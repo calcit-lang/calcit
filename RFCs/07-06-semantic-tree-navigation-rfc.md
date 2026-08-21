@@ -2,13 +2,13 @@
 
 状态：Draft  
 日期：2026-07-06  
-关联：`cr tree search-replace`、`cr tree show`、`cr query search`、`03-18-query-def-tree-show-chunked-display-plan.md`
+关联：`calcit tree search-replace`、`calcit tree show`、`calcit query search`、`03-18-query-def-tree-show-chunked-display-plan.md`
 
 ---
 
 ## 1. 概要
 
-当前 `cr tree` 系列编辑命令在定位子表达式时依赖纯数字点号路径（如 `--path '0.3.2.1'`）。对于人类而言手动数坐标已经不方便，对于 LLM 而言更是结构性难题——LLM 在精确计数方面的可靠性与人类手动数行号相当。
+当前 `calcit tree` 系列编辑命令在定位子表达式时依赖纯数字点号路径（如 `--path '0.3.2.1'`）。对于人类而言手动数坐标已经不方便，对于 LLM 而言更是结构性难题——LLM 在精确计数方面的可靠性与人类手动数行号相当。
 
 本 RFC 提出 **四层互补方案**，从近到远逐步提升编辑体验：
 
@@ -35,16 +35,16 @@
 当前 LLM 编辑 Calcit 代码的标准工作流：
 
 ```
-1. cr tree show 'app.main/main!'             → 查看代码结构
+1. calcit tree show 'app.main/main!'             → 查看代码结构
 2. LLM 自己数目标表达式的坐标                   → 容易数错
-3. cr tree replace 'app.main/main!' --path '...'  → 可能用错路径
+3. calcit tree replace 'app.main/main!' --path '...'  → 可能用错路径
 4. 出错后重新数、重新试                          → 迭代成本高
 ```
 
 或者用 `search-replace`：
 
 ```
-1. cr tree search-replace 'app.main/main!' --pattern 'old-expr' ...
+1. calcit tree search-replace 'app.main/main!' --pattern 'old-expr' ...
    → 报错："Found 3 matches"
 2. LLM 需要切回 tree show 手动辨别是哪个匹配
 3. 回到手动数坐标模式
@@ -53,16 +53,16 @@
 ### 2.2 目标工作流
 
 ```
-1. cr tree show 'app.main/main!'  → 输出自动带路径注释
+1. calcit tree show 'app.main/main!'  → 输出自动带路径注释
 2. LLM 直接从注释中复制路径          → 不需要数
-3. cr tree replace 'app.main/main!' --path '复制来的路径' ...
+3. calcit tree replace 'app.main/main!' --path '复制来的路径' ...
    → 一次成功
 ```
 
 或者在多匹配场景：
 
 ```
-1. cr tree search-replace ... --pattern '...'
+1. calcit tree search-replace ... --pattern '...'
    → 列出 3 个候选（带路径和上下文）
 2. LLM 用 --pick 0 或 --path 指定
    → 一次成功
@@ -74,7 +74,7 @@
 
 ### 3.1 方案
 
-在 `cr tree show` 的输出中，为每个 **list 节点**的末尾追加一条路径注释。注释放在末尾而非开头，避免插入前导节点导致已有子节点索引偏移。格式为 Cirru 行注释语法：
+在 `calcit tree show` 的输出中，为每个 **list 节点**的末尾追加一条路径注释。注释放在末尾而非开头，避免插入前导节点导致已有子节点索引偏移。格式为 Cirru 行注释语法：
 
 ```cirru
 defn add (a b)
@@ -88,10 +88,10 @@ defn add (a b)
 
 ```bash
 # 默认行为：纯代码展示，无路径注释
-cr tree show 'app.main/main!'
+calcit tree show 'app.main/main!'
 
 # 开启路径标注（所有嵌套层级末尾标注路径）
-cr tree show 'app.main/main!' --path-annotations
+calcit tree show 'app.main/main!' --path-annotations
 ```
 
 当展示的节点包含较多子节点（如超过阈值）时，在输出底部提示可用选项：
@@ -114,7 +114,7 @@ defn process (xs)
     foldl zs 0 add
 ```
 
-默认 `cr tree show` 输出（无标注，保持旧行为）：
+默认 `calcit tree show` 输出（无标注，保持旧行为）：
 
 ```cirru
 defn process (xs)
@@ -177,18 +177,18 @@ defn process (xs)
 
 ```bash
 # 多匹配时列出候选
-cr tree search-replace 'app.main/main!' \
+calcit tree search-replace 'app.main/main!' \
   --pattern 'old-name' \
   --code 'new-name'
 
 # 输出候选列表后，选择第 2 个候选
-cr tree search-replace 'app.main/main!' \
+calcit tree search-replace 'app.main/main!' \
   --pattern 'old-name' \
   --code 'new-name' \
   --pick 2
 
 # 或直接用路径指定
-cr tree search-replace 'app.main/main!' \
+calcit tree search-replace 'app.main/main!' \
   --pattern 'old-name' \
   --code 'new-name' \
   --at '1.3.0'
@@ -203,15 +203,15 @@ Found 3 matches for pattern "old-name":
 
 [0] Path [1.3.0]: "old-name"
     Context: defn update $ old-name new-name
-    Command: cr tree search-replace 'app.main/main!' --pattern 'old-name' ... --pick 0
+    Command: calcit tree search-replace 'app.main/main!' --pattern 'old-name' ... --pick 0
 
 [1] Path [2.5.2]: "old-name"
     Context: let $ old-name x $ do-something old-name
-    Command: cr tree search-replace 'app.main/main!' --pattern 'old-name' ... --pick 1
+    Command: calcit tree search-replace 'app.main/main!' --pattern 'old-name' ... --pick 1
 
 [2] Path [3.0.1]: "old-name"
     Context: cond $ = old-name nil $ handle-nil old-name
-    Command: cr tree search-replace 'app.main/main!' --pattern 'old-name' ... --pick 2
+    Command: calcit tree search-replace 'app.main/main!' --pattern 'old-name' ... --pick 2
 
 Use --pick <index> to select a candidate, or --at '<path>' to specify directly.
 ```
@@ -236,14 +236,14 @@ Use --pick <index> to select a candidate, or --at '<path>' to specify directly.
 
 ```bash
 # 基本形式：在匹配 anchor 的节点的第 N 个子节点中做搜索替换
-cr tree search-replace 'app.main/main!' \
+calcit tree search-replace 'app.main/main!' \
   --at 'defn add' \
   --child 2 \
   --pattern 'old-call' \
   --code 'new-call'
 
 # 多层锚定：在 anchor 内的第 N 个子节点中再锚定
-cr tree search-replace 'app.main/main!' \
+calcit tree search-replace 'app.main/main!' \
   --at 'let' \
   --child 0 \
   --at 'cond' \
@@ -396,7 +396,7 @@ integer        = /\d+/
 
 ```bash
 # 搜索 add 函数的 def，拿到路径
-cr query path 'app.main' \
+calcit query path 'app.main' \
   --selector 'path
     heading def {} :name |add'
 
@@ -407,7 +407,7 @@ cr query path 'app.main' \
 
 ```bash
 # 在 add 函数的第一个 let 绑定中搜索并替换
-cr tree search-replace 'app.main/main!' \
+calcit tree search-replace 'app.main/main!' \
   --path-selector 'path
     heading def {} :name |add
     nth 2
@@ -421,13 +421,13 @@ cr tree search-replace 'app.main/main!' \
 
 ```bash
 # 获取路径后用于后续编辑
-PATH=$(cr query path 'app.main' --selector 'path heading def {} :name |init-fn $ nth 2')
-cr tree replace 'app.main/main!' --path "$PATH" --code '...'
+PATH=$(calcit query path 'app.main' --selector 'path heading def {} :name |init-fn $ nth 2')
+calcit tree replace 'app.main/main!' --path "$PATH" --code '...'
 ```
 
 ### 6.6 与现有路径的互操作
 
-- `cr query path` 输出标准数字路径（如 `1.3.0`），可直接用于 `--path`
+- `calcit query path` 输出标准数字路径（如 `1.3.0`），可直接用于 `--path`
 - `--path-selector` 是 `--path` 的超集替代，内部先解析为数字路径再执行
 - 解析失败时给出明确错误信息（哪一步匹配失败、已匹配到的范围、剩余选择器是什么）
 
@@ -457,23 +457,23 @@ defn main! ()
 
 `noted` 是已有 macro，接受 tag 和表达式两个参数。`@anchor:<name>` 作为 tag 标记该表达式，`noted` 在运行时透传表达式的值，锚点信息不参与运行时语义。
 
-锚点附着在表达式上，表达式被移动/复制时锚点跟随。`cr query anchors` 遍历 AST 中所有 `noted` 调用，提取 `@anchor:` 前缀的 tag 及其路径。
+锚点附着在表达式上，表达式被移动/复制时锚点跟随。`calcit query anchors` 遍历 AST 中所有 `noted` 调用，提取 `@anchor:` 前缀的 tag 及其路径。
 
 ### 7.2 命令
 
 ```bash
 # 列出所有锚点
-cr query anchors 'app.main'
+calcit query anchors 'app.main'
 
 # 输出：
 #   @anchor:init-state → app.main/main! [1]
 #   @anchor:render-loop → app.main/main! [4.2]
 
 # 用锚点定位
-cr tree show 'app.main/main!' --anchor 'init-state'
+calcit tree show 'app.main/main!' --anchor 'init-state'
 
 # 用锚点编辑：在锚点后插入
-cr tree insert-after 'app.main/main!' \
+calcit tree insert-after 'app.main/main!' \
   --anchor 'init-state' \
   --code 'println |loaded'
 ```
@@ -483,7 +483,7 @@ cr tree insert-after 'app.main/main!' \
 - 锚点 tag 以 `@anchor:` 前缀标识，在同一 namespace 内必须唯一（不唯一时报错）
 - `noted` 在运行时透传表达式值，锚点不参与运行时语义
 - 锚点跟随表达式移动：`tree delete` / `tree insert` 等操作后，锚点随 `noted` 节点自然位移
-- `cr query anchors` 遍历 AST 中所有 `noted` 调用，提取路径和名称
+- `calcit query anchors` 遍历 AST 中所有 `noted` 调用，提取路径和名称
 
 ### 7.4 锚点与路径的对比
 
@@ -518,7 +518,7 @@ cr tree insert-after 'app.main/main!' \
 ### Phase 3：L4 结构化查询语言
 
 - `path` 选择器解析器
-- `cr query path` 命令
+- `calcit query path` 命令
 - `--path-selector` 替代 `--path` 的编辑命令集成
 
 **预计工作量**：~5-7 天  
@@ -527,7 +527,7 @@ cr tree insert-after 'app.main/main!' \
 ### Phase 4：锚点注释
 
 - `noted @anchor:<name>` 的识别与提取
-- `cr query anchors` 命令
+- `calcit query anchors` 命令
 - `--anchor` 参数集成到编辑命令
 
 **预计工作量**：~4-6 天  
@@ -564,6 +564,6 @@ cr tree insert-after 'app.main/main!' \
    - 当前暂不支持，可作为后续增强
 
 4. **锚点应缓存还是每次遍历 AST？**
-   - 缓存：`cr query anchors` 首次解析后缓存到 snapshot 元数据，编辑后失效重算
+   - 缓存：`calcit query anchors` 首次解析后缓存到 snapshot 元数据，编辑后失效重算
    - 实时遍历：更简单，无需维护缓存一致性
    - 由于 `noted` 节点在 AST 中自然存在，遍历成本可控，建议先实时遍历

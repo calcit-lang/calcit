@@ -56,18 +56,18 @@
 3. ✅ **修正 `to-pairs`/`keys` 的类型签名**，让 record 也能匹配，消除虚假类型告警。
    - 实现：[src/calcit/type_annotation.rs](../src/calcit/type_annotation.rs) `matches_with_bindings` 里 `(TypeRef, Record)` 分支新增：当 `TypeRef` 名字就是泛化的 `"map"` 时，结构性地匹配任意 record（不要求 record 名字等于 `"map"`）。
    - 测试：新增单元测试 `generic_map_type_ref_accepts_records_structurally`，直接验证 `TypeRef("map")` 与 `Record(Person)` 现在双向匹配，同时确认无关的 `TypeRef` 名字仍然不会误匹配。
-   - 备注：实测 `cr --check-only` 在当前仓库测试集里并未因这个 gap 产生可观察的告警（`test-record.cirru` 里 `keys p2` 这行本来就没有触发过告警，猜测是这条路径上的静态类型推断没有把 `p2` 识别为具体的 `Record` 类型，所以没有触发 `check_proc_arg_types` 这条检查分支）。但 `matches_with_bindings` 的错误比较逻辑本身是真实存在的 bug，属于防御性修复：一旦未来静态推断能力增强（例如给变量加显式类型标注后传入 `to-pairs`/`keys`），就不会再误报。
+   - 备注：实测 `calcit --check-only` 在当前仓库测试集里并未因这个 gap 产生可观察的告警（`test-record.cirru` 里 `keys p2` 这行本来就没有触发过告警，猜测是这条路径上的静态类型推断没有把 `p2` 识别为具体的 `Record` 类型，所以没有触发 `check_proc_arg_types` 这条检查分支）。但 `matches_with_bindings` 的错误比较逻辑本身是真实存在的 bug，属于防御性修复：一旦未来静态推断能力增强（例如给变量加显式类型标注后传入 `to-pairs`/`keys`），就不会再误报。
 4. ⏸️ **（可选，视时间，本轮未实现）** 新增 `&struct:fields`/`&enum:variants` 之类的编程接口，让“裸类型定义”的字段/variant 列表也能被程序消费，而不仅仅是打印文本。
    - 未实现原因：新增一个 proc 需要贯穿 `proc_name.rs`(注册+类型签名)、`builtins.rs`(分发)、`builtins/records.rs`或`meta.rs`(实现)、以及 JS/IR/WASM 三个 codegen 目标的同步实现，工作量与收益相比前三项更低（前三项已经解决了运行时能力不对齐的核心问题；字段/variant 名字目前仍可通过 `Display`/`println` 人肉获取，只是没有编程接口）。留作后续独立迭代。
 
 ## 4. 兼容性 / 风险
 
-- 第 1、2、3 项都已实现并通过 `cargo test`、`cargo run --bin cr -- calcit/test.cirru`、`yarn check-all`、`cargo clippy -- -D warnings`、`cargo fmt` 验证，纯粹的能力扩展/告警范围放宽，不改变现有行为，向后兼容。
+- 第 1、2、3 项都已实现并通过 `cargo test`、`cargo run --bin calcit -- calcit/test.cirru`、`yarn check-all`、`cargo clippy -- -D warnings`、`cargo fmt` 验证，纯粹的能力扩展/告警范围放宽，不改变现有行为，向后兼容。
 - 第 4 项延后，不影响现有行为。
 
 ## 5. 验证方式（已执行）
 
 - `cargo test`：新增/更新的 Rust 单元测试全部通过，覆盖 `Display for Enum`、`&methods-of` 对裸类型定义的调用、`to-pairs`/`keys` 的类型匹配放宽。
-- `cargo run --bin cr -- calcit/test.cirru`：Cirru 集成测试套件全部通过，包括新增的裸类型 `&methods-of` 断言。
+- `cargo run --bin calcit -- calcit/test.cirru`：Cirru 集成测试套件全部通过，包括新增的裸类型 `&methods-of` 断言。
 - `yarn check-all`：JS/IR/WASM 三个目标同步验证通过（`&methods-of` 的 JS 实现已同步补齐）。
 - `cargo clippy -- -D warnings` / `cargo fmt`：均无告警。

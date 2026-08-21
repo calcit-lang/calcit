@@ -1,4 +1,4 @@
-//! Config command handler — top-level `cr config` shortcut
+//! Config command handler — top-level `calcit config` shortcut
 //!
 //! Consolidates project/entry display and safe mutations for modules, versions, and type slots.
 
@@ -201,7 +201,7 @@ fn load_module_silent(module_path: &str, base_dir: &Path, module_folder: &Path) 
 fn handle_version(opts: &ConfigVersionCommand, snapshot_file: &str) -> Result<(), String> {
   let replacement = version_command_replacement(opts.value.as_deref(), snapshot_file);
   eprintln!(
-    "[Deprecated] `cr config version` no longer writes `calcit.cirru :version`; use {replacement}, which manages `deps.cirru :version`"
+    "[Deprecated] `calcit config version` no longer writes `calcit.cirru :version`; use {replacement}, which manages `deps.cirru :version`"
   );
   let _ = snapshot_file;
   Err(format!("Project version is stored in deps.cirru; run {replacement}"))
@@ -211,7 +211,7 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
   if opts.key == "version" {
     let replacement = version_command_replacement(Some(opts.value.as_str()), snapshot_file);
     eprintln!(
-      "[Deprecated] `cr config set version` no longer writes `calcit.cirru :version`; use {replacement} to manage `deps.cirru :version`"
+      "[Deprecated] `calcit config set version` no longer writes `calcit.cirru :version`; use {replacement} to manage `deps.cirru :version`"
     );
     return Err(format!("Project version is stored in deps.cirru; run {replacement}"));
   }

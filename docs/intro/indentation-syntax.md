@@ -29,7 +29,7 @@ defn fibo (x)
     + (fibo $ - x 1) (fibo $ - x 2)
 ```
 
-But also, you can write Calcit code directly in a snapshot file and run it with `cr`.
+But also, you can write Calcit code directly in a snapshot file and run it with `calcit`.
 
 To run `calcit.cirru` (or legacy `compact.cirru`), internally it's doing steps:
 

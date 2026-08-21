@@ -1,6 +1,6 @@
 ---
 title: "Documentation Retrieval Validation"
-summary: "通过可执行案例验证 cr docs 的搜索、摘要、章节解析和模块路由"
+summary: "通过可执行案例验证 calcit docs 的搜索、摘要、章节解析和模块路由"
 scope: "core"
 kind: "reference"
 category: "docs"
@@ -9,9 +9,9 @@ aliases:
   - "search validation"
   - "retrieval regression"
 entry_for:
-  - "cr docs search"
-  - "cr docs read"
-  - "cr docs read-lines"
+  - "calcit docs search"
+  - "calcit docs read"
+  - "calcit docs read-lines"
 id: core/docs/validation
 parent: core/docs
 related:
@@ -22,7 +22,7 @@ requires:
 
 # Documentation Retrieval Validation
 
-This page contains executable validation cases for `cr docs search`, `cr docs read`, and `cr docs read-lines`.
+This page contains executable validation cases for `calcit docs search`, `calcit docs read`, and `calcit docs read-lines`.
 
 Use it when changing:
 
@@ -35,133 +35,133 @@ Use it when changing:
 
 ```bash
 # New split files should be searchable by alias and content
-cr docs search quick-start
-cr docs search project-structure
-cr docs search structural-strategies
-cr docs search debugging
+calcit docs search quick-start
+calcit docs search project-structure
+calcit docs search structural-strategies
+calcit docs search debugging
 
 # Summary mode on new files
-cr docs search "project structure" --summary
-cr docs search debugging --summary
-cr docs search structural --summary
+calcit docs search "project structure" --summary
+calcit docs search debugging --summary
+calcit docs search structural --summary
 ```
 
 ```bash
-cr docs search polymorphism
-cr docs search edit-tree --filename run.md
-cr docs search search-replace
-cr docs search watch mode
-cr docs search calcit.cirru
+calcit docs search polymorphism
+calcit docs search edit-tree --filename run.md
+calcit docs search search-replace
+calcit docs search watch mode
+calcit docs search calcit.cirru
 ```
 
 ## Summary Mode Checks
 
 ```bash
 # --summary should show only title + summary, no content snippets
-cr docs search eval --summary
-cr docs search cirru --summary
+calcit docs search eval --summary
+calcit docs search cirru --summary
 
 # Should still work when no summary field exists
-cr docs search scopes --summary
+calcit docs search scopes --summary
 
 # Summary mode with module filter
-cr docs search render --module respo.calcit --summary
+calcit docs search render --module respo.calcit --summary
 ```
 
 ## Hub Marking Checks
 
 ```bash
 # Results should show [Hub] marker on hub-type documents
-cr docs search features
-cr docs search calcit.cirru
+calcit docs search features
+calcit docs search calcit.cirru
 ```
 
 ## Module Search Checks
 
 ```bash
-cr docs search render --module respo.calcit
-cr docs search clear-cache --module respo.calcit
-cr docs search defstyle --module respo.calcit
-cr docs search hook --module respo.calcit
+calcit docs search render --module respo.calcit
+calcit docs search clear-cache --module respo.calcit
+calcit docs search defstyle --module respo.calcit
+calcit docs search hook --module respo.calcit
 ```
 
 ## Ranking Checks
 
 ```bash
 # A topical page should beat an examples/spec page that only mentions the term
-cr docs search polymorphism
+calcit docs search polymorphism
 
 # Alias-only queries should still find the right page
-cr docs search search-replace
-cr docs search hot reload
+calcit docs search search-replace
+calcit docs search hot reload
 
 # Command-oriented phrases should point at the operational guide
-cr docs search "cr eval"
-cr docs search "add-import"
+calcit docs search "calcit eval"
+calcit docs search "add-import"
 
 # Filename/path hits should stay useful when several pages mention the same term
-cr docs search traits
-cr docs search docs
+calcit docs search traits
+calcit docs search docs
 ```
 
 ## Knowledge Navigation Checks
 
 ```bash
 # A definition name should resolve to the structure-level entry document.
-cr docs search "calcit.core/nth" --summary
-cr docs search "calcit.core/append" --summary
+calcit docs search "calcit.core/nth" --summary
+calcit docs search "calcit.core/append" --summary
 
 # The structured relationship section should be addressable by heading.
-cr docs read "Documentation Indexing Spec" "Knowledge graph fields"
+calcit docs read "Documentation Indexing Spec" "Knowledge graph fields"
 
 # A structure page should expose its operation-oriented sections.
-cr docs read "List" "Quick Recipes"
+calcit docs read "List" "Quick Recipes"
 
 # Build and traverse the structured knowledge graph.
-cr docs graph build
-cr docs graph check
-cr docs graph children core/features
-cr docs graph related core/features/list
-cr docs graph path core/features/list core/run/edit-tree
-cr docs graph explain calcit.core/nth
-cr docs graph explain calcit.core/nth --full
-cr docs graph missing --ns calcit.core --limit 20
-cr docs graph orphans
+calcit docs graph build
+calcit docs graph check
+calcit docs graph children core/features
+calcit docs graph related core/features/list
+calcit docs graph path core/features/list core/run/edit-tree
+calcit docs graph explain calcit.core/nth
+calcit docs graph explain calcit.core/nth --full
+calcit docs graph missing --ns calcit.core --limit 20
+calcit docs graph orphans
 ```
 
 ## Agents and Module Checks
 
 ```bash
 # Agents frontmatter should not leak into output
-cr docs agents
+calcit docs agents
 
 # Module Agents and module docs should both participate in ranking
-cr docs search render --module respo.calcit
-cr docs search clear-cache --module respo.calcit
+calcit docs search render --module respo.calcit
+calcit docs search clear-cache --module respo.calcit
 ```
 
 ## Read Checks
 
 ```bash
 # Metadata should not leak into read output
-cr docs read polymorphism.md
-cr docs read edit-tree.md search-replace
+calcit docs read polymorphism.md
+calcit docs read edit-tree.md search-replace
 
 # Resolver should work with aliases, titles, and command phrases
-cr docs read search-replace
-cr docs read "CLI Code Editing"
-cr docs read "cr eval --dep"
-cr docs read "cr edit add-import"
-cr docs read "query ns"
-cr docs read "reload fn"
-cr docs read "indentation based syntax"
+calcit docs read search-replace
+calcit docs read "CLI Code Editing"
+calcit docs read "calcit eval --dep"
+calcit docs read "calcit edit add-import"
+calcit docs read "query ns"
+calcit docs read "reload fn"
+calcit docs read "indentation based syntax"
 ```
 
 ## Read-Lines Checks
 
 ```bash
-cr docs read-lines search-replace --start 48 --lines 8
-cr docs read-lines Respo-Agent --module respo.calcit --start 1 --lines 8
+calcit docs read-lines search-replace --start 48 --lines 8
+calcit docs read-lines Respo-Agent --module respo.calcit --start 1 --lines 8
 ```
 
 ## Update Rule

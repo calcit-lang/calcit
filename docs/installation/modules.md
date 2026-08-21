@@ -10,7 +10,7 @@ aliases:
   - "caps"
 entry_for:
   - "caps install"
-  - "cr docs remote-libs scan-md"
+  - "calcit docs remote-libs scan-md"
 ---
 
 # Modules directory

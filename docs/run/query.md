@@ -1,6 +1,6 @@
 ---
 title: "Querying Definitions"
-summary: "使用 cr query context/defs/def/type/search/find/usages 聚合 Snapshot 元数据与静态语义"
+summary: "使用 calcit query context/defs/def/type/search/find/usages 聚合 Snapshot 元数据与静态语义"
 scope: "core"
 kind: "reference"
 category: "run"
@@ -16,15 +16,15 @@ aliases:
   - "search-expr"
   - "search expr"
 entry_for:
-  - "cr query ns"
-  - "cr query defs"
-  - "cr query def"
-  - "cr query type"
-  - "cr query type-at"
-  - "cr query context"
-  - "cr query find"
-  - "cr query usages"
-  - "cr query search-expr"
+  - "calcit query ns"
+  - "calcit query defs"
+  - "calcit query def"
+  - "calcit query type"
+  - "calcit query type-at"
+  - "calcit query context"
+  - "calcit query find"
+  - "calcit query usages"
+  - "calcit query search-expr"
 id: core/run/query
 parent: core/run
 related:
@@ -46,20 +46,20 @@ Calcit provides a powerful `query` subcommand to inspect code, find definitions,
 
 ```bash
 # List all loaded namespaces
-cr query ns
+calcit query ns
 
 # Show definitions in a specific namespace
-cr query ns calcit.core
+calcit query ns calcit.core
 ```
 
 ### Read Code (`def`)
 
 ```bash
 # Show full source code of a definition
-cr query def calcit.core/assoc
+calcit query def calcit.core/assoc
 
 # Builtin helpers without snapshot source still return metadata
-cr query def calcit.core/to-js-data
+calcit query def calcit.core/to-js-data
 ```
 
 For source-backed definitions, `query def` prints the stored Cirru body. For special builtin helpers such as `calcit.core/to-js-data`, it falls back to builtin metadata (doc, schema, examples count) even when no snapshot source exists.
@@ -70,30 +70,30 @@ Local metadata queries (`ns <name>`, `defs`, `def`, `peek`, `examples`, `schema`
 
 ```bash
 # Show documentation and examples without the full body
-cr query peek calcit.core/map
+calcit query peek calcit.core/map
 ```
 
 ### Check Examples (`examples`)
 
 ```bash
 # Extract only the examples section
-cr query examples calcit.core/let
+calcit query examples calcit.core/let
 
 # Builtin helpers can also expose curated examples when available
-cr query examples calcit.core/to-js-data
+calcit query examples calcit.core/to-js-data
 ```
 
-To execute stored examples without running an entire namespace's examples, use `cr analyze check-examples --ns app.main --def target-name`.
+To execute stored examples without running an entire namespace's examples, use `calcit analyze check-examples --ns app.main --def target-name`.
 
 ### Read Schema (`schema`)
 
 ```bash
 # Function and value schemas use the same query
-cr query schema app.main/main!
-cr query schema 'app.main/*enabled?'
+calcit query schema app.main/main!
+calcit query schema 'app.main/*enabled?'
 
 # Versioned machine-readable envelope with canonical schema and Cirru tree
-cr query schema 'app.main/*enabled?' --json
+calcit query schema 'app.main/*enabled?' --json
 ```
 
 Parameterized value schemas are rendered directly, for example `:: :ref :bool`; they are no longer hidden as `(none)` merely because they are not function schemas. `--json` emits actual JSON, including both the canonical one-line schema and its Cirru tree, rather than a Cirru EDN fragment labeled as JSON.
@@ -102,40 +102,40 @@ Parameterized value schemas are rendered directly, for example `:: :ref :bool`; 
 
 ```bash
 # Search for a symbol across ALL loaded namespaces
-cr query find assoc
+calcit query find assoc
 ```
 
 ### Analyze Usages (`usages`)
 
 ```bash
 # Find where a specific definition is used
-cr query usages app.main/main!
+calcit query usages app.main/main!
 ```
 
 ### Search Text (`search`)
 
 ```bash
 # Search for raw text (leaf values) across project
-cr query search hello
+calcit query search hello
 
 # Limit to one definition
-cr query search hello --filter app.main/main!
+calcit query search hello --filter app.main/main!
 
 # Stable paths and matched trees in one JSON envelope
-cr query search hello --filter app.main/main! --format json
+calcit query search hello --filter app.main/main! --format json
 ```
 
 ### Search Expressions (`search-expr`)
 
 ```bash
 # Search structural expressions (Cirru pattern)
-cr query search-expr "fn (x)"
+calcit query search-expr "fn (x)"
 
 # Limit to one definition
-cr query search-expr "fn (x)" --filter app.main/main!
+calcit query search-expr "fn (x)" --filter app.main/main!
 
 # `--json` decodes the pattern; `--format json` controls result encoding
-cr query search-expr '["fn",["x"]]' --json --filter app.main/main! --format json
+calcit query search-expr '["fn",["x"]]' --json --filter app.main/main! --format json
 ```
 
 Search JSON results contain a summary plus definition rows with `code@...` paths and the matched Cirru tree. `--parent-path` also returns the editable parent path for leaf searches. A local `--filter` uses shallow Snapshot loading; dependency modules are loaded only if the filtered namespace is not local or an explicit `--entry` is requested.
@@ -144,16 +144,16 @@ Search JSON results contain a summary plus definition rows with `code@...` paths
 
 ```bash
 # Builtin type
-cr query type "'Number"
+calcit query type "'Number"
 
 # Parameterized type; pass Cirru directly, without an extra outer parenthesis layer
-cr query type ":: 'List 'Number"
+calcit query type ":: 'List 'Number"
 
 # A definition with an explicit static schema
-cr query type calcit.core/ceil
+calcit query type calcit.core/ceil
 
 # Machine-readable result; stdout is one JSON value
-cr query type "'Number" --format json
+calcit query type "'Number" --format json
 ```
 
 `query type` loads and preprocesses static metadata but does not run the project init or reload function. It lists methods in dispatch-precedence order and shows the impl that contributes each method. Definition targets first use an explicit schema, then static source inference. This allows `defstruct` and `defenum` declarations with a dynamic entry schema to expose their named type and methods without constructing a runtime value. If neither source is sufficient, query a concrete type annotation instead.
@@ -164,10 +164,10 @@ Use a Snapshot path returned by `query search`, `query context`, or another stru
 
 ```bash
 # Inspect one field-access expression without running the project entry
-cr query type-at test-struct.main/sum-point --path code@3.1
+calcit query type-at test-struct.main/sum-point --path code@3.1
 
 # Machine-readable evidence envelope
-cr query type-at test-struct.main/sum-point --path code@3.1 --format json
+calcit query type-at test-struct.main/sum-point --path code@3.1 --format json
 ```
 
 `query type-at` statically preprocesses the selected definition and reports:
@@ -184,16 +184,16 @@ The command does not invoke the project init/reload function. A dynamic FFI boun
 
 ```bash
 # One bounded view for understanding or preparing to edit a definition
-cr query context app.main/main!
+calcit query context app.main/main!
 
 # Return the typed result envelope as JSON
-cr query context app.main/main! --format json
+calcit query context app.main/main! --format json
 
 # Use a smaller content budget and include dependency/core usages
-cr query context app.main/main! --budget 2400 --deps
+calcit query context app.main/main! --budget 2400 --deps
 
 # Builtin helpers without a Snapshot body use curated metadata
-cr query context calcit.core/to-js-data --format json
+calcit query context calcit.core/to-js-data --format json
 ```
 
 `query context` combines information that otherwise requires several commands:
@@ -215,26 +215,26 @@ With `--format json`, stdout contains one JSON envelope. Command explanations an
 ### Locate a symbol and jump to definition
 
 ```bash
-cr query find assoc
-cr query def calcit.core/assoc
+calcit query find assoc
+calcit query def calcit.core/assoc
 ```
 
 ### Collect edit context in one call
 
 ```bash
-cr query context app.main/main! --format json
+calcit query context app.main/main! --format json
 ```
 
 ### Locate all call sites before refactor
 
 ```bash
-cr query usages app.main/main!
+calcit query usages app.main/main!
 ```
 
 ### Locate by text when you only remember a fragment
 
 ```bash
-cr query search "reload"
+calcit query search "reload"
 ```
 
 ## Runtime Code Inspection
@@ -256,4 +256,4 @@ let
 
 ### Getting Help
 
-Use `cr query --help` for the full list of available query subcommands.
+Use `calcit query --help` for the full list of available query subcommands.

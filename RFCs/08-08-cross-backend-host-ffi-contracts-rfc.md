@@ -41,7 +41,7 @@ JavaScript 宿主对象不建立一套类似 TypeScript 的结构化类型系统
 2. 用现有 trait 体系描述少量稳定宿主操作。
 3. 让 codegen 能从声明确定应生成属性读取、属性写入还是宿主方法调用。
 4. 保留 `JsObject` 与 `JsNullish<T>` 的不透明边界语义。
-5. 让 Snapshot 中的声明可由 `cr query`、生成器和静态分析直接读取。
+5. 让 Snapshot 中的声明可由 `calcit query`、生成器和静态分析直接读取。
 6. 保持声明足够小，使绑定模块只描述应用实际使用的 API。
 
 ### 3.2 非目标
@@ -477,7 +477,7 @@ MVP 建议使用少量稳定诊断：
 3. 现有手写 JS binding 可以继续使用普通 `defn`；只有需要生成或查询宿主绑定时才增加 `:ffi`。
 4. `defwasm-import`、`defwasm-export` 与 registered proc 先只在 query 中暴露规范化 metadata，不立即改变运行时。
 5. 旧的 `:string`、`:: :fn` 等 schema 输入仍可读取；重新保存和新生成内容使用 quoted-symbol 形式。
-6. Snapshot loader 在正式写入 `:ffi` 前必须先做到未知字段无损保留，或明确实现 `CodeEntry.ffi`；不能让一次 `cr edit` 静默删除 binding 元数据。
+6. Snapshot loader 在正式写入 `:ffi` 前必须先做到未知字段无损保留，或明确实现 `CodeEntry.ffi`；不能让一次 `calcit edit` 静默删除 binding 元数据。
 
 ## 12. 实施阶段
 
@@ -493,7 +493,7 @@ MVP 建议使用少量稳定诊断：
 - 支持 JS `:kind :import` 的 `:function`、`:method`、`:value`；
 - 从 definition 的 `Fn` schema 检查 arity、参数和返回值；
 - 要求 JS binding schema 带 `:features #{:js-ffi}`；
-- 在 `cr query context` 和机器 JSON 中暴露 `schema` 与 `ffi`，但不把二者合并。
+- 在 `calcit query context` 和机器 JSON 中暴露 `schema` 与 `ffi`，但不把二者合并。
 
 ### 阶段 2：JS external trait
 
@@ -520,7 +520,7 @@ Snapshot/EDN 测试：
 - `Fn`、`Trait` 与 named type reference 按规范形式 round-trip；
 - `:ffi` 未知扩展字段无损保存；
 - Cirru EDN 中 map、list、set、string、symbol 和 tag 不混淆；
-- `cr edit schema` 只更新 `:schema`，不删除或改写 `:ffi`。
+- `calcit edit schema` 只更新 `:schema`，不删除或改写 `:ffi`。
 
 类型测试：
 

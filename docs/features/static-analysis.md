@@ -13,10 +13,10 @@ aliases:
   - "type baseline"
 entry_for:
   - "assert-type"
-  - "cr analyze check-types"
-  - "cr analyze weak-types"
-  - "cr analyze deprecated"
-  - "cr analyze quality"
+  - "calcit analyze check-types"
+  - "calcit analyze weak-types"
+  - "calcit analyze deprecated"
+  - "calcit analyze quality"
 id: core/features/static-analysis
 related:
   - core/run/library-quality
@@ -31,8 +31,8 @@ Calcit includes a built-in static type analysis system that performs compile-tim
 
 - **Assert Type**: `assert-type total 'Number`
 - **Local `fn` Hint**: `hint-fn $ {} (:args ([] 'Number)) (:return 'Number)`
-- **Top-level `defn` Schema**: `cr edit schema app.main/add --code "quote $ :: 'Fn $ {} (:args ([] 'Number 'Number)) (:return 'Number)"`
-- **Top-level value Schema**: `cr edit schema 'app.main/*enabled?' --code "quote $ :: 'Ref 'Bool"`
+- **Top-level `defn` Schema**: `calcit edit schema app.main/add --code "quote $ :: 'Fn $ {} (:args ([] 'Number 'Number)) (:return 'Number)"`
+- **Top-level value Schema**: `calcit edit schema 'app.main/*enabled?' --code "quote $ :: 'Ref 'Bool"`
 - **Return Type**: `hint-fn $ {} (:return 'String)`
 - **Compact Hint**: `defn my-fn (x) 'String ...`
 - **Check Traits**: `assert-traits x MyTrait`
@@ -46,7 +46,7 @@ The static analysis system provides:
 - **Type annotations** - Optional type hints for function parameters and return values
 - **Compile-time warnings** - Catches errors before code execution
 - **Completion warnings** - Keeps scaffolded `todo!` paths visible to Agents
-- **CI quality gate**: `cr analyze quality --baseline config/calcit-quality.json`
+- **CI quality gate**: `calcit analyze quality --baseline config/calcit-quality.json`
 - **Composable runtime assertions** - `assert-type` and `assert-traits` can validate values at runtime and return original values for chaining
 
 ## Static Project Reports
@@ -55,47 +55,47 @@ Use the CLI reports when you need to understand type quality without running the
 
 ```bash
 # Coverage by definition; unknown code is reported as none, never as full
-cr analyze check-types --ns app.main
+calcit analyze check-types --ns app.main
 
 # All weak type locations
-cr analyze weak-types --ns app.main
+calcit analyze weak-types --ns app.main
 
 # Deprecated API calls, including the source definition and exact code path
-cr analyze deprecated --ns app.main
+calcit analyze deprecated --ns app.main
 
 # Enforce zero type/weak-type/deprecated debt with a non-zero failure exit
-cr analyze quality
+calcit analyze quality
 
 # Bootstrap and enforce a reviewed baseline for an existing project
-cr analyze quality --write-baseline config/calcit-quality.json
-cr analyze quality --baseline config/calcit-quality.json
+calcit analyze quality --write-baseline config/calcit-quality.json
+calcit analyze quality --baseline config/calcit-quality.json
 
 # Focus only on unresolved type debt
-cr analyze weak-types --ns app.main --intent unresolved
+calcit analyze weak-types --ns app.main --intent unresolved
 
 # Focus on nil migration debt while excluding declared Unit returns
-cr analyze weak-types --ns app.main --only code-nil --intent unresolved,declared-optional
+calcit analyze weak-types --ns app.main --only code-nil --intent unresolved,declared-optional
 
 # Inspect explicitly permitted JS FFI dynamic boundaries
-cr analyze weak-types --ns app.main --intent intentional-js-ffi
+calcit analyze weak-types --ns app.main --intent intentional-js-ffi
 
 # Machine-readable definition rows and Snapshot paths
-cr analyze check-types --ns app.main --format json
-cr analyze weak-types --ns app.main --intent unresolved --format json
-cr analyze deprecated --ns app.main --format json
+calcit analyze check-types --ns app.main --format json
+calcit analyze weak-types --ns app.main --intent unresolved --format json
+calcit analyze deprecated --ns app.main --format json
 
 # Keep aggregate counts but omit definition rows (especially useful for agents)
-cr analyze check-types --ns app.main --summary-only --format json
-cr analyze weak-types --ns app.main --intent unresolved --summary-only --format json
+calcit analyze check-types --ns app.main --summary-only --format json
+calcit analyze weak-types --ns app.main --intent unresolved --summary-only --format json
 
 # Validate only one definition's examples
-cr analyze check-examples --ns app.main --def calculate-total
+calcit analyze check-examples --ns app.main --def calculate-total
 
 # Validate examples that depend on JavaScript-only FFI syntax
-cr analyze check-examples --ns app.main --def 'detect-nodejs?' --js
+calcit analyze check-examples --ns app.main --def 'detect-nodejs?' --js
 
 # Explain one expression using inferred and expected types
-cr query type-at app.main/calculate-total --path code@3.2 --format json
+calcit query type-at app.main/calculate-total --path code@3.2 --format json
 ```
 
 `check-types` treats nested dynamic slots such as bare `:ref`, `:list`, or `:map` as partial coverage and includes actionable `[W_SCHEMA_DYNAMIC]` entries in `schema_issues`. An unbound `*type-slot` is also partial and emits `[W_UNRESOLVED_TYPE_SLOT]`; bind it in the selected entry or explicitly choose `:dynamic` for a documented boundary. When partial/none definitions exist, human output adds an `agent-note` and JSON emits `W_TYPE_COVERAGE_GAPS`. `weak-types --format json` reports the exact Snapshot/schema path plus an `impact` and `suggestion` for every occurrence; unresolved dynamic debt emits `W_DYNAMIC_TYPE_DEBT`, unbound slots emit `W_UNRESOLVED_TYPE_SLOT`, while unresolved or compatibility-Optional nil debt emits `W_NIL_TYPE_DEBT`. Definitions marked with the explicit `:js-ffi` feature remain classified as intentional boundaries rather than ordinary unresolved dynamic debt.
@@ -104,9 +104,9 @@ An explicit function schema feature such as `:features $ #{} :js-ffi` classifies
 
 For `code-nil`, the report includes both raw `nil` and the explicit `;nil` Unit marker. Every nil form inside a function declared to return `Unit` is classified as `declared-unit`; `;nil` is also always classified as explicit Unit, including inside generated macro branches. For legacy `Optional<T>`, only structurally proven return positions inherit `declared-optional`; embedded nil values remain unresolved. `declared-unit` is excluded from migration debt, while `declared-optional` remains visible so application APIs move to `Option` or `Result`. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-optional` and requires no findings.
 
-For one definition, `cr query context '<ns/def>' --format json` embeds the same distinction in its diagnostics and returns the definition revision together with Snapshot paths.
+For one definition, `calcit query context '<ns/def>' --format json` embeds the same distinction in its diagnostics and returns the definition revision together with Snapshot paths.
 
-For one expression, `cr query type-at '<ns/def>' --path code@... --format json` preprocesses only static program metadata and returns inferred type, expected type, typed bindings, confidence, method candidates, and diagnostics. It does not run the application entry. Paths use the same stable Snapshot coordinates returned by structural query commands.
+For one expression, `calcit query type-at '<ns/def>' --path code@... --format json` preprocesses only static program metadata and returns inferred type, expected type, typed bindings, confidence, method candidates, and diagnostics. It does not run the application entry. Paths use the same stable Snapshot coordinates returned by structural query commands.
 
 These analysis commands run as static Snapshot readers: they load configured modules and core metadata but do not preprocess or execute the application entry. With `--format json`, stdout is one versioned JSON envelope containing a stable scope revision, filters, summary, and definition-level rows; startup/command messages stay on stderr.
 
@@ -142,7 +142,7 @@ Use `--summary-only` when only aggregate counts are needed. Human output stops a
 
 ## Type Annotations
 
-Built-in types use **quoted symbols**: write `'String`, `'Number`, `'List`, `'Fn`, and `'Dynamic`. This keeps type syntax distinct from ordinary keyword/tag data. Lowercase tags such as `:string`, `:number`, and `:dynamic` remain load-compatible, but `cr edit format` rewrites type positions to the symbol form. It does not rewrite ordinary tags such as enum variants, struct field keys, `:return` schema keys, or `:kind` values.
+Built-in types use **quoted symbols**: write `'String`, `'Number`, `'List`, `'Fn`, and `'Dynamic`. This keeps type syntax distinct from ordinary keyword/tag data. Lowercase tags such as `:string`, `:number`, and `:dynamic` remain load-compatible, but `calcit edit format` rewrites type positions to the symbol form. It does not rewrite ordinary tags such as enum variants, struct field keys, `:return` schema keys, or `:kind` values.
 
 ### Function Parameter Types
 
@@ -151,9 +151,9 @@ Function parameters should be annotated with function schema:
 - top-level `defn` / `defmacro`: prefer `:schema`
 - local `fn`: use `hint-fn` with `:args` / `:rest`
 
-For namespace-level definitions, `:schema` is stored on the definition entry and is typically edited with `cr edit schema`, rather than written inline in the function body.
+For namespace-level definitions, `:schema` is stored on the definition entry and is typically edited with `calcit edit schema`, rather than written inline in the function body.
 
-`cr edit schema` accepts exactly one AST node and therefore requires the CLI code/data boundary: use `quote 'String` for a primitive leaf or `quote $ :: 'Ref 'Bool` for a parameterized type expression. A top-level value backed by `defstruct` or `defenum` uses its fully qualified nominal type, for example `cr edit schema app.schema/store --code "quote 'app.schema/Store"`; the qualification lets the stored schema preserve identity without relying on the editing namespace. The `quote` belongs to CLI transport and is not stored inside `:schema`. Callable payloads use the canonical wrapped form `:: 'Fn $ {} ...` or `:: 'Macro $ {} ...`; raw `{} (:kind :fn)` maps and bare parameterized types such as `'Ref` are rejected with a corrective error. Parameterized value schemas use the same type grammar as function arguments, for example `:: 'Ref 'Bool`, `:: 'List 'String`, or `:: 'Map 'Tag 'Number`.
+`calcit edit schema` accepts exactly one AST node and therefore requires the CLI code/data boundary: use `quote 'String` for a primitive leaf or `quote $ :: 'Ref 'Bool` for a parameterized type expression. A top-level value backed by `defstruct` or `defenum` uses its fully qualified nominal type, for example `calcit edit schema app.schema/store --code "quote 'app.schema/Store"`; the qualification lets the stored schema preserve identity without relying on the editing namespace. The `quote` belongs to CLI transport and is not stored inside `:schema`. Callable payloads use the canonical wrapped form `:: 'Fn $ {} ...` or `:: 'Macro $ {} ...`; raw `{} (:kind :fn)` maps and bare parameterized types such as `'Ref` are rejected with a corrective error. Parameterized value schemas use the same type grammar as function arguments, for example `:: 'Ref 'Bool`, `:: 'List 'String`, or `:: 'Map 'Tag 'Number`.
 
 The preprocessor propagates a named function's schema into its parameter bindings. This means field access, method dispatch, generic return inference, and return checks inside the body use the declared types instead of falling back to `:dynamic`. A `:rest` schema is preserved as a variadic element type both for calls and when the function is passed as a higher-order callback.
 
@@ -276,10 +276,10 @@ let
 
 ### Dynamic 用量审计
 
-每次 `cr` 执行或编译都会在 stderr 统计当前项目的 Dynamic 类型位置。少量使用只保留静默结果；达到一定数量且占比超过阈值时输出 notice 或 warning。该审计不会改变程序语义，也不会污染 stdout；需要定位时运行：
+每次 `calcit` 执行或编译都会在 stderr 统计当前项目的 Dynamic 类型位置。少量使用只保留静默结果；达到一定数量且占比超过阈值时输出 notice 或 warning。该审计不会改变程序语义，也不会污染 stdout；需要定位时运行：
 
 ```bash
-cr analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json
+calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json
 ```
 
 Dynamic 应限制在 JS FFI、宏和框架开放数据边界。普通多态使用 TypeVar/`:generics`，能力约束使用 trait/`:where`，缺失使用 `Option<T>`，失败使用 `Result<T,E>`。
@@ -724,7 +724,7 @@ Then reference the slot in type annotations with the `*name` syntax:
 Bind the slot in the configuration of the entry being compiled. The concrete type must use a full `namespace/definition` path:
 
 ```bash
-cr config set-type-slot :dispatch-op app.schema/Op
+calcit config set-type-slot :dispatch-op app.schema/Op
 ```
 
 This writes the following entry-level configuration:
@@ -740,8 +740,8 @@ No wrapper is needed around `main!`; the binding is installed before any definit
 A named entry has an independent configuration:
 
 ```bash
-cr config set-type-slot --entry server :dispatch-op app.schema/ServerOp
-cr config type-slots --entry server
+calcit config set-type-slot --entry server :dispatch-op app.schema/ServerOp
+calcit config type-slots --entry server
 ```
 
 Entries do not inherit `entries.default.type-slots`. Bind every slot needed by each entry explicitly.
@@ -763,8 +763,8 @@ Entries do not inherit `entries.default.type-slots`. Bind every slot needed by e
 Inspect and remove bindings with:
 
 ```bash
-cr config type-slots
-cr config rm-type-slot :dispatch-op
+calcit config type-slots
+calcit config rm-type-slot :dispatch-op
 ```
 
 ### Compatibility Form

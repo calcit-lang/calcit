@@ -32,7 +32,7 @@ Use `defstruct` to declare a named type with typed fields:
 defstruct Point (:x 'Number) (:y 'Number)
 ```
 
-Each field is a pair of `(:field-name type)`. Use quoted-symbol types such as `'Number`, `'String`, `'Bool`, `'Tag`, `'List`, `'Map`, `'Fn`, and `'Dynamic` (untyped). Legacy tag spellings remain compatible and are rewritten by `cr edit format`.
+Each field is a pair of `(:field-name type)`. Use quoted-symbol types such as `'Number`, `'String`, `'Bool`, `'Tag`, `'List`, `'Map`, `'Fn`, and `'Dynamic` (untyped). Legacy tag spellings remain compatible and are rewritten by `calcit edit format`.
 
 ```cirru
 defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)

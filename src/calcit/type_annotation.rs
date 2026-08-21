@@ -1395,7 +1395,7 @@ impl CalcitTypeAnnotation {
     Some(vars)
   }
 
-  /// Summarize definition code for `cr query def` output.
+  /// Summarize definition code for `calcit query def` output.
   ///
   /// Note: editor mode has no macro expansion, so only display what can be
   /// statically observed (e.g. `hint-fn`, `assert-type`). If no hints are found,

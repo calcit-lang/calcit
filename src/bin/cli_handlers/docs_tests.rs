@@ -108,8 +108,8 @@ fn agents_docs_default_to_the_version_matched_embedded_guide() {
   assert!(document.content.contains("是 **Cirru EDN 树形 Snapshot**"));
   assert!(document.content.contains("x $ (f a)"));
   assert!(document.content.contains("symbol leaf:    quote new-name"));
-  assert!(document.content.contains("cr cirru parse -e --validate"));
-  assert!(document.content.contains("cr docs search 'cursor'"));
+  assert!(document.content.contains("calcit cirru parse -e --validate"));
+  assert!(document.content.contains("calcit docs search 'cursor'"));
 }
 
 #[test]
@@ -267,7 +267,7 @@ fn collect_search_results_prefers_filename_matches() {
 
 #[test]
 fn parse_doc_frontmatter_extracts_lists_and_strips_header() {
-  let raw = "---\ntitle: \"Run Calcit\"\nkind: hub\ncategory: run\naliases:\n  - watch mode\n  - eval\nentry_for:\n  - cr eval\n---\n# Run Calcit\n\nBody text.\n";
+  let raw = "---\ntitle: \"Run Calcit\"\nkind: hub\ncategory: run\naliases:\n  - watch mode\n  - eval\nentry_for:\n  - calcit eval\n---\n# Run Calcit\n\nBody text.\n";
   let (frontmatter, body) = parse_doc_frontmatter(raw);
 
   assert_eq!(frontmatter.title.as_deref(), Some("Run Calcit"));
@@ -275,7 +275,7 @@ fn parse_doc_frontmatter_extracts_lists_and_strips_header() {
   assert_eq!(frontmatter.kind.as_deref(), Some("hub"));
   assert_eq!(frontmatter.category.as_deref(), Some("run"));
   assert_eq!(frontmatter.aliases, vec!["watch mode", "eval"]);
-  assert_eq!(frontmatter.entry_for, vec!["cr eval"]);
+  assert_eq!(frontmatter.entry_for, vec!["calcit eval"]);
   assert!(body.starts_with("# Run Calcit"));
 }
 
@@ -366,7 +366,12 @@ fn repository_query_doc_frontmatter_keeps_search_metadata_separate() {
   let knowledge = parse_doc_knowledge_metadata(&content);
 
   assert_eq!(frontmatter.title.as_deref(), Some("Querying Definitions"));
-  assert!(frontmatter.summary.as_deref().is_some_and(|summary| summary.contains("cr query")));
+  assert!(
+    frontmatter
+      .summary
+      .as_deref()
+      .is_some_and(|summary| summary.contains("calcit query"))
+  );
   assert_eq!(knowledge.id.as_deref(), Some("core/run/query"));
 }
 
@@ -384,7 +389,7 @@ fn collect_search_results_uses_alias_matches_without_body_hits() {
       kind: Some("guide".to_string()),
       category: Some("run".to_string()),
       aliases: vec!["search-replace".to_string(), "tree replace".to_string()],
-      entry_for: vec!["cr tree search-replace".to_string()],
+      entry_for: vec!["calcit tree search-replace".to_string()],
     },
   }];
 
@@ -492,7 +497,7 @@ fn find_doc_by_query_matches_aliases_and_titles() {
         kind: Some("guide".to_string()),
         category: Some("run".to_string()),
         aliases: vec!["search-replace".to_string()],
-        entry_for: vec!["cr tree search-replace".to_string()],
+        entry_for: vec!["calcit tree search-replace".to_string()],
       },
     },
     GuideDoc {

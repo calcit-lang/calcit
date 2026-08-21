@@ -20,7 +20,7 @@ Calcit-js was designed based on experiences from ClojureScript, with a bunch of 
 
 - Indentations
 
-With the `cr` command, Calcit code can be written as an indentation-based language directly. So you don't have to match parentheses like in Clojure. It also means now you need to handle indentations very carefully.
+With the `calcit` command, Calcit code can be written as an indentation-based language directly. So you don't have to match parentheses like in Clojure. It also means now you need to handle indentations very carefully.
 
 - Hot code swapping
 

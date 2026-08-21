@@ -10,9 +10,9 @@ aliases:
   - "batch rename"
   - "agent playbook"
 entry_for:
-  - "cr exec"
-  - "cr tree replace"
-  - "cr edit def"
+  - "calcit exec"
+  - "calcit tree replace"
+  - "calcit edit def"
 ---
 
 # Calcit 编程 Agent 指南
@@ -23,7 +23,7 @@ entry_for:
 
 ## 🚀 🚀 快速开始与零逃逸 Stdin 工作流（新 LLM 必读）
 
-对于所有接收表达式和代码输入的修改命令（如 `cr tree replace`, `cr edit def`, `cr edit add-import`, `cr edit schema` 等），有三种输入方式，按推荐顺序：
+对于所有接收表达式和代码输入的修改命令（如 `calcit tree replace`, `calcit edit def`, `calcit edit add-import`, `calcit edit schema` 等），有三种输入方式，按推荐顺序：
 
 | 方式                | 适用场景             | 格式检测                     |
 | ------------------- | -------------------- | ---------------------------- |
@@ -38,31 +38,31 @@ entry_for:
 ### 统一查询命令
 
 ```bash
-cr query ns
-cr query defs app.core
-cr query def 'app.core/main!'
-cr query peek 'app.core/main!'
-cr query search <keyword> --filter 'app.core/main!'
-cr query find main!
-cr query schema 'app.core/main!'
-cr query examples 'app.core/main!'
-cr query config
-cr query path app.main --selector 'path heading def {} :name |add nth 2'
-cr query anchors app.main
-cr config modules
-cr tree show 'app.core/main!' --path @3.1.0
+calcit query ns
+calcit query defs app.core
+calcit query def 'app.core/main!'
+calcit query peek 'app.core/main!'
+calcit query search <keyword> --filter 'app.core/main!'
+calcit query find main!
+calcit query schema 'app.core/main!'
+calcit query examples 'app.core/main!'
+calcit query config
+calcit query path app.main --selector 'path heading def {} :name |add nth 2'
+calcit query anchors app.main
+calcit config modules
+calcit tree show 'app.core/main!' --path @3.1.0
 ```
 
 ### 极力推荐：免参数 Stdin 重构流（在 zsh / bash 下通过 heredoc）
 
 ```bash
 # 不需要本地临时文件，不需要艰难的 Shell 字符转义，直接传递多行 Cirru 结构定义
-cr calcit.cirru tree replace 'app.main/main!' --path '@3.1' << 'END'
+calcit calcit.cirru tree replace 'app.main/main!' --path '@3.1' << 'END'
 quote (println |abc)
 END
 
 # 添加导入 (edit add-import) 也同样天然支持免参数从 stdin 读取
-cr calcit.cirru edit add-import app.main << 'END'
+calcit calcit.cirru edit add-import app.main << 'END'
 quote (app.config :refer $ dev?)
 END
 ```
@@ -73,13 +73,13 @@ END
 
 ---
 
-## 🔧 代码动态运行：`cr exec`
+## 🔧 代码动态运行：`calcit exec`
 
-在仅用于执行或评估外部代码的场景，`cr exec` 会直接评估通过标准输入 stdin 传入的代码，常用来快速测试独立的 Cirru 代码行为：
+在仅用于执行或评估外部代码的场景，`calcit exec` 会直接评估通过标准输入 stdin 传入的代码，常用来快速测试独立的 Cirru 代码行为：
 
 ```bash
 # 也可以用管道传单行代码进行评估
-echo 'range 10' | cr exec
+echo 'range 10' | calcit exec
 ```
 
 ---
@@ -119,9 +119,9 @@ echo 'range 10' | cr exec
 
 以下文件**严格禁止使用文本替换或直接编辑**：
 
-- **`calcit.cirru` / `compact.cirru`** - 这是 Calcit 程序的运行时快照格式；推荐使用 `calcit.cirru`，旧文件名 `compact.cirru` 仍兼容，必须使用 `cr edit`/`cr tree` 进行修改
+- **`calcit.cirru` / `compact.cirru`** - 这是 Calcit 程序的运行时快照格式；推荐使用 `calcit.cirru`，旧文件名 `compact.cirru` 仍兼容，必须使用 `calcit edit`/`calcit tree` 进行修改
 
-这两个文件的格式对空格和结构极其敏感，直接文本修改会破坏文件结构。请使用 `cr query`/`cr tree`/`cr edit` 等 CLI 命令进行代码查询和修改。
+这两个文件的格式对空格和结构极其敏感，直接文本修改会破坏文件结构。请使用 `calcit query`/`calcit tree`/`calcit edit` 等 CLI 命令进行代码查询和修改。
 
 ## Calcit 与 Cirru 的关系
 
@@ -131,8 +131,8 @@ echo 'range 10' | cr exec
 
 **具体体现：**
 
-- `calcit.cirru`（兼容旧文件名 `compact.cirru`）使用 Cirru 语法存储，必须用 `cr tree`/`cr edit` 命令修改
-- `cr cirru` 工具用于 Cirru 语法与 JSON 的转换（帮助理解和生成代码）
+- `calcit.cirru`（兼容旧文件名 `compact.cirru`）使用 Cirru 语法存储，必须用 `calcit tree`/`calcit edit` 命令修改
+- `calcit cirru` 工具用于 Cirru 语法与 JSON 的转换（帮助理解和生成代码）
 - Cirru 语法特点：
   - 用缩进代替括号（类似 Python/YAML）
   - 字符串必须保留 `|` 前缀（如 `|hello`）；含空格时写 `"|hello world"`，双引号本身不表示字符串
@@ -143,7 +143,7 @@ echo 'range 10' | cr exec
 - Python 语言 ← 使用 → Python 语法
 - Calcit 语言 ← 使用 → Cirru 语法
 
-生成 Calcit 代码前，建议先运行 `cr cirru show-guide` 了解 Cirru 语法规则。
+生成 Calcit 代码前，建议先运行 `calcit cirru show-guide` 了解 Cirru 语法规则。
 
 ---
 
@@ -154,11 +154,11 @@ echo 'range 10' | cr exec
 - `主要运行命令` → [run/cli-options.md](./cli-options.md)
 - `查询子命令` → [run/query.md](./query.md)
 - `文档子命令` → [run/docs-libs.md](./docs-libs.md)
-- `Cirru 语法工具` → `cr cirru show-guide`
+- `Cirru 语法工具` → `calcit cirru show-guide`
 - `精细代码树操作` → [run/edit-tree.md](./edit-tree.md)
 - `代码编辑` → [run/edit-tree.md](./edit-tree.md)
 
-> 本文档工作流以标准 `cr` CLI 命令为主。
+> 本文档工作流以标准 `calcit` CLI 命令为主。
 
 ### LLM 辅助：动态方法提示
 
@@ -169,7 +169,7 @@ echo 'range 10' | cr exec
 - `impl-origin impl` — 以 `Option<Trait>` 读取 nominal impl 的 trait 来源
 - `&trait-call Trait :method receiver & args` — 显式消歧：只调用属于指定 trait 的方法实现
 
-> 📖 深入了解 trait 实现机制：`cr docs read traits.md` 或 `cr docs search 'trait-call'`
+> 📖 深入了解 trait 实现机制：`calcit docs read traits.md` 或 `calcit docs search 'trait-call'`
 
 ### 复杂表达式分段组装策略 (Incremental Assembly) ⭐⭐⭐
 
@@ -178,26 +178,26 @@ echo 'range 10' | cr exec
 简单提示：
 
 - 占位符统一使用 `{{NAME}}` 风格，例如 `{{BODY}}`、`{{TRUE_BRANCH}}`；
-- 大表达式可以先用 `cr query def '<ns/def>'` 看整体；
-- 再用 `cr tree show '<ns/def>' --path @3.1.0` 深入某个片段；
-- 真正填充时，优先用 `cr tree search-replace` 找占位符，不唯一时再退回 `cr tree replace`。
+- 大表达式可以先用 `calcit query def '<ns/def>'` 看整体；
+- 再用 `calcit tree show '<ns/def>' --path @3.1.0` 深入某个片段；
+- 真正填充时，优先用 `calcit tree search-replace` 找占位符，不唯一时再退回 `calcit tree replace`。
 
 1. **确立骨架**：先替换目标节点为一个带有占位符的简单结构。
 
    ```bash
-   cr tree replace '<ns/def>' --path @4.0 --code 'quote (let ((x 1)) {{BODY}})'
+   calcit tree replace '<ns/def>' --path @4.0 --code 'quote (let ((x 1)) {{BODY}})'
    ```
 
 2. **定位占位符**：使用 `tree show` 确认占位符的具体路径。
 
    ```bash
-   cr tree show '<ns/def>' --path @4.0
+   calcit tree show '<ns/def>' --path @4.0
    ```
 
 3. **填充内容**：针对占位符路径进行下一层的精细替换。
 
    ```bash
-   cr tree replace '<ns/def>' --path @4.0.2 --code 'quote (if (= x 1) {{TRUE_BRANCH}} {{FALSE_BRANCH}})'
+   calcit tree replace '<ns/def>' --path @4.0.2 --code 'quote (if (= x 1) {{TRUE_BRANCH}} {{FALSE_BRANCH}})'
    ```
 
 4. **递归迭代**：重复上述步骤直到所有占位符都被替换为最终逻辑。
@@ -221,26 +221,26 @@ echo 'range 10' | cr exec
 比较容易犯的错误：
 
 - Calcit 中只有保留 `|` 前缀的 token 才是 string；`|x` 对应 JavaScript 字符串 `"x"`。双引号只负责保护含空格的 token，`"x"` 仍是 symbol。
-- Calcit 采用 Cirru 缩进语法，可以理解成去掉跨行括号改用缩进的 Lisp 变种。用 `cr cirru parse` 和 `cr cirru format` 互相转化试验。
+- Calcit 采用 Cirru 缩进语法，可以理解成去掉跨行括号改用缩进的 Lisp 变种。用 `calcit cirru parse` 和 `calcit cirru format` 互相转化试验。
 - Calcit 跟 Clojure 在语义上比较像，但 Cirru 主要用缩进、`$` 和圆括号建立 child list；`[]`、`{}`、`#{}` 是集合构造符号，不是包围内容的 delimiter。
 
 ## 开发调试
 
 详细内容已移入 [run/debugging.md](./debugging.md)。包括：
 
-- watcher 监听模式（`cr -w` / `cr js -w`）
-- 增量触发更新（`cr edit inc --changed ...`）
-- runtime/watcher 持久化错误栈（`cr query error`）
+- watcher 监听模式（`calcit -w` / `calcit js -w`）
+- 增量触发更新（`calcit edit inc --changed ...`）
+- runtime/watcher 持久化错误栈（`calcit query error`）
 
 ## 文档支持
 
 遇到疑问时使用：
 
-- `cr docs search keyword` — 在 `docs/` 与 `~/.config/calcit/docs` 中 grep markdown
-- `# see: cr cirru show-guide` — 读取 Cirru 语法指南
-- `cr docs read path.md` — 读取任意文档文件
-- `cr docs agents [<heading> ...] [--full]` — 结构化 Agent 指南
-- `cr docs read` / `sections` / `remote-libs` 等 — 见 [debugging.md](./debugging.md)
+- `calcit docs search keyword` — 在 `docs/` 与 `~/.config/calcit/docs` 中 grep markdown
+- `# see: calcit cirru show-guide` — 读取 Cirru 语法指南
+- `calcit docs read path.md` — 读取任意文档文件
+- `calcit docs agents [<heading> ...] [--full]` — 结构化 Agent 指南
+- `calcit docs read` / `sections` / `remote-libs` 等 — 见 [debugging.md](./debugging.md)
 
 ---
 
@@ -249,42 +249,42 @@ echo 'range 10' | cr exec
 ### 添加新函数
 
 ```bash
-cr edit def 'app.core/multiply' --code 'quote (defn multiply (x y) (* x y))'
+calcit edit def 'app.core/multiply' --code 'quote (defn multiply (x y) (* x y))'
 ```
 
 ### 基本操作
 
 ```bash
 # 添加新函数
-cr edit def 'app.core/multiply' --code 'quote (defn multiply (x y) (* x y))'
+calcit edit def 'app.core/multiply' --code 'quote (defn multiply (x y) (* x y))'
 
 # 覆盖已有定义（`--overwrite`）
-cr edit def 'app.core/multiply' --code 'quote (defn multiply (x y) (* x y))' --overwrite
+calcit edit def 'app.core/multiply' --code 'quote (defn multiply (x y) (* x y))' --overwrite
 
 # 添加 :refer import
-cr edit add-import app.main --code 'quote (app.util :refer $ helper)'
+calcit edit add-import app.main --code 'quote (app.util :refer $ helper)'
 
 # 触发热更新（watcher 模式下写入 .compact-inc.cirru）
-cr edit inc --changed 'app.core/my-fn'
+calcit edit inc --changed 'app.core/my-fn'
 ```
 
 ### 修改定义工作流
 
 ```bash
 # 1. 搜索定位（返回 path + leaf-preview）
-cr query search pattern --filter '<ns/def>'
+calcit query search pattern --filter '<ns/def>'
 
 # 2. 查看节点上下文
-cr tree show '<ns/def>' --path @3.1.0
+calcit tree show '<ns/def>' --path @3.1.0
 
 # 3. 执行替换
-cr tree replace '<ns/def>' --path @3.1.0 --code 'quote new-value'
+calcit tree replace '<ns/def>' --path @3.1.0 --code 'quote new-value'
 
 # 4. 或搜索替换叶子
-cr tree search-replace '<ns/def>' --pattern old-sym --code 'quote new-sym'
+calcit tree search-replace '<ns/def>' --pattern old-sym --code 'quote new-sym'
 
 # 5. 验证写回结果
-cr query def '<ns/def>'
+calcit query def '<ns/def>'
 ```
 
 ---
@@ -299,17 +299,17 @@ cr query def '<ns/def>'
 
 ```bash
 # 1. 搜索并定位目标子表达式
-cr query search complex-call --filter 'app.core/process-data'
+calcit query search complex-call --filter 'app.core/process-data'
 
 # 2. 查看上下文确认路径
-cr tree show 'app.core/process-data' --path @3.2.1
+calcit tree show 'app.core/process-data' --path @3.2.1
 
 # 3. 提取为新定义
-cr edit split-def 'app.core/process-data' --path @3.2.1 --name extracted-calc
+calcit edit split-def 'app.core/process-data' --path @3.2.1 --name extracted-calc
 
 # 4. 验证结果
-cr query def 'app.core/extracted-calc'
-cr query def 'app.core/process-data'
+calcit query def 'app.core/extracted-calc'
+calcit query def 'app.core/process-data'
 ```
 
 ### 重命名定义（`rename-def`）
@@ -318,16 +318,16 @@ cr query def 'app.core/process-data'
 
 ```bash
 # 1. 确认有哪些地方引用到
-cr query usages 'app.core/old-name'
+calcit query usages 'app.core/old-name'
 
 # 2. 搜索所有引用位置
-cr query search old-name --filter 'app.core/caller-fn'
+calcit query search old-name --filter 'app.core/caller-fn'
 
 # 3. 重命名定义
-cr edit rename 'app.core/old-name' new-name
+calcit edit rename 'app.core/old-name' new-name
 
 # 4. 批量更新引用
-cr tree replace-leaf 'app.core/caller-fn' --pattern old-name --code 'quote new-name'
+calcit tree replace-leaf 'app.core/caller-fn' --pattern old-name --code 'quote new-name'
 ```
 
 ### 迁移定义到另一命名空间（`mv-def`）
@@ -335,13 +335,13 @@ cr tree replace-leaf 'app.core/caller-fn' --pattern old-name --code 'quote new-n
 **场景：** 某函数放错了命名空间，需要迁移。
 
 ```bash
-cr edit mv-def app.util/helper-fn app.core/helper-fn
-cr edit add-import app.main --code 'quote (app.core :refer $ helper-fn)'
+calcit edit mv-def app.util/helper-fn app.core/helper-fn
+calcit edit add-import app.main --code 'quote (app.core :refer $ helper-fn)'
 ```
 
 ```bash
 # watcher 模式下触发热更新
-cr edit inc --changed 'app.core/helper-fn'
+calcit edit inc --changed 'app.core/helper-fn'
 ```
 
 ### 在定义内移动 / 复制 AST 节点（`edit cp` / `edit mv`）
@@ -350,12 +350,12 @@ cr edit inc --changed 'app.core/helper-fn'
 
 ```bash
 # 定位节点
-cr query search process --filter 'app.core/main-fn'
-cr tree show 'app.core/main-fn' --path @3.1.2
+calcit query search process --filter 'app.core/main-fn'
+calcit tree show 'app.core/main-fn' --path @3.1.2
 
 # 复制或移动（position: |before |after |prepend-child |append-child |replace）
-cr edit cp 'app.core/main-fn' --from @3.1.2 --path @3.0 --at after
-cr edit mv 'app.core/main-fn' --from @3.1.2 --path @3.0 --at after
+calcit edit cp 'app.core/main-fn' --from @3.1.2 --path @3.0 --at after
+calcit edit mv 'app.core/main-fn' --from @3.1.2 --path @3.0 --at after
 ```
 
 ### 包裹 / 拆包 / 提升节点（`tree-wrap` / `tree-unwrap` / `tree-raise`）
@@ -364,11 +364,11 @@ cr edit mv 'app.core/main-fn' --from @3.1.2 --path @3.0 --at after
 
 ```bash
 # wrap：模板中用 self 引用原节点
-cr tree wrap 'app.core/main-fn' --path @3.1.2 --code 'quote (println self)'
+calcit tree wrap 'app.core/main-fn' --path @3.1.2 --code 'quote (println self)'
 
 # unwrap / raise
-cr tree unwrap 'app.core/main-fn' --path @3.1.2
-cr tree raise 'app.core/main-fn' --path @3.1.2
+calcit tree unwrap 'app.core/main-fn' --path @3.1.2
+calcit tree raise 'app.core/main-fn' --path @3.1.2
 ```
 
 ### 批量重命名局部变量
@@ -377,7 +377,7 @@ cr tree raise 'app.core/main-fn' --path @3.1.2
 
 ```bash
 # 搜索替换所有匹配 of leaf
-cr tree replace-leaf 'app.core/process' --pattern old-var --code 'quote new-var'
+calcit tree replace-leaf 'app.core/process' --pattern old-var --code 'quote new-var'
 ```
 
 ### 树形展示路径标注（`--path-annotations`）
@@ -386,10 +386,10 @@ cr tree replace-leaf 'app.core/process' --pattern old-var --code 'quote new-var'
 
 ```bash
 # 默认行为：纯代码展示
-cr tree show 'app.main/main!' --path '0'
+calcit tree show 'app.main/main!' --path '0'
 
 # 开启路径标注：每个嵌套 list 末尾追加 ; "previous node path: X.Y.Z" 注释
-cr tree show 'app.main/main!' --path '0' --path-annotations
+calcit tree show 'app.main/main!' --path '0' --path-annotations
 ```
 
 输出示例：
@@ -413,10 +413,10 @@ defn process (xs)
 
 ```bash
 # 多匹配时列出候选（带路径、上下文、命令建议）
-cr tree search-replace 'app.main/main!' --pattern 'old-name' --code 'quote new-name'
+calcit tree search-replace 'app.main/main!' --pattern 'old-name' --code 'quote new-name'
 
 # 直接选择第 2 个候选
-cr tree search-replace 'app.main/main!' --pattern 'old-name' --code 'quote new-name' --pick 2
+calcit tree search-replace 'app.main/main!' --pattern 'old-name' --code 'quote new-name' --pick 2
 ```
 
 候选展示格式：
@@ -424,11 +424,11 @@ cr tree search-replace 'app.main/main!' --pattern 'old-name' --code 'quote new-n
 ```
 [0] Path @1.3.0: "old-name"
     Context: defn update $ old-name new-name
-    Command: cr tree search-replace 'app.main/main!' --pattern 'old-name' --code '...' --pick 0
+    Command: calcit tree search-replace 'app.main/main!' --pattern 'old-name' --code '...' --pick 0
 
 [1] Path @2.5.2: "old-name"
     Context: let $ old-name x $ do-something old-name
-    Command: cr tree search-replace 'app.main/main!' --pattern 'old-name' --code '...' --pick 1
+    Command: calcit tree search-replace 'app.main/main!' --pattern 'old-name' --code '...' --pick 1
 ```
 
 ### 锚点链式搜索（`--selector`）
@@ -437,21 +437,21 @@ cr tree search-replace 'app.main/main!' --pattern 'old-name' --code 'quote new-n
 
 ```bash
 # 在 add 函数的 body（第 2 个子节点）→ let → bindings（第 0 个子节点）中搜索替换
-cr tree search-replace 'app.main/main!' \
+calcit tree search-replace 'app.main/main!' \
   --selector 'path heading def {} :name |add nth 2 heading let nth 0' \
   --pattern 'old-var' \
   --code 'quote new-var'
 ```
 
-与 `cr query path` 使用同一套选择器语法（裸叶子/`heading`/`nth`）。等效于先用 `cr query path` 获取数字路径再传 `--path`，但一步完成。
+与 `calcit query path` 使用同一套选择器语法（裸叶子/`heading`/`nth`）。等效于先用 `calcit query path` 获取数字路径再传 `--path`，但一步完成。
 
-### 语义路径查询（`cr query path`）
+### 语义路径查询（`calcit query path`）
 
 **场景：** 用语义描述定位节点，获取数字路径用于后续编辑。
 
 ```bash
 # 解析语义路径为数字坐标
-cr query path app.main --selector 'path
+calcit query path app.main --selector 'path
   heading def {} :name |add
   nth 2
   heading let
@@ -466,7 +466,7 @@ cr query path app.main --selector 'path
 - `heading ...` — 当前 list 的前 N 个子节点匹配（无多余子节点时等同精确匹配）
 - `nth N` — 进入当前 list 的第 N 个子节点
 
-### 锚点标注（`cr query anchors`）
+### 锚点标注（`calcit query anchors`）
 
 **场景：** 在源码中用 `noted @anchor:<name>` 标记关键位置，查询锚点获取稳定引用。
 
@@ -483,7 +483,7 @@ defn main! ()
 查询锚点：
 
 ```bash
-cr query anchors app.main
+calcit query anchors app.main
 # 输出：
 #   @anchor:init-state -> app.main/main! @1
 #   @anchor:render-loop -> app.main/main! @4.2
@@ -502,41 +502,41 @@ cr query anchors app.main
 **批量修改策略：**
 
 - **从后往前操作**（推荐）：先删大索引，再删小索引
-- **单次操作后重新搜索**：每次修改立即用 `cr query search` 更新路径
+- **单次操作后重新搜索**：每次修改立即用 `calcit query search` 更新路径
 - **为旧 path 增加内容护栏**：`tree delete/replace/insert-*` 传入 `--expect 'quote ...'`，节点或锚点不一致时拒绝写入
-- **整体重写**：优先用 `cr edit def --overwrite` 覆盖；根路径 `tree replace` 只保留给明确需要根节点级别改写的场景
+- **整体重写**：优先用 `calcit edit def --overwrite` 覆盖；根路径 `tree replace` 只保留给明确需要根节点级别改写的场景
 
 非法 path 会抛出明确错误，例如 `tree-show: invalid path 'bad.path': segment 'bad' is not an unsigned integer`。
 
 ### 1.5 根路径整体替换的边界 ⭐⭐⭐
 
-`cr tree replace` 的 path 不能为空（写操作不允许 root path）。当你需要完整替换一个定义体时：
+`calcit tree replace` 的 path 不能为空（写操作不允许 root path）。当你需要完整替换一个定义体时：
 
-- 更推荐 `cr edit def ns/def --code 'quote (defn ...)' --overwrite`
+- 更推荐 `calcit edit def ns/def --code 'quote (defn ...)' --overwrite`
 - 先在 snippet 里组织完整定义，再一次性覆盖，验证也更直接
-- 替换成功后仍应立刻执行 `cr query def` 确认写回结构符合预期
+- 替换成功后仍应立刻执行 `calcit query def` 确认写回结构符合预期
 
 ### 2. 输入格式：Cirru one-liner 字符串 ⭐⭐⭐
 
 `--code` 参数必须是带 `quote` 边界的 **Cirru EDN quoted AST**。`quote` 恰好包住一个节点，写入前会被 CLI 剥离：
 
-- AST path：`cr tree show app.main/fn --path @3.1.0`
-- 表达式：`cr tree replace app.main/fn --path @2 --code 'quote (println |hello)'`
-- symbol leaf：`cr tree replace app.main/fn --path @2.0 --code 'quote new-symbol'`
-- string leaf：`cr tree search-replace app.main/fn --pattern '|old text' --code 'quote "|new text"'`
-- 覆盖已有定义：`cr edit def app.main/fn --code 'quote (defn fn () nil)' --overwrite`
+- AST path：`calcit tree show app.main/fn --path @3.1.0`
+- 表达式：`calcit tree replace app.main/fn --path @2 --code 'quote (println |hello)'`
+- symbol leaf：`calcit tree replace app.main/fn --path @2.0 --code 'quote new-symbol'`
+- string leaf：`calcit tree search-replace app.main/fn --pattern '|old text' --code 'quote "|new text"'`
+- 覆盖已有定义：`calcit edit def app.main/fn --code 'quote (defn fn () nil)' --overwrite`
 
 **实战示例：**
 
 ```bash
 # ✅ 替换表达式
-cr tree replace app.main/fn --path @2 --code 'quote (println |hello)'
+calcit tree replace app.main/fn --path @2 --code 'quote (println |hello)'
 
 # ✅ 替换 symbol leaf
-cr tree replace app.main/fn --path @2.0 --code 'quote new-symbol'
+calcit tree replace app.main/fn --path @2.0 --code 'quote new-symbol'
 
 # ✅ 搜索替换 symbol leaf
-cr tree search-replace app.main/fn --pattern old-var --code 'quote new-var'
+calcit tree search-replace app.main/fn --pattern old-var --code 'quote new-var'
 ```
 
 ### 3. Cirru 字符串和数据类型 ⭐⭐
@@ -552,7 +552,7 @@ hello / "hello"   => symbol hello, not a string
 
 双引号只负责把含空格或特殊字符的内容保留为一个 token；它不会单独把 symbol 变成 Calcit string。
 
-**不放心修改是否正确？** 每步后用 `cr tree show` 验证。
+**不放心修改是否正确？** 每步后用 `calcit tree show` 验证。
 
 **Anonymous Enum vs List：**
 
@@ -578,24 +578,24 @@ send-to-component! $ %:: _ :clipboard/read text
 
 ### 4. 输入大小限制 ⭐⭐⭐
 
-`cr edit def` 和 `cr tree replace` 的 code 参数通过 Cirru one-liner 传入，建议单次不超过 **1000 字符**。
+`calcit edit def` 和 `calcit tree replace` 的 code 参数通过 Cirru one-liner 传入，建议单次不超过 **1000 字符**。
 
 **大资源处理建议：**
-如果需要修改复杂的长函数，不要尝试一次性替换整个定义。应先构建主体结构，使用占位符，统一写成 `{{PLACEHOLDER_FEATURE}}` 这种花括号形式，并注意避免重复，然后通过 `cr tree search-replace` 或 `cr tree replace` 做精准的分段替换。
+如果需要修改复杂的长函数，不要尝试一次性替换整个定义。应先构建主体结构，使用占位符，统一写成 `{{PLACEHOLDER_FEATURE}}` 这种花括号形式，并注意避免重复，然后通过 `calcit tree search-replace` 或 `calcit tree replace` 做精准的分段替换。
 
-`cr query def` / `cr tree show` 面向 LLM 脚本调用，返回稳定字符串。
+`calcit query def` / `calcit tree show` 面向 LLM 脚本调用，返回稳定字符串。
 
 ### 5. 命名空间 import 操作 ⭐⭐⭐
 
-`cr edit add-import` **仅支持 `:refer` 单符号导入**：
+`calcit edit add-import` **仅支持 `:refer` 单符号导入**：
 
 ```bash
 # ✅ 正确：添加 :refer import
-cr edit add-import app.main --code 'quote (app.util :refer $ helper)'
+calcit edit add-import app.main --code 'quote (app.util :refer $ helper)'
 
 # ✅ 分两次添加 :as 和 :refer（Calcit 不支持合并写法）
-cr edit add-import app.main --code 'quote (app.schema :refer $ schema)'
-cr edit add-import app.main --code 'quote (app.schema :refer $ Op)'
+calcit edit add-import app.main --code 'quote (app.schema :refer $ schema)'
+calcit edit add-import app.main --code 'quote (app.schema :refer $ Op)'
 ```
 
 **常见陷阱：**
@@ -613,7 +613,7 @@ ns app.main $ :require
   app.schema :refer $ Op
 ```
 
-> `add-import` 不支持 `:as` / `:rename` / 多条规则批量写入。复杂 import 操作需传统 `cr edit imports` / `cr edit add-ns`。
+> `add-import` 不支持 `:as` / `:rename` / 多条规则批量写入。复杂 import 操作需传统 `calcit edit imports` / `calcit edit add-ns`。
 
 ### 6. 推荐工作流程
 
@@ -621,21 +621,21 @@ ns app.main $ :require
 
 ```bash
 # 1. 快速定位
-cr query search target --filter '<ns/def>'
+calcit query search target --filter '<ns/def>'
 
 # 2. 查看上下文
-cr tree show '<ns/def>' --path @3.1.0
+calcit tree show '<ns/def>' --path @3.1.0
 
 # 3. 执行修改
-cr tree replace '<ns/def>' --path @3.1.0 --code 'quote new-value'
+calcit tree replace '<ns/def>' --path @3.1.0 --code 'quote new-value'
 
 # 4. 验证
-cr query def '<ns/def>'
+calcit query def '<ns/def>'
 ```
 
 **新手提示：**
 
-- 不知道目标在哪？用 `cr query search` 快速找到所有匹配
+- 不知道目标在哪？用 `calcit query search` 快速找到所有匹配
 - 想了解代码结构？用 `tree show` 逐层探索
 - 需要批量重命名 leaf？用 `search-replace`
 - 不确定修改是否正确？每步后用 `tree show` 验证
@@ -646,7 +646,7 @@ Calcit 字段名、函数名常包含 `?`, `->`, `!` 等 Bash 敏感字符，在
 
 ### 8. 用 Stdin 传入多条重构动作
 
-我们可以直接利用 Shell 的 heredoc 顺畅地向 `cr` 写入复杂的内联代码，绝无任何转义焦虑。
+我们可以直接利用 Shell 的 heredoc 顺畅地向 `calcit` 写入复杂的内联代码，绝无任何转义焦虑。
 
 ---
 
@@ -657,24 +657,24 @@ Calcit 字段名、函数名常包含 `?`, `->`, `!` 等 Bash 敏感字符，在
 ### 步骤 1：确认目标命名空间和现有代码
 
 ```bash
-# query is done via cr CLI
-cr query defs app.util
-cr query peek 'app.util/format-date'
-cr query def 'app.util/format-date'
+# query is done via calcit CLI
+calcit query defs app.util
+calcit query peek 'app.util/format-date'
+calcit query def 'app.util/format-date'
 ```
 
 ### 步骤 2：用 exec 快速验证写法
 
-在真正写入项目前，先用 `cr exec` 验证逻辑思路：
+在真正写入项目前，先用 `calcit exec` 验证逻辑思路：
 
 ```bash
-cr project.cirru exec << 'END'
+calcit project.cirru exec << 'END'
 string->number |123
 END
 ```
 
 ```bash
-cr project.cirru exec << 'END'
+calcit project.cirru exec << 'END'
 let ((x 10) (y 20)) (+ x y)
 END
 ```
@@ -684,41 +684,41 @@ END
 ### 步骤 3：添加新定义
 
 ```bash
-cr edit def 'app.util/calculate-discount' --code 'quote (defn calculate-discount (price rate) (* price (- 1 rate)))'
-cr query def 'app.util/calculate-discount'
+calcit edit def 'app.util/calculate-discount' --code 'quote (defn calculate-discount (price rate) (* price (- 1 rate)))'
+calcit query def 'app.util/calculate-discount'
 ```
 
 ### 步骤 4：在调用方添加 import 并使用
 
 ```bash
-cr query defs app.core
-cr edit add-import app.core --code 'quote (app.util :refer $ calculate-discount)'
-cr query search total-price --filter 'app.core/checkout'
-cr tree replace 'app.core/checkout' --path @3.2.1 --code 'quote (calculate-discount total-price 0.1)'
+calcit query defs app.core
+calcit edit add-import app.core --code 'quote (app.util :refer $ calculate-discount)'
+calcit query search total-price --filter 'app.core/checkout'
+calcit tree replace 'app.core/checkout' --path @3.2.1 --code 'quote (calculate-discount total-price 0.1)'
 ```
 
 ### 步骤 5：触发热更新并验证
 
 ```bash
-cr edit inc --changed 'app.util/calculate-discount' --changed 'app.core/checkout'
-cr query def 'app.util/calculate-discount'
-cr query def 'app.core/checkout'
+calcit edit inc --changed 'app.util/calculate-discount' --changed 'app.core/checkout'
+calcit query def 'app.util/calculate-discount'
+calcit query def 'app.core/checkout'
 ```
 
-> 可运行 `cr --check-only` 做全量验证，或 `cr js` 快速编译。
+> 可运行 `calcit --check-only` 做全量验证，或 `calcit js` 快速编译。
 
 ### 常见失误快速修复
 
 ```bash
 # 忘记 import → unknown symbol
-cr edit add-import app.core --code 'quote (app.util :refer $ calculate-discount)'
+calcit edit add-import app.core --code 'quote (app.util :refer $ calculate-discount)'
 
 # 函数参数顺序传错 → 定位并修改调用
-cr query search calculate-discount --filter 'app.core/checkout'
-cr tree replace 'app.core/checkout' --path @3.2.1 --code 'quote calculate-discount'
+calcit query search calculate-discount --filter 'app.core/checkout'
+calcit tree replace 'app.core/checkout' --path @3.2.1 --code 'quote calculate-discount'
 ```
 
-> `edit rename` 拼写错误可用 `cr edit rename` 修正。
+> `edit rename` 拼写错误可用 `calcit edit rename` 修正。
 
 ---
 
@@ -751,10 +751,10 @@ cr tree replace 'app.core/checkout' --path @3.2.1 --code 'quote calculate-discou
 
 ```bash
 # 仓库内验证本文档全部 cirru 块
-cr calcit/test.cirru docs check-md docs/run/agent-advanced.md --entry calcit/test.cirru
+calcit calcit/test.cirru docs check-md docs/run/agent-advanced.md --entry calcit/test.cirru
 
 # 等价写法（显式 entry）
-cr docs check-md docs/run/agent-advanced.md --entry calcit/test.cirru
+calcit docs check-md docs/run/agent-advanced.md --entry calcit/test.cirru
 ```
 
 块类型速查：`cirru` = 完整 eval；`cirru.no-check` = 仅语法示意，不参与类型检查。
@@ -764,62 +764,62 @@ cr docs check-md docs/run/agent-advanced.md --entry calcit/test.cirru
 下列块使用仓库内真实路径 `calcit/test.cirru`，专门覆盖选项 map 的常见写法：
 
 ```bash
-# 空 map 即可（:file-path 默认取 cr entry）
-# query is done via cr CLI
+# 空 map 即可（:file-path 默认取 calcit entry）
+# query is done via calcit CLI
 ```
 
 ```bash
 # 必填 + 可选数字（:lines 有默认值，可省略）
-# see: cr query peek app.main/main!
+# see: calcit query peek app.main/main!
 ```
 
 ```bash
 # 多必填 string
-# see: cr query search main --filter app.main/main!
+# see: calcit query search main --filter app.main/main!
 ```
 
 ```bash
 # 无必填项的空 map
-# see: cr cirru show-guide
+# see: calcit cirru show-guide
 ```
 
 ```bash
 # bool 选项（:overwrite 默认 false，显式传入）
-# see: cr edit def app.main/reload! --code ...
+# see: calcit edit def app.main/reload! --code ...
 ```
 
 ```bash
 # 多可选 string（trigger-inc 其余键可省略）
-# see: cr edit inc --changed app.main/main!
+# see: calcit edit inc --changed app.main/main!
 ```
 
 ### 预期失败案例（手动验证，勿放入 `cirru.cli` 块）
 
-`check-md` 要求文档内每个 cirru 块都通过；**故意写错的选项应放在 bash 里用 `cr eval` 验证**，避免拖垮整份文档的 check-md。
+`check-md` 要求文档内每个 cirru 块都通过；**故意写错的选项应放在 bash 里用 `calcit eval` 验证**，避免拖垮整份文档的 check-md。
 
 ```bash
 # 拼写错误 → W_CLI_OPTION_UNKNOWN_KEY
-cr calcit/test.cirru eval '# query is done via cr CLI (:file-pth |x)'
+calcit calcit/test.cirru eval '# query is done via calcit CLI (:file-pth |x)'
 
 # 缺少必填 → W_CLI_OPTION_MISSING_REQUIRED（peek-def 缺 :target）
-cr calcit/test.cirru eval 'cr query peek $ {}'
+calcit calcit/test.cirru eval 'calcit query peek $ {}'
 
 # 类型错误 → W_CLI_OPTION_TYPE_MISMATCH
-cr calcit/test.cirru eval 'cr query peek $ {} (:target |app.main/main!) (:lines |bad)'
+calcit calcit/test.cirru eval 'calcit query peek $ {} (:target |app.main/main!) (:lines |bad)'
 
 # 未知 key + 缺必填（可同时报多条告警）
-cr calcit/test.cirru eval 'cr query peek $ {} (:file-pth |x)'
+calcit calcit/test.cirru eval 'calcit query peek $ {} (:file-pth |x)'
 ```
 
 ### 选项类型告警码
 
 | 告警码                          | 典型原因                                 | 修复                                                                      |
 | ------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------- |
-| `W_CLI_OPTION_UNKNOWN_KEY`      | key 拼写错误（如 `:file-pth`）           | 对照函数文档或 `cr query peek cr query ns` 的 Options                     |
+| `W_CLI_OPTION_UNKNOWN_KEY`      | key 拼写错误（如 `:file-pth`）           | 对照函数文档或 `calcit query peek calcit query ns` 的 Options                     |
 | `W_CLI_OPTION_MISSING_REQUIRED` | 未传必填项（如 `peek-def` 缺 `:target`） | 补全 map 中的必填 tag                                                     |
 | `W_CLI_OPTION_TYPE_MISMATCH`    | 值类型不符（如 `:lines` 收到 string）     | string 按上文规则；number 用数字；bool 用 `true`/`false`                  |
 
-统一使用标准 `cr` CLI 命令。
+统一使用标准 `calcit` CLI 命令。
 
 ---
 
@@ -829,32 +829,32 @@ cr calcit/test.cirru eval 'cr query peek $ {} (:file-pth |x)'
 
 当 watcher 提示有错误或行为异常时，按以下顺序排查：
 
-1. 先保留当前失败命令的 stderr；需要最近 runtime/watcher stack 时再运行 `cr query error`，若提示 stale 则忽略旧栈
-2. 用 `cr --check-only` 快速全量验证
-3. 用 `cr exec` 隔离验证单个表达式写法
+1. 先保留当前失败命令的 stderr；需要最近 runtime/watcher stack 时再运行 `calcit query error`，若提示 stale 则忽略旧栈
+2. 用 `calcit --check-only` 快速全量验证
+3. 用 `calcit exec` 隔离验证单个表达式写法
 
 ```bash
 # 检查某个定义的代码和内容
-cr query def ns/def
-cr tree show ns/def --path @3.1.0
-cr query search suspect-symbol --filter ns/def
-cr query find my-function
-cr query defs my.namespace
-cr query error
+calcit query def ns/def
+calcit tree show ns/def --path @3.1.0
+calcit query search suspect-symbol --filter ns/def
+calcit query find my-function
+calcit query defs my.namespace
+calcit query error
 ```
 
-`cr exec` 的 stdin 是待求值的 Calcit 源码，不是 shell 命令流；`cr query`、`cr tree` 等 CLI 命令应像上面那样分别执行。
+`calcit exec` 的 stdin 是待求值的 Calcit 源码，不是 shell 命令流；`calcit query`、`calcit tree` 等 CLI 命令应像上面那样分别执行。
 
 ### 错误信息对照表
 
 | 错误信息                                 | 原因                                          | 解决方法                                               |
 | ---------------------------------------- | --------------------------------------------- | ------------------------------------------------------ |
-| `tree-show: invalid path ...`            | path 含非法段或非数字                         | 重新 `cr query search` 获取正确 path，只用点号分隔数字 |
-| `tree-replace: root path is not allowed` | 写操作传了空 path                             | 改用 `cr edit def --overwrite` 覆盖整段定义            |
+| `tree-show: invalid path ...`            | path 含非法段或非数字                         | 重新 `calcit query search` 获取正确 path，只用点号分隔数字 |
+| `tree-replace: root path is not allowed` | 写操作传了空 path                             | 改用 `calcit edit def --overwrite` 覆盖整段定义            |
 | `add-import: import rule already exists` | 重复添加相同 import                           | 跳过或先手动移除旧规则                                 |
-| `Definition 'xxx' already exists`        | `cr edit def` 未传 `--overwrite`              | 加 `--overwrite`                                       |
+| `Definition 'xxx' already exists`        | `calcit edit def` 未传 `--overwrite`              | 加 `--overwrite`                                       |
 | `tag-match expected enum value`          | 传入 list 而非 enum                           | 改用 `%:: _`，如 `%:: _ :event-name data`               |
-| `unknown symbol: xxx`                    | 符号未定义或未 import                         | `cr query find` 确认位置，`cr edit add-import` 引入    |
+| `unknown symbol: xxx`                    | 符号未定义或未 import                         | `calcit query find` 确认位置，`calcit edit add-import` 引入    |
 | `expects pairs in list for let`          | `let` 绑定语法错误                            | 改为 `let ((x val)) body`（双层括号）                  |
 | `cannot be used as operator`             | 末尾符号被当作函数调用                        | 改用 `, acc` 前缀传递值，或用函数包裹                  |
 | `unknown data for foldl-shortcut`        | 参数顺序错误（Calcit vs Clojure 差异）        | Calcit 集合在第一位：`map data fn`                     |
@@ -863,6 +863,6 @@ cr query error
 | `W_CLI_OPTION_UNKNOWN_KEY`               | 选项 key 拼写错误                             | 对照 Options 列表，如 `:file-path` 而非 `:file-pth`    |
 | `W_CLI_OPTION_MISSING_REQUIRED`          | 缺少必填选项                                  | 补全 map，如 `peek-def` 必须含 `(:target …)`           |
 | `W_CLI_OPTION_TYPE_MISMATCH`             | 选项值类型错误                                | `:lines` 用数字；字符串按上文规则；布尔用 `true`/`false` |
-| `cr query error` 无报错但页面仍异常      | sidecar 陈旧，或问题在 CSS/DOM/业务值等外部链路 | 先看 stale 提示与当前 stderr，再到真实运行环境核对     |
+| `calcit query error` 无报错但页面仍异常      | sidecar 陈旧，或问题在 CSS/DOM/业务值等外部链路 | 先看 stale 提示与当前 stderr，再到真实运行环境核对     |
 
-> 💡 **错误文件备份**：`.calcit/error.cirru` 保存最近一次被持久化的错误堆栈，不保证每个失败命令都刷新。可用 `cr query error` 格式化读取；看到 stale 提示时，以当前命令 stderr 为准。
+> 💡 **错误文件备份**：`.calcit/error.cirru` 保存最近一次被持久化的错误堆栈，不保证每个失败命令都刷新。可用 `calcit query error` 格式化读取；看到 stale 提示时，以当前命令 stderr 为准。

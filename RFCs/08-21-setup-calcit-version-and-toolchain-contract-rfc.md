@@ -60,7 +60,7 @@ workflow 中重复填写 `version`。
 
 ```yaml
 - uses: actions/checkout@v4
-- uses: calcit-lang/setup-calcit@v1
+- uses: calcit-lang/setup-calcit@v2
 ```
 
 对应项目配置：
@@ -91,7 +91,7 @@ README、Calcit 安装文档、模块模板和 workflow 模板都应优先展示
 增加可选的 `deps-file` input，默认值为 `deps.cirru`。它只用于 monorepo 或非根目录项目：
 
 ```yaml
-- uses: calcit-lang/setup-calcit@v1
+- uses: calcit-lang/setup-calcit@v2
   with:
     deps-file: examples/browser/deps.cirru
 ```
@@ -105,12 +105,17 @@ monorepo 中安装偶然找到的版本。
 
 ### 工具选择
 
-`cr` 和 `caps` 保持默认安装。后续用一个可枚举的 `tools` input 取代不断增加布尔项：
+`calcit` 和 `caps` 保持默认安装。Calcit release 只发布 `calcit`，不再构建第二个 `cr` artifact。
+Action 在安装目录创建相对的 `cr -> calcit` 链接，供旧 workflow 的 `run: cr ...` 继续使用；本地安装只提供
+`calcit`。`tools` input 继续用可枚举形式取代不断增加的布尔项：
 
 ```yaml
 with:
-  tools: cr,caps,cr-wasm
+  tools: calcit,caps,cr-wasm
 ```
+
+兼容输入中的 `cr` 被规范化为 `calcit`；同时请求二者属于重复项并在下载前失败。输出 `tools` 也只列出
+规范化名称，避免将兼容链接误当作第二个已下载工具。
 
 `bundle_calcit` 已经不再需要，不进入 `tools`，对应 `bundler` input 和下载分支直接移除。
 兼容期只需继续接受 `cr-wasm` 布尔 input；转换后得到唯一的 requested tool set。未知工具、
@@ -121,8 +126,8 @@ setup-calcit 不增加 `run-tests`、`run-quality`、`install-modules` 等 input
 
 ```bash
 caps --ci
-cr calcit.cirru --check-only
-cr calcit.cirru analyze quality
+calcit calcit.cirru --check-only
+calcit calcit.cirru analyze quality
 ```
 
 这样 Action 升级不会悄悄改变项目测试范围，失败日志也能清楚区分安装、依赖、类型和运行测试。
@@ -140,7 +145,7 @@ Ubuntu 上的裸文件名假装成跨平台协议。
 
 ### 完整性与版本自检
 
-短期至少在安装后执行轻量版本自检，确认 `cr` 输出的版本与 resolved version 一致。中期由
+短期至少在安装后执行轻量版本自检，确认 `calcit` 输出的版本与 resolved version 一致。中期由
 Calcit release 发布机器可读 manifest，包含：
 
 - release version；
@@ -176,7 +181,7 @@ Job Summary 只记录版本来源、工具、平台、缓存命中和自检结�
 4. 显式版本用法放入 advanced usage，并说明不应与 `deps.cirru` 冲突；
 5. 错误文案修正历史拼写 `calcit-verison`，并给出实际读取路径。
 
-Action 发布稳定接口后建议提供可移动 major tag，例如 `@v1`；安全要求更高的仓库仍可固定 commit
+Action 发布包含 `calcit` 主命令和 `cr` 工作流兼容链接的稳定接口后提供可移动 major tag `@v2`；安全要求更高的仓库仍可固定 commit
 SHA。现有 `@0.0.x` 标签在迁移期继续可用。
 
 ## 实施阶段

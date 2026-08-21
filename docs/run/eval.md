@@ -1,6 +1,6 @@
 ---
 title: "Run in Eval mode"
-summary: "使用 cr eval 求值代码片段、检查类型、加载外部模块。涵盖 --dep、--check-only、assert-type 等用法"
+summary: "使用 calcit eval 求值代码片段、检查类型、加载外部模块。涵盖 --dep、--check-only、assert-type 等用法"
 scope: "core"
 kind: "reference"
 category: "run"
@@ -11,11 +11,11 @@ aliases:
   - "type check"
   - "eval dep"
   - "eval module"
-  - "cr eval"
+  - "calcit eval"
 entry_for:
-  - "cr eval"
-  - "cr eval --dep"
-  - "cr eval --check-only"
+  - "calcit eval"
+  - "calcit eval --dep"
+  - "calcit eval --check-only"
 ---
 
 # Run in Eval mode
@@ -23,13 +23,13 @@ entry_for:
 Use `eval` command to evaluate code snippets from CLI:
 
 ```bash
-$ cr eval 'echo |demo'
+$ calcit eval 'echo |demo'
 1
 took 0.07ms: nil
 ```
 
 ```bash
-$ cr eval 'echo "|spaced string demo"'
+$ calcit eval 'echo "|spaced string demo"'
 spaced string demo
 took 0.074ms: nil
 ```
@@ -39,7 +39,7 @@ took 0.074ms: nil
 You can run multiple expressions:
 
 ```bash
-cr eval '
+calcit eval '
 -> (range 10)
   map $ fn (x)
     * x x
@@ -54,18 +54,18 @@ Eval can access definitions from a loaded program:
 
 ```bash
 # Load from specific file and eval with its context
-cr calcit.cirru eval 'range 3'
+calcit calcit.cirru eval 'range 3'
 # Output: ([] 0 1 2)
 
 # Use let bindings
-cr calcit.cirru eval 'let ((x 1)) (+ x 2)'
+calcit calcit.cirru eval 'let ((x 1)) (+ x 2)'
 # Output: 3
 ```
 
 You can load external modules with repeatable `--dep` options:
 
 ```bash
-cr calcit.cirru eval --dep ~/.config/calcit/modules/respo.calcit/ -- 'ns app.demo $ :require respo.util.detect :refer $ element?\n\nelement? nil'
+calcit calcit.cirru eval --dep ~/.config/calcit/modules/respo.calcit/ -- 'ns app.demo $ :require respo.util.detect :refer $ element?\n\nelement? nil'
 ```
 
 If the first expression in a snippet is `ns`, its `:require` rules are merged into runtime `ns app.main`, so imported symbols can be used in the same snippet.
@@ -76,11 +76,11 @@ Type annotations and static checks work in eval mode:
 
 ```bash
 # Type mismatch will cause error
-cr calcit.cirru eval 'let ((x 1)) (assert-type x :string) x'
+calcit calcit.cirru eval 'let ((x 1)) (assert-type x :string) x'
 # Error: Type mismatch...
 
 # Correct type passes
-cr calcit.cirru eval 'let ((x 1)) (assert-type x :number) x'
+calcit calcit.cirru eval 'let ((x 1)) (assert-type x :number) x'
 # Output: 1
 ```
 
@@ -89,20 +89,20 @@ cr calcit.cirru eval 'let ((x 1)) (assert-type x :number) x'
 ### Quick Calculations
 
 ```bash
-cr eval '+ 1 2 3 4'
+calcit eval '+ 1 2 3 4'
 # Output: 10
 
-cr eval 'apply * $ range 1 6'
+calcit eval 'apply * $ range 1 6'
 # Output: 120  ; factorial of 5
 ```
 
 ### Testing Expressions
 
 ```bash
-cr eval '&list:nth ([] :a :b :c) 1'
+calcit eval '&list:nth ([] :a :b :c) 1'
 # Output: :b
 
-cr eval '&map:get ({} (:x 1) (:y 2)) :x'
+calcit eval '&map:get ({} (:x 1) (:y 2)) :x'
 # Output: 1
 ```
 
@@ -110,11 +110,11 @@ cr eval '&map:get ({} (:x 1) (:y 2)) :x'
 
 ```bash
 # Check function signature
-cr eval 'type-of range'
+calcit eval 'type-of range'
 # Output: :fn
 
 # Test with sample data
-cr eval '-> (range 5) (map inc) (filter (fn (x) (> x 2)))'
+calcit eval '-> (range 5) (map inc) (filter (fn (x) (> x 2)))'
 # Output: ([] 3 4 5)
 ```
 
@@ -123,8 +123,8 @@ cr eval '-> (range 5) (map inc) (filter (fn (x) (> x 2)))'
 ### Syntax Considerations
 
 - **No extra brackets**: Cirru syntax doesn't need outer parentheses at top level
-  - ✅ `cr eval 'range 3'`
-  - ❌ `cr eval '(range 3)'` (adds extra nesting)
+  - ✅ `calcit eval 'range 3'`
+  - ❌ `calcit eval '(range 3)'` (adds extra nesting)
 
 - **Let bindings**: Use paired list format `((name value))`
   - ✅ `let ((x 1)) x`
@@ -134,15 +134,15 @@ cr eval '-> (range 5) (map inc) (filter (fn (x) (> x 2)))'
 
 - Type warnings cause eval to fail (intentional safety feature)
 - Check `.calcit/error.cirru` for complete stack traces
-- Use `cr cirru parse-oneliner` to debug parse issues
+- Use `calcit cirru parse-oneliner` to debug parse issues
 
 ### Query Examples
 
-Use `cr query examples` to see usage examples:
+Use `calcit query examples` to see usage examples:
 
 ```bash
-cr calcit.cirru query examples calcit.core/let
-cr calcit.cirru query examples calcit.core/defn
+calcit calcit.cirru query examples calcit.core/let
+calcit calcit.cirru query examples calcit.core/defn
 ```
 
 For markdown snippet validation (`docs check-md`), see [CLI Options](./cli-options.md#markdown-code-checking).

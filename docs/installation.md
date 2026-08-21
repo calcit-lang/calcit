@@ -27,14 +27,14 @@ cargo install calcit
 Once installed, Calcit is available as a command-line tool. You can test it with:
 
 ```bash
-cr eval "echo |done"
+calcit eval "echo |done"
 ```
 
 ### Binaries
 
 Several binaries are included:
 
-- `cr`: the main command-line tool for running Calcit programs
+- `calcit`: the main command-line tool for running Calcit programs
 - `caps`: downloads Calcit packages
 - `cr-mcp`: provides a Model Context Protocol (MCP) server for Calcit compact files
 

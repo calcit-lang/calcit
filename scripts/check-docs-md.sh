@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Check all Markdown files under docs/ using `cr docs check-md`.
+# Check all Markdown files under docs/ using `calcit docs check-md`.
 # Usage: ./scripts/check-docs-md.sh [entry-file]
 #   entry-file defaults to calcit/test.cirru in this repository.
 
@@ -8,12 +8,12 @@ set -eo pipefail
 ENTRY="${1:-calcit/test.cirru}"
 
 # Prefer a pre-built debug binary; fall back to cargo run (slower but always works).
-if [ -x "./target/debug/cr" ]; then
-  CR_CMD=("./target/debug/cr")
-elif [ -x "./target/release/cr" ]; then
-  CR_CMD=("./target/release/cr")
+if [ -x "./target/debug/calcit" ]; then
+  CR_CMD=("./target/debug/calcit")
+elif [ -x "./target/release/calcit" ]; then
+  CR_CMD=("./target/release/calcit")
 else
-  CR_CMD=(cargo run --bin cr --)
+  CR_CMD=(cargo run --bin calcit --)
 fi
 
 FAILED=0

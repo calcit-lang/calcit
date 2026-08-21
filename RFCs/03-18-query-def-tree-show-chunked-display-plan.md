@@ -1,4 +1,4 @@
-# `cr query def` / `cr tree show` 分片展示方案
+# `calcit query def` / `calcit tree show` 分片展示方案
 
 ## 目标
 
@@ -26,9 +26,9 @@
 
 ### 基线：直接整块输出
 
-当前的 `cr query def` 会一次性打印完整定义。
+当前的 `calcit query def` 会一次性打印完整定义。
 
-当前的 `cr tree show` 会打印目标子树，然后列出直接子节点路径。
+当前的 `calcit tree show` 会打印目标子树，然后列出直接子节点路径。
 
 这个方案在小表达式上没有问题，但面对大表达式时会出现这些缺点：
 
@@ -134,7 +134,7 @@ let
 
 ## 预期交互
 
-### `cr query def`
+### `calcit query def`
 
 对于较小定义：
 
@@ -147,7 +147,7 @@ let
 - 先打印根片段，再按坐标顺序打印拆出的片段；
 - 每个片段展示：坐标、节点数、最大深度、Cirru 内容。
 
-### `cr tree show`
+### `calcit tree show`
 
 对于较小子树：
 
@@ -163,7 +163,7 @@ let
 
 ## CLI 参数设计
 
-这些参数应同时提供给 `cr query def` 和 `cr tree show`：
+这些参数应同时提供给 `calcit query def` 和 `calcit tree show`：
 
 - `--chunk-target-nodes <n>`：每个片段理想节点数；
 - `--chunk-max-nodes <n>`：停止继续细分前允许的软上限；
@@ -251,7 +251,7 @@ let
 把文档示例统一调整为优先使用点号路径，例如：
 
 ```bash
-cr tree show ns/def --path '3.2.1'
+calcit tree show ns/def --path '3.2.1'
 ```
 
 逗号兼容只在合适位置说明一次，不重复铺满全文。
@@ -284,16 +284,16 @@ cr tree show ns/def --path '3.2.1'
 
 1. 先写这份方案文档。
 2. 在 Rust 中加入可复用的分片与路径辅助逻辑。
-3. 把分片渲染接入 `cr query def`。
-4. 把分片渲染接入 `cr tree show`。
+3. 把分片渲染接入 `calcit query def`。
+4. 把分片渲染接入 `calcit tree show`。
 5. 加入点号路径兼容。
 6. 更新文档，主推点号路径。
 7. 用 `find-children-diffs` 做真实案例验证，并微调默认值。
 
 ## 验收标准
 
-- `cr query def` 在大定义上默认输出分片结果；
-- `cr tree show` 在大子树上默认输出分片结果；
+- `calcit query def` 在大定义上默认输出分片结果；
+- `calcit tree show` 在大子树上默认输出分片结果；
 - 两个命令都支持 `--chunk-target-nodes`；
 - 两个命令都接受点号路径；
 - 逗号路径保持兼容；

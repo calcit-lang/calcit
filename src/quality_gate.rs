@@ -1,4 +1,4 @@
-//! Native static-quality budgets for `cr analyze quality`.
+//! Native static-quality budgets for `calcit analyze quality`.
 
 use std::collections::BTreeMap;
 use std::fmt::Write;

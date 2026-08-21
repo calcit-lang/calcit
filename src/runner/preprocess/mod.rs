@@ -2558,7 +2558,7 @@ fn require_js_ffi_feature(
   }
 
   let message = format!(
-    "[Warn] {operation} used in {file_ns}/{def_name} without `:js-ffi` feature in schema — isolate host operations in a binding function with `:features $ #{{}} :js-ffi`; read `cr docs read js-interop.md --full` for the adapter and capability policy"
+    "[Warn] {operation} used in {file_ns}/{def_name} without `:js-ffi` feature in schema — isolate host operations in a binding function with `:features $ #{{}} :js-ffi`; read `calcit docs read js-interop.md --full` for the adapter and capability policy"
   );
   if matches!(policy, crate::snapshot::FeaturePolicy::Error) {
     return Err(CalcitErr::use_msg_stack_location_with_code(
@@ -2616,7 +2616,7 @@ fn validate_js_ffi_target(
     return Ok(());
   }
   let message = format!(
-    "[Error] {operation} requires `{}` target, but the selected entry targets `{}` in {file_ns}/{def_name}; read `cr docs read js-interop.md --full` for target-specific bindings",
+    "[Error] {operation} requires `{}` target, but the selected entry targets `{}` in {file_ns}/{def_name}; read `calcit docs read js-interop.md --full` for target-specific bindings",
     expected.as_str(),
     active.as_str()
   );
@@ -3727,7 +3727,7 @@ fn check_typed_js_field_operation(
     && !external_trait_field_is_writable(field_trait, field_name)
   {
     let message = format!(
-      "[Warn] `js-set` cannot write read-only external-object field `:{field_name}` in {file_ns}/{def_name}; add `:writable $ #{{}} :{field_name}` to that trait's `:ffi` metadata or expose a mutating method instead; read `cr docs read js-interop.md --full` for external-object contracts"
+      "[Warn] `js-set` cannot write read-only external-object field `:{field_name}` in {file_ns}/{def_name}; add `:writable $ #{{}} :{field_name}` to that trait's `:ffi` metadata or expose a mutating method instead; read `calcit docs read js-interop.md --full` for external-object contracts"
     );
     let location = key.get_location().or_else(|| head.get_location());
     if matches!(policy, crate::snapshot::FeaturePolicy::Error) {
@@ -7730,7 +7730,7 @@ mod tests {
     .expect_err("rewritten typed js-get must require the js-ffi feature");
 
     assert_eq!(error.code(), Some("E_JS_FFI_FEATURE_REQUIRED"));
-    assert!(error.to_string().contains("cr docs read js-interop.md --full"));
+    assert!(error.to_string().contains("calcit docs read js-interop.md --full"));
   }
 
   #[test]
@@ -7855,7 +7855,7 @@ mod tests {
     .expect_err("error policy must reject a read-only external field");
 
     assert_eq!(error.code(), Some("E_JS_FFI_FIELD_READONLY"));
-    assert!(error.to_string().contains("cr docs read js-interop.md --full"));
+    assert!(error.to_string().contains("calcit docs read js-interop.md --full"));
   }
 
   #[test]
@@ -7875,7 +7875,7 @@ mod tests {
     .expect_err("strict policy must reject an unmarked host operation");
 
     assert_eq!(error.code(), Some("E_JS_FFI_FEATURE_REQUIRED"));
-    assert!(error.to_string().contains("cr docs read js-interop.md --full"));
+    assert!(error.to_string().contains("calcit docs read js-interop.md --full"));
     assert!(warnings.borrow().is_empty());
   }
 

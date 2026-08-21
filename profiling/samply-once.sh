@@ -37,11 +37,11 @@ stamp="$(date +%Y%m%d-%H%M%S)"
 samply_path=".tmp-profiles/${entry_name}-${mode}-${stamp}.samply"
 
 if [[ "$mode" == "release" ]]; then
-  build_args=(build --release --bin cr)
-  binary="target/release/cr"
+  build_args=(build --release --bin calcit)
+  binary="target/release/calcit"
 else
-  build_args=(build --bin cr)
-  binary="target/debug/cr"
+  build_args=(build --bin calcit)
+  binary="target/debug/calcit"
 fi
 
 echo "Building binary: $binary"

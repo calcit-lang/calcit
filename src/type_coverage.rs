@@ -1,4 +1,4 @@
-//! Type coverage and weak-type analysis for `cr analyze`.
+//! Type coverage and weak-type analysis for `calcit analyze`.
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -288,7 +288,7 @@ pub fn collect_dynamic_usage_summary(snapshot: &snapshot::Snapshot) -> Result<Dy
 pub fn format_dynamic_usage_notice(summary: DynamicUsageSummary) -> Option<String> {
   let severity = summary.severity()?;
   Some(format!(
-    "[{}] Dynamic type usage is {}/{} ({:.1}%) of analyzed type positions. Prefer concrete schemas, generics, traits, Option/Result, or named enums; keep Dynamic at documented FFI and framework boundaries. Run `cr analyze weak-types --intent unresolved` for paths.",
+    "[{}] Dynamic type usage is {}/{} ({:.1}%) of analyzed type positions. Prefer concrete schemas, generics, traits, Option/Result, or named enums; keep Dynamic at documented FFI and framework boundaries. Run `calcit analyze weak-types --intent unresolved` for paths.",
     severity,
     summary.dynamic_positions,
     summary.total_positions,
@@ -527,7 +527,7 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
     };
   }
   if occurrence.kind == WeakTypeKind::UnresolvedTypeSlot {
-    return "Bind this slot in the selected entry with `cr config set-type-slot <slot> <namespace/definition>`, or explicitly select `:dynamic` only when this is a documented open boundary.";
+    return "Bind this slot in the selected entry with `calcit config set-type-slot <slot> <namespace/definition>`, or explicitly select `:dynamic` only when this is a documented open boundary.";
   }
   if occurrence.detail.contains("legacy-any") {
     return "Migrate legacy `:any` to canonical `:dynamic`, then narrow it with a concrete type, a declared type variable, or a named enum when the value participates in typed code.";
@@ -1081,7 +1081,7 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
     );
     let _ = writeln!(
       out,
-      "- next: bind each slot with `cr config set-type-slot`, or choose `:dynamic` explicitly for a documented open boundary."
+      "- next: bind each slot with `calcit config set-type-slot`, or choose `:dynamic` explicitly for a documented open boundary."
     );
   }
   let nil_debt = rows
@@ -1283,7 +1283,7 @@ pub fn run_check_types_report(options: &CheckTypesCommand, snapshot: &snapshot::
     );
     let _ = writeln!(
       out,
-      "- next: `cr analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --summary-only`, then scope the reported namespaces and rerun without `--summary-only`."
+      "- next: `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --summary-only`, then scope the reported namespaces and rerun without `--summary-only`."
     );
   }
   if options.summary_only {
@@ -2298,7 +2298,7 @@ pub fn format_check_types_json(options: &CheckTypesCommand, snapshot: &snapshot:
       "phase": "analysis",
       "severity": "warning",
       "message": format!("{coverage_gaps} definition(s) lack full static coverage; unresolved dynamic slots can hide generic relations and force runtime method dispatch."),
-      "suggestion": "Run `cr analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json`; bind required type slots, then prefer concrete types, declared type variables, or trait `:where` bounds.",
+      "suggestion": "Run `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json`; bind required type slots, then prefer concrete types, declared type variables, or trait `:where` bounds.",
     })]
   };
   let ids = rows.iter().map(|row| (row.ns.clone(), row.def.clone())).collect::<Vec<_>>();
@@ -2414,7 +2414,7 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
       "phase": "analysis",
       "severity": "warning",
       "message": format!("{unresolved_type_slots} type slot(s) are unbound for the selected entry and therefore accept every value as though they were Dynamic."),
-      "suggestion": "Bind each slot with `cr config set-type-slot <slot> <namespace/definition>`, or explicitly select `:dynamic` only for a documented open boundary.",
+      "suggestion": "Bind each slot with `calcit config set-type-slot <slot> <namespace/definition>`, or explicitly select `:dynamic` only for a documented open boundary.",
     }));
   }
   if nil_debt > 0 {

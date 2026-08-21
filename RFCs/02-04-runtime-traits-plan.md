@@ -31,7 +31,7 @@ Snapshot schema 暂时只保存 symbol 形式的 trait reference。预处理在 
 
 ### Inherent method bag
 
-历史写法允许把 tag 传给 `defimpl`。它继续产生 originless method bag，并参与 `.method` 查找，以保证旧项目可运行；但它不是 trait impl，不能满足能力约束。`cr edit format` 对此给出非阻断迁移告警。
+历史写法允许把 tag 传给 `defimpl`。它继续产生 originless method bag，并参与 `.method` 查找，以保证旧项目可运行；但它不是 trait impl，不能满足能力约束。`calcit edit format` 对此给出非阻断迁移告警。
 
 这个边界取代旧的“class/prototype”概念：底层仍复用有序 impl record 作为方法表，但语言层不再把方法存在性当作 trait 身份。
 

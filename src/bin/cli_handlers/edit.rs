@@ -1,7 +1,7 @@
 //! Edit and Tree subcommand handlers and shared utilities
 //!
-//! Handles: cr edit - code editing operations (definitions, namespaces, modules, configs)
-//! Shared by: cr tree - fine-grained tree operations (replace, insert, delete, swap, wrap)
+//! Handles: calcit edit - code editing operations (definitions, namespaces, modules, configs)
+//! Shared by: calcit tree - fine-grained tree operations (replace, insert, delete, swap, wrap)
 //!
 //! Supports code input via:
 //! - `--file <path>` - read from file (auto-detects JSON vs Cirru)
@@ -280,7 +280,7 @@ fn collect_format_advisories(snapshot_file: &str, original_edn: &Edn, snapshot: 
   if original_edn.view_map().is_ok_and(|root| root.contains_key("configs")) {
     advisories.push(format!(
       "[W_LEGACY_CONFIG] Migrated top-level `:configs` to `:entries.default`; canonical formatting keeps the project runnable.\n\
-       Next: run `cr {snapshot_arg} config show` and set an explicit `:mode` plus any named entries with `cr {snapshot_arg} config set ...`."
+       Next: run `calcit {snapshot_arg} config show` and set an explicit `:mode` plus any named entries with `calcit {snapshot_arg} config set ...`."
     ));
   }
 
@@ -338,7 +338,7 @@ fn collect_format_advisories(snapshot_file: &str, original_edn: &Edn, snapshot: 
   if unresolved_dynamic_occurrences > 0 {
     advisories.push(format!(
       "[W_DYNAMIC_TYPE_DEBT] Found {unresolved_dynamic_occurrences} unresolved dynamic or unbound type-slot occurrence(s) in {unresolved_dynamic_definitions} local definition(s); formatting does not guess or rewrite semantic type contracts.\n\
-       Next: run `cr {snapshot_arg} analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --summary-only`, then rerun without `--summary-only` for paths and recommendations."
+       Next: run `calcit {snapshot_arg} analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --summary-only`, then rerun without `--summary-only` for paths and recommendations."
     ));
   }
   if legacy_inherent_impl_count > 0 {
@@ -655,7 +655,7 @@ where
 }
 
 fn run_transaction_child(stage_path: &Path, index: usize, args: &[String]) -> Result<TransactionOperationReport, String> {
-  let executable = std::env::current_exe().map_err(|error| format!("Failed to locate current cr executable: {error}"))?;
+  let executable = std::env::current_exe().map_err(|error| format!("Failed to locate current calcit executable: {error}"))?;
   let output = Command::new(&executable)
     .arg("--tips-level")
     .arg("none")
@@ -809,7 +809,7 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     }
     return Err(format!(
       "Definition '{resolved_definition}' already exists in namespace '{namespace}'.\n\
-       Use --overwrite to replace it. For full-definition rewrites, prefer: cr edit def {namespace}/{resolved_definition} --overwrite --file <file>"
+       Use --overwrite to replace it. For full-definition rewrites, prefer: calcit edit def {namespace}/{resolved_definition} --overwrite --file <file>"
     ));
   }
 
@@ -839,20 +839,20 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     println!("{}", "Next steps:".blue().bold());
     println!(
       "  • View definition: {} '{}/{}'",
-      "cr query def".cyan(),
+      "calcit query def".cyan(),
       namespace,
       resolved_definition
     );
-    println!("  • Check errors: {}", "cr query error".cyan());
+    println!("  • Check errors: {}", "calcit query error".cyan());
     println!(
       "  • Find usages: {} '{}/{}'",
-      "cr query usages".cyan(),
+      "calcit query usages".cyan(),
       namespace,
       resolved_definition
     );
     println!(
       "  • Add to imports: {} <target-ns> '{}' --refer '{}'",
-      "cr edit add-import".cyan(),
+      "calcit edit add-import".cyan(),
       namespace,
       resolved_definition
     );
@@ -861,7 +861,7 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     tips.add(format!(
       "Use single quotes around '{namespace}/{resolved_definition}' to avoid shell escaping issues."
     ));
-    tips.add(format!("Example: cr tree show '{namespace}/{resolved_definition}'"));
+    tips.add(format!("Example: calcit tree show '{namespace}/{resolved_definition}'"));
     tips.print();
   }
   Ok(())
@@ -882,39 +882,41 @@ fn format_existing_definition_advice(namespace: &str, definition: &str, existing
   match advice.strategy {
     CirruEditStrategy::Identical => {
       lines.push("The incoming definition is identical. Prefer skipping the write and inspect the current code first.".to_string());
-      lines.push(format!("Inspect: cr query def '{target}'"));
+      lines.push(format!("Inspect: calcit query def '{target}'"));
     }
     CirruEditStrategy::Replace => {
       lines.push("Most differences are replacements. Prefer a local tree edit instead of a full overwrite.".to_string());
       lines.push(format!(
-        "Try: cr tree search-replace '{target}' --pattern '<leaf>' --code '(quote |<new-leaf>')"
+        "Try: calcit tree search-replace '{target}' --pattern '<leaf>' --code '(quote |<new-leaf>')"
       ));
-      lines.push(format!("Or: cr tree replace '{target}' --path '<path>' --code '(quote |<code>)'"));
+      lines.push(format!(
+        "Or: calcit tree replace '{target}' --path '<path>' --code '(quote |<code>)'"
+      ));
     }
     CirruEditStrategy::Insert => {
       lines.push("Most differences are additive. Prefer inserting nodes into the existing tree.".to_string());
-      lines.push(format!("Try: cr tree insert-before '{target}' --path '<path>' --code '<node>'"));
+      lines.push(format!("Try: calcit tree insert-before '{target}' --path '<path>' --code '<node>'"));
       lines.push(format!(
-        "Or: cr tree insert-after '{target}' --path '<path>' --code '<node>' / cr tree append-child '{target}' --path '<path>' --code '<node>'"
+        "Or: calcit tree insert-after '{target}' --path '<path>' --code '<node>' / calcit tree append-child '{target}' --path '<path>' --code '<node>'"
       ));
     }
     CirruEditStrategy::Delete => {
       lines.push("Most differences are removals. Prefer deleting or lifting nodes from the existing tree.".to_string());
-      lines.push(format!("Try: cr tree delete '{target}' --path '<path>'"));
-      lines.push(format!("Or: cr tree raise '{target}' --path '<child-path>'"));
+      lines.push(format!("Try: calcit tree delete '{target}' --path '<path>'"));
+      lines.push(format!("Or: calcit tree raise '{target}' --path '<child-path>'"));
     }
     CirruEditStrategy::Rewrite => {
       lines.push("The trees are still close, but the change mixes insert/remove/replace. Prefer a structural rewrite over a blind full overwrite.".to_string());
       lines.push(format!(
-        "Try: cr tree rewrite '{target}' --path '<path>' --with self=. --code '<code>'"
+        "Try: calcit tree rewrite '{target}' --path '<path>' --with self=. --code '<code>'"
       ));
-      lines.push(format!("Or: cr tree replace '{target}' --path '<path>' --code '<code>'"));
+      lines.push(format!("Or: calcit tree replace '{target}' --path '<path>' --code '<code>'"));
     }
   }
 
   if advice.strategy != CirruEditStrategy::Identical || changed_nodes > 0 {
     lines.push(format!(
-      "Locate the smallest path first: cr query search '<keyword>' --filter '{target}' && cr tree show '{target}' --path '<path>'"
+      "Locate the smallest path first: calcit query search '<keyword>' --filter '{target}' && calcit tree show '{target}' --path '<path>'"
     ));
   }
 
@@ -1094,7 +1096,7 @@ fn handle_rename(opts: &EditRenameCommand, snapshot_file: &str) -> Result<(), St
     resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
   if file_data.defs.contains_key(&opts.new_name) {
     return Err(format!(
-      "Definition '{}' already exists in namespace '{}'. Use 'cr edit mv-def' to move to a different namespace.",
+      "Definition '{}' already exists in namespace '{}'. Use 'calcit edit mv-def' to move to a different namespace.",
       opts.new_name, namespace
     ));
   }
@@ -1126,7 +1128,7 @@ fn handle_split_def(opts: &EditSplitDefCommand, snapshot_file: &str) -> Result<(
 
   if path.is_empty() {
     return Err(
-      "Cannot split at the root path: the root IS the definition. Use 'cr edit def' to create a new definition from scratch."
+      "Cannot split at the root path: the root IS the definition. Use 'calcit edit def' to create a new definition from scratch."
         .to_string(),
     );
   }
@@ -1186,16 +1188,16 @@ fn handle_split_def(opts: &EditSplitDefCommand, snapshot_file: &str) -> Result<(
   if command_guidance_enabled() {
     println!();
     println!("{}", "Next steps:".blue().bold());
-    println!("  • Inspect new def:  {} '{}/{}'", "cr query def".cyan(), namespace, new_name);
+    println!("  • Inspect new def:  {} '{}/{}'", "calcit query def".cyan(), namespace, new_name);
     println!(
       "  • Inspect source:   {} '{}/{}'",
-      "cr query def".cyan(),
+      "calcit query def".cyan(),
       namespace,
       resolved_definition
     );
     println!(
       "  • Wrap in defn:     {} '{}/{}' --path '' --code 'quote (defn {} ...)'",
-      "cr tree replace".cyan(),
+      "calcit tree replace".cyan(),
       namespace,
       new_name,
       new_name
@@ -2076,7 +2078,7 @@ pub(crate) fn navigate_to_path(code: &Cirru, path: &[usize]) -> Result<Cirru, St
       Cirru::Leaf(_) => {
         let partial = format_path(&path[..depth]);
         return Err(format!(
-          "Cannot navigate into leaf node at depth {depth}\n   Valid path stops at: {}\n   Tip: Use 'cr tree show --path {}' to explore the tree structure (use dot-separated indices, e.g. '@2.1.0')",
+          "Cannot navigate into leaf node at depth {depth}\n   Valid path stops at: {}\n   Tip: Use 'calcit tree show --path {}' to explore the tree structure (use dot-separated indices, e.g. '@2.1.0')",
           format_path(&path[..depth]),
           partial,
         ));
@@ -2085,7 +2087,7 @@ pub(crate) fn navigate_to_path(code: &Cirru, path: &[usize]) -> Result<Cirru, St
         if idx >= items.len() {
           let partial = format_path(&path[..depth]);
           return Err(format!(
-            "Path index {} out of bounds at depth {} (list has {} items)\n   Attempted path: {}\n   Valid path up to: {}\n   Valid index range at this level: 0-{}\n   Tip: Use 'cr tree show --path {}' to see available children",
+            "Path index {} out of bounds at depth {} (list has {} items)\n   Attempted path: {}\n   Valid path up to: {}\n   Valid index range at this level: 0-{}\n   Tip: Use 'calcit tree show --path {}' to see available children",
             idx,
             depth,
             items.len(),
@@ -2690,7 +2692,7 @@ fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> 
   );
   println!(
     "{}",
-    "Watcher will process changes. Wait ~300ms then run 'cr query error' to check result."
+    "Watcher will process changes. Wait ~300ms then run 'calcit query error' to check result."
       .to_string()
       .dimmed()
   );
@@ -2790,7 +2792,7 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
           println!(
             "  {} List definitions: {}",
             "·".dimmed(),
-            format!("cr query defs {source_ns}").cyan()
+            format!("calcit query defs {source_ns}").cyan()
           );
         }
       }
@@ -2813,7 +2815,7 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
         println!(
           "  {} List definitions: {}",
           "·".dimmed(),
-          format!("cr query defs {source_ns}").cyan()
+          format!("calcit query defs {source_ns}").cyan()
         );
       }
       _ => {
@@ -3227,7 +3229,7 @@ mod tests {
   #[test]
   fn schema_edit_preserves_unrelated_legacy_schema_serialization() {
     let fixture = TestSnapshot::from_fixture();
-    let source = r#"#! /usr/bin/env cr
+    let source = r#"#! /usr/bin/env calcit
 {} (:package |demo) (:version |0.0.1)
   :files $ {}
     |app.main $ %{} :FileEntry
@@ -3241,14 +3243,14 @@ mod tests {
       :ns $ %{} :CodeEntry (:code $ quote $ ns app.main)
 "#;
     fs::write(&fixture.path, source).expect("write snapshot");
-    let before = cirru_edn::parse(source.strip_prefix("#! /usr/bin/env cr\n").expect("shebang")).expect("parse source");
+    let before = cirru_edn::parse(source.strip_prefix("#! /usr/bin/env calcit\n").expect("shebang")).expect("parse source");
     let schema = calcit::snapshot::parse_schema_annotation_for_write(&leaf(":string")).expect("parse schema");
 
     save_schema_preserving_snapshot(&fixture.snapshot_string(), "app.main", "target", schema.as_ref()).expect("save target schema");
 
     let output = fs::read_to_string(&fixture.path).expect("read snapshot");
-    assert!(output.starts_with("#! /usr/bin/env cr\n"));
-    let after = cirru_edn::parse(output.strip_prefix("#! /usr/bin/env cr\n").expect("shebang")).expect("parse output");
+    assert!(output.starts_with("#! /usr/bin/env calcit\n"));
+    let after = cirru_edn::parse(output.strip_prefix("#! /usr/bin/env calcit\n").expect("shebang")).expect("parse output");
     let schema_for = |snapshot: &cirru_edn::Edn, definition_name: &str| {
       let cirru_edn::Edn::Map(root) = snapshot else { panic!("root") };
       let cirru_edn::Edn::Map(files) = root.get_or_nil("files") else {
@@ -3277,7 +3279,7 @@ mod tests {
     )
     .expect("clear target schema");
     let cleared_text = fs::read_to_string(&fixture.path).expect("read cleared snapshot");
-    let cleared = cirru_edn::parse(cleared_text.strip_prefix("#! /usr/bin/env cr\n").expect("shebang")).expect("parse cleared");
+    let cleared = cirru_edn::parse(cleared_text.strip_prefix("#! /usr/bin/env calcit\n").expect("shebang")).expect("parse cleared");
     assert_eq!(schema_for(&before, "legacy"), schema_for(&cleared, "legacy"));
     assert_eq!(
       schema_for(&cleared, "target"),

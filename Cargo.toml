@@ -59,7 +59,7 @@ name = "calcit"
 path = "src/lib.rs"
 
 [[bin]]
-name = "cr"
+name = "calcit"
 path = "src/bin/cr.rs"
 
 [[bin]]

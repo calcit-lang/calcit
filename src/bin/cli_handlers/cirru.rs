@@ -1,6 +1,6 @@
 //! Cirru subcommand handlers
 //!
-//! Handles: cr cirru parse, format, parse-edn, show-guide
+//! Handles: calcit cirru parse, format, parse-edn, show-guide
 
 use calcit::cli_args::{CirruCommand, CirruSubcommand};
 

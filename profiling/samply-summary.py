@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument(
     "--binary",
     type=Path,
-    help="Mach-O binary for atos symbolization fallback (e.g. target/debug/cr)",
+    help="Mach-O binary for atos symbolization fallback (e.g. target/debug/calcit)",
   )
   parser.add_argument(
     "--image-base",

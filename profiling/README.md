@@ -56,13 +56,13 @@ profiling/samply-once.sh calcit/fibo.cirru --release --top 20 --include 'calcit:
 ### 仅汇总已有 `.samply`
 
 ```bash
-python3 profiling/samply-summary.py --input .tmp-profiles/fibo-debug-xxxx.samply --binary target/debug/cr --top 30
+python3 profiling/samply-summary.py --input .tmp-profiles/fibo-debug-xxxx.samply --binary target/debug/calcit --top 30
 ```
 
 release 对应：
 
 ```bash
-python3 profiling/samply-summary.py --input .tmp-profiles/fibo-release-xxxx.samply --binary target/release/cr --top 30
+python3 profiling/samply-summary.py --input .tmp-profiles/fibo-release-xxxx.samply --binary target/release/calcit --top 30
 ```
 
 常用参数：
@@ -80,5 +80,5 @@ python3 profiling/samply-summary.py --input .tmp-profiles/fibo-release-xxxx.samp
 
 ## 说明
 
-- `samply-once.sh` 会先 `cargo build`，再直接对 `target/debug/cr` 或 `target/release/cr` 录制，避免把 `rustc` 编译过程混入热点。
+- `samply-once.sh` 会先 `cargo build`，再直接对 `target/debug/calcit` 或 `target/release/calcit` 录制，避免把 `rustc` 编译过程混入热点。
 - 临时产物位于 `.tmp-profiles/`，可按需清理。

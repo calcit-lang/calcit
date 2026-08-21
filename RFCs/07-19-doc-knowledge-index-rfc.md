@@ -6,7 +6,7 @@
 
 ## 1. 概要
 
-在保持 Markdown 可读、可 Git 管理的前提下，为 `cr docs` 增加一层结构化的文档知识索引：
+在保持 Markdown 可读、可 Git 管理的前提下，为 `calcit docs` 增加一层结构化的文档知识索引：
 
 ```text
 Markdown / Calcit snapshot
@@ -34,7 +34,7 @@ Markdown 和 Calcit 源码仍然是事实来源；缓存只是可以删除并重
 - 当前不引入 RDF、SPARQL、Neo4j 或 SurrealDB。
 - 当前不强制把每个章节拆成独立文件。
 - 当前不把缓存当作用户需要手工维护的知识源。
-- 当前不改变既有 `cr docs search/read` 的默认输出语义。
+- 当前不改变既有 `calcit docs search/read` 的默认输出语义。
 
 ## 4. 文档元数据
 
@@ -125,41 +125,41 @@ leads_to:
 已完成第一版面向知识节点的查询：
 
 ```bash
-cr docs graph build
-cr docs graph check
-cr docs graph children <node>
-cr docs graph related <node>
-cr docs graph path <from> <to>
+calcit docs graph build
+calcit docs graph check
+calcit docs graph children <node>
+calcit docs graph related <node>
+calcit docs graph path <from> <to>
 ```
 
 查询当前从 Markdown 构建 JSON cache，并通过双向 BFS 查找关系路径：
 
 ```bash
-cr docs graph path core/features/list core/run/edit-tree
+calcit docs graph path core/features/list core/run/edit-tree
 # core/features/list -> core/run/query -> core/run/edit-tree
 ```
 
 当前已支持通过 `code_refs` 反查关联文档节点；后续再增加源码定义、示例和正文聚合：
 
 ```bash
-cr docs graph explain <definition>
+calcit docs graph explain <definition>
 ```
 
 ### Phase C：完整性检查
 
 ```bash
-cr docs graph check
-cr docs graph orphans
-cr docs graph missing
+calcit docs graph check
+calcit docs graph orphans
+calcit docs graph missing
 ```
 
 检查断链、孤立节点、无正文定义、缺少示例和缺少必要章节。
 
 当前已实现：
 
-- `cr docs graph check`：检查关系边是否指向已知文档节点；
-- `cr docs graph missing [--ns <prefix>] [--limit <n>]`：按 namespace 分批检查带有 snapshot 文档说明、但没有 `code_refs` 的定义；
-- `cr docs graph orphans`：检查没有任何关系的文档节点。
+- `calcit docs graph check`：检查关系边是否指向已知文档节点；
+- `calcit docs graph missing [--ns <prefix>] [--limit <n>]`：按 namespace 分批检查带有 snapshot 文档说明、但没有 `code_refs` 的定义；
+- `calcit docs graph orphans`：检查没有任何关系的文档节点。
 
 ## 8. 验证标准
 

@@ -849,7 +849,7 @@ availability。Backend 信息不参与普通 schema type matching，但调用不
 definition 的 `:ffi` metadata 可以声明 `(:target :browser)` 或
 `(:target :node)`。typed external-object operation 和带该 metadata 的 raw host
 wrapper 会在 codegen 前检查 selected entry；缺少 entry target 的旧项目保持兼容，暂不做
-target-specific validation。`cr query def ns/name --json` 同时暴露 `ffi` metadata，包含
+target-specific validation。`calcit query def ns/name --json` 同时暴露 `ffi` metadata，包含
 host name mapping，供 adapter 审计使用。
 
 ## external trait 的有限补充
@@ -964,7 +964,7 @@ generic trait、associated type、effect row 和 FFI 专用 type constructor 都
 2. `js-ffi` 公共 wrapper 不向业务代码暴露无理由的 `Dynamic`。
 3. probe、错误和状态结果使用命名 Struct/Enum。
 4. `JsNullish<T>` 不会静默匹配 `Option<T>`，存在性检查后仍保留 payload type。
-5. external field/method 的类型和 host name 可由 `cr query` 查询。
+5. external field/method 的类型和 host name 可由 `calcit query` 查询。
 6. 未声明 writable 的 external field 无法被 typed write。
 7. 带 `:js-ffi` 的匿名 callback 能保留实现体归属，capability validation 能检查其 raw
    operation；Fn 类型匹配结果不因 feature 改变。

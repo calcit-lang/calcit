@@ -1,4 +1,4 @@
-# RFC: `cr analyze effects-graph` — State / Transform / Effect 分解图
+# RFC: `calcit analyze effects-graph` — State / Transform / Effect 分解图
 
 状态：Draft  
 日期：2026-06-15  
@@ -11,7 +11,7 @@
 新增分析命令：
 
 ```bash
-cr analyze effects-graph [--root ns/def] [options...]
+calcit analyze effects-graph [--root ns/def] [options...]
 ```
 
 从**入口定义**（默认 `:init-fn`）出发，把程序（及其可达子函数）分解为三类信息，并输出一张可递归展开的分析图：
@@ -227,7 +227,7 @@ defn render-once (ui) $
 - `&doseq` (`:effect`) → body 内 effect 边展开
 - `println` (`:log` `:io`) → `[:console]`
 
-宿主注入 proc 通过 `RegisteredProcDescriptor.tags`（`HashSet<EdnTag>`，与 core `:tags` 同名）声明；可用 `cr query host-procs [--tag :log]` 查看。
+宿主注入 proc 通过 `RegisteredProcDescriptor.tags`（`HashSet<EdnTag>`，与 core `:tags` 同名）声明；可用 `calcit query host-procs [--tag :log]` 查看。
 
 ---
 
@@ -236,7 +236,7 @@ defn render-once (ui) $
 ### 5.1 语法
 
 ```bash
-cr analyze effects-graph [options]
+calcit analyze effects-graph [options]
 ```
 
 与 `call-graph` 对齐的选项：
@@ -316,9 +316,9 @@ flowchart LR
 
 推荐工作流：
 
-1. `cr analyze call-graph` — 看清**可达定义集合**
-2. `cr analyze effects-graph` — 在同一入口上读**语义分解**
-3. `cr analyze check-types --infer-missing` + `effects-graph --infer-missing` — 补齐 schema
+1. `calcit analyze call-graph` — 看清**可达定义集合**
+2. `calcit analyze effects-graph` — 在同一入口上读**语义分解**
+3. `calcit analyze check-types --infer-missing` + `effects-graph --infer-missing` — 补齐 schema
 
 ---
 
@@ -326,7 +326,7 @@ flowchart LR
 
 ### 6.1 模块划分
 
-新增 `src/effects_graph.rs`（库模块），CLI 入口挂到 `cr analyze`（`cli_args.rs` / `cr.rs`），与 `call_tree` 并列。
+新增 `src/effects_graph.rs`（库模块），CLI 入口挂到 `calcit analyze`（`cli_args.rs` / `calcit.rs`），与 `call_tree` 并列。
 
 ```
 effects_graph/
@@ -358,7 +358,7 @@ effects_graph/
 3. 替换：字面量 → `_`；长字符串 → `"..."` ；大块 `quote` → `⟨quoted⟩`
 4. 生成 `summary`：优先 `doc` 首句，否则模板 `"let×N, if×M, calls K"`
 
-`full` 模式：输出类似 `cr tree show --chunked` 的分片骨架（见 `03-18-query-def-tree-show-chunked-display-plan.md`），但不输出完整叶子。
+`full` 模式：输出类似 `calcit tree show --chunked` 的分片骨架（见 `03-18-query-def-tree-show-chunked-display-plan.md`），但不输出完整叶子。
 
 ### 6.4 类型补全（`--infer-missing`）
 
@@ -379,7 +379,7 @@ effects_graph/
     :effects $ [] :render :console
 ```
 
-与 `cr edit` 集成留作 Phase C。
+与 `calcit edit` 集成留作 Phase C。
 
 ---
 
@@ -389,7 +389,7 @@ effects_graph/
 
 **交付**：
 
-- [x] `cr analyze effects-graph` tree + json 输出
+- [x] `calcit analyze effects-graph` tree + json 输出
 - [x] 入口可达分析（复用 `CallTreeAnalyzer` 可达集）
 - [x] State：`param` / `return` / `local` / `atom` 基础识别
 - [x] Effect：builtin proc 表（core 全覆盖）
@@ -412,9 +412,9 @@ effects_graph/
 
 - [x] `RegisteredProcDescriptor.tags`（与 core `:tags` 对齐）
 - [ ] `defeffect` 语法落地（可选）
-- [ ] `cr analyze effects-graph-diff <git-ref>`（对齐 `program-diff`）
-- [ ] Agent 指南：`cr docs agents` 增加 effects-graph 工作流
-- [ ] 与 `query def` 联动：`cr query def ns/def --view effects`
+- [ ] `calcit analyze effects-graph-diff <git-ref>`（对齐 `program-diff`）
+- [ ] Agent 指南：`calcit docs agents` 增加 effects-graph 工作流
+- [ ] 与 `query def` 联动：`calcit query def ns/def --view effects`
 
 ---
 
@@ -451,7 +451,7 @@ app.comp.container/comp-container
 | 层级 | 内容 |
 |------|------|
 | 单元测试 | `classify_effect`, `extract_state_ports`, `compress_transform` |
-| 集成测试 | 对 `calcit/test-effects-graph.cirru` 跑 `cr analyze effects-graph --format json`，快照比对 |
+| 集成测试 | 对 `calcit/test-effects-graph.cirru` 跑 `calcit analyze effects-graph --format json`，快照比对 |
 | 回归 | 不改变现有 `call-graph` / `check-types` 行为 |
 | 可选 | msg-buffer / respo 手工验收（不纳入 CI 硬依赖） |
 
@@ -492,7 +492,7 @@ app.comp.container/comp-container
 
 ## 13. 验收标准（Phase A）
 
-- [ ] `cargo run --bin cr -- calcit/test.cirru analyze effects-graph` 成功退出
+- [ ] `cargo run --bin calcit -- calcit/test.cirru analyze effects-graph` 成功退出
 - [ ] 输出包含 entry 的 state / transform / effect 三节
 - [ ] `read-file` 调用归类为 `io/read`，不落在 transform 摘要正文中
 - [ ] `--format json` 可被 `jq` 解析，节点含 `fqn`、`kind`

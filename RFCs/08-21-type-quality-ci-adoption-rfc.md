@@ -13,7 +13,7 @@ definition 保存 baseline。现在缺少的不是另一套统计脚本，而是
 
 本 RFC 规定：
 
-1. 类型质量门禁统一使用 `cr analyze quality`，不得在各仓库自行拼 JSON 或补 JS 比较脚本；
+1. 类型质量门禁统一使用 `calcit analyze quality`，不得在各仓库自行拼 JSON 或补 JS 比较脚本；
 2. 新模块默认零容忍，存量模块提交按 definition 的 baseline 并只允许逐步收紧；
 3. 类型门禁只是 CI 的静态层，不能替代 native/JS/browser/dylib 的实际运行测试；
 4. 文档、模板、机器输出和 baseline 更新流程形成一条可追溯的生态规范。
@@ -89,7 +89,7 @@ definition 保存 baseline。现在缺少的不是另一套统计脚本，而是
 ```
 
 普通项目不在 workflow 重复填写 `version`。setup-cr 的详细契约由
-`08-21-setup-cr-version-and-toolchain-contract-rfc.md` 规定。
+`08-21-setup-calcit-version-and-toolchain-contract-rfc.md` 规定。
 
 ### Q0 + Q1 基础门禁
 
@@ -97,16 +97,16 @@ definition 保存 baseline。现在缺少的不是另一套统计脚本，而是
 
 ```bash
 caps --ci
-cr calcit.cirru edit format
+calcit calcit.cirru edit format
 git diff --exit-code -- calcit.cirru
-cr calcit.cirru --check-only
-cr calcit.cirru analyze quality --format json
+calcit calcit.cirru --check-only
+calcit calcit.cirru analyze quality --format json
 ```
 
 存量项目只把最后一行改为：
 
 ```bash
-cr calcit.cirru analyze quality \
+calcit calcit.cirru analyze quality \
   --baseline config/calcit-quality.json \
   --format json
 ```
@@ -114,8 +114,8 @@ cr calcit.cirru analyze quality \
 `check-types` 与 `weak-types` 用于本地定位和 PR 解释，不再承担自定义退出逻辑：
 
 ```bash
-cr calcit.cirru analyze check-types --summary-only
-cr calcit.cirru analyze weak-types \
+calcit calcit.cirru analyze check-types --summary-only
+calcit calcit.cirru analyze weak-types \
   --only schema-dynamic,unresolved-type-slot,code-dynamic \
   --intent unresolved
 ```
@@ -128,10 +128,10 @@ CI 可以保存 JSON 报告，但不得解析若干子报告后自行发明总�
 可复用类库至少增加：
 
 ```bash
-cr calcit.cirru analyze check-examples --ns package.api
-cr calcit.cirru docs format-md README.md --check
-cr calcit.cirru docs check-md README.md --failures-only
-cr calcit.cirru --entry test
+calcit calcit.cirru analyze check-examples --ns package.api
+calcit calcit.cirru docs format-md README.md --check
+calcit calcit.cirru docs check-md README.md --failures-only
+calcit calcit.cirru --entry test
 ```
 
 没有 examples 且命令退出零不代表覆盖完成。公开 definition 必须由 runnable example 或明确的
@@ -141,7 +141,7 @@ cr calcit.cirru --entry test
 ### Q3/Q4 后端与消费者
 
 - JS 模块：codegen 后实际运行 Node test；browser API 运行 headless browser smoke/contract test；
-- native dylib：build、复制实际 artifact、由目标 `cr` 进程装载并调用；
+- native dylib：build、复制实际 artifact、由目标 `calcit` 进程装载并调用；
 - 多 entry：逐一运行声明支持的 mode/target，不能只测 default；
 - 核心/基础库：记录至少一个真实消费者仓库、commit、entry 和命令。
 
@@ -152,7 +152,7 @@ cr calcit.cirru --entry test
 ### 首次创建
 
 ```bash
-cr calcit.cirru analyze quality \
+calcit calcit.cirru analyze quality \
   --write-baseline config/calcit-quality.json
 ```
 
@@ -223,7 +223,7 @@ cr calcit.cirru analyze quality \
 - occurrence 包含 definition、namespace、path、kind、intent、impact、suggestion；
 - 退出码稳定区分 quality failure 与命令/解析失败。
 
-如果 GitHub annotations 或 SARIF 有明确需求，应由 `cr` 原生输出或提供统一转换器。各项目不再
+如果 GitHub annotations 或 SARIF 有明确需求，应由 `calcit` 原生输出或提供统一转换器。各项目不再
 自行实现一份脆弱的 JS parser。
 
 ## 实施阶段
@@ -268,5 +268,5 @@ cr calcit.cirru analyze quality \
 - `docs/type-guidance.md`
 - `docs/run/library-quality.md`
 - `RFCs/07-26-static-semantic-analysis-rfc.md`
-- `RFCs/08-21-setup-cr-version-and-toolchain-contract-rfc.md`
+- `RFCs/08-21-setup-calcit-version-and-toolchain-contract-rfc.md`
 - `RFCs/08-21-js-ffi-runtime-contract-validation-rfc.md`

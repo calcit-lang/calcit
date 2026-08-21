@@ -119,7 +119,7 @@ defimpl :MyMarkerImpl :MyMarker $ .dummy
   fn (_x) nil
 ```
 
-This form is retained so older `.method` dispatch keeps working. It does **not** implement a nominal trait and therefore cannot satisfy `assert-traits`, a generic `:where` bound, or `&trait-call`. `cr edit format` reports the non-blocking `W_LEGACY_INHERENT_IMPL` migration advisory. New code should define a real trait and pass its symbol:
+This form is retained so older `.method` dispatch keeps working. It does **not** implement a nominal trait and therefore cannot satisfy `assert-traits`, a generic `:where` bound, or `&trait-call`. `calcit edit format` reports the non-blocking `W_LEGACY_INHERENT_IMPL` migration advisory. New code should define a real trait and pass its symbol:
 
 ```cirru
 let
@@ -333,10 +333,10 @@ let
   p .foo
 ```
 
-### Examples (verified with `cr eval`)
+### Examples (verified with `calcit eval`)
 
 ```bash
-cargo run --bin cr -- calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Len)) (xs .len)'
+cargo run --bin calcit -- calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Len)) (xs .len)'
 ```
 
 Expected output:
@@ -346,7 +346,7 @@ Expected output:
 ```
 
 ```bash
-cargo run --bin cr -- calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Mappable)) (xs .map inc)'
+cargo run --bin calcit -- calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Mappable)) (xs .map inc)'
 ```
 
 Expected output:

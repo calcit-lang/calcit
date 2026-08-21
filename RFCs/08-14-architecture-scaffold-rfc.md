@@ -11,8 +11,8 @@
 建议命令：
 
 ```bash
-cr edit scaffold --file docs/architectures/order-submission.cirru --dry-run --format edn
-cr edit scaffold --file docs/architectures/order-submission.cirru --expect-revision '<revision>'
+calcit edit scaffold --file docs/architectures/order-submission.cirru --dry-run --format edn
+calcit edit scaffold --file docs/architectures/order-submission.cirru --expect-revision '<revision>'
 ```
 
 它与现有编辑原语的关系是：
@@ -227,7 +227,7 @@ defn validate-order (order)
 ### 4.1 主命令
 
 ```bash
-cr edit scaffold --file <architecture.cirru> [options]
+calcit edit scaffold --file <architecture.cirru> [options]
 ```
 
 第一版参数：
@@ -409,9 +409,9 @@ Snapshot-level `--expect-revision` 安全但保守：两个 Agent 修改不同 d
 cursor user 用于区分 CLI 导航状态，不是 work item owner、权限身份或并发锁。parent 可以为 subagent 设置：
 
 ```bash
-cr --cursor-user agent-a cursor set app.order/validate-order --path @0
-CALCIT_CURSOR_USER=agent-b cr cursor show
-cr cursor show # fallback: default
+calcit --cursor-user agent-a cursor set app.order/validate-order --path @0
+CALCIT_CURSOR_USER=agent-b calcit cursor show
+calcit cursor show # fallback: default
 ```
 
 解析优先级仍为 `--cursor-user` > `CALCIT_CURSOR_USER` > `default`。
@@ -481,7 +481,7 @@ CLI 仍接受任意 `--file`。目录只是约定，不由第一版自动创建�
 - JSON compatibility projection；
 - 不写 Snapshot 的单元与 CLI 协议测试。
 
-当前实现进度（2026-08-14）：`cr edit scaffold` 已支持 `--file`、`--code` 或 stdin 输入，以及 `human`、`edn`、`json` 输出。它验证 Symbol FQN/params、anonymous-enum edge、schema、roots/edge endpoint，计算 `plan-id`，对当前 Snapshot 做 create/reuse/external reconciliation，并输出 create operation 预览和 work items。`--dry-run` 保持只读；不带该 flag 时，会在同目录 staged file 中创建全部缺失的 `:ensure` definition，写入 doc/schema、`:scaffold` tag 和 function `todo!` stub，复核 revision 后以 atomic rename 提交。已有 definition 从不被覆盖；成功 apply 后会触发既有 cursor 后置校验。dependency/core external lookup、definition-level patch 和 per-user cursor 仍留在后续阶段。
+当前实现进度（2026-08-14）：`calcit edit scaffold` 已支持 `--file`、`--code` 或 stdin 输入，以及 `human`、`edn`、`json` 输出。它验证 Symbol FQN/params、anonymous-enum edge、schema、roots/edge endpoint，计算 `plan-id`，对当前 Snapshot 做 create/reuse/external reconciliation，并输出 create operation 预览和 work items。`--dry-run` 保持只读；不带该 flag 时，会在同目录 staged file 中创建全部缺失的 `:ensure` definition，写入 doc/schema、`:scaffold` tag 和 function `todo!` stub，复核 revision 后以 atomic rename 提交。已有 definition 从不被覆盖；成功 apply 后会触发既有 cursor 后置校验。dependency/core external lookup、definition-level patch 和 per-user cursor 仍留在后续阶段。
 
 ### Phase 2：atomic scaffold apply（基础版本已实现）
 

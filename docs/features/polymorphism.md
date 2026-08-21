@@ -149,7 +149,7 @@ let
 
 If the trait is missing or its selected impl is incomplete, `assert-traits` raises an error. Methods are not combined across unrelated impls: implementing `TraitA/.render` never satisfies `TraitB/.render`.
 
-`defimpl` validates concrete trait implementations when they are created: missing or extra methods and non-callable values are rejected, and native preprocessing compares typed method signatures when metadata is available. Passing a tag as the trait argument remains a legacy way to create an inherent method bag; `cr edit format` reports `W_LEGACY_INHERENT_IMPL` because that value cannot satisfy `assert-traits`, `:where`, or `&trait-call`. The advisory is non-blocking, so compatible `.method` code continues to run.
+`defimpl` validates concrete trait implementations when they are created: missing or extra methods and non-callable values are rejected, and native preprocessing compares typed method signatures when metadata is available. Passing a tag as the trait argument remains a legacy way to create an inherent method bag; `calcit edit format` reports `W_LEGACY_INHERENT_IMPL` because that value cannot satisfy `assert-traits`, `:where`, or `&trait-call`. The advisory is non-blocking, so compatible `.method` code continues to run.
 
 ## Generic `:where` bounds on functions
 
@@ -215,8 +215,8 @@ Use a type variable for identity-like relationships, add `:where` when that vari
 Agents can check how much information survives without running the program:
 
 ```bash
-cr analyze check-types --summary-only
-cr analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --summary-only
+calcit analyze check-types --summary-only
+calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --summary-only
 ```
 
 If the summary reports debt, rerun `weak-types` without `--summary-only` and scope it with `--ns` or `--ns-prefix`. Each occurrence explains whether it affects generic substitution, callback checking, container element propagation, or compile-time method specialization.

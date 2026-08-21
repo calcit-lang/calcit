@@ -1,6 +1,6 @@
 ---
 title: "Documentation Indexing Spec"
-summary: "cr docs 使用的 Markdown frontmatter、知识节点关系和增量缓存约定"
+summary: "calcit docs 使用的 Markdown frontmatter、知识节点关系和增量缓存约定"
 scope: "core"
 kind: "spec"
 category: "docs"
@@ -9,9 +9,9 @@ aliases:
   - "docs metadata"
   - "search indexing"
 entry_for:
-  - "cr docs search"
-  - "cr docs read"
-  - "cr docs read-lines"
+  - "calcit docs search"
+  - "calcit docs read"
+  - "calcit docs read-lines"
 id: core/docs/indexing
 parent: core/docs
 related:
@@ -25,7 +25,7 @@ leads_to:
 
 # Documentation Indexing Spec
 
-This page defines the documentation layout expected by `cr docs`.
+This page defines the documentation layout expected by `calcit docs`.
 
 The goal is to keep docs git-friendly and readable while still giving the CLI enough structure for fast lookup.
 
@@ -137,7 +137,7 @@ search behavior. The generated relationship cache is stored outside the
 repository under `~/.config/calcit/docs-cache/` and can always be rebuilt from
 the source documents.
 
-`cr docs graph build` also records a fingerprint of the embedded Calcit core
+`calcit docs graph build` also records a fingerprint of the embedded Calcit core
 snapshot. The cache is rebuilt when a Markdown file, parser/schema version, or
 the indexed definition snapshot changes. The cache is an implementation
 detail, not a source file to commit.
@@ -155,8 +155,8 @@ aliases:
   - "search-replace"
   - "imports"
 entry_for:
-  - "cr tree search-replace"
-  - "cr edit add-import"
+  - "calcit tree search-replace"
+  - "calcit edit add-import"
 ---
 ```
 
@@ -166,7 +166,7 @@ Notes:
 - `aliases` should use phrases people actually type, not every possible synonym
 - `entry_for` is best for commands, APIs, and exact task wording
 - `scope` is authored explicitly even if it can be inferred from directory layout
-- `Agents.md` can use the same schema; `cr docs agents` will strip frontmatter before rendering
+- `Agents.md` can use the same schema; `calcit docs agents` will strip frontmatter before rendering
 - unknown `category` values are rejected during doc loading so the registry stays stable
 
 Examples:
@@ -177,36 +177,36 @@ Examples:
 
 ## Search Behavior
 
-`cr docs search` defaults to built-in `calcit` docs and supports narrowing to one installed module:
+`calcit docs search` defaults to built-in `calcit` docs and supports narrowing to one installed module:
 
 ```bash
-cr docs search render --module respo.calcit
+calcit docs search render --module respo.calcit
 ```
 
-- `cr docs search <keyword>` — searches doc body + frontmatter metadata (title, aliases, entry_for, summary)
-- `cr docs search <keyword> --summary` — shows only doc title + summary (no content snippets), ideal for LLM first-pass filtering
-- `cr docs search <keyword> --filename <filename>` — filter by filename
-- `cr docs search <keyword> --module <name>` — search module docs instead of core
+- `calcit docs search <keyword>` — searches doc body + frontmatter metadata (title, aliases, entry_for, summary)
+- `calcit docs search <keyword> --summary` — shows only doc title + summary (no content snippets), ideal for LLM first-pass filtering
+- `calcit docs search <keyword> --filename <filename>` — filter by filename
+- `calcit docs search <keyword> --module <name>` — search module docs instead of core
 
 ### `summary` field (recommended)
 
 A one-sentence description of the document's purpose and content. Used by `--summary` mode and search ranking.
 
 ```yaml
-summary: "How to use cr tree commands to show, replace, delete, and restructure AST nodes by path or content"
+summary: "How to use calcit tree commands to show, replace, delete, and restructure AST nodes by path or content"
 ```
 
 Search scoring: exact match 200, contains match 130.
 
 ## Read Behavior
 
-`cr docs list` lists files in the current doc scope.
+`calcit docs list` lists files in the current doc scope.
 
-`cr docs sections <file>` lists headings in one file.
+`calcit docs sections <file>` lists headings in one file.
 
-`cr docs read` uses the same document resolver style as `search`.
+`calcit docs read` uses the same document resolver style as `search`.
 
-`cr docs read-lines` uses the same resolver too.
+`calcit docs read-lines` uses the same resolver too.
 
 It can resolve a page by:
 
@@ -221,14 +221,14 @@ It also supports narrowing to one module with `--module <name>`.
 Examples:
 
 ```bash
-cr docs scopes
-cr docs list
-cr docs sections search-replace
-cr docs read search-replace
-cr docs read "CLI Code Editing"
-cr docs read Respo-Agent --module respo.calcit
-cr docs read-lines search-replace --start 48 --lines 8
-cr docs read-lines Respo-Agent --module respo.calcit --start 1 --lines 8
+calcit docs scopes
+calcit docs list
+calcit docs sections search-replace
+calcit docs read search-replace
+calcit docs read "CLI Code Editing"
+calcit docs read Respo-Agent --module respo.calcit
+calcit docs read-lines search-replace --start 48 --lines 8
+calcit docs read-lines Respo-Agent --module respo.calcit --start 1 --lines 8
 ```
 
 ## Recommended Authoring Style

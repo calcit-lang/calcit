@@ -89,8 +89,8 @@ Cirru EDN diagnostic 至少包含：
 
 - `W_TODO` 是 completion warning，不是 type warning；同一位置不得再产生伪造的返回类型 mismatch；
 - scaffold dry-run/apply 把它列入 expected warnings，不把新 stub 当成 apply conflict；
-- `cr --check-only` 遵循当前严格 warning 策略：可创建 scaffold，但仍有 reachable TODO 时检查返回非零，Agent 不能宣称功能完成；
-- `cr analyze check-types` 扫描所选 Snapshot definition，将 TODO 数量和 diagnostics 纳入 human/Cirru EDN 报告，即使节点暂时不从 entry 可达；
+- `calcit --check-only` 遵循当前严格 warning 策略：可创建 scaffold，但仍有 reachable TODO 时检查返回非零，Agent 不能宣称功能完成；
+- `calcit analyze check-types` 扫描所选 Snapshot definition，将 TODO 数量和 diagnostics 纳入 human/Cirru EDN 报告，即使节点暂时不从 entry 可达；
 - 后续若引入 warning severity/allow-list，`W_TODO` 的默认 completion gate 仍应为 deny，显式探索性运行才允许降级；
 - Cirru EDN stdout 保持单个 value；JSON 只作为现有工具兼容投影，human warning 与普通命令提示走 stderr。
 

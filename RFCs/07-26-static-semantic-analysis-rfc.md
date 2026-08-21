@@ -11,10 +11,10 @@
 ## 2. 静态查询
 
 ```bash
-cr query type :number --format json
-cr query type ':: :list :number' --format json
-cr query type app.schema/Person --format json
-cr query type-at app.main/f --path code@3.2 --format json
+calcit query type :number --format json
+calcit query type ':: :list :number' --format json
+calcit query type app.schema/Person --format json
+calcit query type-at app.main/f --path code@3.2 --format json
 ```
 
 返回 canonical type、可用 methods 与其 impl 优先级、schema/推断证据，以及可用时的 fields、enum variants、constructors、trait 和 examples。`type-at` 返回 inferred/expected type、lexical bindings、method candidates、evidence、definition revision 和 diagnostics。
@@ -96,10 +96,10 @@ cr query type-at app.main/f --path code@3.2 --format json
 逐步提供：
 
 ```bash
-cr --check-only --format json
-cr query diagnostics --format json
-cr analyze check-types --format json
-cr analyze weak-types --intent unresolved --format json
+calcit --check-only --format json
+calcit query diagnostics --format json
+calcit analyze check-types --format json
+calcit analyze weak-types --intent unresolved --format json
 ```
 
 验收包括：稳定 diagnostic code/phase、expected/actual 为结构数据、`type-at` 不执行程序、故意 FFI dynamic 不被误报、`:any` 输入 canonicalize 为 `:dynamic`、泛型/where/callback/container 中的 dynamic 能说明丢失的多态关系，以及正常/未知/显式 schema 分支的回归测试。

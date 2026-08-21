@@ -34,7 +34,7 @@ Also there are some differences:
 | bundle js modules | ES Modules, with ESBuild/Vite                    | Google Closure Compiler / Webpack            |
 | operand order     | at first                                         | at last                                      |
 | Polymorphism      | at runtime, slow `.map ([] 1 2 3) f`             | at compile time, also supports multi-arities |
-| REPL              | only at command line: `cr eval "+ 1 2"`          | a real REPL                                  |
+| REPL              | only at command line: `calcit eval "+ 1 2"`          | a real REPL                                  |
 | `[]` syntax       | `[]` is a built-in function                      | builtin syntax                               |
 | `{}` syntax       | `{} (:a b)` is macro, expands to `&{} :a :b`     | builtin syntax                               |
 
