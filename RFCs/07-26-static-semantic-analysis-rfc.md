@@ -27,7 +27,7 @@ cr query type-at app.main/f --path code@3.2 --format json
 
 - `proven`：schema 或静态规则已证明；
 - `partial`：信息只覆盖一部分结构；
-- `intentional-js-ffi` / `intentional-macro`：设计上允许的动态边界；
+- `intentional-js-ffi` / `intentional-macro` / `intentional-type-slot-dynamic`：设计上允许的动态边界；
 - `unresolved`：应补 schema 或推断规则；
 - `unknown`：当前没有足够静态证据；
 - `failed`：静态处理本身失败。

@@ -4,7 +4,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
-use calcit::calcit::{CalcitProc, CalcitSyntax, CalcitTypeAnnotation, ProcTypeSignature, SchemaKind, SyntaxTypeSignature};
+use calcit::calcit::{
+  CalcitProc, CalcitSyntax, CalcitTypeAnnotation, ProcTypeSignature, SchemaKind, SyntaxTypeSignature, resolve_type_slot,
+};
 use calcit::cli_args::{CheckTypesCommand, WeakTypesCommand};
 use calcit::snapshot;
 use cirru_parser::Cirru;
@@ -119,6 +121,7 @@ fn entry_polymorphism(entry: &snapshot::CodeEntry) -> (Vec<String>, Vec<String>)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum WeakTypeKind {
   SchemaDynamic,
+  UnresolvedTypeSlot,
   CodeDynamic,
   CodeNil,
 }
@@ -127,13 +130,14 @@ impl WeakTypeKind {
   pub fn as_str(&self) -> &'static str {
     match self {
       Self::SchemaDynamic => "schema-dynamic",
+      Self::UnresolvedTypeSlot => "unresolved-type-slot",
       Self::CodeDynamic => "code-dynamic",
       Self::CodeNil => "code-nil",
     }
   }
 
   pub fn all() -> BTreeSet<Self> {
-    BTreeSet::from([Self::SchemaDynamic, Self::CodeDynamic, Self::CodeNil])
+    BTreeSet::from([Self::SchemaDynamic, Self::UnresolvedTypeSlot, Self::CodeDynamic, Self::CodeNil])
   }
 }
 
@@ -141,6 +145,7 @@ impl WeakTypeKind {
 pub enum WeakTypeIntent {
   Unresolved,
   IntentionalJsFfi,
+  IntentionalTypeSlotDynamic,
   DeclaredUnit,
   DeclaredOptional,
 }
@@ -150,13 +155,20 @@ impl WeakTypeIntent {
     match self {
       Self::Unresolved => "unresolved",
       Self::IntentionalJsFfi => "intentional-js-ffi",
+      Self::IntentionalTypeSlotDynamic => "intentional-type-slot-dynamic",
       Self::DeclaredUnit => "declared-unit",
       Self::DeclaredOptional => "declared-optional",
     }
   }
 
   pub fn all() -> BTreeSet<Self> {
-    BTreeSet::from([Self::Unresolved, Self::IntentionalJsFfi, Self::DeclaredUnit, Self::DeclaredOptional])
+    BTreeSet::from([
+      Self::Unresolved,
+      Self::IntentionalJsFfi,
+      Self::IntentionalTypeSlotDynamic,
+      Self::DeclaredUnit,
+      Self::DeclaredOptional,
+    ])
   }
 }
 
@@ -290,11 +302,12 @@ pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String
   for item in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
     let kind = match item {
       "schema-dynamic" => WeakTypeKind::SchemaDynamic,
+      "unresolved-type-slot" => WeakTypeKind::UnresolvedTypeSlot,
       "code-dynamic" => WeakTypeKind::CodeDynamic,
       "code-nil" => WeakTypeKind::CodeNil,
       other => {
         return Err(format!(
-          "Unknown weak-type filter `{other}`. Expected comma-separated values from: schema-dynamic, code-dynamic, code-nil"
+          "Unknown weak-type filter `{other}`. Expected comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil"
         ));
       }
     };
@@ -302,7 +315,10 @@ pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String
   }
 
   if selected.is_empty() {
-    return Err("Weak-type filter cannot be empty. Use comma-separated values from: schema-dynamic, code-dynamic, code-nil".to_owned());
+    return Err(
+      "Weak-type filter cannot be empty. Use comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil"
+        .to_owned(),
+    );
   }
 
   Ok(selected)
@@ -315,11 +331,12 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
     let intent = match item {
       "unresolved" => WeakTypeIntent::Unresolved,
       "intentional-js-ffi" => WeakTypeIntent::IntentionalJsFfi,
+      "intentional-type-slot-dynamic" => WeakTypeIntent::IntentionalTypeSlotDynamic,
       "declared-unit" => WeakTypeIntent::DeclaredUnit,
       "declared-optional" => WeakTypeIntent::DeclaredOptional,
       other => {
         return Err(format!(
-          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi, declared-unit, declared-optional"
+          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi, intentional-type-slot-dynamic, declared-unit, declared-optional"
         ));
       }
     };
@@ -328,7 +345,7 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
 
   if selected.is_empty() {
     return Err(
-      "Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi, declared-unit, declared-optional"
+      "Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi, intentional-type-slot-dynamic, declared-unit, declared-optional"
         .to_owned(),
     );
   }
@@ -418,6 +435,21 @@ fn scan_schema_dynamic_annotation(
         path.to_owned(),
       );
     }
+    CalcitTypeAnnotation::TypeSlot(name) => match resolve_type_slot(name) {
+      Some(resolved) => {
+        let start = occurrences.len();
+        scan_schema_dynamic_annotation(&resolved, path, detail, occurrences);
+        for occurrence in &mut occurrences[start..] {
+          occurrence.intent = WeakTypeIntent::IntentionalTypeSlotDynamic;
+        }
+      }
+      None => push_weak_type_occurrence(
+        occurrences,
+        WeakTypeKind::UnresolvedTypeSlot,
+        weak_type_detail(WeakTypeKind::UnresolvedTypeSlot, &format!("{detail}:{name}")),
+        path.to_owned(),
+      ),
+    },
     CalcitTypeAnnotation::List(inner)
     | CalcitTypeAnnotation::Set(inner)
     | CalcitTypeAnnotation::Ref(inner)
@@ -474,6 +506,9 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
   if occurrence.intent == WeakTypeIntent::IntentionalJsFfi {
     return "Keep the dynamic value isolated at the declared JS FFI boundary and validate or convert it before typed code consumes it.";
   }
+  if occurrence.intent == WeakTypeIntent::IntentionalTypeSlotDynamic {
+    return "This slot intentionally resolves to Dynamic for the selected entry. Keep that boundary documented and narrow or validate the value before typed code relies on it.";
+  }
 
   if occurrence.kind == WeakTypeKind::CodeNil {
     return match occurrence.intent {
@@ -490,6 +525,9 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
         "Declare Unit for a no-value result and remove explicit nil/`;nil` when possible; use Option/Result for application absence or failure."
       }
     };
+  }
+  if occurrence.kind == WeakTypeKind::UnresolvedTypeSlot {
+    return "Bind this slot in the selected entry with `cr config set-type-slot <slot> <namespace/definition>`, or explicitly select `:dynamic` only when this is a documented open boundary.";
   }
   if occurrence.detail.contains("legacy-any") {
     return "Migrate legacy `:any` to canonical `:dynamic`, then narrow it with a concrete type, a declared type variable, or a named enum when the value participates in typed code.";
@@ -516,6 +554,9 @@ fn weak_type_impact(occurrence: &WeakTypeOccurrence) -> &'static str {
   if occurrence.intent == WeakTypeIntent::IntentionalJsFfi {
     return "The value stays dynamic at an explicit boundary; typed callers must validate or convert it before relying on methods or generic relations.";
   }
+  if occurrence.intent == WeakTypeIntent::IntentionalTypeSlotDynamic {
+    return "The selected entry intentionally leaves this slot Dynamic; static relations do not cross this boundary until the value is narrowed or validated.";
+  }
   if occurrence.kind == WeakTypeKind::CodeNil {
     return match occurrence.intent {
       WeakTypeIntent::DeclaredUnit => {
@@ -526,6 +567,9 @@ fn weak_type_impact(occurrence: &WeakTypeOccurrence) -> &'static str {
       }
       _ => "A nil form weakens branch and return inference because no Unit or Optional return contract covers this position.",
     };
+  }
+  if occurrence.kind == WeakTypeKind::UnresolvedTypeSlot {
+    return "The slot currently accepts every value, so call checking and generic specialization can silently fall back as though this position were Dynamic.";
   }
   if occurrence.detail.contains("fn-arg") || occurrence.detail.contains("fn-return") {
     return "The callback contract loses parameter/return checking and prevents reliable variance or generic substitution.";
@@ -548,15 +592,23 @@ fn entry_schema_issues(ns: &str, def_name: &str, code: &Cirru, annotation: &Calc
     annotation,
     CalcitTypeAnnotation::Fn(fn_annot) if fn_annot.features.iter().any(|feature| feature.ref_str() == "js-ffi")
   );
-  if has_js_ffi_feature || matches!(annotation, CalcitTypeAnnotation::Dynamic) {
+  if matches!(annotation, CalcitTypeAnnotation::Dynamic) {
     return issues;
   }
 
   let mut occurrences = vec![];
   scan_schema_dynamic_annotation(annotation, "schema", "root", &mut occurrences);
   for occurrence in occurrences {
+    if has_js_ffi_feature && occurrence.kind == WeakTypeKind::SchemaDynamic {
+      continue;
+    }
+    let warning = if occurrence.kind == WeakTypeKind::UnresolvedTypeSlot {
+      "W_UNRESOLVED_TYPE_SLOT"
+    } else {
+      "W_SCHEMA_DYNAMIC"
+    };
     issues.push(format!(
-      "[W_SCHEMA_DYNAMIC] {} is unresolved ({}). Fix: {}",
+      "[{warning}] {} is unresolved ({}). Fix: {}",
       occurrence.path,
       occurrence.detail,
       weak_type_suggestion(&occurrence)
@@ -751,6 +803,8 @@ pub fn analyze_weak_types_entry(
 ) -> Option<WeakTypeRow> {
   let mut occurrences: Vec<WeakTypeOccurrence> = vec![];
 
+  let selected_schema_annotations =
+    selected.contains(&WeakTypeKind::SchemaDynamic) || selected.contains(&WeakTypeKind::UnresolvedTypeSlot);
   if matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
     if selected.contains(&WeakTypeKind::SchemaDynamic) && !code_declares_embedded_type_schema(&entry.code) {
       push_weak_type_occurrence(
@@ -761,7 +815,7 @@ pub fn analyze_weak_types_entry(
       );
     }
   } else if let CalcitTypeAnnotation::Fn(fn_annot) = entry.schema.as_ref() {
-    if selected.contains(&WeakTypeKind::SchemaDynamic) {
+    if selected_schema_annotations {
       for (idx, arg) in fn_annot.arg_types.iter().enumerate() {
         scan_schema_dynamic_annotation(arg, &format!("schema.args.{idx}"), "arg", &mut occurrences);
       }
@@ -770,11 +824,12 @@ pub fn analyze_weak_types_entry(
         scan_schema_dynamic_annotation(rest, "schema.rest", "rest", &mut occurrences);
       }
     }
-  } else if selected.contains(&WeakTypeKind::SchemaDynamic) {
+  } else if selected_schema_annotations {
     let before = occurrences.len();
     scan_schema_dynamic_annotation(entry.schema.as_ref(), "schema", "root", &mut occurrences);
 
     if occurrences.len() == before
+      && selected.contains(&WeakTypeKind::SchemaDynamic)
       && let Ok(schema_cirru) = snapshot::schema_edn_to_cirru(&entry.schema.to_type_edn())
     {
       let mut path = vec![];
@@ -792,6 +847,8 @@ pub fn analyze_weak_types_entry(
     selected,
     &mut occurrences,
   );
+
+  occurrences.retain(|occurrence| selected.contains(&occurrence.kind));
 
   let has_js_ffi_feature = matches!(
     entry.schema.as_ref(),
@@ -979,16 +1036,18 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
   }
   let _ = writeln!(
     out,
-    "- hits: schema-dynamic={} code-dynamic={} code-nil={}",
+    "- hits: schema-dynamic={} unresolved-type-slot={} code-dynamic={} code-nil={}",
     kind_count.get("schema-dynamic").copied().unwrap_or(0),
+    kind_count.get("unresolved-type-slot").copied().unwrap_or(0),
     kind_count.get("code-dynamic").copied().unwrap_or(0),
     kind_count.get("code-nil").copied().unwrap_or(0)
   );
   let _ = writeln!(
     out,
-    "- intents: unresolved={} intentional-js-ffi={} declared-unit={} declared-optional={}",
+    "- intents: unresolved={} intentional-js-ffi={} intentional-type-slot-dynamic={} declared-unit={} declared-optional={}",
     intent_count.get("unresolved").copied().unwrap_or(0),
     intent_count.get("intentional-js-ffi").copied().unwrap_or(0),
+    intent_count.get("intentional-type-slot-dynamic").copied().unwrap_or(0),
     intent_count.get("declared-unit").copied().unwrap_or(0),
     intent_count.get("declared-optional").copied().unwrap_or(0)
   );
@@ -1008,6 +1067,21 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
     let _ = writeln!(
       out,
       "- next: rerun without `--summary-only`; prefer concrete types, `:generics` type variables, or trait `:where` bounds before retaining a documented dynamic boundary."
+    );
+  }
+  let unresolved_type_slots = rows
+    .iter()
+    .flat_map(|row| row.occurrences.iter())
+    .filter(|occurrence| occurrence.intent == WeakTypeIntent::Unresolved && occurrence.kind == WeakTypeKind::UnresolvedTypeSlot)
+    .count();
+  if unresolved_type_slots > 0 {
+    let _ = writeln!(
+      out,
+      "- agent-note: {unresolved_type_slots} type slot(s) are not bound for the selected entry and currently behave like Dynamic."
+    );
+    let _ = writeln!(
+      out,
+      "- next: bind each slot with `cr config set-type-slot`, or choose `:dynamic` explicitly for a documented open boundary."
     );
   }
   let nil_debt = rows
@@ -1032,7 +1106,7 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
     return Ok(());
   }
   let _ = writeln!(out, "- detail:");
-  for kind in ["schema-dynamic", "code-dynamic", "code-nil"] {
+  for kind in ["schema-dynamic", "unresolved-type-slot", "code-dynamic", "code-nil"] {
     let _ = writeln!(out, "  - {kind}");
     if let Some(items) = detail_count.get(kind) {
       for (detail, count) in items {
@@ -1209,7 +1283,7 @@ pub fn run_check_types_report(options: &CheckTypesCommand, snapshot: &snapshot::
     );
     let _ = writeln!(
       out,
-      "- next: `cr analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved --summary-only`, then scope the reported namespaces and rerun without `--summary-only`."
+      "- next: `cr analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --summary-only`, then scope the reported namespaces and rerun without `--summary-only`."
     );
   }
   if options.summary_only {
@@ -2224,7 +2298,7 @@ pub fn format_check_types_json(options: &CheckTypesCommand, snapshot: &snapshot:
       "phase": "analysis",
       "severity": "warning",
       "message": format!("{coverage_gaps} definition(s) lack full static coverage; unresolved dynamic slots can hide generic relations and force runtime method dispatch."),
-      "suggestion": "Run `cr analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved --format json`; prefer concrete types, declared type variables, or trait `:where` bounds.",
+      "suggestion": "Run `cr analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json`; bind required type slots, then prefer concrete types, declared type variables, or trait `:where` bounds.",
     })]
   };
   let ids = rows.iter().map(|row| (row.ns.clone(), row.def.clone())).collect::<Vec<_>>();
@@ -2269,10 +2343,16 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
       *intents.entry(occurrence.intent.as_str()).or_insert(0) += 1;
     }
   }
-  for kind in ["schema-dynamic", "code-dynamic", "code-nil"] {
+  for kind in ["schema-dynamic", "unresolved-type-slot", "code-dynamic", "code-nil"] {
     kinds.entry(kind).or_insert(0);
   }
-  for intent in ["unresolved", "intentional-js-ffi", "declared-unit", "declared-optional"] {
+  for intent in [
+    "unresolved",
+    "intentional-js-ffi",
+    "intentional-type-slot-dynamic",
+    "declared-unit",
+    "declared-optional",
+  ] {
     intents.entry(intent).or_insert(0);
   }
 
@@ -2305,6 +2385,11 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
         && matches!(occurrence.kind, WeakTypeKind::SchemaDynamic | WeakTypeKind::CodeDynamic)
     })
     .count();
+  let unresolved_type_slots = rows
+    .iter()
+    .flat_map(|row| row.occurrences.iter())
+    .filter(|occurrence| occurrence.intent == WeakTypeIntent::Unresolved && occurrence.kind == WeakTypeKind::UnresolvedTypeSlot)
+    .count();
   let nil_debt = rows
     .iter()
     .flat_map(|row| row.occurrences.iter())
@@ -2323,6 +2408,15 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
       "suggestion": "Prefer concrete types; use `:generics` when positions share a type and trait `:where` bounds when only capabilities are required. Keep `:dynamic` only at documented boundaries.",
     }));
   }
+  if unresolved_type_slots > 0 {
+    diagnostics.push(serde_json::json!({
+      "code": "W_UNRESOLVED_TYPE_SLOT",
+      "phase": "analysis",
+      "severity": "warning",
+      "message": format!("{unresolved_type_slots} type slot(s) are unbound for the selected entry and therefore accept every value as though they were Dynamic."),
+      "suggestion": "Bind each slot with `cr config set-type-slot <slot> <namespace/definition>`, or explicitly select `:dynamic` only for a documented open boundary.",
+    }));
+  }
   if nil_debt > 0 {
     diagnostics.push(serde_json::json!({
       "code": "W_NIL_TYPE_DEBT",
@@ -2333,7 +2427,7 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
     }));
   }
   let envelope = serde_json::json!({
-    "schema_version": 2,
+    "schema_version": 3,
     "command": "analyze.weak-types",
     "revision": analysis_revision(snapshot, &ids)?,
     "data": {

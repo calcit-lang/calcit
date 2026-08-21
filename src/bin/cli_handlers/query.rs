@@ -2181,7 +2181,10 @@ fn weak_type_diagnostics(entry: &snapshot::CodeEntry, budget: usize) -> Vec<Cont
     .into_iter()
     .take(limit)
     .map(|occurrence| {
-      let intentional = occurrence.intent == crate::type_coverage::WeakTypeIntent::IntentionalJsFfi;
+      let intentional = matches!(
+        occurrence.intent,
+        crate::type_coverage::WeakTypeIntent::IntentionalJsFfi | crate::type_coverage::WeakTypeIntent::IntentionalTypeSlotDynamic
+      );
       ContextDiagnostic {
         code: if intentional {
           "I_DYNAMIC_TYPE_INTENTIONAL".to_owned()

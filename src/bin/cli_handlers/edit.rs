@@ -294,6 +294,7 @@ fn collect_format_advisories(snapshot_file: &str, original_edn: &Edn, snapshot: 
 
   let selected = std::collections::BTreeSet::from([
     crate::type_coverage::WeakTypeKind::SchemaDynamic,
+    crate::type_coverage::WeakTypeKind::UnresolvedTypeSlot,
     crate::type_coverage::WeakTypeKind::CodeDynamic,
   ]);
   let mut legacy_any_count = count_legacy_any_schema_fields(original_edn);
@@ -336,8 +337,8 @@ fn collect_format_advisories(snapshot_file: &str, original_edn: &Edn, snapshot: 
   }
   if unresolved_dynamic_occurrences > 0 {
     advisories.push(format!(
-      "[W_DYNAMIC_TYPE_DEBT] Found {unresolved_dynamic_occurrences} unresolved dynamic slot(s) in {unresolved_dynamic_definitions} local definition(s); formatting does not guess or rewrite semantic type contracts.\n\
-       Next: run `cr {snapshot_arg} analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved --summary-only`, then rerun without `--summary-only` for paths and recommendations."
+      "[W_DYNAMIC_TYPE_DEBT] Found {unresolved_dynamic_occurrences} unresolved dynamic or unbound type-slot occurrence(s) in {unresolved_dynamic_definitions} local definition(s); formatting does not guess or rewrite semantic type contracts.\n\
+       Next: run `cr {snapshot_arg} analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --summary-only`, then rerun without `--summary-only` for paths and recommendations."
     ));
   }
   if legacy_inherent_impl_count > 0 {

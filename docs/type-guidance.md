@@ -22,7 +22,7 @@ parent: core/features
 
 ```bash
 cr analyze check-types --summary-only
-cr analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved --format json
+cr analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json
 ```
 
 ## 用原生 quality gate 阻止类型债务回归

@@ -42,7 +42,7 @@ The `edit` command handles high-level operations on namespaces and definitions.
 cr edit format
 ```
 
-This command also rewrites older namespace records and top-level `:configs` into canonical shapes. It succeeds after recoverable migrations, while stderr identifies `W_LEGACY_CONFIG`, `W_LEGACY_SNAPSHOT_NAME`, `W_LEGACY_ANY`, or `W_DYNAMIC_TYPE_DEBT` when follow-up work is recommended. It does not invent concrete types; follow dynamic warnings with `cr analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved`.
+This command also rewrites older namespace records and top-level `:configs` into canonical shapes. It succeeds after recoverable migrations, while stderr identifies `W_LEGACY_CONFIG`, `W_LEGACY_SNAPSHOT_NAME`, `W_LEGACY_ANY`, or `W_DYNAMIC_TYPE_DEBT` when follow-up work is recommended. It does not invent concrete types; follow dynamic or unbound-slot warnings with `cr analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved`.
 
 ### Persistent Tree Cursor
 
