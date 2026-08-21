@@ -94,7 +94,7 @@ fn run_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) -> Resul
     Ok(())
   } else {
     Err(format!(
-      "Static quality gate failed with {} regression(s).",
+      "Static quality gate failed with {} regression(s). Run `cr docs read library-quality.md --full` for the baseline and CI workflow.",
       outcome.violations.len()
     ))
   }
