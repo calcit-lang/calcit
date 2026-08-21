@@ -171,7 +171,7 @@ caps --help
 再用新 `cr` 判断结果；也不要只更新本机而让 CI 继续安装旧版。若团队通过其他受控方式分发二进制，
 使用该方式即可，但要记录实际版本，并确认 `caps --help` 已包含项目需要的新选项。
 
-> ⚠️ CI 中 `cr`/`caps` 的项目版本来自 `deps.cirru` 的 `:calcit-version`。正常 workflow 只使用 `calcit-lang/setup-cr` 安装该版本，不要再在 workflow 重复传 `version`。旧 setup-cr release 可能不支持新 Snapshot/CLI 协议；若升级后出现安装或 Snapshot 错误，先升级 Action release，再确认 `deps.cirru` 是唯一版本来源。详见 [GitHub Actions](../installation/github-actions.md)。
+> ⚠️ CI 中 `cr`/`caps` 的项目版本来自 `deps.cirru` 的 `:calcit-version`。新 workflow 使用 `tiye/setup-calcit@v1` 安装该版本，不要再在 workflow 重复传 `version`。已发布的 `calcit-lang/setup-cr` tag 继续支持旧项目；GitHub Actions 不会为 Action 仓库改名重定向，因此迁移必须显式替换 `uses:`。详见 [GitHub Actions](../installation/github-actions.md)。
 
 ### Step B：先对齐项目版本与 Node 工具链
 
@@ -584,7 +584,7 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
     corepack prepare yarn@4.12.0 --activate
     yarn --version
 
-- uses: calcit-lang/setup-cr@0.0.9
+- uses: tiye/setup-calcit@v1
 
 - name: Install deps
   run: caps --ci && yarn install --immutable
@@ -611,7 +611,7 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
     cr calcit.cirru --entry test
 ```
 
-> ⚠️ CI 中安装的 Calcit 项目版本来自 `deps.cirru`，Action release 只决定安装器协议是否足够新。普通 workflow 不传 `version`；升级时修改 `deps.cirru`，并在需要新安装器能力时更新 `calcit-lang/setup-cr`。不要在 `caps --ci` 之前运行 `cr` 命令，否则会使用默认旧版模块缓存。完整模板见 [GitHub Actions](../installation/github-actions.md)。
+> ⚠️ CI 中安装的 Calcit 项目版本来自 `deps.cirru`，Action release 只决定安装器协议是否足够新。普通 workflow 不传 `version`；升级时修改 `deps.cirru`，并在需要新安装器能力时更新 `tiye/setup-calcit`。不要在 `caps --ci` 之前运行 `cr` 命令，否则会使用默认旧版模块缓存。完整模板见 [GitHub Actions](../installation/github-actions.md)。
 
 说明：若项目依赖 `packageManager: "yarn@4.12.0"`，优先先执行 Corepack 激活，再让 CI 触发 Yarn。不要让 `setup-node` 的 Yarn cache 或其他 Yarn 调用早于 `corepack enable` / `corepack prepare`，否则可能误用 runner 上的全局 Yarn 1。 `caps --ci` 参数保证在 CI 加载模块时使用 HTTPS 协议，避免 CI 环境下的 SSH key 问题。
 

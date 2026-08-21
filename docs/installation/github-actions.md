@@ -1,6 +1,6 @@
 ---
 title: "GitHub Actions"
-summary: "Use setup-cr with the project version in deps.cirru, then run caps and the native quality gate."
+summary: "Use setup-calcit with the project version in deps.cirru, then run caps and the native quality gate."
 scope: "core"
 kind: "reference"
 category: "installation"
@@ -9,6 +9,7 @@ aliases:
   - "ci"
   - "workflow"
   - "setup-cr"
+  - "setup-calcit"
   - "Calcit CI"
 id: core/installation/github-actions
 related:
@@ -16,6 +17,7 @@ related:
   - core/features/static-analysis
 entry_for:
   - "setup-cr"
+  - "setup-calcit"
   - "Calcit GitHub Actions"
 ---
 
@@ -39,14 +41,18 @@ Then install it after checkout. Do not repeat the Calcit version in the workflow
 - name: Enable Yarn
   run: corepack enable && corepack prepare yarn@4.12.0 --activate
 
-- uses: calcit-lang/setup-cr@0.0.9
+- uses: tiye/setup-calcit@v1
 ```
 
-`setup-cr` reads the selected `deps.cirru` when no explicit version input is supplied. A missing selected
+`setup-calcit` reads the selected `deps.cirru` when no explicit version input is supplied. A missing selected
 file is treated as a task without a project declaration, so it requires an explicit version; a file with
 no `:calcit-version` behaves the same way. Malformed or duplicate declarations fail rather than falling
 back to `version`. Do not provide two version sources for a regular project. The Action release controls
 installer behavior, while `:calcit-version` controls which `cr` and `caps` release the project uses.
+
+Existing `calcit-lang/setup-cr` workflows remain supported by their published tags. GitHub Actions does
+not follow action-repository rename redirects, so use `setup-calcit` for new workflows and migrate an
+old workflow only by intentionally replacing its `uses:` reference.
 
 Then to load packages defined in `deps.cirru` with `caps`:
 

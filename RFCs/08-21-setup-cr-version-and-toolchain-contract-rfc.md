@@ -1,4 +1,4 @@
-# RFC：setup-cr 版本来源与基础工具链契约
+# RFC：setup-calcit 版本来源与基础工具链契约
 
 状态：Draft
 
@@ -7,16 +7,19 @@
 ## 摘要
 
 普通 Calcit 项目的编译器版本应只有一个项目级事实来源：`deps.cirru` 中的
-`:calcit-version`。`setup-cr` 的默认用法只负责读取这个版本并安装相应工具，不再鼓励在
+`:calcit-version`。新的 `setup-calcit` 默认用法只负责读取这个版本并安装相应工具，不再鼓励在
 workflow 中重复填写 `version`。
 
-`version` input 暂不立即删除，因为 setup-cr 自身测试、没有 `deps.cirru` 的临时任务和紧急
+`version` input 暂不立即删除，因为 setup-calcit 自身测试、没有 `deps.cirru` 的临时任务和紧急
 诊断仍然需要显式版本；但它降级为 fallback。若项目同时提供两个不一致的版本，Action 必须
 明确失败，不能再用隐含优先级覆盖。
 
-在这个单一版本来源基础上，setup-cr 可以补齐缓存、校验、平台路径、结构化输出和工具选择等
+在这个单一版本来源基础上，setup-calcit 可以补齐缓存、校验、平台路径、结构化输出和工具选择等
 基础能力，但仍保持“安装工具”的单一职责。依赖安装、类型门禁和项目测试继续由显式 CI step
 执行。
+
+`calcit-lang/setup-cr` 保留为旧 workflow 的兼容入口。GitHub Actions 不会为 Action 仓库改名
+提供重定向，所以不直接重命名该仓库；新项目迁移到 setup-calcit，旧项目继续使用已发布的 tag。
 
 ## 背景
 
@@ -57,7 +60,7 @@ workflow 中重复填写 `version`。
 
 ```yaml
 - uses: actions/checkout@v4
-- uses: calcit-lang/setup-cr@0.0.9
+- uses: tiye/setup-calcit@v1
 ```
 
 对应项目配置：
@@ -88,7 +91,7 @@ README、Calcit 安装文档、模块模板和 workflow 模板都应优先展示
 增加可选的 `deps-file` input，默认值为 `deps.cirru`。它只用于 monorepo 或非根目录项目：
 
 ```yaml
-- uses: calcit-lang/setup-cr@v1
+- uses: tiye/setup-calcit@v1
   with:
     deps-file: examples/browser/deps.cirru
 ```
@@ -113,7 +116,7 @@ with:
 兼容期只需继续接受 `cr-wasm` 布尔 input；转换后得到唯一的 requested tool set。未知工具、
 重复项或目标版本没有对应 artifact 时，在下载前失败。
 
-setup-cr 不增加 `run-tests`、`run-quality`、`install-modules` 等 input。以下步骤必须继续显式
+setup-calcit 不增加 `run-tests`、`run-quality`、`install-modules` 等 input。以下步骤必须继续显式
 出现在 workflow 中：
 
 ```bash
@@ -167,9 +170,9 @@ Job Summary 只记录版本来源、工具、平台、缓存命中和自检结�
 
 ## 文档迁移
 
-1. setup-cr README quick start 删除显式 `version`；
+1. setup-calcit README quick start 删除显式 `version`，并说明 setup-cr 的 legacy 兼容边界；
 2. Calcit README 将 `:calcit-version` 从“CI hint”提升为项目工具链版本；
-3. workflow 模板统一只引用 setup-cr release，不复制 Calcit 版本；
+3. 新 workflow 模板统一引用 setup-calcit release，不复制 Calcit 版本；
 4. 显式版本用法放入 advanced usage，并说明不应与 `deps.cirru` 冲突；
 5. 错误文案修正历史拼写 `calcit-verison`，并给出实际读取路径。
 
@@ -204,7 +207,7 @@ SHA。现有 `@0.0.x` 标签在迁移期继续可用。
 ### Phase 3：release manifest
 
 - Calcit release 产生 checksums/manifest；
-- setup-cr 校验下载完整性和 capability metadata；
+- setup-calcit 校验下载完整性和 capability metadata；
 - 缓存 key 纳入 manifest/schema version。
 
 ## 验收标准
@@ -213,14 +216,14 @@ SHA。现有 `@0.0.x` 标签在迁移期继续可用。
 2. `deps.cirru` 与 input 冲突时，Action 在下载前失败并展示两个来源。
 3. 安装日志能证明最终版本、来源、工具、平台和缓存状态。
 4. 任一工具下载或自检失败时 Action 必须失败，不能留下部分成功状态。
-5. setup-cr 自身测试覆盖默认或显式缺失 deps、合法 deps、畸形 deps、重复声明、冲突和
+5. setup-calcit 自身测试覆盖默认或显式缺失 deps、合法 deps、畸形 deps、重复声明、冲突和
    artifact 缺失。
 6. Action 不隐式运行 `caps`、formatter、类型门禁或业务测试。
 7. 支持的平台都不依赖硬编码 `/home/runner` 路径。
 
 ## 非目标
 
-- 让 setup-cr 成为新的包管理器；
+- 让 setup-calcit 成为新的包管理器；
 - 自动修改 `deps.cirru`；
 - 替项目选择“最新”版本；
 - 隐式运行项目 CI；
