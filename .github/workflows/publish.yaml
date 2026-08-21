@@ -63,8 +63,10 @@ jobs:
       - run: cargo build --release
 
       - name: Generate release asset manifest
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: >
-          node scripts/release-manifest.mjs "${{ github.event.release.tag_name }}"
+          node scripts/release-manifest.mjs "$RELEASE_TAG"
           target/release/calcit target/release/caps target/release/cr-wasm
           > target/release/calcit-release-manifest.json
 

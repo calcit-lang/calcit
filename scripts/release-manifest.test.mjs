@@ -30,3 +30,13 @@ test("release manifest records asset name, size, and SHA-256", async () => {
     ],
   });
 });
+
+test("release manifest reports a concise usage error", () => {
+  const result = spawnSync(process.execPath, ["scripts/release-manifest.mjs"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.equal(result.stderr, "Usage: node scripts/release-manifest.mjs <version> <asset>...\n");
+});
