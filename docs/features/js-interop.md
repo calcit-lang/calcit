@@ -135,6 +135,17 @@ method calls and JavaScript lowering. Keep that assertion at the adapter
 boundary. Application namespaces should call ordinary schema-typed wrappers,
 not pass npm `JsObject` values around.
 
+Audit these exceptional assertions without executing the program:
+
+```bash
+calcit analyze weak-types --only unsafe-coerce
+```
+
+The report gives each assertion's `code@...` Snapshot path and declared target
+schema. Treat the result as a runtime-contract checklist: keep the assertion in
+one adapter, test accepted host values and rejected shapes, then return a
+normal Calcit `Option`, `Result`, struct, or enum to application code.
+
 For example, the host name can differ from the Calcit name while the field type
 stays visible to the type checker:
 

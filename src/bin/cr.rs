@@ -2145,6 +2145,7 @@ mod tests {
     let err = type_coverage::parse_weak_type_kinds("schema-dynamic,unknown").expect_err("unknown filters should fail");
     assert!(err.contains("unknown"), "err: {err}");
     assert!(type_coverage::parse_weak_type_kinds("unresolved-type-slot").is_ok());
+    assert!(type_coverage::parse_weak_type_kinds("unsafe-coerce").is_ok());
   }
 
   #[test]
@@ -2214,6 +2215,48 @@ mod tests {
     let err = type_coverage::parse_weak_type_intents("unresolved,guessed").expect_err("unknown intents should fail");
     assert!(err.contains("guessed"), "err: {err}");
     assert!(type_coverage::parse_weak_type_intents("declared-unit,declared-optional").is_ok());
+    assert!(type_coverage::parse_weak_type_intents("explicit-unsafe").is_ok());
+  }
+
+  #[test]
+  fn analyze_weak_types_inventories_unsafe_coerce_with_target_and_path() {
+    let entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      tests: vec![],
+      tags: HashSet::new(),
+      code: list(vec![
+        leaf("defn"),
+        leaf("load-id"),
+        list(vec![]),
+        list(vec![leaf("unsafe-coerce"), leaf("js/nanoid"), leaf("'String")]),
+      ]),
+      schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![],
+        return_type: Arc::new(CalcitTypeAnnotation::String),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::from([cirru_edn::EdnTag::new("js-ffi")])),
+      }))
+      .into(),
+      ffi: None,
+    };
+
+    let row = type_coverage::analyze_weak_types_entry(
+      "app.npm",
+      "load-id",
+      &entry,
+      &BTreeSet::from([type_coverage::WeakTypeKind::UnsafeCoerce]),
+    )
+    .expect("unsafe coercion should be inventoried");
+    assert_eq!(row.occurrences.len(), 1);
+    let occurrence = &row.occurrences[0];
+    assert_eq!(occurrence.kind, type_coverage::WeakTypeKind::UnsafeCoerce);
+    assert_eq!(occurrence.intent, type_coverage::WeakTypeIntent::ExplicitUnsafe);
+    assert_eq!(occurrence.path, "code@3");
+    assert_eq!(occurrence.detail, "unsafe-coerce:target='String");
   }
 
   #[test]
@@ -2246,11 +2289,12 @@ mod tests {
     let row = type_coverage::analyze_weak_types_entry("app.main", "ffi-wrapper", &entry, &type_coverage::WeakTypeKind::all())
       .expect("should find weak types");
 
-    for occurrence in row
-      .occurrences
-      .iter()
-      .filter(|occurrence| occurrence.kind != type_coverage::WeakTypeKind::CodeNil)
-    {
+    for occurrence in row.occurrences.iter().filter(|occurrence| {
+      !matches!(
+        occurrence.kind,
+        type_coverage::WeakTypeKind::CodeNil | type_coverage::WeakTypeKind::UnsafeCoerce
+      )
+    }) {
       assert_eq!(
         occurrence.intent,
         type_coverage::WeakTypeIntent::IntentionalJsFfi,
@@ -2327,7 +2371,7 @@ mod tests {
     };
     let weak_json = type_coverage::format_weak_types_json(&weak_options, &snapshot).expect("weak type JSON should format");
     let weak_value: serde_json::Value = serde_json::from_str(&weak_json).expect("weak type JSON should parse");
-    assert_eq!(weak_value["schema_version"], 3);
+    assert_eq!(weak_value["schema_version"], 4);
     assert_eq!(weak_value["command"], "analyze.weak-types");
     assert_eq!(weak_value["data"]["filters"]["intent"], "unresolved");
     assert_eq!(weak_value["data"]["definitions"][0]["occurrences"][0]["path"], "schema.args.0");

@@ -270,10 +270,10 @@ pub struct WeakTypesCommand {
   /// namespace prefix scope filter
   #[argh(option)]
   pub ns_prefix: Option<String>,
-  /// match kinds to include, comma-separated: schema-dynamic,unresolved-type-slot,code-dynamic,code-nil
+  /// match kinds to include, comma-separated: schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce
   #[argh(option)]
   pub only: Option<String>,
-  /// intent classes to include, comma-separated: unresolved,intentional-js-ffi,intentional-type-slot-dynamic,declared-unit,declared-optional
+  /// intent classes to include, comma-separated: unresolved,intentional-js-ffi,intentional-type-slot-dynamic,explicit-unsafe,declared-unit,declared-optional
   #[argh(option)]
   pub intent: Option<String>,
   /// output format: human (default) or json

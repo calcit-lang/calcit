@@ -164,11 +164,18 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
         WeakTypeKind::UnresolvedTypeSlot => {}
         WeakTypeKind::CodeDynamic => metrics.code_dynamic += 1,
         WeakTypeKind::CodeNil => metrics.code_nil += 1,
+        // Unsafe assertions are intentionally inventoried separately from the
+        // stable eight-metric quality baseline. A future baseline migration can
+        // promote this count into an enforced budget without reclassifying it.
+        WeakTypeKind::UnsafeCoerce => {}
       }
       match occurrence.intent {
         WeakTypeIntent::Unresolved => metrics.unresolved += 1,
         WeakTypeIntent::DeclaredOptional => metrics.declared_optional += 1,
-        WeakTypeIntent::IntentionalJsFfi | WeakTypeIntent::IntentionalTypeSlotDynamic | WeakTypeIntent::DeclaredUnit => {}
+        WeakTypeIntent::IntentionalJsFfi
+        | WeakTypeIntent::IntentionalTypeSlotDynamic
+        | WeakTypeIntent::ExplicitUnsafe
+        | WeakTypeIntent::DeclaredUnit => {}
       }
     }
   }
