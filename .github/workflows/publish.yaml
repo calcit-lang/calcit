@@ -41,7 +41,7 @@ jobs:
           RUST_MIN_STACK: "16777216"
       - name: "run definition-attached core tests"
         run: cargo run --bin calcit -- src/cirru/calcit-core.cirru test --tag unit
-      - run: cargo run --bin calcit calcit/test.cirru
+      - run: cargo run --bin calcit -- calcit/test.cirru
 
       - name: "verify WASM exports and FFI"
         run: >
@@ -52,7 +52,7 @@ jobs:
         run: >
           yarn
           && yarn tsc
-          && cargo run --bin calcit calcit/test.cirru js
+          && cargo run --bin calcit -- calcit/test.cirru js
           && ln -s ../../ node_modules/@calcit/procs
           && cp -v scripts/main.mjs js-out/
           && node js-out/main.mjs

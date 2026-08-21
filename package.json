@@ -27,7 +27,7 @@
     "warn-dyn-method": "cargo run --bin calcit -- calcit/test.cirru --warn-dyn-method",
     "try-js-brk": "cargo run --bin calcit -- calcit/test.cirru js && node --inspect-brk js-out/main.mjs",
     "try-js": "cargo run --bin calcit -- calcit/test.cirru js && node js-out/main.mjs",
-    "try-ir": "cargo run --bin calcit -- calcit/test.cirru js",
+    "try-ir": "cargo run --bin calcit -- calcit/test.cirru ir",
     "try-wasm": "bash scripts/test-wasm.sh"
   },
   "repository": {
