@@ -113,17 +113,15 @@ Snapshot 路径；如果同目录存在 `compact.cirru`，还会直接给出上�
 `:require` 规则，例如把：
 
 ```cirru.no-check
-ns app.main
-  :require-macros
-    legacy.macros :refer $ defcomp
+ns app.main $ :require-macros
+  legacy.macros :refer $ defcomp
 ```
 
 改为：
 
 ```cirru.no-check
-ns app.main
-  :require
-    legacy.macros :refer $ defcomp
+ns app.main $ :require
+  legacy.macros :refer $ defcomp
 ```
 
 遇到旧写法时，加载阶段会明确报告 `:require-macros` 迁移提示，而不是只返回笼统的 invalid `ns` form。
@@ -173,7 +171,7 @@ caps --help
 再用新 `cr` 判断结果；也不要只更新本机而让 CI 继续安装旧版。若团队通过其他受控方式分发二进制，
 使用该方式即可，但要记录实际版本，并确认 `caps --help` 已包含项目需要的新选项。
 
-> ⚠️ 注意 CI 中 `calcit-lang/setup-cr` 的版本：旧版本（如 `0.0.8`）安装的 `cr` 可能不识别 `calcit.cirru`。升级后若 CI 报 `"compact.cirru does not exist"`，请升级 `setup-cr` 版本。最新版本请查阅 [setup-cr releases](https://github.com/calcit-lang/setup-cr/releases)。
+> ⚠️ CI 中 `cr`/`caps` 的项目版本来自 `deps.cirru` 的 `:calcit-version`。正常 workflow 只使用 `calcit-lang/setup-cr` 安装该版本，不要再在 workflow 重复传 `version`。旧 setup-cr release 可能不支持新 Snapshot/CLI 协议；若升级后出现安装或 Snapshot 错误，先升级 Action release，再确认 `deps.cirru` 是唯一版本来源。详见 [GitHub Actions](../installation/github-actions.md)。
 
 ### Step B：先对齐项目版本与 Node 工具链
 
@@ -390,8 +388,8 @@ let
   &+ safe-idx 1
 
 match (get-env |APP_MODE)
-  (:some mode) $ println mode
-  (:none) $ println |development
+  (:some mode) (println mode)
+  (:none) (println |development)
 ```
 
 上例使用推荐的原生 `match`；维护旧代码时也可以把同一组分支头替换为 `tag-match`，两者都能处理
@@ -613,7 +611,7 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
     cr calcit.cirru --entry test
 ```
 
-> ⚠️ `calcit-lang/setup-cr` 的版本决定了 CI 中安装的 `cr` 版本。旧版本（如 `0.0.8`）可能不识别 `calcit.cirru`，且不支持新版类型检查。建议保持 `@0.0.9` 或更新。最新版本请查阅 [setup-cr releases](https://github.com/calcit-lang/setup-cr/releases)。不要在 `caps --ci` 之前运行 `cr` 命令，否则会使用默认旧版模块缓存。
+> ⚠️ CI 中安装的 Calcit 项目版本来自 `deps.cirru`，Action release 只决定安装器协议是否足够新。普通 workflow 不传 `version`；升级时修改 `deps.cirru`，并在需要新安装器能力时更新 `calcit-lang/setup-cr`。不要在 `caps --ci` 之前运行 `cr` 命令，否则会使用默认旧版模块缓存。完整模板见 [GitHub Actions](../installation/github-actions.md)。
 
 说明：若项目依赖 `packageManager: "yarn@4.12.0"`，优先先执行 Corepack 激活，再让 CI 触发 Yarn。不要让 `setup-node` 的 Yarn cache 或其他 Yarn 调用早于 `corepack enable` / `corepack prepare`，否则可能误用 runner 上的全局 Yarn 1。 `caps --ci` 参数保证在 CI 加载模块时使用 HTTPS 协议，避免 CI 环境下的 SSH key 问题。
 
