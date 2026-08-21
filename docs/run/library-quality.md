@@ -106,6 +106,15 @@ cr calcit.cirru analyze quality --baseline config/calcit-quality.json
 
 baseline 按 definition 保存独立预算，某处清债不能抵消另一处新增债务。后续只应降低 baseline；不要用 ignore warning 或批量 `:dynamic` 让数字看起来通过。需要机器报告时追加 `--format json`，stdout 仍是单个 JSON envelope。
 
+将 baseline 保持在 Git 中，但默认折叠其生成 JSON diff。在项目根目录的 `.gitattributes` 添加：
+
+```gitattributes
+config/calcit-quality.json -diff linguist-generated
+```
+
+这与常见的 `yarn.lock -diff linguist-generated` 约定相同：文件继续参与 CI 和版本控制，只在
+GitHub PR 中默认不展开。任何 baseline 更新仍须人工展开并按 definition 审阅，不能因折叠而自动接受新债务。
+
 ## 3. API examples 与文档
 
 对每个公开 namespace 执行 examples：
