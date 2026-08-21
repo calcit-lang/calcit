@@ -42,19 +42,26 @@ cr calcit.cirru analyze quality --baseline config/calcit-quality.json
 
 门禁同时覆盖未完整类型、unresolved Dynamic、未迁移的 nil/Optional 和 deprecated calls。原生 baseline 按 definition 保存预算，新债务不能被其他 definition 的改善抵消；`--write-baseline` 只用于明确审阅后的更新，不应作为每次 CI 的前置步骤。需要机器读取时追加 `--format json`，失败时 stdout 仍是单个 JSON，进度与错误摘要写入 stderr。
 
+baseline 是已提交的机器生成工件。为避免它的 JSON diff 默认占据 PR 视图，可在项目根目录的
+`.gitattributes` 加入与 `yarn.lock` 相同的生成物标记：
+
+```gitattributes
+config/calcit-quality.json -diff linguist-generated
+```
+
+这不会忽略或删除 baseline；GitHub 只会默认折叠其 diff。更新 baseline 的 PR 仍应展开文件并按
+definition 审阅预算变化。
+
 ## Option / Result 组合
 
 优先让 `Option` / `Result` 的方法表达类型流，而不是逐层 `unwrap` 或调用
 `option:*` / `result:*` 的函数形式：
 
 ```cirru.no-check
-user .and-then
-  fn (user)
-    (get user :profile) .and-then
-      fn (profile) $ get profile :name
+user .and-then $ fn (user)
+  (get user :profile) .and-then $ fn (profile) (get profile :name)
 
-loaded .and-then
-  fn (value) $ validate value
+loaded .and-then $ fn (value) (validate value)
 ```
 
 备用来源使用 `.or-else`。`.unwrap-or` 只用于确实需要默认值的终点，`.map` 用于同步转换，`.and-then` 用于下一个仍可能失败的操作。保留 `Option` 本身能让类型系统持续检查缺失路径；不要为了集合判断而把它解成 `nil`。
@@ -67,8 +74,7 @@ loaded .and-then
 
 ```cirru.no-check
 update-in data ([] :settings :retries)
-  fn (current)
-    current .unwrap-or 0
+  fn (current) (current .unwrap-or 0)
 ```
 
 ## Enum 构造
@@ -76,7 +82,9 @@ update-in data ([] :settings :retries)
 Struct 也支持同样的类型化头部调用：
 
 ```cirru.no-check
-defstruct Profile (:name 'String) (:bio (:: 'Option 'String))
+defstruct Profile (:name 'String)
+  :bio $ :: 'Option 'String
+
 Profile :name |Ada
 ```
 
@@ -88,6 +96,7 @@ Profile :name |Ada
 
 ```cirru.no-check
 Option :some value
+
 Result :err message
 ```
 
