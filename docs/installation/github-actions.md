@@ -32,6 +32,13 @@ Then install it after checkout. Do not repeat the Calcit version in the workflow
 ```yaml
 - uses: actions/checkout@v4
 
+- uses: actions/setup-node@v6
+  with:
+    node-version: 24
+
+- name: Enable Yarn
+  run: corepack enable && corepack prepare yarn@4.12.0 --activate
+
 - uses: calcit-lang/setup-cr@0.0.9
 ```
 
@@ -60,6 +67,18 @@ locally:
     cr calcit.cirru --check-only
     cr calcit.cirru analyze quality --baseline config/calcit-quality.json
 ```
+
+The workflow above covers installation and the static layer. A project that emits JavaScript must add
+its target-specific runtime command; for example, a Node project can compile and execute its smoke or
+contract test as a separate step:
+
+```yaml
+- name: Run generated Node runtime test
+  run: yarn run:node
+```
+
+Browser projects should run an equivalent headless-browser test. Code generation alone is not runtime
+evidence.
 
 New libraries without existing debt can omit `--baseline` and use the zero-debt gate. `check-types`
 and `weak-types` are reports for diagnosis; `analyze quality` is the CI command that fails on a

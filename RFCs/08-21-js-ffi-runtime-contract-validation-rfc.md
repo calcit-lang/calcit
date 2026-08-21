@@ -218,12 +218,24 @@ quality 输出只声明“发现/未发现静态契约风险”，不能声称 N
 
 | 模式 | 行为 | 使用场景 |
 | --- | --- | --- |
-| boundary | 在建立 typed evidence/decoder 时检查一次 | 默认生产路径 |
+| boundary | 只为一次 decoder 操作检查并立即复制为 Calcit-owned data | 默认生产路径 |
 | debug | boundary 外加关键 callback/返回值断言 | 测试、开发、生态升级 |
 | unsafe | 只保留明确 `unsafe-coerce`，由审计和 contract test 承担 | 性能敏感且已证明的 adapter |
 
 模式属于 entry/build policy，不进入普通类型身份。即使选择 unsafe，target 和 capability gate 仍需
 静态检查；关闭 runtime guard 不等于允许未授权 FFI。
+
+### evidence 的有效范围
+
+host object 默认是可变的，不能把一次检查当成可无限期复用的“已验证外部对象”能力。boundary
+模式的 evidence 仅覆盖当前 decoder 调用：decoder 必须立即读取所需字段并返回 Struct、Enum、
+Option、Result 或其他 Calcit-owned data；调用方不能凭该 evidence 在稍后的代码中直接访问原
+对象。若 adapter 必须保留外部对象或在稍后调用其方法，每一次 field/method access 都要重新
+检查存在性和 primitive/function shape，或改为 debug 模式提供这类断言。external-object trait
+仍只提供静态成员声明与代码生成映射，不证明运行时对象不可变或始终符合该 shape。
+
+unsafe 模式可以有意跳过这些检查，但必须把 `unsafe-coerce` 保留在最小 adapter 中，并由针对
+该 binding 的正向和负向 runtime contract test 提供可追溯证据。
 
 ## 实施阶段
 
@@ -281,4 +293,3 @@ quality 输出只声明“发现/未发现静态契约风险”，不能声称 N
 - `RFCs/08-21-type-quality-ci-adoption-rfc.md`
 - `docs/features/js-interop.md`
 - `docs/data/edn.md`
-

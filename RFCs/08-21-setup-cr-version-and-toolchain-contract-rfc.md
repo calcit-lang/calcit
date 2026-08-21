@@ -72,11 +72,13 @@ README、Calcit 安装文档、模块模板和 workflow 模板都应优先展示
 ### 确定的解析规则
 
 1. 默认读取仓库根目录的 `deps.cirru`；
-2. 找到且只找到一个合法 `:calcit-version` 时，以它为项目版本；
-3. 同时传入相同的 `version` 时允许执行，但 summary 标为 redundant；
-4. 两者不一致时以 `E_SETUP_VERSION_CONFLICT` 失败，并同时打印两个来源和值；
-5. 没有 `deps.cirru` 或其中没有版本时，才使用显式 `version`；
-6. 两者都不存在时失败，并给出创建 `deps.cirru` 的首选修复方式。
+2. 缺少该文件、或文件中没有 `:calcit-version` 时，才允许使用显式 `version`；
+3. 出现多个声明或任一声明不是合法 SemVer 时，以 `E_SETUP_VERSION_INVALID` 失败，绝不回退
+   到 `version` input；
+4. 找到且只找到一个合法 `:calcit-version` 时，以它为项目版本；
+5. 同时传入相同的 `version` 时允许执行，但 summary 标为 redundant；
+6. 两个合法来源不一致时以 `E_SETUP_VERSION_CONFLICT` 失败，并同时打印两个来源和值；
+7. 两者都不存在时失败，并给出创建 `deps.cirru` 的首选修复方式。
 
 这里不再定义“谁的优先级更高”。存在冲突就代表项目状态不自洽，应先修复项目，而不是猜测
 维护者意图。
@@ -179,7 +181,8 @@ SHA。现有 `@0.0.x` 标签在迁移期继续可用。
 - README 默认示例改为从 `deps.cirru` 读取；
 - 明确解析规则；
 - 两个版本不一致时失败；
-- 加入版本解析、缺失、重复、冲突的单元测试。
+- 加入版本解析、缺失、无声明、重复、畸形 SemVer、冲突的单元测试；重复和畸形声明均断言
+  `E_SETUP_VERSION_INVALID`，即使 workflow 同时给出 `version` input 也不能回退。
 
 ### Phase 1：可靠安装
 
