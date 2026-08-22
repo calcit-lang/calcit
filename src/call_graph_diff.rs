@@ -127,12 +127,7 @@ fn attach_modules_and_core(
   let module_paths = snapshot.active_entry()?.modules.to_vec();
   for module_path in &module_paths {
     let module_data = crate::load_module(module_path, base_dir, module_folder)?;
-    for (ns, file) in &module_data.files {
-      if snapshot.files.contains_key(ns) {
-        return Err(format!("namespace `{ns}` already exists when loading module `{module_path}`"));
-      }
-      snapshot.files.insert(ns.to_owned(), file.to_owned());
-    }
+    crate::merge_module_files(snapshot, &module_data, module_path)?;
   }
 
   for (ns, file) in &core_snapshot.files {
