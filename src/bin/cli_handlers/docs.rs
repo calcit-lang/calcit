@@ -1583,8 +1583,13 @@ fn load_shared_files_for_check_md(entry: &str, deps: &[String]) -> Result<HashMa
   for module_path in &module_paths {
     let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
     for (k, v) in &module_data.files {
-      if shared_files.contains_key(k) {
-        return Err(format!("namespace `{k}` already exists when loading module `{module_path}`"));
+      if let Some(existing) = shared_files.get(k) {
+        if existing == v {
+          continue;
+        }
+        return Err(format!(
+          "namespace `{k}` conflicts with existing content when loading module `{module_path}`"
+        ));
       }
       shared_files.insert(k.to_owned(), v.to_owned());
     }

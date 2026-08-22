@@ -20,6 +20,7 @@ pub mod util;
 use calcit::{CalcitErrKind, LocatedWarning};
 use call_stack::CallStackList;
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -262,10 +263,30 @@ pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Ca
 }
 
 pub fn load_module(path: &str, base_dir: &Path, module_folder: &Path) -> Result<snapshot::Snapshot, String> {
+  let mut loaded = HashSet::new();
+  load_module_recursive(path, base_dir, module_folder, &mut loaded)
+}
+
+fn load_module_recursive(
+  path: &str,
+  base_dir: &Path,
+  module_folder: &Path,
+  loaded: &mut HashSet<PathBuf>,
+) -> Result<snapshot::Snapshot, String> {
   let candidates = resolve_module_snapshot_candidates(path, base_dir, module_folder);
   let mut last_error: Option<String> = None;
 
   for (_, fullpath, display_path) in candidates {
+    if loaded.contains(&fullpath) {
+      return Ok(snapshot::Snapshot {
+        package: String::new(),
+        about: None,
+        version: String::new(),
+        entries: HashMap::new(),
+        files: HashMap::new(),
+        active_entry: snapshot::DEFAULT_ENTRY_NAME.to_owned(),
+      });
+    }
     let mut content = match fs::read_to_string(&fullpath) {
       Ok(content) => content,
       Err(e) => {
@@ -284,7 +305,17 @@ pub fn load_module(path: &str, base_dir: &Path, module_folder: &Path) -> Result<
     };
 
     match snapshot::load_snapshot_data(&data, &fullpath.display().to_string()) {
-      Ok(snapshot) => {
+      Ok(mut snapshot) => {
+        if !loaded.insert(fullpath.clone()) {
+          return Ok(snapshot);
+        }
+
+        let dependencies = snapshot.active_entry()?.modules.clone();
+        for dependency in dependencies {
+          let dependency_snapshot = load_module_recursive(&dependency, base_dir, module_folder, loaded)?;
+          merge_module_files(&mut snapshot, &dependency_snapshot, &dependency)?;
+        }
+
         if !quiet_tool_output() {
           println!("loading: {display_path}");
         }
@@ -299,14 +330,51 @@ pub fn load_module(path: &str, base_dir: &Path, module_folder: &Path) -> Result<
   Err(last_error.unwrap_or_else(|| format!("expected Cirru snapshot for module path: {path}")))
 }
 
+/// Merge a module and its transitive dependencies while tolerating the same
+/// namespace being listed both directly and transitively. Different content
+/// under one namespace remains an error because it indicates an invalid module
+/// graph or a mismatched dependency resolution.
+pub fn merge_module_files(target: &mut snapshot::Snapshot, module: &snapshot::Snapshot, module_path: &str) -> Result<(), String> {
+  for (namespace, file) in &module.files {
+    if let Some(existing) = target.files.get(namespace) {
+      if existing == file {
+        continue;
+      }
+      return Err(format!(
+        "namespace `{namespace}` conflicts with existing content when loading module `{module_path}`"
+      ));
+    }
+    target.files.insert(namespace.to_owned(), file.to_owned());
+  }
+  Ok(())
+}
+
 #[cfg(test)]
 mod module_resolution_tests {
-  use super::{project_module_folder, resolve_module_snapshot_candidates};
+  use super::{load_module, merge_module_files, project_module_folder, resolve_module_snapshot_candidates};
   use std::fs;
-  use std::path::PathBuf;
+  use std::path::{Path, PathBuf};
 
   fn temp_root(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!("calcit-module-resolution-{label}-{}", std::process::id()))
+  }
+
+  fn write_module(root: &Path, name: &str, dependencies: &[&str], namespace: &str) {
+    let module_dir = root.join(".calcit/modules").join(name);
+    fs::create_dir_all(&module_dir).unwrap();
+    let modules = if dependencies.is_empty() {
+      "[]".to_owned()
+    } else {
+      format!(
+        "[] {}",
+        dependencies.iter().map(|dep| format!("|{dep}/")).collect::<Vec<_>>().join(" ")
+      )
+    };
+    let content = format!(
+      "{} (:package |{name})\n  :version |0.0.0\n  :entries $ {{}}\n    :default $ {{}} (:mode :native) (:init-fn |{namespace}/main!) (:reload-fn |{namespace}/main!)\n      :modules $ {modules}\n  :files $ {{}}\n    |{namespace} $ %{{}} :FileEntry\n      :ns $ %{{}} :CodeEntry (:doc |) (:code $ quote (ns {namespace})) (:examples $ []) (:schema nil)\n      :defs $ {{}}\n        |main! $ %{{}} :CodeEntry (:doc |) (:code $ quote (defn main! () nil)) (:examples $ []) (:schema nil)\n",
+      "{}"
+    );
+    fs::write(module_dir.join("calcit.cirru"), content).unwrap();
   }
 
   #[test]
@@ -339,6 +407,44 @@ mod module_resolution_tests {
     let candidates = resolve_module_snapshot_candidates("demo/", &project, &module_folder);
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].1, project.join(".calcit/modules/demo/calcit.cirru"));
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn load_module_includes_transitive_dependencies_and_terminates_cycles() {
+    let root = temp_root("transitive");
+    write_module(&root, "a", &["b"], "a");
+    write_module(&root, "b", &["c"], "b");
+    write_module(&root, "c", &[], "c");
+    let module_folder = project_module_folder(&root);
+    let snapshot = load_module("a/", &root, &module_folder).unwrap();
+    assert!(snapshot.files.contains_key("a"));
+    assert!(snapshot.files.contains_key("b"));
+    assert!(snapshot.files.contains_key("c"));
+
+    write_module(&root, "cycle-a", &["cycle-b"], "cycle-a");
+    write_module(&root, "cycle-b", &["cycle-a"], "cycle-b");
+    let cycle = load_module("cycle-a/", &root, &module_folder).unwrap();
+    assert!(cycle.files.contains_key("cycle-a"));
+    assert!(cycle.files.contains_key("cycle-b"));
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn merge_module_files_rejects_conflicting_namespaces() {
+    let root = temp_root("conflict");
+    write_module(&root, "one", &[], "shared");
+    write_module(&root, "two", &[], "shared");
+    let second_path = root.join(".calcit/modules/two/calcit.cirru");
+    let second = fs::read_to_string(&second_path)
+      .unwrap()
+      .replace("(defn main! () nil)", "(defn main! (x) x)");
+    fs::write(second_path, second).unwrap();
+    let module_folder = project_module_folder(&root);
+    let mut target = load_module("one/", &root, &module_folder).unwrap();
+    let other = load_module("two/", &root, &module_folder).unwrap();
+    let error = merge_module_files(&mut target, &other, "two/").unwrap_err();
+    assert!(error.contains("namespace `shared` conflicts with existing content"));
     fs::remove_dir_all(root).unwrap();
   }
 
