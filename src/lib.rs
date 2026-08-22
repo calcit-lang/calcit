@@ -331,12 +331,17 @@ fn load_module_recursive(
 }
 
 /// Merge a module and its transitive dependencies while tolerating the same
-/// namespace being listed both directly and transitively. Different content
-/// under one namespace remains an error because it indicates an invalid module
-/// graph or a mismatched dependency resolution.
+/// namespace being listed both directly and transitively. Same-package
+/// namespaces are preserved when a cycle revisits them; different content
+/// under a cross-package namespace remains an error because it indicates an
+/// invalid module graph or a mismatched dependency resolution.
 pub fn merge_module_files(target: &mut snapshot::Snapshot, module: &snapshot::Snapshot, module_path: &str) -> Result<(), String> {
+  let target_namespace_prefix = format!("{}.", target.package);
   for (namespace, file) in &module.files {
-    if namespace == &target.package || namespace.starts_with(&format!("{}.", target.package)) {
+    if module.package == target.package
+      && target.files.contains_key(namespace)
+      && (namespace == &target.package || namespace.starts_with(&target_namespace_prefix))
+    {
       continue;
     }
     if let Some(existing) = target.files.get(namespace) {
@@ -470,9 +475,30 @@ mod module_resolution_tests {
     dependency
       .files
       .insert("one".to_owned(), super::snapshot::gen_meta_ns("one", "dependency/calcit.cirru"));
+    dependency.files.insert(
+      "one.extra".to_owned(),
+      super::snapshot::gen_meta_ns("one.extra", "dependency/calcit.cirru"),
+    );
     merge_module_files(&mut target, &dependency, "two/").unwrap();
     assert_eq!(target.files.get("one.$meta").unwrap(), &original_meta);
     assert_eq!(target.files.get("one").unwrap(), &original_file);
+    assert!(target.files.contains_key("one.extra"));
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn merge_module_files_rejects_cross_package_target_namespaces() {
+    let root = temp_root("cross-package-target-namespace");
+    write_module(&root, "one", &[], "one");
+    write_module(&root, "two", &[], "two");
+    let module_folder = project_module_folder(&root);
+    let mut target = load_module("one/", &root, &module_folder).unwrap();
+    let mut dependency = load_module("two/", &root, &module_folder).unwrap();
+    dependency
+      .files
+      .insert("one".to_owned(), super::snapshot::gen_meta_ns("one", "dependency/calcit.cirru"));
+    let error = merge_module_files(&mut target, &dependency, "two/").unwrap_err();
+    assert!(error.contains("namespace `one` conflicts with existing content"));
     fs::remove_dir_all(root).unwrap();
   }
 
