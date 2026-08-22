@@ -338,7 +338,10 @@ fn load_module_recursive(
 pub fn merge_module_files(target: &mut snapshot::Snapshot, module: &snapshot::Snapshot, module_path: &str) -> Result<(), String> {
   let target_namespace_prefix = format!("{}.", target.package);
   for (namespace, file) in &module.files {
-    if module.package == target.package && (namespace == &target.package || namespace.starts_with(&target_namespace_prefix)) {
+    if module.package == target.package
+      && target.files.contains_key(namespace)
+      && (namespace == &target.package || namespace.starts_with(&target_namespace_prefix))
+    {
       continue;
     }
     if let Some(existing) = target.files.get(namespace) {
@@ -472,9 +475,14 @@ mod module_resolution_tests {
     dependency
       .files
       .insert("one".to_owned(), super::snapshot::gen_meta_ns("one", "dependency/calcit.cirru"));
+    dependency.files.insert(
+      "one.extra".to_owned(),
+      super::snapshot::gen_meta_ns("one.extra", "dependency/calcit.cirru"),
+    );
     merge_module_files(&mut target, &dependency, "two/").unwrap();
     assert_eq!(target.files.get("one.$meta").unwrap(), &original_meta);
     assert_eq!(target.files.get("one").unwrap(), &original_file);
+    assert!(target.files.contains_key("one.extra"));
     fs::remove_dir_all(root).unwrap();
   }
 
