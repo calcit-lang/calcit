@@ -336,6 +336,9 @@ fn load_module_recursive(
 /// graph or a mismatched dependency resolution.
 pub fn merge_module_files(target: &mut snapshot::Snapshot, module: &snapshot::Snapshot, module_path: &str) -> Result<(), String> {
   for (namespace, file) in &module.files {
+    if namespace == &format!("{}.$meta", target.package) {
+      continue;
+    }
     if let Some(existing) = target.files.get(namespace) {
       if existing == file {
         continue;
@@ -445,6 +448,26 @@ mod module_resolution_tests {
     let other = load_module("two/", &root, &module_folder).unwrap();
     let error = merge_module_files(&mut target, &other, "two/").unwrap_err();
     assert!(error.contains("namespace `shared` conflicts with existing content"));
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn merge_module_files_reuses_meta_for_same_package_modules() {
+    let root = temp_root("same-package-meta");
+    write_module(&root, "one", &[], "one");
+    write_module(&root, "two", &[], "two");
+    let module_folder = project_module_folder(&root);
+    let mut target = load_module("one/", &root, &module_folder).unwrap();
+    let original_meta = target.files.get("one.$meta").unwrap().clone();
+    let mut dependency = load_module("two/", &root, &module_folder).unwrap();
+    dependency.package = target.package.clone();
+    dependency.files.remove("two.$meta");
+    dependency.files.insert(
+      "one.$meta".to_owned(),
+      super::snapshot::gen_meta_ns("one.$meta", "dependency/calcit.cirru"),
+    );
+    merge_module_files(&mut target, &dependency, "two/").unwrap();
+    assert_eq!(target.files.get("one.$meta").unwrap(), &original_meta);
     fs::remove_dir_all(root).unwrap();
   }
 
