@@ -368,7 +368,7 @@ Struct 字段是定义的一部分，因此已知 struct 上的 `get`、`:field`
 #### Option 返回 API 对照
 
 以下 API 不再用 `nil` 或 `-1` 表示缺失。把结果直接传给算术、字符串或集合函数时，诊断会显示完整的
-`Option<T>` 推断类型，并建议用 `option:unwrap-or` 或 `tag-match` 显式处理：
+`Option<T>` 推断类型，并建议用类型化 `*-or` 查询终点、`.unwrap-or`、`if-let` 或 `match` 显式处理：
 
 | API | 当前返回类型 | 迁移注意点 |
 | --- | --- | --- |
@@ -384,7 +384,7 @@ let
     xs $ [] 1 2 3
     predicate $ fn (x) = x 2
     idx $ find-index xs predicate
-    safe-idx $ option:unwrap-or idx 0
+    safe-idx $ idx .unwrap-or 0
   &+ safe-idx 1
 
 match (get-env |APP_MODE)
@@ -396,6 +396,21 @@ match (get-env |APP_MODE)
 `Option` 的 `:some` / `:none`，但 `match` 额外提供穷举检查。
 
 只有业务语义确实有合理默认值时才用 `unwrap-or`；需要区分“缺失”和“存在”时保留两个分支。
+
+查询结果立即采用默认值时可直接机械迁移，不改变原查询 API 的 Option 契约：
+
+```cirru.no-check
+option:unwrap-or (get config :port) 6000
+; =>
+get-or config :port 6000
+
+option:unwrap-or (get-env |mode) |release
+; =>
+get-env-or |mode |release
+```
+
+同类 API 包括 `get-in-or`、`first-or`、`last-or`、`nth-or`。fallback 必须与 payload
+类型兼容；需要区分缺失分支时不要使用这些终点，改用 `if-let` 或穷尽 `match`。
 
 #### `.trim` / `.blank?` 接收者迁移
 

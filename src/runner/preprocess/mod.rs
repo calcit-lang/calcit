@@ -4058,7 +4058,9 @@ fn warn_on_nominal_enum_legacy_absence_use(
     | "symbol?" | "fn?" | "bool?" | "buffer?" | "cirru-quote?" | "ref?" | "macro?" | "syntax?" => {
       "pattern-match the nominal enum before applying a payload type predicate"
     }
-    _ if enum_name == "Option" => "use `tag-match`, `option:unwrap-or`, or an Option method to access the payload",
+    _ if enum_name == "Option" => {
+      "use `if-let`/`match` for branches, a typed `*-or` query helper for a lookup default, or an Option method to access the payload"
+    }
     _ => "use `tag-match` instead of positional access on the nominal enum",
   };
   let message = format!(

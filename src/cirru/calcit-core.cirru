@@ -2,6 +2,7 @@
 {} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |calcit)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'calcit.core/println!) (:mode :native) (:reload-fn 'calcit.core/println!)
+      :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
   :files $ {}
@@ -2735,7 +2736,7 @@
                 :generics $ [] 'T
                 :args $ [] 'T 'T
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Trait
           :tags $ #{} :trait
         |Compare $ %{} 'CodeEntry (:doc "|Core trait for three-way comparison. Number and String implement it and return -1, 0, or 1.")
           :code $ quote
@@ -2745,7 +2746,7 @@
                 :generics $ [] 'T
                 :return 'Number
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Trait
           :tags $ #{} :trait
         |Contains $ %{} 'CodeEntry (:doc "|Core trait: Contains")
           :code $ quote
@@ -2755,7 +2756,7 @@
                 :generics $ [] 'T 'K
                 :return 'Bool
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Trait
           :tags $ #{} :trait
         |Countable $ %{} 'CodeEntry (:doc "|Core trait: Countable")
           :code $ quote
@@ -2764,7 +2765,16 @@
                 :generics $ [] 'T
                 :args $ [] 'T
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Trait
+          :tags $ #{} :trait
+        |Debug $ %{} 'CodeEntry (:doc "|Core trait: Debug. All built-in Calcit values implement this diagnostic representation.")
+          :code $ quote
+            deftrait Debug $ .debug
+              :: :fn $ {} (:return :string)
+                :generics $ [] 'T
+                :args $ [] 'T
+          :examples $ []
+          :schema $ :: 'Trait
           :tags $ #{} :trait
         |Deserialize $ %{} 'CodeEntry (:doc "|Core trait: Deserialize")
           :code $ quote
@@ -2773,7 +2783,7 @@
                 :generics $ [] 'T
                 :args $ [] :string
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Trait
           :tags $ #{} :trait
         |Eq $ %{} 'CodeEntry (:doc "|Core trait: Eq")
           :code $ quote
@@ -2782,7 +2792,7 @@
                 :generics $ [] 'T
                 :args $ [] 'T 'T
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Trait
           :tags $ #{} :trait
         |Len $ %{} 'CodeEntry (:doc "|Core trait: Len")
           :code $ quote
@@ -2791,7 +2801,7 @@
                 :generics $ [] 'T
                 :args $ [] 'T
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Trait
           :tags $ #{} :trait
         |ListDestruct $ %{} 'CodeEntry (:doc "|Nominal result of destruct-list: none, or a head element with the remaining list.")
           :code $ quote
@@ -2799,7 +2809,7 @@
               :some 'T $ :: 'List 'T
               :none
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Enum
           :tags $ #{} :data
         |MapDestruct $ %{} 'CodeEntry (:doc "|Nominal result of destruct-map: none, or a key, value, and remaining map.")
           :code $ quote
@@ -2807,7 +2817,7 @@
               :some 'K 'V $ :: 'Map 'K 'V
               :none
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Enum
           :tags $ #{} :data
         |Mappable $ %{} 'CodeEntry (:doc "|Core trait: Mappable")
           :code $ quote
@@ -2816,7 +2826,7 @@
                 :generics $ [] 'T
                 :args $ [] 'T :fn
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Trait
           :tags $ #{} :trait
         |Multiply $ %{} 'CodeEntry (:doc "|Core trait: Multiply")
           :code $ quote
@@ -2825,7 +2835,7 @@
                 :generics $ [] 'T
                 :args $ [] 'T 'T
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Trait
           :tags $ #{} :trait
         |Option $ %{} 'CodeEntry (:doc "|Rust-style Option enum")
           :code $ quote
@@ -2839,7 +2849,7 @@
           :code $ quote
             defimpl OptionMappableImpl Mappable $ .map option:map
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Impl
           :tags $ #{} :trait-impl
         |OptionMethods $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -2859,7 +2869,7 @@
           :code $ quote
             defimpl ResultMappableImpl Mappable $ .map result:map
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Impl
           :tags $ #{} :trait-impl
         |ResultMethods $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -2871,7 +2881,7 @@
           :code $ quote
             defstruct RuntimeMapMeta $ :kind 'Tag
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Enum
         |RuntimeMapResponse $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct RuntimeMapResponse (:code 'Number)
@@ -2879,7 +2889,7 @@
               :body 'Dynamic
               :meta $ :: 'Option RuntimeMapMeta
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Enum
           :tags $ #{} :data :internal
         |Serialize $ %{} 'CodeEntry (:doc "|Core trait: Serialize")
           :code $ quote
@@ -2888,7 +2898,7 @@
                 :generics $ [] 'T
                 :args $ [] 'T
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Trait
           :tags $ #{} :trait
         |SetDestruct $ %{} 'CodeEntry (:doc "|Nominal result of destruct-set: none, or an element with the remaining set.")
           :code $ quote
@@ -2896,17 +2906,8 @@
               :some 'T $ :: 'Set 'T
               :none
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Enum
           :tags $ #{} :data
-        |Debug $ %{} 'CodeEntry (:doc "|Core trait: Debug. All built-in Calcit values implement this diagnostic representation.")
-          :code $ quote
-            deftrait Debug $ .debug
-              :: :fn $ {} (:return :string)
-                :generics $ [] 'T
-                :args $ [] 'T
-          :examples $ []
-          :schema $ :: 'Dynamic
-          :tags $ #{} :trait
         |Show $ %{} 'CodeEntry (:doc "|Core trait: Show. User-facing presentation is opt-in; implement it explicitly with defimpl.")
           :code $ quote
             deftrait Show $ .show
@@ -2914,13 +2915,13 @@
                 :generics $ [] 'T
                 :args $ [] 'T
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Trait
           :tags $ #{} :trait
         |StringDestruct $ %{} 'CodeEntry (:doc "|Nominal result of destruct-str: none, or the first character with the remaining string.")
           :code $ quote
             defenum StringDestruct (:some 'String 'String) (:none)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Enum
           :tags $ #{} :data
         |[,] $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -4851,6 +4852,25 @@
               :code $ quote
                 assert= (%some |a) (first |abc)
               :tags $ #{} :core :unit
+        |first-or $ %{} 'CodeEntry (:doc "|Return the first item, or a type-compatible fallback for an empty collection.")
+          :code $ quote
+            defmacro first-or (xs fallback)
+              quasiquote $ option:unwrap-or
+                first $ ~ xs
+                ~ fallback
+          :examples $ []
+            quote $ assert= 0
+              first-or ([]) 0
+          :schema $ :: 'Macro
+            {} $ :args ([] 'Dynamic 'Dynamic)
+          :tags $ #{} :macro
+          :tests $ []
+            %{} 'TestEntry (:name |returns-first-item-or-fallback)
+              :code $ quote
+                do
+                  assert= 1 $ first-or ([] 1 2) 0
+                  assert= 0 $ first-or ([]) 0
+              :tags $ #{} :core :unit
         |flipped $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro flipped (f & args)
@@ -5141,6 +5161,22 @@
               :features $ #{} :env :io
               :return $ :: 'Option 'String
           :tags $ #{} :env :io
+        |get-env-or $ %{} 'CodeEntry (:doc "|Read an environment variable, or return a String fallback when it is absent.")
+          :code $ quote
+            defmacro get-env-or (name fallback)
+              quasiquote $ option:unwrap-or
+                get-env $ ~ name
+                ~ fallback
+          :examples $ []
+            quote $ assert= |fallback (get-env-or |__CALCIT_TEST_MISSING_ENV_83B125E9__ |fallback)
+          :schema $ :: 'Macro
+            {} $ :args ([] 'Dynamic 'Dynamic)
+          :tags $ #{} :macro
+          :tests $ []
+            %{} 'TestEntry (:name |returns-fallback-for-missing-env)
+              :code $ quote
+                assert= |fallback $ get-env-or |__CALCIT_TEST_MISSING_ENV_83B125E9__ |fallback
+              :tags $ #{} :core :unit
         |get-in $ %{} 'CodeEntry (:doc "|Get a nested value as Option<Dynamic>; none represents a missing path or nil encountered during traversal.")
           :code $ quote
             defn get-in (base path)
@@ -5178,6 +5214,62 @@
                   get-in
                     &{} :a $ &{} :b 2
                     [] :a :b
+              :tags $ #{} :core :unit
+        |get-in-or $ %{} 'CodeEntry (:doc "|Lookup a nested path and return its payload, or return a type-compatible fallback when the path is missing.")
+          :code $ quote
+            defmacro get-in-or (base path fallback)
+              quasiquote $ option:unwrap-or
+                get-in (~ base) (~ path)
+                ~ fallback
+          :examples $ []
+            quote $ assert= |missing
+              get-in-or
+                {} $ :a
+                  {} $ :b |found
+                [] :a :missing
+                , |missing
+          :schema $ :: 'Macro
+            {} $ :args ([] 'Dynamic 'Dynamic 'Dynamic)
+          :tags $ #{} :macro
+          :tests $ []
+            %{} 'TestEntry (:name |returns-nested-value-or-fallback)
+              :code $ quote
+                do
+                  assert= 1 $ get-in-or
+                    {} $ :a
+                      {} $ :b 1
+                    [] :a :b
+                    , 2
+                  assert= 2 $ get-in-or
+                    {} $ :a
+                      {} $ :b 1
+                    [] :a :missing
+                    , 2
+              :tags $ #{} :core :unit
+        |get-or $ %{} 'CodeEntry (:doc "|Lookup a key or index and return its payload, or return a type-compatible fallback when the lookup is none.")
+          :code $ quote
+            defmacro get-or (base k fallback)
+              quasiquote $ option:unwrap-or
+                get (~ base) (~ k)
+                ~ fallback
+          :examples $ []
+            quote $ assert= 0
+              get-or
+                {} $ :a 1
+                , :missing 0
+          :schema $ :: 'Macro
+            {} $ :args ([] 'Dynamic 'Dynamic 'Dynamic)
+          :tags $ #{} :macro
+          :tests $ []
+            %{} 'TestEntry (:name |returns-value-or-fallback)
+              :code $ quote
+                do
+                  assert= 1 $ get-or
+                    {} $ :a 1
+                    , :a 2
+                  assert= 2 $ get-or
+                    {} $ :a 1
+                    , :missing 2
               :tags $ #{} :core :unit
         |group-by $ %{} 'CodeEntry (:doc "|Group elements by the result of applying function f to each element")
           :code $ quote
@@ -5245,7 +5337,7 @@
             quote $ if (empty? xs) 0 (count xs)
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        |if-let $ %{} 'CodeEntry (:doc "|Conditionally binds the result of an expression to a symbol and executes the matching branch when the value is non-nil.")
+        |if-let $ %{} 'CodeEntry (:doc "|Consume Option<T>, bind its payload in the some branch, and evaluate the explicit none branch without calling unwrap.")
           :code $ quote
             defmacro if-let (pair then ? else)
               if
@@ -5697,6 +5789,25 @@
             %{} 'TestEntry (:name |returns-last-string-character)
               :code $ quote
                 assert= (%some |c) (last |abc)
+              :tags $ #{} :core :unit
+        |last-or $ %{} 'CodeEntry (:doc "|Return the last item, or a type-compatible fallback for an empty collection.")
+          :code $ quote
+            defmacro last-or (xs fallback)
+              quasiquote $ option:unwrap-or
+                last $ ~ xs
+                ~ fallback
+          :examples $ []
+            quote $ assert= 3
+              last-or ([] 1 2 3) 0
+          :schema $ :: 'Macro
+            {} $ :args ([] 'Dynamic 'Dynamic)
+          :tags $ #{} :macro
+          :tests $ []
+            %{} 'TestEntry (:name |returns-last-item-or-fallback)
+              :code $ quote
+                do
+                  assert= 2 $ last-or ([] 1 2) 0
+                  assert= 0 $ last-or ([]) 0
               :tags $ #{} :core :unit
         |let $ %{} 'CodeEntry (:doc "|macro for local bindings\nSyntax: (let ([name value] ...) body...)\nParams: pairs (list of binding pairs), body (expressions)\nReturns: result of body with bindings in scope\nCreates multiple local bindings sequentially")
           :code $ quote
@@ -6263,6 +6374,25 @@
             {}
               :args $ [] 'Dynamic 'Number
               :return $ :: 'Option 'Dynamic
+        |nth-or $ %{} 'CodeEntry (:doc "|Return an indexed item, or a type-compatible fallback when the index is invalid or out of bounds.")
+          :code $ quote
+            defmacro nth-or (xs idx fallback)
+              quasiquote $ option:unwrap-or
+                nth (~ xs) (~ idx)
+                ~ fallback
+          :examples $ []
+            quote $ assert= 0
+              nth-or ([] 1 2 3) 9 0
+          :schema $ :: 'Macro
+            {} $ :args ([] 'Dynamic 'Dynamic 'Dynamic)
+          :tags $ #{} :macro
+          :tests $ []
+            %{} 'TestEntry (:name |returns-indexed-item-or-fallback)
+              :code $ quote
+                do
+                  assert= 2 $ nth-or ([] 1 2) 1 0
+                  assert= 0 $ nth-or ([] 1 2) 9 0
+              :tags $ #{} :core :unit
         |number? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is a numeric scalar")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -8089,6 +8219,11 @@
             def &core-countable-struct-impl $ &impl::new :&core-countable-struct-impl (:: :count &struct:count)
           :examples $ []
           :schema $ :: 'Dynamic
+        |&core-debug-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Debug")
+          :code $ quote
+            def &core-debug-impl $ &impl::new :&core-debug-impl (:: :debug &str)
+          :examples $ []
+          :schema $ :: 'Dynamic
         |&core-eq-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Eq")
           :code $ quote
             def &core-eq-impl $ &impl::new :&core-eq-impl (:: :eq? &=)
@@ -8132,11 +8267,6 @@
         |&core-multiply-number-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Multiply on number")
           :code $ quote
             def &core-multiply-number-impl $ &impl::new :&core-multiply-number-impl (:: :multiply &*)
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |&core-debug-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Debug")
-          :code $ quote
-            def &core-debug-impl $ &impl::new :&core-debug-impl (:: :debug &str)
           :examples $ []
           :schema $ :: 'Dynamic
         |&field-match-internal $ %{} 'CodeEntry (:doc |)
