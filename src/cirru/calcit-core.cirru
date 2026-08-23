@@ -6470,7 +6470,7 @@
                       raise $ str-spaced "|option:let expects a symbol for binding, got:" x
                     &let
                       value $ &list:nth pair 1
-                      quasiquote $ ~value .and-then
+                      quasiquote $ .and-then ~value
                         fn (~x)
                           option:let
                             ~ $ &list:rest pairs
@@ -6494,6 +6494,12 @@
                       unreachable $ raise |option-let-should-short-circuit
                     %some $ + x y unreachable
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |expression-binding)
+              :code $ quote
+                assert= (%some 3)
+                  option:let
+                      x $ if true (%some 2) (%none)
+                    %some $ inc x
         |option:map $ %{} 'CodeEntry (:doc "|Mappable map implementation for Option")
           :code $ quote
             defn option:map (opt f)
@@ -7010,7 +7016,7 @@
                       raise $ str-spaced "|result:let expects a symbol for binding, got:" x
                     &let
                       value $ &list:nth pair 1
-                      quasiquote $ ~value .and-then
+                      quasiquote $ .and-then ~value
                         fn (~x)
                           result:let
                             ~ $ &list:rest pairs
@@ -7034,6 +7040,12 @@
                       unreachable $ raise |result-let-should-short-circuit
                     %ok $ + x y unreachable
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |expression-binding)
+              :code $ quote
+                assert= (%ok 3)
+                  result:let
+                      x $ if true (%ok 2) (%err |unreachable)
+                    %ok $ inc x
         |result:map $ %{} 'CodeEntry (:doc "|Mappable map implementation for Result")
           :code $ quote
             defn result:map (res f)
