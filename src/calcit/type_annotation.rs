@@ -2690,7 +2690,7 @@ impl CalcitTypeAnnotation {
       (Self::Fn(_), Self::DynFn) | (Self::DynFn, Self::Fn(_)) => true,
       // Tags are callable in Calcit (as map key accessors), so they satisfy :fn requirements
       (Self::Tag, Self::DynFn) | (Self::Tag, Self::Fn(_)) => true,
-      (Self::Fn(a), Self::Fn(b)) => a.matches_signature(b.as_ref()),
+      (Self::Fn(a), Self::Fn(b)) => a.matches_signature_with_bindings(b.as_ref(), bindings),
       (Self::Variadic(a), Self::Variadic(b)) => a.matches_with_bindings(b, bindings),
       (Self::Custom(a), Self::Custom(b)) => a.as_ref() == b.as_ref(),
       (Self::StructValue(a), Self::StructValue(b)) => a.name == b.name,
@@ -3905,6 +3905,38 @@ mod tests {
     assert!(type_var.matches_with_bindings(&type_var, &mut bindings));
     assert!(type_var.matches_with_bindings(&type_var, &mut bindings));
     assert!(bindings.is_empty(), "an identical type variable needs no self-binding");
+  }
+
+  #[test]
+  fn sibling_callbacks_share_generic_return_bindings() {
+    let generic_t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let generic_u = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("U")));
+    let expected_none = CalcitTypeAnnotation::from_function_parts(vec![], generic_u.clone());
+    let expected_some = CalcitTypeAnnotation::from_function_parts(vec![generic_t], generic_u);
+    let actual_none = CalcitTypeAnnotation::from_function_parts(vec![], Arc::new(CalcitTypeAnnotation::String));
+    let actual_some =
+      CalcitTypeAnnotation::from_function_parts(vec![Arc::new(CalcitTypeAnnotation::Number)], Arc::new(CalcitTypeAnnotation::Number));
+    let mut bindings = TypeBindings::new();
+
+    assert!(actual_none.matches_with_bindings(&expected_none, &mut bindings));
+    assert!(
+      !actual_some.matches_with_bindings(&expected_some, &mut bindings),
+      "a sibling callback must return the U bound by the first callback"
+    );
+  }
+
+  #[test]
+  fn failed_callback_signature_does_not_leak_partial_generic_bindings() {
+    let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let expected = CalcitTypeAnnotation::from_function_parts(vec![generic.clone(), generic], Arc::new(CalcitTypeAnnotation::Unit));
+    let actual = CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)],
+      Arc::new(CalcitTypeAnnotation::Unit),
+    );
+    let mut bindings = TypeBindings::new();
+
+    assert!(!actual.matches_with_bindings(&expected, &mut bindings));
+    assert!(bindings.is_empty(), "a failed callback match must not constrain later arguments");
   }
 
   #[test]
@@ -5165,6 +5197,14 @@ impl CalcitFnTypeAnnotation {
   }
 
   pub fn matches_signature(&self, other: &CalcitFnTypeAnnotation) -> bool {
+    let mut bindings = TypeBindings::new();
+    self.matches_signature_with_bindings(other, &mut bindings)
+  }
+
+  /// Match a callable signature while preserving bindings from its enclosing
+  /// generic call. This lets sibling callbacks share a return type variable,
+  /// such as the two branches accepted by `option:fold`.
+  pub(crate) fn matches_signature_with_bindings(&self, other: &CalcitFnTypeAnnotation, bindings: &mut TypeBindings) -> bool {
     // `self` is the actual callable and `other` is the expected callback shape. An actual
     // callable cannot require more fixed arguments than the expected contract guarantees.
     if self.arg_types.len() > other.arg_types.len() {
@@ -5174,7 +5214,7 @@ impl CalcitFnTypeAnnotation {
     // Don't require generics count to match: actual concrete functions don't declare
     // generics even when expected fn type uses TypeVars. Bindings resolve TypeVars below.
 
-    let mut bindings = TypeBindings::new();
+    let mut staged_bindings = bindings.clone();
 
     for (idx, expected) in other.arg_types.iter().enumerate() {
       let actual = self.arg_types.get(idx).or(self.rest_type.as_ref());
@@ -5184,7 +5224,7 @@ impl CalcitFnTypeAnnotation {
       // Callback parameters are contravariant: every value promised by the expected contract
       // must be accepted by the actual callable. This matters for a function accepting
       // `optional<T>` being used where a callback receives `T`.
-      if !expected.matches_with_bindings(actual, &mut bindings) {
+      if !expected.matches_with_bindings(actual, &mut staged_bindings) {
         return false;
       }
     }
@@ -5195,12 +5235,19 @@ impl CalcitFnTypeAnnotation {
       let Some(actual_rest) = &self.rest_type else {
         return false;
       };
-      if !expected_rest.matches_with_bindings(actual_rest, &mut bindings) {
+      if !expected_rest.matches_with_bindings(actual_rest, &mut staged_bindings) {
         return false;
       }
     }
 
-    self.return_type.matches_with_bindings(other.return_type.as_ref(), &mut bindings)
+    if !self
+      .return_type
+      .matches_with_bindings(other.return_type.as_ref(), &mut staged_bindings)
+    {
+      return false;
+    }
+    *bindings = staged_bindings;
+    true
   }
 }
 
