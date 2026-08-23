@@ -889,22 +889,31 @@ export let remove_watch = (a: CalcitRef, k: CalcitTag): null => {
   return null;
 };
 
-export let range = (n: number, m: number, step: number = 1): CalcitSliceList | CalcitList => {
-  var result: CalcitList | CalcitSliceList = new CalcitSliceList([]);
-  if (m != null) {
-    var idx = n;
-    while (idx < m) {
-      result = result.append(idx);
-      idx = idx + step;
+export let range = (n: number, m?: number, step: number = 1): CalcitSliceList => {
+  const base = m == null ? 0 : n;
+  const bound = m == null ? n : m;
+
+  if (!Number.isFinite(base) || !Number.isFinite(bound) || !Number.isFinite(step)) {
+    throw new TypeError("&list:range expected finite numbers for base, bound, and step");
+  }
+  if (base === bound) {
+    return new CalcitSliceList([]);
+  }
+  if (step === 0 || (bound > base && step < 0) || (bound < base && step > 0)) {
+    throw new Error("&list:range cannot construct list with a step of 0 or invalid step direction");
+  }
+
+  const result: Array<CalcitValue> = [];
+  if (step > 0) {
+    for (let value = base; value < bound; value += step) {
+      result.push(value);
     }
   } else {
-    var idx = 0;
-    while (idx < n) {
-      result = result.append(idx);
-      idx = idx + step;
+    for (let value = base; value > bound; value += step) {
+      result.push(value);
     }
   }
-  return result;
+  return new CalcitSliceList(result);
 };
 
 export function _$n_list_$o_empty_$q_(xs: CalcitValue): boolean {

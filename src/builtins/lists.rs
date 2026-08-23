@@ -244,7 +244,11 @@ pub fn range(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     None => 1.0,
   };
 
-  if (bound - base).abs() < f64::EPSILON {
+  if !base.is_finite() || !bound.is_finite() || !step.is_finite() {
+    return CalcitErr::err_str(CalcitErrKind::Type, "&list:range expected finite numbers for base, bound, and step");
+  }
+
+  if base == bound {
     return Ok(Calcit::from(CalcitList::default()));
   }
 
@@ -255,7 +259,15 @@ pub fn range(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     );
   }
 
-  let mut ys = vec![];
+  let estimated_len = ((bound - base) / step).ceil();
+  if !estimated_len.is_finite() || estimated_len >= usize::MAX as f64 {
+    return CalcitErr::err_str(CalcitErrKind::Unexpected, "&list:range result is too large");
+  }
+
+  let mut ys = Vec::new();
+  if ys.try_reserve_exact(estimated_len as usize).is_err() {
+    return CalcitErr::err_str(CalcitErrKind::Unexpected, "&list:range result is too large");
+  }
   let mut i = base;
   if step > 0.0 {
     while i < bound {
@@ -941,5 +953,34 @@ mod tests {
       butlast(std::slice::from_ref(&empty)).expect("butlast should accept an empty list"),
       empty
     );
+  }
+
+  #[test]
+  fn range_supports_descending_and_fractional_steps() {
+    assert_eq!(
+      range(&[Calcit::Number(5.0), Calcit::Number(0.0), Calcit::Number(-2.0)]).expect("range should support a descending step"),
+      Calcit::from(vec![Calcit::Number(5.0), Calcit::Number(3.0), Calcit::Number(1.0)])
+    );
+    assert_eq!(
+      range(&[Calcit::Number(1.0), Calcit::Number(2.0), Calcit::Number(0.25)]).expect("range should support a fractional step"),
+      Calcit::from(vec![
+        Calcit::Number(1.0),
+        Calcit::Number(1.25),
+        Calcit::Number(1.5),
+        Calcit::Number(1.75),
+      ])
+    );
+  }
+
+  #[test]
+  fn range_rejects_non_finite_numbers() {
+    for args in [
+      vec![Calcit::Number(f64::NAN)],
+      vec![Calcit::Number(0.0), Calcit::Number(f64::INFINITY)],
+      vec![Calcit::Number(0.0), Calcit::Number(1.0), Calcit::Number(f64::NEG_INFINITY)],
+    ] {
+      let error = range(&args).expect_err("range should reject non-finite numbers");
+      assert!(error.to_string().contains("expected finite numbers"));
+    }
   }
 }
