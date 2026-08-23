@@ -782,7 +782,10 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
       where_bounds: Arc::new(vec![]),
       arg_types,
       return_type,
-      fn_kind: SchemaKind::Fn,
+      fn_kind: match xs.first() {
+        Some(Calcit::Syntax(CalcitSyntax::Defmacro, _)) => SchemaKind::Macro,
+        _ => SchemaKind::Fn,
+      },
       rest_type,
       features: Arc::new(std::collections::HashSet::new()),
     })));
@@ -1742,6 +1745,24 @@ mod tests {
       panic!("an unhinted callback with a literal body should retain a function signature: {inferred:?}");
     };
     assert!(matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::String));
+  }
+
+  #[test]
+  fn unhinted_zero_arg_macro_retains_macro_kind() {
+    let macro_form = CalcitList::from(
+      &[
+        Calcit::Syntax(CalcitSyntax::Defmacro, Arc::from("tests.callback")),
+        symbol("callback"),
+        Calcit::from(Vec::<Calcit>::new()),
+        Calcit::Str(Arc::from("fallback")),
+      ][..],
+    );
+
+    let inferred = infer_preprocessed_function_type(&macro_form);
+    let CalcitTypeAnnotation::Fn(signature) = inferred.as_ref() else {
+      panic!("an unhinted zero-argument macro should retain a macro signature: {inferred:?}");
+    };
+    assert_eq!(signature.fn_kind, SchemaKind::Macro);
   }
 
   #[test]
