@@ -3583,7 +3583,9 @@ fn expected_method_argument_types(type_value: &CalcitTypeAnnotation, method_name
   let fn_annotation = signature.as_function()?;
   let expected_receiver = fn_annotation.arg_types.first()?;
   let mut bindings = HashMap::new();
-  type_value.matches_with_bindings(expected_receiver.as_ref(), &mut bindings);
+  if !type_value.matches_with_bindings(expected_receiver.as_ref(), &mut bindings) {
+    return None;
+  }
   Some(
     fn_annotation
       .arg_types
