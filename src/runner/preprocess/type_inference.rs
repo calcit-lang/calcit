@@ -762,7 +762,30 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
     .skip(3)
     .find_map(CalcitTypeAnnotation::extract_fn_annotation_from_hint_form);
   let Some(hinted) = hinted else {
-    return Arc::new(CalcitTypeAnnotation::DynFn);
+    let (arg_types, rest_type) = infer_preprocessed_function_parameters(xs.get(2));
+    // Keep ordinary unhinted callbacks dynamic: inferring their return type can
+    // retroactively tighten existing higher-order calls. A zero-argument thunk
+    // is safe to retain, and provides the U anchor for eliminators such as
+    // `option:fold`.
+    if !arg_types.is_empty() || rest_type.is_some() {
+      return Arc::new(CalcitTypeAnnotation::DynFn);
+    }
+    let inferred_return = xs
+      .get(xs.len().saturating_sub(1))
+      .and_then(|body| infer_type_from_expr(body, &ScopeTypes::new()))
+      .filter(|annotation| !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn));
+    let Some(return_type) = inferred_return else {
+      return Arc::new(CalcitTypeAnnotation::DynFn);
+    };
+    return Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types,
+      return_type,
+      fn_kind: SchemaKind::Fn,
+      rest_type,
+      features: Arc::new(std::collections::HashSet::new()),
+    })));
   };
   let CalcitTypeAnnotation::Fn(fn_annotation) = hinted.as_ref() else {
     return hinted;
@@ -1701,6 +1724,24 @@ mod tests {
       value.as_deref(),
       Some(CalcitTypeAnnotation::JsNullish(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::JsObject)
     ));
+  }
+
+  #[test]
+  fn unhinted_callback_retains_a_concrete_literal_return_type() {
+    let callback = CalcitList::from(
+      &[
+        Calcit::Syntax(CalcitSyntax::Defn, Arc::from("tests.callback")),
+        symbol("callback"),
+        Calcit::from(Vec::<Calcit>::new()),
+        Calcit::Str(Arc::from("fallback")),
+      ][..],
+    );
+
+    let inferred = infer_preprocessed_function_type(&callback);
+    let CalcitTypeAnnotation::Fn(signature) = inferred.as_ref() else {
+      panic!("an unhinted callback with a literal body should retain a function signature: {inferred:?}");
+    };
+    assert!(matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::String));
   }
 
   #[test]
