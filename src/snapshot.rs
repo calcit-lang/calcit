@@ -496,7 +496,7 @@ fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<Calcit
   if let Edn::Enum(view) = value
     && view.extra.is_empty()
     && let Some(canonical) = CalcitTypeAnnotation::canonical_type_symbol_name(&view.variant)
-    && !matches!(canonical, "Fn" | "Macro" | "Optional" | "JsNullish" | "Variadic")
+    && !matches!(canonical, "Optional" | "JsNullish" | "Variadic")
   {
     return Ok(CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::Symbol(Arc::from(
       canonical,
@@ -3968,6 +3968,7 @@ mod tests {
       "List",
       "Map",
       "Set",
+      "Fn",
       "Enum",
       "Ref",
       "Buffer",
@@ -3991,6 +3992,20 @@ mod tests {
         "{symbol} should not degrade on the second save"
       );
     }
+  }
+
+  #[test]
+  fn test_zero_payload_macro_schema_wrapper_canonicalizes_to_dyn_fn() {
+    let parsed = parse_loaded_schema_annotation(&Edn::enum_value("Macro", vec![]), "test/schema").unwrap();
+    assert!(matches!(parsed.as_ref(), CalcitTypeAnnotation::DynFn));
+
+    let canonical = Edn::enum_value("Fn", vec![]);
+    let first_saved = schema_annotation_to_edn(parsed.as_ref());
+    assert_eq!(first_saved, canonical);
+
+    let second = parse_loaded_schema_annotation(&first_saved, "test/schema").unwrap();
+    assert!(matches!(second.as_ref(), CalcitTypeAnnotation::DynFn));
+    assert_eq!(schema_annotation_to_edn(second.as_ref()), canonical);
   }
 
   #[test]
