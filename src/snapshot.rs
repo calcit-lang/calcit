@@ -488,8 +488,19 @@ fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<Calcit
     }
   }
 
-  if matches!(value, Edn::Enum(view) if view.variant.as_ref() == "Dynamic" && view.extra.is_empty()) {
-    return Ok(DYNAMIC_TYPE.clone());
+  // Snapshot writers wrap standalone type symbols as zero-payload EDN enums
+  // (`:: 'String`, `:: 'StructDef`, ...). Decode those wrappers back through
+  // the canonical symbol parser. Otherwise a second unrelated Snapshot write
+  // would interpret definition-kind markers as anonymous Enum values and
+  // silently serialize `StructDef`/`EnumDef` as `Enum`.
+  if let Edn::Enum(view) = value
+    && view.extra.is_empty()
+    && let Some(canonical) = CalcitTypeAnnotation::canonical_type_symbol_name(&view.variant)
+    && !matches!(canonical, "Fn" | "Macro" | "Optional" | "JsNullish" | "Variadic")
+  {
+    return Ok(CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::Symbol(Arc::from(
+      canonical,
+    ))));
   }
 
   // Primitive type tag stored as a plain EDN tag (e.g. :string, :number).
@@ -3940,6 +3951,44 @@ mod tests {
         edn,
         Edn::enum_value(CalcitTypeAnnotation::canonical_type_symbol_name(kind).expect("known kind"), vec![]),
         "schema kind `:{kind}` must round-trip as a canonical symbol, not degrade to dynamic"
+      );
+    }
+  }
+
+  #[test]
+  fn test_zero_payload_canonical_schema_wrappers_survive_repeated_round_trips() {
+    for symbol in [
+      "Dynamic",
+      "Unit",
+      "Bool",
+      "Number",
+      "String",
+      "Symbol",
+      "Tag",
+      "List",
+      "Map",
+      "Set",
+      "Enum",
+      "Ref",
+      "Buffer",
+      "CirruQuote",
+      "JsObject",
+      "Struct",
+      "StructDef",
+      "EnumDef",
+      "Trait",
+      "Impl",
+    ] {
+      let serialized = Edn::enum_value(symbol, vec![]);
+      let first = parse_loaded_schema_annotation(&serialized, "test/schema").unwrap_or_else(|error| panic!("{symbol}: {error}"));
+      let first_saved = schema_annotation_to_edn(first.as_ref());
+      assert_eq!(first_saved, serialized, "{symbol} should survive the first save");
+
+      let second = parse_loaded_schema_annotation(&first_saved, "test/schema").unwrap_or_else(|error| panic!("{symbol}: {error}"));
+      assert_eq!(
+        schema_annotation_to_edn(second.as_ref()),
+        serialized,
+        "{symbol} should not degrade on the second save"
       );
     }
   }
