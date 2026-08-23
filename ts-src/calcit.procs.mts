@@ -889,6 +889,8 @@ export let remove_watch = (a: CalcitRef, k: CalcitTag): null => {
   return null;
 };
 
+const MAX_RANGE_LENGTH = 0xffff_ffff;
+
 export let range = (n: number, m?: number, step: number = 1): CalcitSliceList => {
   const base = m == null ? 0 : n;
   const bound = m == null ? n : m;
@@ -903,14 +905,29 @@ export let range = (n: number, m?: number, step: number = 1): CalcitSliceList =>
     throw new Error("&list:range cannot construct list with a step of 0 or invalid step direction");
   }
 
+  const estimatedLength = Math.ceil((bound - base) / step);
+  if (!Number.isFinite(estimatedLength) || estimatedLength > MAX_RANGE_LENGTH) {
+    throw new Error("&list:range result is too large");
+  }
+
   const result: Array<CalcitValue> = [];
   if (step > 0) {
-    for (let value = base; value < bound; value += step) {
+    for (let value = base; value < bound; ) {
       result.push(value);
+      const next = value + step;
+      if (next === value) {
+        throw new Error("&list:range step does not advance the current value");
+      }
+      value = next;
     }
   } else {
-    for (let value = base; value > bound; value += step) {
+    for (let value = base; value > bound; ) {
       result.push(value);
+      const next = value + step;
+      if (next === value) {
+        throw new Error("&list:range step does not advance the current value");
+      }
+      value = next;
     }
   }
   return new CalcitSliceList(result);

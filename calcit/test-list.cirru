@@ -127,6 +127,13 @@
               assert= ([] 5 3 1) (range 5 0 -2)
               assert= ([] -2 -1 0 1) (range -2 2)
               assert= ([] 1 1.25 1.5 1.75) (range 1 2 0.25)
+              do
+                assert= true $ try
+                  do (range 0 4294967296) false
+                  fn (_error) true
+                assert= true $ try
+                  do (range 100000000000000000000 99999999999999000000 -1) false
+                  fn (_error) true
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)
