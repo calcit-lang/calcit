@@ -352,8 +352,10 @@ let
 - `struct-match` - struct pattern matching
 - `list-match` - list destructuring match
 - `field-match` - map field matching
-- `if-let` - unwrap an `Option<T>` with explicit some/none branches
+- `if-let` - bind an `Option<T>` payload with explicit some/none branches
 - `when-let` - run a body for `%some` and return `Option<R>`
+- `get-or`, `get-in-or`, `get-env-or` - finish a lookup with a type-checked fallback
+- `first-or`, `last-or`, `nth-or` - finish positional lookup with a type-checked fallback
 
 Nested updates are nominal as well: `update-in` passes `Option<T>` to its
 updater, and `dissoc-in` treats an empty path as a no-op. Public lookup and

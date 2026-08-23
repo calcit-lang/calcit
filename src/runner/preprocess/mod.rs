@@ -3916,6 +3916,21 @@ fn nominal_enum_expression_name(value: &Calcit, scope_types: &ScopeTypes) -> Opt
   }
 }
 
+fn option_query_default_helper(value: &Calcit) -> Option<&'static str> {
+  let Calcit::List(items) = value else {
+    return None;
+  };
+  match items.first().and_then(canonical_absence_operation_name) {
+    Some("get") => Some("get-or"),
+    Some("get-in") => Some("get-in-or"),
+    Some("get-env") => Some("get-env-or"),
+    Some("first") => Some("first-or"),
+    Some("last") => Some("last-or"),
+    Some("nth") => Some("nth-or"),
+    _ => None,
+  }
+}
+
 /// Return the nominal element type used by a membership operation, when the
 /// collection has enough static information to prove it. `includes?` checks
 /// map values while `contains?` checks map keys.
@@ -4046,20 +4061,25 @@ fn warn_on_nominal_enum_legacy_absence_use(
 
   let guidance = match operation {
     "nil?" | "some?" if enum_name == "Option" => {
-      "use `option:none?`/`option:some?` (or the corresponding methods) instead of nullable-value predicates"
+      "use `option:none?`/`option:some?` (or the corresponding methods) instead of nullable-value predicates".to_owned()
     }
-    "nil?" | "some?" => "use `tag-match` to inspect the nominal enum variant",
+    "nil?" | "some?" => "use `tag-match` to inspect the nominal enum variant".to_owned(),
     "=" | "&=" if enum_name == "Option" => {
-      "compare Option values only with other Options, or unwrap/pattern-match before comparing a payload"
+      "compare Option values only with other Options, or unwrap/pattern-match before comparing a payload".to_owned()
     }
-    "=" | "&=" => "compare values of the same nominal enum, or pattern-match before comparing a payload",
-    "&compare" if enum_name == "Option" => "unwrap or pattern-match the Option before comparing its payload",
+    "=" | "&=" => "compare values of the same nominal enum, or pattern-match before comparing a payload".to_owned(),
+    "&compare" if enum_name == "Option" => "unwrap or pattern-match the Option before comparing its payload".to_owned(),
     "list?" | "map?" | "set?" | "struct?" | "enum?" | "struct-def?" | "enum-def?" | "tag?" | "number?" | "string?" | "keyword?"
     | "symbol?" | "fn?" | "bool?" | "buffer?" | "cirru-quote?" | "ref?" | "macro?" | "syntax?" => {
-      "pattern-match the nominal enum before applying a payload type predicate"
+      "pattern-match the nominal enum before applying a payload type predicate".to_owned()
     }
-    _ if enum_name == "Option" => "use `tag-match`, `option:unwrap-or`, or an Option method to access the payload",
-    _ => "use `tag-match` instead of positional access on the nominal enum",
+    _ if enum_name == "Option" => match option_query_default_helper(value) {
+      Some(helper) => {
+        format!("use `if-let`/`match` for branches, typed `{helper}` for this query default, or an Option method to access the payload")
+      }
+      None => "use `if-let`/`match` for branches or an Option method to access the payload".to_owned(),
+    },
+    _ => "use `tag-match` instead of positional access on the nominal enum".to_owned(),
   };
   let message = format!(
     "[Warn] `{operation}` consumes nominal enum `{enum_name}` value `{value}` in {file_ns}/{def_name}; this often indicates a nullable-returning API migrated to a nominal type; {guidance}"
@@ -6702,6 +6722,26 @@ mod tests {
       &method_warnings,
     );
     assert_eq!(method_warnings.borrow().len(), 1, "structural Option methods should warn");
+    assert!(
+      !method_warnings.borrow()[0].message().contains("*-or"),
+      "a local Option value has no provable matching query-default helper"
+    );
+
+    let direct_get = Calcit::from(vec![core_head("get"), Calcit::Nil, Calcit::Number(0.0)]);
+    let direct_get_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &core_head("count"),
+      &CalcitList::from(std::slice::from_ref(&direct_get)),
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &direct_get_warnings,
+    );
+    assert_eq!(direct_get_warnings.borrow().len(), 1, "direct get payload misuse should warn");
+    assert!(
+      direct_get_warnings.borrow()[0].message().contains("`get-or`"),
+      "a direct get query should suggest its matching typed fallback helper"
+    );
 
     let equality_head = core_head("=");
     let mixed_equality_args = CalcitList::from(&[option_value.to_owned(), Calcit::Number(1.0)] as &[Calcit]);

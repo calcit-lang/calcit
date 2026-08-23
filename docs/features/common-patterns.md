@@ -94,7 +94,10 @@ let
 let
     find-user $ fn (users id)
       find users $ fn (u)
-        = (option:unwrap $ get u :id) id
+        if-let
+          user-id $ get u :id
+          = user-id id
+          , false
   println $ find-user
     [] ({} (:id |001) (:name |Alice))
     , |001
@@ -236,8 +239,11 @@ let
     toggle-todo! $ fn (id)
       swap! todos $ fn (items)
         map items $ fn (todo)
-          if (= (option:unwrap $ get todo :id) id)
-            assoc todo :done $ not (option:unwrap $ get todo :done)
+          if-let
+            todo-id $ get todo :id
+            if (= todo-id id)
+              assoc todo :done $ not (get-or todo :done false)
+              , todo
             , todo
   add-todo! |buy-milk
   add-todo! |write-docs

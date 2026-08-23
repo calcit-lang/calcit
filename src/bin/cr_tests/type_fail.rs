@@ -216,10 +216,33 @@ fn option_returning_api_type_mismatches_include_unwrap_and_match_help() {
         .find(|warning| warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH") && warning.message().contains(inferred))
         .unwrap_or_else(|| panic!("missing mismatch for {inferred}; warnings: {warnings:?}"));
       assert!(warning.message().contains("inferred type"), "warning: {warning:?}");
-      assert!(warning.message().contains("option:unwrap-or"), "warning: {warning:?}");
+      assert!(
+        warning.message().contains("typed `*-or` query helper when available"),
+        "warning: {warning:?}"
+      );
+      assert!(warning.message().contains(".unwrap-or"), "warning: {warning:?}");
       assert!(warning.message().contains("native `match`"), "warning: {warning:?}");
       assert!(warning.message().contains("tag-match"), "warning: {warning:?}");
     }
+  });
+}
+
+#[test]
+fn typed_query_fallback_rejects_a_different_payload_type() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries("get-or ({} (:a 1)) :a |wrong");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("get-or mismatch should preprocess far enough to report its expanded typed helper call");
+
+    let warnings = warnings.borrow();
+    let warning = warnings
+      .iter()
+      .find(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH"))
+      .unwrap_or_else(|| panic!("missing typed fallback mismatch; warnings: {warnings:?}"));
+    assert!(warning.message().contains("`calcit.core/option:unwrap-or` arg 2 expects type `'T`"));
+    assert!(warning.message().contains("got `:string`"));
   });
 }
 

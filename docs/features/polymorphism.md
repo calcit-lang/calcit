@@ -270,6 +270,13 @@ Core lookup APIs that no longer need to preserve bootstrapping compatibility use
 - Public collection methods follow the same contract: Map/Set `.destruct` return their named destruct enums. Struct does not expose `.nth`, because field position is not stable across backends; field-name `get` returns the field's declared type directly.
 - `when-let` consumes `Option<T>` and returns `Option<R>`; `update-in` passes `Option<T>` to its updater so a missing leaf is never represented by nil.
 
+When a query immediately ends in a business default, use the typed query
+macros `get-or`, `get-in-or`, `get-env-or`, `first-or`, `last-or`, and
+`nth-or`. They preserve the original Option-returning APIs and expand through
+`.unwrap-or`, so an incompatible fallback is rejected whenever the payload type
+is known; an existing Dynamic boundary remains Dynamic. Keep the original Option
+and use `if-let` or exhaustive `match` when absence is a distinct branch.
+
 Raw JavaScript property reads and native calls are different: they return `JsNullish<JsObject>`. Narrow them with `js-present?`/`js-nullish?`; `nil?`, `some?`, and generic `optionally` do not erase this host boundary. Use `js-nullish->option` only as an explicit conversion after accepting or validating the opaque payload contract.
 
 When a generic payload cannot be inferred, Calcit keeps the nominal wrapper and uses `Dynamic` only for the unknown payload—for example, `find` over a dynamically typed list is still `Option<Dynamic>`, not plain `Dynamic`. This makes migration mistakes visible. Using nullable predicates (`some?`/`nil?`), positional enum access, or raw comparison on that Option reports `W_NOMINAL_ENUM_LEGACY_USE`; switch to Option methods or `tag-match`.
@@ -282,7 +289,7 @@ do
   assert= (%none) $ optionally nil
   assert= (%some 2) $ find ([] 1 2 3) (fn (x) (> x 1))
   assert= (%ok 1.5) $ parse-float |1.5
-  assert= |fallback $ (get-env |__MISSING_ENV__) .unwrap-or |fallback
+  assert= |fallback $ get-env-or |__MISSING_ENV__ |fallback
   assert= 0 $
     %none
     , .unwrap-or 0
