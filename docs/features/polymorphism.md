@@ -255,6 +255,14 @@ them to their internal direct implementations. Direct names such as
 `option:unwrap-or` and `result:unwrap-or` are core implementation details, not
 the public call style.
 
+For longer sequential pipelines, the experimental `option:let` and
+`result:let` macros reuse the ordinary `let` binding shape and lower entirely
+to nested `.and-then` calls. Their final body must return the same container;
+they do not introduce parser syntax or implicit wrapping. Macros remain
+namespace-qualified because expansion is compile-time behavior, while any new
+ordinary Option/Result operation should be registered in the corresponding
+method bag and documented in receiver-first form.
+
 `optionally` exists only for legacy core/internal `Optional<T>` compatibility. Public function schemas reject `Optional<T>`; new APIs return `Option<T>`, `Result<T,E>`, or `Unit` directly.
 
 Core lookup APIs that no longer need to preserve bootstrapping compatibility use nominal results directly:

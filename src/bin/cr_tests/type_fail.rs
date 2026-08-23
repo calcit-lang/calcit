@@ -359,6 +359,30 @@ fn type_fail_trait_method_generic_receiver_fixture_reports_warning_code() {
       "warning message was: {}",
       matched[0].message()
     );
+
+    let callback_warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(
+      "type-fail-trait-method-generic-receiver.main",
+      "invalid-result-callback",
+      &callback_warnings,
+      &CallStackList::default(),
+    )
+    .expect("method callback fixture should preprocess with warnings, not hard errors");
+    let callback_warnings = callback_warnings.borrow();
+    let return_warnings: Vec<&LocatedWarning> = callback_warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH"))
+      .collect();
+    assert_eq!(
+      return_warnings.len(),
+      1,
+      "expected one callback return warning, got: {callback_warnings:?}"
+    );
+    assert!(
+      return_warnings[0].message().contains("Result") && return_warnings[0].message().contains("number"),
+      "warning message was: {}",
+      return_warnings[0].message()
+    );
   });
 }
 

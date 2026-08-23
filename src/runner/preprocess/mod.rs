@@ -1376,9 +1376,22 @@ fn preprocess_list_call(
               calcit::MethodKind::Invoke(type_info.clone())
             };
             let typed_method = Calcit::Method(method_name.clone(), method_kind);
+            let expected_method_args = expected_method_argument_types(type_info.as_ref(), method_name.as_ref());
             let mut processed_args = CalcitList::new_inner_from(&[head_form]);
-            for arg in args.iter().skip(1) {
-              processed_args = processed_args.push(preprocess_expr(arg, scope_defs, scope_types, file_ns, check_warnings, call_stack)?);
+            for (arg_idx, arg) in args.iter().skip(1).enumerate() {
+              let expected_fn = expected_method_args
+                .as_ref()
+                .and_then(|types| types.get(arg_idx))
+                .and_then(|expected| expected.resolve_to_fn());
+              let previous_fn = EXPECTED_FN_TYPE.with(|cell| {
+                let mut slot = cell.borrow_mut();
+                let previous = slot.take();
+                *slot = expected_fn;
+                previous
+              });
+              let processed = preprocess_expr(arg, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+              EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous_fn);
+              processed_args = processed_args.push(processed?);
             }
             let processed_args = CalcitList::from(processed_args);
             if is_display_contract {
@@ -3541,6 +3554,46 @@ fn check_struct_method_args(
       }
     }
   }
+}
+
+/// Resolve method argument types after binding the receiver's generic payloads.
+/// This is used before preprocessing inline callbacks, so their parameter and
+/// return contracts are available while the callback body is checked.
+fn expected_method_argument_types(type_value: &CalcitTypeAnnotation, method_name: &str) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  let signature = if let Some(traits) = trait_list_from_type(type_value) {
+    find_trait_method_type(&traits, method_name).map(|(_, method_type)| method_type.clone())?
+  } else {
+    let impl_values = get_impls_from_type(type_value)?;
+    let method_entry = find_method_entry_for_type(type_value, &impl_values, method_name)?;
+    match method_entry {
+      Calcit::Import(import) => program::lookup_def_schema(&import.ns, &import.def),
+      Calcit::Fn { info, .. } if info.def_ref.is_some() => program::lookup_def_schema(&info.def_ns, &info.name),
+      Calcit::Fn { info, .. } => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        generics: info.generics.clone(),
+        where_bounds: info.where_bounds.clone(),
+        arg_types: info.arg_types.clone(),
+        return_type: info.return_type.clone(),
+        fn_kind: SchemaKind::Fn,
+        rest_type: info.rest_type.clone(),
+        features: Arc::new(HashSet::new()),
+      }))),
+      _ => return None,
+    }
+  };
+  let fn_annotation = signature.as_function()?;
+  let expected_receiver = fn_annotation.arg_types.first()?;
+  let mut bindings = HashMap::new();
+  if !type_value.matches_with_bindings(expected_receiver.as_ref(), &mut bindings) {
+    return None;
+  }
+  Some(
+    fn_annotation
+      .arg_types
+      .iter()
+      .skip(1)
+      .map(|arg| arg.substitute_type_vars(&bindings))
+      .collect(),
+  )
 }
 
 fn warn_on_dynamic_trait_call(
@@ -5742,7 +5795,15 @@ pub fn preprocess_defn(
 
       // Check function return type if declared
       // Extract return type hint from processed body (after preprocessing)
-      let return_type_hint = detect_return_type_hint_from_processed_body(&processed_body);
+      let detected_return_type = detect_return_type_hint_from_processed_body(&processed_body);
+      let return_type_hint = if matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+        effective_fn_schema
+          .as_ref()
+          .map(|schema| schema.return_type.clone())
+          .unwrap_or(detected_return_type)
+      } else {
+        detected_return_type
+      };
       check_function_return_type(
         &processed_body,
         &return_type_hint,
