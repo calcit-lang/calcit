@@ -32,8 +32,8 @@ body 也必须显式返回对应容器；宏不会自动添加 `%some` / `%ok`�
 `result:let` 展开为：
 
 ```cirru.no-check
-(read-file path) .and-then $ fn (content)
-  (parse-data content) .and-then $ fn (data)
+.and-then (read-file path) $ fn (content)
+  .and-then (parse-data content) $ fn (data)
     save-data data
 ```
 
