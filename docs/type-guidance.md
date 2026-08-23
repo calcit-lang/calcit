@@ -67,6 +67,19 @@ loaded .and-then $ fn (value) (validate value)
 
 备用来源使用 `.or-else`。`.unwrap-or` 只用于确实需要默认值的终点，`.map` 用于同步转换，`.and-then` 用于下一个仍可能失败的操作。保留 `Option` 本身能让类型系统持续检查缺失路径；不要为了集合判断而把它解成 `nil`。
 
+多个连续步骤可以实验性使用 `option:let` / `result:let`。它们是普通 core macro，
+只展开为嵌套的 `.and-then`，不增加语言 syntax，也不会自动 wrap 或 unwrap body：
+
+```cirru.no-check
+result:let
+    content $ read-file path
+    data $ parse-data content
+  save-data data
+```
+
+body 必须继续返回 `Result`；Option 版本遵循相同规则。普通组合函数仍以接收者方法
+作为公开形式，`option:*` / `result:*` 直接函数调用主要保留给 core lowering。
+
 ## get-in / update-in
 
 `get-in` 是可能失败的开放数据访问，返回 `Option<T>`。不要用它绕过 Struct 字段检查；Struct 路径应使用 `(:field value)`，字段可缺失就把字段声明为 `Option<T>`。

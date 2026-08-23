@@ -1,12 +1,22 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |type-fail-trait-method-generic-receiver) (:version |0.0.0)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |type-fail-trait-method-generic-receiver)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'type-fail-trait-method-generic-receiver.main/main!) (:mode :native) (:reload-fn 'type-fail-trait-method-generic-receiver.main/reload!)
+      :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
   :files $ {}
     |type-fail-trait-method-generic-receiver.main $ %{} 'FileEntry
       :defs $ {}
+        |invalid-result-callback $ %{} 'CodeEntry (:doc "|Method callback deliberately returns a bare payload instead of Result.")
+          :code $ quote
+            defn invalid-result-callback (result)
+              result .and-then $ fn (value) value
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] (:: 'Result 'Number 'String)
+              :return $ :: 'Result 'Number 'String
         |main! $ %{} 'CodeEntry (:doc "|Entry for generic Option receiver method argument mismatch")
           :code $ quote
             defn main! (option) (option .unwrap-or 0)

@@ -1,2 +1,2 @@
 
-*.cirru -diff linguist-generated
+*.cirru diff -linguist-generated

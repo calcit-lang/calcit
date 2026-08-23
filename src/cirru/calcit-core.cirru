@@ -6449,6 +6449,51 @@
                   :args $ [] 'T
               :generics $ [] 'T 'U
           :tags $ #{} :internal
+        |option:let $ %{} 'CodeEntry (:doc "|Sequentially bind Option payloads through the .and-then method; stops at the first none and requires the body to return Option.")
+          :code $ quote
+            defmacro option:let (pairs & body)
+              if
+                not $ and (list? pairs) (every? pairs list?)
+                raise $ str-spaced "|option:let expects pairs in list, got:" pairs
+              if (&list:empty? body) (raise "|option:let expects at least 1 body expression")
+              if (&list:empty? pairs)
+                quasiquote $ do (~@ body)
+                &let
+                  pair $ &list:nth pairs 0
+                  if
+                    not $ &= 2 (&list:count pair)
+                    raise $ str-spaced "|option:let expects binding pair, got:" pair
+                  &let
+                    x $ &list:nth pair 0
+                    if
+                      not $ symbol? x
+                      raise $ str-spaced "|option:let expects a symbol for binding, got:" x
+                    &let
+                      value $ &list:nth pair 1
+                      quasiquote $ ~value .and-then
+                        fn (~x)
+                          option:let
+                            ~ $ &list:rest pairs
+                            ~@ body
+          :examples $ []
+            quote $ assert= (%some 5)
+              option:let
+                  x $ %some 2
+                  y $ %some 3
+                %some $ + x y
+          :schema $ :: 'Macro
+            {} $ :args ([] 'Dynamic)
+          :tags $ #{} :experimental :macro
+          :tests $ []
+            %{} 'TestEntry (:name |short-circuits-none)
+              :code $ quote
+                assert= (%none)
+                  option:let
+                      x $ %some 2
+                      y $ %none
+                      unreachable $ raise |option-let-should-short-circuit
+                    %some $ + x y unreachable
+              :tags $ #{} :core :unit
         |option:map $ %{} 'CodeEntry (:doc "|Mappable map implementation for Option")
           :code $ quote
             defn option:map (opt f)
@@ -6944,6 +6989,51 @@
               :args $ [] (:: 'Result 'T 'E)
               :generics $ [] 'T 'E
           :tags $ #{} :internal
+        |result:let $ %{} 'CodeEntry (:doc "|Sequentially bind Result payloads through the .and-then method; preserves the first error and requires the body to return Result.")
+          :code $ quote
+            defmacro result:let (pairs & body)
+              if
+                not $ and (list? pairs) (every? pairs list?)
+                raise $ str-spaced "|result:let expects pairs in list, got:" pairs
+              if (&list:empty? body) (raise "|result:let expects at least 1 body expression")
+              if (&list:empty? pairs)
+                quasiquote $ do (~@ body)
+                &let
+                  pair $ &list:nth pairs 0
+                  if
+                    not $ &= 2 (&list:count pair)
+                    raise $ str-spaced "|result:let expects binding pair, got:" pair
+                  &let
+                    x $ &list:nth pair 0
+                    if
+                      not $ symbol? x
+                      raise $ str-spaced "|result:let expects a symbol for binding, got:" x
+                    &let
+                      value $ &list:nth pair 1
+                      quasiquote $ ~value .and-then
+                        fn (~x)
+                          result:let
+                            ~ $ &list:rest pairs
+                            ~@ body
+          :examples $ []
+            quote $ assert= (%ok 5)
+              result:let
+                  x $ %ok 2
+                  y $ %ok 3
+                %ok $ + x y
+          :schema $ :: 'Macro
+            {} $ :args ([] 'Dynamic)
+          :tags $ #{} :experimental :macro
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-first-error)
+              :code $ quote
+                assert= (%err |stopped)
+                  result:let
+                      x $ %ok 2
+                      y $ %err |stopped
+                      unreachable $ raise |result-let-should-short-circuit
+                    %ok $ + x y unreachable
+              :tags $ #{} :core :unit
         |result:map $ %{} 'CodeEntry (:doc "|Mappable map implementation for Result")
           :code $ quote
             defn result:map (res f)

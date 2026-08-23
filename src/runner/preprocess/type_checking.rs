@@ -558,10 +558,6 @@ pub(crate) fn check_function_return_type(
     return;
   }
 
-  if declared_return_type.contains_type_var() {
-    return;
-  }
-
   if fn_body.is_empty() {
     return;
   }
@@ -576,7 +572,11 @@ pub(crate) fn check_function_return_type(
     return;
   }
 
-  if !actual_type.as_ref().matches_annotation(declared_return_type.as_ref()) {
+  let mut bindings = HashMap::new();
+  if !actual_type
+    .as_ref()
+    .matches_with_bindings(declared_return_type.as_ref(), &mut bindings)
+  {
     let expected_str = declared_return_type.as_ref().to_brief_string();
     let actual_str = actual_type.as_ref().to_brief_string();
     gen_check_warning_code(
@@ -616,6 +616,62 @@ mod tests {
     let message = append_js_ffi_type_hint("type mismatch".to_owned(), "js-nullish<:js-object>");
     assert!(message.contains("stay opaque after JsNullish checks"));
     assert!(message.contains("unsafe-coerce"));
+  }
+
+  #[test]
+  fn generic_return_contract_still_checks_outer_shape() {
+    let body = vec![Calcit::Number(1.0)];
+    let expected = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Result"),
+      Arc::new(vec![
+        Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))),
+        Arc::new(CalcitTypeAnnotation::String),
+      ]),
+    ));
+    let warnings = RefCell::new(vec![]);
+
+    check_function_return_type(&body, &expected, &ScopeTypes::new(), "tests.return", "callback", &warnings);
+
+    let warnings = warnings.borrow();
+    assert_eq!(warnings.len(), 1, "a generic payload must not erase the Result wrapper contract");
+    assert_eq!(warnings[0].code(), Some("W_FN_RETURN_TYPE_MISMATCH"));
+  }
+
+  #[test]
+  fn generic_return_contract_accepts_matching_wrapper() {
+    let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let expected = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![generic]),
+    ));
+    let actual = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+    ));
+    let local = CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("value")),
+      sym: Arc::from("value"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.return"),
+        at_def: Arc::from("callback"),
+      }),
+      location: None,
+      type_info: actual,
+    };
+    let mut scope_types = ScopeTypes::new();
+    scope_types.insert(Arc::from("value"), local.type_info.clone());
+    let warnings = RefCell::new(vec![]);
+
+    check_function_return_type(
+      &[Calcit::Local(local)],
+      &expected,
+      &scope_types,
+      "tests.return",
+      "callback",
+      &warnings,
+    );
+
+    assert!(warnings.borrow().is_empty(), "matching generic wrappers should remain valid");
   }
 
   #[test]

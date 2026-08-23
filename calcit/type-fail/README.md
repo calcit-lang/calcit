@@ -21,7 +21,7 @@
 
 - 前 4 个会触发 `schema mismatch while preprocessing definition`（定义时校验）。
 - `schema-call-arg-type-mismatch.cirru` 会触发基于 schema 的函数参数类型告警，并在 `--check-only` 下被当作错误处理。
-- `trait-method-generic-receiver-mismatch.cirru` 会验证泛型方法根据 receiver 的 `Option<String>` 绑定其 fallback 类型，并拒绝 `Number` fallback。
+- `trait-method-generic-receiver-mismatch.cirru` 会验证泛型方法根据 receiver 的 `Option<String>` 绑定其 fallback 类型，并拒绝 `Number` fallback；同时验证 `.and-then` callback 不能返回裸 payload。
 - `generic-where-bound-mismatch.cirru` 会触发 `W_GENERIC_WHERE_BOUND_MISMATCH`，验证泛型 `:where` 约束在调用点能被发现，并在 `--check-only` 下被当作错误处理。
 - `type-slot-record-call-arg-type-mismatch.cirru` 会验证 `bind-type` 绑定 struct 实例后，`*slot` 参与调用点类型检查。
 - `type-slot-bind-unknown.cirru` 会验证未声明 slot 的 `bind-type` 会直接失败。
