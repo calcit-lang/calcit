@@ -170,6 +170,7 @@ caps tree
 caps why calcit-lang/memof
 caps status
 caps verify
+caps verify --toolchain # after yarn install, for JS projects
 ```
 
 ### Development
