@@ -257,7 +257,10 @@ pub fn main() -> Result<(), String> {
           return Err(format!("{issues} module(s) are not in the expected state"));
         }
       }
-      Some(SubCommand::Verify(_)) => {
+      Some(SubCommand::Verify(opts)) => {
+        if opts.toolchain {
+          verify_toolchain(&deps, &cli_args)?;
+        }
         let graph = resolve_for_cli(&deps, &cli_args, false)?;
         print_warnings(&graph);
         let issues = verify_project_view(&graph, &graph_options(&cli_args, false)?)?;
@@ -345,6 +348,99 @@ fn graph_options(options: &TopLevelCaps, build_native: bool) -> Result<GraphOpti
   })
 }
 
+fn verify_toolchain(deps: &PackageDeps, options: &TopLevelCaps) -> Result<(), String> {
+  let expected = deps.calcit_version.as_deref().ok_or_else(|| {
+    format!(
+      "{} has no :calcit-version; add the Calcit release used by this project",
+      options.input
+    )
+  })?;
+  Version::parse(expected).map_err(|error| format!("invalid :calcit-version '{expected}': {error}"))?;
+  if expected != CALCIT_VERSION {
+    return Err(format!(
+      "Calcit toolchain mismatch: {} declares {expected}, but running caps is {CALCIT_VERSION}; install Calcit {expected} or upgrade deps.cirru",
+      options.input
+    ));
+  }
+
+  let project_root = graph_options(options, false)?.project_root;
+  let package_json = project_root.join("package.json");
+  if !package_json.exists() {
+    println!("toolchain: Calcit {expected} verified (no package.json; skipped @calcit/procs)");
+    return Ok(());
+  }
+
+  let package = read_procs_manifest_spec(&package_json)?;
+  let Some(spec) = package else {
+    println!("toolchain: Calcit {expected} verified (package.json has no @calcit/procs)");
+    return Ok(());
+  };
+  let accepted_specs = [expected.to_owned(), format!("^{expected}")];
+  if !accepted_specs.iter().any(|candidate| candidate == &spec) {
+    return Err(format!(
+      "Calcit toolchain mismatch: {} declares @calcit/procs@{spec}, expected {} (or ^{}); run `caps upgrade --all` or `yarn up @calcit/procs@^{expected}`",
+      package_json.display(),
+      expected,
+      expected
+    ));
+  }
+
+  let output = Command::new("yarn")
+    .args(["node", "-p", "require('@calcit/procs/package.json').version"])
+    .current_dir(&project_root)
+    .output()
+    .map_err(|error| format!("failed to run `yarn node` to inspect @calcit/procs: {error}; run `yarn install` first"))?;
+  if !output.status.success() {
+    return Err(format!(
+      "failed to resolve installed @calcit/procs with `yarn node`; run `yarn install` first: {}",
+      String::from_utf8_lossy(&output.stderr).trim()
+    ));
+  }
+  let installed = String::from_utf8(output.stdout)
+    .map_err(|error| format!("@calcit/procs version output was not UTF-8: {error}"))?
+    .trim()
+    .to_owned();
+  if installed != expected {
+    return Err(format!(
+      "Calcit toolchain mismatch: installed @calcit/procs is {installed}, expected {expected}; run `yarn up @calcit/procs@^{expected}` and commit the lockfile"
+    ));
+  }
+  println!("toolchain: Calcit and @calcit/procs are both {expected}");
+  Ok(())
+}
+
+fn read_procs_manifest_spec(package_json: &Path) -> Result<Option<String>, String> {
+  let content = fs::read_to_string(package_json).map_err(|error| format!("failed to read {}: {error}", package_json.display()))?;
+  let package: serde_json::Value =
+    serde_json::from_str(&content).map_err(|error| format!("invalid {}: {error}", package_json.display()))?;
+  let mut specs = Vec::new();
+  for section in ["dependencies", "devDependencies"] {
+    let Some(entries) = package.get(section) else {
+      continue;
+    };
+    let Some(entries) = entries.as_object() else {
+      return Err(format!("invalid {}.{section}: expected an object", package_json.display()));
+    };
+    let Some(value) = entries.get("@calcit/procs") else {
+      continue;
+    };
+    let Some(spec) = value.as_str() else {
+      return Err(format!(
+        "invalid {}.{section}.@calcit/procs: expected a version string",
+        package_json.display()
+      ));
+    };
+    specs.push(spec.to_owned());
+  }
+  if specs.len() > 1 && specs[0] != specs[1] {
+    return Err(format!(
+      "{} declares conflicting @calcit/procs versions in dependencies and devDependencies",
+      package_json.display()
+    ));
+  }
+  Ok(specs.into_iter().next())
+}
+
 fn resolve_for_cli(deps: &PackageDeps, options: &TopLevelCaps, build_native: bool) -> Result<ResolvedGraph, String> {
   resolve_graph(deps, &graph_options(options, build_native)?)
 }
@@ -424,9 +520,13 @@ enum SubCommand {
 struct StatusCaps {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-/// verify store contents, project links, and native receipts
+/// verify store contents, project links, native receipts, and optionally the JS runtime toolchain
 #[argh(subcommand, name = "verify")]
-struct VerifyCaps {}
+struct VerifyCaps {
+  /// require :calcit-version, caps, the @calcit/procs manifest range, and its installed version to agree
+  #[argh(switch)]
+  toolchain: bool,
+}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 /// rebuild the project module links from resolved immutable store entries
@@ -901,16 +1001,17 @@ fn sync_calcit_procs_package() -> Result<(), String> {
   }
 
   println!("syncing npm package {}...", "@calcit/procs".green());
+  let package_spec = format!("@calcit/procs@^{CALCIT_VERSION}");
   let status = Command::new("yarn")
-    .args(["up", "@calcit/procs"])
+    .args(["up", &package_spec])
     .status()
-    .map_err(|e| format!("failed to run `yarn up @calcit/procs`: {e}"))?;
+    .map_err(|e| format!("failed to run `yarn up {package_spec}`: {e}"))?;
 
   if status.success() {
     Ok(())
   } else {
     Err(format!(
-      "`yarn up @calcit/procs` exited with status {}",
+      "`yarn up {package_spec}` exited with status {}",
       status.code().map(|code| code.to_string()).unwrap_or_else(|| "signal".to_string())
     ))
   }
@@ -1014,6 +1115,28 @@ mod tests {
     let parsed = cirru_edn::parse("{} (:version ||)").unwrap();
     let deps: PackageDeps = parsed.try_into().unwrap();
     assert!(deps.version.is_none());
+  }
+
+  #[test]
+  fn reads_procs_spec_from_runtime_or_development_dependencies() {
+    let root = std::env::temp_dir().join(format!("calcit-caps-toolchain-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let package_json = root.join("package.json");
+
+    std::fs::write(&package_json, r#"{"dependencies":{"@calcit/procs":"^0.13.38"}}"#).unwrap();
+    assert_eq!(super::read_procs_manifest_spec(&package_json), Ok(Some("^0.13.38".to_owned())));
+
+    std::fs::write(&package_json, r#"{"devDependencies":{"@calcit/procs":"0.13.38"}}"#).unwrap();
+    assert_eq!(super::read_procs_manifest_spec(&package_json), Ok(Some("0.13.38".to_owned())));
+
+    std::fs::write(
+      &package_json,
+      r#"{"dependencies":{"@calcit/procs":"^0.13.37"},"devDependencies":{"@calcit/procs":"^0.13.38"}}"#,
+    )
+    .unwrap();
+    assert!(super::read_procs_manifest_spec(&package_json).unwrap_err().contains("conflicting"));
+    std::fs::remove_dir_all(root).unwrap();
   }
 
   #[test]

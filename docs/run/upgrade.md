@@ -216,12 +216,13 @@ caps upgrade --all
 
 说明：`caps upgrade --all` 会检查 `:dependencies` 与根项目的 `:dev-dependencies`，更新
 对应分组中的依赖版本与 `:calcit-version`；如果确实发生升级，还会顺带执行一次
-`yarn up @calcit/procs`，把 JS 运行时包同步到当前 Calcit 版本链路。
+`yarn up @calcit/procs@^<calcit-version>`，把 JS 运行时包的版本锚点同步到当前 Calcit 发布链路。
 
 如果依赖清单本来已经是最新、但 `package.json` 中的 `@calcit/procs` 仍旧，`caps upgrade --all`
-可能没有产生更新动作。此时应显式执行 `yarn up @calcit/procs`，审阅 `package.json` / `yarn.lock`，
-并确认安装后的包版本与当前 Calcit 发布链路相符；不要只根据 caps 的 “Already up to date” 判断
-JS runtime 已同步。
+可能没有产生更新动作。此时应显式执行 `yarn up @calcit/procs@^<calcit-version>`，审阅
+`package.json` / `yarn.lock`，然后在 `yarn install` 后运行 `caps verify --toolchain`。这个命令会
+要求 `deps.cirru :calcit-version`、运行中的 `caps`、`package.json` 的 `@calcit/procs` 版本锚点
+（精确版本或同版本的 `^` 范围）以及 Yarn 解析出的实际包版本完全一致；适合直接作为 CI 门禁。
 
 如果你只想批量把旧版本提升到最新标签，也可以继续用：
 
@@ -238,6 +239,7 @@ caps
 caps tree
 caps status
 caps verify
+caps verify --toolchain
 ```
 
 说明：这一步才会按当前 `deps.cirru` 下载/同步模块内容。根项目的两个依赖分组都会安装，
@@ -604,6 +606,9 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
 
 - name: Install deps
   run: caps --ci && yarn install --immutable
+
+- name: Verify Calcit runtime toolchain
+  run: caps verify --toolchain
 
 - name: Validate Calcit snapshot and types
   run: |

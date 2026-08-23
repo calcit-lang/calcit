@@ -70,6 +70,9 @@ locally:
 - name: Install dependencies
   run: caps --ci && yarn install --immutable
 
+- name: Verify Calcit runtime toolchain
+  run: caps verify --toolchain
+
 - name: Validate Snapshot and type quality
   run: |
     calcit calcit.cirru edit format
