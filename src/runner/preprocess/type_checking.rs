@@ -16,7 +16,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::type_inference::infer_struct_field_type;
+use super::type_inference::{infer_struct_field_type, infer_unhinted_callback_signature};
 use crate::calcit::{
   self, Calcit, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
   NodeLocation,
@@ -206,6 +206,10 @@ where
   }
 
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+  let is_option_fold = matches!(
+    ctx.head_form,
+    Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "option:fold"
+  );
 
   for (idx, (arg, expected_type)) in ctx.args.iter().zip(ctx.expected_types.iter()).enumerate() {
     if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
@@ -224,10 +228,19 @@ where
       return; // Done after variadic
     }
 
-    if let Some(actual_type) = resolve_type_value(arg, ctx.scope_types)
-      && !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings)
-    {
-      ctx.emit_warning(idx + 1, expected_type.as_ref(), actual_type.as_ref(), &make_warning);
+    if let Some(actual_type) = resolve_type_value(arg, ctx.scope_types) {
+      let actual_type = if is_option_fold
+        && matches!(actual_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
+        && matches!(expected_type.as_ref(), CalcitTypeAnnotation::Fn(_))
+        && let Calcit::List(callback) = arg
+      {
+        infer_unhinted_callback_signature(callback, ctx.scope_types).unwrap_or(actual_type)
+      } else {
+        actual_type
+      };
+      if !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings) {
+        ctx.emit_warning(idx + 1, expected_type.as_ref(), actual_type.as_ref(), &make_warning);
+      }
     }
   }
 

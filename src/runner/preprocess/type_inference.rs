@@ -762,33 +762,20 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
     .skip(3)
     .find_map(CalcitTypeAnnotation::extract_fn_annotation_from_hint_form);
   let Some(hinted) = hinted else {
-    let (arg_types, rest_type) = infer_preprocessed_function_parameters(xs.get(2));
     // Keep ordinary unhinted callbacks dynamic: inferring their return type can
     // retroactively tighten existing higher-order calls. A zero-argument thunk
     // is safe to retain, and provides the U anchor for eliminators such as
     // `option:fold`.
-    if !arg_types.is_empty() || rest_type.is_some() {
-      return Arc::new(CalcitTypeAnnotation::DynFn);
-    }
-    let inferred_return = xs
-      .get(xs.len().saturating_sub(1))
-      .and_then(|body| infer_type_from_expr(body, &ScopeTypes::new()))
-      .filter(|annotation| !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn));
-    let Some(return_type) = inferred_return else {
+    let Some(inferred) = infer_unhinted_callback_signature(xs, &ScopeTypes::new()) else {
       return Arc::new(CalcitTypeAnnotation::DynFn);
     };
-    return Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-      generics: Arc::new(vec![]),
-      where_bounds: Arc::new(vec![]),
-      arg_types,
-      return_type,
-      fn_kind: match xs.first() {
-        Some(Calcit::Syntax(CalcitSyntax::Defmacro, _)) => SchemaKind::Macro,
-        _ => SchemaKind::Fn,
-      },
-      rest_type,
-      features: Arc::new(std::collections::HashSet::new()),
-    })));
+    let CalcitTypeAnnotation::Fn(signature) = inferred.as_ref() else {
+      return Arc::new(CalcitTypeAnnotation::DynFn);
+    };
+    if !signature.arg_types.is_empty() || signature.rest_type.is_some() {
+      return Arc::new(CalcitTypeAnnotation::DynFn);
+    }
+    return inferred;
   };
   let CalcitTypeAnnotation::Fn(fn_annotation) = hinted.as_ref() else {
     return hinted;
@@ -814,6 +801,38 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
     rest_type: fn_annotation.rest_type.clone().or(inferred_rest_type),
     features: fn_annotation.features.clone(),
   })))
+}
+
+/// Recover a concrete signature from an already preprocessed anonymous
+/// callback when its body has a statically known final expression. Callers
+/// choose whether using the recovered signature is appropriate for their
+/// contract; ordinary unhinted functions remain dynamic by default.
+pub(crate) fn infer_unhinted_callback_signature(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  let fn_kind = match xs.first()? {
+    Calcit::Syntax(CalcitSyntax::Defmacro, _) => SchemaKind::Macro,
+    Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _) => SchemaKind::Fn,
+    _ => return None,
+  };
+  if xs.len() <= 3
+    || xs
+      .iter()
+      .skip(3)
+      .any(|form| CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(form).is_some())
+  {
+    return None;
+  }
+  let (arg_types, rest_type) = infer_preprocessed_function_parameters(xs.get(2));
+  let return_type = infer_type_from_expr(xs.get(xs.len() - 1)?, scope_types)
+    .filter(|annotation| !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn))?;
+  Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+    generics: Arc::new(vec![]),
+    where_bounds: Arc::new(vec![]),
+    arg_types,
+    return_type,
+    fn_kind,
+    rest_type,
+    features: Arc::new(std::collections::HashSet::new()),
+  }))))
 }
 
 fn infer_preprocessed_function_parameters(
@@ -1763,6 +1782,22 @@ mod tests {
       panic!("an unhinted zero-argument macro should retain a macro signature: {inferred:?}");
     };
     assert_eq!(signature.fn_kind, SchemaKind::Macro);
+  }
+
+  #[test]
+  fn unhinted_empty_function_remains_dynamic() {
+    let empty_callback = CalcitList::from(
+      &[
+        Calcit::Syntax(CalcitSyntax::Defn, Arc::from("tests.callback")),
+        symbol("callback"),
+        Calcit::from(Vec::<Calcit>::new()),
+      ][..],
+    );
+
+    assert!(matches!(
+      infer_preprocessed_function_type(&empty_callback).as_ref(),
+      CalcitTypeAnnotation::DynFn
+    ));
   }
 
   #[test]

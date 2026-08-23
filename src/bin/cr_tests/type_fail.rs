@@ -201,6 +201,31 @@ fn option_migration_source_calls_fail_during_preprocessing() {
 }
 
 #[test]
+fn option_fold_callbacks_share_return_type_during_preprocessing() {
+  run_with_large_stack(|| {
+    let snippets = [
+      "option:fold (%some 1) (fn () |wrong) identity",
+      "option:fold (%some 1) (fn () |wrong) (fn (x) 1)",
+      "defmacro fold-or (base fallback)\n  quasiquote $ option:fold\n    , ~base\n    fn () ~fallback\n    , identity\n\ndefn main! () $ fold-or (%some 1) |wrong",
+    ];
+
+    for snippet in snippets {
+      let entries = load_snippet_entries(snippet);
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect("option:fold mismatch should surface as a preprocessing warning");
+      let warnings = warnings.borrow();
+      assert!(
+        warnings
+          .iter()
+          .any(|warning| { warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/option:fold") }),
+        "option:fold callback mismatch should be reported for {snippet:?}, got: {warnings:?}"
+      );
+    }
+  });
+}
+
+#[test]
 fn option_returning_api_type_mismatches_include_unwrap_and_match_help() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("do\n  &+ (find-index ([] 1 2) $ fn (x) = x 2) 1\n  starts-with? (get-env |HOME) |/");

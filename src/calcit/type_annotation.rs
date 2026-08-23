@@ -3926,6 +3926,20 @@ mod tests {
   }
 
   #[test]
+  fn failed_callback_signature_does_not_leak_partial_generic_bindings() {
+    let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let expected = CalcitTypeAnnotation::from_function_parts(vec![generic.clone(), generic], Arc::new(CalcitTypeAnnotation::Unit));
+    let actual = CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)],
+      Arc::new(CalcitTypeAnnotation::Unit),
+    );
+    let mut bindings = TypeBindings::new();
+
+    assert!(!actual.matches_with_bindings(&expected, &mut bindings));
+    assert!(bindings.is_empty(), "a failed callback match must not constrain later arguments");
+  }
+
+  #[test]
   fn collect_arg_type_hints_keeps_non_variadic() {
     let body_items = vec![Calcit::List(Arc::new(CalcitList::from(&[
       Calcit::Syntax(CalcitSyntax::AssertType, Arc::from("tests")),
@@ -5200,6 +5214,8 @@ impl CalcitFnTypeAnnotation {
     // Don't require generics count to match: actual concrete functions don't declare
     // generics even when expected fn type uses TypeVars. Bindings resolve TypeVars below.
 
+    let mut staged_bindings = bindings.clone();
+
     for (idx, expected) in other.arg_types.iter().enumerate() {
       let actual = self.arg_types.get(idx).or(self.rest_type.as_ref());
       let Some(actual) = actual else {
@@ -5208,7 +5224,7 @@ impl CalcitFnTypeAnnotation {
       // Callback parameters are contravariant: every value promised by the expected contract
       // must be accepted by the actual callable. This matters for a function accepting
       // `optional<T>` being used where a callback receives `T`.
-      if !expected.matches_with_bindings(actual, bindings) {
+      if !expected.matches_with_bindings(actual, &mut staged_bindings) {
         return false;
       }
     }
@@ -5219,12 +5235,19 @@ impl CalcitFnTypeAnnotation {
       let Some(actual_rest) = &self.rest_type else {
         return false;
       };
-      if !expected_rest.matches_with_bindings(actual_rest, bindings) {
+      if !expected_rest.matches_with_bindings(actual_rest, &mut staged_bindings) {
         return false;
       }
     }
 
-    self.return_type.matches_with_bindings(other.return_type.as_ref(), bindings)
+    if !self
+      .return_type
+      .matches_with_bindings(other.return_type.as_ref(), &mut staged_bindings)
+    {
+      return false;
+    }
+    *bindings = staged_bindings;
+    true
   }
 }
 
