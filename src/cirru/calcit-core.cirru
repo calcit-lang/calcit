@@ -2881,7 +2881,7 @@
           :code $ quote
             defstruct RuntimeMapMeta $ :kind 'Tag
           :examples $ []
-          :schema $ :: 'Enum
+          :schema $ :: 'Struct
         |RuntimeMapResponse $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct RuntimeMapResponse (:code 'Number)
@@ -2889,7 +2889,7 @@
               :body 'Dynamic
               :meta $ :: 'Option RuntimeMapMeta
           :examples $ []
-          :schema $ :: 'Enum
+          :schema $ :: 'Struct
           :tags $ #{} :data :internal
         |Serialize $ %{} 'CodeEntry (:doc "|Core trait: Serialize")
           :code $ quote

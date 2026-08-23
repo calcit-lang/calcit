@@ -9,7 +9,7 @@
 `nil` 契约安全。但迁移后的业务代码出现了新的机械噪音：一次普通查询往往立即接
 `option:unwrap-or`，把“查找”和“缺失时采用业务默认值”拆成两层调用。
 
-对 `/Users/chenyong/repo` 下本地 Calcit Snapshot 的初步盘点发现：
+对 2026-08-23 同步到各仓库默认分支后的本地 Calcit Snapshot 样本盘点发现：
 
 - 约 102 个 Calcit 项目包含 unwrap 相关调用；
 - `unwrap-or` 约 1500 次，直接 `unwrap` 约 300 次；
