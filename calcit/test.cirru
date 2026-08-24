@@ -1,7 +1,8 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |app) (:version |0.0.0)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |app)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
+      :feature-policy $ {}
       :modules $ [] |./test-cond.cirru |./test-hygienic.cirru |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru |./test-math.cirru |./test-recursion.cirru |./test-set.cirru |./test-string.cirru |./test-edn.cirru |./test-js.cirru |./test-struct.cirru |./test-fn.cirru |./test-anonymous-enum.cirru |./test-algebra.cirru |./test-types.cirru |./test-types-inference.cirru |./test-generics.cirru |./test-enum.cirru |./test-traits.cirru |./test-doc-smoke.cirru |./test-def-meta.cirru |./util.cirru
       :type-slots $ {}
   :files $ {}
@@ -362,7 +363,7 @@
             fn () (log-title "|Testing fn")
               &let
                 empty-f $ fn ()
-                assert= nil $ empty-f
+                assert= &unit $ empty-f
               &let
                 coll-f $ fn (& xs) xs
                 assert= ([] 1 2 3 4 5)
@@ -389,6 +390,9 @@
             fn () (log-title "|Testing if with nil")
               assert= (if false 1) (if nil 1)
               assert= (if false 1 2) (if nil 1 2)
+              assert= (if false 1) (if &unit 1)
+              assert= (if false 1 2) (if &unit 1 2)
+              assert= true $ not &unit
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

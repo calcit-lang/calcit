@@ -533,7 +533,7 @@ pub fn syntax_if(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_sta
 
   let cond_value = runner::evaluate_expr(cond, scope, file_ns, call_stack)?;
   match cond_value {
-    Calcit::Nil | Calcit::Bool(false) => match expr.get(2) {
+    Calcit::Nil | Calcit::Unit | Calcit::Bool(false) => match expr.get(2) {
       Some(false_branch) => runner::evaluate_expr(false_branch, scope, file_ns, call_stack),
       None => Ok(Calcit::Nil),
     },

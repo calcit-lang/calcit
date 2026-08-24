@@ -242,6 +242,13 @@ mod tests {
   }
 
   #[test]
+  fn json_stringify_rejects_unit() {
+    let error = stringify(&[Calcit::Unit]).expect_err("json-stringify should reject Unit");
+    assert_eq!(error.kind, CalcitErrKind::Type);
+    assert!(error.msg.contains(":unit"));
+  }
+
+  #[test]
   fn json_pretty_rejects_wrong_arity() {
     let error = pretty(&[Calcit::Nil, Calcit::Nil]).expect_err("json-pretty should reject wrong arity");
     assert_eq!(error.kind, CalcitErrKind::Arity);

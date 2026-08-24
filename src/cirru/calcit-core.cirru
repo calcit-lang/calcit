@@ -487,7 +487,7 @@
               let
                   name $ &list:first pair
                   xs0 $ &list:last pair
-                quasiquote $ foldl ~xs0 (;nil)
+                quasiquote $ foldl ~xs0 &unit
                   defn doseq-fn% (_acc ~name) ~@body
           :examples $ []
             quote $ do
@@ -3135,11 +3135,10 @@
                   if
                     not $ string? ~message
                     raise $ str-spaced "|expects 1st argument to be string, got:" ~message
-                  if ~xs (;nil)
-                    &let ()
-                      eprintln "|Failed assertion:" $ format-to-lisp (quote ~xs)
-                      raise $ ~
-                        &str:concat (&str:concat message "| ") (format-to-lisp xs)
+                  if ~xs &unit $ &let ()
+                    eprintln "|Failed assertion:" $ format-to-lisp (quote ~xs)
+                    raise $ ~
+                      &str:concat (&str:concat message "| ") (format-to-lisp xs)
           :examples $ []
             quote $ assert "|x should be positive" (> 1 0)
             quote $ assert "|list should not be empty"
@@ -3154,15 +3153,14 @@
               &let
                 v $ gensym |v
                 quasiquote $ &let (~v ~code)
-                  if (~f ~v) (;nil)
-                    &let () (eprintln)
-                      eprintln
-                        format-to-lisp $ quote ~code
-                        , "|does not satisfy:"
-                          format-to-lisp $ quote ~f
-                          , "| <--------"
-                      eprintln "|  value is:" ~v
-                      raise "|Not satisfied in assertion!"
+                  if (~f ~v) &unit $ &let () (eprintln)
+                    eprintln
+                      format-to-lisp $ quote ~code
+                      , "|does not satisfy:"
+                        format-to-lisp $ quote ~f
+                        , "| <--------"
+                    eprintln "|  value is:" ~v
+                    raise "|Not satisfied in assertion!"
           :examples $ []
             quote $ assert-detect number? (+ 1 2)
             quote $ assert-detect list? ([] 1 2 3)
@@ -4489,10 +4487,9 @@
         |each $ %{} 'CodeEntry (:doc "|Iterate over a collection, apply a function for side effects, and return Unit.")
           :code $ quote
             defn each (xs f)
-              foldl xs (;nil)
-                defn %each (_acc x) (f x)
+              foldl xs &unit $ defn %each (_acc x) (f x)
           :examples $ []
-            quote $ assert= nil
+            quote $ assert= &unit
               each ([] 1 2 3)
                 fn (x) (&+ x 1)
           :schema $ :: 'Fn
@@ -4903,7 +4900,7 @@
                 not $ list? args
                 raise $ str-spaced "|fn expects args in list, got:" args
               if (&list:empty? body)
-                quasiquote $ defn f% ~args (;nil)
+                quasiquote $ defn f% ~args &unit
                 quasiquote $ defn f% ~args ~@body
           :examples $ []
             quote $ map ([] 1 2 3)
@@ -6606,31 +6603,32 @@
               :args $ [] (:: 'Optional 'T)
               :generics $ [] 'T
               :return $ :: 'Option 'T
-        |or $ %{} 'CodeEntry (:doc "|Logical disjunction macro. Skips evaluating later forms once a truthy (non-nil, non-false) value is found, preserving the first truthy result.")
+        |or $ %{} 'CodeEntry (:doc "|Logical disjunction macro. Skips later forms once a truthy (non-nil, non-false, non-Unit) value is found, preserving the first truthy result.")
           :code $ quote
             defmacro or (item & xs)
               if (&list:empty? xs) item $ if (list? item)
                 &let
                   v1# $ gensym |v1
                   quasiquote $ &let (~v1# ~item)
-                    if
-                      if (nil? ~v1#) true $ &= false ~v1#
+                    if ~v1# (~ v1#)
                       or
                         ~ $ &list:first xs
                         ~@ $ &list:rest xs
-                      ~ v1#
-                quasiquote $ if
-                  if (nil? ~item) true $ &= false ~item
+                quasiquote $ if ~item (~ item)
                   or
                     ~ $ &list:first xs
                     ~@ $ &list:rest xs
-                  ~ item
           :examples $ []
             quote $ assert= |done (or nil |done false)
             quote $ assert= false (or false nil)
             quote $ assert= 2 (or nil 2 3)
           :schema $ :: 'Dynamic
           :tags $ #{} :macro
+          :tests $ []
+            %{} 'TestEntry (:name |skips-unit-and-returns-next-truthy-value)
+              :code $ quote
+                assert= |next $ or &unit |next
+              :tags $ #{} :core :unit
         |pairs-map $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn pairs-map (xs)
