@@ -5413,7 +5413,9 @@ fn build_indexed_match_table(enum_def: &calcit::CalcitEnumDef, branches: &[Calci
     }
 
     let Calcit::List(pattern_items) = pattern else { return None };
-    let Some(Calcit::Tag(tag)) = pattern_items.first() else { return None };
+    let Some(Calcit::Tag(tag)) = pattern_items.first() else {
+      return None;
+    };
     let variant_idx = enum_def.variant_index(tag)?;
     if !matches!(slots[variant_idx], Calcit::Nil) {
       return None;

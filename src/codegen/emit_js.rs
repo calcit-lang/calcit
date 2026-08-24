@@ -1245,8 +1245,8 @@ fn gen_match_code(
     return Err("match expected value and branches".to_owned());
   }
 
-  if let (Some(Calcit::EnumDef(enum_def)), Some(Calcit::List(table))) = (body.get(1), body.get(2)) {
-    return gen_indexed_match_code(&body[0], enum_def, table, local_defs, ns, file_imports, tags, base_return_label);
+  if let (Some(Calcit::EnumDef(_)), Some(Calcit::List(table))) = (body.get(1), body.get(2)) {
+    return gen_indexed_match_code(&body[0], table, local_defs, ns, file_imports, tags, base_return_label);
   }
 
   let has_await = detect_await(body);
@@ -1355,7 +1355,6 @@ fn gen_match_code(
 
 fn gen_indexed_match_code(
   value: &Calcit,
-  enum_def: &calcit::CalcitEnumDef,
   table: &CalcitList,
   local_defs: &HashSet<Arc<str>>,
   ns: &str,
@@ -1363,10 +1362,9 @@ fn gen_indexed_match_code(
   tags: &RefCell<HashSet<EdnTag>>,
   base_return_label: Option<&str>,
 ) -> Result<String, String> {
-  let wildcard_idx = enum_def.variants().len();
-  if table.len() != wildcard_idx + 1 {
+  let Some(wildcard_idx) = table.len().checked_sub(1) else {
     return Err("indexed match table has invalid length".to_owned());
-  }
+  };
 
   let has_await = detect_await(table);
   let return_label = base_return_label.unwrap_or("return ");
@@ -1421,11 +1419,7 @@ fn gen_indexed_match_code(
 
   match &table[wildcard_idx] {
     Calcit::Nil => {
-      write!(
-        chunk,
-        "throw new Error(\"match: no matching branch for tag \" + {tag_var});"
-      )
-      .expect("write");
+      write!(chunk, "throw new Error(\"match: no matching branch for tag \" + {tag_var});").expect("write");
     }
     Calcit::List(pair) if pair.len() == 2 => {
       let body_code = to_js_code(&pair[1], ns, local_defs, file_imports, tags, Some(return_label))?;
@@ -2261,42 +2255,15 @@ mod tests {
 
   #[test]
   fn indexed_enum_match_codegen_uses_numeric_switch_dispatch() {
-    let enum_def = calcit::CalcitEnumDef::from_struct(calcit::CalcitStructValue {
-      struct_ref: Arc::new(calcit::CalcitStructDef::from_fields(
-        EdnTag::from("State"),
-        vec![EdnTag::from("idle"), EdnTag::from("running"), EdnTag::from("done")],
-      )),
-      values: Arc::new(vec![Calcit::from(vec![]), Calcit::from(vec![]), Calcit::from(vec![])]),
-    })
-    .expect("valid enum");
-    let branch = |tag: &str, value: f64| {
-      Calcit::from(vec![
-        Calcit::from(vec![Calcit::Tag(EdnTag::from(tag))]),
-        Calcit::Number(value),
-      ])
-    };
+    let branch = |tag: &str, value: f64| Calcit::from(vec![Calcit::from(vec![Calcit::Tag(EdnTag::from(tag))]), Calcit::Number(value)]);
     let wildcard = Calcit::from(vec![symbol("_"), Calcit::Number(-1.0)]);
-    let table = CalcitList::Vector(vec![
-      branch("idle", 0.0),
-      branch("running", 1.0),
-      branch("done", 2.0),
-      wildcard,
-    ]);
+    let table = CalcitList::Vector(vec![branch("idle", 0.0), branch("running", 1.0), branch("done", 2.0), wildcard]);
     let local_defs = HashSet::from([Arc::from("state")]);
     let file_imports = RefCell::new(ImportsDict::new());
     let tags = RefCell::new(HashSet::new());
 
-    let code = gen_indexed_match_code(
-      &symbol("state"),
-      &enum_def,
-      &table,
-      &local_defs,
-      "tests.emit-js",
-      &file_imports,
-      &tags,
-      None,
-    )
-    .expect("indexed match codegen");
+    let code = gen_indexed_match_code(&symbol("state"), &table, &local_defs, "tests.emit-js", &file_imports, &tags, None)
+      .expect("indexed match codegen");
 
     assert!(code.contains("switch ("), "{code}");
     assert!(code.contains("case _t_.idle.idx:"), "{code}");

@@ -2,7 +2,7 @@ use std::hint::black_box;
 use std::sync::Arc;
 use std::time::Instant;
 
-use calcit::{Calcit, CalcitEnumDef, CalcitList, CalcitStructDef, CalcitStructValue};
+use calcit::calcit::{Calcit, CalcitEnumDef, CalcitList, CalcitStructDef, CalcitStructValue};
 use cirru_edn::EdnTag;
 
 const ITERATIONS: usize = 5_000_000;
