@@ -94,6 +94,9 @@ try {
   assert.deepEqual(layoutValue.withAt(0, earlyField, "a", 1, lateField, "z").values, ["a", "z"]);
   assert.throws(() => layoutValue.nthAt(0, lateField), /expects field :aa-layout-field/);
   assert.throws(() => layoutValue.assocAt(-1, earlyField, "bad"), /non-negative integer index/);
+  assert.throws(() => layoutValue.nthAt(0.5, earlyField), /non-negative integer index/);
+  assert.throws(() => layoutValue.assocAt(0, lateField, "bad"), /expects field :aa-layout-field/);
+  assert.throws(() => layoutValue.withAt(0, lateField, "bad"), /expects field :aa-layout-field/);
   assert.throws(() => layoutValue.withAt(), /index\/tag\/value triples/);
   const parsedReverseLayout = runtimeA.parse_cirru_edn(
     "%{} 'LayoutProbe\n  :zz-layout-field |late\n  :aa-layout-field |early",
