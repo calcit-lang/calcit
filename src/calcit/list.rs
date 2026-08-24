@@ -183,6 +183,113 @@ impl<'a> Iterator for CalcitListIterator<'a> {
   }
 }
 
+/// Borrowed read-only range over a Calcit list. Executable calls use this to
+/// pass argument tails without allocating a second list.
+#[derive(Debug, Clone, Copy)]
+pub struct CalcitListView<'a> {
+  value: &'a CalcitList,
+  start: usize,
+  end: usize,
+}
+
+impl Display for CalcitListView<'_> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "(&CalcitList")?;
+    for x in self {
+      write!(f, " {x}")?;
+    }
+    write!(f, ")")
+  }
+}
+
+impl<'a> CalcitListView<'a> {
+  pub fn len(&self) -> usize {
+    self.end - self.start
+  }
+
+  pub fn is_empty(&self) -> bool {
+    self.start == self.end
+  }
+
+  pub fn get(&self, idx: usize) -> Option<&'a Calcit> {
+    if idx < self.len() { self.value.get(self.start + idx) } else { None }
+  }
+
+  pub fn first(&self) -> Option<&'a Calcit> {
+    self.get(0)
+  }
+
+  pub fn skip(&self, n: usize) -> Result<Self, String> {
+    if n > self.len() {
+      Err(format!("cannot skip {n} item(s) from a list view of length {}", self.len()))
+    } else {
+      Ok(Self {
+        value: self.value,
+        start: self.start + n,
+        end: self.end,
+      })
+    }
+  }
+
+  pub fn to_vec(&self) -> Vec<Calcit> {
+    self.iter().cloned().collect()
+  }
+
+  pub fn traverse_result<S>(&self, f: &mut dyn FnMut(&Calcit) -> Result<(), S>) -> Result<(), S> {
+    for item in self {
+      f(item)?;
+    }
+    Ok(())
+  }
+
+  pub fn iter(&self) -> CalcitListViewIterator<'a> {
+    CalcitListViewIterator {
+      value: self.value,
+      index: self.start,
+      end: self.end,
+    }
+  }
+}
+
+impl Index<usize> for CalcitListView<'_> {
+  type Output = Calcit;
+
+  fn index(&self, idx: usize) -> &Calcit {
+    self
+      .get(idx)
+      .unwrap_or_else(|| panic!("list view index {idx} out of bounds for length {}", self.len()))
+  }
+}
+
+impl<'list> IntoIterator for &CalcitListView<'list> {
+  type Item = &'list Calcit;
+  type IntoIter = CalcitListViewIterator<'list>;
+
+  fn into_iter(self) -> Self::IntoIter {
+    self.iter()
+  }
+}
+
+pub struct CalcitListViewIterator<'a> {
+  value: &'a CalcitList,
+  index: usize,
+  end: usize,
+}
+
+impl<'a> Iterator for CalcitListViewIterator<'a> {
+  type Item = &'a Calcit;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.index < self.end {
+      let ret = self.value.get(self.index);
+      self.index += 1;
+      ret
+    } else {
+      None
+    }
+  }
+}
+
 impl CalcitList {
   pub fn new_inner() -> TernaryTreeList<Calcit> {
     TernaryTreeList::Empty
@@ -222,6 +329,18 @@ impl CalcitList {
       CalcitList::Vector(xs) => xs.first(),
       CalcitList::List(xs) => xs.first(),
     }
+  }
+
+  pub fn view(&self) -> CalcitListView<'_> {
+    CalcitListView {
+      value: self,
+      start: 0,
+      end: self.len(),
+    }
+  }
+
+  pub fn view_from(&self, start: usize) -> Result<CalcitListView<'_>, String> {
+    self.view().skip(start)
   }
 
   pub fn into_list(self) -> Self {
@@ -398,5 +517,40 @@ impl CalcitList {
       index: 0,
       size: self.len(),
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn values() -> Vec<Calcit> {
+    vec![Calcit::Number(1.0), Calcit::Number(2.0), Calcit::Number(3.0), Calcit::Number(4.0)]
+  }
+
+  #[test]
+  fn borrowed_views_read_vector_and_persistent_lists() {
+    let vector = CalcitList::Vector(values());
+    let persistent = CalcitList::List(TernaryTreeList::from(values()));
+
+    for source in [&vector, &persistent] {
+      let tail = source.view_from(1).expect("valid argument tail");
+      assert_eq!(tail.len(), 3);
+      assert_eq!(tail.first(), Some(&Calcit::Number(2.0)));
+      assert_eq!(tail[2], Calcit::Number(4.0));
+      assert_eq!(tail.iter().cloned().collect::<Vec<_>>(), values()[1..]);
+
+      let nested = tail.skip(2).expect("valid nested tail");
+      assert_eq!(nested.to_vec(), vec![Calcit::Number(4.0)]);
+    }
+  }
+
+  #[test]
+  fn borrowed_view_rejects_out_of_bounds_skip() {
+    let source = CalcitList::Vector(values());
+    let view = source.view_from(1).expect("valid argument tail");
+
+    assert!(view.get(3).is_none());
+    assert!(view.skip(4).is_err());
   }
 }

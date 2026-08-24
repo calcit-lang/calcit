@@ -10,7 +10,7 @@ use cirru_edn::EdnTag;
 
 use crate::builtins::meta::type_of;
 
-use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitImport, CalcitList, CalcitScope};
+use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitImport, CalcitListView, CalcitScope};
 use crate::{call_stack::CallStackList, runner};
 
 pub(crate) type ValueAndListeners = (Calcit, HashMap<EdnTag, Calcit>);
@@ -52,7 +52,7 @@ fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack:
 }
 
 /// syntax to prevent expr re-evaluating
-pub fn defatom(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn defatom(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match (expr.first(), expr.get(1)) {
     (Some(Calcit::Symbol { sym, info, .. }), Some(code)) => {
       let mut path: String = (*info.at_ns).to_owned();
@@ -179,7 +179,12 @@ pub fn atom_deref(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 }
 
 /// need to be syntax since triggering internal functions requires program data
-pub fn reset_bang(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn reset_bang(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   if expr.len() < 2 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "reset! expected 2 arguments, but received:", &expr.to_vec());
   }
