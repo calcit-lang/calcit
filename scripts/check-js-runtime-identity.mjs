@@ -80,12 +80,27 @@ try {
     ["aa-layout-field", "zz-layout-field"],
     "Struct field layout must be lexical rather than tag-registration order"
   );
+  const legacyLayoutValue = new runtimeA.CalcitStructValue(
+    layoutDef.name,
+    [lateField, earlyField],
+    ["late", "early"],
+    { name: layoutDef.name, fields: [lateField, earlyField], fieldTypes: [todoType, todoType], impls: [] }
+  );
+  assert.deepEqual(legacyLayoutValue.fields, [earlyField, lateField], "legacy Struct metadata should be canonicalized");
+  assert.deepEqual(legacyLayoutValue.values, ["early", "late"], "canonicalization must preserve field/value alignment");
   const layoutValue = new runtimeA.CalcitStructValue(layoutDef.name, layoutDef.fields, ["early", "late"], layoutDef);
   assert.equal(layoutValue.nthAt(0, earlyField), "early", "indexed Struct reads should use the stable layout");
   assert.equal(layoutValue.assocAt(1, lateField, "updated").values[1], "updated");
   assert.deepEqual(layoutValue.withAt(0, earlyField, "a", 1, lateField, "z").values, ["a", "z"]);
   assert.throws(() => layoutValue.nthAt(0, lateField), /expects field :aa-layout-field/);
   assert.throws(() => layoutValue.assocAt(-1, earlyField, "bad"), /non-negative integer index/);
+  assert.throws(() => layoutValue.withAt(), /index\/tag\/value triples/);
+  const parsedReverseLayout = runtimeA.parse_cirru_edn(
+    "%{} 'LayoutProbe\n  :zz-layout-field |late\n  :aa-layout-field |early",
+    null
+  );
+  assert.deepEqual(parsedReverseLayout.fields, [earlyField, lateField], "EDN Struct fields should be canonicalized");
+  assert.deepEqual(parsedReverseLayout.values, ["early", "late"], "EDN Struct values must follow canonicalized fields");
 
   runtimeA.load_console_formatter_$x_();
   const formatter = globalThis.devtoolsFormatters.at(-1);

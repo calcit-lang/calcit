@@ -1,4 +1,4 @@
-import { CalcitTag, toString } from "./calcit-data.mjs";
+import { CalcitTag, canonicalizeTagPairs, toString } from "./calcit-data.mjs";
 import { CalcitValue } from "./js-primes.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
 
@@ -10,12 +10,10 @@ export class CalcitStructDef {
   cachedHash: number;
 
   constructor(name: CalcitTag, fields: CalcitTag[], fieldTypes: CalcitValue[], impls: CalcitImpl[] = []) {
-    if (fields.length !== fieldTypes.length) {
-      throw new Error("CalcitStructDef: fields and fieldTypes length mismatch");
-    }
+    const [canonicalFields, canonicalTypes] = canonicalizeTagPairs(fields, fieldTypes, "CalcitStructDef");
     this.name = name;
-    this.fields = fields;
-    this.fieldTypes = fieldTypes;
+    this.fields = canonicalFields;
+    this.fieldTypes = canonicalTypes;
     this.impls = impls;
     this.cachedHash = null;
   }

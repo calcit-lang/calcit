@@ -1,7 +1,17 @@
 import { initTernaryTreeMap, Hash, insert } from "@calcit/ternary-tree";
 import { CalcitValue } from "./js-primes.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
-import { newTag, castTag, toString, CalcitTag, getStringName, findInFields, compareTagNames } from "./calcit-data.mjs";
+import {
+  newTag,
+  castTag,
+  toString,
+  CalcitTag,
+  getStringName,
+  findInFields,
+  compareTagNames,
+  canonicalizeTagPairs,
+  tagNamesAreCanonical,
+} from "./calcit-data.mjs";
 
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 
@@ -15,18 +25,18 @@ export class CalcitStructValue {
   cachedHash: Hash;
   constructor(name: CalcitTag, fields: Array<CalcitTag>, values?: Array<CalcitValue>, structRef?: CalcitStructDef) {
     this.name = name;
-    let fieldNames = fields.map(castTag);
-    this.fields = fields;
-    if (values != null) {
-      if (values.length !== fields.length) {
-        throw new Error("fields/values length not match");
-      }
-      this.values = values;
-    } else {
-      this.values = new Array(fieldNames.length);
-    }
+    const fieldNames = fields.map(castTag);
+    const sourceValues = values ?? new Array(fieldNames.length);
+    const [canonicalFields, canonicalValues] = canonicalizeTagPairs(fieldNames, sourceValues, "CalcitStructValue");
+    this.fields = canonicalFields;
+    this.values = canonicalValues;
     this.cachedHash = null;
-    this.structRef = structRef || new CalcitStructDef(name, fields, new Array(fields.length).fill(null));
+    this.structRef =
+      structRef == null
+        ? new CalcitStructDef(name, canonicalFields, new Array(canonicalFields.length).fill(null))
+        : tagNamesAreCanonical(structRef.fields)
+          ? structRef
+          : new CalcitStructDef(structRef.name, structRef.fields, structRef.fieldTypes, structRef.impls);
   }
   get(k: CalcitValue) {
     let field = castTag(k);
@@ -76,7 +86,7 @@ export class CalcitStructValue {
     return new CalcitStructValue(this.name, this.fields, values, this.structRef);
   }
   withAt(...triples: CalcitValue[]): CalcitStructValue {
-    if (triples.length % 3 !== 0) {
+    if (triples.length === 0 || triples.length % 3 !== 0) {
       throw new Error("&struct:with-at expected index/tag/value triples");
     }
     const values = this.values.slice();

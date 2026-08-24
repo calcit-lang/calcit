@@ -143,6 +143,32 @@ export function compareTagNames(x: CalcitTag, y: CalcitTag): number {
   return 0;
 }
 
+export function tagNamesAreCanonical(fields: CalcitTag[]): boolean {
+  for (let idx = 1; idx < fields.length; idx++) {
+    if (compareTagNames(fields[idx - 1], fields[idx]) >= 0) return false;
+  }
+  return true;
+}
+
+export function canonicalizeTagPairs<T>(fields: CalcitTag[], values: T[], context: string): [CalcitTag[], T[]] {
+  if (fields.length !== values.length) {
+    throw new Error(`${context}: fields and values length mismatch`);
+  }
+  if (tagNamesAreCanonical(fields)) return [fields, values];
+
+  const pairs = fields.map((field, idx) => [field, values[idx]] as [CalcitTag, T]);
+  pairs.sort((a, b) => compareTagNames(a[0], b[0]));
+  for (let idx = 1; idx < pairs.length; idx++) {
+    if (pairs[idx - 1][0].value === pairs[idx][0].value) {
+      throw new Error(`${context}: duplicated field :${pairs[idx][0].value}`);
+    }
+  }
+  return [
+    pairs.map(([field]) => field),
+    pairs.map(([, value]) => value),
+  ];
+}
+
 /** returns -1 when not found */
 export function findInFields(xs: Array<CalcitTag>, y: CalcitTag): number {
   let low = 0;

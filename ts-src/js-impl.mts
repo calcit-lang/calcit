@@ -1,6 +1,6 @@
 import { Hash } from "@calcit/ternary-tree";
 import { CalcitValue } from "./js-primes.mjs";
-import { CalcitTag, castTag, findInFields, toString } from "./calcit-data.mjs";
+import { CalcitTag, canonicalizeTagPairs, castTag, findInFields, toString } from "./calcit-data.mjs";
 import type { CalcitTrait } from "./js-trait.mjs";
 
 const CALCIT_IMPL_BRAND = Symbol.for("@calcit/procs/CalcitImpl");
@@ -44,10 +44,11 @@ export class CalcitImpl {
     // optimized dependencies. A global, non-enumerable brand keeps impl values
     // recognizable across those otherwise distinct module instances.
     Object.defineProperty(this, CALCIT_IMPL_BRAND, { value: true });
+    const [canonicalFields, canonicalValues] = canonicalizeTagPairs(fields, values, "CalcitImpl");
     this.name = name;
     this.origin = origin;
-    this.fields = fields;
-    this.values = values;
+    this.fields = canonicalFields;
+    this.values = canonicalValues;
     this.cachedHash = null;
   }
 
