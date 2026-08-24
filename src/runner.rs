@@ -7,8 +7,9 @@ use std::vec;
 
 use crate::builtins;
 use crate::calcit::{
-  CORE_NS, Calcit, CalcitArgLabel, CalcitEnumValue, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList,
-  CalcitListView, CalcitLocal, CalcitProc, CalcitScope, CalcitSyntax, MethodKind, NodeLocation, trailing_option_arg_count,
+  CORE_NS, Calcit, CalcitArgLabel, CalcitCallKind, CalcitEnumValue, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport,
+  CalcitList, CalcitListView, CalcitLocal, CalcitNumberBinaryOp, CalcitProc, CalcitScope, CalcitSyntax, MethodKind, NodeLocation,
+  trailing_option_arg_count,
 };
 use crate::call_stack::{CallStackList, StackKind, using_stack};
 use crate::data::cirru;
@@ -106,6 +107,52 @@ fn build_fn_arity_mismatch_error(info: &CalcitFn, values: &[Calcit], call_stack:
   CalcitErr::use_msg_stack(CalcitErrKind::Unexpected, msg, call_stack)
 }
 
+fn number_binary_proc(operation: CalcitNumberBinaryOp) -> CalcitProc {
+  match operation {
+    CalcitNumberBinaryOp::Add => CalcitProc::NativeAdd,
+    CalcitNumberBinaryOp::Subtract => CalcitProc::NativeMinus,
+    CalcitNumberBinaryOp::Multiply => CalcitProc::NativeMultiply,
+    CalcitNumberBinaryOp::Divide => CalcitProc::NativeDivide,
+    CalcitNumberBinaryOp::LessThan => CalcitProc::NativeLessThan,
+    CalcitNumberBinaryOp::GreaterThan => CalcitProc::NativeGreaterThan,
+  }
+}
+
+fn evaluate_number_binary_call(
+  operation: CalcitNumberBinaryOp,
+  xs: &CalcitList,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  debug_assert_eq!(xs.len(), 3, "specialized binary calls must contain a head and two arguments");
+
+  let evaluate_arg = |arg: &Calcit| {
+    if arg.is_expr_evaluated() {
+      Ok(arg.to_owned())
+    } else {
+      evaluate_expr(arg, scope, file_ns, call_stack)
+    }
+  };
+  // Preserve normal call semantics: each argument is evaluated exactly once,
+  // from left to right, before the operator sees either value.
+  let values = [evaluate_arg(&xs[1])?, evaluate_arg(&xs[2])?];
+
+  match (&values[0], &values[1]) {
+    (Calcit::Number(a), Calcit::Number(b)) => match operation {
+      CalcitNumberBinaryOp::Add => Ok(Calcit::Number(a + b)),
+      CalcitNumberBinaryOp::Subtract => Ok(Calcit::Number(a - b)),
+      CalcitNumberBinaryOp::Multiply => Ok(Calcit::Number(a * b)),
+      CalcitNumberBinaryOp::Divide => Ok(Calcit::Number(a / b)),
+      CalcitNumberBinaryOp::LessThan => Ok(Calcit::Bool(a < b)),
+      CalcitNumberBinaryOp::GreaterThan => Ok(Calcit::Bool(a > b)),
+    },
+    // Static evidence may become stale after hot reload or host interop. Keep
+    // the established dynamic error and stack behavior without re-evaluating.
+    _ => builtins::handle_proc(number_binary_proc(operation), &values, call_stack),
+  }
+}
+
 pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   // println!("eval code: {}", expr.lisp_str());
   use Calcit::*;
@@ -149,6 +196,12 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         expr.get_location(),
       )),
       Some(x) => {
+        if let CalcitCallKind::NumberBinary(operation) = xs.call_kind()
+          && xs.len() == 3
+          && matches!(xs.first(), Some(Calcit::Proc(proc)) if *proc == number_binary_proc(operation))
+        {
+          return evaluate_number_binary_call(operation, xs, scope, file_ns, call_stack);
+        }
         // println!("eval expr: {}", expr.lisp_str());
         // println!("eval expr x: {}", x);
 
@@ -978,6 +1031,86 @@ mod tests {
     let option = user_option_type();
     let info = fn_info(vec![Arc::new(CalcitTypeAnnotation::Number), option.clone(), option]);
     assert!(complete_trailing_option_args(&[Calcit::Number(1.0)], &info).is_none());
+  }
+
+  #[test]
+  fn evaluates_specialized_number_binary_calls() {
+    let cases = [
+      (CalcitNumberBinaryOp::Add, 8.0, 2.0, Calcit::Number(10.0)),
+      (CalcitNumberBinaryOp::Subtract, 8.0, 2.0, Calcit::Number(6.0)),
+      (CalcitNumberBinaryOp::Multiply, 8.0, 2.0, Calcit::Number(16.0)),
+      (CalcitNumberBinaryOp::Divide, 8.0, 2.0, Calcit::Number(4.0)),
+      (CalcitNumberBinaryOp::LessThan, 2.0, 8.0, Calcit::Bool(true)),
+      (CalcitNumberBinaryOp::GreaterThan, 8.0, 2.0, Calcit::Bool(true)),
+    ];
+
+    for (operation, left, right, expected) in cases {
+      let expr = Calcit::from(CalcitList::executable(
+        vec![
+          Calcit::Proc(number_binary_proc(operation)),
+          Calcit::Number(left),
+          Calcit::Number(right),
+        ],
+        CalcitCallKind::NumberBinary(operation),
+      ));
+      assert_eq!(
+        evaluate_expr(&expr, &CalcitScope::default(), "tests.runner", &CallStackList::default()).expect("specialized call"),
+        expected
+      );
+    }
+  }
+
+  #[test]
+  fn specialized_number_call_preserves_dynamic_error_fallback() {
+    let operation = CalcitNumberBinaryOp::Add;
+    let expr = Calcit::from(CalcitList::executable(
+      vec![
+        Calcit::Proc(CalcitProc::NativeAdd),
+        Calcit::Str(Arc::from("oops")),
+        Calcit::Number(1.0),
+      ],
+      CalcitCallKind::NumberBinary(operation),
+    ));
+    let err = evaluate_expr(&expr, &CalcitScope::default(), "tests.runner", &CallStackList::default())
+      .expect_err("stale static evidence must use the normal type error");
+
+    assert!(format!("{err}").contains("&+ requires 2 numbers"));
+  }
+
+  #[test]
+  fn mismatched_number_binary_metadata_uses_normal_dispatch() {
+    let expr = Calcit::from(CalcitList::executable(
+      vec![Calcit::Proc(CalcitProc::NativeMultiply), Calcit::Number(2.0), Calcit::Number(3.0)],
+      CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Add),
+    ));
+
+    assert_eq!(
+      evaluate_expr(&expr, &CalcitScope::default(), "tests.runner", &CallStackList::default())
+        .expect("mismatched call metadata must use the stored procedure"),
+      Calcit::Number(6.0)
+    );
+  }
+
+  #[test]
+  fn specialized_number_call_evaluates_arguments_left_to_right() {
+    let failing_left = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeAdd),
+      Calcit::Str(Arc::from("left")),
+      Calcit::Number(1.0),
+    ]);
+    let failing_right = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeMinus),
+      Calcit::Str(Arc::from("right")),
+      Calcit::Number(1.0),
+    ]);
+    let expr = Calcit::from(CalcitList::executable(
+      vec![Calcit::Proc(CalcitProc::NativeAdd), failing_left, failing_right],
+      CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Add),
+    ));
+    let err = evaluate_expr(&expr, &CalcitScope::default(), "tests.runner", &CallStackList::default())
+      .expect_err("left argument should fail first");
+
+    assert!(format!("{err}").contains("&+ requires 2 numbers"));
   }
 
   #[test]

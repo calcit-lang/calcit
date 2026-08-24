@@ -5,10 +5,10 @@ mod type_rewriting;
 use crate::{
   builtins::{self, is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
-    self, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl, CalcitImport,
-    CalcitList, CalcitLocal, CalcitProc, CalcitScope, CalcitStructDef, CalcitSymbolInfo, CalcitSyntax, CalcitTrait,
-    CalcitTraitMemberKind, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, SchemaKind,
-    brief_type_of_value, pop_type_slot_override, push_type_slot_override, register_type_slot,
+    self, Calcit, CalcitArgLabel, CalcitCallKind, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl,
+    CalcitImport, CalcitList, CalcitLocal, CalcitNumberBinaryOp, CalcitProc, CalcitScope, CalcitStructDef, CalcitSymbolInfo,
+    CalcitSyntax, CalcitTrait, CalcitTraitMemberKind, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation,
+    RawCodeType, SchemaKind, brief_type_of_value, pop_type_slot_override, push_type_slot_override, register_type_slot,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -894,9 +894,34 @@ pub fn compile_source_def_for_snapshot(
 /// traversal over persistent list updates. Quoted/list values stay untouched.
 fn into_executable_call(expr: Calcit) -> Calcit {
   match expr {
-    Calcit::List(items) if matches!(items.as_ref(), CalcitList::List(_)) => Calcit::from(items.to_vec()),
+    Calcit::List(items) if matches!(items.as_ref(), CalcitList::List(_)) => {
+      Calcit::from(CalcitList::executable(items.to_vec(), CalcitCallKind::Normal))
+    }
     _ => expr,
   }
+}
+
+fn classify_number_binary_call(head: &Calcit, args: &[Calcit], scope_types: &ScopeTypes) -> CalcitCallKind {
+  let Calcit::Proc(proc) = head else {
+    return CalcitCallKind::Normal;
+  };
+  let operation = match proc {
+    CalcitProc::NativeAdd => CalcitNumberBinaryOp::Add,
+    CalcitProc::NativeMinus => CalcitNumberBinaryOp::Subtract,
+    CalcitProc::NativeMultiply => CalcitNumberBinaryOp::Multiply,
+    CalcitProc::NativeDivide => CalcitNumberBinaryOp::Divide,
+    CalcitProc::NativeLessThan => CalcitNumberBinaryOp::LessThan,
+    CalcitProc::NativeGreaterThan => CalcitNumberBinaryOp::GreaterThan,
+    _ => return CalcitCallKind::Normal,
+  };
+  if args.len() != 2
+    || !args
+      .iter()
+      .all(|arg| matches!(resolve_type_value(arg, scope_types).as_deref(), Some(CalcitTypeAnnotation::Number)))
+  {
+    return CalcitCallKind::Normal;
+  }
+  CalcitCallKind::NumberBinary(operation)
 }
 
 pub fn preprocess_expr(
@@ -2153,7 +2178,9 @@ fn preprocess_list_call(
           ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, file_ns.into()));
           Ok(Calcit::from(CalcitList::List(ys)))
         } else {
-          Ok(Calcit::from(CalcitList::List(ys)))
+          let items = ys.to_vec();
+          let kind = classify_number_binary_call(&items[0], &items[1..], scope_types);
+          Ok(Calcit::from(CalcitList::executable(items, kind)))
         }
       }
       h => {
@@ -6655,10 +6682,10 @@ mod tests {
     let Calcit::List(outer) = resolved else {
       panic!("expected outer call")
     };
-    assert!(matches!(outer.as_ref(), CalcitList::Vector(_)));
+    assert!(matches!(outer.as_ref(), CalcitList::Call(_, CalcitCallKind::Normal)));
     assert!(matches!(
       outer.get(2),
-      Some(Calcit::List(inner)) if matches!(inner.as_ref(), CalcitList::Vector(_))
+      Some(Calcit::List(inner)) if matches!(inner.as_ref(), CalcitList::Call(_, CalcitCallKind::Normal))
     ));
   }
 
@@ -6684,11 +6711,87 @@ mod tests {
     let Calcit::List(outer) = resolved else {
       panic!("expected quote call")
     };
-    assert!(matches!(outer.as_ref(), CalcitList::Vector(_)));
+    assert!(matches!(outer.as_ref(), CalcitList::Call(_, CalcitCallKind::Normal)));
     assert!(matches!(
       outer.get(1),
       Some(Calcit::List(inner)) if matches!(inner.as_ref(), CalcitList::List(_))
     ));
+  }
+
+  #[test]
+  fn classifies_exact_number_binary_native_calls() {
+    let typed_local = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("typed-number")),
+      sym: Arc::from("typed-number"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.executable"),
+        at_def: Arc::from("main"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Number),
+    });
+    let args = [typed_local, Calcit::Number(1.0)];
+
+    for (proc, operation) in [
+      (CalcitProc::NativeAdd, CalcitNumberBinaryOp::Add),
+      (CalcitProc::NativeMinus, CalcitNumberBinaryOp::Subtract),
+      (CalcitProc::NativeMultiply, CalcitNumberBinaryOp::Multiply),
+      (CalcitProc::NativeDivide, CalcitNumberBinaryOp::Divide),
+      (CalcitProc::NativeLessThan, CalcitNumberBinaryOp::LessThan),
+      (CalcitProc::NativeGreaterThan, CalcitNumberBinaryOp::GreaterThan),
+    ] {
+      assert_eq!(
+        classify_number_binary_call(&Calcit::Proc(proc), &args, &ScopeTypes::new()),
+        CalcitCallKind::NumberBinary(operation)
+      );
+    }
+  }
+
+  #[test]
+  fn preprocessed_number_binary_call_carries_static_operation() {
+    let expr = Cirru::List(vec![Cirru::leaf("&+"), Cirru::leaf("1"), Cirru::leaf("2")]);
+    let code = code_to_calcit(&expr, "tests.executable", "main", vec![]).expect("parse native number call");
+    let warnings = RefCell::new(vec![]);
+
+    let resolved = preprocess_expr(
+      &code,
+      &HashSet::new(),
+      &mut ScopeTypes::new(),
+      "tests.executable",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("preprocess native number call");
+
+    let Calcit::List(call) = resolved else {
+      panic!("expected executable call")
+    };
+    assert_eq!(call.call_kind(), CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Add));
+  }
+
+  #[test]
+  fn leaves_dynamic_and_non_binary_native_calls_unspecialized() {
+    let dynamic_local = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("dynamic-number")),
+      sym: Arc::from("dynamic-number"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.executable"),
+        at_def: Arc::from("main"),
+      }),
+      location: None,
+      type_info: crate::calcit::DYNAMIC_TYPE.clone(),
+    });
+    let dynamic_args = [dynamic_local, Calcit::Number(1.0)];
+    let unary_args = [Calcit::Number(1.0)];
+
+    assert_eq!(
+      classify_number_binary_call(&Calcit::Proc(CalcitProc::NativeAdd), &dynamic_args, &ScopeTypes::new()),
+      CalcitCallKind::Normal
+    );
+    assert_eq!(
+      classify_number_binary_call(&Calcit::Proc(CalcitProc::NativeAdd), &unary_args, &ScopeTypes::new()),
+      CalcitCallKind::Normal
+    );
   }
 
   #[test]
