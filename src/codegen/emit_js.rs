@@ -629,14 +629,14 @@ fn gen_call_code(
     // deftype-slot is preprocessing-only; it has no JS runtime effect.
     Calcit::Proc(CalcitProc::DeftypeSlot) => Ok(format!("{return_code}null")),
     Calcit::Proc(CalcitProc::WithTypeSlot) => Err("internal compiler error: with-type-slot escaped preprocessing".to_owned()),
-    // &struct:nth: with 3 args (struct, idx, :field-tag), use struct.getRequired(tag) for JS
-    // because JS CalcitStructValue fields are sorted by tag.idx (registration order), not alphabetically.
-    // With 2 args (struct, idx), fall back to struct.values[idx] (only valid when index matches).
+    // &struct:nth: typed calls carry the expected field tag so stale schema
+    // metadata fails loudly while the JS runtime reads by precomputed index.
     Calcit::Proc(CalcitProc::NativeStructNth) => {
       if body.len() == 3 {
         let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+        let idx_code = to_js_code(&body[1], ns, local_defs, file_imports, tags, None)?;
         let tag_code = to_js_code(&body[2], ns, local_defs, file_imports, tags, None)?;
-        Ok(format!("{return_code}{record_code}.getRequired({tag_code})"))
+        Ok(format!("{return_code}{record_code}.nthAt({idx_code}, {tag_code})"))
       } else if body.len() == 2 {
         let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
         let idx_code = to_js_code(&body[1], ns, local_defs, file_imports, tags, None)?;
@@ -645,39 +645,34 @@ fn gen_call_code(
         Err(format!("&struct:nth expected 2-3 arguments, got: {body}"))
       }
     }
-    // &struct:assoc-at: optimized assoc with pre-resolved index.
-    // JS uses struct.assoc(tag, value) since JS field ordering differs from Rust.
+    // &struct:assoc-at: direct indexed update with a stale-metadata tag check.
     Calcit::Proc(CalcitProc::NativeStructAssocAt) => {
       if body.len() == 4 {
         let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+        let idx_code = to_js_code(&body[1], ns, local_defs, file_imports, tags, None)?;
         let tag_code = to_js_code(&body[2], ns, local_defs, file_imports, tags, None)?;
         let value_code = to_js_code(&body[3], ns, local_defs, file_imports, tags, None)?;
-        Ok(format!("{return_code}{record_code}.assoc({tag_code}, {value_code})"))
+        Ok(format!("{return_code}{record_code}.assocAt({idx_code}, {tag_code}, {value_code})"))
       } else {
         Err(format!("&struct:assoc-at expected 4 arguments, got: {body}"))
       }
     }
-    // &struct:with-at: optimized with pre-resolved indices.
-    // JS ignores indices and calls the same _$n_record_$o_with(proto, tag, val, ...) function.
+    // &struct:with-at: direct indexed batch update with tag checks.
     Calcit::Proc(CalcitProc::NativeStructWithAt) => {
       if body.len() >= 3 && (body.len() - 1).is_multiple_of(3) {
-        let proc_prefix = get_proc_prefix(ns);
         let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
         let triple_count = (body.len() - 1) / 3;
-        let mut all_args = vec![record_code];
+        let mut all_args = vec![];
         for i in 0..triple_count {
           let base = 1 + i * 3;
-          // Skip index (body[base]), emit tag and value for JS
+          let idx_code = to_js_code(&body[base], ns, local_defs, file_imports, tags, None)?;
           let tag_code = to_js_code(&body[base + 1], ns, local_defs, file_imports, tags, None)?;
           let value_code = to_js_code(&body[base + 2], ns, local_defs, file_imports, tags, None)?;
+          all_args.push(idx_code);
           all_args.push(tag_code);
           all_args.push(value_code);
         }
-        Ok(format!(
-          "{return_code}{proc_prefix}{}({})",
-          escape_var("&struct:with"),
-          all_args.join(", ")
-        ))
+        Ok(format!("{return_code}{record_code}.withAt({})", all_args.join(", ")))
       } else {
         Err(format!(
           "&struct:with-at expected (struct, idx, tag, val, ...) triples, got: {body}"
@@ -2466,5 +2461,48 @@ mod tests {
     let code = to_js_code(&form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("map literal should compile");
 
     assert_eq!(code, "$clt._$n__$M_(_t_.value, 1)");
+  }
+
+  #[test]
+  fn typed_struct_codegen_keeps_precomputed_indices() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+    let nth = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeStructNth),
+      symbol("person"),
+      Calcit::Number(0.0),
+      Calcit::Tag(EdnTag::from("name")),
+    ]);
+    let assoc = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeStructAssocAt),
+      symbol("person"),
+      Calcit::Number(0.0),
+      Calcit::Tag(EdnTag::from("name")),
+      Calcit::Str(Arc::from("Ada")),
+    ]);
+    let with = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeStructWithAt),
+      symbol("person"),
+      Calcit::Number(0.0),
+      Calcit::Tag(EdnTag::from("name")),
+      Calcit::Str(Arc::from("Ada")),
+      Calcit::Number(1.0),
+      Calcit::Tag(EdnTag::from("score")),
+      Calcit::Number(9.0),
+    ]);
+
+    assert_eq!(
+      to_js_code(&nth, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("indexed read should compile"),
+      "person.nthAt(0, _t_.name)"
+    );
+    assert_eq!(
+      to_js_code(&assoc, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("indexed assoc should compile"),
+      "person.assocAt(0, _t_.name, \"Ada\")"
+    );
+    assert_eq!(
+      to_js_code(&with, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("indexed batch update should compile"),
+      "person.withAt(0, _t_.name, \"Ada\", 1, _t_.score, 9)"
+    );
   }
 }

@@ -1636,7 +1636,7 @@ fn preprocess_list_call(
             && let Some(idx) = struct_def.index_of(tag.ref_str())
           {
             // Emit (&struct:nth processed_arg idx :field-tag)
-            // The 3rd arg (field tag) is used by JS codegen where field order differs from Rust
+            // The field tag lets every backend reject stale index metadata after schema drift.
             let items: Vec<Calcit> = vec![
               Calcit::Proc(CalcitProc::NativeStructNth),
               processed_arg,

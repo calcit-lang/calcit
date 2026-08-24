@@ -63,6 +63,30 @@ try {
     "struct field lookup must reject a missing field instead of returning nil"
   );
 
+  const lateField = runtimeA.newTag("zz-layout-field");
+  const earlyField = runtimeA.newTag("aa-layout-field");
+  assert.ok(lateField.idx < earlyField.idx, "fixture must register fields in reverse lexical order");
+  assert.ok(
+    runtimeA.compareTagNames(runtimeA.newTag("\ue000"), runtimeA.newTag("𐀀")) < 0,
+    "field ordering must match Rust Unicode scalar ordering rather than UTF-16 code-unit ordering"
+  );
+  const layoutDef = runtimeA.defstruct(
+    runtimeA.newTag("LayoutProbe"),
+    new runtimeA.CalcitSliceList([lateField, todoType]),
+    new runtimeA.CalcitSliceList([earlyField, todoType])
+  );
+  assert.deepEqual(
+    layoutDef.fields.map((field) => field.value),
+    ["aa-layout-field", "zz-layout-field"],
+    "Struct field layout must be lexical rather than tag-registration order"
+  );
+  const layoutValue = new runtimeA.CalcitStructValue(layoutDef.name, layoutDef.fields, ["early", "late"], layoutDef);
+  assert.equal(layoutValue.nthAt(0, earlyField), "early", "indexed Struct reads should use the stable layout");
+  assert.equal(layoutValue.assocAt(1, lateField, "updated").values[1], "updated");
+  assert.deepEqual(layoutValue.withAt(0, earlyField, "a", 1, lateField, "z").values, ["a", "z"]);
+  assert.throws(() => layoutValue.nthAt(0, lateField), /expects field :aa-layout-field/);
+  assert.throws(() => layoutValue.assocAt(-1, earlyField, "bad"), /non-negative integer index/);
+
   runtimeA.load_console_formatter_$x_();
   const formatter = globalThis.devtoolsFormatters.at(-1);
   const embeddedObjects = (node, found = []) => {

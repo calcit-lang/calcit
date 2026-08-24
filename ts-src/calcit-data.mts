@@ -126,6 +126,23 @@ export let getStringName = (x: CalcitValue): string => {
   throw new Error("Cannot get string as name");
 };
 
+/** Compare tag names by Unicode scalar value, matching Rust `str` ordering. */
+export function compareTagNames(x: CalcitTag, y: CalcitTag): number {
+  let xIdx = 0;
+  let yIdx = 0;
+  while (xIdx < x.value.length && yIdx < y.value.length) {
+    const xCode = x.value.codePointAt(xIdx)!;
+    const yCode = y.value.codePointAt(yIdx)!;
+    if (xCode < yCode) return -1;
+    if (xCode > yCode) return 1;
+    xIdx += xCode > 0xffff ? 2 : 1;
+    yIdx += yCode > 0xffff ? 2 : 1;
+  }
+  if (xIdx < x.value.length) return 1;
+  if (yIdx < y.value.length) return -1;
+  return 0;
+}
+
 /** returns -1 when not found */
 export function findInFields(xs: Array<CalcitTag>, y: CalcitTag): number {
   let low = 0;
@@ -134,9 +151,10 @@ export function findInFields(xs: Array<CalcitTag>, y: CalcitTag): number {
   while (low <= high) {
     const mid = Math.floor((low + high) / 2);
     const midVal = xs[mid];
-    if (midVal.idx < y.idx) {
+    const ordering = compareTagNames(midVal, y);
+    if (ordering < 0) {
       low = mid + 1;
-    } else if (midVal.idx > y.idx) {
+    } else if (ordering > 0) {
       high = mid - 1;
     } else {
       return mid;
