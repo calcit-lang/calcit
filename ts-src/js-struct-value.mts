@@ -1,7 +1,17 @@
 import { initTernaryTreeMap, Hash, insert } from "@calcit/ternary-tree";
 import { CalcitValue } from "./js-primes.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
-import { newTag, castTag, toString, CalcitTag, getStringName, findInFields } from "./calcit-data.mjs";
+import {
+  newTag,
+  castTag,
+  toString,
+  CalcitTag,
+  getStringName,
+  findInFields,
+  compareTagNames,
+  canonicalizeTagPairs,
+  tagNamesAreCanonical,
+} from "./calcit-data.mjs";
 
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 
@@ -15,18 +25,18 @@ export class CalcitStructValue {
   cachedHash: Hash;
   constructor(name: CalcitTag, fields: Array<CalcitTag>, values?: Array<CalcitValue>, structRef?: CalcitStructDef) {
     this.name = name;
-    let fieldNames = fields.map(castTag);
-    this.fields = fields;
-    if (values != null) {
-      if (values.length !== fields.length) {
-        throw new Error("fields/values length not match");
-      }
-      this.values = values;
-    } else {
-      this.values = new Array(fieldNames.length);
-    }
+    const fieldNames = fields.map(castTag);
+    const sourceValues = values ?? new Array(fieldNames.length);
+    const [canonicalFields, canonicalValues] = canonicalizeTagPairs(fieldNames, sourceValues, "CalcitStructValue");
+    this.fields = canonicalFields;
+    this.values = canonicalValues;
     this.cachedHash = null;
-    this.structRef = structRef || new CalcitStructDef(name, fields, new Array(fields.length).fill(null));
+    this.structRef =
+      structRef == null
+        ? new CalcitStructDef(name, canonicalFields, new Array(canonicalFields.length).fill(null))
+        : tagNamesAreCanonical(structRef.fields)
+          ? structRef
+          : new CalcitStructDef(structRef.name, structRef.fields, structRef.fieldTypes, structRef.impls);
   }
   get(k: CalcitValue) {
     let field = castTag(k);
@@ -63,6 +73,40 @@ export class CalcitStructValue {
     }
     return new CalcitStructValue(this.name, this.fields, values, this.structRef);
   }
+  nthAt(index: CalcitValue, field: CalcitValue): CalcitValue {
+    const idx = checkedStructIndex(index, "&struct:nth");
+    this.assertFieldAt(idx, field, "&struct:nth");
+    return this.values[idx];
+  }
+  assocAt(index: CalcitValue, field: CalcitValue, value: CalcitValue): CalcitStructValue {
+    const idx = checkedStructIndex(index, "&struct:assoc-at");
+    this.assertFieldAt(idx, field, "&struct:assoc-at");
+    const values = this.values.slice();
+    values[idx] = value;
+    return new CalcitStructValue(this.name, this.fields, values, this.structRef);
+  }
+  withAt(...triples: CalcitValue[]): CalcitStructValue {
+    if (triples.length === 0 || triples.length % 3 !== 0) {
+      throw new Error("&struct:with-at expected index/tag/value triples");
+    }
+    const values = this.values.slice();
+    for (let base = 0; base < triples.length; base += 3) {
+      const idx = checkedStructIndex(triples[base], "&struct:with-at");
+      this.assertFieldAt(idx, triples[base + 1], "&struct:with-at");
+      values[idx] = triples[base + 2];
+    }
+    return new CalcitStructValue(this.name, this.fields, values, this.structRef);
+  }
+  private assertFieldAt(idx: number, field: CalcitValue, operation: string): void {
+    if (idx >= this.fields.length) {
+      throw new Error(`${operation} index ${idx} out of range for struct '${this.name.value}' with ${this.fields.length} fields`);
+    }
+    const fieldTag = castTag(field);
+    const expectedTag = this.fields[idx];
+    if (expectedTag.value !== fieldTag.value) {
+      throw new Error(`${operation} index ${idx} expects field :${expectedTag.value}, but received :${fieldTag.value}`);
+    }
+  }
   /** return -1 for missing */
   findIndex(k: CalcitValue) {
     let field = castTag(k);
@@ -97,35 +141,21 @@ export class CalcitStructValue {
 }
 
 export let new_struct_value = (name: CalcitValue, ...fields: Array<CalcitValue>): CalcitValue => {
-  let fieldNames = fields.map(castTag).sort((x, y) => {
-    if (x.idx < y.idx) {
-      return -1;
-    } else if (x.idx > y.idx) {
-      return 1;
-    } else {
-      throw new Error(`Unexpected duplication in struct fields: ${x.toString()}`);
-    }
-  });
+  let fieldNames = fields.map(castTag).sort(compareTagNames);
+  assertUniqueFields(fieldNames, "Unexpected duplication in struct fields");
   return new CalcitStructValue(castTag(name), fieldNames);
 };
 
 export let new_impl_struct_value = (impl: CalcitImpl, name: CalcitValue, ...fields: Array<CalcitValue>): CalcitValue => {
-  let fieldNames = fields.map(castTag).sort((x, y) => {
-    if (x.idx < y.idx) {
-      return -1;
-    } else if (x.idx > y.idx) {
-      return 1;
-    } else {
-      throw new Error(`Unexpected duplication in struct fields: ${x.toString()}`);
-    }
-  });
+  let fieldNames = fields.map(castTag).sort(compareTagNames);
+  assertUniqueFields(fieldNames, "Unexpected duplication in struct fields");
   let nameTag = castTag(name);
   let structRef = new CalcitStructDef(nameTag, fieldNames, new Array(fieldNames.length).fill(null), [impl]);
   return new CalcitStructValue(nameTag, fieldNames, undefined, structRef);
 };
 
 /** Loose record: `?{} :field1 val1 :field2 val2` – record without a declared struct.
- *  Fields are sorted by tag index. The record name is "?" (sentinel). */
+ *  Fields use the same lexical layout as named structs. The record name is "_". */
 export let _$q__$M_ = (...xs: Array<CalcitValue>): CalcitValue => {
   if (xs.length % 2 !== 0) {
     throw new Error("?{} expected pairs of :field value");
@@ -134,10 +164,10 @@ export let _$q__$M_ = (...xs: Array<CalcitValue>): CalcitValue => {
   for (let i = 0; i < xs.length; i += 2) {
     pairs.push([castTag(xs[i]), xs[i + 1]]);
   }
-  pairs.sort((a, b) => a[0].idx - b[0].idx);
+  pairs.sort((a, b) => compareTagNames(a[0], b[0]));
   // Check for duplicate fields after sorting
   for (let i = 1; i < pairs.length; i++) {
-    if (pairs[i][0].idx === pairs[i - 1][0].idx) {
+    if (pairs[i][0].value === pairs[i - 1][0].value) {
       throw new Error(`?{} received duplicate field: :${getStringName(pairs[i][0])}`);
     }
   }
@@ -146,6 +176,21 @@ export let _$q__$M_ = (...xs: Array<CalcitValue>): CalcitValue => {
   let looseTag = newTag("_");
   return new CalcitStructValue(looseTag, fieldNames, values);
 };
+
+function checkedStructIndex(value: CalcitValue, operation: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${operation} expected a non-negative integer index, but received: ${value}`);
+  }
+  return value;
+}
+
+function assertUniqueFields(fields: CalcitTag[], message: string): void {
+  for (let idx = 1; idx < fields.length; idx++) {
+    if (fields[idx - 1].value === fields[idx].value) {
+      throw new Error(`${message}: ${fields[idx].toString()}`);
+    }
+  }
+}
 
 export let fieldsEqual = (xs: Array<CalcitTag>, ys: Array<CalcitTag>): boolean => {
   if (xs === ys) {

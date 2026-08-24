@@ -126,6 +126,49 @@ export let getStringName = (x: CalcitValue): string => {
   throw new Error("Cannot get string as name");
 };
 
+/** Compare tag names by Unicode scalar value, matching Rust `str` ordering. */
+export function compareTagNames(x: CalcitTag, y: CalcitTag): number {
+  let xIdx = 0;
+  let yIdx = 0;
+  while (xIdx < x.value.length && yIdx < y.value.length) {
+    const xCode = x.value.codePointAt(xIdx)!;
+    const yCode = y.value.codePointAt(yIdx)!;
+    if (xCode < yCode) return -1;
+    if (xCode > yCode) return 1;
+    xIdx += xCode > 0xffff ? 2 : 1;
+    yIdx += yCode > 0xffff ? 2 : 1;
+  }
+  if (xIdx < x.value.length) return 1;
+  if (yIdx < y.value.length) return -1;
+  return 0;
+}
+
+export function tagNamesAreCanonical(fields: CalcitTag[]): boolean {
+  for (let idx = 1; idx < fields.length; idx++) {
+    if (compareTagNames(fields[idx - 1], fields[idx]) >= 0) return false;
+  }
+  return true;
+}
+
+export function canonicalizeTagPairs<T>(fields: CalcitTag[], values: T[], context: string): [CalcitTag[], T[]] {
+  if (fields.length !== values.length) {
+    throw new Error(`${context}: fields and values length mismatch`);
+  }
+  if (tagNamesAreCanonical(fields)) return [fields, values];
+
+  const pairs = fields.map((field, idx) => [field, values[idx]] as [CalcitTag, T]);
+  pairs.sort((a, b) => compareTagNames(a[0], b[0]));
+  for (let idx = 1; idx < pairs.length; idx++) {
+    if (pairs[idx - 1][0].value === pairs[idx][0].value) {
+      throw new Error(`${context}: duplicated field :${pairs[idx][0].value}`);
+    }
+  }
+  return [
+    pairs.map(([field]) => field),
+    pairs.map(([, value]) => value),
+  ];
+}
+
 /** returns -1 when not found */
 export function findInFields(xs: Array<CalcitTag>, y: CalcitTag): number {
   let low = 0;
@@ -134,9 +177,10 @@ export function findInFields(xs: Array<CalcitTag>, y: CalcitTag): number {
   while (low <= high) {
     const mid = Math.floor((low + high) / 2);
     const midVal = xs[mid];
-    if (midVal.idx < y.idx) {
+    const ordering = compareTagNames(midVal, y);
+    if (ordering < 0) {
       low = mid + 1;
-    } else if (midVal.idx > y.idx) {
+    } else if (ordering > 0) {
       high = mid - 1;
     } else {
       return mid;

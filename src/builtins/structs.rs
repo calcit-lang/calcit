@@ -635,14 +635,34 @@ pub fn call_loose_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 /// This is the optimized path emitted by the preprocessor when the field index is known at compile time.
 pub fn struct_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   // Accept 2 or 3 args: (struct, idx) or (struct, idx, :field-tag)
-  // The 3rd arg (field tag) is only used by JS codegen; Rust runtime ignores it.
+  // The optional field tag guards generated code against stale schema indices.
   if xs.len() < 2 || xs.len() > 3 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:nth expected 2-3 arguments, but received:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::Struct(CalcitStructValue { values, struct_ref }), Calcit::Number(n)) => {
-      let idx = *n as usize;
+      let idx = checked_struct_index(*n, "&struct:nth")?;
       if idx < values.len() {
+        if let Some(field) = xs.get(2) {
+          let Calcit::Tag(field_tag) = field else {
+            return CalcitErr::err_str(
+              CalcitErrKind::Type,
+              format!("&struct:nth expected an optional field tag, but received: {}", field.lisp_str()),
+            );
+          };
+          let Some(expected_tag) = struct_ref.fields.get(idx) else {
+            return CalcitErr::err_str(
+              CalcitErrKind::Arity,
+              format!("&struct:nth struct `{}` is missing field metadata at index {idx}", struct_ref.name),
+            );
+          };
+          if expected_tag != field_tag {
+            return CalcitErr::err_str(
+              CalcitErrKind::Type,
+              format!("&struct:nth index {idx} expects field `:{expected_tag}`, but received `:{field_tag}`"),
+            );
+          }
+        }
         Ok(values[idx].to_owned())
       } else {
         CalcitErr::err_str(
@@ -1562,6 +1582,22 @@ mod tests {
     let with_error = struct_with_at(&[struct_value, Calcit::Number(1.0), Calcit::tag("x"), Calcit::Number(3.0)])
       .expect_err("stale with tag must fail");
     assert!(with_error.msg.contains("expects field `:y`"));
+  }
+
+  #[test]
+  fn indexed_struct_reads_validate_indices_and_field_tags() {
+    let struct_value = indexed_struct_fixture();
+    let stale = struct_nth(&[struct_value.clone(), Calcit::Number(0.0), Calcit::tag("y")]).expect_err("stale read tag must fail");
+    assert!(stale.msg.contains("expects field `:x`"));
+
+    let invalid =
+      struct_nth(&[struct_value.clone(), Calcit::Number(0.5), Calcit::tag("x")]).expect_err("fractional read index must fail");
+    assert!(invalid.msg.contains("non-negative integer index"));
+
+    assert_eq!(
+      struct_nth(&[struct_value, Calcit::Number(1.0), Calcit::tag("y")]).expect("matching index/tag read"),
+      Calcit::Number(2.0)
+    );
   }
 
   #[test]

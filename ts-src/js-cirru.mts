@@ -6,7 +6,7 @@ import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitStructValue } from "./js-struct-value.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
-import { CalcitTag, CalcitSymbol, CalcitRecur, newTag } from "./calcit-data.mjs";
+import { CalcitTag, CalcitSymbol, CalcitRecur, newTag, compareTagNames } from "./calcit-data.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { CalcitEnumDef } from "./js-enum-def.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
@@ -352,9 +352,7 @@ const extract_cirru_edn_inner = (x: CirruEdnFormat, options: CalcitValue, preser
           throw new Error(`Expected field pairs for struct, got: ${pair}`);
         }
       });
-      entries.sort((a, b) => {
-        return a[0].cmp(b[0]);
-      });
+      entries.sort((a, b) => compareTagNames(a[0], b[0]));
       let fields: Array<CalcitTag> = [];
       let values: Array<CalcitValue> = [];
 

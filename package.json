@@ -18,6 +18,7 @@
     "test-snippets": "cargo test -q snippets::tests",
     "check-js-runtime": "node scripts/check-js-runtime-identity.mjs",
     "bench-recur-smoke": "cargo run --bin calcit -- calcit/test.cirru js && node --input-type=module -e \"import { test_loop } from './js-out/test-recursion.main.mjs'; const n=3000; const t0=process.hrtime.bigint(); for(let i=0;i<n;i++) test_loop(); const dt=Number(process.hrtime.bigint()-t0)/1e6; console.log('test_loop_ms='+dt.toFixed(3));\"",
+    "bench-struct-index": "yarn compile && node scripts/bench-struct-index.mjs",
     "check-smooth": "yarn fmt-rs && yarn lint-rs && yarn test-rs && yarn check-all",
     "check-all": "yarn compile && yarn check-js-runtime && yarn check-agent-interface && yarn try-core-tests && yarn try-rs && yarn try-js && yarn try-ir && yarn try-wasm",
     "check-agent-interface": "cargo build --bin calcit && node scripts/check-agent-interface.mjs",

@@ -17,6 +17,7 @@ import {
   refsRegistry,
   toString,
   getStringName,
+  compareTagNames,
   _$n__$e_,
   hashFunction,
 } from "./calcit-data.mjs";
@@ -252,7 +253,7 @@ export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStr
     fields.push({ tag: fieldTag, type: fieldType });
   }
 
-  fields.sort((a, b) => a.tag.idx - b.tag.idx);
+  fields.sort((a, b) => compareTagNames(a.tag, b.tag));
   for (let i = 1; i < fields.length; i++) {
     if (fields[i - 1].tag.value === fields[i].tag.value) {
       throw new Error(`defstruct duplicated field: ${fields[i].tag.toString()}`);
@@ -279,7 +280,7 @@ export let defenum = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnum
     entries.push({ tag, payload });
   }
 
-  entries.sort((a, b) => a.tag.idx - b.tag.idx);
+  entries.sort((a, b) => compareTagNames(a.tag, b.tag));
   for (let i = 1; i < entries.length; i++) {
     if (entries[i - 1].tag.value === entries[i].tag.value) {
       throw new Error(`defenum duplicated variant: ${entries[i].tag.toString()}`);
@@ -324,7 +325,7 @@ export let _$n_impl_$o__$o_new = (name: CalcitValue, ...pairs: CalcitValue[]): C
     }
     entries.push({ tag: fieldTag, value });
   }
-  entries.sort((a, b) => a.tag.idx - b.tag.idx);
+  entries.sort((a, b) => compareTagNames(a.tag, b.tag));
   for (let i = 1; i < entries.length; i++) {
     if (entries[i - 1].tag.value === entries[i].tag.value) {
       throw new Error(`&impl::new duplicated field: ${entries[i].tag.toString()}`);
@@ -391,11 +392,22 @@ export function _$n_struct_$o_field_tag(x: CalcitValue, idx: CalcitValue): Calci
   return x.fields[i];
 }
 
-export function _$n_struct_$o_nth(x: CalcitValue, idx: CalcitValue): CalcitValue {
+export function _$n_struct_$o_nth(x: CalcitValue, idx: CalcitValue, field?: CalcitValue): CalcitValue {
   if (!(x instanceof CalcitStructValue)) throw new Error(`&struct:nth expected a struct value, got ${x}`);
+  if (field !== undefined) return x.nthAt(idx, field);
   const i = idx as number;
   if (i < 0 || i >= x.values.length) throw new Error(`&struct:nth index ${i} out of range for struct with ${x.values.length} fields`);
   return x.values[i];
+}
+
+export function _$n_struct_$o_assoc_at(x: CalcitValue, idx: CalcitValue, field: CalcitValue, value: CalcitValue): CalcitValue {
+  if (!(x instanceof CalcitStructValue)) throw new Error(`&struct:assoc-at expected a struct value, got ${x}`);
+  return x.assocAt(idx, field, value);
+}
+
+export function _$n_struct_$o_with_at(x: CalcitValue, ...triples: CalcitValue[]): CalcitValue {
+  if (!(x instanceof CalcitStructValue)) throw new Error(`&struct:with-at expected a struct value, got ${x}`);
+  return x.withAt(...triples);
 }
 
 
@@ -1845,8 +1857,8 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
         const idx = actualNames.indexOf(name);
         decodedFields.set(name, decode_typed_edn_node(graph, fieldNode, input.values[idx], `${path}.${name}`, depth + 1));
       });
-      // Native declarations use lexical field order while the JS runtime keeps
-      // its interned-tag order. Re-align values to the nominal JS declaration.
+      // Re-align by name so values produced by older runtimes or external data
+      // still adopt the current nominal declaration's canonical field layout.
       if (decodedFields.size !== node.nominal.fields.length) {
         return typed_edn_error(path, `struct :${node.nominal.name.value} decoder fields do not match its nominal declaration`);
       }
