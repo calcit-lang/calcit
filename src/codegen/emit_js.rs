@@ -195,6 +195,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
     Calcit::Bool(b) => Ok(b.to_string()),
     Calcit::Number(n) => Ok(n.to_string()),
     Calcit::Nil => Ok(String::from("null")),
+    Calcit::Unit => Ok(String::from("void 0")),
     // mainly for methods, which are recognized during reading
     Calcit::Proc(p) => Ok(format!("new {var_prefix}CalcitSymbol({})", escape_cirru_str(p.as_ref()))),
     Calcit::List(ys) => {
@@ -392,6 +393,7 @@ fn to_js_code(
       Calcit::Bool(b) => Ok(b.to_string()),
       Calcit::Number(n) => Ok(n.to_string()),
       Calcit::Nil => Ok(String::from("null")),
+      Calcit::Unit => Ok(String::from("void 0")),
       Calcit::Tag(s) => {
         let mut tags = tags.borrow_mut();
         tags.insert(s.to_owned());
@@ -2435,6 +2437,19 @@ mod tests {
     .expect("bare empty map should compile");
 
     assert_eq!(code, "$clt._$n__$M_()");
+  }
+
+  #[test]
+  fn explicit_unit_codegen_is_distinct_from_nil() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+
+    let unit = to_js_code(&Calcit::Unit, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("unit should compile");
+    let nil = to_js_code(&Calcit::Nil, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("nil should compile");
+
+    assert_eq!(unit, "void 0");
+    assert_eq!(nil, "null");
   }
 
   #[test]

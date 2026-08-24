@@ -5258,7 +5258,7 @@ impl CalcitFnTypeAnnotation {
 pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
   match expected {
     CalcitTypeAnnotation::Dynamic => true,
-    CalcitTypeAnnotation::Unit => matches!(value, Calcit::Nil),
+    CalcitTypeAnnotation::Unit => matches!(value, Calcit::Unit | Calcit::Nil),
     CalcitTypeAnnotation::Optional(inner) => matches!(value, Calcit::Nil) || value_matches_type_annotation(value, inner),
     CalcitTypeAnnotation::JsNullish(inner) => matches!(value, Calcit::Nil) || value_matches_type_annotation(value, inner),
     CalcitTypeAnnotation::Bool => matches!(value, Calcit::Bool(_)),
@@ -5393,7 +5393,7 @@ fn infer_runtime_enum_applied_args(enum_def: &CalcitEnumDef, enum_value: &Calcit
 
 pub fn infer_runtime_value_type(value: &Calcit) -> Arc<CalcitTypeAnnotation> {
   match value {
-    Calcit::Nil => Arc::new(CalcitTypeAnnotation::Unit),
+    Calcit::Nil | Calcit::Unit => Arc::new(CalcitTypeAnnotation::Unit),
     Calcit::Bool(_) => Arc::new(CalcitTypeAnnotation::Bool),
     Calcit::Number(_) => Arc::new(CalcitTypeAnnotation::Number),
     Calcit::Str(_) => Arc::new(CalcitTypeAnnotation::String),

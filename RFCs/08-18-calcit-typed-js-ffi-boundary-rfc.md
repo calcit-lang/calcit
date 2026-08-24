@@ -237,7 +237,7 @@ defstruct NodeProbe
 ```
 
 当前 probe 使用 `Map<Tag, Dynamic>`，应迁移成命名 Struct。Storage mutation、console、
-timer registration 等只有副作用的 wrapper 应显式以 `nil` 收尾并声明返回 `Unit`，不因
+timer registration 等只有副作用的 wrapper 应显式以 `&unit` 收尾并声明返回 `Unit`，不因
 JavaScript 返回 `undefined` 就暴露 `Dynamic`。
 
 ## 类型表达案例目录

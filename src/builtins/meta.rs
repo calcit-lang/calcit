@@ -63,6 +63,7 @@ pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
   match &xs[0] {
     Nil => Ok(Calcit::tag("nil")),
+    Unit => Ok(Calcit::tag("unit")),
     Bool(..) => Ok(Calcit::tag("bool")),
     Number(..) => Ok(Calcit::tag("number")),
     Symbol { .. } => Ok(Calcit::tag("symbol")),

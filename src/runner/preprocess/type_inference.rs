@@ -502,6 +502,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
     Calcit::Str(_) => Some(tag_annotation("string")),
     Calcit::Bool(_) => Some(tag_annotation("bool")),
     Calcit::Nil => Some(tag_annotation("nil")),
+    Calcit::Unit => Some(tag_annotation("unit")),
     Calcit::Tag(_) => Some(tag_annotation("tag")),
     Calcit::Map(values) => Some(Arc::new(CalcitTypeAnnotation::Map(
       infer_homogeneous_type(values.iter().map(|(key, _)| key), scope_types),

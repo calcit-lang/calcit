@@ -129,7 +129,8 @@ fn calcit_to_json(value: &Calcit) -> Result<Value, CalcitErr> {
       }
       Ok(Value::Object(object))
     }
-    Calcit::Ref(..)
+    Calcit::Unit
+    | Calcit::Ref(..)
     | Calcit::Thunk(..)
     | Calcit::Recur(..)
     | Calcit::StructDef(..)

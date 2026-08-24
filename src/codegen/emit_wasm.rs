@@ -7,7 +7,7 @@
 //! - Arithmetic: `&+`, `&-`, `&*`, `&/`, `&number:rem`
 //! - Comparisons: `&<`, `&>`, `&=`
 //! - `recur` (tail recursion via WASM loop)
-//! - Number literals, Bool literals, Nil (→ 0.0)
+//! - Number literals, Bool literals, Nil/Unit (→ 0.0)
 //! - Tag values (compiled to f64 integer constants)
 //! - Struct creation (`&%{}`) and field access (`&struct:nth`, `&struct:get`)
 //! - Tuple creation (`::`) and field access (`&enum:nth`)
@@ -979,7 +979,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
     Calcit::Bool(true) => {
       ctx.emit(f64_const(1.0));
     }
-    Calcit::Bool(false) | Calcit::Nil => {
+    Calcit::Bool(false) | Calcit::Nil | Calcit::Unit => {
       ctx.emit(f64_const(0.0));
     }
     Calcit::List(xs) if xs.is_empty() => {
@@ -2856,7 +2856,7 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
   let rest = &body[1..];
 
   match pair {
-    Calcit::Nil => emit_body(ctx, rest),
+    Calcit::Nil | Calcit::Unit => emit_body(ctx, rest),
     Calcit::List(xs) if xs.is_empty() => emit_body(ctx, rest),
     Calcit::List(xs) if xs.len() == 2 => {
       let var_name = match &xs[0] {
@@ -3187,7 +3187,7 @@ fn collect_struct_field_tags_from_program(
 }
 
 /// If `expr` is a literal enum constructor `(NativeEnum :tag val0 val1...)` with only
-/// literal args (Tag, Str, Number, Bool, Nil), return its lispy string representation.
+/// literal args (Tag, Str, Number, Bool, Nil, Unit), return its lispy string representation.
 /// Used both to pre-intern the string and to emit it as a constant in `emit_turn_string`.
 pub(crate) fn try_format_enum_literal(expr: &Calcit) -> Option<String> {
   if let Calcit::List(list) = expr
@@ -3201,7 +3201,7 @@ pub(crate) fn try_format_enum_literal(expr: &Calcit) -> Option<String> {
         s.push(' ');
       }
       match item {
-        Calcit::Tag(_) | Calcit::Str(_) | Calcit::Number(_) | Calcit::Bool(_) | Calcit::Nil => {
+        Calcit::Tag(_) | Calcit::Str(_) | Calcit::Number(_) | Calcit::Bool(_) | Calcit::Nil | Calcit::Unit => {
           use std::fmt::Write;
           write!(s, "{item}").ok()?;
         }

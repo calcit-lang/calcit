@@ -219,7 +219,9 @@ impl DataShapeGraph {
       .ok_or_else(|| DataShapeValueError::at(path, format!("missing shape node #{node_id}")))?;
 
     match node {
-      DataShapeNode::Unit if matches!(value, Calcit::Nil) => Ok(()),
+      // `nil` remains accepted for source compatibility, while `&unit` is the
+      // distinct value produced by newly written Unit-returning code.
+      DataShapeNode::Unit if matches!(value, Calcit::Unit | Calcit::Nil) => Ok(()),
       DataShapeNode::Bool if matches!(value, Calcit::Bool(_)) => Ok(()),
       DataShapeNode::Number if matches!(value, Calcit::Number(_)) => Ok(()),
       DataShapeNode::String if matches!(value, Calcit::Str(_)) => Ok(()),
@@ -383,7 +385,7 @@ impl DataShapeNode {
   pub(crate) fn expected_kind(&self) -> &str {
     match self {
       Self::Dynamic => "dynamic",
-      Self::Unit => "nil",
+      Self::Unit => "&unit",
       Self::Bool => "bool",
       Self::Number => "number",
       Self::String => "string",

@@ -14,6 +14,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
   match xs {
     Cirru::Leaf(s) => match &**s {
       "nil" => Ok(Calcit::Nil),
+      "&unit" => Ok(Calcit::Unit),
       "true" => Ok(Calcit::Bool(true)),
       "false" => Ok(Calcit::Bool(false)),
       "&E" => Ok(Calcit::Number(std::f64::consts::E)),
@@ -236,6 +237,7 @@ pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
   match xs {
     Calcit::CirruQuote(code) => Ok(code.to_owned()),
     Calcit::Nil => Ok(Cirru::leaf("nil")),
+    Calcit::Unit => Ok(Cirru::leaf("&unit")),
     Calcit::Bool(b) => Ok(Cirru::Leaf(b.to_string().into())),
     Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string().into())),
     Calcit::Str(s) => Ok(Cirru::Leaf((**s).into())),
@@ -259,6 +261,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
   use Calcit::*;
   match x {
     Nil => Ok(Cirru::leaf("nil")),
+    Unit => Ok(Cirru::leaf("&unit")),
     Bool(true) => Ok(Cirru::leaf("true")),
     Bool(false) => Ok(Cirru::leaf("false")),
     Number(n) => Ok(Cirru::Leaf(n.to_string().into())),
@@ -317,6 +320,13 @@ mod tests {
     assert!(matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AssertType, _))));
     assert!(matches!(items.get(1), Some(Calcit::Symbol { .. })));
     assert!(matches!(items.get(2), Some(Calcit::Tag(_))));
+  }
+
+  #[test]
+  fn parses_explicit_unit_literal() {
+    let parsed = code_to_calcit(&Cirru::leaf("&unit"), "tests.ns", "demo", vec![]).expect("parse unit");
+    assert!(matches!(parsed, Calcit::Unit));
+    assert_eq!(calcit_to_cirru(&parsed).expect("render unit"), Cirru::leaf("&unit"));
   }
 
   #[test]

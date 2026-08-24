@@ -1138,6 +1138,7 @@ pub fn preprocess_expr(
     Calcit::Number(..)
     | Calcit::Str(..)
     | Calcit::Nil
+    | Calcit::Unit
     | Calcit::Bool(..)
     | Calcit::Tag(..)
     | Calcit::CirruQuote(..)
