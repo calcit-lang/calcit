@@ -579,7 +579,7 @@ fn validate_existing_compatibility(
     ));
   }
   let mut diff = BTreeSet::new();
-  if entry.schema.as_ref() != spec.schema_annotation.as_ref() {
+  if !scaffold_schema_compatible(entry.schema.as_ref(), spec.schema_annotation.as_ref()) {
     let existing_dynamic = matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic);
     let planned_dynamic = matches!(spec.schema_annotation.as_ref(), CalcitTypeAnnotation::Dynamic);
     if existing_dynamic || planned_dynamic {
@@ -615,6 +615,13 @@ fn validate_existing_compatibility(
     diff.insert("code".to_owned());
   }
   Ok(diff)
+}
+
+fn scaffold_schema_compatible(existing: &CalcitTypeAnnotation, planned: &CalcitTypeAnnotation) -> bool {
+  existing == planned
+    || (matches!(existing, CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_))
+      && matches!(planned, CalcitTypeAnnotation::Custom(_))
+      && existing.matches_annotation(planned))
 }
 
 fn report_to_edn(report: &ScaffoldPlanReport, dry_run: bool, apply_result: &ScaffoldApplyResult) -> Edn {
@@ -876,7 +883,12 @@ fn edn_symbol(value: &Edn, context: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-  use super::{apply_scaffold, parse_architecture_plan, plan_id, reconcile_plan};
+  use std::sync::Arc;
+
+  use calcit::calcit::{Calcit, CalcitEnumDef, CalcitStructDef, CalcitStructValue, CalcitTypeAnnotation};
+  use cirru_edn::EdnTag;
+
+  use super::{apply_scaffold, parse_architecture_plan, plan_id, reconcile_plan, scaffold_schema_compatible};
   use crate::cli_handlers::edit::load_snapshot;
   use crate::cli_handlers::test_support::TestProject;
 
@@ -922,6 +934,27 @@ mod tests {
       :code $ quote (def scaffold-answer 42)
 "#;
 
+  const DATA_DEFINITION_KIND_PLAN: &str = r#"
+{}
+  :schema-version 1
+  :feature 'data-kinds
+  :roots $ #{} 'app.main/Box0 'app.main/Choice0
+  :definitions $ {}
+    'app.main/Box0 $ {}
+      :mode :ensure
+      :kind :data
+      :doc "|Nominal box."
+      :schema $ :: 'StructDef
+      :code $ quote (defstruct Box0 (:value 'String))
+    'app.main/Choice0 $ {}
+      :mode :ensure
+      :kind :data
+      :doc "|Nominal choice."
+      :schema $ :: 'EnumDef
+      :code $ quote (defenum Choice0 (:none))
+  :edges $ #{}
+"#;
+
   #[test]
   fn parses_flat_symbol_graph_and_has_stable_plan_id() {
     let plan = parse_architecture_plan(PLAN).expect("plan should parse");
@@ -949,6 +982,47 @@ mod tests {
     let invalid = PLAN.replace("[] 'value", "[] |value");
     let error = parse_architecture_plan(&invalid).expect_err("string params should be rejected");
     assert!(error.contains("Symbol"), "unexpected error: {error}");
+  }
+
+  #[test]
+  fn accepts_concrete_data_definition_schemas_for_kind_markers() {
+    let plan = parse_architecture_plan(DATA_DEFINITION_KIND_PLAN).expect("data definition plan should parse");
+    let planned_struct_schema = plan
+      .definitions
+      .get("app.main/Box0")
+      .expect("struct plan should exist")
+      .schema_annotation
+      .as_ref();
+    let planned_enum_schema = plan
+      .definitions
+      .get("app.main/Choice0")
+      .expect("enum plan should exist")
+      .schema_annotation
+      .as_ref();
+    let struct_schema = CalcitTypeAnnotation::StructDef(Arc::new(CalcitStructDef::from_fields(
+      EdnTag::new("Box0"),
+      vec![EdnTag::new("value")],
+    )));
+    let enum_schema = CalcitTypeAnnotation::EnumDef(Arc::new(
+      CalcitEnumDef::from_struct(CalcitStructValue {
+        struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Choice0"), vec![EdnTag::new("none")])),
+        values: Arc::new(vec![Calcit::Nil]),
+      })
+      .expect("enum definition should be valid"),
+    ));
+
+    assert!(matches!(planned_struct_schema, CalcitTypeAnnotation::Custom(_)));
+    assert!(matches!(planned_enum_schema, CalcitTypeAnnotation::Custom(_)));
+    assert!(scaffold_schema_compatible(&struct_schema, planned_struct_schema));
+    assert!(scaffold_schema_compatible(&enum_schema, planned_enum_schema));
+    assert!(!scaffold_schema_compatible(
+      &struct_schema,
+      &CalcitTypeAnnotation::from_tag_name("Struct")
+    ));
+    assert!(!scaffold_schema_compatible(
+      &CalcitTypeAnnotation::Number,
+      &CalcitTypeAnnotation::Dynamic
+    ));
   }
 
   #[test]

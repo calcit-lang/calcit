@@ -493,14 +493,8 @@ fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<Calcit
   // the canonical symbol parser. Otherwise a second unrelated Snapshot write
   // would interpret definition-kind markers as anonymous Enum values and
   // silently serialize `StructDef`/`EnumDef` as `Enum`.
-  if let Edn::Enum(view) = value
-    && view.extra.is_empty()
-    && let Some(canonical) = CalcitTypeAnnotation::canonical_type_symbol_name(&view.variant)
-    && !matches!(canonical, "Optional" | "JsNullish" | "Variadic")
-  {
-    return Ok(CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::Symbol(Arc::from(
-      canonical,
-    ))));
+  if let Some(annotation) = parse_zero_payload_schema_wrapper(value) {
+    return Ok(annotation);
   }
 
   // Primitive type tag stored as a plain EDN tag (e.g. :string, :number).
@@ -547,6 +541,20 @@ fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<Calcit
     ));
   }
   Ok(annotation)
+}
+
+fn parse_zero_payload_schema_wrapper(value: &Edn) -> Option<Arc<CalcitTypeAnnotation>> {
+  let Edn::Enum(view) = value else { return None };
+  if !view.extra.is_empty() {
+    return None;
+  }
+  let canonical = CalcitTypeAnnotation::canonical_type_symbol_name(&view.variant)?;
+  if matches!(canonical, "Optional" | "JsNullish" | "Variadic") {
+    return None;
+  }
+  Some(CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::Symbol(Arc::from(
+    canonical,
+  ))))
 }
 
 fn tags_vec_to_set(tags: Vec<String>) -> HashSet<EdnTag> {
@@ -1677,6 +1685,9 @@ pub fn parse_schema_annotation_for_write(schema: &Cirru) -> Result<Arc<CalcitTyp
     parse_schema_data(schema)?;
   }
   let schema_edn = schema_cirru_to_edn(schema.clone());
+  if let Some(annotation) = parse_zero_payload_schema_wrapper(&schema_edn) {
+    return Ok(annotation);
+  }
   Ok(
     CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn)
       .map(|signature| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature))))
