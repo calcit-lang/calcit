@@ -106,7 +106,7 @@ fn collect_dynamic_method_findings(
   project_namespaces: &HashSet<String>,
 ) -> Vec<LocatedWarning> {
   let mut unique = BTreeMap::new();
-  for warning in warnings {
+  for (occurrence_index, warning) in warnings.into_iter().enumerate() {
     if !matches!(warning.code(), Some("P_DYNAMIC_METHOD_DISPATCH" | "P_DYNAMIC_POSTFIX_METHOD")) {
       continue;
     }
@@ -114,12 +114,18 @@ fn collect_dynamic_method_findings(
     if !include_dependencies && !project_namespaces.contains(location.ns.as_ref()) {
       continue;
     }
+    // A precise Snapshot coordinate identifies one call and can be de-duplicated
+    // when init/reload reach the same definition. Generated macro forms may only
+    // carry `coord=[]`; retain each of those occurrences to avoid undercounting
+    // repeated identical calls at an imprecise fallback location.
+    let occurrence_key = if location.coord.is_empty() { occurrence_index + 1 } else { 0 };
     let key = (
       location.ns.to_string(),
       location.def.to_string(),
       location.coord.to_vec(),
       warning.code().unwrap_or_default().to_owned(),
       warning.message().to_owned(),
+      occurrence_key,
     );
     unique.entry(key).or_insert(warning);
   }
@@ -134,7 +140,7 @@ fn run_dynamic_methods(
 ) -> Result<(), String> {
   if !matches!(options.format.as_str(), "human" | "text" | "json") {
     return Err(format!(
-      "Unknown dynamic-methods output format `{}`. Expected `human` or `json`.",
+      "Unknown dynamic-methods output format `{}`. Expected `human`, `text`, or `json`.",
       options.format
     ));
   }
@@ -1813,18 +1819,24 @@ mod tests {
     let warnings = vec![
       warning("app.main", "P_DYNAMIC_METHOD_DISPATCH", vec![1]),
       warning("app.main", "P_DYNAMIC_METHOD_DISPATCH", vec![1]),
+      warning("app.main", "P_DYNAMIC_METHOD_DISPATCH", vec![]),
+      warning("app.main", "P_DYNAMIC_METHOD_DISPATCH", vec![]),
       warning("app.main", "W_JS_FFI_UNTYPED_ACCESS", vec![2]),
       warning("dep.lib", "P_DYNAMIC_POSTFIX_METHOD", vec![3]),
     ];
 
     let project_only = collect_dynamic_method_findings(warnings.clone(), false, &project_namespaces);
-    assert_eq!(project_only.len(), 1);
+    assert_eq!(
+      project_only.len(),
+      3,
+      "precise duplicates collapse but fallback occurrences remain distinct"
+    );
     assert_eq!(project_only[0].location().ns.as_ref(), "app.main");
 
     let with_dependencies = collect_dynamic_method_findings(warnings, true, &project_namespaces);
-    assert_eq!(with_dependencies.len(), 2);
+    assert_eq!(with_dependencies.len(), 4);
     assert_eq!(with_dependencies[0].location().ns.as_ref(), "app.main");
-    assert_eq!(with_dependencies[1].location().ns.as_ref(), "dep.lib");
+    assert_eq!(with_dependencies[3].location().ns.as_ref(), "dep.lib");
   }
 
   #[test]

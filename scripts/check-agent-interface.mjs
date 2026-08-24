@@ -314,11 +314,47 @@ const scenarios = [
       if (result.data.summary.findings !== 2 || result.data.summary.passed !== false) {
         throw new Error("dynamic-methods policy did not fail above its limit");
       }
+      if (result.data.findings.length !== 2) {
+        throw new Error("dynamic-methods policy omitted fixture finding rows");
+      }
       if (result.data.findings.some((finding) => !finding.code?.startsWith("P_DYNAMIC_"))) {
         throw new Error("dynamic-methods report included unrelated warnings");
       }
       if (result.diagnostics[0]?.code !== "E_DYNAMIC_METHOD_POLICY") {
         throw new Error("dynamic-methods policy failure lost its structured diagnostic");
+      }
+    },
+  },
+  {
+    name: "dynamic method project scope",
+    args: [
+      "calcit/test-dynamic-method-scope.cirru",
+      "analyze",
+      "dynamic-methods",
+      "--summary-only",
+      "--format",
+      "json",
+    ],
+    check(result) {
+      if (result.data.summary.findings !== 0 || result.data.filters.include_dependencies !== false) {
+        throw new Error("dynamic-methods default scope leaked dependency findings");
+      }
+    },
+  },
+  {
+    name: "dynamic method dependency scope",
+    args: [
+      "calcit/test-dynamic-method-scope.cirru",
+      "analyze",
+      "dynamic-methods",
+      "--deps",
+      "--summary-only",
+      "--format",
+      "json",
+    ],
+    check(result) {
+      if (result.data.summary.findings !== 2 || result.data.filters.include_dependencies !== true) {
+        throw new Error("dynamic-methods --deps lost reachable module findings");
       }
     },
   },
