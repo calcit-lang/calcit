@@ -229,7 +229,7 @@ fn collect_param_symbols(args: &CalcitList) -> Result<Vec<Arc<str>>, String> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitStructDef, CalcitStructValue, CalcitTrait};
+  use crate::calcit::{CalcitEnumDef, CalcitStructDef, CalcitStructValue, CalcitTrait};
   use crate::call_stack::CallStackList;
   use cirru_edn::EdnTag;
 
@@ -418,6 +418,47 @@ mod tests {
     ]);
     let result = assert_traits(&expr.view(), &scope, "tests.assert", &CallStackList::default()).expect("assert-traits should pass");
     assert!(matches!(result, Calcit::Struct(_)));
+  }
+
+  #[test]
+  fn indexed_match_selects_variant_and_falls_back_on_arity_mismatch() {
+    let enum_def = Arc::new(
+      CalcitEnumDef::from_struct(CalcitStructValue {
+        struct_ref: Arc::new(CalcitStructDef::from_fields(
+          EdnTag::from("MaybeNumber"),
+          vec![EdnTag::from("none"), EdnTag::from("some")],
+        )),
+        values: Arc::new(vec![Calcit::Nil, Calcit::from(vec![Calcit::Tag(EdnTag::from("number"))])]),
+      })
+      .expect("valid enum definition"),
+    );
+    let binding = make_local("value", "tests.match", "indexed");
+    let some_branch = Calcit::from(vec![
+      Calcit::from(vec![Calcit::Tag(EdnTag::from("some")), binding.to_owned()]),
+      binding,
+    ]);
+    let wildcard = Calcit::from(vec![make_symbol("_", "tests.match", "indexed"), Calcit::Number(-1.0)]);
+    let table = Calcit::from(vec![Calcit::Nil, some_branch, wildcard]);
+    let make_expr = |extra| {
+      CalcitList::Vector(vec![
+        Calcit::Enum(CalcitEnumValue {
+          tag: Arc::new(Calcit::Tag(EdnTag::from("some"))),
+          extra,
+          sum_type: Some(enum_def.clone()),
+        }),
+        Calcit::EnumDef(enum_def.as_ref().to_owned()),
+        table.to_owned(),
+      ])
+    };
+    let scope = CalcitScope::default();
+    let stack = CallStackList::default();
+
+    let selected = syntax_match(&make_expr(vec![Calcit::Number(7.0)]).view(), &scope, "tests.match", &stack)
+      .expect("matching arity should select indexed branch");
+    assert_eq!(selected, Calcit::Number(7.0));
+
+    let fallback = syntax_match(&make_expr(vec![]).view(), &scope, "tests.match", &stack).expect("arity mismatch should use wildcard");
+    assert_eq!(fallback, Calcit::Number(-1.0));
   }
 
   #[test]

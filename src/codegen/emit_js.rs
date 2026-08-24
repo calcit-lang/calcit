@@ -1060,29 +1060,28 @@ fn gen_symbol_code(s: &str, def_ns: &str, at_def: &str, xs: &Calcit, passed_defs
 }
 
 fn detect_await(xs: &CalcitList) -> bool {
-  for x in xs {
-    match x {
-      Calcit::List(al) => {
-        if matches!(
-          al.get(0),
-          Some(Calcit::Syntax(
-            CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport,
-            _
-          ))
-        ) {
-          // a nested function has its own scope deciding if it's async
-          continue;
-        } else if detect_await(al) {
-          return true;
-        }
+  xs.iter().any(detect_await_node)
+}
+
+fn detect_await_node(x: &Calcit) -> bool {
+  match x {
+    Calcit::List(al) => {
+      if matches!(
+        al.first(),
+        Some(Calcit::Syntax(
+          CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport,
+          _
+        ))
+      ) {
+        // a nested function has its own scope deciding if it's async
+        false
+      } else {
+        detect_await(al)
       }
-      Calcit::Symbol { sym, .. } if &**sym == "js-await" => {
-        return true;
-      }
-      _ => {}
     }
+    Calcit::Symbol { sym, .. } if &**sym == "js-await" => true,
+    _ => false,
   }
-  false
 }
 
 fn gen_let_code(
@@ -1366,8 +1365,8 @@ fn gen_indexed_match_code(
     return Err("indexed match table has invalid length".to_owned());
   };
 
-  let has_await = detect_await(table);
-  let return_label = base_return_label.unwrap_or("return ");
+  let has_await = detect_await_node(value) || detect_await(table);
+  let return_label = "return ";
   let proc_prefix = get_proc_prefix(ns);
   let value_code = to_js_code(value, ns, local_defs, file_imports, tags, None)?;
   let val_var = js_gensym("match_v");
@@ -1428,10 +1427,10 @@ fn gen_indexed_match_code(
     other => return Err(format!("indexed match wildcard slot expected a branch pair, got: {other}")),
   }
 
-  if base_return_label.is_some() {
-    Ok(chunk)
-  } else {
-    Ok(make_fn_wrapper(&chunk, has_await))
+  let wrapped = make_fn_wrapper(&chunk, has_await);
+  match base_return_label {
+    Some(label) => Ok(format!("{label}{wrapped}")),
+    None => Ok(wrapped),
   }
 }
 
@@ -2270,6 +2269,45 @@ mod tests {
     assert!(code.contains("case _t_.running.idx:"), "{code}");
     assert!(code.contains("case _t_.done.idx:"), "{code}");
     assert!(!code.contains(" else if "), "{code}");
+  }
+
+  #[test]
+  fn indexed_enum_match_codegen_wraps_non_return_contexts() {
+    let branch = Calcit::from(vec![Calcit::from(vec![Calcit::Tag(EdnTag::from("idle"))]), Calcit::Number(0.0)]);
+    let table = CalcitList::Vector(vec![branch, Calcit::Nil]);
+    let local_defs = HashSet::from([Arc::from("state")]);
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+
+    let code = gen_indexed_match_code(
+      &symbol("state"),
+      &table,
+      &local_defs,
+      "tests.emit-js",
+      &file_imports,
+      &tags,
+      Some("result = "),
+    )
+    .expect("indexed match codegen");
+
+    assert!(code.starts_with("result = (function _fn_()"), "{code}");
+    assert!(code.contains("return 0"), "{code}");
+  }
+
+  #[test]
+  fn indexed_enum_match_codegen_detects_await_in_matched_value() {
+    let branch = Calcit::from(vec![Calcit::from(vec![Calcit::Tag(EdnTag::from("idle"))]), Calcit::Number(0.0)]);
+    let table = CalcitList::Vector(vec![branch, Calcit::Nil]);
+    let value = Calcit::from(vec![symbol("js-await"), symbol("state-promise")]);
+    let local_defs = HashSet::from([Arc::from("state-promise")]);
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+
+    let code = gen_indexed_match_code(&value, &table, &local_defs, "tests.emit-js", &file_imports, &tags, None)
+      .expect("async indexed match codegen");
+
+    assert!(code.starts_with("await (async function _async_fn_()"), "{code}");
+    assert!(code.contains("await state_promise"), "{code}");
   }
 
   #[test]
