@@ -3675,9 +3675,9 @@ fn warn_on_dynamic_trait_call(
   );
 
   if let Some(loc) = head.get_location().or_else(|| receiver.get_location()) {
-    gen_check_warning_with_location(message, loc, check_warnings);
+    gen_check_warning_with_location_code(message, "P_DYNAMIC_METHOD_DISPATCH", loc, check_warnings);
   } else {
-    gen_check_warning(message, file_ns, check_warnings);
+    gen_check_warning_code(message, "P_DYNAMIC_METHOD_DISPATCH", file_ns, check_warnings);
   }
 }
 
@@ -11149,6 +11149,7 @@ mod tests {
 
     let warnings_vec = warnings.borrow();
     assert!(!warnings_vec.is_empty(), "should warn on dynamic trait call");
+    assert_eq!(warnings_vec[0].code(), Some("P_DYNAMIC_METHOD_DISPATCH"));
     let warning_msg = warnings_vec[0].to_string();
     assert!(
       warning_msg.contains("dynamic trait call") && warning_msg.contains(".greet"),

@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 #[allow(unused_imports)]
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -34,8 +34,8 @@ mod cr_cirru_suite_tests;
 use calcit::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, LocatedWarning, SchemaKind};
 use calcit::call_stack::CallStackList;
 use calcit::cli_args::{
-  AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, DeprecatedCommand, EffectsGraphCommand,
-  QualityCommand, TestCommand, ToplevelCalcit, WeakTypesCommand,
+  AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, DeprecatedCommand, DynamicMethodsCommand,
+  EffectsGraphCommand, QualityCommand, TestCommand, ToplevelCalcit, WeakTypesCommand,
 };
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
@@ -96,6 +96,139 @@ fn run_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) -> Resul
     Err(format!(
       "Static quality gate failed with {} regression(s). Run `calcit docs read library-quality.md --full` for the baseline and CI workflow.",
       outcome.violations.len()
+    ))
+  }
+}
+
+fn collect_dynamic_method_findings(
+  warnings: Vec<LocatedWarning>,
+  include_dependencies: bool,
+  project_namespaces: &HashSet<String>,
+) -> Vec<LocatedWarning> {
+  let mut unique = BTreeMap::new();
+  for (occurrence_index, warning) in warnings.into_iter().enumerate() {
+    if !matches!(warning.code(), Some("P_DYNAMIC_METHOD_DISPATCH" | "P_DYNAMIC_POSTFIX_METHOD")) {
+      continue;
+    }
+    let location = warning.location();
+    if !include_dependencies && !project_namespaces.contains(location.ns.as_ref()) {
+      continue;
+    }
+    // A precise Snapshot coordinate identifies one call and can be de-duplicated
+    // when init/reload reach the same definition. Generated macro forms may only
+    // carry `coord=[]`; retain each of those occurrences to avoid undercounting
+    // repeated identical calls at an imprecise fallback location.
+    let occurrence_key = if location.coord.is_empty() { occurrence_index + 1 } else { 0 };
+    let key = (
+      location.ns.to_string(),
+      location.def.to_string(),
+      location.coord.to_vec(),
+      warning.code().unwrap_or_default().to_owned(),
+      warning.message().to_owned(),
+      occurrence_key,
+    );
+    unique.entry(key).or_insert(warning);
+  }
+  unique.into_values().collect()
+}
+
+fn run_dynamic_methods(
+  options: &DynamicMethodsCommand,
+  entries: &ProgramEntries,
+  snapshot: &snapshot::Snapshot,
+  project_namespaces: &HashSet<String>,
+) -> Result<(), String> {
+  if !matches!(options.format.as_str(), "human" | "text" | "json") {
+    return Err(format!(
+      "Unknown dynamic-methods output format `{}`. Expected `human`, `text`, or `json`.",
+      options.format
+    ));
+  }
+
+  let previous_warn_setting = runner::preprocess::is_warn_dyn_method_enabled();
+  runner::preprocess::set_warn_dyn_method(true);
+  let collected = (|| {
+    let warnings = RefCell::new(Vec::new());
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .map_err(|failure| failure.msg)?;
+    runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, &warnings, &CallStackList::default())
+      .map_err(|failure| failure.msg)?;
+    Ok::<Vec<LocatedWarning>, String>(warnings.into_inner())
+  })();
+  runner::preprocess::set_warn_dyn_method(previous_warn_setting);
+
+  let findings = collect_dynamic_method_findings(collected?, options.deps, project_namespaces);
+  let finding_count = findings.len();
+  let passed = options.max.is_none_or(|limit| finding_count <= limit);
+  let revision_ids = snapshot
+    .files
+    .iter()
+    .filter(|(namespace, _)| options.deps || project_namespaces.contains(namespace.as_str()))
+    .flat_map(|(namespace, file)| file.defs.keys().map(|definition| (namespace.clone(), definition.clone())))
+    .collect::<Vec<_>>();
+  let revision = type_coverage::analysis_revision(snapshot, &revision_ids)?;
+
+  match options.format.as_str() {
+    "human" | "text" => {
+      println!("Dynamic method dispatch analysis");
+      println!("- scope: {}", if options.deps { "project+dependencies" } else { "project" });
+      println!("- revision: {revision}");
+      println!("- findings: {finding_count}");
+      if let Some(limit) = options.max {
+        println!("- policy: {} (limit {limit})", if passed { "PASS" } else { "FAIL" });
+      }
+      if !options.summary_only {
+        for warning in &findings {
+          println!("- {warning}");
+        }
+      }
+    }
+    "json" => {
+      let rows = if options.summary_only {
+        Vec::new()
+      } else {
+        findings.iter().map(LocatedWarning::as_json).collect::<Vec<_>>()
+      };
+      println!(
+        "{}",
+        serde_json::json!({
+          "schema_version": 1,
+          "command": "analyze.dynamic-methods",
+          "revision": revision,
+          "data": {
+            "filters": {
+              "include_dependencies": options.deps,
+              "summary_only": options.summary_only,
+              "max": options.max,
+            },
+            "summary": {
+              "findings": finding_count,
+              "passed": passed,
+            },
+            "findings": rows,
+          },
+          "diagnostics": if passed {
+            Vec::<serde_json::Value>::new()
+          } else {
+            vec![serde_json::json!({
+              "code": "E_DYNAMIC_METHOD_POLICY",
+              "phase": "analysis",
+              "severity": "error",
+              "message": format!("Dynamic method dispatch findings {finding_count} exceed limit {}.", options.max.unwrap_or_default()),
+            })]
+          },
+        })
+      );
+    }
+    _ => unreachable!("dynamic-methods output format was validated before analysis"),
+  }
+
+  if passed {
+    Ok(())
+  } else {
+    Err(format!(
+      "Dynamic method dispatch policy failed: {finding_count} finding(s) exceed --max {}.",
+      options.max.unwrap_or_default()
     ))
   }
 }
@@ -405,6 +538,7 @@ fn run_cli() -> Result<(), String> {
       ),
       AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot),
       AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(weak_type_options, &snapshot),
+      AnalyzeSubcommand::DynamicMethods(options) => run_dynamic_methods(options, &entries, &snapshot, &project_namespaces),
       AnalyzeSubcommand::Deprecated(deprecated_options) => run_deprecated(deprecated_options, &snapshot),
       AnalyzeSubcommand::Quality(quality_options) => run_quality(quality_options, &snapshot),
       AnalyzeSubcommand::EffectsGraph(effects_graph_options) => run_effects_graph(&entries, effects_graph_options),
@@ -1668,6 +1802,41 @@ mod tests {
 
     assert_eq!(project.files["calcit.core"].ns.doc, "source core");
     assert!(project.files.contains_key("calcit.internal"));
+  }
+
+  #[test]
+  fn dynamic_method_findings_are_scoped_deduplicated_and_code_filtered() {
+    fn warning(namespace: &str, code: &str, coord: Vec<u16>) -> LocatedWarning {
+      LocatedWarning::new_with_detail(
+        format!("warning {code}"),
+        calcit::calcit::NodeLocation::new(Arc::from(namespace), Arc::from("run"), Arc::from(coord)),
+        Some(code.to_owned()),
+        None,
+      )
+    }
+
+    let project_namespaces = HashSet::from(["app.main".to_owned()]);
+    let warnings = vec![
+      warning("app.main", "P_DYNAMIC_METHOD_DISPATCH", vec![1]),
+      warning("app.main", "P_DYNAMIC_METHOD_DISPATCH", vec![1]),
+      warning("app.main", "P_DYNAMIC_METHOD_DISPATCH", vec![]),
+      warning("app.main", "P_DYNAMIC_METHOD_DISPATCH", vec![]),
+      warning("app.main", "W_JS_FFI_UNTYPED_ACCESS", vec![2]),
+      warning("dep.lib", "P_DYNAMIC_POSTFIX_METHOD", vec![3]),
+    ];
+
+    let project_only = collect_dynamic_method_findings(warnings.clone(), false, &project_namespaces);
+    assert_eq!(
+      project_only.len(),
+      3,
+      "precise duplicates collapse but fallback occurrences remain distinct"
+    );
+    assert_eq!(project_only[0].location().ns.as_ref(), "app.main");
+
+    let with_dependencies = collect_dynamic_method_findings(warnings, true, &project_namespaces);
+    assert_eq!(with_dependencies.len(), 4);
+    assert_eq!(with_dependencies[0].location().ns.as_ref(), "app.main");
+    assert_eq!(with_dependencies[3].location().ns.as_ref(), "dep.lib");
   }
 
   #[test]

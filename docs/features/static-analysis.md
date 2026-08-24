@@ -63,6 +63,12 @@ calcit analyze weak-types --ns app.main
 # Deprecated API calls, including the source definition and exact code path
 calcit analyze deprecated --ns app.main
 
+# Reachable unresolved method dispatch, without unrelated warning categories
+calcit analyze dynamic-methods
+
+# Enforce a reviewed dynamic-dispatch budget in CI
+calcit analyze dynamic-methods --max 4 --summary-only --format json
+
 # Enforce zero type/weak-type/deprecated debt with a non-zero failure exit
 calcit analyze quality
 
@@ -86,6 +92,7 @@ calcit analyze weak-types --ns app.main --only unsafe-coerce
 calcit analyze check-types --ns app.main --format json
 calcit analyze weak-types --ns app.main --intent unresolved --format json
 calcit analyze deprecated --ns app.main --format json
+calcit analyze dynamic-methods --format json
 
 # Keep aggregate counts but omit definition rows (especially useful for agents)
 calcit analyze check-types --ns app.main --summary-only --format json
@@ -113,7 +120,9 @@ For one definition, `calcit query context '<ns/def>' --format json` embeds the s
 
 For one expression, `calcit query type-at '<ns/def>' --path code@... --format json` preprocesses only static program metadata and returns inferred type, expected type, typed bindings, confidence, method candidates, and diagnostics. It does not run the application entry. Paths use the same stable Snapshot coordinates returned by structural query commands.
 
-These analysis commands run as static Snapshot readers: they load configured modules and core metadata but do not preprocess or execute the application entry. With `--format json`, stdout is one versioned JSON envelope containing a stable scope revision, filters, summary, and definition-level rows; startup/command messages stay on stderr.
+`check-types`, `weak-types`, `deprecated`, and `quality` run as static Snapshot readers: they load configured modules and core metadata but do not preprocess or execute the application entry. `dynamic-methods` preprocesses the selected entry's reachable definitions without executing them, because receiver inference and method specialization are preprocessing results. With `--format json`, stdout is one versioned JSON envelope containing a stable scope revision, filters, summary, and finding or definition rows; startup/command messages stay on stderr.
+
+`analyze dynamic-methods` reports only `P_DYNAMIC_METHOD_DISPATCH` and `P_DYNAMIC_POSTFIX_METHOD`; ordinary type warnings and JS FFI diagnostics do not contaminate its count. Project namespaces are the default scope, while `--deps` includes reachable modules. `--summary-only` omits individual findings. `--max <count>` turns the report into a focused CI policy and emits `E_DYNAMIC_METHOD_POLICY` with a non-zero status when the count grows beyond the reviewed budget. A receiver made concrete by normal inference, a trait constraint, or an explicit reviewed `unsafe-coerce` boundary is not unresolved dispatch.
 
 `analyze quality` combines the release-facing metrics from `check-types`, `weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce --intent unresolved,declared-optional,explicit-unsafe`, and `deprecated`. `unsafeCoerce` is an independent budget for explicit host assertions; it is not folded into unresolved Dynamic debt. With no baseline it is a zero-debt gate. `--baseline <file>` compares against a committed baseline and exits non-zero on regression; `--write-baseline <file>` atomically writes a reviewed native baseline. Native v2 baselines keep budgets per definition, so improving one definition cannot hide new debt in another. Native v1 and the older flat eight-metric shape remain readable and preserve their original eight-metric enforcement; v1 is reported as `native-baseline-v1` and does not claim an `unsafeCoerce` delta. Regenerate a reviewed baseline to adopt that budget. Scope flags (`--ns`, `--ns-prefix`, `--deps`) are recorded in native baselines and must match when they are enforced.
 

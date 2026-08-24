@@ -150,7 +150,7 @@ yarn install
 yarn install --immutable
 calcit calcit.cirru edit format
 calcit calcit.cirru --check-only
-calcit calcit.cirru --warn-dyn-method --check-only
+calcit calcit.cirru analyze dynamic-methods --max 0
 calcit calcit.cirru analyze deprecated --summary-only --format json
 calcit calcit.cirru analyze weak-types --intent unresolved,declared-optional --summary-only --format json
 calcit calcit.cirru
@@ -470,15 +470,17 @@ calcit calcit.cirru analyze deprecated --summary-only
 `:features $ #{} :js-ffi`，并在进入 typed code 前 validate/convert。无返回值使用 `Unit`；业务缺失
 使用 `Option`，需要错误信息时使用 `Result`，不要让旧 `Optional<T>` 或裸 `nil` 无限保留。
 
-再对每个 entry 开启动态方法告警：
+再对每个 entry 运行独立的动态方法报告；已有项目可以先记录非零上限，再逐步降低：
 
 ```bash
-calcit calcit.cirru --warn-dyn-method --check-only
-calcit calcit.cirru --entry test --warn-dyn-method --check-only
+calcit calcit.cirru analyze dynamic-methods --summary-only --format json
+calcit calcit.cirru analyze dynamic-methods --max 0
+calcit calcit.cirru --entry test analyze dynamic-methods --max 0
 ```
 
-这个开关会暴露无法静态专门化的方法调用和未类型化的动态接收者。它不是第一步：先修复普通
-`--check-only`，再打开额外告警，否则旧项目的初始噪音可能掩盖真正的配置和 API 错误。
+该报告只统计无法静态专门化的方法调用，不混入普通类型或 JS FFI warning；默认不统计依赖，
+维护模块时可加 `--deps` 查看完整可达范围。旧的 `--warn-dyn-method --check-only` 仍适合交互排查，
+但会和其他预处理 warning 一起阻断，不适合作为单一性能指标的 CI policy。
 
 ### 3.6 存量项目的类型收紧策略
 
@@ -618,10 +620,10 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
     while IFS= read -r entry; do
       if [ "$entry" = "default" ]; then
         calcit calcit.cirru --check-only
-        calcit calcit.cirru --warn-dyn-method --check-only
+        calcit calcit.cirru analyze dynamic-methods --max 0
       else
         calcit calcit.cirru --entry "$entry" --check-only
-        calcit calcit.cirru --entry "$entry" --warn-dyn-method --check-only
+        calcit calcit.cirru --entry "$entry" analyze dynamic-methods --max 0
       fi
     done < <(calcit calcit.cirru config show | awk '/^Snapshot Entries:/{in_entries=1; next} in_entries && /^  [^ ]/{print $1}')
     calcit calcit.cirru analyze quality --baseline config/calcit-quality.json
@@ -661,7 +663,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 4. `yarn install --immutable`
 5. `calcit calcit.cirru edit format` 后 `git diff --exit-code -- calcit.cirru`
 6. default 与每个 named entry 的 `--check-only`
-7. 每个 entry 的 `--warn-dyn-method --check-only`（普通检查全绿后启用）
+7. 每个 entry 的 `analyze dynamic-methods --max <reviewed-limit>`；清零后使用 `--max 0`
 8. 所有声明支持的 entry 行为测试（默认 once；watch 另行验收）
 9. `analyze quality` 的 JSON baseline 或零目标（`check-types`、dynamic/nil `weak-types`、`deprecated` 仍作为定位报告）
 10. `calcit test --require-match`、公开 namespace 的 `check-examples` 与 `docs check-md`
@@ -676,7 +678,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 | 依赖图 | `caps tree/status/verify` | 递归版本、链接、store/native 收据 | 状态异常会阻断；普通图告警用 `--strict` 收紧 |
 | Snapshot 规范化 | `calcit edit format` + `git diff` | 旧 configs/schema 拼写和规范化建议 | format 告警不阻断，diff 需人工审阅 |
 | entry 预处理 | `calcit --entry ... --check-only` | 配置、缺失定义、参数/返回值、数据与 trait 类型错误 | 错误或 warning 均阻断 |
-| 动态分派 | `calcit --warn-dyn-method --check-only` | 动态 receiver、无法专门化的方法与未类型化 FFI 访问 | warning 会随 check-only 阻断 |
+| 动态分派 | `calcit analyze dynamic-methods --max <reviewed-limit>` | 动态 receiver 与无法专门化的方法；默认排除依赖和无关 FFI warning | 超过上限时阻断；`--deps` 可审计依赖 |
 | 静态债务 | `analyze check-types/weak-types/deprecated --format json` | 覆盖率、dynamic、nil/Optional、废弃调用 | 报告本身不按命中数阻断，CI 比较 summary |
 | 示例与测试 | `check-examples`、`docs check-md`、`calcit test --require-match` | API 示例、文档片段、definition-attached tests | 失败或未匹配测试时阻断 |
 | 行为与后端 | entry、Node/Vite、项目测试 | native/JS/FFI 的真实行为差异 | 由进程退出码阻断 |
