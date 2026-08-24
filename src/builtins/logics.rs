@@ -60,7 +60,7 @@ pub fn binary_greater(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn not(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     let hint = String::from(
-      "💡 Usage: `not boolean-value`\n  Negates a boolean value\n  Examples: `not true` => false, `not nil` => true, `not &unit` => true",
+      "💡 Usage: `not value`\n  Negates a boolean value; nil and &unit are also falsey\n  Examples: `not true` => false, `not nil` => true, `not &unit` => true",
     );
     return crate::builtins::err_arity_with_hint("not requires exactly 1 argument (a boolean, nil, or Unit), but received:", xs, hint);
   }

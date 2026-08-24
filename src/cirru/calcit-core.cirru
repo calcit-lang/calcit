@@ -488,7 +488,7 @@
                   name $ &list:first pair
                   xs0 $ &list:last pair
                 quasiquote $ foldl ~xs0 &unit
-                  defn doseq-fn% (_acc ~name) ~@body
+                  defn doseq-fn% (_acc ~name) ~@body &unit
           :examples $ []
             quote $ do
               defatom *seen $ []
@@ -500,6 +500,13 @@
             {} (:return 'Unit)
               :args $ [] 'Dynamic
           :tags $ #{} :effect :internal :macro
+          :tests $ []
+            %{} 'TestEntry (:name |returns-unit-after-body)
+              :code $ quote
+                assert= &unit $ &doseq
+                  x $ [] 1 2
+                  &+ x 1
+              :tags $ #{} :core :unit
         |&enum-def:has-variant? $ %{} 'CodeEntry (:doc "|Test whether an EnumDef declares a variant.")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4487,7 +4494,7 @@
         |each $ %{} 'CodeEntry (:doc "|Iterate over a collection, apply a function for side effects, and return Unit.")
           :code $ quote
             defn each (xs f)
-              foldl xs &unit $ defn %each (_acc x) (f x)
+              foldl xs &unit $ defn %each (_acc x) (f x) &unit
           :examples $ []
             quote $ assert= &unit
               each ([] 1 2 3)
@@ -4498,6 +4505,12 @@
                 :: 'Fn $ {} (:return 'R)
                   :args $ [] 'T
               :generics $ [] 'T 'R
+          :tests $ []
+            %{} 'TestEntry (:name |returns-unit-after-callbacks)
+              :code $ quote
+                assert= &unit $ each ([] 1 2)
+                  fn (x) x
+              :tags $ #{} :core :unit
         |either $ %{} 'CodeEntry (:doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value.")
           :code $ quote
             defmacro either (& xs)
@@ -6310,7 +6323,7 @@
             {} (:return 'T)
               :args $ [] 'T
               :generics $ [] 'T
-        |not $ %{} 'CodeEntry (:doc "|internal function for logical not\nSyntax: (not value)\nParams: value (any)\nReturns: boolean\nReturns true if value is falsy (nil or false), false otherwise")
+        |not $ %{} 'CodeEntry (:doc "|internal function for logical not\nSyntax: (not value)\nParams: value (boolean, nil, or Unit)\nReturns: boolean\nReturns true if value is falsy (nil, false, or Unit), false otherwise")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
