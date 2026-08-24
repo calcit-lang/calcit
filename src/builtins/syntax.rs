@@ -270,7 +270,7 @@ mod tests {
   }
 
   #[test]
-  fn only_surrounding_function_hints_are_runtime_metadata() {
+  fn only_surrounding_function_hints_are_compile_time_metadata() {
     let ns = "tests.fn";
     let metadata_hint = Calcit::from(vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ns)), Calcit::from(vec![])]);
     let targeted_hint = Calcit::from(vec![

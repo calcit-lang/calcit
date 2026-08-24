@@ -198,6 +198,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
       Some(x) => {
         if let CalcitCallKind::NumberBinary(operation) = xs.call_kind()
           && xs.len() == 3
+          && matches!(xs.first(), Some(Calcit::Proc(proc)) if *proc == number_binary_proc(operation))
         {
           return evaluate_number_binary_call(operation, xs, scope, file_ns, call_stack);
         }
@@ -1074,6 +1075,20 @@ mod tests {
       .expect_err("stale static evidence must use the normal type error");
 
     assert!(format!("{err}").contains("&+ requires 2 numbers"));
+  }
+
+  #[test]
+  fn mismatched_number_binary_metadata_uses_normal_dispatch() {
+    let expr = Calcit::from(CalcitList::executable(
+      vec![Calcit::Proc(CalcitProc::NativeMultiply), Calcit::Number(2.0), Calcit::Number(3.0)],
+      CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Add),
+    ));
+
+    assert_eq!(
+      evaluate_expr(&expr, &CalcitScope::default(), "tests.runner", &CallStackList::default())
+        .expect("mismatched call metadata must use the stored procedure"),
+      Calcit::Number(6.0)
+    );
   }
 
   #[test]

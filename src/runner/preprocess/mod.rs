@@ -902,14 +902,6 @@ fn into_executable_call(expr: Calcit) -> Calcit {
 }
 
 fn classify_number_binary_call(head: &Calcit, args: &[Calcit], scope_types: &ScopeTypes) -> CalcitCallKind {
-  if args.len() != 2
-    || !args
-      .iter()
-      .all(|arg| matches!(resolve_type_value(arg, scope_types).as_deref(), Some(CalcitTypeAnnotation::Number)))
-  {
-    return CalcitCallKind::Normal;
-  }
-
   let Calcit::Proc(proc) = head else {
     return CalcitCallKind::Normal;
   };
@@ -922,6 +914,13 @@ fn classify_number_binary_call(head: &Calcit, args: &[Calcit], scope_types: &Sco
     CalcitProc::NativeGreaterThan => CalcitNumberBinaryOp::GreaterThan,
     _ => return CalcitCallKind::Normal,
   };
+  if args.len() != 2
+    || !args
+      .iter()
+      .all(|arg| matches!(resolve_type_value(arg, scope_types).as_deref(), Some(CalcitTypeAnnotation::Number)))
+  {
+    return CalcitCallKind::Normal;
+  }
   CalcitCallKind::NumberBinary(operation)
 }
 
