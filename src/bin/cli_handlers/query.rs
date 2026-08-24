@@ -2754,7 +2754,7 @@ fn load_snapshot_with_entry(input_path: &str, entry: Option<&str>) -> Result<sna
   for module_path in &modules_to_load {
     match load_module_silent(module_path, base_dir, &module_folder) {
       Ok(module_snapshot) => {
-        calcit::merge_module_files(&mut snapshot, &module_snapshot, module_path)?;
+        calcit::merge_project_module_files(&mut snapshot, &module_snapshot, module_path)?;
       }
       Err(e) => {
         eprintln!("Warning: Failed to load module '{module_path}': {e}");
