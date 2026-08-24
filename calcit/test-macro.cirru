@@ -1,7 +1,8 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-macro) (:version |0.0.0)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-macro)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-macro.main/main!) (:mode :native) (:reload-fn 'test-macro.main/reload!)
+      :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
@@ -63,16 +64,15 @@
                     assert-detect fn? $ fn () 1
                   quote $ &let
                     v__1 $ fn () 1
-                    if (fn? v__1) (;nil)
-                      &let () (eprintln)
-                        eprintln
-                          format-to-lisp $ quote
-                            fn () 1
-                          , "|does not satisfy:"
-                            format-to-lisp $ quote fn?
-                            , "| <--------"
-                        eprintln "|  value is:" v__1
-                        raise "|Not satisfied in assertion!"
+                    if (fn? v__1) &unit $ &let () (eprintln)
+                      eprintln
+                        format-to-lisp $ quote
+                          fn () 1
+                        , "|does not satisfy:"
+                          format-to-lisp $ quote fn?
+                          , "| <--------"
+                      eprintln "|  value is:" v__1
+                      raise "|Not satisfied in assertion!"
           :examples $ []
           :schema $ :: 'Dynamic
         |test-expr-in-case $ %{} 'CodeEntry (:doc |)

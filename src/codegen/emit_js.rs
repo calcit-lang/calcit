@@ -1782,7 +1782,7 @@ fn hinted_async(xs: &CalcitList) -> bool {
   }
 
   fn is_truthy(form: &Calcit) -> bool {
-    !matches!(form, Calcit::Nil | Calcit::Bool(false))
+    !matches!(form, Calcit::Nil | Calcit::Unit | Calcit::Bool(false))
   }
 
   fn schema_marks_async(form: &Calcit) -> bool {

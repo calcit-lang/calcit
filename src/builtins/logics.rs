@@ -59,20 +59,22 @@ pub fn binary_greater(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn not(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    let hint =
-      String::from("💡 Usage: `not boolean-value`\n  Negates a boolean value\n  Examples: `not true` => false, `not nil` => true");
-    return crate::builtins::err_arity_with_hint("not requires exactly 1 argument (a boolean or nil), but received:", xs, hint);
+    let hint = String::from(
+      "💡 Usage: `not value`\n  Negates a boolean value; nil and &unit are also falsey\n  Examples: `not true` => false, `not nil` => true, `not &unit` => true",
+    );
+    return crate::builtins::err_arity_with_hint("not requires exactly 1 argument (a boolean, nil, or Unit), but received:", xs, hint);
   }
   match &xs[0] {
-    Calcit::Nil => Ok(Calcit::Bool(true)),
+    Calcit::Nil | Calcit::Unit => Ok(Calcit::Bool(true)),
     Calcit::Bool(b) => Ok(Calcit::Bool(!b)),
     a => {
       let msg = format!(
-        "not requires a boolean or nil as argument, but received: {}",
+        "not requires a boolean, nil, or Unit as argument, but received: {}",
         crate::builtins::meta::type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint =
-        String::from("💡 Hint: Pass a boolean value (true/false) or nil to not\n  Examples: `not true` => false, `not nil` => true");
+      let hint = String::from(
+        "💡 Hint: Pass a boolean value (true/false), nil, or &unit to not\n  Examples: `not true` => false, `not nil` => true, `not &unit` => true",
+      );
       crate::builtins::err_type_with_hint(msg, hint)
     }
   }
