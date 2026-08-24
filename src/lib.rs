@@ -373,6 +373,14 @@ pub fn merge_project_module_files(
   }
 
   let namespace_prefix = format!("{}.", target.package);
+  if !module
+    .files
+    .keys()
+    .any(|namespace| namespace == &target.package || namespace.starts_with(&namespace_prefix))
+  {
+    return merge_module_files(target, module, module_path);
+  }
+
   let mut filtered_module = module.clone();
   filtered_module
     .files
@@ -533,10 +541,16 @@ mod module_resolution_tests {
     let module_folder = project_module_folder(&root);
     let mut target = load_module("one/", &root, &module_folder).unwrap();
     let original = target.files.get("one").unwrap().clone();
+    let original_extra = super::snapshot::gen_meta_ns("one.extra", "project/calcit.cirru");
+    target.files.insert("one.extra".to_owned(), original_extra.clone());
     let mut dependency = load_module("two/", &root, &module_folder).unwrap();
     dependency
       .files
       .insert("one".to_owned(), super::snapshot::gen_meta_ns("one", "dependency/calcit.cirru"));
+    dependency.files.insert(
+      "one.extra".to_owned(),
+      super::snapshot::gen_meta_ns("one.extra", "dependency/calcit.cirru"),
+    );
     dependency.files.insert(
       "two.extra".to_owned(),
       super::snapshot::gen_meta_ns("two.extra", "dependency/calcit.cirru"),
@@ -544,7 +558,16 @@ mod module_resolution_tests {
 
     merge_project_module_files(&mut target, &dependency, "two/").unwrap();
     assert_eq!(target.files.get("one").unwrap(), &original);
+    assert_eq!(target.files.get("one.extra").unwrap(), &original_extra);
     assert!(target.files.contains_key("two.extra"));
+
+    let mut conflicting_target = load_module("one/", &root, &module_folder).unwrap();
+    conflicting_target.files.insert(
+      "two.extra".to_owned(),
+      super::snapshot::gen_meta_ns("two.extra", "project/calcit.cirru"),
+    );
+    let error = merge_project_module_files(&mut conflicting_target, &dependency, "two/").unwrap_err();
+    assert!(error.contains("namespace `two.extra` conflicts with existing content"));
     fs::remove_dir_all(root).unwrap();
   }
 
