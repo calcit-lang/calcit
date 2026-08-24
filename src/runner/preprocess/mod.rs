@@ -1453,10 +1453,12 @@ fn preprocess_list_call(
       let next_stack = call_stack.extend_owned(&info.def_ns, &info.name, StackKind::Macro, code, args.to_vec());
 
       let mut body_scope = CalcitScope::default();
+      let frame_checkpoint = body_scope.frame_checkpoint();
 
       loop {
         // need to handle recursion
         // println!("evaluating line: {:?}", body);
+        body_scope.restore_frame(frame_checkpoint);
         runner::bind_marked_args(&mut body_scope, &info.args, &current_values, &next_stack)?;
         let code = runner::evaluate_lines(&info.body.to_vec(), &body_scope, file_ns, &next_stack)?;
         match code {

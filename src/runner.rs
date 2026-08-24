@@ -308,9 +308,11 @@ pub fn call_expr(
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
       let mut body_scope = CalcitScope::default();
+      let frame_checkpoint = body_scope.frame_checkpoint();
 
       Ok(loop {
         // need to handle recursion
+        body_scope.restore_frame(frame_checkpoint);
         bind_marked_args(&mut body_scope, &info.args, &current_values, call_stack)?;
         let code = evaluate_lines(info.body.as_ref().as_slice(), &body_scope, &info.def_ns, &next_stack)?;
         match code {
@@ -580,6 +582,7 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
   let completed_values = complete_trailing_option_args(values, info);
   let values = completed_values.as_deref().unwrap_or(values);
   let mut body_scope = (*info.scope).to_owned();
+  let frame_checkpoint = body_scope.frame_checkpoint();
   match &*info.args {
     CalcitFnArgs::Args(args) => {
       if args.len() != values.len() {
@@ -597,6 +600,7 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
   if let Calcit::Recur(xs) = v {
     let mut current_values = xs.to_vec();
     loop {
+      body_scope.restore_frame(frame_checkpoint);
       match &*info.args {
         CalcitFnArgs::Args(args) => {
           if args.len() != current_values.len() {
@@ -622,6 +626,7 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
 pub fn run_fn_owned(values: Vec<Calcit>, info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let values = complete_trailing_option_args(&values, info).unwrap_or(values);
   let mut body_scope = (*info.scope).to_owned();
+  let frame_checkpoint = body_scope.frame_checkpoint();
   match &*info.args {
     CalcitFnArgs::Args(args) => {
       if args.len() != values.len() {
@@ -639,6 +644,7 @@ pub fn run_fn_owned(values: Vec<Calcit>, info: &CalcitFn, call_stack: &CallStack
   if let Calcit::Recur(xs) = v {
     let mut current_values = xs.to_vec();
     loop {
+      body_scope.restore_frame(frame_checkpoint);
       match &*info.args {
         CalcitFnArgs::Args(args) => {
           if args.len() != current_values.len() {
@@ -906,7 +912,20 @@ pub fn evaluate_spreaded_args_from(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitFnUsageMeta, CalcitStructDef, CalcitStructValue, CalcitTypeAnnotation};
+  use crate::calcit::{CalcitFnUsageMeta, CalcitStructDef, CalcitStructValue, CalcitSymbolInfo, CalcitTypeAnnotation};
+
+  fn local_value(name: &str, idx: u16) -> Calcit {
+    Calcit::Local(CalcitLocal {
+      idx,
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.runner"),
+        at_def: Arc::from("tail-loop"),
+      }),
+      location: None,
+      type_info: crate::calcit::DYNAMIC_TYPE.clone(),
+    })
+  }
 
   fn user_option_type() -> Arc<CalcitTypeAnnotation> {
     let option_def = crate::calcit::CalcitEnumDef::from_struct(CalcitStructValue {
@@ -946,5 +965,53 @@ mod tests {
     let option = user_option_type();
     let info = fn_info(vec![Arc::new(CalcitTypeAnnotation::Number), option.clone(), option]);
     assert!(complete_trailing_option_args(&[Calcit::Number(1.0)], &info).is_none());
+  }
+
+  #[test]
+  fn long_recur_preserves_captured_scope() {
+    let x = CalcitLocal::track_sym(&Arc::from("tail-loop-x"));
+    let acc = CalcitLocal::track_sym(&Arc::from("tail-loop-acc"));
+    let captured = CalcitLocal::track_sym(&Arc::from("tail-loop-captured"));
+    let x_value = || local_value("tail-loop-x", x);
+    let acc_value = || local_value("tail-loop-acc", acc);
+    let captured_value = || local_value("tail-loop-captured", captured);
+
+    let condition = Calcit::from(vec![Calcit::Proc(CalcitProc::NativeLessThan), x_value(), Calcit::Number(1.0)]);
+    let completed = Calcit::from(vec![Calcit::Proc(CalcitProc::NativeAdd), acc_value(), captured_value()]);
+    let next_x = Calcit::from(vec![Calcit::Proc(CalcitProc::NativeMinus), x_value(), Calcit::Number(1.0)]);
+    let next_acc = Calcit::from(vec![Calcit::Proc(CalcitProc::NativeAdd), acc_value(), Calcit::Number(1.0)]);
+    let recur = Calcit::from(vec![Calcit::Proc(CalcitProc::Recur), next_x, next_acc]);
+    let body = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.runner")),
+      condition,
+      completed,
+      recur,
+    ]);
+
+    let mut closure_scope = CalcitScope::default();
+    closure_scope.insert_mut(captured, Calcit::Number(42.0));
+    let info = CalcitFn {
+      name: Arc::from("tail-loop"),
+      def_ns: Arc::from("tests.runner"),
+      def_ref: None,
+      usage: CalcitFnUsageMeta::default(),
+      scope: Arc::new(closure_scope),
+      args: Arc::new(CalcitFnArgs::Args(vec![x, acc])),
+      body: vec![body],
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      return_type: Arc::new(CalcitTypeAnnotation::Number),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::Number)],
+      rest_type: None,
+    };
+
+    let result = run_fn_owned(
+      vec![Calcit::Number(100_000.0), Calcit::Number(0.0)],
+      &info,
+      &CallStackList::default(),
+    )
+    .expect("long recur should complete");
+
+    assert_eq!(result, Calcit::Number(100_042.0));
   }
 }
