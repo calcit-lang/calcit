@@ -8,7 +8,7 @@ use std::vec;
 use crate::builtins;
 use crate::calcit::{
   CORE_NS, Calcit, CalcitArgLabel, CalcitEnumValue, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList,
-  CalcitLocal, CalcitProc, CalcitScope, CalcitSyntax, MethodKind, NodeLocation, trailing_option_arg_count,
+  CalcitListView, CalcitLocal, CalcitProc, CalcitScope, CalcitSyntax, MethodKind, NodeLocation, trailing_option_arg_count,
 };
 use crate::call_stack::{CallStackList, StackKind, using_stack};
 use crate::data::cirru;
@@ -152,11 +152,12 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         // println!("eval expr: {}", expr.lisp_str());
         // println!("eval expr x: {}", x);
 
+        let call = xs.view();
         if x.is_expr_evaluated() {
-          call_expr(x, xs, scope, file_ns, call_stack, false)
+          call_expr(x, &call, scope, file_ns, call_stack, false)
         } else {
           let v = evaluate_expr(x, scope, file_ns, call_stack)?;
-          call_expr(&v, xs, scope, file_ns, call_stack, false)
+          call_expr(&v, &call, scope, file_ns, call_stack, false)
         }
       }
     },
@@ -185,7 +186,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
 
 pub fn call_expr(
   v: &Calcit,
-  xs: &CalcitList,
+  xs: &CalcitListView<'_>,
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,
@@ -204,7 +205,13 @@ pub fn call_expr(
     Calcit::Syntax(s, def_ns) => {
       let rest_nodes = xs.skip(1).expect("expected syntax rest nodes");
       if using_stack() {
-        let next_stack = call_stack.extend_owned(def_ns, s.as_ref(), StackKind::Syntax, Calcit::from(xs), rest_nodes.to_vec());
+        let next_stack = call_stack.extend_owned(
+          def_ns,
+          s.as_ref(),
+          StackKind::Syntax,
+          Calcit::from(xs.to_vec()),
+          rest_nodes.to_vec(),
+        );
         builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
           if e.stack.is_empty() {
             let mut e2 = e;
@@ -283,7 +290,7 @@ pub fn call_expr(
         evaluate_args_from(xs, 1, scope, file_ns, call_stack)?
       };
       if using_stack() {
-        let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Fn, &Calcit::from(xs), &values);
+        let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Fn, &Calcit::from(xs.to_vec()), &values);
         run_fn_owned(values, info, &next_stack)
       } else {
         run_fn_owned(values, info, call_stack)
@@ -292,13 +299,19 @@ pub fn call_expr(
     Calcit::Macro { info, .. } => {
       eprintln!(
         "[Warn] macro should already be handled during preprocessing: {}",
-        Calcit::from(xs.to_owned()).lisp_str()
+        Calcit::from(xs.to_vec()).lisp_str()
       );
 
       let mut current_values: Vec<Calcit> = xs.iter().skip(1).cloned().collect();
 
       let next_stack = if using_stack() {
-        call_stack.extend_owned(&info.def_ns, &info.name, StackKind::Macro, Calcit::from(xs), current_values.clone())
+        call_stack.extend_owned(
+          &info.def_ns,
+          &info.name,
+          StackKind::Macro,
+          Calcit::from(xs.to_vec()),
+          current_values.clone(),
+        )
       } else {
         call_stack.to_owned()
       };
@@ -383,9 +396,9 @@ pub fn call_expr(
         .first()
         .and_then(|node| node.get_location())
         .or_else(|| a.get_location())
-        .or_else(|| xs.drop_left().first().and_then(|node| node.get_location()));
+        .or_else(|| xs.get(1).and_then(|node| node.get_location()));
       let expr_one_liner = {
-        let expr = Calcit::from(xs.to_owned());
+        let expr = Calcit::from(xs.to_vec());
         match cirru::calcit_to_cirru(&expr) {
           Ok(v) => match cirru_parser::format_expr_one_liner(&v) {
             Ok(s) => s,
@@ -792,11 +805,11 @@ pub fn evaluate_args(
   file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<Vec<Calcit>, CalcitErr> {
-  evaluate_args_from(&items, 0, scope, file_ns, call_stack)
+  evaluate_args_from(&items.view(), 0, scope, file_ns, call_stack)
 }
 
 pub fn evaluate_args_from(
-  items: &CalcitList,
+  items: &CalcitListView<'_>,
   start: usize,
   scope: &CalcitScope,
   file_ns: &str,
@@ -830,11 +843,11 @@ pub fn evaluate_spreaded_args(
   file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<Vec<Calcit>, CalcitErr> {
-  evaluate_spreaded_args_from(&items, 0, scope, file_ns, call_stack)
+  evaluate_spreaded_args_from(&items.view(), 0, scope, file_ns, call_stack)
 }
 
 pub fn evaluate_spreaded_args_from(
-  items: &CalcitList,
+  items: &CalcitListView<'_>,
   start: usize,
   scope: &CalcitScope,
   file_ns: &str,

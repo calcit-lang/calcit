@@ -11,14 +11,14 @@ use crate::builtins;
 use crate::builtins::meta::{NS_SYMBOL_DICT, type_of};
 
 use crate::calcit::{
-  self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitList, CalcitLocal, CalcitMacro,
-  CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
+  self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitList, CalcitListView,
+  CalcitLocal, CalcitMacro, CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
 };
 use crate::calcit::{Calcit, CalcitEnumValue, CalcitErr, CalcitScope, gen_core_id};
 use crate::call_stack::CallStackList;
 use crate::runner::{self, call_expr, evaluate_expr};
 
-pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn defn(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
   match (expr.first(), expr.get(1)) {
     (Some(Calcit::Symbol { sym: s, .. }), Some(Calcit::List(xs))) => {
       let body_items = expr.skip(2)?.to_vec();
@@ -101,7 +101,7 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
   }
 }
 
-pub fn defmacro(expr: &CalcitList, _scope: &CalcitScope, def_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn defmacro(expr: &CalcitListView<'_>, _scope: &CalcitScope, def_ns: &str) -> Result<Calcit, CalcitErr> {
   match (expr.first(), expr.get(1)) {
     (Some(Calcit::Symbol { sym: s, .. }), Some(Calcit::List(xs))) => Ok(Calcit::Macro {
       id: gen_core_id(),
@@ -120,7 +120,7 @@ pub fn defmacro(expr: &CalcitList, _scope: &CalcitScope, def_ns: &str) -> Result
       CalcitErrKind::Type,
       format!(
         "defmacro expected a symbol and a list of arguments, but received: {}",
-        Calcit::from(expr.to_owned())
+        Calcit::from(expr.to_vec())
       ),
     ),
   }
@@ -279,7 +279,7 @@ mod tests {
 
     let expr = CalcitList::Vector(vec![fn_name, args_list, hint_form, body_expr]);
 
-    let resolved = defn(&expr, &scope, ns).expect("defn should succeed");
+    let resolved = defn(&expr.view(), &scope, ns).expect("defn should succeed");
     match resolved {
       Calcit::Fn { info, .. } => {
         assert!(matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Number));
@@ -324,7 +324,7 @@ mod tests {
       make_symbol("x", ns, "main"),
     ]);
 
-    let Calcit::Fn { info, .. } = defn(&expr, &CalcitScope::default(), ns).expect("variadic defn should compile") else {
+    let Calcit::Fn { info, .. } = defn(&expr.view(), &CalcitScope::default(), ns).expect("variadic defn should compile") else {
       panic!("expected function");
     };
     assert!(matches!(info.rest_type.as_deref(), Some(CalcitTypeAnnotation::Number)));
@@ -343,7 +343,7 @@ mod tests {
   fn assert_type_runtime_checks_pass() {
     let scope = CalcitScope::default();
     let expr = CalcitList::Vector(vec![Calcit::Number(1.0), Calcit::Tag(EdnTag::from("number"))]);
-    let result = assert_type(&expr, &scope, "tests.assert", &CallStackList::default()).expect("assert-type should pass");
+    let result = assert_type(&expr.view(), &scope, "tests.assert", &CallStackList::default()).expect("assert-type should pass");
     assert!(matches!(result, Calcit::Number(1.0)));
   }
 
@@ -351,7 +351,7 @@ mod tests {
   fn assert_type_runtime_checks_fail() {
     let scope = CalcitScope::default();
     let expr = CalcitList::Vector(vec![Calcit::Str(Arc::from("oops")), Calcit::Tag(EdnTag::from("number"))]);
-    let err = assert_type(&expr, &scope, "tests.assert", &CallStackList::default()).expect_err("assert-type should fail");
+    let err = assert_type(&expr.view(), &scope, "tests.assert", &CallStackList::default()).expect_err("assert-type should fail");
     assert!(format!("{err}").contains("assert-type failed"));
   }
 
@@ -390,7 +390,7 @@ mod tests {
       }),
       empty_trait,
     ]);
-    let result = assert_traits(&expr, &scope, "tests.assert", &CallStackList::default()).expect("assert-traits should pass");
+    let result = assert_traits(&expr.view(), &scope, "tests.assert", &CallStackList::default()).expect("assert-traits should pass");
     assert!(matches!(result, Calcit::Struct(_)));
   }
 
@@ -398,7 +398,7 @@ mod tests {
   fn assert_traits_runtime_checks_fail_on_non_trait() {
     let scope = CalcitScope::default();
     let expr = CalcitList::Vector(vec![Calcit::Number(1.0), Calcit::Tag(EdnTag::from("not-trait"))]);
-    let err = assert_traits(&expr, &scope, "tests.assert", &CallStackList::default()).expect_err("assert-traits should fail");
+    let err = assert_traits(&expr.view(), &scope, "tests.assert", &CallStackList::default()).expect_err("assert-traits should fail");
     assert!(format!("{err}").contains("expected a trait definition"));
   }
 
@@ -504,7 +504,7 @@ pub fn get_raw_args_fn(args: &CalcitList) -> Result<CalcitFnArgs, String> {
   }
 }
 
-pub fn quote(expr: &CalcitList, _scope: &CalcitScope, _file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn quote(expr: &CalcitListView<'_>, _scope: &CalcitScope, _file_ns: &str) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     Ok(expr[0].to_owned())
   } else {
@@ -512,7 +512,12 @@ pub fn quote(expr: &CalcitList, _scope: &CalcitScope, _file_ns: &str) -> Result<
   }
 }
 
-pub fn syntax_if(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn syntax_if(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   let l = expr.len();
   if l > 3 {
     return CalcitErr::err_nodes(
@@ -541,7 +546,7 @@ pub fn syntax_if(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_sta
   }
 }
 
-pub fn eval(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn eval(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     let v = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
     let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
@@ -554,10 +559,15 @@ pub fn eval(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &
   }
 }
 
-pub fn syntax_let(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn syntax_let(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   match expr.first() {
     // Some(Calcit::Nil) => runner::evaluate_lines(&expr.drop_left(), scope, file_ns, call_stack),
-    Some(Calcit::List(xs)) if xs.is_empty() => runner::evaluate_lines(&expr.drop_left().to_vec(), scope, file_ns, call_stack),
+    Some(Calcit::List(xs)) if xs.is_empty() => runner::evaluate_lines(&expr.skip(1)?.to_vec(), scope, file_ns, call_stack),
     Some(Calcit::List(xs)) if xs.len() == 2 => {
       let mut body_scope = scope.to_owned();
       match (&xs[0], &xs[1]) {
@@ -573,7 +583,7 @@ pub fn syntax_let(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
         }
         (a, _) => return CalcitErr::err_str(CalcitErrKind::Type, format!("let invalid binding name: {a}")),
       }
-      runner::evaluate_lines(&expr.drop_left().to_vec(), &body_scope, file_ns, call_stack)
+      runner::evaluate_lines(&expr.skip(1)?.to_vec(), &body_scope, file_ns, call_stack)
     }
     Some(Calcit::List(xs)) => CalcitErr::err_nodes(CalcitErrKind::Arity, "let invalid length, but received:", &xs.to_vec()),
     Some(_) => CalcitErr::err_str(CalcitErrKind::Type, format!("let invalid node, but received: {}", expr.to_owned())),
@@ -581,7 +591,12 @@ pub fn syntax_let(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
   }
 }
 
-pub fn assert_type(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn assert_type(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   if expr.len() != 2 {
     return CalcitErr::err_nodes(
       CalcitErrKind::Arity,
@@ -617,7 +632,12 @@ pub fn assert_type(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_s
 
 /// Evaluate its first argument and discard the declared type. The annotation is
 /// consumed by preprocessing so FFI boundaries can opt into typed downstream code.
-pub fn unsafe_coerce(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn unsafe_coerce(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   if expr.len() != 2 {
     return CalcitErr::err_nodes(
       CalcitErrKind::Arity,
@@ -630,7 +650,7 @@ pub fn unsafe_coerce(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call
 }
 
 pub fn parse_cirru_edn_as(
-  expr: &CalcitList,
+  expr: &CalcitListView<'_>,
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,
@@ -694,7 +714,12 @@ pub fn parse_cirru_edn_as(
   })
 }
 
-pub fn decode_map_as(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn decode_map_as(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   if expr.len() != 2 && expr.len() != 3 {
     return CalcitErr::err_nodes(
       CalcitErrKind::Arity,
@@ -736,7 +761,12 @@ pub fn decode_map_as(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call
   })
 }
 
-pub fn assert_traits(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn assert_traits(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   if expr.len() < 2 {
     return CalcitErr::err_nodes(
       CalcitErrKind::Arity,
@@ -762,7 +792,12 @@ enum SpanResult {
   Range(Arc<CalcitList>),
 }
 
-pub fn quasiquote(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn quasiquote(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   match expr.first() {
     None => CalcitErr::err_str(CalcitErrKind::Arity, "quasiquote expected a node, but received none"),
     Some(code) => {
@@ -876,7 +911,12 @@ fn print_macroexpand_chain(label: &str, chain: &[Arc<str>]) {
   eprintln!("[{label}] expansion chain: {chain_text}");
 }
 
-pub fn macroexpand(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn macroexpand(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
 
@@ -925,7 +965,12 @@ pub fn macroexpand(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_s
   }
 }
 
-pub fn macroexpand_1(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn macroexpand_1(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
     // println!("quoted: {}", quoted_code);
@@ -961,7 +1006,12 @@ pub fn macroexpand_1(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call
   }
 }
 
-pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn macroexpand_all(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
 
@@ -1031,7 +1081,12 @@ pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, ca
 }
 
 /// inserted automatically when `&` syntax is recognized in calling
-pub fn call_spread(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn call_spread(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   if expr.len() < 3 {
     return CalcitErr::err_nodes(
       CalcitErrKind::Arity,
@@ -1050,7 +1105,12 @@ pub fn call_spread(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_s
   }
 }
 
-pub fn call_try(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn call_try(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   if expr.len() == 2 {
     let xs = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack);
 
@@ -1078,7 +1138,7 @@ pub fn call_try(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stac
   }
 }
 
-pub fn gensym(xs: &CalcitList, _scope: &CalcitScope, file_ns: &str, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn gensym(xs: &CalcitListView<'_>, _scope: &CalcitScope, file_ns: &str, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let n = {
     let mut ns_sym_dict = NS_SYMBOL_DICT.lock().expect("open symbol dict");
     // Use a per-definition key so gensym numbers are stable regardless of preprocessing order.
@@ -1145,7 +1205,12 @@ pub fn gensym(xs: &CalcitList, _scope: &CalcitScope, file_ns: &str, _call_stack:
 /// where each pattern is either:
 ///   - a list `(:tag binding1 binding2 ...)` for enum variant matching
 ///   - the symbol `_` for a wildcard/default case
-pub fn syntax_match(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn syntax_match(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   if expr.is_empty() {
     return CalcitErr::err_str(CalcitErrKind::Arity, "match expected a value and branches");
   }

@@ -890,14 +890,11 @@ pub fn compile_source_def_for_snapshot(
   Ok(())
 }
 
-/// Ordinary runtime call nodes are immutable after preprocessing and favor
-/// contiguous traversal over persistent list updates. Syntax calls still use
-/// cheap persistent `skip` operations, and quoted/list values stay untouched.
+/// Executable call nodes are immutable after preprocessing and favor contiguous
+/// traversal over persistent list updates. Quoted/list values stay untouched.
 fn into_executable_call(expr: Calcit) -> Calcit {
   match expr {
-    Calcit::List(items) if matches!(items.as_ref(), CalcitList::List(_)) && !matches!(items.first(), Some(Calcit::Syntax(..))) => {
-      Calcit::from(items.to_vec())
-    }
+    Calcit::List(items) if matches!(items.as_ref(), CalcitList::List(_)) => Calcit::from(items.to_vec()),
     _ => expr,
   }
 }
@@ -6666,7 +6663,7 @@ mod tests {
   }
 
   #[test]
-  fn executable_conversion_keeps_syntax_and_quoted_lists_persistent() {
+  fn executable_conversion_makes_syntax_contiguous_and_keeps_quoted_lists_persistent() {
     let quoted = Calcit::List(Arc::new(CalcitList::List(TernaryTreeList::from(vec![
       Calcit::Number(1.0),
       Calcit::Number(2.0),
@@ -6687,7 +6684,7 @@ mod tests {
     let Calcit::List(outer) = resolved else {
       panic!("expected quote call")
     };
-    assert!(matches!(outer.as_ref(), CalcitList::List(_)));
+    assert!(matches!(outer.as_ref(), CalcitList::Vector(_)));
     assert!(matches!(
       outer.get(1),
       Some(Calcit::List(inner)) if matches!(inner.as_ref(), CalcitList::List(_))

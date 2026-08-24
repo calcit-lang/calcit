@@ -14,7 +14,7 @@ pub mod syntax;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock, RwLock};
 
-use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, CalcitScope, CalcitSyntax};
+use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitListView, CalcitProc, CalcitScope, CalcitSyntax};
 use crate::call_stack::{CallStackList, using_stack};
 use cirru_edn::EdnTag;
 
@@ -610,7 +610,7 @@ pub fn register_import_proc_with_descriptor(name: &str, f: FnType, descriptor: R
 
 pub fn handle_syntax(
   name: &CalcitSyntax,
-  nodes: &CalcitList,
+  nodes: &CalcitListView<'_>,
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,
