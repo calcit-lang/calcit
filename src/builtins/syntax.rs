@@ -1265,6 +1265,33 @@ pub fn syntax_match(
     }
   };
 
+  // A statically known enum match is preprocessed into
+  // [value, enum-definition, declaration-ordered branch table]. The final
+  // table slot is an optional trailing wildcard branch.
+  if expr.len() == 3
+    && let Calcit::EnumDef(enum_def) = &expr[1]
+    && let Calcit::List(table) = &expr[2]
+  {
+    let wildcard_idx = enum_def.variants().len();
+    if table.len() != wildcard_idx + 1 {
+      return CalcitErr::err_str(CalcitErrKind::Unexpected, "indexed match table has invalid length");
+    }
+    if let Some(variant_idx) = enum_def.variant_index(&tag)
+      && let Some(result) = evaluate_indexed_match_branch(&table[variant_idx], extra, scope, file_ns, call_stack)?
+    {
+      return Ok(result);
+    }
+    if let Some(result) = evaluate_indexed_match_branch(&table[wildcard_idx], extra, scope, file_ns, call_stack)? {
+      return Ok(result);
+    }
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Unexpected,
+      format!("match found no matching branch for tag :{}", tag.ref_str()),
+      call_stack,
+      expr[0].get_location(),
+    ));
+  }
+
   // Iterate over branches
   for branch_idx in 1..expr.len() {
     let branch = match &expr[branch_idx] {
@@ -1348,4 +1375,62 @@ pub fn syntax_match(
     call_stack,
     expr[0].get_location(),
   ))
+}
+
+fn evaluate_indexed_match_branch(
+  branch: &Calcit,
+  extra: &[Calcit],
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
+  if matches!(branch, Calcit::Nil) {
+    return Ok(None);
+  }
+  let Calcit::List(pair) = branch else {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Unexpected,
+      "indexed match slot expected a branch pair",
+    ));
+  };
+  if pair.len() != 2 {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Unexpected,
+      "indexed match slot expected a 2-element branch pair",
+    ));
+  }
+  let pattern = &pair[0];
+  let body = &pair[1];
+  if matches!(
+    pattern,
+    Calcit::Symbol { sym, .. } | Calcit::Local(CalcitLocal { sym, .. }) if sym.as_ref() == "_"
+  ) {
+    return evaluate_expr(body, scope, file_ns, call_stack).map(Some);
+  }
+  let Calcit::List(pattern_items) = pattern else {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Unexpected,
+      "indexed match slot expected a tag pattern",
+    ));
+  };
+  let binding_count = pattern_items.len().saturating_sub(1);
+  if binding_count != extra.len() {
+    return Ok(None);
+  }
+  let mut body_scope = scope.to_owned();
+  for (binding, value) in pattern_items.iter().skip(1).zip(extra) {
+    match binding {
+      Calcit::Local(CalcitLocal { idx, .. }) => body_scope.insert_mut(*idx, value.to_owned()),
+      Calcit::Symbol { sym, .. } => body_scope.insert_mut(CalcitLocal::track_sym(sym), value.to_owned()),
+      other => {
+        return Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Syntax,
+          format!("match pattern expected a binding name, got: {other}"),
+          call_stack,
+          other.get_location(),
+        ));
+      }
+    }
+  }
+  evaluate_expr(body, &body_scope, file_ns, call_stack).map(Some)
 }

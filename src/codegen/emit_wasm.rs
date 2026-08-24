@@ -2931,7 +2931,14 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::LocalSet(tag_local));
 
   // Collect branches: separate tag branches and wildcard
-  let branches = &args[1..];
+  let branches: Vec<&Calcit> = if args.len() == 3
+    && matches!(&args[1], Calcit::EnumDef(_))
+    && let Calcit::List(table) = &args[2]
+  {
+    table.iter().filter(|branch| !matches!(branch, Calcit::Nil)).collect()
+  } else {
+    args[1..].iter().collect()
+  };
   let mut tag_branches: Vec<(&Calcit, &Calcit)> = Vec::new(); // (pattern, body)
   let mut wildcard_body: Option<&Calcit> = None;
 

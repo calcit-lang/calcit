@@ -118,6 +118,14 @@ impl CalcitEnumDef {
     self.variant_index.get(name).map(|idx| &self.variants[*idx])
   }
 
+  /// Return the stable declaration-order slot for a variant tag.
+  ///
+  /// Preprocessed enum matches use this index to select an already validated
+  /// branch directly instead of scanning every branch tag at runtime.
+  pub fn variant_index(&self, tag: &EdnTag) -> Option<usize> {
+    self.variant_index.get(tag.ref_str()).copied()
+  }
+
   fn collect_variants(struct_value: &CalcitStructValue) -> Result<(Vec<EnumVariant>, HashMap<String, usize>), String> {
     let mut variants: Vec<EnumVariant> = Vec::with_capacity(struct_value.fields().len());
     let mut index: HashMap<String, usize> = HashMap::with_capacity(struct_value.fields().len());
