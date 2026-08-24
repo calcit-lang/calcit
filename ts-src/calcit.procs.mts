@@ -889,22 +889,51 @@ export let remove_watch = (a: CalcitRef, k: CalcitTag): null => {
   return null;
 };
 
-export let range = (n: number, m: number, step: number = 1): CalcitSliceList | CalcitList => {
-  var result: CalcitList | CalcitSliceList = new CalcitSliceList([]);
-  if (m != null) {
-    var idx = n;
-    while (idx < m) {
-      result = result.append(idx);
-      idx = idx + step;
+const MAX_RANGE_LENGTH = 0xffff_ffff;
+
+export let range = (n: number, m?: number, step: number = 1): CalcitSliceList => {
+  const base = m == null ? 0 : n;
+  const bound = m == null ? n : m;
+
+  if (!Number.isFinite(base) || !Number.isFinite(bound) || !Number.isFinite(step)) {
+    throw new TypeError("&list:range expected finite numbers for base, bound, and step");
+  }
+  if (base === bound) {
+    return new CalcitSliceList([]);
+  }
+  if (step === 0 || (bound > base && step < 0) || (bound < base && step > 0)) {
+    throw new Error("&list:range cannot construct list with a step of 0 or invalid step direction");
+  }
+
+  // Avoid overflowing `bound - base` when finite endpoints have opposite signs.
+  const estimatedLength = (base < 0) !== (bound < 0)
+    ? Math.ceil(Math.abs(base) / Math.abs(step) + Math.abs(bound) / Math.abs(step))
+    : Math.ceil((bound - base) / step);
+  if (!Number.isFinite(estimatedLength) || estimatedLength > MAX_RANGE_LENGTH) {
+    throw new Error("&list:range result is too large");
+  }
+
+  const result: Array<CalcitValue> = [];
+  if (step > 0) {
+    for (let value = base; value < bound; ) {
+      result.push(value);
+      const next = value + step;
+      if (next === value) {
+        throw new Error("&list:range step does not advance the current value");
+      }
+      value = next;
     }
   } else {
-    var idx = 0;
-    while (idx < n) {
-      result = result.append(idx);
-      idx = idx + step;
+    for (let value = base; value > bound; ) {
+      result.push(value);
+      const next = value + step;
+      if (next === value) {
+        throw new Error("&list:range step does not advance the current value");
+      }
+      value = next;
     }
   }
-  return result;
+  return new CalcitSliceList(result);
 };
 
 export function _$n_list_$o_empty_$q_(xs: CalcitValue): boolean {

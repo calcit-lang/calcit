@@ -6792,6 +6792,10 @@
                   assert= ([] 4 5 6 7 8 9) (range 4 10)
                   assert= ([] 2 4 6 8) (range 2 10 2)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |generates-descending-ranges)
+              :code $ quote
+                assert= ([] 5 3 1) (range 5 0 -2)
+              :tags $ #{} :core :unit
         |range-bothway $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn range-bothway (x ? y)
