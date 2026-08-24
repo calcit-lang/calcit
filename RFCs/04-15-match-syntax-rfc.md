@@ -127,20 +127,26 @@ missing = all_variants - covered_tags
 
 ## 6. JS 代码生成
 
-生成立即执行函数表达式（IIFE）：
+动态或无法安全重排的 match 保留立即执行函数中的 if-else 链。静态已知 enum 且分支没有重复 tag、wildcard 位于末尾时，预处理器会生成内部 declaration-order branch table；JS codegen 对该形式生成 `switch (tag.idx)`，native evaluator 通过 enum definition 的 variant index 直接选择 slot。这个内部表示不增加用户语法，匿名 enum 和动态边界仍使用兼容路径。
+
+概念上的 JS 输出如下：
 
 ```javascript
 (() => {
   let match_v = <value>;
   let match_t = _$n_tuple_$o_nth(match_v, 0);
-  if (match_t === _kn_ok && _$n_tuple_$o_count(match_v) === 1) {
-    return kwd_$o_success;  // (:ok) :success
-  } else if (match_t === _kn_err && _$n_tuple_$o_count(match_v) === 2) {
-    let msg = _$n_tuple_$o_nth(match_v, 1);
-    return msg;  // (:err msg) msg
-  } else {
-    throw new Error("match: no matching branch for tag");
+  switch (match_t.idx) {
+    case _kn_ok.idx:
+      if (_$n_tuple_$o_count(match_v) === 1) return kwd_$o_success;
+      break;
+    case _kn_err.idx:
+      if (_$n_tuple_$o_count(match_v) === 2) {
+        let msg = _$n_tuple_$o_nth(match_v, 1);
+        return msg;
+      }
+      break;
   }
+  throw new Error("match: no matching branch for tag");
 })()
 ```
 

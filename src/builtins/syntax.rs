@@ -229,7 +229,7 @@ fn collect_param_symbols(args: &CalcitList) -> Result<Vec<Arc<str>>, String> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitStructDef, CalcitStructValue, CalcitTrait};
+  use crate::calcit::{CalcitEnumDef, CalcitStructDef, CalcitStructValue, CalcitTrait};
   use crate::call_stack::CallStackList;
   use cirru_edn::EdnTag;
 
@@ -418,6 +418,47 @@ mod tests {
     ]);
     let result = assert_traits(&expr.view(), &scope, "tests.assert", &CallStackList::default()).expect("assert-traits should pass");
     assert!(matches!(result, Calcit::Struct(_)));
+  }
+
+  #[test]
+  fn indexed_match_selects_variant_and_falls_back_on_arity_mismatch() {
+    let enum_def = Arc::new(
+      CalcitEnumDef::from_struct(CalcitStructValue {
+        struct_ref: Arc::new(CalcitStructDef::from_fields(
+          EdnTag::from("MaybeNumber"),
+          vec![EdnTag::from("none"), EdnTag::from("some")],
+        )),
+        values: Arc::new(vec![Calcit::Nil, Calcit::from(vec![Calcit::Tag(EdnTag::from("number"))])]),
+      })
+      .expect("valid enum definition"),
+    );
+    let binding = make_local("value", "tests.match", "indexed");
+    let some_branch = Calcit::from(vec![
+      Calcit::from(vec![Calcit::Tag(EdnTag::from("some")), binding.to_owned()]),
+      binding,
+    ]);
+    let wildcard = Calcit::from(vec![make_symbol("_", "tests.match", "indexed"), Calcit::Number(-1.0)]);
+    let table = Calcit::from(vec![Calcit::Nil, some_branch, wildcard]);
+    let make_expr = |extra| {
+      CalcitList::Vector(vec![
+        Calcit::Enum(CalcitEnumValue {
+          tag: Arc::new(Calcit::Tag(EdnTag::from("some"))),
+          extra,
+          sum_type: Some(enum_def.clone()),
+        }),
+        Calcit::EnumDef(enum_def.as_ref().to_owned()),
+        table.to_owned(),
+      ])
+    };
+    let scope = CalcitScope::default();
+    let stack = CallStackList::default();
+
+    let selected = syntax_match(&make_expr(vec![Calcit::Number(7.0)]).view(), &scope, "tests.match", &stack)
+      .expect("matching arity should select indexed branch");
+    assert_eq!(selected, Calcit::Number(7.0));
+
+    let fallback = syntax_match(&make_expr(vec![]).view(), &scope, "tests.match", &stack).expect("arity mismatch should use wildcard");
+    assert_eq!(fallback, Calcit::Number(-1.0));
   }
 
   #[test]
@@ -1265,6 +1306,33 @@ pub fn syntax_match(
     }
   };
 
+  // A statically known enum match is preprocessed into
+  // [value, enum-definition, declaration-ordered branch table]. The final
+  // table slot is an optional trailing wildcard branch.
+  if expr.len() == 3
+    && let Calcit::EnumDef(enum_def) = &expr[1]
+    && let Calcit::List(table) = &expr[2]
+  {
+    let wildcard_idx = enum_def.variants().len();
+    if table.len() != wildcard_idx + 1 {
+      return CalcitErr::err_str(CalcitErrKind::Unexpected, "indexed match table has invalid length");
+    }
+    if let Some(variant_idx) = enum_def.variant_index(&tag)
+      && let Some(result) = evaluate_indexed_match_branch(&table[variant_idx], extra, scope, file_ns, call_stack)?
+    {
+      return Ok(result);
+    }
+    if let Some(result) = evaluate_indexed_match_branch(&table[wildcard_idx], extra, scope, file_ns, call_stack)? {
+      return Ok(result);
+    }
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Unexpected,
+      format!("match found no matching branch for tag :{}", tag.ref_str()),
+      call_stack,
+      expr[0].get_location(),
+    ));
+  }
+
   // Iterate over branches
   for branch_idx in 1..expr.len() {
     let branch = match &expr[branch_idx] {
@@ -1348,4 +1416,62 @@ pub fn syntax_match(
     call_stack,
     expr[0].get_location(),
   ))
+}
+
+fn evaluate_indexed_match_branch(
+  branch: &Calcit,
+  extra: &[Calcit],
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
+  if matches!(branch, Calcit::Nil) {
+    return Ok(None);
+  }
+  let Calcit::List(pair) = branch else {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Unexpected,
+      "indexed match slot expected a branch pair",
+    ));
+  };
+  if pair.len() != 2 {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Unexpected,
+      "indexed match slot expected a 2-element branch pair",
+    ));
+  }
+  let pattern = &pair[0];
+  let body = &pair[1];
+  if matches!(
+    pattern,
+    Calcit::Symbol { sym, .. } | Calcit::Local(CalcitLocal { sym, .. }) if sym.as_ref() == "_"
+  ) {
+    return evaluate_expr(body, scope, file_ns, call_stack).map(Some);
+  }
+  let Calcit::List(pattern_items) = pattern else {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Unexpected,
+      "indexed match slot expected a tag pattern",
+    ));
+  };
+  let binding_count = pattern_items.len().saturating_sub(1);
+  if binding_count != extra.len() {
+    return Ok(None);
+  }
+  let mut body_scope = scope.to_owned();
+  for (binding, value) in pattern_items.iter().skip(1).zip(extra) {
+    match binding {
+      Calcit::Local(CalcitLocal { idx, .. }) => body_scope.insert_mut(*idx, value.to_owned()),
+      Calcit::Symbol { sym, .. } => body_scope.insert_mut(CalcitLocal::track_sym(sym), value.to_owned()),
+      other => {
+        return Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Syntax,
+          format!("match pattern expected a binding name, got: {other}"),
+          call_stack,
+          other.get_location(),
+        ));
+      }
+    }
+  }
+  evaluate_expr(body, &body_scope, file_ns, call_stack).map(Some)
 }

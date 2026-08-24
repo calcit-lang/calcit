@@ -5384,6 +5384,48 @@ fn resolve_enum_type_for_match(
   }
 }
 
+fn is_match_wildcard(pattern: &Calcit) -> bool {
+  matches!(
+    pattern,
+    Calcit::Symbol { sym, .. } | Calcit::Local(CalcitLocal { sym, .. }) if sym.as_ref() == "_"
+  )
+}
+
+/// Arrange validated match branches by enum declaration slot. The final slot
+/// stores an optional trailing wildcard branch. Decline forms whose source
+/// order carries semantics that an indexed table cannot preserve.
+fn build_indexed_match_table(enum_def: &calcit::CalcitEnumDef, branches: &[Calcit]) -> Option<Calcit> {
+  let mut slots = vec![Calcit::Nil; enum_def.variants().len() + 1];
+  let wildcard_slot = enum_def.variants().len();
+
+  for (branch_idx, branch) in branches.iter().enumerate() {
+    let Calcit::List(pair) = branch else { return None };
+    if pair.len() != 2 {
+      return None;
+    }
+    let pattern = &pair[0];
+    if is_match_wildcard(pattern) {
+      if branch_idx + 1 != branches.len() || !matches!(slots[wildcard_slot], Calcit::Nil) {
+        return None;
+      }
+      slots[wildcard_slot] = branch.to_owned();
+      continue;
+    }
+
+    let Calcit::List(pattern_items) = pattern else { return None };
+    let Some(Calcit::Tag(tag)) = pattern_items.first() else {
+      return None;
+    };
+    let variant_idx = enum_def.variant_index(tag)?;
+    if !matches!(slots[variant_idx], Calcit::Nil) {
+      return None;
+    }
+    slots[variant_idx] = branch.to_owned();
+  }
+
+  Some(Calcit::from(CalcitList::Vector(slots)))
+}
+
 /// Preprocess `match` syntax and perform exhaustiveness checking.
 /// Input form (pair-based): `(match <value> (<pattern1> <body1>) (<pattern2> <body2>) ...)`
 ///
@@ -5627,6 +5669,17 @@ fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: 
         ctx.check_warnings,
       );
     }
+  }
+
+  if let Some(enum_def) = enum_def
+    && let Some(table) = build_indexed_match_table(enum_def, &xs[2..])
+  {
+    return Ok(Calcit::from(CalcitList::Vector(vec![
+      xs[0].to_owned(),
+      xs[1].to_owned(),
+      Calcit::EnumDef(enum_def.to_owned()),
+      table,
+    ])));
   }
 
   Ok(Calcit::List(Arc::from(CalcitList::Vector(xs))))
@@ -6657,6 +6710,58 @@ mod tests {
 
   fn lock_preprocess_test_state() -> std::sync::MutexGuard<'static, ()> {
     PREPROCESS_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner())
+  }
+
+  fn match_branch(tag: &str, body: &str) -> Calcit {
+    Calcit::from(vec![
+      Calcit::from(vec![Calcit::Tag(cirru_edn::EdnTag::from(tag))]),
+      Calcit::Tag(cirru_edn::EdnTag::from(body)),
+    ])
+  }
+
+  fn wildcard_match_branch(body: &str) -> Calcit {
+    Calcit::from(vec![
+      Calcit::Symbol {
+        sym: Arc::from("_"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.match"),
+          at_def: Arc::from("dispatch"),
+        }),
+        location: None,
+      },
+      Calcit::Tag(cirru_edn::EdnTag::from(body)),
+    ])
+  }
+
+  fn indexed_match_enum() -> CalcitEnumDef {
+    let fields = vec![
+      cirru_edn::EdnTag::from("idle"),
+      cirru_edn::EdnTag::from("running"),
+      cirru_edn::EdnTag::from("done"),
+    ];
+    CalcitEnumDef::from_struct(CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(cirru_edn::EdnTag::from("State"), fields)),
+      values: Arc::new(vec![Calcit::from(vec![]), Calcit::from(vec![]), Calcit::from(vec![])]),
+    })
+    .expect("valid enum")
+  }
+
+  #[test]
+  fn indexed_match_table_uses_variant_order_and_declines_ambiguous_forms() {
+    let enum_def = indexed_match_enum();
+    let done = match_branch("done", "finished");
+    let idle = match_branch("idle", "waiting");
+    let wildcard = wildcard_match_branch("unknown");
+    let table = build_indexed_match_table(&enum_def, &[done.clone(), idle.clone(), wildcard.clone()]).expect("indexed table");
+    let Calcit::List(slots) = table else { panic!("expected table") };
+
+    assert_eq!(slots[0], idle);
+    assert!(matches!(slots[1], Calcit::Nil));
+    assert_eq!(slots[2], done);
+    assert_eq!(slots[3], wildcard);
+    assert!(build_indexed_match_table(&enum_def, &[match_branch("idle", "first"), match_branch("idle", "second")]).is_none());
+    assert!(build_indexed_match_table(&enum_def, &[wildcard_match_branch("early"), match_branch("done", "late")]).is_none());
+    assert!(build_indexed_match_table(&enum_def, &[match_branch("missing", "unknown")]).is_none());
   }
 
   #[test]

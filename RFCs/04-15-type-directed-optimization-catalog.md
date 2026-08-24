@@ -71,18 +71,21 @@
 
 ---
 
-### P3: `tag-match` 分支整数化 ⬜ 推迟（侵入性大，CalcitTuple 12+ 构造点需改动）
+### P3: 已知 enum 的 `match` 分支索引化 ✅ #422
 
-**问题**: `tag-match` 运行时用 tag 字符串逐一比较（线性扫描分支）。JS codegen 也是 if-else 链。
+**问题**: 原生 `match` 虽然保留了 enum 类型和分支结构，native 运行时仍逐项比较 tag，JS codegen 也输出 if-else 链。旧目录将其写成 `tag-match` 优化，但该宏展开后已经丢失结构；真正可安全优化的是原生 `match`。
 
-**位置**: `src/builtins/syntax.rs` L933-1050（runner），`src/codegen/emit_js.rs` L897-978（JS codegen）。
+**实际方案**:
 
-**方案**:
+- 预处理器仅在 enum 类型已知、tag 不重复、wildcard 位于末尾时，生成内部 declaration-order branch table；
+- native 复用 `CalcitEnumDef` 已有的 tag→variant HashMap，一次查找后直接选择 branch slot；
+- JS 对同一内部表示生成 `switch (tag.idx)`；
+- WASM 继续消费其已有整数 tag，并兼容 branch table 表示；
+- 动态/匿名 enum、重复 tag、early wildcard 保留原始线性表示和语义。
 
-- **Rust 端**: enum 类型已知时预处理阶段把 tag 比较替换为 `variant_index` 的整数比较
-- **JS 端**: emit `switch (tag.idx)` 替代 if-else 链
+没有给 `CalcitEnumValue` 新增字段，也没有增加用户语法，因此避免修改所有 enum 构造和序列化边界。
 
-**收益**: 5+ 分支时 O(n) → O(1)。
+**收益**: native 从 O(branches) 降为平均 O(1) branch selection；JS 由引擎整数 switch 分派。
 
 **影响**: 中 — 状态机、消息路由场景（Cumulo updater dispatcher）明显加速。
 
@@ -162,9 +165,9 @@
 | 4    | P2   | `0e705f1` | NativeRecordWithAt 批量索引化           | Record 批量更新加速（fibo 不涉及） |
 | 5    | P7   | `fa325c6` | if 常量折叠                             | 宏展开场景受益                     |
 | -    | 额外 | `7c04880` | runtime def resolution 去重复 RwLock 读 | 微优化                             |
+| 6    | P3   | #422      | typed `match` branch table + JS switch  | enum dispatcher / state machine    |
 
 ### 待定
 
-- **P3**: tag-match 整数化 — 推迟，CalcitTuple 12+ 构造点需改动，侵入性大
 - **P4**: Method dispatch 静态绑定 — 推迟，实现复杂度高
 - **P6**: get-in/assoc-in 静态路径展开 — 未开始，视实际瓶颈决定
