@@ -65,6 +65,7 @@ pub fn defn(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str) -> Re
       {
         *last = Arc::new(CalcitTypeAnnotation::Variadic(inner.clone()));
       }
+      let runtime_body = body_items.iter().filter(|form| !is_function_metadata_hint(form)).cloned().collect();
       let is_macro_gen = s.as_ref().contains('%');
       Ok(Calcit::Fn {
         id: gen_core_id(),
@@ -81,7 +82,7 @@ pub fn defn(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str) -> Re
           usage: CalcitFnUsageMeta::default(),
           scope: Arc::new(scope.to_owned()),
           args: Arc::new(parsed_args),
-          body: body_items,
+          body: runtime_body,
           generics,
           where_bounds,
           return_type,
@@ -99,6 +100,16 @@ pub fn defn(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str) -> Re
       "defn expected a symbol and a list of arguments, but received insufficient arguments",
     ),
   }
+}
+
+/// A one-argument `hint-fn` form describes the surrounding function. Its
+/// information is copied into `CalcitFn` above and is not executable body code.
+/// Two-argument forms still target an expression and must retain runtime behavior.
+fn is_function_metadata_hint(form: &Calcit) -> bool {
+  matches!(
+    form,
+    Calcit::List(xs) if xs.len() == 2 && matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::HintFn, _)))
+  )
 }
 
 pub fn defmacro(expr: &CalcitListView<'_>, _scope: &CalcitScope, def_ns: &str) -> Result<Calcit, CalcitErr> {
@@ -259,6 +270,20 @@ mod tests {
   }
 
   #[test]
+  fn only_surrounding_function_hints_are_runtime_metadata() {
+    let ns = "tests.fn";
+    let metadata_hint = Calcit::from(vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ns)), Calcit::from(vec![])]);
+    let targeted_hint = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ns)),
+      Calcit::Number(1.0),
+      Calcit::Tag(EdnTag::from("number")),
+    ]);
+
+    assert!(is_function_metadata_hint(&metadata_hint));
+    assert!(!is_function_metadata_hint(&targeted_hint));
+  }
+
+  #[test]
   fn defn_captures_return_type_hint() {
     let ns = "tests.fn";
     let scope = CalcitScope::default();
@@ -277,7 +302,7 @@ mod tests {
     );
     let body_expr = make_symbol("x", ns, "main");
 
-    let expr = CalcitList::Vector(vec![fn_name, args_list, hint_form, body_expr]);
+    let expr = CalcitList::Vector(vec![fn_name, args_list, hint_form, body_expr.clone()]);
 
     let resolved = defn(&expr.view(), &scope, ns).expect("defn should succeed");
     match resolved {
@@ -285,6 +310,7 @@ mod tests {
         assert!(matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Number));
         assert_eq!(info.arg_types.len(), 1, "single parameter function should track one arg type slot");
         assert!(info.arg_types.iter().all(|slot| matches!(**slot, CalcitTypeAnnotation::Dynamic)));
+        assert_eq!(info.body, vec![body_expr], "function metadata hint must not execute as body code");
       }
       other => panic!("expected function, got {other}"),
     }

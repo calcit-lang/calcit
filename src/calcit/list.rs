@@ -1,4 +1,5 @@
 use core::fmt;
+use std::cmp::Ordering;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::{fmt::Debug, ops::Index, sync::Arc};
@@ -7,10 +8,30 @@ use im_ternary_tree::TernaryTreeList;
 
 use crate::Calcit;
 
-#[derive(Debug, Clone, Ord, PartialOrd)]
+/// Internal execution metadata attached to contiguous call nodes. It never
+/// changes the language-level list value represented by the stored items.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CalcitCallKind {
+  #[default]
+  Normal,
+  NumberBinary(CalcitNumberBinaryOp),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CalcitNumberBinaryOp {
+  Add,
+  Subtract,
+  Multiply,
+  Divide,
+  LessThan,
+  GreaterThan,
+}
+
+#[derive(Debug, Clone)]
 /// abstraction over im_ternary_tree::TernaryTreeList
 pub enum CalcitList {
   Vector(Vec<Calcit>),
+  Call(Vec<Calcit>, CalcitCallKind),
   List(TernaryTreeList<Calcit>),
 }
 
@@ -28,6 +49,7 @@ impl PartialEq for CalcitList {
   fn eq(&self, other: &Self) -> bool {
     match (self, other) {
       (CalcitList::Vector(xs), CalcitList::Vector(ys)) => xs == ys,
+      (CalcitList::Call(xs, _), CalcitList::Call(ys, _)) => xs == ys,
       (CalcitList::List(xs), CalcitList::List(ys)) => xs == ys,
       (a, b) => {
         let a_size = a.len();
@@ -47,6 +69,18 @@ impl PartialEq for CalcitList {
 }
 
 impl Eq for CalcitList {}
+
+impl Ord for CalcitList {
+  fn cmp(&self, other: &Self) -> Ordering {
+    self.iter().cmp(other.iter())
+  }
+}
+
+impl PartialOrd for CalcitList {
+  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+    Some(self.cmp(other))
+  }
+}
 
 impl Hash for CalcitList {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -144,6 +178,7 @@ impl Index<usize> for CalcitList {
   fn index(&self, idx: usize) -> &Calcit {
     match self {
       CalcitList::Vector(xs) => &xs[idx],
+      CalcitList::Call(xs, _) => &xs[idx],
       CalcitList::List(xs) => &xs[idx],
     }
   }
@@ -306,6 +341,7 @@ impl CalcitList {
   pub fn len(&self) -> usize {
     match self {
       CalcitList::Vector(xs) => xs.len(),
+      CalcitList::Call(xs, _) => xs.len(),
       CalcitList::List(xs) => xs.len(),
     }
   }
@@ -313,6 +349,7 @@ impl CalcitList {
   pub fn is_empty(&self) -> bool {
     match self {
       CalcitList::Vector(xs) => xs.is_empty(),
+      CalcitList::Call(xs, _) => xs.is_empty(),
       CalcitList::List(xs) => xs.is_empty(),
     }
   }
@@ -320,6 +357,7 @@ impl CalcitList {
   pub fn get(&self, idx: usize) -> Option<&Calcit> {
     match self {
       CalcitList::Vector(xs) => xs.get(idx),
+      CalcitList::Call(xs, _) => xs.get(idx),
       CalcitList::List(xs) => xs.get(idx),
     }
   }
@@ -327,6 +365,7 @@ impl CalcitList {
   pub fn first(&self) -> Option<&Calcit> {
     match self {
       CalcitList::Vector(xs) => xs.first(),
+      CalcitList::Call(xs, _) => xs.first(),
       CalcitList::List(xs) => xs.first(),
     }
   }
@@ -343,9 +382,21 @@ impl CalcitList {
     self.view().skip(start)
   }
 
+  pub fn executable(items: Vec<Calcit>, kind: CalcitCallKind) -> Self {
+    CalcitList::Call(items, kind)
+  }
+
+  pub fn call_kind(&self) -> CalcitCallKind {
+    match self {
+      CalcitList::Call(_, kind) => *kind,
+      CalcitList::Vector(_) | CalcitList::List(_) => CalcitCallKind::Normal,
+    }
+  }
+
   pub fn into_list(self) -> Self {
     match self {
       CalcitList::Vector(xs) => CalcitList::List(TernaryTreeList::from(xs)),
+      CalcitList::Call(xs, _) => CalcitList::List(TernaryTreeList::from(xs)),
       CalcitList::List(_) => self.to_owned(),
     }
   }
@@ -353,6 +404,7 @@ impl CalcitList {
   pub fn to_vec(&self) -> Vec<Calcit> {
     match self {
       CalcitList::Vector(xs) => xs.to_owned(),
+      CalcitList::Call(xs, _) => xs.to_owned(),
       CalcitList::List(xs) => xs.to_vec(),
     }
   }
@@ -364,6 +416,7 @@ impl CalcitList {
         ys = ys.push(x);
         CalcitList::List(ys)
       }
+      CalcitList::Call(xs, _) => CalcitList::List(TernaryTreeList::from(xs).push(x)),
       CalcitList::List(xs) => CalcitList::List(xs.push(x)),
     }
   }
@@ -371,6 +424,7 @@ impl CalcitList {
   pub fn push_left(&self, x: Calcit) -> Self {
     match self {
       CalcitList::Vector(xs) => CalcitList::List(TernaryTreeList::from(xs).prepend(x)),
+      CalcitList::Call(xs, _) => CalcitList::List(TernaryTreeList::from(xs).prepend(x)),
       CalcitList::List(xs) => CalcitList::List(xs.push_left(x)),
     }
   }
@@ -384,6 +438,7 @@ impl CalcitList {
         }
         CalcitList::List(ys)
       }
+      CalcitList::Call(xs, _) => CalcitList::List(TernaryTreeList::from(xs.iter().skip(1).cloned().collect::<Vec<_>>())),
       CalcitList::List(xs) => CalcitList::List(xs.drop_left()),
     }
   }
@@ -397,6 +452,9 @@ impl CalcitList {
         }
         Ok(CalcitList::List(ys))
       }
+      CalcitList::Call(xs, _) => Ok(CalcitList::List(TernaryTreeList::from(
+        xs.iter().skip(n).cloned().collect::<Vec<_>>(),
+      ))),
       CalcitList::List(xs) => Ok(CalcitList::List(xs.skip(n)?)),
     }
   }
@@ -410,6 +468,9 @@ impl CalcitList {
         }
         Ok(CalcitList::List(ys))
       }
+      CalcitList::Call(xs, _) => Ok(CalcitList::List(TernaryTreeList::from(
+        xs.iter().take(xs.len() - 1).cloned().collect::<Vec<_>>(),
+      ))),
       CalcitList::List(xs) => Ok(CalcitList::List(xs.butlast()?)),
     }
   }
@@ -417,6 +478,10 @@ impl CalcitList {
   pub fn slice(&self, start: usize, end: usize) -> Result<Self, String> {
     match self {
       CalcitList::Vector(xs) => {
+        let ys = TernaryTreeList::from(xs);
+        Ok(CalcitList::List(ys.slice(start, end)?))
+      }
+      CalcitList::Call(xs, _) => {
         let ys = TernaryTreeList::from(xs);
         Ok(CalcitList::List(ys.slice(start, end)?))
       }
@@ -433,6 +498,7 @@ impl CalcitList {
         }
         CalcitList::List(ys)
       }
+      CalcitList::Call(xs, _) => CalcitList::List(TernaryTreeList::from(xs).reverse()),
       CalcitList::List(xs) => CalcitList::List(xs.reverse()),
     }
   }
@@ -440,6 +506,11 @@ impl CalcitList {
   pub fn assoc(&self, idx: usize, x: Calcit) -> Result<Self, String> {
     match self {
       CalcitList::Vector(xs) => {
+        let mut ys = TernaryTreeList::from(xs);
+        ys = ys.assoc(idx, x)?;
+        Ok(CalcitList::List(ys))
+      }
+      CalcitList::Call(xs, _) => {
         let mut ys = TernaryTreeList::from(xs);
         ys = ys.assoc(idx, x)?;
         Ok(CalcitList::List(ys))
@@ -455,6 +526,11 @@ impl CalcitList {
         ys = ys.dissoc(idx)?;
         Ok(CalcitList::List(ys))
       }
+      CalcitList::Call(xs, _) => {
+        let mut ys = TernaryTreeList::from(xs);
+        ys = ys.dissoc(idx)?;
+        Ok(CalcitList::List(ys))
+      }
       CalcitList::List(xs) => Ok(CalcitList::List(xs.dissoc(idx)?)),
     }
   }
@@ -466,6 +542,11 @@ impl CalcitList {
         ys = ys.assoc_before(idx, x)?;
         Ok(CalcitList::List(ys))
       }
+      CalcitList::Call(xs, _) => {
+        let mut ys = TernaryTreeList::from(xs);
+        ys = ys.assoc_before(idx, x)?;
+        Ok(CalcitList::List(ys))
+      }
       CalcitList::List(xs) => Ok(CalcitList::List(xs.assoc_before(idx, x)?)),
     }
   }
@@ -473,6 +554,7 @@ impl CalcitList {
   pub fn assoc_after(&self, idx: usize, x: Calcit) -> Result<Self, String> {
     let base_list = match self {
       CalcitList::Vector(xs) => TernaryTreeList::from(xs),
+      CalcitList::Call(xs, _) => TernaryTreeList::from(xs),
       CalcitList::List(xs) => xs.clone(),
     };
     Ok(CalcitList::List(base_list.assoc_after(idx, x)?))
@@ -481,6 +563,7 @@ impl CalcitList {
   pub fn index_of(&self, x: &Calcit) -> Option<usize> {
     match self {
       CalcitList::Vector(xs) => xs.iter().position(|y| y == x),
+      CalcitList::Call(xs, _) => xs.iter().position(|y| y == x),
       CalcitList::List(xs) => xs.index_of(x),
     }
   }
@@ -488,6 +571,11 @@ impl CalcitList {
   pub fn traverse(&self, f: &mut dyn FnMut(&Calcit)) {
     match self {
       CalcitList::Vector(xs) => {
+        for x in xs {
+          f(x);
+        }
+      }
+      CalcitList::Call(xs, _) => {
         for x in xs {
           f(x);
         }
@@ -502,6 +590,12 @@ impl CalcitList {
     // self.0.traverse_result(f)
     match self {
       CalcitList::Vector(xs) => {
+        for x in xs {
+          f(x)?;
+        }
+        Ok(())
+      }
+      CalcitList::Call(xs, _) => {
         for x in xs {
           f(x)?;
         }
@@ -529,11 +623,12 @@ mod tests {
   }
 
   #[test]
-  fn borrowed_views_read_vector_and_persistent_lists() {
+  fn borrowed_views_read_all_list_storage_kinds() {
     let vector = CalcitList::Vector(values());
+    let call = CalcitList::executable(values(), CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Add));
     let persistent = CalcitList::List(TernaryTreeList::from(values()));
 
-    for source in [&vector, &persistent] {
+    for source in [&vector, &call, &persistent] {
       let tail = source.view_from(1).expect("valid argument tail");
       assert_eq!(tail.len(), 3);
       assert_eq!(tail.first(), Some(&Calcit::Number(2.0)));
@@ -552,5 +647,20 @@ mod tests {
 
     assert!(view.get(3).is_none());
     assert!(view.skip(4).is_err());
+  }
+
+  #[test]
+  fn executable_metadata_does_not_change_list_value_semantics() {
+    let normal = CalcitList::executable(values(), CalcitCallKind::Normal);
+    let specialized = CalcitList::executable(values(), CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Add));
+    let vector = CalcitList::Vector(values());
+    let persistent = CalcitList::List(TernaryTreeList::from(values()));
+
+    assert_eq!(normal, specialized);
+    assert_eq!(specialized, vector);
+    assert_eq!(specialized, persistent);
+    assert_eq!(normal.cmp(&specialized), Ordering::Equal);
+    assert_eq!(specialized.call_kind(), CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Add));
+    assert_eq!(specialized.push_right(Calcit::Number(5.0)).call_kind(), CalcitCallKind::Normal);
   }
 }
