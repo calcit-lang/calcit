@@ -153,6 +153,24 @@ mod tests {
     assert_eq!(trailing_option_arg_count(&types, 3), 2);
     assert_eq!(trailing_option_arg_count(&types, 4), 0, "partial metadata must keep exact arity");
   }
+
+  #[test]
+  fn restores_call_frame_without_dropping_captured_bindings() {
+    let mut scope = CalcitScope::default();
+    scope.insert_mut(1, Calcit::Number(42.0));
+    let checkpoint = scope.frame_checkpoint();
+
+    for value in 0..100_000 {
+      scope.restore_frame(checkpoint);
+      scope.insert_mut(2, Calcit::Number(value as f64));
+      scope.insert_mut(3, Calcit::Number((value + 1) as f64));
+    }
+
+    assert_eq!(scope.0.len(), checkpoint + 2);
+    assert_eq!(scope.get(1), Some(&Calcit::Number(42.0)));
+    assert_eq!(scope.get(2), Some(&Calcit::Number(99_999.0)));
+    assert_eq!(scope.get(3), Some(&Calcit::Number(100_000.0)));
+  }
 }
 
 /// Macro variant of Calcit data
@@ -182,6 +200,16 @@ impl Display for ScopePair {
 pub struct CalcitScope(Vec<ScopePair>);
 
 impl CalcitScope {
+  /// Capture the current end of a lexical frame before adding call-local bindings.
+  pub(crate) fn frame_checkpoint(&self) -> usize {
+    self.0.len()
+  }
+
+  /// Drop bindings added after a frame checkpoint while preserving captured scope.
+  pub(crate) fn restore_frame(&mut self, checkpoint: usize) {
+    self.0.truncate(checkpoint);
+  }
+
   /// load value of a symbol from the scope (reverse scan for shadowing)
   pub fn get(&self, key: u16) -> Option<&Calcit> {
     for pair in self.0.iter().rev() {
