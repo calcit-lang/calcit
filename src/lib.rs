@@ -357,9 +357,32 @@ pub fn merge_module_files(target: &mut snapshot::Snapshot, module: &snapshot::Sn
   Ok(())
 }
 
+/// Merge a direct dependency into a project snapshot.
+///
+/// A library's development graph can revisit that library through a transitive
+/// dependency (for example, a documentation UI that renders Markdown). The
+/// project source is authoritative for its own package namespaces, so discard
+/// those transitive copies before applying the normal, strict module merge.
+pub fn merge_project_module_files(
+  target: &mut snapshot::Snapshot,
+  module: &snapshot::Snapshot,
+  module_path: &str,
+) -> Result<(), String> {
+  if target.package.is_empty() {
+    return merge_module_files(target, module, module_path);
+  }
+
+  let namespace_prefix = format!("{}.", target.package);
+  let mut filtered_module = module.clone();
+  filtered_module
+    .files
+    .retain(|namespace, _| namespace != &target.package && !namespace.starts_with(&namespace_prefix));
+  merge_module_files(target, &filtered_module, module_path)
+}
+
 #[cfg(test)]
 mod module_resolution_tests {
-  use super::{load_module, merge_module_files, project_module_folder, resolve_module_snapshot_candidates};
+  use super::{load_module, merge_module_files, merge_project_module_files, project_module_folder, resolve_module_snapshot_candidates};
   use std::fs;
   use std::path::{Path, PathBuf};
 
@@ -499,6 +522,29 @@ mod module_resolution_tests {
       .insert("one".to_owned(), super::snapshot::gen_meta_ns("one", "dependency/calcit.cirru"));
     let error = merge_module_files(&mut target, &dependency, "two/").unwrap_err();
     assert!(error.contains("namespace `one` conflicts with existing content"));
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn project_merge_keeps_project_namespaces_over_transitive_copies() {
+    let root = temp_root("project-self-dependency");
+    write_module(&root, "one", &[], "one");
+    write_module(&root, "two", &[], "two");
+    let module_folder = project_module_folder(&root);
+    let mut target = load_module("one/", &root, &module_folder).unwrap();
+    let original = target.files.get("one").unwrap().clone();
+    let mut dependency = load_module("two/", &root, &module_folder).unwrap();
+    dependency
+      .files
+      .insert("one".to_owned(), super::snapshot::gen_meta_ns("one", "dependency/calcit.cirru"));
+    dependency.files.insert(
+      "two.extra".to_owned(),
+      super::snapshot::gen_meta_ns("two.extra", "dependency/calcit.cirru"),
+    );
+
+    merge_project_module_files(&mut target, &dependency, "two/").unwrap();
+    assert_eq!(target.files.get("one").unwrap(), &original);
+    assert!(target.files.contains_key("two.extra"));
     fs::remove_dir_all(root).unwrap();
   }
 

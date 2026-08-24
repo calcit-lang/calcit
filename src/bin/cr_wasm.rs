@@ -85,7 +85,7 @@ fn main() -> Result<(), String> {
   let module_paths = snapshot.active_entry()?.modules.clone();
   for module_path in &module_paths {
     let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
-    calcit::merge_module_files(&mut snapshot, &module_data, module_path)?;
+    calcit::merge_project_module_files(&mut snapshot, &module_data, module_path)?;
   }
 
   let selected_entry = snapshot.active_entry()?;

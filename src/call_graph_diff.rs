@@ -127,7 +127,7 @@ fn attach_modules_and_core(
   let module_paths = snapshot.active_entry()?.modules.to_vec();
   for module_path in &module_paths {
     let module_data = crate::load_module(module_path, base_dir, module_folder)?;
-    crate::merge_module_files(snapshot, &module_data, module_path)?;
+    crate::merge_project_module_files(snapshot, &module_data, module_path)?;
   }
 
   for (ns, file) in &core_snapshot.files {
