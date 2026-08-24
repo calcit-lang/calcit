@@ -11,6 +11,9 @@ use crate::builtins;
 use crate::call_stack::CallStackList;
 use crate::runner;
 
+// Keep eager ranges portable to JavaScript, whose array length is a 32-bit value.
+const MAX_RANGE_LEN: usize = u32::MAX as usize;
+
 pub fn new_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::List(Arc::new(xs.into())))
 }
@@ -244,7 +247,11 @@ pub fn range(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     None => 1.0,
   };
 
-  if (bound - base).abs() < f64::EPSILON {
+  if !base.is_finite() || !bound.is_finite() || !step.is_finite() {
+    return CalcitErr::err_str(CalcitErrKind::Type, "&list:range expected finite numbers for base, bound, and step");
+  }
+
+  if base == bound {
     return Ok(Calcit::from(CalcitList::default()));
   }
 
@@ -255,17 +262,39 @@ pub fn range(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     );
   }
 
-  let mut ys = vec![];
+  // A direct `bound - base` can overflow for finite endpoints with opposite signs.
+  // Same-sign subtraction is finite; otherwise normalize each half before summing.
+  let estimated_len = if (base < 0.0) != (bound < 0.0) {
+    (base.abs() / step.abs() + bound.abs() / step.abs()).ceil()
+  } else {
+    ((bound - base) / step).ceil()
+  };
+  if !estimated_len.is_finite() || estimated_len > MAX_RANGE_LEN as f64 {
+    return CalcitErr::err_str(CalcitErrKind::Unexpected, "&list:range result is too large");
+  }
+
+  let mut ys = Vec::new();
+  if ys.try_reserve_exact(estimated_len as usize).is_err() {
+    return CalcitErr::err_str(CalcitErrKind::Unexpected, "&list:range result is too large");
+  }
   let mut i = base;
   if step > 0.0 {
     while i < bound {
       ys.push(Calcit::Number(i));
-      i += step;
+      let next = i + step;
+      if next == i {
+        return CalcitErr::err_str(CalcitErrKind::Unexpected, "&list:range step does not advance the current value");
+      }
+      i = next;
     }
   } else {
     while i > bound {
       ys.push(Calcit::Number(i));
-      i += step;
+      let next = i + step;
+      if next == i {
+        return CalcitErr::err_str(CalcitErrKind::Unexpected, "&list:range step does not advance the current value");
+      }
+      i = next;
     }
   }
   Ok(Calcit::from(ys))
@@ -941,5 +970,50 @@ mod tests {
       butlast(std::slice::from_ref(&empty)).expect("butlast should accept an empty list"),
       empty
     );
+  }
+
+  #[test]
+  fn range_supports_descending_and_fractional_steps() {
+    assert_eq!(
+      range(&[Calcit::Number(5.0), Calcit::Number(0.0), Calcit::Number(-2.0)]).expect("range should support a descending step"),
+      Calcit::from(vec![Calcit::Number(5.0), Calcit::Number(3.0), Calcit::Number(1.0)])
+    );
+    assert_eq!(
+      range(&[Calcit::Number(1.0), Calcit::Number(2.0), Calcit::Number(0.25)]).expect("range should support a fractional step"),
+      Calcit::from(vec![
+        Calcit::Number(1.0),
+        Calcit::Number(1.25),
+        Calcit::Number(1.5),
+        Calcit::Number(1.75),
+      ])
+    );
+    assert_eq!(
+      range(&[Calcit::Number(-1e308), Calcit::Number(1e308), Calcit::Number(1e308)])
+        .expect("range should not overflow while estimating a finite cross-zero range"),
+      Calcit::from(vec![Calcit::Number(-1e308), Calcit::Number(0.0)])
+    );
+  }
+
+  #[test]
+  fn range_rejects_non_finite_numbers() {
+    for args in [
+      vec![Calcit::Number(f64::NAN)],
+      vec![Calcit::Number(0.0), Calcit::Number(f64::INFINITY)],
+      vec![Calcit::Number(0.0), Calcit::Number(1.0), Calcit::Number(f64::NEG_INFINITY)],
+    ] {
+      let error = range(&args).expect_err("range should reject non-finite numbers");
+      assert!(error.to_string().contains("expected finite numbers"));
+    }
+  }
+
+  #[test]
+  fn range_rejects_oversized_and_non_advancing_results() {
+    let oversized = range(&[Calcit::Number(0.0), Calcit::Number(MAX_RANGE_LEN as f64 + 1.0), Calcit::Number(1.0)])
+      .expect_err("range should reject results larger than the shared backend limit");
+    assert!(oversized.to_string().contains("result is too large"));
+
+    let stalled = range(&[Calcit::Number(1e20), Calcit::Number(1e20 - 1e6), Calcit::Number(-1.0)])
+      .expect_err("range should reject steps that cannot advance at the current magnitude");
+    assert!(stalled.to_string().contains("step does not advance"));
   }
 }

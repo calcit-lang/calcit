@@ -1,7 +1,8 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-list) (:version |0.0.0)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-list)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-list.main/main!) (:mode :native) (:reload-fn 'test-list.main/reload!)
+      :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
@@ -13,7 +14,7 @@
           :schema $ :: 'Dynamic
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (test-alias) (test-doseq) (test-let[]) (test-comma) (test-methods-shorthand) (test-pair) (test-match) (do true)
+            defn main! () (test-alias) (test-doseq) (test-let[]) (test-comma) (test-methods-shorthand) (test-pair) (test-match) (test-range) (do true)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -118,6 +119,22 @@
                 .filter-pair
                   [] ([] :a 2) ([] :b 12) ([] :b 112)
                   fn (k n) (> n 10)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-range $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-range ()
+              assert= ([] 5 3 1) (range 5 0 -2)
+              assert= ([] -2 -1 0 1) (range -2 2)
+              assert= ([] 1 1.25 1.5 1.75) (range 1 2 0.25)
+              assert= ([] -1e308 0) (range -1e308 1e308 1e308)
+              do
+                assert= true $ try
+                  do (range 0 4294967296) false
+                  fn (_error) true
+                assert= true $ try
+                  do (range 100000000000000000000 99999999999999000000 -1) false
+                  fn (_error) true
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)
