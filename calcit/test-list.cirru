@@ -127,6 +127,7 @@
               assert= ([] 5 3 1) (range 5 0 -2)
               assert= ([] -2 -1 0 1) (range -2 2)
               assert= ([] 1 1.25 1.5 1.75) (range 1 2 0.25)
+              assert= ([] -1e308 0) (range -1e308 1e308 1e308)
               do
                 assert= true $ try
                   do (range 0 4294967296) false

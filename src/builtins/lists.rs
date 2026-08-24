@@ -262,7 +262,13 @@ pub fn range(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     );
   }
 
-  let estimated_len = ((bound - base) / step).ceil();
+  // A direct `bound - base` can overflow for finite endpoints with opposite signs.
+  // Same-sign subtraction is finite; otherwise normalize each half before summing.
+  let estimated_len = if (base < 0.0) != (bound < 0.0) {
+    (base.abs() / step.abs() + bound.abs() / step.abs()).ceil()
+  } else {
+    ((bound - base) / step).ceil()
+  };
   if !estimated_len.is_finite() || estimated_len > MAX_RANGE_LEN as f64 {
     return CalcitErr::err_str(CalcitErrKind::Unexpected, "&list:range result is too large");
   }
@@ -980,6 +986,11 @@ mod tests {
         Calcit::Number(1.5),
         Calcit::Number(1.75),
       ])
+    );
+    assert_eq!(
+      range(&[Calcit::Number(-1e308), Calcit::Number(1e308), Calcit::Number(1e308)])
+        .expect("range should not overflow while estimating a finite cross-zero range"),
+      Calcit::from(vec![Calcit::Number(-1e308), Calcit::Number(0.0)])
     );
   }
 

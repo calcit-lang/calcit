@@ -905,7 +905,10 @@ export let range = (n: number, m?: number, step: number = 1): CalcitSliceList =>
     throw new Error("&list:range cannot construct list with a step of 0 or invalid step direction");
   }
 
-  const estimatedLength = Math.ceil((bound - base) / step);
+  // Avoid overflowing `bound - base` when finite endpoints have opposite signs.
+  const estimatedLength = (base < 0) !== (bound < 0)
+    ? Math.ceil(Math.abs(base) / Math.abs(step) + Math.abs(bound) / Math.abs(step))
+    : Math.ceil((bound - base) / step);
   if (!Number.isFinite(estimatedLength) || estimatedLength > MAX_RANGE_LENGTH) {
     throw new Error("&list:range result is too large");
   }
