@@ -890,6 +890,18 @@ pub fn compile_source_def_for_snapshot(
   Ok(())
 }
 
+/// Ordinary runtime call nodes are immutable after preprocessing and favor
+/// contiguous traversal over persistent list updates. Syntax calls still use
+/// cheap persistent `skip` operations, and quoted/list values stay untouched.
+fn into_executable_call(expr: Calcit) -> Calcit {
+  match expr {
+    Calcit::List(items) if matches!(items.as_ref(), CalcitList::List(_)) && !matches!(items.first(), Some(Calcit::Syntax(..))) => {
+      Calcit::from(items.to_vec())
+    }
+    _ => expr,
+  }
+}
+
 pub fn preprocess_expr(
   expr: &Calcit,
   scope_defs: &HashSet<Arc<str>>,
@@ -1132,7 +1144,7 @@ pub fn preprocess_expr(
       } else {
         // TODO whether function bothers this...
         // println!("start calling: {}", expr);
-        preprocess_list_call(xs, scope_defs, scope_types, file_ns, check_warnings, call_stack)
+        preprocess_list_call(xs, scope_defs, scope_types, file_ns, check_warnings, call_stack).map(into_executable_call)
       }
     }
     Calcit::Number(..)
@@ -6621,6 +6633,65 @@ mod tests {
 
   fn lock_preprocess_test_state() -> std::sync::MutexGuard<'static, ()> {
     PREPROCESS_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner())
+  }
+
+  #[test]
+  fn preprocessed_calls_use_contiguous_nodes() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("+"),
+      Cirru::leaf("1"),
+      Cirru::List(vec![Cirru::leaf("*"), Cirru::leaf("2"), Cirru::leaf("3")]),
+    ]);
+    let code = code_to_calcit(&expr, "tests.executable", "main", vec![]).expect("parse call");
+    let warnings = RefCell::new(vec![]);
+
+    let resolved = preprocess_expr(
+      &code,
+      &HashSet::new(),
+      &mut ScopeTypes::new(),
+      "tests.executable",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("preprocess call");
+
+    let Calcit::List(outer) = resolved else {
+      panic!("expected outer call")
+    };
+    assert!(matches!(outer.as_ref(), CalcitList::Vector(_)));
+    assert!(matches!(
+      outer.get(2),
+      Some(Calcit::List(inner)) if matches!(inner.as_ref(), CalcitList::Vector(_))
+    ));
+  }
+
+  #[test]
+  fn executable_conversion_keeps_syntax_and_quoted_lists_persistent() {
+    let quoted = Calcit::List(Arc::new(CalcitList::List(TernaryTreeList::from(vec![
+      Calcit::Number(1.0),
+      Calcit::Number(2.0),
+    ]))));
+    let code = Calcit::from(vec![Calcit::Syntax(CalcitSyntax::Quote, Arc::from("tests.executable")), quoted]);
+    let warnings = RefCell::new(vec![]);
+
+    let resolved = preprocess_expr(
+      &code,
+      &HashSet::new(),
+      &mut ScopeTypes::new(),
+      "tests.executable",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("preprocess quote");
+
+    let Calcit::List(outer) = resolved else {
+      panic!("expected quote call")
+    };
+    assert!(matches!(outer.as_ref(), CalcitList::List(_)));
+    assert!(matches!(
+      outer.get(1),
+      Some(Calcit::List(inner)) if matches!(inner.as_ref(), CalcitList::List(_))
+    ));
   }
 
   #[test]
