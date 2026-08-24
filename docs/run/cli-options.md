@@ -93,6 +93,17 @@ Warn when dynamic method dispatch cannot be specialized at preprocess time, and 
 calcit --warn-dyn-method
 ```
 
+For a focused, machine-readable inventory that excludes unrelated type and FFI warnings, use the dedicated analysis command:
+
+```bash
+calcit analyze dynamic-methods
+calcit analyze dynamic-methods --summary-only --format json
+calcit analyze dynamic-methods --max 0
+calcit analyze dynamic-methods --deps
+```
+
+The default scope contains project namespaces only. `--deps` includes reachable dependency namespaces, and `--max` returns a non-zero status when the finding count exceeds the reviewed limit.
+
 ### Hot Reloading Configuration
 
 **--init-fn**: Override the main entry function:

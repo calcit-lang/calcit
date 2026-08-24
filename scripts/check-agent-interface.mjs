@@ -277,6 +277,52 @@ const scenarios = [
     },
   },
   {
+    name: "dynamic method summary",
+    args: [
+      "calcit/test-method-errors.cirru",
+      "analyze",
+      "dynamic-methods",
+      "--summary-only",
+      "--format",
+      "json",
+    ],
+    check(result) {
+      if (result.schema_version !== 1 || result.command !== "analyze.dynamic-methods") {
+        throw new Error("unexpected analyze.dynamic-methods envelope");
+      }
+      if (result.data.summary.findings !== 2 || result.data.findings.length !== 0) {
+        throw new Error("dynamic-methods summary did not preserve aggregate-only output");
+      }
+      if (result.data.summary.passed !== true || !result.revision.startsWith("md5:")) {
+        throw new Error("dynamic-methods summary lost policy or revision metadata");
+      }
+    },
+  },
+  {
+    name: "dynamic method policy failure",
+    args: [
+      "calcit/test-method-errors.cirru",
+      "analyze",
+      "dynamic-methods",
+      "--max",
+      "1",
+      "--format",
+      "json",
+    ],
+    expectedStatus: 1,
+    check(result) {
+      if (result.data.summary.findings !== 2 || result.data.summary.passed !== false) {
+        throw new Error("dynamic-methods policy did not fail above its limit");
+      }
+      if (result.data.findings.some((finding) => !finding.code?.startsWith("P_DYNAMIC_"))) {
+        throw new Error("dynamic-methods report included unrelated warnings");
+      }
+      if (result.diagnostics[0]?.code !== "E_DYNAMIC_METHOD_POLICY") {
+        throw new Error("dynamic-methods policy failure lost its structured diagnostic");
+      }
+    },
+  },
+  {
     name: "static quality gate failure",
     args: [
       "calcit/test.cirru",

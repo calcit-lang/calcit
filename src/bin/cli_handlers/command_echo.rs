@@ -564,6 +564,19 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       }
       desc
     }
+    AnalyzeSubcommand::DynamicMethods(opts) => {
+      let mut desc = "locates unresolved dynamic method dispatch in reachable definitions".to_string();
+      if opts.deps {
+        desc.push_str(", including dependencies");
+      }
+      if opts.summary_only {
+        desc.push_str(", returning aggregate counts only");
+      }
+      if let Some(limit) = opts.max {
+        desc.push_str(&format!(", enforcing a maximum of {limit}"));
+      }
+      desc
+    }
     AnalyzeSubcommand::Deprecated(opts) => {
       let mut desc = "locates calls to APIs marked deprecated".to_string();
       if let Some(ns) = &opts.ns {
@@ -858,6 +871,13 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       value "format" => &opts.format; default "human",
       switch "deps" => opts.deps,
       switch "summary-only" => opts.summary_only
+    ),
+    AnalyzeSubcommand::DynamicMethods(opts) => echo_items!(
+      tokens,
+      value "format" => &opts.format; default "human",
+      switch "deps" => opts.deps,
+      switch "summary-only" => opts.summary_only,
+      opt_owned "max" => opts.max.map(|value| value.to_string()); default "none"
     ),
     AnalyzeSubcommand::Deprecated(opts) => echo_items!(
       tokens,
@@ -1256,6 +1276,7 @@ fn analyze_name(subcommand: &AnalyzeSubcommand) -> &'static str {
     AnalyzeSubcommand::CheckExamples(_) => "check-examples",
     AnalyzeSubcommand::CheckTypes(_) => "check-types",
     AnalyzeSubcommand::WeakTypes(_) => "weak-types",
+    AnalyzeSubcommand::DynamicMethods(_) => "dynamic-methods",
     AnalyzeSubcommand::Deprecated(_) => "deprecated",
     AnalyzeSubcommand::Quality(_) => "quality",
     AnalyzeSubcommand::EffectsGraph(_) => "effects-graph",

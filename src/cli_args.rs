@@ -206,6 +206,8 @@ pub enum AnalyzeSubcommand {
   CheckTypes(CheckTypesCommand),
   /// locate weakly-typed hotspots such as :dynamic schema usage and nil literals
   WeakTypes(WeakTypesCommand),
+  /// locate unresolved dynamic method dispatch in reachable definitions
+  DynamicMethods(DynamicMethodsCommand),
   /// locate calls to definitions marked with the :deprecated tag
   Deprecated(DeprecatedCommand),
   /// enforce type coverage, weak-type, and deprecated API quality budgets
@@ -285,6 +287,24 @@ pub struct WeakTypesCommand {
   /// emit aggregate counts without per-definition details
   #[argh(switch, long = "summary-only")]
   pub summary_only: bool,
+}
+
+/// locate unresolved dynamic method dispatch in reachable definitions
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "dynamic-methods")]
+pub struct DynamicMethodsCommand {
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+  /// include dependency namespaces
+  #[argh(switch)]
+  pub deps: bool,
+  /// emit aggregate counts without individual findings
+  #[argh(switch, long = "summary-only")]
+  pub summary_only: bool,
+  /// fail when the finding count exceeds this limit
+  #[argh(option)]
+  pub max: Option<usize>,
 }
 
 /// locate calls to definitions marked with the :deprecated tag

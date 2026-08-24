@@ -470,15 +470,17 @@ calcit calcit.cirru analyze deprecated --summary-only
 `:features $ #{} :js-ffi`，并在进入 typed code 前 validate/convert。无返回值使用 `Unit`；业务缺失
 使用 `Option`，需要错误信息时使用 `Result`，不要让旧 `Optional<T>` 或裸 `nil` 无限保留。
 
-再对每个 entry 开启动态方法告警：
+再对每个 entry 运行独立的动态方法报告；已有项目可以先记录非零上限，再逐步降低：
 
 ```bash
-calcit calcit.cirru --warn-dyn-method --check-only
-calcit calcit.cirru --entry test --warn-dyn-method --check-only
+calcit calcit.cirru analyze dynamic-methods --summary-only --format json
+calcit calcit.cirru analyze dynamic-methods --max 0
+calcit calcit.cirru --entry test analyze dynamic-methods --max 0
 ```
 
-这个开关会暴露无法静态专门化的方法调用和未类型化的动态接收者。它不是第一步：先修复普通
-`--check-only`，再打开额外告警，否则旧项目的初始噪音可能掩盖真正的配置和 API 错误。
+该报告只统计无法静态专门化的方法调用，不混入普通类型或 JS FFI warning；默认不统计依赖，
+维护模块时可加 `--deps` 查看完整可达范围。旧的 `--warn-dyn-method --check-only` 仍适合交互排查，
+但会和其他预处理 warning 一起阻断，不适合作为单一性能指标的 CI policy。
 
 ### 3.6 存量项目的类型收紧策略
 
