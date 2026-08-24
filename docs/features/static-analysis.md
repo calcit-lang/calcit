@@ -105,7 +105,7 @@ calcit query type-at app.main/calculate-total --path code@3.2 --format json
 
 An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. A selected entry binding of `:type-slots` to `:dynamic` stays visible as `intentional-type-slot-dynamic`. Neither hides the location, but both separate an explicit boundary choice from unresolved type debt. The FFI feature does not classify `nil`, because an FFI capability does not imply that every nullable branch is intentional.
 
-For `code-nil`, the report includes both raw `nil` and the explicit `;nil` Unit marker. Every nil form inside a function declared to return `Unit` is classified as `declared-unit`; `;nil` is also always classified as explicit Unit, including inside generated macro branches. For legacy `Optional<T>`, only structurally proven return positions inherit `declared-optional`; embedded nil values remain unresolved. `declared-unit` is excluded from migration debt, while `declared-optional` remains visible so application APIs move to `Option` or `Result`. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-optional` and requires no findings.
+For `code-nil`, the report includes raw `nil` and the legacy `;nil` compatibility marker. Every nil form inside a function declared to return `Unit` is classified as `declared-unit`; the explicit `&unit` literal is already a distinct Unit value and is not nil debt. For legacy `Optional<T>`, only structurally proven return positions inherit `declared-optional`; embedded nil values remain unresolved. `declared-unit` is excluded from migration debt, while `declared-optional` remains visible so application APIs move to `Option` or `Result`. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-optional` and requires no findings.
 
 `unsafe-coerce` is reported separately as `unsafe-coerce` with the explicit `explicit-unsafe` intent, its exact `code@...` path, and the asserted target schema. JSON occurrence rows add an `evidence` object with the static input form, whether the containing definition declares `:js-ffi`, and whether the namespace follows the `js-ffi.raw.*` adapter convention. This is static source evidence, not a claimed runtime proof of the host value. JSON adds `W_JS_FFI_UNCHECKED_COERCE` whenever the selected scope contains one or more assertions. Keep each assertion in a narrow adapter and cover both accepted and rejected host values with runtime-contract tests.
 
@@ -262,7 +262,7 @@ let
 
 | Canonical syntax | Calcit Type |
 | ---------------- | ----------- |
-| `'Unit` | Nil / unit |
+| `'Unit` | `&unit` (legacy `nil` accepted) |
 | `'Bool` | Boolean |
 | `'Number` | Number |
 | `'String` | String |

@@ -112,6 +112,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
 
   match expr {
     Nil
+    | Unit
     | Bool(_)
     | Number(_)
     | Registered(_)

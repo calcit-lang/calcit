@@ -91,6 +91,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     ]))),
     Registered(s) => Ok(Calcit::Registered(s.to_owned())),
     Nil => Ok(Calcit::Nil),
+    Unit => Ok(Calcit::Unit),
     Enum(CalcitEnumValue { tag: t, extra, .. }) => {
       let mut ys = vec![Calcit::Proc(CalcitProc::NativeEnum), data_to_calcit(t, ns, at_def)?];
       for x in extra {

@@ -69,6 +69,8 @@ static ID_GEN: AtomicUsize = AtomicUsize::new(0);
 #[derive(Debug, Clone)]
 pub enum Calcit {
   Nil,
+  /// Explicit no-value result. Unlike `Nil`, this cannot represent application absence.
+  Unit,
   Bool(bool),
   Number(f64),
   Symbol {
@@ -146,6 +148,7 @@ impl fmt::Display for Calcit {
     use Calcit::*;
     match self {
       Nil => f.write_str("nil"),
+      Unit => f.write_str("&unit"),
       Bool(v) => f.write_str(&format!("{v}")),
       Number(n) => f.write_str(&format!("{n}")),
       Symbol { sym, .. } => f.write_str(&format!("'{sym}")),
@@ -419,6 +422,7 @@ impl Hash for Calcit {
     use Calcit::*;
     match self {
       Nil => "nil:".hash(_state),
+      Unit => "unit:".hash(_state),
       Bool(v) => {
         "bool:".hash(_state);
         v.hash(_state);
@@ -602,6 +606,10 @@ impl Ord for Calcit {
       (Nil, _) => Less,
       (_, Nil) => Greater,
 
+      (Unit, Unit) => Equal,
+      (Unit, _) => Less,
+      (_, Unit) => Greater,
+
       (Bool(a), Bool(b)) => a.cmp(b),
       (Bool(_), _) => Less,
       (_, Bool(_)) => Greater,
@@ -761,6 +769,7 @@ impl PartialEq for Calcit {
 
     match (self, other) {
       (Nil, Nil) => true,
+      (Unit, Unit) => true,
       (Bool(a), Bool(b)) => a == b,
       (Number(a), Number(b)) => a == b,
       (Symbol { sym: a, .. }, Symbol { sym: b, .. }) => a == b,
@@ -829,6 +838,7 @@ impl Calcit {
   pub fn turn_string(&self) -> String {
     match self {
       Calcit::Nil => String::from(""),
+      Calcit::Unit => String::from("&unit"),
       Calcit::Str(s) => (**s).to_owned(),
       Calcit::Method(name, method_kind) => match method_kind {
         MethodKind::Invoke(_) => format!(".{name}"),
@@ -890,6 +900,7 @@ impl Calcit {
     use Calcit::*;
     match self {
       Nil => "**Calcit nil** (`nil`)".to_string(),
+      Unit => "**Calcit unit** (`&unit`) — explicit no-value result".to_string(),
       Bool(b) => format!("**Calcit boolean** (`{b}`)"),
       Number(n) => format!("**Calcit number** (`{n}`)"),
       Symbol { sym, .. } => {

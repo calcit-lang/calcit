@@ -128,6 +128,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
   match code {
     Calcit::Number(n) => Edn::Number(*n),
     Calcit::Nil => Edn::Nil,
+    Calcit::Unit => Edn::sym("&unit"),
     Calcit::Str(s) => Edn::Str((**s).into()),
     Calcit::Bool(b) => Edn::Bool(b.to_owned()),
     Calcit::Tag(s) => Edn::Tag(s.to_owned()),
