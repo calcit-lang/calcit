@@ -323,6 +323,7 @@ fn check_proc_arity(name: CalcitProc, args: &[Calcit]) -> Result<(), CalcitErr> 
 /// make sure that stack information attached in errors from procs
 pub fn handle_proc(name: CalcitProc, args: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   check_proc_arity(name, args)?;
+  crate::runner::macro_capability::check_proc(name, call_stack)?;
 
   if using_stack() {
     handle_proc_internal(name, args, call_stack).map_err(|e| {

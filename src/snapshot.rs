@@ -50,6 +50,8 @@ fn canonical_schema_field_name(text: &str) -> Option<&'static str> {
     "rest" => Some("rest"),
     "generics" => Some("generics"),
     "where" => Some("where"),
+    "features" => Some("features"),
+    "capabilities" => Some("capabilities"),
     _ => None,
   }
 }
@@ -1242,6 +1244,7 @@ pub const VALID_SCHEMA_FIELDS: &[&str] = &[
   ":required",
   ":optional",
   ":expansion",
+  ":capabilities",
   ":rest",
   ":generics",
   ":where",
@@ -1596,6 +1599,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   let mut required_node: Option<&Cirru> = None;
   let mut optional_node: Option<&Cirru> = None;
   let mut expansion_node: Option<&Cirru> = None;
+  let mut capabilities_node: Option<&Cirru> = None;
   let mut where_node: Option<&Cirru> = None;
   let mut features_node: Option<&Cirru> = None;
 
@@ -1610,6 +1614,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
         ":required" => required_node = Some(val),
         ":optional" => optional_node = Some(val),
         ":expansion" => expansion_node = Some(val),
+        ":capabilities" => capabilities_node = Some(val),
         ":rest" => rest_node = Some(val),
         ":where" => where_node = Some(val),
         ":features" => features_node = Some(val),
@@ -1676,6 +1681,25 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
     }
     if let Some(var) = used.iter().find(|name| looks_like_undeclared_type_var(name)) {
       return Err(format!("Type variable `'{var}` is used but no `:generics` field is declared."));
+    }
+  }
+
+  if let Some(capabilities_val) = capabilities_node {
+    let Cirru::List(items) = capabilities_val else {
+      return Err("`:capabilities` must be a hashset like `(#{} :env-read :fs-read)`".to_owned());
+    };
+    if !matches!(items.first(), Some(Cirru::Leaf(first)) if first.as_ref() == "#{}") {
+      return Err("`:capabilities` must be a hashset like `(#{} :env-read :fs-read)`".to_owned());
+    }
+    for item in items.iter().skip(1) {
+      let Cirru::Leaf(name) = item else {
+        return Err("`:capabilities` hashset items must be simple leaf tags".to_owned());
+      };
+      if crate::calcit::MacroCapability::parse(name).is_none() {
+        return Err(format!(
+          "Unknown macro capability `{name}`. Expected one of: :env-read, :fs-read, :platform-read, :clock-read, :mutable-state, :dynamic-eval, :fs-write, :process, :host-ffi"
+        ));
+      }
     }
   }
 
@@ -3879,7 +3903,7 @@ mod tests {
   #[test]
   fn phase_aware_macro_schema_writes_and_loads_as_macro_signature() {
     let schema = cirru_parser::parse(
-      ":: 'Macro\n  {} (:generics $ [] 'T)\n    :required $ [] 'SyntaxSymbol (:: 'Expr 'T)\n    :optional $ [] 'SyntaxList\n    :rest 'Syntax\n    :expansion $ :: 'Expr 'T",
+      ":: 'Macro\n  {} (:generics $ [] 'T)\n    :required $ [] 'SyntaxSymbol (:: 'Expr 'T)\n    :optional $ [] 'SyntaxList\n    :rest 'Syntax\n    :expansion $ :: 'Expr 'T\n    :capabilities $ #{} :env-read :fs-read",
     )
     .expect("strict macro schema should parse")
     .into_iter()
@@ -3893,10 +3917,25 @@ mod tests {
     assert_eq!(signature.required_inputs.len(), 2);
     assert_eq!(signature.optional_inputs.len(), 1);
     assert!(signature.rest_input.is_some());
+    assert!(signature.capabilities.contains(&crate::calcit::MacroCapability::EnvRead));
+    assert!(signature.capabilities.contains(&crate::calcit::MacroCapability::FsRead));
 
     let saved = schema_annotation_to_edn(annotation.as_ref());
     let loaded = parse_loaded_schema_annotation(&saved, "test macro schema").expect("saved strict signature should reload");
     assert_eq!(loaded, annotation);
+  }
+
+  #[test]
+  fn macro_schema_rejects_unknown_compile_time_capabilities() {
+    let schema = cirru_parser::parse(
+      ":: 'Macro\n  {} (:required $ [])\n    :expansion $ :: 'Expr 'String\n    :capabilities $ #{} :network-everything",
+    )
+    .expect("schema syntax")
+    .into_iter()
+    .next()
+    .expect("schema node");
+    let error = parse_schema_annotation_for_write(&schema).expect_err("unknown capabilities must not silently become pure");
+    assert!(error.contains("Unknown macro capability"), "unexpected error: {error}");
   }
 
   #[test]
