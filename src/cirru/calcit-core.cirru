@@ -3485,7 +3485,11 @@
                   ~ v
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {}
+              :capabilities $ #{} :platform-read
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Fn)
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |call-wo-log $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -3496,7 +3500,11 @@
               quasiquote $ ~f ~@xs
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Fn)
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |case $ %{} 'CodeEntry (:doc "|Match a value against pattern/result pairs. Raises when no pattern matches instead of returning nil.")
           :code $ quote
@@ -4160,7 +4168,10 @@
                   call-w-log ~f-name ~@args
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Definition 'Fn
+              :required $ [] 'SyntaxSymbol 'SyntaxList
           :tags $ #{} :macro
         |defn-wo-log $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -4175,7 +4186,10 @@
               quasiquote $ defn ~f-name ~args ~@body
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Definition 'Fn
+              :required $ [] 'SyntaxSymbol 'SyntaxList
           :tags $ #{} :macro
         |defstruct $ %{} 'CodeEntry (:doc "|Define a StructDef with fixed fields and field types.")
           :code $ quote
@@ -6473,7 +6487,11 @@
             defmacro noted (_doc v) v
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'T
+              :generics $ [] 'T
+              :required $ [] 'Syntax (:: 'Expr 'T)
           :tags $ #{} :macro
         |nth $ %{} 'CodeEntry (:doc "|Return an indexed item from a list, string, or enum as Option<T>. Struct fields are accessed by their declared names.")
           :code $ quote
@@ -8203,7 +8221,11 @@
                     ~ x
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {}
+              :capabilities $ #{} :platform-read
+              :expansion $ :: 'Expr 'T
+              :generics $ [] 'T
+              :required $ [] (:: 'Expr 'T)
           :tags $ #{} :macro
         |when $ %{} 'CodeEntry (:doc "|Conditional macro that evaluates its body only when the test expression is truthy, returning the last body value.")
           :code $ quote
@@ -8289,7 +8311,11 @@
                   ~ v
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'T
+              :generics $ [] 'T
+              :required $ [] (:: 'Expr 'T)
           :tags $ #{} :io :log :macro
         |with-gensyms $ %{} 'CodeEntry (:doc "|Macro helper for hygienic local names\nSyntax: (with-gensyms (a b ...) body...)\nBinds each symbol to a fresh gensym and evaluates body with those bindings.")
           :code $ quote
@@ -8305,7 +8331,10 @@
             quote $ with-gensyms (v)
               quasiquote $ &let (~v 1) ~v
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] 'SyntaxList
           :tags $ #{} :macro
         |with-type-slot $ %{} 'CodeEntry (:doc "|Compatibility form for a local compile-time type-slot override. Syntax: (with-type-slot (:slot-name TypeExpr) body...). The form is always erased during preprocessing; it evaluates bodies in order and returns the last value. New entry points should prefer :type-slots configuration.")
           :code $ quote &runtime-implementation
@@ -8326,7 +8355,11 @@
             defmacro wo-log (x) x
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'T
+              :generics $ [] 'T
+              :required $ [] (:: 'Expr 'T)
           :tags $ #{} :macro
         |write-file $ %{} 'CodeEntry (:doc "|internal function for writing files\nSyntax: (write-file filepath content)\nParams: filepath (string), content (string)\nReturns: &unit or error\nWrites string content to file")
           :code $ quote &runtime-implementation
