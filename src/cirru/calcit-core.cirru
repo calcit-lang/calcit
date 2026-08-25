@@ -104,8 +104,9 @@
                 p $ %{}? Point (:x 1)
               assert= nil $ :y p
           :schema $ :: 'Macro
-            {} (:return 'Struct)
-              :args $ [] 'Struct
+            {} (:required $ [] 'SyntaxSymbol)
+              :rest 'SyntaxList
+              :expansion $ :: 'Expr 'Struct
           :tags $ #{} :macro
         |& $ %{} 'CodeEntry (:doc "|internal syntax for spreading in function definition and call\nSyntax: (& rest-args) in params or (f & args) in calls\nParams: varies based on context\nReturns: varies based on context\nMarks rest parameters or argument spreading")
           :code $ quote &runtime-implementation

@@ -7,9 +7,9 @@ use crate::{
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitCallKind, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl,
     CalcitImport, CalcitList, CalcitLocal, CalcitNumberBinaryOp, CalcitProc, CalcitScope, CalcitStructDef, CalcitSymbolInfo,
-    CalcitSyntax, CalcitTrait, CalcitTraitMemberKind, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation,
-    ParamShape, ParamShapeToken, RawCodeType, SchemaKind, brief_type_of_value, compare_param_shapes, pop_type_slot_override,
-    push_type_slot_override, register_type_slot,
+    CalcitSyntax, CalcitTrait, CalcitTraitMemberKind, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning,
+    MacroExpansionType, MacroSignature, MacroSyntaxType, NodeLocation, ParamShape, ParamShapeToken, RawCodeType, SchemaKind,
+    brief_type_of_value, compare_param_shapes, pop_type_slot_override, push_type_slot_override, register_type_slot,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -1706,6 +1706,15 @@ fn preprocess_list_call(
   match head_value {
     Some(Calcit::Macro { info, .. }) => {
       let mut current_values: Vec<Calcit> = args.to_vec();
+      let call_location = head_form.get_location().or_else(|| args.first().and_then(Calcit::get_location));
+      let mut macro_type_bindings = validate_macro_call_inputs(
+        info.name.as_ref(),
+        info.signature.as_ref(),
+        &args,
+        scope_types,
+        call_stack,
+        call_location.clone(),
+      )?;
 
       warn_on_trait_impl_method_tag_syntax(info.as_ref(), &args, file_ns, def_name.as_ref(), check_warnings);
 
@@ -1727,10 +1736,29 @@ fn preprocess_list_call(
         match code {
           Calcit::Recur(ys) => {
             current_values = ys;
+            let recur_args = CalcitList::from(current_values.as_slice());
+            macro_type_bindings = validate_macro_call_inputs(
+              info.name.as_ref(),
+              info.signature.as_ref(),
+              &recur_args,
+              scope_types,
+              &next_stack,
+              call_location.clone(),
+            )?;
           }
           _ => {
             // println!("gen code: {} {}", code, &code.lisp_str());
-            return preprocess_expr(&code, scope_defs, scope_types, file_ns, check_warnings, &next_stack);
+            let processed = preprocess_expr(&code, scope_defs, scope_types, file_ns, check_warnings, &next_stack)?;
+            validate_macro_expansion_result(
+              info.name.as_ref(),
+              info.signature.as_ref(),
+              (&code, &processed),
+              scope_types,
+              macro_type_bindings,
+              &next_stack,
+              call_location,
+            )?;
+            return Ok(processed);
           }
         }
       }
@@ -5051,6 +5079,204 @@ fn check_callable_type(
     }
   }
 }
+
+fn macro_syntax_contract_label(contract: &MacroSyntaxType) -> String {
+  match contract {
+    MacroSyntaxType::Syntax => "Syntax".to_owned(),
+    MacroSyntaxType::SyntaxSymbol => "SyntaxSymbol".to_owned(),
+    MacroSyntaxType::SyntaxList => "SyntaxList".to_owned(),
+    MacroSyntaxType::Expr(semantic) => format!("Expr<{}>", semantic.to_brief_string()),
+  }
+}
+
+fn macro_input_contract(signature: &MacroSignature, idx: usize) -> Option<&MacroSyntaxType> {
+  if idx < signature.required_inputs.len() {
+    signature.required_inputs.get(idx)
+  } else if idx < signature.required_inputs.len() + signature.optional_inputs.len() {
+    signature.optional_inputs.get(idx - signature.required_inputs.len())
+  } else {
+    signature.rest_input.as_ref()
+  }
+}
+
+fn validate_macro_call_inputs(
+  macro_name: &str,
+  signature: &MacroSignature,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  call_stack: &CallStackList,
+  call_location: Option<NodeLocation>,
+) -> Result<HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>, CalcitErr> {
+  let mut bindings = HashMap::new();
+  if !signature.is_strict() {
+    return Ok(bindings);
+  }
+  let min = signature.required_inputs.len();
+  let max = signature.required_inputs.len() + signature.optional_inputs.len();
+  if args.len() < min || (signature.rest_input.is_none() && args.len() > max) {
+    let expected = if signature.rest_input.is_some() {
+      format!("at least {min}")
+    } else if min == max {
+      min.to_string()
+    } else {
+      format!("{min}..={max}")
+    };
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Arity,
+      format!(
+        "macro input-syntax violation in `{macro_name}`: expected {expected} argument(s), got {}",
+        args.len()
+      ),
+      "E_MACRO_INPUT_ARITY",
+      call_stack,
+      call_location,
+    ));
+  }
+  for (idx, arg) in args.iter().enumerate() {
+    let Some(contract) = macro_input_contract(signature, idx) else {
+      continue;
+    };
+    let shape_matches = match contract {
+      MacroSyntaxType::Syntax | MacroSyntaxType::Expr(_) => true,
+      MacroSyntaxType::SyntaxSymbol => matches!(arg, Calcit::Symbol { .. }),
+      MacroSyntaxType::SyntaxList => matches!(arg, Calcit::List(_)),
+    };
+    if !shape_matches {
+      return Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!(
+          "macro input-syntax violation in `{macro_name}` at argument {}: expected {}, got {}",
+          idx + 1,
+          macro_syntax_contract_label(contract),
+          brief_type_of_value(arg)
+        ),
+        "E_MACRO_INPUT_SYNTAX",
+        call_stack,
+        arg.get_location().or_else(|| call_location.clone()),
+      ));
+    }
+    if let MacroSyntaxType::Expr(expected) = contract
+      && let Some(actual) = infer_type_from_expr(arg, scope_types)
+      && !matches!(actual.as_ref(), CalcitTypeAnnotation::Dynamic)
+      && !actual.as_ref().matches_with_bindings(expected.as_ref(), &mut bindings)
+    {
+      return Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!(
+          "macro input-syntax violation in `{macro_name}` at argument {}: expression expects semantic type `{}`, got `{}`",
+          idx + 1,
+          expected.to_brief_string(),
+          actual.to_brief_string()
+        ),
+        "E_MACRO_INPUT_EXPR_TYPE",
+        call_stack,
+        arg.get_location().or_else(|| call_location.clone()),
+      ));
+    }
+  }
+  Ok(bindings)
+}
+
+fn is_definition_syntax(code: &Calcit) -> bool {
+  let Calcit::List(xs) = code else { return false };
+  match xs.first() {
+    Some(Calcit::Syntax(head, _)) => matches!(
+      head,
+      CalcitSyntax::Defn | CalcitSyntax::Defmacro | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport
+    ),
+    Some(Calcit::Symbol { sym, .. }) => matches!(
+      sym.as_ref(),
+      "defn" | "defmacro" | "defstruct" | "defenum" | "deftrait" | "defimpl" | "defwasm-export" | "defwasm-import"
+    ),
+    _ => false,
+  }
+}
+
+fn validate_macro_expansion_result(
+  macro_name: &str,
+  signature: &MacroSignature,
+  expansion: (&Calcit, &Calcit),
+  scope_types: &ScopeTypes,
+  mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
+  call_stack: &CallStackList,
+  call_location: Option<NodeLocation>,
+) -> Result<(), CalcitErr> {
+  let (raw_expansion, processed) = expansion;
+  if !signature.is_strict() {
+    return Ok(());
+  }
+  match &signature.expansion {
+    MacroExpansionType::Dynamic => Ok(()),
+    MacroExpansionType::Declarations => {
+      let valid = is_definition_syntax(raw_expansion)
+        || matches!(raw_expansion, Calcit::List(xs) if xs.first().is_some_and(|head| matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "do")) && xs.iter().skip(1).all(is_definition_syntax));
+      if valid {
+        Ok(())
+      } else {
+        Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          format!("macro expansion-result violation in `{macro_name}`: expected Declarations, got `{raw_expansion}`"),
+          "E_MACRO_EXPANSION_DECLARATIONS",
+          call_stack,
+          raw_expansion.get_location().or(call_location),
+        ))
+      }
+    }
+    MacroExpansionType::Definition(expected) => {
+      if !is_definition_syntax(raw_expansion) {
+        return Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          format!(
+            "macro expansion-result violation in `{macro_name}`: expected Definition<{}>",
+            expected.to_brief_string()
+          ),
+          "E_MACRO_EXPANSION_DEFINITION",
+          call_stack,
+          raw_expansion.get_location().or(call_location),
+        ));
+      }
+      if let Some(actual) = resolve_type_value(processed, scope_types)
+        && !matches!(actual.as_ref(), CalcitTypeAnnotation::Dynamic)
+        && !actual.as_ref().matches_with_bindings(expected.as_ref(), &mut bindings)
+      {
+        return Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          format!(
+            "macro expansion-result violation in `{macro_name}`: expected definition type `{}`, got `{}`",
+            expected.to_brief_string(),
+            actual.to_brief_string()
+          ),
+          "E_MACRO_EXPANSION_DEFINITION_TYPE",
+          call_stack,
+          raw_expansion.get_location().or(call_location),
+        ));
+      }
+      Ok(())
+    }
+    MacroExpansionType::Expr(expected) => {
+      let Some(actual) = resolve_type_value(processed, scope_types) else {
+        return Ok(());
+      };
+      if matches!(actual.as_ref(), CalcitTypeAnnotation::Dynamic)
+        || actual.as_ref().matches_with_bindings(expected.as_ref(), &mut bindings)
+      {
+        Ok(())
+      } else {
+        Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          format!(
+            "macro expansion-result violation in `{macro_name}`: expected Expr<{}>, got `{}`",
+            expected.to_brief_string(),
+            actual.to_brief_string()
+          ),
+          "E_MACRO_EXPANSION_EXPR_TYPE",
+          call_stack,
+          raw_expansion.get_location().or(call_location),
+        ))
+      }
+    }
+  }
+}
 /// Get the impl records from a type value
 /// - If type_value is already a Struct, use it directly
 /// - If type_value is a Tag, map to corresponding core impl list
@@ -6026,7 +6252,14 @@ pub fn preprocess_defn(
       }
       warn_on_legacy_optional_public_schema(ctx.file_ns, def_name.as_ref(), &def_schema, ctx.check_warnings);
       let schema_issues = validate_def_schema_during_preprocess(head, ctx.file_ns, def_name.as_ref(), ys, &def_schema);
-      let (staged_macro_issues, hard_schema_issues) = partition_def_schema_issues(head, schema_issues);
+      let (staged_macro_issues, hard_schema_issues) = if matches!(
+        def_schema.as_ref(),
+        CalcitTypeAnnotation::Macro(signature) if signature.is_strict()
+      ) {
+        (vec![], schema_issues)
+      } else {
+        partition_def_schema_issues(head, schema_issues)
+      };
       let definition_location = NodeLocation::new(
         info.at_ns.to_owned(),
         info.at_def.to_owned(),
@@ -6066,6 +6299,28 @@ pub fn preprocess_defn(
         CalcitTypeAnnotation::Dynamic => EXPECTED_FN_TYPE.with(|cell| cell.borrow().clone()),
         _ => None,
       });
+      if let CalcitTypeAnnotation::Macro(signature) = def_schema.as_ref()
+        && signature.is_strict()
+      {
+        let required_types = signature
+          .required_inputs
+          .iter()
+          .map(|contract| Arc::new(CalcitTypeAnnotation::Syntax(Arc::new(contract.clone()))));
+        let optional_types = signature.optional_inputs.iter().map(|contract| {
+          Arc::new(CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Syntax(Arc::new(
+            contract.clone(),
+          )))))
+        });
+        let parameter_types = required_types.chain(optional_types).chain(
+          signature
+            .rest_input
+            .iter()
+            .map(|_| Arc::new(CalcitTypeAnnotation::Syntax(Arc::new(MacroSyntaxType::SyntaxList)))),
+        );
+        for (param_sym, type_info) in param_symbols.iter().zip(parameter_types) {
+          body_types.insert(param_sym.clone(), type_info);
+        }
+      }
       if let Some(fn_annot) = &effective_fn_schema {
         let body_type_bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = fn_annot
           .where_bounds
@@ -6123,7 +6378,10 @@ pub fn preprocess_defn(
       let prev_features = CURRENT_FN_FEATURES.with(|cell| {
         let mut guard = cell.borrow_mut();
         let old = guard.take();
-        *guard = effective_fn_schema.as_ref().map(|fn_annot| fn_annot.features.clone());
+        *guard = match def_schema.as_ref() {
+          CalcitTypeAnnotation::Macro(signature) => Some(signature.features.clone()),
+          _ => effective_fn_schema.as_ref().map(|fn_annot| fn_annot.features.clone()),
+        };
         old
       });
 
@@ -6873,6 +7131,30 @@ fn contains_legacy_optional(annotation: &CalcitTypeAnnotation) -> bool {
         || info.rest_type.as_ref().is_some_and(|item| contains_legacy_optional(item))
         || contains_legacy_optional(info.return_type.as_ref())
     }
+    CalcitTypeAnnotation::Macro(signature) => match &signature.compatibility {
+      crate::calcit::MacroSignatureCompatibility::Legacy(info) => {
+        info.arg_types.iter().any(|item| contains_legacy_optional(item))
+          || info.rest_type.as_ref().is_some_and(|item| contains_legacy_optional(item))
+          || contains_legacy_optional(info.return_type.as_ref())
+      }
+      crate::calcit::MacroSignatureCompatibility::Strict => {
+        let contract_contains = |contract: &MacroSyntaxType| match contract {
+          MacroSyntaxType::Expr(semantic) => contains_legacy_optional(semantic),
+          MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => false,
+        };
+        signature.required_inputs.iter().any(contract_contains)
+          || signature.optional_inputs.iter().any(contract_contains)
+          || signature.rest_input.as_ref().is_some_and(contract_contains)
+          || match &signature.expansion {
+            MacroExpansionType::Expr(semantic) | MacroExpansionType::Definition(semantic) => contains_legacy_optional(semantic),
+            MacroExpansionType::Dynamic | MacroExpansionType::Declarations => false,
+          }
+      }
+    },
+    CalcitTypeAnnotation::Syntax(contract) => match contract.as_ref() {
+      MacroSyntaxType::Expr(semantic) => contains_legacy_optional(semantic),
+      MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => false,
+    },
     CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
       args.iter().any(|item| contains_legacy_optional(item))
     }
@@ -6913,6 +7195,35 @@ fn validate_def_schema_during_preprocess(
   args: &CalcitList,
   schema: &CalcitTypeAnnotation,
 ) -> Vec<String> {
+  if let CalcitTypeAnnotation::Macro(signature) = schema {
+    if !matches!(head, CalcitSyntax::Defmacro) {
+      let code_kind = match head {
+        CalcitSyntax::Defn => "defn",
+        CalcitSyntax::DefWasmExport => "defwasm-export",
+        CalcitSyntax::DefWasmImport => "defwasm-import",
+        _ => "non-macro definition",
+      };
+      return vec![format!(
+        "[E_SCHEMA_KIND] {ns}/{def_name}: schema :kind is :macro but code uses {code_kind}"
+      )];
+    }
+    if signature.is_strict() {
+      let code_shape = analyze_def_schema_param_shape(args);
+      let schema_shape = ParamShape {
+        required: signature.required_inputs.len(),
+        optional: signature.optional_inputs.len(),
+        has_rest: signature.rest_input.is_some(),
+        errors: vec![],
+      };
+      return compare_param_shapes(&format!("{ns}/{def_name}"), &code_shape, &schema_shape);
+    }
+    if let crate::calcit::MacroSignatureCompatibility::Legacy(fn_annot) = &signature.compatibility {
+      let code_shape = analyze_def_schema_param_shape(args);
+      let schema_shape = ParamShape::from_schema(&fn_annot.arg_types, fn_annot.rest_type.is_some());
+      return compare_param_shapes(&format!("{ns}/{def_name}"), &code_shape, &schema_shape);
+    }
+    return vec![];
+  }
   let CalcitTypeAnnotation::Fn(fn_annot) = schema else {
     return vec![];
   };
@@ -6964,6 +7275,139 @@ mod tests {
   use std::sync::{LazyLock, Mutex};
 
   static PREPROCESS_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+  fn strict_macro_signature(
+    required_inputs: Vec<MacroSyntaxType>,
+    optional_inputs: Vec<MacroSyntaxType>,
+    rest_input: Option<MacroSyntaxType>,
+    expansion: MacroExpansionType,
+  ) -> MacroSignature {
+    MacroSignature {
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      required_inputs: Arc::new(required_inputs),
+      optional_inputs: Arc::new(optional_inputs),
+      rest_input,
+      expansion,
+      features: Arc::new(HashSet::new()),
+      compatibility: crate::calcit::MacroSignatureCompatibility::Strict,
+    }
+  }
+
+  fn test_symbol(name: &str) -> Calcit {
+    Calcit::Symbol {
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.macro-signature"),
+        at_def: Arc::from("demo"),
+      }),
+      location: Some(Arc::from(vec![1, 2, 3])),
+    }
+  }
+
+  #[test]
+  fn phase_aware_macro_inputs_distinguish_symbols_lists_quotes_and_expr_generics() {
+    let signature = strict_macro_signature(
+      vec![
+        MacroSyntaxType::SyntaxSymbol,
+        MacroSyntaxType::Expr(Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))),
+      ],
+      vec![MacroSyntaxType::SyntaxList],
+      Some(MacroSyntaxType::Syntax),
+      MacroExpansionType::Expr(Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))),
+    );
+    let syntax_list = Calcit::from(vec![test_symbol("f"), Calcit::Number(1.0)]);
+    let quoted_literal = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::Quote, Arc::from("tests.macro-signature")),
+      test_symbol("literal"),
+    ]);
+    let args = CalcitList::from(vec![test_symbol("name"), Calcit::Number(1.0), syntax_list, quoted_literal].as_slice());
+    let bindings = validate_macro_call_inputs(
+      "typed-macro",
+      &signature,
+      &args,
+      &ScopeTypes::new(),
+      &CallStackList::default(),
+      None,
+    )
+    .expect("valid syntax contracts");
+    assert!(matches!(bindings.get("T").map(Arc::as_ref), Some(CalcitTypeAnnotation::Number)));
+
+    let invalid = CalcitList::from(vec![Calcit::from(vec![test_symbol("quoted")]), Calcit::Number(1.0)].as_slice());
+    let err = validate_macro_call_inputs(
+      "typed-macro",
+      &signature,
+      &invalid,
+      &ScopeTypes::new(),
+      &CallStackList::default(),
+      None,
+    )
+    .expect_err("a list is not symbol syntax");
+    assert_eq!(err.code.as_deref(), Some("E_MACRO_INPUT_SYNTAX"));
+    assert!(err.msg.contains("input-syntax violation"));
+
+    validate_macro_expansion_result(
+      "typed-macro",
+      &signature,
+      (&Calcit::Number(2.0), &Calcit::Number(2.0)),
+      &ScopeTypes::new(),
+      bindings.clone(),
+      &CallStackList::default(),
+      None,
+    )
+    .expect("generic expansion type follows Expr<T> input");
+    let err = validate_macro_expansion_result(
+      "typed-macro",
+      &signature,
+      (&Calcit::Str(Arc::from("wrong")), &Calcit::Str(Arc::from("wrong"))),
+      &ScopeTypes::new(),
+      bindings,
+      &CallStackList::default(),
+      None,
+    )
+    .expect_err("wrong expansion result type");
+    assert_eq!(err.code.as_deref(), Some("E_MACRO_EXPANSION_EXPR_TYPE"));
+    assert!(err.msg.contains("expansion-result violation"));
+  }
+
+  #[test]
+  fn phase_aware_macro_definition_and_declarations_outputs_are_distinct() {
+    let definition = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::Defn, Arc::from("tests.macro-signature")),
+      test_symbol("generated"),
+      Calcit::from(vec![]),
+      Calcit::Number(1.0),
+    ]);
+    let definition_signature = strict_macro_signature(
+      vec![],
+      vec![],
+      None,
+      MacroExpansionType::Definition(Arc::new(CalcitTypeAnnotation::Dynamic)),
+    );
+    validate_macro_expansion_result(
+      "define-one",
+      &definition_signature,
+      (&definition, &definition),
+      &ScopeTypes::new(),
+      HashMap::new(),
+      &CallStackList::default(),
+      None,
+    )
+    .expect("definition output");
+
+    let declarations_signature = strict_macro_signature(vec![], vec![], None, MacroExpansionType::Declarations);
+    let err = validate_macro_expansion_result(
+      "define-many",
+      &declarations_signature,
+      (&Calcit::Number(1.0), &Calcit::Number(1.0)),
+      &ScopeTypes::new(),
+      HashMap::new(),
+      &CallStackList::default(),
+      None,
+    )
+    .expect_err("expression is not declarations");
+    assert_eq!(err.code.as_deref(), Some("E_MACRO_EXPANSION_DECLARATIONS"));
+  }
 
   fn lock_preprocess_test_state() -> std::sync::MutexGuard<'static, ()> {
     PREPROCESS_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner())
@@ -10388,6 +10832,7 @@ mod tests {
       def_ns: Arc::from(calcit::CORE_NS),
       args: Arc::new(vec![]),
       body: Arc::new(vec![]),
+      signature: Arc::new(crate::calcit::MacroSignature::legacy_dynamic()),
     };
 
     let warnings = RefCell::new(vec![]);

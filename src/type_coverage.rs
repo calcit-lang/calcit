@@ -6,8 +6,8 @@ use std::fmt::Write;
 use std::sync::Arc;
 
 use calcit::calcit::{
-  CalcitProc, CalcitSyntax, CalcitTypeAnnotation, ParamShape, ParamShapeToken, ProcTypeSignature, SchemaKind, SyntaxTypeSignature,
-  compare_param_shapes, resolve_type_slot,
+  CalcitProc, CalcitSyntax, CalcitTypeAnnotation, MacroExpansionType, MacroSignatureCompatibility, MacroSyntaxType, ParamShape,
+  ParamShapeToken, ProcTypeSignature, SchemaKind, SyntaxTypeSignature, compare_param_shapes, resolve_type_slot,
 };
 use calcit::cli_args::{CheckTypesCommand, WeakTypesCommand};
 use calcit::snapshot;
@@ -88,6 +88,12 @@ fn unwrap_singleton_group(mut node: &Cirru) -> &Cirru {
 fn entry_polymorphism(entry: &snapshot::CodeEntry) -> (Vec<String>, Vec<String>) {
   if let CalcitTypeAnnotation::Fn(fn_annot) = entry.schema.as_ref() {
     return fn_polymorphism(fn_annot);
+  }
+  if let CalcitTypeAnnotation::Macro(signature) = entry.schema.as_ref() {
+    return (
+      signature.generics.iter().map(|name| format!("'{name}")).collect(),
+      signature.where_bounds.iter().map(|bound| bound.to_brief_string()).collect(),
+    );
   }
 
   let Cirru::List(items) = &entry.code else {
@@ -269,6 +275,31 @@ fn count_annotation_positions(annotation: &CalcitTypeAnnotation) -> (usize, usiz
       add(&fn_annot.return_type);
       if let Some(rest) = &fn_annot.rest_type {
         add(rest);
+      }
+    }
+    CalcitTypeAnnotation::Macro(signature) => {
+      if let MacroSignatureCompatibility::Legacy(fn_annot) = &signature.compatibility {
+        for arg in &fn_annot.arg_types {
+          add(arg);
+        }
+        add(&fn_annot.return_type);
+        if let Some(rest) = &fn_annot.rest_type {
+          add(rest);
+        }
+      } else {
+        for contract in signature.required_inputs.iter().chain(signature.optional_inputs.iter()) {
+          if let MacroSyntaxType::Expr(semantic) = contract {
+            add(semantic);
+          }
+        }
+        if let Some(MacroSyntaxType::Expr(semantic)) = &signature.rest_input {
+          add(semantic);
+        }
+        match &signature.expansion {
+          MacroExpansionType::Expr(semantic) | MacroExpansionType::Definition(semantic) => add(semantic),
+          MacroExpansionType::Dynamic => dynamic += 1,
+          MacroExpansionType::Declarations => {}
+        }
       }
     }
     CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
@@ -524,6 +555,32 @@ fn scan_schema_dynamic_annotation(
         scan_schema_dynamic_annotation(rest, &format!("{path}.rest"), &rest_detail, occurrences);
       }
     }
+    CalcitTypeAnnotation::Macro(signature) => {
+      if let MacroSignatureCompatibility::Legacy(fn_annot) = &signature.compatibility {
+        for (idx, arg) in fn_annot.arg_types.iter().enumerate() {
+          scan_schema_dynamic_annotation(arg, &format!("{path}.legacy-args.{idx}"), detail, occurrences);
+        }
+        scan_schema_dynamic_annotation(&fn_annot.return_type, &format!("{path}.legacy-return"), detail, occurrences);
+      } else {
+        for (idx, contract) in signature.required_inputs.iter().chain(signature.optional_inputs.iter()).enumerate() {
+          if let MacroSyntaxType::Expr(semantic) = contract {
+            scan_schema_dynamic_annotation(semantic, &format!("{path}.inputs.{idx}.expr"), detail, occurrences);
+          }
+        }
+        if let Some(MacroSyntaxType::Expr(semantic)) = &signature.rest_input {
+          scan_schema_dynamic_annotation(semantic, &format!("{path}.rest.expr"), detail, occurrences);
+        }
+        match &signature.expansion {
+          MacroExpansionType::Expr(semantic) | MacroExpansionType::Definition(semantic) => {
+            scan_schema_dynamic_annotation(semantic, &format!("{path}.expansion"), detail, occurrences);
+          }
+          MacroExpansionType::Dynamic => {
+            scan_schema_dynamic_annotation(&CalcitTypeAnnotation::Dynamic, &format!("{path}.expansion"), detail, occurrences)
+          }
+          MacroExpansionType::Declarations => {}
+        }
+      }
+    }
     CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
       for (idx, arg) in args.iter().enumerate() {
         let type_arg_detail = extend_schema_dynamic_detail(detail, "type-arg");
@@ -630,10 +687,11 @@ fn weak_type_impact(occurrence: &WeakTypeOccurrence) -> &'static str {
 fn entry_schema_issues(ns: &str, def_name: &str, code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -> Vec<String> {
   let annotation = schema.as_ref();
   let mut issues = validate_def_vs_schema(ns, def_name, code, annotation);
-  let has_js_ffi_feature = matches!(
-    annotation,
-    CalcitTypeAnnotation::Fn(fn_annot) if fn_annot.features.iter().any(|feature| feature.ref_str() == "js-ffi")
-  );
+  let has_js_ffi_feature = match annotation {
+    CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.features.iter().any(|feature| feature.ref_str() == "js-ffi"),
+    CalcitTypeAnnotation::Macro(signature) => signature.features.iter().any(|feature| feature.ref_str() == "js-ffi"),
+    _ => false,
+  };
   if matches!(annotation, CalcitTypeAnnotation::Dynamic) {
     if matches!(code, Cirru::List(items) if matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defmacro")) {
       let (warning, detail) = if snapshot::schema_annotation_is_missing(schema) {
@@ -719,6 +777,10 @@ fn classify_code_nil(parent: Option<&WeakCodeParent>) -> &'static str {
 fn nil_return_intent(annotation: &CalcitTypeAnnotation) -> WeakTypeIntent {
   let return_type = match annotation {
     CalcitTypeAnnotation::Fn(fn_annotation) => fn_annotation.return_type.as_ref(),
+    CalcitTypeAnnotation::Macro(signature) => match &signature.expansion {
+      MacroExpansionType::Expr(semantic) | MacroExpansionType::Definition(semantic) => semantic.as_ref(),
+      MacroExpansionType::Dynamic | MacroExpansionType::Declarations => annotation,
+    },
     other => other,
   };
   match return_type {
@@ -1011,10 +1073,11 @@ pub fn analyze_weak_types_entry(
 
   occurrences.retain(|occurrence| selected.contains(&occurrence.kind));
 
-  let has_js_ffi_feature = matches!(
-    entry.schema.as_ref(),
-    CalcitTypeAnnotation::Fn(fn_annot) if fn_annot.features.iter().any(|feature| feature.ref_str() == "js-ffi")
-  );
+  let has_js_ffi_feature = match entry.schema.as_ref() {
+    CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.features.iter().any(|feature| feature.ref_str() == "js-ffi"),
+    CalcitTypeAnnotation::Macro(signature) => signature.features.iter().any(|feature| feature.ref_str() == "js-ffi"),
+    _ => false,
+  };
   if has_js_ffi_feature {
     for occurrence in &mut occurrences {
       if matches!(occurrence.kind, WeakTypeKind::SchemaDynamic | WeakTypeKind::CodeDynamic) {
@@ -1728,6 +1791,36 @@ pub fn validate_def_vs_schema(ns: &str, def_name: &str, code: &Cirru, schema: &C
     return vec![];
   }
 
+  if let CalcitTypeAnnotation::Macro(signature) = schema {
+    let Cirru::List(xs) = code else { return vec![] };
+    if !matches!(xs.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defmacro") {
+      let code_kind = xs
+        .first()
+        .and_then(|head| match head {
+          Cirru::Leaf(head) => Some(head.as_ref()),
+          _ => None,
+        })
+        .unwrap_or("non-macro definition");
+      return vec![format!(
+        "[E_SCHEMA_KIND] {ns}/{def_name}: schema :kind is :macro but code uses {code_kind}"
+      )];
+    }
+    let code_shape = analyze_param_shape(xs.get(2));
+    let schema_shape = if signature.is_strict() {
+      ParamShape {
+        required: signature.required_inputs.len(),
+        optional: signature.optional_inputs.len(),
+        has_rest: signature.rest_input.is_some(),
+        errors: vec![],
+      }
+    } else if let MacroSignatureCompatibility::Legacy(fn_annot) = &signature.compatibility {
+      ParamShape::from_schema(&fn_annot.arg_types, fn_annot.rest_type.is_some())
+    } else {
+      return vec![];
+    };
+    return compare_param_shapes(&format!("{ns}/{def_name}"), &code_shape, &schema_shape);
+  }
+
   let CalcitTypeAnnotation::Fn(fn_annot) = schema else {
     // Non-Fn schema (Dynamic, etc.) has no structural constraints
     return vec![];
@@ -1803,6 +1896,74 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
     {
       return analyze_builtin_syntax(def_name, &sig);
     }
+  }
+
+  if let CalcitTypeAnnotation::Macro(signature) = entry.schema.as_ref() {
+    if let MacroSignatureCompatibility::Legacy(fn_annot) = &signature.compatibility
+      && let Ok(schema) = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())
+      && let Some((params, param_annotations, return_type_hints, level)) = extract_fn_schema_hints(&schema)
+    {
+      return TypeCoverageRow {
+        ns: ns.to_owned(),
+        def: def_name.to_owned(),
+        kind: DefKind::Macro,
+        level: downgrade_coverage_for_dynamic_annotation(level, entry.schema.as_ref()),
+        params,
+        param_annotations,
+        return_type_hints,
+        generics: signature.generics.iter().map(|name| format!("'{name}")).collect(),
+        where_bounds: signature.where_bounds.iter().map(|bound| bound.to_brief_string()).collect(),
+        data_type: None,
+        schema_issues: entry_schema_issues(ns, def_name, &entry.code, &entry.schema),
+      };
+    }
+
+    let contract_label = |contract: &MacroSyntaxType| match contract {
+      MacroSyntaxType::Syntax => "Syntax".to_owned(),
+      MacroSyntaxType::SyntaxSymbol => "SyntaxSymbol".to_owned(),
+      MacroSyntaxType::SyntaxList => "SyntaxList".to_owned(),
+      MacroSyntaxType::Expr(semantic) => format!("Expr<{}>", semantic.to_brief_string()),
+    };
+    let mut params = vec![];
+    let mut param_annotations = BTreeMap::new();
+    for (idx, contract) in signature.required_inputs.iter().enumerate() {
+      let name = format!("arg-{}", idx + 1);
+      params.push(name.clone());
+      param_annotations.insert(name, vec![contract_label(contract)]);
+    }
+    for (idx, contract) in signature.optional_inputs.iter().enumerate() {
+      let name = format!("optional-{}", idx + 1);
+      params.push(name.clone());
+      param_annotations.insert(name, vec![contract_label(contract)]);
+    }
+    if let Some(contract) = &signature.rest_input {
+      params.push("rest".to_owned());
+      param_annotations.insert("rest".to_owned(), vec![contract_label(contract)]);
+    }
+    let expansion = match &signature.expansion {
+      MacroExpansionType::Dynamic => "Dynamic".to_owned(),
+      MacroExpansionType::Expr(semantic) => format!("Expr<{}>", semantic.to_brief_string()),
+      MacroExpansionType::Definition(semantic) => format!("Definition<{}>", semantic.to_brief_string()),
+      MacroExpansionType::Declarations => "Declarations".to_owned(),
+    };
+    let level = if signature.is_strict() && !matches!(signature.expansion, MacroExpansionType::Dynamic) {
+      CoverageLevel::Full
+    } else {
+      CoverageLevel::Partial
+    };
+    return TypeCoverageRow {
+      ns: ns.to_owned(),
+      def: def_name.to_owned(),
+      kind: DefKind::Macro,
+      level: downgrade_coverage_for_dynamic_annotation(level, entry.schema.as_ref()),
+      params,
+      param_annotations,
+      return_type_hints: vec![expansion],
+      generics: signature.generics.iter().map(|name| format!("'{name}")).collect(),
+      where_bounds: signature.where_bounds.iter().map(|bound| bound.to_brief_string()).collect(),
+      data_type: None,
+      schema_issues: entry_schema_issues(ns, def_name, &entry.code, &entry.schema),
+    };
   }
 
   // Function schemas are the canonical source for top-level callable coverage.

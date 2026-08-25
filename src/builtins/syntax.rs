@@ -12,7 +12,7 @@ use crate::builtins::meta::{NS_SYMBOL_DICT, type_of};
 
 use crate::calcit::{
   self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitList, CalcitListView,
-  CalcitLocal, CalcitMacro, CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
+  CalcitLocal, CalcitMacro, CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning, MacroSignature,
 };
 use crate::calcit::{Calcit, CalcitEnumValue, CalcitErr, CalcitScope, gen_core_id};
 use crate::call_stack::CallStackList;
@@ -114,15 +114,23 @@ fn is_function_metadata_hint(form: &Calcit) -> bool {
 
 pub fn defmacro(expr: &CalcitListView<'_>, _scope: &CalcitScope, def_ns: &str) -> Result<Calcit, CalcitErr> {
   match (expr.first(), expr.get(1)) {
-    (Some(Calcit::Symbol { sym: s, .. }), Some(Calcit::List(xs))) => Ok(Calcit::Macro {
-      id: gen_core_id(),
-      info: Arc::new(CalcitMacro {
-        name: s.to_owned(),
-        def_ns: Arc::from(def_ns),
-        args: Arc::new(get_raw_args(xs)?),
-        body: Arc::new(expr.skip(2)?.to_vec()),
-      }),
-    }),
+    (Some(Calcit::Symbol { sym: s, .. }), Some(Calcit::List(xs))) => {
+      let signature = match crate::program::lookup_def_schema(def_ns, s).as_ref() {
+        CalcitTypeAnnotation::Macro(signature) => signature.clone(),
+        CalcitTypeAnnotation::Fn(annotation) => Arc::new(MacroSignature::from_legacy_fn(annotation.as_ref().clone())),
+        _ => Arc::new(MacroSignature::legacy_dynamic()),
+      };
+      Ok(Calcit::Macro {
+        id: gen_core_id(),
+        info: Arc::new(CalcitMacro {
+          name: s.to_owned(),
+          def_ns: Arc::from(def_ns),
+          args: Arc::new(get_raw_args(xs)?),
+          body: Arc::new(expr.skip(2)?.to_vec()),
+          signature,
+        }),
+      })
+    }
     (Some(a), Some(b)) => CalcitErr::err_str(
       CalcitErrKind::Type,
       format!("defmacro expected a symbol and a list of arguments, but received: {a} {b}"),
