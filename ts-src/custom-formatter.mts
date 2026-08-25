@@ -77,16 +77,22 @@ let td = (style: any, ...children: any[]) => {
 
 /** handle null value in nested data */
 let saveString = (v: CalcitValue) => {
+  if (v === null) {
+    return "nil";
+  }
+  if (v === undefined) {
+    return "&unit";
+  }
   if (typeof v === "string") {
     if (v.match(/[\s\"\n\t\,]/)) {
       return `"|${v}"`;
     } else {
       return `|${v}`;
     }
-  } else if (v != null && v.toString) {
+  } else if (v.toString) {
     return v.toString();
   } else {
-    return "nil";
+    return String(v);
   }
 };
 

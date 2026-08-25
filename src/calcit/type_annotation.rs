@@ -319,7 +319,9 @@ pub enum CalcitTypeAnnotation {
   Trait(Arc<CalcitTrait>),
   /// Multiple trait constraints recorded in order
   TraitSet(Arc<Vec<Arc<CalcitTrait>>>),
-  /// Unit/nil type — for side-effectful functions that explicitly return nil
+  /// Legacy nil sentinel. New APIs should prefer Option/Result or Unit.
+  Nil,
+  /// Unit type for side-effectful functions without a domain value.
   Unit,
   /// JavaScript FFI host value (opaque to the Calcit type system)
   JsObject,
@@ -447,6 +449,7 @@ impl CalcitTypeAnnotation {
       | Self::CirruQuote
       | Self::Dynamic
       | Self::TypeVar(_)
+      | Self::Nil
       | Self::Unit
       | Self::JsObject
       | Self::TypeSlot(_) => Ok(()),
@@ -479,7 +482,8 @@ impl CalcitTypeAnnotation {
       "ref" => Some(Self::Ref(DYNAMIC_TYPE.clone())),
       "buffer" => Some(Self::Buffer),
       "cirru-quote" => Some(Self::CirruQuote),
-      "unit" | "nil" => Some(Self::Unit),
+      "nil" => Some(Self::Nil),
+      "unit" => Some(Self::Unit),
       "js-object" => Some(Self::JsObject),
       _ => None,
     }
@@ -501,6 +505,7 @@ impl CalcitTypeAnnotation {
       Self::Ref(_) => Some("ref"),
       Self::Buffer => Some("buffer"),
       Self::CirruQuote => Some("cirru-quote"),
+      Self::Nil => Some("nil"),
       Self::Unit => Some("unit"),
       Self::JsObject => Some("js-object"),
       _ => None,
@@ -516,6 +521,7 @@ impl CalcitTypeAnnotation {
   pub fn canonical_type_symbol_name(name: &str) -> Option<&'static str> {
     match name.trim_start_matches(':') {
       "any" | "dynamic" | "Dynamic" => Some("Dynamic"),
+      "nil" | "Nil" => Some("Nil"),
       "unit" | "Unit" => Some("Unit"),
       "bool" | "Bool" => Some("Bool"),
       "number" | "Number" => Some("Number"),
@@ -549,6 +555,7 @@ impl CalcitTypeAnnotation {
   fn builtin_type_from_symbol_name(name: &str) -> Option<Self> {
     match Self::canonical_type_symbol_name(name)? {
       "Dynamic" => Some(Self::Dynamic),
+      "Nil" => Some(Self::Nil),
       "Unit" => Some(Self::Unit),
       "Bool" => Some(Self::Bool),
       "Number" => Some(Self::Number),
@@ -2346,7 +2353,7 @@ impl CalcitTypeAnnotation {
       Self::Set(_) => Some("&core-set-impls"),
       Self::Number => Some("&core-number-impls"),
       Self::DynFn | Self::Fn(_) => Some("&core-fn-impls"),
-      Self::Unit | Self::Bool | Self::Tag | Self::Symbol | Self::CirruQuote => Some("&core-scalar-impls"),
+      Self::Nil | Self::Unit | Self::Bool | Self::Tag | Self::Symbol | Self::CirruQuote => Some("&core-scalar-impls"),
       Self::Optional(inner) => inner.core_impl_list_symbol(),
       Self::TypeRef(name, _) => resolve_type_ref_as_schema(name).and_then(|schema| schema.core_impl_list_symbol()),
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.core_impl_list_symbol()),
@@ -2526,6 +2533,21 @@ impl CalcitTypeAnnotation {
       (Self::TypeVar(actual), Self::TypeVar(expected)) if actual == expected => true,
       (actual, Self::TypeVar(var)) => match bindings.get(var) {
         Some(bound) if bound.as_ref() == actual => true,
+        Some(bound) if matches!(bound.as_ref(), Self::Nil) => {
+          let merged = if matches!(actual, Self::Optional(_)) {
+            actual.to_owned()
+          } else {
+            Self::Optional(Arc::new(actual.to_owned()))
+          };
+          bindings.insert(var.to_owned(), Arc::new(merged));
+          true
+        }
+        Some(bound) if matches!(actual, Self::Nil) => {
+          if !matches!(bound.as_ref(), Self::Optional(_)) {
+            bindings.insert(var.to_owned(), Arc::new(Self::Optional(bound.clone())));
+          }
+          true
+        }
         Some(bound) => {
           let bound = bound.clone();
           actual.matches_with_bindings(bound.as_ref(), bindings)
@@ -2538,14 +2560,14 @@ impl CalcitTypeAnnotation {
       (_, Self::Optional(expected_inner)) => match self {
         Self::Optional(actual_inner) => actual_inner.matches_with_bindings(expected_inner, bindings),
         Self::JsNullish(_) => false,
-        Self::Unit => true, // nil is always valid for Optional types
+        Self::Nil => true,
         _ => self.matches_with_bindings(expected_inner, bindings),
       },
       (Self::Optional(_), _) => false,
       (_, Self::JsNullish(expected_inner)) => match self {
         Self::JsNullish(actual_inner) => actual_inner.matches_with_bindings(expected_inner, bindings),
         Self::Optional(_) => false,
-        Self::Unit => true,
+        Self::Nil => true,
         _ => self.matches_with_bindings(expected_inner, bindings),
       },
       (Self::JsNullish(_), _) => false,
@@ -2558,9 +2580,25 @@ impl CalcitTypeAnnotation {
       | (Self::Buffer, Self::Buffer)
       | (Self::CirruQuote, Self::CirruQuote)
       | (Self::JsObject, Self::JsObject)
+      | (Self::Nil, Self::Nil)
       | (Self::Unit, Self::Unit) => true,
       (Self::TypeVar(var), expected_type) => match bindings.get(var) {
         Some(bound) if bound.as_ref() == expected_type => true,
+        Some(bound) if matches!(bound.as_ref(), Self::Nil) => {
+          let merged = if matches!(expected_type, Self::Optional(_)) {
+            expected_type.to_owned()
+          } else {
+            Self::Optional(Arc::new(expected_type.to_owned()))
+          };
+          bindings.insert(var.to_owned(), Arc::new(merged));
+          true
+        }
+        Some(bound) if matches!(expected_type, Self::Nil) => {
+          if !matches!(bound.as_ref(), Self::Optional(_)) {
+            bindings.insert(var.to_owned(), Arc::new(Self::Optional(bound.clone())));
+          }
+          true
+        }
         Some(bound) => {
           let bound = bound.clone();
           bound.as_ref().matches_with_bindings(expected_type, bindings)
@@ -2983,6 +3021,7 @@ impl CalcitTypeAnnotation {
     match self {
       // Simple builtin scalars
       Self::Dynamic => Edn::Symbol(Arc::from("Dynamic")),
+      Self::Nil => Edn::Symbol(Arc::from("Nil")),
       Self::Unit => Edn::Symbol(Arc::from("Unit")),
       Self::Bool => Edn::Symbol(Arc::from("Bool")),
       Self::Number => Edn::Symbol(Arc::from("Number")),
@@ -3212,11 +3251,12 @@ impl CalcitTypeAnnotation {
       Self::Enum(_, _) => 25,
       Self::Trait(_) => 26,
       Self::TraitSet(_) => 27,
-      Self::Unit => 28,
-      Self::JsObject => 29,
-      Self::TypeSlot(_) => 30,
-      Self::StructDef(_) => 31,
-      Self::EnumDef(_) => 32,
+      Self::Nil => 28,
+      Self::Unit => 29,
+      Self::JsObject => 30,
+      Self::TypeSlot(_) => 31,
+      Self::StructDef(_) => 32,
+      Self::EnumDef(_) => 33,
     }
   }
 }
@@ -4757,8 +4797,54 @@ mod tests {
     assert!(!js_nullish.matches_annotation(&optional));
     assert!(!optional.matches_annotation(&js_nullish));
     assert!(CalcitTypeAnnotation::Number.matches_annotation(&js_nullish));
-    assert!(CalcitTypeAnnotation::Unit.matches_annotation(&js_nullish));
+    assert!(CalcitTypeAnnotation::Nil.matches_annotation(&js_nullish));
+    assert!(!CalcitTypeAnnotation::Unit.matches_annotation(&js_nullish));
     assert_eq!(js_nullish.to_type_edn(), Edn::enum_value("JsNullish", vec![number.to_type_edn()]));
+  }
+
+  #[test]
+  fn nil_and_unit_are_distinct_static_and_runtime_types() {
+    assert_eq!(
+      CalcitTypeAnnotation::builtin_type_from_tag_name("nil"),
+      Some(CalcitTypeAnnotation::Nil)
+    );
+    assert_eq!(
+      CalcitTypeAnnotation::builtin_type_from_tag_name("unit"),
+      Some(CalcitTypeAnnotation::Unit)
+    );
+    assert!(!CalcitTypeAnnotation::Nil.matches_annotation(&CalcitTypeAnnotation::Unit));
+    assert!(!CalcitTypeAnnotation::Unit.matches_annotation(&CalcitTypeAnnotation::Nil));
+    assert!(value_matches_type_annotation(&Calcit::Nil, &CalcitTypeAnnotation::Nil));
+    assert!(!value_matches_type_annotation(&Calcit::Nil, &CalcitTypeAnnotation::Unit));
+    assert!(value_matches_type_annotation(&Calcit::Unit, &CalcitTypeAnnotation::Unit));
+    assert!(!value_matches_type_annotation(&Calcit::Unit, &CalcitTypeAnnotation::Nil));
+    assert_eq!(infer_runtime_value_type(&Calcit::Nil).as_ref(), &CalcitTypeAnnotation::Nil);
+    assert_eq!(infer_runtime_value_type(&Calcit::Unit).as_ref(), &CalcitTypeAnnotation::Unit);
+  }
+
+  #[test]
+  fn generic_bindings_lift_nil_and_values_into_optional() {
+    let var = Arc::<str>::from("T");
+    let mut nil_first = TypeBindings::new();
+    assert!(CalcitTypeAnnotation::Nil.matches_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut nil_first));
+    assert!(CalcitTypeAnnotation::Bool.matches_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut nil_first));
+    assert!(matches!(
+      nil_first.get(&var).map(Arc::as_ref),
+      Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
+    ));
+
+    let mut value_first = TypeBindings::new();
+    assert!(CalcitTypeAnnotation::Bool.matches_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut value_first));
+    assert!(CalcitTypeAnnotation::Nil.matches_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut value_first));
+    assert!(matches!(
+      value_first.get(&var).map(Arc::as_ref),
+      Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
+    ));
+
+    assert!(!CalcitTypeAnnotation::Unit.matches_with_bindings(
+      &CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Bool)),
+      &mut TypeBindings::new()
+    ));
   }
 
   #[test]
@@ -4883,6 +4969,7 @@ impl Hash for CalcitTypeAnnotation {
           t.name.hash(state);
         }
       }
+      Self::Nil => "nil".hash(state),
       Self::Unit => "unit".hash(state),
       Self::JsObject => "js-object".hash(state),
       Self::TypeSlot(name) => {
@@ -5258,7 +5345,8 @@ impl CalcitFnTypeAnnotation {
 pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
   match expected {
     CalcitTypeAnnotation::Dynamic => true,
-    CalcitTypeAnnotation::Unit => matches!(value, Calcit::Unit | Calcit::Nil),
+    CalcitTypeAnnotation::Nil => matches!(value, Calcit::Nil),
+    CalcitTypeAnnotation::Unit => matches!(value, Calcit::Unit),
     CalcitTypeAnnotation::Optional(inner) => matches!(value, Calcit::Nil) || value_matches_type_annotation(value, inner),
     CalcitTypeAnnotation::JsNullish(inner) => matches!(value, Calcit::Nil) || value_matches_type_annotation(value, inner),
     CalcitTypeAnnotation::Bool => matches!(value, Calcit::Bool(_)),
@@ -5393,7 +5481,8 @@ fn infer_runtime_enum_applied_args(enum_def: &CalcitEnumDef, enum_value: &Calcit
 
 pub fn infer_runtime_value_type(value: &Calcit) -> Arc<CalcitTypeAnnotation> {
   match value {
-    Calcit::Nil | Calcit::Unit => Arc::new(CalcitTypeAnnotation::Unit),
+    Calcit::Nil => Arc::new(CalcitTypeAnnotation::Nil),
+    Calcit::Unit => Arc::new(CalcitTypeAnnotation::Unit),
     Calcit::Bool(_) => Arc::new(CalcitTypeAnnotation::Bool),
     Calcit::Number(_) => Arc::new(CalcitTypeAnnotation::Number),
     Calcit::Str(_) => Arc::new(CalcitTypeAnnotation::String),

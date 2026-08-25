@@ -72,9 +72,10 @@ export let type_of = (x: any): CalcitTag => {
   if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
     return newTag("map");
   }
-  if (x == null) {
+  if (x === null) {
     return newTag("nil");
   }
+  if (x === undefined) return newTag("unit");
   if (x instanceof CalcitRef) {
     return newTag("ref");
   }
@@ -461,7 +462,7 @@ export let _$n__$s_ = (x: number, y: number): number => {
 };
 
 export let _$n_str = (x: CalcitValue): string => {
-  if (x == null) {
+  if (x === null) {
     return "";
   }
   if (typeof x === "string") {
@@ -687,11 +688,11 @@ export let _$n_enum_def_$o_variant_arity = function (enumPrototype: CalcitValue,
   throw new Error("Expected variant to be a list");
 };
 
-export let _$n_enum_$o_validate = function (enumValue: CalcitValue, tag: CalcitValue): CalcitValue {
+export let _$n_enum_$o_validate = function (enumValue: CalcitValue, tag: CalcitValue): void {
   if (arguments.length !== 2) throw new Error("&enum:validate takes 2 arguments");
   if (!(enumValue instanceof CalcitEnumValue)) throw new Error("&enum:validate expects an enum value as first argument");
   if (enumValue.enumPrototype == null) {
-    return null;
+    return;
   }
 
   const proto = assert_enum_tag_args("&enum:validate", enumValue.enumPrototype as CalcitValue, tag as CalcitTag);
@@ -708,7 +709,7 @@ export let _$n_enum_$o_validate = function (enumValue: CalcitValue, tag: CalcitV
     if (expected !== actual) {
       throw new Error(`enum variant expects ${expected} payload(s), got ${actual} for ${enumValue}`);
     }
-    return null;
+    return;
   }
 
   throw new Error("Expected variant to be a list");
@@ -870,7 +871,7 @@ export let _$n_map_$o_dissoc = function (xs: CalcitValue, ...args: CalcitValue[]
   throw new Error("`dissoc` expected a map");
 };
 
-export let reset_$x_ = (a: CalcitRef, v: CalcitValue): null => {
+export let reset_$x_ = (a: CalcitRef, v: CalcitValue): CalcitValue => {
   if (!(a instanceof CalcitRef)) {
     throw new Error("Expected ref for reset!");
   }
@@ -879,10 +880,10 @@ export let reset_$x_ = (a: CalcitRef, v: CalcitValue): null => {
   a.listeners.forEach((f) => {
     f(v, prev);
   });
-  return null;
+  return v;
 };
 
-export let add_watch = (a: CalcitRef, k: CalcitTag, f: CalcitFn): null => {
+export let add_watch = (a: CalcitRef, k: CalcitTag, f: CalcitFn): void => {
   if (!(a instanceof CalcitRef)) {
     throw new Error("Expected ref for add-watch!");
   }
@@ -893,12 +894,10 @@ export let add_watch = (a: CalcitRef, k: CalcitTag, f: CalcitFn): null => {
     throw new Error("Expected watcher function");
   }
   a.listeners.set(k, f);
-  return null;
 };
 
-export let remove_watch = (a: CalcitRef, k: CalcitTag): null => {
+export let remove_watch = (a: CalcitRef, k: CalcitTag): void => {
   a.listeners.delete(k);
-  return null;
 };
 
 const MAX_RANGE_LENGTH = 0xffff_ffff;
@@ -1018,7 +1017,7 @@ export let _$n_set_$o_destruct = (xs: CalcitValue): CalcitValue => {
   throw new Error("Expect a set");
 };
 
-export let timeout_call = (duration: number, f: CalcitFn): null => {
+export let timeout_call = (duration: number, f: CalcitFn): void => {
   if (typeof duration !== "number") {
     throw new Error("Expected duration in number");
   }
@@ -1026,7 +1025,6 @@ export let timeout_call = (duration: number, f: CalcitFn): null => {
     throw new Error("Expected callback in fn");
   }
   setTimeout(f, duration);
-  return null;
 };
 
 export let _$n_list_$o_rest = (xs: CalcitValue): CalcitList | CalcitSliceList => {
@@ -1123,13 +1121,12 @@ export let generate_id_$x_ = (): string => {
   return `gen_id_${idCounter}_${time}`;
 };
 
-export let _$n_display_stack = (): null => {
+export let _$n_display_stack = (): void => {
   console.trace();
-  return null;
 };
 
 export let _$n_list_$o_slice = (xs: CalcitList, from: number, to: number): CalcitSliceList | CalcitList => {
-  if (xs == null) {
+  if (xs === null) {
     return null;
   }
   let size = xs.len();
@@ -1147,7 +1144,7 @@ export let _$n_list_$o_concat = (...lists: (CalcitList | CalcitSliceList)[]): Ca
   let result: CalcitSliceList | CalcitList = new CalcitSliceList([]);
   for (let idx = 0; idx < lists.length; idx++) {
     let item = lists[idx];
-    if (item == null) {
+    if (item === null) {
       continue;
     }
     if (item instanceof CalcitList || item instanceof CalcitSliceList) {
@@ -1164,7 +1161,7 @@ export let _$n_list_$o_concat = (...lists: (CalcitList | CalcitSliceList)[]): Ca
 };
 
 export let _$n_list_$o_reverse = (xs: CalcitList): CalcitList => {
-  if (xs == null) {
+  if (xs === null) {
     return null;
   }
   return xs.reverse();
@@ -1195,12 +1192,12 @@ export let round_$q_ = (a: number) => {
 };
 export let _$n_str_$o_concat = (a: string, b: string) => {
   // Optimize string concatenation by avoiding unnecessary toString calls
-  const aStr = a != null ? toString(a, false) : "";
-  const bStr = b != null ? toString(b, false) : "";
+  const aStr = a !== null ? toString(a, false) : "";
+  const bStr = b !== null ? toString(b, false) : "";
   return aStr + bStr;
 };
 export let sort = (xs: CalcitList | CalcitSliceList, f: CalcitFn): CalcitSliceList => {
-  if (xs == null) {
+  if (xs === null) {
     return null;
   }
   if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
@@ -1215,10 +1212,10 @@ export let floor = (n: number): number => {
 };
 
 export let _$n_merge = (a: CalcitValue, b: CalcitMap | CalcitSliceMap): CalcitValue => {
-  if (a == null) {
+  if (a === null) {
     return b;
   }
-  if (b == null) {
+  if (b === null) {
     return a;
   }
   if (a instanceof CalcitMap || a instanceof CalcitSliceMap) {
@@ -1258,10 +1255,10 @@ export let _$n_merge = (a: CalcitValue, b: CalcitMap | CalcitSliceMap): CalcitVa
 };
 
 export let _$n_merge_non_nil = (a: CalcitMap | CalcitSliceMap, b: CalcitMap | CalcitSliceMap): CalcitMap | CalcitSliceMap => {
-  if (a == null) {
+  if (a === null) {
     return b;
   }
-  if (b == null) {
+  if (b === null) {
     return a;
   }
   if (!(a instanceof CalcitMap || a instanceof CalcitSliceMap)) {
@@ -1323,7 +1320,7 @@ export let _$n_include = (xs: CalcitSet, y: CalcitValue): CalcitSet => {
   if (!(xs instanceof CalcitSet)) {
     throw new Error("Expected a set");
   }
-  if (y == null) {
+  if (y === null) {
     return xs;
   }
   return xs.include(y);
@@ -1333,7 +1330,7 @@ export let _$n_exclude = (xs: CalcitSet, y: CalcitValue): CalcitSet => {
   if (!(xs instanceof CalcitSet)) {
     throw new Error("Expected a set");
   }
-  if (y == null) {
+  if (y === null) {
     return xs;
   }
   return xs.exclude(y);
@@ -1464,7 +1461,7 @@ export let aget = (x: any, name: string): any => {
 export let aset = (x: any, name: string, v: any): any => {
   return (x[name] = v);
 };
-export let js_get = aget;
+export let js_get = (x: any, name: string): any => x[name] ?? null;
 export let js_set = aset;
 /** generates `delete a.b` */
 export let js_delete = (obj: any, name: string): any => {
@@ -1549,7 +1546,7 @@ export let quit_$x_ = (): void => {
 };
 
 export let turn_string = (x: CalcitValue): string => {
-  if (x == null) {
+  if (x === null) {
     return "";
   }
   if (typeof x === "string") {
@@ -1592,7 +1589,7 @@ export let ends_with_$q_ = (xs: string, y: string): boolean => {
 };
 
 export let blank_$q_ = (x: string): boolean => {
-  if (x == null) {
+  if (x === null) {
     return true;
   }
   if (typeof x === "string") {
@@ -1617,7 +1614,7 @@ export let arrayToList = (xs: Array<CalcitValue>): CalcitSliceList => {
 };
 
 export let listToArray = (xs: CalcitList | CalcitSliceList): Array<CalcitValue> => {
-  if (xs == null) {
+  if (xs === null) {
     return null;
   }
   if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
@@ -1637,7 +1634,7 @@ export let bool_$q_ = (x: CalcitValue): boolean => {
   return typeof x === "boolean";
 };
 export let nil_$q_ = (x: CalcitValue): boolean => {
-  return x == null;
+  return x === null;
 };
 export let tag_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitTag;
@@ -1717,7 +1714,7 @@ export let parse_cirru_edn = (code: string, options: CalcitValue) => {
 };
 
 type DataShapeNode =
-  | { kind: "unit" | "bool" | "number" | "string" | "symbol" | "tag" | "buffer" | "cirru-quote" | "dynamic" }
+  | { kind: "nil" | "unit" | "bool" | "number" | "string" | "symbol" | "tag" | "buffer" | "cirru-quote" | "dynamic" }
   | { kind: "optional" | "list" | "set" | "ref"; inner: number }
   | { kind: "map"; key: number; value: number }
   | { kind: "map-option"; nominal: CalcitEnumDef; inner: number }
@@ -1732,7 +1729,8 @@ type DataShapeGraph = {
 };
 
 const typed_edn_kind = (value: any): string => {
-  if (value == null) return "nil";
+  if (value === null) return "nil";
+  if (value === undefined) return "unit";
   if (typeof value === "boolean") return "bool";
   if (typeof value === "number") return "number";
   if (typeof value === "string") return "string";
@@ -1763,9 +1761,12 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
   if (node == null) typed_edn_error(path, `invalid data shape node #${nodeId}`);
 
   switch (node.kind) {
+    case "nil":
+      if (input === null) return null;
+      return typed_edn_error(path, `expected Nil, got ${typed_edn_kind(input)}`);
     case "unit":
-      if (input == null) return null;
-      return typed_edn_error(path, `expected nil, got ${typed_edn_kind(input)}`);
+      if (input === undefined) return input;
+      return typed_edn_error(path, `expected Unit, got ${typed_edn_kind(input)}`);
     case "bool":
       if (typeof input === "boolean") return input;
       return typed_edn_error(path, `expected bool, got ${typed_edn_kind(input)}`);
@@ -1788,7 +1789,7 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
       if (input instanceof CalcitCirruQuote) return input;
       return typed_edn_error(path, `expected cirru-quote, got ${typed_edn_kind(input)}`);
     case "optional":
-      return input == null ? null : decode_typed_edn_node(graph, node.inner, input, path, depth + 1);
+      return input === null ? null : decode_typed_edn_node(graph, node.inner, input, path, depth + 1);
     case "list": {
       if (!(input instanceof CalcitList || input instanceof CalcitSliceList)) {
         return typed_edn_error(path, `expected list, got ${typed_edn_kind(input)}`);
@@ -1904,7 +1905,7 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
 
 export let parse_cirru_edn_as = (code: string, graph: DataShapeGraph): CalcitValue => {
   if (typeof code !== "string") throw new Error(`parse-cirru-edn-as expected a string, got ${typed_edn_kind(code)}`);
-  if (graph.version !== 1) throw new Error(`parse-cirru-edn-as expected data shape ABI version 1, got ${graph.version}`);
+  if (graph.version !== 2) throw new Error(`parse-cirru-edn-as expected data shape ABI version 2, got ${graph.version}`);
   if (typeof graph.fingerprint !== "string" || graph.fingerprint.length === 0) {
     throw new Error("parse-cirru-edn-as expected a non-empty data shape fingerprint");
   }
@@ -2015,7 +2016,7 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
       return new CalcitSliceMap(entries.flat());
     }
     case "optional":
-      return input == null ? null : decode_runtime_map_node(graph, node.inner, input, path, depth + 1);
+      return input === null ? null : decode_runtime_map_node(graph, node.inner, input, path, depth + 1);
     case "ref":
       if (!(input instanceof CalcitRef)) return map_decode_error(path, `expected atom, got ${typed_edn_kind(input)}`);
       return atom(decode_runtime_map_node(graph, node.inner, input.value, `${path}.value`, depth + 1));
@@ -2048,7 +2049,7 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
 };
 
 export let decode_map_as = (value: CalcitValue, graph: DataShapeGraph): CalcitValue => {
-  if (graph.version !== 1) throw new Error(`decode-map-as expected data shape ABI version 1, got ${graph.version}`);
+  if (graph.version !== 2) throw new Error(`decode-map-as expected data shape ABI version 2, got ${graph.version}`);
   if (typeof graph.fingerprint !== "string" || graph.fingerprint.length === 0) {
     throw new Error("decode-map-as expected a non-empty data shape fingerprint");
   }
@@ -2086,7 +2087,7 @@ const cirru_quote_to_json = (value: ICirruNode): any => {
 };
 
 const calcit_to_json = (value: CalcitValue): any => {
-  if (value == null) return null;
+  if (value === null) return null;
   if (typeof value === "string") return value;
   if (typeof value === "number") {
     if (Number.isFinite(value)) return value;
@@ -2143,8 +2144,10 @@ export let json_pretty = function (value: CalcitValue): string {
 };
 
 export let format_to_lisp = (x: CalcitValue): string => {
-  if (x == null) {
+  if (x === null) {
     return "nil";
+  } else if (x === undefined) {
+    return "&unit";
   } else if (x instanceof CalcitSymbol) {
     return x.value;
   } else if (x instanceof CalcitList || x instanceof CalcitSliceList) {
@@ -2171,8 +2174,10 @@ export let format_to_cirru = (x: CalcitValue): string => {
 };
 
 export let transform_code_to_cirru = (x: CalcitValue): ICirruNode => {
-  if (x == null) {
+  if (x === null) {
     return "nil";
+  } else if (x === undefined) {
+    return "&unit";
   } else if (x instanceof CalcitSymbol) {
     return x.value;
   } else if (x instanceof CalcitList || x instanceof CalcitSliceList) {

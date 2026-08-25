@@ -1,7 +1,8 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-anonymous-enum) (:version |0.0.0)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-anonymous-enum)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-anonymous-enum.main/main!) (:mode :native) (:reload-fn 'test-anonymous-enum.main/reload!)
+      :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
   :files $ {}
@@ -11,7 +12,7 @@
           :code $ quote
             defenum Result (:ok 'Number) (:err 'String)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'EnumDef
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing anonymous enum")
@@ -27,7 +28,7 @@
                 assert= "|(%:: 'Result :ok 1)" $ str ok
                 assert= true $ &enum-def:has-variant? Result :ok
                 assert= 1 $ &enum-def:variant-arity Result :ok
-                assert= nil $ &enum:validate ok :ok
+                assert= &unit $ &enum:validate ok :ok
               let
                   plain $ :: :plain 1
                 assert= (%none) (enum-definition plain)

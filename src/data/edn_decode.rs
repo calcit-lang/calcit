@@ -73,11 +73,18 @@ impl MapDecoder<'_> {
       .ok_or_else(|| EdnDecodeError::at(path, format!("invalid data shape node #{node_id}")))?;
     match node {
       DataShapeNode::Dynamic => Ok(input.to_owned()),
-      DataShapeNode::Unit => {
+      DataShapeNode::Nil => {
         if matches!(input, Calcit::Nil) {
           Ok(Calcit::Nil)
         } else {
           Err(map_kind_mismatch(path, "nil", input))
+        }
+      }
+      DataShapeNode::Unit => {
+        if matches!(input, Calcit::Unit) {
+          Ok(Calcit::Unit)
+        } else {
+          Err(map_kind_mismatch(path, "&unit", input))
         }
       }
       DataShapeNode::Bool => {
@@ -336,10 +343,11 @@ impl Decoder<'_> {
         path,
         "internal decoder error: open runtime-map node is unavailable for Cirru EDN",
       )),
-      DataShapeNode::Unit => match input {
+      DataShapeNode::Nil => match input {
         Edn::Nil => Ok(Calcit::Nil),
         _ => Err(kind_mismatch(path, "nil", input)),
       },
+      DataShapeNode::Unit => Err(EdnDecodeError::at(path, "Cirru EDN cannot decode &unit")),
       DataShapeNode::Bool => match input {
         Edn::Bool(value) => Ok(Calcit::Bool(*value)),
         _ => Err(kind_mismatch(path, "bool", input)),

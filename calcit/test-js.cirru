@@ -1,7 +1,8 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-js) (:version |0.0.0)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-js)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-js.main/main!) (:mode :native) (:reload-fn 'test-js.main/reload!)
+      :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
@@ -70,7 +71,7 @@
                       let
                           a 1
                           a $ js-await (timeout 200)
-                        assert= nil a
+                        assert= &unit a
                   b
               js/console.log "|a promise from nested let" f
           :examples $ []

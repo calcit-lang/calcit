@@ -659,7 +659,7 @@ impl CalcitProc {
         arg_types: vec![],
       }),
       NativeDisplayStack => Some(ProcTypeSignature {
-        return_type: some_tag("nil"),
+        return_type: some_tag("unit"),
         arg_types: vec![variadic_dynamic()],
       }),
       NativeMethodsOf => Some(ProcTypeSignature {
@@ -675,15 +675,15 @@ impl CalcitProc {
         arg_types: vec![some_tag("trait"), dynamic_tag(), dynamic_tag(), variadic_dynamic()],
       }),
       NativeAssertTraits => Some(ProcTypeSignature {
-        return_type: some_tag("nil"),
-        arg_types: vec![dynamic_tag(), some_tag("trait")],
+        return_type: type_var("T"),
+        arg_types: vec![type_var("T"), some_tag("trait")],
       }),
       NativeCirruType => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
         arg_types: vec![some_tag("cirru-quote")],
       }),
       NativeResetGenSymIndex => Some(ProcTypeSignature {
-        return_type: some_tag("nil"),
+        return_type: some_tag("unit"),
         arg_types: vec![],
       }),
       NativeInspectType => Some(ProcTypeSignature {
@@ -1210,7 +1210,7 @@ impl CalcitProc {
         arg_types: vec![some_tag("enum-def"), some_tag("tag")],
       }),
       NativeEnumValidate => Some(ProcTypeSignature {
-        return_type: some_tag("nil"),
+        return_type: some_tag("unit"),
         arg_types: vec![some_tag("enum"), some_tag("tag")],
       }),
 
@@ -1309,11 +1309,11 @@ impl CalcitProc {
         arg_types: vec![ref_of(type_var("T"))],
       }),
       AddWatch => Some(ProcTypeSignature {
-        return_type: some_tag("nil"),
+        return_type: some_tag("unit"),
         arg_types: vec![some_tag("ref"), dynamic_tag(), dynamic_tag()],
       }),
       RemoveWatch => Some(ProcTypeSignature {
-        return_type: some_tag("nil"),
+        return_type: some_tag("unit"),
         arg_types: vec![some_tag("ref"), dynamic_tag()],
       }),
 
@@ -1327,7 +1327,7 @@ impl CalcitProc {
         arg_types: vec![some_tag("string"), some_tag("bool")],
       }),
       WriteFile => Some(ProcTypeSignature {
-        return_type: some_tag("nil"),
+        return_type: some_tag("unit"),
         arg_types: vec![some_tag("string"), some_tag("string")],
       }),
       Raise => Some(ProcTypeSignature {
@@ -1342,7 +1342,7 @@ impl CalcitProc {
         arg_types: vec![some_tag("string")],
       }),
       Quit => Some(ProcTypeSignature {
-        return_type: some_tag("nil"),
+        return_type: some_tag("unit"),
         arg_types: vec![some_tag("number")],
       }),
       GetEnv => Some(ProcTypeSignature {
@@ -1408,7 +1408,7 @@ impl CalcitProc {
         arg_types: vec![some_tag("list")],
       }),
       RegisterCalcitBuiltinImpls => Some(ProcTypeSignature {
-        return_type: some_tag("nil"),
+        return_type: some_tag("unit"),
         arg_types: vec![dynamic_tag()],
       }),
 
@@ -1418,7 +1418,7 @@ impl CalcitProc {
 
       // === Type slot operations ===
       DeftypeSlot => Some(ProcTypeSignature {
-        return_type: some_tag("nil"),
+        return_type: some_tag("unit"),
         arg_types: vec![some_tag("tag")],
       }),
       // with-type-slot has a variadic body; type-checking is handled at preprocess time
@@ -1566,5 +1566,32 @@ mod tests {
     assert_eq!(CalcitProc::from_str("&enum:nth"), Ok(CalcitProc::NativeEnumNth));
     assert!(CalcitProc::from_str("parse-float").is_err());
     assert!(CalcitProc::from_str("get-env").is_err());
+  }
+
+  #[test]
+  fn effect_proc_signatures_use_unit_and_assertions_preserve_values() {
+    for proc in [
+      CalcitProc::NativeDisplayStack,
+      CalcitProc::NativeResetGenSymIndex,
+      CalcitProc::NativeEnumValidate,
+      CalcitProc::AddWatch,
+      CalcitProc::RemoveWatch,
+      CalcitProc::WriteFile,
+      CalcitProc::Quit,
+      CalcitProc::RegisterCalcitBuiltinImpls,
+      CalcitProc::DeftypeSlot,
+    ] {
+      let signature = proc.get_type_signature().expect("effect proc signature");
+      assert!(matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Unit), "{proc}");
+    }
+
+    let signature = CalcitProc::NativeAssertTraits
+      .get_type_signature()
+      .expect("assert-traits signature");
+    assert_eq!(signature.return_type, signature.arg_types[0]);
+    assert!(matches!(
+      signature.return_type.as_ref(),
+      CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T"
+    ));
   }
 }

@@ -109,7 +109,7 @@ impl CalcitSyntax {
     let tag_t = Arc::new(CalcitTypeAnnotation::Tag);
     let cirru_quote_t = Arc::new(CalcitTypeAnnotation::CirruQuote);
     let list_dyn = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Dynamic)));
-    let ref_dyn = Arc::new(CalcitTypeAnnotation::Ref(Arc::new(CalcitTypeAnnotation::Dynamic)));
+    let value_t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
 
     match self {
       If => Some(SyntaxTypeSignature {
@@ -149,8 +149,8 @@ impl CalcitSyntax {
       }),
       Reset => Some(SyntaxTypeSignature {
         param_names: vec!["atom", "value"],
-        param_types: vec![ref_dyn.clone(), dyn_t.clone()],
-        return_type: dyn_t.clone(),
+        param_types: vec![Arc::new(CalcitTypeAnnotation::Ref(value_t.clone())), value_t.clone()],
+        return_type: value_t.clone(),
       }),
       HintFn => Some(SyntaxTypeSignature {
         param_names: vec!["hint", "f"],
@@ -159,8 +159,8 @@ impl CalcitSyntax {
       }),
       AssertType => Some(SyntaxTypeSignature {
         param_names: vec!["expr", "type"],
-        param_types: vec![dyn_t.clone(), dyn_t.clone()],
-        return_type: dyn_t.clone(),
+        param_types: vec![value_t.clone(), dyn_t.clone()],
+        return_type: value_t.clone(),
       }),
       UnsafeCoerce => Some(SyntaxTypeSignature {
         param_names: vec!["value", "type"],
@@ -179,8 +179,8 @@ impl CalcitSyntax {
       }),
       AssertTraits => Some(SyntaxTypeSignature {
         param_names: vec!["expr", "trait"],
-        param_types: vec![dyn_t.clone(), tag_t.clone()],
-        return_type: dyn_t.clone(),
+        param_types: vec![value_t.clone(), tag_t.clone()],
+        return_type: value_t.clone(),
       }),
       CoreLet => Some(SyntaxTypeSignature {
         param_names: vec!["binding", "body"],
@@ -198,6 +198,37 @@ impl CalcitSyntax {
         return_type: dyn_t.clone(),
       }),
       Defn | Defmacro | DefWasmExport | DefWasmImport | ArgSpread | ArgOptional | MacroInterpolate | MacroInterpolateSpread => None,
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn reset_signature_preserves_the_ref_value_type() {
+    let signature = CalcitSyntax::Reset.get_type_signature().expect("reset! signature");
+    let CalcitTypeAnnotation::Ref(inner) = signature.param_types[0].as_ref() else {
+      panic!("reset! first parameter must be Ref<T>");
+    };
+    assert_eq!(inner, &signature.param_types[1]);
+    assert_eq!(signature.return_type, signature.param_types[1]);
+    assert!(matches!(
+      signature.return_type.as_ref(),
+      CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T"
+    ));
+  }
+
+  #[test]
+  fn assertion_signatures_preserve_the_checked_value_type() {
+    for syntax in [CalcitSyntax::AssertType, CalcitSyntax::AssertTraits] {
+      let signature = syntax.get_type_signature().expect("assertion signature");
+      assert_eq!(signature.return_type, signature.param_types[0]);
+      assert!(matches!(
+        signature.return_type.as_ref(),
+        CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T"
+      ));
     }
   }
 }

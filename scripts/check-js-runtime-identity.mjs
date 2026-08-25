@@ -43,6 +43,35 @@ try {
   assert.equal(todoEnumValue.toString(), "(%:: 'TodoState :draft |)");
   assert.equal(anonymousEnumValue.toString(), "(%:: _ :draft |)");
 
+  assert.equal(runtimeA.type_of(null).value, "nil", "nil must keep its own runtime type");
+  assert.equal(runtimeA.type_of(undefined).value, "unit", "&unit must keep its own runtime type");
+  assert.equal(runtimeA.nil_$q_(null), true);
+  assert.equal(runtimeA.nil_$q_(undefined), false, "&unit must not satisfy nil?");
+  assert.equal(runtimeA._$n__$e_(null, undefined), false, "nil and &unit must not compare equal");
+  assert.notEqual(runtimeA.hashFunction(null), runtimeA.hashFunction(undefined), "nil and &unit need distinct hashes");
+  assert.equal(runtimeA.toString(null, true), "nil");
+  assert.equal(runtimeA.toString(undefined, true), "&unit");
+  assert.throws(() => runtimeA.json_stringify(undefined), /cannot encode value: &unit/);
+  assert.throws(() => runtimeA.to_cirru_edn(undefined), /cannot encode &unit/);
+
+  const effectRef = runtimeA.atom(1);
+  const watchKey = runtimeA.newTag("runtime-unit-check");
+  const watchCalls = [];
+  assert.equal(
+    runtimeA.add_watch(effectRef, watchKey, (next, previous) => watchCalls.push([next, previous])),
+    undefined,
+    "add-watch must return &unit"
+  );
+  assert.equal(runtimeA.reset_$x_(effectRef, 2), 2, "reset! must return the written value");
+  assert.deepEqual(watchCalls, [[2, 1]], "reset! must still notify watchers");
+  assert.equal(runtimeA.remove_watch(effectRef, watchKey), undefined, "remove-watch must return &unit");
+  const validatedEnum = new runtimeA.CalcitEnumDef(
+    new runtimeA.CalcitStructValue(todoName, [todoField], [new runtimeA.CalcitSliceList([todoType])])
+  );
+  const validatedEnumValue = new runtimeA.CalcitEnumValue(todoField, ["ready"], validatedEnum);
+  assert.equal(runtimeA._$n_enum_$o_validate(validatedEnumValue, todoField), undefined, "enum validation must return &unit");
+  assert.equal(runtimeA.timeout_call(0, () => {}), undefined, "timeout-call must return &unit");
+
   const anonymousEnumCode = runtimeA.format_cirru_edn(anonymousEnumValue);
   const parsedAnonymousEnum = runtimeA.parse_cirru_edn(anonymousEnumCode, null);
   assert.equal(parsedAnonymousEnum.tag, todoField, "anonymous enum tags should stay interned after a Cirru EDN round-trip");

@@ -16,13 +16,13 @@
                   :atom x
                   , x
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Impl
         |%r $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defimpl %r DemoGetTrait $ .get
               fn (self) 1
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Impl
         |*ref-demo $ %{} 'CodeEntry (:doc |)
           :code $ quote (defatom *ref-demo 0)
           :examples $ []
@@ -36,7 +36,7 @@
           :code $ quote
             defenum AtomBox $ :atom 'Dynamic
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'EnumDef
         |AtomDerefTrait $ %{} 'CodeEntry (:doc |)
           :code $ quote
             deftrait AtomDerefTrait $ .deref :fn
@@ -51,7 +51,7 @@
           :code $ quote
             defenum Demo $ :a 'Dynamic
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'EnumDef
         |DemoGetTrait $ %{} 'CodeEntry (:doc |)
           :code $ quote
             deftrait DemoGetTrait $ .get :fn
@@ -62,7 +62,7 @@
             defimpl Deref DerefTrait $ .deref
               fn (self) 2
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Impl
         |DerefTrait $ %{} 'CodeEntry (:doc |)
           :code $ quote
             deftrait DerefTrait $ .deref :fn
@@ -75,7 +75,7 @@
               .show $ fn (x)
                 str $ &enum:nth x 1
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Impl
         |NumBox $ %{} 'CodeEntry (:doc |)
           :code $ quote
             def NumBox $ impl-traits NumBox0 Num
@@ -85,12 +85,12 @@
           :code $ quote
             defenum NumBox $ :number 'Number
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'EnumDef
         |NumTrait $ %{} 'CodeEntry (:doc |)
           :code $ quote
             deftrait NumTrait (.inc :fn) (.show :fn)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Trait
         |ValueBox $ %{} 'CodeEntry (:doc |)
           :code $ quote
             def ValueBox $ impl-traits ValueBox0 Deref
@@ -100,7 +100,7 @@
           :code $ quote
             defenum ValueBox $ :value 'Dynamic
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'EnumDef
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (&init-builtin-impls!)
@@ -450,9 +450,10 @@
         |test-refs $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)
-              add-watch *ref-demo :change $ fn (current prev) (println "|change happened:" prev current)
-              reset! *ref-demo 2
-              remove-watch *ref-demo :change
+              assert= &unit $ add-watch *ref-demo :change
+                fn (current prev) (println "|change happened:" prev current)
+              assert= 2 $ reset! *ref-demo 2
+              assert= &unit $ remove-watch *ref-demo :change
               assert= 2 @*ref-demo
               assert= :ref $ type-of *ref-demo
               let

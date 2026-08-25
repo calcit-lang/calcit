@@ -219,7 +219,7 @@ pub fn read_dir(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn write_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(path)), Some(Calcit::Str(content))) => match fs::write(&**path, &**content) {
-      Ok(_) => Ok(Calcit::Nil),
+      Ok(_) => Ok(Calcit::Unit),
       Err(e) => CalcitErr::err_str(CalcitErrKind::Effect, format!("write-file failed, {e}")),
     },
     (Some(a), Some(b)) => {
@@ -250,7 +250,7 @@ pub fn write_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 #[cfg(test)]
 mod tests {
-  use super::todo;
+  use super::{todo, write_file};
   use crate::calcit::Calcit;
 
   #[test]
@@ -263,5 +263,16 @@ mod tests {
   fn todo_runtime_error_has_a_default_message() {
     let error = todo(&[]).expect_err("todo must not return a value");
     assert!(error.to_string().contains("TODO: implementation is pending"));
+  }
+
+  #[test]
+  fn write_file_returns_unit_after_success() {
+    let path = std::env::temp_dir().join(format!("calcit-write-file-unit-{}", std::process::id()));
+    let result =
+      write_file(&[Calcit::new_str(path.to_string_lossy()), Calcit::new_str("unit contract")]).expect("write-file should succeed");
+
+    assert!(matches!(result, Calcit::Unit));
+    assert_eq!(std::fs::read_to_string(&path).expect("read test file"), "unit contract");
+    std::fs::remove_file(path).expect("remove test file");
   }
 }

@@ -2708,7 +2708,7 @@ mod tests {
   }
 
   #[test]
-  fn analyze_weak_types_classifies_nil_inside_unit_definitions_as_declared_unit() {
+  fn analyze_weak_types_classifies_only_returned_nil_as_declared_unit_debt() {
     let unit_entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
@@ -2739,11 +2739,15 @@ mod tests {
       &BTreeSet::from([type_coverage::WeakTypeKind::CodeNil]),
     )
     .expect("unit nil occurrences");
-    assert_eq!(unit_row.occurrences[0].intent, type_coverage::WeakTypeIntent::DeclaredUnit);
+    assert_eq!(
+      unit_row.occurrences[0].intent,
+      type_coverage::WeakTypeIntent::Unresolved,
+      "an intermediate Nil does not inherit the function return contract"
+    );
     assert_eq!(
       unit_row.occurrences[1].intent,
       type_coverage::WeakTypeIntent::DeclaredUnit,
-      "all nil forms inside a Unit definition inherit its no-value contract"
+      "the returned Nil is identified as violating the Unit contract"
     );
 
     let single_do_entry = snapshot::CodeEntry {
@@ -2789,8 +2793,33 @@ mod tests {
       &BTreeSet::from([type_coverage::WeakTypeKind::CodeNil]),
     )
     .expect("explicit ;nil occurrence");
-    assert_eq!(unit_macro_row.occurrences[0].detail, "code-nil:unit-macro:literal");
+    assert_eq!(unit_macro_row.occurrences[0].detail, "code-nil:nil-macro:literal");
     assert_eq!(unit_macro_row.occurrences[0].intent, type_coverage::WeakTypeIntent::DeclaredUnit);
+
+    let quoted_nil_entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      tests: vec![],
+      tags: HashSet::new(),
+      code: list(vec![
+        leaf("defn"),
+        leaf("nil-code"),
+        list(vec![]),
+        list(vec![leaf("quote"), leaf("nil")]),
+      ]),
+      schema: unit_entry.schema.clone(),
+      ffi: None,
+    };
+    assert!(
+      type_coverage::analyze_weak_types_entry(
+        "app.main",
+        "nil-code",
+        &quoted_nil_entry,
+        &BTreeSet::from([type_coverage::WeakTypeKind::CodeNil]),
+      )
+      .is_none(),
+      "quoted Nil is code data rather than a runtime nil value"
+    );
 
     let empty_unit_entry = snapshot::CodeEntry {
       doc: "".to_owned(),

@@ -87,8 +87,11 @@ export let format_cirru_one_liner = (data: CalcitCirruQuote | CalcitList): strin
 
 /** better use string version of Cirru EDN in future */
 export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
-  if (x == null) {
+  if (x === null) {
     return "nil";
+  }
+  if (x === undefined) {
+    throw new Error("Cirru EDN cannot encode &unit");
   }
   if (typeof x === "string") {
     return `|${x}`;
