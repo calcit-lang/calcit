@@ -6026,9 +6026,7 @@ pub fn preprocess_defn(
       }
       warn_on_legacy_optional_public_schema(ctx.file_ns, def_name.as_ref(), &def_schema, ctx.check_warnings);
       let schema_issues = validate_def_schema_during_preprocess(head, ctx.file_ns, def_name.as_ref(), ys, &def_schema);
-      let (staged_macro_issues, hard_schema_issues): (Vec<_>, Vec<_>) = schema_issues
-        .into_iter()
-        .partition(|issue| matches!(head, CalcitSyntax::Defmacro) && !issue.starts_with("[E_SCHEMA_KIND]"));
+      let (staged_macro_issues, hard_schema_issues) = partition_def_schema_issues(head, schema_issues);
       let definition_location = NodeLocation::new(
         info.at_ns.to_owned(),
         info.at_def.to_owned(),
@@ -6847,6 +6845,18 @@ fn emit_staged_macro_schema_warnings(
       check_warnings,
     );
   }
+}
+
+fn is_staged_macro_schema_compatibility_issue(issue: &str) -> bool {
+  ["[E_SCHEMA_REQUIRED_ARGS]", "[E_SCHEMA_OPTIONAL_ARGS]", "[E_SCHEMA_REST_ARGS]"]
+    .iter()
+    .any(|code| issue.starts_with(code))
+}
+
+fn partition_def_schema_issues(head: &CalcitSyntax, issues: Vec<String>) -> (Vec<String>, Vec<String>) {
+  issues
+    .into_iter()
+    .partition(|issue| matches!(head, CalcitSyntax::Defmacro) && is_staged_macro_schema_compatibility_issue(issue))
 }
 
 fn contains_legacy_optional(annotation: &CalcitTypeAnnotation) -> bool {
@@ -11994,5 +12004,21 @@ mod tests {
     assert_eq!(warnings[0].code(), Some("W_MACRO_SCHEMA_PARAM_SHAPE"));
     assert_eq!(warnings[0].location(), &location);
     assert!(warnings[0].message().contains("E_SCHEMA_REST_ARGS"));
+  }
+
+  #[test]
+  fn only_macro_schema_compatibility_mismatches_are_staged() {
+    let issues = vec![
+      "[E_SCHEMA_REQUIRED_ARGS] app/demo: mismatch".to_owned(),
+      "[E_SCHEMA_OPTIONAL_ARGS] app/demo: mismatch".to_owned(),
+      "[E_SCHEMA_REST_ARGS] app/demo: mismatch".to_owned(),
+      "[E_DEF_PARAM_SHAPE] app/demo: malformed parameter list".to_owned(),
+      "[E_SCHEMA_KIND] app/demo: wrong definition kind".to_owned(),
+    ];
+    let (staged, hard) = partition_def_schema_issues(&CalcitSyntax::Defmacro, issues);
+    assert_eq!(staged.len(), 3);
+    assert_eq!(hard.len(), 2);
+    assert!(hard.iter().any(|issue| issue.starts_with("[E_DEF_PARAM_SHAPE]")));
+    assert!(hard.iter().any(|issue| issue.starts_with("[E_SCHEMA_KIND]")));
   }
 }
