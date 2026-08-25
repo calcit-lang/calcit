@@ -32,7 +32,11 @@
                 ~@ $ reverse xs
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([])
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ []
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |%err $ %{} 'CodeEntry (:doc "|Create Err variant of Result")
           :code $ quote
@@ -2563,7 +2567,10 @@
             quote $ assert= 9
               -> 2 inc $ * 3
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
         |->% $ %{} 'CodeEntry (:doc "|pass value as `%` into several expressions")
           :code $ quote
@@ -2577,7 +2584,11 @@
                 quasiquote $ let ~pairs ~tail
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic)
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |->> $ %{} 'CodeEntry (:doc "|thread macro passing value at end of each expression")
           :code $ quote
@@ -2952,7 +2963,10 @@
                 quasiquote $ [] ~@xs
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([])
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'List
+              :required $ []
           :tags $ #{} :macro
         |[] $ %{} 'CodeEntry (:doc "|internal function for creating lists\nSyntax: ([] & elements)\nParams: elements (any, variadic)\nReturns: list\nCreates new list from provided elements")
           :code $ quote &runtime-implementation
@@ -2985,8 +2999,10 @@
               quasiquote $ defn %\ (? % %2) ~xs
           :examples $ []
           :schema $ :: 'Macro
-            {} (:return 'Fn)
-              :args $ []
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Fn
+              :required $ []
           :tags $ #{} :macro
         |\. $ %{} 'CodeEntry (:doc "|this syntax is bared used, deprecating")
           :code $ quote
@@ -3015,8 +3031,10 @@
                             recur code $ butlast ys
           :examples $ []
           :schema $ :: 'Macro
-            {} (:return 'Fn)
-              :args $ [] 'Dynamic
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Fn
+              :required $ [] 'Syntax
           :tags $ #{} :deprecated :macro
         |abs $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -3146,7 +3164,10 @@
             quote $ assert= 15
               apply-args ([] 5 10) +
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] 'SyntaxList (:: 'Expr 'Fn)
           :tags $ #{} :macro
         |assert $ %{} 'CodeEntry (:doc "|Assert that an expression is truthy, raise with a message when false, and return Unit on success.")
           :code $ quote
@@ -4946,7 +4967,11 @@
                 ~@ $ reverse args
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Fn)
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |floor $ %{} 'CodeEntry (:doc "|internal function for floor operation\nSyntax: (floor n)\nParams: n (number)\nReturns: number\nReturns largest integer less than or equal to n")
           :code $ quote &runtime-implementation

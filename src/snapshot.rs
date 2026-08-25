@@ -4056,6 +4056,106 @@ mod tests {
       ));
     }
 
+    for def_name in ["->", "->%", "%<-", "apply-args", "flipped", "\\", "\\.", "[,]"] {
+      let CalcitTypeAnnotation::Macro(signature) = core_file.defs[def_name].schema.as_ref() else {
+        panic!("{def_name} should load as MacroSignature");
+      };
+      assert!(signature.is_strict(), "{def_name} should use a phase-aware contract");
+      assert!(signature.capabilities.is_empty(), "{def_name} should be compile-time pure");
+      assert!(signature.optional_inputs.is_empty(), "{def_name} should not have optional inputs");
+      match def_name {
+        "->" => {
+          assert!(matches!(
+            signature.required_inputs.as_slice(),
+            [crate::calcit::MacroSyntaxType::Expr(value)]
+              if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+          ));
+          assert!(matches!(signature.rest_input, Some(crate::calcit::MacroSyntaxType::Syntax)));
+        }
+        "->%" => {
+          assert!(matches!(
+            signature.required_inputs.as_slice(),
+            [crate::calcit::MacroSyntaxType::Expr(value)]
+              if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+          ));
+          assert!(matches!(
+            signature.rest_input,
+            Some(crate::calcit::MacroSyntaxType::Expr(ref value))
+              if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+          ));
+        }
+        "%<-" => {
+          assert!(signature.required_inputs.is_empty());
+          assert!(matches!(
+            signature.rest_input,
+            Some(crate::calcit::MacroSyntaxType::Expr(ref value))
+              if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+          ));
+        }
+        "apply-args" => {
+          assert!(matches!(
+            signature.required_inputs.as_slice(),
+            [
+              crate::calcit::MacroSyntaxType::SyntaxList,
+              crate::calcit::MacroSyntaxType::Expr(value)
+            ] if matches!(value.as_ref(), CalcitTypeAnnotation::DynFn)
+          ));
+          assert!(signature.rest_input.is_none());
+        }
+        "flipped" => {
+          assert!(matches!(
+            signature.required_inputs.as_slice(),
+            [crate::calcit::MacroSyntaxType::Expr(value)]
+              if matches!(value.as_ref(), CalcitTypeAnnotation::DynFn)
+          ));
+          assert!(matches!(
+            signature.rest_input,
+            Some(crate::calcit::MacroSyntaxType::Expr(ref value))
+              if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+          ));
+        }
+        "\\" => {
+          assert!(signature.required_inputs.is_empty());
+          assert!(matches!(signature.rest_input, Some(crate::calcit::MacroSyntaxType::Syntax)));
+        }
+        "\\." => {
+          assert!(matches!(
+            signature.required_inputs.as_slice(),
+            [crate::calcit::MacroSyntaxType::Syntax]
+          ));
+          assert!(matches!(signature.rest_input, Some(crate::calcit::MacroSyntaxType::Syntax)));
+        }
+        "[,]" => {
+          assert!(signature.required_inputs.is_empty());
+          assert!(matches!(signature.rest_input, Some(crate::calcit::MacroSyntaxType::Syntax)));
+        }
+        _ => unreachable!(),
+      }
+      if matches!(def_name, "\\" | "\\.") {
+        assert!(matches!(
+          signature.expansion,
+          crate::calcit::MacroExpansionType::Expr(ref output)
+            if matches!(output.as_ref(), CalcitTypeAnnotation::DynFn)
+        ));
+      } else if def_name == "[,]" {
+        assert!(matches!(
+          signature.expansion,
+          crate::calcit::MacroExpansionType::Expr(ref output)
+            if matches!(
+              output.as_ref(),
+              CalcitTypeAnnotation::List(value)
+                if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+            )
+        ));
+      } else {
+        assert!(matches!(
+          signature.expansion,
+          crate::calcit::MacroExpansionType::Expr(ref output)
+            if matches!(output.as_ref(), CalcitTypeAnnotation::Dynamic)
+        ));
+      }
+    }
+
     for def_name in ["let", "fn"] {
       let CalcitTypeAnnotation::Macro(signature) = core_file.defs[def_name].schema.as_ref() else {
         unreachable!()
