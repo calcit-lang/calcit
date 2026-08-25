@@ -4207,6 +4207,53 @@ mod tests {
         if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
     ));
 
+    for def_name in ["{}", "%{}", "{,}"] {
+      let CalcitTypeAnnotation::Macro(signature) = core_file.defs[def_name].schema.as_ref() else {
+        panic!("{def_name} should load as MacroSignature");
+      };
+      assert!(signature.is_strict(), "{def_name} should use a phase-aware contract");
+      assert!(signature.capabilities.is_empty(), "{def_name} should be compile-time pure");
+      assert!(signature.optional_inputs.is_empty(), "{def_name} should not have optional inputs");
+      match def_name {
+        "{}" => {
+          assert!(signature.required_inputs.is_empty());
+          assert!(matches!(signature.rest_input, Some(crate::calcit::MacroSyntaxType::SyntaxList)));
+        }
+        "%{}" => {
+          assert!(matches!(
+            signature.required_inputs.as_slice(),
+            [crate::calcit::MacroSyntaxType::Expr(inner)]
+              if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
+          ));
+          assert!(matches!(signature.rest_input, Some(crate::calcit::MacroSyntaxType::SyntaxList)));
+        }
+        "{,}" => {
+          assert!(signature.required_inputs.is_empty());
+          assert!(matches!(signature.rest_input, Some(crate::calcit::MacroSyntaxType::Syntax)));
+        }
+        _ => unreachable!(),
+      }
+      if def_name == "%{}" {
+        assert!(matches!(
+          signature.expansion,
+          crate::calcit::MacroExpansionType::Expr(ref inner)
+            if inner.as_ref()
+              == &CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("struct")))
+        ));
+      } else {
+        assert!(matches!(
+          signature.expansion,
+          crate::calcit::MacroExpansionType::Expr(ref inner)
+            if matches!(
+              inner.as_ref(),
+              CalcitTypeAnnotation::Map(key, value)
+                if matches!(key.as_ref(), CalcitTypeAnnotation::Dynamic)
+                  && matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+            )
+        ));
+      }
+    }
+
     let test_file = snapshot.files.get("calcit.test").expect("calcit.test file should exist");
     for def_name in ["is", "is-not=", "is-throws", "is=", "throws?"] {
       let CalcitTypeAnnotation::Macro(signature) = test_file.defs[def_name].schema.as_ref() else {

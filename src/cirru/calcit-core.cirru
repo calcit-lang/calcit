@@ -84,11 +84,13 @@
           :examples $ []
             quote $ let
                 Point $ defstruct Point (:x 'Number) (:y 'Number)
-                rec $ %{} Point ([] :x 1) ([] :y 2)
+                rec $ %{} Point (:x 1) (:y 2)
               assert= 1 $ :x rec
           :schema $ :: 'Macro
-            {} (:return 'Struct)
-              :args $ [] 'Dynamic
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Struct
+              :required $ [] (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
         |%{}? $ %{} 'CodeEntry (:doc "|Partial struct constructor. It allows declared Optional fields to be omitted and fills them with nil.")
           :code $ quote
@@ -8299,7 +8301,10 @@
                   section-by ([] ~@xs) 2
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([])
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Map
+              :required $ []
           :tags $ #{} :macro
         |{} $ %{} 'CodeEntry (:doc "|macro for creating hashmaps\nSyntax: ({} (:key value) ...)\nParams: pairs (key-value pairs)\nReturns: hashmap\nCreates a hashmap from key-value pairs")
           :code $ quote
@@ -8317,7 +8322,10 @@
             quote $ {} (:a 1) (:b 2)
             quote $ {} (:name |Alice) (:age 30)
           :schema $ :: 'Macro
-            {} $ :args ([])
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Map
+              :required $ []
           :tags $ #{} :macro
         |~ $ %{} 'CodeEntry (:doc "|internal syntax for interpolating value in macro\nSyntax: (~ expr) inside quasiquote\nParams: expr (expression to evaluate)\nReturns: evaluated expression\nUnquotes expression inside quasiquote")
           :code $ quote &runtime-implementation
