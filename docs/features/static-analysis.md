@@ -271,7 +271,8 @@ let
 
 | Canonical syntax | Calcit Type |
 | ---------------- | ----------- |
-| `'Unit` | `&unit` (legacy `nil` accepted) |
+| `'Unit` | `&unit` (distinct from `nil`) |
+| `'Nil` | `nil` (legacy absence only) |
 | `'Bool` | Boolean |
 | `'Number` | Number |
 | `'String` | String |
