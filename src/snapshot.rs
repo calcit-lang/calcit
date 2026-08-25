@@ -4002,6 +4002,60 @@ mod tests {
       );
     }
 
+    let CalcitTypeAnnotation::Macro(def_signature) = core_file.defs["def"].schema.as_ref() else {
+      panic!("def should load as MacroSignature");
+    };
+    assert!(def_signature.is_strict());
+    assert!(def_signature.capabilities.is_empty());
+    assert!(matches!(
+      def_signature.required_inputs.as_slice(),
+      [
+        crate::calcit::MacroSyntaxType::SyntaxSymbol,
+        crate::calcit::MacroSyntaxType::Expr(value)
+      ] if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+    ));
+    assert!(def_signature.optional_inputs.is_empty());
+    assert!(def_signature.rest_input.is_none());
+    assert!(matches!(
+      def_signature.expansion,
+      crate::calcit::MacroExpansionType::Expr(ref value)
+        if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+    ));
+
+    for (def_name, expected_output, rest_is_list) in [
+      ("deftrait", "trait", true),
+      ("defstruct", "struct-def", true),
+      ("defimpl", "impl", false),
+      ("defenum", "enum-def", true),
+    ] {
+      let CalcitTypeAnnotation::Macro(signature) = core_file.defs[def_name].schema.as_ref() else {
+        panic!("{def_name} should load as MacroSignature");
+      };
+      assert!(signature.is_strict(), "{def_name} should use a phase-aware contract");
+      assert!(signature.capabilities.is_empty(), "{def_name} should be compile-time pure");
+      assert!(signature.optional_inputs.is_empty(), "{def_name} should not have optional inputs");
+      match def_name {
+        "defimpl" => assert!(matches!(
+          signature.required_inputs.as_slice(),
+          [crate::calcit::MacroSyntaxType::Syntax, crate::calcit::MacroSyntaxType::Syntax]
+        )),
+        _ => assert!(matches!(
+          signature.required_inputs.as_slice(),
+          [crate::calcit::MacroSyntaxType::Syntax]
+        )),
+      }
+      if rest_is_list {
+        assert!(matches!(signature.rest_input, Some(crate::calcit::MacroSyntaxType::SyntaxList)));
+      } else {
+        assert!(matches!(signature.rest_input, Some(crate::calcit::MacroSyntaxType::Syntax)));
+      }
+      assert!(matches!(
+        signature.expansion,
+        crate::calcit::MacroExpansionType::Expr(ref output)
+          if matches!(output.as_ref(), CalcitTypeAnnotation::Custom(value) if value.as_ref() == &Calcit::tag(expected_output))
+      ));
+    }
+
     for def_name in ["let", "fn"] {
       let CalcitTypeAnnotation::Macro(signature) = core_file.defs[def_name].schema.as_ref() else {
         unreachable!()
