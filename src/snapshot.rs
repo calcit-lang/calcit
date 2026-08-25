@@ -4043,11 +4043,17 @@ mod tests {
       let CalcitTypeAnnotation::Macro(signature) = test_file.defs[def_name].schema.as_ref() else {
         panic!("calcit.test/{def_name} should load as MacroSignature");
       };
+      let expected_input_count = match def_name {
+        "is" | "is-throws" | "throws?" => 1,
+        "is-not=" | "is=" => 2,
+        _ => unreachable!(),
+      };
       assert!(signature.is_strict(), "calcit.test/{def_name} should use a phase-aware contract");
       assert!(
         signature.capabilities.is_empty(),
         "calcit.test/{def_name} should be compile-time pure"
       );
+      assert_eq!(signature.required_inputs.len(), expected_input_count);
       assert!(signature.required_inputs.iter().all(
         |input| matches!(input, crate::calcit::MacroSyntaxType::Expr(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic))
       ));
