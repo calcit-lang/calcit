@@ -128,6 +128,27 @@ pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
   }
 }
 
+/// Merge the body types of a preprocessed pair-based `match` expression.
+fn infer_match_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  if xs.len() < 3 {
+    return None;
+  }
+
+  let mut inferred: Option<Arc<CalcitTypeAnnotation>> = None;
+  for branch in xs.iter().skip(2) {
+    let Calcit::List(pair) = branch else { return None };
+    if pair.len() != 2 {
+      return None;
+    }
+    let branch_type = resolve_type_value(pair.get(1)?, scope_types)?;
+    inferred = Some(match inferred {
+      Some(previous) => merge_if_branch_types(previous, branch_type)?,
+      None => branch_type,
+    });
+  }
+  inferred
+}
+
 // ---------------------------------------------------------------------------
 // Generic return type resolution
 // ---------------------------------------------------------------------------
@@ -373,10 +394,10 @@ pub(super) fn find_struct_lookup_in_literal_path(base_type: &CalcitTypeAnnotatio
   None
 }
 
-/// Return a non-empty literal lookup path only when every collection hop and
-/// payload remains statically known. This is deliberately stricter than
-/// return-type inference: executable path expansion must never turn a Dynamic
-/// boundary or a Struct field into a different runtime operation.
+/// Return a non-empty literal lookup path when every receiver needed for a
+/// further hop remains statically known. The final payload may be Dynamic
+/// because it is returned rather than traversed. A Struct boundary always
+/// stays on the public fallback.
 pub(super) fn fully_typed_literal_lookup_path(base_type: &CalcitTypeAnnotation, path_arg: &Calcit) -> Option<Vec<Calcit>> {
   let path_items = extract_literal_list_items(path_arg)?;
   if path_items.is_empty() || matches!(base_type, CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
@@ -393,16 +414,14 @@ pub(super) fn fully_typed_literal_lookup_path(base_type: &CalcitTypeAnnotation, 
     current_type = infer_lookup_payload_type_from_type(current_type.as_ref(), Some(key))?;
   }
 
-  if matches!(current_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
-    return None;
-  }
   Some(path_items.into_iter().cloned().collect())
 }
 
 /// The first expansion phase limits `assoc-in` to map-only chains. Missing map
 /// entries are also represented by fresh maps, which means direct map
-/// primitives preserve the public construction behavior. Lists, strings and
-/// enum payloads need a mixed-container lowering and stay on the fallback.
+/// primitives preserve the public construction behavior. The final payload
+/// must also be non-Dynamic; lists, strings and enum payloads need a
+/// mixed-container lowering and stay on the fallback.
 pub(super) fn fully_typed_literal_assoc_path(base_type: &CalcitTypeAnnotation, path_arg: &Calcit) -> Option<Vec<Calcit>> {
   let path_items = extract_literal_list_items(path_arg)?;
   if path_items.is_empty() {
@@ -623,6 +642,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           }
         }
         Calcit::Syntax(CalcitSyntax::If, _) => infer_if_return_type(xs, scope_types),
+        Calcit::Syntax(CalcitSyntax::Match, _) => infer_match_return_type(xs, scope_types),
 
         // A preprocessed function remains a syntax list until runtime construction. Preserve an
         // explicit body `hint-fn` as its static value type; without a schema we only know that the
@@ -2093,10 +2113,27 @@ mod tests {
     let dynamic_map = CalcitTypeAnnotation::Map(tag_annotation("tag"), calcit::DYNAMIC_TYPE.clone());
     assert!(fully_typed_literal_lookup_path(&dynamic_map, &path).is_none());
     assert!(fully_typed_literal_assoc_path(&dynamic_map, &path).is_none());
+    let one_step_path = proc_call(CalcitProc::List, vec![Calcit::Tag(EdnTag::from("user"))]);
+    assert!(fully_typed_literal_lookup_path(&dynamic_map, &one_step_path).is_some());
+    assert!(fully_typed_literal_assoc_path(&dynamic_map, &one_step_path).is_none());
 
     let string_path = proc_call(CalcitProc::List, vec![Calcit::Number(0.0)]);
     assert!(fully_typed_literal_lookup_path(&CalcitTypeAnnotation::String, &string_path).is_some());
     assert!(fully_typed_literal_assoc_path(&CalcitTypeAnnotation::String, &string_path).is_none());
+  }
+
+  #[test]
+  fn preprocessed_match_preserves_merged_branch_type() {
+    let option_number = core_type_ref("Option", vec![Arc::new(CalcitTypeAnnotation::Number)]);
+    let branch_value = |name: &str| local(name, option_number.clone());
+    let match_expr = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::Match, Arc::from("tests.match-type")),
+      Calcit::Tag(EdnTag::from("some")),
+      Calcit::from(vec![Calcit::Tag(EdnTag::from("some")), branch_value("some-result")]),
+      Calcit::from(vec![Calcit::Tag(EdnTag::from("none")), branch_value("none-result")]),
+    ]);
+
+    assert_eq!(infer_type_from_expr(&match_expr, &ScopeTypes::new()), Some(option_number));
   }
 
   #[test]

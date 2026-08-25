@@ -924,6 +924,7 @@ fn classify_number_binary_call(head: &Calcit, args: &[Calcit], scope_types: &Sco
   CalcitCallKind::NumberBinary(operation)
 }
 
+/// Build a location-free import for a compiler-generated core call.
 fn core_import(def: &str, file_ns: &str) -> Calcit {
   Calcit::Import(CalcitImport {
     ns: calcit::CORE_NS.into(),
@@ -933,10 +934,12 @@ fn core_import(def: &str, file_ns: &str) -> Calcit {
   })
 }
 
+/// Store a compiler-generated call in executable list form.
 fn generated_call(items: Vec<Calcit>) -> Calcit {
   Calcit::from(CalcitList::from(items.as_slice()))
 }
 
+/// Build a compiler-generated call to an ordinary core definition.
 fn generated_core_call(def: &str, args: Vec<Calcit>, file_ns: &str) -> Calcit {
   let mut items = Vec::with_capacity(args.len() + 1);
   items.push(core_import(def, file_ns));
@@ -944,6 +947,7 @@ fn generated_core_call(def: &str, args: Vec<Calcit>, file_ns: &str) -> Calcit {
   generated_call(items)
 }
 
+/// Build an `if` used only inside a generated specialization.
 fn generated_if(condition: Calcit, then_branch: Calcit, else_branch: Calcit, file_ns: &str) -> Calcit {
   generated_call(vec![
     Calcit::Syntax(CalcitSyntax::If, Arc::from(file_ns)),
@@ -953,6 +957,7 @@ fn generated_if(condition: Calcit, then_branch: Calcit, else_branch: Calcit, fil
   ])
 }
 
+/// Bind one generated temporary while retaining source evaluation order.
 fn generated_let(binding: Calcit, value: Calcit, body: Calcit, file_ns: &str) -> Calcit {
   generated_call(vec![
     Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(file_ns)),
@@ -961,6 +966,7 @@ fn generated_let(binding: Calcit, value: Calcit, body: Calcit, file_ns: &str) ->
   ])
 }
 
+/// Wrap a body in left-to-right generated temporary bindings.
 fn generated_lets(bindings: Vec<(Calcit, Calcit)>, mut body: Calcit, file_ns: &str) -> Calcit {
   for (binding, value) in bindings.into_iter().rev() {
     body = generated_let(binding, value, body, file_ns);
@@ -968,11 +974,13 @@ fn generated_lets(bindings: Vec<(Calcit, Calcit)>, mut body: Calcit, file_ns: &s
   body
 }
 
+/// Allocate a hygienic local for a generated path expression.
 fn generated_path_symbol(prefix: &str, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = CalcitList::from(&[Calcit::Str(Arc::from(prefix))] as &[Calcit]);
   builtins::syntax::gensym(&args.view(), &CalcitScope::default(), file_ns, call_stack)
 }
 
+/// Expand one Option-preserving `get-in` traversal step.
 fn generated_get_in_step(current: Calcit, path: &[Calcit], file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let none = generated_core_call("%none", vec![], file_ns);
   let present = if let Some((key, rest)) = path.split_first() {
@@ -1010,6 +1018,7 @@ fn generated_get_in_step(current: Calcit, path: &[Calcit], file_ns: &str, call_s
   ))
 }
 
+/// Expand one Map-only `assoc-in` reconstruction step.
 fn generated_assoc_in_step(
   current: Calcit,
   value: &Calcit,
@@ -1067,6 +1076,7 @@ fn generated_assoc_in_step(
   ))
 }
 
+/// Expand eligible core path calls and leave every uncertain case untouched.
 fn try_expand_typed_literal_path_call(
   head: &Calcit,
   args: &CalcitList,
@@ -1124,6 +1134,21 @@ fn try_expand_typed_literal_path_call(
     }
     _ => Ok(None),
   }
+}
+
+/// Reprocess generated code without surfacing diagnostics for synthetic guards.
+/// Caller expressions have already been preprocessed with the user's warning
+/// sink before specialization, so discarding only this second pass avoids
+/// compiler-generated `nil?`/`struct?` warnings without hiding source warnings.
+fn preprocess_generated_path_expansion(
+  expanded: &Calcit,
+  scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  let generated_warnings = RefCell::new(vec![]);
+  preprocess_expr(expanded, scope_defs, scope_types, file_ns, &generated_warnings, call_stack)
 }
 
 pub fn preprocess_expr(
@@ -1822,7 +1847,7 @@ fn preprocess_list_call(
           if matches!(def.as_ref(), "get-in" | "assoc-in")
             && let Some(expanded) = try_expand_typed_literal_path_call(&head_form, &current_args, scope_types, file_ns, call_stack)?
           {
-            return preprocess_expr(&expanded, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+            return preprocess_generated_path_expansion(&expanded, scope_defs, scope_types, file_ns, call_stack);
           }
           if let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types, file_ns) {
             return Ok(specialized);
@@ -2380,7 +2405,7 @@ fn preprocess_list_call(
           && matches!(def.as_ref(), "get-in" | "assoc-in")
           && let Some(expanded) = try_expand_typed_literal_path_call(call_head, &processed_args, scope_types, file_ns, call_stack)?
         {
-          return preprocess_expr(&expanded, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+          return preprocess_generated_path_expansion(&expanded, scope_defs, scope_types, file_ns, call_stack);
         }
 
         if !has_spread
@@ -7208,6 +7233,49 @@ mod tests {
       .expect("dynamic path decision")
       .is_none()
     );
+  }
+
+  #[test]
+  fn generated_path_guards_suppress_only_their_synthetic_warnings() {
+    let _guard = lock_preprocess_test_state();
+    let option_number = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+    ));
+    let option_value = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("optional-value")),
+      sym: Arc::from("optional-value"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.typed-path"),
+        at_def: Arc::from("main"),
+      }),
+      location: None,
+      type_info: option_number,
+    });
+    let guard = generated_call(vec![Calcit::Proc(CalcitProc::NilQuestion), option_value]);
+    let direct_warnings = RefCell::new(vec![]);
+    let mut direct_scope_types = ScopeTypes::new();
+    preprocess_expr(
+      &guard,
+      &HashSet::new(),
+      &mut direct_scope_types,
+      "tests.typed-path",
+      &direct_warnings,
+      &CallStackList::default(),
+    )
+    .expect("preprocess synthetic guard with the normal warning sink");
+    assert_eq!(direct_warnings.borrow().len(), 1);
+    assert_eq!(direct_warnings.borrow()[0].code(), Some("W_NOMINAL_ENUM_LEGACY_USE"));
+
+    let mut generated_scope_types = ScopeTypes::new();
+    preprocess_generated_path_expansion(
+      &guard,
+      &HashSet::new(),
+      &mut generated_scope_types,
+      "tests.typed-path",
+      &CallStackList::default(),
+    )
+    .expect("preprocess synthetic guard with its private warning sink");
   }
 
   #[test]

@@ -13,14 +13,15 @@ turn either API into an alternate Struct field accessor; required fields remain
 
 ## Changes
 
-- Expand a non-empty literal `get-in` path only when the base, every collection
-  hop, and the final payload are statically non-Dynamic and no hop is a Struct.
+- Expand a non-empty literal `get-in` path only when the base and every
+  collection value that needs another traversal step are statically
+  non-Dynamic and no hop is a Struct. The final payload may remain Dynamic.
 - Preserve single evaluation, nil short-circuiting, `%some` / `%none`, missing
   keys, and an explicit Struct guard at every generated lookup hop.
-- Expand `assoc-in` only for fully typed Map-only paths in this first phase.
-  Generated code uses direct map contains/get/assoc primitives while retaining
-  missing-map construction, nil normalization, evaluation order, and Struct
-  rejection.
+- Expand `assoc-in` only for Map-only paths with a statically non-Dynamic final
+  payload in this first phase. Generated code uses direct map
+  contains/get/assoc primitives while retaining missing-map construction, nil
+  normalization, evaluation order, and Struct rejection.
 - Keep empty paths, Dynamic or unknown hops, Struct boundaries, and mixed
   `assoc-in` containers on the original recursive functions.
 - Add a checked-in native/generated-JS comparison benchmark and update RFC P6
@@ -29,10 +30,10 @@ turn either API into an alternate Struct field accessor; required fields remain
 ## Measurements
 
 The 100,000-operation release benchmark produced the same outputs for typed and
-dynamic variants. The checked-in script measured native at 3.46 s versus 6.70 s
-for read (~1.9x faster), and 2.31 s versus 6.32 s for write (~2.7x faster).
-Generated JS medians were 39.3 ms versus 74.2 ms for read (~47% faster), and
-19.9 ms versus 867.0 ms for write (~43.6x faster). Run `yarn
+dynamic variants. The checked-in warm/sample driver measured native at 2.98 s
+versus 5.48 s for read (~1.8x faster), and 1.68 s versus 5.02 s for write
+(~3.0x faster). Generated JS medians were 33.9 ms versus 50.9 ms for read (~33%
+faster), and 16.2 ms versus 696.0 ms for write (~43x faster). Run `yarn
 bench-literal-paths` to reproduce the focused comparison.
 
 ## Validation

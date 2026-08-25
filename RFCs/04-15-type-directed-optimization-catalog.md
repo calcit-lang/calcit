@@ -125,7 +125,7 @@
 
 **问题**: `get-in base [:a :b :c]` 是 Calcit 编写的递归函数（`calcit-core.cirru`），每层递归拆列表 + 动态 `get`。
 
-**方案**: 路径是非空字面量列表，且 base 与每个中间 payload 都有非 Dynamic 静态类型时，在预处理阶段展开。`get-in` 展开为保留 `%some` / `%none`、nil 短路与逐层 Struct guard 的嵌套 `get` / `match`；`assoc-in` 第一阶段只接受全 Map 路径，展开为逐层 `&map:contains?`、`&map:get`、`&map:assoc`。Dynamic、混合容器、空路径以及任何进入 Struct 的路径继续调用原函数。
+**方案**: 路径是非空字面量列表，且 base 与每个需要继续遍历的中间 payload 都有非 Dynamic 静态类型时，在预处理阶段展开。`get-in` 的最终 payload 可以是 Dynamic，展开结果仍为对应的 `Option`；`assoc-in` 第一阶段只接受全 Map 路径，并额外要求最终 payload 非 Dynamic，再展开为逐层 `&map:contains?`、`&map:get`、`&map:assoc`。Dynamic collection hop、混合容器、空路径以及任何进入 Struct 的路径继续调用原函数。`get-in` 展开保留 `%some` / `%none`、nil 短路与逐层 Struct guard。
 
 旧方案中沿 Record/Struct 字段展开的设想已经废弃。公开 `get-in` / `assoc-in` 明确不遍历 Struct；必填字段继续使用 `(:field value)` 与直接 `assoc`，不能借性能优化绕开名义类型检查。
 
