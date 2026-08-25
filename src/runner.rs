@@ -1,4 +1,5 @@
 pub mod macro_capability;
+pub mod macro_metrics;
 pub mod preprocess;
 pub mod track;
 
@@ -383,6 +384,8 @@ pub fn call_expr(
       );
 
       let mut current_values: Vec<Calcit> = xs.iter().skip(1).cloned().collect();
+      let macro_name = format!("{}/{}", info.def_ns, info.name);
+      macro_metrics::record_expansion(&macro_name, info.signature.as_ref());
 
       let next_stack = if using_stack() {
         call_stack.extend_owned(
@@ -407,7 +410,10 @@ pub fn call_expr(
         // need to handle recursion
         body_scope.restore_frame(frame_checkpoint);
         bind_marked_args(&mut body_scope, &info.args, &current_values, call_stack)?;
-        let evaluate_body = || evaluate_lines(info.body.as_ref().as_slice(), &body_scope, &info.def_ns, &next_stack);
+        let evaluate_body = || {
+          let _timer = macro_metrics::PhaseTimer::start(&macro_name, macro_metrics::MacroMetricPhase::Evaluator);
+          evaluate_lines(info.body.as_ref().as_slice(), &body_scope, &info.def_ns, &next_stack)
+        };
         let code = if info.signature.is_strict() {
           macro_capability::with_macro_context(
             Arc::from(format!("{}/{}", info.def_ns, info.name)),

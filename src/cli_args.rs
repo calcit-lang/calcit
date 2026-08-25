@@ -52,6 +52,9 @@ pub struct ToplevelCalcit {
   /// print progress details and timing while loading and compiling
   #[argh(switch)]
   pub verbose: bool,
+  /// emit machine-readable macro expansion metrics to stderr on exit
+  #[argh(switch)]
+  pub macro_metrics: bool,
   /// maximum seconds for one JS/IR compilation (0 disables the limit)
   #[argh(option, default = "60")]
   pub timeout: u64,

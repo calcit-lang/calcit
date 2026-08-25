@@ -11,11 +11,14 @@ aliases:
   - "reload-fn"
   - "reload fn"
   - "watch-dir"
+  - "macro metrics"
+  - "macro expansion metrics"
 entry_for:
   - "calcit -w"
   - "calcit js -w"
   - "calcit --help"
   - "calcit --reload-fn"
+  - "calcit --macro-metrics"
 ---
 
 # CLI Options
@@ -103,6 +106,41 @@ calcit analyze dynamic-methods --deps
 ```
 
 The default scope contains project namespaces only. `--deps` includes reachable dependency namespaces, and `--max` returns a non-zero status when the finding count exceeds the reviewed limit.
+
+### Macro Expansion Metrics (--macro-metrics)
+
+Use opt-in macro metrics to profile compile, check, and hot-reload work without
+changing normal CLI output:
+
+```bash
+cargo build --release --bin calcit
+target/release/calcit --macro-metrics --check-only calcit/test.cirru
+target/release/calcit --macro-metrics --check-only /path/to/respo/calcit.cirru js
+```
+
+The CLI writes one `macro-expansion-metrics: {...}` JSON record to stderr when
+it exits. Timing fields use nanoseconds. Per-macro and total evaluator and
+post-preprocess times are exclusive: when a nested macro starts, its parent's
+timer pauses, so totals do not double-count recursive expansion work.
+
+The report also records general-evaluator fallbacks, cache hits and misses,
+miss reasons, bypass reasons, and actual invalidation reasons. Before the pure
+expansion cache lands, eligible strict/pure macros report a
+`cache-not-implemented` miss; legacy and effectful signatures report explicit
+bypasses rather than false invalidations.
+
+Reproducible release-mode baseline from 2026-08-25 (three warm runs, median):
+
+| Project | Revision | Expansions | Evaluator | Post-preprocess | General fallback |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Calcit test snapshot | `32883223` | 2,432 | 20.21 ms | 52.61 ms | 2,432 |
+| Respo JS check | `be8141e` | 1,414 | 14.24 ms | 35.50 ms | 1,414 |
+
+Calcit's highest post-preprocess costs in the median run were `assert=`
+(21.66 ms), `let` (10.16 ms), `def` (5.39 ms), and `fn` (4.20 ms). Respo's
+were `let` (11.53 ms), `def` (4.71 ms), `fn` (2.92 ms), and `cond` (1.87 ms).
+These results prioritize common structural macros and post-expansion processing
+for the typed Macro IR phase; they do not claim application runtime gains.
 
 ### Hot Reloading Configuration
 

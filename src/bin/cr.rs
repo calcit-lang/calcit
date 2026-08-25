@@ -277,6 +277,7 @@ fn run_cli() -> Result<(), String> {
   // Query/analyze commands may run preprocessing before the normal program-loading path.
   runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method);
   runner::preprocess::set_verbose_preprocess(cli_args.verbose);
+  let _macro_metrics_report = runner::macro_metrics::ReportOnDrop::new(cli_args.macro_metrics);
 
   if cli_handlers::should_echo_command(&cli_args) {
     cli_handlers::suppress_command_guidance();
