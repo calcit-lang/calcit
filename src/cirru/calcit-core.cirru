@@ -3160,8 +3160,10 @@
             quote $ assert "|list should not be empty"
               not $ empty? ([] 1)
           :schema $ :: 'Macro
-            {} (:return 'Unit)
-              :args $ [] 'Dynamic 'Dynamic
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Unit
+              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :control :log :macro
         |assert-detect $ %{} 'CodeEntry (:doc "|Assert that a value satisfies a predicate, raise with details when false, and return Unit on success.")
           :code $ quote
@@ -3182,8 +3184,10 @@
             quote $ assert-detect list? ([] 1 2 3)
             quote $ assert-detect even? (* 2 5)
           :schema $ :: 'Macro
-            {} (:return 'Unit)
-              :args $ [] 'Dynamic 'Dynamic
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Unit
+              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :control :log :macro
         |assert-type $ %{} 'CodeEntry (:doc "|internal syntax for type assertion at preprocessing stage\nSyntax: (assert-type expr type-expr)\nParams: expr (any), type-expr (type annotation)\nReturns: evaluated result of expr\nAsserts that expr matches the given type annotation during static analysis")
           :code $ quote &runtime-implementation
@@ -3205,12 +3209,16 @@
                           eprintln |Right: ~vb
                           eprintln "|      " $ format-to-lisp (quote ~b)
                           raise "|not equal in assertion!"
+                        , &unit
           :examples $ []
             quote $ assert= 4 (+ 2 2)
             quote $ assert= |hello (str |hel |lo)
             quote $ assert= ([] 1 2 3) (range 1 4)
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Unit
+              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :control :log :macro
         |assoc $ %{} 'CodeEntry (:doc "|Associate a key or index in maps, lists, enums, and structs.")
           :code $ quote
@@ -8543,8 +8551,10 @@
               quasiquote $ assert |Expected-truthy-expression: ~expr
           :examples $ []
           :schema $ :: 'Macro
-            {} (:return 'Unit)
-              :args $ [] 'Dynamic
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Unit
+              :required $ [] (:: 'Expr 'Dynamic)
           :tags $ #{} :control :macro :test
           :tests $ []
             %{} 'TestEntry (:name |accepts-truthy)
@@ -8560,8 +8570,10 @@
               quasiquote $ assert |Expected-values-to-differ: (not= ~left ~right)
           :examples $ []
           :schema $ :: 'Macro
-            {} (:return 'Unit)
-              :args $ [] 'Dynamic 'Dynamic
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Unit
+              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :control :macro :test
           :tests $ []
             %{} 'TestEntry (:name |accepts-different-values)
@@ -8580,8 +8592,10 @@
                   fn (error) true
           :examples $ []
           :schema $ :: 'Macro
-            {} (:return 'Unit)
-              :args $ [] 'Dynamic
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Unit
+              :required $ [] (:: 'Expr 'Dynamic)
           :tags $ #{} :control :macro :test
           :tests $ []
             %{} 'TestEntry (:name |accepts-raised-errors)
@@ -8594,8 +8608,10 @@
               quasiquote $ assert= ~expected ~actual
           :examples $ []
           :schema $ :: 'Macro
-            {} (:return 'Unit)
-              :args $ [] 'Dynamic 'Dynamic
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Unit
+              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :control :macro :test
           :tests $ []
             %{} 'TestEntry (:name |compares-values)
@@ -8614,8 +8630,10 @@
                 fn (error) true
           :examples $ []
           :schema $ :: 'Macro
-            {} (:return 'Bool)
-              :args $ [] 'Dynamic
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Bool
+              :required $ [] (:: 'Expr 'Dynamic)
           :tags $ #{} :control :macro :test
           :tests $ []
             %{} 'TestEntry (:name |detects-raised-errors)
