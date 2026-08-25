@@ -14,6 +14,7 @@ The canonical snapshot/source form is:
     :optional $ [] 'SyntaxList
     :rest 'Syntax
     :expansion $ :: 'Expr 'T
+    :capabilities $ #{}
 ```
 
 Input contracts are `Syntax`, `SyntaxSymbol`, `SyntaxList`, and `Expr<T>`.

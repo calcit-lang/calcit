@@ -67,9 +67,16 @@ fn proc_policy(proc: CalcitProc) -> Option<CapabilityPolicy> {
     ReadFile | ReadDir => MacroCapability::FsRead,
     NativeGetOs | NativeGetCalcitBackend | NativeGetCalcitRunningMode => MacroCapability::PlatformRead,
     UnixTimeMs | CpuTime => MacroCapability::ClockRead,
-    GenerateId | NativeResetGenSymIndex | RegisterCalcitBuiltinImpls | Atom | AtomDeref | AddWatch | RemoveWatch => {
-      MacroCapability::MutableState
-    }
+    GenerateId
+    | NativeResetGenSymIndex
+    | RegisterCalcitBuiltinImpls
+    | NativeBufListNew
+    | NativeBufListPush
+    | NativeBufListConcat
+    | Atom
+    | AtomDeref
+    | AddWatch
+    | RemoveWatch => MacroCapability::MutableState,
     WriteFile => return Some(CapabilityPolicy::Forbidden(MacroCapability::FsWrite)),
     Quit => return Some(CapabilityPolicy::Forbidden(MacroCapability::Process)),
     _ => return None,
@@ -192,6 +199,22 @@ mod tests {
       check_proc(CalcitProc::GetEnv, &CallStackList::default())
     })
     .expect("declared env read should pass");
+  }
+
+  #[test]
+  fn buf_list_procedures_require_mutable_state() {
+    for proc in [
+      CalcitProc::NativeBufListNew,
+      CalcitProc::NativeBufListPush,
+      CalcitProc::NativeBufListConcat,
+    ] {
+      let error = with_macro_context(Arc::from("app/mutate-buffer"), Arc::new(HashSet::new()), None, || {
+        check_proc(proc, &CallStackList::default())
+      })
+      .expect_err("mutable BufList procedures must need a declaration");
+      assert_eq!(error.code(), Some("E_MACRO_CAPABILITY_MISSING"));
+      assert!(error.msg.contains(":mutable-state"));
+    }
   }
 
   #[test]

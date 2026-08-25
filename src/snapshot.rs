@@ -1555,9 +1555,6 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
     ));
   }
 
-  // EDN-level validity
-  parse_schema_data(schema)?;
-
   // Reject deprecated :nil type annotation
   check_no_nil_type(schema)?;
 
@@ -1695,6 +1692,9 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
       let Cirru::Leaf(name) = item else {
         return Err("`:capabilities` hashset items must be simple leaf tags".to_owned());
       };
+      if !name.starts_with(':') {
+        return Err(format!("Macro capability `{name}` must be a colon-prefixed tag"));
+      }
       if crate::calcit::MacroCapability::parse(name).is_none() {
         return Err(format!(
           "Unknown macro capability `{name}`. Expected one of: :env-read, :fs-read, :platform-read, :clock-read, :mutable-state, :dynamic-eval, :fs-write, :process, :host-ffi"
@@ -1725,6 +1725,10 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
       }
     }
   }
+
+  // Run the general EDN parser after field-specific checks so malformed
+  // capability metadata receives the stable schema diagnostic above.
+  parse_schema_data(schema)?;
 
   Ok(())
 }
@@ -3936,6 +3940,18 @@ mod tests {
     .expect("schema node");
     let error = parse_schema_annotation_for_write(&schema).expect_err("unknown capabilities must not silently become pure");
     assert!(error.contains("Unknown macro capability"), "unexpected error: {error}");
+  }
+
+  #[test]
+  fn macro_schema_rejects_non_tag_compile_time_capabilities() {
+    let schema =
+      cirru_parser::parse(":: 'Macro\n  {} (:required $ [])\n    :expansion $ :: 'Expr 'String\n    :capabilities $ #{} env-read")
+        .expect("schema syntax")
+        .into_iter()
+        .next()
+        .expect("schema node");
+    let error = parse_schema_annotation_for_write(&schema).expect_err("capability symbols must not pass as tags");
+    assert!(error.contains("colon-prefixed tag"), "unexpected error: {error}");
   }
 
   #[test]
