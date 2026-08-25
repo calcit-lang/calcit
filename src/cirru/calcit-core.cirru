@@ -298,7 +298,10 @@
                     quasiquote $ &case ~item ~default ~@others
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic 'Dynamic)
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic) 'SyntaxList
           :tags $ #{} :internal :macro
         |&cirru-nth $ %{} 'CodeEntry (:doc "|internal function for Cirru nth operation\nSyntax: (&cirru-nth cirru-list index)\nParams: cirru-list (cirru quote list), index (number)\nReturns: cirru node\nGets nth element from Cirru list node, errors if index is out of bounds")
           :code $ quote &runtime-implementation
@@ -856,8 +859,9 @@
           :examples $ []
           :schema $ :: 'Macro
             {}
-              :args $ [] (:: 'List 'T) 'Dynamic 'Dynamic 'Dynamic
-              :generics $ [] 'T
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic) 'SyntaxList 'SyntaxList 'SyntaxList
           :tags $ #{} :internal :macro
         |&list:append $ %{} 'CodeEntry (:doc |)
           :code $ quote (&runtime-implementation)
@@ -2365,7 +2369,10 @@
                           &struct-match-internal ~value $ ~@ (&list:rest body)
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Struct)
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic)
           :tags $ #{} :internal :macro
         |&struct:assoc $ %{} 'CodeEntry (:doc "|Associate a declared field on a struct value.")
           :code $ quote &runtime-implementation
@@ -3485,7 +3492,10 @@
                     , ~@patterns
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
         |case-default $ %{} 'CodeEntry (:doc "|Case macro variant with an explicit default branch\nEvaluates the target once, compares it against pattern/result pairs, and falls back to the provided default when no pattern matches.")
           :code $ quote
@@ -6052,7 +6062,10 @@
                 () nil
                 (head tail) head
           :schema $ :: 'Macro
-            {} $ :args ([])
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ []
           :tags $ #{} :macro
         |list? $ %{} 'CodeEntry (:doc "|checks if value is a list\nSyntax: (list? x)\nParams: x (any)\nReturns: true if x is a list, false otherwise\nType predicate for list data structure")
           :code $ quote &runtime-implementation
@@ -7589,7 +7602,10 @@
                     &struct-match-internal ~value ~@body
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Struct)
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
         |struct-with $ %{} 'CodeEntry (:doc "|Construct a new struct value by replacing declared fields.")
           :code $ quote
@@ -7673,12 +7689,15 @@
               tag-match (:: :ok 1)
                 (:ok v) (&+ v 10)
                 (:err e) (eprintln e)
-            quote $ assert= |got:hello
+            quote $ assert= |hello:got
               tag-match (:: :some |hello)
                 (:some x) (str x |:got)
                 (:none) |nothing
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
         |tag? $ %{} 'CodeEntry (:doc "|Check if a value is a tag (keyword)")
           :code $ quote &runtime-implementation
@@ -8519,7 +8538,10 @@
                       if (&= pattern '_) branch $ raise (str-spaced "|unknown supported pattern:" pair)
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Tag)
         |normalize-trait-type $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn normalize-trait-type (t0)
