@@ -31,7 +31,8 @@
               quasiquote $ ->%
                 ~@ $ reverse xs
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {} $ :args ([])
           :tags $ #{} :macro
         |%err $ %{} 'CodeEntry (:doc "|Create Err variant of Result")
           :code $ quote
@@ -104,9 +105,10 @@
                 p $ %{}? Point (:x 1)
               assert= nil $ :y p
           :schema $ :: 'Macro
-            {} (:required $ [] 'SyntaxSymbol)
-              :rest 'SyntaxList
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
               :expansion $ :: 'Expr 'Struct
+              :required $ [] 'SyntaxSymbol
           :tags $ #{} :macro
         |& $ %{} 'CodeEntry (:doc "|internal syntax for spreading in function definition and call\nSyntax: (& rest-args) in params or (f & args) in calls\nParams: varies based on context\nReturns: varies based on context\nMarks rest parameters or argument spreading")
           :code $ quote &runtime-implementation
@@ -2667,7 +2669,8 @@
               quasiquote $ ->
                 ~@ $ reverse xs
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {} $ :args ([])
           :tags $ #{} :macro
         |<= $ %{} 'CodeEntry (:doc "|Less than or equal comparison, supports multiple arguments")
           :code $ quote
@@ -3049,7 +3052,12 @@
           :examples $ []
             quote $ assert= false (and true false true)
             quote $ assert= |done (and true |done)
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ []
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |any? $ %{} 'CodeEntry (:doc "|checks if any element in collection satisfies the predicate function, returns true on first match, short-circuits evaluation")
           :code $ quote
@@ -3588,7 +3596,11 @@
                 true :fallback
             quote $ assert= :fallback
               cond (false :branch) (true :fallback)
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ []
           :tags $ #{} :macro
         |conj $ %{} 'CodeEntry (:doc "|Appends values to the end of a list, returning a new list\nSupports adding multiple values by chaining additional arguments.")
           :code $ quote
@@ -4474,7 +4486,12 @@
               do (inc 1) (+ 1 2)
             quote $ assert= |world
               do (str |hello) (str |world)
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ []
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |drop $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -4538,7 +4555,8 @@
             quote $ assert= 42 (either nil 42 nil)
             quote $ assert= false (either false true)
             quote $ assert= |backup (either nil nil |backup)
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {} $ :args ([])
           :tags $ #{} :macro
         |empty $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -4922,7 +4940,10 @@
             quote $ filter ([] 1 2 3 4 5)
               fn (n) (> n 2)
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] 'SyntaxList
           :tags $ #{} :macro
         |fn? $ %{} 'CodeEntry (:doc "|Check if a value is a function")
           :code $ quote &runtime-implementation
@@ -5395,7 +5416,8 @@
                       quote nil
                     quasiquote $ if ~condition ~false-branch ~true-branch
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {} $ :args ([])
           :tags $ #{} :macro
         |impl-origin $ %{} 'CodeEntry (:doc "|Return the trait origin of an impl as Option<Trait>; inherent method bags produce none.")
           :code $ quote
@@ -5847,7 +5869,10 @@
                 a 10
               * a a
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] 'SyntaxList
           :tags $ #{} :macro
         |let-destruct $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -6006,7 +6031,8 @@
               list-match ([] 1 2 3)
                 () nil
                 (head tail) head
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {} $ :args ([])
           :tags $ #{} :macro
         |list? $ %{} 'CodeEntry (:doc "|checks if value is a list\nSyntax: (list? x)\nParams: x (any)\nReturns: true if x is a list, false otherwise\nType predicate for list data structure")
           :code $ quote &runtime-implementation
@@ -6636,7 +6662,8 @@
             quote $ assert= |done (or nil |done false)
             quote $ assert= false (or false nil)
             quote $ assert= 2 (or nil 2 3)
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {} $ :args ([])
           :tags $ #{} :macro
           :tests $ []
             %{} 'TestEntry (:name |skips-unit-and-returns-next-truthy-value)
@@ -6849,7 +6876,8 @@
           :code $ quote
             defmacro record-match (& _args) (raise "|`record-match` was removed; use `struct-match`")
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {} $ :args ([])
           :tags $ #{} :deprecated :macro
         |record-struct $ %{} 'CodeEntry (:doc "|Deprecated legacy function. Replace `record-struct` with `struct-definition`, which returns Option<StructDef>.")
           :code $ quote
@@ -6864,7 +6892,8 @@
           :code $ quote
             defmacro record-with (& _args) (raise "|`record-with` was removed; use `struct-with`")
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {} $ :args ([])
           :tags $ #{} :deprecated :macro
         |record? $ %{} 'CodeEntry (:doc "|Deprecated legacy predicate. Replace `record?` with `struct?` for values or `struct-def?` for definitions.")
           :code $ quote
@@ -7703,7 +7732,8 @@
               if (&list:empty? xs) (raise "|thread-as expects at least 1 expression")
               quasiquote $ ->% ~@xs
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {} $ :args ([])
           :tags $ #{} :alias :macro
         |thread-first $ %{} 'CodeEntry (:doc "|a alias for `->`")
           :code $ quote
@@ -7711,7 +7741,8 @@
               if (&list:empty? xs) (raise "|thread-first expects at least 1 expression")
               quasiquote $ -> ~@xs
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {} $ :args ([])
           :tags $ #{} :alias :macro
         |thread-last $ %{} 'CodeEntry (:doc "|a alias for `->>`")
           :code $ quote
@@ -7719,7 +7750,8 @@
               if (&list:empty? xs) (raise "|thread-last expects at least 1 expression")
               quasiquote $ ->> ~@xs
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {} $ :args ([])
           :tags $ #{} :alias :macro
         |thread-step? $ %{} 'CodeEntry (:doc "|Check whether a value is a valid thread-macro step form")
           :code $ quote
@@ -8213,7 +8245,8 @@
                 quasiquote $ pairs-map
                   section-by ([] ~@xs) 2
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {} $ :args ([])
           :tags $ #{} :macro
         |{} $ %{} 'CodeEntry (:doc "|macro for creating hashmaps\nSyntax: ({} (:key value) ...)\nParams: pairs (key-value pairs)\nReturns: hashmap\nCreates a hashmap from key-value pairs")
           :code $ quote

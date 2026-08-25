@@ -3988,6 +3988,39 @@ mod tests {
         );
       }
     }
+
+    for def_name in ["let", "fn", "and", "cond", "do"] {
+      let entry = core_file.defs.get(def_name).unwrap_or_else(|| panic!("missing def: {def_name}"));
+      let CalcitTypeAnnotation::Macro(signature) = entry.schema.as_ref() else {
+        panic!("{def_name} should load as MacroSignature");
+      };
+      assert!(signature.is_strict(), "{def_name} should use a phase-aware contract");
+      assert!(signature.capabilities.is_empty(), "{def_name} should be compile-time pure");
+      assert!(
+        matches!(signature.expansion, crate::calcit::MacroExpansionType::Expr(ref inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)),
+        "{def_name} should explicitly retain a dynamic expression result"
+      );
+    }
+
+    for def_name in ["let", "fn"] {
+      let CalcitTypeAnnotation::Macro(signature) = core_file.defs[def_name].schema.as_ref() else {
+        unreachable!()
+      };
+      assert!(matches!(
+        signature.required_inputs.as_slice(),
+        [crate::calcit::MacroSyntaxType::SyntaxList]
+      ));
+      assert!(matches!(signature.rest_input, Some(crate::calcit::MacroSyntaxType::Syntax)));
+    }
+
+    let CalcitTypeAnnotation::Macro(cond_signature) = core_file.defs["cond"].schema.as_ref() else {
+      unreachable!()
+    };
+    assert!(cond_signature.required_inputs.is_empty());
+    assert!(matches!(
+      cond_signature.rest_input,
+      Some(crate::calcit::MacroSyntaxType::SyntaxList)
+    ));
   }
 
   #[test]

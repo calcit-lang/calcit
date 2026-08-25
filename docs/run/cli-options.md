@@ -123,11 +123,12 @@ it exits. Timing fields use nanoseconds. Per-macro and total evaluator and
 post-preprocess times are exclusive: when a nested macro starts, its parent's
 timer pauses, so totals do not double-count recursive expansion work.
 
-The report also records general-evaluator fallbacks, cache hits and misses,
-miss reasons, bypass reasons, and actual invalidation reasons. Before the pure
-expansion cache lands, eligible strict/pure macros report a
-`cache-not-implemented` miss; legacy and effectful signatures report explicit
-bypasses rather than false invalidations.
+The report records general-evaluator fallbacks, cache misses, miss reasons, and
+bypass reasons. Before the pure expansion cache lands, eligible strict/pure
+macros report a `cache-not-implemented` miss; legacy and effectful signatures
+report explicit bypasses rather than false invalidations. The `cacheHits` and
+`cacheInvalidations` fields are reserved for the cache implementation and stay
+at zero or empty until that implementation activates them.
 
 Reproducible release-mode baseline from 2026-08-25 (three warm runs, median):
 

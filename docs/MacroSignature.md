@@ -37,6 +37,37 @@ and serialize without data loss. They become an explicitly legacy, non-strict
 syntax contracts. An omitted or `Dynamic` legacy macro schema likewise does not
 claim full phase coverage.
 
+## Migrating structural macros
+
+Do not replace a whole-`Dynamic` schema with invented runtime parameter types.
+First describe the raw syntax the macro actually inspects and the semantic kind
+of the emitted form. For example, a binding macro with one list-shaped syntax
+argument and arbitrary body forms can use:
+
+```cirru
+:: 'Macro
+  {} (:required $ [] 'SyntaxList)
+    :rest 'Syntax
+    :expansion $ :: 'Expr 'Dynamic
+    :capabilities $ #{}
+```
+
+`Expr<Dynamic>` here is an explicit semantic boundary: the expansion is known
+to be an expression, but its value type depends on user code. It is stricter
+than a legacy whole-`Dynamic` macro without pretending that every body form has
+one static value type. Use `SyntaxSymbol` for declaration names, `SyntaxList`
+for argument/binding/pair lists, `Expr<T>` only when call-site semantic typing
+is meaningful, and `Definition<T>` or `Declarations` only when the emitted AST
+is genuinely a definition.
+
+After migration, inspect the stored contract rather than relying on coverage
+percentages alone:
+
+```bash
+calcit query schema calcit.core/let
+calcit query context calcit.core/let --format json
+```
+
 ## Compile-time capabilities
 
 A strict macro is pure by default. Effects performed while its body is being
