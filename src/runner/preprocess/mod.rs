@@ -20,8 +20,8 @@ use type_checking::{
 };
 pub use type_inference::infer_static_type_from_expr;
 use type_inference::{
-  extract_literal_list_items, find_struct_lookup_in_literal_path, infer_struct_field_type, infer_type_from_expr, resolve_enum_value,
-  resolve_program_value_for_preprocess, resolve_type_value,
+  extract_literal_list_items, find_struct_lookup_in_literal_path, fully_typed_literal_assoc_path, fully_typed_literal_lookup_path,
+  infer_struct_field_type, infer_type_from_expr, resolve_enum_value, resolve_program_value_for_preprocess, resolve_type_value,
 };
 use type_rewriting::{
   build_enum_ref_node, build_struct_ref_node, try_rewrite_enum_args_to_named_enums, try_rewrite_local_fn_enum_args_to_named_enums,
@@ -924,6 +924,208 @@ fn classify_number_binary_call(head: &Calcit, args: &[Calcit], scope_types: &Sco
   CalcitCallKind::NumberBinary(operation)
 }
 
+fn core_import(def: &str, file_ns: &str) -> Calcit {
+  Calcit::Import(CalcitImport {
+    ns: calcit::CORE_NS.into(),
+    def: Arc::from(def),
+    info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
+    def_id: Some(program::ensure_def_id(calcit::CORE_NS, def).0),
+  })
+}
+
+fn generated_call(items: Vec<Calcit>) -> Calcit {
+  Calcit::from(CalcitList::from(items.as_slice()))
+}
+
+fn generated_core_call(def: &str, args: Vec<Calcit>, file_ns: &str) -> Calcit {
+  let mut items = Vec::with_capacity(args.len() + 1);
+  items.push(core_import(def, file_ns));
+  items.extend(args);
+  generated_call(items)
+}
+
+fn generated_if(condition: Calcit, then_branch: Calcit, else_branch: Calcit, file_ns: &str) -> Calcit {
+  generated_call(vec![
+    Calcit::Syntax(CalcitSyntax::If, Arc::from(file_ns)),
+    condition,
+    then_branch,
+    else_branch,
+  ])
+}
+
+fn generated_let(binding: Calcit, value: Calcit, body: Calcit, file_ns: &str) -> Calcit {
+  generated_call(vec![
+    Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(file_ns)),
+    generated_call(vec![binding, value]),
+    body,
+  ])
+}
+
+fn generated_lets(bindings: Vec<(Calcit, Calcit)>, mut body: Calcit, file_ns: &str) -> Calcit {
+  for (binding, value) in bindings.into_iter().rev() {
+    body = generated_let(binding, value, body, file_ns);
+  }
+  body
+}
+
+fn generated_path_symbol(prefix: &str, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  let args = CalcitList::from(&[Calcit::Str(Arc::from(prefix))] as &[Calcit]);
+  builtins::syntax::gensym(&args.view(), &CalcitScope::default(), file_ns, call_stack)
+}
+
+fn generated_get_in_step(current: Calcit, path: &[Calcit], file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  let none = generated_core_call("%none", vec![], file_ns);
+  let present = if let Some((key, rest)) = path.split_first() {
+    let payload = generated_path_symbol("typed_path_value", file_ns, call_stack)?;
+    let some_pattern = generated_call(vec![Calcit::tag("some"), payload.to_owned()]);
+    let none_pattern = generated_call(vec![Calcit::tag("none")]);
+    let some_branch = generated_call(vec![some_pattern, generated_get_in_step(payload, rest, file_ns, call_stack)?]);
+    let none_branch = generated_call(vec![none_pattern, none.to_owned()]);
+    let matched = generated_call(vec![
+      Calcit::Syntax(CalcitSyntax::Match, Arc::from(file_ns)),
+      generated_core_call("get", vec![current.to_owned(), key.to_owned()], file_ns),
+      some_branch,
+      none_branch,
+    ]);
+    generated_if(
+      generated_call(vec![Calcit::Proc(CalcitProc::StructQuestion), current.to_owned()]),
+      generated_call(vec![
+        Calcit::Proc(CalcitProc::Raise),
+        Calcit::Str(Arc::from(
+          "get-in does not traverse Struct fields; use (:field value) so the checker can enforce the declared type",
+        )),
+      ]),
+      matched,
+      file_ns,
+    )
+  } else {
+    generated_core_call("%some", vec![current.to_owned()], file_ns)
+  };
+
+  Ok(generated_if(
+    generated_call(vec![Calcit::Proc(CalcitProc::NilQuestion), current]),
+    none,
+    present,
+    file_ns,
+  ))
+}
+
+fn generated_assoc_in_step(
+  current: Calcit,
+  value: &Calcit,
+  path: &[Calcit],
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  let Some((key, rest)) = path.split_first() else {
+    return Ok(value.to_owned());
+  };
+
+  let data = generated_path_symbol("typed_path_data", file_ns, call_stack)?;
+  let child = generated_path_symbol("typed_path_child", file_ns, call_stack)?;
+  let empty_map = || generated_call(vec![Calcit::Proc(CalcitProc::NativeMap)]);
+  let child_value = generated_if(
+    generated_call(vec![Calcit::Proc(CalcitProc::NativeMapContains), data.to_owned(), key.to_owned()]),
+    generated_call(vec![Calcit::Proc(CalcitProc::NativeMapGet), data.to_owned(), key.to_owned()]),
+    empty_map(),
+    file_ns,
+  );
+  let updated_child = generated_let(
+    child.to_owned(),
+    child_value,
+    generated_assoc_in_step(child, value, rest, file_ns, call_stack)?,
+    file_ns,
+  );
+  let assoc = generated_call(vec![
+    Calcit::Proc(CalcitProc::NativeMapAssoc),
+    data.to_owned(),
+    key.to_owned(),
+    updated_child,
+  ]);
+  let normalized = generated_let(
+    data,
+    generated_if(
+      generated_call(vec![Calcit::Proc(CalcitProc::NilQuestion), current.to_owned()]),
+      empty_map(),
+      current.to_owned(),
+      file_ns,
+    ),
+    assoc,
+    file_ns,
+  );
+
+  Ok(generated_if(
+    generated_call(vec![Calcit::Proc(CalcitProc::StructQuestion), current]),
+    generated_call(vec![
+      Calcit::Proc(CalcitProc::Raise),
+      Calcit::Str(Arc::from(
+        "assoc-in does not traverse Struct fields; use assoc with a direct field key",
+      )),
+    ]),
+    normalized,
+    file_ns,
+  ))
+}
+
+fn try_expand_typed_literal_path_call(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
+  let Calcit::Import(CalcitImport { ns, def, .. }) = head else {
+    return Ok(None);
+  };
+  if ns.as_ref() != calcit::CORE_NS {
+    return Ok(None);
+  }
+
+  let Some(base) = args.first() else { return Ok(None) };
+  let Some(path_arg) = args.get(1) else { return Ok(None) };
+  let Some(base_type) = resolve_type_value(base, scope_types) else {
+    return Ok(None);
+  };
+
+  match def.as_ref() {
+    "get-in" if args.len() == 2 => {
+      let Some(path) = fully_typed_literal_lookup_path(base_type.as_ref(), path_arg) else {
+        return Ok(None);
+      };
+      let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
+      let mut path_bindings = Vec::with_capacity(path.len());
+      let mut path_locals = Vec::with_capacity(path.len());
+      for key in path {
+        let binding = generated_path_symbol("typed_path_key", file_ns, call_stack)?;
+        path_locals.push(binding.to_owned());
+        path_bindings.push((binding, key));
+      }
+      let body = generated_get_in_step(base_binding.to_owned(), &path_locals, file_ns, call_stack)?;
+      let body = generated_lets(path_bindings, body, file_ns);
+      Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)))
+    }
+    "assoc-in" if args.len() == 3 => {
+      let Some(path) = fully_typed_literal_assoc_path(base_type.as_ref(), path_arg) else {
+        return Ok(None);
+      };
+      let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
+      let value_binding = generated_path_symbol("typed_path_replacement", file_ns, call_stack)?;
+      let mut path_bindings = Vec::with_capacity(path.len());
+      let mut path_locals = Vec::with_capacity(path.len());
+      for key in path {
+        let binding = generated_path_symbol("typed_path_key", file_ns, call_stack)?;
+        path_locals.push(binding.to_owned());
+        path_bindings.push((binding, key));
+      }
+      let body = generated_assoc_in_step(base_binding.to_owned(), &value_binding, &path_locals, file_ns, call_stack)?;
+      let body = generated_let(value_binding, args[2].to_owned(), body, file_ns);
+      let body = generated_lets(path_bindings, body, file_ns);
+      Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)))
+    }
+    _ => Ok(None),
+  }
+}
+
 pub fn preprocess_expr(
   expr: &Calcit,
   scope_defs: &HashSet<Arc<str>>,
@@ -1617,6 +1819,11 @@ fn preprocess_list_call(
         // Try to specialize polymorphic calls when receiver type is known
         if let Calcit::Import(CalcitImport { ns, def, .. }) = &head_form {
           let current_args = CalcitList::from(ys.drop_left());
+          if matches!(def.as_ref(), "get-in" | "assoc-in")
+            && let Some(expanded) = try_expand_typed_literal_path_call(&head_form, &current_args, scope_types, file_ns, call_stack)?
+          {
+            return preprocess_expr(&expanded, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+          }
           if let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types, file_ns) {
             return Ok(specialized);
           }
@@ -2165,6 +2372,15 @@ fn preprocess_list_call(
           }
           // Return nil for &inspect-type
           return Ok(Calcit::Nil);
+        }
+
+        if !has_spread
+          && let Some(call_head @ Calcit::Import(CalcitImport { ns, def, .. })) = ys.first()
+          && ns.as_ref() == calcit::CORE_NS
+          && matches!(def.as_ref(), "get-in" | "assoc-in")
+          && let Some(expanded) = try_expand_typed_literal_path_call(call_head, &processed_args, scope_types, file_ns, call_stack)?
+        {
+          return preprocess_expr(&expanded, scope_defs, scope_types, file_ns, check_warnings, call_stack);
         }
 
         if !has_spread
@@ -6896,6 +7112,101 @@ mod tests {
     assert_eq!(
       classify_number_binary_call(&Calcit::Proc(CalcitProc::NativeAdd), &unary_args, &ScopeTypes::new()),
       CalcitCallKind::Normal
+    );
+  }
+
+  #[test]
+  fn expands_only_fully_typed_literal_path_calls() {
+    let _guard = lock_preprocess_test_state();
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let nested_map = Arc::new(CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::Tag),
+      Arc::new(CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Tag), number)),
+    ));
+    let typed_base = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("typed-path-base")),
+      sym: Arc::from("typed-path-base"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.typed-path"),
+        at_def: Arc::from("main"),
+      }),
+      location: None,
+      type_info: nested_map,
+    });
+    let literal_path = generated_call(vec![Calcit::Proc(CalcitProc::List), Calcit::tag("user"), Calcit::tag("score")]);
+    let stack = CallStackList::default();
+
+    let get_args = CalcitList::from(&[typed_base.to_owned(), literal_path.to_owned()] as &[Calcit]);
+    let expanded_get = try_expand_typed_literal_path_call(
+      &core_import("get-in", "tests.typed-path"),
+      &get_args,
+      &ScopeTypes::new(),
+      "tests.typed-path",
+      &stack,
+    )
+    .expect("build get-in expansion")
+    .expect("typed get-in expansion");
+    let get_code = expanded_get.lisp_str();
+    assert!(get_code.contains("match"));
+    assert!(get_code.contains("get-in does not traverse Struct fields"));
+    assert!(!get_code.contains("calcit.core/get-in"));
+    assert_eq!(get_code.matches("typed-path-base").count(), 1, "caller base is evaluated once");
+    assert_eq!(get_code.matches(":user").count(), 1, "first path expression is evaluated once");
+    assert_eq!(get_code.matches(":score").count(), 1, "second path expression is evaluated once");
+
+    let assoc_args = CalcitList::from(&[
+      typed_base.to_owned(),
+      literal_path.to_owned(),
+      Calcit::Str(Arc::from("typed-path-value-input")),
+    ] as &[Calcit]);
+    let expanded_assoc = try_expand_typed_literal_path_call(
+      &core_import("assoc-in", "tests.typed-path"),
+      &assoc_args,
+      &ScopeTypes::new(),
+      "tests.typed-path",
+      &stack,
+    )
+    .expect("build assoc-in expansion")
+    .expect("typed assoc-in expansion");
+    let assoc_code = expanded_assoc.lisp_str();
+    assert!(assoc_code.contains("&map:contains?"));
+    assert!(assoc_code.contains("assoc-in does not traverse Struct fields"));
+    assert!(!assoc_code.contains("calcit.core/assoc-in"));
+    assert_eq!(assoc_code.matches("typed-path-base").count(), 1, "caller base is evaluated once");
+    assert_eq!(assoc_code.matches(":user").count(), 1, "first path expression is evaluated once");
+    assert_eq!(assoc_code.matches(":score").count(), 1, "second path expression is evaluated once");
+    assert_eq!(
+      assoc_code.matches("typed-path-value-input").count(),
+      1,
+      "replacement is evaluated once"
+    );
+    assert!(
+      assoc_code.find(":score").expect("second path expression")
+        < assoc_code.find("typed-path-value-input").expect("replacement expression"),
+      "path expressions are evaluated before the replacement"
+    );
+
+    let dynamic_base = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("dynamic-path-base")),
+      sym: Arc::from("dynamic-path-base"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.typed-path"),
+        at_def: Arc::from("main"),
+      }),
+      location: None,
+      type_info: calcit::DYNAMIC_TYPE.clone(),
+    });
+    let dynamic_args = CalcitList::from(&[dynamic_base, literal_path] as &[Calcit]);
+    assert!(
+      try_expand_typed_literal_path_call(
+        &core_import("get-in", "tests.typed-path"),
+        &dynamic_args,
+        &ScopeTypes::new(),
+        "tests.typed-path",
+        &stack,
+      )
+      .expect("dynamic path decision")
+      .is_none()
     );
   }
 

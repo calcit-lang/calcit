@@ -373,6 +373,54 @@ pub(super) fn find_struct_lookup_in_literal_path(base_type: &CalcitTypeAnnotatio
   None
 }
 
+/// Return a non-empty literal lookup path only when every collection hop and
+/// payload remains statically known. This is deliberately stricter than
+/// return-type inference: executable path expansion must never turn a Dynamic
+/// boundary or a Struct field into a different runtime operation.
+pub(super) fn fully_typed_literal_lookup_path(base_type: &CalcitTypeAnnotation, path_arg: &Calcit) -> Option<Vec<Calcit>> {
+  let path_items = extract_literal_list_items(path_arg)?;
+  if path_items.is_empty() || matches!(base_type, CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
+    return None;
+  }
+
+  let mut current_type = Arc::new(base_type.to_owned());
+  for key in &path_items {
+    if is_struct_lookup_boundary(current_type.as_ref())
+      || matches!(current_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
+    {
+      return None;
+    }
+    current_type = infer_lookup_payload_type_from_type(current_type.as_ref(), Some(key))?;
+  }
+
+  if matches!(current_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
+    return None;
+  }
+  Some(path_items.into_iter().cloned().collect())
+}
+
+/// The first expansion phase limits `assoc-in` to map-only chains. Missing map
+/// entries are also represented by fresh maps, which means direct map
+/// primitives preserve the public construction behavior. Lists, strings and
+/// enum payloads need a mixed-container lowering and stay on the fallback.
+pub(super) fn fully_typed_literal_assoc_path(base_type: &CalcitTypeAnnotation, path_arg: &Calcit) -> Option<Vec<Calcit>> {
+  let path_items = extract_literal_list_items(path_arg)?;
+  if path_items.is_empty() {
+    return None;
+  }
+
+  let mut current_type = Arc::new(base_type.to_owned());
+  for key in &path_items {
+    if !matches!(current_type.as_ref(), CalcitTypeAnnotation::Map(_, _)) {
+      return None;
+    }
+    current_type = infer_lookup_payload_type_from_type(current_type.as_ref(), Some(key))?;
+  }
+
+  (!matches!(current_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn))
+    .then(|| path_items.into_iter().cloned().collect())
+}
+
 fn infer_get_return_type_from_type(base_type: &CalcitTypeAnnotation, key_arg: Option<&Calcit>) -> Option<Arc<CalcitTypeAnnotation>> {
   // Required Struct fields use `(:field value)` and are lowered to
   // `&struct:nth`/`&struct:get`. Keeping Struct out of `get` gives this public
@@ -2007,14 +2055,48 @@ mod tests {
       find_struct_lookup_in_literal_path(users_type.as_ref(), &path),
       Some((1, Calcit::Tag(field))) if field.ref_str() == "name"
     ));
+    assert!(fully_typed_literal_lookup_path(users_type.as_ref(), &path).is_none());
+    assert!(fully_typed_literal_assoc_path(users_type.as_ref(), &path).is_none());
 
     let empty_path = proc_call(CalcitProc::List, vec![]);
-    let empty_call = CalcitList::from(&[symbol("get-in"), local("user", user_type.clone()), empty_path] as &[Calcit]);
+    let empty_call = CalcitList::from(&[symbol("get-in"), local("user", user_type.clone()), empty_path.clone()] as &[Calcit]);
     assert_eq!(
       infer_core_get_in_return_type(&empty_call, &ScopeTypes::new()),
-      Some(core_type_ref("Option", vec![user_type])),
+      Some(core_type_ref("Option", vec![user_type.clone()])),
       "an empty path does not access a Struct field"
     );
+    assert!(fully_typed_literal_lookup_path(user_type.as_ref(), &empty_path).is_none());
+    assert!(fully_typed_literal_assoc_path(user_type.as_ref(), &empty_path).is_none());
+  }
+
+  #[test]
+  fn typed_literal_paths_require_static_non_struct_hops() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let nested_map = Arc::new(CalcitTypeAnnotation::Map(
+      tag_annotation("tag"),
+      Arc::new(CalcitTypeAnnotation::Map(tag_annotation("tag"), number)),
+    ));
+    let path = proc_call(
+      CalcitProc::List,
+      vec![Calcit::Tag(EdnTag::from("user")), Calcit::Tag(EdnTag::from("score"))],
+    );
+
+    assert_eq!(
+      fully_typed_literal_lookup_path(nested_map.as_ref(), &path).map(|xs| xs.len()),
+      Some(2)
+    );
+    assert_eq!(
+      fully_typed_literal_assoc_path(nested_map.as_ref(), &path).map(|xs| xs.len()),
+      Some(2)
+    );
+
+    let dynamic_map = CalcitTypeAnnotation::Map(tag_annotation("tag"), calcit::DYNAMIC_TYPE.clone());
+    assert!(fully_typed_literal_lookup_path(&dynamic_map, &path).is_none());
+    assert!(fully_typed_literal_assoc_path(&dynamic_map, &path).is_none());
+
+    let string_path = proc_call(CalcitProc::List, vec![Calcit::Number(0.0)]);
+    assert!(fully_typed_literal_lookup_path(&CalcitTypeAnnotation::String, &string_path).is_some());
+    assert!(fully_typed_literal_assoc_path(&CalcitTypeAnnotation::String, &string_path).is_none());
   }
 
   #[test]

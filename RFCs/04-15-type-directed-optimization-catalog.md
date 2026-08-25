@@ -121,11 +121,13 @@
 
 ---
 
-### P6: `get-in` / `assoc-in` 静态路径展开
+### P6: `get-in` / `assoc-in` 静态路径展开 ✅ #424
 
 **问题**: `get-in base [:a :b :c]` 是 Calcit 编写的递归函数（`calcit-core.cirru`），每层递归拆列表 + 动态 `get`。
 
-**方案**: 路径是字面量列表且 base 类型已知 Record 时，编译期展开为嵌套 `&record:nth`。`assoc-in` 同理展开为嵌套的 `&record:assoc-at`。
+**方案**: 路径是非空字面量列表，且 base 与每个中间 payload 都有非 Dynamic 静态类型时，在预处理阶段展开。`get-in` 展开为保留 `%some` / `%none`、nil 短路与逐层 Struct guard 的嵌套 `get` / `match`；`assoc-in` 第一阶段只接受全 Map 路径，展开为逐层 `&map:contains?`、`&map:get`、`&map:assoc`。Dynamic、混合容器、空路径以及任何进入 Struct 的路径继续调用原函数。
+
+旧方案中沿 Record/Struct 字段展开的设想已经废弃。公开 `get-in` / `assoc-in` 明确不遍历 Struct；必填字段继续使用 `(:field value)` 与直接 `assoc`，不能借性能优化绕开名义类型检查。
 
 **收益**: 消除递归、list 分解、运行时字段查找。
 
@@ -166,8 +168,8 @@
 | 5    | P7   | `fa325c6` | if 常量折叠                             | 宏展开场景受益                     |
 | -    | 额外 | `7c04880` | runtime def resolution 去重复 RwLock 读 | 微优化                             |
 | 6    | P3   | #422      | typed `match` branch table + JS switch  | enum dispatcher / state machine    |
+| 7    | P6   | #424      | typed literal collection path expansion | nested map/list lookup and map update |
 
 ### 待定
 
 - **P4**: Method dispatch 静态绑定 — 推迟，实现复杂度高
-- **P6**: get-in/assoc-in 静态路径展开 — 未开始，视实际瓶颈决定
