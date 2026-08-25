@@ -4038,6 +4038,26 @@ mod tests {
       ));
     }
 
+    for (def_name, required, optional, has_rest) in [
+      ("or", 1, 0, true),
+      ("either", 0, 0, true),
+      ("when", 1, 0, true),
+      ("when-not", 1, 0, true),
+      ("if-not", 0, 0, true),
+      ("if-let", 2, 1, false),
+      ("when-let", 1, 0, true),
+    ] {
+      let CalcitTypeAnnotation::Macro(signature) = core_file.defs[def_name].schema.as_ref() else {
+        panic!("{def_name} should load as MacroSignature");
+      };
+      assert!(signature.is_strict(), "{def_name} should use a phase-aware contract");
+      assert!(signature.capabilities.is_empty(), "{def_name} should be compile-time pure");
+      assert_eq!(signature.required_inputs.len(), required, "{def_name} required inputs");
+      assert_eq!(signature.optional_inputs.len(), optional, "{def_name} optional inputs");
+      assert_eq!(signature.rest_input.is_some(), has_rest, "{def_name} rest input");
+      assert!(matches!(signature.expansion, crate::calcit::MacroExpansionType::Expr(_)));
+    }
+
     let test_file = snapshot.files.get("calcit.test").expect("calcit.test file should exist");
     for def_name in ["is", "is-not=", "is-throws", "is=", "throws?"] {
       let CalcitTypeAnnotation::Macro(signature) = test_file.defs[def_name].schema.as_ref() else {

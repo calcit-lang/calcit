@@ -4564,7 +4564,11 @@
             quote $ assert= false (either false true)
             quote $ assert= |backup (either nil nil |backup)
           :schema $ :: 'Macro
-            {} $ :args ([])
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ []
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |empty $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -5403,7 +5407,11 @@
                 v $ %none
                 , v |missing
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :optional $ [] (:: 'Expr 'Dynamic)
+              :required $ [] 'SyntaxList (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
         |if-not $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -5425,7 +5433,11 @@
                     quasiquote $ if ~condition ~false-branch ~true-branch
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([])
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ []
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |impl-origin $ %{} 'CodeEntry (:doc "|Return the trait origin of an impl as Option<Trait>; inherent method bags produce none.")
           :code $ quote
@@ -6651,7 +6663,7 @@
               :args $ [] (:: 'Optional 'T)
               :generics $ [] 'T
               :return $ :: 'Option 'T
-        |or $ %{} 'CodeEntry (:doc "|Logical disjunction macro. Skips later forms once a truthy (non-nil, non-false, non-Unit) value is found, preserving the first truthy result.")
+        |or $ %{} 'CodeEntry (:doc "|Logical disjunction macro. Skips later forms once a truthy (non-nil, non-false, non-Unit) value is found and returns it; when every form is falsey, returns the final form.")
           :code $ quote
             defmacro or (item & xs)
               if (&list:empty? xs) item $ if (list? item)
@@ -6668,10 +6680,14 @@
                     ~@ $ &list:rest xs
           :examples $ []
             quote $ assert= |done (or nil |done false)
-            quote $ assert= false (or false nil)
+            quote $ assert= nil (or false nil)
             quote $ assert= 2 (or nil 2 3)
           :schema $ :: 'Macro
-            {} $ :args ([])
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic)
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
           :tests $ []
             %{} 'TestEntry (:name |skips-unit-and-returns-next-truthy-value)
@@ -8113,7 +8129,11 @@
             quote $ assert= nil
               when false $ inc 1
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic)
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |when-let $ %{} 'CodeEntry (:doc "|Consume Option<T>, evaluate the body only for some, and return Option<R>.")
           :code $ quote
@@ -8135,8 +8155,10 @@
           :examples $ []
           :schema $ :: 'Macro
             {}
-              :args $ [] 'Dynamic
-              :return $ :: 'Option 'Dynamic
+              :capabilities $ #{}
+              :expansion $ :: 'Expr (:: 'Option 'Dynamic)
+              :required $ [] 'SyntaxList
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |when-not $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -8150,7 +8172,11 @@
                   &let () ~@body
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic)
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |with-cpu-time $ %{} 'CodeEntry (:doc |)
           :code $ quote
