@@ -1706,7 +1706,6 @@ fn preprocess_list_call(
   match head_value {
     Some(Calcit::Macro { info, .. }) => {
       let mut current_values: Vec<Calcit> = args.to_vec();
-      let call_location = head_form.get_location().or_else(|| args.first().and_then(Calcit::get_location));
       let mut macro_type_bindings = validate_macro_call_inputs(
         info.name.as_ref(),
         info.signature.as_ref(),
@@ -1727,40 +1726,53 @@ fn preprocess_list_call(
       let mut body_scope = CalcitScope::default();
       let frame_checkpoint = body_scope.frame_checkpoint();
 
-      loop {
-        // need to handle recursion
-        // println!("evaluating line: {:?}", body);
-        body_scope.restore_frame(frame_checkpoint);
-        runner::bind_marked_args(&mut body_scope, &info.args, &current_values, &next_stack)?;
-        let code = runner::evaluate_lines(&info.body.to_vec(), &body_scope, file_ns, &next_stack)?;
-        match code {
-          Calcit::Recur(ys) => {
-            current_values = ys;
-            let recur_args = CalcitList::from(current_values.as_slice());
-            macro_type_bindings = validate_macro_call_inputs(
-              info.name.as_ref(),
-              info.signature.as_ref(),
-              &recur_args,
-              scope_types,
-              &next_stack,
-              call_location.clone(),
-            )?;
-          }
-          _ => {
-            // println!("gen code: {} {}", code, &code.lisp_str());
-            let processed = preprocess_expr(&code, scope_defs, scope_types, file_ns, check_warnings, &next_stack)?;
-            validate_macro_expansion_result(
-              info.name.as_ref(),
-              info.signature.as_ref(),
-              (&code, &processed),
-              scope_types,
-              macro_type_bindings,
-              &next_stack,
-              call_location,
-            )?;
-            return Ok(processed);
+      let execute_macro = || -> Result<Calcit, CalcitErr> {
+        loop {
+          // need to handle recursion
+          body_scope.restore_frame(frame_checkpoint);
+          runner::bind_marked_args(&mut body_scope, &info.args, &current_values, &next_stack)?;
+          let code = runner::evaluate_lines(&info.body.to_vec(), &body_scope, file_ns, &next_stack)?;
+          match code {
+            Calcit::Recur(ys) => {
+              current_values = ys;
+              let recur_args = CalcitList::from(current_values.as_slice());
+              macro_type_bindings = validate_macro_call_inputs(
+                info.name.as_ref(),
+                info.signature.as_ref(),
+                &recur_args,
+                scope_types,
+                &next_stack,
+                call_location.clone(),
+              )?;
+            }
+            _ => {
+              let processed = preprocess_expr(&code, scope_defs, scope_types, file_ns, check_warnings, &next_stack)?;
+              validate_macro_expansion_result(
+                info.name.as_ref(),
+                info.signature.as_ref(),
+                (&code, &processed),
+                scope_types,
+                macro_type_bindings,
+                &next_stack,
+                call_location.clone(),
+              )?;
+              return Ok(processed);
+            }
           }
         }
+      };
+
+      if info.signature.is_strict() {
+        runner::macro_capability::with_macro_context(
+          Arc::from(format!("{}/{}", info.def_ns, info.name)),
+          info.signature.capabilities.clone(),
+          call_location.clone(),
+          execute_macro,
+        )
+      } else {
+        // Legacy Macro schemas remain compatible, but their effects are
+        // deliberately unknown and therefore cannot be considered pure.
+        execute_macro()
       }
     }
 
@@ -7289,6 +7301,7 @@ mod tests {
       optional_inputs: Arc::new(optional_inputs),
       rest_input,
       expansion,
+      capabilities: Arc::new(HashSet::new()),
       features: Arc::new(HashSet::new()),
       compatibility: crate::calcit::MacroSignatureCompatibility::Strict,
     }

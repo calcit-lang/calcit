@@ -360,6 +360,66 @@ pub enum MacroSignatureCompatibility {
   Legacy(Arc<CalcitFnTypeAnnotation>),
 }
 
+/// Effects that may be performed while a macro is expanding. These are
+/// deliberately separate from ordinary function `:features`: capabilities
+/// are an executable compile-time policy, not documentation or a runtime
+/// backend marker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MacroCapability {
+  EnvRead,
+  FsRead,
+  PlatformRead,
+  ClockRead,
+  MutableState,
+  DynamicEval,
+  FsWrite,
+  Process,
+  HostFfi,
+}
+
+impl MacroCapability {
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::EnvRead => "env-read",
+      Self::FsRead => "fs-read",
+      Self::PlatformRead => "platform-read",
+      Self::ClockRead => "clock-read",
+      Self::MutableState => "mutable-state",
+      Self::DynamicEval => "dynamic-eval",
+      Self::FsWrite => "fs-write",
+      Self::Process => "process",
+      Self::HostFfi => "host-ffi",
+    }
+  }
+
+  pub fn parse(name: &str) -> Option<Self> {
+    match name.trim_start_matches(':') {
+      "env-read" => Some(Self::EnvRead),
+      "fs-read" => Some(Self::FsRead),
+      "platform-read" => Some(Self::PlatformRead),
+      "clock-read" => Some(Self::ClockRead),
+      "mutable-state" => Some(Self::MutableState),
+      "dynamic-eval" => Some(Self::DynamicEval),
+      "fs-write" => Some(Self::FsWrite),
+      "process" => Some(Self::Process),
+      "host-ffi" => Some(Self::HostFfi),
+      _ => None,
+    }
+  }
+
+  /// Dangerous host mutations are intentionally unavailable to macro
+  /// expansion. Keeping them in the model gives diagnostics and tooling a
+  /// complete, auditable classification without turning declarations into an
+  /// escape hatch.
+  pub fn is_allowed(self) -> bool {
+    !matches!(self, Self::FsWrite | Self::Process | Self::HostFfi)
+  }
+
+  pub fn is_cache_safe(self) -> bool {
+    false
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MacroSignature {
   pub generics: Arc<Vec<Arc<str>>>,
@@ -368,6 +428,7 @@ pub struct MacroSignature {
   pub optional_inputs: Arc<Vec<MacroSyntaxType>>,
   pub rest_input: Option<MacroSyntaxType>,
   pub expansion: MacroExpansionType,
+  pub capabilities: Arc<HashSet<MacroCapability>>,
   pub features: Arc<HashSet<EdnTag>>,
   pub compatibility: MacroSignatureCompatibility,
 }
@@ -392,6 +453,13 @@ impl Ord for MacroSignature {
       .then_with(|| self.optional_inputs.cmp(&other.optional_inputs))
       .then_with(|| self.rest_input.cmp(&other.rest_input))
       .then_with(|| self.expansion.cmp(&other.expansion))
+      .then_with(|| {
+        let mut a = self.capabilities.iter().copied().collect::<Vec<_>>();
+        let mut b = other.capabilities.iter().copied().collect::<Vec<_>>();
+        a.sort_unstable();
+        b.sort_unstable();
+        a.cmp(&b)
+      })
       .then_with(|| self_features.cmp(&other_features))
       .then_with(|| self.compatibility.cmp(&other.compatibility))
   }
@@ -405,6 +473,9 @@ impl Hash for MacroSignature {
     self.optional_inputs.hash(state);
     self.rest_input.hash(state);
     self.expansion.hash(state);
+    let mut capabilities = self.capabilities.iter().copied().collect::<Vec<_>>();
+    capabilities.sort_unstable();
+    capabilities.hash(state);
     let mut features = self.features.iter().map(EdnTag::ref_str).collect::<Vec<_>>();
     features.sort_unstable();
     features.hash(state);
@@ -421,6 +492,7 @@ impl MacroSignature {
       optional_inputs: Arc::new(vec![]),
       rest_input: None,
       expansion: MacroExpansionType::Dynamic,
+      capabilities: Arc::new(HashSet::new()),
       features: Arc::new(HashSet::new()),
       compatibility: MacroSignatureCompatibility::Legacy(Arc::new(CalcitFnTypeAnnotation {
         generics: Arc::new(vec![]),
@@ -446,6 +518,7 @@ impl MacroSignature {
       optional_inputs: Arc::new(vec![]),
       rest_input: None,
       expansion: MacroExpansionType::Dynamic,
+      capabilities: Arc::new(HashSet::new()),
       features: annotation.features.clone(),
       compatibility: MacroSignatureCompatibility::Legacy(annotation),
     }
@@ -453,6 +526,12 @@ impl MacroSignature {
 
   pub fn is_strict(&self) -> bool {
     matches!(self.compatibility, MacroSignatureCompatibility::Strict)
+  }
+
+  /// Later expansion caching may only trust strict macros whose compile-time
+  /// execution has no declared effects. Legacy signatures remain unknown.
+  pub fn is_cache_eligible(&self) -> bool {
+    self.is_strict() && self.capabilities.iter().all(|capability| capability.is_cache_safe())
   }
 
   fn parse_contract(form: &Edn, generics: &[Arc<str>]) -> Option<MacroSyntaxType> {
@@ -534,6 +613,15 @@ impl MacroSignature {
     }
     if let Some(expansion) = Self::expansion_to_edn(&self.expansion) {
       map.insert_key("expansion", expansion);
+    }
+    if !self.capabilities.is_empty() {
+      let mut set = EdnSetView::default();
+      let mut capabilities = self.capabilities.iter().copied().collect::<Vec<_>>();
+      capabilities.sort_unstable();
+      for capability in capabilities {
+        set.insert(Edn::Tag(EdnTag::new(capability.as_str())));
+      }
+      map.insert_key("capabilities", Edn::Set(set));
     }
     if !self.generics.is_empty() {
       map.insert_key(
@@ -1542,7 +1630,9 @@ impl CalcitTypeAnnotation {
       return None;
     }
 
-    let strict = ["required", "optional", "expansion"].iter().any(|key| map.tag_get(key).is_some());
+    let strict = ["required", "optional", "expansion", "capabilities"]
+      .iter()
+      .any(|key| map.tag_get(key).is_some());
     if !strict {
       let legacy = Self::parse_fn_schema_from_edn(schema)?;
       return Some(MacroSignature::from_legacy_fn(legacy));
@@ -1597,6 +1687,19 @@ impl CalcitTypeAnnotation {
         _ => None,
       })
       .unwrap_or_default();
+    let capabilities = match map.tag_get("capabilities") {
+      None => Arc::new(HashSet::new()),
+      Some(Edn::Set(xs)) => Arc::new(
+        xs.0
+          .iter()
+          .map(|item| match item {
+            Edn::Tag(tag) => MacroCapability::parse(tag.ref_str()),
+            _ => None,
+          })
+          .collect::<Option<HashSet<_>>>()?,
+      ),
+      Some(_) => return None,
+    };
     Some(MacroSignature {
       generics: Arc::new(generics),
       where_bounds: Arc::new(where_bounds),
@@ -1604,6 +1707,7 @@ impl CalcitTypeAnnotation {
       optional_inputs: Arc::new(optional_inputs),
       rest_input,
       expansion,
+      capabilities,
       features,
       compatibility: MacroSignatureCompatibility::Strict,
     })
@@ -1638,7 +1742,10 @@ impl CalcitTypeAnnotation {
     if !has_schema_fields {
       return None;
     }
-    if ["required", "optional", "expansion"].iter().any(|key| map.tag_get(key).is_some()) {
+    if ["required", "optional", "expansion", "capabilities"]
+      .iter()
+      .any(|key| map.tag_get(key).is_some())
+    {
       return None;
     }
 
@@ -4034,6 +4141,10 @@ mod tests {
     map.insert_key("optional", Edn::List(EdnListView(vec![Edn::Symbol(Arc::from("SyntaxList"))])));
     map.insert_key("rest", Edn::Symbol(Arc::from("Syntax")));
     map.insert_key("expansion", Edn::enum_value("Expr", vec![Edn::Symbol(Arc::from("T"))]));
+    map.insert_key(
+      "capabilities",
+      Edn::Set(EdnSetView(HashSet::from([Edn::tag("env-read"), Edn::tag("fs-read")]))),
+    );
     let schema = Edn::enum_value("Macro", vec![Edn::Map(map)]);
 
     let signature = CalcitTypeAnnotation::parse_macro_signature_from_edn(&schema).expect("strict macro signature");
@@ -4049,6 +4160,9 @@ mod tests {
     assert!(matches!(signature.optional_inputs.as_slice(), [MacroSyntaxType::SyntaxList]));
     assert!(matches!(signature.rest_input, Some(MacroSyntaxType::Syntax)));
     assert!(matches!(signature.expansion, MacroExpansionType::Expr(_)));
+    assert!(signature.capabilities.contains(&MacroCapability::EnvRead));
+    assert!(signature.capabilities.contains(&MacroCapability::FsRead));
+    assert!(!signature.is_cache_eligible());
 
     let reloaded = CalcitTypeAnnotation::parse_macro_signature_from_edn(&signature.to_wrapped_schema_edn()).expect("round trip");
     assert_eq!(reloaded, signature);
@@ -4062,6 +4176,7 @@ mod tests {
     let schema = Edn::enum_value("Macro", vec![Edn::Map(map)]);
     let signature = CalcitTypeAnnotation::parse_macro_signature_from_edn(&schema).expect("legacy macro schema");
     assert!(!signature.is_strict());
+    assert!(!signature.is_cache_eligible());
     assert!(matches!(signature.compatibility, MacroSignatureCompatibility::Legacy(_)));
     assert!(matches!(signature.expansion, MacroExpansionType::Dynamic));
   }

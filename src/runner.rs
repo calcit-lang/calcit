@@ -1,3 +1,4 @@
+pub mod macro_capability;
 pub mod preprocess;
 pub mod track;
 
@@ -231,7 +232,15 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
       }
     },
     Recur(_) => unreachable!("recur not expected to be from symbol"),
-    RawCode(_, code) => unreachable!("raw code `{}` cannot be called", code),
+    RawCode(_, code) => {
+      macro_capability::check_host_ffi(code, call_stack)?;
+      Err(CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Unexpected,
+        format!("raw host code `{code}` cannot be evaluated by the native runtime"),
+        call_stack,
+        expr.get_location(),
+      ))
+    }
     Set(_) => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Unexpected,
       "unexpected set for expr",
@@ -272,6 +281,7 @@ pub fn call_expr(
       builtins::handle_proc(*p, &values, call_stack)
     }
     Calcit::Syntax(s, def_ns) => {
+      macro_capability::check_syntax(s, call_stack)?;
       let rest_nodes = xs.skip(1).expect("expected syntax rest nodes");
       if using_stack() {
         let next_stack = call_stack.extend_owned(
@@ -295,6 +305,7 @@ pub fn call_expr(
       }
     }
     Calcit::Method(name, kind) => {
+      macro_capability::check_method(name, kind, call_stack)?;
       if matches!(kind, MethodKind::Invoke(_)) {
         let values = if spreading {
           evaluate_spreaded_args_from(xs, 1, scope, file_ns, call_stack)?
@@ -396,7 +407,17 @@ pub fn call_expr(
         // need to handle recursion
         body_scope.restore_frame(frame_checkpoint);
         bind_marked_args(&mut body_scope, &info.args, &current_values, call_stack)?;
-        let code = evaluate_lines(info.body.as_ref().as_slice(), &body_scope, &info.def_ns, &next_stack)?;
+        let evaluate_body = || evaluate_lines(info.body.as_ref().as_slice(), &body_scope, &info.def_ns, &next_stack);
+        let code = if info.signature.is_strict() {
+          macro_capability::with_macro_context(
+            Arc::from(format!("{}/{}", info.def_ns, info.name)),
+            info.signature.capabilities.clone(),
+            xs.first().and_then(Calcit::get_location),
+            evaluate_body,
+          )?
+        } else {
+          evaluate_body()?
+        };
         match code {
           Calcit::Recur(ys) => {
             current_values = ys;
@@ -442,6 +463,7 @@ pub fn call_expr(
       }
     }
     Calcit::Registered(alias) => {
+      macro_capability::check_registered(alias, call_stack)?;
       let values = if spreading {
         evaluate_spreaded_args_from(xs, 1, scope, file_ns, call_stack)?
       } else {
@@ -994,7 +1016,82 @@ pub fn evaluate_spreaded_args_from(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitFnUsageMeta, CalcitStructDef, CalcitStructValue, CalcitSymbolInfo, CalcitTypeAnnotation};
+  use crate::calcit::{
+    CalcitFnUsageMeta, CalcitMacro, CalcitStructDef, CalcitStructValue, CalcitSymbolInfo, CalcitTypeAnnotation, MacroCapability,
+    MacroExpansionType, MacroSignature, MacroSignatureCompatibility,
+  };
+  use std::collections::HashSet;
+
+  fn strict_test_macro(name: &str, body: Vec<Calcit>, capabilities: HashSet<MacroCapability>) -> Calcit {
+    Calcit::Macro {
+      id: Arc::from(format!("tests.runner/{name}")),
+      info: Arc::new(CalcitMacro {
+        name: Arc::from(name),
+        def_ns: Arc::from("tests.runner"),
+        args: Arc::new(vec![]),
+        body: Arc::new(body),
+        signature: Arc::new(MacroSignature {
+          generics: Arc::new(vec![]),
+          where_bounds: Arc::new(vec![]),
+          required_inputs: Arc::new(vec![]),
+          optional_inputs: Arc::new(vec![]),
+          rest_input: None,
+          expansion: MacroExpansionType::Expr(Arc::new(CalcitTypeAnnotation::String)),
+          capabilities: Arc::new(capabilities),
+          features: Arc::new(HashSet::new()),
+          compatibility: MacroSignatureCompatibility::Strict,
+        }),
+      }),
+    }
+  }
+
+  fn call_zero_arg_macro(value: &Calcit) -> Result<Calcit, CalcitErr> {
+    let call = CalcitList::from(std::slice::from_ref(value));
+    call_expr(
+      value,
+      &call.view(),
+      &CalcitScope::default(),
+      "tests.runner",
+      &CallStackList::default(),
+      false,
+    )
+  }
+
+  #[test]
+  fn strict_macro_runtime_path_enforces_declared_env_reads() {
+    let body = vec![Calcit::from(vec![
+      Calcit::Proc(CalcitProc::GetEnv),
+      Calcit::new_str("CALCIT_TEST_CAPABILITY_MISSING_ENV"),
+      Calcit::new_str("fallback"),
+    ])];
+    let pure = strict_test_macro("read-env", body.clone(), HashSet::new());
+    let error = call_zero_arg_macro(&pure).expect_err("undeclared compile-time env read must fail");
+    assert_eq!(error.code(), Some("E_MACRO_CAPABILITY_MISSING"));
+
+    let declared = strict_test_macro("read-env", body, HashSet::from([MacroCapability::EnvRead]));
+    assert_eq!(
+      call_zero_arg_macro(&declared).expect("declared env read"),
+      Calcit::new_str("fallback")
+    );
+  }
+
+  #[test]
+  fn strict_macro_may_emit_runtime_env_read_without_capability() {
+    let runtime_call = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::GetEnv),
+      Calcit::new_str("CALCIT_TEST_CAPABILITY_MISSING_ENV"),
+      Calcit::new_str("runtime-fallback"),
+    ]);
+    let body = vec![Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::Quote, Arc::from("tests.runner")),
+      runtime_call,
+    ])];
+    let emitting_macro = strict_test_macro("emit-env", body, HashSet::new());
+    assert_eq!(
+      call_zero_arg_macro(&emitting_macro).expect("emitting runtime effect stays pure"),
+      Calcit::new_str("runtime-fallback")
+    );
+  }
 
   fn local_value(name: &str, idx: u16) -> Calcit {
     Calcit::Local(CalcitLocal {
