@@ -431,7 +431,8 @@ mod schema_serde {
     S: serde::Serializer,
   {
     let edn: Option<Edn> = match schema.as_ref() {
-      CalcitTypeAnnotation::Dynamic => None,
+      CalcitTypeAnnotation::Dynamic if schema_annotation_is_missing(schema) => None,
+      CalcitTypeAnnotation::Dynamic => Some(schema_annotation_to_edn(schema.as_ref())),
       // Keep the binary snapshot representation of function schemas stable:
       // build.rs and older runtimes expect the direct map form here. Value
       // annotations use their ordinary type-expression representation.
@@ -451,6 +452,13 @@ mod schema_serde {
       Some(v) => parse_loaded_schema_annotation(&v, "CodeEntry.schema").map_err(serde::de::Error::custom)?,
     })
   }
+}
+
+/// Missing schemas use the shared Dynamic singleton. An explicitly declared
+/// `:: Dynamic` is parsed into its own Arc so analysis and binary snapshots can
+/// preserve the difference between omitted and intentionally untyped schemas.
+pub fn schema_annotation_is_missing(schema: &Arc<CalcitTypeAnnotation>) -> bool {
+  matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic) && Arc::ptr_eq(schema, &DYNAMIC_TYPE)
 }
 
 mod tags_serde {
@@ -3543,6 +3551,20 @@ mod tests {
     let code = Cirru::List(vec![Cirru::leaf("defstruct")]);
     let explicit = Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("struct"))));
     assert_eq!(normalize_schema_for_code(&code, &explicit), explicit);
+  }
+
+  #[test]
+  fn binary_schema_round_trip_distinguishes_missing_and_explicit_dynamic() {
+    let mut explicit = CodeEntry::from_code(Cirru::leaf("nil"));
+    explicit.schema = Arc::new(CalcitTypeAnnotation::Dynamic);
+    let bytes = rmp_serde::to_vec(&explicit).expect("explicit Dynamic entry should encode");
+    let decoded: CodeEntry = rmp_serde::from_slice(&bytes).expect("explicit Dynamic entry should decode");
+    assert!(!schema_annotation_is_missing(&decoded.schema));
+
+    let missing = CodeEntry::from_code(Cirru::leaf("nil"));
+    let bytes = rmp_serde::to_vec(&missing).expect("missing schema entry should encode");
+    let decoded: CodeEntry = rmp_serde::from_slice(&bytes).expect("missing schema entry should decode");
+    assert!(schema_annotation_is_missing(&decoded.schema));
   }
 
   #[test]

@@ -1950,6 +1950,25 @@ mod tests {
     list(vec![leaf("defmacro"), leaf("test-macro"), list(params), leaf("nil")])
   }
 
+  fn macro_schema_with_optional(required: usize, optional: usize, has_rest: bool) -> CalcitTypeAnnotation {
+    let mut arg_types = vec![calcit::calcit::DYNAMIC_TYPE.clone(); required];
+    arg_types.extend((0..optional).map(|_| {
+      Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("Option"),
+        Arc::new(vec![calcit::calcit::DYNAMIC_TYPE.clone()]),
+      ))
+    }));
+    CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types,
+      return_type: calcit::calcit::DYNAMIC_TYPE.clone(),
+      fn_kind: SchemaKind::Macro,
+      rest_type: has_rest.then(|| calcit::calcit::DYNAMIC_TYPE.clone()),
+      features: Arc::new(HashSet::new()),
+    }))
+  }
+
   fn code_entry(code: Cirru, schema: CalcitTypeAnnotation) -> snapshot::CodeEntry {
     snapshot::CodeEntry {
       doc: String::new(),
@@ -2017,6 +2036,26 @@ mod tests {
 
     assert_eq!(row.kind, type_coverage::DefKind::Other);
     assert_eq!(row.level, type_coverage::CoverageLevel::None);
+  }
+
+  #[test]
+  fn type_coverage_does_not_mark_whole_dynamic_macros_as_full() {
+    let entry = code_entry(defmacro_code(&["form"]), CalcitTypeAnnotation::Dynamic);
+    let row = type_coverage::analyze_code_entry("app.main", "expand-form", &entry);
+
+    assert_eq!(row.kind, type_coverage::DefKind::Macro);
+    assert_eq!(row.level, type_coverage::CoverageLevel::None);
+    assert!(row.schema_issues.iter().any(|issue| issue.starts_with("[W_MACRO_SCHEMA_DYNAMIC]")));
+
+    let mut missing = code_entry(defmacro_code(&["form"]), CalcitTypeAnnotation::Dynamic);
+    missing.schema = calcit::calcit::DYNAMIC_TYPE.clone();
+    let row = type_coverage::analyze_code_entry("app.main", "missing-schema", &missing);
+    assert!(row.schema_issues.iter().any(|issue| issue.starts_with("[W_SCHEMA_MISSING]")));
+
+    let partially_typed = code_entry(defmacro_code(&["form"]), fn_schema_annotation(SchemaKind::Macro, 1, false));
+    let row = type_coverage::analyze_code_entry("app.main", "expand-form", &partially_typed);
+    assert_eq!(row.level, type_coverage::CoverageLevel::Partial);
+    assert!(row.schema_issues.iter().any(|issue| issue.contains("W_SCHEMA_DYNAMIC")));
   }
 
   #[test]
@@ -2235,11 +2274,39 @@ mod tests {
   }
 
   #[test]
-  fn validate_macro_arity_is_ignored() {
+  fn validate_macro_required_arity_mismatch_is_reported() {
     let schema = fn_schema_annotation(SchemaKind::Macro, 1, false);
     let code = defmacro_code(&["a", "b"]);
     let issues = type_coverage::validate_def_vs_schema("myns", "my-macro", &code, &schema);
-    assert!(issues.is_empty(), "macro arity differences should not be reported: {issues:?}");
+    assert!(
+      issues.iter().any(|issue| issue.starts_with("[E_SCHEMA_REQUIRED_ARGS]")),
+      "{issues:?}"
+    );
+  }
+
+  #[test]
+  fn validate_macro_optional_and_rest_shapes() {
+    let code = list(vec![
+      leaf("defmacro"),
+      leaf("test-macro"),
+      list(vec![leaf("a"), leaf("?"), leaf("b"), leaf("&"), leaf("xs")]),
+      leaf("nil"),
+    ]);
+    let schema = macro_schema_with_optional(1, 1, true);
+    let issues = type_coverage::validate_def_vs_schema("myns", "my-macro", &code, &schema);
+    assert!(issues.is_empty(), "well-formed optional/rest macro should pass: {issues:?}");
+
+    let mismatch = macro_schema_with_optional(2, 0, false);
+    let issues = type_coverage::validate_def_vs_schema("myns", "my-macro", &code, &mismatch);
+    assert!(
+      issues.iter().any(|issue| issue.starts_with("[E_SCHEMA_REQUIRED_ARGS]")),
+      "{issues:?}"
+    );
+    assert!(
+      issues.iter().any(|issue| issue.starts_with("[E_SCHEMA_OPTIONAL_ARGS]")),
+      "{issues:?}"
+    );
+    assert!(issues.iter().any(|issue| issue.starts_with("[E_SCHEMA_REST_ARGS]")), "{issues:?}");
   }
 
   #[test]
