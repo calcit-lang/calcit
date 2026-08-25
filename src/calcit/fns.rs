@@ -13,6 +13,126 @@ pub(crate) fn trailing_option_arg_count(arg_types: &[Arc<CalcitTypeAnnotation>],
   arg_types.iter().rev().take_while(|arg| arg.is_option_type()).count()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParamShapeToken {
+  Binding,
+  OptionalMark,
+  RestMark,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParamShape {
+  pub required: usize,
+  pub optional: usize,
+  pub has_rest: bool,
+  pub errors: Vec<&'static str>,
+}
+
+impl ParamShape {
+  pub fn from_tokens(tokens: impl IntoIterator<Item = ParamShapeToken>) -> Self {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Phase {
+      Required,
+      Optional,
+      RestBinding,
+      AfterRest,
+    }
+
+    let mut shape = Self {
+      required: 0,
+      optional: 0,
+      has_rest: false,
+      errors: vec![],
+    };
+    let mut phase = Phase::Required;
+    let mut saw_optional_mark = false;
+
+    for token in tokens {
+      match token {
+        ParamShapeToken::Binding => match phase {
+          Phase::Required => shape.required += 1,
+          Phase::Optional => shape.optional += 1,
+          Phase::RestBinding => {
+            shape.has_rest = true;
+            phase = Phase::AfterRest;
+          }
+          Phase::AfterRest => shape.errors.push("binding appears after the rest parameter"),
+        },
+        ParamShapeToken::OptionalMark => match phase {
+          Phase::Required => {
+            saw_optional_mark = true;
+            phase = Phase::Optional;
+          }
+          Phase::Optional => shape.errors.push("optional marker appears more than once"),
+          Phase::RestBinding | Phase::AfterRest => shape.errors.push("optional marker appears after the rest marker"),
+        },
+        ParamShapeToken::RestMark => match phase {
+          Phase::Required | Phase::Optional => phase = Phase::RestBinding,
+          Phase::RestBinding | Phase::AfterRest => shape.errors.push("rest marker appears more than once"),
+        },
+      }
+    }
+
+    if saw_optional_mark && shape.optional == 0 {
+      shape.errors.push("optional marker is missing an optional binding");
+    }
+    if phase == Phase::RestBinding {
+      shape.errors.push("rest marker is missing its binding");
+    }
+    shape
+  }
+
+  pub fn from_schema(arg_types: &[Arc<CalcitTypeAnnotation>], has_rest: bool) -> Self {
+    let optional = trailing_option_arg_count(arg_types, arg_types.len());
+    Self {
+      required: arg_types.len() - optional,
+      optional,
+      has_rest,
+      errors: vec![],
+    }
+  }
+
+  /// Preserve the established callable arity model for ordinary functions,
+  /// whose schemas describe every fixed slot but do not encode the `?`
+  /// marker separately. Macro diagnostics use the full shape instead.
+  pub fn as_fixed_arity(&self) -> Self {
+    Self {
+      required: self.required + self.optional,
+      optional: 0,
+      has_rest: self.has_rest,
+      errors: self.errors.clone(),
+    }
+  }
+}
+
+pub fn compare_param_shapes(owner: &str, code: &ParamShape, schema: &ParamShape) -> Vec<String> {
+  let mut issues = code
+    .errors
+    .iter()
+    .map(|detail| format!("[E_DEF_PARAM_SHAPE] {owner}: malformed parameter list: {detail}"))
+    .collect::<Vec<_>>();
+  if code.required != schema.required {
+    issues.push(format!(
+      "[E_SCHEMA_REQUIRED_ARGS] {owner}: schema has {} required arg(s) but code has {}",
+      schema.required, code.required
+    ));
+  }
+  if code.optional != schema.optional {
+    issues.push(format!(
+      "[E_SCHEMA_OPTIONAL_ARGS] {owner}: schema has {} optional arg(s) but code has {}",
+      schema.optional, code.optional
+    ));
+  }
+  if code.has_rest != schema.has_rest {
+    issues.push(if code.has_rest {
+      format!("[E_SCHEMA_REST_ARGS] {owner}: code has & rest param but schema has no :rest")
+    } else {
+      format!("[E_SCHEMA_REST_ARGS] {owner}: schema has :rest but code has no & param")
+    });
+  }
+  issues
+}
+
 /// structure of a function arguments
 #[derive(Debug, Clone)]
 pub enum CalcitArgLabel {
@@ -170,6 +290,45 @@ mod tests {
     assert_eq!(scope.get(1), Some(&Calcit::Number(42.0)));
     assert_eq!(scope.get(2), Some(&Calcit::Number(99_999.0)));
     assert_eq!(scope.get(3), Some(&Calcit::Number(100_000.0)));
+  }
+
+  #[test]
+  fn parameter_shapes_track_required_optional_and_rest_bindings() {
+    let shape = ParamShape::from_tokens([
+      ParamShapeToken::Binding,
+      ParamShapeToken::OptionalMark,
+      ParamShapeToken::Binding,
+      ParamShapeToken::RestMark,
+      ParamShapeToken::Binding,
+    ]);
+    assert_eq!(shape.required, 1);
+    assert_eq!(shape.optional, 1);
+    assert!(shape.has_rest);
+    assert!(shape.errors.is_empty());
+  }
+
+  #[test]
+  fn parameter_shapes_report_malformed_marker_sequences() {
+    let cases = [
+      (vec![ParamShapeToken::OptionalMark], "optional marker is missing"),
+      (vec![ParamShapeToken::RestMark], "rest marker is missing"),
+      (
+        vec![ParamShapeToken::RestMark, ParamShapeToken::Binding, ParamShapeToken::Binding],
+        "binding appears after",
+      ),
+      (
+        vec![ParamShapeToken::OptionalMark, ParamShapeToken::OptionalMark],
+        "optional marker appears more than once",
+      ),
+      (
+        vec![ParamShapeToken::OptionalMark, ParamShapeToken::RestMark, ParamShapeToken::Binding],
+        "optional marker is missing",
+      ),
+    ];
+    for (tokens, expected) in cases {
+      let shape = ParamShape::from_tokens(tokens);
+      assert!(shape.errors.iter().any(|error| error.contains(expected)), "{shape:?}");
+    }
   }
 }
 

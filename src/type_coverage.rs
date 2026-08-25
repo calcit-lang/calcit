@@ -3,9 +3,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
+use std::sync::Arc;
 
 use calcit::calcit::{
-  CalcitProc, CalcitSyntax, CalcitTypeAnnotation, ProcTypeSignature, SchemaKind, SyntaxTypeSignature, resolve_type_slot,
+  CalcitProc, CalcitSyntax, CalcitTypeAnnotation, ParamShape, ParamShapeToken, ProcTypeSignature, SchemaKind, SyntaxTypeSignature,
+  compare_param_shapes, resolve_type_slot,
 };
 use calcit::cli_args::{CheckTypesCommand, WeakTypesCommand};
 use calcit::snapshot;
@@ -625,13 +627,25 @@ fn weak_type_impact(occurrence: &WeakTypeOccurrence) -> &'static str {
   "The dynamic slot erases type relations at this boundary, reducing call checking, generic binding, and compile-time method specialization."
 }
 
-fn entry_schema_issues(ns: &str, def_name: &str, code: &Cirru, annotation: &CalcitTypeAnnotation) -> Vec<String> {
+fn entry_schema_issues(ns: &str, def_name: &str, code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -> Vec<String> {
+  let annotation = schema.as_ref();
   let mut issues = validate_def_vs_schema(ns, def_name, code, annotation);
   let has_js_ffi_feature = matches!(
     annotation,
     CalcitTypeAnnotation::Fn(fn_annot) if fn_annot.features.iter().any(|feature| feature.ref_str() == "js-ffi")
   );
   if matches!(annotation, CalcitTypeAnnotation::Dynamic) {
+    if matches!(code, Cirru::List(items) if matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defmacro")) {
+      let (warning, detail) = if snapshot::schema_annotation_is_missing(schema) {
+        ("W_SCHEMA_MISSING", "has no declared macro schema")
+      } else {
+        (
+          "W_MACRO_SCHEMA_DYNAMIC",
+          "declares an intentionally untyped whole-Dynamic macro schema",
+        )
+      };
+      issues.push(format!("[{warning}] {ns}/{def_name} {detail}"));
+    }
     return issues;
   }
 
@@ -1734,69 +1748,45 @@ pub fn validate_def_vs_schema(ns: &str, def_name: &str, code: &Cirru, schema: &C
   // Kind mismatch
   match (fn_annot.fn_kind, code_kind) {
     (SchemaKind::Fn, "defmacro") => {
-      issues.push(format!("{ns}/{def_name}: schema :kind is :fn but code uses defmacro"));
+      issues.push(format!(
+        "[E_SCHEMA_KIND] {ns}/{def_name}: schema :kind is :fn but code uses defmacro"
+      ));
     }
     (SchemaKind::Macro, "defn") => {
-      issues.push(format!("{ns}/{def_name}: schema :kind is :macro but code uses defn"));
+      issues.push(format!(
+        "[E_SCHEMA_KIND] {ns}/{def_name}: schema :kind is :macro but code uses defn"
+      ));
     }
     _ => {}
   }
 
-  if code_kind == "defmacro" {
-    return issues;
+  let mut code_shape = analyze_param_shape(xs.get(2));
+  let mut schema_shape = ParamShape::from_schema(&fn_annot.arg_types, fn_annot.rest_type.is_some());
+  if code_kind != "defmacro" {
+    code_shape = code_shape.as_fixed_arity();
+    schema_shape = schema_shape.as_fixed_arity();
   }
-
-  // Arity check
-  let (required_count, has_rest) = analyze_param_arity(xs.get(2));
-  let schema_required = fn_annot.arg_types.len();
-  let schema_has_rest = fn_annot.rest_type.is_some();
-
-  if required_count != schema_required {
-    issues.push(format!(
-      "{ns}/{def_name}: schema has {schema_required} required arg(s) but code has {required_count}"
-    ));
-  }
-  if has_rest != schema_has_rest {
-    if has_rest {
-      issues.push(format!("{ns}/{def_name}: code has & rest param but schema has no :rest"));
-    } else {
-      issues.push(format!("{ns}/{def_name}: schema has :rest but code has no & param"));
-    }
-  }
+  issues.extend(compare_param_shapes(&format!("{ns}/{def_name}"), &code_shape, &schema_shape));
 
   issues
 }
 
 /// Count required params and detect rest param from a defn/defmacro args form.
 pub fn analyze_param_arity(args: Option<&Cirru>) -> (usize, bool) {
+  let shape = analyze_param_shape(args);
+  (shape.required, shape.has_rest)
+}
+
+fn analyze_param_shape(args: Option<&Cirru>) -> ParamShape {
   let Some(Cirru::List(xs)) = args else {
-    return (0, false);
+    return ParamShape::from_tokens([]);
   };
-  let mut required = 0usize;
-  let mut has_rest = false;
-  let mut after_amp = false;
-  for item in xs.iter() {
-    match item {
-      Cirru::Leaf(s) => {
-        let s = s.as_ref();
-        if s == "&" {
-          after_amp = true;
-        } else if s == "[]" || s == "," || s == "?" {
-          // skip structural markers
-        } else if after_amp {
-          has_rest = true;
-        } else if !s.starts_with(':') && !s.starts_with('|') && !s.chars().all(|c| c.is_ascii_digit()) {
-          required += 1;
-        }
-      }
-      Cirru::List(_) => {
-        if !after_amp {
-          required += 1;
-        }
-      }
-    }
-  }
-  (required, has_rest)
+  ParamShape::from_tokens(xs.iter().filter_map(|item| match item {
+    Cirru::Leaf(s) if matches!(s.as_ref(), "[]" | ",") => None,
+    Cirru::Leaf(s) if s.as_ref() == "?" => Some(ParamShapeToken::OptionalMark),
+    Cirru::Leaf(s) if s.as_ref() == "&" => Some(ParamShapeToken::RestMark),
+    _ => Some(ParamShapeToken::Binding),
+  }))
 }
 
 pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> TypeCoverageRow {
@@ -2007,7 +1997,13 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
         let body = &xs[3..];
         let params = extract_param_symbols(args);
         let param_annotations = extract_assert_type_annotations(body);
-        (DefKind::Macro, params, param_annotations, Vec::new(), None, CoverageLevel::Full)
+        let typed_count = count_typed_params(&params, &param_annotations);
+        let level = if typed_count > 0 {
+          CoverageLevel::Partial
+        } else {
+          CoverageLevel::None
+        };
+        (DefKind::Macro, params, param_annotations, Vec::new(), None, level)
       }
       Some(Cirru::Leaf(head)) if &**head == "def" => {
         let inferred = xs.get(2).and_then(infer_data_type);

@@ -8,7 +8,8 @@ use crate::{
     self, Calcit, CalcitArgLabel, CalcitCallKind, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl,
     CalcitImport, CalcitList, CalcitLocal, CalcitNumberBinaryOp, CalcitProc, CalcitScope, CalcitStructDef, CalcitSymbolInfo,
     CalcitSyntax, CalcitTrait, CalcitTraitMemberKind, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation,
-    RawCodeType, SchemaKind, brief_type_of_value, pop_type_slot_override, push_type_slot_override, register_type_slot,
+    ParamShape, ParamShapeToken, RawCodeType, SchemaKind, brief_type_of_value, compare_param_shapes, pop_type_slot_override,
+    push_type_slot_override, register_type_slot,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -6025,18 +6026,27 @@ pub fn preprocess_defn(
       }
       warn_on_legacy_optional_public_schema(ctx.file_ns, def_name.as_ref(), &def_schema, ctx.check_warnings);
       let schema_issues = validate_def_schema_during_preprocess(head, ctx.file_ns, def_name.as_ref(), ys, &def_schema);
-      if !schema_issues.is_empty() {
-        let details = schema_issues.join("\n  - ");
+      let (staged_macro_issues, hard_schema_issues) = partition_def_schema_issues(head, schema_issues);
+      let definition_location = NodeLocation::new(
+        info.at_ns.to_owned(),
+        info.at_def.to_owned(),
+        location.to_owned().unwrap_or_default(),
+      );
+      // Existing projects contain macro schemas that predate parameter-shape
+      // validation. Keep the location-aware preprocessing diagnostic opt-in
+      // during migration; `analyze check-types` reports the same issues by
+      // default without blocking project execution.
+      if std::env::var_os("CALCIT_WARN_MACRO_SCHEMA_SHAPE").is_some() {
+        emit_staged_macro_schema_warnings(staged_macro_issues, ctx.file_ns, &definition_location, ctx.check_warnings);
+      }
+      if !hard_schema_issues.is_empty() {
+        let details = hard_schema_issues.join("\n  - ");
         return Err(CalcitErr::use_msg_stack_location_with_code(
           CalcitErrKind::Type,
           format!("schema mismatch while preprocessing definition:\n  - {details}"),
           "E_SCHEMA_DEF_MISMATCH",
           ctx.call_stack,
-          Some(NodeLocation::new(
-            info.at_ns.to_owned(),
-            info.at_def.to_owned(),
-            location.to_owned().unwrap_or_default(),
-          )),
+          Some(definition_location),
         ));
       }
 
@@ -6812,28 +6822,41 @@ pub fn preprocess_assert_traits(
   Ok(assert_expr)
 }
 
-fn analyze_def_schema_param_arity(args: &CalcitList) -> (usize, bool) {
-  let mut required_count = 0;
-  let mut has_rest = false;
-  let mut skip_rest_binding = false;
+fn analyze_def_schema_param_shape(args: &CalcitList) -> ParamShape {
+  ParamShape::from_tokens(args.iter().map(|item| match item {
+    Calcit::Syntax(CalcitSyntax::ArgOptional, _) => ParamShapeToken::OptionalMark,
+    Calcit::Syntax(CalcitSyntax::ArgSpread, _) => ParamShapeToken::RestMark,
+    _ => ParamShapeToken::Binding,
+  }))
+}
 
-  for item in args {
-    if matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
-      has_rest = true;
-      skip_rest_binding = true;
-      continue;
-    }
-    if matches!(item, Calcit::Syntax(CalcitSyntax::ArgOptional, _)) {
-      continue;
-    }
-    if skip_rest_binding {
-      skip_rest_binding = false;
-      continue;
-    }
-    required_count += 1;
+fn emit_staged_macro_schema_warnings(
+  issues: Vec<String>,
+  file_ns: &str,
+  definition_location: &NodeLocation,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  for issue in issues {
+    gen_check_warning_code_at(
+      format!("[Warn] staged macro schema mismatch: {issue}"),
+      "W_MACRO_SCHEMA_PARAM_SHAPE",
+      file_ns,
+      Some(definition_location.clone()),
+      check_warnings,
+    );
   }
+}
 
-  (required_count, has_rest)
+fn is_staged_macro_schema_compatibility_issue(issue: &str) -> bool {
+  ["[E_SCHEMA_REQUIRED_ARGS]", "[E_SCHEMA_OPTIONAL_ARGS]", "[E_SCHEMA_REST_ARGS]"]
+    .iter()
+    .any(|code| issue.starts_with(code))
+}
+
+fn partition_def_schema_issues(head: &CalcitSyntax, issues: Vec<String>) -> (Vec<String>, Vec<String>) {
+  issues
+    .into_iter()
+    .partition(|issue| matches!(head, CalcitSyntax::Defmacro) && is_staged_macro_schema_compatibility_issue(issue))
 }
 
 fn contains_legacy_optional(annotation: &CalcitTypeAnnotation) -> bool {
@@ -6906,34 +6929,25 @@ fn validate_def_schema_during_preprocess(
 
   match (fn_annot.fn_kind, code_kind) {
     (SchemaKind::Fn, "defmacro") => {
-      issues.push(format!("{ns}/{def_name}: schema :kind is :fn but code uses defmacro"));
+      issues.push(format!(
+        "[E_SCHEMA_KIND] {ns}/{def_name}: schema :kind is :fn but code uses defmacro"
+      ));
     }
     (SchemaKind::Macro, "defn" | "defwasm-export" | "defwasm-import") => {
-      issues.push(format!("{ns}/{def_name}: schema :kind is :macro but code uses {code_kind}"));
+      issues.push(format!(
+        "[E_SCHEMA_KIND] {ns}/{def_name}: schema :kind is :macro but code uses {code_kind}"
+      ));
     }
     _ => {}
   }
 
-  if code_kind == "defmacro" {
-    return issues;
+  let mut code_shape = analyze_def_schema_param_shape(args);
+  let mut schema_shape = ParamShape::from_schema(&fn_annot.arg_types, fn_annot.rest_type.is_some());
+  if code_kind != "defmacro" {
+    code_shape = code_shape.as_fixed_arity();
+    schema_shape = schema_shape.as_fixed_arity();
   }
-
-  let (required_count, has_rest) = analyze_def_schema_param_arity(args);
-  let schema_required = fn_annot.arg_types.len();
-  let schema_has_rest = fn_annot.rest_type.is_some();
-
-  if required_count != schema_required {
-    issues.push(format!(
-      "{ns}/{def_name}: schema has {schema_required} required arg(s) but code has {required_count}"
-    ));
-  }
-  if has_rest != schema_has_rest {
-    if has_rest {
-      issues.push(format!("{ns}/{def_name}: code has & rest param but schema has no :rest"));
-    } else {
-      issues.push(format!("{ns}/{def_name}: schema has :rest but code has no & param"));
-    }
-  }
+  issues.extend(compare_param_shapes(&format!("{ns}/{def_name}"), &code_shape, &schema_shape));
 
   issues
 }
@@ -11893,7 +11907,7 @@ mod tests {
   }
 
   #[test]
-  fn validate_def_schema_ignores_macro_arity_details() {
+  fn validate_def_schema_reports_macro_required_and_rest_mismatches() {
     let args = CalcitList::from(&[
       Calcit::Local(CalcitLocal {
         idx: CalcitLocal::track_sym(&Arc::from("args")),
@@ -11928,7 +11942,7 @@ mod tests {
     }));
 
     let issues = validate_def_schema_during_preprocess(&CalcitSyntax::Defmacro, "calcit.core", "fn", &args, &schema);
-    assert!(issues.is_empty(), "macro arity differences should be ignored: {issues:?}");
+    assert!(issues.iter().any(|issue| issue.starts_with("[E_SCHEMA_REST_ARGS]")), "{issues:?}");
   }
 
   #[test]
@@ -11967,8 +11981,44 @@ mod tests {
       }),
     ] as &[Calcit]);
 
-    let (required_count, has_rest) = analyze_def_schema_param_arity(&args);
-    assert_eq!(required_count, 3, "optional marker should not count as its own arg");
-    assert!(!has_rest);
+    let shape = analyze_def_schema_param_shape(&args);
+    assert_eq!(shape.required, 2);
+    assert_eq!(shape.optional, 1);
+    assert!(!shape.has_rest);
+    assert!(shape.errors.is_empty());
+  }
+
+  #[test]
+  fn staged_macro_schema_warning_keeps_code_and_definition_location() {
+    let location = NodeLocation::new(Arc::from("app.macros"), Arc::from("demo"), Arc::new(vec![1, 2]));
+    let warnings = RefCell::new(vec![]);
+    emit_staged_macro_schema_warnings(
+      vec!["[E_SCHEMA_REST_ARGS] app.macros/demo: code has & rest param but schema has no :rest".to_owned()],
+      "app.macros",
+      &location,
+      &warnings,
+    );
+
+    let warnings = warnings.borrow();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].code(), Some("W_MACRO_SCHEMA_PARAM_SHAPE"));
+    assert_eq!(warnings[0].location(), &location);
+    assert!(warnings[0].message().contains("E_SCHEMA_REST_ARGS"));
+  }
+
+  #[test]
+  fn only_macro_schema_compatibility_mismatches_are_staged() {
+    let issues = vec![
+      "[E_SCHEMA_REQUIRED_ARGS] app/demo: mismatch".to_owned(),
+      "[E_SCHEMA_OPTIONAL_ARGS] app/demo: mismatch".to_owned(),
+      "[E_SCHEMA_REST_ARGS] app/demo: mismatch".to_owned(),
+      "[E_DEF_PARAM_SHAPE] app/demo: malformed parameter list".to_owned(),
+      "[E_SCHEMA_KIND] app/demo: wrong definition kind".to_owned(),
+    ];
+    let (staged, hard) = partition_def_schema_issues(&CalcitSyntax::Defmacro, issues);
+    assert_eq!(staged.len(), 3);
+    assert_eq!(hard.len(), 2);
+    assert!(hard.iter().any(|issue| issue.starts_with("[E_DEF_PARAM_SHAPE]")));
+    assert!(hard.iter().any(|issue| issue.starts_with("[E_SCHEMA_KIND]")));
   }
 }

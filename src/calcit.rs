@@ -40,6 +40,7 @@ pub use calcit_trait::{CalcitTrait, CalcitTraitMemberKind};
 pub use enum_value::CalcitEnumValue;
 pub(crate) use fns::trailing_option_arg_count;
 pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitMacro, CalcitScope};
+pub use fns::{ParamShape, ParamShapeToken, compare_param_shapes};
 pub use list::{CalcitCallKind, CalcitList, CalcitListView, CalcitNumberBinaryOp};
 pub use local::CalcitLocal;
 pub use proc_name::{CalcitProc, ProcArity, ProcTypeSignature};
