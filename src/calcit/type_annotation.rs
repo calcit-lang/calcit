@@ -1818,6 +1818,7 @@ impl CalcitTypeAnnotation {
           && matches!(
             name,
             "Dynamic"
+              | "Nil"
               | "Unit"
               | "Bool"
               | "Number"
@@ -2040,6 +2041,7 @@ impl CalcitTypeAnnotation {
               && matches!(
                 name,
                 "Dynamic"
+                  | "Nil"
                   | "Unit"
                   | "Bool"
                   | "Number"
@@ -4082,6 +4084,27 @@ mod tests {
     assert!(matches!(parsed.as_ref(), CalcitTypeAnnotation::TypeRef(name, args)
         if name.as_ref() == "Box"
           && matches!(args.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Number))));
+  }
+
+  #[test]
+  fn zero_argument_nil_applications_keep_nil_type() {
+    let list_form = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("::"),
+      Calcit::List(Arc::new(CalcitList::from(&[
+        Calcit::Syntax(CalcitSyntax::Quote, Arc::from(CORE_NS)),
+        symbol("Nil"),
+      ]))),
+    ])));
+    let enum_form = CalcitTypeAnnotation::edn_type_to_calcit(&Edn::enum_value("Nil", vec![]));
+
+    assert!(matches!(
+      CalcitTypeAnnotation::parse_type_annotation_form(&list_form).as_ref(),
+      CalcitTypeAnnotation::Nil
+    ));
+    assert!(matches!(
+      CalcitTypeAnnotation::parse_type_annotation_form(&enum_form).as_ref(),
+      CalcitTypeAnnotation::Nil
+    ));
   }
 
   #[test]

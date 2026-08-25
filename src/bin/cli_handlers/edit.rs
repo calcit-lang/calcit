@@ -2846,6 +2846,8 @@ mod tests {
 
   type TestSnapshot = TestProject;
 
+  // Snapshot serialization normalizes the format version, so use package as an
+  // observable staged mutation when testing transaction change detection.
   fn fake_package_operation(stage_path: &Path, index: usize, args: &[String]) -> Result<TransactionOperationReport, String> {
     let package = args.get(2).ok_or_else(|| "fake operation needs package at index 2".to_string())?;
     let mut snapshot = load_snapshot(&stage_path.to_string_lossy())?;

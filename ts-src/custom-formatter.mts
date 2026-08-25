@@ -21,8 +21,11 @@ declare global {
 }
 
 let embedObject = (x: CalcitValue) => {
-  if (x == null) {
+  if (x === null) {
     return null;
+  }
+  if (x === undefined) {
+    return span({ whiteSpace: "pre", color: hsl(240, 70, 50) }, "&unit");
   }
   if (typeof x === "string") {
     return span({ whiteSpace: "pre", color: hsl(120, 70, 50), maxWidth: "100vw" }, `|${x}`);

@@ -53,6 +53,13 @@ try {
   assert.equal(runtimeA.toString(undefined, true), "&unit");
   assert.throws(() => runtimeA.json_stringify(undefined), /cannot encode value: &unit/);
   assert.throws(() => runtimeA.to_cirru_edn(undefined), /cannot encode &unit/);
+  const nilShape = { version: 2, root: 0, fingerprint: "runtime-nil-shape", nodes: [{ kind: "nil" }] };
+  assert.equal(runtimeA.parse_cirru_edn_as("do nil", nilShape), null, "typed EDN decoding must preserve the Nil node");
+  assert.throws(
+    () => runtimeA.parse_cirru_edn_as("do |value", nilShape),
+    /expected Nil, got string/,
+    "typed EDN decoding must reject non-Nil input for the Nil node"
+  );
 
   const effectRef = runtimeA.atom(1);
   const watchKey = runtimeA.newTag("runtime-unit-check");
@@ -159,6 +166,17 @@ try {
   assert.ok(formatter.hasBody(todoEnum), "enum definition formatter should expose variants");
   assert.ok(embeddedObjects(formatter.body(todoStruct)).includes(todoType), "struct definition formatter should embed field types");
   assert.ok(embeddedObjects(formatter.body(todoEnum)).includes(todoType), "enum definition formatter should embed variant payload types");
+  const assertFormatterRendersNestedUnit = (value, kind) => {
+    assert.ok(JSON.stringify(formatter.body(value)).includes("&unit"), `${kind} formatter should render nested &unit values`);
+  };
+  assertFormatterRendersNestedUnit(new runtimeA.CalcitSliceList([undefined]), "list");
+  assertFormatterRendersNestedUnit(new runtimeA.CalcitSet([undefined]), "set");
+  assertFormatterRendersNestedUnit(new runtimeA.CalcitSliceMap([todoField, undefined]), "map");
+  assertFormatterRendersNestedUnit(new runtimeA.CalcitStructValue(todoName, [todoField], [undefined]), "struct");
+  assert.ok(
+    !JSON.stringify(formatter.body(new runtimeA.CalcitSliceList([null]))).includes("&unit"),
+    "nested nil must remain distinct from &unit"
+  );
 
   const foreignField = runtimeA.newTag("show");
   const method = () => "demo";
