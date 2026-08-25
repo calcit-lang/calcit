@@ -113,6 +113,7 @@ fn number_binary_proc(operation: CalcitNumberBinaryOp) -> CalcitProc {
     CalcitNumberBinaryOp::Subtract => CalcitProc::NativeMinus,
     CalcitNumberBinaryOp::Multiply => CalcitProc::NativeMultiply,
     CalcitNumberBinaryOp::Divide => CalcitProc::NativeDivide,
+    CalcitNumberBinaryOp::Remainder => CalcitProc::NativeNumberRem,
     CalcitNumberBinaryOp::LessThan => CalcitProc::NativeLessThan,
     CalcitNumberBinaryOp::GreaterThan => CalcitProc::NativeGreaterThan,
   }
@@ -138,18 +139,33 @@ fn evaluate_number_binary_call(
   // from left to right, before the operator sees either value.
   let values = [evaluate_arg(&xs[1])?, evaluate_arg(&xs[2])?];
 
-  match (&values[0], &values[1]) {
+  let result = match (&values[0], &values[1]) {
     (Calcit::Number(a), Calcit::Number(b)) => match operation {
       CalcitNumberBinaryOp::Add => Ok(Calcit::Number(a + b)),
       CalcitNumberBinaryOp::Subtract => Ok(Calcit::Number(a - b)),
       CalcitNumberBinaryOp::Multiply => Ok(Calcit::Number(a * b)),
       CalcitNumberBinaryOp::Divide => Ok(Calcit::Number(a / b)),
+      CalcitNumberBinaryOp::Remainder => builtins::rem_numbers(*a, *b),
       CalcitNumberBinaryOp::LessThan => Ok(Calcit::Bool(a < b)),
       CalcitNumberBinaryOp::GreaterThan => Ok(Calcit::Bool(a > b)),
     },
     // Static evidence may become stale after hot reload or host interop. Keep
     // the established dynamic error and stack behavior without re-evaluating.
     _ => builtins::handle_proc(number_binary_proc(operation), &values, call_stack),
+  };
+
+  if using_stack() {
+    result.map_err(|err| {
+      if err.stack.is_empty() {
+        let mut stacked = err;
+        call_stack.clone_into(&mut stacked.stack);
+        stacked
+      } else {
+        err
+      }
+    })
+  } else {
+    result
   }
 }
 
@@ -1040,6 +1056,7 @@ mod tests {
       (CalcitNumberBinaryOp::Subtract, 8.0, 2.0, Calcit::Number(6.0)),
       (CalcitNumberBinaryOp::Multiply, 8.0, 2.0, Calcit::Number(16.0)),
       (CalcitNumberBinaryOp::Divide, 8.0, 2.0, Calcit::Number(4.0)),
+      (CalcitNumberBinaryOp::Remainder, 8.0, 3.0, Calcit::Number(2.0)),
       (CalcitNumberBinaryOp::LessThan, 2.0, 8.0, Calcit::Bool(true)),
       (CalcitNumberBinaryOp::GreaterThan, 8.0, 2.0, Calcit::Bool(true)),
     ];
@@ -1075,6 +1092,48 @@ mod tests {
       .expect_err("stale static evidence must use the normal type error");
 
     assert!(format!("{err}").contains("&+ requires 2 numbers"));
+  }
+
+  #[test]
+  fn specialized_remainder_matches_normal_number_conversion() {
+    for (left, right) in [(8.0, 3.0), (8.5, 3.0), (f64::from(i32::MAX) + 1.0, 3.0), (8.0, 2.5)] {
+      let expr = Calcit::from(CalcitList::executable(
+        vec![
+          Calcit::Proc(CalcitProc::NativeNumberRem),
+          Calcit::Number(left),
+          Calcit::Number(right),
+        ],
+        CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Remainder),
+      ));
+      let specialized = evaluate_expr(&expr, &CalcitScope::default(), "tests.runner", &CallStackList::default());
+      let dispatched = builtins::handle_proc(
+        CalcitProc::NativeNumberRem,
+        &[Calcit::Number(left), Calcit::Number(right)],
+        &CallStackList::default(),
+      );
+
+      assert_eq!(specialized, dispatched);
+    }
+  }
+
+  #[test]
+  fn specialized_remainder_preserves_normal_error_stack() {
+    let expr = Calcit::from(CalcitList::executable(
+      vec![Calcit::Proc(CalcitProc::NativeNumberRem), Calcit::Number(8.5), Calcit::Number(3.0)],
+      CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Remainder),
+    ));
+    let call_stack = CallStackList::default().extend("tests.runner", "typed-rem-error", StackKind::Fn, &Calcit::Nil, &[]);
+    let specialized =
+      evaluate_expr(&expr, &CalcitScope::default(), "tests.runner", &call_stack).expect_err("fractional remainder input must fail");
+    let dispatched = builtins::handle_proc(
+      CalcitProc::NativeNumberRem,
+      &[Calcit::Number(8.5), Calcit::Number(3.0)],
+      &call_stack,
+    )
+    .expect_err("normal remainder dispatch must fail");
+
+    assert_eq!(specialized.stack, dispatched.stack);
+    assert_eq!(specialized.stack, call_stack);
   }
 
   #[test]
