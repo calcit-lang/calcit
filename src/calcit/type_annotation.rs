@@ -281,6 +281,11 @@ pub enum CalcitTypeAnnotation {
   /// function type without a known signature
   DynFn,
   Fn(Arc<CalcitFnTypeAnnotation>),
+  /// Compile-time macro contract. Unlike `Fn`, its inputs describe raw syntax
+  /// and its output describes the semantic value produced after expansion.
+  Macro(Arc<MacroSignature>),
+  /// A macro-body local whose value is an unevaluated syntax node.
+  Syntax(Arc<MacroSyntaxType>),
   /// Hashset type
   Set(Arc<CalcitTypeAnnotation>),
   Ref(Arc<CalcitTypeAnnotation>),
@@ -328,6 +333,236 @@ pub enum CalcitTypeAnnotation {
   /// A type slot reference declared via `deftype-slot` and bound via `bind-type`.
   /// At type-checking time, this is resolved by looking up the global TYPE_SLOTS registry.
   TypeSlot(Arc<str>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MacroSyntaxType {
+  Syntax,
+  SyntaxSymbol,
+  SyntaxList,
+  Expr(Arc<CalcitTypeAnnotation>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MacroExpansionType {
+  Dynamic,
+  Expr(Arc<CalcitTypeAnnotation>),
+  Definition(Arc<CalcitTypeAnnotation>),
+  Declarations,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MacroSignatureCompatibility {
+  Strict,
+  /// Existing `Macro {:args ... :return ...}` schemas mixed runtime and syntax
+  /// phases. Keep their data for lossless snapshots, but do not enforce it as
+  /// a strict syntax/expansion contract.
+  Legacy(Arc<CalcitFnTypeAnnotation>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MacroSignature {
+  pub generics: Arc<Vec<Arc<str>>>,
+  pub where_bounds: Arc<Vec<CalcitGenericBound>>,
+  pub required_inputs: Arc<Vec<MacroSyntaxType>>,
+  pub optional_inputs: Arc<Vec<MacroSyntaxType>>,
+  pub rest_input: Option<MacroSyntaxType>,
+  pub expansion: MacroExpansionType,
+  pub features: Arc<HashSet<EdnTag>>,
+  pub compatibility: MacroSignatureCompatibility,
+}
+
+impl PartialOrd for MacroSignature {
+  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+    Some(self.cmp(other))
+  }
+}
+
+impl Ord for MacroSignature {
+  fn cmp(&self, other: &Self) -> Ordering {
+    let mut self_features = self.features.iter().map(EdnTag::ref_str).collect::<Vec<_>>();
+    let mut other_features = other.features.iter().map(EdnTag::ref_str).collect::<Vec<_>>();
+    self_features.sort_unstable();
+    other_features.sort_unstable();
+    self
+      .generics
+      .cmp(&other.generics)
+      .then_with(|| self.where_bounds.cmp(&other.where_bounds))
+      .then_with(|| self.required_inputs.cmp(&other.required_inputs))
+      .then_with(|| self.optional_inputs.cmp(&other.optional_inputs))
+      .then_with(|| self.rest_input.cmp(&other.rest_input))
+      .then_with(|| self.expansion.cmp(&other.expansion))
+      .then_with(|| self_features.cmp(&other_features))
+      .then_with(|| self.compatibility.cmp(&other.compatibility))
+  }
+}
+
+impl Hash for MacroSignature {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    self.generics.hash(state);
+    self.where_bounds.hash(state);
+    self.required_inputs.hash(state);
+    self.optional_inputs.hash(state);
+    self.rest_input.hash(state);
+    self.expansion.hash(state);
+    let mut features = self.features.iter().map(EdnTag::ref_str).collect::<Vec<_>>();
+    features.sort_unstable();
+    features.hash(state);
+    self.compatibility.hash(state);
+  }
+}
+
+impl MacroSignature {
+  pub fn legacy_dynamic() -> Self {
+    Self {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      required_inputs: Arc::new(vec![]),
+      optional_inputs: Arc::new(vec![]),
+      rest_input: None,
+      expansion: MacroExpansionType::Dynamic,
+      features: Arc::new(HashSet::new()),
+      compatibility: MacroSignatureCompatibility::Legacy(Arc::new(CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![],
+        return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+        fn_kind: SchemaKind::Macro,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })),
+    }
+  }
+
+  pub fn from_legacy_fn(annotation: CalcitFnTypeAnnotation) -> Self {
+    let annotation = Arc::new(CalcitFnTypeAnnotation {
+      fn_kind: SchemaKind::Macro,
+      ..annotation
+    });
+    Self {
+      generics: annotation.generics.clone(),
+      where_bounds: annotation.where_bounds.clone(),
+      required_inputs: Arc::new(vec![]),
+      optional_inputs: Arc::new(vec![]),
+      rest_input: None,
+      expansion: MacroExpansionType::Dynamic,
+      features: annotation.features.clone(),
+      compatibility: MacroSignatureCompatibility::Legacy(annotation),
+    }
+  }
+
+  pub fn is_strict(&self) -> bool {
+    matches!(self.compatibility, MacroSignatureCompatibility::Strict)
+  }
+
+  fn parse_contract(form: &Edn, generics: &[Arc<str>]) -> Option<MacroSyntaxType> {
+    match form {
+      Edn::Symbol(name) | Edn::Quote(cirru_parser::Cirru::Leaf(name)) => match name.as_ref() {
+        "Syntax" => Some(MacroSyntaxType::Syntax),
+        "SyntaxSymbol" => Some(MacroSyntaxType::SyntaxSymbol),
+        "SyntaxList" => Some(MacroSyntaxType::SyntaxList),
+        _ => None,
+      },
+      Edn::Enum(view) if view.variant.as_ref() == "Expr" && view.extra.len() == 1 => {
+        let semantic = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(
+          &CalcitTypeAnnotation::edn_type_to_calcit(&view.extra[0]),
+          generics,
+        );
+        Some(MacroSyntaxType::Expr(semantic))
+      }
+      _ => None,
+    }
+  }
+
+  fn parse_expansion(form: Option<&Edn>, generics: &[Arc<str>]) -> Option<MacroExpansionType> {
+    let form = form?;
+    match form {
+      Edn::Symbol(name) | Edn::Quote(cirru_parser::Cirru::Leaf(name)) if name.as_ref() == "Declarations" => {
+        Some(MacroExpansionType::Declarations)
+      }
+      Edn::Enum(view) if view.variant.as_ref() == "Declarations" && view.extra.is_empty() => Some(MacroExpansionType::Declarations),
+      Edn::Enum(view) if matches!(view.variant.as_ref(), "Expr" | "Definition") && view.extra.len() == 1 => {
+        let semantic = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(
+          &CalcitTypeAnnotation::edn_type_to_calcit(&view.extra[0]),
+          generics,
+        );
+        if view.variant.as_ref() == "Expr" {
+          Some(MacroExpansionType::Expr(semantic))
+        } else {
+          Some(MacroExpansionType::Definition(semantic))
+        }
+      }
+      _ => None,
+    }
+  }
+
+  fn contract_to_edn(contract: &MacroSyntaxType) -> Edn {
+    match contract {
+      MacroSyntaxType::Syntax => Edn::Symbol(Arc::from("Syntax")),
+      MacroSyntaxType::SyntaxSymbol => Edn::Symbol(Arc::from("SyntaxSymbol")),
+      MacroSyntaxType::SyntaxList => Edn::Symbol(Arc::from("SyntaxList")),
+      MacroSyntaxType::Expr(semantic) => Edn::enum_value("Expr", vec![semantic.to_type_edn()]),
+    }
+  }
+
+  fn expansion_to_edn(expansion: &MacroExpansionType) -> Option<Edn> {
+    match expansion {
+      MacroExpansionType::Dynamic => None,
+      MacroExpansionType::Expr(semantic) => Some(Edn::enum_value("Expr", vec![semantic.to_type_edn()])),
+      MacroExpansionType::Definition(semantic) => Some(Edn::enum_value("Definition", vec![semantic.to_type_edn()])),
+      MacroExpansionType::Declarations => Some(Edn::enum_value("Declarations", vec![])),
+    }
+  }
+
+  pub fn to_wrapped_schema_edn(&self) -> Edn {
+    if let MacroSignatureCompatibility::Legacy(annotation) = &self.compatibility {
+      return annotation.to_wrapped_schema_edn();
+    }
+    let mut map = EdnMapView::default();
+    map.insert_key(
+      "required",
+      Edn::List(EdnListView(self.required_inputs.iter().map(Self::contract_to_edn).collect())),
+    );
+    if !self.optional_inputs.is_empty() {
+      map.insert_key(
+        "optional",
+        Edn::List(EdnListView(self.optional_inputs.iter().map(Self::contract_to_edn).collect())),
+      );
+    }
+    if let Some(rest) = &self.rest_input {
+      map.insert_key("rest", Self::contract_to_edn(rest));
+    }
+    if let Some(expansion) = Self::expansion_to_edn(&self.expansion) {
+      map.insert_key("expansion", expansion);
+    }
+    if !self.generics.is_empty() {
+      map.insert_key(
+        "generics",
+        Edn::List(EdnListView(self.generics.iter().map(|name| Edn::Symbol(name.clone())).collect())),
+      );
+    }
+    if let Some(where_bounds) = (CalcitFnTypeAnnotation {
+      generics: self.generics.clone(),
+      where_bounds: self.where_bounds.clone(),
+      arg_types: vec![],
+      return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+      fn_kind: SchemaKind::Macro,
+      rest_type: None,
+      features: self.features.clone(),
+    })
+    .where_bounds_to_edn()
+    {
+      map.insert_key("where", where_bounds);
+    }
+    if !self.features.is_empty() {
+      let mut set = EdnSetView::default();
+      for feature in self.features.iter() {
+        set.insert(Edn::Tag(feature.clone()));
+      }
+      map.insert_key("features", Edn::Set(set));
+    }
+    Edn::enum_value("Macro", vec![Edn::Map(map)])
+  }
 }
 
 impl CalcitTypeAnnotation {
@@ -378,6 +613,24 @@ impl CalcitTypeAnnotation {
         value.validate_applied_type_args()
       }
       Self::Fn(signature) => signature.validate_applied_type_args(),
+      Self::Macro(signature) => {
+        for contract in signature.required_inputs.iter().chain(signature.optional_inputs.iter()) {
+          if let MacroSyntaxType::Expr(semantic) = contract {
+            semantic.validate_applied_type_args()?;
+          }
+        }
+        if let Some(MacroSyntaxType::Expr(semantic)) = &signature.rest_input {
+          semantic.validate_applied_type_args()?;
+        }
+        match &signature.expansion {
+          MacroExpansionType::Expr(semantic) | MacroExpansionType::Definition(semantic) => semantic.validate_applied_type_args(),
+          MacroExpansionType::Dynamic | MacroExpansionType::Declarations => Ok(()),
+        }
+      }
+      Self::Syntax(contract) => match contract.as_ref() {
+        MacroSyntaxType::Expr(semantic) => semantic.validate_applied_type_args(),
+        MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => Ok(()),
+      },
       Self::Struct(base, args) => {
         for arg in args.iter() {
           arg.validate_applied_type_args()?;
@@ -1272,6 +1525,90 @@ impl CalcitTypeAnnotation {
     Self::parse_type_annotation_form_inner(&Self::edn_type_to_calcit(form), &[], true)
   }
 
+  /// Parse a phase-aware macro signature. New signatures use
+  /// `:required/:optional/:rest/:expansion`; existing `:args/:return` macro
+  /// schemas are retained as explicitly legacy, non-strict signatures.
+  pub fn parse_macro_signature_from_edn(schema: &Edn) -> Option<MacroSignature> {
+    let (map, wrapped_macro) = match schema {
+      Edn::Map(map) => (map, false),
+      Edn::Enum(view) if matches!(view.variant.as_ref(), "macro" | "Macro") => match view.extra.first() {
+        Some(Edn::Map(map)) => (map, true),
+        _ => return None,
+      },
+      _ => return None,
+    };
+    let tagged_macro = matches!(map.tag_get("kind"), Some(Edn::Tag(tag)) if tag.ref_str() == "macro");
+    if !wrapped_macro && !tagged_macro {
+      return None;
+    }
+
+    let strict = ["required", "optional", "expansion"].iter().any(|key| map.tag_get(key).is_some());
+    if !strict {
+      let legacy = Self::parse_fn_schema_from_edn(schema)?;
+      return Some(MacroSignature::from_legacy_fn(legacy));
+    }
+
+    let generics: Vec<Arc<str>> = match map.tag_get("generics") {
+      None => vec![],
+      Some(Edn::List(xs)) => xs
+        .0
+        .iter()
+        .map(|item| match item {
+          Edn::Symbol(name) if !name.starts_with('\'') => Some(name.clone()),
+          _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?,
+      Some(_) => return None,
+    };
+    let parse_contracts = |field: Option<&Edn>| -> Option<Vec<MacroSyntaxType>> {
+      match field {
+        None => Some(vec![]),
+        Some(Edn::List(xs)) => xs
+          .0
+          .iter()
+          .map(|item| MacroSignature::parse_contract(item, generics.as_slice()))
+          .collect(),
+        Some(_) => None,
+      }
+    };
+    let required_inputs = parse_contracts(map.tag_get("required"))?;
+    let optional_inputs = parse_contracts(map.tag_get("optional"))?;
+    let rest_input = match map.tag_get("rest") {
+      Some(item) => Some(MacroSignature::parse_contract(item, generics.as_slice())?),
+      None => None,
+    };
+    let expansion = MacroSignature::parse_expansion(map.tag_get("expansion"), generics.as_slice())?;
+    let where_bounds = map
+      .tag_get("where")
+      .and_then(|value| Self::parse_where_bounds_from_edn(value, generics.as_slice()))
+      .unwrap_or_default();
+    let features = map
+      .tag_get("features")
+      .and_then(|value| match value {
+        Edn::Set(xs) => Some(Arc::new(
+          xs.0
+            .iter()
+            .filter_map(|item| match item {
+              Edn::Tag(tag) => Some(tag.clone()),
+              _ => None,
+            })
+            .collect(),
+        )),
+        _ => None,
+      })
+      .unwrap_or_default();
+    Some(MacroSignature {
+      generics: Arc::new(generics),
+      where_bounds: Arc::new(where_bounds),
+      required_inputs: Arc::new(required_inputs),
+      optional_inputs: Arc::new(optional_inputs),
+      rest_input,
+      expansion,
+      features,
+      compatibility: MacroSignatureCompatibility::Strict,
+    })
+  }
+
   /// Parse a schema [`Edn`] map value (as stored in [`crate::snapshot::CodeEntry::schema`])
   /// directly into a [`CalcitFnTypeAnnotation`], without going through a Cirru/Calcit roundtrip.
   ///
@@ -1299,6 +1636,9 @@ impl CalcitTypeAnnotation {
       .iter()
       .any(|key| map.tag_get(key).is_some());
     if !has_schema_fields {
+      return None;
+    }
+    if ["required", "optional", "expansion"].iter().any(|key| map.tag_get(key).is_some()) {
       return None;
     }
 
@@ -2528,6 +2868,8 @@ impl CalcitTypeAnnotation {
   pub(crate) fn matches_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
     match (self, expected) {
       (_, Self::Dynamic) | (Self::Dynamic, _) => true,
+      (Self::Macro(actual), Self::Macro(expected)) => actual == expected,
+      (Self::Syntax(actual), Self::Syntax(expected)) => actual == expected,
       // Compatibility for annotations constructed by older embedders before
       // `:any` was normalized during parsing. Alias semantics are symmetric.
       (_, Self::Custom(expected)) if Self::custom_keyword_matches(expected, "any") => true,
@@ -3187,6 +3529,13 @@ impl CalcitTypeAnnotation {
 
     match self {
       Self::Fn(signature) => signature.describe(),
+      Self::Macro(_) => "macro-signature".to_owned(),
+      Self::Syntax(contract) => match contract.as_ref() {
+        MacroSyntaxType::Syntax => "syntax".to_owned(),
+        MacroSyntaxType::SyntaxSymbol => "syntax-symbol".to_owned(),
+        MacroSyntaxType::SyntaxList => "syntax-list".to_owned(),
+        MacroSyntaxType::Expr(semantic) => format!("syntax-expr<{}>", semantic.describe()),
+      },
       Self::Variadic(inner) => format!("variadic {}", inner.describe()),
       Self::Custom(_) => "custom".to_string(),
       Self::Optional(inner) => format!("optional<{}>", inner.describe()),
@@ -3259,6 +3608,8 @@ impl CalcitTypeAnnotation {
       Self::TypeSlot(_) => 31,
       Self::StructDef(_) => 32,
       Self::EnumDef(_) => 33,
+      Self::Macro(_) => 34,
+      Self::Syntax(_) => 35,
     }
   }
 }
@@ -3668,6 +4019,52 @@ mod tests {
   use super::*;
   use crate::calcit::CalcitSymbolInfo;
   use std::collections::BTreeSet;
+
+  #[test]
+  fn phase_aware_macro_signature_round_trips_without_fn_conflation() {
+    let mut map = EdnMapView::default();
+    map.insert_key("generics", Edn::List(EdnListView(vec![Edn::Symbol(Arc::from("T"))])));
+    map.insert_key(
+      "required",
+      Edn::List(EdnListView(vec![
+        Edn::Symbol(Arc::from("SyntaxSymbol")),
+        Edn::enum_value("Expr", vec![Edn::Symbol(Arc::from("T"))]),
+      ])),
+    );
+    map.insert_key("optional", Edn::List(EdnListView(vec![Edn::Symbol(Arc::from("SyntaxList"))])));
+    map.insert_key("rest", Edn::Symbol(Arc::from("Syntax")));
+    map.insert_key("expansion", Edn::enum_value("Expr", vec![Edn::Symbol(Arc::from("T"))]));
+    let schema = Edn::enum_value("Macro", vec![Edn::Map(map)]);
+
+    let signature = CalcitTypeAnnotation::parse_macro_signature_from_edn(&schema).expect("strict macro signature");
+    assert!(
+      CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema).is_none(),
+      "strict macro contracts must not be accepted as runtime function annotations"
+    );
+    assert!(signature.is_strict());
+    assert!(matches!(
+      signature.required_inputs.as_slice(),
+      [MacroSyntaxType::SyntaxSymbol, MacroSyntaxType::Expr(_)]
+    ));
+    assert!(matches!(signature.optional_inputs.as_slice(), [MacroSyntaxType::SyntaxList]));
+    assert!(matches!(signature.rest_input, Some(MacroSyntaxType::Syntax)));
+    assert!(matches!(signature.expansion, MacroExpansionType::Expr(_)));
+
+    let reloaded = CalcitTypeAnnotation::parse_macro_signature_from_edn(&signature.to_wrapped_schema_edn()).expect("round trip");
+    assert_eq!(reloaded, signature);
+  }
+
+  #[test]
+  fn legacy_macro_schema_is_explicitly_non_strict() {
+    let mut map = EdnMapView::default();
+    map.insert_key("args", Edn::List(EdnListView(vec![Edn::Symbol(Arc::from("Struct"))])));
+    map.insert_key("return", Edn::Symbol(Arc::from("Struct")));
+    let schema = Edn::enum_value("Macro", vec![Edn::Map(map)]);
+    let signature = CalcitTypeAnnotation::parse_macro_signature_from_edn(&schema).expect("legacy macro schema");
+    assert!(!signature.is_strict());
+    assert!(matches!(signature.compatibility, MacroSignatureCompatibility::Legacy(_)));
+    assert!(matches!(signature.expansion, MacroExpansionType::Dynamic));
+  }
 
   fn core_impl_trait_names(definition: &str) -> BTreeSet<String> {
     fn visit(node: &cirru_parser::Cirru, names: &mut BTreeSet<String>) {
@@ -4922,6 +5319,14 @@ impl Hash for CalcitTypeAnnotation {
         signature.arg_types.hash(state);
         signature.return_type.hash(state);
       }
+      Self::Macro(signature) => {
+        "macro-signature".hash(state);
+        signature.hash(state);
+      }
+      Self::Syntax(contract) => {
+        "syntax".hash(state);
+        contract.hash(state);
+      }
       Self::Set(inner) => {
         "set".hash(state);
         inner.hash(state);
@@ -5034,6 +5439,8 @@ impl Ord for CalcitTypeAnnotation {
         .cmp(&b.generics)
         .then_with(|| a.arg_types.cmp(&b.arg_types))
         .then_with(|| a.return_type.cmp(&b.return_type)),
+      (Self::Macro(a), Self::Macro(b)) => a.cmp(b),
+      (Self::Syntax(a), Self::Syntax(b)) => a.cmp(b),
       (Self::Set(a), Self::Set(b)) => a.cmp(b),
       (Self::Ref(a), Self::Ref(b)) => a.cmp(b),
       (Self::Variadic(a), Self::Variadic(b)) => a.cmp(b),
@@ -5385,6 +5792,8 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     CalcitTypeAnnotation::CirruQuote => matches!(value, Calcit::CirruQuote(_)),
     CalcitTypeAnnotation::AnonymousEnum => matches!(value, Calcit::Enum(_)),
     CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => matches!(value, Calcit::Fn { .. } | Calcit::Proc(_)),
+    CalcitTypeAnnotation::Macro(_) => matches!(value, Calcit::Macro { .. }),
+    CalcitTypeAnnotation::Syntax(_) => false,
     CalcitTypeAnnotation::Struct(expected_struct, _) => match value {
       Calcit::Struct(r) => r.struct_ref.name == expected_struct.name,
       _ => false,

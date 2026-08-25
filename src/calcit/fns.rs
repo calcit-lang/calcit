@@ -340,6 +340,7 @@ pub struct CalcitMacro {
   pub def_ns: Arc<str>,
   pub args: Arc<Vec<CalcitArgLabel>>,
   pub body: Arc<Vec<Calcit>>,
+  pub signature: Arc<crate::calcit::MacroSignature>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

@@ -145,6 +145,7 @@ mod schema_serde {
     let edn: Option<Edn> = match schema.as_ref() {
       CalcitTypeAnnotation::Dynamic => None,
       CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.to_schema_edn()),
+      CalcitTypeAnnotation::Macro(signature) => Some(signature.to_wrapped_schema_edn()),
       _ => None,
     };
     edn.serialize(s)
@@ -157,8 +158,9 @@ mod schema_serde {
     let opt = Option::<Edn>::deserialize(d)?;
     Ok(match opt {
       None | Some(Edn::Nil) => DYNAMIC_TYPE.clone(),
-      Some(v) => CalcitTypeAnnotation::parse_fn_schema_from_edn(&v)
-        .map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s))))
+      Some(v) => CalcitTypeAnnotation::parse_macro_signature_from_edn(&v)
+        .map(|s| Arc::new(CalcitTypeAnnotation::Macro(Arc::new(s))))
+        .or_else(|| CalcitTypeAnnotation::parse_fn_schema_from_edn(&v).map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s)))))
         .unwrap_or_else(|| DYNAMIC_TYPE.clone()),
     })
   }
@@ -307,8 +309,9 @@ impl TryFrom<Edn> for DetailedCodeEntry {
         validate_test_names(tests.iter().map(|test| test.name.as_str()), "DetailedCodeEntry.tests")?;
         let schema_parsed: Arc<CalcitTypeAnnotation> = match schema {
           None | Some(Edn::Nil) => DYNAMIC_TYPE.clone(),
-          Some(v) => CalcitTypeAnnotation::parse_fn_schema_from_edn(&v)
-            .map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s))))
+          Some(v) => CalcitTypeAnnotation::parse_macro_signature_from_edn(&v)
+            .map(|s| Arc::new(CalcitTypeAnnotation::Macro(Arc::new(s))))
+            .or_else(|| CalcitTypeAnnotation::parse_fn_schema_from_edn(&v).map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s)))))
             .unwrap_or_else(|| DYNAMIC_TYPE.clone()),
         };
         Ok(DetailedCodeEntry {

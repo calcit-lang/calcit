@@ -7,9 +7,7 @@ use std::collections::hash_set::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::calcit::{
-  Calcit, CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context,
-};
+use crate::calcit::{Calcit, CalcitTypeAnnotation, DYNAMIC_TYPE, MacroSignature, with_type_annotation_warning_context};
 use crate::data::edn::{format_deserialize_error, format_edn_display};
 
 const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.";
@@ -46,6 +44,9 @@ fn canonical_schema_field_name(text: &str) -> Option<&'static str> {
     "kind" => Some("kind"),
     "args" => Some("args"),
     "return" => Some("return"),
+    "required" => Some("required"),
+    "optional" => Some("optional"),
+    "expansion" => Some("expansion"),
     "rest" => Some("rest"),
     "generics" => Some("generics"),
     "where" => Some("where"),
@@ -527,6 +528,9 @@ fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<Calcit
     parse_schema_data(&schema_cirru)
       .map_err(|e| format!("failed to validate {owner}: {e}; schema={}", format_edn_preview(&normalized)))?;
 
+    if let Some(signature) = CalcitTypeAnnotation::parse_macro_signature_from_edn(&normalized) {
+      return Ok(Arc::new(CalcitTypeAnnotation::Macro(Arc::new(signature))));
+    }
     return CalcitTypeAnnotation::parse_fn_schema_from_edn(&normalized)
       .map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s))))
       .ok_or_else(|| {
@@ -606,6 +610,7 @@ pub fn schema_annotation_to_edn(schema: &CalcitTypeAnnotation) -> Edn {
   let expression = match schema {
     CalcitTypeAnnotation::Dynamic => Edn::Symbol(Arc::from("Dynamic")),
     CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
+    CalcitTypeAnnotation::Macro(signature) => signature.to_wrapped_schema_edn(),
     // Runtime-resolved nominal types are intentionally persisted as their
     // broad schema kinds. Their concrete definitions belong to source code,
     // and serializing only a local name would lose namespace identity.
@@ -1230,7 +1235,18 @@ fn validate_serialized_snapshot_content(content: &str) -> Result<(), String> {
 }
 
 /// Valid top-level field names accepted in a schema map.
-pub const VALID_SCHEMA_FIELDS: &[&str] = &[":kind", ":args", ":return", ":rest", ":generics", ":where", ":features"];
+pub const VALID_SCHEMA_FIELDS: &[&str] = &[
+  ":kind",
+  ":args",
+  ":return",
+  ":required",
+  ":optional",
+  ":expansion",
+  ":rest",
+  ":generics",
+  ":where",
+  ":features",
+];
 
 /// Recursively check a Cirru schema tree for deprecated `:nil` type annotations.
 fn check_no_nil_type(node: &Cirru) -> Result<(), String> {
@@ -1577,6 +1593,9 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   let mut args_node: Option<&Cirru> = None;
   let mut return_node: Option<&Cirru> = None;
   let mut rest_node: Option<&Cirru> = None;
+  let mut required_node: Option<&Cirru> = None;
+  let mut optional_node: Option<&Cirru> = None;
+  let mut expansion_node: Option<&Cirru> = None;
   let mut where_node: Option<&Cirru> = None;
   let mut features_node: Option<&Cirru> = None;
 
@@ -1588,6 +1607,9 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
         ":generics" => generics_node = Some(val),
         ":args" => args_node = Some(val),
         ":return" => return_node = Some(val),
+        ":required" => required_node = Some(val),
+        ":optional" => optional_node = Some(val),
+        ":expansion" => expansion_node = Some(val),
         ":rest" => rest_node = Some(val),
         ":where" => where_node = Some(val),
         ":features" => features_node = Some(val),
@@ -1608,6 +1630,9 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
       collect_type_vars(node, &mut used);
     }
     if let Some(node) = rest_node {
+      collect_type_vars(node, &mut used);
+    }
+    for node in [required_node, optional_node, expansion_node].into_iter().flatten() {
       collect_type_vars(node, &mut used);
     }
     if let Some(node) = where_node {
@@ -1641,6 +1666,9 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
       collect_type_vars(node, &mut used);
     }
     if let Some(node) = rest_node {
+      collect_type_vars(node, &mut used);
+    }
+    for node in [required_node, optional_node, expansion_node].into_iter().flatten() {
       collect_type_vars(node, &mut used);
     }
     if let Some(node) = where_node {
@@ -1697,8 +1725,12 @@ pub fn parse_schema_annotation_for_write(schema: &Cirru) -> Result<Arc<CalcitTyp
     return Ok(annotation);
   }
   Ok(
-    CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn)
-      .map(|signature| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature))))
+    CalcitTypeAnnotation::parse_macro_signature_from_edn(&schema_edn)
+      .map(|signature| Arc::new(CalcitTypeAnnotation::Macro(Arc::new(signature))))
+      .or_else(|| {
+        CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn)
+          .map(|signature| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature))))
+      })
       .unwrap_or_else(|| CalcitTypeAnnotation::parse_type_annotation_from_edn(&schema_edn)),
   )
 }
@@ -1749,23 +1781,16 @@ fn normalize_schema_for_code(code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -
     }
   }
 
-  let CalcitTypeAnnotation::Fn(fn_annot) = schema.as_ref() else {
-    return schema.clone();
-  };
-
-  if !code_declares_macro(code) || matches!(fn_annot.fn_kind, SchemaKind::Macro) {
+  if !code_declares_macro(code) || matches!(schema.as_ref(), CalcitTypeAnnotation::Macro(_)) {
     return schema.clone();
   }
-
-  Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-    generics: fn_annot.generics.clone(),
-    where_bounds: fn_annot.where_bounds.clone(),
-    arg_types: fn_annot.arg_types.clone(),
-    return_type: fn_annot.return_type.clone(),
-    fn_kind: SchemaKind::Macro,
-    rest_type: fn_annot.rest_type.clone(),
-    features: fn_annot.features.clone(),
-  })))
+  match schema.as_ref() {
+    CalcitTypeAnnotation::Fn(fn_annot) => Arc::new(CalcitTypeAnnotation::Macro(Arc::new(MacroSignature::from_legacy_fn(
+      fn_annot.as_ref().clone(),
+    )))),
+    CalcitTypeAnnotation::Dynamic => Arc::new(CalcitTypeAnnotation::Macro(Arc::new(MacroSignature::legacy_dynamic()))),
+    _ => schema.clone(),
+  }
 }
 
 /// structure of runtime snapshot files such as `calcit.cirru` (legacy: `compact.cirru`)
@@ -3575,7 +3600,7 @@ mod tests {
     // 2. Format it to Cirru string (via cirru_edn::format)
     // 3. Parse it back (via cirru_edn::parse)
     // 4. TryFrom<Edn> for CodeEntry
-    // 5. Check entry.schema is Fn with fn_kind: Macro
+    // 5. Check entry.schema is the dedicated legacy-compatible MacroSignature
 
     let schema_text = "{} (:kind :macro) (:return :bool) (:args ([] :number :number))";
     let schema_cirru = cirru_parser::parse(schema_text)
@@ -3618,17 +3643,17 @@ mod tests {
     let reloaded: CodeEntry = parsed_edn.try_into().expect("TryFrom<Edn> should succeed");
 
     // Check the schema was preserved
-    match reloaded.schema.as_ref() {
-      CalcitTypeAnnotation::Fn(fn_annot) => {
-        assert_eq!(
-          fn_annot.fn_kind,
-          SchemaKind::Macro,
-          "fn_kind must survive round-trip; cirru_text: {cirru_text:?}"
-        );
-        assert_eq!(fn_annot.arg_types.len(), 2, "arg_types must survive round-trip");
-      }
-      other => panic!("schema must be Fn after round-trip, got {other:?}; cirru_text: {cirru_text:?}"),
-    }
+    let CalcitTypeAnnotation::Macro(signature) = reloaded.schema.as_ref() else {
+      panic!(
+        "schema must be Macro after round-trip, got {:?}; cirru_text: {cirru_text:?}",
+        reloaded.schema
+      )
+    };
+    let crate::calcit::MacroSignatureCompatibility::Legacy(fn_annot) = &signature.compatibility else {
+      panic!("legacy schema should keep compatibility payload")
+    };
+    assert_eq!(fn_annot.fn_kind, SchemaKind::Macro);
+    assert_eq!(fn_annot.arg_types.len(), 2, "arg_types must survive round-trip");
   }
 
   #[test]
@@ -3795,10 +3820,13 @@ mod tests {
     );
 
     let entry: CodeEntry = entry.try_into().expect("code entry should parse");
-    let CalcitTypeAnnotation::Fn(fn_annot) = entry.schema.as_ref() else {
-      panic!("schema should be fn-like");
+    let CalcitTypeAnnotation::Macro(signature) = entry.schema.as_ref() else {
+      panic!("defmacro schema should normalize to MacroSignature");
     };
-    assert_eq!(fn_annot.fn_kind, SchemaKind::Macro);
+    assert!(matches!(
+      signature.compatibility,
+      crate::calcit::MacroSignatureCompatibility::Legacy(_)
+    ));
   }
 
   #[test]
@@ -3849,6 +3877,29 @@ mod tests {
   }
 
   #[test]
+  fn phase_aware_macro_schema_writes_and_loads_as_macro_signature() {
+    let schema = cirru_parser::parse(
+      ":: 'Macro\n  {} (:generics $ [] 'T)\n    :required $ [] 'SyntaxSymbol (:: 'Expr 'T)\n    :optional $ [] 'SyntaxList\n    :rest 'Syntax\n    :expansion $ :: 'Expr 'T",
+    )
+    .expect("strict macro schema should parse")
+    .into_iter()
+    .next()
+    .expect("schema node");
+    let annotation = parse_schema_annotation_for_write(&schema).expect("strict macro schema should validate");
+    let CalcitTypeAnnotation::Macro(signature) = annotation.as_ref() else {
+      panic!("strict macro schema must not become Fn: {annotation:?}")
+    };
+    assert!(signature.is_strict());
+    assert_eq!(signature.required_inputs.len(), 2);
+    assert_eq!(signature.optional_inputs.len(), 1);
+    assert!(signature.rest_input.is_some());
+
+    let saved = schema_annotation_to_edn(annotation.as_ref());
+    let loaded = parse_loaded_schema_annotation(&saved, "test macro schema").expect("saved strict signature should reload");
+    assert_eq!(loaded, annotation);
+  }
+
+  #[test]
   fn test_load_snapshot_preserves_selected_real_world_schemas() {
     let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
     let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
@@ -3870,11 +3921,17 @@ mod tests {
       "optionally",
     ] {
       let entry = core_file.defs.get(def_name).unwrap_or_else(|| panic!("missing def: {def_name}"));
-      assert!(
-        matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Fn(_)),
-        "schema for {def_name} should stay fn-like after load, got {:?}",
-        entry.schema
-      );
+      if matches!(def_name, "%{}" | "deftrait" | "[,]" | "noted") {
+        assert!(
+          matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Macro(_)),
+          "{def_name} should load as MacroSignature"
+        );
+      } else {
+        assert!(
+          matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Fn(_)),
+          "schema for {def_name} should stay fn-like"
+        );
+      }
     }
   }
 

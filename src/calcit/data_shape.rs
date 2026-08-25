@@ -511,6 +511,9 @@ impl GraphBuilder {
       CalcitTypeAnnotation::TypeVar(name) => Err(unsupported_type(&format!("generic variable '{name} is not bound"))),
       CalcitTypeAnnotation::AnonymousEnum => Err(unsupported_type("anonymous enum has no declared enum schema")),
       CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Err(unsupported_type("function values are not closed data")),
+      CalcitTypeAnnotation::Macro(_) | CalcitTypeAnnotation::Syntax(_) => {
+        Err(unsupported_type("compile-time macro syntax contracts are not application data"))
+      }
       CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_) => {
         Err(unsupported_type("trait constraints are not data shapes"))
       }
