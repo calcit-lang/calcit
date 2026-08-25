@@ -6174,6 +6174,7 @@ fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: 
   Ok(Calcit::List(Arc::from(CalcitList::Vector(xs))))
 }
 
+/// Maps a source-facing macro contract to the runtime type visible inside the macro body.
 fn macro_contract_body_type(contract: &MacroSyntaxType) -> Arc<CalcitTypeAnnotation> {
   match contract {
     MacroSyntaxType::SyntaxSymbol => Arc::new(CalcitTypeAnnotation::Symbol),
@@ -6184,6 +6185,7 @@ fn macro_contract_body_type(contract: &MacroSyntaxType) -> Arc<CalcitTypeAnnotat
   }
 }
 
+/// Builds body parameter types in required, optional, and rest binding order.
 fn strict_macro_body_parameter_types(signature: &MacroSignature) -> Vec<Arc<CalcitTypeAnnotation>> {
   let required_types = signature.required_inputs.iter().map(macro_contract_body_type);
   let optional_types = signature

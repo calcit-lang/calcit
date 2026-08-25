@@ -4055,7 +4055,73 @@ mod tests {
       assert_eq!(signature.required_inputs.len(), required, "{def_name} required inputs");
       assert_eq!(signature.optional_inputs.len(), optional, "{def_name} optional inputs");
       assert_eq!(signature.rest_input.is_some(), has_rest, "{def_name} rest input");
-      assert!(matches!(signature.expansion, crate::calcit::MacroExpansionType::Expr(_)));
+      match def_name {
+        "or" | "when" | "when-not" => {
+          assert!(matches!(
+            signature.required_inputs.as_slice(),
+            [crate::calcit::MacroSyntaxType::Expr(inner)]
+              if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
+          ));
+          assert!(matches!(
+            signature.rest_input,
+            Some(crate::calcit::MacroSyntaxType::Expr(ref inner))
+              if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
+          ));
+        }
+        "either" | "if-not" => {
+          assert!(signature.required_inputs.is_empty());
+          assert!(matches!(
+            signature.rest_input,
+            Some(crate::calcit::MacroSyntaxType::Expr(ref inner))
+              if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
+          ));
+        }
+        "if-let" => {
+          assert!(matches!(
+            signature.required_inputs.as_slice(),
+            [
+              crate::calcit::MacroSyntaxType::SyntaxList,
+              crate::calcit::MacroSyntaxType::Expr(inner)
+            ] if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
+          ));
+          assert!(matches!(
+            signature.optional_inputs.as_slice(),
+            [crate::calcit::MacroSyntaxType::Expr(inner)]
+              if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
+          ));
+          assert!(signature.rest_input.is_none());
+        }
+        "when-let" => {
+          assert!(matches!(
+            signature.required_inputs.as_slice(),
+            [crate::calcit::MacroSyntaxType::SyntaxList]
+          ));
+          assert!(matches!(
+            signature.rest_input,
+            Some(crate::calcit::MacroSyntaxType::Expr(ref inner))
+              if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
+          ));
+        }
+        _ => unreachable!(),
+      }
+      if def_name == "when-let" {
+        assert!(matches!(
+          signature.expansion,
+          crate::calcit::MacroExpansionType::Expr(ref inner)
+            if matches!(
+              inner.as_ref(),
+              CalcitTypeAnnotation::TypeRef(name, args)
+                if name.as_ref() == "Option"
+                  && matches!(args.as_slice(), [item] if matches!(item.as_ref(), CalcitTypeAnnotation::Dynamic))
+            )
+        ));
+      } else {
+        assert!(matches!(
+          signature.expansion,
+          crate::calcit::MacroExpansionType::Expr(ref inner)
+            if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
+        ));
+      }
     }
 
     let test_file = snapshot.files.get("calcit.test").expect("calcit.test file should exist");
