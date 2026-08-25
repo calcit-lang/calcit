@@ -4156,6 +4156,73 @@ mod tests {
       }
     }
 
+    for def_name in [
+      "let-destruct",
+      "let-sugar",
+      "let[]",
+      "let{}",
+      "loop",
+      "struct-with",
+      "swap!",
+      "&doseq",
+    ] {
+      let CalcitTypeAnnotation::Macro(signature) = core_file.defs[def_name].schema.as_ref() else {
+        panic!("{def_name} should load as MacroSignature");
+      };
+      assert!(signature.is_strict(), "{def_name} should use a phase-aware contract");
+      assert!(signature.capabilities.is_empty(), "{def_name} should be compile-time pure");
+      assert!(signature.optional_inputs.is_empty(), "{def_name} should not have optional inputs");
+      match def_name {
+        "let-destruct" => assert!(matches!(
+          signature.required_inputs.as_slice(),
+          [crate::calcit::MacroSyntaxType::Syntax, crate::calcit::MacroSyntaxType::Expr(value)]
+            if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+        )),
+        "let-sugar" | "loop" | "&doseq" => assert!(matches!(
+          signature.required_inputs.as_slice(),
+          [crate::calcit::MacroSyntaxType::SyntaxList]
+        )),
+        "let[]" | "let{}" => assert!(matches!(
+          signature.required_inputs.as_slice(),
+          [crate::calcit::MacroSyntaxType::SyntaxList, crate::calcit::MacroSyntaxType::Expr(value)]
+            if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+        )),
+        "struct-with" => assert!(matches!(
+          signature.required_inputs.as_slice(),
+          [crate::calcit::MacroSyntaxType::Expr(value)]
+            if matches!(value.as_ref(), CalcitTypeAnnotation::Custom(kind) if kind.as_ref() == &Calcit::tag("struct"))
+        )),
+        "swap!" => assert!(matches!(
+          signature.required_inputs.as_slice(),
+          [crate::calcit::MacroSyntaxType::Expr(reference), crate::calcit::MacroSyntaxType::Expr(function)]
+            if matches!(reference.as_ref(), CalcitTypeAnnotation::Ref(value) if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic))
+              && matches!(function.as_ref(), CalcitTypeAnnotation::DynFn)
+        )),
+        _ => unreachable!(),
+      }
+      if def_name == "struct-with" {
+        assert!(matches!(signature.rest_input, Some(crate::calcit::MacroSyntaxType::SyntaxList)));
+        assert!(matches!(
+          signature.expansion,
+          crate::calcit::MacroExpansionType::Expr(ref output)
+            if matches!(output.as_ref(), CalcitTypeAnnotation::Custom(kind) if kind.as_ref() == &Calcit::tag("struct"))
+        ));
+      } else {
+        assert!(matches!(
+          signature.rest_input,
+          Some(crate::calcit::MacroSyntaxType::Expr(ref value))
+            if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+        ));
+        let expected_unit = matches!(def_name, "swap!" | "&doseq");
+        assert!(matches!(
+          signature.expansion,
+          crate::calcit::MacroExpansionType::Expr(ref output)
+            if (expected_unit && matches!(output.as_ref(), CalcitTypeAnnotation::Unit))
+              || (!expected_unit && matches!(output.as_ref(), CalcitTypeAnnotation::Dynamic))
+        ));
+      }
+    }
+
     for def_name in ["let", "fn"] {
       let CalcitTypeAnnotation::Macro(signature) = core_file.defs[def_name].schema.as_ref() else {
         unreachable!()

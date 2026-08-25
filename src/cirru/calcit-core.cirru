@@ -509,8 +509,11 @@
                 reset! *seen $ append (deref *seen) n
               assert= ([] 1 2) (deref *seen)
           :schema $ :: 'Macro
-            {} (:return 'Unit)
-              :args $ [] 'Dynamic
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Unit
+              :required $ [] 'SyntaxList
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :effect :internal :macro
           :tests $ []
             %{} 'TestEntry (:name |returns-unit-after-body)
@@ -5966,7 +5969,11 @@
                   raise $ str-spaced "|Unknown structure to destruct:" pattern
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] 'Syntax (:: 'Expr 'Dynamic)
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |let-sugar $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -5978,6 +5985,7 @@
                 quasiquote $ &let () ~@body
                 &let
                   pair $ &list:nth pairs 0
+                  assert-type pair 'List
                   if
                     not $ &= 2 (&list:count pair)
                     raise $ str-spaced "|expected pair length of 2, got:" pair
@@ -5990,7 +5998,11 @@
                         ~@ body
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] 'SyntaxList
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |let[] $ %{} 'CodeEntry (:doc "|Destructures a sequential value inside `let`, assigning each position to declared names and supporting `&` rest bindings.")
           :code $ quote
@@ -6031,7 +6043,11 @@
             quote $ let[] (x y) ([] 1 2) (+ x y)
             quote $ let[] (head & tail) ([] 9 8 7) (count tail)
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] 'SyntaxList (:: 'Expr 'Dynamic)
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |let{} $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -6050,7 +6066,11 @@
                     ~@ body
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] 'SyntaxList (:: 'Expr 'Dynamic)
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |list-match $ %{} 'CodeEntry (:doc "|Two-branch list destructuring macro. Provides separate clauses for the empty list and a head/tail pattern, useful for simple recursion or guards.")
           :code $ quote
@@ -6146,7 +6166,11 @@
                   + total $ first xs
                   rest xs
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] 'SyntaxList
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |macro? $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -7663,7 +7687,10 @@
                 ~@ $ &list:concat & pairs
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Struct
+              :required $ [] (:: 'Expr 'Struct)
           :tags $ #{} :macro
         |struct? $ %{} 'CodeEntry (:doc "|Predicate that checks struct values, including nominal and anonymous structs. Passing a StructDef reports a migration error.")
           :code $ quote &runtime-implementation
@@ -7688,7 +7715,11 @@
             quote $ do (defatom *state 1) (swap! *state + 2)
               assert= 3 $ deref *state
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Unit
+              :required $ [] (:: 'Expr 'Ref) (:: 'Expr 'Fn)
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro :state
         |symbol? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is a symbol literal (as opposed to strings, keywords, or other data).")
           :code $ quote &runtime-implementation
