@@ -1697,7 +1697,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
       }
       if crate::calcit::MacroCapability::parse(name).is_none() {
         return Err(format!(
-          "Unknown macro capability `{name}`. Expected one of: :env-read, :fs-read, :platform-read, :clock-read, :mutable-state, :dynamic-eval, :fs-write, :process, :host-ffi"
+          "Unknown macro capability `{name}`. Expected one of: :env-read, :fs-read, :platform-read, :clock-read, :log, :mutable-state, :dynamic-eval, :fs-write, :process, :host-ffi"
         ));
       }
     }

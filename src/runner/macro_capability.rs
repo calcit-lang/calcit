@@ -158,7 +158,11 @@ pub fn check_syntax(syntax: &CalcitSyntax, call_stack: &CallStackList) -> Result
 }
 
 pub fn check_registered(alias: &str, call_stack: &CallStackList) -> Result<(), CalcitErr> {
-  check_policy(CapabilityPolicy::Forbidden(MacroCapability::HostFfi), alias, call_stack)
+  let policy = match alias {
+    "echo" | "println" | "eprintln" => CapabilityPolicy::Requires(MacroCapability::Log),
+    _ => CapabilityPolicy::Forbidden(MacroCapability::HostFfi),
+  };
+  check_policy(policy, alias, call_stack)
 }
 
 pub fn check_host_ffi(operation: &str, call_stack: &CallStackList) -> Result<(), CalcitErr> {
@@ -199,6 +203,35 @@ mod tests {
       check_proc(CalcitProc::GetEnv, &CallStackList::default())
     })
     .expect("declared env read should pass");
+  }
+
+  #[test]
+  fn registered_console_output_requires_log_capability() {
+    for alias in ["echo", "println", "eprintln"] {
+      let error = with_macro_context(Arc::from("app/log"), Arc::new(HashSet::new()), None, || {
+        check_registered(alias, &CallStackList::default())
+      })
+      .expect_err("compile-time console output must need a declaration");
+      assert_eq!(error.code(), Some("E_MACRO_CAPABILITY_MISSING"));
+      assert!(error.msg.contains(":log"));
+
+      let declared = Arc::new(HashSet::from([MacroCapability::Log]));
+      with_macro_context(Arc::from("app/log"), declared, None, || {
+        check_registered(alias, &CallStackList::default())
+      })
+      .expect("declared compile-time console output should pass");
+    }
+  }
+
+  #[test]
+  fn unrelated_registered_procedures_remain_forbidden_host_ffi() {
+    let declared = Arc::new(HashSet::from([MacroCapability::Log]));
+    let error = with_macro_context(Arc::from("app/ffi"), declared, None, || {
+      check_registered("custom-host-proc", &CallStackList::default())
+    })
+    .expect_err("log capability must not permit arbitrary registered procedures");
+    assert_eq!(error.code(), Some("E_MACRO_CAPABILITY_DISALLOWED"));
+    assert!(error.msg.contains(":host-ffi"));
   }
 
   #[test]

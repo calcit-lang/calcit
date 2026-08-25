@@ -370,6 +370,7 @@ pub enum MacroCapability {
   FsRead,
   PlatformRead,
   ClockRead,
+  Log,
   MutableState,
   DynamicEval,
   FsWrite,
@@ -384,6 +385,7 @@ impl MacroCapability {
       Self::FsRead => "fs-read",
       Self::PlatformRead => "platform-read",
       Self::ClockRead => "clock-read",
+      Self::Log => "log",
       Self::MutableState => "mutable-state",
       Self::DynamicEval => "dynamic-eval",
       Self::FsWrite => "fs-write",
@@ -398,6 +400,7 @@ impl MacroCapability {
       "fs-read" => Some(Self::FsRead),
       "platform-read" => Some(Self::PlatformRead),
       "clock-read" => Some(Self::ClockRead),
+      "log" => Some(Self::Log),
       "mutable-state" => Some(Self::MutableState),
       "dynamic-eval" => Some(Self::DynamicEval),
       "fs-write" => Some(Self::FsWrite),
@@ -4141,7 +4144,11 @@ mod tests {
     map.insert_key("expansion", Edn::enum_value("Expr", vec![Edn::Symbol(Arc::from("T"))]));
     map.insert_key(
       "capabilities",
-      Edn::Set(EdnSetView(HashSet::from([Edn::tag("env-read"), Edn::tag("fs-read")]))),
+      Edn::Set(EdnSetView(HashSet::from([
+        Edn::tag("env-read"),
+        Edn::tag("fs-read"),
+        Edn::tag("log"),
+      ]))),
     );
     let schema = Edn::enum_value("Macro", vec![Edn::Map(map)]);
 
@@ -4160,6 +4167,7 @@ mod tests {
     assert!(matches!(signature.expansion, MacroExpansionType::Expr(_)));
     assert!(signature.capabilities.contains(&MacroCapability::EnvRead));
     assert!(signature.capabilities.contains(&MacroCapability::FsRead));
+    assert!(signature.capabilities.contains(&MacroCapability::Log));
     assert!(!signature.is_cache_eligible());
 
     let reloaded = CalcitTypeAnnotation::parse_macro_signature_from_edn(&signature.to_wrapped_schema_edn()).expect("round trip");

@@ -16,8 +16,10 @@
                 quasiquote $ do (println "|env: not eval. tests skipped")
           :examples $ []
           :schema $ :: 'Macro
-            {} (:rest 'Dynamic)
-              :args $ [] 'Dynamic
+            {} (:rest 'Syntax)
+              :capabilities $ #{} :platform-read
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ []
         |inside-js: $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro inside-js: (& body)
@@ -27,8 +29,10 @@
                 quasiquote $ do (println "|env: not js. tests skipped")
           :examples $ []
           :schema $ :: 'Macro
-            {} (:rest 'Dynamic)
-              :args $ [] 'Dynamic
+            {} (:rest 'Syntax)
+              :capabilities $ #{} :platform-read
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ []
         |log-title $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
