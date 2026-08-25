@@ -91,18 +91,20 @@ fn update(name: &str, f: impl FnOnce(&mut MacroExpansionMetric)) {
 /// count as misses (`cache-not-implemented`), while effectful and legacy calls
 /// are bypassed with a stable reason.
 pub fn record_expansion(name: &str, signature: &MacroSignature) {
-  update(name, |metric| {
-    metric.expansions += 1;
-    metric.general_evaluator_fallbacks += 1;
-    if !signature.is_strict() {
-      add_reason(&mut metric.cache_bypasses, "legacy-signature", 1);
-    } else if !signature.capabilities.is_empty() {
-      add_reason(&mut metric.cache_bypasses, "declared-capabilities", 1);
-    } else {
-      metric.cache_misses += 1;
-      add_reason(&mut metric.cache_miss_reasons, "cache-not-implemented", 1);
-    }
-  });
+  update(name, |metric| record_expansion_metric(metric, signature));
+}
+
+fn record_expansion_metric(metric: &mut MacroExpansionMetric, signature: &MacroSignature) {
+  metric.expansions += 1;
+  metric.general_evaluator_fallbacks += 1;
+  if !signature.is_strict() {
+    add_reason(&mut metric.cache_bypasses, "legacy-signature", 1);
+  } else if !signature.capabilities.is_empty() {
+    add_reason(&mut metric.cache_bypasses, "declared-capabilities", 1);
+  } else {
+    metric.cache_misses += 1;
+    add_reason(&mut metric.cache_miss_reasons, "cache-not-implemented", 1);
+  }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -187,6 +189,10 @@ pub fn reset(enabled: bool) {
 
 pub fn report_json() -> Result<String, String> {
   let metrics = METRICS.lock().expect("read macro expansion metrics").clone();
+  report_json_for(metrics)
+}
+
+fn report_json_for(metrics: BTreeMap<String, MacroExpansionMetric>) -> Result<String, String> {
   serde_json::to_string(&MacroMetricsReport {
     schema_version: 1,
     unit: "nanoseconds",
@@ -242,20 +248,17 @@ mod tests {
 
   #[test]
   fn report_separates_counts_timings_and_cache_reasons() {
-    reset(true);
-    record_expansion("tests/pure", &pure_signature());
+    let mut metrics = BTreeMap::new();
+    let pure = metrics.entry("tests/pure".to_owned()).or_default();
+    record_expansion_metric(pure, &pure_signature());
+    pure.evaluator_nanos = 1;
+    pure.post_preprocess_nanos = 2;
     let legacy = MacroSignature::legacy_dynamic();
-    record_expansion("tests/legacy", &legacy);
+    record_expansion_metric(metrics.entry("tests/legacy".to_owned()).or_default(), &legacy);
     let mut effectful = pure_signature();
     effectful.capabilities = Arc::new(HashSet::from([MacroCapability::EnvRead]));
-    record_expansion("tests/effectful", &effectful);
-    {
-      let _timer = PhaseTimer::start("tests/pure", MacroMetricPhase::Evaluator);
-    }
-    {
-      let _timer = PhaseTimer::start("tests/pure", MacroMetricPhase::PostPreprocess);
-    }
-    let report: serde_json::Value = serde_json::from_str(&report_json().expect("metrics JSON")).expect("valid JSON");
+    record_expansion_metric(metrics.entry("tests/effectful".to_owned()).or_default(), &effectful);
+    let report: serde_json::Value = serde_json::from_str(&report_json_for(metrics).expect("metrics JSON")).expect("valid JSON");
     assert_eq!(report["totals"]["expansions"], 3);
     assert_eq!(report["totals"]["generalEvaluatorFallbacks"], 3);
     assert_eq!(report["totals"]["cacheMisses"], 1);
@@ -263,7 +266,7 @@ mod tests {
     assert_eq!(report["totals"]["cacheBypasses"]["legacy-signature"], 1);
     assert_eq!(report["totals"]["cacheBypasses"]["declared-capabilities"], 1);
     assert_eq!(report["totals"]["cacheInvalidations"], serde_json::json!({}));
-    assert!(report["macros"]["tests/pure"]["evaluatorNanos"].as_u64().is_some());
-    reset(false);
+    assert_eq!(report["macros"]["tests/pure"]["evaluatorNanos"], 1);
+    assert_eq!(report["macros"]["tests/pure"]["postPreprocessNanos"], 2);
   }
 }
