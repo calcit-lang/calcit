@@ -23,6 +23,7 @@ pub enum CalcitNumberBinaryOp {
   Subtract,
   Multiply,
   Divide,
+  Remainder,
   LessThan,
   GreaterThan,
 }

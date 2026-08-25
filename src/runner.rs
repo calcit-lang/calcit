@@ -113,6 +113,7 @@ fn number_binary_proc(operation: CalcitNumberBinaryOp) -> CalcitProc {
     CalcitNumberBinaryOp::Subtract => CalcitProc::NativeMinus,
     CalcitNumberBinaryOp::Multiply => CalcitProc::NativeMultiply,
     CalcitNumberBinaryOp::Divide => CalcitProc::NativeDivide,
+    CalcitNumberBinaryOp::Remainder => CalcitProc::NativeNumberRem,
     CalcitNumberBinaryOp::LessThan => CalcitProc::NativeLessThan,
     CalcitNumberBinaryOp::GreaterThan => CalcitProc::NativeGreaterThan,
   }
@@ -144,6 +145,7 @@ fn evaluate_number_binary_call(
       CalcitNumberBinaryOp::Subtract => Ok(Calcit::Number(a - b)),
       CalcitNumberBinaryOp::Multiply => Ok(Calcit::Number(a * b)),
       CalcitNumberBinaryOp::Divide => Ok(Calcit::Number(a / b)),
+      CalcitNumberBinaryOp::Remainder => builtins::rem_numbers(*a, *b),
       CalcitNumberBinaryOp::LessThan => Ok(Calcit::Bool(a < b)),
       CalcitNumberBinaryOp::GreaterThan => Ok(Calcit::Bool(a > b)),
     },
@@ -1040,6 +1042,7 @@ mod tests {
       (CalcitNumberBinaryOp::Subtract, 8.0, 2.0, Calcit::Number(6.0)),
       (CalcitNumberBinaryOp::Multiply, 8.0, 2.0, Calcit::Number(16.0)),
       (CalcitNumberBinaryOp::Divide, 8.0, 2.0, Calcit::Number(4.0)),
+      (CalcitNumberBinaryOp::Remainder, 8.0, 3.0, Calcit::Number(2.0)),
       (CalcitNumberBinaryOp::LessThan, 2.0, 8.0, Calcit::Bool(true)),
       (CalcitNumberBinaryOp::GreaterThan, 8.0, 2.0, Calcit::Bool(true)),
     ];
@@ -1075,6 +1078,28 @@ mod tests {
       .expect_err("stale static evidence must use the normal type error");
 
     assert!(format!("{err}").contains("&+ requires 2 numbers"));
+  }
+
+  #[test]
+  fn specialized_remainder_matches_normal_number_conversion() {
+    for (left, right) in [(8.0, 3.0), (8.5, 3.0), (f64::from(i32::MAX) + 1.0, 3.0), (8.0, 2.5)] {
+      let expr = Calcit::from(CalcitList::executable(
+        vec![
+          Calcit::Proc(CalcitProc::NativeNumberRem),
+          Calcit::Number(left),
+          Calcit::Number(right),
+        ],
+        CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Remainder),
+      ));
+      let specialized = evaluate_expr(&expr, &CalcitScope::default(), "tests.runner", &CallStackList::default());
+      let dispatched = builtins::handle_proc(
+        CalcitProc::NativeNumberRem,
+        &[Calcit::Number(left), Calcit::Number(right)],
+        &CallStackList::default(),
+      );
+
+      assert_eq!(specialized, dispatched);
+    }
   }
 
   #[test]

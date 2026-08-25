@@ -19,6 +19,7 @@ use crate::call_stack::{CallStackList, using_stack};
 use cirru_edn::EdnTag;
 
 use im_ternary_tree::TernaryTreeList;
+pub(crate) use math::rem_numbers;
 pub(crate) use refs::{ValueAndListeners, quick_build_atom};
 
 pub type FnType = fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr>;

@@ -91,13 +91,13 @@
 
 ---
 
-### P4: Method dispatch 静态绑定 ⬜ 推迟（复杂度高，待类型覆盖率提高）
+### P4: Method dispatch 静态绑定 ✅ #426
 
 **问题**: `.method obj` 运行时路径：① 匹配 receiver 类型 → ② 查 impl 列表（builtin 还要 evaluate symbol）→ ③ 线性遍历 `impls` 数组找方法名。
 
 **位置**: `src/builtins/meta.rs` L1016-1095，`method_call_impls` 函数。
 
-**方案**: 预处理阶段 receiver 类型和 trait 均已知时，直接解析到 `CalcitFn`/`CalcitProc`，把 `.method obj args` 重写为 `(resolved-fn obj args)`。
+**实际方案**: 预处理阶段 receiver 类型和 impl precedence 已知时，已有的 `try_inline_method_call` 会直接解析到稳定的 top-level callable 或 `CalcitProc`，把 `.method obj args` 重写为 `(resolved-fn obj args)`；Dynamic receiver、无法安全保留 closure 身份的 method entry 继续运行时 dispatch。#426 补齐了静态绑定后的 executable call metadata，使 `.add`、`.multiply`、`.rem` 等 resolved proc 还能进入 typed native number fast path，并把 remainder 纳入该 fast path。runtime 在执行 metadata 前仍校验实际 proc，hot reload 或 host interop 使静态证据过期时退回普通错误路径。
 
 **收益**: 消除 symbol resolution + linear impl search。
 
@@ -169,7 +169,8 @@
 | -    | 额外 | `7c04880` | runtime def resolution 去重复 RwLock 读 | 微优化                             |
 | 6    | P3   | #422      | typed `match` branch table + JS switch  | enum dispatcher / state machine    |
 | 7    | P6   | #424      | typed literal collection path expansion | nested map/list lookup and map update |
+| 8    | P4   | #426      | static method calls retain native op metadata | typed remainder loop ~11% faster |
 
 ### 待定
 
-- **P4**: Method dispatch 静态绑定 — 推迟，实现复杂度高
+- 在最新 Respo/Recollect 工作负载上继续 profiling；后续项目以实测热点为准，不再预设广泛 unboxing 或关闭 Dynamic 边界。

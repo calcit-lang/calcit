@@ -108,11 +108,7 @@ pub fn fractional(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn rem(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
-    (Some(Calcit::Number(base)), Some(Calcit::Number(step))) => match (f64_to_i32(*base), f64_to_i32(*step)) {
-      (Ok(a), Ok(b)) => Ok(Calcit::Number((a % b) as f64)),
-      (Err(a), _) => CalcitErr::err_str(CalcitErrKind::Type, a),
-      (_, Err(a)) => CalcitErr::err_str(CalcitErrKind::Type, a),
-    },
+    (Some(Calcit::Number(base)), Some(Calcit::Number(step))) => rem_numbers(*base, *step),
     (Some(a), Some(b)) => CalcitErr::err_str(
       CalcitErrKind::Type,
       format!("&math:rem expected 2 numbers, but received: {a:?} {b:?}"),
@@ -121,6 +117,14 @@ pub fn rem(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       CalcitErrKind::Arity,
       format!("&math:rem expected 2 numbers, but received: {a:?} {b:?}"),
     ),
+  }
+}
+
+pub(crate) fn rem_numbers(base: f64, step: f64) -> Result<Calcit, CalcitErr> {
+  match (f64_to_i32(base), f64_to_i32(step)) {
+    (Ok(a), Ok(b)) => Ok(Calcit::Number((a % b) as f64)),
+    (Err(a), _) => CalcitErr::err_str(CalcitErrKind::Type, a),
+    (_, Err(a)) => CalcitErr::err_str(CalcitErrKind::Type, a),
   }
 }
 

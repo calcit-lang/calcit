@@ -910,6 +910,7 @@ fn classify_number_binary_call(head: &Calcit, args: &[Calcit], scope_types: &Sco
     CalcitProc::NativeMinus => CalcitNumberBinaryOp::Subtract,
     CalcitProc::NativeMultiply => CalcitNumberBinaryOp::Multiply,
     CalcitProc::NativeDivide => CalcitNumberBinaryOp::Divide,
+    CalcitProc::NativeNumberRem => CalcitNumberBinaryOp::Remainder,
     CalcitProc::NativeLessThan => CalcitNumberBinaryOp::LessThan,
     CalcitProc::NativeGreaterThan => CalcitNumberBinaryOp::GreaterThan,
     _ => return CalcitCallKind::Normal,
@@ -4794,7 +4795,7 @@ fn try_inline_method_call(head: &Calcit, args: &CalcitList, scope_types: &ScopeT
       let (_impl_index, _impl_value, method_entry) = find_method_entry_with_impl(type_ref, &impl_values, method_name.as_ref())?;
 
       if let Some(callable_head) = pick_callable_from_method_entry(method_entry, file_ns) {
-        return Some(build_inlined_call(callable_head, args));
+        return Some(build_inlined_call(callable_head, args, scope_types));
       }
 
       None
@@ -4819,13 +4820,14 @@ fn pick_callable_from_method_entry(entry: &Calcit, _file_ns: &str) -> Option<Cal
   }
 }
 
-fn build_inlined_call(callable_head: Calcit, args: &CalcitList) -> Calcit {
+fn build_inlined_call(callable_head: Calcit, args: &CalcitList, scope_types: &ScopeTypes) -> Calcit {
   let mut call_nodes: Vec<Calcit> = Vec::with_capacity(args.len() + 1);
   call_nodes.push(callable_head);
   for item in args.iter() {
     call_nodes.push(item.to_owned());
   }
-  Calcit::from(call_nodes)
+  let kind = classify_number_binary_call(&call_nodes[0], &call_nodes[1..], scope_types);
+  Calcit::from(CalcitList::executable(call_nodes, kind))
 }
 
 fn find_method_entry_with_impl<'a>(
@@ -7083,6 +7085,7 @@ mod tests {
       (CalcitProc::NativeMinus, CalcitNumberBinaryOp::Subtract),
       (CalcitProc::NativeMultiply, CalcitNumberBinaryOp::Multiply),
       (CalcitProc::NativeDivide, CalcitNumberBinaryOp::Divide),
+      (CalcitProc::NativeNumberRem, CalcitNumberBinaryOp::Remainder),
       (CalcitProc::NativeLessThan, CalcitNumberBinaryOp::LessThan),
       (CalcitProc::NativeGreaterThan, CalcitNumberBinaryOp::GreaterThan),
     ] {
@@ -7113,6 +7116,53 @@ mod tests {
       panic!("expected executable call")
     };
     assert_eq!(call.call_kind(), CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Add));
+  }
+
+  #[test]
+  fn statically_inlined_method_call_retains_number_operation_metadata() {
+    let typed_local = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("typed-number")),
+      sym: Arc::from("typed-number"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.executable"),
+        at_def: Arc::from("main"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Number),
+    });
+    let args = CalcitList::from(&[typed_local, Calcit::Number(3.0)] as &[Calcit]);
+
+    let resolved = build_inlined_call(Calcit::Proc(CalcitProc::NativeNumberRem), &args, &ScopeTypes::new());
+    let Calcit::List(call) = resolved else {
+      panic!("expected executable call")
+    };
+
+    assert!(matches!(
+      call.as_ref(),
+      CalcitList::Call(_, CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Remainder))
+    ));
+  }
+
+  #[test]
+  fn statically_inlined_method_call_keeps_dynamic_arguments_on_normal_dispatch() {
+    let dynamic_local = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("dynamic-number")),
+      sym: Arc::from("dynamic-number"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.executable"),
+        at_def: Arc::from("main"),
+      }),
+      location: None,
+      type_info: calcit::DYNAMIC_TYPE.clone(),
+    });
+    let args = CalcitList::from(&[dynamic_local, Calcit::Number(3.0)] as &[Calcit]);
+
+    let resolved = build_inlined_call(Calcit::Proc(CalcitProc::NativeNumberRem), &args, &ScopeTypes::new());
+    let Calcit::List(call) = resolved else {
+      panic!("expected executable call")
+    };
+
+    assert!(matches!(call.as_ref(), CalcitList::Call(_, CalcitCallKind::Normal)));
   }
 
   #[test]
