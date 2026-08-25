@@ -3911,7 +3911,10 @@
             defmacro def (_name x) x
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] 'SyntaxSymbol (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
         |defatom $ %{} 'CodeEntry (:doc "|internal syntax for defining referenced state\nSyntax: (defatom name initial-value)\nParams: name (symbol), initial-value (any)\nReturns: atom definition\nDefines a mutable reference with initial value")
           :code $ quote &runtime-implementation
@@ -4009,7 +4012,10 @@
           :examples $ []
             quote $ defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'EnumDef
+              :required $ [] 'Syntax
           :tags $ #{} :macro
         |defimpl $ %{} 'CodeEntry (:doc "|macro for defining trait implementation values\nSyntax: (defimpl ImplName Trait (.method value) ...)\nParams: ImplName (symbol), Trait (symbol), method pairs\nReturns: impl value\nNotes: new code passes raw symbols; tag arguments remain only as legacy compatibility for originless method bags. This macro does not attach an impl to a target type/value; use `impl-traits` separately.\nExpands to &impl::new")
           :code $ quote
@@ -4091,7 +4097,10 @@
                                 quasiquote $ [] ~key ~v0
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Impl
+              :required $ [] 'Syntax 'Syntax
           :tags $ #{} :macro
         |defmacro $ %{} 'CodeEntry (:doc "|internal syntax for defining macros\nSyntax: (defmacro name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: macro definition\nDefines a macro that transforms code at compile time")
           :code $ quote &runtime-implementation
@@ -4236,7 +4245,10 @@
           :examples $ []
             quote $ defstruct Person (:name 'String) (:age 'Number)
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'StructDef
+              :required $ [] 'Syntax
           :tags $ #{} :macro
         |deftrait $ %{} 'CodeEntry (:doc "|macro for defining traits\nSyntax: (deftrait Name (.method (:: :fn $ {} (:args [...]) (:return t))) ...)\nParams: Name (symbol/tag), methods (list of (tag type))\nNotes: use :fn (tag) for DynFn when signature is intentionally omitted\nReturns: trait definition value\nExpands to &trait::new")
           :code $ quote
@@ -4270,7 +4282,10 @@
                     [] ~@normalized
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Trait
+              :required $ [] 'Syntax
           :tags $ #{} :macro
         |deftype-slot $ %{} 'CodeEntry (:doc "|Declare a named compile-time type slot supplied by a library. Syntax: (deftype-slot :slot-name). Applications should bind the slot for each entry with calcit config set-type-slot; an unbound slot falls back to :dynamic.")
           :code $ quote &runtime-implementation
