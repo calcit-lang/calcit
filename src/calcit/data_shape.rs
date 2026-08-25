@@ -9,7 +9,7 @@ use super::type_annotation::{TypeBindings, validate_runtime_generic_where_bounds
 use super::{Calcit, CalcitEnumDef, CalcitStructDef, CalcitTypeAnnotation};
 use crate::program;
 
-const DATA_SHAPE_ABI_VERSION: u16 = 1;
+const DATA_SHAPE_ABI_VERSION: u16 = 2;
 const MAX_SHAPE_VALUE_DEPTH: usize = 1024;
 
 /// A closed, backend-neutral description of statically typed Calcit data.
@@ -29,6 +29,7 @@ pub(crate) enum DataShapeNode {
   /// An intentionally open value at a runtime data boundary. Closed EDN
   /// shapes never contain this node.
   Dynamic,
+  Nil,
   Unit,
   Bool,
   Number,
@@ -219,9 +220,8 @@ impl DataShapeGraph {
       .ok_or_else(|| DataShapeValueError::at(path, format!("missing shape node #{node_id}")))?;
 
     match node {
-      // `nil` remains accepted for source compatibility, while `&unit` is the
-      // distinct value produced by newly written Unit-returning code.
-      DataShapeNode::Unit if matches!(value, Calcit::Unit | Calcit::Nil) => Ok(()),
+      DataShapeNode::Nil if matches!(value, Calcit::Nil) => Ok(()),
+      DataShapeNode::Unit if matches!(value, Calcit::Unit) => Ok(()),
       DataShapeNode::Bool if matches!(value, Calcit::Bool(_)) => Ok(()),
       DataShapeNode::Number if matches!(value, Calcit::Number(_)) => Ok(()),
       DataShapeNode::String if matches!(value, Calcit::Str(_)) => Ok(()),
@@ -385,6 +385,7 @@ impl DataShapeNode {
   pub(crate) fn expected_kind(&self) -> &str {
     match self {
       Self::Dynamic => "dynamic",
+      Self::Nil => "nil",
       Self::Unit => "&unit",
       Self::Bool => "bool",
       Self::Number => "number",
@@ -421,6 +422,7 @@ impl GraphBuilder {
 
   fn build_type(&mut self, target: &CalcitTypeAnnotation, default_ns: &str) -> Result<usize, DataShapeError> {
     match target {
+      CalcitTypeAnnotation::Nil => Ok(self.push(DataShapeNode::Nil)),
       CalcitTypeAnnotation::Unit => Ok(self.push(DataShapeNode::Unit)),
       CalcitTypeAnnotation::Bool => Ok(self.push(DataShapeNode::Bool)),
       CalcitTypeAnnotation::Number => Ok(self.push(DataShapeNode::Number)),
@@ -703,6 +705,7 @@ fn shape_fingerprint(root: usize, nodes: &[DataShapeNode]) -> String {
     hasher.update(format!("#{node_id}:").as_bytes());
     match node {
       DataShapeNode::Dynamic => hasher.update(b"dynamic;"),
+      DataShapeNode::Nil => hasher.update(b"nil;"),
       DataShapeNode::Unit => hasher.update(b"unit;"),
       DataShapeNode::Bool => hasher.update(b"bool;"),
       DataShapeNode::Number => hasher.update(b"number;"),

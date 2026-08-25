@@ -2846,10 +2846,12 @@ mod tests {
 
   type TestSnapshot = TestProject;
 
-  fn fake_version_operation(stage_path: &Path, index: usize, args: &[String]) -> Result<TransactionOperationReport, String> {
-    let version = args.get(2).ok_or_else(|| "fake operation needs version at index 2".to_string())?;
+  // Snapshot serialization normalizes the format version, so use package as an
+  // observable staged mutation when testing transaction change detection.
+  fn fake_package_operation(stage_path: &Path, index: usize, args: &[String]) -> Result<TransactionOperationReport, String> {
+    let package = args.get(2).ok_or_else(|| "fake operation needs package at index 2".to_string())?;
     let mut snapshot = load_snapshot(&stage_path.to_string_lossy())?;
-    snapshot.version = version.to_string();
+    snapshot.package = package.to_string();
     save_snapshot(&snapshot, &stage_path.to_string_lossy())?;
     Ok(TransactionOperationReport {
       index,
@@ -3066,7 +3068,7 @@ mod tests {
   fn transaction_rejects_stale_revision_without_running_operations() {
     let fixture = TestSnapshot::from_fixture();
     let original = fs::read_to_string(&fixture.path).expect("fixture should read");
-    let operations = vec![vec!["config".to_string(), "version".to_string(), "9.0.0".to_string()]];
+    let operations = vec![vec!["config".to_string(), "package".to_string(), "transaction-test".to_string()]];
     let mut called = false;
 
     let error = run_staged_transaction_with(&fixture.path, &operations, Some("md5:stale"), false, |_, _, _| {
@@ -3084,9 +3086,9 @@ mod tests {
   fn transaction_dry_run_validates_but_keeps_original_snapshot() {
     let fixture = TestSnapshot::from_fixture();
     let original = fs::read_to_string(&fixture.path).expect("fixture should read");
-    let operations = vec![vec!["config".to_string(), "version".to_string(), "9.0.0".to_string()]];
+    let operations = vec![vec!["config".to_string(), "package".to_string(), "transaction-test".to_string()]];
 
-    let report = run_staged_transaction_with(&fixture.path, &operations, None, true, fake_version_operation)
+    let report = run_staged_transaction_with(&fixture.path, &operations, None, true, fake_package_operation)
       .expect("dry-run transaction should validate");
 
     assert!(report.dry_run);
@@ -3100,13 +3102,13 @@ mod tests {
     let fixture = TestSnapshot::from_fixture();
     let original = fs::read_to_string(&fixture.path).expect("fixture should read");
     let operations = vec![
-      vec!["config".to_string(), "version".to_string(), "9.0.0".to_string()],
-      vec!["config".to_string(), "version".to_string(), "9.0.1".to_string()],
+      vec!["config".to_string(), "package".to_string(), "transaction-test".to_string()],
+      vec!["config".to_string(), "package".to_string(), "transaction-test-2".to_string()],
     ];
 
     let error = run_staged_transaction_with(&fixture.path, &operations, None, false, |path, index, args| {
       if index == 0 {
-        fake_version_operation(path, index, args)
+        fake_package_operation(path, index, args)
       } else {
         Err("simulated second operation failure".to_string())
       }
@@ -3120,18 +3122,18 @@ mod tests {
   #[test]
   fn successful_transaction_replaces_snapshot_once() {
     let fixture = TestSnapshot::from_fixture();
-    let operations = vec![vec!["config".to_string(), "version".to_string(), "9.0.0".to_string()]];
+    let operations = vec![vec!["config".to_string(), "package".to_string(), "transaction-test".to_string()]];
 
     let report =
-      run_staged_transaction_with(&fixture.path, &operations, None, false, fake_version_operation).expect("transaction should commit");
+      run_staged_transaction_with(&fixture.path, &operations, None, false, fake_package_operation).expect("transaction should commit");
 
     assert!(!report.dry_run);
     assert!(report.changed);
     assert_eq!(
       load_snapshot(&fixture.path.to_string_lossy())
         .expect("committed snapshot should load")
-        .version,
-      "0.0.0"
+        .package,
+      "transaction-test"
     );
     assert!(
       !fs::read_to_string(&fixture.path)

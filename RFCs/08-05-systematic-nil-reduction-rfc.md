@@ -25,7 +25,7 @@
 - 名称以 `&` 开头的 raw primitive 属于 semver-private 实现细节，允许在内部使用 nullable 表示，但不得直接挂入公开方法表；
 - 已生成 JS bundle 引用的 npm runtime export 属于 codegen ABI：typed wrapper/raw proc 改名时必须保留兼容 export，并由 runtime identity test 覆盖；类型系统负责阻断重新编译的旧 FFI 源码，但不能替代旧 bundle 的装载兼容性；
 - 新增查询 API 不得先返回 nil、再在后续版本改成 Option。类型和所有后端实现必须在首次发布时一致；
-- `analyze weak-types --only code-nil --intent unresolved,declared-optional` 必须对 core 返回零结果；
+- `analyze weak-types --only code-nil --intent unresolved,declared-unit,declared-optional` 必须对 core 返回零结果；
 - 以后若要改变这些名义返回类型，只能作为独立的非 nil 设计变更处理，不能再以“清理遗留 nil”为由制造连续 breaking change。
 
 本次最终迁移表：
@@ -48,7 +48,7 @@
 
 - `CalcitTypeAnnotation::Optional(T)` 能表达 `T | nil`；
 - `CalcitTypeAnnotation::JsNullish(T)` 独立表达 JavaScript 宿主空值，不与 Optional/Option 相互匹配；
-- `nil` 推断为 `Unit`，且 `Unit` 可以匹配 `Optional<T>`；
+- `nil` 与 `Unit` 过去共享静态表示，导致声明为 `Unit` 的副作用函数仍可能实际返回 nil；
 - `nil?` / `some?` 已支持分支内的 Optional 类型收窄；
 - core 已定义 `Option<T>`、`Result<T, E>` 及基本组合函数；
 - `get` 对 List、Map 和 String 已采用可能缺失的返回推断。
@@ -64,7 +64,7 @@
 
 ### Unit
 
-`Unit` 只用于副作用操作或明确没有有意义返回值的表达式，例如写文件、注册 watcher。新代码显式返回 `&unit`；它与 `nil` 不相等、不会通过 `nil?`，JavaScript 后端生成 `void 0`（而 `nil` 仍生成 `null`）。为了兼容既有代码，标注为 `Unit` 的位置仍可接受旧的 `nil`，而 `;nil` 也保留为旧的兼容宏；新业务代码不得把两者当 Unit 标记或缺失值容器。
+`Unit` 只用于副作用操作或明确没有有意义返回值的表达式，例如写文件、注册 watcher。新代码显式返回 `&unit`；它与 `nil` 不相等、不会通过 `nil?`，JavaScript 后端生成 `void 0`（而 `nil` 仍生成 `null`）。`Unit` 标注不再接受 nil；`nil` 具有独立的 `Nil` 静态类型，并且只有 Nil 可以进入遗留 `Optional<T>`。`;nil` 保留为返回 Nil 的兼容宏，不能用作 Unit 标记；副作用函数应以 `&unit` 或最终得到 Unit 的 `do` 收尾。
 
 ### Optional<T>（遗留内部表示）
 
@@ -97,7 +97,7 @@ JS FFI 是无法立即消除的宿主空值边界。原生属性读取、方法�
 - 将底层 `&parse-float` 和 `&get-env` proc 的 nullable 返回标成 Optional，作为公开名义 API 之下的兼容边界；
 - 将 `rest` / `butlast` 对空 List 的结果统一为同类型空 List，并同步 Native、JS、WASM；`rest` 与 `empty` 的公开契约改为 `T -> T`，因此确定存在的集合/String 不再被无条件提升为 Optional，而显式 Optional/nil 输入仍保留其可空类型；
 - 公开 core 的 `first`、`last`、`nth`、`get`、`get-in` schema 返回名义 `Option`；内部 `&list:first`、`&list:nth`、`&map:get` 等 raw primitive 保留 nullable 表示并标记为 internal；
-- `analyze weak-types` 将裸 `nil` 与 `;nil` 都纳入审计，仅在结构上可证明的返回位置读取函数契约，并区分 `declared-unit`、`declared-optional` 与 `unresolved`；JSON 对后两类迁移债务发出 `W_NIL_TYPE_DEBT`；
+- `analyze weak-types` 将裸 `nil` 与 `;nil` 都纳入审计，仅在结构上可证明的返回位置读取函数契约，并区分 `declared-unit`、`declared-optional` 与 `unresolved`；三类都属于迁移债务并由 JSON 发出 `W_NIL_TYPE_DEBT`；
 - `analyze.weak-types` 的机器协议升级到 schema v2，避免旧消费者在 v1 下错误接受新增的封闭 intent/diagnostic 枚举；
 - 修正既有 `optionally` 桥接函数的契约为 `Optional<T> -> Option<T>`，为遗留 nullable 边界提供不丢失类型关系的显式出口；
 - 为上述规则增加单元测试。
@@ -106,7 +106,7 @@ Phase 1 的类型契约修正本身不改变相关过程的运行时返回值；
 
 低层专用推断不能通过批量 `unsafe-coerce` 清理：core 宏在检查列表形状后读取 AST，当前类型系统尚不能携带“非空列表”及 guard clause 终止证据。此类宏改用明确的 `&` raw primitive；公开包装器始终保留 Option 外层，不把内部 nullable 表示扩散成 API。
 
-nil 审计也坚持证据边界：返回的 `do` 只有最后一项继承返回契约，返回的 `if` 只有结果分支继承契约；中间步骤、集合内容和尚未建模的控制流仍标成 `unresolved`。`declared-unit` 不计入迁移债务，`declared-optional` 则继续提示迁移到 Option/Result。
+nil 审计也坚持证据边界：返回的 `do` 只有最后一项继承返回契约，返回的 `if` 只有结果分支继承契约；中间步骤、集合内容和尚未建模的控制流仍标成 `unresolved`。`declared-unit` 提示改为真正的 `&unit`，`declared-optional` 则继续提示迁移到 Option/Result。
 
 ### Phase 2：建立名义安全 API
 
@@ -140,6 +140,17 @@ core 自举宏已经迁到明确的 `&` raw primitive，公开 `first`、`last`�
 - 删除已无调用方的 nil-tolerant 分支；
 - Optional 仅由迁移工具与 internal raw primitive 识别；公开 schema 由稳定诊断阻断；
 - 审计 JS/WASM 后端，确保名义类型的表示和分支行为一致。
+
+### Phase 5：Nil / Unit 运行时与 ABI 分离
+
+- 为 `nil` 增加独立的 `Nil` 类型标注，禁止其匹配 `Unit`，同时保留 Nil 到遗留 `Optional<T>` 的关系；
+- Native effect proc 返回真实 Unit；有意义的 mutation（例如 `reset!`）保留并声明其写入值，而不是伪造 Unit；
+- JavaScript 后端用 `null` 表示 Nil、用 `undefined` 表示 Unit，并在相等、哈希、格式化、类型反射和 typed decode 中保持二者可区分；
+- data-shape ABI 增加独立 Nil 节点并升级版本，防止旧 runtime 静默把 Nil 当 Unit；Cirru EDN 和 JSON 均拒绝序列化 Unit；
+- `;nil` 的零参数 hint form 必须生成真正的 Nil 返回；`assert-type` / `assert-traits` 在 JS 中保留被断言的值；
+- 对 js-ffi、Respo 与 Recollect 做组合验证，只迁移明确的 effect tail；DOM 缺失、宿主 nullish 和框架动态边界不机械替换。
+
+实施跟踪见 [#428](https://github.com/calcit-lang/calcit/issues/428) 与 [#429](https://github.com/calcit-lang/calcit/issues/429)。
 
 ## 类型提示修复策略
 

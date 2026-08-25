@@ -32,6 +32,7 @@ export type CalcitValue =
   | CalcitStructDef
   | CalcitEnumDef
   | CalcitCirruQuote
+  | undefined
   | null;
 
 export let isLiteral = (x: CalcitValue): boolean => {
@@ -46,6 +47,7 @@ export let isLiteral = (x: CalcitValue): boolean => {
 
 enum PseudoTypeIndex {
   nil,
+  unit,
   bool,
   number,
   symbol,
@@ -67,7 +69,8 @@ enum PseudoTypeIndex {
 
 let typeAsInt = (x: CalcitValue): number => {
   // based on order used in Ord trait
-  if (x == null) return PseudoTypeIndex.nil;
+  if (x === null) return PseudoTypeIndex.nil;
+  if (x === undefined) return PseudoTypeIndex.unit;
   let t = typeof x;
   if (t === "boolean") return PseudoTypeIndex.bool;
   if (t === "number") return PseudoTypeIndex.number;
@@ -107,6 +110,7 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
   if (ta === tb) {
     switch (ta) {
       case PseudoTypeIndex.nil:
+      case PseudoTypeIndex.unit:
         return 0;
       case PseudoTypeIndex.bool:
         return rawCompare(a, b);

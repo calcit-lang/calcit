@@ -5544,7 +5544,7 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
         }
       });
       PredicateNarrowing {
-        true_binding: Some((sym, Arc::new(CalcitTypeAnnotation::Unit))),
+        true_binding: Some((sym, Arc::new(CalcitTypeAnnotation::Nil))),
         false_binding,
       }
     }
@@ -5558,7 +5558,7 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
       });
       PredicateNarrowing {
         true_binding,
-        false_binding: Some((sym, Arc::new(CalcitTypeAnnotation::Unit))),
+        false_binding: Some((sym, Arc::new(CalcitTypeAnnotation::Nil))),
       }
     }
     "js-nullish?" => {
@@ -5570,7 +5570,7 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
         }
       });
       PredicateNarrowing {
-        true_binding: Some((sym, Arc::new(CalcitTypeAnnotation::Unit))),
+        true_binding: Some((sym, Arc::new(CalcitTypeAnnotation::JsNullish(calcit::DYNAMIC_TYPE.clone())))),
         false_binding,
       }
     }
@@ -5584,7 +5584,7 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
       });
       PredicateNarrowing {
         true_binding,
-        false_binding: Some((sym, Arc::new(CalcitTypeAnnotation::Unit))),
+        false_binding: Some((sym, Arc::new(CalcitTypeAnnotation::JsNullish(calcit::DYNAMIC_TYPE.clone())))),
       }
     }
     _ => empty,

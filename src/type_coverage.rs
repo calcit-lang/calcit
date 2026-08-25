@@ -548,11 +548,11 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
 
   if occurrence.kind == WeakTypeKind::CodeNil {
     return match occurrence.intent {
-      WeakTypeIntent::DeclaredUnit if occurrence.detail.contains("unit-macro") => {
-        "Keep the Unit return contract, but remove explicit `;nil` when an empty body or final Unit-returning effect already expresses no result."
+      WeakTypeIntent::DeclaredUnit if occurrence.detail.contains("nil-macro") => {
+        "The legacy `;nil` form returns Nil, not Unit. Replace it with `&unit`, or end the body with an effect that already returns Unit."
       }
       WeakTypeIntent::DeclaredUnit => {
-        "Keep the Unit return contract and remove explicit nil when an empty body or final Unit-returning effect already expresses no result."
+        "The declared return is Unit, so replace this nil with `&unit`, or end the body with an effect that already returns Unit."
       }
       WeakTypeIntent::DeclaredOptional => {
         "Keep Optional only at a compatibility/FFI boundary; migrate application-level absence to Option and failures with details to Result."
@@ -599,7 +599,7 @@ fn weak_type_impact(occurrence: &WeakTypeOccurrence) -> &'static str {
   if occurrence.kind == WeakTypeKind::CodeNil {
     return match occurrence.intent {
       WeakTypeIntent::DeclaredUnit => {
-        "The explicit nil form is confined to a declared Unit return, but may still be redundant source-level noise."
+        "Nil and Unit are distinct values, so this return violates the declared Unit contract and differs across generated runtimes."
       }
       WeakTypeIntent::DeclaredOptional => {
         "The nil is covered by an Optional return contract but remains compatibility debt until callers use a nominal Option/Result API."
@@ -847,7 +847,11 @@ fn scan_cirru_weak_types(
           weak_type_detail(WeakTypeKind::CodeDynamic, &detail),
           format_cirru_path(root, path),
         );
-      } else if text.as_ref() == "nil" && root == "code" && selected.contains(&WeakTypeKind::CodeNil) {
+      } else if text.as_ref() == "nil"
+        && root == "code"
+        && selected.contains(&WeakTypeKind::CodeNil)
+        && !state.quote_context.is_quoted()
+      {
         push_weak_type_occurrence(
           occurrences,
           WeakTypeKind::CodeNil,
@@ -864,18 +868,21 @@ fn scan_cirru_weak_types(
         Cirru::Leaf(text) => Some(text.to_string()),
         _ => None,
       });
-      if root == "code" && selected.contains(&WeakTypeKind::CodeNil) && matches!(head.as_deref(), Some(";nil")) {
+      if root == "code"
+        && selected.contains(&WeakTypeKind::CodeNil)
+        && matches!(head.as_deref(), Some(";nil"))
+        && !state.quote_context.is_quoted()
+      {
         push_weak_type_occurrence(
           occurrences,
           WeakTypeKind::CodeNil,
-          weak_type_detail(WeakTypeKind::CodeNil, &format!("unit-macro:{}", classify_code_nil(parent))),
+          weak_type_detail(WeakTypeKind::CodeNil, &format!("nil-macro:{}", classify_code_nil(parent))),
           format_cirru_path(root, path),
         );
-        if let Some(occurrence) = occurrences.last_mut() {
-          // `;nil` is the explicit source-level Unit marker. Unlike a raw nil
-          // literal it cannot represent optional application data, including
-          // when it appears inside a macro-generated branch.
-          occurrence.intent = WeakTypeIntent::DeclaredUnit;
+        if let (Some(intent), Some(occurrence)) = (state.nil_return_intent, occurrences.last_mut()) {
+          // `;nil` is a legacy spelling of Nil. It inherits a declared return
+          // intent only when structural analysis proves that it is returned.
+          occurrence.intent = intent;
         }
       }
       if root == "code"
@@ -914,9 +921,7 @@ fn scan_cirru_weak_types(
           items.len(),
         );
         let child_state = WeakScanState {
-          nil_return_intent: state
-            .nil_return_intent
-            .filter(|intent| matches!(intent, WeakTypeIntent::DeclaredUnit) || child_return_position),
+          nil_return_intent: state.nil_return_intent.filter(|_| child_return_position),
           quote_context: state.quote_context.for_child(head.as_deref(), idx),
         };
         scan_cirru_weak_types(item, root, path, Some(&next_parent), child_state, selected, occurrences);
@@ -1239,17 +1244,20 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
     .flat_map(|row| row.occurrences.iter())
     .filter(|occurrence| {
       occurrence.kind == WeakTypeKind::CodeNil
-        && matches!(occurrence.intent, WeakTypeIntent::Unresolved | WeakTypeIntent::DeclaredOptional)
+        && matches!(
+          occurrence.intent,
+          WeakTypeIntent::Unresolved | WeakTypeIntent::DeclaredUnit | WeakTypeIntent::DeclaredOptional
+        )
     })
     .count();
   if nil_debt > 0 {
     let _ = writeln!(
       out,
-      "- agent-note: {nil_debt} nil occurrence(s) are unresolved or covered only by Optional compatibility contracts."
+      "- agent-note: {nil_debt} nil occurrence(s) are unresolved, violate Unit returns, or are covered only by Optional compatibility contracts."
     );
     let _ = writeln!(
       out,
-      "- next: filter `--only code-nil --intent unresolved,declared-optional`; declare Unit and remove redundant nil/`;nil` for no-value returns, then prefer Option/Result for application absence or failure."
+      "- next: filter `--only code-nil --intent unresolved,declared-unit,declared-optional`; use `&unit` for no-value returns, then prefer Option/Result for application absence or failure."
     );
   }
   let unsafe_coercions = rows
@@ -2589,7 +2597,10 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
     .flat_map(|row| row.occurrences.iter())
     .filter(|occurrence| {
       occurrence.kind == WeakTypeKind::CodeNil
-        && matches!(occurrence.intent, WeakTypeIntent::Unresolved | WeakTypeIntent::DeclaredOptional)
+        && matches!(
+          occurrence.intent,
+          WeakTypeIntent::Unresolved | WeakTypeIntent::DeclaredUnit | WeakTypeIntent::DeclaredOptional
+        )
     })
     .count();
   let unsafe_coercions = rows
@@ -2621,8 +2632,8 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
       "code": "W_NIL_TYPE_DEBT",
       "phase": "analysis",
       "severity": "warning",
-      "message": format!("{nil_debt} nil occurrence(s) are unresolved or covered only by Optional compatibility contracts."),
-      "suggestion": "Declare Unit and remove redundant nil/`;nil` for no-value returns. Prefer Option for application absence and Result when failure details matter; keep Optional only at compatibility or FFI boundaries.",
+      "message": format!("{nil_debt} nil occurrence(s) are unresolved, violate Unit returns, or are covered only by Optional compatibility contracts."),
+      "suggestion": "Use `&unit` for no-value returns. Prefer Option for application absence and Result when failure details matter; keep Optional only at compatibility or FFI boundaries.",
     }));
   }
   if unsafe_coercions > 0 {

@@ -539,7 +539,10 @@ fn gen_call_code(
         // for `&call-spread`, just translate as normal call
         CalcitSyntax::CallSpread => gen_call_code(&body, ns, local_defs, xs, file_imports, tags, return_label),
         CalcitSyntax::HintFn => Ok(format!("{return_code}null")),
-        CalcitSyntax::AssertType => Ok(format!("{return_code}null")),
+        CalcitSyntax::AssertType => match body.first() {
+          Some(value) => to_js_code(value, ns, local_defs, file_imports, tags, return_label),
+          None => Err(String::from("assert-type expected a value")),
+        },
         CalcitSyntax::UnsafeCoerce => match body.first() {
           Some(value) => Ok(format!(
             "{return_code}{}",
@@ -579,7 +582,10 @@ fn gen_call_code(
           }
           _ => Err(format!("decode-map-as expected a value and a type expression, got: {body}")),
         },
-        CalcitSyntax::AssertTraits => Ok(format!("{return_code}null")),
+        CalcitSyntax::AssertTraits => match body.first() {
+          Some(value) => to_js_code(value, ns, local_defs, file_imports, tags, return_label),
+          None => Err(String::from("assert-traits expected a value")),
+        },
         CalcitSyntax::Match => gen_match_code(&body, local_defs, xs, ns, file_imports, tags, return_label),
         _ => {
           let (prelude, args_code) =
@@ -627,7 +633,7 @@ fn gen_call_code(
       }
     }
     // deftype-slot is preprocessing-only; it has no JS runtime effect.
-    Calcit::Proc(CalcitProc::DeftypeSlot) => Ok(format!("{return_code}null")),
+    Calcit::Proc(CalcitProc::DeftypeSlot) => Ok(format!("{return_code}void 0")),
     Calcit::Proc(CalcitProc::WithTypeSlot) => Err("internal compiler error: with-type-slot escaped preprocessing".to_owned()),
     // &struct:nth: typed calls carry the expected field tag so stale schema
     // metadata fails loudly while the JS runtime reads by precomputed index.
@@ -787,9 +793,9 @@ fn gen_call_code(
         if body.len() == 1 {
           let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
           if matches_js_var(name) {
-            Ok(format!("{return_code}{obj}?.{name}"))
+            Ok(format!("{return_code}({obj}?.{name} ?? null)"))
           } else {
-            Ok(format!("{return_code}{obj}?.[{}]", escape_cirru_str(name)))
+            Ok(format!("{return_code}({obj}?.[{}] ?? null)", escape_cirru_str(name)))
           }
         } else {
           Err(format!("optional accessor takes only 1 argument, {xs}"))
@@ -837,7 +843,7 @@ fn gen_call_code(
           } else {
             format!("{obj}[{}]", escape_cirru_str(name))
           };
-          let call_code = format!("{caller}?.({args_code})");
+          let call_code = format!("({caller}?.({args_code}) ?? null)");
           Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
         } else {
           Err(format!("invoke-native-optional expected at least 1 object, got: {xs}"))
@@ -934,6 +940,7 @@ fn data_shape_graph_to_js(graph: &DataShapeGraph, current_ns: &str, file_imports
   for node in &graph.nodes {
     let code = match node {
       DataShapeNode::Dynamic => String::from("{kind:\"dynamic\"}"),
+      DataShapeNode::Nil => String::from("{kind:\"nil\"}"),
       DataShapeNode::Unit => String::from("{kind:\"unit\"}"),
       DataShapeNode::Bool => String::from("{kind:\"bool\"}"),
       DataShapeNode::Number => String::from("{kind:\"number\"}"),
@@ -1724,6 +1731,17 @@ fn gen_js_func(
     snippets::tmpl_args_exact(name, args_count, at_ns)
   };
 
+  let legacy_optional_fill_code = if has_optional {
+    fixed_arg_names
+      .iter()
+      .enumerate()
+      .skip(args_count)
+      .map(|(idx, arg_name)| format!("if (arguments.length <= {idx}) {arg_name} = null;"))
+      .collect::<Vec<_>>()
+      .join("\n")
+  } else {
+    String::new()
+  };
   let option_fill_code = if trailing_option_count == 0 {
     String::new()
   } else {
@@ -1737,7 +1755,7 @@ fn gen_js_func(
       .collect::<Vec<_>>()
       .join("\n")
   };
-  let entry_check_code = [check_args.trim(), option_fill_code.trim()]
+  let entry_check_code = [check_args.trim(), legacy_optional_fill_code.trim(), option_fill_code.trim()]
     .into_iter()
     .filter(|part| !part.is_empty())
     .collect::<Vec<_>>()
@@ -1767,19 +1785,20 @@ fn gen_js_func(
         _ => false,
       };
       if is_hint {
-        if hinted_async(xs) {
-          async_prefix = String::from("async ")
-        } else if xs.len() > 1 && !xs.iter().skip(1).any(is_schema_map_form) {
-          eprintln!(
-            "[Warn] hint-fn args not in recognized schema map form in {}/{name}; correct usage: `hint-fn $ {{}} (:async true)`",
-            passed_defs.ns
-          );
+        // A zero-argument hint form is the expansion of `;nil`; it is a real
+        // Nil expression. Only forms carrying metadata are stripped.
+        if xs.len() > 1 {
+          if hinted_async(xs) {
+            async_prefix = String::from("async ")
+          } else if !xs.iter().skip(1).any(is_schema_map_form) {
+            eprintln!(
+              "[Warn] hint-fn args not in recognized schema map form in {}/{name}; correct usage: `hint-fn $ {{}} (:async true)`",
+              passed_defs.ns
+            );
+          }
+          continue;
         }
-        continue;
       }
-    }
-    if line == &Calcit::Nil {
-      continue;
     }
     body = body.push_right(line.to_owned());
   }
@@ -2399,6 +2418,34 @@ mod tests {
     // Multiline raw-code must stay byte-for-byte: the second line is not indented.
     assert!(code.contains("let t = `line1\nline2`;"), "raw-code changed:\n{code}");
     assert!(code.contains("\nline2`;"), "raw-code newline content indented:\n{code}");
+  }
+
+  #[test]
+  fn nil_function_tail_is_returned_instead_of_treated_as_metadata() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+    let passed_defs = PassedDefs {
+      ns: "tests.emit-js",
+      local_defs: &local_defs,
+      file_imports: &file_imports,
+    };
+    let args = CalcitFnArgs::Args(vec![]);
+    let code = gen_js_func(
+      "nil-tail",
+      JsFnParams {
+        args: &args,
+        arg_types: &[],
+      },
+      &[Calcit::Nil],
+      &passed_defs,
+      false,
+      &tags,
+      "tests.emit-js",
+    )
+    .expect("nil function tail should compile");
+
+    assert!(code.contains("return null"), "nil tail was discarded:\n{code}");
   }
 
   #[test]

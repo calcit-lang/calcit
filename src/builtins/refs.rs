@@ -195,7 +195,7 @@ pub fn reset_bang(
     (Calcit::Ref(_path, locked_pair), v) => {
       // println!("reset defatom {:?} {}", _path, v);
       modify_ref(locked_pair, v.to_owned(), call_stack)?;
-      Ok(Calcit::Nil)
+      Ok(v.to_owned())
     }
     // if reset! called before deref, we need to trigger the thunk
     (Calcit::Thunk(thunk), _) => match &expr[0] {
@@ -205,7 +205,7 @@ pub fn reset_bang(
           (Calcit::Ref(_path, locked_pair), v) => {
             // println!("reset defatom {:?} {}", _path, v);
             modify_ref(locked_pair, v.to_owned(), call_stack)?;
-            Ok(Calcit::Nil)
+            Ok(v.to_owned())
           }
           (a, _) => Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Type,
@@ -240,7 +240,7 @@ pub fn add_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         ),
         None => {
           pair.1.insert(k.to_owned(), f.to_owned());
-          Ok(Calcit::Nil)
+          Ok(Calcit::Unit)
         }
       }
     }
@@ -299,7 +299,7 @@ pub fn remove_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         ),
         Some(_) => {
           pair.1.remove(k);
-          Ok(Calcit::Nil)
+          Ok(Calcit::Unit)
         }
       }
     }

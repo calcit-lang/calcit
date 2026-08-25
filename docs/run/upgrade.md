@@ -152,7 +152,7 @@ calcit calcit.cirru edit format
 calcit calcit.cirru --check-only
 calcit calcit.cirru analyze dynamic-methods --max 0
 calcit calcit.cirru analyze deprecated --summary-only --format json
-calcit calcit.cirru analyze weak-types --intent unresolved,declared-optional --summary-only --format json
+calcit calcit.cirru analyze weak-types --intent unresolved,declared-unit,declared-optional --summary-only --format json
 calcit calcit.cirru
 yarn vite build --base=./
 ```
@@ -457,7 +457,7 @@ calcit calcit.cirru config set-type-slot --entry test :dispatch-op app.test-sche
 calcit calcit.cirru analyze check-types --summary-only
 calcit calcit.cirru analyze weak-types \
   --only schema-dynamic,unresolved-type-slot,code-dynamic,code-nil \
-  --intent unresolved,declared-optional \
+  --intent unresolved,declared-unit,declared-optional \
   --summary-only
 calcit calcit.cirru analyze deprecated --summary-only
 ```

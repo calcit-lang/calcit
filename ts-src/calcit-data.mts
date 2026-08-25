@@ -224,6 +224,7 @@ export let castTag = (x: CalcitValue): CalcitTag => {
 export var refsRegistry = new Map<string, CalcitRef>();
 
 let defaultHash_nil = valueHash("nil:");
+let defaultHash_unit = valueHash("unit:");
 let defaultHash_number = valueHash("number:");
 let defaultHash_string = valueHash("string:");
 let defaultHash_tag = valueHash("tag:");
@@ -248,9 +249,10 @@ let fnHashCounter = 0;
 let jsObjectHashCounter = 0;
 
 export let hashFunction = (x: CalcitValue): Hash => {
-  if (x == null) {
+  if (x === null) {
     return defaultHash_nil;
   }
+  if (x === undefined) return defaultHash_unit;
   if (typeof x === "number") {
     return mergeValueHash(defaultHash_number, x);
   }
@@ -442,9 +444,10 @@ let hashCirru = (base: number, x: CirruWriterNode) => {
 overwriteHashGenerator(hashFunction);
 
 export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: boolean = false): string => {
-  if (x == null) {
+  if (x === null) {
     return "nil";
   }
+  if (x === undefined) return "&unit";
   if (typeof x === "string") {
     if (escaped) {
       // turn to visual string representation
@@ -549,9 +552,10 @@ export let to_js_data = (x: CalcitValue, options?: CalcitValue | boolean): any =
 };
 
 let to_js_data_inner = (x: CalcitValue, addColon: boolean): any => {
-  if (x == null) {
+  if (x === null) {
     return null;
   }
+  if (x === undefined) return undefined;
   if (x === true || x === false) {
     return x;
   }
@@ -640,10 +644,7 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   if (x === y) {
     return true;
   }
-  if (x == null) {
-    if (y == null) {
-      return true;
-    }
+  if (x === null) {
     return false;
   }
 

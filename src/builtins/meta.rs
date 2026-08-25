@@ -138,7 +138,7 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
 
 pub fn reset_gensym_index(_xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   force_reset_gensym_index()?;
-  Ok(Calcit::Nil)
+  Ok(Calcit::Unit)
 }
 
 pub fn force_reset_gensym_index() -> Result<(), String> {
@@ -197,7 +197,7 @@ pub fn generate_id(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn display_stack(_xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   call_stack::show_stack(call_stack);
-  Ok(Calcit::Nil)
+  Ok(Calcit::Unit)
 }
 
 pub fn parse_cirru_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -1059,7 +1059,7 @@ pub fn enum_validate(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           }
         }
       }
-      Ok(Calcit::Nil)
+      Ok(Calcit::Unit)
     }
     (Calcit::Enum(_), other) => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -1742,7 +1742,7 @@ pub fn assert_traits(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit
 #[allow(dead_code)]
 pub fn register_calcit_builtin_impls(_xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   // JS runtime uses this to register builtin impls. Native runtime treats it as a no-op.
-  Ok(Calcit::Nil)
+  Ok(Calcit::Unit)
 }
 
 pub fn no_op() -> Result<Calcit, CalcitErr> {
@@ -1819,7 +1819,7 @@ pub fn async_sleep(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit
 
   // handle.join();
 
-  Ok(Calcit::Nil)
+  Ok(Calcit::Unit)
 }
 
 pub fn format_ternary_tree(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -2084,7 +2084,7 @@ pub fn deftype_slot(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
   };
   register_type_slot(name).map_err(|e| CalcitErr::use_str(CalcitErrKind::Unexpected, e))?;
-  Ok(Calcit::Nil)
+  Ok(Calcit::Unit)
 }
 
 /// `with-type-slot` runtime stub: type binding is handled entirely at preprocess time.

@@ -21,8 +21,11 @@ declare global {
 }
 
 let embedObject = (x: CalcitValue) => {
-  if (x == null) {
+  if (x === null) {
     return null;
+  }
+  if (x === undefined) {
+    return span({ whiteSpace: "pre", color: hsl(240, 70, 50) }, "&unit");
   }
   if (typeof x === "string") {
     return span({ whiteSpace: "pre", color: hsl(120, 70, 50), maxWidth: "100vw" }, `|${x}`);
@@ -77,16 +80,22 @@ let td = (style: any, ...children: any[]) => {
 
 /** handle null value in nested data */
 let saveString = (v: CalcitValue) => {
+  if (v === null) {
+    return "nil";
+  }
+  if (v === undefined) {
+    return "&unit";
+  }
   if (typeof v === "string") {
     if (v.match(/[\s\"\n\t\,]/)) {
       return `"|${v}"`;
     } else {
       return `|${v}`;
     }
-  } else if (v != null && v.toString) {
+  } else if (v.toString) {
     return v.toString();
   } else {
-    return "nil";
+    return String(v);
   }
 };
 

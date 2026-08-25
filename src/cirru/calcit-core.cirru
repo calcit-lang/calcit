@@ -470,11 +470,11 @@
               :generics $ [] 'T
               :return $ :: 'Set 'T
           :tags $ #{} :builtin :internal
-        |&display-stack $ %{} 'CodeEntry (:doc "|internal function for displaying call stack\nSyntax: (&display-stack)\nParams: none\nReturns: string representation of call stack\nReturns formatted string showing current call stack for debugging")
+        |&display-stack $ %{} 'CodeEntry (:doc "|internal function for displaying call stack\nSyntax: (&display-stack)\nParams: none\nReturns: &unit\nPrints the current call stack for debugging")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'String)
+            {} (:return 'Unit)
               :args $ []
           :tags $ #{} :builtin :internal :io :log
         |&doseq $ %{} 'CodeEntry (:doc "|Internal side-effect traversal macro. Iterates over a binding pair, executes the body for each element, and returns Unit.")
@@ -587,7 +587,7 @@
             {} (:return 'List)
               :args $ [] 'Enum
           :tags $ #{} :builtin :internal
-        |&enum:validate $ %{} 'CodeEntry (:doc "|Validate an enum value against its definition.")
+        |&enum:validate $ %{} 'CodeEntry (:doc "|Validate an enum value against its definition.\nReturns &unit when validation succeeds; raises an error otherwise.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
@@ -2632,13 +2632,13 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
-        |;nil $ %{} 'CodeEntry (:doc |)
+        |;nil $ %{} 'CodeEntry (:doc "|Legacy macro that evaluates to nil while accepting ignored body forms.\nUse &unit (or a do expression ending in &unit) when an operation has no domain value; use Option for absence in new APIs.")
           :code $ quote
             defmacro ;nil $ & _body
           :examples $ []
-            quote $ assert-type (;nil) (quote Unit)
+            quote $ assert-type (;nil) (quote Nil)
           :schema $ :: 'Macro
-            {} (:return 'Unit)
+            {} (:return 'Nil)
               :args $ []
           :tags $ #{} :macro
         |< $ %{} 'CodeEntry (:doc |)
@@ -3018,7 +3018,7 @@
               :code $ quote
                 assert= 4 $ abs -4
               :tags $ #{} :core :unit
-        |add-watch $ %{} 'CodeEntry (:doc "|internal function for adding atom watchers\nSyntax: (add-watch atom key callback)\nParams: atom (atom), key (any), callback (function)\nReturns: atom\nAdds watcher function to atom")
+        |add-watch $ %{} 'CodeEntry (:doc "|internal function for adding atom watchers\nSyntax: (add-watch atom key callback)\nParams: atom (atom), key (any), callback (function)\nReturns: &unit\nAdds watcher function to atom")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
@@ -5391,7 +5391,7 @@
                     false-branch $ if
                       &= 3 $ &list:count xs
                       &list:nth xs 2
-                      ;nil
+                      quote nil
                     quasiquote $ if ~condition ~false-branch ~true-branch
           :examples $ []
           :schema $ :: 'Dynamic
@@ -6905,7 +6905,7 @@
               :args $ [] 'T
               :generics $ [] 'T
           :tags $ #{} :builtin :internal :state
-        |remove-watch $ %{} 'CodeEntry (:doc "|internal function for removing atom watchers\nSyntax: (remove-watch atom key)\nParams: atom (atom), key (any)\nReturns: atom\nRemoves watcher with specified key from atom")
+        |remove-watch $ %{} 'CodeEntry (:doc "|internal function for removing atom watchers\nSyntax: (remove-watch atom key)\nParams: atom (atom), key (any)\nReturns: &unit\nRemoves watcher with specified key from atom")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
@@ -8169,7 +8169,7 @@
           :schema $ :: 'Macro
             {} $ :args ([] 'Dynamic)
           :tags $ #{} :macro
-        |write-file $ %{} 'CodeEntry (:doc "|internal function for writing files\nSyntax: (write-file filepath content)\nParams: filepath (string), content (string)\nReturns: nil or error\nWrites string content to file, creates directories if needed")
+        |write-file $ %{} 'CodeEntry (:doc "|internal function for writing files\nSyntax: (write-file filepath content)\nParams: filepath (string), content (string)\nReturns: &unit or error\nWrites string content to file")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
