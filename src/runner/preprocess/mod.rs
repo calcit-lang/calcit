@@ -6174,6 +6174,31 @@ fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: 
   Ok(Calcit::List(Arc::from(CalcitList::Vector(xs))))
 }
 
+/// Maps a source-facing macro contract to the runtime type visible inside the macro body.
+fn macro_contract_body_type(contract: &MacroSyntaxType) -> Arc<CalcitTypeAnnotation> {
+  match contract {
+    MacroSyntaxType::SyntaxSymbol => Arc::new(CalcitTypeAnnotation::Symbol),
+    MacroSyntaxType::SyntaxList => Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Syntax(Arc::new(
+      MacroSyntaxType::Syntax,
+    ))))),
+    MacroSyntaxType::Syntax | MacroSyntaxType::Expr(_) => Arc::new(CalcitTypeAnnotation::Syntax(Arc::new(contract.clone()))),
+  }
+}
+
+/// Builds body parameter types in required, optional, and rest binding order.
+fn strict_macro_body_parameter_types(signature: &MacroSignature) -> Vec<Arc<CalcitTypeAnnotation>> {
+  let required_types = signature.required_inputs.iter().map(macro_contract_body_type);
+  let optional_types = signature
+    .optional_inputs
+    .iter()
+    .map(|contract| Arc::new(CalcitTypeAnnotation::Optional(macro_contract_body_type(contract))));
+  let rest_type = signature
+    .rest_input
+    .iter()
+    .map(|contract| Arc::new(CalcitTypeAnnotation::List(macro_contract_body_type(contract))));
+  required_types.chain(optional_types).chain(rest_type).collect()
+}
+
 pub fn preprocess_defn(
   head: &CalcitSyntax,
   head_ns: &str,
@@ -6321,22 +6346,7 @@ pub fn preprocess_defn(
       if let CalcitTypeAnnotation::Macro(signature) = def_schema.as_ref()
         && signature.is_strict()
       {
-        let required_types = signature
-          .required_inputs
-          .iter()
-          .map(|contract| Arc::new(CalcitTypeAnnotation::Syntax(Arc::new(contract.clone()))));
-        let optional_types = signature.optional_inputs.iter().map(|contract| {
-          Arc::new(CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Syntax(Arc::new(
-            contract.clone(),
-          )))))
-        });
-        let parameter_types = required_types.chain(optional_types).chain(
-          signature
-            .rest_input
-            .iter()
-            .map(|_| Arc::new(CalcitTypeAnnotation::Syntax(Arc::new(MacroSyntaxType::SyntaxList)))),
-        );
-        for (param_sym, type_info) in param_symbols.iter().zip(parameter_types) {
+        for (param_sym, type_info) in param_symbols.iter().zip(strict_macro_body_parameter_types(signature)) {
           body_types.insert(param_sym.clone(), type_info);
         }
       }
@@ -7388,6 +7398,32 @@ mod tests {
     .expect_err("wrong expansion result type");
     assert_eq!(err.code.as_deref(), Some("E_MACRO_EXPANSION_EXPR_TYPE"));
     assert!(err.msg.contains("expansion-result violation"));
+  }
+
+  #[test]
+  fn strict_macro_rest_body_binding_is_a_list_of_declared_syntax() {
+    let rest_contract = MacroSyntaxType::Expr(Arc::new(CalcitTypeAnnotation::Dynamic));
+    let signature = strict_macro_signature(vec![], vec![], Some(rest_contract.clone()), MacroExpansionType::Dynamic);
+    let parameter_types = strict_macro_body_parameter_types(&signature);
+    assert!(matches!(
+      parameter_types.as_slice(),
+      [item]
+        if matches!(
+          item.as_ref(),
+          CalcitTypeAnnotation::List(inner)
+            if matches!(inner.as_ref(), CalcitTypeAnnotation::Syntax(contract) if contract.as_ref() == &rest_contract)
+        )
+    ));
+
+    let list_signature = strict_macro_signature(
+      vec![MacroSyntaxType::SyntaxList, MacroSyntaxType::SyntaxSymbol],
+      vec![],
+      None,
+      MacroExpansionType::Dynamic,
+    );
+    let parameter_types = strict_macro_body_parameter_types(&list_signature);
+    assert!(matches!(parameter_types[0].as_ref(), CalcitTypeAnnotation::List(_)));
+    assert!(matches!(parameter_types[1].as_ref(), CalcitTypeAnnotation::Symbol));
   }
 
   #[test]
