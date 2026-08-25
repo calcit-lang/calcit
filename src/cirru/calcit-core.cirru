@@ -3555,7 +3555,10 @@
             quote $ assert= |fallback
               case-default 5 |fallback (1 |one) (2 |two) (3 |three)
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
         |ceil $ %{} 'CodeEntry (:doc "|internal function for ceiling operation\nSyntax: (ceil n)\nParams: n (number)\nReturns: number\nReturns smallest integer greater than or equal to n")
           :code $ quote &runtime-implementation
@@ -4807,9 +4810,10 @@
                     internal/&field-match-internal ~value ~@body
           :examples $ []
           :schema $ :: 'Macro
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Map)
           :tags $ #{} :macro
         |filter $ %{} 'CodeEntry (:doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible.")
           :code $ quote
@@ -8616,7 +8620,10 @@
                           &field-match-internal ~value $ ~@ (&list:rest body)
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Map)
         |&tag-match-internal $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro &tag-match-internal (value t & body)
