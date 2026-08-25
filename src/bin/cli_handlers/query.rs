@@ -336,6 +336,7 @@ fn query_schema_cirru(annotation: &CalcitTypeAnnotation, wrapped: bool) -> Resul
     CalcitTypeAnnotation::Dynamic => return Ok(None),
     CalcitTypeAnnotation::Fn(fn_annot) if wrapped => fn_annot.to_wrapped_schema_edn(),
     CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_schema_edn(),
+    CalcitTypeAnnotation::Macro(signature) => signature.to_wrapped_schema_edn(),
     other => other.to_type_edn(),
   };
   snapshot::schema_edn_to_cirru(&schema_edn).map(|cirru| {
@@ -903,6 +904,32 @@ mod type_query_tests {
     let value: serde_json::Value = serde_json::from_str(&output).expect("schema output should be valid JSON");
     assert_eq!(value["data"]["canonical_schema"], "'Ref");
     assert_eq!(value["data"]["tree"], "'Ref");
+  }
+
+  #[test]
+  fn strict_macro_schema_queries_preserve_phase_contracts() {
+    let schema = cirru_parser::parse(
+      ":: 'Macro\n  {} (:required $ [] 'SyntaxList)\n    :rest 'Syntax\n    :expansion $ :: 'Expr 'Dynamic\n    :capabilities $ #{}",
+    )
+    .expect("strict macro schema syntax")
+    .into_iter()
+    .next()
+    .expect("schema node");
+    let annotation = snapshot::parse_schema_annotation_for_write(&schema).expect("strict macro schema");
+
+    let displayed = format_query_schema(annotation.as_ref(), true);
+    assert!(displayed.contains(":: 'Macro"), "unexpected schema: {displayed}");
+    assert!(displayed.contains(":required"), "unexpected schema: {displayed}");
+    assert!(displayed.contains(":capabilities $ #{}"), "unexpected schema: {displayed}");
+    assert_eq!(
+      context_schema(annotation.as_ref()).expect("context schema"),
+      Some(displayed.trim().to_owned())
+    );
+
+    let output = format_schema_query_json("app.main/with-bindings", "project", annotation.as_ref(), "revision-1".to_owned())
+      .expect("macro schema JSON");
+    let value: serde_json::Value = serde_json::from_str(&output).expect("schema output should be valid JSON");
+    assert_eq!(value["data"]["tree"][1], "'Macro");
   }
 
   #[test]
@@ -1976,7 +2003,7 @@ fn namespace_source(snapshot: &snapshot::Snapshot, namespace: &str) -> String {
 fn context_schema(annotation: &CalcitTypeAnnotation) -> Result<Option<String>, String> {
   match annotation {
     CalcitTypeAnnotation::Dynamic => Ok(None),
-    CalcitTypeAnnotation::Fn(_) => Ok(Some(format_query_schema(annotation, true).trim().to_owned())),
+    CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::Macro(_) => Ok(Some(format_query_schema(annotation, true).trim().to_owned())),
     _ => Ok(Some(format_type_query_annotation(annotation)?)),
   }
 }
@@ -1984,6 +2011,11 @@ fn context_schema(annotation: &CalcitTypeAnnotation) -> Result<Option<String>, S
 fn context_features(annotation: &CalcitTypeAnnotation) -> Vec<String> {
   let mut features = match annotation {
     CalcitTypeAnnotation::Fn(fn_annot) => fn_annot
+      .features
+      .iter()
+      .map(|feature| feature.ref_str().to_owned())
+      .collect::<Vec<_>>(),
+    CalcitTypeAnnotation::Macro(signature) => signature
       .features
       .iter()
       .map(|feature| feature.ref_str().to_owned())

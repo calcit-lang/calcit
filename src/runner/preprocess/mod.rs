@@ -1735,7 +1735,19 @@ fn preprocess_list_call(
           runner::bind_marked_args(&mut body_scope, &info.args, &current_values, &next_stack)?;
           let evaluator_timer =
             runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::Evaluator);
-          let code = runner::evaluate_lines(&info.body.to_vec(), &body_scope, file_ns, &next_stack)?;
+          let evaluate_body = || runner::evaluate_lines(&info.body.to_vec(), &body_scope, file_ns, &next_stack);
+          let code = if info.signature.is_strict() {
+            runner::macro_capability::with_macro_context(
+              Arc::from(macro_name.as_str()),
+              info.signature.capabilities.clone(),
+              call_location.clone(),
+              evaluate_body,
+            )?
+          } else {
+            // Legacy Macro schemas remain compatible, but their effects are
+            // deliberately unknown and therefore cannot be considered pure.
+            evaluate_body()?
+          };
           drop(evaluator_timer);
           match code {
             Calcit::Recur(ys) => {
@@ -1768,19 +1780,7 @@ fn preprocess_list_call(
           }
         }
       };
-
-      if info.signature.is_strict() {
-        runner::macro_capability::with_macro_context(
-          Arc::from(macro_name.as_str()),
-          info.signature.capabilities.clone(),
-          call_location.clone(),
-          execute_macro,
-        )
-      } else {
-        // Legacy Macro schemas remain compatible, but their effects are
-        // deliberately unknown and therefore cannot be considered pure.
-        execute_macro()
-      }
+      execute_macro()
     }
 
     Some(Calcit::Fn { info, .. }) => {

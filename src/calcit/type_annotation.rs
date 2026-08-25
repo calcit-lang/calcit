@@ -614,15 +614,13 @@ impl MacroSignature {
     if let Some(expansion) = Self::expansion_to_edn(&self.expansion) {
       map.insert_key("expansion", expansion);
     }
-    if !self.capabilities.is_empty() {
-      let mut set = EdnSetView::default();
-      let mut capabilities = self.capabilities.iter().copied().collect::<Vec<_>>();
-      capabilities.sort_unstable();
-      for capability in capabilities {
-        set.insert(Edn::Tag(EdnTag::new(capability.as_str())));
-      }
-      map.insert_key("capabilities", Edn::Set(set));
+    let mut set = EdnSetView::default();
+    let mut capabilities = self.capabilities.iter().copied().collect::<Vec<_>>();
+    capabilities.sort_unstable();
+    for capability in capabilities {
+      set.insert(Edn::Tag(EdnTag::new(capability.as_str())));
     }
+    map.insert_key("capabilities", Edn::Set(set));
     if !self.generics.is_empty() {
       map.insert_key(
         "generics",
