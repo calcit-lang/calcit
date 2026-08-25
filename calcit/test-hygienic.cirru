@@ -17,7 +17,10 @@
                   [] (~ a) (~ b) c (~ c) (add-2 8)
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{} :log
+              :expansion $ :: 'Expr 'List
+              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
         |add-11-safe $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro add-11-safe (a b)
@@ -27,7 +30,10 @@
                     [] (~ a) (~ b) ~c
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'List
+              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
         |add-2 $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn add-2 (x) (&+ x 2)

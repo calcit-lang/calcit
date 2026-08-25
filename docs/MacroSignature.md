@@ -81,7 +81,9 @@ evaluated must be declared separately from runtime/backend `:features`:
 ```
 
 Allowed opt-in capabilities are `:env-read`, `:fs-read`, `:platform-read`,
-`:clock-read`, `:mutable-state`, and `:dynamic-eval`. Any declared capability
+`:clock-read`, `:log`, `:mutable-state`, and `:dynamic-eval`. `:log` covers
+compile-time calls to `echo`, `println`, and `eprintln`; merely emitting those
+calls into quoted runtime syntax stays pure. Any declared capability
 makes the expansion ineligible for the pure-macro cache planned by the macro
 roadmap. Legacy signatures have unknown effects and are likewise ineligible.
 
