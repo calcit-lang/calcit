@@ -1705,6 +1705,8 @@ fn preprocess_list_call(
 
   match head_value {
     Some(Calcit::Macro { info, .. }) => {
+      let macro_name = format!("{}/{}", info.def_ns, info.name);
+      runner::macro_metrics::record_expansion(&macro_name, info.signature.as_ref());
       let mut current_values: Vec<Calcit> = args.to_vec();
       let mut macro_type_bindings = validate_macro_call_inputs(
         info.name.as_ref(),
@@ -1731,7 +1733,10 @@ fn preprocess_list_call(
           // need to handle recursion
           body_scope.restore_frame(frame_checkpoint);
           runner::bind_marked_args(&mut body_scope, &info.args, &current_values, &next_stack)?;
+          let evaluator_timer =
+            runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::Evaluator);
           let code = runner::evaluate_lines(&info.body.to_vec(), &body_scope, file_ns, &next_stack)?;
+          drop(evaluator_timer);
           match code {
             Calcit::Recur(ys) => {
               current_values = ys;
@@ -1746,6 +1751,8 @@ fn preprocess_list_call(
               )?;
             }
             _ => {
+              let _post_preprocess_timer =
+                runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
               let processed = preprocess_expr(&code, scope_defs, scope_types, file_ns, check_warnings, &next_stack)?;
               validate_macro_expansion_result(
                 info.name.as_ref(),
@@ -1764,7 +1771,7 @@ fn preprocess_list_call(
 
       if info.signature.is_strict() {
         runner::macro_capability::with_macro_context(
-          Arc::from(format!("{}/{}", info.def_ns, info.name)),
+          Arc::from(macro_name.as_str()),
           info.signature.capabilities.clone(),
           call_location.clone(),
           execute_macro,

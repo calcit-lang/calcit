@@ -78,27 +78,28 @@ pub fn print_command_echo(cli_args: &ToplevelCalcit) {
 
 fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
   let subcommand = cli_args.subcommand.as_ref()?;
+  let base_command = command_prefix(cli_args.macro_metrics);
   let snapshot_command = if cli_args.input == calcit::DEFAULT_SNAPSHOT_FILE {
-    "calcit".to_owned()
+    base_command.clone()
   } else {
-    format!("calcit {}", format_atom(&cli_args.input))
+    format!("{base_command} {}", format_atom(&cli_args.input))
   };
   let mut tokens = vec![match subcommand {
     CalcitCommand::Query(cmd) => format!("{snapshot_command} query {}", query_name(&cmd.subcommand)),
     CalcitCommand::Docs(cmd) => match &cmd.subcommand {
       DocsSubcommand::RemoteLibs(opts) => match opts.subcommand.as_ref() {
-        Some(subcommand) => format!("calcit docs remote-libs {}", libs_name(subcommand)),
-        None => "calcit docs remote-libs".to_string(),
+        Some(subcommand) => format!("{base_command} docs remote-libs {}", libs_name(subcommand)),
+        None => format!("{base_command} docs remote-libs"),
       },
-      other => format!("calcit docs {}", docs_name(other)),
+      other => format!("{base_command} docs {}", docs_name(other)),
     },
-    CalcitCommand::Libs(cmd) => format!("calcit libs {}", libs_name(cmd.subcommand.as_ref()?)),
+    CalcitCommand::Libs(cmd) => format!("{base_command} libs {}", libs_name(cmd.subcommand.as_ref()?)),
     CalcitCommand::Edit(cmd) => format!("{snapshot_command} edit {}", edit_name(&cmd.subcommand)),
     CalcitCommand::Tree(cmd) => format!("{snapshot_command} tree {}", tree_name(&cmd.subcommand)),
     CalcitCommand::Cursor(cmd) => format!("{snapshot_command} cursor {}", cursor_name(&cmd.subcommand)),
     CalcitCommand::Config(cmd) => format!("{snapshot_command} config {}", config_name(&cmd.subcommand)),
     CalcitCommand::Analyze(cmd) => format!("{snapshot_command} analyze {}", analyze_name(&cmd.subcommand)),
-    CalcitCommand::Cirru(cmd) => format!("calcit cirru {}", cirru_name(&cmd.subcommand)),
+    CalcitCommand::Cirru(cmd) => format!("{base_command} cirru {}", cirru_name(&cmd.subcommand)),
     CalcitCommand::Test(_) => format!("{snapshot_command} test"),
     _ => return None,
   }];
@@ -141,6 +142,14 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
   }
 
   Some(tokens.join(" "))
+}
+
+fn command_prefix(macro_metrics: bool) -> String {
+  if macro_metrics {
+    "calcit --macro-metrics".to_owned()
+  } else {
+    "calcit".to_owned()
+  }
 }
 
 fn render_command_explanation(cli_args: &ToplevelCalcit) -> Option<String> {
@@ -1417,7 +1426,13 @@ fn push_config(tokens: &mut Vec<String>, cmd: &ConfigCommand) {
 
 #[cfg(test)]
 mod tests {
-  use super::{DEFAULT_ECHO_TOKEN_PREFIX, push_switch, push_value};
+  use super::{DEFAULT_ECHO_TOKEN_PREFIX, command_prefix, push_switch, push_value};
+
+  #[test]
+  fn global_macro_metrics_switch_precedes_snapshot_and_subcommand() {
+    assert_eq!(command_prefix(true), "calcit --macro-metrics");
+    assert_eq!(command_prefix(false), "calcit");
+  }
 
   #[test]
   fn default_command_echo_tokens_are_marked_without_hiding_real_parentheses() {
