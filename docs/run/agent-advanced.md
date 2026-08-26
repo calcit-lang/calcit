@@ -121,7 +121,7 @@ echo 'range 10' | calcit exec
 
 - **`calcit.cirru`** - 这是 Calcit 程序的运行时快照格式；旧 `compact.cirru` 必须先迁移，源码使用 `calcit edit`/`calcit tree` 修改
 
-这两个文件的格式对空格和结构极其敏感，直接文本修改会破坏文件结构。请使用 `calcit query`/`calcit tree`/`calcit edit` 等 CLI 命令进行代码查询和修改。
+这个文件的格式对空格和结构极其敏感，直接文本修改会破坏文件结构。请使用 `calcit query`/`calcit tree`/`calcit edit` 等 CLI 命令进行代码查询和修改。
 
 ## Calcit 与 Cirru 的关系
 

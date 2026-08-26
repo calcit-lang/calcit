@@ -2122,16 +2122,26 @@ fn legacy_snapshot_recovery_hint(path: &str) -> Option<String> {
   }
 }
 
+/// Build migration guidance when `path` uses the retired snapshot filename.
+pub fn retired_snapshot_migration_error(path: &Path) -> Option<String> {
+  if path.file_name().and_then(|name| name.to_str()) != Some(crate::LEGACY_SNAPSHOT_FILE) {
+    return None;
+  }
+
+  let canonical_path = path.with_file_name(crate::DEFAULT_SNAPSHOT_FILE);
+  Some(format!(
+    "Snapshot filename `{}` is retired. Copy or rename the last runnable snapshot to `{}`, then run `calcit {} edit format` and `calcit {} --check-only`. The published Calcit 0.13.48 release is the final release that accepts the old filename.",
+    crate::LEGACY_SNAPSHOT_FILE,
+    canonical_path.display(),
+    canonical_path.display(),
+    canonical_path.display()
+  ))
+}
+
 /// Parse a Snapshot while preserving the source path in deserialization errors.
 pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
-  if Path::new(path).file_name().and_then(|name| name.to_str()) == Some(crate::LEGACY_SNAPSHOT_FILE) {
-    return Err(format!(
-      "Snapshot filename `{}` is retired. Copy or rename the last runnable snapshot to `{}`, then run `calcit {} edit format` and `calcit {} --check-only`. The published Calcit 0.13.48 release is the final release that accepts the old filename.",
-      crate::LEGACY_SNAPSHOT_FILE,
-      crate::DEFAULT_SNAPSHOT_FILE,
-      crate::DEFAULT_SNAPSHOT_FILE,
-      crate::DEFAULT_SNAPSHOT_FILE
-    ));
+  if let Some(error) = retired_snapshot_migration_error(Path::new(path)) {
+    return Err(error);
   }
   load_snapshot_data_inner(data, path).map_err(|error| {
     let mut message = format!("Failed to load Snapshot `{path}`: {error}");
