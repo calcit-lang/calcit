@@ -329,7 +329,13 @@ fn to_js_code(
             Ok(escape_var(alias))
           }
           _ => {
-            file_imports.borrow_mut().insert(item.to_owned());
+            // Type-directed rewrites may conservatively preserve a referred-import
+            // marker even when the resolved definition lives in this module.  A
+            // named self-import is invalid ESM once the same definition is exported
+            // below, so keep same-namespace references local at the emitter boundary.
+            if item.ns.as_ref() != ns {
+              file_imports.borrow_mut().insert(item.to_owned());
+            }
             Ok(escape_var(def))
           }
         }
@@ -2689,6 +2695,31 @@ mod tests {
 
     assert_eq!(unit, "void 0");
     assert_eq!(nil, "null");
+  }
+
+  #[test]
+  fn same_namespace_referred_defs_do_not_generate_self_imports() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+    let request = Calcit::Import(CalcitImport {
+      ns: Arc::from("tests.emit-js"),
+      def: Arc::from("Request"),
+      info: Arc::new(ImportInfo::NsReferDef {
+        at_ns: Arc::from("tests.consumer"),
+        at_def: Arc::from("request"),
+      }),
+      def_id: None,
+    });
+
+    let code = to_js_code(&request, "tests.emit-js", &local_defs, &file_imports, &tags, None)
+      .expect("same-namespace definition should compile as a local reference");
+
+    assert_eq!(code, "Request");
+    assert!(
+      file_imports.borrow().is_empty(),
+      "same-namespace reference must not create an ESM self-import"
+    );
   }
 
   #[test]

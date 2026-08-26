@@ -5482,9 +5482,11 @@
           :tags $ #{} :interop
         |js-nullish? $ %{} 'CodeEntry (:doc "|Return true when a JsNullish<T> boundary value is JavaScript null or undefined.")
           :code $ quote
-            defn js-nullish? (x) (nil? x)
+            defn js-nullish? (x)
+              or (nil? x) (= :unit (type-of x))
           :examples $ []
             quote $ assert= true (js-nullish? nil)
+            quote $ assert= true (js-nullish? &unit)
           :schema $ :: 'Fn
             {} (:return 'Bool)
               :args $ [] (:: 'JsNullish 'T)
@@ -5516,9 +5518,10 @@
         |js-present? $ %{} 'CodeEntry (:doc "|Return true when a JsNullish<T> boundary contains a non-null JavaScript value.")
           :code $ quote
             defn js-present? (x)
-              not $ nil? x
+              not $ js-nullish? x
           :examples $ []
             quote $ assert= false (js-present? nil)
+            quote $ assert= false (js-present? &unit)
           :schema $ :: 'Fn
             {} (:return 'Bool)
               :args $ [] (:: 'JsNullish 'T)
