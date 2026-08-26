@@ -84,9 +84,15 @@ pub enum CalcitSyntax {
   /// Parse Cirru EDN and deeply validate/construct the declared closed type.
   #[strum(serialize = "parse-cirru-edn-as")]
   ParseCirruEdnAs,
+  /// Parse Cirru EDN into a closed type and return runtime failures as Result.
+  #[strum(serialize = "try-parse-cirru-edn-as")]
+  TryParseCirruEdnAs,
   /// Decode an evaluated Calcit Map into a declared typed data shape.
   #[strum(serialize = "decode-map-as")]
   DecodeMapAs,
+  /// Decode an evaluated value into a closed type and return runtime failures as Result.
+  #[strum(serialize = "try-decode-map-as")]
+  TryDecodeMapAs,
   /// placeholder for trait requirement assertions
   #[strum(serialize = "assert-traits")]
   AssertTraits,
@@ -172,7 +178,17 @@ impl CalcitSyntax {
         param_types: vec![Arc::new(CalcitTypeAnnotation::String), dyn_t.clone()],
         return_type: dyn_t.clone(),
       }),
+      TryParseCirruEdnAs => Some(SyntaxTypeSignature {
+        param_names: vec!["text", "type"],
+        param_types: vec![Arc::new(CalcitTypeAnnotation::String), dyn_t.clone()],
+        return_type: dyn_t.clone(),
+      }),
       DecodeMapAs => Some(SyntaxTypeSignature {
+        param_names: vec!["value", "type"],
+        param_types: vec![dyn_t.clone(), dyn_t.clone()],
+        return_type: dyn_t.clone(),
+      }),
+      TryDecodeMapAs => Some(SyntaxTypeSignature {
         param_names: vec!["value", "type"],
         param_types: vec![dyn_t.clone(), dyn_t.clone()],
         return_type: dyn_t.clone(),

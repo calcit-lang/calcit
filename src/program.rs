@@ -351,7 +351,10 @@ fn collect_compiled_dep_keys(code: &Calcit, deps: &mut Vec<(Arc<str>, Arc<str>)>
     Calcit::List(xs) => {
       if matches!(
         xs.first(),
-        Some(Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::DecodeMapAs, _))
+        Some(Calcit::Syntax(
+          CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::TryParseCirruEdnAs | CalcitSyntax::DecodeMapAs | CalcitSyntax::TryDecodeMapAs,
+          _,
+        ))
       ) && let Some(graph) = xs.get(3).and_then(DataShapeGraph::from_calcit_handle)
       {
         deps.extend(graph.nominal_paths());

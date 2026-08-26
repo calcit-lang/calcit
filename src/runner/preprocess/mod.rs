@@ -2052,11 +2052,11 @@ fn preprocess_list_call(
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_unsafe_coerce(name, name_ns, &args, &mut ctx)
         }
-        CalcitSyntax::ParseCirruEdnAs => {
+        CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::TryParseCirruEdnAs => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_parse_cirru_edn_as(name, name_ns, &args, &mut ctx)
         }
-        CalcitSyntax::DecodeMapAs => {
+        CalcitSyntax::DecodeMapAs | CalcitSyntax::TryDecodeMapAs => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_decode_map_as(name, name_ns, &args, &mut ctx)
         }
@@ -6901,12 +6901,22 @@ pub fn preprocess_parse_cirru_edn_as(
     ctx.check_warnings,
     ctx.call_stack,
   )?;
+  if let Some(actual) = resolve_type_value(&text_form, ctx.scope_types)
+    && !matches!(actual.as_ref(), CalcitTypeAnnotation::String | CalcitTypeAnnotation::Dynamic)
+  {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("{head} expected String input, got {}", actual.to_brief_string()),
+      ctx.call_stack,
+      text_form.get_location(),
+    ));
+  }
   let type_form = args.get(1).expect("validated parse-cirru-edn-as type");
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
   let decoder = crate::calcit::data_shape::DataShapeGraph::build(target.as_ref(), ctx.file_ns).map_err(|error| {
     CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
-      format!("parse-cirru-edn-as cannot derive a decoder: {error}"),
+      format!("{head} cannot derive a decoder: {error}"),
       ctx.call_stack,
       type_form.get_location(),
     )
@@ -6947,7 +6957,7 @@ pub fn preprocess_decode_map_as(
   let decoder = crate::calcit::data_shape::DataShapeGraph::build_open(target.as_ref(), ctx.file_ns).map_err(|error| {
     CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
-      format!("decode-map-as cannot derive a runtime map decoder: {error}"),
+      format!("{head} cannot derive a runtime map decoder: {error}"),
       ctx.call_stack,
       type_form.get_location(),
     )
@@ -8527,6 +8537,27 @@ mod tests {
     let error = preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.edn", &warnings, &stack)
       .expect_err("Dynamic decoder must be rejected before runtime");
     assert!(error.msg.contains("Dynamic is forbidden"), "unexpected error: {error:?}");
+  }
+
+  #[test]
+  fn safe_strict_edn_decode_rejects_known_non_string_input() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("try-parse-cirru-edn-as"),
+      Cirru::leaf("1"),
+      Cirru::leaf(":number"),
+    ]);
+    let code = code_to_calcit(&expr, "tests.edn", "main", vec![]).expect("parse safe strict decoder");
+    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let error = preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.edn", &warnings, &stack)
+      .expect_err("known non-String input must be rejected before runtime");
+    assert!(
+      error.msg.contains("expected String input, got :number"),
+      "unexpected error: {error:?}"
+    );
   }
 
   #[test]

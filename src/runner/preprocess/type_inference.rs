@@ -663,6 +663,14 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           .get(2)
           .map(|form| CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[])),
 
+        Calcit::Syntax(CalcitSyntax::TryParseCirruEdnAs | CalcitSyntax::TryDecodeMapAs, _) => xs.get(2).map(|form| {
+          let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[]);
+          Arc::new(CalcitTypeAnnotation::TypeRef(
+            Arc::from("calcit.core/Result"),
+            Arc::new(vec![target, Arc::new(CalcitTypeAnnotation::String)]),
+          ))
+        }),
+
         // Local variable as head (function call)
         // If it's a function type, return its return type
         Calcit::Local(local) => {
@@ -1965,6 +1973,31 @@ mod tests {
       assert!(matches!(
         infer_static_type_from_expr(&expression).as_deref(),
         Some(CalcitTypeAnnotation::List(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
+      ));
+    }
+  }
+
+  #[test]
+  fn safe_typed_decode_expression_has_result_target_type() {
+    let target = Calcit::Enum(calcit::CalcitEnumValue {
+      tag: Arc::new(Calcit::tag("list")),
+      extra: vec![Calcit::tag("number")],
+      sum_type: None,
+    });
+    for syntax in [CalcitSyntax::TryParseCirruEdnAs, CalcitSyntax::TryDecodeMapAs] {
+      let expression = Calcit::from(vec![
+        Calcit::Syntax(syntax, Arc::from(calcit::CORE_NS)),
+        Calcit::Str(Arc::from("[] 1 2")),
+        target.clone(),
+      ]);
+
+      let inferred = infer_static_type_from_expr(&expression).expect("safe decoder type");
+      assert!(matches!(
+        inferred.as_ref(),
+        CalcitTypeAnnotation::TypeRef(name, args)
+          if name.as_ref() == "calcit.core/Result"
+            && matches!(args.first().map(AsRef::as_ref), Some(CalcitTypeAnnotation::List(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number))
+            && matches!(args.get(1).map(AsRef::as_ref), Some(CalcitTypeAnnotation::String))
       ));
     }
   }

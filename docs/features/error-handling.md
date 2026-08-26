@@ -24,6 +24,8 @@ Calcit uses `try` / `raise` for exception-based error handling. Errors are strin
 
 `try` takes an expression body and a handler function. If the body raises an error, the handler receives the error message as a string:
 
+Native and generated JavaScript normalize caught failures to this String contract; host `Error` objects are not exposed through the handler.
+
 ```cirru
 let
     result $ try

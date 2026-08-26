@@ -1119,7 +1119,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         }
         emit_expr(ctx, &args_list[0])
       }
-      CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::DecodeMapAs => Err(format!("{syn} is not yet supported in WASM codegen")),
+      CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::TryParseCirruEdnAs | CalcitSyntax::DecodeMapAs | CalcitSyntax::TryDecodeMapAs => {
+        Err(format!("{syn} is not yet supported in WASM codegen"))
+      }
       CalcitSyntax::Defn => {
         // A `fn`/`defn` form in value position creates a closure capturing outer variables.
         // Closures with captured upvalues can't be represented as static WASM function

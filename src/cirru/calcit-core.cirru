@@ -8006,6 +8006,27 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :control :internal :syntax
+        |try-decode-map-as $ %{} 'CodeEntry (:doc "|Decode an evaluated Calcit value into a compile-time-derived type and return Result<T,String>. Runtime shape failures become :err with a structural path; invalid TypeExpr decoder derivation remains a compile-time error. Syntax: (try-decode-map-as value TypeExpr). Native and JavaScript are supported; WASM typed decoding is not yet supported.")
+          :code $ quote (def try-decode-map-as &runtime-implementation)
+          :examples $ []
+            quote $ try-decode-map-as 1 'Number
+            quote $ try-decode-map-as |bad 'Number
+            quote $ tag-match (try-decode-map-as |bad 'Number)
+              (:err message)
+                assert= true $ string? message
+              (:ok _) false
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic 'Dynamic
+          :tags $ #{} :builtin :data :syntax
+          :tests $ []
+            %{} 'TestEntry (:name |result-contract)
+              :code $ quote
+                do
+                  assert= true $ result:ok? (try-decode-map-as 1 'Number)
+                  assert= true $ result:err? (try-decode-map-as |bad 'Number)
+                  assert-type (try-decode-map-as 1 'Number) (:: 'Result 'Number 'String)
+              :tags $ #{} :unit
         |try-parse-cirru $ %{} 'CodeEntry (:doc "|Parse Cirru as Result<CirruQuote,String>; errors are returned instead of raised. Prefer the .parse-cirru String method in user code.")
           :code $ quote
             defn try-parse-cirru (source)
@@ -8054,6 +8075,32 @@
                       char-from-code 41
                       , .parse-cirru-edn
                   assert-type (|[] .parse-cirru-edn) (:: 'Result 'Dynamic 'String)
+        |try-parse-cirru-edn-as $ %{} 'CodeEntry (:doc "|Parse Cirru EDN into a compile-time-derived closed type and return Result<T,String>. Runtime parse and shape failures become :err; invalid TypeExpr decoder derivation remains a compile-time error. Syntax: (try-parse-cirru-edn-as text TypeExpr). Native and JavaScript are supported; WASM typed decoding is not yet supported.")
+          :code $ quote (def try-parse-cirru-edn-as &runtime-implementation)
+          :examples $ []
+            quote $ try-parse-cirru-edn-as "|[] 1 2" (:: 'List 'Number)
+            quote $ try-parse-cirru-edn-as "|[] 1 |bad" (:: 'List 'Number)
+            quote $ tag-match
+              try-parse-cirru-edn-as "|[] 1 |bad" $ :: 'List 'Number
+              (:err message)
+                assert= true $ string? message
+              (:ok _) false
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'String 'Dynamic
+          :tags $ #{} :builtin :data :syntax
+          :tests $ []
+            %{} 'TestEntry (:name |result-contract)
+              :code $ quote
+                do
+                  assert= true $ result:ok?
+                    try-parse-cirru-edn-as "|[] 1 2" $ :: 'List 'Number
+                  assert= true $ result:err?
+                    try-parse-cirru-edn-as "|[] 1 |bad" $ :: 'List 'Number
+                  assert-type
+                    try-parse-cirru-edn-as "|[] 1 2" $ :: 'List 'Number
+                    :: 'Result (:: 'List 'Number) 'String
+              :tags $ #{} :unit
         |try-parse-cirru-list $ %{} 'CodeEntry (:doc "|Parse a Cirru expression list as Result<List,String>; errors are returned instead of raised. Prefer the .parse-cirru-list String method in user code.")
           :code $ quote
             defn try-parse-cirru-list (source)

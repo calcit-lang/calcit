@@ -566,6 +566,34 @@ fn gen_call_code(
           }
           _ => Err(format!("parse-cirru-edn-as expected a string and a type expression, got: {body}")),
         },
+        CalcitSyntax::TryParseCirruEdnAs => match (body.first(), body.get(1)) {
+          (Some(text), Some(type_form)) if body.len() == 2 || body.len() == 3 => {
+            let graph = match body.get(2).and_then(DataShapeGraph::from_calcit_handle) {
+              Some(graph) => graph,
+              None => {
+                let target = calcit::CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
+                Arc::new(DataShapeGraph::build(target.as_ref(), ns).map_err(|error| error.to_string())?)
+              }
+            };
+            let graph_code = data_shape_graph_to_js(graph.as_ref(), ns, file_imports)?;
+            let text_code = to_js_code(text, ns, local_defs, file_imports, tags, None)?;
+            let call_code = format!("{}parse_cirru_edn_as({text_code}, {graph_code})", get_proc_prefix(ns));
+            let result_code = snippets::tmpl_result_try(
+              &call_code,
+              &format!("{var_prefix}{}", escape_var("%ok")),
+              &format!("{var_prefix}{}", escape_var("%err")),
+            );
+            Ok(wrap_call_with_prelude(
+              String::new(),
+              result_code,
+              return_label,
+              detect_await(&body),
+            ))
+          }
+          _ => Err(format!(
+            "try-parse-cirru-edn-as expected a string and a type expression, got: {body}"
+          )),
+        },
         CalcitSyntax::DecodeMapAs => match (body.first(), body.get(1)) {
           (Some(value), Some(type_form)) if body.len() == 2 || body.len() == 3 => {
             let graph = match body.get(2).and_then(DataShapeGraph::from_calcit_handle) {
@@ -581,6 +609,32 @@ fn gen_call_code(
             Ok(wrap_call_with_prelude(String::new(), call_code, return_label, detect_await(&body)))
           }
           _ => Err(format!("decode-map-as expected a value and a type expression, got: {body}")),
+        },
+        CalcitSyntax::TryDecodeMapAs => match (body.first(), body.get(1)) {
+          (Some(value), Some(type_form)) if body.len() == 2 || body.len() == 3 => {
+            let graph = match body.get(2).and_then(DataShapeGraph::from_calcit_handle) {
+              Some(graph) => graph,
+              None => {
+                let target = calcit::CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
+                Arc::new(DataShapeGraph::build_open(target.as_ref(), ns).map_err(|error| error.to_string())?)
+              }
+            };
+            let graph_code = data_shape_graph_to_js(graph.as_ref(), ns, file_imports)?;
+            let value_code = to_js_code(value, ns, local_defs, file_imports, tags, None)?;
+            let call_code = format!("{}decode_map_as({value_code}, {graph_code})", get_proc_prefix(ns));
+            let result_code = snippets::tmpl_result_try(
+              &call_code,
+              &format!("{var_prefix}{}", escape_var("%ok")),
+              &format!("{var_prefix}{}", escape_var("%err")),
+            );
+            Ok(wrap_call_with_prelude(
+              String::new(),
+              result_code,
+              return_label,
+              detect_await(&body),
+            ))
+          }
+          _ => Err(format!("try-decode-map-as expected a value and a type expression, got: {body}")),
         },
         CalcitSyntax::AssertTraits => match body.first() {
           Some(value) => to_js_code(value, ns, local_defs, file_imports, tags, return_label),
