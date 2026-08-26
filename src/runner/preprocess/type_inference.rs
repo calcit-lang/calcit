@@ -1887,6 +1887,7 @@ mod tests {
       usage: CalcitFnUsageMeta::default(),
       scope: Arc::new(CalcitScope::default()),
       args: Arc::new(CalcitFnArgs::Args(vec![0])),
+      call_shape: crate::calcit::CalcitFnCallShape::fixed(1),
       body: vec![],
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),

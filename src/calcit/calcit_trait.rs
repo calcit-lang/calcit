@@ -287,6 +287,7 @@ mod tests {
       usage: CalcitFnUsageMeta::default(),
       scope: Arc::new(CalcitScope::default()),
       args: Arc::new(CalcitFnArgs::Args(vec![1])),
+      call_shape: crate::calcit::CalcitFnCallShape::fixed(1),
       body: vec![crate::Calcit::Nil; body_len],
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),

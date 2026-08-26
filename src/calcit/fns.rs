@@ -160,6 +160,52 @@ pub enum CalcitFnArgs {
   Args(Vec<u16>),
 }
 
+/// Execution-only callable shape cached after typed preprocessing.
+///
+/// Native calls should not have to walk argument annotations merely to decide
+/// arity and trailing `Option` completion. The full annotations stay on
+/// `CalcitFn` for codegen, queries, and diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CalcitFnCallShape {
+  param_len: u16,
+  trailing_optionals: u16,
+  has_rest: bool,
+}
+
+impl CalcitFnCallShape {
+  pub fn fixed(param_len: usize) -> Self {
+    Self {
+      param_len: u16::try_from(param_len).expect("function parameter count exceeds local index capacity"),
+      trailing_optionals: 0,
+      has_rest: false,
+    }
+  }
+
+  pub fn from_parts(args: &CalcitFnArgs, arg_types: &[Arc<CalcitTypeAnnotation>], has_typed_rest: bool) -> Self {
+    let param_len = args.param_len();
+    let has_marked_rest =
+      matches!(args, CalcitFnArgs::MarkedArgs(labels) if labels.iter().any(|label| matches!(label, CalcitArgLabel::RestMark)));
+    Self {
+      param_len: u16::try_from(param_len).expect("function parameter count exceeds local index capacity"),
+      trailing_optionals: u16::try_from(trailing_option_arg_count(arg_types, param_len))
+        .expect("optional parameter count exceeds local index capacity"),
+      has_rest: has_typed_rest || has_marked_rest,
+    }
+  }
+
+  pub fn param_len(self) -> usize {
+    usize::from(self.param_len)
+  }
+
+  pub fn trailing_optionals(self) -> usize {
+    usize::from(self.trailing_optionals)
+  }
+
+  pub fn has_rest(self) -> bool {
+    self.has_rest
+  }
+}
+
 impl CalcitFnArgs {
   /// Counts positional parameters(either indexed locals or symbols) while ignoring markers.
   pub fn param_len(&self) -> usize {
@@ -186,6 +232,8 @@ pub struct CalcitFn {
   pub usage: CalcitFnUsageMeta,
   pub scope: Arc<CalcitScope>,
   pub args: Arc<CalcitFnArgs>,
+  /// compact arity facts used by the native call path
+  pub call_shape: CalcitFnCallShape,
   pub body: Vec<Calcit>,
   /// generics declared by hint-fn
   pub generics: Arc<Vec<Arc<str>>>,
@@ -272,6 +320,34 @@ mod tests {
     let types = vec![Arc::new(CalcitTypeAnnotation::Number), option_number.clone(), option_number];
     assert_eq!(trailing_option_arg_count(&types, 3), 2);
     assert_eq!(trailing_option_arg_count(&types, 4), 0, "partial metadata must keep exact arity");
+  }
+
+  #[test]
+  fn caches_runtime_call_shape_from_typed_arguments() {
+    let option_number = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+    ));
+    let args = CalcitFnArgs::Args(vec![1, 2, 3]);
+    let shape = CalcitFnCallShape::from_parts(
+      &args,
+      &[Arc::new(CalcitTypeAnnotation::Number), option_number.clone(), option_number],
+      false,
+    );
+    assert_eq!(shape.param_len(), 3);
+    assert_eq!(shape.trailing_optionals(), 2);
+    assert!(!shape.has_rest());
+  }
+
+  #[test]
+  fn runtime_call_shape_combines_marked_and_typed_rest_evidence() {
+    let marked = CalcitFnArgs::MarkedArgs(vec![CalcitArgLabel::Idx(1), CalcitArgLabel::RestMark, CalcitArgLabel::Idx(2)]);
+    let marked_shape = CalcitFnCallShape::from_parts(&marked, &[], false);
+    assert_eq!(marked_shape.param_len(), 2);
+    assert!(marked_shape.has_rest());
+
+    let typed = CalcitFnArgs::Args(vec![1]);
+    assert!(CalcitFnCallShape::from_parts(&typed, &[crate::calcit::DYNAMIC_TYPE.clone()], true).has_rest());
   }
 
   #[test]

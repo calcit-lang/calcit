@@ -39,7 +39,7 @@ pub use calcit_struct::CalcitStructDef;
 pub use calcit_trait::{CalcitTrait, CalcitTraitMemberKind};
 pub use enum_value::CalcitEnumValue;
 pub(crate) use fns::trailing_option_arg_count;
-pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitMacro, CalcitScope};
+pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitFnCallShape, CalcitFnDefRef, CalcitFnUsageMeta, CalcitMacro, CalcitScope};
 pub use fns::{ParamShape, ParamShapeToken, compare_param_shapes};
 pub use list::{CalcitCallKind, CalcitList, CalcitListView, CalcitNumberBinaryOp};
 pub use local::CalcitLocal;
@@ -1676,6 +1676,7 @@ mod tests {
           usage: CalcitFnUsageMeta::default(),
           scope: Arc::new(CalcitScope::default()),
           args: Arc::new(CalcitFnArgs::Args(vec![])),
+          call_shape: CalcitFnCallShape::fixed(0),
           body: vec![Calcit::Str(Arc::from("ok"))],
           generics: Arc::new(vec![]),
           where_bounds: Arc::new(vec![]),

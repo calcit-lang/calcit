@@ -11,8 +11,8 @@ use crate::builtins;
 use crate::builtins::meta::{NS_SYMBOL_DICT, type_of};
 
 use crate::calcit::{
-  self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitList, CalcitListView,
-  CalcitLocal, CalcitMacro, CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning, MacroSignature,
+  self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnCallShape, CalcitFnDefRef, CalcitFnUsageMeta, CalcitList,
+  CalcitListView, CalcitLocal, CalcitMacro, CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning, MacroSignature,
 };
 use crate::calcit::{Calcit, CalcitEnumValue, CalcitErr, CalcitScope, gen_core_id};
 use crate::call_stack::CallStackList;
@@ -67,6 +67,7 @@ pub fn defn(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str) -> Re
       }
       let runtime_body = body_items.iter().filter(|form| !is_function_metadata_hint(form)).cloned().collect();
       let is_macro_gen = s.as_ref().contains('%');
+      let call_shape = CalcitFnCallShape::from_parts(&parsed_args, &arg_types, rest_type.is_some());
       Ok(Calcit::Fn {
         id: gen_core_id(),
         info: Arc::new(CalcitFn {
@@ -82,6 +83,7 @@ pub fn defn(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str) -> Re
           usage: CalcitFnUsageMeta::default(),
           scope: Arc::new(scope.to_owned()),
           args: Arc::new(parsed_args),
+          call_shape,
           body: runtime_body,
           generics,
           where_bounds,
@@ -318,6 +320,9 @@ mod tests {
         assert!(matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Number));
         assert_eq!(info.arg_types.len(), 1, "single parameter function should track one arg type slot");
         assert!(info.arg_types.iter().all(|slot| matches!(**slot, CalcitTypeAnnotation::Dynamic)));
+        assert_eq!(info.call_shape.param_len(), 1);
+        assert_eq!(info.call_shape.trailing_optionals(), 0);
+        assert!(!info.call_shape.has_rest());
         assert_eq!(info.body, vec![body_expr], "function metadata hint must not execute as body code");
       }
       other => panic!("expected function, got {other}"),
@@ -362,6 +367,8 @@ mod tests {
       panic!("expected function");
     };
     assert!(matches!(info.rest_type.as_deref(), Some(CalcitTypeAnnotation::Number)));
+    assert_eq!(info.call_shape.param_len(), 2);
+    assert!(info.call_shape.has_rest());
     assert!(matches!(
       info.arg_types.last().map(AsRef::as_ref),
       Some(CalcitTypeAnnotation::Variadic(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
