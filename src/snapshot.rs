@@ -78,8 +78,10 @@ fn normalize_schema_map(map: &EdnMapView) -> EdnMapView {
   for (key, value) in map.0.iter() {
     let normalized_key = match key {
       Edn::Tag(tag) => Edn::tag(tag.ref_str()),
-      Edn::Str(text) => canonical_schema_field_name(text).map(Edn::tag).unwrap_or_else(|| key.clone()),
-      Edn::Symbol(text) => canonical_schema_field_name(text).map(Edn::tag).unwrap_or_else(|| key.clone()),
+      Edn::Str(text) | Edn::Symbol(text) => canonical_schema_field_name(text)
+        .map(Edn::tag)
+        .or_else(|| text.strip_prefix('\'').map(|name| Edn::Symbol(Arc::from(name))))
+        .unwrap_or_else(|| key.clone()),
       _ => key.clone(),
     };
 
@@ -87,13 +89,26 @@ fn normalize_schema_map(map: &EdnMapView) -> EdnMapView {
       (Edn::Tag(tag), Edn::Str(text)) | (Edn::Tag(tag), Edn::Symbol(text)) if tag.ref_str() == "kind" => {
         canonical_schema_kind_name(text).map(Edn::tag).unwrap_or_else(|| value.clone())
       }
-      _ => value.clone(),
+      _ => normalize_schema_value(value),
     };
 
     normalized.insert(normalized_key, normalized_value);
   }
 
   normalized
+}
+
+fn normalize_schema_value(value: &Edn) -> Edn {
+  match value {
+    Edn::Map(map) => Edn::Map(normalize_schema_map(map)),
+    Edn::List(items) => Edn::List(EdnListView(items.0.iter().map(normalize_schema_value).collect())),
+    Edn::Enum(view) => {
+      let mut normalized = view.clone();
+      normalized.extra = view.extra.iter().map(normalize_schema_value).collect();
+      Edn::Enum(normalized)
+    }
+    _ => value.clone(),
+  }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
