@@ -975,7 +975,13 @@ fn try_lower_core_let_macro(args: &CalcitList, file_ns: &str) -> Option<Calcit> 
   let Calcit::List(pairs) = args.first()? else {
     return None;
   };
-  if !pairs.iter().all(|pair| matches!(pair, Calcit::List(_))) {
+  if !pairs.iter().all(|pair| {
+    matches!(
+      pair,
+      Calcit::List(binding)
+        if binding.is_empty() || (binding.len() == 2 && matches!(binding.first(), Some(Calcit::Symbol { .. })))
+    )
+  }) {
     return None;
   }
 
@@ -7439,10 +7445,20 @@ mod tests {
   }
 
   #[test]
-  fn leaves_invalid_core_let_pairs_on_the_general_macro_path() {
-    let invalid_pairs = Calcit::from(vec![Calcit::Number(1.0)]);
-    let args = CalcitList::from(&[invalid_pairs, Calcit::Number(2.0)] as &[Calcit]);
-    assert!(try_lower_core_let_macro(&args, "tests.core-let").is_none());
+  fn leaves_malformed_core_let_pairs_on_the_general_macro_path() {
+    for pair in [
+      Calcit::from(vec![test_symbol("x")]),
+      Calcit::from(vec![test_symbol("x"), Calcit::Number(1.0), Calcit::Number(2.0)]),
+      Calcit::from(vec![Calcit::Number(1.0), Calcit::Number(2.0)]),
+    ] {
+      let pairs = Calcit::from(vec![pair]);
+      let args = CalcitList::from(&[pairs, Calcit::Number(2.0)] as &[Calcit]);
+      assert!(try_lower_core_let_macro(&args, "tests.core-let").is_none());
+    }
+
+    let empty_pair = Calcit::from(CalcitList::default());
+    let args = CalcitList::from(&[Calcit::from(vec![empty_pair]), Calcit::Number(2.0)] as &[Calcit]);
+    assert!(try_lower_core_let_macro(&args, "tests.core-let").is_some());
   }
 
   #[test]

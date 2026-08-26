@@ -6,6 +6,9 @@
   for valid binding-pair lists.
 - Invalid outer binding shapes deliberately remain on the ordinary macro path,
   preserving the established macro diagnostics and error behavior.
+- After review, native lowering was narrowed to the exact `&let` binding
+  contract: `()` or a two-item list headed by a symbol. Singleton, oversized,
+  and non-symbol-headed lists therefore retain the ordinary macro path.
 - Macro metrics now explicitly classify this route as `native-fast-path`, not
   as a general-evaluator fallback or a cache candidate.
 - Latest Respo main release-binary metrics changed from 1,418 expansions / about
