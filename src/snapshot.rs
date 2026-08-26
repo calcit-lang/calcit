@@ -3998,7 +3998,7 @@ mod tests {
       "bundled macros must declare phase-aware contracts instead of legacy whole-Dynamic schemas: {legacy_macros:?}"
     );
     assert_eq!(
-      macro_count, 86,
+      macro_count, 63,
       "update the audited bundled macro inventory when core macros change"
     );
   }
@@ -4015,7 +4015,6 @@ mod tests {
       "&+",
       "%{}",
       "deftrait",
-      "[,]",
       "not",
       "not=",
       "noted",
@@ -4025,7 +4024,7 @@ mod tests {
       "optionally",
     ] {
       let entry = core_file.defs.get(def_name).unwrap_or_else(|| panic!("missing def: {def_name}"));
-      if matches!(def_name, "%{}" | "deftrait" | "[,]" | "noted") {
+      if matches!(def_name, "%{}" | "deftrait" | "noted") {
         assert!(
           matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Macro(_)),
           "{def_name} should load as MacroSignature"
@@ -4120,7 +4119,7 @@ mod tests {
       ));
     }
 
-    for def_name in ["->", "->%", "%<-", "apply-args", "flipped", "\\", "\\.", "[,]"] {
+    for def_name in ["->", "->%", "apply-args", "flipped", "\\"] {
       let CalcitTypeAnnotation::Macro(signature) = core_file.defs[def_name].schema.as_ref() else {
         panic!("{def_name} should load as MacroSignature");
       };
@@ -4142,14 +4141,6 @@ mod tests {
             [crate::calcit::MacroSyntaxType::Expr(value)]
               if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
           ));
-          assert!(matches!(
-            signature.rest_input,
-            Some(crate::calcit::MacroSyntaxType::Expr(ref value))
-              if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
-          ));
-        }
-        "%<-" => {
-          assert!(signature.required_inputs.is_empty());
           assert!(matches!(
             signature.rest_input,
             Some(crate::calcit::MacroSyntaxType::Expr(ref value))
@@ -4182,34 +4173,13 @@ mod tests {
           assert!(signature.required_inputs.is_empty());
           assert!(matches!(signature.rest_input, Some(crate::calcit::MacroSyntaxType::Syntax)));
         }
-        "\\." => {
-          assert!(matches!(
-            signature.required_inputs.as_slice(),
-            [crate::calcit::MacroSyntaxType::Syntax]
-          ));
-          assert!(matches!(signature.rest_input, Some(crate::calcit::MacroSyntaxType::Syntax)));
-        }
-        "[,]" => {
-          assert!(signature.required_inputs.is_empty());
-          assert!(matches!(signature.rest_input, Some(crate::calcit::MacroSyntaxType::Syntax)));
-        }
         _ => unreachable!(),
       }
-      if matches!(def_name, "\\" | "\\.") {
+      if def_name == "\\" {
         assert!(matches!(
           signature.expansion,
           crate::calcit::MacroExpansionType::Expr(ref output)
             if matches!(output.as_ref(), CalcitTypeAnnotation::DynFn)
-        ));
-      } else if def_name == "[,]" {
-        assert!(matches!(
-          signature.expansion,
-          crate::calcit::MacroExpansionType::Expr(ref output)
-            if matches!(
-              output.as_ref(),
-              CalcitTypeAnnotation::List(value)
-                if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
-            )
         ));
       } else {
         assert!(matches!(
@@ -4490,44 +4460,7 @@ mod tests {
         if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
     ));
 
-    let CalcitTypeAnnotation::Macro(field_match) = core_file.defs["field-match"].schema.as_ref() else {
-      panic!("field-match should load as MacroSignature");
-    };
-    assert!(field_match.is_strict());
-    assert!(field_match.capabilities.is_empty());
-    assert!(matches!(
-      field_match.required_inputs.as_slice(),
-      [crate::calcit::MacroSyntaxType::Expr(value)]
-        if matches!(value.as_ref(), CalcitTypeAnnotation::Map(_, _))
-    ));
-    assert!(matches!(field_match.rest_input, Some(crate::calcit::MacroSyntaxType::SyntaxList)));
-    assert!(matches!(
-      field_match.expansion,
-      crate::calcit::MacroExpansionType::Expr(ref inner)
-        if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
-    ));
-
     let internal_file = snapshot.files.get("calcit.internal").expect("calcit.internal file should exist");
-    let CalcitTypeAnnotation::Macro(field_internal) = internal_file.defs["&field-match-internal"].schema.as_ref() else {
-      panic!("&field-match-internal should load as MacroSignature");
-    };
-    assert!(field_internal.is_strict());
-    assert!(field_internal.capabilities.is_empty());
-    assert!(matches!(
-      field_internal.required_inputs.as_slice(),
-      [crate::calcit::MacroSyntaxType::Expr(value)]
-        if matches!(value.as_ref(), CalcitTypeAnnotation::Map(_, _))
-    ));
-    assert!(matches!(
-      field_internal.rest_input,
-      Some(crate::calcit::MacroSyntaxType::SyntaxList)
-    ));
-    assert!(matches!(
-      field_internal.expansion,
-      crate::calcit::MacroExpansionType::Expr(ref inner)
-        if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
-    ));
-
     let CalcitTypeAnnotation::Macro(tag_internal) = internal_file.defs["&tag-match-internal"].schema.as_ref() else {
       panic!("&tag-match-internal should load as MacroSignature");
     };

@@ -1,6 +1,6 @@
 # RFC 整理索引
 
-更新时间：2026-08-23
+更新时间：2026-08-26
 
 ## 目录原则
 
@@ -48,7 +48,8 @@
 | `08-21-type-quality-ci-adoption-rfc.md`               | Draft       | 统一使用原生 `analyze quality` 与按 definition baseline，定义生态 CI 层级并禁止各项目重复实现 JS 汇总脚本。 |
 | `08-21-js-ffi-runtime-contract-validation-rfc.md`     | Draft       | 在现有 typed JS FFI 声明之上增加 host guard、decoder、runtime contract tests 与 unsafe evidence。 |
 | `08-21-static-type-system-evolution-roadmap.md`       | Draft       | 借鉴 Rust/MoonBit 推进 Unknown/Dynamic 分离、穷尽性、局部推断、trait coherence 与框架类型化。 |
-| `08-23-typed-option-query-ergonomics-rfc.md`           | Implemented | 保持 Option 边界，新增 `get-or` 等类型安全查询终点，减少业务代码中的机械 unwrap。 |
+| `08-23-typed-option-query-ergonomics-rfc.md`           | Withdrawn | 生态采用率为零；`get-or` 等六个宏已移除，直接使用查询返回的 `Option` 与 `.unwrap-or`。 |
+| `08-23-option-result-binding-macros-rfc.md`             | Partial | 保留已有 Respo 使用的 `option:let`；移除未采用的 `result:let`，Result 链直接使用 `.and-then`。 |
 
 ## 已执行的清理
 

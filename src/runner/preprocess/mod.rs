@@ -144,12 +144,8 @@ pub(crate) fn tag_annotation(name: &str) -> Arc<CalcitTypeAnnotation> {
 
 fn removed_data_api_replacement(name: &str) -> Option<String> {
   match name {
-    "record?" => Some("struct? (values) or struct-def? (definitions)".to_owned()),
     "tuple?" => Some("enum? (values) or enum-def? (definitions)".to_owned()),
-    "record-struct" => Some("struct-definition".to_owned()),
     "tuple-enum" => Some("enum-definition".to_owned()),
-    "record-with" => Some("struct-with".to_owned()),
-    "record-match" => Some("struct-match".to_owned()),
     "&record:struct" => Some("&struct:definition".to_owned()),
     "&tuple:enum" => Some("&enum:definition".to_owned()),
     "&tuple:enum-has-variant?" => Some("&enum-def:has-variant?".to_owned()),
@@ -4398,21 +4394,6 @@ fn nominal_enum_expression_name(value: &Calcit, scope_types: &ScopeTypes) -> Opt
   }
 }
 
-fn option_query_default_helper(value: &Calcit) -> Option<&'static str> {
-  let Calcit::List(items) = value else {
-    return None;
-  };
-  match items.first().and_then(canonical_absence_operation_name) {
-    Some("get") => Some("get-or"),
-    Some("get-in") => Some("get-in-or"),
-    Some("get-env") => Some("get-env-or"),
-    Some("first") => Some("first-or"),
-    Some("last") => Some("last-or"),
-    Some("nth") => Some("nth-or"),
-    _ => None,
-  }
-}
-
 /// Return the nominal element type used by a membership operation, when the
 /// collection has enough static information to prove it. `includes?` checks
 /// map values while `contains?` checks map keys.
@@ -4555,12 +4536,9 @@ fn warn_on_nominal_enum_legacy_absence_use(
     | "symbol?" | "fn?" | "bool?" | "buffer?" | "cirru-quote?" | "ref?" | "macro?" | "syntax?" => {
       "pattern-match the nominal enum before applying a payload type predicate".to_owned()
     }
-    _ if enum_name == "Option" => match option_query_default_helper(value) {
-      Some(helper) => {
-        format!("use `if-let`/`match` for branches, typed `{helper}` for this query default, or an Option method to access the payload")
-      }
-      None => "use `if-let`/`match` for branches or an Option method to access the payload".to_owned(),
-    },
+    _ if enum_name == "Option" => {
+      "use `if-let`/`match` for branches or an Option method such as `.unwrap-or` to access the payload".to_owned()
+    }
     _ => "use `tag-match` instead of positional access on the nominal enum".to_owned(),
   };
   let message = format!(
@@ -8017,12 +7995,8 @@ mod tests {
   #[test]
   fn removed_data_apis_point_to_their_struct_enum_replacements() {
     let cases = [
-      ("record?", "struct? (values) or struct-def? (definitions)"),
       ("tuple?", "enum? (values) or enum-def? (definitions)"),
-      ("record-struct", "struct-definition"),
       ("tuple-enum", "enum-definition"),
-      ("record-with", "struct-with"),
-      ("record-match", "struct-match"),
       ("&record:get", "&struct:get"),
       ("&record:struct", "&struct:definition"),
       ("&tuple:nth", "&enum:nth"),
@@ -8036,26 +8010,6 @@ mod tests {
       assert_eq!(removed_data_api_replacement(legacy).as_deref(), Some(replacement));
     }
     assert_eq!(removed_data_api_replacement("&map:get"), None);
-  }
-
-  #[test]
-  fn removed_core_data_api_calls_emit_migration_diagnostics() {
-    let head = Calcit::Import(CalcitImport {
-      ns: Arc::from(calcit::CORE_NS),
-      def: Arc::from("record?"),
-      info: Arc::new(ImportInfo::Core {
-        at_ns: Arc::from("tests.migration"),
-      }),
-      def_id: None,
-    });
-    let warnings = RefCell::new(vec![]);
-
-    warn_on_removed_data_api_call(&head, None, "tests.migration", &warnings);
-
-    let warnings = warnings.borrow();
-    assert_eq!(warnings.len(), 1);
-    assert_eq!(warnings[0].code(), Some("W_REMOVED_DATA_API"));
-    assert!(warnings[0].message().contains("struct? (values) or struct-def? (definitions)"));
   }
 
   #[test]
@@ -8177,10 +8131,7 @@ mod tests {
       &method_warnings,
     );
     assert_eq!(method_warnings.borrow().len(), 1, "structural Option methods should warn");
-    assert!(
-      !method_warnings.borrow()[0].message().contains("*-or"),
-      "a local Option value has no provable matching query-default helper"
-    );
+    assert!(method_warnings.borrow()[0].message().contains(".unwrap-or"));
 
     let direct_get = Calcit::from(vec![core_head("get"), Calcit::Nil, Calcit::Number(0.0)]);
     let direct_get_warnings = RefCell::new(vec![]);
@@ -8193,10 +8144,7 @@ mod tests {
       &direct_get_warnings,
     );
     assert_eq!(direct_get_warnings.borrow().len(), 1, "direct get payload misuse should warn");
-    assert!(
-      direct_get_warnings.borrow()[0].message().contains("`get-or`"),
-      "a direct get query should suggest its matching typed fallback helper"
-    );
+    assert!(direct_get_warnings.borrow()[0].message().contains(".unwrap-or"));
 
     let equality_head = core_head("=");
     let mixed_equality_args = CalcitList::from(&[option_value.to_owned(), Calcit::Number(1.0)] as &[Calcit]);

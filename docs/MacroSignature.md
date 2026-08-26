@@ -74,13 +74,27 @@ phase-aware signature. Adding a new bundled macro with an omitted or legacy
 whole-`Dynamic` schema fails the Rust test suite. This complements runtime
 metrics, which only report macros reached by the selected entry.
 
+Before promoting an experimental macro, measure its source adoption in the
+Calcit workspace rather than relying on its presence in documentation or the
+core definition itself:
+
+```bash
+rg -n -F --glob '*.cirru' --glob '!**/src/cirru/calcit-core.cirru' -- 'MACRO_NAME' /path/to/workspace
+```
+
+Use the literal matches as an audit candidate list, then manually distinguish
+executable call sites from definitions, docs, comments, quoted code, and longer
+symbols. Record the executable call sites in the promotion PR. Zero-call-site
+syntax should normally stay in a module or be removed instead of becoming
+permanent core surface.
+
 Some strict contracts still contain intentional `Dynamic` positions. Broad
 collection helpers such as `first`, `nth`, and `get` accept several runtime
 shapes that cannot yet be expressed as one static union or trait contract.
 Their convenience macros therefore describe argument count and expression
 phase precisely while retaining `Expr<Dynamic>` for the open payload. More
-specific boundaries should remain concrete: for example, `get-env-or` accepts
-and returns `String`, `js-object` expands to `JsObject`, and anonymous enum
+specific boundaries should remain concrete: for example, `js-object` expands
+to `JsObject`, and anonymous enum
 sugar expands to `Enum`.
 
 ## Compile-time capabilities

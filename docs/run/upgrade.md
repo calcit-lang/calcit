@@ -402,17 +402,17 @@ match (get-env |APP_MODE)
 查询结果立即采用默认值时可直接机械迁移，不改变原查询 API 的 Option 契约：
 
 ```cirru.no-check
-option:unwrap-or (get config :port) 6000
-; =>
 get-or config :port 6000
-
-option:unwrap-or (get-env |mode) |release
 ; =>
+(get config :port) .unwrap-or 6000
+
 get-env-or |mode |release
+; =>
+(get-env |mode) .unwrap-or |release
 ```
 
-同类 API 包括 `get-in-or`、`first-or`、`last-or`、`nth-or`。fallback 必须与 payload
-类型兼容；需要区分缺失分支时不要使用这些终点，改用 `if-let` 或穷尽 `match`。
+`get-in-or`、`first-or`、`last-or`、`nth-or` 同样改为对应查询后调用 `.unwrap-or`。
+fallback 必须与 payload 类型兼容；需要区分缺失分支时改用 `if-let` 或穷尽 `match`。
 
 #### `.trim` / `.blank?` 接收者迁移
 

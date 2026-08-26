@@ -24,20 +24,6 @@
             {} (:return 'Enum)
               :args $ [] 'Dynamic 'Tag
           :tags $ #{} :builtin :internal
-        |%<- $ %{} 'CodeEntry (:doc "|pass value as `%` into several expressions, in reversed order")
-          :code $ quote
-            defmacro %<- (& xs)
-              if (&list:empty? xs) (raise "|%<- expects at least 1 expression")
-              quasiquote $ ->%
-                ~@ $ reverse xs
-          :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ []
-              :rest $ :: 'Expr 'Dynamic
-          :tags $ #{} :macro
         |%err $ %{} 'CodeEntry (:doc "|Create Err variant of Result")
           :code $ quote
             defn %err (message) (%:: Result :err message)
@@ -2694,19 +2680,6 @@
                   assert= true $ < 1 2 3 4 5
                   assert= false $ < 3 2
               :tags $ #{} :core :unit
-        |<- $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro <- (& xs)
-              if (&list:empty? xs) (raise "|<- expects at least 1 expression")
-              quasiquote $ ->
-                ~@ $ reverse xs
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ []
-          :tags $ #{} :macro
         |<= $ %{} 'CodeEntry (:doc "|Less than or equal comparison, supports multiple arguments")
           :code $ quote
             defn <= (x & ys)
@@ -2969,20 +2942,6 @@
           :examples $ []
           :schema $ :: 'Enum
           :tags $ #{} :data
-        |[,] $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro [,] (& body)
-              &let
-                xs $ &list:filter body
-                  fn (x) (/= x ',)
-                quasiquote $ [] ~@xs
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'List
-              :required $ []
-          :tags $ #{} :macro
         |[] $ %{} 'CodeEntry (:doc "|internal function for creating lists\nSyntax: ([] & elements)\nParams: elements (any, variadic)\nReturns: list\nCreates new list from provided elements")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2992,24 +2951,6 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-        |[][] $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro [][] (& xs)
-              if
-                not $ and (list? xs) (every? xs list?)
-                raise $ str-spaced "|[][] expects list items, got:" xs
-              &let
-                items $ map xs
-                  fn (ys)
-                    quasiquote $ [] ~@ys
-                quasiquote $ [] ~@items
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr (:: 'List 'List)
-              :required $ []
-          :tags $ #{} :macro
         |\ $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro \ (& xs)
@@ -3022,38 +2963,6 @@
               :expansion $ :: 'Expr 'Fn
               :required $ []
           :tags $ #{} :macro
-        |\. $ %{} 'CodeEntry (:doc "|this syntax is bared used, deprecating")
-          :code $ quote
-            defmacro \. (args-alias & xs)
-              if
-                not $ or (symbol? args-alias) (string? args-alias)
-                raise $ str-spaced "|\\. expects symbol/string arg alias, got:" args-alias
-              if (&list:empty? xs) (raise "|\\. expects function body")
-              &let
-                args $ ->% (turn-string args-alias) (split % |,) (map % turn-symbol)
-                &let
-                  inner-body $ if
-                    &= 1 $ &list:count xs
-                    &list:first xs
-                    quasiquote $ &let () ~@xs
-                  apply-args (inner-body args)
-                    fn (body ys)
-                      if (&list:empty? ys) (quasiquote ~body)
-                        &let
-                          a0 $ &list:last ys
-                          &let
-                            code $ [] (quasiquote defn)
-                              turn-symbol $ &str:concat |f_ (turn-string a0)
-                              [] a0
-                              , body
-                            recur code $ butlast ys
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Fn
-              :required $ [] 'Syntax
-          :tags $ #{} :deprecated :macro
         |abs $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn abs (x)
@@ -3477,50 +3386,6 @@
                   assert= ([])
                     butlast $ []
               :tags $ #{} :core :unit
-        |call-w-log $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro call-w-log (f & xs)
-              if
-                not $ or (symbol? f) (list? f)
-                raise $ str-spaced "|call-w-log expects function expression, got:" f
-              let
-                  v $ if
-                    = :eval $ &get-calcit-running-mode
-                    gensym |v
-                    , '_log_tmp
-                  args-value $ gensym |args-value
-                quasiquote $ let
-                    ~args-value $ [] ~@xs
-                    ~v $ ~f & ~args-value
-                  println |call:
-                    format-to-lisp $ quote (call-w-log ~f ~@xs)
-                    , |=> ~v
-                  println "|f:   " ~f
-                  println |args: ~args-value
-                  ~ v
-          :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{} :platform-read
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Fn)
-              :rest $ :: 'Expr 'Dynamic
-          :tags $ #{} :macro
-        |call-wo-log $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro call-wo-log (f & xs)
-              if
-                not $ or (symbol? f) (list? f)
-                raise $ str-spaced "|call-wo-log expects function expression, got:" f
-              quasiquote $ ~f ~@xs
-          :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Fn)
-              :rest $ :: 'Expr 'Dynamic
-          :tags $ #{} :macro
         |case $ %{} 'CodeEntry (:doc "|Match a value against pattern/result pairs. Raises when no pattern matches instead of returning nil.")
           :code $ quote
             defmacro case (item & patterns)
@@ -4170,45 +4035,6 @@
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic 'Dynamic 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        |defn-w-log $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro defn-w-log (f-name args & body)
-              if
-                not $ symbol? f-name
-                raise $ str-spaced "|defn-w-log expects function name symbol, got:" f-name
-              if
-                not $ list? args
-                raise $ str-spaced "|defn-w-log expects args in list, got:" args
-              if (&list:empty? body) (raise "|defn-w-log expects function body")
-              quasiquote $ defn ~f-name ~args
-                &let
-                  ~f-name $ defn ~f-name ~args ~@body
-                  call-w-log ~f-name ~@args
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Definition 'Fn
-              :required $ [] 'SyntaxSymbol 'SyntaxList
-          :tags $ #{} :macro
-        |defn-wo-log $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro defn-wo-log (f-name args & body)
-              if
-                not $ symbol? f-name
-                raise $ str-spaced "|defn-wo-log expects function name symbol, got:" f-name
-              if
-                not $ list? args
-                raise $ str-spaced "|defn-wo-log expects args in list, got:" args
-              if (&list:empty? body) (raise "|defn-wo-log expects function body")
-              quasiquote $ defn ~f-name ~args ~@body
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Definition 'Fn
-              :required $ [] 'SyntaxSymbol 'SyntaxList
-          :tags $ #{} :macro
         |defstruct $ %{} 'CodeEntry (:doc "|Define a StructDef with fixed fields and field types.")
           :code $ quote
             defmacro defstruct (name & pairs)
@@ -4810,26 +4636,6 @@
                 assert= (#{} 3)
                   exclude (#{} 1 2 3) 1 2
               :tags $ #{} :core :unit
-        |field-match $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro field-match (value & body)
-              if (&list:empty? body) (raise "|field-match expected patterns for matching")
-                if (list? value)
-                  &let
-                    v# $ gensym |v
-                    quasiquote $ &let (~v# ~value)
-                      assert "|expected map value to match" $ map? ~v#
-                      internal/&field-match-internal ~v# ~@body
-                  quasiquote $ &let ()
-                    assert "|expected map value to match" $ map? ~value
-                    internal/&field-match-internal ~value ~@body
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Map)
-          :tags $ #{} :macro
         |filter $ %{} 'CodeEntry (:doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible.")
           :code $ quote
             defn filter (xs f)
@@ -4976,28 +4782,6 @@
             %{} 'TestEntry (:name |returns-first-string-character)
               :code $ quote
                 assert= (%some |a) (first |abc)
-              :tags $ #{} :core :unit
-        |first-or $ %{} 'CodeEntry (:doc "|Return the first item, or a type-compatible fallback for an empty collection.")
-          :code $ quote
-            defmacro first-or (xs fallback)
-              quasiquote $ option:unwrap-or
-                first $ ~ xs
-                ~ fallback
-          :examples $ []
-            quote $ assert= 0
-              first-or ([]) 0
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
-          :tags $ #{} :macro
-          :tests $ []
-            %{} 'TestEntry (:name |returns-first-item-or-fallback)
-              :code $ quote
-                do
-                  assert= 1 $ first-or ([] 1 2) 0
-                  assert= 0 $ first-or ([]) 0
               :tags $ #{} :core :unit
         |flipped $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -5296,25 +5080,6 @@
               :features $ #{} :env :io
               :return $ :: 'Option 'String
           :tags $ #{} :env :io
-        |get-env-or $ %{} 'CodeEntry (:doc "|Read an environment variable, or return a String fallback when it is absent.")
-          :code $ quote
-            defmacro get-env-or (name fallback)
-              quasiquote $ option:unwrap-or
-                get-env $ ~ name
-                ~ fallback
-          :examples $ []
-            quote $ assert= |fallback (get-env-or |__CALCIT_TEST_MISSING_ENV_83B125E9__ |fallback)
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'String
-              :required $ [] (:: 'Expr 'String) (:: 'Expr 'String)
-          :tags $ #{} :macro
-          :tests $ []
-            %{} 'TestEntry (:name |returns-fallback-for-missing-env)
-              :code $ quote
-                assert= |fallback $ get-env-or |__CALCIT_TEST_MISSING_ENV_83B125E9__ |fallback
-              :tags $ #{} :core :unit
         |get-in $ %{} 'CodeEntry (:doc "|Get a nested value as Option<Dynamic>; none represents a missing path or nil encountered during traversal.")
           :code $ quote
             defn get-in (base path)
@@ -5352,68 +5117,6 @@
                   get-in
                     &{} :a $ &{} :b 2
                     [] :a :b
-              :tags $ #{} :core :unit
-        |get-in-or $ %{} 'CodeEntry (:doc "|Lookup a nested path and return its payload, or return a type-compatible fallback when the path is missing.")
-          :code $ quote
-            defmacro get-in-or (base path fallback)
-              quasiquote $ option:unwrap-or
-                get-in (~ base) (~ path)
-                ~ fallback
-          :examples $ []
-            quote $ assert= |missing
-              get-in-or
-                {} $ :a
-                  {} $ :b |found
-                [] :a :missing
-                , |missing
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'List) (:: 'Expr 'Dynamic)
-          :tags $ #{} :macro
-          :tests $ []
-            %{} 'TestEntry (:name |returns-nested-value-or-fallback)
-              :code $ quote
-                do
-                  assert= 1 $ get-in-or
-                    {} $ :a
-                      {} $ :b 1
-                    [] :a :b
-                    , 2
-                  assert= 2 $ get-in-or
-                    {} $ :a
-                      {} $ :b 1
-                    [] :a :missing
-                    , 2
-              :tags $ #{} :core :unit
-        |get-or $ %{} 'CodeEntry (:doc "|Lookup a key or index and return its payload, or return a type-compatible fallback when the lookup is none.")
-          :code $ quote
-            defmacro get-or (base k fallback)
-              quasiquote $ option:unwrap-or
-                get (~ base) (~ k)
-                ~ fallback
-          :examples $ []
-            quote $ assert= 0
-              get-or
-                {} $ :a 1
-                , :missing 0
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
-          :tags $ #{} :macro
-          :tests $ []
-            %{} 'TestEntry (:name |returns-value-or-fallback)
-              :code $ quote
-                do
-                  assert= 1 $ get-or
-                    {} $ :a 1
-                    , :a 2
-                  assert= 2 $ get-or
-                    {} $ :a 1
-                    , :missing 2
               :tags $ #{} :core :unit
         |group-by $ %{} 'CodeEntry (:doc "|Group elements by the result of applying function f to each element")
           :code $ quote
@@ -5944,28 +5647,6 @@
             %{} 'TestEntry (:name |returns-last-string-character)
               :code $ quote
                 assert= (%some |c) (last |abc)
-              :tags $ #{} :core :unit
-        |last-or $ %{} 'CodeEntry (:doc "|Return the last item, or a type-compatible fallback for an empty collection.")
-          :code $ quote
-            defmacro last-or (xs fallback)
-              quasiquote $ option:unwrap-or
-                last $ ~ xs
-                ~ fallback
-          :examples $ []
-            quote $ assert= 3
-              last-or ([] 1 2 3) 0
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
-          :tags $ #{} :macro
-          :tests $ []
-            %{} 'TestEntry (:name |returns-last-item-or-fallback)
-              :code $ quote
-                do
-                  assert= 2 $ last-or ([] 1 2) 0
-                  assert= 0 $ last-or ([]) 0
               :tags $ #{} :core :unit
         |let $ %{} 'CodeEntry (:doc "|macro for local bindings\nSyntax: (let ([name value] ...) body...)\nParams: pairs (list of binding pairs), body (expressions)\nReturns: result of body with bindings in scope\nCreates multiple local bindings sequentially")
           :code $ quote
@@ -6564,28 +6245,6 @@
             {}
               :args $ [] 'Dynamic 'Number
               :return $ :: 'Option 'Dynamic
-        |nth-or $ %{} 'CodeEntry (:doc "|Return an indexed item, or a type-compatible fallback when the index is invalid or out of bounds.")
-          :code $ quote
-            defmacro nth-or (xs idx fallback)
-              quasiquote $ option:unwrap-or
-                nth (~ xs) (~ idx)
-                ~ fallback
-          :examples $ []
-            quote $ assert= 0
-              nth-or ([] 1 2 3) 9 0
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Number) (:: 'Expr 'Dynamic)
-          :tags $ #{} :macro
-          :tests $ []
-            %{} 'TestEntry (:name |returns-indexed-item-or-fallback)
-              :code $ quote
-                do
-                  assert= 2 $ nth-or ([] 1 2) 1 0
-                  assert= 0 $ nth-or ([] 1 2) 9 0
-              :tags $ #{} :core :unit
         |number? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is a numeric scalar")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -7035,43 +6694,6 @@
             {} (:return 'String)
               :args $ [] 'String
           :tags $ #{} :builtin :file :internal :io
-        |record-match $ %{} 'CodeEntry (:doc "|Deprecated legacy macro. Replace `record-match` with `struct-match`.")
-          :code $ quote
-            defmacro record-match (& _args) (raise "|`record-match` was removed; use `struct-match`")
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ []
-          :tags $ #{} :deprecated :macro
-        |record-struct $ %{} 'CodeEntry (:doc "|Deprecated legacy function. Replace `record-struct` with `struct-definition`, which returns Option<StructDef>.")
-          :code $ quote
-            defn record-struct (_value) (raise "|`record-struct` was removed; use `struct-definition`, which returns Option<StructDef>")
-          :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Dynamic
-              :return $ :: 'Option 'Tag
-          :tags $ #{} :deprecated
-        |record-with $ %{} 'CodeEntry (:doc "|Deprecated legacy macro. Replace `record-with` with `struct-with`.")
-          :code $ quote
-            defmacro record-with (& _args) (raise "|`record-with` was removed; use `struct-with`")
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ []
-          :tags $ #{} :deprecated :macro
-        |record? $ %{} 'CodeEntry (:doc "|Deprecated legacy predicate. Replace `record?` with `struct?` for values or `struct-def?` for definitions.")
-          :code $ quote
-            defn record? (_value) (raise "|`record?` was removed; use `struct?` for struct values or `struct-def?` for definitions")
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Dynamic
-          :tags $ #{} :deprecated
         |recur $ %{} 'CodeEntry (:doc "|internal function for tail recursion\nSyntax: (recur args...)\nParams: args (any, variable number)\nReturns: recur structure for tail call optimization\nEnables tail call optimization by marking recursive calls")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -7209,60 +6831,6 @@
               :args $ [] (:: 'Result 'T 'E)
               :generics $ [] 'T 'E
           :tags $ #{} :internal
-        |result:let $ %{} 'CodeEntry (:doc "|Sequentially bind Result payloads through the .and-then method; preserves the first error and requires the body to return Result.")
-          :code $ quote
-            defmacro result:let (pairs & body)
-              if
-                not $ and (list? pairs) (every? pairs list?)
-                raise $ str-spaced "|result:let expects pairs in list, got:" pairs
-              if (&list:empty? body) (raise "|result:let expects at least 1 body expression")
-              if (&list:empty? pairs)
-                quasiquote $ do (~@ body)
-                &let
-                  pair $ assert-type (&list:nth pairs 0) 'List
-                  if
-                    not $ &= 2 (&list:count pair)
-                    raise $ str-spaced "|result:let expects binding pair, got:" pair
-                  &let
-                    x $ &list:nth pair 0
-                    if
-                      not $ symbol? x
-                      raise $ str-spaced "|result:let expects a symbol for binding, got:" x
-                    &let
-                      value $ &list:nth pair 1
-                      quasiquote $ .and-then ~value
-                        fn (~x)
-                          result:let
-                            ~ $ &list:rest pairs
-                            ~@ body
-          :examples $ []
-            quote $ assert= (%ok 5)
-              result:let
-                  x $ %ok 2
-                  y $ %ok 3
-                %ok $ + x y
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr (:: 'Result 'Dynamic 'Dynamic)
-              :required $ [] 'SyntaxList
-          :tags $ #{} :experimental :macro
-          :tests $ []
-            %{} 'TestEntry (:name |preserves-first-error)
-              :code $ quote
-                assert= (%err |stopped)
-                  result:let
-                      x $ %ok 2
-                      y $ %err |stopped
-                      unreachable $ raise |result-let-should-short-circuit
-                    %ok $ + x y unreachable
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |expression-binding)
-              :code $ quote
-                assert= (%ok 3)
-                  result:let
-                      x $ if true (%ok 2) (%err |unreachable)
-                    %ok $ inc x
         |result:map $ %{} 'CodeEntry (:doc "|Mappable map implementation for Result")
           :code $ quote
             defn result:map (res f)
@@ -7911,42 +7479,6 @@
                   assert= ([] 0 1 2)
                     take-last (range 3) 4
               :tags $ #{} :core :unit
-        |thread-as $ %{} 'CodeEntry (:doc "|a alias for `->%`")
-          :code $ quote
-            defmacro thread-as (& xs)
-              if (&list:empty? xs) (raise "|thread-as expects at least 1 expression")
-              quasiquote $ ->% ~@xs
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ []
-          :tags $ #{} :alias :macro
-        |thread-first $ %{} 'CodeEntry (:doc "|a alias for `->`")
-          :code $ quote
-            defmacro thread-first (& xs)
-              if (&list:empty? xs) (raise "|thread-first expects at least 1 expression")
-              quasiquote $ -> ~@xs
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ []
-          :tags $ #{} :alias :macro
-        |thread-last $ %{} 'CodeEntry (:doc "|a alias for `->>`")
-          :code $ quote
-            defmacro thread-last (& xs)
-              if (&list:empty? xs) (raise "|thread-last expects at least 1 expression")
-              quasiquote $ ->> ~@xs
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ []
-          :tags $ #{} :alias :macro
         |thread-step? $ %{} 'CodeEntry (:doc "|Check whether a value is a valid thread-macro step form")
           :code $ quote
             defn thread-step? (x)
@@ -8793,41 +8325,6 @@
             def &core-multiply-number-impl $ &impl::new :&core-multiply-number-impl (:: :multiply &*)
           :examples $ []
           :schema $ :: 'Dynamic
-        |&field-match-internal $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro &field-match-internal (value & body)
-              if (&list:empty? body)
-                quasiquote $ eprintln "|[Warn] field-match found no matched case, missing `_` case?" ~value
-                &let
-                  pair $ &list:nth body 0
-                  if
-                    not $ list? pair
-                    raise $ str-spaced "|field-match expected arm in list, got:" pair
-                  let
-                      pattern $ &list:nth pair 0
-                    assert "|expected literal or symbol as tag" $ or (tag? pattern) (symbol? pattern)
-                    if (&= pattern '_)
-                      &let ()
-                        assert "|field-match expected a branch after `_`" $ &= 2 (&list:count pair)
-                        if
-                          not $ &= 1 (&list:count body)
-                          eprintln "|[Warn] expected `_` beginning last branch of field-match"
-                        &list:nth pair 1
-                      &let ()
-                        assert "|field-match expected an with (tag new-name body)" $ &= 3 (&list:count pair)
-                        quasiquote $ if
-                          &= ~pattern $ &map:get ~value :tag
-                          &let
-                              ~ $ &list:nth pair 1
-                              , ~value
-                            ~ $ &list:nth pair 2
-                          &field-match-internal ~value $ ~@ (&list:rest body)
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Map)
         |&tag-match-internal $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro &tag-match-internal (value t & body)

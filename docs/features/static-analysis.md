@@ -303,9 +303,8 @@ Dynamic 应限制在 JS FFI、宏和框架开放数据边界。普通多态使�
 
 优先使用接收者方法组合可选值，例如 `opt .map f`、`opt .and-then f`、`opt .or-else f`；`Result` 同样使用 `.and-then`、`.map-err`、`.or-else`。`.unwrap` 只用于已经证明为 `some`/`ok` 的分支，`.unwrap-or` 只在默认值终点使用，避免把 `Option` 过早还原成 `nil`。
 
-查询后立即结束为业务默认值时，优先使用 `get-or`、`get-in-or`、`get-env-or`、
-`first-or`、`last-or`、`nth-or`。这些宏展开到类型化的 `.unwrap-or`，不会改变原查询 API
-的 `Option<T>` 契约。需要区分缺失分支时使用 `if-let` 或穷尽 `match`。
+查询后立即结束为业务默认值时，直接在查询返回的 `Option<T>` 上使用 `.unwrap-or`。
+需要区分缺失分支时使用 `if-let` 或穷尽 `match`。
 
 `get-in` 返回 `Option<T>`，适合开放 Map/List 路径；不要用它绕过 Struct 字段检查，Struct 应使用 `(:field value)`。`update-in` 的 updater 接收 `Option<T>`，必须显式处理缺失值。
 

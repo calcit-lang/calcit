@@ -1,7 +1,11 @@
 # Option / Result 顺序绑定宏 RFC
 
-状态：Experimental
+状态：Partially retained（2026-08-26；保留 `option:let`，移除 `result:let`）
 日期：2026-08-23
+
+> 历史说明：`option:let` 在 Respo 中有实际使用，因此继续保留；`result:let`
+> 没有生态采用且会隐藏 Result 链，已从 core 移除。Result 代码应直接使用
+> receiver-first `.and-then`。下文保留原始实验设计供追溯。
 
 ## 目标
 
