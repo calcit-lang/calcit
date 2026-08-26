@@ -174,7 +174,7 @@ calcit --reload-libs
 
 ### Config Entry (--entry)
 
-Use a specific entry from `calcit.cirru` (legacy filename: `compact.cirru`). Without this option Calcit selects `entries.default`; the selected entry's `:mode` chooses native execution or JS emission:
+Use a specific entry from `calcit.cirru`. Without this option Calcit selects `entries.default`; the selected entry's `:mode` chooses native execution or JS emission:
 
 ```bash
 calcit --entry test
@@ -233,7 +233,7 @@ calcit docs check-md README.md
 This defaults to `calcit.cirru` as the eval entry. If your project uses a different snapshot filename, pass it explicitly with `--entry`:
 
 ```bash
-calcit docs check-md README.md --entry compact.cirru
+calcit docs check-md README.md --entry calcit.cirru
 ```
 
 Load module dependencies with repeatable `--dep` options:

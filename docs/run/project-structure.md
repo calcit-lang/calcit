@@ -17,9 +17,9 @@ entry_for:
 
 # 项目结构：`calcit.cirru` 与 `deps.cirru`
 
-## `calcit.cirru` 的 EDN 结构（兼容旧文件名 `compact.cirru`）
+## `calcit.cirru` 的 EDN 结构
 
-Agent 切到新窗口时，优先把 `calcit.cirru`（兼容旧文件名 `compact.cirru`）看成一个"可执行项目快照"，其顶层 EDN 结构通常是：
+Agent 切到新窗口时，把 `calcit.cirru` 看成一个"可执行项目快照"，其顶层 EDN 结构通常是：
 
 ```cirru.no-check
 {}
@@ -57,9 +57,9 @@ Agent 切到新窗口时，优先把 `calcit.cirru`（兼容旧文件名 `compac
 - `:description`：entry 用途的简短语义说明；只提供给人和工具阅读，不影响运行。
 - `:type-slots`：当前 entry 的编译期类型绑定（slot 名 → 完整 `namespace/definition` 路径或 `:dynamic`）。各 entry 都保存完整配置，彼此不继承。
 - `:files`：源码数据库（namespace → `:ns` + `:defs`；每个定义是 `CodeEntry`，包含 code/doc/examples/schema）。
-- `:modules`：加载的外部模块路径（通常来自 `~/.config/calcit/modules/`，目录结尾 `/` 默认补 `calcit.cirru`，并回退到 `compact.cirru`）。
+- `:modules`：加载的外部模块路径（通常来自项目 `.calcit/modules/`，目录结尾 `/` 补 `calcit.cirru`；旧 `compact.cirru` 模块会被拒绝）。
 
-一般避免直接修改 `calcit.cirru` 文件（兼容旧文件名 `compact.cirru`）, 因为可能会导致格式出错整体无法解析, 如果确实认为需要修改, 要确保修改以后立即执行 `calcit calcit.cirru edit format` 确保能够正确格式化.
+一般避免直接修改 `calcit.cirru` 文件，因为可能会导致格式出错整体无法解析；如果确实需要修改，要确保修改以后立即执行 `calcit calcit.cirru edit format`。
 
 启动解析顺序（实操最常用）：
 
@@ -116,7 +116,7 @@ project source.
 给 Agent 一个最小心智就够：
 
 - `deps.cirru`：声明"要下载哪些外部模块 + 期望的 calcit 版本 + 项目发布版本（`:version`）"。
-- `calcit.cirru`（兼容旧文件名 `compact.cirru`）：声明"运行时要加载哪些模块（`:modules`）+ 项目代码快照（`:files`）"。
+- `calcit.cirru`：声明"运行时要加载哪些模块（`:modules`）+ 项目代码快照（`:files`）"。
 
 版本号只以 `deps.cirru :version` 为权威，用 `caps version get/set/bump` 管理；`calcit.cirru :version`
 不会作为 `caps` 的回退来源。`calcit config version` / `calcit config set version` 已废弃，请改用 `caps version`。

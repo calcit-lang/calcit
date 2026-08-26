@@ -189,7 +189,7 @@ pub fn global_temp_path_guidance(path: &str, kind: GlobalTempPathKind) -> Option
       "`{path}` is under a global temporary directory. For project-local Calcit scratch input, prefer `.calcit/snippets/<name>`; keep `.calcit/` in `.gitignore`. For one-off multi-line input, omit `--file`/`--code` and pipe stdin instead."
     ),
     GlobalTempPathKind::Snapshot => format!(
-      "snapshot `{path}` is under a global temporary directory. Keep `calcit.cirru` (or legacy `compact.cirru`) at the project root so relative module paths and project-local files resolve from the intended base directory. Use `.calcit/snippets/` only for scratch files passed with `--file`, not for the project snapshot."
+      "snapshot `{path}` is under a global temporary directory. Keep `calcit.cirru` at the project root so relative module paths and project-local files resolve from the intended base directory. Use `.calcit/snippets/` only for scratch files passed with `--file`, not for the project snapshot."
     ),
   })
 }

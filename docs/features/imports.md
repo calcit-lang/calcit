@@ -22,7 +22,7 @@ entry_for:
 
 # Imports
 
-Calcit loads namespaces from `calcit.cirru` (legacy filename: `compact.cirru`). Dependencies are tracked via `~/.config/calcit/modules/`.
+Calcit loads namespaces from `calcit.cirru`. Dependencies are installed into the project module view under `.calcit/modules/`.
 
 ## Quick Recipes
 

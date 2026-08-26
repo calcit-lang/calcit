@@ -284,14 +284,6 @@ fn collect_format_advisories(snapshot_file: &str, original_edn: &Edn, snapshot: 
     ));
   }
 
-  if Path::new(snapshot_file).file_name().and_then(|name| name.to_str()) == Some("compact.cirru") {
-    advisories.push(
-      "[W_LEGACY_SNAPSHOT_NAME] `compact.cirru` remains compatible but is the legacy snapshot filename.\n\
-       Next: rename it to `calcit.cirru`, then update scripts, CI, and ignore/attribute rules that still name the old file."
-        .to_owned(),
-    );
-  }
-
   let selected = std::collections::BTreeSet::from([
     crate::type_coverage::WeakTypeKind::SchemaDynamic,
     crate::type_coverage::WeakTypeKind::UnresolvedTypeSlot,
@@ -2611,7 +2603,7 @@ fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> 
     let file = snapshot
       .files
       .get(ns)
-      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save calcit.cirru (or legacy compact.cirru)?"))?;
+      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save calcit.cirru?"))?;
     changes.added.insert(Arc::from(ns.as_str()), file.clone());
   }
 
@@ -2625,7 +2617,7 @@ fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> 
     let file = snapshot
       .files
       .get(ns)
-      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save calcit.cirru (or legacy compact.cirru)?"))?;
+      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save calcit.cirru?"))?;
     let entry = ensure_change_entry(&mut changed_entries, ns);
     entry.ns = Some(file.ns.code.clone());
   }
@@ -2670,9 +2662,7 @@ fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> 
   }
 
   if changes.added.is_empty() && changes.removed.is_empty() && changes.changed.is_empty() {
-    return Err(
-      "No change data collected. Confirm the flags match definitions saved in calcit.cirru (or legacy compact.cirru).".to_string(),
-    );
+    return Err("No change data collected. Confirm the flags match definitions saved in calcit.cirru.".to_string());
   }
 
   let namespace_total = changes.added.len() + changes.removed.len() + changes.changed.len();
@@ -2870,13 +2860,12 @@ mod tests {
   }
 
   #[test]
-  fn format_advisories_cover_legacy_structure_filename_and_dynamic_debt() {
+  fn format_advisories_cover_legacy_structure_and_dynamic_debt() {
     let snapshot = load_snapshot("calcit/test.cirru").expect("fixture snapshot should load");
     let original_edn = cirru_edn::parse("{} (:configs $ {}) (:schema :any)").expect("legacy markers should parse");
-    let advisories = collect_format_advisories("compact.cirru", &original_edn, &snapshot).join("\n");
+    let advisories = collect_format_advisories("calcit.cirru", &original_edn, &snapshot).join("\n");
 
     assert!(advisories.contains("W_LEGACY_CONFIG"), "advisories: {advisories}");
-    assert!(advisories.contains("W_LEGACY_SNAPSHOT_NAME"), "advisories: {advisories}");
     assert!(advisories.contains("W_LEGACY_ANY"), "advisories: {advisories}");
     assert!(advisories.contains("W_DYNAMIC_TYPE_DEBT"), "advisories: {advisories}");
     assert!(advisories.contains("analyze weak-types"), "advisories: {advisories}");

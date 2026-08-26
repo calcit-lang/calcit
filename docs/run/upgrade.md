@@ -45,7 +45,7 @@ related:
 git status --short
 git switch -c upgrade/calcit-latest
 calcit --version
-calcit compact.cirru                # 替换为旧项目原本可成功执行的入口命令
+calcit compact.cirru            # 仅在 0.13.48 或更早的旧工具链记录基线
 yarn test                       # 替换为项目原有的测试/构建命令
 ```
 
@@ -55,14 +55,14 @@ Snapshot 文件迁移、依赖升级和类型修复建议分别提交，任何�
 
 升级前先检查以下文件与配置是否齐全：
 
-- 运行入口：`calcit.cirru`（兼容旧文件名 `compact.cirru`）
+- 运行入口：`calcit.cirru`（严格版本不再接受 `compact.cirru`）
   - `:entries.default`（默认入口及 `:mode`）
   - `:entries.<name>`（额外入口及各自 `:mode`）
 - 命令入口：`README`、项目脚本、CI workflow
 - Node 工具链：`package.json`、`yarn.lock`、Corepack/Yarn 版本
 - 注意 git fetch 检查最新历史, 避免基于老版本操作导致变更冲突
 - 依赖边界：运行/编译期需要的模块放在 `:dependencies`；只供当前项目测试、examples、文档检查和维护脚本使用的模块放在 `:dev-dependencies`
-- 结构化编辑优先使用 `calcit edit` / `calcit tree`；若直接改过 `calcit.cirru`（或旧文件名 `compact.cirru`），提交前执行一次 `calcit calcit.cirru edit format`
+- 结构化编辑优先使用 `calcit edit` / `calcit tree`；若直接改过 `calcit.cirru`，提交前执行一次 `calcit calcit.cirru edit format`
 - 静态质量基线：`check-types`、`weak-types`、公开 namespace examples 与 Markdown 示例
 
 ### 快照文件迁移说明
@@ -72,12 +72,13 @@ Snapshot 文件迁移、依赖升级和类型修复建议分别提交，任何�
 - `calcit.cirru` — 存放完整 AST 快照，内容包含全部编译信息（带所有代码位置、类型标注等）
 - `compact.cirru` — 存放精简代码，是人工读写的主要文件
 
-当前推荐去掉旧的双文件模式，把精简 Snapshot 直接保存在 `calcit.cirru` 中，方便 `calcit` 命令直接读取使用。
+Calcit 0.13.48 是接受 `compact.cirru` 文件名的最后一个兼容版本；0.13.49 起会在反序列化前拒绝该文件名并给出迁移命令。
+严格版本只把精简 Snapshot 保存在 `calcit.cirru` 中。
 如果两个文件同时存在，不要仅凭文件名猜测哪个是有效源码；先在旧版本下分别检查 Git 历史、文件体积、
 项目脚本和实际运行入口。确认 `compact.cirru` 是当前可运行的精简 Snapshot 后再迁移：
 
 1. 确认 `compact.cirru` 是项目实际精简化代码，`calcit.cirru` 是完整 AST 快照（差异通常很大）
-2. 先在独立提交或临时分支中将 `compact.cirru` 复制/重命名为 `calcit.cirru`，不要和业务逻辑修复混在一起
+2. 使用 0.13.48 或更早的可运行工具链确认基线，再在独立提交或临时分支中将 `compact.cirru` 复制/重命名为 `calcit.cirru`，不要和业务逻辑修复混在一起
 3. 执行 `calcit calcit.cirru edit format`，审阅 diff，再对新的 `calcit.cirru` 运行 `--check-only` 和原有 entry/构建测试
 4. 新旧入口行为一致后再删除旧文件并提交；后续所有 `calcit` 命令都显式基于单一的 `calcit.cirru`
 
@@ -107,7 +108,7 @@ calcit calcit.cirru --check-only
 
 若 `rg` 没有匹配，才继续复制和格式化；如果仍有匹配，应逐个编辑 namespace 规则，而不是用全局替换，
 以免改动代码字符串中的同名文本。不要删除备份或旧文件，直到所有 entry 与原有 native/JS 测试均通过。现在反序列化错误会带上失败的
-Snapshot 路径；如果同目录存在 `compact.cirru`，还会直接给出上述恢复方向。
+Snapshot 路径；如果同目录存在 `compact.cirru`，还会直接给出上述恢复方向。严格版本不能直接格式化 `compact.cirru`；必须先复制或重命名为 `calcit.cirru`。
 
 旧 namespace 里的 `:require-macros` 也必须在 Snapshot 规范化前处理。宏与普通值现在共用
 `:require` 规则，例如把：

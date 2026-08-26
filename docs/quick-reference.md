@@ -32,7 +32,7 @@ calcit eval "echo |done"
 
 ## Core Commands
 
-- `calcit` - Run Calcit program (default: `calcit.cirru`, fallback: `compact.cirru`)
+- `calcit` - Run Calcit program from `calcit.cirru`; retired `compact.cirru` inputs receive migration guidance
 - `calcit eval "code"` - Evaluate code snippet
 - `calcit js` - Generate JavaScript
 - `calcit query ...` - Query definitions/usages/search
@@ -197,7 +197,7 @@ let
 ## File Structure
 
 - `calcit.cirru` - Preferred runtime snapshot and structural-editing source
-- `compact.cirru` - Legacy runtime snapshot filename kept for compatibility
+- `compact.cirru` - Retired runtime snapshot filename; migrate it to `calcit.cirru` with Calcit 0.13.48 as the final compatibility release
 - `deps.cirru` - Dependencies
 - `.compact-inc.cirru` - Hot reload trigger, including incremental changes
 

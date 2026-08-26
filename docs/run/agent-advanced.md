@@ -119,7 +119,7 @@ echo 'range 10' | calcit exec
 
 以下文件**严格禁止使用文本替换或直接编辑**：
 
-- **`calcit.cirru` / `compact.cirru`** - 这是 Calcit 程序的运行时快照格式；推荐使用 `calcit.cirru`，旧文件名 `compact.cirru` 仍兼容，必须使用 `calcit edit`/`calcit tree` 进行修改
+- **`calcit.cirru`** - 这是 Calcit 程序的运行时快照格式；旧 `compact.cirru` 必须先迁移，源码使用 `calcit edit`/`calcit tree` 修改
 
 这两个文件的格式对空格和结构极其敏感，直接文本修改会破坏文件结构。请使用 `calcit query`/`calcit tree`/`calcit edit` 等 CLI 命令进行代码查询和修改。
 
@@ -131,7 +131,7 @@ echo 'range 10' | calcit exec
 
 **具体体现：**
 
-- `calcit.cirru`（兼容旧文件名 `compact.cirru`）使用 Cirru 语法存储，必须用 `calcit tree`/`calcit edit` 命令修改
+- `calcit.cirru` 使用 Cirru 语法存储，必须用 `calcit tree`/`calcit edit` 命令修改
 - `calcit cirru` 工具用于 Cirru 语法与 JSON 的转换（帮助理解和生成代码）
 - Cirru 语法特点：
   - 用缩进代替括号（类似 Python/YAML）

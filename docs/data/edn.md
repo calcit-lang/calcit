@@ -236,7 +236,7 @@ let
 
 ## Quotes
 
-Quoted Cirru is preserved as syntax data. This is used by runtime snapshots (`calcit.cirru`, legacy `compact.cirru`):
+Quoted Cirru is preserved as syntax data. This is used by runtime snapshots (`calcit.cirru`):
 
 ```cirru
 quote $ def a 1

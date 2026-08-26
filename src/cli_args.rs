@@ -43,7 +43,7 @@ pub struct ToplevelCalcit {
   #[argh(option)]
   /// specify a path to watch assets changes
   pub watch_dir: Option<String>,
-  /// input source file, defaults to "calcit.cirru" and falls back to "compact.cirru"
+  /// input source file, defaults to "calcit.cirru"; retired compact.cirru inputs receive migration guidance
   #[argh(positional, default = "String::from(crate::DEFAULT_SNAPSHOT_FILE)")]
   pub input: String,
   /// print version only
@@ -1128,7 +1128,7 @@ pub struct DocsCheckMdCommand {
   /// entry .cirru file for eval context (default: calcit.cirru)
   #[argh(option, default = "String::from(\"calcit.cirru\")")]
   pub entry: String,
-  /// extra dependency module path for eval context, can be provided multiple times; defaults to modules from entries.default.modules; paths ending with '/' prefer calcit.cirru and fall back to compact.cirru
+  /// extra dependency module path for eval context, can be provided multiple times; defaults to modules from entries.default.modules; paths ending with '/' resolve calcit.cirru and reject retired compact.cirru modules
   #[argh(option)]
   pub dep: Vec<String>,
   /// suppress successful block logs; still prints failures and summary on error

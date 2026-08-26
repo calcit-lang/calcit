@@ -443,6 +443,25 @@ mod module_resolution_tests {
   }
 
   #[test]
+  fn compact_only_module_is_rejected_with_migration_guidance() {
+    let root = temp_root("retired-compact-module");
+    let project = root.join("project");
+    let module_dir = project.join(".calcit/modules/demo");
+    fs::create_dir_all(&module_dir).unwrap();
+    fs::write(
+      module_dir.join("compact.cirru"),
+      "{} (:package |demo)\n  :entries $ {}\n    :default $ {} (:mode :native) (:init-fn 'demo/main!) (:reload-fn 'demo/main!)\n      :modules $ []\n  :files $ {}\n",
+    )
+    .unwrap();
+
+    let module_folder = project_module_folder(&project);
+    let error = load_module("demo/", &project, &module_folder).expect_err("compact-only module should be rejected");
+    assert!(error.contains("filename `compact.cirru` is retired"), "error: {error}");
+    assert!(error.contains("calcit calcit.cirru edit format"), "error: {error}");
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
   fn named_modules_do_not_fall_back_to_the_global_store() {
     let root = temp_root("no-global-fallback");
     let project = root.join("project");
