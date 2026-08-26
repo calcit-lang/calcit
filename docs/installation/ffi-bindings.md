@@ -19,7 +19,7 @@ Currently two APIs are supported, based on Cirru EDN data.
 First one is a synchronous [Edn](https://github.com/Cirru/cirru-edn.rs) API with type signature:
 
 ```rust
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn demo(args: Vec<Edn>) -> Result<Edn, String> {
 }
 ```
@@ -27,7 +27,7 @@ pub fn demo(args: Vec<Edn>) -> Result<Edn, String> {
 The other one is an asynchorous API, it can be called multiple times, which relies on `Arc` type(not sure if we can find a better solution yet),
 
 ```rust
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn demo(
   args: Vec<Edn>,
   handler: Arc<dyn Fn(Vec<Edn>) -> Result<Edn, String> + Send + Sync + 'static>,

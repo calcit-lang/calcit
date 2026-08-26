@@ -79,7 +79,7 @@ Calcit 与 dylib 必须使用同一 rustc 工具链。先运行 `calcit --ffi-bu
 PKG_VER=$(cargo metadata --no-deps --format-version 1 \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['packages'][0]['version'])")
 
-git add Cargo.toml Cargo.lock deps.cirru
+git add Cargo.toml Cargo.lock deps.cirru build.rs
 git commit -m "chore: upgrade cirru_edn $EDN_VER, cirru_parser $PARSER_VER; bump version to $PKG_VER"
 git tag "$PKG_VER"
 git push origin <branch>
