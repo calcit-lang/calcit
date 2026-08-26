@@ -118,10 +118,11 @@ gh pr checks <PR_NUMBER>
 
 按顺序排查：
 
-1. `calcit_ffi_build_id()`、`abi_version()`、`edn_version()` 是否已导出
-2. `calcit_ffi_build_id()` 是否使用 `extern "C"`、静态 NUL 结尾字节串与 `*const c_char`
-3. `#[unsafe(no_mangle)]`（Rust 2024 edition）是否存在
-4. `dylibs/` 中是否已复制最新产物（`cp target/release/*.* dylibs/`）
+1. 同步方法优先检查 `calcit_ffi_buffer_version()`、`calcit_ffi_buffer_free()` 与 `<method>_calcit_ffi_v1` 是否已导出
+2. 仍在旧 Rust ABI 的方法检查 `calcit_ffi_build_id()`、`abi_version()`、`edn_version()` 是否已导出
+3. `calcit_ffi_build_id()` 是否使用 `extern "C"`、静态 NUL 结尾字节串与 `*const c_char`
+4. `#[unsafe(no_mangle)]`（Rust 2024 edition）是否存在
+5. `dylibs/` 中是否已复制最新产物（`cp target/release/*.* dylibs/`）
 
 ### FFI build identity mismatch
 

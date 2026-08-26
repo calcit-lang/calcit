@@ -102,13 +102,56 @@ pub fn edn_version() -> String {
 
 `edn_version()` must match the exact `cirru_edn` crate version used by the running Calcit binary. If either version differs, Calcit aborts the FFI call before invoking the target symbol.
 
-The build identity must also match exactly. Debug Calcit hosts reject dylibs that do not export `calcit_ffi_build_id`, which prevents the common debug-host/release-dylib crash before even calling `abi_version()`. Release hosts temporarily retain the legacy path with a warning so maintained modules can migrate incrementally. A matching identity reduces accidental incompatibility; it does not turn Rust's native ABI into a stable public protocol. New FFI designs should use the planned C-safe serialized byte-buffer interface instead.
+The build identity must also match exactly. Debug Calcit hosts reject dylibs that do not export `calcit_ffi_build_id`, which prevents the common debug-host/release-dylib crash before even calling `abi_version()`. Release hosts temporarily retain the legacy path with a warning so maintained modules can migrate incrementally. A matching identity reduces accidental incompatibility; it does not turn Rust's native ABI into a stable public protocol.
 
 Inspect the host side before building or debugging a module:
 
 ```bash
 calcit --ffi-build-id
 ```
+
+### C-safe synchronous buffer ABI
+
+New synchronous methods should use buffer protocol version 1. Calcit first looks for `<method>_calcit_ffi_v1`; only methods without that symbol fall back to the build-ID-guarded Rust ABI. Existing Calcit source calls do not change.
+
+The dylib exports these C ABI symbols:
+
+```rust
+#[repr(C)]
+pub struct CalcitFfiBuffer {
+  pub ptr: *mut u8,
+  pub len: usize,
+  pub cap: usize,
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn calcit_ffi_buffer_version() -> u32 { 1 }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn calcit_ffi_buffer_free(buffer: CalcitFfiBuffer) {
+  // Reconstruct and drop the Vec in the dylib that allocated it.
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn read_file_calcit_ffi_v1(
+  request_ptr: *const u8,
+  request_len: usize,
+  output: *mut CalcitFfiBuffer,
+) -> i32 {
+  // Decode, call the implementation, and write one owned output buffer.
+  0
+}
+```
+
+Protocol rules:
+
+- Input is one UTF-8 Cirru EDN list containing the method arguments. The host owns it for the duration of the synchronous call.
+- Status `0` means the output is one UTF-8 Cirru EDN value. A nonzero status means the output is a UTF-8 error message.
+- The dylib allocates every output and Calcit copies it before calling that same dylib's `calcit_ffi_buffer_free` exactly once.
+- The adapter must contain panics and return an error status; unwinding across `extern "C"` is invalid.
+- Calcit rejects protocol-version mismatches, malformed buffer metadata, oversized responses, invalid UTF-8, and invalid response EDN.
+
+`calcit-lang/calcit_wasmtime` contains the first complete adapter. Version 1 currently covers synchronous `&call-dylib-edn`; callback and blocking APIs remain on the guarded legacy path until their ownership protocol lands.
 
 ### Call in Calcit
 

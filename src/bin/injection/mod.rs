@@ -327,6 +327,21 @@ pub fn call_dylib_edn(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
   );
 
   let lib = load_dylib(&lib_name)?;
+  match calcit::ffi_abi::try_call_buffer(&lib, &lib_name, &method, ys.clone())
+    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?
+  {
+    Some(ret) => {
+      trace_ffi_event(
+        "return-buffer",
+        format!(
+          "lib={lib_name} symbol={method}_calcit_ffi_v1 ret={}",
+          format_edn_args_for_trace(std::slice::from_ref(&ret))
+        ),
+      );
+      return Ok(edn_to_calcit(&ret, &Calcit::Nil));
+    }
+    None => trace_ffi_event("buffer-fallback", format!("lib={lib_name} symbol={method}")),
+  }
   ensure_abi_compatible(&lib, &lib_name)?;
   trace_ffi_event("lookup-symbol", format!("lib={lib_name} symbol={method}"));
   let func: libloading::Symbol<EdnFfi> = unsafe { lib.get(method.as_bytes()) }.map_err(|e| {
