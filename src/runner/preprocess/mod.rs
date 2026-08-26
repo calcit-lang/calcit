@@ -1001,6 +1001,22 @@ fn try_lower_core_let_macro(args: &CalcitList, file_ns: &str) -> Option<Calcit> 
   body.pop()
 }
 
+/// Lower the strict core `{}` macro into the internal flat map constructor.
+/// Malformed pairs retain the ordinary macro path and its diagnostics.
+fn try_lower_core_map_macro(args: &CalcitList) -> Option<Calcit> {
+  let mut items = vec![Calcit::Proc(CalcitProc::NativeMap)];
+  for pair in args.iter() {
+    let Calcit::List(pair_items) = pair else {
+      return None;
+    };
+    if pair_items.len() != 2 {
+      return None;
+    }
+    items.extend(pair_items.iter().cloned());
+  }
+  Some(Calcit::from(CalcitList::from(items.as_slice())))
+}
+
 /// Wrap a body in left-to-right generated temporary bindings.
 fn generated_lets(bindings: Vec<(Calcit, Calcit)>, mut body: Calcit, file_ns: &str) -> Calcit {
   for (binding, value) in bindings.into_iter().rev() {
@@ -1758,10 +1774,16 @@ fn preprocess_list_call(
       let code = Calcit::List(Arc::new(xs.to_owned()));
       let next_stack = call_stack.extend_owned(&info.def_ns, &info.name, StackKind::Macro, code, args.to_vec());
 
-      if info.def_ns.as_ref() == calcit::CORE_NS
-        && info.name.as_ref() == "let"
-        && let Some(lowered) = try_lower_core_let_macro(&args, file_ns)
-      {
+      let native_lowered = if info.def_ns.as_ref() == calcit::CORE_NS {
+        match info.name.as_ref() {
+          "let" => try_lower_core_let_macro(&args, file_ns),
+          "{}" => try_lower_core_map_macro(&args),
+          _ => None,
+        }
+      } else {
+        None
+      };
+      if let Some(lowered) = native_lowered {
         runner::macro_metrics::record_native_fast_path(&macro_name);
         let _post_preprocess_timer =
           runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
@@ -7459,6 +7481,30 @@ mod tests {
     let empty_pair = Calcit::from(CalcitList::default());
     let args = CalcitList::from(&[Calcit::from(vec![empty_pair]), Calcit::Number(2.0)] as &[Calcit]);
     assert!(try_lower_core_let_macro(&args, "tests.core-let").is_some());
+  }
+
+  #[test]
+  fn lowers_valid_core_map_pairs_to_the_flat_native_map_constructor() {
+    let pair_a = Calcit::from(vec![Calcit::Tag(EdnTag::from("a")), Calcit::Number(1.0)]);
+    let pair_b = Calcit::from(vec![Calcit::Tag(EdnTag::from("b")), Calcit::Number(2.0)]);
+    let args = CalcitList::from(&[pair_a, pair_b] as &[Calcit]);
+    let lowered = try_lower_core_map_macro(&args).expect("valid pairs use native lowering");
+    let Calcit::List(items) = lowered else {
+      panic!("expected native map call")
+    };
+    assert!(matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeMap))));
+    assert_eq!(items.len(), 5);
+    assert_eq!(items.get(1), Some(&Calcit::Tag(EdnTag::from("a"))));
+    assert_eq!(items.get(4), Some(&Calcit::Number(2.0)));
+  }
+
+  #[test]
+  fn leaves_malformed_core_map_pairs_on_the_general_macro_path() {
+    for pair in [Calcit::Number(1.0), Calcit::from(vec![Calcit::Tag(EdnTag::from("a"))])] {
+      let args = CalcitList::from(&[pair] as &[Calcit]);
+      assert!(try_lower_core_map_macro(&args).is_none());
+    }
+    assert!(try_lower_core_map_macro(&CalcitList::default()).is_some());
   }
 
   #[test]
