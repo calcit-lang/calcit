@@ -134,6 +134,20 @@ pub fn record_cache_bypass(name: &str, reason: &'static str) {
   update(name, |metric| record_cache_bypass_metric(metric, reason));
 }
 
+/// Reclassify a recorded macro expansion that used a compiler-native lowering
+/// instead of entering the general macro evaluator.
+pub fn record_native_fast_path(name: &str) {
+  update(name, record_native_fast_path_metric);
+}
+
+fn record_native_fast_path_metric(metric: &mut MacroExpansionMetric) {
+  metric.general_evaluator_fallbacks = metric.general_evaluator_fallbacks.saturating_sub(1);
+  if remove_reason(&mut metric.cache_miss_reasons, "cache-not-implemented") {
+    metric.cache_misses = metric.cache_misses.saturating_sub(1);
+    add_reason(&mut metric.cache_bypasses, "native-fast-path", 1);
+  }
+}
+
 fn record_cache_bypass_metric(metric: &mut MacroExpansionMetric, reason: &'static str) {
   if remove_reason(&mut metric.cache_miss_reasons, "cache-not-implemented") {
     metric.cache_misses = metric.cache_misses.saturating_sub(1);
@@ -338,5 +352,15 @@ mod tests {
     record_cache_bypass_metric(&mut bypass, "cache-disabled");
     assert_eq!(bypass.cache_misses, 0);
     assert_eq!(bypass.cache_bypasses.get("cache-disabled"), Some(&1));
+  }
+
+  #[test]
+  fn native_fast_path_is_not_reported_as_a_general_evaluator_fallback() {
+    let mut metric = MacroExpansionMetric::default();
+    record_expansion_metric(&mut metric, &pure_signature());
+    record_native_fast_path_metric(&mut metric);
+    assert_eq!(metric.general_evaluator_fallbacks, 0);
+    assert_eq!(metric.cache_misses, 0);
+    assert_eq!(metric.cache_bypasses.get("native-fast-path"), Some(&1));
   }
 }

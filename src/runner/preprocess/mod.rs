@@ -968,6 +968,33 @@ fn generated_let(binding: Calcit, value: Calcit, body: Calcit, file_ns: &str) ->
   ])
 }
 
+/// Lower the strict core `let` macro without executing its small recursive
+/// macro body. Invalid binding shapes deliberately keep the general path so
+/// the macro retains its established diagnostics.
+fn try_lower_core_let_macro(args: &CalcitList, file_ns: &str) -> Option<Calcit> {
+  let Calcit::List(pairs) = args.first()? else {
+    return None;
+  };
+  if !pairs.iter().all(|pair| matches!(pair, Calcit::List(_))) {
+    return None;
+  }
+
+  let core_let = || Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(file_ns));
+  let mut body: Vec<Calcit> = args.iter().skip(1).cloned().collect();
+  if pairs.is_empty() {
+    let mut items = vec![core_let(), Calcit::from(CalcitList::default())];
+    items.append(&mut body);
+    return Some(Calcit::from(CalcitList::from(items.as_slice())));
+  }
+
+  for index in (0..pairs.len()).rev() {
+    let mut items = vec![core_let(), pairs[index].to_owned()];
+    items.append(&mut body);
+    body = vec![Calcit::from(CalcitList::from(items.as_slice()))];
+  }
+  body.pop()
+}
+
 /// Wrap a body in left-to-right generated temporary bindings.
 fn generated_lets(bindings: Vec<(Calcit, Calcit)>, mut body: Calcit, file_ns: &str) -> Calcit {
   for (binding, value) in bindings.into_iter().rev() {
@@ -1724,6 +1751,16 @@ fn preprocess_list_call(
 
       let code = Calcit::List(Arc::new(xs.to_owned()));
       let next_stack = call_stack.extend_owned(&info.def_ns, &info.name, StackKind::Macro, code, args.to_vec());
+
+      if info.def_ns.as_ref() == calcit::CORE_NS
+        && info.name.as_ref() == "let"
+        && let Some(lowered) = try_lower_core_let_macro(&args, file_ns)
+      {
+        runner::macro_metrics::record_native_fast_path(&macro_name);
+        let _post_preprocess_timer =
+          runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
+        return preprocess_expr(&lowered, scope_defs, scope_types, file_ns, check_warnings, &next_stack);
+      }
 
       let mut body_scope = CalcitScope::default();
       let frame_checkpoint = body_scope.frame_checkpoint();
@@ -7378,6 +7415,34 @@ mod tests {
       }),
       location: Some(Arc::from(vec![1, 2, 3])),
     }
+  }
+
+  #[test]
+  fn lowers_valid_core_let_pairs_to_nested_core_let_forms() {
+    let pair_a = Calcit::from(vec![test_symbol("a"), Calcit::Number(1.0)]);
+    let pair_b = Calcit::from(vec![test_symbol("b"), Calcit::Number(2.0)]);
+    let pairs = Calcit::from(vec![pair_a.clone(), pair_b.clone()]);
+    let body = test_symbol("b");
+    let args = CalcitList::from(&[pairs, body] as &[Calcit]);
+
+    let lowered = try_lower_core_let_macro(&args, "tests.core-let").expect("valid pairs use native lowering");
+    let Calcit::List(outer) = lowered else {
+      panic!("expected outer core let")
+    };
+    assert!(matches!(outer.first(), Some(Calcit::Syntax(CalcitSyntax::CoreLet, _))));
+    assert_eq!(outer.get(1), Some(&pair_a));
+    let Some(Calcit::List(inner)) = outer.get(2) else {
+      panic!("multiple pairs should nest core lets")
+    };
+    assert!(matches!(inner.first(), Some(Calcit::Syntax(CalcitSyntax::CoreLet, _))));
+    assert_eq!(inner.get(1), Some(&pair_b));
+  }
+
+  #[test]
+  fn leaves_invalid_core_let_pairs_on_the_general_macro_path() {
+    let invalid_pairs = Calcit::from(vec![Calcit::Number(1.0)]);
+    let args = CalcitList::from(&[invalid_pairs, Calcit::Number(2.0)] as &[Calcit]);
+    assert!(try_lower_core_let_macro(&args, "tests.core-let").is_none());
   }
 
   #[test]
