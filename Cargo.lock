@@ -398,9 +398,9 @@ dependencies = [
 
 [[package]]
 name = "im_ternary_tree"
-version = "0.0.20"
+version = "0.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "095dd3c9192b9cdc754f22c3d116d5fad36859fcdb25f00e332af99a88de6015"
+checksum = "b21d17f676465859589cf34e88c66d40d6bc8c2857176a34ac835f21f055919a"
 
 [[package]]
 name = "inotify"

@@ -1,3 +1,4 @@
+pub mod macro_cache;
 pub mod macro_capability;
 pub mod macro_metrics;
 pub mod preprocess;
@@ -386,6 +387,7 @@ pub fn call_expr(
       let mut current_values: Vec<Calcit> = xs.iter().skip(1).cloned().collect();
       let macro_name = format!("{}/{}", info.def_ns, info.name);
       macro_metrics::record_expansion(&macro_name, info.signature.as_ref());
+      macro_metrics::record_cache_bypass(&macro_name, "runtime-evaluator");
 
       let next_stack = if using_stack() {
         call_stack.extend_owned(

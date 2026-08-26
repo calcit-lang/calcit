@@ -278,6 +278,10 @@ fn run_cli() -> Result<(), String> {
   runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method);
   runner::preprocess::set_verbose_preprocess(cli_args.verbose);
   let _macro_metrics_report = runner::macro_metrics::ReportOnDrop::new(cli_args.macro_metrics);
+  let macro_cache_enabled = cli_args.watch
+    || matches!(&cli_args.subcommand, Some(CalcitCommand::EmitJs(options)) if options.watch)
+    || matches!(&cli_args.subcommand, Some(CalcitCommand::EmitIr(options)) if options.watch);
+  runner::macro_cache::reset(macro_cache_enabled);
 
   if cli_handlers::should_echo_command(&cli_args) {
     cli_handlers::suppress_command_guidance();
