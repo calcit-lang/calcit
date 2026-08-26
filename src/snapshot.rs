@@ -4023,6 +4023,21 @@ mod tests {
       }
     }
 
+    let CalcitTypeAnnotation::Macro(js_object) = core_file.defs["js-object"].schema.as_ref() else {
+      panic!("js-object should load as MacroSignature");
+    };
+    assert!(js_object.is_strict());
+    assert!(matches!(js_object.rest_input, Some(crate::calcit::MacroSyntaxType::SyntaxList)));
+    assert!(matches!(
+      js_object.expansion,
+      crate::calcit::MacroExpansionType::Expr(ref inner)
+        if matches!(inner.as_ref(), CalcitTypeAnnotation::JsObject)
+    ));
+    assert!(
+      js_object.features.iter().any(|feature| feature.ref_str() == "js-ffi"),
+      "js-object should retain its js-ffi backend feature"
+    );
+
     for def_name in ["let", "fn", "and", "cond", "do"] {
       let entry = core_file.defs.get(def_name).unwrap_or_else(|| panic!("missing def: {def_name}"));
       let CalcitTypeAnnotation::Macro(signature) = entry.schema.as_ref() else {
