@@ -28,7 +28,7 @@ hex = "0.4.3"
 fs4 = "1.1.0"
 md-5 = "0.11.0"
 rpds = "1.2.1"
-im_ternary_tree = "0.0.20"
+im_ternary_tree = "0.0.21"
 # im_ternary_tree = { path = "/Users/chenyong/repo/calcit-lang/ternary-tree.rs" }
 colored = "3.1.1"
 strum = "0.25"
