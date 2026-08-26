@@ -5470,9 +5470,10 @@
         |js-nullish->option $ %{} 'CodeEntry (:doc "|Explicitly convert a JavaScript null/undefined boundary value into nominal Option<T>. This does not validate or coerce the opaque payload type.")
           :code $ quote
             defn js-nullish->option (x)
-              if (nil? x) (%none) (%some x)
+              if (js-nullish? x) (%none) (%some x)
           :examples $ []
             quote $ assert= (%none) (js-nullish->option nil)
+            quote $ assert= (%none) (js-nullish->option &unit)
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'JsNullish 'T)
