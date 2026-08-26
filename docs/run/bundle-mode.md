@@ -23,7 +23,7 @@ If you prefer to write Calcit code without the calcit-editor, that's possible to
 
 Calcit code can be written using indentation-based syntax. This means you don't need to match parentheses as in Clojure, but you must pay close attention to indentation.
 
-Use a `calcit.cirru` file (legacy filename: `compact.cirru`) with the `calcit` command to run the program.
+Use a `calcit.cirru` file with the `calcit` command to run the program. Retired `compact.cirru` inputs must be migrated first.
 
 For projects that still keep one namespace per indentation-based `.cirru` source file, the repository includes a one-shot Calcit bundler example:
 

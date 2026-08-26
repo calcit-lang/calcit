@@ -18,7 +18,7 @@ As demonstrated in [Cirru Project](http://cirru.org/), it's for higher goals of 
 
 Structural editing makes Calcit a lot different from existing languages, even unique among Lisps.
 
-Calcit Editor uses `calcit.cirru` as the preferred snapshot file, which contains much informations. Legacy `compact.cirru` remains compatible as a runtime snapshot filename.
+Calcit Editor uses `calcit.cirru` as the canonical snapshot file. The retired `compact.cirru` filename must be migrated before current tools can load it.
 Example of a `calcit.cirru` file is more readable:
 
 ```cirru.no-check

@@ -17,7 +17,7 @@ Since there are two platforms for running Calcit, soutions for hot swapping are 
 
 ### Rust runtime
 
-Hot swapping is built inside Rust runtime. When you specity `:reload-fn` in `calcit.cirru` (legacy filename: `compact.cirru`):
+Hot swapping is built inside Rust runtime. When you specify `:reload-fn` in `calcit.cirru`:
 
 ```cirru
 {}

@@ -34,7 +34,7 @@ leads_to:
    calcit docs agents --full
    ```
 
-3. `calcit.cirru`（旧项目可能是 `compact.cirru`）是 **Cirru EDN 树形 Snapshot**，不是按行维护的文本源码。不要用 line patch、正则脚本或 formatter 直接改它；使用 `calcit edit`、`calcit tree`、`calcit cursor`。
+3. `calcit.cirru` 是 **Cirru EDN 树形 Snapshot**，不是按行维护的文本源码。旧项目若只有 `compact.cirru`，先按 upgrade 指南迁移；当前工具会拒绝旧文件名。不要用 line patch、正则脚本或 formatter 直接改 Snapshot；使用 `calcit edit`、`calcit tree`、`calcit cursor`。
 4. `CURSOR`、`FOLDED:*`、chunk 标题和 path annotation 都是展示信息，绝不能复制回 Snapshot。`cursor show --format json` 中 `tree` 才是真实节点，`preview_tree` 只是展示树。
 
 ### 0.1 发现 Calcit 缺陷时：定位归属仓库并提交 Issue
@@ -64,7 +64,7 @@ calcit query config
 calcit .calcit/snippets/demo.cirru query config
 ```
 
-当 cwd、`calcit.cirru` / `compact.cirru` 或多个 Snapshot 可能混淆时，先选定文件，并在后续查询、mutation、验证中始终显式传同一个路径（如 `calcit ./calcit.cirru ...`）。非默认 Snapshot 会包含在 `Command:` 回显中；默认值为减少噪音会省略，需要审计展开后的全部默认选项时加 `--verbose`。路径仍可能经过 alias 解析，必要时结合 `query config` 确认项目身份。
+当 cwd、`calcit.cirru` 或多个 Snapshot 可能混淆时，先选定文件，并在后续查询、mutation、验证中始终显式传同一个路径（如 `calcit ./calcit.cirru ...`）。遇到 `compact.cirru` 时暂停 mutation，先复制或重命名为 `calcit.cirru` 并按 upgrade 指南验证。非默认 Snapshot 会包含在 `Command:` 回显中；默认值为减少噪音会省略，需要审计展开后的全部默认选项时加 `--verbose`。必要时结合 `query config` 确认项目身份。
 
 `calcit [snapshot-file]` 默认选择 `entries.default` 并按它的 `:mode`（`:native` / `:js`）单次运行；`--entry <name>` 选择其他入口。显式 `js` 保留为覆盖方式。只有明确需要监听时才加 `-w` / `--watch`。`calcit ir` 只用于编译器/生成结果调试，不作为日常构建或完成证明。这里的 snapshot 文件不要与 `--entry <named-entry>` 混淆。
 
@@ -117,7 +117,7 @@ entry 都是独立配置，不能假设其模块继承 default。`--check-only` 
 重复传入 `--dep`。动态加载、未调用的公开 API 和外部消费者不在这些静态结果的证明范围内。
 
 注意：`config modules --entry` 与顶层 `--entry` 选择 named entry；`docs check-md --entry` 则选择用于
-检查的 snapshot 文件（如 `calcit.cirru` 或 `compact.cirru`），两者不是同一种参数。
+检查的 snapshot 文件（`calcit.cirru`），两者不是同一种参数。
 
 读取源码优先使用 human/Cirru 输出；只有需要稳定字段、自动分支或静态证据时才使用 `--format json`。`--format json` 承诺 stdout 为单个 JSON envelope；某些命令的 `--json` 只是在人类输出后附加 JSON，具体以子命令 `--help` 为准。
 

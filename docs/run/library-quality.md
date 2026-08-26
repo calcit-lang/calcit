@@ -55,7 +55,7 @@ git diff --exit-code -- calcit.cirru
 `edit format` 是可恢复的规范化步骤，不是完整 linter。它会继续完成格式化，同时对以下情况写入 stderr 告警并给出后续命令：
 
 - `W_LEGACY_CONFIG`：顶层 `:configs` 已迁移到 `:entries.default`。
-- `W_LEGACY_SNAPSHOT_NAME`：仍使用兼容文件名 `compact.cirru`。
+- `compact.cirru` 会被直接拒绝，不再进入 formatter 告警阶段。
 - `W_LEGACY_ANY`：schema 中的旧 `:any` 被规范化为 `'Dynamic`；其他旧 type tags 也会在已知类型位置改写为 quoted symbol。
 - `W_DYNAMIC_TYPE_DEBT`：本地定义仍有 unresolved dynamic；format 不会猜测类型并自动改写语义。
 
@@ -67,7 +67,7 @@ CI 中运行 `edit format` 后必须检查 diff，否则“命令成功”只说
 - 每个 entry 有明确的 `:mode :native` 或 `:mode :js`。
 - named entry 是完整配置，不继承 default 的 `:modules` 或 `:type-slots`。
 - `:init-fn` / `:reload-fn` 使用定义 symbol；旧字符串会在规范化写入时迁移。
-- `compact.cirru` 只作为兼容输入；新项目与脚本统一使用 `calcit.cirru`。
+- 项目、依赖模块和脚本只使用 `calcit.cirru`；`compact.cirru` 必须先按升级手册迁移。
 
 ## 2. 静态类型质量
 

@@ -39,7 +39,7 @@ struct WasmArgs {
   /// print version only
   #[argh(switch, short = 'v')]
   version: bool,
-  /// input source file, defaults to "calcit.cirru" and falls back to "compact.cirru"
+  /// input source file, defaults to "calcit.cirru"; retired compact.cirru inputs receive migration guidance
   #[argh(positional, default = "String::from(calcit::DEFAULT_SNAPSHOT_FILE)")]
   input: String,
 }

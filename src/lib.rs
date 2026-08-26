@@ -144,16 +144,7 @@ pub fn resolve_snapshot_path_alias(path: &Path) -> PathBuf {
 
 fn module_path_candidates(path: &str) -> Vec<String> {
   if path.ends_with('/') {
-    vec![format!("{path}{DEFAULT_SNAPSHOT_FILE}"), format!("{path}{LEGACY_SNAPSHOT_FILE}")]
-  } else if path.ends_with(DEFAULT_SNAPSHOT_FILE) {
-    vec![
-      path.to_string(),
-      format!(
-        "{}{}",
-        path.strip_suffix(DEFAULT_SNAPSHOT_FILE).unwrap_or(path),
-        LEGACY_SNAPSHOT_FILE
-      ),
-    ]
+    vec![format!("{path}{DEFAULT_SNAPSHOT_FILE}")]
   } else {
     vec![path.to_string()]
   }
@@ -284,6 +275,18 @@ fn load_module_recursive(
 ) -> Result<snapshot::Snapshot, String> {
   let candidates = resolve_module_snapshot_candidates(path, base_dir, module_folder);
   let mut last_error: Option<String> = None;
+
+  if let Some((_, canonical_path, _)) = candidates.first()
+    && !canonical_path.exists()
+    && canonical_path.file_name().and_then(|name| name.to_str()) == Some(DEFAULT_SNAPSHOT_FILE)
+  {
+    let retired_path = canonical_path.with_file_name(LEGACY_SNAPSHOT_FILE);
+    if retired_path.is_file()
+      && let Some(error) = snapshot::retired_snapshot_migration_error(&retired_path)
+    {
+      return Err(format!("Failed to load snapshot '{}': {error}", retired_path.display()));
+    }
+  }
 
   for (_, fullpath, display_path) in candidates {
     if loaded.contains(&fullpath) {
@@ -437,8 +440,31 @@ mod module_resolution_tests {
 
     let module_folder = project_module_folder(&project);
     let candidates = resolve_module_snapshot_candidates("demo/", &project, &module_folder);
-    assert_eq!(candidates[0].1, project.join(".calcit/modules/demo/compact.cirru"));
-    assert_eq!(candidates[0].2, "<mods>/demo/compact.cirru");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].1, project.join(".calcit/modules/demo/calcit.cirru"));
+    assert_eq!(candidates[0].2, "<mods>/demo/calcit.cirru");
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn compact_only_module_is_rejected_with_migration_guidance() {
+    let root = temp_root("retired-compact-module");
+    let project = root.join("project");
+    let module_dir = project.join(".calcit/modules/demo");
+    fs::create_dir_all(&module_dir).unwrap();
+    fs::write(
+      module_dir.join("compact.cirru"),
+      "{} (:package |demo)\n  :entries $ {}\n    :default $ {} (:mode :native) (:init-fn 'demo/main!) (:reload-fn 'demo/main!)\n      :modules $ []\n  :files $ {}\n",
+    )
+    .unwrap();
+
+    let module_folder = project_module_folder(&project);
+    let error = load_module("demo/", &project, &module_folder).expect_err("compact-only module should be rejected");
+    assert!(error.contains("filename `compact.cirru` is retired"), "error: {error}");
+    assert!(
+      error.contains(&format!("calcit {} edit format", module_dir.join("calcit.cirru").display())),
+      "error: {error}"
+    );
     fs::remove_dir_all(root).unwrap();
   }
 

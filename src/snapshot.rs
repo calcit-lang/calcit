@@ -1836,7 +1836,7 @@ fn normalize_schema_for_code(code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -
   }
 }
 
-/// structure of runtime snapshot files such as `calcit.cirru` (legacy: `compact.cirru`)
+/// structure of canonical runtime snapshot files such as `calcit.cirru`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
   pub package: String,
@@ -2122,8 +2122,27 @@ fn legacy_snapshot_recovery_hint(path: &str) -> Option<String> {
   }
 }
 
+/// Build migration guidance when `path` uses the retired snapshot filename.
+pub fn retired_snapshot_migration_error(path: &Path) -> Option<String> {
+  if path.file_name().and_then(|name| name.to_str()) != Some(crate::LEGACY_SNAPSHOT_FILE) {
+    return None;
+  }
+
+  let canonical_path = path.with_file_name(crate::DEFAULT_SNAPSHOT_FILE);
+  Some(format!(
+    "Snapshot filename `{}` is retired. Copy or rename the last runnable snapshot to `{}`, then run `calcit {} edit format` and `calcit {} --check-only`. The published Calcit 0.13.48 release is the final release that accepts the old filename.",
+    crate::LEGACY_SNAPSHOT_FILE,
+    canonical_path.display(),
+    canonical_path.display(),
+    canonical_path.display()
+  ))
+}
+
 /// Parse a Snapshot while preserving the source path in deserialization errors.
 pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
+  if let Some(error) = retired_snapshot_migration_error(Path::new(path)) {
+    return Err(error);
+  }
   load_snapshot_data_inner(data, path).map_err(|error| {
     let mut message = format!("Failed to load Snapshot `{path}`: {error}");
     if let Some(hint) = legacy_snapshot_recovery_hint(path) {
@@ -2831,6 +2850,19 @@ mod tests {
     assert!(error.contains("calcit calcit.cirru --check-only"), "error: {error}");
 
     fs::remove_dir_all(root).expect("remove legacy snapshot fixture directory");
+  }
+
+  #[test]
+  fn compact_snapshot_filename_is_rejected_with_migration_commands() {
+    let error = load_snapshot_data(&Edn::Nil, "compact.cirru").expect_err("retired snapshot filename should fail before parsing");
+
+    assert!(error.contains("filename `compact.cirru` is retired"), "error: {error}");
+    assert!(error.contains("calcit.cirru"), "error: {error}");
+    assert!(error.contains("calcit calcit.cirru edit format"), "error: {error}");
+    assert!(
+      error.contains("published Calcit 0.13.48 release is the final release"),
+      "error: {error}"
+    );
   }
 
   fn revision_test_entry(tags: &[&str]) -> CodeEntry {

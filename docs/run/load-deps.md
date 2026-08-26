@@ -51,7 +51,7 @@ caps remove --dev calcit-lang/calcit-test
 `caps outdated` and `caps upgrade --all` inspect both root groups and preserve each declaration's
 group.
 
-To load modules, use `:modules` configuration in `calcit.cirru` (legacy filename: `compact.cirru`):
+To load modules, use `:modules` configuration in `calcit.cirru`:
 
 ```cirru.edn
 {}
@@ -64,7 +64,7 @@ Paths defined in `:modules` are loaded only through `<project>/.calcit/modules/`
 this project view as links to the matching immutable revisions in the global store; it is therefore
 an error to run a project before its dependencies have been installed with `caps`.
 
-Modules that end with `/` are automatically suffixed with `calcit.cirru`, and still fall back to `compact.cirru` for compatibility.
+Modules that end with `/` are automatically suffixed with `calcit.cirru`. A module that only contains `compact.cirru` is rejected with migration guidance.
 
 ### Dependency graph
 

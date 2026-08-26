@@ -19,7 +19,7 @@ When using the MCP (Model Context Protocol) server, each documentation or code f
 
 # Indentation-based Syntax
 
-Calcit was designed based on tools from [Cirru Project](http://cirru.org/), which means, it's suggested to be programming with [Calcit Editor](https://github.com/calcit-lang/editor/). It will emit a file `calcit.cirru` containing data of the code; the legacy filename `compact.cirru` is still supported. And the data is still written in [Cirru EDN](https://github.com/Cirru/cirru-edn#syntax), Clojure EDN but based on Cirru Syntax.
+Calcit was designed based on tools from [Cirru Project](http://cirru.org/), which means, it's suggested to be programming with [Calcit Editor](https://github.com/calcit-lang/editor/). It emits the canonical `calcit.cirru` source snapshot. The data is written in [Cirru EDN](https://github.com/Cirru/cirru-edn#syntax), Clojure EDN but based on Cirru Syntax.
 
 For Cirru Syntax, read <http://text.cirru.org/>, and you may find a live demo at <http://repo.cirru.org/parser.coffee/>. A normal snippet looks like: this
 
@@ -31,7 +31,7 @@ defn fibo (x)
 
 But also, you can write Calcit code directly in a snapshot file and run it with `calcit`.
 
-To run `calcit.cirru` (or legacy `compact.cirru`), internally it's doing steps:
+To run `calcit.cirru`, internally it's doing steps:
 
 1. parse Cirru Syntax into vectors,
 2. turn Cirru vectors into Cirru EDN, which is a piece of data,
