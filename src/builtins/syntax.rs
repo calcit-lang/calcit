@@ -789,6 +789,30 @@ pub fn parse_cirru_edn_as(
   })
 }
 
+fn wrap_core_result_variant(name: &str, value: Calcit, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  let constructor = runner::evaluate_symbol_from_program(name, calcit::CORE_NS, None, call_stack)?;
+  match constructor {
+    Calcit::Fn { info, .. } => runner::run_fn(&[value], &info, call_stack),
+    Calcit::Proc(proc) => builtins::handle_proc(proc, &[value], call_stack),
+    other => CalcitErr::err_str(
+      CalcitErrKind::Unexpected,
+      format!("{name} expected a core Result constructor, but resolved to {other}"),
+    ),
+  }
+}
+
+pub fn try_parse_cirru_edn_as(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  match parse_cirru_edn_as(expr, scope, file_ns, call_stack) {
+    Ok(value) => wrap_core_result_variant("%ok", value, call_stack),
+    Err(failure) => wrap_core_result_variant("%err", Calcit::Str(failure.msg.into()), call_stack),
+  }
+}
+
 pub fn decode_map_as(
   expr: &CalcitListView<'_>,
   scope: &CalcitScope,
@@ -834,6 +858,18 @@ pub fn decode_map_as(
       expr.first().and_then(Calcit::get_location),
     )
   })
+}
+
+pub fn try_decode_map_as(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  match decode_map_as(expr, scope, file_ns, call_stack) {
+    Ok(value) => wrap_core_result_variant("%ok", value, call_stack),
+    Err(failure) => wrap_core_result_variant("%err", Calcit::Str(failure.msg.into()), call_stack),
+  }
 }
 
 pub fn assert_traits(

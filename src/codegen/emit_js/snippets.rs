@@ -5,12 +5,29 @@ use super::runtime::get_proc_prefix;
 pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn tmpl_try(err_var: String, body: String, handler: String, return_code: &str) -> String {
+  let message_var = js_gensym("errMessage");
   format!(
     "try {{
   {body}
 }} catch ({err_var}) {{
-  {return_code} ({handler})({err_var})
+  let {message_var} = {err_var} instanceof Error ? {err_var}.message : `${{{err_var}}}`;
+  {return_code} ({handler})({message_var})
 }}",
+  )
+}
+
+pub fn tmpl_result_try(call_code: &str, ok_code: &str, err_code: &str) -> String {
+  let err_var = js_gensym("err");
+  let message_var = js_gensym("errMessage");
+  format!(
+    "(function __fn__(){{
+  try {{
+    return {ok_code}({call_code});
+  }} catch ({err_var}) {{
+    let {message_var} = {err_var} instanceof Error ? {err_var}.message : `${{{err_var}}}`;
+    return {err_code}({message_var});
+  }}
+}})()"
   )
 }
 
@@ -154,6 +171,22 @@ mod tests {
   fn args_fewer_than_zero_arity_returns_empty() {
     let code = tmpl_args_fewer_than("f%", 0, "app.main");
     assert!(code.is_empty());
+  }
+
+  #[test]
+  fn try_handler_receives_a_string_message() {
+    let code = tmpl_try("caught".to_owned(), "return risky()".to_owned(), "handler".to_owned(), "return");
+    assert!(code.contains("caught instanceof Error ? caught.message"));
+    assert!(code.contains("(handler)(errMessage"));
+    assert!(!code.contains("(handler)(caught)"));
+  }
+
+  #[test]
+  fn result_try_wraps_success_and_normalizes_failure() {
+    let code = tmpl_result_try("decode()", "ok", "err");
+    assert!(code.contains("return ok(decode());"));
+    assert!(code.contains("instanceof Error"));
+    assert!(code.contains("return err(errMessage"));
   }
 
   #[test]

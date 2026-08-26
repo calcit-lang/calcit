@@ -69,7 +69,16 @@ Runtime failures include a structural path:
 parse-cirru-edn-as failed at $.friends[2].age: expected number, got string
 ```
 
-The failure is raised like `parse-cirru-edn` errors and can be handled with `try`.
+The compatibility form raises the failure like `parse-cirru-edn`. New code that expects malformed external input should use the Result-returning syntax:
+
+```cirru.no-run
+def Person $ defstruct Person (:name 'String) (:age 'Number)
+
+defn decode-people (raw)
+  try-parse-cirru-edn-as raw $ :: 'List Person
+```
+
+Its inferred return type is `Result<List<Person>,String>`, not `Result<Dynamic,String>`. Runtime parse and recursive shape failures become `:err` with the same structural context. An invalid `TypeExpr` remains a compile-time error because it is a program definition problem rather than recoverable input.
 
 ## Decoding runtime maps into Structs
 
@@ -89,7 +98,9 @@ defstruct Response (:code 'Number)
 
 Unlike the closed text decoder, `decode-map-as` permits an explicitly declared `Dynamic` leaf for an open payload such as an HTTP response body. Keep it at the boundary and decode it again into a closed Struct/Enum before application logic depends on it. It never treats `nil` as an empty map or silently supplies required fields. Native and JavaScript support this syntax; the WASM backend does not currently support typed decoder syntaxes.
 
-The syntax is available for native execution and JavaScript code generation. The current WASM backend does not yet support either typed EDN decoder.
+Use `try-decode-map-as value TypeExpr` when a host value may legitimately fail validation. It returns `Result<T,String>` and preserves paths such as `$.friends[2].age` in the error payload. `decode-map-as` remains available for compatibility and for boundaries where invalid input should abort immediately.
+
+The raising and Result-returning typed syntaxes are available for native execution and JavaScript code generation. The current WASM backend does not yet support typed EDN decoding.
 
 Map and Set iteration order is not a semantic guarantee. The formatter applies a stable order for readable, reproducible output; callers must not use that order as application data.
 
