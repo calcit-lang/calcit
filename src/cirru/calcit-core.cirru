@@ -450,7 +450,7 @@
           :tags $ #{} :internal
         |&core-string-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare)
+            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -8006,6 +8006,89 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :control :internal :syntax
+        |try-parse-cirru $ %{} 'CodeEntry (:doc "|Parse Cirru as Result<CirruQuote,String>; errors are returned instead of raised. Prefer the .parse-cirru String method in user code.")
+          :code $ quote
+            defn try-parse-cirru (source)
+              try
+                %ok $ parse-cirru source
+                fn (message) (%err message)
+          :examples $ []
+            quote $ |a .parse-cirru
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'String
+              :return $ :: 'Result 'CirruQuote 'String
+          :tests $ []
+            %{} 'TestEntry (:name |result-method-contract)
+              :code $ quote
+                do
+                  assert= true $ result:ok? (|a .parse-cirru)
+                  assert= true $ result:err?
+                      char-from-code 41
+                      , .parse-cirru
+                  assert-type (|a .parse-cirru) (:: 'Result 'CirruQuote 'String)
+        |try-parse-cirru-edn $ %{} 'CodeEntry (:doc "|Parse Cirru EDN as Result<Dynamic,String>; the payload stays Dynamic because EDN is open data. Prefer the .parse-cirru-edn String method in user code.")
+          :code $ quote
+            defn try-parse-cirru-edn (source)
+              try
+                %ok $ parse-cirru-edn source
+                fn (message) (%err message)
+          :examples $ []
+            quote $ |[] .parse-cirru-edn
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'String
+              :return $ :: 'Result 'Dynamic 'String
+          :tests $ []
+            %{} 'TestEntry (:name |result-method-contract)
+              :code $ quote
+                do
+                  assert= true $ result:ok? (|[] .parse-cirru-edn)
+                  assert= true $ result:err?
+                      char-from-code 41
+                      , .parse-cirru-edn
+                  assert-type (|[] .parse-cirru-edn) (:: 'Result 'Dynamic 'String)
+        |try-parse-cirru-list $ %{} 'CodeEntry (:doc "|Parse a Cirru expression list as Result<List,String>; errors are returned instead of raised. Prefer the .parse-cirru-list String method in user code.")
+          :code $ quote
+            defn try-parse-cirru-list (source)
+              try
+                %ok $ parse-cirru-list source
+                fn (message) (%err message)
+          :examples $ []
+            quote $ |a .parse-cirru-list
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'String
+              :return $ :: 'Result 'List 'String
+          :tests $ []
+            %{} 'TestEntry (:name |result-method-contract)
+              :code $ quote
+                do
+                  assert= true $ result:ok? (|a .parse-cirru-list)
+                  assert= true $ result:err?
+                      char-from-code 41
+                      , .parse-cirru-list
+                  assert-type (|a .parse-cirru-list)
+                    :: 'Result (:: 'List 'Dynamic) 'String
+        |try-parse-json $ %{} 'CodeEntry (:doc "|Parse JSON as Result<Dynamic,String>; the payload stays Dynamic because JSON is open data. Prefer the .parse-json String method in user code.")
+          :code $ quote
+            defn try-parse-json (source)
+              try
+                %ok $ json-parse source
+                fn (message) (%err message)
+          :examples $ []
+            quote $ |1 .parse-json
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'String
+              :return $ :: 'Result 'Dynamic 'String
+          :tests $ []
+            %{} 'TestEntry (:name |result-method-contract)
+              :code $ quote
+                do
+                  assert= true $ result:ok? (|1 .parse-json)
+                  assert= true $ result:err? (|{ .parse-json)
+                  assert-type (|1 .parse-json) (:: 'Result 'Dynamic 'String)
         |tuple-enum $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn tuple-enum (_value) (raise "|`tuple-enum` was removed; use `enum-definition`, which returns Option<EnumDef>")

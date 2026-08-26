@@ -204,11 +204,10 @@ pub fn parse_cirru_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Str(s)) => match cirru_parser::parse(s) {
       Ok(nodes) => Ok(cirru::cirru_to_calcit(&Cirru::List(nodes))),
-      Err(e) => {
-        eprintln!("\nparse-cirru-list failed:");
-        eprintln!("{}", e.format_detailed(Some(s)));
-        CalcitErr::err_str(CalcitErrKind::Syntax, "parse-cirru-list failed")
-      }
+      Err(e) => CalcitErr::err_str(
+        CalcitErrKind::Syntax,
+        format!("parse-cirru-list failed:\n{}", e.format_detailed(Some(s))),
+      ),
     },
     Some(a) => {
       let msg = format!(
@@ -234,11 +233,10 @@ pub fn parse_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Str(s)) => match cirru_parser::parse(s) {
       Ok(nodes) => Ok(Calcit::CirruQuote(Cirru::List(nodes))),
-      Err(e) => {
-        eprintln!("\nparse-cirru failed:");
-        eprintln!("{}", e.format_detailed(Some(s)));
-        CalcitErr::err_str(CalcitErrKind::Syntax, "parse-cirru failed")
-      }
+      Err(e) => CalcitErr::err_str(
+        CalcitErrKind::Syntax,
+        format!("parse-cirru failed:\n{}", e.format_detailed(Some(s))),
+      ),
     },
     Some(a) => {
       let msg = format!(
@@ -308,11 +306,7 @@ pub fn parse_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Some(options) => Ok(edn::edn_to_calcit(&nodes, options)),
         None => Ok(edn::edn_to_calcit(&nodes, &Calcit::Nil)),
       },
-      Err(e) => {
-        eprintln!("\nparse-cirru-edn failed:");
-        eprintln!("{e}");
-        CalcitErr::err_str(CalcitErrKind::Syntax, "parse-cirru-edn failed")
-      }
+      Err(e) => CalcitErr::err_str(CalcitErrKind::Syntax, format!("parse-cirru-edn failed:\n{e}")),
     },
     Some(a) => {
       let msg = format!(
@@ -2178,5 +2172,36 @@ mod tests {
     let impls = collect_optional_core_impls("&missing-test-core-impls", &CallStackList::default())
       .expect("missing core impl list should be treated as unavailable");
     assert!(impls.is_empty());
+  }
+
+  #[test]
+  fn cirru_parse_errors_keep_detailed_context_in_the_error_value() {
+    let invalid = Calcit::new_str(")");
+
+    for (label, result) in [
+      ("parse-cirru", parse_cirru(std::slice::from_ref(&invalid))),
+      ("parse-cirru-list", parse_cirru_list(std::slice::from_ref(&invalid))),
+    ] {
+      let error = result.expect_err("invalid Cirru must fail");
+      assert!(error.msg.contains(label), "missing operation name: {}", error.msg);
+      assert!(
+        error.msg.contains("Unexpected closing parenthesis"),
+        "missing parser detail: {}",
+        error.msg
+      );
+      assert!(error.msg.contains("line 1, column 1"), "missing source location: {}", error.msg);
+    }
+  }
+
+  #[test]
+  fn cirru_edn_parse_errors_keep_parser_context_in_the_error_value() {
+    let error = parse_cirru_edn(&[Calcit::new_str(")")]).expect_err("invalid Cirru EDN must fail");
+    assert!(error.msg.contains("parse-cirru-edn failed"));
+    assert!(
+      error.msg.contains("Unexpected closing parenthesis"),
+      "missing parser detail: {}",
+      error.msg
+    );
+    assert!(error.msg.contains("line 1, column 1"), "missing source location: {}", error.msg);
   }
 }

@@ -23,6 +23,22 @@ The runtime APIs are:
 
 `parse-cirru-edn` is the dynamic API: its result is `Dynamic`, and its optional type map only restores nominal identity. Use `parse-cirru-edn-as` when persisted or external data must enter typed application code.
 
+## Recoverable parsing with Result
+
+User-facing String methods return `Result` instead of raising on malformed input:
+
+```cirru
+let
+    parsed $ |[] .parse-cirru-edn
+    json $ |1 .parse-json
+  assert= true $ parsed .ok?
+  assert= true $ json .ok?
+```
+
+The available methods are `.parse-cirru`, `.parse-cirru-list`, `.parse-cirru-edn`, and `.parse-json`. Their function-form counterparts are named `try-parse-cirru`, `try-parse-cirru-list`, `try-parse-cirru-edn`, and `try-parse-json`. Parse failures carry the parser message in `Result`'s `:err` payload, including Cirru source position and nearby input where available.
+
+Cirru syntax has a closed result type, while Cirru EDN and JSON remain `Result<Dynamic,String>` because their data shapes are open. Use `parse-cirru-edn-as` or `decode-map-as` after the boundary when application code needs a closed nominal type. The original parser procedures remain available for compatibility and still raise on malformed input.
+
 ## Strict typed decoding
 
 `parse-cirru-edn-as` is a language syntax that derives a closed decoder graph at compile time, then validates and constructs the complete value recursively:
