@@ -25,6 +25,9 @@ pub struct ToplevelCalcit {
   /// print FFI dylib calls and callbacks for debugging native crashes
   #[argh(switch)]
   pub trace_ffi: bool,
+  /// print the Rust-native FFI host build identity and exit
+  #[argh(switch)]
+  pub ffi_build_id: bool,
   /// entry file path, defaults to "js-out/"
   #[argh(option, default = "String::from(\"js-out/\")")]
   pub emit_path: String,

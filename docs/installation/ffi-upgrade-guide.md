@@ -12,7 +12,7 @@ aliases:
 
 本文描述将 Calcit FFI 动态库项目（dylib 工程）升级到最新依赖版本的完整流程，基于实际升级经验整理。
 
-## 两个关键版本号
+## 版本与构建身份
 
 每个 FFI 项目需要同步维护两处版本号：
 
@@ -22,6 +22,8 @@ aliases:
 | `deps.cirru` | `:calcit-version \|x.y.z` | 必须与 `calcit --version` 输出一致，CI 会用它校验               |
 
 两者不一致都会导致 CI 失败或运行时 `dlsym failed`。
+
+此外，Rust 原生 ABI 不稳定。FFI 项目必须按 [Rust bindings](./ffi-bindings.md) 增加 `build.rs` 和 C-safe `calcit_ffi_build_id()` 导出。该身份包含精确 rustc、target、debug assertions 与 panic strategy；Calcit 会在调用 `abi_version()`、`edn_version()` 或业务 symbol 之前比较。不要把 optimization level 加入身份：Calcit 自身 release 使用体积优化，而模块通常使用 Cargo 默认 release 优化，两者可以共享相同的 ABI 构建模式。
 
 ## 升级流程
 
@@ -69,13 +71,15 @@ calcit calcit.cirru
 
 三步缺一不可：构建 → 复制产物 → 运行验证。如果只更新了 `target/release/` 而未复制到 `dylibs/`，运行时仍会加载旧库。
 
+Calcit 与 dylib 必须使用同一 rustc 工具链。先运行 `calcit --ffi-build-id` 查看 host identity。若项目提供 `rust-toolchain.toml`，应固定到发布 Calcit 所报告的 compiler identity；本地从源码构建 Calcit 时，则用同一个 toolchain 构建 dylib。debug Calcit 会在缺少 build identity 时直接拒绝旧模块；release Calcit 在迁移期仍会接受，但会输出兼容性警告。
+
 ### 4. 提交、打标签并推送
 
 ```bash
 PKG_VER=$(cargo metadata --no-deps --format-version 1 \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['packages'][0]['version'])")
 
-git add Cargo.toml Cargo.lock deps.cirru
+git add Cargo.toml Cargo.lock deps.cirru build.rs
 git commit -m "chore: upgrade cirru_edn $EDN_VER, cirru_parser $PARSER_VER; bump version to $PKG_VER"
 git tag "$PKG_VER"
 git push origin <branch>
@@ -114,9 +118,14 @@ gh pr checks <PR_NUMBER>
 
 按顺序排查：
 
-1. `edn_version()` 函数是否已导出
-2. `#[unsafe(no_mangle)]`（Rust 2024 edition）是否存在
-3. `dylibs/` 中是否已复制最新产物（`cp target/release/*.* dylibs/`）
+1. `calcit_ffi_build_id()`、`abi_version()`、`edn_version()` 是否已导出
+2. `calcit_ffi_build_id()` 是否使用 `extern "C"`、静态 NUL 结尾字节串与 `*const c_char`
+3. `#[unsafe(no_mangle)]`（Rust 2024 edition）是否存在
+4. `dylibs/` 中是否已复制最新产物（`cp target/release/*.* dylibs/`）
+
+### FFI build identity mismatch
+
+错误会同时打印 dylib 与 host identity。逐项比较 rustc release/commit、target、debug assertions 和 panic strategy；不要绕过检查或手工伪造 identity。使用同一 toolchain 与同类 debug/release 构建重新生成二进制，再复制到 `dylibs/` 验证。
 
 ### amend 后需要重打 tag
 

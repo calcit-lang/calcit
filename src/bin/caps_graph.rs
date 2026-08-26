@@ -1058,6 +1058,9 @@ pub fn verify_project_view(graph: &ResolvedGraph, options: &GraphOptions) -> Res
 pub fn verify_native_library(path: &Path) -> Result<(), String> {
   type VersionFn = fn() -> String;
   let library = unsafe { libloading::Library::new(path) }.map_err(|e| format!("failed to load {}: {e}", path.display()))?;
+  let lib_name = path.display().to_string();
+  let build_id = calcit::ffi_abi::lookup_build_id(&library, &lib_name)?;
+  calcit::ffi_abi::validate_build_id(&lib_name, build_id.as_deref(), calcit::FFI_BUILD_ID, cfg!(debug_assertions))?;
   let abi: libloading::Symbol<VersionFn> =
     unsafe { library.get(b"abi_version") }.map_err(|e| format!("failed to read abi_version from {}: {e}", path.display()))?;
   let actual_abi = abi();
@@ -1191,8 +1194,9 @@ fn expected_link_target(module: &ResolvedModule) -> Result<PathBuf, String> {
   }
   let target = rust_target_identity();
   let build_input = format!(
-    "{target}\ncalcit={CALCIT_VERSION}\nffi-abi={}\ncirru-edn={}\ncommit={}",
+    "{target}\ncalcit={CALCIT_VERSION}\nffi-abi={}\nffi-build={}\ncirru-edn={}\ncommit={}",
     calcit::FFI_ABI_VERSION,
+    calcit::FFI_BUILD_ID,
     cirru_edn::version(),
     module.commit
   );
@@ -1218,6 +1222,7 @@ fn write_native_receipt(module: &ResolvedModule, realization: &Path, build_key: 
   receipt.insert(Edn::tag("commit"), Edn::str(module.commit.as_str()));
   receipt.insert(Edn::tag("calcit-version"), Edn::str(CALCIT_VERSION));
   receipt.insert(Edn::tag("ffi-abi"), Edn::str(calcit::FFI_ABI_VERSION));
+  receipt.insert(Edn::tag("ffi-build"), Edn::str(calcit::FFI_BUILD_ID));
   receipt.insert(Edn::tag("cirru-edn"), Edn::str(cirru_edn::version()));
   receipt.insert(Edn::tag("build-key"), Edn::str(build_key));
   receipt.insert(
@@ -1252,6 +1257,7 @@ fn verify_native_receipt(module: &ResolvedModule, realization: &Path) -> Result<
     ("commit", module.commit.as_str()),
     ("calcit-version", CALCIT_VERSION),
     ("ffi-abi", calcit::FFI_ABI_VERSION),
+    ("ffi-build", calcit::FFI_BUILD_ID),
     ("cirru-edn", cirru_edn::version()),
     ("build-key", expected_build_key),
   ] {

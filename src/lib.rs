@@ -10,6 +10,8 @@ pub mod codegen;
 pub mod def_diff;
 pub mod detailed_snapshot;
 pub mod effects_graph;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod ffi_abi;
 pub mod program;
 pub mod program_diff;
 pub mod project_state;
@@ -36,6 +38,7 @@ use crate::util::string::strip_shebang;
 pub const DEFAULT_SNAPSHOT_FILE: &str = "calcit.cirru";
 pub const LEGACY_SNAPSHOT_FILE: &str = "compact.cirru";
 pub const FFI_ABI_VERSION: &str = "0.0.9";
+pub const FFI_BUILD_ID: &str = env!("CALCIT_FFI_BUILD_ID");
 
 static QUIET_TOOL_OUTPUT: AtomicBool = AtomicBool::new(false);
 

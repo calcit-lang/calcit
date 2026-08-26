@@ -19,7 +19,7 @@ Currently two APIs are supported, based on Cirru EDN data.
 First one is a synchronous [Edn](https://github.com/Cirru/cirru-edn.rs) API with type signature:
 
 ```rust
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn demo(args: Vec<Edn>) -> Result<Edn, String> {
 }
 ```
@@ -27,7 +27,7 @@ pub fn demo(args: Vec<Edn>) -> Result<Edn, String> {
 The other one is an asynchorous API, it can be called multiple times, which relies on `Arc` type(not sure if we can find a better solution yet),
 
 ```rust
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn demo(
   args: Vec<Edn>,
   handler: Arc<dyn Fn(Vec<Edn>) -> Result<Edn, String> + Send + Sync + 'static>,
@@ -44,15 +44,55 @@ Process need to keep running when there are tasks running.
 
 Asynchronous tasks are based on threads, which is currently decoupled from core features of Calcit. We may need techniques like `tokio` for better performance in the future, but current solution is quite naive yet.
 
-Also to declare runtime compatibility, FFI dylibs need two extra functions with specific names so that Calcit could check before actually calling them:
+Rust's native ABI has no stability guarantee. `Vec<Edn>`, `String`, `Result`, and callback trait objects are therefore a transitional interface rather than a portable dylib protocol. Calcit checks a C-safe build identity before invoking those Rust ABI symbols.
+
+Add a `build.rs` that derives the identity from the exact compiler, target, debug-assertion mode, and panic strategy:
 
 ```rust
-#[no_mangle]
+use std::{env, process::Command};
+
+fn field<'a>(output: &'a str, name: &str) -> &'a str {
+  output.lines().find_map(|line| line.strip_prefix(name).map(str::trim)).unwrap()
+}
+
+fn main() {
+  let rustc = env::var("RUSTC").unwrap_or_else(|_| "rustc".to_owned());
+  let output = Command::new(rustc).args(["--version", "--verbose"]).output().unwrap();
+  assert!(output.status.success());
+  let verbose = String::from_utf8(output.stdout).unwrap();
+  let release = field(&verbose, "release:");
+  let commit = field(&verbose, "commit-hash:");
+  let target = env::var("TARGET").unwrap();
+  let debug_assertions = env::var_os("CARGO_CFG_DEBUG_ASSERTIONS").is_some();
+  let panic_strategy = env::var("CARGO_CFG_PANIC").unwrap();
+  println!(
+    "cargo:rustc-env=CALCIT_FFI_BUILD_ID=rustc={release}:{commit};target={target};debug-assertions={debug_assertions};panic={panic_strategy}"
+  );
+}
+```
+
+Export the resulting value through a null-terminated C string. This lookup is safe to perform before any Rust-layout-dependent value crosses the library boundary:
+
+```rust
+use std::ffi::c_char;
+
+static FFI_BUILD_ID: &[u8] = concat!(env!("CALCIT_FFI_BUILD_ID"), "\0").as_bytes();
+
+#[unsafe(no_mangle)]
+pub extern "C" fn calcit_ffi_build_id() -> *const c_char {
+  FFI_BUILD_ID.as_ptr().cast()
+}
+```
+
+The existing Rust ABI version functions are still required during the migration period:
+
+```rust
+#[unsafe(no_mangle)]
 pub fn abi_version() -> String {
   String::from("0.0.9")
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn edn_version() -> String {
   cirru_edn::version().to_owned()
 }
@@ -61,6 +101,14 @@ pub fn edn_version() -> String {
 `abi_version()` must match Calcit's FFI ABI version exactly.
 
 `edn_version()` must match the exact `cirru_edn` crate version used by the running Calcit binary. If either version differs, Calcit aborts the FFI call before invoking the target symbol.
+
+The build identity must also match exactly. Debug Calcit hosts reject dylibs that do not export `calcit_ffi_build_id`, which prevents the common debug-host/release-dylib crash before even calling `abi_version()`. Release hosts temporarily retain the legacy path with a warning so maintained modules can migrate incrementally. A matching identity reduces accidental incompatibility; it does not turn Rust's native ABI into a stable public protocol. New FFI designs should use the planned C-safe serialized byte-buffer interface instead.
+
+Inspect the host side before building or debugging a module:
+
+```bash
+calcit --ffi-build-id
+```
 
 ### Call in Calcit
 

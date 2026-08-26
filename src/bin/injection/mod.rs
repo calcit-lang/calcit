@@ -1,7 +1,7 @@
 use crate::runner;
 use cirru_edn::Edn;
 use colored::Colorize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::AtomicUsize;
@@ -26,9 +26,9 @@ type EdnFfiFn = fn(
   f: Arc<dyn Fn(Vec<Edn>) -> Result<Edn, String> + Send + Sync + 'static>,
   finish: Arc<dyn FnOnce()>,
 ) -> Result<Edn, String>;
-
 /// lazily cache dylibs, in case Linux drops memory of libraries
 static DYLIBS: LazyLock<Mutex<HashMap<String, Arc<libloading::Library>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static LEGACY_DYLIB_WARNED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
 static TRACE_FFI: AtomicBool = AtomicBool::new(false);
 static STDOUT_TO_STDERR: AtomicBool = AtomicBool::new(false);
 static SILENCE_PROGRAM_OUTPUT: AtomicBool = AtomicBool::new(false);
@@ -51,9 +51,10 @@ pub fn set_trace_ffi(v: bool) {
       format!(
         "cwd={cwd} exe={exe} abi={} edn={edn_version} host={}",
         calcit::FFI_ABI_VERSION,
-        std::env::consts::OS
+        std::env::consts::OS,
       ),
     );
+    trace_ffi_event("host-build", calcit::FFI_BUILD_ID);
   }
 }
 
@@ -125,6 +126,36 @@ fn load_dylib(lib_name: &str) -> Result<Arc<libloading::Library>, CalcitErr> {
 }
 
 fn ensure_abi_compatible(lib: &libloading::Library, lib_name: &str) -> Result<(), CalcitErr> {
+  trace_ffi_event("lookup-build-id", format!("lib={lib_name}"));
+  let dylib_build_id =
+    calcit::ffi_abi::lookup_build_id(lib, lib_name).map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
+  match calcit::ffi_abi::validate_build_id(lib_name, dylib_build_id.as_deref(), calcit::FFI_BUILD_ID, cfg!(debug_assertions))
+    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?
+  {
+    calcit::ffi_abi::FfiBuildCompatibility::Exact => trace_ffi_event(
+      "build-id",
+      format!(
+        "lib={lib_name} dylib={} host={} compatible=true",
+        dylib_build_id.as_deref().unwrap_or("<missing>"),
+        calcit::FFI_BUILD_ID
+      ),
+    ),
+    calcit::ffi_abi::FfiBuildCompatibility::Legacy => {
+      trace_ffi_event(
+        "build-id",
+        format!("lib={lib_name} dylib=<missing> host={} legacy=true", calcit::FFI_BUILD_ID),
+      );
+      let mut warned = LEGACY_DYLIB_WARNED
+        .lock()
+        .map_err(|_| CalcitErr::use_str(CalcitErrKind::Unexpected, "failed to lock legacy dylib warning cache"))?;
+      if warned.insert(lib_name.to_owned()) && !calcit::quiet_tool_output() {
+        eprintln!(
+          "[warning] Rust-native FFI library `{lib_name}` has no C-safe `calcit_ffi_build_id`; release-host compatibility is temporary and cannot prove compiler compatibility. Rebuild the module using the current FFI guide."
+        );
+      }
+    }
+  }
+
   let expected_edn_version = cirru_edn::version();
   trace_ffi_event("lookup-abi", format!("lib={lib_name}"));
   let lookup_version: libloading::Symbol<fn() -> String> = unsafe { lib.get("abi_version".as_bytes()) }.map_err(|e| {
