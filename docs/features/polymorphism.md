@@ -294,7 +294,7 @@ do
   assert= (%none) $ optionally nil
   assert= (%some 2) $ find ([] 1 2 3) (fn (x) (> x 1))
   assert= (%ok 1.5) $ parse-float |1.5
-  assert= |fallback $ option:unwrap-or (get-env |__MISSING_ENV__) |fallback
+  assert= |fallback $ (get-env |__MISSING_ENV__) .unwrap-or |fallback
   assert= 0 $
     %none
     , .unwrap-or 0

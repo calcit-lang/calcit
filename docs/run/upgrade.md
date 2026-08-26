@@ -404,11 +404,11 @@ match (get-env |APP_MODE)
 ```cirru.no-check
 get-or config :port 6000
 ; =>
-option:unwrap-or (get config :port) 6000
+(get config :port) .unwrap-or 6000
 
 get-env-or |mode |release
 ; =>
-option:unwrap-or (get-env |mode) |release
+(get-env |mode) .unwrap-or |release
 ```
 
 `get-in-or`、`first-or`、`last-or`、`nth-or` 同样改为对应查询后调用 `.unwrap-or`。

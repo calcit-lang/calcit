@@ -79,12 +79,14 @@ Calcit workspace rather than relying on its presence in documentation or the
 core definition itself:
 
 ```bash
-rg -n --glob '*.cirru' --glob '!**/src/cirru/calcit-core.cirru' '(^|[ (])MACRO_NAME([ )$]|$)' /path/to/workspace
+rg -n -F --glob '*.cirru' --glob '!**/src/cirru/calcit-core.cirru' -- 'MACRO_NAME' /path/to/workspace
 ```
 
-Record the executable call sites in the promotion PR. Zero-call-site syntax
-should normally stay in a module or be removed instead of becoming permanent
-core surface.
+Use the literal matches as an audit candidate list, then manually distinguish
+executable call sites from definitions, docs, comments, quoted code, and longer
+symbols. Record the executable call sites in the promotion PR. Zero-call-site
+syntax should normally stay in a module or be removed instead of becoming
+permanent core surface.
 
 Some strict contracts still contain intentional `Dynamic` positions. Broad
 collection helpers such as `first`, `nth`, and `get` accept several runtime

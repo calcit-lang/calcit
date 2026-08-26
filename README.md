@@ -59,7 +59,7 @@ Evaluate snippets:
 ```bash
 calcit eval 'range 100'
 
-calcit eval '-> 100 range (map $ \ * % %)'
+calcit eval -- '-> 100 range (map $ \ * % %)'
 ```
 
 Run with a runtime snapshot such as `calcit.cirru` (legacy filename: `compact.cirru`):
