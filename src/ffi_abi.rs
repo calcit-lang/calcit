@@ -53,6 +53,21 @@ fn encode_buffer_request(args: Vec<Edn>) -> Result<Vec<u8>, String> {
     .map_err(|error| format!("failed to encode FFI buffer request: {error}"))
 }
 
+fn decode_buffer_response(status: i32, output: Vec<u8>, lib_name: &str, symbol: &str) -> Result<Edn, String> {
+  if status == 0 {
+    let source = std::str::from_utf8(&output)
+      .map_err(|error| format!("FFI buffer method `{symbol}` in `{lib_name}` returned non-UTF-8 EDN: {error}"))?;
+    cirru_edn::parse(source)
+      .map_err(|error| format!("FFI buffer method `{symbol}` in `{lib_name}` returned invalid Cirru EDN: {error}"))
+  } else {
+    let message = String::from_utf8(output)
+      .map_err(|error| format!("FFI buffer method `{symbol}` in `{lib_name}` returned non-UTF-8 error output: {error}"))?;
+    Err(format!(
+      "FFI buffer method `{symbol}` in `{lib_name}` failed with status {status}: {message}"
+    ))
+  }
+}
+
 unsafe fn copy_and_free_buffer(
   buffer: FfiBuffer,
   free: &libloading::Symbol<FfiBufferFree>,
@@ -117,18 +132,7 @@ pub fn try_call_buffer(lib: &libloading::Library, lib_name: &str, method: &str, 
   let status = unsafe { call(request.as_ptr(), request.len(), &mut output) };
   let output = unsafe { copy_and_free_buffer(output, &free, lib_name, &symbol) }?;
 
-  if status == 0 {
-    let source = std::str::from_utf8(&output)
-      .map_err(|error| format!("FFI buffer method `{symbol}` in `{lib_name}` returned non-UTF-8 EDN: {error}"))?;
-    let value = cirru_edn::parse(source)
-      .map_err(|error| format!("FFI buffer method `{symbol}` in `{lib_name}` returned invalid Cirru EDN: {error}"))?;
-    Ok(Some(value))
-  } else {
-    let message = String::from_utf8_lossy(&output);
-    Err(format!(
-      "FFI buffer method `{symbol}` in `{lib_name}` failed with status {status}: {message}"
-    ))
-  }
+  decode_buffer_response(status, output, lib_name, &symbol).map(Some)
 }
 
 pub fn validate_build_id(
@@ -169,7 +173,10 @@ pub fn lookup_build_id(lib: &libloading::Library, lib_name: &str) -> Result<Opti
 
 #[cfg(test)]
 mod tests {
-  use super::{BUFFER_PROTOCOL_VERSION, FfiBuildCompatibility, buffer_method_symbol, encode_buffer_request, validate_build_id};
+  use super::{
+    BUFFER_PROTOCOL_VERSION, FfiBuildCompatibility, buffer_method_symbol, decode_buffer_response, encode_buffer_request,
+    validate_build_id,
+  };
   use cirru_edn::Edn;
 
   #[test]
@@ -184,6 +191,12 @@ mod tests {
     let source = std::str::from_utf8(&encoded).expect("UTF-8 request");
     let decoded = cirru_edn::parse(source).expect("parse request");
     assert_eq!(decoded, Edn::List(cirru_edn::EdnListView(vec![Edn::Number(1.0), Edn::str("two")])));
+  }
+
+  #[test]
+  fn buffer_error_responses_require_strict_utf8() {
+    let error = decode_buffer_response(1, vec![0xff], "demo", "read_calcit_ffi_v1").expect_err("invalid UTF-8 must fail");
+    assert!(error.contains("non-UTF-8 error output"), "error: {error}");
   }
 
   #[test]

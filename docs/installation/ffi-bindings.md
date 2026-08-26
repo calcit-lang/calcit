@@ -110,7 +110,7 @@ Inspect the host side before building or debugging a module:
 calcit --ffi-build-id
 ```
 
-### C-safe synchronous buffer ABI
+## C-safe synchronous buffer ABI
 
 New synchronous methods should use buffer protocol version 1. Calcit first looks for `<method>_calcit_ffi_v1`; only methods without that symbol fall back to the build-ID-guarded Rust ABI. Existing Calcit source calls do not change.
 
