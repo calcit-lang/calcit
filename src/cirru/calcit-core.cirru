@@ -436,7 +436,7 @@
           :tags $ #{} :internal
         |&core-string-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
+            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json) (:: :read-file try-read-file) (:: :read-dir try-read-dir) (:: :write-file try-write-file)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -5484,7 +5484,8 @@
         |js-nullish? $ %{} 'CodeEntry (:doc "|Return true when a JsNullish<T> boundary value is JavaScript null or undefined.")
           :code $ quote
             defn js-nullish? (x)
-              or (nil? x) (= :unit (type-of x))
+              or (nil? x)
+                = :unit $ type-of x
           :examples $ []
             quote $ assert= true (js-nullish? nil)
             quote $ assert= true (js-nullish? &unit)
@@ -7682,6 +7683,56 @@
                   assert= true $ result:ok? (|1 .parse-json)
                   assert= true $ result:err? (|{ .parse-json)
                   assert-type (|1 .parse-json) (:: 'Result 'Dynamic 'String)
+        |try-read-dir $ %{} 'CodeEntry (:doc "|List directory paths as Result<List<String>,String>; failures are returned instead of raised. Prefer the .read-dir String method in user code. Native is supported; JavaScript requires a host read_dir injection, and WASM file effects are not yet supported.")
+          :code $ quote
+            defn try-read-dir (path recursive?)
+              try
+                %ok $ read-dir path recursive?
+                fn (message) (%err message)
+          :examples $ []
+            quote $ |/calcit-result-contract-does-not-exist .read-dir false
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'String 'Bool
+              :return $ :: 'Result (:: 'List 'String) 'String
+        |try-read-file $ %{} 'CodeEntry (:doc "|Read a UTF-8 file as Result<String,String>; failures are returned instead of raised. Prefer the .read-file String method in user code. Native and JavaScript hosts with file injections are supported; WASM file effects are not yet supported.")
+          :code $ quote
+            defn try-read-file (path)
+              try
+                %ok $ read-file path
+                fn (message) (%err message)
+          :examples $ []
+            quote $ |/calcit-result-contract-does-not-exist/file .read-file
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'String
+              :return $ :: 'Result 'String 'String
+          :tests $ []
+            %{} 'TestEntry (:name |result-method-contract)
+              :code $ quote
+                do
+                  assert= true $ result:ok? (|Cargo.toml .read-file)
+                  assert= true $ result:ok? (|src .read-dir false)
+                  assert= true $ result:err? (|/calcit-result-contract-does-not-exist/file .read-file)
+                  assert= true $ result:err? (|/calcit-result-contract-does-not-exist .read-dir false)
+                  assert= true $ result:err? (|/calcit-result-contract-does-not-exist/file .write-file |content)
+                  assert-type (|/calcit-result-contract-does-not-exist/file .read-file) (:: 'Result 'String 'String)
+                  assert-type (|/calcit-result-contract-does-not-exist .read-dir false)
+                    :: 'Result (:: 'List 'String) 'String
+                  assert-type (|/calcit-result-contract-does-not-exist/file .write-file |content) (:: 'Result 'Unit 'String)
+              :tags $ #{} :unit
+        |try-write-file $ %{} 'CodeEntry (:doc "|Write UTF-8 content as Result<Unit,String>; failures are returned instead of raised. Prefer the .write-file String method in user code. Native and JavaScript hosts with file injections are supported; WASM file effects are not yet supported.")
+          :code $ quote
+            defn try-write-file (path content)
+              try
+                %ok $ write-file path content
+                fn (message) (%err message)
+          :examples $ []
+            quote $ |/calcit-result-contract-does-not-exist/file .write-file |content
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'String 'String
+              :return $ :: 'Result 'Unit 'String
         |tuple-enum $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn tuple-enum (_value) (raise "|`tuple-enum` was removed; use `enum-definition`, which returns Option<EnumDef>")

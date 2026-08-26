@@ -380,10 +380,13 @@ parsed .and-then
 `.and-then`，让错误类型转换保持可见：
 
 ```cirru.no-check
-read-file path .and-then $ fn (content)
+path .read-file .and-then $ fn (content)
   parse-data content .and-then $ fn (data)
     save-data data
 ```
+
+文件路径上的 `.read-file`、`.read-dir` 与 `.write-file` 返回 `Result<...,String>`；
+底层同名函数仍保留抛错行为以兼容旧代码。预期 I/O 失败时优先使用方法形式。
 
 `option:let` 使用普通 `let` 的 binding pair 结构。每个右侧和最终 body 都必须保持
 Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。

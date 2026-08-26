@@ -354,6 +354,14 @@
               println "|Env mode:" $ get-env |mode
               println "|Env mode:" $ option:unwrap-or (get-env |m0) "|default m0"
               eprintln "|stdout message"
+              do
+                assert= true $ result:err? (|/calcit-result-contract-does-not-exist/file .read-file)
+                assert= true $ result:err? (|/calcit-result-contract-does-not-exist .read-dir false)
+                assert= true $ result:err? (|/calcit-result-contract-does-not-exist/file .write-file |content)
+                assert-type (|/calcit-result-contract-does-not-exist/file .read-file) (:: 'Result 'String 'String)
+                assert-type (|/calcit-result-contract-does-not-exist .read-dir false)
+                  :: 'Result (:: 'List 'String) 'String
+                assert-type (|/calcit-result-contract-does-not-exist/file .write-file |content) (:: 'Result 'Unit 'String)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

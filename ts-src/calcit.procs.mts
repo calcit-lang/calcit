@@ -1676,19 +1676,50 @@ export let buffer_$q_ = (x: CalcitValue): boolean => {
 
 export let _$n_str_$o_escape = (x: string) => JSON.stringify(x);
 
+export type CalcitFileInjections = {
+  read_file?: (path: string) => unknown;
+  read_dir?: (path: string, recursive: boolean) => unknown;
+  write_file?: (path: string, content: string) => unknown;
+};
+
+const get_file_injection = <K extends keyof CalcitFileInjections>(name: K): NonNullable<CalcitFileInjections[K]> => {
+  const injections = (globalThis as { __calcit_injections__?: CalcitFileInjections }).__calcit_injections__;
+  const injection = injections?.[name];
+  if (typeof injection !== "function") {
+    throw new Error(`${name} is unavailable: the JavaScript host did not provide a __calcit_injections__.${name} function`);
+  }
+  return injection as NonNullable<CalcitFileInjections[K]>;
+};
+
 export let read_file = (path: string): string => {
   if (inNodeJs) {
-    // TODO
-    (globalThis as any)["__calcit_injections__"].read_file(path);
+    const content = get_file_injection("read_file")(path);
+    if (typeof content !== "string") {
+      throw new TypeError(`read_file injection expected a string result, got ${typeof content}`);
+    }
+    return content;
   } else {
     // no actual File API in browser
-    return localStorage.get(path) ?? "";
+    const content = localStorage.getItem(path);
+    if (content === null) {
+      throw new Error(`read-file failed at ${path}: key not found in localStorage`);
+    }
+    return content;
   }
+};
+export let read_dir = (path: string, recursive: boolean): CalcitSliceList => {
+  if (!inNodeJs) {
+    throw new Error("read_dir is unavailable in browser JavaScript hosts");
+  }
+  const paths = get_file_injection("read_dir")(path, recursive);
+  if (!Array.isArray(paths) || !paths.every((item) => typeof item === "string")) {
+    throw new TypeError("read_dir injection expected an array of strings");
+  }
+  return new CalcitSliceList([...paths].sort());
 };
 export let write_file = (path: string, content: string): void => {
   if (inNodeJs) {
-    // TODO
-    (globalThis as any)["__calcit_injections__"].write_file(path, content);
+    get_file_injection("write_file")(path, content);
   } else {
     // no actual File API in browser
     localStorage.setItem(path, content);
