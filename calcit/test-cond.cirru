@@ -1,7 +1,8 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-cond) (:version |0.0.0)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-cond)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-cond.main/main!) (:mode :native) (:reload-fn 'test-cond.main/reload!)
+      :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
@@ -9,7 +10,7 @@
       :defs $ {}
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing cond") (test-when) (test-cond) (test-or) (test-and) (test-either) (test-case) (test-tag-match) (test-field-match) true
+            defn main! () (log-title "|Testing cond") (test-when) (test-cond) (test-or) (test-and) (test-either) (test-case) (test-tag-match) true
           :examples $ []
           :schema $ :: 'Dynamic
         |test-and $ %{} 'CodeEntry (:doc |)
@@ -80,24 +81,6 @@
               assert= nil $ either nil nil
               assert= 1 $ either nil nil 1
               assert= 1 $ either (do nil) (do 1) (do nil)
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-field-match $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing field-match")
-              &let
-                match-ab $ fn (data)
-                  field-match data
-                    :a a $ [] :a (&map:get a :a)
-                    :b b $ [] :b (&map:get b :b)
-                    _ :other
-                assert=
-                  match-ab $ &{} :tag :a :a 1
-                  [] :a 1
-                assert=
-                  match-ab $ &{} :tag :b :b 2
-                  [] :b 2
-                assert= :other $ match-ab (&{} :tag :c)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-or $ %{} 'CodeEntry (:doc |)

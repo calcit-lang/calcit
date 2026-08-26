@@ -242,7 +242,7 @@ let
           if-let
             todo-id $ get todo :id
             if (= todo-id id)
-              assoc todo :done $ not (get-or todo :done false)
+              assoc todo :done $ not $ option:unwrap-or (get todo :done) false
               , todo
             , todo
   add-todo! |buy-milk

@@ -189,14 +189,14 @@ let
 ```cirru
 let
     m $ {} (:a :one) (:b :two)
-    val $ get-or m :missing :default
+    val $ option:unwrap-or (get m :missing) :default
   , val
   ; => :default
 ```
 
-`get-or` 是 `(get m key) .unwrap-or fallback` 的类型安全查询终点；payload 类型可推断时，
-fallback 必须兼容该类型。需要区分 key 存在与缺失时仍使用 `get`，再以 `if-let` 或
-`match` 处理完整 `Option`。
+`.unwrap-or` 是 `Option` 的类型安全默认值终点；payload 类型可推断时，fallback 必须
+兼容该类型。需要区分 key 存在与缺失时仍使用 `get`，再以 `if-let` 或 `match` 处理
+完整 `Option`。
 
 ### Counting occurrences
 
@@ -206,7 +206,7 @@ let
     init $ {}
     freq $ foldl words init $ fn (acc w)
       let
-          n $ get-or acc w 0
+          n $ option:unwrap-or (get acc w) 0
         assoc acc w (inc n)
   println freq
   ; ({} (:a 3) (:b 2) (:c 1))

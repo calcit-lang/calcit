@@ -1546,10 +1546,10 @@ mod tests {
       CalcitTypeAnnotation::Optional(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
     ));
 
-    let record_struct = CalcitProc::NativeStructDefinition
+    let struct_definition = CalcitProc::NativeStructDefinition
       .get_type_signature()
-      .expect("record-struct signature");
-    assert_eq!(record_struct.return_type, optional_tag("struct-def"));
+      .expect("struct-definition signature");
+    assert_eq!(struct_definition.return_type, optional_tag("struct-def"));
 
     let list_first = CalcitProc::NativeListFirst.get_type_signature().expect("&list:first signature");
     assert!(matches!(

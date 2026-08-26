@@ -218,31 +218,6 @@
                   macroexpand-all $ quote (\ + x % %2)
                   macroexpand-all $ quote
                     defn %\ (? % %2) (calcit.core/+ x % %2)
-                assert=
-                  macroexpand $ quote (\. x x)
-                  quasiquote $ defn f_x (x) x
-                assert=
-                  macroexpand $ quote (\. x,y x)
-                  quote $ defn f_x (x)
-                    defn f_y (y) x
-                assert=
-                  macroexpand $ quote
-                    \. x,y (println x y) x
-                  quote $ defn f_x (x)
-                    defn f_y (y)
-                      &let () (println x y) x
-              println "|evaluating lambda alias"
-              assert= 2 $
-                \. x x
-                , 2
-              assert= 2 $
-                  \. x,y x
-                  , 2
-                , 3
-              assert= 2 $
-                  \. x,y (println "|inside lambda alias" x y) x
-                  , 2
-                , 3
           :examples $ []
           :schema $ :: 'Dynamic
         |test-misc $ %{} 'CodeEntry (:doc |)
@@ -286,14 +261,6 @@
                     -> a (b c) (d e f)
                   quote $ d (b a c) e f
                 assert=
-                  macroexpand $ quote
-                    thread-first a (b c) (d e f)
-                  quote $ -> a (b c) (d e f)
-                assert=
-                  macroexpand-all $ quote
-                    <- (b c) (d e f) a
-                  quote $ b (d a e f) c
-                assert=
                   macroexpand $ quote (->> a b c)
                   quote $ c (b a)
                 assert=
@@ -315,10 +282,6 @@
                     ->> a (b c) (d e f)
                   quote $ d e f (b c a)
                 assert=
-                  macroexpand $ quote
-                    thread-last a (b c) (d e f)
-                  quote $ ->> a (b c) (d e f)
-                assert=
                   macroexpand $ quote (->% a)
                   quote a
                 assert=
@@ -328,13 +291,8 @@
                       % a
                       % $ + % 1
                     * % 2
-                assert=
-                  macroexpand $ quote
-                    thread-as a (+ % 1) (* % 2)
-                  quote $ ->% a (+ % 1) (* % 2)
               assert= 35 $ ->% 3 (+ % 4) (* % 5)
               assert= 36 $ ->% 3 (+ % %) (* % %)
-              assert= 18 $ %<- (+ % %) (* % %) 3
           :examples $ []
           :schema $ :: 'Dynamic
         |test-w-log $ %{} 'CodeEntry (:doc |)
@@ -359,26 +317,6 @@
                 w-log $ + 1
                   w-log $ * 7 8
                 , 57
-              ; println $ macroexpand
-                quote $ call-w-log + 1 2 3 4
-              assert= 10 $ call-w-log + 1 2 3 4
-              assert= 10 $ call-wo-log + 1 2 3 4
-              inside-eval: (&reset-gensym-index!)
-                assert=
-                  macroexpand $ quote
-                    defn-w-log f1 (a b) (+ a b)
-                  quote $ defn f1 (a b)
-                    &let
-                      f1 $ defn f1 (a b) (+ a b)
-                      call-w-log f1 a b
-                ; println $ macroexpand
-                  quote $ defn-w-log f1 (a b) (+ a b)
-              let
-                  f2 $ defn-w-log f2 (a b) (+ a b)
-                  f3 $ defn-wo-log f3 (a b) (+ a b)
-                assert= 7 $ f2 3 4
-                assert= 11 $ f2 & ([] 5 6)
-                assert= 7 $ f3 3 4
           :examples $ []
           :schema $ :: 'Dynamic
         |test-with-cpu-time $ %{} 'CodeEntry (:doc |)

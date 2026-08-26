@@ -14,7 +14,7 @@
           :schema $ :: 'Dynamic
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (test-alias) (test-doseq) (test-let[]) (test-comma) (test-methods-shorthand) (test-pair) (test-match) (test-range) (do true)
+            defn main! () (test-alias) (test-doseq) (test-let[]) (test-methods-shorthand) (test-pair) (test-match) (test-range) (do true)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -23,13 +23,6 @@
           :code $ quote
             fn () (log-title "|Testing alias")
               assert= (' 1 2 3) ([] 1 2 3)
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-        |test-comma $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () $ assert= ([] 1 2 3 4) ([,] 1 2 3 4)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
