@@ -4793,7 +4793,7 @@
             {}
               :capabilities $ #{}
               :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Fn)
+              :required $ [] (:: 'Expr 'Dynamic)
               :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |floor $ %{} 'CodeEntry (:doc "|internal function for floor operation\nSyntax: (floor n)\nParams: n (number)\nReturns: number\nReturns largest integer less than or equal to n")

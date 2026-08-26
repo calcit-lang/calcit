@@ -4161,7 +4161,7 @@ mod tests {
           assert!(matches!(
             signature.required_inputs.as_slice(),
             [crate::calcit::MacroSyntaxType::Expr(value)]
-              if matches!(value.as_ref(), CalcitTypeAnnotation::DynFn)
+              if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
           ));
           assert!(matches!(
             signature.rest_input,
