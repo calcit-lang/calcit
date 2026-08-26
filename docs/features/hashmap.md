@@ -206,7 +206,7 @@ let
     init $ {}
     freq $ foldl words init $ fn (acc w)
       let
-          n $ (get acc w) .unwrap-or 0
+          n $ -> (get acc w) (.unwrap-or 0)
         assoc acc w (inc n)
   println freq
   ; ({} (:a 3) (:b 2) (:c 1))
