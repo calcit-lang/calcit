@@ -158,18 +158,19 @@ pub fn lookup(
   }
 }
 
-pub fn store(token: CacheMiss, output: &Calcit, file_ns: &str) {
+/// Store an expansion with the gensym position captured immediately after the
+/// macro evaluator returned, before recursively preprocessing its output.
+pub fn store(token: CacheMiss, output: &Calcit, evaluator_gensym_end: usize) {
   if !is_enabled() {
     return;
   }
-  let gensym_end = meta::current_gensym_index(file_ns);
   let entry = CachedExpansion {
     macro_id: token.macro_id,
     signature_hash: token.signature_hash,
     inputs: token.inputs,
     output: output.clone(),
     gensym_start: token.gensym_start,
-    gensym_delta: gensym_end.saturating_sub(token.gensym_start),
+    gensym_delta: evaluator_gensym_end.saturating_sub(token.gensym_start),
   };
   let mut cache = CACHE.lock().expect("write macro expansion cache");
   if cache.len() >= MAX_ENTRIES && !cache.contains_key(&token.call_site) {
@@ -222,7 +223,7 @@ mod tests {
       panic!("first lookup should miss");
     };
     assert_eq!(reason, "cold-call-site");
-    store(token, &Calcit::Number(2.0), "app.main");
+    store(token, &Calcit::Number(2.0), meta::current_gensym_index("app.main"));
 
     assert!(matches!(
       lookup(
@@ -260,7 +261,7 @@ mod tests {
     let CacheLookup::Miss { token, .. } = lookup("calcit.core/id", &old_id, &signature, &[], Some(&call_location), "app.main") else {
       panic!("first lookup should miss");
     };
-    store(token, &Calcit::Unit, "app.main");
+    store(token, &Calcit::Unit, meta::current_gensym_index("app.main"));
 
     let CacheLookup::Miss { reason, .. } = lookup(
       "calcit.core/id",
@@ -297,7 +298,7 @@ mod tests {
       };
       assert_eq!(meta::current_gensym_index("app.main"), 1);
       meta::advance_gensym_index("app.main", 2);
-      store(token, &Calcit::new_str("generated"), "app.main");
+      store(token, &Calcit::new_str("generated"), meta::current_gensym_index("app.main"));
       Ok::<(), ()>(())
     })
     .expect("store generated expansion");
@@ -335,6 +336,50 @@ mod tests {
       Ok::<(), ()>(())
     })
     .expect("reject shifted sequence");
+    reset(false);
+  }
+
+  #[test]
+  fn outer_cache_replays_only_evaluator_gensyms_before_nested_macro_expansion() {
+    let _guard = TEST_LOCK.lock().expect("serialize macro cache tests");
+    reset(true);
+    let signature = pure_signature();
+    let macro_id = Arc::from("outer-macro");
+    let call_location = location(&[8]);
+
+    let miss_following_gensym = meta::with_compiling_def("app.main", "main!", || {
+      let CacheLookup::Miss { token, .. } =
+        lookup("app.main/outer-macro", &macro_id, &signature, &[], Some(&call_location), "app.main")
+      else {
+        panic!("outer macro should initially miss");
+      };
+
+      // The outer evaluator emits one gensym, then returns code invoking an
+      // inner macro. The inner macro emits two more while that code is
+      // recursively preprocessed.
+      meta::advance_gensym_index("app.main", 1);
+      let evaluator_gensym_end = meta::current_gensym_index("app.main");
+      meta::advance_gensym_index("app.main", 2);
+      store(token, &Calcit::new_str("inner-macro-call"), evaluator_gensym_end);
+      Ok::<usize, ()>(meta::current_gensym_index("app.main"))
+    })
+    .expect("store outer expansion");
+
+    let hit_following_gensym = meta::with_compiling_def("app.main", "main!", || {
+      assert!(matches!(
+        lookup("app.main/outer-macro", &macro_id, &signature, &[], Some(&call_location), "app.main"),
+        CacheLookup::Hit(_)
+      ));
+      // Recursive preprocessing still expands the inner macro on a cache hit.
+      meta::advance_gensym_index("app.main", 2);
+      Ok::<usize, ()>(meta::current_gensym_index("app.main"))
+    })
+    .expect("replay outer expansion");
+
+    assert_eq!(
+      hit_following_gensym, miss_following_gensym,
+      "a cached outer expansion must preserve the gensym position after its nested macro"
+    );
     reset(false);
   }
 }

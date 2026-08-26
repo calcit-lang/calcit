@@ -1746,6 +1746,7 @@ fn preprocess_list_call(
 
       let execute_macro = || -> Result<Calcit, CalcitErr> {
         let mut cache_miss = None;
+        let mut evaluator_gensym_end = None;
         loop {
           // need to handle recursion
           body_scope.restore_frame(frame_checkpoint);
@@ -1771,6 +1772,7 @@ fn preprocess_list_call(
                 // deliberately unknown and therefore cannot be considered pure.
                 evaluate_body()?
               };
+              evaluator_gensym_end = Some(builtins::meta::current_gensym_index(file_ns));
               drop(evaluator_timer);
               evaluated
             }
@@ -1802,7 +1804,11 @@ fn preprocess_list_call(
                 call_location.clone(),
               )?;
               if let Some(token) = cache_miss.take() {
-                runner::macro_cache::store(token, &code, file_ns);
+                runner::macro_cache::store(
+                  token,
+                  &code,
+                  evaluator_gensym_end.expect("cache miss evaluates the macro before storing its expansion"),
+                );
               }
               return Ok(processed);
             }
