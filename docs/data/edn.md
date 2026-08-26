@@ -39,6 +39,8 @@ The available methods are `.parse-cirru`, `.parse-cirru-list`, `.parse-cirru-edn
 
 Cirru syntax has a closed result type, while Cirru EDN and JSON remain `Result<Dynamic,String>` because their data shapes are open. Use `parse-cirru-edn-as` or `decode-map-as` after the boundary when application code needs a closed nominal type. The original parser procedures remain available for compatibility and still raise on malformed input.
 
+These Result-returning parser methods currently run on the native and JavaScript backends. The WASM backend does not yet support the underlying parser procedures or `try`-based wrappers; the standard WASM validation suite confirms that unsupported parser definitions are skipped without affecting supported exports.
+
 ## Strict typed decoding
 
 `parse-cirru-edn-as` is a language syntax that derives a closed decoder graph at compile time, then validates and constructs the complete value recursively:
