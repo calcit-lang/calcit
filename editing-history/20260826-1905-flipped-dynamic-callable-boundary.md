@@ -1,6 +1,7 @@
 # Keep `flipped` compatible with host callables
 
-- Relaxed `flipped`'s first macro input from statically known `Fn` to `Dynamic`.
+- Relaxed `flipped`'s first macro input from source schema `Fn` (represented
+  internally as `DynFn`) to `Dynamic`.
 - The macro only reverses call syntax; JavaScript host symbols such as
   `js/setTimeout` are intentionally dynamic and cannot satisfy the native
   callable schema before host lowering.
