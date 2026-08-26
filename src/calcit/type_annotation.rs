@@ -2316,8 +2316,12 @@ impl CalcitTypeAnnotation {
               args.first().cloned().unwrap_or_else(|| DYNAMIC_TYPE.clone()),
             ));
           }
-          "Fn" if let Some(schema_form) = enum_value.extra.first() => {
-            if let Some(parsed) = Self::parse_fn_annotation_from_schema_form(schema_form, generics, strict_named_refs) {
+          "Fn" => {
+            if let Some(parsed) = enum_value
+              .extra
+              .first()
+              .and_then(|schema_form| Self::parse_fn_annotation_from_schema_form(schema_form, generics, strict_named_refs))
+            {
               return parsed;
             }
           }
@@ -2539,8 +2543,11 @@ impl CalcitTypeAnnotation {
                   args.first().cloned().unwrap_or_else(|| DYNAMIC_TYPE.clone()),
                 ));
               }
-              "Fn" if let Some(schema_form) = xs.get(2) => {
-                if let Some(parsed) = Self::parse_fn_annotation_from_schema_form(schema_form, generics, strict_named_refs) {
+              "Fn" => {
+                if let Some(parsed) = xs
+                  .get(2)
+                  .and_then(|schema_form| Self::parse_fn_annotation_from_schema_form(schema_form, generics, strict_named_refs))
+                {
                   return parsed;
                 }
               }

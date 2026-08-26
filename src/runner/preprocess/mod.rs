@@ -5929,10 +5929,11 @@ fn resolve_enum_type_for_match(
   let stripped = name.trim_start_matches('\'').trim_start_matches(':');
   let short_name = stripped.rsplit('/').next().unwrap_or(stripped);
   if let Some(local_type) = scope_types.get(stripped).or_else(|| scope_types.get(short_name)) {
-    match local_type.as_ref() {
-      CalcitTypeAnnotation::EnumDef(enum_def) => return Some(enum_def.as_ref().to_owned()),
-      _ if let Some(enum_def) = local_type.resolve_to_enum() => return Some(enum_def),
-      _ => {}
+    if let CalcitTypeAnnotation::EnumDef(enum_def) = local_type.as_ref() {
+      return Some(enum_def.as_ref().to_owned());
+    }
+    if let Some(enum_def) = local_type.resolve_to_enum() {
+      return Some(enum_def);
     }
   }
   let (target_ns, target_def) = if let Some((ns, def)) = stripped.rsplit_once('/') {
