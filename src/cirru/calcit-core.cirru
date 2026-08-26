@@ -8014,6 +8014,9 @@
                 fn (message) (%err message)
           :examples $ []
             quote $ |a .parse-cirru
+            quote $
+              char-from-code 41
+              , .parse-cirru
           :schema $ :: 'Fn
             {}
               :args $ [] 'String
@@ -8035,6 +8038,9 @@
                 fn (message) (%err message)
           :examples $ []
             quote $ |[] .parse-cirru-edn
+            quote $
+              char-from-code 41
+              , .parse-cirru-edn
           :schema $ :: 'Fn
             {}
               :args $ [] 'String
@@ -8056,6 +8062,9 @@
                 fn (message) (%err message)
           :examples $ []
             quote $ |a .parse-cirru-list
+            quote $
+              char-from-code 41
+              , .parse-cirru-list
           :schema $ :: 'Fn
             {}
               :args $ [] 'String
@@ -8078,6 +8087,7 @@
                 fn (message) (%err message)
           :examples $ []
             quote $ |1 .parse-json
+            quote $ |{ .parse-json
           :schema $ :: 'Fn
             {}
               :args $ [] 'String
