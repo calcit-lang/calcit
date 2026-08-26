@@ -705,6 +705,7 @@ mod tests {
       usage: Default::default(),
       scope: Arc::new(Default::default()),
       args: Arc::new(crate::calcit::CalcitFnArgs::Args(vec![])),
+      call_shape: crate::calcit::CalcitFnCallShape::fixed(0),
       body: vec![],
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),

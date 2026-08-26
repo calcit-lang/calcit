@@ -9515,6 +9515,7 @@ mod tests {
             usage: CalcitFnUsageMeta::default(),
             scope: Arc::new(CalcitScope::default()),
             args: Arc::new(CalcitFnArgs::Args(vec![CalcitLocal::track_sym(&Arc::from("x"))])),
+            call_shape: crate::calcit::CalcitFnCallShape::fixed(1),
             body: vec![],
             generics: Arc::new(vec![generic_name.clone()]),
             where_bounds: Arc::new(vec![]),
@@ -11360,6 +11361,7 @@ mod tests {
       usage: crate::calcit::CalcitFnUsageMeta::default(),
       scope: Arc::new(CalcitScope::default()),
       args: Arc::new(CalcitFnArgs::Args(vec![0])),
+      call_shape: crate::calcit::CalcitFnCallShape::fixed(1),
       body: vec![Calcit::Nil],
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -11414,6 +11416,7 @@ mod tests {
       usage: crate::calcit::CalcitFnUsageMeta::default(),
       scope: Arc::new(CalcitScope::default()),
       args: Arc::new(CalcitFnArgs::Args(vec![0, 1])), // two args
+      call_shape: crate::calcit::CalcitFnCallShape::fixed(2),
       body: vec![Calcit::Nil],
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -11506,6 +11509,7 @@ mod tests {
       usage: CalcitFnUsageMeta::default(),
       scope: Arc::new(CalcitScope::default()),
       args: Arc::new(CalcitFnArgs::Args(vec![0])),
+      call_shape: crate::calcit::CalcitFnCallShape::fixed(1),
       body: vec![Calcit::Nil],
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -11617,6 +11621,7 @@ mod tests {
       usage: crate::calcit::CalcitFnUsageMeta::default(),
       scope: Arc::new(CalcitScope::default()),
       args: Arc::new(CalcitFnArgs::Args(vec![0])),
+      call_shape: crate::calcit::CalcitFnCallShape::fixed(1),
       body: vec![hint_form],
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![crate::calcit::CalcitGenericBound {
@@ -12007,6 +12012,7 @@ mod tests {
       usage: crate::calcit::CalcitFnUsageMeta::default(),
       scope: Arc::new(CalcitScope::default()),
       args: Arc::new(CalcitFnArgs::Args(vec![1, 2])), // 2 parameters
+      call_shape: crate::calcit::CalcitFnCallShape::fixed(2),
       body: vec![Calcit::Nil],
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),

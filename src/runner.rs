@@ -12,7 +12,6 @@ use crate::builtins;
 use crate::calcit::{
   CORE_NS, Calcit, CalcitArgLabel, CalcitCallKind, CalcitEnumValue, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport,
   CalcitList, CalcitListView, CalcitLocal, CalcitNumberBinaryOp, CalcitProc, CalcitScope, CalcitSyntax, MethodKind, NodeLocation,
-  trailing_option_arg_count,
 };
 use crate::call_stack::{CallStackList, StackKind, using_stack};
 use crate::data::cirru;
@@ -667,14 +666,12 @@ fn option_none_value(expected_type: &crate::calcit::CalcitTypeAnnotation) -> Opt
 /// Fill only a continuous trailing run of omitted `Option<T>` parameters.
 /// A rest parameter keeps the function variadic and therefore disables this sugar.
 fn complete_trailing_option_args(values: &[Calcit], info: &CalcitFn) -> Option<Vec<Calcit>> {
-  if info.rest_type.is_some()
-    || matches!(info.args.as_ref(), CalcitFnArgs::MarkedArgs(args) if args.iter().any(|arg| matches!(arg, CalcitArgLabel::RestMark)))
-  {
+  if info.call_shape.has_rest() {
     return None;
   }
 
-  let param_len = info.args.param_len();
-  let optional_count = trailing_option_arg_count(&info.arg_types, param_len);
+  let param_len = info.call_shape.param_len();
+  let optional_count = info.call_shape.trailing_optionals();
   let required_len = param_len.saturating_sub(optional_count);
   if optional_count == 0 || values.len() < required_len || values.len() >= param_len {
     return None;
@@ -1130,14 +1127,16 @@ mod tests {
   }
 
   fn fn_info(arg_types: Vec<Arc<CalcitTypeAnnotation>>) -> CalcitFn {
-    let args = (0..arg_types.len()).map(|idx| idx as u16).collect();
+    let args = CalcitFnArgs::Args((0..arg_types.len()).map(|idx| idx as u16).collect());
+    let call_shape = crate::calcit::CalcitFnCallShape::from_parts(&args, &arg_types, false);
     CalcitFn {
       name: Arc::from("with-options"),
       def_ns: Arc::from("tests.runner"),
       def_ref: None,
       usage: CalcitFnUsageMeta::default(),
       scope: Arc::new(CalcitScope::default()),
-      args: Arc::new(CalcitFnArgs::Args(args)),
+      args: Arc::new(args),
+      call_shape,
       body: vec![],
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -1300,18 +1299,22 @@ mod tests {
 
     let mut closure_scope = CalcitScope::default();
     closure_scope.insert_mut(captured, Calcit::Number(42.0));
+    let args = CalcitFnArgs::Args(vec![x, acc]);
+    let arg_types = vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::Number)];
+    let call_shape = crate::calcit::CalcitFnCallShape::from_parts(&args, &arg_types, false);
     let info = CalcitFn {
       name: Arc::from("tail-loop"),
       def_ns: Arc::from("tests.runner"),
       def_ref: None,
       usage: CalcitFnUsageMeta::default(),
       scope: Arc::new(closure_scope),
-      args: Arc::new(CalcitFnArgs::Args(vec![x, acc])),
+      args: Arc::new(args),
+      call_shape,
       body: vec![body],
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       return_type: Arc::new(CalcitTypeAnnotation::Number),
-      arg_types: vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::Number)],
+      arg_types,
       rest_type: None,
     };
 
