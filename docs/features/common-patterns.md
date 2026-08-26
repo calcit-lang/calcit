@@ -331,9 +331,8 @@ The first argument is the value to match, the second is the default/fallback, fo
 ### Reading and Writing
 
 ```cirru.no-run
-|data.txt .read-file .and-then $ fn (content)
-  &doseq (line $ split-lines content)
-    println line
+(|data.txt .read-file) .and-then $ fn (content)
+  println content
   %ok &unit
 ```
 

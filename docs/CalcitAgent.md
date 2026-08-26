@@ -380,7 +380,7 @@ parsed .and-then
 `.and-then`，让错误类型转换保持可见：
 
 ```cirru.no-check
-path .read-file .and-then $ fn (content)
+(path .read-file) .and-then $ fn (content)
   parse-data content .and-then $ fn (data)
     save-data data
 ```
