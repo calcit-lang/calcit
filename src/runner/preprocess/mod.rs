@@ -1704,7 +1704,7 @@ fn preprocess_list_call(
   // Thunk: invalid here
 
   match head_value {
-    Some(Calcit::Macro { info, .. }) => {
+    Some(Calcit::Macro { id: macro_id, info }) => {
       let macro_name = format!("{}/{}", info.def_ns, info.name);
       runner::macro_metrics::record_expansion(&macro_name, info.signature.as_ref());
       let mut current_values: Vec<Calcit> = args.to_vec();
@@ -1728,27 +1728,53 @@ fn preprocess_list_call(
       let mut body_scope = CalcitScope::default();
       let frame_checkpoint = body_scope.frame_checkpoint();
 
+      let mut cache_lookup = Some(runner::macro_cache::lookup(
+        &macro_name,
+        &macro_id,
+        info.signature.as_ref(),
+        &current_values,
+        call_location.as_ref(),
+        file_ns,
+      ));
+      match cache_lookup.as_ref().expect("macro cache lookup") {
+        runner::macro_cache::CacheLookup::Hit(_) => runner::macro_metrics::record_cache_hit(&macro_name),
+        runner::macro_cache::CacheLookup::Miss { reason, .. } => {
+          runner::macro_metrics::record_cache_miss(&macro_name, reason, *reason != "cold-call-site")
+        }
+        runner::macro_cache::CacheLookup::Bypass(reason) => runner::macro_metrics::record_cache_bypass(&macro_name, reason),
+      }
+
       let execute_macro = || -> Result<Calcit, CalcitErr> {
+        let mut cache_miss = None;
         loop {
           // need to handle recursion
           body_scope.restore_frame(frame_checkpoint);
           runner::bind_marked_args(&mut body_scope, &info.args, &current_values, &next_stack)?;
-          let evaluator_timer =
-            runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::Evaluator);
-          let evaluate_body = || runner::evaluate_lines(&info.body.to_vec(), &body_scope, file_ns, &next_stack);
-          let code = if info.signature.is_strict() {
-            runner::macro_capability::with_macro_context(
-              Arc::from(macro_name.as_str()),
-              info.signature.capabilities.clone(),
-              call_location.clone(),
-              evaluate_body,
-            )?
-          } else {
-            // Legacy Macro schemas remain compatible, but their effects are
-            // deliberately unknown and therefore cannot be considered pure.
-            evaluate_body()?
+          let code = match cache_lookup.take() {
+            Some(runner::macro_cache::CacheLookup::Hit(code)) => code,
+            lookup => {
+              if let Some(runner::macro_cache::CacheLookup::Miss { token, .. }) = lookup {
+                cache_miss = Some(token);
+              }
+              let evaluator_timer =
+                runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::Evaluator);
+              let evaluate_body = || runner::evaluate_lines(&info.body.to_vec(), &body_scope, file_ns, &next_stack);
+              let evaluated = if info.signature.is_strict() {
+                runner::macro_capability::with_macro_context(
+                  Arc::from(macro_name.as_str()),
+                  info.signature.capabilities.clone(),
+                  call_location.clone(),
+                  evaluate_body,
+                )?
+              } else {
+                // Legacy Macro schemas remain compatible, but their effects are
+                // deliberately unknown and therefore cannot be considered pure.
+                evaluate_body()?
+              };
+              drop(evaluator_timer);
+              evaluated
+            }
           };
-          drop(evaluator_timer);
           match code {
             Calcit::Recur(ys) => {
               current_values = ys;
@@ -1775,6 +1801,9 @@ fn preprocess_list_call(
                 &next_stack,
                 call_location.clone(),
               )?;
+              if let Some(token) = cache_miss.take() {
+                runner::macro_cache::store(token, &code, file_ns);
+              }
               return Ok(processed);
             }
           }

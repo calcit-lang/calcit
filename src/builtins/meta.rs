@@ -41,6 +41,28 @@ thread_local! {
   pub(crate) static CURRENT_COMPILING_DEF: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
 
+pub(crate) fn current_compiling_key(file_ns: &str) -> Arc<str> {
+  CURRENT_COMPILING_DEF.with(|cell| match cell.borrow().as_ref() {
+    Some(definition) => Arc::from(definition.as_str()),
+    None => Arc::from(file_ns),
+  })
+}
+
+pub(crate) fn current_gensym_index(file_ns: &str) -> usize {
+  let key = current_compiling_key(file_ns);
+  NS_SYMBOL_DICT.lock().expect("read gensym counter").get(&key).copied().unwrap_or(1)
+}
+
+pub(crate) fn advance_gensym_index(file_ns: &str, delta: usize) {
+  if delta == 0 {
+    return;
+  }
+  let key = current_compiling_key(file_ns);
+  let mut counters = NS_SYMBOL_DICT.lock().expect("advance gensym counter");
+  let next = counters.get(&key).copied().unwrap_or(1).saturating_add(delta);
+  counters.insert(key, next);
+}
+
 /// Runs `f` with the current-compiling-def context set to `ns/def`.
 /// Restores the previous context on return (supports reentrant calls).
 /// Also resets the gensym counter for this def so gensym sequences are always stable.

@@ -124,11 +124,20 @@ post-preprocess times are exclusive: when a nested macro starts, its parent's
 timer pauses, so totals do not double-count recursive expansion work.
 
 The report records general-evaluator fallbacks, cache misses, miss reasons, and
-bypass reasons. Before the pure expansion cache lands, eligible strict/pure
-macros report a `cache-not-implemented` miss; legacy and effectful signatures
-report explicit bypasses rather than false invalidations. The `cacheHits` and
-`cacheInvalidations` fields are reserved for the cache implementation and stay
-at zero or empty until that implementation activates them.
+bypass reasons. Watch mode keeps a conservative raw-expansion cache for macros
+with strict signatures and no compile-time capabilities. Entries are scoped to
+stable source call sites and validate the macro identity, signature, exact input
+syntax (including locations), and gensym sequence before reuse. Legacy,
+effectful, runtime-evaluator, unstable-call-site, and non-watch calls report an
+explicit bypass reason. `cacheInvalidations` separates changed macro definitions,
+signatures, inputs, and gensym sequences; a cache hit skips macro evaluation but
+still preprocesses and type-checks the emitted expansion.
+
+The cache deliberately targets repeated preprocessing during hot reload. A
+normal once-mode build does not populate it, avoiding cold-build memory and
+cloning overhead. It does not cache post-preprocess results yet, so helper/import/
+type dependency invalidation for that higher-ceiling optimization remains future
+work.
 
 Reproducible release-mode baseline from 2026-08-25 (three warm runs, median):
 

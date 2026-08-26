@@ -56,6 +56,17 @@ fn add_reason(target: &mut BTreeMap<String, u64>, reason: &str, count: u64) {
   *target.entry(reason.to_owned()).or_default() += count;
 }
 
+fn remove_reason(target: &mut BTreeMap<String, u64>, reason: &str) -> bool {
+  let Some(count) = target.get_mut(reason) else {
+    return false;
+  };
+  *count = count.saturating_sub(1);
+  if *count == 0 {
+    target.remove(reason);
+  }
+  true
+}
+
 fn totals(metrics: &BTreeMap<String, MacroExpansionMetric>) -> MacroMetricTotals {
   let mut totals = MacroMetricTotals::default();
   for metric in metrics.values() {
@@ -92,6 +103,42 @@ fn update(name: &str, f: impl FnOnce(&mut MacroExpansionMetric)) {
 /// are bypassed with a stable reason.
 pub fn record_expansion(name: &str, signature: &MacroSignature) {
   update(name, |metric| record_expansion_metric(metric, signature));
+}
+
+pub fn record_cache_hit(name: &str) {
+  update(name, record_cache_hit_metric);
+}
+
+fn record_cache_hit_metric(metric: &mut MacroExpansionMetric) {
+  if remove_reason(&mut metric.cache_miss_reasons, "cache-not-implemented") {
+    metric.cache_misses = metric.cache_misses.saturating_sub(1);
+  }
+  metric.general_evaluator_fallbacks = metric.general_evaluator_fallbacks.saturating_sub(1);
+  metric.cache_hits += 1;
+}
+
+pub fn record_cache_miss(name: &str, reason: &'static str, invalidated: bool) {
+  update(name, |metric| record_cache_miss_metric(metric, reason, invalidated));
+}
+
+fn record_cache_miss_metric(metric: &mut MacroExpansionMetric, reason: &'static str, invalidated: bool) {
+  if remove_reason(&mut metric.cache_miss_reasons, "cache-not-implemented") {
+    add_reason(&mut metric.cache_miss_reasons, reason, 1);
+  }
+  if invalidated {
+    add_reason(&mut metric.cache_invalidations, reason, 1);
+  }
+}
+
+pub fn record_cache_bypass(name: &str, reason: &'static str) {
+  update(name, |metric| record_cache_bypass_metric(metric, reason));
+}
+
+fn record_cache_bypass_metric(metric: &mut MacroExpansionMetric, reason: &'static str) {
+  if remove_reason(&mut metric.cache_miss_reasons, "cache-not-implemented") {
+    metric.cache_misses = metric.cache_misses.saturating_sub(1);
+    add_reason(&mut metric.cache_bypasses, reason, 1);
+  }
 }
 
 fn record_expansion_metric(metric: &mut MacroExpansionMetric, signature: &MacroSignature) {
@@ -268,5 +315,28 @@ mod tests {
     assert_eq!(report["totals"]["cacheInvalidations"], serde_json::json!({}));
     assert_eq!(report["macros"]["tests/pure"]["evaluatorNanos"], 1);
     assert_eq!(report["macros"]["tests/pure"]["postPreprocessNanos"], 2);
+  }
+
+  #[test]
+  fn cache_outcomes_replace_the_placeholder_candidate_miss() {
+    let mut hit = MacroExpansionMetric::default();
+    record_expansion_metric(&mut hit, &pure_signature());
+    record_cache_hit_metric(&mut hit);
+    assert_eq!(hit.cache_hits, 1);
+    assert_eq!(hit.cache_misses, 0);
+    assert_eq!(hit.general_evaluator_fallbacks, 0);
+
+    let mut miss = MacroExpansionMetric::default();
+    record_expansion_metric(&mut miss, &pure_signature());
+    record_cache_miss_metric(&mut miss, "input-syntax", true);
+    assert_eq!(miss.cache_misses, 1);
+    assert_eq!(miss.cache_miss_reasons.get("input-syntax"), Some(&1));
+    assert_eq!(miss.cache_invalidations.get("input-syntax"), Some(&1));
+
+    let mut bypass = MacroExpansionMetric::default();
+    record_expansion_metric(&mut bypass, &pure_signature());
+    record_cache_bypass_metric(&mut bypass, "cache-disabled");
+    assert_eq!(bypass.cache_misses, 0);
+    assert_eq!(bypass.cache_bypasses.get("cache-disabled"), Some(&1));
   }
 }
