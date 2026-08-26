@@ -15,6 +15,24 @@ try {
 
   const runtimeA = await import(pathToFileURL(join(runtimeAPath, "calcit.procs.mjs")).href);
   const runtimeB = await import(pathToFileURL(join(runtimeBPath, "calcit.procs.mjs")).href);
+  const writes = [];
+  globalThis.__calcit_injections__ = {
+    read_file: (path) => `content:${path}`,
+    read_dir: (path, recursive) => [`${path}/z`, `${path}/${recursive ? "deep/a" : "a"}`],
+    write_file: (path, content) => writes.push([path, content]),
+  };
+  assert.equal(runtimeA.read_file("demo.txt"), "content:demo.txt", "read-file must return the injected host value");
+  assert.deepEqual(
+    runtimeA.listToArray(runtimeA.read_dir("demo", false)),
+    ["demo/a", "demo/z"],
+    "read-dir must validate, sort, and convert injected host paths"
+  );
+  assert.equal(runtimeA.write_file("demo.txt", "next"), undefined, "write-file must preserve its Unit contract");
+  assert.deepEqual(writes, [["demo.txt", "next"]]);
+  globalThis.__calcit_injections__.read_file = () => undefined;
+  assert.throws(() => runtimeA.read_file("bad.txt"), /expected a string result/);
+  globalThis.__calcit_injections__.read_dir = () => ["ok", 1];
+  assert.throws(() => runtimeA.read_dir("bad", false), /array of strings/);
   assert.equal(runtimeA.get_env, runtimeA._$n_get_env, "legacy get_env export should delegate to the raw proc");
   assert.equal(runtimeA.get_env("CALCIT_MISSING_ENV_FOR_RUNTIME_TEST", "fallback"), "fallback");
   assert.equal(
@@ -212,5 +230,6 @@ try {
 
   console.log("JS runtime identity check passed");
 } finally {
+  delete globalThis.__calcit_injections__;
   await rm(fixtureRoot, { recursive: true, force: true });
 }

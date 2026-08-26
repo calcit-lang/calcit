@@ -400,7 +400,8 @@ lowered to indexed access; an undeclared field is a diagnostic, not `nil`.
 ### Effects/IO
 
 - `echo`, `println` - output
-- `read-file`, `write-file` - file operations
+- `.read-file`, `.read-dir`, `.write-file` - recoverable String methods returning `Result` (native/JS; unavailable in WASM)
+- `read-file`, `read-dir`, `write-file` - raising compatibility primitives (native/JS; unavailable in WASM)
 - `get-env` - environment variables
 - `raise` - throw error
 - `quit!` - exit program

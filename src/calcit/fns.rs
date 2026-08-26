@@ -347,7 +347,7 @@ mod tests {
     assert!(marked_shape.has_rest());
 
     let typed = CalcitFnArgs::Args(vec![1]);
-    assert!(CalcitFnCallShape::from_parts(&typed, &[crate::calcit::DYNAMIC_TYPE.clone()], true).has_rest());
+    assert!(CalcitFnCallShape::from_parts(&typed, std::slice::from_ref(&*crate::calcit::DYNAMIC_TYPE), true).has_rest());
   }
 
   #[test]

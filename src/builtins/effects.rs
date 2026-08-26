@@ -220,7 +220,7 @@ pub fn write_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(path)), Some(Calcit::Str(content))) => match fs::write(&**path, &**content) {
       Ok(_) => Ok(Calcit::Unit),
-      Err(e) => CalcitErr::err_str(CalcitErrKind::Effect, format!("write-file failed, {e}")),
+      Err(e) => CalcitErr::err_str(CalcitErrKind::Effect, format!("write-file failed at {}: {e}", &**path)),
     },
     (Some(a), Some(b)) => {
       let msg = format!(

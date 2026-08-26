@@ -331,13 +331,12 @@ The first argument is the value to match, the second is the default/fallback, fo
 ### Reading and Writing
 
 ```cirru.no-run
-let
-    content $ read-file |data.txt
-    lines $ split-lines content
+(|data.txt .read-file) .and-then $ fn (content)
   println content
-  &doseq (line lines)
-    println line
+  %ok &unit
 ```
+
+The String methods `.read-file`, `.read-dir`, and `.write-file` return `Result`, so expected I/O failures stay in the typed flow. The raw `read-file`, `read-dir`, and `write-file` procedures remain raising compatibility primitives. Native and generated JavaScript support these host file effects; WASM does not yet expose them.
 
 ## Math Operations
 
