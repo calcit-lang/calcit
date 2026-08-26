@@ -72,12 +72,13 @@ loaded .and-then $ fn (value) (validate value)
 
 ```cirru.no-check
 (path .read-file) .and-then $ fn (content)
-  parse-data content .and-then $ fn (data)
+  (parse-data content) .and-then $ fn (data)
     save-data data
 ```
 
 文件路径上的 `.read-file`、`.read-dir` 与 `.write-file` 返回 `Result<...,String>`；
 底层同名函数仍保留抛错行为以兼容旧代码。预期 I/O 失败时优先使用方法形式。
+这些文件效果支持 native 与生成的 JavaScript；WASM 尚未提供宿主文件效果。
 
 `option:let` 的 body 必须继续返回 `Option`。普通组合函数仍以接收者方法
 作为公开形式，`option:*` / `result:*` 直接函数调用主要保留给 core lowering。

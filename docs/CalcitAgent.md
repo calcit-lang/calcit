@@ -381,12 +381,13 @@ parsed .and-then
 
 ```cirru.no-check
 (path .read-file) .and-then $ fn (content)
-  parse-data content .and-then $ fn (data)
+  (parse-data content) .and-then $ fn (data)
     save-data data
 ```
 
 文件路径上的 `.read-file`、`.read-dir` 与 `.write-file` 返回 `Result<...,String>`；
 底层同名函数仍保留抛错行为以兼容旧代码。预期 I/O 失败时优先使用方法形式。
+这些文件效果支持 native 与生成的 JavaScript；WASM 尚未提供宿主文件效果。
 
 `option:let` 使用普通 `let` 的 binding pair 结构。每个右侧和最终 body 都必须保持
 Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。

@@ -7683,17 +7683,20 @@
                   assert= true $ result:ok? (|1 .parse-json)
                   assert= true $ result:err? (|{ .parse-json)
                   assert-type (|1 .parse-json) (:: 'Result 'Dynamic 'String)
-        |try-read-dir $ %{} 'CodeEntry (:doc "|List directory paths as Result<List<String>,String>; failures are returned instead of raised. Prefer the .read-dir String method in user code. Native is supported; JavaScript requires a host read_dir injection, and WASM file effects are not yet supported.")
+        |try-read-dir $ %{} 'CodeEntry (:doc "|List directory paths as Result<List<String>,String>; failures are returned instead of raised. Prefer the .read-dir String method in user code. Omit the trailing Option<Bool> for non-recursive listing, or pass %some true/%some false explicitly. Native is supported; JavaScript requires a host read_dir injection, and WASM file effects are not yet supported.")
           :code $ quote
             defn try-read-dir (path recursive?)
               try
-                %ok $ read-dir path recursive?
+                %ok $ tag-match recursive?
+                  (:some recursive?) (read-dir path recursive?)
+                  (:none) (read-dir path)
                 fn (message) (%err message)
           :examples $ []
-            quote $ |/calcit-result-contract-does-not-exist .read-dir false
+            quote $ |src .read-dir
+            quote $ |src .read-dir (%some true)
           :schema $ :: 'Fn
             {}
-              :args $ [] 'String 'Bool
+              :args $ [] 'String (:: 'Option 'Bool)
               :return $ :: 'Result (:: 'List 'String) 'String
         |try-read-file $ %{} 'CodeEntry (:doc "|Read a UTF-8 file as Result<String,String>; failures are returned instead of raised. Prefer the .read-file String method in user code. Native and JavaScript hosts with file injections are supported; WASM file effects are not yet supported.")
           :code $ quote
@@ -7712,12 +7715,19 @@
               :code $ quote
                 do
                   assert= true $ result:ok? (|Cargo.toml .read-file)
-                  assert= true $ result:ok? (|src .read-dir false)
+                  assert= true $ result:ok? (|src .read-dir)
+                  assert= true $ result:ok?
+                    |src .read-dir $ %some false
                   assert= true $ result:err? (|/calcit-result-contract-does-not-exist/file .read-file)
-                  assert= true $ result:err? (|/calcit-result-contract-does-not-exist .read-dir false)
+                  assert= true $ result:err? (|/calcit-result-contract-does-not-exist .read-dir)
+                  assert= true $ result:err?
+                    |/calcit-result-contract-does-not-exist .read-dir $ %some false
                   assert= true $ result:err? (|/calcit-result-contract-does-not-exist/file .write-file |content)
                   assert-type (|/calcit-result-contract-does-not-exist/file .read-file) (:: 'Result 'String 'String)
-                  assert-type (|/calcit-result-contract-does-not-exist .read-dir false)
+                  assert-type (|/calcit-result-contract-does-not-exist .read-dir)
+                    :: 'Result (:: 'List 'String) 'String
+                  assert-type
+                    |/calcit-result-contract-does-not-exist .read-dir $ %some false
                     :: 'Result (:: 'List 'String) 'String
                   assert-type (|/calcit-result-contract-does-not-exist/file .write-file |content) (:: 'Result 'Unit 'String)
               :tags $ #{} :unit

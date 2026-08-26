@@ -336,7 +336,7 @@ The first argument is the value to match, the second is the default/fallback, fo
   %ok &unit
 ```
 
-The String methods `.read-file`, `.read-dir`, and `.write-file` return `Result`, so expected I/O failures stay in the typed flow. The raw `read-file`, `read-dir`, and `write-file` procedures remain raising compatibility primitives.
+The String methods `.read-file`, `.read-dir`, and `.write-file` return `Result`, so expected I/O failures stay in the typed flow. The raw `read-file`, `read-dir`, and `write-file` procedures remain raising compatibility primitives. Native and generated JavaScript support these host file effects; WASM does not yet expose them.
 
 ## Math Operations
 
