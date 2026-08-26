@@ -3955,6 +3955,40 @@ mod tests {
   }
 
   #[test]
+  fn bundled_core_defmacros_require_phase_aware_contracts() {
+    let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
+    let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
+    let snapshot = load_snapshot_data(&edn_data, "src/cirru/calcit-core.cirru").expect("Failed to parse snapshot");
+    let mut macro_count = 0;
+    let mut legacy_macros = vec![];
+
+    for (ns_name, file) in &snapshot.files {
+      for (def_name, entry) in &file.defs {
+        if !code_declares_macro(&entry.code) {
+          continue;
+        }
+        macro_count += 1;
+        let CalcitTypeAnnotation::Macro(signature) = entry.schema.as_ref() else {
+          panic!("{ns_name}/{def_name} should load as MacroSignature");
+        };
+        if !signature.is_strict() {
+          legacy_macros.push(format!("{ns_name}/{def_name}"));
+        }
+      }
+    }
+
+    legacy_macros.sort();
+    assert!(
+      legacy_macros.is_empty(),
+      "bundled macros must declare phase-aware contracts instead of legacy whole-Dynamic schemas: {legacy_macros:?}"
+    );
+    assert_eq!(
+      macro_count, 86,
+      "update the audited bundled macro inventory when core macros change"
+    );
+  }
+
+  #[test]
   fn test_load_snapshot_preserves_selected_real_world_schemas() {
     let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
     let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
@@ -3988,6 +4022,21 @@ mod tests {
         );
       }
     }
+
+    let CalcitTypeAnnotation::Macro(js_object) = core_file.defs["js-object"].schema.as_ref() else {
+      panic!("js-object should load as MacroSignature");
+    };
+    assert!(js_object.is_strict());
+    assert!(matches!(js_object.rest_input, Some(crate::calcit::MacroSyntaxType::SyntaxList)));
+    assert!(matches!(
+      js_object.expansion,
+      crate::calcit::MacroExpansionType::Expr(ref inner)
+        if matches!(inner.as_ref(), CalcitTypeAnnotation::JsObject)
+    ));
+    assert!(
+      js_object.features.iter().any(|feature| feature.ref_str() == "js-ffi"),
+      "js-object should retain its js-ffi backend feature"
+    );
 
     for def_name in ["let", "fn", "and", "cond", "do"] {
       let entry = core_file.defs.get(def_name).unwrap_or_else(|| panic!("missing def: {def_name}"));

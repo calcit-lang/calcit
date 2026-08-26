@@ -68,6 +68,21 @@ calcit query schema calcit.core/let
 calcit query context calcit.core/let --format json
 ```
 
+The bundled core snapshot has an additional inventory gate: every `defmacro`
+in `calcit.core`, `calcit.internal`, and `calcit.test` must load as a strict
+phase-aware signature. Adding a new bundled macro with an omitted or legacy
+whole-`Dynamic` schema fails the Rust test suite. This complements runtime
+metrics, which only report macros reached by the selected entry.
+
+Some strict contracts still contain intentional `Dynamic` positions. Broad
+collection helpers such as `first`, `nth`, and `get` accept several runtime
+shapes that cannot yet be expressed as one static union or trait contract.
+Their convenience macros therefore describe argument count and expression
+phase precisely while retaining `Expr<Dynamic>` for the open payload. More
+specific boundaries should remain concrete: for example, `get-env-or` accepts
+and returns `String`, `js-object` expands to `JsObject`, and anonymous enum
+sugar expands to `Enum`.
+
 ## Compile-time capabilities
 
 A strict macro is pure by default. Effects performed while its body is being

@@ -2612,7 +2612,10 @@
                     &call-spread recur ([] x0 base) & $ &list:rest xs
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
         |/ $ %{} 'CodeEntry (:doc |dividing)
           :code $ quote
@@ -2651,7 +2654,11 @@
             quote $ assert= (:: :point 1 2) (: :point 1 2)
             quote $ assert= (:: :name |calcit) (: |name |calcit)
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Enum
+              :required $ [] 'Syntax
+              :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         |:: $ %{} 'CodeEntry (:doc "|Construct an anonymous enum value. The implicit enum definition is `_`.")
           :code $ quote &runtime-implementation
@@ -2664,8 +2671,10 @@
           :examples $ []
             quote $ assert-type (;nil) (quote Nil)
           :schema $ :: 'Macro
-            {} (:return 'Nil)
-              :args $ []
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Nil
+              :required $ []
           :tags $ #{} :macro
         |< $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -2693,7 +2702,10 @@
                 ~@ $ reverse xs
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([])
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ []
           :tags $ #{} :macro
         |<= $ %{} 'CodeEntry (:doc "|Less than or equal comparison, supports multiple arguments")
           :code $ quote
@@ -2993,7 +3005,10 @@
                 quasiquote $ [] ~@items
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([])
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr (:: 'List 'List)
+              :required $ []
           :tags $ #{} :macro
         |\ $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -4972,7 +4987,10 @@
             quote $ assert= 0
               first-or ([]) 0
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
           :tests $ []
             %{} 'TestEntry (:name |returns-first-item-or-fallback)
@@ -5287,7 +5305,10 @@
           :examples $ []
             quote $ assert= |fallback (get-env-or |__CALCIT_TEST_MISSING_ENV_83B125E9__ |fallback)
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'String
+              :required $ [] (:: 'Expr 'String) (:: 'Expr 'String)
           :tags $ #{} :macro
           :tests $ []
             %{} 'TestEntry (:name |returns-fallback-for-missing-env)
@@ -5346,7 +5367,10 @@
                 [] :a :missing
                 , |missing
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'List) (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
           :tests $ []
             %{} 'TestEntry (:name |returns-nested-value-or-fallback)
@@ -5375,7 +5399,10 @@
                 {} $ :a 1
                 , :missing 0
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
           :tests $ []
             %{} 'TestEntry (:name |returns-value-or-fallback)
@@ -5777,9 +5804,11 @@
                 quasiquote $ &js-object ~@ys
           :examples $ []
           :schema $ :: 'Macro
-            {}
-              :args $ [] 'Dynamic
+            {} (:rest 'SyntaxList)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'JsObject
               :features $ #{} :js-ffi
+              :required $ []
           :tags $ #{} :interop :macro
         |js-present? $ %{} 'CodeEntry (:doc "|Return true when a JsNullish<T> boundary contains a non-null JavaScript value.")
           :code $ quote
@@ -5926,7 +5955,10 @@
             quote $ assert= 3
               last-or ([] 1 2 3) 0
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
           :tests $ []
             %{} 'TestEntry (:name |returns-last-item-or-fallback)
@@ -6542,7 +6574,10 @@
             quote $ assert= 0
               nth-or ([] 1 2 3) 9 0
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Number) (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
           :tests $ []
             %{} 'TestEntry (:name |returns-indexed-item-or-fallback)
@@ -6617,7 +6652,7 @@
               if (&list:empty? pairs)
                 quasiquote $ do (~@ body)
                 &let
-                  pair $ &list:nth pairs 0
+                  pair $ assert-type (&list:nth pairs 0) 'List
                   if
                     not $ &= 2 (&list:count pair)
                     raise $ str-spaced "|option:let expects binding pair, got:" pair
@@ -6640,7 +6675,10 @@
                   y $ %some 3
                 %some $ + x y
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr (:: 'Option 'Dynamic)
+              :required $ [] 'SyntaxList
           :tags $ #{} :experimental :macro
           :tests $ []
             %{} 'TestEntry (:name |short-circuits-none)
@@ -7002,7 +7040,10 @@
             defmacro record-match (& _args) (raise "|`record-match` was removed; use `struct-match`")
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([])
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ []
           :tags $ #{} :deprecated :macro
         |record-struct $ %{} 'CodeEntry (:doc "|Deprecated legacy function. Replace `record-struct` with `struct-definition`, which returns Option<StructDef>.")
           :code $ quote
@@ -7018,7 +7059,10 @@
             defmacro record-with (& _args) (raise "|`record-with` was removed; use `struct-with`")
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([])
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ []
           :tags $ #{} :deprecated :macro
         |record? $ %{} 'CodeEntry (:doc "|Deprecated legacy predicate. Replace `record?` with `struct?` for values or `struct-def?` for definitions.")
           :code $ quote
@@ -7175,7 +7219,7 @@
               if (&list:empty? pairs)
                 quasiquote $ do (~@ body)
                 &let
-                  pair $ &list:nth pairs 0
+                  pair $ assert-type (&list:nth pairs 0) 'List
                   if
                     not $ &= 2 (&list:count pair)
                     raise $ str-spaced "|result:let expects binding pair, got:" pair
@@ -7198,7 +7242,10 @@
                   y $ %ok 3
                 %ok $ + x y
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr (:: 'Result 'Dynamic 'Dynamic)
+              :required $ [] 'SyntaxList
           :tags $ #{} :experimental :macro
           :tests $ []
             %{} 'TestEntry (:name |preserves-first-error)
@@ -7871,7 +7918,10 @@
               quasiquote $ ->% ~@xs
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([])
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ []
           :tags $ #{} :alias :macro
         |thread-first $ %{} 'CodeEntry (:doc "|a alias for `->`")
           :code $ quote
@@ -7880,7 +7930,10 @@
               quasiquote $ -> ~@xs
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([])
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ []
           :tags $ #{} :alias :macro
         |thread-last $ %{} 'CodeEntry (:doc "|a alias for `->>`")
           :code $ quote
@@ -7889,7 +7942,10 @@
               quasiquote $ ->> ~@xs
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([])
+            {} (:rest 'Syntax)
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
+              :required $ []
           :tags $ #{} :alias :macro
         |thread-step? $ %{} 'CodeEntry (:doc "|Check whether a value is a valid thread-macro step form")
           :code $ quote
@@ -8202,7 +8258,11 @@
                   ~ x
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {}
+              :capabilities $ #{} :platform-read
+              :expansion $ :: 'Expr 'T
+              :generics $ [] 'T
+              :required $ [] (:: 'Expr 'T)
           :tags $ #{} :macro
         |w-log $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -8352,7 +8412,11 @@
             defmacro wo-js-log (x) x
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {}
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'T
+              :generics $ [] 'T
+              :required $ [] (:: 'Expr 'T)
           :tags $ #{} :macro
         |wo-log $ %{} 'CodeEntry (:doc |)
           :code $ quote
