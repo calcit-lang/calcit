@@ -297,7 +297,10 @@ fn run_cli() -> Result<(), String> {
   builtins::effects::init_effects_states();
 
   #[cfg(not(target_arch = "wasm32"))]
-  injection::inject_platform_apis();
+  {
+    injection::init_async_runtime()?;
+    injection::inject_platform_apis();
+  }
 
   // Handle standalone commands that don't need full program loading
   match &cli_args.subcommand {
@@ -590,6 +593,9 @@ fn run_cli() -> Result<(), String> {
     let args = cli_args.clone();
     std::thread::spawn(move || watch_files(entries, args, assets_watch, configured_run_mode));
   }
+  #[cfg(not(target_arch = "wasm32"))]
+  injection::exit_when_async_cleared()?;
+  #[cfg(target_arch = "wasm32")]
   runner::track::exit_when_cleared();
   Ok(())
 }

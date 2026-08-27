@@ -30,6 +30,38 @@ pub const ASYNC_TASK_KNOWN_FLAGS: u32 =
 pub const ASYNC_EVENT_FLAG_COALESCED: u32 = 1 << 0;
 pub const ASYNC_EVENT_KNOWN_FLAGS: u32 = ASYNC_EVENT_FLAG_COALESCED;
 
+pub type FfiAsyncHostEnqueue = unsafe extern "C" fn(
+  context: u64,
+  task_handle: u64,
+  event_kind: u32,
+  response_handle: u64,
+  payload_ptr: *const u8,
+  payload_len: usize,
+) -> i32;
+
+/// Native host functions that an async dylib may copy and call from producer
+/// threads. The integer context is opaque and avoids exposing a Rust object
+/// pointer or allocator across the ABI.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct FfiAsyncHostV1 {
+  pub protocol_version: u32,
+  pub struct_size: u32,
+  pub context: u64,
+  pub enqueue: Option<FfiAsyncHostEnqueue>,
+}
+
+impl FfiAsyncHostV1 {
+  pub fn new(context: u64, enqueue: FfiAsyncHostEnqueue) -> Self {
+    Self {
+      protocol_version: ASYNC_PROTOCOL_VERSION,
+      struct_size: std::mem::size_of::<Self>() as u32,
+      context,
+      enqueue: Some(enqueue),
+    }
+  }
+}
+
 /// Stable status values returned by C-safe async host functions. Keep these
 /// as integer constants rather than an FFI enum so foreign callers cannot
 /// construct an invalid Rust discriminant.
@@ -543,6 +575,13 @@ impl FfiBuffer {
 type FfiBufferVersion = unsafe extern "C" fn() -> u32;
 type FfiBufferFree = unsafe extern "C" fn(FfiBuffer);
 type FfiBufferCall = unsafe extern "C" fn(*const u8, usize, *mut FfiBuffer) -> i32;
+type FfiAsyncVersion = unsafe extern "C" fn() -> u32;
+pub type FfiAsyncStart = unsafe extern "C" fn(
+  request_ptr: *const u8,
+  request_len: usize,
+  task: *const FfiAsyncTaskDescriptor,
+  host: *const FfiAsyncHostV1,
+) -> i32;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum FfiBuildCompatibility {
@@ -554,10 +593,40 @@ fn buffer_method_symbol(method: &str) -> String {
   format!("{method}{BUFFER_METHOD_SUFFIX}")
 }
 
-fn encode_buffer_request(args: Vec<Edn>) -> Result<Vec<u8>, String> {
+pub fn async_method_symbol(method: &str) -> String {
+  format!("{method}{ASYNC_METHOD_SUFFIX}")
+}
+
+pub fn encode_buffer_request(args: Vec<Edn>) -> Result<Vec<u8>, String> {
   cirru_edn::format(&Edn::List(EdnListView(args)), true)
     .map(String::into_bytes)
     .map_err(|error| format!("failed to encode FFI buffer request: {error}"))
+}
+
+/// Probe a C-safe async method without touching the guarded Rust ABI. A
+/// missing protocol or per-method symbol returns `None` for transitional
+/// fallback; an advertised but incompatible version is a hard error.
+pub fn lookup_async_start<'lib>(
+  lib: &'lib libloading::Library,
+  lib_name: &str,
+  method: &str,
+) -> Result<Option<libloading::Symbol<'lib, FfiAsyncStart>>, String> {
+  let version: libloading::Symbol<FfiAsyncVersion> = match unsafe { lib.get(ASYNC_PROTOCOL_VERSION_SYMBOL) } {
+    Ok(version) => version,
+    Err(_) => return Ok(None),
+  };
+  let current_version = unsafe { version() };
+  if current_version != ASYNC_PROTOCOL_VERSION {
+    return Err(format!(
+      "FFI async protocol mismatch in `{lib_name}`: dylib={current_version}, host={ASYNC_PROTOCOL_VERSION}"
+    ));
+  }
+
+  let symbol = async_method_symbol(method);
+  match unsafe { lib.get(symbol.as_bytes()) } {
+    Ok(start) => Ok(Some(start)),
+    Err(_) => Ok(None),
+  }
 }
 
 fn decode_buffer_response(status: i32, output: Vec<u8>, lib_name: &str, symbol: &str) -> Result<Edn, String> {
@@ -683,8 +752,9 @@ mod tests {
   use super::{
     ASYNC_EVENT_FLAG_COALESCED, ASYNC_PROTOCOL_VERSION, ASYNC_TASK_FLAG_COALESCE_ALLOWED, ASYNC_TASK_FLAG_REQUIRES_RESPONSE,
     ASYNC_TASK_FLAG_SERIAL_EVENTS, BUFFER_PROTOCOL_VERSION, FfiAsyncEventDescriptor, FfiAsyncEventKind, FfiAsyncHandle,
-    FfiAsyncHandleError, FfiAsyncHandleKind, FfiAsyncHandleRegistry, FfiAsyncLifecycle, FfiAsyncTaskDescriptor, FfiBuildCompatibility,
-    async_status, buffer_method_symbol, decode_buffer_response, encode_buffer_request, validate_build_id,
+    FfiAsyncHandleError, FfiAsyncHandleKind, FfiAsyncHandleRegistry, FfiAsyncHostV1, FfiAsyncLifecycle, FfiAsyncTaskDescriptor,
+    FfiBuildCompatibility, async_method_symbol, async_status, buffer_method_symbol, decode_buffer_response, encode_buffer_request,
+    validate_build_id,
   };
   use cirru_edn::Edn;
 
@@ -692,6 +762,27 @@ mod tests {
   fn buffer_method_names_are_versioned_without_changing_source_calls() {
     assert_eq!(buffer_method_symbol("run_wat"), "run_wat_calcit_ffi_v1");
     assert_eq!(BUFFER_PROTOCOL_VERSION, 1);
+  }
+
+  unsafe extern "C" fn test_enqueue(
+    _context: u64,
+    _task_handle: u64,
+    _event_kind: u32,
+    _response_handle: u64,
+    _payload_ptr: *const u8,
+    _payload_len: usize,
+  ) -> i32 {
+    async_status::OK
+  }
+
+  #[test]
+  fn async_host_table_and_method_names_are_c_stable() {
+    let host = FfiAsyncHostV1::new(42, test_enqueue);
+    assert_eq!(async_method_symbol("watch"), "watch_calcit_ffi_async_v1");
+    assert_eq!(host.protocol_version, ASYNC_PROTOCOL_VERSION);
+    assert_eq!(host.struct_size as usize, std::mem::size_of::<FfiAsyncHostV1>());
+    assert_eq!(host.context, 42);
+    assert!(host.enqueue.is_some());
   }
 
   #[test]

@@ -6,10 +6,10 @@ more than one callback: it must represent timers, file watchers, HTTP work,
 WebSocket connections, and server resources.
 
 This document describes protocol version 1 as it is implemented in stages.
-The current implementation provides the handle types, lifecycle registry, and
-bounded host event queue; existing `&call-dylib-edn-fn` and
-`&blocking-dylib-edn-fn` calls still use the build-identity-guarded Rust ABI
-until the C host function table lands.
+The current implementation provides the handle types, lifecycle registry,
+bounded host event queue, and the native callback-v1 entry point used by
+`&call-dylib-edn-fn`. `&blocking-dylib-edn-fn` still uses the
+build-identity-guarded Rust ABI until the blocking protocol lands.
 
 ## Shared task model
 
@@ -97,6 +97,70 @@ converted to a Rust enum, avoiding invalid-discriminant undefined behavior.
 Business payloads will continue to use UTF-8 Cirru EDN buffers, with allocator
 ownership and matching free functions explicit in both directions.
 
+## Native callback ABI v1
+
+Before using the legacy Rust callback ABI, `&call-dylib-edn-fn` probes the
+following C symbols:
+
+```c
+uint32_t calcit_ffi_async_version(void); /* returns 1 */
+
+int32_t <method>_calcit_ffi_async_v1(
+  const uint8_t *request_ptr,
+  size_t request_len,
+  const CalcitFfiAsyncTaskV1 *task,
+  const CalcitFfiAsyncHostV1 *host
+);
+```
+
+The request is a UTF-8 Cirru EDN list and is readable only for the duration of
+the start call. The task descriptor contains the host-issued handle and must
+be copied if the module needs it after returning. The host table has process
+lifetime, although modules should copy only the fields covered by
+`struct_size` so later hosts can append functions compatibly.
+
+Callback v1 currently exposes one host operation:
+
+```c
+int32_t enqueue(
+  uint64_t context,
+  uint64_t task_handle,
+  uint32_t event_kind,
+  uint64_t response_handle,
+  const uint8_t *payload_ptr,
+  size_t payload_len
+);
+```
+
+The module may call `enqueue` from producer threads. Calcit validates the
+context, handles, kind, pointer, length, and queue capacity, copies the bytes
+before returning, and invokes the Calcit callback only while the CLI host
+thread drains the queue. The producer retains ownership of its payload and may
+reuse or free it after `enqueue` returns. A null pointer is valid only when the
+length is zero. No panic, Rust allocator, Rust callback, or executor object
+crosses the boundary.
+
+Payload rules are explicit:
+
+- `Emit` (`1`) carries a Cirru EDN list whose elements become callback
+  arguments;
+- `Complete` (`2`) carries exactly the explicit unit value `&unit` (surrounding
+  whitespace is allowed); it never uses null/nil as success;
+- `Fail` (`3`) carries one Cirru EDN diagnostic value and is reported to the
+  console with task and sequence metadata.
+
+The start function returns `0` after it has accepted responsibility for the
+task. A nonzero result makes the host purge startup events and reclaim the
+handle. Host calls return the stable `async_status` integer codes, including
+invalid/stale handle, closing/finished task, host closing, queue full, invalid
+payload, and internal error.
+
+If a dylib does not export `calcit_ffi_async_version`, or does not export the
+versioned symbol for this particular method, Calcit falls back to the guarded
+Rust callback ABI. If it advertises an async protocol version other than 1,
+Calcit fails before invoking either ABI. This per-method rule lets maintained
+modules migrate incrementally without hiding an actual version mismatch.
+
 ## WASM compatibility boundary
 
 WASM will not reuse C pointers or native function pointers. It can still reuse
@@ -116,15 +180,14 @@ present the same Calcit-facing behavior.
 
 ## Rollout
 
-The remaining implementation order is:
+The remaining implementation order after native callback v1 is:
 
-1. native C host function table and per-method callback v1 lookup;
-2. response handles, server backpressure, cancellation, timeout, and shutdown
+1. response handles, server backpressure, cancellation, timeout, and shutdown
    fixtures;
-3. blocking calls reusing the same registry and envelopes;
-4. migration and release of `calcit-fetch`, `calcit-http`, `calcit-wss`, and
+2. blocking calls reusing the same registry and envelopes;
+3. migration and release of `calcit-fetch`, `calcit-http`, `calcit-wss`, and
    `calcit.std`;
-5. a `calcit_wasmtime` adapter prototype after the event envelope is stable;
-6. removal of the guarded Rust ABI fallback under issue #474.
+4. a `calcit_wasmtime` adapter prototype after the event envelope is stable;
+5. removal of the guarded Rust ABI fallback under issue #474.
 
 See issue #482 for the full acceptance matrix and module rollout status.

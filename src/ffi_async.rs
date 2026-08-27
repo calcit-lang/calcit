@@ -34,6 +34,7 @@ pub struct FfiAsyncEnqueueOutcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FfiAsyncQueueError {
   InvalidCapacity,
+  NullPayload,
   PayloadTooLarge { actual: usize, limit: usize },
   QueueClosed,
   QueueFull { capacity: usize },
@@ -45,7 +46,7 @@ pub enum FfiAsyncQueueError {
 impl FfiAsyncQueueError {
   pub fn status_code(&self) -> i32 {
     match self {
-      Self::PayloadTooLarge { .. } => async_status::INVALID_PAYLOAD,
+      Self::NullPayload | Self::PayloadTooLarge { .. } => async_status::INVALID_PAYLOAD,
       Self::QueueClosed => async_status::HOST_CLOSING,
       Self::QueueFull { .. } => async_status::QUEUE_FULL,
       Self::Handle(error) => error.status_code(),
@@ -58,6 +59,7 @@ impl fmt::Display for FfiAsyncQueueError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       Self::InvalidCapacity => f.write_str("async FFI event queue capacity must be greater than zero"),
+      Self::NullPayload => f.write_str("async FFI event payload pointer is null for a non-empty payload"),
       Self::PayloadTooLarge { actual, limit } => {
         write!(f, "async FFI event payload has {actual} bytes, exceeding the {limit}-byte limit")
       }
@@ -135,6 +137,34 @@ pub struct FfiAsyncDrainReport {
   pub callback_failures: Vec<FfiAsyncDispatchFailure>,
   pub lifecycle_failures: Vec<FfiAsyncLifecycleFailure>,
   pub queue_failures: Vec<FfiAsyncQueueFailure>,
+  pub finished: Vec<FfiAsyncEventDescriptor>,
+}
+
+/// Validate and copy a foreign payload before it enters the host queue. A null
+/// pointer is accepted only for an empty payload. As with every C ABI, a
+/// non-null pointer must remain readable for the declared length during this
+/// call; the host cannot validate arbitrary dangling addresses.
+///
+/// # Safety
+///
+/// For a non-zero `payload_len`, `payload_ptr` must point to at least that many
+/// initialized, readable bytes for the duration of this call.
+pub unsafe fn copy_async_payload(payload_ptr: *const u8, payload_len: usize) -> Result<Vec<u8>, FfiAsyncQueueError> {
+  if payload_len > MAX_ASYNC_EVENT_PAYLOAD_BYTES {
+    return Err(FfiAsyncQueueError::PayloadTooLarge {
+      actual: payload_len,
+      limit: MAX_ASYNC_EVENT_PAYLOAD_BYTES,
+    });
+  }
+  if payload_len == 0 {
+    return Ok(vec![]);
+  }
+  if payload_ptr.is_null() {
+    return Err(FfiAsyncQueueError::NullPayload);
+  }
+  // SAFETY: the caller upholds readability for `payload_len`; bounds and null
+  // were checked above, and the bytes are copied before returning across FFI.
+  Ok(unsafe { std::slice::from_raw_parts(payload_ptr, payload_len) }.to_vec())
 }
 
 struct FfiAsyncQueueState {
@@ -183,6 +213,12 @@ impl FfiAsyncEventQueue {
     queue.closed = true;
     self.ready.notify_all();
     Ok(())
+  }
+
+  /// Remove queued work for a task that failed during startup or was otherwise
+  /// reclaimed before normal dispatch.
+  pub fn discard_handle_events(&self, handle: FfiAsyncHandle) -> Result<usize, FfiAsyncQueueError> {
+    self.purge_handle(handle)
   }
 
   /// Enqueue an event without blocking a foreign producer. When the queue is
@@ -356,6 +392,8 @@ impl FfiAsyncEventQueue {
               descriptor: event.descriptor,
               error,
             });
+          } else if kind.is_terminal() {
+            report.finished.push(event.descriptor);
           }
         }
         Err(message) => {
@@ -365,11 +403,14 @@ impl FfiAsyncEventQueue {
           });
           report.discarded += 1;
           failed_handles.insert(handle);
-          if let Err(error) = registry.finish(handle) {
-            report.lifecycle_failures.push(FfiAsyncLifecycleFailure {
-              descriptor: event.descriptor,
-              error,
-            });
+          match registry.finish(handle) {
+            Ok(()) => report.finished.push(event.descriptor),
+            Err(error) => {
+              report.lifecycle_failures.push(FfiAsyncLifecycleFailure {
+                descriptor: event.descriptor,
+                error,
+              });
+            }
           }
           match self.purge_handle(handle) {
             Ok(purged) => report.purged += purged,
@@ -477,6 +518,8 @@ mod tests {
 
     let report = queue.drain(&registry, 1, |_| Ok(())).expect("drain completion");
     assert_eq!(report.delivered, 1);
+    assert_eq!(report.finished.len(), 1);
+    assert_eq!(report.finished[0].task_handle, handle.raw());
     assert_eq!(
       registry.state(handle).expect("finished task").lifecycle,
       FfiAsyncLifecycle::Finished
@@ -564,6 +607,7 @@ mod tests {
     assert_eq!(report.discarded, 1);
     assert_eq!(report.purged, 1);
     assert_eq!(report.dequeued, report.delivered + report.discarded);
+    assert_eq!(report.finished.len(), 1);
     assert_eq!(registry.state(handle).expect("failed task").lifecycle, FfiAsyncLifecycle::Finished);
     assert_eq!(queue.len(), Ok(1));
   }
@@ -673,5 +717,25 @@ mod tests {
       queue.enqueue(&registry, handle, None, FfiAsyncEventKind::Complete, b"&unit".to_vec()),
       Err(FfiAsyncQueueError::QueueClosed)
     );
+  }
+
+  #[test]
+  fn foreign_payload_copy_checks_null_size_and_ownership() {
+    assert_eq!(unsafe { copy_async_payload(std::ptr::null(), 0) }, Ok(vec![]));
+    assert_eq!(
+      unsafe { copy_async_payload(std::ptr::null(), 1) },
+      Err(FfiAsyncQueueError::NullPayload)
+    );
+    assert_eq!(
+      unsafe { copy_async_payload(std::ptr::null(), MAX_ASYNC_EVENT_PAYLOAD_BYTES + 1) },
+      Err(FfiAsyncQueueError::PayloadTooLarge {
+        actual: MAX_ASYNC_EVENT_PAYLOAD_BYTES + 1,
+        limit: MAX_ASYNC_EVENT_PAYLOAD_BYTES,
+      })
+    );
+
+    let source = b"([] 1 2)".to_vec();
+    let copied = unsafe { copy_async_payload(source.as_ptr(), source.len()) }.expect("copy payload");
+    assert_eq!(copied, source);
   }
 }
