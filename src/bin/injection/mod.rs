@@ -19,7 +19,7 @@ use calcit::{
   ffi_abi::{
     ASYNC_RESPONSE_REJECT, ASYNC_RESPONSE_RESOLVE, ASYNC_TASK_FLAG_REQUIRES_RESPONSE, ASYNC_TASK_FLAG_SERIAL_EVENTS, FfiAsyncEventKind,
     FfiAsyncHandle, FfiAsyncHandleKind, FfiAsyncHandleRegistry, FfiAsyncHostV1, FfiAsyncResponseResolve, FfiAsyncTaskCancel,
-    FfiAsyncTaskDescriptor, async_status,
+    FfiAsyncTaskDescriptor, FfiBlockingHostV1, FfiBuffer, async_status,
   },
   ffi_async::{FfiAsyncDrainReport, FfiAsyncEventQueue, copy_async_payload},
   runner::track,
@@ -51,6 +51,14 @@ struct NativeAsyncTask {
   lib_name: String,
   method: String,
   control: Arc<Mutex<Option<NativeAsyncTaskControl>>>,
+  blocking: Option<NativeBlockingTask>,
+}
+
+#[derive(Clone)]
+struct NativeBlockingTask {
+  owner_thread: thread::ThreadId,
+  buffers: Arc<Mutex<HashMap<usize, Box<[u8]>>>>,
+  failures: Arc<Mutex<Vec<String>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -261,6 +269,225 @@ fn async_host_table(task_handle: FfiAsyncHandle) -> FfiAsyncHostV1 {
     native_async_configure_task,
     native_async_open_response,
   )
+}
+
+fn blocking_host_table(task_handle: FfiAsyncHandle) -> FfiBlockingHostV1 {
+  FfiBlockingHostV1::new(
+    task_handle.raw(),
+    native_blocking_invoke,
+    native_blocking_finish,
+    native_blocking_free_buffer,
+  )
+}
+
+fn resolve_native_blocking_task(
+  runtime: &NativeAsyncRuntime,
+  context: u64,
+  task_handle: u64,
+) -> Result<(FfiAsyncHandle, NativeAsyncTask, NativeBlockingTask), i32> {
+  let handle = FfiAsyncHandle::from_raw(task_handle);
+  let task = match runtime.registry.clone_value(handle) {
+    Ok(NativeAsyncResource::Task(task)) => task,
+    Ok(NativeAsyncResource::Response(_)) => return Err(async_status::INVALID_HANDLE),
+    Err(error) => return Err(error.status_code()),
+  };
+  let Some(blocking) = task.blocking.clone() else {
+    return Err(async_status::INVALID_HANDLE);
+  };
+  if context != task_handle {
+    record_blocking_failure(&blocking, "blocking FFI host context does not own this task");
+    return Err(async_status::INVALID_HANDLE);
+  }
+  if blocking.owner_thread != thread::current().id() {
+    record_blocking_failure(&blocking, "blocking FFI callback was invoked from a foreign thread");
+    return Err(async_status::WRONG_THREAD);
+  }
+  Ok((handle, task, blocking))
+}
+
+fn record_blocking_failure(blocking: &NativeBlockingTask, message: impl Into<String>) {
+  if let Ok(mut failures) = blocking.failures.lock() {
+    failures.push(message.into());
+  }
+}
+
+fn store_blocking_host_buffer(blocking: &NativeBlockingTask, bytes: Vec<u8>, out: *mut FfiBuffer) -> Result<(), i32> {
+  if out.is_null() || bytes.is_empty() {
+    return Err(async_status::INVALID_PAYLOAD);
+  }
+  let mut bytes = bytes.into_boxed_slice();
+  let ptr = bytes.as_mut_ptr();
+  let len = bytes.len();
+  let key = ptr as usize;
+  let mut buffers = blocking.buffers.lock().map_err(|_| async_status::INTERNAL_ERROR)?;
+  if buffers.insert(key, bytes).is_some() {
+    return Err(async_status::INTERNAL_ERROR);
+  }
+  // SAFETY: the C caller provides a writable output descriptor for this
+  // synchronous host call. Ownership of the bytes remains in `buffers`.
+  unsafe { out.write(FfiBuffer { ptr, len, cap: len }) };
+  Ok(())
+}
+
+fn free_blocking_host_buffer(blocking: &NativeBlockingTask, buffer: FfiBuffer) -> Result<(), i32> {
+  if buffer.ptr.is_null() || buffer.len == 0 || buffer.cap != buffer.len {
+    return Err(async_status::INVALID_PAYLOAD);
+  }
+  let key = buffer.ptr as usize;
+  let mut buffers = blocking.buffers.lock().map_err(|_| async_status::INTERNAL_ERROR)?;
+  let Some(bytes) = buffers.remove(&key) else {
+    return Err(async_status::INVALID_PAYLOAD);
+  };
+  if bytes.len() != buffer.len {
+    buffers.insert(key, bytes);
+    return Err(async_status::INVALID_PAYLOAD);
+  }
+  Ok(())
+}
+
+unsafe extern "C" fn native_blocking_invoke(
+  context: u64,
+  task_handle: u64,
+  payload_ptr: *const u8,
+  payload_len: usize,
+  out: *mut FfiBuffer,
+) -> i32 {
+  std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let runtime = match native_async_runtime() {
+      Ok(runtime) => runtime,
+      Err(_) => return async_status::HOST_CLOSING,
+    };
+    // SAFETY: forwarded from the C entry point's documented pointer contract.
+    unsafe { invoke_native_blocking(runtime, context, task_handle, payload_ptr, payload_len, out) }
+  }))
+  .unwrap_or(async_status::INTERNAL_ERROR)
+}
+
+unsafe fn invoke_native_blocking(
+  runtime: &NativeAsyncRuntime,
+  context: u64,
+  task_handle: u64,
+  payload_ptr: *const u8,
+  payload_len: usize,
+  out: *mut FfiBuffer,
+) -> i32 {
+  if out.is_null() {
+    return async_status::INVALID_PAYLOAD;
+  }
+  // SAFETY: validated non-null above; initialize before any fallible work so
+  // a rejected call never exposes uninitialized host memory.
+  unsafe { out.write(FfiBuffer::empty()) };
+  let (handle, task, blocking) = match resolve_native_blocking_task(runtime, context, task_handle) {
+    Ok(task) => task,
+    Err(status) => return status,
+  };
+  // SAFETY: the caller promises a readable payload for this synchronous call.
+  let payload = match unsafe { copy_async_payload(payload_ptr, payload_len) } {
+    Ok(payload) => payload,
+    Err(error) => {
+      record_blocking_failure(&blocking, error.to_string());
+      return error.status_code();
+    }
+  };
+  let args = match decode_async_emit(&payload) {
+    Ok(args) => args,
+    Err(error) => {
+      record_blocking_failure(&blocking, error);
+      return async_status::INVALID_PAYLOAD;
+    }
+  };
+  let sequence = match runtime.registry.next_event_sequence(handle) {
+    Ok(sequence) => sequence,
+    Err(error) => {
+      record_blocking_failure(&blocking, error.to_string());
+      return error.status_code();
+    }
+  };
+  let Calcit::Fn { info, .. } = &task.callback else {
+    return async_status::INVALID_HANDLE;
+  };
+  trace_ffi_event(
+    "blocking-callback-in-v1",
+    format!(
+      "lib={} symbol={} task={} sequence={} argc={}",
+      task.lib_name,
+      task.method,
+      handle.raw(),
+      sequence,
+      args.len()
+    ),
+  );
+  match runner::run_fn(&args, info, &task.stack) {
+    Ok(ret) => match encode_async_value(&ret) {
+      Ok(output) => match store_blocking_host_buffer(&blocking, output, out) {
+        Ok(()) => async_status::OK,
+        Err(status) => status,
+      },
+      Err(error) => {
+        let message = format!("failed to encode blocking callback result: {}", error.msg);
+        record_blocking_failure(&blocking, message.clone());
+        match store_blocking_host_buffer(&blocking, message.into_bytes(), out) {
+          Ok(()) => async_status::CALLBACK_ERROR,
+          Err(status) => status,
+        }
+      }
+    },
+    Err(error) => {
+      let _ = display_stack(
+        &format!("[Error] blocking FFI callback failed: {}", error.msg),
+        &error.stack,
+        error.location.as_ref(),
+      );
+      let message = format!("Calcit callback failed: {}", error.msg);
+      record_blocking_failure(&blocking, message.clone());
+      match store_blocking_host_buffer(&blocking, message.into_bytes(), out) {
+        Ok(()) => async_status::CALLBACK_ERROR,
+        Err(status) => status,
+      }
+    }
+  }
+}
+
+unsafe extern "C" fn native_blocking_finish(context: u64, task_handle: u64) -> i32 {
+  std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let runtime = match native_async_runtime() {
+      Ok(runtime) => runtime,
+      Err(_) => return async_status::HOST_CLOSING,
+    };
+    let (handle, _, blocking) = match resolve_native_blocking_task(runtime, context, task_handle) {
+      Ok(task) => task,
+      Err(status) => return status,
+    };
+    match runtime.registry.finish(handle) {
+      Ok(()) => async_status::OK,
+      Err(error) => {
+        record_blocking_failure(&blocking, error.to_string());
+        error.status_code()
+      }
+    }
+  }))
+  .unwrap_or(async_status::INTERNAL_ERROR)
+}
+
+unsafe extern "C" fn native_blocking_free_buffer(context: u64, task_handle: u64, buffer: FfiBuffer) -> i32 {
+  std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let runtime = match native_async_runtime() {
+      Ok(runtime) => runtime,
+      Err(_) => return async_status::HOST_CLOSING,
+    };
+    let (_, _, blocking) = match resolve_native_blocking_task(runtime, context, task_handle) {
+      Ok(task) => task,
+      Err(status) => return status,
+    };
+    match free_blocking_host_buffer(&blocking, buffer) {
+      Ok(()) => async_status::OK,
+      Err(status) => {
+        record_blocking_failure(&blocking, format!("blocking FFI rejected host buffer free with status {status}"));
+        status
+      }
+    }
+  }))
+  .unwrap_or(async_status::INTERNAL_ERROR)
 }
 
 unsafe extern "C" fn native_async_enqueue(
@@ -1265,6 +1492,7 @@ fn try_start_async_callback_v1(
     lib_name: lib_name.to_owned(),
     method: method.to_owned(),
     control: Arc::new(Mutex::new(None)),
+    blocking: None,
   };
   let handle = runtime
     .registry
@@ -1497,8 +1725,124 @@ pub fn call_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<
   Ok(Calcit::Unit)
 }
 
-/// pass callback function to FFI function, blocking the thread,
-/// used by calcit-paint, where main thread is required
+fn release_blocking_task(runtime: &NativeAsyncRuntime, handle: FfiAsyncHandle) -> Result<(usize, Vec<String>), String> {
+  match runtime.registry.state(handle).map_err(|error| error.to_string())?.lifecycle {
+    calcit::ffi_abi::FfiAsyncLifecycle::Active | calcit::ffi_abi::FfiAsyncLifecycle::Closing => {
+      runtime.registry.finish(handle).map_err(|error| error.to_string())?;
+    }
+    calcit::ffi_abi::FfiAsyncLifecycle::Finished => {}
+  }
+  let NativeAsyncResource::Task(task) = runtime.registry.release(handle).map_err(|error| error.to_string())? else {
+    return Err("blocking FFI handle released a response resource".to_owned());
+  };
+  let (leaked, failures) = match task.blocking {
+    Some(blocking) => {
+      let leaked = blocking
+        .buffers
+        .lock()
+        .map_err(|_| "blocking FFI host buffer lock is poisoned".to_owned())?
+        .len();
+      let failures = blocking
+        .failures
+        .lock()
+        .map_err(|_| "blocking FFI failure log lock is poisoned".to_owned())?
+        .clone();
+      (leaked, failures)
+    }
+    None => return Err("blocking FFI handle lost its blocking state".to_owned()),
+  };
+  track::track_task_release();
+  trace_ffi_event(
+    "blocking-task-release-v1",
+    format!(
+      "task={} leaked_buffers={leaked} pending={}",
+      handle.raw(),
+      track::count_pending_tasks()
+    ),
+  );
+  Ok((leaked, failures))
+}
+
+fn try_call_blocking_v1(
+  lib: &libloading::Library,
+  lib_name: &str,
+  method: &str,
+  args: Vec<Edn>,
+  callback: Calcit,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
+  let runtime = native_async_runtime().map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
+  let task = NativeAsyncTask {
+    callback,
+    stack: Arc::new(call_stack.to_owned()),
+    lib_name: lib_name.to_owned(),
+    method: method.to_owned(),
+    control: Arc::new(Mutex::new(None)),
+    blocking: Some(NativeBlockingTask {
+      owner_thread: thread::current().id(),
+      buffers: Arc::new(Mutex::new(HashMap::new())),
+      failures: Arc::new(Mutex::new(vec![])),
+    }),
+  };
+  let handle = runtime
+    .registry
+    .register_with_flags(
+      FfiAsyncHandleKind::OneShot,
+      ASYNC_TASK_FLAG_SERIAL_EVENTS,
+      NativeAsyncResource::Task(task),
+    )
+    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error.to_string()))?;
+  let descriptor = FfiAsyncTaskDescriptor::new(handle, FfiAsyncHandleKind::OneShot, ASYNC_TASK_FLAG_SERIAL_EVENTS);
+  let host = blocking_host_table(handle);
+  track::track_task_add();
+  trace_ffi_event(
+    "blocking-call-v1",
+    format!(
+      "lib={lib_name} symbol={} task={} argc={} pending={}",
+      calcit::ffi_abi::blocking_method_symbol(method),
+      handle.raw(),
+      args.len(),
+      track::count_pending_tasks()
+    ),
+  );
+
+  let outcome = calcit::ffi_abi::try_call_blocking(lib, lib_name, method, args, &descriptor, &host);
+  let (leaked, mut failures) = release_blocking_task(runtime, handle)
+    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, format!("blocking task cleanup failed: {error}")))?;
+  let value = match outcome {
+    Ok(value) => value,
+    Err(error) => {
+      failures.insert(0, error);
+      None
+    }
+  };
+  if leaked > 0 {
+    failures.push(format!("leaked {leaked} host callback buffer(s)"));
+  }
+  if !failures.is_empty() {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Unexpected,
+      format!("FFI blocking method `{method}` in `{lib_name}` failed: {}", failures.join("; ")),
+    ));
+  }
+  match value {
+    None => Ok(None),
+    Some(ret) => {
+      trace_ffi_event(
+        "blocking-return-v1",
+        format!(
+          "lib={lib_name} symbol={} ret={}",
+          calcit::ffi_abi::blocking_method_symbol(method),
+          format_edn_args_for_trace(std::slice::from_ref(&ret))
+        ),
+      );
+      Ok(Some(Calcit::Nil))
+    }
+  }
+}
+
+/// Pass a callback to a C-safe FFI method while the dylib owns the host
+/// thread. The guarded Rust ABI remains as a per-method migration fallback.
 pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {
     return CalcitErr::err_str(
@@ -1540,9 +1884,6 @@ pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Res
     );
   }
 
-  track::track_task_add();
-  trace_ffi_event("task-add", format!("kind=blocking pending={}", track::count_pending_tasks()));
-
   trace_ffi_event(
     "blocking-call",
     format!(
@@ -1553,8 +1894,24 @@ pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Res
     ),
   );
 
-  let lib = unsafe { libloading::Library::new(&lib_name) }
-    .map_err(|e| CalcitErr::use_str(CalcitErrKind::Unexpected, format!("failed to load dylib `{lib_name}`: {e}")))?;
+  let lib = load_dylib(&lib_name)?;
+  let has_blocking_v1 = calcit::ffi_abi::has_blocking_method(&lib, &lib_name, &method)
+    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
+  if has_blocking_v1 {
+    return try_call_blocking_v1(&lib, &lib_name, &method, ys.clone(), callback.clone(), call_stack)?.ok_or_else(|| {
+      CalcitErr::use_str(
+        CalcitErrKind::Unexpected,
+        format!("FFI blocking method `{method}` in `{lib_name}` disappeared after protocol lookup"),
+      )
+    });
+  }
+  trace_ffi_event(
+    "blocking-fallback",
+    format!(
+      "lib={lib_name} symbol={} fallback={method}",
+      calcit::ffi_abi::blocking_method_symbol(&method)
+    ),
+  );
   ensure_abi_compatible(&lib, &lib_name)?;
   let copied_stack = Arc::new(call_stack.to_owned());
   let callback_method = method.clone();
@@ -1566,7 +1923,11 @@ pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Res
       format!("failed to load FFI symbol `{method}` in `{lib_name}`: {e}"),
     )
   })?;
-  match func(
+  let released = Arc::new(AtomicBool::new(false));
+  let finish_released = Arc::clone(&released);
+  track::track_task_add();
+  trace_ffi_event("task-add", format!("kind=blocking-legacy pending={}", track::count_pending_tasks()));
+  let result = func(
     ys.to_owned(),
     Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
       trace_ffi_event(
@@ -1604,8 +1965,20 @@ pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Res
         Err(format!("expected last argument to be callback fn, got: {callback}"))
       }
     }),
-    Arc::new(track::track_task_release),
-  ) {
+    Arc::new(move || {
+      if !finish_released.swap(true, Ordering::AcqRel) {
+        track::track_task_release();
+      }
+    }),
+  );
+  if !released.swap(true, Ordering::AcqRel) {
+    track::track_task_release();
+    trace_ffi_event(
+      "task-release",
+      format!("kind=blocking-legacy implicit=true pending={}", track::count_pending_tasks()),
+    );
+  }
+  match result {
     Ok(ret) => {
       trace_ffi_event(
         "blocking-return",
@@ -1618,8 +1991,6 @@ pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Res
     }
     Err(e) => {
       trace_ffi_event("blocking-error", format!("lib={lib_name} symbol={method} {e}"));
-      // TODO for more accurate tracking, need to place tracker inside foreign function
-      // track::track_task_release();
       let _ = display_stack(&format!("failed to call request: {e}"), call_stack, None);
       return CalcitErr::err_str(CalcitErrKind::Unexpected, e);
     }
@@ -1682,6 +2053,7 @@ mod async_callback_tests {
       lib_name: "fixture".to_owned(),
       method: "server".to_owned(),
       control: Arc::new(Mutex::new(None)),
+      blocking: None,
     })
   }
 
@@ -1690,6 +2062,50 @@ mod async_callback_tests {
       registry: FfiAsyncHandleRegistry::new(),
       queue: FfiAsyncEventQueue::new(capacity).expect("create host queue"),
       responses: Mutex::new(NativeAsyncResponseIndex::default()),
+    }
+  }
+
+  fn blocking_test_task_with_callback(callback: Calcit) -> (NativeAsyncResource, NativeBlockingTask) {
+    let blocking = NativeBlockingTask {
+      owner_thread: thread::current().id(),
+      buffers: Arc::new(Mutex::new(HashMap::new())),
+      failures: Arc::new(Mutex::new(vec![])),
+    };
+    (
+      NativeAsyncResource::Task(NativeAsyncTask {
+        callback,
+        stack: Arc::new(CallStackList::default()),
+        lib_name: "fixture".to_owned(),
+        method: "blocking".to_owned(),
+        control: Arc::new(Mutex::new(None)),
+        blocking: Some(blocking.clone()),
+      }),
+      blocking,
+    )
+  }
+
+  fn blocking_test_task() -> (NativeAsyncResource, NativeBlockingTask) {
+    blocking_test_task_with_callback(Calcit::Nil)
+  }
+
+  fn constant_callback(value: &str) -> Calcit {
+    Calcit::Fn {
+      id: Arc::from("blocking-fixture-callback"),
+      info: Arc::new(calcit::calcit::CalcitFn {
+        name: Arc::from("blocking-fixture-callback"),
+        def_ns: Arc::from("tests.ffi"),
+        def_ref: None,
+        usage: calcit::calcit::CalcitFnUsageMeta::default(),
+        scope: Arc::new(calcit::calcit::CalcitScope::default()),
+        args: Arc::new(calcit::calcit::CalcitFnArgs::Args(vec![])),
+        call_shape: calcit::calcit::CalcitFnCallShape::fixed(0),
+        body: vec![Calcit::Str(Arc::from(value))],
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        return_type: calcit::calcit::DYNAMIC_TYPE.clone(),
+        arg_types: vec![],
+        rest_type: None,
+      }),
     }
   }
 
@@ -1711,6 +2127,108 @@ mod async_callback_tests {
       .insert(handle, response)
       .expect("index response");
     handle
+  }
+
+  #[test]
+  fn blocking_host_buffers_require_exact_metadata_and_free_once() {
+    let (_, blocking) = blocking_test_task();
+    let mut output = FfiBuffer::empty();
+    store_blocking_host_buffer(&blocking, b"|callback-result".to_vec(), &mut output).expect("store host buffer");
+    assert_eq!(blocking.buffers.lock().expect("host buffers").len(), 1);
+
+    let forged = FfiBuffer {
+      ptr: output.ptr,
+      len: output.len - 1,
+      cap: output.cap,
+    };
+    assert_eq!(free_blocking_host_buffer(&blocking, forged), Err(async_status::INVALID_PAYLOAD));
+    assert_eq!(blocking.buffers.lock().expect("host buffers").len(), 1);
+    assert_eq!(free_blocking_host_buffer(&blocking, output), Ok(()));
+    assert_eq!(free_blocking_host_buffer(&blocking, output), Err(async_status::INVALID_PAYLOAD));
+  }
+
+  #[test]
+  fn blocking_callback_runs_inline_and_returns_host_owned_edn() {
+    let runtime = test_runtime(4);
+    let (task, blocking) = blocking_test_task_with_callback(constant_callback("ok"));
+    let handle = runtime
+      .registry
+      .register_with_flags(FfiAsyncHandleKind::OneShot, ASYNC_TASK_FLAG_SERIAL_EVENTS, task)
+      .expect("register blocking task");
+    let payload = b"[]";
+    let mut output = FfiBuffer::empty();
+    assert_eq!(
+      unsafe { invoke_native_blocking(&runtime, handle.raw(), handle.raw(), payload.as_ptr(), payload.len(), &mut output) },
+      async_status::OK
+    );
+    let output_bytes = unsafe { std::slice::from_raw_parts(output.ptr.cast_const(), output.len) };
+    let output_edn = cirru_edn::parse(std::str::from_utf8(output_bytes).expect("callback UTF-8")).expect("callback EDN");
+    assert_eq!(output_edn, Edn::str("ok"));
+    assert_eq!(free_blocking_host_buffer(&blocking, output), Ok(()));
+    assert_eq!(runtime.registry.state(handle).expect("blocking state").next_sequence, 2);
+
+    assert_eq!(runtime.registry.finish(handle), Ok(()));
+    let mut late_output = FfiBuffer::empty();
+    assert_eq!(
+      unsafe {
+        invoke_native_blocking(
+          &runtime,
+          handle.raw(),
+          handle.raw(),
+          payload.as_ptr(),
+          payload.len(),
+          &mut late_output,
+        )
+      },
+      async_status::HANDLE_FINISHED
+    );
+    assert!(late_output.ptr.is_null());
+    assert!(matches!(runtime.registry.release(handle), Ok(NativeAsyncResource::Task(_))));
+  }
+
+  #[test]
+  fn blocking_task_rejects_callback_dispatch_from_a_foreign_thread() {
+    let runtime = Arc::new(test_runtime(4));
+    let (task, blocking) = blocking_test_task();
+    let handle = runtime
+      .registry
+      .register_with_flags(FfiAsyncHandleKind::OneShot, ASYNC_TASK_FLAG_SERIAL_EVENTS, task)
+      .expect("register blocking task");
+    assert!(resolve_native_blocking_task(&runtime, handle.raw(), handle.raw()).is_ok());
+
+    let foreign_runtime = Arc::clone(&runtime);
+    let status = thread::spawn(move || {
+      resolve_native_blocking_task(&foreign_runtime, handle.raw(), handle.raw())
+        .err()
+        .expect("foreign thread must fail")
+    })
+    .join()
+    .expect("foreign thread");
+    assert_eq!(status, async_status::WRONG_THREAD);
+    assert_eq!(
+      blocking.failures.lock().expect("blocking failures").as_slice(),
+      ["blocking FFI callback was invoked from a foreign thread"]
+    );
+  }
+
+  #[test]
+  fn blocking_explicit_finish_is_exactly_once_and_prevents_late_callbacks() {
+    let runtime = test_runtime(4);
+    let (task, _) = blocking_test_task();
+    let handle = runtime
+      .registry
+      .register_with_flags(FfiAsyncHandleKind::OneShot, ASYNC_TASK_FLAG_SERIAL_EVENTS, task)
+      .expect("register blocking task");
+    assert_eq!(runtime.registry.finish(handle), Ok(()));
+    assert_eq!(
+      runtime.registry.finish(handle),
+      Err(calcit::ffi_abi::FfiAsyncHandleError::HandleFinished)
+    );
+    assert_eq!(
+      runtime.registry.next_event_sequence(handle),
+      Err(calcit::ffi_abi::FfiAsyncHandleError::HandleFinished)
+    );
+    assert!(matches!(runtime.registry.release(handle), Ok(NativeAsyncResource::Task(_))));
   }
 
   #[test]
