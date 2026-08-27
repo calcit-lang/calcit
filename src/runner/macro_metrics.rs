@@ -158,9 +158,7 @@ fn record_cache_bypass_metric(metric: &mut MacroExpansionMetric, reason: &'stati
 fn record_expansion_metric(metric: &mut MacroExpansionMetric, signature: &MacroSignature) {
   metric.expansions += 1;
   metric.general_evaluator_fallbacks += 1;
-  if !signature.is_strict() {
-    add_reason(&mut metric.cache_bypasses, "legacy-signature", 1);
-  } else if !signature.capabilities.is_empty() {
+  if !signature.capabilities.is_empty() {
     add_reason(&mut metric.cache_bypasses, "declared-capabilities", 1);
   } else {
     metric.cache_misses += 1;
@@ -289,7 +287,7 @@ impl Drop for ReportOnDrop {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{MacroCapability, MacroExpansionType, MacroSignatureCompatibility};
+  use crate::calcit::{MacroCapability, MacroExpansionType};
   use std::collections::HashSet;
   use std::sync::Arc;
 
@@ -303,7 +301,6 @@ mod tests {
       expansion: MacroExpansionType::Dynamic,
       capabilities: Arc::new(HashSet::new()),
       features: Arc::new(HashSet::new()),
-      compatibility: MacroSignatureCompatibility::Strict,
     }
   }
 
@@ -314,17 +311,14 @@ mod tests {
     record_expansion_metric(pure, &pure_signature());
     pure.evaluator_nanos = 1;
     pure.post_preprocess_nanos = 2;
-    let legacy = MacroSignature::legacy_dynamic();
-    record_expansion_metric(metrics.entry("tests/legacy".to_owned()).or_default(), &legacy);
     let mut effectful = pure_signature();
     effectful.capabilities = Arc::new(HashSet::from([MacroCapability::EnvRead]));
     record_expansion_metric(metrics.entry("tests/effectful".to_owned()).or_default(), &effectful);
     let report: serde_json::Value = serde_json::from_str(&report_json_for(metrics).expect("metrics JSON")).expect("valid JSON");
-    assert_eq!(report["totals"]["expansions"], 3);
-    assert_eq!(report["totals"]["generalEvaluatorFallbacks"], 3);
+    assert_eq!(report["totals"]["expansions"], 2);
+    assert_eq!(report["totals"]["generalEvaluatorFallbacks"], 2);
     assert_eq!(report["totals"]["cacheMisses"], 1);
     assert_eq!(report["totals"]["cacheMissReasons"]["cache-not-implemented"], 1);
-    assert_eq!(report["totals"]["cacheBypasses"]["legacy-signature"], 1);
     assert_eq!(report["totals"]["cacheBypasses"]["declared-capabilities"], 1);
     assert_eq!(report["totals"]["cacheInvalidations"], serde_json::json!({}));
     assert_eq!(report["macros"]["tests/pure"]["evaluatorNanos"], 1);

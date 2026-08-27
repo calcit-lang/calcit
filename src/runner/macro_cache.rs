@@ -88,9 +88,6 @@ pub fn lookup(
   if !is_enabled() {
     return CacheLookup::Bypass("cache-disabled");
   }
-  if !signature.is_strict() {
-    return CacheLookup::Bypass("legacy-signature");
-  }
   if !signature.capabilities.is_empty() {
     return CacheLookup::Bypass("declared-capabilities");
   }
@@ -182,7 +179,7 @@ pub fn store(token: CacheMiss, output: &Calcit, evaluator_gensym_end: usize) {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{MacroExpansionType, MacroSignatureCompatibility};
+  use crate::calcit::MacroExpansionType;
   use std::collections::HashSet;
 
   static TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
@@ -197,7 +194,6 @@ mod tests {
       expansion: MacroExpansionType::Dynamic,
       capabilities: Arc::new(HashSet::new()),
       features: Arc::new(HashSet::new()),
-      compatibility: MacroSignatureCompatibility::Strict,
     }
   }
 

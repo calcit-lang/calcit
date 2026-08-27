@@ -415,16 +415,12 @@ pub fn call_expr(
           let _timer = macro_metrics::PhaseTimer::start(&macro_name, macro_metrics::MacroMetricPhase::Evaluator);
           evaluate_lines(info.body.as_ref().as_slice(), &body_scope, &info.def_ns, &next_stack)
         };
-        let code = if info.signature.is_strict() {
-          macro_capability::with_macro_context(
-            Arc::from(format!("{}/{}", info.def_ns, info.name)),
-            info.signature.capabilities.clone(),
-            xs.first().and_then(Calcit::get_location),
-            evaluate_body,
-          )?
-        } else {
-          evaluate_body()?
-        };
+        let code = macro_capability::with_macro_context(
+          Arc::from(format!("{}/{}", info.def_ns, info.name)),
+          info.signature.capabilities.clone(),
+          xs.first().and_then(Calcit::get_location),
+          evaluate_body,
+        )?;
         match code {
           Calcit::Recur(ys) => {
             current_values = ys;
@@ -1023,7 +1019,7 @@ mod tests {
   use super::*;
   use crate::calcit::{
     CalcitFnUsageMeta, CalcitMacro, CalcitStructDef, CalcitStructValue, CalcitSymbolInfo, CalcitTypeAnnotation, MacroCapability,
-    MacroExpansionType, MacroSignature, MacroSignatureCompatibility,
+    MacroExpansionType, MacroSignature,
   };
   use std::collections::HashSet;
 
@@ -1044,7 +1040,6 @@ mod tests {
           expansion: MacroExpansionType::Expr(Arc::new(CalcitTypeAnnotation::String)),
           capabilities: Arc::new(capabilities),
           features: Arc::new(HashSet::new()),
-          compatibility: MacroSignatureCompatibility::Strict,
         }),
       }),
     }

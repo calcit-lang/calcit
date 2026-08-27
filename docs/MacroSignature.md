@@ -32,25 +32,13 @@ whether the violation belongs to input syntax or the expansion result and keep
 the macro call stack and source location.
 
 Existing `(:: 'Macro ({} (:args ...) (:return ...)))` schemas remain readable
-and serialize without data loss. They become an explicitly legacy, non-strict
-`MacroSignature`: their runtime-looking types are compatibility metadata, not
-syntax contracts. An omitted or `Dynamic` legacy macro schema likewise does not
-claim full phase coverage.
-
-Inventory compatibility contracts before migrating or releasing a module:
-
-```bash
-calcit analyze check-types --deps --format json
-```
-
-Each compatibility definition emits `W_LEGACY_MACRO_SCHEMA`. JSON schema v2
-records whether the loaded Snapshot supplied an old `Fn` contract or a whole
-`Dynamic` contract, preserves the old signature as evidence, and reports the
-exact Snapshot path. `summary.legacy_macro_schemas` is suitable for a reviewed
-baseline or a zero target. Always include `--deps` when checking an application:
-an installed module release may still contain legacy contracts after that
-module's main branch has migrated. The analyzer is intentionally diagnostic;
-it never invents phase-aware contracts from runtime-looking parameter types.
+and serialize without data loss. Current Calcit no longer accepts such runtime
+`Fn` schemas or an omitted/whole-`Dynamic` macro schema: Snapshot loading fails
+with the exact definition path. Migrate a module using final-compatible Calcit
+0.13.51, then publish its strict contract before upgrading consumers. Always
+include `--deps` when checking an application, since installed releases are what
+the loader resolves. The analyzer never invents phase-aware contracts from
+runtime-looking parameter types.
 
 ## Migrating structural macros
 
