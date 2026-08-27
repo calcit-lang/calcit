@@ -198,6 +198,23 @@ and invalidates it after the attempt. Unresolved requests are rejected on
 timeout or when their owning task finishes; a queued request that times out is
 skipped without terminating the Server.
 
+## C-safe blocking callback ABI
+
+`&blocking-dylib-edn-fn` probes `<method>_calcit_ffi_blocking_v1`. This entry
+point reuses the async protocol version, generation task handle, lifecycle,
+sequence, and Cirru EDN payload rules, but invokes the Calcit callback directly
+on the host thread instead of waiting for the asynchronous queue to drain.
+Foreign-thread invocation is rejected.
+
+Callback results are allocated and tracked by the host and must be returned
+through the blocking host table's `free_buffer`; the method's final output is
+allocated by the module and released through `calcit_ffi_buffer_free`.
+`finish` may be called explicitly once, otherwise method return finishes the
+task implicitly. Missing per-method blocking symbols retain the guarded legacy
+fallback during migration. See
+[Asynchronous FFI task protocol](ffi-async-protocol.md#native-blocking-abi-v1)
+for the C signatures and ownership rules.
+
 ### Call in Calcit
 
 Rust code is compiled into dylibs, and then Calcit could call with:

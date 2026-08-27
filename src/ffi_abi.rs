@@ -21,6 +21,7 @@ const MAX_BUFFER_BYTES: usize = 256 * 1024 * 1024;
 pub const ASYNC_PROTOCOL_VERSION: u32 = 1;
 pub const ASYNC_PROTOCOL_VERSION_SYMBOL: &[u8] = b"calcit_ffi_async_version";
 pub const ASYNC_METHOD_SUFFIX: &str = "_calcit_ffi_async_v1";
+pub const BLOCKING_METHOD_SUFFIX: &str = "_calcit_ffi_blocking_v1";
 
 pub const ASYNC_TASK_FLAG_SERIAL_EVENTS: u32 = 1 << 0;
 pub const ASYNC_TASK_FLAG_COALESCE_ALLOWED: u32 = 1 << 1;
@@ -58,6 +59,10 @@ pub type FfiAsyncHostOpenResponse = unsafe extern "C" fn(
   resolve: Option<FfiAsyncResponseResolve>,
   out_handle: *mut u64,
 ) -> i32;
+pub type FfiBlockingHostInvoke =
+  unsafe extern "C" fn(context: u64, task_handle: u64, payload_ptr: *const u8, payload_len: usize, out: *mut FfiBuffer) -> i32;
+pub type FfiBlockingHostFinish = unsafe extern "C" fn(context: u64, task_handle: u64) -> i32;
+pub type FfiBlockingHostFreeBuffer = unsafe extern "C" fn(context: u64, task_handle: u64, buffer: FfiBuffer) -> i32;
 
 pub const ASYNC_RESPONSE_RESOLVE: u32 = 1;
 pub const ASYNC_RESPONSE_REJECT: u32 = 2;
@@ -94,6 +99,39 @@ impl FfiAsyncHostV1 {
   }
 }
 
+/// Host operations available while a C-safe blocking method owns the CLI
+/// thread. `invoke` executes the Calcit callback synchronously and is accepted
+/// only from the thread that registered the task. Callback output remains
+/// host-owned until the module calls `free_buffer`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct FfiBlockingHostV1 {
+  pub protocol_version: u32,
+  pub struct_size: u32,
+  pub context: u64,
+  pub invoke: Option<FfiBlockingHostInvoke>,
+  pub finish: Option<FfiBlockingHostFinish>,
+  pub free_buffer: Option<FfiBlockingHostFreeBuffer>,
+}
+
+impl FfiBlockingHostV1 {
+  pub fn new(
+    context: u64,
+    invoke: FfiBlockingHostInvoke,
+    finish: FfiBlockingHostFinish,
+    free_buffer: FfiBlockingHostFreeBuffer,
+  ) -> Self {
+    Self {
+      protocol_version: ASYNC_PROTOCOL_VERSION,
+      struct_size: std::mem::size_of::<Self>() as u32,
+      context,
+      invoke: Some(invoke),
+      finish: Some(finish),
+      free_buffer: Some(free_buffer),
+    }
+  }
+}
+
 /// Stable status values returned by C-safe async host functions. Keep these
 /// as integer constants rather than an FFI enum so foreign callers cannot
 /// construct an invalid Rust discriminant.
@@ -108,6 +146,8 @@ pub mod async_status {
   pub const QUEUE_FULL: i32 = 7;
   pub const INVALID_PAYLOAD: i32 = 8;
   pub const INTERNAL_ERROR: i32 = 9;
+  pub const CALLBACK_ERROR: i32 = 10;
+  pub const WRONG_THREAD: i32 = 11;
 }
 
 /// Semantic role of a host-owned handle. Values are fixed for C and future
@@ -687,7 +727,7 @@ pub struct FfiBuffer {
 }
 
 impl FfiBuffer {
-  fn empty() -> Self {
+  pub fn empty() -> Self {
     Self {
       ptr: ptr::null_mut(),
       len: 0,
@@ -706,6 +746,13 @@ pub type FfiAsyncStart = unsafe extern "C" fn(
   task: *const FfiAsyncTaskDescriptor,
   host: *const FfiAsyncHostV1,
 ) -> i32;
+pub type FfiBlockingCall = unsafe extern "C" fn(
+  request_ptr: *const u8,
+  request_len: usize,
+  task: *const FfiAsyncTaskDescriptor,
+  host: *const FfiBlockingHostV1,
+  output: *mut FfiBuffer,
+) -> i32;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum FfiBuildCompatibility {
@@ -719,6 +766,34 @@ fn buffer_method_symbol(method: &str) -> String {
 
 pub fn async_method_symbol(method: &str) -> String {
   format!("{method}{ASYNC_METHOD_SUFFIX}")
+}
+
+pub fn blocking_method_symbol(method: &str) -> String {
+  format!("{method}{BLOCKING_METHOD_SUFFIX}")
+}
+
+/// Check whether one blocking method has completed the C-safe migration before
+/// allocating host task state. An advertised incompatible protocol or a
+/// migrated method without its matching module-side free function is a hard
+/// error; an absent version/method retains transitional fallback.
+pub fn has_blocking_method(lib: &libloading::Library, lib_name: &str, method: &str) -> Result<bool, String> {
+  let version: libloading::Symbol<FfiAsyncVersion> = match unsafe { lib.get(ASYNC_PROTOCOL_VERSION_SYMBOL) } {
+    Ok(version) => version,
+    Err(_) => return Ok(false),
+  };
+  let current_version = unsafe { version() };
+  if current_version != ASYNC_PROTOCOL_VERSION {
+    return Err(format!(
+      "FFI async protocol mismatch in `{lib_name}`: dylib={current_version}, host={ASYNC_PROTOCOL_VERSION}"
+    ));
+  }
+  let symbol = blocking_method_symbol(method);
+  if unsafe { lib.get::<FfiBlockingCall>(symbol.as_bytes()) }.is_err() {
+    return Ok(false);
+  }
+  unsafe { lib.get::<FfiBufferFree>(BUFFER_FREE_SYMBOL) }
+    .map_err(|error| format!("FFI blocking method `{symbol}` in `{lib_name}` is missing `calcit_ffi_buffer_free`: {error}"))?;
+  Ok(true)
 }
 
 pub fn encode_buffer_request(args: Vec<Edn>) -> Result<Vec<u8>, String> {
@@ -751,6 +826,43 @@ pub fn lookup_async_start<'lib>(
     Ok(start) => Ok(Some(start)),
     Err(_) => Ok(None),
   }
+}
+
+/// Probe and invoke a C-safe blocking callback method. It shares the async
+/// protocol version and task descriptor while using a distinct method symbol,
+/// so blocking and asynchronous entry points cannot be confused. Missing
+/// protocol or method symbols retain the guarded per-method fallback.
+pub fn try_call_blocking(
+  lib: &libloading::Library,
+  lib_name: &str,
+  method: &str,
+  args: Vec<Edn>,
+  task: &FfiAsyncTaskDescriptor,
+  host: &FfiBlockingHostV1,
+) -> Result<Option<Edn>, String> {
+  let version: libloading::Symbol<FfiAsyncVersion> = match unsafe { lib.get(ASYNC_PROTOCOL_VERSION_SYMBOL) } {
+    Ok(version) => version,
+    Err(_) => return Ok(None),
+  };
+  let current_version = unsafe { version() };
+  if current_version != ASYNC_PROTOCOL_VERSION {
+    return Err(format!(
+      "FFI async protocol mismatch in `{lib_name}`: dylib={current_version}, host={ASYNC_PROTOCOL_VERSION}"
+    ));
+  }
+
+  let symbol = blocking_method_symbol(method);
+  let call: libloading::Symbol<FfiBlockingCall> = match unsafe { lib.get(symbol.as_bytes()) } {
+    Ok(call) => call,
+    Err(_) => return Ok(None),
+  };
+  let free: libloading::Symbol<FfiBufferFree> = unsafe { lib.get(BUFFER_FREE_SYMBOL) }
+    .map_err(|error| format!("FFI blocking method `{symbol}` in `{lib_name}` is missing `calcit_ffi_buffer_free`: {error}"))?;
+  let request = encode_buffer_request(args)?;
+  let mut output = FfiBuffer::empty();
+  let status = unsafe { call(request.as_ptr(), request.len(), task, host, &mut output) };
+  let output = unsafe { copy_and_free_buffer(output, &free, lib_name, &symbol) }?;
+  decode_buffer_response(status, output, lib_name, &symbol).map(Some)
 }
 
 fn decode_buffer_response(status: i32, output: Vec<u8>, lib_name: &str, symbol: &str) -> Result<Edn, String> {
@@ -877,8 +989,8 @@ mod tests {
     ASYNC_EVENT_FLAG_COALESCED, ASYNC_PROTOCOL_VERSION, ASYNC_TASK_FLAG_COALESCE_ALLOWED, ASYNC_TASK_FLAG_REQUIRES_RESPONSE,
     ASYNC_TASK_FLAG_SERIAL_EVENTS, BUFFER_PROTOCOL_VERSION, FfiAsyncEventDescriptor, FfiAsyncEventKind, FfiAsyncHandle,
     FfiAsyncHandleError, FfiAsyncHandleKind, FfiAsyncHandleRegistry, FfiAsyncHostV1, FfiAsyncLifecycle, FfiAsyncTaskDescriptor,
-    FfiBuildCompatibility, async_method_symbol, async_status, buffer_method_symbol, decode_buffer_response, encode_buffer_request,
-    validate_build_id,
+    FfiBlockingHostV1, FfiBuffer, FfiBuildCompatibility, async_method_symbol, async_status, blocking_method_symbol,
+    buffer_method_symbol, decode_buffer_response, encode_buffer_request, validate_build_id,
   };
   use cirru_edn::Edn;
 
@@ -921,6 +1033,24 @@ mod tests {
     async_status::OK
   }
 
+  unsafe extern "C" fn test_blocking_invoke(
+    _context: u64,
+    _task_handle: u64,
+    _payload_ptr: *const u8,
+    _payload_len: usize,
+    _out: *mut FfiBuffer,
+  ) -> i32 {
+    async_status::OK
+  }
+
+  unsafe extern "C" fn test_blocking_finish(_context: u64, _task_handle: u64) -> i32 {
+    async_status::OK
+  }
+
+  unsafe extern "C" fn test_blocking_free(_context: u64, _task_handle: u64, _buffer: FfiBuffer) -> i32 {
+    async_status::OK
+  }
+
   #[test]
   fn async_host_table_and_method_names_are_c_stable() {
     let host = FfiAsyncHostV1::new(42, test_enqueue, test_configure, test_open_response);
@@ -931,6 +1061,18 @@ mod tests {
     assert!(host.enqueue.is_some());
     assert!(host.configure_task.is_some());
     assert!(host.open_response.is_some());
+  }
+
+  #[test]
+  fn blocking_host_table_and_method_names_are_c_stable() {
+    let host = FfiBlockingHostV1::new(42, test_blocking_invoke, test_blocking_finish, test_blocking_free);
+    assert_eq!(blocking_method_symbol("read_lines"), "read_lines_calcit_ffi_blocking_v1");
+    assert_eq!(host.protocol_version, ASYNC_PROTOCOL_VERSION);
+    assert_eq!(host.struct_size as usize, std::mem::size_of::<FfiBlockingHostV1>());
+    assert_eq!(host.context, 42);
+    assert!(host.invoke.is_some());
+    assert!(host.finish.is_some());
+    assert!(host.free_buffer.is_some());
   }
 
   #[test]

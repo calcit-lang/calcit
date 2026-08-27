@@ -7,9 +7,9 @@ WebSocket connections, and server resources.
 
 This document describes protocol version 1 as it is implemented in stages.
 The current implementation provides the handle types, lifecycle registry,
-bounded host event queue, and the native callback-v1 entry point used by
-`&call-dylib-edn-fn`. `&blocking-dylib-edn-fn` still uses the
-build-identity-guarded Rust ABI until the blocking protocol lands.
+bounded host event queue, native callback-v1, response/Server capabilities,
+and the blocking-v1 entry point used by `&blocking-dylib-edn-fn`. Both callback
+forms retain a guarded per-method Rust ABI fallback during module migration.
 
 ## Shared task model
 
@@ -229,6 +229,97 @@ Rust callback ABI. If it advertises an async protocol version other than 1,
 Calcit fails before invoking either ABI. This per-method rule lets maintained
 modules migrate incrementally without hiding an actual version mismatch.
 
+## Native blocking ABI v1
+
+`&blocking-dylib-edn-fn` probes a separate entry point so a method that owns
+the host thread cannot accidentally be started as an asynchronous task:
+
+```c
+int32_t <method>_calcit_ffi_blocking_v1(
+  const uint8_t *request_ptr,
+  size_t request_len,
+  const CalcitFfiAsyncTaskV1 *task,
+  const CalcitFfiBlockingHostV1 *host,
+  CalcitFfiBuffer *output
+);
+```
+
+It uses the same `calcit_ffi_async_version() -> 1`, generation handle,
+OneShot lifecycle, monotonic event sequence, status values, and Cirru EDN
+request encoding as callback v1. The final method result follows buffer v1:
+the module allocates `output`, and the host copies it before calling that
+module's `calcit_ffi_buffer_free`.
+
+The blocking host table is C-layout and contains three operations:
+
+```c
+typedef struct {
+  uint8_t *ptr;
+  size_t len;
+  size_t cap;
+} CalcitFfiBuffer;
+
+typedef struct {
+  uint32_t protocol_version;
+  uint32_t struct_size;
+  uint64_t context;
+  int32_t (*invoke)(
+    uint64_t context,
+    uint64_t task_handle,
+    const uint8_t *payload_ptr,
+    size_t payload_len,
+    CalcitFfiBuffer *output
+  );
+  int32_t (*finish)(uint64_t context, uint64_t task_handle);
+  int32_t (*free_buffer)(
+    uint64_t context,
+    uint64_t task_handle,
+    CalcitFfiBuffer buffer
+  );
+} CalcitFfiBlockingHostV1;
+```
+
+The function pointer signatures are equivalent to:
+
+```c
+int32_t invoke(
+  uint64_t context,
+  uint64_t task_handle,
+  const uint8_t *payload_ptr,
+  size_t payload_len,
+  CalcitFfiBuffer *output
+);
+
+int32_t finish(uint64_t context, uint64_t task_handle);
+
+int32_t free_buffer(
+  uint64_t context,
+  uint64_t task_handle,
+  CalcitFfiBuffer buffer
+);
+```
+
+`invoke` accepts a Cirru EDN argument list and runs the Calcit callback
+synchronously. It is valid only on the thread that registered the blocking
+task; a foreign-thread invocation returns `WRONG_THREAD` and never enters the
+Calcit runtime. Successful callback output is one Cirru EDN value. A callback
+failure returns `CALLBACK_ERROR` with a UTF-8 diagnostic buffer. The host owns
+both forms of callback output, records their exact pointer and length, and
+releases them only through `free_buffer`; forged metadata, duplicate free, and
+cross-task context are rejected. Any unfreed callback buffers are reclaimed
+and reported when the blocking method returns.
+
+`finish` is optional and exactly once. If the module does not call it, normal
+or failed return from the blocking method performs an implicit finish. After
+explicit finish, further `invoke` calls fail deterministically. This preserves
+main-thread event loops without introducing a queue-drain deadlock, while
+foreign-thread and long-lived work remains on callback v1's bounded queue.
+
+Missing protocol or per-method blocking symbols retain the build-identity-
+guarded Rust fallback. An advertised incompatible version, missing module
+buffer free function, malformed output, leaked host callback buffer, or
+wrong-thread callback is a hard error.
+
 ## WASM compatibility boundary
 
 WASM will not reuse C pointers or native function pointers. It can still reuse
@@ -248,12 +339,11 @@ present the same Calcit-facing behavior.
 
 ## Rollout
 
-The remaining implementation order after response/server v1 is:
+The remaining rollout order after blocking v1 is:
 
-1. blocking calls reusing the same registry and envelopes;
-2. migration and release of `calcit-fetch`, `calcit-http`, `calcit-wss`, and
+1. migration and release of `calcit-fetch`, `calcit-http`, `calcit-wss`, and
    `calcit.std`;
-3. a `calcit_wasmtime` adapter prototype after the event envelope is stable;
-4. removal of the guarded Rust ABI fallback under issue #474.
+2. a `calcit_wasmtime` adapter prototype after the event envelope is stable;
+3. removal of the guarded Rust ABI fallback under issue #474.
 
 See issue #482 for the full acceptance matrix and module rollout status.
