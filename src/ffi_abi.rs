@@ -25,6 +25,10 @@ pub const ASYNC_METHOD_SUFFIX: &str = "_calcit_ffi_async_v1";
 pub const ASYNC_TASK_FLAG_SERIAL_EVENTS: u32 = 1 << 0;
 pub const ASYNC_TASK_FLAG_COALESCE_ALLOWED: u32 = 1 << 1;
 pub const ASYNC_TASK_FLAG_REQUIRES_RESPONSE: u32 = 1 << 2;
+pub const ASYNC_TASK_KNOWN_FLAGS: u32 =
+  ASYNC_TASK_FLAG_SERIAL_EVENTS | ASYNC_TASK_FLAG_COALESCE_ALLOWED | ASYNC_TASK_FLAG_REQUIRES_RESPONSE;
+pub const ASYNC_EVENT_FLAG_COALESCED: u32 = 1 << 0;
+pub const ASYNC_EVENT_KNOWN_FLAGS: u32 = ASYNC_EVENT_FLAG_COALESCED;
 
 /// Stable status values returned by C-safe async host functions. Keep these
 /// as integer constants rather than an FFI enum so foreign callers cannot
@@ -51,6 +55,35 @@ pub enum FfiAsyncHandleKind {
   Stream = 2,
   Server = 3,
   Response = 4,
+}
+
+/// Stable event tags shared by native and future WASM transports. `Complete`
+/// and `Fail` are terminal; `Emit` may repeat while a task is active.
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FfiAsyncEventKind {
+  Emit = 1,
+  Complete = 2,
+  Fail = 3,
+}
+
+impl FfiAsyncEventKind {
+  pub fn is_terminal(self) -> bool {
+    matches!(self, Self::Complete | Self::Fail)
+  }
+}
+
+impl TryFrom<u32> for FfiAsyncEventKind {
+  type Error = FfiAsyncHandleError;
+
+  fn try_from(value: u32) -> Result<Self, Self::Error> {
+    match value {
+      1 => Ok(Self::Emit),
+      2 => Ok(Self::Complete),
+      3 => Ok(Self::Fail),
+      _ => Err(FfiAsyncHandleError::InvalidEventKind(value)),
+    }
+  }
 }
 
 impl TryFrom<u32> for FfiAsyncHandleKind {
@@ -98,6 +131,48 @@ impl FfiAsyncTaskDescriptor {
   }
 }
 
+/// C-layout event metadata. Payload bytes are deliberately not represented by
+/// a Rust pointer here: the native host function table and a future WASM
+/// adapter provide their own copying transport around this shared descriptor.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FfiAsyncEventDescriptor {
+  pub protocol_version: u32,
+  pub struct_size: u32,
+  pub kind: u32,
+  pub flags: u32,
+  pub task_handle: u64,
+  pub response_handle: u64,
+  pub sequence: u64,
+  pub payload_len: u64,
+}
+
+impl FfiAsyncEventDescriptor {
+  pub fn new(
+    task_handle: FfiAsyncHandle,
+    response_handle: Option<FfiAsyncHandle>,
+    sequence: u64,
+    kind: FfiAsyncEventKind,
+    flags: u32,
+    payload_len: usize,
+  ) -> Result<Self, FfiAsyncHandleError> {
+    if flags & !ASYNC_EVENT_KNOWN_FLAGS != 0 {
+      return Err(FfiAsyncHandleError::InvalidEventFlags(flags));
+    }
+    let payload_len = u64::try_from(payload_len).map_err(|_| FfiAsyncHandleError::PayloadTooLarge)?;
+    Ok(Self {
+      protocol_version: ASYNC_PROTOCOL_VERSION,
+      struct_size: std::mem::size_of::<Self>() as u32,
+      kind: kind as u32,
+      flags,
+      task_handle: task_handle.raw(),
+      response_handle: response_handle.unwrap_or(FfiAsyncHandle::INVALID).raw(),
+      sequence,
+      payload_len,
+    })
+  }
+}
+
 /// Opaque generation handle. Zero is permanently invalid. The low 32 bits
 /// store slot index + 1 and the high 32 bits store a non-zero generation.
 #[repr(transparent)]
@@ -135,26 +210,34 @@ impl FfiAsyncHandle {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FfiAsyncHandleError {
   InvalidKind(u32),
+  InvalidEventKind(u32),
+  InvalidFlags(u32),
+  InvalidEventFlags(u32),
   InvalidHandle,
   StaleHandle,
   HandleClosing,
   HandleFinished,
   HandleStillActive,
+  TerminalAlreadyQueued,
   HostClosing,
   RegistryExhausted,
   SequenceExhausted,
+  PayloadTooLarge,
   RegistryPoisoned,
 }
 
 impl FfiAsyncHandleError {
   pub fn status_code(&self) -> i32 {
     match self {
-      Self::InvalidKind(_) => async_status::INVALID_PAYLOAD,
+      Self::InvalidKind(_) | Self::InvalidEventKind(_) | Self::InvalidFlags(_) | Self::InvalidEventFlags(_) | Self::PayloadTooLarge => {
+        async_status::INVALID_PAYLOAD
+      }
       Self::InvalidHandle => async_status::INVALID_HANDLE,
       Self::StaleHandle => async_status::STALE_HANDLE,
       Self::HandleClosing => async_status::HANDLE_CLOSING,
       Self::HandleFinished => async_status::HANDLE_FINISHED,
       Self::HandleStillActive => async_status::HANDLE_STILL_ACTIVE,
+      Self::TerminalAlreadyQueued => async_status::HANDLE_CLOSING,
       Self::HostClosing => async_status::HOST_CLOSING,
       Self::RegistryExhausted | Self::SequenceExhausted | Self::RegistryPoisoned => async_status::INTERNAL_ERROR,
     }
@@ -165,14 +248,19 @@ impl fmt::Display for FfiAsyncHandleError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       Self::InvalidKind(value) => write!(f, "invalid async FFI handle kind {value}"),
+      Self::InvalidEventKind(value) => write!(f, "invalid async FFI event kind {value}"),
+      Self::InvalidFlags(value) => write!(f, "invalid async FFI task flags 0x{value:x}"),
+      Self::InvalidEventFlags(value) => write!(f, "invalid async FFI event flags 0x{value:x}"),
       Self::InvalidHandle => f.write_str("invalid async FFI handle"),
       Self::StaleHandle => f.write_str("stale async FFI handle generation"),
       Self::HandleClosing => f.write_str("async FFI handle is closing"),
       Self::HandleFinished => f.write_str("async FFI handle is already finished"),
       Self::HandleStillActive => f.write_str("async FFI handle must finish before release"),
+      Self::TerminalAlreadyQueued => f.write_str("async FFI handle already has a terminal event queued"),
       Self::HostClosing => f.write_str("async FFI host is closing"),
       Self::RegistryExhausted => f.write_str("async FFI handle registry is exhausted"),
       Self::SequenceExhausted => f.write_str("async FFI event sequence is exhausted"),
+      Self::PayloadTooLarge => f.write_str("async FFI event payload length is too large"),
       Self::RegistryPoisoned => f.write_str("async FFI handle registry lock is poisoned"),
     }
   }
@@ -183,8 +271,10 @@ impl std::error::Error for FfiAsyncHandleError {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FfiAsyncHandleState {
   pub kind: FfiAsyncHandleKind,
+  pub flags: u32,
   pub lifecycle: FfiAsyncLifecycle,
   pub next_sequence: u64,
+  pub terminal_queued: bool,
 }
 
 struct RegisteredAsyncHandle<T> {
@@ -228,6 +318,13 @@ impl<T> FfiAsyncHandleRegistry<T> {
   }
 
   pub fn register(&self, kind: FfiAsyncHandleKind, value: T) -> Result<FfiAsyncHandle, FfiAsyncHandleError> {
+    self.register_with_flags(kind, 0, value)
+  }
+
+  pub fn register_with_flags(&self, kind: FfiAsyncHandleKind, flags: u32, value: T) -> Result<FfiAsyncHandle, FfiAsyncHandleError> {
+    if flags & !ASYNC_TASK_KNOWN_FLAGS != 0 || (flags & ASYNC_TASK_FLAG_COALESCE_ALLOWED != 0 && kind != FfiAsyncHandleKind::Stream) {
+      return Err(FfiAsyncHandleError::InvalidFlags(flags));
+    }
     let mut registry = self.state.lock().map_err(|_| FfiAsyncHandleError::RegistryPoisoned)?;
     if registry.closing {
       return Err(FfiAsyncHandleError::HostClosing);
@@ -235,8 +332,10 @@ impl<T> FfiAsyncHandleRegistry<T> {
 
     let state = FfiAsyncHandleState {
       kind,
+      flags,
       lifecycle: FfiAsyncLifecycle::Active,
       next_sequence: 1,
+      terminal_queued: false,
     };
     while let Some(index) = registry.free_slots.pop() {
       let slot = &mut registry.slots[index];
@@ -280,17 +379,35 @@ impl<T> FfiAsyncHandleRegistry<T> {
   /// Reserve the next host sequence before an event is enqueued. Events are
   /// rejected as soon as cancellation/shutdown moves a handle to Closing.
   pub fn next_event_sequence(&self, handle: FfiAsyncHandle) -> Result<u64, FfiAsyncHandleError> {
+    self.reserve_event_sequence(handle, FfiAsyncEventKind::Emit)
+  }
+
+  /// Reserve an event sequence and atomically claim a terminal event when
+  /// needed. Queue implementations call this only after capacity is secured,
+  /// so a full queue does not leave a phantom terminal transition behind.
+  pub fn reserve_event_sequence(&self, handle: FfiAsyncHandle, kind: FfiAsyncEventKind) -> Result<u64, FfiAsyncHandleError> {
     let mut registry = self.state.lock().map_err(|_| FfiAsyncHandleError::RegistryPoisoned)?;
     let task = resolve_async_handle_mut(&mut registry, handle)?;
-    match task.state.lifecycle {
-      FfiAsyncLifecycle::Active => {
-        let sequence = task.state.next_sequence;
-        task.state.next_sequence = sequence.checked_add(1).ok_or(FfiAsyncHandleError::SequenceExhausted)?;
-        Ok(sequence)
+    let sequence = task.state.next_sequence;
+    let next_sequence = sequence.checked_add(1).ok_or(FfiAsyncHandleError::SequenceExhausted)?;
+    if kind.is_terminal() {
+      if task.state.lifecycle == FfiAsyncLifecycle::Finished {
+        return Err(FfiAsyncHandleError::HandleFinished);
       }
-      FfiAsyncLifecycle::Closing => Err(FfiAsyncHandleError::HandleClosing),
-      FfiAsyncLifecycle::Finished => Err(FfiAsyncHandleError::HandleFinished),
+      if task.state.terminal_queued {
+        return Err(FfiAsyncHandleError::TerminalAlreadyQueued);
+      }
+      task.state.terminal_queued = true;
+    } else {
+      match task.state.lifecycle {
+        FfiAsyncLifecycle::Active => {}
+        FfiAsyncLifecycle::Closing => return Err(FfiAsyncHandleError::HandleClosing),
+        FfiAsyncLifecycle::Finished => return Err(FfiAsyncHandleError::HandleFinished),
+      }
     }
+
+    task.state.next_sequence = next_sequence;
+    Ok(sequence)
   }
 
   /// Begin cancellation or orderly close. Completion must still be
@@ -564,7 +681,8 @@ pub fn lookup_build_id(lib: &libloading::Library, lib_name: &str) -> Result<Opti
 #[cfg(test)]
 mod tests {
   use super::{
-    ASYNC_PROTOCOL_VERSION, ASYNC_TASK_FLAG_REQUIRES_RESPONSE, ASYNC_TASK_FLAG_SERIAL_EVENTS, BUFFER_PROTOCOL_VERSION, FfiAsyncHandle,
+    ASYNC_EVENT_FLAG_COALESCED, ASYNC_PROTOCOL_VERSION, ASYNC_TASK_FLAG_COALESCE_ALLOWED, ASYNC_TASK_FLAG_REQUIRES_RESPONSE,
+    ASYNC_TASK_FLAG_SERIAL_EVENTS, BUFFER_PROTOCOL_VERSION, FfiAsyncEventDescriptor, FfiAsyncEventKind, FfiAsyncHandle,
     FfiAsyncHandleError, FfiAsyncHandleKind, FfiAsyncHandleRegistry, FfiAsyncLifecycle, FfiAsyncTaskDescriptor, FfiBuildCompatibility,
     async_status, buffer_method_symbol, decode_buffer_response, encode_buffer_request, validate_build_id,
   };
@@ -639,6 +757,25 @@ mod tests {
     assert_eq!(descriptor.kind, FfiAsyncHandleKind::Server as u32);
     assert_eq!(FfiAsyncHandleKind::try_from(descriptor.kind), Ok(FfiAsyncHandleKind::Server));
     assert_eq!(FfiAsyncHandleKind::try_from(99), Err(FfiAsyncHandleError::InvalidKind(99)));
+
+    let event = FfiAsyncEventDescriptor::new(handle, None, 7, FfiAsyncEventKind::Emit, ASYNC_EVENT_FLAG_COALESCED, 12)
+      .expect("create event descriptor");
+    assert_eq!(event.protocol_version, ASYNC_PROTOCOL_VERSION);
+    assert_eq!(event.struct_size as usize, std::mem::size_of::<FfiAsyncEventDescriptor>());
+    assert_eq!(event.task_handle, handle.raw());
+    assert_eq!(event.response_handle, FfiAsyncHandle::INVALID.raw());
+    assert_eq!(event.sequence, 7);
+    assert_eq!(event.payload_len, 12);
+    assert_eq!(FfiAsyncEventKind::try_from(event.kind), Ok(FfiAsyncEventKind::Emit));
+    assert_eq!(FfiAsyncEventKind::try_from(99), Err(FfiAsyncHandleError::InvalidEventKind(99)));
+    assert_eq!(
+      FfiAsyncEventDescriptor::new(handle, None, 8, FfiAsyncEventKind::Emit, 1 << 31, 0),
+      Err(FfiAsyncHandleError::InvalidEventFlags(1 << 31))
+    );
+    assert_eq!(
+      registry.register_with_flags(FfiAsyncHandleKind::Server, ASYNC_TASK_FLAG_COALESCE_ALLOWED, "invalid-server"),
+      Err(FfiAsyncHandleError::InvalidFlags(ASYNC_TASK_FLAG_COALESCE_ALLOWED))
+    );
   }
 
   #[test]
