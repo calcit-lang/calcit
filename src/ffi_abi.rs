@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use std::ffi::{CStr, c_char};
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::{ptr, slice};
 
 use cirru_edn::{Edn, EdnAnyRef, EdnEnumView, EdnListView, EdnMapView, EdnSetView, EdnStructView};
@@ -776,6 +777,16 @@ struct NativeFfiResourceLease {
   _library: Option<Arc<libloading::Library>>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct FfiResourceKey {
+  lib_name: Arc<str>,
+  handle: u64,
+  generation: u64,
+}
+
+static RESOURCE_LEASES: LazyLock<Mutex<HashMap<FfiResourceKey, Weak<NativeFfiResourceLease>>>> =
+  LazyLock::new(|| Mutex::new(HashMap::new()));
+
 impl fmt::Debug for NativeFfiResourceLease {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.debug_struct("NativeFfiResourceLease")
@@ -788,12 +799,23 @@ impl fmt::Debug for NativeFfiResourceLease {
 
 impl Drop for NativeFfiResourceLease {
   fn drop(&mut self) {
+    let key = FfiResourceKey {
+      lib_name: self.lib_name.clone(),
+      handle: self.handle,
+      generation: self.generation,
+    };
+    let leases = RESOURCE_LEASES.lock();
     // SAFETY: the function pointer belongs to `_library`, which is dropped
     // after this method returns. Resource v1 requires release to accept any
     // token and report stale/duplicate values through its status code.
     let status = unsafe { (self.release)(self.handle, self.generation) };
     if let Some(trace) = self.trace {
       trace("resource-release", &self.lib_name, self.handle, self.generation, status);
+    }
+    if let Ok(mut leases) = leases
+      && leases.get(&key).is_some_and(|lease| lease.upgrade().is_none())
+    {
+      leases.remove(&key);
     }
     if status != 0 {
       eprintln!(
@@ -822,6 +844,34 @@ struct FfiResourceAdapter {
   release: FfiResourceRelease,
   trace: Option<FfiResourceTrace>,
   library: Option<Arc<libloading::Library>>,
+}
+
+fn intern_resource_lease(adapter: &FfiResourceAdapter, handle: u64, generation: u64) -> Result<Arc<NativeFfiResourceLease>, String> {
+  let key = FfiResourceKey {
+    lib_name: adapter.lib_name.clone(),
+    handle,
+    generation,
+  };
+  let mut leases = RESOURCE_LEASES
+    .lock()
+    .map_err(|_| "failed to lock the FFI resource lease registry".to_owned())?;
+  if let Some(lease) = leases.get(&key).and_then(Weak::upgrade) {
+    return Ok(lease);
+  }
+
+  let lease = Arc::new(NativeFfiResourceLease {
+    lib_name: adapter.lib_name.clone(),
+    handle,
+    generation,
+    release: adapter.release,
+    trace: adapter.trace,
+    _library: adapter.library.clone(),
+  });
+  leases.insert(key, Arc::downgrade(&lease));
+  if let Some(trace) = adapter.trace {
+    trace("resource-create", &adapter.lib_name, handle, generation, 0);
+  }
+  Ok(lease)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -992,18 +1042,8 @@ fn hydrate_resource_tokens(value: Edn, adapter: &FfiResourceAdapter) -> Result<E
   match value {
     Edn::Struct(resource) if resource.name.as_ref() == RESOURCE_TOKEN_STRUCT => {
       let (handle, generation) = decode_resource_token(&resource)?;
-      if let Some(trace) = adapter.trace {
-        trace("resource-create", &adapter.lib_name, handle, generation, 0);
-      }
       Ok(Edn::AnyRef(EdnAnyRef::new(NativeFfiResource {
-        lease: Arc::new(NativeFfiResourceLease {
-          lib_name: adapter.lib_name.clone(),
-          handle,
-          generation,
-          release: adapter.release,
-          trace: adapter.trace,
-          _library: adapter.library.clone(),
-        }),
+        lease: intern_resource_lease(adapter, handle, generation)?,
       })))
     }
     Edn::List(EdnListView(xs)) => Ok(Edn::List(EdnListView(
@@ -1430,6 +1470,27 @@ mod tests {
     });
     assert_eq!(RESOURCE_RELEASES.load(Ordering::SeqCst), 0);
     drop(resource);
+    assert_eq!(RESOURCE_RELEASES.load(Ordering::SeqCst), 1);
+  }
+
+  #[test]
+  fn duplicate_tokens_share_one_lease_within_and_across_responses() {
+    let _guard = RESOURCE_TEST_LOCK.lock().expect("resource test lock");
+    RESOURCE_RELEASES.store(0, Ordering::SeqCst);
+    let token = encode_resource_token(29, 5);
+    let hydrated = hydrate_resource_tokens(Edn::List(EdnListView(vec![token.clone(), token.clone()])), &test_resource_adapter())
+      .expect("hydrate duplicate tokens");
+    let Edn::List(EdnListView(mut aliases)) = hydrated else {
+      panic!("duplicate response should stay a list")
+    };
+    let first = aliases.pop().expect("first alias");
+    let second = aliases.pop().expect("second alias");
+    let across_response = hydrate_resource_tokens(token, &test_resource_adapter()).expect("hydrate across response");
+
+    drop(first);
+    drop(second);
+    assert_eq!(RESOURCE_RELEASES.load(Ordering::SeqCst), 0);
+    drop(across_response);
     assert_eq!(RESOURCE_RELEASES.load(Ordering::SeqCst), 1);
   }
 

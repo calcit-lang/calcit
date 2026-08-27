@@ -44,7 +44,7 @@ pub extern "C" fn calcit_ffi_resource_release_v1(
 
 - 模块拥有 registry 中的 native 对象，宿主只保存 `(module, handle, generation)`。
 - Calcit 将返回 token 转换为宿主管理的 `AnyRef`，并在资源存活期间固定创建它的 dylib。
-- Calcit 值的 clone 只共享宿主引用，不调用模块 retain；最后一个宿主引用析构时 exactly-once 调用 `calcit_ffi_resource_release_v1`。
+- Calcit 会按 `(module, handle, generation)` 复用同一宿主 lease；无论 token 在同一或不同响应中出现多少次，clone/alias 都不调用模块 retain，最后一个宿主引用析构时才 exactly-once 调用 `calcit_ffi_resource_release_v1`。
 - `release` 可能在任意宿主线程执行，模块实现必须线程安全、不得 panic 或跨 FFI unwind。
 - 模块必须用 generation 拒绝 stale handle，并确定性处理未知或重复释放的 token。
 - 只有创建资源的同一个模块可以接收该资源参数。宿主在调用前拒绝 wrong-module、普通 AnyRef 和用户直接构造的保留 token。
@@ -91,7 +91,7 @@ A resource-creating method still returns ordinary buffer-v1 Cirru EDN. A resourc
 
 - The module owns native objects in its registry; the host stores only `(module, handle, generation)`.
 - Calcit converts a returned token into a host-managed `AnyRef` and pins its creating dylib while the resource is alive.
-- Cloning a Calcit value shares the host reference and does not call a module retain function. Dropping the final host reference calls `calcit_ffi_resource_release_v1` exactly once.
+- Calcit interns one host lease per `(module, handle, generation)`. No matter how often a token appears within or across responses, clones and aliases do not call a module retain function; dropping the final host reference calls `calcit_ffi_resource_release_v1` exactly once.
 - `release` may run on any host thread. It must be thread-safe and must not panic or unwind across FFI.
 - The module validates generation on every call, rejects stale handles, and handles unknown or duplicate releases deterministically.
 - Only the creating module may receive the resource as an argument. Before invocation, the host rejects wrong-module resources, ordinary AnyRefs, and directly forged reserved tokens.
