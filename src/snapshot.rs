@@ -2441,13 +2441,32 @@ fn parse_file_for_format_with_context(
   file_name: &str,
   migration: &mut SnapshotFormatMigration,
 ) -> Result<FileInSnapShot, String> {
-  let map = data
-    .view_map()
-    .map_err(|e| format!("{file_name}: expected FileEntry map/struct: {e}; got {}", format_edn_preview(&data)))?;
-  let ns_value = map
-    .get(&Edn::tag("ns"))
-    .or_else(|| map.get(&Edn::str("ns")))
-    .ok_or_else(|| format!("{file_name}: missing `:ns` field in FileEntry"))?;
+  let (ns_value, defs_value) = match &data {
+    Edn::Map(map) => (
+      map.get(&Edn::tag("ns")).or_else(|| map.get(&Edn::str("ns"))),
+      map.get(&Edn::tag("defs")).or_else(|| map.get(&Edn::str("defs"))),
+    ),
+    Edn::Struct(struct_value) => (
+      struct_value
+        .pairs
+        .iter()
+        .find(|(key, _)| key.ref_str() == "ns")
+        .map(|(_, value)| value),
+      struct_value
+        .pairs
+        .iter()
+        .find(|(key, _)| key.ref_str() == "defs")
+        .map(|(_, value)| value),
+    ),
+    other => {
+      return Err(format!(
+        "{file_name}: expected FileEntry map/struct, got {}",
+        format_edn_preview(other)
+      ));
+    }
+  };
+  let ns_value = ns_value.ok_or_else(|| format!("{file_name}: missing `:ns` field in FileEntry"))?;
+  let defs_value = defs_value.ok_or_else(|| format!("{file_name}: missing `:defs` field in FileEntry"))?;
   let ns = match ns_value {
     Edn::Quote(code) => {
       migration.direct_quote_namespaces += 1;
@@ -2459,10 +2478,6 @@ fn parse_file_for_format_with_context(
     modern => modern.to_owned().try_into().map_err(|e: String| format!("{file_name}/:ns: {e}"))?,
   };
 
-  let defs_value = map
-    .get(&Edn::tag("defs"))
-    .or_else(|| map.get(&Edn::str("defs")))
-    .ok_or_else(|| format!("{file_name}: missing `:defs` field in FileEntry"))?;
   let defs_map = defs_value.view_map().map_err(|e| {
     format!(
       "{file_name}: failed to parse `:defs` as map: {e}; got {}",
@@ -5086,6 +5101,23 @@ mod tests {
     let legacy = legacy_direct_quote_snapshot([("custom", Edn::Bool(true))]);
     let error = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect_err("unknown legacy config must not be discarded");
     assert!(error.contains("legacy configs: unknown field `:custom`"), "error: {error}");
+  }
+
+  #[test]
+  fn format_loader_accepts_fileentry_struct_written_by_schema_migration_release() {
+    let legacy = legacy_direct_quote_snapshot([]);
+    let (snapshot, _) = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect("legacy fixture should migrate");
+    let rendered = render_snapshot_content(&snapshot).expect("migrated snapshot should render");
+    let canonical = cirru_edn::parse(&rendered).expect("rendered snapshot should parse");
+    let Edn::Map(root) = &canonical else { panic!("snapshot root map") };
+    let files = root.get(&Edn::tag("files")).expect("files");
+    let Edn::Map(files) = files else { panic!("files map") };
+    assert!(matches!(files.get(&Edn::str("mini.core")), Some(Edn::Struct(_))));
+
+    load_snapshot_data(&canonical, "calcit.cirru").expect("strict loader already accepts FileEntry structs");
+    let (_, migration) =
+      load_snapshot_data_for_format(&canonical, "calcit.cirru").expect("format loader should accept FileEntry structs too");
+    assert_eq!(migration, SnapshotFormatMigration::default());
   }
 
   #[test]
