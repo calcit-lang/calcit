@@ -380,13 +380,18 @@ parsed .and-then
 `.and-then`，让错误类型转换保持可见：
 
 ```cirru.no-check
-(path .read-file) .and-then $ fn (content)
-  (parse-data content) .and-then $ fn (data)
-    save-data data
+let
+    source $ fs:path |data.cirru
+    content-result source.read-text
+  content-result.and-then $ fn (content)
+    (parse-data content) .and-then $ fn (data)
+      save-data data
 ```
 
-文件路径上的 `.read-file`、`.read-dir` 与 `.write-file` 返回 `Result<...,String>`；
-底层同名函数仍保留抛错行为以兼容旧代码。预期 I/O 失败时优先使用方法形式。
+`fs:path` 把 UTF-8 字符串显式构造成 `FsPath`，不执行规范化或文件系统访问。
+`FsPath` 上的 `.read-text`、`.read-dir`、`.walk-dir` 与 `.write-text` 返回
+`Result<...,String>`；String 不提供文件效果方法。`try-read-file`、`try-read-dir`、
+`try-write-file` 以及底层 raising procedures 仍作为兼容入口。
 这些文件效果支持 native 与生成的 JavaScript；WASM 尚未提供宿主文件效果。
 
 `option:let` 使用普通 `let` 的 binding pair 结构。每个右侧和最终 body 都必须保持

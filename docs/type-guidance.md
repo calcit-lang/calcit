@@ -71,13 +71,18 @@ loaded .and-then $ fn (value) (validate value)
 `.and-then`，让错误类型的转换保持可见：
 
 ```cirru.no-check
-(path .read-file) .and-then $ fn (content)
-  (parse-data content) .and-then $ fn (data)
-    save-data data
+let
+    source $ fs:path |data.cirru
+    content-result source.read-text
+  content-result.and-then $ fn (content)
+    (parse-data content) .and-then $ fn (data)
+      save-data data
 ```
 
-文件路径上的 `.read-file`、`.read-dir` 与 `.write-file` 返回 `Result<...,String>`；
-底层同名函数仍保留抛错行为以兼容旧代码。预期 I/O 失败时优先使用方法形式。
+先用 `fs:path` 把 UTF-8 String 提升为 nominal `FsPath`，再调用 `.read-text`、
+`.read-dir`、`.walk-dir` 或 `.write-text`，这些方法返回 `Result<...,String>`。
+String 本身不携带文件系统语义；`try-read-file`、`try-read-dir`、
+`try-write-file` 与底层 raising procedures 仅保留为兼容入口。
 这些文件效果支持 native 与生成的 JavaScript；WASM 尚未提供宿主文件效果。
 
 `option:let` 的 body 必须继续返回 `Option`。普通组合函数仍以接收者方法

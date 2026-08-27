@@ -331,12 +331,15 @@ The first argument is the value to match, the second is the default/fallback, fo
 ### Reading and Writing
 
 ```cirru.no-run
-(|data.txt .read-file) .and-then $ fn (content)
-  println content
-  %ok &unit
+let
+    source $ fs:path |data.txt
+    content-result source.read-text
+  content-result.and-then $ fn (content)
+    println content
+    %ok &unit
 ```
 
-The String methods `.read-file`, `.read-dir`, and `.write-file` return `Result`, so expected I/O failures stay in the typed flow. The raw `read-file`, `read-dir`, and `write-file` procedures remain raising compatibility primitives. Native and generated JavaScript support these host file effects; WASM does not yet expose them.
+`fs:path` constructs a nominal `FsPath` without normalizing or touching the filesystem. Its `.read-text`, `.read-dir`, `.walk-dir`, and `.write-text` methods return `Result`, so expected I/O failures stay in the typed flow; `.read-dir` lists immediate children and `.walk-dir` recurses. String has no file-effect methods. The `try-read-*`/`try-write-file` functions and raw raising procedures remain compatibility entries. Native and generated JavaScript support these host file effects; WASM does not yet expose them.
 
 ## Math Operations
 

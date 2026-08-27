@@ -354,19 +354,18 @@
               println "|Env mode:" $ get-env |mode
               println "|Env mode:" $ option:unwrap-or (get-env |m0) "|default m0"
               eprintln "|stdout message"
-              do
-                assert= true $ result:err? (|/calcit-result-contract-does-not-exist/file .read-file)
-                assert= true $ result:err? (|/calcit-result-contract-does-not-exist .read-dir)
-                assert= true $ result:err?
-                  |/calcit-result-contract-does-not-exist .read-dir $ %some false
-                assert= true $ result:err? (|/calcit-result-contract-does-not-exist/file .write-file |content)
-                assert-type (|/calcit-result-contract-does-not-exist/file .read-file) (:: 'Result 'String 'String)
-                assert-type (|/calcit-result-contract-does-not-exist .read-dir)
-                  :: 'Result (:: 'List 'String) 'String
-                assert-type
-                  |/calcit-result-contract-does-not-exist .read-dir $ %some false
-                  :: 'Result (:: 'List 'String) 'String
-                assert-type (|/calcit-result-contract-does-not-exist/file .write-file |content) (:: 'Result 'Unit 'String)
+              let
+                  missing-file $ fs:path |/calcit-result-contract-does-not-exist/file
+                  missing-dir $ fs:path |/calcit-result-contract-does-not-exist
+                do
+                  assert= true $ result:err? missing-file.read-text
+                  assert= true $ result:err? missing-dir.read-dir
+                  assert= true $ result:err? missing-dir.walk-dir
+                  assert= true $ result:err? (missing-file.write-text |content)
+                  assert-type missing-file.read-text $ :: 'Result 'String 'String
+                  assert-type missing-dir.read-dir $ :: 'Result (:: 'List 'FsPath) 'String
+                  assert-type missing-dir.walk-dir $ :: 'Result (:: 'List 'FsPath) 'String
+                  assert-type (missing-file.write-text |content) (:: 'Result 'Unit 'String)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
