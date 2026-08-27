@@ -114,12 +114,13 @@ int32_t <method>_calcit_ffi_async_v1(
 ```
 
 The request is a UTF-8 Cirru EDN list and is readable only for the duration of
-the start call. The task descriptor contains the host-issued handle and must
-be copied if the module needs it after returning. The host table has process
-lifetime, although modules should copy only the fields covered by
-`struct_size` so later hosts can append functions compatibly.
+the start call. The task descriptor and host table must both be copied if the
+module needs them after returning. Function pointers remain valid while the
+host is running, but the table pointer itself is call-scoped. Modules should
+copy only the fields covered by `struct_size` so later hosts can append
+functions compatibly.
 
-Callback v1 currently exposes one host operation:
+Callback v1 exposes three host operations. The first publishes events:
 
 ```c
 int32_t enqueue(
@@ -132,13 +133,80 @@ int32_t enqueue(
 );
 ```
 
-The module may call `enqueue` from producer threads. Calcit validates the
-context, handles, kind, pointer, length, and queue capacity, copies the bytes
-before returning, and invokes the Calcit callback only while the CLI host
-thread drains the queue. The producer retains ownership of its payload and may
+The module may call `enqueue` from producer threads. Each start receives a
+task-bound context; it cannot be reused with another task handle. Calcit
+validates the context, handles, kind, pointer, length, and queue capacity,
+copies the bytes before returning, and invokes the Calcit callback only while
+the CLI host thread drains the queue. The producer retains ownership of its payload and may
 reuse or free it after `enqueue` returns. A null pointer is valid only when the
 length is zero. No panic, Rust allocator, Rust callback, or executor object
 crosses the boundary.
+
+Before its first event, a module may specialize the provisional Stream task
+and install its cancellation hook:
+
+```c
+int32_t configure_task(
+  uint64_t context,
+  uint64_t task_handle,
+  uint32_t task_kind,
+  uint32_t task_flags,
+  uint64_t task_context,
+  CalcitFfiAsyncCancelFn cancel
+);
+```
+
+OneShot, Stream, and Server are valid task kinds; Response is host-issued and
+cannot be selected here. Configuration after the first event is rejected.
+Server tasks must provide a cancel function. `&call-dylib-edn-fn` returns an
+opaque native task capability when callback v1 installs a cancel hook (and
+keeps returning explicit `&unit` otherwise); `&ffi-task-cancel` invokes this
+hook on the host thread. An accepted cancel must eventually enqueue exactly
+one `Complete` or `Fail`; repeated cancel while Closing is idempotent.
+
+A Server that declares `REQUIRES_RESPONSE` opens one response capability for
+each request before enqueueing it:
+
+```c
+int32_t open_response(
+  uint64_t context,
+  uint64_t task_handle,
+  uint64_t response_context,
+  uint64_t timeout_ms,
+  CalcitFfiAsyncResolveFn resolve,
+  uint64_t *out_response_handle
+);
+```
+
+The timeout must be between 1 millisecond and 24 hours, and one task may keep
+at most 1024 responses open concurrently. The resulting
+host-issued handle must be attached to exactly one `Emit` from the owning
+Server. Missing handles, handles from another Server, response handles on
+terminal/ordinary Stream events, and already-resolved or expired handles are
+rejected deterministically. Request events are never coalesced; queue-full
+leaves the capability active until the module retries or the host rejects it
+at timeout.
+
+Calcit appends an opaque AnyRef response capability to the event's decoded EDN
+arguments. The callback resolves it with `&ffi-response-resolve` or rejects it
+with `&ffi-response-reject`. The host atomically claims the capability, encodes
+that value, calls the module's resolve function on the host thread, and
+invalidates the capability after the module returns, including when the module
+reports an error. Reuse or concurrent resolution therefore cannot invoke the
+module twice and fails as a closing/stale generation rather than accidentally
+resolving a later request. Timeout, task completion, and callback failure
+reject every still-active owned response and release it. A request that
+expires while waiting behind other events is rejected and skipped without
+terminating its long-lived Server. Deadline and owner indexes make timeout and
+task cleanup proportional to the responses being processed rather than all
+live FFI handles.
+Startup failure discards host handles without calling back into module context
+whose ownership never transferred.
+
+AnyRef is deliberately a native non-serializable capability rather than a
+Calcit number: the full generation-bearing `u64` cannot safely round-trip
+through JavaScript floating-point numbers. A future WASM adapter will expose
+the same logical capability through its backend-specific handle value.
 
 Payload rules are explicit:
 
@@ -180,14 +248,12 @@ present the same Calcit-facing behavior.
 
 ## Rollout
 
-The remaining implementation order after native callback v1 is:
+The remaining implementation order after response/server v1 is:
 
-1. response handles, server backpressure, cancellation, timeout, and shutdown
-   fixtures;
-2. blocking calls reusing the same registry and envelopes;
-3. migration and release of `calcit-fetch`, `calcit-http`, `calcit-wss`, and
+1. blocking calls reusing the same registry and envelopes;
+2. migration and release of `calcit-fetch`, `calcit-http`, `calcit-wss`, and
    `calcit.std`;
-4. a `calcit_wasmtime` adapter prototype after the event envelope is stable;
-5. removal of the guarded Rust ABI fallback under issue #474.
+3. a `calcit_wasmtime` adapter prototype after the event envelope is stable;
+4. removal of the guarded Rust ABI fallback under issue #474.
 
 See issue #482 for the full acceptance matrix and module rollout status.

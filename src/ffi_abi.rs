@@ -38,6 +38,29 @@ pub type FfiAsyncHostEnqueue = unsafe extern "C" fn(
   payload_ptr: *const u8,
   payload_len: usize,
 ) -> i32;
+pub type FfiAsyncTaskCancel =
+  unsafe extern "C" fn(task_context: u64, task_handle: u64, reason_ptr: *const u8, reason_len: usize) -> i32;
+pub type FfiAsyncResponseResolve =
+  unsafe extern "C" fn(response_context: u64, response_handle: u64, outcome: u32, payload_ptr: *const u8, payload_len: usize) -> i32;
+pub type FfiAsyncHostConfigureTask = unsafe extern "C" fn(
+  context: u64,
+  task_handle: u64,
+  kind: u32,
+  flags: u32,
+  task_context: u64,
+  cancel: Option<FfiAsyncTaskCancel>,
+) -> i32;
+pub type FfiAsyncHostOpenResponse = unsafe extern "C" fn(
+  context: u64,
+  task_handle: u64,
+  response_context: u64,
+  timeout_ms: u64,
+  resolve: Option<FfiAsyncResponseResolve>,
+  out_handle: *mut u64,
+) -> i32;
+
+pub const ASYNC_RESPONSE_RESOLVE: u32 = 1;
+pub const ASYNC_RESPONSE_REJECT: u32 = 2;
 
 /// Native host functions that an async dylib may copy and call from producer
 /// threads. The integer context is opaque and avoids exposing a Rust object
@@ -49,15 +72,24 @@ pub struct FfiAsyncHostV1 {
   pub struct_size: u32,
   pub context: u64,
   pub enqueue: Option<FfiAsyncHostEnqueue>,
+  pub configure_task: Option<FfiAsyncHostConfigureTask>,
+  pub open_response: Option<FfiAsyncHostOpenResponse>,
 }
 
 impl FfiAsyncHostV1 {
-  pub fn new(context: u64, enqueue: FfiAsyncHostEnqueue) -> Self {
+  pub fn new(
+    context: u64,
+    enqueue: FfiAsyncHostEnqueue,
+    configure_task: FfiAsyncHostConfigureTask,
+    open_response: FfiAsyncHostOpenResponse,
+  ) -> Self {
     Self {
       protocol_version: ASYNC_PROTOCOL_VERSION,
       struct_size: std::mem::size_of::<Self>() as u32,
       context,
       enqueue: Some(enqueue),
+      configure_task: Some(configure_task),
+      open_response: Some(open_response),
     }
   }
 }
@@ -251,6 +283,9 @@ pub enum FfiAsyncHandleError {
   HandleFinished,
   HandleStillActive,
   TerminalAlreadyQueued,
+  TaskAlreadyStarted,
+  MissingResponse,
+  UnexpectedResponse,
   HostClosing,
   RegistryExhausted,
   SequenceExhausted,
@@ -261,9 +296,14 @@ pub enum FfiAsyncHandleError {
 impl FfiAsyncHandleError {
   pub fn status_code(&self) -> i32 {
     match self {
-      Self::InvalidKind(_) | Self::InvalidEventKind(_) | Self::InvalidFlags(_) | Self::InvalidEventFlags(_) | Self::PayloadTooLarge => {
-        async_status::INVALID_PAYLOAD
-      }
+      Self::InvalidKind(_)
+      | Self::InvalidEventKind(_)
+      | Self::InvalidFlags(_)
+      | Self::InvalidEventFlags(_)
+      | Self::TaskAlreadyStarted
+      | Self::MissingResponse
+      | Self::UnexpectedResponse
+      | Self::PayloadTooLarge => async_status::INVALID_PAYLOAD,
       Self::InvalidHandle => async_status::INVALID_HANDLE,
       Self::StaleHandle => async_status::STALE_HANDLE,
       Self::HandleClosing => async_status::HANDLE_CLOSING,
@@ -289,6 +329,9 @@ impl fmt::Display for FfiAsyncHandleError {
       Self::HandleFinished => f.write_str("async FFI handle is already finished"),
       Self::HandleStillActive => f.write_str("async FFI handle must finish before release"),
       Self::TerminalAlreadyQueued => f.write_str("async FFI handle already has a terminal event queued"),
+      Self::TaskAlreadyStarted => f.write_str("async FFI task cannot be configured after its first event"),
+      Self::MissingResponse => f.write_str("async FFI server event requires a response handle"),
+      Self::UnexpectedResponse => f.write_str("async FFI response handle is not valid for this event"),
       Self::HostClosing => f.write_str("async FFI host is closing"),
       Self::RegistryExhausted => f.write_str("async FFI handle registry is exhausted"),
       Self::SequenceExhausted => f.write_str("async FFI event sequence is exhausted"),
@@ -354,9 +397,7 @@ impl<T> FfiAsyncHandleRegistry<T> {
   }
 
   pub fn register_with_flags(&self, kind: FfiAsyncHandleKind, flags: u32, value: T) -> Result<FfiAsyncHandle, FfiAsyncHandleError> {
-    if flags & !ASYNC_TASK_KNOWN_FLAGS != 0 || (flags & ASYNC_TASK_FLAG_COALESCE_ALLOWED != 0 && kind != FfiAsyncHandleKind::Stream) {
-      return Err(FfiAsyncHandleError::InvalidFlags(flags));
-    }
+    validate_async_task_flags(kind, flags)?;
     let mut registry = self.state.lock().map_err(|_| FfiAsyncHandleError::RegistryPoisoned)?;
     if registry.closing {
       return Err(FfiAsyncHandleError::HostClosing);
@@ -369,32 +410,60 @@ impl<T> FfiAsyncHandleRegistry<T> {
       next_sequence: 1,
       terminal_queued: false,
     };
-    while let Some(index) = registry.free_slots.pop() {
-      let slot = &mut registry.slots[index];
-      let Some(generation) = slot.generation.checked_add(1) else {
-        // A wrapped generation could make a very old stale handle valid
-        // again, so permanently retire slots that exhaust the counter.
-        continue;
-      };
-      slot.generation = generation;
-      slot.task = Some(RegisteredAsyncHandle { state, value });
-      return Ok(FfiAsyncHandle::from_parts(index, slot.generation));
-    }
+    register_async_handle(&mut registry, state, value)
+  }
 
-    if registry.slots.len() >= u32::MAX as usize {
-      return Err(FfiAsyncHandleError::RegistryExhausted);
+  /// Register a child capability only while its owner is still active and has
+  /// not queued a terminal event. Native response adapters hold their owner
+  /// index lock around this call so owner completion cannot miss a new child.
+  pub fn register_for_active_owner(
+    &self,
+    owner: FfiAsyncHandle,
+    kind: FfiAsyncHandleKind,
+    value: T,
+  ) -> Result<FfiAsyncHandle, FfiAsyncHandleError> {
+    validate_async_task_flags(kind, 0)?;
+    let mut registry = self.state.lock().map_err(|_| FfiAsyncHandleError::RegistryPoisoned)?;
+    if registry.closing {
+      return Err(FfiAsyncHandleError::HostClosing);
     }
-    let index = registry.slots.len();
-    registry.slots.push(AsyncHandleSlot {
-      generation: 1,
-      task: Some(RegisteredAsyncHandle { state, value }),
-    });
-    Ok(FfiAsyncHandle::from_parts(index, 1))
+    let owner_state = resolve_async_handle(&registry, owner)?.state;
+    match owner_state.lifecycle {
+      FfiAsyncLifecycle::Active if !owner_state.terminal_queued => {}
+      FfiAsyncLifecycle::Active | FfiAsyncLifecycle::Closing => return Err(FfiAsyncHandleError::HandleClosing),
+      FfiAsyncLifecycle::Finished => return Err(FfiAsyncHandleError::HandleFinished),
+    }
+    let state = FfiAsyncHandleState {
+      kind,
+      flags: 0,
+      lifecycle: FfiAsyncLifecycle::Active,
+      next_sequence: 1,
+      terminal_queued: false,
+    };
+    register_async_handle(&mut registry, state, value)
   }
 
   pub fn state(&self, handle: FfiAsyncHandle) -> Result<FfiAsyncHandleState, FfiAsyncHandleError> {
     let registry = self.state.lock().map_err(|_| FfiAsyncHandleError::RegistryPoisoned)?;
     Ok(resolve_async_handle(&registry, handle)?.state)
+  }
+
+  /// Configure a task before its first event. Async start functions use this
+  /// to specialize the host's default Stream descriptor into OneShot or
+  /// Server and to declare response/coalescing policy.
+  pub fn configure(&self, handle: FfiAsyncHandle, kind: FfiAsyncHandleKind, flags: u32) -> Result<(), FfiAsyncHandleError> {
+    validate_async_task_flags(kind, flags)?;
+    if kind == FfiAsyncHandleKind::Response {
+      return Err(FfiAsyncHandleError::InvalidKind(kind as u32));
+    }
+    let mut registry = self.state.lock().map_err(|_| FfiAsyncHandleError::RegistryPoisoned)?;
+    let task = resolve_async_handle_mut(&mut registry, handle)?;
+    if task.state.lifecycle != FfiAsyncLifecycle::Active || task.state.next_sequence != 1 || task.state.terminal_queued {
+      return Err(FfiAsyncHandleError::TaskAlreadyStarted);
+    }
+    task.state.kind = kind;
+    task.state.flags = flags;
+    Ok(())
   }
 
   /// Clone host-owned metadata/callback state without holding the registry
@@ -525,6 +594,61 @@ impl<T> FfiAsyncHandleRegistry<T> {
         })
         .count(),
     )
+  }
+
+  /// Snapshot registered handles without holding the registry lock while the
+  /// host invokes module control functions or performs timeout processing.
+  pub fn snapshot(&self) -> Result<Vec<(FfiAsyncHandle, FfiAsyncHandleState, T)>, FfiAsyncHandleError>
+  where
+    T: Clone,
+  {
+    let registry = self.state.lock().map_err(|_| FfiAsyncHandleError::RegistryPoisoned)?;
+    let mut values = vec![];
+    for (index, slot) in registry.slots.iter().enumerate() {
+      if let Some(task) = &slot.task {
+        values.push((FfiAsyncHandle::from_parts(index, slot.generation), task.state, task.value.clone()));
+      }
+    }
+    Ok(values)
+  }
+}
+
+fn register_async_handle<T>(
+  registry: &mut AsyncHandleRegistryState<T>,
+  state: FfiAsyncHandleState,
+  value: T,
+) -> Result<FfiAsyncHandle, FfiAsyncHandleError> {
+  while let Some(index) = registry.free_slots.pop() {
+    let slot = &mut registry.slots[index];
+    let Some(generation) = slot.generation.checked_add(1) else {
+      // A wrapped generation could make a very old stale handle valid again,
+      // so permanently retire slots that exhaust the counter.
+      continue;
+    };
+    slot.generation = generation;
+    slot.task = Some(RegisteredAsyncHandle { state, value });
+    return Ok(FfiAsyncHandle::from_parts(index, slot.generation));
+  }
+
+  if registry.slots.len() >= u32::MAX as usize {
+    return Err(FfiAsyncHandleError::RegistryExhausted);
+  }
+  let index = registry.slots.len();
+  registry.slots.push(AsyncHandleSlot {
+    generation: 1,
+    task: Some(RegisteredAsyncHandle { state, value }),
+  });
+  Ok(FfiAsyncHandle::from_parts(index, 1))
+}
+
+fn validate_async_task_flags(kind: FfiAsyncHandleKind, flags: u32) -> Result<(), FfiAsyncHandleError> {
+  if flags & !ASYNC_TASK_KNOWN_FLAGS != 0
+    || (flags & ASYNC_TASK_FLAG_COALESCE_ALLOWED != 0 && kind != FfiAsyncHandleKind::Stream)
+    || (flags & ASYNC_TASK_FLAG_REQUIRES_RESPONSE != 0 && kind != FfiAsyncHandleKind::Server)
+  {
+    Err(FfiAsyncHandleError::InvalidFlags(flags))
+  } else {
+    Ok(())
   }
 }
 
@@ -775,14 +899,38 @@ mod tests {
     async_status::OK
   }
 
+  unsafe extern "C" fn test_configure(
+    _context: u64,
+    _task_handle: u64,
+    _kind: u32,
+    _flags: u32,
+    _task_context: u64,
+    _cancel: Option<super::FfiAsyncTaskCancel>,
+  ) -> i32 {
+    async_status::OK
+  }
+
+  unsafe extern "C" fn test_open_response(
+    _context: u64,
+    _task_handle: u64,
+    _response_context: u64,
+    _timeout_ms: u64,
+    _resolve: Option<super::FfiAsyncResponseResolve>,
+    _out_handle: *mut u64,
+  ) -> i32 {
+    async_status::OK
+  }
+
   #[test]
   fn async_host_table_and_method_names_are_c_stable() {
-    let host = FfiAsyncHostV1::new(42, test_enqueue);
+    let host = FfiAsyncHostV1::new(42, test_enqueue, test_configure, test_open_response);
     assert_eq!(async_method_symbol("watch"), "watch_calcit_ffi_async_v1");
     assert_eq!(host.protocol_version, ASYNC_PROTOCOL_VERSION);
     assert_eq!(host.struct_size as usize, std::mem::size_of::<FfiAsyncHostV1>());
     assert_eq!(host.context, 42);
     assert!(host.enqueue.is_some());
+    assert!(host.configure_task.is_some());
+    assert!(host.open_response.is_some());
   }
 
   #[test]
@@ -881,6 +1029,72 @@ mod tests {
     assert_eq!(registry.next_event_sequence(handle), Err(FfiAsyncHandleError::HandleFinished));
     assert_eq!(registry.release(handle), Ok("watcher"));
     assert_eq!(registry.release(handle), Err(FfiAsyncHandleError::StaleHandle));
+  }
+
+  #[test]
+  fn async_task_configuration_is_pre_event_and_kind_aware() {
+    let registry = FfiAsyncHandleRegistry::new();
+    let handle = registry
+      .register_with_flags(FfiAsyncHandleKind::Stream, ASYNC_TASK_FLAG_SERIAL_EVENTS, "server")
+      .expect("register provisional task");
+    registry
+      .configure(
+        handle,
+        FfiAsyncHandleKind::Server,
+        ASYNC_TASK_FLAG_SERIAL_EVENTS | ASYNC_TASK_FLAG_REQUIRES_RESPONSE,
+      )
+      .expect("configure server");
+    let state = registry.state(handle).expect("configured state");
+    assert_eq!(state.kind, FfiAsyncHandleKind::Server);
+    assert_eq!(state.flags, ASYNC_TASK_FLAG_SERIAL_EVENTS | ASYNC_TASK_FLAG_REQUIRES_RESPONSE);
+    assert_eq!(registry.next_event_sequence(handle), Ok(1));
+    assert_eq!(
+      registry.configure(handle, FfiAsyncHandleKind::OneShot, ASYNC_TASK_FLAG_SERIAL_EVENTS),
+      Err(FfiAsyncHandleError::TaskAlreadyStarted)
+    );
+    assert_eq!(
+      registry.register_with_flags(
+        FfiAsyncHandleKind::Stream,
+        ASYNC_TASK_FLAG_SERIAL_EVENTS | ASYNC_TASK_FLAG_REQUIRES_RESPONSE,
+        "invalid-stream"
+      ),
+      Err(FfiAsyncHandleError::InvalidFlags(
+        ASYNC_TASK_FLAG_SERIAL_EVENTS | ASYNC_TASK_FLAG_REQUIRES_RESPONSE
+      ))
+    );
+  }
+
+  #[test]
+  fn async_child_registration_requires_an_active_owner_without_terminal_event() {
+    let registry = FfiAsyncHandleRegistry::new();
+    let owner = registry.register(FfiAsyncHandleKind::Server, "server").expect("register owner");
+    let response = registry
+      .register_for_active_owner(owner, FfiAsyncHandleKind::Response, "response")
+      .expect("register response for active owner");
+    assert_eq!(registry.state(response).expect("response state").kind, FfiAsyncHandleKind::Response);
+    assert_eq!(registry.reserve_event_sequence(owner, FfiAsyncEventKind::Complete), Ok(1));
+    assert_eq!(
+      registry.register_for_active_owner(owner, FfiAsyncHandleKind::Response, "late-response"),
+      Err(FfiAsyncHandleError::HandleClosing)
+    );
+    registry.finish(owner).expect("finish owner");
+    assert_eq!(
+      registry.register_for_active_owner(owner, FfiAsyncHandleKind::Response, "finished-response"),
+      Err(FfiAsyncHandleError::HandleFinished)
+    );
+  }
+
+  #[test]
+  fn async_registry_snapshot_preserves_handle_kind_and_value() {
+    let registry = FfiAsyncHandleRegistry::new();
+    let task = registry.register(FfiAsyncHandleKind::Server, "server").expect("register server");
+    let response = registry
+      .register(FfiAsyncHandleKind::Response, "response")
+      .expect("register response");
+    let snapshot = registry.snapshot().expect("snapshot handles");
+    assert_eq!(snapshot.len(), 2);
+    assert!(snapshot.contains(&(task, registry.state(task).expect("task state"), "server")));
+    assert!(snapshot.contains(&(response, registry.state(response).expect("response state"), "response")));
   }
 
   #[test]
