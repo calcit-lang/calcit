@@ -1056,29 +1056,58 @@ pub fn verify_project_view(graph: &ResolvedGraph, options: &GraphOptions) -> Res
 }
 
 pub fn verify_native_library(path: &Path) -> Result<(), String> {
-  type VersionFn = fn() -> String;
+  type VersionFn = unsafe extern "C" fn() -> u32;
   let library = unsafe { libloading::Library::new(path) }.map_err(|e| format!("failed to load {}: {e}", path.display()))?;
-  let lib_name = path.display().to_string();
-  let build_id = calcit::ffi_abi::lookup_build_id(&library, &lib_name)?;
-  calcit::ffi_abi::validate_build_id(&lib_name, build_id.as_deref(), calcit::FFI_BUILD_ID, cfg!(debug_assertions))?;
-  let abi: libloading::Symbol<VersionFn> =
-    unsafe { library.get(b"abi_version") }.map_err(|e| format!("failed to read abi_version from {}: {e}", path.display()))?;
-  let actual_abi = abi();
-  if actual_abi != calcit::FFI_ABI_VERSION {
+  let mut advertised = vec![];
+  for (name, symbol, expected) in [
+    (
+      "buffer",
+      calcit::ffi_abi::BUFFER_PROTOCOL_VERSION_SYMBOL,
+      calcit::ffi_abi::BUFFER_PROTOCOL_VERSION,
+    ),
+    (
+      "async",
+      calcit::ffi_abi::ASYNC_PROTOCOL_VERSION_SYMBOL,
+      calcit::ffi_abi::ASYNC_PROTOCOL_VERSION,
+    ),
+    (
+      "resource",
+      calcit::ffi_abi::RESOURCE_PROTOCOL_VERSION_SYMBOL,
+      calcit::ffi_abi::RESOURCE_PROTOCOL_VERSION,
+    ),
+  ] {
+    let Ok(version) = (unsafe { library.get::<VersionFn>(symbol) }) else {
+      continue;
+    };
+    let actual = unsafe { version() };
+    if actual != expected {
+      return Err(format!(
+        "FFI {name} protocol mismatch in {}: found {actual}, expected {expected}",
+        path.display()
+      ));
+    }
+    advertised.push(name);
+  }
+  if advertised.is_empty() {
     return Err(format!(
-      "FFI ABI mismatch in {}: found {actual_abi}, expected {}",
-      path.display(),
-      calcit::FFI_ABI_VERSION
+      "{} does not advertise a supported C-safe FFI protocol; expected `calcit_ffi_buffer_version` or `calcit_ffi_async_version`",
+      path.display()
     ));
   }
-  let edn: libloading::Symbol<VersionFn> =
-    unsafe { library.get(b"edn_version") }.map_err(|e| format!("failed to read edn_version from {}: {e}", path.display()))?;
-  let actual_edn = edn();
-  if actual_edn != cirru_edn::version() {
+  if advertised.contains(&"buffer")
+    && unsafe { library.get::<calcit::ffi_abi::FfiBufferFree>(calcit::ffi_abi::BUFFER_FREE_SYMBOL) }.is_err()
+  {
     return Err(format!(
-      "cirru_edn mismatch in {}: found {actual_edn}, expected {}",
+      "{} advertises C-safe buffer protocol but is missing `calcit_ffi_buffer_free`",
       path.display(),
-      cirru_edn::version()
+    ));
+  }
+  if advertised.contains(&"resource")
+    && unsafe { library.get::<calcit::ffi_abi::FfiResourceRelease>(calcit::ffi_abi::RESOURCE_RELEASE_SYMBOL) }.is_err()
+  {
+    return Err(format!(
+      "{} advertises C-safe resource protocol but is missing `calcit_ffi_resource_release_v1`",
+      path.display(),
     ));
   }
   Ok(())
@@ -1194,10 +1223,10 @@ fn expected_link_target(module: &ResolvedModule) -> Result<PathBuf, String> {
   }
   let target = rust_target_identity();
   let build_input = format!(
-    "{target}\ncalcit={CALCIT_VERSION}\nffi-abi={}\nffi-build={}\ncirru-edn={}\ncommit={}",
-    calcit::FFI_ABI_VERSION,
-    calcit::FFI_BUILD_ID,
-    cirru_edn::version(),
+    "{target}\ncalcit={CALCIT_VERSION}\nffi-buffer={}\nffi-async={}\nffi-resource={}\ncommit={}",
+    calcit::ffi_abi::BUFFER_PROTOCOL_VERSION,
+    calcit::ffi_abi::ASYNC_PROTOCOL_VERSION,
+    calcit::ffi_abi::RESOURCE_PROTOCOL_VERSION,
     module.commit
   );
   let build_key = hex::encode(Md5::digest(build_input.as_bytes()));
@@ -1221,9 +1250,15 @@ fn write_native_receipt(module: &ResolvedModule, realization: &Path, build_key: 
   receipt.insert(Edn::tag("module"), Edn::str(module.repository.as_str()));
   receipt.insert(Edn::tag("commit"), Edn::str(module.commit.as_str()));
   receipt.insert(Edn::tag("calcit-version"), Edn::str(CALCIT_VERSION));
-  receipt.insert(Edn::tag("ffi-abi"), Edn::str(calcit::FFI_ABI_VERSION));
-  receipt.insert(Edn::tag("ffi-build"), Edn::str(calcit::FFI_BUILD_ID));
-  receipt.insert(Edn::tag("cirru-edn"), Edn::str(cirru_edn::version()));
+  receipt.insert(
+    Edn::tag("ffi-buffer"),
+    Edn::str(calcit::ffi_abi::BUFFER_PROTOCOL_VERSION.to_string()),
+  );
+  receipt.insert(Edn::tag("ffi-async"), Edn::str(calcit::ffi_abi::ASYNC_PROTOCOL_VERSION.to_string()));
+  receipt.insert(
+    Edn::tag("ffi-resource"),
+    Edn::str(calcit::ffi_abi::RESOURCE_PROTOCOL_VERSION.to_string()),
+  );
   receipt.insert(Edn::tag("build-key"), Edn::str(build_key));
   receipt.insert(
     Edn::tag("artifacts"),
@@ -1252,13 +1287,16 @@ fn verify_native_receipt(module: &ResolvedModule, realization: &Path) -> Result<
     .map_err(|e| format!("failed to parse {}: {e}", receipt_path.display()))?
     .view_map()?;
   let expected_build_key = realization.file_name().and_then(|name| name.to_str()).unwrap_or("unknown");
+  let buffer_version = calcit::ffi_abi::BUFFER_PROTOCOL_VERSION.to_string();
+  let async_version = calcit::ffi_abi::ASYNC_PROTOCOL_VERSION.to_string();
+  let resource_version = calcit::ffi_abi::RESOURCE_PROTOCOL_VERSION.to_string();
   for (key, expected) in [
     ("module", module.repository.as_str()),
     ("commit", module.commit.as_str()),
     ("calcit-version", CALCIT_VERSION),
-    ("ffi-abi", calcit::FFI_ABI_VERSION),
-    ("ffi-build", calcit::FFI_BUILD_ID),
-    ("cirru-edn", cirru_edn::version()),
+    ("ffi-buffer", buffer_version.as_str()),
+    ("ffi-async", async_version.as_str()),
+    ("ffi-resource", resource_version.as_str()),
     ("build-key", expected_build_key),
   ] {
     let actual = receipt

@@ -8,8 +8,9 @@ WebSocket connections, and server resources.
 This document describes protocol version 1 as it is implemented in stages.
 The current implementation provides the handle types, lifecycle registry,
 bounded host event queue, native callback-v1, response/Server capabilities,
-and the blocking-v1 entry point used by `&blocking-dylib-edn-fn`. Both callback
-forms retain a guarded per-method Rust ABI fallback during module migration.
+and the blocking-v1 entry point used by `&blocking-dylib-edn-fn`. Callback and
+blocking calls require their C-safe v1 entry points; Rust ABI fallback has been
+removed.
 
 ## Shared task model
 
@@ -99,8 +100,8 @@ ownership and matching free functions explicit in both directions.
 
 ## Native callback ABI v1
 
-Before using the legacy Rust callback ABI, `&call-dylib-edn-fn` probes the
-following C symbols:
+`&call-dylib-edn-fn` requires the following C symbols. Missing symbols are
+deterministic migration errors; Calcit does not probe a Rust callback ABI:
 
 ```c
 uint32_t calcit_ffi_async_version(void); /* returns 1 */
@@ -315,10 +316,10 @@ explicit finish, further `invoke` calls fail deterministically. This preserves
 main-thread event loops without introducing a queue-drain deadlock, while
 foreign-thread and long-lived work remains on callback v1's bounded queue.
 
-Missing protocol or per-method blocking symbols retain the build-identity-
-guarded Rust fallback. An advertised incompatible version, missing module
-buffer free function, malformed output, leaked host callback buffer, or
-wrong-thread callback is a hard error.
+Missing protocol or per-method blocking symbols are deterministic migration
+errors. An advertised incompatible version, missing module buffer free
+function, malformed output, leaked host callback buffer, or wrong-thread
+callback is a hard error.
 
 ## WASM compatibility boundary
 
@@ -337,13 +338,10 @@ objects, thread-local state, an executor/waker ABI, or native threads. Native
 threaded producers and a future single-threaded WASM poll adapter can therefore
 present the same Calcit-facing behavior.
 
-## Rollout
+## Rollout status
 
-The remaining rollout order after blocking v1 is:
-
-1. migration and release of `calcit-fetch`, `calcit-http`, `calcit-wss`, and
-   `calcit.std`;
-2. a `calcit_wasmtime` adapter prototype after the event envelope is stable;
-3. removal of the guarded Rust ABI fallback under issue #474.
-
-See issue #482 for the full acceptance matrix and module rollout status.
+The maintained native ecosystem has migrated to C-safe v1 protocols. The
+primary modules (`calcit-fetch`, `calcit-http`, `calcit-wss`, and `calcit.std`)
+and the additional audited modules, including `calcit-paint`, no longer require
+Rust-layout entry points. See issues #474 and #482 for the acceptance matrix
+and migration history.

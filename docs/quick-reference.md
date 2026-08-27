@@ -44,7 +44,6 @@ calcit eval "echo |done"
 
 - `--watch` / `-w` - Watch files and rerun/rebuild on changes
 - `--disable-stack` - Disable stack trace for errors
-- `--ffi-build-id` - Print the native FFI compiler/target/build-mode identity and exit
 - `--skip-arity-check` - Skip arity check in JS codegen
 - `--emit-path <path>` - Specify output path for JS (default: `js-out/`)
 - `--init-fn <fn>` - Specify main function

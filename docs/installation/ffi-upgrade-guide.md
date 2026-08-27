@@ -12,18 +12,20 @@ aliases:
 
 本文描述将 Calcit FFI 动态库项目（dylib 工程）升级到最新依赖版本的完整流程，基于实际升级经验整理。
 
-## 版本与构建身份
+## 版本与协议
 
 每个 FFI 项目需要同步维护两处版本号：
 
 | 文件         | 字段                      | 说明                                                        |
 | ------------ | ------------------------- | ----------------------------------------------------------- |
-| `Cargo.toml` | `cirru_edn = "x.y.z"`     | 必须与运行时 Calcit 二进制所链接的 `cirru_edn` 版本完全一致 |
+| `Cargo.toml` | `cirru_edn = "x.y.z"`     | 模块内部使用的 Cirru EDN codec；不再与 Calcit host 的 Rust crate 版本绑定 |
 | `deps.cirru` | `:calcit-version \|x.y.z` | 必须与 `calcit --version` 输出一致，CI 会用它校验               |
 
-两者不一致都会导致 CI 失败或运行时 `dlsym failed`。
-
-此外，Rust 原生 ABI 不稳定。FFI 项目必须按 [Rust bindings](./ffi-bindings.md) 增加 `build.rs` 和 C-safe `calcit_ffi_build_id()` 导出。该身份包含精确 rustc、target、debug assertions 与 panic strategy；Calcit 会在调用 `abi_version()`、`edn_version()` 或业务 symbol 之前比较。不要把 optimization level 加入身份：Calcit 自身 release 使用体积优化，而模块通常使用 Cargo 默认 release 优化，两者可以共享相同的 ABI 构建模式。
+Calcit native FFI 只支持 [Rust bindings](./ffi-bindings.md) 中的 C-safe
+buffer/async/blocking/resource protocol v1。Host 与模块通过 UTF-8 Cirru EDN
+bytes 交换业务数据，不再要求使用同一个 rustc 或同一个 `cirru_edn`
+crate build。`calcit_ffi_build_id`、`abi_version`、`edn_version` 和 Rust-layout
+business methods 均已退役。
 
 ## 升级流程
 
@@ -73,7 +75,16 @@ calcit calcit.cirru
 
 若模块返回编译后的正则等可复用 native 对象，不要继续跨 dylib 传递 Rust `AnyRef`，也不要改成用户手动释放的整数句柄。按照 [FFI opaque resource protocol / FFI 不透明资源协议](./ffi-resource-protocol.md) 使用 buffer v1 token、generation registry 和自动 release。
 
-Calcit 与 dylib 必须使用同一 rustc 工具链。先运行 `calcit --ffi-build-id` 查看 host identity。若项目提供 `rust-toolchain.toml`，应固定到发布 Calcit 所报告的 compiler identity；本地从源码构建 Calcit 时，则用同一个 toolchain 构建 dylib。debug Calcit 会在缺少 build identity 时直接拒绝旧模块；release Calcit 在迁移期仍会接受，但会输出兼容性警告。
+验证 release dylib 的导出符号只包含固定 C ABI，并按模块实际使用的能力检查符号：
+
+- 同步 buffer：`calcit_ffi_buffer_version`、`calcit_ffi_buffer_free`、`<method>_calcit_ffi_v1`；
+- 异步 callback：`calcit_ffi_async_version`、`<method>_calcit_ffi_async_v1`；
+- blocking callback：`calcit_ffi_async_version`、`calcit_ffi_buffer_free`、`<method>_calcit_ffi_blocking_v1`；
+- opaque resource：`calcit_ffi_resource_version`、`calcit_ffi_resource_release_v1`。
+
+只实现异步 callback 的模块不需要导出 buffer protocol 或
+`calcit_ffi_buffer_free`。缺失当前调用所需符号时，Calcit 会直接报告期望的
+C-safe symbol，不会尝试同名 Rust function。
 
 ### 4. 提交、打标签并推送
 
@@ -81,7 +92,7 @@ Calcit 与 dylib 必须使用同一 rustc 工具链。先运行 `calcit --ffi-bu
 PKG_VER=$(cargo metadata --no-deps --format-version 1 \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['packages'][0]['version'])")
 
-git add Cargo.toml Cargo.lock deps.cirru build.rs
+git add Cargo.toml Cargo.lock deps.cirru
 git commit -m "chore: upgrade cirru_edn $EDN_VER, cirru_parser $PARSER_VER; bump version to $PKG_VER"
 git tag "$PKG_VER"
 git push origin <branch>
@@ -121,14 +132,11 @@ gh pr checks <PR_NUMBER>
 按顺序排查：
 
 1. 同步方法优先检查 `calcit_ffi_buffer_version()`、`calcit_ffi_buffer_free()` 与 `<method>_calcit_ffi_v1` 是否已导出
-2. 仍在旧 Rust ABI 的方法检查 `calcit_ffi_build_id()`、`abi_version()`、`edn_version()` 是否已导出
-3. `calcit_ffi_build_id()` 是否使用 `extern "C"`、静态 NUL 结尾字节串与 `*const c_char`
-4. `#[unsafe(no_mangle)]`（Rust 2024 edition）是否存在
-5. `dylibs/` 中是否已复制最新产物（`cp target/release/*.* dylibs/`）
-
-### FFI build identity mismatch
-
-错误会同时打印 dylib 与 host identity。逐项比较 rustc release/commit、target、debug assertions 和 panic strategy；不要绕过检查或手工伪造 identity。使用同一 toolchain 与同类 debug/release 构建重新生成二进制，再复制到 `dylibs/` 验证。
+2. async 方法检查 `calcit_ffi_async_version()` 与 `<method>_calcit_ffi_async_v1`
+3. blocking 方法检查 `calcit_ffi_async_version()`、`calcit_ffi_buffer_free()` 与 `<method>_calcit_ffi_blocking_v1`
+4. opaque resource 方法检查 `calcit_ffi_resource_version()` 与 `calcit_ffi_resource_release_v1`
+5. 所有导出是否使用 `extern "C"` 与 `#[unsafe(no_mangle)]`（Rust 2024 edition）
+6. `dylibs/` 中是否已复制最新产物（`cp target/release/*.* dylibs/`）
 
 ### amend 后需要重打 tag
 
