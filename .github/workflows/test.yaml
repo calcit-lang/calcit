@@ -7,6 +7,20 @@ on:
 name: Test
 
 jobs:
+  macos_main_thread:
+    name: macOS main-thread CLI
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --bin calcit
+      - name: Verify the reserved process-main stack
+        run: |
+          stacksize=$(otool -l target/debug/calcit | awk '/cmd LC_MAIN/{main=1} main && /stacksize/{print $2; exit}')
+          test "$stacksize" = "33554432"
+      - run: ./target/debug/calcit -v
+
   build_and_test:
     name: Test
     runs-on: ubuntu-latest

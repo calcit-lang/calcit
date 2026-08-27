@@ -239,8 +239,18 @@ fn attach_missing_core_namespaces(snapshot: &mut snapshot::Snapshot, core_snapsh
   }
 }
 
+#[cfg(not(target_os = "macos"))]
 const CLI_STACK_SIZE: usize = 32 * 1024 * 1024;
 
+#[cfg(target_os = "macos")]
+fn main() -> Result<(), String> {
+  // AppKit event loops must be created and driven on the process main thread.
+  // The macOS binary reserves the same 32 MiB stack in build.rs, so running
+  // the CLI here preserves both the GUI contract and preprocessing headroom.
+  run_cli()
+}
+
+#[cfg(not(target_os = "macos"))]
 fn main() -> Result<(), String> {
   let worker = std::thread::Builder::new()
     .name("calcit-cli".to_owned())
