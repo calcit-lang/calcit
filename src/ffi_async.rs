@@ -248,6 +248,15 @@ impl FfiAsyncEventQueue {
     }
 
     let task_state = registry.state(task_handle)?;
+    if kind == FfiAsyncEventKind::Emit && task_state.flags & crate::ffi_abi::ASYNC_TASK_FLAG_REQUIRES_RESPONSE != 0 {
+      let response_handle = response_handle.ok_or(FfiAsyncHandleError::MissingResponse)?;
+      let response_state = registry.state(response_handle)?;
+      if response_state.kind != crate::ffi_abi::FfiAsyncHandleKind::Response || response_state.lifecycle != FfiAsyncLifecycle::Active {
+        return Err(FfiAsyncHandleError::UnexpectedResponse.into());
+      }
+    } else if response_handle.is_some() {
+      return Err(FfiAsyncHandleError::UnexpectedResponse.into());
+    }
     let coalesce_index = if queue.events.len() >= self.capacity
       && kind == FfiAsyncEventKind::Emit
       && task_state.flags & ASYNC_TASK_FLAG_COALESCE_ALLOWED != 0
@@ -579,6 +588,44 @@ mod tests {
     assert_eq!(report.discarded, 1);
     assert_eq!(report.delivered, 1);
     assert_eq!(report.lifecycle_failures.len(), 1);
+  }
+
+  #[test]
+  fn server_request_requires_one_active_response_handle() {
+    let registry = FfiAsyncHandleRegistry::new();
+    let server = registry
+      .register_with_flags(
+        FfiAsyncHandleKind::Server,
+        crate::ffi_abi::ASYNC_TASK_FLAG_SERIAL_EVENTS | crate::ffi_abi::ASYNC_TASK_FLAG_REQUIRES_RESPONSE,
+        (),
+      )
+      .expect("register server");
+    let response = registry.register(FfiAsyncHandleKind::Response, ()).expect("register response");
+    let queue = FfiAsyncEventQueue::new(3).expect("create queue");
+
+    assert_eq!(
+      queue.enqueue(&registry, server, None, FfiAsyncEventKind::Emit, vec![]),
+      Err(FfiAsyncQueueError::Handle(FfiAsyncHandleError::MissingResponse))
+    );
+    queue
+      .enqueue(&registry, server, Some(response), FfiAsyncEventKind::Emit, b"request".to_vec())
+      .expect("enqueue request with response");
+    assert_eq!(
+      queue.enqueue(&registry, server, Some(response), FfiAsyncEventKind::Complete, b"&unit".to_vec()),
+      Err(FfiAsyncQueueError::Handle(FfiAsyncHandleError::UnexpectedResponse))
+    );
+  }
+
+  #[test]
+  fn ordinary_stream_rejects_unexpected_response_capabilities() {
+    let registry = FfiAsyncHandleRegistry::new();
+    let stream = registry.register(FfiAsyncHandleKind::Stream, ()).expect("register stream");
+    let response = registry.register(FfiAsyncHandleKind::Response, ()).expect("register response");
+    let queue = FfiAsyncEventQueue::new(1).expect("create queue");
+    assert_eq!(
+      queue.enqueue(&registry, stream, Some(response), FfiAsyncEventKind::Emit, vec![]),
+      Err(FfiAsyncQueueError::Handle(FfiAsyncHandleError::UnexpectedResponse))
+    );
   }
 
   #[test]

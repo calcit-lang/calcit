@@ -171,6 +171,31 @@ legacy fallback; an advertised incompatible version is an error. See
 [Asynchronous FFI task protocol](ffi-async-protocol.md) for the exact C
 signatures, ownership, lifecycle, status, queue, and future WASM rules.
 
+Callback-v1 calls that install a cancel hook return an opaque native task
+capability rather than nil or a floating-point handle. Non-cancellable calls
+continue to return explicit `&unit`. Long-running tasks can be stopped
+explicitly:
+
+```cirru.no-check
+let
+    task $ &call-dylib-edn-fn lib-path |serve on-request
+  &ffi-task-cancel task :shutdown
+```
+
+For a Server request carrying a response handle, Calcit appends an opaque
+response capability after the decoded request arguments. It is exactly-once:
+
+```cirru.no-check
+defn on-request (method path response!)
+  if (= path |/health)
+    &ffi-response-resolve response! $ {} (:status 200) (:body |ok)
+    &ffi-response-reject response! $ {} (:status 404) (:body |missing)
+```
+
+The host validates ownership and deadline, invokes the dylib resolver on the
+Calcit host thread, and invalidates the capability after success. Unresolved
+requests are rejected on timeout or when their owning task finishes.
+
 ### Call in Calcit
 
 Rust code is compiled into dylibs, and then Calcit could call with:

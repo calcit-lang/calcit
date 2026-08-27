@@ -1,5 +1,5 @@
 use crate::runner;
-use cirru_edn::Edn;
+use cirru_edn::{Edn, EdnAnyRef};
 use colored::Colorize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -17,7 +17,8 @@ use calcit::{
   call_stack::{CallStackList, display_stack},
   data::edn::{calcit_to_edn, edn_to_calcit, sanitize_edn_for_format},
   ffi_abi::{
-    ASYNC_TASK_FLAG_SERIAL_EVENTS, FfiAsyncEventKind, FfiAsyncHandle, FfiAsyncHandleKind, FfiAsyncHandleRegistry, FfiAsyncHostV1,
+    ASYNC_RESPONSE_REJECT, ASYNC_RESPONSE_RESOLVE, ASYNC_TASK_FLAG_REQUIRES_RESPONSE, ASYNC_TASK_FLAG_SERIAL_EVENTS, FfiAsyncEventKind,
+    FfiAsyncHandle, FfiAsyncHandleKind, FfiAsyncHandleRegistry, FfiAsyncHostV1, FfiAsyncResponseResolve, FfiAsyncTaskCancel,
     FfiAsyncTaskDescriptor, async_status,
   },
   ffi_async::{FfiAsyncDrainReport, FfiAsyncEventQueue, copy_async_payload},
@@ -41,22 +42,57 @@ static TRACE_FFI_EVENT_ID: AtomicUsize = AtomicUsize::new(1);
 static TRACE_FFI_STARTED: LazyLock<Instant> = LazyLock::new(Instant::now);
 const ASYNC_HOST_CONTEXT: u64 = 0x4341_4c43_4954_0001;
 const ASYNC_EVENT_QUEUE_CAPACITY: usize = 1024;
+const MAX_ASYNC_RESPONSE_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1000;
 
 #[derive(Clone)]
-struct NativeAsyncCallback {
+struct NativeAsyncTask {
   callback: Calcit,
   stack: Arc<CallStackList>,
   lib_name: String,
   method: String,
+  control: Arc<Mutex<Option<NativeAsyncTaskControl>>>,
+}
+
+#[derive(Clone, Copy)]
+struct NativeAsyncTaskControl {
+  context: u64,
+  cancel: FfiAsyncTaskCancel,
+}
+
+#[derive(Clone, Copy)]
+struct NativeAsyncResponse {
+  owner_task: FfiAsyncHandle,
+  context: u64,
+  deadline: Instant,
+  resolve: FfiAsyncResponseResolve,
+}
+
+#[derive(Clone)]
+enum NativeAsyncResource {
+  Task(NativeAsyncTask),
+  Response(NativeAsyncResponse),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NativeAsyncCapability {
+  handle: FfiAsyncHandle,
+  kind: FfiAsyncHandleKind,
 }
 
 struct NativeAsyncRuntime {
-  registry: FfiAsyncHandleRegistry<NativeAsyncCallback>,
+  registry: FfiAsyncHandleRegistry<NativeAsyncResource>,
   queue: FfiAsyncEventQueue,
 }
 
 static NATIVE_ASYNC_RUNTIME: OnceLock<NativeAsyncRuntime> = OnceLock::new();
-static NATIVE_ASYNC_HOST: LazyLock<FfiAsyncHostV1> = LazyLock::new(|| FfiAsyncHostV1::new(ASYNC_HOST_CONTEXT, native_async_enqueue));
+static NATIVE_ASYNC_HOST: LazyLock<FfiAsyncHostV1> = LazyLock::new(|| {
+  FfiAsyncHostV1::new(
+    ASYNC_HOST_CONTEXT,
+    native_async_enqueue,
+    native_async_configure_task,
+    native_async_open_response,
+  )
+});
 
 #[allow(dead_code)]
 pub fn set_trace_ffi(v: bool) {
@@ -198,11 +234,24 @@ unsafe fn enqueue_native_async_event(
     Err(error) => return error.status_code(),
   };
   let task_handle = FfiAsyncHandle::from_raw(task_handle);
+  if !matches!(runtime.registry.clone_value(task_handle), Ok(NativeAsyncResource::Task(_))) {
+    return async_status::INVALID_HANDLE;
+  }
   let response_handle = if response_handle == FfiAsyncHandle::INVALID.raw() {
     None
   } else {
     Some(FfiAsyncHandle::from_raw(response_handle))
   };
+  if let Some(response_handle) = response_handle {
+    let response = match runtime.registry.clone_value(response_handle) {
+      Ok(NativeAsyncResource::Response(response)) if response.owner_task == task_handle => response,
+      Ok(_) => return async_status::INVALID_HANDLE,
+      Err(error) => return error.status_code(),
+    };
+    if response.deadline <= Instant::now() {
+      return async_status::HANDLE_FINISHED;
+    }
+  }
 
   match runtime
     .queue
@@ -232,6 +281,387 @@ unsafe fn enqueue_native_async_event(
       );
       error.status_code()
     }
+  }
+}
+
+unsafe extern "C" fn native_async_configure_task(
+  context: u64,
+  task_handle: u64,
+  kind: u32,
+  flags: u32,
+  task_context: u64,
+  cancel: Option<FfiAsyncTaskCancel>,
+) -> i32 {
+  std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    if context != ASYNC_HOST_CONTEXT {
+      return async_status::INVALID_HANDLE;
+    }
+    let runtime = match native_async_runtime() {
+      Ok(runtime) => runtime,
+      Err(_) => return async_status::HOST_CLOSING,
+    };
+    let kind = match FfiAsyncHandleKind::try_from(kind) {
+      Ok(kind) if kind != FfiAsyncHandleKind::Response => kind,
+      Ok(_) => return async_status::INVALID_PAYLOAD,
+      Err(error) => return error.status_code(),
+    };
+    if kind == FfiAsyncHandleKind::Server && cancel.is_none() {
+      return async_status::INVALID_PAYLOAD;
+    }
+    let resource = match runtime.registry.clone_value(FfiAsyncHandle::from_raw(task_handle)) {
+      Ok(NativeAsyncResource::Task(task)) => task,
+      Ok(_) => return async_status::INVALID_HANDLE,
+      Err(error) => return error.status_code(),
+    };
+    if let Err(error) = runtime.registry.configure(FfiAsyncHandle::from_raw(task_handle), kind, flags) {
+      return error.status_code();
+    }
+    let mut control = match resource.control.lock() {
+      Ok(control) => control,
+      Err(_) => return async_status::INTERNAL_ERROR,
+    };
+    *control = cancel.map(|cancel| NativeAsyncTaskControl {
+      context: task_context,
+      cancel,
+    });
+    trace_ffi_event(
+      "async-configure",
+      format!("task={task_handle} kind={kind:?} flags=0x{flags:x} cancel={}", cancel.is_some()),
+    );
+    async_status::OK
+  }))
+  .unwrap_or(async_status::INTERNAL_ERROR)
+}
+
+unsafe extern "C" fn native_async_open_response(
+  context: u64,
+  task_handle: u64,
+  response_context: u64,
+  timeout_ms: u64,
+  resolve: Option<FfiAsyncResponseResolve>,
+  out_handle: *mut u64,
+) -> i32 {
+  std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    if context != ASYNC_HOST_CONTEXT {
+      return async_status::INVALID_HANDLE;
+    }
+    if out_handle.is_null() || timeout_ms == 0 || timeout_ms > MAX_ASYNC_RESPONSE_TIMEOUT_MS {
+      return async_status::INVALID_PAYLOAD;
+    }
+    let Some(resolve) = resolve else {
+      return async_status::INVALID_PAYLOAD;
+    };
+    let runtime = match native_async_runtime() {
+      Ok(runtime) => runtime,
+      Err(_) => return async_status::HOST_CLOSING,
+    };
+    let task_handle = FfiAsyncHandle::from_raw(task_handle);
+    let task_state = match runtime.registry.state(task_handle) {
+      Ok(state) => state,
+      Err(error) => return error.status_code(),
+    };
+    if task_state.kind != FfiAsyncHandleKind::Server
+      || task_state.flags & ASYNC_TASK_FLAG_REQUIRES_RESPONSE == 0
+      || task_state.lifecycle != calcit::ffi_abi::FfiAsyncLifecycle::Active
+    {
+      return async_status::INVALID_HANDLE;
+    }
+    if !matches!(runtime.registry.clone_value(task_handle), Ok(NativeAsyncResource::Task(_))) {
+      return async_status::INVALID_HANDLE;
+    }
+    let Some(deadline) = Instant::now().checked_add(Duration::from_millis(timeout_ms)) else {
+      return async_status::INVALID_PAYLOAD;
+    };
+    let response = NativeAsyncResource::Response(NativeAsyncResponse {
+      owner_task: task_handle,
+      context: response_context,
+      deadline,
+      resolve,
+    });
+    let response_handle = match runtime.registry.register(FfiAsyncHandleKind::Response, response) {
+      Ok(handle) => handle,
+      Err(error) => return error.status_code(),
+    };
+    // SAFETY: the C caller provided a non-null writable out pointer for this
+    // synchronous call; only one fixed-width value is written.
+    unsafe { out_handle.write(response_handle.raw()) };
+    trace_ffi_event(
+      "async-response-open",
+      format!(
+        "task={} response={} timeout_ms={timeout_ms}",
+        task_handle.raw(),
+        response_handle.raw()
+      ),
+    );
+    async_status::OK
+  }))
+  .unwrap_or(async_status::INTERNAL_ERROR)
+}
+
+fn async_capability(handle: FfiAsyncHandle, kind: FfiAsyncHandleKind) -> Calcit {
+  Calcit::AnyRef(EdnAnyRef::new(NativeAsyncCapability { handle, kind }))
+}
+
+fn read_native_async_capability(value: &Calcit) -> Result<NativeAsyncCapability, CalcitErr> {
+  let Calcit::AnyRef(reference) = value else {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Type,
+      format!("expected async FFI capability, got: {value}"),
+    ));
+  };
+  let guard = reference
+    .0
+    .read()
+    .map_err(|_| CalcitErr::use_str(CalcitErrKind::Unexpected, "async FFI capability lock is poisoned"))?;
+  let Some(capability) = guard.as_any().downcast_ref::<NativeAsyncCapability>().copied() else {
+    return Err(CalcitErr::use_str(CalcitErrKind::Type, "expected async FFI capability"));
+  };
+  Ok(capability)
+}
+
+fn read_async_capability(value: &Calcit, expected: FfiAsyncHandleKind) -> Result<NativeAsyncCapability, CalcitErr> {
+  let capability = read_native_async_capability(value)?;
+  if capability.kind != expected {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Type,
+      format!("expected async FFI {expected:?} capability, got {:?}", capability.kind),
+    ));
+  }
+  Ok(capability)
+}
+
+fn read_async_task_capability(value: &Calcit) -> Result<NativeAsyncCapability, CalcitErr> {
+  let capability = read_native_async_capability(value)?;
+  if capability.kind == FfiAsyncHandleKind::Response {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Type,
+      "expected async FFI task capability, got response capability",
+    ));
+  }
+  Ok(capability)
+}
+
+fn encode_async_value(value: &Calcit) -> Result<Vec<u8>, CalcitErr> {
+  if matches!(value, Calcit::Unit) {
+    return Ok(b"&unit".to_vec());
+  }
+  let value = calcit_to_edn(value)?;
+  cirru_edn::format(&value, true)
+    .map(String::into_bytes)
+    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, format!("failed to encode async FFI value: {error}")))
+}
+
+fn resolve_async_response_with(
+  runtime: &NativeAsyncRuntime,
+  capability: NativeAsyncCapability,
+  outcome: u32,
+  payload: &[u8],
+) -> Result<(), String> {
+  let state = runtime.registry.state(capability.handle).map_err(|error| error.to_string())?;
+  if state.kind != FfiAsyncHandleKind::Response || state.lifecycle != calcit::ffi_abi::FfiAsyncLifecycle::Active {
+    return Err("async FFI response capability is no longer active".to_owned());
+  }
+  let NativeAsyncResource::Response(response) = runtime.registry.clone_value(capability.handle).map_err(|error| error.to_string())?
+  else {
+    return Err("async FFI capability does not reference a response".to_owned());
+  };
+  if response.deadline <= Instant::now() {
+    let _ = reject_response_for_host(runtime, capability.handle, response, b"{} (:code :timeout)");
+    return Err("async FFI response capability has expired".to_owned());
+  }
+  let status = unsafe { (response.resolve)(response.context, capability.handle.raw(), outcome, payload.as_ptr(), payload.len()) };
+  if status != async_status::OK {
+    return Err(format!(
+      "async FFI response {} was rejected by the module with status {status}",
+      capability.handle.raw()
+    ));
+  }
+  runtime.registry.finish(capability.handle).map_err(|error| error.to_string())?;
+  match runtime.registry.release(capability.handle) {
+    Ok(NativeAsyncResource::Response(_)) => {}
+    Ok(NativeAsyncResource::Task(_)) => {
+      return Err("async FFI response released a task resource".to_owned());
+    }
+    Err(error) => return Err(error.to_string()),
+  }
+  trace_ffi_event(
+    "async-response-finish",
+    format!(
+      "task={} response={} outcome={outcome}",
+      response.owner_task.raw(),
+      capability.handle.raw()
+    ),
+  );
+  Ok(())
+}
+
+fn resolve_async_response(capability: NativeAsyncCapability, outcome: u32, payload: &[u8]) -> Result<Calcit, CalcitErr> {
+  let runtime = native_async_runtime().map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
+  resolve_async_response_with(runtime, capability, outcome, payload)
+    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
+  Ok(Calcit::Unit)
+}
+
+fn ffi_response_resolve(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&ffi-response-resolve expected 2 arguments, got: {xs:?}"),
+    );
+  }
+  let capability = read_async_capability(&xs[0], FfiAsyncHandleKind::Response)?;
+  let payload = encode_async_value(&xs[1])?;
+  resolve_async_response(capability, ASYNC_RESPONSE_RESOLVE, &payload)
+}
+
+fn ffi_response_reject(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&ffi-response-reject expected 2 arguments, got: {xs:?}"),
+    );
+  }
+  let capability = read_async_capability(&xs[0], FfiAsyncHandleKind::Response)?;
+  let payload = encode_async_value(&xs[1])?;
+  resolve_async_response(capability, ASYNC_RESPONSE_REJECT, &payload)
+}
+
+fn reject_response_for_host(
+  runtime: &NativeAsyncRuntime,
+  handle: FfiAsyncHandle,
+  response: NativeAsyncResponse,
+  reason: &[u8],
+) -> Option<String> {
+  let status = unsafe { (response.resolve)(response.context, handle.raw(), ASYNC_RESPONSE_REJECT, reason.as_ptr(), reason.len()) };
+  let finish_error = runtime.registry.finish(handle).err();
+  let release_error = if finish_error.is_none() {
+    runtime.registry.release(handle).err()
+  } else {
+    None
+  };
+  trace_ffi_event(
+    "async-response-reject",
+    format!("task={} response={} status={status}", response.owner_task.raw(), handle.raw()),
+  );
+  if let Some(error) = finish_error {
+    Some(format!("response {} lifecycle error: {error}", handle.raw()))
+  } else if let Some(error) = release_error {
+    Some(format!("response {} release error: {error}", handle.raw()))
+  } else if status != async_status::OK {
+    Some(format!("response {} module reject failed with status {status}", handle.raw()))
+  } else {
+    None
+  }
+}
+
+fn expire_async_responses(runtime: &NativeAsyncRuntime) -> Result<(), String> {
+  let now = Instant::now();
+  for (handle, state, resource) in runtime.registry.snapshot().map_err(|error| error.to_string())? {
+    let NativeAsyncResource::Response(response) = resource else {
+      continue;
+    };
+    if state.lifecycle == calcit::ffi_abi::FfiAsyncLifecycle::Active && response.deadline <= now {
+      if let Some(error) = reject_response_for_host(runtime, handle, response, b"{} (:code :timeout)") {
+        eprintln!("[Error] async FFI response timeout: {error}");
+      } else {
+        eprintln!(
+          "[Error] async FFI response {} for task {} timed out",
+          handle.raw(),
+          response.owner_task.raw()
+        );
+      }
+    }
+  }
+  Ok(())
+}
+
+fn reject_owned_responses(runtime: &NativeAsyncRuntime, owner: FfiAsyncHandle, reason: &[u8]) -> Result<(), String> {
+  for (handle, state, resource) in runtime.registry.snapshot().map_err(|error| error.to_string())? {
+    let NativeAsyncResource::Response(response) = resource else {
+      continue;
+    };
+    if response.owner_task == owner
+      && state.lifecycle == calcit::ffi_abi::FfiAsyncLifecycle::Active
+      && let Some(error) = reject_response_for_host(runtime, handle, response, reason)
+    {
+      eprintln!("[Error] async FFI response cleanup: {error}");
+    }
+  }
+  Ok(())
+}
+
+fn discard_owned_responses(runtime: &NativeAsyncRuntime, owner: FfiAsyncHandle) -> Result<usize, String> {
+  let mut discarded = 0;
+  for (handle, _state, resource) in runtime.registry.snapshot().map_err(|error| error.to_string())? {
+    let NativeAsyncResource::Response(response) = resource else {
+      continue;
+    };
+    if response.owner_task == owner {
+      let _ = runtime.registry.finish(handle);
+      if runtime.registry.release(handle).is_ok() {
+        discarded += 1;
+      }
+    }
+  }
+  Ok(discarded)
+}
+
+fn ffi_task_cancel(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if xs.is_empty() || xs.len() > 2 {
+    return CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&ffi-task-cancel expected 1 or 2 arguments, got: {xs:?}"),
+    );
+  }
+  let capability = read_async_task_capability(&xs[0])?;
+  let reason = if xs.len() == 2 {
+    encode_async_value(&xs[1])?
+  } else {
+    b"{} (:code :cancelled)".to_vec()
+  };
+  let runtime = native_async_runtime().map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
+  let state = runtime
+    .registry
+    .state(capability.handle)
+    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error.to_string()))?;
+  if state.lifecycle == calcit::ffi_abi::FfiAsyncLifecycle::Closing {
+    return Ok(Calcit::Unit);
+  }
+  let NativeAsyncResource::Task(task) = runtime
+    .registry
+    .clone_value(capability.handle)
+    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error.to_string()))?
+  else {
+    return CalcitErr::err_str(CalcitErrKind::Unexpected, "async FFI capability does not reference a task");
+  };
+  let control = task
+    .control
+    .lock()
+    .map_err(|_| CalcitErr::use_str(CalcitErrKind::Unexpected, "async FFI task control lock is poisoned"))?
+    .to_owned()
+    .ok_or_else(|| CalcitErr::use_str(CalcitErrKind::Unexpected, "async FFI task does not provide cancellation"))?;
+  runtime
+    .registry
+    .begin_close(capability.handle)
+    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error.to_string()))?;
+  let status = unsafe { (control.cancel)(control.context, capability.handle.raw(), reason.as_ptr(), reason.len()) };
+  trace_ffi_event("async-task-cancel", format!("task={} status={status}", capability.handle.raw()));
+  if status == async_status::OK {
+    Ok(Calcit::Unit)
+  } else {
+    let _ = runtime.queue.discard_handle_events(capability.handle);
+    let _ = reject_owned_responses(runtime, capability.handle, b"{} (:code :cancel-failed)");
+    let _ = runtime.registry.finish(capability.handle);
+    if matches!(runtime.registry.release(capability.handle), Ok(NativeAsyncResource::Task(_))) {
+      track::track_task_release();
+    }
+    CalcitErr::err_str(
+      CalcitErrKind::Unexpected,
+      format!(
+        "async FFI task {} cancellation failed with status {status}",
+        capability.handle.raw()
+      ),
+    )
   }
 }
 
@@ -266,7 +696,9 @@ fn decode_async_failure(payload: &[u8]) -> Result<String, String> {
 
 fn dispatch_native_async_event(runtime: &NativeAsyncRuntime, event: &calcit::ffi_async::FfiAsyncQueuedEvent) -> Result<(), String> {
   let handle = event.task_handle();
-  let task = runtime.registry.clone_value(handle).map_err(|error| error.to_string())?;
+  let NativeAsyncResource::Task(task) = runtime.registry.clone_value(handle).map_err(|error| error.to_string())? else {
+    return Err("async FFI event targeted a non-task handle".to_owned());
+  };
   let kind = event.kind().map_err(|error| error.to_string())?;
   trace_ffi_event(
     "async-drain",
@@ -283,7 +715,22 @@ fn dispatch_native_async_event(runtime: &NativeAsyncRuntime, event: &calcit::ffi
 
   match kind {
     FfiAsyncEventKind::Emit => {
-      let args = decode_async_emit(event.payload())?;
+      let mut args = decode_async_emit(event.payload())?;
+      if event.descriptor.response_handle != FfiAsyncHandle::INVALID.raw() {
+        let response_handle = FfiAsyncHandle::from_raw(event.descriptor.response_handle);
+        let NativeAsyncResource::Response(response) =
+          runtime.registry.clone_value(response_handle).map_err(|error| error.to_string())?
+        else {
+          return Err("async FFI event carried a non-response handle".to_owned());
+        };
+        if response.owner_task != handle {
+          return Err("async FFI response handle belongs to another task".to_owned());
+        }
+        if response.deadline <= Instant::now() {
+          return Err("async FFI response handle expired before callback dispatch".to_owned());
+        }
+        args.push(async_capability(response_handle, FfiAsyncHandleKind::Response));
+      }
       let Calcit::Fn { info, .. } = &task.callback else {
         return Err("async FFI task lost its Calcit callback".to_owned());
       };
@@ -319,6 +766,7 @@ fn dispatch_native_async_event(runtime: &NativeAsyncRuntime, event: &calcit::ffi
 
 pub fn drain_async_events(limit: usize) -> Result<FfiAsyncDrainReport, String> {
   let runtime = native_async_runtime()?;
+  expire_async_responses(runtime)?;
   let mut report = runtime
     .queue
     .drain(&runtime.registry, limit, |event| dispatch_native_async_event(runtime, event))
@@ -345,11 +793,18 @@ pub fn drain_async_events(limit: usize) -> Result<FfiAsyncDrainReport, String> {
 
   for descriptor in report.finished.clone() {
     let handle = FfiAsyncHandle::from_raw(descriptor.task_handle);
-    if let Err(error) = runtime.registry.release(handle) {
-      report
-        .lifecycle_failures
-        .push(calcit::ffi_async::FfiAsyncLifecycleFailure { descriptor, error });
-      continue;
+    reject_owned_responses(runtime, handle, b"{} (:code :owner-finished)")?;
+    match runtime.registry.release(handle) {
+      Ok(NativeAsyncResource::Task(_)) => {}
+      Ok(NativeAsyncResource::Response(_)) => {
+        return Err(format!("async FFI task {} released a response resource", handle.raw()));
+      }
+      Err(error) => {
+        report
+          .lifecycle_failures
+          .push(calcit::ffi_async::FfiAsyncLifecycleFailure { descriptor, error });
+        continue;
+      }
     }
     track::track_task_release();
     trace_ffi_event(
@@ -545,6 +1000,30 @@ pub fn inject_platform_apis() {
       tags: proc_tags(["interop", "io"]),
     },
   );
+  for (name, proc, arity_min, arity_max) in [
+    (
+      "&ffi-response-resolve",
+      ffi_response_resolve as calcit::builtins::FnType,
+      2,
+      Some(2),
+    ),
+    ("&ffi-response-reject", ffi_response_reject as calcit::builtins::FnType, 2, Some(2)),
+    ("&ffi-task-cancel", ffi_task_cancel as calcit::builtins::FnType, 1, Some(2)),
+  ] {
+    builtins::register_import_proc_with_descriptor(
+      name,
+      proc,
+      RegisteredProcDescriptor {
+        arity_min,
+        arity_max,
+        platforms: vec![RegisteredProcPlatform::Native],
+        stability: RegisteredProcStability::Public,
+        docs_hint: Some(Arc::from("Fix: use a capability received from native async FFI.")),
+        callback_last: false,
+        tags: proc_tags(["interop", "io"]),
+      },
+    );
+  }
   builtins::register_import_proc_with_descriptor(
     "async-sleep",
     builtins::meta::async_sleep,
@@ -687,15 +1166,20 @@ fn try_start_async_callback_v1(
   };
   let runtime = native_async_runtime().map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
   let request = calcit::ffi_abi::encode_buffer_request(args).map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
-  let task = NativeAsyncCallback {
+  let task = NativeAsyncTask {
     callback,
     stack: Arc::new(call_stack.to_owned()),
     lib_name: lib_name.to_owned(),
     method: method.to_owned(),
+    control: Arc::new(Mutex::new(None)),
   };
   let handle = runtime
     .registry
-    .register_with_flags(FfiAsyncHandleKind::Stream, ASYNC_TASK_FLAG_SERIAL_EVENTS, task)
+    .register_with_flags(
+      FfiAsyncHandleKind::Stream,
+      ASYNC_TASK_FLAG_SERIAL_EVENTS,
+      NativeAsyncResource::Task(task),
+    )
     .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error.to_string()))?;
   let descriptor = FfiAsyncTaskDescriptor::new(handle, FfiAsyncHandleKind::Stream, ASYNC_TASK_FLAG_SERIAL_EVENTS);
   let host = async_host_table();
@@ -713,17 +1197,38 @@ fn try_start_async_callback_v1(
   );
   let status = unsafe { start(request.as_ptr(), request.len(), &descriptor, host) };
   if status == async_status::OK {
-    return Ok(Some(Calcit::Unit));
+    let state = runtime
+      .registry
+      .state(handle)
+      .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error.to_string()))?;
+    let NativeAsyncResource::Task(task) = runtime
+      .registry
+      .clone_value(handle)
+      .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error.to_string()))?
+    else {
+      return CalcitErr::err_str(CalcitErrKind::Unexpected, "async FFI start replaced its task resource").map(Some);
+    };
+    let cancellable = task
+      .control
+      .lock()
+      .map_err(|_| CalcitErr::use_str(CalcitErrKind::Unexpected, "async FFI task control lock is poisoned"))?
+      .is_some();
+    return Ok(Some(if cancellable {
+      async_capability(handle, state.kind)
+    } else {
+      Calcit::Unit
+    }));
   }
 
   let purged = runtime.queue.discard_handle_events(handle).unwrap_or(0);
+  let discarded_responses = discard_owned_responses(runtime, handle).unwrap_or(0);
   let _ = runtime.registry.finish(handle);
   let _ = runtime.registry.release(handle);
   track::track_task_release();
   trace_ffi_event(
     "async-start-failed",
     format!(
-      "lib={lib_name} symbol={} task={} status={status} purged={purged} pending={}",
+      "lib={lib_name} symbol={} task={} status={status} purged={purged} discarded_responses={discarded_responses} pending={}",
       calcit::ffi_abi::async_method_symbol(method),
       handle.raw(),
       track::count_pending_tasks()
@@ -1053,6 +1558,39 @@ pub fn on_ctrl_c(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, 
 mod async_callback_tests {
   use super::*;
 
+  type RecordedResponse = (u64, u64, u32, Vec<u8>);
+  static RESPONSE_EVENTS: LazyLock<Mutex<Vec<RecordedResponse>>> = LazyLock::new(|| Mutex::new(vec![]));
+
+  unsafe extern "C" fn record_response(
+    context: u64,
+    response_handle: u64,
+    outcome: u32,
+    payload_ptr: *const u8,
+    payload_len: usize,
+  ) -> i32 {
+    let payload = if payload_len == 0 {
+      vec![]
+    } else {
+      // SAFETY: test callers pass a readable payload for this synchronous call.
+      unsafe { std::slice::from_raw_parts(payload_ptr, payload_len) }.to_vec()
+    };
+    RESPONSE_EVENTS
+      .lock()
+      .expect("response event lock")
+      .push((context, response_handle, outcome, payload));
+    async_status::OK
+  }
+
+  fn test_task() -> NativeAsyncResource {
+    NativeAsyncResource::Task(NativeAsyncTask {
+      callback: Calcit::Nil,
+      stack: Arc::new(CallStackList::default()),
+      lib_name: "fixture".to_owned(),
+      method: "server".to_owned(),
+      control: Arc::new(Mutex::new(None)),
+    })
+  }
+
   #[test]
   fn foreign_producer_enters_through_c_payload_boundary_and_host_drains_completion() {
     let runtime = Arc::new(NativeAsyncRuntime {
@@ -1061,16 +1599,7 @@ mod async_callback_tests {
     });
     let handle = runtime
       .registry
-      .register_with_flags(
-        FfiAsyncHandleKind::Stream,
-        ASYNC_TASK_FLAG_SERIAL_EVENTS,
-        NativeAsyncCallback {
-          callback: Calcit::Nil,
-          stack: Arc::new(CallStackList::default()),
-          lib_name: "fixture".to_owned(),
-          method: "complete".to_owned(),
-        },
-      )
+      .register_with_flags(FfiAsyncHandleKind::Stream, ASYNC_TASK_FLAG_SERIAL_EVENTS, test_task())
       .expect("register fixture task");
 
     let producer_runtime = Arc::clone(&runtime);
@@ -1114,5 +1643,146 @@ mod async_callback_tests {
       decode_async_failure(b"{} (:code :closed)").expect("decode failure"),
       "{} $ :code :closed"
     );
+  }
+
+  #[test]
+  fn expired_response_is_rejected_once_and_released() {
+    const CONTEXT: u64 = 101;
+    let runtime = NativeAsyncRuntime {
+      registry: FfiAsyncHandleRegistry::new(),
+      queue: FfiAsyncEventQueue::new(4).expect("create host queue"),
+    };
+    let owner = runtime
+      .registry
+      .register_with_flags(
+        FfiAsyncHandleKind::Server,
+        ASYNC_TASK_FLAG_SERIAL_EVENTS | ASYNC_TASK_FLAG_REQUIRES_RESPONSE,
+        test_task(),
+      )
+      .expect("register server");
+    let response = runtime
+      .registry
+      .register(
+        FfiAsyncHandleKind::Response,
+        NativeAsyncResource::Response(NativeAsyncResponse {
+          owner_task: owner,
+          context: CONTEXT,
+          deadline: Instant::now() - Duration::from_millis(1),
+          resolve: record_response,
+        }),
+      )
+      .expect("register response");
+
+    expire_async_responses(&runtime).expect("expire responses");
+    assert_eq!(
+      runtime.registry.state(response),
+      Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle)
+    );
+    let events: Vec<RecordedResponse> = RESPONSE_EVENTS
+      .lock()
+      .expect("response events")
+      .iter()
+      .filter(|(context, ..)| *context == CONTEXT)
+      .cloned()
+      .collect();
+    assert_eq!(
+      events,
+      vec![(CONTEXT, response.raw(), ASYNC_RESPONSE_REJECT, b"{} (:code :timeout)".to_vec())]
+    );
+  }
+
+  #[test]
+  fn response_resolution_is_exactly_once_and_rejects_stale_reuse() {
+    const CONTEXT: u64 = 202;
+    let runtime = NativeAsyncRuntime {
+      registry: FfiAsyncHandleRegistry::new(),
+      queue: FfiAsyncEventQueue::new(4).expect("create host queue"),
+    };
+    let owner = runtime
+      .registry
+      .register(FfiAsyncHandleKind::Server, test_task())
+      .expect("register server");
+    let response = runtime
+      .registry
+      .register(
+        FfiAsyncHandleKind::Response,
+        NativeAsyncResource::Response(NativeAsyncResponse {
+          owner_task: owner,
+          context: CONTEXT,
+          deadline: Instant::now() + Duration::from_secs(1),
+          resolve: record_response,
+        }),
+      )
+      .expect("register response");
+    let capability = NativeAsyncCapability {
+      handle: response,
+      kind: FfiAsyncHandleKind::Response,
+    };
+
+    resolve_async_response_with(&runtime, capability, ASYNC_RESPONSE_RESOLVE, b"|ok").expect("resolve response");
+    let error =
+      resolve_async_response_with(&runtime, capability, ASYNC_RESPONSE_RESOLVE, b"|late").expect_err("stale response must fail");
+    assert!(error.contains("stale"), "error: {error}");
+    let events: Vec<RecordedResponse> = RESPONSE_EVENTS
+      .lock()
+      .expect("response events")
+      .iter()
+      .filter(|(context, ..)| *context == CONTEXT)
+      .cloned()
+      .collect();
+    assert_eq!(events, vec![(CONTEXT, response.raw(), ASYNC_RESPONSE_RESOLVE, b"|ok".to_vec())]);
+  }
+
+  #[test]
+  fn response_handle_must_belong_to_the_enqueuing_server() {
+    let runtime = NativeAsyncRuntime {
+      registry: FfiAsyncHandleRegistry::new(),
+      queue: FfiAsyncEventQueue::new(4).expect("create host queue"),
+    };
+    let first = runtime
+      .registry
+      .register_with_flags(
+        FfiAsyncHandleKind::Server,
+        ASYNC_TASK_FLAG_SERIAL_EVENTS | ASYNC_TASK_FLAG_REQUIRES_RESPONSE,
+        test_task(),
+      )
+      .expect("register first server");
+    let second = runtime
+      .registry
+      .register_with_flags(
+        FfiAsyncHandleKind::Server,
+        ASYNC_TASK_FLAG_SERIAL_EVENTS | ASYNC_TASK_FLAG_REQUIRES_RESPONSE,
+        test_task(),
+      )
+      .expect("register second server");
+    let response = runtime
+      .registry
+      .register(
+        FfiAsyncHandleKind::Response,
+        NativeAsyncResource::Response(NativeAsyncResponse {
+          owner_task: first,
+          context: 0,
+          deadline: Instant::now() + Duration::from_secs(1),
+          resolve: record_response,
+        }),
+      )
+      .expect("register response");
+    let payload = b"[] |request";
+
+    assert_eq!(
+      unsafe {
+        enqueue_native_async_event(
+          &runtime,
+          ASYNC_HOST_CONTEXT,
+          second.raw(),
+          FfiAsyncEventKind::Emit as u32,
+          response.raw(),
+          payload.as_ptr(),
+          payload.len(),
+        )
+      },
+      async_status::INVALID_HANDLE
+    );
+    assert_eq!(runtime.queue.len(), Ok(0));
   }
 }
