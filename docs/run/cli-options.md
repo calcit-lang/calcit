@@ -27,7 +27,7 @@ entry_for:
 calcit --help
 ```
 
-Quick note: `calcit edit format` rewrites the target snapshot using canonical serialization without guessing semantic changes. It normalizes legacy namespace records and top-level `:configs`, and rewrites legacy schema type tags such as `:string` and `:ref` to quoted symbols such as `'String` and `'Ref` only in known type positions. Ordinary tag data stays unchanged. It then emits recoverable stderr advisories for legacy filenames, legacy `:any`, and unresolved dynamic type debt. Use `calcit analyze weak-types` for exact paths and recommendations; format warnings do not turn the command into a type-quality gate.
+Quick note: `calcit edit format` rewrites the target snapshot using canonical serialization without guessing semantic changes. Retired `compact.cirru` filenames and top-level `:configs` are rejected with migration guidance; use the final compatible Calcit 0.13.50 release to convert them first. Current formatting normalizes older namespace records and rewrites legacy schema type tags such as `:string` and `:ref` to quoted symbols such as `'String` and `'Ref` only in known type positions. Ordinary tag data stays unchanged. It emits recoverable stderr advisories for legacy `:any` and unresolved dynamic type debt. Use `calcit analyze weak-types` for exact paths and recommendations; format warnings do not turn the command into a type-quality gate.
 
 For feature-level planning, use `calcit edit scaffold`. Its primary input is a
 Cirru EDN architecture plan, preferably stored under

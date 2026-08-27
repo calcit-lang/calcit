@@ -339,10 +339,6 @@ fn find_map_value_mut<'a>(map: &'a mut EdnMapView, key: &str) -> Option<&'a mut 
   map.0.get_mut(&Edn::str(key))
 }
 
-fn find_map_value<'a>(map: &'a EdnMapView, key: &str) -> Option<&'a Edn> {
-  map.get(&Edn::tag(key)).or_else(|| map.get(&Edn::str(key)))
-}
-
 fn type_slots_as_edn(type_slots: &HashMap<String, String>) -> Edn {
   let mut slots = EdnMapView::default();
   for (slot, type_path) in type_slots {
@@ -371,38 +367,14 @@ fn save_type_slots_preserving_snapshot(
   let Edn::Map(root) = &mut data else {
     return Err("Snapshot root must be an EDN map".to_owned());
   };
-  let has_default_entry = match find_map_value(root, "entries") {
-    Some(Edn::Map(entries)) => find_map_value(entries, snapshot::DEFAULT_ENTRY_NAME).is_some(),
-    _ => false,
+  let entry_name = entry.unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
+  let entries_value = find_map_value_mut(root, "entries").ok_or_else(|| "Snapshot is missing :entries".to_owned())?;
+  let Edn::Map(entries) = entries_value else {
+    return Err("Snapshot :entries must be an EDN map".to_owned());
   };
-
-  let configs = if let Some(entry_name) = entry {
-    let entries_value = find_map_value_mut(root, "entries").ok_or_else(|| "Snapshot is missing :entries".to_owned())?;
-    let Edn::Map(entries) = entries_value else {
-      return Err("Snapshot :entries must be an EDN map".to_owned());
-    };
-    let entry_value = find_map_value_mut(entries, entry_name).ok_or_else(|| format!("Entry '{entry_name}' not found"))?;
-    let Edn::Map(entry_configs) = entry_value else {
-      return Err(format!("Entry '{entry_name}' config must be an EDN map"));
-    };
-    entry_configs
-  } else if has_default_entry {
-    let entries_value = find_map_value_mut(root, "entries").ok_or_else(|| "Snapshot is missing :entries".to_owned())?;
-    let Edn::Map(entries) = entries_value else {
-      return Err("Snapshot :entries must be an EDN map".to_owned());
-    };
-    let entry_value =
-      find_map_value_mut(entries, snapshot::DEFAULT_ENTRY_NAME).ok_or_else(|| "Snapshot is missing :entries.default".to_owned())?;
-    let Edn::Map(entry_configs) = entry_value else {
-      return Err("Entry 'default' config must be an EDN map".to_owned());
-    };
-    entry_configs
-  } else {
-    let configs_value = find_map_value_mut(root, "configs").ok_or_else(|| "Snapshot is missing :entries or :configs".to_owned())?;
-    let Edn::Map(configs) = configs_value else {
-      return Err("Snapshot :configs must be an EDN map".to_owned());
-    };
-    configs
+  let entry_value = find_map_value_mut(entries, entry_name).ok_or_else(|| format!("Entry '{entry_name}' not found"))?;
+  let Edn::Map(configs) = entry_value else {
+    return Err(format!("Entry '{entry_name}' config must be an EDN map"));
   };
 
   configs.insert_key("type-slots", type_slots_as_edn(type_slots));
@@ -487,7 +459,7 @@ mod tests {
     fs::create_dir_all(global.join("demo")).unwrap();
     let snapshot = |package: &str| {
       format!(
-        "{{}} (:package |{package})\n  :configs $ {{}} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.1)\n    :modules $ []\n  :files $ {{}}\n"
+        "{{}} (:package |{package})\n  :entries $ {{}}\n    :default $ {{}} (:mode :native) (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)\n      :modules $ []\n  :files $ {{}}\n"
       )
     };
     fs::write(project.join(".calcit/modules/demo/compact.cirru"), "invalid snapshot").unwrap();
@@ -516,9 +488,9 @@ mod tests {
   #[test]
   fn type_slot_edn_mutation_preserves_unrelated_snapshot_data() {
     let source = r#"{} (:package |demo)
-  :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.1)
-    :modules $ []
   :entries $ {}
+    :default $ {} (:mode :native) (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
+      :modules $ []
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
@@ -559,8 +531,11 @@ mod tests {
       read_definition_field(&before_root, "schema"),
       read_definition_field(&after_root, "schema")
     );
-    let Edn::Map(configs) = after_root.get_or_nil("configs") else {
-      panic!("configs")
+    let Edn::Map(entries) = after_root.get_or_nil("entries") else {
+      panic!("entries")
+    };
+    let Edn::Map(configs) = entries.get_or_nil(snapshot::DEFAULT_ENTRY_NAME) else {
+      panic!("entries.default")
     };
     let Edn::Map(saved_slots) = configs.get_or_nil("type-slots") else {
       panic!("type slots")

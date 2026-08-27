@@ -65,20 +65,6 @@ pub struct SnapshotEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LegacySnapshotConfigs {
-  #[serde(rename = "init-fn", deserialize_with = "deserialize_ns_def")]
-  pub init_fn: String,
-  #[serde(rename = "reload-fn", deserialize_with = "deserialize_ns_def")]
-  pub reload_fn: String,
-  #[serde(default)]
-  pub modules: Vec<String>,
-  #[serde(default)]
-  pub version: String,
-  #[serde(default, rename = "type-slots")]
-  pub type_slots: HashMap<String, String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CodeEntry {
   pub doc: String,
   #[serde(default)]
@@ -613,30 +599,15 @@ fn main() {
 
   let files = parse_files(data.get_or_nil("files")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:files`: {e}"));
 
-  let legacy_configs = match data.get_or_nil("configs") {
-    Edn::Nil => None,
-    value => {
-      Some(from_edn::<LegacySnapshotConfigs>(value).unwrap_or_else(|e| panic!("failed to parse calcit-core legacy `:configs`: {e}")))
-    }
-  };
-  let mut entries = parse_entries(data.get_or_nil("entries")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:entries`: {e}"));
-  if let Some(configs) = &legacy_configs {
-    entries.insert(
-      "default".to_owned(),
-      SnapshotEntry {
-        mode: SnapshotRunMode::Native,
-        init_fn: configs.init_fn.clone(),
-        reload_fn: configs.reload_fn.clone(),
-        description: String::new(),
-        modules: configs.modules.clone(),
-        type_slots: configs.type_slots.clone(),
-        feature_policy: HashMap::new(),
-        target: None,
-      },
-    );
+  if data.contains_key("configs") {
+    panic!("calcit-core uses retired top-level `:configs`; migrate it with Calcit 0.13.50 before building")
+  }
+  let entries = parse_entries(data.get_or_nil("entries")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:entries`: {e}"));
+  if !entries.contains_key("default") {
+    panic!("calcit-core `:entries` must contain `:default`");
   }
   let version = match data.get_or_nil("version") {
-    Edn::Nil => legacy_configs.map(|configs| configs.version).unwrap_or_default(),
+    Edn::Nil => String::new(),
     value => from_edn(value).unwrap_or_else(|e| panic!("failed to parse calcit-core `:version`: {e}")),
   };
 

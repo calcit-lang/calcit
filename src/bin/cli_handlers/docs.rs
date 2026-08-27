@@ -1488,17 +1488,18 @@ fn ensure_runtime_initialized() {
 }
 
 fn collect_check_md_module_paths(entry: &str, deps: &[String]) -> Result<Vec<String>, String> {
-  let resolved_entry = calcit::resolve_snapshot_path_alias(Path::new(entry));
+  let resolved_entry = Path::new(entry);
+  calcit::validate_snapshot_path(resolved_entry)?;
   let mut content =
-    fs::read_to_string(&resolved_entry).map_err(|e| format!("Failed to read entry file '{}': {e}", resolved_entry.display()))?;
+    fs::read_to_string(resolved_entry).map_err(|e| format!("Failed to read entry file '{}': {e}", resolved_entry.display()))?;
   util::string::strip_shebang(&mut content);
   let data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse entry file '{}': {e}", resolved_entry.display()))?;
 
-  // Extract entries.default.modules (or legacy configs.modules) directly from raw EDN.
-  // This is necessary because old-format snapshots (with %{} :Expr code entries) cannot
-  // be deserialized via load_snapshot_data, but we only need the module list here.
+  // Extract entries.default.modules directly from raw EDN. This is necessary
+  // because older code-entry encodings may not fully deserialize, while docs
+  // checking only needs the module list.
   // Fail fast on malformed modules to avoid silently dropping dependencies.
-  let module_paths_from_entry: Vec<String> = extract_modules_from_edn(&data)?;
+  let module_paths_from_entry: Vec<String> = extract_modules_from_edn(&data, entry)?;
 
   let mut module_paths = module_paths_from_entry;
   module_paths.extend(deps.iter().cloned());
@@ -1511,7 +1512,7 @@ fn collect_check_md_module_paths(entry: &str, deps: &[String]) -> Result<Vec<Str
 /// Extract the default entry's module list from an EDN snapshot value without fully
 /// deserializing the snapshot. This tolerates old-format entries (e.g. `%{} :Expr`)
 /// that `load_snapshot_data` cannot handle.
-fn extract_modules_from_edn(data: &cirru_edn::Edn) -> Result<Vec<String>, String> {
+fn extract_modules_from_edn(data: &cirru_edn::Edn, source_path: &str) -> Result<Vec<String>, String> {
   use cirru_edn::Edn;
 
   // Both old and new snapshot formats use a top-level Map or Struct.
@@ -1523,15 +1524,15 @@ fn extract_modules_from_edn(data: &cirru_edn::Edn) -> Result<Vec<String>, String
     }
   };
 
+  if get_field(data, "configs").is_some() {
+    return Err(snapshot::retired_snapshot_configs_error(source_path));
+  }
   let entry = match get_field(data, "entries") {
     Some(entries) => match get_field(&entries, snapshot::DEFAULT_ENTRY_NAME) {
       Some(entry) => entry,
       None => return Err("Snapshot `:entries` is missing `:default`".to_owned()),
     },
-    None => match get_field(data, "configs") {
-      Some(configs) => configs,
-      None => return Ok(vec![]),
-    },
+    None => return Ok(vec![]),
   };
   let modules_edn = match get_field(&entry, "modules") {
     Some(modules) => modules,
@@ -1562,9 +1563,10 @@ fn extract_modules_from_edn(data: &cirru_edn::Edn) -> Result<Vec<String>, String
 }
 
 pub(crate) fn load_entry_snapshot_for_check_md(entry: &str) -> Result<snapshot::Snapshot, String> {
-  let resolved_entry = calcit::resolve_snapshot_path_alias(Path::new(entry));
+  let resolved_entry = Path::new(entry);
+  calcit::validate_snapshot_path(resolved_entry)?;
   let mut content =
-    fs::read_to_string(&resolved_entry).map_err(|e| format!("Failed to read entry file '{}': {e}", resolved_entry.display()))?;
+    fs::read_to_string(resolved_entry).map_err(|e| format!("Failed to read entry file '{}': {e}", resolved_entry.display()))?;
   util::string::strip_shebang(&mut content);
   let data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse entry file '{}': {e}", resolved_entry.display()))?;
   snapshot::load_snapshot_data(&data, &resolved_entry.display().to_string())
