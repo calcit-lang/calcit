@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use calcit::{
   builtins,
@@ -16,6 +16,11 @@ use calcit::{
   calcit::{Calcit, CalcitErr, CalcitErrKind},
   call_stack::{CallStackList, display_stack},
   data::edn::{calcit_to_edn, edn_to_calcit, sanitize_edn_for_format},
+  ffi_abi::{
+    ASYNC_TASK_FLAG_SERIAL_EVENTS, FfiAsyncEventKind, FfiAsyncHandle, FfiAsyncHandleKind, FfiAsyncHandleRegistry, FfiAsyncHostV1,
+    FfiAsyncTaskDescriptor, async_status,
+  },
+  ffi_async::{FfiAsyncDrainReport, FfiAsyncEventQueue, copy_async_payload},
   runner::track,
 };
 
@@ -34,6 +39,24 @@ static STDOUT_TO_STDERR: AtomicBool = AtomicBool::new(false);
 static SILENCE_PROGRAM_OUTPUT: AtomicBool = AtomicBool::new(false);
 static TRACE_FFI_EVENT_ID: AtomicUsize = AtomicUsize::new(1);
 static TRACE_FFI_STARTED: LazyLock<Instant> = LazyLock::new(Instant::now);
+const ASYNC_HOST_CONTEXT: u64 = 0x4341_4c43_4954_0001;
+const ASYNC_EVENT_QUEUE_CAPACITY: usize = 1024;
+
+#[derive(Clone)]
+struct NativeAsyncCallback {
+  callback: Calcit,
+  stack: Arc<CallStackList>,
+  lib_name: String,
+  method: String,
+}
+
+struct NativeAsyncRuntime {
+  registry: FfiAsyncHandleRegistry<NativeAsyncCallback>,
+  queue: FfiAsyncEventQueue,
+}
+
+static NATIVE_ASYNC_RUNTIME: OnceLock<NativeAsyncRuntime> = OnceLock::new();
+static NATIVE_ASYNC_HOST: LazyLock<FfiAsyncHostV1> = LazyLock::new(|| FfiAsyncHostV1::new(ASYNC_HOST_CONTEXT, native_async_enqueue));
 
 #[allow(dead_code)]
 pub fn set_trace_ffi(v: bool) {
@@ -104,6 +127,258 @@ fn trace_ffi_event(label: &str, message: impl AsRef<str>) {
       thread::current().id(),
       message.as_ref()
     );
+  }
+}
+
+/// Bind the async queue to the CLI worker thread before any dylib can publish
+/// work. Tests that only inject proc metadata do not initialize global runtime
+/// state and therefore cannot accidentally claim host-thread ownership.
+pub fn init_async_runtime() -> Result<(), String> {
+  if NATIVE_ASYNC_RUNTIME.get().is_some() {
+    return Ok(());
+  }
+  let runtime = NativeAsyncRuntime {
+    registry: FfiAsyncHandleRegistry::new(),
+    queue: FfiAsyncEventQueue::new(ASYNC_EVENT_QUEUE_CAPACITY).map_err(|error| error.to_string())?,
+  };
+  NATIVE_ASYNC_RUNTIME
+    .set(runtime)
+    .map_err(|_| "async FFI runtime was initialized concurrently".to_owned())
+}
+
+fn native_async_runtime() -> Result<&'static NativeAsyncRuntime, String> {
+  NATIVE_ASYNC_RUNTIME
+    .get()
+    .ok_or_else(|| "async FFI runtime is not initialized on the CLI worker thread".to_owned())
+}
+
+fn async_host_table() -> &'static FfiAsyncHostV1 {
+  &NATIVE_ASYNC_HOST
+}
+
+unsafe extern "C" fn native_async_enqueue(
+  context: u64,
+  task_handle: u64,
+  event_kind: u32,
+  response_handle: u64,
+  payload_ptr: *const u8,
+  payload_len: usize,
+) -> i32 {
+  std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let runtime = match native_async_runtime() {
+      Ok(runtime) => runtime,
+      Err(_) => return async_status::HOST_CLOSING,
+    };
+    // SAFETY: the C caller promises that a non-empty payload remains readable
+    // for this call. The helper validates length/null and copies immediately.
+    unsafe { enqueue_native_async_event(runtime, context, task_handle, event_kind, response_handle, payload_ptr, payload_len) }
+  }))
+  .unwrap_or(async_status::INTERNAL_ERROR)
+}
+
+unsafe fn enqueue_native_async_event(
+  runtime: &NativeAsyncRuntime,
+  context: u64,
+  task_handle: u64,
+  event_kind: u32,
+  response_handle: u64,
+  payload_ptr: *const u8,
+  payload_len: usize,
+) -> i32 {
+  if context != ASYNC_HOST_CONTEXT {
+    return async_status::INVALID_HANDLE;
+  }
+  let kind = match FfiAsyncEventKind::try_from(event_kind) {
+    Ok(kind) => kind,
+    Err(error) => return error.status_code(),
+  };
+  // SAFETY: forwarded from the C entry point's documented pointer contract.
+  let payload = match unsafe { copy_async_payload(payload_ptr, payload_len) } {
+    Ok(payload) => payload,
+    Err(error) => return error.status_code(),
+  };
+  let task_handle = FfiAsyncHandle::from_raw(task_handle);
+  let response_handle = if response_handle == FfiAsyncHandle::INVALID.raw() {
+    None
+  } else {
+    Some(FfiAsyncHandle::from_raw(response_handle))
+  };
+
+  match runtime
+    .queue
+    .enqueue(&runtime.registry, task_handle, response_handle, kind, payload)
+  {
+    Ok(outcome) => {
+      trace_ffi_event(
+        "async-enqueue",
+        format!(
+          "task={} kind={kind:?} sequence={} disposition={:?} producer={:?}",
+          task_handle.raw(),
+          outcome.sequence,
+          outcome.disposition,
+          thread::current().id()
+        ),
+      );
+      async_status::OK
+    }
+    Err(error) => {
+      trace_ffi_event(
+        "async-enqueue-rejected",
+        format!(
+          "task={} kind={kind:?} status={} error={error}",
+          task_handle.raw(),
+          error.status_code()
+        ),
+      );
+      error.status_code()
+    }
+  }
+}
+
+fn decode_async_emit(payload: &[u8]) -> Result<Vec<Calcit>, String> {
+  let source = std::str::from_utf8(payload).map_err(|error| format!("async FFI event payload is not UTF-8: {error}"))?;
+  let value = cirru_edn::parse(source).map_err(|error| format!("async FFI event payload is not valid Cirru EDN: {error}"))?;
+  let Edn::List(cirru_edn::EdnListView(args)) = value else {
+    return Err(format!("async FFI Emit payload must be a Cirru EDN list, got: {value}"));
+  };
+  Ok(args.iter().map(|arg| edn_to_calcit(arg, &Calcit::Nil)).collect())
+}
+
+fn validate_async_completion(payload: &[u8]) -> Result<(), String> {
+  let source = std::str::from_utf8(payload).map_err(|error| format!("async FFI completion payload is not UTF-8: {error}"))?;
+  if source.trim() == "&unit" {
+    Ok(())
+  } else {
+    Err(format!(
+      "async FFI Complete payload must be explicit `&unit`, got: {}",
+      source.trim()
+    ))
+  }
+}
+
+fn decode_async_failure(payload: &[u8]) -> Result<String, String> {
+  let source = std::str::from_utf8(payload).map_err(|error| format!("async FFI failure payload is not UTF-8: {error}"))?;
+  let value = cirru_edn::parse(source).map_err(|error| format!("async FFI failure payload is not valid Cirru EDN: {error}"))?;
+  cirru_edn::format(&sanitize_edn_for_format(&value), true)
+    .map(|message| message.trim().to_owned())
+    .map_err(|error| format!("failed to format async FFI failure payload: {error}"))
+}
+
+fn dispatch_native_async_event(runtime: &NativeAsyncRuntime, event: &calcit::ffi_async::FfiAsyncQueuedEvent) -> Result<(), String> {
+  let handle = event.task_handle();
+  let task = runtime.registry.clone_value(handle).map_err(|error| error.to_string())?;
+  let kind = event.kind().map_err(|error| error.to_string())?;
+  trace_ffi_event(
+    "async-drain",
+    format!(
+      "lib={} symbol={} task={} kind={kind:?} sequence={} producer={:?} queued_ms={:.3}",
+      task.lib_name,
+      task.method,
+      handle.raw(),
+      event.descriptor.sequence,
+      event.producer_thread(),
+      event.queued_for().as_secs_f64() * 1000.0
+    ),
+  );
+
+  match kind {
+    FfiAsyncEventKind::Emit => {
+      let args = decode_async_emit(event.payload())?;
+      let Calcit::Fn { info, .. } = &task.callback else {
+        return Err("async FFI task lost its Calcit callback".to_owned());
+      };
+      match runner::run_fn(&args, info, &task.stack) {
+        Ok(ret) => {
+          trace_ffi_event(
+            "async-callback-out",
+            format!(
+              "lib={} symbol={} task={} sequence={} ret={}",
+              task.lib_name,
+              task.method,
+              handle.raw(),
+              event.descriptor.sequence,
+              ret.turn_string()
+            ),
+          );
+          Ok(())
+        }
+        Err(error) => {
+          let _ = display_stack(
+            &format!("[Error] async FFI callback failed: {}", error.msg),
+            &error.stack,
+            error.location.as_ref(),
+          );
+          Err(format!("Calcit callback failed: {}", error.msg))
+        }
+      }
+    }
+    FfiAsyncEventKind::Complete => validate_async_completion(event.payload()),
+    FfiAsyncEventKind::Fail => Err(format!("async FFI task failed: {}", decode_async_failure(event.payload())?)),
+  }
+}
+
+pub fn drain_async_events(limit: usize) -> Result<FfiAsyncDrainReport, String> {
+  let runtime = native_async_runtime()?;
+  let mut report = runtime
+    .queue
+    .drain(&runtime.registry, limit, |event| dispatch_native_async_event(runtime, event))
+    .map_err(|error| error.to_string())?;
+
+  for failure in &report.callback_failures {
+    eprintln!(
+      "[Error] async FFI task {} sequence {}: {}",
+      failure.descriptor.task_handle, failure.descriptor.sequence, failure.message
+    );
+  }
+  for failure in &report.lifecycle_failures {
+    eprintln!(
+      "[Error] async FFI lifecycle task {} sequence {}: {}",
+      failure.descriptor.task_handle, failure.descriptor.sequence, failure.error
+    );
+  }
+  for failure in &report.queue_failures {
+    eprintln!(
+      "[Error] async FFI queue task {} sequence {}: {}",
+      failure.descriptor.task_handle, failure.descriptor.sequence, failure.error
+    );
+  }
+
+  for descriptor in report.finished.clone() {
+    let handle = FfiAsyncHandle::from_raw(descriptor.task_handle);
+    if let Err(error) = runtime.registry.release(handle) {
+      report
+        .lifecycle_failures
+        .push(calcit::ffi_async::FfiAsyncLifecycleFailure { descriptor, error });
+      continue;
+    }
+    track::track_task_release();
+    trace_ffi_event(
+      "async-task-release",
+      format!(
+        "task={} sequence={} pending={}",
+        handle.raw(),
+        descriptor.sequence,
+        track::count_pending_tasks()
+      ),
+    );
+  }
+
+  Ok(report)
+}
+
+pub fn exit_when_async_cleared() -> Result<(), String> {
+  let runtime = native_async_runtime()?;
+  loop {
+    drain_async_events(256)?;
+    if track::count_pending_tasks() == 0 && runtime.queue.is_empty().map_err(|error| error.to_string())? {
+      return Ok(());
+    }
+    if runtime.queue.is_empty().map_err(|error| error.to_string())? {
+      runtime
+        .queue
+        .wait_for_event(Duration::from_millis(40))
+        .map_err(|error| error.to_string())?;
+    }
   }
 }
 
@@ -397,6 +672,73 @@ pub fn stderr_println(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
   Ok(Calcit::Nil)
 }
 
+fn try_start_async_callback_v1(
+  lib: &libloading::Library,
+  lib_name: &str,
+  method: &str,
+  args: Vec<Edn>,
+  callback: Calcit,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
+  let Some(start) =
+    calcit::ffi_abi::lookup_async_start(lib, lib_name, method).map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?
+  else {
+    return Ok(None);
+  };
+  let runtime = native_async_runtime().map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
+  let request = calcit::ffi_abi::encode_buffer_request(args).map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
+  let task = NativeAsyncCallback {
+    callback,
+    stack: Arc::new(call_stack.to_owned()),
+    lib_name: lib_name.to_owned(),
+    method: method.to_owned(),
+  };
+  let handle = runtime
+    .registry
+    .register_with_flags(FfiAsyncHandleKind::Stream, ASYNC_TASK_FLAG_SERIAL_EVENTS, task)
+    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error.to_string()))?;
+  let descriptor = FfiAsyncTaskDescriptor::new(handle, FfiAsyncHandleKind::Stream, ASYNC_TASK_FLAG_SERIAL_EVENTS);
+  let host = async_host_table();
+
+  track::track_task_add();
+  trace_ffi_event(
+    "async-start",
+    format!(
+      "lib={lib_name} symbol={} task={} request_bytes={} pending={}",
+      calcit::ffi_abi::async_method_symbol(method),
+      handle.raw(),
+      request.len(),
+      track::count_pending_tasks()
+    ),
+  );
+  let status = unsafe { start(request.as_ptr(), request.len(), &descriptor, host) };
+  if status == async_status::OK {
+    return Ok(Some(Calcit::Unit));
+  }
+
+  let purged = runtime.queue.discard_handle_events(handle).unwrap_or(0);
+  let _ = runtime.registry.finish(handle);
+  let _ = runtime.registry.release(handle);
+  track::track_task_release();
+  trace_ffi_event(
+    "async-start-failed",
+    format!(
+      "lib={lib_name} symbol={} task={} status={status} purged={purged} pending={}",
+      calcit::ffi_abi::async_method_symbol(method),
+      handle.raw(),
+      track::count_pending_tasks()
+    ),
+  );
+  CalcitErr::err_str(
+    CalcitErrKind::Unexpected,
+    format!(
+      "FFI async method `{}` in `{lib_name}` failed to start with status {status}",
+      calcit::ffi_abi::async_method_symbol(method)
+    ),
+  )
+  .map(Some)
+}
+
 /// pass callback function to FFI function, so it can call multiple times
 /// currently for HTTP servers
 pub fn call_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
@@ -440,9 +782,6 @@ pub fn call_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<
     );
   }
 
-  track::track_task_add();
-  trace_ffi_event("task-add", format!("kind=callback pending={}", track::count_pending_tasks()));
-
   trace_ffi_event(
     "spawn-callback",
     format!(
@@ -454,7 +793,19 @@ pub fn call_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<
   );
 
   let lib = load_dylib(&lib_name)?;
+  if let Some(result) = try_start_async_callback_v1(&lib, &lib_name, &method, ys.clone(), callback.clone(), call_stack)? {
+    return Ok(result);
+  }
+  trace_ffi_event(
+    "async-fallback",
+    format!(
+      "lib={lib_name} symbol={} fallback={method}",
+      calcit::ffi_abi::async_method_symbol(&method)
+    ),
+  );
   ensure_abi_compatible(&lib, &lib_name)?;
+  track::track_task_add();
+  trace_ffi_event("task-add", format!("kind=callback pending={}", track::count_pending_tasks()));
   let copied_stack_1 = Arc::new(call_stack.to_owned());
   let method_name = method.clone();
   let lib_name_for_thread = lib_name.clone();
@@ -544,7 +895,7 @@ pub fn call_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<
     Ok(Calcit::Nil)
   });
 
-  Ok(Calcit::Nil)
+  Ok(Calcit::Unit)
 }
 
 /// pass callback function to FFI function, blocking the thread,
@@ -695,5 +1046,73 @@ pub fn on_ctrl_c(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, 
     Ok(Calcit::Nil)
   } else {
     CalcitErr::err_str(CalcitErrKind::Arity, format!("on-control-c expected a callback function {xs:?}"))
+  }
+}
+
+#[cfg(test)]
+mod async_callback_tests {
+  use super::*;
+
+  #[test]
+  fn foreign_producer_enters_through_c_payload_boundary_and_host_drains_completion() {
+    let runtime = Arc::new(NativeAsyncRuntime {
+      registry: FfiAsyncHandleRegistry::new(),
+      queue: FfiAsyncEventQueue::new(4).expect("create host queue"),
+    });
+    let handle = runtime
+      .registry
+      .register_with_flags(
+        FfiAsyncHandleKind::Stream,
+        ASYNC_TASK_FLAG_SERIAL_EVENTS,
+        NativeAsyncCallback {
+          callback: Calcit::Nil,
+          stack: Arc::new(CallStackList::default()),
+          lib_name: "fixture".to_owned(),
+          method: "complete".to_owned(),
+        },
+      )
+      .expect("register fixture task");
+
+    let producer_runtime = Arc::clone(&runtime);
+    let producer = thread::spawn(move || {
+      let payload = b"&unit";
+      // SAFETY: the payload is readable for the duration of the call.
+      unsafe {
+        enqueue_native_async_event(
+          &producer_runtime,
+          ASYNC_HOST_CONTEXT,
+          handle.raw(),
+          FfiAsyncEventKind::Complete as u32,
+          FfiAsyncHandle::INVALID.raw(),
+          payload.as_ptr(),
+          payload.len(),
+        )
+      }
+    });
+    assert_eq!(producer.join().expect("producer thread"), async_status::OK);
+
+    let report = runtime
+      .queue
+      .drain(&runtime.registry, 4, |event| dispatch_native_async_event(&runtime, event))
+      .expect("host-thread drain");
+    assert_eq!(report.dequeued, 1);
+    assert_eq!(report.delivered, 1);
+    assert_eq!(report.finished.len(), 1);
+    assert_eq!(report.finished[0].task_handle, handle.raw());
+    assert!(report.callback_failures.is_empty());
+    assert!(report.lifecycle_failures.is_empty());
+  }
+
+  #[test]
+  fn async_payload_decoders_require_list_unit_and_structured_failure() {
+    let args = decode_async_emit(b"[] 1 |two").expect("decode emit list");
+    assert_eq!(args.len(), 2);
+    assert!(decode_async_emit(b"{} (:not-a-list true)").is_err());
+    assert_eq!(validate_async_completion(b"  &unit\n"), Ok(()));
+    assert!(validate_async_completion(b"nil").is_err());
+    assert_eq!(
+      decode_async_failure(b"{} (:code :closed)").expect("decode failure"),
+      "{} $ :code :closed"
+    );
   }
 }

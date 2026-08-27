@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
 mod injection;
 
 #[cfg(not(target_arch = "wasm32"))]

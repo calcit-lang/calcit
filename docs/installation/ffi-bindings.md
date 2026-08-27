@@ -24,7 +24,8 @@ pub fn demo(args: Vec<Edn>) -> Result<Edn, String> {
 }
 ```
 
-The other one is an asynchorous API, it can be called multiple times, which relies on `Arc` type(not sure if we can find a better solution yet),
+The legacy asynchronous API can be called multiple times and relies on Rust
+`Arc` trait objects:
 
 ```rust
 #[unsafe(no_mangle)]
@@ -42,7 +43,8 @@ The function `finish` is used for indicating that the task has finished. It can 
 Internally Calcit tracks with a counter to see if all asynchorous tasks are finished.
 Process need to keep running when there are tasks running.
 
-Asynchronous tasks are based on threads, which is currently decoupled from core features of Calcit. We may need techniques like `tokio` for better performance in the future, but current solution is quite naive yet.
+New callback methods should instead implement the C-safe asynchronous protocol
+described below. The Rust form remains only as a per-method migration fallback.
 
 Rust's native ABI has no stability guarantee. `Vec<Edn>`, `String`, `Result`, and callback trait objects are therefore a transitional interface rather than a portable dylib protocol. Calcit checks a C-safe build identity before invoking those Rust ABI symbols.
 
@@ -151,7 +153,23 @@ Protocol rules:
 - The adapter must contain panics and return an error status; unwinding across `extern "C"` is invalid.
 - Calcit rejects protocol-version mismatches, malformed buffer metadata, oversized responses, invalid UTF-8, and invalid response EDN.
 
-`calcit-lang/calcit_wasmtime` contains the first complete adapter. Version 1 currently covers synchronous `&call-dylib-edn`; callback and blocking APIs remain on the guarded legacy path until their ownership protocol lands. The staged task/event/server design, including future WASM constraints, is documented in [Asynchronous FFI task protocol](ffi-async-protocol.md).
+`calcit-lang/calcit_wasmtime` contains the first complete synchronous adapter.
+
+## C-safe asynchronous callback ABI
+
+`&call-dylib-edn-fn` now probes `<method>_calcit_ffi_async_v1` before using the
+guarded legacy Rust callback. A callback-v1 module exports
+`calcit_ffi_async_version() -> 1`, accepts a C-layout task descriptor and host
+function table, and publishes byte payloads through the host's `enqueue`
+function. Foreign producer threads only enqueue; Calcit copies the payload and
+runs callbacks on its host thread.
+
+`Emit` payloads are Cirru EDN argument lists. Successful completion must carry
+the explicit `&unit` value, and `Fail` carries a Cirru EDN diagnostic that is
+surfaced to the console. Missing version or per-method symbols retain the
+legacy fallback; an advertised incompatible version is an error. See
+[Asynchronous FFI task protocol](ffi-async-protocol.md) for the exact C
+signatures, ownership, lifecycle, status, queue, and future WASM rules.
 
 ### Call in Calcit
 
