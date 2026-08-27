@@ -401,7 +401,9 @@ lowered to indexed access; an undeclared field is a diagnostic, not `nil`.
 ### Effects/IO
 
 - `echo`, `println` - output
-- `.read-file`, `.read-dir`, `.write-file` - recoverable String methods returning `Result` (native/JS; unavailable in WASM)
+- `fs:path` - construct a nominal `FsPath` from a UTF-8 String without normalization
+- `FsPath .read-text`, `.read-dir`, `.walk-dir`, `.write-text` - recoverable file effects returning `Result` (native/JS; unavailable in WASM)
+- `try-read-file`, `try-read-dir`, `try-write-file` - String-path compatibility functions returning `Result`
 - `read-file`, `read-dir`, `write-file` - raising compatibility primitives (native/JS; unavailable in WASM)
 - `get-env` - environment variables
 - `raise` - throw error

@@ -436,10 +436,19 @@
           :tags $ #{} :internal
         |&core-string-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json) (:: :read-file try-read-file) (:: :read-dir try-read-dir) (:: :write-file try-write-file)
+            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |excludes-file-effects)
+              :code $ quote
+                let
+                    methods $ &methods-of |plain-text
+                  do
+                    assert= false $ includes? methods .read-file
+                    assert= false $ includes? methods .read-dir
+                    assert= false $ includes? methods .write-file
         |&core-struct-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for struct values.")
           :code $ quote
             def &core-struct-impls $ [] &core-struct-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-struct-impl) (&impl::new Contains internal/&core-contains-struct-impl)
@@ -2813,6 +2822,46 @@
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
+        |FsPath $ %{} 'CodeEntry (:doc "|Nominal UTF-8 host filesystem path. Construct with fs:path; file effects are exposed on FsPath rather than String.")
+          :code $ quote
+            def FsPath $ impl-traits
+              defstruct FsPath $ :value 'String
+              , FsPathOpsImpl
+          :examples $ []
+          :schema $ :: 'StructDef
+          :tags $ #{} :core :data
+        |FsPathOps $ %{} 'CodeEntry (:doc "|Internal method contract for FsPath values.")
+          :code $ quote
+            deftrait FsPathOps
+              .read-text $ :: 'Fn
+                {}
+                  :args $ [] 'FsPath
+                  :return $ :: 'Result 'String 'String
+              .write-text $ :: 'Fn
+                {}
+                  :args $ [] 'FsPath 'String
+                  :return $ :: 'Result 'Unit 'String
+              .read-dir $ :: 'Fn
+                {}
+                  :args $ [] 'FsPath
+                  :return $ :: 'Result (:: 'List 'FsPath) 'String
+              .walk-dir $ :: 'Fn
+                {}
+                  :args $ [] 'FsPath
+                  :return $ :: 'Result (:: 'List 'FsPath) 'String
+              .to-string $ :: 'Fn
+                {}
+                  :args $ [] 'FsPath
+                  :return 'String
+          :examples $ []
+          :schema $ :: 'Trait
+          :tags $ #{} :internal :trait
+        |FsPathOpsImpl $ %{} 'CodeEntry (:doc "|Internal FsPath method implementation.")
+          :code $ quote
+            defimpl FsPathOpsImpl FsPathOps (.read-text fs-path:read-text) (.write-text fs-path:write-text) (.read-dir fs-path:read-dir) (.walk-dir fs-path:walk-dir) (.to-string fs-path:to-string)
+          :examples $ []
+          :schema $ :: 'Impl
+          :tags $ #{} :internal :trait-impl
         |Len $ %{} 'CodeEntry (:doc "|Core trait: Len")
           :code $ quote
             deftrait Len $ .len
@@ -5002,6 +5051,99 @@
                 assert= (&{} 1 1 2 2 3 3)
                   frequencies $ [] 1 2 2 3 3 3
               :tags $ #{} :core :unit
+        |fs-path:read-dir $ %{} 'CodeEntry (:doc "|List immediate children as Result<List<FsPath>,String>.")
+          :code $ quote
+            defn fs-path:read-dir (self)
+              result:map
+                try-read-dir (:value self) (%none)
+                fn (paths) (map paths fs:path)
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'FsPath
+              :return $ :: 'Result (:: 'List 'FsPath) 'String
+          :tags $ #{} :file :internal :io
+        |fs-path:read-text $ %{} 'CodeEntry (:doc "|Read an FsPath as UTF-8 text and return Result<String,String>.")
+          :code $ quote
+            defn fs-path:read-text (self)
+              try-read-file $ :value self
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'FsPath
+              :return $ :: 'Result 'String 'String
+          :tags $ #{} :file :internal :io
+        |fs-path:to-string $ %{} 'CodeEntry (:doc "|Return the stored UTF-8 path string.")
+          :code $ quote
+            defn fs-path:to-string (self) (:value self)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'String)
+              :args $ [] 'FsPath
+          :tags $ #{} :internal
+        |fs-path:walk-dir $ %{} 'CodeEntry (:doc "|Recursively list descendants as Result<List<FsPath>,String>.")
+          :code $ quote
+            defn fs-path:walk-dir (self)
+              result:map
+                try-read-dir (:value self) (%some true)
+                fn (paths) (map paths fs:path)
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'FsPath
+              :return $ :: 'Result (:: 'List 'FsPath) 'String
+          :tags $ #{} :file :internal :io
+        |fs-path:write-text $ %{} 'CodeEntry (:doc "|Write UTF-8 text to an FsPath and return Result<Unit,String>.")
+          :code $ quote
+            defn fs-path:write-text (self content)
+              try-write-file (:value self) content
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'FsPath 'String
+              :return $ :: 'Result 'Unit 'String
+          :tags $ #{} :file :internal :io
+        |fs:path $ %{} 'CodeEntry (:doc "|Construct an FsPath from a UTF-8 path string without normalization or filesystem access.")
+          :code $ quote
+            defn fs:path (value)
+              %{} FsPath $ :value value
+          :examples $ []
+            quote $ fs:path |assets/data.cirru
+            quote $ .read-text (fs:path |assets/data.cirru)
+            quote $ .read-dir (fs:path |assets)
+          :schema $ :: 'Fn
+            {} (:return 'FsPath)
+              :args $ [] 'String
+          :tags $ #{} :core
+          :tests $ []
+            %{} 'TestEntry (:name |fs-path-contract)
+              :code $ quote
+                do
+                  assert= |Cargo.toml $ .to-string (fs:path |Cargo.toml)
+                  assert= true $ result:ok?
+                    .read-text $ fs:path |Cargo.toml
+                  assert= true $ result:ok?
+                    .read-dir $ fs:path |src
+                  assert= true $ result:ok?
+                    .walk-dir $ fs:path |src
+                  assert= true $ result:err?
+                    .read-text $ fs:path |/calcit-result-contract-does-not-exist/file
+                  assert= true $ result:err?
+                    .read-dir $ fs:path |/calcit-result-contract-does-not-exist
+                  assert= true $ result:err?
+                    .write-text (fs:path |/calcit-result-contract-does-not-exist/file) |content
+                  assert-type
+                    .read-text $ fs:path |/calcit-result-contract-does-not-exist/file
+                    :: 'Result 'String 'String
+                  assert-type
+                    .read-dir $ fs:path |/calcit-result-contract-does-not-exist
+                    :: 'Result (:: 'List 'FsPath) 'String
+                  assert-type
+                    .walk-dir $ fs:path |/calcit-result-contract-does-not-exist
+                    :: 'Result (:: 'List 'FsPath) 'String
+                  assert-type
+                    .write-text (fs:path |/calcit-result-contract-does-not-exist/file) |content
+                    :: 'Result 'Unit 'String
         |generate-id! $ %{} 'CodeEntry (:doc "|internal function for generating unique IDs\nSyntax: (generate-id!)\nParams: none\nReturns: unique string ID\nGenerates a unique identifier string for runtime use")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -7683,7 +7825,7 @@
                   assert= true $ result:ok? (|1 .parse-json)
                   assert= true $ result:err? (|{ .parse-json)
                   assert-type (|1 .parse-json) (:: 'Result 'Dynamic 'String)
-        |try-read-dir $ %{} 'CodeEntry (:doc "|List directory paths as Result<List<String>,String>; failures are returned instead of raised. Prefer the .read-dir String method in user code. Omit the trailing Option<Bool> for non-recursive listing, or pass %some true/%some false explicitly. Native is supported; JavaScript requires a host read_dir injection, and WASM file effects are not yet supported.")
+        |try-read-dir $ %{} 'CodeEntry (:doc "|Compatibility function that lists a directory String as Result<List<String>,String>. Omit the trailing Option<Bool> for non-recursive listing, or pass %some true for recursion. New code should use FsPath .read-dir or .walk-dir. Native is supported; JavaScript requires a host read_dir injection, and WASM file effects are not yet supported.")
           :code $ quote
             defn try-read-dir (path recursive?)
               try
@@ -7692,53 +7834,32 @@
                   (:none) (read-dir path)
                 fn (message) (%err message)
           :examples $ []
-            quote $ |src .read-dir
-            quote $ |src .read-dir (%some true)
+            quote $ try-read-dir |src
+            quote $ try-read-dir |src (%some true)
           :schema $ :: 'Fn
             {}
               :args $ [] 'String (:: 'Option 'Bool)
               :return $ :: 'Result (:: 'List 'String) 'String
-        |try-read-file $ %{} 'CodeEntry (:doc "|Read a UTF-8 file as Result<String,String>; failures are returned instead of raised. Prefer the .read-file String method in user code. Native and JavaScript hosts with file injections are supported; WASM file effects are not yet supported.")
+        |try-read-file $ %{} 'CodeEntry (:doc "|Compatibility function that reads a UTF-8 path String as Result<String,String>. New code should construct FsPath with fs:path and call .read-text. Native and JavaScript hosts with file injections are supported; WASM file effects are not yet supported.")
           :code $ quote
             defn try-read-file (path)
               try
                 %ok $ read-file path
                 fn (message) (%err message)
           :examples $ []
-            quote $ |/calcit-result-contract-does-not-exist/file .read-file
+            quote $ try-read-file |/calcit-result-contract-does-not-exist/file
           :schema $ :: 'Fn
             {}
               :args $ [] 'String
               :return $ :: 'Result 'String 'String
-          :tests $ []
-            %{} 'TestEntry (:name |result-method-contract)
-              :code $ quote
-                do
-                  assert= true $ result:ok? (|Cargo.toml .read-file)
-                  assert= true $ result:ok? (|src .read-dir)
-                  assert= true $ result:ok?
-                    |src .read-dir $ %some false
-                  assert= true $ result:err? (|/calcit-result-contract-does-not-exist/file .read-file)
-                  assert= true $ result:err? (|/calcit-result-contract-does-not-exist .read-dir)
-                  assert= true $ result:err?
-                    |/calcit-result-contract-does-not-exist .read-dir $ %some false
-                  assert= true $ result:err? (|/calcit-result-contract-does-not-exist/file .write-file |content)
-                  assert-type (|/calcit-result-contract-does-not-exist/file .read-file) (:: 'Result 'String 'String)
-                  assert-type (|/calcit-result-contract-does-not-exist .read-dir)
-                    :: 'Result (:: 'List 'String) 'String
-                  assert-type
-                    |/calcit-result-contract-does-not-exist .read-dir $ %some false
-                    :: 'Result (:: 'List 'String) 'String
-                  assert-type (|/calcit-result-contract-does-not-exist/file .write-file |content) (:: 'Result 'Unit 'String)
-              :tags $ #{} :unit
-        |try-write-file $ %{} 'CodeEntry (:doc "|Write UTF-8 content as Result<Unit,String>; failures are returned instead of raised. Prefer the .write-file String method in user code. Native and JavaScript hosts with file injections are supported; WASM file effects are not yet supported.")
+        |try-write-file $ %{} 'CodeEntry (:doc "|Compatibility function that writes UTF-8 content to a path String as Result<Unit,String>. New code should construct FsPath with fs:path and call .write-text. Native and JavaScript hosts with file injections are supported; WASM file effects are not yet supported.")
           :code $ quote
             defn try-write-file (path content)
               try
                 %ok $ write-file path content
                 fn (message) (%err message)
           :examples $ []
-            quote $ |/calcit-result-contract-does-not-exist/file .write-file |content
+            quote $ try-write-file |/calcit-result-contract-does-not-exist/file |content
           :schema $ :: 'Fn
             {}
               :args $ [] 'String 'String
