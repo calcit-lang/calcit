@@ -37,6 +37,21 @@ and serialize without data loss. They become an explicitly legacy, non-strict
 syntax contracts. An omitted or `Dynamic` legacy macro schema likewise does not
 claim full phase coverage.
 
+Inventory compatibility contracts before migrating or releasing a module:
+
+```bash
+calcit analyze check-types --deps --format json
+```
+
+Each compatibility definition emits `W_LEGACY_MACRO_SCHEMA`. JSON schema v2
+records whether the loaded Snapshot supplied an old `Fn` contract or a whole
+`Dynamic` contract, preserves the old signature as evidence, and reports the
+exact Snapshot path. `summary.legacy_macro_schemas` is suitable for a reviewed
+baseline or a zero target. Always include `--deps` when checking an application:
+an installed module release may still contain legacy contracts after that
+module's main branch has migrated. The analyzer is intentionally diagnostic;
+it never invents phase-aware contracts from runtime-looking parameter types.
+
 ## Migrating structural macros
 
 Do not replace a whole-`Dynamic` schema with invented runtime parameter types.

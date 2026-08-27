@@ -6,8 +6,9 @@ use std::fmt::Write;
 use std::sync::Arc;
 
 use calcit::calcit::{
-  CalcitProc, CalcitSyntax, CalcitTypeAnnotation, MacroExpansionType, MacroSignatureCompatibility, MacroSyntaxType, ParamShape,
-  ParamShapeToken, ProcTypeSignature, SchemaKind, SyntaxTypeSignature, compare_param_shapes, resolve_type_slot,
+  CalcitProc, CalcitSyntax, CalcitTypeAnnotation, LegacyMacroSchemaOrigin, MacroExpansionType, MacroSignatureCompatibility,
+  MacroSyntaxType, ParamShape, ParamShapeToken, ProcTypeSignature, SchemaKind, SyntaxTypeSignature, compare_param_shapes,
+  resolve_type_slot,
 };
 use calcit::cli_args::{CheckTypesCommand, WeakTypesCommand};
 use calcit::snapshot;
@@ -67,6 +68,17 @@ pub struct TypeCoverageRow {
   pub where_bounds: Vec<String>,
   pub data_type: Option<String>,
   pub schema_issues: Vec<String>,
+  pub legacy_macro_schema: Option<LegacyMacroSchemaInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LegacyMacroSchemaInfo {
+  pub origin: LegacyMacroSchemaOrigin,
+  pub signature: String,
+}
+
+fn legacy_macro_snapshot_path(ns: &str, def_name: &str) -> String {
+  format!("snapshot.files[{ns:?}].defs[{def_name:?}].schema")
 }
 
 fn fn_polymorphism(fn_annot: &calcit::calcit::CalcitFnTypeAnnotation) -> (Vec<String>, Vec<String>) {
@@ -278,7 +290,7 @@ fn count_annotation_positions(annotation: &CalcitTypeAnnotation) -> (usize, usiz
       }
     }
     CalcitTypeAnnotation::Macro(signature) => {
-      if let MacroSignatureCompatibility::Legacy(fn_annot) = &signature.compatibility {
+      if let MacroSignatureCompatibility::Legacy { annotation: fn_annot, .. } = &signature.compatibility {
         for arg in &fn_annot.arg_types {
           add(arg);
         }
@@ -556,7 +568,7 @@ fn scan_schema_dynamic_annotation(
       }
     }
     CalcitTypeAnnotation::Macro(signature) => {
-      if let MacroSignatureCompatibility::Legacy(fn_annot) = &signature.compatibility {
+      if let MacroSignatureCompatibility::Legacy { annotation: fn_annot, .. } = &signature.compatibility {
         for (idx, arg) in fn_annot.arg_types.iter().enumerate() {
           scan_schema_dynamic_annotation(arg, &format!("{path}.legacy-args.{idx}"), detail, occurrences);
         }
@@ -687,6 +699,16 @@ fn weak_type_impact(occurrence: &WeakTypeOccurrence) -> &'static str {
 fn entry_schema_issues(ns: &str, def_name: &str, code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -> Vec<String> {
   let annotation = schema.as_ref();
   let mut issues = validate_def_vs_schema(ns, def_name, code, annotation);
+  if let CalcitTypeAnnotation::Macro(signature) = annotation
+    && let MacroSignatureCompatibility::Legacy { origin, annotation } = &signature.compatibility
+  {
+    issues.push(format!(
+      "[W_LEGACY_MACRO_SCHEMA] {ns}/{def_name} uses a legacy {} macro schema `{}` at {}. Fix: declare :required/:optional/:rest syntax inputs, :expansion, and :capabilities explicitly; do not infer them from the runtime Fn signature.",
+      origin.as_str(),
+      annotation.describe(),
+      legacy_macro_snapshot_path(ns, def_name)
+    ));
+  }
   let has_js_ffi_feature = match annotation {
     CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.features.iter().any(|feature| feature.ref_str() == "js-ffi"),
     CalcitTypeAnnotation::Macro(signature) => signature.features.iter().any(|feature| feature.ref_str() == "js-ffi"),
@@ -1498,6 +1520,7 @@ pub fn run_check_types_report(options: &CheckTypesCommand, snapshot: &snapshot::
   let mut ns_set: BTreeSet<String> = BTreeSet::new();
   let mut polymorphic_defs = 0usize;
   let mut bounded_polymorphic_defs = 0usize;
+  let mut legacy_macro_schemas = 0usize;
 
   for row in &rows {
     *level_count.entry(row.level.as_str()).or_insert(0) += 1;
@@ -1508,6 +1531,9 @@ pub fn run_check_types_report(options: &CheckTypesCommand, snapshot: &snapshot::
       if !row.where_bounds.is_empty() {
         bounded_polymorphic_defs += 1;
       }
+    }
+    if row.legacy_macro_schema.is_some() {
+      legacy_macro_schemas += 1;
     }
   }
 
@@ -1538,6 +1564,13 @@ pub fn run_check_types_report(options: &CheckTypesCommand, snapshot: &snapshot::
     out,
     "- polymorphism: generic={polymorphic_defs} trait-bounded={bounded_polymorphic_defs}"
   );
+  let _ = writeln!(out, "- legacy macro schemas: {legacy_macro_schemas}");
+  if legacy_macro_schemas > 0 {
+    let _ = writeln!(
+      out,
+      "- macro-migration: {legacy_macro_schemas} macro definition(s) still use runtime Fn/Dynamic compatibility; inspect [W_LEGACY_MACRO_SCHEMA] and declare phase-aware inputs, expansion, and capabilities."
+    );
+  }
   let coverage_gaps = level_count.get("partial").copied().unwrap_or(0) + level_count.get("none").copied().unwrap_or(0);
   if coverage_gaps > 0 {
     let _ = writeln!(
@@ -1735,6 +1768,7 @@ fn analyze_builtin_syntax(def_name: &str, sig: &SyntaxTypeSignature) -> TypeCove
     where_bounds: vec![],
     data_type: None,
     schema_issues: vec![],
+    legacy_macro_schema: None,
   }
 }
 
@@ -1775,6 +1809,7 @@ fn analyze_builtin_proc(def_name: &str, sig: &ProcTypeSignature) -> TypeCoverage
     where_bounds: vec![],
     data_type: None,
     schema_issues: vec![],
+    legacy_macro_schema: None,
   }
 }
 
@@ -1813,7 +1848,7 @@ pub fn validate_def_vs_schema(ns: &str, def_name: &str, code: &Cirru, schema: &C
         has_rest: signature.rest_input.is_some(),
         errors: vec![],
       }
-    } else if let MacroSignatureCompatibility::Legacy(fn_annot) = &signature.compatibility {
+    } else if let MacroSignatureCompatibility::Legacy { annotation: fn_annot, .. } = &signature.compatibility {
       ParamShape::from_schema(&fn_annot.arg_types, fn_annot.rest_type.is_some())
     } else {
       return vec![];
@@ -1899,7 +1934,10 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
   }
 
   if let CalcitTypeAnnotation::Macro(signature) = entry.schema.as_ref() {
-    if let MacroSignatureCompatibility::Legacy(fn_annot) = &signature.compatibility
+    if let MacroSignatureCompatibility::Legacy {
+      origin,
+      annotation: fn_annot,
+    } = &signature.compatibility
       && let Ok(schema) = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())
       && let Some((params, param_annotations, return_type_hints, level)) = extract_fn_schema_hints(&schema)
     {
@@ -1915,6 +1953,10 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
         where_bounds: signature.where_bounds.iter().map(|bound| bound.to_brief_string()).collect(),
         data_type: None,
         schema_issues: entry_schema_issues(ns, def_name, &entry.code, &entry.schema),
+        legacy_macro_schema: Some(LegacyMacroSchemaInfo {
+          origin: *origin,
+          signature: fn_annot.describe(),
+        }),
       };
     }
 
@@ -1963,6 +2005,7 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
       where_bounds: signature.where_bounds.iter().map(|bound| bound.to_brief_string()).collect(),
       data_type: None,
       schema_issues: entry_schema_issues(ns, def_name, &entry.code, &entry.schema),
+      legacy_macro_schema: None,
     };
   }
 
@@ -1990,6 +2033,7 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
       where_bounds,
       data_type: None,
       schema_issues: entry_schema_issues(ns, def_name, &entry.code, &entry.schema),
+      legacy_macro_schema: None,
     };
   }
 
@@ -2121,6 +2165,7 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
             where_bounds,
             data_type: None,
             schema_issues: entry_schema_issues(ns, def_name, &entry.code, &entry.schema),
+            legacy_macro_schema: None,
           };
         }
         if std::env::var("CR_DEBUG_SCHEMA").is_ok() {
@@ -2206,6 +2251,7 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
     where_bounds,
     data_type,
     schema_issues: entry_schema_issues(ns, def_name, &entry.code, &entry.schema),
+    legacy_macro_schema: None,
   }
 }
 
@@ -2585,6 +2631,7 @@ pub fn format_check_types_json(options: &CheckTypesCommand, snapshot: &snapshot:
   let mut namespaces = BTreeSet::<&str>::new();
   let mut polymorphic_defs = 0usize;
   let mut bounded_polymorphic_defs = 0usize;
+  let mut legacy_macro_schemas = 0usize;
   for row in &rows {
     *levels.entry(row.level.as_str()).or_insert(0) += 1;
     *kinds.entry(row.kind.as_str()).or_insert(0) += 1;
@@ -2594,6 +2641,9 @@ pub fn format_check_types_json(options: &CheckTypesCommand, snapshot: &snapshot:
       if !row.where_bounds.is_empty() {
         bounded_polymorphic_defs += 1;
       }
+    }
+    if row.legacy_macro_schema.is_some() {
+      legacy_macro_schemas += 1;
     }
   }
   for level in ["none", "partial", "full"] {
@@ -2629,24 +2679,39 @@ pub fn format_check_types_json(options: &CheckTypesCommand, snapshot: &snapshot:
         "where_bounds": row.where_bounds,
         "data_type": row.data_type,
         "schema_issues": row.schema_issues,
+        "legacy_macro_schema": row.legacy_macro_schema.as_ref().map(|legacy| serde_json::json!({
+          "diagnostic_code": "W_LEGACY_MACRO_SCHEMA",
+          "origin": legacy.origin.as_str(),
+          "signature": legacy.signature,
+          "snapshot_path": legacy_macro_snapshot_path(&row.ns, &row.def),
+          "migration": "Declare :required/:optional/:rest syntax inputs, :expansion, and :capabilities explicitly; do not infer phase-aware contracts from this runtime Fn signature.",
+        })),
       })
     })
     .collect::<Vec<_>>();
   let coverage_gaps = levels.get("partial").copied().unwrap_or(0) + levels.get("none").copied().unwrap_or(0);
-  let diagnostics = if coverage_gaps == 0 {
-    vec![]
-  } else {
-    vec![serde_json::json!({
+  let mut diagnostics = vec![];
+  if coverage_gaps > 0 {
+    diagnostics.push(serde_json::json!({
       "code": "W_TYPE_COVERAGE_GAPS",
       "phase": "analysis",
       "severity": "warning",
       "message": format!("{coverage_gaps} definition(s) lack full static coverage; unresolved dynamic slots can hide generic relations and force runtime method dispatch."),
       "suggestion": "Run `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json`; bind required type slots, then prefer concrete types, declared type variables, or trait `:where` bounds.",
-    })]
-  };
+    }));
+  }
+  if legacy_macro_schemas > 0 {
+    diagnostics.push(serde_json::json!({
+      "code": "W_LEGACY_MACRO_SCHEMA",
+      "phase": "analysis",
+      "severity": "warning",
+      "message": format!("{legacy_macro_schemas} macro definition(s) still use legacy runtime Fn/Dynamic schemas."),
+      "suggestion": "Inspect data.definitions[].legacy_macro_schema, then declare :required/:optional/:rest syntax inputs, :expansion, and :capabilities explicitly. Include dependencies when auditing release graphs.",
+    }));
+  }
   let ids = rows.iter().map(|row| (row.ns.clone(), row.def.clone())).collect::<Vec<_>>();
   let envelope = serde_json::json!({
-    "schema_version": 1,
+    "schema_version": 2,
     "command": "analyze.check-types",
     "revision": analysis_revision(snapshot, &ids)?,
     "data": {
@@ -2666,6 +2731,7 @@ pub fn format_check_types_json(options: &CheckTypesCommand, snapshot: &snapshot:
           "generic_definitions": polymorphic_defs,
           "trait_bounded_definitions": bounded_polymorphic_defs,
         },
+        "legacy_macro_schemas": legacy_macro_schemas,
       },
       "definitions": definitions,
     },
@@ -2843,17 +2909,111 @@ pub fn format_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapsh
 
 #[cfg(test)]
 mod tests {
+  use std::collections::{HashMap, HashSet};
   use std::sync::Arc;
 
-  use calcit::calcit::{CalcitTypeAnnotation, clear_type_slots, push_type_slot_override};
+  use calcit::calcit::{
+    CalcitFnTypeAnnotation, CalcitTypeAnnotation, LegacyMacroSchemaOrigin, MacroSignature, SchemaKind, clear_type_slots,
+    push_type_slot_override,
+  };
+  use calcit::cli_args::CheckTypesCommand;
+  use calcit::snapshot::{CodeEntry, FileInSnapShot, NsEntry, Snapshot};
   use cirru_parser::Cirru;
 
-  use super::{WeakTypeIntent, WeakTypeKind, classify_unsafe_coerce_source, is_raw_adapter_namespace, scan_schema_dynamic_annotation};
+  use super::{
+    WeakTypeIntent, WeakTypeKind, analyze_code_entry, classify_unsafe_coerce_source, format_check_types, format_check_types_json,
+    is_raw_adapter_namespace, scan_schema_dynamic_annotation,
+  };
+
+  fn leaf(value: &str) -> Cirru {
+    Cirru::Leaf(Arc::from(value))
+  }
+
+  fn list(items: Vec<Cirru>) -> Cirru {
+    Cirru::List(items)
+  }
+
+  fn legacy_macro_entry(signature: MacroSignature) -> CodeEntry {
+    CodeEntry {
+      doc: String::new(),
+      examples: vec![],
+      tests: vec![],
+      tags: HashSet::new(),
+      code: list(vec![leaf("defmacro"), leaf("legacy"), list(vec![leaf("value")]), leaf("value")]),
+      schema: Arc::new(CalcitTypeAnnotation::Macro(Arc::new(signature))),
+      ffi: None,
+    }
+  }
 
   fn scan(annotation: CalcitTypeAnnotation) -> Vec<super::WeakTypeOccurrence> {
     let mut occurrences = vec![];
     scan_schema_dynamic_annotation(&annotation, "schema", "root", &mut occurrences);
     occurrences
+  }
+
+  #[test]
+  fn legacy_macro_inventory_reports_origin_signature_path_and_summary() {
+    let fn_signature = MacroSignature::from_legacy_fn(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
+      return_type: Arc::new(CalcitTypeAnnotation::String),
+      fn_kind: SchemaKind::Macro,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    });
+    let fn_entry = legacy_macro_entry(fn_signature);
+    let row = analyze_code_entry("app.main", "legacy", &fn_entry);
+    let legacy = row.legacy_macro_schema.expect("legacy macro metadata");
+    assert_eq!(legacy.origin, LegacyMacroSchemaOrigin::Fn);
+    assert_eq!(legacy.signature, "fn(number) -> string");
+    assert!(row.schema_issues.iter().any(|issue| {
+      issue.contains("[W_LEGACY_MACRO_SCHEMA]") && issue.contains("snapshot.files[\"app.main\"].defs[\"legacy\"].schema")
+    }));
+
+    let dynamic_entry = legacy_macro_entry(MacroSignature::legacy_dynamic());
+    let dynamic_row = analyze_code_entry("app.main", "legacy-dynamic", &dynamic_entry);
+    assert_eq!(
+      dynamic_row.legacy_macro_schema.expect("dynamic legacy macro metadata").origin,
+      LegacyMacroSchemaOrigin::Dynamic
+    );
+
+    let mut snapshot = Snapshot {
+      package: "app".to_owned(),
+      ..Snapshot::default()
+    };
+    snapshot.files.insert(
+      "app.main".to_owned(),
+      FileInSnapShot {
+        ns: NsEntry {
+          doc: String::new(),
+          code: list(vec![leaf("ns"), leaf("app.main")]),
+        },
+        defs: HashMap::from([("legacy".to_owned(), fn_entry)]),
+      },
+    );
+    let options = CheckTypesCommand {
+      ns: None,
+      ns_prefix: None,
+      only: None,
+      format: "json".to_owned(),
+      deps: false,
+      summary_only: false,
+    };
+    let human = format_check_types(&options, &snapshot).expect("human inventory");
+    assert!(human.contains("- legacy macro schemas: 1"));
+    let json: serde_json::Value =
+      serde_json::from_str(&format_check_types_json(&options, &snapshot).expect("JSON inventory")).expect("valid inventory JSON");
+    assert_eq!(json["schema_version"], 2);
+    assert_eq!(json["data"]["summary"]["legacy_macro_schemas"], 1);
+    assert_eq!(json["data"]["definitions"][0]["legacy_macro_schema"]["origin"], "Fn");
+    assert!(
+      json["diagnostics"]
+        .as_array()
+        .expect("diagnostics array")
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "W_LEGACY_MACRO_SCHEMA")
+    );
   }
 
   #[test]

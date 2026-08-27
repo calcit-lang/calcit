@@ -351,13 +351,31 @@ pub enum MacroExpansionType {
   Declarations,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LegacyMacroSchemaOrigin {
+  Fn,
+  Dynamic,
+}
+
+impl LegacyMacroSchemaOrigin {
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Fn => "Fn",
+      Self::Dynamic => "Dynamic",
+    }
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MacroSignatureCompatibility {
   Strict,
   /// Existing `Macro {:args ... :return ...}` schemas mixed runtime and syntax
   /// phases. Keep their data for lossless snapshots, but do not enforce it as
   /// a strict syntax/expansion contract.
-  Legacy(Arc<CalcitFnTypeAnnotation>),
+  Legacy {
+    origin: LegacyMacroSchemaOrigin,
+    annotation: Arc<CalcitFnTypeAnnotation>,
+  },
 }
 
 /// Effects that may be performed while a macro is expanding. These are
@@ -497,15 +515,18 @@ impl MacroSignature {
       expansion: MacroExpansionType::Dynamic,
       capabilities: Arc::new(HashSet::new()),
       features: Arc::new(HashSet::new()),
-      compatibility: MacroSignatureCompatibility::Legacy(Arc::new(CalcitFnTypeAnnotation {
-        generics: Arc::new(vec![]),
-        where_bounds: Arc::new(vec![]),
-        arg_types: vec![],
-        return_type: crate::calcit::DYNAMIC_TYPE.clone(),
-        fn_kind: SchemaKind::Macro,
-        rest_type: None,
-        features: Arc::new(HashSet::new()),
-      })),
+      compatibility: MacroSignatureCompatibility::Legacy {
+        origin: LegacyMacroSchemaOrigin::Dynamic,
+        annotation: Arc::new(CalcitFnTypeAnnotation {
+          generics: Arc::new(vec![]),
+          where_bounds: Arc::new(vec![]),
+          arg_types: vec![],
+          return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+          fn_kind: SchemaKind::Macro,
+          rest_type: None,
+          features: Arc::new(HashSet::new()),
+        }),
+      },
     }
   }
 
@@ -523,7 +544,10 @@ impl MacroSignature {
       expansion: MacroExpansionType::Dynamic,
       capabilities: Arc::new(HashSet::new()),
       features: annotation.features.clone(),
-      compatibility: MacroSignatureCompatibility::Legacy(annotation),
+      compatibility: MacroSignatureCompatibility::Legacy {
+        origin: LegacyMacroSchemaOrigin::Fn,
+        annotation,
+      },
     }
   }
 
@@ -597,7 +621,7 @@ impl MacroSignature {
   }
 
   pub fn to_wrapped_schema_edn(&self) -> Edn {
-    if let MacroSignatureCompatibility::Legacy(annotation) = &self.compatibility {
+    if let MacroSignatureCompatibility::Legacy { annotation, .. } = &self.compatibility {
       return annotation.to_wrapped_schema_edn();
     }
     let mut map = EdnMapView::default();
@@ -4190,8 +4214,23 @@ mod tests {
     let signature = CalcitTypeAnnotation::parse_macro_signature_from_edn(&schema).expect("legacy macro schema");
     assert!(!signature.is_strict());
     assert!(!signature.is_cache_eligible());
-    assert!(matches!(signature.compatibility, MacroSignatureCompatibility::Legacy(_)));
+    assert!(matches!(
+      signature.compatibility,
+      MacroSignatureCompatibility::Legacy {
+        origin: LegacyMacroSchemaOrigin::Fn,
+        ..
+      }
+    ));
     assert!(matches!(signature.expansion, MacroExpansionType::Dynamic));
+
+    let dynamic_signature = MacroSignature::legacy_dynamic();
+    assert!(matches!(
+      dynamic_signature.compatibility,
+      MacroSignatureCompatibility::Legacy {
+        origin: LegacyMacroSchemaOrigin::Dynamic,
+        ..
+      }
+    ));
   }
 
   fn core_impl_trait_names(definition: &str) -> BTreeSet<String> {

@@ -3715,7 +3715,7 @@ mod tests {
         reloaded.schema
       )
     };
-    let crate::calcit::MacroSignatureCompatibility::Legacy(fn_annot) = &signature.compatibility else {
+    let crate::calcit::MacroSignatureCompatibility::Legacy { annotation: fn_annot, .. } = &signature.compatibility else {
       panic!("legacy schema should keep compatibility payload")
     };
     assert_eq!(fn_annot.fn_kind, SchemaKind::Macro);
@@ -3891,7 +3891,26 @@ mod tests {
     };
     assert!(matches!(
       signature.compatibility,
-      crate::calcit::MacroSignatureCompatibility::Legacy(_)
+      crate::calcit::MacroSignatureCompatibility::Legacy {
+        origin: crate::calcit::LegacyMacroSchemaOrigin::Fn,
+        ..
+      }
+    ));
+  }
+
+  #[test]
+  fn test_defmacro_code_records_dynamic_schema_origin_on_load() {
+    let code = Cirru::List(vec![Cirru::leaf("defmacro"), Cirru::leaf("demo"), Cirru::List(vec![])]);
+    let normalized = normalize_schema_for_code(&code, &DYNAMIC_TYPE);
+    let CalcitTypeAnnotation::Macro(signature) = normalized.as_ref() else {
+      panic!("defmacro Dynamic schema should normalize to MacroSignature");
+    };
+    assert!(matches!(
+      signature.compatibility,
+      crate::calcit::MacroSignatureCompatibility::Legacy {
+        origin: crate::calcit::LegacyMacroSchemaOrigin::Dynamic,
+        ..
+      }
     ));
   }
 
