@@ -6,10 +6,10 @@ more than one callback: it must represent timers, file watchers, HTTP work,
 WebSocket connections, and server resources.
 
 This document describes protocol version 1 as it is implemented in stages.
-The current implementation provides the handle types and lifecycle registry;
-existing `&call-dylib-edn-fn` and `&blocking-dylib-edn-fn` calls still use the
-build-identity-guarded Rust ABI until the event queue and C host function table
-land.
+The current implementation provides the handle types, lifecycle registry, and
+bounded host event queue; existing `&call-dylib-edn-fn` and
+`&blocking-dylib-edn-fn` calls still use the build-identity-guarded Rust ABI
+until the C host function table lands.
 
 ## Shared task model
 
@@ -44,10 +44,32 @@ error instead of looking like an unknown handle.
 ## Events and ordering
 
 Each active handle owns a monotonically increasing event sequence starting at
-1. The host reserves the sequence before enqueueing an event. The next stage
-will add the bounded host event queue and will execute Calcit callbacks only on
-the host scheduling thread. A dylib watcher/server thread may enqueue bytes but
-must never enter the Calcit runtime directly.
+1. The host reserves the sequence only after queue capacity has been secured,
+so `QUEUE_FULL` does not consume a sequence or claim a terminal event. The
+bounded queue accepts producers from foreign threads, but only the thread that
+created it may wait or drain and execute Calcit callbacks. A dylib
+watcher/server thread may enqueue bytes but must never enter the Calcit runtime
+directly.
+
+An event uses one of three stable tags: repeating `Emit`, successful terminal
+`Complete`, or failed terminal `Fail`. At most one terminal event may be queued
+for a task. Cancellation changes the task to `Closing`; already queued ordinary
+events are then discarded, while the terminal acknowledgement is still
+delivered. Terminal dispatch marks the task `Finished` before it can be
+released.
+
+Queue capacity is measured in events and every payload also has a host-side
+size limit. Full queues return `QUEUE_FULL` without blocking the producer.
+Only `Emit` events on a task registered with `COALESCE_ALLOWED` may replace an
+older queued emit for that same task; the replacement carries a newer sequence
+and the `COALESCED` event flag. Complete/fail and server request events are
+never silently dropped or coalesced.
+
+Drain returns a structured report rather than printing and forgetting
+failures. A callback failure records task/sequence metadata and its message,
+finishes the failed task, and purges its remaining queued events. Lifecycle
+rejections are reported separately. Queue entries also retain producer thread
+and queue-delay metadata for `--trace-ffi` without logging complete payloads.
 
 Streams and servers therefore do not require a Rust closure to cross the ABI.
 They keep only the opaque task handle and the C host function table. HTTP
@@ -64,6 +86,11 @@ rules.
 - a fixed numeric handle kind;
 - capability flags such as serialized events, permitted coalescing, or a
   required response.
+
+`FfiAsyncEventDescriptor` adds the event kind, event flags, task and optional
+response handles, sequence, and payload length. It contains no Rust pointer;
+the native C host function table and a WASM linear-memory adapter can wrap the
+same descriptor with different byte-copying transports.
 
 Status values are integer constants. Foreign input is validated before it is
 converted to a Rust enum, avoiding invalid-discriminant undefined behavior.
@@ -91,15 +118,13 @@ present the same Calcit-facing behavior.
 
 The remaining implementation order is:
 
-1. bounded event queue, scheduler-thread draining, trace events, and propagated
-   callback failures;
-2. native C host function table and per-method callback v1 lookup;
-3. response handles, server backpressure, cancellation, timeout, and shutdown
+1. native C host function table and per-method callback v1 lookup;
+2. response handles, server backpressure, cancellation, timeout, and shutdown
    fixtures;
-4. blocking calls reusing the same registry and envelopes;
-5. migration and release of `calcit-fetch`, `calcit-http`, `calcit-wss`, and
+3. blocking calls reusing the same registry and envelopes;
+4. migration and release of `calcit-fetch`, `calcit-http`, `calcit-wss`, and
    `calcit.std`;
-6. a `calcit_wasmtime` adapter prototype after the event envelope is stable;
-7. removal of the guarded Rust ABI fallback under issue #474.
+5. a `calcit_wasmtime` adapter prototype after the event envelope is stable;
+6. removal of the guarded Rust ABI fallback under issue #474.
 
 See issue #482 for the full acceptance matrix and module rollout status.
