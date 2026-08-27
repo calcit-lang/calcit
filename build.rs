@@ -579,6 +579,13 @@ fn main() {
   println!("cargo:rerun-if-env-changed=CARGO_CFG_PANIC");
   println!("cargo:rustc-env=CALCIT_FFI_BUILD_ID={}", ffi_build_id());
 
+  let target = env::var("TARGET").expect("Cargo must provide TARGET to build scripts");
+  if target.ends_with("apple-darwin") {
+    // Calcit executes directly on the process main thread on macOS so native
+    // AppKit event loops can own it. Match the worker stack used elsewhere.
+    println!("cargo:rustc-link-arg-bin=calcit=-Wl,-stack_size,0x2000000");
+  }
+
   let out_dir = env::var_os("OUT_DIR").unwrap();
   let dest_path = Path::new(&out_dir).join("calcit-core.rmp");
 
