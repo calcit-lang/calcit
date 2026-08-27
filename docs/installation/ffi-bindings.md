@@ -155,6 +155,12 @@ Protocol rules:
 
 `calcit-lang/calcit_wasmtime` contains the first complete synchronous adapter.
 
+Methods that create reusable native objects use the C-safe
+[opaque resource protocol](ffi-resource-protocol.md). The host turns reserved
+buffer-v1 tokens into automatically released Calcit `AnyRef` values, validates
+module ownership on later calls, and pins the creating dylib until the final
+reference is dropped.
+
 ## C-safe asynchronous callback ABI
 
 `&call-dylib-edn-fn` now probes `<method>_calcit_ffi_async_v1` before using the

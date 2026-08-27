@@ -71,6 +71,8 @@ calcit calcit.cirru
 
 三步缺一不可：构建 → 复制产物 → 运行验证。如果只更新了 `target/release/` 而未复制到 `dylibs/`，运行时仍会加载旧库。
 
+若模块返回编译后的正则等可复用 native 对象，不要继续跨 dylib 传递 Rust `AnyRef`，也不要改成用户手动释放的整数句柄。按照 [FFI opaque resource protocol / FFI 不透明资源协议](./ffi-resource-protocol.md) 使用 buffer v1 token、generation registry 和自动 release。
+
 Calcit 与 dylib 必须使用同一 rustc 工具链。先运行 `calcit --ffi-build-id` 查看 host identity。若项目提供 `rust-toolchain.toml`，应固定到发布 Calcit 所报告的 compiler identity；本地从源码构建 Calcit 时，则用同一个 toolchain 构建 dylib。debug Calcit 会在缺少 build identity 时直接拒绝旧模块；release Calcit 在迁移期仍会接受，但会输出兼容性警告。
 
 ### 4. 提交、打标签并推送

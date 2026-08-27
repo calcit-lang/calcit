@@ -1,9 +1,9 @@
 use std::ffi::{CStr, c_char};
 use std::fmt;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::{ptr, slice};
 
-use cirru_edn::{Edn, EdnListView};
+use cirru_edn::{Edn, EdnAnyRef, EdnEnumView, EdnListView, EdnMapView, EdnSetView, EdnStructView};
 
 pub const BUILD_ID_SYMBOL: &[u8] = b"calcit_ffi_build_id";
 
@@ -14,6 +14,13 @@ pub const BUFFER_PROTOCOL_VERSION_SYMBOL: &[u8] = b"calcit_ffi_buffer_version";
 pub const BUFFER_FREE_SYMBOL: &[u8] = b"calcit_ffi_buffer_free";
 const BUFFER_METHOD_SUFFIX: &str = "_calcit_ffi_v1";
 const MAX_BUFFER_BYTES: usize = 256 * 1024 * 1024;
+
+pub const RESOURCE_PROTOCOL_VERSION: u32 = 1;
+pub const RESOURCE_PROTOCOL_VERSION_SYMBOL: &[u8] = b"calcit_ffi_resource_version";
+pub const RESOURCE_RELEASE_SYMBOL: &[u8] = b"calcit_ffi_resource_release_v1";
+pub const RESOURCE_TOKEN_STRUCT: &str = "CalcitFfiResourceV1";
+const RESOURCE_TOKEN_FIELD: &str = "token";
+const RESOURCE_TOKEN_BYTES: usize = 16;
 
 /// Version of the transport-neutral asynchronous task semantics. Native C ABI
 /// adapters and future WASM adapters must preserve the same handle lifecycle,
@@ -739,6 +746,9 @@ impl FfiBuffer {
 type FfiBufferVersion = unsafe extern "C" fn() -> u32;
 type FfiBufferFree = unsafe extern "C" fn(FfiBuffer);
 type FfiBufferCall = unsafe extern "C" fn(*const u8, usize, *mut FfiBuffer) -> i32;
+type FfiResourceVersion = unsafe extern "C" fn() -> u32;
+type FfiResourceRelease = unsafe extern "C" fn(u64, u64) -> i32;
+pub type FfiResourceTrace = fn(&str, &str, u64, u64, i32);
 type FfiAsyncVersion = unsafe extern "C" fn() -> u32;
 pub type FfiAsyncStart = unsafe extern "C" fn(
   request_ptr: *const u8,
@@ -753,6 +763,66 @@ pub type FfiBlockingCall = unsafe extern "C" fn(
   host: *const FfiBlockingHostV1,
   output: *mut FfiBuffer,
 ) -> i32;
+
+struct NativeFfiResourceLease {
+  lib_name: Arc<str>,
+  handle: u64,
+  generation: u64,
+  release: FfiResourceRelease,
+  trace: Option<FfiResourceTrace>,
+  // Keep the creator loaded until the final Calcit reference has released its
+  // resource. This remains necessary even if the process-wide dylib cache is
+  // changed to permit unloading in the future.
+  _library: Option<Arc<libloading::Library>>,
+}
+
+impl fmt::Debug for NativeFfiResourceLease {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.debug_struct("NativeFfiResourceLease")
+      .field("lib_name", &self.lib_name)
+      .field("handle", &self.handle)
+      .field("generation", &self.generation)
+      .finish_non_exhaustive()
+  }
+}
+
+impl Drop for NativeFfiResourceLease {
+  fn drop(&mut self) {
+    // SAFETY: the function pointer belongs to `_library`, which is dropped
+    // after this method returns. Resource v1 requires release to accept any
+    // token and report stale/duplicate values through its status code.
+    let status = unsafe { (self.release)(self.handle, self.generation) };
+    if let Some(trace) = self.trace {
+      trace("resource-release", &self.lib_name, self.handle, self.generation, status);
+    }
+    if status != 0 {
+      eprintln!(
+        "[Warn] FFI resource release failed: lib={} handle={} generation={} status={status}",
+        self.lib_name, self.handle, self.generation
+      );
+    }
+  }
+}
+
+#[derive(Clone, Debug)]
+struct NativeFfiResource {
+  lease: Arc<NativeFfiResourceLease>,
+}
+
+impl PartialEq for NativeFfiResource {
+  fn eq(&self, other: &Self) -> bool {
+    self.lease.lib_name == other.lease.lib_name
+      && self.lease.handle == other.lease.handle
+      && self.lease.generation == other.lease.generation
+  }
+}
+
+struct FfiResourceAdapter {
+  lib_name: Arc<str>,
+  release: FfiResourceRelease,
+  trace: Option<FfiResourceTrace>,
+  library: Option<Arc<libloading::Library>>,
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum FfiBuildCompatibility {
@@ -800,6 +870,179 @@ pub fn encode_buffer_request(args: Vec<Edn>) -> Result<Vec<u8>, String> {
   cirru_edn::format(&Edn::List(EdnListView(args)), true)
     .map(String::into_bytes)
     .map_err(|error| format!("failed to encode FFI buffer request: {error}"))
+}
+
+fn encode_resource_token(handle: u64, generation: u64) -> Edn {
+  let mut token = Vec::with_capacity(RESOURCE_TOKEN_BYTES);
+  token.extend_from_slice(&handle.to_le_bytes());
+  token.extend_from_slice(&generation.to_le_bytes());
+  let mut value = EdnStructView::new(RESOURCE_TOKEN_STRUCT);
+  value.insert(RESOURCE_TOKEN_FIELD, Edn::Buffer(token));
+  value.into()
+}
+
+fn decode_resource_token(value: &EdnStructView) -> Result<(u64, u64), String> {
+  if value.pairs.len() != 1 || !value.pairs[0].0.matches(RESOURCE_TOKEN_FIELD) {
+    return Err(format!(
+      "FFI resource token `{RESOURCE_TOKEN_STRUCT}` must contain exactly one `:{RESOURCE_TOKEN_FIELD}` field"
+    ));
+  }
+  let Edn::Buffer(bytes) = &value.pairs[0].1 else {
+    return Err(format!(
+      "FFI resource token `{RESOURCE_TOKEN_STRUCT}` field `:{RESOURCE_TOKEN_FIELD}` must be a buffer"
+    ));
+  };
+  if bytes.len() != RESOURCE_TOKEN_BYTES {
+    return Err(format!(
+      "FFI resource token `{RESOURCE_TOKEN_STRUCT}` must contain {RESOURCE_TOKEN_BYTES} bytes, got {}",
+      bytes.len()
+    ));
+  }
+  let handle = u64::from_le_bytes(bytes[..8].try_into().expect("resource handle byte width"));
+  let generation = u64::from_le_bytes(bytes[8..].try_into().expect("resource generation byte width"));
+  if handle == 0 || generation == 0 {
+    return Err(format!(
+      "FFI resource token `{RESOURCE_TOKEN_STRUCT}` requires non-zero handle and generation"
+    ));
+  }
+  Ok((handle, generation))
+}
+
+fn transform_resource_args(value: &Edn, lib_name: &str) -> Result<Edn, String> {
+  match value {
+    Edn::AnyRef(reference) => {
+      let value = reference
+        .0
+        .read()
+        .map_err(|_| "failed to read FFI resource AnyRef because its lock is poisoned".to_owned())?;
+      let Some(resource) = value.as_any().downcast_ref::<NativeFfiResource>() else {
+        return Err(format!(
+          "C-safe FFI buffer method in `{lib_name}` cannot serialize a non-resource AnyRef"
+        ));
+      };
+      if resource.lease.lib_name.as_ref() != lib_name {
+        return Err(format!(
+          "FFI resource belongs to `{}`, but the attempted call targets `{lib_name}`",
+          resource.lease.lib_name
+        ));
+      }
+      Ok(encode_resource_token(resource.lease.handle, resource.lease.generation))
+    }
+    Edn::List(EdnListView(xs)) => Ok(Edn::List(EdnListView(
+      xs.iter()
+        .map(|item| transform_resource_args(item, lib_name))
+        .collect::<Result<Vec<_>, _>>()?,
+    ))),
+    Edn::Set(xs) => {
+      let mut output = EdnSetView::default();
+      for item in &xs.0 {
+        output.insert(transform_resource_args(item, lib_name)?);
+      }
+      Ok(output.into())
+    }
+    Edn::Map(xs) => {
+      let mut output = EdnMapView::default();
+      for (key, item) in &xs.0 {
+        output.insert(transform_resource_args(key, lib_name)?, transform_resource_args(item, lib_name)?);
+      }
+      Ok(output.into())
+    }
+    Edn::Enum(EdnEnumView { variant, type_name, extra }) => Ok(Edn::Enum(EdnEnumView {
+      variant: variant.clone(),
+      type_name: type_name.clone(),
+      extra: extra
+        .iter()
+        .map(|item| transform_resource_args(item, lib_name))
+        .collect::<Result<Vec<_>, _>>()?,
+    })),
+    Edn::Struct(EdnStructView { name, pairs }) => {
+      if name.as_ref() == RESOURCE_TOKEN_STRUCT {
+        return Err(format!(
+          "`{RESOURCE_TOKEN_STRUCT}` is reserved for host-managed FFI resources and cannot be supplied directly"
+        ));
+      }
+      let mut output = EdnStructView::new(name.clone());
+      for (key, item) in pairs {
+        output.insert(key.clone(), transform_resource_args(item, lib_name)?);
+      }
+      Ok(output.into())
+    }
+    Edn::Atom(inner) => Ok(Edn::Atom(Box::new(transform_resource_args(inner, lib_name)?))),
+    other => Ok(other.clone()),
+  }
+}
+
+fn contains_resource_token(value: &Edn) -> bool {
+  match value {
+    Edn::Struct(value) if value.name.as_ref() == RESOURCE_TOKEN_STRUCT => true,
+    Edn::List(xs) => xs.0.iter().any(contains_resource_token),
+    Edn::Set(xs) => xs.0.iter().any(contains_resource_token),
+    Edn::Map(xs) => xs
+      .0
+      .iter()
+      .any(|(key, value)| contains_resource_token(key) || contains_resource_token(value)),
+    Edn::Enum(value) => value.extra.iter().any(contains_resource_token),
+    Edn::Struct(value) => value.pairs.iter().any(|(_, value)| contains_resource_token(value)),
+    Edn::Atom(inner) => contains_resource_token(inner),
+    _ => false,
+  }
+}
+
+fn hydrate_resource_tokens(value: Edn, adapter: &FfiResourceAdapter) -> Result<Edn, String> {
+  match value {
+    Edn::Struct(resource) if resource.name.as_ref() == RESOURCE_TOKEN_STRUCT => {
+      let (handle, generation) = decode_resource_token(&resource)?;
+      if let Some(trace) = adapter.trace {
+        trace("resource-create", &adapter.lib_name, handle, generation, 0);
+      }
+      Ok(Edn::AnyRef(EdnAnyRef::new(NativeFfiResource {
+        lease: Arc::new(NativeFfiResourceLease {
+          lib_name: adapter.lib_name.clone(),
+          handle,
+          generation,
+          release: adapter.release,
+          trace: adapter.trace,
+          _library: adapter.library.clone(),
+        }),
+      })))
+    }
+    Edn::List(EdnListView(xs)) => Ok(Edn::List(EdnListView(
+      xs.into_iter()
+        .map(|item| hydrate_resource_tokens(item, adapter))
+        .collect::<Result<Vec<_>, _>>()?,
+    ))),
+    Edn::Set(xs) => {
+      let mut output = EdnSetView::default();
+      for item in xs.0 {
+        output.insert(hydrate_resource_tokens(item, adapter)?);
+      }
+      Ok(output.into())
+    }
+    Edn::Map(xs) => {
+      let mut output = EdnMapView::default();
+      for (key, item) in xs.0 {
+        output.insert(hydrate_resource_tokens(key, adapter)?, hydrate_resource_tokens(item, adapter)?);
+      }
+      Ok(output.into())
+    }
+    Edn::Enum(EdnEnumView { variant, type_name, extra }) => Ok(Edn::Enum(EdnEnumView {
+      variant,
+      type_name,
+      extra: extra
+        .into_iter()
+        .map(|item| hydrate_resource_tokens(item, adapter))
+        .collect::<Result<Vec<_>, _>>()?,
+    })),
+    Edn::Struct(EdnStructView { name, pairs }) => {
+      let mut output = EdnStructView::new(name);
+      for (key, item) in pairs {
+        output.insert(key, hydrate_resource_tokens(item, adapter)?);
+      }
+      Ok(output.into())
+    }
+    Edn::Atom(inner) => Ok(Edn::Atom(Box::new(hydrate_resource_tokens(*inner, adapter)?))),
+    other => Ok(other),
+  }
 }
 
 /// Probe a C-safe async method without touching the guarded Rust ABI. A
@@ -920,7 +1163,13 @@ unsafe fn copy_and_free_buffer(
 /// Try the C-safe synchronous byte-buffer protocol. `Ok(None)` means the
 /// library or this particular method has not migrated and may use the guarded
 /// legacy Rust ABI path.
-pub fn try_call_buffer(lib: &libloading::Library, lib_name: &str, method: &str, args: Vec<Edn>) -> Result<Option<Edn>, String> {
+pub fn try_call_buffer(
+  lib: &Arc<libloading::Library>,
+  lib_name: &str,
+  method: &str,
+  args: Vec<Edn>,
+  resource_trace: Option<FfiResourceTrace>,
+) -> Result<Option<Edn>, String> {
   let version: libloading::Symbol<FfiBufferVersion> = match unsafe { lib.get(BUFFER_PROTOCOL_VERSION_SYMBOL) } {
     Ok(version) => version,
     Err(_) => return Ok(None),
@@ -939,12 +1188,42 @@ pub fn try_call_buffer(lib: &libloading::Library, lib_name: &str, method: &str, 
   };
   let free: libloading::Symbol<FfiBufferFree> = unsafe { lib.get(BUFFER_FREE_SYMBOL) }
     .map_err(|error| format!("FFI buffer method `{symbol}` in `{lib_name}` is missing `calcit_ffi_buffer_free`: {error}"))?;
+  let args = args
+    .iter()
+    .map(|value| transform_resource_args(value, lib_name))
+    .collect::<Result<Vec<_>, _>>()?;
   let request = encode_buffer_request(args)?;
   let mut output = FfiBuffer::empty();
   let status = unsafe { call(request.as_ptr(), request.len(), &mut output) };
   let output = unsafe { copy_and_free_buffer(output, &free, lib_name, &symbol) }?;
+  let output = decode_buffer_response(status, output, lib_name, &symbol)?;
+  if !contains_resource_token(&output) {
+    return Ok(Some(output));
+  }
 
-  decode_buffer_response(status, output, lib_name, &symbol).map(Some)
+  let version: libloading::Symbol<FfiResourceVersion> = unsafe { lib.get(RESOURCE_PROTOCOL_VERSION_SYMBOL) }.map_err(|error| {
+    format!(
+      "FFI buffer method `{symbol}` in `{lib_name}` returned a resource token but is missing `calcit_ffi_resource_version`: {error}"
+    )
+  })?;
+  let current_version = unsafe { version() };
+  if current_version != RESOURCE_PROTOCOL_VERSION {
+    return Err(format!(
+      "FFI resource protocol mismatch in `{lib_name}`: dylib={current_version}, host={RESOURCE_PROTOCOL_VERSION}"
+    ));
+  }
+  let release: libloading::Symbol<FfiResourceRelease> = unsafe { lib.get(RESOURCE_RELEASE_SYMBOL) }.map_err(|error| {
+    format!(
+      "FFI buffer method `{symbol}` in `{lib_name}` returned a resource token but is missing `calcit_ffi_resource_release_v1`: {error}"
+    )
+  })?;
+  let adapter = FfiResourceAdapter {
+    lib_name: Arc::from(lib_name),
+    release: *release,
+    trace: resource_trace,
+    library: Some(lib.clone()),
+  };
+  hydrate_resource_tokens(output, &adapter).map(Some)
 }
 
 pub fn validate_build_id(
@@ -989,10 +1268,34 @@ mod tests {
     ASYNC_EVENT_FLAG_COALESCED, ASYNC_PROTOCOL_VERSION, ASYNC_TASK_FLAG_COALESCE_ALLOWED, ASYNC_TASK_FLAG_REQUIRES_RESPONSE,
     ASYNC_TASK_FLAG_SERIAL_EVENTS, BUFFER_PROTOCOL_VERSION, FfiAsyncEventDescriptor, FfiAsyncEventKind, FfiAsyncHandle,
     FfiAsyncHandleError, FfiAsyncHandleKind, FfiAsyncHandleRegistry, FfiAsyncHostV1, FfiAsyncLifecycle, FfiAsyncTaskDescriptor,
-    FfiBlockingHostV1, FfiBuffer, FfiBuildCompatibility, async_method_symbol, async_status, blocking_method_symbol,
-    buffer_method_symbol, decode_buffer_response, encode_buffer_request, validate_build_id,
+    FfiBlockingHostV1, FfiBuffer, FfiBuildCompatibility, FfiResourceAdapter, RESOURCE_PROTOCOL_VERSION, RESOURCE_TOKEN_BYTES,
+    RESOURCE_TOKEN_STRUCT, async_method_symbol, async_status, blocking_method_symbol, buffer_method_symbol, decode_buffer_response,
+    decode_resource_token, encode_buffer_request, encode_resource_token, hydrate_resource_tokens, transform_resource_args,
+    validate_build_id,
   };
-  use cirru_edn::Edn;
+  use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
+  };
+
+  use cirru_edn::{Edn, EdnAnyRef, EdnListView, EdnStructView};
+
+  static RESOURCE_RELEASES: AtomicUsize = AtomicUsize::new(0);
+  static RESOURCE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+  unsafe extern "C" fn test_resource_release(_handle: u64, _generation: u64) -> i32 {
+    RESOURCE_RELEASES.fetch_add(1, Ordering::SeqCst);
+    0
+  }
+
+  fn test_resource_adapter() -> FfiResourceAdapter {
+    FfiResourceAdapter {
+      lib_name: Arc::from("demo"),
+      release: test_resource_release,
+      trace: None,
+      library: None,
+    }
+  }
 
   #[test]
   fn buffer_method_names_are_versioned_without_changing_source_calls() {
@@ -1081,6 +1384,65 @@ mod tests {
     let source = std::str::from_utf8(&encoded).expect("UTF-8 request");
     let decoded = cirru_edn::parse(source).expect("parse request");
     assert_eq!(decoded, Edn::List(cirru_edn::EdnListView(vec![Edn::Number(1.0), Edn::str("two")])));
+  }
+
+  #[test]
+  fn resource_tokens_use_fixed_non_zero_handle_and_generation() {
+    let Edn::Struct(token) = encode_resource_token(7, 11) else {
+      panic!("resource token should be a struct")
+    };
+    assert_eq!(token.name.as_ref(), RESOURCE_TOKEN_STRUCT);
+    assert_eq!(decode_resource_token(&token).expect("valid resource token"), (7, 11));
+
+    let mut malformed = EdnStructView::new(RESOURCE_TOKEN_STRUCT);
+    malformed.insert("token", Edn::Buffer(vec![0; RESOURCE_TOKEN_BYTES]));
+    let error = decode_resource_token(&malformed).expect_err("zero token must fail");
+    assert!(error.contains("non-zero handle and generation"), "error: {error}");
+  }
+
+  #[test]
+  fn nested_resources_round_trip_only_to_their_creator_module() {
+    let _guard = RESOURCE_TEST_LOCK.lock().expect("resource test lock");
+    RESOURCE_RELEASES.store(0, Ordering::SeqCst);
+    let encoded = Edn::List(EdnListView(vec![Edn::str("prefix"), encode_resource_token(7, 11)]));
+    let hydrated = hydrate_resource_tokens(encoded.clone(), &test_resource_adapter()).expect("hydrate resource");
+    assert_eq!(
+      transform_resource_args(&hydrated, "demo").expect("encode matching resource"),
+      encoded
+    );
+
+    let error = transform_resource_args(&hydrated, "other").expect_err("wrong module must fail");
+    assert!(error.contains("belongs to `demo`"), "error: {error}");
+    drop(hydrated);
+    assert_eq!(RESOURCE_RELEASES.load(Ordering::SeqCst), 1);
+  }
+
+  #[test]
+  fn cloned_resources_release_once_after_concurrent_final_drop() {
+    let _guard = RESOURCE_TEST_LOCK.lock().expect("resource test lock");
+    RESOURCE_RELEASES.store(0, Ordering::SeqCst);
+    let resource = hydrate_resource_tokens(encode_resource_token(17, 3), &test_resource_adapter()).expect("hydrate resource");
+    let clones = (0..8).map(|_| resource.clone()).collect::<Vec<_>>();
+    std::thread::scope(|scope| {
+      for clone in clones {
+        scope.spawn(move || drop(clone));
+      }
+    });
+    assert_eq!(RESOURCE_RELEASES.load(Ordering::SeqCst), 0);
+    drop(resource);
+    assert_eq!(RESOURCE_RELEASES.load(Ordering::SeqCst), 1);
+  }
+
+  #[test]
+  fn c_safe_buffer_rejects_unmanaged_any_refs_and_forged_tokens() {
+    let unmanaged = Edn::AnyRef(EdnAnyRef::new(String::from("native")));
+    let error = transform_resource_args(&unmanaged, "demo").expect_err("unmanaged AnyRef must fail");
+    assert!(error.contains("non-resource AnyRef"), "error: {error}");
+
+    let forged = encode_resource_token(1, 1);
+    let error = transform_resource_args(&forged, "demo").expect_err("direct resource token must fail");
+    assert!(error.contains("reserved for host-managed"), "error: {error}");
+    assert_eq!(RESOURCE_PROTOCOL_VERSION, 1);
   }
 
   #[test]

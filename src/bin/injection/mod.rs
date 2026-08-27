@@ -239,6 +239,13 @@ fn trace_ffi_event(label: &str, message: impl AsRef<str>) {
   }
 }
 
+fn trace_ffi_resource_event(label: &str, lib_name: &str, handle: u64, generation: u64, status: i32) {
+  trace_ffi_event(
+    label,
+    format!("lib={lib_name} handle={handle} generation={generation} status={status}"),
+  );
+}
+
 /// Bind the async queue to the CLI worker thread before any dylib can publish
 /// work. Tests that only inject proc metadata do not initialize global runtime
 /// state and therefore cannot accidentally claim host-thread ownership.
@@ -1401,7 +1408,7 @@ pub fn call_dylib_edn(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
   );
 
   let lib = load_dylib(&lib_name)?;
-  match calcit::ffi_abi::try_call_buffer(&lib, &lib_name, &method, ys.clone())
+  match calcit::ffi_abi::try_call_buffer(&lib, &lib_name, &method, ys.clone(), Some(trace_ffi_resource_event))
     .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?
   {
     Some(ret) => {
