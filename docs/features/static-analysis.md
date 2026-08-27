@@ -90,6 +90,8 @@ calcit analyze weak-types --ns app.main --only unsafe-coerce
 
 # Machine-readable definition rows and Snapshot paths
 calcit analyze check-types --ns app.main --format json
+# Include installed modules when inventorying legacy macro contracts
+calcit analyze check-types --deps --format json
 calcit analyze weak-types --ns app.main --intent unresolved --format json
 calcit analyze deprecated --ns app.main --format json
 calcit analyze dynamic-methods --format json
@@ -108,7 +110,14 @@ calcit analyze check-examples --ns app.main --def 'detect-nodejs?' --js
 calcit query type-at app.main/calculate-total --path code@3.2 --format json
 ```
 
-`check-types` treats nested dynamic slots such as bare `:ref`, `:list`, or `:map` as partial coverage and includes actionable `[W_SCHEMA_DYNAMIC]` entries in `schema_issues`. An unbound `*type-slot` is also partial and emits `[W_UNRESOLVED_TYPE_SLOT]`; bind it in the selected entry or explicitly choose `:dynamic` for a documented boundary. When partial/none definitions exist, human output adds an `agent-note` and JSON emits `W_TYPE_COVERAGE_GAPS`. `weak-types --format json` reports the exact Snapshot/schema path plus an `impact` and `suggestion` for every occurrence; unresolved dynamic debt emits `W_DYNAMIC_TYPE_DEBT`, unbound slots emit `W_UNRESOLVED_TYPE_SLOT`, while unresolved or compatibility-Optional nil debt emits `W_NIL_TYPE_DEBT`. Definitions marked with the explicit `:js-ffi` feature remain classified as intentional boundaries rather than ordinary unresolved dynamic debt.
+`check-types` treats nested dynamic slots such as bare `:ref`, `:list`, or `:map` as partial coverage and includes actionable `[W_SCHEMA_DYNAMIC]` entries in `schema_issues`. An unbound `*type-slot` is also partial and emits `[W_UNRESOLVED_TYPE_SLOT]`; bind it in the selected entry or explicitly choose `:dynamic` for a documented boundary. When partial/none definitions exist, human output adds an `agent-note` and JSON emits `W_TYPE_COVERAGE_GAPS`. A macro still normalized from an old runtime `Fn` or whole-`Dynamic` schema emits `W_LEGACY_MACRO_SCHEMA`. Check-types JSON schema v2 exposes `summary.legacy_macro_schemas` plus a per-definition `legacy_macro_schema` object containing the source kind, old signature, Snapshot path, and migration guidance. Use `--deps`: release audits must inspect resolved module artifacts, not only each dependency's current source branch. The report never guesses `Syntax`, `Expr<T>`, or expansion contracts. `weak-types --format json` reports the exact Snapshot/schema path plus an `impact` and `suggestion` for every occurrence; unresolved dynamic debt emits `W_DYNAMIC_TYPE_DEBT`, unbound slots emit `W_UNRESOLVED_TYPE_SLOT`, while unresolved or compatibility-Optional nil debt emits `W_NIL_TYPE_DEBT`. Definitions marked with the explicit `:js-ffi` feature remain classified as intentional boundaries rather than ordinary unresolved dynamic debt.
+
+For a zero-legacy release check, inspect the stable summary field (or store it in the project's reviewed CI baseline):
+
+```bash
+calcit analyze check-types --deps --summary-only --format json \
+  | jq -e '.data.summary.legacy_macro_schemas == 0'
+```
 
 An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. A selected entry binding of `:type-slots` to `:dynamic` stays visible as `intentional-type-slot-dynamic`. Neither hides the location, but both separate an explicit boundary choice from unresolved type debt. The FFI feature does not classify `nil`, because an FFI capability does not imply that every nullable branch is intentional.
 

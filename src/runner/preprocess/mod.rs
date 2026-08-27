@@ -7250,7 +7250,7 @@ fn contains_legacy_optional(annotation: &CalcitTypeAnnotation) -> bool {
         || contains_legacy_optional(info.return_type.as_ref())
     }
     CalcitTypeAnnotation::Macro(signature) => match &signature.compatibility {
-      crate::calcit::MacroSignatureCompatibility::Legacy(info) => {
+      crate::calcit::MacroSignatureCompatibility::Legacy { annotation: info, .. } => {
         info.arg_types.iter().any(|item| contains_legacy_optional(item))
           || info.rest_type.as_ref().is_some_and(|item| contains_legacy_optional(item))
           || contains_legacy_optional(info.return_type.as_ref())
@@ -7335,7 +7335,11 @@ fn validate_def_schema_during_preprocess(
       };
       return compare_param_shapes(&format!("{ns}/{def_name}"), &code_shape, &schema_shape);
     }
-    if let crate::calcit::MacroSignatureCompatibility::Legacy(fn_annot) = &signature.compatibility {
+    if let crate::calcit::MacroSignatureCompatibility::Legacy {
+      origin: crate::calcit::LegacyMacroSchemaOrigin::Fn,
+      annotation: fn_annot,
+    } = &signature.compatibility
+    {
       let code_shape = analyze_def_schema_param_shape(args);
       let schema_shape = ParamShape::from_schema(&fn_annot.arg_types, fn_annot.rest_type.is_some());
       return compare_param_shapes(&format!("{ns}/{def_name}"), &code_shape, &schema_shape);
@@ -12427,6 +12431,26 @@ mod tests {
 
     assert_eq!(issues.len(), 1, "expected 1 issue, got: {issues:?}");
     assert!(issues[0].contains("schema has 3 required arg(s) but code has 2"));
+  }
+
+  #[test]
+  fn dynamic_legacy_macro_skips_parameter_shape_validation_during_preprocess() {
+    let args = CalcitList::from(
+      &[Calcit::Symbol {
+        sym: Arc::from("value"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.schema"),
+          at_def: Arc::from("demo"),
+        }),
+        location: None,
+      }][..],
+    );
+    let schema = CalcitTypeAnnotation::Macro(Arc::new(crate::calcit::MacroSignature::legacy_dynamic()));
+    let issues = validate_def_schema_during_preprocess(&CalcitSyntax::Defmacro, "tests.schema", "demo", &args, &schema);
+    assert!(
+      issues.is_empty(),
+      "Dynamic-origin legacy schema must not constrain parameters: {issues:?}"
+    );
   }
 
   #[test]

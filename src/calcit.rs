@@ -50,10 +50,10 @@ pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};
 pub use syntax_name::{CalcitSyntax, SyntaxTypeSignature};
 pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub use type_annotation::{
-  CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTypeAnnotation, DYNAMIC_TYPE, MacroCapability, MacroExpansionType, MacroSignature,
-  MacroSignatureCompatibility, MacroSyntaxType, SchemaKind, brief_type_of_value, clear_type_slots, configure_entry_type_slots,
-  pop_type_slot_override, push_type_slot_override, register_program_lookups, register_type_slot, resolve_type_slot,
-  value_matches_type_annotation, with_type_annotation_warning_context,
+  CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTypeAnnotation, DYNAMIC_TYPE, LegacyMacroSchemaOrigin, MacroCapability,
+  MacroExpansionType, MacroSignature, MacroSignatureCompatibility, MacroSyntaxType, SchemaKind, brief_type_of_value, clear_type_slots,
+  configure_entry_type_slots, pop_type_slot_override, push_type_slot_override, register_program_lookups, register_type_slot,
+  resolve_type_slot, value_matches_type_annotation, with_type_annotation_warning_context,
 };
 
 use compare::{
