@@ -120,13 +120,21 @@ pub struct FfiAsyncLifecycleFailure {
   pub error: FfiAsyncHandleError,
 }
 
+#[derive(Debug, Clone)]
+pub struct FfiAsyncQueueFailure {
+  pub descriptor: FfiAsyncEventDescriptor,
+  pub error: FfiAsyncQueueError,
+}
+
 #[derive(Debug, Default)]
 pub struct FfiAsyncDrainReport {
   pub dequeued: usize,
   pub delivered: usize,
   pub discarded: usize,
+  pub purged: usize,
   pub callback_failures: Vec<FfiAsyncDispatchFailure>,
   pub lifecycle_failures: Vec<FfiAsyncLifecycleFailure>,
+  pub queue_failures: Vec<FfiAsyncQueueFailure>,
 }
 
 struct FfiAsyncQueueState {
@@ -301,7 +309,17 @@ impl FfiAsyncEventQueue {
         continue;
       }
 
-      let kind = event.kind().map_err(FfiAsyncQueueError::Handle)?;
+      let kind = match event.kind() {
+        Ok(kind) => kind,
+        Err(error) => {
+          report.lifecycle_failures.push(FfiAsyncLifecycleFailure {
+            descriptor: event.descriptor,
+            error,
+          });
+          report.discarded += 1;
+          continue;
+        }
+      };
       let state = match registry.state(handle) {
         Ok(state) => state,
         Err(error) => {
@@ -345,6 +363,7 @@ impl FfiAsyncEventQueue {
             descriptor: event.descriptor,
             message,
           });
+          report.discarded += 1;
           failed_handles.insert(handle);
           if let Err(error) = registry.finish(handle) {
             report.lifecycle_failures.push(FfiAsyncLifecycleFailure {
@@ -352,7 +371,13 @@ impl FfiAsyncEventQueue {
               error,
             });
           }
-          report.discarded += self.purge_handle(handle)?;
+          match self.purge_handle(handle) {
+            Ok(purged) => report.purged += purged,
+            Err(error) => report.queue_failures.push(FfiAsyncQueueFailure {
+              descriptor: event.descriptor,
+              error,
+            }),
+          }
         }
       }
     }
@@ -526,7 +551,7 @@ mod tests {
     }
 
     let report = queue
-      .drain(&registry, 2, |event| {
+      .drain(&registry, 1, |event| {
         if event.payload() == b"bad" {
           Err("Calcit callback failed".to_owned())
         } else {
@@ -537,8 +562,35 @@ mod tests {
     assert_eq!(report.callback_failures.len(), 1);
     assert_eq!(report.callback_failures[0].message, "Calcit callback failed");
     assert_eq!(report.discarded, 1);
+    assert_eq!(report.purged, 1);
+    assert_eq!(report.dequeued, report.delivered + report.discarded);
     assert_eq!(registry.state(handle).expect("failed task").lifecycle, FfiAsyncLifecycle::Finished);
     assert_eq!(queue.len(), Ok(1));
+  }
+
+  #[test]
+  fn malformed_batch_event_is_reported_without_losing_drain_accounting() {
+    let registry = FfiAsyncHandleRegistry::new();
+    let malformed = registry
+      .register(FfiAsyncHandleKind::Stream, ())
+      .expect("register malformed stream");
+    let valid = registry.register(FfiAsyncHandleKind::Stream, ()).expect("register valid stream");
+    let queue = FfiAsyncEventQueue::new(2).expect("create queue");
+    queue
+      .enqueue(&registry, malformed, None, FfiAsyncEventKind::Emit, vec![])
+      .expect("enqueue malformed event placeholder");
+    queue
+      .enqueue(&registry, valid, None, FfiAsyncEventKind::Emit, vec![])
+      .expect("enqueue valid event");
+    queue.state.lock().expect("queue lock").events[0].descriptor.kind = 99;
+
+    let report = queue.drain(&registry, 2, |_| Ok(())).expect("degraded drain report");
+    assert_eq!(report.dequeued, 2);
+    assert_eq!(report.delivered, 1);
+    assert_eq!(report.discarded, 1);
+    assert_eq!(report.lifecycle_failures.len(), 1);
+    assert_eq!(report.lifecycle_failures[0].error, FfiAsyncHandleError::InvalidEventKind(99));
+    assert_eq!(report.dequeued, report.delivered + report.discarded);
   }
 
   #[test]
