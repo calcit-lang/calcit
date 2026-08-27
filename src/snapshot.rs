@@ -1264,6 +1264,7 @@ pub const VALID_SCHEMA_FIELDS: &[&str] = &[
   ":generics",
   ":where",
   ":features",
+  ":legacy-origin",
 ];
 
 /// Recursively check a Cirru schema tree for deprecated `:nil` type annotations.
@@ -1612,6 +1613,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   let mut optional_node: Option<&Cirru> = None;
   let mut expansion_node: Option<&Cirru> = None;
   let mut capabilities_node: Option<&Cirru> = None;
+  let mut legacy_origin_node: Option<&Cirru> = None;
   let mut where_node: Option<&Cirru> = None;
   let mut features_node: Option<&Cirru> = None;
 
@@ -1627,6 +1629,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
         ":optional" => optional_node = Some(val),
         ":expansion" => expansion_node = Some(val),
         ":capabilities" => capabilities_node = Some(val),
+        ":legacy-origin" => legacy_origin_node = Some(val),
         ":rest" => rest_node = Some(val),
         ":where" => where_node = Some(val),
         ":features" => features_node = Some(val),
@@ -1716,6 +1719,12 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
         ));
       }
     }
+  }
+
+  if let Some(legacy_origin) = legacy_origin_node
+    && !matches!(legacy_origin, Cirru::Leaf(value) if matches!(value.as_ref(), ":fn" | ":dynamic"))
+  {
+    return Err("`:legacy-origin` must be `:fn` or `:dynamic`".to_owned());
   }
 
   // Validate :features value — must be a hashset of tags
@@ -3904,6 +3913,39 @@ mod tests {
     let normalized = normalize_schema_for_code(&code, &DYNAMIC_TYPE);
     let CalcitTypeAnnotation::Macro(signature) = normalized.as_ref() else {
       panic!("defmacro Dynamic schema should normalize to MacroSignature");
+    };
+    assert!(matches!(
+      signature.compatibility,
+      crate::calcit::MacroSignatureCompatibility::Legacy {
+        origin: crate::calcit::LegacyMacroSchemaOrigin::Dynamic,
+        ..
+      }
+    ));
+  }
+
+  #[test]
+  fn test_dynamic_legacy_macro_origin_survives_code_entry_round_trip() {
+    let entry = CodeEntry {
+      doc: String::new(),
+      examples: vec![],
+      tests: vec![],
+      tags: HashSet::new(),
+      code: Cirru::List(vec![
+        Cirru::leaf("defmacro"),
+        Cirru::leaf("demo"),
+        Cirru::List(vec![Cirru::leaf("value")]),
+        Cirru::leaf("value"),
+      ]),
+      schema: Arc::new(CalcitTypeAnnotation::Macro(Arc::new(MacroSignature::legacy_dynamic()))),
+      ffi: None,
+    };
+    let encoded = Edn::from(&entry);
+    let text = cirru_edn::format(&encoded, true).expect("legacy macro CodeEntry should format");
+    assert!(text.contains(":legacy-origin :dynamic"), "origin marker should persist: {text}");
+    let parsed = cirru_edn::parse(&text).expect("legacy macro CodeEntry should parse");
+    let reloaded: CodeEntry = parsed.try_into().expect("legacy macro CodeEntry should reload");
+    let CalcitTypeAnnotation::Macro(signature) = reloaded.schema.as_ref() else {
+      panic!("reloaded schema should remain a macro");
     };
     assert!(matches!(
       signature.compatibility,

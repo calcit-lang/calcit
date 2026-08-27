@@ -1848,7 +1848,11 @@ pub fn validate_def_vs_schema(ns: &str, def_name: &str, code: &Cirru, schema: &C
         has_rest: signature.rest_input.is_some(),
         errors: vec![],
       }
-    } else if let MacroSignatureCompatibility::Legacy { annotation: fn_annot, .. } = &signature.compatibility {
+    } else if let MacroSignatureCompatibility::Legacy {
+      origin: LegacyMacroSchemaOrigin::Fn,
+      annotation: fn_annot,
+    } = &signature.compatibility
+    {
       ParamShape::from_schema(&fn_annot.arg_types, fn_annot.rest_type.is_some())
     } else {
       return vec![];

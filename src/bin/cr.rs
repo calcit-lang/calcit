@@ -2296,6 +2296,17 @@ mod tests {
   }
 
   #[test]
+  fn validate_dynamic_legacy_macro_has_no_parameter_shape_contract() {
+    let schema = CalcitTypeAnnotation::Macro(Arc::new(calcit::calcit::MacroSignature::legacy_dynamic()));
+    let code = defmacro_code(&["a", "b"]);
+    let issues = type_coverage::validate_def_vs_schema("myns", "my-macro", &code, &schema);
+    assert!(
+      issues.is_empty(),
+      "Dynamic-origin legacy schema must not constrain parameters: {issues:?}"
+    );
+  }
+
+  #[test]
   fn validate_macro_optional_and_rest_shapes() {
     let code = list(vec![
       leaf("defmacro"),
