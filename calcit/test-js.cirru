@@ -11,9 +11,13 @@
         |load-data-code $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro load-data-code (s)
-              &data-to-code $ parse-cirru-edn s
+              &data-to-code $ parse-cirru-edn
+                unsafe-coerce s 'String
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Macro
+            {} (:required $ [] (:: 'Expr 'String))
+              :capabilities $ #{}
+              :expansion $ :: 'Expr 'Dynamic
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing js") (test-js) (test-let-example) (test-collection) (test-async) (test-async-in-data) (test-data-gen) (test-regexp) (test-property) (test-tag-keys)

@@ -7,7 +7,7 @@ use std::collections::hash_set::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::calcit::{Calcit, CalcitTypeAnnotation, DYNAMIC_TYPE, MacroSignature, with_type_annotation_warning_context};
+use crate::calcit::{Calcit, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context};
 use crate::data::edn::{format_deserialize_error, format_edn_display};
 
 const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.";
@@ -1776,15 +1776,19 @@ pub fn parse_schema_annotation_for_write(schema: &Cirru) -> Result<Arc<CalcitTyp
   if let Some(annotation) = parse_zero_payload_schema_wrapper(&schema_edn) {
     return Ok(annotation);
   }
-  Ok(
-    CalcitTypeAnnotation::parse_macro_signature_from_edn(&schema_edn)
-      .map(|signature| Arc::new(CalcitTypeAnnotation::Macro(Arc::new(signature))))
-      .or_else(|| {
-        CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn)
-          .map(|signature| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature))))
-      })
-      .unwrap_or_else(|| CalcitTypeAnnotation::parse_type_annotation_from_edn(&schema_edn)),
-  )
+  if let Some(signature) = CalcitTypeAnnotation::parse_macro_signature_from_edn(&schema_edn) {
+    return Ok(Arc::new(CalcitTypeAnnotation::Macro(Arc::new(signature))));
+  }
+  if let Some(signature) = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn) {
+    if matches!(signature.fn_kind, SchemaKind::Macro) {
+      return Err(
+        "legacy `:kind :macro` function schemas are no longer writable; declare a strict `Macro` contract with :required/:optional/:rest, :expansion, and :capabilities instead"
+          .to_owned(),
+      );
+    }
+    return Ok(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature))));
+  }
+  Ok(CalcitTypeAnnotation::parse_type_annotation_from_edn(&schema_edn))
 }
 
 impl From<&CodeEntry> for Edn {
@@ -1833,16 +1837,7 @@ fn normalize_schema_for_code(code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -
     }
   }
 
-  if !code_declares_macro(code) || matches!(schema.as_ref(), CalcitTypeAnnotation::Macro(_)) {
-    return schema.clone();
-  }
-  match schema.as_ref() {
-    CalcitTypeAnnotation::Fn(fn_annot) => Arc::new(CalcitTypeAnnotation::Macro(Arc::new(MacroSignature::from_legacy_fn(
-      fn_annot.as_ref().clone(),
-    )))),
-    CalcitTypeAnnotation::Dynamic => Arc::new(CalcitTypeAnnotation::Macro(Arc::new(MacroSignature::legacy_dynamic()))),
-    _ => schema.clone(),
-  }
+  schema.clone()
 }
 
 /// structure of canonical runtime snapshot files such as `calcit.cirru`
@@ -2177,6 +2172,7 @@ fn load_snapshot_data_inner(data: &Edn, path: &str) -> Result<Snapshot, String> 
   }
   let pkg: Arc<str> = data.get_or_nil("package").try_into()?;
   let mut files: HashMap<String, FileInSnapShot> = parse_files_with_context(&data.get_or_nil("files"))?;
+  validate_strict_macro_schemas(&files, path)?;
   let about = match data.get_or_nil("about") {
     Edn::Nil => None,
     value => {
@@ -2205,6 +2201,31 @@ fn load_snapshot_data_inner(data: &Edn, path: &str) -> Result<Snapshot, String> 
     active_entry: default_active_entry(),
   };
   Ok(s)
+}
+
+fn validate_strict_macro_schemas(files: &HashMap<String, FileInSnapShot>, path: &str) -> Result<(), String> {
+  let mut namespaces = files.keys().collect::<Vec<_>>();
+  namespaces.sort_unstable();
+  for ns in namespaces {
+    let file = &files[ns];
+    let mut definitions = file.defs.keys().collect::<Vec<_>>();
+    definitions.sort_unstable();
+    for def_name in definitions {
+      let entry = &file.defs[def_name];
+      if !code_declares_macro(&entry.code) || matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Macro(_)) {
+        continue;
+      }
+      let found = match entry.schema.as_ref() {
+        CalcitTypeAnnotation::Fn(_) => "a runtime Fn schema",
+        CalcitTypeAnnotation::Dynamic => "a Dynamic schema",
+        _ => "a non-Macro schema",
+      };
+      return Err(format!(
+        "legacy macro schema at snapshot.files[{ns:?}].defs[{def_name:?}].schema: `defmacro` requires a strict `Macro` contract with :required/:optional/:rest, :expansion, and :capabilities, but found {found}. Migrate this definition with the final compatible Calcit 0.13.51 release, then retry `calcit '{path}' --check-only`."
+      ));
+    }
+  }
+  Ok(())
 }
 
 fn parse_code_entry_with_context(data: Edn, owner: &str) -> Result<CodeEntry, String> {
@@ -2821,7 +2842,7 @@ pub fn save_snapshot_to_file<P: AsRef<Path>>(snapshot_path: P, snapshot: &Snapsh
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::CalcitFnTypeAnnotation;
+  use crate::calcit::{CalcitFnTypeAnnotation, SchemaKind};
   use cirru_edn::EdnListView;
 
   fn parse_one(source: &str) -> Cirru {
@@ -3668,73 +3689,50 @@ mod tests {
   }
 
   #[test]
-  fn test_macro_schema_full_file_round_trip() {
-    use crate::calcit::SchemaKind;
-    // Simulate saving + loading via the actual file format:
-    // 1. Write a CodeEntry with :kind :macro schema to Edn (as done by save_snapshot_to_file)
-    // 2. Format it to Cirru string (via cirru_edn::format)
-    // 3. Parse it back (via cirru_edn::parse)
-    // 4. TryFrom<Edn> for CodeEntry
-    // 5. Check entry.schema is the dedicated legacy-compatible MacroSignature
-
-    let schema_text = "{} (:kind :macro) (:return :bool) (:args ([] :number :number))";
-    let schema_cirru = cirru_parser::parse(schema_text)
-      .expect("should parse")
-      .into_iter()
-      .next()
-      .expect("should have one node");
-    let schema_edn = schema_cirru_to_edn(schema_cirru);
-
-    let fn_schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn).expect("must parse");
-    assert_eq!(fn_schema.fn_kind, SchemaKind::Macro);
-
-    // Build a minimal CodeEntry with this schema
-    let entry = CodeEntry {
-      doc: "test fn".to_owned(),
-      examples: vec![],
-      tests: vec![],
-      tags: HashSet::new(),
-      code: vec!["defmacro", "test-fn", "(a b)", "nil"].into(),
-      schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(fn_schema))),
-      ffi: None,
-    };
-
-    // Serialize to Edn (as From<&CodeEntry> for Edn does)
-    let entry_edn: Edn = Edn::from(&entry);
-
-    // Format to Cirru string and parse back (as save_snapshot + load_snapshot do)
-    let cirru_text = cirru_edn::format(&entry_edn, true).expect("format should succeed");
-    assert!(
-      cirru_text.contains(":schema $ :: 'Macro"),
-      "macro schema should use canonical wrapped 'Macro symbol: {cirru_text}"
-    );
-    assert!(
-      cirru_text.contains(":return 'Bool"),
-      "macro schema should preserve non-dynamic return field during serialization: {cirru_text}"
-    );
-    let parsed_edn = cirru_edn::parse(&cirru_text).expect("parse should succeed");
-
-    // Deserialize back to CodeEntry
-    let reloaded: CodeEntry = parsed_edn.try_into().expect("TryFrom<Edn> should succeed");
-
-    // Check the schema was preserved
-    let CalcitTypeAnnotation::Macro(signature) = reloaded.schema.as_ref() else {
-      panic!(
-        "schema must be Macro after round-trip, got {:?}; cirru_text: {cirru_text:?}",
-        reloaded.schema
-      )
-    };
-    let crate::calcit::MacroSignatureCompatibility::Legacy { annotation: fn_annot, .. } = &signature.compatibility else {
-      panic!("legacy schema should keep compatibility payload")
-    };
-    assert_eq!(fn_annot.fn_kind, SchemaKind::Macro);
-    assert_eq!(fn_annot.arg_types.len(), 2, "arg_types must survive round-trip");
+  fn strict_loader_rejects_legacy_macro_schemas_with_snapshot_path() {
+    let macro_code = Cirru::List(vec![Cirru::leaf("defmacro"), Cirru::leaf("legacy"), Cirru::List(vec![])]);
+    for schema in [
+      DYNAMIC_TYPE.clone(),
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![],
+        return_type: DYNAMIC_TYPE.clone(),
+        fn_kind: SchemaKind::Macro,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      }))),
+    ] {
+      let files = HashMap::from([(
+        "app.main".to_owned(),
+        FileInSnapShot {
+          ns: NsEntry {
+            doc: String::new(),
+            code: Cirru::List(vec![Cirru::leaf("ns"), Cirru::leaf("app.main")]),
+          },
+          defs: HashMap::from([(
+            "legacy".to_owned(),
+            CodeEntry {
+              doc: String::new(),
+              examples: vec![],
+              tests: vec![],
+              tags: HashSet::new(),
+              code: macro_code.clone(),
+              schema,
+              ffi: None,
+            },
+          )]),
+        },
+      )]);
+      let error = validate_strict_macro_schemas(&files, "fixtures/legacy.cirru").expect_err("legacy macro must be rejected");
+      assert!(error.contains("snapshot.files[\"app.main\"].defs[\"legacy\"].schema"), "{error}");
+      assert!(error.contains("Calcit 0.13.51"), "{error}");
+      assert!(error.contains("fixtures/legacy.cirru"), "{error}");
+    }
   }
 
   #[test]
   fn test_code_entry_serializes_schema_as_wrapped_fn() {
-    use crate::calcit::SchemaKind;
-
     let entry = CodeEntry {
       doc: "wrapped schema".to_owned(),
       examples: vec![],
@@ -3778,99 +3776,7 @@ mod tests {
   }
 
   #[test]
-  fn test_code_entry_serializes_macro_rest_schema_without_losing_rest() {
-    use crate::calcit::SchemaKind;
-
-    let entry = CodeEntry {
-      doc: "wrapped macro schema".to_owned(),
-      examples: vec![],
-      tests: vec![],
-      tags: HashSet::new(),
-      code: vec!["defmacro", "wrapped", "(& body)", "nil"].into(),
-      schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
-        generics: std::sync::Arc::new(vec![]),
-        where_bounds: std::sync::Arc::new(vec![]),
-        arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
-        return_type: crate::calcit::DYNAMIC_TYPE.clone(),
-        fn_kind: SchemaKind::Macro,
-        rest_type: Some(crate::calcit::DYNAMIC_TYPE.clone()),
-        features: std::sync::Arc::new(std::collections::HashSet::new()),
-      }))),
-      ffi: None,
-    };
-
-    let entry_edn: Edn = Edn::from(&entry);
-    let schema = match entry_edn {
-      Edn::Struct(struct_value) => struct_value
-        .pairs
-        .iter()
-        .find(|(k, _)| k.arc_str().as_ref() == "schema")
-        .map(|(_, v)| v.to_owned())
-        .expect("schema field should exist"),
-      _ => panic!("expected struct edn"),
-    };
-
-    let Edn::Enum(view) = schema else {
-      panic!("top-level schema should serialize as wrapped macro tuple");
-    };
-    assert_eq!(view.variant.as_ref(), "Macro");
-    let Some(Edn::Map(map)) = view.extra.first() else {
-      panic!("wrapped schema payload should be a map");
-    };
-    assert!(
-      map.tag_get("kind").is_none(),
-      "wrapped macro schema should omit redundant inner :kind"
-    );
-    assert!(map.tag_get("return").is_none(), "wrapped macro schema should omit redundant return");
-    assert!(matches!(map.tag_get("rest"), Some(Edn::Symbol(name)) if name.as_ref() == "Dynamic"));
-  }
-
-  #[test]
-  fn test_code_entry_serializes_macro_non_dynamic_return() {
-    use crate::calcit::SchemaKind;
-
-    let entry = CodeEntry {
-      doc: "wrapped macro schema".to_owned(),
-      examples: vec![],
-      tests: vec![],
-      tags: HashSet::new(),
-      code: vec!["defmacro", "wrapped", "(x)", "x"].into(),
-      schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
-        generics: std::sync::Arc::new(vec![]),
-        where_bounds: std::sync::Arc::new(vec![]),
-        arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
-        return_type: std::sync::Arc::new(CalcitTypeAnnotation::Custom(std::sync::Arc::new(crate::calcit::Calcit::tag(
-          "record",
-        )))),
-        fn_kind: SchemaKind::Macro,
-        rest_type: None,
-        features: std::sync::Arc::new(std::collections::HashSet::new()),
-      }))),
-      ffi: None,
-    };
-
-    let entry_edn: Edn = Edn::from(&entry);
-    let schema = match entry_edn {
-      Edn::Struct(struct_value) => struct_value
-        .pairs
-        .iter()
-        .find(|(k, _)| k.arc_str().as_ref() == "schema")
-        .map(|(_, v)| v.to_owned())
-        .expect("schema field should exist"),
-      _ => panic!("expected struct edn"),
-    };
-
-    let Edn::Enum(view) = schema else {
-      panic!("top-level schema should serialize as wrapped macro tuple");
-    };
-    let Some(Edn::Map(map)) = view.extra.first() else {
-      panic!("wrapped schema payload should be a map");
-    };
-    assert!(matches!(map.tag_get("return"), Some(Edn::Symbol(name)) if name.as_ref() == "Struct"));
-  }
-
-  #[test]
-  fn test_defmacro_code_normalizes_fn_schema_kind_on_load() {
+  fn code_entry_keeps_legacy_fn_schema_for_snapshot_level_rejection() {
     let code = cirru_parser::parse("defmacro demo (x) x")
       .expect("should parse code")
       .into_iter()
@@ -3895,70 +3801,49 @@ mod tests {
     );
 
     let entry: CodeEntry = entry.try_into().expect("code entry should parse");
-    let CalcitTypeAnnotation::Macro(signature) = entry.schema.as_ref() else {
-      panic!("defmacro schema should normalize to MacroSignature");
-    };
-    assert!(matches!(
-      signature.compatibility,
-      crate::calcit::MacroSignatureCompatibility::Legacy {
-        origin: crate::calcit::LegacyMacroSchemaOrigin::Fn,
-        ..
-      }
-    ));
+    assert!(matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Fn(_)));
   }
 
   #[test]
-  fn test_defmacro_code_records_dynamic_schema_origin_on_load() {
+  fn defmacro_dynamic_schema_is_not_normalized_to_a_macro_contract() {
     let code = Cirru::List(vec![Cirru::leaf("defmacro"), Cirru::leaf("demo"), Cirru::List(vec![])]);
     let normalized = normalize_schema_for_code(&code, &DYNAMIC_TYPE);
-    let CalcitTypeAnnotation::Macro(signature) = normalized.as_ref() else {
-      panic!("defmacro Dynamic schema should normalize to MacroSignature");
-    };
-    assert!(matches!(
-      signature.compatibility,
-      crate::calcit::MacroSignatureCompatibility::Legacy {
-        origin: crate::calcit::LegacyMacroSchemaOrigin::Dynamic,
-        ..
-      }
-    ));
+    assert!(matches!(normalized.as_ref(), CalcitTypeAnnotation::Dynamic));
   }
 
   #[test]
-  fn test_dynamic_legacy_macro_origin_survives_code_entry_round_trip() {
+  fn strict_macro_schema_round_trips_without_legacy_origin_metadata() {
     let entry = CodeEntry {
       doc: String::new(),
       examples: vec![],
       tests: vec![],
       tags: HashSet::new(),
-      code: Cirru::List(vec![
-        Cirru::leaf("defmacro"),
-        Cirru::leaf("demo"),
-        Cirru::List(vec![Cirru::leaf("value")]),
-        Cirru::leaf("value"),
-      ]),
-      schema: Arc::new(CalcitTypeAnnotation::Macro(Arc::new(MacroSignature::legacy_dynamic()))),
+      code: Cirru::List(vec![Cirru::leaf("defmacro"), Cirru::leaf("demo"), Cirru::List(vec![])]),
+      schema: parse_schema_annotation_for_write(
+        &cirru_parser::parse(":: 'Macro\n  {} (:required $ [])\n    :expansion $ :: 'Expr 'Dynamic\n    :capabilities $ #{}")
+          .expect("strict schema syntax")
+          .into_iter()
+          .next()
+          .expect("strict schema node"),
+      )
+      .expect("strict schema"),
       ffi: None,
     };
     let encoded = Edn::from(&entry);
-    let text = cirru_edn::format(&encoded, true).expect("legacy macro CodeEntry should format");
-    assert!(text.contains(":legacy-origin :dynamic"), "origin marker should persist: {text}");
+    let text = cirru_edn::format(&encoded, true).expect("strict macro CodeEntry should format");
+    assert!(
+      !text.contains(":legacy-origin"),
+      "strict schema must not serialize legacy metadata: {text}"
+    );
     let parsed = cirru_edn::parse(&text).expect("legacy macro CodeEntry should parse");
-    let reloaded: CodeEntry = parsed.try_into().expect("legacy macro CodeEntry should reload");
-    let CalcitTypeAnnotation::Macro(signature) = reloaded.schema.as_ref() else {
+    let reloaded: CodeEntry = parsed.try_into().expect("strict macro CodeEntry should reload");
+    let CalcitTypeAnnotation::Macro(_signature) = reloaded.schema.as_ref() else {
       panic!("reloaded schema should remain a macro");
     };
-    assert!(matches!(
-      signature.compatibility,
-      crate::calcit::MacroSignatureCompatibility::Legacy {
-        origin: crate::calcit::LegacyMacroSchemaOrigin::Dynamic,
-        ..
-      }
-    ));
   }
 
   #[test]
-  fn test_macro_schema_round_trip() {
-    use crate::calcit::SchemaKind;
+  fn legacy_macro_fn_schema_is_not_parsed_as_a_macro_signature() {
     // Simulate writing a :kind :macro schema and reading it back
     let schema_text = "{} (:kind :macro) (:return :bool) (:args ([] :number :number))";
     let schema_cirru = cirru_parser::parse(schema_text)
@@ -3971,36 +3856,18 @@ mod tests {
     let schema_edn = schema_cirru_to_edn(schema_cirru);
     assert!(!matches!(schema_edn, Edn::Nil), "schema_edn must not be Nil: {schema_edn:?}");
 
-    // Parse the schema (as done when reading back)
-    let fn_schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn);
-    assert!(
-      fn_schema.is_some(),
-      "parse_fn_schema_from_edn must return Some for macro schema; schema_edn={schema_edn:?}"
-    );
-    let fn_schema = fn_schema.unwrap();
-    assert_eq!(fn_schema.fn_kind, SchemaKind::Macro, "fn_kind must be Macro");
-    assert_eq!(fn_schema.arg_types.len(), 2, "must have 2 arg types");
+    assert!(CalcitTypeAnnotation::parse_macro_signature_from_edn(&schema_edn).is_none());
+  }
 
-    // Simulate a save (to_schema_edn) + reload
-    let saved_edn = fn_schema.to_schema_edn();
-    let fn_schema2 = CalcitTypeAnnotation::parse_fn_schema_from_edn(&saved_edn);
-    assert!(
-      fn_schema2.is_some(),
-      "reload: parse_fn_schema_from_edn must return Some; saved_edn={saved_edn:?}"
-    );
-    let fn_schema2 = fn_schema2.unwrap();
-    assert_eq!(fn_schema2.fn_kind, SchemaKind::Macro, "reload: fn_kind must be Macro");
-    assert_eq!(fn_schema2.arg_types.len(), 2, "reload: must have 2 arg types");
-
-    // Simulate normalize_schema_edn path (as used in TryFrom<Edn> for CodeEntry)
-    let normalized = normalize_schema_edn(&saved_edn).expect("normalize must succeed");
-    let fn_schema3 = CalcitTypeAnnotation::parse_fn_schema_from_edn(&normalized);
-    assert!(
-      fn_schema3.is_some(),
-      "normalized: parse_fn_schema_from_edn must return Some; normalized={normalized:?}"
-    );
-    let fn_schema3 = fn_schema3.unwrap();
-    assert_eq!(fn_schema3.fn_kind, SchemaKind::Macro, "normalized: fn_kind must be Macro");
+  #[test]
+  fn schema_writer_rejects_legacy_macro_function_schema() {
+    let schema = cirru_parser::parse(":: 'Macro\n  {} (:return 'Bool)\n    :args $ [] 'Number")
+      .expect("legacy schema syntax should parse")
+      .into_iter()
+      .next()
+      .expect("legacy schema node");
+    let error = parse_schema_annotation_for_write(&schema).expect_err("legacy macro function schema must be rejected");
+    assert!(error.contains("no longer writable"), "unexpected error: {error}");
   }
 
   #[test]

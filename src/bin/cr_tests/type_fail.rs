@@ -1,7 +1,9 @@
 use super::*;
-use calcit::calcit::{Calcit, CalcitProc, CalcitTypeAnnotation};
+use calcit::calcit::{Calcit, CalcitProc, CalcitTypeAnnotation, MacroExpansionType, MacroSignature, MacroSyntaxType};
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::fs;
+use std::sync::Arc;
 
 fn lock_fixture_tests() -> std::sync::MutexGuard<'static, ()> {
   super::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner())
@@ -40,10 +42,31 @@ fn load_snippet_entries(snippet: &str) -> ProgramEntries {
   builtins::effects::init_effects_states();
 
   let mut snapshot = snapshot::Snapshot::default();
-  snapshot.files.insert(
-    "app.main".to_owned(),
-    snapshot::create_file_from_snippet(snippet).expect("test snippet should parse"),
-  );
+  let mut file = snapshot::create_file_from_snippet(snippet).expect("test snippet should parse");
+  for entry in file.defs.values_mut() {
+    let Some(required_inputs) = (match &entry.code {
+      cirru_parser::Cirru::List(items) if matches!(items.first(), Some(cirru_parser::Cirru::Leaf(head)) if head.as_ref() == "defmacro") => {
+        match items.get(2) {
+          Some(cirru_parser::Cirru::List(params)) => Some(vec![MacroSyntaxType::Syntax; params.len()]),
+          _ => None,
+        }
+      }
+      _ => None,
+    }) else {
+      continue;
+    };
+    entry.schema = Arc::new(CalcitTypeAnnotation::Macro(Arc::new(MacroSignature {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      required_inputs: Arc::new(required_inputs),
+      optional_inputs: Arc::new(vec![]),
+      rest_input: None,
+      expansion: MacroExpansionType::Dynamic,
+      capabilities: Arc::new(HashSet::new()),
+      features: Arc::new(HashSet::new()),
+    })));
+  }
+  snapshot.files.insert("app.main".to_owned(), file);
 
   prepare_snapshot_entries(snapshot)
 }

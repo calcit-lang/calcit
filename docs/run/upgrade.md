@@ -464,7 +464,7 @@ calcit calcit.cirru analyze weak-types \
 calcit calcit.cirru analyze deprecated --summary-only
 ```
 
-其中 `check-types` JSON v2 的 `summary.legacy_macro_schemas` 应在发布链完成迁移后设为 0；迁移期间先记录并审阅 baseline。必须使用 `--deps` 检查实际解析的模块版本，不能用依赖仓库尚未发布的 main 代替。`W_LEGACY_MACRO_SCHEMA` 会给出来源 `Fn`/`Dynamic`、旧签名和 Snapshot path，但不会猜测 syntax/expansion contract。
+旧的 macro `Fn` / whole-`Dynamic` schema 不再作为运行时兼容格式：Snapshot loader 会在解析阶段以 definition 的完整 path 拒绝它。应使用最终兼容版本 Calcit 0.13.51 先将模块改成严格 `Macro` contract（显式声明 `:required` / `:optional` / `:rest`、`:expansion` 和 `:capabilities`），再使用新版本检查。必须使用 `--deps` 检查实际解析的模块版本，不能用依赖仓库尚未发布的 main 代替。
 
 有命中时去掉 `--summary-only` 查看 definition、Snapshot path、impact、suggestion 和 deprecated
 目标文档。`check-types` 会把缺失或部分 schema（包括没有元素类型的 List/Map/Ref）列出来；

@@ -12,7 +12,7 @@ use crate::builtins::meta::{NS_SYMBOL_DICT, type_of};
 
 use crate::calcit::{
   self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnCallShape, CalcitFnDefRef, CalcitFnUsageMeta, CalcitList,
-  CalcitListView, CalcitLocal, CalcitMacro, CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning, MacroSignature,
+  CalcitListView, CalcitLocal, CalcitMacro, CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
 };
 use crate::calcit::{Calcit, CalcitEnumValue, CalcitErr, CalcitScope, gen_core_id};
 use crate::call_stack::CallStackList;
@@ -119,8 +119,22 @@ pub fn defmacro(expr: &CalcitListView<'_>, _scope: &CalcitScope, def_ns: &str) -
     (Some(Calcit::Symbol { sym: s, .. }), Some(Calcit::List(xs))) => {
       let signature = match crate::program::lookup_def_schema(def_ns, s).as_ref() {
         CalcitTypeAnnotation::Macro(signature) => signature.clone(),
-        CalcitTypeAnnotation::Fn(annotation) => Arc::new(MacroSignature::from_legacy_fn(annotation.as_ref().clone())),
-        _ => Arc::new(MacroSignature::legacy_dynamic()),
+        CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::Dynamic => {
+          return CalcitErr::err_str(
+            CalcitErrKind::Type,
+            format!(
+              "defmacro {def_ns}/{s} requires a strict Macro schema; runtime Fn and Dynamic macro schemas were retired in this strict-only Calcit release. Migrate the Snapshot with Calcit 0.13.51, then declare :required/:optional/:rest, :expansion, and :capabilities."
+            ),
+          );
+        }
+        _ => {
+          return CalcitErr::err_str(
+            CalcitErrKind::Type,
+            format!(
+              "defmacro {def_ns}/{s} requires a strict Macro schema with :required/:optional/:rest, :expansion, and :capabilities"
+            ),
+          );
+        }
       };
       Ok(Calcit::Macro {
         id: gen_core_id(),

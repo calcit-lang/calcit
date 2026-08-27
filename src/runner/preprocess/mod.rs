@@ -1821,18 +1821,12 @@ fn preprocess_list_call(
               let evaluator_timer =
                 runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::Evaluator);
               let evaluate_body = || runner::evaluate_lines(&info.body.to_vec(), &body_scope, file_ns, &next_stack);
-              let evaluated = if info.signature.is_strict() {
-                runner::macro_capability::with_macro_context(
-                  Arc::from(macro_name.as_str()),
-                  info.signature.capabilities.clone(),
-                  call_location.clone(),
-                  evaluate_body,
-                )?
-              } else {
-                // Legacy Macro schemas remain compatible, but their effects are
-                // deliberately unknown and therefore cannot be considered pure.
-                evaluate_body()?
-              };
+              let evaluated = runner::macro_capability::with_macro_context(
+                Arc::from(macro_name.as_str()),
+                info.signature.capabilities.clone(),
+                call_location.clone(),
+                evaluate_body,
+              )?;
               evaluator_gensym_end = Some(builtins::meta::current_gensym_index(file_ns));
               drop(evaluator_timer);
               evaluated
@@ -5205,9 +5199,6 @@ fn validate_macro_call_inputs(
   call_location: Option<NodeLocation>,
 ) -> Result<HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>, CalcitErr> {
   let mut bindings = HashMap::new();
-  if !signature.is_strict() {
-    return Ok(bindings);
-  }
   let min = signature.required_inputs.len();
   let max = signature.required_inputs.len() + signature.optional_inputs.len();
   if args.len() < min || (signature.rest_input.is_none() && args.len() > max) {
@@ -5299,9 +5290,6 @@ fn validate_macro_expansion_result(
   call_location: Option<NodeLocation>,
 ) -> Result<(), CalcitErr> {
   let (raw_expansion, processed) = expansion;
-  if !signature.is_strict() {
-    return Ok(());
-  }
   match &signature.expansion {
     MacroExpansionType::Dynamic => Ok(()),
     MacroExpansionType::Declarations => {
@@ -6375,28 +6363,13 @@ pub fn preprocess_defn(
       }
       warn_on_legacy_optional_public_schema(ctx.file_ns, def_name.as_ref(), &def_schema, ctx.check_warnings);
       let schema_issues = validate_def_schema_during_preprocess(head, ctx.file_ns, def_name.as_ref(), ys, &def_schema);
-      let (staged_macro_issues, hard_schema_issues) = if matches!(
-        def_schema.as_ref(),
-        CalcitTypeAnnotation::Macro(signature) if signature.is_strict()
-      ) {
-        (vec![], schema_issues)
-      } else {
-        partition_def_schema_issues(head, schema_issues)
-      };
       let definition_location = NodeLocation::new(
         info.at_ns.to_owned(),
         info.at_def.to_owned(),
         location.to_owned().unwrap_or_default(),
       );
-      // Existing projects contain macro schemas that predate parameter-shape
-      // validation. Keep the location-aware preprocessing diagnostic opt-in
-      // during migration; `analyze check-types` reports the same issues by
-      // default without blocking project execution.
-      if std::env::var_os("CALCIT_WARN_MACRO_SCHEMA_SHAPE").is_some() {
-        emit_staged_macro_schema_warnings(staged_macro_issues, ctx.file_ns, &definition_location, ctx.check_warnings);
-      }
-      if !hard_schema_issues.is_empty() {
-        let details = hard_schema_issues.join("\n  - ");
+      if !schema_issues.is_empty() {
+        let details = schema_issues.join("\n  - ");
         return Err(CalcitErr::use_msg_stack_location_with_code(
           CalcitErrKind::Type,
           format!("schema mismatch while preprocessing definition:\n  - {details}"),
@@ -6422,9 +6395,7 @@ pub fn preprocess_defn(
         CalcitTypeAnnotation::Dynamic => EXPECTED_FN_TYPE.with(|cell| cell.borrow().clone()),
         _ => None,
       });
-      if let CalcitTypeAnnotation::Macro(signature) = def_schema.as_ref()
-        && signature.is_strict()
-      {
+      if let CalcitTypeAnnotation::Macro(signature) = def_schema.as_ref() {
         for (param_sym, type_info) in param_symbols.iter().zip(strict_macro_body_parameter_types(signature)) {
           body_types.insert(param_sym.clone(), type_info);
         }
@@ -7206,35 +7177,6 @@ fn analyze_def_schema_param_shape(args: &CalcitList) -> ParamShape {
   }))
 }
 
-fn emit_staged_macro_schema_warnings(
-  issues: Vec<String>,
-  file_ns: &str,
-  definition_location: &NodeLocation,
-  check_warnings: &RefCell<Vec<LocatedWarning>>,
-) {
-  for issue in issues {
-    gen_check_warning_code_at(
-      format!("[Warn] staged macro schema mismatch: {issue}"),
-      "W_MACRO_SCHEMA_PARAM_SHAPE",
-      file_ns,
-      Some(definition_location.clone()),
-      check_warnings,
-    );
-  }
-}
-
-fn is_staged_macro_schema_compatibility_issue(issue: &str) -> bool {
-  ["[E_SCHEMA_REQUIRED_ARGS]", "[E_SCHEMA_OPTIONAL_ARGS]", "[E_SCHEMA_REST_ARGS]"]
-    .iter()
-    .any(|code| issue.starts_with(code))
-}
-
-fn partition_def_schema_issues(head: &CalcitSyntax, issues: Vec<String>) -> (Vec<String>, Vec<String>) {
-  issues
-    .into_iter()
-    .partition(|issue| matches!(head, CalcitSyntax::Defmacro) && is_staged_macro_schema_compatibility_issue(issue))
-}
-
 fn contains_legacy_optional(annotation: &CalcitTypeAnnotation) -> bool {
   match annotation {
     CalcitTypeAnnotation::Optional(_) => true,
@@ -7249,26 +7191,19 @@ fn contains_legacy_optional(annotation: &CalcitTypeAnnotation) -> bool {
         || info.rest_type.as_ref().is_some_and(|item| contains_legacy_optional(item))
         || contains_legacy_optional(info.return_type.as_ref())
     }
-    CalcitTypeAnnotation::Macro(signature) => match &signature.compatibility {
-      crate::calcit::MacroSignatureCompatibility::Legacy { annotation: info, .. } => {
-        info.arg_types.iter().any(|item| contains_legacy_optional(item))
-          || info.rest_type.as_ref().is_some_and(|item| contains_legacy_optional(item))
-          || contains_legacy_optional(info.return_type.as_ref())
-      }
-      crate::calcit::MacroSignatureCompatibility::Strict => {
-        let contract_contains = |contract: &MacroSyntaxType| match contract {
-          MacroSyntaxType::Expr(semantic) => contains_legacy_optional(semantic),
-          MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => false,
-        };
-        signature.required_inputs.iter().any(contract_contains)
-          || signature.optional_inputs.iter().any(contract_contains)
-          || signature.rest_input.as_ref().is_some_and(contract_contains)
-          || match &signature.expansion {
-            MacroExpansionType::Expr(semantic) | MacroExpansionType::Definition(semantic) => contains_legacy_optional(semantic),
-            MacroExpansionType::Dynamic | MacroExpansionType::Declarations => false,
-          }
-      }
-    },
+    CalcitTypeAnnotation::Macro(signature) => {
+      let contract_contains = |contract: &MacroSyntaxType| match contract {
+        MacroSyntaxType::Expr(semantic) => contains_legacy_optional(semantic),
+        MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => false,
+      };
+      signature.required_inputs.iter().any(contract_contains)
+        || signature.optional_inputs.iter().any(contract_contains)
+        || signature.rest_input.as_ref().is_some_and(contract_contains)
+        || match &signature.expansion {
+          MacroExpansionType::Expr(semantic) | MacroExpansionType::Definition(semantic) => contains_legacy_optional(semantic),
+          MacroExpansionType::Dynamic | MacroExpansionType::Declarations => false,
+        }
+    }
     CalcitTypeAnnotation::Syntax(contract) => match contract.as_ref() {
       MacroSyntaxType::Expr(semantic) => contains_legacy_optional(semantic),
       MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => false,
@@ -7325,26 +7260,14 @@ fn validate_def_schema_during_preprocess(
         "[E_SCHEMA_KIND] {ns}/{def_name}: schema :kind is :macro but code uses {code_kind}"
       )];
     }
-    if signature.is_strict() {
-      let code_shape = analyze_def_schema_param_shape(args);
-      let schema_shape = ParamShape {
-        required: signature.required_inputs.len(),
-        optional: signature.optional_inputs.len(),
-        has_rest: signature.rest_input.is_some(),
-        errors: vec![],
-      };
-      return compare_param_shapes(&format!("{ns}/{def_name}"), &code_shape, &schema_shape);
-    }
-    if let crate::calcit::MacroSignatureCompatibility::Legacy {
-      origin: crate::calcit::LegacyMacroSchemaOrigin::Fn,
-      annotation: fn_annot,
-    } = &signature.compatibility
-    {
-      let code_shape = analyze_def_schema_param_shape(args);
-      let schema_shape = ParamShape::from_schema(&fn_annot.arg_types, fn_annot.rest_type.is_some());
-      return compare_param_shapes(&format!("{ns}/{def_name}"), &code_shape, &schema_shape);
-    }
-    return vec![];
+    let code_shape = analyze_def_schema_param_shape(args);
+    let schema_shape = ParamShape {
+      required: signature.required_inputs.len(),
+      optional: signature.optional_inputs.len(),
+      has_rest: signature.rest_input.is_some(),
+      errors: vec![],
+    };
+    return compare_param_shapes(&format!("{ns}/{def_name}"), &code_shape, &schema_shape);
   }
   let CalcitTypeAnnotation::Fn(fn_annot) = schema else {
     return vec![];
@@ -7413,7 +7336,6 @@ mod tests {
       expansion,
       capabilities: Arc::new(HashSet::new()),
       features: Arc::new(HashSet::new()),
-      compatibility: crate::calcit::MacroSignatureCompatibility::Strict,
     }
   }
 
@@ -11035,7 +10957,7 @@ mod tests {
       def_ns: Arc::from(calcit::CORE_NS),
       args: Arc::new(vec![]),
       body: Arc::new(vec![]),
-      signature: Arc::new(crate::calcit::MacroSignature::legacy_dynamic()),
+      signature: Arc::new(strict_macro_signature(vec![], vec![], None, MacroExpansionType::Dynamic)),
     };
 
     let warnings = RefCell::new(vec![]);
@@ -12434,7 +12356,7 @@ mod tests {
   }
 
   #[test]
-  fn dynamic_legacy_macro_skips_parameter_shape_validation_during_preprocess() {
+  fn strict_macro_validates_parameter_shape_during_preprocess() {
     let args = CalcitList::from(
       &[Calcit::Symbol {
         sym: Arc::from("value"),
@@ -12445,11 +12367,11 @@ mod tests {
         location: None,
       }][..],
     );
-    let schema = CalcitTypeAnnotation::Macro(Arc::new(crate::calcit::MacroSignature::legacy_dynamic()));
+    let schema = CalcitTypeAnnotation::Macro(Arc::new(strict_macro_signature(vec![], vec![], None, MacroExpansionType::Dynamic)));
     let issues = validate_def_schema_during_preprocess(&CalcitSyntax::Defmacro, "tests.schema", "demo", &args, &schema);
     assert!(
-      issues.is_empty(),
-      "Dynamic-origin legacy schema must not constrain parameters: {issues:?}"
+      issues.iter().any(|issue| issue.starts_with("[E_SCHEMA_REQUIRED_ARGS]")),
+      "strict macro schema must constrain parameters: {issues:?}"
     );
   }
 
@@ -12659,39 +12581,5 @@ mod tests {
     assert_eq!(shape.optional, 1);
     assert!(!shape.has_rest);
     assert!(shape.errors.is_empty());
-  }
-
-  #[test]
-  fn staged_macro_schema_warning_keeps_code_and_definition_location() {
-    let location = NodeLocation::new(Arc::from("app.macros"), Arc::from("demo"), Arc::new(vec![1, 2]));
-    let warnings = RefCell::new(vec![]);
-    emit_staged_macro_schema_warnings(
-      vec!["[E_SCHEMA_REST_ARGS] app.macros/demo: code has & rest param but schema has no :rest".to_owned()],
-      "app.macros",
-      &location,
-      &warnings,
-    );
-
-    let warnings = warnings.borrow();
-    assert_eq!(warnings.len(), 1);
-    assert_eq!(warnings[0].code(), Some("W_MACRO_SCHEMA_PARAM_SHAPE"));
-    assert_eq!(warnings[0].location(), &location);
-    assert!(warnings[0].message().contains("E_SCHEMA_REST_ARGS"));
-  }
-
-  #[test]
-  fn only_macro_schema_compatibility_mismatches_are_staged() {
-    let issues = vec![
-      "[E_SCHEMA_REQUIRED_ARGS] app/demo: mismatch".to_owned(),
-      "[E_SCHEMA_OPTIONAL_ARGS] app/demo: mismatch".to_owned(),
-      "[E_SCHEMA_REST_ARGS] app/demo: mismatch".to_owned(),
-      "[E_DEF_PARAM_SHAPE] app/demo: malformed parameter list".to_owned(),
-      "[E_SCHEMA_KIND] app/demo: wrong definition kind".to_owned(),
-    ];
-    let (staged, hard) = partition_def_schema_issues(&CalcitSyntax::Defmacro, issues);
-    assert_eq!(staged.len(), 3);
-    assert_eq!(hard.len(), 2);
-    assert!(hard.iter().any(|issue| issue.starts_with("[E_DEF_PARAM_SHAPE]")));
-    assert!(hard.iter().any(|issue| issue.starts_with("[E_SCHEMA_KIND]")));
   }
 }
