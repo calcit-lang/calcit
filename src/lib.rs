@@ -39,9 +39,6 @@ use crate::util::string::strip_shebang;
 
 pub const DEFAULT_SNAPSHOT_FILE: &str = "calcit.cirru";
 pub const LEGACY_SNAPSHOT_FILE: &str = "compact.cirru";
-pub const FFI_ABI_VERSION: &str = "0.0.9";
-pub const FFI_BUILD_ID: &str = env!("CALCIT_FFI_BUILD_ID");
-
 static QUIET_TOOL_OUTPUT: AtomicBool = AtomicBool::new(false);
 
 pub fn set_quiet_tool_output(v: bool) {

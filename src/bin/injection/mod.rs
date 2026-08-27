@@ -25,16 +25,8 @@ use calcit::{
   runner::track,
 };
 
-/// FFI protocol types
-type EdnFfi = fn(args: Vec<Edn>) -> Result<Edn, String>;
-type EdnFfiFn = fn(
-  args: Vec<Edn>,
-  f: Arc<dyn Fn(Vec<Edn>) -> Result<Edn, String> + Send + Sync + 'static>,
-  finish: Arc<dyn FnOnce()>,
-) -> Result<Edn, String>;
 /// lazily cache dylibs, in case Linux drops memory of libraries
 static DYLIBS: LazyLock<Mutex<HashMap<String, Arc<libloading::Library>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
-static LEGACY_DYLIB_WARNED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
 static TRACE_FFI: AtomicBool = AtomicBool::new(false);
 static STDOUT_TO_STDERR: AtomicBool = AtomicBool::new(false);
 static SILENCE_PROGRAM_OUTPUT: AtomicBool = AtomicBool::new(false);
@@ -171,7 +163,6 @@ static NATIVE_ASYNC_RUNTIME: OnceLock<NativeAsyncRuntime> = OnceLock::new();
 pub fn set_trace_ffi(v: bool) {
   TRACE_FFI.store(v, Ordering::Relaxed);
   if v {
-    let edn_version = cirru_edn::version();
     let cwd = std::env::current_dir()
       .map(|p| p.display().to_string())
       .unwrap_or_else(|_| "<unknown-cwd>".to_string());
@@ -181,12 +172,13 @@ pub fn set_trace_ffi(v: bool) {
     trace_ffi_event(
       "enable",
       format!(
-        "cwd={cwd} exe={exe} abi={} edn={edn_version} host={}",
-        calcit::FFI_ABI_VERSION,
+        "cwd={cwd} exe={exe} buffer={} async={} resource={} host={}",
+        calcit::ffi_abi::BUFFER_PROTOCOL_VERSION,
+        calcit::ffi_abi::ASYNC_PROTOCOL_VERSION,
+        calcit::ffi_abi::RESOURCE_PROTOCOL_VERSION,
         std::env::consts::OS,
       ),
     );
-    trace_ffi_event("host-build", calcit::FFI_BUILD_ID);
   }
 }
 
@@ -1182,78 +1174,13 @@ fn load_dylib(lib_name: &str) -> Result<Arc<libloading::Library>, CalcitErr> {
   Ok(lib)
 }
 
-fn ensure_abi_compatible(lib: &libloading::Library, lib_name: &str) -> Result<(), CalcitErr> {
-  trace_ffi_event("lookup-build-id", format!("lib={lib_name}"));
-  let dylib_build_id =
-    calcit::ffi_abi::lookup_build_id(lib, lib_name).map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
-  match calcit::ffi_abi::validate_build_id(lib_name, dylib_build_id.as_deref(), calcit::FFI_BUILD_ID, cfg!(debug_assertions))
-    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?
-  {
-    calcit::ffi_abi::FfiBuildCompatibility::Exact => trace_ffi_event(
-      "build-id",
-      format!(
-        "lib={lib_name} dylib={} host={} compatible=true",
-        dylib_build_id.as_deref().unwrap_or("<missing>"),
-        calcit::FFI_BUILD_ID
-      ),
+fn c_safe_migration_error(kind: &str, protocol: &str, lib_name: &str, method: &str, expected: &str) -> CalcitErr {
+  CalcitErr::use_str(
+    CalcitErrKind::Unexpected,
+    format!(
+      "FFI {kind} method `{method}` in `{lib_name}` does not provide C-safe {protocol}. Expected {expected}; the legacy Rust-ABI fallback has been removed. Upgrade and rebuild the native module."
     ),
-    calcit::ffi_abi::FfiBuildCompatibility::Legacy => {
-      trace_ffi_event(
-        "build-id",
-        format!("lib={lib_name} dylib=<missing> host={} legacy=true", calcit::FFI_BUILD_ID),
-      );
-      let mut warned = LEGACY_DYLIB_WARNED
-        .lock()
-        .map_err(|_| CalcitErr::use_str(CalcitErrKind::Unexpected, "failed to lock legacy dylib warning cache"))?;
-      if warned.insert(lib_name.to_owned()) && !calcit::quiet_tool_output() {
-        eprintln!(
-          "[warning] Rust-native FFI library `{lib_name}` has no C-safe `calcit_ffi_build_id`; release-host compatibility is temporary and cannot prove compiler compatibility. Rebuild the module using the current FFI guide."
-        );
-      }
-    }
-  }
-
-  let expected_edn_version = cirru_edn::version();
-  trace_ffi_event("lookup-abi", format!("lib={lib_name}"));
-  let lookup_version: libloading::Symbol<fn() -> String> = unsafe { lib.get("abi_version".as_bytes()) }.map_err(|e| {
-    CalcitErr::use_str(
-      CalcitErrKind::Unexpected,
-      format!("failed to lookup `abi_version` in `{lib_name}`: {e}"),
-    )
-  })?;
-  let current = lookup_version();
-  trace_ffi_event(
-    "abi-version",
-    format!("lib={lib_name} current={current} expected={}", calcit::FFI_ABI_VERSION),
-  );
-  if current != calcit::FFI_ABI_VERSION {
-    return CalcitErr::err_str(
-      CalcitErrKind::Unexpected,
-      format!("ABI versions mismatch: {current} {}", calcit::FFI_ABI_VERSION),
-    )
-    .map(|_| ());
-  }
-
-  trace_ffi_event("lookup-edn-version", format!("lib={lib_name}"));
-  let lookup_edn_version: libloading::Symbol<fn() -> String> = unsafe { lib.get("edn_version".as_bytes()) }.map_err(|e| {
-    CalcitErr::use_str(
-      CalcitErrKind::Unexpected,
-      format!("failed to lookup `edn_version` in `{lib_name}`: {e}"),
-    )
-  })?;
-  let current_edn = lookup_edn_version();
-  trace_ffi_event(
-    "edn-version",
-    format!("lib={lib_name} current={current_edn} expected={expected_edn_version}"),
-  );
-  if current_edn != expected_edn_version {
-    return CalcitErr::err_str(
-      CalcitErrKind::Unexpected,
-      format!("cirru_edn versions mismatch: {current_edn} {expected_edn_version}"),
-    )
-    .map(|_| ());
-  }
-  Ok(())
+  )
 }
 
 static PLATFORM_APIS_INJECTED: AtomicBool = AtomicBool::new(false);
@@ -1419,30 +1346,20 @@ pub fn call_dylib_edn(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
           format_edn_args_for_trace(std::slice::from_ref(&ret))
         ),
       );
-      return Ok(edn_to_calcit(&ret, &Calcit::Nil));
+      Ok(edn_to_calcit(&ret, &Calcit::Nil))
     }
-    None => trace_ffi_event("buffer-fallback", format!("lib={lib_name} symbol={method}")),
+    None => {
+      let symbol = calcit::ffi_abi::buffer_method_symbol(&method);
+      trace_ffi_event("buffer-required", format!("lib={lib_name} symbol={symbol} missing=true"));
+      Err(c_safe_migration_error(
+        "synchronous",
+        "buffer protocol v1",
+        &lib_name,
+        &method,
+        &format!("`calcit_ffi_buffer_version`, `{symbol}`, and `calcit_ffi_buffer_free`"),
+      ))
+    }
   }
-  ensure_abi_compatible(&lib, &lib_name)?;
-  trace_ffi_event("lookup-symbol", format!("lib={lib_name} symbol={method}"));
-  let func: libloading::Symbol<EdnFfi> = unsafe { lib.get(method.as_bytes()) }.map_err(|e| {
-    CalcitErr::use_str(
-      CalcitErrKind::Unexpected,
-      format!("failed to load FFI symbol `{method}` in `{lib_name}`: {e}"),
-    )
-  })?;
-  let ret = func(ys.to_owned()).map_err(|e| {
-    trace_ffi_event("error", format!("lib={lib_name} symbol={method} {e}"));
-    e
-  })?;
-  trace_ffi_event(
-    "return",
-    format!(
-      "lib={lib_name} symbol={method} ret={}",
-      format_edn_args_for_trace(std::slice::from_ref(&ret))
-    ),
-  );
-  Ok(edn_to_calcit(&ret, &Calcit::Nil))
 }
 
 pub fn stdout_println(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
@@ -1630,106 +1547,15 @@ pub fn call_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<
   if let Some(result) = try_start_async_callback_v1(&lib, &lib_name, &method, ys.clone(), callback.clone(), call_stack)? {
     return Ok(result);
   }
-  trace_ffi_event(
-    "async-fallback",
-    format!(
-      "lib={lib_name} symbol={} fallback={method}",
-      calcit::ffi_abi::async_method_symbol(&method)
-    ),
-  );
-  ensure_abi_compatible(&lib, &lib_name)?;
-  track::track_task_add();
-  trace_ffi_event("task-add", format!("kind=callback pending={}", track::count_pending_tasks()));
-  let copied_stack_1 = Arc::new(call_stack.to_owned());
-  let method_name = method.clone();
-  let lib_name_for_thread = lib_name.clone();
-
-  let _handle = thread::spawn(move || {
-    trace_ffi_event(
-      "thread-start",
-      format!(
-        "lib={lib_name_for_thread} symbol={method_name} pending={}",
-        track::count_pending_tasks()
-      ),
-    );
-    let callback_method_name = method_name.clone();
-    let callback_lib_name = lib_name_for_thread.clone();
-    trace_ffi_event("lookup-symbol", format!("lib={lib_name_for_thread} symbol={method_name}"));
-    let func: libloading::Symbol<EdnFfiFn> = match unsafe { lib.get(method_name.as_bytes()) } {
-      Ok(f) => f,
-      Err(e) => {
-        track::track_task_release();
-        trace_ffi_event("task-release", format!("kind=callback pending={}", track::count_pending_tasks()));
-        return CalcitErr::err_str(
-          CalcitErrKind::Unexpected,
-          format!("failed to load FFI symbol `{method_name}` in `{lib_name_for_thread}`: {e}"),
-        );
-      }
-    };
-    let copied_stack = copied_stack_1.to_owned();
-    match func(
-      ys.to_owned(),
-      Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
-        trace_ffi_event(
-          "callback-in",
-          format!(
-            "lib={callback_lib_name} symbol={callback_method_name} argc={} args={}",
-            ps.len(),
-            format_edn_args_for_trace(&ps)
-          ),
-        );
-        if let Calcit::Fn { info, .. } = &callback {
-          let mut real_args: Vec<Calcit> = vec![];
-          for p in ps {
-            real_args.push(edn_to_calcit(&p, &Calcit::Nil));
-          }
-          let r = runner::run_fn(&real_args, info, &copied_stack);
-          match r {
-            Ok(ret) => {
-              let ret_edn = calcit_to_edn(&ret)?;
-              trace_ffi_event(
-                "callback-out",
-                format!(
-                  "lib={callback_lib_name} symbol={callback_method_name} ret={}",
-                  format_edn_args_for_trace(std::slice::from_ref(&ret_edn))
-                ),
-              );
-              Ok(ret_edn)
-            }
-            Err(e) => {
-              display_stack(&format!("[Error] thread callback failed: {}", e.msg), &e.stack, e.location.as_ref())?;
-              Err(format!("Error: {e}"))
-            }
-          }
-        } else {
-          Err(format!("expected last argument to be callback fn, got: {callback}"))
-        }
-      }),
-      Arc::new(track::track_task_release),
-    ) {
-      Ok(ret) => {
-        trace_ffi_event(
-          "return-callback",
-          format!(
-            "lib={lib_name_for_thread} symbol={method_name} ret={}",
-            format_edn_args_for_trace(std::slice::from_ref(&ret))
-          ),
-        );
-        edn_to_calcit(&ret, &Calcit::Nil)
-      }
-      Err(e) => {
-        track::track_task_release();
-        trace_ffi_event("task-release", format!("kind=callback pending={}", track::count_pending_tasks()));
-        trace_ffi_event("error-callback", format!("lib={lib_name_for_thread} symbol={method_name} {e}"));
-        // let _ = display_stack(&format!("failed to call request: {}", e), &copied_stack_1);
-        eprintln!("failure inside ffi thread: {e}");
-        return CalcitErr::err_str(CalcitErrKind::Unexpected, e);
-      }
-    };
-    Ok(Calcit::Nil)
-  });
-
-  Ok(Calcit::Unit)
+  let symbol = calcit::ffi_abi::async_method_symbol(&method);
+  trace_ffi_event("async-required", format!("lib={lib_name} symbol={symbol} missing=true"));
+  Err(c_safe_migration_error(
+    "callback",
+    "async protocol v1",
+    &lib_name,
+    &method,
+    &format!("`calcit_ffi_async_version` and `{symbol}`"),
+  ))
 }
 
 fn release_blocking_task(runtime: &NativeAsyncRuntime, handle: FfiAsyncHandle) -> Result<(usize, Vec<String>), String> {
@@ -1849,7 +1675,7 @@ fn try_call_blocking_v1(
 }
 
 /// Pass a callback to a C-safe FFI method while the dylib owns the host
-/// thread. The guarded Rust ABI remains as a per-method migration fallback.
+/// thread. Missing C-safe protocol or method symbols are migration errors.
 pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {
     return CalcitErr::err_str(
@@ -1912,98 +1738,15 @@ pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Res
       )
     });
   }
-  trace_ffi_event(
-    "blocking-fallback",
-    format!(
-      "lib={lib_name} symbol={} fallback={method}",
-      calcit::ffi_abi::blocking_method_symbol(&method)
-    ),
-  );
-  ensure_abi_compatible(&lib, &lib_name)?;
-  let copied_stack = Arc::new(call_stack.to_owned());
-  let callback_method = method.clone();
-  let callback_lib_name = lib_name.clone();
-
-  let func: libloading::Symbol<EdnFfiFn> = unsafe { lib.get(method.as_bytes()) }.map_err(|e| {
-    CalcitErr::use_str(
-      CalcitErrKind::Unexpected,
-      format!("failed to load FFI symbol `{method}` in `{lib_name}`: {e}"),
-    )
-  })?;
-  let released = Arc::new(AtomicBool::new(false));
-  let finish_released = Arc::clone(&released);
-  track::track_task_add();
-  trace_ffi_event("task-add", format!("kind=blocking-legacy pending={}", track::count_pending_tasks()));
-  let result = func(
-    ys.to_owned(),
-    Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
-      trace_ffi_event(
-        "blocking-callback-in",
-        format!(
-          "lib={callback_lib_name} symbol={callback_method} argc={} args={}",
-          ps.len(),
-          format_edn_args_for_trace(&ps)
-        ),
-      );
-      if let Calcit::Fn { info, .. } = &callback {
-        let mut real_args: Vec<Calcit> = vec![];
-        for p in ps {
-          real_args.push(edn_to_calcit(&p, &Calcit::Nil));
-        }
-        let r = runner::run_fn(&real_args, info, &copied_stack);
-        match r {
-          Ok(ret) => {
-            let ret_edn = calcit_to_edn(&ret)?;
-            trace_ffi_event(
-              "blocking-callback-out",
-              format!(
-                "lib={callback_lib_name} symbol={callback_method} ret={}",
-                format_edn_args_for_trace(std::slice::from_ref(&ret_edn))
-              ),
-            );
-            Ok(ret_edn)
-          }
-          Err(e) => {
-            display_stack(&format!("[Error] thread callback failed: {}", e.msg), &e.stack, e.location.as_ref())?;
-            Err(format!("Error: {e}"))
-          }
-        }
-      } else {
-        Err(format!("expected last argument to be callback fn, got: {callback}"))
-      }
-    }),
-    Arc::new(move || {
-      if !finish_released.swap(true, Ordering::AcqRel) {
-        track::track_task_release();
-      }
-    }),
-  );
-  if !released.swap(true, Ordering::AcqRel) {
-    track::track_task_release();
-    trace_ffi_event(
-      "task-release",
-      format!("kind=blocking-legacy implicit=true pending={}", track::count_pending_tasks()),
-    );
-  }
-  match result {
-    Ok(ret) => {
-      trace_ffi_event(
-        "blocking-return",
-        format!(
-          "lib={lib_name} symbol={method} ret={}",
-          format_edn_args_for_trace(std::slice::from_ref(&ret))
-        ),
-      );
-      edn_to_calcit(&ret, &Calcit::Nil)
-    }
-    Err(e) => {
-      trace_ffi_event("blocking-error", format!("lib={lib_name} symbol={method} {e}"));
-      let _ = display_stack(&format!("failed to call request: {e}"), call_stack, None);
-      return CalcitErr::err_str(CalcitErrKind::Unexpected, e);
-    }
-  };
-
-  Ok(Calcit::Nil)
+  let symbol = calcit::ffi_abi::blocking_method_symbol(&method);
+  trace_ffi_event("blocking-required", format!("lib={lib_name} symbol={symbol} missing=true"));
+  Err(c_safe_migration_error(
+    "blocking",
+    "blocking protocol v1",
+    &lib_name,
+    &method,
+    &format!("`calcit_ffi_async_version`, `{symbol}`, and `calcit_ffi_buffer_free`"),
+  ))
 }
 
 /// need to put it here since the crate does not compile for dylib
@@ -2032,6 +1775,26 @@ mod async_callback_tests {
 
   type RecordedResponse = (u64, u64, u32, Vec<u8>);
   static RESPONSE_EVENTS: LazyLock<Mutex<Vec<RecordedResponse>>> = LazyLock::new(|| Mutex::new(vec![]));
+
+  #[test]
+  fn missing_c_safe_symbols_report_migration_without_rust_symbol_probes() {
+    for (kind, protocol, expected) in [
+      ("synchronous", "buffer protocol v1", "`read_calcit_ffi_v1`"),
+      ("callback", "async protocol v1", "`serve_calcit_ffi_async_v1`"),
+      ("blocking", "blocking protocol v1", "`paint_calcit_ffi_blocking_v1`"),
+    ] {
+      let error = c_safe_migration_error(kind, protocol, "fixture.so", "demo", expected);
+      assert!(error.msg.contains(protocol), "error: {}", error.msg);
+      assert!(error.msg.contains(expected), "error: {}", error.msg);
+      assert!(
+        error.msg.contains("legacy Rust-ABI fallback has been removed"),
+        "error: {}",
+        error.msg
+      );
+      assert!(!error.msg.contains("abi_version"), "error: {}", error.msg);
+      assert!(!error.msg.contains("edn_version"), "error: {}", error.msg);
+    }
+  }
 
   unsafe extern "C" fn record_response(
     context: u64,

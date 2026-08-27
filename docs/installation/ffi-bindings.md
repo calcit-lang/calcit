@@ -12,109 +12,32 @@ aliases:
 
 > API status: unstable.
 
-Rust supports extending with dynamic libraries. A demo project can be found at https://github.com/calcit-lang/dylib-workflow
+Rust supports extending Calcit with dynamic libraries. A complete project can
+be found at https://github.com/calcit-lang/dylib-workflow.
 
-Currently two APIs are supported, based on Cirru EDN data.
+Only versioned C-safe protocols are supported. Dynamic libraries must not
+export business methods that pass Rust `Vec`, `String`, `Result`, `AnyRef`,
+`Arc<dyn Fn>`, or `FnOnce` values across the boundary. Those layouts, vtables,
+allocators, and drop implementations are compiler-specific and are no longer
+probed or invoked by Calcit.
 
-First one is a synchronous [Edn](https://github.com/Cirru/cirru-edn.rs) API with type signature:
+The supported boundaries are:
 
-```rust
-#[unsafe(no_mangle)]
-pub fn demo(args: Vec<Edn>) -> Result<Edn, String> {
-}
-```
+- synchronous byte-buffer protocol v1;
+- asynchronous task/callback protocol v1;
+- blocking callback protocol v1;
+- opaque-resource protocol v1 for reusable native objects.
 
-The legacy asynchronous API can be called multiple times and relies on Rust
-`Arc` trait objects:
-
-```rust
-#[unsafe(no_mangle)]
-pub fn demo(
-  args: Vec<Edn>,
-  handler: Arc<dyn Fn(Vec<Edn>) -> Result<Edn, String> + Send + Sync + 'static>,
-  finish: Box<dyn FnOnce() + Send + Sync + 'static>,
-) -> Result<Edn, String> {
-}
-```
-
-in this snippet, the function `handler` is used as the callback, which could be called multiple times.
-
-The function `finish` is used for indicating that the task has finished. It can be called once, or not being called.
-Internally Calcit tracks with a counter to see if all asynchorous tasks are finished.
-Process need to keep running when there are tasks running.
-
-New callback methods should instead implement the C-safe asynchronous protocol
-described below. The Rust form remains only as a per-method migration fallback.
-
-Rust's native ABI has no stability guarantee. `Vec<Edn>`, `String`, `Result`, and callback trait objects are therefore a transitional interface rather than a portable dylib protocol. Calcit checks a C-safe build identity before invoking those Rust ABI symbols.
-
-Add a `build.rs` that derives the identity from the exact compiler, target, debug-assertion mode, and panic strategy:
-
-```rust
-use std::{env, process::Command};
-
-fn field<'a>(output: &'a str, name: &str) -> &'a str {
-  output.lines().find_map(|line| line.strip_prefix(name).map(str::trim)).unwrap()
-}
-
-fn main() {
-  let rustc = env::var("RUSTC").unwrap_or_else(|_| "rustc".to_owned());
-  let output = Command::new(rustc).args(["--version", "--verbose"]).output().unwrap();
-  assert!(output.status.success());
-  let verbose = String::from_utf8(output.stdout).unwrap();
-  let release = field(&verbose, "release:");
-  let commit = field(&verbose, "commit-hash:");
-  let target = env::var("TARGET").unwrap();
-  let debug_assertions = env::var_os("CARGO_CFG_DEBUG_ASSERTIONS").is_some();
-  let panic_strategy = env::var("CARGO_CFG_PANIC").unwrap();
-  println!(
-    "cargo:rustc-env=CALCIT_FFI_BUILD_ID=rustc={release}:{commit};target={target};debug-assertions={debug_assertions};panic={panic_strategy}"
-  );
-}
-```
-
-Export the resulting value through a null-terminated C string. This lookup is safe to perform before any Rust-layout-dependent value crosses the library boundary:
-
-```rust
-use std::ffi::c_char;
-
-static FFI_BUILD_ID: &[u8] = concat!(env!("CALCIT_FFI_BUILD_ID"), "\0").as_bytes();
-
-#[unsafe(no_mangle)]
-pub extern "C" fn calcit_ffi_build_id() -> *const c_char {
-  FFI_BUILD_ID.as_ptr().cast()
-}
-```
-
-The existing Rust ABI version functions are still required during the migration period:
-
-```rust
-#[unsafe(no_mangle)]
-pub fn abi_version() -> String {
-  String::from("0.0.9")
-}
-
-#[unsafe(no_mangle)]
-pub fn edn_version() -> String {
-  cirru_edn::version().to_owned()
-}
-```
-
-`abi_version()` must match Calcit's FFI ABI version exactly.
-
-`edn_version()` must match the exact `cirru_edn` crate version used by the running Calcit binary. If either version differs, Calcit aborts the FFI call before invoking the target symbol.
-
-The build identity must also match exactly. Debug Calcit hosts reject dylibs that do not export `calcit_ffi_build_id`, which prevents the common debug-host/release-dylib crash before even calling `abi_version()`. Release hosts temporarily retain the legacy path with a warning so maintained modules can migrate incrementally. A matching identity reduces accidental incompatibility; it does not turn Rust's native ABI into a stable public protocol.
-
-Inspect the host side before building or debugging a module:
-
-```bash
-calcit --ffi-build-id
-```
+Each protocol advertises a fixed `extern "C"` version function. Missing
+version or per-method symbols are deterministic migration errors; there is no
+Rust-ABI fallback. Native modules should use `cdylib` and export only fixed C
+ABI symbols.
 
 ## C-safe synchronous buffer ABI
 
-New synchronous methods should use buffer protocol version 1. Calcit first looks for `<method>_calcit_ffi_v1`; only methods without that symbol fall back to the build-ID-guarded Rust ABI. Existing Calcit source calls do not change.
+Synchronous methods use buffer protocol version 1. Calcit looks for
+`<method>_calcit_ffi_v1`; missing protocol/version/free/method symbols are
+migration errors. Existing Calcit source calls do not change.
 
 The dylib exports these C ABI symbols:
 
@@ -163,17 +86,20 @@ reference is dropped.
 
 ## C-safe asynchronous callback ABI
 
-`&call-dylib-edn-fn` now probes `<method>_calcit_ffi_async_v1` before using the
-guarded legacy Rust callback. A callback-v1 module exports
+`&call-dylib-edn-fn` requires `<method>_calcit_ffi_async_v1`. A callback-v1 module exports
 `calcit_ffi_async_version() -> 1`, accepts a C-layout task descriptor and host
 function table, and publishes byte payloads through the host's `enqueue`
 function. Foreign producer threads only enqueue; Calcit copies the payload and
 runs callbacks on its host thread.
 
+An async-only module does not need to export the buffer protocol or
+`calcit_ffi_buffer_free`. Those symbols are required only by synchronous buffer
+methods and blocking methods whose final output is allocated by the module.
+
 `Emit` payloads are Cirru EDN argument lists. Successful completion must carry
 the explicit `&unit` value, and `Fail` carries a Cirru EDN diagnostic that is
-surfaced to the console. Missing version or per-method symbols retain the
-legacy fallback; an advertised incompatible version is an error. See
+surfaced to the console. Missing version or per-method symbols are migration
+errors; an advertised incompatible version is a protocol mismatch. See
 [Asynchronous FFI task protocol](ffi-async-protocol.md) for the exact C
 signatures, ownership, lifecycle, status, queue, and future WASM rules.
 
@@ -216,8 +142,8 @@ Callback results are allocated and tracked by the host and must be returned
 through the blocking host table's `free_buffer`; the method's final output is
 allocated by the module and released through `calcit_ffi_buffer_free`.
 `finish` may be called explicitly once, otherwise method return finishes the
-task implicitly. Missing per-method blocking symbols retain the guarded legacy
-fallback during migration. See
+task implicitly. Missing protocol or per-method blocking symbols are migration
+errors. See
 [Asynchronous FFI task protocol](ffi-async-protocol.md#native-blocking-abi-v1)
 for the C signatures and ownership rules.
 

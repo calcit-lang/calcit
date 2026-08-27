@@ -276,11 +276,6 @@ fn run_cli() -> Result<(), String> {
     return Ok(());
   }
 
-  if cli_args.ffi_build_id {
-    println!("{}", calcit::FFI_BUILD_ID);
-    return Ok(());
-  }
-
   if let Some(level) = cli_args.tips_level.as_deref() {
     cli_handlers::set_tips_level(level)?;
   }

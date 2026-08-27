@@ -1,14 +1,9 @@
 use std::collections::HashMap;
-use std::ffi::{CStr, c_char};
 use std::fmt;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::{ptr, slice};
 
 use cirru_edn::{Edn, EdnAnyRef, EdnEnumView, EdnListView, EdnMapView, EdnSetView, EdnStructView};
-
-pub const BUILD_ID_SYMBOL: &[u8] = b"calcit_ffi_build_id";
-
-type FfiBuildId = unsafe extern "C" fn() -> *const c_char;
 
 pub const BUFFER_PROTOCOL_VERSION: u32 = 1;
 pub const BUFFER_PROTOCOL_VERSION_SYMBOL: &[u8] = b"calcit_ffi_buffer_version";
@@ -745,10 +740,10 @@ impl FfiBuffer {
 }
 
 type FfiBufferVersion = unsafe extern "C" fn() -> u32;
-type FfiBufferFree = unsafe extern "C" fn(FfiBuffer);
+pub type FfiBufferFree = unsafe extern "C" fn(FfiBuffer);
 type FfiBufferCall = unsafe extern "C" fn(*const u8, usize, *mut FfiBuffer) -> i32;
 type FfiResourceVersion = unsafe extern "C" fn() -> u32;
-type FfiResourceRelease = unsafe extern "C" fn(u64, u64) -> i32;
+pub type FfiResourceRelease = unsafe extern "C" fn(u64, u64) -> i32;
 pub type FfiResourceTrace = fn(&str, &str, u64, u64, i32);
 type FfiAsyncVersion = unsafe extern "C" fn() -> u32;
 pub type FfiAsyncStart = unsafe extern "C" fn(
@@ -874,13 +869,7 @@ fn intern_resource_lease(adapter: &FfiResourceAdapter, handle: u64, generation: 
   Ok(lease)
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum FfiBuildCompatibility {
-  Exact,
-  Legacy,
-}
-
-fn buffer_method_symbol(method: &str) -> String {
+pub fn buffer_method_symbol(method: &str) -> String {
   format!("{method}{BUFFER_METHOD_SUFFIX}")
 }
 
@@ -895,7 +884,8 @@ pub fn blocking_method_symbol(method: &str) -> String {
 /// Check whether one blocking method has completed the C-safe migration before
 /// allocating host task state. An advertised incompatible protocol or a
 /// migrated method without its matching module-side free function is a hard
-/// error; an absent version/method retains transitional fallback.
+/// error; an absent version/method returns `false` so the caller can report a
+/// deterministic C-safe migration error before allocating host task state.
 pub fn has_blocking_method(lib: &libloading::Library, lib_name: &str, method: &str) -> Result<bool, String> {
   let version: libloading::Symbol<FfiAsyncVersion> = match unsafe { lib.get(ASYNC_PROTOCOL_VERSION_SYMBOL) } {
     Ok(version) => version,
@@ -1085,9 +1075,9 @@ fn hydrate_resource_tokens(value: Edn, adapter: &FfiResourceAdapter) -> Result<E
   }
 }
 
-/// Probe a C-safe async method without touching the guarded Rust ABI. A
-/// missing protocol or per-method symbol returns `None` for transitional
-/// fallback; an advertised but incompatible version is a hard error.
+/// Probe a C-safe async method. A missing protocol or per-method symbol returns
+/// `None` so the caller can report a deterministic migration error; an
+/// advertised but incompatible version is a hard error.
 pub fn lookup_async_start<'lib>(
   lib: &'lib libloading::Library,
   lib_name: &str,
@@ -1114,7 +1104,7 @@ pub fn lookup_async_start<'lib>(
 /// Probe and invoke a C-safe blocking callback method. It shares the async
 /// protocol version and task descriptor while using a distinct method symbol,
 /// so blocking and asynchronous entry points cannot be confused. Missing
-/// protocol or method symbols retain the guarded per-method fallback.
+/// protocol or method symbols are reported by the caller as migration errors.
 pub fn try_call_blocking(
   lib: &libloading::Library,
   lib_name: &str,
@@ -1201,8 +1191,8 @@ unsafe fn copy_and_free_buffer(
 }
 
 /// Try the C-safe synchronous byte-buffer protocol. `Ok(None)` means the
-/// library or this particular method has not migrated and may use the guarded
-/// legacy Rust ABI path.
+/// library or this particular method is missing required C-safe symbols; the
+/// caller must report a deterministic migration error.
 pub fn try_call_buffer(
   lib: &Arc<libloading::Library>,
   lib_name: &str,
@@ -1266,52 +1256,15 @@ pub fn try_call_buffer(
   hydrate_resource_tokens(output, &adapter).map(Some)
 }
 
-pub fn validate_build_id(
-  lib_name: &str,
-  dylib_build_id: Option<&str>,
-  host_build_id: &str,
-  require_build_id: bool,
-) -> Result<FfiBuildCompatibility, String> {
-  match dylib_build_id {
-    Some(dylib_build_id) if dylib_build_id == host_build_id => Ok(FfiBuildCompatibility::Exact),
-    Some(dylib_build_id) => Err(format!(
-      "Refusing Rust-native FFI library `{lib_name}` before invoking a Rust ABI symbol because its build identity differs from the Calcit host. dylib: `{dylib_build_id}`; host: `{host_build_id}`. Rebuild both with the same rustc, target, debug-assertion mode, and panic strategy."
-    )),
-    None if require_build_id => Err(format!(
-      "Refusing legacy Rust-native FFI library `{lib_name}` before invoking a Rust ABI symbol: this debug Calcit host cannot prove that the dylib uses a compatible build. Export the C-safe `calcit_ffi_build_id` symbol described in the FFI guide, or run a release Calcit host built with the same toolchain as the dylib. Expected host identity: `{host_build_id}`."
-    )),
-    None => Ok(FfiBuildCompatibility::Legacy),
-  }
-}
-
-/// Read the optional static C build identity without invoking a Rust ABI symbol.
-pub fn lookup_build_id(lib: &libloading::Library, lib_name: &str) -> Result<Option<String>, String> {
-  let lookup: libloading::Symbol<FfiBuildId> = match unsafe { lib.get(BUILD_ID_SYMBOL) } {
-    Ok(lookup) => lookup,
-    Err(_) => return Ok(None),
-  };
-  let ptr = unsafe { lookup() };
-  if ptr.is_null() {
-    return Err(format!(
-      "FFI library `{lib_name}` returned a null pointer from `calcit_ffi_build_id`"
-    ));
-  }
-  let value = unsafe { CStr::from_ptr(ptr) }
-    .to_str()
-    .map_err(|error| format!("FFI library `{lib_name}` returned invalid UTF-8 from `calcit_ffi_build_id`: {error}"))?;
-  Ok(Some(value.to_owned()))
-}
-
 #[cfg(test)]
 mod tests {
   use super::{
     ASYNC_EVENT_FLAG_COALESCED, ASYNC_PROTOCOL_VERSION, ASYNC_TASK_FLAG_COALESCE_ALLOWED, ASYNC_TASK_FLAG_REQUIRES_RESPONSE,
     ASYNC_TASK_FLAG_SERIAL_EVENTS, BUFFER_PROTOCOL_VERSION, FfiAsyncEventDescriptor, FfiAsyncEventKind, FfiAsyncHandle,
     FfiAsyncHandleError, FfiAsyncHandleKind, FfiAsyncHandleRegistry, FfiAsyncHostV1, FfiAsyncLifecycle, FfiAsyncTaskDescriptor,
-    FfiBlockingHostV1, FfiBuffer, FfiBuildCompatibility, FfiResourceAdapter, RESOURCE_PROTOCOL_VERSION, RESOURCE_TOKEN_BYTES,
-    RESOURCE_TOKEN_STRUCT, async_method_symbol, async_status, blocking_method_symbol, buffer_method_symbol, decode_buffer_response,
-    decode_resource_token, encode_buffer_request, encode_resource_token, hydrate_resource_tokens, transform_resource_args,
-    validate_build_id,
+    FfiBlockingHostV1, FfiBuffer, FfiResourceAdapter, RESOURCE_PROTOCOL_VERSION, RESOURCE_TOKEN_BYTES, RESOURCE_TOKEN_STRUCT,
+    async_method_symbol, async_status, blocking_method_symbol, buffer_method_symbol, decode_buffer_response, decode_resource_token,
+    encode_buffer_request, encode_resource_token, hydrate_resource_tokens, transform_resource_args,
   };
   use std::sync::{
     Arc, Mutex,
@@ -1510,37 +1463,6 @@ mod tests {
   fn buffer_error_responses_require_strict_utf8() {
     let error = decode_buffer_response(1, vec![0xff], "demo", "read_calcit_ffi_v1").expect_err("invalid UTF-8 must fail");
     assert!(error.contains("non-UTF-8 error output"), "error: {error}");
-  }
-
-  #[test]
-  fn exact_identity_is_accepted() {
-    assert_eq!(
-      validate_build_id("demo", Some("same-build"), "same-build", true).expect("exact identity should pass"),
-      FfiBuildCompatibility::Exact
-    );
-  }
-
-  #[test]
-  fn mismatched_identity_is_rejected_before_rust_abi_calls() {
-    let error = validate_build_id("demo", Some("release-build"), "debug-build", false).expect_err("different identities must fail");
-    assert!(error.contains("before invoking a Rust ABI symbol"), "error: {error}");
-    assert!(error.contains("release-build"), "error: {error}");
-    assert!(error.contains("debug-build"), "error: {error}");
-  }
-
-  #[test]
-  fn debug_hosts_reject_legacy_dylibs_before_rust_abi_calls() {
-    let error = validate_build_id("demo", None, "debug-build", true).expect_err("debug host must require build identity");
-    assert!(error.contains("Refusing legacy Rust-native FFI library"), "error: {error}");
-    assert!(error.contains("calcit_ffi_build_id"), "error: {error}");
-  }
-
-  #[test]
-  fn release_hosts_keep_a_temporary_legacy_path() {
-    assert_eq!(
-      validate_build_id("demo", None, "release-build", false).expect("release compatibility path should remain"),
-      FfiBuildCompatibility::Legacy
-    );
   }
 
   #[test]
