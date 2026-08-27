@@ -151,7 +151,7 @@ Protocol rules:
 - The adapter must contain panics and return an error status; unwinding across `extern "C"` is invalid.
 - Calcit rejects protocol-version mismatches, malformed buffer metadata, oversized responses, invalid UTF-8, and invalid response EDN.
 
-`calcit-lang/calcit_wasmtime` contains the first complete adapter. Version 1 currently covers synchronous `&call-dylib-edn`; callback and blocking APIs remain on the guarded legacy path until their ownership protocol lands.
+`calcit-lang/calcit_wasmtime` contains the first complete adapter. Version 1 currently covers synchronous `&call-dylib-edn`; callback and blocking APIs remain on the guarded legacy path until their ownership protocol lands. The staged task/event/server design, including future WASM constraints, is documented in [Asynchronous FFI task protocol](ffi-async-protocol.md).
 
 ### Call in Calcit
 
