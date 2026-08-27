@@ -424,14 +424,14 @@ fallback 必须与 payload 类型兼容；需要区分缺失分支时改用 `if-
 
 ### 3.3 统一 entries
 
-顶层 `:configs` 是兼容输入，不应继续作为新配置写法。执行：
+顶层 `:configs` 已停止加载。先使用最后兼容版本 Calcit 0.13.50 执行：
 
 ```bash
 calcit calcit.cirru edit format
 calcit calcit.cirru config show
 ```
 
-format 会把旧 `:configs` 迁移为 `:entries.default`，并输出 `W_LEGACY_CONFIG`。随后应审阅：
+0.13.50 的 format 会把旧 `:configs` 迁移为 `:entries.default`。当前严格版本只输出包含 Snapshot 路径和上述命令的错误，不再保留双格式解码分支。迁移后应审阅：
 
 - 每个 entry 都有明确的 `:mode :native` 或 `:mode :js`。
 - named entry 是完整配置，不继承 default 的 modules/type slots。

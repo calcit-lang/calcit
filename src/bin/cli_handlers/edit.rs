@@ -277,13 +277,6 @@ fn collect_format_advisories(snapshot_file: &str, original_edn: &Edn, snapshot: 
   let mut advisories = vec![];
   let snapshot_arg = shell_quote(snapshot_file);
 
-  if original_edn.view_map().is_ok_and(|root| root.contains_key("configs")) {
-    advisories.push(format!(
-      "[W_LEGACY_CONFIG] Migrated top-level `:configs` to `:entries.default`; canonical formatting keeps the project runnable.\n\
-       Next: run `calcit {snapshot_arg} config show` and set an explicit `:mode` plus any named entries with `calcit {snapshot_arg} config set ...`."
-    ));
-  }
-
   let selected = std::collections::BTreeSet::from([
     crate::type_coverage::WeakTypeKind::SchemaDynamic,
     crate::type_coverage::WeakTypeKind::UnresolvedTypeSlot,
@@ -2860,12 +2853,11 @@ mod tests {
   }
 
   #[test]
-  fn format_advisories_cover_legacy_structure_and_dynamic_debt() {
+  fn format_advisories_cover_dynamic_debt() {
     let snapshot = load_snapshot("calcit/test.cirru").expect("fixture snapshot should load");
-    let original_edn = cirru_edn::parse("{} (:configs $ {}) (:schema :any)").expect("legacy markers should parse");
+    let original_edn = cirru_edn::parse("{} (:schema :any)").expect("legacy markers should parse");
     let advisories = collect_format_advisories("calcit.cirru", &original_edn, &snapshot).join("\n");
 
-    assert!(advisories.contains("W_LEGACY_CONFIG"), "advisories: {advisories}");
     assert!(advisories.contains("W_LEGACY_ANY"), "advisories: {advisories}");
     assert!(advisories.contains("W_DYNAMIC_TYPE_DEBT"), "advisories: {advisories}");
     assert!(advisories.contains("analyze weak-types"), "advisories: {advisories}");

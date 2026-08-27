@@ -147,6 +147,27 @@ fn collect_check_md_module_paths_merges_entry_modules_with_cli_deps() {
 }
 
 #[test]
+fn collect_check_md_module_paths_rejects_retired_configs() {
+  let root = unique_temp_dir("check-md-retired-configs");
+  let entry = root.join("mini snapshot.cirru");
+  let content = r#"{} (:package |mini)
+  :configs $ {} (:init-fn |mini/main!) (:reload-fn |mini/main!)
+    :modules $ [] |respo.calcit/
+  :entries $ {}
+  :files $ {}
+"#;
+  write_file(&entry, content);
+
+  let error = collect_check_md_module_paths(entry.to_str().expect("entry path should be utf-8"), &[])
+    .expect_err("docs dependency discovery must reject retired configs");
+  assert!(error.contains("Top-level `:configs` is retired"), "error: {error}");
+  assert!(error.contains("Calcit 0.13.50"), "error: {error}");
+  assert!(error.contains("mini snapshot.cirru"), "error: {error}");
+
+  fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn load_entry_snapshot_for_check_md_reads_respo_project() {
   let entry = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../respo/respo/calcit.cirru");
   if !entry.exists() {

@@ -23,7 +23,7 @@
 calcit docs agents --full
 ```
 
-未先阅读最新 Agent 指南时，不要直接开始改 `calcit.cirru`（兼容旧文件名 `compact.cirru`），避免沿用过时心智模型误判命令边界。
+未先阅读最新 Agent 指南时，不要直接开始改 `calcit.cirru`；旧文件名 `compact.cirru` 已停用，必须先按升级指南迁移。
 
 ### 运行模式更新（calcit / js）
 
@@ -35,7 +35,7 @@ calcit docs agents --full
 ### calcit eval 基础与常见踩坑
 
 - **用途定位**：`calcit eval` 适合快速验证语义/类型提示与宏展开，不等同于完整项目运行。
-- **可加载外部模块**：`calcit eval` 支持重复传入 `--dep`，可加载多个模块目录（路径以 `/` 结尾时会优先读取其中的 `calcit.cirru`，并回退到 `compact.cirru`）。
+- **可加载外部模块**：`calcit eval` 支持重复传入 `--dep`，可加载多个模块目录（路径以 `/` 结尾时读取其中的 `calcit.cirru`；仅有 `compact.cirru` 的模块会被拒绝并提示迁移）。
   - ✅ `cargo run --bin calcit -- calcit/test.cirru eval --dep ~/.config/calcit/modules/respo.calcit/ -- 'ns app.demo $ :require respo.util.detect :refer $ element?\n\nelement? nil'`
 - **首表达式 `ns` 会注入当前 eval 程序**：当 snippet 第一个表达式是 `ns` 时，会把 `ns <NS> ...` 从第 3 个节点开始（通常是 `:require` 等规则）合并到运行用的 `ns app.main`，用于在 eval 中显式导入命名空间。
 - **`docs check-md` 也支持依赖模块**：`calcit docs check-md` 可通过多次 `--dep` 传参，内部会透传给 `eval`/`--check-only`。这样 markdown 代码块可配合首行 `ns ... :require ...` 访问模块函数。

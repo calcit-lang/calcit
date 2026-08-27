@@ -377,7 +377,7 @@ fn run_cli() -> Result<(), String> {
     }
   }
 
-  let input_path = calcit::resolve_snapshot_path_alias(&PathBuf::from(&cli_args.input));
+  let input_path = PathBuf::from(&cli_args.input);
   let input_path_str = input_path.to_string_lossy().to_string();
   let base_dir = input_path.parent().expect("extract parent");
   let module_folder = calcit::project_module_folder(base_dir);
@@ -419,6 +419,7 @@ fn run_cli() -> Result<(), String> {
       calcit::merge_project_module_files(&mut snapshot, &module_data, module_path)?;
     }
   } else {
+    calcit::validate_snapshot_path(&input_path)?;
     if !input_path.exists() {
       return Err(format!("{} does not exist", input_path.display()));
     }

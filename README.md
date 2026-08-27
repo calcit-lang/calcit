@@ -19,7 +19,7 @@ Core design:
 
 Current direction:
 
-- `calcit.cirru` is the primary source snapshot; legacy `compact.cirru` is still compatible
+- `calcit.cirru` is the canonical source snapshot; retired `compact.cirru` inputs receive migration guidance
 - CLI-first development with `calcit` and `caps`, designed to work well with AI agents in terminal workflows
 - Better CLI editing and validation for CI, docs lookup, module management, and incremental updates
 
@@ -62,18 +62,16 @@ calcit eval 'range 100'
 calcit eval -- '-> 100 range (map $ \ * % %)'
 ```
 
-Run with a runtime snapshot such as `calcit.cirru` (legacy filename: `compact.cirru`):
+Run with the canonical runtime snapshot `calcit.cirru`:
 
 ```bash
 calcit calcit.cirru # run once (default)
-calcit compact.cirru # legacy filename still works
-
-calcit # by default, it picks `calcit.cirru`, then falls back to `compact.cirru`
+calcit # reads calcit.cirru from the current directory
 
 calcit -w # watch mode (explicit flag required)
 ```
 
-By default Calcit reads `:init-fn` and `:reload-fn` from `calcit.cirru` configs (falling back to `compact.cirru`). You may also specify functions:
+By default Calcit reads `:init-fn` and `:reload-fn` from `calcit.cirru` `:entries.default`. You may also specify functions:
 
 ```bash
 calcit --init-fn='app.main/main!' --reload-fn='app.main/reload!'
@@ -150,7 +148,7 @@ Use `caps add --dev <org/repo>@<ref>` and `caps remove --dev <org/repo>` to mana
 
 `:calcit-version` helps with version checks and provides hints in [CI](https://github.com/calcit-lang/setup-calcit).
 
-To load modules, use `:modules` configuration and the runtime snapshot file `calcit.cirru` (legacy: `compact.cirru`):
+To load modules, use `:modules` configuration and the runtime snapshot file `calcit.cirru`:
 
 ```cirru.no-check
 :entries $ {}
@@ -161,7 +159,7 @@ To load modules, use `:modules` configuration and the runtime snapshot file `cal
 Paths defined in `:modules` load from the snapshot directory's `.calcit/modules/`, e.g.
 `.calcit/modules/memof/calcit.cirru`. Run `caps` to materialize or refresh that project-local view.
 
-Modules ending with `/` are automatically suffixed with `calcit.cirru`, and still fall back to `compact.cirru` for compatibility.
+Modules ending with `/` are automatically suffixed with `calcit.cirru`. A module containing only retired `compact.cirru` is rejected with migration guidance.
 
 Inspect and verify the resolved graph with:
 
@@ -203,7 +201,7 @@ yarn check-all
 ```
 
 - [Cirru Parser](https://github.com/Cirru/parser.rs) for indentation-based syntax parsing.
-- [Cirru EDN](https://github.com/Cirru/cirru-edn.rs) for runtime snapshot file parsing (`calcit.cirru` / legacy `compact.cirru`).
+- [Cirru EDN](https://github.com/Cirru/cirru-edn.rs) for canonical runtime snapshot parsing (`calcit.cirru`).
 - [Ternary Tree](https://github.com/calcit-lang/ternary-tree.rs) for immutable list data structure.
 
 Other tools:

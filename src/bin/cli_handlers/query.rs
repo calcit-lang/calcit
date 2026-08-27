@@ -1805,7 +1805,8 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
   let format = parse_query_render_format(&opts.format)?;
   let target_path = parse_type_at_path(&opts.path)?;
   let (namespace, requested_definition) = parse_target(&opts.target)?;
-  let resolved_input = calcit::resolve_snapshot_path_alias(Path::new(input_path));
+  let resolved_input = Path::new(input_path);
+  calcit::validate_snapshot_path(resolved_input)?;
   let snapshot = if resolved_input.exists() {
     load_snapshot(input_path)?
   } else if namespace == calcit::calcit::CORE_NS || namespace == "calcit.internal" {
@@ -2671,7 +2672,8 @@ fn handle_context(input_path: &str, opts: &QueryContextCommand) -> Result<(), St
   }
   let format = parse_query_render_format(&opts.format)?;
   let (namespace, requested_definition) = parse_target(&opts.target)?;
-  let resolved_input = calcit::resolve_snapshot_path_alias(Path::new(input_path));
+  let resolved_input = Path::new(input_path);
+  calcit::validate_snapshot_path(resolved_input)?;
   let snapshot = if resolved_input.exists() {
     load_snapshot(input_path)?
   } else if namespace == calcit::calcit::CORE_NS || namespace == "calcit.internal" {
@@ -2724,13 +2726,14 @@ fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
 }
 
 fn load_main_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
-  let resolved_input_path = calcit::resolve_snapshot_path_alias(Path::new(input_path));
+  let resolved_input_path = Path::new(input_path);
+  calcit::validate_snapshot_path(resolved_input_path)?;
   let resolved_input_str = resolved_input_path.to_string_lossy().to_string();
   if !resolved_input_path.exists() {
     return Err(format!("{} does not exist", resolved_input_path.display()));
   }
 
-  let mut content = fs::read_to_string(&resolved_input_path).map_err(|e| format!("Failed to read file: {e}"))?;
+  let mut content = fs::read_to_string(resolved_input_path).map_err(|e| format!("Failed to read file: {e}"))?;
   strip_shebang(&mut content);
   let data = cirru_edn::parse(&content).map_err(|e| {
     eprintln!("\nFailed to parse file '{}':", resolved_input_path.display());

@@ -11,7 +11,7 @@
 
 - `calcit analyze program-diff <GIT REF>`
 
-该命令从 Git 中读取指定版本的完整运行时快照文件（默认沿用当前 `calcit` 的输入文件路径，优先 `calcit.cirru`，兼容旧文件名 `compact.cirru`），确保**历史版本**与**当前工作区版本**都能被正确解析为 Calcit snapshot，然后做**结构化 diff**。
+该命令从 Git 中读取指定版本的完整运行时快照文件（默认沿用当前 `calcit` 的 canonical `calcit.cirru` 输入路径；退休的 `compact.cirru` 会被拒绝并提示迁移），确保**历史版本**与**当前工作区版本**都能被正确解析为 Calcit snapshot，然后做**结构化 diff**。
 
 输出目标不是纯文本行 diff，而是面向程序结构的树形 diff：
 
@@ -27,7 +27,7 @@
 
 当前针对运行时快照文件的版本对比主要依赖 Git 行 diff，但它有几个明显问题：
 
-1. **对结构不友好**：`calcit.cirru`（兼容旧文件名 `compact.cirru`）是机器生成的 snapshot，行 diff 容易受格式、字段顺序和长表达式影响；
+1. **对结构不友好**：`calcit.cirru` 是机器生成的 snapshot，行 diff 容易受格式、字段顺序和长表达式影响；
 2. **对表达式内部变化不友好**：definition 代码改动往往是局部子树变化，行 diff 很难快速看出 AST 层面的增删改；
 3. **对 LLM / CLI 阅读不友好**：调用 `git diff` 后很难一眼区分“只是某个 def 变了”还是“整个 namespace 被搬动了”；
 4. **缺少 parse guard**：历史版本文件如果本身损坏，应该先明确报解析失败，而不是直接进入错误 diff。
@@ -43,7 +43,7 @@ calcit analyze program-diff <GIT REF>
 语义：
 
 - `<GIT REF>` 可以是 `HEAD~1`、tag、branch、commit SHA 等；
-- 当前侧使用 `calcit` 输入路径（默认优先 `calcit.cirru`，兼容旧文件名 `compact.cirru`）；
+- 当前侧使用 `calcit` 输入路径（默认是 canonical `calcit.cirru`；退休的 `compact.cirru` 不参与 diff）；
 - 历史侧使用 `git show <ref>:<repo-relative-input-path>` 读取文件内容；
 - 两边都必须先经过：
   1. `cirru_edn::parse`
@@ -177,7 +177,7 @@ list 内部子节点对比采用“带替换代价的序列对齐”策略：
 
 ## 7. 预期收益
 
-- 更适合 review `calcit.cirru`（兼容旧文件名 `compact.cirru`）的语义变化；
+- 更适合 review canonical `calcit.cirru` 的语义变化；
 - 更容易理解大型 definition 的局部 AST 改动；
 - 对 agent/LLM 更友好，能直接拿到层级化变化；
 - 为后续抽象成 Cirru diff 模块提供实现样本。

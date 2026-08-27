@@ -59,7 +59,8 @@ fn main() -> Result<(), String> {
 
   let core_snapshot = calcit::load_core_snapshot()?;
 
-  let input_path = calcit::resolve_snapshot_path_alias(&PathBuf::from(&cli_args.input));
+  let input_path = PathBuf::from(&cli_args.input);
+  calcit::validate_snapshot_path(&input_path)?;
   let input_path_str = input_path.to_string_lossy().to_string();
   if !input_path.exists() {
     return Err(format!("{} does not exist", input_path.display()));

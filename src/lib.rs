@@ -131,18 +131,24 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: &[Calcit]) -> 
   run_program_with_docs(init_ns, init_def, params)
 }
 
-pub fn resolve_snapshot_path_alias(path: &Path) -> PathBuf {
-  if path.exists() {
-    return path.to_path_buf();
+/// Reject retired Snapshot inputs without silently resolving them as aliases.
+///
+/// A missing canonical path still checks for a sibling `compact.cirru` solely
+/// to report the actionable migration error instead of a generic not-found
+/// message. The retired path is never returned to a caller for loading.
+pub fn validate_snapshot_path(path: &Path) -> Result<(), String> {
+  if let Some(error) = snapshot::retired_snapshot_migration_error(path) {
+    return Err(error);
   }
-
-  match path.file_name().and_then(|name| name.to_str()) {
-    Some(DEFAULT_SNAPSHOT_FILE) => {
-      let fallback = path.with_file_name(LEGACY_SNAPSHOT_FILE);
-      if fallback.exists() { fallback } else { path.to_path_buf() }
+  if !path.exists() && path.file_name().and_then(|name| name.to_str()) == Some(DEFAULT_SNAPSHOT_FILE) {
+    let retired_path = path.with_file_name(LEGACY_SNAPSHOT_FILE);
+    if retired_path.is_file()
+      && let Some(error) = snapshot::retired_snapshot_migration_error(&retired_path)
+    {
+      return Err(error);
     }
-    _ => path.to_path_buf(),
   }
+  Ok(())
 }
 
 fn module_path_candidates(path: &str) -> Vec<String> {
@@ -405,7 +411,10 @@ pub fn merge_project_module_files(
 
 #[cfg(test)]
 mod module_resolution_tests {
-  use super::{load_module, merge_module_files, merge_project_module_files, project_module_folder, resolve_module_snapshot_candidates};
+  use super::{
+    load_module, merge_module_files, merge_project_module_files, project_module_folder, resolve_module_snapshot_candidates,
+    validate_snapshot_path,
+  };
   use std::fs;
   use std::path::{Path, PathBuf};
 
@@ -446,6 +455,21 @@ mod module_resolution_tests {
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].1, project.join(".calcit/modules/demo/calcit.cirru"));
     assert_eq!(candidates[0].2, "<mods>/demo/calcit.cirru");
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn canonical_path_does_not_alias_retired_sibling() {
+    let root = temp_root("retired-top-level-compact");
+    fs::create_dir_all(&root).unwrap();
+    let canonical = root.join("calcit.cirru");
+    let retired = root.join("compact.cirru");
+    fs::write(&retired, "retired").unwrap();
+
+    let error = validate_snapshot_path(&canonical).expect_err("retired sibling must be rejected, not loaded as an alias");
+    assert!(error.contains("filename `compact.cirru` is retired"), "error: {error}");
+    assert!(error.contains(&canonical.display().to_string()), "error: {error}");
+    assert!(!canonical.exists(), "validation must not materialize or alias the canonical path");
     fs::remove_dir_all(root).unwrap();
   }
 

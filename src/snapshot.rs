@@ -2138,6 +2138,14 @@ pub fn retired_snapshot_migration_error(path: &Path) -> Option<String> {
   ))
 }
 
+/// Build migration guidance for the retired top-level `:configs` shape.
+pub fn retired_snapshot_configs_error(path: &str) -> String {
+  let path_arg = format!("'{}'", path.replace('\'', "'\"'\"'"));
+  format!(
+    "Top-level `:configs` is retired in Snapshot `{path}`. Use the final compatible Calcit 0.13.50 release to run `calcit {path_arg} edit format`, review the generated `:entries.default` with `calcit {path_arg} config show`, then retry with the current `calcit {path_arg} --check-only`."
+  )
+}
+
 /// Parse a Snapshot while preserving the source path in deserialization errors.
 pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
   if let Some(error) = retired_snapshot_migration_error(Path::new(path)) {
@@ -2155,6 +2163,9 @@ pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
 
 fn load_snapshot_data_inner(data: &Edn, path: &str) -> Result<Snapshot, String> {
   let data = data.view_map()?;
+  if data.contains_key("configs") {
+    return Err(retired_snapshot_configs_error(path));
+  }
   let pkg: Arc<str> = data.get_or_nil("package").try_into()?;
   let mut files: HashMap<String, FileInSnapShot> = parse_files_with_context(&data.get_or_nil("files"))?;
   let about = match data.get_or_nil("about") {
@@ -2166,33 +2177,13 @@ fn load_snapshot_data_inner(data: &Edn, path: &str) -> Result<Snapshot, String> 
   };
   let meta_ns = format!("{pkg}.$meta");
   files.insert(meta_ns.to_owned(), gen_meta_ns(&meta_ns, path));
-  let legacy_configs = data.get(&Edn::tag("configs"));
-  let mut entries = parse_entries_with_context(&data.get_or_nil("entries"), legacy_configs.is_none())?;
+  let entries = parse_entries_with_context(&data.get_or_nil("entries"), true)?;
   let version = match data.get(&Edn::tag("version")) {
     Some(_) => parse_snapshot_config_string_field(&data, "version", "snapshot")?,
-    None => match legacy_configs {
-      Some(configs) => {
-        let configs_map = configs
-          .view_map()
-          .map_err(|e| format!("configs: failed to parse config map: {e}; got {}", format_edn_preview(configs)))?;
-        match configs_map.get(&Edn::tag("version")) {
-          Some(_) => parse_snapshot_config_string_field(&configs_map, "version", "configs")?,
-          None => default_version(),
-        }
-      }
-      None => default_version(),
-    },
+    None => default_version(),
   };
 
-  if let Some(configs) = legacy_configs {
-    if entries.contains_key(DEFAULT_ENTRY_NAME) {
-      return Err("Snapshot cannot contain both legacy `:configs` and `:entries.default`".to_owned());
-    }
-    entries.insert(
-      DEFAULT_ENTRY_NAME.to_owned(),
-      parse_snapshot_entry_with_context(configs.to_owned(), "entries.default", false)?,
-    );
-  } else if !entries.contains_key(DEFAULT_ENTRY_NAME) {
+  if !entries.contains_key(DEFAULT_ENTRY_NAME) {
     return Err("Snapshot `:entries` must contain a `:default` entry".to_owned());
   }
 
@@ -4888,7 +4879,7 @@ mod tests {
   }
 
   #[test]
-  fn legacy_configs_migrate_to_default_native_entry() {
+  fn legacy_configs_are_rejected_with_versioned_migration_guidance() {
     let content = r#"{} (:package |mini)
   :configs $ {} (:init-fn |mini/main!) (:reload-fn |mini/reload!) (:version |1.2.3)
     :modules $ [] |legacy/
@@ -4896,17 +4887,11 @@ mod tests {
   :files $ {}
 "#;
     let edn_data = cirru_edn::parse(content).expect("legacy snapshot text should parse");
-    let snapshot = load_snapshot_data(&edn_data, "mini.cirru").expect("legacy snapshot should load");
-    let default_entry = snapshot.entries.get(DEFAULT_ENTRY_NAME).expect("migrated default entry");
-    assert_eq!(snapshot.version, "1.2.3");
-    assert_eq!(default_entry.mode, SnapshotRunMode::Native);
-    assert_eq!(default_entry.modules, vec!["legacy/"]);
-    assert!(default_entry.description.is_empty());
-
-    let rendered = render_snapshot_content(&snapshot).expect("legacy snapshot should render canonically");
-    assert!(!rendered.contains(":version"));
-    assert!(rendered.contains(":default $ {}") && rendered.contains(":mode :native"));
-    assert!(!rendered.contains(":configs"));
+    let error = load_snapshot_data(&edn_data, "fixtures/mini.cirru").expect_err("legacy configs must be rejected");
+    assert!(error.contains("Top-level `:configs` is retired"), "error: {error}");
+    assert!(error.contains("Calcit 0.13.50"), "error: {error}");
+    assert!(error.contains("calcit 'fixtures/mini.cirru' edit format"), "error: {error}");
+    assert!(error.contains("calcit 'fixtures/mini.cirru' --check-only"), "error: {error}");
   }
 
   #[test]
