@@ -161,7 +161,8 @@ fn collect_check_md_module_paths_rejects_retired_configs() {
   let error = collect_check_md_module_paths(entry.to_str().expect("entry path should be utf-8"), &[])
     .expect_err("docs dependency discovery must reject retired configs");
   assert!(error.contains("Top-level `:configs` is retired"), "error: {error}");
-  assert!(error.contains("Calcit 0.13.50"), "error: {error}");
+  assert!(error.contains("current Calcit"), "error: {error}");
+  assert!(error.contains("Runtime loading remains strict"), "error: {error}");
   assert!(error.contains("mini snapshot.cirru"), "error: {error}");
 
   fs::remove_dir_all(root).unwrap();

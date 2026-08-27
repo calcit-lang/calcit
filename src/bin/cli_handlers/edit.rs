@@ -249,7 +249,8 @@ fn maintain_cursor_after_edit(cmd: &EditCommand, snapshot_file: &str) -> Result<
 fn handle_format(_opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), String> {
   let original_content = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
   let original_edn = cirru_edn::parse(&original_content).map_err(|e| format!("Failed to parse EDN: {e}"))?;
-  let mut snapshot = snapshot::load_snapshot_data(&original_edn, snapshot_file).map_err(|e| format!("Failed to load snapshot: {e}"))?;
+  let (mut snapshot, legacy_migration) =
+    snapshot::load_snapshot_data_for_format(&original_edn, snapshot_file).map_err(|e| format!("Failed to load snapshot: {e}"))?;
   let advisories = collect_format_advisories(snapshot_file, &original_edn, &snapshot);
   let canonicalized_type_forms = snapshot::canonicalize_snapshot_type_syntax(&mut snapshot);
   let formatted_content = render_snapshot_content(&snapshot)?;
@@ -264,6 +265,15 @@ fn handle_format(_opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), S
     println!(
       "{} Canonicalized {canonicalized_type_forms} legacy tag-based type form(s) to quoted symbols",
       "✓".green()
+    );
+  }
+  if legacy_migration.happened() {
+    println!(
+      "{} Migrated legacy Snapshot data: {} namespace quote(s), {} definition quote(s), configs={}",
+      "✓".green(),
+      legacy_migration.direct_quote_namespaces,
+      legacy_migration.direct_quote_definitions,
+      legacy_migration.legacy_configs
     );
   }
 

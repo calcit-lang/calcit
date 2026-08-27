@@ -65,4 +65,4 @@ calcit config type-slots --entry server
 
 The type-slot environment is selected before preprocessing starts, so the binding applies to the whole reachable call graph. Entry functions do not need a `with-type-slot` wrapper.
 
-Top-level `:configs` is retired. If an old snapshot still contains it, use the final compatible Calcit 0.13.50 release to run `calcit calcit.cirru edit format`, review the generated `entries.default`, and then validate it with the current release. Current Calcit rejects the old shape instead of guessing an implicit `:mode :native`.
+Top-level `:configs` is retired. If an old snapshot still contains it, run `calcit calcit.cirru edit format` with the current release, review the generated `entries.default`, and then run strict validation. Only the formatter's isolated one-way loader accepts the old shape and defaults a missing mode to `:native`; runtime loading and other commands reject it. Existing `entries.default` conflicts and unknown legacy config fields are errors rather than implicit overwrites.

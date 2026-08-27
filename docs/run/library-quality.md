@@ -54,7 +54,7 @@ git diff --exit-code -- calcit.cirru
 
 `edit format` 是可恢复的规范化步骤，不是完整 linter。它会继续完成格式化，同时对以下情况写入 stderr 告警并给出后续命令：
 
-- 顶层 `:configs` 和 `compact.cirru` 会被直接拒绝，不再进入 formatter 告警阶段。使用最后兼容版本 Calcit 0.13.50 完成格式迁移，再回到当前版本验证。
+- `compact.cirru` 文件名会被拒绝；先确认它是有效源码并复制/重命名为 `calcit.cirru`。仅 `edit format` 可一次性迁移早期 direct quote 与顶层 `:configs`，并输出迁移计数；普通 loader 仍严格拒绝旧结构。
 - `W_LEGACY_ANY`：schema 中的旧 `:any` 被规范化为 `'Dynamic`；其他旧 type tags 也会在已知类型位置改写为 quoted symbol。
 - `W_DYNAMIC_TYPE_DEBT`：本地定义仍有 unresolved dynamic；format 不会猜测类型并自动改写语义。
 
