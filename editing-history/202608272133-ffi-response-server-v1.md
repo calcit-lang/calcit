@@ -17,7 +17,7 @@ numbers or allowing foreign threads to enter the runtime.
   `&ffi-task-cancel`;
 - issued opaque AnyRef response capabilities, appended them to request callback
   arguments, and added `&ffi-response-resolve` / `&ffi-response-reject`;
-- enforced response owner, kind, active lifecycle, required-request, timeout,
+- enforced response owner, kind, active lifecycle, `REQUIRES_RESPONSE`, timeout,
   and non-coalescing queue rules;
 - rejected and released unresolved responses on timeout or owner completion,
   while startup rollback discards handles without entering untransferred module

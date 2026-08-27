@@ -192,9 +192,11 @@ defn on-request (method path response!)
     &ffi-response-reject response! $ {} (:status 404) (:body |missing)
 ```
 
-The host validates ownership and deadline, invokes the dylib resolver on the
-Calcit host thread, and invalidates the capability after success. Unresolved
-requests are rejected on timeout or when their owning task finishes.
+The host validates task-bound context, ownership, and deadline, atomically
+claims the capability, invokes the dylib resolver on the Calcit host thread,
+and invalidates it after the attempt. Unresolved requests are rejected on
+timeout or when their owning task finishes; a queued request that times out is
+skipped without terminating the Server.
 
 ### Call in Calcit
 

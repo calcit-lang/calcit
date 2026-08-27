@@ -114,10 +114,11 @@ int32_t <method>_calcit_ffi_async_v1(
 ```
 
 The request is a UTF-8 Cirru EDN list and is readable only for the duration of
-the start call. The task descriptor contains the host-issued handle and must
-be copied if the module needs it after returning. The host table has process
-lifetime, although modules should copy only the fields covered by
-`struct_size` so later hosts can append functions compatibly.
+the start call. The task descriptor and host table must both be copied if the
+module needs them after returning. Function pointers remain valid while the
+host is running, but the table pointer itself is call-scoped. Modules should
+copy only the fields covered by `struct_size` so later hosts can append
+functions compatibly.
 
 Callback v1 exposes three host operations. The first publishes events:
 
@@ -132,10 +133,11 @@ int32_t enqueue(
 );
 ```
 
-The module may call `enqueue` from producer threads. Calcit validates the
-context, handles, kind, pointer, length, and queue capacity, copies the bytes
-before returning, and invokes the Calcit callback only while the CLI host
-thread drains the queue. The producer retains ownership of its payload and may
+The module may call `enqueue` from producer threads. Each start receives a
+task-bound context; it cannot be reused with another task handle. Calcit
+validates the context, handles, kind, pointer, length, and queue capacity,
+copies the bytes before returning, and invokes the Calcit callback only while
+the CLI host thread drains the queue. The producer retains ownership of its payload and may
 reuse or free it after `enqueue` returns. A null pointer is valid only when the
 length is zero. No panic, Rust allocator, Rust callback, or executor object
 crosses the boundary.
@@ -176,7 +178,8 @@ int32_t open_response(
 );
 ```
 
-The timeout must be between 1 millisecond and 24 hours. The resulting
+The timeout must be between 1 millisecond and 24 hours, and one task may keep
+at most 1024 responses open concurrently. The resulting
 host-issued handle must be attached to exactly one `Emit` from the owning
 Server. Missing handles, handles from another Server, response handles on
 terminal/ordinary Stream events, and already-resolved or expired handles are
@@ -186,11 +189,17 @@ at timeout.
 
 Calcit appends an opaque AnyRef response capability to the event's decoded EDN
 arguments. The callback resolves it with `&ffi-response-resolve` or rejects it
-with `&ffi-response-reject`. The host encodes that value, calls the module's
-resolve function on the host thread, and invalidates the capability after the
-module returns status 0. Reuse therefore fails as a stale generation rather
-than accidentally resolving a later request. Timeout, task completion, and
-callback failure reject every still-active owned response and release it.
+with `&ffi-response-reject`. The host atomically claims the capability, encodes
+that value, calls the module's resolve function on the host thread, and
+invalidates the capability after the module returns, including when the module
+reports an error. Reuse or concurrent resolution therefore cannot invoke the
+module twice and fails as a closing/stale generation rather than accidentally
+resolving a later request. Timeout, task completion, and callback failure
+reject every still-active owned response and release it. A request that
+expires while waiting behind other events is rejected and skipped without
+terminating its long-lived Server. Deadline and owner indexes make timeout and
+task cleanup proportional to the responses being processed rather than all
+live FFI handles.
 Startup failure discards host handles without calling back into module context
 whose ownership never transferred.
 

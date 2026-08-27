@@ -410,27 +410,37 @@ impl<T> FfiAsyncHandleRegistry<T> {
       next_sequence: 1,
       terminal_queued: false,
     };
-    while let Some(index) = registry.free_slots.pop() {
-      let slot = &mut registry.slots[index];
-      let Some(generation) = slot.generation.checked_add(1) else {
-        // A wrapped generation could make a very old stale handle valid
-        // again, so permanently retire slots that exhaust the counter.
-        continue;
-      };
-      slot.generation = generation;
-      slot.task = Some(RegisteredAsyncHandle { state, value });
-      return Ok(FfiAsyncHandle::from_parts(index, slot.generation));
-    }
+    register_async_handle(&mut registry, state, value)
+  }
 
-    if registry.slots.len() >= u32::MAX as usize {
-      return Err(FfiAsyncHandleError::RegistryExhausted);
+  /// Register a child capability only while its owner is still active and has
+  /// not queued a terminal event. Native response adapters hold their owner
+  /// index lock around this call so owner completion cannot miss a new child.
+  pub fn register_for_active_owner(
+    &self,
+    owner: FfiAsyncHandle,
+    kind: FfiAsyncHandleKind,
+    value: T,
+  ) -> Result<FfiAsyncHandle, FfiAsyncHandleError> {
+    validate_async_task_flags(kind, 0)?;
+    let mut registry = self.state.lock().map_err(|_| FfiAsyncHandleError::RegistryPoisoned)?;
+    if registry.closing {
+      return Err(FfiAsyncHandleError::HostClosing);
     }
-    let index = registry.slots.len();
-    registry.slots.push(AsyncHandleSlot {
-      generation: 1,
-      task: Some(RegisteredAsyncHandle { state, value }),
-    });
-    Ok(FfiAsyncHandle::from_parts(index, 1))
+    let owner_state = resolve_async_handle(&registry, owner)?.state;
+    match owner_state.lifecycle {
+      FfiAsyncLifecycle::Active if !owner_state.terminal_queued => {}
+      FfiAsyncLifecycle::Active | FfiAsyncLifecycle::Closing => return Err(FfiAsyncHandleError::HandleClosing),
+      FfiAsyncLifecycle::Finished => return Err(FfiAsyncHandleError::HandleFinished),
+    }
+    let state = FfiAsyncHandleState {
+      kind,
+      flags: 0,
+      lifecycle: FfiAsyncLifecycle::Active,
+      next_sequence: 1,
+      terminal_queued: false,
+    };
+    register_async_handle(&mut registry, state, value)
   }
 
   pub fn state(&self, handle: FfiAsyncHandle) -> Result<FfiAsyncHandleState, FfiAsyncHandleError> {
@@ -601,6 +611,34 @@ impl<T> FfiAsyncHandleRegistry<T> {
     }
     Ok(values)
   }
+}
+
+fn register_async_handle<T>(
+  registry: &mut AsyncHandleRegistryState<T>,
+  state: FfiAsyncHandleState,
+  value: T,
+) -> Result<FfiAsyncHandle, FfiAsyncHandleError> {
+  while let Some(index) = registry.free_slots.pop() {
+    let slot = &mut registry.slots[index];
+    let Some(generation) = slot.generation.checked_add(1) else {
+      // A wrapped generation could make a very old stale handle valid again,
+      // so permanently retire slots that exhaust the counter.
+      continue;
+    };
+    slot.generation = generation;
+    slot.task = Some(RegisteredAsyncHandle { state, value });
+    return Ok(FfiAsyncHandle::from_parts(index, slot.generation));
+  }
+
+  if registry.slots.len() >= u32::MAX as usize {
+    return Err(FfiAsyncHandleError::RegistryExhausted);
+  }
+  let index = registry.slots.len();
+  registry.slots.push(AsyncHandleSlot {
+    generation: 1,
+    task: Some(RegisteredAsyncHandle { state, value }),
+  });
+  Ok(FfiAsyncHandle::from_parts(index, 1))
 }
 
 fn validate_async_task_flags(kind: FfiAsyncHandleKind, flags: u32) -> Result<(), FfiAsyncHandleError> {
@@ -1023,6 +1061,26 @@ mod tests {
       Err(FfiAsyncHandleError::InvalidFlags(
         ASYNC_TASK_FLAG_SERIAL_EVENTS | ASYNC_TASK_FLAG_REQUIRES_RESPONSE
       ))
+    );
+  }
+
+  #[test]
+  fn async_child_registration_requires_an_active_owner_without_terminal_event() {
+    let registry = FfiAsyncHandleRegistry::new();
+    let owner = registry.register(FfiAsyncHandleKind::Server, "server").expect("register owner");
+    let response = registry
+      .register_for_active_owner(owner, FfiAsyncHandleKind::Response, "response")
+      .expect("register response for active owner");
+    assert_eq!(registry.state(response).expect("response state").kind, FfiAsyncHandleKind::Response);
+    assert_eq!(registry.reserve_event_sequence(owner, FfiAsyncEventKind::Complete), Ok(1));
+    assert_eq!(
+      registry.register_for_active_owner(owner, FfiAsyncHandleKind::Response, "late-response"),
+      Err(FfiAsyncHandleError::HandleClosing)
+    );
+    registry.finish(owner).expect("finish owner");
+    assert_eq!(
+      registry.register_for_active_owner(owner, FfiAsyncHandleKind::Response, "finished-response"),
+      Err(FfiAsyncHandleError::HandleFinished)
     );
   }
 
