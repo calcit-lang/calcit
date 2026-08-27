@@ -42,7 +42,7 @@ The `edit` command handles high-level operations on namespaces and definitions.
 calcit edit format
 ```
 
-This command also rewrites older namespace records into canonical shapes. Retired `compact.cirru` filenames and top-level `:configs` are rejected before formatting; use the final compatible Calcit 0.13.50 release for that one-way migration. For accepted snapshots, stderr identifies `W_LEGACY_ANY` or `W_DYNAMIC_TYPE_DEBT` when follow-up work is recommended. It does not invent concrete types; follow dynamic or unbound-slot warnings with `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved`.
+This command also rewrites older namespace records into canonical shapes. A retired `compact.cirru` must first be copied or renamed to `calcit.cirru`; then `edit format` alone can migrate early direct-quote code and top-level `:configs` through an isolated one-way loader. It reports migrated node counts and rejects ambiguous legacy configs. Runtime loading and other edits remain strict. For accepted snapshots, stderr identifies `W_LEGACY_ANY` or `W_DYNAMIC_TYPE_DEBT` when follow-up work is recommended. It does not invent concrete types; follow dynamic or unbound-slot warnings with `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved`.
 
 ### Persistent Tree Cursor
 

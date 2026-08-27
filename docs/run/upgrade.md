@@ -82,8 +82,10 @@ Calcit 0.13.48 是接受 `compact.cirru` 文件名的最后一个兼容版本；
 3. 执行 `calcit calcit.cirru edit format`，审阅 diff，再对新的 `calcit.cirru` 运行 `--check-only` 和原有 entry/构建测试
 4. 新旧入口行为一致后再删除旧文件并提交；后续所有 `calcit` 命令都显式基于单一的 `calcit.cirru`
 
-如果新版 `calcit` 连旧的完整 `calcit.cirru` 都无法反序列化，就不能先对它执行 `edit format`。先确认旁边的
-`compact.cirru` 能在旧工具链运行，并从 Git 状态/历史确认它是最后的有效精简源码；然后用可恢复的步骤重建：
+如果新版 `calcit` 连旧的完整 `calcit.cirru` 都无法反序列化，先确认旁边的 `compact.cirru` 能在旧工具链运行，
+并从 Git 状态/历史确认它是最后的有效精简源码。当前 `edit format` 有一个与 runtime loader 隔离的一次性迁移入口，
+可读取早期 compact Snapshot 的 direct quoted namespace/definition 以及顶层 `:configs`，再写成 canonical Snapshot；
+普通运行、检查和其他编辑命令仍严格拒绝这些旧结构。按以下可恢复步骤重建：
 
 ```bash
 cp calcit.cirru calcit.full-snapshot.backup.cirru
@@ -108,7 +110,9 @@ calcit calcit.cirru --check-only
 
 若 `rg` 没有匹配，才继续复制和格式化；如果仍有匹配，应逐个编辑 namespace 规则，而不是用全局替换，
 以免改动代码字符串中的同名文本。不要删除备份或旧文件，直到所有 entry 与原有 native/JS 测试均通过。现在反序列化错误会带上失败的
-Snapshot 路径；如果同目录存在 `compact.cirru`，还会直接给出上述恢复方向。严格版本不能直接格式化 `compact.cirru`；必须先复制或重命名为 `calcit.cirru`。
+Snapshot 路径；如果同目录存在 `compact.cirru`，还会直接给出上述恢复方向。严格版本不能直接格式化名为
+`compact.cirru` 的文件；必须先复制或重命名为 `calcit.cirru`。如果迁移日志报告 direct quote/configs 计数，需单独审阅生成的
+`CodeEntry` / `NsEntry` 和 `entries.default`；旧 definition 会得到明确的 `Dynamic` schema，不会自动猜测业务类型。
 
 旧 namespace 里的 `:require-macros` 也必须在 Snapshot 规范化前处理。宏与普通值现在共用
 `:require` 规则，例如把：
@@ -424,14 +428,15 @@ fallback 必须与 payload 类型兼容；需要区分缺失分支时改用 `if-
 
 ### 3.3 统一 entries
 
-顶层 `:configs` 已停止加载。先使用最后兼容版本 Calcit 0.13.50 执行：
+顶层 `:configs` 已停止被普通 runtime loader 加载。使用当前 Calcit 的一次性 formatter 迁移入口执行：
 
 ```bash
 calcit calcit.cirru edit format
 calcit calcit.cirru config show
 ```
 
-0.13.50 的 format 会把旧 `:configs` 迁移为 `:entries.default`。当前严格版本只输出包含 Snapshot 路径和上述命令的错误，不再保留双格式解码分支。迁移后应审阅：
+`edit format` 会把旧 `:configs` 迁移为 `:entries.default` 并输出迁移计数；普通 runtime loader 不保留双格式解码分支。
+若旧 `:configs` 与现有 `:entries.default` 冲突，或包含未知字段，formatter 会报错而不会静默覆盖。迁移后应审阅：
 
 - 每个 entry 都有明确的 `:mode :native` 或 `:mode :js`。
 - named entry 是完整配置，不继承 default 的 modules/type slots。

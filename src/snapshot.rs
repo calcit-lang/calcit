@@ -1853,6 +1853,22 @@ pub struct Snapshot {
   pub active_entry: String,
 }
 
+/// One-shot legacy conversions performed exclusively by `calcit edit format`.
+/// Runtime loading stays strict so canonical snapshots cannot depend on these
+/// compatibility branches.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SnapshotFormatMigration {
+  pub direct_quote_namespaces: usize,
+  pub direct_quote_definitions: usize,
+  pub legacy_configs: bool,
+}
+
+impl SnapshotFormatMigration {
+  pub fn happened(self) -> bool {
+    self.legacy_configs || self.direct_quote_namespaces > 0 || self.direct_quote_definitions > 0
+  }
+}
+
 impl Snapshot {
   pub fn active_entry_name(&self) -> &str {
     &self.active_entry
@@ -2146,7 +2162,7 @@ pub fn retired_snapshot_migration_error(path: &Path) -> Option<String> {
 pub fn retired_snapshot_configs_error(path: &str) -> String {
   let path_arg = format!("'{}'", path.replace('\'', "'\"'\"'"));
   format!(
-    "Top-level `:configs` is retired in Snapshot `{path}`. Use the final compatible Calcit 0.13.50 release to run `calcit {path_arg} edit format`, review the generated `:entries.default` with `calcit {path_arg} config show`, then retry with the current `calcit {path_arg} --check-only`."
+    "Top-level `:configs` is retired in Snapshot `{path}`. Run `calcit {path_arg} edit format` with the current Calcit to perform the isolated one-way migration, review the generated `:entries.default` with `calcit {path_arg} config show`, then retry `calcit {path_arg} --check-only`. Runtime loading remains strict outside `edit format`."
   )
 }
 
@@ -2163,6 +2179,108 @@ pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
     }
     message
   })
+}
+
+/// Parse a Snapshot for canonical formatting, including the constrained
+/// direct-quote/configs shape used by early compact snapshots.
+///
+/// This is intentionally separate from [`load_snapshot_data`]: callers other
+/// than `edit format` must not gain an implicit legacy runtime path.
+pub fn load_snapshot_data_for_format(data: &Edn, path: &str) -> Result<(Snapshot, SnapshotFormatMigration), String> {
+  if let Some(error) = retired_snapshot_migration_error(Path::new(path)) {
+    return Err(error);
+  }
+  load_snapshot_data_for_format_inner(data, path).map_err(|error| format!("Failed to load Snapshot `{path}` for formatting: {error}"))
+}
+
+fn load_snapshot_data_for_format_inner(data: &Edn, path: &str) -> Result<(Snapshot, SnapshotFormatMigration), String> {
+  let data = data.view_map()?;
+  let mut migration = SnapshotFormatMigration::default();
+  let pkg: Arc<str> = data.get_or_nil("package").try_into()?;
+  let mut files = parse_files_for_format_with_context(&data.get_or_nil("files"), &mut migration)?;
+
+  // A direct-quote macro has no schema to validate yet. Formatting writes an
+  // explicit Dynamic schema, after which the existing strict-loader guidance
+  // points users at the final schema-migration release.
+  if migration.direct_quote_definitions == 0 {
+    validate_strict_macro_schemas(&files, path)?;
+  }
+
+  let about = match data.get_or_nil("about") {
+    Edn::Nil => None,
+    value => {
+      let s: Arc<str> = value.try_into()?;
+      Some(s.to_string())
+    }
+  };
+  let meta_ns = format!("{pkg}.$meta");
+  files.insert(meta_ns.to_owned(), gen_meta_ns(&meta_ns, path));
+
+  let entries_value = data.get_or_nil("entries");
+  let mut entries = if matches!(entries_value, Edn::Nil) {
+    HashMap::new()
+  } else {
+    parse_entries_with_context(&entries_value, true)?
+  };
+  let mut legacy_version = None;
+  if let Some(configs) = data.get(&Edn::tag("configs")).or_else(|| data.get(&Edn::str("configs"))) {
+    if entries.contains_key(DEFAULT_ENTRY_NAME) {
+      return Err("legacy `:configs` conflicts with existing `:entries.default`; remove the ambiguity before formatting".to_owned());
+    }
+    let (entry, version) = parse_legacy_configs_for_format(configs)?;
+    entries.insert(DEFAULT_ENTRY_NAME.to_owned(), entry);
+    legacy_version = version;
+    migration.legacy_configs = true;
+  }
+
+  if !entries.contains_key(DEFAULT_ENTRY_NAME) {
+    return Err("Snapshot `:entries` must contain a `:default` entry".to_owned());
+  }
+  let version = match data.get(&Edn::tag("version")).or_else(|| data.get(&Edn::str("version"))) {
+    Some(_) => parse_snapshot_config_string_field(&data, "version", "snapshot")?,
+    None => legacy_version.unwrap_or_else(default_version),
+  };
+
+  Ok((
+    Snapshot {
+      package: pkg.to_string(),
+      about,
+      version,
+      entries,
+      files,
+      active_entry: default_active_entry(),
+    },
+    migration,
+  ))
+}
+
+fn parse_legacy_configs_for_format(data: &Edn) -> Result<(SnapshotEntry, Option<String>), String> {
+  let configs = data
+    .view_map()
+    .map_err(|e| format!("legacy configs: expected a map: {e}; got {}", format_edn_preview(data)))?;
+  for key in configs.0.keys() {
+    let name = match key {
+      Edn::Tag(tag) => tag.ref_str(),
+      Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':'),
+      _ => {
+        return Err(format!(
+          "legacy configs: field name must be a tag, string, or symbol; got {}",
+          format_edn_preview(key)
+        ));
+      }
+    };
+    if !matches!(name, "init-fn" | "reload-fn" | "modules" | "version" | "mode") {
+      return Err(format!(
+        "legacy configs: unknown field `:{name}`; migrate it explicitly before formatting"
+      ));
+    }
+  }
+  let entry = parse_snapshot_entry_with_context(data.to_owned(), "legacy configs", false)?;
+  let version = match configs.get(&Edn::tag("version")).or_else(|| configs.get(&Edn::str("version"))) {
+    Some(_) => Some(parse_snapshot_config_string_field(&configs, "version", "legacy configs")?),
+    None => None,
+  };
+  Ok((entry, version))
 }
 
 fn load_snapshot_data_inner(data: &Edn, path: &str) -> Result<Snapshot, String> {
@@ -2313,6 +2431,75 @@ fn parse_files_with_context(data: &Edn) -> Result<HashMap<String, FileInSnapShot
     files.insert(
       file_name.clone(),
       parse_file_in_snapshot_with_context(file_value.to_owned(), &file_name)?,
+    );
+  }
+  Ok(files)
+}
+
+fn parse_file_for_format_with_context(
+  data: Edn,
+  file_name: &str,
+  migration: &mut SnapshotFormatMigration,
+) -> Result<FileInSnapShot, String> {
+  let map = data
+    .view_map()
+    .map_err(|e| format!("{file_name}: expected FileEntry map/struct: {e}; got {}", format_edn_preview(&data)))?;
+  let ns_value = map
+    .get(&Edn::tag("ns"))
+    .or_else(|| map.get(&Edn::str("ns")))
+    .ok_or_else(|| format!("{file_name}: missing `:ns` field in FileEntry"))?;
+  let ns = match ns_value {
+    Edn::Quote(code) => {
+      migration.direct_quote_namespaces += 1;
+      NsEntry {
+        doc: String::new(),
+        code: code.clone(),
+      }
+    }
+    modern => modern.to_owned().try_into().map_err(|e: String| format!("{file_name}/:ns: {e}"))?,
+  };
+
+  let defs_value = map
+    .get(&Edn::tag("defs"))
+    .or_else(|| map.get(&Edn::str("defs")))
+    .ok_or_else(|| format!("{file_name}: missing `:defs` field in FileEntry"))?;
+  let defs_map = defs_value.view_map().map_err(|e| {
+    format!(
+      "{file_name}: failed to parse `:defs` as map: {e}; got {}",
+      format_edn_preview(defs_value)
+    )
+  })?;
+  let mut defs = HashMap::with_capacity(defs_map.0.len());
+  for (def_key, def_value) in defs_map.0.iter() {
+    let def_name: String = from_edn(def_key.to_owned())
+      .map_err(|e| format!("{file_name}: failed to parse def name: {e}; got {}", format_edn_preview(def_key)))?;
+    let owner = format!("{file_name}/{def_name}");
+    let entry = match def_value {
+      Edn::Quote(code) => {
+        migration.direct_quote_definitions += 1;
+        CodeEntry::from_code(code.clone())
+      }
+      modern => parse_code_entry_with_context(modern.to_owned(), &owner)?,
+    };
+    defs.insert(def_name, entry);
+  }
+  Ok(FileInSnapShot { ns, defs })
+}
+
+fn parse_files_for_format_with_context(
+  data: &Edn,
+  migration: &mut SnapshotFormatMigration,
+) -> Result<HashMap<String, FileInSnapShot>, String> {
+  let files_map = data
+    .view_map()
+    .map_err(|e| format!("failed to parse snapshot `:files` as map: {e}; got {}", format_edn_preview(data)))?;
+  let mut files = HashMap::with_capacity(files_map.0.len());
+  for (file_key, file_value) in files_map.0.iter() {
+    let file_name: String = from_edn(file_key.to_owned())
+      .map_err(|e| format!("failed to parse snapshot file key: {e}; got {}", format_edn_preview(file_key)))?;
+    files.insert(
+      file_name.clone(),
+      parse_file_for_format_with_context(file_value.to_owned(), &file_name, migration)?,
     );
   }
   Ok(files)
@@ -4807,7 +4994,7 @@ mod tests {
   }
 
   #[test]
-  fn legacy_configs_are_rejected_with_versioned_migration_guidance() {
+  fn legacy_configs_are_rejected_with_current_format_migration_guidance() {
     let content = r#"{} (:package |mini)
   :configs $ {} (:init-fn |mini/main!) (:reload-fn |mini/reload!) (:version |1.2.3)
     :modules $ [] |legacy/
@@ -4817,9 +5004,107 @@ mod tests {
     let edn_data = cirru_edn::parse(content).expect("legacy snapshot text should parse");
     let error = load_snapshot_data(&edn_data, "fixtures/mini.cirru").expect_err("legacy configs must be rejected");
     assert!(error.contains("Top-level `:configs` is retired"), "error: {error}");
-    assert!(error.contains("Calcit 0.13.50"), "error: {error}");
+    assert!(error.contains("current Calcit"), "error: {error}");
+    assert!(error.contains("Runtime loading remains strict"), "error: {error}");
     assert!(error.contains("calcit 'fixtures/mini.cirru' edit format"), "error: {error}");
     assert!(error.contains("calcit 'fixtures/mini.cirru' --check-only"), "error: {error}");
+  }
+
+  fn legacy_direct_quote_snapshot(config_overrides: impl IntoIterator<Item = (&'static str, Edn)>) -> Edn {
+    let mut configs = EdnMapView::default();
+    configs.insert_key("init-fn", Edn::str("mini/main!"));
+    configs.insert_key("reload-fn", Edn::str("mini/reload!"));
+    configs.insert_key("version", Edn::str("1.2.3"));
+    configs.insert_key("modules", Edn::List(EdnListView(vec![Edn::str("legacy/")])));
+    for (key, value) in config_overrides {
+      configs.insert_key(key, value);
+    }
+
+    let modern = CodeEntry::from_code(parse_one("defn modern () nil"));
+    let mut defs = EdnMapView::default();
+    defs.insert(Edn::str("main!"), Edn::Quote(parse_one("defn main! () nil")));
+    defs.insert(Edn::str("modern"), Edn::from(&modern));
+    let file = Edn::map_from_iter([
+      (Edn::tag("ns"), Edn::Quote(vec!["ns", "mini.core"].into())),
+      (Edn::tag("defs"), Edn::Map(defs)),
+    ]);
+    Edn::map_from_iter([
+      (Edn::tag("package"), Edn::str("mini")),
+      (Edn::tag("configs"), Edn::Map(configs)),
+      (Edn::tag("entries"), Edn::Map(EdnMapView::default())),
+      (Edn::tag("files"), Edn::map_from_iter([(Edn::str("mini.core"), file)])),
+    ])
+  }
+
+  #[test]
+  fn format_loader_migrates_direct_quotes_and_configs_without_weakening_strict_loader() {
+    let legacy = legacy_direct_quote_snapshot([]);
+    let strict_error = load_snapshot_data(&legacy, "calcit.cirru").expect_err("strict loader must reject legacy configs");
+    assert!(strict_error.contains("Top-level `:configs` is retired"), "error: {strict_error}");
+
+    let mut direct_quotes_only = legacy.clone();
+    let Edn::Map(root) = &mut direct_quotes_only else {
+      panic!("legacy fixture root map")
+    };
+    root.0.remove(&Edn::tag("configs"));
+    let default_entry = Edn::map_from_iter([
+      (Edn::tag("mode"), Edn::tag("native")),
+      (Edn::tag("init-fn"), Edn::Symbol("mini/main!".into())),
+      (Edn::tag("reload-fn"), Edn::Symbol("mini/reload!".into())),
+    ]);
+    root.insert_key("entries", Edn::map_from_iter([(Edn::str(DEFAULT_ENTRY_NAME), default_entry)]));
+    let strict_error =
+      load_snapshot_data(&direct_quotes_only, "calcit.cirru").expect_err("strict loader must also reject direct-quote code");
+    assert!(strict_error.contains("mini.core/:ns"), "error: {strict_error}");
+    assert!(strict_error.contains("expected struct/map"), "error: {strict_error}");
+
+    let (snapshot, migration) =
+      load_snapshot_data_for_format(&legacy, "calcit.cirru").expect("format loader should migrate the constrained legacy shape");
+    assert_eq!(
+      migration,
+      SnapshotFormatMigration {
+        direct_quote_namespaces: 1,
+        direct_quote_definitions: 1,
+        legacy_configs: true,
+      }
+    );
+    assert_eq!(snapshot.version, "1.2.3");
+    assert_eq!(snapshot.entries[DEFAULT_ENTRY_NAME].mode, SnapshotRunMode::Native);
+    assert_eq!(snapshot.entries[DEFAULT_ENTRY_NAME].modules, vec!["legacy/"]);
+    assert_eq!(snapshot.files["mini.core"].defs["main!"].schema, DYNAMIC_TYPE.clone());
+    assert!(snapshot.files["mini.core"].defs.contains_key("modern"));
+
+    let rendered = render_snapshot_content(&snapshot).expect("migrated snapshot should render canonically");
+    assert!(!rendered.contains(":configs"), "rendered: {rendered}");
+    assert!(rendered.contains(":entries"), "rendered: {rendered}");
+    let canonical = cirru_edn::parse(&rendered).expect("canonical output should parse");
+    load_snapshot_data(&canonical, "calcit.cirru").expect("canonical output should pass the strict loader");
+  }
+
+  #[test]
+  fn format_loader_rejects_unknown_legacy_configs_fields() {
+    let legacy = legacy_direct_quote_snapshot([("custom", Edn::Bool(true))]);
+    let error = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect_err("unknown legacy config must not be discarded");
+    assert!(error.contains("legacy configs: unknown field `:custom`"), "error: {error}");
+  }
+
+  #[test]
+  fn format_loader_reports_malformed_legacy_definition_with_owner() {
+    let mut legacy = legacy_direct_quote_snapshot([]);
+    let Edn::Map(root) = &mut legacy else {
+      panic!("legacy fixture root map")
+    };
+    let files = root.0.get_mut(&Edn::tag("files")).expect("files");
+    let Edn::Map(files) = files else { panic!("files map") };
+    let file = files.0.get_mut(&Edn::str("mini.core")).expect("mini.core");
+    let Edn::Map(file) = file else { panic!("file map") };
+    let defs = file.0.get_mut(&Edn::tag("defs")).expect("defs");
+    let Edn::Map(defs) = defs else { panic!("defs map") };
+    defs.insert(Edn::str("broken"), Edn::Number(1.0));
+
+    let error = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect_err("malformed legacy definition must fail");
+    assert!(error.contains("mini.core/broken"), "error: {error}");
+    assert!(error.contains("expected struct/map"), "error: {error}");
   }
 
   #[test]
