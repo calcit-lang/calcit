@@ -42,6 +42,39 @@ allowed. `finish` and `release` are exactly-once operations; a finished
 tombstone remains until release so duplicate completion has a deterministic
 error instead of looking like an unknown handle.
 
+## Host shutdown / 宿主关闭
+
+The CLI owns the process Ctrl-C handler. The signal thread only records a
+shutdown request; it never enters the Calcit runtime. A callback registered by
+`on-control-c` runs once on the host thread before native task cancellation.
+This keeps application cleanup serialized with ordinary callbacks.
+
+Shutdown stops new registrations, moves every live native task and response
+capability to `Closing`, rejects open responses with `:host-shutdown`, and
+invokes each available module cancel hook. The host continues draining
+terminal events for a two-second grace period, so a cooperative module can
+still publish its exactly-once `Complete` or `Fail` acknowledgement. At the
+deadline the queue closes, then unfinished tasks are purged and released with
+diagnostics containing module, method, task handle, kind, age, purged-event
+count, and discarded-response count. Closing before forced release prevents a
+late producer from racing a reclaimed task handle.
+
+CLI watch loops and the compatibility `async-sleep` task observe the same
+shutdown request, so they cannot keep the process alive after native cleanup.
+
+Calcit CLI 统一拥有进程的 Ctrl-C handler。信号线程只记录关闭请求，
+不直接进入 Calcit runtime；`on-control-c` 注册的回调会在取消 native
+task 之前，由 host thread 串行执行一次。
+
+关闭会停止新注册，把存活的 native task 和 response capability 转为
+`Closing`，以 `:host-shutdown` 拒绝未完成 response，并调用模块的
+cancel hook。Host 在 2 秒 grace period 内继续 drain terminal event；超时任务
+会被强制 purge/release，同时输出 module、method、task handle、kind、age、
+purged event 与 discarded response 诊断。在 grace period 内，合作的模块仍可发布
+exactly-once `Complete` 或 `Fail`；deadline 到达后先关闭队列再强制 release，
+避免迟到 producer 与已回收 task handle 竞态。Watch loop 与兼容性
+`async-sleep` 也会观察同一关闭请求，不会在 native cleanup 后继续挂住进程。
+
 ## Events and ordering
 
 Each active handle owns a monotonically increasing event sequence starting at

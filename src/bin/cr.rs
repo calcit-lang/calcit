@@ -1131,8 +1131,8 @@ pub fn watch_files(
     }
   };
 
-  loop {
-    match rx.recv() {
+  while !injection::shutdown_requested() {
+    match rx.recv_timeout(Duration::from_millis(100)) {
       Ok(Ok(_event)) => {
         // load new program code
         let mut content = fs::read_to_string(&inc_path).expect("reading inc file");
@@ -1146,9 +1146,14 @@ pub fn watch_files(
         };
       }
       Ok(Err(e)) => println!("watch error: {e:?}"),
-      Err(e) => eprintln!("watch error: {e:?}"),
+      Err(RecvTimeoutError::Timeout) => {}
+      Err(RecvTimeoutError::Disconnected) => {
+        eprintln!("watch error: channel disconnected");
+        break;
+      }
     }
   }
+  runner::track::track_task_release();
 }
 
 // overwrite previous state

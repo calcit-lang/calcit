@@ -1,8 +1,35 @@
-use std::sync::atomic;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{self, AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Condvar, LazyLock, Mutex};
 use std::{thread, time};
 
 static TASK_COUNT: AtomicUsize = AtomicUsize::new(0);
+static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+static SHUTDOWN_WAKE: LazyLock<(Mutex<()>, Condvar)> = LazyLock::new(|| (Mutex::new(()), Condvar::new()));
+
+pub fn reset_shutdown() {
+  SHUTDOWN_REQUESTED.store(false, Ordering::Release);
+}
+
+pub fn request_shutdown() {
+  SHUTDOWN_REQUESTED.store(true, Ordering::Release);
+  SHUTDOWN_WAKE.1.notify_all();
+}
+
+pub fn shutdown_requested() -> bool {
+  SHUTDOWN_REQUESTED.load(Ordering::Acquire)
+}
+
+pub fn wait_for_shutdown(timeout: time::Duration) -> bool {
+  if shutdown_requested() {
+    return true;
+  }
+  let guard = SHUTDOWN_WAKE.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+  let _guard = SHUTDOWN_WAKE
+    .1
+    .wait_timeout_while(guard, timeout, |_| !shutdown_requested())
+    .unwrap_or_else(|poisoned| poisoned.into_inner());
+  shutdown_requested()
+}
 
 pub fn exit_when_cleared() {
   let delay = time::Duration::from_millis(40);

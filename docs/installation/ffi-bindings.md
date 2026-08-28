@@ -141,6 +141,11 @@ let
   &ffi-task-cancel task :shutdown
 ```
 
+Ctrl-C performs the same cancellation at host scope. A function registered
+with `on-control-c` runs on the Calcit host thread before the runtime starts
+the two-second native-task shutdown grace period; the signal thread itself
+never runs Calcit code.
+
 For a Server request carrying a response handle, Calcit appends an opaque
 response capability after the decoded request arguments. It is exactly-once:
 
