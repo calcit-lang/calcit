@@ -33,6 +33,22 @@ version or per-method symbols are deterministic migration errors; there is no
 Rust-ABI fallback. Native modules should use `cdylib` and export only fixed C
 ABI symbols.
 
+Rust module authors should use
+[`calcit_native_ffi`](https://crates.io/crates/calcit_native_ffi) instead of
+copying protocol structs and transport adapters into each repository. The
+crate provides the v1 descriptors, status/task/event constants, buffer
+ownership helpers, Cirru EDN transport, backpressure policy, async/blocking
+host helpers, and final-dylib export macros. This document remains the
+normative host protocol; the shared crate is the maintained Rust
+implementation for modules.
+
+Rust 模块作者应优先使用
+[`calcit_native_ffi`](https://crates.io/crates/calcit_native_ffi)，不要在每个
+仓库复制 protocol struct 和 transport adapter。该 crate 统一提供 v1
+descriptor、status/task/event 常量、buffer ownership、Cirru EDN transport、
+backpressure、async/blocking host helper 以及 final-dylib export macro。本页
+仍是 host protocol 的规范定义，共享 crate 是模块侧维护的 Rust 实现。
+
 ## C-safe synchronous buffer ABI
 
 Synchronous methods use buffer protocol version 1. Calcit looks for
@@ -76,7 +92,8 @@ Protocol rules:
 - The adapter must contain panics and return an error status; unwinding across `extern "C"` is invalid.
 - Calcit rejects protocol-version mismatches, malformed buffer metadata, oversized responses, invalid UTF-8, and invalid response EDN.
 
-`calcit-lang/calcit_wasmtime` contains the first complete synchronous adapter.
+`calcit-lang/calcit_wasmtime` contains a complete synchronous adapter and uses
+the shared crate starting with version 0.1.5.
 
 Methods that create reusable native objects use the C-safe
 [opaque resource protocol](ffi-resource-protocol.md). The host turns reserved
@@ -180,3 +197,19 @@ Currently there are some early extensions:
 - [HTTP server binding](https://github.com/calcit-lang/calcit-http)
 - [Wasmtime binding](https://github.com/calcit-lang/calcit_wasmtime)
 - [fswatch](https://github.com/calcit-lang/calcit-fswatch)
+
+The first shared-crate rollout is available in `calcit-http 0.3.8`,
+`calcit-wss 0.2.17`, `calcit-fetch 0.0.17`, `calcit_wasmtime 0.1.5`, and
+`calcit.std 0.2.22`.
+
+首批共享 crate 迁移版本为 `calcit-http 0.3.8`、`calcit-wss 0.2.17`、
+`calcit-fetch 0.0.17`、`calcit_wasmtime 0.1.5` 和 `calcit.std 0.2.22`。
+
+The second rollout is available in `calcit-json 0.0.14`,
+`calcit-clipboard 0.0.10`, `calcit-command 0.0.6`, and `calcit-regex 0.0.15`.
+Regex keeps its module-owned opaque-resource registry while sharing the
+buffer-v1 transport adapter.
+
+第二批迁移版本为 `calcit-json 0.0.14`、`calcit-clipboard 0.0.10`、
+`calcit-command 0.0.6` 和 `calcit-regex 0.0.15`。Regex 继续由模块维护
+opaque-resource registry，只共享 buffer-v1 transport adapter。

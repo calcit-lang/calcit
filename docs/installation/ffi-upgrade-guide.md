@@ -27,6 +27,22 @@ bytes 交换业务数据，不再要求使用同一个 rustc 或同一个 `cirru
 crate build。`calcit_ffi_build_id`、`abi_version`、`edn_version` 和 Rust-layout
 business methods 均已退役。
 
+Rust 模块应依赖已发布的 `calcit_native_ffi`，复用版本化 descriptor、buffer
+ownership、Cirru EDN transport、async backpressure 和 blocking adapter。模块
+仓库继续负责业务参数与逻辑、thread、connection/task registry、cancel state、
+server lifecycle 及其他领域状态；不要复制协议模板。共享 crate 不足时，先在
+[`calcit-lang/calcit-native-ffi`](https://github.com/calcit-lang/calcit-native-ffi)
+扩展契约和测试，再升级消费者。
+
+Rust modules should depend on the published `calcit_native_ffi` crate for
+versioned descriptors, buffer ownership, Cirru EDN transport, async
+backpressure, and blocking adapters. Module repositories continue to own
+domain arguments and behavior, threads, connection/task registries,
+cancellation state, server lifecycles, and other domain-specific state. If a
+shared capability is missing, extend and test the contract in
+[`calcit-lang/calcit-native-ffi`](https://github.com/calcit-lang/calcit-native-ffi)
+before upgrading consumers.
+
 ## 升级流程
 
 ### 0. 导出版本变量（所有后续步骤均复用）
@@ -54,6 +70,16 @@ sed -i "s/^cirru_parser = .*/cirru_parser = \"$PARSER_VER\"/" Cargo.toml
 ```
 
 同时将 `[package] version` bump 一个 patch 版本（若项目有版本号发布需求）。
+
+对于 Rust native 模块，同时使用稳定版本引用：
+
+```toml
+[dependencies]
+calcit_native_ffi = "0.1.0"
+```
+
+不要使用 git branch 或 commit hash 作为日常模块依赖；crate version 与模块
+lockfile 才是可重复发布边界。
 
 ### 2. 更新 deps.cirru
 
@@ -151,11 +177,11 @@ git push origin "$PKG_VER" --force
 通过 GitHub CLI 快速检查所有 FFI 项目的最新版本和 CI 状态：
 
 ```bash
-for repo in calcit-lang/calcit-std calcit-lang/dylib-workflow \
+for repo in calcit-lang/calcit.std calcit-lang/dylib-workflow \
             calcit-lang/calcit-fetch calcit-lang/calcit-http \
             calcit-lang/calcit-regex calcit-lang/calcit-wss \
             calcit-lang/calcit-command calcit-lang/calcit-clipboard \
-            calcit-lang/calcit-wasmtime calcit-lang/calcit-fswatch \
+            calcit-lang/calcit_wasmtime calcit-lang/calcit-fswatch \
             calcit-lang/calcit-graphviz; do
   echo "=== $repo ==="
   gh release list --repo "$repo" --limit 1
