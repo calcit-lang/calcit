@@ -117,6 +117,7 @@ version = "0.13.57"
 dependencies = [
  "argh",
  "bisection_key",
+ "calcit_native_ffi",
  "cirru_edn",
  "cirru_parser",
  "colored",
@@ -141,6 +142,12 @@ dependencies = [
  "walkdir",
  "wasm-encoder",
 ]
+
+[[package]]
+name = "calcit_native_ffi"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42a8cfaff7caed355a63e9df68c57cea5af1d01b1b37734ed812a4a9ed2faeed"
 
 [[package]]
 name = "cc"

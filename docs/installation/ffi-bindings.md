@@ -42,12 +42,22 @@ host helpers, and final-dylib export macros. This document remains the
 normative host protocol; the shared crate is the maintained Rust
 implementation for modules.
 
+Calcit itself consumes the same crate with default features disabled for raw
+protocol versions, symbols, function signatures, resource-token constants,
+and C-layout descriptors. Dynamic loading, task/resource registries, callback
+queues, dylib pinning, and lifecycle enforcement remain runtime-owned.
+
 Rust 模块作者应优先使用
 [`calcit_native_ffi`](https://crates.io/crates/calcit_native_ffi)，不要在每个
 仓库复制 protocol struct 和 transport adapter。该 crate 统一提供 v1
 descriptor、status/task/event 常量、buffer ownership、Cirru EDN transport、
 backpressure、async/blocking host helper 以及 final-dylib export macro。本页
 仍是 host protocol 的规范定义，共享 crate 是模块侧维护的 Rust 实现。
+
+Calcit runtime 也通过关闭默认 feature 直接消费同一 crate 的 raw protocol
+version、symbol、function signature、resource token 常量与 C-layout descriptor。
+动态加载、task/resource registry、callback queue、dylib pin 与 lifecycle 检查
+仍由 runtime 维护。
 
 ## C-safe synchronous buffer ABI
 
