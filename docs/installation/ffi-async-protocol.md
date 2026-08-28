@@ -242,6 +242,18 @@ keeps returning explicit `&unit` otherwise); `&ffi-task-cancel` invokes this
 hook on the host thread. An accepted cancel must eventually enqueue exactly
 one `Complete` or `Fail`; repeated cancel while Closing is idempotent.
 
+At the Calcit adapter boundary, wrap that opaque value with `ffi:task` and
+expose the nominal `FfiTask` to application code. Lifecycle operations are
+method-oriented: `.cancel` supplies the standard cancelled reason and
+`.cancel-with reason` supplies an explicit EDN-compatible reason. The raw
+procedure remains available for compatibility, but should not leak through a
+module's public API.
+
+在 Calcit 模块适配边界，应使用 `ffi:task` 包装这个不透明值，并向业务代码暴露
+nominal `FfiTask`。生命周期操作以方法为主：`.cancel` 使用标准取消原因，
+`.cancel-with reason` 传入显式、可编码为 EDN 的原因。底层 procedure 继续兼容，
+但不应泄漏到模块公开 API。
+
 A Server that declares `REQUIRES_RESPONSE` opens one response capability for
 each request before enqueueing it:
 
@@ -266,8 +278,10 @@ leaves the capability active until the module retries or the host rejects it
 at timeout.
 
 Calcit appends an opaque AnyRef response capability to the event's decoded EDN
-arguments. The callback resolves it with `&ffi-response-resolve` or rejects it
-with `&ffi-response-reject`. The host atomically claims the capability, encodes
+arguments. An adapter wraps it with `ffi:response`; application callbacks then
+call `.resolve value` or `.reject value` on the nominal `FfiResponse`. The raw
+`&ffi-response-resolve` and `&ffi-response-reject` procedures remain boundary
+primitives. The host atomically claims the capability, encodes
 that value, calls the module's resolve function on the host thread, and
 invalidates the capability after the module returns, including when the module
 reports an error. Reuse or concurrent resolution therefore cannot invoke the
@@ -280,6 +294,15 @@ task cleanup proportional to the responses being processed rather than all
 live FFI handles.
 Startup failure discards host handles without calling back into module context
 whose ownership never transferred.
+
+`FfiTask` and `FfiResponse` deliberately remain separate nominal wrappers.
+Payload and reason parameters are method-level generics rather than `Dynamic`;
+only the opaque raw field is dynamic at the host boundary. The host still
+validates capability kind, owner, generation, lifecycle, and EDN encodability.
+
+`FfiTask` 与 `FfiResponse` 是两个独立的 nominal wrapper。payload 与 reason
+使用方法级泛型而不是 `Dynamic`；只有宿主边界上的不透明 raw 字段保持动态。
+宿主仍会校验 capability kind、owner、generation、lifecycle 以及 EDN 可编码性。
 
 AnyRef is deliberately a native non-serializable capability rather than a
 Calcit number: the full generation-bearing `u64` cannot safely round-trip

@@ -404,6 +404,8 @@ lowered to indexed access; an undeclared field is a diagnostic, not `nil`.
 - `FsPath .read-text`, `.read-dir`, `.walk-dir`, `.write-text` - recoverable file effects returning `Result` (native/JS; unavailable in WASM)
 - `try-read-file`, `try-read-dir`, `try-write-file` - String-path compatibility functions returning `Result`
 - `read-file`, `read-dir`, `write-file` - raising compatibility primitives (native/JS; unavailable in WASM)
+- `ffi:task`, `FfiTask .cancel` / `.cancel-with` - nominal native async task lifecycle API
+- `ffi:response`, `FfiResponse .resolve` / `.reject` - nominal exactly-once native response API
 - `get-env` - environment variables
 - `raise` - throw error
 - `quit!` - exit program
