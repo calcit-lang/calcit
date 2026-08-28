@@ -1,167 +1,47 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::slice;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
-use std::{ptr, slice};
 
+pub use calcit_native_ffi::{
+  ASYNC_METHOD_SUFFIX, ASYNC_PROTOCOL_VERSION, ASYNC_PROTOCOL_VERSION_SYMBOL, BLOCKING_METHOD_SUFFIX, BUFFER_FREE_SYMBOL,
+  BUFFER_METHOD_SUFFIX, BUFFER_PROTOCOL_VERSION, BUFFER_PROTOCOL_VERSION_SYMBOL, MAX_BUFFER_BYTES, RESOURCE_PROTOCOL_VERSION,
+  RESOURCE_PROTOCOL_VERSION_SYMBOL, RESOURCE_RELEASE_SYMBOL, RESOURCE_TOKEN_BYTES, RESOURCE_TOKEN_FIELD, RESOURCE_TOKEN_STRUCT,
+  async_method_symbol, blocking_method_symbol, buffer_method_symbol, status as async_status,
+};
+pub use calcit_native_ffi::{
+  AsyncHostConfigure as FfiAsyncHostConfigureTask, AsyncHostEnqueue as FfiAsyncHostEnqueue,
+  AsyncHostOpenResponse as FfiAsyncHostOpenResponse, AsyncMethodV1 as FfiAsyncStart, AsyncResponseResolve as FfiAsyncResponseResolve,
+  AsyncTaskCancel as FfiAsyncTaskCancel, AsyncVersionFn as FfiAsyncVersion, BlockingHostFinish as FfiBlockingHostFinish,
+  BlockingHostFreeBuffer as FfiBlockingHostFreeBuffer, BlockingHostInvoke as FfiBlockingHostInvoke,
+  BlockingMethodV1 as FfiBlockingCall, BufferFreeFn as FfiBufferFree, BufferMethodV1 as FfiBufferCall,
+  BufferVersionFn as FfiBufferVersion, CalcitFfiAsyncHostV1 as FfiAsyncHostV1, CalcitFfiAsyncTaskV1 as FfiAsyncTaskDescriptor,
+  CalcitFfiBlockingHostV1 as FfiBlockingHostV1, CalcitFfiBuffer as FfiBuffer, ResourceReleaseV1 as FfiResourceRelease,
+  ResourceVersionFn as FfiResourceVersion,
+};
 use cirru_edn::{Edn, EdnAnyRef, EdnEnumView, EdnListView, EdnMapView, EdnSetView, EdnStructView};
-
-pub const BUFFER_PROTOCOL_VERSION: u32 = 1;
-pub const BUFFER_PROTOCOL_VERSION_SYMBOL: &[u8] = b"calcit_ffi_buffer_version";
-pub const BUFFER_FREE_SYMBOL: &[u8] = b"calcit_ffi_buffer_free";
-const BUFFER_METHOD_SUFFIX: &str = "_calcit_ffi_v1";
-const MAX_BUFFER_BYTES: usize = 256 * 1024 * 1024;
-
-pub const RESOURCE_PROTOCOL_VERSION: u32 = 1;
-pub const RESOURCE_PROTOCOL_VERSION_SYMBOL: &[u8] = b"calcit_ffi_resource_version";
-pub const RESOURCE_RELEASE_SYMBOL: &[u8] = b"calcit_ffi_resource_release_v1";
-pub const RESOURCE_TOKEN_STRUCT: &str = "CalcitFfiResourceV1";
-const RESOURCE_TOKEN_FIELD: &str = "token";
-const RESOURCE_TOKEN_BYTES: usize = 16;
 
 /// Version of the transport-neutral asynchronous task semantics. Native C ABI
 /// adapters and future WASM adapters must preserve the same handle lifecycle,
 /// even though their memory transports differ.
-pub const ASYNC_PROTOCOL_VERSION: u32 = 1;
-pub const ASYNC_PROTOCOL_VERSION_SYMBOL: &[u8] = b"calcit_ffi_async_version";
-pub const ASYNC_METHOD_SUFFIX: &str = "_calcit_ffi_async_v1";
-pub const BLOCKING_METHOD_SUFFIX: &str = "_calcit_ffi_blocking_v1";
-
-pub const ASYNC_TASK_FLAG_SERIAL_EVENTS: u32 = 1 << 0;
-pub const ASYNC_TASK_FLAG_COALESCE_ALLOWED: u32 = 1 << 1;
-pub const ASYNC_TASK_FLAG_REQUIRES_RESPONSE: u32 = 1 << 2;
-pub const ASYNC_TASK_KNOWN_FLAGS: u32 =
-  ASYNC_TASK_FLAG_SERIAL_EVENTS | ASYNC_TASK_FLAG_COALESCE_ALLOWED | ASYNC_TASK_FLAG_REQUIRES_RESPONSE;
-pub const ASYNC_EVENT_FLAG_COALESCED: u32 = 1 << 0;
-pub const ASYNC_EVENT_KNOWN_FLAGS: u32 = ASYNC_EVENT_FLAG_COALESCED;
-
-pub type FfiAsyncHostEnqueue = unsafe extern "C" fn(
-  context: u64,
-  task_handle: u64,
-  event_kind: u32,
-  response_handle: u64,
-  payload_ptr: *const u8,
-  payload_len: usize,
-) -> i32;
-pub type FfiAsyncTaskCancel =
-  unsafe extern "C" fn(task_context: u64, task_handle: u64, reason_ptr: *const u8, reason_len: usize) -> i32;
-pub type FfiAsyncResponseResolve =
-  unsafe extern "C" fn(response_context: u64, response_handle: u64, outcome: u32, payload_ptr: *const u8, payload_len: usize) -> i32;
-pub type FfiAsyncHostConfigureTask = unsafe extern "C" fn(
-  context: u64,
-  task_handle: u64,
-  kind: u32,
-  flags: u32,
-  task_context: u64,
-  cancel: Option<FfiAsyncTaskCancel>,
-) -> i32;
-pub type FfiAsyncHostOpenResponse = unsafe extern "C" fn(
-  context: u64,
-  task_handle: u64,
-  response_context: u64,
-  timeout_ms: u64,
-  resolve: Option<FfiAsyncResponseResolve>,
-  out_handle: *mut u64,
-) -> i32;
-pub type FfiBlockingHostInvoke =
-  unsafe extern "C" fn(context: u64, task_handle: u64, payload_ptr: *const u8, payload_len: usize, out: *mut FfiBuffer) -> i32;
-pub type FfiBlockingHostFinish = unsafe extern "C" fn(context: u64, task_handle: u64) -> i32;
-pub type FfiBlockingHostFreeBuffer = unsafe extern "C" fn(context: u64, task_handle: u64, buffer: FfiBuffer) -> i32;
-
-pub const ASYNC_RESPONSE_RESOLVE: u32 = 1;
-pub const ASYNC_RESPONSE_REJECT: u32 = 2;
-
-/// Native host functions that an async dylib may copy and call from producer
-/// threads. The integer context is opaque and avoids exposing a Rust object
-/// pointer or allocator across the ABI.
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct FfiAsyncHostV1 {
-  pub protocol_version: u32,
-  pub struct_size: u32,
-  pub context: u64,
-  pub enqueue: Option<FfiAsyncHostEnqueue>,
-  pub configure_task: Option<FfiAsyncHostConfigureTask>,
-  pub open_response: Option<FfiAsyncHostOpenResponse>,
-}
-
-impl FfiAsyncHostV1 {
-  pub fn new(
-    context: u64,
-    enqueue: FfiAsyncHostEnqueue,
-    configure_task: FfiAsyncHostConfigureTask,
-    open_response: FfiAsyncHostOpenResponse,
-  ) -> Self {
-    Self {
-      protocol_version: ASYNC_PROTOCOL_VERSION,
-      struct_size: std::mem::size_of::<Self>() as u32,
-      context,
-      enqueue: Some(enqueue),
-      configure_task: Some(configure_task),
-      open_response: Some(open_response),
-    }
-  }
-}
-
-/// Host operations available while a C-safe blocking method owns the CLI
-/// thread. `invoke` executes the Calcit callback synchronously and is accepted
-/// only from the thread that registered the task. Callback output remains
-/// host-owned until the module calls `free_buffer`.
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct FfiBlockingHostV1 {
-  pub protocol_version: u32,
-  pub struct_size: u32,
-  pub context: u64,
-  pub invoke: Option<FfiBlockingHostInvoke>,
-  pub finish: Option<FfiBlockingHostFinish>,
-  pub free_buffer: Option<FfiBlockingHostFreeBuffer>,
-}
-
-impl FfiBlockingHostV1 {
-  pub fn new(
-    context: u64,
-    invoke: FfiBlockingHostInvoke,
-    finish: FfiBlockingHostFinish,
-    free_buffer: FfiBlockingHostFreeBuffer,
-  ) -> Self {
-    Self {
-      protocol_version: ASYNC_PROTOCOL_VERSION,
-      struct_size: std::mem::size_of::<Self>() as u32,
-      context,
-      invoke: Some(invoke),
-      finish: Some(finish),
-      free_buffer: Some(free_buffer),
-    }
-  }
-}
-
-/// Stable status values returned by C-safe async host functions. Keep these
-/// as integer constants rather than an FFI enum so foreign callers cannot
-/// construct an invalid Rust discriminant.
-pub mod async_status {
-  pub const OK: i32 = 0;
-  pub const INVALID_HANDLE: i32 = 1;
-  pub const STALE_HANDLE: i32 = 2;
-  pub const HANDLE_CLOSING: i32 = 3;
-  pub const HANDLE_FINISHED: i32 = 4;
-  pub const HANDLE_STILL_ACTIVE: i32 = 5;
-  pub const HOST_CLOSING: i32 = 6;
-  pub const QUEUE_FULL: i32 = 7;
-  pub const INVALID_PAYLOAD: i32 = 8;
-  pub const INTERNAL_ERROR: i32 = 9;
-  pub const CALLBACK_ERROR: i32 = 10;
-  pub const WRONG_THREAD: i32 = 11;
-}
+pub const ASYNC_TASK_FLAG_SERIAL_EVENTS: u32 = calcit_native_ffi::task_flags::SERIAL_EVENTS;
+pub const ASYNC_TASK_FLAG_COALESCE_ALLOWED: u32 = calcit_native_ffi::task_flags::COALESCE_ALLOWED;
+pub const ASYNC_TASK_FLAG_REQUIRES_RESPONSE: u32 = calcit_native_ffi::task_flags::REQUIRES_RESPONSE;
+pub const ASYNC_TASK_KNOWN_FLAGS: u32 = calcit_native_ffi::task_flags::KNOWN;
+pub const ASYNC_EVENT_FLAG_COALESCED: u32 = calcit_native_ffi::event_flags::COALESCED;
+pub const ASYNC_EVENT_KNOWN_FLAGS: u32 = calcit_native_ffi::event_flags::KNOWN;
+pub const ASYNC_RESPONSE_RESOLVE: u32 = calcit_native_ffi::response_outcome::RESOLVE;
+pub const ASYNC_RESPONSE_REJECT: u32 = calcit_native_ffi::response_outcome::REJECT;
 
 /// Semantic role of a host-owned handle. Values are fixed for C and future
 /// WASM adapters; unknown raw values must be rejected before conversion.
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FfiAsyncHandleKind {
-  OneShot = 1,
-  Stream = 2,
-  Server = 3,
-  Response = 4,
+  OneShot = calcit_native_ffi::task_kind::ONE_SHOT,
+  Stream = calcit_native_ffi::task_kind::STREAM,
+  Server = calcit_native_ffi::task_kind::SERVER,
+  Response = calcit_native_ffi::task_kind::RESPONSE,
 }
 
 /// Stable event tags shared by native and future WASM transports. `Complete`
@@ -169,9 +49,9 @@ pub enum FfiAsyncHandleKind {
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FfiAsyncEventKind {
-  Emit = 1,
-  Complete = 2,
-  Fail = 3,
+  Emit = calcit_native_ffi::event_kind::EMIT,
+  Complete = calcit_native_ffi::event_kind::COMPLETE,
+  Fail = calcit_native_ffi::event_kind::FAIL,
 }
 
 impl FfiAsyncEventKind {
@@ -185,9 +65,9 @@ impl TryFrom<u32> for FfiAsyncEventKind {
 
   fn try_from(value: u32) -> Result<Self, Self::Error> {
     match value {
-      1 => Ok(Self::Emit),
-      2 => Ok(Self::Complete),
-      3 => Ok(Self::Fail),
+      calcit_native_ffi::event_kind::EMIT => Ok(Self::Emit),
+      calcit_native_ffi::event_kind::COMPLETE => Ok(Self::Complete),
+      calcit_native_ffi::event_kind::FAIL => Ok(Self::Fail),
       _ => Err(FfiAsyncHandleError::InvalidEventKind(value)),
     }
   }
@@ -198,10 +78,10 @@ impl TryFrom<u32> for FfiAsyncHandleKind {
 
   fn try_from(value: u32) -> Result<Self, Self::Error> {
     match value {
-      1 => Ok(Self::OneShot),
-      2 => Ok(Self::Stream),
-      3 => Ok(Self::Server),
-      4 => Ok(Self::Response),
+      calcit_native_ffi::task_kind::ONE_SHOT => Ok(Self::OneShot),
+      calcit_native_ffi::task_kind::STREAM => Ok(Self::Stream),
+      calcit_native_ffi::task_kind::SERVER => Ok(Self::Server),
+      calcit_native_ffi::task_kind::RESPONSE => Ok(Self::Response),
       _ => Err(FfiAsyncHandleError::InvalidKind(value)),
     }
   }
@@ -212,30 +92,6 @@ pub enum FfiAsyncLifecycle {
   Active,
   Closing,
   Finished,
-}
-
-/// C-layout task metadata. The handle remains a raw `u64` so a WASM adapter
-/// may transport it as i64 or two i32 values without exposing host pointers.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FfiAsyncTaskDescriptor {
-  pub protocol_version: u32,
-  pub struct_size: u32,
-  pub handle: u64,
-  pub kind: u32,
-  pub flags: u32,
-}
-
-impl FfiAsyncTaskDescriptor {
-  pub fn new(handle: FfiAsyncHandle, kind: FfiAsyncHandleKind, flags: u32) -> Self {
-    Self {
-      protocol_version: ASYNC_PROTOCOL_VERSION,
-      struct_size: std::mem::size_of::<Self>() as u32,
-      handle: handle.raw(),
-      kind: kind as u32,
-      flags,
-    }
-  }
 }
 
 /// C-layout event metadata. Payload bytes are deliberately not represented by
@@ -719,46 +575,7 @@ fn resolve_async_handle_mut<T>(
   slot.task.as_mut().ok_or(FfiAsyncHandleError::StaleHandle)
 }
 
-/// Owned bytes allocated by an FFI module. The module must release this value
-/// through `calcit_ffi_buffer_free`; the host only copies from it.
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct FfiBuffer {
-  pub ptr: *mut u8,
-  pub len: usize,
-  pub cap: usize,
-}
-
-impl FfiBuffer {
-  pub fn empty() -> Self {
-    Self {
-      ptr: ptr::null_mut(),
-      len: 0,
-      cap: 0,
-    }
-  }
-}
-
-type FfiBufferVersion = unsafe extern "C" fn() -> u32;
-pub type FfiBufferFree = unsafe extern "C" fn(FfiBuffer);
-type FfiBufferCall = unsafe extern "C" fn(*const u8, usize, *mut FfiBuffer) -> i32;
-type FfiResourceVersion = unsafe extern "C" fn() -> u32;
-pub type FfiResourceRelease = unsafe extern "C" fn(u64, u64) -> i32;
 pub type FfiResourceTrace = fn(&str, &str, u64, u64, i32);
-type FfiAsyncVersion = unsafe extern "C" fn() -> u32;
-pub type FfiAsyncStart = unsafe extern "C" fn(
-  request_ptr: *const u8,
-  request_len: usize,
-  task: *const FfiAsyncTaskDescriptor,
-  host: *const FfiAsyncHostV1,
-) -> i32;
-pub type FfiBlockingCall = unsafe extern "C" fn(
-  request_ptr: *const u8,
-  request_len: usize,
-  task: *const FfiAsyncTaskDescriptor,
-  host: *const FfiBlockingHostV1,
-  output: *mut FfiBuffer,
-) -> i32;
 
 struct NativeFfiResourceLease {
   lib_name: Arc<str>,
@@ -867,18 +684,6 @@ fn intern_resource_lease(adapter: &FfiResourceAdapter, handle: u64, generation: 
     trace("resource-create", &adapter.lib_name, handle, generation, 0);
   }
   Ok(lease)
-}
-
-pub fn buffer_method_symbol(method: &str) -> String {
-  format!("{method}{BUFFER_METHOD_SUFFIX}")
-}
-
-pub fn async_method_symbol(method: &str) -> String {
-  format!("{method}{ASYNC_METHOD_SUFFIX}")
-}
-
-pub fn blocking_method_symbol(method: &str) -> String {
-  format!("{method}{BLOCKING_METHOD_SUFFIX}")
 }
 
 /// Check whether one blocking method has completed the C-safe migration before
@@ -1472,8 +1277,8 @@ mod tests {
       .register(FfiAsyncHandleKind::Server, "http-server")
       .expect("register server");
     let descriptor = FfiAsyncTaskDescriptor::new(
-      handle,
-      FfiAsyncHandleKind::Server,
+      handle.raw(),
+      FfiAsyncHandleKind::Server as u32,
       ASYNC_TASK_FLAG_SERIAL_EVENTS | ASYNC_TASK_FLAG_REQUIRES_RESPONSE,
     );
 

@@ -1426,7 +1426,7 @@ fn try_start_async_callback_v1(
       NativeAsyncResource::Task(task),
     )
     .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error.to_string()))?;
-  let descriptor = FfiAsyncTaskDescriptor::new(handle, FfiAsyncHandleKind::Stream, ASYNC_TASK_FLAG_SERIAL_EVENTS);
+  let descriptor = FfiAsyncTaskDescriptor::new(handle.raw(), FfiAsyncHandleKind::Stream as u32, ASYNC_TASK_FLAG_SERIAL_EVENTS);
   let host = async_host_table(handle);
 
   track::track_task_add();
@@ -1625,7 +1625,7 @@ fn try_call_blocking_v1(
       NativeAsyncResource::Task(task),
     )
     .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error.to_string()))?;
-  let descriptor = FfiAsyncTaskDescriptor::new(handle, FfiAsyncHandleKind::OneShot, ASYNC_TASK_FLAG_SERIAL_EVENTS);
+  let descriptor = FfiAsyncTaskDescriptor::new(handle.raw(), FfiAsyncHandleKind::OneShot as u32, ASYNC_TASK_FLAG_SERIAL_EVENTS);
   let host = blocking_host_table(handle);
   track::track_task_add();
   trace_ffi_event(
