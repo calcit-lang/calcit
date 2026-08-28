@@ -85,6 +85,12 @@ String 本身不携带文件系统语义；`try-read-file`、`try-read-dir`、
 `try-write-file` 与底层 raising procedures 仅保留为兼容入口。
 这些文件效果支持 native 与生成的 JavaScript；WASM 尚未提供宿主文件效果。
 
+Native 异步 FFI capability 也遵循相同边界原则。模块适配层用 `ffi:task`、
+`ffi:response` 把不透明 AnyRef 提升为 nominal `FfiTask`、`FfiResponse`，业务层调用
+`.cancel`、`.cancel-with`、`.resolve`、`.reject`。raw 字段保持 `Dynamic`，但
+reason/payload 使用方法级泛型，因此不会为了宿主编码而抹掉调用侧类型。底层
+`&ffi-task-cancel`、`&ffi-response-*` 只作为适配与兼容入口。
+
 `option:let` 的 body 必须继续返回 `Option`。普通组合函数仍以接收者方法
 作为公开形式，`option:*` / `result:*` 直接函数调用主要保留给 core lowering。
 

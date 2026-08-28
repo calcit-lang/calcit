@@ -137,9 +137,19 @@ explicitly:
 
 ```cirru.no-check
 let
-    task $ &call-dylib-edn-fn lib-path |serve on-request
-  &ffi-task-cancel task :shutdown
+    task $ ffi:task $ &call-dylib-edn-fn lib-path |serve on-request
+  task.cancel-with :shutdown
 ```
+
+`ffi:task` is the adapter-boundary constructor for the nominal `FfiTask`
+wrapper. Application code should use `.cancel` or `.cancel-with`; the raw
+`&ffi-task-cancel` procedure is retained for module adapters and compatibility.
+The wrapper intentionally keeps only its opaque host value as `Dynamic`, while
+the cancellation reason remains a method-level generic type.
+
+`ffi:task` 是模块适配边界使用的 nominal `FfiTask` 构造函数。业务代码应调用
+`.cancel` 或 `.cancel-with`；底层 `&ffi-task-cancel` 只保留给模块适配层及兼容代码。
+wrapper 内只有不透明宿主值是 `Dynamic`，取消原因仍保留调用处的泛型静态类型。
 
 Ctrl-C performs the same cancellation at host scope. A function registered
 with `on-control-c` runs on the Calcit host thread before the runtime starts
@@ -153,10 +163,24 @@ response capability after the decoded request arguments. It is exactly-once:
 
 ```cirru.no-check
 defn on-request (method path response!)
-  if (= path |/health)
-    &ffi-response-resolve response! $ {} (:status 200) (:body |ok)
-    &ffi-response-reject response! $ {} (:status 404) (:body |missing)
+  let
+      response $ ffi:response response!
+    if (= path |/health)
+      response.resolve $ {} (:status 200) (:body |ok)
+      response.reject $ {} (:status 404) (:body |missing)
 ```
+
+The nominal `FfiResponse` receiver prevents task and response methods from
+being interchanged. Its `.resolve` and `.reject` payloads are generic and keep
+their caller-side type; Cirru EDN encoding remains the native boundary check.
+Constructing a wrapper around the wrong raw value is rejected deterministically
+by the host when the method is invoked. These lifecycle methods are native-only;
+generated JavaScript and WASM do not provide native dylib capabilities.
+
+nominal `FfiResponse` 接收者区分 task 与 response 方法，避免两种 capability
+被混用。`.resolve`、`.reject` 的 payload 使用泛型，保留调用侧类型，Cirru EDN
+编码仍是 native 边界检查。若适配层包装了错误的原始值，宿主会在方法调用时确定性拒绝。
+这些生命周期方法仅支持 native；生成的 JavaScript 与 WASM 不提供 native dylib capability。
 
 The host validates task-bound context, ownership, and deadline, atomically
 claims the capability, invokes the dylib resolver on the Calcit host thread,
