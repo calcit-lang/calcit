@@ -4,7 +4,7 @@
 //! creates the queue may drain it and enter the Calcit runtime. No Rust
 //! callback, executor, or allocator crosses the transport boundary.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::sync::{Condvar, Mutex};
 use std::thread::{self, ThreadId};
@@ -48,6 +48,20 @@ pub enum FfiAsyncEnqueueDisposition {
 pub struct FfiAsyncEnqueueOutcome {
   pub sequence: u64,
   pub disposition: FfiAsyncEnqueueDisposition,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// A point-in-time snapshot of one async task's queue usage and cumulative
+/// enqueue outcomes. Payload bytes are counted but never copied into metrics.
+pub struct FfiAsyncTaskQueueMetrics {
+  pub queued_events: usize,
+  pub queued_bytes: usize,
+  pub oldest_age: Option<Duration>,
+  pub accepted_total: u64,
+  pub coalesced_total: u64,
+  pub queue_full_total: u64,
+  pub dequeued_total: u64,
+  pub purged_total: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -206,7 +220,98 @@ pub unsafe fn copy_async_payload(payload_ptr: *const u8, payload_len: usize) -> 
 struct FfiAsyncQueueState {
   events: VecDeque<FfiAsyncQueuedEvent>,
   queued_bytes: usize,
+  tasks: HashMap<FfiAsyncHandle, FfiAsyncTaskQueueState>,
   closed: bool,
+}
+
+#[derive(Debug, Clone)]
+struct FfiAsyncQueuedSample {
+  sequence: u64,
+  bytes: usize,
+  enqueued_at: Instant,
+}
+
+#[derive(Debug, Default)]
+struct FfiAsyncTaskQueueState {
+  queued: VecDeque<FfiAsyncQueuedSample>,
+  queued_bytes: usize,
+  accepted_total: u64,
+  coalesced_total: u64,
+  queue_full_total: u64,
+  dequeued_total: u64,
+  purged_total: u64,
+}
+
+impl FfiAsyncTaskQueueState {
+  fn snapshot(&self, now: Instant) -> FfiAsyncTaskQueueMetrics {
+    FfiAsyncTaskQueueMetrics {
+      queued_events: self.queued.len(),
+      queued_bytes: self.queued_bytes,
+      oldest_age: self.queued.front().map(|sample| now.saturating_duration_since(sample.enqueued_at)),
+      accepted_total: self.accepted_total,
+      coalesced_total: self.coalesced_total,
+      queue_full_total: self.queue_full_total,
+      dequeued_total: self.dequeued_total,
+      purged_total: self.purged_total,
+    }
+  }
+
+  fn record_enqueued(&mut self, sequence: u64, bytes: usize, enqueued_at: Instant) {
+    self.accepted_total = self.accepted_total.saturating_add(1);
+    self.queued_bytes = self.queued_bytes.saturating_add(bytes);
+    self.queued.push_back(FfiAsyncQueuedSample {
+      sequence,
+      bytes,
+      enqueued_at,
+    });
+  }
+
+  fn record_queue_full(&mut self) {
+    self.queue_full_total = self.queue_full_total.saturating_add(1);
+  }
+
+  fn record_coalesced(&mut self, replaced_sequence: u64, sequence: u64, bytes: usize, enqueued_at: Instant) {
+    self.accepted_total = self.accepted_total.saturating_add(1);
+    self.coalesced_total = self.coalesced_total.saturating_add(1);
+    let replaced = if let Some(sample) = self.queued.iter_mut().find(|sample| sample.sequence == replaced_sequence) {
+      self.queued_bytes = self.queued_bytes.saturating_sub(sample.bytes).saturating_add(bytes);
+      *sample = FfiAsyncQueuedSample {
+        sequence,
+        bytes,
+        enqueued_at,
+      };
+      true
+    } else {
+      false
+    };
+    debug_assert!(replaced, "coalesced async event must have a matching task metric sample");
+  }
+
+  fn record_dequeued(&mut self, sequence: u64) {
+    self.dequeued_total = self.dequeued_total.saturating_add(1);
+    if self.queued.front().is_some_and(|sample| sample.sequence == sequence)
+      && let Some(sample) = self.queued.pop_front()
+    {
+      self.queued_bytes = self.queued_bytes.saturating_sub(sample.bytes);
+      return;
+    }
+    let removed = if let Some(index) = self.queued.iter().position(|sample| sample.sequence == sequence)
+      && let Some(sample) = self.queued.remove(index)
+    {
+      self.queued_bytes = self.queued_bytes.saturating_sub(sample.bytes);
+      true
+    } else {
+      false
+    };
+    debug_assert!(removed, "dequeued async event must have a matching task metric sample");
+  }
+
+  fn record_purged(&mut self, count: usize) {
+    debug_assert_eq!(self.queued.len(), count, "purged async event count must match task metric samples");
+    self.purged_total = self.purged_total.saturating_add(count as u64);
+    self.queued.clear();
+    self.queued_bytes = 0;
+  }
 }
 
 /// A bounded multi-producer, single-host-thread event queue.
@@ -238,6 +343,7 @@ impl FfiAsyncEventQueue {
       state: Mutex::new(FfiAsyncQueueState {
         events: VecDeque::with_capacity(limits.event_capacity),
         queued_bytes: 0,
+        tasks: HashMap::new(),
         closed: false,
       }),
       ready: Condvar::new(),
@@ -259,6 +365,35 @@ impl FfiAsyncEventQueue {
   pub fn usage(&self) -> Result<(usize, usize), FfiAsyncQueueError> {
     let queue = self.state.lock().map_err(|_| FfiAsyncQueueError::QueuePoisoned)?;
     Ok((queue.events.len(), queue.queued_bytes))
+  }
+
+  /// Snapshot metrics for one task without changing their lifecycle.
+  pub fn task_metrics(&self, handle: FfiAsyncHandle) -> Result<Option<FfiAsyncTaskQueueMetrics>, FfiAsyncQueueError> {
+    let queue = self.state.lock().map_err(|_| FfiAsyncQueueError::QueuePoisoned)?;
+    let now = Instant::now();
+    Ok(queue.tasks.get(&handle).map(|state| state.snapshot(now)))
+  }
+
+  /// Snapshot every tracked task. This is intended for diagnostics such as
+  /// shutdown summaries rather than event-queue hot paths.
+  pub fn task_metrics_snapshot(&self) -> Result<Vec<(FfiAsyncHandle, FfiAsyncTaskQueueMetrics)>, FfiAsyncQueueError> {
+    let queue = self.state.lock().map_err(|_| FfiAsyncQueueError::QueuePoisoned)?;
+    let now = Instant::now();
+    Ok(queue.tasks.iter().map(|(handle, state)| (*handle, state.snapshot(now))).collect())
+  }
+
+  /// Remove and return a task's final metrics after its queued events have
+  /// drained or been purged.
+  pub fn take_task_metrics(&self, handle: FfiAsyncHandle) -> Result<Option<FfiAsyncTaskQueueMetrics>, FfiAsyncQueueError> {
+    let mut queue = self.state.lock().map_err(|_| FfiAsyncQueueError::QueuePoisoned)?;
+    let now = Instant::now();
+    Ok(queue.tasks.remove(&handle).map(|state| {
+      debug_assert!(
+        state.queued.is_empty(),
+        "task metrics must only be removed after queued events are cleared"
+      );
+      state.snapshot(now)
+    }))
   }
 
   pub fn len(&self) -> Result<usize, FfiAsyncQueueError> {
@@ -344,9 +479,11 @@ impl FfiAsyncEventQueue {
 
     if coalesce_index.is_none() {
       if exceeds_event_limit {
+        queue.tasks.entry(task_handle).or_default().record_queue_full();
         return Err(FfiAsyncQueueError::QueueFull { capacity: event_limit });
       }
       if exceeds_byte_limit {
+        queue.tasks.entry(task_handle).or_default().record_queue_full();
         return Err(FfiAsyncQueueError::QueueBytesFull {
           capacity: byte_limit,
           queued: queue.queued_bytes,
@@ -357,6 +494,7 @@ impl FfiAsyncEventQueue {
       let replaced_bytes = queue.events[index].payload.len();
       let coalesced_bytes = queue.queued_bytes.saturating_sub(replaced_bytes).checked_add(payload.len());
       if coalesced_bytes.is_none_or(|total| total > byte_limit) {
+        queue.tasks.entry(task_handle).or_default().record_queue_full();
         return Err(FfiAsyncQueueError::QueueBytesFull {
           capacity: byte_limit,
           queued: queue.queued_bytes.saturating_sub(replaced_bytes),
@@ -374,13 +512,25 @@ impl FfiAsyncEventQueue {
       producer_thread: thread::current().id(),
       enqueued_at: Instant::now(),
     };
+    let enqueued_at = event.enqueued_at;
 
     let disposition = if let Some(index) = coalesce_index {
+      let replaced_sequence = queue.events[index].descriptor.sequence;
       queue.queued_bytes = queue.queued_bytes.saturating_sub(queue.events[index].payload.len()) + event.payload.len();
+      queue
+        .tasks
+        .entry(task_handle)
+        .or_default()
+        .record_coalesced(replaced_sequence, sequence, event.payload.len(), enqueued_at);
       queue.events[index] = event;
       FfiAsyncEnqueueDisposition::Coalesced
     } else {
       queue.queued_bytes += event.payload.len();
+      queue
+        .tasks
+        .entry(task_handle)
+        .or_default()
+        .record_enqueued(sequence, event.payload.len(), enqueued_at);
       queue.events.push_back(event);
       FfiAsyncEnqueueDisposition::Enqueued
     };
@@ -433,6 +583,9 @@ impl FfiAsyncEventQueue {
           break;
         };
         queue.queued_bytes = queue.queued_bytes.saturating_sub(event.payload.len());
+        if let Some(state) = queue.tasks.get_mut(&event.task_handle()) {
+          state.record_dequeued(event.descriptor.sequence);
+        }
         batch.push(event);
       }
     }
@@ -544,7 +697,11 @@ impl FfiAsyncEventQueue {
       }
     });
     queue.queued_bytes = queue.queued_bytes.saturating_sub(purged_bytes);
-    Ok(before - queue.events.len())
+    let purged = before - queue.events.len();
+    if let Some(state) = queue.tasks.get_mut(&handle) {
+      state.record_purged(purged);
+    }
+    Ok(purged)
   }
 
   fn ensure_host_thread(&self) -> Result<(), FfiAsyncQueueError> {
@@ -721,6 +878,65 @@ mod tests {
       .expect("drain coalesced event");
     assert_eq!(payload, vec![2; 7]);
     assert_eq!(queue.queued_bytes(), Ok(0));
+  }
+
+  #[test]
+  fn task_metrics_track_coalescing_rejection_drain_and_purge_without_global_scans() {
+    let registry = FfiAsyncHandleRegistry::new();
+    let coalescing = registry
+      .register_with_flags(FfiAsyncHandleKind::Stream, ASYNC_TASK_FLAG_COALESCE_ALLOWED, ())
+      .expect("register coalescing stream");
+    let ordinary = registry.register(FfiAsyncHandleKind::Stream, ()).expect("register ordinary stream");
+    let queue = FfiAsyncEventQueue::new(2).expect("create queue");
+
+    queue
+      .enqueue(&registry, coalescing, None, FfiAsyncEventKind::Emit, b"old".to_vec())
+      .expect("enqueue old coalescing event");
+    queue
+      .enqueue(&registry, ordinary, None, FfiAsyncEventKind::Emit, b"x".to_vec())
+      .expect("fill queue with ordinary event");
+    queue
+      .enqueue(&registry, coalescing, None, FfiAsyncEventKind::Emit, b"newer".to_vec())
+      .expect("coalesce latest task event");
+    assert_eq!(
+      queue.enqueue(&registry, ordinary, None, FfiAsyncEventKind::Emit, b"blocked".to_vec()),
+      Err(FfiAsyncQueueError::QueueFull { capacity: 2 })
+    );
+
+    let coalescing_metrics = queue
+      .task_metrics(coalescing)
+      .expect("read coalescing metrics")
+      .expect("metrics exist");
+    assert_eq!(coalescing_metrics.queued_events, 1);
+    assert_eq!(coalescing_metrics.queued_bytes, 5);
+    assert!(coalescing_metrics.oldest_age.is_some());
+    assert_eq!(coalescing_metrics.accepted_total, 2);
+    assert_eq!(coalescing_metrics.coalesced_total, 1);
+    assert_eq!(coalescing_metrics.queue_full_total, 0);
+
+    let ordinary_metrics = queue.task_metrics(ordinary).expect("read ordinary metrics").expect("metrics exist");
+    assert_eq!(ordinary_metrics.queued_events, 1);
+    assert_eq!(ordinary_metrics.queued_bytes, 1);
+    assert_eq!(ordinary_metrics.accepted_total, 1);
+    assert_eq!(ordinary_metrics.queue_full_total, 1);
+
+    queue.drain(&registry, 1, |_| Ok(())).expect("drain coalesced event");
+    let coalescing_metrics = queue
+      .task_metrics(coalescing)
+      .expect("read drained metrics")
+      .expect("metrics exist");
+    assert_eq!(coalescing_metrics.queued_events, 0);
+    assert_eq!(coalescing_metrics.queued_bytes, 0);
+    assert_eq!(coalescing_metrics.oldest_age, None);
+    assert_eq!(coalescing_metrics.dequeued_total, 1);
+
+    assert_eq!(queue.discard_handle_events(ordinary), Ok(1));
+    let ordinary_metrics = queue.task_metrics(ordinary).expect("read purged metrics").expect("metrics exist");
+    assert_eq!(ordinary_metrics.queued_events, 0);
+    assert_eq!(ordinary_metrics.purged_total, 1);
+    assert_eq!(queue.task_metrics_snapshot().expect("snapshot metrics").len(), 2);
+    assert!(queue.take_task_metrics(coalescing).expect("take metrics").is_some());
+    assert_eq!(queue.task_metrics(coalescing), Ok(None));
   }
 
   #[test]
@@ -994,6 +1210,11 @@ mod tests {
       })
       .expect("host drain");
     assert_eq!(sequences, vec![1, 2, 3, 4]);
+    let metrics = queue.task_metrics(handle).expect("read concurrent metrics").expect("metrics exist");
+    assert_eq!(metrics.accepted_total, 4);
+    assert_eq!(metrics.dequeued_total, 4);
+    assert_eq!(metrics.queued_events, 0);
+    assert_eq!(metrics.queued_bytes, 0);
   }
 
   #[test]

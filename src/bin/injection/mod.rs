@@ -21,7 +21,7 @@ use calcit::{
     FfiAsyncHandle, FfiAsyncHandleKind, FfiAsyncHandleRegistry, FfiAsyncHostV1, FfiAsyncResponseResolve, FfiAsyncTaskCancel,
     FfiAsyncTaskDescriptor, FfiBlockingHostV1, FfiBuffer, async_status,
   },
-  ffi_async::{FfiAsyncDrainReport, FfiAsyncEventQueue, copy_async_payload},
+  ffi_async::{FfiAsyncDrainReport, FfiAsyncEventQueue, FfiAsyncTaskQueueMetrics, copy_async_payload},
   runner::track,
 };
 
@@ -165,6 +165,62 @@ struct NativeAsyncRuntime {
   registry: FfiAsyncHandleRegistry<NativeAsyncResource>,
   queue: FfiAsyncEventQueue,
   responses: Mutex<NativeAsyncResponseIndex>,
+}
+
+#[derive(Debug, Default)]
+struct NativeAsyncModuleQueueMetrics {
+  active_tasks: usize,
+  closing_tasks: usize,
+  queued_events: usize,
+  queued_bytes: usize,
+  oldest_age: Option<Duration>,
+  accepted_total: u64,
+  coalesced_total: u64,
+  queue_full_total: u64,
+  dequeued_total: u64,
+  purged_total: u64,
+}
+
+impl NativeAsyncModuleQueueMetrics {
+  fn add_task(&mut self, lifecycle: calcit::ffi_abi::FfiAsyncLifecycle, metrics: FfiAsyncTaskQueueMetrics) {
+    match lifecycle {
+      calcit::ffi_abi::FfiAsyncLifecycle::Active => self.active_tasks += 1,
+      calcit::ffi_abi::FfiAsyncLifecycle::Closing => self.closing_tasks += 1,
+      calcit::ffi_abi::FfiAsyncLifecycle::Finished => {}
+    }
+    self.queued_events = self.queued_events.saturating_add(metrics.queued_events);
+    self.queued_bytes = self.queued_bytes.saturating_add(metrics.queued_bytes);
+    self.oldest_age = match (self.oldest_age, metrics.oldest_age) {
+      (Some(current), Some(candidate)) => Some(current.max(candidate)),
+      (None, Some(candidate)) => Some(candidate),
+      (current, None) => current,
+    };
+    self.accepted_total = self.accepted_total.saturating_add(metrics.accepted_total);
+    self.coalesced_total = self.coalesced_total.saturating_add(metrics.coalesced_total);
+    self.queue_full_total = self.queue_full_total.saturating_add(metrics.queue_full_total);
+    self.dequeued_total = self.dequeued_total.saturating_add(metrics.dequeued_total);
+    self.purged_total = self.purged_total.saturating_add(metrics.purged_total);
+  }
+}
+
+fn format_oldest_age(age: Option<Duration>) -> String {
+  age
+    .map(|value| format!("{:.3}", value.as_secs_f64() * 1000.0))
+    .unwrap_or_else(|| "none".to_owned())
+}
+
+fn format_task_queue_metrics(metrics: FfiAsyncTaskQueueMetrics) -> String {
+  format!(
+    "queued_events={} queued_bytes={} oldest_ms={} accepted={} coalesced={} queue_full={} dequeued={} purged={}",
+    metrics.queued_events,
+    metrics.queued_bytes,
+    format_oldest_age(metrics.oldest_age),
+    metrics.accepted_total,
+    metrics.coalesced_total,
+    metrics.queue_full_total,
+    metrics.dequeued_total,
+    metrics.purged_total
+  )
 }
 
 static NATIVE_ASYNC_RUNTIME: OnceLock<NativeAsyncRuntime> = OnceLock::new();
@@ -581,13 +637,15 @@ unsafe fn enqueue_native_async_event(
   {
     Ok(outcome) => {
       let (queued_events, queued_bytes) = runtime.queue.usage().unwrap_or((0, 0));
+      let task_metrics = runtime.queue.task_metrics(task_handle).ok().flatten().unwrap_or_default();
       trace_ffi_event(
         "async-enqueue",
         format!(
-          "task={} kind={kind:?} sequence={} disposition={:?} queued_events={queued_events} queued_bytes={queued_bytes} producer={:?}",
+          "task={} kind={kind:?} sequence={} disposition={:?} global_queued_events={queued_events} global_queued_bytes={queued_bytes} {} producer={:?}",
           task_handle.raw(),
           outcome.sequence,
           outcome.disposition,
+          format_task_queue_metrics(task_metrics),
           thread::current().id()
         ),
       );
@@ -595,12 +653,14 @@ unsafe fn enqueue_native_async_event(
     }
     Err(error) => {
       let (queued_events, queued_bytes) = runtime.queue.usage().unwrap_or((0, 0));
+      let task_metrics = runtime.queue.task_metrics(task_handle).ok().flatten().unwrap_or_default();
       trace_ffi_event(
         "async-enqueue-rejected",
         format!(
-          "task={} kind={kind:?} status={} queued_events={queued_events} queued_bytes={queued_bytes} error={error}",
+          "task={} kind={kind:?} status={} global_queued_events={queued_events} global_queued_bytes={queued_bytes} {} error={error}",
           task_handle.raw(),
-          error.status_code()
+          error.status_code(),
+          format_task_queue_metrics(task_metrics)
         ),
       );
       error.status_code()
@@ -983,9 +1043,23 @@ fn ffi_task_cancel(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calci
     let _ = runtime.queue.discard_handle_events(capability.handle);
     let _ = reject_owned_responses(runtime, capability.handle, b"{} (:code :cancel-failed)");
     let _ = runtime.registry.finish(capability.handle);
+    let metrics = runtime
+      .queue
+      .take_task_metrics(capability.handle)
+      .ok()
+      .flatten()
+      .unwrap_or_default();
     if matches!(runtime.registry.release(capability.handle), Ok(NativeAsyncResource::Task(_))) {
       track::track_task_release();
     }
+    trace_ffi_event(
+      "async-task-cancel-failed",
+      format!(
+        "task={} status={status} {}",
+        capability.handle.raw(),
+        format_task_queue_metrics(metrics)
+      ),
+    );
     CalcitErr::err_str(
       CalcitErrKind::Unexpected,
       format!(
@@ -1139,8 +1213,8 @@ fn drain_async_events_from(runtime: &NativeAsyncRuntime, limit: usize) -> Result
   for descriptor in report.finished.clone() {
     let handle = FfiAsyncHandle::from_raw(descriptor.task_handle);
     reject_owned_responses(runtime, handle, b"{} (:code :owner-finished)")?;
-    match runtime.registry.release(handle) {
-      Ok(NativeAsyncResource::Task(_)) => {}
+    let task = match runtime.registry.release(handle) {
+      Ok(NativeAsyncResource::Task(task)) => task,
       Ok(NativeAsyncResource::Response(_)) => {
         return Err(format!("async FFI task {} released a response resource", handle.raw()));
       }
@@ -1150,14 +1224,22 @@ fn drain_async_events_from(runtime: &NativeAsyncRuntime, limit: usize) -> Result
           .push(calcit::ffi_async::FfiAsyncLifecycleFailure { descriptor, error });
         continue;
       }
-    }
+    };
+    let metrics = runtime
+      .queue
+      .take_task_metrics(handle)
+      .map_err(|error| error.to_string())?
+      .unwrap_or_default();
     track::track_task_release();
     trace_ffi_event(
       "async-task-release",
       format!(
-        "task={} sequence={} pending={}",
+        "lib={} symbol={} task={} sequence={} {} pending={}",
+        task.lib_name,
+        task.method,
         handle.raw(),
         descriptor.sequence,
+        format_task_queue_metrics(metrics),
         track::count_pending_tasks()
       ),
     );
@@ -1222,6 +1304,39 @@ fn reject_response_during_shutdown(
 
 fn begin_native_async_shutdown(runtime: &NativeAsyncRuntime) -> Result<usize, String> {
   let snapshot = runtime.registry.snapshot().map_err(|error| error.to_string())?;
+  let queue_metrics: HashMap<FfiAsyncHandle, FfiAsyncTaskQueueMetrics> = runtime
+    .queue
+    .task_metrics_snapshot()
+    .map_err(|error| error.to_string())?
+    .into_iter()
+    .collect();
+  let mut module_metrics: BTreeMap<(String, String), NativeAsyncModuleQueueMetrics> = BTreeMap::new();
+  for (handle, state, resource) in &snapshot {
+    if let NativeAsyncResource::Task(task) = resource {
+      module_metrics
+        .entry((task.lib_name.clone(), task.method.clone()))
+        .or_default()
+        .add_task(state.lifecycle, queue_metrics.get(handle).copied().unwrap_or_default());
+    }
+  }
+  for ((lib_name, method), metrics) in module_metrics {
+    trace_ffi_event(
+      "async-shutdown-summary",
+      format!(
+        "lib={lib_name} symbol={method} active={} closing={} queued_events={} queued_bytes={} oldest_ms={} accepted={} coalesced={} queue_full={} dequeued={} purged={}",
+        metrics.active_tasks,
+        metrics.closing_tasks,
+        metrics.queued_events,
+        metrics.queued_bytes,
+        format_oldest_age(metrics.oldest_age),
+        metrics.accepted_total,
+        metrics.coalesced_total,
+        metrics.queue_full_total,
+        metrics.dequeued_total,
+        metrics.purged_total
+      ),
+    );
+  }
   let pending = runtime.registry.begin_shutdown().map_err(|error| error.to_string())?;
 
   for (handle, state, resource) in &snapshot {
@@ -1250,11 +1365,12 @@ fn begin_native_async_shutdown(runtime: &NativeAsyncRuntime) -> Result<usize, St
       trace_ffi_event(
         "async-shutdown-wait",
         format!(
-          "lib={} symbol={} task={} kind={:?} cancellable=false",
+          "lib={} symbol={} task={} kind={:?} cancellable=false {}",
           task.lib_name,
           task.method,
           handle.raw(),
-          state.kind
+          state.kind,
+          format_task_queue_metrics(queue_metrics.get(&handle).copied().unwrap_or_default())
         ),
       );
       continue;
@@ -1263,11 +1379,12 @@ fn begin_native_async_shutdown(runtime: &NativeAsyncRuntime) -> Result<usize, St
     trace_ffi_event(
       "async-shutdown-cancel",
       format!(
-        "lib={} symbol={} task={} kind={:?} status={status}",
+        "lib={} symbol={} task={} kind={:?} status={status} {}",
         task.lib_name,
         task.method,
         handle.raw(),
-        state.kind
+        state.kind,
+        format_task_queue_metrics(queue_metrics.get(&handle).copied().unwrap_or_default())
       ),
     );
     if status != async_status::OK && status != async_status::HANDLE_FINISHED {
@@ -1314,17 +1431,23 @@ fn force_cleanup_native_async(runtime: &NativeAsyncRuntime, release_tracked_task
       NativeAsyncResource::Task(_) => {}
       NativeAsyncResource::Response(_) => return Err(format!("async FFI task {} released a response resource", handle.raw())),
     }
+    let metrics = runtime
+      .queue
+      .take_task_metrics(handle)
+      .map_err(|error| error.to_string())?
+      .unwrap_or_default();
     if unfinished {
       forced += 1;
       eprintln!(
-        "[Warn] force-cleaned unfinished async FFI task: lib={} symbol={} task={} kind={:?} age_ms={:.3} purged={} responses={}",
+        "[Warn] force-cleaned unfinished async FFI task: lib={} symbol={} task={} kind={:?} age_ms={:.3} purged={} responses={} {}",
         task.lib_name,
         task.method,
         handle.raw(),
         state.kind,
         task.started_at.elapsed().as_secs_f64() * 1000.0,
         purged,
-        discarded_responses
+        discarded_responses,
+        format_task_queue_metrics(metrics)
       );
     }
   }
@@ -1693,14 +1816,16 @@ fn try_start_async_callback_v1(
   let purged = runtime.queue.discard_handle_events(handle).unwrap_or(0);
   let discarded_responses = discard_owned_responses(runtime, handle).unwrap_or(0);
   let _ = runtime.registry.finish(handle);
+  let metrics = runtime.queue.take_task_metrics(handle).ok().flatten().unwrap_or_default();
   let _ = runtime.registry.release(handle);
   track::track_task_release();
   trace_ffi_event(
     "async-start-failed",
     format!(
-      "lib={lib_name} symbol={} task={} status={status} purged={purged} discarded_responses={discarded_responses} pending={}",
+      "lib={lib_name} symbol={} task={} status={status} purged={purged} discarded_responses={discarded_responses} {} pending={}",
       calcit::ffi_abi::async_method_symbol(method),
       handle.raw(),
+      format_task_queue_metrics(metrics),
       track::count_pending_tasks()
     ),
   );
@@ -2568,6 +2693,7 @@ mod async_callback_tests {
       Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle)
     );
     assert_eq!(runtime.registry.pending_count(), Ok(0));
+    assert_eq!(runtime.queue.task_metrics(owner), Ok(None));
     assert!(!runtime.queue.wait_for_event(Duration::ZERO).expect("closed queue"));
     assert_eq!(
       runtime.registry.register(FfiAsyncHandleKind::Stream, test_task()),
@@ -2617,6 +2743,7 @@ mod async_callback_tests {
     );
     assert_eq!(runtime.registry.pending_count(), Ok(0));
     assert!(runtime.queue.is_empty().expect("empty shutdown queue"));
+    assert_eq!(runtime.queue.task_metrics(owner), Ok(None));
   }
 
   #[test]
