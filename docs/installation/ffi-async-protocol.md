@@ -109,7 +109,11 @@ completion acknowledgement from entering the host loop. Full event or byte
 budgets return `QUEUE_FULL` without blocking the producer.
 The CLI defaults are 1024 total events and 64 MiB of queued payloads, with 16
 events and 64 KiB reserved for terminal traffic. `--trace-ffi` records both
-current queue counters on accepted and rejected enqueue attempts.
+current queue counters on accepted and rejected enqueue attempts. The host
+also maintains bounded per-task queue accounting: queued event count,
+queued bytes, oldest queued age, accepted/coalesced/queue-full totals, dequeued
+events, and purged events. It stores only fixed metadata alongside each queued
+event and never duplicates or logs the business payload.
 Only `Emit` events on a task registered with `COALESCE_ALLOWED` may replace an
 older queued emit for that same task; the replacement carries a newer sequence
 and the `COALESCED` event flag. Complete/fail and server request events are
@@ -120,6 +124,16 @@ failures. A callback failure records task/sequence metadata and its message,
 finishes the failed task, and purges its remaining queued events. Lifecycle
 rejections are reported separately. Queue entries also retain producer thread
 and queue-delay metadata for `--trace-ffi` without logging complete payloads.
+During shutdown, the CLI aggregates these counters by module and method, emits
+a compact `async-shutdown-summary`, includes the task-local snapshot on cancel
+and release traces, and removes the metric state when the task is released.
+
+CLI 默认总容量为 1024 个 event 与 64 MiB queued payload，并为 terminal
+traffic 预留 16 个 event 与 64 KiB。Host 同时维护有界的 per-task 索引，记录
+queued event 数、queued bytes、oldest queued age，以及 accepted、coalesced、
+queue-full、dequeued、purged 累计值。该索引只复制固定长度元数据，不复制或
+打印业务 payload。关闭时 CLI 按 module/method 聚合为紧凑的
+`async-shutdown-summary`，并在 task release 后删除对应指标状态。
 
 Streams and servers therefore do not require a Rust closure to cross the ABI.
 They keep only the opaque task handle and the C host function table. HTTP
