@@ -33,6 +33,9 @@ static SILENCE_PROGRAM_OUTPUT: AtomicBool = AtomicBool::new(false);
 static TRACE_FFI_EVENT_ID: AtomicUsize = AtomicUsize::new(1);
 static TRACE_FFI_STARTED: LazyLock<Instant> = LazyLock::new(Instant::now);
 const ASYNC_EVENT_QUEUE_CAPACITY: usize = 1024;
+const ASYNC_EVENT_QUEUE_BYTE_CAPACITY: usize = 64 * 1024 * 1024;
+const ASYNC_TERMINAL_EVENT_RESERVE: usize = 16;
+const ASYNC_TERMINAL_BYTE_RESERVE: usize = 64 * 1024;
 const MAX_ASYNC_RESPONSES_PER_TASK: usize = ASYNC_EVENT_QUEUE_CAPACITY;
 const MAX_ASYNC_RESPONSE_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1000;
 
@@ -247,7 +250,13 @@ pub fn init_async_runtime() -> Result<(), String> {
   }
   let runtime = NativeAsyncRuntime {
     registry: FfiAsyncHandleRegistry::new(),
-    queue: FfiAsyncEventQueue::new(ASYNC_EVENT_QUEUE_CAPACITY).map_err(|error| error.to_string())?,
+    queue: FfiAsyncEventQueue::with_limits(calcit::ffi_async::FfiAsyncQueueLimits {
+      event_capacity: ASYNC_EVENT_QUEUE_CAPACITY,
+      byte_capacity: ASYNC_EVENT_QUEUE_BYTE_CAPACITY,
+      terminal_event_reserve: ASYNC_TERMINAL_EVENT_RESERVE,
+      terminal_byte_reserve: ASYNC_TERMINAL_BYTE_RESERVE,
+    })
+    .map_err(|error| error.to_string())?,
     responses: Mutex::new(NativeAsyncResponseIndex::default()),
   };
   NATIVE_ASYNC_RUNTIME
@@ -555,10 +564,11 @@ unsafe fn enqueue_native_async_event(
     .enqueue(&runtime.registry, task_handle, response_handle, kind, payload)
   {
     Ok(outcome) => {
+      let (queued_events, queued_bytes) = runtime.queue.usage().unwrap_or((0, 0));
       trace_ffi_event(
         "async-enqueue",
         format!(
-          "task={} kind={kind:?} sequence={} disposition={:?} producer={:?}",
+          "task={} kind={kind:?} sequence={} disposition={:?} queued_events={queued_events} queued_bytes={queued_bytes} producer={:?}",
           task_handle.raw(),
           outcome.sequence,
           outcome.disposition,
@@ -568,10 +578,11 @@ unsafe fn enqueue_native_async_event(
       async_status::OK
     }
     Err(error) => {
+      let (queued_events, queued_bytes) = runtime.queue.usage().unwrap_or((0, 0));
       trace_ffi_event(
         "async-enqueue-rejected",
         format!(
-          "task={} kind={kind:?} status={} error={error}",
+          "task={} kind={kind:?} status={} queued_events={queued_events} queued_bytes={queued_bytes} error={error}",
           task_handle.raw(),
           error.status_code()
         ),

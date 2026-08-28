@@ -60,7 +60,14 @@ delivered. Terminal dispatch marks the task `Finished` before it can be
 released.
 
 Queue capacity is measured in events and every payload also has a host-side
-size limit. Full queues return `QUEUE_FULL` without blocking the producer.
+size limit. The CLI host additionally bounds the aggregate queued payload
+bytes. Ordinary events cannot consume the event and byte reserves held for
+`Complete` and `Fail`, so a saturated stream cannot prevent cancellation or
+completion acknowledgement from entering the host loop. Full event or byte
+budgets return `QUEUE_FULL` without blocking the producer.
+The CLI defaults are 1024 total events and 64 MiB of queued payloads, with 16
+events and 64 KiB reserved for terminal traffic. `--trace-ffi` records both
+current queue counters on accepted and rejected enqueue attempts.
 Only `Emit` events on a task registered with `COALESCE_ALLOWED` may replace an
 older queued emit for that same task; the replacement carries a newer sequence
 and the `COALESCED` event flag. Complete/fail and server request events are
@@ -225,10 +232,10 @@ invalid/stale handle, closing/finished task, host closing, queue full, invalid
 payload, and internal error.
 
 If a dylib does not export `calcit_ffi_async_version`, or does not export the
-versioned symbol for this particular method, Calcit falls back to the guarded
-Rust callback ABI. If it advertises an async protocol version other than 1,
-Calcit fails before invoking either ABI. This per-method rule lets maintained
-modules migrate incrementally without hiding an actual version mismatch.
+versioned symbol for this particular method, Calcit reports a deterministic
+migration error. The legacy Rust callback ABI fallback has been removed. If a
+module advertises an async protocol version other than 1, Calcit fails before
+invoking the method.
 
 ## Native blocking ABI v1
 

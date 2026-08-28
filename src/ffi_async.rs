@@ -20,6 +20,25 @@ use crate::ffi_abi::{
 pub const MAX_ASYNC_EVENT_PAYLOAD_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FfiAsyncQueueLimits {
+  pub event_capacity: usize,
+  pub byte_capacity: usize,
+  pub terminal_event_reserve: usize,
+  pub terminal_byte_reserve: usize,
+}
+
+impl FfiAsyncQueueLimits {
+  pub const fn event_only(event_capacity: usize) -> Self {
+    Self {
+      event_capacity,
+      byte_capacity: usize::MAX,
+      terminal_event_reserve: 0,
+      terminal_byte_reserve: 0,
+    }
+  }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FfiAsyncEnqueueDisposition {
   Enqueued,
   Coalesced,
@@ -34,10 +53,13 @@ pub struct FfiAsyncEnqueueOutcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FfiAsyncQueueError {
   InvalidCapacity,
+  InvalidByteCapacity,
+  InvalidTerminalReserve,
   NullPayload,
   PayloadTooLarge { actual: usize, limit: usize },
   QueueClosed,
   QueueFull { capacity: usize },
+  QueueBytesFull { capacity: usize, queued: usize, incoming: usize },
   WrongDrainThread,
   QueuePoisoned,
   Handle(FfiAsyncHandleError),
@@ -48,9 +70,13 @@ impl FfiAsyncQueueError {
     match self {
       Self::NullPayload | Self::PayloadTooLarge { .. } => async_status::INVALID_PAYLOAD,
       Self::QueueClosed => async_status::HOST_CLOSING,
-      Self::QueueFull { .. } => async_status::QUEUE_FULL,
+      Self::QueueFull { .. } | Self::QueueBytesFull { .. } => async_status::QUEUE_FULL,
       Self::Handle(error) => error.status_code(),
-      Self::InvalidCapacity | Self::WrongDrainThread | Self::QueuePoisoned => async_status::INTERNAL_ERROR,
+      Self::InvalidCapacity
+      | Self::InvalidByteCapacity
+      | Self::InvalidTerminalReserve
+      | Self::WrongDrainThread
+      | Self::QueuePoisoned => async_status::INTERNAL_ERROR,
     }
   }
 }
@@ -59,12 +85,22 @@ impl fmt::Display for FfiAsyncQueueError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       Self::InvalidCapacity => f.write_str("async FFI event queue capacity must be greater than zero"),
+      Self::InvalidByteCapacity => f.write_str("async FFI event queue byte capacity must be greater than zero"),
+      Self::InvalidTerminalReserve => f.write_str("async FFI terminal reserve must not exceed the queue capacity"),
       Self::NullPayload => f.write_str("async FFI event payload pointer is null for a non-empty payload"),
       Self::PayloadTooLarge { actual, limit } => {
         write!(f, "async FFI event payload has {actual} bytes, exceeding the {limit}-byte limit")
       }
       Self::QueueClosed => f.write_str("async FFI event queue is closed"),
       Self::QueueFull { capacity } => write!(f, "async FFI event queue is full at capacity {capacity}"),
+      Self::QueueBytesFull {
+        capacity,
+        queued,
+        incoming,
+      } => write!(
+        f,
+        "async FFI event queue byte budget is full: queued={queued}, incoming={incoming}, capacity={capacity}"
+      ),
       Self::WrongDrainThread => f.write_str("async FFI event queue must be drained by its host thread"),
       Self::QueuePoisoned => f.write_str("async FFI event queue lock is poisoned"),
       Self::Handle(error) => error.fmt(f),
@@ -169,12 +205,13 @@ pub unsafe fn copy_async_payload(payload_ptr: *const u8, payload_len: usize) -> 
 
 struct FfiAsyncQueueState {
   events: VecDeque<FfiAsyncQueuedEvent>,
+  queued_bytes: usize,
   closed: bool,
 }
 
 /// A bounded multi-producer, single-host-thread event queue.
 pub struct FfiAsyncEventQueue {
-  capacity: usize,
+  limits: FfiAsyncQueueLimits,
   host_thread: ThreadId,
   state: Mutex<FfiAsyncQueueState>,
   ready: Condvar,
@@ -182,14 +219,25 @@ pub struct FfiAsyncEventQueue {
 
 impl FfiAsyncEventQueue {
   pub fn new(capacity: usize) -> Result<Self, FfiAsyncQueueError> {
-    if capacity == 0 {
+    Self::with_limits(FfiAsyncQueueLimits::event_only(capacity))
+  }
+
+  pub fn with_limits(limits: FfiAsyncQueueLimits) -> Result<Self, FfiAsyncQueueError> {
+    if limits.event_capacity == 0 {
       return Err(FfiAsyncQueueError::InvalidCapacity);
     }
+    if limits.byte_capacity == 0 {
+      return Err(FfiAsyncQueueError::InvalidByteCapacity);
+    }
+    if limits.terminal_event_reserve > limits.event_capacity || limits.terminal_byte_reserve > limits.byte_capacity {
+      return Err(FfiAsyncQueueError::InvalidTerminalReserve);
+    }
     Ok(Self {
-      capacity,
+      limits,
       host_thread: thread::current().id(),
       state: Mutex::new(FfiAsyncQueueState {
-        events: VecDeque::with_capacity(capacity),
+        events: VecDeque::with_capacity(limits.event_capacity),
+        queued_bytes: 0,
         closed: false,
       }),
       ready: Condvar::new(),
@@ -197,7 +245,20 @@ impl FfiAsyncEventQueue {
   }
 
   pub fn capacity(&self) -> usize {
-    self.capacity
+    self.limits.event_capacity
+  }
+
+  pub fn byte_capacity(&self) -> usize {
+    self.limits.byte_capacity
+  }
+
+  pub fn queued_bytes(&self) -> Result<usize, FfiAsyncQueueError> {
+    Ok(self.state.lock().map_err(|_| FfiAsyncQueueError::QueuePoisoned)?.queued_bytes)
+  }
+
+  pub fn usage(&self) -> Result<(usize, usize), FfiAsyncQueueError> {
+    let queue = self.state.lock().map_err(|_| FfiAsyncQueueError::QueuePoisoned)?;
+    Ok((queue.events.len(), queue.queued_bytes))
   }
 
   pub fn len(&self) -> Result<usize, FfiAsyncQueueError> {
@@ -257,7 +318,20 @@ impl FfiAsyncEventQueue {
     } else if response_handle.is_some() {
       return Err(FfiAsyncHandleError::UnexpectedResponse.into());
     }
-    let coalesce_index = if queue.events.len() >= self.capacity
+    let terminal = kind.is_terminal();
+    let event_limit = if terminal {
+      self.limits.event_capacity
+    } else {
+      self.limits.event_capacity - self.limits.terminal_event_reserve
+    };
+    let byte_limit = if terminal {
+      self.limits.byte_capacity
+    } else {
+      self.limits.byte_capacity - self.limits.terminal_byte_reserve
+    };
+    let exceeds_event_limit = queue.events.len() >= event_limit;
+    let exceeds_byte_limit = queue.queued_bytes.checked_add(payload.len()).is_none_or(|total| total > byte_limit);
+    let coalesce_index = if (exceeds_event_limit || exceeds_byte_limit)
       && kind == FfiAsyncEventKind::Emit
       && task_state.flags & ASYNC_TASK_FLAG_COALESCE_ALLOWED != 0
     {
@@ -268,8 +342,27 @@ impl FfiAsyncEventQueue {
       None
     };
 
-    if queue.events.len() >= self.capacity && coalesce_index.is_none() {
-      return Err(FfiAsyncQueueError::QueueFull { capacity: self.capacity });
+    if coalesce_index.is_none() {
+      if exceeds_event_limit {
+        return Err(FfiAsyncQueueError::QueueFull { capacity: event_limit });
+      }
+      if exceeds_byte_limit {
+        return Err(FfiAsyncQueueError::QueueBytesFull {
+          capacity: byte_limit,
+          queued: queue.queued_bytes,
+          incoming: payload.len(),
+        });
+      }
+    } else if let Some(index) = coalesce_index {
+      let replaced_bytes = queue.events[index].payload.len();
+      let coalesced_bytes = queue.queued_bytes.saturating_sub(replaced_bytes).checked_add(payload.len());
+      if coalesced_bytes.is_none_or(|total| total > byte_limit) {
+        return Err(FfiAsyncQueueError::QueueBytesFull {
+          capacity: byte_limit,
+          queued: queue.queued_bytes.saturating_sub(replaced_bytes),
+          incoming: payload.len(),
+        });
+      }
     }
 
     let sequence = registry.reserve_event_sequence(task_handle, kind)?;
@@ -283,9 +376,11 @@ impl FfiAsyncEventQueue {
     };
 
     let disposition = if let Some(index) = coalesce_index {
+      queue.queued_bytes = queue.queued_bytes.saturating_sub(queue.events[index].payload.len()) + event.payload.len();
       queue.events[index] = event;
       FfiAsyncEnqueueDisposition::Coalesced
     } else {
+      queue.queued_bytes += event.payload.len();
       queue.events.push_back(event);
       FfiAsyncEnqueueDisposition::Enqueued
     };
@@ -330,13 +425,14 @@ impl FfiAsyncEventQueue {
       return Ok(FfiAsyncDrainReport::default());
     }
 
-    let mut batch = Vec::with_capacity(limit.min(self.capacity));
+    let mut batch = Vec::with_capacity(limit.min(self.limits.event_capacity));
     {
       let mut queue = self.state.lock().map_err(|_| FfiAsyncQueueError::QueuePoisoned)?;
       for _ in 0..limit {
         let Some(event) = queue.events.pop_front() else {
           break;
         };
+        queue.queued_bytes = queue.queued_bytes.saturating_sub(event.payload.len());
         batch.push(event);
       }
     }
@@ -438,7 +534,16 @@ impl FfiAsyncEventQueue {
   fn purge_handle(&self, handle: FfiAsyncHandle) -> Result<usize, FfiAsyncQueueError> {
     let mut queue = self.state.lock().map_err(|_| FfiAsyncQueueError::QueuePoisoned)?;
     let before = queue.events.len();
-    queue.events.retain(|event| event.descriptor.task_handle != handle.raw());
+    let mut purged_bytes = 0;
+    queue.events.retain(|event| {
+      if event.descriptor.task_handle == handle.raw() {
+        purged_bytes += event.payload.len();
+        false
+      } else {
+        true
+      }
+    });
+    queue.queued_bytes = queue.queued_bytes.saturating_sub(purged_bytes);
     Ok(before - queue.events.len())
   }
 
@@ -477,6 +582,145 @@ mod tests {
       Err(FfiAsyncQueueError::QueueFull { capacity: 1 })
     );
     assert_eq!(registry.state(handle).expect("stream state").next_sequence, 2);
+  }
+
+  #[test]
+  fn queue_limits_validate_byte_capacity_and_terminal_reserve() {
+    assert!(matches!(
+      FfiAsyncEventQueue::with_limits(FfiAsyncQueueLimits {
+        event_capacity: 1,
+        byte_capacity: 0,
+        terminal_event_reserve: 0,
+        terminal_byte_reserve: 0,
+      }),
+      Err(FfiAsyncQueueError::InvalidByteCapacity)
+    ));
+    assert!(matches!(
+      FfiAsyncEventQueue::with_limits(FfiAsyncQueueLimits {
+        event_capacity: 1,
+        byte_capacity: 8,
+        terminal_event_reserve: 2,
+        terminal_byte_reserve: 0,
+      }),
+      Err(FfiAsyncQueueError::InvalidTerminalReserve)
+    ));
+    assert!(matches!(
+      FfiAsyncEventQueue::with_limits(FfiAsyncQueueLimits {
+        event_capacity: 1,
+        byte_capacity: 8,
+        terminal_event_reserve: 0,
+        terminal_byte_reserve: 9,
+      }),
+      Err(FfiAsyncQueueError::InvalidTerminalReserve)
+    ));
+  }
+
+  #[test]
+  fn byte_budget_rejects_emit_without_consuming_sequence_but_accepts_reserved_terminal() {
+    let registry = FfiAsyncHandleRegistry::new();
+    let stream = registry.register(FfiAsyncHandleKind::Stream, ()).expect("register stream");
+    let task = registry.register(FfiAsyncHandleKind::OneShot, ()).expect("register one-shot");
+    let queue = FfiAsyncEventQueue::with_limits(FfiAsyncQueueLimits {
+      event_capacity: 3,
+      byte_capacity: 12,
+      terminal_event_reserve: 1,
+      terminal_byte_reserve: 5,
+    })
+    .expect("create byte-bounded queue");
+
+    queue
+      .enqueue(&registry, stream, None, FfiAsyncEventKind::Emit, vec![1; 7])
+      .expect("fill ordinary byte budget");
+    assert_eq!(
+      queue.enqueue(&registry, stream, None, FfiAsyncEventKind::Emit, vec![2]),
+      Err(FfiAsyncQueueError::QueueBytesFull {
+        capacity: 7,
+        queued: 7,
+        incoming: 1,
+      })
+    );
+    assert_eq!(registry.state(stream).expect("stream state").next_sequence, 2);
+
+    queue
+      .enqueue(&registry, task, None, FfiAsyncEventKind::Complete, b"&unit".to_vec())
+      .expect("terminal event uses reserved bytes");
+    assert_eq!(queue.queued_bytes(), Ok(12));
+    let report = queue.drain(&registry, 3, |_| Ok(())).expect("drain byte-bounded queue");
+    assert_eq!(report.delivered, 2);
+    assert_eq!(queue.queued_bytes(), Ok(0));
+  }
+
+  #[test]
+  fn ordinary_events_cannot_consume_terminal_event_reserve() {
+    let registry = FfiAsyncHandleRegistry::new();
+    let first = registry.register(FfiAsyncHandleKind::Stream, ()).expect("register first stream");
+    let second = registry.register(FfiAsyncHandleKind::Stream, ()).expect("register second stream");
+    let third = registry.register(FfiAsyncHandleKind::Stream, ()).expect("register third stream");
+    let terminal = registry.register(FfiAsyncHandleKind::OneShot, ()).expect("register terminal task");
+    let queue = FfiAsyncEventQueue::with_limits(FfiAsyncQueueLimits {
+      event_capacity: 3,
+      byte_capacity: 128,
+      terminal_event_reserve: 1,
+      terminal_byte_reserve: 8,
+    })
+    .expect("create reserved queue");
+
+    for handle in [first, second] {
+      queue
+        .enqueue(&registry, handle, None, FfiAsyncEventKind::Emit, vec![])
+        .expect("fill ordinary event slots");
+    }
+    assert_eq!(
+      queue.enqueue(&registry, third, None, FfiAsyncEventKind::Emit, vec![]),
+      Err(FfiAsyncQueueError::QueueFull { capacity: 2 })
+    );
+    queue
+      .enqueue(&registry, terminal, None, FfiAsyncEventKind::Complete, b"&unit".to_vec())
+      .expect("terminal event uses reserved slot");
+    assert_eq!(queue.len(), Ok(3));
+  }
+
+  #[test]
+  fn byte_pressure_coalescing_replaces_payload_and_keeps_accounting_exact() {
+    let registry = FfiAsyncHandleRegistry::new();
+    let handle = registry
+      .register_with_flags(FfiAsyncHandleKind::Stream, ASYNC_TASK_FLAG_COALESCE_ALLOWED, ())
+      .expect("register coalescing stream");
+    let queue = FfiAsyncEventQueue::with_limits(FfiAsyncQueueLimits {
+      event_capacity: 4,
+      byte_capacity: 10,
+      terminal_event_reserve: 1,
+      terminal_byte_reserve: 2,
+    })
+    .expect("create byte-bounded queue");
+
+    queue
+      .enqueue(&registry, handle, None, FfiAsyncEventKind::Emit, vec![1; 6])
+      .expect("enqueue initial event");
+    let outcome = queue
+      .enqueue(&registry, handle, None, FfiAsyncEventKind::Emit, vec![2; 7])
+      .expect("coalesce under byte pressure");
+    assert_eq!(outcome.disposition, FfiAsyncEnqueueDisposition::Coalesced);
+    assert_eq!(queue.queued_bytes(), Ok(7));
+    assert_eq!(
+      queue.enqueue(&registry, handle, None, FfiAsyncEventKind::Emit, vec![3; 9]),
+      Err(FfiAsyncQueueError::QueueBytesFull {
+        capacity: 8,
+        queued: 0,
+        incoming: 9,
+      })
+    );
+    assert_eq!(queue.queued_bytes(), Ok(7));
+
+    let mut payload = vec![];
+    queue
+      .drain(&registry, 1, |event| {
+        payload = event.payload().to_vec();
+        Ok(())
+      })
+      .expect("drain coalesced event");
+    assert_eq!(payload, vec![2; 7]);
+    assert_eq!(queue.queued_bytes(), Ok(0));
   }
 
   #[test]
