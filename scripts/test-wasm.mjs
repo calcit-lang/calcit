@@ -383,6 +383,11 @@ check("test-list-butlast()", 2, e["test-list-butlast"]);
 check("test-list-butlast-empty()", 0, e["test-list-butlast-empty"]);
 check("test-list-slice()", 23, e["test-list-slice"]); // count=3 + first=20
 check("test-list-reverse()", 40, e["test-list-reverse"]); // first=30 + nth(2)=10
+check("test-list-sort-ascending()", 14, e["test-list-sort-ascending"]); // first=1, last=4
+check("test-list-sort-descending()", 41, e["test-list-sort-descending"]); // first=4, last=1
+check("test-list-sort-stable()", 11321, e["test-list-sort-stable"]); // ids 10,11,20,21
+check("test-list-sort-input-immutable()", 41, e["test-list-sort-input-immutable"]); // source first=4, sorted first=1
+check("test-list-sort-dynamic-callee()", 14, e["test-list-sort-dynamic-callee"]);
 check("test-list-concat()", 44, e["test-list-concat"]); // count=4 + nth(3)=40
 check("test-list-assoc()", 99, e["test-list-assoc"]);
 check("test-list-assoc-before()", 103, e["test-list-assoc-before"]); // count=4 + nth(1)=99

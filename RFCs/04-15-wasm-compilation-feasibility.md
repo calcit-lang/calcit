@@ -253,6 +253,7 @@ WASM GC proposal（2024 年起 V8/SpiderMonkey 已发布）提供：
 2. 继续补充 `calcit.core` 常见高阶路径。
   - `foldl`、`foldl-shortcut`、`foldr-shortcut`、`sort`、`&call-spread` 仍是大量跳过项的源头。
   - 这部分不是为了追求“理论完备”，而是为了减少真实项目中被迫绕开 core helper 的情况。
+  - 2026-08：带显式 comparator 的 `sort` / `&list:sort` 已实现稳定 WASM 排序；一参数 heterogeneous total-order 仍明确拒绝，等待类型化比较协议。
 
 3. 持续扩大 `test-wasm.cirru` 的下游回归覆盖。
   - 每补一个能力，都应优先加一个最小但能锁定语义边界的 WASM 用例。

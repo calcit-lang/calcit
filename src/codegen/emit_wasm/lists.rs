@@ -277,6 +277,82 @@ pub(super) fn emit_list_reverse(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   Ok(())
 }
 
+/// `&list:sort list comparator` — return a stable sorted copy.
+///
+/// WASM does not yet implement Calcit's heterogeneous one-argument total
+/// ordering. Requiring an explicit comparator keeps the supported path
+/// type-directed and avoids silently returning an unsorted list.
+pub(super) fn emit_list_sort(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 2 {
+    return Err("&list:sort in WASM requires a list and an explicit 2-argument comparator".into());
+  }
+
+  let src = emit_ptr_to_i32(ctx, &args[0])?;
+  let count = emit_load_count_i32(ctx, src);
+  let dst = emit_alloc_list(ctx, count);
+
+  let dst_base = emit_addr_offset(ctx, dst, 8);
+  let src_base = emit_addr_offset(ctx, src, 8);
+  emit_copy_f64_loop(ctx, dst_base, src_base, count);
+
+  // Stable insertion sort is a compact baseline for immutable Calcit lists.
+  // Equal (and NaN) comparator results do not move the left element.
+  let left = ctx.alloc_local();
+  let key = ctx.alloc_local();
+  let comparator =
+    resolve_callee_kind(ctx, &args[1], left, key).map_err(|error| format!("&list:sort comparator is not callable in WASM: {error}"))?;
+  let i = ctx.alloc_i32(1);
+  let j = ctx.alloc_local_typed(ValType::I32);
+  let previous_index = ctx.alloc_local_typed(ValType::I32);
+
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(i, count);
+
+  emit_list_load_elem(ctx, dst, i);
+  ctx.emit(Instruction::LocalSet(key));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::LocalSet(j));
+
+  ctx.begin_block();
+  ctx.begin_loop();
+
+  // j == 0 means the key belongs at the beginning.
+  ctx.emit(Instruction::LocalGet(j));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::BrIf(1));
+
+  ctx.emit(Instruction::LocalGet(j));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::LocalSet(previous_index));
+  emit_list_load_elem(ctx, dst, previous_index);
+  ctx.emit(Instruction::LocalSet(left));
+
+  // Shift only when comparator(left, key) > 0. Equal and NaN results retain
+  // the original order, matching the interpreter's stable-sort behavior.
+  emit_foldl_step(ctx, &comparator, left, key)?;
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Gt);
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::BrIf(1));
+
+  emit_list_store_elem(ctx, dst, j, left);
+  ctx.emit(Instruction::LocalGet(previous_index));
+  ctx.emit(Instruction::LocalSet(j));
+  ctx.br_loop();
+
+  ctx.end_block_loop();
+  emit_list_store_elem(ctx, dst, j, key);
+
+  ctx.i32_inc(i);
+  ctx.br_loop();
+  ctx.end_block_loop();
+
+  ctx.ptr_to_f64(dst);
+  Ok(())
+}
+
 /// `&list:concat a b` — concatenate two lists.
 /// Flatten one level starting from a pre-evaluated f64 list local.
 /// Used by emit_mapcat and &list:flatten intercepts.
@@ -1623,4 +1699,33 @@ pub(super) fn emit_join(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Str
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(sep));
   emit_join_from_locals(ctx, xs, sep)
+}
+
+#[cfg(test)]
+mod sort_tests {
+  use super::*;
+
+  fn empty_context() -> WasmGenCtx {
+    WasmGenCtx::new(
+      0,
+      WasmCompileEnv {
+        fn_index: HashMap::new(),
+        fn_arity: HashMap::new(),
+        fn_has_rest: HashMap::new(),
+        runtime_fn_index: HashMap::new(),
+        tag_index: HashMap::new(),
+        struct_field_tags: HashMap::new(),
+        string_pool: HashMap::new(),
+        atom_globals: HashMap::new(),
+        value_imports: HashMap::new(),
+        fn_table_index: HashMap::new(),
+      },
+    )
+  }
+
+  #[test]
+  fn sort_rejects_the_unsupported_total_order_form() {
+    let error = emit_list_sort(&mut empty_context(), &[Calcit::Nil]).expect_err("one-argument sort must not compile as identity");
+    assert!(error.contains("explicit 2-argument comparator"), "error: {error}");
+  }
 }

@@ -1,7 +1,8 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-wasm) (:version |0.0.0)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-wasm)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-wasm.main/main!) (:mode :native) (:reload-fn 'test-wasm.main/reload!)
+      :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
   :files $ {}
@@ -39,6 +40,11 @@
         |collect-rest $ %{} 'CodeEntry (:doc "|returns rest list unchanged")
           :code $ quote
             defn collect-rest (a & xs) xs
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |compare-wasm-ascending $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn compare-wasm-ascending (a b) (&- a b)
           :examples $ []
           :schema $ :: 'Dynamic
         |factorial $ %{} 'CodeEntry (:doc "|Factorial — recursive")
@@ -528,6 +534,62 @@
             defn test-list-slice () $ &let
               xs $ &list:slice ([] 10 20 30 40 50) 1 4
               &+ (&list:count xs) (&list:first xs)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-list-sort-ascending $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-list-sort-ascending () $ &let
+              ys $ sort ([] 4 1 3 2) &-
+              +
+                * 10 $ &list:first ys
+                &list:last ys
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-list-sort-descending $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-list-sort-descending () $ &let
+              ys $ &list:sort ([] 4 1 3 2)
+                fn (a b) (- b a)
+              +
+                * 10 $ &list:first ys
+                &list:last ys
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-list-sort-dynamic-callee $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-list-sort-dynamic-callee () $ &let (comparator compare-wasm-ascending)
+              &let
+                ys $ sort ([] 4 1 3 2) comparator
+                +
+                  * 10 $ &list:first ys
+                  &list:last ys
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-list-sort-input-immutable $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-list-sort-input-immutable () $ &let
+              xs $ [] 4 1 3 2
+              &let
+                ys $ sort xs
+                  fn (a b) (- a b)
+                +
+                  * 10 $ &list:first xs
+                  &list:first ys
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-list-sort-stable $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-list-sort-stable () $ &let
+              xs $ [] ([] 2 20) ([] 1 10) ([] 2 21) ([] 1 11)
+              &let
+                ys $ sort xs
+                  fn (a b)
+                    - (&list:nth a 0) (&list:nth b 0)
+                +
+                  * 1000 $ &list:nth (&list:nth ys 0) 1
+                  * 100 $ &list:nth (&list:nth ys 1) 1
+                  * 10 $ &list:nth (&list:nth ys 2) 1
+                  &list:nth (&list:nth ys 3) 1
           :examples $ []
           :schema $ :: 'Dynamic
         |test-list-to-set $ %{} 'CodeEntry (:doc "|list to set deduplicates elements")

@@ -1995,15 +1995,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeListPrepend => emit_list_prepend(ctx, args),
     CalcitProc::NativeListButlast => emit_list_butlast(ctx, args),
     CalcitProc::NativeListLast => emit_list_last(ctx, args),
-    CalcitProc::NativeListSort => {
-      // Sort is not yet implemented in WASM — pass list through as stub
-      if args.is_empty() {
-        ctx.emit(f64_const(0.0));
-      } else {
-        emit_expr(ctx, &args[0])?;
-      }
-      Ok(())
-    }
+    CalcitProc::NativeListSort => emit_list_sort(ctx, args),
     CalcitProc::NativeListRange => emit_range(ctx, args),
     CalcitProc::NativeListFoldl => emit_foldl(ctx, args),
     CalcitProc::NativeListFoldlShortcut => emit_foldl_shortcut(ctx, args),
@@ -2174,17 +2166,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     // &number:format — formatting; stub in WASM.
     CalcitProc::NativeNumberFormat => ctx.stub_proc(args),
 
-    // sort — native sort with optional comparator; not yet supported in WASM; return first arg.
-    CalcitProc::Sort => {
-      if args.is_empty() {
-        ctx.emit(f64_const(0.0));
-      } else {
-        // Skip any non-constant args (comparator lambda). Just pass the source list through
-        // as a trivial (unsorted) stub so the function compiles.
-        emit_expr(ctx, &args[0])?;
-      }
-      Ok(())
-    }
+    CalcitProc::Sort => emit_list_sort(ctx, args),
 
     // Not yet supported
     _ => Err(format!("unsupported proc in WASM: {proc}")),
