@@ -204,3 +204,12 @@ The first shared-crate rollout is available in `calcit-http 0.3.8`,
 
 首批共享 crate 迁移版本为 `calcit-http 0.3.8`、`calcit-wss 0.2.17`、
 `calcit-fetch 0.0.17`、`calcit_wasmtime 0.1.5` 和 `calcit.std 0.2.22`。
+
+The second rollout is available in `calcit-json 0.0.14`,
+`calcit-clipboard 0.0.10`, `calcit-command 0.0.6`, and `calcit-regex 0.0.15`.
+Regex keeps its module-owned opaque-resource registry while sharing the
+buffer-v1 transport adapter.
+
+第二批迁移版本为 `calcit-json 0.0.14`、`calcit-clipboard 0.0.10`、
+`calcit-command 0.0.6` 和 `calcit-regex 0.0.15`。Regex 继续由模块维护
+opaque-resource registry，只共享 buffer-v1 transport adapter。
