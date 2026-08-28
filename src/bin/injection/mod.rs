@@ -1184,7 +1184,7 @@ fn run_pending_ctrl_c_callback() -> Result<(), String> {
   let Calcit::Fn { info, .. } = callback.as_ref() else {
     return Err("registered Ctrl-C callback is not a function".to_owned());
   };
-  runner::run_fn(&[], info, &stack)
+  runner::run_fn_during_shutdown(&[], info, &stack)
     .map(|_| ())
     .map_err(|error| format!("Ctrl-C callback failed: {}", error.msg))
 }

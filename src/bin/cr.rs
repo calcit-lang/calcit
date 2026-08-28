@@ -571,18 +571,24 @@ fn run_cli() -> Result<(), String> {
     }
     let started_time = Instant::now();
 
-    let v = calcit::run_program_with_docs(entries.init_ns.to_owned(), entries.init_def.to_owned(), &[]).map_err(|e| {
-      LocatedWarning::print_list(&e.warnings);
-      e.msg
-    })?;
-
-    let duration = Instant::now().duration_since(started_time);
-    println!("{}{}", format!("took {}ms: ", duration.as_micros() as f64 / 1000.0).dimmed(), v);
-    Ok(())
+    calcit::run_program_with_docs(entries.init_ns.to_owned(), entries.init_def.to_owned(), &[])
+      .map_err(|e| {
+        LocatedWarning::print_list(&e.warnings);
+        e.msg
+      })
+      .map(|v| {
+        let duration = Instant::now().duration_since(started_time);
+        println!("{}{}", format!("took {}ms: ", duration.as_micros() as f64 / 1000.0).dimmed(), v);
+      })
   };
 
-  if eval_once {
-    task?;
+  let task_result = if eval_once {
+    if task.is_err() {
+      // Evaluation failures can leave native tasks behind. Enter the same
+      // bounded cleanup path used by Ctrl-C before returning the error.
+      runner::track::request_shutdown();
+    }
+    task
   } else {
     // error are only printed in watch mode
     match task {
@@ -591,7 +597,8 @@ fn run_cli() -> Result<(), String> {
         eprintln!("\nfailed to run, {e}");
       }
     }
-  }
+    Ok(())
+  };
 
   if !eval_once {
     runner::track::track_task_add();
@@ -602,7 +609,7 @@ fn run_cli() -> Result<(), String> {
   injection::exit_when_async_cleared()?;
   #[cfg(target_arch = "wasm32")]
   runner::track::exit_when_cleared();
-  Ok(())
+  task_result
 }
 
 #[derive(Debug, Clone)]
@@ -1134,6 +1141,9 @@ pub fn watch_files(
   while !injection::shutdown_requested() {
     match rx.recv_timeout(Duration::from_millis(100)) {
       Ok(Ok(_event)) => {
+        if injection::shutdown_requested() {
+          break;
+        }
         // load new program code
         let mut content = fs::read_to_string(&inc_path).expect("reading inc file");
         strip_shebang(&mut content);
@@ -1164,6 +1174,7 @@ fn recall_program(
   settings: &ToplevelCalcit,
   configured_run_mode: snapshot::SnapshotRunMode,
 ) -> Result<(), String> {
+  ensure_host_running("reload")?;
   println!("\n-------- file change --------\n");
 
   // Steps:
@@ -1178,6 +1189,7 @@ fn recall_program(
   })?;
   // println!("\ndata: {}", &data);
   let changes: ChangesDict = data.try_into()?;
+  ensure_host_running("reload")?;
 
   // Print change summary
   println!("{} Incremental changes detected:", "→".cyan());
@@ -1215,11 +1227,13 @@ fn recall_program(
   }
 
   program::apply_code_changes(&changes)?;
+  ensure_host_running("reload")?;
   println!("{} Changes applied to program", "✓".green());
 
   // clear invalidated runtime cache entries
   program::clear_runtime_caches_for_changes(&changes, settings.reload_libs)?;
   builtins::meta::force_reset_gensym_index()?;
+  ensure_host_running("reload")?;
   println!("cleared runtime caches and reset gensym index.");
 
   // Create a minimal snapshot for documentation lookup during incremental updates
@@ -1263,6 +1277,14 @@ fn recall_program(
   }
 
   Ok(())
+}
+
+fn ensure_host_running(operation: &str) -> Result<(), String> {
+  if injection::shutdown_requested() {
+    Err(format!("{operation} interrupted by host shutdown"))
+  } else {
+    Ok(())
+  }
 }
 
 /// Check-only mode: preprocess init_fn and reload_fn to validate code without execution
@@ -1323,9 +1345,6 @@ fn run_codegen_with_timeout(
   timeout_secs: u64,
   verbose: bool,
 ) -> Result<(), String> {
-  if timeout_secs == 0 {
-    return run_codegen(entries, emit_path, ir_mode, verbose);
-  }
   let entries = entries.clone();
   let emit_path = emit_path.to_owned();
   let (tx, rx) = channel();
@@ -1341,16 +1360,29 @@ fn run_codegen_with_timeout(
       let _ = tx.send(result);
     })
     .map_err(|err| format!("failed to start codegen thread: {err}"))?;
-  match rx.recv_timeout(Duration::from_secs(timeout_secs)) {
-    Ok(result) => result,
-    Err(RecvTimeoutError::Timeout) => Err(format!(
-      "codegen timed out after {timeout_secs}s; re-run with --verbose or --timeout 0 for diagnosis"
-    )),
-    Err(RecvTimeoutError::Disconnected) => Err("codegen thread terminated without returning a result".into()),
+
+  let started_at = Instant::now();
+  let timeout = (timeout_secs > 0).then(|| Duration::from_secs(timeout_secs));
+  loop {
+    ensure_host_running("codegen")?;
+    let wait = timeout
+      .map(|limit| limit.saturating_sub(started_at.elapsed()).min(Duration::from_millis(40)))
+      .unwrap_or(Duration::from_millis(40));
+    if timeout.is_some() && wait.is_zero() {
+      return Err(format!(
+        "codegen timed out after {timeout_secs}s; re-run with --verbose or --timeout 0 for diagnosis"
+      ));
+    }
+    match rx.recv_timeout(wait) {
+      Ok(result) => return result,
+      Err(RecvTimeoutError::Timeout) => {}
+      Err(RecvTimeoutError::Disconnected) => return Err("codegen thread terminated without returning a result".into()),
+    }
   }
 }
 
 fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool, verbose: bool) -> Result<(), String> {
+  ensure_host_running("codegen")?;
   let started_time = Instant::now();
   let phase = |name: &str| {
     if verbose {
@@ -1392,6 +1424,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool, verbose
       return Err(headline);
     }
   }
+  ensure_host_running("codegen")?;
 
   // preprocess to reload
   phase("preprocessing reload entry");
@@ -1404,6 +1437,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool, verbose
       return Err(headline);
     }
   }
+  ensure_host_running("codegen")?;
 
   let warnings = check_warnings.borrow();
   throw_on_js_warnings(&warnings, &js_file_path)?;
@@ -1415,6 +1449,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool, verbose
   }
 
   if ir_mode {
+    ensure_host_running("codegen")?;
     phase("emitting IR");
     match codegen::gen_ir::emit_ir(&entries.init_fn, &entries.reload_fn, emit_path) {
       Ok(_) => (),
@@ -1424,6 +1459,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool, verbose
       }
     }
   } else {
+    ensure_host_running("codegen")?;
     // TODO entry ns
     phase("emitting JavaScript");
     match codegen::emit_js::emit_js(&entries.init_ns, emit_path) {

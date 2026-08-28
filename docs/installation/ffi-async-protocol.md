@@ -45,8 +45,8 @@ error instead of looking like an unknown handle.
 ## Host shutdown / 宿主关闭
 
 The CLI owns the process Ctrl-C handler. The signal thread only records a
-shutdown request; it never enters the Calcit runtime. A callback registered by
-`on-control-c` runs once on the host thread before native task cancellation.
+synchronized shutdown request; it never enters the Calcit runtime. A callback
+registered by `on-control-c` runs once on the host thread before native task cancellation.
 This keeps application cleanup serialized with ordinary callbacks.
 
 Shutdown stops new registrations, moves every live native task and response
@@ -61,8 +61,13 @@ late producer from racing a reclaimed task handle.
 
 CLI watch loops and the compatibility `async-sleep` task observe the same
 shutdown request, so they cannot keep the process alive after native cleanup.
+The native evaluator checks the request periodically, including at tail-recur
+boundaries, while reload and codegen check between phases. An interrupted
+once-mode run still enters bounded async cleanup before returning its error.
+The registered `on-control-c` callback temporarily suppresses evaluator
+interruption so application cleanup can finish on the host thread.
 
-Calcit CLI 统一拥有进程的 Ctrl-C handler。信号线程只记录关闭请求，
+Calcit CLI 统一拥有进程的 Ctrl-C handler。信号线程只同步记录关闭请求，
 不直接进入 Calcit runtime；`on-control-c` 注册的回调会在取消 native
 task 之前，由 host thread 串行执行一次。
 
@@ -74,6 +79,10 @@ purged event 与 discarded response 诊断。在 grace period 内，合作的模
 exactly-once `Complete` 或 `Fail`；deadline 到达后先关闭队列再强制 release，
 避免迟到 producer 与已回收 task handle 竞态。Watch loop 与兼容性
 `async-sleep` 也会观察同一关闭请求，不会在 native cleanup 后继续挂住进程。
+Native evaluator 会周期性检查该请求（包括尾递归边界），reload 与 codegen
+也会在阶段之间检查。Once-mode 执行被中断后仍会先进入有界 async cleanup，
+再返回错误；运行 `on-control-c` 时则临时暂停 evaluator 中断，确保应用清理
+可在 host thread 完成。
 
 ## Events and ordering
 

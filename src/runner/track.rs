@@ -11,6 +11,10 @@ pub fn reset_shutdown() {
 }
 
 pub fn request_shutdown() {
+  // Serialize the predicate change with condvar waiters. Without this lock a
+  // waiter can observe `false`, then miss the notification just before it
+  // enters `wait_timeout_while`.
+  let _guard = SHUTDOWN_WAKE.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
   SHUTDOWN_REQUESTED.store(true, Ordering::Release);
   SHUTDOWN_WAKE.1.notify_all();
 }

@@ -4,7 +4,7 @@ pub mod macro_metrics;
 pub mod preprocess;
 pub mod track;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::sync::Arc;
 use std::vec;
 
@@ -18,6 +18,52 @@ use crate::data::cirru;
 use crate::program;
 use crate::util::string::has_ns_part;
 use cirru_edn::EdnTag;
+
+const SHUTDOWN_CHECK_INTERVAL: u16 = 256;
+
+thread_local! {
+  static SHUTDOWN_CHECK_COUNTDOWN: Cell<u16> = const { Cell::new(0) };
+  static SHUTDOWN_CHECK_SUSPENDED: Cell<u16> = const { Cell::new(0) };
+}
+
+struct ShutdownCheckGuard;
+
+impl Drop for ShutdownCheckGuard {
+  fn drop(&mut self) {
+    SHUTDOWN_CHECK_SUSPENDED.with(|depth| depth.set(depth.get().saturating_sub(1)));
+  }
+}
+
+fn with_shutdown_check_suspended<T>(f: impl FnOnce() -> T) -> T {
+  SHUTDOWN_CHECK_SUSPENDED.with(|depth| depth.set(depth.get().saturating_add(1)));
+  let _guard = ShutdownCheckGuard;
+  f()
+}
+
+fn check_shutdown(call_stack: &CallStackList) -> Result<(), CalcitErr> {
+  if SHUTDOWN_CHECK_SUSPENDED.with(Cell::get) > 0 {
+    return Ok(());
+  }
+  let should_check = SHUTDOWN_CHECK_COUNTDOWN.with(|countdown| {
+    let remaining = countdown.get();
+    if remaining == 0 {
+      countdown.set(SHUTDOWN_CHECK_INTERVAL);
+      true
+    } else {
+      countdown.set(remaining - 1);
+      false
+    }
+  });
+  if should_check && track::shutdown_requested() {
+    Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Unexpected,
+      "execution interrupted by host shutdown",
+      call_stack,
+    ))
+  } else {
+    Ok(())
+  }
+}
 
 fn build_runtime_cell_error(ns: &str, def: &str, call_stack: &CallStackList, cell: program::RuntimeCell) -> CalcitErr {
   match cell {
@@ -172,6 +218,7 @@ fn evaluate_number_binary_call(
 }
 
 pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  check_shutdown(call_stack)?;
   // println!("eval code: {}", expr.lisp_str());
   use Calcit::*;
 
@@ -408,6 +455,7 @@ pub fn call_expr(
       let frame_checkpoint = body_scope.frame_checkpoint();
 
       Ok(loop {
+        check_shutdown(&next_stack)?;
         // need to handle recursion
         body_scope.restore_frame(frame_checkpoint);
         bind_marked_args(&mut body_scope, &info.args, &current_values, call_stack)?;
@@ -705,6 +753,7 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
   if let Calcit::Recur(xs) = v {
     let mut current_values = xs.to_vec();
     loop {
+      check_shutdown(call_stack)?;
       body_scope.restore_frame(frame_checkpoint);
       match &*info.args {
         CalcitFnArgs::Args(args) => {
@@ -725,6 +774,12 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
     }
   }
   Ok(v)
+}
+
+/// Runs an application shutdown callback after the host has recorded its
+/// shutdown request, without interrupting the callback itself.
+pub fn run_fn_during_shutdown(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  with_shutdown_check_suspended(|| run_fn(values, info, call_stack))
 }
 
 /// quick path for `run_fn` which takes ownership of values
@@ -749,6 +804,7 @@ pub fn run_fn_owned(values: Vec<Calcit>, info: &CalcitFn, call_stack: &CallStack
   if let Calcit::Recur(xs) = v {
     let mut current_values = xs.to_vec();
     loop {
+      check_shutdown(call_stack)?;
       body_scope.restore_frame(frame_checkpoint);
       match &*info.args {
         CalcitFnArgs::Args(args) => {
