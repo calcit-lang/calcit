@@ -28,6 +28,7 @@ use calcit::{
 /// lazily cache dylibs, in case Linux drops memory of libraries
 static DYLIBS: LazyLock<Mutex<HashMap<String, Arc<libloading::Library>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 static TRACE_FFI: AtomicBool = AtomicBool::new(false);
+static FFI_METRICS_ENABLED: AtomicBool = AtomicBool::new(false);
 static STDOUT_TO_STDERR: AtomicBool = AtomicBool::new(false);
 static SILENCE_PROGRAM_OUTPUT: AtomicBool = AtomicBool::new(false);
 static TRACE_FFI_EVENT_ID: AtomicUsize = AtomicUsize::new(1);
@@ -50,7 +51,7 @@ struct NativeAsyncTask {
   stack: Arc<CallStackList>,
   lib_name: String,
   method: String,
-  control: Arc<Mutex<Option<NativeAsyncTaskControl>>>,
+  control: Arc<Mutex<NativeAsyncTaskState>>,
   blocking: Option<NativeBlockingTask>,
   started_at: Instant,
 }
@@ -66,6 +67,12 @@ struct NativeBlockingTask {
 struct NativeAsyncTaskControl {
   context: u64,
   cancel: FfiAsyncTaskCancel,
+}
+
+#[derive(Default)]
+struct NativeAsyncTaskState {
+  control: Option<NativeAsyncTaskControl>,
+  outcomes: NativeAsyncTaskOutcomes,
 }
 
 #[derive(Clone, Copy)]
@@ -165,12 +172,22 @@ struct NativeAsyncRuntime {
   registry: FfiAsyncHandleRegistry<NativeAsyncResource>,
   queue: FfiAsyncEventQueue,
   responses: Mutex<NativeAsyncResponseIndex>,
+  completed_metrics: Mutex<BTreeMap<(String, String), NativeAsyncModuleQueueMetrics>>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, Default)]
+struct NativeAsyncTaskOutcomes {
+  cancel_requested_total: u64,
+  cancel_succeeded_total: u64,
+  cancel_failed_total: u64,
+  deadline_timeout_total: u64,
+}
+
+#[derive(Debug, Clone, Default)]
 struct NativeAsyncModuleQueueMetrics {
   active_tasks: usize,
   closing_tasks: usize,
+  completed_tasks: u64,
   queued_events: usize,
   queued_bytes: usize,
   oldest_age: Option<Duration>,
@@ -179,6 +196,10 @@ struct NativeAsyncModuleQueueMetrics {
   queue_full_total: u64,
   dequeued_total: u64,
   purged_total: u64,
+  cancel_requested_total: u64,
+  cancel_succeeded_total: u64,
+  cancel_failed_total: u64,
+  deadline_timeout_total: u64,
 }
 
 impl NativeAsyncModuleQueueMetrics {
@@ -201,6 +222,41 @@ impl NativeAsyncModuleQueueMetrics {
     self.dequeued_total = self.dequeued_total.saturating_add(metrics.dequeued_total);
     self.purged_total = self.purged_total.saturating_add(metrics.purged_total);
   }
+
+  fn add_completed(&mut self, metrics: FfiAsyncTaskQueueMetrics, outcomes: NativeAsyncTaskOutcomes) {
+    self.completed_tasks = self.completed_tasks.saturating_add(1);
+    self.add_task(calcit::ffi_abi::FfiAsyncLifecycle::Finished, metrics);
+    self.add_outcomes(outcomes);
+  }
+
+  fn add_outcomes(&mut self, outcomes: NativeAsyncTaskOutcomes) {
+    self.cancel_requested_total = self.cancel_requested_total.saturating_add(outcomes.cancel_requested_total);
+    self.cancel_succeeded_total = self.cancel_succeeded_total.saturating_add(outcomes.cancel_succeeded_total);
+    self.cancel_failed_total = self.cancel_failed_total.saturating_add(outcomes.cancel_failed_total);
+    self.deadline_timeout_total = self.deadline_timeout_total.saturating_add(outcomes.deadline_timeout_total);
+  }
+
+  fn merge(&mut self, other: &Self) {
+    self.active_tasks = self.active_tasks.saturating_add(other.active_tasks);
+    self.closing_tasks = self.closing_tasks.saturating_add(other.closing_tasks);
+    self.completed_tasks = self.completed_tasks.saturating_add(other.completed_tasks);
+    self.queued_events = self.queued_events.saturating_add(other.queued_events);
+    self.queued_bytes = self.queued_bytes.saturating_add(other.queued_bytes);
+    self.oldest_age = match (self.oldest_age, other.oldest_age) {
+      (Some(current), Some(candidate)) => Some(current.max(candidate)),
+      (None, Some(candidate)) => Some(candidate),
+      (current, None) => current,
+    };
+    self.accepted_total = self.accepted_total.saturating_add(other.accepted_total);
+    self.coalesced_total = self.coalesced_total.saturating_add(other.coalesced_total);
+    self.queue_full_total = self.queue_full_total.saturating_add(other.queue_full_total);
+    self.dequeued_total = self.dequeued_total.saturating_add(other.dequeued_total);
+    self.purged_total = self.purged_total.saturating_add(other.purged_total);
+    self.cancel_requested_total = self.cancel_requested_total.saturating_add(other.cancel_requested_total);
+    self.cancel_succeeded_total = self.cancel_succeeded_total.saturating_add(other.cancel_succeeded_total);
+    self.cancel_failed_total = self.cancel_failed_total.saturating_add(other.cancel_failed_total);
+    self.deadline_timeout_total = self.deadline_timeout_total.saturating_add(other.deadline_timeout_total);
+  }
 }
 
 fn format_oldest_age(age: Option<Duration>) -> String {
@@ -221,6 +277,147 @@ fn format_task_queue_metrics(metrics: FfiAsyncTaskQueueMetrics) -> String {
     metrics.dequeued_total,
     metrics.purged_total
   )
+}
+
+fn task_outcomes(task: &NativeAsyncTask) -> Result<NativeAsyncTaskOutcomes, String> {
+  task
+    .control
+    .lock()
+    .map(|state| state.outcomes)
+    .map_err(|_| "async FFI task outcome metrics lock is poisoned".to_owned())
+}
+
+fn ffi_metrics_enabled() -> bool {
+  FFI_METRICS_ENABLED.load(Ordering::Relaxed) || cfg!(test)
+}
+
+fn update_task_outcomes(task: &NativeAsyncTask, f: impl FnOnce(&mut NativeAsyncTaskOutcomes)) -> Result<(), String> {
+  if !ffi_metrics_enabled() {
+    return Ok(());
+  }
+  let mut outcomes = task
+    .control
+    .lock()
+    .map_err(|_| "async FFI task outcome metrics lock is poisoned".to_owned())?;
+  f(&mut outcomes.outcomes);
+  Ok(())
+}
+
+fn archive_task_metrics(
+  runtime: &NativeAsyncRuntime,
+  task: &NativeAsyncTask,
+  queue_metrics: FfiAsyncTaskQueueMetrics,
+) -> Result<(), String> {
+  if !ffi_metrics_enabled() || task.blocking.is_some() {
+    return Ok(());
+  }
+  let outcomes = task_outcomes(task)?;
+  runtime
+    .completed_metrics
+    .lock()
+    .map_err(|_| "async FFI completed metrics lock is poisoned".to_owned())?
+    .entry((task.lib_name.clone(), task.method.clone()))
+    .or_default()
+    .add_completed(queue_metrics, outcomes);
+  Ok(())
+}
+
+fn collect_native_async_module_metrics(
+  runtime: &NativeAsyncRuntime,
+) -> Result<BTreeMap<(String, String), NativeAsyncModuleQueueMetrics>, String> {
+  let mut modules = runtime
+    .completed_metrics
+    .lock()
+    .map_err(|_| "async FFI completed metrics lock is poisoned".to_owned())?
+    .clone();
+  let queue_metrics: HashMap<FfiAsyncHandle, FfiAsyncTaskQueueMetrics> = runtime
+    .queue
+    .task_metrics_snapshot()
+    .map_err(|error| error.to_string())?
+    .into_iter()
+    .collect();
+  for (handle, state, resource) in runtime.registry.snapshot().map_err(|error| error.to_string())? {
+    let NativeAsyncResource::Task(task) = resource else {
+      continue;
+    };
+    if task.blocking.is_some() {
+      continue;
+    }
+    let aggregate = modules.entry((task.lib_name.clone(), task.method.clone())).or_default();
+    aggregate.add_task(state.lifecycle, queue_metrics.get(&handle).copied().unwrap_or_default());
+    aggregate.add_outcomes(task_outcomes(&task)?);
+  }
+  Ok(modules)
+}
+
+fn module_metrics_json(metrics: &NativeAsyncModuleQueueMetrics) -> serde_json::Value {
+  serde_json::json!({
+    "activeTasks": metrics.active_tasks,
+    "closingTasks": metrics.closing_tasks,
+    "completedTasks": metrics.completed_tasks,
+    "queuedEvents": metrics.queued_events,
+    "queuedBytes": metrics.queued_bytes,
+    "oldestQueuedAgeMs": metrics.oldest_age.map(|age| age.as_secs_f64() * 1000.0),
+    "acceptedTotal": metrics.accepted_total,
+    "coalescedTotal": metrics.coalesced_total,
+    "queueFullTotal": metrics.queue_full_total,
+    "dequeuedTotal": metrics.dequeued_total,
+    "purgedTotal": metrics.purged_total,
+    "cancelRequestedTotal": metrics.cancel_requested_total,
+    "cancelSucceededTotal": metrics.cancel_succeeded_total,
+    "cancelFailedTotal": metrics.cancel_failed_total,
+    "deadlineTimeoutTotal": metrics.deadline_timeout_total,
+  })
+}
+
+fn native_async_metrics_json(runtime: &NativeAsyncRuntime) -> Result<String, String> {
+  let modules = collect_native_async_module_metrics(runtime)?;
+  let mut totals = NativeAsyncModuleQueueMetrics::default();
+  let rows = modules
+    .iter()
+    .map(|((lib_name, method), metrics)| {
+      totals.merge(metrics);
+      let mut row = module_metrics_json(metrics);
+      let object = row.as_object_mut().expect("module metrics JSON must be an object");
+      object.insert("module".to_owned(), serde_json::Value::String(lib_name.clone()));
+      object.insert("method".to_owned(), serde_json::Value::String(method.clone()));
+      row
+    })
+    .collect::<Vec<_>>();
+  serde_json::to_string(&serde_json::json!({
+    "schemaVersion": 1,
+    "units": { "age": "milliseconds", "bytes": "bytes" },
+    "totals": module_metrics_json(&totals),
+    "modules": rows,
+  }))
+  .map_err(|error| format!("failed to serialize native async FFI metrics: {error}"))
+}
+
+pub struct FfiMetricsReportOnDrop {
+  enabled: bool,
+}
+
+impl FfiMetricsReportOnDrop {
+  pub fn new(enabled: bool) -> Self {
+    FFI_METRICS_ENABLED.store(enabled, Ordering::Relaxed);
+    Self { enabled }
+  }
+}
+
+impl Drop for FfiMetricsReportOnDrop {
+  fn drop(&mut self) {
+    if !self.enabled {
+      return;
+    }
+    let Some(runtime) = NATIVE_ASYNC_RUNTIME.get() else {
+      return;
+    };
+    match native_async_metrics_json(runtime) {
+      Ok(report) => eprintln!("ffi-async-metrics: {report}"),
+      Err(error) => eprintln!("[Warn] {error}"),
+    }
+    FFI_METRICS_ENABLED.store(false, Ordering::Relaxed);
+  }
 }
 
 static NATIVE_ASYNC_RUNTIME: OnceLock<NativeAsyncRuntime> = OnceLock::new();
@@ -320,6 +517,7 @@ pub fn init_async_runtime() -> Result<(), String> {
     })
     .map_err(|error| error.to_string())?,
     responses: Mutex::new(NativeAsyncResponseIndex::default()),
+    completed_metrics: Mutex::new(BTreeMap::new()),
   };
   NATIVE_ASYNC_RUNTIME
     .set(runtime)
@@ -704,7 +902,7 @@ unsafe extern "C" fn native_async_configure_task(
       Ok(control) => control,
       Err(_) => return async_status::INTERNAL_ERROR,
     };
-    *control = cancel.map(|cancel| NativeAsyncTaskControl {
+    control.control = cancel.map(|cancel| NativeAsyncTaskControl {
       context: task_context,
       cancel,
     });
@@ -958,6 +1156,13 @@ fn expire_async_responses(runtime: &NativeAsyncRuntime) -> Result<(), String> {
     .map_err(|_| "async FFI response index lock is poisoned".to_owned())?
     .take_due(now);
   for handle in handles {
+    if let Ok(NativeAsyncResource::Response(response)) = runtime.registry.clone_value(handle)
+      && let Ok(NativeAsyncResource::Task(task)) = runtime.registry.clone_value(response.owner_task)
+    {
+      update_task_outcomes(&task, |outcomes| {
+        outcomes.deadline_timeout_total = outcomes.deadline_timeout_total.saturating_add(1);
+      })?;
+    }
     if let Some(error) = reject_response_for_host(runtime, handle, b"{} (:code :timeout)") {
       eprintln!("[Error] async FFI response timeout: {error}");
     } else {
@@ -1029,17 +1234,29 @@ fn ffi_task_cancel(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calci
     .control
     .lock()
     .map_err(|_| CalcitErr::use_str(CalcitErrKind::Unexpected, "async FFI task control lock is poisoned"))?
-    .to_owned()
+    .control
     .ok_or_else(|| CalcitErr::use_str(CalcitErrKind::Unexpected, "async FFI task does not provide cancellation"))?;
   runtime
     .registry
     .begin_close(capability.handle)
     .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error.to_string()))?;
+  update_task_outcomes(&task, |outcomes| {
+    outcomes.cancel_requested_total = outcomes.cancel_requested_total.saturating_add(1);
+  })
+  .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
   let status = unsafe { (control.cancel)(control.context, capability.handle.raw(), reason.as_ptr(), reason.len()) };
   trace_ffi_event("async-task-cancel", format!("task={} status={status}", capability.handle.raw()));
   if status == async_status::OK {
+    update_task_outcomes(&task, |outcomes| {
+      outcomes.cancel_succeeded_total = outcomes.cancel_succeeded_total.saturating_add(1);
+    })
+    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
     Ok(Calcit::Unit)
   } else {
+    update_task_outcomes(&task, |outcomes| {
+      outcomes.cancel_failed_total = outcomes.cancel_failed_total.saturating_add(1);
+    })
+    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
     let _ = runtime.queue.discard_handle_events(capability.handle);
     let _ = reject_owned_responses(runtime, capability.handle, b"{} (:code :cancel-failed)");
     let _ = runtime.registry.finish(capability.handle);
@@ -1049,7 +1266,10 @@ fn ffi_task_cancel(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calci
       .ok()
       .flatten()
       .unwrap_or_default();
-    if matches!(runtime.registry.release(capability.handle), Ok(NativeAsyncResource::Task(_))) {
+    if let Ok(NativeAsyncResource::Task(released_task)) = runtime.registry.release(capability.handle) {
+      if let Err(error) = archive_task_metrics(runtime, &released_task, metrics) {
+        eprintln!("[Warn] {error}");
+      }
       track::track_task_release();
     }
     trace_ffi_event(
@@ -1230,6 +1450,7 @@ fn drain_async_events_from(runtime: &NativeAsyncRuntime, limit: usize) -> Result
       .take_task_metrics(handle)
       .map_err(|error| error.to_string())?
       .unwrap_or_default();
+    archive_task_metrics(runtime, &task, metrics)?;
     track::track_task_release();
     trace_ffi_event(
       "async-task-release",
@@ -1360,7 +1581,7 @@ fn begin_native_async_shutdown(runtime: &NativeAsyncRuntime) -> Result<usize, St
       .control
       .lock()
       .map_err(|_| format!("async FFI task {} control lock is poisoned", handle.raw()))?
-      .to_owned();
+      .control;
     let Some(control) = control else {
       trace_ffi_event(
         "async-shutdown-wait",
@@ -1375,7 +1596,17 @@ fn begin_native_async_shutdown(runtime: &NativeAsyncRuntime) -> Result<usize, St
       );
       continue;
     };
+    update_task_outcomes(&task, |outcomes| {
+      outcomes.cancel_requested_total = outcomes.cancel_requested_total.saturating_add(1);
+    })?;
     let status = unsafe { (control.cancel)(control.context, handle.raw(), reason.as_ptr(), reason.len()) };
+    update_task_outcomes(&task, |outcomes| {
+      if status == async_status::OK || status == async_status::HANDLE_FINISHED {
+        outcomes.cancel_succeeded_total = outcomes.cancel_succeeded_total.saturating_add(1);
+      } else {
+        outcomes.cancel_failed_total = outcomes.cancel_failed_total.saturating_add(1);
+      }
+    })?;
     trace_ffi_event(
       "async-shutdown-cancel",
       format!(
@@ -1436,6 +1667,7 @@ fn force_cleanup_native_async(runtime: &NativeAsyncRuntime, release_tracked_task
       .take_task_metrics(handle)
       .map_err(|error| error.to_string())?
       .unwrap_or_default();
+    archive_task_metrics(runtime, &task, metrics)?;
     if unfinished {
       forced += 1;
       eprintln!(
@@ -1761,7 +1993,7 @@ fn try_start_async_callback_v1(
     stack: Arc::new(call_stack.to_owned()),
     lib_name: lib_name.to_owned(),
     method: method.to_owned(),
-    control: Arc::new(Mutex::new(None)),
+    control: Arc::new(Mutex::new(NativeAsyncTaskState::default())),
     blocking: None,
     started_at: Instant::now(),
   };
@@ -1804,6 +2036,7 @@ fn try_start_async_callback_v1(
       .control
       .lock()
       .map_err(|_| CalcitErr::use_str(CalcitErrKind::Unexpected, "async FFI task control lock is poisoned"))?
+      .control
       .is_some();
     return Ok(Some(if cancellable {
       async_capability(handle, state.kind)
@@ -1817,7 +2050,11 @@ fn try_start_async_callback_v1(
   let discarded_responses = discard_owned_responses(runtime, handle).unwrap_or(0);
   let _ = runtime.registry.finish(handle);
   let metrics = runtime.queue.take_task_metrics(handle).ok().flatten().unwrap_or_default();
-  let _ = runtime.registry.release(handle);
+  if let Ok(NativeAsyncResource::Task(released_task)) = runtime.registry.release(handle)
+    && let Err(error) = archive_task_metrics(runtime, &released_task, metrics)
+  {
+    eprintln!("[Warn] {error}");
+  }
   track::track_task_release();
   trace_ffi_event(
     "async-start-failed",
@@ -1917,6 +2154,7 @@ fn release_blocking_task(runtime: &NativeAsyncRuntime, handle: FfiAsyncHandle) -
   let NativeAsyncResource::Task(task) = runtime.registry.release(handle).map_err(|error| error.to_string())? else {
     return Err("blocking FFI handle released a response resource".to_owned());
   };
+  archive_task_metrics(runtime, &task, FfiAsyncTaskQueueMetrics::default())?;
   let (leaked, failures) = match task.blocking {
     Some(blocking) => {
       let leaked = blocking
@@ -1959,7 +2197,7 @@ fn try_call_blocking_v1(
     stack: Arc::new(call_stack.to_owned()),
     lib_name: lib_name.to_owned(),
     method: method.to_owned(),
-    control: Arc::new(Mutex::new(None)),
+    control: Arc::new(Mutex::new(NativeAsyncTaskState::default())),
     blocking: Some(NativeBlockingTask {
       owner_thread: thread::current().id(),
       buffers: Arc::new(Mutex::new(HashMap::new())),
@@ -2202,7 +2440,7 @@ mod async_callback_tests {
       stack: Arc::new(CallStackList::default()),
       lib_name: "fixture".to_owned(),
       method: "server".to_owned(),
-      control: Arc::new(Mutex::new(None)),
+      control: Arc::new(Mutex::new(NativeAsyncTaskState::default())),
       blocking: None,
       started_at: Instant::now(),
     })
@@ -2213,6 +2451,7 @@ mod async_callback_tests {
       registry: FfiAsyncHandleRegistry::new(),
       queue: FfiAsyncEventQueue::new(capacity).expect("create host queue"),
       responses: Mutex::new(NativeAsyncResponseIndex::default()),
+      completed_metrics: Mutex::new(BTreeMap::new()),
     }
   }
 
@@ -2228,7 +2467,7 @@ mod async_callback_tests {
         stack: Arc::new(CallStackList::default()),
         lib_name: "fixture".to_owned(),
         method: "blocking".to_owned(),
-        control: Arc::new(Mutex::new(None)),
+        control: Arc::new(Mutex::new(NativeAsyncTaskState::default())),
         blocking: Some(blocking.clone()),
         started_at: Instant::now(),
       }),
@@ -2464,6 +2703,11 @@ mod async_callback_tests {
       events,
       vec![(CONTEXT, response.raw(), ASYNC_RESPONSE_REJECT, b"{} (:code :timeout)".to_vec())]
     );
+    let metrics: serde_json::Value =
+      serde_json::from_str(&native_async_metrics_json(&runtime).expect("metrics JSON")).expect("valid metrics JSON");
+    assert_eq!(metrics["totals"]["deadlineTimeoutTotal"], 1);
+    assert_eq!(metrics["modules"][0]["module"], "fixture");
+    assert_eq!(metrics["modules"][0]["method"], "server");
   }
 
   #[test]
@@ -2665,7 +2909,7 @@ mod async_callback_tests {
     let NativeAsyncResource::Task(task_state) = &task else {
       unreachable!("test task is a task resource");
     };
-    *task_state.control.lock().expect("task control") = Some(NativeAsyncTaskControl {
+    task_state.control.lock().expect("task control").control = Some(NativeAsyncTaskControl {
       context: (&shutdown_cancels as *const AtomicUsize) as u64,
       cancel: record_shutdown_cancel,
     });
@@ -2715,6 +2959,13 @@ mod async_callback_tests {
         b"{} (:code :host-shutdown)".to_vec()
       )]
     );
+    let metrics: serde_json::Value =
+      serde_json::from_str(&native_async_metrics_json(&runtime).expect("metrics JSON")).expect("valid metrics JSON");
+    assert_eq!(metrics["totals"]["activeTasks"], 0);
+    assert_eq!(metrics["totals"]["completedTasks"], 1);
+    assert_eq!(metrics["totals"]["cancelRequestedTotal"], 1);
+    assert_eq!(metrics["totals"]["cancelSucceededTotal"], 1);
+    assert_eq!(metrics["totals"]["cancelFailedTotal"], 0);
   }
 
   #[test]
@@ -2724,7 +2975,7 @@ mod async_callback_tests {
     let NativeAsyncResource::Task(task_state) = &task else {
       unreachable!("test task is a task resource");
     };
-    *task_state.control.lock().expect("task control") = Some(NativeAsyncTaskControl {
+    task_state.control.lock().expect("task control").control = Some(NativeAsyncTaskControl {
       context: (&runtime as *const NativeAsyncRuntime) as u64,
       cancel: complete_shutdown_cancel,
     });
@@ -2754,7 +3005,7 @@ mod async_callback_tests {
     let NativeAsyncResource::Task(task_state) = &task else {
       unreachable!("test task is a task resource");
     };
-    *task_state.control.lock().expect("task control") = Some(NativeAsyncTaskControl {
+    task_state.control.lock().expect("task control").control = Some(NativeAsyncTaskControl {
       context: (&shutdown_cancels as *const AtomicUsize) as u64,
       cancel: record_shutdown_cancel,
     });

@@ -13,12 +13,15 @@ aliases:
   - "watch-dir"
   - "macro metrics"
   - "macro expansion metrics"
+  - "ffi metrics"
+  - "async ffi metrics"
 entry_for:
   - "calcit -w"
   - "calcit js -w"
   - "calcit --help"
   - "calcit --reload-fn"
   - "calcit --macro-metrics"
+  - "calcit --ffi-metrics"
 ---
 
 # CLI Options
@@ -151,6 +154,31 @@ Calcit's highest post-preprocess costs in the median run were `assert=`
 were `let` (11.53 ms), `def` (4.71 ms), `fn` (2.92 ms), and `cond` (1.87 ms).
 These results prioritize common structural macros and post-expansion processing
 for the typed Macro IR phase; they do not claim application runtime gains.
+
+### Native Async FFI Metrics (--ffi-metrics)
+
+Use opt-in native async FFI metrics when a server or integration test needs a
+machine-readable backpressure and lifecycle sample:
+
+```bash
+calcit --ffi-metrics --entry server
+```
+
+On normal exit or bounded Ctrl-C shutdown, the CLI writes exactly one
+`ffi-async-metrics: {...}` JSON record to stderr. Business stdout remains
+unchanged. The versioned report contains totals and stable module/method rows
+for active, closing, and completed tasks; current queue depth, bytes, and oldest
+age; enqueue/coalesce/queue-full/dequeue/purge counts; response deadline
+timeouts; and cancellation requests, successes, and failures. Completed tasks
+are folded into bounded module/method aggregates rather than retained one by
+one. No payload is copied into or printed by the report.
+
+使用 `--ffi-metrics` 可在服务或集成测试正常退出、或完成有界 Ctrl-C 关闭时，
+向 stderr 输出唯一一条 `ffi-async-metrics: {...}` JSON 记录，不改变业务
+stdout。报告按 module/method 汇总当前与已完成 task、queue backlog、oldest
+age、enqueue/coalesce/queue-full/dequeue/purge、response deadline timeout 与
+cancel 请求/成功/失败；已完成 task 只进入有界聚合，不逐项长期保留，也不会
+复制或打印业务 payload。
 
 ### Hot Reloading Configuration
 

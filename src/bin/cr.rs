@@ -288,6 +288,8 @@ fn run_cli() -> Result<(), String> {
   runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method);
   runner::preprocess::set_verbose_preprocess(cli_args.verbose);
   let _macro_metrics_report = runner::macro_metrics::ReportOnDrop::new(cli_args.macro_metrics);
+  #[cfg(not(target_arch = "wasm32"))]
+  let _ffi_metrics_report = injection::FfiMetricsReportOnDrop::new(cli_args.ffi_metrics);
   let macro_cache_enabled = cli_args.watch
     || matches!(&cli_args.subcommand, Some(CalcitCommand::EmitJs(options)) if options.watch)
     || matches!(&cli_args.subcommand, Some(CalcitCommand::EmitIr(options)) if options.watch);

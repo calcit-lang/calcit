@@ -135,6 +135,20 @@ queue-full、dequeued、purged 累计值。该索引只复制固定长度元数�
 打印业务 payload。关闭时 CLI 按 module/method 聚合为紧凑的
 `async-shutdown-summary`，并在 task release 后删除对应指标状态。
 
+For automated sampling, `calcit --ffi-metrics` emits one schema-versioned JSON
+record to stderr at process exit. Released tasks are folded into bounded
+module/method aggregates, so normal completion does not erase cumulative queue
+and lifecycle evidence or retain task capabilities indefinitely. The host
+counts queue outcomes, response deadline timeouts, and cancellation outcomes.
+Module-internal retries and remote-service timings remain module-owned and must
+be reported by that module rather than inferred by the host.
+
+自动化采样可使用 `calcit --ffi-metrics`，它在进程退出时向 stderr 输出一条带
+schema version 的 JSON。已释放 task 会折叠到有界的 module/method 聚合中，
+既不丢失累计 queue/lifecycle 证据，也不长期保留 task capability。Queue
+结果、response deadline timeout 与 cancel 结果属于 host 可观测指标；模块
+内部 retry 和远端服务耗时仍由模块自身上报，host 不做猜测。
+
 Streams and servers therefore do not require a Rust closure to cross the ABI.
 They keep only the opaque task handle and the C host function table. HTTP
 request events will carry a separate `Response` handle, allowing a Calcit

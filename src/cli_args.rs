@@ -55,6 +55,9 @@ pub struct ToplevelCalcit {
   /// emit machine-readable macro expansion metrics to stderr on exit
   #[argh(switch)]
   pub macro_metrics: bool,
+  /// emit machine-readable native async FFI metrics to stderr on exit
+  #[argh(switch)]
+  pub ffi_metrics: bool,
   /// maximum seconds for one JS/IR compilation (0 disables the limit)
   #[argh(option, default = "60")]
   pub timeout: u64,

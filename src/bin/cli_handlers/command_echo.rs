@@ -78,7 +78,7 @@ pub fn print_command_echo(cli_args: &ToplevelCalcit) {
 
 fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
   let subcommand = cli_args.subcommand.as_ref()?;
-  let base_command = command_prefix(cli_args.macro_metrics);
+  let base_command = command_prefix(cli_args.macro_metrics, cli_args.ffi_metrics);
   let snapshot_command = if cli_args.input == calcit::DEFAULT_SNAPSHOT_FILE {
     base_command.clone()
   } else {
@@ -144,12 +144,15 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
   Some(tokens.join(" "))
 }
 
-fn command_prefix(macro_metrics: bool) -> String {
+fn command_prefix(macro_metrics: bool, ffi_metrics: bool) -> String {
+  let mut command = "calcit".to_owned();
   if macro_metrics {
-    "calcit --macro-metrics".to_owned()
-  } else {
-    "calcit".to_owned()
+    command.push_str(" --macro-metrics");
   }
+  if ffi_metrics {
+    command.push_str(" --ffi-metrics");
+  }
+  command
 }
 
 fn render_command_explanation(cli_args: &ToplevelCalcit) -> Option<String> {
@@ -1430,8 +1433,10 @@ mod tests {
 
   #[test]
   fn global_macro_metrics_switch_precedes_snapshot_and_subcommand() {
-    assert_eq!(command_prefix(true), "calcit --macro-metrics");
-    assert_eq!(command_prefix(false), "calcit");
+    assert_eq!(command_prefix(true, false), "calcit --macro-metrics");
+    assert_eq!(command_prefix(false, true), "calcit --ffi-metrics");
+    assert_eq!(command_prefix(true, true), "calcit --macro-metrics --ffi-metrics");
+    assert_eq!(command_prefix(false, false), "calcit");
   }
 
   #[test]
