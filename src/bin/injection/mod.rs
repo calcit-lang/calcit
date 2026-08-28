@@ -1221,8 +1221,8 @@ fn reject_response_during_shutdown(
 }
 
 fn begin_native_async_shutdown(runtime: &NativeAsyncRuntime) -> Result<usize, String> {
-  let pending = runtime.registry.begin_shutdown().map_err(|error| error.to_string())?;
   let snapshot = runtime.registry.snapshot().map_err(|error| error.to_string())?;
+  let pending = runtime.registry.begin_shutdown().map_err(|error| error.to_string())?;
 
   for (handle, state, resource) in &snapshot {
     if state.kind == FfiAsyncHandleKind::Response
@@ -1235,7 +1235,7 @@ fn begin_native_async_shutdown(runtime: &NativeAsyncRuntime) -> Result<usize, St
 
   let reason = b"{} (:code :host-shutdown)";
   for (handle, state, resource) in snapshot {
-    if state.kind == FfiAsyncHandleKind::Response || state.lifecycle == calcit::ffi_abi::FfiAsyncLifecycle::Finished {
+    if state.kind == FfiAsyncHandleKind::Response || state.lifecycle != calcit::ffi_abi::FfiAsyncLifecycle::Active {
       continue;
     }
     let NativeAsyncResource::Task(task) = resource else {
@@ -2000,7 +2000,6 @@ mod async_callback_tests {
 
   type RecordedResponse = (u64, u64, u32, Vec<u8>);
   static RESPONSE_EVENTS: LazyLock<Mutex<Vec<RecordedResponse>>> = LazyLock::new(|| Mutex::new(vec![]));
-  static SHUTDOWN_CANCELS: AtomicUsize = AtomicUsize::new(0);
 
   #[test]
   fn missing_c_safe_symbols_report_migration_without_rust_symbol_probes() {
@@ -2043,14 +2042,16 @@ mod async_callback_tests {
   }
 
   unsafe extern "C" fn record_shutdown_cancel(context: u64, _task_handle: u64, reason_ptr: *const u8, reason_len: usize) -> i32 {
-    if context != 707 || reason_ptr.is_null() {
+    if context == 0 || reason_ptr.is_null() {
       return async_status::INVALID_PAYLOAD;
     }
     let reason = unsafe { std::slice::from_raw_parts(reason_ptr, reason_len) };
     if reason != b"{} (:code :host-shutdown)" {
       return async_status::INVALID_PAYLOAD;
     }
-    SHUTDOWN_CANCELS.fetch_add(1, Ordering::Relaxed);
+    // SAFETY: shutdown tests pass a live AtomicUsize address and invoke the
+    // cancellation callback synchronously before the counter is dropped.
+    unsafe { &*(context as *const AtomicUsize) }.fetch_add(1, Ordering::Relaxed);
     async_status::OK
   }
 
@@ -2533,14 +2534,14 @@ mod async_callback_tests {
   #[test]
   fn runtime_shutdown_cancels_tasks_rejects_responses_and_force_cleans_after_grace() {
     const RESPONSE_CONTEXT: u64 = 808;
-    SHUTDOWN_CANCELS.store(0, Ordering::Relaxed);
+    let shutdown_cancels = AtomicUsize::new(0);
     let runtime = test_runtime(4);
     let task = test_task();
     let NativeAsyncResource::Task(task_state) = &task else {
       unreachable!("test task is a task resource");
     };
     *task_state.control.lock().expect("task control") = Some(NativeAsyncTaskControl {
-      context: 707,
+      context: (&shutdown_cancels as *const AtomicUsize) as u64,
       cancel: record_shutdown_cancel,
     });
     let owner = runtime
@@ -2557,7 +2558,7 @@ mod async_callback_tests {
       shutdown_native_async_runtime(&runtime, Duration::ZERO, false).expect("shutdown runtime"),
       1
     );
-    assert_eq!(SHUTDOWN_CANCELS.load(Ordering::Relaxed), 1);
+    assert_eq!(shutdown_cancels.load(Ordering::Relaxed), 1);
     assert_eq!(
       runtime.registry.state(owner),
       Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle)
@@ -2616,5 +2617,34 @@ mod async_callback_tests {
     );
     assert_eq!(runtime.registry.pending_count(), Ok(0));
     assert!(runtime.queue.is_empty().expect("empty shutdown queue"));
+  }
+
+  #[test]
+  fn runtime_shutdown_does_not_cancel_an_already_closing_task_twice() {
+    let shutdown_cancels = AtomicUsize::new(0);
+    let runtime = test_runtime(4);
+    let task = test_task();
+    let NativeAsyncResource::Task(task_state) = &task else {
+      unreachable!("test task is a task resource");
+    };
+    *task_state.control.lock().expect("task control") = Some(NativeAsyncTaskControl {
+      context: (&shutdown_cancels as *const AtomicUsize) as u64,
+      cancel: record_shutdown_cancel,
+    });
+    let owner = runtime
+      .registry
+      .register_with_flags(FfiAsyncHandleKind::Stream, ASYNC_TASK_FLAG_SERIAL_EVENTS, task)
+      .expect("register closing stream");
+    runtime.registry.begin_close(owner).expect("begin explicit close");
+
+    assert_eq!(
+      shutdown_native_async_runtime(&runtime, Duration::ZERO, false).expect("shutdown runtime"),
+      1
+    );
+    assert_eq!(shutdown_cancels.load(Ordering::Relaxed), 0);
+    assert_eq!(
+      runtime.registry.state(owner),
+      Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle)
+    );
   }
 }
