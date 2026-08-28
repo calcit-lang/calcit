@@ -28,17 +28,18 @@ crate build。`calcit_ffi_build_id`、`abi_version`、`edn_version` 和 Rust-lay
 business methods 均已退役。
 
 Rust 模块应依赖已发布的 `calcit_native_ffi`，复用版本化 descriptor、buffer
-ownership、Cirru EDN transport、async backpressure 和 blocking adapter。只有
-模块业务逻辑、task registry 与 cancel 生命周期留在模块仓库；不要复制协议
-模板。共享 crate 不足时，先在
+ownership、Cirru EDN transport、async backpressure 和 blocking adapter。模块
+仓库继续负责业务参数与逻辑、thread、connection/task registry、cancel state、
+server lifecycle 及其他领域状态；不要复制协议模板。共享 crate 不足时，先在
 [`calcit-lang/calcit-native-ffi`](https://github.com/calcit-lang/calcit-native-ffi)
 扩展契约和测试，再升级消费者。
 
 Rust modules should depend on the published `calcit_native_ffi` crate for
 versioned descriptors, buffer ownership, Cirru EDN transport, async
-backpressure, and blocking adapters. Keep only domain behavior, task
-registries, and cancellation lifecycles in the module repository. If a shared
-capability is missing, extend and test the contract in
+backpressure, and blocking adapters. Module repositories continue to own
+domain arguments and behavior, threads, connection/task registries,
+cancellation state, server lifecycles, and other domain-specific state. If a
+shared capability is missing, extend and test the contract in
 [`calcit-lang/calcit-native-ffi`](https://github.com/calcit-lang/calcit-native-ffi)
 before upgrading consumers.
 
