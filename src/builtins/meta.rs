@@ -1827,8 +1827,7 @@ pub fn async_sleep(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit
 
   let _handle = thread::spawn(move || {
     let ten_secs = time::Duration::from_secs(sec.round() as u64);
-    // let _now = time::Instant::now();
-    thread::sleep(ten_secs);
+    runner::track::wait_for_shutdown(ten_secs);
 
     runner::track::track_task_release();
   });

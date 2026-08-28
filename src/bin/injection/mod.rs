@@ -38,6 +38,11 @@ const ASYNC_TERMINAL_EVENT_RESERVE: usize = 16;
 const ASYNC_TERMINAL_BYTE_RESERVE: usize = 64 * 1024;
 const MAX_ASYNC_RESPONSES_PER_TASK: usize = ASYNC_EVENT_QUEUE_CAPACITY;
 const MAX_ASYNC_RESPONSE_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1000;
+const ASYNC_SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+
+static CTRL_C_CALLBACK_PENDING: AtomicBool = AtomicBool::new(false);
+type CtrlCCallback = (Arc<Calcit>, Arc<CallStackList>);
+static CTRL_C_CALLBACK: LazyLock<Mutex<Option<CtrlCCallback>>> = LazyLock::new(|| Mutex::new(None));
 
 #[derive(Clone)]
 struct NativeAsyncTask {
@@ -47,6 +52,7 @@ struct NativeAsyncTask {
   method: String,
   control: Arc<Mutex<Option<NativeAsyncTaskControl>>>,
   blocking: Option<NativeBlockingTask>,
+  started_at: Instant,
 }
 
 #[derive(Clone)]
@@ -261,7 +267,17 @@ pub fn init_async_runtime() -> Result<(), String> {
   };
   NATIVE_ASYNC_RUNTIME
     .set(runtime)
-    .map_err(|_| "async FFI runtime was initialized concurrently".to_owned())
+    .map_err(|_| "async FFI runtime was initialized concurrently".to_owned())?;
+  track::reset_shutdown();
+  ctrlc::set_handler(|| {
+    CTRL_C_CALLBACK_PENDING.store(true, Ordering::Release);
+    track::request_shutdown();
+  })
+  .map_err(|error| format!("failed to install Calcit Ctrl-C handler: {error}"))
+}
+
+pub fn shutdown_requested() -> bool {
+  track::shutdown_requested()
 }
 
 fn native_async_runtime() -> Result<&'static NativeAsyncRuntime, String> {
@@ -1094,8 +1110,7 @@ fn dispatch_native_async_event(runtime: &NativeAsyncRuntime, event: &calcit::ffi
   }
 }
 
-pub fn drain_async_events(limit: usize) -> Result<FfiAsyncDrainReport, String> {
-  let runtime = native_async_runtime()?;
+fn drain_async_events_from(runtime: &NativeAsyncRuntime, limit: usize) -> Result<FfiAsyncDrainReport, String> {
   expire_async_responses(runtime)?;
   let mut report = runtime
     .queue
@@ -1151,12 +1166,209 @@ pub fn drain_async_events(limit: usize) -> Result<FfiAsyncDrainReport, String> {
   Ok(report)
 }
 
+pub fn drain_async_events(limit: usize) -> Result<FfiAsyncDrainReport, String> {
+  drain_async_events_from(native_async_runtime()?, limit)
+}
+
+fn run_pending_ctrl_c_callback() -> Result<(), String> {
+  if !CTRL_C_CALLBACK_PENDING.swap(false, Ordering::AcqRel) {
+    return Ok(());
+  }
+  let callback = CTRL_C_CALLBACK
+    .lock()
+    .map_err(|_| "Ctrl-C callback lock is poisoned".to_owned())?
+    .clone();
+  let Some((callback, stack)) = callback else {
+    return Ok(());
+  };
+  let Calcit::Fn { info, .. } = callback.as_ref() else {
+    return Err("registered Ctrl-C callback is not a function".to_owned());
+  };
+  runner::run_fn_during_shutdown(&[], info, &stack)
+    .map(|_| ())
+    .map_err(|error| format!("Ctrl-C callback failed: {}", error.msg))
+}
+
+fn reject_response_during_shutdown(
+  runtime: &NativeAsyncRuntime,
+  handle: FfiAsyncHandle,
+  response: NativeAsyncResponse,
+) -> Result<(), String> {
+  runtime
+    .responses
+    .lock()
+    .map_err(|_| "async FFI response index lock is poisoned".to_owned())?
+    .remove(handle);
+  let reason = b"{} (:code :host-shutdown)";
+  let status = unsafe { (response.resolve)(response.context, handle.raw(), ASYNC_RESPONSE_REJECT, reason.as_ptr(), reason.len()) };
+  runtime.registry.finish(handle).map_err(|error| error.to_string())?;
+  match runtime.registry.release(handle).map_err(|error| error.to_string())? {
+    NativeAsyncResource::Response(_) => {}
+    NativeAsyncResource::Task(_) => return Err(format!("async FFI response {} released a task resource", handle.raw())),
+  }
+  trace_ffi_event(
+    "async-response-shutdown",
+    format!("task={} response={} status={status}", response.owner_task.raw(), handle.raw()),
+  );
+  if status == async_status::OK {
+    Ok(())
+  } else {
+    Err(format!(
+      "async FFI response {} shutdown rejection failed with status {status}",
+      handle.raw()
+    ))
+  }
+}
+
+fn begin_native_async_shutdown(runtime: &NativeAsyncRuntime) -> Result<usize, String> {
+  let snapshot = runtime.registry.snapshot().map_err(|error| error.to_string())?;
+  let pending = runtime.registry.begin_shutdown().map_err(|error| error.to_string())?;
+
+  for (handle, state, resource) in &snapshot {
+    if state.kind == FfiAsyncHandleKind::Response
+      && let NativeAsyncResource::Response(response) = resource
+      && let Err(error) = reject_response_during_shutdown(runtime, *handle, *response)
+    {
+      eprintln!("[Error] {error}");
+    }
+  }
+
+  let reason = b"{} (:code :host-shutdown)";
+  for (handle, state, resource) in snapshot {
+    if state.kind == FfiAsyncHandleKind::Response || state.lifecycle != calcit::ffi_abi::FfiAsyncLifecycle::Active {
+      continue;
+    }
+    let NativeAsyncResource::Task(task) = resource else {
+      continue;
+    };
+    let control = task
+      .control
+      .lock()
+      .map_err(|_| format!("async FFI task {} control lock is poisoned", handle.raw()))?
+      .to_owned();
+    let Some(control) = control else {
+      trace_ffi_event(
+        "async-shutdown-wait",
+        format!(
+          "lib={} symbol={} task={} kind={:?} cancellable=false",
+          task.lib_name,
+          task.method,
+          handle.raw(),
+          state.kind
+        ),
+      );
+      continue;
+    };
+    let status = unsafe { (control.cancel)(control.context, handle.raw(), reason.as_ptr(), reason.len()) };
+    trace_ffi_event(
+      "async-shutdown-cancel",
+      format!(
+        "lib={} symbol={} task={} kind={:?} status={status}",
+        task.lib_name,
+        task.method,
+        handle.raw(),
+        state.kind
+      ),
+    );
+    if status != async_status::OK && status != async_status::HANDLE_FINISHED {
+      eprintln!(
+        "[Error] async FFI shutdown cancellation failed: lib={} symbol={} task={} status={status}",
+        task.lib_name,
+        task.method,
+        handle.raw()
+      );
+    }
+  }
+  trace_ffi_event("async-shutdown-begin", format!("pending={}", pending.len()));
+  Ok(pending.len())
+}
+
+fn force_cleanup_native_async(runtime: &NativeAsyncRuntime, release_tracked_tasks: bool) -> Result<usize, String> {
+  let snapshot = runtime.registry.snapshot().map_err(|error| error.to_string())?;
+  let mut forced = 0;
+
+  for (handle, state, resource) in &snapshot {
+    if state.kind == FfiAsyncHandleKind::Response
+      && let NativeAsyncResource::Response(response) = resource
+      && let Err(error) = reject_response_during_shutdown(runtime, *handle, *response)
+    {
+      eprintln!("[Error] {error}");
+    }
+  }
+
+  for (handle, state, resource) in snapshot {
+    if state.kind == FfiAsyncHandleKind::Response {
+      continue;
+    }
+    let NativeAsyncResource::Task(task) = resource else {
+      continue;
+    };
+    let unfinished = state.lifecycle != calcit::ffi_abi::FfiAsyncLifecycle::Finished;
+    let purged = runtime.queue.discard_handle_events(handle).map_err(|error| error.to_string())?;
+    let discarded_responses = discard_owned_responses(runtime, handle)?;
+    if state.lifecycle != calcit::ffi_abi::FfiAsyncLifecycle::Finished {
+      runtime.registry.finish(handle).map_err(|error| error.to_string())?;
+    }
+    match runtime.registry.release(handle).map_err(|error| error.to_string())? {
+      NativeAsyncResource::Task(_) if release_tracked_tasks => track::track_task_release(),
+      NativeAsyncResource::Task(_) => {}
+      NativeAsyncResource::Response(_) => return Err(format!("async FFI task {} released a response resource", handle.raw())),
+    }
+    if unfinished {
+      forced += 1;
+      eprintln!(
+        "[Warn] force-cleaned unfinished async FFI task: lib={} symbol={} task={} kind={:?} age_ms={:.3} purged={} responses={}",
+        task.lib_name,
+        task.method,
+        handle.raw(),
+        state.kind,
+        task.started_at.elapsed().as_secs_f64() * 1000.0,
+        purged,
+        discarded_responses
+      );
+    }
+  }
+  Ok(forced)
+}
+
+fn shutdown_native_async_runtime(runtime: &NativeAsyncRuntime, grace: Duration, release_tracked_tasks: bool) -> Result<usize, String> {
+  let requested = begin_native_async_shutdown(runtime)?;
+  let deadline = Instant::now() + grace;
+  while runtime.registry.pending_count().map_err(|error| error.to_string())? > 0 && Instant::now() < deadline {
+    drain_async_events_from(runtime, 256)?;
+    if runtime.registry.pending_count().map_err(|error| error.to_string())? == 0 {
+      break;
+    }
+    let remaining = deadline.saturating_duration_since(Instant::now()).min(Duration::from_millis(40));
+    if !remaining.is_zero() {
+      runtime.queue.wait_for_event(remaining).map_err(|error| error.to_string())?;
+    }
+  }
+  drain_async_events_from(runtime, 256)?;
+  runtime.queue.close().map_err(|error| error.to_string())?;
+  let forced = force_cleanup_native_async(runtime, release_tracked_tasks)?;
+  trace_ffi_event("async-shutdown-complete", format!("requested={requested} forced={forced}"));
+  Ok(forced)
+}
+
 pub fn exit_when_async_cleared() -> Result<(), String> {
   let runtime = native_async_runtime()?;
+  let mut shutdown_complete = false;
   loop {
+    if shutdown_requested() && !shutdown_complete {
+      if let Err(error) = run_pending_ctrl_c_callback() {
+        eprintln!("[Error] {error}");
+      }
+      shutdown_native_async_runtime(runtime, ASYNC_SHUTDOWN_GRACE, true)?;
+      shutdown_complete = true;
+    }
     drain_async_events(256)?;
     if track::count_pending_tasks() == 0 && runtime.queue.is_empty().map_err(|error| error.to_string())? {
       return Ok(());
+    }
+    if shutdown_complete {
+      thread::sleep(Duration::from_millis(10));
+      continue;
     }
     if runtime.queue.is_empty().map_err(|error| error.to_string())? {
       runtime
@@ -1428,6 +1640,7 @@ fn try_start_async_callback_v1(
     method: method.to_owned(),
     control: Arc::new(Mutex::new(None)),
     blocking: None,
+    started_at: Instant::now(),
   };
   let handle = runtime
     .registry
@@ -1627,6 +1840,7 @@ fn try_call_blocking_v1(
       buffers: Arc::new(Mutex::new(HashMap::new())),
       failures: Arc::new(Mutex::new(vec![])),
     }),
+    started_at: Instant::now(),
   };
   let handle = runtime
     .registry
@@ -1764,16 +1978,16 @@ pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Res
 #[unsafe(no_mangle)]
 pub fn on_ctrl_c(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 1 {
-    let cb = Arc::new(xs[0].to_owned());
-    let copied_stack = Arc::new(call_stack.to_owned());
-    ctrlc::set_handler(move || {
-      if let Calcit::Fn { info, .. } = cb.as_ref()
-        && let Err(e) = runner::run_fn(&[], info, &copied_stack)
-      {
-        eprintln!("error: {e}");
-      }
-    })
-    .map_err(|e| CalcitErr::use_str(CalcitErrKind::Unexpected, format!("failed to set Ctrl-C handler: {e}")))?;
+    if !matches!(&xs[0], Calcit::Fn { .. }) {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("on-control-c expected a callback function, got: {}", xs[0]),
+      );
+    }
+    *CTRL_C_CALLBACK
+      .lock()
+      .map_err(|_| CalcitErr::use_str(CalcitErrKind::Unexpected, "Ctrl-C callback lock is poisoned"))? =
+      Some((Arc::new(xs[0].to_owned()), Arc::new(call_stack.to_owned())));
     Ok(Calcit::Nil)
   } else {
     CalcitErr::err_str(CalcitErrKind::Arity, format!("on-control-c expected a callback function {xs:?}"))
@@ -1827,6 +2041,36 @@ mod async_callback_tests {
     async_status::OK
   }
 
+  unsafe extern "C" fn record_shutdown_cancel(context: u64, _task_handle: u64, reason_ptr: *const u8, reason_len: usize) -> i32 {
+    if context == 0 || reason_ptr.is_null() {
+      return async_status::INVALID_PAYLOAD;
+    }
+    let reason = unsafe { std::slice::from_raw_parts(reason_ptr, reason_len) };
+    if reason != b"{} (:code :host-shutdown)" {
+      return async_status::INVALID_PAYLOAD;
+    }
+    // SAFETY: shutdown tests pass a live AtomicUsize address and invoke the
+    // cancellation callback synchronously before the counter is dropped.
+    unsafe { &*(context as *const AtomicUsize) }.fetch_add(1, Ordering::Relaxed);
+    async_status::OK
+  }
+
+  unsafe extern "C" fn complete_shutdown_cancel(context: u64, task_handle: u64, _reason_ptr: *const u8, _reason_len: usize) -> i32 {
+    // SAFETY: this test passes a live host-thread runtime address as context
+    // and invokes cancellation synchronously before that runtime is dropped.
+    let runtime = unsafe { &*(context as *const NativeAsyncRuntime) };
+    match runtime.queue.enqueue(
+      &runtime.registry,
+      FfiAsyncHandle::from_raw(task_handle),
+      None,
+      FfiAsyncEventKind::Complete,
+      b"&unit".to_vec(),
+    ) {
+      Ok(_) => async_status::OK,
+      Err(error) => error.status_code(),
+    }
+  }
+
   fn test_task() -> NativeAsyncResource {
     NativeAsyncResource::Task(NativeAsyncTask {
       callback: Calcit::Nil,
@@ -1835,6 +2079,7 @@ mod async_callback_tests {
       method: "server".to_owned(),
       control: Arc::new(Mutex::new(None)),
       blocking: None,
+      started_at: Instant::now(),
     })
   }
 
@@ -1860,6 +2105,7 @@ mod async_callback_tests {
         method: "blocking".to_owned(),
         control: Arc::new(Mutex::new(None)),
         blocking: Some(blocking.clone()),
+        started_at: Instant::now(),
       }),
       blocking,
     )
@@ -2282,6 +2528,123 @@ mod async_callback_tests {
         )
       },
       async_status::INVALID_HANDLE
+    );
+  }
+
+  #[test]
+  fn runtime_shutdown_cancels_tasks_rejects_responses_and_force_cleans_after_grace() {
+    const RESPONSE_CONTEXT: u64 = 808;
+    let shutdown_cancels = AtomicUsize::new(0);
+    let runtime = test_runtime(4);
+    let task = test_task();
+    let NativeAsyncResource::Task(task_state) = &task else {
+      unreachable!("test task is a task resource");
+    };
+    *task_state.control.lock().expect("task control") = Some(NativeAsyncTaskControl {
+      context: (&shutdown_cancels as *const AtomicUsize) as u64,
+      cancel: record_shutdown_cancel,
+    });
+    let owner = runtime
+      .registry
+      .register_with_flags(
+        FfiAsyncHandleKind::Server,
+        ASYNC_TASK_FLAG_SERIAL_EVENTS | ASYNC_TASK_FLAG_REQUIRES_RESPONSE,
+        task,
+      )
+      .expect("register shutdown server");
+    let response = register_test_response(&runtime, owner, RESPONSE_CONTEXT, Instant::now() + Duration::from_secs(1));
+
+    assert_eq!(
+      shutdown_native_async_runtime(&runtime, Duration::ZERO, false).expect("shutdown runtime"),
+      1
+    );
+    assert_eq!(shutdown_cancels.load(Ordering::Relaxed), 1);
+    assert_eq!(
+      runtime.registry.state(owner),
+      Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle)
+    );
+    assert_eq!(
+      runtime.registry.state(response),
+      Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle)
+    );
+    assert_eq!(runtime.registry.pending_count(), Ok(0));
+    assert!(!runtime.queue.wait_for_event(Duration::ZERO).expect("closed queue"));
+    assert_eq!(
+      runtime.registry.register(FfiAsyncHandleKind::Stream, test_task()),
+      Err(calcit::ffi_abi::FfiAsyncHandleError::HostClosing)
+    );
+    let responses: Vec<RecordedResponse> = RESPONSE_EVENTS
+      .lock()
+      .expect("response events")
+      .iter()
+      .filter(|(context, ..)| *context == RESPONSE_CONTEXT)
+      .cloned()
+      .collect();
+    assert_eq!(
+      responses,
+      vec![(
+        RESPONSE_CONTEXT,
+        response.raw(),
+        ASYNC_RESPONSE_REJECT,
+        b"{} (:code :host-shutdown)".to_vec()
+      )]
+    );
+  }
+
+  #[test]
+  fn runtime_shutdown_drains_cooperative_terminal_before_deadline() {
+    let runtime = test_runtime(4);
+    let task = test_task();
+    let NativeAsyncResource::Task(task_state) = &task else {
+      unreachable!("test task is a task resource");
+    };
+    *task_state.control.lock().expect("task control") = Some(NativeAsyncTaskControl {
+      context: (&runtime as *const NativeAsyncRuntime) as u64,
+      cancel: complete_shutdown_cancel,
+    });
+    let owner = runtime
+      .registry
+      .register_with_flags(FfiAsyncHandleKind::Stream, ASYNC_TASK_FLAG_SERIAL_EVENTS, task)
+      .expect("register cooperative stream");
+
+    assert_eq!(
+      shutdown_native_async_runtime(&runtime, Duration::from_millis(50), false).expect("shutdown runtime"),
+      0
+    );
+    assert_eq!(
+      runtime.registry.state(owner),
+      Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle)
+    );
+    assert_eq!(runtime.registry.pending_count(), Ok(0));
+    assert!(runtime.queue.is_empty().expect("empty shutdown queue"));
+  }
+
+  #[test]
+  fn runtime_shutdown_does_not_cancel_an_already_closing_task_twice() {
+    let shutdown_cancels = AtomicUsize::new(0);
+    let runtime = test_runtime(4);
+    let task = test_task();
+    let NativeAsyncResource::Task(task_state) = &task else {
+      unreachable!("test task is a task resource");
+    };
+    *task_state.control.lock().expect("task control") = Some(NativeAsyncTaskControl {
+      context: (&shutdown_cancels as *const AtomicUsize) as u64,
+      cancel: record_shutdown_cancel,
+    });
+    let owner = runtime
+      .registry
+      .register_with_flags(FfiAsyncHandleKind::Stream, ASYNC_TASK_FLAG_SERIAL_EVENTS, task)
+      .expect("register closing stream");
+    runtime.registry.begin_close(owner).expect("begin explicit close");
+
+    assert_eq!(
+      shutdown_native_async_runtime(&runtime, Duration::ZERO, false).expect("shutdown runtime"),
+      1
+    );
+    assert_eq!(shutdown_cancels.load(Ordering::Relaxed), 0);
+    assert_eq!(
+      runtime.registry.state(owner),
+      Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle)
     );
   }
 }
