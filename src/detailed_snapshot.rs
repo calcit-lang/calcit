@@ -7,7 +7,24 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::calcit::{CalcitTypeAnnotation, DYNAMIC_TYPE};
-use crate::snapshot::{CodeEntry, FileInSnapShot, NsEntry, TestEntry, gen_meta_ns, validate_test_names};
+use crate::snapshot::{
+  CodeEntry, FileInSnapShot, NsEntry, TestEntry, gen_meta_ns, insert_snapshot_identifier, parse_snapshot_identifier_key,
+  validate_test_names,
+};
+
+fn parse_detailed_files(data: &Edn, owner: &str) -> Result<HashMap<String, DetailedFileInSnapshot>, String> {
+  if matches!(data, Edn::Nil) {
+    return Ok(HashMap::new());
+  }
+  let map = data.view_map().map_err(|error| format!("{owner}: expected files map: {error}"))?;
+  let mut files = HashMap::with_capacity(map.0.len());
+  for (key, value) in &map.0 {
+    let name = parse_snapshot_identifier_key(key, owner)?;
+    let file = value.to_owned().try_into().map_err(|error| format!("{owner}/{name}: {error}"))?;
+    insert_snapshot_identifier(&mut files, name, file, owner)?;
+  }
+  Ok(files)
+}
 
 /// Detailed Cirru structure with metadata for tracking changes
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -458,12 +475,16 @@ impl TryFrom<Edn> for DetailedFileInSnapshot {
               ns = Some(value.to_owned().try_into()?);
             }
             "defs" => {
-              if let Edn::Map(defs_map) = value {
-                for (k, v) in defs_map.0.iter() {
-                  if let (Edn::Str(key_str), Ok(def_entry)) = (k, v.to_owned().try_into()) {
-                    defs.insert(key_str.to_string(), def_entry);
-                  }
-                }
+              let defs_map = value
+                .view_map()
+                .map_err(|error| format!("FileEntry/:defs: expected map: {error}"))?;
+              for (key, value) in &defs_map.0 {
+                let name = parse_snapshot_identifier_key(key, "FileEntry/:defs")?;
+                let entry = value
+                  .to_owned()
+                  .try_into()
+                  .map_err(|error| format!("FileEntry/:defs/{name}: {error}"))?;
+                insert_snapshot_identifier(&mut defs, name, entry, "FileEntry/:defs")?;
               }
             }
             _ => {}
@@ -516,13 +537,7 @@ impl TryFrom<Edn> for DetailedSnapshot {
               entries = value.to_owned();
             }
             "files" => {
-              if let Edn::Map(files_map) = value {
-                for (k, v) in files_map.0.iter() {
-                  if let (Edn::Str(key_str), Ok(file)) = (k, v.to_owned().try_into()) {
-                    files.insert(key_str.to_string(), file);
-                  }
-                }
-              }
+              files = parse_detailed_files(value, "DetailedSnapshot/:files")?;
             }
             "users" => {
               users = value.to_owned();
@@ -542,19 +557,7 @@ impl TryFrom<Edn> for DetailedSnapshot {
       _ => {
         let data = data.view_map()?;
 
-        let files = data
-          .get_or_nil("files")
-          .view_map()
-          .map(|map| {
-            let mut result = HashMap::new();
-            for (k, v) in map.0.iter() {
-              if let (Edn::Str(key), Ok(file)) = (k, v.to_owned().try_into()) {
-                result.insert(key.to_string(), file);
-              }
-            }
-            result
-          })
-          .unwrap_or_default();
+        let files = parse_detailed_files(&data.get_or_nil("files"), "DetailedSnapshot/:files")?;
 
         Ok(DetailedSnapshot {
           package: data.get_or_nil("package").try_into()?,
@@ -574,18 +577,7 @@ pub fn load_detailed_snapshot_data(data: &Edn, path: &str) -> Result<DetailedSna
   let pkg: Arc<str> = data.get_or_nil("package").try_into()?;
 
   let files_edn = data.get_or_nil("files");
-  let mut files: HashMap<String, DetailedFileInSnapshot> = files_edn
-    .view_map()
-    .map(|map| {
-      let mut result = HashMap::new();
-      for (k, v) in map.0.iter() {
-        if let (Edn::Str(key), Ok(file)) = (k, v.to_owned().try_into()) {
-          result.insert(key.to_string(), file);
-        }
-      }
-      result
-    })
-    .unwrap_or_default();
+  let mut files = parse_detailed_files(&files_edn, "DetailedSnapshot/:files")?;
 
   let meta_ns = format!("{pkg}.$meta");
   files.insert(meta_ns.to_owned(), gen_meta_ns(&meta_ns, path).into());
