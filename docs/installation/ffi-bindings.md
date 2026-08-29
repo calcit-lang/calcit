@@ -7,10 +7,16 @@ aliases:
   - "ffi"
   - "rust bindings"
   - "native bindings"
+id: core/ffi
 ---
 # Rust bindings
 
 > API status: unstable.
+
+Before adding a new effect or moving behavior between core and a module, apply
+the [core, library, and host capability boundary](host-capability-boundary.md).
+This page defines the native transport; it does not decide which layer owns a
+business capability.
 
 Rust supports extending Calcit with dynamic libraries. A complete project can
 be found at https://github.com/calcit-lang/dylib-workflow.
