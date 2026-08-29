@@ -16,7 +16,7 @@ id: core/structural-editor
 
 As demonstrated in [Cirru Project](http://cirru.org/), it's for higher goals of auto-layout code editor. [Calcit Editor](https://github.com/calcit-lang/editor) was incubated in Cirru.
 
-Structural editing makes Calcit a lot different from existing languages, even unique among Lisps.
+Structural editing follows directly from Calcit's canonical syntax-tree source model: definitions and internal nodes can be queried, validated, and changed without treating source as unstructured text.
 
 Calcit Editor uses `calcit.cirru` as the canonical snapshot file. The retired `compact.cirru` filename must be migrated before current tools can load it.
 Example of a `calcit.cirru` file is more readable:

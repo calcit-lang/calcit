@@ -1,43 +1,44 @@
 ---
-title: "Features from Clojure"
+title: "Historical Influences and Migration Notes"
 scope: "core"
 kind: "guide"
 category: "intro"
 aliases:
-  - "clojure dialect"
-  - "clojurescript dialect"
+  - "clojure migration"
+  - "clojurescript migration"
   - "from clojure"
 ---
-# Features from Clojure
+# Historical Influences and Migration Notes
 
-Calcit is mostly a ClojureScript dialect. So it should also be considered a Clojure dialect.
+Early Calcit borrowed important ideas from Clojure and ClojureScript, including immutable persistent data, namespaces, code-as-data macros, higher-order functions, and interactive development. That history can help readers recognize some surface concepts, but it no longer defines the language.
 
-There are some significant features Calcit is learning from Clojure,
+Modern Calcit has its own semantic center:
 
-- Runtime persistent data by default, you can only simulate states with `Ref`s.
-- Namespaces
-- Hygienic macros(although less powerful)
-- Higher order functions
-- Keywords, although Calcit changed the name to "tag" since `0.7`
-- Compiles to JavaScript, interops
-- Hot code swapping while code modified, and trigger an `on-reload` function
-- HUD for JavaScript errors
+- nominal structs and enums with validated construction and pattern matching;
+- traits, implementations, and method-oriented capability APIs;
+- static type analysis with generics, Option, Result, and explicit Dynamic boundaries;
+- canonical Cirru source snapshots and structural CLI editing;
+- native Rust execution, typed C FFI capabilities, and JavaScript ES Module output;
+- deterministic real-time application updates with revisioned diff/patch synchronization.
 
-Also there are some differences:
+Do not assume a Clojure form, argument order, collection delimiter, polymorphism rule, or host interop behavior applies to Calcit. Query Calcit directly:
 
-| Feature           | Calcit                                           | Clojure                                      |
-| ----------------- | ------------------------------------------------ | -------------------------------------------- |
-| Host Language     | Rust, and use `dylib`s for extending             | Java/Clojure, import Mavan packages          |
-| Syntax            | Indentations / Syntax Tree Editor                | Parentheses                                  |
-| Persistent data   | unbalanced 2-3 Tree, with tricks from FingerTree | HAMT / RRB-tree                              |
-| Package manager   | `git clone` to a folder                          | Clojars                                      |
-| bundle js modules | ES Modules, with ESBuild/Vite                    | Google Closure Compiler / Webpack            |
-| operand order     | at first                                         | at last                                      |
-| Polymorphism      | at runtime, slow `.map ([] 1 2 3) f`             | at compile time, also supports multi-arities |
-| REPL              | only at command line: `calcit eval "+ 1 2"`          | a real REPL                                  |
-| `[]` syntax       | `[]` is a built-in function                      | builtin syntax                               |
-| `{}` syntax       | `{} (:a b)` is macro, expands to `&{} :a :b`     | builtin syntax                               |
+```bash
+calcit query examples calcit.core/map
+calcit query type "'String"
+calcit docs search trait
+```
 
-also Calcit is a one-person language, it has too few features compared to Clojure.
+Useful migration differences include:
 
-Calcit shares many paradiams I learnt while using ClojureScript. But meanwhile it's designed to be more friendly with ES Modules ecosystem.
+| Area | Calcit behavior |
+| --- | --- |
+| Source syntax | Cirru indentation, `$`, and local parentheses build syntax trees; `[]`, `{}`, and `#{}` are constructor symbols |
+| Collection transforms | Collection arguments generally come before callbacks, such as `map xs f` |
+| Domain values | Prefer nominal `defstruct` and `defenum` definitions over untyped map/tag conventions |
+| Polymorphism | Prefer traits and methods, with explicit trait calls for disambiguation |
+| Recoverable absence/failure | Use Option and Result methods and matching rather than nil/exception conventions |
+| Native extension | Typed C FFI modules expose capabilities through Calcit-facing APIs |
+| Web applications | JavaScript ES Modules, Respo projections, and revisioned WebSocket synchronization are first-class ecosystem patterns |
+
+This page is intentionally a migration aid, not the primary explanation of Calcit. New documentation should introduce Calcit concepts on their own terms and use comparisons only when they prevent a concrete migration mistake.

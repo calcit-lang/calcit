@@ -1,6 +1,6 @@
-### Calcit Scripting Language
+### Calcit Programming Language
 
-> Semantically a dialect of ClojureScript. Built with Rust. Compiles to JavaScript ES Modules.
+> A typed functional language for interactive and real-time applications. Built with Rust and compiling to JavaScript ES Modules.
 
 - Home https://calcit-lang.org/
 - API Doc https://apis.calcit-lang.org/
@@ -13,7 +13,8 @@ Core design:
 - Interpreter runs on Rust, extensible with Rust FFI
 - Persistent Data Structure
 - Indentation-based Cirru syntax, friendly to plain text editing
-- Lisp macros, functional style
+- Code-as-data macros and functional style
+- Nominal structs/enums, traits, methods, Option/Result, and static analysis
 - Compiles to JavaScript in ES Modules, JavaScript Interop
 - Hot code swapping friendly
 
@@ -22,6 +23,7 @@ Current direction:
 - `calcit.cirru` is the canonical source snapshot; retired `compact.cirru` inputs receive migration guidance
 - CLI-first development with `calcit` and `caps`, designed to work well with AI agents in terminal workflows
 - Better CLI editing and validation for CI, docs lookup, module management, and incremental updates
+- Consistent support for real-time web applications: typed WebSocket messages, deterministic state updates, diff/patch synchronization, acknowledgement, and resynchronization
 
 ### Install ![GitHub Release](https://img.shields.io/github/v/release/calcit-lang/calcit)
 

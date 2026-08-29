@@ -19,7 +19,7 @@ When using the MCP (Model Context Protocol) server, each documentation or code f
 
 # Indentation-based Syntax
 
-Calcit was designed based on tools from [Cirru Project](http://cirru.org/), which means, it's suggested to be programming with [Calcit Editor](https://github.com/calcit-lang/editor/). It emits the canonical `calcit.cirru` source snapshot. The data is written in [Cirru EDN](https://github.com/Cirru/cirru-edn#syntax), Clojure EDN but based on Cirru Syntax.
+Calcit source uses tools from the [Cirru Project](http://cirru.org/). The canonical `calcit.cirru` snapshot is written as Cirru EDN and can be inspected or updated through Calcit CLI query/edit/tree commands. Cirru EDN is Calcit's typed interchange notation expressed with Cirru syntax.
 
 For Cirru Syntax, read <http://text.cirru.org/>, and you may find a live demo at <http://repo.cirru.org/parser.coffee/>. A normal snippet looks like: this
 

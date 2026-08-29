@@ -10,7 +10,7 @@ aliases:
 ---
 # Macros
 
-Like Clojure, Calcit uses macros to support new syntax. And macros ared evaluated during building to expand syntax tree. A `defmacro` block returns list and symbols, as well as literals:
+Calcit macros extend the language by transforming syntax trees during preprocessing. A `defmacro` block returns lists, symbols, and literals:
 
 ## Quick Recipes
 
@@ -55,7 +55,7 @@ defmacro swap! (a b)
         reset! ~b ~tmp
 ```
 
-Calcit was not designed to be identical to Clojure, so there are many details here and there.
+Macros operate on Calcit syntax and values; use Calcit examples and macro-expansion tools rather than assuming forms from another language.
 
 ### Macros and Static Analysis
 
