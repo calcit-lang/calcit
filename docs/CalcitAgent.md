@@ -511,7 +511,7 @@ calcit docs read-lines agent-advanced.md --start 1 --lines 80
 | ---------------------------- | --------------------------------------------------------------- |
 | Cirru 语法、AST 与常见误写   | `calcit cirru show-guide`；`calcit docs read cirru-syntax.md 'Common Mistakes'` |
 | Cirru EDN 数据层             | `calcit cirru parse-edn --help`；`calcit docs read edn.md --full`       |
-| Calcit 与 Clojure 差异       | `calcit docs read agent-advanced.md 'Calcit vs Clojure'`            |
+| 从 Clojure 迁移时的易错点    | `calcit docs read agent-advanced.md 'Migration notes for Clojure users'` |
 | tree/cursor/transaction      | `calcit docs read edit-tree.md --full`                              |
 | query/context/type-at        | `calcit docs read query.md --full`                                  |
 | 复杂重构与历史陷阱           | `calcit docs read agent-advanced.md --full`                         |

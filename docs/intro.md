@@ -10,20 +10,20 @@ aliases:
 ---
 # Introduction
 
-Calcit is a scripting language that combines the power of Clojure-like functional programming with modern tooling and hot code swapping.
+Calcit is a typed functional language designed for interactive programs, real-time web applications, and concise native scripting.
 
-> An interpreter for Calcit snapshots with hot code swapping support, built with Rust.
+> One language model across a Rust interpreter and JavaScript ES Module output, with state-preserving reload and typed host boundaries.
 
-Calcit is primarily inspired by ClojureScript and designed for interactive development. It can run natively via the Rust interpreter or compile to JavaScript in ES Modules syntax for web development.
+Calcit runs natively through its Rust interpreter and compiles to JavaScript ES Modules for browser and Node.js applications. Its current language model combines immutable persistent data, code-as-data macros, nominal structs and enums, traits and method dispatch, Option/Result composition, pattern matching, static analysis, and typed host boundaries.
 
 ## Key Features
 
 - **Immutable persistent data structures** - All data is immutable by default using ternary tree implementations
-- **Structural editing** - Visual tree-based code editing with Calcit Editor
-- **Hot code swapping** - Live code updates during development without losing state
+- **Nominal types and traits** - Model domain values explicitly and expose capabilities as methods
+- **Hot code swapping** - Live code updates during development without losing application state
 - **JavaScript interop** - Seamless integration with JS ecosystem and ES Modules
 - **Indentation-based syntax** - Alternative to parentheses for cleaner code
-- **Static type analysis** - Compile-time type checking and error detection
+- **Static type analysis** - Compile-time checking across functions, enums, structs, traits, and FFI contracts
 - **MCP (Model Context Protocol)** server - Tool integration for AI assistants
 - **Fast compilation** - Rust-based interpreter with excellent performance
 
@@ -41,20 +41,20 @@ cargo install calcit
 
 Calcit experiments with several interesting ideas:
 
-- **Code as data** - Code is stored in EDN snapshot files (`.cirru`), enabling structural editing and powerful metaprogramming
+- **Code as data** - Canonical source is stored in `calcit.cirru`, enabling structural CLI edits and metaprogramming
 - **Pattern matching** - Tagged unions and enum types with compile-time validation
 - **Type inference** - Static analysis without requiring extensive type annotations
-- **Incremental compilation** - Hot reload with `.compact-inc.cirru` for fast iteration
+- **Deterministic updates** - Keep business-state transitions serial and explicit while asynchronous work remains at system boundaries
 - **Ternary tree collections** - Custom persistent data structures optimized for performance
-- **File-as-key/value model** - MCP server integration uses Markdown docs as knowledge base
+- **Typed capabilities** - Traits and method-oriented APIs keep reusable behavior explicit without erasing domain types
 
-Most other features are inherited from ClojureScript. Calcit-js is commonly used for web development with [Respo](https://respo-mvc.org/), a virtual DOM library migrated from ClojureScript.
+One central Calcit use case is a real-time application built with [Respo](https://respo-mvc.org/), Recollect, WebSocket modules, and [Calcium Workflow](https://github.com/Cumulo/calcium-workflow): the browser sends typed operations, the server applies deterministic state updates, and revisioned diff/patch messages incrementally synchronize client projections. See [Real-time Application Model](intro/realtime-applications.md).
 
 ## Use Cases
 
-- **Web development** - Compile to JS and use with Respo or other frameworks
+- **Real-time web applications** - Share typed operations and revisioned incremental projections across browser and server
 - **Scripting** - Fast native execution for CLI tools and automation
 - **Interactive development** - REPL-driven development with hot code swapping
-- **Teaching** - Clean syntax and structural editor for learning functional programming
+- **Typed native modules** - Expose system capabilities through C FFI while preserving typed Calcit APIs
 
-For more details, see [Overview](intro/overview.md) and [From Clojure](intro/from-clojure.md).
+For more details, see [Overview](intro/overview.md), [Real-time Application Model](intro/realtime-applications.md), and [Historical Influences and Migration Notes](intro/from-clojure.md).

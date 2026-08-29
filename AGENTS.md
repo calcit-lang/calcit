@@ -15,6 +15,15 @@
 - **一致性**：复用现有模式，保持日志和错误信息风格统一。
 - **测试覆盖**：新功能必须补齐正常路径与异常分支的测试用例。
 
+### 语言定位与文档一致性
+
+- **以 Calcit 自身为中心**：文档直接介绍 nominal struct/enum、traits 与方法、Option/Result、静态分析、typed FFI、Cirru source model 和跨 backend 语义，不再以 “ClojureScript dialect” 或其他语言类比作为主要解释框架。
+- **历史比较只服务迁移**：Clojure/ClojureScript 等历史影响可在迁移提示中保留；只有在避免具体语法、参数顺序或语义误判时才使用比较，不把外部语言当作设计依据。
+- **统一实时应用模型**：面向 Web 应用的设计围绕 Calcium Workflow：typed operation/message envelope、串行确定性 updater、Respo/Recollect projection 与 diff/patch、revision/ack/resync、有界异步、可观测收敛。
+- **能力优先以方法暴露**：新增公共抽象优先通过 trait 与 method 形成一致 API；先强化 nominal types 和 typed boundaries，再考虑增加语法或借鉴其他语言特性。
+- **跨项目验证**：相关语言/生态改动优先在 Calcium Workflow 回归，并逐步用 TopixIM/Timegrass 类真实实时应用验证；Calcit、Respo、Recollect、WebSocket 与 native FFI 模块应保持层次清晰、职责一致。
+- **双语协作记录**：关联 Issue 与 PR 的标题、正文和阶段性进度保持中英双语，便于跨项目追踪同一设计方向。
+
 直接使用命令修改 calcit 程序时不需要调用 cargo, 直接按照文档给出的命令行示例执行即可。
 
 在开始任何 `calcit edit` / `calcit tree` 修改前，先把下面这条命令当作**硬前置步骤**执行一遍，而不是可选建议：

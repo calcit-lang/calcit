@@ -125,8 +125,8 @@ echo 'range 10' | calcit exec
 
 ## Calcit 与 Cirru 的关系
 
-- **Calcit** 是编程语言本身（一门类似 Clojure 的函数式编程语言）
-- **Cirru** 是语法格式（缩进风格的 S-expression，类似去掉括号改用缩进的 Lisp）
+- **Calcit** 是编程语言本身，当前语义中心包括 nominal struct/enum、trait 与方法、Option/Result、静态分析及 typed FFI。
+- **Cirru** 是表达 Calcit syntax tree 的缩进语法格式，通过缩进、`$` 与局部圆括号组织节点。
 - **关系**：Calcit 代码使用 Cirru 语法书写和存储
 
 **具体体现：**
@@ -221,8 +221,8 @@ echo 'range 10' | calcit exec
 比较容易犯的错误：
 
 - Calcit 中只有保留 `|` 前缀的 token 才是 string；`|x` 对应 JavaScript 字符串 `"x"`。双引号只负责保护含空格的 token，`"x"` 仍是 symbol。
-- Calcit 采用 Cirru 缩进语法，可以理解成去掉跨行括号改用缩进的 Lisp 变种。用 `calcit cirru parse` 和 `calcit cirru format` 互相转化试验。
-- Calcit 跟 Clojure 在语义上比较像，但 Cirru 主要用缩进、`$` 和圆括号建立 child list；`[]`、`{}`、`#{}` 是集合构造符号，不是包围内容的 delimiter。
+- Calcit 采用 Cirru 缩进语法；用 `calcit cirru parse` 和 `calcit cirru format` 观察语法树与格式化结果，不要从其他语言的 delimiter 规则猜测结构。
+- Cirru 主要用缩进、`$` 和圆括号建立 child list；`[]`、`{}`、`#{}` 是 Calcit 集合构造符号，不是包围内容的 delimiter。
 
 ## 开发调试
 
@@ -722,7 +722,9 @@ calcit tree replace 'app.core/checkout' --path @3.2.1 --code 'quote calculate-di
 
 ---
 
-## 💡 Calcit vs Clojure 关键差异
+## 💡 Migration notes for Clojure users
+
+本节只用于避免迁移时的具体误判，不作为 Calcit 的语言定义。新代码应以 Calcit 的 nominal types、traits/methods、Option/Result 和 typed boundaries 为准。
 
 **语法层面：**
 

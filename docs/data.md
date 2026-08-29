@@ -18,7 +18,7 @@ Calcit uses persistent values by default, with a small set of explicit stateful 
 - **Bool**: `true`, `false`
 - **Nil**: `nil`, used for absence at untyped boundaries
 - **Number**: `f64` in Rust, Number in JavaScript (`1`, `3.14`, `-42`)
-- **Tag**: Immutable strings starting with `:` (`:keyword`, `:demo`) - similar to Clojure keywords
+- **Tag**: Interned immutable identifiers starting with `:` (`:keyword`, `:demo`), commonly used for field names, variants, and protocol labels
 - **Symbol**: Quoted identifiers such as `'name`; unlike tags, symbols preserve code/data intent
 - **String**: Text data with special prefix syntax (`|text`, `"|with spaces"`)
 - **Buffer**: Immutable bytes, created with `&buffer`

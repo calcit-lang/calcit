@@ -21,7 +21,7 @@ calcit eval "+ 1 2"
 
 If you prefer to write Calcit code without the calcit-editor, that's possible too. See the example in [minimal-calcit](https://github.com/calcit-lang/minimal-calcit).
 
-Calcit code can be written using indentation-based syntax. This means you don't need to match parentheses as in Clojure, but you must pay close attention to indentation.
+Calcit code uses indentation-based Cirru syntax, where indentation, `$`, and local parentheses determine syntax-tree structure. Format and inspect the tree with Calcit CLI commands rather than guessing structure from visual layout alone.
 
 Use a `calcit.cirru` file with the `calcit` command to run the program. Retired `compact.cirru` inputs must be migrated first.
 

@@ -10,22 +10,26 @@ aliases:
 ---
 # Overview
 
-- Immutable Data
+## Immutable values and deterministic state
 
-Values and states are represented in different data structures, which is the semantics from functional programming. Internally it's [im](https://crates.io/crates/im) in Rust and a custom [finger tree](https://github.com/calcit-lang/ternary-tree.ts) in JavaScript.
+Calcit uses persistent immutable collections in both the Rust interpreter and JavaScript output. Application state changes are expressed as explicit operations passed through a deterministic updater. This keeps replay, diffing, hot reload, and synchronization understandable.
 
-- Lisp(Code is Data)
+## Nominal domain modeling
 
-Calcit-js was designed based on experiences from ClojureScript, with a bunch of builtin macros. It offers similar experiences to ClojureScript. So Calcit offers much power via macros, while keeping its core simple.
+Structs and enums describe application data and protocol envelopes. Pattern matching validates enum variants, while Option and Result make missing values and recoverable failures explicit. Static analysis preserves these relationships through function calls and collection operations.
 
-- Indentations
+## Traits and method-oriented capabilities
 
-With the `calcit` command, Calcit code can be written as an indentation-based language directly. So you don't have to match parentheses like in Clojure. It also means now you need to handle indentations very carefully.
+Traits describe capabilities independently from concrete data representation. Public APIs generally expose those capabilities as methods, with explicit trait calls available when dispatch needs disambiguation. This is the preferred extension model for collections, typed host objects, and reusable application abstractions.
 
-- Hot code swapping
+## Code as data with Cirru syntax
 
-Calcit was built with hot swapping in mind. Combined with [calcit-editor](https://github.com/calcit-lang/editor), it watches code changes by specifying `-w`, and re-runs program on updates. For calcit-js, it works with Vite and Webpack to reload, learning from Elm, ClojureScript and React.
+Calcit macros transform syntax trees. Source is stored canonically in `calcit.cirru` and written with indentation, `$`, and local parentheses rather than delimiter-heavy collection syntax. CLI tree operations can inspect and update this source structurally.
 
-- ES Modules Syntax
+## Native and JavaScript execution
 
-To leverage the power of modern browsers with help of Vite, we need another ClojureScript that emits `import`/`export` for Vite. Calcit-js does this! And this page is built with Calcit-js as well, open Console to find out more.
+The Rust interpreter supports native scripts and typed C FFI modules. JavaScript codegen emits ES Modules for browser and Node.js ecosystems. Both paths aim to preserve the same Calcit semantics while keeping host-specific effects at explicit boundaries.
+
+## Interactive real-time applications
+
+Calcit hot reload is designed to preserve running application state. In Calcium-style applications, a serial server updater produces typed client projections, Recollect computes structural differences, and revision/ack/resync messages keep browser state convergent over WebSocket. See [Real-time Application Model](realtime-applications.md).
