@@ -39,7 +39,7 @@ leads_to:
 
 会写回 Snapshot 的 `edit`、`tree`、`config` 和 cursor mutation 会先核对同目录
 `deps.cirru :calcit-version`。若项目固定版本与当前 CLI 不一致，命令会在写入前失败；应改用项目固定的
-Calcit 版本，或先显式执行 `caps upgrade --all deps.cirru` 升级项目。查询、dry-run、cursor 导航，以及尚未
+Calcit 版本，或先显式执行 `caps deps.cirru upgrade --all` 升级项目。查询、dry-run、cursor 导航，以及尚未
 声明 `:calcit-version` 的旧项目不受此门禁影响。
 
 ### 0.1 发现 Calcit 缺陷时：定位归属仓库并提交 Issue

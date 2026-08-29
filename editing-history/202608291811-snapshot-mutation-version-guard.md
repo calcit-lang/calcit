@@ -10,7 +10,7 @@ Calcit 0.13.60 writes canonical symbol keys for Snapshot namespaces and definiti
 - Snapshot-writing `edit`, `tree`, `config`, and cursor operations now reject an exact `:calcit-version` mismatch before loading or writing the target file.
 - Read-only commands, dry-runs, cursor navigation, projects without `deps.cirru`, and legacy manifests without `:calcit-version` remain usable.
 - Invalid non-string or non-semver declarations fail with a manifest-specific diagnostic.
-- The failure explains both safe paths: use the pinned Calcit release, or explicitly upgrade the project with `caps upgrade --all`.
+- The failure explains both safe paths: use the pinned Calcit release, or explicitly upgrade the project with `caps <deps-file> upgrade --all`.
 
 ## Verification
 

@@ -137,7 +137,7 @@ ns app.main $ :require
 
 新版 CLI 在任何 Snapshot 写入前都会核对相邻 `deps.cirru :calcit-version`。这避免全局安装的新版本
 把 Snapshot 写成项目 CI 固定的旧版本无法读取的格式。版本不一致时，先决定是使用项目固定版本完成
-当前编辑，还是显式运行 `caps upgrade --all deps.cirru` 升级整条工具链；不要为了绕过门禁临时删除版本声明。
+当前编辑，还是显式运行 `caps deps.cirru upgrade --all` 升级整条工具链；不要为了绕过门禁临时删除版本声明。
 
 ---
 

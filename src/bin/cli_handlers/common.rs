@@ -98,7 +98,7 @@ pub fn guard_snapshot_mutation_toolchain(snapshot_path: &str) -> Result<(), Stri
 
   Err(format!(
     "Snapshot mutation blocked: {deps_path} pins Calcit {declared}, but the running CLI is {running}.\n\
-     Re-run this edit with Calcit {declared}, or explicitly upgrade the project first with `caps upgrade --all {deps_path}`.\n\
+     Re-run this edit with Calcit {declared}, or explicitly upgrade the project first with `caps {deps_path} upgrade --all`.\n\
      No changes were written to {snapshot_path}."
   ))
 }
@@ -579,6 +579,10 @@ mod tests {
     let error = guard_snapshot_mutation_toolchain(snapshot.to_str().unwrap()).unwrap_err();
     assert!(error.contains("Snapshot mutation blocked"), "error: {error}");
     assert!(error.contains("pins Calcit 0.1.0"), "error: {error}");
+    assert!(
+      error.contains("caps ") && error.contains("deps.cirru upgrade --all"),
+      "error: {error}"
+    );
     assert!(error.contains("No changes were written"), "error: {error}");
     fs::remove_dir_all(dir).unwrap();
   }
