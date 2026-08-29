@@ -1202,6 +1202,11 @@ fn discard_owned_responses(runtime: &NativeAsyncRuntime, owner: FfiAsyncHandle) 
   Ok(discarded)
 }
 
+fn begin_async_task_cancel(runtime: &NativeAsyncRuntime, handle: FfiAsyncHandle) -> Result<usize, String> {
+  runtime.registry.begin_close(handle).map_err(|error| error.to_string())?;
+  runtime.queue.discard_handle_events(handle).map_err(|error| error.to_string())
+}
+
 fn ffi_task_cancel(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() || xs.len() > 2 {
     return CalcitErr::err_str(
@@ -1236,16 +1241,17 @@ fn ffi_task_cancel(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calci
     .map_err(|_| CalcitErr::use_str(CalcitErrKind::Unexpected, "async FFI task control lock is poisoned"))?
     .control
     .ok_or_else(|| CalcitErr::use_str(CalcitErrKind::Unexpected, "async FFI task does not provide cancellation"))?;
-  runtime
-    .registry
-    .begin_close(capability.handle)
-    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error.to_string()))?;
+  let purged =
+    begin_async_task_cancel(runtime, capability.handle).map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
   update_task_outcomes(&task, |outcomes| {
     outcomes.cancel_requested_total = outcomes.cancel_requested_total.saturating_add(1);
   })
   .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
   let status = unsafe { (control.cancel)(control.context, capability.handle.raw(), reason.as_ptr(), reason.len()) };
-  trace_ffi_event("async-task-cancel", format!("task={} status={status}", capability.handle.raw()));
+  trace_ffi_event(
+    "async-task-cancel",
+    format!("task={} status={status} purged={purged}", capability.handle.raw()),
+  );
   if status == async_status::OK {
     update_task_outcomes(&task, |outcomes| {
       outcomes.cancel_succeeded_total = outcomes.cancel_succeeded_total.saturating_add(1);
@@ -2453,6 +2459,71 @@ mod async_callback_tests {
       responses: Mutex::new(NativeAsyncResponseIndex::default()),
       completed_metrics: Mutex::new(BTreeMap::new()),
     }
+  }
+
+  #[test]
+  fn task_cancel_purges_queued_emits_but_still_accepts_terminal() {
+    let runtime = test_runtime(4);
+    let handle = runtime
+      .registry
+      .register_with_flags(FfiAsyncHandleKind::Stream, ASYNC_TASK_FLAG_SERIAL_EVENTS, test_task())
+      .expect("register cancellable task");
+    let emit = b"([] |queued-before-cancel)";
+    assert_eq!(
+      unsafe {
+        enqueue_native_async_event(
+          &runtime,
+          handle.raw(),
+          handle.raw(),
+          FfiAsyncEventKind::Emit as u32,
+          FfiAsyncHandle::INVALID.raw(),
+          emit.as_ptr(),
+          emit.len(),
+        )
+      },
+      async_status::OK
+    );
+    assert_eq!(runtime.queue.len(), Ok(1));
+
+    assert_eq!(begin_async_task_cancel(&runtime, handle), Ok(1));
+    assert_eq!(runtime.queue.len(), Ok(0));
+    assert_eq!(
+      unsafe {
+        enqueue_native_async_event(
+          &runtime,
+          handle.raw(),
+          handle.raw(),
+          FfiAsyncEventKind::Emit as u32,
+          FfiAsyncHandle::INVALID.raw(),
+          emit.as_ptr(),
+          emit.len(),
+        )
+      },
+      async_status::HANDLE_CLOSING
+    );
+
+    let terminal = b"&unit";
+    assert_eq!(
+      unsafe {
+        enqueue_native_async_event(
+          &runtime,
+          handle.raw(),
+          handle.raw(),
+          FfiAsyncEventKind::Complete as u32,
+          FfiAsyncHandle::INVALID.raw(),
+          terminal.as_ptr(),
+          terminal.len(),
+        )
+      },
+      async_status::OK
+    );
+    let report = runtime
+      .queue
+      .drain(&runtime.registry, 4, |event| dispatch_native_async_event(&runtime, event))
+      .expect("drain terminal after cancel");
+    assert_eq!(report.delivered, 1);
+    assert!(report.lifecycle_failures.is_empty());
+    assert_eq!(report.finished.len(), 1);
   }
 
   fn blocking_test_task_with_callback(callback: Calcit) -> (NativeAsyncResource, NativeBlockingTask) {

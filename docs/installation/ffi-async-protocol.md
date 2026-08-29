@@ -242,6 +242,18 @@ keeps returning explicit `&unit` otherwise); `&ffi-task-cancel` invokes this
 hook on the host thread. An accepted cancel must eventually enqueue exactly
 one `Complete` or `Fail`; repeated cancel while Closing is idempotent.
 
+Cancellation first moves the task to Closing, which rejects every new Emit,
+then purges Emit events that were accepted but not dispatched before invoking
+the module cancel hook. If several events were already detached into one host
+drain batch, later Emits in that batch are discarded as cancellation cleanup
+rather than reported as lifecycle failures. Reserved `Complete`/`Fail` traffic
+remains accepted so the module can acknowledge cleanup exactly once.
+
+取消操作会先把 task 切换为 Closing，阻止所有新的 Emit，再清理已经接受但尚未
+dispatch 的 Emit，然后调用模块 cancel hook。若多个事件已经被 host 一次取入同一
+drain batch，批次中位于取消回调之后的 Emit 会作为取消清理静默丢弃，而不会误报为
+lifecycle failure。预留的 `Complete`/`Fail` 仍可入队，供模块 exactly-once 确认清理完成。
+
 At the Calcit adapter boundary, wrap that opaque value with `ffi:task` and
 expose the nominal `FfiTask` to application code. Lifecycle operations are
 method-oriented: `.cancel` supplies the standard cancelled reason and

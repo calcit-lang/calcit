@@ -312,6 +312,10 @@ impl FfiAsyncTaskQueueState {
     self.queued.clear();
     self.queued_bytes = 0;
   }
+
+  fn record_discarded_after_dequeue(&mut self) {
+    self.purged_total = self.purged_total.saturating_add(1);
+  }
 }
 
 /// A bounded multi-producer, single-host-thread event queue.
@@ -625,16 +629,29 @@ impl FfiAsyncEventQueue {
           continue;
         }
       };
-      if state.lifecycle == FfiAsyncLifecycle::Finished
-        || (state.lifecycle == FfiAsyncLifecycle::Closing && kind == FfiAsyncEventKind::Emit)
-      {
+      if state.lifecycle == FfiAsyncLifecycle::Closing && kind == FfiAsyncEventKind::Emit {
+        // A drain batch is detached from the shared queue before callbacks run.
+        // Cancellation from an earlier callback can therefore close the task
+        // while later, previously accepted emits are already in this batch.
+        // New emits cannot reserve a sequence after begin_close, so discarding
+        // these detached events is cancellation cleanup, not a lifecycle error.
+        if let Some(state) = self
+          .state
+          .lock()
+          .map_err(|_| FfiAsyncQueueError::QueuePoisoned)?
+          .tasks
+          .get_mut(&handle)
+        {
+          state.record_discarded_after_dequeue();
+        }
+        report.discarded += 1;
+        report.purged += 1;
+        continue;
+      }
+      if state.lifecycle == FfiAsyncLifecycle::Finished {
         report.lifecycle_failures.push(FfiAsyncLifecycleFailure {
           descriptor: event.descriptor,
-          error: if state.lifecycle == FfiAsyncLifecycle::Finished {
-            FfiAsyncHandleError::HandleFinished
-          } else {
-            FfiAsyncHandleError::HandleClosing
-          },
+          error: FfiAsyncHandleError::HandleFinished,
         });
         report.discarded += 1;
         continue;
@@ -940,6 +957,41 @@ mod tests {
   }
 
   #[test]
+  fn cancellation_during_a_drain_batch_silently_discards_later_emits() {
+    let registry = FfiAsyncHandleRegistry::new();
+    let handle = registry.register(FfiAsyncHandleKind::Stream, ()).expect("register stream");
+    let queue = FfiAsyncEventQueue::new(2).expect("create queue");
+    for payload in [b"first".to_vec(), b"stale-after-cancel".to_vec()] {
+      queue
+        .enqueue(&registry, handle, None, FfiAsyncEventKind::Emit, payload)
+        .expect("enqueue accepted emit");
+    }
+
+    let mut delivered = vec![];
+    let report = queue
+      .drain(&registry, 2, |event| {
+        delivered.push(event.payload().to_vec());
+        registry.begin_close(handle).expect("cancel task from first callback");
+        Ok(())
+      })
+      .expect("drain cancellation batch");
+
+    assert_eq!(delivered, vec![b"first".to_vec()]);
+    assert_eq!(report.delivered, 1);
+    assert_eq!(report.discarded, 1);
+    assert_eq!(report.purged, 1);
+    assert!(report.lifecycle_failures.is_empty());
+    assert_eq!(
+      queue
+        .task_metrics(handle)
+        .expect("read metrics")
+        .expect("task metrics")
+        .purged_total,
+      1
+    );
+  }
+
+  #[test]
   fn full_queue_coalesces_only_opted_in_emit_events() {
     let registry = FfiAsyncHandleRegistry::new();
     let handle = registry
@@ -1047,7 +1099,8 @@ mod tests {
     assert_eq!(kinds, vec![FfiAsyncEventKind::Complete]);
     assert_eq!(report.discarded, 1);
     assert_eq!(report.delivered, 1);
-    assert_eq!(report.lifecycle_failures.len(), 1);
+    assert_eq!(report.purged, 1);
+    assert!(report.lifecycle_failures.is_empty());
   }
 
   #[test]
