@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use super::atomic_write::{StagedFile, stage_atomic_file};
-use super::common::{cirru_to_json_value, format_path, parse_path};
+use super::common::{cirru_to_json_value, format_path, guard_snapshot_mutation_toolchain, parse_path};
 use super::edit::{apply_operation_at_path, check_ns_editable, load_snapshot, navigate_to_path, parse_target};
 use super::tree_mutation::{
   TreeCursorMutation, TreeOperation, adjusted_source_path_after_insertion, transform_cursor_path, transform_delete,
@@ -95,6 +95,19 @@ pub fn set_cursor_after_mode(mode: &str) -> Result<(), String> {
 }
 
 pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result<(), String> {
+  if matches!(
+    &cmd.subcommand,
+    CursorSubcommand::Cut(_)
+      | CursorSubcommand::Paste(_)
+      | CursorSubcommand::Apply(_)
+      | CursorSubcommand::SlurpNext(_)
+      | CursorSubcommand::SlurpPrev(_)
+      | CursorSubcommand::BarfLast(_)
+      | CursorSubcommand::BarfFirst(_)
+      | CursorSubcommand::Duplicate(_)
+  ) {
+    guard_snapshot_mutation_toolchain(snapshot_file)?;
+  }
   match &cmd.subcommand {
     CursorSubcommand::Set(opts) => {
       if opts.path == "@cursor" {

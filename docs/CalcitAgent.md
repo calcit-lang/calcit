@@ -37,6 +37,11 @@ leads_to:
 3. `calcit.cirru` 是 **Cirru EDN 树形 Snapshot**，不是按行维护的文本源码。旧项目若只有 `compact.cirru`，先按 upgrade 指南迁移；当前工具会拒绝旧文件名。不要用 line patch、正则脚本或 formatter 直接改 Snapshot；使用 `calcit edit`、`calcit tree`、`calcit cursor`。
 4. `CURSOR`、`FOLDED:*`、chunk 标题和 path annotation 都是展示信息，绝不能复制回 Snapshot。`cursor show --format json` 中 `tree` 才是真实节点，`preview_tree` 只是展示树。
 
+会写回 Snapshot 的 `edit`、`tree`、`config` 和 cursor mutation 会先核对同目录
+`deps.cirru :calcit-version`。若项目固定版本与当前 CLI 不一致，命令会在写入前失败；应改用项目固定的
+Calcit 版本，或先显式执行 `caps deps.cirru upgrade --all` 升级项目。查询、dry-run、cursor 导航，以及尚未
+声明 `:calcit-version` 的旧项目不受此门禁影响。
+
 ### 0.1 发现 Calcit 缺陷时：定位归属仓库并提交 Issue
 
 发现 **Calcit 语言、编译器、运行时或 CLI 工具** 的可复现问题时，必须向该工具的维护仓库提交 GitHub Issue；不要把问题只留在当前项目的提交说明、错误 sidecar 或聊天记录里。发现 **类库/模块** 问题时，也必须提交到该类库的维护仓库，而不是误报到使用它的应用项目或 Calcit 核心仓库。

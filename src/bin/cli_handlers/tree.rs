@@ -4,8 +4,8 @@ use std::fmt::Write as _;
 
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, fragment_nesting_level, maybe_chunk_node};
 use super::common::{
-  ERR_CODE_INPUT_REQUIRED, cirru_to_json, emit_cli_output, format_path, parse_input_to_cirru, parse_path, print_cli_warning_block,
-  read_code_input, resolve_definition_lookup,
+  ERR_CODE_INPUT_REQUIRED, cirru_to_json, emit_cli_output, format_path, guard_snapshot_mutation_toolchain, parse_input_to_cirru,
+  parse_path, print_cli_warning_block, read_code_input, resolve_definition_lookup,
 };
 use super::cursor::{
   maintain_cursor_after_tree_mutation, resolve_active_cursor_reference, resolve_cursor_path_argument, resolve_cursor_target_argument,
@@ -31,6 +31,9 @@ use super::tree_mutation::{TreeCursorMutation, TreeOperation};
 
 /// Main handler for code command
 pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(), String> {
+  if !matches!(&cmd.subcommand, TreeSubcommand::Show(_)) {
+    guard_snapshot_mutation_toolchain(snapshot_file)?;
+  }
   let mut resolved = cmd.clone();
   resolve_tree_cursor_references(&mut resolved, snapshot_file)?;
   let cursor_mutation = prepare_cursor_mutation(&resolved, snapshot_file)?;

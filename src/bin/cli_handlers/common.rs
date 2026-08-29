@@ -1,5 +1,6 @@
 //! Common utilities shared between CLI handlers
 
+use cirru_edn::Edn;
 use cirru_parser::Cirru;
 use std::fs;
 use std::path::Path;
@@ -67,6 +68,40 @@ pub fn deps_path_for_snapshot(snapshot_path: &str) -> String {
     .join("deps.cirru")
     .display()
     .to_string()
+}
+
+/// Refuse to rewrite a Snapshot with a different Calcit release than the one
+/// pinned by the adjacent deps.cirru. Snapshot serialization can evolve between
+/// releases, so a newer global CLI must not silently produce data that the
+/// project's pinned toolchain cannot read.
+pub fn guard_snapshot_mutation_toolchain(snapshot_path: &str) -> Result<(), String> {
+  let deps_path = deps_path_for_snapshot(snapshot_path);
+  if !Path::new(&deps_path).exists() {
+    return Ok(());
+  }
+
+  let content = fs::read_to_string(&deps_path).map_err(|error| format!("Failed to read {deps_path}: {error}"))?;
+  let data = cirru_edn::parse(&content).map_err(|error| format!("Failed to parse {deps_path}: {error}"))?;
+  let deps = data
+    .view_map()
+    .map_err(|error| format!("Invalid dependency manifest {deps_path}: {error}"))?;
+  let declared = match deps.get_or_nil("calcit-version") {
+    Edn::Str(version) if !version.trim().is_empty() => version.to_string(),
+    Edn::Str(_) | Edn::Nil => return Ok(()),
+    value => return Err(format!("Invalid :calcit-version in {deps_path}: expected a string, got {value}")),
+  };
+  semver::Version::parse(&declared).map_err(|error| format!("Invalid :calcit-version '{declared}' in {deps_path}: {error}"))?;
+  let running = env!("CARGO_PKG_VERSION");
+  if declared == running {
+    return Ok(());
+  }
+  let quoted_deps_path = shell_quote(&deps_path);
+
+  Err(format!(
+    "Snapshot mutation blocked: {deps_path} pins Calcit {declared}, but the running CLI is {running}.\n\
+     Re-run this edit with Calcit {declared}, or explicitly upgrade the project first with `caps {quoted_deps_path} upgrade --all`.\n\
+     No changes were written to {snapshot_path}."
+  ))
 }
 
 fn is_shell_sensitive_char(ch: char) -> bool {
@@ -394,10 +429,28 @@ pub fn parse_input_to_cirru(raw: &str) -> Result<Cirru, String> {
 #[cfg(test)]
 mod tests {
   use super::{
-    GlobalTempPathKind, format_path, format_path_with_separator, global_temp_path_guidance, parse_input_to_cirru, parse_path,
-    parse_quoted_cirru_nodes, resolve_definition_lookup, shell_quote,
+    GlobalTempPathKind, format_path, format_path_with_separator, global_temp_path_guidance, guard_snapshot_mutation_toolchain,
+    parse_input_to_cirru, parse_path, parse_quoted_cirru_nodes, resolve_definition_lookup, shell_quote,
   };
   use cirru_parser::Cirru;
+  use std::fs;
+  use std::sync::atomic::{AtomicU64, Ordering};
+  use std::time::{SystemTime, UNIX_EPOCH};
+
+  static FIXTURE_ID: AtomicU64 = AtomicU64::new(0);
+
+  fn mutation_guard_fixture(deps_content: Option<&str>) -> (std::path::PathBuf, std::path::PathBuf) {
+    let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let fixture_id = FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("calcit mutation guard-{}-{nonce}-{fixture_id}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let snapshot = dir.join("calcit.cirru");
+    fs::write(&snapshot, "{}\n").unwrap();
+    if let Some(content) = deps_content {
+      fs::write(dir.join("deps.cirru"), content).unwrap();
+    }
+    (dir, snapshot)
+  }
 
   fn leaf(value: &str) -> Cirru {
     Cirru::Leaf(value.into())
@@ -513,5 +566,37 @@ mod tests {
     assert!(err.contains("Found multiple shell-sensitive candidates starting with 'value-'"));
     assert!(err.contains("'value->text'"));
     assert!(err.contains("'value->debug'"));
+  }
+
+  #[test]
+  fn snapshot_mutation_guard_accepts_matching_or_unpinned_projects() {
+    let matching = format!("{{}} (:calcit-version |{})\n", env!("CARGO_PKG_VERSION"));
+    for deps in [Some(matching.as_str()), Some("{} (:dependencies $ {})\n"), None] {
+      let (dir, snapshot) = mutation_guard_fixture(deps);
+      guard_snapshot_mutation_toolchain(snapshot.to_str().unwrap()).unwrap();
+      fs::remove_dir_all(dir).unwrap();
+    }
+  }
+
+  #[test]
+  fn snapshot_mutation_guard_rejects_version_mismatch() {
+    let (dir, snapshot) = mutation_guard_fixture(Some("{} (:calcit-version |0.1.0)\n"));
+    let error = guard_snapshot_mutation_toolchain(snapshot.to_str().unwrap()).unwrap_err();
+    assert!(error.contains("Snapshot mutation blocked"), "error: {error}");
+    assert!(error.contains("pins Calcit 0.1.0"), "error: {error}");
+    assert!(
+      error.contains("caps '") && error.contains("deps.cirru' upgrade --all"),
+      "error: {error}"
+    );
+    assert!(error.contains("No changes were written"), "error: {error}");
+    fs::remove_dir_all(dir).unwrap();
+  }
+
+  #[test]
+  fn snapshot_mutation_guard_rejects_invalid_declared_version() {
+    let (dir, snapshot) = mutation_guard_fixture(Some("{} (:calcit-version |latest)\n"));
+    let error = guard_snapshot_mutation_toolchain(snapshot.to_str().unwrap()).unwrap_err();
+    assert!(error.contains("Invalid :calcit-version 'latest'"), "error: {error}");
+    fs::remove_dir_all(dir).unwrap();
   }
 }

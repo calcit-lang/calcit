@@ -38,8 +38,8 @@ use calcit::util::string::strip_shebang;
 
 use super::atomic_write::stage_atomic_file;
 use super::common::{
-  ERR_CODE_INPUT_REQUIRED, format_path, parse_input_to_cirru, parse_path, parse_quoted_cirru_nodes, print_cli_warning_block,
-  read_code_input, resolve_definition_lookup, shell_quote,
+  ERR_CODE_INPUT_REQUIRED, format_path, guard_snapshot_mutation_toolchain, parse_input_to_cirru, parse_path, parse_quoted_cirru_nodes,
+  print_cli_warning_block, read_code_input, resolve_definition_lookup, shell_quote,
 };
 use super::cursor::{
   maintain_cursor_after_any_mutation, maintain_cursor_after_definition_delete, maintain_cursor_after_definition_move,
@@ -81,6 +81,9 @@ pub(crate) fn process_node_with_references(
 }
 
 pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(), String> {
+  if edit_mutates_snapshot(&cmd.subcommand) {
+    guard_snapshot_mutation_toolchain(snapshot_file)?;
+  }
   let mut resolved = cmd.clone();
   resolve_edit_cursor_references(&mut resolved, snapshot_file)?;
   let result = match &resolved.subcommand {
@@ -113,6 +116,16 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
   };
   result?;
   maintain_cursor_after_edit(&resolved, snapshot_file)
+}
+
+fn edit_mutates_snapshot(cmd: &EditSubcommand) -> bool {
+  match cmd {
+    EditSubcommand::Transaction(opts) => !opts.dry_run,
+    EditSubcommand::Scaffold(opts) => !opts.dry_run,
+    EditSubcommand::Tags(opts) => opts.tags.is_some(),
+    EditSubcommand::Inc(_) => false,
+    _ => true,
+  }
 }
 
 fn resolve_edit_cursor_references(cmd: &mut EditCommand, snapshot_file: &str) -> Result<(), String> {
