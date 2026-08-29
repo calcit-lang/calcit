@@ -39,3 +39,9 @@ Several binaries are included:
 - `cr-mcp`: provides a Model Context Protocol (MCP) server for Calcit compact files
 
 Another important command is `ct`, which is the "Calcit Editor" and is available in a separate repository.
+
+## Native extensions and host capabilities
+
+- [Core, library, and host capability boundary](installation/host-capability-boundary.md)
+- [Rust bindings](installation/ffi-bindings.md)
+- [FFI upgrade guide](installation/ffi-upgrade-guide.md)
