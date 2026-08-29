@@ -312,6 +312,27 @@ impl FfiAsyncTaskQueueState {
     self.queued.clear();
     self.queued_bytes = 0;
   }
+
+  fn record_selected_purge(&mut self, sequences: &HashSet<u64>) {
+    let before = self.queued.len();
+    let mut purged_bytes = 0;
+    self.queued.retain(|sample| {
+      if sequences.contains(&sample.sequence) {
+        purged_bytes += sample.bytes;
+        false
+      } else {
+        true
+      }
+    });
+    let purged = before - self.queued.len();
+    debug_assert_eq!(purged, sequences.len(), "selective purge must match task metric samples");
+    self.queued_bytes = self.queued_bytes.saturating_sub(purged_bytes);
+    self.purged_total = self.purged_total.saturating_add(purged as u64);
+  }
+
+  fn record_discarded_after_dequeue(&mut self) {
+    self.purged_total = self.purged_total.saturating_add(1);
+  }
 }
 
 /// A bounded multi-producer, single-host-thread event queue.
@@ -415,6 +436,31 @@ impl FfiAsyncEventQueue {
   /// reclaimed before normal dispatch.
   pub fn discard_handle_events(&self, handle: FfiAsyncHandle) -> Result<usize, FfiAsyncQueueError> {
     self.purge_handle(handle)
+  }
+
+  /// Remove only ordinary Emit events for a closing task while preserving any
+  /// terminal acknowledgement that the producer already queued.
+  pub fn discard_handle_emit_events(&self, handle: FfiAsyncHandle) -> Result<usize, FfiAsyncQueueError> {
+    let mut queue = self.state.lock().map_err(|_| FfiAsyncQueueError::QueuePoisoned)?;
+    let before = queue.events.len();
+    let mut purged_bytes = 0;
+    let mut sequences = HashSet::new();
+    queue.events.retain(|event| {
+      if event.descriptor.task_handle == handle.raw() && event.descriptor.kind == FfiAsyncEventKind::Emit as u32 {
+        purged_bytes += event.payload.len();
+        sequences.insert(event.descriptor.sequence);
+        false
+      } else {
+        true
+      }
+    });
+    queue.queued_bytes = queue.queued_bytes.saturating_sub(purged_bytes);
+    let purged = before - queue.events.len();
+    if let Some(state) = queue.tasks.get_mut(&handle) {
+      state.record_selected_purge(&sequences);
+    }
+    debug_assert_eq!(purged, sequences.len(), "selective queue purge must preserve unique sequences");
+    Ok(purged)
   }
 
   /// Enqueue an event without blocking a foreign producer. When the queue is
@@ -625,16 +671,29 @@ impl FfiAsyncEventQueue {
           continue;
         }
       };
-      if state.lifecycle == FfiAsyncLifecycle::Finished
-        || (state.lifecycle == FfiAsyncLifecycle::Closing && kind == FfiAsyncEventKind::Emit)
-      {
+      if state.lifecycle == FfiAsyncLifecycle::Closing && kind == FfiAsyncEventKind::Emit {
+        // A drain batch is detached from the shared queue before callbacks run.
+        // Cancellation from an earlier callback can therefore close the task
+        // while later, previously accepted emits are already in this batch.
+        // New emits cannot reserve a sequence after begin_close, so discarding
+        // these detached events is cancellation cleanup, not a lifecycle error.
+        if let Some(state) = self
+          .state
+          .lock()
+          .map_err(|_| FfiAsyncQueueError::QueuePoisoned)?
+          .tasks
+          .get_mut(&handle)
+        {
+          state.record_discarded_after_dequeue();
+        }
+        report.discarded += 1;
+        report.purged += 1;
+        continue;
+      }
+      if state.lifecycle == FfiAsyncLifecycle::Finished {
         report.lifecycle_failures.push(FfiAsyncLifecycleFailure {
           descriptor: event.descriptor,
-          error: if state.lifecycle == FfiAsyncLifecycle::Finished {
-            FfiAsyncHandleError::HandleFinished
-          } else {
-            FfiAsyncHandleError::HandleClosing
-          },
+          error: FfiAsyncHandleError::HandleFinished,
         });
         report.discarded += 1;
         continue;
@@ -940,6 +999,41 @@ mod tests {
   }
 
   #[test]
+  fn cancellation_during_a_drain_batch_silently_discards_later_emits() {
+    let registry = FfiAsyncHandleRegistry::new();
+    let handle = registry.register(FfiAsyncHandleKind::Stream, ()).expect("register stream");
+    let queue = FfiAsyncEventQueue::new(2).expect("create queue");
+    for payload in [b"first".to_vec(), b"stale-after-cancel".to_vec()] {
+      queue
+        .enqueue(&registry, handle, None, FfiAsyncEventKind::Emit, payload)
+        .expect("enqueue accepted emit");
+    }
+
+    let mut delivered = vec![];
+    let report = queue
+      .drain(&registry, 2, |event| {
+        delivered.push(event.payload().to_vec());
+        registry.begin_close(handle).expect("cancel task from first callback");
+        Ok(())
+      })
+      .expect("drain cancellation batch");
+
+    assert_eq!(delivered, vec![b"first".to_vec()]);
+    assert_eq!(report.delivered, 1);
+    assert_eq!(report.discarded, 1);
+    assert_eq!(report.purged, 1);
+    assert!(report.lifecycle_failures.is_empty());
+    assert_eq!(
+      queue
+        .task_metrics(handle)
+        .expect("read metrics")
+        .expect("task metrics")
+        .purged_total,
+      1
+    );
+  }
+
+  #[test]
   fn full_queue_coalesces_only_opted_in_emit_events() {
     let registry = FfiAsyncHandleRegistry::new();
     let handle = registry
@@ -1032,10 +1126,20 @@ mod tests {
     queue
       .enqueue(&registry, handle, None, FfiAsyncEventKind::Emit, b"tick".to_vec())
       .expect("enqueue tick");
-    registry.begin_close(handle).expect("cancel stream");
     queue
       .enqueue(&registry, handle, None, FfiAsyncEventKind::Complete, b"&unit".to_vec())
       .expect("enqueue close acknowledgement");
+    registry.begin_close(handle).expect("cancel stream");
+    assert_eq!(queue.discard_handle_emit_events(handle), Ok(1));
+    assert_eq!(queue.len(), Ok(1));
+    assert_eq!(
+      queue
+        .task_metrics(handle)
+        .expect("read metrics")
+        .expect("task metrics")
+        .purged_total,
+      1
+    );
 
     let mut kinds = vec![];
     let report = queue
@@ -1045,9 +1149,10 @@ mod tests {
       })
       .expect("drain cancelled stream");
     assert_eq!(kinds, vec![FfiAsyncEventKind::Complete]);
-    assert_eq!(report.discarded, 1);
+    assert_eq!(report.discarded, 0);
     assert_eq!(report.delivered, 1);
-    assert_eq!(report.lifecycle_failures.len(), 1);
+    assert_eq!(report.purged, 0);
+    assert!(report.lifecycle_failures.is_empty());
   }
 
   #[test]
