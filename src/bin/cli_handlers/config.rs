@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use super::common::deps_path_for_snapshot;
+use super::common::{deps_path_for_snapshot, guard_snapshot_mutation_toolchain};
 use super::edit::{load_snapshot, save_snapshot};
 
 fn load_snapshot_for_display(input_path: &str) -> Result<snapshot::Snapshot, String> {
@@ -32,6 +32,14 @@ fn load_snapshot_for_display(input_path: &str) -> Result<snapshot::Snapshot, Str
 }
 
 pub fn handle_config_command(cmd: &ConfigCommand, snapshot_file: &str) -> Result<(), String> {
+  let mutates_snapshot = match &cmd.subcommand {
+    ConfigSubcommand::Show(_) | ConfigSubcommand::Modules(_) | ConfigSubcommand::TypeSlots(_) | ConfigSubcommand::Version(_) => false,
+    ConfigSubcommand::Set(opts) => opts.key != "version",
+    _ => true,
+  };
+  if mutates_snapshot {
+    guard_snapshot_mutation_toolchain(snapshot_file)?;
+  }
   match &cmd.subcommand {
     ConfigSubcommand::Show(opts) => handle_show(opts, snapshot_file),
     ConfigSubcommand::Modules(opts) => handle_modules(opts, snapshot_file),
