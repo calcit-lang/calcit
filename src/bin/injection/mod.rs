@@ -1204,7 +1204,7 @@ fn discard_owned_responses(runtime: &NativeAsyncRuntime, owner: FfiAsyncHandle) 
 
 fn begin_async_task_cancel(runtime: &NativeAsyncRuntime, handle: FfiAsyncHandle) -> Result<usize, String> {
   runtime.registry.begin_close(handle).map_err(|error| error.to_string())?;
-  runtime.queue.discard_handle_events(handle).map_err(|error| error.to_string())
+  runtime.queue.discard_handle_emit_events(handle).map_err(|error| error.to_string())
 }
 
 fn ffi_task_cancel(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
@@ -2485,23 +2485,6 @@ mod async_callback_tests {
     );
     assert_eq!(runtime.queue.len(), Ok(1));
 
-    assert_eq!(begin_async_task_cancel(&runtime, handle), Ok(1));
-    assert_eq!(runtime.queue.len(), Ok(0));
-    assert_eq!(
-      unsafe {
-        enqueue_native_async_event(
-          &runtime,
-          handle.raw(),
-          handle.raw(),
-          FfiAsyncEventKind::Emit as u32,
-          FfiAsyncHandle::INVALID.raw(),
-          emit.as_ptr(),
-          emit.len(),
-        )
-      },
-      async_status::HANDLE_CLOSING
-    );
-
     let terminal = b"&unit";
     assert_eq!(
       unsafe {
@@ -2517,6 +2500,24 @@ mod async_callback_tests {
       },
       async_status::OK
     );
+
+    assert_eq!(begin_async_task_cancel(&runtime, handle), Ok(1));
+    assert_eq!(runtime.queue.len(), Ok(1));
+    assert_eq!(
+      unsafe {
+        enqueue_native_async_event(
+          &runtime,
+          handle.raw(),
+          handle.raw(),
+          FfiAsyncEventKind::Emit as u32,
+          FfiAsyncHandle::INVALID.raw(),
+          emit.as_ptr(),
+          emit.len(),
+        )
+      },
+      async_status::HANDLE_CLOSING
+    );
+
     let report = runtime
       .queue
       .drain(&runtime.registry, 4, |event| dispatch_native_async_event(&runtime, event))
