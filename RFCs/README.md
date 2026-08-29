@@ -1,6 +1,6 @@
 # RFC 整理索引
 
-更新时间：2026-08-26
+更新时间：2026-08-29
 
 ## 目录原则
 
@@ -50,6 +50,7 @@
 | `08-21-static-type-system-evolution-roadmap.md`       | Draft       | 借鉴 Rust/MoonBit 推进 Unknown/Dynamic 分离、穷尽性、局部推断、trait coherence 与框架类型化。 |
 | `08-23-typed-option-query-ergonomics-rfc.md`           | Withdrawn | 生态采用率为零；`get-or` 等六个宏已移除，直接使用查询返回的 `Option` 与 `.unwrap-or`。 |
 | `08-23-option-result-binding-macros-rfc.md`             | Partial | 保留已有 Respo 使用的 `option:let`；移除未采用的 `result:let`，Result 链直接使用 `.and-then`。 |
+| `08-29-snapshot-symbol-keys-and-tag-match-deprecation-rfc.md` | Implemented | Snapshot namespace/definition key 宽读 String/Symbol、窄写 Symbol；`tag-match` 普通废弃并迁移到原生 `match`。 |
 
 ## 已执行的清理
 

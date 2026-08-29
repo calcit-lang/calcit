@@ -107,6 +107,26 @@ pub struct Snapshot {
   pub files: HashMap<String, FileInSnapShot>,
 }
 
+fn parse_snapshot_identifier_key(value: &Edn, owner: &str) -> Result<String, String> {
+  match value {
+    Edn::Str(text) | Edn::Symbol(text) if !text.is_empty() => Ok(text.to_string()),
+    Edn::Str(_) | Edn::Symbol(_) => Err(format!("{owner}: snapshot identifier key cannot be empty")),
+    other => Err(format!(
+      "{owner}: snapshot identifier key must be a String or Symbol, got {}",
+      format_edn_preview(other)
+    )),
+  }
+}
+
+fn insert_snapshot_identifier<T>(target: &mut HashMap<String, T>, name: String, value: T, owner: &str) -> Result<(), String> {
+  if target.insert(name.clone(), value).is_some() {
+    return Err(format!(
+      "{owner}: duplicate snapshot identifier `{name}` after normalizing String/Symbol keys"
+    ));
+  }
+  Ok(())
+}
+
 fn parse_snapshot_entry(data: Edn) -> Result<SnapshotEntry, String> {
   let map = data.view_map().map_err(|e| format!("entry must be a map: {e}"))?;
   let ns_def = |key: &str| match map.get_or_nil(key) {
@@ -516,9 +536,10 @@ fn parse_file_in_snapshot(edn: Edn, file_name: &str) -> Result<FileInSnapShot, S
           other => return Err(format!("{file_name}: expected `:defs` map, got {}", format_edn_preview(other))),
         };
         for (def_key, def_value) in &map.0 {
-          let name: String = from_edn(def_key.clone()).map_err(|e| format!("{file_name}: invalid def key: {e}"))?;
+          let name = parse_snapshot_identifier_key(def_key, &format!("{file_name}/:defs"))?;
           let owner = format!("{file_name}/{name}");
-          defs.insert(name, parse_code_entry(def_value.clone(), &owner)?);
+          let entry = parse_code_entry(def_value.clone(), &owner)?;
+          insert_snapshot_identifier(&mut defs, name, entry, &format!("{file_name}/:defs"))?;
         }
       }
       _ => {}
@@ -535,8 +556,9 @@ fn parse_files(edn: Edn) -> Result<HashMap<String, FileInSnapShot>, String> {
     Edn::Map(map) => {
       let mut result = HashMap::with_capacity(map.0.len());
       for (key, value) in map.0 {
-        let name: String = from_edn(key).map_err(|e| format!("invalid file key: {e}"))?;
-        result.insert(name.clone(), parse_file_in_snapshot(value, &name)?);
+        let name = parse_snapshot_identifier_key(&key, "snapshot/:files")?;
+        let file = parse_file_in_snapshot(value, &name)?;
+        insert_snapshot_identifier(&mut result, name, file, "snapshot/:files")?;
       }
       Ok(result)
     }

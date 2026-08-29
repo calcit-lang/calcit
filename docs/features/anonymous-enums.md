@@ -44,18 +44,20 @@ it never relies on unchecked indexing.
 
 ## Matching
 
-`tag-match` can match an anonymous enum when there is no definition available
-for exhaustiveness analysis:
+Native `match` can match an anonymous enum even though no definition is
+available for exhaustiveness analysis:
 
 ```cirru
 let
     value $ %:: _ :point 10 20
-  assert= 30 $ tag-match value
+  assert= 30 $ match value
     (:point x y) (+ x y)
     _ 0
 ```
 
-For domain data, prefer a named enum and native `match`, which can validate
+The deprecated `tag-match` macro remains readable during migration, but it is
+reported by deprecated/quality analysis. For domain data, prefer a named enum
+and native `match`, which can validate
 variants, payload arity, and exhaustiveness:
 
 ```cirru

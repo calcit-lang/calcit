@@ -438,6 +438,8 @@ calcit calcit.cirru config show
 `edit format` 会把旧 `:configs` 迁移为 `:entries.default` 并输出迁移计数；普通 runtime loader 不保留双格式解码分支。
 若旧 `:configs` 与现有 `:entries.default` 冲突，或包含未知字段，formatter 会报错而不会静默覆盖。迁移后应审阅：
 
+当前 formatter 还会把 `:files` 下的 namespace key 与 `:defs` 下的 definition key 统一写成 Symbol。loader 继续兼容旧 String key；若同一名字同时以 String 和 Symbol 出现，归一化后会明确报重名，避免静默覆盖。该变化只规范化标识符表示，不改变定义语义。
+
 - 每个 entry 都有明确的 `:mode :native` 或 `:mode :js`。
 - named entry 是完整配置，不继承 default 的 modules/type slots。
 - `:init-fn` / `:reload-fn` 使用 definition symbol，而不是继续新增字符串值。

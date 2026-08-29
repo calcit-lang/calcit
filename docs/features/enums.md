@@ -20,7 +20,7 @@ Calcit enums are tagged unions: each variant has a tag and zero or more typed pa
 - **Define**: `defenum Shape (:circle 'Number) (:rect 'Number 'Number)`
 - **Create**: `%:: Shape :circle 5`
 - **Match** (recommended): `match shape ((:circle r) ...) ((:rect w h) ...)`
-- **Legacy Fallback**: `tag-match shape ((:circle r) ...) ((:rect w h) ...)`
+- **Deprecated legacy form**: `tag-match shape ((:circle r) ...) ((:rect w h) ...)`
 - **Type Check**: `assert-type shape 'Shape`
 
 ## Defining Enums
@@ -131,9 +131,9 @@ let
   println err
 ```
 
-## Pattern Matching with `tag-match` (legacy)
+## Pattern Matching with `tag-match` (deprecated)
 
-> **Note**: Prefer `match` (see below) for new code. `match` provides compile-time exhaustiveness checking.
+> **Deprecated**: migrate to `match` (see below). Calls to `tag-match` are reported by `calcit analyze deprecated` and count against `analyze quality`. `match` also preserves enum structure for compile-time exhaustiveness, arity, type, and optimization analysis.
 
 `tag-match` branches on the variant tag and binds payload values to names:
 

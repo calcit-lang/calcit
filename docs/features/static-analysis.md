@@ -136,6 +136,8 @@ For one expression, `calcit query type-at '<ns/def>' --path code@... --format js
 
 `analyze deprecated` scans calls to definitions tagged `:deprecated`. It reports every calling definition and a stable `code@...` path, and includes the target definition's documentation so migrations can be automated without maintaining a second hard-coded legacy API list. Use `--summary-only --format json` for migration gates that only need aggregate counts.
 
+`tag-match` is deprecated in favor of native `match`. Its calls are ordinary deprecated findings and therefore consume the `deprecatedCalls` quality budget. Native `match` keeps branch structure visible to exhaustiveness, payload-arity, type, and backend optimization passes.
+
 ### TODO completion warnings
 
 `todo!` is a compiler-known diverging placeholder for code that is intentionally

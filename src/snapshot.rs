@@ -26,6 +26,31 @@ fn format_edn_preview(value: &Edn) -> String {
   format_edn_display(value)
 }
 
+pub(crate) fn parse_snapshot_identifier_key(value: &Edn, owner: &str) -> Result<String, String> {
+  match value {
+    Edn::Str(text) | Edn::Symbol(text) if !text.is_empty() => Ok(text.to_string()),
+    Edn::Str(_) | Edn::Symbol(_) => Err(format!("{owner}: snapshot identifier key cannot be empty")),
+    other => Err(format!(
+      "{owner}: snapshot identifier key must be a String or Symbol, got {}",
+      format_edn_preview(other)
+    )),
+  }
+}
+
+pub(crate) fn insert_snapshot_identifier<T>(
+  target: &mut HashMap<String, T>,
+  name: String,
+  value: T,
+  owner: &str,
+) -> Result<(), String> {
+  if target.insert(name.clone(), value).is_some() {
+    return Err(format!(
+      "{owner}: duplicate snapshot identifier `{name}` after normalizing String/Symbol keys"
+    ));
+  }
+  Ok(())
+}
+
 fn schema_path_label(path: &[String]) -> String {
   if path.is_empty() { "<root>".to_owned() } else { path.join("") }
 }
@@ -311,7 +336,7 @@ impl From<&FileInSnapShot> for Edn {
   fn from(data: &FileInSnapShot) -> Edn {
     let mut defs_map = EdnMapView::default();
     for (k, v) in &data.defs {
-      defs_map.insert(Edn::str(k.as_str()), Edn::from(v));
+      defs_map.insert(Edn::Symbol(k.as_str().into()), Edn::from(v));
     }
     Edn::Struct(EdnStructView {
       name: Arc::from("FileEntry"),
@@ -323,36 +348,7 @@ impl From<&FileInSnapShot> for Edn {
 impl TryFrom<Edn> for FileInSnapShot {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
-    match data {
-      Edn::Map(_) => {
-        let preview = data.clone();
-        from_edn(data).map_err(|e| format!("failed to parse FileInSnapShot: {}", format_deserialize_error(&e, &preview)))
-      }
-      Edn::Struct(struct_value) => {
-        let mut ns = None;
-        let mut defs = None;
-
-        for (key, value) in struct_value.pairs.iter() {
-          match key.arc_str().as_ref() {
-            "ns" => {
-              ns = Some(value.to_owned().try_into().map_err(|e| format!("failed to parse ns: {e}"))?);
-            }
-            "defs" => {
-              defs = Some(value.to_owned().try_into().map_err(|e| format!("failed to parse defs: {e}"))?);
-            }
-            _ => {}
-          }
-        }
-
-        let ns = ns.ok_or("Missing ns field in FileEntry")?;
-        let defs = defs.ok_or("Missing defs field in FileEntry")?;
-        Ok(FileInSnapShot { ns, defs })
-      }
-      _ => Err(format!(
-        "Expected FileInSnapShot map or struct, but got: {}",
-        format_edn_display(&data)
-      )),
-    }
+    parse_file_in_snapshot_with_context(data, "<file>")
   }
 }
 
@@ -360,7 +356,7 @@ impl From<FileInSnapShot> for Edn {
   fn from(data: FileInSnapShot) -> Edn {
     let mut defs_map = EdnMapView::default();
     for (k, v) in data.defs {
-      defs_map.insert(Edn::str(k.as_str()), Edn::from(v));
+      defs_map.insert(Edn::Symbol(k.as_str().into()), Edn::from(v));
     }
     Edn::map_from_iter([("defs".into(), Edn::from(defs_map)), ("ns".into(), data.ns.into())])
   }
@@ -2373,10 +2369,10 @@ fn parse_file_in_snapshot_with_context(data: Edn, file_name: &str) -> Result<Fil
 
       let mut defs = HashMap::with_capacity(defs_map.0.len());
       for (def_key, def_value) in defs_map.0.iter() {
-        let def_name: String = from_edn(def_key.to_owned())
-          .map_err(|e| format!("{file_name}: failed to parse def name: {e}; got {}", format_edn_preview(def_key)))?;
+        let def_name = parse_snapshot_identifier_key(def_key, &format!("{file_name}/:defs"))?;
         let owner = format!("{file_name}/{def_name}");
-        defs.insert(def_name, parse_code_entry_with_context(def_value.to_owned(), &owner)?);
+        let entry = parse_code_entry_with_context(def_value.to_owned(), &owner)?;
+        insert_snapshot_identifier(&mut defs, def_name, entry, &format!("{file_name}/:defs"))?;
       }
 
       Ok(FileInSnapShot { ns, defs })
@@ -2398,10 +2394,10 @@ fn parse_file_in_snapshot_with_context(data: Edn, file_name: &str) -> Result<Fil
               )
             })?;
             for (def_key, def_value) in defs_map.0.iter() {
-              let def_name: String = from_edn(def_key.to_owned())
-                .map_err(|e| format!("{file_name}: failed to parse def name: {e}; got {}", format_edn_preview(def_key)))?;
+              let def_name = parse_snapshot_identifier_key(def_key, &format!("{file_name}/:defs"))?;
               let owner = format!("{file_name}/{def_name}");
-              defs.insert(def_name, parse_code_entry_with_context(def_value.to_owned(), &owner)?);
+              let entry = parse_code_entry_with_context(def_value.to_owned(), &owner)?;
+              insert_snapshot_identifier(&mut defs, def_name, entry, &format!("{file_name}/:defs"))?;
             }
           }
           _ => {}
@@ -2426,12 +2422,9 @@ fn parse_files_with_context(data: &Edn) -> Result<HashMap<String, FileInSnapShot
     .map_err(|e| format!("failed to parse snapshot `:files` as map: {e}; got {}", format_edn_preview(data)))?;
   let mut files = HashMap::with_capacity(files_map.0.len());
   for (file_key, file_value) in files_map.0.iter() {
-    let file_name: String = from_edn(file_key.to_owned())
-      .map_err(|e| format!("failed to parse snapshot file key: {e}; got {}", format_edn_preview(file_key)))?;
-    files.insert(
-      file_name.clone(),
-      parse_file_in_snapshot_with_context(file_value.to_owned(), &file_name)?,
-    );
+    let file_name = parse_snapshot_identifier_key(file_key, "snapshot/:files")?;
+    let file = parse_file_in_snapshot_with_context(file_value.to_owned(), &file_name)?;
+    insert_snapshot_identifier(&mut files, file_name, file, "snapshot/:files")?;
   }
   Ok(files)
 }
@@ -2486,8 +2479,7 @@ fn parse_file_for_format_with_context(
   })?;
   let mut defs = HashMap::with_capacity(defs_map.0.len());
   for (def_key, def_value) in defs_map.0.iter() {
-    let def_name: String = from_edn(def_key.to_owned())
-      .map_err(|e| format!("{file_name}: failed to parse def name: {e}; got {}", format_edn_preview(def_key)))?;
+    let def_name = parse_snapshot_identifier_key(def_key, &format!("{file_name}/:defs"))?;
     let owner = format!("{file_name}/{def_name}");
     let entry = match def_value {
       Edn::Quote(code) => {
@@ -2496,7 +2488,7 @@ fn parse_file_for_format_with_context(
       }
       modern => parse_code_entry_with_context(modern.to_owned(), &owner)?,
     };
-    defs.insert(def_name, entry);
+    insert_snapshot_identifier(&mut defs, def_name, entry, &format!("{file_name}/:defs"))?;
   }
   Ok(FileInSnapShot { ns, defs })
 }
@@ -2510,12 +2502,9 @@ fn parse_files_for_format_with_context(
     .map_err(|e| format!("failed to parse snapshot `:files` as map: {e}; got {}", format_edn_preview(data)))?;
   let mut files = HashMap::with_capacity(files_map.0.len());
   for (file_key, file_value) in files_map.0.iter() {
-    let file_name: String = from_edn(file_key.to_owned())
-      .map_err(|e| format!("failed to parse snapshot file key: {e}; got {}", format_edn_preview(file_key)))?;
-    files.insert(
-      file_name.clone(),
-      parse_file_for_format_with_context(file_value.to_owned(), &file_name, migration)?,
-    );
+    let file_name = parse_snapshot_identifier_key(file_key, "snapshot/:files")?;
+    let file = parse_file_for_format_with_context(file_value.to_owned(), &file_name, migration)?;
+    insert_snapshot_identifier(&mut files, file_name, file, "snapshot/:files")?;
   }
   Ok(files)
 }
@@ -3000,7 +2989,7 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
     if k.ends_with(".$meta") {
       continue;
     }
-    files_map.insert(Edn::str(k.as_str()), Edn::from(v));
+    files_map.insert(Edn::Symbol(k.as_str().into()), Edn::from(v));
   }
   edn_map.insert_key("files", files_map.into());
 
@@ -4157,6 +4146,20 @@ mod tests {
   }
 
   #[test]
+  fn bundled_tag_match_is_deprecated_in_favor_of_native_match() {
+    let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
+    let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
+    let snapshot = load_snapshot_data(&edn_data, "src/cirru/calcit-core.cirru").expect("Failed to parse snapshot");
+    let entry = snapshot.files["calcit.core"]
+      .defs
+      .get("tag-match")
+      .expect("calcit.core/tag-match should exist");
+
+    assert!(entry.tags.iter().any(|tag| tag.ref_str() == "deprecated"));
+    assert!(entry.doc.contains("use `match`"), "migration guidance: {}", entry.doc);
+  }
+
+  #[test]
   fn test_load_snapshot_preserves_selected_real_world_schemas() {
     let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
     let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
@@ -4796,11 +4799,11 @@ mod tests {
     let _ = fs::remove_file(&temp_path);
 
     assert!(
-      saved.contains("|&+ $ %{} 'CodeEntry") && saved.contains(":schema $ :: 'Fn"),
+      saved.contains("&+ $ %{} 'CodeEntry") && saved.contains(":schema $ :: 'Fn"),
       "saved snapshot should retain wrapped fn schemas"
     );
     assert!(
-      saved.contains("|%{} $ %{} 'CodeEntry") && saved.contains(":schema $ :: 'Macro"),
+      saved.contains("%{} $ %{} 'CodeEntry") && saved.contains(":schema $ :: 'Macro"),
       "saved snapshot should retain wrapped macro schemas"
     );
   }
@@ -5112,12 +5115,36 @@ mod tests {
     let Edn::Map(root) = &canonical else { panic!("snapshot root map") };
     let files = root.get(&Edn::tag("files")).expect("files");
     let Edn::Map(files) = files else { panic!("files map") };
-    assert!(matches!(files.get(&Edn::str("mini.core")), Some(Edn::Struct(_))));
+    let file = files.get(&Edn::Symbol("mini.core".into())).expect("canonical Symbol file key");
+    let Edn::Struct(file) = file else { panic!("FileEntry struct") };
+    let defs = file
+      .pairs
+      .iter()
+      .find(|(key, _)| key.ref_str() == "defs")
+      .map(|(_, value)| value)
+      .expect("defs");
+    let Edn::Map(defs) = defs else { panic!("defs map") };
+    assert!(defs.get(&Edn::Symbol("main!".into())).is_some(), "canonical Symbol def key");
 
     load_snapshot_data(&canonical, "calcit.cirru").expect("strict loader already accepts FileEntry structs");
     let (_, migration) =
       load_snapshot_data_for_format(&canonical, "calcit.cirru").expect("format loader should accept FileEntry structs too");
     assert_eq!(migration, SnapshotFormatMigration::default());
+  }
+
+  #[test]
+  fn snapshot_loader_rejects_string_symbol_identifier_collision() {
+    let mut legacy = legacy_direct_quote_snapshot([]);
+    let Edn::Map(root) = &mut legacy else {
+      panic!("legacy fixture root map")
+    };
+    let files = root.0.get_mut(&Edn::tag("files")).expect("files");
+    let Edn::Map(files) = files else { panic!("files map") };
+    let duplicate = files.get(&Edn::str("mini.core")).expect("legacy String key").clone();
+    files.insert(Edn::Symbol("mini.core".into()), duplicate);
+
+    let error = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect_err("normalized collision must fail");
+    assert!(error.contains("duplicate snapshot identifier `mini.core`"), "error: {error}");
   }
 
   #[test]
