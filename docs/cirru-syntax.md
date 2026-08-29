@@ -108,7 +108,7 @@ fn (x)
 
 ### 5. Collection Constructors Are Operators
 
-`[]`, `{}`, and `#{}` are Calcit constructor symbols, not Clojure/JSON delimiters around source text. As a same-line argument, bare `[]` is the constructor function, not an empty list value:
+`[]`, `{}`, and `#{}` are Calcit constructor symbols rather than delimiters around source text. As a same-line argument, bare `[]` is the constructor function, not an empty list value:
 
 ```text
 type-of []       => :fn
@@ -186,7 +186,7 @@ Calcit uses strict arity checking. Many core functions like `+`, `-`, `*`, `/` h
 
 ### 5. No Inline Types in Parameters
 
-Calcit **does not** support Clojure-style `(defn name [^Type arg] ...)`.
+Calcit keeps parameter lists structural and declares types in function schemas rather than inline parameter metadata.
 
 - ❌ `defn add (a :number) ...`
 - ✅ Use function schema for parameter types (`:schema` on top-level defs, `hint-fn` for local `fn`).
@@ -291,7 +291,7 @@ When providing JSON:
 - Wrong bare indented return `x`; correct `, x`. The bare line is a one-child call list.
 - Wrong `let (x 1) ...`; correct `let ((x 1)) ...`, or use the documented multiline binding indentation.
 - Wrong empty-list argument `foldl xs [] f`; correct `foldl xs ([]) f`, or bind `init $ []` first.
-- Wrong Clojure order `map f xs`; correct Calcit order `map xs f`.
+- Wrong collection order `map f xs`; correct Calcit order `map xs f`.
 - Wrong `$ a b c` at the beginning of a line; correct `a b c`. A line is already an expression.
 - Wrong `a$b`; correct `a $ b`. Operators require token-separating spaces.
 - Wrong JSON AST `["&+", 1, 2]`; correct `["&+", "1", "2"]`. AST leaves are strings.

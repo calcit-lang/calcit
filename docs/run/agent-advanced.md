@@ -722,26 +722,25 @@ calcit tree replace 'app.core/checkout' --path @3.2.1 --code 'quote calculate-di
 
 ---
 
-## 💡 Migration notes for Clojure users
+## 💡 Calcit 语义检查点
 
-本节只用于避免迁移时的具体误判，不作为 Calcit 的语言定义。新代码应以 Calcit 的 nominal types、traits/methods、Option/Result 和 typed boundaries 为准。
+遇到陌生代码或迁移旧项目时，以 Calcit 当前的 nominal types、traits/methods、Option/Result、typed boundaries 和 CLI 查询结果为准。
 
-**语法层面：**
+**源码结构：**
 
-- **定界方式不同**：`[]`、`{}`、`#{}` 是 Calcit 集合构造符号，不是 Clojure/JSON 那样包住内容的 delimiter；Cirru 主要用缩进、`$` 和圆括号建立 child list
-- **函数前缀**：Calcit 用 `&` 区分内置函数（`&+`、`&str`）和用户定义函数
+- **集合构造符号**：`[]`、`{}`、`#{}` 是普通调用位置上的构造器；Cirru 用缩进、`$` 和圆括号建立 child list
+- **函数前缀**：`&` 标识底层内置操作（如 `&+`、`&str`）；公共能力优先查询普通函数或 trait method
 
 **集合函数参数顺序（易错 ⭐⭐⭐）：**
 
-- **Calcit**: 集合在**第一位** → `map data fn` 或 `-> data (map fn)`
-- **Clojure**: 函数在第一位 → `map fn data` 或 `->> data $ map fn`
-- **症状**：`unknown data for foldl-shortcut` 报错
-- **原因**：误用 `->>` 或参数顺序错误
+- 集合在**第一位**：`map data fn` 或 `-> data (map fn)`
+- `unknown data for foldl-shortcut` 通常表示误用了 `->>` 或颠倒了集合与回调参数
+- 不确定时运行 `calcit query examples calcit.core/map`，不要凭其他语言的调用习惯猜测
 
-**其他差异：**
+**数据与宏：**
 
-- **宏系统**：Calcit 更简洁，缺少 Clojure 的 reader macro（如 `#()`）
-- **数据类型**：Calcit 的 Anonymous Enum (`%:: _`，`::` 为简写) 和 List (`[]`) 有不同用途（见"Cirru 字符串和数据类型"）
+- Anonymous Enum 使用 `%:: _`（`::` 为简写），与 List 构造器 `[]` 语义不同（见“Cirru 字符串和数据类型”）
+- 宏展开遵循 Calcit 的 Cirru AST 与 capability 约束；先用 `query`、`macroexpand` 和现有示例确认结构
 
 ---
 
@@ -859,7 +858,7 @@ calcit query error
 | `unknown symbol: xxx`                    | 符号未定义或未 import                         | `calcit query find` 确认位置，`calcit edit add-import` 引入    |
 | `expects pairs in list for let`          | `let` 绑定语法错误                            | 改为 `let ((x val)) body`（双层括号）                  |
 | `cannot be used as operator`             | 末尾符号被当作函数调用                        | 改用 `, acc` 前缀传递值，或用函数包裹                  |
-| `unknown data for foldl-shortcut`        | 参数顺序错误（Calcit vs Clojure 差异）        | Calcit 集合在第一位：`map data fn`                     |
+| `unknown data for foldl-shortcut`        | 集合与回调参数顺序错误                        | Calcit 集合在第一位：`map data fn`                     |
 | 字符串被拆分成多个 token                 | 含空格字符串没有保留为一个 string token       | 使用上文的 spaced-string 写法                          |
 | `Type warning` 导致 exec 失败            | 类型不匹配（阻断执行）                        | 优先检查 `:schema` / `hint-fn` 的参数标注              |
 | `W_CLI_OPTION_UNKNOWN_KEY`               | 选项 key 拼写错误                             | 对照 Options 列表，如 `:file-path` 而非 `:file-pth`    |

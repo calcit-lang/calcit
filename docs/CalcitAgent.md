@@ -336,7 +336,7 @@ div
 ### 5.2 高频字面量与求值陷阱
 
 - `hello` 是 symbol，`|hello` 是 string，`:hello` 是 tag；字符串必须保留 `|`。含空格写 `"|hello world"`，其中双引号只保护一个含空格 token，单独写 `"hello"` 仍是 symbol。
-- `[]`、`{}`、`#{}` 是 Calcit 的集合构造符号，不是 Clojure/JSON 的包围定界符。作为普通参数的裸 `[]` 是函数值，不是空 list；可靠写法是先 `init $ []` 再传 `init`，或显式使用 `([])`。
+- `[]`、`{}`、`#{}` 是 Calcit 的集合构造符号，不是包围源码的定界符。作为普通参数的裸 `[]` 是函数值，不是空 list；可靠写法是先 `init $ []` 再传 `init`，或显式使用 `([])`。
 - `let` bindings 必须是 pair list：单行写 `let ((x 1)) ...`；多行时 bindings 比 body 多缩进一层：
 
   ```cirru.no-check
@@ -346,7 +346,7 @@ div
     + x y
   ```
 
-- `map`、`filter`、`foldl` 等 Calcit 集合函数把集合放在前面；不确定参数顺序时运行 `calcit query examples calcit.core/map` 或查询对应定义，不要套用 Clojure 记忆。
+- `map`、`filter`、`foldl` 等 Calcit 集合函数把集合放在前面；不确定参数顺序时运行 `calcit query examples calcit.core/map` 或查询对应定义，以当前签名和示例为准。
 - 改动缩进、`$`、`,` 或圆括号都会改变 AST 和 path；修改后重新 show/search，或继续使用 cursor。
 
 ### 5.3 可选参数优先使用 `Option`
@@ -511,7 +511,7 @@ calcit docs read-lines agent-advanced.md --start 1 --lines 80
 | ---------------------------- | --------------------------------------------------------------- |
 | Cirru 语法、AST 与常见误写   | `calcit cirru show-guide`；`calcit docs read cirru-syntax.md 'Common Mistakes'` |
 | Cirru EDN 数据层             | `calcit cirru parse-edn --help`；`calcit docs read edn.md --full`       |
-| 从 Clojure 迁移时的易错点    | `calcit docs read agent-advanced.md 'Migration notes for Clojure users'` |
+| 历史影响与迁移说明          | `calcit docs read from-clojure.md --full`                              |
 | tree/cursor/transaction      | `calcit docs read edit-tree.md --full`                              |
 | query/context/type-at        | `calcit docs read query.md --full`                                  |
 | 复杂重构与历史陷阱           | `calcit docs read agent-advanced.md --full`                         |
