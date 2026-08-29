@@ -2722,7 +2722,12 @@ fn try_rewrite_struct_enum_constructor_head_call(
       }
     }
 
-    let struct_ref_node = build_struct_ref_node(&struct_def, ns_def_path, file_ns, def_name);
+    // `resolve_type_value` intentionally describes the definition value, but
+    // that annotation does not always retain its source path. Keep the
+    // already-resolved Import from the call head so JS codegen receives a
+    // runtime reference instead of an embedded compiler-only StructDef.
+    let constructor_path = constructor_definition_path(head_form).or(ns_def_path);
+    let struct_ref_node = build_struct_ref_node(&struct_def, constructor_path, file_ns, def_name);
     let mut struct_items: Vec<Calcit> = Vec::with_capacity(struct_def.fields.len() * 2 + 2);
     struct_items.push(Calcit::Proc(CalcitProc::NativeStruct));
     struct_items.push(struct_ref_node);
@@ -2803,7 +2808,11 @@ fn try_rewrite_struct_enum_constructor_head_call(
       return Ok(None);
     }
 
-    let enum_ref_node = build_enum_ref_node(enum_def, ns_def_path, file_ns, def_name);
+    // Direct `Op :variant` calls reach here with an Import head. Preserve its
+    // namespace/definition path: lowering to an embedded enum prototype works
+    // in the native evaluator but cannot be emitted as JavaScript.
+    let constructor_path = constructor_definition_path(head_form).or(ns_def_path);
+    let enum_ref_node = build_enum_ref_node(enum_def, constructor_path, file_ns, def_name);
     let mut items: Vec<Calcit> = Vec::with_capacity(args.len() + 1);
     items.push(Calcit::Proc(CalcitProc::NativeNamedEnumNew));
     items.push(enum_ref_node);
@@ -2813,6 +2822,13 @@ fn try_rewrite_struct_enum_constructor_head_call(
   }
 
   Ok(None)
+}
+
+fn constructor_definition_path(head_form: &Calcit) -> Option<(Arc<str>, Arc<str>)> {
+  match head_form {
+    Calcit::Import(CalcitImport { ns, def, .. }) => Some((ns.clone(), def.clone())),
+    _ => None,
+  }
 }
 
 fn data_definition_kind(ns: &str, def: &str) -> Option<&'static str> {
@@ -10290,6 +10306,25 @@ mod tests {
     }
     assert_eq!(*items.get(2).expect("tag key"), Calcit::Tag(EdnTag::from("ok")));
     assert_eq!(items.len(), 3);
+  }
+
+  #[test]
+  fn preserves_import_path_for_direct_named_enum_constructor() {
+    let head = Calcit::Import(CalcitImport {
+      ns: Arc::from("tests.schema"),
+      def: Arc::from("Op"),
+      info: Arc::new(ImportInfo::NsAs {
+        alias: Arc::from("schema"),
+        at_ns: Arc::from("tests.consumer"),
+        at_def: Arc::from("make-op"),
+      }),
+      def_id: Some(7),
+    });
+
+    assert_eq!(
+      constructor_definition_path(&head),
+      Some((Arc::from("tests.schema"), Arc::from("Op")))
+    );
   }
 
   #[test]

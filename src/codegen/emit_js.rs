@@ -411,7 +411,9 @@ fn to_js_code(
         Ok(format!("new {proc_prefix}CalcitCirruQuote({})", cirru_to_js(code)?))
       }
       Calcit::RawCode(_, code) => Ok((**code).to_owned()),
-      a => unreachable!("[Error] unknown kind to gen js code: {}", a),
+      a => Err(format!(
+        "cannot emit JS for compiler-only value `{a}`; preprocessing should lower data definitions to runtime references"
+      )),
     };
 
     match (return_label, &ret) {
@@ -2632,6 +2634,27 @@ mod tests {
 
     assert!(failure.contains("raw syntax node `if`"), "unexpected error: {failure}");
     assert!(failure.contains("LLM hint"), "unexpected error: {failure}");
+  }
+
+  #[test]
+  fn compiler_only_values_fail_js_codegen_without_panicking() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+    let struct_def = calcit::CalcitStructDef::from_fields(EdnTag::from("Op"), vec![]);
+
+    let failure = to_js_code(
+      &Calcit::StructDef(struct_def),
+      "tests.emit-js",
+      &local_defs,
+      &file_imports,
+      &tags,
+      None,
+    )
+    .expect_err("compiler-only data definitions should be rejected in JS codegen");
+
+    assert!(failure.contains("compiler-only value"), "unexpected error: {failure}");
+    assert!(failure.contains("runtime references"), "unexpected error: {failure}");
   }
 
   #[test]
