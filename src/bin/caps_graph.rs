@@ -514,27 +514,29 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
 
   eprintln!("resolving {repository}@{reference}");
   let remote = resolve_remote_ref(repository, reference, options.ci)?;
-  let source = module_cache_root(&options.modules_dir)
-    .join("git")
-    .join(owner)
-    .join(repo)
-    .join(&remote.commit)
-    .join("source");
-  let _lock = CacheMetadataLock::acquire(&module_cache_root(&options.modules_dir))?;
-  if source.exists() {
-    validate_store_source(repository, &source, &remote.commit)?;
-    ensure_store_metadata_unlocked(&source, repository, reference, &remote.commit)?;
-    let dependencies = read_module_dependencies(&source)?;
-    return Ok(ResolvedModule {
-      repository: repository.to_string(),
-      reference: reference.to_string(),
-      commit: remote.commit,
-      kind: remote.kind,
-      link_target: source.clone(),
-      source,
-      dependencies,
-    });
+  let cache_root = module_cache_root(&options.modules_dir);
+  let source = cache_root.join("git").join(owner).join(repo).join(&remote.commit).join("source");
+  {
+    let _lock = CacheMetadataLock::acquire(&cache_root)?;
+    if source.exists() {
+      validate_store_source(repository, &source, &remote.commit)?;
+      ensure_store_metadata_unlocked(&source, repository, reference, &remote.commit)?;
+      let dependencies = read_module_dependencies(&source)?;
+      return Ok(ResolvedModule {
+        repository: repository.to_string(),
+        reference: reference.to_string(),
+        commit: remote.commit,
+        kind: remote.kind,
+        link_target: source.clone(),
+        source,
+        dependencies,
+      });
+    }
   }
+
+  // Network cloning is intentionally outside the global metadata lock. Each
+  // process clones into a unique temporary path, then competes only for the
+  // short store installation/metadata critical section below.
   GitRepo::clone_to_path(&temp_path, &remote.url, reference, &remote.kind, true)
     .map_err(|e| format!("failed to clone {repository}@{reference}: {e}"))?;
   let temp_repo = GitRepo { dir: temp_path.clone() };
@@ -545,33 +547,30 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
       remote.commit
     ));
   }
-  let source = module_cache_root(&options.modules_dir)
-    .join("git")
-    .join(owner)
-    .join(repo)
-    .join(&commit)
-    .join("source");
-  if source.exists() {
-    fs::remove_dir_all(&temp_path).map_err(|e| format!("failed to clean {}: {e}", temp_path.display()))?;
-    validate_store_source(repository, &source, &commit)?;
-  } else {
-    let parent = source.parent().ok_or_else(|| format!("invalid store path {}", source.display()))?;
-    fs::create_dir_all(parent).map_err(|e| format!("failed to create {}: {e}", parent.display()))?;
-    if let Err(error) = fs::rename(&temp_path, &source) {
-      if source.exists() {
-        fs::remove_dir_all(&temp_path).map_err(|e| format!("failed to clean {} after concurrent install: {e}", temp_path.display()))?;
-        validate_store_source(repository, &source, &commit)?;
-      } else {
-        return Err(format!(
-          "failed to move {} into store {}: {error}",
-          temp_path.display(),
-          source.display()
-        ));
+  {
+    let _lock = CacheMetadataLock::acquire(&cache_root)?;
+    if source.exists() {
+      fs::remove_dir_all(&temp_path).map_err(|e| format!("failed to clean {}: {e}", temp_path.display()))?;
+      validate_store_source(repository, &source, &commit)?;
+    } else {
+      let parent = source.parent().ok_or_else(|| format!("invalid store path {}", source.display()))?;
+      fs::create_dir_all(parent).map_err(|e| format!("failed to create {}: {e}", parent.display()))?;
+      if let Err(error) = fs::rename(&temp_path, &source) {
+        if source.exists() {
+          fs::remove_dir_all(&temp_path)
+            .map_err(|e| format!("failed to clean {} after concurrent install: {e}", temp_path.display()))?;
+          validate_store_source(repository, &source, &commit)?;
+        } else {
+          return Err(format!(
+            "failed to move {} into store {}: {error}",
+            temp_path.display(),
+            source.display()
+          ));
+        }
       }
     }
+    ensure_store_metadata_unlocked(&source, repository, reference, &commit)?;
   }
-
-  ensure_store_metadata_unlocked(&source, repository, reference, &commit)?;
 
   let dependencies = read_module_dependencies(&source)?;
   Ok(ResolvedModule {
