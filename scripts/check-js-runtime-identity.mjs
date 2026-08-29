@@ -34,6 +34,9 @@ try {
   globalThis.__calcit_injections__.read_dir = () => ["ok", 1];
   assert.throws(() => runtimeA.read_dir("bad", false), /array of strings/);
   assert.equal(runtimeA.get_env, runtimeA._$n_get_env, "legacy get_env export should delegate to the raw proc");
+  assert.equal(typeof runtimeA._$n_ffi_response_resolve, "function", "generated async FFI response imports must link on JS");
+  assert.equal(typeof runtimeA._$n_ffi_response_reject, "function", "generated async FFI rejection imports must link on JS");
+  assert.equal(typeof runtimeA._$n_ffi_task_cancel, "function", "generated async FFI task imports must link on JS");
   assert.equal(runtimeA.get_env("CALCIT_MISSING_ENV_FOR_RUNTIME_TEST", "fallback"), "fallback");
   assert.equal(
     runtimeA._$n_str_$o_replace("a&a&", "&", "&amp;"),

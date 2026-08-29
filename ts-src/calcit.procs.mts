@@ -2759,6 +2759,9 @@ export let macroexpand_all = unavailableProc;
 export let _$n_get_calcit_running_mode = unavailableProc;
 export let _$n_get_def_doc = unavailableProc;
 export let _$n_get_def_schema = unavailableProc;
+export let _$n_ffi_response_resolve = unavailableProc;
+export let _$n_ffi_response_reject = unavailableProc;
+export let _$n_ffi_task_cancel = unavailableProc;
 
 // already handled in code emitter
 export let raise = unavailableProc;
