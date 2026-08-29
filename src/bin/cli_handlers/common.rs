@@ -95,10 +95,11 @@ pub fn guard_snapshot_mutation_toolchain(snapshot_path: &str) -> Result<(), Stri
   if declared == running {
     return Ok(());
   }
+  let quoted_deps_path = shell_quote(&deps_path);
 
   Err(format!(
     "Snapshot mutation blocked: {deps_path} pins Calcit {declared}, but the running CLI is {running}.\n\
-     Re-run this edit with Calcit {declared}, or explicitly upgrade the project first with `caps {deps_path} upgrade --all`.\n\
+     Re-run this edit with Calcit {declared}, or explicitly upgrade the project first with `caps {quoted_deps_path} upgrade --all`.\n\
      No changes were written to {snapshot_path}."
   ))
 }
@@ -433,11 +434,15 @@ mod tests {
   };
   use cirru_parser::Cirru;
   use std::fs;
+  use std::sync::atomic::{AtomicU64, Ordering};
   use std::time::{SystemTime, UNIX_EPOCH};
+
+  static FIXTURE_ID: AtomicU64 = AtomicU64::new(0);
 
   fn mutation_guard_fixture(deps_content: Option<&str>) -> (std::path::PathBuf, std::path::PathBuf) {
     let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let dir = std::env::temp_dir().join(format!("calcit-mutation-guard-{}-{nonce}", std::process::id()));
+    let fixture_id = FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("calcit mutation guard-{}-{nonce}-{fixture_id}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
     let snapshot = dir.join("calcit.cirru");
     fs::write(&snapshot, "{}\n").unwrap();
@@ -580,7 +585,7 @@ mod tests {
     assert!(error.contains("Snapshot mutation blocked"), "error: {error}");
     assert!(error.contains("pins Calcit 0.1.0"), "error: {error}");
     assert!(
-      error.contains("caps ") && error.contains("deps.cirru upgrade --all"),
+      error.contains("caps '") && error.contains("deps.cirru' upgrade --all"),
       "error: {error}"
     );
     assert!(error.contains("No changes were written"), "error: {error}");
