@@ -21,5 +21,5 @@ The first complete Calcit-to-Calx scalar baseline was collected from a clean wor
 - Debug and release cover five kernels and 13 input points, preserving seven fresh-process raw samples per point.
 - In release samples, the input-scaled range-sum, Fibonacci, and bounded-simulation cases reach sampled one-shot crossovers; fixed affine and polynomial do not.
 - Hot results are explicitly scoped to a reused Calx VM versus a Calcit call path that performs entry lookup each time. They are not an isolated interpreter-dispatch multiplier.
-- The evidence supports adding an equivalent cached Calcit callable baseline before evaluating compile caching and VM reuse. It does not yet support an automatic selection policy.
+- The evidence supports adding an equivalent baseline that uses a cached Calcit callable before evaluating compile caching and VM reuse. It does not yet support an automatic selection policy.
 - Typed buffers, peak RSS/allocation profiles, a WASM reference, and cross-machine repetition remain incomplete, so #39 stays open.

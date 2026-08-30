@@ -89,6 +89,14 @@ pub struct CalxKernelCompileTimings {
   pub total: Duration,
 }
 
+#[derive(Debug, Default)]
+struct CalxKernelCompileStageTimings {
+  eligibility: Duration,
+  planning: Duration,
+  program_construction: Duration,
+  validation_lowering: Duration,
+}
+
 impl From<CalxLoweringError> for CalxKernelCompileError {
   fn from(error: CalxLoweringError) -> Self {
     Self::Lowering(error)
@@ -277,7 +285,7 @@ pub fn compile_calx_kernel(
   namespace: impl Into<Arc<str>>,
   definition: impl Into<Arc<str>>,
 ) -> Result<CalxCompiledKernel, CalxKernelCompileError> {
-  compile_calx_kernel_measured(program, namespace, definition).map(|(kernel, _)| kernel)
+  compile_calx_kernel_with_imports_inner(program, namespace, definition, &CalxHostImports::new(), None)
 }
 
 /// Compile a closed scalar kernel and report each compilation-stage duration.
@@ -296,7 +304,7 @@ pub fn compile_calx_kernel_with_imports(
   definition: impl Into<Arc<str>>,
   imports: &CalxHostImports,
 ) -> Result<CalxCompiledKernel, CalxKernelCompileError> {
-  compile_calx_kernel_with_imports_measured(program, namespace, definition, imports).map(|(kernel, _)| kernel)
+  compile_calx_kernel_with_imports_inner(program, namespace, definition, imports, None)
 }
 
 /// Compile with explicit typed imports and report each compilation-stage duration.
@@ -307,11 +315,34 @@ pub fn compile_calx_kernel_with_imports_measured(
   imports: &CalxHostImports,
 ) -> Result<(CalxCompiledKernel, CalxKernelCompileTimings), CalxKernelCompileError> {
   let total_started = Instant::now();
-  let eligibility_started = Instant::now();
+  let mut stage_timings = CalxKernelCompileStageTimings::default();
+  let kernel = compile_calx_kernel_with_imports_inner(program, namespace, definition, imports, Some(&mut stage_timings))?;
+  Ok((
+    kernel,
+    CalxKernelCompileTimings {
+      eligibility: stage_timings.eligibility,
+      planning: stage_timings.planning,
+      program_construction: stage_timings.program_construction,
+      validation_lowering: stage_timings.validation_lowering,
+      total: total_started.elapsed(),
+    },
+  ))
+}
+
+fn compile_calx_kernel_with_imports_inner(
+  program: &CompiledProgram,
+  namespace: impl Into<Arc<str>>,
+  definition: impl Into<Arc<str>>,
+  imports: &CalxHostImports,
+  mut stage_timings: Option<&mut CalxKernelCompileStageTimings>,
+) -> Result<CalxCompiledKernel, CalxKernelCompileError> {
+  let eligibility_started = stage_timings.as_ref().map(|_| Instant::now());
   let graph =
     analyze_calx_eligibility_with_imports(program, namespace, definition, imports).map_err(CalxKernelCompileError::Eligibility)?;
-  let eligibility = eligibility_started.elapsed();
-  let planning_started = Instant::now();
+  if let (Some(timings), Some(started)) = (stage_timings.as_deref_mut(), eligibility_started) {
+    timings.eligibility = started.elapsed();
+  }
+  let planning_started = stage_timings.as_ref().map(|_| Instant::now());
   let entry_signature = graph
     .functions
     .iter()
@@ -342,9 +373,11 @@ pub fn compile_calx_kernel_with_imports_measured(
       imports,
     )?);
   }
-  let planning = planning_started.elapsed();
+  if let (Some(timings), Some(started)) = (stage_timings.as_deref_mut(), planning_started) {
+    timings.planning = started.elapsed();
+  }
 
-  let construction_started = Instant::now();
+  let construction_started = stage_timings.as_ref().map(|_| Instant::now());
   let mut builder = ProgramBuilder::new();
   let used_imports = graph
     .functions
@@ -374,27 +407,21 @@ pub fn compile_calx_kernel_with_imports_measured(
     builder.function(emit_function(plan, &import_ids)?)?;
   }
   let program = builder.build()?;
-  let program_construction = construction_started.elapsed();
-  let validation_started = Instant::now();
+  if let (Some(timings), Some(started)) = (stage_timings.as_deref_mut(), construction_started) {
+    timings.program_construction = started.elapsed();
+  }
+  let validation_started = stage_timings.as_ref().map(|_| Instant::now());
   let program = ValidatedProgram::try_from_program(program)?;
-  let validation_lowering = validation_started.elapsed();
-  let kernel = CalxCompiledKernel {
+  if let (Some(timings), Some(started)) = (stage_timings, validation_started) {
+    timings.validation_lowering = started.elapsed();
+  }
+  Ok(CalxCompiledKernel {
     graph,
     params,
     result,
     program,
     host_bindings,
-  };
-  Ok((
-    kernel,
-    CalxKernelCompileTimings {
-      eligibility,
-      planning,
-      program_construction,
-      validation_lowering,
-      total: total_started.elapsed(),
-    },
-  ))
+  })
 }
 
 fn function_names(graph: &CalxEligibleCallGraph) -> BTreeMap<CalxDefinitionRef, String> {

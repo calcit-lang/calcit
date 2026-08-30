@@ -27,6 +27,7 @@ const matrix = quick
   ? fullMatrix.map(({ kernel, sizes }) => ({ kernel, sizes: [sizes[0]] }))
   : fullMatrix;
 
+/** Read and validate one integer experiment setting from the environment. */
 function integerFromEnvironment(name, fallback, minimum) {
   const raw = process.env[name];
   if (raw === undefined) return fallback;
@@ -37,25 +38,51 @@ function integerFromEnvironment(name, fallback, minimum) {
   return parsed;
 }
 
+/** Read a strictly positive integer experiment setting. */
 function positiveInteger(name, fallback) {
   return integerFromEnvironment(name, fallback, 1);
 }
 
+/** Read a non-negative integer experiment setting. */
 function nonNegativeInteger(name, fallback) {
   return integerFromEnvironment(name, fallback, 0);
 }
 
+/** Capture one toolchain or repository metadata command as text. */
 function commandOutput(command, args) {
   return execFileSync(command, args, { cwd: repoRoot, encoding: "utf8" }).trim();
 }
 
+/** Build the runner and return Cargo's authoritative executable path. */
 function build(profile) {
-  const args = ["build", "--bin", "calcit-calx-bench"];
+  const args = ["build", "--bin", "calcit-calx-bench", "--message-format=json-render-diagnostics"];
   if (profile === "release") args.push("--release");
-  const result = spawnSync("cargo", args, { cwd: repoRoot, stdio: "inherit" });
-  if (result.status !== 0) throw new Error(`failed to build ${profile} calcit-calx-bench`);
+  const result = spawnSync("cargo", args, {
+    cwd: repoRoot,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (result.error) throw new Error(`failed to spawn cargo for ${profile}: ${result.error.message}`);
+  if (result.stderr) process.stderr.write(result.stderr);
+  if (result.status !== 0) {
+    throw new Error(`failed to build ${profile} calcit-calx-bench\n${result.stdout}`);
+  }
+  const artifact = result.stdout
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+    .find(
+      (message) =>
+        message.reason === "compiler-artifact" &&
+        message.target?.name === "calcit-calx-bench" &&
+        message.target?.kind?.includes("bin") &&
+        typeof message.executable === "string",
+    );
+  if (!artifact) throw new Error(`cargo did not report the ${profile} calcit-calx-bench executable`);
+  return artifact.executable;
 }
 
+/** Run one correctness-gated fresh-process benchmark sample. */
 function runCase(binary, kernel, size) {
   const args = [
     "--kernel",
@@ -74,6 +101,9 @@ function runCase(binary, kernel, size) {
     maxBuffer: 16 * 1024 * 1024,
   });
   const processWallNs = Number(process.hrtime.bigint() - started);
+  if (result.error) {
+    throw new Error(`failed to spawn ${binary} for ${kernel}/${size}: ${result.error.message}`);
+  }
   if (result.status !== 0) {
     throw new Error(`benchmark failed for ${kernel}/${size}\n${result.stdout}\n${result.stderr}`);
   }
@@ -84,6 +114,7 @@ function runCase(binary, kernel, size) {
   return { processWallNs, report };
 }
 
+/** Return the median of a non-empty numeric sample. */
 function median(values) {
   const ordered = [...values].sort((a, b) => a - b);
   const middle = Math.floor(ordered.length / 2);
@@ -92,11 +123,13 @@ function median(values) {
     : ordered[middle];
 }
 
+/** Return the median absolute deviation of a non-empty numeric sample. */
 function medianAbsoluteDeviation(values) {
   const center = median(values);
   return median(values.map((value) => Math.abs(value - center)));
 }
 
+/** Flatten the staged metrics selected for aggregation. */
 function selectMetrics(sample) {
   const { report } = sample;
   return {
@@ -119,6 +152,7 @@ function selectMetrics(sample) {
   };
 }
 
+/** Aggregate raw samples without discarding them from the final report. */
 function aggregate(rawSamples) {
   const rows = rawSamples.map(selectMetrics);
   const names = Object.keys(rows[0]);
@@ -145,16 +179,19 @@ function aggregate(rawSamples) {
   };
 }
 
+/** Find the first sampled size whose selected ratio is at most one. */
 function crossover(cases, ratioName) {
   return cases.find((item) => item.aggregate.derived[ratioName] <= 1)?.size ?? null;
 }
 
-build("debug");
-build("release");
+const binaries = new Map([
+  ["debug", build("debug")],
+  ["release", build("release")],
+]);
 
 const profiles = [];
 for (const profile of ["debug", "release"]) {
-  const binary = path.join(repoRoot, "target", profile, "calcit-calx-bench");
+  const binary = binaries.get(profile);
   const cases = [];
   for (const { kernel, sizes } of matrix) {
     for (const size of sizes) {

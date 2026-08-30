@@ -58,7 +58,7 @@ and VM reuse next, but it does not show that arbitrary Calcit code belongs on Ca
 The hot comparison needs particular care. Calx reuses an instantiated VM, while the current Calcit baseline calls
 through `run_program_with_docs`, including entry lookup, every time. This measures embedding-visible repeated-call
 paths, not an isolated comparison of VM opcode dispatch with runner opcode dispatch. Any selection policy based on
-this evidence first needs an equivalent cached Calcit callable baseline.
+this evidence first needs an equivalent baseline that uses a cached Calcit callable.
 
 The report still lacks a typed-buffer workload, platform-profiler peak RSS/allocation hotspots, a same-kernel WASM
 reference, and cross-machine repetition. calx-vm #39 therefore remains open; this one environment cannot justify a

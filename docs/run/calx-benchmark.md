@@ -47,7 +47,7 @@ CALX_BENCH_QUICK=1 CALX_BENCH_SAMPLES=1 yarn bench-calx-e2e
 - `CALX_BENCH_HOT_ITERATIONS`：每个进程内的 hot call 测量次数；
 - `CALX_BENCH_OUTPUT`：相对仓库根目录或绝对 JSON 输出路径。
 
-单 case runner 的 stdout 始终是一个 `calcit-calx-benchmark/1` JSON，可独立排错：
+单 case runner 成功时，stdout 恰好输出一个 `calcit-calx-benchmark/1` JSON；失败写入 stderr 并以非零状态退出：
 
 ```bash
 cargo run --release --bin calcit-calx-bench -- \
@@ -125,7 +125,8 @@ The first complete clean-worktree baseline and its bounded conclusions are recor
 The experiment can be pinned with `CALX_BENCH_SAMPLES`, `CALX_BENCH_PROCESS_WARMUP`,
 `CALX_BENCH_VM_WARMUP`, `CALX_BENCH_HOT_ITERATIONS`, and `CALX_BENCH_OUTPUT`.
 
-The single-case runner always emits one `calcit-calx-benchmark/1` JSON value on stdout:
+On success, the single-case runner emits exactly one `calcit-calx-benchmark/1` JSON value on stdout. Failures are
+reported on stderr with a nonzero exit status:
 
 ```bash
 cargo run --release --bin calcit-calx-bench -- \

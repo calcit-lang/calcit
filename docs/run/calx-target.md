@@ -100,14 +100,16 @@ golden tests，但明确是 experimental report，不是可持久化的 compiler
 ## Source-backed fixtures
 
 [`tests/fixtures/calx/scalar-kernels.cirru`](../../tests/fixtures/calx/scalar-kernels.cirru)
-包含首批三类真实 Calcit source：
+包含五类真实 Calcit source：
 
 - `range-sum`：Number comparison 与 tail recur；
 - `fibonacci`：if、F64 comparison 与 direct recursion；
-- `affine`：多参数算术和 direct helper call graph。
+- `affine`：多参数算术和 direct helper call graph；
+- `polynomial`：固定深度数值表达式；
+- `bounded-simulation`：随输入规模增长的数值状态迭代。
 
 测试先让这些 definitions 经过 Calcit preprocessing，再从 `CompiledProgram` snapshot 分析和 lowering；
-对应 golden 固定 ABI、entry、函数签名、确定排序与 direct-call edges。三个 kernel 都会在 strict Calx
+对应 golden 固定 ABI、entry、函数签名、确定排序与 direct-call edges。五个 kernel 都会在 strict Calx
 VM 中实际执行，并与同一源码的 Calcit native runner 做差分比较。另一个 fixture 固定 Dynamic callee
 导致整个入口 closure fallback 的报告，并验证不会进入 lowering。
 
@@ -129,6 +131,7 @@ generated-program golden 固定 import declaration、guest syntax 与 Calcit tre
 
 当前 API 仍是 Rust embedding，不是 `calcit` CLI 的正式 backend。首批没有 collection/nominal value、closure、
 cache、profiling/selection policy，也还没有基于 benchmark 的自动 offload。correctness corpus 已覆盖 scalar
-kernel、zero/single-result typed imports、generated program、trap 与 fallback；下一阶段进入 #39，先建立分阶段
-基准矩阵和 crossover point，再用 profile 证据决定 compile cache、VM reuse 与 selection policy。基准命令、
-阶段定义和原始 JSON 格式见[《Calcit→Calx benchmark methodology》](./calx-benchmark.md)。
+kernel、zero/single-result typed imports、generated program、trap 与 fallback。分阶段 benchmark matrix、
+采样 crossover point 和首份 scalar baseline 已建立；[calx-vm #39](https://github.com/calcit-lang/calx-vm/issues/39)
+后续仍需用公平的 cached Calcit 调用基线与 profile 证据决定 compile cache、VM reuse 与 selection policy。
+基准命令、阶段定义和原始 JSON 格式见[《Calcit→Calx benchmark methodology》](./calx-benchmark.md)。

@@ -21,7 +21,7 @@ use cirru_parser::Cirru;
 use serde::Serialize;
 
 const FIXTURE_NAMESPACE: &str = "bench.calx-kernels";
-const CALX_VM_VERSION: &str = "0.3.0";
+const CARGO_LOCK: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.lock"));
 
 #[derive(Debug, FromArgs)]
 /// measure one source-backed Calcit-to-Calx scalar kernel
@@ -47,7 +47,7 @@ struct Args {
 #[serde(rename_all = "camelCase")]
 struct EnvironmentReport {
   package_version: &'static str,
-  calx_vm_version: &'static str,
+  calx_vm_version: String,
   profile: &'static str,
   os: &'static str,
   architecture: &'static str,
@@ -111,6 +111,29 @@ fn nanos(duration: Duration) -> u64 {
   u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
 }
 
+/// Resolve one uniquely-versioned package from the lockfile embedded at build time.
+fn resolved_dependency_version<'a>(lockfile: &'a str, package_name: &str) -> Result<&'a str, String> {
+  let versions = lockfile
+    .split("[[package]]")
+    .skip(1)
+    .filter_map(|package| {
+      let name = package
+        .lines()
+        .find_map(|line| line.strip_prefix("name = \"").and_then(|value| value.strip_suffix('"')))?;
+      let version = package
+        .lines()
+        .find_map(|line| line.strip_prefix("version = \"").and_then(|value| value.strip_suffix('"')))?;
+      (name == package_name).then_some(version)
+    })
+    .collect::<Vec<_>>();
+  match versions.as_slice() {
+    [version] => Ok(version),
+    [] => Err(format!("Cargo.lock has no resolved `{package_name}` package")),
+    _ => Err(format!("Cargo.lock resolves `{package_name}` more than once: {versions:?}")),
+  }
+}
+
+/// Build the fixed Number-only function schema for one benchmark definition.
 fn number_fn_schema(arity: usize) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
     generics: Arc::new(vec![]),
@@ -123,6 +146,7 @@ fn number_fn_schema(arity: usize) -> Arc<CalcitTypeAnnotation> {
   })))
 }
 
+/// Parse and install the source-backed scalar corpus in a fresh benchmark process.
 fn install_fixture() -> Result<(), String> {
   let arities = HashMap::from([
     ("range-sum", 2),
@@ -166,6 +190,7 @@ fn install_fixture() -> Result<(), String> {
   Ok(())
 }
 
+/// Map a named corpus case and its input size to concrete Calcit arguments.
 fn kernel_arguments(kernel: &str, size: u32) -> Result<Vec<Calcit>, String> {
   let n = f64::from(size);
   match kernel {
@@ -178,6 +203,7 @@ fn kernel_arguments(kernel: &str, size: u32) -> Result<Vec<Calcit>, String> {
   }
 }
 
+/// Convert proven scalar arguments without admitting Nil or Dynamic values.
 fn convert_arguments(kernel: &CalxCompiledKernel, args: &[Calcit]) -> Result<Vec<CalxValue>, String> {
   if kernel.params().len() != args.len() {
     return Err(format!("expected {} arguments, found {}", kernel.params().len(), args.len()));
@@ -194,6 +220,7 @@ fn convert_arguments(kernel: &CalxCompiledKernel, args: &[Calcit]) -> Result<Vec
     .collect()
 }
 
+/// Convert one strict Calx result back through the proven scalar boundary.
 fn convert_result(kernel: &CalxCompiledKernel, result: CalxRunResult) -> Result<Calcit, String> {
   match (kernel.result(), result) {
     (None, CalxRunResult::Void) => Ok(Calcit::Unit),
@@ -203,6 +230,7 @@ fn convert_result(kernel: &CalxCompiledKernel, result: CalxRunResult) -> Result<
   }
 }
 
+/// Run correctness first, then collect one process-local staged measurement.
 fn measure(args: &Args) -> Result<BenchmarkReport, String> {
   if args.hot_iterations == 0 {
     return Err("--hot-iterations must be greater than zero".to_owned());
@@ -243,8 +271,9 @@ fn measure(args: &Args) -> Result<BenchmarkReport, String> {
   let mut vm = kernel.instantiate().map_err(|error| error.to_string())?;
   let vm_setup_ns = nanos(setup_started.elapsed());
 
+  let one_shot_input = vm_args.clone();
   let execution_started = Instant::now();
-  let vm_result = vm.run_typed(vm_args.clone()).map_err(|error| error.to_string())?;
+  let vm_result = vm.run_typed(one_shot_input).map_err(|error| error.to_string())?;
   let pure_execution_ns = nanos(execution_started.elapsed());
 
   let result_boundary_started = Instant::now();
@@ -281,7 +310,7 @@ fn measure(args: &Args) -> Result<BenchmarkReport, String> {
     schema: "calcit-calx-benchmark/1",
     environment: EnvironmentReport {
       package_version: env!("CARGO_PKG_VERSION"),
-      calx_vm_version: CALX_VM_VERSION,
+      calx_vm_version: resolved_dependency_version(CARGO_LOCK, "calx_vm")?.to_owned(),
       profile: if cfg!(debug_assertions) { "debug" } else { "release" },
       os: std::env::consts::OS,
       architecture: std::env::consts::ARCH,
@@ -324,6 +353,7 @@ fn measure(args: &Args) -> Result<BenchmarkReport, String> {
   })
 }
 
+/// Emit exactly one JSON report on success and keep failures on stderr.
 fn main() {
   let args: Args = argh::from_env();
   match measure(&args).and_then(|report| serde_json::to_string(&report).map_err(|error| error.to_string())) {
@@ -332,5 +362,24 @@ fn main() {
       eprintln!("calcit-calx-bench: {error}");
       std::process::exit(1);
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn embedded_calx_vm_version_comes_from_the_resolved_lockfile() {
+    let version = resolved_dependency_version(CARGO_LOCK, "calx_vm").expect("one resolved calx_vm package");
+    assert_eq!(version.split('.').count(), 3);
+    assert!(version.split('.').all(|part| part.parse::<u64>().is_ok()));
+  }
+
+  #[test]
+  fn dependency_version_requires_one_unique_package() {
+    let duplicate = "[[package]]\nname = \"demo\"\nversion = \"1.0.0\"\n[[package]]\nname = \"demo\"\nversion = \"2.0.0\"\n";
+    assert!(resolved_dependency_version(duplicate, "demo").is_err());
+    assert!(resolved_dependency_version(duplicate, "missing").is_err());
   }
 }
