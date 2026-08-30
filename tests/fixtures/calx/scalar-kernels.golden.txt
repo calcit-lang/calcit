@@ -1,0 +1,15 @@
+## range-sum
+abi calcit-calx-kernel/1
+entry tests.calx-kernels/range-sum
+function tests.calx-kernels/range-sum (F64,F64)->F64
+## fibonacci
+abi calcit-calx-kernel/1
+entry tests.calx-kernels/fibonacci
+function tests.calx-kernels/fibonacci (F64)->F64
+  call tests.calx-kernels/fibonacci
+## affine
+abi calcit-calx-kernel/1
+entry tests.calx-kernels/affine
+function tests.calx-kernels/affine (F64,F64,F64)->F64
+  call tests.calx-kernels/affine-helper
+function tests.calx-kernels/affine-helper (F64,F64,F64)->F64
