@@ -35,8 +35,9 @@ The JSON command writes one parseable envelope to stdout. Its
 [`schemas/ffi-interface-ir-v1.schema.json`](../../schemas/ffi-interface-ir-v1.schema.json).
 The envelope's `interface_schema` field carries the schema identifier.
 Definitions and diagnostics are sorted deterministically, and `revision` is a
-digest of the interface plus diagnostics. Consumers must check `version`
-before generation.
+digest of the interface plus diagnostics. Unordered EDN maps and sets are
+canonicalized recursively before `logical_schema`, `lowering.raw`, and the
+revision are emitted. Consumers must check `version` before generation.
 
 ## Boundary selection
 

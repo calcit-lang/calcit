@@ -2,7 +2,6 @@ use md5::{Digest, Md5};
 use serde::Serialize;
 
 use crate::calcit::{CalcitTypeAnnotation, SchemaKind};
-use crate::data::edn::format_edn_display;
 use crate::snapshot::{CodeEntry, Snapshot};
 use cirru_edn::Edn;
 
@@ -245,6 +244,78 @@ fn metadata_value<'a>(metadata: &'a Edn, key: &str) -> Option<&'a Edn> {
   }
 }
 
+fn canonical_edn_display(value: &Edn) -> String {
+  match value {
+    Edn::List(items) => {
+      let values = items.iter().map(canonical_edn_display).collect::<Vec<_>>().join(" ");
+      if values.is_empty() {
+        "([])".to_owned()
+      } else {
+        format!("([] {values})")
+      }
+    }
+    Edn::Set(items) => {
+      let mut values = items.0.iter().map(canonical_edn_display).collect::<Vec<_>>();
+      values.sort_unstable();
+      if values.is_empty() {
+        "(#{})".to_owned()
+      } else {
+        format!("(#{{}} {})", values.join(" "))
+      }
+    }
+    Edn::Map(items) => {
+      let mut pairs = items
+        .0
+        .iter()
+        .map(|(key, value)| (canonical_edn_display(key), canonical_edn_display(value)))
+        .collect::<Vec<_>>();
+      pairs.sort_unstable();
+      let entries = pairs
+        .into_iter()
+        .map(|(key, value)| format!("({key} {value})"))
+        .collect::<Vec<_>>()
+        .join(" ");
+      if entries.is_empty() {
+        "({})".to_owned()
+      } else {
+        format!("({{}} {entries})")
+      }
+    }
+    Edn::Struct(value) => {
+      let mut pairs = value
+        .pairs
+        .iter()
+        .map(|(field, value)| (field.ref_str(), canonical_edn_display(value)))
+        .collect::<Vec<_>>();
+      pairs.sort_unstable();
+      let entries = pairs
+        .into_iter()
+        .map(|(field, value)| format!("(:{field} {value})"))
+        .collect::<Vec<_>>()
+        .join(" ");
+      if entries.is_empty() {
+        format!("(%{{}} '{})", value.name)
+      } else {
+        format!("(%{{}} '{} {entries})", value.name)
+      }
+    }
+    Edn::Enum(value) => {
+      let extra = value.extra.iter().map(canonical_edn_display).collect::<Vec<_>>().join(" ");
+      let prefix = match &value.type_name {
+        Some(type_name) => format!("(%:: '{type_name} '{}", value.variant),
+        None => format!("(:: '{}", value.variant),
+      };
+      if extra.is_empty() {
+        format!("{prefix})")
+      } else {
+        format!("{prefix} {extra})")
+      }
+    }
+    Edn::Atom(value) => format!("(atom {})", canonical_edn_display(value)),
+    _ => value.to_string(),
+  }
+}
+
 fn is_ffi_boundary_candidate(metadata: &Edn) -> bool {
   match metadata {
     Edn::Map(_) | Edn::Struct(_) => ["backend", "target", "kind", "symbol", "invoke", "transport"]
@@ -301,7 +372,7 @@ fn convert_lowering(metadata: &Edn, definition: &str) -> Result<(FfiLoweringIr, 
       symbol: scalar_metadata(metadata, "symbol", definition, &mut diagnostics),
       invoke: scalar_metadata(metadata, "invoke", definition, &mut diagnostics),
       transport: scalar_metadata(metadata, "transport", definition, &mut diagnostics),
-      raw: format_edn_display(metadata),
+      raw: canonical_edn_display(metadata),
     },
     diagnostics,
   ))
@@ -352,7 +423,7 @@ pub fn export_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -> Result<F
       namespace: namespace.to_owned(),
       name: name.to_owned(),
       doc: entry.doc.clone(),
-      logical_schema: format_edn_display(&entry.schema.to_type_edn()),
+      logical_schema: canonical_edn_display(&entry.schema.to_type_edn()),
       signature,
       lowering,
       status,
@@ -604,6 +675,46 @@ mod tests {
 
     assert_eq!(first, second);
     assert_eq!(empty.summary.definitions, 0);
+  }
+
+  #[test]
+  fn metadata_map_order_does_not_change_raw_output_or_revision() {
+    let metadata_a = Edn::map_from_iter([
+      (Edn::tag("backend"), Edn::tag("native")),
+      (Edn::tag("symbol"), Edn::str("read")),
+      (Edn::tag("target"), Edn::tag("native")),
+    ]);
+    let metadata_b = Edn::map_from_iter([
+      (Edn::tag("target"), Edn::tag("native")),
+      (Edn::tag("symbol"), Edn::str("read")),
+      (Edn::tag("backend"), Edn::tag("native")),
+    ]);
+    let make_report = |metadata| {
+      export_snapshot(
+        &snapshot(vec![(
+          "read",
+          function_entry(
+            vec![Arc::new(CalcitTypeAnnotation::String)],
+            Arc::new(CalcitTypeAnnotation::String),
+            metadata,
+          ),
+        )]),
+        None,
+      )
+      .expect("export canonically ordered metadata")
+    };
+
+    let first = make_report(metadata_a);
+    let second = make_report(metadata_b);
+    assert_eq!(
+      first.interface.definitions[0].lowering.raw,
+      "({} (:backend :native) (:symbol |read) (:target :native))"
+    );
+    assert_eq!(
+      first.interface.definitions[0].lowering.raw,
+      second.interface.definitions[0].lowering.raw
+    );
+    assert_eq!(first.revision, second.revision);
   }
 
   #[test]
