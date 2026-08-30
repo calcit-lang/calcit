@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { integerFromEnvironment } from "./bench-calx-settings.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const quick = process.env.CALX_BENCH_QUICK === "1";
@@ -27,25 +28,14 @@ const matrix = quick
   ? fullMatrix.map(({ kernel, sizes }) => ({ kernel, sizes: [sizes[0]] }))
   : fullMatrix;
 
-/** Read and validate one integer experiment setting from the environment. */
-function integerFromEnvironment(name, fallback, minimum) {
-  const raw = process.env[name];
-  if (raw === undefined) return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isSafeInteger(parsed) || parsed < minimum) {
-    throw new Error(`${name} must be an integer greater than or equal to ${minimum}`);
-  }
-  return parsed;
-}
-
 /** Read a strictly positive integer experiment setting. */
 function positiveInteger(name, fallback) {
-  return integerFromEnvironment(name, fallback, 1);
+  return integerFromEnvironment(process.env, name, fallback, 1);
 }
 
 /** Read a non-negative integer experiment setting. */
 function nonNegativeInteger(name, fallback) {
-  return integerFromEnvironment(name, fallback, 0);
+  return integerFromEnvironment(process.env, name, fallback, 0);
 }
 
 /** Capture one toolchain or repository metadata command as text. */
