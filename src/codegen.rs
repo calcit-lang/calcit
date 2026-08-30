@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
+pub mod calx;
 pub mod emit_js;
 pub mod emit_wasm;
 pub mod gen_ir;

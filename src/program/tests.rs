@@ -1,10 +1,12 @@
 use super::*;
 use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
-use crate::calcit::{CalcitImport, CalcitStructDef, CalcitSyntax, ImportInfo};
+use crate::calcit::{CalcitFnTypeAnnotation, CalcitImport, CalcitStructDef, CalcitSyntax, ImportInfo, SchemaKind};
 use crate::call_stack::CallStackList;
+use crate::codegen::calx::{CalxDefinitionRef, CalxFallbackCode, CalxScalarType, analyze_calx_eligibility};
 use crate::data::cirru::code_to_calcit;
 use crate::run_program_with_docs;
 use cirru_edn::EdnTag;
+use std::collections::HashSet;
 use std::sync::{LazyLock, Mutex};
 
 static PROGRAM_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
@@ -190,6 +192,177 @@ fn reset_program_test_state() {
   PROGRAM_COMPILED_DATA_STATE.write().expect("reset compiled data").clear();
   PROGRAM_CODE_DATA.write().expect("reset program code").clear();
   *PROGRAM_DEF_ID_INDEX.write().expect("reset def id index") = ProgramDefIdIndex::default();
+}
+
+fn calx_test_fn_schema(arg_types: Vec<CalcitTypeAnnotation>, return_type: CalcitTypeAnnotation) -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+    generics: Arc::new(vec![]),
+    where_bounds: Arc::new(vec![]),
+    arg_types: arg_types.into_iter().map(Arc::new).collect(),
+    return_type: Arc::new(return_type),
+    fn_kind: SchemaKind::Fn,
+    rest_type: None,
+    features: Arc::new(HashSet::new()),
+  })))
+}
+
+fn calx_test_defs_from_source(namespace: &str, source: &str) -> HashMap<String, Calcit> {
+  cirru_parser::parse(source)
+    .expect("parse Calx source fixture")
+    .into_iter()
+    .map(|node| {
+      let Cirru::List(items) = &node else {
+        panic!("Calx fixture definition must be a list: {node}");
+      };
+      let Some(Cirru::Leaf(definition)) = items.get(1) else {
+        panic!("Calx fixture definition must have a name: {node}");
+      };
+      let code = code_to_calcit(&node, namespace, definition, vec![]).expect("convert Calx fixture source");
+      (definition.to_string(), code)
+    })
+    .collect()
+}
+
+fn install_calx_test_defs(namespace: &str, defs: Vec<(&str, Calcit, Arc<CalcitTypeAnnotation>)>) {
+  let mut entries = HashMap::new();
+  for (definition, code, schema) in defs {
+    let _ = ensure_def_id(namespace, definition);
+    entries.insert(
+      Arc::from(definition),
+      ProgramDefEntry {
+        code,
+        schema,
+        doc: Arc::from(""),
+        examples: vec![],
+        ffi: None,
+      },
+    );
+  }
+  PROGRAM_CODE_DATA.write().expect("install Calx eligibility fixtures").insert(
+    Arc::from(namespace),
+    ProgramFileData {
+      import_map: HashMap::new(),
+      defs: entries,
+    },
+  );
+}
+
+fn compile_calx_test_entry(namespace: &str, definition: &str) {
+  let warnings = RefCell::new(vec![]);
+  crate::runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default())
+    .unwrap_or_else(|error| panic!("preprocess Calx fixture {namespace}/{definition}: {error}"));
+  assert!(
+    warnings.borrow().is_empty(),
+    "unexpected fixture warnings: {:#?}",
+    warnings.borrow()
+  );
+}
+
+#[test]
+fn calx_eligibility_accepts_three_real_preprocessed_scalar_kernels() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-kernels";
+  let number = || CalcitTypeAnnotation::Number;
+  let mut source_defs = calx_test_defs_from_source(namespace, include_str!("../../tests/fixtures/calx/scalar-kernels.cirru"));
+  install_calx_test_defs(
+    namespace,
+    vec![
+      (
+        "range-sum",
+        source_defs.remove("range-sum").expect("range-sum source"),
+        calx_test_fn_schema(vec![number(), number()], number()),
+      ),
+      (
+        "fibonacci",
+        source_defs.remove("fibonacci").expect("fibonacci source"),
+        calx_test_fn_schema(vec![number()], number()),
+      ),
+      (
+        "affine-helper",
+        source_defs.remove("affine-helper").expect("affine-helper source"),
+        calx_test_fn_schema(vec![number(), number(), number()], number()),
+      ),
+      (
+        "affine",
+        source_defs.remove("affine").expect("affine source"),
+        calx_test_fn_schema(vec![number(), number(), number()], number()),
+      ),
+    ],
+  );
+  for definition in ["range-sum", "fibonacci", "affine"] {
+    compile_calx_test_entry(namespace, definition);
+  }
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed preprocessed Calx fixtures");
+
+  let range = analyze_calx_eligibility(&snapshot, namespace, "range-sum").expect("range-sum should be eligible");
+  assert_eq!(range.functions.len(), 1);
+  assert_eq!(range.functions[0].params, vec![CalxScalarType::F64, CalxScalarType::F64]);
+  assert_eq!(range.functions[0].result, Some(CalxScalarType::F64));
+
+  let fibonacci = analyze_calx_eligibility(&snapshot, namespace, "fibonacci").expect("fibonacci should be eligible");
+  assert_eq!(fibonacci.functions.len(), 1);
+  assert_eq!(
+    fibonacci.functions[0].direct_calls,
+    vec![CalxDefinitionRef::new(namespace, "fibonacci")]
+  );
+
+  let affine = analyze_calx_eligibility(&snapshot, namespace, "affine").expect("affine should be eligible");
+  assert_eq!(
+    affine
+      .functions
+      .iter()
+      .map(|function| function.definition.definition.as_ref())
+      .collect::<Vec<_>>(),
+    vec!["affine", "affine-helper"]
+  );
+  let summary = format!(
+    "## range-sum\n{}## fibonacci\n{}## affine\n{}",
+    range.stable_summary(),
+    fibonacci.stable_summary(),
+    affine.stable_summary()
+  );
+  assert_eq!(summary, include_str!("../../tests/fixtures/calx/scalar-kernels.golden.txt"));
+}
+
+#[test]
+fn calx_eligibility_falls_back_for_the_whole_reachable_closure() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-fallback";
+  let mut source_defs = calx_test_defs_from_source(namespace, include_str!("../../tests/fixtures/calx/fallback.cirru"));
+  install_calx_test_defs(
+    namespace,
+    vec![
+      (
+        "dynamic-helper",
+        source_defs.remove("dynamic-helper").expect("dynamic-helper source"),
+        DYNAMIC_TYPE.clone(),
+      ),
+      (
+        "entry",
+        source_defs.remove("entry").expect("entry source"),
+        calx_test_fn_schema(vec![CalcitTypeAnnotation::Number], CalcitTypeAnnotation::Number),
+      ),
+    ],
+  );
+  compile_calx_test_entry(namespace, "entry");
+  let snapshot = clone_compiled_program_snapshot().expect("clone fallback fixture");
+
+  let report = analyze_calx_eligibility(&snapshot, namespace, "entry").expect_err("reachable Dynamic callee must reject closure");
+  assert_eq!(
+    report.stable_summary(),
+    include_str!("../../tests/fixtures/calx/fallback.golden.txt")
+  );
+  assert!(report.issues.iter().any(|issue| issue.code == CalxFallbackCode::DynamicType));
+  assert!(report.issues.iter().any(|issue| issue.code == CalxFallbackCode::CallClosure));
+  let dynamic = report
+    .issues
+    .iter()
+    .find(|issue| issue.code == CalxFallbackCode::DynamicType)
+    .expect("Dynamic fallback detail");
+  assert_eq!(dynamic.call_path.len(), 2);
+  assert_eq!(dynamic.call_path[1], CalxDefinitionRef::new(namespace, "dynamic-helper"));
 }
 
 fn compiled_def_for_test(def_id: DefId, deps: Vec<DefId>) -> CompiledDef {

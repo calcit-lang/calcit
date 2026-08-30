@@ -1,0 +1,5 @@
+abi calcit-calx-kernel/1
+entry tests.calx-fallback/entry
+issue CALX_SUBSET_DYNAMIC_TYPE tests.calx-fallback/dynamic-helper source=1 call=tests.calx-fallback/entry -> tests.calx-fallback/dynamic-helper message=function `tests.calx-fallback/dynamic-helper` has non-function schema `dynamic`
+issue CALX_SUBSET_DYNAMIC_TYPE tests.calx-fallback/dynamic-helper source=3 call=tests.calx-fallback/entry -> tests.calx-fallback/dynamic-helper message=local `x` remains Dynamic
+issue CALX_SUBSET_CALL_CLOSURE tests.calx-fallback/entry source=- call=tests.calx-fallback/entry message=entry `tests.calx-fallback/entry` has an ineligible reachable call closure
