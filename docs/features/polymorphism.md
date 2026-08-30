@@ -255,6 +255,15 @@ them to their internal direct implementations. Direct names such as
 `option:unwrap-or` and `result:unwrap-or` are core implementation details, not
 the public call style.
 
+That rule has one explicit boundary exception: postfix nominal methods require
+a receiver that preprocessing can identify as `Option` or `Result`. If legacy
+data, configuration, or FFI erases the receiver to `Dynamic`, preprocessing
+reports `W_DYNAMIC_NOMINAL_METHOD_RECEIVER`. Add a schema or narrow the value
+before using method syntax; when the boundary intentionally remains Dynamic,
+use the corresponding `option:*` or `result:*` function explicitly. This keeps
+the escape hatch visible and prevents a runtime Option/Result value from being
+evaluated as an operator.
+
 For longer sequential Option pipelines, the experimental `option:let` macro
 reuses the ordinary `let` binding shape and lowers entirely to nested
 `.and-then` calls. Result pipelines use explicit receiver-first `.and-then`

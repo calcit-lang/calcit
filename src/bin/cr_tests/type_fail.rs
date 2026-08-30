@@ -224,6 +224,27 @@ fn option_migration_source_calls_fail_during_preprocessing() {
 }
 
 #[test]
+fn dynamic_option_method_receiver_fails_during_preprocessing() {
+  run_with_large_stack(|| {
+    let entries =
+      load_snippet_entries("let\n    m $ unsafe-coerce ({} (:a 1)) 'Dynamic\n    fallback 0\n  (get m :a) .unwrap-or fallback");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("Dynamic Option method misuse should report before runtime");
+
+    let warnings = warnings.borrow();
+    let matched = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_DYNAMIC_NOMINAL_METHOD_RECEIVER"))
+      .collect::<Vec<_>>();
+    assert_eq!(matched.len(), 1, "expected one Dynamic Option-method warning, got: {warnings:?}");
+    assert!(matched[0].message().contains("`.unwrap-or`"));
+    assert!(matched[0].message().contains("`option:*` or `result:*`"));
+  });
+}
+
+#[test]
 fn option_fold_callbacks_share_return_type_during_preprocessing() {
   run_with_large_stack(|| {
     let snippets = [

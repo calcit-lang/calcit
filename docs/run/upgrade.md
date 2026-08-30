@@ -423,6 +423,12 @@ get-env-or |mode |release
 `get-in-or`、`first-or`、`last-or`、`nth-or` 同样改为对应查询后调用 `.unwrap-or`。
 fallback 必须与 payload 类型兼容；需要区分缺失分支时改用 `if-let` 或穷尽 `match`。
 
+上述 method 迁移要求查询接收者能静态推断为 `Option<T>`。如果 legacy Map、配置或 FFI
+边界仍把查询结果擦除为 `Dynamic`，检查器会报告 `W_DYNAMIC_NOMINAL_METHOD_RECEIVER`，而不是
+允许代码在运行时把 Option 值误当作 operator。优先为边界补 schema 或先 narrow；确实需要保留
+Dynamic 时，使用明确的函数形式，例如 `option:unwrap-or (get config :port) 6000`。这类函数形式
+只作为未类型化边界逃生口，类型化业务代码仍使用接收者 method。
+
 #### `.trim` / `.blank?` 接收者迁移
 
 `.trim` 与 `.blank?` 只对静态推断为 String 的接收者可用。若错误写成 `unknown method .trim for map`，

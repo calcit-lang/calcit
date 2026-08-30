@@ -1718,17 +1718,28 @@ fn preprocess_list_call(
           // For non-struct/trait types (Dynamic, Fn, etc.), silently fall through —
           // `.method` is a normal argument.
         }
-        if warn_dyn_method_enabled()
-          && file_ns != calcit::CORE_NS
+        if file_ns != calcit::CORE_NS
           && resolve_type_value(&head_form, scope_types).is_none_or(|type_info| is_dynamic_annotation(type_info.as_ref()))
         {
-          let message = format!(
-            "[Warn] postfix method `.{method_name}` has a dynamic receiver in {file_ns}/{def_name}; use prefix syntax `(.{method_name} receiver ...)`, assert-traits, or unsafe-coerce at an FFI boundary"
-          );
-          if let Some(loc) = head_form.get_location().or_else(|| first_arg.get_location()) {
-            gen_check_warning_with_location_code(message, "P_DYNAMIC_POSTFIX_METHOD", loc, check_warnings);
-          } else {
-            gen_check_warning_code(message, "P_DYNAMIC_POSTFIX_METHOD", file_ns, check_warnings);
+          let location = head_form.get_location().or_else(|| first_arg.get_location());
+          if let Some((receiver_requirement, helper_hint)) = dynamic_nominal_method_requirement(method_name.as_ref()) {
+            let message = format!(
+              "[Warn] postfix nominal method `.{method_name}` requires a statically known {receiver_requirement} receiver in {file_ns}/{def_name}, but the receiver is Dynamic; narrow it with a schema/assertion before using method syntax, or call {helper_hint} at an intentional Dynamic boundary"
+            );
+            if let Some(loc) = location {
+              gen_check_warning_with_location_code(message, "W_DYNAMIC_NOMINAL_METHOD_RECEIVER", loc, check_warnings);
+            } else {
+              gen_check_warning_code(message, "W_DYNAMIC_NOMINAL_METHOD_RECEIVER", file_ns, check_warnings);
+            }
+          } else if warn_dyn_method_enabled() {
+            let message = format!(
+              "[Warn] postfix method `.{method_name}` has a dynamic receiver in {file_ns}/{def_name}; use prefix syntax `(.{method_name} receiver ...)`, assert-traits, or unsafe-coerce at an FFI boundary"
+            );
+            if let Some(loc) = location {
+              gen_check_warning_with_location_code(message, "P_DYNAMIC_POSTFIX_METHOD", loc, check_warnings);
+            } else {
+              gen_check_warning_code(message, "P_DYNAMIC_POSTFIX_METHOD", file_ns, check_warnings);
+            }
           }
         }
       }
@@ -5535,6 +5546,15 @@ fn is_dynamic_annotation(type_value: &CalcitTypeAnnotation) -> bool {
     || matches!(type_value, CalcitTypeAnnotation::Optional(inner) if is_dynamic_annotation(inner.as_ref()))
 }
 
+fn dynamic_nominal_method_requirement(method_name: &str) -> Option<(&'static str, &'static str)> {
+  match method_name {
+    "some?" | "none?" | "unwrap" | "fold" => Some(("Option", "the matching `option:*` function")),
+    "ok?" | "err?" | "map-err" => Some(("Result", "the matching `result:*` function")),
+    "unwrap-or" | "and-then" | "or-else" => Some(("Option or Result", "the matching `option:*` or `result:*` function")),
+    _ => None,
+  }
+}
+
 /// Rank annotations by how much static information they erase. Root-level
 /// dynamic callable/value types are weaker than an equally dynamic container,
 /// because the latter still preserves useful shape information.
@@ -8659,6 +8679,35 @@ mod tests {
       .collect::<Vec<_>>();
     assert_eq!(matched.len(), 1, "expected one dynamic postfix warning, got: {warnings:?}");
     assert!(matched[0].message().contains("unsafe-coerce"));
+  }
+
+  #[test]
+  fn nominal_container_methods_warn_on_dynamic_receivers_without_opt_in() {
+    let _lock = lock_preprocess_test_state();
+    let _warn_guard = WarnDynMethodGuard::new(false);
+    let expr = Cirru::List(vec![Cirru::leaf("receiver"), Cirru::leaf(".unwrap-or"), Cirru::leaf("0")]);
+    let code = code_to_calcit(&expr, "tests.dynamic-option", "main", vec![]).expect("parse cirru");
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("receiver"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.dynamic-option", &warnings, &stack)
+      .expect("dynamic Option method should preprocess far enough to report a warning");
+
+    let warnings = warnings.borrow();
+    let matched = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_DYNAMIC_NOMINAL_METHOD_RECEIVER"))
+      .collect::<Vec<_>>();
+    assert_eq!(matched.len(), 1, "expected one Dynamic nominal-method warning, got: {warnings:?}");
+    assert!(matched[0].message().contains("statically known Option or Result receiver"));
+    assert!(matched[0].message().contains("`option:*` or `result:*`"));
+    assert!(
+      warnings.iter().all(|warning| warning.code() != Some("P_DYNAMIC_POSTFIX_METHOD")),
+      "the unconditional diagnostic should not be duplicated by the opt-in policy warning"
+    );
   }
 
   #[test]
