@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "interface_version": 1,
+  "package": "calcit.std",
+  "package_version": "0.2.29",
+  "generated": [
+    {
+      "path": "calcit-std.ffi.rs",
+      "sha256": "0eb964cc838e1a2e83d5b71233482ee9d4f08c64daf2275df47d3813599e3d2a"
+    },
+    {
+      "path": "calcit-std.ffi.cirru",
+      "sha256": "d2adb28c7baf828f4ba5b90a80c9bf38556b9c2b539fd44f16e816525657ae27"
+    },
+    {
+      "path": "calcit-std.d.ts",
+      "sha256": "1cdb018c50cdda871993b2f22a0b46e23ba75c9a8fede72ed916eadbed30ba36"
+    },
+    {
+      "path": "calcit-std.wit",
+      "sha256": "5926d59bd45177678f284dac4324c42dc31a427f74ae75a7374db07a3ecb5c8e"
+    }
+  ]
+}
