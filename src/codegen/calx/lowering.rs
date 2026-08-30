@@ -1,5 +1,6 @@
 //! Typed lowering from a proven Calx-eligible Calcit call graph.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
@@ -717,7 +718,7 @@ fn lower_error(function: &CalxDefinitionRef, source_path: Option<Vec<u16>>, mess
   }
 }
 
-fn emit_function(plan: &PlannedFunction) -> Result<FunctionBuilder, CalxBuildError> {
+fn emit_function(plan: &PlannedFunction) -> Result<FunctionBuilder, CalxKernelCompileError> {
   let source = source_origin(&plan.definition, None);
   let results = plan.result.into_iter().map(CalxScalarType::vm_type).collect();
   let mut builder = FunctionBuilder::synthetic(plan.vm_name.clone(), results, source)?;
@@ -734,18 +735,44 @@ fn emit_function(plan: &PlannedFunction) -> Result<FunctionBuilder, CalxBuildErr
     let id = builder.local_at(local.name.as_ref(), local.value_type.vm_type(), span)?;
     local_ids.insert(*idx, id);
   }
-  emit_expression(&plan.body, builder.body(), &plan.definition, &local_ids)?;
+  let context = EmissionContext {
+    function: &plan.definition,
+    locals: &local_ids,
+    lowering_error: RefCell::new(None),
+  };
+  emit_expression(&plan.body, builder.body(), &context)?;
+  if let Some(error) = context.lowering_error.into_inner() {
+    return Err(CalxKernelCompileError::Lowering(error));
+  }
   Ok(builder)
+}
+
+struct EmissionContext<'a> {
+  function: &'a CalxDefinitionRef,
+  locals: &'a BTreeMap<u16, LocalId>,
+  lowering_error: RefCell<Option<CalxLoweringError>>,
+}
+
+impl EmissionContext<'_> {
+  fn record_missing_local(&self, idx: u16, source_path: Option<Vec<u16>>) {
+    let mut error = self.lowering_error.borrow_mut();
+    if error.is_none() {
+      *error = Some(lower_error(
+        self.function,
+        source_path,
+        format!("typed local index {idx} has no emitted Calx LocalId"),
+      ));
+    }
+  }
 }
 
 fn emit_expression(
   expression: &PlannedExpression,
   body: &mut BodyBuilder,
-  function: &CalxDefinitionRef,
-  locals: &BTreeMap<u16, LocalId>,
+  context: &EmissionContext<'_>,
 ) -> Result<(), CalxBuildError> {
   body.set_default_span(Some(SourceSpan::synthetic(source_origin(
-    function,
+    context.function,
     expression.source_path.as_deref(),
   ))));
   match &expression.kind {
@@ -757,34 +784,42 @@ fn emit_expression(
     }
     PlannedExpressionKind::Unit => {}
     PlannedExpressionKind::Local(idx) => {
-      body.local_get(&locals[idx])?;
+      if let Some(local) = context.locals.get(idx) {
+        body.local_get(local)?;
+      } else {
+        context.record_missing_local(*idx, expression.source_path.clone());
+      }
     }
-    PlannedExpressionKind::Sequence(expressions) => emit_sequence(expressions, body, function, locals)?,
+    PlannedExpressionKind::Sequence(expressions) => emit_sequence(expressions, body, context)?,
     PlannedExpressionKind::Let {
       local,
       value,
       body: let_body,
     } => {
-      emit_expression(value, body, function, locals)?;
-      body.local_set(&locals[local])?;
-      emit_expression(let_body, body, function, locals)?;
+      emit_expression(value, body, context)?;
+      if let Some(local_id) = context.locals.get(local) {
+        body.local_set(local_id)?;
+      } else {
+        context.record_missing_local(*local, expression.source_path.clone());
+      }
+      emit_expression(let_body, body, context)?;
     }
     PlannedExpressionKind::If {
       condition,
       then_branch,
       else_branch,
     } => {
-      emit_expression(condition, body, function, locals)?;
+      emit_expression(condition, body, context)?;
       let results = expression.result.into_iter().map(CalxScalarType::vm_type).collect();
       body.if_else(
         results,
-        |then_body| emit_expression(then_branch, then_body, function, locals),
-        |else_body| emit_expression(else_branch, else_body, function, locals),
+        |then_body| emit_expression(then_branch, then_body, context),
+        |else_body| emit_expression(else_branch, else_body, context),
       )?;
     }
     PlannedExpressionKind::Operation { operation, args } => {
       for argument in args {
-        emit_expression(argument, body, function, locals)?;
+        emit_expression(argument, body, context)?;
       }
       match operation {
         PlannedOperation::Add => body.emit(VmSyntax::Add)?,
@@ -803,7 +838,7 @@ fn emit_expression(
       tail,
     } => {
       for argument in args {
-        emit_expression(argument, body, function, locals)?;
+        emit_expression(argument, body, context)?;
       }
       if *tail {
         body.return_call(callee.as_str())?;
@@ -818,11 +853,10 @@ fn emit_expression(
 fn emit_sequence(
   expressions: &[PlannedExpression],
   body: &mut BodyBuilder,
-  function: &CalxDefinitionRef,
-  locals: &BTreeMap<u16, LocalId>,
+  context: &EmissionContext<'_>,
 ) -> Result<(), CalxBuildError> {
   for (index, expression) in expressions.iter().enumerate() {
-    emit_expression(expression, body, function, locals)?;
+    emit_expression(expression, body, context)?;
     if index + 1 != expressions.len() && expression.result.is_some() {
       body.emit(VmSyntax::Drop)?;
     }
@@ -835,4 +869,30 @@ fn source_origin(function: &CalxDefinitionRef, path: Option<&[u16]>) -> String {
     .map(|parts| parts.iter().map(u16::to_string).collect::<Vec<_>>().join("."))
     .unwrap_or_else(|| "-".to_owned());
   format!("calcit:{}@{path}", function.qualified())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn missing_planned_local_returns_lowering_error() {
+    let definition = CalxDefinitionRef::new("tests.calx", "missing-local");
+    let plan = PlannedFunction {
+      definition: definition.clone(),
+      vm_name: "main".to_owned(),
+      params: vec![],
+      locals: BTreeMap::new(),
+      result: Some(CalxScalarType::F64),
+      body: planned(Some(CalxScalarType::F64), Some(vec![3, 1]), PlannedExpressionKind::Local(42)),
+    };
+
+    let error = emit_function(&plan).expect_err("an unplanned typed local must not panic");
+    let CalxKernelCompileError::Lowering(error) = error else {
+      panic!("expected a lowering error, got {error}");
+    };
+    assert_eq!(error.function, definition);
+    assert_eq!(error.source_path, Some(vec![3, 1]));
+    assert!(error.message.contains("local index 42"));
+  }
 }

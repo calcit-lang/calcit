@@ -7,6 +7,7 @@
 
 mod lowering;
 
+pub use calx_vm::{CalxBuildError, CalxError, CalxProgramError};
 pub use lowering::{
   CalxCompiledKernel, CalxKernelBoundaryError, CalxKernelBoundaryErrorKind, CalxKernelCompileError, CalxKernelRunError,
   CalxLoweringError, compile_calx_kernel,
