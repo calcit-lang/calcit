@@ -13,3 +13,11 @@ entry tests.calx-kernels/affine
 function tests.calx-kernels/affine (F64,F64,F64)->F64
   call tests.calx-kernels/affine-helper
 function tests.calx-kernels/affine-helper (F64,F64,F64)->F64
+## polynomial
+abi calcit-calx-kernel/1
+entry tests.calx-kernels/polynomial
+function tests.calx-kernels/polynomial (F64)->F64
+## bounded-simulation
+abi calcit-calx-kernel/1
+entry tests.calx-kernels/bounded-simulation
+function tests.calx-kernels/bounded-simulation (F64,F64,F64)->F64

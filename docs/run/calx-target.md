@@ -130,4 +130,5 @@ generated-program golden 固定 import declaration、guest syntax 与 Calcit tre
 当前 API 仍是 Rust embedding，不是 `calcit` CLI 的正式 backend。首批没有 collection/nominal value、closure、
 cache、profiling/selection policy，也还没有基于 benchmark 的自动 offload。correctness corpus 已覆盖 scalar
 kernel、zero/single-result typed imports、generated program、trap 与 fallback；下一阶段进入 #39，先建立分阶段
-基准矩阵和 crossover point，再用 profile 证据决定 compile cache、VM reuse 与 selection policy。
+基准矩阵和 crossover point，再用 profile 证据决定 compile cache、VM reuse 与 selection policy。基准命令、
+阶段定义和原始 JSON 格式见[《Calcit→Calx benchmark methodology》](./calx-benchmark.md)。

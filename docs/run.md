@@ -50,6 +50,7 @@ calcit js
 - [Development Debugging](./run/debugging.md)
 - [Querying definitions](./run/query.md)
 - [Experimental Calx target eligibility](./run/calx-target.md)
+- [Calcit→Calx benchmark methodology](./run/calx-benchmark.md)
 - [Documentation & Libraries](./run/docs-libs.md)
 - [CLI Code Editing](./run/edit-tree.md)
 - [Load Deps](./run/load-deps.md)

@@ -5,7 +5,7 @@ use crate::call_stack::CallStackList;
 use crate::codegen::calx::{
   CalxDefinitionRef, CalxError, CalxFallbackCode, CalxHostImport, CalxHostImports, CalxKernelBoundaryErrorKind, CalxKernelCompileError,
   CalxKernelRunError, CalxScalarType, CalxValue, analyze_calx_eligibility, analyze_calx_eligibility_with_imports, compile_calx_kernel,
-  compile_calx_kernel_with_imports,
+  compile_calx_kernel_measured, compile_calx_kernel_with_imports,
 };
 use crate::data::cirru::code_to_calcit;
 use crate::run_program_with_docs;
@@ -290,15 +290,25 @@ fn install_calx_scalar_kernel_fixture(namespace: &str) {
         source_defs.remove("affine").expect("affine source"),
         calx_test_fn_schema(vec![number(), number(), number()], number()),
       ),
+      (
+        "polynomial",
+        source_defs.remove("polynomial").expect("polynomial source"),
+        calx_test_fn_schema(vec![number()], number()),
+      ),
+      (
+        "bounded-simulation",
+        source_defs.remove("bounded-simulation").expect("bounded-simulation source"),
+        calx_test_fn_schema(vec![number(), number(), number()], number()),
+      ),
     ],
   );
-  for definition in ["range-sum", "fibonacci", "affine"] {
+  for definition in ["range-sum", "fibonacci", "affine", "polynomial", "bounded-simulation"] {
     compile_calx_test_entry(namespace, definition);
   }
 }
 
 #[test]
-fn calx_eligibility_accepts_three_real_preprocessed_scalar_kernels() {
+fn calx_eligibility_accepts_five_real_preprocessed_scalar_kernels() {
   let _guard = lock_program_test_state();
   reset_program_test_state();
   let namespace = "tests.calx-kernels";
@@ -326,17 +336,25 @@ fn calx_eligibility_accepts_three_real_preprocessed_scalar_kernels() {
       .collect::<Vec<_>>(),
     vec!["affine", "affine-helper"]
   );
+  let polynomial = analyze_calx_eligibility(&snapshot, namespace, "polynomial").expect("polynomial should be eligible");
+  assert_eq!(polynomial.functions.len(), 1);
+
+  let bounded_simulation =
+    analyze_calx_eligibility(&snapshot, namespace, "bounded-simulation").expect("bounded-simulation should be eligible");
+  assert_eq!(bounded_simulation.functions.len(), 1);
   let summary = format!(
-    "## range-sum\n{}## fibonacci\n{}## affine\n{}",
+    "## range-sum\n{}## fibonacci\n{}## affine\n{}## polynomial\n{}## bounded-simulation\n{}",
     range.stable_summary(),
     fibonacci.stable_summary(),
-    affine.stable_summary()
+    affine.stable_summary(),
+    polynomial.stable_summary(),
+    bounded_simulation.stable_summary()
   );
   assert_eq!(summary, include_str!("../../tests/fixtures/calx/scalar-kernels.golden.txt"));
 }
 
 #[test]
-fn calx_lowering_executes_three_source_kernels_like_native_calcit() {
+fn calx_lowering_executes_five_source_kernels_like_native_calcit() {
   let _guard = lock_program_test_state();
   reset_program_test_state();
   let namespace = "tests.calx-kernels";
@@ -347,6 +365,11 @@ fn calx_lowering_executes_three_source_kernels_like_native_calcit() {
     ("range-sum", vec![Calcit::Number(10.0), Calcit::Number(0.0)]),
     ("fibonacci", vec![Calcit::Number(10.0)]),
     ("affine", vec![Calcit::Number(3.0), Calcit::Number(4.0), Calcit::Number(5.0)]),
+    ("polynomial", vec![Calcit::Number(3.0)]),
+    (
+      "bounded-simulation",
+      vec![Calcit::Number(10.0), Calcit::Number(0.5), Calcit::Number(0.99)],
+    ),
   ];
   for (definition, args) in cases {
     let kernel = compile_calx_kernel(&snapshot, namespace, definition)
@@ -376,6 +399,20 @@ fn calx_lowering_executes_three_source_kernels_like_native_calcit() {
     error,
     CalxKernelRunError::Boundary(ref boundary) if boundary.kind == CalxKernelBoundaryErrorKind::ArgumentType
   ));
+}
+
+#[test]
+fn calx_measured_compile_reports_non_overlapping_stages() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-kernels";
+  install_calx_scalar_kernel_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed preprocessed Calx fixtures");
+
+  let (kernel, timings) = compile_calx_kernel_measured(&snapshot, namespace, "range-sum").expect("measure range-sum compilation");
+  let measured_stages = timings.eligibility + timings.planning + timings.program_construction + timings.validation_lowering;
+  assert!(timings.total >= measured_stages);
+  assert_eq!(kernel.graph().entry, CalxDefinitionRef::new(namespace, "range-sum"));
 }
 
 fn install_calx_typed_import_fixture(namespace: &str) {

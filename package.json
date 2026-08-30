@@ -23,6 +23,7 @@
     "bench-enum-match": "cargo run --release --example bench_enum_match && yarn compile && node scripts/bench-enum-match.mjs",
     "bench-literal-paths": "cargo build --release --bin calcit && yarn compile && target/release/calcit calcit/bench-literal-paths.cirru && node scripts/bench-literal-paths-native.mjs && target/release/calcit --emit-path target/literal-path-js calcit/bench-literal-paths.cirru js && node scripts/bench-literal-paths.mjs",
     "bench-typed-method-rem": "cargo build --release --bin calcit && yarn compile && target/release/calcit calcit/fibo.cirru && node scripts/bench-typed-method-rem-native.mjs && target/release/calcit --emit-path target/typed-method-rem-js calcit/fibo.cirru js && node scripts/bench-typed-method-rem.mjs",
+    "bench-calx-e2e": "node scripts/bench-calx-e2e.mjs",
     "bench-struct-index": "yarn compile && node scripts/bench-struct-index.mjs",
     "check-smooth": "yarn fmt-rs && yarn lint-rs && yarn test-rs && yarn check-all",
     "check-all": "yarn compile && yarn check-js-runtime && yarn check-agent-interface && yarn try-core-tests && yarn try-rs && yarn try-js && yarn try-ir && yarn try-wasm && yarn check-literal-paths && yarn check-typed-method-rem",

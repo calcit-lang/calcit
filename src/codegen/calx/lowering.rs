@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use calx_vm::{
   BodyBuilder, Calx as VmValue, CalxBuildError, CalxError, CalxHostBindings, CalxProgramError, CalxRunResult, CalxSyntax as VmSyntax,
@@ -71,6 +72,21 @@ impl Error for CalxKernelCompileError {
       Self::Validation(error) => Some(error),
     }
   }
+}
+
+/// Opt-in wall-clock measurements for the Calx compilation stages.
+///
+/// These durations are evidence for benchmark reports, not stable performance
+/// thresholds. Program construction includes declaration emission and
+/// `ProgramBuilder::build`; validation includes strict validation and Calx
+/// instruction lowering in `ValidatedProgram::try_from_program`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CalxKernelCompileTimings {
+  pub eligibility: Duration,
+  pub planning: Duration,
+  pub program_construction: Duration,
+  pub validation_lowering: Duration,
+  pub total: Duration,
 }
 
 impl From<CalxLoweringError> for CalxKernelCompileError {
@@ -261,7 +277,16 @@ pub fn compile_calx_kernel(
   namespace: impl Into<Arc<str>>,
   definition: impl Into<Arc<str>>,
 ) -> Result<CalxCompiledKernel, CalxKernelCompileError> {
-  compile_calx_kernel_with_imports(program, namespace, definition, &CalxHostImports::new())
+  compile_calx_kernel_measured(program, namespace, definition).map(|(kernel, _)| kernel)
+}
+
+/// Compile a closed scalar kernel and report each compilation-stage duration.
+pub fn compile_calx_kernel_measured(
+  program: &CompiledProgram,
+  namespace: impl Into<Arc<str>>,
+  definition: impl Into<Arc<str>>,
+) -> Result<(CalxCompiledKernel, CalxKernelCompileTimings), CalxKernelCompileError> {
+  compile_calx_kernel_with_imports_measured(program, namespace, definition, &CalxHostImports::new())
 }
 
 /// Compiles a kernel with an explicit set of typed scalar host capabilities.
@@ -271,8 +296,22 @@ pub fn compile_calx_kernel_with_imports(
   definition: impl Into<Arc<str>>,
   imports: &CalxHostImports,
 ) -> Result<CalxCompiledKernel, CalxKernelCompileError> {
+  compile_calx_kernel_with_imports_measured(program, namespace, definition, imports).map(|(kernel, _)| kernel)
+}
+
+/// Compile with explicit typed imports and report each compilation-stage duration.
+pub fn compile_calx_kernel_with_imports_measured(
+  program: &CompiledProgram,
+  namespace: impl Into<Arc<str>>,
+  definition: impl Into<Arc<str>>,
+  imports: &CalxHostImports,
+) -> Result<(CalxCompiledKernel, CalxKernelCompileTimings), CalxKernelCompileError> {
+  let total_started = Instant::now();
+  let eligibility_started = Instant::now();
   let graph =
     analyze_calx_eligibility_with_imports(program, namespace, definition, imports).map_err(CalxKernelCompileError::Eligibility)?;
+  let eligibility = eligibility_started.elapsed();
+  let planning_started = Instant::now();
   let entry_signature = graph
     .functions
     .iter()
@@ -303,7 +342,9 @@ pub fn compile_calx_kernel_with_imports(
       imports,
     )?);
   }
+  let planning = planning_started.elapsed();
 
+  let construction_started = Instant::now();
   let mut builder = ProgramBuilder::new();
   let used_imports = graph
     .functions
@@ -333,14 +374,27 @@ pub fn compile_calx_kernel_with_imports(
     builder.function(emit_function(plan, &import_ids)?)?;
   }
   let program = builder.build()?;
+  let program_construction = construction_started.elapsed();
+  let validation_started = Instant::now();
   let program = ValidatedProgram::try_from_program(program)?;
-  Ok(CalxCompiledKernel {
+  let validation_lowering = validation_started.elapsed();
+  let kernel = CalxCompiledKernel {
     graph,
     params,
     result,
     program,
     host_bindings,
-  })
+  };
+  Ok((
+    kernel,
+    CalxKernelCompileTimings {
+      eligibility,
+      planning,
+      program_construction,
+      validation_lowering,
+      total: total_started.elapsed(),
+    },
+  ))
 }
 
 fn function_names(graph: &CalxEligibleCallGraph) -> BTreeMap<CalxDefinitionRef, String> {

@@ -72,6 +72,10 @@ path = "src/bin/calcit_deps.rs"
 name = "cr-wasm"
 path = "src/bin/cr_wasm.rs"
 
+[[bin]]
+name = "calcit-calx-bench"
+path = "src/bin/calx_bench.rs"
+
 [profile.release]
 lto = true
 opt-level = "s"
