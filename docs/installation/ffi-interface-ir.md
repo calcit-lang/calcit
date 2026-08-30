@@ -59,6 +59,35 @@ Both layers remain visible:
 - `status` and `diagnostic_codes` prevent generators from treating an
   unsupported definition as usable.
 
+## Lowering contract validation
+
+Interface IR v1 callable definitions have one direction: Calcit imports a raw
+binding from the selected host backend. An explicit import/export direction
+field is reserved for a future IR version; consumers must not infer a reverse
+export from v1 metadata.
+
+Native callables are generator-safe only when all three lowering fields are
+present and coherent:
+
+| Invoke                | Transport          | Symbol |
+| --------------------- | ------------------ | ------ |
+| `sync`                | `edn-buffer-v1`    | portable C base identifier |
+| `async`               | `async-task-v1`    | portable C base identifier |
+| `blocking-callback`   | `blocking-host-v1` | portable C base identifier |
+
+The symbol is the unsuffixed logical base such as `read_file`; Calcit derives
+the versioned C entry point. Native targets are omitted or `native`. JS targets
+are omitted, `browser`, or `node`. Unknown backends, invalid targets, missing
+fields, non-portable symbols, unversioned transports, and mismatched
+invoke/transport pairs produce path-specific diagnostics before bindgen.
+
+Interface IR v1 的 callable direction 固定为“Calcit 从 host backend import raw
+binding”；显式双向 direction 字段留给后续 IR 版本。native callable 必须声明
+未带协议后缀的 portable C base symbol，并使用 `sync + edn-buffer-v1`、
+`async + async-task-v1` 或 `blocking-callback + blocking-host-v1` 之一。
+未知 backend/target、缺失字段、非法 symbol、未版本化 transport 与组合错配都会
+在 bindgen 前产生带精确 path 的 diagnostic。
+
 V1 represents `Unit`, `Bool`, `Number`, `String`, `Buffer`, homogeneous
 `List`, and nominal named types (including representable `Option`, `Result`,
 struct, and enum references). `Dynamic`, callbacks, `Map`, `Set`, `Ref`, host
@@ -76,10 +105,11 @@ Map/Set、Ref、host object、可变参数或泛型调用边界给出结构化�
 
 ## Scope of v1
 
-This phase defines an inventory and generator input. It does not yet validate
-every backend-specific arity, transport, ownership, cancellation, or resource
-lifecycle rule, and it does not replace the existing C-safe native protocols.
-Those checks and generated adapters belong to the next bindgen phase.
+This phase defines an inventory and generator input. It validates fixed
+function arity and the published native invocation/transport pairs, but does
+not yet validate callback positions, ownership, cancellation, or resource
+lifecycle fields nested in lowering metadata. Those structured checks and
+generated adapters belong to the next bindgen phase.
 
 ## Phase 0 bindgen preview
 

@@ -343,6 +343,141 @@ fn scalar_metadata(metadata: &Edn, key: &str, definition: &str, diagnostics: &mu
   }
 }
 
+fn is_portable_c_identifier(value: &str) -> bool {
+  let mut chars = value.chars();
+  let Some(first) = chars.next() else {
+    return false;
+  };
+  (first == '_' || first.is_ascii_alphabetic()) && chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
+}
+
+fn validate_lowering_contract(definition: &str, lowering: &FfiLoweringIr, diagnostics: &mut Vec<FfiInterfaceDiagnostic>) {
+  match lowering.backend.as_deref() {
+    None => {}
+    Some("native") => {
+      if let Some(target) = lowering.target.as_deref()
+        && target != "native"
+      {
+        diagnostics.push(diagnostic(
+          definition,
+          "lowering.target",
+          "E_FFI_IR_TARGET_INVALID",
+          format!("Native FFI lowering cannot target `{target}`."),
+          "Omit `:target` for the current native host or use `:target :native`; browser/node targets belong to the JS backend.",
+        ));
+      }
+
+      match lowering.symbol.as_deref() {
+        None => diagnostics.push(diagnostic(
+          definition,
+          "lowering.symbol",
+          "E_FFI_IR_SYMBOL_REQUIRED",
+          "Native FFI lowering does not declare a base symbol.",
+          "Declare a portable C identifier such as `:symbol |read_file`; Calcit derives the versioned protocol suffix.",
+        )),
+        Some(symbol) if !is_portable_c_identifier(symbol) => diagnostics.push(diagnostic(
+          definition,
+          "lowering.symbol",
+          "E_FFI_IR_SYMBOL_INVALID",
+          format!("Native FFI base symbol `{symbol}` is not a portable C identifier."),
+          "Use ASCII letters, digits, and underscores, beginning with a letter or underscore; do not include a protocol suffix.",
+        )),
+        Some(_) => {}
+      }
+
+      let invoke_known = match lowering.invoke.as_deref() {
+        None => {
+          diagnostics.push(diagnostic(
+            definition,
+            "lowering.invoke",
+            "E_FFI_IR_INVOKE_REQUIRED",
+            "Native FFI lowering does not declare an invocation mode.",
+            "Declare `:invoke :sync`, `:invoke :async`, or `:invoke :blocking-callback`.",
+          ));
+          false
+        }
+        Some("sync" | "async" | "blocking-callback") => true,
+        Some(invoke) => {
+          diagnostics.push(diagnostic(
+            definition,
+            "lowering.invoke",
+            "E_FFI_IR_INVOKE_UNKNOWN",
+            format!("Native FFI invocation mode `{invoke}` is not supported."),
+            "Use one of the published native invocation modes: sync, async, or blocking-callback.",
+          ));
+          false
+        }
+      };
+
+      let transport_known = match lowering.transport.as_deref() {
+        None => {
+          diagnostics.push(diagnostic(
+            definition,
+            "lowering.transport",
+            "E_FFI_IR_TRANSPORT_REQUIRED",
+            "Native FFI lowering does not declare a transport.",
+            "Declare `:transport :edn-buffer-v1`, `:transport :async-task-v1`, or `:transport :blocking-host-v1`.",
+          ));
+          false
+        }
+        Some("edn-buffer-v1" | "async-task-v1" | "blocking-host-v1") => true,
+        Some(transport) => {
+          diagnostics.push(diagnostic(
+            definition,
+            "lowering.transport",
+            "E_FFI_IR_TRANSPORT_UNKNOWN",
+            format!("Native FFI transport `{transport}` is not supported."),
+            "Use one of the published versioned native transports instead of an unversioned or Rust-layout ABI.",
+          ));
+          false
+        }
+      };
+
+      if invoke_known && transport_known {
+        let pair = (lowering.invoke.as_deref(), lowering.transport.as_deref());
+        if !matches!(
+          pair,
+          (Some("sync"), Some("edn-buffer-v1"))
+            | (Some("async"), Some("async-task-v1"))
+            | (Some("blocking-callback"), Some("blocking-host-v1"))
+        ) {
+          diagnostics.push(diagnostic(
+            definition,
+            "lowering.transport",
+            "E_FFI_IR_TRANSPORT_MISMATCH",
+            format!(
+              "Native FFI invocation mode `{}` is incompatible with transport `{}`.",
+              lowering.invoke.as_deref().expect("known invocation mode"),
+              lowering.transport.as_deref().expect("known transport")
+            ),
+            "Use sync + edn-buffer-v1, async + async-task-v1, or blocking-callback + blocking-host-v1.",
+          ));
+        }
+      }
+    }
+    Some("js") => {
+      if let Some(target) = lowering.target.as_deref()
+        && !matches!(target, "browser" | "node")
+      {
+        diagnostics.push(diagnostic(
+          definition,
+          "lowering.target",
+          "E_FFI_IR_TARGET_INVALID",
+          format!("JS FFI target `{target}` is not supported."),
+          "Use `:target :browser`, `:target :node`, or omit the target for a shared JS boundary.",
+        ));
+      }
+    }
+    Some(backend) => diagnostics.push(diagnostic(
+      definition,
+      "lowering.backend",
+      "E_FFI_IR_BACKEND_UNKNOWN",
+      format!("FFI backend `{backend}` is not part of Interface IR v{FFI_INTERFACE_IR_VERSION}."),
+      "Use the native or JS backend, or keep the boundary behind a handwritten adapter until that backend has a versioned contract.",
+    )),
+  }
+}
+
 fn convert_lowering(metadata: &Edn, definition: &str) -> Result<(FfiLoweringIr, Vec<FfiInterfaceDiagnostic>), String> {
   let mut diagnostics = Vec::new();
   if !matches!(metadata, Edn::Struct(_) | Edn::Map(_)) {
@@ -364,18 +499,17 @@ fn convert_lowering(metadata: &Edn, definition: &str) -> Result<(FfiLoweringIr, 
       "Declare `:backend :native`, `:backend :js`, or another explicit backend before generation.",
     ));
   }
-  Ok((
-    FfiLoweringIr {
-      backend,
-      target: scalar_metadata(metadata, "target", definition, &mut diagnostics),
-      kind: scalar_metadata(metadata, "kind", definition, &mut diagnostics),
-      symbol: scalar_metadata(metadata, "symbol", definition, &mut diagnostics),
-      invoke: scalar_metadata(metadata, "invoke", definition, &mut diagnostics),
-      transport: scalar_metadata(metadata, "transport", definition, &mut diagnostics),
-      raw: canonical_edn_display(metadata),
-    },
-    diagnostics,
-  ))
+  let lowering = FfiLoweringIr {
+    backend,
+    target: scalar_metadata(metadata, "target", definition, &mut diagnostics),
+    kind: scalar_metadata(metadata, "kind", definition, &mut diagnostics),
+    symbol: scalar_metadata(metadata, "symbol", definition, &mut diagnostics),
+    invoke: scalar_metadata(metadata, "invoke", definition, &mut diagnostics),
+    transport: scalar_metadata(metadata, "transport", definition, &mut diagnostics),
+    raw: canonical_edn_display(metadata),
+  };
+  validate_lowering_contract(definition, &lowering, &mut diagnostics);
+  Ok((lowering, diagnostics))
 }
 
 pub fn export_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -> Result<FfiExportReport, String> {
@@ -545,7 +679,13 @@ mod tests {
   }
 
   fn native_metadata(symbol: &str) -> Edn {
-    Edn::map_from_iter([(Edn::tag("backend"), Edn::tag("native")), (Edn::tag("symbol"), Edn::str(symbol))])
+    Edn::map_from_iter([
+      (Edn::tag("backend"), Edn::tag("native")),
+      (Edn::tag("invoke"), Edn::tag("sync")),
+      (Edn::tag("kind"), Edn::tag("dylib-method")),
+      (Edn::tag("symbol"), Edn::str(symbol)),
+      (Edn::tag("transport"), Edn::tag("edn-buffer-v1")),
+    ])
   }
 
   fn diagnostic_codes(report: &FfiExportReport) -> HashSet<&str> {
@@ -657,6 +797,157 @@ mod tests {
     assert_eq!(report.summary.unsupported, 1);
     assert!(codes.contains("E_FFI_IR_METADATA_SHAPE"));
     assert!(codes.contains("E_FFI_IR_BACKEND_REQUIRED"));
+  }
+
+  #[test]
+  fn rejects_incomplete_native_lowering_before_generation() {
+    let report = export_snapshot(
+      &snapshot(vec![(
+        "incomplete",
+        function_entry(
+          vec![Arc::new(CalcitTypeAnnotation::String)],
+          Arc::new(CalcitTypeAnnotation::String),
+          Edn::map_from_iter([(Edn::tag("backend"), Edn::tag("native"))]),
+        ),
+      )]),
+      None,
+    )
+    .expect("inventory incomplete native metadata");
+
+    let codes = diagnostic_codes(&report);
+    assert_eq!(report.summary.unsupported, 1);
+    assert!(codes.contains("E_FFI_IR_SYMBOL_REQUIRED"));
+    assert!(codes.contains("E_FFI_IR_INVOKE_REQUIRED"));
+    assert!(codes.contains("E_FFI_IR_TRANSPORT_REQUIRED"));
+    assert_eq!(
+      report.diagnostics.iter().map(|item| item.path.as_str()).collect::<Vec<_>>(),
+      ["lowering.symbol", "lowering.invoke", "lowering.transport"]
+    );
+  }
+
+  #[test]
+  fn rejects_invalid_native_symbol_and_protocol_pair() {
+    let metadata = Edn::map_from_iter([
+      (Edn::tag("backend"), Edn::tag("native")),
+      (Edn::tag("invoke"), Edn::tag("async")),
+      (Edn::tag("symbol"), Edn::str("not-portable!")),
+      (Edn::tag("transport"), Edn::tag("edn-buffer-v1")),
+    ]);
+    let report = export_snapshot(
+      &snapshot(vec![(
+        "invalid",
+        function_entry(
+          vec![Arc::new(CalcitTypeAnnotation::String)],
+          Arc::new(CalcitTypeAnnotation::String),
+          metadata,
+        ),
+      )]),
+      None,
+    )
+    .expect("inventory invalid native metadata");
+
+    let codes = diagnostic_codes(&report);
+    assert!(codes.contains("E_FFI_IR_SYMBOL_INVALID"));
+    assert!(codes.contains("E_FFI_IR_TRANSPORT_MISMATCH"));
+  }
+
+  #[test]
+  fn accepts_each_published_native_protocol_pair() {
+    let definitions = [
+      ("sync", "edn-buffer-v1"),
+      ("async", "async-task-v1"),
+      ("blocking-callback", "blocking-host-v1"),
+    ]
+    .into_iter()
+    .map(|(invoke, transport)| {
+      (
+        invoke,
+        function_entry(
+          vec![],
+          Arc::new(CalcitTypeAnnotation::Unit),
+          Edn::map_from_iter([
+            (Edn::tag("backend"), Edn::tag("native")),
+            (Edn::tag("invoke"), Edn::tag(invoke)),
+            (Edn::tag("symbol"), Edn::str(invoke.replace('-', "_"))),
+            (Edn::tag("transport"), Edn::tag(transport)),
+          ]),
+        ),
+      )
+    })
+    .collect();
+    let report = export_snapshot(&snapshot(definitions), None).expect("export published native protocol pairs");
+
+    assert_eq!(report.summary.supported, 3);
+    assert_eq!(report.summary.unsupported, 0);
+    assert!(report.diagnostics.is_empty());
+  }
+
+  #[test]
+  fn rejects_unknown_lowering_values_and_backend_targets() {
+    let definitions = vec![
+      (
+        "native-target",
+        function_entry(
+          vec![],
+          Arc::new(CalcitTypeAnnotation::Unit),
+          Edn::map_from_iter([
+            (Edn::tag("backend"), Edn::tag("native")),
+            (Edn::tag("invoke"), Edn::tag("future")),
+            (Edn::tag("symbol"), Edn::str("native_target")),
+            (Edn::tag("target"), Edn::tag("browser")),
+            (Edn::tag("transport"), Edn::tag("rust-abi")),
+          ]),
+        ),
+      ),
+      (
+        "js-target",
+        function_entry(
+          vec![],
+          Arc::new(CalcitTypeAnnotation::Unit),
+          Edn::map_from_iter([(Edn::tag("backend"), Edn::tag("js")), (Edn::tag("target"), Edn::tag("worker"))]),
+        ),
+      ),
+      (
+        "unknown-backend",
+        function_entry(
+          vec![],
+          Arc::new(CalcitTypeAnnotation::Unit),
+          Edn::map_from_iter([(Edn::tag("backend"), Edn::tag("python"))]),
+        ),
+      ),
+    ];
+    let report = export_snapshot(&snapshot(definitions), None).expect("inventory unknown lowering values");
+
+    let codes = diagnostic_codes(&report);
+    assert_eq!(report.summary.unsupported, 3);
+    assert!(codes.contains("E_FFI_IR_TARGET_INVALID"));
+    assert!(codes.contains("E_FFI_IR_INVOKE_UNKNOWN"));
+    assert!(codes.contains("E_FFI_IR_TRANSPORT_UNKNOWN"));
+    assert!(codes.contains("E_FFI_IR_BACKEND_UNKNOWN"));
+  }
+
+  #[test]
+  fn invalid_lowering_diagnostics_and_revision_are_repeatable() {
+    let metadata = || {
+      Edn::map_from_iter([
+        (Edn::tag("transport"), Edn::tag("edn-buffer-v1")),
+        (Edn::tag("backend"), Edn::tag("native")),
+        (Edn::tag("symbol"), Edn::str("not-portable!")),
+        (Edn::tag("invoke"), Edn::tag("async")),
+      ])
+    };
+    let make_report = || {
+      export_snapshot(
+        &snapshot(vec![(
+          "invalid",
+          function_entry(vec![], Arc::new(CalcitTypeAnnotation::Unit), metadata()),
+        )]),
+        None,
+      )
+      .expect("export repeatable invalid lowering")
+    };
+
+    assert_eq!(make_report(), make_report());
   }
 
   #[test]
