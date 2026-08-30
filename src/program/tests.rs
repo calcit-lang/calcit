@@ -3,16 +3,19 @@ use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
 use crate::calcit::{CalcitFnTypeAnnotation, CalcitImport, CalcitStructDef, CalcitSyntax, ImportInfo, SchemaKind};
 use crate::call_stack::CallStackList;
 use crate::codegen::calx::{
-  CalxDefinitionRef, CalxFallbackCode, CalxKernelBoundaryErrorKind, CalxKernelCompileError, CalxKernelRunError, CalxScalarType,
-  analyze_calx_eligibility, compile_calx_kernel,
+  CalxDefinitionRef, CalxError, CalxFallbackCode, CalxHostImport, CalxHostImports, CalxKernelBoundaryErrorKind, CalxKernelCompileError,
+  CalxKernelRunError, CalxScalarType, CalxValue, analyze_calx_eligibility, analyze_calx_eligibility_with_imports, compile_calx_kernel,
+  compile_calx_kernel_with_imports,
 };
 use crate::data::cirru::code_to_calcit;
 use crate::run_program_with_docs;
 use cirru_edn::EdnTag;
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{LazyLock, Mutex};
 
 static PROGRAM_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+static CALX_VOID_IMPORT_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 fn cirru_leaf(value: &str) -> Cirru {
   Cirru::Leaf(value.into())
@@ -372,6 +375,168 @@ fn calx_lowering_executes_three_source_kernels_like_native_calcit() {
   assert!(matches!(
     error,
     CalxKernelRunError::Boundary(ref boundary) if boundary.kind == CalxKernelBoundaryErrorKind::ArgumentType
+  ));
+}
+
+fn install_calx_typed_import_fixture(namespace: &str) {
+  let number = || CalcitTypeAnnotation::Number;
+  let mut source_defs = calx_test_defs_from_source(namespace, include_str!("../../tests/fixtures/calx/typed-imports.cirru"));
+  install_calx_test_defs(
+    namespace,
+    vec![
+      (
+        "host-scale",
+        source_defs.remove("host-scale").expect("host-scale source"),
+        calx_test_fn_schema(vec![number()], number()),
+      ),
+      (
+        "host-observe",
+        source_defs.remove("host-observe").expect("host-observe source"),
+        calx_test_fn_schema(vec![number()], CalcitTypeAnnotation::Unit),
+      ),
+      (
+        "host-trap",
+        source_defs.remove("host-trap").expect("host-trap source"),
+        calx_test_fn_schema(vec![number()], number()),
+      ),
+      (
+        "imported-pipeline",
+        source_defs.remove("imported-pipeline").expect("imported-pipeline source"),
+        calx_test_fn_schema(vec![number()], number()),
+      ),
+      (
+        "imported-trap",
+        source_defs.remove("imported-trap").expect("imported-trap source"),
+        calx_test_fn_schema(vec![number()], number()),
+      ),
+    ],
+  );
+  for definition in ["imported-pipeline", "imported-trap"] {
+    compile_calx_test_entry(namespace, definition);
+  }
+}
+
+fn calx_test_scale(args: &[CalxValue]) -> Result<CalxValue, CalxError> {
+  let [CalxValue::F64(value)] = args else {
+    return Err(CalxError::new_raw("fixture scale expected one F64".to_owned()));
+  };
+  Ok(CalxValue::F64(value * 2.0))
+}
+
+fn calx_test_observe(args: &[CalxValue]) -> Result<(), CalxError> {
+  let [CalxValue::F64(_)] = args else {
+    return Err(CalxError::new_raw("fixture observe expected one F64".to_owned()));
+  };
+  CALX_VOID_IMPORT_CALLS.fetch_add(1, Ordering::SeqCst);
+  Ok(())
+}
+
+fn calx_test_trap(_args: &[CalxValue]) -> Result<CalxValue, CalxError> {
+  Err(CalxError::new_raw("fixture host trap".to_owned()))
+}
+
+fn calx_test_host_imports(namespace: &str) -> CalxHostImports {
+  let mut imports = CalxHostImports::new();
+  imports.insert(
+    CalxDefinitionRef::new(namespace, "host-scale"),
+    CalxHostImport::value("fixture.scale", vec![CalxScalarType::F64], CalxScalarType::F64, calx_test_scale)
+      .expect("valid value host import"),
+  );
+  imports.insert(
+    CalxDefinitionRef::new(namespace, "host-observe"),
+    CalxHostImport::void("fixture.observe", vec![CalxScalarType::F64], calx_test_observe).expect("valid void host import"),
+  );
+  imports.insert(
+    CalxDefinitionRef::new(namespace, "host-trap"),
+    CalxHostImport::value("fixture.trap", vec![CalxScalarType::F64], CalxScalarType::F64, calx_test_trap)
+      .expect("valid trapping host import"),
+  );
+  imports
+}
+
+#[test]
+fn calx_typed_imports_cover_void_value_and_generated_program_golden() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-imports";
+  install_calx_typed_import_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed import fixtures");
+  let imports = calx_test_host_imports(namespace);
+
+  let graph = analyze_calx_eligibility_with_imports(&snapshot, namespace, "imported-pipeline", &imports)
+    .expect("explicit typed imports should be eligible");
+  assert_eq!(graph.functions.len(), 1, "approved imports must not expand the guest call graph");
+  assert_eq!(
+    graph.functions[0].host_imports,
+    vec![
+      CalxDefinitionRef::new(namespace, "host-observe"),
+      CalxDefinitionRef::new(namespace, "host-scale"),
+    ]
+  );
+
+  let kernel =
+    compile_calx_kernel_with_imports(&snapshot, namespace, "imported-pipeline", &imports).expect("compile typed import fixture");
+  assert_eq!(
+    kernel.stable_program_summary(),
+    include_str!("../../tests/fixtures/calx/generated-program.golden.txt")
+  );
+  assert_eq!(kernel.validated_program().imports().len(), 2);
+  assert!(kernel.validated_program().imports().iter().any(|import| import.result.is_none()));
+  assert!(kernel.validated_program().imports().iter().any(|import| import.result.is_some()));
+
+  CALX_VOID_IMPORT_CALLS.store(0, Ordering::SeqCst);
+  let args = [Calcit::Number(3.0)];
+  let calx_result = kernel.run(&args).expect("run typed import fixture");
+  let native_result =
+    run_program_with_docs(Arc::from(namespace), Arc::from("imported-pipeline"), &args).expect("run native typed import fixture");
+  assert_eq!(calx_result, native_result);
+  assert_eq!(calx_result, Calcit::Number(7.0));
+  assert_eq!(CALX_VOID_IMPORT_CALLS.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn calx_typed_import_trap_is_stable_and_never_becomes_fallback() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-imports";
+  install_calx_typed_import_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed import trap fixture");
+  let imports = calx_test_host_imports(namespace);
+  let kernel =
+    compile_calx_kernel_with_imports(&snapshot, namespace, "imported-trap", &imports).expect("compile trapping typed import fixture");
+
+  let error = kernel
+    .run(&[Calcit::Number(2.0)])
+    .expect_err("host callback failure must remain a Calx runtime trap");
+  let summary = format!("{error}\n");
+  assert_eq!(summary, include_str!("../../tests/fixtures/calx/trap.golden.txt"));
+  let CalxKernelRunError::Runtime(runtime) = error else {
+    panic!("host callback failure must not become boundary/fallback: {error}");
+  };
+  assert_eq!(runtime.message, "fixture host trap");
+  assert!(runtime.snapshot.is_none(), "host errors must not invent VM state");
+}
+
+#[test]
+fn calx_typed_import_signature_mismatch_falls_back_before_lowering() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-imports";
+  install_calx_typed_import_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed import mismatch fixture");
+  let mut imports = calx_test_host_imports(namespace);
+  imports.insert(
+    CalxDefinitionRef::new(namespace, "host-scale"),
+    CalxHostImport::value("fixture.scale", vec![CalxScalarType::Bool], CalxScalarType::F64, calx_test_scale)
+      .expect("construct deliberately mismatched import"),
+  );
+
+  let report = analyze_calx_eligibility_with_imports(&snapshot, namespace, "imported-pipeline", &imports)
+    .expect_err("typed import signature mismatch must reject the whole kernel");
+  assert!(report.issues.iter().any(|issue| issue.code == CalxFallbackCode::HostCapability));
+  assert!(matches!(
+    compile_calx_kernel_with_imports(&snapshot, namespace, "imported-pipeline", &imports),
+    Err(CalxKernelCompileError::Eligibility(_))
   ));
 }
 

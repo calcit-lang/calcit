@@ -1,32 +1,23 @@
 //! Typed lowering from a proven Calx-eligible Calcit call graph.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
 use calx_vm::{
   BodyBuilder, Calx as VmValue, CalxBuildError, CalxError, CalxHostBindings, CalxProgramError, CalxRunResult, CalxSyntax as VmSyntax,
-  CalxType as VmType, CalxVM, FunctionBuilder, LocalId, ProgramBuilder, SourceSpan, ValidatedProgram,
+  CalxVM, FunctionBuilder, ImportId, LocalId, ProgramBuilder, SourceSpan, ValidatedProgram,
 };
 
 use crate::calcit::{Calcit, CalcitFnArgs, CalcitLocal, CalcitProc, CalcitSyntax, brief_type_of_value};
 use crate::program::CompiledProgram;
 
 use super::{
-  CalxDefinitionRef, CalxEligibleCallGraph, CalxFallbackReport, CalxScalarType, analyze_calx_eligibility, extract_fn_parts,
-  lookup_compiled_def, source_path,
+  CalxDefinitionRef, CalxEligibleCallGraph, CalxFallbackReport, CalxHostImports, CalxScalarType, analyze_calx_eligibility_with_imports,
+  extract_fn_parts, lookup_compiled_def, source_path,
 };
-
-impl CalxScalarType {
-  const fn vm_type(self) -> VmType {
-    match self {
-      Self::F64 => VmType::F64,
-      Self::Bool => VmType::Bool,
-    }
-  }
-}
 
 /// A mismatch discovered while converting a graph that already passed the
 /// eligibility proof. This is a compiler integration error, not a fallback.
@@ -159,6 +150,7 @@ pub struct CalxCompiledKernel {
   params: Vec<CalxScalarType>,
   result: Option<CalxScalarType>,
   program: ValidatedProgram,
+  host_bindings: CalxHostBindings,
 }
 
 impl CalxCompiledKernel {
@@ -178,8 +170,45 @@ impl CalxCompiledKernel {
     &self.program
   }
 
+  /// Deterministic generated-program report for repository golden fixtures.
+  /// This is diagnostic text, not a serialized Calx program ABI.
+  pub fn stable_program_summary(&self) -> String {
+    let mut output = format!("abi {}\nentry {}\n", self.graph.abi_edition, self.graph.entry.qualified());
+    for import in self.program.imports() {
+      let params = import.params.iter().map(ToString::to_string).collect::<Vec<_>>().join(",");
+      let result = import.result.map(|value| value.to_string()).unwrap_or_else(|| "Void".to_owned());
+      output.push_str(&format!("import {} ({params})->{result}\n", import.name));
+    }
+    for function in self.program.functions() {
+      let params = function
+        .params_types
+        .iter()
+        .map(|value| format!("{value:?}"))
+        .collect::<Vec<_>>()
+        .join(",");
+      let result = function
+        .ret_types
+        .iter()
+        .map(|value| format!("{value:?}"))
+        .collect::<Vec<_>>()
+        .join(",");
+      let result = if result.is_empty() { "Void" } else { result.as_str() };
+      output.push_str(&format!("function {} ({params})->{result}\n", function.name));
+      for (index, syntax) in function.syntax.iter().enumerate() {
+        let origin = function
+          .source_spans
+          .get(index)
+          .and_then(Option::as_ref)
+          .map(|span| span.source.as_ref())
+          .unwrap_or("-");
+        output.push_str(&format!("  {index:03} {syntax:?} @ {origin}\n"));
+      }
+    }
+    output
+  }
+
   pub fn instantiate(&self) -> Result<CalxVM, CalxKernelRunError> {
-    CalxVM::from_validated_program(self.program.clone(), CalxHostBindings::new()).map_err(CalxKernelRunError::Instantiate)
+    CalxVM::from_validated_program(self.program.clone(), self.host_bindings.clone()).map_err(CalxKernelRunError::Instantiate)
   }
 
   pub fn run(&self, args: &[Calcit]) -> Result<Calcit, CalxKernelRunError> {
@@ -232,7 +261,18 @@ pub fn compile_calx_kernel(
   namespace: impl Into<Arc<str>>,
   definition: impl Into<Arc<str>>,
 ) -> Result<CalxCompiledKernel, CalxKernelCompileError> {
-  let graph = analyze_calx_eligibility(program, namespace, definition).map_err(CalxKernelCompileError::Eligibility)?;
+  compile_calx_kernel_with_imports(program, namespace, definition, &CalxHostImports::new())
+}
+
+/// Compiles a kernel with an explicit set of typed scalar host capabilities.
+pub fn compile_calx_kernel_with_imports(
+  program: &CompiledProgram,
+  namespace: impl Into<Arc<str>>,
+  definition: impl Into<Arc<str>>,
+  imports: &CalxHostImports,
+) -> Result<CalxCompiledKernel, CalxKernelCompileError> {
+  let graph =
+    analyze_calx_eligibility_with_imports(program, namespace, definition, imports).map_err(CalxKernelCompileError::Eligibility)?;
   let entry_signature = graph
     .functions
     .iter()
@@ -260,12 +300,37 @@ pub fn compile_calx_kernel(
       function.result,
       &names,
       &signatures,
+      imports,
     )?);
   }
 
   let mut builder = ProgramBuilder::new();
+  let used_imports = graph
+    .functions
+    .iter()
+    .flat_map(|function| function.host_imports.iter().cloned())
+    .collect::<BTreeSet<_>>();
+  let mut import_ids = BTreeMap::new();
+  let mut host_bindings = CalxHostBindings::new();
+  for target in used_imports {
+    let import = imports.get(&target).ok_or_else(|| {
+      CalxKernelCompileError::Lowering(lower_error(
+        &target,
+        None,
+        "eligible host import has no compile-time capability binding",
+      ))
+    })?;
+    let id = builder.import_at(
+      import.name(),
+      import.params().iter().copied().map(CalxScalarType::vm_type).collect(),
+      import.result().map(CalxScalarType::vm_type),
+      Some(SourceSpan::synthetic(source_origin(&target, None))),
+    )?;
+    import_ids.insert(target, id);
+    host_bindings.insert(import.name().into(), import.binding().clone());
+  }
   for plan in &plans {
-    builder.function(emit_function(plan)?)?;
+    builder.function(emit_function(plan, &import_ids)?)?;
   }
   let program = builder.build()?;
   let program = ValidatedProgram::try_from_program(program)?;
@@ -274,6 +339,7 @@ pub fn compile_calx_kernel(
     params,
     result,
     program,
+    host_bindings,
   })
 }
 
@@ -342,6 +408,10 @@ enum PlannedExpressionKind {
     args: Vec<PlannedExpression>,
     tail: bool,
   },
+  ImportCall {
+    target: CalxDefinitionRef,
+    args: Vec<PlannedExpression>,
+  },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -361,6 +431,7 @@ struct PlanningContext<'a> {
   function_result: Option<CalxScalarType>,
   names: &'a BTreeMap<CalxDefinitionRef, String>,
   signatures: &'a BTreeMap<CalxDefinitionRef, (Vec<CalxScalarType>, Option<CalxScalarType>)>,
+  imports: &'a CalxHostImports,
   locals: BTreeMap<u16, PlannedLocal>,
 }
 
@@ -371,6 +442,7 @@ fn plan_function(
   result: Option<CalxScalarType>,
   names: &BTreeMap<CalxDefinitionRef, String>,
   signatures: &BTreeMap<CalxDefinitionRef, (Vec<CalxScalarType>, Option<CalxScalarType>)>,
+  imports: &CalxHostImports,
 ) -> Result<PlannedFunction, CalxLoweringError> {
   let compiled =
     lookup_compiled_def(program, &definition).ok_or_else(|| lower_error(&definition, None, "compiled definition disappeared"))?;
@@ -415,6 +487,7 @@ fn plan_function(
     function_result: result,
     names,
     signatures,
+    imports,
     locals: BTreeMap::new(),
   };
   let body = plan_sequence(&body, true, &mut context)?;
@@ -668,6 +741,15 @@ fn plan_direct_call(
   tail: bool,
   context: &mut PlanningContext<'_>,
 ) -> Result<PlannedExpression, CalxLoweringError> {
+  if let Some(import) = context.imports.get(&target) {
+    let result = import.result();
+    let args = plan_args(args, context)?;
+    return Ok(planned(
+      result,
+      args.first().and_then(|value| value.source_path.clone()),
+      PlannedExpressionKind::ImportCall { target, args },
+    ));
+  }
   let (_, result) = context.signatures.get(&target).ok_or_else(|| {
     lower_error(
       context.function,
@@ -718,7 +800,10 @@ fn lower_error(function: &CalxDefinitionRef, source_path: Option<Vec<u16>>, mess
   }
 }
 
-fn emit_function(plan: &PlannedFunction) -> Result<FunctionBuilder, CalxKernelCompileError> {
+fn emit_function(
+  plan: &PlannedFunction,
+  imports: &BTreeMap<CalxDefinitionRef, ImportId>,
+) -> Result<FunctionBuilder, CalxKernelCompileError> {
   let source = source_origin(&plan.definition, None);
   let results = plan.result.into_iter().map(CalxScalarType::vm_type).collect();
   let mut builder = FunctionBuilder::synthetic(plan.vm_name.clone(), results, source)?;
@@ -738,6 +823,7 @@ fn emit_function(plan: &PlannedFunction) -> Result<FunctionBuilder, CalxKernelCo
   let context = EmissionContext {
     function: &plan.definition,
     locals: &local_ids,
+    imports,
     lowering_error: RefCell::new(None),
   };
   emit_expression(&plan.body, builder.body(), &context)?;
@@ -750,6 +836,7 @@ fn emit_function(plan: &PlannedFunction) -> Result<FunctionBuilder, CalxKernelCo
 struct EmissionContext<'a> {
   function: &'a CalxDefinitionRef,
   locals: &'a BTreeMap<u16, LocalId>,
+  imports: &'a BTreeMap<CalxDefinitionRef, ImportId>,
   lowering_error: RefCell<Option<CalxLoweringError>>,
 }
 
@@ -846,6 +933,23 @@ fn emit_expression(
         body.call(callee.as_str())?;
       }
     }
+    PlannedExpressionKind::ImportCall { target, args } => {
+      for argument in args {
+        emit_expression(argument, body, context)?;
+      }
+      if let Some(import) = context.imports.get(target) {
+        body.call_import(import)?;
+      } else {
+        let mut error = context.lowering_error.borrow_mut();
+        if error.is_none() {
+          *error = Some(lower_error(
+            context.function,
+            expression.source_path.clone(),
+            format!("host import `{}` has no emitted Calx ImportId", target.qualified()),
+          ));
+        }
+      }
+    }
   }
   Ok(())
 }
@@ -887,7 +991,7 @@ mod tests {
       body: planned(Some(CalxScalarType::F64), Some(vec![3, 1]), PlannedExpressionKind::Local(42)),
     };
 
-    let error = emit_function(&plan).expect_err("an unplanned typed local must not panic");
+    let error = emit_function(&plan, &BTreeMap::new()).expect_err("an unplanned typed local must not panic");
     let CalxKernelCompileError::Lowering(error) = error else {
       panic!("expected a lowering error, got {error}");
     };
