@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://calcit-lang.org/schemas/ffi-interface-ir-v1.schema.json",
+  "title": "Calcit FFI Interface IR v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "package", "package_version", "definitions"],
+  "properties": {
+    "version": { "const": 1 },
+    "package": { "type": "string" },
+    "package_version": { "type": "string" },
+    "definitions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/definition" }
+    }
+  },
+  "$defs": {
+    "definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "namespace",
+        "name",
+        "doc",
+        "logical_schema",
+        "signature",
+        "lowering",
+        "status",
+        "diagnostic_codes"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "namespace": { "type": "string" },
+        "name": { "type": "string" },
+        "doc": { "type": "string" },
+        "logical_schema": { "type": "string" },
+        "signature": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/functionSignature" }
+          ]
+        },
+        "lowering": { "$ref": "#/$defs/lowering" },
+        "status": { "enum": ["supported", "unsupported"] },
+        "diagnostic_codes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "functionSignature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parameters", "result"],
+      "properties": {
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["position", "type"],
+            "properties": {
+              "position": { "type": "integer", "minimum": 0 },
+              "type": { "$ref": "#/$defs/type" }
+            }
+          }
+        },
+        "result": { "$ref": "#/$defs/type" }
+      }
+    },
+    "type": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "enum": ["unit", "bool", "number", "string", "buffer"] } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "item"],
+          "properties": {
+            "kind": { "const": "list" },
+            "item": { "$ref": "#/$defs/type" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "name", "arguments"],
+          "properties": {
+            "kind": { "const": "named" },
+            "name": { "type": "string" },
+            "arguments": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/type" }
+            }
+          }
+        }
+      ]
+    },
+    "lowering": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "target", "kind", "symbol", "invoke", "transport", "raw"],
+      "properties": {
+        "backend": { "type": ["string", "null"] },
+        "target": { "type": ["string", "null"] },
+        "kind": { "type": ["string", "null"] },
+        "symbol": { "type": ["string", "null"] },
+        "invoke": { "type": ["string", "null"] },
+        "transport": { "type": ["string", "null"] },
+        "raw": { "type": "string" }
+      }
+    }
+  }
+}

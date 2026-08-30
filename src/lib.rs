@@ -14,6 +14,7 @@ pub mod effects_graph;
 pub mod ffi_abi;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod ffi_async;
+pub mod ffi_interface_ir;
 pub mod program;
 pub mod program_diff;
 pub mod project_state;

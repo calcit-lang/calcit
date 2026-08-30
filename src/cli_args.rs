@@ -103,6 +103,35 @@ pub enum CalcitCommand {
   Cursor(CursorCommand),
   /// manage project configuration (show, set, modules, add-module, rm-module)
   Config(ConfigCommand),
+  /// inspect and export typed FFI interface contracts
+  Ffi(FfiCommand),
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "ffi")]
+/// inspect and export typed FFI interface contracts
+pub struct FfiCommand {
+  #[argh(subcommand)]
+  pub subcommand: FfiSubcommand,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand)]
+pub enum FfiSubcommand {
+  /// export versioned Interface IR from local definitions with typed schemas and FFI lowering metadata
+  Export(FfiExportCommand),
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "export")]
+/// export versioned Interface IR from local definitions with typed schemas and FFI lowering metadata
+pub struct FfiExportCommand {
+  /// output one machine-readable JSON document instead of the human inventory
+  #[argh(switch)]
+  pub json: bool,
+  /// restrict export to one exact local namespace
+  #[argh(option)]
+  pub ns: Option<String>,
 }
 
 /// discover and run definition-attached tests

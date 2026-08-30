@@ -335,6 +335,9 @@ fn run_cli() -> Result<(), String> {
     Some(CalcitCommand::Config(config_cmd)) => {
       return cli_handlers::handle_config_command(config_cmd, &cli_args.input);
     }
+    Some(CalcitCommand::Ffi(ffi_cmd)) => {
+      return cli_handlers::handle_ffi_command(ffi_cmd, &cli_args.input);
+    }
     Some(CalcitCommand::Analyze(analyze_cmd)) => match &analyze_cmd.subcommand {
       AnalyzeSubcommand::ProgramDiff(diff_cmd) => {
         return cli_handlers::handle_program_diff_command(diff_cmd, &cli_args.input);

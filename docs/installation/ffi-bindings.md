@@ -21,6 +21,11 @@ business capability.
 Rust supports extending Calcit with dynamic libraries. A complete project can
 be found at https://github.com/calcit-lang/dylib-workflow.
 
+Typed raw bindings can be inspected without running the program using
+[`calcit ffi export`](ffi-interface-ir.md). Its versioned Interface IR is the
+input boundary for bindgen experiments and API inventory checks; the C-safe
+protocols documented below remain the runtime transport.
+
 Only versioned C-safe protocols are supported. Dynamic libraries must not
 export business methods that pass Rust `Vec`, `String`, `Result`, `AnyRef`,
 `Arc<dyn Fn>`, or `FnOnce` values across the boundary. Those layouts, vtables,

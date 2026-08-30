@@ -4,6 +4,24 @@ const binary = process.env.CALCIT_AGENT_BIN ?? process.env.CALCIT_AGENT_CR ?? ".
 
 const scenarios = [
   {
+    name: "typed FFI Interface IR",
+    args: ["calcit/test.cirru", "ffi", "export", "--json"],
+    check(result) {
+      if (result.schema_version !== 1 || result.command !== "ffi.export") {
+        throw new Error("unexpected ffi.export envelope");
+      }
+      if (!result.interface_schema?.endsWith("ffi-interface-ir-v1.schema.json")) {
+        throw new Error("ffi.export did not identify its Interface IR schema");
+      }
+      if (result.data.interface.version !== 1 || !result.revision.startsWith("md5:")) {
+        throw new Error("ffi.export lost its versioned deterministic interface");
+      }
+      if (!Array.isArray(result.data.interface.definitions) || !Array.isArray(result.diagnostics)) {
+        throw new Error("ffi.export omitted inventory or diagnostics");
+      }
+    },
+  },
+  {
     name: "static type methods",
     args: ["calcit/test.cirru", "query", "type", ":number", "--format", "json"],
     check(result) {

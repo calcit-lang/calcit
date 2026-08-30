@@ -521,6 +521,7 @@ calcit docs read-lines agent-advanced.md --start 1 --lines 80
 | run/watch/JS codegen         | `calcit docs read cli-options.md 'Common Usage Patterns'`           |
 | 错误排查                     | `calcit docs read debugging.md --full`；`calcit query error`            |
 | 文档图与 frontmatter         | `calcit docs read docs-indexing.md --full`；`calcit docs graph --help`  |
+| typed FFI inventory          | `calcit ffi export --json`；`calcit docs read ffi-interface-ir.md --full` |
 | 安装模块的 API/示例          | `calcit docs scopes` → `calcit docs search <kw> --module <module>`      |
 
 定义级资料优先从源码元数据查询：`calcit query schema '<ns/def>'`、`calcit query examples '<ns/def>'`、`calcit query usages '<ns/def>'`。远程库发现、program diff、call graph、JS escape 等低频能力直接从对应 `--help` 开始。

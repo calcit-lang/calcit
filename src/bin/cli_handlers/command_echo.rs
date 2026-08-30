@@ -58,6 +58,7 @@ pub fn should_echo_command(cli_args: &ToplevelCalcit) -> bool {
       | Some(CalcitCommand::Tree(_))
       | Some(CalcitCommand::Cursor(_))
       | Some(CalcitCommand::Config(_))
+      | Some(CalcitCommand::Ffi(_))
       | Some(CalcitCommand::Analyze(_))
       | Some(CalcitCommand::Cirru(_))
       | Some(CalcitCommand::Test(_))
@@ -98,6 +99,7 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Tree(cmd) => format!("{snapshot_command} tree {}", tree_name(&cmd.subcommand)),
     CalcitCommand::Cursor(cmd) => format!("{snapshot_command} cursor {}", cursor_name(&cmd.subcommand)),
     CalcitCommand::Config(cmd) => format!("{snapshot_command} config {}", config_name(&cmd.subcommand)),
+    CalcitCommand::Ffi(cmd) => format!("{snapshot_command} ffi {}", ffi_name(&cmd.subcommand)),
     CalcitCommand::Analyze(cmd) => format!("{snapshot_command} analyze {}", analyze_name(&cmd.subcommand)),
     CalcitCommand::Cirru(cmd) => format!("{base_command} cirru {}", cirru_name(&cmd.subcommand)),
     CalcitCommand::Test(_) => format!("{snapshot_command} test"),
@@ -112,6 +114,7 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Tree(cmd) => push_tree(&mut tokens, cmd),
     CalcitCommand::Cursor(cmd) => push_cursor(&mut tokens, cmd),
     CalcitCommand::Config(cmd) => push_config(&mut tokens, cmd),
+    CalcitCommand::Ffi(cmd) => push_ffi(&mut tokens, cmd),
     CalcitCommand::Analyze(cmd) => push_analyze(&mut tokens, cmd),
     CalcitCommand::Cirru(cmd) => push_cirru(&mut tokens, cmd),
     CalcitCommand::Test(opts) => {
@@ -164,6 +167,7 @@ fn render_command_explanation(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Cursor(cmd) => render_cursor_explanation(cmd),
     CalcitCommand::Docs(cmd) => render_docs_explanation(cmd),
     CalcitCommand::Analyze(cmd) => render_analyze_explanation(cmd),
+    CalcitCommand::Ffi(_) => Some("exports versioned typed FFI Interface IR from local typed raw bindings".to_owned()),
     CalcitCommand::Cirru(cmd) => render_cirru_explanation(cmd),
     CalcitCommand::Test(_) => Some("discovers and runs definition-attached tests".to_owned()),
     _ => None,
@@ -1395,6 +1399,20 @@ fn config_name(subcommand: &ConfigSubcommand) -> &'static str {
     ConfigSubcommand::RmModule(_) => "rm-module",
     ConfigSubcommand::SetTypeSlot(_) => "set-type-slot",
     ConfigSubcommand::RmTypeSlot(_) => "rm-type-slot",
+  }
+}
+
+fn ffi_name(subcommand: &FfiSubcommand) -> &'static str {
+  match subcommand {
+    FfiSubcommand::Export(_) => "export",
+  }
+}
+
+fn push_ffi(tokens: &mut Vec<String>, cmd: &FfiCommand) {
+  match &cmd.subcommand {
+    FfiSubcommand::Export(opts) => {
+      echo_items!(tokens, switch "json" => opts.json, opt "ns" => opts.ns.as_deref(); default "none");
+    }
   }
 }
 
