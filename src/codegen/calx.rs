@@ -9,8 +9,9 @@ mod lowering;
 
 pub use calx_vm::{Calx as CalxValue, CalxBuildError, CalxError, CalxProgramError};
 pub use lowering::{
-  CalxCompiledKernel, CalxKernelBoundaryError, CalxKernelBoundaryErrorKind, CalxKernelCompileError, CalxKernelRunError,
-  CalxLoweringError, compile_calx_kernel, compile_calx_kernel_with_imports,
+  CalxCompiledKernel, CalxKernelBoundaryError, CalxKernelBoundaryErrorKind, CalxKernelCompileError, CalxKernelCompileTimings,
+  CalxKernelRunError, CalxLoweringError, compile_calx_kernel, compile_calx_kernel_measured, compile_calx_kernel_with_imports,
+  compile_calx_kernel_with_imports_measured,
 };
 
 use std::collections::{BTreeMap, BTreeSet};

@@ -4,3 +4,4 @@ yarn.lock -diff linguist-generated
 Cargo.lock -diff linguist-generated
 lib -diff linguist-generated
 editing-history/* -diff linguist-generated
+benchmarks/calx/*.json -diff linguist-generated
