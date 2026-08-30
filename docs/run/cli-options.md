@@ -15,6 +15,7 @@ aliases:
   - "macro expansion metrics"
   - "ffi metrics"
   - "async ffi metrics"
+  - "ffi export"
 entry_for:
   - "calcit -w"
   - "calcit js -w"
@@ -22,6 +23,7 @@ entry_for:
   - "calcit --reload-fn"
   - "calcit --macro-metrics"
   - "calcit --ffi-metrics"
+  - "calcit ffi export"
 ---
 
 # CLI Options
@@ -49,6 +51,20 @@ with their planned/existing metadata and are never overwritten. EDN is the
 canonical machine format; JSON is a compatibility projection.
 
 ## Detailed Option Descriptions
+
+### Typed FFI inventory (`ffi export`)
+
+Export local raw bindings declared by non-empty `:ffi` lowering metadata:
+
+```bash
+calcit calcit.cirru ffi export
+calcit calcit.cirru ffi export --json --ns app.ffi
+```
+
+The JSON mode keeps stdout to one machine-readable document and reports
+unsupported schemas as deterministic diagnostics rather than Dynamic
+fallbacks. See [FFI Interface IR](../installation/ffi-interface-ir.md) for the
+versioned schema and boundary rules.
 
 ### Input File
 

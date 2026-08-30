@@ -2725,7 +2725,7 @@ fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
   load_snapshot_with_entry(input_path, None)
 }
 
-fn load_main_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
+pub(crate) fn load_main_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
   let resolved_input_path = Path::new(input_path);
   calcit::validate_snapshot_path(resolved_input_path)?;
   let resolved_input_str = resolved_input_path.to_string_lossy().to_string();
