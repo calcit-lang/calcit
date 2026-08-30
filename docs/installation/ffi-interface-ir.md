@@ -80,3 +80,39 @@ This phase defines an inventory and generator input. It does not yet validate
 every backend-specific arity, transport, ownership, cancellation, or resource
 lifecycle rule, and it does not replace the existing C-safe native protocols.
 Those checks and generated adapters belong to the next bindgen phase.
+
+## Phase 0 bindgen preview
+
+The repository includes a deliberately narrow preview consumer for measuring
+the Interface IR before the generator moves to an independent crate:
+
+```bash
+calcit /path/to/calcit.std/calcit.cirru ffi export --json --ns calcit.std.hash > /tmp/calcit-std-ffi.json
+node scripts/ffi-bindgen-preview.mjs \
+  --input /tmp/calcit-std-ffi.json \
+  --out /tmp/calcit-std-bindings
+```
+
+For a supported synchronous native `edn-buffer-v1` definition, one input emits
+four deterministic previews plus a SHA-256 manifest:
+
+- a Rust typed trait and C-safe adapter stub;
+- a Calcit raw wrapper that receives the resolved dylib path;
+- a TypeScript declaration;
+- a WIT interface/world for the strict primitive/List subset.
+
+The preview rejects unsupported definitions, non-native backends, missing
+symbols, async/blocking invocation, other transports, and WIT named types. It
+does not generate Dynamic fallbacks. Rust adapter bodies remain explicit
+`todo!` stubs because decoder ownership and module implementation binding are
+not yet part of Interface IR v1. Resource and async metadata stay visible in
+`lowering.raw`, but production generation waits for structured lifecycle
+fields.
+
+仓库内提供一个刻意收窄的 Phase 0 preview consumer，用于在拆分独立 crate 前
+量化 Interface IR。对于 supported 的同步 native `edn-buffer-v1` definition，
+同一输入会确定性生成 Rust typed trait/C-safe adapter stub、Calcit raw wrapper、
+TypeScript declaration、严格 primitive/List 子集的 WIT，以及 SHA-256 manifest。
+unsupported definition、async/blocking transport 与未声明的 WIT named type 都会
+直接失败，不会生成 Dynamic fallback。Rust decoder body、resource ownership 与
+async lifecycle 仍留到结构化 IR 字段和独立 bindgen 阶段完成。
