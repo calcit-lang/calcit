@@ -11,7 +11,9 @@ defn fibonacci (n)
       fibonacci $ &- n 2
 
 defn affine-helper (x scale offset)
-  &+ (&* x scale) offset
+  &let
+    scaled $ &* x scale
+    &+ scaled offset
 
 defn affine (x scale offset)
   affine-helper x scale offset

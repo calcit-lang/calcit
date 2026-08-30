@@ -2,7 +2,10 @@ use super::*;
 use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
 use crate::calcit::{CalcitFnTypeAnnotation, CalcitImport, CalcitStructDef, CalcitSyntax, ImportInfo, SchemaKind};
 use crate::call_stack::CallStackList;
-use crate::codegen::calx::{CalxDefinitionRef, CalxFallbackCode, CalxScalarType, analyze_calx_eligibility};
+use crate::codegen::calx::{
+  CalxDefinitionRef, CalxFallbackCode, CalxKernelBoundaryErrorKind, CalxKernelCompileError, CalxKernelRunError, CalxScalarType,
+  analyze_calx_eligibility, compile_calx_kernel,
+};
 use crate::data::cirru::code_to_calcit;
 use crate::run_program_with_docs;
 use cirru_edn::EdnTag;
@@ -258,11 +261,7 @@ fn compile_calx_test_entry(namespace: &str, definition: &str) {
   );
 }
 
-#[test]
-fn calx_eligibility_accepts_three_real_preprocessed_scalar_kernels() {
-  let _guard = lock_program_test_state();
-  reset_program_test_state();
-  let namespace = "tests.calx-kernels";
+fn install_calx_scalar_kernel_fixture(namespace: &str) {
   let number = || CalcitTypeAnnotation::Number;
   let mut source_defs = calx_test_defs_from_source(namespace, include_str!("../../tests/fixtures/calx/scalar-kernels.cirru"));
   install_calx_test_defs(
@@ -293,6 +292,14 @@ fn calx_eligibility_accepts_three_real_preprocessed_scalar_kernels() {
   for definition in ["range-sum", "fibonacci", "affine"] {
     compile_calx_test_entry(namespace, definition);
   }
+}
+
+#[test]
+fn calx_eligibility_accepts_three_real_preprocessed_scalar_kernels() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-kernels";
+  install_calx_scalar_kernel_fixture(namespace);
   let snapshot = clone_compiled_program_snapshot().expect("clone typed preprocessed Calx fixtures");
 
   let range = analyze_calx_eligibility(&snapshot, namespace, "range-sum").expect("range-sum should be eligible");
@@ -323,6 +330,49 @@ fn calx_eligibility_accepts_three_real_preprocessed_scalar_kernels() {
     affine.stable_summary()
   );
   assert_eq!(summary, include_str!("../../tests/fixtures/calx/scalar-kernels.golden.txt"));
+}
+
+#[test]
+fn calx_lowering_executes_three_source_kernels_like_native_calcit() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-kernels";
+  install_calx_scalar_kernel_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed preprocessed Calx fixtures");
+
+  let cases = [
+    ("range-sum", vec![Calcit::Number(10.0), Calcit::Number(0.0)]),
+    ("fibonacci", vec![Calcit::Number(10.0)]),
+    ("affine", vec![Calcit::Number(3.0), Calcit::Number(4.0), Calcit::Number(5.0)]),
+  ];
+  for (definition, args) in cases {
+    let kernel = compile_calx_kernel(&snapshot, namespace, definition)
+      .unwrap_or_else(|error| panic!("compile Calx kernel {namespace}/{definition}: {error}"));
+    assert_eq!(kernel.validated_program().functions()[0].name.as_ref(), "main");
+    assert!(
+      kernel
+        .validated_program()
+        .functions()
+        .iter()
+        .all(|function| !function.instrs.is_empty())
+    );
+
+    let calx_result = kernel
+      .run(&args)
+      .unwrap_or_else(|error| panic!("run Calx kernel {namespace}/{definition}: {error}"));
+    let native_result = run_program_with_docs(Arc::from(namespace), Arc::from(definition), &args)
+      .unwrap_or_else(|error| panic!("run native Calcit kernel {namespace}/{definition}: {error}"));
+    assert_eq!(calx_result, native_result, "Calx/native mismatch for {definition}");
+  }
+
+  let range = compile_calx_kernel(&snapshot, namespace, "range-sum").expect("compile range-sum boundary fixture");
+  let error = range
+    .run(&[Calcit::Nil, Calcit::Number(0.0)])
+    .expect_err("Nil must not cross the strict Calx boundary");
+  assert!(matches!(
+    error,
+    CalxKernelRunError::Boundary(ref boundary) if boundary.kind == CalxKernelBoundaryErrorKind::ArgumentType
+  ));
 }
 
 #[test]
@@ -363,6 +413,10 @@ fn calx_eligibility_falls_back_for_the_whole_reachable_closure() {
     .expect("Dynamic fallback detail");
   assert_eq!(dynamic.call_path.len(), 2);
   assert_eq!(dynamic.call_path[1], CalxDefinitionRef::new(namespace, "dynamic-helper"));
+  assert!(matches!(
+    compile_calx_kernel(&snapshot, namespace, "entry"),
+    Err(CalxKernelCompileError::Eligibility(_))
+  ));
 }
 
 fn compiled_def_for_test(def_id: DefId, deps: Vec<DefId>) -> CompiledDef {
