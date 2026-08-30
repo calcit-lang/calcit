@@ -270,6 +270,8 @@ pub enum CalcitProc {
   NativeStrEscape,
   #[strum(serialize = "&str:count")]
   NativeStrCount,
+  #[strum(serialize = "&str:utf8-byte-count")]
+  NativeStrUtf8ByteCount,
   #[strum(serialize = "&str:empty?")]
   NativeStrEmpty,
   #[strum(serialize = "&str:contains?")]
@@ -869,6 +871,10 @@ impl CalcitProc {
         arg_types: vec![some_tag("string")],
       }),
       NativeStrCount => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("string")],
+      }),
+      NativeStrUtf8ByteCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
         arg_types: vec![some_tag("string")],
       }),

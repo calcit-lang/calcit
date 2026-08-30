@@ -481,6 +481,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeStrReplace => strings::replace(args),
     NativeStrEscape => strings::escape(args),
     NativeStrCount => strings::count(args),
+    NativeStrUtf8ByteCount => strings::utf8_byte_count(args),
     NativeStrEmpty => strings::empty_ques(args),
     NativeStrContains => strings::contains_ques(args),
     NativeStrIncludes => strings::includes_ques(args),

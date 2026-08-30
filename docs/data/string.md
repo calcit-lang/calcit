@@ -14,6 +14,17 @@ The way strings are represented in Calcit is a bit unique. Strings are distingui
 
 This somewhat unusual design exists because the structural editor naturally wraps strings in double quotes. When writing with indentation-based syntax, the outermost double quotes can be omitted for convenience.
 
+### Character count and wire size
+
+String `.count` returns the number of Unicode scalar values consistently on the native, JavaScript, and WASM backends. Use `.utf8-byte-count` when a protocol, queue, file, or metric needs the encoded UTF-8 byte length:
+
+```cirru
+assert= 2 $ "|A😀".count
+assert= 5 $ "|A😀".utf8-byte-count
+```
+
+Keep these operations distinct: character count describes Calcit text indexing semantics, while UTF-8 byte count describes storage and wire budgets. The latter is O(1) on the native and WASM representations and uses one allocation-free linear pass in generated JavaScript.
+
 ### Tag
 
 Calcit also provides the Tag type, written with a leading `:` such as `:demo`. Tags are interned immutable identifiers with consistent Calcit semantics across the Rust interpreter and JavaScript output. They are commonly used for struct fields, enum variants, map keys, and protocol labels; ordinary user-facing text should remain a String.

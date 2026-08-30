@@ -436,7 +436,7 @@
           :tags $ #{} :internal
         '&core-string-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
+            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :utf8-byte-count &str:utf8-byte-count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -2162,6 +2162,7 @@
                 do
                   assert= 3 $ &str:count |abc
                   assert= 2 $ &str:count "|中文"
+                  assert= 1 $ &str:count "|😀"
               :tags $ #{} :core :unit
         '&str:empty $ %{} 'CodeEntry (:doc "|internal helper for string :empty method entry")
           :code $ quote
@@ -2327,6 +2328,26 @@
                 do
                   assert= |bc $ &str:slice |abcd 1 3
                   assert= "|文字" $ &str:slice "|中文字符串" 1 3
+              :tags $ #{} :core :unit
+        '&str:utf8-byte-count $ %{} 'CodeEntry (:doc "|Return the UTF-8 wire byte length of a String in O(1) on native/WASM and one linear pass on JavaScript. Prefer receiver method .utf8-byte-count in application code.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'String
+          :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |counts-utf8-wire-bytes)
+              :code $ quote
+                do
+                  assert= 3 $ &str:utf8-byte-count |abc
+                  assert= 2 $ &str:utf8-byte-count "|é"
+                  assert= 3 $ &str:utf8-byte-count "|中"
+                  assert= 4 $ &str:utf8-byte-count "|😀"
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |receiver-method-counts-wire-bytes)
+              :code $ quote
+                assert= 5 $ "|A😀" .utf8-byte-count
               :tags $ #{} :core :unit
         '&struct-def:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to a StructDef.")
           :code $ quote &runtime-implementation

@@ -43,12 +43,64 @@ pub(super) fn emit_str_alloc(ctx: &mut WasmGenCtx, len_i32: u32) -> (u32, u32) {
   (ptr, content_base)
 }
 
-/// `count` on a string — returns byte length as f64.
+/// `count` on a string — returns Unicode scalar count as f64.
 pub(super) fn emit_str_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&str:count")?;
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0))); // byte_len at logical_ptr+0
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalSet(ptr));
+
+  let byte_len = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(byte_len));
+
+  let index = ctx.alloc_i32(0);
+  let count = ctx.alloc_i32(0);
+  ctx.emit(Instruction::Block(BlockType::Empty));
+  ctx.emit(Instruction::Loop(BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::LocalGet(byte_len));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
+
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  ctx.emit(Instruction::I32Const(0xc0));
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::I32Const(0x80));
+  ctx.emit(Instruction::I32Ne);
+  ctx.emit(Instruction::If(BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(count));
+  ctx.emit(Instruction::End);
+
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(index));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
+}
+
+/// UTF-8 byte count is stored directly in the string header.
+pub(super) fn emit_str_utf8_byte_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(1, args, "&str:utf8-byte-count")?;
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   Ok(())
 }
 

@@ -2061,6 +2061,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
 
     // ------- String operations -------
     CalcitProc::NativeStrCount => emit_str_count(ctx, args),
+    CalcitProc::NativeStrUtf8ByteCount => emit_str_utf8_byte_count(ctx, args),
     CalcitProc::NativeStrEmpty => emit_str_empty(ctx, args),
     CalcitProc::NativeStrConcat => emit_str_concat(ctx, args),
     CalcitProc::NativeStrNth => emit_str_nth(ctx, args),
