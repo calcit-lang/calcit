@@ -27,6 +27,31 @@ bytes 交换业务数据，不再要求使用同一个 rustc 或同一个 `cirru
 crate build。`calcit_ffi_build_id`、`abi_version`、`edn_version` 和 Rust-layout
 business methods 均已退役。
 
+每个 native raw binding 的 `:ffi` metadata 也必须完整声明 lowering contract：
+
+```cirru.no-check
+:ffi $ {}
+  :backend :native
+  :invoke :sync
+  :kind :dylib-method
+  :symbol |read_file
+  :transport :edn-buffer-v1
+```
+
+同步、异步与 blocking callback 分别使用 `sync + edn-buffer-v1`、
+`async + async-task-v1`、`blocking-callback + blocking-host-v1`。`symbol` 使用
+不带 `_calcit_ffi_*_v1` 后缀的 C identifier；host 会根据 transport 解析版本化
+entry point。可先运行 `calcit calcit.cirru ffi export --json`，在构建 dylib 前
+发现缺失字段、非法 symbol 与协议错配。
+
+Every native raw binding must also declare a complete `:ffi` lowering
+contract. Sync, async, and blocking callbacks use `sync + edn-buffer-v1`,
+`async + async-task-v1`, and `blocking-callback + blocking-host-v1`
+respectively. The symbol is an unsuffixed portable C identifier; the host
+derives the versioned entry point. Run `calcit calcit.cirru ffi export --json`
+to catch missing fields, invalid symbols, and protocol mismatches before
+building the dylib.
+
 Rust 模块应依赖已发布的 `calcit_native_ffi`，复用版本化 descriptor、buffer
 ownership、Cirru EDN transport、async backpressure 和 blocking adapter。模块
 仓库继续负责业务参数与逻辑、thread、connection/task registry、cancel state、
