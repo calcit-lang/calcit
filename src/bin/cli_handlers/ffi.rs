@@ -1,12 +1,16 @@
 use calcit::cli_args::{FfiCommand, FfiSubcommand};
 use calcit::ffi_interface_ir::{FFI_INTERFACE_IR_SCHEMA_ID, export_snapshot, format_human_report};
 
+use super::common::package_version_for_snapshot;
 use super::query::load_main_snapshot;
 
 pub fn handle_ffi_command(command: &FfiCommand, input_path: &str) -> Result<(), String> {
   match &command.subcommand {
     FfiSubcommand::Export(options) => {
-      let snapshot = load_main_snapshot(input_path)?;
+      let mut snapshot = load_main_snapshot(input_path)?;
+      if let Some(version) = package_version_for_snapshot(input_path)? {
+        snapshot.version = version;
+      }
       let report = export_snapshot(&snapshot, options.ns.as_deref())?;
       if options.json {
         let envelope = serde_json::json!({

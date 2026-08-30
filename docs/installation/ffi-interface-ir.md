@@ -38,6 +38,9 @@ Definitions and diagnostics are sorted deterministically, and `revision` is a
 digest of the interface plus diagnostics. Unordered EDN maps and sets are
 canonicalized recursively before `logical_schema`, `lowering.raw`, and the
 revision are emitted. Consumers must check `version` before generation.
+`package_version` comes from the adjacent `deps.cirru :version`, which is the
+project's release-version source of truth. Legacy projects without that field
+fall back to the compatibility version retained in the snapshot.
 
 ## Boundary selection
 
@@ -67,6 +70,9 @@ diagnostics. A rejected signature is `null`; there is no Dynamic fallback.
 Map/Set、Ref、host object、可变参数或泛型调用边界给出结构化错误，不会静默
 退化为动态调用。生成器必须先检查 interface `version`、definition `status`
 和顶层 `diagnostics`。
+
+`package_version` 读取相邻 `deps.cirru` 的 `:version`，与当前项目发版流程保持
+同一事实来源；尚未迁移版本字段的旧项目才回退到 snapshot 兼容值。
 
 ## Scope of v1
 
