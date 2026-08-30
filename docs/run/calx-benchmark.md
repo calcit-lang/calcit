@@ -36,6 +36,9 @@ yarn bench-calx-e2e
 CALX_BENCH_QUICK=1 CALX_BENCH_SAMPLES=1 yarn bench-calx-e2e
 ```
 
+仓库内首份完整、干净工作区 baseline 及其有限结论见
+[`benchmarks/calx/README.md`](../../benchmarks/calx/README.md)。
+
 以下环境变量可固定实验参数：
 
 - `CALX_BENCH_SAMPLES`：保留的 fresh-process 样本数；
@@ -115,6 +118,9 @@ Raw output defaults to `target/calx-bench/latest.json`. Use this command for a f
 ```bash
 CALX_BENCH_QUICK=1 CALX_BENCH_SAMPLES=1 yarn bench-calx-e2e
 ```
+
+The first complete clean-worktree baseline and its bounded conclusions are recorded in
+[`benchmarks/calx/README.md`](../../benchmarks/calx/README.md).
 
 The experiment can be pinned with `CALX_BENCH_SAMPLES`, `CALX_BENCH_PROCESS_WARMUP`,
 `CALX_BENCH_VM_WARMUP`, `CALX_BENCH_HOT_ITERATIONS`, and `CALX_BENCH_OUTPUT`.
