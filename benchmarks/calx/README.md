@@ -4,7 +4,7 @@
 
 首份完整 baseline 是 [`20260831-macos-arm64.json`](./20260831-macos-arm64.json)。采集环境为 Apple M1 Pro
 8 logical CPUs、macOS arm64、Rust 1.97.1，代码 commit 为
-`6863811956d23b6834fb9e336f0cc25a4844f607`，采集开始时 `gitDirty=false`。每个 case 丢弃 2 个 fresh-process
+`a1708055af6a0ab6ba04cda8cada3bc3d4720dae`，采集开始时 `gitDirty=false`。每个 case 丢弃 2 个 fresh-process
 预热样本，保留 7 个原始样本；hot call 使用 20 次 VM 预热和 100 次测量。报告同时保存 debug/release，
 使用 median 与 median absolute deviation。
 
@@ -18,7 +18,7 @@ release 采样点的有限结果：
 | polynomial | 10, 1000 | 10 | 未出现 |
 | bounded-simulation | 10, 100, 1000 | 10 | 100 |
 
-在 release 样本中，Calx compile total 的中位数约为 42–68 μs。规模增长的 range-sum、Fibonacci 和
+在 release 样本中，Calx compile total 的中位数约为 38–72 μs。规模增长的 range-sum、Fibonacci 和
 bounded-simulation 能摊薄 frontend/compile/setup 成本；固定深度 affine/polynomial 在所测输入点没有
 one-shot crossover。这支持下一步研究 compile cache 与 VM reuse，但不证明所有 Calcit 代码适合 Calx。
 
@@ -36,7 +36,7 @@ baseline。
 
 The first complete baseline is [`20260831-macos-arm64.json`](./20260831-macos-arm64.json). It was collected on an
 Apple M1 Pro with 8 logical CPUs, macOS arm64, and Rust 1.97.1, at commit
-`6863811956d23b6834fb9e336f0cc25a4844f607` with `gitDirty=false`. Each case discards two fresh-process warm-up
+`a1708055af6a0ab6ba04cda8cada3bc3d4720dae` with `gitDirty=false`. Each case discards two fresh-process warm-up
 samples and preserves seven raw samples. Hot calls use 20 VM warm-ups and 100 measured calls. The report contains
 both debug and release profiles and uses the median plus median absolute deviation.
 
@@ -50,7 +50,7 @@ Bounded results at the sampled release points:
 | polynomial | 10, 1000 | 10 | none |
 | bounded-simulation | 10, 100, 1000 | 10 | 100 |
 
-Median Calx compile total is approximately 42–68 μs in the release samples. The input-scaled range-sum,
+Median Calx compile total is approximately 38–72 μs in the release samples. The input-scaled range-sum,
 Fibonacci, and bounded-simulation cases amortize frontend, compile, and setup costs; fixed-depth affine and
 polynomial do not reach a one-shot crossover at their sampled points. This supports investigating compile caching
 and VM reuse next, but it does not show that arbitrary Calcit code belongs on Calx.
