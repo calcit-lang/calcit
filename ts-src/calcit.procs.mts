@@ -371,9 +371,37 @@ export function _$n_list_$o_count(x: CalcitValue): number {
   throw new Error(`expected a list ${x}`);
 }
 export function _$n_str_$o_count(x: CalcitValue): number {
-  if (typeof x === "string") return x.length;
+  if (typeof x === "string") {
+    let count = 0;
+    for (const _scalar of x) count += 1;
+    return count;
+  }
 
   throw new Error(`expected a string ${x}`);
+}
+export function _$n_str_$o_utf8_byte_count(x: CalcitValue): number {
+  if (typeof x !== "string") throw new Error(`&str:utf8-byte-count expected a string ${x}`);
+
+  let bytes = 0;
+  for (let i = 0; i < x.length; i += 1) {
+    const code = x.charCodeAt(i);
+    if (code < 0x80) {
+      bytes += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff && i + 1 < x.length) {
+      const next = x.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4;
+        i += 1;
+      } else {
+        bytes += 3;
+      }
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
 }
 export function _$n_map_$o_count(x: CalcitValue): number {
   if (x instanceof CalcitMap || x instanceof CalcitSliceMap) return x.len();

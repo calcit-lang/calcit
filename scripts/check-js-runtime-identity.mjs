@@ -49,6 +49,11 @@ try {
     "string replacement must treat patterns and replacement text literally"
   );
   assert.equal(runtimeA._$n_str_$o_replace("ab", "", "-"), "-a-b-", "empty string patterns should replace each boundary");
+  assert.equal(runtimeA._$n_str_$o_utf8_byte_count("abc"), 3, "ASCII byte length must match code-unit length");
+  assert.equal(runtimeA._$n_str_$o_utf8_byte_count("é"), 2, "two-byte UTF-8 scalars must be counted exactly");
+  assert.equal(runtimeA._$n_str_$o_utf8_byte_count("中"), 3, "three-byte UTF-8 scalars must be counted exactly");
+  assert.equal(runtimeA._$n_str_$o_utf8_byte_count("😀"), 4, "surrogate pairs must count as one four-byte UTF-8 scalar");
+  assert.equal(runtimeA._$n_str_$o_count("A😀"), 2, "string count must use Unicode scalars rather than UTF-16 code units");
 
   const todoName = runtimeA.newTag("TodoState");
   const todoField = runtimeA.newTag("draft");

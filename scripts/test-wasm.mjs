@@ -502,6 +502,8 @@ check("test-buf-list-filter()", 2, e["test-buf-list-filter"]);
 
 // --- String operation tests ---
 check("test-str-count()", 5, e["test-str-count"]);
+check("test-str-character-count()", 2, e["test-str-character-count"]);
+check("test-str-utf8-byte-count()", 5, e["test-str-utf8-byte-count"]);
 check("test-str-empty-true()", 1, e["test-str-empty-true"]); // count("") == 0
 check("test-str-empty-false()", 0, e["test-str-empty-false"]); // count("hi") == 0 is false
 check("test-str-concat()", 6, e["test-str-concat"]);

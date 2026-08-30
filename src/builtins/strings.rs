@@ -346,6 +346,17 @@ pub fn count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn utf8_byte_count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
+    Some(Calcit::Str(s)) => Ok(Calcit::Number(s.len() as f64)),
+    Some(a) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&str:utf8-byte-count expected a string, but received: {a}"),
+    ),
+    None => CalcitErr::err_str(CalcitErrKind::Arity, "&str:utf8-byte-count expected 1 argument, but received none"),
+  }
+}
+
 pub fn empty_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Str(s)) => Ok(Calcit::Bool(s.is_empty())),
