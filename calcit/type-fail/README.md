@@ -48,6 +48,7 @@
 - `E_SCHEMA_DEF_MISMATCH`：定义与 `:schema` 的 `:kind` / `:args` / `:rest` 不匹配
 - `W_FN_ARG_TYPE_MISMATCH`：用户函数调用参数类型不匹配
 - `W_METHOD_ARG_TYPE_MISMATCH`：静态方法调用参数类型不匹配
+- `W_DYNAMIC_NOMINAL_METHOD_RECEIVER`：Option/Result method 的接收者仍为 Dynamic，需先收窄或在明确边界使用函数形式
 - `W_PROC_ARG_TYPE_MISMATCH`：内建 proc 参数类型不匹配
 - `W_CORE_FN_ARG_TYPE_MISMATCH`：`calcit.core` 函数参数类型不匹配
 - `W_FN_RETURN_TYPE_MISMATCH`：函数声明返回类型与函数体实际返回类型不匹配
