@@ -252,8 +252,9 @@ do
 
 For a statically known receiver, preprocessing resolves these methods and lowers
 them to their internal direct implementations. Direct names such as
-`option:unwrap-or` and `result:unwrap-or` are core implementation details, not
-the public call style.
+`option:unwrap-or` and `result:unwrap-or` are supported lower-level forms for
+intentional Dynamic boundaries; method syntax remains the preferred public
+style for typed code.
 
 That rule has one explicit boundary exception: postfix nominal methods require
 a receiver that preprocessing can identify as `Option` or `Result`. If legacy

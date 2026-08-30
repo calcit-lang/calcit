@@ -1722,7 +1722,9 @@ fn preprocess_list_call(
           && resolve_type_value(&head_form, scope_types).is_none_or(|type_info| is_dynamic_annotation(type_info.as_ref()))
         {
           let location = head_form.get_location().or_else(|| first_arg.get_location());
-          if let Some((receiver_requirement, helper_hint)) = dynamic_nominal_method_requirement(method_name.as_ref()) {
+          if matches!(method_kind, calcit::MethodKind::Invoke(_))
+            && let Some((receiver_requirement, helper_hint)) = dynamic_nominal_method_requirement(method_name.as_ref())
+          {
             let message = format!(
               "[Warn] postfix nominal method `.{method_name}` requires a statically known {receiver_requirement} receiver in {file_ns}/{def_name}, but the receiver is Dynamic; narrow it with a schema/assertion before using method syntax, or call {helper_hint} at an intentional Dynamic boundary"
             );
@@ -8708,6 +8710,39 @@ mod tests {
       warnings.iter().all(|warning| warning.code() != Some("P_DYNAMIC_POSTFIX_METHOD")),
       "the unconditional diagnostic should not be duplicated by the opt-in policy warning"
     );
+  }
+
+  #[test]
+  fn native_js_members_do_not_trigger_dynamic_nominal_method_warning() {
+    let _lock = lock_preprocess_test_state();
+    let _warn_guard = WarnDynMethodGuard::new(false);
+
+    for method in [".-unwrap-or", ".!unwrap-or"] {
+      let expr = Cirru::List(vec![Cirru::leaf("receiver"), Cirru::leaf(method), Cirru::leaf("0")]);
+      let code = code_to_calcit(&expr, "tests.dynamic-js-member", "main", vec![]).expect("parse cirru");
+      let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+      scope_defs.insert(Arc::from("receiver"));
+      let mut scope_types: ScopeTypes = ScopeTypes::new();
+      let warnings = RefCell::new(vec![]);
+
+      preprocess_expr(
+        &code,
+        &scope_defs,
+        &mut scope_types,
+        "tests.dynamic-js-member",
+        &warnings,
+        &CallStackList::default(),
+      )
+      .expect("native JavaScript member token should remain outside nominal method diagnostics");
+
+      assert!(
+        warnings
+          .borrow()
+          .iter()
+          .all(|warning| warning.code() != Some("W_DYNAMIC_NOMINAL_METHOD_RECEIVER")),
+        "{method} must not be treated as an Option/Result method"
+      );
+    }
   }
 
   #[test]
