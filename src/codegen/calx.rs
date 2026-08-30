@@ -7,14 +7,16 @@
 
 mod lowering;
 
-pub use calx_vm::{CalxBuildError, CalxError, CalxProgramError};
+pub use calx_vm::{Calx as CalxValue, CalxBuildError, CalxError, CalxProgramError};
 pub use lowering::{
   CalxCompiledKernel, CalxKernelBoundaryError, CalxKernelBoundaryErrorKind, CalxKernelCompileError, CalxKernelRunError,
-  CalxLoweringError, compile_calx_kernel,
+  CalxLoweringError, compile_calx_kernel, compile_calx_kernel_with_imports,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+
+use calx_vm::{CalxHostBinding, CalxType as VmType};
 
 use crate::builtins::syntax::get_raw_args_fn;
 use crate::calcit::{Calcit, CalcitFnArgs, CalcitProc, CalcitSyntax, CalcitTypeAnnotation};
@@ -33,6 +35,13 @@ impl CalxScalarType {
     match self {
       Self::F64 => "F64",
       Self::Bool => "Bool",
+    }
+  }
+
+  const fn vm_type(self) -> VmType {
+    match self {
+      Self::F64 => VmType::F64,
+      Self::Bool => VmType::Bool,
     }
   }
 }
@@ -55,6 +64,78 @@ impl CalxDefinitionRef {
     format!("{}/{}", self.namespace, self.definition)
   }
 }
+
+/// One explicitly approved scalar host capability for a Calx kernel.
+///
+/// The Calcit definition is supplied as the key in [`CalxHostImports`]. Its
+/// typed snapshot signature must exactly match this declaration before the
+/// function body may be replaced by the host callback.
+#[derive(Debug, Clone)]
+pub struct CalxHostImport {
+  name: Arc<str>,
+  params: Vec<CalxScalarType>,
+  result: Option<CalxScalarType>,
+  binding: CalxHostBinding,
+}
+
+impl CalxHostImport {
+  /// Declares a zero-result import backed by `Result<(), CalxError>`.
+  pub fn void(
+    name: impl Into<Arc<str>>,
+    params: Vec<CalxScalarType>,
+    callback: fn(&[CalxValue]) -> Result<(), CalxError>,
+  ) -> Result<Self, CalxProgramError> {
+    let binding = CalxHostBinding::void(params.iter().copied().map(CalxScalarType::vm_type).collect(), callback)?;
+    Ok(Self {
+      name: name.into(),
+      params,
+      result: None,
+      binding,
+    })
+  }
+
+  /// Declares a single-result import backed by `Result<CalxValue, CalxError>`.
+  pub fn value(
+    name: impl Into<Arc<str>>,
+    params: Vec<CalxScalarType>,
+    result: CalxScalarType,
+    callback: fn(&[CalxValue]) -> Result<CalxValue, CalxError>,
+  ) -> Result<Self, CalxProgramError> {
+    let binding = CalxHostBinding::value(
+      params.iter().copied().map(CalxScalarType::vm_type).collect(),
+      result.vm_type(),
+      callback,
+    )?;
+    Ok(Self {
+      name: name.into(),
+      params,
+      result: Some(result),
+      binding,
+    })
+  }
+
+  /// Calx import declaration name used in the generated program.
+  pub fn name(&self) -> &str {
+    &self.name
+  }
+
+  /// Concrete non-nil, non-Dynamic scalar parameter contract.
+  pub fn params(&self) -> &[CalxScalarType] {
+    &self.params
+  }
+
+  /// Zero-result imports return `None`; single-result imports return one scalar type.
+  pub fn result(&self) -> Option<CalxScalarType> {
+    self.result
+  }
+
+  fn binding(&self) -> &CalxHostBinding {
+    &self.binding
+  }
+}
+
+/// Explicit Calcit-definition to Calx-host-capability mapping.
+pub type CalxHostImports = BTreeMap<CalxDefinitionRef, CalxHostImport>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CalxFallbackCode {
@@ -143,6 +224,7 @@ pub struct CalxEligibleFunction {
   pub params: Vec<CalxScalarType>,
   pub result: Option<CalxScalarType>,
   pub direct_calls: Vec<CalxDefinitionRef>,
+  pub host_imports: Vec<CalxDefinitionRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,6 +246,9 @@ impl CalxEligibleCallGraph {
       for callee in &function.direct_calls {
         output.push_str(&format!("  call {}\n", callee.qualified()));
       }
+      for import in &function.host_imports {
+        output.push_str(&format!("  import {}\n", import.qualified()));
+      }
     }
     output
   }
@@ -179,13 +264,24 @@ pub fn analyze_calx_eligibility(
   namespace: impl Into<Arc<str>>,
   definition: impl Into<Arc<str>>,
 ) -> Result<CalxEligibleCallGraph, CalxFallbackReport> {
+  analyze_calx_eligibility_with_imports(program, namespace, definition, &CalxHostImports::new())
+}
+
+/// Proves eligibility while replacing only explicitly declared, signature-
+/// matched Calcit definitions with strict typed host imports.
+pub fn analyze_calx_eligibility_with_imports(
+  program: &CompiledProgram,
+  namespace: impl Into<Arc<str>>,
+  definition: impl Into<Arc<str>>,
+  imports: &CalxHostImports,
+) -> Result<CalxEligibleCallGraph, CalxFallbackReport> {
   let entry = CalxDefinitionRef::new(namespace, definition);
-  let mut analyzer = EligibilityAnalyzer::new(program, entry.clone());
+  let mut analyzer = EligibilityAnalyzer::new(program, entry.clone(), imports);
   analyzer.visit(entry.clone(), vec![entry.clone()]);
   analyzer.finish()
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct FunctionSignature {
   params: Vec<CalxScalarType>,
   result: Option<CalxScalarType>,
@@ -193,6 +289,7 @@ struct FunctionSignature {
 
 struct EligibilityAnalyzer<'a> {
   program: &'a CompiledProgram,
+  imports: &'a CalxHostImports,
   entry: CalxDefinitionRef,
   visited: BTreeSet<CalxDefinitionRef>,
   functions: BTreeMap<CalxDefinitionRef, CalxEligibleFunction>,
@@ -200,9 +297,10 @@ struct EligibilityAnalyzer<'a> {
 }
 
 impl<'a> EligibilityAnalyzer<'a> {
-  fn new(program: &'a CompiledProgram, entry: CalxDefinitionRef) -> Self {
+  fn new(program: &'a CompiledProgram, entry: CalxDefinitionRef, imports: &'a CalxHostImports) -> Self {
     Self {
       program,
+      imports,
       entry,
       visited: BTreeSet::new(),
       functions: BTreeMap::new(),
@@ -241,6 +339,7 @@ impl<'a> EligibilityAnalyzer<'a> {
     let signature = analyze_signature(compiled, &target, &call_path, &mut self.issues);
     let parts = extract_fn_parts(compiled, &target, &call_path, &mut self.issues);
     let mut direct_calls = BTreeSet::new();
+    let mut host_imports = BTreeSet::new();
     let mut body_result = None;
     if let Some((args, body)) = parts {
       if let Some(signature) = &signature
@@ -274,6 +373,8 @@ impl<'a> EligibilityAnalyzer<'a> {
         signature: signature.as_ref(),
         call_path: &call_path,
         direct_calls: &mut direct_calls,
+        host_imports: &mut host_imports,
+        imports: self.imports,
         issues: &mut self.issues,
       };
       body_result = analyze_sequence(&body, true, &mut context);
@@ -302,6 +403,7 @@ impl<'a> EligibilityAnalyzer<'a> {
           params: signature.params,
           result: signature.result,
           direct_calls: direct_calls.iter().cloned().collect(),
+          host_imports: host_imports.iter().cloned().collect(),
         },
       );
     }
@@ -522,6 +624,8 @@ struct ExpressionContext<'a> {
   signature: Option<&'a FunctionSignature>,
   call_path: &'a [CalxDefinitionRef],
   direct_calls: &'a mut BTreeSet<CalxDefinitionRef>,
+  host_imports: &'a mut BTreeSet<CalxDefinitionRef>,
+  imports: &'a CalxHostImports,
   issues: &'a mut Vec<CalxFallbackIssue>,
 }
 
@@ -813,6 +917,9 @@ fn analyze_direct_call(
   args: &[Calcit],
   context: &mut ExpressionContext<'_>,
 ) -> Option<Option<CalxScalarType>> {
+  if let Some(import) = context.imports.get(&target) {
+    return analyze_host_import_call(target, import, args, context);
+  }
   let Some(compiled) = lookup_compiled_def(context.program, &target) else {
     analyze_unknown_args(args, context);
     issue(
@@ -862,6 +969,78 @@ fn analyze_direct_call(
     }
   }
   valid.then_some(signature.result)
+}
+
+fn analyze_host_import_call(
+  target: CalxDefinitionRef,
+  import: &CalxHostImport,
+  args: &[Calcit],
+  context: &mut ExpressionContext<'_>,
+) -> Option<Option<CalxScalarType>> {
+  let Some(compiled) = lookup_compiled_def(context.program, &target) else {
+    analyze_unknown_args(args, context);
+    issue(
+      context,
+      CalxFallbackCode::HostCapability,
+      args.first().and_then(source_path),
+      format!("approved host import `{}` is missing from the typed snapshot", target.qualified()),
+    );
+    return None;
+  };
+  if compiled.kind != CompiledDefKind::Fn {
+    analyze_unknown_args(args, context);
+    issue(
+      context,
+      CalxFallbackCode::HostCapability,
+      source_path(&compiled.preprocessed_code),
+      format!("approved host import `{}` is not a top-level function", target.qualified()),
+    );
+    return None;
+  }
+  let declared = analyze_signature(compiled, &target, context.call_path, context.issues)?;
+  if declared.params != import.params || declared.result != import.result {
+    analyze_unknown_args(args, context);
+    issue(
+      context,
+      CalxFallbackCode::HostCapability,
+      source_path(&compiled.preprocessed_code),
+      format!(
+        "approved host import `{}` declares ({:?})->{:?}, but typed snapshot requires ({:?})->{:?}",
+        target.qualified(),
+        import.params,
+        import.result,
+        declared.params,
+        declared.result
+      ),
+    );
+    return None;
+  }
+  if args.len() != import.params.len() {
+    issue(
+      context,
+      CalxFallbackCode::Arity,
+      args.first().and_then(source_path),
+      format!(
+        "host import `{}` expects {} arguments, found {}",
+        target.qualified(),
+        import.params.len(),
+        args.len()
+      ),
+    );
+    return None;
+  }
+  let mut valid = true;
+  for (argument, expected) in args.iter().zip(&import.params) {
+    if analyze_expression(argument, false, context) != Some(Some(*expected)) {
+      valid = false;
+    }
+  }
+  if valid {
+    context.host_imports.insert(target);
+    Some(import.result)
+  } else {
+    None
+  }
 }
 
 fn analyze_unknown_args(args: &[Calcit], context: &mut ExpressionContext<'_>) {

@@ -1,0 +1,13 @@
+abi calcit-calx-kernel/1
+entry tests.calx-imports/imported-pipeline
+import fixture.observe (F64)->Void
+import fixture.scale (F64)->F64
+function main (F64)->F64
+  000 LocalGet(0) @ calcit:tests.calx-imports/imported-pipeline@3.1.1.1.1
+  001 CallImport("fixture.scale") @ calcit:tests.calx-imports/imported-pipeline@3.1.1.1.1
+  002 LocalSet(1) @ calcit:tests.calx-imports/imported-pipeline@3.1.1.1.1
+  003 LocalGet(1) @ calcit:tests.calx-imports/imported-pipeline@3.2.1
+  004 CallImport("fixture.observe") @ calcit:tests.calx-imports/imported-pipeline@3.2.1
+  005 LocalGet(1) @ calcit:tests.calx-imports/imported-pipeline@3.3.1
+  006 Const(F64(1.0)) @ calcit:tests.calx-imports/imported-pipeline@-
+  007 Add @ calcit:tests.calx-imports/imported-pipeline@-
