@@ -44,7 +44,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: 1.97.1
           components: clippy
           targets: wasm32-unknown-unknown
 

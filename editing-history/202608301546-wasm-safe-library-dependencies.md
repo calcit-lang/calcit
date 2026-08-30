@@ -5,6 +5,8 @@
 - Add a CI check that compiles the Calcit library for
   `wasm32-unknown-unknown`, preventing native CLI dependencies from leaking
   back into browser runtimes.
+- Align the Actions toolchain with `rust-toolchain.toml` so the WASM standard
+  library is installed for the compiler Cargo actually uses.
 - Keep the local JS regression command aligned with CI by installing
   `scripts/main.mjs` after code generation, so clean workspaces have a launcher.
 - Validate the boundary through the real `calcit-lang/wasm-play` embedded
@@ -13,6 +15,8 @@
   边界之后。
 - CI 新增 `wasm32-unknown-unknown` Calcit library 编译检查，防止 native CLI
   依赖重新泄漏到浏览器 runtime。
+- 将 Actions 工具链与 `rust-toolchain.toml` 对齐，确保 WASM 标准库安装到
+  Cargo 实际使用的编译器。
 - 将本地 JS 回归命令与 CI 对齐，在代码生成后安装 `scripts/main.mjs`，避免干净工作区
   因缺少启动入口失败。
 - 通过真实 `calcit-lang/wasm-play` 内嵌 runtime 升级验证该边界。
