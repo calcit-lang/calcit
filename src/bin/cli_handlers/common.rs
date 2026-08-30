@@ -70,6 +70,28 @@ pub fn deps_path_for_snapshot(snapshot_path: &str) -> String {
     .to_string()
 }
 
+/// Read the package version owned by the dependency manifest next to a
+/// Snapshot. Project versions moved out of `calcit.cirru`, so read-only tools
+/// must not report the compatibility value still present in older snapshots.
+pub fn package_version_for_snapshot(snapshot_path: &str) -> Result<Option<String>, String> {
+  let deps_path = deps_path_for_snapshot(snapshot_path);
+  if !Path::new(&deps_path).exists() {
+    return Ok(None);
+  }
+
+  let content = fs::read_to_string(&deps_path).map_err(|error| format!("Failed to read {deps_path}: {error}"))?;
+  let data = cirru_edn::parse(&content).map_err(|error| format!("Failed to parse {deps_path}: {error}"))?;
+  let deps = data
+    .view_map()
+    .map_err(|error| format!("Invalid dependency manifest {deps_path}: {error}"))?;
+  match deps.get_or_nil("version") {
+    Edn::Str(version) if version.trim().is_empty() || version.as_ref() == "|" => Ok(None),
+    Edn::Str(version) => Ok(Some(version.to_string())),
+    Edn::Nil => Ok(None),
+    value => Err(format!("Invalid :version in {deps_path}: expected a string, got {value}")),
+  }
+}
+
 /// Refuse to rewrite a Snapshot with a different Calcit release than the one
 /// pinned by the adjacent deps.cirru. Snapshot serialization can evolve between
 /// releases, so a newer global CLI must not silently produce data that the
@@ -430,7 +452,7 @@ pub fn parse_input_to_cirru(raw: &str) -> Result<Cirru, String> {
 mod tests {
   use super::{
     GlobalTempPathKind, format_path, format_path_with_separator, global_temp_path_guidance, guard_snapshot_mutation_toolchain,
-    parse_input_to_cirru, parse_path, parse_quoted_cirru_nodes, resolve_definition_lookup, shell_quote,
+    package_version_for_snapshot, parse_input_to_cirru, parse_path, parse_quoted_cirru_nodes, resolve_definition_lookup, shell_quote,
   };
   use cirru_parser::Cirru;
   use std::fs;
@@ -576,6 +598,33 @@ mod tests {
       guard_snapshot_mutation_toolchain(snapshot.to_str().unwrap()).unwrap();
       fs::remove_dir_all(dir).unwrap();
     }
+  }
+
+  #[test]
+  fn package_version_comes_from_dependency_manifest() {
+    let (dir, snapshot) = mutation_guard_fixture(Some("{} (:version |1.2.3) (:calcit-version |0.13.69)\n"));
+    assert_eq!(
+      package_version_for_snapshot(snapshot.to_str().unwrap()).unwrap(),
+      Some("1.2.3".to_owned())
+    );
+    fs::remove_dir_all(dir).unwrap();
+  }
+
+  #[test]
+  fn package_version_allows_legacy_or_unversioned_projects() {
+    for deps in [Some("{} (:dependencies $ {})\n"), None] {
+      let (dir, snapshot) = mutation_guard_fixture(deps);
+      assert_eq!(package_version_for_snapshot(snapshot.to_str().unwrap()).unwrap(), None);
+      fs::remove_dir_all(dir).unwrap();
+    }
+  }
+
+  #[test]
+  fn package_version_rejects_invalid_manifest_values() {
+    let (dir, snapshot) = mutation_guard_fixture(Some("{} (:version 1)\n"));
+    let error = package_version_for_snapshot(snapshot.to_str().unwrap()).unwrap_err();
+    assert!(error.contains("Invalid :version"), "error: {error}");
+    fs::remove_dir_all(dir).unwrap();
   }
 
   #[test]
