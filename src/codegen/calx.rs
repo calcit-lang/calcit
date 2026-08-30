@@ -1,8 +1,16 @@
-//! Eligibility analysis for the experimental Calcit-to-Calx scalar subset.
+//! Eligibility analysis and lowering for the experimental Calcit-to-Calx scalar subset.
 //!
 //! This module consumes an immutable [`CompiledProgram`](crate::program::CompiledProgram)
-//! snapshot. It does not depend on `calx_vm` and does not emit a partial program:
-//! callers receive either a closed eligible call graph or one stable fallback report.
+//! snapshot. It never emits a partial program: callers receive either a closed eligible
+//! call graph, or one stable fallback report. Eligible graphs can then be lowered through
+//! `calx_vm::ProgramBuilder` and strict validation without admitting Nil or Dynamic values.
+
+mod lowering;
+
+pub use lowering::{
+  CalxCompiledKernel, CalxKernelBoundaryError, CalxKernelBoundaryErrorKind, CalxKernelCompileError, CalxKernelRunError,
+  CalxLoweringError, compile_calx_kernel,
+};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
