@@ -44,14 +44,17 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: 1.97.1
           components: clippy
+          targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2
 
       - run: cargo test
         env:
           RUST_MIN_STACK: "16777216"
+      - name: "check wasm32 library dependency boundary"
+        run: cargo check --lib --target wasm32-unknown-unknown
       - name: "run definition-attached core tests"
         run: cargo run --bin calcit -- src/cirru/calcit-core.cirru test --tag unit
       - run: cargo run --bin calcit -- calcit/test.cirru
