@@ -205,6 +205,10 @@ Foreign-thread invocation is rejected.
 Callback results are allocated and tracked by the host and must be returned
 through the blocking host table's `free_buffer`; the method's final output is
 allocated by the module and released through `calcit_ffi_buffer_free`.
+Calcit `Unit` callback results are normalized to EDN `nil` only for this
+transport because Cirru EDN has no Unit value; the typed Calcit callback still
+returns `Unit`.
+
 `finish` may be called explicitly once, otherwise method return finishes the
 task implicitly. Missing protocol or per-method blocking symbols are migration
 errors. See

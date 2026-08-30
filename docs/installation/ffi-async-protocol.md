@@ -392,6 +392,13 @@ typedef struct {
 } CalcitFfiBlockingHostV1;
 ```
 
+Callback values use Cirru EDN transport. Because Calcit `Unit` is deliberately
+distinct from EDN `nil` and has no EDN representation, the host normalizes a
+blocking callback's `Unit` result to `nil` at this transport boundary. The
+callback remains typed as returning `Unit` inside Calcit; blocking native
+methods should treat callback results as acknowledgements unless their API
+explicitly documents a value-bearing callback.
+
 The function pointer signatures are equivalent to:
 
 ```c

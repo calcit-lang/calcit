@@ -696,7 +696,7 @@ unsafe fn invoke_native_blocking(
     ),
   );
   match runner::run_fn(&args, info, &task.stack) {
-    Ok(ret) => match encode_async_value(&ret) {
+    Ok(ret) => match encode_blocking_callback_value(&ret) {
       Ok(output) => match store_blocking_host_buffer(&blocking, output, out) {
         Ok(()) => async_status::OK,
         Err(status) => status,
@@ -1042,6 +1042,16 @@ fn encode_async_value(value: &Calcit) -> Result<Vec<u8>, CalcitErr> {
   cirru_edn::format(&value, true)
     .map(String::into_bytes)
     .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, format!("failed to encode async FFI value: {error}")))
+}
+
+/// Blocking callback results use the Cirru EDN transport expected by native
+/// adapters. Unit has no Cirru EDN representation, so normalize it to `nil` at
+/// this ignored-result boundary while preserving Unit inside Calcit.
+fn encode_blocking_callback_value(value: &Calcit) -> Result<Vec<u8>, CalcitErr> {
+  if matches!(value, Calcit::Unit) {
+    return encode_async_value(&Calcit::Nil);
+  }
+  encode_async_value(value)
 }
 
 fn resolve_async_response_with(
@@ -2552,6 +2562,10 @@ mod async_callback_tests {
   }
 
   fn constant_callback(value: &str) -> Calcit {
+    constant_callback_value(Calcit::Str(Arc::from(value)))
+  }
+
+  fn constant_callback_value(value: Calcit) -> Calcit {
     Calcit::Fn {
       id: Arc::from("blocking-fixture-callback"),
       info: Arc::new(calcit::calcit::CalcitFn {
@@ -2562,7 +2576,7 @@ mod async_callback_tests {
         scope: Arc::new(calcit::calcit::CalcitScope::default()),
         args: Arc::new(calcit::calcit::CalcitFnArgs::Args(vec![])),
         call_shape: calcit::calcit::CalcitFnCallShape::fixed(0),
-        body: vec![Calcit::Str(Arc::from(value))],
+        body: vec![value],
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         return_type: calcit::calcit::DYNAMIC_TYPE.clone(),
@@ -2647,6 +2661,28 @@ mod async_callback_tests {
     );
     assert!(late_output.ptr.is_null());
     assert!(matches!(runtime.registry.release(handle), Ok(NativeAsyncResource::Task(_))));
+  }
+
+  #[test]
+  fn blocking_unit_callback_uses_edn_nil_transport() {
+    let runtime = test_runtime(4);
+    let (task, blocking) = blocking_test_task_with_callback(constant_callback_value(Calcit::Unit));
+    let handle = runtime
+      .registry
+      .register_with_flags(FfiAsyncHandleKind::OneShot, ASYNC_TASK_FLAG_SERIAL_EVENTS, task)
+      .expect("register blocking task");
+    let payload = b"[]";
+    let mut output = FfiBuffer::empty();
+    assert_eq!(
+      unsafe { invoke_native_blocking(&runtime, handle.raw(), handle.raw(), payload.as_ptr(), payload.len(), &mut output) },
+      async_status::OK
+    );
+    let output_bytes = unsafe { std::slice::from_raw_parts(output.ptr.cast_const(), output.len) };
+    assert_eq!(
+      cirru_edn::parse(std::str::from_utf8(output_bytes).expect("callback UTF-8")).expect("callback EDN"),
+      Edn::Nil
+    );
+    assert_eq!(free_blocking_host_buffer(&blocking, output), Ok(()));
   }
 
   #[test]
