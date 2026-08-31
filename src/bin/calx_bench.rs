@@ -600,14 +600,14 @@ fn measure_cache_profile(args: &Args) -> Result<CacheProfileReport, String> {
     black_box(reused_vm.run_values(vm_args.clone())?);
   }
   let reused_started = Instant::now();
-  let mut last_reused_result = None;
+  let mut last_reused_raw_result = None;
   for _ in 0..args.cache_profile_iterations {
-    last_reused_result = Some(CalxBenchmarkSession::decode_calx_result(
-      &initial_kernel,
-      reused_vm.run_values(vm_args.clone())?,
-    )?);
+    last_reused_raw_result = Some(reused_vm.run_values(vm_args.clone())?);
   }
   let reused_vm_execution_total_ns = nanos(reused_started.elapsed());
+  let last_reused_result = last_reused_raw_result
+    .map(|result| CalxBenchmarkSession::decode_calx_result(&initial_kernel, result))
+    .transpose()?;
 
   let cached_native_started = Instant::now();
   let mut last_cached_native_result = None;
