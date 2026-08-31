@@ -332,7 +332,7 @@ fn nanos(duration: Duration) -> u64 {
 
 fn environment_report() -> Result<EnvironmentReport, String> {
   Ok(EnvironmentReport {
-    package_version: env!("CARGO_PKG_VERSION"),
+    package_version: calcit::cli_args::CALCIT_VERSION,
     calx_vm_version: resolved_dependency_version(CARGO_LOCK, "calx_vm")?.to_owned(),
     profile: if cfg!(debug_assertions) { "debug" } else { "release" },
     os: std::env::consts::OS,
