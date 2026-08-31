@@ -32,6 +32,7 @@
 - **模板不冒充产品**：workflow/template 仓库必须明确标记用途及“不随业务功能迭代版本”；实验性 benchmark 也必须明确结果可比性和非生产定位。
 - **Calx profile 证据**：机器相关的 Calx 采样策略、raw reports 与性能 provenance 由 [`calcit-lang/calcit-calx-bench`](https://github.com/calcit-lang/calcit-calx-bench) 独立维护；core 的 `docs/run/calx-compile-cache.md` 只拥有 cache/runtime 语义与设计约束。报告必须记录干净 commit、环境、命令、迭代数、原始文件哈希与 inclusive-stack 限制，不把原始 profiler 资产提交回 core。
 - **迁移完成才删除**：只有目标仓库具备文档、Actions、发布或实验运行入口、兼容验证与跨仓库 smoke 后，才能从主仓库删除原实现；迁移期 README 必须同时说明当前入口与目标状态。
+- **Bindgen 契约**：拆分已完成；core 只拥有 `calcit ffi export`、版本化 Interface IR schema、导出语义和最小 conformance tests。确定性 Rust/Calcit/TypeScript/WIT generation、compatibility diff、manifest、stale check、WIT validation 与 capability matrix 以 [`calcit-lang/calcit-bindgen`](https://github.com/calcit-lang/calcit-bindgen) 为准；不得把 generator preview、golden 或 WIT tooling 重新加入 core release。
 - **Calx harness 契约**：拆分已完成；core 的 `docs/run/calx-harness-extraction.md` 只保留 ownership/discovery，产品契约、`pins.json`、运行方法与报告 schema 以 standalone 仓库为准。lowering/correctness 留在 core，外部 harness 必须 pin Calcit revision，不能依赖可变全局或把机器阈值写成 correctness gate。
 - **Calx session adapter**：外部 harness 只能经 `calcit::codegen::calx::benchmark_session` 使用固定 revision 的内部接口，并记录 `CALX_BENCHMARK_SESSION_EDITION`；不得重新引入 `PROGRAM_CODE_DATA`、`ProgramFileData`、`ensure_def_id`、`run_fn` 或其他 mutable-global 访问。
 

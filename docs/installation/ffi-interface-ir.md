@@ -126,42 +126,34 @@ not yet validate callback positions, ownership, cancellation, or resource
 lifecycle fields nested in lowering metadata. Those structured checks and
 generated adapters belong to the next bindgen phase.
 
-## Phase 0 bindgen preview
+## Standalone production bindgen
 
-The repository includes a deliberately narrow preview consumer for measuring
-the Interface IR before the generator moves to an independent crate:
+Production generation is maintained by
+[`calcit-lang/calcit-bindgen`](https://github.com/calcit-lang/calcit-bindgen).
+This repository owns only Interface IR extraction, versioned schemas, exporter
+semantics, and conformance tests; it does not ship generator backends, manifests,
+goldens, WIT tooling, or stale-artifact policy.
 
 ```bash
 calcit /path/to/calcit.std/calcit.cirru ffi export --json --ns calcit.std.hash > /tmp/calcit-std-ffi.json
-node scripts/ffi-bindgen-preview.mjs \
-  --input /tmp/calcit-std-ffi.json \
-  --out /tmp/calcit-std-bindings
+calcit-bindgen validate /tmp/calcit-std-ffi.json
+calcit-bindgen generate /tmp/calcit-std-ffi.json --out /tmp/calcit-std-bindings
+calcit-bindgen check /tmp/calcit-std-ffi.json --out /tmp/calcit-std-bindings
 ```
 
-For a supported synchronous native `edn-buffer-v1` definition, one v2 input emits
-four deterministic previews plus a SHA-256 manifest:
+The standalone tool owns deterministic Rust, method-oriented Calcit,
+namespace-qualified TypeScript, and strict-subset WIT generation. Its manifest
+records the enabled backend set and every managed artifact. Unknown versions,
+unsupported definitions, Dynamic/resource/callback boundaries, and types outside
+a selected backend's capability matrix fail explicitly without generated
+fallbacks. Consult its README and release for the current matrix and commands.
 
-- a Rust typed trait and C-safe adapter stub;
-- a Calcit raw wrapper that receives the resolved dylib path;
-- a TypeScript declaration;
-- a WIT interface/world for the strict monomorphic type subset.
+production generator 由独立仓库
+[`calcit-lang/calcit-bindgen`](https://github.com/calcit-lang/calcit-bindgen)
+维护。本仓库只负责 Interface IR 提取、版本化 schema、exporter 语义与最小 conformance；
+不再保存 generator backend、manifest、golden、WIT tooling 或 stale-artifact policy。
 
-The preview emits Rust and TypeScript Struct/Enum declarations, plus WIT record
-and variant declarations for the monomorphic strict subset. It rejects
-unsupported definitions, non-native backends, missing symbols,
-async/blocking invocation, other transports, missing declarations, and generic
-WIT declarations. It does not generate Dynamic fallbacks. Rust adapter bodies
-remain explicit
-`todo!` stubs because decoder ownership and module implementation binding are
-not yet part of Interface IR v2. Resource and async metadata stay visible in
-`lowering.raw`, but production generation waits for structured lifecycle
-fields.
-
-仓库内提供一个刻意收窄的 Phase 0 preview consumer，用于在拆分独立 crate 前
-量化 Interface IR。对于 supported 的同步 native `edn-buffer-v1` definition，
-同一输入会确定性生成 Rust typed trait/C-safe adapter stub、Calcit raw wrapper、
-TypeScript declaration、Struct/Enum 对应的 Rust/TS/WIT declaration、严格类型
-子集的 WIT，以及 SHA-256 manifest。unsupported definition、async/blocking
-transport、缺失声明与 WIT 暂不支持的 generic declaration 都会
-直接失败，不会生成 Dynamic fallback。Rust decoder body、resource ownership 与
-async lifecycle 仍留到结构化 IR 字段和独立 bindgen 阶段完成。
+独立工具负责确定性的 Rust、方法化 Calcit、保留 namespace identity 的 TypeScript 与严格
+WIT 子集生成。manifest 记录启用的 backend 和全部托管产物；未知版本、unsupported
+definition、Dynamic/resource/callback 边界与超出 capability matrix 的类型都会明确失败，
+不会生成 fallback。具体能力矩阵、命令和版本以独立仓库 README/release 为准。

@@ -33,7 +33,7 @@ cadence are maintained separately or tracked for extraction:
 
 | Module | Status and ownership |
 | --- | --- |
-| [`calcit-bindgen`](https://github.com/calcit-lang/calcit-bindgen) | Independent repository; production generator parity and removal of the core preview are tracked in [#544](https://github.com/calcit-lang/calcit/issues/544). |
+| [`calcit-bindgen`](https://github.com/calcit-lang/calcit-bindgen) | Independent experimental production generator owning deterministic Rust/Calcit/TypeScript/WIT generation, manifests, compatibility diff, and stale checks. Core retains only Interface IR export/schema/conformance; the completed cutover is tracked in [#544](https://github.com/calcit-lang/calcit/issues/544). |
 | [`calcit-native-ffi`](https://github.com/calcit-lang/calcit-native-ffi) | Independent production shared ABI/helper crate for native modules; canonical ABI ownership is tracked in [calcit-native-ffi#7](https://github.com/calcit-lang/calcit-native-ffi/issues/7). |
 | [`caps`](https://github.com/calcit-lang/caps) | Independent production package manager released as the `calcit-caps` crate; the completed core cutover is tracked in [#555](https://github.com/calcit-lang/calcit/issues/555). |
 | [`calcit-calx-bench`](https://github.com/calcit-lang/calcit-calx-bench) | Independent experimental harness and report archive consuming core's revision-pinned session adapter; the completed adapter migration and core product-asset cutover are tracked in [#558](https://github.com/calcit-lang/calcit/issues/558) and [#559](https://github.com/calcit-lang/calcit/issues/559), while Calx lowering, cache, runtime semantics, and correctness gates remain in core. |
