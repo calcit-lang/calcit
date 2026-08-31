@@ -1,0 +1,163 @@
+{
+  "schema": "calcit-calx-compile-profile-suite/1",
+  "environment": {
+    "gitCommit": "ef04017f0bc60e2d8f6341599f00d426a11ed360",
+    "gitDirty": false,
+    "packageVersion": "0.13.72",
+    "calxVmVersion": "0.3.0",
+    "operatingSystem": "macOS 26.5.2 (25F84)",
+    "architecture": "arm64",
+    "cpu": "Apple M1 Pro",
+    "logicalCpus": 8,
+    "rustc": "1.97.1 (8bab26f4f 2026-07-14)",
+    "samply": "0.13.1"
+  },
+  "build": {
+    "cargoProfile": "release",
+    "repositoryReleaseOptLevel": "s",
+    "repositoryReleaseLto": true,
+    "temporaryStripOverride": "none",
+    "temporaryDebugOverride": "line-tables-only"
+  },
+  "measurement": {
+    "warmupIterations": 1000,
+    "stageTimingIterations": 10000,
+    "allocationIterations": 10000,
+    "uninstrumentedIterationsPerKernel": 100000,
+    "samplyKernel": "bounded-simulation",
+    "samplyUninstrumentedIterations": 1000000,
+    "samplyRateHz": 1000,
+    "samplySamples": 20987,
+    "samplyAllocationStackSamples": 8018
+  },
+  "rawProfile": {
+    "committed": false,
+    "profilePath": "target/calx-bench/compile-profile-ef04017f.json.gz",
+    "profileBytes": 247218,
+    "profileSha256": "f7e076a85ea810f218a971e3bf58d4c5fdf40a897d4a497d22bad2c5acd40399",
+    "symbolsPath": "target/calx-bench/compile-profile-ef04017f.json.syms.json",
+    "symbolsBytes": 63787,
+    "symbolsSha256": "38f61b2da3f242f059494c11cbb0ac4e4eea5f86af0d2c9a6217a71c9dbeb376"
+  },
+  "kernels": [
+    {
+      "kernel": "range-sum",
+      "compilePerIterationNs": 15354,
+      "stageTimingPerIterationNs": {
+        "eligibility": 3013,
+        "planning": 3148,
+        "programConstruction": 8118,
+        "validationLowering": 1093,
+        "total": 15990
+      },
+      "allocationsPerIteration": {
+        "allocationCalls": 301,
+        "reallocationCalls": 59,
+        "deallocationCalls": 301,
+        "requestedBytes": 28339,
+        "explicitlyDeallocatedBytes": 24794
+      }
+    },
+    {
+      "kernel": "fibonacci",
+      "compilePerIterationNs": 17398,
+      "stageTimingPerIterationNs": {
+        "eligibility": 3207,
+        "planning": 3255,
+        "programConstruction": 8642,
+        "validationLowering": 1234,
+        "total": 16941
+      },
+      "allocationsPerIteration": {
+        "allocationCalls": 337,
+        "reallocationCalls": 69,
+        "deallocationCalls": 337,
+        "requestedBytes": 34914,
+        "explicitlyDeallocatedBytes": 29543
+      }
+    },
+    {
+      "kernel": "affine",
+      "compilePerIterationNs": 20859,
+      "stageTimingPerIterationNs": {
+        "eligibility": 4336,
+        "planning": 3985,
+        "programConstruction": 9243,
+        "validationLowering": 987,
+        "total": 19334
+      },
+      "allocationsPerIteration": {
+        "allocationCalls": 392,
+        "reallocationCalls": 57,
+        "deallocationCalls": 392,
+        "requestedBytes": 27275,
+        "explicitlyDeallocatedBytes": 25555
+      }
+    },
+    {
+      "kernel": "polynomial",
+      "compilePerIterationNs": 15252,
+      "stageTimingPerIterationNs": {
+        "eligibility": 2875,
+        "planning": 3028,
+        "programConstruction": 6318,
+        "validationLowering": 628,
+        "total": 13352
+      },
+      "allocationsPerIteration": {
+        "allocationCalls": 222,
+        "reallocationCalls": 52,
+        "deallocationCalls": 222,
+        "requestedBytes": 22561,
+        "explicitlyDeallocatedBytes": 20009
+      }
+    },
+    {
+      "kernel": "bounded-simulation",
+      "compilePerIterationNs": 20011,
+      "stageTimingPerIterationNs": {
+        "eligibility": 4536,
+        "planning": 4484,
+        "programConstruction": 12624,
+        "validationLowering": 1435,
+        "total": 23807
+      },
+      "allocationsPerIteration": {
+        "allocationCalls": 355,
+        "reallocationCalls": 91,
+        "deallocationCalls": 355,
+        "requestedBytes": 37569,
+        "explicitlyDeallocatedBytes": 31393
+      }
+    }
+  ],
+  "selectedInclusiveCpuStacks": [
+    { "symbol": "calcit::codegen::calx::lowering::emit_expression", "samples": 9296, "sampleRatio": 0.4429 },
+    { "symbol": "calcit::codegen::calx::lowering::source_origin", "samples": 7475, "sampleRatio": 0.3562 },
+    { "symbol": "calx_vm::builder::BodyBuilder::if_else_at", "samples": 7221, "sampleRatio": 0.3441 },
+    { "symbol": "calcit::codegen::calx::EligibilityAnalyzer::visit", "samples": 3580, "sampleRatio": 0.1706 },
+    { "symbol": "calcit::codegen::calx::lowering::plan_expression", "samples": 2640, "sampleRatio": 0.1258 },
+    { "symbol": "calx_vm::program::ValidatedProgram::try_from_program", "samples": 1216, "sampleRatio": 0.0579 },
+    { "symbol": "calx_vm::validator::validate_typed_program", "samples": 845, "sampleRatio": 0.0403 },
+    { "symbol": "calx_vm::builder::ProgramBuilder::build", "samples": 278, "sampleRatio": 0.0132 }
+  ],
+  "selectedAllocationStackAncestors": [
+    { "symbol": "calcit::codegen::calx::lowering::emit_expression", "samples": 5006, "allocationSampleRatio": 0.6243 },
+    { "symbol": "calcit::codegen::calx::lowering::source_origin", "samples": 4313, "allocationSampleRatio": 0.5379 },
+    { "symbol": "calx_vm::builder::BodyBuilder::if_else_at", "samples": 3884, "allocationSampleRatio": 0.4844 },
+    { "symbol": "calcit::codegen::calx::EligibilityAnalyzer::visit", "samples": 861, "allocationSampleRatio": 0.1074 },
+    { "symbol": "calcit::codegen::calx::lowering::plan_expression", "samples": 747, "allocationSampleRatio": 0.0932 },
+    { "symbol": "calx_vm::program::ValidatedProgram::try_from_program", "samples": 533, "allocationSampleRatio": 0.0665 },
+    { "symbol": "calx_vm::validator::validate_typed_program", "samples": 304, "allocationSampleRatio": 0.0379 },
+    { "symbol": "calx_vm::builder::ProgramBuilder::build", "samples": 47, "allocationSampleRatio": 0.0059 }
+  ],
+  "interpretation": {
+    "primaryCacheTarget": "the immutable source-derived validated artifact after eligibility and lowering",
+    "primaryMissPathHotspot": "program construction, especially expression emission and source-origin formatting",
+    "stageRatiosAreInclusive": false,
+    "stackRatiosAreInclusiveAndOverlap": true,
+    "requestedBytesArePeakResidentMemory": false,
+    "instrumentsAllocationsAvailable": false,
+    "instrumentsFailure": "macOS authorization service rejected attachment with status -60006"
+  }
+}
