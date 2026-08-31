@@ -25,6 +25,23 @@ Current direction:
 - Better CLI editing and validation for CI, docs lookup, module management, and incremental updates
 - Consistent support for real-time web applications: typed WebSocket messages, deterministic state updates, diff/patch synchronization, acknowledgement, and resynchronization
 
+### Repository Boundaries
+
+Calcit keeps language semantics, runtime behavior, backend lowering, the `calcit` CLI/Agent interface, and
+versioned language documentation in this repository. Products with independent dependencies and release
+cadence are maintained separately or tracked for extraction:
+
+| Module | Status and ownership |
+| --- | --- |
+| [`calcit-bindgen`](https://github.com/calcit-lang/calcit-bindgen) | Independent repository; production generator parity and removal of the core preview are tracked in [#544](https://github.com/calcit-lang/calcit/issues/544). |
+| [`calcit-native-ffi`](https://github.com/calcit-lang/calcit-native-ffi) | Independent production shared ABI/helper crate for native modules; canonical ABI ownership is tracked in [calcit-native-ffi#7](https://github.com/calcit-lang/calcit-native-ffi/issues/7). |
+| `caps` | Still shipped from this repository while independent package-manager extraction is tracked in [#546](https://github.com/calcit-lang/calcit/issues/546). |
+| `calcit-calx-bench` | Experimental harness still in this repository; extraction of benchmark policy and reports is tracked in [#547](https://github.com/calcit-lang/calcit/issues/547), while Calx backend semantics remain in core. |
+
+See [#549](https://github.com/calcit-lang/calcit/issues/549) for the bilingual repository-boundary roadmap.
+Calcit has no near-term LSP plan, so analysis and Agent CLI capabilities remain in this repository and release
+unit rather than being split for a hypothetical consumer.
+
 ### Install ![GitHub Release](https://img.shields.io/github/v/release/calcit-lang/calcit)
 
 Build and install with Rust:
