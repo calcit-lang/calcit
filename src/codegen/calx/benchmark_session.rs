@@ -77,6 +77,12 @@ impl CalxBenchmarkCorpus {
       if definition.name.is_empty() {
         return Err("Calx benchmark definition name must not be empty".to_owned());
       }
+      if !matches!(definition.schema.as_ref(), CalcitTypeAnnotation::Fn(_)) {
+        return Err(format!(
+          "Calx benchmark definition {}/{} must declare a function schema",
+          namespace, definition.name
+        ));
+      }
       if schemas.insert(definition.name.clone(), definition.schema).is_some() {
         return Err(format!("duplicate Calx benchmark schema for {}/{}", namespace, definition.name));
       }
@@ -104,6 +110,9 @@ impl CalxBenchmarkCorpus {
       let Cirru::List(items) = &node else {
         return Err(format!("Calx benchmark source definition must be a list: {node}"));
       };
+      if !matches!(items.first(), Some(Cirru::Leaf(kind)) if kind.as_ref() == "defn") {
+        return Err(format!("Calx benchmark source only accepts top-level defn forms: {node}"));
+      }
       let Some(Cirru::Leaf(definition)) = items.get(1) else {
         return Err(format!("Calx benchmark source definition must have a name: {node}"));
       };
@@ -467,6 +476,31 @@ mod tests {
         .expect("read source registry")
         .contains_key(corpus.namespace())
     );
+  }
+
+  #[test]
+  fn corpus_rejects_non_function_schemas_and_non_defn_source() {
+    let schema_error = CalxBenchmarkCorpus::new(
+      "test.calx-benchmark-session-schema",
+      "defn value ()\n  , 1",
+      [CalxBenchmarkDefinition::new("value", Arc::new(CalcitTypeAnnotation::Number))],
+    )
+    .expect_err("non-function schema must fail");
+    assert!(schema_error.contains("function schema"));
+
+    let source_result = CalxBenchmarkSession::prepare(
+      &CalxBenchmarkCorpus::new(
+        "test.calx-benchmark-session-source",
+        "def value 1",
+        [CalxBenchmarkDefinition::new("value", number_fn_schema(0))],
+      )
+      .expect("declare invalid source corpus"),
+      "value",
+    );
+    let Err(source_error) = source_result else {
+      panic!("non-defn source must fail");
+    };
+    assert!(source_error.contains("top-level defn"));
   }
 
   #[test]
