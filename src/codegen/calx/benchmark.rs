@@ -235,20 +235,22 @@ pub struct CalxBenchmarkProgramCounts {
   pub diagnostic_bytes: usize,
 }
 
-/// Cached Calcit function plus the concrete schema used at every invocation.
-pub struct CalxBenchmarkCalcitCallable {
-  qualified_name: Arc<str>,
-  params: Vec<CalxScalarType>,
-  result: CalxBenchmarkReturn,
+/// Cached Calcit function bound to the session that resolved it.
+pub struct CalxBenchmarkCalcitCallable<'session> {
+  session: &'session CalxBenchmarkSession,
+  definition: Arc<str>,
   callable: Arc<CalcitFn>,
 }
 
-impl CalxBenchmarkCalcitCallable {
+impl CalxBenchmarkCalcitCallable<'_> {
+  /// Run the cached function while its source session still owns the runtime corpus.
   pub fn run(&self, args: &[Calcit]) -> Result<Calcit, CalxBenchmarkAdapterError> {
-    validate_calcit_arguments(&self.qualified_name, &self.params, args)?;
+    let contract = self.session.definition(&self.definition)?;
+    let qualified_name = format!("{}/{}", self.session.namespace, self.definition);
+    validate_calcit_arguments(&qualified_name, &contract.params, args)?;
     let result = runner::run_fn(args, &self.callable, &CallStackList::default())
       .map_err(|error| CalxBenchmarkAdapterError::new(CalxBenchmarkAdapterStage::NativeRun, error.to_string()))?;
-    validate_calcit_result(&self.qualified_name, self.result, &result)?;
+    validate_calcit_result(&qualified_name, contract.result, &result)?;
     Ok(result)
   }
 }
@@ -328,8 +330,9 @@ impl CalxBenchmarkSession {
     })
   }
 
-  pub fn resolve_calcit_callable(&self, definition: &str) -> Result<CalxBenchmarkCalcitCallable, CalxBenchmarkAdapterError> {
-    let contract = self.definition(definition)?;
+  /// Resolve a cached callable whose lifetime cannot outlive this session.
+  pub fn resolve_calcit_callable(&self, definition: &str) -> Result<CalxBenchmarkCalcitCallable<'_>, CalxBenchmarkAdapterError> {
+    self.definition(definition)?;
     let value = runner::evaluate_symbol_from_program(definition, &self.namespace, None, &CallStackList::default())
       .map_err(|error| CalxBenchmarkAdapterError::new(CalxBenchmarkAdapterStage::Resolve, error.to_string()))?;
     let Calcit::Fn { info, .. } = value else {
@@ -339,9 +342,8 @@ impl CalxBenchmarkSession {
       ));
     };
     Ok(CalxBenchmarkCalcitCallable {
-      qualified_name: Arc::from(format!("{}/{definition}", self.namespace)),
-      params: contract.params.clone(),
-      result: contract.result,
+      session: self,
+      definition: Arc::from(definition),
       callable: info,
     })
   }
