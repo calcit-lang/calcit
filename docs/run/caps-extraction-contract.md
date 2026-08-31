@@ -3,7 +3,7 @@ title: "Caps extraction contract"
 summary: "Compatibility, version, storage, command, dependency, and regression boundaries for extracting caps from Calcit core"
 scope: "tool"
 kind: "maintainer-guide"
-category: "packages"
+category: "run"
 aliases:
   - "caps repository extraction"
   - "caps compatibility contract"
