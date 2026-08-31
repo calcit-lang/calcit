@@ -74,6 +74,10 @@ scalar source fixture 是唯一明确允许 copy-with-provenance 的共享资产
   schema `calcit-calx-benchmark/2`; progress and diagnostics never share stdout.
 - A successful suite writes schema `calcit-calx-benchmark-suite/2` and preserves
   every `rawSamples` entry in addition to median and median absolute deviation.
+- The core transition adds opt-in `calcit-calx-compile-profile/1` and
+  `calcit-calx-cache-profile/1` single-case evidence. Both schemas and their
+  commands migrate with the runner; they do not extend the archived suite-v2
+  objects in place.
 - Parse, build, correctness, schema, and runtime failures go to stderr and exit
   nonzero. Partial JSON is never reported as success.
 - Reports retain debug/release profile, OS/architecture/CPU/memory, complete
@@ -87,6 +91,8 @@ scalar source fixture 是唯一明确允许 copy-with-provenance 的共享资产
 - 单 case 成功时 stdout 只写一个 `calcit-calx-benchmark/2` JSON；进度和诊断不混入 stdout。
 - suite 成功时写 `calcit-calx-benchmark-suite/2`，在 median 与 MAD 之外保留全部
   `rawSamples`。
+- core 迁移期新增 opt-in 的 `calcit-calx-compile-profile/1` 与
+  `calcit-calx-cache-profile/1` 单 case 证据；schema 与命令随 runner 一起迁移，不原地扩展历史 suite-v2。
 - parse/build/correctness/schema/runtime 失败写 stderr 并非零退出，不把 partial JSON 当成功结果。
 - 报告保留 profile、主机/工具链、精确 Calcit commit 与 dirty 状态、resolved `calx-vm`
   版本、workload/matrix/settings、预热政策和未覆盖范围。
