@@ -2,30 +2,32 @@
 
 ## 中文
 
-首份完整 baseline 是 [`20260831-macos-arm64.json`](./20260831-macos-arm64.json)。采集环境为 Apple M1 Pro
+当前完整 schema v2 baseline 是 [`20260831-macos-arm64.json`](./20260831-macos-arm64.json)。采集环境为 Apple M1 Pro
 8 logical CPUs、macOS arm64、Rust 1.97.1，代码 commit 为
-`a1708055af6a0ab6ba04cda8cada3bc3d4720dae`，采集开始时 `gitDirty=false`。每个 case 丢弃 2 个 fresh-process
-预热样本，保留 7 个原始样本；hot call 使用 20 次 VM 预热和 100 次测量。报告同时保存 debug/release，
-使用 median 与 median absolute deviation。
+`88bb5a2250ba65b0e35c4d1809e6d49a14c61623`，采集开始时 `gitDirty=false`。每个 case 丢弃 2 个
+fresh-process 预热样本，保留 7 个原始样本；cached Calcit callable 与 reused Calx VM 都使用 20 次预热和
+100 次测量。报告同时保存 debug/release，使用 median 与 median absolute deviation，共保留 182 个原始样本。
 
 release 采样点的有限结果：
 
-| Kernel | 采样规模 | 首个 hot ≤ native | 首个 one-shot end-to-end ≤ native |
-| --- | --- | --- | --- |
-| range-sum | 10, 100, 1000 | 10 | 100 |
-| fibonacci | 5, 10, 20 | 5 | 10 |
-| affine | 10, 1000 | 10 | 未出现 |
-| polynomial | 10, 1000 | 10 | 未出现 |
-| bounded-simulation | 10, 100, 1000 | 10 | 100 |
+| Kernel | 采样规模 | 首个 Calx hot ≤ lookup native | 首个 Calx hot ≤ cached native | 首个 one-shot end-to-end ≤ lookup native |
+| --- | --- | --- | --- | --- |
+| range-sum | 10, 100, 1000 | 10 | 10 | 100 |
+| fibonacci | 5, 10, 20 | 5 | 5 | 10 |
+| affine | 10, 1000 | 10 | 10 | 未出现 |
+| polynomial | 10, 1000 | 10 | 10 | 未出现 |
+| bounded-simulation | 10, 100, 1000 | 10 | 10 | 1000 |
 
-在 release 样本中，Calx compile total 的中位数约为 38–72 μs。规模增长的 range-sum、Fibonacci 和
+在 release 样本中，Calx compile total 的中位数约为 41–78 μs。规模增长的 range-sum、Fibonacci 和
 bounded-simulation 能摊薄 frontend/compile/setup 成本；固定深度 affine/polynomial 在所测输入点没有
-one-shot crossover。这支持下一步研究 compile cache 与 VM reuse，但不证明所有 Calcit 代码适合 Calx。
+one-shot crossover。bounded-simulation 的采样 one-shot crossover 从旧基线的 100 移到 1000，说明阈值只能
+解释为当前样本点，不能固定写进选择策略。
 
-hot 对比尤其需要谨慎：Calx 侧复用已经实例化的 VM，而当前 Calcit baseline 每次通过
-`run_program_with_docs` 完成入口查找与调用。它衡量的是 embedding 可见的重复调用路径，不是纯粹的 VM opcode
-dispatch 对 runner opcode dispatch。后续选择策略若依赖该数据，必须先增加等价的 cached Calcit callable
-baseline。
+公平的 cached-callable 对比消除了 Calcit 每次 entry lookup 的不对称，但仍保留函数 scope、参数绑定和真实
+runner execution。release 下 Calx hot / cached Calcit ratio 为 0.106–0.392，即在这些 scalar kernels 和
+输入点上约快 2.6–9.5 倍。旧的 lookup-native ratio 为 0.009–0.150，确实夸大了微型 kernel 的差距；不过
+cached 对比没有消除 Calx 的有限收益。证据支持下一步先用 profile 建立 compile/program cache issue；当前
+compile 成本远大于 VM setup，尚不足以优先实现 VM pooling，也不证明任意 Calcit 代码适合 Calx。
 
 本报告仍缺少 typed-buffer workload、平台 profiler 的 peak RSS/allocation hotspot、WASM 同 kernel 参照，
 以及跨机器重复采样。因此 calx-vm #39 保持打开；不能根据这一个环境承诺固定倍数或自动 offload 阈值。
@@ -34,31 +36,35 @@ baseline。
 
 ## English
 
-The first complete baseline is [`20260831-macos-arm64.json`](./20260831-macos-arm64.json). It was collected on an
+The current complete schema-v2 baseline is [`20260831-macos-arm64.json`](./20260831-macos-arm64.json). It was collected on an
 Apple M1 Pro with 8 logical CPUs, macOS arm64, and Rust 1.97.1, at commit
-`a1708055af6a0ab6ba04cda8cada3bc3d4720dae` with `gitDirty=false`. Each case discards two fresh-process warm-up
-samples and preserves seven raw samples. Hot calls use 20 VM warm-ups and 100 measured calls. The report contains
-both debug and release profiles and uses the median plus median absolute deviation.
+`88bb5a2250ba65b0e35c4d1809e6d49a14c61623` with `gitDirty=false`. Each case discards two fresh-process warm-up
+samples and preserves seven raw samples. Both the cached Calcit callable and reused Calx VM use 20 warm-ups and
+100 measured calls. The report contains debug and release profiles, uses the median plus median absolute deviation,
+and preserves 182 raw samples.
 
 Bounded results at the sampled release points:
 
-| Kernel | Sampled sizes | First hot ≤ native | First one-shot end-to-end ≤ native |
-| --- | --- | --- | --- |
-| range-sum | 10, 100, 1000 | 10 | 100 |
-| fibonacci | 5, 10, 20 | 5 | 10 |
-| affine | 10, 1000 | 10 | none |
-| polynomial | 10, 1000 | 10 | none |
-| bounded-simulation | 10, 100, 1000 | 10 | 100 |
+| Kernel | Sampled sizes | First Calx hot ≤ lookup native | First Calx hot ≤ cached native | First one-shot end-to-end ≤ lookup native |
+| --- | --- | --- | --- | --- |
+| range-sum | 10, 100, 1000 | 10 | 10 | 100 |
+| fibonacci | 5, 10, 20 | 5 | 5 | 10 |
+| affine | 10, 1000 | 10 | 10 | none |
+| polynomial | 10, 1000 | 10 | 10 | none |
+| bounded-simulation | 10, 100, 1000 | 10 | 10 | 1000 |
 
-Median Calx compile total is approximately 38–72 μs in the release samples. The input-scaled range-sum,
+Median Calx compile total is approximately 41–78 μs in the release samples. The input-scaled range-sum,
 Fibonacci, and bounded-simulation cases amortize frontend, compile, and setup costs; fixed-depth affine and
-polynomial do not reach a one-shot crossover at their sampled points. This supports investigating compile caching
-and VM reuse next, but it does not show that arbitrary Calcit code belongs on Calx.
+polynomial do not reach a one-shot crossover at their sampled points. The sampled bounded-simulation one-shot
+crossover moves from 100 in the old baseline to 1000, demonstrating that a sampled threshold must not be frozen
+into a selection policy.
 
-The hot comparison needs particular care. Calx reuses an instantiated VM, while the current Calcit baseline calls
-through `run_program_with_docs`, including entry lookup, every time. This measures embedding-visible repeated-call
-paths, not an isolated comparison of VM opcode dispatch with runner opcode dispatch. Any selection policy based on
-this evidence first needs an equivalent baseline that uses a cached Calcit callable.
+The fair cached-callable comparison removes repeated Calcit entry lookup while retaining function-scope setup,
+argument binding, and real runner execution. The release Calx-hot/cached-Calcit ratio is 0.106–0.392, or about
+2.6–9.5 times faster for these scalar kernels and sampled inputs. The old lookup-native ratio of 0.009–0.150 did
+overstate the tiny-kernel gap, but the cached comparison does not eliminate the bounded Calx gain. This evidence
+supports filing a profile-backed compile/program-cache issue next. Compilation remains much larger than VM setup,
+so it does not yet justify prioritizing VM pooling or claiming that arbitrary Calcit code belongs on Calx.
 
 The report still lacks a typed-buffer workload, platform-profiler peak RSS/allocation hotspots, a same-kernel WASM
 reference, and cross-machine repetition. calx-vm #39 therefore remains open; this one environment cannot justify a
