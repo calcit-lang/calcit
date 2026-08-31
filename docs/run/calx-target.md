@@ -32,6 +32,28 @@ let kernel = compile_calx_kernel(&snapshot, "app.kernel", "range-sum")?;
 let value = kernel.run(&[Calcit::Number(10.0), Calcit::Number(0.0)])?;
 ```
 
+需要跨重复请求复用完整 validated artifact 时，由 embedding 显式持有有界 cache；cache 不进入全局状态：
+
+```rust
+use calcit::codegen::calx::{CalxCompileCache, CalxHostImports};
+
+let mut cache = CalxCompileCache::new(8);
+let imports = CalxHostImports::new();
+let preparation = cache.prepare(&snapshot, "app.kernel", "range-sum", &imports)?;
+assert!(!preparation.report().cache_hit);
+
+let hit = cache.prepare(&snapshot, "app.kernel", "range-sum", &imports)?;
+assert!(hit.report().cache_hit);
+let value = hit.kernel().run(&[Calcit::Number(10.0), Calcit::Number(0.0)])?;
+```
+
+cache 保存的 `CalxCompiledArtifact` 只有 eligible graph、strict boundary、`ValidatedProgram`、reachable
+definition structural stamps、used-import schema stamps、ABI 与 callback-free import contract。`CalxPreparedKernel` 每次由当前
+`CalxHostImports` 新建，host callback、capability state、VM、buffer input 与 runtime state 都不会进入
+artifact。命中逐项核对旧 reachable set；entry/direct/transitive/schema 变化会 miss，无关 definition
+变化保持 hit。API、LRU、eviction ledger、miss reason 与统计契约见
+[revision-safe cache 文档](./calx-compile-cache.md)。
+
 需要宿主能力时，embedding 必须显式构造 `CalxHostImports`，以 Calcit definition 为 capability key，
 再调用 `analyze_calx_eligibility_with_imports` / `compile_calx_kernel_with_imports`。普通未知调用不会自动
 变成 import，allowlist 中的 declaration 也必须与 typed snapshot 的 fixed-arity Number/Bool/Unit
@@ -130,7 +152,9 @@ generated-program golden 固定 import declaration、guest syntax 与 Calcit tre
 ## 尚未实现
 
 当前 API 仍是 Rust embedding，不是 `calcit` CLI 的正式 backend。首批没有 collection/nominal value、closure、
-cache、profiling/selection policy，也还没有基于 benchmark 的自动 offload。correctness corpus 已覆盖 scalar
+持久化 cache、VM pool 或 selection policy，也还没有基于 benchmark 的自动 offload。embedding-owned、
+容量有界、revision-safe 的 validated-artifact cache 已实现，但 cache-hit 性能报告仍等待独立 harness。
+correctness corpus 已覆盖 scalar
 kernel、zero/single-result typed imports、generated program、trap 与 fallback。分阶段 benchmark matrix、
 采样 crossover point 和首份 scalar baseline 已建立；[calx-vm #39](https://github.com/calcit-lang/calx-vm/issues/39)
 现已补充公平的 cached Calcit callable 基线：有限 scalar 样本仍显示 Calx hot 收益，但 lookup-call 对比确实

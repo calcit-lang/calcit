@@ -5,13 +5,15 @@
 //! call graph, or one stable fallback report. Eligible graphs can then be lowered through
 //! `calx_vm::ProgramBuilder` and strict validation without admitting Nil or Dynamic values.
 
+mod cache;
 mod lowering;
 
+pub use cache::{CalxCacheMissReason, CalxCachePreparation, CalxCachePrepareReport, CalxCompileCache, CalxCompileCacheStats};
 pub use calx_vm::{Calx as CalxValue, CalxBuildError, CalxError, CalxProgramError};
 pub use lowering::{
-  CalxCompiledKernel, CalxKernelBoundaryError, CalxKernelBoundaryErrorKind, CalxKernelCompileError, CalxKernelCompileTimings,
-  CalxKernelRunError, CalxLoweringError, compile_calx_kernel, compile_calx_kernel_measured, compile_calx_kernel_with_imports,
-  compile_calx_kernel_with_imports_measured,
+  CalxCompiledArtifact, CalxCompiledKernel, CalxKernelBoundaryError, CalxKernelBoundaryErrorKind, CalxKernelCompileError,
+  CalxKernelCompileTimings, CalxKernelRunError, CalxLoweringError, CalxPreparedKernel, compile_calx_kernel,
+  compile_calx_kernel_measured, compile_calx_kernel_with_imports, compile_calx_kernel_with_imports_measured,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -79,6 +81,15 @@ pub struct CalxHostImport {
   binding: CalxHostBinding,
 }
 
+/// Callback-free typed declaration used in revision-safe Calx artifact keys.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CalxImportContract {
+  pub definition: CalxDefinitionRef,
+  pub export_name: Arc<str>,
+  pub params: Vec<CalxScalarType>,
+  pub result: Option<CalxScalarType>,
+}
+
 impl CalxHostImport {
   /// Declares a zero-result import backed by `Result<(), CalxError>`.
   pub fn void(
@@ -130,13 +141,29 @@ impl CalxHostImport {
     self.result
   }
 
-  fn binding(&self) -> &CalxHostBinding {
+  fn contract(&self, definition: CalxDefinitionRef) -> CalxImportContract {
+    CalxImportContract {
+      definition,
+      export_name: self.name.clone(),
+      params: self.params.clone(),
+      result: self.result,
+    }
+  }
+
+  pub(super) fn binding(&self) -> &CalxHostBinding {
     &self.binding
   }
 }
 
 /// Explicit Calcit-definition to Calx-host-capability mapping.
 pub type CalxHostImports = BTreeMap<CalxDefinitionRef, CalxHostImport>;
+
+fn import_contract(imports: &CalxHostImports) -> Vec<CalxImportContract> {
+  imports
+    .iter()
+    .map(|(definition, import)| import.contract(definition.clone()))
+    .collect()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CalxFallbackCode {

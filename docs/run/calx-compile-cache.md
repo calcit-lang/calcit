@@ -2,6 +2,13 @@
 
 Tracking: [calcit#552](https://github.com/calcit-lang/calcit/issues/552) and [calx-vm#39](https://github.com/calcit-lang/calx-vm/issues/39)
 
+Implementation status: the embedding-owned in-memory artifact cache described
+here is implemented in Calcit core. Standalone benchmark ownership and the
+cross-machine cache-hit evidence archive remain tracked separately by calcit#558/#559.
+
+实现状态：本文定义的 embedding-owned 内存 artifact cache 已在 Calcit core 实现；独立 benchmark
+归属与跨机器 cache-hit 证据归档仍由 calcit#558/#559 分开追踪。
+
 ## 中文
 
 ### Profile 结论
@@ -29,7 +36,10 @@ Samply 的 20,987 个 CPU samples 将主要 inclusive 路径定位到 `emit_expr
   `CalxHostBindings`；运行或建立 fresh VM 只通过这一层。
 
 callback、capability state、buffer input、VM instance、stack/frame 和 runtime trap 都不进入 artifact。
-缓存命中也必须重新校验 typed import declarations，并从本次 `CalxHostImports` 重新附着 callbacks。
+缓存命中也必须重新校验 typed import declarations 与实际使用的 Calcit import definition schema，并从本次
+`CalxHostImports` 重新附着 callbacks。
+当前 Calx `ValidatedProgram` 含单线程 `Rc` 值，因此 artifact 也以 `Rc` 在一个 embedding thread 内共享，
+不承诺 `Send`/`Sync`；跨线程宿主应各自持有 cache，不能用 `Arc` 伪装线程安全。
 
 ### Revision key 与命中算法
 
@@ -64,13 +74,15 @@ lookup 顺序：
 
 ### API、容量与观测
 
-公共能力优先以对象方法提供。建议的实验接口为：
+公共能力优先以对象方法提供。当前实验接口为：
 
-```text
-CalxCompileCache::new(capacity)
-cache.prepare(program, namespace, definition, imports)
-cache.stats()
-cache.clear()
+```rust
+let mut cache = CalxCompileCache::new(8);
+let preparation = cache.prepare(program, namespace, definition, imports)?;
+let value = preparation.kernel().run(args)?;
+let report = preparation.report();
+let stats = cache.stats();
+cache.clear();
 ```
 
 `capacity` 首版按 artifact 个数设置硬上限，使用确定性的 LRU eviction；不得无界增长。stats 至少包含 hit、
@@ -78,6 +90,9 @@ miss、miss reason、eviction、clear、entry count、reachable function count�
 miss reason 固定区分 `empty`、`entry-changed`、`callee-changed`、`schema-changed`、`abi-changed`、
 `import-contract-changed`、`dependency-missing` 和 `evicted`。命中报告明确标记跳过 eligibility、planning、
 program construction、validation/lowering，但仍记录 revision validation 与 binding attachment 成本。
+`capacity == 0` 是受支持的 always-miss 模式：仍完整编译并重新附着 bindings，但不保存 artifact 或
+tombstone。`clear()` 清空 artifact 与 ledger、递增 clear counter，并保留其余历史 counters 供 embedding
+观察；current-entry、instruction 与 estimated-byte gauges 则立即归零。
 
 为了让 `evicted` 可判定，cache 维护独立的 recently-evicted slot-key ledger。ledger 保存完整 slot key，容量不超过
 artifact capacity，并按确定性的 LRU 顺序裁剪；它不是 artifact，也不保存 program、callback 或 definition stamp。
@@ -132,7 +147,10 @@ The first implementation splits the current `CalxCompiledKernel` into two layers
 
 Callbacks, capability state, buffer inputs, VM instances, stack/frame state, and runtime traps never enter the
 artifact. A cache hit must revalidate typed import declarations and attach callbacks again from the current
-`CalxHostImports` value.
+`CalxHostImports` value. It also rechecks the schema of every Calcit definition actually used as a host import. The
+current Calx `ValidatedProgram` contains single-threaded `Rc` values, so an artifact is
+also shared with `Rc` inside one embedding thread and makes no `Send`/`Sync` promise. Cross-thread hosts own separate
+caches rather than using `Arc` to imply thread safety that the VM does not provide.
 
 ### Revision key and hit algorithm
 
@@ -170,13 +188,15 @@ invalidating every Calx artifact for an unrelated definition update.
 
 ### API, capacity, and observability
 
-Public capability should be method-oriented. The proposed experimental surface is:
+Public capability is method-oriented. The current experimental surface is:
 
-```text
-CalxCompileCache::new(capacity)
-cache.prepare(program, namespace, definition, imports)
-cache.stats()
-cache.clear()
+```rust
+let mut cache = CalxCompileCache::new(8);
+let preparation = cache.prepare(program, namespace, definition, imports)?;
+let value = preparation.kernel().run(args)?;
+let report = preparation.report();
+let stats = cache.stats();
+cache.clear();
 ```
 
 The first `capacity` is a hard artifact-count limit with deterministic LRU eviction; growth is never unbounded.
@@ -185,6 +205,10 @@ syntax/instruction count, and estimated bytes. Stable miss reasons distinguish `
 `callee-changed`, `schema-changed`, `abi-changed`, `import-contract-changed`, `dependency-missing`, and `evicted`.
 A hit reports that eligibility, planning, program construction, and validation/lowering were skipped while still
 recording revision-validation and binding-attachment cost.
+Capacity zero is a supported always-miss mode: compilation and fresh binding attachment still occur, but no artifact
+or tombstone is retained. `clear()` removes artifacts and the ledger and increments the clear counter while retaining
+historical hit/miss/eviction counters; current entry, instruction, and estimated-byte gauges immediately return to
+zero.
 
 To make `evicted` observable, the cache keeps a separate recently-evicted slot-key ledger. It stores complete slot
 keys, is bounded to at most the artifact capacity, and is trimmed in deterministic LRU order. It is not an artifact

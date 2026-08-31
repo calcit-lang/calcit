@@ -14,7 +14,9 @@ use std::time::{Duration, Instant};
 use argh::FromArgs;
 use calcit::calcit::{CalcitFn, CalcitFnTypeAnnotation, CalcitTypeAnnotation, SchemaKind};
 use calcit::call_stack::CallStackList;
-use calcit::codegen::calx::{CalxCompiledKernel, CalxScalarType, CalxValue, compile_calx_kernel, compile_calx_kernel_measured};
+use calcit::codegen::calx::{
+  CalxCompileCache, CalxCompiledKernel, CalxHostImports, CalxScalarType, CalxValue, compile_calx_kernel, compile_calx_kernel_measured,
+};
 use calcit::data::cirru::code_to_calcit;
 use calcit::program::{PROGRAM_CODE_DATA, ProgramDefEntry, ProgramFileData, clone_existing_compiled_program, ensure_def_id};
 use calcit::{Calcit, run_program_with_docs};
@@ -142,6 +144,14 @@ struct Args {
   /// compilations used for allocation counters in profile mode
   #[argh(option, default = "10000")]
   compile_profile_allocation_iterations: u32,
+
+  /// cache hits measured with fresh binding attachment and VM setup; zero disables cache profile mode
+  #[argh(option, default = "0")]
+  cache_profile_iterations: u32,
+
+  /// cache-hit preparations discarded before cache profile measurement
+  #[argh(option, default = "100")]
+  cache_profile_warmup: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -232,6 +242,59 @@ struct CompileProfileReport {
   allocations: AllocationReport,
   allocations_per_iteration: AllocationReport,
   compilation_succeeded: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CacheProfileRuntimeReport {
+  initial_miss_prepare_ns: u64,
+  hit_prepare_total_ns: u64,
+  hit_prepare_per_iteration_ns: u64,
+  revision_validation_total_ns: u64,
+  revision_validation_per_iteration_ns: u64,
+  binding_attachment_total_ns: u64,
+  binding_attachment_per_iteration_ns: u64,
+  fresh_vm_setup_total_ns: u64,
+  fresh_vm_setup_per_iteration_ns: u64,
+  fresh_vm_execution_total_ns: u64,
+  fresh_vm_execution_per_iteration_ns: u64,
+  reused_vm_execution_total_ns: u64,
+  reused_vm_execution_per_iteration_ns: u64,
+  cached_native_execution_total_ns: u64,
+  cached_native_execution_per_iteration_ns: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CacheProfileStateReport {
+  capacity: usize,
+  hits: u64,
+  misses: u64,
+  initial_miss_reason: &'static str,
+  evictions: u64,
+  entries: usize,
+  reachable_functions: usize,
+  syntax_instructions: usize,
+  lowered_instructions: usize,
+  estimated_bytes: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CacheProfileReport {
+  schema: &'static str,
+  environment: EnvironmentReport,
+  kernel: String,
+  workload: &'static str,
+  warmup_iterations: u32,
+  measured_iterations: u32,
+  fixture_install_ns: u64,
+  calcit_frontend_ns: u64,
+  snapshot_clone_ns: u64,
+  initial_compile: CompileReport,
+  runtime: CacheProfileRuntimeReport,
+  cache: CacheProfileStateReport,
+  correctness: bool,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -440,6 +503,16 @@ fn add_compile_timings(report: &mut CompileReport, timings: calcit::codegen::cal
   report.total_ns = report.total_ns.saturating_add(nanos(timings.total));
 }
 
+fn compile_report(timings: calcit::codegen::calx::CalxKernelCompileTimings) -> CompileReport {
+  CompileReport {
+    eligibility_ns: nanos(timings.eligibility),
+    planning_ns: nanos(timings.planning),
+    program_construction_ns: nanos(timings.program_construction),
+    validation_lowering_ns: nanos(timings.validation_lowering),
+    total_ns: nanos(timings.total),
+  }
+}
+
 /// Amplify the complete compile pipeline so sampling and allocation profilers
 /// can distinguish its stages from process/frontend setup.
 fn measure_compile_profile(args: &Args) -> Result<CompileProfileReport, String> {
@@ -519,6 +592,171 @@ fn measure_compile_profile(args: &Args) -> Result<CompileProfileReport, String> 
     allocations,
     allocations_per_iteration,
     compilation_succeeded: true,
+  })
+}
+
+/// Measure cache-hit preparation separately from fresh-VM and reused-VM work.
+fn measure_cache_profile(args: &Args) -> Result<CacheProfileReport, String> {
+  if args.cache_profile_iterations == 0 {
+    return Err("--cache-profile-iterations must be greater than zero in cache profile mode".to_owned());
+  }
+
+  let fixture_started = Instant::now();
+  install_fixture()?;
+  let fixture_install_ns = nanos(fixture_started.elapsed());
+
+  let frontend_started = Instant::now();
+  let warnings = RefCell::new(vec![]);
+  calcit::runner::preprocess::ensure_ns_def_compiled(FIXTURE_NAMESPACE, &args.kernel, &warnings, &CallStackList::default())
+    .map_err(|error| error.to_string())?;
+  if !warnings.borrow().is_empty() {
+    return Err(format!("Calx cache profile frontend produced warnings: {:#?}", warnings.borrow()));
+  }
+  let calcit_frontend_ns = nanos(frontend_started.elapsed());
+
+  let snapshot_started = Instant::now();
+  let snapshot = clone_existing_compiled_program();
+  let snapshot_clone_ns = nanos(snapshot_started.elapsed());
+  let imports = CalxHostImports::new();
+  let mut cache = CalxCompileCache::new(1);
+  let initial_started = Instant::now();
+  let initial = cache
+    .prepare(&snapshot, FIXTURE_NAMESPACE, args.kernel.as_str(), &imports)
+    .map_err(|error| error.to_string())?;
+  let initial_miss_prepare_ns = nanos(initial_started.elapsed());
+  let initial_miss_reason = initial
+    .report()
+    .miss_reason
+    .ok_or_else(|| "initial cache preparation unexpectedly hit".to_owned())?;
+  let initial_compile = compile_report(
+    initial
+      .report()
+      .compilation
+      .ok_or_else(|| "initial cache miss did not report compilation stages".to_owned())?,
+  );
+  let initial_kernel = initial.into_kernel();
+  let calcit_args = kernel_arguments(&args.kernel, args.size)?;
+  let vm_args = convert_arguments(&initial_kernel, &calcit_args)?;
+
+  let native_result = run_program_with_docs(Arc::from(FIXTURE_NAMESPACE), Arc::from(args.kernel.as_str()), &calcit_args)
+    .map_err(|error| error.to_string())?;
+  let native_call_stack = CallStackList::default();
+  let cached_native_callable = resolve_cached_calcit_callable(&args.kernel, &native_call_stack)?;
+
+  for _ in 0..args.cache_profile_warmup {
+    let preparation = cache
+      .prepare(&snapshot, FIXTURE_NAMESPACE, args.kernel.as_str(), &imports)
+      .map_err(|error| error.to_string())?;
+    if !preparation.report().cache_hit {
+      return Err("cache profile warmup unexpectedly missed".to_owned());
+    }
+    let mut vm = preparation.kernel().instantiate().map_err(|error| error.to_string())?;
+    black_box(vm.run_typed(vm_args.clone()).map_err(|error| error.to_string())?);
+    black_box(calcit::runner::run_fn(&calcit_args, &cached_native_callable, &native_call_stack).map_err(|error| error.to_string())?);
+  }
+
+  let mut hit_prepare_total_ns = 0u64;
+  let mut revision_validation_total_ns = 0u64;
+  let mut binding_attachment_total_ns = 0u64;
+  let mut fresh_vm_setup_total_ns = 0u64;
+  let mut fresh_vm_execution_total_ns = 0u64;
+  let mut last_fresh_result = None;
+  for _ in 0..args.cache_profile_iterations {
+    let prepare_started = Instant::now();
+    let preparation = cache
+      .prepare(&snapshot, FIXTURE_NAMESPACE, args.kernel.as_str(), &imports)
+      .map_err(|error| error.to_string())?;
+    hit_prepare_total_ns = hit_prepare_total_ns.saturating_add(nanos(prepare_started.elapsed()));
+    if !preparation.report().cache_hit {
+      return Err("cache profile measured preparation unexpectedly missed".to_owned());
+    }
+    revision_validation_total_ns = revision_validation_total_ns.saturating_add(nanos(preparation.report().revision_validation));
+    binding_attachment_total_ns = binding_attachment_total_ns.saturating_add(nanos(preparation.report().binding_attachment));
+
+    let setup_started = Instant::now();
+    let mut vm = preparation.kernel().instantiate().map_err(|error| error.to_string())?;
+    fresh_vm_setup_total_ns = fresh_vm_setup_total_ns.saturating_add(nanos(setup_started.elapsed()));
+    let execution_started = Instant::now();
+    let result = vm.run_typed(vm_args.clone()).map_err(|error| error.to_string())?;
+    fresh_vm_execution_total_ns = fresh_vm_execution_total_ns.saturating_add(nanos(execution_started.elapsed()));
+    last_fresh_result = Some(convert_result(preparation.kernel(), result)?);
+  }
+
+  let mut reused_vm = initial_kernel.instantiate().map_err(|error| error.to_string())?;
+  for _ in 0..args.cache_profile_warmup {
+    black_box(reused_vm.run_typed(vm_args.clone()).map_err(|error| error.to_string())?);
+  }
+  let reused_started = Instant::now();
+  let mut last_reused_result = None;
+  for _ in 0..args.cache_profile_iterations {
+    last_reused_result = Some(convert_result(
+      &initial_kernel,
+      reused_vm.run_typed(vm_args.clone()).map_err(|error| error.to_string())?,
+    )?);
+  }
+  let reused_vm_execution_total_ns = nanos(reused_started.elapsed());
+
+  let cached_native_started = Instant::now();
+  let mut last_cached_native_result = None;
+  for _ in 0..args.cache_profile_iterations {
+    last_cached_native_result =
+      Some(calcit::runner::run_fn(&calcit_args, &cached_native_callable, &native_call_stack).map_err(|error| error.to_string())?);
+  }
+  let cached_native_execution_total_ns = nanos(cached_native_started.elapsed());
+
+  if last_fresh_result.as_ref() != Some(&native_result)
+    || last_reused_result.as_ref() != Some(&native_result)
+    || last_cached_native_result.as_ref() != Some(&native_result)
+  {
+    return Err(format!(
+      "cache profile correctness mismatch for {}/{}",
+      FIXTURE_NAMESPACE, args.kernel
+    ));
+  }
+
+  let divisor = u64::from(args.cache_profile_iterations);
+  let stats = cache.stats();
+  Ok(CacheProfileReport {
+    schema: "calcit-calx-cache-profile/1",
+    environment: environment_report()?,
+    kernel: args.kernel.clone(),
+    workload: "revision-validated-cache-hit-plus-fresh-vm",
+    warmup_iterations: args.cache_profile_warmup,
+    measured_iterations: args.cache_profile_iterations,
+    fixture_install_ns,
+    calcit_frontend_ns,
+    snapshot_clone_ns,
+    initial_compile,
+    runtime: CacheProfileRuntimeReport {
+      initial_miss_prepare_ns,
+      hit_prepare_total_ns,
+      hit_prepare_per_iteration_ns: hit_prepare_total_ns / divisor,
+      revision_validation_total_ns,
+      revision_validation_per_iteration_ns: revision_validation_total_ns / divisor,
+      binding_attachment_total_ns,
+      binding_attachment_per_iteration_ns: binding_attachment_total_ns / divisor,
+      fresh_vm_setup_total_ns,
+      fresh_vm_setup_per_iteration_ns: fresh_vm_setup_total_ns / divisor,
+      fresh_vm_execution_total_ns,
+      fresh_vm_execution_per_iteration_ns: fresh_vm_execution_total_ns / divisor,
+      reused_vm_execution_total_ns,
+      reused_vm_execution_per_iteration_ns: reused_vm_execution_total_ns / divisor,
+      cached_native_execution_total_ns,
+      cached_native_execution_per_iteration_ns: cached_native_execution_total_ns / divisor,
+    },
+    cache: CacheProfileStateReport {
+      capacity: cache.capacity(),
+      hits: stats.hits,
+      misses: stats.misses,
+      initial_miss_reason: initial_miss_reason.as_str(),
+      evictions: stats.evictions,
+      entries: stats.entry_count,
+      reachable_functions: stats.reachable_function_count,
+      syntax_instructions: stats.syntax_instruction_count,
+      lowered_instructions: stats.lowered_instruction_count,
+      estimated_bytes: stats.estimated_bytes,
+    },
+    correctness: true,
   })
 }
 
@@ -669,10 +907,14 @@ fn measure(args: &Args) -> Result<BenchmarkReport, String> {
 /// Emit exactly one JSON report on success and keep failures on stderr.
 fn main() {
   let args: Args = argh::from_env();
-  let report = if args.compile_profile_iterations == 0 {
-    measure(&args).and_then(|report| serde_json::to_string(&report).map_err(|error| error.to_string()))
-  } else {
+  let report = if args.compile_profile_iterations > 0 && args.cache_profile_iterations > 0 {
+    Err("compile profile mode and cache profile mode are mutually exclusive".to_owned())
+  } else if args.compile_profile_iterations > 0 {
     measure_compile_profile(&args).and_then(|report| serde_json::to_string(&report).map_err(|error| error.to_string()))
+  } else if args.cache_profile_iterations > 0 {
+    measure_cache_profile(&args).and_then(|report| serde_json::to_string(&report).map_err(|error| error.to_string()))
+  } else {
+    measure(&args).and_then(|report| serde_json::to_string(&report).map_err(|error| error.to_string()))
   };
   match report {
     Ok(json) => println!("{json}"),
@@ -727,6 +969,8 @@ mod tests {
       compile_profile_warmup: 1,
       compile_profile_stage_iterations: 2,
       compile_profile_allocation_iterations: 2,
+      cache_profile_iterations: 0,
+      cache_profile_warmup: 0,
     })
     .expect("measure repeated complete compilation");
 
@@ -748,5 +992,39 @@ mod tests {
     let serialized = serde_json::to_value(&report).expect("serialize compile profile report");
     assert_eq!(serialized["compilationSucceeded"], true);
     assert!(serialized.get("correctness").is_none());
+  }
+
+  #[test]
+  fn cache_profile_separates_hit_validation_binding_and_fresh_vm_costs() {
+    let report = measure_cache_profile(&Args {
+      kernel: "affine".to_owned(),
+      size: 10,
+      vm_warmup: 0,
+      hot_iterations: 1,
+      compile_profile_iterations: 0,
+      compile_profile_warmup: 0,
+      compile_profile_stage_iterations: 1,
+      compile_profile_allocation_iterations: 1,
+      cache_profile_iterations: 2,
+      cache_profile_warmup: 1,
+    })
+    .expect("measure revision-safe cache hits");
+
+    assert_eq!(report.schema, "calcit-calx-cache-profile/1");
+    assert_eq!(report.workload, "revision-validated-cache-hit-plus-fresh-vm");
+    assert_eq!(report.cache.capacity, 1);
+    assert_eq!(report.cache.misses, 1);
+    assert_eq!(report.cache.initial_miss_reason, "empty");
+    assert_eq!(report.cache.evictions, 0);
+    assert_eq!(report.cache.entries, 1);
+    assert_eq!(report.cache.hits, 3);
+    assert!(report.cache.estimated_bytes > 0);
+    assert!(report.initial_compile.total_ns > 0);
+    assert!(report.runtime.hit_prepare_total_ns > 0);
+    assert!(report.runtime.fresh_vm_setup_total_ns > 0);
+    assert!(report.runtime.fresh_vm_execution_total_ns > 0);
+    assert!(report.runtime.reused_vm_execution_total_ns > 0);
+    assert!(report.runtime.cached_native_execution_total_ns > 0);
+    assert!(report.correctness);
   }
 }

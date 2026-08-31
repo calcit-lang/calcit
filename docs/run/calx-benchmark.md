@@ -89,6 +89,26 @@ release profile 默认移除 debug info；上面的临时 Cargo override 只为 
 迭代数、阶段摘要和可复查的 top stacks。profile mode 仍然执行完整 compile pipeline，因此它用于定位
 cache candidate，不代表 cache-hit 成本。
 
+### Cache profile 模式
+
+显式传入 `--cache-profile-iterations` 会先产生一次完整 cache miss，再对同一 snapshot/entry 重复执行
+revision validation、fresh host-binding attachment、fresh VM setup 与执行。它另外测量 reused Calx VM 和
+cached Calcit callable，避免把 cache-hit prepare 与纯执行混成一个数字：
+
+```bash
+cargo run --release --bin calcit-calx-bench -- \
+  --kernel affine --size 1000 \
+  --cache-profile-warmup 100 \
+  --cache-profile-iterations 10000
+```
+
+成功 stdout 只有一个 `calcit-calx-cache-profile/1` JSON。报告包含 initial miss 的完整 compile stages、
+hit prepare/revision validation/binding attachment、fresh VM setup/execution、reused VM execution、cached
+native execution，以及 cache hit/miss/entry/instruction/estimated-byte gauges。每条路径都执行同一输入并与
+Calcit 结果核对后才输出 `correctness: true`。compile-profile 与 cache-profile 参数互斥，失败不输出 partial
+JSON。该新 schema 不修改冻结的 `calcit-calx-benchmark/2` 历史报告；迁移到独立 harness 后由新仓库负责
+跨机器样本、median/MAD 与 crossover 汇总。
+
 ### 阶段定义
 
 - `fixtureInstallNs`：解析并安装固定 source fixture；
@@ -210,6 +230,27 @@ size, while the replaced block is not counted again as an explicit deallocation.
 Raw Samply/Instruments artifacts stay under `target/`; the repository records tool versions, commit, hardware,
 commands, iteration counts, stage summaries, and reviewable top stacks. Profile mode still executes the complete
 compile pipeline, so it locates cache candidates but does not model cache-hit cost.
+
+### Cache profile mode
+
+Passing `--cache-profile-iterations` first records one complete cache miss, then repeatedly measures revision
+validation, fresh host-binding attachment, fresh VM setup, and execution for the same snapshot and entry. It also
+measures a reused Calx VM and a cached Calcit callable so cache-hit preparation is not conflated with pure execution:
+
+```bash
+cargo run --release --bin calcit-calx-bench -- \
+  --kernel affine --size 1000 \
+  --cache-profile-warmup 100 \
+  --cache-profile-iterations 10000
+```
+
+Successful stdout contains exactly one `calcit-calx-cache-profile/1` JSON value. The report includes complete
+initial-miss compilation stages; hit preparation, revision validation, and binding attachment; fresh VM setup and
+execution; reused-VM and cached-native execution; and cache hit/miss/entry/instruction/estimated-byte gauges. Every
+path executes the same input and is compared with the Calcit result before `correctness: true` is emitted. Compile
+and cache profile modes are mutually exclusive, and failures emit no partial JSON. This new schema does not rewrite
+the frozen `calcit-calx-benchmark/2` archive. After extraction, the standalone harness owns cross-machine sampling,
+median/MAD aggregation, and crossover reports.
 
 ### Phase definitions
 

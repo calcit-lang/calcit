@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -12,12 +13,12 @@ use calx_vm::{
   CalxVM, FunctionBuilder, ImportId, LocalId, ProgramBuilder, SourceSpan, ValidatedProgram,
 };
 
-use crate::calcit::{Calcit, CalcitFnArgs, CalcitLocal, CalcitProc, CalcitSyntax, brief_type_of_value};
-use crate::program::CompiledProgram;
+use crate::calcit::{Calcit, CalcitFnArgs, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, brief_type_of_value};
+use crate::program::{CompiledProgram, DefId};
 
 use super::{
-  CalxDefinitionRef, CalxEligibleCallGraph, CalxFallbackReport, CalxHostImports, CalxScalarType, analyze_calx_eligibility_with_imports,
-  extract_fn_parts, lookup_compiled_def, source_path,
+  CalxDefinitionRef, CalxEligibleCallGraph, CalxFallbackReport, CalxHostImports, CalxImportContract, CalxScalarType,
+  analyze_calx_eligibility_with_imports, extract_fn_parts, import_contract, lookup_compiled_def, source_path,
 };
 
 /// A mismatch discovered while converting a graph that already passed the
@@ -90,7 +91,7 @@ pub struct CalxKernelCompileTimings {
 }
 
 #[derive(Debug, Default)]
-struct CalxKernelCompileStageTimings {
+pub(super) struct CalxKernelCompileStageTimings {
   eligibility: Duration,
   planning: Duration,
   program_construction: Duration,
@@ -167,17 +168,36 @@ impl Error for CalxKernelRunError {
   }
 }
 
-/// An immutable strict Calx program plus its proven Calcit kernel boundary.
-#[derive(Debug, Clone)]
-pub struct CalxCompiledKernel {
-  graph: CalxEligibleCallGraph,
-  params: Vec<CalxScalarType>,
-  result: Option<CalxScalarType>,
-  program: ValidatedProgram,
-  host_bindings: CalxHostBindings,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct CalxDefinitionStamp {
+  pub definition: CalxDefinitionRef,
+  pub def_id: DefId,
+  pub preprocessed_code: Calcit,
+  pub schema: Arc<CalcitTypeAnnotation>,
 }
 
-impl CalxCompiledKernel {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct CalxImportSchemaStamp {
+  pub definition: CalxDefinitionRef,
+  pub schema: Arc<CalcitTypeAnnotation>,
+}
+
+/// Immutable source-derived output of eligibility, lowering, and validation.
+///
+/// Host callbacks, VM instances, runtime values, and capability state are
+/// deliberately absent so this value can be shared by a revision-safe cache.
+#[derive(Debug, Clone)]
+pub struct CalxCompiledArtifact {
+  pub(super) graph: CalxEligibleCallGraph,
+  pub(super) params: Vec<CalxScalarType>,
+  pub(super) result: Option<CalxScalarType>,
+  pub(super) program: ValidatedProgram,
+  pub(super) reachable_stamps: Vec<CalxDefinitionStamp>,
+  pub(super) import_schema_stamps: Vec<CalxImportSchemaStamp>,
+  pub(super) import_contract: Vec<CalxImportContract>,
+}
+
+impl CalxCompiledArtifact {
   pub fn graph(&self) -> &CalxEligibleCallGraph {
     &self.graph
   }
@@ -192,6 +212,52 @@ impl CalxCompiledKernel {
 
   pub fn validated_program(&self) -> &ValidatedProgram {
     &self.program
+  }
+
+  pub fn import_contract(&self) -> &[CalxImportContract] {
+    &self.import_contract
+  }
+
+  pub fn reachable_definition_count(&self) -> usize {
+    self.reachable_stamps.len()
+  }
+
+  pub fn syntax_instruction_count(&self) -> usize {
+    self.program.functions().iter().map(|function| function.syntax.len()).sum()
+  }
+
+  pub fn lowered_instruction_count(&self) -> usize {
+    self.program.functions().iter().map(|function| function.instrs.len()).sum()
+  }
+
+  /// Deterministic shallow estimate used for bounded-cache observability.
+  ///
+  /// Shared persistent Calcit storage is intentionally not walked recursively;
+  /// the estimate counts owned vectors, declarations, instructions, and names.
+  pub fn estimated_bytes(&self) -> usize {
+    let mut bytes = std::mem::size_of::<Self>();
+    bytes += self.params.len() * std::mem::size_of::<CalxScalarType>();
+    bytes += self.reachable_stamps.len() * std::mem::size_of::<CalxDefinitionStamp>();
+    bytes += self.import_schema_stamps.len() * std::mem::size_of::<CalxImportSchemaStamp>();
+    bytes += self.import_contract.len() * std::mem::size_of::<CalxImportContract>();
+    for stamp in &self.reachable_stamps {
+      bytes += stamp.definition.namespace.len() + stamp.definition.definition.len();
+      bytes += std::mem::size_of_val(&stamp.preprocessed_code) + std::mem::size_of_val(stamp.schema.as_ref());
+    }
+    for stamp in &self.import_schema_stamps {
+      bytes += stamp.definition.namespace.len() + stamp.definition.definition.len();
+      bytes += std::mem::size_of_val(stamp.schema.as_ref());
+    }
+    for contract in &self.import_contract {
+      bytes += contract.definition.namespace.len() + contract.definition.definition.len() + contract.export_name.len();
+      bytes += contract.params.len() * std::mem::size_of::<CalxScalarType>();
+    }
+    for function in self.program.functions() {
+      bytes += function.name.len();
+      bytes += std::mem::size_of_val(function.syntax.as_slice());
+      bytes += std::mem::size_of_val(function.instrs.as_slice());
+    }
+    bytes
   }
 
   /// Deterministic generated-program report for repository golden fixtures.
@@ -230,20 +296,58 @@ impl CalxCompiledKernel {
     }
     output
   }
+}
+
+/// Per-request executable kernel with freshly attached host capabilities.
+#[derive(Debug, Clone)]
+pub struct CalxPreparedKernel {
+  artifact: Rc<CalxCompiledArtifact>,
+  host_bindings: CalxHostBindings,
+}
+
+/// Compatibility name for the pre-cache API.
+pub type CalxCompiledKernel = CalxPreparedKernel;
+
+impl CalxPreparedKernel {
+  pub fn artifact(&self) -> &Rc<CalxCompiledArtifact> {
+    &self.artifact
+  }
+
+  pub fn graph(&self) -> &CalxEligibleCallGraph {
+    self.artifact.graph()
+  }
+
+  pub fn params(&self) -> &[CalxScalarType] {
+    self.artifact.params()
+  }
+
+  pub fn result(&self) -> Option<CalxScalarType> {
+    self.artifact.result()
+  }
+
+  pub fn validated_program(&self) -> &ValidatedProgram {
+    self.artifact.validated_program()
+  }
+
+  /// Deterministic generated-program report for repository golden fixtures.
+  /// This is diagnostic text, not a serialized Calx program ABI.
+  pub fn stable_program_summary(&self) -> String {
+    self.artifact.stable_program_summary()
+  }
 
   pub fn instantiate(&self) -> Result<CalxVM, CalxKernelRunError> {
-    CalxVM::from_validated_program(self.program.clone(), self.host_bindings.clone()).map_err(CalxKernelRunError::Instantiate)
+    CalxVM::from_validated_program(self.artifact.program.clone(), self.host_bindings.clone()).map_err(CalxKernelRunError::Instantiate)
   }
 
   pub fn run(&self, args: &[Calcit]) -> Result<Calcit, CalxKernelRunError> {
-    if args.len() != self.params.len() {
+    if args.len() != self.artifact.params.len() {
       return Err(CalxKernelRunError::Boundary(CalxKernelBoundaryError {
         kind: CalxKernelBoundaryErrorKind::Arity,
-        message: format!("expected {} arguments, found {}", self.params.len(), args.len()),
+        message: format!("expected {} arguments, found {}", self.artifact.params.len(), args.len()),
       }));
     }
     let mut vm_args = Vec::with_capacity(args.len());
-    for (index, (value, expected)) in args.iter().zip(&self.params).enumerate() {
+    for (index, (value, expected)) in args.iter().zip(&self.artifact.params).enumerate() {
       let converted = match (expected, value) {
         (CalxScalarType::F64, Calcit::Number(value)) => VmValue::F64(*value),
         (CalxScalarType::Bool, Calcit::Bool(value)) => VmValue::Bool(*value),
@@ -263,7 +367,7 @@ impl CalxCompiledKernel {
 
     let mut vm = self.instantiate()?;
     let output = vm.run_typed(vm_args).map_err(CalxKernelRunError::Runtime)?;
-    match (self.result, output) {
+    match (self.artifact.result, output) {
       (None, CalxRunResult::Void) => Ok(Calcit::Unit),
       (Some(CalxScalarType::F64), CalxRunResult::Value(VmValue::F64(value))) => Ok(Calcit::Number(value)),
       (Some(CalxScalarType::Bool), CalxRunResult::Value(VmValue::Bool(value))) => Ok(Calcit::Bool(value)),
@@ -285,7 +389,7 @@ pub fn compile_calx_kernel(
   namespace: impl Into<Arc<str>>,
   definition: impl Into<Arc<str>>,
 ) -> Result<CalxCompiledKernel, CalxKernelCompileError> {
-  compile_calx_kernel_with_imports_inner(program, namespace, definition, &CalxHostImports::new(), None)
+  compile_calx_kernel_with_imports(program, namespace, definition, &CalxHostImports::new())
 }
 
 /// Compile a closed scalar kernel and report each compilation-stage duration.
@@ -304,7 +408,8 @@ pub fn compile_calx_kernel_with_imports(
   definition: impl Into<Arc<str>>,
   imports: &CalxHostImports,
 ) -> Result<CalxCompiledKernel, CalxKernelCompileError> {
-  compile_calx_kernel_with_imports_inner(program, namespace, definition, imports, None)
+  let artifact = compile_calx_artifact_with_imports_inner(program, namespace.into(), definition.into(), imports, None)?;
+  prepare_calx_artifact(artifact, imports)
 }
 
 /// Compile with explicit typed imports and report each compilation-stage duration.
@@ -315,10 +420,23 @@ pub fn compile_calx_kernel_with_imports_measured(
   imports: &CalxHostImports,
 ) -> Result<(CalxCompiledKernel, CalxKernelCompileTimings), CalxKernelCompileError> {
   let total_started = Instant::now();
+  let (artifact, mut timings) = compile_calx_artifact_with_imports_measured(program, namespace.into(), definition.into(), imports)?;
+  let kernel = prepare_calx_artifact(artifact, imports)?;
+  timings.total = total_started.elapsed();
+  Ok((kernel, timings))
+}
+
+pub(super) fn compile_calx_artifact_with_imports_measured(
+  program: &CompiledProgram,
+  namespace: Arc<str>,
+  definition: Arc<str>,
+  imports: &CalxHostImports,
+) -> Result<(Rc<CalxCompiledArtifact>, CalxKernelCompileTimings), CalxKernelCompileError> {
+  let total_started = Instant::now();
   let mut stage_timings = CalxKernelCompileStageTimings::default();
-  let kernel = compile_calx_kernel_with_imports_inner(program, namespace, definition, imports, Some(&mut stage_timings))?;
+  let artifact = compile_calx_artifact_with_imports_inner(program, namespace, definition, imports, Some(&mut stage_timings))?;
   Ok((
-    kernel,
+    artifact,
     CalxKernelCompileTimings {
       eligibility: stage_timings.eligibility,
       planning: stage_timings.planning,
@@ -329,13 +447,13 @@ pub fn compile_calx_kernel_with_imports_measured(
   ))
 }
 
-fn compile_calx_kernel_with_imports_inner(
+pub(super) fn compile_calx_artifact_with_imports_inner(
   program: &CompiledProgram,
-  namespace: impl Into<Arc<str>>,
-  definition: impl Into<Arc<str>>,
+  namespace: Arc<str>,
+  definition: Arc<str>,
   imports: &CalxHostImports,
   mut stage_timings: Option<&mut CalxKernelCompileStageTimings>,
-) -> Result<CalxCompiledKernel, CalxKernelCompileError> {
+) -> Result<Rc<CalxCompiledArtifact>, CalxKernelCompileError> {
   let eligibility_started = stage_timings.as_ref().map(|_| Instant::now());
   let graph =
     analyze_calx_eligibility_with_imports(program, namespace, definition, imports).map_err(CalxKernelCompileError::Eligibility)?;
@@ -385,11 +503,10 @@ fn compile_calx_kernel_with_imports_inner(
     .flat_map(|function| function.host_imports.iter().cloned())
     .collect::<BTreeSet<_>>();
   let mut import_ids = BTreeMap::new();
-  let mut host_bindings = CalxHostBindings::new();
-  for target in used_imports {
-    let import = imports.get(&target).ok_or_else(|| {
+  for target in &used_imports {
+    let import = imports.get(target).ok_or_else(|| {
       CalxKernelCompileError::Lowering(lower_error(
-        &target,
+        target,
         None,
         "eligible host import has no compile-time capability binding",
       ))
@@ -398,30 +515,95 @@ fn compile_calx_kernel_with_imports_inner(
       import.name(),
       import.params().iter().copied().map(CalxScalarType::vm_type).collect(),
       import.result().map(CalxScalarType::vm_type),
-      Some(SourceSpan::synthetic(source_origin(&target, None))),
+      Some(SourceSpan::synthetic(source_origin(target, None))),
     )?;
-    import_ids.insert(target, id);
-    host_bindings.insert(import.name().into(), import.binding().clone());
+    import_ids.insert(target.clone(), id);
   }
   for plan in &plans {
     builder.function(emit_function(plan, &import_ids)?)?;
   }
-  let program = builder.build()?;
+  let built_program = builder.build()?;
   if let (Some(timings), Some(started)) = (stage_timings.as_deref_mut(), construction_started) {
     timings.program_construction = started.elapsed();
   }
   let validation_started = stage_timings.as_ref().map(|_| Instant::now());
-  let program = ValidatedProgram::try_from_program(program)?;
+  let validated_program = ValidatedProgram::try_from_program(built_program)?;
   if let (Some(timings), Some(started)) = (stage_timings, validation_started) {
     timings.validation_lowering = started.elapsed();
   }
-  Ok(CalxCompiledKernel {
+  let reachable_stamps = graph
+    .functions
+    .iter()
+    .map(|function| {
+      let compiled = lookup_compiled_def(program, &function.definition).ok_or_else(|| {
+        CalxKernelCompileError::Lowering(lower_error(
+          &function.definition,
+          None,
+          "eligible definition disappeared before artifact stamping",
+        ))
+      })?;
+      Ok(CalxDefinitionStamp {
+        definition: function.definition.clone(),
+        def_id: compiled.def_id,
+        preprocessed_code: compiled.preprocessed_code.clone(),
+        schema: compiled.schema.clone(),
+      })
+    })
+    .collect::<Result<Vec<_>, CalxKernelCompileError>>()?;
+  let import_schema_stamps = used_imports
+    .iter()
+    .map(|definition| {
+      let compiled = lookup_compiled_def(program, definition).ok_or_else(|| {
+        CalxKernelCompileError::Lowering(lower_error(
+          definition,
+          None,
+          "eligible host import disappeared before artifact stamping",
+        ))
+      })?;
+      Ok(CalxImportSchemaStamp {
+        definition: definition.clone(),
+        schema: compiled.schema.clone(),
+      })
+    })
+    .collect::<Result<Vec<_>, CalxKernelCompileError>>()?;
+  Ok(Rc::new(CalxCompiledArtifact {
     graph,
     params,
     result,
-    program,
-    host_bindings,
-  })
+    program: validated_program,
+    reachable_stamps,
+    import_schema_stamps,
+    import_contract: import_contract(imports),
+  }))
+}
+
+pub(super) fn prepare_calx_artifact(
+  artifact: Rc<CalxCompiledArtifact>,
+  imports: &CalxHostImports,
+) -> Result<CalxPreparedKernel, CalxKernelCompileError> {
+  let actual_contract = import_contract(imports);
+  if actual_contract != artifact.import_contract {
+    return Err(CalxKernelCompileError::Lowering(lower_error(
+      &artifact.graph.entry,
+      None,
+      "typed host import declarations changed while attaching a compiled artifact",
+    )));
+  }
+
+  let used_imports = artifact
+    .graph
+    .functions
+    .iter()
+    .flat_map(|function| function.host_imports.iter())
+    .collect::<BTreeSet<_>>();
+  let mut host_bindings = CalxHostBindings::new();
+  for target in used_imports {
+    let import = imports.get(target).ok_or_else(|| {
+      CalxKernelCompileError::Lowering(lower_error(target, None, "compiled host import has no current capability binding"))
+    })?;
+    host_bindings.insert(import.name().into(), import.binding().clone());
+  }
+  Ok(CalxPreparedKernel { artifact, host_bindings })
 }
 
 fn function_names(graph: &CalxEligibleCallGraph) -> BTreeMap<CalxDefinitionRef, String> {

@@ -3,9 +3,9 @@ use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
 use crate::calcit::{CalcitFnTypeAnnotation, CalcitImport, CalcitStructDef, CalcitSyntax, ImportInfo, SchemaKind};
 use crate::call_stack::CallStackList;
 use crate::codegen::calx::{
-  CalxDefinitionRef, CalxError, CalxFallbackCode, CalxHostImport, CalxHostImports, CalxKernelBoundaryErrorKind, CalxKernelCompileError,
-  CalxKernelRunError, CalxScalarType, CalxValue, analyze_calx_eligibility, analyze_calx_eligibility_with_imports, compile_calx_kernel,
-  compile_calx_kernel_measured, compile_calx_kernel_with_imports,
+  CalxCacheMissReason, CalxCompileCache, CalxDefinitionRef, CalxError, CalxFallbackCode, CalxHostImport, CalxHostImports,
+  CalxKernelBoundaryErrorKind, CalxKernelCompileError, CalxKernelRunError, CalxScalarType, CalxValue, analyze_calx_eligibility,
+  analyze_calx_eligibility_with_imports, compile_calx_kernel, compile_calx_kernel_measured, compile_calx_kernel_with_imports,
 };
 use crate::data::cirru::code_to_calcit;
 use crate::run_program_with_docs;
@@ -460,6 +460,13 @@ fn calx_test_scale(args: &[CalxValue]) -> Result<CalxValue, CalxError> {
   Ok(CalxValue::F64(value * 2.0))
 }
 
+fn calx_test_scale_three(args: &[CalxValue]) -> Result<CalxValue, CalxError> {
+  let [CalxValue::F64(value)] = args else {
+    return Err(CalxError::new_raw("fixture scale expected one F64".to_owned()));
+  };
+  Ok(CalxValue::F64(value * 3.0))
+}
+
 fn calx_test_observe(args: &[CalxValue]) -> Result<(), CalxError> {
   let [CalxValue::F64(_)] = args else {
     return Err(CalxError::new_raw("fixture observe expected one F64".to_owned()));
@@ -473,11 +480,18 @@ fn calx_test_trap(_args: &[CalxValue]) -> Result<CalxValue, CalxError> {
 }
 
 fn calx_test_host_imports(namespace: &str) -> CalxHostImports {
+  calx_test_host_imports_with_scale(namespace, "fixture.scale", calx_test_scale)
+}
+
+fn calx_test_host_imports_with_scale(
+  namespace: &str,
+  export_name: &str,
+  callback: fn(&[CalxValue]) -> Result<CalxValue, CalxError>,
+) -> CalxHostImports {
   let mut imports = CalxHostImports::new();
   imports.insert(
     CalxDefinitionRef::new(namespace, "host-scale"),
-    CalxHostImport::value("fixture.scale", vec![CalxScalarType::F64], CalxScalarType::F64, calx_test_scale)
-      .expect("valid value host import"),
+    CalxHostImport::value(export_name, vec![CalxScalarType::F64], CalxScalarType::F64, callback).expect("valid value host import"),
   );
   imports.insert(
     CalxDefinitionRef::new(namespace, "host-observe"),
@@ -489,6 +503,235 @@ fn calx_test_host_imports(namespace: &str) -> CalxHostImports {
       .expect("valid trapping host import"),
   );
   imports
+}
+
+#[test]
+fn calx_compile_cache_hits_reuse_artifacts_but_reattach_current_callbacks() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-cache-imports";
+  install_calx_typed_import_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed import cache fixture");
+  let imports_a = calx_test_host_imports_with_scale(namespace, "fixture.scale", calx_test_scale);
+  let imports_b = calx_test_host_imports_with_scale(namespace, "fixture.scale", calx_test_scale_three);
+  let mut cache = CalxCompileCache::new(2);
+
+  let first = cache
+    .prepare(&snapshot, namespace, "imported-pipeline", &imports_a)
+    .expect("compile initial cached artifact");
+  assert_eq!(first.report().miss_reason, Some(CalxCacheMissReason::Empty));
+  assert!(!first.report().cache_hit);
+  assert_eq!(
+    first.kernel().run(&[Calcit::Number(3.0)]).expect("run callback A"),
+    Calcit::Number(7.0)
+  );
+  let first_artifact = first.kernel().artifact().clone();
+
+  let second = cache
+    .prepare(&snapshot, namespace, "imported-pipeline", &imports_b)
+    .expect("hit artifact with callback B");
+  assert!(second.report().cache_hit);
+  assert!(second.report().miss_reason.is_none());
+  assert!(second.report().skipped_eligibility);
+  assert!(second.report().skipped_planning);
+  assert!(second.report().skipped_program_construction);
+  assert!(second.report().skipped_validation_lowering);
+  assert!(std::rc::Rc::ptr_eq(&first_artifact, second.kernel().artifact()));
+  assert_eq!(
+    second.kernel().run(&[Calcit::Number(3.0)]).expect("run callback B"),
+    Calcit::Number(10.0),
+    "cache hit must use the current callback rather than stale capability state"
+  );
+
+  let mut host_schema_changed = snapshot.clone();
+  host_schema_changed
+    .get_mut(namespace)
+    .expect("fixture namespace")
+    .defs
+    .get_mut("host-scale")
+    .expect("host import definition")
+    .schema = calx_test_fn_schema(vec![CalcitTypeAnnotation::Bool], CalcitTypeAnnotation::Number);
+  assert!(matches!(
+    cache.prepare(&host_schema_changed, namespace, "imported-pipeline", &imports_b),
+    Err(CalxKernelCompileError::Eligibility(_))
+  ));
+
+  let changed_contract = calx_test_host_imports_with_scale(namespace, "fixture.scale.v2", calx_test_scale_three);
+  let third = cache
+    .prepare(&snapshot, namespace, "imported-pipeline", &changed_contract)
+    .expect("changed import declaration recompiles");
+  assert_eq!(third.report().miss_reason, Some(CalxCacheMissReason::ImportContractChanged));
+  assert!(!std::rc::Rc::ptr_eq(&first_artifact, third.kernel().artifact()));
+
+  let stats = cache.stats();
+  assert_eq!(stats.hits, 1);
+  assert_eq!(stats.misses, 3);
+  assert_eq!(stats.miss_count(CalxCacheMissReason::Empty), 1);
+  assert_eq!(stats.miss_count(CalxCacheMissReason::SchemaChanged), 1);
+  assert_eq!(stats.miss_count(CalxCacheMissReason::ImportContractChanged), 1);
+  assert_eq!(stats.entry_count, 2);
+  assert!(stats.reachable_function_count >= 2);
+  assert!(stats.syntax_instruction_count > 0);
+  assert!(stats.lowered_instruction_count > 0);
+  assert!(stats.estimated_bytes > 0);
+}
+
+#[test]
+fn calx_compile_cache_validates_reachable_revisions_without_global_invalidation() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-cache-revisions";
+  install_calx_scalar_kernel_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone revision cache fixture");
+  let imports = CalxHostImports::new();
+  let mut cache = CalxCompileCache::new(2);
+
+  let initial = cache.prepare(&snapshot, namespace, "affine", &imports).expect("cache affine");
+  assert_eq!(initial.report().miss_reason, Some(CalxCacheMissReason::Empty));
+  let initial_artifact = initial.kernel().artifact().clone();
+
+  let mut unrelated = snapshot.clone();
+  unrelated
+    .get_mut(namespace)
+    .expect("fixture namespace")
+    .defs
+    .get_mut("polynomial")
+    .expect("unrelated definition")
+    .def_id
+    .0 += 10_000;
+  let unrelated_hit = cache
+    .prepare(&unrelated, namespace, "affine", &imports)
+    .expect("unrelated change must preserve hit");
+  assert!(unrelated_hit.report().cache_hit);
+  assert!(std::rc::Rc::ptr_eq(&initial_artifact, unrelated_hit.kernel().artifact()));
+
+  let mut entry_changed = unrelated.clone();
+  entry_changed
+    .get_mut(namespace)
+    .expect("fixture namespace")
+    .defs
+    .get_mut("affine")
+    .expect("entry definition")
+    .def_id
+    .0 += 20_000;
+  let entry_miss = cache
+    .prepare(&entry_changed, namespace, "affine", &imports)
+    .expect("entry replacement recompiles");
+  assert_eq!(entry_miss.report().miss_reason, Some(CalxCacheMissReason::EntryChanged));
+
+  let mut callee_changed = entry_changed.clone();
+  callee_changed
+    .get_mut(namespace)
+    .expect("fixture namespace")
+    .defs
+    .get_mut("affine-helper")
+    .expect("callee definition")
+    .def_id
+    .0 += 30_000;
+  let callee_miss = cache
+    .prepare(&callee_changed, namespace, "affine", &imports)
+    .expect("callee replacement recompiles");
+  assert_eq!(callee_miss.report().miss_reason, Some(CalxCacheMissReason::CalleeChanged));
+
+  let mut schema_changed = callee_changed.clone();
+  schema_changed
+    .get_mut(namespace)
+    .expect("fixture namespace")
+    .defs
+    .get_mut("affine-helper")
+    .expect("callee definition")
+    .schema = DYNAMIC_TYPE.clone();
+  assert!(matches!(
+    cache.prepare(&schema_changed, namespace, "affine", &imports),
+    Err(CalxKernelCompileError::Eligibility(_))
+  ));
+
+  let mut dependency_missing = callee_changed;
+  dependency_missing
+    .get_mut(namespace)
+    .expect("fixture namespace")
+    .defs
+    .remove("affine-helper");
+  assert!(matches!(
+    cache.prepare(&dependency_missing, namespace, "affine", &imports),
+    Err(CalxKernelCompileError::Eligibility(_))
+  ));
+
+  let stats = cache.stats();
+  assert_eq!(stats.hits, 1);
+  assert_eq!(stats.miss_count(CalxCacheMissReason::EntryChanged), 1);
+  assert_eq!(stats.miss_count(CalxCacheMissReason::CalleeChanged), 1);
+  assert_eq!(stats.miss_count(CalxCacheMissReason::SchemaChanged), 1);
+  assert_eq!(stats.miss_count(CalxCacheMissReason::DependencyMissing), 1);
+  assert_eq!(stats.entry_count, 1, "failed recompilation must not cache a partial artifact");
+}
+
+#[test]
+fn calx_compile_cache_bounds_lru_and_eviction_provenance() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-cache-lru";
+  install_calx_scalar_kernel_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone LRU cache fixture");
+  let imports = CalxHostImports::new();
+  let mut cache = CalxCompileCache::new(1);
+
+  cache.prepare(&snapshot, namespace, "range-sum", &imports).expect("insert A");
+  cache
+    .prepare(&snapshot, namespace, "fibonacci", &imports)
+    .expect("insert B and evict A");
+  assert_eq!(cache.stats().entry_count, 1);
+  assert_eq!(cache.stats().recently_evicted_count, 1);
+  assert_eq!(cache.stats().evictions, 1);
+
+  cache
+    .prepare(&snapshot, namespace, "polynomial", &imports)
+    .expect("insert C and overflow ledger");
+  let forgotten = cache
+    .prepare(&snapshot, namespace, "range-sum", &imports)
+    .expect("oldest tombstone must become empty");
+  assert_eq!(forgotten.report().miss_reason, Some(CalxCacheMissReason::Empty));
+
+  let evicted = cache
+    .prepare(&snapshot, namespace, "polynomial", &imports)
+    .expect("most recent tombstone must remain observable");
+  assert_eq!(evicted.report().miss_reason, Some(CalxCacheMissReason::Evicted));
+  assert_eq!(cache.stats().entry_count, 1);
+  assert!(cache.stats().evictions >= 4);
+  assert_eq!(cache.stats().miss_count(CalxCacheMissReason::Evicted), 1);
+
+  cache.clear();
+  let after_clear = cache
+    .prepare(&snapshot, namespace, "range-sum", &imports)
+    .expect("clear removes artifacts and tombstones");
+  assert_eq!(after_clear.report().miss_reason, Some(CalxCacheMissReason::Empty));
+  assert_eq!(cache.stats().clears, 1);
+
+  let mut disabled = CalxCompileCache::new(0);
+  for _ in 0..2 {
+    let preparation = disabled
+      .prepare(&snapshot, namespace, "range-sum", &imports)
+      .expect("zero-capacity cache compiles without storing");
+    assert_eq!(preparation.report().miss_reason, Some(CalxCacheMissReason::Empty));
+  }
+  assert_eq!(disabled.stats().entry_count, 0);
+  assert_eq!(disabled.stats().misses, 2);
+
+  let mut lru = CalxCompileCache::new(2);
+  lru.prepare(&snapshot, namespace, "range-sum", &imports).expect("insert LRU A");
+  lru.prepare(&snapshot, namespace, "fibonacci", &imports).expect("insert LRU B");
+  assert!(
+    lru
+      .prepare(&snapshot, namespace, "range-sum", &imports)
+      .expect("touch LRU A")
+      .report()
+      .cache_hit
+  );
+  lru.prepare(&snapshot, namespace, "polynomial", &imports).expect("insert LRU C");
+  let evicted_b = lru
+    .prepare(&snapshot, namespace, "fibonacci", &imports)
+    .expect("least recently used B was evicted");
+  assert_eq!(evicted_b.report().miss_reason, Some(CalxCacheMissReason::Evicted));
 }
 
 #[test]
@@ -619,6 +862,18 @@ fn calx_eligibility_falls_back_for_the_whole_reachable_closure() {
     compile_calx_kernel(&snapshot, namespace, "entry"),
     Err(CalxKernelCompileError::Eligibility(_))
   ));
+
+  let mut cache = CalxCompileCache::new(2);
+  for _ in 0..2 {
+    assert!(matches!(
+      cache.prepare(&snapshot, namespace, "entry", &CalxHostImports::new()),
+      Err(CalxKernelCompileError::Eligibility(_))
+    ));
+  }
+  let stats = cache.stats();
+  assert_eq!(stats.entry_count, 0, "negative eligibility results must never be cached");
+  assert_eq!(stats.misses, 2);
+  assert_eq!(stats.miss_count(CalxCacheMissReason::Empty), 2);
 }
 
 fn compiled_def_for_test(def_id: DefId, deps: Vec<DefId>) -> CompiledDef {
