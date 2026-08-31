@@ -148,9 +148,9 @@ ns app.main $ :require
 ### 快速命令清单
 
 ```bash
-# 安装/更新独立发布的用户工具；分别记录版本
-cargo install calcit --bin calcit --force
-cargo install calcit-caps --force
+# 安装当前经过组合验证的独立用户工具；分别固定并记录版本
+cargo install calcit --bin calcit --version 0.13.72 --force
+cargo install calcit-caps --version 0.1.0 --force
 calcit --version
 caps --version
 caps upgrade --all
@@ -173,8 +173,8 @@ yarn vite build --base=./
 ### Step A：确认 Calcit CLI 版本
 
 ```bash
-cargo install calcit --bin calcit --force
-cargo install calcit-caps --force
+cargo install calcit --bin calcit --version 0.13.72 --force
+cargo install calcit-caps --version 0.1.0 --force
 calcit --version
 caps --version
 caps --help
@@ -184,6 +184,8 @@ caps --help
 单独固定一个经过该 Calcit 版本和真实项目 smoke 验证的稳定版本。不要先用未经验证的旧 `caps` 改依赖，
 再用新 `calcit` 判断结果；也不要只更新本机而让 CI 继续安装另一版本。若团队通过其他受控方式分发二进制，
 使用该方式即可，但要分别记录实际版本，并确认 `caps --help` 已包含项目需要的新选项。
+上面的 `calcit 0.13.72` + `calcit-caps 0.1.0` 是当前验证组合；升级到后续版本时，从对应 release notes
+或 `setup-calcit` 已验证的版本矩阵选择一对明确版本，不要省略 `--version` 而隐式安装两个 latest。
 
 > ⚠️ CI 中 Calcit runtime/compiler 的项目版本来自 `deps.cirru :calcit-version`；caps 使用 setup-calcit 独立固定的稳定版本，必要时通过 `caps-version` 显式覆盖。普通 workflow 不重复传 `version`。Action 会对新 Calcit release 临时提供 `cr -> calcit` 兼容链接；对旧 release 则回退到 `cr` asset 并暴露 `calcit`。新命令统一写 `calcit`。已发布的 `calcit-lang/setup-cr` tag 继续支持旧项目；GitHub Actions 不会为 Action 仓库改名重定向，因此迁移必须显式替换 `uses:`。详见 [GitHub Actions](../installation/github-actions.md)。
 
