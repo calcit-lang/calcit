@@ -48,8 +48,9 @@ Then install it after checkout. Do not repeat the Calcit version in the workflow
 file is treated as a task without a project declaration, so it requires an explicit version; a file with
 no `:calcit-version` behaves the same way. Malformed or duplicate declarations fail rather than falling
 back to `version`. Do not provide two version sources for a regular project. The Action release controls
-installer behavior, while `:calcit-version` controls which `calcit` and `caps` release the project uses. Version
-1 adds `cr -> calcit` inside the Action tool directory so an existing `run: cr ...` command keeps working
+installer behavior, while `:calcit-version` controls the Calcit runtime/compiler release. Caps has an independent
+release version; setup-calcit pins a verified stable default and exposes `caps-version` when a workflow needs an
+explicit package-manager pin. Version 1 adds `cr -> calcit` inside the Action tool directory so an existing `run: cr ...` command keeps working
 during workflow migration. For pre-rename releases it falls back to their `cr` asset and exposes `calcit`; new
 and edited commands should use `calcit`.
 

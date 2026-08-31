@@ -67,7 +67,7 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: >
           node scripts/release-manifest.mjs "$RELEASE_TAG"
-          target/release/calcit target/release/caps target/release/cr-wasm
+          target/release/calcit target/release/cr-wasm
           > target/release/calcit-release-manifest.json
 
       - name: Release
@@ -76,7 +76,6 @@ jobs:
           files: |
             target/release/calcit
             target/release/cr-wasm
-            target/release/caps
             target/release/calcit-release-manifest.json
 
       - uses: katyo/publish-crates@v1

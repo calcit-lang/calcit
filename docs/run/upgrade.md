@@ -27,7 +27,7 @@ related:
 
 升级完成的标准不是“`caps upgrade --all` 执行成功”，而是：
 
-- 新版 `calcit` / `caps` 已固定到本地和 CI，且 `deps.cirru`、`@calcit/procs` 版本链路一致；
+- 新版 `calcit` 与独立版本的 `caps` 已分别固定到本地和 CI，且 `deps.cirru`、`calcit`、`@calcit/procs` 版本链路一致；
 - 每个声明支持的 entry 都通过 `--check-only`，并完成对应 native / JS 行为测试；
 - `check-types`、`weak-types`、`deprecated` 已生成可复查报告，存量债务有 baseline，新增债务被阻断；
 - examples、Markdown 示例、项目测试与真实消费者回归覆盖了公开能力。
@@ -148,9 +148,11 @@ ns app.main $ :require
 ### 快速命令清单
 
 ```bash
-# 安装/更新用户工具；本地和 CI 必须使用同一版本链路
-cargo install calcit --bin calcit --bin caps --force
+# 安装/更新独立发布的用户工具；分别记录版本
+cargo install calcit --bin calcit --force
+cargo install calcit-caps --force
 calcit --version
+caps --version
 caps upgrade --all
 caps
 corepack enable
@@ -171,16 +173,19 @@ yarn vite build --base=./
 ### Step A：确认 Calcit CLI 版本
 
 ```bash
-cargo install calcit --bin calcit --bin caps --force
+cargo install calcit --bin calcit --force
+cargo install calcit-caps --force
 calcit --version
+caps --version
 caps --help
 ```
 
-说明：`calcit` 和 `caps` 是同一 Calcit 发布链路中的用户工具，应一起更新。不要先用旧 `caps` 改依赖，
-再用新 `calcit` 判断结果；也不要只更新本机而让 CI 继续安装旧版。若团队通过其他受控方式分发二进制，
-使用该方式即可，但要记录实际版本，并确认 `caps --help` 已包含项目需要的新选项。
+说明：`calcit` 和 `caps` 是独立发布的用户工具。`:calcit-version` 只固定 runtime/compiler；caps 需要
+单独固定一个经过该 Calcit 版本和真实项目 smoke 验证的稳定版本。不要先用未经验证的旧 `caps` 改依赖，
+再用新 `calcit` 判断结果；也不要只更新本机而让 CI 继续安装另一版本。若团队通过其他受控方式分发二进制，
+使用该方式即可，但要分别记录实际版本，并确认 `caps --help` 已包含项目需要的新选项。
 
-> ⚠️ CI 中 `calcit`/`caps` 的项目版本来自 `deps.cirru` 的 `:calcit-version`。新 workflow 使用 `calcit-lang/setup-calcit@v1` 安装该版本，不要再在 workflow 重复传 `version`。Action 会对新 release 临时提供 `cr -> calcit` 兼容链接；对旧 release 则回退到 `cr` asset 并暴露 `calcit`。新命令统一写 `calcit`。已发布的 `calcit-lang/setup-cr` tag 继续支持旧项目；GitHub Actions 不会为 Action 仓库改名重定向，因此迁移必须显式替换 `uses:`。详见 [GitHub Actions](../installation/github-actions.md)。
+> ⚠️ CI 中 Calcit runtime/compiler 的项目版本来自 `deps.cirru :calcit-version`；caps 使用 setup-calcit 独立固定的稳定版本，必要时通过 `caps-version` 显式覆盖。普通 workflow 不重复传 `version`。Action 会对新 Calcit release 临时提供 `cr -> calcit` 兼容链接；对旧 release 则回退到 `cr` asset 并暴露 `calcit`。新命令统一写 `calcit`。已发布的 `calcit-lang/setup-cr` tag 继续支持旧项目；GitHub Actions 不会为 Action 仓库改名重定向，因此迁移必须显式替换 `uses:`。详见 [GitHub Actions](../installation/github-actions.md)。
 
 ### Step B：先对齐项目版本与 Node 工具链
 

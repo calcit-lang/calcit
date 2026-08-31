@@ -1,6 +1,6 @@
 ---
 title: "Caps extraction contract"
-summary: "Compatibility, version, storage, command, dependency, and regression boundaries for extracting caps from Calcit core"
+summary: "Completed caps extraction boundary, independent release contract, and retained Calcit module-loading compatibility"
 scope: "tool"
 kind: "maintainer-guide"
 category: "run"
@@ -25,21 +25,23 @@ entry_for:
 `deps.cirru`、Git/SemVer ref、递归依赖图、immutable module store、项目链接、
 native artifact realization/receipt/verification，以及相关诊断和恢复。
 
-Calcit core 继续拥有 Snapshot/module loading 语义和 `deps.cirru` 的兼容要求，但不应
-长期拥有 resolver、store、Git、lock 或 native artifact 实现。native ABI 的唯一 Rust
-source of truth 是 `calcit_native_ffi::abi`；独立 caps 必须用
+实现与发布现归 [`calcit-lang/caps`](https://github.com/calcit-lang/caps) 所有，crate 名为
+`calcit-caps`，命令仍为 `caps`。Calcit core 继续拥有 Snapshot/module loading 语义和
+`deps.cirru` 的兼容要求，但不再拥有 resolver、store、Git、lock 或 native artifact 实现。
+native ABI 的唯一 Rust source of truth 是 `calcit_native_ffi::abi`；独立 caps 以
 `default-features = false` 直接消费，不经 `calcit::ffi_abi` 间接引用。
 
-### 当前 extraction inventory
+### 已迁出的 baseline inventory
 
-| Source | Scope | Baseline |
-| --- | --- | --- |
-| `src/bin/calcit_deps.rs` | CLI、manifest/toolchain guard、upgrade/version | 1,267 行，9 项 unit tests |
-| `src/bin/caps_graph.rs` | resolver、store、project view、native artifacts、locking/recovery | 1,836 行，15 项 unit tests |
-| `src/bin/git/mod.rs` | non-interactive Git clone/ref/status | 93 行 |
-| `tests/caps_cli_contract.rs` | 无网络 public CLI contract | help surface、explicit input/version read、missing input failure |
+| Former core source | Ownership after cutover |
+| --- | --- |
+| `src/bin/calcit_deps.rs` | standalone caps CLI、manifest/toolchain guard、upgrade/version |
+| `src/bin/caps_graph.rs` | standalone resolver、store、project view、native artifacts、locking/recovery |
+| `src/bin/git/mod.rs` | standalone non-interactive Git clone/ref/status |
+| `tests/caps_cli_contract.rs` | standalone public CLI and cross-project contract suites |
 
-迁移时逐项移动上述实现与 tests；不能复制后让两个仓库长期各自演进。
+这些 core 路径在独立 `0.1.0` 发布和真实项目 smoke 后删除，不再复制演进。Calcit core
+只保留 module path/Snapshot loading compatibility tests；package-manager regression 属于独立仓库。
 
 ### 稳定用户契约
 
@@ -71,8 +73,7 @@ source of truth 是 `calcit_native_ffi::abi`；独立 caps 必须用
 
 ### 版本解耦
 
-当前 `env!("CARGO_PKG_VERSION")` 同时充当 caps package version 和 expected Calcit
-toolchain version，拆仓后必须删除该耦合：
+独立发布已经删除 caps package version 与 Calcit toolchain version 的耦合：
 
 1. `caps --version` 只报告 caps 自身版本；
 2. `deps.cirru :calcit-version` 只声明项目需要的 Calcit toolchain；
@@ -81,7 +82,7 @@ toolchain version，拆仓后必须删除该耦合：
    caps 自身版本；
 5. `@calcit/procs` manifest 与 installed version 继续精确匹配 `:calcit-version`。
 
-具体 override flag/API 在独立仓库实现前确定；它不能改变以上三种版本的所有权。
+`setup-calcit` 通过独立 `caps-version` 输入固定已验证的 caps release；这不会改变以上三种版本的所有权。
 
 ### 迁移回归矩阵
 
@@ -91,11 +92,12 @@ toolchain version，拆仓后必须删除该耦合：
   project-view rollback、clean preservation；
 - native：buffer、async/blocking、resource symbols，receipt digest，allocator ownership；
 - CLI：help command surface、显式/默认 input、stdout/stderr/exit status、version get/set/bump；
-- real projects：Calcium Workflow 与 Respo 使用稳定 calcit + candidate caps 完成
+- real projects：Calcium Workflow 与 Respo 使用稳定 calcit + stable caps 完成
   install/status/verify/check。
 
-迁移顺序由 [#546](https://github.com/calcit-lang/calcit/issues/546) 索引：先冻结本契约，
-再建立独立仓库，发布验证后才从 core 删除实现。
+迁移由 [#546](https://github.com/calcit-lang/calcit/issues/546) 和
+[#555](https://github.com/calcit-lang/calcit/issues/555) 索引。独立 `0.1.0` 已通过 Calcium Workflow/Respo
+smoke；后续 package-manager 改动、tests 与 release 只在独立仓库维护。
 
 ## English
 
@@ -106,12 +108,12 @@ toolchain version，拆仓后必须删除该耦合：
 storage, project views, native artifact realization/receipts/verification, and
 their diagnostics and recovery paths.
 
-Calcit core retains Snapshot/module-loading semantics and the compatibility
-requirements of `deps.cirru`, but should not continue owning resolver, store,
-Git, lock, or native-artifact implementations. `calcit_native_ffi::abi` is the
-single Rust source of truth for native ABI. Standalone caps consumes it
-directly with default features disabled instead of depending on
-`calcit::ffi_abi`.
+Implementation and releases now belong to
+[`calcit-lang/caps`](https://github.com/calcit-lang/caps), published as the
+`calcit-caps` crate while retaining the `caps` command. Calcit core keeps
+Snapshot/module-loading semantics and `deps.cirru` compatibility, but no
+longer owns resolver, store, Git, lock, or native-artifact implementations.
+`calcit_native_ffi::abi` remains the single Rust source of truth for native ABI.
 
 ### Stable contract
 
@@ -131,7 +133,7 @@ identity, artifact digests, and ABI protocols.
 
 ### Version separation
 
-The current `env!("CARGO_PKG_VERSION")` coupling must not cross the repository
+The former `env!("CARGO_PKG_VERSION")` coupling does not cross the repository
 boundary. The caps package reports only its own version; `:calcit-version`
 selects the project toolchain; toolchain verification probes installed
 `calcit` by default; and explicit CI/embedding input reports its provenance.
@@ -140,14 +142,13 @@ project's Calcit version exactly.
 
 ### Regression baseline
 
-Move the existing 24 unit tests and keep coverage for ref selection, graph
-groups, storage/cache/locking/recovery, native ABI and receipts, CLI
-stdout/stderr/exit behavior, and real Calcium Workflow/Respo installation.
-`tests/caps_cli_contract.rs` adds a network-free binary-level baseline for the
-public command surface, explicit version reads without mutation, and missing
-input failure.
+The standalone repository owns coverage for ref selection, graph groups,
+storage/cache/locking/recovery, native ABI and receipts, CLI behavior, and real
+Calcium Workflow/Respo installation. Core retains only Snapshot and module-path
+loading compatibility, so package-manager logic has one implementation and one
+regression suite.
 
-[#546](https://github.com/calcit-lang/calcit/issues/546) indexes the migration:
-freeze this contract first, bootstrap the standalone repository second, and
-remove the core implementation only after a published candidate passes the
-cross-repository smoke.
+[#546](https://github.com/calcit-lang/calcit/issues/546) and
+[#555](https://github.com/calcit-lang/calcit/issues/555) index the completed
+cutover. Standalone `0.1.0` passed Calcium Workflow/Respo smoke before core
+removed its duplicate implementation and release asset.
