@@ -12,4 +12,4 @@
 - Rebased the Calx benchmark product-asset cleanup onto current `main` after the standalone caps cutover merged.
 - Resolved the README overlap by retaining final ownership for both extracted modules while keeping Calx lowering/cache/runtime/correctness in core.
 - Corrected the sequential delta to binary targets `3 → 2` with direct dependencies remaining `30`; only `calcit` and `cr-wasm` remain as final targets.
-- The removed runner target is outside the `calcit` link path; isolated before/after release builds on the original base were byte-identical at `9,515,920` bytes.
+- The removed runner target is outside the `calcit` link path; a fresh release build after rebasing onto the caps cutover is byte-identical to that sequential baseline at `9,516,000` bytes.
