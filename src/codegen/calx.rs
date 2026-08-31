@@ -8,6 +8,9 @@
 mod cache;
 mod lowering;
 
+#[doc(hidden)]
+pub mod benchmark;
+
 pub use cache::{CalxCacheMissReason, CalxCachePreparation, CalxCachePrepareReport, CalxCompileCache, CalxCompileCacheStats};
 pub use calx_vm::{Calx as CalxValue, CalxBuildError, CalxError, CalxProgramError};
 pub use lowering::{

@@ -36,7 +36,7 @@ cadence are maintained separately or tracked for extraction:
 | [`calcit-bindgen`](https://github.com/calcit-lang/calcit-bindgen) | Independent repository; production generator parity and removal of the core preview are tracked in [#544](https://github.com/calcit-lang/calcit/issues/544). |
 | [`calcit-native-ffi`](https://github.com/calcit-lang/calcit-native-ffi) | Independent production shared ABI/helper crate for native modules; canonical ABI ownership is tracked in [calcit-native-ffi#7](https://github.com/calcit-lang/calcit-native-ffi/issues/7). |
 | `caps` | Still shipped from this repository while independent package-manager extraction is tracked in [#546](https://github.com/calcit-lang/calcit/issues/546). |
-| `calcit-calx-bench` | Experimental harness still in this repository; extraction of benchmark policy and reports is tracked in [#547](https://github.com/calcit-lang/calcit/issues/547), while Calx backend semantics remain in core. |
+| `calcit-calx-bench` | The standalone experimental harness exists at [`calcit-lang/calcit-calx-bench`](https://github.com/calcit-lang/calcit-calx-bench). The transitional runner remains here until the revision-pinned adapter reproduction and [#559](https://github.com/calcit-lang/calcit/issues/559) cutover; Calx backend semantics remain in core. |
 
 See [#549](https://github.com/calcit-lang/calcit/issues/549) for the bilingual repository-boundary roadmap.
 Calcit has no near-term LSP plan, so analysis and Agent CLI capabilities remain in this repository and release

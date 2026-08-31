@@ -627,6 +627,22 @@ fn remove_compiled_ns(ns: &str) {
   program.remove(ns);
 }
 
+/// Replace one explicitly named benchmark namespace without exposing the
+/// compiler's mutable registries to the benchmark consumer.
+///
+/// The revision-pinned benchmark adapter is the only intended caller. It
+/// serializes session creation, registers stable definition ids, and retains
+/// the installed namespace for the lifetime of the session because cached
+/// Calcit callables may resolve same-namespace callees through runtime cells.
+pub(crate) fn replace_benchmark_namespace(ns: Arc<str>, file: ProgramFileData) {
+  for def in file.defs.keys() {
+    let _ = register_program_def_id(&ns, def);
+  }
+  clear_runtime_ns(&ns);
+  remove_compiled_ns(&ns);
+  PROGRAM_CODE_DATA.write().expect("write benchmark source corpus").insert(ns, file);
+}
+
 fn collect_transitive_dependent_def_ids(compiled: &ProgramCompiledData, seed_ids: &HashSet<DefId>) -> HashSet<DefId> {
   if seed_ids.is_empty() {
     return HashSet::new();

@@ -9,7 +9,7 @@
   },
   "targetRepository": {
     "suggested": "calcit-lang/calcit-calx-bench",
-    "confirmed": false,
+    "confirmed": true,
     "existingCalcitCalxRole": "native-ffi-demo-do-not-absorb-harness"
   },
   "sourcesOfTruth": {
@@ -36,6 +36,7 @@
   ],
   "stayInCore": [
     "src/codegen/calx.rs",
+    "src/codegen/calx/benchmark.rs",
     "src/codegen/calx/lowering.rs",
     "src/program/tests.rs",
     "tests/fixtures/calx/scalar-kernels.cirru",
@@ -56,6 +57,8 @@
     "absoluteCiThresholds": false
   },
   "adapter": {
+    "implementation": "src/codegen/calx/benchmark.rs",
+    "transitionalConsumer": "src/bin/calx_bench.rs",
     "requiredOperations": [
       "install-explicit-source-corpus",
       "preprocess-to-immutable-program-handle",

@@ -2,17 +2,17 @@
 
 ## Status / 状态
 
-This document freezes the phase-one boundary tracked by
+This document freezes the extraction boundary tracked by
 [calcit#557](https://github.com/calcit-lang/calcit/issues/557). The harness is
 an **experimental benchmark/research product**, not a Calcit runtime feature,
-language correctness gate, or production dependency. This phase documents the
-contract and bootstrap inventory; it does not create a repository or remove
-assets from Calcit core.
+language correctness gate, or production dependency. The standalone repository
+now exists; core removal remains a later cutover after the pinned adapter and
+reproduction evidence are complete.
 
 本文冻结 [calcit#557](https://github.com/calcit-lang/calcit/issues/557)
-追踪的第一阶段边界。该 harness 是**实验性 benchmark/research 产品**，不是 Calcit
-runtime 功能、语言正确性 gate 或生产依赖。本阶段只记录契约和 bootstrap inventory，
-不创建仓库，也不从 Calcit core 删除资产。
+追踪的拆分边界。该 harness 是**实验性 benchmark/research 产品**，不是 Calcit runtime
+功能、语言正确性 gate 或生产依赖。独立仓库已经建立；只有 pinned adapter 与复现实证完成后，
+后续 cutover 才会从 Calcit core 删除产品资产。
 
 The machine-readable bootstrap manifest is
 [`calx-harness-bootstrap.json`](./calx-harness-bootstrap.json). Issue
@@ -23,13 +23,15 @@ owns the later core cutover.
 
 ## Product and repository boundary / 产品与仓库边界
 
-The proposed standalone repository name is `calcit-lang/calcit-calx-bench`,
-pending maintainer confirmation in #558. The existing
+The confirmed standalone repository is
+[`calcit-lang/calcit-calx-bench`](https://github.com/calcit-lang/calcit-calx-bench).
+The existing
 [`calcit-lang/calcit-calx`](https://github.com/calcit-lang/calcit-calx) remains
 a native FFI demo and must not silently absorb benchmark orchestration,
 historical reports, or release policy.
 
-建议的独立仓库名为 `calcit-lang/calcit-calx-bench`，等待维护者在 #558 确认。已有
+已确认并建立的独立仓库为
+[`calcit-lang/calcit-calx-bench`](https://github.com/calcit-lang/calcit-calx-bench)。已有
 [`calcit-lang/calcit-calx`](https://github.com/calcit-lang/calcit-calx)
 继续保持 native FFI demo 定位，不静默承接 benchmark orchestration、历史报告或发布策略。
 
@@ -128,9 +130,24 @@ quick-smoke matrix before changing the pin. Mutable-global access, implicit
 source installation, automatic fallback after effects, and benchmark policy
 inside core are forbidden.
 
+The implementation lives in the doc-hidden
+`codegen::calx::benchmark` module. `CalxBenchmarkSession` serializes explicit
+corpus installation, preprocesses every declared function exactly once, owns
+an immutable `CompiledProgram` snapshot, and validates both Calcit and Calx
+calls against concrete scalar signatures. Unit is explicit; Nil, Dynamic, and
+persistent collection coercion are absent from the adapter contract. The
+transitional core runner consumes only this session API, and a source-level
+contract regression prevents it from reaching compiler registries again.
+
 该 adapter 是 **internal benchmark API**，不承诺 semver 兼容，也不能意外扩张成通用
 embedding API。harness 固定 Calcit commit/tag，升级 pin 前运行 compile 与 quick-smoke matrix。
 禁止暴露可变全局、隐式安装源码、effect 后自动 fallback，以及把 benchmark policy 放回 core。
+
+实现位于 doc-hidden 的 `codegen::calx::benchmark` 模块。`CalxBenchmarkSession`
+串行封装显式 corpus 安装，一次预处理所有声明函数，持有 immutable `CompiledProgram` snapshot，
+并用 concrete scalar schema 校验 Calcit 与 Calx 两条调用路径。Unit 为显式返回类型；adapter
+契约不包含 Nil、Dynamic 或 persistent collection coercion。过渡期 core runner 只消费该
+session API，source-level contract regression 阻止它重新访问 compiler registry。
 
 ## Test and smoke migration matrix / 测试与 smoke 迁移矩阵
 
