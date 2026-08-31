@@ -5,6 +5,7 @@
 //! call graph, or one stable fallback report. Eligible graphs can then be lowered through
 //! `calx_vm::ProgramBuilder` and strict validation without admitting Nil or Dynamic values.
 
+pub mod benchmark_session;
 mod cache;
 mod lowering;
 

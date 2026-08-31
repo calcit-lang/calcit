@@ -33,6 +33,7 @@
 - **Calx profile 证据**：Calx 性能与 cache 决策以 `docs/run/calx-benchmark.md`、`docs/run/calx-compile-cache.md` 和 `benchmarks/calx/*.json` 为 source of truth；原始 profiler 文件留在 `target/`，提交的摘要必须记录干净 commit、环境、命令、迭代数、原始文件哈希与 inclusive-stack 限制。
 - **迁移完成才删除**：只有目标仓库具备文档、Actions、发布或实验运行入口、兼容验证与跨仓库 smoke 后，才能从主仓库删除原实现；迁移期 README 必须同时说明当前入口与目标状态。
 - **Calx harness 契约**：实验性 benchmark 拆分以 `docs/run/calx-harness-extraction.md` 和 machine-readable bootstrap manifest 为准；lowering/correctness 留在 core，外部 harness 必须 pin Calcit revision，不能依赖可变全局或把机器阈值写成 correctness gate。
+- **Calx session adapter**：外部 harness 只能经 `calcit::codegen::calx::benchmark_session` 使用固定 revision 的内部接口，并记录 `CALX_BENCHMARK_SESSION_EDITION`；不得重新引入 `PROGRAM_CODE_DATA`、`ProgramFileData`、`ensure_def_id`、`run_fn` 或其他 mutable-global 访问。
 
 直接使用命令修改 calcit 程序时不需要调用 cargo, 直接按照文档给出的命令行示例执行即可。
 
