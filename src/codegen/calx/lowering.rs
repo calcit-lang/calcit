@@ -351,6 +351,7 @@ impl CalxPreparedKernel {
       let converted = match (expected, value) {
         (CalxScalarType::F64, Calcit::Number(value)) => VmValue::F64(*value),
         (CalxScalarType::Bool, Calcit::Bool(value)) => VmValue::Bool(*value),
+        (CalxScalarType::F64Buffer, Calcit::F64Buffer(values)) => VmValue::f64_buffer_copy_from_slice(values),
         _ => {
           return Err(CalxKernelRunError::Boundary(CalxKernelBoundaryError {
             kind: CalxKernelBoundaryErrorKind::ArgumentType,
@@ -371,6 +372,9 @@ impl CalxPreparedKernel {
       (None, CalxRunResult::Void) => Ok(Calcit::Unit),
       (Some(CalxScalarType::F64), CalxRunResult::Value(VmValue::F64(value))) => Ok(Calcit::Number(value)),
       (Some(CalxScalarType::Bool), CalxRunResult::Value(VmValue::Bool(value))) => Ok(Calcit::Bool(value)),
+      (Some(CalxScalarType::F64Buffer), CalxRunResult::Value(VmValue::F64Buffer(values))) => {
+        Ok(Calcit::F64Buffer(std::sync::Arc::from(values.as_ref())))
+      }
       (expected, actual) => Err(CalxKernelRunError::Boundary(CalxKernelBoundaryError {
         kind: CalxKernelBoundaryErrorKind::ResultType,
         message: format!("validated result contract {expected:?} produced {actual:?}"),
@@ -687,6 +691,9 @@ enum PlannedOperation {
   Equal,
   LessThan,
   GreaterThan,
+  F64BufferLen,
+  F64ToI64Index,
+  F64BufferGet,
 }
 
 struct PlanningContext<'a> {
@@ -962,6 +969,9 @@ fn plan_proc(
     CalcitProc::NativeEquals => (Some(PlannedOperation::Equal), Some(CalxScalarType::Bool)),
     CalcitProc::NativeLessThan => (Some(PlannedOperation::LessThan), Some(CalxScalarType::Bool)),
     CalcitProc::NativeGreaterThan => (Some(PlannedOperation::GreaterThan), Some(CalxScalarType::Bool)),
+    CalcitProc::NativeF64BufferLen => (Some(PlannedOperation::F64BufferLen), Some(CalxScalarType::F64)),
+    CalcitProc::NativeF64ToI64Index => (Some(PlannedOperation::F64ToI64Index), Some(CalxScalarType::F64)),
+    CalcitProc::NativeF64BufferGet => (Some(PlannedOperation::F64BufferGet), Some(CalxScalarType::F64)),
     CalcitProc::Recur => {
       let name = context
         .names
@@ -1043,6 +1053,7 @@ fn scalar_local_type(local: &CalcitLocal, function: &CalxDefinitionRef) -> Resul
   match local.type_info.as_ref() {
     crate::calcit::CalcitTypeAnnotation::Number => Ok(Some(CalxScalarType::F64)),
     crate::calcit::CalcitTypeAnnotation::Bool => Ok(Some(CalxScalarType::Bool)),
+    crate::calcit::CalcitTypeAnnotation::F64Buffer => Ok(Some(CalxScalarType::F64Buffer)),
     other => Err(lower_error(
       function,
       local.location.as_ref().map(|path| path.as_ref().clone()),
@@ -1180,6 +1191,9 @@ fn emit_expression(
         PlannedOperation::Equal => body.emit(VmSyntax::F64Eq)?,
         PlannedOperation::LessThan => body.emit(VmSyntax::F64Lt)?,
         PlannedOperation::GreaterThan => body.emit(VmSyntax::F64Gt)?,
+        PlannedOperation::F64BufferLen => body.f64_buffer_len()?,
+        PlannedOperation::F64ToI64Index => body.f64_to_i64_index()?,
+        PlannedOperation::F64BufferGet => body.f64_buffer_get()?,
       };
     }
     PlannedExpressionKind::Call {

@@ -430,6 +430,9 @@ impl GraphBuilder {
       CalcitTypeAnnotation::Symbol => Ok(self.push(DataShapeNode::Symbol)),
       CalcitTypeAnnotation::Tag => Ok(self.push(DataShapeNode::Tag)),
       CalcitTypeAnnotation::Buffer => Ok(self.push(DataShapeNode::Buffer)),
+      CalcitTypeAnnotation::F64Buffer => Err(unsupported_type(
+        "F64Buffer is an opaque strict-kernel boundary, not serializable application data",
+      )),
       CalcitTypeAnnotation::CirruQuote => Ok(self.push(DataShapeNode::CirruQuote)),
       CalcitTypeAnnotation::Optional(inner) => {
         let inner = self.build_type(inner, default_ns)?;

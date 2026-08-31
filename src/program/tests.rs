@@ -401,6 +401,78 @@ fn calx_lowering_executes_five_source_kernels_like_native_calcit() {
   ));
 }
 
+fn install_calx_f64_buffer_kernel_fixture(namespace: &str) {
+  let mut source_defs = calx_test_defs_from_source(namespace, include_str!("../../tests/fixtures/calx/f64-buffer-kernel.cirru"));
+  install_calx_test_defs(
+    namespace,
+    vec![(
+      "dot-product",
+      source_defs.remove("dot-product").expect("dot-product source"),
+      calx_test_fn_schema(
+        vec![
+          CalcitTypeAnnotation::F64Buffer,
+          CalcitTypeAnnotation::F64Buffer,
+          CalcitTypeAnnotation::Number,
+          CalcitTypeAnnotation::Number,
+        ],
+        CalcitTypeAnnotation::Number,
+      ),
+    )],
+  );
+  compile_calx_test_entry(namespace, "dot-product");
+}
+
+#[test]
+fn calx_f64_buffer_dot_product_is_source_backed_strict_and_differential() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-f64-buffer";
+  install_calx_f64_buffer_kernel_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed F64Buffer fixture");
+
+  let graph = analyze_calx_eligibility(&snapshot, namespace, "dot-product").expect("F64Buffer kernel should be eligible");
+  assert_eq!(graph.abi_edition.as_ref(), "calcit-calx-kernel/2");
+  assert_eq!(
+    graph.functions[0].params,
+    vec![
+      CalxScalarType::F64Buffer,
+      CalxScalarType::F64Buffer,
+      CalxScalarType::F64,
+      CalxScalarType::F64,
+    ]
+  );
+
+  let args = vec![
+    Calcit::F64Buffer(Arc::from([1.0, 2.0, 3.0])),
+    Calcit::F64Buffer(Arc::from([4.0, 5.0, 6.0])),
+    Calcit::Number(2.0),
+    Calcit::Number(0.0),
+  ];
+  let kernel = compile_calx_kernel(&snapshot, namespace, "dot-product").expect("compile strict F64Buffer kernel");
+  assert_eq!(
+    kernel.stable_program_summary(),
+    include_str!("../../tests/fixtures/calx/f64-buffer-kernel.golden.txt")
+  );
+  let calx_result = kernel.run(&args).expect("run strict F64Buffer kernel");
+  let native_result =
+    run_program_with_docs(Arc::from(namespace), Arc::from("dot-product"), &args).expect("run native F64Buffer kernel");
+  assert_eq!(calx_result, Calcit::Number(32.0));
+  assert_eq!(calx_result, native_result);
+  assert!(kernel.stable_program_summary().contains("F64BufferGet"));
+
+  for invalid in [Calcit::Nil, Calcit::from(vec![Calcit::Number(1.0)]), Calcit::Buffer(vec![0, 1])] {
+    let error = kernel
+      .run(&[invalid, args[1].clone(), Calcit::Number(2.0), Calcit::Number(0.0)])
+      .expect_err("only concrete F64Buffer crosses the strict boundary");
+    assert!(matches!(error, CalxKernelRunError::Boundary(ref boundary) if boundary.kind == CalxKernelBoundaryErrorKind::ArgumentType));
+  }
+
+  let trap = kernel
+    .run(&[args[0].clone(), args[1].clone(), Calcit::Number(3.0), Calcit::Number(0.0)])
+    .expect_err("out-of-bounds buffer access must trap without native retry");
+  assert!(matches!(trap, CalxKernelRunError::Runtime(_)));
+}
+
 #[test]
 fn calx_measured_compile_reports_non_overlapping_stages() {
   let _guard = lock_program_test_state();

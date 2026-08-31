@@ -147,6 +147,7 @@ fn calcit_to_json(value: &Calcit) -> Result<Value, CalcitErr> {
     | Calcit::Registered(..)
     | Calcit::Local(..)
     | Calcit::AnyRef(..)
+    | Calcit::F64Buffer(..)
     | Calcit::BufList(..) => {
       let msg = format!(
         "json-stringify cannot encode value of type: {}",

@@ -1,6 +1,6 @@
-# 实验性 Calx target：typed scalar kernel lowering
+# 实验性 Calx target：typed kernel lowering
 
-Calcit 正在验证一个很窄的 typed scalar kernel 子集能否编译到 Calx。这个实验不改变默认 native
+Calcit 正在验证一个很窄的 typed kernel 子集能否编译到 Calx。这个实验不改变默认 native
 runner、JS codegen 或仓库内部 WASM backend，也不会把任意 Calcit 函数静默发送给另一个运行时。
 
 当前阶段建立 eligibility boundary，并把通过证明的 closed kernel 降为可执行的 strict Calx program：
@@ -68,22 +68,25 @@ artifact。命中逐项核对旧 reachable set；entry/direct/transitive/schema 
 name；direct tail call 与 `recur` 降为 `return-call`。
 
 运行边界严格按已证明签名逐项转换：Calcit `Number` 对应 Calx `F64`，Calcit `Bool` 对应 Calx
-`Bool`，void result 对应 Calcit `Unit`。`Nil`、Dynamic 或任意不匹配的 runtime value 会在进入 VM
-之前被拒绝，不会被编码为占位值。
+`Bool`，Calcit `F64Buffer` 对应 immutable Calx `F64Buffer`，void result 对应 Calcit `Unit`。
+`F64Buffer` 不复用 byte `Buffer` 或 persistent `List`，也不做隐式 element conversion。`Nil`、Dynamic
+或任意不匹配的 runtime value 会在进入 VM 之前被拒绝，不会被编码为占位值。
 
 ## 首批接受范围
 
-- function boundary 与 local：`Number`、`Bool`；函数结果额外接受 `Unit`，映射为 void；
+- function boundary 与 local：`Number`、`Bool`、immutable `F64Buffer`；函数结果额外接受 `Unit`，映射为 void；
 - fixed arity top-level function；
 - Number/Bool literal、typed local、单 binding `&let`、有 else 的 `if`；
 - `&+`、一元/二元 `&-`、`&*`、`&/`、`&=`、`&<`、`&>`；
+- internal typed-buffer intrinsics：`&f64-buffer:len`、`&f64:to-i64-index`、`&f64-buffer:get`；后两者的
+  conversion/bounds failure 在 VM 中 trap，绝不返回 `Nil`；
 - fixed-arity direct call 与 tail-position `recur`；
 - 显式 allowlist 的 zero-result / single-result typed host import；
 - 条件必须静态为 Bool，不复用 Calcit 或 Calx 的 numeric truthiness。
 
 首批明确拒绝：
 
-- `Dynamic`、`Nil`、Optional/JsNullish，以及除 Number/Bool/Unit 之外的 boundary/storage type；
+- `Dynamic`、`Nil`、Optional/JsNullish，以及除 Number/Bool/F64Buffer/Unit 之外的 boundary/storage type；
 - closure、function value、local/dynamic operator、HOF、rest/optional arity；
 - 无 else 的 `if`、非 tail `recur`、global/ref/atom、collection/nominal value；
 - 未加入 allowlist 的 host/native capability。
@@ -101,7 +104,8 @@ scalar 进入 VM，callback 只借用本次调用的 slice，single result 由 c
 
 ## Fallback contract
 
-fallback 使用 ABI edition `calcit-calx-kernel/1`，并保留 entry、失败 definition、可用的 source tree
+scalar-only kernel 使用 ABI edition `calcit-calx-kernel/1`；包含 `F64Buffer` 或 typed-buffer intrinsic
+的 kernel 使用 `calcit-calx-kernel/2`。两种 report 都保留 entry、失败 definition、可用的 source tree
 path、call path、稳定 code 与人类可读 message。稳定 code 包括：
 
 - `CALX_SUBSET_DYNAMIC_TYPE`
@@ -139,6 +143,11 @@ VM 中实际执行，并与同一源码的 Calcit native runner 做差分比较�
 覆盖 zero-result observe capability、single-result numeric capability 和 trapping capability。对应
 generated-program golden 固定 import declaration、guest syntax 与 Calcit tree origin；trap golden 固定
 `CALX_HOST_IMPORT` 诊断。签名不一致的显式 capability 在 lowering 前整体 fallback。
+
+[`tests/fixtures/calx/f64-buffer-kernel.cirru`](../../tests/fixtures/calx/f64-buffer-kernel.cirru) 是 ABI `/2`
+的 source-backed dot product：两个 concrete `F64Buffer`、checked Number index 与 accumulator 经过真实
+Calcit preprocessing 后，生成程序 golden 固定 `F64ToI64Index`/`F64BufferGet`。测试同时对照 native
+Calcit 执行，并拒绝 Nil、List、byte Buffer 和越界访问；VM trap 后不会自动重跑 native Calcit。
 
 ## 错误与回退边界
 

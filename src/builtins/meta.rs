@@ -95,6 +95,7 @@ pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Ref(..) => Ok(Calcit::tag("ref")),
     Enum { .. } => Ok(Calcit::tag("enum")),
     Buffer(..) => Ok(Calcit::tag("buffer")),
+    F64Buffer(..) => Ok(Calcit::tag("f64-buffer")),
     BufList(..) => Ok(Calcit::tag("buf-list")),
     CirruQuote(..) => Ok(Calcit::tag("cirru-quote")),
     Recur(..) => Ok(Calcit::tag("recur")),
@@ -1901,6 +1902,49 @@ pub fn buffer(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Buffer(buf))
 }
 
+/// Return the concrete F64Buffer length without exposing boxed elements.
+pub fn f64_buffer_len(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  let [Calcit::F64Buffer(values)] = xs else {
+    return CalcitErr::err_nodes(CalcitErrKind::Type, "f64-buffer.len expected one F64Buffer:", xs);
+  };
+  if values.len() >= (1usize << 63) {
+    return CalcitErr::err_str(
+      CalcitErrKind::Unexpected,
+      format!("f64-buffer.len length {} does not fit i64", values.len()),
+    );
+  }
+  Ok(Calcit::Number(values.len() as f64))
+}
+
+/// Match the strict Calx F64-to-I64 index domain without a Nil sentinel.
+pub fn f64_to_i64_index(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  let [Calcit::Number(value)] = xs else {
+    return CalcitErr::err_nodes(CalcitErrKind::Type, "f64.to-i64-index expected one Number:", xs);
+  };
+  if !value.is_finite() || value.fract() != 0.0 || *value < 0.0 || *value >= 9_223_372_036_854_775_808.0 {
+    return CalcitErr::err_str(CalcitErrKind::Unexpected, format!("f64.to-i64-index rejected {value}"));
+  }
+  Ok(Calcit::Number(*value))
+}
+
+/// Read one checked element from a concrete F64Buffer; invalid indexes trap.
+pub fn f64_buffer_get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  let [Calcit::F64Buffer(values), Calcit::Number(index)] = xs else {
+    return CalcitErr::err_nodes(CalcitErrKind::Type, "f64-buffer.get expected F64Buffer and Number index:", xs);
+  };
+  if !index.is_finite() || index.fract() != 0.0 || *index < 0.0 || *index >= 9_223_372_036_854_775_808.0 {
+    return CalcitErr::err_str(CalcitErrKind::Unexpected, format!("f64-buffer.get rejected index {index}"));
+  }
+  let index = *index as usize;
+  let Some(value) = values.get(index) else {
+    return CalcitErr::err_str(
+      CalcitErrKind::Unexpected,
+      format!("f64-buffer.get index {index} is out of bounds for length {}", values.len()),
+    );
+  };
+  Ok(Calcit::Number(*value))
+}
+
 pub fn hash(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&hash expected 1 argument, but received:", xs);
@@ -2224,5 +2268,29 @@ mod tests {
       error.msg
     );
     assert!(error.msg.contains("line 1, column 1"), "missing source location: {}", error.msg);
+  }
+
+  #[test]
+  fn f64_buffer_primitives_keep_a_strict_non_nil_index_contract() {
+    let buffer = Calcit::F64Buffer(Arc::from([2.0, 3.0]));
+    assert_eq!(
+      f64_buffer_len(std::slice::from_ref(&buffer)).expect("measure concrete buffer"),
+      Calcit::Number(2.0)
+    );
+    assert_eq!(
+      f64_buffer_get(&[buffer.clone(), Calcit::Number(1.0)]).expect("read concrete buffer"),
+      Calcit::Number(3.0)
+    );
+    assert_eq!(
+      f64_to_i64_index(&[Calcit::Number(0.0)]).expect("convert zero index"),
+      Calcit::Number(0.0)
+    );
+
+    for invalid in [Calcit::Number(-1.0), Calcit::Number(1.5), Calcit::Number(f64::NAN)] {
+      let error = f64_to_i64_index(&[invalid]).expect_err("non-index numbers must trap, never return Nil");
+      assert_eq!(error.kind, CalcitErrKind::Unexpected);
+    }
+    let error = f64_buffer_get(&[buffer, Calcit::Number(2.0)]).expect_err("out-of-bounds reads must trap");
+    assert_eq!(error.kind, CalcitErrKind::Unexpected);
   }
 }

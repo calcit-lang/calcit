@@ -270,6 +270,27 @@
             {} (:return 'Buffer)
               :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal :state
+        '&f64-buffer:len $ %{} 'CodeEntry (:doc "|strict immutable F64Buffer length")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'F64Buffer
+          :tags $ #{} :builtin :internal
+        '&f64:to-i64-index $ %{} 'CodeEntry (:doc "|checked strict F64Buffer index conversion")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'Number
+          :tags $ #{} :builtin :internal
+        '&f64-buffer:get $ %{} 'CodeEntry (:doc "|strict immutable F64Buffer checked read")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'F64Buffer 'Number
+          :tags $ #{} :builtin :internal
         '&call-spread $ %{} 'CodeEntry (:doc "|internal syntax for handling & spreading in function calls\nSyntax: (&call-spread fn args)\nParams: fn (function), args (list with spread)\nReturns: function call result\nHandles argument spreading in function calls")
           :code $ quote &runtime-implementation
           :examples $ []
