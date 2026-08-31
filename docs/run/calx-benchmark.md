@@ -43,7 +43,7 @@ CALX_BENCH_QUICK=1 CALX_BENCH_SAMPLES=1 yarn bench-calx-e2e
 
 - `CALX_BENCH_SAMPLES`：保留的 fresh-process 样本数；
 - `CALX_BENCH_PROCESS_WARMUP`：每个 case 丢弃的 fresh-process 样本数；
-- `CALX_BENCH_VM_WARMUP`：hot call 前复用同一 VM 的预热次数；
+- `CALX_BENCH_VM_WARMUP`：cached Calcit callable 与复用的 Calx VM 在 hot call 前各自的预热次数；
 - `CALX_BENCH_HOT_ITERATIONS`：每个进程内的 hot call 测量次数；
 - `CALX_BENCH_OUTPUT`：相对仓库根目录或绝对 JSON 输出路径。
 
@@ -126,7 +126,8 @@ The first complete clean-worktree baseline and its bounded conclusions are recor
 [`benchmarks/calx/README.md`](../../benchmarks/calx/README.md).
 
 The experiment can be pinned with `CALX_BENCH_SAMPLES`, `CALX_BENCH_PROCESS_WARMUP`,
-`CALX_BENCH_VM_WARMUP`, `CALX_BENCH_HOT_ITERATIONS`, and `CALX_BENCH_OUTPUT`.
+`CALX_BENCH_VM_WARMUP` (applied separately to the cached Calcit callable and reused Calx VM),
+`CALX_BENCH_HOT_ITERATIONS`, and `CALX_BENCH_OUTPUT`.
 
 On success, the single-case runner emits exactly one `calcit-calx-benchmark/2` JSON value on stdout. Failures are
 reported on stderr with a nonzero exit status:
