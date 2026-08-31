@@ -3,18 +3,18 @@
 Tracking: [calcit#552](https://github.com/calcit-lang/calcit/issues/552) and [calx-vm#39](https://github.com/calcit-lang/calx-vm/issues/39)
 
 Implementation status: the embedding-owned in-memory artifact cache described
-here is implemented in Calcit core. Standalone benchmark ownership and the
-cross-machine cache-hit evidence archive remain tracked separately by calcit#558/#559.
+here is implemented in Calcit core. Benchmark execution and the cross-machine
+cache-hit evidence archive are maintained by `calcit-lang/calcit-calx-bench`.
 
-实现状态：本文定义的 embedding-owned 内存 artifact cache 已在 Calcit core 实现；独立 benchmark
-归属与跨机器 cache-hit 证据归档仍由 calcit#558/#559 分开追踪。
+实现状态：本文定义的 embedding-owned 内存 artifact cache 已在 Calcit core 实现；benchmark 执行与
+跨机器 cache-hit 证据归档由 `calcit-lang/calcit-calx-bench` 独立维护。
 
 ## 中文
 
 ### Profile 结论
 
-基于干净提交 `ef04017f0bc60e2d8f6341599f00d426a11ed360` 的 release profile 见
-[`20260831-compile-profile-macos-arm64.json`](../../benchmarks/calx/20260831-compile-profile-macos-arm64.json)。
+基于干净提交 `ef04017f0bc60e2d8f6341599f00d426a11ed360` 的 release profile 见 standalone archive
+[`20260831-compile-profile-macos-arm64.json`](https://github.com/calcit-lang/calcit-calx-bench/blob/main/benchmarks/calx/20260831-compile-profile-macos-arm64.json)。
 五个 scalar kernel 的未插桩完整编译约为 15.3–20.9 μs/次；分阶段测量中 program construction 占总时间
 约 47–54%，eligibility 与 planning 各约 17–23%，validation/lowering 约 5–7%。每次编译产生约
 222–392 次 allocation、52–91 次 reallocation 和 22–38 KiB 累计请求。
@@ -122,8 +122,8 @@ artifact eviction 统计，之后该旧 key 按 `empty` 处理。
 
 ### Profile findings
 
-The release profile from clean commit `ef04017f0bc60e2d8f6341599f00d426a11ed360` is recorded in
-[`20260831-compile-profile-macos-arm64.json`](../../benchmarks/calx/20260831-compile-profile-macos-arm64.json).
+The release profile from clean commit `ef04017f0bc60e2d8f6341599f00d426a11ed360` is recorded in the standalone archive
+[`20260831-compile-profile-macos-arm64.json`](https://github.com/calcit-lang/calcit-calx-bench/blob/main/benchmarks/calx/20260831-compile-profile-macos-arm64.json).
 Uninstrumented complete compilation takes approximately 15.3–20.9 μs per scalar kernel. In staged measurements,
 program construction accounts for approximately 47–54% of total time, eligibility and planning each account for
 approximately 17–23%, and validation/lowering accounts for approximately 5–7%. One compilation performs roughly
