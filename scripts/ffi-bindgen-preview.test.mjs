@@ -109,3 +109,27 @@ test("preview rejects generated definition identifiers that collide across names
     /generated Rust\/TypeScript definition identifier "md5" collides between calcit\.std\.hash\/md5 and demo\.hash\/md5/u,
   );
 });
+
+test("preview rejects generated struct-field and enum-variant collisions", async () => {
+  const fixture = await readJson(path.join(fixtureRoot, "composite-interface.json"));
+
+  const structCollision = structuredClone(fixture);
+  structCollision.declarations[0].fields.push(
+    { name: "foo-bar", type: { kind: "string" } },
+    { name: "foo_bar", type: { kind: "string" } },
+  );
+  assert.throws(
+    () => generatePreview(structCollision),
+    /generated Rust\/TypeScript field in demo\.schema\/Person identifier "foo_bar" collides/u,
+  );
+
+  const enumCollision = structuredClone(fixture);
+  enumCollision.declarations[1].variants.push(
+    { name: "retry-now", payload: [] },
+    { name: "retry_now", payload: [] },
+  );
+  assert.throws(
+    () => generatePreview(enumCollision),
+    /generated Rust variant in demo\.schema\/Outcome identifier "RetryNow" collides/u,
+  );
+});

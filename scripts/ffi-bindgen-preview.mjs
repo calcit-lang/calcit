@@ -237,6 +237,22 @@ function ensureGeneratedIdentifiers(definitions, declarations) {
   ensureUniqueGeneratedIdentifiers(definitions, "Rust native symbol", (definition) => identifier(definition.lowering.symbol));
   ensureUniqueGeneratedIdentifiers(declarations, "Rust/TypeScript declaration", (declaration) => declarationTypeName(declaration.id));
   ensureUniqueGeneratedIdentifiers(declarations, "WIT declaration", (declaration) => identifier(declaration.id, "-"));
+  for (const declaration of declarations) {
+    if (declaration.kind === "struct") {
+      const fields = declaration.fields.map((field) => ({ id: `${declaration.id}.${field.name}`, name: field.name }));
+      ensureUniqueGeneratedIdentifiers(fields, `Rust/TypeScript field in ${declaration.id}`, (field) => identifier(field.name));
+      ensureUniqueGeneratedIdentifiers(fields, `WIT field in ${declaration.id}`, (field) => identifier(field.name, "-"));
+    } else if (declaration.kind === "enum") {
+      const variants = declaration.variants.map((variant) => ({
+        id: `${declaration.id}.${variant.name}`,
+        name: variant.name,
+      }));
+      ensureUniqueGeneratedIdentifiers(variants, `Rust variant in ${declaration.id}`, (variant) => pascalIdentifier(variant.name));
+      ensureUniqueGeneratedIdentifiers(variants, `TypeScript/WIT variant in ${declaration.id}`, (variant) =>
+        identifier(variant.name, "-"),
+      );
+    }
+  }
 }
 
 function renderRustDeclarations(interfaceDocument, declarations) {
