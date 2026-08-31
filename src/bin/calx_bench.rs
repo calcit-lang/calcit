@@ -3,16 +3,18 @@
 //! The orchestration script runs this binary in fresh processes to measure
 //! process-level cold cost without mixing benchmark policy into the compiler.
 
+use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::hint::black_box;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use argh::FromArgs;
 use calcit::calcit::{CalcitFn, CalcitFnTypeAnnotation, CalcitTypeAnnotation, SchemaKind};
 use calcit::call_stack::CallStackList;
-use calcit::codegen::calx::{CalxCompiledKernel, CalxScalarType, CalxValue, compile_calx_kernel_measured};
+use calcit::codegen::calx::{CalxCompiledKernel, CalxScalarType, CalxValue, compile_calx_kernel, compile_calx_kernel_measured};
 use calcit::data::cirru::code_to_calcit;
 use calcit::program::{PROGRAM_CODE_DATA, ProgramDefEntry, ProgramFileData, clone_existing_compiled_program, ensure_def_id};
 use calcit::{Calcit, run_program_with_docs};
@@ -22,6 +24,60 @@ use serde::Serialize;
 
 const FIXTURE_NAMESPACE: &str = "bench.calx-kernels";
 const CARGO_LOCK: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.lock"));
+
+struct ProfileAllocator;
+
+static COUNT_PROFILE_ALLOCATIONS: AtomicBool = AtomicBool::new(false);
+static PROFILE_ALLOCATION_CALLS: AtomicU64 = AtomicU64::new(0);
+static PROFILE_REALLOCATION_CALLS: AtomicU64 = AtomicU64::new(0);
+static PROFILE_DEALLOCATION_CALLS: AtomicU64 = AtomicU64::new(0);
+static PROFILE_REQUESTED_BYTES: AtomicU64 = AtomicU64::new(0);
+static PROFILE_DEALLOCATED_BYTES: AtomicU64 = AtomicU64::new(0);
+
+fn record_profile_allocation(bytes: usize) {
+  if COUNT_PROFILE_ALLOCATIONS.load(Ordering::Relaxed) {
+    PROFILE_ALLOCATION_CALLS.fetch_add(1, Ordering::Relaxed);
+    PROFILE_REQUESTED_BYTES.fetch_add(bytes as u64, Ordering::Relaxed);
+  }
+}
+
+unsafe impl GlobalAlloc for ProfileAllocator {
+  unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+    let value = unsafe { System.alloc(layout) };
+    if !value.is_null() {
+      record_profile_allocation(layout.size());
+    }
+    value
+  }
+
+  unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+    let value = unsafe { System.alloc_zeroed(layout) };
+    if !value.is_null() {
+      record_profile_allocation(layout.size());
+    }
+    value
+  }
+
+  unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+    if COUNT_PROFILE_ALLOCATIONS.load(Ordering::Relaxed) {
+      PROFILE_DEALLOCATION_CALLS.fetch_add(1, Ordering::Relaxed);
+      PROFILE_DEALLOCATED_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
+    }
+    unsafe { System.dealloc(ptr, layout) };
+  }
+
+  unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+    let value = unsafe { System.realloc(ptr, layout, new_size) };
+    if !value.is_null() && COUNT_PROFILE_ALLOCATIONS.load(Ordering::Relaxed) {
+      PROFILE_REALLOCATION_CALLS.fetch_add(1, Ordering::Relaxed);
+      PROFILE_REQUESTED_BYTES.fetch_add(new_size as u64, Ordering::Relaxed);
+    }
+    value
+  }
+}
+
+#[global_allocator]
+static GLOBAL_ALLOCATOR: ProfileAllocator = ProfileAllocator;
 
 #[derive(Debug, FromArgs)]
 /// measure one source-backed Calcit-to-Calx scalar kernel
@@ -41,6 +97,22 @@ struct Args {
   /// reused-VM calls included in hot measurement
   #[argh(option, default = "100")]
   hot_iterations: u32,
+
+  /// repeat complete Calx compilation for profiler sampling; zero runs the normal benchmark
+  #[argh(option, default = "0")]
+  compile_profile_iterations: u32,
+
+  /// complete Calx compilations discarded before profiler sampling
+  #[argh(option, default = "100")]
+  compile_profile_warmup: u32,
+
+  /// compilations used for aggregate per-stage timings in profile mode
+  #[argh(option, default = "10000")]
+  compile_profile_stage_iterations: u32,
+
+  /// compilations used for allocation counters in profile mode
+  #[argh(option, default = "10000")]
+  compile_profile_allocation_iterations: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -53,7 +125,7 @@ struct EnvironmentReport {
   architecture: &'static str,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CompileReport {
   eligibility_ns: u64,
@@ -110,8 +182,77 @@ struct BenchmarkReport {
   correctness: bool,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CompileProfileReport {
+  schema: &'static str,
+  environment: EnvironmentReport,
+  kernel: String,
+  workload: &'static str,
+  warmup_iterations: u32,
+  measured_iterations: u32,
+  fixture_install_ns: u64,
+  calcit_frontend_ns: u64,
+  snapshot_clone_ns: u64,
+  compile_total_ns: u64,
+  compile_per_iteration_ns: u64,
+  stage_timing_iterations: u32,
+  stage_timing_total: CompileReport,
+  stage_timing_per_iteration: CompileReport,
+  allocation_iterations: u32,
+  allocations: AllocationReport,
+  allocations_per_iteration: AllocationReport,
+  correctness: bool,
+}
+
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AllocationReport {
+  allocation_calls: u64,
+  reallocation_calls: u64,
+  deallocation_calls: u64,
+  requested_bytes: u64,
+  explicitly_deallocated_bytes: u64,
+}
+
+impl AllocationReport {
+  fn divided_by(&self, iterations: u32) -> Self {
+    let divisor = u64::from(iterations);
+    Self {
+      allocation_calls: self.allocation_calls / divisor,
+      reallocation_calls: self.reallocation_calls / divisor,
+      deallocation_calls: self.deallocation_calls / divisor,
+      requested_bytes: self.requested_bytes / divisor,
+      explicitly_deallocated_bytes: self.explicitly_deallocated_bytes / divisor,
+    }
+  }
+}
+
+impl CompileReport {
+  fn divided_by(&self, iterations: u32) -> Self {
+    let divisor = u64::from(iterations);
+    Self {
+      eligibility_ns: self.eligibility_ns / divisor,
+      planning_ns: self.planning_ns / divisor,
+      program_construction_ns: self.program_construction_ns / divisor,
+      validation_lowering_ns: self.validation_lowering_ns / divisor,
+      total_ns: self.total_ns / divisor,
+    }
+  }
+}
+
 fn nanos(duration: Duration) -> u64 {
   u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
+}
+
+fn environment_report() -> Result<EnvironmentReport, String> {
+  Ok(EnvironmentReport {
+    package_version: env!("CARGO_PKG_VERSION"),
+    calx_vm_version: resolved_dependency_version(CARGO_LOCK, "calx_vm")?.to_owned(),
+    profile: if cfg!(debug_assertions) { "debug" } else { "release" },
+    os: std::env::consts::OS,
+    architecture: std::env::consts::ARCH,
+  })
 }
 
 /// Resolve one uniquely-versioned package from the lockfile embedded at build time.
@@ -241,6 +382,116 @@ fn resolve_cached_calcit_callable(kernel: &str, call_stack: &CallStackList) -> R
   }
 }
 
+fn reset_profile_allocations() {
+  PROFILE_ALLOCATION_CALLS.store(0, Ordering::Relaxed);
+  PROFILE_REALLOCATION_CALLS.store(0, Ordering::Relaxed);
+  PROFILE_DEALLOCATION_CALLS.store(0, Ordering::Relaxed);
+  PROFILE_REQUESTED_BYTES.store(0, Ordering::Relaxed);
+  PROFILE_DEALLOCATED_BYTES.store(0, Ordering::Relaxed);
+}
+
+fn read_profile_allocations() -> AllocationReport {
+  AllocationReport {
+    allocation_calls: PROFILE_ALLOCATION_CALLS.load(Ordering::Relaxed),
+    reallocation_calls: PROFILE_REALLOCATION_CALLS.load(Ordering::Relaxed),
+    deallocation_calls: PROFILE_DEALLOCATION_CALLS.load(Ordering::Relaxed),
+    requested_bytes: PROFILE_REQUESTED_BYTES.load(Ordering::Relaxed),
+    explicitly_deallocated_bytes: PROFILE_DEALLOCATED_BYTES.load(Ordering::Relaxed),
+  }
+}
+
+fn add_compile_timings(report: &mut CompileReport, timings: calcit::codegen::calx::CalxKernelCompileTimings) {
+  report.eligibility_ns = report.eligibility_ns.saturating_add(nanos(timings.eligibility));
+  report.planning_ns = report.planning_ns.saturating_add(nanos(timings.planning));
+  report.program_construction_ns = report.program_construction_ns.saturating_add(nanos(timings.program_construction));
+  report.validation_lowering_ns = report.validation_lowering_ns.saturating_add(nanos(timings.validation_lowering));
+  report.total_ns = report.total_ns.saturating_add(nanos(timings.total));
+}
+
+/// Amplify the complete compile pipeline so sampling and allocation profilers
+/// can distinguish its stages from process/frontend setup.
+fn measure_compile_profile(args: &Args) -> Result<CompileProfileReport, String> {
+  if args.compile_profile_iterations == 0 {
+    return Err("--compile-profile-iterations must be greater than zero in compile profile mode".to_owned());
+  }
+  if args.compile_profile_stage_iterations == 0 {
+    return Err("--compile-profile-stage-iterations must be greater than zero in compile profile mode".to_owned());
+  }
+  if args.compile_profile_allocation_iterations == 0 {
+    return Err("--compile-profile-allocation-iterations must be greater than zero in compile profile mode".to_owned());
+  }
+
+  let fixture_started = Instant::now();
+  install_fixture()?;
+  let fixture_install_ns = nanos(fixture_started.elapsed());
+
+  let frontend_started = Instant::now();
+  let warnings = RefCell::new(vec![]);
+  calcit::runner::preprocess::ensure_ns_def_compiled(FIXTURE_NAMESPACE, &args.kernel, &warnings, &CallStackList::default())
+    .map_err(|error| error.to_string())?;
+  if !warnings.borrow().is_empty() {
+    return Err(format!("Calx compile profile frontend produced warnings: {:#?}", warnings.borrow()));
+  }
+  let calcit_frontend_ns = nanos(frontend_started.elapsed());
+
+  let snapshot_started = Instant::now();
+  let snapshot = clone_existing_compiled_program();
+  let snapshot_clone_ns = nanos(snapshot_started.elapsed());
+
+  for _ in 0..args.compile_profile_warmup {
+    black_box(compile_calx_kernel(&snapshot, FIXTURE_NAMESPACE, args.kernel.as_str()).map_err(|error| error.to_string())?);
+  }
+
+  let mut stage_timing_total = CompileReport::default();
+  for _ in 0..args.compile_profile_stage_iterations {
+    let (kernel, timings) =
+      compile_calx_kernel_measured(&snapshot, FIXTURE_NAMESPACE, args.kernel.as_str()).map_err(|error| error.to_string())?;
+    add_compile_timings(&mut stage_timing_total, timings);
+    black_box(kernel);
+  }
+  let stage_timing_per_iteration = stage_timing_total.divided_by(args.compile_profile_stage_iterations);
+
+  reset_profile_allocations();
+  COUNT_PROFILE_ALLOCATIONS.store(true, Ordering::Relaxed);
+  let allocation_result = (|| {
+    for _ in 0..args.compile_profile_allocation_iterations {
+      black_box(compile_calx_kernel(&snapshot, FIXTURE_NAMESPACE, args.kernel.as_str()).map_err(|error| error.to_string())?);
+    }
+    Ok::<(), String>(())
+  })();
+  COUNT_PROFILE_ALLOCATIONS.store(false, Ordering::Relaxed);
+  allocation_result?;
+  let allocations = read_profile_allocations();
+  let allocations_per_iteration = allocations.divided_by(args.compile_profile_allocation_iterations);
+
+  let compile_started = Instant::now();
+  for _ in 0..args.compile_profile_iterations {
+    black_box(compile_calx_kernel(&snapshot, FIXTURE_NAMESPACE, args.kernel.as_str()).map_err(|error| error.to_string())?);
+  }
+  let compile_total_ns = nanos(compile_started.elapsed());
+
+  Ok(CompileProfileReport {
+    schema: "calcit-calx-compile-profile/1",
+    environment: environment_report()?,
+    kernel: args.kernel.clone(),
+    workload: "complete-uncached-scalar-compilation",
+    warmup_iterations: args.compile_profile_warmup,
+    measured_iterations: args.compile_profile_iterations,
+    fixture_install_ns,
+    calcit_frontend_ns,
+    snapshot_clone_ns,
+    compile_total_ns,
+    compile_per_iteration_ns: compile_total_ns / u64::from(args.compile_profile_iterations),
+    stage_timing_iterations: args.compile_profile_stage_iterations,
+    stage_timing_total,
+    stage_timing_per_iteration,
+    allocation_iterations: args.compile_profile_allocation_iterations,
+    allocations,
+    allocations_per_iteration,
+    correctness: true,
+  })
+}
+
 /// Run correctness first, then collect one process-local staged measurement.
 fn measure(args: &Args) -> Result<BenchmarkReport, String> {
   if args.hot_iterations == 0 {
@@ -343,13 +594,7 @@ fn measure(args: &Args) -> Result<BenchmarkReport, String> {
 
   Ok(BenchmarkReport {
     schema: "calcit-calx-benchmark/2",
-    environment: EnvironmentReport {
-      package_version: env!("CARGO_PKG_VERSION"),
-      calx_vm_version: resolved_dependency_version(CARGO_LOCK, "calx_vm")?.to_owned(),
-      profile: if cfg!(debug_assertions) { "debug" } else { "release" },
-      os: std::env::consts::OS,
-      architecture: std::env::consts::ARCH,
-    },
+    environment: environment_report()?,
     kernel: args.kernel.clone(),
     workload: "scalar-only",
     size: args.size,
@@ -394,7 +639,12 @@ fn measure(args: &Args) -> Result<BenchmarkReport, String> {
 /// Emit exactly one JSON report on success and keep failures on stderr.
 fn main() {
   let args: Args = argh::from_env();
-  match measure(&args).and_then(|report| serde_json::to_string(&report).map_err(|error| error.to_string())) {
+  let report = if args.compile_profile_iterations == 0 {
+    measure(&args).and_then(|report| serde_json::to_string(&report).map_err(|error| error.to_string()))
+  } else {
+    measure_compile_profile(&args).and_then(|report| serde_json::to_string(&report).map_err(|error| error.to_string()))
+  };
+  match report {
     Ok(json) => println!("{json}"),
     Err(error) => {
       eprintln!("calcit-calx-bench: {error}");
@@ -434,5 +684,36 @@ mod tests {
 
     let error = resolve_cached_calcit_callable("missing-kernel", &call_stack).expect_err("missing entries must fail");
     assert!(error.contains("missing-kernel"));
+  }
+
+  #[test]
+  fn compile_profile_mode_repeats_complete_uncached_compilation() {
+    let report = measure_compile_profile(&Args {
+      kernel: "affine".to_owned(),
+      size: 10,
+      vm_warmup: 0,
+      hot_iterations: 1,
+      compile_profile_iterations: 2,
+      compile_profile_warmup: 1,
+      compile_profile_stage_iterations: 2,
+      compile_profile_allocation_iterations: 2,
+    })
+    .expect("measure repeated complete compilation");
+
+    assert_eq!(report.schema, "calcit-calx-compile-profile/1");
+    assert_eq!(report.workload, "complete-uncached-scalar-compilation");
+    assert_eq!(report.warmup_iterations, 1);
+    assert_eq!(report.measured_iterations, 2);
+    assert_eq!(report.stage_timing_iterations, 2);
+    assert_eq!(report.allocation_iterations, 2);
+    assert!(report.compile_total_ns > 0);
+    assert!(report.compile_per_iteration_ns > 0);
+    assert!(report.stage_timing_total.total_ns > 0);
+    assert!(report.stage_timing_per_iteration.total_ns > 0);
+    assert!(report.allocations.allocation_calls > 0);
+    assert!(report.allocations.requested_bytes > 0);
+    assert!(report.allocations_per_iteration.allocation_calls > 0);
+    assert!(report.allocations_per_iteration.requested_bytes > 0);
+    assert!(report.correctness);
   }
 }

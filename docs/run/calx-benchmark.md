@@ -54,6 +54,37 @@ cargo run --release --bin calcit-calx-bench -- \
   --kernel range-sum --size 1000 --vm-warmup 20 --hot-iterations 100
 ```
 
+### Compile profile 模式
+
+CPU/allocation profiler 不能从单次约几十微秒的编译可靠分辨热点。显式传入
+`--compile-profile-iterations` 后，runner 只安装并 preprocess source fixture 一次，再重复完整、未缓存的
+eligibility → planning → program construction → validation/lowering 链。stdout 仍恰好输出一个 JSON，
+schema 为 `calcit-calx-compile-profile/1`；默认 benchmark 模式和 schema 不变。
+
+```bash
+CARGO_PROFILE_RELEASE_STRIP=none \
+  CARGO_PROFILE_RELEASE_DEBUG=line-tables-only \
+  cargo build --release --bin calcit-calx-bench
+
+samply record --save-only --main-thread-only --unstable-presymbolicate \
+  --output target/calx-profile/compile-cpu.json.gz \
+  ./target/release/calcit-calx-bench \
+  --kernel affine \
+  --compile-profile-warmup 1000 \
+  --compile-profile-stage-iterations 10000 \
+  --compile-profile-allocation-iterations 10000 \
+  --compile-profile-iterations 100000
+```
+
+release profile 默认移除 debug info；上面的临时 Cargo override 只为 profiler 保留 line tables，不改变正式发布配置。
+`stageTimingPerIteration` 来自单独的阶段计时窗口，`allocationsPerIteration` 来自只在指定窗口开启的
+单线程 allocator counters。`requestedBytes` 是累计请求量，不是 peak RSS；reallocation 的新大小计入请求量，
+旧 block 不重复计入显式 deallocation。无插桩的 `compilePerIterationNs` 才是外部 CPU profiler 的主负载。
+
+原始 Samply/Instruments artifact 写在 `target/` 而不提交；仓库只保存工具版本、commit、硬件、命令、
+迭代数、阶段摘要和可复查的 top stacks。profile mode 仍然执行完整 compile pipeline，因此它用于定位
+cache candidate，不代表 cache-hit 成本。
+
 ### 阶段定义
 
 - `fixtureInstallNs`：解析并安装固定 source fixture；
@@ -136,6 +167,40 @@ reported on stderr with a nonzero exit status:
 cargo run --release --bin calcit-calx-bench -- \
   --kernel range-sum --size 1000 --vm-warmup 20 --hot-iterations 100
 ```
+
+### Compile profile mode
+
+A CPU or allocation profiler cannot reliably distinguish hotspots from a single compilation lasting only tens of
+microseconds. Passing `--compile-profile-iterations` installs and preprocesses the source fixture once, then repeats
+the complete uncached eligibility → planning → program construction → validation/lowering pipeline. Stdout still
+contains exactly one JSON value, using `calcit-calx-compile-profile/1`; the default benchmark mode and schema are
+unchanged.
+
+```bash
+CARGO_PROFILE_RELEASE_STRIP=none \
+  CARGO_PROFILE_RELEASE_DEBUG=line-tables-only \
+  cargo build --release --bin calcit-calx-bench
+
+samply record --save-only --main-thread-only --unstable-presymbolicate \
+  --output target/calx-profile/compile-cpu.json.gz \
+  ./target/release/calcit-calx-bench \
+  --kernel affine \
+  --compile-profile-warmup 1000 \
+  --compile-profile-stage-iterations 10000 \
+  --compile-profile-allocation-iterations 10000 \
+  --compile-profile-iterations 100000
+```
+
+The release profile strips debug information by default. The temporary Cargo overrides above retain line tables for
+the profiler without changing the shipping configuration. `stageTimingPerIteration` comes from a separate staged
+timing window, while `allocationsPerIteration` comes from single-threaded allocator counters enabled only for the
+requested window. `requestedBytes` is cumulative request volume, not peak RSS. A reallocation adds its new requested
+size, while the replaced block is not counted again as an explicit deallocation. The uninstrumented
+`compilePerIterationNs` remains the workload observed by the external CPU profiler.
+
+Raw Samply/Instruments artifacts stay under `target/`; the repository records tool versions, commit, hardware,
+commands, iteration counts, stage summaries, and reviewable top stacks. Profile mode still executes the complete
+compile pipeline, so it locates cache candidates but does not model cache-hit cost.
 
 ### Phase definitions
 
