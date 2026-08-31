@@ -98,8 +98,16 @@ function runCase(binary, kernel, size) {
     throw new Error(`benchmark failed for ${kernel}/${size}\n${result.stdout}\n${result.stderr}`);
   }
   const report = JSON.parse(result.stdout);
-  if (report.schema !== "calcit-calx-benchmark/1" || report.correctness !== true) {
+  if (report.schema !== "calcit-calx-benchmark/2" || report.correctness !== true) {
     throw new Error(`invalid or unverified benchmark report for ${kernel}/${size}`);
+  }
+  const cachedNativeMetrics = [
+    report.runtime?.cachedNativeResolutionNs,
+    report.runtime?.cachedNativeExecutionTotalNs,
+    report.runtime?.cachedNativeExecutionPerCallNs,
+  ];
+  if (!cachedNativeMetrics.every((value) => Number.isFinite(value) && value >= 0)) {
+    throw new Error(`benchmark report lacks valid cached-native metrics for ${kernel}/${size}`);
   }
   return { processWallNs, report };
 }
@@ -133,11 +141,15 @@ function selectMetrics(sample) {
     validationLoweringNs: report.compile.validationLoweringNs,
     calxCompileTotalNs: report.compile.totalNs,
     nativeCallNs: report.runtime.nativeCallNs,
+    cachedNativeResolutionNs: report.runtime.cachedNativeResolutionNs,
+    cachedNativeExecutionTotalNs: report.runtime.cachedNativeExecutionTotalNs,
+    cachedNativeExecutionPerCallNs: report.runtime.cachedNativeExecutionPerCallNs,
     boundaryArgumentsNs: report.runtime.boundaryArgumentsNs,
     vmSetupNs: report.runtime.vmSetupNs,
     pureExecutionNs: report.runtime.pureExecutionNs,
     boundaryResultNs: report.runtime.boundaryResultNs,
     calxOneShotNs: report.runtime.calxOneShotNs,
+    hotExecutionTotalNs: report.runtime.hotExecutionTotalNs,
     hotExecutionPerCallNs: report.runtime.hotExecutionPerCallNs,
   };
 }
@@ -150,7 +162,7 @@ function aggregate(rawSamples) {
   const medianAbsoluteDeviations = Object.fromEntries(
     names.map((name) => [name, medianAbsoluteDeviation(rows.map((row) => row[name]))]),
   );
-  const nativeEndToEndNs = medians.fixtureInstallNs + medians.calcitFrontendNs + medians.nativeCallNs;
+  const lookupNativeEndToEndNs = medians.fixtureInstallNs + medians.calcitFrontendNs + medians.nativeCallNs;
   const calxEndToEndNs =
     medians.fixtureInstallNs +
     medians.calcitFrontendNs +
@@ -161,10 +173,11 @@ function aggregate(rawSamples) {
     medians,
     medianAbsoluteDeviations,
     derived: {
-      nativeEndToEndNs,
+      lookupNativeEndToEndNs,
       calxEndToEndNs,
-      hotVsNativeRatio: medians.hotExecutionPerCallNs / medians.nativeCallNs,
-      oneShotEndToEndRatio: calxEndToEndNs / nativeEndToEndNs,
+      calxHotVsLookupNativeRatio: medians.hotExecutionPerCallNs / medians.nativeCallNs,
+      calxHotVsCachedNativeRatio: medians.hotExecutionPerCallNs / medians.cachedNativeExecutionPerCallNs,
+      calxOneShotEndToEndVsLookupNativeRatio: calxEndToEndNs / lookupNativeEndToEndNs,
     },
   };
 }
@@ -201,8 +214,12 @@ for (const profile of ["debug", "release"]) {
     const kernelCases = cases.filter((item) => item.kernel === kernel).sort((a, b) => a.size - b.size);
     return {
       kernel,
-      hotExecutionSize: crossover(kernelCases, "hotVsNativeRatio"),
-      oneShotEndToEndSize: crossover(kernelCases, "oneShotEndToEndRatio"),
+      calxHotVsLookupNativeSize: crossover(kernelCases, "calxHotVsLookupNativeRatio"),
+      calxHotVsCachedNativeSize: crossover(kernelCases, "calxHotVsCachedNativeRatio"),
+      calxOneShotEndToEndVsLookupNativeSize: crossover(
+        kernelCases,
+        "calxOneShotEndToEndVsLookupNativeRatio",
+      ),
     };
   });
   profiles.push({ profile, cases, crossovers });
@@ -210,7 +227,7 @@ for (const profile of ["debug", "release"]) {
 
 const cpu = os.cpus()[0];
 const report = {
-  schema: "calcit-calx-benchmark-suite/1",
+  schema: "calcit-calx-benchmark-suite/2",
   generatedAt: new Date().toISOString(),
   scope: {
     workload: "scalar-only",
@@ -235,6 +252,8 @@ const report = {
     samples,
     vmWarmup,
     hotIterations,
+    hotWarmupMeaning: "applied equally to the cached Calcit callable and reused Calx VM",
+    cachedNativeMeaning: "resolved callable reused; scope setup, argument binding, and runner execution remain timed",
     noiseStatistic: "median-and-median-absolute-deviation",
     processWallMeaning: "Node spawn wall time including process startup and all measured phases",
     regressionPolicy: "informational-no-absolute-ci-threshold",
@@ -250,7 +269,9 @@ for (const { profile, crossovers } of profiles) {
   console.log(`${profile} sampled crossover points:`);
   for (const item of crossovers) {
     console.log(
-      `  ${item.kernel}: hot=${item.hotExecutionSize ?? "none"}, one-shot=${item.oneShotEndToEndSize ?? "none"}`,
+      `  ${item.kernel}: hot-vs-lookup=${item.calxHotVsLookupNativeSize ?? "none"}, ` +
+        `hot-vs-cached=${item.calxHotVsCachedNativeSize ?? "none"}, ` +
+        `one-shot-vs-lookup=${item.calxOneShotEndToEndVsLookupNativeSize ?? "none"}`,
     );
   }
 }

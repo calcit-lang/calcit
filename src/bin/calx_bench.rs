@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use argh::FromArgs;
-use calcit::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, SchemaKind};
+use calcit::calcit::{CalcitFn, CalcitFnTypeAnnotation, CalcitTypeAnnotation, SchemaKind};
 use calcit::call_stack::CallStackList;
 use calcit::codegen::calx::{CalxCompiledKernel, CalxScalarType, CalxValue, compile_calx_kernel_measured};
 use calcit::data::cirru::code_to_calcit;
@@ -67,6 +67,9 @@ struct CompileReport {
 #[serde(rename_all = "camelCase")]
 struct RuntimeReport {
   native_call_ns: u64,
+  cached_native_resolution_ns: u64,
+  cached_native_execution_total_ns: u64,
+  cached_native_execution_per_call_ns: u64,
   boundary_arguments_ns: u64,
   vm_setup_ns: u64,
   pure_execution_ns: u64,
@@ -230,6 +233,14 @@ fn convert_result(kernel: &CalxCompiledKernel, result: CalxRunResult) -> Result<
   }
 }
 
+/// Resolve the already-preprocessed Calcit entry once for a fair repeated-call baseline.
+fn resolve_cached_calcit_callable(kernel: &str, call_stack: &CallStackList) -> Result<Arc<CalcitFn>, String> {
+  match calcit::runner::evaluate_symbol_from_program(kernel, FIXTURE_NAMESPACE, None, call_stack).map_err(|error| error.to_string())? {
+    Calcit::Fn { info, .. } => Ok(info),
+    value => Err(format!("expected cached benchmark callable, found {value}")),
+  }
+}
+
 /// Run correctness first, then collect one process-local staged measurement.
 fn measure(args: &Args) -> Result<BenchmarkReport, String> {
   if args.hot_iterations == 0 {
@@ -261,6 +272,30 @@ fn measure(args: &Args) -> Result<BenchmarkReport, String> {
   let native_result = run_program_with_docs(Arc::from(FIXTURE_NAMESPACE), Arc::from(args.kernel.as_str()), &calcit_args)
     .map_err(|error| error.to_string())?;
   let native_call_ns = nanos(native_started.elapsed());
+
+  let native_call_stack = CallStackList::default();
+  let cached_native_resolution_started = Instant::now();
+  let cached_native_callable = resolve_cached_calcit_callable(&args.kernel, &native_call_stack)?;
+  let cached_native_resolution_ns = nanos(cached_native_resolution_started.elapsed());
+  let cached_native_result =
+    calcit::runner::run_fn(&calcit_args, &cached_native_callable, &native_call_stack).map_err(|error| error.to_string())?;
+  if cached_native_result != native_result {
+    return Err(format!(
+      "correctness mismatch for {}/{}: Calcit lookup={native_result}, Calcit cached={cached_native_result}",
+      FIXTURE_NAMESPACE, args.kernel
+    ));
+  }
+
+  for _ in 0..args.vm_warmup {
+    black_box(calcit::runner::run_fn(&calcit_args, &cached_native_callable, &native_call_stack).map_err(|error| error.to_string())?);
+  }
+  let cached_native_inputs = (0..args.hot_iterations).map(|_| calcit_args.clone()).collect::<Vec<_>>();
+  let cached_native_started = Instant::now();
+  for input in cached_native_inputs {
+    black_box(calcit::runner::run_fn(&input, &cached_native_callable, &native_call_stack).map_err(|error| error.to_string())?);
+  }
+  let cached_native_execution_total_ns = nanos(cached_native_started.elapsed());
+  let cached_native_execution_per_call_ns = cached_native_execution_total_ns / u64::from(args.hot_iterations);
 
   let calx_one_shot_started = Instant::now();
   let boundary_arguments_started = Instant::now();
@@ -307,7 +342,7 @@ fn measure(args: &Args) -> Result<BenchmarkReport, String> {
   let diagnostic_bytes = kernel.stable_program_summary().len();
 
   Ok(BenchmarkReport {
-    schema: "calcit-calx-benchmark/1",
+    schema: "calcit-calx-benchmark/2",
     environment: EnvironmentReport {
       package_version: env!("CARGO_PKG_VERSION"),
       calx_vm_version: resolved_dependency_version(CARGO_LOCK, "calx_vm")?.to_owned(),
@@ -332,6 +367,9 @@ fn measure(args: &Args) -> Result<BenchmarkReport, String> {
     },
     runtime: RuntimeReport {
       native_call_ns,
+      cached_native_resolution_ns,
+      cached_native_execution_total_ns,
+      cached_native_execution_per_call_ns,
       boundary_arguments_ns,
       vm_setup_ns,
       pure_execution_ns,
@@ -381,5 +419,20 @@ mod tests {
     let duplicate = "[[package]]\nname = \"demo\"\nversion = \"1.0.0\"\n[[package]]\nname = \"demo\"\nversion = \"2.0.0\"\n";
     assert!(resolved_dependency_version(duplicate, "demo").is_err());
     assert!(resolved_dependency_version(duplicate, "missing").is_err());
+  }
+
+  #[test]
+  fn cached_callable_matches_lookup_execution_and_rejects_missing_entries() {
+    install_fixture().expect("install benchmark fixture");
+    let args = kernel_arguments("range-sum", 10).expect("range-sum arguments");
+    let lookup_result =
+      run_program_with_docs(Arc::from(FIXTURE_NAMESPACE), Arc::from("range-sum"), &args).expect("run lookup baseline");
+    let call_stack = CallStackList::default();
+    let callable = resolve_cached_calcit_callable("range-sum", &call_stack).expect("resolve cached callable");
+    let cached_result = calcit::runner::run_fn(&args, &callable, &call_stack).expect("run cached callable");
+    assert_eq!(cached_result, lookup_result);
+
+    let error = resolve_cached_calcit_callable("missing-kernel", &call_stack).expect_err("missing entries must fail");
+    assert!(error.contains("missing-kernel"));
   }
 }
