@@ -165,9 +165,9 @@ dependencies = [
 
 [[package]]
 name = "calcit_native_ffi"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42a8cfaff7caed355a63e9df68c57cea5af1d01b1b37734ed812a4a9ed2faeed"
+checksum = "73ebd0fd554c1e6778850f26743d7a06dca3f387e945d03f202abd424c4b1743"
 
 [[package]]
 name = "calx_vm"

@@ -34,7 +34,7 @@ cirru_edn = "0.8.0"
 cirru_parser = "=0.2.15"
 bisection_key = "0.0.1"
 calx_vm = "0.3.0"
-calcit_native_ffi = { version = "0.1.2", default-features = false }
+calcit_native_ffi = { version = "0.1.3", default-features = false }
 rmp-serde = "1.3.0"
 semver = "1.0.28"
 regex = "1.13.1"
