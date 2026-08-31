@@ -167,8 +167,17 @@ function witType(type, definitionId, declarations) {
       return `option<${item}>`;
     }
     case "result": {
-      const ok = witType(type.ok, definitionId, declarations) ?? "_";
-      const error = witType(type.error, definitionId, declarations) ?? "_";
+      const ok = witType(type.ok, definitionId, declarations);
+      const error = witType(type.error, definitionId, declarations);
+      if (ok === null && error === null) {
+        return "result";
+      }
+      if (error === null) {
+        return `result<${ok}>`;
+      }
+      if (ok === null) {
+        return `result<_, ${error}>`;
+      }
       return `result<${ok}, ${error}>`;
     }
     case "struct":
@@ -205,6 +214,44 @@ function ensurePreviewBinding(definition) {
     throw new Error(
       `${definition.id} uses invoke=${lowering.invoke ?? "<missing>"} transport=${lowering.transport ?? "<missing>"}; Phase 0 preview requires sync edn-buffer-v1`,
     );
+  }
+}
+
+function ensureUniqueGeneratedIdentifiers(items, target, generatedIdentifier) {
+  const owners = new Map();
+  for (const item of items) {
+    const generated = generatedIdentifier(item);
+    const previous = owners.get(generated);
+    if (previous) {
+      throw new Error(
+        `generated ${target} identifier ${JSON.stringify(generated)} collides between ${previous.id} and ${item.id}`,
+      );
+    }
+    owners.set(generated, item);
+  }
+}
+
+function ensureGeneratedIdentifiers(definitions, declarations) {
+  ensureUniqueGeneratedIdentifiers(definitions, "Rust/TypeScript definition", (definition) => identifier(definition.name));
+  ensureUniqueGeneratedIdentifiers(definitions, "Calcit/WIT definition", (definition) => identifier(definition.name, "-"));
+  ensureUniqueGeneratedIdentifiers(definitions, "Rust native symbol", (definition) => identifier(definition.lowering.symbol));
+  ensureUniqueGeneratedIdentifiers(declarations, "Rust/TypeScript declaration", (declaration) => declarationTypeName(declaration.id));
+  ensureUniqueGeneratedIdentifiers(declarations, "WIT declaration", (declaration) => identifier(declaration.id, "-"));
+  for (const declaration of declarations) {
+    if (declaration.kind === "struct") {
+      const fields = declaration.fields.map((field) => ({ id: `${declaration.id}.${field.name}`, name: field.name }));
+      ensureUniqueGeneratedIdentifiers(fields, `Rust/TypeScript field in ${declaration.id}`, (field) => identifier(field.name));
+      ensureUniqueGeneratedIdentifiers(fields, `WIT field in ${declaration.id}`, (field) => identifier(field.name, "-"));
+    } else if (declaration.kind === "enum") {
+      const variants = declaration.variants.map((variant) => ({
+        id: `${declaration.id}.${variant.name}`,
+        name: variant.name,
+      }));
+      ensureUniqueGeneratedIdentifiers(variants, `Rust variant in ${declaration.id}`, (variant) => pascalIdentifier(variant.name));
+      ensureUniqueGeneratedIdentifiers(variants, `TypeScript/WIT variant in ${declaration.id}`, (variant) =>
+        identifier(variant.name, "-"),
+      );
+    }
   }
 }
 
@@ -428,6 +475,7 @@ export function generatePreview(document) {
   }
   definitions.forEach(ensurePreviewBinding);
   const declarations = declarationMap(interfaceDocument);
+  ensureGeneratedIdentifiers(definitions, [...declarations.values()]);
   const slug = identifier(interfaceDocument.package, "-");
   return new Map([
     [`${slug}.ffi.rs`, renderRust(interfaceDocument, definitions, declarations)],

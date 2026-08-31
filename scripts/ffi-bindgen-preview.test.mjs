@@ -78,3 +78,58 @@ test("generates Struct, Enum, Option, and Result declarations from Interface IR 
   assert.match(wit, /variant demo-schema-outcome/u);
   assert.match(wit, /roundtrip: func\(arg0: demo-schema-person\) -> result<demo-schema-outcome, string>/u);
 });
+
+test("WIT preview uses canonical Result forms when Unit omits payloads", async () => {
+  const fixture = await readJson(path.join(fixtureRoot, "composite-interface.json"));
+
+  const unitError = structuredClone(fixture);
+  unitError.definitions[0].signature.result.error = { kind: "unit" };
+  assert.match(generatePreview(unitError).get("demo-types.wit"), /-> result<demo-schema-outcome>;/u);
+
+  const unitOk = structuredClone(fixture);
+  unitOk.definitions[0].signature.result.ok = { kind: "unit" };
+  assert.match(generatePreview(unitOk).get("demo-types.wit"), /-> result<_, string>;/u);
+
+  const unitBoth = structuredClone(fixture);
+  unitBoth.definitions[0].signature.result.ok = { kind: "unit" };
+  unitBoth.definitions[0].signature.result.error = { kind: "unit" };
+  assert.match(generatePreview(unitBoth).get("demo-types.wit"), /-> result;/u);
+});
+
+test("preview rejects generated definition identifiers that collide across namespaces", async () => {
+  const document = await readJson(path.join(fixtureRoot, "md5-interface.json"));
+  const duplicate = structuredClone(document.definitions[0]);
+  duplicate.id = "demo.hash/md5";
+  duplicate.namespace = "demo.hash";
+  duplicate.lowering.symbol = "demo_md5";
+  document.definitions.push(duplicate);
+
+  assert.throws(
+    () => generatePreview(document),
+    /generated Rust\/TypeScript definition identifier "md5" collides between calcit\.std\.hash\/md5 and demo\.hash\/md5/u,
+  );
+});
+
+test("preview rejects generated struct-field and enum-variant collisions", async () => {
+  const fixture = await readJson(path.join(fixtureRoot, "composite-interface.json"));
+
+  const structCollision = structuredClone(fixture);
+  structCollision.declarations[0].fields.push(
+    { name: "foo-bar", type: { kind: "string" } },
+    { name: "foo_bar", type: { kind: "string" } },
+  );
+  assert.throws(
+    () => generatePreview(structCollision),
+    /generated Rust\/TypeScript field in demo\.schema\/Person identifier "foo_bar" collides/u,
+  );
+
+  const enumCollision = structuredClone(fixture);
+  enumCollision.declarations[1].variants.push(
+    { name: "retry-now", payload: [] },
+    { name: "retry_now", payload: [] },
+  );
+  assert.throws(
+    () => generatePreview(enumCollision),
+    /generated Rust variant in demo\.schema\/Outcome identifier "RetryNow" collides/u,
+  );
+});

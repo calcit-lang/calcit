@@ -812,7 +812,11 @@ fn is_portable_c_identifier(value: &str) -> bool {
   let Some(first) = chars.next() else {
     return false;
   };
-  (first == '_' || first.is_ascii_alphabetic()) && chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
+  (first == '_' || first.is_ascii_alphabetic())
+    && chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
+    && !["_calcit_ffi_v1", "_calcit_ffi_async_v1", "_calcit_ffi_blocking_v1"]
+      .iter()
+      .any(|suffix| value.ends_with(suffix))
 }
 
 fn validate_lowering_contract(definition: &str, lowering: &FfiLoweringIr, diagnostics: &mut Vec<FfiInterfaceDiagnostic>) {
@@ -1570,6 +1574,37 @@ mod tests {
     let codes = diagnostic_codes(&report);
     assert!(codes.contains("E_FFI_IR_SYMBOL_INVALID"));
     assert!(codes.contains("E_FFI_IR_TRANSPORT_MISMATCH"));
+  }
+
+  #[test]
+  fn rejects_protocol_suffixed_native_base_symbols() {
+    let definitions = [
+      ("sync", "edn-buffer-v1", "read_calcit_ffi_v1"),
+      ("async", "async-task-v1", "watch_calcit_ffi_async_v1"),
+      ("blocking-callback", "blocking-host-v1", "read_lines_calcit_ffi_blocking_v1"),
+    ]
+    .into_iter()
+    .map(|(invoke, transport, symbol)| {
+      (
+        invoke,
+        function_entry(
+          vec![],
+          Arc::new(CalcitTypeAnnotation::Unit),
+          Edn::map_from_iter([
+            (Edn::tag("backend"), Edn::tag("native")),
+            (Edn::tag("invoke"), Edn::tag(invoke)),
+            (Edn::tag("symbol"), Edn::str(symbol)),
+            (Edn::tag("transport"), Edn::tag(transport)),
+          ]),
+        ),
+      )
+    })
+    .collect();
+    let report = export_snapshot(&snapshot(definitions), None).expect("inventory protocol-suffixed symbols");
+
+    assert_eq!(report.summary.supported, 0);
+    assert_eq!(report.summary.unsupported, 3);
+    assert!(diagnostic_codes(&report).contains("E_FFI_IR_SYMBOL_INVALID"));
   }
 
   #[test]
