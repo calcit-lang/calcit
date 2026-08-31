@@ -233,6 +233,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     | Ref(..)
     | Enum { .. }
     | Buffer(..)
+    | F64Buffer(..)
     | BufList(..)
     | CirruQuote(..)
     | Proc(_)

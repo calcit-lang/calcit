@@ -4843,6 +4843,7 @@ mod tests {
       "Enum",
       "Ref",
       "Buffer",
+      "F64Buffer",
       "CirruQuote",
       "JsObject",
       "Struct",

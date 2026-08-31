@@ -170,9 +170,9 @@ checksum = "73ebd0fd554c1e6778850f26743d7a06dca3f387e945d03f202abd424c4b1743"
 
 [[package]]
 name = "calx_vm"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41617de20ac52661b75b70b13fba720c657032e086c14e70c0ef3b79bc0cdf08"
+checksum = "9e6c7b1ce24e4e724da7d7831b87daac55213b900493a4f081cc97a48d56ca83"
 dependencies = [
  "argh",
  "bincode",

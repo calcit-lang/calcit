@@ -1,0 +1,28 @@
+abi calcit-calx-kernel/2
+entry tests.calx-f64-buffer/dot-product
+function main (F64Buffer,F64Buffer,F64,F64)->F64
+  000 LocalGet(2) @ calcit:tests.calx-f64-buffer/dot-product@3.1.1
+  001 Const(F64(0.0)) @ calcit:tests.calx-f64-buffer/dot-product@-
+  002 F64Lt @ calcit:tests.calx-f64-buffer/dot-product@-
+  003 If { ret_types: [F64], else_at: 23, to: 25 } @ calcit:tests.calx-f64-buffer/dot-product@-
+  004 LocalGet(0) @ calcit:tests.calx-f64-buffer/dot-product@3.3.1
+  005 LocalGet(1) @ calcit:tests.calx-f64-buffer/dot-product@3.3.2
+  006 LocalGet(2) @ calcit:tests.calx-f64-buffer/dot-product@3.3.3.1
+  007 Const(F64(1.0)) @ calcit:tests.calx-f64-buffer/dot-product@-
+  008 Neg @ calcit:tests.calx-f64-buffer/dot-product@-
+  009 Add @ calcit:tests.calx-f64-buffer/dot-product@-
+  010 LocalGet(3) @ calcit:tests.calx-f64-buffer/dot-product@3.3.4.1
+  011 LocalGet(0) @ calcit:tests.calx-f64-buffer/dot-product@3.3.4.2.1.1
+  012 LocalGet(2) @ calcit:tests.calx-f64-buffer/dot-product@3.3.4.2.1.2.1
+  013 F64ToI64Index @ calcit:tests.calx-f64-buffer/dot-product@3.3.4.2.1.2.1
+  014 F64BufferGet @ calcit:tests.calx-f64-buffer/dot-product@3.3.4.2.1.2.1
+  015 LocalGet(1) @ calcit:tests.calx-f64-buffer/dot-product@3.3.4.2.2.1
+  016 LocalGet(2) @ calcit:tests.calx-f64-buffer/dot-product@3.3.4.2.2.2.1
+  017 F64ToI64Index @ calcit:tests.calx-f64-buffer/dot-product@3.3.4.2.2.2.1
+  018 F64BufferGet @ calcit:tests.calx-f64-buffer/dot-product@3.3.4.2.2.2.1
+  019 Mul @ calcit:tests.calx-f64-buffer/dot-product@3.3.4.2.2.2.1
+  020 Add @ calcit:tests.calx-f64-buffer/dot-product@3.3.4.2.2.2.1
+  021 ReturnCall("main") @ calcit:tests.calx-f64-buffer/dot-product@3.3.4.2.2.2.1
+  022 ElseEnd @ calcit:tests.calx-f64-buffer/dot-product@-
+  023 LocalGet(3) @ calcit:tests.calx-f64-buffer/dot-product@3.2
+  024 ThenEnd @ calcit:tests.calx-f64-buffer/dot-product@-

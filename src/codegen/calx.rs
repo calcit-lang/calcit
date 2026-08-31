@@ -26,12 +26,20 @@ use crate::builtins::syntax::get_raw_args_fn;
 use crate::calcit::{Calcit, CalcitFnArgs, CalcitProc, CalcitSyntax, CalcitTypeAnnotation};
 use crate::program::{CompiledDef, CompiledDefKind, CompiledProgram};
 
+/// Compatibility edition for the original scalar-only Calx kernel contract.
+///
+/// Keep this stable for existing compile-cache records and source goldens. A
+/// kernel only moves to the typed-buffer edition when its reachable signature
+/// actually includes [`CalxScalarType::F64Buffer`].
 pub const CALX_KERNEL_ABI_EDITION: &str = "calcit-calx-kernel/1";
+pub const CALX_TYPED_BUFFER_KERNEL_ABI_EDITION: &str = "calcit-calx-kernel/2";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CalxScalarType {
   F64,
   Bool,
+  /// Immutable concrete buffer; the historic enum name is retained for API compatibility.
+  F64Buffer,
 }
 
 impl CalxScalarType {
@@ -39,6 +47,7 @@ impl CalxScalarType {
     match self {
       Self::F64 => "F64",
       Self::Bool => "Bool",
+      Self::F64Buffer => "F64Buffer",
     }
   }
 
@@ -46,6 +55,7 @@ impl CalxScalarType {
     match self {
       Self::F64 => VmType::F64,
       Self::Bool => VmType::Bool,
+      Self::F64Buffer => VmType::F64Buffer,
     }
   }
 }
@@ -477,19 +487,30 @@ impl<'a> EligibilityAnalyzer<'a> {
     }
     self.issues.sort();
     self.issues.dedup();
+    let abi_edition = Arc::from(calx_kernel_abi_edition(self.functions.values()));
     if self.issues.is_empty() {
       Ok(CalxEligibleCallGraph {
-        abi_edition: Arc::from(CALX_KERNEL_ABI_EDITION),
+        abi_edition,
         entry: self.entry,
         functions: self.functions.into_values().collect(),
       })
     } else {
       Err(CalxFallbackReport {
-        abi_edition: Arc::from(CALX_KERNEL_ABI_EDITION),
+        abi_edition,
         entry: self.entry,
         issues: self.issues,
       })
     }
+  }
+}
+
+fn calx_kernel_abi_edition<'a>(mut functions: impl Iterator<Item = &'a CalxEligibleFunction>) -> &'static str {
+  if functions
+    .any(|function| function.params.contains(&CalxScalarType::F64Buffer) || function.result == Some(CalxScalarType::F64Buffer))
+  {
+    CALX_TYPED_BUFFER_KERNEL_ABI_EDITION
+  } else {
+    CALX_KERNEL_ABI_EDITION
   }
 }
 
@@ -892,6 +913,18 @@ fn analyze_proc(proc: CalcitProc, args: &[Calcit], tail: bool, context: &mut Exp
       analyze_typed_args(proc, args, &[CalxScalarType::F64, CalxScalarType::F64], context)?;
       Some(Some(CalxScalarType::Bool))
     }
+    CalcitProc::NativeF64BufferLen => {
+      analyze_typed_args(proc, args, &[CalxScalarType::F64Buffer], context)?;
+      Some(Some(CalxScalarType::F64))
+    }
+    CalcitProc::NativeF64ToI64Index => {
+      analyze_typed_args(proc, args, &[CalxScalarType::F64], context)?;
+      Some(Some(CalxScalarType::F64))
+    }
+    CalcitProc::NativeF64BufferGet => {
+      analyze_typed_args(proc, args, &[CalxScalarType::F64Buffer, CalxScalarType::F64], context)?;
+      Some(Some(CalxScalarType::F64))
+    }
     CalcitProc::Recur => {
       if !tail {
         issue(
@@ -1089,6 +1122,7 @@ fn map_slot_type(
   match annotation {
     CalcitTypeAnnotation::Number => Some(CalxScalarType::F64),
     CalcitTypeAnnotation::Bool => Some(CalxScalarType::Bool),
+    CalcitTypeAnnotation::F64Buffer => Some(CalxScalarType::F64Buffer),
     CalcitTypeAnnotation::Dynamic => {
       push_expression_issue(
         issues,
@@ -1144,6 +1178,7 @@ fn map_slot_type_quiet(annotation: &CalcitTypeAnnotation) -> Option<CalxScalarTy
   match annotation {
     CalcitTypeAnnotation::Number => Some(CalxScalarType::F64),
     CalcitTypeAnnotation::Bool => Some(CalxScalarType::Bool),
+    CalcitTypeAnnotation::F64Buffer => Some(CalxScalarType::F64Buffer),
     _ => None,
   }
 }

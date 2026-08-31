@@ -188,6 +188,8 @@ pub enum CalxBenchmarkRawResult {
   F64(f64),
   /// One strict boolean result.
   Bool(bool),
+  /// One immutable concrete buffer result.
+  F64Buffer(std::rc::Rc<[f64]>),
 }
 
 /// Reusable Calx VM owned by a benchmark call path.
@@ -202,6 +204,7 @@ impl CalxBenchmarkVm {
       CalxRunResult::Void => Ok(CalxBenchmarkRawResult::Void),
       CalxRunResult::Value(CalxValue::F64(value)) => Ok(CalxBenchmarkRawResult::F64(value)),
       CalxRunResult::Value(CalxValue::Bool(value)) => Ok(CalxBenchmarkRawResult::Bool(value)),
+      CalxRunResult::Value(CalxValue::F64Buffer(values)) => Ok(CalxBenchmarkRawResult::F64Buffer(values)),
       CalxRunResult::Value(value) => Err(format!("validated scalar kernel produced unsupported VM value: {value:?}")),
     }
   }
@@ -353,6 +356,7 @@ impl CalxBenchmarkSession {
       .map(|(index, (value, expected))| match (value, expected) {
         (Calcit::Number(value), CalxScalarType::F64) => Ok(CalxValue::F64(*value)),
         (Calcit::Bool(value), CalxScalarType::Bool) => Ok(CalxValue::Bool(*value)),
+        (Calcit::F64Buffer(values), CalxScalarType::F64Buffer) => Ok(CalxValue::f64_buffer_copy_from_slice(values)),
         _ => Err(format!("argument {index} does not match the proven Calx scalar type")),
       })
       .collect()
@@ -369,6 +373,7 @@ impl CalxBenchmarkSession {
       (None, CalxBenchmarkRawResult::Void) => Ok(Calcit::Unit),
       (Some(CalxScalarType::F64), CalxBenchmarkRawResult::F64(value)) => Ok(Calcit::Number(value)),
       (Some(CalxScalarType::Bool), CalxBenchmarkRawResult::Bool(value)) => Ok(Calcit::Bool(value)),
+      (Some(CalxScalarType::F64Buffer), CalxBenchmarkRawResult::F64Buffer(values)) => Ok(Calcit::F64Buffer(Arc::from(values.as_ref()))),
       (expected, actual) => Err(format!("validated result contract {expected:?} produced {actual:?}")),
     }
   }
