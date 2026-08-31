@@ -398,6 +398,17 @@ fn repository_query_doc_frontmatter_keeps_search_metadata_separate() {
 }
 
 #[test]
+fn repository_caps_extraction_contract_uses_registered_frontmatter() {
+  let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/run/caps-extraction-contract.md");
+  let content = fs::read_to_string(path).expect("caps extraction contract should be readable");
+  let (frontmatter, _) = parse_doc_frontmatter(&content);
+
+  assert_eq!(frontmatter.category.as_deref(), Some("run"));
+  validate_doc_frontmatter("docs/run/caps-extraction-contract.md", &frontmatter)
+    .expect("caps extraction contract should remain loadable by calcit docs");
+}
+
+#[test]
 fn collect_search_results_uses_alias_matches_without_body_hits() {
   let docs = vec![GuideDoc {
     filename: "edit-tree.md".to_string(),
