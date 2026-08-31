@@ -30,6 +30,7 @@
 - **拆分总索引**：跨仓库职责和迁移顺序由 [calcit#549](https://github.com/calcit-lang/calcit/issues/549) 追踪；bindgen、caps、Calx benchmark 和 native ABI 的具体任务使用总索引中的 child Issues，避免重复立项。
 - **状态必须可发现**：每个拆出或供多个仓库复用的模块，都必须在自己的 README 或 AGENTS.md 说明状态（production / experimental / template / internal）、职责与非职责、上游/下游契约和 source of truth、兼容矩阵、版本与发布策略、迁移/验证命令以及关联 umbrella/child Issues。
 - **模板不冒充产品**：workflow/template 仓库必须明确标记用途及“不随业务功能迭代版本”；实验性 benchmark 也必须明确结果可比性和非生产定位。
+- **Calx profile 证据**：Calx 性能与 cache 决策以 `docs/run/calx-benchmark.md`、`docs/run/calx-compile-cache.md` 和 `benchmarks/calx/*.json` 为 source of truth；原始 profiler 文件留在 `target/`，提交的摘要必须记录干净 commit、环境、命令、迭代数、原始文件哈希与 inclusive-stack 限制。
 - **迁移完成才删除**：只有目标仓库具备文档、Actions、发布或实验运行入口、兼容验证与跨仓库 smoke 后，才能从主仓库删除原实现；迁移期 README 必须同时说明当前入口与目标状态。
 - **Calx harness 契约**：实验性 benchmark 拆分以 `docs/run/calx-harness-extraction.md` 和 machine-readable bootstrap manifest 为准；lowering/correctness 留在 core，外部 harness 必须 pin Calcit revision，不能依赖可变全局或把机器阈值写成 correctness gate。
 

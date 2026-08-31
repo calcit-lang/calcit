@@ -32,6 +32,13 @@ compile 成本远大于 VM setup，尚不足以优先实现 VM pooling，也不�
 本报告仍缺少 typed-buffer workload、平台 profiler 的 peak RSS/allocation hotspot、WASM 同 kernel 参照，
 以及跨机器重复采样。因此 calx-vm #39 保持打开；不能根据这一个环境承诺固定倍数或自动 offload 阈值。
 
+编译阶段 profile 见 [`20260831-compile-profile-macos-arm64.json`](./20260831-compile-profile-macos-arm64.json)。
+它从干净提交 `ef04017f0bc60e2d8f6341599f00d426a11ed360` 采集五个 kernel 的分阶段时间与 allocator counters，
+并在 bounded-simulation 上保留 Samply profile 哈希和 top stacks。program construction 占约 47–54%，
+主要 CPU/分配路径为 `emit_expression`、`source_origin` 与 builder emission。这个证据把下一阶段收敛为
+revision-safe validated-artifact cache；详细边界见
+[compile cache design](../../docs/run/calx-compile-cache.md)。
+
 ---
 
 ## English
@@ -69,3 +76,11 @@ so it does not yet justify prioritizing VM pooling or claiming that arbitrary Ca
 The report still lacks a typed-buffer workload, platform-profiler peak RSS/allocation hotspots, a same-kernel WASM
 reference, and cross-machine repetition. calx-vm #39 therefore remains open; this one environment cannot justify a
 fixed multiplier or an automatic offload threshold.
+
+The compile-stage profile is recorded in
+[`20260831-compile-profile-macos-arm64.json`](./20260831-compile-profile-macos-arm64.json). It captures staged timings
+and allocator counters for all five kernels from clean commit `ef04017f0bc60e2d8f6341599f00d426a11ed360`, plus
+the Samply profile hashes and selected stacks for bounded-simulation. Program construction accounts for roughly
+47–54%, with `emit_expression`, `source_origin`, and builder emission dominating CPU and allocation paths. This
+evidence narrows the next slice to a revision-safe validated-artifact cache; see the
+[compile cache design](../../docs/run/calx-compile-cache.md) for the boundary.

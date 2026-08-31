@@ -134,7 +134,10 @@ cache、profiling/selection policy，也还没有基于 benchmark 的自动 offl
 kernel、zero/single-result typed imports、generated program、trap 与 fallback。分阶段 benchmark matrix、
 采样 crossover point 和首份 scalar baseline 已建立；[calx-vm #39](https://github.com/calcit-lang/calx-vm/issues/39)
 现已补充公平的 cached Calcit callable 基线：有限 scalar 样本仍显示 Calx hot 收益，但 lookup-call 对比确实
-夸大了微型 kernel 差距。后续先用 profile 证据决定 compile/program cache，VM pooling 不在缺少独立证据时
-提前实现；实用 bulk workload 由 [calx-vm #50](https://github.com/calcit-lang/calx-vm/issues/50) 以严格、
+夸大了微型 kernel 差距。[compile profile](../../benchmarks/calx/20260831-compile-profile-macos-arm64.json)
+进一步确认 program construction 及其 expression/source-origin emission 是首要 CPU 与分配目标；
+[revision-safe cache design](./calx-compile-cache.md) 因此选择缓存完整 validated source-derived artifact，并在
+每次命中重新附着 host bindings。VM pooling 不在缺少独立证据时提前实现；实用 bulk workload 由
+[calx-vm #50](https://github.com/calcit-lang/calx-vm/issues/50) 以严格、
 non-nil、zero-Dynamic typed buffer 单独推进，再决定 selection policy。
 基准命令、阶段定义和原始 JSON 格式见[《Calcit→Calx benchmark methodology》](./calx-benchmark.md)。
