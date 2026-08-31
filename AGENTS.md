@@ -24,6 +24,14 @@
 - **跨项目验证**：相关语言/生态改动优先在 Calcium Workflow 回归，并逐步用 TopixIM/Timegrass 类真实实时应用验证；Calcit、Respo、Recollect、WebSocket 与 native FFI 模块应保持层次清晰、职责一致。
 - **双语协作记录**：关联 Issue 与 PR 的标题、正文和阶段性进度保持中英双语，便于跨项目追踪同一设计方向。
 
+### 仓库职责与拆分模块追踪
+
+- **主仓库边界**：parser/source model、Snapshot、preprocess/type system、runtime、JS/WASM/Calx backend 语义、`@calcit/procs`、`calcit` CLI/Agent interface 以及权威 RFC/离线文档留在本仓库。短期不规划 LSP，不为假设中的 LSP consumer 拆独立 analysis 仓库。
+- **拆分总索引**：跨仓库职责和迁移顺序由 [calcit#549](https://github.com/calcit-lang/calcit/issues/549) 追踪；bindgen、caps、Calx benchmark 和 native ABI 的具体任务使用总索引中的 child Issues，避免重复立项。
+- **状态必须可发现**：每个拆出或供多个仓库复用的模块，都必须在自己的 README 或 AGENTS.md 说明状态（production / experimental / template / internal）、职责与非职责、上游/下游契约和 source of truth、兼容矩阵、版本与发布策略、迁移/验证命令以及关联 umbrella/child Issues。
+- **模板不冒充产品**：workflow/template 仓库必须明确标记用途及“不随业务功能迭代版本”；实验性 benchmark 也必须明确结果可比性和非生产定位。
+- **迁移完成才删除**：只有目标仓库具备文档、Actions、发布或实验运行入口、兼容验证与跨仓库 smoke 后，才能从主仓库删除原实现；迁移期 README 必须同时说明当前入口与目标状态。
+
 直接使用命令修改 calcit 程序时不需要调用 cargo, 直接按照文档给出的命令行示例执行即可。
 
 在开始任何 `calcit edit` / `calcit tree` 修改前，先把下面这条命令当作**硬前置步骤**执行一遍，而不是可选建议：
