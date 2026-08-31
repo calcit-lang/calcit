@@ -2,17 +2,19 @@
 
 ## Status / 状态
 
-This document freezes the phase-one boundary tracked by
+This document freezes the boundary tracked by
 [calcit#557](https://github.com/calcit-lang/calcit/issues/557). The harness is
 an **experimental benchmark/research product**, not a Calcit runtime feature,
-language correctness gate, or production dependency. This phase documents the
-contract and bootstrap inventory; it does not create a repository or remove
-assets from Calcit core.
+language correctness gate, or production dependency. The standalone repository
+is now bootstrapped. The current transition adds the revision-pinned adapter and
+routes the temporary core runner through it; duplicate core assets remain until
+the standalone quick matrix passes on the adapter revision.
 
 本文冻结 [calcit#557](https://github.com/calcit-lang/calcit/issues/557)
-追踪的第一阶段边界。该 harness 是**实验性 benchmark/research 产品**，不是 Calcit
-runtime 功能、语言正确性 gate 或生产依赖。本阶段只记录契约和 bootstrap inventory，
-不创建仓库，也不从 Calcit core 删除资产。
+追踪的拆分边界。该 harness 是**实验性 benchmark/research 产品**，不是 Calcit runtime
+功能、语言正确性 gate 或生产依赖。独立仓库已经 bootstrap；当前过渡阶段增加固定 revision
+的 adapter，并让 core 中的临时 runner 先通过它运行。只有独立仓库基于该 revision
+通过 quick matrix 后，才删除 core 中的重复资产。
 
 The machine-readable bootstrap manifest is
 [`calx-harness-bootstrap.json`](./calx-harness-bootstrap.json). Issue
@@ -23,13 +25,15 @@ owns the later core cutover.
 
 ## Product and repository boundary / 产品与仓库边界
 
-The proposed standalone repository name is `calcit-lang/calcit-calx-bench`,
-pending maintainer confirmation in #558. The existing
+The standalone repository is
+[`calcit-lang/calcit-calx-bench`](https://github.com/calcit-lang/calcit-calx-bench).
+The existing
 [`calcit-lang/calcit-calx`](https://github.com/calcit-lang/calcit-calx) remains
 a native FFI demo and must not silently absorb benchmark orchestration,
 historical reports, or release policy.
 
-建议的独立仓库名为 `calcit-lang/calcit-calx-bench`，等待维护者在 #558 确认。已有
+独立仓库为
+[`calcit-lang/calcit-calx-bench`](https://github.com/calcit-lang/calcit-calx-bench)。已有
 [`calcit-lang/calcit-calx`](https://github.com/calcit-lang/calcit-calx)
 继续保持 native FFI demo 定位，不静默承接 benchmark orchestration、历史报告或发布策略。
 
@@ -49,7 +53,7 @@ harness/schema 变化，每次测量必须固定精确的 Calcit 与 `calx-vm` r
 
 | Asset | Phase-two action | Long-term owner | Reason |
 | --- | --- | --- | --- |
-| `src/bin/calx_bench.rs` | migrate, then replace with the narrow adapter consumer | standalone harness | single-case runner and measurement phases |
+| `src/bin/calx_bench.rs` | now consumes only the narrow adapter; migrate and then remove | standalone harness | single-case runner and measurement phases |
 | `scripts/bench-calx-e2e.mjs` | migrate | standalone harness | process/profile/sample orchestration and aggregation |
 | `scripts/bench-calx-settings.mjs` and test | migrate | standalone harness | experiment-setting policy |
 | `docs/run/calx-benchmark.md` | migrate methodology; leave a short core link | standalone harness | measurement and comparison policy |
@@ -131,6 +135,24 @@ inside core are forbidden.
 该 adapter 是 **internal benchmark API**，不承诺 semver 兼容，也不能意外扩张成通用
 embedding API。harness 固定 Calcit commit/tag，升级 pin 前运行 compile 与 quick-smoke matrix。
 禁止暴露可变全局、隐式安装源码、effect 后自动 fallback，以及把 benchmark policy 放回 core。
+
+The adapter lives at `calcit::codegen::calx::benchmark_session` and identifies
+its contract with `CALX_BENCHMARK_SESSION_EDITION`. `CalxBenchmarkCorpus`
+requires a complete name-to-schema declaration before source installation;
+`CalxBenchmarkSession` then owns the process-local setup lock, immutable
+preprocessed program snapshot, and cached callable. Its methods expose measured
+compile/cache preparation, lookup/cached Calcit execution, strict Calx argument
+encoding, VM execution/result decoding, timings, and stable program counts. The
+temporary core runner consumes this same surface so migration cannot depend on
+additional private hooks.
+
+adapter 位于 `calcit::codegen::calx::benchmark_session`，通过
+`CALX_BENCHMARK_SESSION_EDITION` 标识契约。`CalxBenchmarkCorpus` 在安装源码前要求
+完整的 definition-name 到 schema 声明；`CalxBenchmarkSession` 随后持有进程内 setup
+锁、不可变的 preprocess program snapshot 和 cached callable。它的方法只暴露 measured
+compile/cache preparation、Calcit lookup/cached 执行、严格 Calx 参数编码、VM 执行/结果解码、
+timing 与稳定 program counts。core 中的临时 runner 也只消费这组接口，确保迁移时不能依赖
+额外 private hook。
 
 ## Test and smoke migration matrix / 测试与 smoke 迁移矩阵
 

@@ -15,7 +15,8 @@ fn bootstrap_manifest_has_valid_tracking_ownership_and_assets() {
   let manifest = read_json(BOOTSTRAP);
   assert_eq!(manifest["schema"], "calcit-calx-harness-bootstrap/1");
   assert_eq!(manifest["status"], "experimental-benchmark");
-  assert_eq!(manifest["targetRepository"]["confirmed"], false);
+  assert_eq!(manifest["targetRepository"]["name"], "calcit-lang/calcit-calx-bench");
+  assert_eq!(manifest["targetRepository"]["confirmed"], true);
   assert_eq!(
     manifest["targetRepository"]["existingCalcitCalxRole"],
     "native-ffi-demo-do-not-absorb-harness"
@@ -49,6 +50,7 @@ fn bootstrap_manifest_has_valid_tracking_ownership_and_assets() {
     stayed,
     string_set(&[
       "src/codegen/calx.rs",
+      "src/codegen/calx/benchmark_session.rs",
       "src/codegen/calx/lowering.rs",
       "src/program/tests.rs",
       "tests/fixtures/calx/scalar-kernels.cirru",
@@ -69,6 +71,9 @@ fn bootstrap_manifest_has_valid_tracking_ownership_and_assets() {
 
   assert_eq!(manifest["migrationTests"]["rust"], 3);
   assert_eq!(manifest["migrationTests"]["node"], 4);
+  assert_eq!(manifest["adapter"]["module"], "calcit::codegen::calx::benchmark_session");
+  assert_eq!(manifest["adapter"]["edition"], "calcit-calx-benchmark-session/1");
+  assert_eq!(manifest["adapter"]["coreTransitionalRunnerUsesAdapter"], true);
   assert_eq!(manifest["reportContract"]["preserveRawSamples"], true);
   assert_eq!(manifest["reportContract"]["absoluteCiThresholds"], false);
 }
