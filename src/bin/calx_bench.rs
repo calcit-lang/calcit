@@ -7,8 +7,8 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::hint::black_box;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use argh::FromArgs;
@@ -33,6 +33,35 @@ static PROFILE_REALLOCATION_CALLS: AtomicU64 = AtomicU64::new(0);
 static PROFILE_DEALLOCATION_CALLS: AtomicU64 = AtomicU64::new(0);
 static PROFILE_REQUESTED_BYTES: AtomicU64 = AtomicU64::new(0);
 static PROFILE_DEALLOCATED_BYTES: AtomicU64 = AtomicU64::new(0);
+static PROFILE_ALLOCATION_WINDOW: Mutex<()> = Mutex::new(());
+
+struct ProfileAllocationWindow {
+  _guard: MutexGuard<'static, ()>,
+}
+
+impl ProfileAllocationWindow {
+  /// Start one exclusive allocation-measurement window and reset its counters.
+  fn begin() -> Result<Self, String> {
+    let guard = PROFILE_ALLOCATION_WINDOW
+      .lock()
+      .map_err(|error| format!("Calx compile profile allocation window is poisoned: {error}"))?;
+    reset_profile_allocations();
+    COUNT_PROFILE_ALLOCATIONS.store(true, Ordering::Relaxed);
+    Ok(Self { _guard: guard })
+  }
+
+  /// Stop counting before exposing the counters to report construction.
+  fn finish(self) -> AllocationReport {
+    COUNT_PROFILE_ALLOCATIONS.store(false, Ordering::Relaxed);
+    read_profile_allocations()
+  }
+}
+
+impl Drop for ProfileAllocationWindow {
+  fn drop(&mut self) {
+    COUNT_PROFILE_ALLOCATIONS.store(false, Ordering::Relaxed);
+  }
+}
 
 fn record_profile_allocation(bytes: usize) {
   if COUNT_PROFILE_ALLOCATIONS.load(Ordering::Relaxed) {
@@ -202,7 +231,7 @@ struct CompileProfileReport {
   allocation_iterations: u32,
   allocations: AllocationReport,
   allocations_per_iteration: AllocationReport,
-  correctness: bool,
+  compilation_succeeded: bool,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -382,6 +411,7 @@ fn resolve_cached_calcit_callable(kernel: &str, call_stack: &CallStackList) -> R
   }
 }
 
+/// Reset counters while holding the exclusive profile allocation window.
 fn reset_profile_allocations() {
   PROFILE_ALLOCATION_CALLS.store(0, Ordering::Relaxed);
   PROFILE_REALLOCATION_CALLS.store(0, Ordering::Relaxed);
@@ -390,6 +420,7 @@ fn reset_profile_allocations() {
   PROFILE_DEALLOCATED_BYTES.store(0, Ordering::Relaxed);
 }
 
+/// Snapshot counters before releasing the exclusive profile allocation window.
 fn read_profile_allocations() -> AllocationReport {
   AllocationReport {
     allocation_calls: PROFILE_ALLOCATION_CALLS.load(Ordering::Relaxed),
@@ -400,6 +431,7 @@ fn read_profile_allocations() -> AllocationReport {
   }
 }
 
+/// Accumulate one measured compilation into an aggregate stage report.
 fn add_compile_timings(report: &mut CompileReport, timings: calcit::codegen::calx::CalxKernelCompileTimings) {
   report.eligibility_ns = report.eligibility_ns.saturating_add(nanos(timings.eligibility));
   report.planning_ns = report.planning_ns.saturating_add(nanos(timings.planning));
@@ -451,17 +483,15 @@ fn measure_compile_profile(args: &Args) -> Result<CompileProfileReport, String> 
   }
   let stage_timing_per_iteration = stage_timing_total.divided_by(args.compile_profile_stage_iterations);
 
-  reset_profile_allocations();
-  COUNT_PROFILE_ALLOCATIONS.store(true, Ordering::Relaxed);
+  let allocation_window = ProfileAllocationWindow::begin()?;
   let allocation_result = (|| {
     for _ in 0..args.compile_profile_allocation_iterations {
       black_box(compile_calx_kernel(&snapshot, FIXTURE_NAMESPACE, args.kernel.as_str()).map_err(|error| error.to_string())?);
     }
     Ok::<(), String>(())
   })();
-  COUNT_PROFILE_ALLOCATIONS.store(false, Ordering::Relaxed);
   allocation_result?;
-  let allocations = read_profile_allocations();
+  let allocations = allocation_window.finish();
   let allocations_per_iteration = allocations.divided_by(args.compile_profile_allocation_iterations);
 
   let compile_started = Instant::now();
@@ -488,7 +518,7 @@ fn measure_compile_profile(args: &Args) -> Result<CompileProfileReport, String> 
     allocation_iterations: args.compile_profile_allocation_iterations,
     allocations,
     allocations_per_iteration,
-    correctness: true,
+    compilation_succeeded: true,
   })
 }
 
@@ -714,6 +744,9 @@ mod tests {
     assert!(report.allocations.requested_bytes > 0);
     assert!(report.allocations_per_iteration.allocation_calls > 0);
     assert!(report.allocations_per_iteration.requested_bytes > 0);
-    assert!(report.correctness);
+    assert!(report.compilation_succeeded);
+    let serialized = serde_json::to_value(&report).expect("serialize compile profile report");
+    assert_eq!(serialized["compilationSucceeded"], true);
+    assert!(serialized.get("correctness").is_none());
   }
 }

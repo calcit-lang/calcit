@@ -61,6 +61,10 @@ CPU/allocation profiler 不能从单次约几十微秒的编译可靠分辨热�
 eligibility → planning → program construction → validation/lowering 链。stdout 仍恰好输出一个 JSON，
 schema 为 `calcit-calx-compile-profile/1`；默认 benchmark 模式和 schema 不变。
 
+profile report 的 `compilationSucceeded` 只表示全部 warmup、stage、allocation 与未插桩编译都成功完成；
+profile mode 不执行 kernel，因此不会输出 `correctness: true`。语义正确性仍由默认 benchmark 与 core
+differential corpus 验证。
+
 ```bash
 CARGO_PROFILE_RELEASE_STRIP=none \
   CARGO_PROFILE_RELEASE_DEBUG=line-tables-only \
@@ -175,6 +179,11 @@ microseconds. Passing `--compile-profile-iterations` installs and preprocesses t
 the complete uncached eligibility → planning → program construction → validation/lowering pipeline. Stdout still
 contains exactly one JSON value, using `calcit-calx-compile-profile/1`; the default benchmark mode and schema are
 unchanged.
+
+The profile report's `compilationSucceeded` field means only that every warmup, staged, allocation, and
+uninstrumented compilation completed successfully. Profile mode does not execute the kernel and therefore does not
+emit `correctness: true`; semantic correctness remains covered by the default benchmark and the core differential
+corpus.
 
 ```bash
 CARGO_PROFILE_RELEASE_STRIP=none \

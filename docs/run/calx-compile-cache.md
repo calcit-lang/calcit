@@ -79,12 +79,21 @@ miss reason 固定区分 `empty`、`entry-changed`、`callee-changed`、`schema-
 `import-contract-changed`、`dependency-missing` 和 `evicted`。命中报告明确标记跳过 eligibility、planning、
 program construction、validation/lowering，但仍记录 revision validation 与 binding attachment 成本。
 
+为了让 `evicted` 可判定，cache 维护独立的 recently-evicted slot-key ledger。ledger 保存完整 slot key，容量不超过
+artifact capacity，并按确定性的 LRU 顺序裁剪；它不是 artifact，也不保存 program、callback 或 definition stamp。
+淘汰 artifact 时插入或刷新其 key；再次插入同 key 时移除 tombstone；`clear()` 同时清空 artifact 与 ledger。
+当 active slots 中没有 key 时，ledger 命中报告 `evicted`，否则报告 `empty`。artifact 淘汰当下只增加
+`evictions`，后续实际 lookup 才增加 `misses.evicted`，避免一次淘汰重复计为 miss。ledger 自身淘汰旧 key 不增加
+artifact eviction 统计，之后该旧 key 按 `empty` 处理。
+
 ### 安全与测试门槛
 
 - hot reload 改 entry、direct/transitive callee 或 schema 必须 miss；无关 definition 改动必须 hit；
 - callback A 编译后，以相同声明传 callback B 命中缓存，执行必须只调用 B；
 - import declaration 改动必须 miss，callback identity 改动本身不能污染 source-derived key；
 - capacity、LRU eviction、显式 clear 与 stats 必须可测试；
+- eviction provenance 必须覆盖 capacity=1 下插入 A、插入 B、查询 A 得到 `evicted`；ledger 溢出后最旧
+  tombstone 查询得到 `empty`；重新插入或 clear 后旧 tombstone 不得继续报告 `evicted`；
 - partial lowering、placeholder 和 negative eligibility result 不缓存；
 - eligibility fallback 仍只发生在执行前，runtime trap 后不重跑 Calcit；
 - benchmark 必须同时报告 uncached one-shot、cache hit + fresh VM、cached-native 与 reused-Calx execution，
@@ -177,12 +186,23 @@ syntax/instruction count, and estimated bytes. Stable miss reasons distinguish `
 A hit reports that eligibility, planning, program construction, and validation/lowering were skipped while still
 recording revision-validation and binding-attachment cost.
 
+To make `evicted` observable, the cache keeps a separate recently-evicted slot-key ledger. It stores complete slot
+keys, is bounded to at most the artifact capacity, and is trimmed in deterministic LRU order. It is not an artifact
+and retains no program, callback, or definition stamp. Evicting an artifact inserts or refreshes its key; reinserting
+that key removes its tombstone; `clear()` clears both artifacts and the ledger. When no active slot matches, a ledger
+hit reports `evicted`, otherwise the miss is `empty`. The eviction itself increments only `evictions`; a later lookup
+increments `misses.evicted`, avoiding double-counting. Removing an old key from the bounded ledger does not count as
+an artifact eviction, and a later lookup of that forgotten key reports `empty`.
+
 ### Safety and test gate
 
 - Hot reloads of the entry, a direct/transitive callee, or a schema must miss; an unrelated definition change must hit.
 - After compiling with callback A, a hit with the same declaration and callback B must execute only B.
 - Import declaration changes must miss; callback identity itself must not contaminate the source-derived key.
 - Capacity, deterministic LRU eviction, explicit clear, and stats must be covered.
+- Eviction-provenance coverage inserts A then B at capacity one and expects an A lookup to report `evicted`; after
+  the ledger overflows its oldest tombstone reports `empty`; reinsertion and clear must not leave a stale `evicted`
+  reason.
 - Partial lowering, placeholders, and negative eligibility results are never cached.
 - Eligibility fallback remains compile-time only; a runtime trap never reruns Calcit.
 - Benchmarks compare uncached one-shot, cache hit plus fresh VM, cached-native, and reused-Calx execution while retaining allocation and estimated-memory costs.
