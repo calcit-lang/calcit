@@ -1,7 +1,8 @@
 {
-  "version": 1,
+  "version": 2,
   "package": "calcit.std",
   "package_version": "0.2.29",
+  "declarations": [],
   "definitions": [
     {
       "id": "calcit.std.hash/md5",

@@ -1,0 +1,62 @@
+{
+  "version": 2,
+  "package": "demo.types",
+  "package_version": "0.1.0",
+  "declarations": [
+    {
+      "kind": "struct",
+      "id": "demo.schema/Person",
+      "namespace": "demo.schema",
+      "name": "Person",
+      "type_parameters": [],
+      "fields": [
+        { "name": "name", "type": { "kind": "string" } },
+        { "name": "nickname", "type": { "kind": "option", "item": { "kind": "string" } } }
+      ]
+    },
+    {
+      "kind": "enum",
+      "id": "demo.schema/Outcome",
+      "namespace": "demo.schema",
+      "name": "Outcome",
+      "type_parameters": [],
+      "variants": [
+        {
+          "name": "ok",
+          "payload": [{ "kind": "struct", "id": "demo.schema/Person", "arguments": [] }]
+        },
+        { "name": "err", "payload": [{ "kind": "string" }] }
+      ]
+    }
+  ],
+  "definitions": [
+    {
+      "id": "demo.ffi/roundtrip",
+      "namespace": "demo.ffi",
+      "name": "roundtrip",
+      "doc": "Round-trip a typed composite value.",
+      "logical_schema": "(:: 'Fn ({} (:args ([] 'demo.schema/Person)) (:return (:: 'Result 'demo.schema/Outcome 'String))))",
+      "signature": {
+        "parameters": [
+          { "position": 0, "type": { "kind": "struct", "id": "demo.schema/Person", "arguments": [] } }
+        ],
+        "result": {
+          "kind": "result",
+          "ok": { "kind": "enum", "id": "demo.schema/Outcome", "arguments": [] },
+          "error": { "kind": "string" }
+        }
+      },
+      "lowering": {
+        "backend": "native",
+        "target": null,
+        "kind": "dylib-method",
+        "symbol": "roundtrip",
+        "invoke": "sync",
+        "transport": "edn-buffer-v1",
+        "raw": "({} (:backend :native) (:invoke :sync) (:kind :dylib-method) (:symbol |roundtrip) (:transport :edn-buffer-v1))"
+      },
+      "status": "supported",
+      "diagnostic_codes": []
+    }
+  ]
+}
