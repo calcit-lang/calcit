@@ -157,8 +157,9 @@ caps status
 ```
 
 Use `caps verify` for the stronger immutable-store and native-receipt checks. For JavaScript projects,
-run `caps verify --toolchain` after `yarn install` to require that `:calcit-version`, `caps`, the
-`package.json` `@calcit/procs` declaration, and the installed runtime package agree exactly. Shared
+run `caps verify --toolchain` after `yarn install` to require that `:calcit-version`, the installed `calcit`,
+the `package.json` `@calcit/procs` declaration, and the installed runtime package agree exactly.
+The independently versioned caps release reports the comparison but is not itself expected to share the Calcit version. Shared
 store revisions should not be edited directly; reinstall a damaged revision instead. `caps` overwrites
 `~/.config/calcit/module-caches/AGENTS.md` on every invocation with the workflow for changing a dependency:
 use its Git repository, commit the change, publish a new tag, then update `deps.cirru` and reinstall.

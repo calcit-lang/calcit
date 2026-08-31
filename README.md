@@ -21,7 +21,7 @@ Core design:
 Current direction:
 
 - `calcit.cirru` is the canonical source snapshot; retired `compact.cirru` inputs receive migration guidance
-- CLI-first development with `calcit` and `caps`, designed to work well with AI agents in terminal workflows
+- CLI-first development with the `calcit` runtime and the independently released `caps` package manager, designed to work well with AI agents in terminal workflows
 - Better CLI editing and validation for CI, docs lookup, module management, and incremental updates
 - Consistent support for real-time web applications: typed WebSocket messages, deterministic state updates, diff/patch synchronization, acknowledgement, and resynchronization
 
@@ -35,7 +35,7 @@ cadence are maintained separately or tracked for extraction:
 | --- | --- |
 | [`calcit-bindgen`](https://github.com/calcit-lang/calcit-bindgen) | Independent repository; production generator parity and removal of the core preview are tracked in [#544](https://github.com/calcit-lang/calcit/issues/544). |
 | [`calcit-native-ffi`](https://github.com/calcit-lang/calcit-native-ffi) | Independent production shared ABI/helper crate for native modules; canonical ABI ownership is tracked in [calcit-native-ffi#7](https://github.com/calcit-lang/calcit-native-ffi/issues/7). |
-| `caps` | Still shipped from this repository while independent package-manager extraction is tracked in [#546](https://github.com/calcit-lang/calcit/issues/546). |
+| [`caps`](https://github.com/calcit-lang/caps) | Independent production package manager released as the `calcit-caps` crate; the completed core cutover is tracked in [#555](https://github.com/calcit-lang/calcit/issues/555). |
 | [`calcit-calx-bench`](https://github.com/calcit-lang/calcit-calx-bench) | Independent experimental harness is bootstrapped; the revision-pinned session-adapter migration and removal of duplicate core benchmark assets are tracked in [#558](https://github.com/calcit-lang/calcit/issues/558) and [#559](https://github.com/calcit-lang/calcit/issues/559), while Calx backend semantics remain in core. |
 
 See [#549](https://github.com/calcit-lang/calcit/issues/549) for the bilingual repository-boundary roadmap.
@@ -50,8 +50,9 @@ Build and install with Rust:
 # get Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# get Calcit user-facing tools
-cargo install calcit --bin calcit --bin caps
+# install the independently versioned user-facing tools
+cargo install calcit --bin calcit
+cargo install calcit-caps
 ```
 
 Installed binaries:
@@ -59,16 +60,18 @@ Installed binaries:
 - `calcit`, the runtime and JS compiler
 - `caps`, for downloading dependencies declared in `deps.cirru`
 
-When installing from source, install the same public tools:
+When developing Calcit core from source, install its runtime locally and install caps from its own release:
 
 ```bash
-cargo install --path . --bin calcit --bin caps
+cargo install --path . --bin calcit
+cargo install calcit-caps
 ```
 
 For new GitHub Actions workflows, use [setup-calcit@v1](https://github.com/calcit-lang/setup-calcit). It
-installs `calcit` and creates a lightweight `cr -> calcit` compatibility link for existing workflow commands;
-for pre-rename releases it falls back to `cr` and exposes the equivalent `calcit` command.
-Local installations ship only `calcit`; migrate local scripts directly instead of relying on a wrapper. Existing
+installs the Calcit version declared in `deps.cirru`, installs a separately versioned stable caps release, and creates
+a lightweight `cr -> calcit` compatibility link for existing workflow commands. For pre-rename Calcit releases it
+falls back to `cr` and exposes the equivalent `calcit` command. Local Calcit releases no longer include caps; migrate
+local scripts directly instead of relying on a wrapper. Existing
 [setup-cr](https://github.com/calcit-lang/setup-cr) workflow tags remain supported.
 
 ### Quick Start
@@ -130,7 +133,7 @@ calcit query search 'foo'   # locate code by symbol or string
 calcit edit ...             # structured edits for defs, imports, config, modules
 calcit js                   # compile once
 calcit js -w                # watch mode
-caps                    # install/update dependencies from deps.cirru
+caps                         # install/update dependencies from deps.cirru
 ```
 
 Calcit Editor is no longer the recommended path for everyday development. If you still need the older editor workflow, see [Calcit Editor](https://github.com/calcit-lang/editor).
