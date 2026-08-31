@@ -1,20 +1,65 @@
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
 use md5::{Digest, Md5};
 use serde::Serialize;
 
-use crate::calcit::{CalcitTypeAnnotation, SchemaKind};
+use crate::calcit::{Calcit, CalcitEnumDef, CalcitStructDef, CalcitTypeAnnotation, SchemaKind};
+use crate::data::cirru::code_to_calcit;
 use crate::snapshot::{CodeEntry, Snapshot};
 use cirru_edn::Edn;
+use cirru_parser::Cirru;
 
-pub const FFI_INTERFACE_IR_VERSION: u32 = 1;
-pub const FFI_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/ffi-interface-ir-v1.schema.json";
-pub const FFI_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/ffi-interface-ir-v1.schema.json");
+pub const FFI_INTERFACE_IR_VERSION: u32 = 2;
+pub const FFI_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/ffi-interface-ir-v2.schema.json";
+pub const FFI_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/ffi-interface-ir-v2.schema.json");
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FfiInterfaceDocument {
   pub version: u32,
   pub package: String,
   pub package_version: String,
+  pub declarations: Vec<FfiTypeDeclarationIr>,
   pub definitions: Vec<FfiDefinitionIr>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum FfiTypeDeclarationIr {
+  Struct {
+    id: String,
+    namespace: String,
+    name: String,
+    type_parameters: Vec<String>,
+    fields: Vec<FfiStructFieldIr>,
+  },
+  Enum {
+    id: String,
+    namespace: String,
+    name: String,
+    type_parameters: Vec<String>,
+    variants: Vec<FfiEnumVariantIr>,
+  },
+}
+
+impl FfiTypeDeclarationIr {
+  fn id(&self) -> &str {
+    match self {
+      Self::Struct { id, .. } | Self::Enum { id, .. } => id,
+    }
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FfiStructFieldIr {
+  pub name: String,
+  #[serde(rename = "type")]
+  pub type_ir: FfiTypeIr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FfiEnumVariantIr {
+  pub name: String,
+  pub payload: Vec<FfiTypeIr>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -59,7 +104,11 @@ pub enum FfiTypeIr {
   String,
   Buffer,
   List { item: Box<FfiTypeIr> },
-  Named { name: String, arguments: Vec<FfiTypeIr> },
+  Option { item: Box<FfiTypeIr> },
+  Result { ok: Box<FfiTypeIr>, error: Box<FfiTypeIr> },
+  Struct { id: String, arguments: Vec<FfiTypeIr> },
+  Enum { id: String, arguments: Vec<FfiTypeIr> },
+  TypeParameter { name: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -118,23 +167,200 @@ fn diagnostic(
   }
 }
 
-fn named_type(
-  name: &str,
+#[derive(Debug, Clone)]
+enum LocalTypeDeclaration {
+  Struct {
+    id: String,
+    namespace: String,
+    nominal: CalcitStructDef,
+  },
+  Enum {
+    id: String,
+    namespace: String,
+    nominal: CalcitEnumDef,
+  },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocalTypeDeclarationKind {
+  Struct,
+  Enum,
+}
+
+impl LocalTypeDeclaration {
+  fn id(&self) -> &str {
+    match self {
+      Self::Struct { id, .. } | Self::Enum { id, .. } => id,
+    }
+  }
+
+  fn namespace(&self) -> &str {
+    match self {
+      Self::Struct { namespace, .. } | Self::Enum { namespace, .. } => namespace,
+    }
+  }
+
+  fn kind(&self) -> LocalTypeDeclarationKind {
+    match self {
+      Self::Struct { .. } => LocalTypeDeclarationKind::Struct,
+      Self::Enum { .. } => LocalTypeDeclarationKind::Enum,
+    }
+  }
+
+  fn type_parameters(&self) -> &[std::sync::Arc<str>] {
+    match self {
+      Self::Struct { nominal, .. } => nominal.generics.as_ref(),
+      Self::Enum { nominal, .. } => nominal.generics(),
+    }
+  }
+}
+
+struct TypeConversionContext<'a> {
+  declarations: &'a BTreeMap<String, LocalTypeDeclaration>,
+  required: &'a mut BTreeSet<String>,
+  current_namespace: &'a str,
+  type_parameters: &'a BTreeSet<String>,
+}
+
+fn normalized_type_name(name: &str) -> &str {
+  name.trim_start_matches('\'')
+}
+
+fn explicit_builtin_type(name: &str) -> Option<&str> {
+  match normalized_type_name(name) {
+    "Option" | "calcit.core/Option" => Some("Option"),
+    "Result" | "calcit.core/Result" => Some("Result"),
+    _ => None,
+  }
+}
+
+fn convert_type_arguments(
   arguments: &[std::sync::Arc<CalcitTypeAnnotation>],
   definition: &str,
   path: &str,
-) -> Result<FfiTypeIr, Box<FfiInterfaceDiagnostic>> {
-  let mut converted = Vec::with_capacity(arguments.len());
-  for (index, argument) in arguments.iter().enumerate() {
-    converted.push(convert_type(argument, definition, &format!("{path}.arguments.{index}"))?);
+  context: &mut TypeConversionContext<'_>,
+) -> Result<Vec<FfiTypeIr>, Box<FfiInterfaceDiagnostic>> {
+  arguments
+    .iter()
+    .enumerate()
+    .map(|(index, argument)| convert_type(argument, definition, &format!("{path}.arguments.{index}"), context))
+    .collect()
+}
+
+fn resolve_local_declaration<'a>(
+  name: &str,
+  expected_kind: Option<LocalTypeDeclarationKind>,
+  definition: &str,
+  path: &str,
+  context: &'a TypeConversionContext<'_>,
+) -> Result<&'a LocalTypeDeclaration, Box<FfiInterfaceDiagnostic>> {
+  let name = normalized_type_name(name);
+  let mut candidates = Vec::new();
+  if name.contains('/') {
+    if let Some(candidate) = context.declarations.get(name) {
+      candidates.push(candidate);
+    }
+  } else {
+    let local_id = format!("{}/{name}", context.current_namespace);
+    if let Some(candidate) = context.declarations.get(&local_id) {
+      candidates.push(candidate);
+    }
   }
-  Ok(FfiTypeIr::Named {
-    name: name.trim_start_matches('\'').to_owned(),
-    arguments: converted,
+  if let Some(kind) = expected_kind {
+    candidates.retain(|candidate| candidate.kind() == kind);
+  }
+  candidates.sort_unstable_by_key(|candidate| candidate.id());
+  candidates.dedup_by_key(|candidate| candidate.id());
+
+  match candidates.as_slice() {
+    [declaration] => Ok(*declaration),
+    [] => Err(Box::new(diagnostic(
+      definition,
+      path,
+      "E_FFI_IR_DECLARATION_MISSING",
+      format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot resolve local type declaration `{name}` at `{path}`."),
+      "Use a namespace-qualified local defstruct/defenum reference, or keep dependency/resource/host types behind a handwritten adapter until declarations can be included explicitly.",
+    ))),
+    many => Err(Box::new(diagnostic(
+      definition,
+      path,
+      "E_FFI_IR_DECLARATION_AMBIGUOUS",
+      format!(
+        "FFI Interface IR v{FFI_INTERFACE_IR_VERSION} found multiple local declarations for `{name}` at `{path}`: {}.",
+        many.iter().map(|candidate| candidate.id()).collect::<Vec<_>>().join(", ")
+      ),
+      "Use the namespace-qualified declaration ID in the callable schema so bindgen never guesses between same-name types.",
+    ))),
+  }
+}
+
+fn nominal_type(
+  name: &str,
+  expected_kind: Option<LocalTypeDeclarationKind>,
+  arguments: &[std::sync::Arc<CalcitTypeAnnotation>],
+  definition: &str,
+  path: &str,
+  context: &mut TypeConversionContext<'_>,
+) -> Result<FfiTypeIr, Box<FfiInterfaceDiagnostic>> {
+  if let Some(builtin) = explicit_builtin_type(name) {
+    let converted = convert_type_arguments(arguments, definition, path, context)?;
+    return match (builtin, converted.as_slice()) {
+      ("Option", [item]) => Ok(FfiTypeIr::Option {
+        item: Box::new(item.clone()),
+      }),
+      ("Result", [ok, error]) => Ok(FfiTypeIr::Result {
+        ok: Box::new(ok.clone()),
+        error: Box::new(error.clone()),
+      }),
+      ("Option", _) => Err(Box::new(diagnostic(
+        definition,
+        path,
+        "E_FFI_IR_TYPE_ARGUMENT_ARITY",
+        format!("Option expects 1 type argument at `{path}`, but received {}.", converted.len()),
+        "Use Option<T> with exactly one generator-safe item type.",
+      ))),
+      ("Result", _) => Err(Box::new(diagnostic(
+        definition,
+        path,
+        "E_FFI_IR_TYPE_ARGUMENT_ARITY",
+        format!("Result expects 2 type arguments at `{path}`, but received {}.", converted.len()),
+        "Use Result<T, E> with exactly one success type and one error type.",
+      ))),
+      _ => unreachable!("explicit_builtin_type returns a known built-in"),
+    };
+  }
+
+  let declaration = resolve_local_declaration(name, expected_kind, definition, path, context)?;
+  let expected_arity = declaration.type_parameters().len();
+  if arguments.len() != expected_arity {
+    return Err(Box::new(diagnostic(
+      definition,
+      path,
+      "E_FFI_IR_TYPE_ARGUMENT_ARITY",
+      format!(
+        "Type declaration `{}` expects {expected_arity} argument(s) at `{path}`, but received {}.",
+        declaration.id(),
+        arguments.len()
+      ),
+      "Apply every declared type parameter exactly once; callable signatures remain monomorphic in Interface IR v2.",
+    )));
+  }
+  let id = declaration.id().to_owned();
+  let kind = declaration.kind();
+  let converted = convert_type_arguments(arguments, definition, path, context)?;
+  context.required.insert(id.clone());
+  Ok(match kind {
+    LocalTypeDeclarationKind::Struct => FfiTypeIr::Struct { id, arguments: converted },
+    LocalTypeDeclarationKind::Enum => FfiTypeIr::Enum { id, arguments: converted },
   })
 }
 
-fn convert_type(annotation: &CalcitTypeAnnotation, definition: &str, path: &str) -> Result<FfiTypeIr, Box<FfiInterfaceDiagnostic>> {
+fn convert_type(
+  annotation: &CalcitTypeAnnotation,
+  definition: &str,
+  path: &str,
+  context: &mut TypeConversionContext<'_>,
+) -> Result<FfiTypeIr, Box<FfiInterfaceDiagnostic>> {
   match annotation {
     CalcitTypeAnnotation::Unit => Ok(FfiTypeIr::Unit),
     CalcitTypeAnnotation::Bool => Ok(FfiTypeIr::Bool),
@@ -142,18 +368,43 @@ fn convert_type(annotation: &CalcitTypeAnnotation, definition: &str, path: &str)
     CalcitTypeAnnotation::String => Ok(FfiTypeIr::String),
     CalcitTypeAnnotation::Buffer => Ok(FfiTypeIr::Buffer),
     CalcitTypeAnnotation::List(item) => Ok(FfiTypeIr::List {
-      item: Box::new(convert_type(item, definition, &format!("{path}.item"))?),
+      item: Box::new(convert_type(item, definition, &format!("{path}.item"), context)?),
     }),
-    CalcitTypeAnnotation::TypeRef(name, arguments) => named_type(name, arguments, definition, path),
-    CalcitTypeAnnotation::Struct(struct_def, arguments) => named_type(struct_def.name.ref_str(), arguments, definition, path),
-    CalcitTypeAnnotation::Enum(enum_def, arguments) => named_type(enum_def.name().ref_str(), arguments, definition, path),
-    CalcitTypeAnnotation::StructValue(struct_def) => Ok(FfiTypeIr::Named {
-      name: struct_def.name.ref_str().to_owned(),
-      arguments: vec![],
-    }),
-    CalcitTypeAnnotation::EnumValue(enum_def) => Ok(FfiTypeIr::Named {
-      name: enum_def.name().ref_str().to_owned(),
-      arguments: vec![],
+    CalcitTypeAnnotation::TypeRef(name, arguments) => nominal_type(name, None, arguments, definition, path, context),
+    CalcitTypeAnnotation::Struct(struct_def, arguments) => nominal_type(
+      struct_def.name.ref_str(),
+      Some(LocalTypeDeclarationKind::Struct),
+      arguments,
+      definition,
+      path,
+      context,
+    ),
+    CalcitTypeAnnotation::Enum(enum_def, arguments) => nominal_type(
+      enum_def.name().ref_str(),
+      Some(LocalTypeDeclarationKind::Enum),
+      arguments,
+      definition,
+      path,
+      context,
+    ),
+    CalcitTypeAnnotation::StructValue(struct_def) => nominal_type(
+      struct_def.name.ref_str(),
+      Some(LocalTypeDeclarationKind::Struct),
+      &[],
+      definition,
+      path,
+      context,
+    ),
+    CalcitTypeAnnotation::EnumValue(enum_def) => nominal_type(
+      enum_def.name().ref_str(),
+      Some(LocalTypeDeclarationKind::Enum),
+      &[],
+      definition,
+      path,
+      context,
+    ),
+    CalcitTypeAnnotation::TypeVar(name) if context.type_parameters.contains(name.as_ref()) => Ok(FfiTypeIr::TypeParameter {
+      name: name.trim_start_matches('\'').to_owned(),
     }),
     unsupported => Err(Box::new(diagnostic(
       definition,
@@ -163,12 +414,18 @@ fn convert_type(annotation: &CalcitTypeAnnotation, definition: &str, path: &str)
         "FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot represent Calcit type `{}` at `{path}`.",
         unsupported.to_brief_string()
       ),
-      "Use Unit, Bool, Number, String, Buffer, List, Struct, Enum, Option, Result, or another nominal named type; keep Dynamic, callbacks, Map/Set, Ref, and host objects behind a handwritten adapter.",
+      "Use Unit, Bool, Number, String, Buffer, List, Option, Result, or an explicitly declared local Struct/Enum; keep Dynamic, callbacks, Map/Set, Ref, resources, and host objects behind a handwritten adapter.",
     ))),
   }
 }
 
-fn convert_signature(entry: &CodeEntry, definition: &str) -> Result<FfiFunctionSignatureIr, Vec<FfiInterfaceDiagnostic>> {
+fn convert_signature(
+  entry: &CodeEntry,
+  definition: &str,
+  namespace: &str,
+  declarations: &BTreeMap<String, LocalTypeDeclaration>,
+  required: &mut BTreeSet<String>,
+) -> Result<FfiFunctionSignatureIr, Vec<FfiInterfaceDiagnostic>> {
   let CalcitTypeAnnotation::Fn(signature) = entry.schema.as_ref() else {
     return Err(vec![diagnostic(
       definition,
@@ -197,7 +454,7 @@ fn convert_signature(entry: &CodeEntry, definition: &str) -> Result<FfiFunctionS
       definition,
       "logical_schema.generics",
       "E_FFI_IR_UNSUPPORTED_GENERIC",
-      "Generic and trait-bounded FFI call signatures are not part of Interface IR v1.",
+      "Generic and trait-bounded FFI call signatures are not part of Interface IR v2.",
       "Expose a monomorphic raw binding and keep generic normalization in handwritten Calcit code.",
     ));
   }
@@ -206,19 +463,31 @@ fn convert_signature(entry: &CodeEntry, definition: &str) -> Result<FfiFunctionS
       definition,
       "logical_schema.rest",
       "E_FFI_IR_UNSUPPORTED_REST",
-      "Variadic FFI call signatures are not part of Interface IR v1.",
+      "Variadic FFI call signatures are not part of Interface IR v2.",
       "Expose a fixed-arity raw binding, using a typed List or Tuple when the host needs multiple values.",
     ));
   }
 
+  let type_parameters = BTreeSet::new();
+  let mut context = TypeConversionContext {
+    declarations,
+    required,
+    current_namespace: namespace,
+    type_parameters: &type_parameters,
+  };
   let mut parameters = Vec::with_capacity(signature.arg_types.len());
   for (position, annotation) in signature.arg_types.iter().enumerate() {
-    match convert_type(annotation, definition, &format!("signature.parameters.{position}.type")) {
+    match convert_type(
+      annotation,
+      definition,
+      &format!("signature.parameters.{position}.type"),
+      &mut context,
+    ) {
       Ok(type_ir) => parameters.push(FfiParameterIr { position, type_ir }),
       Err(error) => diagnostics.push(*error),
     }
   }
-  let result = match convert_type(&signature.return_type, definition, "signature.result") {
+  let result = match convert_type(&signature.return_type, definition, "signature.result", &mut context) {
     Ok(result) => Some(result),
     Err(error) => {
       diagnostics.push(*error);
@@ -234,6 +503,201 @@ fn convert_signature(entry: &CodeEntry, definition: &str) -> Result<FfiFunctionS
   } else {
     Err(diagnostics)
   }
+}
+
+fn cirru_may_define_nominal_type(code: &Cirru) -> bool {
+  let Cirru::List(items) = code else {
+    return false;
+  };
+  let Some(Cirru::Leaf(head)) = items.first() else {
+    return false;
+  };
+  match head.rsplit('/').next().unwrap_or(head) {
+    "defstruct" | "defenum" | "&struct-def:new" | "&enum-def:new" => true,
+    "def" => items.get(2).is_some_and(cirru_may_define_nominal_type),
+    "impl-traits" => items.get(1).is_some_and(cirru_may_define_nominal_type),
+    "quote" => items.get(1).is_some_and(cirru_may_define_nominal_type),
+    _ => false,
+  }
+}
+
+fn collect_local_type_declarations(snapshot: &Snapshot) -> BTreeMap<String, LocalTypeDeclaration> {
+  let mut declarations = BTreeMap::new();
+  for (namespace, file) in &snapshot.files {
+    for (definition, entry) in &file.defs {
+      if !cirru_may_define_nominal_type(&entry.code) {
+        continue;
+      }
+      let Ok(code) = code_to_calcit(&entry.code, namespace, definition, vec![]) else {
+        continue;
+      };
+      let Some(declaration) = crate::calcit::type_annotation::resolve_type_def_from_code(&code) else {
+        continue;
+      };
+      let id = format!("{namespace}/{definition}");
+      let source = match declaration {
+        Calcit::StructDef(nominal) => LocalTypeDeclaration::Struct {
+          id: id.clone(),
+          namespace: namespace.clone(),
+          nominal,
+        },
+        Calcit::EnumDef(nominal) => LocalTypeDeclaration::Enum {
+          id: id.clone(),
+          namespace: namespace.clone(),
+          nominal,
+        },
+        _ => continue,
+      };
+      declarations.insert(id, source);
+    }
+  }
+  declarations
+}
+
+fn declaration_type_parameters(source: &LocalTypeDeclaration) -> Vec<String> {
+  source
+    .type_parameters()
+    .iter()
+    .map(|parameter| parameter.trim_start_matches('\'').to_owned())
+    .collect()
+}
+
+fn convert_declaration(
+  source: &LocalTypeDeclaration,
+  owner_definition: &str,
+  declarations: &BTreeMap<String, LocalTypeDeclaration>,
+  required: &mut BTreeSet<String>,
+) -> Result<FfiTypeDeclarationIr, Vec<FfiInterfaceDiagnostic>> {
+  let mut diagnostics = Vec::new();
+  let parameters = declaration_type_parameters(source);
+  let type_parameters = parameters.iter().cloned().collect::<BTreeSet<_>>();
+  let mut context = TypeConversionContext {
+    declarations,
+    required,
+    current_namespace: source.namespace(),
+    type_parameters: &type_parameters,
+  };
+
+  match source {
+    LocalTypeDeclaration::Struct { id, namespace, nominal } => {
+      if !nominal.where_bounds.is_empty() {
+        diagnostics.push(diagnostic(
+          owner_definition,
+          format!("declarations.{id}.type_parameters"),
+          "E_FFI_IR_DECLARATION_BOUNDS",
+          format!("Struct declaration `{id}` has trait-bounded type parameters, which Interface IR v2 cannot lower portably."),
+          "Expose an unbounded transport struct or keep trait-constrained normalization in handwritten Calcit code.",
+        ));
+      }
+      let mut fields = Vec::with_capacity(nominal.fields.len());
+      for (index, (name, annotation)) in nominal.fields.iter().zip(nominal.field_types.iter()).enumerate() {
+        match convert_type(
+          annotation,
+          owner_definition,
+          &format!("declarations.{id}.fields.{index}.type"),
+          &mut context,
+        ) {
+          Ok(type_ir) => fields.push(FfiStructFieldIr {
+            name: name.ref_str().to_owned(),
+            type_ir,
+          }),
+          Err(error) => diagnostics.push(*error),
+        }
+      }
+      if diagnostics.is_empty() {
+        Ok(FfiTypeDeclarationIr::Struct {
+          id: id.clone(),
+          namespace: namespace.clone(),
+          name: nominal.name.ref_str().to_owned(),
+          type_parameters: parameters,
+          fields,
+        })
+      } else {
+        Err(diagnostics)
+      }
+    }
+    LocalTypeDeclaration::Enum { id, namespace, nominal } => {
+      if !nominal.where_bounds().is_empty() {
+        diagnostics.push(diagnostic(
+          owner_definition,
+          format!("declarations.{id}.type_parameters"),
+          "E_FFI_IR_DECLARATION_BOUNDS",
+          format!("Enum declaration `{id}` has trait-bounded type parameters, which Interface IR v2 cannot lower portably."),
+          "Expose an unbounded transport enum or keep trait-constrained normalization in handwritten Calcit code.",
+        ));
+      }
+      let mut variants = Vec::with_capacity(nominal.variants().len());
+      for (variant_index, variant) in nominal.variants().iter().enumerate() {
+        let mut payload = Vec::with_capacity(variant.payload_types().len());
+        for (payload_index, annotation) in variant.payload_types().iter().enumerate() {
+          match convert_type(
+            annotation,
+            owner_definition,
+            &format!("declarations.{id}.variants.{variant_index}.payload.{payload_index}"),
+            &mut context,
+          ) {
+            Ok(type_ir) => payload.push(type_ir),
+            Err(error) => diagnostics.push(*error),
+          }
+        }
+        variants.push(FfiEnumVariantIr {
+          name: variant.tag.ref_str().to_owned(),
+          payload,
+        });
+      }
+      if diagnostics.is_empty() {
+        Ok(FfiTypeDeclarationIr::Enum {
+          id: id.clone(),
+          namespace: namespace.clone(),
+          name: nominal.name().ref_str().to_owned(),
+          type_parameters: parameters,
+          variants,
+        })
+      } else {
+        Err(diagnostics)
+      }
+    }
+  }
+}
+
+fn convert_reachable_declarations(
+  owner_definition: &str,
+  declarations: &BTreeMap<String, LocalTypeDeclaration>,
+  required: &mut BTreeSet<String>,
+) -> (Vec<FfiTypeDeclarationIr>, Vec<FfiInterfaceDiagnostic>) {
+  let mut pending = required.iter().cloned().collect::<VecDeque<_>>();
+  let mut visited = BTreeSet::new();
+  let mut converted = BTreeMap::new();
+  let mut diagnostics = Vec::new();
+
+  while let Some(id) = pending.pop_front() {
+    if !visited.insert(id.clone()) {
+      continue;
+    }
+    let Some(source) = declarations.get(&id) else {
+      diagnostics.push(diagnostic(
+        owner_definition,
+        format!("declarations.{id}"),
+        "E_FFI_IR_DECLARATION_MISSING",
+        format!("Required declaration `{id}` disappeared while building Interface IR v{FFI_INTERFACE_IR_VERSION}."),
+        "Keep the namespace-qualified local declaration in the same snapshot as its FFI signature.",
+      ));
+      continue;
+    };
+    match convert_declaration(source, owner_definition, declarations, required) {
+      Ok(declaration) => {
+        converted.insert(declaration.id().to_owned(), declaration);
+      }
+      Err(errors) => diagnostics.extend(errors),
+    }
+    for nested in required.iter() {
+      if !visited.contains(nested) && !pending.contains(nested) {
+        pending.push_back(nested.clone());
+      }
+    }
+  }
+
+  (converted.into_values().collect(), diagnostics)
 }
 
 fn metadata_value<'a>(metadata: &'a Edn, key: &str) -> Option<&'a Edn> {
@@ -513,6 +977,7 @@ fn convert_lowering(metadata: &Edn, definition: &str) -> Result<(FfiLoweringIr, 
 }
 
 pub fn export_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -> Result<FfiExportReport, String> {
+  let local_declarations = collect_local_type_declarations(snapshot);
   let mut candidates = snapshot
     .files
     .iter()
@@ -530,17 +995,30 @@ pub fn export_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -> Result<F
   candidates.sort_unstable_by(|left, right| (left.0, left.1).cmp(&(right.0, right.1)));
 
   let mut definitions = Vec::with_capacity(candidates.len());
+  let mut interface_declarations = BTreeMap::new();
   let mut diagnostics = Vec::new();
   for (namespace, name, entry, metadata) in candidates {
     let id = format!("{namespace}/{name}");
     let definition_diagnostic_start = diagnostics.len();
-    let signature = match convert_signature(entry, &id) {
+    let mut required = BTreeSet::new();
+    let mut signature = match convert_signature(entry, &id, namespace, &local_declarations, &mut required) {
       Ok(signature) => Some(signature),
       Err(errors) => {
         diagnostics.extend(errors);
         None
       }
     };
+    if signature.is_some() {
+      let (declarations, declaration_diagnostics) = convert_reachable_declarations(&id, &local_declarations, &mut required);
+      if declaration_diagnostics.is_empty() {
+        for declaration in declarations {
+          interface_declarations.insert(declaration.id().to_owned(), declaration);
+        }
+      } else {
+        diagnostics.extend(declaration_diagnostics);
+        signature = None;
+      }
+    }
     let (lowering, lowering_diagnostics) = convert_lowering(metadata, &id)?;
     diagnostics.extend(lowering_diagnostics);
     let definition_diagnostics = &diagnostics[definition_diagnostic_start..];
@@ -573,6 +1051,7 @@ pub fn export_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -> Result<F
     version: FFI_INTERFACE_IR_VERSION,
     package: snapshot.package.clone(),
     package_version: snapshot.version.clone(),
+    declarations: interface_declarations.into_values().collect(),
     definitions,
   };
   let summary = FfiExportSummary {
@@ -596,11 +1075,12 @@ pub fn export_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -> Result<F
 
 pub fn format_human_report(report: &FfiExportReport) -> String {
   let mut output = format!(
-    "Calcit FFI Interface IR v{}\n- package: {} {}\n- revision: {}\n- definitions: {} ({} supported, {} unsupported)\n",
+    "Calcit FFI Interface IR v{}\n- package: {} {}\n- revision: {}\n- declarations: {}\n- definitions: {} ({} supported, {} unsupported)\n",
     report.interface.version,
     report.interface.package,
     report.interface.package_version,
     report.revision,
+    report.interface.declarations.len(),
     report.summary.definitions,
     report.summary.supported,
     report.summary.unsupported,
@@ -655,6 +1135,19 @@ mod tests {
         features: Arc::new(HashSet::new()),
       }))),
       ffi: Some(ffi),
+    }
+  }
+
+  fn data_entry(code: &str) -> CodeEntry {
+    let parsed = cirru_parser::parse(code).expect("parse data declaration fixture");
+    CodeEntry {
+      doc: "test declaration".to_owned(),
+      examples: vec![],
+      tests: vec![],
+      tags: HashSet::new(),
+      code: parsed.into_iter().next().expect("one data declaration fixture"),
+      schema: DYNAMIC_TYPE.clone(),
+      ffi: None,
     }
   }
 
@@ -724,6 +1217,234 @@ mod tests {
     assert_eq!(report.summary.unsupported, 0);
     assert!(report.diagnostics.is_empty());
     assert!(report.revision.starts_with("md5:"));
+  }
+
+  #[test]
+  fn exports_reachable_struct_enum_option_and_result_declarations() {
+    let person = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Person"), Arc::new(vec![])));
+    let outcome = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Outcome"), Arc::new(vec![])));
+    let result = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("Result"),
+      Arc::new(vec![outcome, Arc::new(CalcitTypeAnnotation::String)]),
+    ));
+    let report = export_snapshot(
+      &snapshot(vec![
+        (
+          "Person",
+          data_entry("defstruct Person (:name 'String) (:nickname (:: 'Option 'String))"),
+        ),
+        ("Outcome", data_entry("defenum Outcome (:ok Person) (:err 'String)")),
+        ("roundtrip", function_entry(vec![person], result, native_metadata("roundtrip"))),
+      ]),
+      None,
+    )
+    .expect("export reachable composite declarations");
+
+    assert_eq!(report.summary.supported, 1);
+    assert!(report.diagnostics.is_empty());
+    assert_eq!(
+      report
+        .interface
+        .declarations
+        .iter()
+        .map(FfiTypeDeclarationIr::id)
+        .collect::<Vec<_>>(),
+      ["test.ffi/Outcome", "test.ffi/Person"]
+    );
+    assert!(matches!(
+      report.interface.definitions[0].signature.as_ref().expect("supported signature").parameters[0].type_ir,
+      FfiTypeIr::Struct { ref id, ref arguments } if id == "test.ffi/Person" && arguments.is_empty()
+    ));
+    assert!(matches!(
+      report.interface.definitions[0].signature.as_ref().expect("supported signature").result,
+      FfiTypeIr::Result { ref ok, ref error }
+        if matches!(ok.as_ref(), FfiTypeIr::Enum { id, arguments } if id == "test.ffi/Outcome" && arguments.is_empty())
+          && matches!(error.as_ref(), FfiTypeIr::String)
+    ));
+    let person_declaration = report
+      .interface
+      .declarations
+      .iter()
+      .find(|declaration| declaration.id() == "test.ffi/Person")
+      .expect("person declaration");
+    assert!(matches!(
+      person_declaration,
+      FfiTypeDeclarationIr::Struct { fields, .. }
+        if matches!(fields[1].type_ir, FfiTypeIr::Option { ref item } if matches!(item.as_ref(), FfiTypeIr::String))
+    ));
+  }
+
+  #[test]
+  fn unresolved_named_type_fails_before_generation() {
+    let export = || {
+      export_snapshot(
+        &snapshot(vec![(
+          "read",
+          function_entry(
+            vec![Arc::new(CalcitTypeAnnotation::TypeRef(
+              Arc::from("missing/Thing"),
+              Arc::new(vec![]),
+            ))],
+            Arc::new(CalcitTypeAnnotation::Unit),
+            native_metadata("read"),
+          ),
+        )]),
+        None,
+      )
+      .expect("inventory unresolved named type")
+    };
+    let report = export();
+
+    assert_eq!(report.summary.unsupported, 1);
+    assert!(report.interface.definitions[0].signature.is_none());
+    assert!(diagnostic_codes(&report).contains("E_FFI_IR_DECLARATION_MISSING"));
+    assert_eq!(report, export(), "unresolved declaration diagnostics must be deterministic");
+  }
+
+  #[test]
+  fn rejects_declaration_type_argument_arity_mismatch() {
+    let report = export_snapshot(
+      &snapshot(vec![
+        ("Box", data_entry("defstruct Box ('T) (:value 'T)")),
+        (
+          "read-box",
+          function_entry(
+            vec![Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Box"), Arc::new(vec![])))],
+            Arc::new(CalcitTypeAnnotation::Unit),
+            native_metadata("read_box"),
+          ),
+        ),
+      ]),
+      None,
+    )
+    .expect("inventory declaration with wrong type argument arity");
+
+    assert_eq!(report.summary.unsupported, 1);
+    assert!(report.interface.definitions[0].signature.is_none());
+    assert!(diagnostic_codes(&report).contains("E_FFI_IR_TYPE_ARGUMENT_ARITY"));
+  }
+
+  #[test]
+  fn preserves_generic_declaration_parameters_with_monomorphic_application() {
+    let report = export_snapshot(
+      &snapshot(vec![
+        ("Box", data_entry("defstruct Box ('T) (:value 'T)")),
+        (
+          "read-box",
+          function_entry(
+            vec![Arc::new(CalcitTypeAnnotation::TypeRef(
+              Arc::from("test.ffi/Box"),
+              Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+            ))],
+            Arc::new(CalcitTypeAnnotation::Unit),
+            native_metadata("read_box"),
+          ),
+        ),
+      ]),
+      None,
+    )
+    .expect("export generic declaration with monomorphic call site");
+
+    assert_eq!(report.summary.supported, 1);
+    assert!(matches!(
+      &report.interface.declarations[0],
+      FfiTypeDeclarationIr::Struct { type_parameters, fields, .. }
+        if type_parameters == &["T"]
+          && matches!(fields[0].type_ir, FfiTypeIr::TypeParameter { ref name } if name == "T")
+    ));
+    assert!(matches!(
+      report.interface.definitions[0].signature.as_ref().expect("supported signature").parameters[0].type_ir,
+      FfiTypeIr::Struct { ref arguments, .. } if matches!(arguments.as_slice(), [FfiTypeIr::Number])
+    ));
+  }
+
+  #[test]
+  fn namespace_qualified_declaration_ids_do_not_collide() {
+    let file = |definitions: Vec<(&str, CodeEntry)>| FileInSnapShot {
+      ns: NsEntry {
+        doc: String::new(),
+        code: Cirru::List(vec![]),
+      },
+      defs: definitions.into_iter().map(|(name, entry)| (name.to_owned(), entry)).collect(),
+    };
+    let source = Snapshot {
+      package: "test-package".to_owned(),
+      about: None,
+      version: "0.1.0".to_owned(),
+      entries: HashMap::new(),
+      files: HashMap::from([
+        (
+          "alpha.ffi".to_owned(),
+          file(vec![
+            ("Person", data_entry("defstruct Person (:name 'String)")),
+            (
+              "read",
+              function_entry(
+                vec![Arc::new(CalcitTypeAnnotation::TypeRef(
+                  Arc::from("alpha.ffi/Person"),
+                  Arc::new(vec![]),
+                ))],
+                Arc::new(CalcitTypeAnnotation::Unit),
+                native_metadata("alpha_read"),
+              ),
+            ),
+          ]),
+        ),
+        (
+          "beta.ffi".to_owned(),
+          file(vec![
+            ("Person", data_entry("defstruct Person (:name 'String)")),
+            (
+              "read",
+              function_entry(
+                vec![Arc::new(CalcitTypeAnnotation::TypeRef(
+                  Arc::from("beta.ffi/Person"),
+                  Arc::new(vec![]),
+                ))],
+                Arc::new(CalcitTypeAnnotation::Unit),
+                native_metadata("beta_read"),
+              ),
+            ),
+          ]),
+        ),
+      ]),
+      active_entry: "default".to_owned(),
+    };
+    let report = export_snapshot(&source, None).expect("export same-name declarations from two namespaces");
+
+    assert_eq!(report.summary.supported, 2);
+    assert_eq!(
+      report
+        .interface
+        .declarations
+        .iter()
+        .map(FfiTypeDeclarationIr::id)
+        .collect::<Vec<_>>(),
+      ["alpha.ffi/Person", "beta.ffi/Person"]
+    );
+  }
+
+  #[test]
+  fn unrelated_declarations_do_not_change_interface_revision() {
+    let binding = || {
+      function_entry(
+        vec![Arc::new(CalcitTypeAnnotation::String)],
+        Arc::new(CalcitTypeAnnotation::String),
+        native_metadata("read"),
+      )
+    };
+    let without_declaration = export_snapshot(&snapshot(vec![("read", binding())]), None).expect("baseline export");
+    let with_declaration = export_snapshot(
+      &snapshot(vec![
+        ("Unused", data_entry("defstruct Unused (:value 'Dynamic)")),
+        ("read", binding()),
+      ]),
+      None,
+    )
+    .expect("export with unrelated declaration");
+
+    assert!(with_declaration.interface.declarations.is_empty());
+    assert_eq!(without_declaration.revision, with_declaration.revision);
   }
 
   #[test]
@@ -1014,5 +1735,13 @@ mod tests {
 
     assert_eq!(schema["$id"], FFI_INTERFACE_IR_SCHEMA_ID);
     assert_eq!(schema["properties"]["version"]["const"], FFI_INTERFACE_IR_VERSION);
+    assert!(
+      schema["required"]
+        .as_array()
+        .expect("top-level required properties")
+        .iter()
+        .any(|property| property == "declarations")
+    );
+    assert!(!FFI_INTERFACE_IR_SCHEMA.contains("\"const\": \"named\""));
   }
 }

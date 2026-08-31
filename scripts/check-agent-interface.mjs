@@ -10,10 +10,10 @@ const scenarios = [
       if (result.schema_version !== 1 || result.command !== "ffi.export") {
         throw new Error("unexpected ffi.export envelope");
       }
-      if (!result.interface_schema?.endsWith("ffi-interface-ir-v1.schema.json")) {
+      if (!result.interface_schema?.endsWith("ffi-interface-ir-v2.schema.json")) {
         throw new Error("ffi.export did not identify its Interface IR schema");
       }
-      if (result.data.interface.version !== 1 || !result.revision.startsWith("md5:")) {
+      if (result.data.interface.version !== 2 || !Array.isArray(result.data.interface.declarations) || !result.revision.startsWith("md5:")) {
         throw new Error("ffi.export lost its versioned deterministic interface");
       }
       if (!Array.isArray(result.data.interface.definitions) || !Array.isArray(result.diagnostics)) {
