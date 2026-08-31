@@ -133,5 +133,8 @@ generated-program golden 固定 import declaration、guest syntax 与 Calcit tre
 cache、profiling/selection policy，也还没有基于 benchmark 的自动 offload。correctness corpus 已覆盖 scalar
 kernel、zero/single-result typed imports、generated program、trap 与 fallback。分阶段 benchmark matrix、
 采样 crossover point 和首份 scalar baseline 已建立；[calx-vm #39](https://github.com/calcit-lang/calx-vm/issues/39)
-后续仍需用公平的 cached Calcit 调用基线与 profile 证据决定 compile cache、VM reuse 与 selection policy。
+现已补充公平的 cached Calcit callable 基线：有限 scalar 样本仍显示 Calx hot 收益，但 lookup-call 对比确实
+夸大了微型 kernel 差距。后续先用 profile 证据决定 compile/program cache，VM pooling 不在缺少独立证据时
+提前实现；实用 bulk workload 由 [calx-vm #50](https://github.com/calcit-lang/calx-vm/issues/50) 以严格、
+non-nil、zero-Dynamic typed buffer 单独推进，再决定 selection policy。
 基准命令、阶段定义和原始 JSON 格式见[《Calcit→Calx benchmark methodology》](./calx-benchmark.md)。
