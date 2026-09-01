@@ -278,33 +278,63 @@ fn metric_deltas(actual: &QualityMetrics, limit: &QualityMetrics) -> BTreeMap<St
     .collect()
 }
 
-fn read_baseline(path: &Path) -> Result<Result<QualityBaseline, QualityMetrics>, String> {
-  let content = fs::read_to_string(path).map_err(|error| format!("Failed to read quality baseline '{}': {error}", path.display()))?;
+fn validate_native_baseline(path: &Path, baseline: QualityBaseline) -> Result<QualityBaseline, String> {
+  if !matches!(baseline.schema_version, 1 | QUALITY_BASELINE_SCHEMA_VERSION) {
+    return Err(format!(
+      "Unsupported quality baseline schemaVersion {} in '{}'; expected 1 or {}.",
+      baseline.schema_version,
+      path.display(),
+      QUALITY_BASELINE_SCHEMA_VERSION
+    ));
+  }
+  let summed = sum_metrics(baseline.definitions.values());
+  if summed != baseline.metrics {
+    return Err(format!(
+      "Invalid native quality baseline '{}': top-level metrics do not equal the per-definition totals.",
+      path.display()
+    ));
+  }
+  Ok(baseline)
+}
+
+fn decode_json_baseline(path: &Path, content: &str) -> Result<Result<QualityBaseline, QualityMetrics>, String> {
   let value: serde_json::Value =
-    serde_json::from_str(&content).map_err(|error| format!("Failed to parse quality baseline '{}': {error}", path.display()))?;
+    serde_json::from_str(content).map_err(|error| format!("Failed to parse JSON quality baseline '{}': {error}", path.display()))?;
   if value.get("schemaVersion").is_some() {
     let baseline: QualityBaseline =
       serde_json::from_value(value).map_err(|error| format!("Invalid native quality baseline '{}': {error}", path.display()))?;
-    if !matches!(baseline.schema_version, 1 | QUALITY_BASELINE_SCHEMA_VERSION) {
-      return Err(format!(
-        "Unsupported quality baseline schemaVersion {} in '{}'; expected 1 or {}.",
-        baseline.schema_version,
-        path.display(),
-        QUALITY_BASELINE_SCHEMA_VERSION
-      ));
-    }
-    let summed = sum_metrics(baseline.definitions.values());
-    if summed != baseline.metrics {
-      return Err(format!(
-        "Invalid native quality baseline '{}': top-level metrics do not equal the per-definition totals.",
-        path.display()
-      ));
-    }
-    Ok(Ok(baseline))
+    Ok(Ok(validate_native_baseline(path, baseline)?))
   } else {
     let metrics: QualityMetrics =
       serde_json::from_value(value).map_err(|error| format!("Invalid legacy quality baseline '{}': {error}", path.display()))?;
     Ok(Err(metrics))
+  }
+}
+
+fn decode_cirru_baseline(path: &Path, content: &str) -> Result<Result<QualityBaseline, QualityMetrics>, String> {
+  let value =
+    cirru_edn::parse(content).map_err(|error| format!("Failed to parse Cirru EDN quality baseline '{}': {error}", path.display()))?;
+  let is_native = value
+    .view_map()
+    .map_err(|error| format!("Invalid Cirru EDN quality baseline '{}': {error}", path.display()))?
+    .contains_key("schemaVersion");
+  if is_native {
+    let baseline: QualityBaseline =
+      cirru_edn::from_edn(value).map_err(|error| format!("Invalid native quality baseline '{}': {error}", path.display()))?;
+    Ok(Ok(validate_native_baseline(path, baseline)?))
+  } else {
+    let metrics: QualityMetrics =
+      cirru_edn::from_edn(value).map_err(|error| format!("Invalid legacy quality baseline '{}': {error}", path.display()))?;
+    Ok(Err(metrics))
+  }
+}
+
+fn read_baseline(path: &Path) -> Result<Result<QualityBaseline, QualityMetrics>, String> {
+  let content = fs::read_to_string(path).map_err(|error| format!("Failed to read quality baseline '{}': {error}", path.display()))?;
+  if path.extension().is_some_and(|extension| extension == "json") {
+    decode_json_baseline(path, &content)
+  } else {
+    decode_cirru_baseline(path, &content)
   }
 }
 
@@ -321,9 +351,20 @@ fn write_baseline(path: &Path, scope: &QualityScope, current: &QualitySnapshot) 
       .map(|(definition, metrics)| (definition.clone(), metrics.clone()))
       .collect(),
   };
-  let mut content = serde_json::to_string_pretty(&baseline)
-    .map_err(|error| format!("Failed to encode quality baseline '{}': {error}", path.display()))?;
-  content.push('\n');
+  let mut content = if path.extension().is_some_and(|extension| extension == "json") {
+    serde_json::to_string_pretty(&baseline)
+      .map_err(|error| format!("Failed to encode JSON quality baseline '{}': {error}", path.display()))?
+  } else {
+    let data = cirru_edn::to_edn(&baseline)
+      .map_err(|error| format!("Failed to encode Cirru EDN quality baseline '{}': {error}", path.display()))?;
+    cirru_edn::format(&data, false)
+      .map_err(|error| format!("Failed to format Cirru EDN quality baseline '{}': {error}", path.display()))?
+      .trim_start()
+      .to_owned()
+  };
+  if !content.ends_with('\n') {
+    content.push('\n');
+  }
   let staged = crate::cli_handlers::stage_atomic_file(path, content.as_bytes(), "quality baseline")?;
   staged.commit()
 }
@@ -485,6 +526,68 @@ mod tests {
       schema_dynamic,
       ..QualityMetrics::default()
     }
+  }
+
+  fn sample_snapshot() -> QualitySnapshot {
+    QualitySnapshot {
+      revision: "md5:test".to_owned(),
+      metrics: metrics(1),
+      definitions: BTreeMap::from([("app/main".to_owned(), metrics(1))]),
+    }
+  }
+
+  fn default_scope() -> QualityScope {
+    QualityScope {
+      namespace: None,
+      namespace_prefix: None,
+      include_dependencies: false,
+    }
+  }
+
+  fn temp_baseline_path(name: &str, extension: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("calcit-quality-{}-{name}.{extension}", std::process::id()))
+  }
+
+  #[test]
+  fn cirru_edn_is_the_default_baseline_format() {
+    let path = temp_baseline_path("native", "cirru");
+    write_baseline(&path, &default_scope(), &sample_snapshot()).expect("write Cirru EDN baseline");
+
+    let content = fs::read_to_string(&path).expect("read Cirru EDN baseline");
+    assert!(content.starts_with("{}"));
+    assert!(content.contains(":schemaVersion 2"));
+    let parsed = read_baseline(&path).expect("read Cirru EDN baseline").expect("native baseline");
+    fs::remove_file(&path).expect("remove Cirru EDN baseline");
+    assert_eq!(parsed.metrics, metrics(1));
+    assert_eq!(parsed.definitions.get("app/main"), Some(&metrics(1)));
+  }
+
+  #[test]
+  fn explicit_json_baseline_remains_available() {
+    let path = temp_baseline_path("native", "json");
+    write_baseline(&path, &default_scope(), &sample_snapshot()).expect("write JSON baseline");
+
+    let content = fs::read_to_string(&path).expect("read JSON baseline");
+    assert!(content.starts_with('{'));
+    assert!(content.contains("\"schemaVersion\": 2"));
+    let parsed = read_baseline(&path).expect("read JSON baseline").expect("native baseline");
+    fs::remove_file(&path).expect("remove JSON baseline");
+    assert_eq!(parsed.metrics, metrics(1));
+  }
+
+  #[test]
+  fn legacy_flat_cirru_edn_baseline_remains_readable() {
+    let source = "{} (:typeNone 1) (:typeNotFull 1) (:schemaDynamic 2) (:codeDynamic 0) (:codeNil 0) (:unresolved 2) (:declaredOptional 0) (:deprecatedCalls 0)";
+    let path = temp_baseline_path("legacy", "cirru");
+    fs::write(&path, source).expect("write legacy Cirru EDN baseline");
+
+    let parsed = read_baseline(&path)
+      .expect("read legacy Cirru EDN baseline")
+      .expect_err("legacy baseline");
+    fs::remove_file(&path).expect("remove legacy Cirru EDN baseline");
+    assert_eq!(parsed.type_none, 1);
+    assert_eq!(parsed.schema_dynamic, 2);
+    assert_eq!(parsed.unsafe_coerce, 0);
   }
 
   #[test]

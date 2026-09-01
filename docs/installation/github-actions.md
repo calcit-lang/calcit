@@ -79,7 +79,7 @@ locally:
     calcit calcit.cirru edit format
     git diff --exit-code -- calcit.cirru
     calcit calcit.cirru --check-only
-    calcit calcit.cirru analyze quality --baseline config/calcit-quality.json
+    calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 ```
 
 The workflow above covers installation and the static layer. A project that emits JavaScript must add

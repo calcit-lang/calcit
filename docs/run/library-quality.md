@@ -99,21 +99,21 @@ calcit calcit.cirru analyze quality
 存量类库先审阅现状并生成 baseline，再在 CI 中阻止回归：
 
 ```bash
-calcit calcit.cirru analyze quality --write-baseline config/calcit-quality.json
-calcit calcit.cirru analyze quality --baseline config/calcit-quality.json
+calcit calcit.cirru analyze quality --write-baseline config/calcit-quality.cirru
+calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 ```
 
 新生成的 v2 baseline 按 definition 保存独立预算，某处清债不能抵消另一处新增债务；其中 `unsafeCoerce` 是独立的 host-boundary 预算。旧 v1/扁平 baseline 仍可读取并维持原有八项检查，审阅后重新生成才会启用这一项。后续只应降低 baseline；不要用 ignore warning 或批量 `:dynamic` 让数字看起来通过。需要机器报告时追加 `--format json`，stdout 仍是单个 JSON envelope。
 
-将 baseline 保持在 Git 中，但默认折叠其生成 JSON diff。在项目根目录的 `.gitattributes` 添加：
+将 baseline 保持在 Git 中，并声明为文本形式的生成文件，使 GitHub 语言统计忽略其行数。在项目根目录的 `.gitattributes` 添加：
 
 ```gitattributes
-config/calcit-quality.json -diff linguist-generated
+config/*-quality.cirru text linguist-generated=true
 ```
 
-这与常见的 `yarn.lock -diff linguist-generated` 约定相同：文件继续参与 CI 和版本控制，只在
-GitHub PR 中默认不展开。注意 `-diff` 也会让本地 Git 默认不显示文本 diff；若需要本地审阅，
-可省略 `-diff`。任何 baseline 更新仍须人工展开并按 definition 审阅，不能因折叠而自动接受新债务。
+baseline 继续参与 CI、版本控制和文本 diff，但不计入 GitHub 语言统计。只有外部工具明确要求
+JSON 时才把输出路径写成 `.json`；仓库内配置默认使用 Cirru EDN。任何 baseline 更新仍须按
+definition 审阅，不能因其属于生成文件而自动接受新债务。
 
 ## 3. API examples 与文档
 

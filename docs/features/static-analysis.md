@@ -46,7 +46,7 @@ The static analysis system provides:
 - **Type annotations** - Optional type hints for function parameters and return values
 - **Compile-time warnings** - Catches errors before code execution
 - **Completion warnings** - Keeps scaffolded `todo!` paths visible to Agents
-- **CI quality gate**: `calcit analyze quality --baseline config/calcit-quality.json`
+- **CI quality gate**: `calcit analyze quality --baseline config/calcit-quality.cirru`
 - **Composable runtime assertions** - `assert-type` and `assert-traits` can validate values at runtime and return original values for chaining
 
 ## Static Project Reports
@@ -73,8 +73,8 @@ calcit analyze dynamic-methods --max 4 --summary-only --format json
 calcit analyze quality
 
 # Bootstrap and enforce a reviewed baseline for an existing project
-calcit analyze quality --write-baseline config/calcit-quality.json
-calcit analyze quality --baseline config/calcit-quality.json
+calcit analyze quality --write-baseline config/calcit-quality.cirru
+calcit analyze quality --baseline config/calcit-quality.cirru
 
 # Focus only on unresolved type debt
 calcit analyze weak-types --ns app.main --intent unresolved
@@ -134,7 +134,7 @@ For one expression, `calcit query type-at '<ns/def>' --path code@... --format js
 
 `analyze quality` combines the release-facing metrics from `check-types`, `weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce --intent unresolved,declared-unit,declared-optional,explicit-unsafe`, and `deprecated`. `unsafeCoerce` is an independent budget for explicit host assertions; it is not folded into unresolved Dynamic debt. With no baseline it is a zero-debt gate. `--baseline <file>` compares against a committed baseline and exits non-zero on regression; `--write-baseline <file>` atomically writes a reviewed native baseline. Native v2 baselines keep budgets per definition, so improving one definition cannot hide new debt in another. Native v1 and the older flat eight-metric shape remain readable and preserve their original eight-metric enforcement; v1 is reported as `native-baseline-v1` and does not claim an `unsafeCoerce` delta. Regenerate a reviewed baseline to adopt that budget. Scope flags (`--ns`, `--ns-prefix`, `--deps`) are recorded in native baselines and must match when they are enforced.
 
-Calcit's bundled Cirru core uses `config/calcit-core-quality.json` as a per-definition migration baseline. `yarn check-core-quality`, the pull-request workflow, and the release workflow reject new or increased Dynamic/type-coverage debt while existing contracts are migrated incrementally. After a reviewed cleanup, regenerate the baseline with `calcit src/cirru/calcit-core.cirru analyze quality --write-baseline config/calcit-core-quality.json --format json`; never regenerate it merely to make an unexplained regression pass. Track retained open boundaries and cleanup batches in [calcit#579](https://github.com/calcit-lang/calcit/issues/579).
+Calcit's bundled Cirru core uses `config/calcit-core-quality.cirru` as a per-definition Cirru EDN migration baseline. `yarn check-core-quality`, the pull-request workflow, and the release workflow reject new or increased Dynamic/type-coverage debt while existing contracts are migrated incrementally. After a reviewed cleanup, regenerate the baseline with `calcit src/cirru/calcit-core.cirru analyze quality --write-baseline config/calcit-core-quality.cirru --format json`; never regenerate it merely to make an unexplained regression pass. A `.json` output path remains available only for external tooling that explicitly requires JSON. Track retained open boundaries and cleanup batches in [calcit#579](https://github.com/calcit-lang/calcit/issues/579).
 
 `analyze deprecated` scans calls to definitions tagged `:deprecated`. It reports every calling definition and a stable `code@...` path, and includes the target definition's documentation so migrations can be automated without maintaining a second hard-coded legacy API list. Use `--summary-only --format json` for migration gates that only need aggregate counts.
 

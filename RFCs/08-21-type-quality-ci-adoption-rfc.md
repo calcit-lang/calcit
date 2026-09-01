@@ -107,7 +107,7 @@ calcit calcit.cirru analyze quality --format json
 
 ```bash
 calcit calcit.cirru analyze quality \
-  --baseline config/calcit-quality.json \
+  --baseline config/calcit-quality.cirru \
   --format json
 ```
 
@@ -153,7 +153,7 @@ calcit calcit.cirru --entry test
 
 ```bash
 calcit calcit.cirru analyze quality \
-  --write-baseline config/calcit-quality.json
+  --write-baseline config/calcit-quality.cirru
 ```
 
 生成后必须人工审阅：

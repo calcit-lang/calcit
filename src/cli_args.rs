@@ -379,10 +379,10 @@ pub struct QualityCommand {
   /// include dependency/core namespaces
   #[argh(switch)]
   pub deps: bool,
-  /// compare against a committed quality baseline JSON file
+  /// compare against a committed Cirru EDN baseline, or an explicit .json file
   #[argh(option)]
   pub baseline: Option<String>,
-  /// write a per-definition quality baseline JSON file and exit successfully
+  /// write a Cirru EDN baseline by default; use .json only for external tools
   #[argh(option, long = "write-baseline")]
   pub write_baseline: Option<String>,
   /// output format: human (default) or json

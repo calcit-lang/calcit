@@ -29,7 +29,7 @@
     "check-agent-interface": "cargo build --bin calcit && node scripts/check-agent-interface.mjs",
     "try-all": "yarn check-all",
     "try-core-tests": "cargo run --bin calcit -- src/cirru/calcit-core.cirru test --tag unit --summary-only",
-    "check-core-quality": "cargo run --bin calcit -- src/cirru/calcit-core.cirru analyze quality --baseline config/calcit-core-quality.json --format json",
+    "check-core-quality": "cargo run --bin calcit -- src/cirru/calcit-core.cirru analyze quality --baseline config/calcit-core-quality.cirru --format json",
     "try-rs": "cargo run --bin calcit -- calcit/test.cirru",
     "warn-dyn-method": "cargo run --bin calcit -- calcit/test.cirru --warn-dyn-method",
     "try-js-brk": "cargo run --bin calcit -- calcit/test.cirru js && cp scripts/main.mjs js-out/main.mjs && node --inspect-brk js-out/main.mjs",
