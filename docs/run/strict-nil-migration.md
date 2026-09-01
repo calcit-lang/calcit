@@ -11,6 +11,7 @@ keeps the legacy runtime behavior during migration.
 | --- | --- | --- |
 | `E_LEGACY_OPTIONAL_PARAM` | `defn f (required ? optional) ...` or the equivalent `fn` form | Remove `?`, declare trailing parameters as `Option<T>`, and rely on trailing omission to insert `%none`; use `%some value` / `%none` at explicit call sites. |
 | `E_PARTIAL_STRUCT_NIL_FILL` | `%{}? Struct ...` and `&%{}? Struct ...` | Use `%{}` with every field present. Change genuinely absent fields to `Option<T>` and provide `%none`. Do not infer business defaults automatically. |
+| `E_NIL_FOR_UNIT` | A function declared to return `Unit` whose returned expression has static type `Nil`, including legacy `;nil` | Return `&unit`, or end the body with an effect that already returns `Unit`. Intermediate nil values are not treated as the function return. |
 
 The runtime `nil` value, Cirru EDN nil, and explicit untyped/FFI boundaries are
 not removed. The strict errors only close constructs that silently manufacture

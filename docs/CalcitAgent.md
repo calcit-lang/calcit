@@ -367,7 +367,7 @@ defstruct Profile (:name 'String) (:bio (:: 'Option 'String))
 Profile :name |Ada
 ```
 
-这项语法糖只处理**结尾连续的** `Option` 参数：位于必填参数之前的 `Option` 仍然必须显式传 `(%none)` 或 `(%some value)`，带 rest 参数的函数也不会自动补值。`?` 参数只用于兼容已有的非类型化 API，其缺省值是 `nil`；`--strict-types` 会以 `E_LEGACY_OPTIONAL_PARAM` 拒绝它。`%{}?` 同样会隐式用 `nil` 补 Struct 字段，并在 strict 模式触发 `E_PARTIAL_STRUCT_NIL_FILL`。修改旧接口时迁移到 `Option` 和完整 `%{}` 构造；在 FFI 或非类型化边界之外，缺失值使用 `Option`，失败使用 `Result`，无有效返回值使用 `Unit`。
+这项语法糖只处理**结尾连续的** `Option` 参数：位于必填参数之前的 `Option` 仍然必须显式传 `(%none)` 或 `(%some value)`，带 rest 参数的函数也不会自动补值。`?` 参数只用于兼容已有的非类型化 API，其缺省值是 `nil`；`--strict-types` 会以 `E_LEGACY_OPTIONAL_PARAM` 拒绝它。`%{}?` 同样会隐式用 `nil` 补 Struct 字段，并在 strict 模式触发 `E_PARTIAL_STRUCT_NIL_FILL`。修改旧接口时迁移到 `Option` 和完整 `%{}` 构造；在 FFI 或非类型化边界之外，缺失值使用 `Option`，失败使用 `Result`，无有效返回值使用 `Unit`。`Nil` 与 `Unit` 是不同类型：声明返回 `Unit` 的函数应返回 `&unit` 或以 Unit effect 结束；strict 模式以 `E_NIL_FOR_UNIT` 拒绝返回位置的 `nil` / `;nil`。
 
 Option/Result 的级联优先使用接收者方法，不要在每一层都 `unwrap`：
 

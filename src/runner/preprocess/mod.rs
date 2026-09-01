@@ -6411,6 +6411,45 @@ fn strict_macro_body_parameter_types(signature: &MacroSignature) -> Vec<Arc<Calc
   required_types.chain(optional_types).chain(rest_type).collect()
 }
 
+fn reject_strict_nil_for_unit_return(
+  fn_body: &[Calcit],
+  declared_return_type: &Arc<CalcitTypeAnnotation>,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  call_stack: &CallStackList,
+  fallback_location: Option<NodeLocation>,
+) -> Result<(), CalcitErr> {
+  if !strict_types_enabled()
+    || !should_emit_project_source_lint(file_ns)
+    || !matches!(declared_return_type.as_ref(), CalcitTypeAnnotation::Unit)
+  {
+    return Ok(());
+  }
+
+  let Some(returned_expr) = fn_body.last() else {
+    return Ok(());
+  };
+  let Some(actual_type) = resolve_type_value(returned_expr, scope_types) else {
+    return Ok(());
+  };
+  if !matches!(actual_type.as_ref(), CalcitTypeAnnotation::Nil) {
+    return Ok(());
+  }
+
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!(
+      "function `{file_ns}/{def_name}` declares Unit but returns nil; replace the returned nil or legacy `;nil` with `&unit`, or end the body with an effect that already returns Unit"
+    ),
+    "E_NIL_FOR_UNIT",
+    call_stack,
+    find_preferred_macro_location(call_stack)
+      .or_else(|| returned_expr.get_location())
+      .or(fallback_location),
+  ))
+}
+
 pub fn preprocess_defn(
   head: &CalcitSyntax,
   head_ns: &str,
@@ -6648,6 +6687,15 @@ pub fn preprocess_defn(
       } else {
         detected_return_type
       };
+      reject_strict_nil_for_unit_return(
+        &processed_body,
+        &return_type_hint,
+        &body_types,
+        ctx.file_ns,
+        def_name.as_ref(),
+        ctx.call_stack,
+        Some(definition_location.clone()),
+      )?;
       check_function_return_type(
         &processed_body,
         &return_type_hint,
@@ -8655,6 +8703,47 @@ mod tests {
     let error = preprocess_test_expr(&code).expect_err("strict mode should reject omitted Struct fields");
     assert_eq!(error.code.as_deref(), Some("E_PARTIAL_STRUCT_NIL_FILL"));
     assert!(error.msg.contains("%none"));
+  }
+
+  #[test]
+  fn strict_types_rejects_nil_for_unit_but_compat_mode_keeps_the_existing_warning_path() {
+    let _state = lock_preprocess_test_state();
+    let body = vec![Calcit::Nil];
+    let declared = Arc::new(CalcitTypeAnnotation::Unit);
+    let fallback_location = NodeLocation::new("tests.strict-nil".into(), "unit-step".into(), Arc::new(vec![3]));
+
+    {
+      let _strict = StrictTypesGuard::new(false);
+      reject_strict_nil_for_unit_return(
+        &body,
+        &declared,
+        &ScopeTypes::new(),
+        "tests.strict-nil",
+        "unit-step",
+        &CallStackList::default(),
+        Some(fallback_location.clone()),
+      )
+      .expect("compatibility mode should keep the existing return mismatch warning path");
+
+      let warnings = RefCell::new(vec![]);
+      check_function_return_type(&body, &declared, &ScopeTypes::new(), "tests.strict-nil", "unit-step", &warnings);
+      assert_eq!(warnings.borrow()[0].code(), Some("W_FN_RETURN_TYPE_MISMATCH"));
+    }
+
+    let _strict = StrictTypesGuard::new(true);
+    let error = reject_strict_nil_for_unit_return(
+      &body,
+      &declared,
+      &ScopeTypes::new(),
+      "tests.strict-nil",
+      "unit-step",
+      &CallStackList::default(),
+      Some(fallback_location),
+    )
+    .expect_err("strict mode should reject Nil as Unit");
+    assert_eq!(error.code.as_deref(), Some("E_NIL_FOR_UNIT"));
+    assert!(error.msg.contains("&unit"));
+    assert!(error.location.is_some());
   }
 
   #[test]
