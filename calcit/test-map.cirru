@@ -1,20 +1,38 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-map) (:version |0.0.0)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-map)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-map.main/main!) (:mode :native) (:reload-fn 'test-map.main/reload!)
+      :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
-    |test-map.main $ %{} 'FileEntry
+    'test-map.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} 'CodeEntry (:doc |)
+        'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-get) (test-shorthand) (do true)
+            defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-get) (test-shorthand) (test-filter-map-kv) (do true)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-get $ %{} 'CodeEntry (:doc |)
+        'test-filter-map-kv $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-filter-map-kv ()
+              assert=
+                {} (:b 20) (:c 30)
+                filter-map-kv
+                  {} (:a 1) (:b 2) (:c 3)
+                  fn (k v)
+                    if (> v 1)
+                      %:: MapEntryDecision :keep k $ * v 10
+                      %:: MapEntryDecision :drop
+              assert= ({})
+                .filter-map-kv
+                  {} $ :a 1
+                  fn (k v) (%:: MapEntryDecision :drop)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        'test-get $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing get")
               assert= (%none)
@@ -38,7 +56,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-map-comma $ %{} 'CodeEntry (:doc |)
+        'test-map-comma $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing {,}")
               inside-eval: $ assert=
@@ -51,7 +69,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-maps $ %{} 'CodeEntry (:doc |)
+        'test-maps $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-maps ()
               assert= 2 $ count
@@ -124,7 +142,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-native-map-syntax $ %{} 'CodeEntry (:doc |)
+        'test-native-map-syntax $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-native-map-syntax () $ inside-eval:
               assert=
@@ -135,7 +153,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-shorthand $ %{} 'CodeEntry (:doc |)
+        'test-shorthand $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing shorthand")
               let

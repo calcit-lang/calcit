@@ -935,16 +935,27 @@ pub(super) fn emit_find_index(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 /// `map-kv xs f` — apply binary `f(k, v) → [k', v']` to every entry of a map, returning a new map.
 /// Iterates via `__rt_map_linearize` which returns a flat `[n_pairs, k0, v0, k1, v1, ...]` buffer.
 pub(super) fn emit_map_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(2, args, "map-kv")?;
+  emit_map_kv_impl(ctx, args, false)
+}
+
+/// `filter-map-kv xs f` — apply binary `f(k, v) → MapEntryDecision<k', v'>`,
+/// associating `:keep` payloads and omitting `:drop` results.
+pub(super) fn emit_filter_map_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  emit_map_kv_impl(ctx, args, true)
+}
+
+fn emit_map_kv_impl(ctx: &mut WasmGenCtx, args: &[Calcit], uses_decision: bool) -> Result<(), String> {
+  let op_name = if uses_decision { "filter-map-kv" } else { "map-kv" };
+  expect_arity(2, args, op_name)?;
 
   // Resolve binary callee: f(k, v) → [k', v']
   let kind = if let Some((params, body)) = try_extract_inline_lambda(&args[1]) {
     if params.len() < 2 {
-      return Err("map-kv: inline lambda needs at least 2 params".into());
+      return Err(format!("{op_name}: inline lambda needs at least 2 params"));
     }
     FoldlCallKind::Inline(params, body)
   } else {
-    return Err("map-kv: callee must be an inline lambda in WASM".into());
+    return Err(format!("{op_name}: callee must be an inline lambda in WASM"));
   };
 
   // Evaluate map source → i32 ptr
@@ -1039,21 +1050,46 @@ pub(super) fn emit_map_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(result_ptr));
 
-  // new_key = result[0] at offset 8, new_val = result[1] at offset 16
-  ctx.emit(Instruction::LocalGet(result_ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-  ctx.emit(Instruction::LocalSet(new_key));
-  ctx.emit(Instruction::LocalGet(result_ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
-  ctx.emit(Instruction::LocalSet(new_val));
-
-  // acc = __rt_map_assoc(acc, new_key, new_val)
   let assoc_idx = *ctx.runtime_fn_index.get("__rt_map_assoc").expect("__rt_map_assoc");
-  ctx.emit(Instruction::LocalGet(acc));
-  ctx.emit(Instruction::LocalGet(new_key));
-  ctx.emit(Instruction::LocalGet(new_val));
-  ctx.emit(Instruction::Call(assoc_idx));
-  ctx.emit(Instruction::LocalSet(acc));
+  if uses_decision {
+    let keep_tag = *ctx.tag_index.get("keep").ok_or("filter-map-kv: :keep tag missing")?;
+
+    // Named enum layout is [payload_count, tag, payload_0, payload_1, ...].
+    // Only :keep carries the replacement key and value; :drop leaves acc intact.
+    ctx.emit(Instruction::LocalGet(result_ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+    ctx.emit(f64_const(keep_tag as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.begin_block_if();
+
+    ctx.emit(Instruction::LocalGet(result_ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
+    ctx.emit(Instruction::LocalSet(new_key));
+    ctx.emit(Instruction::LocalGet(result_ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(24)));
+    ctx.emit(Instruction::LocalSet(new_val));
+
+    ctx.emit(Instruction::LocalGet(acc));
+    ctx.emit(Instruction::LocalGet(new_key));
+    ctx.emit(Instruction::LocalGet(new_val));
+    ctx.emit(Instruction::Call(assoc_idx));
+    ctx.emit(Instruction::LocalSet(acc));
+    ctx.emit(Instruction::End);
+  } else {
+    // Pair-list layout is [count, key, value].
+    ctx.emit(Instruction::LocalGet(result_ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+    ctx.emit(Instruction::LocalSet(new_key));
+    ctx.emit(Instruction::LocalGet(result_ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
+    ctx.emit(Instruction::LocalSet(new_val));
+
+    ctx.emit(Instruction::LocalGet(acc));
+    ctx.emit(Instruction::LocalGet(new_key));
+    ctx.emit(Instruction::LocalGet(new_val));
+    ctx.emit(Instruction::Call(assoc_idx));
+    ctx.emit(Instruction::LocalSet(acc));
+  }
 
   ctx.emit(Instruction::LocalGet(i));
   ctx.emit(Instruction::I32Const(1));

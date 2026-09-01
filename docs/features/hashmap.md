@@ -21,7 +21,7 @@ All map operations return new maps — the original is never mutated.
 - **Create**: `{} (:a 1) (:b 2)`
 - **Access**: `get m :a`, `contains? m :a`
 - **Modify**: `assoc m :c 3`, `dissoc m :a`, `update m :a inc`
-- **Transform**: `map-kv m f`, `merge m1 m2`
+- **Transform**: `map-kv m f`, `filter-map-kv m f`, `merge m1 m2`
 - **Keys/Values**: `keys m`, `vals m`, `to-pairs m`
 
 ## Creating Maps
@@ -111,20 +111,42 @@ assoc-in config $ [] :server :port $ 8080
 
 ### `map-kv` — transform entries
 
-Returns a new map. If the callback returns `nil`, the entry is dropped (used as filter):
+Returns a new map. The callback transforms each entry and returns a two-item list
+containing the output key and value:
 
 ```cirru
 let
     m $ {} (:a 1) (:b 2) (:c 13)
     doubled $ map-kv m $ fn (k v) ([] k (* v 2))
-    filtered $ map-kv m $ fn (k v)
-      if (> v 10) nil
-        [] k v
   println doubled
   ; => ({} (:a 2) (:b 4) (:c 26))
+```
+
+Legacy native and JavaScript execution accepts `nil` or an enum value as a
+drop sentinel, but new code must not rely on that behavior. It cannot describe
+the callback result precisely and historically was not consistent across
+backends. Use `filter-map-kv` when entries may be omitted.
+
+### `filter-map-kv` — typed transform and filter
+
+`filter-map-kv` requires the callback to return a
+`MapEntryDecision<OutputKey, OutputValue>`. Return `:keep` with the transformed
+key and value, or `:drop` without a payload:
+
+```cirru
+let
+    m $ {} (:a 1) (:b 2) (:c 13)
+    filtered $ filter-map-kv m $ fn (k v)
+      if (> v 10)
+        %:: MapEntryDecision :drop
+        %:: MapEntryDecision :keep k v
   println filtered
   ; => ({} (:a 1) (:b 2))
 ```
+
+The method form is also available as `.filter-map-kv`. Prefer this API over a
+`nil` callback sentinel so the compiler can relate the callback payload to the
+resulting map's key and value types.
 
 ### `to-pairs` — convert to set of pairs
 
