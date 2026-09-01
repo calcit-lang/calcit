@@ -8,10 +8,10 @@
   "metrics": {
     "typeNone": 47,
     "typeNotFull": 144,
-    "schemaDynamic": 301,
+    "schemaDynamic": 297,
     "codeDynamic": 0,
     "codeNil": 0,
-    "unresolved": 301,
+    "unresolved": 297,
     "declaredOptional": 0,
     "deprecatedCalls": 0,
     "unsafeCoerce": 0
@@ -1135,17 +1135,6 @@
       "codeDynamic": 0,
       "codeNil": 0,
       "unresolved": 1,
-      "declaredOptional": 0,
-      "deprecatedCalls": 0,
-      "unsafeCoerce": 0
-    },
-    "calcit.core/foldl-shortcut": {
-      "typeNone": 0,
-      "typeNotFull": 0,
-      "schemaDynamic": 4,
-      "codeDynamic": 0,
-      "codeNil": 0,
-      "unresolved": 4,
       "declaredOptional": 0,
       "deprecatedCalls": 0,
       "unsafeCoerce": 0

@@ -5178,13 +5178,31 @@
                 :: 'Fn $ {} (:return 'Bool)
                   :args $ [] 'T 'T
               :generics $ [] 'T
-        'foldl-shortcut $ %{} 'CodeEntry (:doc "|internal function for left fold with shortcut\nSyntax: (foldl-shortcut list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from left with early termination support")
+        'foldl-shortcut $ %{} 'CodeEntry (:doc "|Internal left fold with early termination. Syntax: (foldl-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Dynamic 'Dynamic 'Fn
+            {} (:return 'U)
+              :args $ [] (:: 'List 'T) 'U 'U
+                :: 'Fn $ {} (:return 'Enum)
+                  :args $ [] 'U 'T
+              :generics $ [] 'T 'U
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-shortcut-accumulator)
+              :code $ quote
+                assert= 3 $ foldl-shortcut ([] 1 2 3) 0 99
+                  fn (acc x)
+                    let
+                        next $ + acc x
+                      :: (&= x 2) next
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-default-without-shortcut)
+              :code $ quote
+                assert= 99 $ foldl-shortcut ([] 1 2 3) 0 99
+                  fn (acc x)
+                    :: false $ + acc x
+              :tags $ #{} :core :unit
         'foldr-shortcut $ %{} 'CodeEntry (:doc "|Internal right fold with early termination. Syntax: (foldr-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default.")
           :code $ quote &runtime-implementation
           :examples $ []
