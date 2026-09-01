@@ -7,11 +7,11 @@
   },
   "metrics": {
     "typeNone": 47,
-    "typeNotFull": 145,
-    "schemaDynamic": 305,
+    "typeNotFull": 144,
+    "schemaDynamic": 303,
     "codeDynamic": 0,
     "codeNil": 0,
-    "unresolved": 305,
+    "unresolved": 303,
     "declaredOptional": 0,
     "deprecatedCalls": 0,
     "unsafeCoerce": 0
@@ -1443,17 +1443,6 @@
       "codeDynamic": 0,
       "codeNil": 0,
       "unresolved": 1,
-      "declaredOptional": 0,
-      "deprecatedCalls": 0,
-      "unsafeCoerce": 0
-    },
-    "calcit.core/map-indexed": {
-      "typeNone": 0,
-      "typeNotFull": 1,
-      "schemaDynamic": 2,
-      "codeDynamic": 0,
-      "codeNil": 0,
-      "unresolved": 2,
       "declaredOptional": 0,
       "deprecatedCalls": 0,
       "unsafeCoerce": 0

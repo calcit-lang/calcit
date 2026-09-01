@@ -3139,7 +3139,9 @@
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
-              :args $ [] (:: 'Ref 'T) 'K 'Fn
+              :args $ [] (:: 'Ref 'T) 'K
+                :: 'Fn $ {} (:return 'Unit)
+                  :args $ [] 'T 'T
               :generics $ [] 'T 'K
           :tags $ #{} :builtin :internal :state :watch
         'and $ %{} 'CodeEntry (:doc "|Logical conjunction macro with short-circuit semantics\nReturns the first falsy value or the last truthy value, evaluating expressions left to right.")
@@ -6370,8 +6372,12 @@
               map-indexed ([] |a |b)
                 fn (i x) ([] i x)
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Fn
+            {}
+              :args $ [] (:: 'List 'T)
+                :: 'Fn $ {} (:return 'U)
+                  :args $ [] 'Number 'T
+              :generics $ [] 'T 'U
+              :return $ :: 'List 'U
           :tests $ []
             %{} 'TestEntry (:name |passes-index-and-value)
               :code $ quote
