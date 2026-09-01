@@ -3463,7 +3463,8 @@ fn warn_on_raw_struct_index_access(
   call_stack: &CallStackList,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
-  if !should_emit_project_source_lint(file_ns)
+  if !warn_dyn_method_enabled()
+    || !should_emit_project_source_lint(file_ns)
     || file_ns == calcit::CORE_NS
     || call_stack
       .0
@@ -9808,6 +9809,7 @@ mod tests {
 
   #[test]
   fn rejects_source_struct_index_access_in_generic_helpers() {
+    let _guard = WarnDynMethodGuard::new(true);
     let expr = Cirru::List(vec![
       Cirru::leaf("&struct:nth"),
       Cirru::leaf("store"),
@@ -9840,6 +9842,7 @@ mod tests {
 
   #[test]
   fn accepts_persisted_struct_index_ir_with_matching_nominal_layout() {
+    let _guard = WarnDynMethodGuard::new(true);
     let expr = Cirru::List(vec![
       Cirru::leaf("&struct:nth"),
       Cirru::leaf("store"),
