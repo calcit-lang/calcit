@@ -270,27 +270,6 @@
             {} (:return 'Buffer)
               :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal :state
-        '&f64-buffer:len $ %{} 'CodeEntry (:doc "|strict immutable F64Buffer length")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'F64Buffer
-          :tags $ #{} :builtin :internal
-        '&f64:to-i64-index $ %{} 'CodeEntry (:doc "|checked strict F64Buffer index conversion")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number
-          :tags $ #{} :builtin :internal
-        '&f64-buffer:get $ %{} 'CodeEntry (:doc "|strict immutable F64Buffer checked read")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'F64Buffer 'Number
-          :tags $ #{} :builtin :internal
         '&call-spread $ %{} 'CodeEntry (:doc "|internal syntax for handling & spreading in function calls\nSyntax: (&call-spread fn args)\nParams: fn (function), args (list with spread)\nReturns: function call result\nHandles argument spreading in function calls")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -415,7 +394,7 @@
           :tags $ #{} :internal
         '&core-map-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            def &core-map-methods $ &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :values vals)
+            def &core-map-methods $ &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :values vals)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -639,6 +618,27 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :meta
+        '&f64-buffer:get $ %{} 'CodeEntry (:doc "|strict immutable F64Buffer checked read")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'F64Buffer 'Number
+          :tags $ #{} :builtin :internal
+        '&f64-buffer:len $ %{} 'CodeEntry (:doc "|strict immutable F64Buffer length")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'F64Buffer
+          :tags $ #{} :builtin :internal
+        '&f64:to-i64-index $ %{} 'CodeEntry (:doc "|checked strict F64Buffer index conversion")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'Number
+          :tags $ #{} :builtin :internal
         '&fn:apply $ %{} 'CodeEntry (:doc "|internal helper for fn :apply method entry")
           :code $ quote
             defn &fn:apply (f g)
@@ -2988,6 +2988,14 @@
           :examples $ []
           :schema $ :: 'Enum
           :tags $ #{} :data
+        'MapEntryDecision $ %{} 'CodeEntry (:doc "|Typed decision returned by filter-map-kv: :keep supplies the output key/value and :drop omits the input entry.")
+          :code $ quote
+            def MapEntryDecision $ impl-traits
+              defenum MapEntryDecision ([] 'K 'V) (:keep 'K 'V) (:drop)
+              , internal/&core-debug-impl internal/&core-eq-impl
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :data
         'Mappable $ %{} 'CodeEntry (:doc "|Core trait: Mappable")
           :code $ quote
             deftrait Mappable $ .map
@@ -4902,6 +4910,47 @@
                 assert= (#{} 7 9)
                   filter (#{} 1 3 5 7 9)
                     fn (x) (> x 5)
+              :tags $ #{} :core :unit
+        'filter-map-kv $ %{} 'CodeEntry (:doc "|Transforms and filters map entries with a typed MapEntryDecision callback. Return :keep with the output key/value or :drop to omit an entry.")
+          :code $ quote
+            defn filter-map-kv (xs f)
+              foldl xs ({})
+                defn %filter-map-kv (acc pair)
+                  hint-fn $ {}
+                    :args $ [] 'Map 'List
+                    :return 'Map
+                  let
+                      key $ &list:nth pair 0
+                      value $ &list:nth pair 1
+                      decision $ f key value
+                    match decision
+                      (:keep next-key next-value) (&map:assoc acc next-key next-value)
+                      (:drop) (identity acc)
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] (:: 'Map 'K 'V)
+                :: 'Fn $ {}
+                  :args $ [] 'K 'V
+                  :return $ :: 'MapEntryDecision 'R 'S
+              :generics $ [] 'K 'V 'R 'S
+              :return $ :: 'Map 'R 'S
+          :tests $ []
+            %{} 'TestEntry (:name |transforms-and-drops)
+              :code $ quote
+                do
+                  assert=
+                    {} (:b 20) (:c 30)
+                    filter-map-kv
+                      {} (:a 1) (:b 2) (:c 3)
+                      fn (k v)
+                        if (> v 1)
+                          %:: MapEntryDecision :keep k $ * v 10
+                          %:: MapEntryDecision :drop
+                  assert= ({})
+                    .filter-map-kv
+                      {} $ :a 1
+                      fn (k v) (%:: MapEntryDecision :drop)
               :tags $ #{} :core :unit
         'filter-not $ %{} 'CodeEntry (:doc |)
           :code $ quote

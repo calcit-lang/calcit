@@ -266,6 +266,17 @@
               &+ (&enum:nth t 1) (&enum:nth t 2)
           :examples $ []
           :schema $ :: 'Dynamic
+        'test-filter-map-kv $ %{} 'CodeEntry (:doc "|Typed filter-map-kv keeps two transformed entries and drops one.")
+          :code $ quote
+            defn test-filter-map-kv () $ let
+                output $ filter-map-kv (&{} :a 1 :b 2 :c 3)
+                  fn (k v)
+                    if (&> v 1)
+                      %:: MapEntryDecision :keep k $ &* v 10
+                      %:: MapEntryDecision :drop
+              &+ (&map:count output) (&map:get output :c)
+          :examples $ []
+          :schema $ :: 'Dynamic
         'test-find-found $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-find-found () $ option:unwrap-or
