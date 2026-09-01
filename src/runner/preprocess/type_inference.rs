@@ -631,6 +631,10 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
     Calcit::List(xs) => {
       let head = xs.first()?;
       match head {
+        // The zero-argument `hint-fn` is the processed representation of the
+        // legacy `;nil` marker. Metadata-bearing forms are not Nil values.
+        Calcit::Syntax(CalcitSyntax::HintFn, _) if xs.len() == 1 => Some(tag_annotation("nil")),
+
         // &let expression: infer from final expression (last element)
         Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
           // &let has format: (&let (binding) body...)
