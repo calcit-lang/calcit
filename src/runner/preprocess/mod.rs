@@ -3361,8 +3361,20 @@ fn check_struct_field_access(
   call_stack: &CallStackList,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
+  // `&struct:nth` embeds one concrete Struct layout in source. It is safe only
+  // as compiler-generated IR: a reusable helper may later receive a different
+  // nominal Struct with the same field name at another index. Keep the field
+  // tag as a runtime stale-schema assertion, but reject hand-written indexed
+  // access before it can escape in a published JS module.
+  if let Calcit::Proc(CalcitProc::NativeStructNth) = head {
+    if args.len() >= 2
+      && let (Some(receiver), Some(index)) = (args.first(), args.get(1))
+    {
+      warn_on_raw_struct_index_access(receiver, index, args.get(2), scope_types, file_ns, call_stack, check_warnings);
+    }
+  }
   // Check if this is a call to &struct:get
-  if let Calcit::Proc(CalcitProc::NativeStructGet) = head {
+  else if let Calcit::Proc(CalcitProc::NativeStructGet) = head {
     // &struct:get takes 2 args: (struct_value, field)
     if args.len() >= 2
       && let (Some(struct_arg), Some(field_arg)) = (args.first(), args.get(1))
@@ -3440,6 +3452,66 @@ fn check_struct_field_access(
       check_field_in_struct(struct_arg, &field_tag, scope_types, file_ns, check_warnings);
     }
   }
+}
+
+fn warn_on_raw_struct_index_access(
+  receiver: &Calcit,
+  index: &Calcit,
+  field: Option<&Calcit>,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  if !should_emit_project_source_lint(file_ns)
+    || file_ns == calcit::CORE_NS
+    || call_stack
+      .0
+      .iter()
+      .any(|frame| matches!(frame.kind, StackKind::Macro) && frame.def.as_ref() == "defimpl")
+  {
+    return;
+  }
+
+  // Typed `(:field value)` reads are lowered to `&struct:nth` and persisted in
+  // Snapshot IR. Accept that representation when the receiver still proves the
+  // exact nominal layout and the embedded index/tag pair agrees with it. Raw
+  // indexed access is hazardous only when that proof is absent or stale.
+  let matches_known_layout = resolve_type_value(receiver, scope_types)
+    .as_deref()
+    .and_then(CalcitTypeAnnotation::resolve_to_struct)
+    .is_some_and(|struct_def| {
+      let Calcit::Number(raw_index) = index else {
+        return false;
+      };
+      let Some(Calcit::Tag(field_tag)) = field else {
+        return false;
+      };
+      *raw_index >= 0.0
+        && raw_index.fract() == 0.0
+        && struct_def
+          .index_of(field_tag.ref_str())
+          .is_some_and(|field_index| field_index == *raw_index as usize)
+    });
+  if matches_known_layout {
+    return;
+  }
+
+  let field_text = field.map(Calcit::lisp_str).unwrap_or_else(|| "<unknown field>".to_owned());
+  let message = format!(
+    "[Warn] `&struct:nth` for {field_text} at index {} in {file_ns} has no matching concrete nominal Struct layout. A hard-coded index is unsafe in reusable or generic code. Use `({field_text} value)` on a concrete typed Struct so the compiler derives the index; generic helpers must use a typed trait/accessor or keep a Map boundary. `&struct:nth` is valid only as compiler/runtime IR backed by matching type evidence",
+    index.lisp_str()
+  );
+  gen_check_warning_code_at(
+    message,
+    "W_STRUCT_INDEX_RAW_ACCESS",
+    file_ns,
+    field
+      .and_then(Calcit::get_location)
+      .or_else(|| index.get_location())
+      .or_else(|| receiver.get_location()),
+    check_warnings,
+  );
 }
 
 fn warn_on_raw_struct_field_access(
@@ -7040,6 +7112,20 @@ pub fn preprocess_decode_map_as(
     ctx.check_warnings,
     ctx.call_stack,
   )?;
+  if let Some(actual) = resolve_type_value(&value_form, ctx.scope_types)
+    && actual.as_ref().resolve_to_struct().is_some()
+  {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "{head} expects an undecoded Map/host value, but received the already nominal Struct `{}`. Use the typed Struct directly; decode only at the external data boundary before storing or dispatching it",
+        actual.to_brief_string()
+      ),
+      "E_DECODE_MAP_AS_ALREADY_STRUCT",
+      ctx.call_stack,
+      value_form.get_location(),
+    ));
+  }
   let type_form = args.get(1).expect("validated decode-map-as type");
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
   let decoder = crate::calcit::data_shape::DataShapeGraph::build_open(target.as_ref(), ctx.file_ns).map_err(|error| {
@@ -9710,6 +9796,115 @@ mod tests {
     assert_eq!(warnings.len(), 1);
     assert_eq!(warnings[0].code(), Some("W_STRUCT_RAW_ACCESS"));
     assert!(warnings[0].message().contains("Use `(:name value)`"));
+  }
+
+  #[test]
+  fn rejects_source_struct_index_access_in_generic_helpers() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("&struct:nth"),
+      Cirru::leaf("store"),
+      Cirru::leaf("1"),
+      Cirru::leaf(":states"),
+    ]);
+    let code = code_to_calcit(&expr, "tests.struct", "update-states", vec![]).expect("parse raw indexed field access");
+    let scope_defs = HashSet::from([Arc::from("store")]);
+    let mut scope_types = ScopeTypes::new();
+    scope_types.insert(Arc::from("store"), Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))));
+    let warnings = RefCell::new(vec![]);
+
+    let _resolved = preprocess_expr(
+      &code,
+      &scope_defs,
+      &mut scope_types,
+      "tests.struct",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("preprocess raw indexed field access");
+
+    let warnings = warnings.borrow();
+    assert!(
+      warnings.iter().any(|warning| warning.code() == Some("W_STRUCT_INDEX_RAW_ACCESS")),
+      "raw source index must not be published from a generic helper: {warnings:?}"
+    );
+    assert!(warnings.iter().any(|warning| warning.message().contains("matching type evidence")));
+  }
+
+  #[test]
+  fn accepts_persisted_struct_index_ir_with_matching_nominal_layout() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("&struct:nth"),
+      Cirru::leaf("store"),
+      Cirru::leaf("1"),
+      Cirru::leaf(":states"),
+    ]);
+    let code = code_to_calcit(&expr, "tests.struct", "read-states", vec![]).expect("parse indexed field IR");
+    let scope_defs = HashSet::from([Arc::from("store")]);
+    let store_def = Arc::new(CalcitStructDef::from_fields(
+      EdnTag::from("Store"),
+      vec![EdnTag::from("count"), EdnTag::from("states")],
+    ));
+    let mut scope_types = ScopeTypes::new();
+    scope_types.insert(
+      Arc::from("store"),
+      Arc::new(CalcitTypeAnnotation::Struct(store_def, Arc::new(vec![]))),
+    );
+    let warnings = RefCell::new(vec![]);
+
+    let _resolved = preprocess_expr(
+      &code,
+      &scope_defs,
+      &mut scope_types,
+      "tests.struct",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("preprocess persisted indexed field IR");
+
+    assert!(
+      warnings
+        .borrow()
+        .iter()
+        .all(|warning| warning.code() != Some("W_STRUCT_INDEX_RAW_ACCESS")),
+      "matching typed Snapshot IR must not be treated as hand-written unsafe access"
+    );
+  }
+
+  #[test]
+  fn rejects_decode_map_as_on_an_already_typed_struct() {
+    let store_def = Arc::new(CalcitStructDef::from_fields(EdnTag::from("Store"), vec![EdnTag::from("states")]));
+    let store = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("store")),
+      sym: Arc::from("store"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.decode"),
+        at_def: Arc::from("updater"),
+      }),
+      location: Some(Arc::from(vec![1, 2, 3])),
+      type_info: Arc::new(CalcitTypeAnnotation::Struct(store_def, Arc::new(vec![]))),
+    });
+    let args = CalcitList::from(&[
+      store,
+      Calcit::Symbol {
+        sym: Arc::from("Dynamic"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.decode"),
+          at_def: Arc::from("updater"),
+        }),
+        location: Some(Arc::from(vec![1, 2, 4])),
+      },
+    ]);
+    let scope_defs = HashSet::from([Arc::from("store")]);
+    let mut scope_types = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+    let mut context = PreprocessContext::new(&scope_defs, &mut scope_types, "tests.decode", &warnings, &stack);
+
+    let error = preprocess_decode_map_as(&CalcitSyntax::DecodeMapAs, calcit::CORE_NS, &args, &mut context)
+      .expect_err("an already decoded Struct must fail before runtime");
+
+    assert_eq!(error.code(), Some("E_DECODE_MAP_AS_ALREADY_STRUCT"));
+    assert!(error.to_string().contains("Use the typed Struct directly"));
   }
 
   #[test]

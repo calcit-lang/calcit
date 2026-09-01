@@ -285,7 +285,10 @@ fn run_cli() -> Result<(), String> {
   }
 
   // Query/analyze commands may run preprocessing before the normal program-loading path.
-  runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method);
+  // Strict type mode includes every location-aware JS FFI diagnostic. The
+  // ordinary flag remains available for migration audits that are not ready
+  // for the zero-debt Dynamic/nil quality gate yet.
+  runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method || cli_args.strict_types);
   runner::preprocess::set_verbose_preprocess(cli_args.verbose);
   let _macro_metrics_report = runner::macro_metrics::ReportOnDrop::new(cli_args.macro_metrics);
   #[cfg(not(target_arch = "wasm32"))]
@@ -520,10 +523,33 @@ fn run_cli() -> Result<(), String> {
     run_check_only(&entries)?;
   }
 
+  let run_strict_type_gate = || {
+    run_quality(
+      &QualityCommand {
+        ns: None,
+        ns_prefix: None,
+        deps: false,
+        baseline: None,
+        write_baseline: None,
+        format: "human".to_owned(),
+      },
+      &snapshot,
+    )
+  };
+
+  // `--strict-types` is a preflight for every execution/codegen mode, not just
+  // another spelling of check-only. Existing projects with reviewed debt keep
+  // using `analyze quality --baseline ...`; strict mode is intentionally the
+  // zero-debt policy for new modules and fully migrated libraries.
+  if cli_args.strict_types && !check_only {
+    run_check_only(&entries)?;
+    run_strict_type_gate()?;
+  }
+
   let use_configured_js_mode = should_emit_js(&cli_args.subcommand, configured_run_mode);
 
   let task = if check_only {
-    run_check_only(&entries)
+    run_check_only(&entries).and_then(|_| if cli_args.strict_types { run_strict_type_gate() } else { Ok(()) })
   } else if let Some(CalcitCommand::Test(test_options)) = &cli_args.subcommand {
     eval_once = true;
     run_tests(test_options, &snapshot, &project_namespaces)

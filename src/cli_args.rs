@@ -22,6 +22,9 @@ pub struct ToplevelCalcit {
   /// warn on dynamic method calls that cannot be monomorphized
   #[argh(switch)]
   pub warn_dyn_method: bool,
+  /// enforce a zero-debt Dynamic, nil, unsafe-coerce, and untyped JS FFI gate before running
+  #[argh(switch)]
+  pub strict_types: bool,
   /// print FFI dylib calls and callbacks for debugging native crashes
   #[argh(switch)]
   pub trace_ffi: bool,
