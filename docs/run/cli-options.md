@@ -134,6 +134,21 @@ project that intentionally retains such boundaries should document and freeze
 them with `calcit analyze quality --baseline <file>` instead of claiming the
 zero-debt strict policy.
 
+Strict preprocessing also rejects two constructs that manufacture `nil`
+implicitly:
+
+- `E_LEGACY_OPTIONAL_PARAM`: a `?` parameter would bind an omitted argument to
+  `nil`. Remove the marker, declare trailing parameters as `Option<T>`, and let
+  omission insert `%none` (or pass `%some value` / `%none` explicitly).
+- `E_PARTIAL_STRUCT_NIL_FILL`: `%{}?` / `&%{}?` would fill omitted Struct fields
+  with `nil`. Use `%{}` and provide every field explicitly; an `Option<T>` field
+  receives `%none` rather than `nil`.
+
+Both constructs remain available outside `--strict-types` during ecosystem
+migration. Partial Struct construction is not auto-fixed because the compiler
+cannot infer whether an omitted business field should become `Option<T>`, gain a
+default, or be supplied by the caller.
+
 `--strict-types` also rejects hand-written runtime Struct index operations such
 as `&struct:nth` without matching nominal type evidence. Use `(:field value)` with a concrete nominal Struct; generic
 helpers need a typed trait/accessor or a deliberately open Map boundary.

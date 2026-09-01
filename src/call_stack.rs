@@ -295,7 +295,7 @@ fn find_location_in_calcit(v: &Calcit) -> Option<NodeLocation> {
   }
 }
 
-fn find_preferred_macro_location(stack: &CallStackList) -> Option<NodeLocation> {
+pub(crate) fn find_preferred_macro_location(stack: &CallStackList) -> Option<NodeLocation> {
   let mut macro_locations: Vec<NodeLocation> = vec![];
   for item in &stack.0 {
     if item.kind != StackKind::Macro {

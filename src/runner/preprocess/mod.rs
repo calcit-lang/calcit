@@ -11,7 +11,7 @@ use crate::{
     MacroExpansionType, MacroSignature, MacroSyntaxType, NodeLocation, ParamShape, ParamShapeToken, RawCodeType, SchemaKind,
     brief_type_of_value, compare_param_shapes, pop_type_slot_override, push_type_slot_override, register_type_slot,
   },
-  call_stack::{CallStackList, StackKind},
+  call_stack::{CallStackList, StackKind, find_preferred_macro_location},
   codegen, program, runner,
 };
 
@@ -42,6 +42,7 @@ use strum::ParseError;
 pub(crate) type ScopeTypes = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
 static WARN_DYN_METHOD: AtomicBool = AtomicBool::new(false);
+static STRICT_TYPES: AtomicBool = AtomicBool::new(false);
 static VERBOSE_PREPROCESS: AtomicBool = AtomicBool::new(false);
 static PROJECT_NAMESPACES: LazyLock<RwLock<HashSet<Arc<str>>>> = LazyLock::new(|| RwLock::new(HashSet::new()));
 
@@ -136,6 +137,18 @@ fn warn_dyn_method_enabled() -> bool {
 
 pub fn is_warn_dyn_method_enabled() -> bool {
   warn_dyn_method_enabled()
+}
+
+pub fn set_strict_types(enabled: bool) {
+  STRICT_TYPES.store(enabled, Ordering::SeqCst);
+}
+
+fn strict_types_enabled() -> bool {
+  STRICT_TYPES.load(Ordering::Relaxed)
+}
+
+pub fn is_strict_types_enabled() -> bool {
+  strict_types_enabled()
 }
 
 pub(crate) fn tag_annotation(name: &str) -> Arc<CalcitTypeAnnotation> {
@@ -1501,6 +1514,19 @@ fn preprocess_list_call(
     def_name: &def_name,
     call_location: call_location.clone(),
   };
+
+  if strict_types_enabled()
+    && should_emit_project_source_lint(file_ns)
+    && (matches!(def_name.as_ref(), "%{}?" | "&%{}?") || matches!(head_form, Calcit::Proc(CalcitProc::NativeStructPartial)))
+  {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      "partial Struct construction implicitly fills omitted fields with nil; use `%{}` and provide every field explicitly, using `%none` for fields declared as Option<T>",
+      "E_PARTIAL_STRUCT_NIL_FILL",
+      call_stack,
+      call_location,
+    ));
+  }
   warn_on_removed_data_api_call(&head_form, call_location.clone(), file_ns, check_warnings);
 
   let has_anonymous_definition_marker = matches!(args.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "_");
@@ -6408,6 +6434,23 @@ pub fn preprocess_defn(
       let mut param_symbols: Vec<Arc<str>> = vec![];
       let mut has_marked_args = false; // Track if function has & or ? markers
 
+      if strict_types_enabled()
+        && should_emit_project_source_lint(ctx.file_ns)
+        && ys.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgOptional, _)))
+      {
+        return Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          "legacy `?` parameters implicitly bind omitted arguments to nil; remove `?`, declare trailing parameters as Option<T>, and pass `%some value` or `%none` explicitly when omission sugar is not used",
+          "E_LEGACY_OPTIONAL_PARAM",
+          ctx.call_stack,
+          find_preferred_macro_location(ctx.call_stack).or(Some(NodeLocation::new(
+            info.at_ns.to_owned(),
+            info.at_def.to_owned(),
+            location.to_owned().unwrap_or_default(),
+          ))),
+        ));
+      }
+
       xs = xs.push_right(Calcit::Symbol {
         sym: def_name.to_owned(),
         info: Arc::new(CalcitSymbolInfo {
@@ -8539,6 +8582,79 @@ mod tests {
     fn drop(&mut self) {
       set_warn_dyn_method(self.prev);
     }
+  }
+
+  struct StrictTypesGuard {
+    prev: bool,
+  }
+
+  impl StrictTypesGuard {
+    fn new(enabled: bool) -> Self {
+      let prev = strict_types_enabled();
+      set_strict_types(enabled);
+      Self { prev }
+    }
+  }
+
+  impl Drop for StrictTypesGuard {
+    fn drop(&mut self) {
+      set_strict_types(self.prev);
+    }
+  }
+
+  fn legacy_optional_definition() -> Calcit {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("defn"),
+      Cirru::leaf("demo"),
+      Cirru::List(vec![Cirru::leaf("?"), Cirru::leaf("value")]),
+      Cirru::leaf("value"),
+    ]);
+    code_to_calcit(&expr, "tests.strict-nil", "demo", vec![]).expect("parse optional definition")
+  }
+
+  fn preprocess_test_expr(expr: &Calcit) -> Result<Calcit, CalcitErr> {
+    let warnings = RefCell::new(vec![]);
+    preprocess_expr(
+      expr,
+      &HashSet::new(),
+      &mut ScopeTypes::new(),
+      "tests.strict-nil",
+      &warnings,
+      &CallStackList::default(),
+    )
+  }
+
+  #[test]
+  fn strict_types_rejects_legacy_optional_parameters_but_compat_mode_keeps_them() {
+    let _state = lock_preprocess_test_state();
+    let code = legacy_optional_definition();
+
+    {
+      let _strict = StrictTypesGuard::new(false);
+      preprocess_test_expr(&code).expect("compatibility mode should keep legacy optional parameters");
+    }
+
+    let _strict = StrictTypesGuard::new(true);
+    let error = preprocess_test_expr(&code).expect_err("strict mode should reject implicit nil parameter binding");
+    assert_eq!(error.code.as_deref(), Some("E_LEGACY_OPTIONAL_PARAM"));
+    assert!(error.msg.contains("Option<T>"));
+    assert!(error.location.is_some(), "strict diagnostic should retain the definition location");
+  }
+
+  #[test]
+  fn strict_types_rejects_partial_struct_nil_fill_but_compat_mode_keeps_it() {
+    let _state = lock_preprocess_test_state();
+    let code = Calcit::from(vec![Calcit::Proc(CalcitProc::NativeStructPartial), Calcit::Nil]);
+
+    {
+      let _strict = StrictTypesGuard::new(false);
+      preprocess_test_expr(&code).expect("compatibility mode should keep partial Struct construction");
+    }
+
+    let _strict = StrictTypesGuard::new(true);
+    let error = preprocess_test_expr(&code).expect_err("strict mode should reject omitted Struct fields");
+    assert_eq!(error.code.as_deref(), Some("E_PARTIAL_STRUCT_NIL_FILL"));
+    assert!(error.msg.contains("%none"));
   }
 
   #[test]
