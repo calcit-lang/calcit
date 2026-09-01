@@ -289,6 +289,7 @@ fn run_cli() -> Result<(), String> {
   // ordinary flag remains available for migration audits that are not ready
   // for the zero-debt Dynamic/nil quality gate yet.
   runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method || cli_args.strict_types);
+  runner::preprocess::set_strict_types(cli_args.strict_types);
   runner::preprocess::set_verbose_preprocess(cli_args.verbose);
   let _macro_metrics_report = runner::macro_metrics::ReportOnDrop::new(cli_args.macro_metrics);
   #[cfg(not(target_arch = "wasm32"))]

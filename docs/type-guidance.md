@@ -117,8 +117,9 @@ Profile :name |Ada
 ```
 
 参数必须是 `:field value` 对，必填字段不能省略；末尾声明为 `Option<T>`
-的字段可以省略，Calcit 会补成 `%none`。需要显式控制所有字段或构造部分值时，
-继续使用 `%{} Profile ...` / `%{}? Profile ...`。
+的字段可以省略，Calcit 会补成 `%none`。需要显式控制所有字段时使用
+`%{} Profile ...` 并完整提供字段。`%{}?` 会把遗漏字段补成 `nil`，只作为迁移期
+兼容入口保留，并会被 `--strict-types` 以 `E_PARTIAL_STRUCT_NIL_FILL` 拒绝。
 
 已知 Enum 定义时使用头部调用：
 

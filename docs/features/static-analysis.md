@@ -482,6 +482,10 @@ defn factorial (n acc)
 - Macro-generated functions (e.g., from `loop` macro)
 - `calcit.core` namespace functions
 
+This compatibility exception applies to ordinary preprocessing. Under
+`--strict-types`, `?` parameters fail earlier with `E_LEGACY_OPTIONAL_PARAM` and
+must migrate to trailing `Option<T>` parameters.
+
 ## Type Inference
 
 The system infers types from various sources:
