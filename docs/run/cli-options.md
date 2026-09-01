@@ -143,11 +143,15 @@ implicitly:
 - `E_PARTIAL_STRUCT_NIL_FILL`: `%{}?` / `&%{}?` would fill omitted Struct fields
   with `nil`. Use `%{}` and provide every field explicitly; an `Option<T>` field
   receives `%none` rather than `nil`.
+- `E_NIL_FOR_UNIT`: a function declared to return `Unit` actually returns the
+  distinct `Nil` value. Replace returned `nil` / `;nil` with `&unit`, or end the
+  body with an effect that already returns Unit. Intermediate nil expressions
+  are not classified as the function return.
 
-Both constructs remain available outside `--strict-types` during ecosystem
-migration. Partial Struct construction is not auto-fixed because the compiler
-cannot infer whether an omitted business field should become `Option<T>`, gain a
-default, or be supplied by the caller.
+These compatibility paths remain available outside `--strict-types` during
+ecosystem migration. Partial Struct construction is not auto-fixed because the
+compiler cannot infer whether an omitted business field should become
+`Option<T>`, gain a default, or be supplied by the caller.
 
 `--strict-types` also rejects hand-written runtime Struct index operations such
 as `&struct:nth` without matching nominal type evidence. Use `(:field value)` with a concrete nominal Struct; generic
