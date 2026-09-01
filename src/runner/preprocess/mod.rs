@@ -3497,9 +3497,17 @@ fn warn_on_raw_struct_index_access(
     return;
   }
 
-  let field_text = field.map(Calcit::lisp_str).unwrap_or_else(|| "<unknown field>".to_owned());
+  let (field_text, field_access_hint) = match field {
+    Some(Calcit::Tag(field_tag)) => {
+      let field_text = Calcit::Tag(field_tag.to_owned()).lisp_str();
+      let access_hint = format!("({field_text} value)");
+      (field_text, access_hint)
+    }
+    Some(value) => (value.lisp_str(), "(:field value)".to_owned()),
+    None => ("<missing field tag>".to_owned(), "(:field value)".to_owned()),
+  };
   let message = format!(
-    "[Warn] `&struct:nth` for {field_text} at index {} in {file_ns} has no matching concrete nominal Struct layout. A hard-coded index is unsafe in reusable or generic code. Use `({field_text} value)` on a concrete typed Struct so the compiler derives the index; generic helpers must use a typed trait/accessor or keep a Map boundary. `&struct:nth` is valid only as compiler/runtime IR backed by matching type evidence",
+    "[Warn] `&struct:nth` for {field_text} at index {} in {file_ns} has no matching concrete nominal Struct layout. A hard-coded index is unsafe in reusable or generic code. Use `{field_access_hint}` on a concrete typed Struct so the compiler derives the index; generic helpers must use a typed trait/accessor or keep a Map boundary. `&struct:nth` is valid only as compiler/runtime IR backed by matching type evidence",
     index.lisp_str()
   );
   gen_check_warning_code_at(

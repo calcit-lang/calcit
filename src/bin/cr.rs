@@ -542,7 +542,11 @@ fn run_cli() -> Result<(), String> {
   // using `analyze quality --baseline ...`; strict mode is intentionally the
   // zero-debt policy for new modules and fully migrated libraries.
   if cli_args.strict_types && !check_only {
-    run_check_only(&entries)?;
+    // Eval/exec already preprocess above so they can fail before evaluating.
+    // Other run/codegen modes still need the explicit strict preflight here.
+    if !is_eval_mode {
+      run_check_only(&entries)?;
+    }
     run_strict_type_gate()?;
   }
 
