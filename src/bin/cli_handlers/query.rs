@@ -2216,7 +2216,9 @@ fn weak_type_diagnostics(entry: &snapshot::CodeEntry, budget: usize) -> Vec<Cont
     .map(|occurrence| {
       let intentional = matches!(
         occurrence.intent,
-        crate::type_coverage::WeakTypeIntent::IntentionalJsFfi | crate::type_coverage::WeakTypeIntent::IntentionalTypeSlotDynamic
+        crate::type_coverage::WeakTypeIntent::IntentionalJsFfi
+          | crate::type_coverage::WeakTypeIntent::IntentionalMacroSyntax
+          | crate::type_coverage::WeakTypeIntent::IntentionalTypeSlotDynamic
       );
       ContextDiagnostic {
         code: if intentional {

@@ -144,7 +144,7 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
     ns: options.ns.clone(),
     ns_prefix: options.ns_prefix.clone(),
     only: Some("schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce".to_owned()),
-    intent: Some("unresolved,declared-unit,declared-optional,explicit-unsafe".to_owned()),
+    intent: Some("unresolved,intentional-macro-syntax,declared-unit,declared-optional,explicit-unsafe".to_owned()),
     format: "json".to_owned(),
     deps: options.deps,
     summary_only: false,
@@ -196,6 +196,7 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
         WeakTypeIntent::Unresolved => metrics.unresolved += 1,
         WeakTypeIntent::DeclaredOptional => metrics.declared_optional += 1,
         WeakTypeIntent::IntentionalJsFfi
+        | WeakTypeIntent::IntentionalMacroSyntax
         | WeakTypeIntent::IntentionalTypeSlotDynamic
         | WeakTypeIntent::ExplicitUnsafe
         | WeakTypeIntent::DeclaredUnit => {}

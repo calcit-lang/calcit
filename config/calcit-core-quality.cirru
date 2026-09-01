@@ -16,7 +16,7 @@
       :schemaDynamic 1
       :typeNone 0
       :typeNotFull 1
-      :unresolved 1
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/& $ {} (:codeDynamic 0)
       :codeNil 0
@@ -61,7 +61,7 @@
       :schemaDynamic 3
       :typeNone 0
       :typeNotFull 1
-      :unresolved 3
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/&cirru-quote:to-list $ {} (:codeDynamic 0)
       :codeNil 0
@@ -250,7 +250,7 @@
       :schemaDynamic 1
       :typeNone 0
       :typeNotFull 1
-      :unresolved 1
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/&enum:params $ {} (:codeDynamic 0)
       :codeNil 0
@@ -367,7 +367,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/&list:flatten $ {} (:codeDynamic 0)
       :codeNil 0
@@ -412,7 +412,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/&struct:assoc $ {} (:codeDynamic 0)
       :codeNil 0
@@ -520,7 +520,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/->% $ {} (:codeDynamic 0)
       :codeNil 0
@@ -529,7 +529,7 @@
       :schemaDynamic 3
       :typeNone 0
       :typeNotFull 1
-      :unresolved 3
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/->> $ {} (:codeDynamic 0)
       :codeNil 0
@@ -538,7 +538,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core//= $ {} (:codeDynamic 0)
       :codeNil 0
@@ -556,7 +556,7 @@
       :schemaDynamic 1
       :typeNone 0
       :typeNotFull 1
-      :unresolved 1
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/:: $ {} (:codeDynamic 0)
       :codeNil 0
@@ -637,7 +637,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/any? $ {} (:codeDynamic 0)
       :codeNil 0
@@ -664,7 +664,7 @@
       :schemaDynamic 1
       :typeNone 0
       :typeNotFull 1
-      :unresolved 1
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/assert $ {} (:codeDynamic 0)
       :codeNil 0
@@ -673,7 +673,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/assert-detect $ {} (:codeDynamic 0)
       :codeNil 0
@@ -682,7 +682,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/assert-type $ {} (:codeDynamic 0)
       :codeNil 0
@@ -700,7 +700,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/assoc-in $ {} (:codeDynamic 0)
       :codeNil 0
@@ -718,7 +718,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/case-default $ {} (:codeDynamic 0)
       :codeNil 0
@@ -727,7 +727,7 @@
       :schemaDynamic 3
       :typeNone 0
       :typeNotFull 1
-      :unresolved 3
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/cond $ {} (:codeDynamic 0)
       :codeNil 0
@@ -736,7 +736,7 @@
       :schemaDynamic 1
       :typeNone 0
       :typeNotFull 1
-      :unresolved 1
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/data-definition-form $ {} (:codeDynamic 0)
       :codeNil 0
@@ -781,7 +781,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/defatom $ {} (:codeDynamic 0)
       :codeNil 0
@@ -826,7 +826,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/each $ {} (:codeDynamic 0)
       :codeNil 0
@@ -844,7 +844,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/eval $ {} (:codeDynamic 0)
       :codeNil 0
@@ -907,7 +907,7 @@
       :schemaDynamic 3
       :typeNone 0
       :typeNotFull 1
-      :unresolved 3
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/fn $ {} (:codeDynamic 0)
       :codeNil 0
@@ -916,7 +916,7 @@
       :schemaDynamic 1
       :typeNone 0
       :typeNotFull 1
-      :unresolved 1
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/format-cirru $ {} (:codeDynamic 0)
       :codeNil 0
@@ -988,7 +988,7 @@
       :schemaDynamic 3
       :typeNone 0
       :typeNotFull 1
-      :unresolved 3
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/if-not $ {} (:codeDynamic 0)
       :codeNil 0
@@ -997,7 +997,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/impl-traits $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1060,7 +1060,7 @@
       :schemaDynamic 1
       :typeNone 0
       :typeNotFull 1
-      :unresolved 1
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/let-destruct $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1069,7 +1069,7 @@
       :schemaDynamic 3
       :typeNone 0
       :typeNotFull 1
-      :unresolved 3
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/let-sugar $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1078,7 +1078,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/let[] $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1087,7 +1087,7 @@
       :schemaDynamic 3
       :typeNone 0
       :typeNotFull 1
-      :unresolved 3
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/let{} $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1096,7 +1096,7 @@
       :schemaDynamic 3
       :typeNone 0
       :typeNotFull 1
-      :unresolved 3
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/list-match $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1105,7 +1105,7 @@
       :schemaDynamic 1
       :typeNone 0
       :typeNotFull 1
-      :unresolved 1
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/loop $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1114,7 +1114,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/macroexpand $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1186,7 +1186,7 @@
       :schemaDynamic 1
       :typeNone 0
       :typeNotFull 1
-      :unresolved 1
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/or $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1195,7 +1195,7 @@
       :schemaDynamic 3
       :typeNone 0
       :typeNotFull 1
-      :unresolved 3
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/parse-cirru-edn $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1303,7 +1303,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/swap! $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1312,7 +1312,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/tag-match $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1321,7 +1321,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/tagging-edn $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1465,7 +1465,7 @@
       :schemaDynamic 3
       :typeNone 0
       :typeNotFull 1
-      :unresolved 3
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/when-let $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1474,7 +1474,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/when-not $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1483,7 +1483,7 @@
       :schemaDynamic 3
       :typeNone 0
       :typeNotFull 1
-      :unresolved 3
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/with-gensyms $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1492,7 +1492,7 @@
       :schemaDynamic 1
       :typeNone 0
       :typeNotFull 1
-      :unresolved 1
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/with-type-slot $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1510,7 +1510,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/{} $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1519,7 +1519,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.core/~ $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1789,7 +1789,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.internal/normalize-trait-type $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1816,7 +1816,7 @@
       :schemaDynamic 1
       :typeNone 0
       :typeNotFull 1
-      :unresolved 1
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.test/is-not= $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1825,7 +1825,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.test/is-throws $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1834,7 +1834,7 @@
       :schemaDynamic 1
       :typeNone 0
       :typeNotFull 1
-      :unresolved 1
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.test/is= $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1843,7 +1843,7 @@
       :schemaDynamic 2
       :typeNone 0
       :typeNotFull 1
-      :unresolved 2
+      :unresolved 0
       :unsafeCoerce 0
     |calcit.test/throws? $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1852,7 +1852,7 @@
       :schemaDynamic 1
       :typeNone 0
       :typeNotFull 1
-      :unresolved 1
+      :unresolved 0
       :unsafeCoerce 0
   :metrics $ {} (:codeDynamic 0)
     :codeNil 0
@@ -1861,7 +1861,7 @@
     :schemaDynamic 297
     :typeNone 47
     :typeNotFull 144
-    :unresolved 297
+    :unresolved 203
     :unsafeCoerce 0
   :scope $ {} (:includeDependencies false)
     :namespace nil
