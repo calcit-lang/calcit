@@ -115,6 +115,29 @@ Warn when dynamic method dispatch cannot be specialized at preprocess time, and 
 calcit --warn-dyn-method
 ```
 
+### Strict type preflight (`--strict-types`)
+
+Use `--strict-types` for new or fully migrated modules that must carry no local
+type debt:
+
+```bash
+calcit --check-only --strict-types
+calcit --strict-types js
+```
+
+The flag enables the location-aware untyped JS FFI diagnostics from
+`--warn-dyn-method`, then runs the zero-baseline static quality gate before
+execution or code generation. It rejects unresolved or schema `Dynamic`, code
+`nil`, declared legacy optional values, deprecated calls, and explicit
+`unsafe-coerce` boundaries. Deep/open payloads may still use `Dynamic`, but a
+project that intentionally retains such boundaries should document and freeze
+them with `calcit analyze quality --baseline <file>` instead of claiming the
+zero-debt strict policy.
+
+`--strict-types` also rejects hand-written runtime Struct index operations such
+as `&struct:nth` without matching nominal type evidence. Use `(:field value)` with a concrete nominal Struct; generic
+helpers need a typed trait/accessor or a deliberately open Map boundary.
+
 For a focused, machine-readable inventory that excludes unrelated type and FFI warnings, use the dedicated analysis command:
 
 ```bash

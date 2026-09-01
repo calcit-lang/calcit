@@ -84,6 +84,12 @@ Its inferred return type is `Result<List<Person>,String>`, not `Result<Dynamic,S
 
 `decode-map-as` is the companion for data that has already crossed a host boundary and is now an evaluated Calcit value, such as a JSON object returned by a JavaScript FFI. It derives the target shape at compile time and returns the declared type, so it is the typed replacement for ad-hoc map readers and runtime schema libraries. Struct targets consume maps, while list, map, enum, ref, and scalar targets are decoded recursively as well.
 
+Decode exactly once, at the boundary. Passing an already nominal Struct to
+`decode-map-as` or `try-decode-map-as` is a compile-time
+`E_DECODE_MAP_AS_ALREADY_STRUCT` error; use that Struct directly. This prevents
+an updater or history loader from accidentally re-decoding typed state and
+failing later with “expected map, got struct”.
+
 It converts a Map to a nominal Struct recursively, rejects unknown keys and missing required fields, and reports the path of a bad nested value. A missing `Option<T>` field becomes `%none`; a present raw `T` becomes `%some T`. Already-wrapped `%some` and `%none` values are also accepted.
 
 ```cirru.no-run
