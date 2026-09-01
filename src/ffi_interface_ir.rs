@@ -9,9 +9,9 @@ use crate::snapshot::{CodeEntry, Snapshot};
 use cirru_edn::Edn;
 use cirru_parser::Cirru;
 
-pub const FFI_INTERFACE_IR_VERSION: u32 = 2;
-pub const FFI_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/ffi-interface-ir-v2.schema.json";
-pub const FFI_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/ffi-interface-ir-v2.schema.json");
+pub const FFI_INTERFACE_IR_VERSION: u32 = 3;
+pub const FFI_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/ffi-interface-ir-v3.schema.json";
+pub const FFI_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/ffi-interface-ir-v3.schema.json");
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FfiInterfaceDocument {
@@ -119,7 +119,42 @@ pub struct FfiLoweringIr {
   pub symbol: Option<String>,
   pub invoke: Option<String>,
   pub transport: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub stream: Option<FfiStreamLoweringIr>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub resource: Option<FfiResourceLoweringIr>,
   pub raw: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FfiOwnershipIr {
+  Own,
+  Borrow,
+  Clone,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FfiStreamLoweringIr {
+  pub callback_parameter: usize,
+  #[serde(rename = "event")]
+  pub event_type: FfiTypeIr,
+  pub callback_result: FfiTypeIr,
+  pub cancel: String,
+  pub task_result: FfiOwnershipIr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FfiResourceParameterOwnershipIr {
+  pub position: usize,
+  pub ownership: FfiOwnershipIr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FfiResourceLoweringIr {
+  pub protocol: String,
+  pub result: Option<FfiOwnershipIr>,
+  pub parameters: Vec<FfiResourceParameterOwnershipIr>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -342,7 +377,7 @@ fn nominal_type(
         declaration.id(),
         arguments.len()
       ),
-      "Apply every declared type parameter exactly once; callable signatures remain monomorphic in Interface IR v2.",
+      "Apply every declared type parameter exactly once; callable signatures remain monomorphic in Interface IR v3.",
     )));
   }
   let id = declaration.id().to_owned();
@@ -454,7 +489,7 @@ fn convert_signature(
       definition,
       "logical_schema.generics",
       "E_FFI_IR_UNSUPPORTED_GENERIC",
-      "Generic and trait-bounded FFI call signatures are not part of Interface IR v2.",
+      "Generic and trait-bounded FFI call signatures are not part of Interface IR v3.",
       "Expose a monomorphic raw binding and keep generic normalization in handwritten Calcit code.",
     ));
   }
@@ -463,7 +498,7 @@ fn convert_signature(
       definition,
       "logical_schema.rest",
       "E_FFI_IR_UNSUPPORTED_REST",
-      "Variadic FFI call signatures are not part of Interface IR v2.",
+      "Variadic FFI call signatures are not part of Interface IR v3.",
       "Expose a fixed-arity raw binding, using a typed List or Tuple when the host needs multiple values.",
     ));
   }
@@ -585,7 +620,7 @@ fn convert_declaration(
           owner_definition,
           format!("declarations.{id}.type_parameters"),
           "E_FFI_IR_DECLARATION_BOUNDS",
-          format!("Struct declaration `{id}` has trait-bounded type parameters, which Interface IR v2 cannot lower portably."),
+          format!("Struct declaration `{id}` has trait-bounded type parameters, which Interface IR v3 cannot lower portably."),
           "Expose an unbounded transport struct or keep trait-constrained normalization in handwritten Calcit code.",
         ));
       }
@@ -622,7 +657,7 @@ fn convert_declaration(
           owner_definition,
           format!("declarations.{id}.type_parameters"),
           "E_FFI_IR_DECLARATION_BOUNDS",
-          format!("Enum declaration `{id}` has trait-bounded type parameters, which Interface IR v2 cannot lower portably."),
+          format!("Enum declaration `{id}` has trait-bounded type parameters, which Interface IR v3 cannot lower portably."),
           "Expose an unbounded transport enum or keep trait-constrained normalization in handwritten Calcit code.",
         ));
       }
@@ -789,21 +824,185 @@ fn is_ffi_boundary_candidate(metadata: &Edn) -> bool {
   }
 }
 
-fn scalar_metadata(metadata: &Edn, key: &str, definition: &str, diagnostics: &mut Vec<FfiInterfaceDiagnostic>) -> Option<String> {
-  let value = metadata_value(metadata, key)?;
+fn scalar_value(value: &Edn, path: &str, definition: &str, diagnostics: &mut Vec<FfiInterfaceDiagnostic>) -> Option<String> {
   match value {
     Edn::Tag(value) => Some(value.ref_str().to_owned()),
     Edn::Str(value) | Edn::Symbol(value) => Some(value.trim_start_matches(':').to_owned()),
     _ => {
       diagnostics.push(diagnostic(
         definition,
-        format!("lowering.{key}"),
+        path,
         "E_FFI_IR_METADATA_TYPE",
-        format!("FFI lowering field `{key}` must be a tag, symbol, or string."),
+        format!("FFI lowering field `{path}` must be a tag, symbol, or string."),
         "Use a stable scalar value in `:ffi` metadata so generators can compare it deterministically.",
       ));
       None
     }
+  }
+}
+
+fn scalar_metadata(metadata: &Edn, key: &str, definition: &str, diagnostics: &mut Vec<FfiInterfaceDiagnostic>) -> Option<String> {
+  let value = metadata_value(metadata, key)?;
+  scalar_value(value, &format!("lowering.{key}"), definition, diagnostics)
+}
+
+fn lifecycle_metadata<'a>(
+  metadata: &'a Edn,
+  key: &str,
+  definition: &str,
+  diagnostics: &mut Vec<FfiInterfaceDiagnostic>,
+) -> Option<&'a Edn> {
+  let value = metadata_value(metadata, key)?;
+  if matches!(value, Edn::Map(_) | Edn::Struct(_)) {
+    Some(value)
+  } else {
+    diagnostics.push(diagnostic(
+      definition,
+      format!("lowering.{key}"),
+      "E_FFI_IR_LIFECYCLE_SHAPE",
+      format!("FFI lifecycle field `{key}` must be a map or struct."),
+      "Use structured :stream or :resource metadata so ownership and lifecycle can be validated before generation.",
+    ));
+    None
+  }
+}
+
+fn lifecycle_ownership(
+  metadata: &Edn,
+  key: &str,
+  definition: &str,
+  path: &str,
+  diagnostics: &mut Vec<FfiInterfaceDiagnostic>,
+) -> Option<FfiOwnershipIr> {
+  let value = metadata_value(metadata, key)?;
+  match scalar_value(value, path, definition, diagnostics).as_deref() {
+    Some("own") => Some(FfiOwnershipIr::Own),
+    Some("borrow") => Some(FfiOwnershipIr::Borrow),
+    Some("clone") => Some(FfiOwnershipIr::Clone),
+    Some(other) => {
+      diagnostics.push(diagnostic(
+        definition,
+        path,
+        "E_FFI_IR_OWNERSHIP_UNKNOWN",
+        format!("FFI lifecycle ownership `{other}` is not supported at `{path}`."),
+        "Use :own for a newly returned lease, or :borrow / :clone for a resource input.",
+      ));
+      None
+    }
+    None => None,
+  }
+}
+
+fn lifecycle_position(value: &Edn, definition: &str, path: &str, diagnostics: &mut Vec<FfiInterfaceDiagnostic>) -> Option<usize> {
+  let Edn::Number(number) = value else {
+    diagnostics.push(diagnostic(
+      definition,
+      path,
+      "E_FFI_IR_LIFECYCLE_POSITION",
+      format!("FFI lifecycle position at `{path}` must be a non-negative integer."),
+      "Use the declared zero-based function parameter position.",
+    ));
+    return None;
+  };
+  if !number.is_finite() || *number < 0.0 || number.fract() != 0.0 || *number > usize::MAX as f64 {
+    diagnostics.push(diagnostic(
+      definition,
+      path,
+      "E_FFI_IR_LIFECYCLE_POSITION",
+      format!("FFI lifecycle position `{number}` at `{path}` must be a non-negative integer."),
+      "Use the declared zero-based function parameter position.",
+    ));
+    None
+  } else {
+    Some(*number as usize)
+  }
+}
+
+fn lifecycle_type_from_metadata(
+  value: &Edn,
+  definition: &str,
+  path: &str,
+  context: &mut TypeConversionContext<'_>,
+  diagnostics: &mut Vec<FfiInterfaceDiagnostic>,
+) -> Option<FfiTypeIr> {
+  let name = scalar_value(value, path, definition, diagnostics)?;
+  let annotation = match normalized_type_name(&name) {
+    "Unit" | "calcit.core/Unit" => CalcitTypeAnnotation::Unit,
+    "Bool" | "calcit.core/Bool" => CalcitTypeAnnotation::Bool,
+    "Number" | "calcit.core/Number" => CalcitTypeAnnotation::Number,
+    "String" | "calcit.core/String" => CalcitTypeAnnotation::String,
+    "Buffer" | "calcit.core/Buffer" => CalcitTypeAnnotation::Buffer,
+    name => CalcitTypeAnnotation::TypeRef(std::sync::Arc::from(name), std::sync::Arc::new(vec![])),
+  };
+  match convert_type(&annotation, definition, path, context) {
+    Ok(type_ir) => Some(type_ir),
+    Err(error) => {
+      diagnostics.push(*error);
+      None
+    }
+  }
+}
+
+fn stream_callback_result(
+  entry: &CodeEntry,
+  callback_parameter: usize,
+  definition: &str,
+  context: &mut TypeConversionContext<'_>,
+  diagnostics: &mut Vec<FfiInterfaceDiagnostic>,
+) -> Option<FfiTypeIr> {
+  let CalcitTypeAnnotation::Fn(signature) = entry.schema.as_ref() else {
+    diagnostics.push(diagnostic(
+      definition,
+      "lowering.stream.callback_parameter",
+      "E_FFI_IR_STREAM_CALLBACK_MISSING",
+      "An async stream lifecycle contract requires a function schema with a callback parameter.",
+      "Declare the callback as a typed function parameter and reference its zero-based position.",
+    ));
+    return None;
+  };
+  let Some(callback) = signature.arg_types.get(callback_parameter) else {
+    diagnostics.push(diagnostic(
+      definition,
+      "lowering.stream.callback_parameter",
+      "E_FFI_IR_STREAM_CALLBACK_MISSING",
+      format!("Stream callback parameter {callback_parameter} is outside the declared function arity."),
+      "Reference an existing zero-based callback parameter position.",
+    ));
+    return None;
+  };
+  let CalcitTypeAnnotation::Fn(callback_signature) = callback.as_ref() else {
+    diagnostics.push(diagnostic(
+      definition,
+      "lowering.stream.callback_parameter",
+      "E_FFI_IR_STREAM_CALLBACK_TYPE",
+      format!("Stream callback parameter {callback_parameter} must have a typed function schema."),
+      "Declare a callback parameter with a fixed-arity Fn schema returning Unit.",
+    ));
+    return None;
+  };
+  let result = match convert_type(
+    &callback_signature.return_type,
+    definition,
+    "lowering.stream.callback_result",
+    context,
+  ) {
+    Ok(result) => result,
+    Err(error) => {
+      diagnostics.push(*error);
+      return None;
+    }
+  };
+  if result != FfiTypeIr::Unit {
+    diagnostics.push(diagnostic(
+      definition,
+      "lowering.stream.callback_result",
+      "E_FFI_IR_STREAM_CALLBACK_RESULT",
+      "Interface IR v3 stream callbacks must return Unit.",
+      "Keep acknowledgement, retry, and domain-result policy in a handwritten layer until the async adapter contract expands.",
+    ));
+    None
+  } else {
+    Some(result)
   }
 }
 
@@ -946,7 +1145,255 @@ fn validate_lowering_contract(definition: &str, lowering: &FfiLoweringIr, diagno
   }
 }
 
-fn convert_lowering(metadata: &Edn, definition: &str) -> Result<(FfiLoweringIr, Vec<FfiInterfaceDiagnostic>), String> {
+fn convert_stream_lowering(
+  metadata: &Edn,
+  entry: &CodeEntry,
+  definition: &str,
+  context: &mut TypeConversionContext<'_>,
+  diagnostics: &mut Vec<FfiInterfaceDiagnostic>,
+) -> Option<FfiStreamLoweringIr> {
+  let stream = lifecycle_metadata(metadata, "stream", definition, diagnostics)?;
+  let callback_parameter = metadata_value(stream, "callback-parameter")
+    .and_then(|value| lifecycle_position(value, definition, "lowering.stream.callback_parameter", diagnostics));
+  let event_type = metadata_value(stream, "event")
+    .and_then(|value| lifecycle_type_from_metadata(value, definition, "lowering.stream.event", context, diagnostics));
+  let cancel =
+    metadata_value(stream, "cancel").and_then(|value| scalar_value(value, "lowering.stream.cancel", definition, diagnostics));
+  let task_result = lifecycle_ownership(stream, "task-result", definition, "lowering.stream.task_result", diagnostics);
+  let callback_result =
+    callback_parameter.and_then(|position| stream_callback_result(entry, position, definition, context, diagnostics));
+  let (Some(callback_parameter), Some(event_type), Some(callback_result), Some(cancel), Some(task_result)) =
+    (callback_parameter, event_type, callback_result, cancel, task_result)
+  else {
+    diagnostics.push(diagnostic(
+      definition,
+      "lowering.stream",
+      "E_FFI_IR_STREAM_INCOMPLETE",
+      "Async stream lifecycle metadata is incomplete.",
+      "Declare callback-parameter, event, cooperative cancel, and an owned task-result before generating lifecycle adapters.",
+    ));
+    return None;
+  };
+  if cancel != "cooperative" {
+    diagnostics.push(diagnostic(
+      definition,
+      "lowering.stream.cancel",
+      "E_FFI_IR_STREAM_CANCEL",
+      format!("Interface IR v3 stream cancellation must be cooperative, got `{cancel}`."),
+      "Use :cancel :cooperative so native and JS AbortSignal adapters share cancellation semantics.",
+    ));
+  }
+  if task_result != FfiOwnershipIr::Own {
+    diagnostics.push(diagnostic(
+      definition,
+      "lowering.stream.task_result",
+      "E_FFI_IR_STREAM_TASK_OWNERSHIP",
+      "Interface IR v3 stream tasks must transfer an owned task lease to Calcit.",
+      "Use :task-result :own; borrowed task handles cannot outlive the FFI call safely.",
+    ));
+  }
+  Some(FfiStreamLoweringIr {
+    callback_parameter,
+    event_type,
+    callback_result,
+    cancel,
+    task_result,
+  })
+}
+
+fn convert_resource_lowering(
+  metadata: &Edn,
+  definition: &str,
+  diagnostics: &mut Vec<FfiInterfaceDiagnostic>,
+) -> Option<FfiResourceLoweringIr> {
+  let resource = lifecycle_metadata(metadata, "resource", definition, diagnostics)?;
+  let protocol =
+    metadata_value(resource, "protocol").and_then(|value| scalar_value(value, "lowering.resource.protocol", definition, diagnostics));
+  let result = lifecycle_ownership(resource, "result", definition, "lowering.resource.result", diagnostics);
+  let mut parameters = Vec::new();
+  let mut parameters_valid = true;
+  if let Some(parameter_values) = metadata_value(resource, "parameters") {
+    let Edn::Map(parameter_values) = parameter_values else {
+      diagnostics.push(diagnostic(
+        definition,
+        "lowering.resource.parameters",
+        "E_FFI_IR_RESOURCE_PARAMETERS",
+        "Resource parameter ownership must be an EDN map from parameter position to ownership.",
+        "Use :parameters $ {} (0 :borrow) for each non-consuming resource input.",
+      ));
+      return None;
+    };
+    let mut seen = BTreeSet::new();
+    for (position_value, ownership_value) in &parameter_values.0 {
+      let Some(position) = lifecycle_position(position_value, definition, "lowering.resource.parameters", diagnostics) else {
+        parameters_valid = false;
+        continue;
+      };
+      if !seen.insert(position) {
+        diagnostics.push(diagnostic(
+          definition,
+          "lowering.resource.parameters",
+          "E_FFI_IR_RESOURCE_PARAMETERS",
+          format!("Resource parameter ownership repeats position {position}."),
+          "Declare each resource input position exactly once.",
+        ));
+        parameters_valid = false;
+        continue;
+      }
+      let Some(ownership_name) = scalar_value(ownership_value, "lowering.resource.parameters", definition, diagnostics) else {
+        parameters_valid = false;
+        continue;
+      };
+      let ownership = match ownership_name.as_str() {
+        "borrow" => FfiOwnershipIr::Borrow,
+        "clone" => FfiOwnershipIr::Clone,
+        "own" => {
+          diagnostics.push(diagnostic(
+            definition,
+            "lowering.resource.parameters",
+            "E_FFI_IR_RESOURCE_PARAMETERS",
+            format!("Resource input position {position} cannot use :own before a consuming ABI is specified."),
+            "Use :borrow or :clone for inputs; only a resource constructor may return :own.",
+          ));
+          parameters_valid = false;
+          continue;
+        }
+        other => {
+          diagnostics.push(diagnostic(
+            definition,
+            "lowering.resource.parameters",
+            "E_FFI_IR_OWNERSHIP_UNKNOWN",
+            format!("Resource input position {position} uses unknown ownership `{other}`."),
+            "Use :borrow or :clone for resource inputs.",
+          ));
+          parameters_valid = false;
+          continue;
+        }
+      };
+      parameters.push(FfiResourceParameterOwnershipIr { position, ownership });
+    }
+    parameters.sort_unstable_by_key(|parameter| parameter.position);
+  }
+  let Some(protocol) = protocol else {
+    diagnostics.push(diagnostic(
+      definition,
+      "lowering.resource",
+      "E_FFI_IR_RESOURCE_INCOMPLETE",
+      "Resource lifecycle metadata must declare a protocol.",
+      "Use :protocol :opaque-resource-v1 for the currently supported opaque-resource contract.",
+    ));
+    return None;
+  };
+  if protocol != "opaque-resource-v1" {
+    diagnostics.push(diagnostic(
+      definition,
+      "lowering.resource.protocol",
+      "E_FFI_IR_RESOURCE_PROTOCOL",
+      format!("Interface IR v3 resource protocol must be opaque-resource-v1, got `{protocol}`."),
+      "Use the published opaque-resource-v1 protocol until a new versioned resource transport is introduced.",
+    ));
+  }
+  if !parameters_valid {
+    return None;
+  }
+  Some(FfiResourceLoweringIr {
+    protocol,
+    result,
+    parameters,
+  })
+}
+
+fn validate_lifecycle_contract(definition: &str, lowering: &FfiLoweringIr, diagnostics: &mut Vec<FfiInterfaceDiagnostic>) {
+  if lowering.stream.is_some() && lowering.resource.is_some() {
+    diagnostics.push(diagnostic(
+      definition,
+      "lowering",
+      "E_FFI_IR_LIFECYCLE_MIXED",
+      "A callable cannot declare both stream and resource lifecycle lowering.",
+      "Expose separate raw callables for asynchronous streams and opaque resource operations.",
+    ));
+  }
+  if lowering.stream.is_some()
+    && !matches!(
+      (
+        lowering.backend.as_deref(),
+        lowering.invoke.as_deref(),
+        lowering.transport.as_deref(),
+        lowering.kind.as_deref()
+      ),
+      (Some("native"), Some("async"), Some("async-task-v1"), Some("async-stream"))
+    )
+  {
+    diagnostics.push(diagnostic(
+      definition,
+      "lowering.stream",
+      "E_FFI_IR_STREAM_LOWERING",
+      "A stream lifecycle contract requires native + async + async-task-v1 + async-stream lowering.",
+      "Align backend, invoke, transport, and kind before attempting lifecycle adapter generation.",
+    ));
+  }
+  if let Some(resource) = &lowering.resource {
+    if !matches!(
+      (
+        lowering.backend.as_deref(),
+        lowering.invoke.as_deref(),
+        lowering.transport.as_deref()
+      ),
+      (Some("native"), Some("sync"), Some("edn-buffer-v1"))
+    ) {
+      diagnostics.push(diagnostic(
+        definition,
+        "lowering.resource",
+        "E_FFI_IR_RESOURCE_LOWERING",
+        "A resource lifecycle contract requires native + sync + edn-buffer-v1 lowering.",
+        "Align backend, invoke, and transport before attempting resource adapter generation.",
+      ));
+    }
+    match lowering.kind.as_deref() {
+      Some("resource-constructor") if resource.result == Some(FfiOwnershipIr::Own) && resource.parameters.is_empty() => {}
+      Some("resource-constructor") => diagnostics.push(diagnostic(
+        definition,
+        "lowering.resource",
+        "E_FFI_IR_RESOURCE_CONSTRUCTOR",
+        "A resource constructor must return :own and cannot declare input resource ownership.",
+        "Use :result :own and omit :parameters for a constructor.",
+      )),
+      Some("resource-method") if resource.result.is_none() && !resource.parameters.is_empty() => {}
+      Some("resource-method") => diagnostics.push(diagnostic(
+        definition,
+        "lowering.resource",
+        "E_FFI_IR_RESOURCE_METHOD",
+        "A resource method must declare one or more borrowed/cloned inputs and cannot return an ownership lease.",
+        "Use :parameters with :borrow or :clone, and omit :result.",
+      )),
+      _ => diagnostics.push(diagnostic(
+        definition,
+        "lowering.kind",
+        "E_FFI_IR_RESOURCE_KIND",
+        "A resource lifecycle contract requires kind resource-constructor or resource-method.",
+        "Declare the raw operation's resource role explicitly.",
+      )),
+    }
+  }
+  if lowering.stream.is_some() || lowering.resource.is_some() {
+    diagnostics.push(diagnostic(
+      definition,
+      "lowering",
+      "E_FFI_IR_LIFECYCLE_ADAPTER_UNAVAILABLE",
+      "The Interface IR v3 lifecycle contract is validated, but generated async/resource adapters and conformance vectors are not available yet.",
+      "Keep this raw binding behind its handwritten adapter until the lifecycle backend is released.",
+    ));
+  }
+}
+
+fn convert_lowering(
+  metadata: &Edn,
+  entry: &CodeEntry,
+  definition: &str,
+  namespace: &str,
+  declarations: &BTreeMap<String, LocalTypeDeclaration>,
+  required: &mut BTreeSet<String>,
+) -> Result<(FfiLoweringIr, Vec<FfiInterfaceDiagnostic>), String> {
   let mut diagnostics = Vec::new();
   if !matches!(metadata, Edn::Struct(_) | Edn::Map(_)) {
     diagnostics.push(diagnostic(
@@ -967,6 +1414,15 @@ fn convert_lowering(metadata: &Edn, definition: &str) -> Result<(FfiLoweringIr, 
       "Declare `:backend :native`, `:backend :js`, or another explicit backend before generation.",
     ));
   }
+  let lifecycle_type_parameters = BTreeSet::new();
+  let mut context = TypeConversionContext {
+    declarations,
+    required,
+    current_namespace: namespace,
+    type_parameters: &lifecycle_type_parameters,
+  };
+  let stream = convert_stream_lowering(metadata, entry, definition, &mut context, &mut diagnostics);
+  let resource = convert_resource_lowering(metadata, definition, &mut diagnostics);
   let lowering = FfiLoweringIr {
     backend,
     target: scalar_metadata(metadata, "target", definition, &mut diagnostics),
@@ -974,9 +1430,12 @@ fn convert_lowering(metadata: &Edn, definition: &str) -> Result<(FfiLoweringIr, 
     symbol: scalar_metadata(metadata, "symbol", definition, &mut diagnostics),
     invoke: scalar_metadata(metadata, "invoke", definition, &mut diagnostics),
     transport: scalar_metadata(metadata, "transport", definition, &mut diagnostics),
+    stream,
+    resource,
     raw: canonical_edn_display(metadata),
   };
   validate_lowering_contract(definition, &lowering, &mut diagnostics);
+  validate_lifecycle_contract(definition, &lowering, &mut diagnostics);
   Ok((lowering, diagnostics))
 }
 
@@ -1012,7 +1471,9 @@ pub fn export_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -> Result<F
         None
       }
     };
-    if signature.is_some() {
+    let (lowering, lowering_diagnostics) = convert_lowering(metadata, entry, &id, namespace, &local_declarations, &mut required)?;
+    diagnostics.extend(lowering_diagnostics);
+    if !required.is_empty() {
       let (declarations, declaration_diagnostics) = convert_reachable_declarations(&id, &local_declarations, &mut required);
       if declaration_diagnostics.is_empty() {
         for declaration in declarations {
@@ -1023,8 +1484,6 @@ pub fn export_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -> Result<F
         signature = None;
       }
     }
-    let (lowering, lowering_diagnostics) = convert_lowering(metadata, &id)?;
-    diagnostics.extend(lowering_diagnostics);
     let definition_diagnostics = &diagnostics[definition_diagnostic_start..];
     let mut diagnostic_codes = definition_diagnostics.iter().map(|item| item.code.clone()).collect::<Vec<_>>();
     diagnostic_codes.sort_unstable();
@@ -1122,6 +1581,18 @@ mod tests {
   use crate::calcit::{CalcitFnTypeAnnotation, DYNAMIC_TYPE};
   use crate::snapshot::{CodeEntry, FileInSnapShot, NsEntry};
 
+  fn function_type(args: Vec<Arc<CalcitTypeAnnotation>>, result: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+    Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: args,
+      return_type: result,
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })))
+  }
+
   fn function_entry(args: Vec<Arc<CalcitTypeAnnotation>>, result: Arc<CalcitTypeAnnotation>, ffi: Edn) -> CodeEntry {
     CodeEntry {
       doc: "test binding".to_owned(),
@@ -1129,15 +1600,7 @@ mod tests {
       tests: vec![],
       tags: HashSet::new(),
       code: Cirru::List(vec![]),
-      schema: Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-        generics: Arc::new(vec![]),
-        where_bounds: Arc::new(vec![]),
-        arg_types: args,
-        return_type: result,
-        fn_kind: SchemaKind::Fn,
-        rest_type: None,
-        features: Arc::new(HashSet::new()),
-      }))),
+      schema: function_type(args, result),
       ffi: Some(ffi),
     }
   }
@@ -1221,6 +1684,172 @@ mod tests {
     assert_eq!(report.summary.unsupported, 0);
     assert!(report.diagnostics.is_empty());
     assert!(report.revision.starts_with("md5:"));
+  }
+
+  #[test]
+  fn exports_v3_stream_lifecycle_and_keeps_it_unsupported() {
+    let stream_metadata = Edn::map_from_iter([
+      (Edn::tag("backend"), Edn::tag("native")),
+      (Edn::tag("invoke"), Edn::tag("async")),
+      (Edn::tag("kind"), Edn::tag("async-stream")),
+      (Edn::tag("symbol"), Edn::str("serve")),
+      (Edn::tag("transport"), Edn::tag("async-task-v1")),
+      (
+        Edn::tag("stream"),
+        Edn::map_from_iter([
+          (Edn::tag("callback-parameter"), Edn::Number(1.0)),
+          (Edn::tag("cancel"), Edn::tag("cooperative")),
+          (Edn::tag("event"), Edn::sym("test.ffi/Event")),
+          (Edn::tag("task-result"), Edn::tag("own")),
+        ]),
+      ),
+    ]);
+    let report = export_snapshot(
+      &snapshot(vec![
+        ("Event", data_entry("defenum Event (:message 'String)")),
+        (
+          "serve",
+          function_entry(
+            vec![
+              DYNAMIC_TYPE.clone(),
+              function_type(
+                vec![Arc::new(CalcitTypeAnnotation::TypeRef(
+                  Arc::from("test.ffi/Event"),
+                  Arc::new(vec![]),
+                ))],
+                Arc::new(CalcitTypeAnnotation::Unit),
+              ),
+            ],
+            Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("FfiTask"), Arc::new(vec![]))),
+            stream_metadata,
+          ),
+        ),
+      ]),
+      None,
+    )
+    .expect("export v3 stream lifecycle");
+
+    let definition = &report.interface.definitions[0];
+    assert_eq!(report.interface.version, 3);
+    assert_eq!(definition.status, FfiDefinitionStatus::Unsupported);
+    assert!(
+      definition.signature.is_none(),
+      "the Dynamic options map remains outside the sync subset"
+    );
+    assert!(matches!(
+      definition.lowering.stream,
+      Some(FfiStreamLoweringIr {
+        callback_parameter: 1,
+        event_type: FfiTypeIr::Enum { ref id, ref arguments },
+        callback_result: FfiTypeIr::Unit,
+        ref cancel,
+        task_result: FfiOwnershipIr::Own,
+      }) if id == "test.ffi/Event" && arguments.is_empty() && cancel == "cooperative"
+    ));
+    assert!(
+      report
+        .interface
+        .declarations
+        .iter()
+        .any(|declaration| declaration.id() == "test.ffi/Event")
+    );
+    assert!(diagnostic_codes(&report).contains("E_FFI_IR_LIFECYCLE_ADAPTER_UNAVAILABLE"));
+    let encoded = serde_json::to_string(&report.interface).expect("serialize v3 stream interface");
+    assert!(encoded.contains("\"stream\""));
+    assert!(!encoded.contains("\"resource\""));
+  }
+
+  #[test]
+  fn exports_v3_resource_ownership_and_keeps_it_unsupported() {
+    let constructor_metadata = Edn::map_from_iter([
+      (Edn::tag("backend"), Edn::tag("native")),
+      (Edn::tag("invoke"), Edn::tag("sync")),
+      (Edn::tag("kind"), Edn::tag("resource-constructor")),
+      (Edn::tag("symbol"), Edn::str("compile")),
+      (Edn::tag("transport"), Edn::tag("edn-buffer-v1")),
+      (
+        Edn::tag("resource"),
+        Edn::map_from_iter([
+          (Edn::tag("protocol"), Edn::tag("opaque-resource-v1")),
+          (Edn::tag("result"), Edn::tag("own")),
+        ]),
+      ),
+    ]);
+    let method_metadata = Edn::map_from_iter([
+      (Edn::tag("backend"), Edn::tag("native")),
+      (Edn::tag("invoke"), Edn::tag("sync")),
+      (Edn::tag("kind"), Edn::tag("resource-method")),
+      (Edn::tag("symbol"), Edn::str("source")),
+      (Edn::tag("transport"), Edn::tag("edn-buffer-v1")),
+      (
+        Edn::tag("resource"),
+        Edn::map_from_iter([
+          (Edn::tag("protocol"), Edn::tag("opaque-resource-v1")),
+          (Edn::tag("parameters"), Edn::map_from_iter([(Edn::Number(0.0), Edn::tag("borrow"))])),
+        ]),
+      ),
+    ]);
+    let report = export_snapshot(
+      &snapshot(vec![
+        (
+          "compile",
+          function_entry(
+            vec![Arc::new(CalcitTypeAnnotation::String)],
+            Arc::new(CalcitTypeAnnotation::String),
+            constructor_metadata,
+          ),
+        ),
+        (
+          "source",
+          function_entry(vec![DYNAMIC_TYPE.clone()], Arc::new(CalcitTypeAnnotation::String), method_metadata),
+        ),
+      ]),
+      None,
+    )
+    .expect("export v3 resource lifecycle");
+
+    assert_eq!(report.summary.supported, 0);
+    assert_eq!(report.summary.unsupported, 2);
+    assert!(matches!(
+      report.interface.definitions[0].lowering.resource,
+      Some(FfiResourceLoweringIr { ref protocol, result: Some(FfiOwnershipIr::Own), ref parameters })
+        if protocol == "opaque-resource-v1" && parameters.is_empty()
+    ));
+    assert!(matches!(
+      report.interface.definitions[1].lowering.resource,
+      Some(FfiResourceLoweringIr { result: None, ref parameters, .. })
+        if matches!(parameters.as_slice(), [FfiResourceParameterOwnershipIr { position: 0, ownership: FfiOwnershipIr::Borrow }])
+    ));
+    assert!(diagnostic_codes(&report).contains("E_FFI_IR_LIFECYCLE_ADAPTER_UNAVAILABLE"));
+  }
+
+  #[test]
+  fn rejects_consuming_resource_inputs_until_the_abi_declares_them() {
+    let metadata = Edn::map_from_iter([
+      (Edn::tag("backend"), Edn::tag("native")),
+      (Edn::tag("invoke"), Edn::tag("sync")),
+      (Edn::tag("kind"), Edn::tag("resource-method")),
+      (Edn::tag("symbol"), Edn::str("consume")),
+      (Edn::tag("transport"), Edn::tag("edn-buffer-v1")),
+      (
+        Edn::tag("resource"),
+        Edn::map_from_iter([
+          (Edn::tag("protocol"), Edn::tag("opaque-resource-v1")),
+          (Edn::tag("parameters"), Edn::map_from_iter([(Edn::Number(0.0), Edn::tag("own"))])),
+        ]),
+      ),
+    ]);
+    let report = export_snapshot(
+      &snapshot(vec![(
+        "consume",
+        function_entry(vec![DYNAMIC_TYPE.clone()], Arc::new(CalcitTypeAnnotation::Unit), metadata),
+      )]),
+      None,
+    )
+    .expect("inventory consuming resource input");
+
+    assert!(report.interface.definitions[0].lowering.resource.is_none());
+    assert!(diagnostic_codes(&report).contains("E_FFI_IR_RESOURCE_PARAMETERS"));
   }
 
   #[test]
@@ -1777,6 +2406,8 @@ mod tests {
         .iter()
         .any(|property| property == "declarations")
     );
+    assert!(schema["$defs"]["lowering"]["properties"].get("stream").is_some());
+    assert!(schema["$defs"]["lowering"]["properties"].get("resource").is_some());
     assert!(!FFI_INTERFACE_IR_SCHEMA.contains("\"const\": \"named\""));
   }
 }

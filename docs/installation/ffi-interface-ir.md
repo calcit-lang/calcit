@@ -32,7 +32,7 @@ calcit calcit.cirru ffi export --json --ns app.ffi
 
 The JSON command writes one parseable envelope to stdout. Its
 `data.interface` value follows
-[`schemas/ffi-interface-ir-v2.schema.json`](../../schemas/ffi-interface-ir-v2.schema.json).
+[`schemas/ffi-interface-ir-v3.schema.json`](../../schemas/ffi-interface-ir-v3.schema.json).
 The envelope's `interface_schema` field carries the schema identifier.
 Definitions and diagnostics are sorted deterministically, and `revision` is a
 digest of the interface plus diagnostics. Unordered EDN maps and sets are
@@ -44,7 +44,7 @@ fall back to the compatibility version retained in the snapshot.
 
 ## Boundary selection
 
-Version 2 selects local definitions whose `:ffi` metadata contains at least
+Version 3 selects local definitions whose `:ffi` metadata contains at least
 one lowering field: `:backend`, `:target`, `:kind`, `:symbol`, `:invoke`, or
 `:transport`. Empty `:ffi {}` placeholders and capability-only metadata such
 as `:features` do not declare a raw binding. Malformed non-container metadata
@@ -62,10 +62,10 @@ Both layers remain visible:
 
 ## Lowering contract validation
 
-Interface IR v2 callable definitions have one direction: Calcit imports a raw
+Interface IR v3 callable definitions have one direction: Calcit imports a raw
 binding from the selected host backend. An explicit import/export direction
 field is reserved for a future IR version; consumers must not infer a reverse
-export from v2 metadata.
+export from v3 metadata.
 
 Native callables are generator-safe only when all three lowering fields are
 present and coherent:
@@ -82,14 +82,14 @@ are omitted, `browser`, or `node`. Unknown backends, invalid targets, missing
 fields, non-portable symbols, unversioned transports, and mismatched
 invoke/transport pairs produce path-specific diagnostics before bindgen.
 
-Interface IR v2 的 callable direction 固定为“Calcit 从 host backend import raw
+Interface IR v3 的 callable direction 固定为“Calcit 从 host backend import raw
 binding”；显式双向 direction 字段留给后续 IR 版本。native callable 必须声明
 未带协议后缀的 portable C base symbol，并使用 `sync + edn-buffer-v1`、
 `async + async-task-v1` 或 `blocking-callback + blocking-host-v1` 之一。
 未知 backend/target、缺失字段、非法 symbol、未版本化 transport 与组合错配都会
 在 bindgen 前产生带精确 path 的 diagnostic。
 
-V2 represents `Unit`, `Bool`, `Number`, `String`, `Buffer`, homogeneous
+V3 represents `Unit`, `Bool`, `Number`, `String`, `Buffer`, homogeneous
 `List`, explicit `Option` / `Result`, and local Struct/Enum references backed
 by namespace-qualified declarations. Declaration fields and variant payloads
 may use declared type parameters, while callable signatures remain
@@ -113,18 +113,20 @@ Option/Result 使用明确类型节点；只纳入从 FFI signature 传递可达
 `package_version` 读取相邻 `deps.cirru` 的 `:version`，与当前项目发版流程保持
 同一事实来源；尚未迁移版本字段的旧项目才回退到 snapshot 兼容值。
 
-## Versioning and scope of v2
+## Versioning and lifecycle scope of v3
 
-The frozen v1 schema remains in the repository for old consumers, but current
-exports use v2. A v1-only consumer must reject v2 explicitly and upgrade before
-generation; it must not ignore the new `declarations` field and continue with
-the old undeclared `named` behavior.
+The frozen v1 and v2 schemas remain in the repository for old consumers, but
+current exports use v3. A v1- or v2-only consumer must reject v3 explicitly and
+upgrade before generation; it must not ignore structured lifecycle metadata or
+continue with the old undeclared `named` behavior.
 
-This phase defines an inventory and generator input. It validates fixed
-function arity and the published native invocation/transport pairs, but does
-not yet validate callback positions, ownership, cancellation, or resource
-lifecycle fields nested in lowering metadata. Those structured checks and
-generated adapters belong to the next bindgen phase.
+V3 adds optional structured lifecycle metadata. `lowering.stream` records a
+callback parameter, event type, Unit callback result, cooperative cancellation,
+and an owned task result. `lowering.resource` records `opaque-resource-v1` and
+constructor/result or method/input ownership. Lifecycle definitions remain
+`unsupported`: the exporter validates the contract, while generated
+Promise/AsyncIterable/AbortSignal and resource adapters wait for conformance
+vectors and real WSS/regex pilots. There is no Dynamic fallback.
 
 ## Standalone production bindgen
 
