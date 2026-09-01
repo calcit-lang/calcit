@@ -3134,15 +3134,15 @@
               :code $ quote
                 assert= 4 $ abs -4
               :tags $ #{} :core :unit
-        'add-watch $ %{} 'CodeEntry (:doc "|internal function for adding atom watchers\nSyntax: (add-watch atom key callback)\nParams: atom (atom), key (any), callback (function)\nReturns: &unit\nAdds watcher function to atom")
+        'add-watch $ %{} 'CodeEntry (:doc "|Register a watcher on a Ref<T>. Syntax: (add-watch ref tag-key callback). The key must be a Tag. The callback receives (new-value old-value), returns Unit, and add-watch itself returns Unit.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
-              :args $ [] (:: 'Ref 'T) 'K
+              :args $ [] (:: 'Ref 'T) 'Tag
                 :: 'Fn $ {} (:return 'Unit)
                   :args $ [] 'T 'T
-              :generics $ [] 'T 'K
+              :generics $ [] 'T
           :tags $ #{} :builtin :internal :state :watch
         'and $ %{} 'CodeEntry (:doc "|Logical conjunction macro with short-circuit semantics\nReturns the first falsy value or the last truthy value, evaluating expressions left to right.")
           :code $ quote
@@ -6386,7 +6386,7 @@
                       [] (&list:first pair)
                         + 10 $ &list:last pair
               :tags $ #{} :core :unit
-        'map-indexed $ %{} 'CodeEntry (:doc "|Map over a collection with index, f takes index and value")
+        'map-indexed $ %{} 'CodeEntry (:doc "|Map over a List<T> with indices. The callback receives (index value), and the result is List<U>.")
           :code $ quote
             defn map-indexed (xs f)
               foldl xs ([])
