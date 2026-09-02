@@ -27,6 +27,8 @@ the cyclic binding and never terminated.
 
 - Add a named type-variable occurs-check across container, function, nominal,
   optional/nullish and variadic annotations.
+- Follow aliases already present in the binding graph so indirect cycles such
+  as `T = U` followed by `U = Optional<T>` are rejected as well.
 - If a candidate contains the variable being bound, keep the unresolved
   generic match permissive without storing the recursive binding. Later
   concrete arguments can still bind the variable normally.
