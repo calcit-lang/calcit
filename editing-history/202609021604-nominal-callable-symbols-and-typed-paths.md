@@ -11,6 +11,7 @@
 - Preserved dynamic paths, Dynamic receivers, mixed containers, and captured closures as explicit compatibility boundaries rather than guessing static semantics.
 - Allowed a named `impl-traits` wrapper type to match the concrete Struct/Enum value it resolves to, so hooks can expose precise nominal plugin return types without losing method lookup identity.
 - Preserved legacy `?` optional-parameter evidence in the cached callable shape and method checker, preventing valid calls such as `.show d!` from being rejected when the final text argument is omitted.
+- Hardened generated-callable invalidation after review: canonical impl tags win over aliases, inline `impl-traits` values depend on their nominal source definition, and synthesis falls back to runtime dispatch when no reliable source owner exists. Reprocessed Dynamic parameters also clear shadowed outer type evidence.
 - Added Rust unit coverage, generated-JS assertions, native runtime checks, documentation, and cross-backend regression coverage.
 
 ## 中文
@@ -22,4 +23,5 @@
 - 动态路径、Dynamic 接收者、混合容器和捕获闭包继续作为显式兼容边界，不猜测其静态语义。
 - 允许命名的 `impl-traits` 包装类型与其解析得到的具体 Struct/Enum 值匹配，使 hook 可以声明精确的 nominal plugin 返回类型，同时保留方法查找身份。
 - 在缓存的 callable shape 与方法检查器中保留旧式 `?` 可选参数证据，避免 `.show d!` 这类省略末尾文本参数的合法调用被误报。
+- 根据 review 加固生成 callable 的失效关系：canonical impl tag 优先于别名，inline `impl-traits` 依赖其 nominal 源定义；找不到可靠源码 owner 时回退到运行时分发。重新处理 Dynamic 参数时也会清除被遮蔽的外层类型证据。
 - 补充 Rust 单元测试、生成 JS 断言、native 运行验证、文档与跨后端回归门禁。

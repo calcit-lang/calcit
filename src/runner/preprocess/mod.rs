@@ -5147,8 +5147,8 @@ fn pick_callable_from_method_entry(
         def_id: Some(program::ensure_def_id(def_ref.def_ns.as_ref(), def_ref.def_name.as_ref()).0),
       })))
     }
-    Calcit::Fn { info, .. } if info.scope.is_empty() => {
-      synthesize_nominal_impl_callable(info, impl_value, receiver_type, method_name, file_ns, call_stack).map(Some)
+    Calcit::Fn { info, .. } if info.scope.is_empty() && nominal_callable_scope_name(receiver_type, info.def_ns.as_ref()).is_some() => {
+      synthesize_nominal_impl_callable(info, impl_value, receiver_type, method_name, file_ns, call_stack)
     }
     // A closure that captures lexical state cannot be promoted to a top-level
     // callable without changing its semantics. It remains on the explicit
@@ -5253,6 +5253,32 @@ fn synthetic_fn_args(info: &CalcitFn, schema: &CalcitTypeAnnotation, synthetic_n
   Calcit::from(CalcitList::from(nodes.as_slice()))
 }
 
+/// Collect source owners that must invalidate a generated nominal callable.
+fn nominal_callable_owner_deps(target_ns: &str, impl_value: &CalcitImpl, receiver_type: &CalcitTypeAnnotation) -> Vec<program::DefId> {
+  let mut deps = vec![];
+  if let Some(owner_def) = program::find_source_def_for_runtime_value(target_ns, &Calcit::Impl(impl_value.clone())) {
+    deps.push(program::ensure_def_id(target_ns, owner_def.as_ref()));
+  }
+
+  let type_ref = match receiver_type {
+    CalcitTypeAnnotation::TypeRef(path, _) => Some(path.as_ref()),
+    CalcitTypeAnnotation::Optional(inner) => {
+      return nominal_callable_owner_deps(target_ns, impl_value, inner.as_ref());
+    }
+    _ => None,
+  };
+  if let Some(path) = type_ref {
+    let stripped = path.trim_start_matches(['\'', ':']);
+    let (type_ns, type_def) = stripped.rsplit_once('/').unwrap_or((target_ns, stripped));
+    if program::has_def_code(type_ns, type_def) {
+      deps.push(program::ensure_def_id(type_ns, type_def));
+    }
+  }
+  deps.sort();
+  deps.dedup();
+  deps
+}
+
 /// Materialize a capture-free anonymous impl method as a deterministic compiled definition.
 fn synthesize_nominal_impl_callable(
   info: &CalcitFn,
@@ -5261,19 +5287,21 @@ fn synthesize_nominal_impl_callable(
   method_name: &str,
   file_ns: &str,
   call_stack: &CallStackList,
-) -> Result<Calcit, CalcitErr> {
+) -> Result<Option<Calcit>, CalcitErr> {
   let target_ns = info.def_ns.as_ref();
   let Some(scope_name) = nominal_callable_scope_name(receiver_type, target_ns) else {
-    return Err(CalcitErr::use_msg_stack_location_with_code(
-      CalcitErrKind::Type,
-      format!("cannot create a static callable for `.{method_name}` without a nominal receiver type"),
-      "E_IMPL_CALLABLE_NOMINAL_RECEIVER_REQUIRED",
-      call_stack,
-      None,
-    ));
+    return Ok(None);
   };
   let method_segment = method_name.to_ascii_lowercase();
   let synthetic_name = format!("&{scope_name}:{method_segment}");
+
+  // A cacheable compiler-owned symbol must have at least one source owner.
+  // Otherwise retain runtime method dispatch so no stale generated definition
+  // can survive a source edit without an invalidation edge.
+  let owner_deps = nominal_callable_owner_deps(target_ns, impl_value, receiver_type);
+  if owner_deps.is_empty() {
+    return Ok(None);
+  }
 
   if program::has_def_code(target_ns, &synthetic_name) {
     return Err(CalcitErr::use_msg_stack_location_with_code(
@@ -5316,11 +5344,9 @@ fn synthesize_nominal_impl_callable(
     ));
   }
   let mut deps = program::collect_compiled_deps(&preprocessed_code);
-  if let Some(owner_def) = program::find_source_def_for_runtime_value(target_ns, &Calcit::Impl(impl_value.clone())) {
-    deps.push(program::ensure_def_id(target_ns, owner_def.as_ref()));
-    deps.sort();
-    deps.dedup();
-  }
+  deps.extend(owner_deps);
+  deps.sort();
+  deps.dedup();
   program::store_compiled_output(
     target_ns,
     &synthetic_name,
@@ -5351,12 +5377,12 @@ fn synthesize_nominal_impl_callable(
       at_def: Arc::from(synthetic_name.as_str()),
     }
   };
-  Ok(Calcit::Import(CalcitImport {
+  Ok(Some(Calcit::Import(CalcitImport {
     ns: Arc::from(target_ns),
     def: Arc::from(synthetic_name),
     info: Arc::new(info),
     def_id: Some(def_id),
-  }))
+  })))
 }
 
 fn build_inlined_call(callable_head: Calcit, args: &CalcitList, scope_types: &ScopeTypes) -> Calcit {
@@ -6834,6 +6860,8 @@ pub fn preprocess_defn(
             body_defs.insert(local.sym.clone());
             if !matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Dynamic) {
               body_types.insert(local.sym.clone(), local.type_info.clone());
+            } else {
+              body_types.remove(&local.sym);
             }
             zs.push(Calcit::Local(local.clone()));
             Ok(())
@@ -11720,6 +11748,90 @@ mod tests {
   }
 
   #[test]
+  fn nominal_callable_tracks_inline_type_owner_or_falls_back_without_source() {
+    let _guard = lock_preprocess_test_state();
+    let owner_ns: Arc<str> = Arc::from("tests.inline-impl-owner");
+    program::install_internal_source_namespace(
+      owner_ns.clone(),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from("CatProfile"),
+          program::ProgramDefEntry {
+            code: Calcit::Nil,
+            schema: calcit::DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: None,
+          },
+        )]),
+      },
+    )
+    .expect("install inline impl owner fixture");
+    let inline_impl = CalcitImpl {
+      name: EdnTag::new("InlineDisplayImpl"),
+      origin: None,
+      fields: Arc::new(vec![]),
+      values: Arc::new(vec![]),
+    };
+    let receiver = CalcitTypeAnnotation::TypeRef(Arc::from("tests.inline-impl-owner/CatProfile"), Arc::new(vec![]));
+    assert_eq!(
+      nominal_callable_owner_deps(&owner_ns, &inline_impl, &receiver),
+      vec![program::ensure_def_id(&owner_ns, "CatProfile")],
+      "inline impl-traits must be invalidated through the nominal type source"
+    );
+
+    let missing_receiver = CalcitTypeAnnotation::TypeRef(Arc::from("tests.missing/CatProfile"), Arc::new(vec![]));
+    assert!(
+      nominal_callable_owner_deps(&owner_ns, &inline_impl, &missing_receiver).is_empty(),
+      "callable synthesis must fall back when no source owner can invalidate it"
+    );
+    program::remove_internal_source_namespace(&owner_ns);
+  }
+
+  #[test]
+  fn capture_free_non_nominal_impl_method_stays_on_runtime_dispatch() {
+    let method = Calcit::Fn {
+      id: calcit::gen_core_id(),
+      info: Arc::new(CalcitFn {
+        name: Arc::from("f%"),
+        def_ns: Arc::from("tests.non-nominal-impl"),
+        def_ref: None,
+        usage: CalcitFnUsageMeta { used_in_impl: true },
+        scope: Arc::new(CalcitScope::default()),
+        args: Arc::new(CalcitFnArgs::Args(vec![])),
+        call_shape: CalcitFnCallShape::fixed(0),
+        body: vec![Calcit::Nil],
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        return_type: calcit::DYNAMIC_TYPE.clone(),
+        arg_types: vec![],
+        rest_type: None,
+      }),
+    };
+    let impl_value = CalcitImpl {
+      name: EdnTag::new("DynamicDisplayImpl"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("display")]),
+      values: Arc::new(vec![method.clone()]),
+    };
+    let receiver = CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("struct")));
+    assert!(
+      pick_callable_from_method_entry(
+        &method,
+        &impl_value,
+        &receiver,
+        "display",
+        "tests.non-nominal-impl",
+        &CallStackList::default(),
+      )
+      .expect("non-nominal method selection must remain valid")
+      .is_none(),
+      "a non-nominal receiver cannot safely own a generated callable"
+    );
+  }
+
+  #[test]
   fn captured_impl_closure_stays_on_runtime_dispatch() {
     let captured_idx = CalcitLocal::track_sym(&Arc::from("captured"));
     let mut captured_scope = CalcitScope::default();
@@ -13489,6 +13601,46 @@ mod tests {
       rest_type: has_rest.then(|| Arc::new(CalcitTypeAnnotation::Number)),
       features: Arc::new(HashSet::new()),
     })))
+  }
+
+  #[test]
+  fn reprocessed_dynamic_local_parameter_shadows_outer_type() {
+    let ns: Arc<str> = Arc::from("tests.local-shadow");
+    let symbol_info = Arc::new(CalcitSymbolInfo {
+      at_ns: ns.clone(),
+      at_def: Arc::from("demo"),
+    });
+    let parameter = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("value")),
+      sym: Arc::from("value"),
+      info: symbol_info.clone(),
+      location: None,
+      type_info: calcit::DYNAMIC_TYPE.clone(),
+    });
+    let code = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::Defn, ns.clone()),
+      Calcit::Symbol {
+        sym: Arc::from("demo"),
+        info: symbol_info.clone(),
+        location: None,
+      },
+      Calcit::from(vec![parameter]),
+      Calcit::Symbol {
+        sym: Arc::from("value"),
+        info: symbol_info,
+        location: None,
+      },
+    ]);
+    let scope_defs = HashSet::from([Arc::from("value")]);
+    let mut scope_types = ScopeTypes::from([(Arc::from("value"), Arc::new(CalcitTypeAnnotation::String))]);
+    let warnings = RefCell::new(vec![]);
+    let result = preprocess_expr(&code, &scope_defs, &mut scope_types, &ns, &warnings, &CallStackList::default())
+      .expect("reprocess defn with compiler-generated local parameter");
+    assert!(matches!(
+      result,
+      Calcit::List(items)
+        if matches!(items.iter().last(), Some(Calcit::Local(local)) if matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Dynamic))
+    ));
   }
 
   #[test]

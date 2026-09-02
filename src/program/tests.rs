@@ -1,6 +1,6 @@
 use super::*;
 use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
-use crate::calcit::{CalcitFnTypeAnnotation, CalcitImport, CalcitStructDef, CalcitSyntax, ImportInfo, SchemaKind};
+use crate::calcit::{CalcitFnTypeAnnotation, CalcitImpl, CalcitImport, CalcitStructDef, CalcitSyntax, ImportInfo, SchemaKind};
 use crate::call_stack::CallStackList;
 use crate::codegen::calx::{
   CalxCacheMissReason, CalxCompileCache, CalxDefinitionRef, CalxError, CalxFallbackCode, CalxHostImport, CalxHostImports,
@@ -99,6 +99,17 @@ fn runtime_value_provenance_resolves_only_source_backed_definitions() {
     find_source_def_for_runtime_value("tests.runtime-provenance", &target).as_deref(),
     Some("a-owner"),
     "provenance is source-backed and deterministic"
+  );
+  let tagged_impl = Calcit::Impl(CalcitImpl {
+    name: EdnTag::new("z-owner"),
+    origin: None,
+    fields: Arc::new(vec![]),
+    values: Arc::new(vec![]),
+  });
+  assert_eq!(
+    find_source_def_for_runtime_value("tests.runtime-provenance", &tagged_impl).as_deref(),
+    Some("z-owner"),
+    "an impl tag identifies its source owner even before that owner is Ready"
   );
   assert_eq!(find_source_def_for_runtime_value("tests.missing", &target), None);
 }

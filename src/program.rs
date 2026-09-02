@@ -329,15 +329,22 @@ pub fn lookup_runtime_ready(ns: &str, def: &str) -> Option<Calcit> {
   lookup_def_id(ns, def).and_then(lookup_runtime_ready_by_id)
 }
 
-/// Find the source definition that currently owns an evaluated metadata value.
+/// Find the source definition that owns a runtime metadata value.
 ///
-/// Static impl-callable synthesis uses this provenance edge so changing a
-/// `defimpl` invalidates both its generated callable and every direct caller.
+/// An impl tag names its canonical `defimpl` owner even while that definition
+/// is not `Ready`. Other metadata values fall back to deterministic equality
+/// over evaluated source-backed definitions.
 pub(crate) fn find_source_def_for_runtime_value(ns: &str, target: &Calcit) -> Option<Arc<str>> {
   let source_defs = {
     let source = PROGRAM_CODE_DATA.read().expect("read program code");
     source.get(ns)?.defs.keys().cloned().collect::<HashSet<_>>()
   };
+  if let Calcit::Impl(impl_value) = target {
+    let tagged_owner: Arc<str> = Arc::from(impl_value.name().ref_str());
+    if source_defs.contains(tagged_owner.as_ref()) {
+      return Some(tagged_owner);
+    }
+  }
   let candidates = {
     let index = PROGRAM_DEF_ID_INDEX.read().expect("read program def id index");
     index
