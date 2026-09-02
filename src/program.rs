@@ -329,6 +329,44 @@ pub fn lookup_runtime_ready(ns: &str, def: &str) -> Option<Calcit> {
   lookup_def_id(ns, def).and_then(lookup_runtime_ready_by_id)
 }
 
+/// Find the source definition that owns a runtime metadata value.
+///
+/// An impl tag names its canonical `defimpl` owner even while that definition
+/// is not `Ready`. Other metadata values fall back to deterministic equality
+/// over evaluated source-backed definitions.
+pub(crate) fn find_source_def_for_runtime_value(ns: &str, target: &Calcit) -> Option<Arc<str>> {
+  let source_defs = {
+    let source = PROGRAM_CODE_DATA.read().expect("read program code");
+    source.get(ns)?.defs.keys().cloned().collect::<HashSet<_>>()
+  };
+  if let Calcit::Impl(impl_value) = target {
+    let tagged_owner: Arc<str> = Arc::from(impl_value.name().ref_str());
+    if source_defs.contains(tagged_owner.as_ref()) {
+      return Some(tagged_owner);
+    }
+  }
+  let candidates = {
+    let index = PROGRAM_DEF_ID_INDEX.read().expect("read program def id index");
+    index
+      .by_ns
+      .get(ns)?
+      .iter()
+      .filter(|(def, _)| source_defs.contains(def.as_ref()))
+      .map(|(def, def_id)| (def.clone(), *def_id))
+      .collect::<Vec<_>>()
+  };
+  let runtime = PROGRAM_RUNTIME_DATA_STATE.read().expect("read runtime data");
+  let mut matches = candidates
+    .into_iter()
+    .filter_map(|(def, def_id)| match runtime.get(def_id.0 as usize) {
+      Some(RuntimeCell::Ready(value)) if value == target => Some(def),
+      _ => None,
+    })
+    .collect::<Vec<_>>();
+  matches.sort();
+  matches.into_iter().next()
+}
+
 pub fn mark_runtime_def_resolving(ns: &str, def: &str) {
   let def_id = ensure_def_id(ns, def);
   write_runtime_cell(def_id, RuntimeCell::Resolving);

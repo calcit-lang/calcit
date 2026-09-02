@@ -277,7 +277,7 @@ in receiver-first form.
 Core lookup APIs that no longer need to preserve bootstrapping compatibility use nominal results directly:
 
 - `find`, `find-index`, `find-last`, `find-last-index`, `index-of`, and `last-index-of` return `Option`.
-- `get-in` returns `Option<Dynamic>` while preserving a more precise payload type for literal paths when inference can resolve it.
+- `get-in` returns `Option<Dynamic>` while preserving a more precise payload type for literal paths when inference can resolve it. Fully typed Map receivers with non-empty literal paths are lowered, together with `assoc-in` and `update-in`, to direct typed lookup/association chains; dynamic paths and open containers remain an explicit compatibility boundary.
 - List/set `max` and `min` return `Option<Number>` so empty collections are explicit.
 - String `.find-index` and `str-find-index` return `Option<Number>`; the internal `&str:find-index` primitive retains its `-1` ABI sentinel.
 - `get-env` returns `Option<String>`; use `.unwrap-or` for a default.
@@ -285,7 +285,7 @@ Core lookup APIs that no longer need to preserve bootstrapping compatibility use
 - Reflection uses `enum-definition: Enum -> Option<EnumDef>`, `struct-definition: Struct -> Option<StructDef>`, and `impl-origin: Impl -> Option<Trait>`.
 - `destruct-list`, `destruct-map`, `destruct-set`, and `destruct-str` return named `*Destruct` enums, preserving the familiar `:some`/`:none` branches with checked payloads.
 - Public collection methods follow the same contract: Map/Set `.destruct` return their named destruct enums. Struct does not expose `.nth`, because field position is not stable across backends; field-name `get` returns the field's declared type directly.
-- `when-let` consumes `Option<T>` and returns `Option<R>`; `update-in` passes `Option<T>` to its updater so a missing leaf is never represented by nil.
+- `when-let` consumes `Option<T>` and returns `Option<R>`; `update-in` passes `Option<T>` to its updater so a missing leaf is never represented by nil. The typed literal-path lowering evaluates the receiver, every path segment, and the updater exactly once in source order.
 
 When a query immediately ends in a business default, call `.unwrap-or` on its
 Option result. An incompatible fallback is rejected whenever the payload type

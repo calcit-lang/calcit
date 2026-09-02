@@ -1194,6 +1194,28 @@ fn try_expand_typed_literal_path_call(
       let body = generated_lets(path_bindings, body, file_ns);
       Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)))
     }
+    "update-in" if args.len() == 3 => {
+      let Some(path) = fully_typed_literal_assoc_path(base_type.as_ref(), path_arg) else {
+        return Ok(None);
+      };
+      let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
+      let updater_binding = generated_path_symbol("typed_path_updater", file_ns, call_stack)?;
+      let replacement_binding = generated_path_symbol("typed_path_replacement", file_ns, call_stack)?;
+      let mut path_bindings = Vec::with_capacity(path.len());
+      let mut path_locals = Vec::with_capacity(path.len());
+      for key in path {
+        let binding = generated_path_symbol("typed_path_key", file_ns, call_stack)?;
+        path_locals.push(binding.to_owned());
+        path_bindings.push((binding, key));
+      }
+      let current = generated_get_in_step(base_binding.to_owned(), &path_locals, file_ns, call_stack)?;
+      let replacement = generated_call(vec![updater_binding.to_owned(), current]);
+      let body = generated_assoc_in_step(base_binding.to_owned(), &replacement_binding, &path_locals, file_ns, call_stack)?;
+      let body = generated_let(replacement_binding, replacement, body, file_ns);
+      let body = generated_let(updater_binding, args[2].to_owned(), body, file_ns);
+      let body = generated_lets(path_bindings, body, file_ns);
+      Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)))
+    }
     _ => Ok(None),
   }
 }
@@ -1741,7 +1763,7 @@ fn preprocess_list_call(
             // generic prefix-call branch below. Specialize it before returning
             // so typed source such as `m .keys` reaches codegen with the direct
             // `&scope:name` callable as its head instead of `invoke-method`.
-            if let Some(optimized_call) = try_inline_method_call(&typed_method, &processed_args, scope_types, file_ns) {
+            if let Some(optimized_call) = try_inline_method_call(&typed_method, &processed_args, scope_types, file_ns, call_stack)? {
               return Ok(optimized_call);
             }
 
@@ -2032,7 +2054,7 @@ fn preprocess_list_call(
         // Try to specialize polymorphic calls when receiver type is known
         if let Calcit::Import(CalcitImport { ns, def, .. }) = &head_form {
           let current_args = CalcitList::from(ys.drop_left());
-          if matches!(def.as_ref(), "get-in" | "assoc-in")
+          if matches!(def.as_ref(), "get-in" | "assoc-in" | "update-in")
             && let Some(expanded) = try_expand_typed_literal_path_call(&head_form, &current_args, scope_types, file_ns, call_stack)?
           {
             return preprocess_generated_path_expansion(&expanded, scope_defs, scope_types, file_ns, call_stack);
@@ -2591,7 +2613,7 @@ fn preprocess_list_call(
         if !has_spread
           && let Some(call_head @ Calcit::Import(CalcitImport { ns, def, .. })) = ys.first()
           && ns.as_ref() == calcit::CORE_NS
-          && matches!(def.as_ref(), "get-in" | "assoc-in")
+          && matches!(def.as_ref(), "get-in" | "assoc-in" | "update-in")
           && let Some(expanded) = try_expand_typed_literal_path_call(call_head, &processed_args, scope_types, file_ns, call_stack)?
         {
           return preprocess_generated_path_expansion(&expanded, scope_defs, scope_types, file_ns, call_stack);
@@ -2599,7 +2621,7 @@ fn preprocess_list_call(
 
         if !has_spread
           && let Some(call_head) = ys.first()
-          && let Some(optimized_call) = try_inline_method_call(call_head, &processed_args, scope_types, file_ns)
+          && let Some(optimized_call) = try_inline_method_call(call_head, &processed_args, scope_types, file_ns, call_stack)?
         {
           return Ok(optimized_call);
         }
@@ -4050,15 +4072,17 @@ fn check_struct_method_args(
   let actual_with_receiver = actual_count + 1; // Include receiver in count
 
   // Check for variadic args (has RestMark)
-  let has_variadic = match fn_info.args.as_ref() {
-    CalcitFnArgs::MarkedArgs(xs) => xs.iter().any(|label| matches!(label, CalcitArgLabel::RestMark)),
-    CalcitFnArgs::Args(_) => false,
-  };
+  let has_variadic = fn_info.call_shape.has_rest()
+    || matches!(fn_info.args.as_ref(), CalcitFnArgs::MarkedArgs(xs) if xs.iter().any(|label| matches!(label, CalcitArgLabel::RestMark)));
 
   let trailing_options = if has_variadic {
     0
   } else {
-    calcit::trailing_option_arg_count(&fn_info.arg_types, expected_count)
+    fn_info
+      .call_shape
+      .trailing_optionals()
+      .max(fn_info.args.marked_optional_count())
+      .max(calcit::trailing_option_arg_count(&fn_info.arg_types, expected_count))
   };
   let accepts_omission = trailing_options > 0 && (expected_count - trailing_options..=expected_count).contains(&actual_with_receiver);
   if !has_variadic && expected_count != actual_with_receiver && !accepts_omission {
@@ -5043,7 +5067,15 @@ fn try_specialize_polymorphic_call(
   Some(Calcit::from(items))
 }
 
-fn try_inline_method_call(head: &Calcit, args: &CalcitList, scope_types: &ScopeTypes, file_ns: &str) -> Option<Calcit> {
+/// Resolve a typed receiver method to a direct callable when its implementation
+/// can be selected without runtime dispatch.
+fn try_inline_method_call(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
   match head {
     Calcit::Method(method_name, calcit::MethodKind::Invoke(type_value)) => {
       let mut resolved_type = type_value.clone();
@@ -5055,36 +5087,302 @@ fn try_inline_method_call(head: &Calcit, args: &CalcitList, scope_types: &ScopeT
         resolved_type = inferred;
       }
       if matches!(resolved_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
-        return None;
+        return Ok(None);
       }
       let type_ref = resolved_type.as_ref();
-      let impl_values = get_impls_from_type(type_ref)?;
-      let (_impl_index, _impl_value, method_entry) = find_method_entry_with_impl(type_ref, &impl_values, method_name.as_ref())?;
+      let Some(impl_values) = get_impls_from_type(type_ref) else {
+        return Ok(None);
+      };
+      let Some((_impl_index, impl_value, method_entry)) = find_method_entry_with_impl(type_ref, &impl_values, method_name.as_ref())
+      else {
+        return Ok(None);
+      };
 
-      if let Some(callable_head) = pick_callable_from_method_entry(method_entry, file_ns) {
-        return Some(build_inlined_call(callable_head, args, scope_types));
+      if let Some(callable_head) =
+        pick_callable_from_method_entry(method_entry, impl_value, type_ref, method_name.as_ref(), file_ns, call_stack)?
+      {
+        return Ok(Some(build_inlined_call(callable_head, args, scope_types)));
       }
 
-      None
+      Ok(None)
     }
-    _ => None,
+    _ => Ok(None),
   }
 }
 
-fn pick_callable_from_method_entry(entry: &Calcit, _file_ns: &str) -> Option<Calcit> {
+/// Convert a selected method entry into a stable direct-call head.
+fn pick_callable_from_method_entry(
+  entry: &Calcit,
+  impl_value: &CalcitImpl,
+  receiver_type: &CalcitTypeAnnotation,
+  method_name: &str,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
   match entry {
     // Avoid inlining Fn literals: JS codegen would embed large function bodies and lose closure semantics.
-    Calcit::Import(..) | Calcit::Proc(..) | Calcit::Registered(..) | Calcit::Symbol { .. } => Some(entry.to_owned()),
+    Calcit::Import(..) | Calcit::Proc(..) | Calcit::Registered(..) | Calcit::Symbol { .. } => Ok(Some(entry.to_owned())),
     Calcit::Fn { info, .. }
-      if info
-        .def_ref
-        .as_ref()
-        .is_some_and(|def_ref| !def_ref.is_macro_gen && program::has_def_code(def_ref.def_ns.as_ref(), def_ref.def_name.as_ref())) =>
+      if let Some(def_ref) = info.def_ref.as_ref()
+        && !def_ref.is_macro_gen
+        && (program::has_def_code(def_ref.def_ns.as_ref(), def_ref.def_name.as_ref())
+          || program::lookup_compiled_def(def_ref.def_ns.as_ref(), def_ref.def_name.as_ref()).is_some()) =>
     {
-      Some(entry.to_owned())
+      let import_info = if def_ref.def_ns.as_ref() == calcit::CORE_NS {
+        ImportInfo::Core { at_ns: Arc::from(file_ns) }
+      } else if def_ref.def_ns.as_ref() == file_ns {
+        ImportInfo::SameFile {
+          at_def: def_ref.def_name.clone(),
+        }
+      } else {
+        ImportInfo::NsReferDef {
+          at_ns: Arc::from(file_ns),
+          at_def: def_ref.def_name.clone(),
+        }
+      };
+      Ok(Some(Calcit::Import(CalcitImport {
+        ns: def_ref.def_ns.clone(),
+        def: def_ref.def_name.clone(),
+        info: Arc::new(import_info),
+        def_id: Some(program::ensure_def_id(def_ref.def_ns.as_ref(), def_ref.def_name.as_ref()).0),
+      })))
+    }
+    Calcit::Fn { info, .. } if info.scope.is_empty() && nominal_callable_scope_name(receiver_type, info.def_ns.as_ref()).is_some() => {
+      synthesize_nominal_impl_callable(info, impl_value, receiver_type, method_name, file_ns, call_stack)
+    }
+    // A closure that captures lexical state cannot be promoted to a top-level
+    // callable without changing its semantics. It remains on the explicit
+    // runtime dispatch path until closure conversion is modeled separately.
+    _ => Ok(None),
+  }
+}
+
+/// Derive the lowercase internal `&scope:name` scope from a nominal receiver.
+fn nominal_callable_scope_name(receiver_type: &CalcitTypeAnnotation, target_ns: &str) -> Option<String> {
+  let raw_name = match receiver_type {
+    CalcitTypeAnnotation::TypeRef(path, _) => match path.rsplit_once('/') {
+      Some((type_ns, name)) if type_ns != target_ns => format!("{type_ns}/{name}"),
+      Some((_, name)) => name.to_owned(),
+      None => path.to_string(),
+    },
+    CalcitTypeAnnotation::Struct(definition, _) | CalcitTypeAnnotation::StructValue(definition) => definition.name.ref_str().to_owned(),
+    CalcitTypeAnnotation::Enum(definition, _) | CalcitTypeAnnotation::EnumValue(definition) => definition.name().ref_str().to_owned(),
+    CalcitTypeAnnotation::Optional(inner) => return nominal_callable_scope_name(inner.as_ref(), target_ns),
+    _ => return None,
+  };
+
+  let mut normalized = String::with_capacity(raw_name.len());
+  let mut previous_was_lower_or_digit = false;
+  let mut previous_was_separator = false;
+  for ch in raw_name.trim_start_matches(['\'', ':', '&']).chars() {
+    if ch.is_ascii_uppercase() {
+      if previous_was_lower_or_digit && !previous_was_separator {
+        normalized.push('-');
+      }
+      normalized.push(ch.to_ascii_lowercase());
+      previous_was_lower_or_digit = false;
+      previous_was_separator = false;
+    } else if ch.is_ascii_alphanumeric() || matches!(ch, '?' | '!') {
+      normalized.push(ch.to_ascii_lowercase());
+      previous_was_lower_or_digit = ch.is_ascii_lowercase() || ch.is_ascii_digit();
+      previous_was_separator = false;
+    } else if !previous_was_separator && !normalized.is_empty() {
+      normalized.push('-');
+      previous_was_lower_or_digit = false;
+      previous_was_separator = true;
+    }
+  }
+  while normalized.ends_with('-') {
+    normalized.pop();
+  }
+  (!normalized.is_empty()).then_some(normalized)
+}
+
+/// Prefer the originating trait contract, then fall back to the evaluated Fn metadata.
+fn impl_method_schema(impl_value: &CalcitImpl, method_name: &str, fallback: &CalcitFn) -> Arc<CalcitTypeAnnotation> {
+  if let Some(trait_def) = impl_value.origin()
+    && let Some(method_idx) = trait_def.method_index(method_name)
+    && let Some(method_type) = trait_def.method_types.get(method_idx)
+  {
+    return method_type.clone();
+  }
+  Arc::new(CalcitTypeAnnotation::from_calcit_fn(fallback))
+}
+
+/// Rebuild compiler-owned function parameters while preserving markers and type evidence.
+fn synthetic_fn_args(info: &CalcitFn, schema: &CalcitTypeAnnotation, synthetic_name: &str) -> Calcit {
+  let schema_args = schema.resolve_to_fn().map(|annotation| annotation.arg_types.clone());
+  let mut parameter_index = 0usize;
+  let mut nodes = vec![];
+  let mut push_local = |idx: u16, nodes: &mut Vec<Calcit>| {
+    let type_info = schema_args
+      .as_ref()
+      .and_then(|types| types.get(parameter_index))
+      .cloned()
+      .or_else(|| info.arg_types.get(parameter_index).cloned())
+      .unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+    parameter_index += 1;
+    nodes.push(Calcit::Local(CalcitLocal {
+      idx,
+      sym: Arc::from(CalcitLocal::read_name(idx)),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: info.def_ns.clone(),
+        at_def: Arc::from(synthetic_name),
+      }),
+      location: None,
+      type_info,
+    }));
+  };
+
+  match info.args.as_ref() {
+    CalcitFnArgs::Args(indices) => {
+      for idx in indices {
+        push_local(*idx, &mut nodes);
+      }
+    }
+    CalcitFnArgs::MarkedArgs(labels) => {
+      for label in labels {
+        match label {
+          CalcitArgLabel::Idx(idx) => push_local(*idx, &mut nodes),
+          CalcitArgLabel::OptionalMark => nodes.push(Calcit::Syntax(CalcitSyntax::ArgOptional, info.def_ns.clone())),
+          CalcitArgLabel::RestMark => nodes.push(Calcit::Syntax(CalcitSyntax::ArgSpread, info.def_ns.clone())),
+        }
+      }
+    }
+  }
+  Calcit::from(CalcitList::from(nodes.as_slice()))
+}
+
+/// Collect source owners that must invalidate a generated nominal callable.
+fn nominal_callable_owner_deps(target_ns: &str, impl_value: &CalcitImpl, receiver_type: &CalcitTypeAnnotation) -> Vec<program::DefId> {
+  let mut deps = vec![];
+  if let Some(owner_def) = program::find_source_def_for_runtime_value(target_ns, &Calcit::Impl(impl_value.clone())) {
+    deps.push(program::ensure_def_id(target_ns, owner_def.as_ref()));
+  }
+
+  let type_ref = match receiver_type {
+    CalcitTypeAnnotation::TypeRef(path, _) => Some(path.as_ref()),
+    CalcitTypeAnnotation::Optional(inner) => {
+      return nominal_callable_owner_deps(target_ns, impl_value, inner.as_ref());
     }
     _ => None,
+  };
+  if let Some(path) = type_ref {
+    let stripped = path.trim_start_matches(['\'', ':']);
+    let (type_ns, type_def) = stripped.rsplit_once('/').unwrap_or((target_ns, stripped));
+    if program::has_def_code(type_ns, type_def) {
+      deps.push(program::ensure_def_id(type_ns, type_def));
+    }
   }
+  deps.sort();
+  deps.dedup();
+  deps
+}
+
+/// Materialize a capture-free anonymous impl method as a deterministic compiled definition.
+fn synthesize_nominal_impl_callable(
+  info: &CalcitFn,
+  impl_value: &CalcitImpl,
+  receiver_type: &CalcitTypeAnnotation,
+  method_name: &str,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
+  let target_ns = info.def_ns.as_ref();
+  let Some(scope_name) = nominal_callable_scope_name(receiver_type, target_ns) else {
+    return Ok(None);
+  };
+  let method_segment = method_name.to_ascii_lowercase();
+  let synthetic_name = format!("&{scope_name}:{method_segment}");
+
+  // A cacheable compiler-owned symbol must have at least one source owner.
+  // Otherwise retain runtime method dispatch so no stale generated definition
+  // can survive a source edit without an invalidation edge.
+  let owner_deps = nominal_callable_owner_deps(target_ns, impl_value, receiver_type);
+  if owner_deps.is_empty() {
+    return Ok(None);
+  }
+
+  if program::has_def_code(target_ns, &synthetic_name) {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "generated impl callable `{target_ns}/{synthetic_name}` conflicts with a source definition; use that named callable directly in the impl or rename the conflicting internal definition"
+      ),
+      "E_IMPL_CALLABLE_SYMBOL_COLLISION",
+      call_stack,
+      None,
+    ));
+  }
+
+  let schema = impl_method_schema(impl_value, method_name, info);
+  let mut nodes = vec![
+    Calcit::Syntax(CalcitSyntax::Defn, info.def_ns.clone()),
+    Calcit::Symbol {
+      sym: Arc::from(synthetic_name.as_str()),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: info.def_ns.clone(),
+        at_def: Arc::from(synthetic_name.as_str()),
+      }),
+      location: None,
+    },
+    synthetic_fn_args(info, schema.as_ref(), &synthetic_name),
+  ];
+  nodes.extend(info.body.iter().cloned());
+  let preprocessed_code = Calcit::from(CalcitList::from(nodes.as_slice()));
+  if let Some(existing) = program::lookup_compiled_def(target_ns, &synthetic_name)
+    && (existing.preprocessed_code != preprocessed_code || existing.schema != schema)
+  {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "generated impl callable `{target_ns}/{synthetic_name}` collides with a different generated definition; rename one nominal type or provide an explicit named callable"
+      ),
+      "E_IMPL_CALLABLE_GENERATED_COLLISION",
+      call_stack,
+      None,
+    ));
+  }
+  let mut deps = program::collect_compiled_deps(&preprocessed_code);
+  deps.extend(owner_deps);
+  deps.sort();
+  deps.dedup();
+  program::store_compiled_output(
+    target_ns,
+    &synthetic_name,
+    program::CompiledDefPayload {
+      version_id: 0,
+      preprocessed_code: preprocessed_code.clone(),
+      codegen_form: preprocessed_code,
+      deps,
+      type_summary: Some(Arc::from(schema.to_brief_string())),
+      source_code: None,
+      schema,
+      doc: Arc::from(format!(
+        "Compiler-generated direct callable for nominal method `.{method_name}` from impl `{}`.",
+        impl_value.name()
+      )),
+      examples: vec![],
+    },
+  );
+
+  let def_id = program::ensure_def_id(target_ns, &synthetic_name).0;
+  let info = if target_ns == file_ns {
+    ImportInfo::SameFile {
+      at_def: Arc::from(synthetic_name.as_str()),
+    }
+  } else {
+    ImportInfo::NsReferDef {
+      at_ns: Arc::from(file_ns),
+      at_def: Arc::from(synthetic_name.as_str()),
+    }
+  };
+  Ok(Some(Calcit::Import(CalcitImport {
+    ns: Arc::from(target_ns),
+    def: Arc::from(synthetic_name),
+    info: Arc::new(info),
+    def_id: Some(def_id),
+  })))
 }
 
 fn build_inlined_call(callable_head: Calcit, args: &CalcitList, scope_types: &ScopeTypes) -> Calcit {
@@ -6553,6 +6851,21 @@ pub fn preprocess_defn(
             body_defs.insert(sym.to_owned());
             Ok(())
           }
+          // Compiler-generated rewrites may reprocess a callback that has
+          // already passed through this function once. Preserve its typed
+          // Local parameter nodes so the second pass is idempotent instead of
+          // rejecting valid generated code as non-source syntax.
+          Calcit::Local(local) => {
+            param_symbols.push(local.sym.clone());
+            body_defs.insert(local.sym.clone());
+            if !matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Dynamic) {
+              body_types.insert(local.sym.clone(), local.type_info.clone());
+            } else {
+              body_types.remove(&local.sym);
+            }
+            zs.push(Calcit::Local(local.clone()));
+            Ok(())
+          }
           _ => Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Type,
             format!("expected defn args to be symbols, got: {y}"),
@@ -7548,8 +7861,8 @@ fn validate_def_schema_during_preprocess(
 mod tests {
   use super::*;
   use crate::calcit::{
-    CalcitEnumDef, CalcitFn, CalcitFnArgs, CalcitFnUsageMeta, CalcitImport, CalcitMacro, CalcitScope, CalcitStructDef,
-    CalcitStructValue, ImportInfo,
+    CalcitEnumDef, CalcitFn, CalcitFnArgs, CalcitFnCallShape, CalcitFnDefRef, CalcitFnUsageMeta, CalcitImport, CalcitMacro,
+    CalcitScope, CalcitStructDef, CalcitStructValue, ImportInfo,
   };
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
@@ -8088,6 +8401,44 @@ mod tests {
       "path expressions are evaluated before the replacement"
     );
 
+    let updater = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("typed-path-updater-input")),
+      sym: Arc::from("typed-path-updater-input"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.typed-path"),
+        at_def: Arc::from("main"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::DynFn),
+    });
+    let update_args = CalcitList::from(&[typed_base.to_owned(), literal_path.to_owned(), updater] as &[Calcit]);
+    let expanded_update = try_expand_typed_literal_path_call(
+      &core_import("update-in", "tests.typed-path"),
+      &update_args,
+      &ScopeTypes::new(),
+      "tests.typed-path",
+      &stack,
+    )
+    .expect("build update-in expansion")
+    .expect("typed update-in expansion");
+    let update_code = expanded_update.lisp_str();
+    assert!(update_code.contains("match"), "updater receives the Option-producing lookup result");
+    assert!(update_code.contains("&map:assoc"));
+    assert!(!update_code.contains("calcit.core/update-in"));
+    assert_eq!(update_code.matches("typed-path-base").count(), 1, "caller base is evaluated once");
+    assert_eq!(update_code.matches(":user").count(), 1, "first path expression is evaluated once");
+    assert_eq!(update_code.matches(":score").count(), 1, "second path expression is evaluated once");
+    assert_eq!(
+      update_code.matches("typed-path-updater-input").count(),
+      1,
+      "updater expression is evaluated once"
+    );
+    assert!(
+      update_code.find(":score").expect("second path expression")
+        < update_code.find("typed-path-updater-input").expect("updater expression"),
+      "path expressions are evaluated before the updater"
+    );
+
     let dynamic_base = Calcit::Local(CalcitLocal {
       idx: CalcitLocal::track_sym(&Arc::from("dynamic-path-base")),
       sym: Arc::from("dynamic-path-base"),
@@ -8108,6 +8459,22 @@ mod tests {
         &stack,
       )
       .expect("dynamic path decision")
+      .is_none()
+    );
+    let dynamic_update_args = CalcitList::from(&[
+      dynamic_args.first().expect("dynamic base").to_owned(),
+      dynamic_args.get(1).expect("literal path").to_owned(),
+      test_symbol("dynamic-updater"),
+    ] as &[Calcit]);
+    assert!(
+      try_expand_typed_literal_path_call(
+        &core_import("update-in", "tests.typed-path"),
+        &dynamic_update_args,
+        &ScopeTypes::new(),
+        "tests.typed-path",
+        &stack,
+      )
+      .expect("dynamic update path decision")
       .is_none()
     );
   }
@@ -11248,6 +11615,278 @@ mod tests {
   }
 
   #[test]
+  fn anonymous_nominal_impl_method_gets_a_stable_direct_callable() {
+    let _guard = lock_preprocess_test_state();
+    let impl_ns: Arc<str> = Arc::from("tests.nominal-impl");
+    let receiver_idx = CalcitLocal::track_sym(&Arc::from("self"));
+    let anonymous_method = Calcit::Fn {
+      id: calcit::gen_core_id(),
+      info: Arc::new(CalcitFn {
+        name: Arc::from("f%"),
+        def_ns: impl_ns.clone(),
+        def_ref: Some(CalcitFnDefRef {
+          def_ns: impl_ns.clone(),
+          def_name: Arc::from("f%"),
+          coord: None,
+          is_defn: true,
+          is_macro_gen: true,
+        }),
+        usage: CalcitFnUsageMeta { used_in_impl: true },
+        scope: Arc::new(CalcitScope::default()),
+        args: Arc::new(CalcitFnArgs::Args(vec![receiver_idx])),
+        call_shape: CalcitFnCallShape::fixed(1),
+        body: vec![Calcit::Str(Arc::from("cat"))],
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        return_type: Arc::new(CalcitTypeAnnotation::String),
+        arg_types: vec![calcit::DYNAMIC_TYPE.clone()],
+        rest_type: None,
+      }),
+    };
+    let display_impl = Arc::new(CalcitImpl {
+      name: EdnTag::new("CatDisplayImpl"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("display-name")]),
+      values: Arc::new(vec![anonymous_method.clone()]),
+    });
+    program::install_internal_source_namespace(
+      impl_ns.clone(),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from("CatDisplayImpl"),
+          program::ProgramDefEntry {
+            code: Calcit::Nil,
+            schema: calcit::DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: None,
+          },
+        )]),
+      },
+    )
+    .expect("install impl source fixture");
+    program::write_runtime_ready(&impl_ns, "CatDisplayImpl", Calcit::Impl(display_impl.as_ref().clone()))
+      .expect("install evaluated impl fixture");
+    let mut cat_struct = CalcitStructDef::from_fields(EdnTag::from("CatProfile"), vec![EdnTag::from("name")]);
+    cat_struct.impls = vec![display_impl.clone()];
+    let receiver_type = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(cat_struct)));
+    let receiver = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("kitty")),
+      sym: Arc::from("kitty"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.nominal-call"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: receiver_type.clone(),
+    });
+    let head = Calcit::Method(Arc::from("display-name"), calcit::MethodKind::Invoke(receiver_type.clone()));
+    let args = CalcitList::from(&[receiver] as &[Calcit]);
+
+    let lowered = try_inline_method_call(&head, &args, &ScopeTypes::new(), "tests.nominal-call", &CallStackList::default())
+      .expect("lower anonymous nominal impl")
+      .expect("anonymous nominal impl should get a direct callable");
+    let Calcit::List(call) = lowered else {
+      panic!("expected direct call")
+    };
+    assert!(matches!(
+      call.first(),
+      Some(Calcit::Import(CalcitImport { ns, def, .. }))
+        if ns.as_ref() == impl_ns.as_ref() && def.as_ref() == "&cat-profile:display-name"
+    ));
+
+    let compiled = program::lookup_compiled_def(&impl_ns, "&cat-profile:display-name")
+      .expect("stable callable should be registered as a compiled definition");
+    assert_eq!(compiled.kind, program::CompiledDefKind::Fn);
+    assert!(
+      compiled.deps.contains(&program::ensure_def_id(&impl_ns, "CatDisplayImpl")),
+      "changing the source defimpl must invalidate its generated callable"
+    );
+    assert!(matches!(
+      &compiled.preprocessed_code,
+      Calcit::List(items)
+        if matches!(items.get(1), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "&cat-profile:display-name")
+    ));
+
+    let callable = runner::evaluate_symbol_from_program("&cat-profile:display-name", &impl_ns, None, &CallStackList::default())
+      .expect("evaluate generated callable");
+    let Calcit::Fn { info, .. } = callable else {
+      panic!("generated callable should evaluate to a function")
+    };
+    assert_eq!(
+      runner::run_fn(&[Calcit::Nil], &info, &CallStackList::default()).expect("invoke generated callable"),
+      Calcit::Str(Arc::from("cat"))
+    );
+
+    let Calcit::Fn { info: original_info, .. } = anonymous_method else {
+      panic!("fixture method should remain a function")
+    };
+    let mut conflicting_info = original_info.as_ref().clone();
+    conflicting_info.body = vec![Calcit::Str(Arc::from("different implementation"))];
+    let collision = synthesize_nominal_impl_callable(
+      &conflicting_info,
+      display_impl.as_ref(),
+      receiver_type.as_ref(),
+      "display-name",
+      "tests.nominal-call",
+      &CallStackList::default(),
+    )
+    .expect_err("different generated bodies must not silently overwrite the same callable symbol");
+    assert_eq!(collision.code(), Some("E_IMPL_CALLABLE_GENERATED_COLLISION"));
+    program::remove_internal_source_namespace(&impl_ns);
+  }
+
+  #[test]
+  fn nominal_callable_scope_qualifies_cross_namespace_type_refs() {
+    let receiver = CalcitTypeAnnotation::TypeRef(Arc::from("app.models/CatProfile"), Arc::new(vec![]));
+    assert_eq!(nominal_callable_scope_name(&receiver, "app.models").as_deref(), Some("cat-profile"));
+    assert_eq!(
+      nominal_callable_scope_name(&receiver, "app.impls").as_deref(),
+      Some("app-models-cat-profile")
+    );
+  }
+
+  #[test]
+  fn nominal_callable_tracks_inline_type_owner_or_falls_back_without_source() {
+    let _guard = lock_preprocess_test_state();
+    let owner_ns: Arc<str> = Arc::from("tests.inline-impl-owner");
+    program::install_internal_source_namespace(
+      owner_ns.clone(),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from("CatProfile"),
+          program::ProgramDefEntry {
+            code: Calcit::Nil,
+            schema: calcit::DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: None,
+          },
+        )]),
+      },
+    )
+    .expect("install inline impl owner fixture");
+    let inline_impl = CalcitImpl {
+      name: EdnTag::new("InlineDisplayImpl"),
+      origin: None,
+      fields: Arc::new(vec![]),
+      values: Arc::new(vec![]),
+    };
+    let receiver = CalcitTypeAnnotation::TypeRef(Arc::from("tests.inline-impl-owner/CatProfile"), Arc::new(vec![]));
+    assert_eq!(
+      nominal_callable_owner_deps(&owner_ns, &inline_impl, &receiver),
+      vec![program::ensure_def_id(&owner_ns, "CatProfile")],
+      "inline impl-traits must be invalidated through the nominal type source"
+    );
+
+    let missing_receiver = CalcitTypeAnnotation::TypeRef(Arc::from("tests.missing/CatProfile"), Arc::new(vec![]));
+    assert!(
+      nominal_callable_owner_deps(&owner_ns, &inline_impl, &missing_receiver).is_empty(),
+      "callable synthesis must fall back when no source owner can invalidate it"
+    );
+    program::remove_internal_source_namespace(&owner_ns);
+  }
+
+  #[test]
+  fn capture_free_non_nominal_impl_method_stays_on_runtime_dispatch() {
+    let method = Calcit::Fn {
+      id: calcit::gen_core_id(),
+      info: Arc::new(CalcitFn {
+        name: Arc::from("f%"),
+        def_ns: Arc::from("tests.non-nominal-impl"),
+        def_ref: None,
+        usage: CalcitFnUsageMeta { used_in_impl: true },
+        scope: Arc::new(CalcitScope::default()),
+        args: Arc::new(CalcitFnArgs::Args(vec![])),
+        call_shape: CalcitFnCallShape::fixed(0),
+        body: vec![Calcit::Nil],
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        return_type: calcit::DYNAMIC_TYPE.clone(),
+        arg_types: vec![],
+        rest_type: None,
+      }),
+    };
+    let impl_value = CalcitImpl {
+      name: EdnTag::new("DynamicDisplayImpl"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("display")]),
+      values: Arc::new(vec![method.clone()]),
+    };
+    let receiver = CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("struct")));
+    assert!(
+      pick_callable_from_method_entry(
+        &method,
+        &impl_value,
+        &receiver,
+        "display",
+        "tests.non-nominal-impl",
+        &CallStackList::default(),
+      )
+      .expect("non-nominal method selection must remain valid")
+      .is_none(),
+      "a non-nominal receiver cannot safely own a generated callable"
+    );
+  }
+
+  #[test]
+  fn captured_impl_closure_stays_on_runtime_dispatch() {
+    let captured_idx = CalcitLocal::track_sym(&Arc::from("captured"));
+    let mut captured_scope = CalcitScope::default();
+    captured_scope.insert_mut(captured_idx, Calcit::Str(Arc::from("value")));
+    let method = Calcit::Fn {
+      id: calcit::gen_core_id(),
+      info: Arc::new(CalcitFn {
+        name: Arc::from("f%"),
+        def_ns: Arc::from("tests.captured-impl"),
+        def_ref: None,
+        usage: CalcitFnUsageMeta { used_in_impl: true },
+        scope: Arc::new(captured_scope),
+        args: Arc::new(CalcitFnArgs::Args(vec![])),
+        call_shape: CalcitFnCallShape::fixed(0),
+        body: vec![Calcit::Local(CalcitLocal {
+          idx: captured_idx,
+          sym: Arc::from("captured"),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: Arc::from("tests.captured-impl"),
+            at_def: Arc::from("f%"),
+          }),
+          location: None,
+          type_info: Arc::new(CalcitTypeAnnotation::String),
+        })],
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        return_type: Arc::new(CalcitTypeAnnotation::String),
+        arg_types: vec![],
+        rest_type: None,
+      }),
+    };
+    let implementation = CalcitImpl {
+      name: EdnTag::new("CapturedImpl"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("value")]),
+      values: Arc::new(vec![method.clone()]),
+    };
+    let receiver_type = CalcitTypeAnnotation::StructValue(Arc::new(CalcitStructDef::from_fields(EdnTag::new("CapturedBox"), vec![])));
+
+    assert!(
+      pick_callable_from_method_entry(
+        &method,
+        &implementation,
+        &receiver_type,
+        "value",
+        "tests.captured-call",
+        &CallStackList::default(),
+      )
+      .expect("captured closure is a supported runtime boundary")
+      .is_none()
+    );
+    assert!(program::lookup_compiled_def("tests.captured-impl", "&captured-box:value").is_none());
+  }
+
+  #[test]
   fn rejects_enum_head_call_with_missing_tag() {
     use crate::calcit::{CalcitEnumDef, CalcitStructValue};
     use crate::data::cirru::code_to_calcit;
@@ -12962,6 +13601,46 @@ mod tests {
       rest_type: has_rest.then(|| Arc::new(CalcitTypeAnnotation::Number)),
       features: Arc::new(HashSet::new()),
     })))
+  }
+
+  #[test]
+  fn reprocessed_dynamic_local_parameter_shadows_outer_type() {
+    let ns: Arc<str> = Arc::from("tests.local-shadow");
+    let symbol_info = Arc::new(CalcitSymbolInfo {
+      at_ns: ns.clone(),
+      at_def: Arc::from("demo"),
+    });
+    let parameter = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("value")),
+      sym: Arc::from("value"),
+      info: symbol_info.clone(),
+      location: None,
+      type_info: calcit::DYNAMIC_TYPE.clone(),
+    });
+    let code = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::Defn, ns.clone()),
+      Calcit::Symbol {
+        sym: Arc::from("demo"),
+        info: symbol_info.clone(),
+        location: None,
+      },
+      Calcit::from(vec![parameter]),
+      Calcit::Symbol {
+        sym: Arc::from("value"),
+        info: symbol_info,
+        location: None,
+      },
+    ]);
+    let scope_defs = HashSet::from([Arc::from("value")]);
+    let mut scope_types = ScopeTypes::from([(Arc::from("value"), Arc::new(CalcitTypeAnnotation::String))]);
+    let warnings = RefCell::new(vec![]);
+    let result = preprocess_expr(&code, &scope_defs, &mut scope_types, &ns, &warnings, &CallStackList::default())
+      .expect("reprocess defn with compiler-generated local parameter");
+    assert!(matches!(
+      result,
+      Calcit::List(items)
+        if matches!(items.iter().last(), Some(Calcit::Local(local)) if matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Dynamic))
+    ));
   }
 
   #[test]

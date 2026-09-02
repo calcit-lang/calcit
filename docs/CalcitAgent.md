@@ -404,7 +404,7 @@ Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。
 
 需要尝试备用来源时使用 `.or-else`；它只在 `none`/`err` 分支调用 fallback。`.unwrap` 只适合已经由 `tag-match`、`.some?` 或明确不变量证明为 `some` 的位置；默认值用 `.unwrap-or`，继续转换用 `.map` / `.and-then`。接收者已静态推断为 `Option`/`Result` 时，避免使用 `option:*` / `result:*` 的函数形式，以便接收者类型和类型流保持可见；未类型化 legacy 数据或 core 边界才保留直接 helper。
 
-`get-in` 返回 `Option<T>`，适合 Map/List/字符串等可能缺失的路径；路径进入 Struct 时应改用类型化的 `(:field value)` 访问，字段需要可缺失时在 Struct 中声明 `Option<T>`。`update-in` 的 updater 接收 `Option<T>`，缺失分支应显式处理，不要无条件 unwrap：
+`get-in` 返回 `Option<T>`，适合开放数据中可能缺失的路径。完整类型的嵌套 Map 配合非空字面量路径时，`get-in`、`assoc-in`、`update-in` 会编译为直接的类型化访问/重建链，并保证接收者、各路径段和 updater 按源码顺序各求值一次。动态路径、动态接收者和混合容器保留为显式兼容边界。路径进入 Struct 时应改用类型化的 `(:field value)` 或 `value.:field` 访问，字段需要可缺失时在 Struct 中声明 `Option<T>`。`update-in` 的 updater 接收 `Option<T>`，缺失分支应显式处理，不要无条件 unwrap：
 
 ```cirru.no-check
 update-in data ([] :profile :visits)
