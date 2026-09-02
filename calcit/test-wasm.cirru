@@ -762,6 +762,12 @@
                 , 10 0
           :examples $ []
           :schema $ :: 'Dynamic
+        'test-map-keys-method $ %{} 'CodeEntry (:doc "|typed `.keys` lowers to `&map:keys` and returns Set<K> across WASM.")
+          :code $ quote
+            defn test-map-keys-method () $ &set:count
+              .keys $ &{} :a 1 :b 2
+          :examples $ []
+          :schema $ :: 'Dynamic
         'test-map-merge $ %{} 'CodeEntry (:doc "|merge two maps, b overrides a")
           :code $ quote
             defn test-map-merge () $ &map:count

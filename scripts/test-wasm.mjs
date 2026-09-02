@@ -3,6 +3,7 @@
 // Usage: node scripts/test-wasm.mjs
 
 import { readFileSync, existsSync } from "fs";
+import assert from "node:assert/strict";
 
 const wasmPath = "js-out/program.wasm";
 const wasm = readFileSync(wasmPath);
@@ -367,6 +368,11 @@ check("test-list-nth(0)", 10, e["test-list-nth"], 0);
 check("test-list-nth(2)", 30, e["test-list-nth"], 2);
 check("test-list-first-generic()", 42, e["test-list-first-generic"]);
 check("test-list-nth(3)", 40, e["test-list-nth"], 3);
+assert.throws(
+  () => e["test-list-nth"](4),
+  WebAssembly.RuntimeError,
+  "out-of-bounds &list:nth must trap instead of loading unchecked memory",
+);
 check("test-list-first()", 42, e["test-list-first"]);
 check("test-list-rest-generic-first()", 20, e["test-list-rest-generic-first"]);
 check("test-list-rest-count()", 2, e["test-list-rest-count"]);
@@ -444,6 +450,7 @@ check("test-filter-map-kv()", 32, e["test-filter-map-kv"]); // count=2 plus tran
 check("test-map-diff-new()", 1, e["test-map-diff-new"]); // {a:1} — entries of a not in b
 check("test-map-diff-keys()", 2, e["test-map-diff-keys"]); // #{a, c} not in b
 check("test-map-common-keys()", 2, e["test-map-common-keys"]); // #{b, c} in both
+check("test-map-keys-method()", 2, e["test-map-keys-method"]); // typed .keys lowers to &map:keys and returns Set
 
 const sameTopDifferentLeaf = findSameTopDifferentLeaf();
 check(

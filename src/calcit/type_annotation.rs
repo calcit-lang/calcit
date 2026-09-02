@@ -2759,6 +2759,7 @@ impl CalcitTypeAnnotation {
       Self::String => Some("&core-string-impls"),
       Self::Map(_, _) => Some("&core-map-impls"),
       Self::Set(_) => Some("&core-set-impls"),
+      Self::Ref(_) => Some("&core-ref-impls"),
       Self::Number => Some("&core-number-impls"),
       Self::DynFn | Self::Fn(_) => Some("&core-fn-impls"),
       Self::Nil | Self::Unit | Self::Bool | Self::Tag | Self::Symbol | Self::CirruQuote => Some("&core-scalar-impls"),
@@ -4181,6 +4182,7 @@ mod tests {
       (CalcitTypeAnnotation::List(dynamic.clone()), "&core-list-impls"),
       (CalcitTypeAnnotation::Map(dynamic.clone(), dynamic.clone()), "&core-map-impls"),
       (CalcitTypeAnnotation::Set(dynamic.clone()), "&core-set-impls"),
+      (CalcitTypeAnnotation::Ref(dynamic.clone()), "&core-ref-impls"),
       (CalcitTypeAnnotation::String, "&core-string-impls"),
       (CalcitTypeAnnotation::Number, "&core-number-impls"),
       (CalcitTypeAnnotation::DynFn, "&core-fn-impls"),
@@ -4188,6 +4190,11 @@ mod tests {
     ];
 
     for (annotation, definition) in cases {
+      assert_eq!(
+        annotation.core_impl_list_symbol(),
+        Some(definition),
+        "implementation mapping drifted for {definition}"
+      );
       let expected: BTreeSet<String> = annotation
         .builtin_core_trait_names()
         .iter()

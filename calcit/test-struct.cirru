@@ -326,7 +326,9 @@
                   {} (:name |Chen) (:age 20) (:position :mainland)
                 assert= 21 $ :age
                   &struct:from-map Person $ {} (:name |Chen) (:age 21) (:position :mainland)
-                assert= (keys p2) (#{} :age :name :position)
+                assert=
+                  .keys $ .to-map p2
+                  #{} :age :name :position
                 assert-detect identity $ &struct:matches? p1 p1
                 assert-detect identity $ &struct:matches? p1 p2
                 assert-detect not $ &struct:matches? p1 c1
@@ -341,10 +343,10 @@
                 assert-detect not $ &= p1 c1
                 assert=
                   %{} Person (:age 23) (:name |Ye) (:position :mainland)
-                  merge p1 $ {} (:age 23) (:name |Ye)
+                  struct-with p1 (:age 23) (:name |Ye)
                 assert=
                   %{} Person (:age 23) (:name |Ye) (:position :mainland)
-                  merge p1 $ {} (:age 23) (:name |Ye)
+                  struct-with p1 (:age 23) (:name |Ye)
                 assert-detect identity $ contains? p1 :name
                 assert-detect not $ contains? p1 :surname
                 assert= 3 $ count p1

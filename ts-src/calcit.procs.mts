@@ -602,7 +602,12 @@ export let _$n_list_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
   if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
   if (typeof k !== "number") throw new Error("Expected number index for a list");
 
-  if (xs instanceof CalcitList || xs instanceof CalcitSliceList) return xs.get(k);
+  if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
+    if (!Number.isInteger(k) || k < 0 || k >= xs.len()) {
+      throw new Error(`&list:nth index ${k} out of bounds for list of length ${xs.len()}`);
+    }
+    return xs.get(k);
+  }
 
   throw new Error("Does not support `nth` on this type");
 };
@@ -2352,6 +2357,7 @@ let calcit_builtin_impls = {
   enum: null as CalcitImplEntry,
   struct: null as CalcitImplEntry,
   scalar: null as CalcitImplEntry,
+  ref: null as CalcitImplEntry,
 };
 
 // need to register code from outside
@@ -2434,6 +2440,9 @@ function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
   } else if (typeof obj === "function") {
     tag = "&core-fn-methods";
     impls = normalize_builtin_impls(calcit_builtin_impls.fn);
+  } else if (obj instanceof CalcitRef) {
+    tag = "&core-ref-methods";
+    impls = normalize_builtin_impls(calcit_builtin_impls.ref);
   } else if (
     obj == null ||
     typeof obj === "boolean" ||
@@ -2616,6 +2625,14 @@ export let _$n_map_$o_to_list = (m: CalcitValue): CalcitSliceList => {
     return new CalcitSliceList(ys);
   } else {
     throw new Error("&map:to-list expected a Map");
+  }
+};
+
+export let _$n_map_$o_keys = (m: CalcitValue): CalcitSet => {
+  if (m instanceof CalcitMap || m instanceof CalcitSliceMap) {
+    return new CalcitSet(m.keysArray());
+  } else {
+    throw new Error("&map:keys expected a Map");
   }
 };
 

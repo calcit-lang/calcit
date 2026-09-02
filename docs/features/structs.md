@@ -159,13 +159,13 @@ required field accessor until an expected named Struct type rewrites them. This
 prevents an undeclared field from silently becoming `Dynamic` and forces the
 schema to be established before application code depends on it.
 
-Standard collection functions like `keys`, `count`, and `contains?` also work on structs:
+`count` and `contains?` work on structs. Convert a Struct to its typed Map view before requesting keys:
 
 ```cirru
 let
     Point $ defstruct Point (:x :number) (:y :number)
     p $ %{} Point (:x 1) (:y 2)
-  println $ keys p
+  println $ .keys $ .to-map p
   ; => $ #{} :x :y
   println $ count p
   ; => 2
@@ -249,9 +249,6 @@ let
   ; => true
   ; get the definition used to construct the value
   println $ struct-definition p
-  ; compare definitions directly for an origin check
-  println $ = (struct-definition p) .unwrap Point
-  ; => true
   ; struct-def? is the definition predicate
   println $ struct-def? Point
   ; => true
@@ -289,14 +286,13 @@ let
   ; => {} (:x 1) (:y 2)
 ```
 
-`merge` also works and returns a new value of the same struct definition:
+Use `struct-with` to update fields while preserving the same struct definition:
 
 ```cirru
 let
     Person $ defstruct Person (:name :string) (:age :number) (:position :tag)
     p $ %{} Person (:name |Chen) (:age 20) (:position :mainland)
-  println $ merge p
-    {} (:age 23) (:name |Ye)
+  println $ struct-with p (:age 23) (:name |Ye)
 ```
 
 ## Struct Name and Definition Inspection
@@ -314,15 +310,14 @@ let
 
 ### Struct Origin Check
 
-Compare struct definitions directly when you need to confirm a struct value's origin:
+Use the typed Struct predicate when you need to confirm a struct value's origin:
 
 ```cirru
 let
     Cat $ defstruct Cat (:name :string) (:color :tag)
     Dog $ defstruct Dog (:name :string)
     v1 $ %{} Cat (:name |Mimi) (:color :white)
-  if
-    = (struct-definition v1) .unwrap Cat
+  if (&struct:matches? v1 Cat)
     println "|Handle Cat branch"
     println "|Not a Cat"
 ```

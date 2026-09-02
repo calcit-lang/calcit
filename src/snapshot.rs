@@ -3720,9 +3720,11 @@ mod tests {
     assert!(
       matches!(fn_schema.arg_types.first().map(|t| t.as_ref()), Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "T")
     );
-    assert!(
-      matches!(fn_schema.return_type.as_ref(), CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "Result" && args.len() == 2)
-    );
+    assert!(matches!(
+      fn_schema.return_type.as_ref(),
+      CalcitTypeAnnotation::TypeRef(name, args)
+        if matches!(name.as_ref(), "Result" | "calcit.core/Result") && args.len() == 2
+    ));
 
     let saved_text = cirru_parser::format(
       &[schema_edn_to_cirru(&fn_schema.to_schema_edn()).expect("schema edn to cirru")],
@@ -3730,7 +3732,7 @@ mod tests {
     )
     .expect("format schema");
     assert!(
-      saved_text.contains(":return $ :: 'Result 'T 'E"),
+      saved_text.contains(":return $ :: 'Result 'T 'E") || saved_text.contains(":return $ :: 'calcit.core/Result 'T 'E"),
       "saved schema should keep named type reference syntax: {saved_text}"
     );
   }
@@ -4522,7 +4524,7 @@ mod tests {
             if matches!(
               inner.as_ref(),
               CalcitTypeAnnotation::TypeRef(name, args)
-                if name.as_ref() == "Option"
+                if matches!(name.as_ref(), "Option" | "calcit.core/Option")
                   && matches!(args.as_slice(), [item] if matches!(item.as_ref(), CalcitTypeAnnotation::Dynamic))
             )
         ));
@@ -4741,7 +4743,7 @@ mod tests {
       args => panic!("optionally should accept exactly one argument, got {args:?}"),
     };
     let output_var = match schema.return_type.as_ref() {
-      CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "Option" => match args.as_slice() {
+      CalcitTypeAnnotation::TypeRef(name, args) if matches!(name.as_ref(), "Option" | "calcit.core/Option") => match args.as_slice() {
         [arg] => match arg.as_ref() {
           CalcitTypeAnnotation::TypeVar(name) => name,
           other => panic!("optionally Option output should contain a type variable, got {other:?}"),

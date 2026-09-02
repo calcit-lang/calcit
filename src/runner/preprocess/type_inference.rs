@@ -163,15 +163,38 @@ pub(crate) fn resolve_generic_return_type<'a>(
   call_args: impl Iterator<Item = &'a Calcit>,
   scope_types: &ScopeTypes,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
+  resolve_generic_return_type_parts(
+    fn_info.generics.as_ref(),
+    &fn_info.arg_types,
+    fn_info.rest_type.as_ref(),
+    &fn_info.return_type,
+    call_args,
+    scope_types,
+  )
+}
+
+fn resolve_generic_return_type_parts<'a>(
+  generics: &[Arc<str>],
+  arg_types: &[Arc<CalcitTypeAnnotation>],
+  rest_type: Option<&Arc<CalcitTypeAnnotation>>,
+  return_type: &Arc<CalcitTypeAnnotation>,
+  call_args: impl Iterator<Item = &'a Calcit>,
+  scope_types: &ScopeTypes,
+) -> Option<Arc<CalcitTypeAnnotation>> {
   // Only attempt resolution when there are generics and the return type contains TypeVars
-  if fn_info.generics.is_empty() || !fn_info.return_type.contains_type_var() {
+  if generics.is_empty() || !return_type.contains_type_var() {
     return None;
   }
 
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
 
-  // Match each actual argument against the declared argument type to build bindings
-  for (arg, expected_type) in call_args.zip(fn_info.arg_types.iter()) {
+  // Match fixed and variadic actual arguments against the declared types.
+  // Rest-only generic functions otherwise lose their payload type before a
+  // typed receiver method has a chance to specialize.
+  for (idx, arg) in call_args.enumerate() {
+    let Some(expected_type) = arg_types.get(idx).or(rest_type) else {
+      break;
+    };
     if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
       continue;
     }
@@ -181,11 +204,11 @@ pub(crate) fn resolve_generic_return_type<'a>(
     }
   }
 
-  for generic in fn_info.generics.iter() {
+  for generic in generics {
     bindings.entry(generic.clone()).or_insert_with(|| calcit::DYNAMIC_TYPE.clone());
   }
 
-  let resolved = fn_info.return_type.substitute_type_vars(&bindings);
+  let resolved = return_type.substitute_type_vars(&bindings);
   // Only return if every declared type variable was resolved or defaulted.
   if resolved.contains_type_var() { None } else { Some(resolved) }
 }
@@ -238,6 +261,26 @@ pub(crate) fn infer_return_type_from_compiled_callable(
 
   let is_core_enum_constructor = ns == calcit::CORE_NS && matches!(def, "%some" | "%none" | "%ok" | "%err");
 
+  // A definition schema is the public contract and is stronger evidence than
+  // a Dynamic return inferred from its implementation body. Read it before
+  // compiled metadata so generic collection/ref shapes survive call sites.
+  let declared_schema = program::lookup_def_schema(ns, def);
+  if let CalcitTypeAnnotation::Fn(info) = declared_schema.as_ref() {
+    if let Some(resolved) = resolve_generic_return_type_parts(
+      info.generics.as_ref(),
+      &info.arg_types,
+      info.rest_type.as_ref(),
+      &info.return_type,
+      call_expr.iter().skip(1),
+      scope_types,
+    ) {
+      return Some(resolved);
+    }
+    if !matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      return Some(info.return_type.clone());
+    }
+  }
+
   // Prefer compiled callable metadata. The four core enum constructors are
   // also needed while the core is bootstrapping, before their payloads are
   // compiled; their declared schemas unlock receiver-first method calls.
@@ -268,8 +311,7 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     return None;
   }
 
-  let schema = program::lookup_def_schema(ns, def);
-  let CalcitTypeAnnotation::Fn(info) = schema.as_ref() else {
+  let CalcitTypeAnnotation::Fn(info) = declared_schema.as_ref() else {
     return None;
   };
   if info.generics.is_empty() || !info.return_type.contains_type_var() {
@@ -654,6 +696,14 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::Defmacro | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _) => {
           Some(infer_preprocessed_function_type(xs))
         }
+
+        // A `defatom` expression evaluates to the reference that it defines.
+        // Preserve the initializer type so imported atoms and receiver-first
+        // `.deref` calls do not lose `Ref<T>` at the definition boundary.
+        Calcit::Syntax(CalcitSyntax::Defatom, _) => xs
+          .get(2)
+          .and_then(|initial_value| infer_type_from_expr(initial_value, scope_types))
+          .map(|initial_type| Arc::new(CalcitTypeAnnotation::Ref(initial_type))),
 
         // Assertion and coercion type expressions have no local generics, so names are concrete refs.
         // `assert-type` is erased for local bindings during preprocessing, but when it wraps an
@@ -1915,6 +1965,36 @@ mod tests {
   }
 
   #[test]
+  fn variadic_generic_schema_preserves_collection_payloads() {
+    let key_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("K")));
+    let value_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("V")));
+    let generic_map = Arc::new(CalcitTypeAnnotation::Map(key_var, value_var));
+    let concrete_map = Arc::new(CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::String),
+      Arc::new(CalcitTypeAnnotation::Number),
+    ));
+    let first = local("first", concrete_map.clone());
+    let second = local("second", concrete_map);
+
+    let inferred = resolve_generic_return_type_parts(
+      &[Arc::from("K"), Arc::from("V")],
+      std::slice::from_ref(&generic_map),
+      Some(&generic_map),
+      &generic_map,
+      [&first, &second].into_iter(),
+      &ScopeTypes::new(),
+    )
+    .expect("generic map payloads should survive fixed and rest arguments");
+
+    assert!(matches!(
+      inferred.as_ref(),
+      CalcitTypeAnnotation::Map(key, value)
+        if matches!(key.as_ref(), CalcitTypeAnnotation::String)
+          && matches!(value.as_ref(), CalcitTypeAnnotation::Number)
+    ));
+  }
+
+  #[test]
   fn infers_homogeneous_collection_literal_types() {
     let list = proc_call(CalcitProc::List, vec![Calcit::Number(1.0), Calcit::Number(2.0)]);
     let set = proc_call(CalcitProc::Set, vec![Calcit::Str(Arc::from("a")), Calcit::Str(Arc::from("b"))]);
@@ -2037,6 +2117,20 @@ mod tests {
     ));
     assert!(matches!(
       infer_static_type_from_expr(&atom).as_deref(),
+      Some(CalcitTypeAnnotation::Ref(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
+    ));
+  }
+
+  #[test]
+  fn defatom_expression_preserves_initializer_type() {
+    let expression = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::Defatom, Arc::from(calcit::CORE_NS)),
+      symbol("*counter"),
+      Calcit::Number(0.0),
+    ]);
+
+    assert!(matches!(
+      infer_static_type_from_expr(&expression).as_deref(),
       Some(CalcitTypeAnnotation::Ref(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
     ));
   }

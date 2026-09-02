@@ -394,7 +394,7 @@
           :tags $ #{} :internal
         '&core-map-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            def &core-map-methods $ &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :values vals)
+            def &core-map-methods $ &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :values vals)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -409,6 +409,18 @@
             def &core-number-methods $ &impl::new :&core-number-methods (:: :ceil ceil) (:: :empty &number:empty) (:: :floor floor) (:: :format &number:format) (:: :display-by &number:display-by) (:: :inc inc) (:: :pow pow) (:: :round round) (:: :round? round?) (:: :fract &number:fract) (:: :sqrt sqrt) (:: :negate negate) (:: :rem &number:rem) (:: :compare &compare)
           :examples $ []
           :schema $ :: 'Dynamic
+          :tags $ #{} :internal
+        '&core-ref-impls $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            def &core-ref-impls $ [] &core-ref-methods
+          :examples $ []
+          :schema $ :: 'List 'Impl
+          :tags $ #{} :internal
+        '&core-ref-methods $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            def &core-ref-methods $ &impl::new :&core-ref-methods (:: :deref &atom:deref)
+          :examples $ []
+          :schema $ :: 'Impl
           :tags $ #{} :internal
         '&core-scalar-impls $ %{} 'CodeEntry (:doc "|Built-in nominal Debug/Eq implementation list for scalar literals")
           :code $ quote
@@ -849,10 +861,10 @@
           :tags $ #{} :builtin :internal
         '&init-builtin-impls! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-enum-impls) (identity &core-struct-impls) (identity &core-scalar-impls) (identity Add) (identity Debug) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
+            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-enum-impls) (identity &core-struct-impls) (identity &core-scalar-impls) (identity &core-ref-impls) (identity Add) (identity Debug) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
               if
                 &= (&get-calcit-backend) :js
-                register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls
+                register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :ref &core-ref-impls
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
@@ -1341,11 +1353,11 @@
             {} (:return 'Number)
               :args $ [] (:: 'List 'Number) 'Number
           :tags $ #{} :internal
-        '&list:nth $ %{} 'CodeEntry (:doc "|internal function for getting nth list element\nSyntax: (&list:nth list index)\nParams: list (list), index (number)\nReturns: any or nil\nReturns element at index, nil if index out of bounds")
+        '&list:nth $ %{} 'CodeEntry (:doc "|Internal List<T> index primitive. A valid index returns T; invalid indexes fail instead of returning nil. User code should use nth for Option<T>.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'Tag)
+            {} (:return 'T)
               :args $ [] (:: 'List 'T) 'Number
               :generics $ [] 'T
           :tags $ #{} :builtin :internal
@@ -1712,7 +1724,7 @@
               :args $ [] (:: 'Map 'K 'V) 'K
               :generics $ [] 'K 'V
           :tags $ #{} :alias :builtin :internal
-        '&map:keys $ %{} 'CodeEntry (:doc |)
+        '&map:keys $ %{} 'CodeEntry (:doc "|Internal typed Map<K,V> key projection. Returns Set<K>; user code should call `.keys`.")
           :code $ quote (&runtime-implementation)
           :examples $ []
           :schema $ :: 'Fn
@@ -4017,8 +4029,10 @@
             quote $ ; defatom *my-atom
               {} $ :a 1
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Dynamic
+            {}
+              :args $ [] 'Symbol 'T
+              :generics $ [] 'T
+              :return $ :: 'Ref 'T
           :tags $ #{} :builtin :internal :state :syntax
         'defenum $ %{} 'CodeEntry (:doc "|Define an EnumDef with a closed set of variants.")
           :code $ quote
@@ -4356,7 +4370,7 @@
             {} (:return 'Unit)
               :args $ [] 'Tag
           :tags $ #{} :builtin :internal :meta :state :syntax
-        'deref $ %{} 'CodeEntry (:doc "|Reads the current value stored in a reference\nSupports Calcit atoms as well as other host structures that implement deref.")
+        'deref $ %{} 'CodeEntry (:doc "|Reads Ref<T> without erasing its payload type. Prefer receiver syntax `.deref` in user code; custom host or nominal dereference behavior belongs to a typed method implementation.")
           :code $ quote
             defn deref (*a)
               if (ref? *a) (&atom:deref *a) (.deref *a)
@@ -4366,10 +4380,19 @@
             quote $ do (defatom *counter 0) (reset! *counter 5)
               assert= 5 $ deref *counter
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'T
+            {} (:return 'T)
+              :args $ [] (:: 'Ref 'T)
               :generics $ [] 'T
           :tags $ #{} :builtin :internal :state
+          :tests $ []
+            %{} 'TestEntry (:name |receiver-method-preserves-ref-payload)
+              :code $ quote
+                let
+                    *typed-counter $ atom 1
+                  assert= 1 $ .deref *typed-counter
+                  reset! *typed-counter 2
+                  assert= 2 $ .deref *typed-counter
+              :tags $ #{} :core :types :unit
         'destruct-list $ %{} 'CodeEntry (:doc "|Split a list into the nominal ListDestruct<T> enum.")
           :code $ quote
             defn destruct-list (xs)
@@ -4745,7 +4768,7 @@
           :schema $ :: 'Fn
             {}
               :args $ [] 'Enum
-              :return $ :: 'Option 'Tag
+              :return $ :: 'Option 'EnumDef
         'enum? $ %{} 'CodeEntry (:doc "|Predicate that checks nominal and anonymous enum values. Passing an EnumDef reports a migration error.")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5999,20 +6022,26 @@
               :args $ [] 'T
               :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'keys $ %{} 'CodeEntry (:doc |)
+        'keys $ %{} 'CodeEntry (:doc "|Returns Set<K> for Map<K,V>. User code should prefer `.keys`; a statically known Map receiver lowers directly to internal `&map:keys`.")
           :code $ quote
-            defn keys (x)
-              map (to-pairs x) &list:first
+            defn keys (x) (&map:keys x)
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'Set)
-              :args $ [] 'Dynamic
+            {}
+              :args $ [] (:: 'Map 'K 'V)
+              :generics $ [] 'K 'V
+              :return $ :: 'Set 'K
           :tests $ []
             %{} 'TestEntry (:name |returns-map-tags)
               :code $ quote
                 assert= (#{} :a :b)
                   keys $ &{} :a 1 :b 2
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |receiver-method-lowers-to-map-keys)
+              :code $ quote
+                assert= (#{} :a :b)
+                  .keys $ &{} :a 1 :b 2
+              :tags $ #{} :core :types :unit
         'keys-non-nil $ %{} 'CodeEntry (:doc "|Get keys from a map that have non-nil values")
           :code $ quote
             defn keys-non-nil (x)
@@ -6535,7 +6564,7 @@
                 assert= (%some 4)
                   max $ [] 1 2 3 4
               :tags $ #{} :core :unit
-        'merge $ %{} 'CodeEntry (:doc "|Combines maps left-to-right, with later maps overwriting keys from earlier ones by reducing through `&merge`.")
+        'merge $ %{} 'CodeEntry (:doc "|Combines homogeneous Map<K,V> values left-to-right, with later maps overwriting earlier keys. User code may use `.merge`; runtime implementation remains internal.")
           :code $ quote
             defn merge (x0 & xs) (reduce xs x0 &merge)
           :examples $ []
@@ -6551,9 +6580,11 @@
                 {} $ :b 2
                 {} $ :c 3
           :schema $ :: 'Fn
-            {} (:rest 'Dynamic) (:return 'T)
-              :args $ [] 'T
-              :generics $ [] 'T
+            {}
+              :args $ [] (:: 'Map 'K 'V)
+              :generics $ [] 'K 'V
+              :rest $ :: 'Map 'K 'V
+              :return $ :: 'Map 'K 'V
           :tests $ []
             %{} 'TestEntry (:name |combines-maps-left-to-right)
               :code $ quote
@@ -7742,7 +7773,7 @@
           :schema $ :: 'Fn
             {}
               :args $ [] 'Struct
-              :return $ :: 'Option 'Tag
+              :return $ :: 'Option 'StructDef
         'struct-match $ %{} 'CodeEntry (:doc "|Pattern-match a struct value by StructDef and fields.")
           :code $ quote
             defmacro struct-match (value & body)

@@ -181,7 +181,7 @@ pub(super) fn emit_map_to_list(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   emit_map_to_pair_list(ctx, args, "list")
 }
 
-/// `&map:keys m` — list of all keys in the map (unordered).
+/// `&map:keys m` — set of all keys in the map (unordered).
 pub(super) fn emit_map_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&map:keys")?;
   let map_ptr = emit_ptr_to_i32(ctx, &args[0])?;
@@ -189,7 +189,7 @@ pub(super) fn emit_map_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
   let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
 
   let ts = ctx.i32_offset(count, 1);
-  let dst = emit_alloc_with_count(ctx, count, ts, "list");
+  let dst = emit_alloc_with_count(ctx, count, ts, "set");
 
   let i = ctx.alloc_i32(0);
   ctx.begin_block();

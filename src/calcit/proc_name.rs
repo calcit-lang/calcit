@@ -963,7 +963,7 @@ impl CalcitProc {
         arg_types: vec![some_tag("list"), some_tag("number"), some_tag("number")],
       }),
       NativeListNth => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
+        return_type: type_var("T"),
         arg_types: vec![list_of(type_var("T")), some_tag("number")],
       }),
       NativeListFirst => Some(ProcTypeSignature {
@@ -1313,8 +1313,8 @@ impl CalcitProc {
 
       // === Refs/Atoms ===
       Atom => Some(ProcTypeSignature {
-        return_type: some_tag("ref"),
-        arg_types: vec![dynamic_tag()],
+        return_type: ref_of(type_var("T")),
+        arg_types: vec![type_var("T")],
       }),
       AtomDeref => Some(ProcTypeSignature {
         return_type: type_var("T"),
@@ -1554,6 +1554,31 @@ mod tests {
     ] {
       assert_eq!(proc.arity(), Some(expected), "{proc} arity");
     }
+  }
+
+  #[test]
+  fn collection_and_ref_primitives_preserve_generic_payloads() {
+    let nth = CalcitProc::NativeListNth.get_type_signature().expect("list nth signature");
+    assert!(matches!(
+      nth.return_type.as_ref(),
+      CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T"
+    ));
+    assert!(matches!(
+      nth.arg_types.first().map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::List(inner))
+        if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T")
+    ));
+
+    let atom = CalcitProc::Atom.get_type_signature().expect("atom signature");
+    assert!(matches!(
+      atom.return_type.as_ref(),
+      CalcitTypeAnnotation::Ref(inner)
+        if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T")
+    ));
+    assert!(matches!(
+      atom.arg_types.first().map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "T"
+    ));
   }
 
   #[test]

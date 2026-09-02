@@ -443,6 +443,30 @@ Dynamic 时，使用明确的函数形式，例如 `option:unwrap-or (get config
 或改成 `(trim receiver)` / `(blank? receiver)` 获取直接的参数类型诊断。新的 unknown-method 错误会同时写出
 实际接收者类型和这两个函数形式；不要用 `unsafe-coerce` 掩盖业务数据类型错误。
 
+#### 接收者方法与内部函数的边界
+
+业务源码统一写接收者方法，例如 `xs .map f`、`m .keys` 和 `cell .deref`。当接收者类型已知时，
+预处理器会根据类型及其 impl 表把调用专门化为对应的小写内部函数，例如 `&list:map`、`&map:keys`
+或 `&atom:deref`；这些 `&scope:name` 名称是编译器、core 实现和生成代码之间的内部 ABI，诊断和
+迁移建议不应要求业务代码手写完整内部名称。本阶段已让内建 Map/Ref 接收者生成直接内部调用；
+自定义 nominal 类型会先按其 impl 表静态选中实现，而匿名函数实现到直接符号调用的代码生成仍会分阶段收紧。
+接收者保留为 `Dynamic` 时会留下动态分派，应通过补 schema、类型收窄或显式边界继续迁移。
+
+这次收紧后，常见迁移如下：
+
+| 旧的宽松写法 | 类型化写法 | 原因 |
+| --- | --- | --- |
+| `deref custom-box` | `custom-box .deref` | 公共 `deref` 只接受 `Ref<T>`；nominal 类型由自己的 impl 解析 |
+| `keys struct-value` | `struct-value .to-map .keys` | `.keys` 的接收者是 `Map<K,V>`，Struct 字段来自静态定义 |
+| `merge struct-value patch` | `struct-with struct-value (:field value)` | `merge` 保持同一 `Map<K,V>` 契约，不再兼作 Struct 更新 |
+| `merge map-value nil` | `map-value` 或显式条件分支 | `nil` 不再充当空 Map；缺失状态应建模为 `Option<Map<K,V>>` |
+
+`&map:keys` 在 native、JS 与 WASM 后端都返回 `Set<K>`，与公开 `.keys` schema 一致。若项目曾直接
+依赖这个内部函数返回 List，应迁移为 `.keys` 并在确实需要顺序容器的位置显式转换。
+
+`&list:nth` 是 core/backend 使用的内部、成功返回 `T` 的索引原语；越界或非整数索引现在会报错或 trap，
+不会再以 `nil` 冒充 `T`。业务代码需要表达缺失时使用公开 `nth`，其结果是 `Option<T>`。
+
 ### 3.3 统一 entries
 
 顶层 `:configs` 已停止被普通 runtime loader 加载。使用当前 Calcit 的一次性 formatter 迁移入口执行：

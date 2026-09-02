@@ -85,6 +85,7 @@
                 assert-detect not $ includes? dict :a
                 ; println $ keys dict
                 assert= (keys dict) (#{} :c :a :b :d)
+                assert= (.keys dict) (#{} :c :a :b :d)
                 assert=
                   vals $ {} (:a 1) (:b 2) (:c 2)
                   #{} 2 1
@@ -130,11 +131,6 @@
                     {} (:a true) (:b false) (:c true) (:d false)
                     {} (:a false) (:b false) (:c true) (:d true)
                   {} (:a false) (:b false) (:c true) (:d true)
-                assert=
-                  merge
-                    {} $ :a 1
-                    , nil
-                  {} $ :a 1
                 assert=
                   &hash $ &{} :a 1 :b 2 3 :c
                   &hash $ &{} 3 :c :a 1 :b 2
