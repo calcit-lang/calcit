@@ -126,7 +126,7 @@
                   m3 $ &map:dissoc m2 |a
                   m4 $ &map:get m2 |b
                   m5 $ merge m2
-                    {} $ :c 3
+                    {} $ |c 3
                 &inspect-type m2
                 &inspect-type m3
                 &inspect-type m4

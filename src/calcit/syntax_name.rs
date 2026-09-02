@@ -150,8 +150,8 @@ impl CalcitSyntax {
       }),
       Defatom => Some(SyntaxTypeSignature {
         param_names: vec!["name", "init"],
-        param_types: vec![symbol_t.clone(), dyn_t.clone()],
-        return_type: symbol_t.clone(),
+        param_types: vec![symbol_t.clone(), value_t.clone()],
+        return_type: Arc::new(CalcitTypeAnnotation::Ref(value_t.clone())),
       }),
       Reset => Some(SyntaxTypeSignature {
         param_names: vec!["atom", "value"],

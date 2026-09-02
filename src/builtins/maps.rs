@@ -180,8 +180,8 @@ pub fn to_pairs(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn map_keys(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Map(ys)) => {
-      let keys: Vec<Calcit> = ys.keys().map(|k| k.to_owned()).collect();
-      Ok(Calcit::List(Arc::new(CalcitList::Vector(keys))))
+      let keys: rpds::HashTrieSetSync<Calcit> = ys.keys().cloned().collect();
+      Ok(Calcit::Set(keys))
     }
     Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:keys expected a map, but received: {a}")),
     None => CalcitErr::err_str(CalcitErrKind::Arity, "&map:keys expected 1 argument, but received none"),

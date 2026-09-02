@@ -765,15 +765,6 @@
       :typeNotFull 1
       :unresolved 0
       :unsafeCoerce 0
-    |calcit.core/defatom $ {} (:codeDynamic 0)
-      :codeNil 0
-      :declaredOptional 0
-      :deprecatedCalls 0
-      :schemaDynamic 3
-      :typeNone 0
-      :typeNotFull 0
-      :unresolved 3
-      :unsafeCoerce 0
     |calcit.core/defmacro $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
@@ -791,15 +782,6 @@
       :typeNone 0
       :typeNotFull 1
       :unresolved 4
-      :unsafeCoerce 0
-    |calcit.core/deref $ {} (:codeDynamic 0)
-      :codeNil 0
-      :declaredOptional 0
-      :deprecatedCalls 0
-      :schemaDynamic 1
-      :typeNone 0
-      :typeNotFull 1
-      :unresolved 1
       :unsafeCoerce 0
     |calcit.core/do $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1017,15 +999,6 @@
       :typeNotFull 0
       :unresolved 1
       :unsafeCoerce 0
-    |calcit.core/keys $ {} (:codeDynamic 0)
-      :codeNil 0
-      :declaredOptional 0
-      :deprecatedCalls 0
-      :schemaDynamic 2
-      :typeNone 0
-      :typeNotFull 1
-      :unresolved 2
-      :unsafeCoerce 0
     |calcit.core/last $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
@@ -1126,15 +1099,6 @@
       :unresolved 1
       :unsafeCoerce 0
     |calcit.core/map $ {} (:codeDynamic 0)
-      :codeNil 0
-      :declaredOptional 0
-      :deprecatedCalls 0
-      :schemaDynamic 1
-      :typeNone 0
-      :typeNotFull 1
-      :unresolved 1
-      :unsafeCoerce 0
-    |calcit.core/merge $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
       :deprecatedCalls 0
@@ -1831,10 +1795,10 @@
     :codeNil 0
     :declaredOptional 0
     :deprecatedCalls 0
-    :schemaDynamic 291
+    :schemaDynamic 284
     :typeNone 47
-    :typeNotFull 141
-    :unresolved 197
+    :typeNotFull 138
+    :unresolved 190
     :unsafeCoerce 0
   :scope $ {} (:includeDependencies false)
     :namespace nil

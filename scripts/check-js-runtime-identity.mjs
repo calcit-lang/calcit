@@ -55,6 +55,14 @@ try {
   assert.equal(runtimeA._$n_str_$o_utf8_byte_count("😀"), 4, "surrogate pairs must count as one four-byte UTF-8 scalar");
   assert.equal(runtimeA._$n_str_$o_count("A😀"), 2, "string count must use Unicode scalars rather than UTF-16 code units");
 
+  const mapKeyA = "map-key-a";
+  const mapKeyB = "map-key-b";
+  const typedMapKeys = runtimeA._$n_map_$o_keys(new runtimeA.CalcitSliceMap([mapKeyA, 1, mapKeyB, 2]));
+  assert.ok(typedMapKeys instanceof runtimeA.CalcitSet, "&map:keys must match its Set<K> contract on JS");
+  assert.equal(typedMapKeys.len(), 2);
+  assert.equal(typedMapKeys.contains(mapKeyA), true);
+  assert.equal(typedMapKeys.contains(mapKeyB), true);
+
   const todoName = runtimeA.newTag("TodoState");
   const todoField = runtimeA.newTag("draft");
   const todoType = new runtimeA.CalcitSymbol("String");

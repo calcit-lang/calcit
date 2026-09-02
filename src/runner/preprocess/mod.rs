@@ -1737,6 +1737,14 @@ fn preprocess_list_call(
             check_struct_method_args(&typed_method, &processed_args, scope_types, file_ns, &def_name, check_warnings);
             require_js_ffi_feature_for_operation(&typed_method, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
 
+            // Postfix syntax is normalized here rather than flowing through the
+            // generic prefix-call branch below. Specialize it before returning
+            // so typed source such as `m .keys` reaches codegen with the direct
+            // `&scope:name` callable as its head instead of `invoke-method`.
+            if let Some(optimized_call) = try_inline_method_call(&typed_method, &processed_args, scope_types, file_ns) {
+              return Ok(optimized_call);
+            }
+
             let mut ys = CalcitList::new_inner_from(&[typed_method]);
             for arg in processed_args.iter() {
               ys = ys.push(arg.to_owned());
@@ -5743,6 +5751,7 @@ fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation)
     CalcitTypeAnnotation::String => Some("&core-string-impls"),
     CalcitTypeAnnotation::Map(_, _) => Some("&core-map-impls"),
     CalcitTypeAnnotation::Set(_) => Some("&core-set-impls"),
+    CalcitTypeAnnotation::Ref(_) => Some("&core-ref-impls"),
     CalcitTypeAnnotation::Number => Some("&core-number-impls"),
     CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Some("&core-fn-impls"),
     CalcitTypeAnnotation::Optional(inner) => core_impl_list_symbol_from_type_annotation(inner.as_ref()),
@@ -11180,6 +11189,62 @@ mod tests {
       "method-call should become typed method form"
     );
     assert!(warnings.borrow().is_empty(), "should not warn for valid method-call syntax");
+  }
+
+  #[test]
+  fn typed_postfix_method_lowers_to_its_internal_callable_head() {
+    use crate::data::cirru::code_to_calcit;
+    use cirru_edn::EdnTag;
+    use cirru_parser::Cirru;
+
+    let internal_target = Calcit::Import(CalcitImport {
+      ns: Arc::from(calcit::CORE_NS),
+      def: Arc::from("&demo:rename"),
+      info: Arc::new(ImportInfo::Core {
+        at_ns: Arc::from("tests.struct"),
+      }),
+      def_id: None,
+    });
+    let rename_impl = Arc::new(CalcitImpl {
+      name: EdnTag::new("CatRename"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("rename")]),
+      values: Arc::new(vec![internal_target]),
+    });
+    let mut cat_struct = CalcitStructDef::from_fields(EdnTag::from("Cat"), vec![EdnTag::from("name")]);
+    cat_struct.impls = vec![rename_impl];
+
+    let expr = Cirru::List(vec![Cirru::leaf("kitty"), Cirru::leaf(".rename"), Cirru::leaf("|LagopusB")]);
+    let code = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse struct method call");
+    let scope_defs = HashSet::from([Arc::from("kitty")]);
+    let mut scope_types = ScopeTypes::from([(
+      Arc::from("kitty"),
+      Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(cat_struct))),
+    )]);
+    let warnings = RefCell::new(vec![]);
+
+    let result = preprocess_expr(
+      &code,
+      &scope_defs,
+      &mut scope_types,
+      "tests.struct",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("preprocess typed postfix method");
+
+    let Calcit::List(nodes) = result else {
+      panic!("expected specialized call")
+    };
+    assert!(
+      matches!(
+        nodes.first(),
+        Some(Calcit::Import(CalcitImport { ns, def, .. }))
+          if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "&demo:rename"
+      ),
+      "typed postfix method should expose the internal callable head: {nodes}"
+    );
+    assert!(warnings.borrow().is_empty());
   }
 
   #[test]

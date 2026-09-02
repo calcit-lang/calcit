@@ -265,7 +265,7 @@ fn option_migration_source_calls_fail_during_preprocessing() {
 fn dynamic_option_method_receiver_fails_during_preprocessing() {
   run_with_large_stack(|| {
     let entries =
-      load_snippet_entries("let\n    m $ unsafe-coerce ({} (:a 1)) 'Dynamic\n    fallback 0\n  (get m :a) .unwrap-or fallback");
+      load_snippet_entries("defn consume-dynamic (value)\n  value .unwrap-or 0\n\ndefn main! ()\n  consume-dynamic (%some 1)");
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
 
     runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())

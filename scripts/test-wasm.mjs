@@ -444,6 +444,7 @@ check("test-filter-map-kv()", 32, e["test-filter-map-kv"]); // count=2 plus tran
 check("test-map-diff-new()", 1, e["test-map-diff-new"]); // {a:1} — entries of a not in b
 check("test-map-diff-keys()", 2, e["test-map-diff-keys"]); // #{a, c} not in b
 check("test-map-common-keys()", 2, e["test-map-common-keys"]); // #{b, c} in both
+check("test-map-keys-method()", 2, e["test-map-keys-method"]); // typed .keys lowers to &map:keys and returns Set
 
 const sameTopDifferentLeaf = findSameTopDifferentLeaf();
 check(
