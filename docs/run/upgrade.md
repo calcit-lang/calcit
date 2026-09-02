@@ -464,6 +464,9 @@ Dynamic 时，使用明确的函数形式，例如 `option:unwrap-or (get config
 `&map:keys` 在 native、JS 与 WASM 后端都返回 `Set<K>`，与公开 `.keys` schema 一致。若项目曾直接
 依赖这个内部函数返回 List，应迁移为 `.keys` 并在确实需要顺序容器的位置显式转换。
 
+`&list:nth` 是 core/backend 使用的内部、成功返回 `T` 的索引原语；越界或非整数索引现在会报错或 trap，
+不会再以 `nil` 冒充 `T`。业务代码需要表达缺失时使用公开 `nth`，其结果是 `Option<T>`。
+
 ### 3.3 统一 entries
 
 顶层 `:configs` 已停止被普通 runtime loader 加载。使用当前 Calcit 的一次性 formatter 迁移入口执行：

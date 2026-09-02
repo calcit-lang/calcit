@@ -29,16 +29,40 @@ pub(super) fn emit_list_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
 pub(super) fn emit_list_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&list:nth expects 2 args")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  // offset = (1 + idx) * 8
+  let index_value = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalSet(index_value));
+
+  // &list:nth is an internal unchecked-payload primitive: a successful call
+  // returns T, while an invalid index traps instead of leaking nil as T.
+  let index = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(index_value));
   ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(index));
+  let count = emit_load_count_i32(ctx, ptr);
+
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalGet(index_value));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+
+  // offset = (1 + idx) * 8
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::LocalGet(index));
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::LocalGet(ptr));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
   Ok(())
 }
 

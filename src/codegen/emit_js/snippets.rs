@@ -135,6 +135,7 @@ $procs.register_calcit_builtin_impls({{
   enum: _$n_core_enum_impls,
   struct: _$n_core_struct_impls,
   scalar: _$n_core_scalar_impls,
+  ref: _$n_core_ref_impls,
 }});
 
 let runtimeVersion = $procs.calcit_version;

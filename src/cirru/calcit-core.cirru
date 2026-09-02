@@ -861,10 +861,10 @@
           :tags $ #{} :builtin :internal
         '&init-builtin-impls! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-enum-impls) (identity &core-struct-impls) (identity &core-scalar-impls) (identity Add) (identity Debug) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
+            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-enum-impls) (identity &core-struct-impls) (identity &core-scalar-impls) (identity &core-ref-impls) (identity Add) (identity Debug) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
               if
                 &= (&get-calcit-backend) :js
-                register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls
+                register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :ref &core-ref-impls
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
@@ -1353,7 +1353,7 @@
             {} (:return 'Number)
               :args $ [] (:: 'List 'Number) 'Number
           :tags $ #{} :internal
-        '&list:nth $ %{} 'CodeEntry (:doc "|internal function for getting nth list element\nSyntax: (&list:nth list index)\nParams: list (list), index (number)\nReturns: any or nil\nReturns element at index, nil if index out of bounds")
+        '&list:nth $ %{} 'CodeEntry (:doc "|Internal List<T> index primitive. A valid index returns T; invalid indexes fail instead of returning nil. User code should use nth for Option<T>.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn

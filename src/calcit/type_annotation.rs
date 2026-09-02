@@ -4190,6 +4190,11 @@ mod tests {
     ];
 
     for (annotation, definition) in cases {
+      assert_eq!(
+        annotation.core_impl_list_symbol(),
+        Some(definition),
+        "implementation mapping drifted for {definition}"
+      );
       let expected: BTreeSet<String> = annotation
         .builtin_core_trait_names()
         .iter()

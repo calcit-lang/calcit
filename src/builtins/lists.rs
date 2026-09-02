@@ -58,7 +58,10 @@ pub fn nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Calcit::List(ys), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => match ys.get(idx) {
         Some(v) => Ok((*v).to_owned()),
-        None => Ok(Calcit::Nil),
+        None => CalcitErr::err_str(
+          CalcitErrKind::Type,
+          format!("&list:nth index {idx} out of bounds for list of length {}", ys.len()),
+        ),
       },
       Err(e) => CalcitErr::err_str(
         CalcitErrKind::Type,
@@ -970,6 +973,13 @@ mod tests {
       butlast(std::slice::from_ref(&empty)).expect("butlast should accept an empty list"),
       empty
     );
+  }
+
+  #[test]
+  fn nth_rejects_out_of_bounds_instead_of_returning_nil() {
+    let values = Calcit::from(vec![Calcit::Number(1.0), Calcit::Number(2.0)]);
+    let error = nth(&[values, Calcit::Number(2.0)]).expect_err("unchecked list access must not leak nil as T");
+    assert!(error.to_string().contains("index 2 out of bounds for list of length 2"));
   }
 
   #[test]

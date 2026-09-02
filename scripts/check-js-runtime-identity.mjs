@@ -55,6 +55,22 @@ try {
   assert.equal(runtimeA._$n_str_$o_utf8_byte_count("😀"), 4, "surrogate pairs must count as one four-byte UTF-8 scalar");
   assert.equal(runtimeA._$n_str_$o_count("A😀"), 2, "string count must use Unicode scalars rather than UTF-16 code units");
 
+  const boundedList = new runtimeA.CalcitSliceList([1, 2]);
+  assert.equal(runtimeA._$n_list_$o_nth(boundedList, 1), 2);
+  assert.throws(
+    () => runtimeA._$n_list_$o_nth(boundedList, 2),
+    /index 2 out of bounds for list of length 2/,
+    "internal &list:nth must fail instead of returning nil outside its T contract",
+  );
+
+  const refDerefImpl = new runtimeA.CalcitImpl(
+    runtimeA.newTag("&core-ref-methods"),
+    [runtimeA.newTag("deref")],
+    [runtimeA._$n_atom_$o_deref],
+  );
+  runtimeA.register_calcit_builtin_impls({ ref: new runtimeA.CalcitSliceList([refDerefImpl]) });
+  assert.equal(runtimeA.invoke_method("deref", runtimeA.atom(7)), 7, "dynamic Ref fallback must use the registered Ref impl table");
+
   const mapKeyA = "map-key-a";
   const mapKeyB = "map-key-b";
   const typedMapKeys = runtimeA._$n_map_$o_keys(new runtimeA.CalcitSliceMap([mapKeyA, 1, mapKeyB, 2]));

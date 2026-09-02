@@ -3,6 +3,7 @@
 // Usage: node scripts/test-wasm.mjs
 
 import { readFileSync, existsSync } from "fs";
+import assert from "node:assert/strict";
 
 const wasmPath = "js-out/program.wasm";
 const wasm = readFileSync(wasmPath);
@@ -367,6 +368,11 @@ check("test-list-nth(0)", 10, e["test-list-nth"], 0);
 check("test-list-nth(2)", 30, e["test-list-nth"], 2);
 check("test-list-first-generic()", 42, e["test-list-first-generic"]);
 check("test-list-nth(3)", 40, e["test-list-nth"], 3);
+assert.throws(
+  () => e["test-list-nth"](4),
+  WebAssembly.RuntimeError,
+  "out-of-bounds &list:nth must trap instead of loading unchecked memory",
+);
 check("test-list-first()", 42, e["test-list-first"]);
 check("test-list-rest-generic-first()", 20, e["test-list-rest-generic-first"]);
 check("test-list-rest-count()", 2, e["test-list-rest-count"]);
