@@ -12,6 +12,7 @@ keeps the legacy runtime behavior during migration.
 | `E_LEGACY_OPTIONAL_PARAM` | `defn f (required ? optional) ...` or the equivalent `fn` form | Remove `?`, declare trailing parameters as `Option<T>`, and rely on trailing omission to insert `%none`; use `%some value` / `%none` at explicit call sites. |
 | `E_PARTIAL_STRUCT_NIL_FILL` | `%{}? Struct ...` and `&%{}? Struct ...` | Use `%{}` with every field present. Change genuinely absent fields to `Option<T>` and provide `%none`. Do not infer business defaults automatically. |
 | `E_NIL_FOR_UNIT` | A function declared to return `Unit` whose returned expression has static type `Nil`, including legacy `;nil` | Return `&unit`, or end the body with an effect that already returns `Unit`. Intermediate nil values are not treated as the function return. |
+| `E_NIL_CALLBACK_SENTINEL` | An inline `map-kv` callback has a return path that uses `nil` to drop an entry, including an `if` without an else branch | Use `filter-map-kv`; return `MapEntryDecision :keep key value` or `MapEntryDecision :drop` on every path. A `nil` nested inside the returned key/value pair remains ordinary data and is not rejected. |
 
 The runtime `nil` value, Cirru EDN nil, and explicit untyped/FFI boundaries are
 not removed. The strict errors only close constructs that silently manufacture
@@ -19,6 +20,15 @@ nil inside typed code.
 
 运行时 `nil`、Cirru EDN nil 以及明确的 untyped/FFI 边界不会删除；上述错误只阻断
 typed code 中静默制造 nil 的语法。
+
+`E_NIL_CALLBACK_SENTINEL` is intentionally conservative. It checks only
+structurally visible return paths of inline `fn` / `defn` callbacks. It does not
+guess through named callbacks or reject `[] key nil`, where nil is the mapped
+value rather than a drop sentinel.
+
+`E_NIL_CALLBACK_SENTINEL` 采用保守检查：只分析内联 `fn` / `defn` 回调中结构上
+可见的返回路径，不猜测具名回调；`[] key nil` 中的 nil 是映射后的值，不是丢弃
+sentinel，因此不会被拒绝。
 
 ## Initial executable census / 首轮可执行调用点盘点
 

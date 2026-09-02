@@ -125,7 +125,10 @@ let
 Legacy native and JavaScript execution accepts `nil` or an enum value as a
 drop sentinel, but new code must not rely on that behavior. It cannot describe
 the callback result precisely and historically was not consistent across
-backends. Use `filter-map-kv` when entries may be omitted.
+backends. Use `filter-map-kv` when entries may be omitted. In `--strict-types`,
+an inline callback with a structurally visible nil return path is rejected with
+`E_NIL_CALLBACK_SENTINEL`; a nil nested inside the returned pair remains valid
+map data.
 
 ### `filter-map-kv` — typed transform and filter
 
