@@ -187,6 +187,9 @@ impl CalcitTrait {
   /// references use runtime identity, source references use their qualified
   /// definition, and legacy bare placeholders fall back to shape or name.
   pub fn matches_reference(&self, expected: &Self) -> bool {
+    if expected.runtime_id.is_none() && expected.definition_ref.is_none() && expected.methods.is_empty() {
+      return self.name == expected.name;
+    }
     if expected.runtime_id.is_some() {
       return self == expected;
     }
@@ -339,12 +342,15 @@ mod tests {
     let user = CalcitTrait::new(EdnTag::new("Show"), vec![], vec![]).with_definition_ref("app.main", "Show");
     let same_core = CalcitTrait::new_reference("calcit.core/Show");
     let runtime_core = CalcitTrait::new_runtime(EdnTag::new("Show"), vec![], vec![]).with_definition_ref("calcit.core", "Show");
+    let legacy_placeholder = CalcitTrait::new_reference("Show");
 
     assert_eq!(core, same_core);
     assert_eq!(hash_trait(&core), hash_trait(&same_core));
     assert_ne!(core, user);
     assert!(!core.matches_reference(&user));
     assert!(runtime_core.matches_reference(&same_core));
+    assert!(core.matches_reference(&legacy_placeholder));
+    assert!(user.matches_reference(&legacy_placeholder));
   }
 
   #[test]
