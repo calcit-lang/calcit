@@ -338,7 +338,7 @@
                 assert-detect identity $ = p1 p1
                 assert-detect identity $ = p1 p2
                 assert-detect not $ = p1 p3
-                assert-detect not $ = p1 c1
+                assert-detect not $ &= p1 c1
                 assert=
                   %{} Person (:age 23) (:name |Ye) (:position :mainland)
                   merge p1 $ {} (:age 23) (:name |Ye)

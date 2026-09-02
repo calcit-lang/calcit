@@ -569,6 +569,23 @@ calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 不同分类间迁移时，应在 PR 中解释并显式更新 baseline，而不是让一个总数相互抵消。baseline 归零后
 保留 `analyze quality`，以阻止后续重新引入。
 
+#### 公共 equality 改为同类型契约
+
+公共 `=`、`not=` 和 `/=` 只接受同一静态类型的操作数：`=` 的第一个参数和所有 rest 参数共享类型变量
+`T`，另外两个函数的左右参数也共享 `T`。底层运行时仍能比较不同类别的值，但应用代码不能再依赖这种
+隐式跨类型行为；它通常来自未收窄的 FFI 值、把类型谓词写成 equality，或遗漏了 nominal enum 的
+pattern match。
+
+升级后出现 `W_FN_ARG_TYPE_MISMATCH` 时，根据值的来源选择明确迁移：
+
+- 两边本应是同一种数据：先 parse/normalize，再比较；
+- 一边来自 Dynamic 或 FFI：在 adapter 中使用 typed FFI、validator 或 `assert-type` 收窄；
+- 只是判断类别：使用 `string?`、`number?`、`tag?` 等类型谓词；
+- 比较 Option/Result 或其他 nominal enum：先使用对应 predicate/method 或 pattern match，再比较 payload。
+
+不要把业务调用改成底层 `&=` 来绕过检查。`&=` 和 `&compare` 保留跨类型运行时语义，只供经过审计的
+core/runtime 边界使用，后续会作为独立的 internal runtime-polymorphic contract 继续跟踪。
+
 ### 3.7 format 的边界
 
 `calcit edit format` 负责可解析性、canonical serialization 和已知旧结构迁移；它不是完整的语义 linter。告警写到 stderr 且不会阻止格式化。CI 需要在 format 后检查 `git diff`，并单独读取 `check-types` / `weak-types --format json` 来执行项目自己的质量阈值。
