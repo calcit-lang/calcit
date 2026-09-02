@@ -972,6 +972,24 @@ impl CalcitTypeAnnotation {
       .is_some_and(|resolved| resolved.name().ref_str() == target)
   }
 
+  fn type_ref_matches_trait(name: &str, target: &CalcitTrait) -> bool {
+    let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+    if target
+      .definition_ref
+      .as_deref()
+      .is_some_and(|definition_ref| definition_ref == stripped)
+    {
+      return true;
+    }
+    if resolve_type_ref_as_schema(stripped).is_some_and(|resolved| {
+      matches!(resolved.as_ref(), Self::Trait(resolved_trait) if resolved_trait.matches_reference(target) || target.matches_reference(resolved_trait))
+    })
+    {
+      return true;
+    }
+    target.definition_ref.is_none() && target.runtime_id.is_none() && Self::type_ref_name_matches(stripped, target.name.ref_str())
+  }
+
   fn is_hint_fn_form(list: &CalcitList) -> bool {
     match list.first() {
       Some(Calcit::Syntax(CalcitSyntax::HintFn, _)) => true,
@@ -1245,6 +1263,22 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  fn trait_bound_with_source_ref(form: &Calcit, trait_def: &Arc<CalcitTrait>) -> Arc<CalcitTrait> {
+    if trait_def.definition_ref.is_some() {
+      return trait_def.clone();
+    }
+    let Some(source_name) = Self::extract_type_ref_name(form) else {
+      return trait_def.clone();
+    };
+    let Some((ns, def)) = source_name.rsplit_once('/') else {
+      return trait_def.clone();
+    };
+    if def != trait_def.name.ref_str() {
+      return trait_def.clone();
+    }
+    Arc::new(trait_def.as_ref().clone().with_definition_ref(ns, def))
+  }
+
   fn parse_trait_bounds_value(form: &Calcit, generics: &[Arc<str>], strict_named_refs: bool) -> Option<Vec<Arc<CalcitTrait>>> {
     if let Calcit::List(items) = form {
       let start = if items.first().map(Self::is_args_list_head).unwrap_or(false) {
@@ -1256,7 +1290,7 @@ impl CalcitTypeAnnotation {
       for item in items.iter().skip(start) {
         let parsed = Self::parse_type_annotation_form_inner(item, generics, strict_named_refs);
         match parsed.as_ref() {
-          CalcitTypeAnnotation::Trait(trait_def) => traits.push(trait_def.clone()),
+          CalcitTypeAnnotation::Trait(trait_def) => traits.push(Self::trait_bound_with_source_ref(item, trait_def)),
           CalcitTypeAnnotation::TypeRef(name, args) if strict_named_refs && args.is_empty() => {
             traits.push(Arc::new(CalcitTrait::new_reference(name)))
           }
@@ -1269,7 +1303,7 @@ impl CalcitTypeAnnotation {
     }
 
     match Self::parse_type_annotation_form_inner(form, generics, strict_named_refs).as_ref() {
-      CalcitTypeAnnotation::Trait(trait_def) => Some(vec![trait_def.clone()]),
+      CalcitTypeAnnotation::Trait(trait_def) => Some(vec![Self::trait_bound_with_source_ref(form, trait_def)]),
       CalcitTypeAnnotation::TypeRef(name, args) if strict_named_refs && args.is_empty() => {
         Some(vec![Arc::new(CalcitTrait::new_reference(name))])
       }
@@ -2895,6 +2929,19 @@ impl CalcitTypeAnnotation {
   }
 
   fn satisfies_trait_bound(&self, expected_trait: &CalcitTrait) -> bool {
+    match self {
+      Self::Trait(actual_trait) if actual_trait.matches_reference(expected_trait) || expected_trait.matches_reference(actual_trait) => {
+        return true;
+      }
+      Self::TraitSet(actual_traits)
+        if actual_traits
+          .iter()
+          .any(|actual_trait| actual_trait.matches_reference(expected_trait) || expected_trait.matches_reference(actual_trait)) =>
+      {
+        return true;
+      }
+      _ => {}
+    }
     if let Some(impls) = self.collect_static_impls() {
       if impls.iter().any(|imp| Self::impl_matches_trait(imp, expected_trait)) {
         return true;
@@ -3118,10 +3165,24 @@ impl CalcitTypeAnnotation {
         }
         a_args.len() == b_args.len() && a_args.iter().zip(b_args.iter()).all(|(x, y)| x.matches_with_bindings(y, bindings))
       }
-      (Self::Trait(a), Self::Trait(b)) => a == b,
-      (Self::TraitSet(actual), Self::Trait(expected)) => actual.iter().any(|t| t == expected),
-      (Self::Trait(actual), Self::TraitSet(expected)) => expected.len() == 1 && expected.iter().any(|t| t == actual),
-      (Self::TraitSet(actual), Self::TraitSet(expected)) => expected.iter().all(|t| actual.iter().any(|a| a == t)),
+      (Self::TypeRef(name, args), Self::Trait(trait_def)) | (Self::Trait(trait_def), Self::TypeRef(name, args)) => {
+        args.is_empty() && Self::type_ref_matches_trait(name, trait_def.as_ref())
+      }
+      (Self::Trait(a), Self::Trait(b)) => a.matches_reference(b) || b.matches_reference(a),
+      (Self::TraitSet(actual), Self::Trait(expected)) => actual
+        .iter()
+        .any(|trait_def| trait_def.matches_reference(expected) || expected.matches_reference(trait_def)),
+      (Self::Trait(actual), Self::TraitSet(expected)) => {
+        expected.len() == 1
+          && expected
+            .iter()
+            .any(|trait_def| actual.matches_reference(trait_def) || trait_def.matches_reference(actual))
+      }
+      (Self::TraitSet(actual), Self::TraitSet(expected)) => expected.iter().all(|expected_trait| {
+        actual
+          .iter()
+          .any(|actual_trait| actual_trait.matches_reference(expected_trait) || expected_trait.matches_reference(actual_trait))
+      }),
       (actual, Self::Trait(expected)) => actual.satisfies_trait_bound(expected.as_ref()),
       (actual, Self::TraitSet(expected)) => actual.satisfies_trait_bounds(expected.as_ref()),
       (Self::Struct(_, _), Self::Custom(expected))
@@ -4239,6 +4300,24 @@ mod tests {
     assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(runtime_user_debug)));
   }
 
+  #[test]
+  fn nominal_trait_annotations_match_their_type_refs_and_own_bounds() {
+    let dom_element = Arc::new(CalcitTrait::new_reference("respo.dom/DomElement"));
+    let other_dom_element = Arc::new(CalcitTrait::new_reference("other.dom/DomElement"));
+    let mut evaluated_dom_element = CalcitTrait::new_reference("respo.dom/DomElement");
+    evaluated_dom_element.runtime_id = Some(7);
+    let annotation = CalcitTypeAnnotation::Trait(Arc::new(evaluated_dom_element));
+
+    assert!(annotation.matches_annotation(&CalcitTypeAnnotation::TypeRef(Arc::from("respo.dom/DomElement"), Arc::new(vec![]),)));
+    assert!(!annotation.matches_annotation(&CalcitTypeAnnotation::TypeRef(Arc::from("other.dom/DomElement"), Arc::new(vec![]),)));
+    assert!(annotation.satisfies_trait_bound(dom_element.as_ref()));
+    assert!(!annotation.satisfies_trait_bound(other_dom_element.as_ref()));
+    let CalcitTypeAnnotation::Trait(evaluated_dom_element) = &annotation else {
+      unreachable!();
+    };
+    assert!(CalcitTypeAnnotation::Trait(dom_element).satisfies_trait_bound(evaluated_dom_element));
+  }
+
   fn symbol(name: &str) -> Calcit {
     Calcit::Symbol {
       sym: Arc::from(name),
@@ -4890,6 +4969,16 @@ mod tests {
       bounds[0].traits[0].methods.is_empty(),
       "source resolution happens during preprocessing"
     );
+  }
+
+  #[test]
+  fn qualified_trait_bounds_keep_their_nominal_source_reference() {
+    let source_form = symbol("respo.dom/DomElement");
+    let trait_def = Arc::new(CalcitTrait::new(EdnTag::new("DomElement"), vec![], vec![]));
+
+    let qualified = CalcitTypeAnnotation::trait_bound_with_source_ref(&source_form, &trait_def);
+
+    assert_eq!(qualified.definition_ref.as_deref(), Some("respo.dom/DomElement"));
   }
 
   #[test]
