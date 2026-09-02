@@ -165,12 +165,13 @@ LLMs often forget the `|` prefix. **Always** use `|` for string literals, even s
 - ❌ `let (x 1) x`
 - ✅ `let ((x 1)) x`
 - ✅ **Preferred**: Use multi-line for clarity:
-  ```cirru.no-run
-  let
-      x 1
-      y 2
-    + x y
-  ```
+
+```cirru.no-run
+let
+    x 1
+    y 2
+  + x y
+```
 
 ### 3. Parse Success Is Not Semantic Success
 

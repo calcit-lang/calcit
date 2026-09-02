@@ -7773,7 +7773,7 @@
           :schema $ :: 'Fn
             {}
               :args $ [] 'Struct
-              :return $ :: 'Option 'Tag
+              :return $ :: 'Option 'StructDef
         'struct-match $ %{} 'CodeEntry (:doc "|Pattern-match a struct value by StructDef and fields.")
           :code $ quote
             defmacro struct-match (value & body)
