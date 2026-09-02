@@ -93,11 +93,13 @@ reason/payload 使用方法级泛型，因此不会为了宿主编码而抹掉�
 `option:let` 的 body 必须继续返回 `Option`。普通组合函数仍以接收者方法
 作为公开形式，`option:*` / `result:*` 直接函数调用主要保留给 core lowering。
 
-## get-in / update-in
+## get-in / assoc-in / update-in
 
-`get-in` 是可能失败的开放数据访问，返回 `Option<T>`。不要用它绕过 Struct 字段检查；Struct 路径应使用 `(:field value)`，字段可缺失就把字段声明为 `Option<T>`。
+`get-in` 是可能失败的开放数据访问，返回 `Option<T>`。当接收者是完整类型的嵌套 Map、路径是非空字面量时，编译器会把 `get-in`、`assoc-in` 和 `update-in` 展开为类型化的直接 `get` / `assoc` 链，不再经过运行时动态路径遍历；调用参数仍按源码顺序各求值一次。`update-in` 的 updater 接收 `Option<T>`，因此缺失叶子不会退回 nil。
 
-`update-in` 的 updater 接收 `Option<T>`。对缺失值给默认值或明确返回 `%none`，不要无条件 unwrap：
+动态接收者、动态路径和混合容器仍是明确的兼容边界，会保留动态路径 API。新代码在数据形状已知时优先使用直接 `.get`、Option 组合和名义字段访问；只有开放数据才使用路径 API。不要用路径函数绕过 Struct 字段检查：Struct 应使用 `(:field value)` 或 `value.:field`，字段可缺失就把字段声明为 `Option<T>`。
+
+对 `update-in` 的缺失值给默认值或明确处理 `%none`，不要无条件 unwrap：
 
 ```cirru.no-check
 update-in data ([] :settings :retries)

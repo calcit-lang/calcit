@@ -185,9 +185,10 @@ impl CalcitFnCallShape {
     let param_len = args.param_len();
     let has_marked_rest =
       matches!(args, CalcitFnArgs::MarkedArgs(labels) if labels.iter().any(|label| matches!(label, CalcitArgLabel::RestMark)));
+    let marked_optionals = args.marked_optional_count();
     Self {
       param_len: u16::try_from(param_len).expect("function parameter count exceeds local index capacity"),
-      trailing_optionals: u16::try_from(trailing_option_arg_count(arg_types, param_len))
+      trailing_optionals: u16::try_from(marked_optionals.max(trailing_option_arg_count(arg_types, param_len)))
         .expect("optional parameter count exceeds local index capacity"),
       has_rest: has_typed_rest || has_marked_rest,
     }
@@ -212,6 +213,25 @@ impl CalcitFnArgs {
     match self {
       CalcitFnArgs::MarkedArgs(xs) => xs.iter().filter(|label| matches!(label, CalcitArgLabel::Idx(_))).count(),
       CalcitFnArgs::Args(xs) => xs.len(),
+    }
+  }
+
+  /// Counts the trailing parameters made optional by a legacy `?` marker.
+  ///
+  /// Keep this evidence available independently from typed `Option` metadata:
+  /// imported and anonymous impl callables may still originate from source that
+  /// uses the marker while their schema remains intentionally broad.
+  pub fn marked_optional_count(&self) -> usize {
+    match self {
+      CalcitFnArgs::MarkedArgs(labels) => {
+        let shape = ParamShape::from_tokens(labels.iter().map(|label| match label {
+          CalcitArgLabel::Idx(_) => ParamShapeToken::Binding,
+          CalcitArgLabel::OptionalMark => ParamShapeToken::OptionalMark,
+          CalcitArgLabel::RestMark => ParamShapeToken::RestMark,
+        }));
+        if shape.errors.is_empty() { shape.optional } else { 0 }
+      }
+      CalcitFnArgs::Args(_) => 0,
     }
   }
 
@@ -348,6 +368,17 @@ mod tests {
 
     let typed = CalcitFnArgs::Args(vec![1]);
     assert!(CalcitFnCallShape::from_parts(&typed, std::slice::from_ref(&*crate::calcit::DYNAMIC_TYPE), true).has_rest());
+
+    let optional = CalcitFnArgs::MarkedArgs(vec![
+      CalcitArgLabel::Idx(1),
+      CalcitArgLabel::Idx(2),
+      CalcitArgLabel::OptionalMark,
+      CalcitArgLabel::Idx(3),
+    ]);
+    let optional_shape = CalcitFnCallShape::from_parts(&optional, &[], false);
+    assert_eq!(optional.marked_optional_count(), 1);
+    assert_eq!(optional_shape.param_len(), 3);
+    assert_eq!(optional_shape.trailing_optionals(), 1);
   }
 
   #[test]
@@ -436,6 +467,10 @@ impl Display for ScopePair {
 pub struct CalcitScope(Vec<ScopePair>);
 
 impl CalcitScope {
+  pub(crate) fn is_empty(&self) -> bool {
+    self.0.is_empty()
+  }
+
   /// Capture the current end of a lexical frame before adding call-local bindings.
   pub(crate) fn frame_checkpoint(&self) -> usize {
     self.0.len()

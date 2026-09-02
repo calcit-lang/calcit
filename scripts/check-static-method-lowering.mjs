@@ -12,6 +12,23 @@ assert.doesNotMatch(
 const appOutput = readFileSync("js-out/app.main.mjs", "utf8");
 assert.match(appOutput, /\$clt\._\$n_atom_\$o_deref\([^)]*\)/, "typed Ref .deref must lower to &atom:deref");
 
+const structOutput = readFileSync("js-out/test-struct.main.mjs", "utf8");
+assert.match(
+  structOutput,
+  /export function _\$n_lagopus0_\$o_show\(self\)/,
+  "an anonymous nominal impl method must receive a stable &lagopus0:show callable",
+);
+assert.match(
+  structOutput,
+  /_\$n_lagopus0_\$o_rename\(l1t, "LagopusB"\)/,
+  "typed source .rename must call the generated nominal callable directly",
+);
+assert.doesNotMatch(
+  structOutput,
+  /invoke_method\(\s*"show"\s*,\s*l1t\b/,
+  "a statically known nominal .show call must not retain dynamic dispatch",
+);
+
 const coreOutput = readFileSync("js-out/calcit.core.mjs", "utf8");
 assert.match(coreOutput, /ref:\s*_\$n_core_ref_impls/, "generated JS must register the Ref fallback impl table");
 

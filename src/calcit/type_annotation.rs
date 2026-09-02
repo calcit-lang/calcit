@@ -960,6 +960,18 @@ impl CalcitTypeAnnotation {
     left == right || left.rsplit('/').next().is_some_and(|segment| segment == right)
   }
 
+  fn type_ref_resolves_to_struct_name(name: &str, target: &str) -> bool {
+    Self::TypeRef(Arc::from(name), Arc::new(vec![]))
+      .resolve_to_struct()
+      .is_some_and(|resolved| resolved.name.ref_str() == target)
+  }
+
+  fn type_ref_resolves_to_enum_name(name: &str, target: &str) -> bool {
+    Self::TypeRef(Arc::from(name), Arc::new(vec![]))
+      .resolve_to_enum()
+      .is_some_and(|resolved| resolved.name().ref_str() == target)
+  }
+
   fn is_hint_fn_form(list: &CalcitList) -> bool {
     match list.first() {
       Some(Calcit::Syntax(CalcitSyntax::HintFn, _)) => true,
@@ -3034,7 +3046,8 @@ impl CalcitTypeAnnotation {
       (Self::Set(a), Self::Set(b)) => a.matches_with_bindings(b, bindings),
       (Self::Ref(a), Self::Ref(b)) => a.matches_with_bindings(b, bindings),
       (Self::TypeRef(name, args), Self::Struct(base, other_args)) | (Self::Struct(base, other_args), Self::TypeRef(name, args)) => {
-        if !Self::type_ref_name_matches(name, base.name.ref_str()) {
+        if !Self::type_ref_name_matches(name, base.name.ref_str()) && !Self::type_ref_resolves_to_struct_name(name, base.name.ref_str())
+        {
           return false;
         }
         match (args.is_empty(), other_args.is_empty()) {
@@ -3051,7 +3064,9 @@ impl CalcitTypeAnnotation {
         }
       }
       (Self::TypeRef(name, args), Self::Enum(base, other_args)) | (Self::Enum(base, other_args), Self::TypeRef(name, args)) => {
-        if !Self::type_ref_name_matches(name, base.name().ref_str()) {
+        if !Self::type_ref_name_matches(name, base.name().ref_str())
+          && !Self::type_ref_resolves_to_enum_name(name, base.name().ref_str())
+        {
           return false;
         }
         match (args.is_empty(), other_args.is_empty()) {
@@ -3071,10 +3086,12 @@ impl CalcitTypeAnnotation {
         // Structs are structurally map-like (field name -> value), so procs typed as
         // accepting a generic "map" (e.g. `to-pairs`/`keys`) should also accept structs,
         // in addition to matching the struct's own type name.
-        Self::type_ref_name_matches(name, base.name.ref_str()) || Self::type_ref_name_matches(name, "map")
+        Self::type_ref_name_matches(name, base.name.ref_str())
+          || Self::type_ref_resolves_to_struct_name(name, base.name.ref_str())
+          || Self::type_ref_name_matches(name, "map")
       }
       (Self::TypeRef(name, _), Self::EnumValue(base)) | (Self::EnumValue(base), Self::TypeRef(name, _)) => {
-        Self::type_ref_name_matches(name, base.name().ref_str())
+        Self::type_ref_name_matches(name, base.name().ref_str()) || Self::type_ref_resolves_to_enum_name(name, base.name().ref_str())
       }
       (Self::Struct(a, a_args), Self::Struct(b, b_args)) => {
         if a.name != b.name {

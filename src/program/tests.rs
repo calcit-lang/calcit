@@ -58,6 +58,105 @@ fn strict_edn_decoder_nominals_are_compiled_dependencies() {
 }
 
 #[test]
+fn runtime_value_provenance_resolves_only_source_backed_definitions() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let target = Calcit::Str(Arc::from("impl-metadata-value"));
+  PROGRAM_CODE_DATA.write().expect("seed source program").insert(
+    Arc::from("tests.runtime-provenance"),
+    ProgramFileData {
+      import_map: HashMap::new(),
+      defs: HashMap::from([
+        (
+          Arc::from("z-owner"),
+          ProgramDefEntry {
+            code: Calcit::Nil,
+            schema: DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: None,
+          },
+        ),
+        (
+          Arc::from("a-owner"),
+          ProgramDefEntry {
+            code: Calcit::Nil,
+            schema: DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: None,
+          },
+        ),
+      ]),
+    },
+  );
+  write_runtime_ready("tests.runtime-provenance", "runtime-only", target.clone()).expect("seed runtime-only value");
+  write_runtime_ready("tests.runtime-provenance", "z-owner", target.clone()).expect("seed source-backed value");
+  write_runtime_ready("tests.runtime-provenance", "a-owner", target.clone()).expect("seed second source-backed value");
+
+  assert_eq!(
+    find_source_def_for_runtime_value("tests.runtime-provenance", &target).as_deref(),
+    Some("a-owner"),
+    "provenance is source-backed and deterministic"
+  );
+  assert_eq!(find_source_def_for_runtime_value("tests.missing", &target), None);
+}
+
+#[test]
+fn nominal_impl_wrapper_type_ref_matches_its_concrete_enum_value() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  calcit::register_program_lookups(lookup_runtime_ready, lookup_def_code, lookup_def_schema);
+
+  let wrapper_code = code_to_calcit(
+    &cirru_list(vec![
+      cirru_leaf("def"),
+      cirru_leaf("alert-actions-plugin"),
+      cirru_list(vec![
+        cirru_leaf("impl-traits"),
+        cirru_list(vec![
+          cirru_leaf("defenum"),
+          cirru_leaf("PluginNode"),
+          cirru_list(vec![cirru_leaf(":value"), cirru_leaf("Dynamic")]),
+        ]),
+        cirru_leaf("PluginActions"),
+      ]),
+    ]),
+    "tests.nominal-wrapper",
+    "alert-actions-plugin",
+    vec![],
+  )
+  .expect("build nominal impl wrapper source");
+
+  PROGRAM_CODE_DATA.write().expect("seed nominal wrapper source").insert(
+    Arc::from("tests.nominal-wrapper"),
+    ProgramFileData {
+      import_map: HashMap::new(),
+      defs: HashMap::from([(
+        Arc::from("alert-actions-plugin"),
+        ProgramDefEntry {
+          code: wrapper_code,
+          schema: DYNAMIC_TYPE.clone(),
+          doc: Arc::from(""),
+          examples: vec![],
+          ffi: None,
+        },
+      )]),
+    },
+  );
+
+  let wrapper_ref = CalcitTypeAnnotation::TypeRef(Arc::from("tests.nominal-wrapper/alert-actions-plugin"), Arc::new(vec![]));
+  let concrete = CalcitTypeAnnotation::Enum(
+    Arc::new(wrapper_ref.resolve_to_enum().expect("resolve wrapper to its underlying enum")),
+    Arc::new(vec![]),
+  );
+
+  assert!(wrapper_ref.matches_annotation(&concrete));
+  assert!(concrete.matches_annotation(&wrapper_ref));
+}
+
+#[test]
 fn import_rule_validation_rejects_short_rules_without_panicking() {
   let error =
     validate_import_rules(&[cirru_list(vec![cirru_leaf("audit.invalid")])]).expect_err("short import rule should be rejected");

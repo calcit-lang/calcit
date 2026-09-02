@@ -356,7 +356,11 @@ let
 - `when-let` - run a body for `%some` and return `Option<R>`
 
 Nested updates are nominal as well: `update-in` passes `Option<T>` to its
-updater, and `dissoc-in` treats an empty path as a no-op. Public lookup and
+updater, and `dissoc-in` treats an empty path as a no-op. On a fully typed nested
+Map, non-empty literal paths in `get-in`, `assoc-in`, and `update-in` compile to
+direct typed lookup/association chains with single evaluation of each argument.
+Dynamic paths, open containers, and mixed traversal deliberately keep the
+runtime compatibility API. Public lookup and
 positional APIs (`get`, `get-in`, `first`, `last`, and collection `nth`) return
 `Option<T>`. Accessing a statically known struct field with `(:field value)` or
 receiver-first `value.:field` returns the field's declared type directly and is
