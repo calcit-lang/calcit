@@ -147,6 +147,10 @@ implicitly:
   distinct `Nil` value. Replace returned `nil` / `;nil` with `&unit`, or end the
   body with an effect that already returns Unit. Intermediate nil expressions
   are not classified as the function return.
+- `E_NIL_CALLBACK_SENTINEL`: an inline `map-kv` callback has a structurally
+  visible return path that uses `nil` to drop an entry. Use `filter-map-kv` and
+  return `MapEntryDecision :keep key value` or `MapEntryDecision :drop` on every
+  path. A nil nested inside the returned pair remains map data.
 
 These compatibility paths remain available outside `--strict-types` during
 ecosystem migration. Partial Struct construction is not auto-fixed because the

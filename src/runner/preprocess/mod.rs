@@ -1559,6 +1559,21 @@ fn preprocess_list_call(
       || matches!(&head_form, Calcit::Symbol { sym, .. } if sym.as_ref() == name)
   };
 
+  if strict_types_enabled()
+    && should_emit_project_source_lint(file_ns)
+    && is_constructor_named("map-kv")
+    && let Some(callback) = args.get(1)
+    && inline_callback_has_nil_return_path(callback)
+  {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      "`map-kv` callback uses nil as a legacy drop sentinel; use `filter-map-kv` and return `MapEntryDecision :keep key value` or `MapEntryDecision :drop` on every path",
+      "E_NIL_CALLBACK_SENTINEL",
+      call_stack,
+      call_location,
+    ));
+  }
+
   // `%{} _ (:field value) ...` is the canonical anonymous-struct
   // constructor. Lower it before macro arguments are preprocessed so `_`
   // cannot be mistaken for a normal unresolved symbol.
@@ -2645,6 +2660,56 @@ fn preprocess_list_call(
         ))
       }
     },
+  }
+}
+
+/// Conservatively recognizes only inline callbacks whose return control flow
+/// structurally contains `nil`. A nil nested inside a returned pair is data,
+/// not the legacy `map-kv` drop sentinel, and must remain valid.
+fn inline_callback_has_nil_return_path(callback: &Calcit) -> bool {
+  let Calcit::List(nodes) = callback else {
+    return false;
+  };
+  let body_start = match nodes.first().and_then(source_callable_name) {
+    Some("fn") => 2,
+    Some("defn") => 3,
+    _ => return false,
+  };
+  nodes.len() > body_start && nodes.get(nodes.len() - 1).is_some_and(expression_has_nil_return_path)
+}
+
+fn expression_has_nil_return_path(expr: &Calcit) -> bool {
+  if matches!(expr, Calcit::Nil) {
+    return true;
+  }
+  let Calcit::List(nodes) = expr else {
+    return false;
+  };
+  let Some(head) = nodes.first() else {
+    return false;
+  };
+  match source_callable_name(head) {
+    Some("if") => {
+      // `if` without an else branch manufactures nil when the condition is false.
+      nodes.len() == 3
+        || nodes.get(2).is_some_and(expression_has_nil_return_path)
+        || nodes.get(3).is_some_and(expression_has_nil_return_path)
+    }
+    Some("do" | "let" | "let-sugar" | "&let") => nodes.get(nodes.len() - 1).is_some_and(expression_has_nil_return_path),
+    Some("match") => nodes
+      .iter()
+      .skip(2)
+      .any(|branch| matches!(branch, Calcit::List(pair) if pair.get(1).is_some_and(expression_has_nil_return_path))),
+    _ => false,
+  }
+}
+
+fn source_callable_name(value: &Calcit) -> Option<&str> {
+  match value {
+    Calcit::Symbol { sym, .. } => Some(sym.as_ref()),
+    Calcit::Import(CalcitImport { def, .. }) => Some(def.as_ref()),
+    Calcit::Syntax(name, _) => Some(name.as_ref()),
+    _ => None,
   }
 }
 
@@ -9084,6 +9149,59 @@ mod tests {
     assert_eq!(error.code.as_deref(), Some("E_LEGACY_OPTIONAL_PARAM"));
     assert!(error.msg.contains("Option<T>"));
     assert!(error.location.is_some(), "strict diagnostic should retain the definition location");
+  }
+
+  #[test]
+  fn strict_types_rejects_inline_map_kv_nil_sentinel_without_rejecting_nil_pair_values() {
+    let _state = lock_preprocess_test_state();
+    let callback = Cirru::List(vec![
+      Cirru::leaf("fn"),
+      Cirru::List(vec![Cirru::leaf("k"), Cirru::leaf("v")]),
+      Cirru::List(vec![
+        Cirru::leaf("if"),
+        Cirru::List(vec![Cirru::leaf("nil?"), Cirru::leaf("v")]),
+        Cirru::List(vec![Cirru::leaf("[]"), Cirru::leaf("k"), Cirru::leaf("v")]),
+        Cirru::leaf("nil"),
+      ]),
+    ]);
+    let expr = Cirru::List(vec![Cirru::leaf("map-kv"), Cirru::List(vec![Cirru::leaf("{}")]), callback]);
+    let code = code_to_calcit(&expr, "tests.strict-nil", "map-entries", vec![]).expect("parse map-kv callback");
+
+    {
+      let _compat = StrictTypesGuard::new(false);
+      preprocess_test_expr(&code).expect("compatibility mode should preserve the legacy map-kv sentinel");
+    }
+
+    let _strict = StrictTypesGuard::new(true);
+    let error = preprocess_test_expr(&code).expect_err("strict mode should reject the nil drop sentinel");
+    assert_eq!(error.code.as_deref(), Some("E_NIL_CALLBACK_SENTINEL"));
+    assert!(error.msg.contains("filter-map-kv"));
+    assert!(error.location.is_some(), "strict diagnostic should retain the map-kv call location");
+
+    let nil_value_callback = Cirru::List(vec![
+      Cirru::leaf("fn"),
+      Cirru::List(vec![Cirru::leaf("k"), Cirru::leaf("v")]),
+      Cirru::List(vec![Cirru::leaf("[]"), Cirru::leaf("k"), Cirru::leaf("nil")]),
+    ]);
+    let nil_value_code =
+      code_to_calcit(&nil_value_callback, "tests.strict-nil", "keep-nil-value", vec![]).expect("parse callback that keeps a nil value");
+    assert!(
+      !inline_callback_has_nil_return_path(&nil_value_code),
+      "nil nested in the returned key/value pair is data, not a drop sentinel"
+    );
+
+    let missing_else_callback = Cirru::List(vec![
+      Cirru::leaf("fn"),
+      Cirru::List(vec![Cirru::leaf("k"), Cirru::leaf("v")]),
+      Cirru::List(vec![
+        Cirru::leaf("if"),
+        Cirru::List(vec![Cirru::leaf("nil?"), Cirru::leaf("v")]),
+        Cirru::List(vec![Cirru::leaf("[]"), Cirru::leaf("k"), Cirru::leaf("v")]),
+      ]),
+    ]);
+    let missing_else_code = code_to_calcit(&missing_else_callback, "tests.strict-nil", "implicit-drop", vec![])
+      .expect("parse callback with an implicit nil branch");
+    assert!(inline_callback_has_nil_return_path(&missing_else_code));
   }
 
   #[test]
