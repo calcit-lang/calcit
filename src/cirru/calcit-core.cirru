@@ -2671,13 +2671,23 @@
                   assert= 15 $ / 360 2 3 4
                   assert= 0.5 $ / 2
               :tags $ #{} :core :unit
-        '/= $ %{} 'CodeEntry (:doc "|not equal")
+        '/= $ %{} 'CodeEntry (:doc "|Alias of not= for two values of the same static type. Mixed-type callers must normalize values or narrow them before comparing.")
           :code $ quote
             defn /= (a b) (not= a b)
           :examples $ []
+            quote $ assert= true (/= 1 2)
+            quote $ assert= false (/= :same :same)
           :schema $ :: 'Fn
             {} (:return 'Bool)
-              :args $ [] 'Dynamic 'Dynamic
+              :args $ [] 'T 'T
+              :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |homogeneous-inequality-alias)
+              :code $ quote
+                do
+                  assert= true $ /= 1 2
+                  assert= false $ /= :same :same
+              :tags $ #{} :core :unit
         ': $ %{} 'CodeEntry (:doc "|Macro sugar for anonymous enums. Expands to `::` and normalizes the variant tag with `turn-tag`.")
           :code $ quote
             defmacro : (tag & args)
@@ -2745,7 +2755,7 @@
           :schema $ :: 'Fn
             {} (:rest 'Number) (:return 'Bool)
               :args $ [] 'Number
-        '= $ %{} 'CodeEntry (:doc "|Equality predicate for one or more values\nReturns true only when every provided argument is equal, short-circuiting on the first mismatch.")
+        '= $ %{} 'CodeEntry (:doc "|Equality predicate for one or more values of the same static type. Returns true only when every argument is equal, short-circuiting on the first mismatch. Mixed-type callers must normalize values, use a type predicate for category checks, or pattern-match nominal values before comparing.")
           :code $ quote
             defn = (x & ys)
               if
@@ -2758,8 +2768,17 @@
             quote $ assert= true
               = ([] 1 2) ([] 1 2)
           :schema $ :: 'Fn
-            {} (:rest 'Dynamic) (:return 'Bool)
-              :args $ [] 'Dynamic
+            {} (:rest 'T) (:return 'Bool)
+              :args $ [] 'T
+              :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |homogeneous-variadic-equality)
+              :code $ quote
+                do
+                  assert= true $ = 3 3 3
+                  assert= true $ = ([] 1 2) ([] 1 2)
+                  assert= true $ = (%some 1) (%some 1)
+              :tags $ #{} :core :unit
         '> $ %{} 'CodeEntry (:doc "|Greater-than comparison for one or more numbers\nReturns true only when the value strictly decreases across every argument.")
           :code $ quote
             defn > (x & ys)
@@ -3320,7 +3339,8 @@
                   vb $ gensym |vb
                   quasiquote $ &let (~va ~a)
                     &let (~vb ~b)
-                      if (not= ~va ~vb)
+                      if
+                        not $ &= (unsafe-coerce ~va 'Dynamic) (unsafe-coerce ~vb 'Dynamic)
                         &let () (eprintln) (eprintln "|Left: " ~va)
                           eprintln "|      " $ format-to-lisp (quote ~a)
                           eprintln |Right: ~vb
@@ -6613,7 +6633,7 @@
               :args $ [] 'T
               :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'not= $ %{} 'CodeEntry (:doc "|Returns true when its two arguments are not identical according to `=`.")
+        'not= $ %{} 'CodeEntry (:doc "|Returns true when two values of the same static type are not equal. Mixed-type callers must normalize values or narrow them before comparing.")
           :code $ quote
             defn not= (x y)
               not $ &= x y
@@ -6623,7 +6643,15 @@
             quote $ assert= true (not= |a |b)
           :schema $ :: 'Fn
             {} (:return 'Bool)
-              :args $ [] 'Dynamic 'Dynamic
+              :args $ [] 'T 'T
+              :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |homogeneous-inequality)
+              :code $ quote
+                do
+                  assert= true $ not= |a |b
+                  assert= false $ not= :same :same
+              :tags $ #{} :core :unit
         'noted $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro noted (_doc v) v

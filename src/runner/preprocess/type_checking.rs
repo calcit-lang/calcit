@@ -524,6 +524,7 @@ pub(crate) fn check_user_fn_arg_types(
 
   let fn_def_ns = fn_info.def_ns.clone();
   let fn_name = fn_info.name.clone();
+  let equality_migration = fn_def_ns.as_ref() == crate::calcit::CORE_NS && matches!(fn_name.as_ref(), "=" | "not=" | "/=");
   let def_name = call_info.def_name.to_owned();
   let file_ns_owned = call_info.file_ns.to_owned();
   let ctx = CheckContext {
@@ -538,8 +539,13 @@ pub(crate) fn check_user_fn_arg_types(
     check_warnings,
   };
   check_arg_types_loop(ctx, |arg_idx, expected_str, actual_str, expr_str| {
+    let migration = if equality_migration {
+      "\n  Migration: public equality now requires operands of one static type. Normalize both values, narrow Dynamic/FFI values with a typed adapter, validator, or assert-type, use a type predicate for category checks, or pattern-match nominal values before comparing."
+    } else {
+      ""
+    };
     format!(
-      "[Warn] Function `{fn_def_ns}/{fn_name}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns_owned}/{def_name}\n  Expression: `{expr_str}`"
+      "[Warn] Function `{fn_def_ns}/{fn_name}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns_owned}/{def_name}\n  Expression: `{expr_str}`{migration}"
     )
   });
 }

@@ -192,6 +192,44 @@ fn type_fail_call_arg_fixture_reports_warning_code() {
 }
 
 #[test]
+fn mixed_public_equality_reports_guided_type_mismatches() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries("do\n  = 1 |one\n  = 1 1 |one\n  not= 1 |one\n  /= 1 |one");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("mixed public equality should preprocess with migration warnings, not hard errors");
+
+    let warnings = warnings.borrow();
+    let equality_warnings = warnings
+      .iter()
+      .filter(|warning| {
+        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+          && ["calcit.core/=`", "calcit.core/not=`", "calcit.core//=`"]
+            .iter()
+            .any(|operation| warning.message().contains(operation))
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(
+      equality_warnings.len(),
+      4,
+      "expected fixed and variadic equality warnings: {warnings:?}"
+    );
+    assert!(
+      equality_warnings.iter().all(|warning| {
+        warning
+          .message()
+          .contains("public equality now requires operands of one static type")
+          && warning.message().contains("narrow Dynamic/FFI values")
+          && warning.message().contains("type predicate")
+          && warning.message().contains("pattern-match nominal values")
+      }),
+      "every equality mismatch should carry migration guidance: {equality_warnings:?}"
+    );
+  });
+}
+
+#[test]
 fn option_migration_source_calls_fail_during_preprocessing() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
