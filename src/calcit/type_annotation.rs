@@ -2721,6 +2721,32 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// Check whether this annotation recursively contains one named `TypeVar`.
+  ///
+  /// Generic matching uses this as an occurs-check before recording a binding,
+  /// so a value such as `Optional<T>` cannot bind `T` to a type containing
+  /// itself and make later comparisons recurse forever.
+  fn contains_type_var_named(&self, name: &str) -> bool {
+    match self {
+      Self::TypeVar(current) => current.as_ref() == name,
+      Self::TypeRef(_, args) => args.iter().any(|arg| arg.contains_type_var_named(name)),
+      Self::List(inner)
+      | Self::Set(inner)
+      | Self::Ref(inner)
+      | Self::Optional(inner)
+      | Self::JsNullish(inner)
+      | Self::Variadic(inner) => inner.contains_type_var_named(name),
+      Self::Map(key, value) => key.contains_type_var_named(name) || value.contains_type_var_named(name),
+      Self::Fn(signature) => {
+        signature.arg_types.iter().any(|arg| arg.contains_type_var_named(name))
+          || signature.return_type.contains_type_var_named(name)
+          || signature.rest_type.as_ref().is_some_and(|rest| rest.contains_type_var_named(name))
+      }
+      Self::Struct(_, args) | Self::Enum(_, args) => args.iter().any(|arg| arg.contains_type_var_named(name)),
+      _ => false,
+    }
+  }
+
   /// Try to resolve this type annotation to a concrete `CalcitStructDef` definition.
   /// Works for `Struct(def, _)`, `StructValue(def)`, and `TypeRef("ns/name", _)` that can be
   /// looked up from the program registry.
@@ -3022,6 +3048,7 @@ impl CalcitTypeAnnotation {
           let bound = bound.clone();
           actual.matches_with_bindings(bound.as_ref(), bindings)
         }
+        None if actual.contains_type_var_named(var) => true,
         None => {
           bindings.insert(var.to_owned(), Arc::new(actual.to_owned()));
           true
@@ -3074,6 +3101,7 @@ impl CalcitTypeAnnotation {
           let bound = bound.clone();
           bound.as_ref().matches_with_bindings(expected_type, bindings)
         }
+        None if expected_type.contains_type_var_named(var) => true,
         None => {
           bindings.insert(var.to_owned(), Arc::new(expected_type.to_owned()));
           true
@@ -4529,6 +4557,20 @@ mod tests {
     assert!(type_var.matches_with_bindings(&type_var, &mut bindings));
     assert!(type_var.matches_with_bindings(&type_var, &mut bindings));
     assert!(bindings.is_empty(), "an identical type variable needs no self-binding");
+  }
+
+  #[test]
+  fn nested_type_vars_do_not_create_recursive_occurs_bindings() {
+    let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let optional_type_var = CalcitTypeAnnotation::Optional(type_var);
+    let expected_type_var = CalcitTypeAnnotation::TypeVar(Arc::from("T"));
+    let mut bindings = TypeBindings::new();
+
+    assert!(optional_type_var.matches_with_bindings(&expected_type_var, &mut bindings));
+    assert!(bindings.is_empty(), "T must not be bound to Optional<T>");
+
+    assert!(CalcitTypeAnnotation::Tag.matches_with_bindings(&expected_type_var, &mut bindings));
+    assert_eq!(bindings.get("T").map(AsRef::as_ref), Some(&CalcitTypeAnnotation::Tag));
   }
 
   #[test]
