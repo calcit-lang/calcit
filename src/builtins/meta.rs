@@ -1907,7 +1907,7 @@ pub fn f64_buffer_len(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let [Calcit::F64Buffer(values)] = xs else {
     return CalcitErr::err_nodes(CalcitErrKind::Type, "f64-buffer.len expected one F64Buffer:", xs);
   };
-  if values.len() >= (1usize << 63) {
+  if values.len() as u64 > i64::MAX as u64 {
     return CalcitErr::err_str(
       CalcitErrKind::Unexpected,
       format!("f64-buffer.len length {} does not fit i64", values.len()),
