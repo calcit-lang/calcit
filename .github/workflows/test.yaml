@@ -57,6 +57,8 @@ jobs:
         run: cargo check --lib --target wasm32-unknown-unknown
       - name: "run definition-attached core tests"
         run: cargo run --bin calcit -- src/cirru/calcit-core.cirru test --tag unit
+      - name: "prevent bundled core type-debt regressions"
+        run: cargo run --bin calcit -- src/cirru/calcit-core.cirru analyze quality --baseline config/calcit-core-quality.cirru --format json
       - run: cargo run --bin calcit -- calcit/test.cirru
 
       - name: "verify WASM exports and FFI"

@@ -161,6 +161,7 @@ impl WeakTypeKind {
 pub enum WeakTypeIntent {
   Unresolved,
   IntentionalJsFfi,
+  IntentionalMacroSyntax,
   IntentionalTypeSlotDynamic,
   ExplicitUnsafe,
   DeclaredUnit,
@@ -172,6 +173,7 @@ impl WeakTypeIntent {
     match self {
       Self::Unresolved => "unresolved",
       Self::IntentionalJsFfi => "intentional-js-ffi",
+      Self::IntentionalMacroSyntax => "intentional-macro-syntax",
       Self::IntentionalTypeSlotDynamic => "intentional-type-slot-dynamic",
       Self::ExplicitUnsafe => "explicit-unsafe",
       Self::DeclaredUnit => "declared-unit",
@@ -183,6 +185,7 @@ impl WeakTypeIntent {
     BTreeSet::from([
       Self::Unresolved,
       Self::IntentionalJsFfi,
+      Self::IntentionalMacroSyntax,
       Self::IntentionalTypeSlotDynamic,
       Self::ExplicitUnsafe,
       Self::DeclaredUnit,
@@ -378,13 +381,14 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
     let intent = match item {
       "unresolved" => WeakTypeIntent::Unresolved,
       "intentional-js-ffi" => WeakTypeIntent::IntentionalJsFfi,
+      "intentional-macro-syntax" => WeakTypeIntent::IntentionalMacroSyntax,
       "intentional-type-slot-dynamic" => WeakTypeIntent::IntentionalTypeSlotDynamic,
       "explicit-unsafe" => WeakTypeIntent::ExplicitUnsafe,
       "declared-unit" => WeakTypeIntent::DeclaredUnit,
       "declared-optional" => WeakTypeIntent::DeclaredOptional,
       other => {
         return Err(format!(
-          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi, intentional-type-slot-dynamic, explicit-unsafe, declared-unit, declared-optional"
+          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi, intentional-macro-syntax, intentional-type-slot-dynamic, explicit-unsafe, declared-unit, declared-optional"
         ));
       }
     };
@@ -393,7 +397,7 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
 
   if selected.is_empty() {
     return Err(
-      "Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi, intentional-type-slot-dynamic, explicit-unsafe, declared-unit, declared-optional"
+      "Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi, intentional-macro-syntax, intentional-type-slot-dynamic, explicit-unsafe, declared-unit, declared-optional"
         .to_owned(),
     );
   }
@@ -467,6 +471,16 @@ fn push_weak_type_occurrence(
     path: path.into(),
     unsafe_evidence: None,
   });
+}
+
+fn scan_intentional_macro_expr(annotation: &CalcitTypeAnnotation, path: &str, detail: &str, occurrences: &mut Vec<WeakTypeOccurrence>) {
+  let start = occurrences.len();
+  scan_schema_dynamic_annotation(annotation, path, detail, occurrences);
+  for occurrence in &mut occurrences[start..] {
+    if occurrence.kind == WeakTypeKind::SchemaDynamic && occurrence.intent == WeakTypeIntent::Unresolved {
+      occurrence.intent = WeakTypeIntent::IntentionalMacroSyntax;
+    }
+  }
 }
 
 fn scan_schema_dynamic_annotation(
@@ -548,14 +562,17 @@ fn scan_schema_dynamic_annotation(
     CalcitTypeAnnotation::Macro(signature) => {
       for (idx, contract) in signature.required_inputs.iter().chain(signature.optional_inputs.iter()).enumerate() {
         if let MacroSyntaxType::Expr(semantic) = contract {
-          scan_schema_dynamic_annotation(semantic, &format!("{path}.inputs.{idx}.expr"), detail, occurrences);
+          scan_intentional_macro_expr(semantic, &format!("{path}.inputs.{idx}.expr"), detail, occurrences);
         }
       }
       if let Some(MacroSyntaxType::Expr(semantic)) = &signature.rest_input {
-        scan_schema_dynamic_annotation(semantic, &format!("{path}.rest.expr"), detail, occurrences);
+        scan_intentional_macro_expr(semantic, &format!("{path}.rest.expr"), detail, occurrences);
       }
       match &signature.expansion {
-        MacroExpansionType::Expr(semantic) | MacroExpansionType::Definition(semantic) => {
+        MacroExpansionType::Expr(semantic) => {
+          scan_intentional_macro_expr(semantic, &format!("{path}.expansion"), detail, occurrences);
+        }
+        MacroExpansionType::Definition(semantic) => {
           scan_schema_dynamic_annotation(semantic, &format!("{path}.expansion"), detail, occurrences);
         }
         MacroExpansionType::Dynamic => {
@@ -583,6 +600,9 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
   }
   if occurrence.intent == WeakTypeIntent::IntentionalJsFfi {
     return "Keep the dynamic value isolated at the declared JS FFI boundary and validate or convert it before typed code consumes it.";
+  }
+  if occurrence.intent == WeakTypeIntent::IntentionalMacroSyntax {
+    return "This Dynamic is an explicit open expression boundary inside a strict MacroSignature. Narrow the Expr semantic type when the macro contract guarantees more, but do not replace the phase-aware signature with whole-Dynamic.";
   }
   if occurrence.intent == WeakTypeIntent::IntentionalTypeSlotDynamic {
     return "This slot intentionally resolves to Dynamic for the selected entry. Keep that boundary documented and narrow or validate the value before typed code relies on it.";
@@ -634,6 +654,9 @@ fn weak_type_impact(occurrence: &WeakTypeOccurrence) -> &'static str {
   }
   if occurrence.intent == WeakTypeIntent::IntentionalJsFfi {
     return "The value stays dynamic at an explicit boundary; typed callers must validate or convert it before relying on methods or generic relations.";
+  }
+  if occurrence.intent == WeakTypeIntent::IntentionalMacroSyntax {
+    return "The macro remains phase-aware, but this expression position intentionally accepts or produces any semantic value; callers retain syntax-shape checks while semantic relations stop at this boundary.";
   }
   if occurrence.intent == WeakTypeIntent::IntentionalTypeSlotDynamic {
     return "The selected entry intentionally leaves this slot Dynamic; static relations do not cross this boundary until the value is narrowed or validated.";
@@ -693,7 +716,9 @@ fn entry_schema_issues(ns: &str, def_name: &str, code: &Cirru, schema: &Arc<Calc
   let mut occurrences = vec![];
   scan_schema_dynamic_annotation(annotation, "schema", "root", &mut occurrences);
   for occurrence in occurrences {
-    if has_js_ffi_feature && occurrence.kind == WeakTypeKind::SchemaDynamic {
+    if (has_js_ffi_feature && occurrence.kind == WeakTypeKind::SchemaDynamic)
+      || occurrence.intent == WeakTypeIntent::IntentionalMacroSyntax
+    {
       continue;
     }
     let warning = if occurrence.kind == WeakTypeKind::UnresolvedTypeSlot {
@@ -1258,9 +1283,10 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
   );
   let _ = writeln!(
     out,
-    "- intents: unresolved={} intentional-js-ffi={} intentional-type-slot-dynamic={} explicit-unsafe={} declared-unit={} declared-optional={}",
+    "- intents: unresolved={} intentional-js-ffi={} intentional-macro-syntax={} intentional-type-slot-dynamic={} explicit-unsafe={} declared-unit={} declared-optional={}",
     intent_count.get("unresolved").copied().unwrap_or(0),
     intent_count.get("intentional-js-ffi").copied().unwrap_or(0),
+    intent_count.get("intentional-macro-syntax").copied().unwrap_or(0),
     intent_count.get("intentional-type-slot-dynamic").copied().unwrap_or(0),
     intent_count.get("explicit-unsafe").copied().unwrap_or(0),
     intent_count.get("declared-unit").copied().unwrap_or(0),
@@ -2655,6 +2681,7 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
   for intent in [
     "unresolved",
     "intentional-js-ffi",
+    "intentional-macro-syntax",
     "intentional-type-slot-dynamic",
     "explicit-unsafe",
     "declared-unit",
@@ -2800,12 +2827,18 @@ pub fn format_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapsh
 
 #[cfg(test)]
 mod tests {
+  use std::collections::HashSet;
   use std::sync::Arc;
 
-  use calcit::calcit::{CalcitTypeAnnotation, clear_type_slots, push_type_slot_override};
+  use calcit::calcit::{
+    CalcitTypeAnnotation, MacroExpansionType, MacroSignature, MacroSyntaxType, clear_type_slots, push_type_slot_override,
+  };
   use cirru_parser::Cirru;
 
-  use super::{WeakTypeIntent, WeakTypeKind, classify_unsafe_coerce_source, is_raw_adapter_namespace, scan_schema_dynamic_annotation};
+  use super::{
+    WeakTypeIntent, WeakTypeKind, classify_unsafe_coerce_source, entry_schema_issues, is_raw_adapter_namespace,
+    scan_schema_dynamic_annotation,
+  };
 
   fn leaf(value: &str) -> Cirru {
     Cirru::Leaf(Arc::from(value))
@@ -2819,6 +2852,71 @@ mod tests {
     let mut occurrences = vec![];
     scan_schema_dynamic_annotation(&annotation, "schema", "root", &mut occurrences);
     occurrences
+  }
+
+  fn macro_schema(
+    required_inputs: Vec<MacroSyntaxType>,
+    rest_input: Option<MacroSyntaxType>,
+    expansion: MacroExpansionType,
+  ) -> CalcitTypeAnnotation {
+    CalcitTypeAnnotation::Macro(Arc::new(MacroSignature {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      required_inputs: Arc::new(required_inputs),
+      optional_inputs: Arc::new(vec![]),
+      rest_input,
+      expansion,
+      capabilities: Arc::new(HashSet::new()),
+      features: Arc::new(HashSet::new()),
+    }))
+  }
+
+  #[test]
+  fn open_expr_positions_in_strict_macros_have_intentional_syntax_intent() {
+    let annotation = macro_schema(
+      vec![MacroSyntaxType::Expr(Arc::new(CalcitTypeAnnotation::Dynamic))],
+      Some(MacroSyntaxType::Expr(Arc::new(CalcitTypeAnnotation::Dynamic))),
+      MacroExpansionType::Expr(Arc::new(CalcitTypeAnnotation::Dynamic)),
+    );
+
+    let occurrences = scan(annotation.clone());
+
+    assert_eq!(occurrences.len(), 3);
+    assert!(
+      occurrences
+        .iter()
+        .all(|occurrence| occurrence.intent == WeakTypeIntent::IntentionalMacroSyntax)
+    );
+    let issues = entry_schema_issues(
+      "app.main",
+      "open-macro",
+      &list(vec![
+        leaf("defmacro"),
+        leaf("open-macro"),
+        list(vec![leaf("x"), leaf("&"), leaf("xs")]),
+        leaf("body"),
+      ]),
+      &Arc::new(annotation),
+    );
+    assert!(
+      issues.is_empty(),
+      "reviewed Expr<Dynamic> boundaries should not be unresolved: {issues:?}"
+    );
+  }
+
+  #[test]
+  fn whole_dynamic_macro_expansions_and_definitions_remain_unresolved() {
+    let dynamic_expansion = scan(macro_schema(vec![], None, MacroExpansionType::Dynamic));
+    let dynamic_definition = scan(macro_schema(
+      vec![],
+      None,
+      MacroExpansionType::Definition(Arc::new(CalcitTypeAnnotation::Dynamic)),
+    ));
+
+    assert_eq!(dynamic_expansion.len(), 1);
+    assert_eq!(dynamic_expansion[0].intent, WeakTypeIntent::Unresolved);
+    assert_eq!(dynamic_definition.len(), 1);
+    assert_eq!(dynamic_definition[0].intent, WeakTypeIntent::Unresolved);
   }
 
   #[test]

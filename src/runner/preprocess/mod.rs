@@ -271,6 +271,7 @@ pub struct PreprocessContext<'a> {
   file_ns: &'a str,
   check_warnings: &'a RefCell<Vec<LocatedWarning>>,
   call_stack: &'a CallStackList,
+  call_location: Option<NodeLocation>,
 }
 
 impl<'a> PreprocessContext<'a> {
@@ -287,6 +288,7 @@ impl<'a> PreprocessContext<'a> {
       file_ns,
       check_warnings,
       call_stack,
+      call_location: None,
     }
   }
 }
@@ -2135,6 +2137,7 @@ fn preprocess_list_call(
         }
         CalcitSyntax::Defn | CalcitSyntax::Defmacro | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+          ctx.call_location = call_location.clone();
           Ok(preprocess_defn(name, name_ns, &args, &mut ctx)?)
         }
         CalcitSyntax::CoreLet => {
@@ -6418,7 +6421,7 @@ fn reject_strict_nil_for_unit_return(
   file_ns: &str,
   def_name: &str,
   call_stack: &CallStackList,
-  fallback_location: Option<NodeLocation>,
+  call_location: Option<NodeLocation>,
 ) -> Result<(), CalcitErr> {
   if !strict_types_enabled()
     || !should_emit_project_source_lint(file_ns)
@@ -6445,8 +6448,8 @@ fn reject_strict_nil_for_unit_return(
     "E_NIL_FOR_UNIT",
     call_stack,
     find_preferred_macro_location(call_stack)
-      .or_else(|| returned_expr.get_location())
-      .or(fallback_location),
+      .or(call_location)
+      .or_else(|| returned_expr.get_location()),
   ))
 }
 
@@ -6694,7 +6697,7 @@ pub fn preprocess_defn(
         ctx.file_ns,
         def_name.as_ref(),
         ctx.call_stack,
-        Some(definition_location.clone()),
+        ctx.call_location.clone().or(Some(definition_location.clone())),
       )?;
       check_function_return_type(
         &processed_body,
@@ -8650,6 +8653,24 @@ mod tests {
     }
   }
 
+  struct StackTrackingGuard {
+    prev: bool,
+  }
+
+  impl StackTrackingGuard {
+    fn new(enabled: bool) -> Self {
+      let prev = crate::call_stack::using_stack();
+      crate::call_stack::set_using_stack(enabled);
+      Self { prev }
+    }
+  }
+
+  impl Drop for StackTrackingGuard {
+    fn drop(&mut self) {
+      crate::call_stack::set_using_stack(self.prev);
+    }
+  }
+
   fn legacy_optional_definition() -> Calcit {
     let expr = Cirru::List(vec![
       Cirru::leaf("defn"),
@@ -8744,6 +8765,34 @@ mod tests {
     assert_eq!(error.code.as_deref(), Some("E_NIL_FOR_UNIT"));
     assert!(error.msg.contains("&unit"));
     assert!(error.location.is_some());
+  }
+
+  #[test]
+  fn strict_types_rejects_legacy_nil_hint_and_keeps_call_location_without_stack_tracking() {
+    let _state = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+    let _stack_tracking = StackTrackingGuard::new(false);
+    let expr = Cirru::List(vec![
+      Cirru::leaf("defn"),
+      Cirru::leaf("unit-step"),
+      Cirru::List(vec![]),
+      Cirru::List(vec![
+        Cirru::leaf("hint-fn"),
+        Cirru::List(vec![
+          Cirru::leaf("{}"),
+          Cirru::List(vec![Cirru::leaf(":return"), Cirru::leaf("'Unit")]),
+        ]),
+      ]),
+      Cirru::List(vec![Cirru::leaf("hint-fn")]),
+    ]);
+    let code = code_to_calcit(&expr, "tests.strict-nil", "unit-step", vec![7]).expect("parse legacy nil definition");
+
+    let error = preprocess_test_expr(&code).expect_err("strict mode should reject legacy `;nil` expansion");
+    assert_eq!(error.code.as_deref(), Some("E_NIL_FOR_UNIT"));
+    let location = error
+      .location
+      .expect("strict diagnostic should retain the definition call location");
+    assert_eq!(location.coord.as_ref(), &vec![7]);
   }
 
   #[test]

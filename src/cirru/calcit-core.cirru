@@ -3134,13 +3134,15 @@
               :code $ quote
                 assert= 4 $ abs -4
               :tags $ #{} :core :unit
-        'add-watch $ %{} 'CodeEntry (:doc "|internal function for adding atom watchers\nSyntax: (add-watch atom key callback)\nParams: atom (atom), key (any), callback (function)\nReturns: &unit\nAdds watcher function to atom")
+        'add-watch $ %{} 'CodeEntry (:doc "|Register a watcher on a Ref<T>. Syntax: (add-watch ref tag-key callback). The key must be a Tag. The callback receives (new-value old-value), returns Unit, and add-watch itself returns Unit.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
-              :args $ [] (:: 'Ref 'T) 'K 'Fn
-              :generics $ [] 'T 'K
+              :args $ [] (:: 'Ref 'T) 'Tag
+                :: 'Fn $ {} (:return 'Unit)
+                  :args $ [] 'T 'T
+              :generics $ [] 'T
           :tags $ #{} :builtin :internal :state :watch
         'and $ %{} 'CodeEntry (:doc "|Logical conjunction macro with short-circuit semantics\nReturns the first falsy value or the last truthy value, evaluating expressions left to right.")
           :code $ quote
@@ -5176,21 +5178,56 @@
                 :: 'Fn $ {} (:return 'Bool)
                   :args $ [] 'T 'T
               :generics $ [] 'T
-        'foldl-shortcut $ %{} 'CodeEntry (:doc "|internal function for left fold with shortcut\nSyntax: (foldl-shortcut list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from left with early termination support")
+        'foldl-shortcut $ %{} 'CodeEntry (:doc "|Internal left fold with early termination. Syntax: (foldl-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Dynamic 'Dynamic 'Fn
+            {} (:return 'U)
+              :args $ [] (:: 'List 'T) 'U 'U
+                :: 'Fn $ {} (:return 'Enum)
+                  :args $ [] 'U 'T
+              :generics $ [] 'T 'U
           :tags $ #{} :builtin :internal
-        'foldr-shortcut $ %{} 'CodeEntry (:doc "|internal function for right fold with shortcut\nSyntax: (foldr-shortcut list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from right with early termination support")
+          :tests $ []
+            %{} 'TestEntry (:name |returns-shortcut-accumulator)
+              :code $ quote
+                assert= 3 $ foldl-shortcut ([] 1 2 3) 0 99
+                  fn (acc x)
+                    let
+                        next $ + acc x
+                      :: (&= x 2) next
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-default-without-shortcut)
+              :code $ quote
+                assert= 99 $ foldl-shortcut ([] 1 2 3) 0 99
+                  fn (acc x)
+                    :: false $ + acc x
+              :tags $ #{} :core :unit
+        'foldr-shortcut $ %{} 'CodeEntry (:doc "|Internal right fold with early termination. Syntax: (foldr-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] (:: 'List 'T) 'Dynamic 'Fn
-              :generics $ [] 'T
+            {} (:return 'U)
+              :args $ [] (:: 'List 'T) 'U 'U
+                :: 'Fn $ {} (:return 'Enum)
+                  :args $ [] 'U 'T
+              :generics $ [] 'T 'U
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-shortcut-accumulator)
+              :code $ quote
+                assert= 5 $ foldr-shortcut ([] 1 2 3) 0 99
+                  fn (acc x)
+                    let
+                        next $ + acc x
+                      :: (&= x 2) next
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-default-without-shortcut)
+              :code $ quote
+                assert= 99 $ foldr-shortcut ([] 1 2 3) 0 99
+                  fn (acc x)
+                    :: false $ + acc x
+              :tags $ #{} :core :unit
         'format-cirru $ %{} 'CodeEntry (:doc "|internal function for formatting Cirru\nSyntax: (format-cirru data)\nParams: data (list)\nReturns: string\nFormats nested list structure into Cirru syntax text")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -6349,7 +6386,7 @@
                       [] (&list:first pair)
                         + 10 $ &list:last pair
               :tags $ #{} :core :unit
-        'map-indexed $ %{} 'CodeEntry (:doc "|Map over a collection with index, f takes index and value")
+        'map-indexed $ %{} 'CodeEntry (:doc "|Map over a List<T> with indices. The callback receives (index value), and the result is List<U>.")
           :code $ quote
             defn map-indexed (xs f)
               foldl xs ([])
@@ -6370,8 +6407,12 @@
               map-indexed ([] |a |b)
                 fn (i x) ([] i x)
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Fn
+            {}
+              :args $ [] (:: 'List 'T)
+                :: 'Fn $ {} (:return 'U)
+                  :args $ [] 'Number 'T
+              :generics $ [] 'T 'U
+              :return $ :: 'List 'U
           :tests $ []
             %{} 'TestEntry (:name |passes-index-and-value)
               :code $ quote

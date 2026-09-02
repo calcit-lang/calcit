@@ -36,22 +36,21 @@ calcit calcit.cirru analyze quality
 存量项目先审阅当前结果并写入 baseline，随后在 CI 中只执行比较命令：
 
 ```bash
-calcit calcit.cirru analyze quality --write-baseline config/calcit-quality.json
-calcit calcit.cirru analyze quality --baseline config/calcit-quality.json
+calcit calcit.cirru analyze quality --write-baseline config/calcit-quality.cirru
+calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 ```
 
 门禁同时覆盖未完整类型、unresolved Dynamic、未迁移的 nil/Optional、deprecated calls 与显式 `unsafe-coerce`。`unsafeCoerce` 是独立的 host-boundary 预算，不能当作已解决的 Dynamic。原生 v2 baseline 按 definition 保存预算，新债务不能被其他 definition 的改善抵消；旧 v1/扁平 baseline 仍只执行它们原来的八项指标，审阅后重新生成 baseline 才会启用这个新预算。`--write-baseline` 只用于明确审阅后的更新，不应作为每次 CI 的前置步骤。需要机器读取时追加 `--format json`，失败时 stdout 仍是单个 JSON，进度与错误摘要写入 stderr。
 
-baseline 是已提交的机器生成工件。为避免它的 JSON diff 默认占据 PR 视图，可在项目根目录的
-`.gitattributes` 加入与 `yarn.lock` 相同的生成物标记：
+baseline 是已提交的 Cirru EDN 机器生成工件。为使 GitHub 语言统计忽略其行数，同时保留文本 diff，
+可在项目根目录的 `.gitattributes` 加入生成物标记：
 
 ```gitattributes
-config/calcit-quality.json -diff linguist-generated
+config/*-quality.cirru text linguist-generated=true
 ```
 
-这不会忽略或删除 baseline；GitHub 只会默认折叠其 diff。`-diff` 同时会让本地 Git 默认不生成
-该文件的文本 diff；如果本地审阅优先，可省略 `-diff`，只保留 `linguist-generated`。更新
-baseline 的 PR 仍应展开文件并按 definition 审阅预算变化。
+这不会忽略或删除 baseline；文件仍保留文本 diff，但不计入语言统计。只有外部工具明确要求 JSON
+时才使用 `.json` 输出路径。更新 baseline 的 PR 仍应按 definition 审阅预算变化。
 
 ## Option / Result 组合
 

@@ -544,27 +544,23 @@ calcit calcit.cirru analyze quality
 存量项目先审阅现状并生成原生 baseline，再在 CI 中执行比较：
 
 ```bash
-calcit calcit.cirru analyze quality --write-baseline config/calcit-quality.json
-calcit calcit.cirru analyze quality --baseline config/calcit-quality.json
+calcit calcit.cirru analyze quality --write-baseline config/calcit-quality.cirru
+calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 ```
 
 原生 v2 baseline 记录 scope、汇总指标和每个 definition 的独立预算，并将 `unsafeCoerce` 作为单独的 host-boundary 预算。新增 definition 默认预算为零；
 一个 definition 的改善不能掩盖另一个 definition 的回归。`--write-baseline` 会原子写入文件，
 但 baseline 仍需人工审阅并随仓库提交，每次提高都要在 PR 中解释。
 
-例如把首次审阅后的上限提交为 `config/calcit-upgrade-baseline.json`：
+例如把首次审阅后的上限提交为 `config/calcit-upgrade-baseline.cirru`：
 
-```json
-{
-  "typeNone": 4,
-  "typeNotFull": 22,
-  "schemaDynamic": 21,
-  "codeDynamic": 0,
-  "codeNil": 22,
-  "unresolved": 43,
-  "declaredOptional": 0,
-  "deprecatedCalls": 0
-}
+```cirru
+{} (:typeNone 4) (:typeNotFull 22) (:schemaDynamic 21)
+  :codeDynamic 0
+  :codeNil 22
+  :unresolved 43
+  :declaredOptional 0
+  :deprecatedCalls 0
 ```
 
 这个旧版扁平 shape 仍可直接传给 `analyze quality --baseline`，便于已有项目删除 Node 检查脚本后
@@ -654,7 +650,7 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
         calcit calcit.cirru --entry "$entry" analyze dynamic-methods --max 0
       fi
     done < <(calcit calcit.cirru config show | awk '/^Snapshot Entries:/{in_entries=1; next} in_entries && /^  [^ ]/{print $1}')
-    calcit calcit.cirru analyze quality --baseline config/calcit-quality.json
+    calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 
 - name: Run project tests
   run: |

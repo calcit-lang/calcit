@@ -46,7 +46,7 @@ The static analysis system provides:
 - **Type annotations** - Optional type hints for function parameters and return values
 - **Compile-time warnings** - Catches errors before code execution
 - **Completion warnings** - Keeps scaffolded `todo!` paths visible to Agents
-- **CI quality gate**: `calcit analyze quality --baseline config/calcit-quality.json`
+- **CI quality gate**: `calcit analyze quality --baseline config/calcit-quality.cirru`
 - **Composable runtime assertions** - `assert-type` and `assert-traits` can validate values at runtime and return original values for chaining
 
 ## Static Project Reports
@@ -73,8 +73,8 @@ calcit analyze dynamic-methods --max 4 --summary-only --format json
 calcit analyze quality
 
 # Bootstrap and enforce a reviewed baseline for an existing project
-calcit analyze quality --write-baseline config/calcit-quality.json
-calcit analyze quality --baseline config/calcit-quality.json
+calcit analyze quality --write-baseline config/calcit-quality.cirru
+calcit analyze quality --baseline config/calcit-quality.cirru
 
 # Focus only on unresolved type debt
 calcit analyze weak-types --ns app.main --intent unresolved
@@ -118,7 +118,7 @@ For a strict-only release check, load every resolved dependency with `--deps`; l
 calcit calcit.cirru analyze check-types --deps --summary-only --format json
 ```
 
-An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. A selected entry binding of `:type-slots` to `:dynamic` stays visible as `intentional-type-slot-dynamic`. Neither hides the location, but both separate an explicit boundary choice from unresolved type debt. The FFI feature does not classify `nil`, because an FFI capability does not imply that every nullable branch is intentional.
+An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. A strict `MacroSignature` classifies `Dynamic` nested specifically inside `Expr<...>` inputs or expansion as `intentional-macro-syntax`: the phase-aware syntax contract remains checked, while the semantic value is deliberately open. Whole-Dynamic macro schemas, `Dynamic` expansions, and `Definition<Dynamic>` remain unresolved. A selected entry binding of `:type-slots` to `:dynamic` stays visible as `intentional-type-slot-dynamic`. These intent classes do not hide locations or remove schema-Dynamic coverage inventory; they separate reviewed boundary choices from unresolved type debt. The FFI feature does not classify `nil`, because an FFI capability does not imply that every nullable branch is intentional.
 
 For `code-nil`, the report includes raw `nil` and the legacy `;nil` compatibility marker. Nil and Unit are distinct: only structurally proven return positions in a function declared to return `Unit` are classified as `declared-unit`, and those findings are migration debt because the returned value is still Nil. Intermediate nil values remain unresolved. The same return-position rule applies to legacy `Optional<T>` as `declared-optional`. The explicit `&unit` literal is the canonical Unit value and is not nil debt. In `--strict-types`, a statically Nil return for a declared Unit function fails during preprocessing with `E_NIL_FOR_UNIT`; ordinary mode retains the existing return-mismatch warning for migration. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-unit,declared-optional` and requires no findings.
 
@@ -132,7 +132,9 @@ For one expression, `calcit query type-at '<ns/def>' --path code@... --format js
 
 `analyze dynamic-methods` reports only `P_DYNAMIC_METHOD_DISPATCH` and `P_DYNAMIC_POSTFIX_METHOD`; ordinary type warnings and JS FFI diagnostics do not contaminate its count. Project namespaces are the default scope, while `--deps` includes reachable modules. `--summary-only` omits individual findings. `--max <count>` turns the report into a focused CI policy and emits `E_DYNAMIC_METHOD_POLICY` with a non-zero status when the count grows beyond the reviewed budget. A receiver made concrete by normal inference, a trait constraint, or an explicit reviewed `unsafe-coerce` boundary is not unresolved dispatch.
 
-`analyze quality` combines the release-facing metrics from `check-types`, `weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce --intent unresolved,declared-unit,declared-optional,explicit-unsafe`, and `deprecated`. `unsafeCoerce` is an independent budget for explicit host assertions; it is not folded into unresolved Dynamic debt. With no baseline it is a zero-debt gate. `--baseline <file>` compares against a committed baseline and exits non-zero on regression; `--write-baseline <file>` atomically writes a reviewed native baseline. Native v2 baselines keep budgets per definition, so improving one definition cannot hide new debt in another. Native v1 and the older flat eight-metric shape remain readable and preserve their original eight-metric enforcement; v1 is reported as `native-baseline-v1` and does not claim an `unsafeCoerce` delta. Regenerate a reviewed baseline to adopt that budget. Scope flags (`--ns`, `--ns-prefix`, `--deps`) are recorded in native baselines and must match when they are enforced.
+`analyze quality` combines the release-facing metrics from `check-types`, `weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce --intent unresolved,intentional-macro-syntax,declared-unit,declared-optional,explicit-unsafe`, and `deprecated`. Intentional macro syntax remains in the `schemaDynamic` budget so new open macro positions cannot bypass review, while only unresolved positions increment the `unresolved` budget. `unsafeCoerce` is an independent budget for explicit host assertions; it is not folded into unresolved Dynamic debt. With no baseline it is a zero-debt gate. `--baseline <file>` compares against a committed baseline and exits non-zero on regression; `--write-baseline <file>` atomically writes a reviewed native baseline. Native v2 baselines keep budgets per definition, so improving one definition cannot hide new debt in another. Native v1 and the older flat eight-metric shape remain readable and preserve their original eight-metric enforcement; v1 is reported as `native-baseline-v1` and does not claim an `unsafeCoerce` delta. Regenerate a reviewed baseline to adopt that budget. Scope flags (`--ns`, `--ns-prefix`, `--deps`) are recorded in native baselines and must match when they are enforced.
+
+Calcit's bundled Cirru core uses `config/calcit-core-quality.cirru` as a per-definition Cirru EDN migration baseline. `yarn check-core-quality`, the pull-request workflow, and the release workflow reject new or increased Dynamic/type-coverage debt while existing contracts are migrated incrementally. After a reviewed cleanup, regenerate the baseline with `calcit src/cirru/calcit-core.cirru analyze quality --write-baseline config/calcit-core-quality.cirru --format json`; never regenerate it merely to make an unexplained regression pass. A `.json` output path remains available only for external tooling that explicitly requires JSON. Track retained open boundaries and cleanup batches in [calcit#579](https://github.com/calcit-lang/calcit/issues/579).
 
 `analyze deprecated` scans calls to definitions tagged `:deprecated`. It reports every calling definition and a stable `code@...` path, and includes the target definition's documentation so migrations can be automated without maintaining a second hard-coded legacy API list. Use `--summary-only --format json` for migration gates that only need aggregate counts.
 
