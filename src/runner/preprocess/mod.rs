@@ -2048,6 +2048,17 @@ fn preprocess_list_call(
           if matches!(method_kind, calcit::MethodKind::Invoke(_))
             && let Some((receiver_requirement, helper_hint)) = dynamic_nominal_method_requirement(method_name.as_ref())
           {
+            if strict_types_enabled() && should_emit_project_source_lint(file_ns) {
+              return Err(CalcitErr::use_msg_stack_location_with_code(
+                CalcitErrKind::Type,
+                format!(
+                  "postfix nominal method `.{method_name}` cannot dispatch on a Dynamic receiver; provide a statically known {receiver_requirement} schema or call {helper_hint} at an explicit open boundary"
+                ),
+                "E_DYNAMIC_POSTFIX_METHOD",
+                call_stack,
+                location.clone(),
+              ));
+            }
             let message = format!(
               "[Warn] postfix nominal method `.{method_name}` requires a statically known {receiver_requirement} receiver in {file_ns}/{def_name}, but the receiver is Dynamic; narrow it with a schema/assertion before using method syntax, or call {helper_hint} at an intentional Dynamic boundary"
             );
@@ -2727,7 +2738,15 @@ fn preprocess_list_call(
           warn_on_untyped_js_ffi_field_access(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
           warn_on_nominal_enum_legacy_absence_use(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
           warn_on_legacy_js_nullish_predicate(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
-          warn_on_dynamic_trait_call(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
+          reject_or_warn_on_dynamic_trait_call(
+            call_head,
+            &processed_args,
+            scope_types,
+            file_ns,
+            def_name.as_ref(),
+            check_warnings,
+            call_stack,
+          )?;
           warn_on_method_name_conflict(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
         }
 
@@ -4509,28 +4528,25 @@ fn expected_method_argument_types(type_value: &CalcitTypeAnnotation, method_name
   )
 }
 
-fn warn_on_dynamic_trait_call(
+fn reject_or_warn_on_dynamic_trait_call(
   head: &Calcit,
   args: &CalcitList,
   scope_types: &ScopeTypes,
   file_ns: &str,
   def_name: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
-) {
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
   if file_ns == calcit::CORE_NS {
-    return;
-  }
-
-  if !warn_dyn_method_enabled() {
-    return;
+    return Ok(());
   }
 
   let Calcit::Method(method_name, calcit::MethodKind::Invoke(_) | calcit::MethodKind::ExternalInvoke(_)) = head else {
-    return;
+    return Ok(());
   };
 
   let Some(receiver) = args.first() else {
-    return;
+    return Ok(());
   };
 
   let receiver_type = resolve_type_value(receiver, scope_types);
@@ -4541,7 +4557,26 @@ fn warn_on_dynamic_trait_call(
   };
 
   if !warn {
-    return;
+    return Ok(());
+  }
+
+  if strict_types_enabled()
+    && should_emit_project_source_lint(file_ns)
+    && let Some((receiver_requirement, helper_hint)) = dynamic_nominal_method_requirement(method_name.as_ref())
+  {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "nominal method `.{method_name}` cannot dispatch on a Dynamic receiver; provide a statically known {receiver_requirement} schema or call {helper_hint} at an explicit open boundary"
+      ),
+      "E_DYNAMIC_METHOD_DISPATCH",
+      call_stack,
+      head.get_location().or_else(|| receiver.get_location()),
+    ));
+  }
+
+  if !warn_dyn_method_enabled() {
+    return Ok(());
   }
 
   let message = format!(
@@ -4553,6 +4588,7 @@ fn warn_on_dynamic_trait_call(
   } else {
     gen_check_warning_code(message, "P_DYNAMIC_METHOD_DISPATCH", file_ns, check_warnings);
   }
+  Ok(())
 }
 
 fn warn_on_nullable_js_ffi_dereference(
@@ -10200,6 +10236,51 @@ mod tests {
       warnings.iter().all(|warning| warning.code() != Some("P_DYNAMIC_POSTFIX_METHOD")),
       "the unconditional diagnostic should not be duplicated by the opt-in policy warning"
     );
+  }
+
+  #[test]
+  fn strict_types_reject_dynamic_nominal_method_dispatch_in_both_call_forms() {
+    let _lock = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+    let _warn_guard = WarnDynMethodGuard::new(false);
+
+    for (expr, expected_code) in [
+      (
+        Cirru::List(vec![Cirru::leaf("receiver"), Cirru::leaf(".unwrap-or"), Cirru::leaf("0")]),
+        "E_DYNAMIC_POSTFIX_METHOD",
+      ),
+      (
+        Cirru::List(vec![Cirru::leaf(".unwrap-or"), Cirru::leaf("receiver"), Cirru::leaf("0")]),
+        "E_DYNAMIC_METHOD_DISPATCH",
+      ),
+    ] {
+      let code = code_to_calcit(&expr, "tests.dynamic-option-strict", "main", vec![]).expect("parse dynamic nominal call");
+      let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+      scope_defs.insert(Arc::from("receiver"));
+      let mut scope_types: ScopeTypes = ScopeTypes::new();
+      let warnings = RefCell::new(vec![]);
+      let stack = CallStackList::default();
+
+      let error = preprocess_expr(
+        &code,
+        &scope_defs,
+        &mut scope_types,
+        "tests.dynamic-option-strict",
+        &warnings,
+        &stack,
+      )
+      .expect_err("strict mode should reject nominal method dispatch on a Dynamic receiver");
+      assert_eq!(error.code.as_deref(), Some(expected_code));
+      assert!(error.msg.contains("`.unwrap-or`"), "method should be named: {error:?}");
+      assert!(
+        error.msg.contains("statically known Option or Result schema"),
+        "receiver migration should be actionable: {error:?}"
+      );
+      assert!(
+        error.msg.contains("`option:*` or `result:*`"),
+        "explicit-boundary alternative should be named: {error:?}"
+      );
+    }
   }
 
   #[test]
