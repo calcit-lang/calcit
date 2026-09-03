@@ -109,7 +109,7 @@ const scenarios = [
       "json",
     ],
     check(result) {
-      if (result.schema_version !== 1 || result.command !== "query.type-at") {
+      if (result.schema_version !== 2 || result.command !== "query.type-at") {
         throw new Error("unexpected query.type-at envelope");
       }
       if (result.data.inferred_type !== "'Number" || result.data.expected_type !== "'Number") {
