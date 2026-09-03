@@ -7215,6 +7215,23 @@ pub fn preprocess_defn(
         info.at_def.to_owned(),
         location.to_owned().unwrap_or_default(),
       );
+      let body_fn_hint = args
+        .iter()
+        .skip(2)
+        .find_map(CalcitTypeAnnotation::extract_fn_annotation_from_hint_form)
+        .and_then(|annotation| match annotation.as_ref() {
+          CalcitTypeAnnotation::Fn(fn_annotation) => Some(fn_annotation.clone()),
+          _ => None,
+        });
+      reject_strict_whole_dynamic_public_schema(
+        head,
+        ctx.file_ns,
+        def_name.as_ref(),
+        &def_schema,
+        body_fn_hint.is_some(),
+        ctx.call_stack,
+        Some(definition_location.clone()),
+      )?;
       reject_strict_unbound_type_slot_schema(
         ctx.file_ns,
         def_name.as_ref(),
@@ -7252,14 +7269,6 @@ pub fn preprocess_defn(
       // Inject declared argument types into the function body. Call-site checks alone are not
       // enough: without these bindings, local method dispatch and return inference inside a named
       // `defn` unnecessarily fall back to Dynamic. Anonymous callbacks still use EXPECTED_FN_TYPE.
-      let body_fn_hint = args
-        .iter()
-        .skip(2)
-        .find_map(CalcitTypeAnnotation::extract_fn_annotation_from_hint_form)
-        .and_then(|annotation| match annotation.as_ref() {
-          CalcitTypeAnnotation::Fn(fn_annotation) => Some(fn_annotation.clone()),
-          _ => None,
-        });
       let effective_fn_schema: Option<Arc<CalcitFnTypeAnnotation>> = body_fn_hint.or_else(|| match def_schema.as_ref() {
         CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.clone()),
         CalcitTypeAnnotation::Dynamic => EXPECTED_FN_TYPE.with(|cell| cell.borrow().clone()),
@@ -8217,6 +8226,45 @@ fn find_unbound_type_slot_schema(annotation: &Arc<CalcitTypeAnnotation>, path: &
     }
     _ => None,
   })
+}
+
+fn reject_strict_whole_dynamic_public_schema(
+  head: &CalcitSyntax,
+  ns: &str,
+  def_name: &str,
+  schema: &Arc<CalcitTypeAnnotation>,
+  has_embedded_fn_schema: bool,
+  call_stack: &CallStackList,
+  definition_location: Option<NodeLocation>,
+) -> Result<(), CalcitErr> {
+  if !strict_types_enabled()
+    || !should_emit_project_source_lint(ns)
+    || !matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic)
+    || has_embedded_fn_schema
+  {
+    return Ok(());
+  }
+
+  let (contract_kind, canonical_schema) = if matches!(head, CalcitSyntax::Defmacro) {
+    ("macro", "Macro")
+  } else {
+    ("function", "Fn")
+  };
+  let declaration = if crate::snapshot::schema_annotation_is_missing(schema) {
+    format!("has no declared {contract_kind} schema")
+  } else {
+    format!("declares a whole-Dynamic {contract_kind} schema")
+  };
+
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!(
+      "{ns}/{def_name} {declaration} at schema, so its contract cannot be checked; declare a structured `{canonical_schema}` schema and keep `Dynamic` only in individual argument, return, or `Expr<Dynamic>` positions for a reviewed open boundary"
+    ),
+    "E_WHOLE_DYNAMIC_PUBLIC_SCHEMA",
+    call_stack,
+    find_preferred_macro_location(call_stack).or(definition_location),
+  ))
 }
 
 fn reject_strict_unbound_type_slot_schema(
@@ -14592,6 +14640,99 @@ mod tests {
       .expect("explicit Dynamic type-slot opt-out should be accepted");
     reject_strict_unbound_type_slot_schema("tests.schema", "dispatch", &schema, &CallStackList::default(), None)
       .expect("an explicit entry-level Dynamic binding remains visible to quality inventory without an unbound-slot error");
+  }
+
+  #[test]
+  fn strict_types_reject_whole_dynamic_contracts_but_allow_structured_open_positions() {
+    let _state = lock_preprocess_test_state();
+    let location = NodeLocation::new("tests.schema".into(), "open-call".into(), Arc::new(vec![4]));
+    let missing_schema = calcit::DYNAMIC_TYPE.clone();
+    let explicit_dynamic_schema = Arc::new(CalcitTypeAnnotation::Dynamic);
+
+    {
+      let _compat = StrictTypesGuard::new(false);
+      reject_strict_whole_dynamic_public_schema(
+        &CalcitSyntax::Defn,
+        "tests.schema",
+        "open-call",
+        &missing_schema,
+        false,
+        &CallStackList::default(),
+        Some(location.clone()),
+      )
+      .expect("compatibility mode should retain missing schemas during migration");
+      reject_strict_whole_dynamic_public_schema(
+        &CalcitSyntax::Defn,
+        "tests.schema",
+        "open-call",
+        &explicit_dynamic_schema,
+        false,
+        &CallStackList::default(),
+        Some(location.clone()),
+      )
+      .expect("compatibility mode should retain explicitly whole-Dynamic schemas during migration");
+    }
+
+    let _strict = StrictTypesGuard::new(true);
+    let missing_error = reject_strict_whole_dynamic_public_schema(
+      &CalcitSyntax::Defn,
+      "tests.schema",
+      "open-call",
+      &missing_schema,
+      false,
+      &CallStackList::default(),
+      Some(location.clone()),
+    )
+    .expect_err("strict mode should reject a missing function schema");
+    assert_eq!(missing_error.code.as_deref(), Some("E_WHOLE_DYNAMIC_PUBLIC_SCHEMA"));
+    assert!(missing_error.msg.contains("no declared function schema"));
+    assert!(missing_error.msg.contains("at schema"));
+    assert!(missing_error.location.is_some());
+
+    let explicit_error = reject_strict_whole_dynamic_public_schema(
+      &CalcitSyntax::Defmacro,
+      "tests.schema",
+      "open-macro",
+      &explicit_dynamic_schema,
+      false,
+      &CallStackList::default(),
+      Some(location),
+    )
+    .expect_err("strict mode should reject a whole-Dynamic macro schema");
+    assert!(explicit_error.msg.contains("whole-Dynamic macro schema"));
+    assert!(explicit_error.msg.contains("structured `Macro` schema"));
+    assert!(explicit_error.msg.contains("`Expr<Dynamic>`"));
+
+    let structured_open_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Dynamic)],
+      return_type: Arc::new(CalcitTypeAnnotation::Dynamic),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    reject_strict_whole_dynamic_public_schema(
+      &CalcitSyntax::Defn,
+      "tests.schema",
+      "reviewed-boundary",
+      &structured_open_schema,
+      false,
+      &CallStackList::default(),
+      None,
+    )
+    .expect("a structured function contract may keep individual Dynamic positions visible for review");
+
+    reject_strict_whole_dynamic_public_schema(
+      &CalcitSyntax::Defn,
+      "tests.schema",
+      "embedded-contract",
+      &missing_schema,
+      true,
+      &CallStackList::default(),
+      None,
+    )
+    .expect("an embedded structured Fn hint is valid static contract evidence");
   }
 
   #[test]

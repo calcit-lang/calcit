@@ -174,6 +174,15 @@ explicitly; it remains visible to `analyze weak-types` and quality baselines but
 is no longer confused with an omitted configuration. Compatibility mode keeps
 the existing warning/inventory behavior while projects migrate.
 
+`E_WHOLE_DYNAMIC_PUBLIC_SCHEMA` rejects a reachable project function or macro
+when neither its root schema nor an embedded hint provides a structured
+contract. Replace a missing or whole-Dynamic root with a structured `Fn` or
+phase-aware `Macro` contract. Existing embedded `Fn` hints remain valid evidence
+during Snapshot migration. When a boundary is genuinely open, keep `Dynamic`
+only in the specific argument, return, or `Expr<Dynamic>` position so `analyze
+weak-types` can report and baseline that exact decision. Compatibility mode
+continues to inventory these definitions while the schema is migrated.
+
 `--strict-types` also rejects hand-written runtime Struct index operations such
 as `&struct:nth` without matching nominal type evidence. Use `(:field value)` with a concrete nominal Struct; generic
 helpers need a typed trait/accessor or a deliberately open Map boundary.
