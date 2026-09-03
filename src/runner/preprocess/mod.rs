@@ -7215,6 +7215,13 @@ pub fn preprocess_defn(
         info.at_def.to_owned(),
         location.to_owned().unwrap_or_default(),
       );
+      reject_strict_bare_container_public_schema(
+        ctx.file_ns,
+        def_name.as_ref(),
+        &def_schema,
+        ctx.call_stack,
+        Some(definition_location.clone()),
+      )?;
       reject_strict_legacy_optional_public_schema(
         ctx.file_ns,
         def_name.as_ref(),
@@ -8094,6 +8101,103 @@ fn contains_legacy_optional(annotation: &CalcitTypeAnnotation) -> bool {
   }
 }
 
+fn find_bare_container_schema(annotation: &Arc<CalcitTypeAnnotation>, path: &str) -> Option<(String, &'static str)> {
+  let find_inner = |inner: &Arc<CalcitTypeAnnotation>, inner_path: String, container: &'static str| {
+    if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic) && Arc::ptr_eq(inner, &calcit::DYNAMIC_TYPE) {
+      Some((inner_path, container))
+    } else {
+      find_bare_container_schema(inner, &inner_path)
+    }
+  };
+
+  match annotation.as_ref() {
+    CalcitTypeAnnotation::List(inner) => find_inner(inner, format!("{path}.item"), "List"),
+    CalcitTypeAnnotation::Set(inner) => find_inner(inner, format!("{path}.item"), "Set"),
+    CalcitTypeAnnotation::Ref(inner) => find_inner(inner, format!("{path}.item"), "Ref"),
+    CalcitTypeAnnotation::Map(key, value) => {
+      find_inner(key, format!("{path}.key"), "Map").or_else(|| find_inner(value, format!("{path}.value"), "Map"))
+    }
+    CalcitTypeAnnotation::Variadic(inner) | CalcitTypeAnnotation::Optional(inner) | CalcitTypeAnnotation::JsNullish(inner) => {
+      find_bare_container_schema(inner, path)
+    }
+    CalcitTypeAnnotation::Fn(info) => info
+      .arg_types
+      .iter()
+      .enumerate()
+      .find_map(|(idx, item)| find_bare_container_schema(item, &format!("{path}.args.{idx}")))
+      .or_else(|| {
+        info
+          .rest_type
+          .as_ref()
+          .and_then(|item| find_bare_container_schema(item, &format!("{path}.rest")))
+      })
+      .or_else(|| find_bare_container_schema(&info.return_type, &format!("{path}.return"))),
+    CalcitTypeAnnotation::Macro(signature) => {
+      let find_contract = |contract: &MacroSyntaxType, contract_path: String| match contract {
+        MacroSyntaxType::Expr(semantic) => find_bare_container_schema(semantic, &contract_path),
+        MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => None,
+      };
+      signature
+        .required_inputs
+        .iter()
+        .enumerate()
+        .find_map(|(idx, contract)| find_contract(contract, format!("{path}.required.{idx}.expr")))
+        .or_else(|| {
+          signature
+            .optional_inputs
+            .iter()
+            .enumerate()
+            .find_map(|(idx, contract)| find_contract(contract, format!("{path}.optional.{idx}.expr")))
+        })
+        .or_else(|| {
+          signature
+            .rest_input
+            .as_ref()
+            .and_then(|contract| find_contract(contract, format!("{path}.rest.expr")))
+        })
+        .or_else(|| match &signature.expansion {
+          MacroExpansionType::Expr(semantic) | MacroExpansionType::Definition(semantic) => {
+            find_bare_container_schema(semantic, &format!("{path}.expansion"))
+          }
+          MacroExpansionType::Dynamic | MacroExpansionType::Declarations => None,
+        })
+    }
+    CalcitTypeAnnotation::Syntax(contract) => match contract.as_ref() {
+      MacroSyntaxType::Expr(semantic) => find_bare_container_schema(semantic, path),
+      MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => None,
+    },
+    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => args
+      .iter()
+      .enumerate()
+      .find_map(|(idx, item)| find_bare_container_schema(item, &format!("{path}.type-arg.{idx}"))),
+    _ => None,
+  }
+}
+
+fn reject_strict_bare_container_public_schema(
+  ns: &str,
+  def_name: &str,
+  schema: &Arc<CalcitTypeAnnotation>,
+  call_stack: &CallStackList,
+  definition_location: Option<NodeLocation>,
+) -> Result<(), CalcitErr> {
+  if !strict_types_enabled() || !should_emit_project_source_lint(ns) {
+    return Ok(());
+  }
+  let Some((path, container)) = find_bare_container_schema(schema, "schema") else {
+    return Ok(());
+  };
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!(
+      "{ns}/{def_name} exposes bare {container} at {path}, which implicitly inserts Dynamic type arguments; apply concrete type arguments, declare a shared :generics type variable, or write Dynamic explicitly for a reviewed open boundary"
+    ),
+    "E_BARE_CONTAINER_SCHEMA",
+    call_stack,
+    find_preferred_macro_location(call_stack).or(definition_location),
+  ))
+}
+
 fn legacy_optional_public_schema_requires_migration(ns: &str, def_name: &str, schema: &CalcitTypeAnnotation) -> bool {
   if !contains_legacy_optional(schema) {
     return false;
@@ -8742,7 +8846,7 @@ mod tests {
     assert!(!nth_code.contains("list?"));
     assert_eq!(nth_code.matches("source-list").count(), 1, "caller receiver is evaluated once");
 
-    let first_args = CalcitList::from(&[typed_list.to_owned()] as &[Calcit]);
+    let first_args = CalcitList::from(std::slice::from_ref(&typed_list));
     let expanded_first = try_expand_typed_optional_access_call(
       calcit::CORE_NS,
       "first",
@@ -14296,6 +14400,67 @@ mod tests {
       .expect("raw core primitives remain explicit nullable implementation boundaries");
     reject_strict_legacy_optional_public_schema(calcit::CORE_NS, "optionally", &schema, &CallStackList::default(), None)
       .expect("the explicit Optional-to-Option bridge remains available");
+  }
+
+  #[test]
+  fn strict_types_reject_bare_container_schemas_with_precise_paths() {
+    let _state = lock_preprocess_test_state();
+    let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Map(
+        Arc::new(CalcitTypeAnnotation::Tag),
+        Arc::new(CalcitTypeAnnotation::List(calcit::DYNAMIC_TYPE.clone())),
+      ))],
+      return_type: Arc::new(CalcitTypeAnnotation::Unit),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    let location = NodeLocation::new("tests.schema".into(), "demo".into(), Arc::new(vec![4]));
+
+    {
+      let _compat = StrictTypesGuard::new(false);
+      reject_strict_bare_container_public_schema("tests.schema", "demo", &schema, &CallStackList::default(), Some(location.clone()))
+        .expect("compatibility mode should retain bare container schemas");
+    }
+
+    let _strict = StrictTypesGuard::new(true);
+    let error = reject_strict_bare_container_public_schema("tests.schema", "demo", &schema, &CallStackList::default(), Some(location))
+      .expect_err("strict mode should reject implicit Dynamic container arguments");
+    assert_eq!(error.code.as_deref(), Some("E_BARE_CONTAINER_SCHEMA"));
+    assert!(error.msg.contains("bare List"));
+    assert!(error.msg.contains("schema.args.0.value.item"));
+    assert!(error.location.is_some());
+  }
+
+  #[test]
+  fn strict_types_allow_explicit_dynamic_container_boundaries() {
+    let _state = lock_preprocess_test_state();
+    let parsed_bare = CalcitTypeAnnotation::parse_type_annotation_from_edn(&cirru_edn::Edn::Symbol(Arc::from("List")));
+    let parsed_explicit = CalcitTypeAnnotation::parse_type_annotation_from_edn(&cirru_edn::Edn::enum_value(
+      "List",
+      vec![cirru_edn::Edn::Symbol(Arc::from("Dynamic"))],
+    ));
+    assert_eq!(
+      find_bare_container_schema(&parsed_bare, "schema"),
+      Some(("schema.item".to_owned(), "List"))
+    );
+    assert_eq!(find_bare_container_schema(&parsed_explicit, "schema"), None);
+
+    let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![parsed_explicit],
+      return_type: Arc::new(CalcitTypeAnnotation::Unit),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+
+    let _strict = StrictTypesGuard::new(true);
+    reject_strict_bare_container_public_schema("tests.schema", "open-values", &schema, &CallStackList::default(), None)
+      .expect("an explicitly written List<Dynamic> remains an auditable open boundary");
   }
 
   #[test]

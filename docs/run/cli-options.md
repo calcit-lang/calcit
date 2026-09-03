@@ -157,6 +157,15 @@ ecosystem migration. Partial Struct construction is not auto-fixed because the
 compiler cannot infer whether an omitted business field should become
 `Option<T>`, gain a default, or be supplied by the caller.
 
+Strict preprocessing also reports `E_BARE_CONTAINER_SCHEMA` when a public
+function or macro contract uses bare `List`, `Map`, `Set`, or `Ref`. The error
+includes the exact schema path whose missing type argument became Dynamic. Add
+concrete arguments, use a declared `:generics` variable when positions are
+related, or spell `Dynamic` explicitly only for a reviewed open boundary. For
+example, migrate `List` to `(:: List T)` with `:generics ([] T)`; an intentional
+open boundary is written `(:: List Dynamic)` so analysis can distinguish it
+from accidental omission.
+
 `--strict-types` also rejects hand-written runtime Struct index operations such
 as `&struct:nth` without matching nominal type evidence. Use `(:field value)` with a concrete nominal Struct; generic
 helpers need a typed trait/accessor or a deliberately open Map boundary.

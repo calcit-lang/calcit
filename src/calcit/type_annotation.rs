@@ -4646,7 +4646,7 @@ mod tests {
 
     assert!(optional_t.matches_with_bindings(&generic_t, &mut bindings));
     assert!(
-      bindings.get("U").is_none(),
+      !bindings.contains_key("U"),
       "U must not be bound to Optional<T> through the T -> U alias"
     );
 
