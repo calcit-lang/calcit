@@ -13,6 +13,7 @@ keeps the legacy runtime behavior during migration.
 | `E_PARTIAL_STRUCT_NIL_FILL` | `%{}? Struct ...` and `&%{}? Struct ...` | Use `%{}` with every field present. Change genuinely absent fields to `Option<T>` and provide `%none`. Do not infer business defaults automatically. |
 | `E_NIL_FOR_UNIT` | A function declared to return `Unit` whose returned expression has static type `Nil`, including legacy `;nil` | Return `&unit`, or end the body with an effect that already returns `Unit`. Intermediate nil values are not treated as the function return. |
 | `E_NIL_CALLBACK_SENTINEL` | An inline `map-kv` callback has a return path that uses `nil` to drop an entry, including an `if` without an else branch | Use `filter-map-kv`; return `MapEntryDecision :keep key value` or `MapEntryDecision :drop` on every path. A `nil` nested inside the returned key/value pair remains ordinary data and is not rejected. |
+| `E_LEGACY_OPTIONAL_SCHEMA` | A public function schema contains legacy `Optional<T>`, which conflates a nominal API with runtime nil | Use `Option<T>` for Calcit absence, `JsNullish<T>` only at JS FFI boundaries, `Result<T,E>` for failures, or `Unit` for effects. Raw core `&...` primitives and the `optionally` bridge remain internal compatibility boundaries. |
 
 The runtime `nil` value, Cirru EDN nil, and explicit untyped/FFI boundaries are
 not removed. The strict errors only close constructs that silently manufacture

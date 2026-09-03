@@ -6952,13 +6952,20 @@ pub fn preprocess_defn(
           )),
         ));
       }
-      warn_on_legacy_optional_public_schema(ctx.file_ns, def_name.as_ref(), &def_schema, ctx.check_warnings);
-      let schema_issues = validate_def_schema_during_preprocess(head, ctx.file_ns, def_name.as_ref(), ys, &def_schema);
       let definition_location = NodeLocation::new(
         info.at_ns.to_owned(),
         info.at_def.to_owned(),
         location.to_owned().unwrap_or_default(),
       );
+      reject_strict_legacy_optional_public_schema(
+        ctx.file_ns,
+        def_name.as_ref(),
+        &def_schema,
+        ctx.call_stack,
+        Some(definition_location.clone()),
+      )?;
+      warn_on_legacy_optional_public_schema(ctx.file_ns, def_name.as_ref(), &def_schema, ctx.check_warnings);
+      let schema_issues = validate_def_schema_during_preprocess(head, ctx.file_ns, def_name.as_ref(), ys, &def_schema);
       if !schema_issues.is_empty() {
         let details = schema_issues.join("\n  - ");
         return Err(CalcitErr::use_msg_stack_location_with_code(
@@ -7829,20 +7836,48 @@ fn contains_legacy_optional(annotation: &CalcitTypeAnnotation) -> bool {
   }
 }
 
+fn legacy_optional_public_schema_requires_migration(ns: &str, def_name: &str, schema: &CalcitTypeAnnotation) -> bool {
+  if !contains_legacy_optional(schema) {
+    return false;
+  }
+  // Core `&` definitions are semver-private primitives and may still model
+  // nullable host/runtime values. Public core wrappers must obey the same
+  // nominal absence rule as application code. `optionally` is the one explicit
+  // bridge from an internal Optional<T> value to Option<T>.
+  !(ns == calcit::CORE_NS && (def_name.starts_with('&') || def_name == "optionally"))
+}
+
+fn reject_strict_legacy_optional_public_schema(
+  ns: &str,
+  def_name: &str,
+  schema: &CalcitTypeAnnotation,
+  call_stack: &CallStackList,
+  definition_location: Option<NodeLocation>,
+) -> Result<(), CalcitErr> {
+  if !strict_types_enabled()
+    || !should_emit_project_source_lint(ns)
+    || !legacy_optional_public_schema_requires_migration(ns, def_name, schema)
+  {
+    return Ok(());
+  }
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!(
+      "{ns}/{def_name} exposes legacy Optional<T> in its public schema; use Option<T> for Calcit absence, JsNullish<T> only for JavaScript FFI, Result<T,E> for failures, or Unit for effects"
+    ),
+    "E_LEGACY_OPTIONAL_SCHEMA",
+    call_stack,
+    find_preferred_macro_location(call_stack).or(definition_location),
+  ))
+}
+
 fn warn_on_legacy_optional_public_schema(
   ns: &str,
   def_name: &str,
   schema: &CalcitTypeAnnotation,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
-  if !contains_legacy_optional(schema) {
-    return;
-  }
-  // Core `&` definitions are semver-private primitives and may still model
-  // nullable host/runtime values. Public core wrappers must obey the same
-  // nominal absence rule as application code. `optionally` is the one explicit
-  // bridge from an internal Optional<T> value to Option<T>.
-  if ns == calcit::CORE_NS && (def_name.starts_with('&') || def_name == "optionally") {
+  if !legacy_optional_public_schema_requires_migration(ns, def_name, schema) {
     return;
   }
   gen_check_warning_code(
@@ -13852,6 +13887,39 @@ mod tests {
       bridge_warnings.borrow().is_empty(),
       "optionally is the explicit nullable-to-nominal bridge"
     );
+  }
+
+  #[test]
+  fn strict_types_reject_legacy_optional_public_schemas_but_keep_internal_bridges() {
+    let _state = lock_preprocess_test_state();
+    let schema = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
+      return_type: Arc::new(CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Number))),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    }));
+    let location = NodeLocation::new("tests.schema".into(), "demo".into(), Arc::new(vec![4]));
+
+    {
+      let _compat = StrictTypesGuard::new(false);
+      reject_strict_legacy_optional_public_schema("tests.schema", "demo", &schema, &CallStackList::default(), Some(location.clone()))
+        .expect("compatibility mode should preserve the warning-only migration path");
+    }
+
+    let _strict = StrictTypesGuard::new(true);
+    let error = reject_strict_legacy_optional_public_schema("tests.schema", "demo", &schema, &CallStackList::default(), Some(location))
+      .expect_err("strict mode should reject public Optional<T> schemas");
+    assert_eq!(error.code.as_deref(), Some("E_LEGACY_OPTIONAL_SCHEMA"));
+    assert!(error.msg.contains("Option<T>"));
+    assert!(error.location.is_some());
+
+    reject_strict_legacy_optional_public_schema(calcit::CORE_NS, "&raw-lookup", &schema, &CallStackList::default(), None)
+      .expect("raw core primitives remain explicit nullable implementation boundaries");
+    reject_strict_legacy_optional_public_schema(calcit::CORE_NS, "optionally", &schema, &CallStackList::default(), None)
+      .expect("the explicit Optional-to-Option bridge remains available");
   }
 
   #[test]
