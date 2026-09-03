@@ -522,6 +522,11 @@ calcit calcit.cirru analyze deprecated --summary-only
 `:features $ #{} :js-ffi`，并在进入 typed code 前 validate/convert。无返回值使用 `Unit`；业务缺失
 使用 `Option`，需要错误信息时使用 `Result`，不要让旧 `Optional<T>` 或裸 `nil` 无限保留。
 
+strict mode 还会以 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA` 拒绝既没有结构化根 schema、也没有嵌入式
+结构化 `Fn` hint 的可达项目定义。迁移时先声明完整 `Fn` 或 phase-aware `Macro` 结构；旧 Snapshot
+中已有的嵌入式 `Fn` hint 仍可作为契约证据。若参数、返回值或宏表达式确实开放，只在对应位置写
+`Dynamic` / `Expr<Dynamic>`，不要用根 `Dynamic` 擦除整个契约。
+
 再对每个 entry 运行独立的动态方法报告；已有项目可以先记录非零上限，再逐步降低：
 
 ```bash

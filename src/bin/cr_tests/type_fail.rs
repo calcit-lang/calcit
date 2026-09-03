@@ -186,6 +186,29 @@ fn strict_type_fail_reachable_unbound_slot_reports_stable_error_code() {
 }
 
 #[test]
+fn strict_type_fail_reachable_whole_dynamic_schema_reports_stable_error_code() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/type-fail/whole-dynamic-schema-strict.cirru");
+    let _strict = StrictTypesReset::enabled();
+    let err = run_check_only(&entries).expect_err("reachable whole-Dynamic schema should fail strict check-only");
+
+    assert!(
+      err.contains("E_WHOLE_DYNAMIC_PUBLIC_SCHEMA"),
+      "unexpected strict whole-Dynamic error: {err}"
+    );
+    assert!(
+      err.contains("whole-Dynamic function schema"),
+      "schema intent should be explicit: {err}"
+    );
+    assert!(err.contains("at schema"), "schema root path should be actionable: {err}");
+    assert!(
+      err.contains("structured `Fn` schema"),
+      "replacement contract should be named: {err}"
+    );
+  });
+}
+
+#[test]
 fn type_fail_call_arg_fixture_reports_warning_code() {
   run_with_large_stack(|| {
     let fixtures = [
