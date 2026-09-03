@@ -790,7 +790,10 @@ Entries do not inherit `entries.default.type-slots`. Bind every slot needed by e
 ### Constraints
 
 - Configuration values must be `:dynamic` or a full `namespace/definition` path that exists after modules are loaded.
-- An unbound slot currently falls back to `:dynamic`; bind it explicitly when static checking is expected.
+- In compatibility mode an unbound slot falls back to `:dynamic` and remains an
+  `unresolved-type-slot` finding. Strict preprocessing rejects a slot used by a
+  reachable function or macro with `E_UNBOUND_TYPE_SLOT`, including its precise
+  schema path.
 - `:dynamic` is an explicit opt-out for an entry that intentionally disables the slot check.
 - The slot name is currently project-wide within one compilation. Libraries should choose stable, specific names to avoid accidental collisions.
 

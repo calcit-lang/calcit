@@ -166,6 +166,14 @@ example, migrate `List` to `(:: List T)` with `:generics ([] T)`; an intentional
 open boundary is written `(:: List Dynamic)` so analysis can distinguish it
 from accidental omission.
 
+`E_UNBOUND_TYPE_SLOT` rejects a reachable function or macro contract that uses
+`*slot` without a binding in the selected entry. Bind a concrete nominal type
+with `calcit config set-type-slot :slot namespace/Definition`. When the entry
+deliberately opts out of static checking at that boundary, bind `:dynamic`
+explicitly; it remains visible to `analyze weak-types` and quality baselines but
+is no longer confused with an omitted configuration. Compatibility mode keeps
+the existing warning/inventory behavior while projects migrate.
+
 `--strict-types` also rejects hand-written runtime Struct index operations such
 as `&struct:nth` without matching nominal type evidence. Use `(:field value)` with a concrete nominal Struct; generic
 helpers need a typed trait/accessor or a deliberately open Map boundary.

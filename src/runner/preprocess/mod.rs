@@ -7215,6 +7215,13 @@ pub fn preprocess_defn(
         info.at_def.to_owned(),
         location.to_owned().unwrap_or_default(),
       );
+      reject_strict_unbound_type_slot_schema(
+        ctx.file_ns,
+        def_name.as_ref(),
+        &def_schema,
+        ctx.call_stack,
+        Some(definition_location.clone()),
+      )?;
       reject_strict_bare_container_public_schema(
         ctx.file_ns,
         def_name.as_ref(),
@@ -8101,40 +8108,38 @@ fn contains_legacy_optional(annotation: &CalcitTypeAnnotation) -> bool {
   }
 }
 
-fn find_bare_container_schema(annotation: &Arc<CalcitTypeAnnotation>, path: &str) -> Option<(String, &'static str)> {
-  let find_inner = |inner: &Arc<CalcitTypeAnnotation>, inner_path: String, container: &'static str| {
-    if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic) && Arc::ptr_eq(inner, &calcit::DYNAMIC_TYPE) {
-      Some((inner_path, container))
-    } else {
-      find_bare_container_schema(inner, &inner_path)
-    }
-  };
-
+fn find_schema_annotation<T>(
+  annotation: &Arc<CalcitTypeAnnotation>,
+  path: &str,
+  predicate: &mut impl FnMut(&Arc<CalcitTypeAnnotation>, &str) -> Option<T>,
+) -> Option<T> {
+  if let Some(found) = predicate(annotation, path) {
+    return Some(found);
+  }
   match annotation.as_ref() {
-    CalcitTypeAnnotation::List(inner) => find_inner(inner, format!("{path}.item"), "List"),
-    CalcitTypeAnnotation::Set(inner) => find_inner(inner, format!("{path}.item"), "Set"),
-    CalcitTypeAnnotation::Ref(inner) => find_inner(inner, format!("{path}.item"), "Ref"),
-    CalcitTypeAnnotation::Map(key, value) => {
-      find_inner(key, format!("{path}.key"), "Map").or_else(|| find_inner(value, format!("{path}.value"), "Map"))
+    CalcitTypeAnnotation::List(inner) | CalcitTypeAnnotation::Set(inner) | CalcitTypeAnnotation::Ref(inner) => {
+      find_schema_annotation(inner, &format!("{path}.item"), predicate)
     }
     CalcitTypeAnnotation::Variadic(inner) | CalcitTypeAnnotation::Optional(inner) | CalcitTypeAnnotation::JsNullish(inner) => {
-      find_bare_container_schema(inner, path)
+      find_schema_annotation(inner, path, predicate)
     }
+    CalcitTypeAnnotation::Map(key, value) => find_schema_annotation(key, &format!("{path}.key"), predicate)
+      .or_else(|| find_schema_annotation(value, &format!("{path}.value"), predicate)),
     CalcitTypeAnnotation::Fn(info) => info
       .arg_types
       .iter()
       .enumerate()
-      .find_map(|(idx, item)| find_bare_container_schema(item, &format!("{path}.args.{idx}")))
+      .find_map(|(idx, item)| find_schema_annotation(item, &format!("{path}.args.{idx}"), predicate))
       .or_else(|| {
         info
           .rest_type
           .as_ref()
-          .and_then(|item| find_bare_container_schema(item, &format!("{path}.rest")))
+          .and_then(|item| find_schema_annotation(item, &format!("{path}.rest"), predicate))
       })
-      .or_else(|| find_bare_container_schema(&info.return_type, &format!("{path}.return"))),
+      .or_else(|| find_schema_annotation(&info.return_type, &format!("{path}.return"), predicate)),
     CalcitTypeAnnotation::Macro(signature) => {
-      let find_contract = |contract: &MacroSyntaxType, contract_path: String| match contract {
-        MacroSyntaxType::Expr(semantic) => find_bare_container_schema(semantic, &contract_path),
+      let mut find_contract = |contract: &MacroSyntaxType, contract_path: String| match contract {
+        MacroSyntaxType::Expr(semantic) => find_schema_annotation(semantic, &contract_path, predicate),
         MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => None,
       };
       signature
@@ -8157,21 +8162,85 @@ fn find_bare_container_schema(annotation: &Arc<CalcitTypeAnnotation>, path: &str
         })
         .or_else(|| match &signature.expansion {
           MacroExpansionType::Expr(semantic) | MacroExpansionType::Definition(semantic) => {
-            find_bare_container_schema(semantic, &format!("{path}.expansion"))
+            find_schema_annotation(semantic, &format!("{path}.expansion"), predicate)
           }
           MacroExpansionType::Dynamic | MacroExpansionType::Declarations => None,
         })
     }
     CalcitTypeAnnotation::Syntax(contract) => match contract.as_ref() {
-      MacroSyntaxType::Expr(semantic) => find_bare_container_schema(semantic, path),
+      MacroSyntaxType::Expr(semantic) => find_schema_annotation(semantic, &format!("{path}.expr"), predicate),
       MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => None,
     },
     CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => args
       .iter()
       .enumerate()
-      .find_map(|(idx, item)| find_bare_container_schema(item, &format!("{path}.type-arg.{idx}"))),
+      .find_map(|(idx, item)| find_schema_annotation(item, &format!("{path}.type-arg.{idx}"), predicate)),
     _ => None,
   }
+}
+
+fn find_bare_container_schema(annotation: &Arc<CalcitTypeAnnotation>, path: &str) -> Option<(String, &'static str)> {
+  find_schema_annotation(annotation, path, &mut |candidate, candidate_path| match candidate.as_ref() {
+    CalcitTypeAnnotation::List(inner)
+      if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic) && Arc::ptr_eq(inner, &calcit::DYNAMIC_TYPE) =>
+    {
+      Some((format!("{candidate_path}.item"), "List"))
+    }
+    CalcitTypeAnnotation::Set(inner)
+      if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic) && Arc::ptr_eq(inner, &calcit::DYNAMIC_TYPE) =>
+    {
+      Some((format!("{candidate_path}.item"), "Set"))
+    }
+    CalcitTypeAnnotation::Ref(inner)
+      if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic) && Arc::ptr_eq(inner, &calcit::DYNAMIC_TYPE) =>
+    {
+      Some((format!("{candidate_path}.item"), "Ref"))
+    }
+    CalcitTypeAnnotation::Map(key, _)
+      if matches!(key.as_ref(), CalcitTypeAnnotation::Dynamic) && Arc::ptr_eq(key, &calcit::DYNAMIC_TYPE) =>
+    {
+      Some((format!("{candidate_path}.key"), "Map"))
+    }
+    CalcitTypeAnnotation::Map(_, value)
+      if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic) && Arc::ptr_eq(value, &calcit::DYNAMIC_TYPE) =>
+    {
+      Some((format!("{candidate_path}.value"), "Map"))
+    }
+    _ => None,
+  })
+}
+
+fn find_unbound_type_slot_schema(annotation: &Arc<CalcitTypeAnnotation>, path: &str) -> Option<(String, Arc<str>)> {
+  find_schema_annotation(annotation, path, &mut |candidate, candidate_path| match candidate.as_ref() {
+    CalcitTypeAnnotation::TypeSlot(name) if calcit::resolve_type_slot(name).is_none() => {
+      Some((candidate_path.to_owned(), name.clone()))
+    }
+    _ => None,
+  })
+}
+
+fn reject_strict_unbound_type_slot_schema(
+  ns: &str,
+  def_name: &str,
+  schema: &Arc<CalcitTypeAnnotation>,
+  call_stack: &CallStackList,
+  definition_location: Option<NodeLocation>,
+) -> Result<(), CalcitErr> {
+  if !strict_types_enabled() || !should_emit_project_source_lint(ns) {
+    return Ok(());
+  }
+  let Some((path, slot)) = find_unbound_type_slot_schema(schema, "schema") else {
+    return Ok(());
+  };
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!(
+      "{ns}/{def_name} uses unbound type slot `*{slot}` at {path}; bind it for the selected entry with `calcit config set-type-slot :{slot} namespace/definition`, or explicitly select `:dynamic` only for a reviewed open boundary"
+    ),
+    "E_UNBOUND_TYPE_SLOT",
+    call_stack,
+    find_preferred_macro_location(call_stack).or(definition_location),
+  ))
 }
 
 fn reject_strict_bare_container_public_schema(
@@ -9606,6 +9675,21 @@ mod tests {
   impl Drop for StrictTypesGuard {
     fn drop(&mut self) {
       set_strict_types(self.prev);
+    }
+  }
+
+  struct TypeSlotsGuard;
+
+  impl TypeSlotsGuard {
+    fn cleared() -> Self {
+      calcit::clear_type_slots();
+      Self
+    }
+  }
+
+  impl Drop for TypeSlotsGuard {
+    fn drop(&mut self) {
+      calcit::clear_type_slots();
     }
   }
 
@@ -14461,6 +14545,53 @@ mod tests {
     let _strict = StrictTypesGuard::new(true);
     reject_strict_bare_container_public_schema("tests.schema", "open-values", &schema, &CallStackList::default(), None)
       .expect("an explicitly written List<Dynamic> remains an auditable open boundary");
+  }
+
+  #[test]
+  fn strict_types_reject_reachable_unbound_type_slots_and_allow_explicit_entry_opt_out() {
+    let _state = lock_preprocess_test_state();
+    let _slots = TypeSlotsGuard::cleared();
+    let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Map(
+        Arc::new(CalcitTypeAnnotation::Tag),
+        Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from(
+          "payload",
+        ))))),
+      ))],
+      return_type: Arc::new(CalcitTypeAnnotation::Unit),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    let location = NodeLocation::new("tests.schema".into(), "dispatch".into(), Arc::new(vec![4]));
+
+    {
+      let _compat = StrictTypesGuard::new(false);
+      reject_strict_unbound_type_slot_schema(
+        "tests.schema",
+        "dispatch",
+        &schema,
+        &CallStackList::default(),
+        Some(location.clone()),
+      )
+      .expect("compatibility mode should retain the existing unresolved-slot analysis path");
+    }
+
+    let _strict = StrictTypesGuard::new(true);
+    let error = reject_strict_unbound_type_slot_schema("tests.schema", "dispatch", &schema, &CallStackList::default(), Some(location))
+      .expect_err("strict mode should reject an unbound slot in a reachable definition");
+    assert_eq!(error.code.as_deref(), Some("E_UNBOUND_TYPE_SLOT"));
+    assert!(error.msg.contains("*payload"));
+    assert!(error.msg.contains("schema.args.0.value.item"));
+    assert!(error.msg.contains("calcit config set-type-slot :payload namespace/definition"));
+    assert!(error.location.is_some());
+
+    calcit::configure_entry_type_slots(&HashMap::from([("payload".to_owned(), ":dynamic".to_owned())]))
+      .expect("explicit Dynamic type-slot opt-out should be accepted");
+    reject_strict_unbound_type_slot_schema("tests.schema", "dispatch", &schema, &CallStackList::default(), None)
+      .expect("an explicit entry-level Dynamic binding remains visible to quality inventory without an unbound-slot error");
   }
 
   #[test]

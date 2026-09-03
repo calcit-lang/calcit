@@ -365,15 +365,18 @@ compiled definition 记录环境 ID。遇到不同环境时：
 
 这避免在尚未设计稳定符号命名和共享策略前，暗中生成多份 specialized JS definitions。
 
-### 8.6 未绑定行为（当前保持兼容）
+### 8.6 未绑定行为（strict 已拒绝）
 
 当前未绑定 slot 静默退化为 `:dynamic`，很容易让用户误以为检查已经生效。
 
-当前未绑定 slot 仍退化为 `:dynamic`；配置也允许显式写 `:dynamic`。是否升级诊断继续保留以下建议规则：
+普通兼容模式下，未绑定 slot 仍退化为 `:dynamic` 并进入
+`unresolved-type-slot` inventory；配置也允许显式写 `:dynamic`。strict
+preprocessing 已实现以下规则：
 
 - 可达 schema 引用了已声明 slot，但 entry 未绑定：默认 hard error；
 - 应用确实希望关闭检查时，在 entry 中显式绑定为 `:dynamic`，让意图可见；
-- 迁移期可先发结构化 warning，再在下一个 breaking release 升级为 error。
+- 非 strict 迁移期继续使用结构化 warning/inventory；breaking release 翻转由
+  #582 跟踪。
 
 示例诊断：
 
