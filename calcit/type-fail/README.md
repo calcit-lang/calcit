@@ -56,7 +56,7 @@
 
 - `E_SCHEMA_DEF_MISMATCH`：定义与 `:schema` 的 `:kind` / `:args` / `:rest` 不匹配
 - `E_UNBOUND_TYPE_SLOT`：strict 模式下可达定义的 schema 引用了未配置或未局部绑定的 type slot
-- `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`：strict 模式下可达 function/macro 既没有结构化根 schema，也没有嵌入式结构化契约
+- `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`：strict 模式下可达 function 或直接进入预处理的 programmatic macro 既没有结构化根 schema，也没有嵌入式结构化契约；普通 legacy Snapshot macro 会更早被 loader 拒绝
 - `E_DYNAMIC_METHOD_DISPATCH` / `E_DYNAMIC_POSTFIX_METHOD`：strict 模式下 Dynamic receiver 使用需要静态 Option/Result nominal evidence 的 method
 - `W_FN_ARG_TYPE_MISMATCH`：用户函数调用参数类型不匹配
 - `W_METHOD_ARG_TYPE_MISMATCH`：静态方法调用参数类型不匹配
