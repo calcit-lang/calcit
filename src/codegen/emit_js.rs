@@ -1380,6 +1380,9 @@ fn gen_match_code(
         // Generate binding code
         let mut scoped_defs = local_defs.to_owned();
         for (i, binding) in pat_xs.iter().skip(1).enumerate() {
+          if matches!(binding, Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if sym.as_ref() == "_") {
+            continue;
+          }
           let bind_name = match binding {
             Calcit::Local(CalcitLocal { sym, .. }) => escape_var(sym),
             Calcit::Symbol { sym, .. } => escape_var(sym),
@@ -1469,6 +1472,9 @@ fn gen_indexed_match_code(
 
     let mut scoped_defs = local_defs.to_owned();
     for (idx, binding) in pattern.iter().skip(1).enumerate() {
+      if matches!(binding, Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if sym.as_ref() == "_") {
+        continue;
+      }
       let bind_name = match binding {
         Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } => {
           scoped_defs.insert(sym.to_owned());
@@ -2350,6 +2356,40 @@ mod tests {
     assert!(code.contains("case _t_.running.idx:"), "{code}");
     assert!(code.contains("case _t_.done.idx:"), "{code}");
     assert!(!code.contains(" else if "), "{code}");
+  }
+
+  #[test]
+  fn enum_match_codegen_does_not_bind_repeated_wildcards() {
+    let pattern = Calcit::from(vec![Calcit::Tag(EdnTag::from("states")), symbol("_"), symbol("_")]);
+    let branch = Calcit::from(vec![pattern, Calcit::Number(0.0)]);
+    let fallback = Calcit::from(vec![symbol("_"), Calcit::Number(-1.0)]);
+    let body = CalcitList::Vector(vec![symbol("state"), branch, fallback]);
+    let local_defs = HashSet::from([Arc::from("state")]);
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+
+    let code = gen_match_code(&body, &local_defs, &Calcit::Nil, "tests.emit-js", &file_imports, &tags, None)
+      .expect("match codegen should support repeated wildcards");
+
+    assert!(!code.contains("let _ ="), "wildcards must not create JS bindings: {code}");
+    assert!(code.contains("_t_.states"), "{code}");
+  }
+
+  #[test]
+  fn indexed_enum_match_codegen_does_not_bind_repeated_wildcards() {
+    let pattern = Calcit::from(vec![Calcit::Tag(EdnTag::from("states")), symbol("_"), symbol("_")]);
+    let branch = Calcit::from(vec![pattern, Calcit::Number(0.0)]);
+    let wildcard = Calcit::from(vec![symbol("_"), Calcit::Number(-1.0)]);
+    let table = CalcitList::Vector(vec![branch, wildcard]);
+    let local_defs = HashSet::from([Arc::from("state")]);
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+
+    let code = gen_indexed_match_code(&symbol("state"), &table, &local_defs, "tests.emit-js", &file_imports, &tags, None)
+      .expect("indexed match codegen should support repeated wildcards");
+
+    assert!(!code.contains("let _ ="), "wildcards must not create JS bindings: {code}");
+    assert!(code.contains("case _t_.states.idx:"), "{code}");
   }
 
   #[test]
