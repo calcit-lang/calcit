@@ -190,6 +190,15 @@ only in the specific argument, return, or `Expr<Dynamic>` position so `analyze
 weak-types` can report and baseline that exact decision. Compatibility mode
 continues to inventory these definitions while the schema is migrated.
 
+`E_ERASED_GENERIC_RELATION` rejects a project call when a `Dynamic` argument
+occupies a declared generic position that is related to another argument,
+variadic item, nested type, or return position. For example, passing `Dynamic`
+to `Fn<T>(T) -> T` prevents strict preprocessing from proving the promised
+input/output relationship. Narrow or validate the value before the call. If
+the callee is intentionally open, put that operation behind a small adapter
+whose structured contract does not claim the generic relationship. Outside
+`--strict-types`, the existing compatibility behavior is unchanged.
+
 `--strict-types` also rejects hand-written runtime Struct index operations such
 as `&struct:nth` without matching nominal type evidence. Use `(:field value)` with a concrete nominal Struct; generic
 helpers need a typed trait/accessor or a deliberately open Map boundary.

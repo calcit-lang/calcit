@@ -532,6 +532,12 @@ strict mode 还会以 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA` 拒绝既没有结构化�
 中已有的嵌入式 `Fn` hint 仍可作为契约证据。若参数、返回值或宏表达式确实开放，只在对应位置写
 `Dynamic` / `Expr<Dynamic>`，不要用根 `Dynamic` 擦除整个契约。
 
+当 `Dynamic` 实参进入重复出现的泛型位置时，strict mode 会进一步报告
+`E_ERASED_GENERIC_RELATION`。例如 `Fn<T>(T) -> T`、同类型比较或参数化容器转换都依赖调用点保留
+`T` 的关系；把未知值直接传入会让返回值或其他参数无法再被静态关联。应先 narrow/validate 成具体
+类型，再调用泛型 API。确实开放的操作应收拢到一个小型 adapter，并让 adapter 的结构化契约明确
+不承诺该泛型关系。非 strict 模式保持原有兼容行为，便于渐进迁移。
+
 再对每个 entry 运行独立的动态方法报告；已有项目可以先记录非零上限，再逐步降低：
 
 ```bash
