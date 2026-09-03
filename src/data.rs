@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::Ordering, sync::Arc};
 
 use crate::{
   Calcit,
@@ -8,6 +8,17 @@ use crate::{
 pub mod cirru;
 pub mod edn;
 pub(crate) mod edn_decode;
+
+/// `Calcit::Ord` intentionally follows runtime numeric equality, where NaN
+/// does not have a total order. Code emission needs a stable order instead, so
+/// numeric map keys use the IEEE total order without changing runtime Map
+/// comparison semantics.
+fn data_to_code_key_cmp(left: &Calcit, right: &Calcit) -> Ordering {
+  match (left, right) {
+    (Calcit::Number(left), Calcit::Number(right)) => left.total_cmp(right),
+    _ => left.cmp(right),
+  }
+}
 
 fn where_bounds_to_calcit_form(bounds: &[crate::calcit::CalcitGenericBound], ns: &str, at_def: &str) -> Option<Calcit> {
   if bounds.is_empty() {
@@ -117,7 +128,9 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     }
     Map(xs) => {
       let mut ys = vec![Calcit::Proc(CalcitProc::NativeMap)];
-      for (k, v) in xs {
+      let mut entries = xs.iter().collect::<Vec<_>>();
+      entries.sort_by(|(left, _), (right, _)| data_to_code_key_cmp(left, right));
+      for (k, v) in entries {
         ys.push(data_to_calcit(k, ns, at_def)?);
         ys.push(data_to_calcit(v, ns, at_def)?);
       }
@@ -271,5 +284,71 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     Trait(_) => Err(format!("data_to_calcit not implemented for trait: {x}")),
     Impl(_) => Err(format!("data_to_calcit not implemented for impl: {x}")),
     AnyRef(..) => Err(format!("data_to_calcit not implemented for any-ref: {x}")),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::data_to_calcit;
+  use crate::calcit::{Calcit, CalcitProc};
+
+  fn map(entries: Vec<(Calcit, Calcit)>) -> Calcit {
+    let values = entries
+      .into_iter()
+      .fold(rpds::HashTrieMap::new_sync(), |map, (key, value)| map.insert(key, value));
+    Calcit::Map(values)
+  }
+
+  #[test]
+  fn data_to_calcit_sorts_map_keys_recursively() {
+    let data = map(vec![
+      (
+        Calcit::tag("gamma"),
+        map(vec![
+          (Calcit::tag("zeta"), Calcit::Number(3.0)),
+          (Calcit::tag("alpha"), Calcit::Number(2.0)),
+        ]),
+      ),
+      (Calcit::tag("beta"), Calcit::Number(1.0)),
+      (Calcit::tag("alpha"), Calcit::Number(0.0)),
+    ]);
+
+    let code = data_to_calcit(&data, "tests.data", "deterministic-map").expect("map data should convert to code");
+    let expected = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeMap),
+      Calcit::tag("alpha"),
+      Calcit::Number(0.0),
+      Calcit::tag("beta"),
+      Calcit::Number(1.0),
+      Calcit::tag("gamma"),
+      Calcit::from(vec![
+        Calcit::Proc(CalcitProc::NativeMap),
+        Calcit::tag("alpha"),
+        Calcit::Number(2.0),
+        Calcit::tag("zeta"),
+        Calcit::Number(3.0),
+      ]),
+    ]);
+
+    assert_eq!(code, expected);
+  }
+
+  #[test]
+  fn data_to_calcit_totally_orders_nan_map_keys() {
+    let low_nan = f64::from_bits(0x7ff8_0000_0000_0001);
+    let high_nan = f64::from_bits(0x7ff8_0000_0000_0002);
+    let data = map(vec![
+      (Calcit::Number(high_nan), Calcit::tag("high-nan")),
+      (Calcit::Number(0.0), Calcit::tag("zero")),
+      (Calcit::Number(low_nan), Calcit::tag("low-nan")),
+    ]);
+
+    let code = data_to_calcit(&data, "tests.data", "nan-map").expect("NaN-keyed map data should convert to code");
+    let Calcit::List(items) = code else {
+      panic!("map data should emit a call form");
+    };
+    assert_eq!(items[2], Calcit::tag("zero"));
+    assert_eq!(items[4], Calcit::tag("low-nan"));
+    assert_eq!(items[6], Calcit::tag("high-nan"));
   }
 }
