@@ -381,9 +381,10 @@ preprocessing 已实现以下规则：
 示例诊断：
 
 ```text
-E_UNBOUND_TYPE_SLOT: `respo.schema/dispatch-op` is required by
-respo.schema/EventHandler but is not bound for entry `app.main/main!`.
-Bind it in :type-slots or explicitly select :dynamic.
+[E_UNBOUND_TYPE_SLOT] respo.schema/EventHandler uses unbound type slot
+`*dispatch-op` at schema.args.0; bind it for the selected entry with
+`calcit config set-type-slot :dispatch-op namespace/definition`, or explicitly
+select `:dynamic` only for a reviewed open boundary.
 ```
 
 ### 8.7 阶段 B 的证据门槛

@@ -168,7 +168,7 @@ from accidental omission.
 
 `E_UNBOUND_TYPE_SLOT` rejects a reachable function or macro contract that uses
 `*slot` without a binding in the selected entry. Bind a concrete nominal type
-with `calcit config set-type-slot :slot namespace/Definition`. When the entry
+with `calcit config set-type-slot :slot namespace/definition`. When the entry
 deliberately opts out of static checking at that boundary, bind `:dynamic`
 explicitly; it remains visible to `analyze weak-types` and quality baselines but
 is no longer confused with an omitted configuration. Compatibility mode keeps
