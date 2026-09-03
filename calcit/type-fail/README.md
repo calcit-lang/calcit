@@ -16,6 +16,7 @@
 - `cargo run --bin calcit -- calcit/type-fail/type-slot-record-call-arg-type-mismatch.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/type-slot-bind-unknown.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/type-slot-bind-duplicate.cirru --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/type-slot-unbound-strict.cirru --strict-types --check-only`
 
 其中：
 
@@ -26,6 +27,7 @@
 - `type-slot-record-call-arg-type-mismatch.cirru` 会验证 `bind-type` 绑定 struct 实例后，`*slot` 参与调用点类型检查。
 - `type-slot-bind-unknown.cirru` 会验证未声明 slot 的 `bind-type` 会直接失败。
 - `type-slot-bind-duplicate.cirru` 会验证同一个 slot 重复绑定会直接失败。
+- `type-slot-unbound-strict.cirru` 会验证 strict 模式拒绝可达定义中的未绑定 slot，并报告稳定的 `E_UNBOUND_TYPE_SLOT`。
 
 ## 自动化测试
 
@@ -34,6 +36,7 @@
 - schema mismatch fixtures：断言最终错误文本包含 `E_SCHEMA_DEF_MISMATCH`
 - call-site arg mismatch fixtures：断言产生 `W_FN_ARG_TYPE_MISMATCH` / `W_GENERIC_WHERE_BOUND_MISMATCH`
 - type-slot hard-fail fixtures：断言错误文本包含具体 slot 绑定失败原因
+- strict type-slot fixture：断言错误文本包含 `E_UNBOUND_TYPE_SLOT`、slot 名称与 schema 路径
 
 相关测试位于 [src/bin/calcit.rs](src/bin/calcit.rs)。
 
@@ -46,6 +49,7 @@
 ## 当前相关 code
 
 - `E_SCHEMA_DEF_MISMATCH`：定义与 `:schema` 的 `:kind` / `:args` / `:rest` 不匹配
+- `E_UNBOUND_TYPE_SLOT`：strict 模式下可达定义的 schema 引用了未配置或未局部绑定的 type slot
 - `W_FN_ARG_TYPE_MISMATCH`：用户函数调用参数类型不匹配
 - `W_METHOD_ARG_TYPE_MISMATCH`：静态方法调用参数类型不匹配
 - `W_DYNAMIC_NOMINAL_METHOD_RECEIVER`：Option/Result method 的接收者仍为 Dynamic，需先收窄或在明确边界使用函数形式
@@ -53,4 +57,4 @@
 - `W_CORE_FN_ARG_TYPE_MISMATCH`：`calcit.core` 函数参数类型不匹配
 - `W_FN_RETURN_TYPE_MISMATCH`：函数声明返回类型与函数体实际返回类型不匹配
 - `W_GENERIC_WHERE_BOUND_MISMATCH`：泛型绑定后的实际类型不满足 `:where` trait 约束
-- type-slot fixture 额外覆盖：struct 绑定、未知 slot 绑定、重复绑定、跨程序加载的 slot 状态清理
+- type-slot fixture 额外覆盖：struct 绑定、未知 slot 绑定、重复绑定、strict 未绑定拒绝、跨程序加载的 slot 状态清理

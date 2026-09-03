@@ -9,6 +9,24 @@ fn lock_fixture_tests() -> std::sync::MutexGuard<'static, ()> {
   super::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner())
 }
 
+struct StrictTypesReset {
+  previous: bool,
+}
+
+impl StrictTypesReset {
+  fn enabled() -> Self {
+    let previous = runner::preprocess::is_strict_types_enabled();
+    runner::preprocess::set_strict_types(true);
+    Self { previous }
+  }
+}
+
+impl Drop for StrictTypesReset {
+  fn drop(&mut self) {
+    runner::preprocess::set_strict_types(self.previous);
+  }
+}
+
 /// Run a test body in a dedicated thread with a 32 MiB stack.
 /// The suite lock is acquired inside the spawned thread so it is held for the
 /// duration of the run and dropped before the thread exits.
@@ -72,11 +90,13 @@ fn load_snippet_entries(snippet: &str) -> ProgramEntries {
 }
 
 fn prepare_snapshot_entries(mut snapshot: snapshot::Snapshot) -> ProgramEntries {
+  let project_namespaces: HashSet<String> = snapshot.files.keys().cloned().collect();
   let core_snapshot = calcit::load_core_snapshot().expect("load core snapshot");
 
   for (k, v) in core_snapshot.files {
     snapshot.files.insert(k.to_owned(), v.to_owned());
   }
+  runner::preprocess::set_project_namespaces(&project_namespaces);
 
   {
     let mut prgm = program::PROGRAM_CODE_DATA.write().expect("open program data");
@@ -146,6 +166,22 @@ fn type_fail_schema_mismatch_fixtures_report_error_code() {
       );
       assert!(err.contains(expected_msg), "fixture {path} msg was: {err}");
     }
+  });
+}
+
+#[test]
+fn strict_type_fail_reachable_unbound_slot_reports_stable_error_code() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/type-fail/type-slot-unbound-strict.cirru");
+    let _strict = StrictTypesReset::enabled();
+    let err = run_check_only(&entries).expect_err("reachable unbound type slot should fail strict check-only");
+
+    assert!(err.contains("E_UNBOUND_TYPE_SLOT"), "unexpected strict type-slot error: {err}");
+    assert!(err.contains("*payload"), "slot name should be actionable: {err}");
+    assert!(
+      err.contains("schema.args.0"),
+      "schema path should identify the unresolved slot: {err}"
+    );
   });
 }
 
