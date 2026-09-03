@@ -1,12 +1,12 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |type-fail-whole-dynamic-schema-strict)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |type-fail-erased-generic-relation-strict)
   :entries $ {}
-    :default $ {} (:description "|Strict preprocessing fixture for a generic relation erased by Dynamic.") (:init-fn 'type-fail-whole-dynamic-schema-strict.main/main!) (:mode :native) (:reload-fn 'type-fail-whole-dynamic-schema-strict.main/reload!)
+    :default $ {} (:description "|Strict preprocessing fixture for a generic relation erased by Dynamic.") (:init-fn 'type-fail-erased-generic-relation-strict.main/main!) (:mode :native) (:reload-fn 'type-fail-erased-generic-relation-strict.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    'type-fail-whole-dynamic-schema-strict.main $ %{} 'FileEntry
+    'type-fail-erased-generic-relation-strict.main $ %{} 'FileEntry
       :defs $ {}
         'compare-open $ %{} 'CodeEntry (:doc "|Dynamic input must be narrowed before entering the homogeneous generic equality relation.")
           :code $ quote
@@ -30,4 +30,4 @@
             {} (:return 'Unit)
               :args $ []
       :ns $ %{} 'NsEntry (:doc "|Strict erased-generic-relation fixture.")
-        :code $ quote (ns type-fail-whole-dynamic-schema-strict.main)
+        :code $ quote (ns type-fail-erased-generic-relation-strict.main)
