@@ -61,6 +61,7 @@ struct SearchCommonOpts<'a> {
 }
 
 const DETAILED_RESULTS_WINDOW: usize = 3;
+const TYPE_AT_SCHEMA_VERSION: u32 = 2;
 
 struct SpecialBuiltinQueryMeta {
   doc: &'static str,
@@ -132,6 +133,15 @@ struct TypeAtBinding {
   path: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct TypeAtLowering {
+  status: &'static str,
+  kind: &'static str,
+  source_head: Option<String>,
+  lowered_head: Option<String>,
+  detail: String,
+}
+
 #[derive(Debug, Serialize)]
 struct TypeAtData {
   id: String,
@@ -147,6 +157,7 @@ struct TypeAtData {
   bindings: Vec<TypeAtBinding>,
   bindings_complete: bool,
   static_methods: Option<Vec<ContextMethod>>,
+  lowering: TypeAtLowering,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1207,6 +1218,12 @@ mod type_query_tests {
       matches!(field_access.first(), Some(Calcit::Proc(calcit::CalcitProc::NativeStructNth))),
       "typed tag access should specialize to struct nth, got {target}"
     );
+    let source = parse_query_test_expression(":x p");
+    let lowering = type_at_lowering(&source, Some(target));
+    assert_eq!(lowering.status, "specialized");
+    assert_eq!(lowering.kind, "nominal-struct-field");
+    assert_eq!(lowering.source_head.as_deref(), Some(":x"));
+    assert_eq!(lowering.lowered_head.as_deref(), Some("&struct:nth"));
   }
 
   #[test]
@@ -1214,6 +1231,55 @@ mod type_query_tests {
     assert_eq!(parse_type_at_path("code@3.2"), Ok(vec![3, 2]));
     assert_eq!(parse_type_at_path("@3.2"), Ok(vec![3, 2]));
     assert_eq!(parse_type_at_path("3.2"), Ok(vec![3, 2]));
+  }
+
+  fn parse_query_test_expression(source: &str) -> Calcit {
+    let mut nodes = cirru_parser::parse(source).expect("test expression should parse");
+    assert_eq!(nodes.len(), 1);
+    code_to_calcit(&nodes.remove(0), "tests.type-at", "demo", vec![]).expect("test expression should convert")
+  }
+
+  #[test]
+  fn type_at_lowering_distinguishes_typed_specialization_from_direct_primitives() {
+    let source = parse_query_test_expression("count xs");
+    let processed = Calcit::from(vec![Calcit::Proc(calcit::CalcitProc::NativeListCount), Calcit::Number(1.0)]);
+    assert_eq!(
+      type_at_lowering(&source, Some(&processed)),
+      TypeAtLowering {
+        status: "specialized",
+        kind: "typed-polymorphic-call",
+        source_head: Some("count".to_owned()),
+        lowered_head: Some("&list:count".to_owned()),
+        detail:
+          "Static receiver type selected a collection-specific primitive or core implementation, removing generic runtime dispatch."
+            .to_owned(),
+      }
+    );
+
+    let direct = Calcit::from(vec![Calcit::Proc(calcit::CalcitProc::NativeListCount), Calcit::Number(1.0)]);
+    let lowering = type_at_lowering(&direct, Some(&direct));
+    assert_eq!(lowering.status, "unchanged");
+    assert_eq!(lowering.kind, "core-expression");
+  }
+
+  #[test]
+  fn type_at_lowering_exposes_dynamic_method_dispatch() {
+    let source = parse_query_test_expression(".show value");
+    let lowering = type_at_lowering(&source, Some(&source));
+    assert_eq!(lowering.status, "dynamic");
+    assert_eq!(lowering.kind, "dynamic-method-dispatch");
+    assert_eq!(lowering.source_head.as_deref(), Some(".show"));
+    assert_eq!(lowering.lowered_head.as_deref(), Some(".show"));
+  }
+
+  #[test]
+  fn type_at_lowering_recognizes_postfix_method_heads() {
+    let source = parse_query_test_expression("value .show");
+    let lowering = type_at_lowering(&source, Some(&source));
+    assert_eq!(lowering.status, "dynamic");
+    assert_eq!(lowering.kind, "dynamic-method-dispatch");
+    assert_eq!(lowering.source_head.as_deref(), Some(".show"));
+    assert_eq!(lowering.lowered_head.as_deref(), Some(".show"));
   }
 
   #[test]
@@ -1631,6 +1697,168 @@ fn type_at_evidence(node: &Calcit, path: &str, used_preprocessed: bool) -> TypeA
   }
 }
 
+fn type_at_call_head(node: &Calcit) -> Option<&Calcit> {
+  match node {
+    Calcit::List(items) => match (items.first(), items.get(1)) {
+      (Some(head @ Calcit::Method(..)), _) => Some(head),
+      (_, Some(head @ Calcit::Method(..))) => Some(head),
+      (head, _) => head,
+    },
+    _ => None,
+  }
+}
+
+fn type_at_head_label(head: &Calcit) -> Option<String> {
+  match head {
+    Calcit::Proc(proc) => Some(proc.to_string()),
+    Calcit::Import(import) => Some(format!("{}/{}", import.ns, import.def)),
+    Calcit::Symbol { sym, .. } | Calcit::Local(calcit::calcit::CalcitLocal { sym, .. }) => Some(sym.to_string()),
+    Calcit::Method(..) => Some(head.turn_string()),
+    Calcit::Tag(tag) => Some(format!(":{tag}")),
+    Calcit::Syntax(syntax, _) => Some(syntax.to_string()),
+    Calcit::StructDef(definition) => Some(definition.name.to_string()),
+    Calcit::EnumDef(definition) => Some(definition.name().to_string()),
+    Calcit::Fn { info, .. } => Some(info.name.to_string()),
+    Calcit::Registered(name) => Some(name.to_string()),
+    _ => None,
+  }
+}
+
+fn type_at_source_method(node: &Calcit) -> Option<String> {
+  let Calcit::List(items) = node else {
+    return None;
+  };
+  items.iter().take(2).find_map(|item| match item {
+    Calcit::Method(name, calcit::calcit::MethodKind::Invoke(_)) => Some(format!(".{name}")),
+    _ => None,
+  })
+}
+
+fn is_typed_collection_target(head: &Calcit) -> bool {
+  match head {
+    Calcit::Proc(proc) => {
+      let name = proc.as_ref();
+      name.starts_with("&list:")
+        || name.starts_with("&map:")
+        || name.starts_with("&set:")
+        || name.starts_with("&str:")
+        || name.starts_with("&enum:")
+    }
+    Calcit::Import(import) if import.ns.as_ref() == calcit::calcit::CORE_NS => {
+      let name = import.def.as_ref();
+      name.starts_with("&list:") || name.starts_with("&map:") || name.starts_with("&set:")
+    }
+    _ => false,
+  }
+}
+
+fn type_at_lowering(source: &Calcit, processed: Option<&Calcit>) -> TypeAtLowering {
+  let source_head = type_at_call_head(source).and_then(type_at_head_label);
+  let Some(processed) = processed else {
+    return TypeAtLowering {
+      status: "unavailable",
+      kind: "preprocess-unavailable",
+      source_head,
+      lowered_head: None,
+      detail: "No source-correlated preprocessed node was produced; inspect diagnostics before relying on runtime dispatch.".to_owned(),
+    };
+  };
+  let processed_head = type_at_call_head(processed);
+  let lowered_head = processed_head.and_then(type_at_head_label);
+  let source_method = type_at_source_method(source);
+
+  let (status, kind, detail) = match processed_head {
+    Some(Calcit::Proc(calcit::CalcitProc::NativeStructNth)) => (
+      "specialized",
+      "nominal-struct-field",
+      "The typed Struct field access was validated and lowered to indexed field access.",
+    ),
+    Some(Calcit::Proc(calcit::CalcitProc::NativeStructGet)) => (
+      "specialized",
+      "struct-field",
+      "The Struct field access was lowered to the core Struct primitive; indexed access needs a resolved nominal field layout.",
+    ),
+    Some(Calcit::Proc(calcit::CalcitProc::NativeStruct)) => (
+      "specialized",
+      "nominal-struct-constructor",
+      "The Struct constructor was checked against its nominal definition and lowered to the core constructor primitive.",
+    ),
+    Some(Calcit::Proc(calcit::CalcitProc::NativeNamedEnumNew)) => (
+      "specialized",
+      "nominal-enum-constructor",
+      "The Enum variant and payload were checked against the nominal definition and lowered to the core constructor primitive.",
+    ),
+    Some(Calcit::Proc(calcit::CalcitProc::NativeEnum)) => (
+      "specialized",
+      "anonymous-enum-constructor",
+      "The anonymous Enum constructor was lowered to the core constructor primitive.",
+    ),
+    Some(head) if is_typed_collection_target(head) && source_head != lowered_head => (
+      "specialized",
+      "typed-polymorphic-call",
+      "Static receiver type selected a collection-specific primitive or core implementation, removing generic runtime dispatch.",
+    ),
+    Some(Calcit::Method(
+      _,
+      calcit::calcit::MethodKind::ExternalAccess(_)
+      | calcit::calcit::MethodKind::ExternalGet(_)
+      | calcit::calcit::MethodKind::ExternalSet(_)
+      | calcit::calcit::MethodKind::ExternalInvoke(_),
+    )) => (
+      "specialized",
+      "typed-external-operation",
+      "Static external-object type selected a backend-native property or method operation.",
+    ),
+    Some(Calcit::Method(_, calcit::calcit::MethodKind::Invoke(receiver)))
+      if matches!(receiver.as_ref(), CalcitTypeAnnotation::Dynamic) =>
+    {
+      (
+        "dynamic",
+        "dynamic-method-dispatch",
+        "The receiver type is still Dynamic, so the method cannot be lowered to a direct callable.",
+      )
+    }
+    Some(Calcit::Method(_, calcit::calcit::MethodKind::Invoke(_))) => (
+      "dynamic",
+      "typed-method-dispatch",
+      "The receiver type is known, but this method remains on the explicit dispatch path because no stable direct callable was selected.",
+    ),
+    Some(_) if source_method.is_some() && source_head != lowered_head => (
+      "specialized",
+      "static-method-call",
+      "The typed method was resolved during preprocessing and lowered to a direct callable.",
+    ),
+    Some(_) if source_head != lowered_head => (
+      "resolved",
+      "static-call-resolution",
+      "Preprocessing resolved the callable head, but no type-directed specialization was identified.",
+    ),
+    Some(_) => (
+      "unchanged",
+      "core-expression",
+      "The expression already uses its final callable shape; no additional type-directed lowering was needed.",
+    ),
+    None if source_method.is_some() => (
+      "specialized",
+      "static-method-call",
+      "The typed method was resolved and folded into a non-call expression during preprocessing.",
+    ),
+    None => (
+      "resolved",
+      "preprocessed-value",
+      "Preprocessing produced a value rather than a callable expression.",
+    ),
+  };
+
+  TypeAtLowering {
+    status,
+    kind,
+    source_head: source_method.or(source_head),
+    lowered_head,
+    detail: detail.to_owned(),
+  }
+}
+
 fn collect_type_at_bindings(node: &Calcit, values: &mut BTreeMap<String, (Arc<CalcitTypeAnnotation>, Option<String>)>) {
   match node {
     Calcit::Local(local) => {
@@ -1759,6 +1987,11 @@ fn render_type_at_human(envelope: &SemanticQueryEnvelope<TypeAtData>) -> String 
   if let Some(intent) = data.dynamic_intent {
     let _ = writeln!(&mut out, "Dynamic intent: {intent}");
   }
+  let _ = writeln!(&mut out, "Lowering: {} ({})", data.lowering.status, data.lowering.kind);
+  let source_head = data.lowering.source_head.as_deref().unwrap_or("value");
+  let lowered_head = data.lowering.lowered_head.as_deref().unwrap_or("value");
+  let _ = writeln!(&mut out, "  {source_head} -> {lowered_head}");
+  let _ = writeln!(&mut out, "  {}", data.lowering.detail);
   let _ = writeln!(&mut out, "Evidence:");
   for evidence in &data.evidence {
     let _ = writeln!(&mut out, "  - {}: {}", evidence.kind, evidence.detail);
@@ -1933,6 +2166,7 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
   }
   let bindings = format_type_at_bindings(processed_root, processed_target)?;
   let confidence = type_at_confidence(inferred.as_deref());
+  let lowering = type_at_lowering(&source_target, processed_target);
   let data = TypeAtData {
     id: format!("{namespace}/{definition}"),
     path: semantic_path.clone(),
@@ -1947,6 +2181,7 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
     bindings,
     bindings_complete: false,
     static_methods: methods,
+    lowering,
   };
   let mut next = vec![format!("calcit tree show '{namespace}/{definition}' --path '{semantic_path}'")];
   if confidence != "exact" {
@@ -1956,7 +2191,7 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
     ));
   }
   let envelope = SemanticQueryEnvelope {
-    schema_version: 1,
+    schema_version: TYPE_AT_SCHEMA_VERSION,
     command: "query.type-at",
     revision,
     data,

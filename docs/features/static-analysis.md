@@ -126,7 +126,7 @@ For `code-nil`, the report includes raw `nil` and the legacy `;nil` compatibilit
 
 For one definition, `calcit query context '<ns/def>' --format json` embeds the same distinction in its diagnostics and returns the definition revision together with Snapshot paths.
 
-For one expression, `calcit query type-at '<ns/def>' --path code@... --format json` preprocesses only static program metadata and returns inferred type, expected type, typed bindings, confidence, method candidates, and diagnostics. It does not run the application entry. Paths use the same stable Snapshot coordinates returned by structural query commands.
+For one expression, `calcit query type-at '<ns/def>' --path code@... --format json` preprocesses only static program metadata and returns inferred type, expected type, typed bindings, confidence, method candidates, preprocess lowering evidence, and diagnostics. Its v2 `data.lowering` object distinguishes type-selected primitives from ordinary static call resolution and remaining dynamic dispatch. It does not run the application entry. Paths use the same stable Snapshot coordinates returned by structural query commands.
 
 `check-types`, `weak-types`, `deprecated`, and `quality` run as static Snapshot readers: they load configured modules and core metadata but do not preprocess or execute the application entry. `dynamic-methods` preprocesses the selected entry's reachable definitions without executing them, because receiver inference and method specialization are preprocessing results. With `--format json`, stdout is one versioned JSON envelope containing a stable scope revision, filters, summary, and finding or definition rows; startup/command messages stay on stderr.
 
