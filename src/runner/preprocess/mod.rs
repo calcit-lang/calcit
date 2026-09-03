@@ -22,7 +22,8 @@ use type_checking::{
 pub use type_inference::infer_static_type_from_expr;
 use type_inference::{
   extract_literal_list_items, find_struct_lookup_in_literal_path, fully_typed_literal_assoc_path, fully_typed_literal_lookup_path,
-  infer_struct_field_type, infer_type_from_expr, resolve_enum_value, resolve_program_value_for_preprocess, resolve_type_value,
+  infer_struct_field_type, infer_struct_value_annotation, infer_type_from_expr, resolve_enum_value,
+  resolve_program_value_for_preprocess, resolve_type_value,
 };
 use type_rewriting::{
   build_enum_ref_node, build_struct_ref_node, try_rewrite_enum_args_to_named_enums, try_rewrite_local_fn_enum_args_to_named_enums,
@@ -475,7 +476,7 @@ fn preprocess_with_type_slot_block(
       Calcit::EnumDef(_) | Calcit::StructDef(_) => {
         Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![])))
       }
-      Calcit::Struct(struct_value) => Arc::new(CalcitTypeAnnotation::StructValue(struct_value.struct_ref.clone())),
+      Calcit::Struct(struct_value) => infer_struct_value_annotation(struct_value, scope_types),
       other => {
         return Err(CalcitErr::use_msg_stack_location(
           CalcitErrKind::Unexpected,
@@ -492,7 +493,7 @@ fn preprocess_with_type_slot_block(
     match &resolved {
       Calcit::EnumDef(enum_def) => Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def.to_owned()), Arc::new(vec![]))),
       Calcit::StructDef(struct_def) => Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def.to_owned()), Arc::new(vec![]))),
-      Calcit::Struct(struct_value) => Arc::new(CalcitTypeAnnotation::StructValue(struct_value.struct_ref.clone())),
+      Calcit::Struct(struct_value) => infer_struct_value_annotation(struct_value, scope_types),
       other => match infer_type_from_expr(other, scope_types) {
         Some(inferred)
           if matches!(
@@ -15191,6 +15192,45 @@ mod tests {
     );
     let args = CalcitList::from(&[Calcit::Number(1.0), value][..]);
     assert!(find_erased_generic_argument(&relation_plus_open_boundary, &args, &scope_types).is_none());
+  }
+
+  #[test]
+  fn type_slot_struct_annotations_preserve_generic_arguments_for_erasure_checks() {
+    let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let box_def = Arc::new(CalcitStructDef {
+      name: EdnTag::new("Box"),
+      fields: Arc::new(vec![EdnTag::new("value")]),
+      field_types: Arc::new(vec![type_var.clone()]),
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    });
+    let dynamic = calcit::DYNAMIC_TYPE.clone();
+    let dynamic_value = generic_relation_test_local("dynamic-value", dynamic.clone());
+    let value_scope = ScopeTypes::from([(Arc::from("dynamic-value"), dynamic.clone())]);
+    let box_value = CalcitStructValue {
+      struct_ref: box_def.clone(),
+      values: Arc::new(vec![dynamic_value]),
+    };
+
+    let inferred = infer_struct_value_annotation(&box_value, &value_scope);
+    assert!(
+      matches!(
+        inferred.as_ref(),
+        CalcitTypeAnnotation::Struct(_, args)
+          if matches!(args.as_slice(), [argument] if matches!(argument.as_ref(), CalcitTypeAnnotation::Dynamic))
+      ),
+      "a generic Struct value used by with-type-slot must retain its applied Dynamic argument: {inferred:?}"
+    );
+
+    let expected_box = Arc::new(CalcitTypeAnnotation::Struct(box_def, Arc::new(vec![type_var])));
+    let signature = generic_relation_test_signature(vec![expected_box.clone()], expected_box, None);
+    let box_local = generic_relation_test_local("box-value", inferred.clone());
+    let box_scope = ScopeTypes::from([(Arc::from("box-value"), inferred)]);
+    let args = CalcitList::from(&[box_local][..]);
+    let erased = find_erased_generic_argument(&signature, &args, &box_scope)
+      .expect("Struct<T> against Struct<Dynamic> should erase the nested generic relation");
+    assert_eq!(erased.generics, vec![Arc::from("T")]);
   }
 
   #[test]

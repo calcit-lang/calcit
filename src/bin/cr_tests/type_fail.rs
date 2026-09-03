@@ -242,6 +242,8 @@ fn strict_type_fail_erased_generic_relation_reports_stable_error_code() {
     );
     assert!(err.contains("call to `calcit.core/=`"), "callee should be explicit: {err}");
     assert!(err.contains("argument 1"), "erased argument should be identified: {err}");
+    assert!(err.contains("passes `dynamic`"), "actual type should be rendered: {err}");
+    assert!(err.contains("required by `'T`"), "expected type should be rendered: {err}");
     assert!(err.contains("generic relation `'T`"), "generic relation should be named: {err}");
     assert!(
       err.contains("narrow or validate the value"),

@@ -625,17 +625,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
       Some(enum_def) => Some(Arc::new(CalcitTypeAnnotation::EnumValue(enum_def.clone()))),
       None => Some(Arc::new(CalcitTypeAnnotation::AnonymousEnum)),
     },
-    Calcit::Struct(struct_value) => {
-      if struct_value.struct_ref.generics.is_empty() {
-        Some(Arc::new(CalcitTypeAnnotation::StructValue(struct_value.struct_ref.clone())))
-      } else {
-        let applied_args = infer_struct_applied_args(struct_value.struct_ref.as_ref(), struct_value.values.iter(), scope_types);
-        Some(Arc::new(CalcitTypeAnnotation::Struct(
-          struct_value.struct_ref.clone(),
-          Arc::new(applied_args),
-        )))
-      }
-    }
+    Calcit::Struct(struct_value) => Some(infer_struct_value_annotation(struct_value, scope_types)),
     Calcit::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::StructDef(Arc::new(struct_def.to_owned())))),
     Calcit::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(enum_def.to_owned())))),
     Calcit::Trait(trait_def) => Some(Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def.to_owned())))),
@@ -1708,6 +1698,18 @@ fn infer_struct_applied_args<'a>(
     .iter()
     .map(|name| bindings.get(name).cloned().unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
     .collect()
+}
+
+pub(super) fn infer_struct_value_annotation(struct_value: &CalcitStructValue, scope_types: &ScopeTypes) -> Arc<CalcitTypeAnnotation> {
+  if struct_value.struct_ref.generics.is_empty() {
+    Arc::new(CalcitTypeAnnotation::StructValue(struct_value.struct_ref.clone()))
+  } else {
+    let applied_args = infer_struct_applied_args(struct_value.struct_ref.as_ref(), struct_value.values.iter(), scope_types);
+    Arc::new(CalcitTypeAnnotation::Struct(
+      struct_value.struct_ref.clone(),
+      Arc::new(applied_args),
+    ))
+  }
 }
 
 fn collect_struct_literal_values(xs: &CalcitList, struct_value: &CalcitStructValue) -> Option<Vec<Calcit>> {
