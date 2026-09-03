@@ -19,7 +19,7 @@ All map operations return new maps — the original is never mutated.
 ## Quick Recipes
 
 - **Create**: `{} (:a 1) (:b 2)`
-- **Access**: `get m :a`, `contains? m :a`
+- **Access**: `m.get :a`, `m.contains? :a`
 - **Modify**: `assoc m :c 3`, `dissoc m :a`, `update m :a inc`
 - **Transform**: `map-kv m f`, `filter-map-kv m f`, `merge m1 m2`
 - **Keys/Values**: `keys m`, `vals m`, `to-pairs m`
@@ -57,17 +57,25 @@ The low-level primitive `&{}` takes flat key-value pairs:
 ```cirru
 let
     m $ {} (:a 1) (:b 2) (:c 3)
-  println $ get m :a
+  println $ m.get :a
   ; => (%some 1)
-  println $ get m :missing
+  println $ m.get :missing
   ; => (%none)
-  println $ contains? m :b
+  println $ m.contains? :b
   ; => true
   println $ count m
   ; => 3
   println $ empty? m
   ; => false
 ```
+
+`.get` is the public typed lookup form and returns `Option<V>`. When `m` has a
+known `Map<K,V>` type, preprocessing checks the receiver family and lowers the
+lookup to `&map:contains?` plus `&map:get`; the key and receiver are each
+evaluated once. The prefix form `get m key` has the same contract and lowering.
+Dynamic receivers keep the compatibility implementation with runtime type
+tests, so business code should preserve the concrete Map type instead of
+erasing it to `Dynamic`.
 
 ### Nested access with `get-in`
 

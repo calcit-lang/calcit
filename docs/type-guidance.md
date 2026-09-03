@@ -99,6 +99,8 @@ reason/payload 使用方法级泛型，因此不会为了宿主编码而抹掉�
 
 动态接收者、动态路径和混合容器仍是明确的兼容边界，会保留动态路径 API。新代码在数据形状已知时优先使用直接 `.get`、Option 组合和名义字段访问；只有开放数据才使用路径 API。不要用路径函数绕过 Struct 字段检查：Struct 应使用 `(:field value)` 或 `value.:field`，字段可缺失就把字段声明为 `Option<T>`。
 
+当 receiver 类型是 `Map<K,V>`、`List<T>`、String 或 Enum 时，`.get`、`.nth`、`.first` 会在 preprocess 阶段降低为该类型的 `&scope:*` primitive 与显式 Option 构造，不再执行通用函数中的 receiver type predicates。前缀形式 `get` / `nth` / `first` 保持兼容并使用同一 lowering；业务代码优先使用 receiver 形式来保留类型意图。
+
 对 `update-in` 的缺失值给默认值或明确处理 `%none`，不要无条件 unwrap：
 
 ```cirru.no-check

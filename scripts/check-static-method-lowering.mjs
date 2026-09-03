@@ -29,6 +29,28 @@ assert.doesNotMatch(
   "a statically known nominal .show call must not retain dynamic dispatch",
 );
 
+const typedOutput = readFileSync("js-out/test-types.main.mjs", "utf8");
+assert.match(
+  typedOutput,
+  /typed_get_receiver__\d+[\s\S]*?\$clt\._\$n_map_\$o_contains_\$q_\([\s\S]*?\$clt\._\$n_map_\$o_get\(/,
+  "typed Map .get must lower to direct contains/get primitives",
+);
+assert.match(
+  typedOutput,
+  /typed_first_receiver__\d+[\s\S]*?\$clt\._\$n_list_\$o_empty_\$q_\([\s\S]*?\$clt\._\$n_list_\$o_first\(/,
+  "typed List .first must lower to direct empty/first primitives",
+);
+assert.match(
+  typedOutput,
+  /typed_first_receiver__\d+[\s\S]*?\$clt\._\$n_str_\$o_empty_\$q_\([\s\S]*?\$clt\._\$n_str_\$o_first\(/,
+  "typed String .first must lower to direct empty/first primitives",
+);
+assert.doesNotMatch(
+  typedOutput,
+  /invoke_method\(\s*"(?:get|nth|first)"/,
+  "typed Option-returning access must not retain dynamic method dispatch",
+);
+
 const coreOutput = readFileSync("js-out/calcit.core.mjs", "utf8");
 assert.match(coreOutput, /ref:\s*_\$n_core_ref_impls/, "generated JS must register the Ref fallback impl table");
 

@@ -40,7 +40,7 @@ All list operations return new lists — the original is never mutated.
 ## Quick Recipes
 
 - **Create**: `[] 1 2 3` or `range 5`
-- **Access**: `nth xs 0`, `first xs`, `last xs`
+- **Access**: `xs.nth 0`, `xs.first`, `xs.last`
 - **Modify**: `append xs 4`, `prepend xs 0`, `assoc xs 1 99`
 - **Transform**: `map xs f`, `filter xs f`, `reduce xs 0 f`
 - **Combine**: `concat xs ys`, `slice xs 1 3`
@@ -73,24 +73,32 @@ let
 ```cirru
 let
     xs $ [] 10 20 30 40
-  println $ nth xs 0
-  ; => 10
-  println $ first xs
-  ; => 10
+  println $ xs.nth 0
+  ; => (%some 10)
+  println $ xs.first
+  ; => (%some 10)
   println $ last xs
-  ; => 40
+  ; => (%some 40)
   println $ count xs
   ; => 4
 ```
 
-`get` is an alias for `nth`:
+`get` uses the same `Option<T>` contract as `nth`:
 
 ```cirru
 let
     xs $ [] :a :b :c
-  println $ get xs 1
-  ; => :b
+  println $ xs.get 1
+  ; => (%some :b)
 ```
+
+With a known `List<T>` receiver, preprocessing lowers `.get` and `.nth` to
+list-specific count/nth primitives, lowers `.first` to empty/first primitives,
+and constructs `Option<T>` directly. Receiver and index expressions retain
+source order and are evaluated once. String and Enum receivers use the same
+source forms and lower to their own primitives. Dynamic receivers remain on
+the compatibility path; new business code should keep the collection element
+type available.
 
 ## Adding / Removing Elements
 
