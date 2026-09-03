@@ -1220,11 +1220,11 @@ fn try_expand_typed_literal_path_call(
   }
 }
 
-/// Reprocess generated code without surfacing diagnostics for synthetic guards.
+/// Reprocess a generated specialization without surfacing diagnostics for synthetic guards.
 /// Caller expressions have already been preprocessed with the user's warning
 /// sink before specialization, so discarding only this second pass avoids
 /// compiler-generated `nil?`/`struct?` warnings without hiding source warnings.
-fn preprocess_generated_path_expansion(
+fn preprocess_generated_specialization(
   expanded: &Calcit,
   scope_defs: &HashSet<Arc<str>>,
   scope_types: &mut ScopeTypes,
@@ -1233,6 +1233,253 @@ fn preprocess_generated_path_expansion(
 ) -> Result<Calcit, CalcitErr> {
   let generated_warnings = RefCell::new(vec![]);
   preprocess_expr(expanded, scope_defs, scope_types, file_ns, &generated_warnings, call_stack)
+}
+
+fn generated_optional_value(value: Calcit, file_ns: &str) -> Calcit {
+  generated_core_call("%some", vec![value], file_ns)
+}
+
+fn generated_absent_value(file_ns: &str) -> Calcit {
+  generated_core_call("%none", vec![], file_ns)
+}
+
+fn generated_optional_index_access(
+  receiver: Calcit,
+  index: Calcit,
+  count_proc: CalcitProc,
+  nth_proc: CalcitProc,
+  check_number: bool,
+  file_ns: &str,
+) -> Calcit {
+  let none = generated_absent_value(file_ns);
+  let in_bounds = generated_if(
+    generated_call(vec![
+      Calcit::Proc(CalcitProc::NativeLessThan),
+      index.to_owned(),
+      Calcit::Number(0.0),
+    ]),
+    none.to_owned(),
+    generated_if(
+      generated_call(vec![
+        Calcit::Proc(CalcitProc::NativeLessThan),
+        index.to_owned(),
+        generated_call(vec![Calcit::Proc(count_proc), receiver.to_owned()]),
+      ]),
+      generated_optional_value(generated_call(vec![Calcit::Proc(nth_proc), receiver, index.to_owned()]), file_ns),
+      none.to_owned(),
+      file_ns,
+    ),
+    file_ns,
+  );
+  if check_number {
+    generated_if(
+      generated_call(vec![Calcit::Proc(CalcitProc::NumberQuestion), index]),
+      in_bounds,
+      none,
+      file_ns,
+    )
+  } else {
+    in_bounds
+  }
+}
+
+fn generated_optional_first_access(receiver: Calcit, receiver_type: &CalcitTypeAnnotation, file_ns: &str) -> Option<Calcit> {
+  let none = generated_absent_value(file_ns);
+  match receiver_type {
+    CalcitTypeAnnotation::List(_) => Some(generated_if(
+      generated_call(vec![Calcit::Proc(CalcitProc::NativeListEmpty), receiver.to_owned()]),
+      none,
+      generated_optional_value(generated_call(vec![Calcit::Proc(CalcitProc::NativeListFirst), receiver]), file_ns),
+      file_ns,
+    )),
+    CalcitTypeAnnotation::String => Some(generated_if(
+      generated_call(vec![Calcit::Proc(CalcitProc::NativeStrEmpty), receiver.to_owned()]),
+      none,
+      generated_optional_value(generated_call(vec![Calcit::Proc(CalcitProc::NativeStrFirst), receiver]), file_ns),
+      file_ns,
+    )),
+    value
+      if matches!(value, CalcitTypeAnnotation::EnumValue(_) | CalcitTypeAnnotation::AnonymousEnum)
+        || value.resolve_to_enum().is_some() =>
+    {
+      Some(generated_if(
+        generated_call(vec![
+          Calcit::Proc(CalcitProc::NativeLessThan),
+          Calcit::Number(0.0),
+          generated_call(vec![Calcit::Proc(CalcitProc::NativeEnumCount), receiver.to_owned()]),
+        ]),
+        generated_optional_value(
+          generated_call(vec![Calcit::Proc(CalcitProc::NativeEnumNth), receiver, Calcit::Number(0.0)]),
+          file_ns,
+        ),
+        none,
+        file_ns,
+      ))
+    }
+    _ => None,
+  }
+}
+
+fn generated_optional_last_access(
+  receiver: Calcit,
+  receiver_type: &CalcitTypeAnnotation,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
+  let none = generated_absent_value(file_ns);
+  if matches!(receiver_type, CalcitTypeAnnotation::List(_)) {
+    return Ok(Some(generated_if(
+      generated_call(vec![Calcit::Proc(CalcitProc::NativeListEmpty), receiver.to_owned()]),
+      none,
+      generated_optional_value(generated_call(vec![Calcit::Proc(CalcitProc::NativeListLast), receiver]), file_ns),
+      file_ns,
+    )));
+  }
+
+  let (count_proc, nth_proc) = match receiver_type {
+    CalcitTypeAnnotation::String => (CalcitProc::NativeStrCount, CalcitProc::NativeStrNth),
+    value
+      if matches!(value, CalcitTypeAnnotation::EnumValue(_) | CalcitTypeAnnotation::AnonymousEnum)
+        || value.resolve_to_enum().is_some() =>
+    {
+      (CalcitProc::NativeEnumCount, CalcitProc::NativeEnumNth)
+    }
+    _ => return Ok(None),
+  };
+  let count = generated_path_symbol("typed_last_count", file_ns, call_stack)?;
+  let body = generated_if(
+    generated_call(vec![
+      Calcit::Proc(CalcitProc::NativeLessThan),
+      Calcit::Number(0.0),
+      count.to_owned(),
+    ]),
+    generated_optional_value(
+      generated_call(vec![
+        Calcit::Proc(nth_proc),
+        receiver.to_owned(),
+        generated_call(vec![Calcit::Proc(CalcitProc::NativeMinus), count.to_owned(), Calcit::Number(1.0)]),
+      ]),
+      file_ns,
+    ),
+    none,
+    file_ns,
+  );
+  Ok(Some(generated_let(
+    count,
+    generated_call(vec![Calcit::Proc(count_proc), receiver]),
+    body,
+    file_ns,
+  )))
+}
+
+/// Lower Option-returning access once the receiver type selects one concrete
+/// collection family. Generated temporaries preserve the source call's
+/// left-to-right, exactly-once argument evaluation.
+fn try_expand_typed_optional_access_call(
+  fn_ns: &str,
+  fn_def: &str,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
+  use CalcitTypeAnnotation as T;
+
+  if fn_ns != calcit::CORE_NS {
+    return Ok(None);
+  }
+  let Some(receiver_expr) = args.first() else {
+    return Ok(None);
+  };
+  let Some(receiver_type) = resolve_type_value(receiver_expr, scope_types) else {
+    return Ok(None);
+  };
+
+  let indexed_procs = match receiver_type.as_ref() {
+    T::List(_) => Some((CalcitProc::NativeListCount, CalcitProc::NativeListNth)),
+    T::String => Some((CalcitProc::NativeStrCount, CalcitProc::NativeStrNth)),
+    T::EnumValue(_) | T::AnonymousEnum => Some((CalcitProc::NativeEnumCount, CalcitProc::NativeEnumNth)),
+    value if value.resolve_to_enum().is_some() => Some((CalcitProc::NativeEnumCount, CalcitProc::NativeEnumNth)),
+    _ => None,
+  };
+
+  match (fn_def, args.len(), receiver_type.as_ref()) {
+    ("get", 2, T::Map(_, _)) => {
+      let receiver = generated_path_symbol("typed_get_receiver", file_ns, call_stack)?;
+      let key = generated_path_symbol("typed_get_key", file_ns, call_stack)?;
+      let body = generated_if(
+        generated_call(vec![
+          Calcit::Proc(CalcitProc::NativeMapContains),
+          receiver.to_owned(),
+          key.to_owned(),
+        ]),
+        generated_optional_value(
+          generated_call(vec![Calcit::Proc(CalcitProc::NativeMapGet), receiver.to_owned(), key.to_owned()]),
+          file_ns,
+        ),
+        generated_absent_value(file_ns),
+        file_ns,
+      );
+      Ok(Some(generated_lets(
+        vec![(receiver, receiver_expr.to_owned()), (key, args[1].to_owned())],
+        body,
+        file_ns,
+      )))
+    }
+    ("get", 2, _) if indexed_procs.is_some() => {
+      let (count_proc, nth_proc) = indexed_procs.expect("guarded indexed procs");
+      let receiver = generated_path_symbol("typed_get_receiver", file_ns, call_stack)?;
+      let index = generated_path_symbol("typed_get_index", file_ns, call_stack)?;
+      let body = generated_optional_index_access(receiver.to_owned(), index.to_owned(), count_proc, nth_proc, true, file_ns);
+      Ok(Some(generated_lets(
+        vec![(receiver, receiver_expr.to_owned()), (index, args[1].to_owned())],
+        body,
+        file_ns,
+      )))
+    }
+    ("nth", 2, _) if indexed_procs.is_some() => {
+      let (count_proc, nth_proc) = indexed_procs.expect("guarded indexed procs");
+      let receiver = generated_path_symbol("typed_nth_receiver", file_ns, call_stack)?;
+      let index = generated_path_symbol("typed_nth_index", file_ns, call_stack)?;
+      let body = generated_optional_index_access(receiver.to_owned(), index.to_owned(), count_proc, nth_proc, true, file_ns);
+      Ok(Some(generated_lets(
+        vec![(receiver, receiver_expr.to_owned()), (index, args[1].to_owned())],
+        body,
+        file_ns,
+      )))
+    }
+    ("first", 1, _) if indexed_procs.is_some() => {
+      let receiver = generated_path_symbol("typed_first_receiver", file_ns, call_stack)?;
+      let body =
+        generated_optional_first_access(receiver.to_owned(), receiver_type.as_ref(), file_ns).expect("guarded typed first receiver");
+      Ok(Some(generated_let(receiver, receiver_expr.to_owned(), body, file_ns)))
+    }
+    ("last", 1, _) if indexed_procs.is_some() => {
+      let receiver = generated_path_symbol("typed_last_receiver", file_ns, call_stack)?;
+      let body = generated_optional_last_access(receiver.to_owned(), receiver_type.as_ref(), file_ns, call_stack)?
+        .expect("guarded typed last receiver");
+      Ok(Some(generated_let(receiver, receiver_expr.to_owned(), body, file_ns)))
+    }
+    _ => Ok(None),
+  }
+}
+
+fn try_expand_inlined_typed_optional_access(
+  call: &Calcit,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
+  let Calcit::List(items) = call else {
+    return Ok(None);
+  };
+  let Some(Calcit::Import(CalcitImport { ns, def, .. })) = items.first() else {
+    return Ok(None);
+  };
+  if ns.as_ref() != calcit::CORE_NS || !matches!(def.as_ref(), "get" | "nth" | "first" | "last") {
+    return Ok(None);
+  }
+  try_expand_typed_optional_access_call(ns, def, &items.drop_left(), scope_types, file_ns, call_stack)
 }
 
 pub fn preprocess_expr(
@@ -1779,6 +2026,9 @@ fn preprocess_list_call(
             // so typed source such as `m .keys` reaches codegen with the direct
             // `&scope:name` callable as its head instead of `invoke-method`.
             if let Some(optimized_call) = try_inline_method_call(&typed_method, &processed_args, scope_types, file_ns, call_stack)? {
+              if let Some(expanded) = try_expand_inlined_typed_optional_access(&optimized_call, scope_types, file_ns, call_stack)? {
+                return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
+              }
               return Ok(optimized_call);
             }
 
@@ -2072,7 +2322,12 @@ fn preprocess_list_call(
           if matches!(def.as_ref(), "get-in" | "assoc-in" | "update-in")
             && let Some(expanded) = try_expand_typed_literal_path_call(&head_form, &current_args, scope_types, file_ns, call_stack)?
           {
-            return preprocess_generated_path_expansion(&expanded, scope_defs, scope_types, file_ns, call_stack);
+            return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
+          }
+          if matches!(def.as_ref(), "get" | "nth" | "first" | "last")
+            && let Some(expanded) = try_expand_typed_optional_access_call(ns, def, &current_args, scope_types, file_ns, call_stack)?
+          {
+            return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
           }
           if let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types, file_ns) {
             return Ok(specialized);
@@ -2631,13 +2886,16 @@ fn preprocess_list_call(
           && matches!(def.as_ref(), "get-in" | "assoc-in" | "update-in")
           && let Some(expanded) = try_expand_typed_literal_path_call(call_head, &processed_args, scope_types, file_ns, call_stack)?
         {
-          return preprocess_generated_path_expansion(&expanded, scope_defs, scope_types, file_ns, call_stack);
+          return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
         }
 
         if !has_spread
           && let Some(call_head) = ys.first()
           && let Some(optimized_call) = try_inline_method_call(call_head, &processed_args, scope_types, file_ns, call_stack)?
         {
+          if let Some(expanded) = try_expand_inlined_typed_optional_access(&optimized_call, scope_types, file_ns, call_stack)? {
+            return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
+          }
           return Ok(optimized_call);
         }
 
@@ -8431,6 +8689,124 @@ mod tests {
   }
 
   #[test]
+  fn expands_typed_optional_access_to_collection_primitives() {
+    let _guard = lock_preprocess_test_state();
+    let map_type = Arc::new(CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::Tag),
+      Arc::new(CalcitTypeAnnotation::Number),
+    ));
+    let typed_map = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("source-map")),
+      sym: Arc::from("source-map"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.typed-access"),
+        at_def: Arc::from("main"),
+      }),
+      location: None,
+      type_info: map_type,
+    });
+    let stack = CallStackList::default();
+    let get_args = CalcitList::from(&[typed_map, Calcit::tag("score")] as &[Calcit]);
+    let expanded_get =
+      try_expand_typed_optional_access_call(calcit::CORE_NS, "get", &get_args, &ScopeTypes::new(), "tests.typed-access", &stack)
+        .expect("build typed get expansion")
+        .expect("Map get should specialize");
+    let get_code = expanded_get.lisp_str();
+    assert!(get_code.contains("&map:contains?"));
+    assert!(get_code.contains("&map:get"));
+    assert!(get_code.contains("calcit.core/%some"));
+    assert!(get_code.contains("calcit.core/%none"));
+    assert!(!get_code.contains("map?"));
+    assert!(!get_code.contains("calcit.core/get"));
+    assert_eq!(get_code.matches("source-map").count(), 1, "caller receiver is evaluated once");
+    assert_eq!(get_code.matches(":score").count(), 1, "caller key is evaluated once");
+
+    let typed_list = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("source-list")),
+      sym: Arc::from("source-list"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.typed-access"),
+        at_def: Arc::from("main"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String))),
+    });
+    let nth_args = CalcitList::from(&[typed_list.to_owned(), Calcit::Number(2.0)] as &[Calcit]);
+    let expanded_nth =
+      try_expand_typed_optional_access_call(calcit::CORE_NS, "nth", &nth_args, &ScopeTypes::new(), "tests.typed-access", &stack)
+        .expect("build typed nth expansion")
+        .expect("List nth should specialize");
+    let nth_code = expanded_nth.lisp_str();
+    assert!(nth_code.contains("&list:count"));
+    assert!(nth_code.contains("&list:nth"));
+    assert!(!nth_code.contains("list?"));
+    assert_eq!(nth_code.matches("source-list").count(), 1, "caller receiver is evaluated once");
+
+    let first_args = CalcitList::from(&[typed_list.to_owned()] as &[Calcit]);
+    let expanded_first = try_expand_typed_optional_access_call(
+      calcit::CORE_NS,
+      "first",
+      &first_args,
+      &ScopeTypes::new(),
+      "tests.typed-access",
+      &stack,
+    )
+    .expect("build typed first expansion")
+    .expect("List first should specialize");
+    let first_code = expanded_first.lisp_str();
+    assert!(first_code.contains("&list:empty?"));
+    assert!(first_code.contains("&list:first"));
+    assert!(!first_code.contains("&list:count"));
+    assert!(!first_code.contains("&list:nth"));
+    assert_eq!(first_code.matches("source-list").count(), 1, "caller receiver is evaluated once");
+
+    let last_args = CalcitList::from(&[typed_list] as &[Calcit]);
+    let expanded_last = try_expand_typed_optional_access_call(
+      calcit::CORE_NS,
+      "last",
+      &last_args,
+      &ScopeTypes::new(),
+      "tests.typed-access",
+      &stack,
+    )
+    .expect("build typed last expansion")
+    .expect("List last should specialize");
+    let last_code = expanded_last.lisp_str();
+    assert!(last_code.contains("&list:empty?"));
+    assert!(last_code.contains("&list:last"));
+    assert!(!last_code.contains("&list:count"));
+    assert!(!last_code.contains("&list:nth"));
+    assert_eq!(last_code.matches("source-list").count(), 1, "caller receiver is evaluated once");
+  }
+
+  #[test]
+  fn leaves_dynamic_optional_access_on_the_compatibility_path() {
+    let dynamic_receiver = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("dynamic-source")),
+      sym: Arc::from("dynamic-source"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.typed-access"),
+        at_def: Arc::from("main"),
+      }),
+      location: None,
+      type_info: calcit::DYNAMIC_TYPE.clone(),
+    });
+    let args = CalcitList::from(&[dynamic_receiver, Calcit::Number(0.0)] as &[Calcit]);
+    assert!(
+      try_expand_typed_optional_access_call(
+        calcit::CORE_NS,
+        "get",
+        &args,
+        &ScopeTypes::new(),
+        "tests.typed-access",
+        &CallStackList::default(),
+      )
+      .expect("dynamic access should remain valid")
+      .is_none()
+    );
+  }
+
+  #[test]
   fn expands_only_fully_typed_literal_path_calls() {
     let _guard = lock_preprocess_test_state();
     let number = Arc::new(CalcitTypeAnnotation::Number);
@@ -8612,7 +8988,7 @@ mod tests {
     assert_eq!(direct_warnings.borrow()[0].code(), Some("W_NOMINAL_ENUM_LEGACY_USE"));
 
     let mut generated_scope_types = ScopeTypes::new();
-    preprocess_generated_path_expansion(
+    preprocess_generated_specialization(
       &guard,
       &HashSet::new(),
       &mut generated_scope_types,
