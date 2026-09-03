@@ -21,7 +21,7 @@
 下一版本是 nil 迁移的最终 breaking window。该版本合并、升级并发布后，以下规则进入兼容性承诺：
 
 - 公开缺失统一返回 `Option<T>`，公开可恢复失败统一返回 `Result<T,E>`，副作用返回 `Unit`；
-- 公开 schema 不得出现 `Optional<T>`。预处理器会发出 `W_LEGACY_OPTIONAL_SCHEMA`，该规则同样约束 `calcit.core` 的公开定义；
+- 公开 schema 不得出现 `Optional<T>`。`--strict-types` 会发出 `E_LEGACY_OPTIONAL_SCHEMA`，普通模式保留迁移警告；该规则同样约束 `calcit.core` 的公开定义；
 - 名称以 `&` 开头的 raw primitive 属于 semver-private 实现细节，允许在内部使用 nullable 表示，但不得直接挂入公开方法表；
 - 已生成 JS bundle 引用的 npm runtime export 属于 codegen ABI：typed wrapper/raw proc 改名时必须保留兼容 export，并由 runtime identity test 覆盖；类型系统负责阻断重新编译的旧 FFI 源码，但不能替代旧 bundle 的装载兼容性；
 - 新增查询 API 不得先返回 nil、再在后续版本改成 Option。类型和所有后端实现必须在首次发布时一致；
