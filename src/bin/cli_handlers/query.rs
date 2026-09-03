@@ -1273,6 +1273,16 @@ mod type_query_tests {
   }
 
   #[test]
+  fn type_at_lowering_recognizes_postfix_method_heads() {
+    let source = parse_query_test_expression("value .show");
+    let lowering = type_at_lowering(&source, Some(&source));
+    assert_eq!(lowering.status, "dynamic");
+    assert_eq!(lowering.kind, "dynamic-method-dispatch");
+    assert_eq!(lowering.source_head.as_deref(), Some(".show"));
+    assert_eq!(lowering.lowered_head.as_deref(), Some(".show"));
+  }
+
+  #[test]
   fn definition_return_schema_does_not_leak_into_nested_functions() {
     let mut nodes = cirru_parser::parse("fn ()\n  fn () 1").expect("test function should parse");
     let mut entry = snapshot::CodeEntry::from_code(nodes.remove(0));
@@ -1689,7 +1699,11 @@ fn type_at_evidence(node: &Calcit, path: &str, used_preprocessed: bool) -> TypeA
 
 fn type_at_call_head(node: &Calcit) -> Option<&Calcit> {
   match node {
-    Calcit::List(items) => items.first(),
+    Calcit::List(items) => match (items.first(), items.get(1)) {
+      (Some(head @ Calcit::Method(..)), _) => Some(head),
+      (_, Some(head @ Calcit::Method(..))) => Some(head),
+      (head, _) => head,
+    },
     _ => None,
   }
 }
