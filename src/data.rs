@@ -117,7 +117,9 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     }
     Map(xs) => {
       let mut ys = vec![Calcit::Proc(CalcitProc::NativeMap)];
-      for (k, v) in xs {
+      let mut entries = xs.iter().collect::<Vec<_>>();
+      entries.sort_by_key(|(key, _)| *key);
+      for (k, v) in entries {
         ys.push(data_to_calcit(k, ns, at_def)?);
         ys.push(data_to_calcit(v, ns, at_def)?);
       }
@@ -271,5 +273,52 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     Trait(_) => Err(format!("data_to_calcit not implemented for trait: {x}")),
     Impl(_) => Err(format!("data_to_calcit not implemented for impl: {x}")),
     AnyRef(..) => Err(format!("data_to_calcit not implemented for any-ref: {x}")),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::data_to_calcit;
+  use crate::calcit::{Calcit, CalcitProc};
+
+  fn map(entries: Vec<(Calcit, Calcit)>) -> Calcit {
+    let values = entries
+      .into_iter()
+      .fold(rpds::HashTrieMap::new_sync(), |map, (key, value)| map.insert(key, value));
+    Calcit::Map(values)
+  }
+
+  #[test]
+  fn data_to_calcit_sorts_map_keys_recursively() {
+    let data = map(vec![
+      (
+        Calcit::tag("gamma"),
+        map(vec![
+          (Calcit::tag("zeta"), Calcit::Number(3.0)),
+          (Calcit::tag("alpha"), Calcit::Number(2.0)),
+        ]),
+      ),
+      (Calcit::tag("beta"), Calcit::Number(1.0)),
+      (Calcit::tag("alpha"), Calcit::Number(0.0)),
+    ]);
+
+    let code = data_to_calcit(&data, "tests.data", "deterministic-map").expect("map data should convert to code");
+    let expected = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeMap),
+      Calcit::tag("alpha"),
+      Calcit::Number(0.0),
+      Calcit::tag("beta"),
+      Calcit::Number(1.0),
+      Calcit::tag("gamma"),
+      Calcit::from(vec![
+        Calcit::Proc(CalcitProc::NativeMap),
+        Calcit::tag("alpha"),
+        Calcit::Number(2.0),
+        Calcit::tag("zeta"),
+        Calcit::Number(3.0),
+      ]),
+    ]);
+
+    assert_eq!(code, expected);
   }
 }
