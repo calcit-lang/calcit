@@ -41,6 +41,14 @@
             defenum Status (:ok 'Number) (:err 'String)
           :examples $ []
           :schema $ :: 'EnumDef
+        'dynamic-last-compat $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn dynamic-last-compat (value) (.last value)
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'Dynamic
+              :return $ :: 'Option 'Dynamic
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity)
