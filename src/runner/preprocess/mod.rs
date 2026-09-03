@@ -1320,6 +1320,58 @@ fn generated_optional_first_access(receiver: Calcit, receiver_type: &CalcitTypeA
   }
 }
 
+fn generated_optional_last_access(
+  receiver: Calcit,
+  receiver_type: &CalcitTypeAnnotation,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
+  let none = generated_absent_value(file_ns);
+  if matches!(receiver_type, CalcitTypeAnnotation::List(_)) {
+    return Ok(Some(generated_if(
+      generated_call(vec![Calcit::Proc(CalcitProc::NativeListEmpty), receiver.to_owned()]),
+      none,
+      generated_optional_value(generated_call(vec![Calcit::Proc(CalcitProc::NativeListLast), receiver]), file_ns),
+      file_ns,
+    )));
+  }
+
+  let (count_proc, nth_proc) = match receiver_type {
+    CalcitTypeAnnotation::String => (CalcitProc::NativeStrCount, CalcitProc::NativeStrNth),
+    value
+      if matches!(value, CalcitTypeAnnotation::EnumValue(_) | CalcitTypeAnnotation::AnonymousEnum)
+        || value.resolve_to_enum().is_some() =>
+    {
+      (CalcitProc::NativeEnumCount, CalcitProc::NativeEnumNth)
+    }
+    _ => return Ok(None),
+  };
+  let count = generated_path_symbol("typed_last_count", file_ns, call_stack)?;
+  let body = generated_if(
+    generated_call(vec![
+      Calcit::Proc(CalcitProc::NativeLessThan),
+      Calcit::Number(0.0),
+      count.to_owned(),
+    ]),
+    generated_optional_value(
+      generated_call(vec![
+        Calcit::Proc(nth_proc),
+        receiver.to_owned(),
+        generated_call(vec![Calcit::Proc(CalcitProc::NativeMinus), count.to_owned(), Calcit::Number(1.0)]),
+      ]),
+      file_ns,
+    ),
+    none,
+    file_ns,
+  );
+  Ok(Some(generated_let(
+    count,
+    generated_call(vec![Calcit::Proc(count_proc), receiver]),
+    body,
+    file_ns,
+  )))
+}
+
 /// Lower Option-returning access once the receiver type selects one concrete
 /// collection family. Generated temporaries preserve the source call's
 /// left-to-right, exactly-once argument evaluation.
@@ -1402,6 +1454,12 @@ fn try_expand_typed_optional_access_call(
         generated_optional_first_access(receiver.to_owned(), receiver_type.as_ref(), file_ns).expect("guarded typed first receiver");
       Ok(Some(generated_let(receiver, receiver_expr.to_owned(), body, file_ns)))
     }
+    ("last", 1, _) if indexed_procs.is_some() => {
+      let receiver = generated_path_symbol("typed_last_receiver", file_ns, call_stack)?;
+      let body = generated_optional_last_access(receiver.to_owned(), receiver_type.as_ref(), file_ns, call_stack)?
+        .expect("guarded typed last receiver");
+      Ok(Some(generated_let(receiver, receiver_expr.to_owned(), body, file_ns)))
+    }
     _ => Ok(None),
   }
 }
@@ -1418,7 +1476,7 @@ fn try_expand_inlined_typed_optional_access(
   let Some(Calcit::Import(CalcitImport { ns, def, .. })) = items.first() else {
     return Ok(None);
   };
-  if ns.as_ref() != calcit::CORE_NS || !matches!(def.as_ref(), "get" | "nth" | "first") {
+  if ns.as_ref() != calcit::CORE_NS || !matches!(def.as_ref(), "get" | "nth" | "first" | "last") {
     return Ok(None);
   }
   try_expand_typed_optional_access_call(ns, def, &items.drop_left(), scope_types, file_ns, call_stack)
@@ -2266,7 +2324,7 @@ fn preprocess_list_call(
           {
             return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
           }
-          if matches!(def.as_ref(), "get" | "nth" | "first")
+          if matches!(def.as_ref(), "get" | "nth" | "first" | "last")
             && let Some(expanded) = try_expand_typed_optional_access_call(ns, def, &current_args, scope_types, file_ns, call_stack)?
           {
             return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
@@ -8684,7 +8742,7 @@ mod tests {
     assert!(!nth_code.contains("list?"));
     assert_eq!(nth_code.matches("source-list").count(), 1, "caller receiver is evaluated once");
 
-    let first_args = CalcitList::from(&[typed_list] as &[Calcit]);
+    let first_args = CalcitList::from(&[typed_list.to_owned()] as &[Calcit]);
     let expanded_first = try_expand_typed_optional_access_call(
       calcit::CORE_NS,
       "first",
@@ -8701,6 +8759,24 @@ mod tests {
     assert!(!first_code.contains("&list:count"));
     assert!(!first_code.contains("&list:nth"));
     assert_eq!(first_code.matches("source-list").count(), 1, "caller receiver is evaluated once");
+
+    let last_args = CalcitList::from(&[typed_list] as &[Calcit]);
+    let expanded_last = try_expand_typed_optional_access_call(
+      calcit::CORE_NS,
+      "last",
+      &last_args,
+      &ScopeTypes::new(),
+      "tests.typed-access",
+      &stack,
+    )
+    .expect("build typed last expansion")
+    .expect("List last should specialize");
+    let last_code = expanded_last.lisp_str();
+    assert!(last_code.contains("&list:empty?"));
+    assert!(last_code.contains("&list:last"));
+    assert!(!last_code.contains("&list:count"));
+    assert!(!last_code.contains("&list:nth"));
+    assert_eq!(last_code.matches("source-list").count(), 1, "caller receiver is evaluated once");
   }
 
   #[test]

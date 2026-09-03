@@ -51,6 +51,19 @@ assert.doesNotMatch(
   "typed Option-returning access must not retain dynamic method dispatch",
 );
 
+const inferenceOutput = readFileSync("js-out/test-types-inference.main.mjs", "utf8");
+assert.match(
+  inferenceOutput,
+  /typed_last_receiver__\d+[\s\S]*?\$clt\._\$n_list_\$o_empty_\$q_\([\s\S]*?\$clt\._\$n_list_\$o_last\(/,
+  "typed List last must lower to direct empty/last primitives",
+);
+assert.match(
+  inferenceOutput,
+  /typed_last_receiver__\d+[\s\S]*?\$clt\._\$n_str_\$o_count\([\s\S]*?\$clt\._\$n_str_\$o_nth\(/,
+  "typed String last must lower to direct count/nth primitives",
+);
+assert.doesNotMatch(inferenceOutput, /invoke_method\(\s*"last"/, "typed last must not retain dynamic method dispatch");
+
 const coreOutput = readFileSync("js-out/calcit.core.mjs", "utf8");
 assert.match(coreOutput, /ref:\s*_\$n_core_ref_impls/, "generated JS must register the Ref fallback impl table");
 

@@ -93,12 +93,12 @@ let
 ```
 
 With a known `List<T>` receiver, preprocessing lowers `.get` and `.nth` to
-list-specific count/nth primitives, lowers `.first` to empty/first primitives,
-and constructs `Option<T>` directly. Receiver and index expressions retain
-source order and are evaluated once. String and Enum receivers use the same
-source forms and lower to their own primitives. Dynamic receivers remain on
-the compatibility path; new business code should keep the collection element
-type available.
+list-specific count/nth primitives, lowers `.first` and `.last` to direct
+empty/access primitives, and constructs `Option<T>` directly. Receiver and
+index expressions retain source order and are evaluated once. String and Enum
+receivers use the same source forms and lower to their own primitives. Dynamic
+receivers remain on the compatibility path; new business code should keep the
+collection element type available.
 
 ## Adding / Removing Elements
 

@@ -346,7 +346,7 @@
           :tags $ #{} :internal
         '&core-enum-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            def &core-enum-methods $ &impl::new :&core-enum-methods (:: :count &enum:count) (:: :nth nth) (:: :get get) (:: :assoc &enum:assoc) (:: :first first)
+            def &core-enum-methods $ &impl::new :&core-enum-methods (:: :count &enum:count) (:: :nth nth) (:: :get get) (:: :assoc &enum:assoc) (:: :first first) (:: :last last)
               :: :empty? $ defn &enum:empty?-impl (x)
                 &= 0 $ &enum:count x
               :: :contains? $ defn &enum:contains?-impl (x k)
@@ -382,7 +382,7 @@
           :tags $ #{} :internal
         '&core-list-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            def &core-list-methods $ &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :join join) (:: :join-str join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth nth) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce reduce) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
+            def &core-list-methods $ &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :join join) (:: :join-str join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth nth) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce reduce) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -448,7 +448,7 @@
           :tags $ #{} :internal
         '&core-string-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :utf8-byte-count &str:utf8-byte-count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
+            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :utf8-byte-count &str:utf8-byte-count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :last last) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -6118,6 +6118,15 @@
               :code $ quote
                 assert= (%some |c) (last |abc)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |receiver-method-lowers-statically)
+              :code $ quote
+                do
+                  assert= (%some 3)
+                    .last $ [] 1 2 3
+                  assert= (%some |c) (.last |abc)
+                  assert= (%none)
+                    .last $ []
+              :tags $ #{} :core :types :unit
         'let $ %{} 'CodeEntry (:doc "|macro for local bindings\nSyntax: (let ([name value] ...) body...)\nParams: pairs (list of binding pairs), body (expressions)\nReturns: result of body with bindings in scope\nCreates multiple local bindings sequentially")
           :code $ quote
             defmacro let (pairs & body)
