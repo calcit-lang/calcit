@@ -436,6 +436,11 @@ fallback 必须与 payload 类型兼容；需要区分缺失分支时改用 `if-
 Dynamic 时，使用明确的函数形式，例如 `option:unwrap-or (get config :port) 6000`。这类函数形式
 只作为未类型化边界逃生口，类型化业务代码仍使用接收者 method。
 
+开启 strict mode 后，同一问题会升级为 `E_DYNAMIC_METHOD_DISPATCH`（prefix）或
+`E_DYNAMIC_POSTFIX_METHOD`（postfix），不再继续生成运行时动态派发。这里的迁移是确定性的：补出
+`Option<T>` / `Result<T, E>` receiver schema，或者把开放边界收拢到显式 `option:*` / `result:*`
+adapter；不要用 `unsafe-coerce` 批量压制。
+
 #### `.trim` / `.blank?` 接收者迁移
 
 `.trim` 与 `.blank?` 只对静态推断为 String 的接收者可用。若错误写成 `unknown method .trim for map`，

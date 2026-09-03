@@ -115,6 +115,13 @@ Warn when dynamic method dispatch cannot be specialized at preprocess time, and 
 calcit --warn-dyn-method
 ```
 
+In compatibility mode, Dynamic receivers used with nominal Option/Result methods
+continue to report `W_DYNAMIC_NOMINAL_METHOD_RECEIVER`. Strict mode rejects the
+same ambiguous execution path with `E_DYNAMIC_METHOD_DISPATCH` for prefix calls
+or `E_DYNAMIC_POSTFIX_METHOD` for postfix calls. Give the receiver a concrete
+`Option<T>` / `Result<T, E>` schema, or use the matching visible `option:*` /
+`result:*` function inside an explicitly reviewed open adapter.
+
 ### Strict type preflight (`--strict-types`)
 
 Use `--strict-types` for new or fully migrated modules that must carry no local

@@ -209,6 +209,26 @@ fn strict_type_fail_reachable_whole_dynamic_schema_reports_stable_error_code() {
 }
 
 #[test]
+fn strict_type_fail_dynamic_nominal_method_reports_stable_error_code() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/type-fail/dynamic-nominal-method-strict.cirru");
+    let _strict = StrictTypesReset::enabled();
+    let err = run_check_only(&entries).expect_err("Dynamic nominal method dispatch should fail strict check-only");
+
+    assert!(err.contains("E_DYNAMIC_POSTFIX_METHOD"), "unexpected strict dispatch error: {err}");
+    assert!(err.contains("`.unwrap-or`"), "method should be explicit: {err}");
+    assert!(
+      err.contains("statically known Option or Result schema"),
+      "receiver migration should be actionable: {err}"
+    );
+    assert!(
+      err.contains("`option:*` or `result:*`"),
+      "explicit-boundary alternative should be named: {err}"
+    );
+  });
+}
+
+#[test]
 fn type_fail_call_arg_fixture_reports_warning_code() {
   run_with_large_stack(|| {
     let fixtures = [
