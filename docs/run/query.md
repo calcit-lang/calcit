@@ -176,9 +176,12 @@ calcit query type-at test-struct.main/sum-point --path code@3.1 --format json
 - the expected type supplied by a return schema, callable parameter, `if` condition, or `assert-type`;
 - relevant typed bindings and their Snapshot paths;
 - statically resolvable methods and implementation origins;
+- the source callable and its preprocess lowering status (`specialized`, `resolved`, `dynamic`, or `unavailable`), including the selected core primitive when type information changes the execution path;
 - evidence, diagnostics, definition revision, and follow-up commands.
 
 The command does not invoke the project init/reload function. A dynamic FFI boundary is labeled `intentional-js-ffi` when the enclosing schema declares `:features $ #{} :js-ffi`; unresolved expressions remain explicit rather than triggering a runtime fallback. Named `defstruct`/`defenum` values are retained as source-backed type references, so field and method metadata can be resolved without constructing application values.
+
+`type-at --format json` uses protocol `schema_version: 2`. Version 2 adds the required `data.lowering` object with `status`, `kind`, `source_head`, `lowered_head`, and `detail`. Tooling can use `status: specialized` to confirm that rich source syntax reached a type-selected primitive, and should treat `dynamic` or `unavailable` as a migration/checking signal rather than assuming that successful inference implies optimized execution.
 
 ### Gather Definition Context (`context`)
 
