@@ -1078,8 +1078,13 @@ impl CalcitProc {
         arg_types: vec![map_of(type_var("K"), type_var("V")), type_var("V")],
       }),
       NativeMapAssoc => Some(ProcTypeSignature {
-        return_type: some_tag("map"),
-        arg_types: vec![some_tag("map"), dynamic_tag(), dynamic_tag(), variadic_dynamic()],
+        return_type: map_of(type_var("K"), type_var("V")),
+        arg_types: vec![
+          map_of(type_var("K"), type_var("V")),
+          type_var("K"),
+          type_var("V"),
+          variadic_dynamic(),
+        ],
       }),
       NativeMapDiffNew => Some(ProcTypeSignature {
         return_type: map_of(type_var("K"), type_var("W")),
@@ -1133,7 +1138,7 @@ impl CalcitProc {
       }),
       NativeSetIncludes => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
-        arg_types: vec![some_set(), dynamic_tag()],
+        arg_types: vec![set_of(type_var("T")), type_var("T")],
       }),
       NativeSetDestruct => Some(ProcTypeSignature {
         return_type: optional_tag("list"),
@@ -1582,6 +1587,31 @@ mod tests {
     assert!(matches!(
       map_includes.arg_types.get(1).map(AsRef::as_ref),
       Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "V"
+    ));
+    let map_assoc = CalcitProc::NativeMapAssoc.get_type_signature().expect("map assoc signature");
+    assert!(matches!(
+      map_assoc.return_type.as_ref(),
+      CalcitTypeAnnotation::Map(key, value)
+        if matches!(key.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "K")
+          && matches!(value.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "V")
+    ));
+    assert!(matches!(
+      map_assoc.arg_types.get(1).map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "K"
+    ));
+    assert!(matches!(
+      map_assoc.arg_types.get(2).map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "V"
+    ));
+    let set_includes = CalcitProc::NativeSetIncludes.get_type_signature().expect("set includes signature");
+    assert!(matches!(
+      set_includes.arg_types.first().map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::Set(inner))
+        if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T")
+    ));
+    assert!(matches!(
+      set_includes.arg_types.get(1).map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "T"
     ));
 
     let atom = CalcitProc::Atom.get_type_signature().expect("atom signature");
