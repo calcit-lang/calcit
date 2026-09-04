@@ -9271,9 +9271,6 @@ mod tests {
   };
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
-  use std::sync::{LazyLock, Mutex};
-
-  static PREPROCESS_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
   fn strict_macro_signature(
     required_inputs: Vec<MacroSyntaxType>,
@@ -9496,8 +9493,8 @@ mod tests {
     assert_eq!(err.code.as_deref(), Some("E_MACRO_EXPANSION_DECLARATIONS"));
   }
 
-  fn lock_preprocess_test_state() -> std::sync::MutexGuard<'static, ()> {
-    PREPROCESS_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner())
+  fn lock_preprocess_test_state() -> crate::program::ProgramTestStateGuard {
+    crate::program::lock_program_test_state()
   }
 
   #[test]
@@ -11574,6 +11571,7 @@ mod tests {
 
   #[test]
   fn passes_assert_traits_expression_without_local_binding() {
+    let _guard = lock_preprocess_test_state();
     let expr = Cirru::List(vec![
       Cirru::leaf("assert-traits"),
       Cirru::List(vec![Cirru::leaf("&+"), Cirru::leaf("1"), Cirru::leaf("2")]),

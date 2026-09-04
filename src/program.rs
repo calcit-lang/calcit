@@ -9,6 +9,9 @@ use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::RwLock;
 
+#[cfg(test)]
+use std::sync::{Mutex, MutexGuard};
+
 use cirru_parser::Cirru;
 
 use crate::calcit::data_shape::DataShapeGraph;
@@ -165,7 +168,7 @@ impl CompiledFileData {
 
 pub type CompiledProgram = HashMap<Arc<str>, CompiledFileData>;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 struct ProgramDefIdIndex {
   next_id: u32,
   by_ns: HashMap<Arc<str>, HashMap<Arc<str>, DefId>>,
@@ -210,6 +213,55 @@ static PROGRAM_COMPILED_DATA_STATE: LazyLock<RwLock<ProgramCompiledData>> = Lazy
 /// raw code information before program running
 pub static PROGRAM_CODE_DATA: LazyLock<RwLock<ProgramCodeData>> = LazyLock::new(|| RwLock::new(HashMap::new()));
 static PROGRAM_DEF_ID_INDEX: LazyLock<RwLock<ProgramDefIdIndex>> = LazyLock::new(|| RwLock::new(ProgramDefIdIndex::default()));
+
+/// Serializes Rust tests that temporarily replace process-wide program state.
+///
+/// The guard snapshots every registry owned by this module and restores it on
+/// drop, including during panic unwinding. Tests in other modules must use this
+/// guard instead of defining a module-local mutex when they read or mutate
+/// program state.
+#[cfg(test)]
+static PROGRAM_TEST_STATE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+#[cfg(test)]
+pub(crate) struct ProgramTestStateGuard {
+  _lock: MutexGuard<'static, ()>,
+  runtime_data: ProgramRuntimeData,
+  compiled_data: ProgramCompiledData,
+  code_data: ProgramCodeData,
+  def_id_index: ProgramDefIdIndex,
+  feature_policy: HashMap<String, snapshot::FeaturePolicy>,
+  target: Option<snapshot::SnapshotTarget>,
+}
+
+#[cfg(test)]
+impl Drop for ProgramTestStateGuard {
+  fn drop(&mut self) {
+    *PROGRAM_RUNTIME_DATA_STATE.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.runtime_data);
+    *PROGRAM_COMPILED_DATA_STATE.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.compiled_data);
+    *PROGRAM_CODE_DATA.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.code_data);
+    *PROGRAM_DEF_ID_INDEX.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.def_id_index);
+    *ACTIVE_FEATURE_POLICY.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.feature_policy);
+    *ACTIVE_TARGET.write().unwrap_or_else(|error| error.into_inner()) = self.target;
+  }
+}
+
+#[cfg(test)]
+pub(crate) fn lock_program_test_state() -> ProgramTestStateGuard {
+  let lock = PROGRAM_TEST_STATE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+  ProgramTestStateGuard {
+    _lock: lock,
+    runtime_data: PROGRAM_RUNTIME_DATA_STATE.read().unwrap_or_else(|error| error.into_inner()).clone(),
+    compiled_data: PROGRAM_COMPILED_DATA_STATE
+      .read()
+      .unwrap_or_else(|error| error.into_inner())
+      .clone(),
+    code_data: PROGRAM_CODE_DATA.read().unwrap_or_else(|error| error.into_inner()).clone(),
+    def_id_index: PROGRAM_DEF_ID_INDEX.read().unwrap_or_else(|error| error.into_inner()).clone(),
+    feature_policy: ACTIVE_FEATURE_POLICY.read().unwrap_or_else(|error| error.into_inner()).clone(),
+    target: *ACTIVE_TARGET.read().unwrap_or_else(|error| error.into_inner()),
+  }
+}
 
 fn ensure_runtime_capacity(runtime: &mut ProgramRuntimeData, def_id: DefId) {
   let idx = def_id.0 as usize;

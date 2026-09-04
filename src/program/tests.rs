@@ -12,9 +12,6 @@ use crate::run_program_with_docs;
 use cirru_edn::EdnTag;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{LazyLock, Mutex};
-
-static PROGRAM_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 static CALX_VOID_IMPORT_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 fn cirru_leaf(value: &str) -> Cirru {
@@ -299,8 +296,8 @@ fn namespace_validation_accepts_legacy_colon_ns_form() {
   assert!(imports.is_empty());
 }
 
-fn lock_program_test_state() -> std::sync::MutexGuard<'static, ()> {
-  PROGRAM_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner())
+fn lock_program_test_state() -> ProgramTestStateGuard {
+  super::lock_program_test_state()
 }
 
 fn reset_program_test_state() {
@@ -308,6 +305,32 @@ fn reset_program_test_state() {
   PROGRAM_COMPILED_DATA_STATE.write().expect("reset compiled data").clear();
   PROGRAM_CODE_DATA.write().expect("reset program code").clear();
   *PROGRAM_DEF_ID_INDEX.write().expect("reset def id index") = ProgramDefIdIndex::default();
+}
+
+#[test]
+fn program_test_state_guard_restores_registry_after_panic() {
+  let namespace: Arc<str> = Arc::from("tests.guard-panic-restoration");
+  let result = std::panic::catch_unwind(|| {
+    let _guard = lock_program_test_state();
+    reset_program_test_state();
+    PROGRAM_CODE_DATA.write().unwrap_or_else(|error| error.into_inner()).insert(
+      namespace.clone(),
+      ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::new(),
+      },
+    );
+    panic!("exercise panic restoration");
+  });
+  assert!(result.is_err());
+
+  let _guard = lock_program_test_state();
+  assert!(
+    !PROGRAM_CODE_DATA
+      .read()
+      .unwrap_or_else(|error| error.into_inner())
+      .contains_key(namespace.as_ref())
+  );
 }
 
 fn calx_test_fn_schema(arg_types: Vec<CalcitTypeAnnotation>, return_type: CalcitTypeAnnotation) -> Arc<CalcitTypeAnnotation> {
