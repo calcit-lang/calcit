@@ -150,7 +150,9 @@ Option/Result nominal family additionally names the expected receiver family
 and its visible `option:*` / `result:*` helper. Compatibility mode retains the
 `P_DYNAMIC_*` inventory and `W_DYNAMIC_NOMINAL_METHOD_RECEIVER` while projects
 migrate. A concrete inferred type, trait constraint, or external-object trait
-remains statically dispatchable and does not trigger this rule.
+remains statically dispatchable and does not trigger this rule. An Optional
+chain over Dynamic is the legacy-optional cause, while `Optional<DynFn>` keeps
+the dynamic-callable cause.
 
 Strict project source also rejects hand-written representation primitives with
 `E_RAW_PRIMITIVE_IN_TYPED_CODE`: `&get-raw`, `record-get` / `&struct:get`, raw `&%{}`, and

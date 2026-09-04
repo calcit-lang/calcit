@@ -6586,6 +6586,11 @@ fn is_dynamic_annotation(type_value: &CalcitTypeAnnotation) -> bool {
     || matches!(type_value, CalcitTypeAnnotation::Optional(inner) if is_dynamic_annotation(inner.as_ref()))
 }
 
+fn is_legacy_optional_dynamic_payload(type_value: &CalcitTypeAnnotation) -> bool {
+  matches!(type_value, CalcitTypeAnnotation::Dynamic)
+    || matches!(type_value, CalcitTypeAnnotation::Optional(inner) if is_legacy_optional_dynamic_payload(inner.as_ref()))
+}
+
 #[derive(Debug, PartialEq)]
 enum DynamicDispatchReceiverCause {
   MissingSchema,
@@ -6645,7 +6650,9 @@ fn classify_dynamic_dispatch_receiver(
     CalcitTypeAnnotation::Dynamic if inside_js_ffi_boundary => Some(DynamicDispatchReceiverCause::ExplicitJsFfiBoundary),
     CalcitTypeAnnotation::Dynamic => Some(DynamicDispatchReceiverCause::DynamicSchema),
     CalcitTypeAnnotation::DynFn => Some(DynamicDispatchReceiverCause::DynamicCallable),
-    CalcitTypeAnnotation::Optional(inner) if is_dynamic_annotation(inner) => Some(DynamicDispatchReceiverCause::LegacyOptional),
+    CalcitTypeAnnotation::Optional(inner) if is_legacy_optional_dynamic_payload(inner) => {
+      Some(DynamicDispatchReceiverCause::LegacyOptional)
+    }
     CalcitTypeAnnotation::Optional(inner) => classify_dynamic_dispatch_receiver(Some(inner), inside_js_ffi_boundary),
     CalcitTypeAnnotation::TypeVar(name) => Some(DynamicDispatchReceiverCause::UnboundGeneric(name.clone())),
     CalcitTypeAnnotation::TypeSlot(name) => match calcit::resolve_type_slot(name) {
@@ -8865,6 +8872,9 @@ fn contains_nominal_contract(annotation: &CalcitTypeAnnotation) -> bool {
           .as_ref()
           .is_some_and(|rest| contains_nominal_contract(rest.as_ref()))
         || contains_nominal_contract(signature.return_type.as_ref())
+    }
+    CalcitTypeAnnotation::TypeSlot(name) => {
+      calcit::resolve_type_slot(name).is_some_and(|resolved| contains_nominal_contract(resolved.as_ref()))
     }
     _ => false,
   }
@@ -11156,6 +11166,10 @@ mod tests {
     assert_eq!(
       classify_dynamic_dispatch_receiver(Some(&CalcitTypeAnnotation::Optional(dynamic)), false),
       Some(DynamicDispatchReceiverCause::LegacyOptional)
+    );
+    assert_eq!(
+      classify_dynamic_dispatch_receiver(Some(&CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::DynFn))), false,),
+      Some(DynamicDispatchReceiverCause::DynamicCallable)
     );
     assert_eq!(
       classify_dynamic_dispatch_receiver(Some(&CalcitTypeAnnotation::TypeVar(Arc::from("T"))), false),
@@ -16207,6 +16221,7 @@ mod tests {
   #[test]
   fn strict_types_reject_dynamic_values_crossing_into_nominal_arguments() {
     let _state = lock_preprocess_test_state();
+    let _slots = TypeSlotsGuard::cleared();
     let person_def = Arc::new(CalcitStructDef {
       name: EdnTag::new("Person"),
       fields: Arc::new(vec![EdnTag::new("name")]),
@@ -16216,6 +16231,11 @@ mod tests {
       impls: vec![],
     });
     let person_type = Arc::new(CalcitTypeAnnotation::Struct(person_def, Arc::new(vec![])));
+    calcit::push_type_slot_override(Arc::from("payload"), person_type.clone());
+    let nominal_slot = CalcitTypeAnnotation::TypeSlot(Arc::from("payload"));
+    assert!(contains_nominal_contract(&nominal_slot));
+    assert!(dynamic_erases_nominal_contract(&CalcitTypeAnnotation::Dynamic, &nominal_slot));
+    calcit::pop_type_slot_override("payload");
     let signature = generic_relation_test_signature(vec![person_type.clone()], Arc::new(CalcitTypeAnnotation::Unit), None);
     let dynamic = calcit::DYNAMIC_TYPE.clone();
     let open_value = generic_relation_test_local("open-value", dynamic.clone());
