@@ -209,7 +209,7 @@ fn specialize_assoc_expected_types(
     value if value.resolve_to_enum().is_some() => {
       specialized[1] = Arc::new(CalcitTypeAnnotation::Number);
     }
-    CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::StructValue(_) => {
+    value if is_direct_struct_receiver(value) => {
       let field_name = match args.get(1)? {
         Calcit::Tag(tag) => tag.ref_str(),
         Calcit::Str(text) => text.as_ref(),
@@ -221,6 +221,11 @@ fn specialize_assoc_expected_types(
     _ => return None,
   }
   Some(specialized)
+}
+
+fn is_direct_struct_receiver(value: &CalcitTypeAnnotation) -> bool {
+  matches!(value, CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::StructValue(_))
+    || matches!(value, CalcitTypeAnnotation::TypeRef(_, _)) && value.resolve_to_struct().is_some()
 }
 
 fn specialize_update_expected_types(
@@ -240,7 +245,7 @@ fn specialize_update_expected_types(
       specialized[1] = key_type.clone();
       value_type.clone()
     }
-    CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::StructValue(_) => {
+    value if is_direct_struct_receiver(value) => {
       let field_name = match args.get(1)? {
         Calcit::Tag(tag) => tag.ref_str(),
         Calcit::Str(text) => text.as_ref(),
@@ -1082,13 +1087,28 @@ mod tests {
       impls: vec![],
     });
     let struct_args = CalcitList::from(&[
-      make_local("task", Arc::new(CalcitTypeAnnotation::StructValue(task_struct))),
+      make_local("task", Arc::new(CalcitTypeAnnotation::StructValue(task_struct.clone()))),
       Calcit::Tag(EdnTag::new("done?")),
       Calcit::Number(0.0),
     ]);
     let struct_specialized = specialize_core_expected_types(&fn_info, &struct_args, &ScopeTypes::new(), &fn_info.arg_types)
       .expect("struct association should specialize from field evidence");
     assert!(matches!(struct_specialized[2].as_ref(), CalcitTypeAnnotation::Bool));
+
+    let optional_struct_args = CalcitList::from(&[
+      make_local(
+        "maybe-task",
+        Arc::new(CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::StructValue(
+          task_struct,
+        )))),
+      ),
+      Calcit::Tag(EdnTag::new("done?")),
+      Calcit::Bool(false),
+    ]);
+    assert!(
+      specialize_core_expected_types(&fn_info, &optional_struct_args, &ScopeTypes::new(), &fn_info.arg_types).is_none(),
+      "Option<Struct> is an Enum wrapper and must be narrowed before Struct association"
+    );
 
     let enum_args = CalcitList::from(&[
       make_local("result", Arc::new(CalcitTypeAnnotation::AnonymousEnum)),
