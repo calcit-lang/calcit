@@ -25,6 +25,10 @@
               assoc (&{} :a 1) :a :bad
               contains? (:: :ok 1) :bad
               assoc (:: :ok 1) :bad 2
+              dissoc ([] 1 2) :bad
+              dissoc (&{} :a 1) 0
+              dissoc (&{} :a 1 :b 2) :a 0
+              &map:dissoc (&{} :a 1 :b 2) :a 0
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

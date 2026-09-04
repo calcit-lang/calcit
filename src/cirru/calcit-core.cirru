@@ -1617,7 +1617,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
-            {}
+            {} (:rest 'K)
               :args $ [] (:: 'Map 'K 'V) 'K
               :generics $ [] 'K 'V
               :return $ :: 'Map 'K 'V

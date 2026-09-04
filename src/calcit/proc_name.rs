@@ -500,7 +500,7 @@ pub struct ProcTypeSignature {
   /// return type declared
   pub return_type: Arc<CalcitTypeAnnotation>,
   /// Argument value types in order. Parameter omission is CalcitProc arity metadata;
-  /// use Variadic to mark variadic args (no checking after this mark).
+  /// use Variadic to type every remaining argument.
   pub arg_types: Vec<Arc<CalcitTypeAnnotation>>,
 }
 
@@ -1058,8 +1058,8 @@ impl CalcitProc {
         arg_types: vec![some_tag("map"), dynamic_tag()],
       }),
       NativeMapDissoc => Some(ProcTypeSignature {
-        return_type: some_tag("map"),
-        arg_types: vec![some_tag("map"), dynamic_tag(), variadic_dynamic()],
+        return_type: map_of(type_var("K"), type_var("V")),
+        arg_types: vec![map_of(type_var("K"), type_var("V")), type_var("K"), variadic_of(type_var("K"))],
       }),
       NativeMapCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
@@ -1602,6 +1602,18 @@ mod tests {
     assert!(matches!(
       map_assoc.arg_types.get(2).map(AsRef::as_ref),
       Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "V"
+    ));
+    let map_dissoc = CalcitProc::NativeMapDissoc.get_type_signature().expect("map dissoc signature");
+    assert!(matches!(
+      map_dissoc.return_type.as_ref(),
+      CalcitTypeAnnotation::Map(key, value)
+        if matches!(key.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "K")
+          && matches!(value.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "V")
+    ));
+    assert!(matches!(
+      map_dissoc.arg_types.get(2).map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::Variadic(inner))
+        if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "K")
     ));
     let set_includes = CalcitProc::NativeSetIncludes.get_type_signature().expect("set includes signature");
     assert!(matches!(

@@ -12,6 +12,7 @@
 //! - `check_function_return_type` — check fn body return type vs declaration
 //! - `detect_return_type_hint_from_processed_body` — extract hint-fn return type
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -186,6 +187,41 @@ fn specialize_core_expected_types(
   }
 }
 
+fn specialize_core_rest_type(fn_info: &CalcitFn, args: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  if fn_info.def_ns.as_ref() != calcit::CORE_NS || fn_info.name.as_ref() != "dissoc" || args.len() < 2 {
+    return None;
+  }
+
+  let receiver_type = resolve_type_value(args.first()?, scope_types)?;
+  match receiver_type.as_ref() {
+    CalcitTypeAnnotation::List(_) => Some(Arc::new(CalcitTypeAnnotation::Number)),
+    CalcitTypeAnnotation::Map(key_type, _) => Some(key_type.clone()),
+    _ => None,
+  }
+}
+
+fn split_trailing_rest_type(
+  arg_types: &[Arc<CalcitTypeAnnotation>],
+) -> (&[Arc<CalcitTypeAnnotation>], Option<&Arc<CalcitTypeAnnotation>>) {
+  match arg_types.last().map(Arc::as_ref) {
+    Some(CalcitTypeAnnotation::Variadic(inner_type)) => (&arg_types[..arg_types.len() - 1], Some(inner_type)),
+    _ => (arg_types, None),
+  }
+}
+
+fn expected_types_with_rest<'a>(
+  fixed_types: &'a [Arc<CalcitTypeAnnotation>],
+  rest_type: Option<&Arc<CalcitTypeAnnotation>>,
+) -> Cow<'a, [Arc<CalcitTypeAnnotation>]> {
+  let Some(rest_type) = rest_type else {
+    return Cow::Borrowed(fixed_types);
+  };
+  let mut expected_types = Vec::with_capacity(fixed_types.len() + 1);
+  expected_types.extend_from_slice(fixed_types);
+  expected_types.push(Arc::new(CalcitTypeAnnotation::Variadic(rest_type.clone())));
+  Cow::Owned(expected_types)
+}
+
 fn specialize_assoc_expected_types(
   args: &CalcitList,
   receiver_type: &CalcitTypeAnnotation,
@@ -323,13 +359,16 @@ where
     // Handle variadic argument type
     if let CalcitTypeAnnotation::Variadic(inner_type) = expected_type.as_ref() {
       for (rest_idx, rest_arg) in ctx.args.iter().skip(idx).enumerate() {
+        let expected_rest_type = inner_type.substitute_type_vars(&bindings);
         if let Some(actual_type) = resolve_type_value(rest_arg, ctx.scope_types)
-          && !actual_type.as_ref().matches_with_bindings(inner_type.as_ref(), &mut bindings)
+          && !actual_type
+            .as_ref()
+            .matches_with_bindings(expected_rest_type.as_ref(), &mut bindings)
         {
-          ctx.emit_warning(idx + rest_idx + 1, inner_type.as_ref(), actual_type.as_ref(), &make_warning);
+          ctx.emit_warning(idx + rest_idx + 1, expected_rest_type.as_ref(), actual_type.as_ref(), &make_warning);
         }
       }
-      return; // Done after variadic
+      break;
     }
 
     if let Some(actual_type) = resolve_type_value(arg, ctx.scope_types) {
@@ -448,7 +487,40 @@ pub(crate) fn check_proc_arg_types(
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
 
   for (idx, (arg, expected_type)) in args.iter().zip(signature.arg_types.iter()).enumerate() {
-    if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Variadic(_)) {
+    if let CalcitTypeAnnotation::Variadic(inner_type) = expected_type.as_ref() {
+      // Several legacy constructor signatures use Variadic<T> as return-type inference
+      // evidence while still accepting heterogeneous values at runtime. Enable concrete
+      // proc rest validation only where the runtime collection already fixes one item type.
+      if !matches!(proc, CalcitProc::NativeMapDissoc) {
+        break;
+      }
+      for (rest_idx, rest_arg) in args.iter().skip(idx).enumerate() {
+        let expected_rest_type = inner_type.substitute_type_vars(&bindings);
+        if let Some(actual_type) = resolve_type_value(rest_arg, scope_types)
+          && !actual_type
+            .as_ref()
+            .matches_with_bindings(expected_rest_type.as_ref(), &mut bindings)
+        {
+          let expected_str = expected_rest_type.to_brief_string();
+          let actual_str = actual_type.to_brief_string();
+          let warning_location = rest_arg.get_location().or_else(|| call_location.clone());
+          gen_check_warning_code_at(
+            append_option_migration_hint(
+              format!(
+                "[Warn] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+                proc.as_ref(),
+                idx + rest_idx + 1
+              ),
+              expected_rest_type.as_ref(),
+              actual_type.as_ref(),
+            ),
+            "W_PROC_ARG_TYPE_MISMATCH",
+            file_ns,
+            warning_location,
+            check_warnings,
+          );
+        }
+      }
       break;
     }
 
@@ -558,14 +630,11 @@ pub(crate) fn check_local_fn_call_arg_types(
     return;
   };
 
-  if fn_annot.arg_types.is_empty()
-    || fn_annot
-      .arg_types
-      .iter()
-      .all(|t| matches!(t.as_ref(), CalcitTypeAnnotation::Dynamic))
-  {
+  if fn_annot.arg_types.is_empty() && fn_annot.rest_type.is_none() {
     return;
   }
+
+  let expected_types = expected_types_with_rest(&fn_annot.arg_types, fn_annot.rest_type.as_ref());
 
   let local_sym = local.sym.clone();
   let def_name = call_info.def_name.to_owned();
@@ -573,7 +642,7 @@ pub(crate) fn check_local_fn_call_arg_types(
   let ctx = CheckContext {
     head_form,
     args,
-    expected_types: &fn_annot.arg_types,
+    expected_types: expected_types.as_ref(),
     where_bounds: fn_annot.where_bounds.as_ref(),
     scope_types,
     file_ns: call_info.file_ns,
@@ -603,14 +672,14 @@ pub(crate) fn check_user_fn_arg_types(
     _ => None,
   };
 
-  let expected_types = if fn_info.arg_types.is_empty() || fn_info.arg_types.iter().all(|t| matches!(**t, CalcitTypeAnnotation::Dynamic))
-  {
-    let Some(fn_annot) = schema_fn_annot else {
-      return;
-    };
-    fn_annot.arg_types.as_slice()
+  let (fn_fixed_types, trailing_rest_type) = split_trailing_rest_type(&fn_info.arg_types);
+
+  let expected_types = if fn_fixed_types.is_empty() || fn_fixed_types.iter().all(|t| matches!(**t, CalcitTypeAnnotation::Dynamic)) {
+    schema_fn_annot
+      .map(|fn_annot| fn_annot.arg_types.as_slice())
+      .unwrap_or(fn_fixed_types)
   } else {
-    fn_info.arg_types.as_slice()
+    fn_fixed_types
   };
 
   let where_bounds = if fn_info.where_bounds.is_empty() {
@@ -621,16 +690,20 @@ pub(crate) fn check_user_fn_arg_types(
     fn_info.where_bounds.as_ref()
   };
 
+  let declared_rest_type = fn_info.rest_type.as_ref().or(trailing_rest_type);
+  let rest_type = match declared_rest_type {
+    Some(rest_type) if !matches!(rest_type.as_ref(), CalcitTypeAnnotation::Dynamic) => Some(rest_type),
+    fallback => schema_fn_annot.and_then(|fn_annot| fn_annot.rest_type.as_ref()).or(fallback),
+  };
+
   let specialized_expected_types = specialize_core_expected_types(fn_info, args, scope_types, expected_types);
-  if specialized_expected_types.is_none()
-    && (expected_types.is_empty()
-      || expected_types
-        .iter()
-        .all(|expected| matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic)))
-  {
+  let specialized_rest_type = specialize_core_rest_type(fn_info, args, scope_types);
+  let effective_fixed_types = specialized_expected_types.as_deref().unwrap_or(expected_types);
+  let effective_rest_type = specialized_rest_type.as_ref().or(rest_type);
+  if effective_fixed_types.is_empty() && effective_rest_type.is_none() {
     return;
   }
-  let expected_types = specialized_expected_types.as_deref().unwrap_or(expected_types);
+  let expected_types = expected_types_with_rest(effective_fixed_types, effective_rest_type);
 
   let fn_def_ns = fn_info.def_ns.clone();
   let fn_name = fn_info.name.clone();
@@ -640,7 +713,7 @@ pub(crate) fn check_user_fn_arg_types(
   let ctx = CheckContext {
     head_form,
     args,
-    expected_types,
+    expected_types: expected_types.as_ref(),
     where_bounds,
     scope_types,
     file_ns: call_info.file_ns,
@@ -824,6 +897,54 @@ mod tests {
     );
 
     assert!(warnings.borrow().is_empty(), "matching generic wrappers should remain valid");
+  }
+
+  #[test]
+  fn local_function_rest_arguments_are_checked() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let fn_type = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![number.clone(), Arc::new(CalcitTypeAnnotation::Variadic(number.clone()))],
+      number,
+    ));
+    let head_form = make_local("sum", fn_type);
+    let Calcit::Local(local) = &head_form else {
+      unreachable!("make_local should produce a local")
+    };
+    let args = CalcitList::from(&[Calcit::Number(1.0), Calcit::Tag(EdnTag::new("bad"))]);
+    let warnings = RefCell::new(vec![]);
+    let call_info = CallTypeCheckInfo {
+      file_ns: "tests.rest",
+      def_name: "demo",
+      call_location: None,
+    };
+
+    check_local_fn_call_arg_types(&head_form, local, &args, &ScopeTypes::new(), &call_info, &warnings);
+
+    let warnings = warnings.borrow();
+    assert_eq!(warnings.len(), 1, "typed local rest args should produce one mismatch: {warnings:?}");
+    assert_eq!(warnings[0].code(), Some("W_LOCAL_FN_ARG_TYPE_MISMATCH"));
+    assert!(warnings[0].message().contains("arg 2 expects type `:number`"));
+  }
+
+  #[test]
+  fn specialize_dissoc_uses_collection_index_or_key_type() {
+    let fn_info = make_core_fn("dissoc", vec![crate::calcit::DYNAMIC_TYPE.clone()]);
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let string = Arc::new(CalcitTypeAnnotation::String);
+
+    let list_args = CalcitList::from(&[
+      make_local("items", Arc::new(CalcitTypeAnnotation::List(string.clone()))),
+      Calcit::Tag(EdnTag::new("bad")),
+    ]);
+    let list_rest = specialize_core_rest_type(&fn_info, &list_args, &ScopeTypes::new()).expect("list dissoc should specialize");
+    assert_eq!(list_rest, number);
+
+    let map_args = CalcitList::from(&[
+      make_local("counts", Arc::new(CalcitTypeAnnotation::Map(string.clone(), number))),
+      Calcit::Number(0.0),
+    ]);
+    let map_rest = specialize_core_rest_type(&fn_info, &map_args, &ScopeTypes::new()).expect("map dissoc should specialize");
+    assert_eq!(map_rest, string);
   }
 
   #[test]
