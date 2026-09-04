@@ -846,15 +846,6 @@
       :typeNotFull 1
       :unresolved 1
       :unsafeCoerce 0
-    |calcit.core/filter $ {} (:codeDynamic 0)
-      :codeNil 0
-      :declaredOptional 0
-      :deprecatedCalls 0
-      :schemaDynamic 2
-      :typeNone 0
-      :typeNotFull 1
-      :unresolved 2
-      :unsafeCoerce 0
     |calcit.core/first $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
@@ -1179,15 +1170,6 @@
       :typeNotFull 1
       :unresolved 1
       :unsafeCoerce 0
-    |calcit.core/slice $ {} (:codeDynamic 0)
-      :codeNil 0
-      :declaredOptional 0
-      :deprecatedCalls 0
-      :schemaDynamic 2
-      :typeNone 0
-      :typeNotFull 1
-      :unresolved 2
-      :unsafeCoerce 0
     |calcit.core/some-in? $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
@@ -1340,15 +1322,6 @@
       :typeNone 0
       :typeNotFull 0
       :unresolved 1
-      :unsafeCoerce 0
-    |calcit.core/update $ {} (:codeDynamic 0)
-      :codeNil 0
-      :declaredOptional 0
-      :deprecatedCalls 0
-      :schemaDynamic 3
-      :typeNone 0
-      :typeNotFull 1
-      :unresolved 3
       :unsafeCoerce 0
     |calcit.core/update-in $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1759,10 +1732,10 @@
     :codeNil 0
     :declaredOptional 0
     :deprecatedCalls 0
-    :schemaDynamic 280
+    :schemaDynamic 273
     :typeNone 47
-    :typeNotFull 135
-    :unresolved 186
+    :typeNotFull 132
+    :unresolved 179
     :unsafeCoerce 0
   :scope $ {} (:includeDependencies false)
     :namespace nil

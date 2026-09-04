@@ -4940,8 +4940,11 @@
                 defn %long? (s)
                   &> (&str:count s) 1
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Fn
+            {} (:return 'C)
+              :args $ [] 'C
+                :: 'Fn $ {} (:return 'R)
+                  :args $ [] 'T
+              :generics $ [] 'C 'T 'R
           :tests $ []
             %{} 'TestEntry (:name |filters-map-pairs)
               :code $ quote
@@ -4955,6 +4958,16 @@
                 assert= (#{} 7 9)
                   filter (#{} 1 3 5 7 9)
                     fn (x) (> x 5)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-filter-container-types)
+              :code $ quote
+                do
+                  assert-type
+                    filter ([] 1 2 3) $ fn (x) (> x 1)
+                    :: 'List 'Number
+                  assert-type
+                    filter (#{} 1 2 3) $ fn (x) (> x 1)
+                    :: 'Set 'Number
               :tags $ #{} :core :unit
         'filter-map-kv $ %{} 'CodeEntry (:doc "|Transforms and filters map entries with a typed MapEntryDecision callback. Return :keep with the output key/value or :drop to omit an entry.")
           :code $ quote
@@ -7542,8 +7555,9 @@
             quote $ assert= ([] 3 4)
               slice ([] 1 2 3 4) 2
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Number 'Number
+            {} (:return 'C)
+              :args $ [] 'C 'Number 'Number
+              :generics $ [] 'C
           :tests $ []
             %{} 'TestEntry (:name |slices-strings)
               :code $ quote
@@ -7556,6 +7570,12 @@
                 do
                   assert= "|文字" $ slice "|中文字符串" 1 3
                   assert= "|文字符串" $ slice "|中文字符串" 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-slice-container-types)
+              :code $ quote
+                do
+                  assert-type (slice ([] 1 2 3) 1) (:: 'List 'Number)
+                  assert-type (slice |abc 1) 'String
               :tags $ #{} :core :unit
         'some-in? $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -8354,11 +8374,11 @@
                 {} $ :count 1
                 , :missing inc
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Dynamic
+            {} (:return 'C)
+              :args $ [] 'C 'K
                 :: 'Fn $ {} (:return 'T)
                   :args $ [] 'T
-              :generics $ [] 'T
+              :generics $ [] 'C 'K 'T
           :tests $ []
             %{} 'TestEntry (:name |updates-existing-map-and-list-slots)
               :code $ quote
@@ -8369,6 +8389,16 @@
                     update ([] 0 1 2) 1 $ fn (x) (+ x 10)
                   assert= ([] 0 1 2)
                     update ([] 0 1 2) 4 $ fn (x) (+ x 10)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-update-container-types)
+              :code $ quote
+                do
+                  assert-type
+                    update (&{} :a 1) :a $ fn (x) (+ x 1)
+                    :: 'Map 'Tag 'Number
+                  assert-type
+                    update ([] 1 2 3) 1 $ fn (x) (+ x 1)
+                    :: 'List 'Number
               :tags $ #{} :core :unit
         'update-in $ %{} 'CodeEntry (:doc "|Walk a nested path and update its leaf. The updater receives Option<T>: some for an existing leaf and none for a missing leaf. Missing intermediate containers are created as maps.")
           :code $ quote
