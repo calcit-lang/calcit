@@ -218,7 +218,7 @@ npm view @calcit/procs version
   scripts/agent-issue-lease.sh heartbeat <issue-number> <agent-id>
   ```
 
-  heartbeat 以远端 lock 为权威：确认 owner 匹配、Issue 仍开放且未显式标记 `agent:blocked` 后，会修复缺失或陈旧的 Issue 状态标签与租约评论。不要因为人类可读镜像短暂丢失而手工创建、覆盖或删除 lock 分支。
+  heartbeat 以远端 lock 为权威：确认 owner 匹配、Issue 仍开放且未显式标记 `agent:blocked` 后，会修复缺失或陈旧的 Issue 状态标签与租约评论。`agent:blocked` 与其他状态标签异常共存时仍具有最高优先级，claim 与 heartbeat 都必须拒绝。不要因为人类可读镜像短暂丢失而手工创建、覆盖或删除 lock 分支。
 
 - 在 Issue 的 `Owned scope` 范围内修改；新增仓库或路径前，先更新 Issue 并确认不与其他活跃 Issue 重叠。
 - 每个执行写入的 Agent 必须为当前认领的 Issue 使用独立 Git worktree，并使用独立分支 `agent/issue-<number>-<agent-id>`。不得让多个 Agent 共用同一个 checkout，不得直接在共享主 checkout、其他 Agent 的 worktree、其他 Agent 的分支或含有他人未提交改动的目录中实现功能。

@@ -171,4 +171,25 @@ if (
 fi
 [[ "$("$real_git" -C "$work_repo" ls-remote --heads origin refs/heads/agent-lock/issue-1 | awk 'NR == 1 { print $1 }')" == "$heartbeat_sha" ]]
 
+# agent:blocked dominates conflicting claimable mirror labels for both renewal
+# of an existing lock and acquisition of a new lock.
+export LEASE_TEST_ISSUE_STATE=OPEN
+export LEASE_TEST_ISSUE_LABELS=$'agent:ready\nagent:blocked'
+if (
+  cd "$work_repo"
+  PATH="$fake_bin:$PATH" "$lease_script" claim 1 heartbeat-owner heartbeat-scope
+); then
+  echo "blocked existing-lock claim unexpectedly succeeded" >&2
+  exit 1
+fi
+[[ "$("$real_git" -C "$work_repo" ls-remote --heads origin refs/heads/agent-lock/issue-1 | awk 'NR == 1 { print $1 }')" == "$heartbeat_sha" ]]
+if (
+  cd "$work_repo"
+  PATH="$fake_bin:$PATH" "$lease_script" claim 2 new-owner new-scope
+); then
+  echo "blocked new-lock claim unexpectedly succeeded" >&2
+  exit 1
+fi
+[[ -z "$("$real_git" -C "$work_repo" ls-remote --heads origin refs/heads/agent-lock/issue-2)" ]]
+
 echo "agent lease release race and heartbeat recovery tests passed"

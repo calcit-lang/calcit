@@ -103,10 +103,18 @@ issue_has_label() {
   gh issue view "$1" --repo "$2" --json labels --jq '.labels[].name' | grep -Fxq "$3"
 }
 
-require_claimable_issue() {
+require_open_unblocked_issue() {
   local issue="$1" repo="$2" state
   state="$(gh issue view "$issue" --repo "$repo" --json state --jq .state)"
   [[ "$state" == "OPEN" ]] || die "issue #$issue is not open"
+  if issue_has_label "$issue" "$repo" agent:blocked; then
+    die "issue #$issue is explicitly agent:blocked"
+  fi
+}
+
+require_claimable_issue() {
+  local issue="$1" repo="$2"
+  require_open_unblocked_issue "$issue" "$repo"
   if issue_has_label "$issue" "$repo" agent:ready; then
     return
   fi
@@ -123,12 +131,7 @@ require_claimable_issue() {
 }
 
 require_renewable_issue() {
-  local issue="$1" repo="$2" state
-  state="$(gh issue view "$issue" --repo "$repo" --json state --jq .state)"
-  [[ "$state" == "OPEN" ]] || die "issue #$issue is not open"
-  if issue_has_label "$issue" "$repo" agent:blocked; then
-    die "issue #$issue is explicitly agent:blocked"
-  fi
+  require_open_unblocked_issue "$1" "$2"
 }
 
 set_issue_state() {
