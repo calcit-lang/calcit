@@ -66,3 +66,56 @@ rg -n -F --glob '*.cirru' --glob '!**/.git/**' -- '(? ' /path/to/calcit-lang
 
 Each hit still needs AST/context review: quoted code and macro definitions are
 not ordinary executable call sites.
+
+## Ecosystem evidence for 0.13.78 / 0.13.78 生态证据
+
+The 2026-09-05 follow-up audit used Calcit 0.13.77 main at
+`5915ccf362fbb759e34812682d4cf2ac0e72deac`. It intentionally reports the nil
+slice separately from the first failure of the whole strict preflight: a
+project can have no project-local nil debt while still being blocked by a
+Dynamic or generic-contract diagnostic.
+
+2026-09-05 的后续审计基于 Calcit 0.13.77 main
+`5915ccf362fbb759e34812682d4cf2ac0e72deac`。审计刻意把 nil 专项结果与完整 strict
+预检的首个失败分开：项目可能没有自身 nil 债务，但仍被 Dynamic 或泛型契约诊断阻断。
+
+| Consumer | Frozen revision | Project nil audit | Dependency-inclusive nil audit | Legacy syntax/schema candidates | First whole-strict blocker | Migration owner |
+| --- | --- | --- | --- | --- | --- | --- |
+| Respo | `d106b38a85d7bc0e10c6d621235843f37e69c6e4` | 49 unresolved hits, 28 definitions, 14 namespaces | same 49 hits | no `(? ...)` or `%{}?`; public legacy `Optional<T>` fields and one `map-kv` nil-drop callback remain | `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA` at `respo.main/f%` | [Respo/respo.calcit#131](https://github.com/Respo/respo.calcit/issues/131) |
+| gen-code | `a112db30414a865089054edcfb4b73a557433d0e` | 0 hits | 122 unresolved hits from dependencies, 61 definitions, 33 namespaces | one executable `fn (? chunk)` stream callback; no `%{}?`, public `Optional<T>`, or `map-kv` candidate | `E_ERASED_GENERIC_RELATION` in `gen-code.comp.container/comp-container` | [calcit-lang/gen-code#13](https://github.com/calcit-lang/gen-code/issues/13) |
+
+The Respo review identifies three distinct migrations rather than treating all
+explicit runtime nil values alike:
+
+- `respo.util.list/pick-event` uses `map-kv` with a visible nil drop sentinel;
+  migrate it to `filter-map-kv` and `MapEntryDecision`.
+- `Component`, `DomProps`, `Element`, and `RespoEvent` expose legacy
+  `Optional<T>` fields. Their DOM/runtime meaning must be reviewed before
+  choosing Calcit `Option<T>` or a host-nullish boundary.
+- The remaining 49 explicit nil forms need per-definition classification.
+  They are visible debt, but their presence alone does not prove that they use
+  one of the implicit compatibility constructs rejected by the five strict nil
+  diagnostics.
+
+Respo 的审阅把迁移分成三类，不把所有显式 runtime nil 混为一谈：`pick-event` 的
+nil-drop sentinel 迁移到 `filter-map-kv`；四个公开数据结构中的 legacy
+`Optional<T>` 按 DOM/runtime 语义选择 `Option<T>` 或 host-nullish 边界；其余 49 个
+显式 nil 逐定义分类，不能仅凭出现 `nil` 就误判为五种隐式兼容构造之一。
+
+Run the audit from a Calcit checkout with clean consumer worktrees:
+
+```bash
+cargo build --bin calcit
+node scripts/check-strict-nil-ecosystem.mjs \
+  --calcit target/debug/calcit \
+  --project respo=/path/to/respo.calcit \
+  --project gen-code=/path/to/gen-code
+```
+
+The script emits revisions, remotes, clean-worktree state, raw source candidate
+counts, project-only and dependency-inclusive nil summaries, and the first
+whole-strict diagnostic as JSON. A dependency load warning, malformed analyzer
+output, or missing repository is a hard failure, preventing an empty program
+from being reported as a zero-hit success. Raw candidates still require the
+context review above; generated artifacts, documentation, and quoted examples
+must not be counted as executable migrations without inspection.
