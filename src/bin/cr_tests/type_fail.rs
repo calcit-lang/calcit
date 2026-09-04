@@ -949,6 +949,33 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       }),
       "native map merge should preserve its first map key/value types: {proc_warnings:?}"
     );
+    let filter_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/filter"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      filter_warnings.len(),
+      3,
+      "collection filters should validate predicate contracts: {warnings:?}"
+    );
+    assert_eq!(
+      filter_warnings
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("arg 2 expects type `fn(:number) -> :bool`")
+            && warning.message().contains("got `fn(:number) -> :number`")
+        })
+        .count(),
+      2,
+      "List and Set filters should pass their Number member type to a Bool predicate: {filter_warnings:?}"
+    );
+    assert!(
+      filter_warnings.iter().any(|warning| {
+        warning.message().contains("arg 2 expects type `fn(:list) -> :bool`")
+          && warning.message().contains("got `fn(:number) -> :number`")
+      }),
+      "Map filters should expose their heterogeneous pair as a List-shaped predicate argument: {filter_warnings:?}"
+    );
   });
 }
 

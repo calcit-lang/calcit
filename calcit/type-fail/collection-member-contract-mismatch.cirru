@@ -31,6 +31,9 @@
               &map:dissoc (&{} :a 1 :b 2) :a 0
               &list:concat ([] 1) ([] 2) ([] :bad)
               &merge (&{} :a 1) (&{} :b 2) (&{} :c :bad)
+              filter ([] 1 2) inc
+              filter (#{} 1 2) inc
+              filter (&{} :a 1) inc
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
