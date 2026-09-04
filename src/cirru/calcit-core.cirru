@@ -7575,7 +7575,8 @@
             quote $ assert= false (some? nil)
           :schema $ :: 'Fn
             {} (:return 'Bool)
-              :args $ [] 'Dynamic
+              :args $ [] 'T
+              :generics $ [] 'T
         'sort $ %{} 'CodeEntry (:doc "|internal function for sorting lists\nSyntax: (sort list) or (sort list comparator)\nParams: list (list), comparator (function, optional)\nReturns: list\nReturns sorted list using natural order or custom comparator")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -7769,7 +7770,8 @@
               struct-def? $ %{} _ (:x 1)
           :schema $ :: 'Fn
             {} (:return 'Bool)
-              :args $ [] 'Dynamic
+              :args $ [] 'T
+              :generics $ [] 'T
         'struct-definition $ %{} 'CodeEntry (:doc "|Return Option<StructDef> for a struct value.")
           :code $ quote
             defn struct-definition (value)
@@ -7981,13 +7983,15 @@
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Bool)
-              :args $ [] 'Dynamic
+              :args $ [] 'T
+              :generics $ [] 'T
         'to-lispy-string $ %{} 'CodeEntry (:doc "|internal function for converting to Lisp string\nSyntax: (to-lispy-string value)\nParams: value (any)\nReturns: string\nConverts value to Lisp-style string representation")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'String)
-              :args $ [] 'Dynamic
+              :args $ [] 'T
+              :generics $ [] 'T
           :tags $ #{} :builtin :internal
         'to-pairs $ %{} 'CodeEntry (:doc "|internal function for converting to pairs\nSyntax: (to-pairs map)\nParams: map (map)\nReturns: set\nConverts map to an unordered set of [key value] pairs")
           :code $ quote &runtime-implementation
