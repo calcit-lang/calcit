@@ -1107,6 +1107,37 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       }),
       "Map mappers should consume and return heterogeneous List pairs: {map_warnings:?}"
     );
+    let fold_warnings = warnings
+      .iter()
+      .filter(|warning| {
+        matches!(warning.code(), Some("W_PROC_ARG_TYPE_MISMATCH") | Some("W_FN_ARG_TYPE_MISMATCH"))
+          && (warning.message().contains("Proc `foldl`") || warning.message().contains("calcit.core/reduce"))
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(
+      fold_warnings.len(),
+      4,
+      "collection folds should validate accumulator/member reducer contracts: {warnings:?}"
+    );
+    assert_eq!(
+      fold_warnings
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("expects type `fn(:number, :string) -> :number`")
+            && warning.message().contains("got `fn(:number, & :number) -> :number`")
+        })
+        .count(),
+      3,
+      "List/Set foldl and Set reduce should preserve String member types: {fold_warnings:?}"
+    );
+    assert!(
+      fold_warnings.iter().any(|warning| {
+        warning.message().contains("Proc `foldl`")
+          && warning.message().contains("expects type `fn(:number, :list) -> :number`")
+          && warning.message().contains("got `fn(:number, & :number) -> :number`")
+      }),
+      "Map foldl should expose entries as heterogeneous List pairs: {fold_warnings:?}"
+    );
   });
 }
 
