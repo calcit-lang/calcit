@@ -352,15 +352,28 @@ pub(crate) fn infer_return_type_from_compiled_callable(
 /// public compatibility schema's Dynamic return instead of guessing.
 fn infer_core_apply_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   let callable_type = call_expr.get(1).and_then(|callable| resolve_type_value(callable, scope_types))?;
-  let arguments_type = call_expr.get(2).and_then(|arguments| resolve_type_value(arguments, scope_types))?;
+  let arguments = call_expr.get(2)?;
+  let arguments_type = resolve_type_value(arguments, scope_types)?;
   let CalcitTypeAnnotation::Fn(signature) = callable_type.as_ref() else {
     return None;
   };
   let CalcitTypeAnnotation::List(item_type) = arguments_type.as_ref() else {
     return None;
   };
-  if !signature.where_bounds.is_empty() {
+  if !signature.where_bounds.is_empty() || matches!(item_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
     return None;
+  }
+
+  let known_length = match arguments {
+    Calcit::List(items) if items.first().is_some_and(is_list_constructor) => Some(items.len().saturating_sub(1)),
+    _ => None,
+  };
+  match (&signature.rest_type, known_length) {
+    (None, Some(length)) if length == signature.arg_types.len() => {}
+    (None, _) => return None,
+    (Some(_), Some(length)) if length >= signature.arg_types.len() => {}
+    (Some(_), None) if signature.arg_types.is_empty() => {}
+    (Some(_), _) => return None,
   }
 
   let mut bindings = HashMap::new();
@@ -2131,7 +2144,7 @@ mod tests {
         Arc::new(CalcitTypeAnnotation::String),
       )),
     );
-    let arguments = local("arguments", Arc::new(CalcitTypeAnnotation::List(number)));
+    let arguments = proc_call(CalcitProc::List, vec![Calcit::Number(1.0), Calcit::Number(2.0)]);
     let call = CalcitList::from(&[symbol("apply"), callable, arguments][..]);
 
     assert!(matches!(
@@ -2155,10 +2168,7 @@ mod tests {
         features: Arc::new(HashSet::new()),
       }))),
     );
-    let arguments = local(
-      "arguments",
-      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number))),
-    );
+    let arguments = proc_call(CalcitProc::List, vec![Calcit::Number(1.0)]);
     let call = CalcitList::from(&[symbol("apply"), callable, arguments][..]);
 
     assert!(matches!(
@@ -2176,13 +2186,72 @@ mod tests {
         Arc::new(CalcitTypeAnnotation::Bool),
       )),
     );
+    let arguments = proc_call(CalcitProc::List, vec![Calcit::Number(1.0), Calcit::Number(2.0)]);
+    let call = CalcitList::from(&[symbol("apply"), callable, arguments][..]);
+
+    assert!(infer_core_apply_return_type(&call, &ScopeTypes::new()).is_none());
+  }
+
+  #[test]
+  fn apply_keeps_dynamic_for_a_list_without_concrete_member_evidence() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let callable = local(
+      "combine",
+      Arc::new(CalcitTypeAnnotation::from_function_parts(
+        vec![number.clone(), number],
+        Arc::new(CalcitTypeAnnotation::String),
+      )),
+    );
+    let arguments = proc_call(CalcitProc::List, vec![Calcit::Number(1.0), Calcit::Str(Arc::from("two"))]);
+    let call = CalcitList::from(&[symbol("apply"), callable, arguments][..]);
+
+    assert!(infer_core_apply_return_type(&call, &ScopeTypes::new()).is_none());
+  }
+
+  #[test]
+  fn apply_keeps_dynamic_when_fixed_arity_cannot_be_proven() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let callable = local(
+      "combine",
+      Arc::new(CalcitTypeAnnotation::from_function_parts(
+        vec![number.clone(), number.clone()],
+        Arc::new(CalcitTypeAnnotation::String),
+      )),
+    );
+    let unknown_length = local("arguments", Arc::new(CalcitTypeAnnotation::List(number.clone())));
+    let too_short = proc_call(CalcitProc::List, vec![Calcit::Number(1.0)]);
+
+    for arguments in [unknown_length, too_short] {
+      let call = CalcitList::from(&[symbol("apply"), callable.clone(), arguments][..]);
+      assert!(infer_core_apply_return_type(&call, &ScopeTypes::new()).is_none());
+    }
+  }
+
+  #[test]
+  fn apply_allows_unknown_length_for_a_rest_only_callable() {
+    let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let callable = local(
+      "collect",
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![Arc::from("T")]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![],
+        return_type: Arc::new(CalcitTypeAnnotation::List(type_var.clone())),
+        fn_kind: SchemaKind::Fn,
+        rest_type: Some(type_var),
+        features: Arc::new(HashSet::new()),
+      }))),
+    );
     let arguments = local(
       "arguments",
       Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number))),
     );
     let call = CalcitList::from(&[symbol("apply"), callable, arguments][..]);
 
-    assert!(infer_core_apply_return_type(&call, &ScopeTypes::new()).is_none());
+    assert!(matches!(
+      infer_core_apply_return_type(&call, &ScopeTypes::new()).as_deref(),
+      Some(CalcitTypeAnnotation::List(item)) if matches!(item.as_ref(), CalcitTypeAnnotation::Number)
+    ));
   }
 
   #[test]
