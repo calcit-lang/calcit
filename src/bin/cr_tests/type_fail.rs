@@ -770,6 +770,63 @@ fn type_fail_update_collection_contract_fixture_reports_warning_codes() {
 }
 
 #[test]
+fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/type-fail/collection-member-contract-mismatch.cirru");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("collection member mismatches should preprocess with warnings");
+
+    let warnings = warnings.borrow();
+    let matched: Vec<&LocatedWarning> = warnings
+      .iter()
+      .filter(|warning| {
+        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+          && (warning.message().contains("calcit.core/get") || warning.message().contains("calcit.core/includes?"))
+      })
+      .collect();
+    assert_eq!(matched.len(), 5, "expected lookup and membership warnings, got: {warnings:?}");
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("calcit.core/get")
+          && warning.message().contains("arg 2 expects type `:number`")
+          && warning.message().contains("got `:tag`")
+      }),
+      "List lookup should require a Number index: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("calcit.core/get")
+          && warning.message().contains("arg 2 expects type `:tag`")
+          && warning.message().contains("got `:number`")
+      }),
+      "Map lookup should require its key type: {matched:?}"
+    );
+    assert_eq!(
+      matched
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("calcit.core/includes?")
+            && warning.message().contains("arg 2 expects type `:number`")
+            && warning.message().contains("got `:tag`")
+        })
+        .count(),
+      2,
+      "Set members and Map values should both preserve their Number type: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("calcit.core/includes?")
+          && warning.message().contains("arg 2 expects type `:string`")
+          && warning.message().contains("got `:number`")
+      }),
+      "String membership should require a String substring: {matched:?}"
+    );
+  });
+}
+
+#[test]
 fn type_fail_type_slot_enum_invalid_variant() {
   run_with_large_stack(|| {
     let entries = load_fixture_entries("calcit/type-fail/type-slot-enum-invalid-variant.cirru");

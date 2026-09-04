@@ -1069,9 +1069,13 @@ impl CalcitProc {
         return_type: some_tag("bool"),
         arg_types: vec![map_of(type_var("K"), type_var("V"))],
       }),
-      NativeMapContains | NativeMapIncludes => Some(ProcTypeSignature {
+      NativeMapContains => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
-        arg_types: vec![some_tag("map"), dynamic_tag()],
+        arg_types: vec![map_of(type_var("K"), type_var("V")), type_var("K")],
+      }),
+      NativeMapIncludes => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![map_of(type_var("K"), type_var("V")), type_var("V")],
       }),
       NativeMapAssoc => Some(ProcTypeSignature {
         return_type: some_tag("map"),
@@ -1567,6 +1571,17 @@ mod tests {
       nth.arg_types.first().map(AsRef::as_ref),
       Some(CalcitTypeAnnotation::List(inner))
         if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T")
+    ));
+
+    let map_contains = CalcitProc::NativeMapContains.get_type_signature().expect("map contains signature");
+    assert!(matches!(
+      map_contains.arg_types.get(1).map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "K"
+    ));
+    let map_includes = CalcitProc::NativeMapIncludes.get_type_signature().expect("map includes signature");
+    assert!(matches!(
+      map_includes.arg_types.get(1).map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "V"
     ));
 
     let atom = CalcitProc::Atom.get_type_signature().expect("atom signature");

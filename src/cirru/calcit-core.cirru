@@ -1718,12 +1718,12 @@
               :generics $ [] 'K 'V
               :return $ :: 'Optional 'V
           :tags $ #{} :builtin :internal
-        '&map:includes? $ %{} 'CodeEntry (:doc "|internal function for checking if map includes key\nSyntax: (&map:includes? map key)\nParams: map (map), key (any)\nReturns: boolean\nReturns true if map includes key (alias for contains?)")
+        '&map:includes? $ %{} 'CodeEntry (:doc "|Internal function for checking whether a map includes a value. Syntax: (&map:includes? map value). Returns true when any map value equals the supplied value.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Bool)
-              :args $ [] (:: 'Map 'K 'V) 'K
+              :args $ [] (:: 'Map 'K 'V) 'V
               :generics $ [] 'K 'V
           :tags $ #{} :alias :builtin :internal
         '&map:keys $ %{} 'CodeEntry (:doc "|Internal typed Map<K,V> key projection. Returns Set<K>; user code should call `.keys`.")
@@ -7573,7 +7573,9 @@
             %{} 'TestEntry (:name |preserves-slice-container-types)
               :code $ quote
                 do
-                  assert-type (slice ([] 1 2 3) 1) (:: 'List 'Number)
+                  assert-type
+                    slice ([] 1 2 3) 1
+                    :: 'List 'Number
                   assert-type (slice |abc 1) 'String
               :tags $ #{} :core :unit
         'some-in? $ %{} 'CodeEntry (:doc |)

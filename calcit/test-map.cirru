@@ -82,7 +82,7 @@
                 assert-detect identity $ contains? dict :a
                 assert-detect not $ contains? dict :a2
                 assert-detect identity $ includes? dict 2
-                assert-detect not $ includes? dict :a
+                assert-detect not $ includes? dict 4
                 ; println $ keys dict
                 assert= (keys dict) (#{} :c :a :b :d)
                 assert= (.keys dict) (#{} :c :a :b :d)
