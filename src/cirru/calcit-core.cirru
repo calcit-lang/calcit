@@ -7232,13 +7232,13 @@
               :args $ [] 'T
               :generics $ [] 'T
           :tags $ #{} :builtin :internal :state
-        'remove-watch $ %{} 'CodeEntry (:doc "|internal function for removing atom watchers\nSyntax: (remove-watch atom key)\nParams: atom (atom), key (any)\nReturns: &unit\nRemoves watcher with specified key from atom")
+        'remove-watch $ %{} 'CodeEntry (:doc "|Remove a watcher from a Ref<T>. Syntax: (remove-watch ref tag-key). The key must be a Tag. Returns Unit; reports an error when the key is absent.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
-              :args $ [] (:: 'Ref 'T) 'K
-              :generics $ [] 'T 'K
+              :args $ [] (:: 'Ref 'T) 'Tag
+              :generics $ [] 'T
           :tags $ #{} :builtin :internal :state :watch
         'repeat $ %{} 'CodeEntry (:doc |)
           :code $ quote
