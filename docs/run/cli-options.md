@@ -211,7 +211,7 @@ whose structured contract does not claim the generic relationship. Outside
 `--strict-types`, the existing compatibility behavior is unchanged.
 
 `--strict-types` reports `E_RAW_PRIMITIVE_IN_TYPED_CODE` for hand-written
-`&get-raw`, `&struct:get`, raw `&%{}`, and `&struct:nth` without matching
+`&get-raw`, `record-get` / `&struct:get`, raw `&%{}`, and `&struct:nth` without matching
 nominal layout evidence. Use Option-returning collection lookup, named Struct
 field syntax, and the public `%{}` constructor. Core/reviewed macro lowering,
 reusable `defimpl` access, and indexed IR whose index/tag agrees with the

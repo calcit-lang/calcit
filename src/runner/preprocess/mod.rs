@@ -3934,12 +3934,18 @@ fn reject_raw_primitive_in_strict_source(
         "use named field syntax on a concrete Struct; only indexed IR with a matching nominal layout and field tag is accepted",
       ))
     }
-    Calcit::Import(CalcitImport { ns, def, .. })
-      if ns.as_ref() == calcit::CORE_NS && matches!(def.as_ref(), "&get-raw" | "record-get") && !inside_defimpl =>
-    {
+    Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "&get-raw" && !inside_defimpl => {
       Some((
         "`&get-raw`",
         "use typed collection lookup returning Option<T>, or named Struct field syntax after narrowing the receiver",
+      ))
+    }
+    Calcit::Import(CalcitImport { ns, def, .. })
+      if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "record-get" && !inside_defimpl =>
+    {
+      Some((
+        "`record-get`",
+        "use `(:field value)` or `value.:field` on a concrete Struct so the compiler validates and lowers the access",
       ))
     }
     Calcit::Symbol { sym, .. } if sym.as_ref() == "&get-raw" && !inside_defimpl => Some((
@@ -11850,6 +11856,26 @@ mod tests {
       assert_eq!(error.code.as_deref(), Some("E_RAW_PRIMITIVE_IN_TYPED_CODE"));
       assert!(error.msg.contains(primitive), "diagnostic must name {primitive}: {error:?}");
     }
+
+    let record_get = Calcit::Import(CalcitImport {
+      ns: Arc::from(calcit::CORE_NS),
+      def: Arc::from("record-get"),
+      info: Arc::new(ImportInfo::Core {
+        at_ns: Arc::from("tests.raw-strict"),
+      }),
+      def_id: None,
+    });
+    let record_error = reject_raw_primitive_in_strict_source(
+      &record_get,
+      &CalcitList::default(),
+      &ScopeTypes::new(),
+      "tests.raw-strict",
+      &CallStackList::default(),
+      None,
+    )
+    .expect_err("legacy record-get must receive its own Struct-access diagnostic");
+    assert!(record_error.msg.contains("`record-get`"));
+    assert!(record_error.msg.contains("`(:field value)`"));
   }
 
   #[test]

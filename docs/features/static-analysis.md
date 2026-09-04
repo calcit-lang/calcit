@@ -153,7 +153,7 @@ migrate. A concrete inferred type, trait constraint, or external-object trait
 remains statically dispatchable and does not trigger this rule.
 
 Strict project source also rejects hand-written representation primitives with
-`E_RAW_PRIMITIVE_IN_TYPED_CODE`: `&get-raw`, `&struct:get`, raw `&%{}`, and
+`E_RAW_PRIMITIVE_IN_TYPED_CODE`: `&get-raw`, `record-get` / `&struct:get`, raw `&%{}`, and
 `&struct:nth` without an exact nominal layout/index/tag proof. Prefer public
 typed lookup, named Struct field syntax, and `%{}` construction. The check is
 evidence based: compiler or reviewed macro lowering, core internals, reusable

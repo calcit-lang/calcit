@@ -1,7 +1,7 @@
 # Reject raw primitives in strict project source
 
-- Added `E_RAW_PRIMITIVE_IN_TYPED_CODE` for hand-written `&get-raw`,
-  `&struct:get`, raw `&%{}`, and `&struct:nth` without matching nominal layout
+- Added `E_RAW_PRIMITIVE_IN_TYPED_CODE` for hand-written `&get-raw`, legacy
+  `record-get` / `&struct:get`, raw `&%{}`, and `&struct:nth` without matching nominal layout
   evidence.
 - Preserved public `%{}` macro lowering, reviewed macro/core internals, reusable
   `defimpl` access, and persisted indexed Struct IR whose index/tag pair agrees

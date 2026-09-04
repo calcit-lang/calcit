@@ -447,7 +447,7 @@ adapter；不要用 `unsafe-coerce` 批量压制。
 `:js-ffi` 只声明 host capability，不授权运行时 method lookup；adapter 必须在返回业务层前转换 host
 值或附加 external-object trait。
 
-strict 项目源码也不能直接依赖 `&get-raw`、`&struct:get`、手写 `&%{}`，或缺少匹配 nominal
+strict 项目源码也不能直接依赖 `&get-raw`、`record-get` / `&struct:get`、手写 `&%{}`，或缺少匹配 nominal
 layout/index/tag evidence 的 `&struct:nth`。这些形式会报告 `E_RAW_PRIMITIVE_IN_TYPED_CODE`。
 collection lookup 改用返回 `Option<T>` 的公开 API，Struct 字段改用 `(:field value)`，构造改用 `%{}`。
 compiler/macro lowering、core internals、可复用 `defimpl`，以及 evidence 完整的 persisted indexed IR 保持可用。
