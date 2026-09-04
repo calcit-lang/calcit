@@ -1046,7 +1046,8 @@ fn emit_map_kv_impl(ctx: &mut WasmGenCtx, args: &[Calcit], uses_decision: bool) 
     _ => unreachable!(),
   }
 
-  // result is [k', v'] list on stack; get its pointer
+  // `map-kv` returns a [k', v'] pair list, while `filter-map-kv` returns a
+  // MapEntryDecision enum. Both are heap values whose pointer is on the stack.
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(result_ptr));
 
