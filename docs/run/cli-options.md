@@ -128,7 +128,9 @@ missing schema, Dynamic value/callable, legacy Optional, unbound generic or
 type slot, or explicit `:js-ffi` Dynamic boundary. Add static nominal or trait
 evidence before method syntax. A JS boundary must convert the host value or
 attach an external-object trait inside its narrow adapter; `:js-ffi` alone does
-not authorize runtime method lookup.
+not authorize runtime method lookup. Legacy Optional means an Optional chain
+whose payload is an open Dynamic value; `Optional<DynFn>` is classified as a
+dynamic callable instead.
 
 `unsafe-coerce` is stricter still: in `--strict-types` it must appear inside
 the current function's structured `Fn` schema with `:features $ #{} :js-ffi`,
@@ -224,7 +226,11 @@ argument whose contract contains a closed Struct or Enum. Decode text with
 with `decode-map-as` / `try-decode-map-as`, or validate and narrow it inside a
 small typed FFI adapter. The diagnostic identifies the argument and target
 contract. It does not reject unrelated `Dynamic` to primitive calls, and
-compatibility mode keeps the existing gradual migration behavior.
+compatibility mode keeps the existing gradual migration behavior. A type slot
+bound to a Struct/Enum contract is resolved before this check, so entry-level
+and scoped slot configuration cannot erase the nominal boundary. Cyclic slot
+bindings are treated conservatively as protected boundaries instead of being
+followed recursively or allowed to bypass the strict check.
 
 `--strict-types` reports `E_RAW_PRIMITIVE_IN_TYPED_CODE` for hand-written
 `&get-raw`, `record-get` / `&struct:get`, raw `&%{}`, and `&struct:nth` without matching
