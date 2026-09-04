@@ -786,13 +786,14 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
           && (warning.message().contains("calcit.core/get")
             || warning.message().contains("calcit.core/includes?")
             || warning.message().contains("calcit.core/contains?")
-            || warning.message().contains("calcit.core/assoc"))
+            || warning.message().contains("calcit.core/assoc")
+            || warning.message().contains("calcit.core/dissoc"))
       })
       .collect();
     assert_eq!(
       matched.len(),
-      14,
-      "expected lookup, membership, key, and association warnings, got: {warnings:?}"
+      17,
+      "expected lookup, membership, key, association, and dissociation warnings, got: {warnings:?}"
     );
     assert!(
       matched.iter().any(|warning| {
@@ -889,6 +890,39 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
           && warning.message().contains("got `:tag`")
       }),
       "Map association should require its value type: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("calcit.core/dissoc")
+          && warning.message().contains("arg 2 expects type `:number`")
+          && warning.message().contains("got `:tag`")
+      }),
+      "List dissociation should require a Number index: {matched:?}"
+    );
+    assert_eq!(
+      matched
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("calcit.core/dissoc")
+            && warning.message().contains("expects type `:tag`")
+            && warning.message().contains("got `:number`")
+        })
+        .count(),
+      2,
+      "Map dissociation should validate both the first and later rest keys: {matched:?}"
+    );
+    let proc_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH") && warning.message().contains("Proc `&map:dissoc`"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      proc_warnings.len(),
+      1,
+      "native map dissoc should validate variadic keys: {warnings:?}"
+    );
+    assert!(
+      proc_warnings[0].message().contains("arg 3 expects type `:tag`") && proc_warnings[0].message().contains("got `:number`"),
+      "native map dissoc should retain the map key binding for later keys: {proc_warnings:?}"
     );
   });
 }
