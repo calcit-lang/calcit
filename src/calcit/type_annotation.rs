@@ -4412,6 +4412,15 @@ mod tests {
       !CalcitTypeAnnotation::trait_references_match(&bare_placeholder, &runtime_trait),
       "a bare actual placeholder must not satisfy a runtime-identified trait by reverse matching"
     );
+
+    let qualified_placeholder = CalcitTrait::new_reference("respo.dom/DomElement");
+    let qualified_runtime =
+      CalcitTrait::new_runtime(EdnTag::new("DomElement"), vec![], vec![]).with_definition_ref("respo.dom", "DomElement");
+    assert!(!qualified_placeholder.matches_reference(&qualified_runtime));
+    assert!(
+      CalcitTypeAnnotation::trait_references_match(&qualified_placeholder, &qualified_runtime),
+      "qualified definition identity keeps the intentional reverse-match path"
+    );
   }
 
   fn symbol(name: &str) -> Calcit {
