@@ -31,7 +31,11 @@ if [[ "$1 $2" == "repo view" ]]; then
 elif [[ "$1 $2" == "label create" ]]; then
   :
 elif [[ "$1 $2" == "issue view" ]]; then
-  if [[ "$*" == *"--json state"* ]]; then echo OPEN; else echo agent:ready; fi
+  if [[ "$*" == *"--json state"* ]]; then
+    echo "${LEASE_TEST_ISSUE_STATE:-OPEN}"
+  else
+    printf '%s\n' "${LEASE_TEST_ISSUE_LABELS-agent:ready}"
+  fi
 elif [[ "$1 $2" == "issue edit" ]]; then
   previous=""
   for arg in "$@"; do
@@ -95,6 +99,8 @@ export LEASE_TEST_REAL_GIT="$real_git"
 export LEASE_TEST_WORK_REPO="$work_repo"
 export LEASE_TEST_OLD_SHA="$old_sha"
 export LEASE_TEST_NEW_SHA="$new_sha"
+export LEASE_TEST_ISSUE_STATE=OPEN
+export LEASE_TEST_ISSUE_LABELS=agent:ready
 
 (
   cd "$work_repo"
@@ -126,4 +132,43 @@ if grep -Fq 'Agent: ``' "$log_file" || grep -Fq 'Scope: ``' "$log_file"; then
   exit 1
 fi
 
-echo "agent lease release race tests passed"
+# Heartbeat trusts the validated remote lock and repairs a missing Issue state
+# label instead of rejecting the current owner because its mirror disappeared.
+heartbeat_sha="$(make_test_lock heartbeat-owner heartbeat-scope 1700000040)"
+"$real_git" -C "$work_repo" push --quiet --force origin "$heartbeat_sha:refs/heads/agent-lock/issue-1"
+: >"$log_file"
+export LEASE_TEST_ISSUE_LABELS=""
+(
+  cd "$work_repo"
+  PATH="$fake_bin:$PATH" "$lease_script" heartbeat 1 heartbeat-owner
+)
+[[ "$(grep '^MIRROR ' "$log_file" | tail -n 1)" == "MIRROR agent:claimed" ]]
+renewed_sha="$("$real_git" -C "$work_repo" ls-remote --heads origin refs/heads/agent-lock/issue-1 | awk 'NR == 1 { print $1 }')"
+[[ -n "$renewed_sha" && "$renewed_sha" != "$heartbeat_sha" ]]
+[[ "$("$real_git" -C "$work_repo" show -s --format=%B "$renewed_sha" | sed -n 's/^agent_id=//p')" == "heartbeat-owner" ]]
+
+# Explicit blocked and closed Issue states remain non-renewable, and neither
+# failure may advance the authoritative lock.
+"$real_git" -C "$work_repo" push --quiet --force origin "$heartbeat_sha:refs/heads/agent-lock/issue-1"
+export LEASE_TEST_ISSUE_LABELS=agent:blocked
+if (
+  cd "$work_repo"
+  PATH="$fake_bin:$PATH" "$lease_script" heartbeat 1 heartbeat-owner
+); then
+  echo "blocked Issue heartbeat unexpectedly succeeded" >&2
+  exit 1
+fi
+[[ "$("$real_git" -C "$work_repo" ls-remote --heads origin refs/heads/agent-lock/issue-1 | awk 'NR == 1 { print $1 }')" == "$heartbeat_sha" ]]
+
+export LEASE_TEST_ISSUE_STATE=CLOSED
+export LEASE_TEST_ISSUE_LABELS=""
+if (
+  cd "$work_repo"
+  PATH="$fake_bin:$PATH" "$lease_script" heartbeat 1 heartbeat-owner
+); then
+  echo "closed Issue heartbeat unexpectedly succeeded" >&2
+  exit 1
+fi
+[[ "$("$real_git" -C "$work_repo" ls-remote --heads origin refs/heads/agent-lock/issue-1 | awk 'NR == 1 { print $1 }')" == "$heartbeat_sha" ]]
+
+echo "agent lease release race and heartbeat recovery tests passed"

@@ -122,6 +122,15 @@ require_claimable_issue() {
   die "issue #$issue is neither agent:ready nor agent:review"
 }
 
+require_renewable_issue() {
+  local issue="$1" repo="$2" state
+  state="$(gh issue view "$issue" --repo "$repo" --json state --jq .state)"
+  [[ "$state" == "OPEN" ]] || die "issue #$issue is not open"
+  if issue_has_label "$issue" "$repo" agent:blocked; then
+    die "issue #$issue is explicitly agent:blocked"
+  fi
+}
+
 set_issue_state() {
   local issue="$1" repo="$2" target="$3"
   gh issue edit "$issue" --repo "$repo" \
@@ -234,8 +243,10 @@ command_heartbeat() {
   [[ "$old_agent" == "$agent" ]] || die "issue #$issue is held by $old_agent, not $agent"
   repo="$(repo_slug)"
   ensure_labels "$repo"
-  # Do not extend ownership after the Issue has been closed or blocked.
-  require_claimable_issue "$issue" "$repo"
+  # The remote lock is authoritative. A missing or stale state label is a
+  # recoverable mirror failure, but an explicit maintainer block or closure is
+  # still authoritative and must stop renewal.
+  require_renewable_issue "$issue" "$repo"
   claimed="$(field "$old_sha" claimed_at)"
   scope="$(field "$old_sha" scope)"
   now="$(date +%s)"
