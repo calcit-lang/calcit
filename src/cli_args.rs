@@ -2474,7 +2474,7 @@ pub enum ConfigSubcommand {
   /// show or bump the project version (omit value to show; use patch|minor|major to bump; or pass a semver string)
   /// [Deprecated] prefer `caps version get/set/bump` which manages `deps.cirru :version`
   Version(ConfigVersionCommand),
-  /// set a configuration key to a value (mode, init-fn, reload-fn, description, version)
+  /// set a configuration key to a value (mode, init-fn, reload-fn, description, feature-policy.<name>, version)
   Set(ConfigSetCommand),
   /// add a module path to an entry's modules
   AddModule(ConfigAddModuleCommand),
@@ -2524,12 +2524,12 @@ pub struct ConfigVersionCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "set")]
-/// set a configuration key (mode, init-fn, reload-fn, description, version)
+/// set a configuration key (mode, init-fn, reload-fn, description, feature-policy.<name>, version)
 pub struct ConfigSetCommand {
   /// apply to a named entry (e.g. "test"); defaults to "default" (version is always project-level)
   #[argh(option)]
   pub entry: Option<String>,
-  /// config key: mode, init-fn, reload-fn, description, version ([Deprecated] prefer `caps version`)
+  /// config key: mode, init-fn, reload-fn, description, feature-policy.<name>, version ([Deprecated] prefer `caps version`)
   #[argh(positional)]
   pub key: String,
   /// config value; for "version" accepts semver string or patch|minor|major

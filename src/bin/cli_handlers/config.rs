@@ -62,6 +62,15 @@ fn format_type_slots(type_slots: &std::collections::HashMap<String, String>) -> 
   format!("{{{}}}", pairs.join(", "))
 }
 
+fn format_feature_policy(feature_policy: &HashMap<String, snapshot::FeaturePolicy>) -> String {
+  let mut pairs = feature_policy
+    .iter()
+    .map(|(feature, policy)| format!(":{feature} -> :{}", policy.as_str()))
+    .collect::<Vec<_>>();
+  pairs.sort();
+  format!("{{{}}}", pairs.join(", "))
+}
+
 fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String> {
   let snapshot = load_snapshot_for_display(input_path)?;
 
@@ -79,6 +88,7 @@ fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String>
     println!("  {}: {}", "description".cyan(), entry.description);
     println!("  {}: {:?}", "modules".cyan(), entry.modules);
     println!("  {}: {}", "type_slots".cyan(), format_type_slots(&entry.type_slots));
+    println!("  {}: {}", "feature_policy".cyan(), format_feature_policy(&entry.feature_policy));
     return Ok(());
   }
 
@@ -103,6 +113,7 @@ fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String>
     println!("    {}: {}", "description".cyan(), entry.description);
     println!("    {}: {:?}", "modules".cyan(), entry.modules);
     println!("    {}: {}", "type_slots".cyan(), format_type_slots(&entry.type_slots));
+    println!("    {}: {}", "feature_policy".cyan(), format_feature_policy(&entry.feature_policy));
   }
 
   Ok(())
@@ -250,9 +261,28 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
       entry.description = opts.value.clone();
       format!("{} Set [{entry_label}] description = '{}'", "✓".green(), opts.value)
     }
+    key if key.starts_with("feature-policy.") => {
+      let feature = key.trim_start_matches("feature-policy.").trim().trim_start_matches(':');
+      if feature.is_empty() {
+        return Err("Feature policy key must name a feature, for example `feature-policy.js-ffi`".to_owned());
+      }
+      let policy = match opts.value.trim().trim_start_matches(':') {
+        "allow" => snapshot::FeaturePolicy::Allow,
+        "warn" => snapshot::FeaturePolicy::Warn,
+        "error" => snapshot::FeaturePolicy::Error,
+        value => return Err(format!("Unknown feature policy '{value}'. Valid policies: allow, warn, error")),
+      };
+      entry.feature_policy.insert(feature.to_owned(), policy);
+      format!(
+        "{} Set [{entry_label}] feature policy ':{}' = ':{}'",
+        "✓".green(),
+        feature.cyan(),
+        policy.as_str()
+      )
+    }
     _ => {
       return Err(format!(
-        "Unknown config key '{}'. Valid keys: mode, init-fn, reload-fn, description, version (accepts semver string or patch|minor|major)",
+        "Unknown config key '{}'. Valid keys: mode, init-fn, reload-fn, description, feature-policy.<name>, version (accepts semver string or patch|minor|major)",
         opts.key
       ));
     }
@@ -491,6 +521,53 @@ mod tests {
       err.contains("caps version bump patch /missing-project/deps.cirru"),
       "unexpected error: {err}"
     );
+  }
+
+  #[test]
+  fn config_set_feature_policy_validates_and_persists_the_selected_entry() {
+    let source = "{} (:package |demo)\n  :entries $ {}\n    :default $ {} (:mode :js) (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)\n      :modules $ []\n      :feature-policy $ {}\n  :files $ {}\n";
+    let temp_path = std::env::temp_dir().join(format!("calcit-feature-policy-{}.cirru", std::process::id()));
+    fs::write(&temp_path, source).expect("write fixture");
+    let path = temp_path.to_string_lossy();
+
+    handle_set(
+      &ConfigSetCommand {
+        entry: None,
+        key: "feature-policy.js-ffi".to_owned(),
+        value: ":warn".to_owned(),
+      },
+      &path,
+    )
+    .expect("set JS FFI policy");
+    let saved = load_snapshot_for_display(&path).expect("reload configured snapshot");
+    assert_eq!(
+      saved.active_entry().unwrap().feature_policy.get("js-ffi"),
+      Some(&snapshot::FeaturePolicy::Warn)
+    );
+
+    let before_invalid = fs::read_to_string(&temp_path).expect("read configured fixture");
+    let error = handle_set(
+      &ConfigSetCommand {
+        entry: None,
+        key: "feature-policy.js-ffi".to_owned(),
+        value: "maybe".to_owned(),
+      },
+      &path,
+    )
+    .expect_err("unknown policy should fail before writing");
+    assert!(error.contains("Valid policies: allow, warn, error"));
+    assert_eq!(fs::read_to_string(&temp_path).expect("read unchanged fixture"), before_invalid);
+
+    fs::remove_file(temp_path).expect("remove fixture");
+  }
+
+  #[test]
+  fn feature_policy_display_is_deterministic() {
+    let policies = HashMap::from([
+      ("zeta".to_owned(), snapshot::FeaturePolicy::Warn),
+      ("js-ffi".to_owned(), snapshot::FeaturePolicy::Error),
+    ]);
+    assert_eq!(format_feature_policy(&policies), "{:js-ffi -> :error, :zeta -> :warn}");
   }
 
   #[test]

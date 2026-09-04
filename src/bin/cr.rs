@@ -464,6 +464,7 @@ fn run_cli() -> Result<(), String> {
       calcit::merge_project_module_files(&mut snapshot, &module_data, module_path)?;
     }
   }
+  apply_strict_feature_policy_defaults(&mut snapshot, cli_args.strict_types)?;
   let selected_entry = snapshot.active_entry()?.clone();
   let configured_run_mode = selected_entry.mode;
   let config_init = selected_entry.init_fn;
@@ -1124,6 +1125,25 @@ fn compiled_test_depends_on(
 
 fn should_emit_js(subcommand: &Option<CalcitCommand>, configured_run_mode: snapshot::SnapshotRunMode) -> bool {
   matches!(subcommand, Some(CalcitCommand::EmitJs(_))) || (subcommand.is_none() && configured_run_mode == snapshot::SnapshotRunMode::Js)
+}
+
+/// Strict mode is an explicit opt-in, so a missing JS FFI policy can safely
+/// become an in-memory error default without rewriting an existing Snapshot.
+/// An entry that deliberately declares allow/warn/error keeps that choice.
+fn apply_strict_feature_policy_defaults(snapshot: &mut snapshot::Snapshot, strict_types: bool) -> Result<(), String> {
+  if !strict_types {
+    return Ok(());
+  }
+  let entry_name = snapshot.active_entry_name().to_owned();
+  let entry = snapshot
+    .entries
+    .get_mut(&entry_name)
+    .ok_or_else(|| format!("Entry '{entry_name}' not found"))?;
+  entry
+    .feature_policy
+    .entry("js-ffi".to_owned())
+    .or_insert(snapshot::FeaturePolicy::Error);
+  Ok(())
 }
 
 fn run_js_escape(symbol: &str) -> Result<(), String> {
@@ -1949,6 +1969,36 @@ mod tests {
       })),
       snapshot::SnapshotRunMode::Js,
     ));
+  }
+
+  #[test]
+  fn strict_types_default_missing_js_ffi_policy_to_error_without_overriding_explicit_choices() {
+    let mut compatibility = snapshot::Snapshot::default();
+    apply_strict_feature_policy_defaults(&mut compatibility, false).expect("compatibility policy");
+    assert!(!compatibility.active_entry().unwrap().feature_policy.contains_key("js-ffi"));
+
+    let mut strict_default = snapshot::Snapshot::default();
+    apply_strict_feature_policy_defaults(&mut strict_default, true).expect("strict policy");
+    assert_eq!(
+      strict_default.active_entry().unwrap().feature_policy.get("js-ffi"),
+      Some(&snapshot::FeaturePolicy::Error)
+    );
+
+    for policy in [
+      snapshot::FeaturePolicy::Allow,
+      snapshot::FeaturePolicy::Warn,
+      snapshot::FeaturePolicy::Error,
+    ] {
+      let mut configured = snapshot::Snapshot::default();
+      configured
+        .entries
+        .get_mut(snapshot::DEFAULT_ENTRY_NAME)
+        .unwrap()
+        .feature_policy
+        .insert("js-ffi".to_owned(), policy);
+      apply_strict_feature_policy_defaults(&mut configured, true).expect("explicit policy");
+      assert_eq!(configured.active_entry().unwrap().feature_policy.get("js-ffi"), Some(&policy));
+    }
   }
 
   #[test]

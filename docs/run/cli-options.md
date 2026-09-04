@@ -149,6 +149,12 @@ calcit --check-only --strict-types
 calcit --strict-types js
 ```
 
+If the selected entry omits `:feature-policy :js-ffi`, strict mode uses
+`:error` as its effective in-memory default without rewriting the Snapshot.
+Older entries may opt into a staged migration explicitly with
+`calcit config set feature-policy.js-ffi warn` (or `allow`); use
+`calcit config show` to audit the selected policy.
+
 The flag enables the location-aware untyped JS FFI diagnostics from
 `--warn-dyn-method`, then runs the zero-baseline static quality gate before
 execution or code generation. It rejects unresolved or schema `Dynamic`, code
