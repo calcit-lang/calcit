@@ -8996,6 +8996,7 @@ fn reject_strict_dynamic_nominal_argument(
   for (actual, expected) in actual_types.iter().zip(expected_types.iter()) {
     if let Some(actual) = actual
       && !contains_dynamic_type(actual.as_ref())
+      && expected.contains_type_var()
     {
       let mut candidate = bindings.clone();
       if actual.as_ref().matches_with_bindings(expected.as_ref(), &mut candidate) {
