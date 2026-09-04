@@ -103,12 +103,24 @@ wrong type-argument arity, trait-bounded declarations, `Dynamic`, callbacks,
 callable boundaries produce explicit diagnostics. A rejected signature is
 `null`; there is no Dynamic fallback or declaration-name guessing.
 
+Declaration IDs follow the resolved nominal Struct/Enum name, not necessarily
+the snapshot binding that stores the base definition. This supports the normal
+top-level trait pattern `Foo0 = defstruct Foo ...` plus
+`Foo = impl-traits Foo0 FooImpl`. If multiple bindings define the same nominal
+ID, export rejects the reference as ambiguous and reports the source bindings
+in deterministic order.
+
 当前 v2 只导出带有效 lowering 字段的本地 raw binding，忽略 snapshot 中普通
 定义的空 `:ffi {}` 占位。Struct/Enum 使用 namespace-qualified declaration ID，
 Option/Result 使用明确类型节点；只纳入从 FFI signature 传递可达的声明。缺失、
 歧义、参数数量错误或无法表示的声明会产生结构化错误，不会按名称猜测或静默退化
 为动态调用。生成器必须先检查 interface `version`、definition `status` 和顶层
 `diagnostics`。
+
+Declaration ID 以解析出的 nominal Struct/Enum 名称为准，不强制等于保存 base
+definition 的 Snapshot binding 名称，因此支持顶层 `Foo0 = defstruct Foo ...` 与
+`Foo = impl-traits Foo0 FooImpl` 模式。多个 binding 声明同一 nominal ID 时会以
+稳定顺序报告歧义，不会随机选择一个形状。
 
 `package_version` 读取相邻 `deps.cirru` 的 `:version`，与当前项目发版流程保持
 同一事实来源；尚未迁移版本字段的旧项目才回退到 snapshot 兼容值。

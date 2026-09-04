@@ -171,11 +171,13 @@ fn diagnostic(
 enum LocalTypeDeclaration {
   Struct {
     id: String,
+    source_id: String,
     namespace: String,
     nominal: CalcitStructDef,
   },
   Enum {
     id: String,
+    source_id: String,
     namespace: String,
     nominal: CalcitEnumDef,
   },
@@ -200,6 +202,12 @@ impl LocalTypeDeclaration {
     }
   }
 
+  fn source_id(&self) -> &str {
+    match self {
+      Self::Struct { source_id, .. } | Self::Enum { source_id, .. } => source_id,
+    }
+  }
+
   fn kind(&self) -> LocalTypeDeclarationKind {
     match self {
       Self::Struct { .. } => LocalTypeDeclarationKind::Struct,
@@ -215,8 +223,10 @@ impl LocalTypeDeclaration {
   }
 }
 
+type LocalTypeDeclarations = BTreeMap<String, Vec<LocalTypeDeclaration>>;
+
 struct TypeConversionContext<'a> {
-  declarations: &'a BTreeMap<String, LocalTypeDeclaration>,
+  declarations: &'a LocalTypeDeclarations,
   required: &'a mut BTreeSet<String>,
   current_namespace: &'a str,
   type_parameters: &'a BTreeSet<String>,
@@ -255,22 +265,22 @@ fn resolve_local_declaration<'a>(
   context: &'a TypeConversionContext<'_>,
 ) -> Result<&'a LocalTypeDeclaration, Box<FfiInterfaceDiagnostic>> {
   let name = normalized_type_name(name);
+  let name_is_qualified = name.contains('/');
   let mut candidates = Vec::new();
-  if name.contains('/') {
-    if let Some(candidate) = context.declarations.get(name) {
-      candidates.push(candidate);
+  if name_is_qualified {
+    if let Some(found) = context.declarations.get(name) {
+      candidates.extend(found);
     }
   } else {
     let local_id = format!("{}/{name}", context.current_namespace);
-    if let Some(candidate) = context.declarations.get(&local_id) {
-      candidates.push(candidate);
+    if let Some(found) = context.declarations.get(&local_id) {
+      candidates.extend(found);
     }
   }
   if let Some(kind) = expected_kind {
     candidates.retain(|candidate| candidate.kind() == kind);
   }
-  candidates.sort_unstable_by_key(|candidate| candidate.id());
-  candidates.dedup_by_key(|candidate| candidate.id());
+  candidates.sort_unstable_by_key(|candidate| candidate.source_id());
 
   match candidates.as_slice() {
     [declaration] => Ok(*declaration),
@@ -281,16 +291,23 @@ fn resolve_local_declaration<'a>(
       format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot resolve local type declaration `{name}` at `{path}`."),
       "Use a namespace-qualified local defstruct/defenum reference, or keep dependency/resource/host types behind a handwritten adapter until declarations can be included explicitly.",
     ))),
-    many => Err(Box::new(diagnostic(
-      definition,
-      path,
-      "E_FFI_IR_DECLARATION_AMBIGUOUS",
-      format!(
-        "FFI Interface IR v{FFI_INTERFACE_IR_VERSION} found multiple local declarations for `{name}` at `{path}`: {}.",
-        many.iter().map(|candidate| candidate.id()).collect::<Vec<_>>().join(", ")
-      ),
-      "Use the namespace-qualified declaration ID in the callable schema so bindgen never guesses between same-name types.",
-    ))),
+    many => {
+      let suggestion = if name_is_qualified {
+        "Keep exactly one local defstruct/defenum source for this namespace-qualified nominal type."
+      } else {
+        "Use a namespace-qualified declaration ID; if it remains ambiguous, keep exactly one local defstruct/defenum source for that nominal type."
+      };
+      Err(Box::new(diagnostic(
+        definition,
+        path,
+        "E_FFI_IR_DECLARATION_AMBIGUOUS",
+        format!(
+          "FFI Interface IR v{FFI_INTERFACE_IR_VERSION} found multiple local declarations for `{name}` at `{path}`: {}.",
+          many.iter().map(|candidate| candidate.source_id()).collect::<Vec<_>>().join(", ")
+        ),
+        suggestion,
+      )))
+    }
   }
 }
 
@@ -423,7 +440,7 @@ fn convert_signature(
   entry: &CodeEntry,
   definition: &str,
   namespace: &str,
-  declarations: &BTreeMap<String, LocalTypeDeclaration>,
+  declarations: &LocalTypeDeclarations,
   required: &mut BTreeSet<String>,
 ) -> Result<FfiFunctionSignatureIr, Vec<FfiInterfaceDiagnostic>> {
   let CalcitTypeAnnotation::Fn(signature) = entry.schema.as_ref() else {
@@ -521,7 +538,16 @@ fn cirru_may_define_nominal_type(code: &Cirru) -> bool {
   }
 }
 
-fn collect_local_type_declarations(snapshot: &Snapshot) -> BTreeMap<String, LocalTypeDeclaration> {
+fn local_nominal_id(namespace: &str, name: &str) -> String {
+  let name = normalized_type_name(name);
+  if name.contains('/') {
+    name.to_owned()
+  } else {
+    format!("{namespace}/{name}")
+  }
+}
+
+fn collect_local_type_declarations(snapshot: &Snapshot) -> LocalTypeDeclarations {
   let mut declarations = BTreeMap::new();
   for (namespace, file) in &snapshot.files {
     for (definition, entry) in &file.defs {
@@ -534,22 +560,33 @@ fn collect_local_type_declarations(snapshot: &Snapshot) -> BTreeMap<String, Loca
       let Some(declaration) = crate::calcit::type_annotation::resolve_type_def_from_code(&code) else {
         continue;
       };
-      let id = format!("{namespace}/{definition}");
+      let source_id = format!("{namespace}/{definition}");
       let source = match declaration {
-        Calcit::StructDef(nominal) => LocalTypeDeclaration::Struct {
-          id: id.clone(),
-          namespace: namespace.clone(),
-          nominal,
-        },
-        Calcit::EnumDef(nominal) => LocalTypeDeclaration::Enum {
-          id: id.clone(),
-          namespace: namespace.clone(),
-          nominal,
-        },
+        Calcit::StructDef(nominal) => {
+          let id = local_nominal_id(namespace, nominal.name.ref_str());
+          LocalTypeDeclaration::Struct {
+            id,
+            source_id,
+            namespace: namespace.clone(),
+            nominal,
+          }
+        }
+        Calcit::EnumDef(nominal) => {
+          let id = local_nominal_id(namespace, nominal.name().ref_str());
+          LocalTypeDeclaration::Enum {
+            id,
+            source_id,
+            namespace: namespace.clone(),
+            nominal,
+          }
+        }
         _ => continue,
       };
-      declarations.insert(id, source);
+      declarations.entry(source.id().to_owned()).or_insert_with(Vec::new).push(source);
     }
+  }
+  for candidates in declarations.values_mut() {
+    candidates.sort_unstable_by(|left, right| left.source_id().cmp(right.source_id()));
   }
   declarations
 }
@@ -565,7 +602,7 @@ fn declaration_type_parameters(source: &LocalTypeDeclaration) -> Vec<String> {
 fn convert_declaration(
   source: &LocalTypeDeclaration,
   owner_definition: &str,
-  declarations: &BTreeMap<String, LocalTypeDeclaration>,
+  declarations: &LocalTypeDeclarations,
   required: &mut BTreeSet<String>,
 ) -> Result<FfiTypeDeclarationIr, Vec<FfiInterfaceDiagnostic>> {
   let mut diagnostics = Vec::new();
@@ -579,7 +616,9 @@ fn convert_declaration(
   };
 
   match source {
-    LocalTypeDeclaration::Struct { id, namespace, nominal } => {
+    LocalTypeDeclaration::Struct {
+      id, namespace, nominal, ..
+    } => {
       if !nominal.where_bounds.is_empty() {
         diagnostics.push(diagnostic(
           owner_definition,
@@ -616,7 +655,9 @@ fn convert_declaration(
         Err(diagnostics)
       }
     }
-    LocalTypeDeclaration::Enum { id, namespace, nominal } => {
+    LocalTypeDeclaration::Enum {
+      id, namespace, nominal, ..
+    } => {
       if !nominal.where_bounds().is_empty() {
         diagnostics.push(diagnostic(
           owner_definition,
@@ -662,7 +703,7 @@ fn convert_declaration(
 
 fn convert_reachable_declarations(
   owner_definition: &str,
-  declarations: &BTreeMap<String, LocalTypeDeclaration>,
+  declarations: &LocalTypeDeclarations,
   required: &mut BTreeSet<String>,
 ) -> (Vec<FfiTypeDeclarationIr>, Vec<FfiInterfaceDiagnostic>) {
   let mut pending = required.iter().cloned().collect::<VecDeque<_>>();
@@ -674,13 +715,30 @@ fn convert_reachable_declarations(
     if !visited.insert(id.clone()) {
       continue;
     }
-    let Some(source) = declarations.get(&id) else {
+    let Some(candidates) = declarations.get(&id) else {
       diagnostics.push(diagnostic(
         owner_definition,
         format!("declarations.{id}"),
         "E_FFI_IR_DECLARATION_MISSING",
         format!("Required declaration `{id}` disappeared while building Interface IR v{FFI_INTERFACE_IR_VERSION}."),
         "Keep the namespace-qualified local declaration in the same snapshot as its FFI signature.",
+      ));
+      continue;
+    };
+    let [source] = candidates.as_slice() else {
+      diagnostics.push(diagnostic(
+        owner_definition,
+        format!("declarations.{id}"),
+        "E_FFI_IR_DECLARATION_AMBIGUOUS",
+        format!(
+          "Required declaration `{id}` resolves to multiple snapshot definitions: {}.",
+          candidates
+            .iter()
+            .map(LocalTypeDeclaration::source_id)
+            .collect::<Vec<_>>()
+            .join(", ")
+        ),
+        "Keep one local defstruct/defenum source for each namespace-qualified nominal type.",
       ));
       continue;
     };
@@ -1276,6 +1334,85 @@ mod tests {
       FfiTypeDeclarationIr::Struct { fields, .. }
         if matches!(fields[1].type_ir, FfiTypeIr::Option { ref item } if matches!(item.as_ref(), FfiTypeIr::String))
     ));
+  }
+
+  #[test]
+  fn indexes_local_declarations_by_nominal_name_instead_of_binding_name() {
+    let person = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Person"), Arc::new(vec![])));
+    let report = export_snapshot(
+      &snapshot(vec![
+        ("PersonShape", data_entry("defstruct Person (:name 'String)")),
+        (
+          "read-person",
+          function_entry(vec![person], Arc::new(CalcitTypeAnnotation::String), native_metadata("read_person")),
+        ),
+      ]),
+      None,
+    )
+    .expect("export nominal declaration stored behind a differently named binding");
+
+    assert_eq!(report.summary.supported, 1);
+    assert!(report.diagnostics.is_empty());
+    assert!(matches!(
+      report.interface.declarations.as_slice(),
+      [FfiTypeDeclarationIr::Struct { id, name, .. }] if id == "test.ffi/Person" && name == "Person"
+    ));
+    assert!(matches!(
+      report.interface.definitions[0].signature.as_ref().expect("supported signature").parameters[0].type_ir,
+      FfiTypeIr::Struct { ref id, ref arguments } if id == "test.ffi/Person" && arguments.is_empty()
+    ));
+  }
+
+  #[test]
+  fn duplicate_nominal_declaration_bindings_are_ambiguous_and_deterministic() {
+    let export = |type_name: &str| {
+      export_snapshot(
+        &snapshot(vec![
+          ("PersonText", data_entry("defstruct Person (:value 'String)")),
+          ("PersonNumber", data_entry("defstruct Person (:value 'Number)")),
+          (
+            "read-person",
+            function_entry(
+              vec![Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(type_name), Arc::new(vec![])))],
+              Arc::new(CalcitTypeAnnotation::Unit),
+              native_metadata("read_person"),
+            ),
+          ),
+        ]),
+        None,
+      )
+      .expect("inventory duplicate nominal declarations")
+    };
+    let report = export("test.ffi/Person");
+
+    assert_eq!(report.summary.unsupported, 1);
+    assert!(report.interface.definitions[0].signature.is_none());
+    let ambiguity = report
+      .diagnostics
+      .iter()
+      .find(|diagnostic| diagnostic.code == "E_FFI_IR_DECLARATION_AMBIGUOUS")
+      .expect("duplicate nominal declarations must be rejected");
+    assert!(ambiguity.message.contains("test.ffi/PersonNumber, test.ffi/PersonText"));
+    assert_eq!(
+      ambiguity.suggestion,
+      "Keep exactly one local defstruct/defenum source for this namespace-qualified nominal type."
+    );
+    assert_eq!(
+      report,
+      export("test.ffi/Person"),
+      "duplicate declaration diagnostics must be deterministic"
+    );
+
+    let unqualified = export("Person");
+    let unqualified_ambiguity = unqualified
+      .diagnostics
+      .iter()
+      .find(|diagnostic| diagnostic.code == "E_FFI_IR_DECLARATION_AMBIGUOUS")
+      .expect("unqualified duplicate nominal declarations must be rejected");
+    assert_eq!(
+      unqualified_ambiguity.suggestion,
+      "Use a namespace-qualified declaration ID; if it remains ambiguous, keep exactly one local defstruct/defenum source for that nominal type."
+    );
   }
 
   #[test]
