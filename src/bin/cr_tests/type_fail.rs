@@ -1170,6 +1170,20 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
         .any(|warning| warning.message().contains("got `fn(:number) -> :number`")),
       "sort should reject a comparator with the wrong arity: {sort_warnings:?}"
     );
+    let sort_by_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/&list:sort-by"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      sort_by_warnings.len(),
+      1,
+      "list sort-by should validate function selectors against the member type: {warnings:?}"
+    );
+    assert!(
+      sort_by_warnings[0].message().contains("expects type `fn(:string) -> 'SortKey`")
+        && sort_by_warnings[0].message().contains("got `fn(:number) -> :number`"),
+      "sort-by should preserve the String member type while leaving its key type generic: {sort_by_warnings:?}"
+    );
   });
 }
 

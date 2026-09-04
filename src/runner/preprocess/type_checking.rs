@@ -144,7 +144,7 @@ fn specialize_core_expected_types(
     return None;
   }
   let required_arity = match fn_info.name.as_ref() {
-    "any?" | "contains?" | "each" | "every?" | "filter" | "get" | "includes?" | "map" => 2,
+    "&list:sort-by" | "any?" | "contains?" | "each" | "every?" | "filter" | "get" | "includes?" | "map" => 2,
     "assoc" | "foldl" | "reduce" | "update" => 3,
     _ => return None,
   };
@@ -173,6 +173,7 @@ fn specialize_core_expected_types(
       specialize_collection_callback_expected_types(fn_info.name.as_ref(), receiver_type.as_ref(), expected_types)
     }
     "foldl" | "reduce" => specialize_collection_fold_expected_types(args, scope_types, expected_types),
+    "&list:sort-by" => specialize_list_sort_by_expected_types(args, scope_types, expected_types),
     "get" => {
       let mut specialized = expected_types.to_vec();
       specialized[1] = match receiver_type.as_ref() {
@@ -198,6 +199,34 @@ fn specialize_core_expected_types(
     "update" => specialize_update_expected_types(args, receiver_type.as_ref(), scope_types, expected_types),
     _ => None,
   }
+}
+
+fn specialize_list_sort_by_expected_types(
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  if expected_types.len() < 2 || args.len() < 2 {
+    return None;
+  }
+  let receiver_type = resolve_type_value(args.first()?, scope_types)?;
+  let CalcitTypeAnnotation::List(item_type) = receiver_type.as_ref() else {
+    return None;
+  };
+  if matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) {
+    return None;
+  }
+  let selector_type = resolve_type_value(args.get(1)?, scope_types)?;
+  if !matches!(selector_type.as_ref(), CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn) {
+    return None;
+  }
+  let mut specialized = expected_types.to_vec();
+  specialized[0] = receiver_type.clone();
+  specialized[1] = Arc::new(CalcitTypeAnnotation::from_function_parts(
+    vec![item_type.clone()],
+    Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("SortKey"))),
+  ));
+  Some(specialized)
 }
 
 fn specialize_collection_fold_expected_types(
@@ -1419,6 +1448,37 @@ mod tests {
       .expect("Syntax list sort should restore its open comparator contract");
     assert_eq!(syntax_specialized[0], syntax_receiver);
     assert!(matches!(syntax_specialized[1].as_ref(), CalcitTypeAnnotation::DynFn));
+  }
+
+  #[test]
+  fn specialize_list_sort_by_relates_function_selector_to_members() {
+    let string = Arc::new(CalcitTypeAnnotation::String);
+    let receiver = Arc::new(CalcitTypeAnnotation::List(string.clone()));
+    let expected = vec![
+      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))))),
+      crate::calcit::DYNAMIC_TYPE.clone(),
+    ];
+    let function_args = CalcitList::from(&[
+      make_local("items", receiver.clone()),
+      make_local("selector", Arc::new(CalcitTypeAnnotation::DynFn)),
+    ]);
+    let specialized = specialize_list_sort_by_expected_types(&function_args, &ScopeTypes::new(), &expected)
+      .expect("typed list sort-by should specialize a function selector");
+    assert_eq!(specialized[0], receiver.clone());
+    let CalcitTypeAnnotation::Fn(selector) = specialized[1].as_ref() else {
+      panic!("sort-by selector should be a function");
+    };
+    assert_eq!(selector.arg_types.as_slice(), &[string]);
+    assert!(matches!(
+      selector.return_type.as_ref(),
+      CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "SortKey"
+    ));
+
+    let tag_args = CalcitList::from(&[make_local("items", receiver), Calcit::Tag(EdnTag::new("name"))]);
+    assert!(
+      specialize_list_sort_by_expected_types(&tag_args, &ScopeTypes::new(), &expected).is_none(),
+      "sort-by tag selectors must retain their compatibility path"
+    );
   }
 
   #[test]

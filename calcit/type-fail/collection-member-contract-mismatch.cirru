@@ -47,6 +47,7 @@
               sort ([] |a |b) +
               &list:sort ([] |a |b) +
               sort ([] |a |b) inc
+              &list:sort-by ([] |a |b) inc
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
