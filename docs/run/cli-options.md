@@ -228,7 +228,9 @@ small typed FFI adapter. The diagnostic identifies the argument and target
 contract. It does not reject unrelated `Dynamic` to primitive calls, and
 compatibility mode keeps the existing gradual migration behavior. A type slot
 bound to a Struct/Enum contract is resolved before this check, so entry-level
-and scoped slot configuration cannot erase the nominal boundary.
+and scoped slot configuration cannot erase the nominal boundary. Cyclic slot
+bindings are treated conservatively as protected boundaries instead of being
+followed recursively or allowed to bypass the strict check.
 
 `--strict-types` reports `E_RAW_PRIMITIVE_IN_TYPED_CODE` for hand-written
 `&get-raw`, `record-get` / `&struct:get`, raw `&%{}`, and `&struct:nth` without matching

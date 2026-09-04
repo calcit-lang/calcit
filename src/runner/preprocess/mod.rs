@@ -8853,31 +8853,40 @@ fn reject_strict_erased_generic_relation(
 }
 
 fn contains_nominal_contract(annotation: &CalcitTypeAnnotation) -> bool {
-  if annotation.resolve_to_struct_with_ref().is_some() || annotation.resolve_to_enum().is_some() {
-    return true;
-  }
-  match annotation {
-    CalcitTypeAnnotation::List(inner)
-    | CalcitTypeAnnotation::Set(inner)
-    | CalcitTypeAnnotation::Ref(inner)
-    | CalcitTypeAnnotation::Optional(inner)
-    | CalcitTypeAnnotation::JsNullish(inner)
-    | CalcitTypeAnnotation::Variadic(inner) => contains_nominal_contract(inner.as_ref()),
-    CalcitTypeAnnotation::Map(key, value) => contains_nominal_contract(key.as_ref()) || contains_nominal_contract(value.as_ref()),
-    CalcitTypeAnnotation::TypeRef(_, args) => args.iter().any(|arg| contains_nominal_contract(arg.as_ref())),
-    CalcitTypeAnnotation::Fn(signature) => {
-      signature.arg_types.iter().any(|arg| contains_nominal_contract(arg.as_ref()))
-        || signature
-          .rest_type
-          .as_ref()
-          .is_some_and(|rest| contains_nominal_contract(rest.as_ref()))
-        || contains_nominal_contract(signature.return_type.as_ref())
+  fn walk(annotation: &CalcitTypeAnnotation, resolving_slots: &mut HashSet<Arc<str>>) -> bool {
+    if let CalcitTypeAnnotation::TypeSlot(name) = annotation {
+      if !resolving_slots.insert(name.clone()) {
+        return true;
+      }
+      let contains_nominal = calcit::resolve_type_slot(name).is_some_and(|resolved| walk(resolved.as_ref(), resolving_slots));
+      resolving_slots.remove(name);
+      return contains_nominal;
     }
-    CalcitTypeAnnotation::TypeSlot(name) => {
-      calcit::resolve_type_slot(name).is_some_and(|resolved| contains_nominal_contract(resolved.as_ref()))
+    if annotation.resolve_to_struct_with_ref().is_some() || annotation.resolve_to_enum().is_some() {
+      return true;
     }
-    _ => false,
+    match annotation {
+      CalcitTypeAnnotation::List(inner)
+      | CalcitTypeAnnotation::Set(inner)
+      | CalcitTypeAnnotation::Ref(inner)
+      | CalcitTypeAnnotation::Optional(inner)
+      | CalcitTypeAnnotation::JsNullish(inner)
+      | CalcitTypeAnnotation::Variadic(inner) => walk(inner.as_ref(), resolving_slots),
+      CalcitTypeAnnotation::Map(key, value) => walk(key.as_ref(), resolving_slots) || walk(value.as_ref(), resolving_slots),
+      CalcitTypeAnnotation::TypeRef(_, args) => args.iter().any(|arg| walk(arg.as_ref(), resolving_slots)),
+      CalcitTypeAnnotation::Fn(signature) => {
+        signature.arg_types.iter().any(|arg| walk(arg.as_ref(), resolving_slots))
+          || signature
+            .rest_type
+            .as_ref()
+            .is_some_and(|rest| walk(rest.as_ref(), resolving_slots))
+          || walk(signature.return_type.as_ref(), resolving_slots)
+      }
+      _ => false,
+    }
   }
+
+  walk(annotation, &mut HashSet::new())
 }
 
 fn dynamic_erases_nominal_contract(actual: &CalcitTypeAnnotation, expected: &CalcitTypeAnnotation) -> bool {
@@ -16236,6 +16245,19 @@ mod tests {
     assert!(contains_nominal_contract(&nominal_slot));
     assert!(dynamic_erases_nominal_contract(&CalcitTypeAnnotation::Dynamic, &nominal_slot));
     calcit::pop_type_slot_override("payload");
+    calcit::push_type_slot_override(
+      Arc::from("direct-cycle"),
+      Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from("direct-cycle"))),
+    );
+    assert!(contains_nominal_contract(&CalcitTypeAnnotation::TypeSlot(Arc::from(
+      "direct-cycle"
+    ))));
+    calcit::pop_type_slot_override("direct-cycle");
+    calcit::push_type_slot_override(Arc::from("cycle-a"), Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from("cycle-b"))));
+    calcit::push_type_slot_override(Arc::from("cycle-b"), Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from("cycle-a"))));
+    assert!(contains_nominal_contract(&CalcitTypeAnnotation::TypeSlot(Arc::from("cycle-a"))));
+    calcit::pop_type_slot_override("cycle-b");
+    calcit::pop_type_slot_override("cycle-a");
     let signature = generic_relation_test_signature(vec![person_type.clone()], Arc::new(CalcitTypeAnnotation::Unit), None);
     let dynamic = calcit::DYNAMIC_TYPE.clone();
     let open_value = generic_relation_test_local("open-value", dynamic.clone());
