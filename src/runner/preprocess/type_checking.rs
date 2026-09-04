@@ -229,6 +229,30 @@ fn specialize_collection_fold_expected_types(
   Some(specialized)
 }
 
+fn specialize_collection_sort_expected_types(
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  if expected_types.len() < 2 || args.len() < 2 {
+    return None;
+  }
+  let receiver_type = resolve_type_value(args.first()?, scope_types)?;
+  let CalcitTypeAnnotation::List(item_type) = receiver_type.as_ref() else {
+    return None;
+  };
+  if matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) {
+    return None;
+  }
+  let mut specialized = expected_types.to_vec();
+  specialized[0] = receiver_type.clone();
+  specialized[1] = Arc::new(CalcitTypeAnnotation::from_function_parts(
+    vec![item_type.clone(), item_type.clone()],
+    Arc::new(CalcitTypeAnnotation::Number),
+  ));
+  Some(specialized)
+}
+
 fn specialize_collection_callback_expected_types(
   fn_name: &str,
   receiver_type: &CalcitTypeAnnotation,
@@ -553,10 +577,14 @@ pub(crate) fn check_proc_arg_types(
     return;
   }
 
-  let expected_types = if matches!(proc, CalcitProc::Foldl) {
-    specialize_collection_fold_expected_types(args, scope_types, &signature.arg_types).unwrap_or_else(|| signature.arg_types.clone())
-  } else {
-    signature.arg_types.clone()
+  let expected_types = match proc {
+    CalcitProc::Foldl => {
+      specialize_collection_fold_expected_types(args, scope_types, &signature.arg_types).unwrap_or_else(|| signature.arg_types.clone())
+    }
+    CalcitProc::Sort | CalcitProc::NativeListSort => {
+      specialize_collection_sort_expected_types(args, scope_types, &signature.arg_types).unwrap_or_else(|| signature.arg_types.clone())
+    }
+    _ => signature.arg_types.clone(),
   };
 
   // Parameter omission is represented by Proc arity metadata. Optional<T>
@@ -1360,6 +1388,25 @@ mod tests {
           && matches!(pair.as_ref(), CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic))
     ));
     assert_eq!(reducer.return_type, number);
+  }
+
+  #[test]
+  fn specialize_collection_sort_relates_comparator_to_members() {
+    let string = Arc::new(CalcitTypeAnnotation::String);
+    let receiver = Arc::new(CalcitTypeAnnotation::List(string.clone()));
+    let args = CalcitList::from(&[
+      make_local("items", receiver.clone()),
+      make_local("comparator", Arc::new(CalcitTypeAnnotation::DynFn)),
+    ]);
+    let expected = CalcitProc::Sort.get_type_signature().expect("sort signature");
+    let specialized = specialize_collection_sort_expected_types(&args, &ScopeTypes::new(), &expected.arg_types)
+      .expect("typed list sort should specialize");
+    assert_eq!(specialized[0], receiver);
+    let CalcitTypeAnnotation::Fn(comparator) = specialized[1].as_ref() else {
+      panic!("sort comparator should be a function");
+    };
+    assert_eq!(comparator.arg_types.as_slice(), &[string.clone(), string]);
+    assert!(matches!(comparator.return_type.as_ref(), CalcitTypeAnnotation::Number));
   }
 
   #[test]

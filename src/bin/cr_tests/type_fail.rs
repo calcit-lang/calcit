@@ -1138,6 +1138,38 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       }),
       "Map foldl should expose entries as heterogeneous List pairs: {fold_warnings:?}"
     );
+    let sort_warnings = warnings
+      .iter()
+      .filter(|warning| {
+        warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
+          && (warning.message().contains("Proc `sort`") || warning.message().contains("Proc `&list:sort`"))
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(
+      sort_warnings.len(),
+      3,
+      "collection sorts should validate comparator contracts: {warnings:?}"
+    );
+    assert!(
+      sort_warnings
+        .iter()
+        .all(|warning| warning.message().contains("expects type `fn(:string, :string) -> :number`")),
+      "sort comparators should receive the concrete List member type and return Number: {sort_warnings:?}"
+    );
+    assert_eq!(
+      sort_warnings
+        .iter()
+        .filter(|warning| warning.message().contains("got `fn(:number, & :number) -> :number`"))
+        .count(),
+      2,
+      "sort and native list sort should both reject a comparator over the wrong member type: {sort_warnings:?}"
+    );
+    assert!(
+      sort_warnings
+        .iter()
+        .any(|warning| warning.message().contains("got `fn(:number) -> :number`")),
+      "sort should reject a comparator with the wrong arity: {sort_warnings:?}"
+    );
   });
 }
 

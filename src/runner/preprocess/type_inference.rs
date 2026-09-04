@@ -1304,6 +1304,7 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
       | CalcitProc::Prepend
       | CalcitProc::Butlast
       | CalcitProc::Sort
+      | CalcitProc::NativeListSort
       | CalcitProc::NativeListAssoc
       | CalcitProc::NativeListAssocBefore
       | CalcitProc::NativeListAssocAfter
@@ -1955,6 +1956,15 @@ mod tests {
       infer_type_from_expr(&dynamic_reducer, &ScopeTypes::new()).as_deref(),
       Some(CalcitTypeAnnotation::Dynamic)
     ));
+  }
+
+  #[test]
+  fn sort_preserves_the_concrete_list_type() {
+    let string_list = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String)));
+    for proc in [CalcitProc::Sort, CalcitProc::NativeListSort] {
+      let expression = proc_call(proc, vec![local("items", string_list.clone())]);
+      assert_eq!(infer_type_from_expr(&expression, &ScopeTypes::new()), Some(string_list.clone()));
+    }
   }
 
   #[test]
