@@ -287,8 +287,8 @@ let
 
 - `defstruct` - define a struct type with typed fields
 - `%{}` - create a named struct value, or an anonymous value with `%{} _ ...`
-- `%{}?` - legacy partial Struct constructor (unset fields default to nil;
-  rejected by `--strict-types` with `E_PARTIAL_STRUCT_NIL_FILL`)
+- `%{}?`, `&%{}?` - legacy partial Struct constructors (unset fields default to
+  nil; both are rejected by `--strict-types` with `E_PARTIAL_STRUCT_NIL_FILL`)
 - `&%{}` - low-level struct constructor (flat key-value pairs, no type check)
 - `struct-with` - update multiple declared fields
 - `&struct:get` - internal/dynamic-boundary field lookup; normal typed code must use `(:field value)`

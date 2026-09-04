@@ -222,10 +222,11 @@ let
 ```
 
 This is a compatibility surface, not a typed construction pattern.
-`--strict-types` rejects it with `E_PARTIAL_STRUCT_NIL_FILL`. Migrate by using
-`%{}` with every field present, or change fields that are genuinely absent to
-`Option<T>` and provide `%none`. There is no automatic rewrite because omitted
-fields may require business defaults rather than absence.
+`--strict-types` rejects both `%{}?` and its low-level `&%{}?` spelling with
+`E_PARTIAL_STRUCT_NIL_FILL`. Migrate by using `%{}` with every field present, or
+change fields that are genuinely absent to `Option<T>` and provide `%none`.
+There is no automatic rewrite because omitted fields may require business
+defaults rather than absence.
 
 The low-level `&%{}` form accepts fields as flat keyword-value pairs (no type checking):
 
