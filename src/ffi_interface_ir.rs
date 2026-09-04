@@ -465,7 +465,7 @@ fn convert_type(
         "FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot represent Calcit type `{}` at `{path}`.",
         unsupported.to_brief_string()
       ),
-      "Use Unit, Bool, Number, String, Buffer, List, Option, Result, or an explicitly declared local Struct/Enum; keep Dynamic, callbacks, Map/Set, Ref, resources, and host objects behind a handwritten adapter.",
+      "Use Unit, Bool, Number, String, Buffer, List, Option, Result, or an explicitly declared local Struct/Enum; keep Map/Set, Ref, resources, host objects, and other non-portable values behind a handwritten adapter.",
     ))),
   }
 }
