@@ -441,6 +441,12 @@ Dynamic 时，使用明确的函数形式，例如 `option:unwrap-or (get config
 `Option<T>` / `Result<T, E>` receiver schema，或者把开放边界收拢到显式 `option:*` / `result:*`
 adapter；不要用 `unsafe-coerce` 批量压制。
 
+其他无法静态 specialization 的项目 method 也会在 strict mode 使用相同的 prefix/postfix error。
+诊断会区分缺失 schema、Dynamic value/callable、legacy Optional、未绑定 generic/type-slot，以及显式
+`:js-ffi` Dynamic boundary。按分类补 concrete/nominal schema、trait `:where` 或 entry slot binding。
+`:js-ffi` 只声明 host capability，不授权运行时 method lookup；adapter 必须在返回业务层前转换 host
+值或附加 external-object trait。
+
 #### `.trim` / `.blank?` 接收者迁移
 
 `.trim` 与 `.blank?` 只对静态推断为 String 的接收者可用。若错误写成 `unknown method .trim for map`，

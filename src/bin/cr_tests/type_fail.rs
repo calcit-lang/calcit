@@ -229,6 +229,27 @@ fn strict_type_fail_dynamic_nominal_method_reports_stable_error_code() {
 }
 
 #[test]
+fn strict_type_fail_general_dynamic_method_reports_receiver_source() {
+  run_with_large_stack(|| {
+    let fixture = "calcit/type-fail/dynamic-method-dispatch-strict.cirru";
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries(fixture);
+    let err = run_check_only(&entries).expect_err("ordinary method dispatch on Dynamic must fail strict check-only");
+
+    assert!(err.contains("E_DYNAMIC_POSTFIX_METHOD"), "unexpected strict dispatch error: {err}");
+    assert!(err.contains("`.custom`"), "method should be explicit: {err}");
+    assert!(
+      err.contains("missing static receiver schema"),
+      "receiver source should be classified: {err}"
+    );
+    assert!(
+      err.contains("add a structured receiver schema"),
+      "migration should be actionable: {err}"
+    );
+  });
+}
+
+#[test]
 fn strict_type_fail_erased_generic_relation_reports_stable_error_code() {
   run_with_large_stack(|| {
     let fixture = "calcit/type-fail/erased-generic-relation-strict.cirru";

@@ -2042,40 +2042,61 @@ fn preprocess_list_call(
           // For non-struct/trait types (Dynamic, Fn, etc.), silently fall through —
           // `.method` is a normal argument.
         }
-        if file_ns != calcit::CORE_NS
-          && resolve_type_value(&head_form, scope_types).is_none_or(|type_info| is_dynamic_annotation(type_info.as_ref()))
-        {
-          let location = head_form.get_location().or_else(|| first_arg.get_location());
-          if matches!(method_kind, calcit::MethodKind::Invoke(_))
-            && let Some((receiver_requirement, helper_hint)) = dynamic_nominal_method_requirement(method_name.as_ref())
-          {
-            if strict_types_enabled() && should_emit_project_source_lint(file_ns) {
-              return Err(CalcitErr::use_msg_stack_location_with_code(
-                CalcitErrKind::Type,
-                format!(
-                  "postfix nominal method `.{method_name}` cannot dispatch on a Dynamic receiver; provide a statically known {receiver_requirement} schema or call {helper_hint} at an explicit open boundary"
-                ),
-                "E_DYNAMIC_POSTFIX_METHOD",
-                call_stack,
-                location.clone(),
-              ));
-            }
-            let message = format!(
-              "[Warn] postfix nominal method `.{method_name}` requires a statically known {receiver_requirement} receiver in {file_ns}/{def_name}, but the receiver is Dynamic; narrow it with a schema/assertion before using method syntax, or call {helper_hint} at an intentional Dynamic boundary"
-            );
-            if let Some(loc) = location {
-              gen_check_warning_with_location_code(message, "W_DYNAMIC_NOMINAL_METHOD_RECEIVER", loc, check_warnings);
+        if file_ns != calcit::CORE_NS {
+          let receiver_type = resolve_type_value(&head_form, scope_types);
+          let receiver_cause = classify_dynamic_dispatch_receiver(receiver_type.as_deref(), current_function_has_js_ffi_feature());
+          if let Some(receiver_cause) = receiver_cause {
+            let location = head_form.get_location().or_else(|| first_arg.get_location());
+            if matches!(method_kind, calcit::MethodKind::Invoke(_))
+              && let Some((receiver_requirement, helper_hint)) = dynamic_nominal_method_requirement(method_name.as_ref())
+            {
+              if strict_types_enabled() && should_emit_project_source_lint(file_ns) {
+                return Err(CalcitErr::use_msg_stack_location_with_code(
+                  CalcitErrKind::Type,
+                  format!(
+                    "postfix nominal method `.{method_name}` cannot be statically specialized because its receiver source is {}; provide a statically known {receiver_requirement} schema or call {helper_hint} at an explicit open boundary",
+                    receiver_cause.label(),
+                  ),
+                  "E_DYNAMIC_POSTFIX_METHOD",
+                  call_stack,
+                  location.clone(),
+                ));
+              }
+              let message = format!(
+                "[Warn] postfix nominal method `.{method_name}` requires a statically known {receiver_requirement} receiver in {file_ns}/{def_name}, but its receiver source is {}; narrow it with a schema/assertion before using method syntax, or call {helper_hint} at an intentional Dynamic boundary",
+                receiver_cause.label(),
+              );
+              if let Some(loc) = location {
+                gen_check_warning_with_location_code(message, "W_DYNAMIC_NOMINAL_METHOD_RECEIVER", loc, check_warnings);
+              } else {
+                gen_check_warning_code(message, "W_DYNAMIC_NOMINAL_METHOD_RECEIVER", file_ns, check_warnings);
+              }
             } else {
-              gen_check_warning_code(message, "W_DYNAMIC_NOMINAL_METHOD_RECEIVER", file_ns, check_warnings);
-            }
-          } else if warn_dyn_method_enabled() {
-            let message = format!(
-              "[Warn] postfix method `.{method_name}` has a dynamic receiver in {file_ns}/{def_name}; use prefix syntax `(.{method_name} receiver ...)`, assert-traits, or unsafe-coerce at an FFI boundary"
-            );
-            if let Some(loc) = location {
-              gen_check_warning_with_location_code(message, "P_DYNAMIC_POSTFIX_METHOD", loc, check_warnings);
-            } else {
-              gen_check_warning_code(message, "P_DYNAMIC_POSTFIX_METHOD", file_ns, check_warnings);
+              if strict_types_enabled() && should_emit_project_source_lint(file_ns) {
+                return Err(CalcitErr::use_msg_stack_location_with_code(
+                  CalcitErrKind::Type,
+                  format!(
+                    "postfix method `.{method_name}` cannot be statically specialized because its receiver source is {}; {}",
+                    receiver_cause.label(),
+                    receiver_cause.migration(),
+                  ),
+                  "E_DYNAMIC_POSTFIX_METHOD",
+                  call_stack,
+                  location.clone(),
+                ));
+              }
+              if warn_dyn_method_enabled() {
+                let message = format!(
+                  "[Warn] postfix method `.{method_name}` cannot be statically specialized in {file_ns}/{def_name} because its receiver source is {}; {}",
+                  receiver_cause.label(),
+                  receiver_cause.migration(),
+                );
+                if let Some(loc) = location {
+                  gen_check_warning_with_location_code(message, "P_DYNAMIC_POSTFIX_METHOD", loc, check_warnings);
+                } else {
+                  gen_check_warning_code(message, "P_DYNAMIC_POSTFIX_METHOD", file_ns, check_warnings);
+                }
+              }
             }
           }
         }
@@ -4569,15 +4590,9 @@ fn reject_or_warn_on_dynamic_trait_call(
   };
 
   let receiver_type = resolve_type_value(receiver, scope_types);
-  let warn = match receiver_type.as_ref().map(|value| value.as_ref()) {
-    None => true,
-    Some(ann) if is_trait_annotation(ann) => false,
-    Some(ann) => is_dynamic_annotation(ann),
-  };
-
-  if !warn {
+  let Some(receiver_cause) = classify_dynamic_dispatch_receiver(receiver_type.as_deref(), current_function_has_js_ffi_feature()) else {
     return Ok(());
-  }
+  };
 
   if strict_types_enabled()
     && should_emit_project_source_lint(file_ns)
@@ -4586,7 +4601,22 @@ fn reject_or_warn_on_dynamic_trait_call(
     return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
       format!(
-        "nominal method `.{method_name}` cannot dispatch on a Dynamic receiver; provide a statically known {receiver_requirement} schema or call {helper_hint} at an explicit open boundary"
+        "nominal method `.{method_name}` cannot be statically specialized because its receiver source is {}; provide a statically known {receiver_requirement} schema or call {helper_hint} at an explicit open boundary",
+        receiver_cause.label(),
+      ),
+      "E_DYNAMIC_METHOD_DISPATCH",
+      call_stack,
+      head.get_location().or_else(|| receiver.get_location()),
+    ));
+  }
+
+  if strict_types_enabled() && should_emit_project_source_lint(file_ns) {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "method `.{method_name}` cannot be statically specialized because its receiver source is {}; {}",
+        receiver_cause.label(),
+        receiver_cause.migration(),
       ),
       "E_DYNAMIC_METHOD_DISPATCH",
       call_stack,
@@ -4599,7 +4629,9 @@ fn reject_or_warn_on_dynamic_trait_call(
   }
 
   let message = format!(
-    "[Warn] dynamic trait call `.{method_name}` cannot be monomorphized in {file_ns}/{def_name}; add assert-traits, or use unsafe-coerce only at a trusted FFI boundary"
+    "[Warn] method `.{method_name}` cannot be statically specialized in {file_ns}/{def_name} because its receiver source is {}; {}",
+    receiver_cause.label(),
+    receiver_cause.migration(),
   );
 
   if let Some(loc) = head.get_location().or_else(|| receiver.get_location()) {
@@ -6340,6 +6372,76 @@ fn is_trait_annotation(type_value: &CalcitTypeAnnotation) -> bool {
 fn is_dynamic_annotation(type_value: &CalcitTypeAnnotation) -> bool {
   matches!(type_value, CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
     || matches!(type_value, CalcitTypeAnnotation::Optional(inner) if is_dynamic_annotation(inner.as_ref()))
+}
+
+#[derive(Debug, PartialEq)]
+enum DynamicDispatchReceiverCause {
+  MissingSchema,
+  DynamicSchema,
+  DynamicCallable,
+  LegacyOptional,
+  UnboundGeneric(Arc<str>),
+  UnboundTypeSlot(Arc<str>),
+  ExplicitJsFfiBoundary,
+}
+
+impl DynamicDispatchReceiverCause {
+  fn label(&self) -> String {
+    match self {
+      Self::MissingSchema => "a missing static receiver schema".to_owned(),
+      Self::DynamicSchema => "a receiver schema that resolves to Dynamic".to_owned(),
+      Self::DynamicCallable => "a receiver schema that resolves to a dynamic callable".to_owned(),
+      Self::LegacyOptional => "a legacy Optional receiver whose payload is Dynamic".to_owned(),
+      Self::UnboundGeneric(name) => format!("unbound generic `'{name}` without a trait constraint"),
+      Self::UnboundTypeSlot(name) => format!("unbound type slot `*{name}`"),
+      Self::ExplicitJsFfiBoundary => "an explicit `:js-ffi` Dynamic boundary".to_owned(),
+    }
+  }
+
+  fn migration(&self) -> &'static str {
+    match self {
+      Self::MissingSchema => "add a structured receiver schema or infer a concrete nominal type before method syntax",
+      Self::DynamicSchema | Self::DynamicCallable | Self::LegacyOptional => {
+        "narrow or validate the receiver before method syntax, or isolate runtime lookup in a typed adapter"
+      }
+      Self::UnboundGeneric(_) => "add a trait `:where` bound or replace the erased generic with a concrete nominal type",
+      Self::UnboundTypeSlot(_) => "bind the slot to a concrete type for this entry before method syntax",
+      Self::ExplicitJsFfiBoundary => {
+        "declare an external-object trait or convert the host value inside the narrow `:js-ffi` adapter before returning it"
+      }
+    }
+  }
+}
+
+fn current_function_has_js_ffi_feature() -> bool {
+  CURRENT_FN_FEATURES.with(|cell| {
+    cell
+      .borrow()
+      .as_ref()
+      .is_some_and(|features| features.iter().any(|feature| feature.ref_str() == "js-ffi"))
+  })
+}
+
+fn classify_dynamic_dispatch_receiver(
+  type_value: Option<&CalcitTypeAnnotation>,
+  inside_js_ffi_boundary: bool,
+) -> Option<DynamicDispatchReceiverCause> {
+  let Some(type_value) = type_value else {
+    return Some(DynamicDispatchReceiverCause::MissingSchema);
+  };
+  match type_value {
+    CalcitTypeAnnotation::Dynamic if inside_js_ffi_boundary => Some(DynamicDispatchReceiverCause::ExplicitJsFfiBoundary),
+    CalcitTypeAnnotation::Dynamic => Some(DynamicDispatchReceiverCause::DynamicSchema),
+    CalcitTypeAnnotation::DynFn => Some(DynamicDispatchReceiverCause::DynamicCallable),
+    CalcitTypeAnnotation::Optional(inner) if is_dynamic_annotation(inner) => Some(DynamicDispatchReceiverCause::LegacyOptional),
+    CalcitTypeAnnotation::Optional(inner) => classify_dynamic_dispatch_receiver(Some(inner), inside_js_ffi_boundary),
+    CalcitTypeAnnotation::TypeVar(name) => Some(DynamicDispatchReceiverCause::UnboundGeneric(name.clone())),
+    CalcitTypeAnnotation::TypeSlot(name) => match calcit::resolve_type_slot(name) {
+      Some(resolved) => classify_dynamic_dispatch_receiver(Some(resolved.as_ref()), inside_js_ffi_boundary),
+      None => Some(DynamicDispatchReceiverCause::UnboundTypeSlot(name.clone())),
+    },
+    _ => None,
+  }
 }
 
 fn dynamic_nominal_method_requirement(method_name: &str) -> Option<(&'static str, &'static str)> {
@@ -10469,7 +10571,87 @@ mod tests {
       .filter(|warning| warning.code() == Some("P_DYNAMIC_POSTFIX_METHOD"))
       .collect::<Vec<_>>();
     assert_eq!(matched.len(), 1, "expected one dynamic postfix warning, got: {warnings:?}");
-    assert!(matched[0].message().contains("unsafe-coerce"));
+    assert!(matched[0].message().contains("missing static receiver schema"));
+    assert!(matched[0].message().contains("add a structured receiver schema"));
+  }
+
+  #[test]
+  fn classifies_dynamic_dispatch_receiver_sources() {
+    let _slots = TypeSlotsGuard::cleared();
+    let dynamic = calcit::DYNAMIC_TYPE.clone();
+    assert_eq!(
+      classify_dynamic_dispatch_receiver(None, false),
+      Some(DynamicDispatchReceiverCause::MissingSchema)
+    );
+    assert_eq!(
+      classify_dynamic_dispatch_receiver(Some(dynamic.as_ref()), false),
+      Some(DynamicDispatchReceiverCause::DynamicSchema)
+    );
+    assert_eq!(
+      classify_dynamic_dispatch_receiver(Some(dynamic.as_ref()), true),
+      Some(DynamicDispatchReceiverCause::ExplicitJsFfiBoundary)
+    );
+    assert_eq!(
+      classify_dynamic_dispatch_receiver(Some(&CalcitTypeAnnotation::DynFn), false),
+      Some(DynamicDispatchReceiverCause::DynamicCallable)
+    );
+    assert_eq!(
+      classify_dynamic_dispatch_receiver(Some(&CalcitTypeAnnotation::Optional(dynamic)), false),
+      Some(DynamicDispatchReceiverCause::LegacyOptional)
+    );
+    assert_eq!(
+      classify_dynamic_dispatch_receiver(Some(&CalcitTypeAnnotation::TypeVar(Arc::from("T"))), false),
+      Some(DynamicDispatchReceiverCause::UnboundGeneric(Arc::from("T")))
+    );
+    assert_eq!(
+      classify_dynamic_dispatch_receiver(Some(&CalcitTypeAnnotation::TypeSlot(Arc::from("receiver"))), false),
+      Some(DynamicDispatchReceiverCause::UnboundTypeSlot(Arc::from("receiver")))
+    );
+    assert_eq!(classify_dynamic_dispatch_receiver(Some(&CalcitTypeAnnotation::Number), false), None);
+  }
+
+  #[test]
+  fn strict_types_reject_general_dynamic_dispatch_in_both_call_forms() {
+    let _lock = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+    let _warn_guard = WarnDynMethodGuard::new(false);
+
+    for (expr, expected_code) in [
+      (
+        Cirru::List(vec![Cirru::leaf("receiver"), Cirru::leaf(".custom")]),
+        "E_DYNAMIC_POSTFIX_METHOD",
+      ),
+      (
+        Cirru::List(vec![Cirru::leaf(".custom"), Cirru::leaf("receiver")]),
+        "E_DYNAMIC_METHOD_DISPATCH",
+      ),
+    ] {
+      let code = code_to_calcit(&expr, "tests.dynamic-general-strict", "main", vec![]).expect("parse dynamic method call");
+      let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+      scope_defs.insert(Arc::from("receiver"));
+      let mut scope_types = ScopeTypes::from([(Arc::from("receiver"), calcit::DYNAMIC_TYPE.clone())]);
+      let warnings = RefCell::new(vec![]);
+
+      let error = preprocess_expr(
+        &code,
+        &scope_defs,
+        &mut scope_types,
+        "tests.dynamic-general-strict",
+        &warnings,
+        &CallStackList::default(),
+      )
+      .expect_err("strict mode should reject a method call that still needs runtime receiver dispatch");
+      assert_eq!(error.code.as_deref(), Some(expected_code));
+      assert!(error.msg.contains("`.custom`"), "method should be named: {error:?}");
+      assert!(
+        error.msg.contains("resolves to Dynamic"),
+        "receiver source should be classified: {error:?}"
+      );
+      assert!(
+        error.msg.contains("narrow or validate"),
+        "migration should be actionable: {error:?}"
+      );
+    }
   }
 
   #[test]
@@ -14646,7 +14828,7 @@ mod tests {
   }
 
   #[test]
-  fn warns_on_dynamic_trait_call() {
+  fn warns_on_unspecialized_dynamic_method_call() {
     let _lock = lock_preprocess_test_state();
     let _guard = WarnDynMethodGuard::new(true);
 
@@ -14663,12 +14845,12 @@ mod tests {
       preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.trait", &warnings, &stack).expect("preprocess method call");
 
     let warnings_vec = warnings.borrow();
-    assert!(!warnings_vec.is_empty(), "should warn on dynamic trait call");
+    assert!(!warnings_vec.is_empty(), "should warn on dynamic method dispatch");
     assert_eq!(warnings_vec[0].code(), Some("P_DYNAMIC_METHOD_DISPATCH"));
     let warning_msg = warnings_vec[0].to_string();
     assert!(
-      warning_msg.contains("dynamic trait call") && warning_msg.contains(".greet"),
-      "warning should mention method: {warning_msg}"
+      warning_msg.contains("missing static receiver schema") && warning_msg.contains(".greet"),
+      "warning should mention the method and receiver source: {warning_msg}"
     );
   }
 
