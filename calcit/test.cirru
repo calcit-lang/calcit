@@ -466,6 +466,8 @@
                 fn (current prev) (println "|change happened:" prev current)
               assert= 2 $ reset! *ref-demo 2
               assert= &unit $ remove-watch *ref-demo :change
+              assert= "|remove-watch failed: listener with key `missing` not found" $ try (remove-watch *ref-demo :missing)
+                fn (error) error
               assert= 2 @*ref-demo
               assert= :ref $ type-of *ref-demo
               let

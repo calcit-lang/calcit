@@ -930,7 +930,9 @@ export let add_watch = (a: CalcitRef, k: CalcitTag, f: CalcitFn): void => {
 };
 
 export let remove_watch = (a: CalcitRef, k: CalcitTag): void => {
-  a.listeners.delete(k);
+  if (!a.listeners.delete(k)) {
+    throw new Error(`remove-watch failed: listener with key \`${k.value}\` not found`);
+  }
 };
 
 const MAX_RANGE_LENGTH = 0xffff_ffff;
