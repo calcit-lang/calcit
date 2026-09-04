@@ -454,6 +454,12 @@ compiler/macro lowering、core internals、可复用 `defimpl`，以及 evidence
 已持久化的 `&%{}` IR 也可以保留，但必须能解析到具体 `defstruct`，并且每个声明字段恰好出现一次；
 缺字段、重复字段或未知字段仍会被拒绝。
 
+`--strict-types` 下，`unsafe-coerce` 还必须位于当前 definition 的结构化 `Fn` schema 所声明的
+`:features $ #{} :js-ffi` 词法范围内，否则报告 `E_UNSCOPED_UNSAFE_COERCE`。`js-ffi.raw.*`
+一类 namespace 约定只用于 inventory，不授予权限。迁移时把 assertion 收拢到小 adapter，完成 host
+value 的 validate/convert 后只返回 typed Calcit data；即使已正确标记，release quality gate 仍需审核
+对应的 per-definition `unsafeCoerce` baseline。
+
 #### `.trim` / `.blank?` 接收者迁移
 
 `.trim` 与 `.blank?` 只对静态推断为 String 的接收者可用。若错误写成 `unknown method .trim for map`，

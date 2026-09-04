@@ -8075,6 +8075,20 @@ pub fn preprocess_unsafe_coerce(
     ));
   }
 
+  if strict_types_enabled()
+    && should_emit_project_source_lint(ctx.file_ns)
+    && ctx.file_ns != calcit::CORE_NS
+    && !current_function_has_js_ffi_feature()
+  {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      "`unsafe-coerce` is outside a lexical `:js-ffi` boundary; move the host assertion into a small adapter function whose structured `Fn` schema declares `:features $ #{} :js-ffi`, validate or convert the host value there, and return typed Calcit data",
+      "E_UNSCOPED_UNSAFE_COERCE",
+      ctx.call_stack,
+      args.first().and_then(Calcit::get_location),
+    ));
+  }
+
   let target_form = preprocess_expr(
     args.first().expect("validated unsafe-coerce target"),
     ctx.scope_defs,
@@ -10245,6 +10259,23 @@ mod tests {
     }
   }
 
+  struct CurrentFnFeaturesGuard {
+    previous: Option<Arc<HashSet<EdnTag>>>,
+  }
+
+  impl CurrentFnFeaturesGuard {
+    fn js_ffi() -> Self {
+      let previous = CURRENT_FN_FEATURES.with(|cell| cell.borrow_mut().replace(Arc::new(HashSet::from([EdnTag::new("js-ffi")]))));
+      Self { previous }
+    }
+  }
+
+  impl Drop for CurrentFnFeaturesGuard {
+    fn drop(&mut self) {
+      CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = self.previous.take());
+    }
+  }
+
   struct TypeSlotsGuard;
 
   impl TypeSlotsGuard {
@@ -10603,6 +10634,44 @@ mod tests {
       "coercing one expression must not retype every later use of the local"
     );
     assert!(warnings.borrow().is_empty());
+  }
+
+  #[test]
+  fn strict_types_require_a_lexical_js_ffi_feature_for_unsafe_coerce() {
+    let _lock = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+    let expr = Cirru::List(vec![Cirru::leaf("unsafe-coerce"), Cirru::leaf("host"), Cirru::leaf("'String")]);
+    let code = code_to_calcit(&expr, "js-ffi.raw.ids", "make-id", vec![]).expect("parse unsafe host assertion");
+    let scope_defs = HashSet::from([Arc::from("host")]);
+    let warnings = RefCell::new(vec![]);
+
+    let error = preprocess_expr(
+      &code,
+      &scope_defs,
+      &mut ScopeTypes::new(),
+      "js-ffi.raw.ids",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect_err("adapter-like namespace naming must not grant an unsafe-coerce exemption");
+    assert_eq!(error.code.as_deref(), Some("E_UNSCOPED_UNSAFE_COERCE"));
+    assert!(error.msg.contains("`:js-ffi` boundary"));
+    assert!(error.msg.contains("structured `Fn` schema"));
+
+    let _features = CurrentFnFeaturesGuard::js_ffi();
+    let resolved = preprocess_expr(
+      &code,
+      &scope_defs,
+      &mut ScopeTypes::new(),
+      "js-ffi.raw.ids",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("the same assertion is allowed inside the lexically marked adapter");
+    assert!(matches!(
+      resolved,
+      Calcit::List(nodes) if matches!(nodes.first(), Some(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _)))
+    ));
   }
 
   #[test]

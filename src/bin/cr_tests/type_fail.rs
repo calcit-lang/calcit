@@ -267,6 +267,20 @@ fn strict_type_fail_raw_primitive_reports_stable_error_code() {
 }
 
 #[test]
+fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let unscoped = load_fixture_entries("calcit/type-fail/unsafe-coerce-unscoped-strict.cirru");
+    let err = run_check_only(&unscoped).expect_err("unscoped unsafe-coerce must fail strict check-only");
+    assert!(err.contains("E_UNSCOPED_UNSAFE_COERCE"), "unexpected strict FFI error: {err}");
+    assert!(err.contains("`:js-ffi` boundary"), "missing lexical-boundary guidance: {err}");
+
+    let scoped = load_fixture_entries("calcit/type-fail/unsafe-coerce-scoped-strict.cirru");
+    run_check_only(&scoped).expect("a marked adapter may contain unsafe-coerce without leaking capability to its caller");
+  });
+}
+
+#[test]
 fn strict_type_fail_erased_generic_relation_reports_stable_error_code() {
   run_with_large_stack(|| {
     let fixture = "calcit/type-fail/erased-generic-relation-strict.cirru";
