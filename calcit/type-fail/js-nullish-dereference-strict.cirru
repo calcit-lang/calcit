@@ -14,7 +14,7 @@
               .-length host
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'JsObject)
+            {} (:return 'Number)
               :args $ []
               :features $ #{} :js-ffi
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
