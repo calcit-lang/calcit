@@ -133,6 +133,9 @@ fn specialize_core_expected_types(
   if fn_info.def_ns.as_ref() != calcit::CORE_NS {
     return None;
   }
+  if !matches!(fn_info.name.as_ref(), "get" | "includes?" | "update") {
+    return None;
+  }
   let receiver = args.first()?;
   let receiver_type = resolve_type_value(receiver, scope_types)?;
   let mut specialized = expected_types.to_vec();
