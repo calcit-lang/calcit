@@ -5006,7 +5006,9 @@ fn reject_or_warn_on_untyped_js_ffi_field_access(
     ));
   }
 
-  gen_check_warning_code_at(message, "W_JS_FFI_UNTYPED_ACCESS", file_ns, location, check_warnings);
+  if warn_dyn_method_enabled() {
+    gen_check_warning_code_at(message, "W_JS_FFI_UNTYPED_ACCESS", file_ns, location, check_warnings);
+  }
   Ok(())
 }
 
@@ -10275,6 +10277,24 @@ mod tests {
     }
   }
 
+  struct ProjectNamespacesGuard {
+    previous: HashSet<Arc<str>>,
+  }
+
+  impl ProjectNamespacesGuard {
+    fn new(namespaces: &[&str]) -> Self {
+      let mut current = PROJECT_NAMESPACES.write().expect("write project namespaces");
+      let previous = std::mem::replace(&mut *current, namespaces.iter().map(|ns| Arc::from(*ns)).collect());
+      Self { previous }
+    }
+  }
+
+  impl Drop for ProjectNamespacesGuard {
+    fn drop(&mut self) {
+      *PROJECT_NAMESPACES.write().expect("restore project namespaces") = std::mem::take(&mut self.previous);
+    }
+  }
+
   struct CurrentFnFeaturesGuard {
     previous: Option<Arc<HashSet<EdnTag>>>,
   }
@@ -11649,6 +11669,33 @@ mod tests {
     assert!(error.msg.contains("external-object trait"));
     assert!(error.msg.contains("lexical `:js-ffi` adapter"));
     assert!(warnings.borrow().is_empty());
+  }
+
+  #[test]
+  fn strict_types_keep_dependency_untyped_access_inventory_opt_in() {
+    let _lock = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+    let _warn_guard = WarnDynMethodGuard::new(false);
+    let _project_namespaces = ProjectNamespacesGuard::new(&["app.main"]);
+    let receiver = untyped_js_ffi_test_receiver();
+    let head = Calcit::Method(Arc::from("value"), calcit::MethodKind::Access);
+    let warnings = RefCell::new(vec![]);
+
+    reject_or_warn_on_untyped_js_ffi_field_access(
+      &head,
+      &CalcitList::from(std::slice::from_ref(&receiver)),
+      &ScopeTypes::new(),
+      "dependency.host",
+      "demo",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("strict dependency access stays outside project-source hard errors");
+
+    assert!(
+      warnings.borrow().is_empty(),
+      "dependency inventory remains behind --warn-dyn-method"
+    );
   }
 
   #[test]
