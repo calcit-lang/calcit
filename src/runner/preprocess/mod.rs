@@ -5530,6 +5530,7 @@ fn try_specialize_polymorphic_call(
   let core_def_name: Option<&'static str> = match (fn_def, receiver_type.as_ref()) {
     ("map", T::List(_)) => Some("&list:map"),
     ("map", T::Map(_, _)) => Some("&map:map"),
+    ("map", T::Set(_)) => Some("&set:map"),
     ("filter", T::List(_)) => Some("&list:filter"),
     ("filter", T::Map(_, _)) => Some("&map:filter"),
     ("filter", T::Set(_)) => Some("&set:filter"),
@@ -9191,6 +9192,33 @@ mod tests {
 
   fn lock_preprocess_test_state() -> std::sync::MutexGuard<'static, ()> {
     PREPROCESS_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner())
+  }
+
+  #[test]
+  fn specializes_public_map_for_set_receivers() {
+    let _guard = lock_preprocess_test_state();
+    let sym = Arc::from("items");
+    let receiver = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&sym),
+      sym,
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.map"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Set(Arc::new(CalcitTypeAnnotation::Number))),
+    });
+    let args = CalcitList::from(&[receiver, Calcit::Nil]);
+
+    let specialized = try_specialize_polymorphic_call(calcit::CORE_NS, "map", &args, &ScopeTypes::new(), "tests.map")
+      .expect("set map should use the native set dispatcher");
+    let Calcit::List(items) = specialized else {
+      panic!("specialized set map should remain a call")
+    };
+    assert!(matches!(
+      items.first(),
+      Some(Calcit::Import(import)) if import.def.as_ref() == "&set:map"
+    ));
   }
 
   fn match_branch(tag: &str, body: &str) -> Calcit {
