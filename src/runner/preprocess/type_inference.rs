@@ -1255,6 +1255,30 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(Arc::new(CalcitTypeAnnotation::Ref(initial_type)));
   }
+  if matches!(proc, CalcitProc::Foldl)
+    && let (Some(receiver), Some(initial_value), Some(reducer)) = (xs.get(1), xs.get(2), xs.get(3))
+    && let (Some(receiver_type), Some(initial_type), Some(reducer_type)) = (
+      resolve_type_value(receiver, scope_types),
+      resolve_type_value(initial_value, scope_types),
+      resolve_type_value(reducer, scope_types),
+    )
+  {
+    let member_type = match receiver_type.as_ref() {
+      CalcitTypeAnnotation::List(item_type) | CalcitTypeAnnotation::Set(item_type)
+        if !matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) =>
+      {
+        Some(item_type.clone())
+      }
+      CalcitTypeAnnotation::Map(_, _) => Some(Arc::new(CalcitTypeAnnotation::List(calcit::DYNAMIC_TYPE.clone()))),
+      _ => None,
+    };
+    if let Some(member_type) = member_type {
+      let expected_reducer = CalcitTypeAnnotation::from_function_parts(vec![initial_type.clone(), member_type], initial_type.clone());
+      if matches!(reducer_type.as_ref(), CalcitTypeAnnotation::Fn(_)) && reducer_type.as_ref().matches_annotation(&expected_reducer) {
+        return Some(initial_type);
+      }
+    }
+  }
   // `&list:nth` retains its unchecked payload type for guarded core macro
   // expansion. Unlike it, `&list:first` has a nullable Core schema and must
   // expose that absence to callers.
@@ -1893,6 +1917,43 @@ mod tests {
     assert!(matches!(
       value.as_deref(),
       Some(CalcitTypeAnnotation::JsNullish(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::JsObject)
+    ));
+  }
+
+  #[test]
+  fn foldl_returns_the_initial_accumulator_type() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let expression = proc_call(
+      CalcitProc::Foldl,
+      vec![
+        local("items", Arc::new(CalcitTypeAnnotation::Set(Arc::new(CalcitTypeAnnotation::String)))),
+        Calcit::Number(0.0),
+        local(
+          "reducer",
+          Arc::new(CalcitTypeAnnotation::from_function_parts(
+            vec![number.clone(), Arc::new(CalcitTypeAnnotation::String)],
+            number,
+          )),
+        ),
+      ],
+    );
+
+    assert!(matches!(
+      infer_type_from_expr(&expression, &ScopeTypes::new()).as_deref(),
+      Some(CalcitTypeAnnotation::Number)
+    ));
+
+    let dynamic_reducer = proc_call(
+      CalcitProc::Foldl,
+      vec![
+        local("items", Arc::new(CalcitTypeAnnotation::Set(Arc::new(CalcitTypeAnnotation::String)))),
+        Calcit::Number(0.0),
+        local("reducer", Arc::new(CalcitTypeAnnotation::DynFn)),
+      ],
+    );
+    assert!(matches!(
+      infer_type_from_expr(&dynamic_reducer, &ScopeTypes::new()).as_deref(),
+      Some(CalcitTypeAnnotation::Dynamic)
     ));
   }
 

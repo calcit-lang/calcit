@@ -40,6 +40,10 @@
               map ([] |a |b) inc
               map (#{} |a |b) inc
               map (&{} :a 1) inc
+              foldl ([] |a |b) 0 +
+              foldl (#{} |a |b) 0 +
+              foldl (&{} :a 1) 0 +
+              reduce (#{} |a |b) 0 +
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

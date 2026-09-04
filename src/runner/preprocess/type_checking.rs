@@ -145,7 +145,7 @@ fn specialize_core_expected_types(
   }
   let required_arity = match fn_info.name.as_ref() {
     "any?" | "contains?" | "each" | "every?" | "filter" | "get" | "includes?" | "map" => 2,
-    "assoc" | "update" => 3,
+    "assoc" | "foldl" | "reduce" | "update" => 3,
     _ => return None,
   };
   if expected_types.len() < required_arity || args.len() < required_arity {
@@ -172,6 +172,7 @@ fn specialize_core_expected_types(
     "any?" | "each" | "every?" | "filter" | "map" => {
       specialize_collection_callback_expected_types(fn_info.name.as_ref(), receiver_type.as_ref(), expected_types)
     }
+    "foldl" | "reduce" => specialize_collection_fold_expected_types(args, scope_types, expected_types),
     "get" => {
       let mut specialized = expected_types.to_vec();
       specialized[1] = match receiver_type.as_ref() {
@@ -197,6 +198,35 @@ fn specialize_core_expected_types(
     "update" => specialize_update_expected_types(args, receiver_type.as_ref(), scope_types, expected_types),
     _ => None,
   }
+}
+
+fn specialize_collection_fold_expected_types(
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  if expected_types.len() < 3 || args.len() < 3 {
+    return None;
+  }
+  let receiver_type = resolve_type_value(args.first()?, scope_types)?;
+  let member_type = match receiver_type.as_ref() {
+    CalcitTypeAnnotation::List(item_type) | CalcitTypeAnnotation::Set(item_type)
+      if !matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) =>
+    {
+      item_type.clone()
+    }
+    CalcitTypeAnnotation::Map(_, _) => Arc::new(CalcitTypeAnnotation::List(crate::calcit::DYNAMIC_TYPE.clone())),
+    _ => return None,
+  };
+  let accumulator_type = resolve_type_value(args.get(1)?, scope_types)?;
+  let mut specialized = expected_types.to_vec();
+  specialized[0] = receiver_type;
+  specialized[1] = accumulator_type.clone();
+  specialized[2] = Arc::new(CalcitTypeAnnotation::from_function_parts(
+    vec![accumulator_type.clone(), member_type],
+    accumulator_type,
+  ));
+  Some(specialized)
 }
 
 fn specialize_collection_callback_expected_types(
@@ -523,11 +553,17 @@ pub(crate) fn check_proc_arg_types(
     return;
   }
 
+  let expected_types = if matches!(proc, CalcitProc::Foldl) {
+    specialize_collection_fold_expected_types(args, scope_types, &signature.arg_types).unwrap_or_else(|| signature.arg_types.clone())
+  } else {
+    signature.arg_types.clone()
+  };
+
   // Parameter omission is represented by Proc arity metadata. Optional<T>
   // remains a value type here and must accept either T or nil.
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
 
-  for (idx, (arg, expected_type)) in args.iter().zip(signature.arg_types.iter()).enumerate() {
+  for (idx, (arg, expected_type)) in args.iter().zip(expected_types.iter()).enumerate() {
     if let CalcitTypeAnnotation::Variadic(inner_type) = expected_type.as_ref() {
       // Collection constructors use Variadic<T> as common-type inference evidence and
       // deliberately fall back to Dynamic for heterogeneous literals. Other operations
@@ -1272,6 +1308,58 @@ mod tests {
     ]);
 
     assert!(specialize_core_expected_types(&fn_info, &args, &ScopeTypes::new(), &fn_info.arg_types).is_none());
+  }
+
+  #[test]
+  fn specialize_collection_fold_relates_accumulator_and_members() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let string = Arc::new(CalcitTypeAnnotation::String);
+    let expected = vec![
+      crate::calcit::DYNAMIC_TYPE.clone(),
+      crate::calcit::DYNAMIC_TYPE.clone(),
+      Arc::new(CalcitTypeAnnotation::DynFn),
+    ];
+
+    for receiver in [
+      CalcitTypeAnnotation::List(string.clone()),
+      CalcitTypeAnnotation::Set(string.clone()),
+    ] {
+      let args = CalcitList::from(&[
+        make_local("items", Arc::new(receiver.clone())),
+        make_local("initial", number.clone()),
+        make_local("reducer", Arc::new(CalcitTypeAnnotation::DynFn)),
+      ]);
+      let specialized =
+        specialize_collection_fold_expected_types(&args, &ScopeTypes::new(), &expected).expect("list and set folds should specialize");
+      assert_eq!(specialized[0].as_ref(), &receiver);
+      assert_eq!(specialized[1], number);
+      let CalcitTypeAnnotation::Fn(reducer) = specialized[2].as_ref() else {
+        panic!("fold reducer should be a function");
+      };
+      assert_eq!(reducer.arg_types.as_slice(), &[number.clone(), string.clone()]);
+      assert_eq!(reducer.return_type, number);
+    }
+
+    let map_args = CalcitList::from(&[
+      make_local(
+        "entries",
+        Arc::new(CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Tag), string)),
+      ),
+      make_local("initial", number.clone()),
+      make_local("reducer", Arc::new(CalcitTypeAnnotation::DynFn)),
+    ]);
+    let specialized =
+      specialize_collection_fold_expected_types(&map_args, &ScopeTypes::new(), &expected).expect("map folds should specialize");
+    let CalcitTypeAnnotation::Fn(reducer) = specialized[2].as_ref() else {
+      panic!("map fold reducer should be a function");
+    };
+    assert!(matches!(
+      reducer.arg_types.as_slice(),
+      [accumulator, pair]
+        if accumulator == &number
+          && matches!(pair.as_ref(), CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic))
+    ));
+    assert_eq!(reducer.return_type, number);
   }
 
   #[test]
