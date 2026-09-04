@@ -9575,6 +9575,52 @@ mod tests {
     ));
   }
 
+  #[test]
+  fn specializes_public_filter_to_shape_preserving_core_definitions() {
+    let _guard = lock_preprocess_test_state();
+    let cases = [
+      (
+        Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number))),
+        "&list:filter",
+      ),
+      (
+        Arc::new(CalcitTypeAnnotation::Map(
+          Arc::new(CalcitTypeAnnotation::Tag),
+          Arc::new(CalcitTypeAnnotation::Number),
+        )),
+        "&map:filter",
+      ),
+      (
+        Arc::new(CalcitTypeAnnotation::Set(Arc::new(CalcitTypeAnnotation::Number))),
+        "&set:filter",
+      ),
+    ];
+
+    for (receiver_type, expected_def) in cases {
+      let sym = Arc::from(format!("{expected_def}-items"));
+      let receiver = Calcit::Local(CalcitLocal {
+        idx: CalcitLocal::track_sym(&sym),
+        sym,
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.filter"),
+          at_def: Arc::from("demo"),
+        }),
+        location: None,
+        type_info: receiver_type,
+      });
+      let args = CalcitList::from(&[receiver, Calcit::Nil]);
+      let specialized = try_specialize_polymorphic_call(calcit::CORE_NS, "filter", &args, &ScopeTypes::new(), "tests.filter")
+        .expect("typed filter receiver should select a shape-preserving core definition");
+      let Calcit::List(items) = specialized else {
+        panic!("specialized filter should remain a call")
+      };
+      assert!(matches!(
+        items.first(),
+        Some(Calcit::Import(import)) if import.def.as_ref() == expected_def
+      ));
+    }
+  }
+
   fn match_branch(tag: &str, body: &str) -> Calcit {
     Calcit::from(vec![
       Calcit::from(vec![Calcit::Tag(cirru_edn::EdnTag::from(tag))]),

@@ -158,6 +158,14 @@ const compilerSpecializedPositions = new Map([
     "The receiver specializes the Option payload to the Map value, List member, or String character contract; the separate Dynamic receiver position remains in the migration queue until its capability is expressible.",
   ],
   [
+    "get-in|schema.return.type-arg.0",
+    "A statically typed receiver plus a fully known literal Map/List path recovers the Option payload at preprocessing time; dynamic paths and Struct traversal remain on the reviewed fallback.",
+  ],
+  [
+    "filter|schema.return",
+    "A statically known List, Map, or Set receiver is rewritten to its typed core filter implementation, which preserves the receiver collection shape; the separate Dynamic receiver position remains in the migration queue.",
+  ],
+  [
     "includes?|schema.args.1",
     "The receiver specializes the searched value to the Map value, collection member, or String contract; the separate Dynamic receiver position remains in the migration queue until its capability is expressible.",
   ],
@@ -228,7 +236,8 @@ function classify(entry) {
   return {
     owner: namespace === "calcit.test" ? "test-library" : "public-core-api",
     decision: "migrate",
-    rationale: "This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship.",
+    rationale:
+      "This caller-visible contract still loses type evidence and is assigned to calcit#701 for an honest generic, trait-associated, recursive nominal, or reviewed-boundary decision.",
   };
 }
 

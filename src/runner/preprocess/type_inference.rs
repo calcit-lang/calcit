@@ -2640,6 +2640,26 @@ mod tests {
   }
 
   #[test]
+  fn get_in_recovers_literal_map_path_payload() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let nested_map = Arc::new(CalcitTypeAnnotation::Map(
+      tag_annotation("tag"),
+      Arc::new(CalcitTypeAnnotation::Map(tag_annotation("tag"), number.clone())),
+    ));
+    let path = proc_call(
+      CalcitProc::List,
+      vec![Calcit::Tag(EdnTag::from("session")), Calcit::Tag(EdnTag::from("revision"))],
+    );
+    let call = CalcitList::from(&[symbol("get-in"), local("store", nested_map), path] as &[Calcit]);
+
+    assert_eq!(
+      infer_core_get_in_return_type(&call, &ScopeTypes::new()),
+      Some(core_type_ref("Option", vec![number])),
+      "a fully typed literal path must preserve its final payload in Option"
+    );
+  }
+
+  #[test]
   fn typed_literal_paths_require_static_non_struct_hops() {
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let nested_map = Arc::new(CalcitTypeAnnotation::Map(

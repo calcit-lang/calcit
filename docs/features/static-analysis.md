@@ -175,6 +175,15 @@ regenerates the analysis in memory and fails when the checked-in table differs;
 after reviewing a deliberate contract change, update it with
 `yarn generate-core-dynamic-classification`. A retained position is still
 locked by the per-definition quality baseline and cannot grow silently.
+Caller-propagating output slots are reviewed separately from their receiver
+slots: typed literal `get-in` paths recover `Option<T>`, and typed List/Map/Set
+`filter` calls lower to shape-preserving core definitions. Dynamic receivers,
+dynamic paths, Struct traversal, and unsupported collection capabilities stay
+in the migration queue rather than inheriting that narrower conclusion. The
+remaining migration rows are assigned to
+[calcit#701](https://github.com/calcit-lang/calcit/issues/701), with bound-slot
+correctness for optional indexed access tracked separately by
+[calcit#694](https://github.com/calcit-lang/calcit/issues/694).
 
 `analyze deprecated` scans calls to definitions tagged `:deprecated`. It reports every calling definition and a stable `code@...` path, and includes the target definition's documentation so migrations can be automated without maintaining a second hard-coded legacy API list. Use `--summary-only --format json` for migration gates that only need aggregate counts.
 
