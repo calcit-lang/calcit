@@ -122,6 +122,14 @@ or `E_DYNAMIC_POSTFIX_METHOD` for postfix calls. Give the receiver a concrete
 `Option<T>` / `Result<T, E>` schema, or use the matching visible `option:*` /
 `result:*` function inside an explicitly reviewed open adapter.
 
+Strict mode also promotes every remaining unspecialized project method to the
+same stable prefix/postfix errors. The diagnostic classifies the receiver as a
+missing schema, Dynamic value/callable, legacy Optional, unbound generic or
+type slot, or explicit `:js-ffi` Dynamic boundary. Add static nominal or trait
+evidence before method syntax. A JS boundary must convert the host value or
+attach an external-object trait inside its narrow adapter; `:js-ffi` alone does
+not authorize runtime method lookup.
+
 ### Strict type preflight (`--strict-types`)
 
 Use `--strict-types` for new or fully migrated modules that must carry no local

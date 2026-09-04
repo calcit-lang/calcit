@@ -142,14 +142,15 @@ For one expression, `calcit query type-at '<ns/def>' --path code@... --format js
 
 `analyze dynamic-methods` reports only `P_DYNAMIC_METHOD_DISPATCH` and `P_DYNAMIC_POSTFIX_METHOD`; ordinary type warnings and JS FFI diagnostics do not contaminate its count. Project namespaces are the default scope, while `--deps` includes reachable modules. `--summary-only` omits individual findings. `--max <count>` turns the report into a focused CI policy and emits `E_DYNAMIC_METHOD_POLICY` with a non-zero status when the count grows beyond the reviewed budget. A receiver made concrete by normal inference, a trait constraint, or an explicit reviewed `unsafe-coerce` boundary is not unresolved dispatch.
 
-The Option/Result nominal family is stricter than the general compatibility
-inventory. Under `--strict-types`, `.unwrap-or`, `.fold`, `.and-then`, and the
-other documented nominal operations reject a Dynamic receiver immediately with
-`E_DYNAMIC_METHOD_DISPATCH` or `E_DYNAMIC_POSTFIX_METHOD`. Narrow the receiver
-to its nominal type, or isolate the intentionally open call behind the matching
-visible `option:*` / `result:*` helper. Other unknown method families remain in
-the dynamic-method inventory until their receiver-loss classification is
-complete.
+Under `--strict-types`, every unspecialized project method is rejected with
+`E_DYNAMIC_METHOD_DISPATCH` or `E_DYNAMIC_POSTFIX_METHOD`. Diagnostics classify
+the receiver loss as a missing schema, Dynamic value/callable, legacy Optional,
+unbound generic/type slot, or explicit `:js-ffi` Dynamic boundary. The
+Option/Result nominal family additionally names the expected receiver family
+and its visible `option:*` / `result:*` helper. Compatibility mode retains the
+`P_DYNAMIC_*` inventory and `W_DYNAMIC_NOMINAL_METHOD_RECEIVER` while projects
+migrate. A concrete inferred type, trait constraint, or external-object trait
+remains statically dispatchable and does not trigger this rule.
 
 `analyze quality` combines the release-facing metrics from `check-types`, `weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce --intent unresolved,intentional-macro-syntax,declared-unit,declared-optional,explicit-unsafe`, and `deprecated`. Intentional macro syntax remains in the `schemaDynamic` budget so new open macro positions cannot bypass review, while only unresolved positions increment the `unresolved` budget. `unsafeCoerce` is an independent budget for explicit host assertions; it is not folded into unresolved Dynamic debt. With no baseline it is a zero-debt gate. `--baseline <file>` compares against a committed baseline and exits non-zero on regression; `--write-baseline <file>` atomically writes a reviewed native baseline. Native v2 baselines keep budgets per definition, so improving one definition cannot hide new debt in another. Native v1 and the older flat eight-metric shape remain readable and preserve their original eight-metric enforcement; v1 is reported as `native-baseline-v1` and does not claim an `unsafeCoerce` delta. Regenerate a reviewed baseline to adopt that budget. Scope flags (`--ns`, `--ns-prefix`, `--deps`) are recorded in native baselines and must match when they are enforced.
 
