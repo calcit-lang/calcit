@@ -34,8 +34,9 @@ and portability rules that apply to every form.
 ## 1. Boundary model: opaque first, typed second
 
 Raw JavaScript values are not ordinary `Dynamic` Calcit values. Property reads,
-native method calls, `aget`, untyped `js-get`, and `js/...` calls are
-conservatively inferred as `JsNullish<JsObject>`:
+native method calls, `aget`, untyped `js-get`, and arbitrary `js/...` calls are
+conservatively inferred as `JsNullish<JsObject>`. The deliberate exception is
+`js/typeof`, whose JavaScript-language result is always inferred as `String`:
 
 - `JsNullish` is reserved for the actual JavaScript `null`/`undefined` boundary;
   it is deliberately distinct from legacy `Optional` and nominal `Option`.
@@ -46,18 +47,22 @@ conservatively inferred as `JsNullish<JsObject>`:
   with a boundary decoder. `unsafe-coerce` is available only when an external
   API contract is trusted and the unchecked conversion is intentional.
 
-Plain `.-name` and `.!name` dereference their receiver. If the receiver is an
-`JsNullish<JsObject>`, preprocessing reports `W_JS_FFI_NULLABLE_DEREF`. Use
-`.?-name`/`.?!name`, or narrow the receiver before dereferencing it.
+Plain `.-name` and `.!name` dereference their receiver. If the receiver is a
+`JsNullish<JsObject>`, strict project source fails with
+`E_JS_FFI_NULLABLE_DEREF`; compatibility mode reports
+`W_JS_FFI_NULLABLE_DEREF`. Use `.?-name`/`.?!name`, or narrow the receiver
+before dereferencing it.
 
 Functions containing raw interop should declare `:features $ #{} :js-ffi` in
 their schema. The feature identifies the boundary but does not suppress
 nullable dereference or strong-type mismatch diagnostics.
 
 Use `js-nullish?` and `js-present?` to narrow a JavaScript boundary. Applying
-legacy `nil?`/`some?` reports `W_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly
-with `js-nullish->option` only after accepting the opaque payload contract;
-generic `optionally` does not accept `JsNullish<T>`.
+legacy `nil?`/`some?` fails strict project source with
+`E_JS_FFI_NULLABLE_PREDICATE`; compatibility mode reports
+`W_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly with
+`js-nullish->option` only after accepting the opaque payload contract; generic
+`optionally` does not accept `JsNullish<T>`.
 
 ## 2. Capability and target policy
 
@@ -79,6 +84,13 @@ without declaring `:js-ffi`; only the wrapper's own implementation body needs
 the feature. An anonymous function uses the feature declared in its own
 `hint-fn` schema.
 
+In `--strict-types`, `unsafe-coerce` has an additional backend-independent
+gate: the current function's structured schema must declare `:js-ffi`, or
+preprocessing fails with `E_UNSCOPED_UNSAFE_COERCE`. An adapter-like namespace
+name is inventory evidence, not authorization. A scoped assertion remains in
+the `unsafeCoerce` quality metric and therefore needs an explicitly reviewed
+baseline before a full strict quality gate can pass.
+
 ### 2.2 Host target policy
 
 Entries can additionally declare an explicit host target:
@@ -95,13 +107,15 @@ legacy projects and disables this target-specific check.
 
 ### 2.3 Audit untyped access points
 
-`.-name`, `.!name`, `aget`, `aset`, `js-get`, and `js-set` against a bare
-`JsObject` receiver (no external-object trait attached) still work, but nothing
-about the field is checked. Running with `--warn-dyn-method` additionally
-reports `W_JS_FFI_UNTYPED_ACCESS` for these calls whenever the field key is a
-literal tag/string, since that is the case where declaring a trait for the
-receiver is directly actionable. A dynamic (non-literal) key, or a receiver
-that already carries trait or nullable evidence, does not trigger it.
+`.-name`, `.!name`, `.?-name`, `.?!name`, `aget`, `aset`, `js-get`, and `js-set` against a bare
+`JsObject` receiver have no field or method contract. When the member key is a
+literal, strict project source rejects the access with
+`E_UNTYPED_JS_OBJECT_ACCESS`; declare the smallest external-object trait and
+coerce the host value to that trait inside the lexical adapter. Compatibility
+mode can inventory the same sites as `W_JS_FFI_UNTYPED_ACCESS` with
+`--warn-dyn-method`. A dynamic (non-literal) key retains explicit raw lookup
+semantics, while receivers that already carry trait or nullable evidence are
+handled by their dedicated checks.
 
 ## 3. Typed adapters and external objects
 
@@ -436,7 +450,11 @@ Common diagnostics:
 | Code | Meaning | Typical fix |
 | --- | --- | --- |
 | `E_JS_FFI_FEATURE_REQUIRED` | A host operation is outside a marked adapter body. | Add `:js-ffi` to that implementation schema or move the operation into a wrapper. |
+| `E_UNSCOPED_UNSAFE_COERCE` | Strict preprocessing finds `unsafe-coerce` outside the current function's lexical FFI scope. | Move it into a small structured `Fn` adapter declaring `:js-ffi`; validate/convert there and return typed data. |
 | `E_JS_FFI_TARGET_MISMATCH` | The selected entry targets another host. | Correct the entry `:target` or use the matching adapter. |
 | `W_JS_FFI_NULLABLE_DEREF` | A nullable host value is dereferenced directly. | Use optional access or narrow with `js-present?`. |
+| `W_JS_FFI_NULLABLE_PREDICATE` | Compatibility source applies legacy `nil?`/`some?` to a host-nullish value. | Use `js-nullish?`/`js-present?` so host semantics remain visible. |
+| `E_JS_FFI_NULLABLE_DEREF` | Strict project source dereferences `JsNullish<JsObject>` directly. | Use optional access or narrow with a dedicated JS predicate. |
+| `E_JS_FFI_NULLABLE_PREDICATE` | Strict project source applies legacy `nil?`/`some?` to `JsNullish<T>`. | Use `js-nullish?`/`js-present?`, then convert explicitly if needed. |
 | `E_JS_FFI_FIELD_READONLY` | A typed external field is written without permission. | Add the field to `:ffi :writable` only if the host API permits it. |
 ```
