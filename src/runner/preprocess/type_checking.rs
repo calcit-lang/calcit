@@ -150,7 +150,11 @@ fn specialize_core_expected_types(
       specialized[1] = match receiver_type.as_ref() {
         CalcitTypeAnnotation::Map(key_type, _) => key_type.clone(),
         CalcitTypeAnnotation::Set(item_type) => item_type.clone(),
-        CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::String => Arc::new(CalcitTypeAnnotation::Number),
+        CalcitTypeAnnotation::List(_)
+        | CalcitTypeAnnotation::String
+        | CalcitTypeAnnotation::EnumValue(_)
+        | CalcitTypeAnnotation::AnonymousEnum => Arc::new(CalcitTypeAnnotation::Number),
+        value if value.resolve_to_enum().is_some() => Arc::new(CalcitTypeAnnotation::Number),
         _ => return None,
       };
       Some(specialized)
@@ -198,6 +202,12 @@ fn specialize_assoc_expected_types(
     CalcitTypeAnnotation::Map(key_type, value_type) => {
       specialized[1] = key_type.clone();
       specialized[2] = value_type.clone();
+    }
+    CalcitTypeAnnotation::EnumValue(_) | CalcitTypeAnnotation::AnonymousEnum => {
+      specialized[1] = Arc::new(CalcitTypeAnnotation::Number);
+    }
+    value if value.resolve_to_enum().is_some() => {
+      specialized[1] = Arc::new(CalcitTypeAnnotation::Number);
     }
     CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::StructValue(_) => {
       let field_name = match args.get(1)? {
@@ -1020,6 +1030,14 @@ mod tests {
     let set_specialized = specialize_core_expected_types(&fn_info, &set_args, &ScopeTypes::new(), &fn_info.arg_types)
       .expect("set membership should specialize");
     assert_eq!(set_specialized[1], number);
+
+    let enum_args = CalcitList::from(&[
+      make_local("result", Arc::new(CalcitTypeAnnotation::AnonymousEnum)),
+      Calcit::Tag(EdnTag::new("bad")),
+    ]);
+    let enum_specialized = specialize_core_expected_types(&fn_info, &enum_args, &ScopeTypes::new(), &fn_info.arg_types)
+      .expect("enum index lookup should specialize");
+    assert!(matches!(enum_specialized[1].as_ref(), CalcitTypeAnnotation::Number));
   }
 
   #[test]
@@ -1071,5 +1089,14 @@ mod tests {
     let struct_specialized = specialize_core_expected_types(&fn_info, &struct_args, &ScopeTypes::new(), &fn_info.arg_types)
       .expect("struct association should specialize from field evidence");
     assert!(matches!(struct_specialized[2].as_ref(), CalcitTypeAnnotation::Bool));
+
+    let enum_args = CalcitList::from(&[
+      make_local("result", Arc::new(CalcitTypeAnnotation::AnonymousEnum)),
+      Calcit::Tag(EdnTag::new("bad")),
+      Calcit::Number(0.0),
+    ]);
+    let enum_specialized = specialize_core_expected_types(&fn_info, &enum_args, &ScopeTypes::new(), &fn_info.arg_types)
+      .expect("enum association should specialize its payload index");
+    assert!(matches!(enum_specialized[1].as_ref(), CalcitTypeAnnotation::Number));
   }
 }

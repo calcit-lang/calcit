@@ -791,7 +791,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       .collect();
     assert_eq!(
       matched.len(),
-      12,
+      14,
       "expected lookup, membership, key, and association warnings, got: {warnings:?}"
     );
     assert!(
@@ -839,8 +839,8 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
             && warning.message().contains("got `:tag`")
         })
         .count(),
-      2,
-      "List indices and Set members should both preserve their Number contract: {matched:?}"
+      3,
+      "List and Enum indices plus Set members should preserve their Number contract: {matched:?}"
     );
     assert!(
       matched.iter().any(|warning| {
@@ -850,13 +850,17 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       }),
       "Map containment should require its key type: {matched:?}"
     );
-    assert!(
-      matched.iter().any(|warning| {
-        warning.message().contains("calcit.core/assoc")
-          && warning.message().contains("arg 2 expects type `:number`")
-          && warning.message().contains("got `:tag`")
-      }),
-      "List association should require a Number index: {matched:?}"
+    assert_eq!(
+      matched
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("calcit.core/assoc")
+            && warning.message().contains("arg 2 expects type `:number`")
+            && warning.message().contains("got `:tag`")
+        })
+        .count(),
+      2,
+      "List and Enum association should require a Number index: {matched:?}"
     );
     assert_eq!(
       matched

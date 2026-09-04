@@ -23,6 +23,8 @@
               assoc ([] 1 2) 0 :bad
               assoc (&{} :a 1) 0 2
               assoc (&{} :a 1) :a :bad
+              contains? (:: :ok 1) :bad
+              assoc (:: :ok 1) :bad 2
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
