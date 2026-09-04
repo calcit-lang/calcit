@@ -77,6 +77,18 @@ or `:error` to reject them during preprocessing:
   :js-ffi :error
 ```
 
+When `--strict-types` is present and the selected entry omits `:js-ffi`, the
+effective in-memory default is `:error`; running the check never rewrites the
+Snapshot. An explicitly configured `:allow` or `:warn` remains available while
+migrating an older entry. Inspect and update the selected entry without hand
+editing the Snapshot:
+
+```bash
+calcit config show
+calcit config set feature-policy.js-ffi error
+calcit config set --entry browser feature-policy.js-ffi warn
+```
+
 The gate applies to `js/...`, JavaScript syntax such as `new` and `js-await`,
 native `.-`/`.!` access, typed external-object access, and host
 `unsafe-coerce`. It is lexical: a normal function may call a typed FFI wrapper
