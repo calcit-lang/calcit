@@ -292,22 +292,24 @@ fn resolve_local_declaration<'a>(
 
   match candidates.as_slice() {
     [declaration] => Ok(*declaration),
-    [] if let Some(capability) = core_host_managed_type(name) => Err(Box::new(diagnostic(
-      definition,
-      path,
-      "E_FFI_IR_HOST_MANAGED_TYPE",
-      format!(
-        "FFI Interface IR v{FFI_INTERFACE_IR_VERSION} deliberately does not represent host-managed core capability `{capability}` at `{path}`."
-      ),
-      "Keep this capability boundary handwritten: wrap opaque native task/response tokens with `ffi:task` or `ffi:response` inside the Calcit adapter, and do not expose their representation to generated bindings.",
-    ))),
-    [] => Err(Box::new(diagnostic(
-      definition,
-      path,
-      "E_FFI_IR_DECLARATION_MISSING",
-      format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot resolve local type declaration `{name}` at `{path}`."),
-      "Use a namespace-qualified local defstruct/defenum reference, or keep dependency/resource/host types behind a handwritten adapter until declarations can be included explicitly.",
-    ))),
+    [] => match core_host_managed_type(name) {
+      Some(capability) => Err(Box::new(diagnostic(
+        definition,
+        path,
+        "E_FFI_IR_HOST_MANAGED_TYPE",
+        format!(
+          "FFI Interface IR v{FFI_INTERFACE_IR_VERSION} deliberately does not represent host-managed core capability `{capability}` at `{path}`."
+        ),
+        "Keep this capability boundary handwritten: wrap opaque native task/response tokens with `ffi:task` or `ffi:response` inside the Calcit adapter, and do not expose their representation to generated bindings.",
+      ))),
+      None => Err(Box::new(diagnostic(
+        definition,
+        path,
+        "E_FFI_IR_DECLARATION_MISSING",
+        format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot resolve local type declaration `{name}` at `{path}`."),
+        "Use a namespace-qualified local defstruct/defenum reference, or keep dependency/resource/host types behind a handwritten adapter until declarations can be included explicitly.",
+      ))),
+    },
     many => {
       let suggestion = if name_is_qualified {
         "Keep exactly one local defstruct/defenum source for this namespace-qualified nominal type."
