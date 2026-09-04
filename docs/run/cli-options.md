@@ -214,8 +214,9 @@ whose structured contract does not claim the generic relationship. Outside
 `&get-raw`, `record-get` / `&struct:get`, raw `&%{}`, and `&struct:nth` without matching
 nominal layout evidence. Use Option-returning collection lookup, named Struct
 field syntax, and the public `%{}` constructor. Core/reviewed macro lowering,
-reusable `defimpl` access, and indexed IR whose index/tag agrees with the
-concrete receiver layout remain valid.
+reusable `defimpl` access, evidence-complete persisted constructors whose fields
+exactly match one concrete Struct, and indexed IR whose index/tag agrees with
+the concrete receiver layout remain valid.
 
 For a focused, machine-readable inventory that excludes unrelated type and FFI warnings, use the dedicated analysis command:
 

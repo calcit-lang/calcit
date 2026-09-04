@@ -3918,10 +3918,14 @@ fn reject_raw_primitive_in_strict_source(
     .any(|frame| matches!(frame.kind, StackKind::Macro) && frame.ns.as_ref() == calcit::CORE_NS && frame.def.as_ref() == "defimpl");
 
   let violation = match head {
-    Calcit::Proc(CalcitProc::NativeStruct) if !public_struct_constructor_origin => Some((
-      "`&%{}`",
-      "use the public `%{}` constructor so field names and declared field types are validated before lowering",
-    )),
+    Calcit::Proc(CalcitProc::NativeStruct)
+      if !public_struct_constructor_origin && !raw_struct_constructor_matches_known_layout(args) =>
+    {
+      Some((
+        "`&%{}`",
+        "use the public `%{}` constructor so field names and declared field types are validated before lowering; persisted raw constructor IR is accepted only when it names one concrete Struct and provides every declared field exactly once",
+      ))
+    }
     Calcit::Proc(CalcitProc::NativeStructGet) if !inside_defimpl => Some((
       "`&struct:get`",
       "use `(:field value)` or `value.:field` on a concrete Struct so the compiler validates and lowers the access",
@@ -3965,6 +3969,40 @@ fn reject_raw_primitive_in_strict_source(
     call_stack,
     location,
   ))
+}
+
+fn raw_struct_constructor_matches_known_layout(args: &CalcitList) -> bool {
+  let Some(definition) = args.first() else {
+    return false;
+  };
+  let resolved_struct_def = match definition {
+    Calcit::StructDef(struct_def) => Some(struct_def.to_owned()),
+    Calcit::Import(CalcitImport { ns, def, .. }) if data_definition_kind(ns, def) == Some("defstruct") => {
+      CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![])).resolve_to_struct()
+    }
+    Calcit::Symbol { sym, info, .. } if data_definition_kind(&info.at_ns, sym) == Some("defstruct") => {
+      CalcitTypeAnnotation::TypeRef(Arc::from(format!("{}/{sym}", info.at_ns)), Arc::new(vec![])).resolve_to_struct()
+    }
+    _ => None,
+  };
+  let Some(struct_def) = resolved_struct_def else {
+    return false;
+  };
+  if args.len() != 1 + struct_def.fields.len() * 2 {
+    return false;
+  }
+
+  let mut provided_fields = HashSet::with_capacity(struct_def.fields.len());
+  let items = args.to_vec();
+  for pair in items[1..].chunks_exact(2) {
+    let Calcit::Tag(field) = &pair[0] else {
+      return false;
+    };
+    if !struct_def.fields.iter().any(|declared| declared == field) || !provided_fields.insert(field.to_owned()) {
+      return false;
+    }
+  }
+  provided_fields.len() == struct_def.fields.len()
 }
 
 fn raw_struct_index_matches_known_layout(
@@ -11879,7 +11917,7 @@ mod tests {
   }
 
   #[test]
-  fn strict_raw_policy_only_accepts_the_core_public_constructor_macro() {
+  fn strict_raw_policy_accepts_public_or_evidence_complete_struct_constructors() {
     let _lock = lock_preprocess_test_state();
     let _strict = StrictTypesGuard::new(true);
     let head = Calcit::Proc(CalcitProc::NativeStruct);
@@ -11892,6 +11930,109 @@ mod tests {
     let error = reject_raw_primitive_in_strict_source(&head, &args, &ScopeTypes::new(), "tests.raw-strict", &project_origin, None)
       .expect_err("a project macro with the same name must not grant a raw-constructor exemption");
     assert_eq!(error.code.as_deref(), Some("E_RAW_PRIMITIVE_IN_TYPED_CODE"));
+
+    let person = CalcitStructDef::from_fields(EdnTag::from("Person"), vec![EdnTag::from("age"), EdnTag::from("name")]);
+    let list = |items: Vec<Calcit>| CalcitList::from(items.as_slice());
+    let complete_args = list(vec![
+      Calcit::StructDef(person.clone()),
+      Calcit::Tag(EdnTag::from("name")),
+      Calcit::Str(Arc::from("Alice")),
+      Calcit::Tag(EdnTag::from("age")),
+      Calcit::Number(20.0),
+    ]);
+    reject_raw_primitive_in_strict_source(
+      &head,
+      &complete_args,
+      &ScopeTypes::new(),
+      "tests.raw-strict",
+      &CallStackList::default(),
+      None,
+    )
+    .expect("persisted raw IR may reorder fields when its concrete Struct layout remains exact");
+
+    calcit::register_program_lookups(program::lookup_runtime_ready, program::lookup_def_code, program::lookup_def_schema);
+    let snapshot_ns = "tests.raw-constructor-snapshot";
+    let struct_source_marker = Calcit::from(vec![Calcit::Symbol {
+      sym: Arc::from("defstruct"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from(snapshot_ns),
+        at_def: Arc::from("Person"),
+      }),
+      location: None,
+    }]);
+    program::PROGRAM_CODE_DATA.write().expect("open program code").insert(
+      Arc::from(snapshot_ns),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from("Person"),
+          program::ProgramDefEntry {
+            code: struct_source_marker,
+            schema: calcit::DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: None,
+          },
+        )]),
+      },
+    );
+    program::write_runtime_ready(snapshot_ns, "Person", Calcit::StructDef(person.clone())).expect("register Snapshot Struct metadata");
+    let snapshot_args = list(vec![
+      Calcit::Symbol {
+        sym: Arc::from("Person"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from(snapshot_ns),
+          at_def: Arc::from("make-person"),
+        }),
+        location: None,
+      },
+      Calcit::Tag(EdnTag::from("age")),
+      Calcit::Number(20.0),
+      Calcit::Tag(EdnTag::from("name")),
+      Calcit::Str(Arc::from("Alice")),
+    ]);
+    reject_raw_primitive_in_strict_source(
+      &head,
+      &snapshot_args,
+      &ScopeTypes::new(),
+      snapshot_ns,
+      &CallStackList::default(),
+      None,
+    )
+    .expect("namespace-local Snapshot symbols must resolve back to their concrete defstruct layout");
+
+    for invalid_args in [
+      list(vec![
+        Calcit::StructDef(person.clone()),
+        Calcit::Tag(EdnTag::from("name")),
+        Calcit::Str(Arc::from("Alice")),
+      ]),
+      list(vec![
+        Calcit::StructDef(person.clone()),
+        Calcit::Tag(EdnTag::from("name")),
+        Calcit::Str(Arc::from("Alice")),
+        Calcit::Tag(EdnTag::from("name")),
+        Calcit::Str(Arc::from("duplicate")),
+      ]),
+      list(vec![
+        Calcit::StructDef(person.clone()),
+        Calcit::Tag(EdnTag::from("name")),
+        Calcit::Str(Arc::from("Alice")),
+        Calcit::Tag(EdnTag::from("unknown")),
+        Calcit::Number(20.0),
+      ]),
+    ] {
+      let error = reject_raw_primitive_in_strict_source(
+        &head,
+        &invalid_args,
+        &ScopeTypes::new(),
+        "tests.raw-strict",
+        &CallStackList::default(),
+        None,
+      )
+      .expect_err("missing, duplicate, or unknown fields must not count as exact constructor evidence");
+      assert_eq!(error.code.as_deref(), Some("E_RAW_PRIMITIVE_IN_TYPED_CODE"));
+    }
   }
 
   #[test]

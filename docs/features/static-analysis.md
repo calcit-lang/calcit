@@ -157,8 +157,9 @@ Strict project source also rejects hand-written representation primitives with
 `&struct:nth` without an exact nominal layout/index/tag proof. Prefer public
 typed lookup, named Struct field syntax, and `%{}` construction. The check is
 evidence based: compiler or reviewed macro lowering, core internals, reusable
-`defimpl` access, and persisted indexed IR with a matching concrete layout are
-preserved.
+`defimpl` access, persisted constructors that name a concrete Struct and contain
+every declared field exactly once, and indexed IR with a matching concrete layout
+are preserved. Missing, duplicate, or unknown constructor fields do not qualify.
 
 `analyze quality` combines the release-facing metrics from `check-types`, `weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce --intent unresolved,intentional-macro-syntax,declared-unit,declared-optional,explicit-unsafe`, and `deprecated`. Intentional macro syntax remains in the `schemaDynamic` budget so new open macro positions cannot bypass review, while only unresolved positions increment the `unresolved` budget. `unsafeCoerce` is an independent budget for explicit host assertions; it is not folded into unresolved Dynamic debt. With no baseline it is a zero-debt gate. `--baseline <file>` compares against a committed baseline and exits non-zero on regression; `--write-baseline <file>` atomically writes a reviewed native baseline. Native v2 baselines keep budgets per definition, so improving one definition cannot hide new debt in another. Native v1 and the older flat eight-metric shape remain readable and preserve their original eight-metric enforcement; v1 is reported as `native-baseline-v1` and does not claim an `unsafeCoerce` delta. Regenerate a reviewed baseline to adopt that budget. Scope flags (`--ns`, `--ns-prefix`, `--deps`) are recorded in native baselines and must match when they are enforced.
 

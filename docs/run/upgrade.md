@@ -451,6 +451,8 @@ strict 项目源码也不能直接依赖 `&get-raw`、`record-get` / `&struct:ge
 layout/index/tag evidence 的 `&struct:nth`。这些形式会报告 `E_RAW_PRIMITIVE_IN_TYPED_CODE`。
 collection lookup 改用返回 `Option<T>` 的公开 API，Struct 字段改用 `(:field value)`，构造改用 `%{}`。
 compiler/macro lowering、core internals、可复用 `defimpl`，以及 evidence 完整的 persisted indexed IR 保持可用。
+已持久化的 `&%{}` IR 也可以保留，但必须能解析到具体 `defstruct`，并且每个声明字段恰好出现一次；
+缺字段、重复字段或未知字段仍会被拒绝。
 
 #### `.trim` / `.blank?` 接收者迁移
 
