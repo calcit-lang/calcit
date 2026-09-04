@@ -1080,6 +1080,33 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       }),
       "each should constrain callback input while allowing any return type: {iteration_warnings:?}"
     );
+    let map_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/map"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      map_warnings.len(),
+      3,
+      "collection maps should validate mapper contracts: {warnings:?}"
+    );
+    assert_eq!(
+      map_warnings
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("arg 2 expects type `fn(:string) -> 'MapOutput`")
+            && warning.message().contains("got `fn(:number) -> :number`")
+        })
+        .count(),
+      2,
+      "List and Set maps should pass their String member type to the mapper: {map_warnings:?}"
+    );
+    assert!(
+      map_warnings.iter().any(|warning| {
+        warning.message().contains("arg 2 expects type `fn(:list) -> :list`")
+          && warning.message().contains("got `fn(:number) -> :number`")
+      }),
+      "Map mappers should consume and return heterogeneous List pairs: {map_warnings:?}"
+    );
   });
 }
 
