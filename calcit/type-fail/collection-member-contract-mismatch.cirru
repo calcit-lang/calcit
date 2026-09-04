@@ -34,6 +34,9 @@
               filter ([] 1 2) inc
               filter (#{} 1 2) inc
               filter (&{} :a 1) inc
+              any? ([] 1 2) inc
+              every? (&{} :a 1) inc
+              each ([] |a |b) inc
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

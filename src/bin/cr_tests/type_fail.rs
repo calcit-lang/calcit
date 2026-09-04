@@ -976,6 +976,44 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       }),
       "Map filters should expose their heterogeneous pair as a List-shaped predicate argument: {filter_warnings:?}"
     );
+    let iteration_warnings = warnings
+      .iter()
+      .filter(|warning| {
+        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+          && ["calcit.core/any?", "calcit.core/every?", "calcit.core/each"]
+            .iter()
+            .any(|name| warning.message().contains(name))
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(
+      iteration_warnings.len(),
+      3,
+      "collection iteration callbacks should preserve member or pair contracts: {warnings:?}"
+    );
+    assert!(
+      iteration_warnings.iter().any(|warning| {
+        warning.message().contains("calcit.core/any?")
+          && warning.message().contains("expects type `fn(:number) -> :bool`")
+          && warning.message().contains("got `fn(:number) -> :number`")
+      }),
+      "any? should require a Bool predicate over the List member type: {iteration_warnings:?}"
+    );
+    assert!(
+      iteration_warnings.iter().any(|warning| {
+        warning.message().contains("calcit.core/every?")
+          && warning.message().contains("expects type `fn(:list) -> :bool`")
+          && warning.message().contains("got `fn(:number) -> :number`")
+      }),
+      "every? should expose Map entries as heterogeneous List pairs: {iteration_warnings:?}"
+    );
+    assert!(
+      iteration_warnings.iter().any(|warning| {
+        warning.message().contains("calcit.core/each")
+          && warning.message().contains("expects type `fn(:string) -> dynamic`")
+          && warning.message().contains("got `fn(:number) -> :number`")
+      }),
+      "each should constrain callback input while allowing any return type: {iteration_warnings:?}"
+    );
   });
 }
 
