@@ -5781,11 +5781,16 @@ fn pick_callable_from_method_entry(
     // Avoid inlining Fn literals: JS codegen would embed large function bodies and lose closure semantics.
     Calcit::Import(..) | Calcit::Proc(..) | Calcit::Registered(..) | Calcit::Symbol { .. } => Ok(Some(entry.to_owned())),
     Calcit::Fn { info, .. }
-      if let Some(def_ref) = info.def_ref.as_ref()
-        && !def_ref.is_macro_gen
-        && (program::has_def_code(def_ref.def_ns.as_ref(), def_ref.def_name.as_ref())
-          || program::lookup_compiled_def(def_ref.def_ns.as_ref(), def_ref.def_name.as_ref()).is_some()) =>
+      if info.def_ref.as_ref().is_some_and(|def_ref| {
+        !def_ref.is_macro_gen
+          && (program::has_def_code(def_ref.def_ns.as_ref(), def_ref.def_name.as_ref())
+            || program::lookup_compiled_def(def_ref.def_ns.as_ref(), def_ref.def_name.as_ref()).is_some())
+      }) =>
     {
+      let def_ref = info
+        .def_ref
+        .as_ref()
+        .expect("guarded function entry must retain its source definition reference");
       let import_info = if def_ref.def_ns.as_ref() == calcit::CORE_NS {
         ImportInfo::Core { at_ns: Arc::from(file_ns) }
       } else if def_ref.def_ns.as_ref() == file_ns {
