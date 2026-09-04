@@ -913,16 +913,41 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     let proc_warnings = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH") && warning.message().contains("Proc `&map:dissoc`"))
+      .filter(|warning| {
+        warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
+          && ["&map:dissoc", "&list:concat", "&merge"]
+            .iter()
+            .any(|proc| warning.message().contains(&format!("Proc `{proc}`")))
+      })
       .collect::<Vec<_>>();
     assert_eq!(
       proc_warnings.len(),
-      1,
-      "native map dissoc should validate variadic keys: {warnings:?}"
+      3,
+      "typed native collection rests should be validated: {warnings:?}"
     );
     assert!(
-      proc_warnings[0].message().contains("arg 3 expects type `:tag`") && proc_warnings[0].message().contains("got `:number`"),
+      proc_warnings.iter().any(|warning| {
+        warning.message().contains("Proc `&map:dissoc`")
+          && warning.message().contains("arg 3 expects type `:tag`")
+          && warning.message().contains("got `:number`")
+      }),
       "native map dissoc should retain the map key binding for later keys: {proc_warnings:?}"
+    );
+    assert!(
+      proc_warnings.iter().any(|warning| {
+        warning.message().contains("Proc `&list:concat`")
+          && warning.message().contains("arg 3 expects type `list<number>`")
+          && warning.message().contains("got `list<tag>`")
+      }),
+      "native list concat should preserve its first list item type: {proc_warnings:?}"
+    );
+    assert!(
+      proc_warnings.iter().any(|warning| {
+        warning.message().contains("Proc `&merge`")
+          && warning.message().contains("arg 3 expects type `map<tag, number>`")
+          && warning.message().contains("got `map<tag, tag>`")
+      }),
+      "native map merge should preserve its first map key/value types: {proc_warnings:?}"
     );
   });
 }
