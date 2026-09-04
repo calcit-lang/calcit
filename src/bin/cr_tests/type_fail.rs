@@ -1184,6 +1184,50 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
         && sort_by_warnings[0].message().contains("got `fn(:number) -> :number`"),
       "sort-by should preserve the String member type while leaving its key type generic: {sort_by_warnings:?}"
     );
+    let list_apply_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/&list:apply"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      list_apply_warnings.len(),
+      1,
+      "list apply should validate every function against the shared input/output contract: {warnings:?}"
+    );
+    assert!(
+      list_apply_warnings[0]
+        .message()
+        .contains("arg 2 expects type `list<fn(string) -> 'ListApplyOutput>`")
+        && list_apply_warnings[0].message().contains("got `list<fn(number) -> number>`"),
+      "list apply should reject functions whose input disagrees with the List item type: {list_apply_warnings:?}"
+    );
+    assert!(
+      list_apply_warnings[0]
+        .message()
+        .contains("Normalize the input/functions to T -> U, or split heterogeneous transformations into separate calls"),
+      "list apply warnings should provide an executable migration direction: {list_apply_warnings:?}"
+    );
+    let list_apply_method_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_METHOD_ARG_TYPE_MISMATCH") && warning.message().contains("Method `.apply`"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      list_apply_method_warnings.len(),
+      1,
+      "the public List.apply method should preserve its receiver binding: {warnings:?}"
+    );
+    assert!(
+      list_apply_method_warnings[0]
+        .message()
+        .contains("arg 2 expects type `list<fn(string) -> 'U>`")
+        && list_apply_method_warnings[0].message().contains("got `list<fn(number) -> number>`"),
+      "List.apply should reject functions that disagree with the receiver item type: {list_apply_method_warnings:?}"
+    );
+    assert!(
+      list_apply_method_warnings[0]
+        .message()
+        .contains("Normalize the input/functions to T -> U, or split heterogeneous transformations into separate calls"),
+      "List.apply method warnings should provide an executable migration direction: {list_apply_method_warnings:?}"
+    );
     let watch_warnings = warnings
       .iter()
       .filter(|warning| {
