@@ -267,6 +267,24 @@ fn strict_type_fail_raw_primitive_reports_stable_error_code() {
 }
 
 #[test]
+fn strict_type_fail_untyped_js_object_access_reports_stable_error_code() {
+  run_with_large_stack(|| {
+    let fixture = "calcit/type-fail/untyped-js-object-access-strict.cirru";
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries(fixture);
+    let err = run_check_only(&entries).expect_err("literal access on a bare JsObject must fail strict check-only");
+
+    assert!(
+      err.contains("E_UNTYPED_JS_OBJECT_ACCESS"),
+      "unexpected strict JS object access error: {err}"
+    );
+    assert!(err.contains(".-length"), "operation should be explicit: {err}");
+    assert!(err.contains("inferred `JsObject`"), "receiver evidence should be explicit: {err}");
+    assert!(err.contains("external-object trait"), "migration should be actionable: {err}");
+  });
+}
+
+#[test]
 fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
