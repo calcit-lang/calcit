@@ -8866,7 +8866,8 @@ fn dynamic_erases_nominal_contract(actual: &CalcitTypeAnnotation, expected: &Cal
     | (CalcitTypeAnnotation::Set(actual), CalcitTypeAnnotation::Set(expected))
     | (CalcitTypeAnnotation::Ref(actual), CalcitTypeAnnotation::Ref(expected))
     | (CalcitTypeAnnotation::Optional(actual), CalcitTypeAnnotation::Optional(expected))
-    | (CalcitTypeAnnotation::JsNullish(actual), CalcitTypeAnnotation::JsNullish(expected)) => {
+    | (CalcitTypeAnnotation::JsNullish(actual), CalcitTypeAnnotation::JsNullish(expected))
+    | (CalcitTypeAnnotation::Variadic(actual), CalcitTypeAnnotation::Variadic(expected)) => {
       dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref())
     }
     (CalcitTypeAnnotation::Map(actual_key, actual_value), CalcitTypeAnnotation::Map(expected_key, expected_value)) => {
@@ -8983,7 +8984,10 @@ fn reject_strict_dynamic_nominal_argument(
     if let Some(actual) = actual
       && !contains_dynamic_type(actual.as_ref())
     {
-      actual.as_ref().matches_with_bindings(expected.as_ref(), &mut bindings);
+      let mut candidate = bindings.clone();
+      if actual.as_ref().matches_with_bindings(expected.as_ref(), &mut candidate) {
+        bindings = candidate;
+      }
     }
   }
   for (index, ((arg, actual), expected)) in args.iter().zip(actual_types).zip(expected_types).enumerate() {
@@ -16302,8 +16306,48 @@ mod tests {
     ));
     assert!(contains_nominal_contract(&CalcitTypeAnnotation::TypeRef(
       Arc::from("tests/Envelope"),
-      Arc::new(vec![person_type]),
+      Arc::new(vec![person_type.clone()]),
     )));
+    assert!(dynamic_erases_nominal_contract(
+      &CalcitTypeAnnotation::Variadic(calcit::DYNAMIC_TYPE.clone()),
+      &CalcitTypeAnnotation::Variadic(person_type.clone()),
+    ));
+
+    let partial_generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let partial_signature = generic_relation_test_signature(
+      vec![
+        Arc::new(CalcitTypeAnnotation::Map(
+          partial_generic.clone(),
+          Arc::new(CalcitTypeAnnotation::Number),
+        )),
+        partial_generic,
+      ],
+      Arc::new(CalcitTypeAnnotation::Unit),
+      None,
+    );
+    let mismatched_map = Arc::new(CalcitTypeAnnotation::Map(
+      person_type.clone(),
+      Arc::new(CalcitTypeAnnotation::String),
+    ));
+    let partial_scope = ScopeTypes::from([
+      (Arc::from("bad-map"), mismatched_map.clone()),
+      (Arc::from("open-value"), calcit::DYNAMIC_TYPE.clone()),
+    ]);
+    let partial_args = CalcitList::from(
+      &[
+        generic_relation_test_local("bad-map", mismatched_map),
+        generic_relation_test_local("open-value", calcit::DYNAMIC_TYPE.clone()),
+      ][..],
+    );
+    reject_strict_dynamic_nominal_argument(
+      &test_symbol("partial-binding"),
+      &partial_args,
+      &partial_signature,
+      &partial_scope,
+      "tests.dynamic-boundary",
+      &CallStackList::default(),
+    )
+    .expect("a mismatching argument must not commit its partial nominal generic binding");
   }
 
   #[test]
