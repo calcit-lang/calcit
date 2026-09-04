@@ -3276,7 +3276,7 @@
                 assert= ([] 1 2 3 4)
                   append ([] 1 2 3) 4
               :tags $ #{} :core :unit
-        'apply $ %{} 'CodeEntry (:doc "|calls a function with arguments from a list, spreads the list as individual arguments")
+        'apply $ %{} 'CodeEntry (:doc "|Call a function with arguments spread from a list. Static analysis preserves the callable return type only when the homogeneous List<T> member satisfies every fixed and rest input; otherwise the compatibility result remains Dynamic. Normalize heterogeneous arguments or call the function directly when their positions have different types.")
           :code $ quote
             defn apply (f args) (f & args)
           :examples $ []

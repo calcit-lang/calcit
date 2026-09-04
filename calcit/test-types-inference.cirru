@@ -89,6 +89,9 @@
                 :args $ [] 'Number
                 :return 'Number
               assert-type (f 1) 'Number
+              assert-type
+                apply f $ [] 1
+                , 'Number
               &inspect-type f
           :examples $ []
           :schema $ :: 'Dynamic
@@ -97,8 +100,12 @@
             defn test-generics-identity () $ let
                 n $ identity 42
                 s $ identity |hello
+                applied-number $ apply identity ([] 42)
+                applied-string $ apply identity ([] |hello)
               assert-type n 'Number
               assert-type s 'String
+              assert-type applied-number 'Number
+              assert-type applied-string 'String
               &inspect-type n
               &inspect-type s
           :examples $ []

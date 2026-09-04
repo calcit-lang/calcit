@@ -220,6 +220,12 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   scope_types: &ScopeTypes,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
   if ns == calcit::CORE_NS
+    && def == "apply"
+    && let Some(inferred) = infer_core_apply_return_type(call_expr, scope_types)
+  {
+    return Some(inferred);
+  }
+  if ns == calcit::CORE_NS
     && let Some(inferred) = infer_core_nominal_absence_return_type(def, call_expr, scope_types)
   {
     return Some(inferred);
@@ -337,6 +343,39 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     return None;
   }
   (resolved.resolve_to_struct().is_some() || resolved.resolve_to_enum().is_some()).then_some(resolved)
+}
+
+/// Recover the result of `apply f args` from the concrete callable contract.
+///
+/// A homogeneous `List<T>` can satisfy the spread only when `T` matches every
+/// fixed/rest input in the callable. If that proof is unavailable, keep the
+/// public compatibility schema's Dynamic return instead of guessing.
+fn infer_core_apply_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  let callable_type = call_expr.get(1).and_then(|callable| resolve_type_value(callable, scope_types))?;
+  let arguments_type = call_expr.get(2).and_then(|arguments| resolve_type_value(arguments, scope_types))?;
+  let CalcitTypeAnnotation::Fn(signature) = callable_type.as_ref() else {
+    return None;
+  };
+  let CalcitTypeAnnotation::List(item_type) = arguments_type.as_ref() else {
+    return None;
+  };
+  if !signature.where_bounds.is_empty() {
+    return None;
+  }
+
+  let mut bindings = HashMap::new();
+  for expected in signature.arg_types.iter().chain(signature.rest_type.iter()) {
+    let mut candidate = bindings.clone();
+    if !item_type.as_ref().matches_with_bindings(expected.as_ref(), &mut candidate) {
+      return None;
+    }
+    bindings = candidate;
+  }
+  for generic in signature.generics.iter() {
+    bindings.entry(generic.clone()).or_insert_with(|| calcit::DYNAMIC_TYPE.clone());
+  }
+  let resolved = signature.return_type.substitute_type_vars(&bindings);
+  (!resolved.contains_type_var()).then_some(resolved)
 }
 
 fn core_type_ref(name: &str, args: Vec<Arc<CalcitTypeAnnotation>>) -> Arc<CalcitTypeAnnotation> {
@@ -2080,6 +2119,70 @@ mod tests {
         if matches!(key.as_ref(), CalcitTypeAnnotation::String)
           && matches!(value.as_ref(), CalcitTypeAnnotation::Number)
     ));
+  }
+
+  #[test]
+  fn apply_recovers_a_compatible_callable_return_type() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let callable = local(
+      "combine",
+      Arc::new(CalcitTypeAnnotation::from_function_parts(
+        vec![number.clone(), number.clone()],
+        Arc::new(CalcitTypeAnnotation::String),
+      )),
+    );
+    let arguments = local("arguments", Arc::new(CalcitTypeAnnotation::List(number)));
+    let call = CalcitList::from(&[symbol("apply"), callable, arguments][..]);
+
+    assert!(matches!(
+      infer_core_apply_return_type(&call, &ScopeTypes::new()).as_deref(),
+      Some(CalcitTypeAnnotation::String)
+    ));
+  }
+
+  #[test]
+  fn apply_binds_a_generic_callable_return_from_the_list_member() {
+    let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let callable = local(
+      "identity",
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![Arc::from("T")]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![type_var.clone()],
+        return_type: type_var,
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      }))),
+    );
+    let arguments = local(
+      "arguments",
+      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number))),
+    );
+    let call = CalcitList::from(&[symbol("apply"), callable, arguments][..]);
+
+    assert!(matches!(
+      infer_core_apply_return_type(&call, &ScopeTypes::new()).as_deref(),
+      Some(CalcitTypeAnnotation::Number)
+    ));
+  }
+
+  #[test]
+  fn apply_keeps_dynamic_when_a_homogeneous_list_cannot_satisfy_every_parameter() {
+    let callable = local(
+      "mixed",
+      Arc::new(CalcitTypeAnnotation::from_function_parts(
+        vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)],
+        Arc::new(CalcitTypeAnnotation::Bool),
+      )),
+    );
+    let arguments = local(
+      "arguments",
+      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number))),
+    );
+    let call = CalcitList::from(&[symbol("apply"), callable, arguments][..]);
+
+    assert!(infer_core_apply_return_type(&call, &ScopeTypes::new()).is_none());
   }
 
   #[test]
