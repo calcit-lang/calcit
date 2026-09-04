@@ -5000,7 +5000,7 @@
                       decision $ f key value
                     match decision
                       (:keep next-key next-value) (&map:assoc acc next-key next-value)
-                      (:drop) (identity acc)
+                      (:drop) acc
           :examples $ []
           :schema $ :: 'Fn
             {}
