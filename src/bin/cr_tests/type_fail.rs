@@ -229,6 +229,30 @@ fn strict_type_fail_dynamic_nominal_method_reports_stable_error_code() {
 }
 
 #[test]
+fn strict_type_fail_erased_generic_relation_reports_stable_error_code() {
+  run_with_large_stack(|| {
+    let fixture = "calcit/type-fail/erased-generic-relation-strict.cirru";
+    let _strict = StrictTypesReset::enabled();
+    let strict_entries = load_fixture_entries(fixture);
+    let err = run_check_only(&strict_entries).expect_err("Dynamic must not erase a generic call relation in strict mode");
+
+    assert!(
+      err.contains("E_ERASED_GENERIC_RELATION"),
+      "unexpected strict generic-relation error: {err}"
+    );
+    assert!(err.contains("call to `calcit.core/=`"), "callee should be explicit: {err}");
+    assert!(err.contains("argument 1"), "erased argument should be identified: {err}");
+    assert!(err.contains("passes `dynamic`"), "actual type should be rendered: {err}");
+    assert!(err.contains("required by `'T`"), "expected type should be rendered: {err}");
+    assert!(err.contains("generic relation `'T`"), "generic relation should be named: {err}");
+    assert!(
+      err.contains("narrow or validate the value"),
+      "migration should be actionable: {err}"
+    );
+  });
+}
+
+#[test]
 fn type_fail_call_arg_fixture_reports_warning_code() {
   run_with_large_stack(|| {
     let fixtures = [

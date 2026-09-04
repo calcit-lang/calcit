@@ -112,6 +112,16 @@ calcit query type-at app.main/calculate-total --path code@3.2 --format json
 
 `check-types` treats nested dynamic slots such as bare `:ref`, `:list`, or `:map` as partial coverage and includes actionable `[W_SCHEMA_DYNAMIC]` entries in `schema_issues`. An unbound `*type-slot` is also partial and emits `[W_UNRESOLVED_TYPE_SLOT]`; bind it in the selected entry or explicitly choose `:dynamic` for a documented boundary. When partial/none definitions exist, human output adds an `agent-note` and JSON emits `W_TYPE_COVERAGE_GAPS`. Strict preprocessing reports `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA` when a reachable project function, or a programmatically supplied macro that reaches preprocessing, has neither a structured root schema nor an embedded structured `Fn` hint; replace a missing or whole-Dynamic root with a structured contract and keep any reviewed `Dynamic` at an exact nested position. Existing embedded `Fn` hints remain valid function-contract evidence during Snapshot migration. Normal Snapshot-loaded macros follow an earlier, stricter path: a legacy runtime `Fn` or whole-`Dynamic` macro schema is rejected with its definition path during Snapshot loading, before static analysis starts. Migrate it with the final compatible Calcit 0.13.51 release, then declare phase-aware `Macro` fields explicitly; the analyzer never guesses `Syntax`, `Expr<T>`, or expansion contracts. Use `--deps`: release audits must inspect resolved module artifacts, not only each dependency's current source branch. `weak-types --format json` reports the exact Snapshot/schema path plus an `impact` and `suggestion` for every occurrence; unresolved dynamic debt emits `W_DYNAMIC_TYPE_DEBT`, unbound slots emit `W_UNRESOLVED_TYPE_SLOT`, while unresolved or compatibility-Optional nil debt emits `W_NIL_TYPE_DEBT`. Definitions marked with the explicit `:js-ffi` feature remain classified as intentional boundaries rather than ordinary unresolved dynamic debt.
 
+Strict call preprocessing also reports `E_ERASED_GENERIC_RELATION` when an
+argument still contains `Dynamic` at a position tied to another occurrence of
+a declared generic. This includes input/output relations such as
+`Fn<T>(T) -> T`, homogeneous variadic calls, and nested container or callback
+positions. A standalone reviewed `Dynamic` position is not rejected merely
+because the same contract declares an unrelated generic. Narrow or validate
+the argument before the relational call, or isolate genuinely open behavior in
+an adapter whose contract does not claim that relationship. Compatibility mode
+keeps accepting the call while projects migrate.
+
 For a strict-only release check, load every resolved dependency with `--deps`; loader acceptance proves that no legacy macro schema remains:
 
 ```bash
@@ -397,6 +407,12 @@ If the body only needs a capability, add a trait bound rather than replacing `'T
 ```
 
 The same rule applies inside containers and callbacks: `:: :list 'T` preserves a homogeneous item relationship, while bare `:list` means `list<dynamic>`; a complete `:: :fn` callback schema preserves argument/return checking, while bare `:fn` does not.
+
+With `--strict-types`, the relationship must also survive each call site. A
+`Dynamic` value cannot be passed directly into one of these related generic
+positions, because accepting it would make the declared relationship
+uncheckable. First decode, validate, pattern-match, or otherwise narrow the
+value to a concrete or nominal type.
 
 #### Struct and Enum Types
 

@@ -22,7 +22,8 @@ use type_checking::{
 pub use type_inference::infer_static_type_from_expr;
 use type_inference::{
   extract_literal_list_items, find_struct_lookup_in_literal_path, fully_typed_literal_assoc_path, fully_typed_literal_lookup_path,
-  infer_struct_field_type, infer_type_from_expr, resolve_enum_value, resolve_program_value_for_preprocess, resolve_type_value,
+  infer_struct_field_type, infer_struct_value_annotation, infer_type_from_expr, resolve_enum_value,
+  resolve_program_value_for_preprocess, resolve_type_value,
 };
 use type_rewriting::{
   build_enum_ref_node, build_struct_ref_node, try_rewrite_enum_args_to_named_enums, try_rewrite_local_fn_enum_args_to_named_enums,
@@ -475,7 +476,7 @@ fn preprocess_with_type_slot_block(
       Calcit::EnumDef(_) | Calcit::StructDef(_) => {
         Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![])))
       }
-      Calcit::Struct(struct_value) => Arc::new(CalcitTypeAnnotation::StructValue(struct_value.struct_ref.clone())),
+      Calcit::Struct(struct_value) => infer_struct_value_annotation(struct_value, scope_types),
       other => {
         return Err(CalcitErr::use_msg_stack_location(
           CalcitErrKind::Unexpected,
@@ -492,7 +493,7 @@ fn preprocess_with_type_slot_block(
     match &resolved {
       Calcit::EnumDef(enum_def) => Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def.to_owned()), Arc::new(vec![]))),
       Calcit::StructDef(struct_def) => Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def.to_owned()), Arc::new(vec![]))),
-      Calcit::Struct(struct_value) => Arc::new(CalcitTypeAnnotation::StructValue(struct_value.struct_ref.clone())),
+      Calcit::Struct(struct_value) => infer_struct_value_annotation(struct_value, scope_types),
       other => match infer_type_from_expr(other, scope_types) {
         Some(inferred)
           if matches!(
@@ -2321,6 +2322,14 @@ fn preprocess_list_call(
           call_location.clone(),
           check_warnings,
         );
+        reject_strict_erased_generic_relation(
+          &head_form,
+          &current_args,
+          effective_user_call_schema(info.as_ref()).as_ref(),
+          scope_types,
+          file_ns,
+          call_stack,
+        )?;
         check_user_fn_arg_types(info.as_ref(), &head_form, &current_args, scope_types, &call_info, check_warnings);
       }
       if has_spread {
@@ -2832,6 +2841,16 @@ fn preprocess_list_call(
           }
           if let Some(Calcit::Local(local)) = ys.first() {
             let updated_args = CalcitList::from(ys.drop_left());
+            let local_type = if matches!(*local.type_info, CalcitTypeAnnotation::Dynamic) {
+              scope_types.get(&local.sym).cloned()
+            } else {
+              Some(local.type_info.clone())
+            };
+            if let Some(local_type) = local_type
+              && let CalcitTypeAnnotation::Fn(signature) = local_type.as_ref()
+            {
+              reject_strict_erased_generic_relation(&head_form, &updated_args, signature, scope_types, file_ns, call_stack)?;
+            }
             check_local_fn_call_arg_types(&head_form, local, &updated_args, scope_types, &call_info, check_warnings);
           }
         }
@@ -8262,6 +8281,250 @@ fn find_unbound_type_slot_schema(annotation: &Arc<CalcitTypeAnnotation>, path: &
     }
     _ => None,
   })
+}
+
+/// Count one named type variable through a schema tree.
+///
+/// A variadic position counts twice because one annotation relates every
+/// runtime rest argument to the same type variable even when it occurs only
+/// once in serialized schema syntax.
+fn count_named_type_var(annotation: &CalcitTypeAnnotation, name: &str) -> usize {
+  match annotation {
+    CalcitTypeAnnotation::TypeVar(current) => usize::from(current.as_ref() == name),
+    CalcitTypeAnnotation::List(inner)
+    | CalcitTypeAnnotation::Set(inner)
+    | CalcitTypeAnnotation::Ref(inner)
+    | CalcitTypeAnnotation::Optional(inner)
+    | CalcitTypeAnnotation::JsNullish(inner) => count_named_type_var(inner, name),
+    CalcitTypeAnnotation::Variadic(inner) => count_named_type_var(inner, name).saturating_mul(2),
+    CalcitTypeAnnotation::Map(key, value) => count_named_type_var(key, name) + count_named_type_var(value, name),
+    CalcitTypeAnnotation::Fn(signature) => {
+      signature
+        .arg_types
+        .iter()
+        .map(|item| count_named_type_var(item, name))
+        .sum::<usize>()
+        + count_named_type_var(&signature.return_type, name)
+        + signature
+          .rest_type
+          .as_ref()
+          .map_or(0, |item| count_named_type_var(&CalcitTypeAnnotation::Variadic(item.clone()), name))
+    }
+    CalcitTypeAnnotation::Macro(signature) => {
+      let count_contract = |contract: &MacroSyntaxType| match contract {
+        MacroSyntaxType::Expr(semantic) => count_named_type_var(semantic, name),
+        MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => 0,
+      };
+      signature
+        .required_inputs
+        .iter()
+        .chain(signature.optional_inputs.iter())
+        .map(count_contract)
+        .sum::<usize>()
+        + signature.rest_input.as_ref().map_or(0, count_contract)
+        + match &signature.expansion {
+          MacroExpansionType::Expr(semantic) | MacroExpansionType::Definition(semantic) => count_named_type_var(semantic, name),
+          MacroExpansionType::Dynamic | MacroExpansionType::Declarations => 0,
+        }
+    }
+    CalcitTypeAnnotation::Syntax(contract) => match contract.as_ref() {
+      MacroSyntaxType::Expr(semantic) => count_named_type_var(semantic, name),
+      MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => 0,
+    },
+    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
+      args.iter().map(|item| count_named_type_var(item, name)).sum()
+    }
+    _ => 0,
+  }
+}
+
+fn related_generic_names(signature: &CalcitFnTypeAnnotation) -> Vec<Arc<str>> {
+  signature
+    .generics
+    .iter()
+    .filter(|name| {
+      let fixed = signature
+        .arg_types
+        .iter()
+        .map(|item| count_named_type_var(item, name))
+        .sum::<usize>();
+      let returned = count_named_type_var(&signature.return_type, name);
+      let rest = signature
+        .rest_type
+        .as_ref()
+        .map_or(0, |item| count_named_type_var(&CalcitTypeAnnotation::Variadic(item.clone()), name));
+      fixed + returned + rest >= 2
+    })
+    .cloned()
+    .collect()
+}
+
+/// Whether Dynamic in the actual type occupies the exact structural position
+/// represented by `name` in the expected type. Binding `T` to
+/// `List<Dynamic>` still preserves a `T -> T` relation, while matching
+/// `List<T>` against `List<Dynamic>` erases its item relation.
+fn generic_is_erased_at(expected: &CalcitTypeAnnotation, actual: &CalcitTypeAnnotation, name: &str) -> bool {
+  if matches!(actual, CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
+    return count_named_type_var(expected, name) > 0;
+  }
+  if let CalcitTypeAnnotation::TypeSlot(slot) = actual {
+    return calcit::resolve_type_slot(slot)
+      .as_ref()
+      .is_none_or(|resolved| generic_is_erased_at(expected, resolved, name));
+  }
+
+  match (expected, actual) {
+    // A concrete structured type, even one with an open nested position, can
+    // bind an entire T without losing the outer generic relationship.
+    (CalcitTypeAnnotation::TypeVar(_), _) => false,
+    (CalcitTypeAnnotation::List(expected), CalcitTypeAnnotation::List(actual))
+    | (CalcitTypeAnnotation::Set(expected), CalcitTypeAnnotation::Set(actual))
+    | (CalcitTypeAnnotation::Ref(expected), CalcitTypeAnnotation::Ref(actual))
+    | (CalcitTypeAnnotation::Optional(expected), CalcitTypeAnnotation::Optional(actual))
+    | (CalcitTypeAnnotation::JsNullish(expected), CalcitTypeAnnotation::JsNullish(actual))
+    | (CalcitTypeAnnotation::Variadic(expected), CalcitTypeAnnotation::Variadic(actual)) => {
+      generic_is_erased_at(expected, actual, name)
+    }
+    (CalcitTypeAnnotation::Map(expected_key, expected_value), CalcitTypeAnnotation::Map(actual_key, actual_value)) => {
+      generic_is_erased_at(expected_key, actual_key, name) || generic_is_erased_at(expected_value, actual_value, name)
+    }
+    (CalcitTypeAnnotation::Fn(expected), CalcitTypeAnnotation::Fn(actual)) => {
+      expected
+        .arg_types
+        .iter()
+        .zip(actual.arg_types.iter())
+        .any(|(expected, actual)| generic_is_erased_at(expected, actual, name))
+        || generic_is_erased_at(&expected.return_type, &actual.return_type, name)
+        || expected.rest_type.as_ref().is_some_and(|expected| {
+          actual
+            .rest_type
+            .as_ref()
+            .is_some_and(|actual| generic_is_erased_at(expected, actual, name))
+        })
+    }
+    (CalcitTypeAnnotation::Struct(expected_def, expected_args), CalcitTypeAnnotation::Struct(actual_def, actual_args))
+      if expected_def.name == actual_def.name =>
+    {
+      expected_args
+        .iter()
+        .zip(actual_args.iter())
+        .any(|(expected, actual)| generic_is_erased_at(expected, actual, name))
+    }
+    (CalcitTypeAnnotation::Enum(expected_def, expected_args), CalcitTypeAnnotation::Enum(actual_def, actual_args))
+      if expected_def.name() == actual_def.name() =>
+    {
+      expected_args
+        .iter()
+        .zip(actual_args.iter())
+        .any(|(expected, actual)| generic_is_erased_at(expected, actual, name))
+    }
+    (CalcitTypeAnnotation::TypeRef(expected_ref, expected_args), CalcitTypeAnnotation::TypeRef(actual_ref, actual_args))
+      if expected_ref == actual_ref =>
+    {
+      expected_args
+        .iter()
+        .zip(actual_args.iter())
+        .any(|(expected, actual)| generic_is_erased_at(expected, actual, name))
+    }
+    _ => false,
+  }
+}
+
+#[derive(Debug, PartialEq)]
+struct ErasedGenericArgument {
+  index: usize,
+  expected: Arc<CalcitTypeAnnotation>,
+  actual: Arc<CalcitTypeAnnotation>,
+  generics: Vec<Arc<str>>,
+}
+
+fn find_erased_generic_argument(
+  signature: &CalcitFnTypeAnnotation,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+) -> Option<ErasedGenericArgument> {
+  let related = related_generic_names(signature);
+  if related.is_empty() || args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+    return None;
+  }
+
+  let inspect = |index: usize, arg: &Calcit, expected: &Arc<CalcitTypeAnnotation>| {
+    let actual = resolve_type_value(arg, scope_types).or_else(|| match arg {
+      Calcit::Local(local) => Some(local.type_info.clone()),
+      _ => None,
+    })?;
+    let erased = related
+      .iter()
+      .filter(|name| generic_is_erased_at(expected, &actual, name))
+      .cloned()
+      .collect::<Vec<_>>();
+    (!erased.is_empty()).then(|| ErasedGenericArgument {
+      index,
+      expected: expected.clone(),
+      actual,
+      generics: erased,
+    })
+  };
+
+  for (index, (arg, expected)) in args.iter().zip(signature.arg_types.iter()).enumerate() {
+    if let Some(found) = inspect(index, arg, expected) {
+      return Some(found);
+    }
+  }
+  if let Some(rest) = &signature.rest_type {
+    for (index, arg) in args.iter().enumerate().skip(signature.arg_types.len()) {
+      if let Some(found) = inspect(index, arg, rest) {
+        return Some(found);
+      }
+    }
+  }
+  None
+}
+
+fn reject_strict_erased_generic_relation(
+  head: &Calcit,
+  args: &CalcitList,
+  signature: &CalcitFnTypeAnnotation,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  if !strict_types_enabled() || !should_emit_project_source_lint(file_ns) {
+    return Ok(());
+  }
+  let Some(ErasedGenericArgument {
+    index,
+    expected,
+    actual,
+    generics,
+  }) = find_erased_generic_argument(signature, args, scope_types)
+  else {
+    return Ok(());
+  };
+  let names = generics.iter().map(|name| format!("`'{name}`")).collect::<Vec<_>>().join(", ");
+  let argument = args.get(index);
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!(
+      "call to `{head}` passes `{}` at argument {}, so Dynamic erases generic relation {names} required by `{}`; narrow or validate the value before this call, or use an explicit open adapter whose contract does not claim that generic relation",
+      actual.to_brief_string(),
+      index + 1,
+      expected.to_brief_string(),
+    ),
+    "E_ERASED_GENERIC_RELATION",
+    call_stack,
+    argument.and_then(Calcit::get_location).or_else(|| head.get_location()),
+  ))
+}
+
+fn effective_user_call_schema(info: &CalcitFn) -> Arc<CalcitFnTypeAnnotation> {
+  if let CalcitTypeAnnotation::Fn(signature) = program::lookup_def_schema(&info.def_ns, &info.name).as_ref() {
+    return signature.clone();
+  }
+  let CalcitTypeAnnotation::Fn(signature) = CalcitTypeAnnotation::from_calcit_fn(info) else {
+    unreachable!("CalcitTypeAnnotation::from_calcit_fn always returns Fn")
+  };
+  signature
 }
 
 fn reject_strict_whole_dynamic_public_schema(
@@ -14814,6 +15077,160 @@ mod tests {
       None,
     )
     .expect("an embedded structured Fn hint is valid static contract evidence");
+  }
+
+  fn generic_relation_test_signature(
+    arg_types: Vec<Arc<CalcitTypeAnnotation>>,
+    return_type: Arc<CalcitTypeAnnotation>,
+    rest_type: Option<Arc<CalcitTypeAnnotation>>,
+  ) -> CalcitFnTypeAnnotation {
+    CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      arg_types,
+      return_type,
+      fn_kind: SchemaKind::Fn,
+      rest_type,
+      features: Arc::new(HashSet::new()),
+    }
+  }
+
+  fn generic_relation_test_local(name: &str, annotation: Arc<CalcitTypeAnnotation>) -> Calcit {
+    Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from(name)),
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.generic-relation"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: annotation,
+    })
+  }
+
+  #[test]
+  fn identifies_repeated_generic_contract_relations() {
+    let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let identity = generic_relation_test_signature(vec![type_var.clone()], type_var.clone(), None);
+    assert_eq!(related_generic_names(&identity), vec![Arc::from("T")]);
+
+    let variadic_equality =
+      generic_relation_test_signature(vec![type_var.clone()], Arc::new(CalcitTypeAnnotation::Bool), Some(type_var.clone()));
+    assert_eq!(related_generic_names(&variadic_equality), vec![Arc::from("T")]);
+
+    let unrelated = generic_relation_test_signature(vec![type_var], Arc::new(CalcitTypeAnnotation::Bool), None);
+    assert!(related_generic_names(&unrelated).is_empty());
+  }
+
+  #[test]
+  fn detects_only_dynamic_arguments_that_erase_generic_relations() {
+    let _state = lock_preprocess_test_state();
+    let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let identity = generic_relation_test_signature(vec![type_var.clone()], type_var.clone(), None);
+    let dynamic = calcit::DYNAMIC_TYPE.clone();
+    let value = generic_relation_test_local("value", dynamic.clone());
+    let scope_types = ScopeTypes::from([(Arc::from("value"), dynamic.clone())]);
+    let dynamic_args = CalcitList::from(&[value.clone()][..]);
+
+    {
+      let _compat = StrictTypesGuard::new(false);
+      reject_strict_erased_generic_relation(
+        &test_symbol("identity"),
+        &dynamic_args,
+        &identity,
+        &scope_types,
+        "tests.generic-relation",
+        &CallStackList::default(),
+      )
+      .expect("compatibility mode should keep accepting erased generic relations during migration");
+    }
+    let _strict = StrictTypesGuard::new(true);
+    let error = reject_strict_erased_generic_relation(
+      &test_symbol("identity"),
+      &dynamic_args,
+      &identity,
+      &scope_types,
+      "tests.generic-relation",
+      &CallStackList::default(),
+    )
+    .expect_err("strict mode should reject an erased generic relation");
+    assert_eq!(error.code.as_deref(), Some("E_ERASED_GENERIC_RELATION"));
+
+    let erased = find_erased_generic_argument(&identity, &dynamic_args, &scope_types).expect("Dynamic should erase T -> T");
+    assert_eq!(erased.index, 0);
+    assert_eq!(erased.expected.as_ref(), type_var.as_ref());
+    assert!(matches!(erased.actual.as_ref(), CalcitTypeAnnotation::Dynamic));
+    assert_eq!(erased.generics, vec![Arc::from("T")]);
+
+    let concrete_args = CalcitList::from(&[Calcit::Number(1.0)][..]);
+    assert!(find_erased_generic_argument(&identity, &concrete_args, &ScopeTypes::new()).is_none());
+
+    let open_list = Arc::new(CalcitTypeAnnotation::List(dynamic.clone()));
+    let list_value = generic_relation_test_local("list-value", open_list.clone());
+    let list_scope = ScopeTypes::from([(Arc::from("list-value"), open_list.clone())]);
+    let list_args = CalcitList::from(&[list_value][..]);
+    assert!(
+      find_erased_generic_argument(&identity, &list_args, &list_scope).is_none(),
+      "T can bind to the complete List<Dynamic> type without losing T -> T"
+    );
+
+    let related_list = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))));
+    let list_identity = generic_relation_test_signature(vec![related_list.clone()], related_list, None);
+    assert!(
+      find_erased_generic_argument(&list_identity, &list_args, &list_scope).is_some(),
+      "List<T> against List<Dynamic> loses the item relationship"
+    );
+
+    let reviewed_open_position = generic_relation_test_signature(vec![type_var], Arc::new(CalcitTypeAnnotation::Dynamic), None);
+    assert!(related_generic_names(&reviewed_open_position).is_empty());
+    assert!(find_erased_generic_argument(&reviewed_open_position, &dynamic_args, &scope_types).is_none());
+
+    let relation_plus_open_boundary = generic_relation_test_signature(
+      vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))), dynamic.clone()],
+      Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))),
+      None,
+    );
+    let args = CalcitList::from(&[Calcit::Number(1.0), value][..]);
+    assert!(find_erased_generic_argument(&relation_plus_open_boundary, &args, &scope_types).is_none());
+  }
+
+  #[test]
+  fn type_slot_struct_annotations_preserve_generic_arguments_for_erasure_checks() {
+    let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let box_def = Arc::new(CalcitStructDef {
+      name: EdnTag::new("Box"),
+      fields: Arc::new(vec![EdnTag::new("value")]),
+      field_types: Arc::new(vec![type_var.clone()]),
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    });
+    let dynamic = calcit::DYNAMIC_TYPE.clone();
+    let dynamic_value = generic_relation_test_local("dynamic-value", dynamic.clone());
+    let value_scope = ScopeTypes::from([(Arc::from("dynamic-value"), dynamic.clone())]);
+    let box_value = CalcitStructValue {
+      struct_ref: box_def.clone(),
+      values: Arc::new(vec![dynamic_value]),
+    };
+
+    let inferred = infer_struct_value_annotation(&box_value, &value_scope);
+    assert!(
+      matches!(
+        inferred.as_ref(),
+        CalcitTypeAnnotation::Struct(_, args)
+          if matches!(args.as_slice(), [argument] if matches!(argument.as_ref(), CalcitTypeAnnotation::Dynamic))
+      ),
+      "a generic Struct value used by with-type-slot must retain its applied Dynamic argument: {inferred:?}"
+    );
+
+    let expected_box = Arc::new(CalcitTypeAnnotation::Struct(box_def, Arc::new(vec![type_var])));
+    let signature = generic_relation_test_signature(vec![expected_box.clone()], expected_box, None);
+    let box_local = generic_relation_test_local("box-value", inferred.clone());
+    let box_scope = ScopeTypes::from([(Arc::from("box-value"), inferred)]);
+    let args = CalcitList::from(&[box_local][..]);
+    let erased = find_erased_generic_argument(&signature, &args, &box_scope)
+      .expect("Struct<T> against Struct<Dynamic> should erase the nested generic relation");
+    assert_eq!(erased.generics, vec![Arc::from("T")]);
   }
 
   #[test]

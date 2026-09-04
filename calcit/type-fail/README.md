@@ -19,6 +19,7 @@
 - `cargo run --bin calcit -- calcit/type-fail/type-slot-unbound-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/whole-dynamic-schema-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/dynamic-nominal-method-strict.cirru --strict-types --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/erased-generic-relation-strict.cirru --strict-types --check-only`
 
 其中：
 
@@ -32,6 +33,7 @@
 - `type-slot-unbound-strict.cirru` 会验证 strict 模式拒绝可达定义中的未绑定 slot，并报告稳定的 `E_UNBOUND_TYPE_SLOT`。
 - `whole-dynamic-schema-strict.cirru` 会验证 strict 模式拒绝可达定义的 whole-Dynamic function contract，并报告稳定的 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`。
 - `dynamic-nominal-method-strict.cirru` 会验证 strict 模式拒绝 Dynamic receiver 上的 Option/Result nominal method dispatch，并报告稳定的 `E_DYNAMIC_POSTFIX_METHOD`。
+- `erased-generic-relation-strict.cirru` 会验证 strict 模式拒绝把 Dynamic 实参传入重复泛型关系，并报告稳定的 `E_ERASED_GENERIC_RELATION`。
 
 ## 自动化测试
 
@@ -43,6 +45,7 @@
 - strict type-slot fixture：断言错误文本包含 `E_UNBOUND_TYPE_SLOT`、slot 名称与 schema 路径
 - strict whole-Dynamic fixture：断言错误文本包含 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`、schema 根路径与 `Fn` 迁移建议
 - strict Dynamic nominal-method fixture：断言错误文本包含 `E_DYNAMIC_POSTFIX_METHOD`、method 名称、receiver schema 与低层 helper 迁移建议
+- strict erased-generic fixture：断言错误文本包含 `E_ERASED_GENERIC_RELATION`、callee、参数位置、泛型变量与 narrow/adapter 迁移建议
 
 相关测试位于 [src/bin/calcit.rs](src/bin/calcit.rs)。
 
@@ -58,6 +61,7 @@
 - `E_UNBOUND_TYPE_SLOT`：strict 模式下可达定义的 schema 引用了未配置或未局部绑定的 type slot
 - `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`：strict 模式下可达 function 或直接进入预处理的 programmatic macro 既没有结构化根 schema，也没有嵌入式结构化契约；普通 legacy Snapshot macro 会更早被 loader 拒绝
 - `E_DYNAMIC_METHOD_DISPATCH` / `E_DYNAMIC_POSTFIX_METHOD`：strict 模式下 Dynamic receiver 使用需要静态 Option/Result nominal evidence 的 method
+- `E_ERASED_GENERIC_RELATION`：strict 模式下 Dynamic 实参擦除了 callee 声明的重复泛型关系
 - `W_FN_ARG_TYPE_MISMATCH`：用户函数调用参数类型不匹配
 - `W_METHOD_ARG_TYPE_MISMATCH`：静态方法调用参数类型不匹配
 - `W_DYNAMIC_NOMINAL_METHOD_RECEIVER`：Option/Result method 的接收者仍为 Dynamic，需先收窄或在明确边界使用函数形式
