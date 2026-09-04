@@ -244,6 +244,14 @@ fn explicit_builtin_type(name: &str) -> Option<&str> {
   }
 }
 
+fn core_host_managed_type(name: &str) -> Option<&str> {
+  match normalized_type_name(name) {
+    "FfiTask" | "calcit.core/FfiTask" => Some("FfiTask"),
+    "FfiResponse" | "calcit.core/FfiResponse" => Some("FfiResponse"),
+    _ => None,
+  }
+}
+
 fn convert_type_arguments(
   arguments: &[std::sync::Arc<CalcitTypeAnnotation>],
   definition: &str,
@@ -284,6 +292,15 @@ fn resolve_local_declaration<'a>(
 
   match candidates.as_slice() {
     [declaration] => Ok(*declaration),
+    [] if let Some(capability) = core_host_managed_type(name) => Err(Box::new(diagnostic(
+      definition,
+      path,
+      "E_FFI_IR_HOST_MANAGED_TYPE",
+      format!(
+        "FFI Interface IR v{FFI_INTERFACE_IR_VERSION} deliberately does not represent host-managed core capability `{capability}` at `{path}`."
+      ),
+      "Keep this capability boundary handwritten: wrap opaque native task/response tokens with `ffi:task` or `ffi:response` inside the Calcit adapter, and do not expose their representation to generated bindings.",
+    ))),
     [] => Err(Box::new(diagnostic(
       definition,
       path,
@@ -1440,6 +1457,73 @@ mod tests {
     assert!(report.interface.definitions[0].signature.is_none());
     assert!(diagnostic_codes(&report).contains("E_FFI_IR_DECLARATION_MISSING"));
     assert_eq!(report, export(), "unresolved declaration diagnostics must be deterministic");
+  }
+
+  #[test]
+  fn classifies_core_host_managed_capabilities_separately_from_missing_declarations() {
+    let export = || {
+      export_snapshot(
+        &snapshot(vec![(
+          "serve",
+          function_entry(
+            vec![Arc::new(CalcitTypeAnnotation::TypeRef(
+              Arc::from("calcit.core/FfiResponse"),
+              Arc::new(vec![]),
+            ))],
+            Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("FfiTask"), Arc::new(vec![]))),
+            native_metadata("serve"),
+          ),
+        )]),
+        None,
+      )
+      .expect("inventory host-managed core capabilities")
+    };
+    let report = export();
+
+    assert_eq!(report.summary.unsupported, 1);
+    assert_eq!(report.summary.diagnostics, 2);
+    assert!(report.interface.definitions[0].signature.is_none());
+    assert!(
+      report
+        .diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.code == "E_FFI_IR_HOST_MANAGED_TYPE")
+    );
+    assert_eq!(
+      report
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.path.as_str())
+        .collect::<Vec<_>>(),
+      ["signature.parameters.0.type", "signature.result"]
+    );
+    assert_eq!(report, export(), "host-managed capability diagnostics must be deterministic");
+  }
+
+  #[test]
+  fn prefers_a_local_declaration_over_the_unqualified_core_capability_name() {
+    let report = export_snapshot(
+      &snapshot(vec![
+        ("FfiTask", data_entry("defstruct FfiTask (:id 'String)")),
+        (
+          "read-task",
+          function_entry(
+            vec![],
+            Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("FfiTask"), Arc::new(vec![]))),
+            native_metadata("read_task"),
+          ),
+        ),
+      ]),
+      None,
+    )
+    .expect("export local declaration shadowing a core capability name");
+
+    assert_eq!(report.summary.supported, 1);
+    assert!(report.diagnostics.is_empty());
+    assert!(matches!(
+      report.interface.definitions[0].signature.as_ref().expect("supported signature").result,
+      FfiTypeIr::Struct { ref id, ref arguments } if id == "test.ffi/FfiTask" && arguments.is_empty()
+    ));
   }
 
   #[test]
