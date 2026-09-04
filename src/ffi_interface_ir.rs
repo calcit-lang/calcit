@@ -265,8 +265,9 @@ fn resolve_local_declaration<'a>(
   context: &'a TypeConversionContext<'_>,
 ) -> Result<&'a LocalTypeDeclaration, Box<FfiInterfaceDiagnostic>> {
   let name = normalized_type_name(name);
+  let name_is_qualified = name.contains('/');
   let mut candidates = Vec::new();
-  if name.contains('/') {
+  if name_is_qualified {
     if let Some(found) = context.declarations.get(name) {
       candidates.extend(found);
     }
@@ -290,16 +291,23 @@ fn resolve_local_declaration<'a>(
       format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot resolve local type declaration `{name}` at `{path}`."),
       "Use a namespace-qualified local defstruct/defenum reference, or keep dependency/resource/host types behind a handwritten adapter until declarations can be included explicitly.",
     ))),
-    many => Err(Box::new(diagnostic(
-      definition,
-      path,
-      "E_FFI_IR_DECLARATION_AMBIGUOUS",
-      format!(
-        "FFI Interface IR v{FFI_INTERFACE_IR_VERSION} found multiple local declarations for `{name}` at `{path}`: {}.",
-        many.iter().map(|candidate| candidate.source_id()).collect::<Vec<_>>().join(", ")
-      ),
-      "Use namespace-qualified declaration IDs and keep exactly one local defstruct/defenum source for each nominal type.",
-    ))),
+    many => {
+      let suggestion = if name_is_qualified {
+        "Keep exactly one local defstruct/defenum source for this namespace-qualified nominal type."
+      } else {
+        "Use a namespace-qualified declaration ID; if it remains ambiguous, keep exactly one local defstruct/defenum source for that nominal type."
+      };
+      Err(Box::new(diagnostic(
+        definition,
+        path,
+        "E_FFI_IR_DECLARATION_AMBIGUOUS",
+        format!(
+          "FFI Interface IR v{FFI_INTERFACE_IR_VERSION} found multiple local declarations for `{name}` at `{path}`: {}.",
+          many.iter().map(|candidate| candidate.source_id()).collect::<Vec<_>>().join(", ")
+        ),
+        suggestion,
+      )))
+    }
   }
 }
 
@@ -1357,7 +1365,7 @@ mod tests {
 
   #[test]
   fn duplicate_nominal_declaration_bindings_are_ambiguous_and_deterministic() {
-    let export = || {
+    let export = |type_name: &str| {
       export_snapshot(
         &snapshot(vec![
           ("PersonText", data_entry("defstruct Person (:value 'String)")),
@@ -1365,10 +1373,7 @@ mod tests {
           (
             "read-person",
             function_entry(
-              vec![Arc::new(CalcitTypeAnnotation::TypeRef(
-                Arc::from("test.ffi/Person"),
-                Arc::new(vec![]),
-              ))],
+              vec![Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(type_name), Arc::new(vec![])))],
               Arc::new(CalcitTypeAnnotation::Unit),
               native_metadata("read_person"),
             ),
@@ -1378,7 +1383,7 @@ mod tests {
       )
       .expect("inventory duplicate nominal declarations")
     };
-    let report = export();
+    let report = export("test.ffi/Person");
 
     assert_eq!(report.summary.unsupported, 1);
     assert!(report.interface.definitions[0].signature.is_none());
@@ -1390,9 +1395,24 @@ mod tests {
     assert!(ambiguity.message.contains("test.ffi/PersonNumber, test.ffi/PersonText"));
     assert_eq!(
       ambiguity.suggestion,
-      "Use namespace-qualified declaration IDs and keep exactly one local defstruct/defenum source for each nominal type."
+      "Keep exactly one local defstruct/defenum source for this namespace-qualified nominal type."
     );
-    assert_eq!(report, export(), "duplicate declaration diagnostics must be deterministic");
+    assert_eq!(
+      report,
+      export("test.ffi/Person"),
+      "duplicate declaration diagnostics must be deterministic"
+    );
+
+    let unqualified = export("Person");
+    let unqualified_ambiguity = unqualified
+      .diagnostics
+      .iter()
+      .find(|diagnostic| diagnostic.code == "E_FFI_IR_DECLARATION_AMBIGUOUS")
+      .expect("unqualified duplicate nominal declarations must be rejected");
+    assert_eq!(
+      unqualified_ambiguity.suggestion,
+      "Use a namespace-qualified declaration ID; if it remains ambiguous, keep exactly one local defstruct/defenum source for that nominal type."
+    );
   }
 
   #[test]
