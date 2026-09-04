@@ -1058,7 +1058,7 @@
             defn test-str-compare-lt () $ &str:compare |abc |abd
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-concat $ %{} 'CodeEntry (:doc "|concat two strings and return byte count")
+        'test-str-concat $ %{} 'CodeEntry (:doc "|concat two strings and return character count")
           :code $ quote
             defn test-str-concat () $ &str:count (&str:concat |foo |bar)
           :examples $ []
@@ -1073,7 +1073,7 @@
             defn test-str-contains-true () $ &str:contains? |hello 1
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-count $ %{} 'CodeEntry (:doc "|string byte length")
+        'test-str-count $ %{} 'CodeEntry (:doc "|string character count")
           :code $ quote
             defn test-str-count () $ &str:count |hello
           :examples $ []
@@ -1083,7 +1083,7 @@
             defn test-str-empty-false () $ &= (&str:count |hi) 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-empty-true $ %{} 'CodeEntry (:doc "|rest of 1-char string has 0 bytes")
+        'test-str-empty-true $ %{} 'CodeEntry (:doc "|rest of 1-char string has 0 characters")
           :code $ quote
             defn test-str-empty-true () $ &=
               &str:count $ &str:rest |a
@@ -1137,12 +1137,12 @@
             defn test-str-pad-right () $ &str:count (&str:pad-right |hi 5 |-)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-rest $ %{} 'CodeEntry (:doc "|rest of hello has 4 bytes")
+        'test-str-rest $ %{} 'CodeEntry (:doc "|rest of hello has 4 characters")
           :code $ quote
             defn test-str-rest () $ &str:count (&str:rest |hello)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-slice $ %{} 'CodeEntry (:doc "|slice bytes 1..4 from abcde = 3 bytes (bcd)")
+        'test-str-slice $ %{} 'CodeEntry (:doc "|slice 1..4 from abcde = 3 characters (bcd)")
           :code $ quote
             defn test-str-slice () $ &str:count (&str:slice |abcde 1 4)
           :examples $ []
