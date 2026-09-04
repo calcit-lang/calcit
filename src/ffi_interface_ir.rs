@@ -879,8 +879,19 @@ fn canonical_edn_display(value: &Edn) -> String {
   }
 }
 
+/// External-object traits describe host capabilities for static member checks;
+/// they are not callable lowering entries for Interface IR.
+fn is_external_object_contract(metadata: &Edn) -> bool {
+  match metadata_value(metadata, "kind") {
+    Some(Edn::Tag(value)) => value.ref_str() == "external-object",
+    Some(Edn::Str(value) | Edn::Symbol(value)) => value.trim_start_matches(':') == "external-object",
+    _ => false,
+  }
+}
+
 fn is_ffi_boundary_candidate(metadata: &Edn) -> bool {
   match metadata {
+    Edn::Map(_) | Edn::Struct(_) if is_external_object_contract(metadata) => false,
     Edn::Map(_) | Edn::Struct(_) => ["backend", "target", "kind", "symbol", "invoke", "transport"]
       .iter()
       .any(|key| metadata_value(metadata, key).is_some()),
@@ -1832,10 +1843,23 @@ mod tests {
             Edn::map_from_iter([(Edn::tag("features"), Edn::tag("js-ffi"))]),
           ),
         ),
+        (
+          "external-object-contract",
+          function_entry(
+            vec![],
+            Arc::new(CalcitTypeAnnotation::Unit),
+            Edn::map_from_iter([
+              (Edn::tag("backend"), Edn::tag("js")),
+              (Edn::tag("kind"), Edn::tag("external-object")),
+              (Edn::tag("target"), Edn::tag("browser")),
+              (Edn::tag("names"), Edn::map_from_iter([(Edn::tag("read"), Edn::str("readValue"))])),
+            ]),
+          ),
+        ),
       ]),
       None,
     )
-    .expect("ignore non-lowering FFI metadata");
+    .expect("ignore non-lowering and external-object FFI metadata");
 
     assert_eq!(report.summary.definitions, 0);
     assert!(report.diagnostics.is_empty());
