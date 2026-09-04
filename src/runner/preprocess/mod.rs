@@ -8844,6 +8844,15 @@ fn contains_nominal_contract(annotation: &CalcitTypeAnnotation) -> bool {
     | CalcitTypeAnnotation::JsNullish(inner)
     | CalcitTypeAnnotation::Variadic(inner) => contains_nominal_contract(inner.as_ref()),
     CalcitTypeAnnotation::Map(key, value) => contains_nominal_contract(key.as_ref()) || contains_nominal_contract(value.as_ref()),
+    CalcitTypeAnnotation::TypeRef(_, args) => args.iter().any(|arg| contains_nominal_contract(arg.as_ref())),
+    CalcitTypeAnnotation::Fn(signature) => {
+      signature.arg_types.iter().any(|arg| contains_nominal_contract(arg.as_ref()))
+        || signature
+          .rest_type
+          .as_ref()
+          .is_some_and(|rest| contains_nominal_contract(rest.as_ref()))
+        || contains_nominal_contract(signature.return_type.as_ref())
+    }
     _ => false,
   }
 }
@@ -8887,6 +8896,18 @@ fn dynamic_erases_nominal_contract(actual: &CalcitTypeAnnotation, expected: &Cal
         .iter()
         .zip(expected_args.iter())
         .any(|(actual, expected)| dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref()))
+    }
+    (CalcitTypeAnnotation::Fn(actual), CalcitTypeAnnotation::Fn(expected)) if actual.arg_types.len() == expected.arg_types.len() => {
+      actual
+        .arg_types
+        .iter()
+        .zip(expected.arg_types.iter())
+        .any(|(actual, expected)| dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref()))
+        || match (actual.rest_type.as_ref(), expected.rest_type.as_ref()) {
+          (Some(actual), Some(expected)) => dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref()),
+          _ => false,
+        }
+        || dynamic_erases_nominal_contract(actual.return_type.as_ref(), expected.return_type.as_ref())
     }
     _ => false,
   }
@@ -16267,8 +16288,22 @@ mod tests {
 
     assert!(dynamic_erases_nominal_contract(
       &CalcitTypeAnnotation::TypeRef(Arc::from("tests/Box"), Arc::new(vec![calcit::DYNAMIC_TYPE.clone()])),
-      &CalcitTypeAnnotation::TypeRef(Arc::from("tests/Box"), Arc::new(vec![person_type])),
+      &CalcitTypeAnnotation::TypeRef(Arc::from("tests/Box"), Arc::new(vec![person_type.clone()])),
     ));
+
+    let open_callback = generic_relation_test_signature(vec![calcit::DYNAMIC_TYPE.clone()], Arc::new(CalcitTypeAnnotation::Unit), None);
+    let person_callback = generic_relation_test_signature(vec![person_type.clone()], Arc::new(CalcitTypeAnnotation::Unit), None);
+    assert!(contains_nominal_contract(&CalcitTypeAnnotation::Fn(Arc::new(
+      person_callback.clone()
+    ))));
+    assert!(dynamic_erases_nominal_contract(
+      &CalcitTypeAnnotation::Fn(Arc::new(open_callback)),
+      &CalcitTypeAnnotation::Fn(Arc::new(person_callback)),
+    ));
+    assert!(contains_nominal_contract(&CalcitTypeAnnotation::TypeRef(
+      Arc::from("tests/Envelope"),
+      Arc::new(vec![person_type]),
+    )));
   }
 
   #[test]
