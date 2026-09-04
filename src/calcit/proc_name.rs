@@ -1347,11 +1347,18 @@ impl CalcitProc {
       }),
       AddWatch => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
-        arg_types: vec![some_tag("ref"), dynamic_tag(), dynamic_tag()],
+        arg_types: vec![
+          ref_of(type_var("T")),
+          some_tag("tag"),
+          Arc::new(CalcitTypeAnnotation::from_function_parts(
+            vec![type_var("T"), type_var("T")],
+            some_tag("unit"),
+          )),
+        ],
       }),
       RemoveWatch => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
-        arg_types: vec![some_tag("ref"), dynamic_tag()],
+        arg_types: vec![ref_of(type_var("T")), some_tag("tag")],
       }),
 
       // === I/O operations ===
@@ -1668,6 +1675,29 @@ mod tests {
     assert!(matches!(
       atom.arg_types.first().map(AsRef::as_ref),
       Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "T"
+    ));
+
+    let add_watch = CalcitProc::AddWatch.get_type_signature().expect("add-watch signature");
+    assert!(matches!(
+      add_watch.arg_types.as_slice(),
+      [reference, key, callback]
+        if matches!(reference.as_ref(), CalcitTypeAnnotation::Ref(inner)
+          if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T"))
+          && matches!(key.as_ref(), CalcitTypeAnnotation::Tag)
+          && matches!(callback.as_ref(), CalcitTypeAnnotation::Fn(signature)
+            if matches!(signature.arg_types.as_slice(), [current, previous]
+              if matches!(current.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T")
+                && matches!(previous.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T"))
+              && matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Unit))
+    ));
+
+    let remove_watch = CalcitProc::RemoveWatch.get_type_signature().expect("remove-watch signature");
+    assert!(matches!(
+      remove_watch.arg_types.as_slice(),
+      [reference, key]
+        if matches!(reference.as_ref(), CalcitTypeAnnotation::Ref(inner)
+          if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T"))
+          && matches!(key.as_ref(), CalcitTypeAnnotation::Tag)
     ));
   }
 

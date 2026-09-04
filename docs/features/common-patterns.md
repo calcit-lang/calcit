@@ -228,6 +228,10 @@ let
   ; => 11
 ```
 
+Watcher keys are Tags. A watcher on `Ref<T>` receives the new and previous
+values as `(T, T)` and must return `Unit`; finish side-effect-only callbacks
+with `&unit`. `remove-watch` requires the same Tag key used at registration.
+
 ### Managing Collections in State
 
 ```cirru

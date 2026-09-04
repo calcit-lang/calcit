@@ -659,6 +659,7 @@ pub(crate) fn check_proc_arg_types(
       break;
     }
 
+    let expected_type = expected_type.substitute_type_vars(&bindings);
     if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
       continue;
     }

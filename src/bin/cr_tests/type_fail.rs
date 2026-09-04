@@ -1184,6 +1184,39 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
         && sort_by_warnings[0].message().contains("got `fn(:number) -> :number`"),
       "sort-by should preserve the String member type while leaving its key type generic: {sort_by_warnings:?}"
     );
+    let watch_warnings = warnings
+      .iter()
+      .filter(|warning| {
+        warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
+          && (warning.message().contains("Proc `add-watch`") || warning.message().contains("Proc `remove-watch`"))
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(
+      watch_warnings.len(),
+      3,
+      "Ref watcher calls should validate keys and callbacks: {warnings:?}"
+    );
+    assert!(
+      watch_warnings.iter().any(|warning| {
+        warning.message().contains("Proc `add-watch` arg 2 expects type `:tag`") && warning.message().contains("got `:string`")
+      }),
+      "add-watch should require a Tag key: {watch_warnings:?}"
+    );
+    assert!(
+      watch_warnings.iter().any(|warning| {
+        warning
+          .message()
+          .contains("Proc `add-watch` arg 3 expects type `fn(:string, :string) -> :unit`")
+          && warning.message().contains("got `fn(:number) -> :number`")
+      }),
+      "add-watch should bind both callback inputs to the Ref payload and require Unit: {watch_warnings:?}"
+    );
+    assert!(
+      watch_warnings.iter().any(|warning| {
+        warning.message().contains("Proc `remove-watch` arg 2 expects type `:tag`") && warning.message().contains("got `:string`")
+      }),
+      "remove-watch should require a Tag key: {watch_warnings:?}"
+    );
   });
 }
 
