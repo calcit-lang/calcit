@@ -210,9 +210,13 @@ the callee is intentionally open, put that operation behind a small adapter
 whose structured contract does not claim the generic relationship. Outside
 `--strict-types`, the existing compatibility behavior is unchanged.
 
-`--strict-types` also rejects hand-written runtime Struct index operations such
-as `&struct:nth` without matching nominal type evidence. Use `(:field value)` with a concrete nominal Struct; generic
-helpers need a typed trait/accessor or a deliberately open Map boundary.
+`--strict-types` reports `E_RAW_PRIMITIVE_IN_TYPED_CODE` for hand-written
+`&get-raw`, `record-get` / `&struct:get`, raw `&%{}`, and `&struct:nth` without matching
+nominal layout evidence. Use Option-returning collection lookup, named Struct
+field syntax, and the public `%{}` constructor. Core/reviewed macro lowering,
+reusable `defimpl` access, evidence-complete persisted constructors whose fields
+exactly match one concrete Struct, and indexed IR whose index/tag agrees with
+the concrete receiver layout remain valid.
 
 For a focused, machine-readable inventory that excludes unrelated type and FFI warnings, use the dedicated analysis command:
 
