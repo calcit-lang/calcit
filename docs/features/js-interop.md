@@ -104,12 +104,14 @@ legacy projects and disables this target-specific check.
 ### 2.3 Audit untyped access points
 
 `.-name`, `.!name`, `aget`, `aset`, `js-get`, and `js-set` against a bare
-`JsObject` receiver (no external-object trait attached) still work, but nothing
-about the field is checked. Running with `--warn-dyn-method` additionally
-reports `W_JS_FFI_UNTYPED_ACCESS` for these calls whenever the field key is a
-literal tag/string, since that is the case where declaring a trait for the
-receiver is directly actionable. A dynamic (non-literal) key, or a receiver
-that already carries trait or nullable evidence, does not trigger it.
+`JsObject` receiver have no field or method contract. When the member key is a
+literal, strict project source rejects the access with
+`E_UNTYPED_JS_OBJECT_ACCESS`; declare the smallest external-object trait and
+coerce the host value to that trait inside the lexical adapter. Compatibility
+mode can inventory the same sites as `W_JS_FFI_UNTYPED_ACCESS` with
+`--warn-dyn-method`. A dynamic (non-literal) key retains explicit raw lookup
+semantics, while receivers that already carry trait or nullable evidence are
+handled by their dedicated checks.
 
 ## 3. Typed adapters and external objects
 
