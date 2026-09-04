@@ -298,7 +298,7 @@ fn resolve_local_declaration<'a>(
         "FFI Interface IR v{FFI_INTERFACE_IR_VERSION} found multiple local declarations for `{name}` at `{path}`: {}.",
         many.iter().map(|candidate| candidate.source_id()).collect::<Vec<_>>().join(", ")
       ),
-      "Use the namespace-qualified declaration ID in the callable schema so bindgen never guesses between same-name types.",
+      "Use namespace-qualified declaration IDs and keep exactly one local defstruct/defenum source for each nominal type.",
     ))),
   }
 }
@@ -1388,6 +1388,10 @@ mod tests {
       .find(|diagnostic| diagnostic.code == "E_FFI_IR_DECLARATION_AMBIGUOUS")
       .expect("duplicate nominal declarations must be rejected");
     assert!(ambiguity.message.contains("test.ffi/PersonNumber, test.ffi/PersonText"));
+    assert_eq!(
+      ambiguity.suggestion,
+      "Use namespace-qualified declaration IDs and keep exactly one local defstruct/defenum source for each nominal type."
+    );
     assert_eq!(report, export(), "duplicate declaration diagnostics must be deterministic");
   }
 
