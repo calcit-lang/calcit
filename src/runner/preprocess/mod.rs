@@ -4941,7 +4941,7 @@ fn check_typed_js_field_operation(
   Ok(())
 }
 
-/// Raw `.-`/`.!`/`aget`/`aset`/`js-get`/`js-set` on a bare `JsObject` receiver
+/// Raw `.-`/`.!`/`.?-`/`.?!`/`aget`/`aset`/`js-get`/`js-set` on a bare `JsObject` receiver
 /// (no external-object trait attached) has nothing left to check statically.
 /// Strict project source must attach an external-object trait when the key is
 /// statically known. Compatibility mode keeps the opt-in inventory warning;
@@ -4965,7 +4965,9 @@ fn reject_or_warn_on_untyped_js_ffi_field_access(
 
   let (operation, field_name) = match head {
     Calcit::Method(name, calcit::MethodKind::Access) => (format!(".-{name}"), name.to_string()),
+    Calcit::Method(name, calcit::MethodKind::AccessOptional) => (format!(".?-{name}"), name.to_string()),
     Calcit::Method(name, calcit::MethodKind::InvokeNative) => (format!(".!{name}"), name.to_string()),
+    Calcit::Method(name, calcit::MethodKind::InvokeNativeOptional) => (format!(".?!{name}"), name.to_string()),
     Calcit::Symbol { sym, .. } if matches!(sym.as_ref(), "aget" | "js-get" | "aset" | "js-set") => {
       let Some(field_name) = args.get(1).and_then(static_js_field_name) else {
         // A dynamic (non-literal) key cannot be described by a trait field
@@ -11646,29 +11648,36 @@ mod tests {
   }
 
   #[test]
-  fn strict_types_reject_untyped_js_object_access_with_a_static_field() {
+  fn strict_types_reject_all_untyped_js_object_method_access_with_a_static_field() {
     let _lock = lock_preprocess_test_state();
     let _strict = StrictTypesGuard::new(true);
     let receiver = untyped_js_ffi_test_receiver();
-    let head = Calcit::Method(Arc::from("value"), calcit::MethodKind::Access);
-    let warnings = RefCell::new(vec![]);
+    for (kind, operation) in [
+      (calcit::MethodKind::Access, ".-value"),
+      (calcit::MethodKind::AccessOptional, ".?-value"),
+      (calcit::MethodKind::InvokeNative, ".!value"),
+      (calcit::MethodKind::InvokeNativeOptional, ".?!value"),
+    ] {
+      let head = Calcit::Method(Arc::from("value"), kind);
+      let warnings = RefCell::new(vec![]);
+      let error = reject_or_warn_on_untyped_js_ffi_field_access(
+        &head,
+        &CalcitList::from(std::slice::from_ref(&receiver)),
+        &ScopeTypes::new(),
+        "tests.untyped-ffi",
+        "demo",
+        &warnings,
+        &CallStackList::default(),
+      )
+      .expect_err("strict project source must attach an external-object trait");
 
-    let error = reject_or_warn_on_untyped_js_ffi_field_access(
-      &head,
-      &CalcitList::from(std::slice::from_ref(&receiver)),
-      &ScopeTypes::new(),
-      "tests.untyped-ffi",
-      "demo",
-      &warnings,
-      &CallStackList::default(),
-    )
-    .expect_err("strict project source must attach an external-object trait");
-
-    assert_eq!(error.code.as_deref(), Some("E_UNTYPED_JS_OBJECT_ACCESS"));
-    assert!(error.msg.contains("inferred `JsObject`"));
-    assert!(error.msg.contains("external-object trait"));
-    assert!(error.msg.contains("lexical `:js-ffi` adapter"));
-    assert!(warnings.borrow().is_empty());
+      assert_eq!(error.code.as_deref(), Some("E_UNTYPED_JS_OBJECT_ACCESS"));
+      assert!(error.msg.contains(operation));
+      assert!(error.msg.contains("inferred `JsObject`"));
+      assert!(error.msg.contains("external-object trait"));
+      assert!(error.msg.contains("lexical `:js-ffi` adapter"));
+      assert!(warnings.borrow().is_empty());
+    }
   }
 
   #[test]

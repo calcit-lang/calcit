@@ -103,7 +103,7 @@ legacy projects and disables this target-specific check.
 
 ### 2.3 Audit untyped access points
 
-`.-name`, `.!name`, `aget`, `aset`, `js-get`, and `js-set` against a bare
+`.-name`, `.!name`, `.?-name`, `.?!name`, `aget`, `aset`, `js-get`, and `js-set` against a bare
 `JsObject` receiver have no field or method contract. When the member key is a
 literal, strict project source rejects the access with
 `E_UNTYPED_JS_OBJECT_ACCESS`; declare the smallest external-object trait and
