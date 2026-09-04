@@ -59,6 +59,8 @@ jobs:
         run: cargo run --bin calcit -- src/cirru/calcit-core.cirru test --tag unit
       - name: "prevent bundled core type-debt regressions"
         run: cargo run --bin calcit -- src/cirru/calcit-core.cirru analyze quality --baseline config/calcit-core-quality.cirru --format json
+      - name: "prevent bundled core Dynamic classification drift"
+        run: cargo build --bin calcit && node scripts/core-dynamic-classification.mjs --check
       - run: cargo run --bin calcit -- calcit/test.cirru
 
       - name: "verify WASM exports and FFI"
