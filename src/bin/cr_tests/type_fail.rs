@@ -1286,6 +1286,69 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
         .contains("Normalize the input/functions to T -> U, or split heterogeneous transformations into separate calls"),
       "List.apply method warnings should provide an executable migration direction: {list_apply_method_warnings:?}"
     );
+    let interleave_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/interleave"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      interleave_warnings.len(),
+      1,
+      "interleave should reject lists with different member types: {warnings:?}"
+    );
+    assert!(
+      interleave_warnings[0]
+        .message()
+        .contains("arg 2 expects type `list<number>`, but got `list<tag>`"),
+      "interleave should report the member type bound by its first input: {interleave_warnings:?}"
+    );
+    assert!(
+      interleave_warnings[0]
+        .message()
+        .contains("Normalize both lists to the same type, or declare List<Dynamic> explicitly"),
+      "interleave should provide an executable homogeneous/open-boundary migration: {interleave_warnings:?}"
+    );
+    let partial_binding_warnings = warnings
+      .iter()
+      .filter(|warning| {
+        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+          && warning
+            .message()
+            .contains("type-fail-collection-member-contract.main/partial-generic-check")
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(
+      partial_binding_warnings.len(),
+      1,
+      "a failed nested generic match must not leak bindings into later arguments: {partial_binding_warnings:?}"
+    );
+    assert!(
+      partial_binding_warnings[0]
+        .message()
+        .contains("arg 1 expects type `map<'T, number>`")
+        && partial_binding_warnings[0].message().contains("got `map<tag, string>`"),
+      "the original mismatching generic container should remain actionable: {partial_binding_warnings:?}"
+    );
+    let partial_variadic_binding_warnings = warnings
+      .iter()
+      .filter(|warning| {
+        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+          && warning
+            .message()
+            .contains("type-fail-collection-member-contract.main/partial-variadic-check")
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(
+      partial_variadic_binding_warnings.len(),
+      1,
+      "a rejected variadic generic argument must not leak bindings into later rest arguments: {partial_variadic_binding_warnings:?}"
+    );
+    assert!(
+      partial_variadic_binding_warnings[0]
+        .message()
+        .contains("arg 1 expects type `map<'T, number>`")
+        && partial_variadic_binding_warnings[0].message().contains("got `map<tag, string>`"),
+      "the original mismatching variadic generic container should remain actionable: {partial_variadic_binding_warnings:?}"
+    );
     let watch_warnings = warnings
       .iter()
       .filter(|warning| {
