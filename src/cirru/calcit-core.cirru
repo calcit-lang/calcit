@@ -4942,9 +4942,9 @@
           :schema $ :: 'Fn
             {} (:return 'C)
               :args $ [] 'C
-                :: 'Fn $ {} (:return 'R)
+                :: 'Fn $ {} (:return 'Bool)
                   :args $ [] 'T
-              :generics $ [] 'C 'T 'R
+              :generics $ [] 'C 'T
           :tests $ []
             %{} 'TestEntry (:name |filters-map-pairs)
               :code $ quote

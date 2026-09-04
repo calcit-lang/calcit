@@ -333,6 +333,27 @@ fn type_fail_call_arg_fixture_reports_warning_code() {
 }
 
 #[test]
+fn filter_predicate_requires_a_boolean_return() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/type-fail/filter-predicate-type-mismatch.cirru");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("filter callback mismatch should surface as a preprocessing warning");
+
+    let warnings = warnings.borrow();
+    assert!(
+      warnings.iter().any(|warning| {
+        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+          && warning.message().contains("calcit.core/filter")
+          && warning.message().contains(":bool")
+      }),
+      "filter must reject a non-Bool predicate contract, got: {warnings:?}"
+    );
+  });
+}
+
+#[test]
 fn mixed_public_equality_reports_guided_type_mismatches() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("do\n  = 1 |one\n  = 1 1 |one\n  not= 1 |one\n  /= 1 |one");
