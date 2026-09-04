@@ -209,6 +209,64 @@ fn strict_type_fail_reachable_whole_dynamic_schema_reports_stable_error_code() {
 }
 
 #[test]
+fn strict_type_fail_dynamic_nominal_argument_reports_decoder_migration() {
+  run_with_large_stack(|| {
+    builtins::effects::init_effects_states();
+    let mut snapshot = snapshot::Snapshot::default();
+    let mut file = snapshot::create_file_from_snippet(concat!(
+      "defstruct Person $ :name 'String\n\n",
+      "defn open-value () $ {} (:name |Ada)\n\n",
+      "defn consume-person (person)\n  :name person\n\n",
+      "defn main! ()\n  consume-person\n    open-value\n\n",
+      "defn reload! () $ identity &unit",
+    ))
+    .expect("dynamic nominal boundary snippet should parse");
+    let person = Arc::new(calcit::calcit::CalcitStructDef {
+      name: cirru_edn::EdnTag::new("Person"),
+      fields: Arc::new(vec![cirru_edn::EdnTag::new("name")]),
+      field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    });
+    let fn_schema = |args, return_type| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: args,
+        return_type,
+        fn_kind: calcit::calcit::SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })))
+    };
+    file.defs.get_mut("open-value").expect("open-value entry").schema = fn_schema(vec![], Arc::new(CalcitTypeAnnotation::Dynamic));
+    file.defs.get_mut("consume-person").expect("consume-person entry").schema = fn_schema(
+      vec![Arc::new(CalcitTypeAnnotation::Struct(person, Arc::new(vec![])))],
+      Arc::new(CalcitTypeAnnotation::String),
+    );
+    file.defs.get_mut("main!").expect("main entry").schema = fn_schema(vec![], Arc::new(CalcitTypeAnnotation::String));
+    file.defs.get_mut("reload!").expect("reload entry").schema = fn_schema(vec![], Arc::new(CalcitTypeAnnotation::Unit));
+    snapshot.files.insert("app.main".to_owned(), file);
+    let entries = prepare_snapshot_entries(snapshot);
+    let _strict = StrictTypesReset::enabled();
+    let err = run_check_only(&entries).expect_err("Dynamic data must not enter a closed nominal argument in strict mode");
+
+    assert!(
+      err.contains("E_DYNAMIC_NOMINAL_ARGUMENT"),
+      "unexpected strict boundary error: {err}"
+    );
+    assert!(err.contains("argument 1"), "argument position should be actionable: {err}");
+    assert!(err.contains("struct Person"), "closed nominal target should be explicit: {err}");
+    assert!(err.contains("parse-cirru-edn-as"), "text decoder migration should be named: {err}");
+    assert!(
+      err.contains("decode-map-as"),
+      "evaluated-value decoder migration should be named: {err}"
+    );
+  });
+}
+
+#[test]
 fn strict_type_fail_dynamic_nominal_method_reports_stable_error_code() {
   run_with_large_stack(|| {
     let entries = load_fixture_entries("calcit/type-fail/dynamic-nominal-method-strict.cirru");
