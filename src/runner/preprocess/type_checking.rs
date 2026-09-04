@@ -63,6 +63,8 @@ fn diagnostic_type_string(annotation: &CalcitTypeAnnotation) -> String {
   }
 }
 
+pub(crate) const LIST_APPLY_MIGRATION_HINT: &str = "\n  Migration: List.apply requires one shared input type T and one shared output type U across the function list. Normalize the input/functions to T -> U, or split heterogeneous transformations into separate calls.";
+
 fn append_option_migration_hint(
   mut message: String,
   expected_type: &CalcitTypeAnnotation,
@@ -144,7 +146,7 @@ fn specialize_core_expected_types(
     return None;
   }
   let required_arity = match fn_info.name.as_ref() {
-    "&list:sort-by" | "any?" | "contains?" | "each" | "every?" | "filter" | "get" | "includes?" | "map" => 2,
+    "&list:apply" | "&list:sort-by" | "any?" | "contains?" | "each" | "every?" | "filter" | "get" | "includes?" | "map" => 2,
     "assoc" | "foldl" | "reduce" | "update" => 3,
     _ => return None,
   };
@@ -155,6 +157,7 @@ fn specialize_core_expected_types(
   let receiver_type = resolve_type_value(receiver, scope_types)?;
 
   match fn_info.name.as_ref() {
+    "&list:apply" => specialize_list_apply_expected_types(receiver_type.as_ref(), expected_types),
     "contains?" => {
       let mut specialized = expected_types.to_vec();
       specialized[1] = match receiver_type.as_ref() {
@@ -199,6 +202,22 @@ fn specialize_core_expected_types(
     "update" => specialize_update_expected_types(args, receiver_type.as_ref(), scope_types, expected_types),
     _ => None,
   }
+}
+
+fn specialize_list_apply_expected_types(
+  receiver_type: &CalcitTypeAnnotation,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  let CalcitTypeAnnotation::List(item_type) = receiver_type else {
+    return None;
+  };
+  let mut specialized = expected_types.to_vec();
+  specialized[0] = Arc::new(receiver_type.clone());
+  specialized[1] = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::from_function_parts(
+    vec![item_type.clone()],
+    Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("ListApplyOutput"))),
+  ))));
+  Some(specialized)
 }
 
 fn specialize_list_sort_by_expected_types(
@@ -844,6 +863,7 @@ pub(crate) fn check_user_fn_arg_types(
   let fn_def_ns = fn_info.def_ns.clone();
   let fn_name = fn_info.name.clone();
   let equality_migration = fn_def_ns.as_ref() == crate::calcit::CORE_NS && matches!(fn_name.as_ref(), "=" | "not=" | "/=");
+  let list_apply_migration = fn_def_ns.as_ref() == crate::calcit::CORE_NS && fn_name.as_ref() == "&list:apply";
   let def_name = call_info.def_name.to_owned();
   let file_ns_owned = call_info.file_ns.to_owned();
   let ctx = CheckContext {
@@ -860,6 +880,8 @@ pub(crate) fn check_user_fn_arg_types(
   check_arg_types_loop(ctx, |arg_idx, expected_str, actual_str, expr_str| {
     let migration = if equality_migration {
       "\n  Migration: public equality now requires operands of one static type. Normalize both values, narrow Dynamic/FFI values with a typed adapter, validator, or assert-type, use a type predicate for category checks, or pattern-match nominal values before comparing."
+    } else if list_apply_migration {
+      LIST_APPLY_MIGRATION_HINT
     } else {
       ""
     };
