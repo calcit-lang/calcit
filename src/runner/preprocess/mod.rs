@@ -2307,7 +2307,15 @@ fn preprocess_list_call(
         // their statically known struct fields in this branch as well.
         check_struct_field_access(&head_form, &current_args, scope_types, file_ns, call_stack, check_warnings);
         warn_on_nominal_enum_legacy_absence_use(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
-        warn_on_legacy_js_nullish_predicate(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
+        reject_or_warn_on_legacy_js_nullish_predicate(
+          &head_form,
+          &current_args,
+          scope_types,
+          file_ns,
+          def_name.as_ref(),
+          check_warnings,
+          call_stack,
+        )?;
         let mut any_rewritten = false;
         // Rewrite hashmap literal args to struct literals when the expected type is a struct
         if let Some(rewritten) = try_rewrite_map_args_to_structs(info.as_ref(), &current_args, file_ns, &def_name, check_warnings) {
@@ -2765,7 +2773,15 @@ fn preprocess_list_call(
           // Recompute processed_args from ys after optimization rewrites (e.g. struct:get→nth, assoc→assoc-at)
           let processed_args = CalcitList::from(ys.drop_left());
           require_js_ffi_feature_for_operation(call_head, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
-          warn_on_nullable_js_ffi_dereference(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
+          reject_or_warn_on_nullable_js_ffi_dereference(
+            call_head,
+            &processed_args,
+            scope_types,
+            file_ns,
+            def_name.as_ref(),
+            check_warnings,
+            call_stack,
+          )?;
           reject_or_warn_on_untyped_js_ffi_field_access(
             call_head,
             &processed_args,
@@ -2776,7 +2792,15 @@ fn preprocess_list_call(
             call_stack,
           )?;
           warn_on_nominal_enum_legacy_absence_use(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
-          warn_on_legacy_js_nullish_predicate(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
+          reject_or_warn_on_legacy_js_nullish_predicate(
+            call_head,
+            &processed_args,
+            scope_types,
+            file_ns,
+            def_name.as_ref(),
+            check_warnings,
+            call_stack,
+          )?;
           reject_or_warn_on_dynamic_trait_call(
             call_head,
             &processed_args,
@@ -4768,16 +4792,17 @@ fn reject_or_warn_on_dynamic_trait_call(
   Ok(())
 }
 
-fn warn_on_nullable_js_ffi_dereference(
+fn reject_or_warn_on_nullable_js_ffi_dereference(
   head: &Calcit,
   args: &CalcitList,
   scope_types: &ScopeTypes,
   file_ns: &str,
   def_name: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
-) {
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
   if file_ns == calcit::CORE_NS {
-    return;
+    return Ok(());
   }
 
   let is_raw_dereference = matches!(
@@ -4785,20 +4810,20 @@ fn warn_on_nullable_js_ffi_dereference(
     Calcit::Method(_, calcit::MethodKind::Access | calcit::MethodKind::InvokeNative)
   ) || matches!(head, Calcit::Symbol { sym, .. } if matches!(sym.as_ref(), "aget" | "js-get"));
   if !is_raw_dereference {
-    return;
+    return Ok(());
   }
 
   let Some(receiver) = args.first() else {
-    return;
+    return Ok(());
   };
   let Some(receiver_type) = resolve_type_value(receiver, scope_types) else {
-    return;
+    return Ok(());
   };
   let CalcitTypeAnnotation::JsNullish(inner) = receiver_type.as_ref() else {
-    return;
+    return Ok(());
   };
   if !matches!(inner.as_ref(), CalcitTypeAnnotation::JsObject) {
-    return;
+    return Ok(());
   }
 
   let operation = match head {
@@ -4812,11 +4837,23 @@ fn warn_on_nullable_js_ffi_dereference(
     "[Warn] JsNullish FFI value is dereferenced by `{operation}` in {file_ns}/{def_name}; use optional access, narrow with `js-present?`/`js-nullish?`, then validate or explicitly `unsafe-coerce` the opaque JsObject value"
   );
 
-  if let Some(location) = head.get_location().or_else(|| receiver.get_location()) {
+  let location = head.get_location().or_else(|| receiver.get_location());
+  if strict_types_enabled() && should_emit_project_source_lint(file_ns) {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      message.replacen("[Warn]", "[Error]", 1),
+      "E_JS_FFI_NULLABLE_DEREF",
+      call_stack,
+      location,
+    ));
+  }
+
+  if let Some(location) = location {
     gen_check_warning_with_location_code(message, "W_JS_FFI_NULLABLE_DEREF", location, check_warnings);
   } else {
     gen_check_warning_code(message, "W_JS_FFI_NULLABLE_DEREF", file_ns, check_warnings);
   }
+  Ok(())
 }
 
 fn static_js_field_name(form: &Calcit) -> Option<&str> {
@@ -5012,41 +5049,54 @@ fn reject_or_warn_on_untyped_js_ffi_field_access(
   Ok(())
 }
 
-fn warn_on_legacy_js_nullish_predicate(
+fn reject_or_warn_on_legacy_js_nullish_predicate(
   head: &Calcit,
   args: &CalcitList,
   scope_types: &ScopeTypes,
   file_ns: &str,
   def_name: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
-) {
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
   if file_ns == calcit::CORE_NS {
-    return;
+    return Ok(());
   }
   let Some(operation) = canonical_absence_operation_name(head) else {
-    return;
+    return Ok(());
   };
   if !matches!(operation, "nil?" | "some?") {
-    return;
+    return Ok(());
   }
   let Some(value) = args.first() else {
-    return;
+    return Ok(());
   };
   let Some(value_type) = resolve_type_value(value, scope_types) else {
-    return;
+    return Ok(());
   };
   if !matches!(value_type.as_ref(), CalcitTypeAnnotation::JsNullish(_)) {
-    return;
+    return Ok(());
   }
 
   let message = format!(
     "[Warn] `{operation}` consumes a JsNullish FFI value in {file_ns}/{def_name}; use `js-nullish?` or `js-present?` so host nullability stays explicit"
   );
-  if let Some(location) = head.get_location().or_else(|| value.get_location()) {
+  let location = head.get_location().or_else(|| value.get_location());
+  if strict_types_enabled() && should_emit_project_source_lint(file_ns) {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      message.replacen("[Warn]", "[Error]", 1),
+      "E_JS_FFI_NULLABLE_PREDICATE",
+      call_stack,
+      location,
+    ));
+  }
+
+  if let Some(location) = location {
     gen_check_warning_with_location_code(message, "W_JS_FFI_NULLABLE_PREDICATE", location, check_warnings);
   } else {
     gen_check_warning_code(message, "W_JS_FFI_NULLABLE_PREDICATE", file_ns, check_warnings);
   }
+  Ok(())
 }
 
 fn canonical_absence_operation_name(head: &Calcit) -> Option<&str> {
@@ -9792,6 +9842,8 @@ mod tests {
 
   #[test]
   fn js_nullish_ffi_values_require_safe_dereference_and_dedicated_predicates() {
+    let _lock = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(false);
     let sym: Arc<str> = Arc::from("host");
     let receiver = Calcit::Local(CalcitLocal {
       idx: CalcitLocal::track_sym(&sym),
@@ -9806,37 +9858,43 @@ mod tests {
     let args = CalcitList::from(std::slice::from_ref(&receiver));
     let warnings = RefCell::new(vec![]);
 
-    warn_on_nullable_js_ffi_dereference(
+    reject_or_warn_on_nullable_js_ffi_dereference(
       &Calcit::Method(Arc::from("read"), calcit::MethodKind::InvokeNative),
       &args,
       &ScopeTypes::new(),
       "tests.js-ffi",
       "demo",
       &warnings,
-    );
+      &CallStackList::default(),
+    )
+    .expect("compatibility mode should retain the nullable dereference warning");
     assert_eq!(warnings.borrow().len(), 1);
     assert_eq!(warnings.borrow()[0].code(), Some("W_JS_FFI_NULLABLE_DEREF"));
 
     let optional_warnings = RefCell::new(vec![]);
-    warn_on_nullable_js_ffi_dereference(
+    reject_or_warn_on_nullable_js_ffi_dereference(
       &Calcit::Method(Arc::from("read"), calcit::MethodKind::InvokeNativeOptional),
       &args,
       &ScopeTypes::new(),
       "tests.js-ffi",
       "demo",
       &optional_warnings,
-    );
+      &CallStackList::default(),
+    )
+    .expect("optional host access remains valid");
     assert!(optional_warnings.borrow().is_empty());
 
     let predicate_warnings = RefCell::new(vec![]);
-    warn_on_legacy_js_nullish_predicate(
+    reject_or_warn_on_legacy_js_nullish_predicate(
       &Calcit::Proc(CalcitProc::NilQuestion),
       &args,
       &ScopeTypes::new(),
       "tests.js-ffi",
       "demo",
       &predicate_warnings,
-    );
+      &CallStackList::default(),
+    )
+    .expect("compatibility mode should retain the legacy predicate warning");
     assert_eq!(predicate_warnings.borrow().len(), 1);
     assert_eq!(predicate_warnings.borrow()[0].code(), Some("W_JS_FFI_NULLABLE_PREDICATE"));
 
@@ -9861,6 +9919,50 @@ mod tests {
       narrowing.true_binding,
       Some((name, inferred)) if name.as_ref() == "host" && matches!(inferred.as_ref(), CalcitTypeAnnotation::JsObject)
     ));
+  }
+
+  #[test]
+  fn strict_types_reject_nullable_js_ffi_dereference_and_legacy_predicates() {
+    let _lock = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+    let sym: Arc<str> = Arc::from("host");
+    let receiver = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&sym),
+      sym,
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.js-ffi-strict"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::JsNullish(Arc::new(CalcitTypeAnnotation::JsObject))),
+    });
+    let args = CalcitList::from(std::slice::from_ref(&receiver));
+
+    let dereference_error = reject_or_warn_on_nullable_js_ffi_dereference(
+      &Calcit::Method(Arc::from("read"), calcit::MethodKind::InvokeNative),
+      &args,
+      &ScopeTypes::new(),
+      "tests.js-ffi-strict",
+      "demo",
+      &RefCell::new(vec![]),
+      &CallStackList::default(),
+    )
+    .expect_err("strict project source must narrow a JsNullish receiver before dereferencing it");
+    assert_eq!(dereference_error.code.as_deref(), Some("E_JS_FFI_NULLABLE_DEREF"));
+    assert!(dereference_error.msg.contains("js-present?"));
+
+    let predicate_error = reject_or_warn_on_legacy_js_nullish_predicate(
+      &Calcit::Proc(CalcitProc::NilQuestion),
+      &args,
+      &ScopeTypes::new(),
+      "tests.js-ffi-strict",
+      "demo",
+      &RefCell::new(vec![]),
+      &CallStackList::default(),
+    )
+    .expect_err("strict project source must use a dedicated JavaScript nullish predicate");
+    assert_eq!(predicate_error.code.as_deref(), Some("E_JS_FFI_NULLABLE_PREDICATE"));
+    assert!(predicate_error.msg.contains("js-nullish?"));
   }
 
   #[test]
