@@ -1197,15 +1197,6 @@
       :typeNotFull 1
       :unresolved 1
       :unsafeCoerce 0
-    |calcit.core/some? $ {} (:codeDynamic 0)
-      :codeNil 0
-      :declaredOptional 0
-      :deprecatedCalls 0
-      :schemaDynamic 1
-      :typeNone 0
-      :typeNotFull 1
-      :unresolved 1
-      :unsafeCoerce 0
     |calcit.core/str $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
@@ -1216,15 +1207,6 @@
       :unresolved 2
       :unsafeCoerce 0
     |calcit.core/str-spaced $ {} (:codeDynamic 0)
-      :codeNil 0
-      :declaredOptional 0
-      :deprecatedCalls 0
-      :schemaDynamic 1
-      :typeNone 0
-      :typeNotFull 1
-      :unresolved 1
-      :unsafeCoerce 0
-    |calcit.core/struct-def? $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
       :deprecatedCalls 0
@@ -1268,24 +1250,6 @@
       :typeNone 0
       :typeNotFull 1
       :unresolved 2
-      :unsafeCoerce 0
-    |calcit.core/thread-step? $ {} (:codeDynamic 0)
-      :codeNil 0
-      :declaredOptional 0
-      :deprecatedCalls 0
-      :schemaDynamic 1
-      :typeNone 0
-      :typeNotFull 1
-      :unresolved 1
-      :unsafeCoerce 0
-    |calcit.core/to-lispy-string $ {} (:codeDynamic 0)
-      :codeNil 0
-      :declaredOptional 0
-      :deprecatedCalls 0
-      :schemaDynamic 1
-      :typeNone 0
-      :typeNotFull 0
-      :unresolved 1
       :unsafeCoerce 0
     |calcit.core/try $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1795,10 +1759,10 @@
     :codeNil 0
     :declaredOptional 0
     :deprecatedCalls 0
-    :schemaDynamic 284
+    :schemaDynamic 280
     :typeNone 47
-    :typeNotFull 138
-    :unresolved 190
+    :typeNotFull 135
+    :unresolved 186
     :unsafeCoerce 0
   :scope $ {} (:includeDependencies false)
     :namespace nil
