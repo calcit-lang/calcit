@@ -1823,9 +1823,16 @@ fn preprocess_list_call(
     call_location: call_location.clone(),
   };
 
+  let is_constructor_named = |name: &str| {
+    matches!(&head_form, Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == name)
+      || matches!(&head_form, Calcit::Symbol { sym, .. } if sym.as_ref() == name)
+  };
+
   if strict_types_enabled()
     && should_emit_project_source_lint(file_ns)
-    && (matches!(def_name.as_ref(), "%{}?" | "&%{}?") || matches!(head_form, Calcit::Proc(CalcitProc::NativeStructPartial)))
+    && (is_constructor_named("%{}?")
+      || is_constructor_named("&%{}?")
+      || matches!(head_form, Calcit::Proc(CalcitProc::NativeStructPartial)))
   {
     return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
@@ -1839,11 +1846,6 @@ fn preprocess_list_call(
   warn_on_removed_data_api_call(&head_form, call_location.clone(), file_ns, check_warnings);
 
   let has_anonymous_definition_marker = matches!(args.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "_");
-  let is_constructor_named = |name: &str| {
-    matches!(&head_form, Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == name)
-      || matches!(&head_form, Calcit::Symbol { sym, .. } if sym.as_ref() == name)
-  };
-
   if strict_types_enabled()
     && should_emit_project_source_lint(file_ns)
     && is_constructor_named("map-kv")
@@ -10929,6 +10931,12 @@ mod tests {
     let error = preprocess_test_expr(&code).expect_err("strict mode should reject omitted Struct fields");
     assert_eq!(error.code.as_deref(), Some("E_PARTIAL_STRUCT_NIL_FILL"));
     assert!(error.msg.contains("%none"));
+
+    let source_call = Cirru::List(vec![Cirru::leaf("%{}?"), Cirru::leaf("Profile")]);
+    let source_code =
+      code_to_calcit(&source_call, "tests.strict-nil", "build-profile", vec![]).expect("parse source partial Struct constructor");
+    let source_error = preprocess_test_expr(&source_code).expect_err("strict mode should reject the core %{}? macro before expansion");
+    assert_eq!(source_error.code.as_deref(), Some("E_PARTIAL_STRUCT_NIL_FILL"));
   }
 
   #[test]
