@@ -144,7 +144,7 @@ fn specialize_core_expected_types(
     return None;
   }
   let required_arity = match fn_info.name.as_ref() {
-    "contains?" | "get" | "includes?" => 2,
+    "any?" | "contains?" | "each" | "every?" | "filter" | "get" | "includes?" | "map" => 2,
     "assoc" | "update" => 3,
     _ => return None,
   };
@@ -168,6 +168,9 @@ fn specialize_core_expected_types(
         _ => return None,
       };
       Some(specialized)
+    }
+    "any?" | "each" | "every?" | "filter" | "map" => {
+      specialize_collection_callback_expected_types(fn_info.name.as_ref(), receiver_type.as_ref(), expected_types)
     }
     "get" => {
       let mut specialized = expected_types.to_vec();
@@ -194,6 +197,35 @@ fn specialize_core_expected_types(
     "update" => specialize_update_expected_types(args, receiver_type.as_ref(), scope_types, expected_types),
     _ => None,
   }
+}
+
+fn specialize_collection_callback_expected_types(
+  fn_name: &str,
+  receiver_type: &CalcitTypeAnnotation,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  let is_map_receiver = matches!(receiver_type, CalcitTypeAnnotation::Map(_, _));
+  let callback_arg = match receiver_type {
+    CalcitTypeAnnotation::List(item_type) | CalcitTypeAnnotation::Set(item_type)
+      if !matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) =>
+    {
+      item_type.clone()
+    }
+    // Map iteration passes a heterogeneous `[key value]` pair. Preserve the
+    // reliable List shape without pretending that both positions have one type.
+    CalcitTypeAnnotation::Map(_, _) => Arc::new(CalcitTypeAnnotation::List(crate::calcit::DYNAMIC_TYPE.clone())),
+    _ => return None,
+  };
+  let mut specialized = expected_types.to_vec();
+  specialized[0] = Arc::new(receiver_type.clone());
+  let callback_return = match fn_name {
+    "each" => crate::calcit::DYNAMIC_TYPE.clone(),
+    "map" if is_map_receiver => Arc::new(CalcitTypeAnnotation::List(crate::calcit::DYNAMIC_TYPE.clone())),
+    "map" => Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("MapOutput"))),
+    _ => Arc::new(CalcitTypeAnnotation::Bool),
+  };
+  specialized[1] = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![callback_arg], callback_return));
+  Some(specialized)
 }
 
 fn specialize_core_rest_type(fn_info: &CalcitFn, args: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -1105,6 +1137,141 @@ mod tests {
     let map_specialized =
       specialize_core_expected_types(&fn_info, &map_args, &ScopeTypes::new(), &fn_info.arg_types).expect("map get should specialize");
     assert_eq!(map_specialized[1], string);
+  }
+
+  #[test]
+  fn specialize_collection_callbacks_use_member_and_pair_types() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+
+    for fn_name in ["any?", "every?", "filter"] {
+      let fn_info = make_core_fn(
+        fn_name,
+        vec![crate::calcit::DYNAMIC_TYPE.clone(), Arc::new(CalcitTypeAnnotation::DynFn)],
+      );
+      for receiver in [
+        CalcitTypeAnnotation::List(number.clone()),
+        CalcitTypeAnnotation::Set(number.clone()),
+      ] {
+        let args = CalcitList::from(&[
+          make_local("items", Arc::new(receiver)),
+          make_local("predicate", Arc::new(CalcitTypeAnnotation::DynFn)),
+        ]);
+        let specialized = specialize_core_expected_types(&fn_info, &args, &ScopeTypes::new(), &fn_info.arg_types)
+          .expect("list and set predicates should specialize");
+        let CalcitTypeAnnotation::Fn(predicate) = specialized[1].as_ref() else {
+          panic!("collection predicate should be a function");
+        };
+        assert!(matches!(predicate.arg_types.as_slice(), [arg] if arg == &number));
+        assert!(matches!(predicate.return_type.as_ref(), CalcitTypeAnnotation::Bool));
+      }
+    }
+
+    let fn_info = make_core_fn(
+      "filter",
+      vec![crate::calcit::DYNAMIC_TYPE.clone(), Arc::new(CalcitTypeAnnotation::DynFn)],
+    );
+    let map_args = CalcitList::from(&[
+      make_local(
+        "entries",
+        Arc::new(CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Tag), number.clone())),
+      ),
+      make_local("predicate", Arc::new(CalcitTypeAnnotation::DynFn)),
+    ]);
+    let map_specialized = specialize_core_expected_types(&fn_info, &map_args, &ScopeTypes::new(), &fn_info.arg_types)
+      .expect("map predicate should specialize");
+    let CalcitTypeAnnotation::Fn(map_predicate) = map_specialized[1].as_ref() else {
+      panic!("map filter predicate should be a function");
+    };
+    assert!(matches!(
+      map_predicate.arg_types.as_slice(),
+      [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic))
+    ));
+    assert!(matches!(map_predicate.return_type.as_ref(), CalcitTypeAnnotation::Bool));
+
+    let each_info = make_core_fn(
+      "each",
+      vec![crate::calcit::DYNAMIC_TYPE.clone(), Arc::new(CalcitTypeAnnotation::DynFn)],
+    );
+    let each_args = CalcitList::from(&[
+      make_local(
+        "items",
+        Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number))),
+      ),
+      make_local("callback", Arc::new(CalcitTypeAnnotation::DynFn)),
+    ]);
+    let each_specialized = specialize_core_expected_types(&each_info, &each_args, &ScopeTypes::new(), &each_info.arg_types)
+      .expect("each callback should specialize");
+    let CalcitTypeAnnotation::Fn(each_callback) = each_specialized[1].as_ref() else {
+      panic!("each callback should be a function");
+    };
+    assert!(matches!(each_callback.arg_types.as_slice(), [arg] if arg == &number));
+    assert!(matches!(each_callback.return_type.as_ref(), CalcitTypeAnnotation::Dynamic));
+  }
+
+  #[test]
+  fn specialize_map_relates_collection_members_and_callback_shapes() {
+    let fn_info = make_core_fn(
+      "map",
+      vec![crate::calcit::DYNAMIC_TYPE.clone(), Arc::new(CalcitTypeAnnotation::DynFn)],
+    );
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+
+    for receiver in [
+      CalcitTypeAnnotation::List(number.clone()),
+      CalcitTypeAnnotation::Set(number.clone()),
+    ] {
+      let args = CalcitList::from(&[
+        make_local("items", Arc::new(receiver)),
+        make_local("mapper", Arc::new(CalcitTypeAnnotation::DynFn)),
+      ]);
+      let specialized = specialize_core_expected_types(&fn_info, &args, &ScopeTypes::new(), &fn_info.arg_types)
+        .expect("list and set mappers should specialize");
+      let CalcitTypeAnnotation::Fn(mapper) = specialized[1].as_ref() else {
+        panic!("collection mapper should be a function");
+      };
+      assert!(matches!(mapper.arg_types.as_slice(), [arg] if arg == &number));
+      assert!(matches!(mapper.return_type.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "MapOutput"));
+    }
+
+    let map_args = CalcitList::from(&[
+      make_local(
+        "entries",
+        Arc::new(CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Tag), number)),
+      ),
+      make_local("mapper", Arc::new(CalcitTypeAnnotation::DynFn)),
+    ]);
+    let map_specialized = specialize_core_expected_types(&fn_info, &map_args, &ScopeTypes::new(), &fn_info.arg_types)
+      .expect("map mapper should specialize");
+    let CalcitTypeAnnotation::Fn(mapper) = map_specialized[1].as_ref() else {
+      panic!("map mapper should be a function");
+    };
+    assert!(matches!(
+      mapper.arg_types.as_slice(),
+      [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic))
+    ));
+    assert!(matches!(
+      mapper.return_type.as_ref(),
+      CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
+    ));
+  }
+
+  #[test]
+  fn collection_callback_specialization_skips_syntax_members() {
+    let fn_info = make_core_fn(
+      "map",
+      vec![crate::calcit::DYNAMIC_TYPE.clone(), Arc::new(CalcitTypeAnnotation::DynFn)],
+    );
+    let args = CalcitList::from(&[
+      make_local(
+        "items",
+        Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Syntax(Arc::new(
+          calcit::MacroSyntaxType::Syntax,
+        ))))),
+      ),
+      make_local("mapper", Arc::new(CalcitTypeAnnotation::DynFn)),
+    ]);
+
+    assert!(specialize_core_expected_types(&fn_info, &args, &ScopeTypes::new(), &fn_info.arg_types).is_none());
   }
 
   #[test]

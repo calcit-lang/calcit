@@ -267,6 +267,72 @@ fn strict_type_fail_raw_primitive_reports_stable_error_code() {
 }
 
 #[test]
+fn strict_type_fail_untyped_js_object_access_reports_stable_error_code() {
+  run_with_large_stack(|| {
+    let fixture = "calcit/type-fail/untyped-js-object-access-strict.cirru";
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries(fixture);
+    let err = run_check_only(&entries).expect_err("literal access on a bare JsObject must fail strict check-only");
+
+    assert!(
+      err.contains("E_UNTYPED_JS_OBJECT_ACCESS"),
+      "unexpected strict JS object access error: {err}"
+    );
+    assert!(err.contains(".-length"), "operation should be explicit: {err}");
+    assert!(err.contains("inferred `JsObject`"), "receiver evidence should be explicit: {err}");
+    assert!(err.contains("external-object trait"), "migration should be actionable: {err}");
+  });
+}
+
+#[test]
+fn strict_type_fail_js_nullish_dereference_reports_stable_error_code() {
+  run_with_large_stack(|| {
+    let fixture = "calcit/type-fail/js-nullish-dereference-strict.cirru";
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries(fixture);
+    let err = run_check_only(&entries).expect_err("direct dereference of a JsNullish host value must fail strict check-only");
+
+    assert!(
+      err.contains("E_JS_FFI_NULLABLE_DEREF"),
+      "unexpected nullable dereference error: {err}"
+    );
+    assert!(err.contains(".-length"), "operation should be explicit: {err}");
+    assert!(err.contains("js-present?"), "narrowing migration should be actionable: {err}");
+  });
+}
+
+#[test]
+fn strict_type_fail_js_nullish_predicate_reports_stable_error_code() {
+  run_with_large_stack(|| {
+    let fixture = "calcit/type-fail/js-nullish-predicate-strict.cirru";
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries(fixture);
+    let err = run_check_only(&entries).expect_err("legacy nil? on a JsNullish host value must fail strict check-only");
+
+    assert!(
+      err.contains("E_JS_FFI_NULLABLE_PREDICATE"),
+      "unexpected nullable predicate error: {err}"
+    );
+    assert!(err.contains("`nil?`"), "legacy predicate should be explicit: {err}");
+    assert!(err.contains("js-nullish?"), "predicate migration should be actionable: {err}");
+  });
+}
+
+#[test]
+fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let unscoped = load_fixture_entries("calcit/type-fail/unsafe-coerce-unscoped-strict.cirru");
+    let err = run_check_only(&unscoped).expect_err("unscoped unsafe-coerce must fail strict check-only");
+    assert!(err.contains("E_UNSCOPED_UNSAFE_COERCE"), "unexpected strict FFI error: {err}");
+    assert!(err.contains("`:js-ffi` boundary"), "missing lexical-boundary guidance: {err}");
+
+    let scoped = load_fixture_entries("calcit/type-fail/unsafe-coerce-scoped-strict.cirru");
+    run_check_only(&scoped).expect("a marked adapter may contain unsafe-coerce without leaking capability to its caller");
+  });
+}
+
+#[test]
 fn strict_type_fail_erased_generic_relation_reports_stable_error_code() {
   run_with_large_stack(|| {
     let fixture = "calcit/type-fail/erased-generic-relation-strict.cirru";
@@ -948,6 +1014,98 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
           && warning.message().contains("got `map<tag, tag>`")
       }),
       "native map merge should preserve its first map key/value types: {proc_warnings:?}"
+    );
+    let filter_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/filter"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      filter_warnings.len(),
+      3,
+      "collection filters should validate predicate contracts: {warnings:?}"
+    );
+    assert_eq!(
+      filter_warnings
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("arg 2 expects type `fn(:number) -> :bool`")
+            && warning.message().contains("got `fn(:number) -> :number`")
+        })
+        .count(),
+      2,
+      "List and Set filters should pass their Number member type to a Bool predicate: {filter_warnings:?}"
+    );
+    assert!(
+      filter_warnings.iter().any(|warning| {
+        warning.message().contains("arg 2 expects type `fn(:list) -> :bool`")
+          && warning.message().contains("got `fn(:number) -> :number`")
+      }),
+      "Map filters should expose their heterogeneous pair as a List-shaped predicate argument: {filter_warnings:?}"
+    );
+    let iteration_warnings = warnings
+      .iter()
+      .filter(|warning| {
+        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+          && ["calcit.core/any?", "calcit.core/every?", "calcit.core/each"]
+            .iter()
+            .any(|name| warning.message().contains(name))
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(
+      iteration_warnings.len(),
+      3,
+      "collection iteration callbacks should preserve member or pair contracts: {warnings:?}"
+    );
+    assert!(
+      iteration_warnings.iter().any(|warning| {
+        warning.message().contains("calcit.core/any?")
+          && warning.message().contains("expects type `fn(:number) -> :bool`")
+          && warning.message().contains("got `fn(:number) -> :number`")
+      }),
+      "any? should require a Bool predicate over the List member type: {iteration_warnings:?}"
+    );
+    assert!(
+      iteration_warnings.iter().any(|warning| {
+        warning.message().contains("calcit.core/every?")
+          && warning.message().contains("expects type `fn(:list) -> :bool`")
+          && warning.message().contains("got `fn(:number) -> :number`")
+      }),
+      "every? should expose Map entries as heterogeneous List pairs: {iteration_warnings:?}"
+    );
+    assert!(
+      iteration_warnings.iter().any(|warning| {
+        warning.message().contains("calcit.core/each")
+          && warning.message().contains("expects type `fn(:string) -> dynamic`")
+          && warning.message().contains("got `fn(:number) -> :number`")
+      }),
+      "each should constrain callback input while allowing any return type: {iteration_warnings:?}"
+    );
+    let map_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/map"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      map_warnings.len(),
+      3,
+      "collection maps should validate mapper contracts: {warnings:?}"
+    );
+    assert_eq!(
+      map_warnings
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("arg 2 expects type `fn(:string) -> 'MapOutput`")
+            && warning.message().contains("got `fn(:number) -> :number`")
+        })
+        .count(),
+      2,
+      "List and Set maps should pass their String member type to the mapper: {map_warnings:?}"
+    );
+    assert!(
+      map_warnings.iter().any(|warning| {
+        warning.message().contains("arg 2 expects type `fn(:list) -> :list`")
+          && warning.message().contains("got `fn(:number) -> :number`")
+      }),
+      "Map mappers should consume and return heterogeneous List pairs: {map_warnings:?}"
     );
   });
 }
