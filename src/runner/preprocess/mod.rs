@@ -8868,6 +8868,31 @@ fn dynamic_erases_nominal_contract(actual: &CalcitTypeAnnotation, expected: &Cal
   }
 }
 
+fn contains_dynamic_type(annotation: &CalcitTypeAnnotation) -> bool {
+  match annotation {
+    CalcitTypeAnnotation::Dynamic => true,
+    CalcitTypeAnnotation::List(inner)
+    | CalcitTypeAnnotation::Set(inner)
+    | CalcitTypeAnnotation::Ref(inner)
+    | CalcitTypeAnnotation::Optional(inner)
+    | CalcitTypeAnnotation::JsNullish(inner)
+    | CalcitTypeAnnotation::Variadic(inner) => contains_dynamic_type(inner.as_ref()),
+    CalcitTypeAnnotation::Map(key, value) => contains_dynamic_type(key.as_ref()) || contains_dynamic_type(value.as_ref()),
+    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
+      args.iter().any(|arg| contains_dynamic_type(arg.as_ref()))
+    }
+    CalcitTypeAnnotation::Fn(signature) => {
+      signature.arg_types.iter().any(|arg| contains_dynamic_type(arg.as_ref()))
+        || signature
+          .rest_type
+          .as_ref()
+          .is_some_and(|rest| contains_dynamic_type(rest.as_ref()))
+        || contains_dynamic_type(signature.return_type.as_ref())
+    }
+    _ => false,
+  }
+}
+
 fn resolve_strict_boundary_argument_type(arg: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   let Calcit::List(items) = arg else {
     return resolve_type_value(arg, scope_types);
@@ -8904,11 +8929,20 @@ fn reject_strict_dynamic_nominal_argument(
   if let Some(rest) = signature.rest_type.as_ref() {
     expected_types.extend(std::iter::repeat_n(rest, args.len().saturating_sub(expected_types.len())));
   }
+  let actual_types = args
+    .iter()
+    .map(|arg| resolve_strict_boundary_argument_type(arg, scope_types))
+    .collect::<Vec<_>>();
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
-  for (index, (arg, expected)) in args.iter().zip(expected_types).enumerate() {
-    let Some(actual) = resolve_strict_boundary_argument_type(arg, scope_types) else {
-      continue;
-    };
+  for (actual, expected) in actual_types.iter().zip(expected_types.iter()) {
+    if let Some(actual) = actual
+      && !contains_dynamic_type(actual.as_ref())
+    {
+      actual.as_ref().matches_with_bindings(expected.as_ref(), &mut bindings);
+    }
+  }
+  for (index, ((arg, actual), expected)) in args.iter().zip(actual_types).zip(expected_types).enumerate() {
+    let Some(actual) = actual else { continue };
     let resolved_expected = expected.substitute_type_vars(&bindings);
     if dynamic_erases_nominal_contract(actual.as_ref(), resolved_expected.as_ref()) {
       return Err(CalcitErr::use_msg_stack_location_with_code(
@@ -8924,7 +8958,6 @@ fn reject_strict_dynamic_nominal_argument(
         arg.get_location().or_else(|| head.get_location()),
       ));
     }
-    actual.as_ref().matches_with_bindings(expected.as_ref(), &mut bindings);
   }
   Ok(())
 }
@@ -16156,12 +16189,38 @@ mod tests {
     assert!(error.msg.contains("decode-map-as"));
 
     let open_list = CalcitTypeAnnotation::List(calcit::DYNAMIC_TYPE.clone());
-    let people = CalcitTypeAnnotation::List(person_type);
+    let people = CalcitTypeAnnotation::List(person_type.clone());
     assert!(dynamic_erases_nominal_contract(&open_list, &people));
     assert!(!dynamic_erases_nominal_contract(
       &CalcitTypeAnnotation::Dynamic,
       &CalcitTypeAnnotation::Number
     ));
+
+    let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let related_signature = generic_relation_test_signature(vec![generic.clone(), generic], Arc::new(CalcitTypeAnnotation::Unit), None);
+    let person_value = generic_relation_test_local("person", person_type.clone());
+    let related_scope = ScopeTypes::from([
+      (Arc::from("open-value"), calcit::DYNAMIC_TYPE.clone()),
+      (Arc::from("person"), person_type.clone()),
+    ]);
+    let related_args = CalcitList::from(
+      &[
+        generic_relation_test_local("open-value", calcit::DYNAMIC_TYPE.clone()),
+        person_value,
+      ][..],
+    );
+    let related_error = reject_strict_dynamic_nominal_argument(
+      &test_symbol("same-type"),
+      &related_args,
+      &related_signature,
+      &related_scope,
+      "tests.dynamic-boundary",
+      &CallStackList::default(),
+    )
+    .expect_err("later nominal arguments should bind generics before earlier Dynamic arguments are checked");
+    assert_eq!(related_error.code.as_deref(), Some("E_DYNAMIC_NOMINAL_ARGUMENT"));
+    assert!(related_error.msg.contains("argument 1"));
+    assert!(related_error.msg.contains("struct Person"));
   }
 
   #[test]
