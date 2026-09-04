@@ -143,10 +143,10 @@ fn specialize_core_expected_types(
   }
   let receiver = args.first()?;
   let receiver_type = resolve_type_value(receiver, scope_types)?;
-  let mut specialized = expected_types.to_vec();
 
   match fn_info.name.as_ref() {
     "get" => {
+      let mut specialized = expected_types.to_vec();
       specialized[1] = match receiver_type.as_ref() {
         CalcitTypeAnnotation::Map(key_type, _) => key_type.clone(),
         CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::String => Arc::new(CalcitTypeAnnotation::Number),
@@ -157,6 +157,7 @@ fn specialize_core_expected_types(
       Some(specialized)
     }
     "includes?" => {
+      let mut specialized = expected_types.to_vec();
       specialized[1] = match receiver_type.as_ref() {
         CalcitTypeAnnotation::Map(_, value_type) => value_type.clone(),
         CalcitTypeAnnotation::List(item_type) | CalcitTypeAnnotation::Set(item_type) => item_type.clone(),
@@ -683,14 +684,19 @@ mod tests {
   }
 
   fn make_core_fn(name: &str, arg_types: Vec<Arc<CalcitTypeAnnotation>>) -> CalcitFn {
+    let arity = arg_types.len();
     CalcitFn {
       name: Arc::from(name),
       def_ns: Arc::from(calcit::CORE_NS),
       def_ref: None,
       usage: Default::default(),
       scope: Arc::new(Default::default()),
-      args: Arc::new(crate::calcit::CalcitFnArgs::Args(vec![])),
-      call_shape: crate::calcit::CalcitFnCallShape::fixed(0),
+      args: Arc::new(crate::calcit::CalcitFnArgs::Args(
+        (0..arity)
+          .map(|idx| u16::try_from(idx).expect("test function arity should fit local indices"))
+          .collect(),
+      )),
+      call_shape: crate::calcit::CalcitFnCallShape::fixed(arity),
       body: vec![],
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -780,8 +786,8 @@ mod tests {
       def_ref: None,
       usage: Default::default(),
       scope: Arc::new(Default::default()),
-      args: Arc::new(crate::calcit::CalcitFnArgs::Args(vec![])),
-      call_shape: crate::calcit::CalcitFnCallShape::fixed(0),
+      args: Arc::new(crate::calcit::CalcitFnArgs::Args(vec![0, 1, 2])),
+      call_shape: crate::calcit::CalcitFnCallShape::fixed(3),
       body: vec![],
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
@@ -829,8 +835,8 @@ mod tests {
       def_ref: None,
       usage: Default::default(),
       scope: Arc::new(Default::default()),
-      args: Arc::new(crate::calcit::CalcitFnArgs::Args(vec![])),
-      call_shape: crate::calcit::CalcitFnCallShape::fixed(0),
+      args: Arc::new(crate::calcit::CalcitFnArgs::Args(vec![0, 1, 2])),
+      call_shape: crate::calcit::CalcitFnCallShape::fixed(3),
       body: vec![],
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
