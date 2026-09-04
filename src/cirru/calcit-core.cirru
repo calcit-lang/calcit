@@ -911,7 +911,7 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-        '&list:apply $ %{} 'CodeEntry (:doc "|internal helper for list :apply method entry")
+        '&list:apply $ %{} 'CodeEntry (:doc "|Internal List<T> apply helper. Every function must accept T and return one shared U; results are concatenated as List<U>. Mixed input/function types must be normalized or split before calling.")
           :code $ quote
             defn &list:apply (xs fs)
               &list:concat & $ map fs
@@ -920,10 +920,27 @@
           :examples $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] (:: 'List 'T) (:: 'List 'Fn)
+              :args $ [] (:: 'List 'T)
+                :: 'List $ :: 'Fn
+                  {} (:return 'U)
+                    :args $ [] 'T
               :generics $ [] 'T 'U
               :return $ :: 'List 'U
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-homogeneous-function-result-types)
+              :code $ quote
+                do
+                  assert-type
+                      [] 1 2
+                      , .apply $ [] str
+                        fn (x)
+                          str $ * x 2
+                    :: 'List 'String
+                  assert= ([] |1 |2 |2 |4)
+                    ([] 1 2) .apply $ [] str
+                      fn (x)
+                        str $ * x 2
         '&list:assoc $ %{} 'CodeEntry (:doc "|internal function for list association\nSyntax: (&list:assoc list index element)\nParams: list (list), index (number), element (any)\nReturns: list\nReturns new list with element at specified index")
           :code $ quote &runtime-implementation
           :examples $ []

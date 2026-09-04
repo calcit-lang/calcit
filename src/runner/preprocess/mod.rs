@@ -4633,9 +4633,12 @@ fn check_struct_method_args(
   // So we need to skip the first type and check remaining args
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
   let arg_types_without_receiver: Vec<Arc<CalcitTypeAnnotation>> = fn_info.arg_types.iter().skip(1).cloned().collect();
+  if let Some(expected_receiver) = fn_info.arg_types.first() {
+    type_value.as_ref().matches_with_bindings(expected_receiver.as_ref(), &mut bindings);
+  }
 
   for (idx, (arg, expected_type)) in method_args.iter().zip(arg_types_without_receiver.iter()).enumerate() {
-    if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
+    if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
       continue; // No type constraint for this argument
     }
 
@@ -4647,11 +4650,12 @@ fn check_struct_method_args(
         {
           let expected_str = inner_type.as_ref().to_brief_string();
           let actual_str = actual_type.as_ref().to_brief_string();
-          gen_check_warning(
+          gen_check_warning_code(
             format!(
               "[Warn] Method `.{method_name}` variadic arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
               idx + rest_idx + 2
             ),
+            "W_METHOD_ARG_TYPE_MISMATCH",
             file_ns,
             check_warnings,
           );
@@ -4663,13 +4667,19 @@ fn check_struct_method_args(
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
       // Compare types
       if !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings) {
-        let expected_str = expected_type.as_ref().to_brief_string();
-        let actual_str = actual_type.as_ref().to_brief_string();
-        gen_check_warning(
+        let expected_str = expected_type.substitute_type_vars(&bindings).describe();
+        let actual_str = actual_type.as_ref().describe();
+        let migration = if method_name.as_ref() == "apply" && matches!(type_value.as_ref(), CalcitTypeAnnotation::List(_)) {
+          type_checking::LIST_APPLY_MIGRATION_HINT
+        } else {
+          ""
+        };
+        gen_check_warning_code(
           format!(
-            "[Warn] Method `.{method_name}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+            "[Warn] Method `.{method_name}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}{migration}",
             idx + 2 // +2 because idx is 0-based and we skip receiver (arg 1)
           ),
+          "W_METHOD_ARG_TYPE_MISMATCH",
           file_ns,
           check_warnings,
         );
