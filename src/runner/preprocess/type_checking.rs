@@ -241,11 +241,12 @@ fn specialize_collection_sort_expected_types(
   let CalcitTypeAnnotation::List(item_type) = receiver_type.as_ref() else {
     return None;
   };
-  if matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) {
-    return None;
-  }
   let mut specialized = expected_types.to_vec();
   specialized[0] = receiver_type.clone();
+  if matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) {
+    specialized[1] = Arc::new(CalcitTypeAnnotation::DynFn);
+    return Some(specialized);
+  }
   specialized[1] = Arc::new(CalcitTypeAnnotation::from_function_parts(
     vec![item_type.clone(), item_type.clone()],
     Arc::new(CalcitTypeAnnotation::Number),
@@ -1407,6 +1408,17 @@ mod tests {
     };
     assert_eq!(comparator.arg_types.as_slice(), &[string.clone(), string]);
     assert!(matches!(comparator.return_type.as_ref(), CalcitTypeAnnotation::Number));
+
+    let syntax = Arc::new(CalcitTypeAnnotation::Syntax(Arc::new(calcit::MacroSyntaxType::Syntax)));
+    let syntax_receiver = Arc::new(CalcitTypeAnnotation::List(syntax));
+    let syntax_args = CalcitList::from(&[
+      make_local("forms", syntax_receiver.clone()),
+      make_local("comparator", Arc::new(CalcitTypeAnnotation::DynFn)),
+    ]);
+    let syntax_specialized = specialize_collection_sort_expected_types(&syntax_args, &ScopeTypes::new(), &expected.arg_types)
+      .expect("Syntax list sort should restore its open comparator contract");
+    assert_eq!(syntax_specialized[0], syntax_receiver);
+    assert!(matches!(syntax_specialized[1].as_ref(), CalcitTypeAnnotation::DynFn));
   }
 
   #[test]
