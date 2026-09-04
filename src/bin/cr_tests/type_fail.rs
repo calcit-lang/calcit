@@ -732,6 +732,44 @@ fn type_fail_slice_receiver_trait_fixture_reports_warning_code() {
 }
 
 #[test]
+fn type_fail_update_collection_contract_fixture_reports_warning_codes() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/type-fail/update-collection-contract-mismatch.cirru");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("collection update mismatches should preprocess with warnings");
+
+    let warnings = warnings.borrow();
+    let matched: Vec<&LocatedWarning> = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/update"))
+      .collect();
+    assert_eq!(matched.len(), 3, "expected update key and callback warnings, got: {warnings:?}");
+    assert!(
+      matched
+        .iter()
+        .any(|warning| { warning.message().contains("arg 2 expects type `:number`") && warning.message().contains("got `:tag`") }),
+      "List update should require a Number index: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("arg 3 expects type `fn(:number) -> :number`")
+          && warning.message().contains("got `fn(:string) -> :string`")
+      }),
+      "Map update should bind the updater to its value type: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("arg 3 expects type `fn(:number) -> :number`")
+          && warning.message().contains("got `fn('T) -> :string`")
+      }),
+      "inline update callbacks should validate their inferred return type: {matched:?}"
+    );
+  });
+}
+
+#[test]
 fn type_fail_type_slot_enum_invalid_variant() {
   run_with_large_stack(|| {
     let entries = load_fixture_entries("calcit/type-fail/type-slot-enum-invalid-variant.cirru");
