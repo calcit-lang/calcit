@@ -47,9 +47,17 @@ fall back to the compatibility version retained in the snapshot.
 Version 2 selects local definitions whose `:ffi` metadata contains at least
 one lowering field: `:backend`, `:target`, `:kind`, `:symbol`, `:invoke`, or
 `:transport`. Empty `:ffi {}` placeholders and capability-only metadata such
-as `:features` do not declare a raw binding. Malformed non-container metadata
-remains visible as a diagnostic instead of disappearing. Dependencies are
-excluded; run the command in each module that owns a boundary.
+as `:features` do not declare a raw binding. A typed external-object trait with
+`:kind :external-object` is also a static host capability contract rather than
+a callable lowering entry; inspect it with `calcit query def`, not `ffi export`.
+Other callable kinds, incomplete lowering, and malformed non-container metadata
+remain visible instead of disappearing. Dependencies are excluded; run the
+command in each module that owns a boundary.
+
+V2 会忽略 `:kind :external-object` 的 typed host capability trait：它用于静态
+成员检查，不是 callable lowering；请用 `calcit query def` 审计其 schema 与 FFI
+metadata。其他 callable kind、字段不完整的 lowering 以及 malformed metadata
+仍会进入 inventory 并产生诊断，不能借此静默绕过 bindgen 检查。
 
 Both layers remain visible:
 
