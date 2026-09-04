@@ -7,7 +7,10 @@ use std::collections::hash_set::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::calcit::{Calcit, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context};
+use crate::calcit::{
+  Calcit, CalcitTypeAnnotation, DYNAMIC_TYPE, MacroExpansionType, MacroSignature, MacroSyntaxType, ParamShape, ParamShapeToken,
+  SchemaKind, with_type_annotation_warning_context,
+};
 use crate::data::edn::{format_deserialize_error, format_edn_display};
 
 const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.";
@@ -1811,6 +1814,48 @@ fn code_declares_macro(code: &Cirru) -> bool {
   matches!(code, Cirru::List(items) if matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defmacro"))
 }
 
+/// Build the narrowest safe contract that can be recovered from a legacy
+/// direct-quote macro. The old representation preserved parameter shape but
+/// carried no semantic schema or capability declaration, so migration keeps
+/// every input as syntax, emits an `Expr<Dynamic>` expansion, and grants no
+/// compile-time capabilities. Projects can refine that conservative contract
+/// after the Snapshot becomes readable by the current toolchain.
+fn legacy_direct_quote_macro_schema(code: &Cirru, owner: &str) -> Result<Option<Arc<CalcitTypeAnnotation>>, String> {
+  if !code_declares_macro(code) {
+    return Ok(None);
+  }
+  let Cirru::List(items) = code else {
+    unreachable!("code_declares_macro only accepts list forms")
+  };
+  let Some(Cirru::List(params)) = items.get(2) else {
+    return Err(format!(
+      "{owner}: cannot migrate legacy direct-quote `defmacro`: expected a parameter list"
+    ));
+  };
+  let shape = ParamShape::from_tokens(params.iter().filter_map(|item| match item {
+    Cirru::Leaf(token) if matches!(token.as_ref(), "[]" | ",") => None,
+    Cirru::Leaf(token) if token.as_ref() == "?" => Some(ParamShapeToken::OptionalMark),
+    Cirru::Leaf(token) if token.as_ref() == "&" => Some(ParamShapeToken::RestMark),
+    _ => Some(ParamShapeToken::Binding),
+  }));
+  if !shape.errors.is_empty() {
+    return Err(format!(
+      "{owner}: cannot migrate legacy direct-quote `defmacro`: malformed parameter list: {}",
+      shape.errors.join("; ")
+    ));
+  }
+  Ok(Some(Arc::new(CalcitTypeAnnotation::Macro(Arc::new(MacroSignature {
+    generics: Arc::new(vec![]),
+    where_bounds: Arc::new(vec![]),
+    required_inputs: Arc::new(vec![MacroSyntaxType::Syntax; shape.required]),
+    optional_inputs: Arc::new(vec![MacroSyntaxType::Syntax; shape.optional]),
+    rest_input: shape.has_rest.then_some(MacroSyntaxType::Syntax),
+    expansion: MacroExpansionType::Expr(DYNAMIC_TYPE.clone()),
+    capabilities: Arc::new(HashSet::new()),
+    features: Arc::new(HashSet::new()),
+  })))))
+}
+
 fn normalize_schema_for_code(code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   // Data declarations are definition values, not untyped application data.
   // Older snapshots stored their root schema as Dynamic because the concrete
@@ -2195,12 +2240,10 @@ fn load_snapshot_data_for_format_inner(data: &Edn, path: &str) -> Result<(Snapsh
   let pkg: Arc<str> = data.get_or_nil("package").try_into()?;
   let mut files = parse_files_for_format_with_context(&data.get_or_nil("files"), &mut migration)?;
 
-  // A direct-quote macro has no schema to validate yet. Formatting writes an
-  // explicit Dynamic schema, after which the existing strict-loader guidance
-  // points users at the final schema-migration release.
-  if migration.direct_quote_definitions == 0 {
-    validate_strict_macro_schemas(&files, path)?;
-  }
+  // Direct-quote macros receive a conservative strict contract while they are
+  // decoded. Existing modern entries remain subject to the ordinary strict
+  // loader policy even when the same Snapshot also contains legacy quotes.
+  validate_strict_macro_schemas(&files, path)?;
 
   let about = match data.get_or_nil("about") {
     Edn::Nil => None,
@@ -2484,7 +2527,11 @@ fn parse_file_for_format_with_context(
     let entry = match def_value {
       Edn::Quote(code) => {
         migration.direct_quote_definitions += 1;
-        CodeEntry::from_code(code.clone())
+        let mut entry = CodeEntry::from_code(code.clone());
+        if let Some(schema) = legacy_direct_quote_macro_schema(code, &owner)? {
+          entry.schema = schema;
+        }
+        entry
       }
       modern => parse_code_entry_with_context(modern.to_owned(), &owner)?,
     };
@@ -5136,6 +5183,67 @@ mod tests {
     let (_, migration) =
       load_snapshot_data_for_format(&canonical, "calcit.cirru").expect("format loader should accept FileEntry structs too");
     assert_eq!(migration, SnapshotFormatMigration::default());
+  }
+
+  #[test]
+  fn format_loader_synthesizes_a_conservative_contract_for_direct_quote_macros() {
+    let mut legacy = legacy_direct_quote_snapshot([]);
+    let Edn::Map(root) = &mut legacy else {
+      panic!("legacy fixture root map")
+    };
+    let files = root.0.get_mut(&Edn::tag("files")).expect("files");
+    let Edn::Map(files) = files else { panic!("files map") };
+    let file = files.0.get_mut(&Edn::str("mini.core")).expect("mini.core");
+    let Edn::Map(file) = file else { panic!("file map") };
+    let defs = file.0.get_mut(&Edn::tag("defs")).expect("defs");
+    let Edn::Map(defs) = defs else { panic!("defs map") };
+    defs.insert(
+      Edn::str("legacy-macro"),
+      Edn::Quote(parse_one("defmacro legacy-macro (required ? optional & rest) required")),
+    );
+
+    let (snapshot, migration) =
+      load_snapshot_data_for_format(&legacy, "calcit.cirru").expect("direct-quote macro should migrate in one pass");
+    assert_eq!(migration.direct_quote_definitions, 2);
+    let entry = &snapshot.files["mini.core"].defs["legacy-macro"];
+    let CalcitTypeAnnotation::Macro(signature) = entry.schema.as_ref() else {
+      panic!("migrated direct-quote macro should have a strict Macro contract")
+    };
+    assert!(matches!(signature.required_inputs.as_slice(), [MacroSyntaxType::Syntax]));
+    assert!(matches!(signature.optional_inputs.as_slice(), [MacroSyntaxType::Syntax]));
+    assert!(matches!(signature.rest_input, Some(MacroSyntaxType::Syntax)));
+    assert!(
+      matches!(signature.expansion, MacroExpansionType::Expr(ref semantic) if matches!(semantic.as_ref(), CalcitTypeAnnotation::Dynamic))
+    );
+    assert!(signature.capabilities.is_empty());
+
+    let rendered = render_snapshot_content(&snapshot).expect("migrated snapshot should render canonically");
+    let canonical = cirru_edn::parse(&rendered).expect("canonical output should parse");
+    load_snapshot_data(&canonical, "calcit.cirru").expect("one-pass output should pass the current strict loader");
+  }
+
+  #[test]
+  fn format_loader_does_not_hide_modern_dynamic_macros_beside_direct_quotes() {
+    let mut legacy = legacy_direct_quote_snapshot([]);
+    let Edn::Map(root) = &mut legacy else {
+      panic!("legacy fixture root map")
+    };
+    let files = root.0.get_mut(&Edn::tag("files")).expect("files");
+    let Edn::Map(files) = files else { panic!("files map") };
+    let file = files.0.get_mut(&Edn::str("mini.core")).expect("mini.core");
+    let Edn::Map(file) = file else { panic!("file map") };
+    let defs = file.0.get_mut(&Edn::tag("defs")).expect("defs");
+    let Edn::Map(defs) = defs else { panic!("defs map") };
+    defs.insert(
+      Edn::str("modern-dynamic-macro"),
+      Edn::from(&CodeEntry::from_code(parse_one("defmacro modern-dynamic-macro (x) x"))),
+    );
+
+    let error = load_snapshot_data_for_format(&legacy, "calcit.cirru")
+      .expect_err("an existing modern Dynamic macro must remain rejected even beside direct quotes");
+    assert!(error.contains("mini.core"), "error: {error}");
+    assert!(error.contains("modern-dynamic-macro"), "error: {error}");
+    assert!(error.contains("a Dynamic schema"), "error: {error}");
   }
 
   #[test]

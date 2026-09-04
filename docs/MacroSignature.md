@@ -34,11 +34,16 @@ the macro call stack and source location.
 Existing `(:: 'Macro ({} (:args ...) (:return ...)))` schemas remain readable
 and serialize without data loss. Current Calcit no longer accepts such runtime
 `Fn` schemas or an omitted/whole-`Dynamic` macro schema: Snapshot loading fails
-with the exact definition path. Migrate a module using final-compatible Calcit
-0.13.51, then publish its strict contract before upgrading consumers. Always
-include `--deps` when checking an application, since installed releases are what
-the loader resolves. The analyzer never invents phase-aware contracts from
-runtime-looking parameter types.
+with the exact definition path. For an already structured `CodeEntry`, migrate
+the module using final-compatible Calcit 0.13.51, then publish its strict
+contract before upgrading consumers. An earlier direct-quote Snapshot instead
+uses the current isolated `calcit edit format` path: the formatter preserves its
+parameter shape as `Syntax`, emits `Expr<Dynamic>`, and grants no capabilities.
+This conservative bridge is limited to definitions decoded from direct quotes;
+it neither rewrites an existing Dynamic schema nor guesses semantic types or
+compile-time effects. Review and narrow the generated contract before release.
+Always include `--deps` when checking an application, since installed releases
+are what the loader resolves.
 
 ## Migrating structural macros
 
