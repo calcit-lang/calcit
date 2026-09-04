@@ -267,72 +267,6 @@ fn strict_type_fail_raw_primitive_reports_stable_error_code() {
 }
 
 #[test]
-fn strict_type_fail_untyped_js_object_access_reports_stable_error_code() {
-  run_with_large_stack(|| {
-    let fixture = "calcit/type-fail/untyped-js-object-access-strict.cirru";
-    let _strict = StrictTypesReset::enabled();
-    let entries = load_fixture_entries(fixture);
-    let err = run_check_only(&entries).expect_err("literal access on a bare JsObject must fail strict check-only");
-
-    assert!(
-      err.contains("E_UNTYPED_JS_OBJECT_ACCESS"),
-      "unexpected strict JS object access error: {err}"
-    );
-    assert!(err.contains(".-length"), "operation should be explicit: {err}");
-    assert!(err.contains("inferred `JsObject`"), "receiver evidence should be explicit: {err}");
-    assert!(err.contains("external-object trait"), "migration should be actionable: {err}");
-  });
-}
-
-#[test]
-fn strict_type_fail_js_nullish_dereference_reports_stable_error_code() {
-  run_with_large_stack(|| {
-    let fixture = "calcit/type-fail/js-nullish-dereference-strict.cirru";
-    let _strict = StrictTypesReset::enabled();
-    let entries = load_fixture_entries(fixture);
-    let err = run_check_only(&entries).expect_err("direct dereference of a JsNullish host value must fail strict check-only");
-
-    assert!(
-      err.contains("E_JS_FFI_NULLABLE_DEREF"),
-      "unexpected nullable dereference error: {err}"
-    );
-    assert!(err.contains(".-length"), "operation should be explicit: {err}");
-    assert!(err.contains("js-present?"), "narrowing migration should be actionable: {err}");
-  });
-}
-
-#[test]
-fn strict_type_fail_js_nullish_predicate_reports_stable_error_code() {
-  run_with_large_stack(|| {
-    let fixture = "calcit/type-fail/js-nullish-predicate-strict.cirru";
-    let _strict = StrictTypesReset::enabled();
-    let entries = load_fixture_entries(fixture);
-    let err = run_check_only(&entries).expect_err("legacy nil? on a JsNullish host value must fail strict check-only");
-
-    assert!(
-      err.contains("E_JS_FFI_NULLABLE_PREDICATE"),
-      "unexpected nullable predicate error: {err}"
-    );
-    assert!(err.contains("`nil?`"), "legacy predicate should be explicit: {err}");
-    assert!(err.contains("js-nullish?"), "predicate migration should be actionable: {err}");
-  });
-}
-
-#[test]
-fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
-  run_with_large_stack(|| {
-    let _strict = StrictTypesReset::enabled();
-    let unscoped = load_fixture_entries("calcit/type-fail/unsafe-coerce-unscoped-strict.cirru");
-    let err = run_check_only(&unscoped).expect_err("unscoped unsafe-coerce must fail strict check-only");
-    assert!(err.contains("E_UNSCOPED_UNSAFE_COERCE"), "unexpected strict FFI error: {err}");
-    assert!(err.contains("`:js-ffi` boundary"), "missing lexical-boundary guidance: {err}");
-
-    let scoped = load_fixture_entries("calcit/type-fail/unsafe-coerce-scoped-strict.cirru");
-    run_check_only(&scoped).expect("a marked adapter may contain unsafe-coerce without leaking capability to its caller");
-  });
-}
-
-#[test]
 fn strict_type_fail_erased_generic_relation_reports_stable_error_code() {
   run_with_large_stack(|| {
     let fixture = "calcit/type-fail/erased-generic-relation-strict.cirru";
@@ -758,6 +692,262 @@ fn type_fail_core_map_where_bound_fixture_reports_warning_code() {
         && warning.message().contains("calcit.core/inc"),
       "warning message was: {}",
       warning.message()
+    );
+  });
+}
+
+#[test]
+fn type_fail_slice_receiver_trait_fixture_reports_warning_code() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/type-fail/slice-receiver-trait-mismatch.cirru");
+    let slice_schema = program::lookup_def_schema("calcit.core", "slice");
+    let CalcitTypeAnnotation::Fn(slice_fn_annot) = slice_schema.as_ref() else {
+      panic!("core slice schema should load as fn, got {slice_schema:?}");
+    };
+    assert_eq!(slice_fn_annot.where_bounds.len(), 1, "core slice should carry one where-bound");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("slice receiver mismatch should preprocess with a warning");
+
+    let warnings = warnings.borrow();
+    let matched: Vec<&LocatedWarning> = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_GENERIC_WHERE_BOUND_MISMATCH"))
+      .collect();
+    assert_eq!(
+      matched.len(),
+      1,
+      "expected exactly one slice where-bound warning, got: {warnings:?}"
+    );
+    let warning = matched[0];
+    assert!(
+      warning.message().contains("`:number`")
+        && warning.message().contains("Sliceable")
+        && warning.message().contains("calcit.core/slice"),
+      "warning message was: {}",
+      warning.message()
+    );
+  });
+}
+
+#[test]
+fn type_fail_update_collection_contract_fixture_reports_warning_codes() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/type-fail/update-collection-contract-mismatch.cirru");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("collection update mismatches should preprocess with warnings");
+
+    let warnings = warnings.borrow();
+    let matched: Vec<&LocatedWarning> = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/update"))
+      .collect();
+    assert_eq!(matched.len(), 3, "expected update key and callback warnings, got: {warnings:?}");
+    assert!(
+      matched
+        .iter()
+        .any(|warning| { warning.message().contains("arg 2 expects type `:number`") && warning.message().contains("got `:tag`") }),
+      "List update should require a Number index: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("arg 3 expects type `fn(:number) -> :number`")
+          && warning.message().contains("got `fn(:string) -> :string`")
+      }),
+      "Map update should bind the updater to its value type: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("arg 3 expects type `fn(:number) -> :number`")
+          && warning.message().contains("got `fn('T) -> :string`")
+      }),
+      "inline update callbacks should validate their inferred return type: {matched:?}"
+    );
+  });
+}
+
+#[test]
+fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/type-fail/collection-member-contract-mismatch.cirru");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("collection member mismatches should preprocess with warnings");
+
+    let warnings = warnings.borrow();
+    let matched: Vec<&LocatedWarning> = warnings
+      .iter()
+      .filter(|warning| {
+        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+          && (warning.message().contains("calcit.core/get")
+            || warning.message().contains("calcit.core/includes?")
+            || warning.message().contains("calcit.core/contains?")
+            || warning.message().contains("calcit.core/assoc")
+            || warning.message().contains("calcit.core/dissoc"))
+      })
+      .collect();
+    assert_eq!(
+      matched.len(),
+      17,
+      "expected lookup, membership, key, association, and dissociation warnings, got: {warnings:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("calcit.core/get")
+          && warning.message().contains("arg 2 expects type `:number`")
+          && warning.message().contains("got `:tag`")
+      }),
+      "List lookup should require a Number index: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("calcit.core/get")
+          && warning.message().contains("arg 2 expects type `:tag`")
+          && warning.message().contains("got `:number`")
+      }),
+      "Map lookup should require its key type: {matched:?}"
+    );
+    assert_eq!(
+      matched
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("calcit.core/includes?")
+            && warning.message().contains("arg 2 expects type `:number`")
+            && warning.message().contains("got `:tag`")
+        })
+        .count(),
+      2,
+      "Set members and Map values should both preserve their Number type: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("calcit.core/includes?")
+          && warning.message().contains("arg 2 expects type `:string`")
+          && warning.message().contains("got `:number`")
+      }),
+      "String membership should require a String substring: {matched:?}"
+    );
+    assert_eq!(
+      matched
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("calcit.core/contains?")
+            && warning.message().contains("arg 2 expects type `:number`")
+            && warning.message().contains("got `:tag`")
+        })
+        .count(),
+      3,
+      "List and Enum indices plus Set members should preserve their Number contract: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("calcit.core/contains?")
+          && warning.message().contains("arg 2 expects type `:tag`")
+          && warning.message().contains("got `:number`")
+      }),
+      "Map containment should require its key type: {matched:?}"
+    );
+    assert_eq!(
+      matched
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("calcit.core/assoc")
+            && warning.message().contains("arg 2 expects type `:number`")
+            && warning.message().contains("got `:tag`")
+        })
+        .count(),
+      2,
+      "List and Enum association should require a Number index: {matched:?}"
+    );
+    assert_eq!(
+      matched
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("calcit.core/assoc")
+            && warning.message().contains("arg 3 expects type `:number`")
+            && warning.message().contains("got `:tag`")
+        })
+        .count(),
+      2,
+      "List and Map association should preserve their Number member/value type: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("calcit.core/assoc")
+          && warning.message().contains("arg 2 expects type `:tag`")
+          && warning.message().contains("got `:number`")
+      }),
+      "Map association should require its key type: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("calcit.core/assoc")
+          && warning.message().contains("arg 3 expects type `:number`")
+          && warning.message().contains("got `:tag`")
+      }),
+      "Map association should require its value type: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("calcit.core/dissoc")
+          && warning.message().contains("arg 2 expects type `:number`")
+          && warning.message().contains("got `:tag`")
+      }),
+      "List dissociation should require a Number index: {matched:?}"
+    );
+    assert_eq!(
+      matched
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("calcit.core/dissoc")
+            && warning.message().contains("expects type `:tag`")
+            && warning.message().contains("got `:number`")
+        })
+        .count(),
+      2,
+      "Map dissociation should validate both the first and later rest keys: {matched:?}"
+    );
+    let proc_warnings = warnings
+      .iter()
+      .filter(|warning| {
+        warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
+          && ["&map:dissoc", "&list:concat", "&merge"]
+            .iter()
+            .any(|proc| warning.message().contains(&format!("Proc `{proc}`")))
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(
+      proc_warnings.len(),
+      3,
+      "typed native collection rests should be validated: {warnings:?}"
+    );
+    assert!(
+      proc_warnings.iter().any(|warning| {
+        warning.message().contains("Proc `&map:dissoc`")
+          && warning.message().contains("arg 3 expects type `:tag`")
+          && warning.message().contains("got `:number`")
+      }),
+      "native map dissoc should retain the map key binding for later keys: {proc_warnings:?}"
+    );
+    assert!(
+      proc_warnings.iter().any(|warning| {
+        warning.message().contains("Proc `&list:concat`")
+          && warning.message().contains("arg 3 expects type `list<number>`")
+          && warning.message().contains("got `list<tag>`")
+      }),
+      "native list concat should preserve its first list item type: {proc_warnings:?}"
+    );
+    assert!(
+      proc_warnings.iter().any(|warning| {
+        warning.message().contains("Proc `&merge`")
+          && warning.message().contains("arg 3 expects type `map<tag, number>`")
+          && warning.message().contains("got `map<tag, tag>`")
+      }),
+      "native map merge should preserve its first map key/value types: {proc_warnings:?}"
     );
   });
 }

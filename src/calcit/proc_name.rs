@@ -499,8 +499,9 @@ use crate::CalcitTypeAnnotation;
 pub struct ProcTypeSignature {
   /// return type declared
   pub return_type: Arc<CalcitTypeAnnotation>,
-  /// Argument value types in order. Parameter omission is CalcitProc arity metadata;
-  /// use Variadic to mark variadic args (no checking after this mark).
+  /// Argument value types in order. Parameter omission is CalcitProc arity metadata.
+  /// `Variadic<T>` supplies rest-element inference evidence; procs whose runtime
+  /// contract requires every rest argument to match `T` opt into checking it.
   pub arg_types: Vec<Arc<CalcitTypeAnnotation>>,
 }
 
@@ -600,6 +601,12 @@ fn some_fn() -> Arc<CalcitTypeAnnotation> {
 }
 
 impl CalcitProc {
+  /// Whether a typed `Variadic<T>` is a homogeneous call contract rather than
+  /// collection-literal inference evidence.
+  pub(crate) fn checks_variadic_arg_types(&self) -> bool {
+    matches!(self, Self::NativeListConcat | Self::NativeMerge | Self::NativeMapDissoc)
+  }
+
   /// Get the namespace and definition name for this proc.
   /// All built-in procs are defined in calcit.core namespace.
   /// Returns (namespace, definition_name)
@@ -1058,8 +1065,8 @@ impl CalcitProc {
         arg_types: vec![some_tag("map"), dynamic_tag()],
       }),
       NativeMapDissoc => Some(ProcTypeSignature {
-        return_type: some_tag("map"),
-        arg_types: vec![some_tag("map"), dynamic_tag(), variadic_dynamic()],
+        return_type: map_of(type_var("K"), type_var("V")),
+        arg_types: vec![map_of(type_var("K"), type_var("V")), type_var("K"), variadic_of(type_var("K"))],
       }),
       NativeMapCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
@@ -1069,13 +1076,22 @@ impl CalcitProc {
         return_type: some_tag("bool"),
         arg_types: vec![map_of(type_var("K"), type_var("V"))],
       }),
-      NativeMapContains | NativeMapIncludes => Some(ProcTypeSignature {
+      NativeMapContains => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
-        arg_types: vec![some_tag("map"), dynamic_tag()],
+        arg_types: vec![map_of(type_var("K"), type_var("V")), type_var("K")],
+      }),
+      NativeMapIncludes => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![map_of(type_var("K"), type_var("V")), type_var("V")],
       }),
       NativeMapAssoc => Some(ProcTypeSignature {
-        return_type: some_tag("map"),
-        arg_types: vec![some_tag("map"), dynamic_tag(), dynamic_tag(), variadic_dynamic()],
+        return_type: map_of(type_var("K"), type_var("V")),
+        arg_types: vec![
+          map_of(type_var("K"), type_var("V")),
+          type_var("K"),
+          type_var("V"),
+          variadic_dynamic(),
+        ],
       }),
       NativeMapDiffNew => Some(ProcTypeSignature {
         return_type: map_of(type_var("K"), type_var("W")),
@@ -1129,7 +1145,7 @@ impl CalcitProc {
       }),
       NativeSetIncludes => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
-        arg_types: vec![some_set(), dynamic_tag()],
+        arg_types: vec![set_of(type_var("T")), type_var("T")],
       }),
       NativeSetDestruct => Some(ProcTypeSignature {
         return_type: optional_tag("list"),
@@ -1569,6 +1585,54 @@ mod tests {
         if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T")
     ));
 
+    let map_contains = CalcitProc::NativeMapContains.get_type_signature().expect("map contains signature");
+    assert!(matches!(
+      map_contains.arg_types.get(1).map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "K"
+    ));
+    let map_includes = CalcitProc::NativeMapIncludes.get_type_signature().expect("map includes signature");
+    assert!(matches!(
+      map_includes.arg_types.get(1).map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "V"
+    ));
+    let map_assoc = CalcitProc::NativeMapAssoc.get_type_signature().expect("map assoc signature");
+    assert!(matches!(
+      map_assoc.return_type.as_ref(),
+      CalcitTypeAnnotation::Map(key, value)
+        if matches!(key.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "K")
+          && matches!(value.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "V")
+    ));
+    assert!(matches!(
+      map_assoc.arg_types.get(1).map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "K"
+    ));
+    assert!(matches!(
+      map_assoc.arg_types.get(2).map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "V"
+    ));
+    let map_dissoc = CalcitProc::NativeMapDissoc.get_type_signature().expect("map dissoc signature");
+    assert!(matches!(
+      map_dissoc.return_type.as_ref(),
+      CalcitTypeAnnotation::Map(key, value)
+        if matches!(key.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "K")
+          && matches!(value.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "V")
+    ));
+    assert!(matches!(
+      map_dissoc.arg_types.get(2).map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::Variadic(inner))
+        if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "K")
+    ));
+    let set_includes = CalcitProc::NativeSetIncludes.get_type_signature().expect("set includes signature");
+    assert!(matches!(
+      set_includes.arg_types.first().map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::Set(inner))
+        if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T")
+    ));
+    assert!(matches!(
+      set_includes.arg_types.get(1).map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "T"
+    ));
+
     let atom = CalcitProc::Atom.get_type_signature().expect("atom signature");
     assert!(matches!(
       atom.return_type.as_ref(),
@@ -1579,6 +1643,19 @@ mod tests {
       atom.arg_types.first().map(AsRef::as_ref),
       Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "T"
     ));
+  }
+
+  #[test]
+  fn typed_variadic_proc_policy_distinguishes_contracts_from_literal_inference() {
+    for proc in [CalcitProc::NativeListConcat, CalcitProc::NativeMerge, CalcitProc::NativeMapDissoc] {
+      assert!(proc.checks_variadic_arg_types(), "{proc} should enforce every typed rest argument");
+    }
+    for proc in [CalcitProc::List, CalcitProc::Set] {
+      assert!(
+        !proc.checks_variadic_arg_types(),
+        "{proc} should infer a common literal item type and preserve heterogeneous fallback"
+      );
+    }
   }
 
   #[test]

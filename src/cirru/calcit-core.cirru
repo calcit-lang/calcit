@@ -377,6 +377,7 @@
         '&core-list-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add.")
           :code $ quote
             def &core-list-impls $ [] &core-list-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-list-impl) (&impl::new Len internal/&core-len-list-impl) (&impl::new Mappable internal/&core-mappable-list-impl) (&impl::new Countable internal/&core-countable-list-impl) (&impl::new Contains internal/&core-contains-list-impl)
+              &impl::new Sliceable $ :: :slice &list:slice
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -443,6 +444,7 @@
         '&core-string-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for string")
           :code $ quote
             def &core-string-impls $ [] &core-string-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Contains internal/&core-contains-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
+              &impl::new Sliceable $ :: :slice &str:slice
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -861,7 +863,7 @@
           :tags $ #{} :builtin :internal
         '&init-builtin-impls! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-enum-impls) (identity &core-struct-impls) (identity &core-scalar-impls) (identity &core-ref-impls) (identity Add) (identity Debug) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
+            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-enum-impls) (identity &core-struct-impls) (identity &core-scalar-impls) (identity &core-ref-impls) (identity Add) (identity Debug) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show) (identity Sliceable)
               if
                 &= (&get-calcit-backend) :js
                 register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :ref &core-ref-impls
@@ -1611,11 +1613,11 @@
                     assert= (&{}) (&list:nth same 1)
                     assert= 2 $ count (&list:nth same 2)
               :tags $ #{} :core :unit
-        '&map:dissoc $ %{} 'CodeEntry (:doc "|internal function for map dissociation\nSyntax: (&map:dissoc map key & keys)\nParams: map (map), key (any), keys (any, variadic)\nReturns: map\nReturns new map without specified keys")
+        '&map:dissoc $ %{} 'CodeEntry (:doc "|internal function for map dissociation\nSyntax: (&map:dissoc map key & keys)\nParams: map (Map<K,V>), key (K), keys (K, variadic)\nReturns: Map<K,V>\nReturns new map without specified keys")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
-            {}
+            {} (:rest 'K)
               :args $ [] (:: 'Map 'K 'V) 'K
               :generics $ [] 'K 'V
               :return $ :: 'Map 'K 'V
@@ -1716,12 +1718,12 @@
               :generics $ [] 'K 'V
               :return $ :: 'Optional 'V
           :tags $ #{} :builtin :internal
-        '&map:includes? $ %{} 'CodeEntry (:doc "|internal function for checking if map includes key\nSyntax: (&map:includes? map key)\nParams: map (map), key (any)\nReturns: boolean\nReturns true if map includes key (alias for contains?)")
+        '&map:includes? $ %{} 'CodeEntry (:doc "|Internal function for checking whether a map includes a value. Syntax: (&map:includes? map value). Returns true when any map value equals the supplied value.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Bool)
-              :args $ [] (:: 'Map 'K 'V) 'K
+              :args $ [] (:: 'Map 'K 'V) 'V
               :generics $ [] 'K 'V
           :tags $ #{} :alias :builtin :internal
         '&map:keys $ %{} 'CodeEntry (:doc "|Internal typed Map<K,V> key projection. Returns Set<K>; user code should call `.keys`.")
@@ -3122,6 +3124,15 @@
               :: :fn $ {} (:return :string)
                 :generics $ [] 'T
                 :args $ [] 'T
+          :examples $ []
+          :schema $ :: 'Trait
+          :tags $ #{} :trait
+        'Sliceable $ %{} 'CodeEntry (:doc "|Core trait for values whose slice operation preserves the receiver type. List and String implement it.")
+          :code $ quote
+            deftrait Sliceable $ .slice
+              :: :fn $ {} (:return 'T)
+                :generics $ [] 'T
+                :args $ [] 'T 'Number 'Number
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
@@ -7542,8 +7553,10 @@
             quote $ assert= ([] 3 4)
               slice ([] 1 2 3 4) 2
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Number 'Number
+            {} (:return 'C)
+              :args $ [] 'C 'Number 'Number
+              :generics $ [] 'C
+              :where $ {} ('C 'Sliceable)
           :tests $ []
             %{} 'TestEntry (:name |slices-strings)
               :code $ quote
@@ -7556,6 +7569,14 @@
                 do
                   assert= "|文字" $ slice "|中文字符串" 1 3
                   assert= "|文字符串" $ slice "|中文字符串" 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-slice-container-types)
+              :code $ quote
+                do
+                  assert-type
+                    slice ([] 1 2 3) 1
+                    :: 'List 'Number
+                  assert-type (slice |abc 1) 'String
               :tags $ #{} :core :unit
         'some-in? $ %{} 'CodeEntry (:doc |)
           :code $ quote

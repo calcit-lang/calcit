@@ -947,6 +947,16 @@ pub(crate) fn infer_unhinted_callback_signature(xs: &CalcitList, scope_types: &S
   {
     return None;
   }
+  if let Some(Calcit::List(params)) = xs.get(2)
+    && params
+      .iter()
+      .any(|param| matches!(param, Calcit::Syntax(CalcitSyntax::ArgOptional | CalcitSyntax::ArgSpread, _)))
+  {
+    // Function annotations do not retain optional-parameter call shapes.
+    // Recovering these callbacks as fixed arity would reject valid shorthand
+    // lambdas that accept an optional second argument.
+    return None;
+  }
   let (arg_types, rest_type) = infer_preprocessed_function_parameters(xs.get(2));
   let return_type = infer_type_from_expr(xs.get(xs.len() - 1)?, scope_types)
     .filter(|annotation| !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn))?;
