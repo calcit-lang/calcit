@@ -75,8 +75,13 @@ no-op or fabricated success value.
 | Construct and inspect a path value without I/O | yes | yes | yes | value-level support only | `fs:path`, `FsPath .to-string` |
 | `FsPath .read-text` / `.write-text` | yes | host injection | browser `localStorage` adapter | unavailable | `FsPath` Result-returning methods |
 | `FsPath .read-dir` / `.walk-dir` | yes | host injection | unavailable | unavailable | `FsPath` Result-returning methods |
-| Process, signal, repeating timer, timezone/date, glob, crypto | module | module/adapter | capability-specific | unavailable unless explicitly imported | typed APIs in `calcit.std` or focused modules |
-| HTTP fetch, HTTP server, WebSocket server/stream | native module | JS/browser adapter where provided | browser adapter where provided | unavailable unless explicitly imported | focused modules with typed task/response/server capabilities |
+| Process and signal lifecycle | `calcit.std` native module | Node adapter | unavailable | unavailable | typed process/signal APIs in `calcit.std` |
+| Repeating timer and timezone/date | `calcit.std` native module | Node adapter | browser adapter | unavailable | typed timer/date APIs in `calcit.std` |
+| Glob | focused native module | Node adapter | unavailable | unavailable | focused glob module; do not infer browser support |
+| Crypto | focused native module | Node adapter | browser crypto adapter | unavailable | focused crypto module or host adapter |
+| HTTP fetch | `calcit-fetch` native module | Node adapter | browser adapter | unavailable | typed task/response APIs in `calcit-fetch` or a host adapter |
+| HTTP and WebSocket servers | `calcit-http` / `calcit-wss` native modules | Node adapter | unavailable | unavailable | typed server/request/response capabilities in focused modules |
+| WebSocket client stream | focused native module | Node adapter | browser adapter | unavailable | typed stream capability in a focused module or host adapter |
 | Native dylib sync/async/blocking/resource transport | C-safe FFI v1 | not applicable | not applicable | separate future adapter | raw runtime boundary plus typed library methods |
 
 The matrix records what exists today, not an entitlement for every backend.
