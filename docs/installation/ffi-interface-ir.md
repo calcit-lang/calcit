@@ -112,9 +112,12 @@ handwritten Calcit adapter and wrap opaque native tokens with `ffi:task` or
 Unsupported signatures distinguish two other common handwritten boundaries.
 `E_FFI_IR_DYNAMIC_TYPE` identifies an open `Dynamic` position that must become a
 concrete raw type or be validated/decoded by an adapter.
-`E_FFI_IR_CALLBACK_TYPE` identifies typed and untyped callbacks because v2 does
-not define their ownership, thread-affinity, or lifetime contract. Other types
-outside the portable subset continue to use `E_FFI_IR_UNSUPPORTED_TYPE`.
+`E_FFI_IR_CALLBACK_TYPE` identifies typed runtime function and untyped `DynFn`
+callbacks because v2 does not define their ownership, thread-affinity, or
+lifetime contract. A nested macro-kind function annotation is not a runtime
+callback and continues to use `E_FFI_IR_UNSUPPORTED_TYPE`; a macro raw binding
+uses `E_FFI_IR_UNSUPPORTED_SCHEMA`. Other types outside the portable subset
+continue to use `E_FFI_IR_UNSUPPORTED_TYPE`.
 
 Declaration IDs follow the resolved nominal Struct/Enum name, not necessarily
 the snapshot binding that stores the base definition. This supports the normal
@@ -137,9 +140,12 @@ core 的 `FfiTask` 与 `FfiResponse` 是已知的宿主管理 capability，并�
 
 unsupported signature 还会区分另外两类常见手写边界：
 `E_FFI_IR_DYNAMIC_TYPE` 表示开放的 `Dynamic` 位置，必须改成具体 raw type，或在
-adapter 中验证/解码；`E_FFI_IR_CALLBACK_TYPE` 表示 typed/untyped callback，因为
-v2 尚未定义 ownership、线程亲和性与生命周期契约。其他超出 portable subset 的
-类型仍使用 `E_FFI_IR_UNSUPPORTED_TYPE`。
+adapter 中验证/解码；`E_FFI_IR_CALLBACK_TYPE` 表示 typed runtime function 与
+untyped `DynFn` callback，因为 v2 尚未定义 ownership、线程亲和性与生命周期契约。
+嵌套的 macro-kind function annotation 不是 runtime callback，仍使用
+`E_FFI_IR_UNSUPPORTED_TYPE`；macro raw binding 使用
+`E_FFI_IR_UNSUPPORTED_SCHEMA`。其他超出 portable subset 的类型仍使用
+`E_FFI_IR_UNSUPPORTED_TYPE`。
 
 Declaration ID 以解析出的 nominal Struct/Enum 名称为准，不强制等于保存 base
 definition 的 Snapshot binding 名称，因此支持顶层 `Foo0 = defstruct Foo ...` 与

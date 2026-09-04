@@ -447,6 +447,13 @@ fn convert_type(
       format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot generate an open Dynamic type at `{path}`."),
       "Replace Dynamic at the raw binding with a concrete generator-safe type or a declared local Struct/Enum. If the payload is intentionally open, keep it behind a handwritten adapter and validate or decode it before entering typed business code.",
     ))),
+    CalcitTypeAnnotation::Fn(signature) if signature.fn_kind == SchemaKind::Macro => Err(Box::new(diagnostic(
+      definition,
+      path,
+      "E_FFI_IR_UNSUPPORTED_TYPE",
+      format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot represent a macro schema at `{path}`."),
+      "Keep macros outside runtime FFI signatures. Expose a runtime Fn only when it is an actual callback boundary, or move compile-time orchestration into handwritten Calcit code.",
+    ))),
     CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn => Err(Box::new(diagnostic(
       definition,
       path,
@@ -1770,6 +1777,39 @@ mod tests {
       ["signature.parameters.0.type", "signature.parameters.1.type"]
     );
     assert_eq!(report, export(), "callback diagnostics must be deterministic");
+  }
+
+  #[test]
+  fn preserves_macro_kind_when_classifying_nested_function_annotations() {
+    let macro_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![DYNAMIC_TYPE.clone()],
+      return_type: DYNAMIC_TYPE.clone(),
+      fn_kind: SchemaKind::Macro,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    let report = export_snapshot(
+      &snapshot(vec![(
+        "expand",
+        function_entry(vec![macro_schema], Arc::new(CalcitTypeAnnotation::Unit), native_metadata("expand")),
+      )]),
+      None,
+    )
+    .expect("inventory nested macro schema");
+
+    assert_eq!(report.summary.supported, 0);
+    assert_eq!(report.summary.unsupported, 1);
+    assert_eq!(report.summary.diagnostics, 1);
+    assert_eq!(report.diagnostics[0].code, "E_FFI_IR_UNSUPPORTED_TYPE");
+    assert_eq!(report.diagnostics[0].path, "signature.parameters.0.type");
+    assert!(report.diagnostics[0].message.contains("macro schema"));
+    assert!(
+      report.diagnostics[0]
+        .suggestion
+        .contains("Keep macros outside runtime FFI signatures")
+    );
   }
 
   #[test]
