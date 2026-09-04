@@ -214,6 +214,13 @@ do (; struct example)
 
 For preprocess to resolve impls and inline methods, keep struct/enum definitions and `impl-traits` at **top-level `ns/def`**. If they are created inside `defn`/`defmacro` bodies, preprocess only sees dynamic values and method dispatch cannot be specialized.
 
+A public function that constructs a top-level alias may keep the underlying
+nominal type in its return schema—for example, return `Person0` while the body
+constructs `%{} Person`. Preprocess preserves `Person0`'s declared fields and
+adds `Person`'s method evidence when every returning body path proves the same
+attachment. Explicitly diverging paths such as `raise` do not erase that
+evidence; live branches with different attachments remain conservative.
+
 When running `warn-dyn-method`, preprocess emits extra diagnostics for:
 
 - `.method` call sites that have multiple trait candidates with the same method name.
