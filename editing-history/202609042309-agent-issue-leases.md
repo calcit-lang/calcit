@@ -11,3 +11,5 @@
 - Agent ID 应包含足够长的任务/会话标识和随机后缀，避免多个任务共享短前缀时错误续租或释放彼此的锁。
 - 生态 Wiki 正文只维护在独立 `calcit-lang/calcit.wiki.git`，主仓库不保存 `docs/wiki/` 副本、同步 workflow 或发布脚本；主仓库仅链接 Wiki，并保留版本化契约文档作为 source of truth。
 - `release` 先原子删除权威 lock ref，再更新 Issue 标签；若标签更新中断，后续 claim 可修复无锁的陈旧 `agent:claimed` 状态，避免出现“已 review 但锁仍有效”的误导状态。
+- Lease commit 使用稳定空 tree；首次 claim 创建无 parent 的 metadata-only 根提交，heartbeat 与过期接管才把前一 lock commit 作为唯一 parent。这样本地 dirty/unpublished HEAD 的 tree、commit 和 ancestor objects 都不会经 `agent-lock/*` ref 发布。
+- `status` 在格式化时间前验证 `claimed_at`、`heartbeat_at`、`expires_at`，损坏元数据会显示 `CORRUPT` 和原始字段并以非零状态退出，便于人工诊断。

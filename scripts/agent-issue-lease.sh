@@ -59,9 +59,11 @@ field() {
 }
 
 make_lock_commit() {
-  local issue="$1" agent="$2" claimed="$3" expires="$4" scope="$5" parent="$6"
+  local issue="$1" agent="$2" claimed="$3" expires="$4" scope="$5" parent="${6:-}"
   local tree message
-  tree="$(git rev-parse HEAD^{tree})"
+  # Lease refs must never publish the caller's repository tree or HEAD ancestry.
+  # `git mktree` with empty input produces Git's stable empty tree object.
+  tree="$(git mktree </dev/null)"
   message="agent-lease-v1
 issue=$issue
 agent_id=$agent
@@ -70,11 +72,19 @@ heartbeat_at=$(date +%s)
 expires_at=$expires
 scope=$scope"
 
-  GIT_AUTHOR_NAME="Calcit Agent Lease" \
-  GIT_AUTHOR_EMAIL="agent-lease@calcit-lang.invalid" \
-  GIT_COMMITTER_NAME="Calcit Agent Lease" \
-  GIT_COMMITTER_EMAIL="agent-lease@calcit-lang.invalid" \
-    git commit-tree "$tree" -p "$parent" <<<"$message"
+  if [[ -n "$parent" ]]; then
+    GIT_AUTHOR_NAME="Calcit Agent Lease" \
+    GIT_AUTHOR_EMAIL="agent-lease@calcit-lang.invalid" \
+    GIT_COMMITTER_NAME="Calcit Agent Lease" \
+    GIT_COMMITTER_EMAIL="agent-lease@calcit-lang.invalid" \
+      git commit-tree "$tree" -p "$parent" <<<"$message"
+  else
+    GIT_AUTHOR_NAME="Calcit Agent Lease" \
+    GIT_AUTHOR_EMAIL="agent-lease@calcit-lang.invalid" \
+    GIT_COMMITTER_NAME="Calcit Agent Lease" \
+    GIT_COMMITTER_EMAIL="agent-lease@calcit-lang.invalid" \
+      git commit-tree "$tree" <<<"$message"
+  fi
 }
 
 repo_slug() {
@@ -178,7 +188,7 @@ command_claim() {
   if [[ -z "$old_sha" ]]; then
     require_claimable_issue "$issue" "$repo"
     claimed="$now"
-    new_sha="$(make_lock_commit "$issue" "$agent" "$claimed" "$expires" "$scope" "$(git rev-parse HEAD)")"
+    new_sha="$(make_lock_commit "$issue" "$agent" "$claimed" "$expires" "$scope")"
     if ! result="$(git push "$remote" "$new_sha:$ref" 2>&1)"; then
       echo "$result" >&2
       die "claim race lost; inspect the current owner with: $0 status $issue"
@@ -279,6 +289,11 @@ command_status() {
   claimed="$(field "$sha" claimed_at)"
   heartbeat="$(field "$sha" heartbeat_at)"
   scope="$(field "$sha" scope)"
+  if [[ ! "$claimed" =~ ^[0-9]+$ || ! "$heartbeat" =~ ^[0-9]+$ || ! "$expires" =~ ^[0-9]+$ ]]; then
+    printf 'CORRUPT issue #%s\nagent=%s\nclaimed_at=%s\nheartbeat_at=%s\nexpires_at=%s\nscope=%s\nlock=%s\n' \
+      "$issue" "$agent" "$claimed" "$heartbeat" "$expires" "$scope" "$sha"
+    return 1
+  fi
   now="$(date +%s)"
   state="ACTIVE"
   if [[ "$expires" =~ ^[0-9]+$ ]] && (( expires <= now )); then
