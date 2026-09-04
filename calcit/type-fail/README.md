@@ -21,6 +21,7 @@
 - `cargo run --bin calcit -- calcit/type-fail/dynamic-nominal-method-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/dynamic-method-dispatch-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/raw-primitive-strict.cirru --strict-types --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/unsafe-coerce-unscoped-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/erased-generic-relation-strict.cirru --strict-types --check-only`
 
 其中：
@@ -37,6 +38,8 @@
 - `dynamic-nominal-method-strict.cirru` 会验证 strict 模式拒绝 Dynamic receiver 上的 Option/Result nominal method dispatch，并报告稳定的 `E_DYNAMIC_POSTFIX_METHOD`。
 - `dynamic-method-dispatch-strict.cirru` 会验证 strict 模式拒绝普通 Dynamic receiver method，并报告 receiver source 与稳定的 `E_DYNAMIC_POSTFIX_METHOD`。
 - `raw-primitive-strict.cirru` 会验证 strict 模式拒绝项目源码直接调用 `&get-raw`，并报告稳定的 `E_RAW_PRIMITIVE_IN_TYPED_CODE`。
+- `unsafe-coerce-unscoped-strict.cirru` 会验证 strict 模式拒绝未声明 `:js-ffi` 的 `unsafe-coerce`，并报告稳定的 `E_UNSCOPED_UNSAFE_COERCE`。
+- `unsafe-coerce-scoped-strict.cirru` 是 integration preprocessing 正例：标记 adapter 可使用 assertion，普通 typed caller 不继承也不需要该 capability；完整 strict quality gate 仍要求显式 `unsafeCoerce` baseline。
 - `erased-generic-relation-strict.cirru` 会验证 strict 模式拒绝把 Dynamic 实参传入重复泛型关系，并报告稳定的 `E_ERASED_GENERIC_RELATION`。
 
 ## 自动化测试
@@ -51,6 +54,7 @@
 - strict Dynamic nominal-method fixture：断言错误文本包含 `E_DYNAMIC_POSTFIX_METHOD`、method 名称、receiver schema 与低层 helper 迁移建议
 - strict general Dynamic method fixture：断言错误文本包含 `E_DYNAMIC_POSTFIX_METHOD`、method 名称、receiver-loss 分类与 typed adapter 迁移建议
 - strict raw primitive fixture：断言错误文本包含 `E_RAW_PRIMITIVE_IN_TYPED_CODE`、primitive 名称与 typed public API 迁移建议
+- strict unsafe-coerce fixtures：断言未标记 adapter 报 `E_UNSCOPED_UNSAFE_COERCE`，而词法标记的 adapter 与普通 caller 可通过 preprocessing
 - strict erased-generic fixture：断言错误文本包含 `E_ERASED_GENERIC_RELATION`、callee、参数位置、泛型变量与 narrow/adapter 迁移建议
 
 相关测试位于 [src/bin/calcit.rs](src/bin/calcit.rs)。
@@ -68,6 +72,7 @@
 - `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`：strict 模式下可达 function 或直接进入预处理的 programmatic macro 既没有结构化根 schema，也没有嵌入式结构化契约；普通 legacy Snapshot macro 会更早被 loader 拒绝
 - `E_DYNAMIC_METHOD_DISPATCH` / `E_DYNAMIC_POSTFIX_METHOD`：strict 模式下 method receiver 缺少可静态 specialization 的 schema、generic/slot 绑定或 typed FFI evidence
 - `E_RAW_PRIMITIVE_IN_TYPED_CODE`：strict 项目源码手写 raw constructor/lookup/index primitive，且没有 compiler/macro origin 或匹配的 nominal layout evidence
+- `E_UNSCOPED_UNSAFE_COERCE`：strict 项目源码在当前 definition 未声明 `:js-ffi` 时使用 `unsafe-coerce`
 - `E_ERASED_GENERIC_RELATION`：strict 模式下 Dynamic 实参擦除了 callee 声明的重复泛型关系
 - `W_FN_ARG_TYPE_MISMATCH`：用户函数调用参数类型不匹配
 - `W_METHOD_ARG_TYPE_MISMATCH`：静态方法调用参数类型不匹配

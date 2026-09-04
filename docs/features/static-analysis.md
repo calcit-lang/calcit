@@ -134,6 +134,13 @@ For `code-nil`, the report includes raw `nil` and the legacy `;nil` compatibilit
 
 `unsafe-coerce` is reported separately as `unsafe-coerce` with the explicit `explicit-unsafe` intent, its exact `code@...` path, and the asserted target schema. JSON occurrence rows add an `evidence` object with the static input form, whether the containing definition declares `:js-ffi`, and whether the namespace follows the `js-ffi.raw.*` adapter convention. This is static source evidence, not a claimed runtime proof of the host value. JSON adds `W_JS_FFI_UNCHECKED_COERCE` whenever the selected scope contains one or more assertions. Keep each assertion in a narrow adapter and cover both accepted and rejected host values with runtime-contract tests.
 
+Under `--strict-types`, this inventory is also enforced lexically before any
+backend is selected. `unsafe-coerce` outside a current structured function
+schema declaring `:js-ffi` fails with `E_UNSCOPED_UNSAFE_COERCE`; an adapter
+namespace convention never grants permission. A correctly scoped occurrence
+still contributes to `unsafeCoerce`, so a release must keep it inside an
+explicitly reviewed per-definition baseline.
+
 For one definition, `calcit query context '<ns/def>' --format json` embeds the same distinction in its diagnostics and returns the definition revision together with Snapshot paths.
 
 For one expression, `calcit query type-at '<ns/def>' --path code@... --format json` preprocesses only static program metadata and returns inferred type, expected type, typed bindings, confidence, method candidates, preprocess lowering evidence, and diagnostics. Its v2 `data.lowering` object distinguishes type-selected primitives from ordinary static call resolution and remaining dynamic dispatch. It does not run the application entry. Paths use the same stable Snapshot coordinates returned by structural query commands.

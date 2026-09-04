@@ -130,6 +130,13 @@ evidence before method syntax. A JS boundary must convert the host value or
 attach an external-object trait inside its narrow adapter; `:js-ffi` alone does
 not authorize runtime method lookup.
 
+`unsafe-coerce` is stricter still: in `--strict-types` it must appear inside
+the current function's structured `Fn` schema with `:features $ #{} :js-ffi`,
+independent of codegen mode or the compatibility feature policy. Otherwise
+preprocessing reports `E_UNSCOPED_UNSAFE_COERCE`. Namespace naming does not
+grant an exemption, and scoped assertions remain subject to the
+per-definition `unsafeCoerce` quality baseline.
+
 ### Strict type preflight (`--strict-types`)
 
 Use `--strict-types` for new or fully migrated modules that must carry no local

@@ -79,6 +79,13 @@ without declaring `:js-ffi`; only the wrapper's own implementation body needs
 the feature. An anonymous function uses the feature declared in its own
 `hint-fn` schema.
 
+In `--strict-types`, `unsafe-coerce` has an additional backend-independent
+gate: the current function's structured schema must declare `:js-ffi`, or
+preprocessing fails with `E_UNSCOPED_UNSAFE_COERCE`. An adapter-like namespace
+name is inventory evidence, not authorization. A scoped assertion remains in
+the `unsafeCoerce` quality metric and therefore needs an explicitly reviewed
+baseline before a full strict quality gate can pass.
+
 ### 2.2 Host target policy
 
 Entries can additionally declare an explicit host target:
@@ -436,6 +443,7 @@ Common diagnostics:
 | Code | Meaning | Typical fix |
 | --- | --- | --- |
 | `E_JS_FFI_FEATURE_REQUIRED` | A host operation is outside a marked adapter body. | Add `:js-ffi` to that implementation schema or move the operation into a wrapper. |
+| `E_UNSCOPED_UNSAFE_COERCE` | Strict preprocessing finds `unsafe-coerce` outside the current function's lexical FFI scope. | Move it into a small structured `Fn` adapter declaring `:js-ffi`; validate/convert there and return typed data. |
 | `E_JS_FFI_TARGET_MISMATCH` | The selected entry targets another host. | Correct the entry `:target` or use the matching adapter. |
 | `W_JS_FFI_NULLABLE_DEREF` | A nullable host value is dereferenced directly. | Use optional access or narrow with `js-present?`. |
 | `E_JS_FFI_FIELD_READONLY` | A typed external field is written without permission. | Add the field to `:ffi :writable` only if the host API permits it. |
