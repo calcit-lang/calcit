@@ -77,7 +77,8 @@ no-op or fabricated success value.
 | `FsPath .read-dir` / `.walk-dir` | yes | host injection | unavailable | unavailable | `FsPath` Result-returning methods |
 | Process and signal lifecycle | `calcit.std` native module | Node adapter | unavailable | unavailable | typed process/signal APIs in `calcit.std` |
 | Repeating timer and timezone/date | `calcit.std` native module | Node adapter | browser adapter | unavailable | typed timer/date APIs in `calcit.std` |
-| Glob and crypto | focused native module | Node adapter | browser crypto adapter; glob unavailable | unavailable | focused modules; do not infer browser glob support |
+| Glob | focused native module | Node adapter | unavailable | unavailable | focused glob module; do not infer browser support |
+| Crypto | focused native module | Node adapter | browser crypto adapter | unavailable | focused crypto module or host adapter |
 | HTTP fetch | `calcit-fetch` native module | Node adapter | browser adapter | unavailable | typed task/response APIs in `calcit-fetch` or a host adapter |
 | HTTP and WebSocket servers | `calcit-http` / `calcit-wss` native modules | Node adapter | unavailable | unavailable | typed server/request/response capabilities in focused modules |
 | WebSocket client stream | focused native module | Node adapter | browser adapter | unavailable | typed stream capability in a focused module or host adapter |
