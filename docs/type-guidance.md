@@ -25,7 +25,7 @@ calcit analyze check-types --summary-only
 calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json
 ```
 
-兼容性的多态 collection facade 可能仍在 core schema 中保留局部 `Dynamic`，但已知 receiver 会在预处理阶段专门化。例如 `update` 对 `List<T>` 要求 `Number` 索引和 `T -> T` updater，对 `Map<K,V>` 要求 `K` 键和 `V -> V` updater；Struct 则按静态字段类型检查。`get` 同样要求 List/String/Enum 的 `Number` 索引或 Map 的 `K` 键，`includes?` 则要求 List/Set 的成员 `T`、Map 的值 `V` 或 String substring。未标注的 inline callback 若能从函数体恢复返回类型，也会参与这项检查。不要把 receiver 擦除为 `Dynamic` 来绕过这些关系：在 FFI/open-data adapter 中先校验或转换，再进入集合操作。
+兼容性的多态 collection facade 可能仍在 core schema 中保留局部 `Dynamic`，或者使用彼此独立、无法表达容器成员关系的泛型，但已知 receiver 会在预处理阶段专门化。例如 `update` 对 `List<T>` 要求 `Number` 索引和 `T -> T` updater，对 `Map<K,V>` 要求 `K` 键和 `V -> V` updater；Struct 则按静态字段类型检查。`get` 同样要求 List/String/Enum 的 `Number` 索引或 Map 的 `K` 键，`includes?` 要求 List/Set 的成员 `T`、Map 的值 `V` 或 String substring；`contains?` 要求 List/String/Enum 的 `Number` 索引、Map 的键 `K` 或 Set 的成员 `T`。`assoc` 会同时约束 List 的索引/成员、Map 的键/值、静态 Struct 字段的值类型，以及 Enum 的 `Number` payload index；Enum payload 可以异构，因此新值在没有精确 variant/slot evidence 时仍保持开放。未标注的 inline callback 若能从函数体恢复返回类型，也会参与这项检查。不要把 receiver 擦除为 `Dynamic` 来绕过这些关系：在 FFI/open-data adapter 中先校验或转换，再进入集合操作。
 
 ## 用原生 quality gate 阻止类型债务回归
 

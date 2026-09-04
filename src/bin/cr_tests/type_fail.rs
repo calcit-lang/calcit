@@ -783,10 +783,17 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       .iter()
       .filter(|warning| {
         warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
-          && (warning.message().contains("calcit.core/get") || warning.message().contains("calcit.core/includes?"))
+          && (warning.message().contains("calcit.core/get")
+            || warning.message().contains("calcit.core/includes?")
+            || warning.message().contains("calcit.core/contains?")
+            || warning.message().contains("calcit.core/assoc"))
       })
       .collect();
-    assert_eq!(matched.len(), 5, "expected lookup and membership warnings, got: {warnings:?}");
+    assert_eq!(
+      matched.len(),
+      14,
+      "expected lookup, membership, key, and association warnings, got: {warnings:?}"
+    );
     assert!(
       matched.iter().any(|warning| {
         warning.message().contains("calcit.core/get")
@@ -822,6 +829,66 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
           && warning.message().contains("got `:number`")
       }),
       "String membership should require a String substring: {matched:?}"
+    );
+    assert_eq!(
+      matched
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("calcit.core/contains?")
+            && warning.message().contains("arg 2 expects type `:number`")
+            && warning.message().contains("got `:tag`")
+        })
+        .count(),
+      3,
+      "List and Enum indices plus Set members should preserve their Number contract: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("calcit.core/contains?")
+          && warning.message().contains("arg 2 expects type `:tag`")
+          && warning.message().contains("got `:number`")
+      }),
+      "Map containment should require its key type: {matched:?}"
+    );
+    assert_eq!(
+      matched
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("calcit.core/assoc")
+            && warning.message().contains("arg 2 expects type `:number`")
+            && warning.message().contains("got `:tag`")
+        })
+        .count(),
+      2,
+      "List and Enum association should require a Number index: {matched:?}"
+    );
+    assert_eq!(
+      matched
+        .iter()
+        .filter(|warning| {
+          warning.message().contains("calcit.core/assoc")
+            && warning.message().contains("arg 3 expects type `:number`")
+            && warning.message().contains("got `:tag`")
+        })
+        .count(),
+      2,
+      "List and Map association should preserve their Number member/value type: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("calcit.core/assoc")
+          && warning.message().contains("arg 2 expects type `:tag`")
+          && warning.message().contains("got `:number`")
+      }),
+      "Map association should require its key type: {matched:?}"
+    );
+    assert!(
+      matched.iter().any(|warning| {
+        warning.message().contains("calcit.core/assoc")
+          && warning.message().contains("arg 3 expects type `:number`")
+          && warning.message().contains("got `:tag`")
+      }),
+      "Map association should require its value type: {matched:?}"
     );
   });
 }

@@ -34,7 +34,7 @@
 - `generic-where-bound-mismatch.cirru` 会触发 `W_GENERIC_WHERE_BOUND_MISMATCH`，验证泛型 `:where` 约束在调用点能被发现，并在 `--check-only` 下被当作错误处理。
 - `slice-receiver-trait-mismatch.cirru` 会验证 `slice` 只接受实现 `Sliceable` 的 receiver，拒绝用 `C -> C` 泛型伪装不可切片的值。
 - `update-collection-contract-mismatch.cirru` 会验证已知 `List<T>` / `Map<K,V>` receiver 将索引/键与 `T -> T` / `V -> V` updater contract 带到调用点。
-- `collection-member-contract-mismatch.cirru` 会验证已知 collection receiver 将 `get` 的索引/键和 `includes?` 的成员类型带到调用点。
+- `collection-member-contract-mismatch.cirru` 会验证已知 collection receiver 将 `get` / `contains?` 的索引或键、`includes?` 的成员，以及 `assoc` 的索引、键和值类型带到调用点，包括 Enum 的 Number payload index。
 - `type-slot-record-call-arg-type-mismatch.cirru` 会验证 `bind-type` 绑定 struct 实例后，`*slot` 参与调用点类型检查。
 - `type-slot-bind-unknown.cirru` 会验证未声明 slot 的 `bind-type` 会直接失败。
 - `type-slot-bind-duplicate.cirru` 会验证同一个 slot 重复绑定会直接失败。
