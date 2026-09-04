@@ -1613,7 +1613,7 @@
                     assert= (&{}) (&list:nth same 1)
                     assert= 2 $ count (&list:nth same 2)
               :tags $ #{} :core :unit
-        '&map:dissoc $ %{} 'CodeEntry (:doc "|internal function for map dissociation\nSyntax: (&map:dissoc map key & keys)\nParams: map (map), key (any), keys (any, variadic)\nReturns: map\nReturns new map without specified keys")
+        '&map:dissoc $ %{} 'CodeEntry (:doc "|internal function for map dissociation\nSyntax: (&map:dissoc map key & keys)\nParams: map (Map<K,V>), key (K), keys (K, variadic)\nReturns: Map<K,V>\nReturns new map without specified keys")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
