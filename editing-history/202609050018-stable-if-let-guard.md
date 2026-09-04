@@ -1,6 +1,6 @@
 # Stable Rust compatibility for guarded matches
 
-Calcit 0.13.77 used `if let` match guards in the FFI Interface IR declaration resolver and typed-method callable selection. Match-arm `if let` guards are still unstable on stable Rust, even though ordinary `if` let-chains are available.
+Calcit 0.13.77 used `if let` match guards in the FFI Interface IR declaration resolver and typed-method callable selection. Match-arm `if let` guards are still unstable on stable Rust, even though ordinary `if let`-chains are available.
 
 The stable rewrite keeps the branch order and behavior explicit:
 
