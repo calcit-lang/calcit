@@ -164,6 +164,8 @@ let
   ; => $ [] 5 4 3 2 1
 ```
 
+For `List<T>`, a function selector is checked as `T -> K`; the key type remains generic because the runtime comparison supports multiple scalar key types. A Tag selector keeps the compatibility path used to read a field or map key.
+
 Reverse:
 
 ```cirru
