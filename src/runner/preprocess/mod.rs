@@ -1799,6 +1799,7 @@ fn preprocess_list_call(
       call_location,
     ));
   }
+  reject_raw_primitive_in_strict_source(&head_form, &args, scope_types, file_ns, call_stack, call_location.clone())?;
   warn_on_removed_data_api_call(&head_form, call_location.clone(), file_ns, check_warnings);
 
   let has_anonymous_definition_marker = matches!(args.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "_");
@@ -3895,6 +3896,92 @@ fn check_struct_field_access(
   }
 }
 
+fn reject_raw_primitive_in_strict_source(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+  location: Option<NodeLocation>,
+) -> Result<(), CalcitErr> {
+  if !strict_types_enabled() || !should_emit_project_source_lint(file_ns) || file_ns == calcit::CORE_NS {
+    return Ok(());
+  }
+
+  let public_struct_constructor_origin = call_stack
+    .0
+    .iter()
+    .any(|frame| matches!(frame.kind, StackKind::Macro) && frame.ns.as_ref() == calcit::CORE_NS && frame.def.as_ref() == "%{}");
+  let inside_defimpl = call_stack
+    .0
+    .iter()
+    .any(|frame| matches!(frame.kind, StackKind::Macro) && frame.ns.as_ref() == calcit::CORE_NS && frame.def.as_ref() == "defimpl");
+
+  let violation = match head {
+    Calcit::Proc(CalcitProc::NativeStruct) if !public_struct_constructor_origin => Some((
+      "`&%{}`",
+      "use the public `%{}` constructor so field names and declared field types are validated before lowering",
+    )),
+    Calcit::Proc(CalcitProc::NativeStructGet) if !inside_defimpl => Some((
+      "`&struct:get`",
+      "use `(:field value)` or `value.:field` on a concrete Struct so the compiler validates and lowers the access",
+    )),
+    Calcit::Proc(CalcitProc::NativeStructNth)
+      if !inside_defimpl && !raw_struct_index_matches_known_layout(args.first(), args.get(1), args.get(2), scope_types) =>
+    {
+      Some((
+        "`&struct:nth`",
+        "use named field syntax on a concrete Struct; only indexed IR with a matching nominal layout and field tag is accepted",
+      ))
+    }
+    Calcit::Import(CalcitImport { ns, def, .. })
+      if ns.as_ref() == calcit::CORE_NS && matches!(def.as_ref(), "&get-raw" | "record-get") && !inside_defimpl =>
+    {
+      Some((
+        "`&get-raw`",
+        "use typed collection lookup returning Option<T>, or named Struct field syntax after narrowing the receiver",
+      ))
+    }
+    Calcit::Symbol { sym, .. } if sym.as_ref() == "&get-raw" && !inside_defimpl => Some((
+      "`&get-raw`",
+      "use typed collection lookup returning Option<T>, or named Struct field syntax after narrowing the receiver",
+    )),
+    _ => None,
+  };
+
+  let Some((primitive, migration)) = violation else {
+    return Ok(());
+  };
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!("raw primitive {primitive} is not allowed in strict project source; {migration}"),
+    "E_RAW_PRIMITIVE_IN_TYPED_CODE",
+    call_stack,
+    location,
+  ))
+}
+
+fn raw_struct_index_matches_known_layout(
+  receiver: Option<&Calcit>,
+  index: Option<&Calcit>,
+  field: Option<&Calcit>,
+  scope_types: &ScopeTypes,
+) -> bool {
+  let (Some(receiver), Some(Calcit::Number(raw_index)), Some(Calcit::Tag(field_tag))) = (receiver, index, field) else {
+    return false;
+  };
+  resolve_type_value(receiver, scope_types)
+    .as_deref()
+    .and_then(CalcitTypeAnnotation::resolve_to_struct)
+    .is_some_and(|struct_def| {
+      *raw_index >= 0.0
+        && raw_index.fract() == 0.0
+        && struct_def
+          .index_of(field_tag.ref_str())
+          .is_some_and(|field_index| field_index == *raw_index as usize)
+    })
+}
+
 fn warn_on_raw_struct_index_access(
   receiver: &Calcit,
   index: &Calcit,
@@ -3919,22 +4006,7 @@ fn warn_on_raw_struct_index_access(
   // Snapshot IR. Accept that representation when the receiver still proves the
   // exact nominal layout and the embedded index/tag pair agrees with it. Raw
   // indexed access is hazardous only when that proof is absent or stale.
-  let matches_known_layout = resolve_type_value(receiver, scope_types)
-    .as_deref()
-    .and_then(CalcitTypeAnnotation::resolve_to_struct)
-    .is_some_and(|struct_def| {
-      let Calcit::Number(raw_index) = index else {
-        return false;
-      };
-      let Some(Calcit::Tag(field_tag)) = field else {
-        return false;
-      };
-      *raw_index >= 0.0
-        && raw_index.fract() == 0.0
-        && struct_def
-          .index_of(field_tag.ref_str())
-          .is_some_and(|field_index| field_index == *raw_index as usize)
-    });
+  let matches_known_layout = raw_struct_index_matches_known_layout(Some(receiver), Some(index), field, scope_types);
   if matches_known_layout {
     return;
   }
@@ -11729,6 +11801,74 @@ mod tests {
   }
 
   #[test]
+  fn strict_types_reject_handwritten_raw_primitives() {
+    let _lock = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+
+    for (expr, primitive) in [
+      (
+        Cirru::List(vec![Cirru::leaf("&struct:get"), Cirru::leaf("store"), Cirru::leaf(":states")]),
+        "&struct:get",
+      ),
+      (
+        Cirru::List(vec![
+          Cirru::leaf("&struct:nth"),
+          Cirru::leaf("store"),
+          Cirru::leaf("1"),
+          Cirru::leaf(":states"),
+        ]),
+        "&struct:nth",
+      ),
+      (
+        Cirru::List(vec![Cirru::leaf("&get-raw"), Cirru::leaf("store"), Cirru::leaf(":states")]),
+        "&get-raw",
+      ),
+      (
+        Cirru::List(vec![
+          Cirru::leaf("&%{}"),
+          Cirru::leaf("Store"),
+          Cirru::leaf(":states"),
+          Cirru::leaf("1"),
+        ]),
+        "&%{}",
+      ),
+    ] {
+      let code = code_to_calcit(&expr, "tests.raw-strict", "demo", vec![]).expect("parse raw primitive");
+      let scope_defs = HashSet::from([Arc::from("store"), Arc::from("Store")]);
+      let mut scope_types = ScopeTypes::from([(Arc::from("store"), Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))))]);
+      let warnings = RefCell::new(vec![]);
+
+      let error = preprocess_expr(
+        &code,
+        &scope_defs,
+        &mut scope_types,
+        "tests.raw-strict",
+        &warnings,
+        &CallStackList::default(),
+      )
+      .expect_err("strict project source must reject a hand-written raw primitive");
+      assert_eq!(error.code.as_deref(), Some("E_RAW_PRIMITIVE_IN_TYPED_CODE"));
+      assert!(error.msg.contains(primitive), "diagnostic must name {primitive}: {error:?}");
+    }
+  }
+
+  #[test]
+  fn strict_raw_policy_only_accepts_the_core_public_constructor_macro() {
+    let _lock = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+    let head = Calcit::Proc(CalcitProc::NativeStruct);
+    let args = CalcitList::default();
+    let core_origin = CallStackList::default().extend(calcit::CORE_NS, "%{}", StackKind::Macro, &Calcit::Nil, &[]);
+    reject_raw_primitive_in_strict_source(&head, &args, &ScopeTypes::new(), "tests.raw-strict", &core_origin, None)
+      .expect("the public core constructor macro may lower to &%{}");
+
+    let project_origin = CallStackList::default().extend("tests.raw-strict", "%{}", StackKind::Macro, &Calcit::Nil, &[]);
+    let error = reject_raw_primitive_in_strict_source(&head, &args, &ScopeTypes::new(), "tests.raw-strict", &project_origin, None)
+      .expect_err("a project macro with the same name must not grant a raw-constructor exemption");
+    assert_eq!(error.code.as_deref(), Some("E_RAW_PRIMITIVE_IN_TYPED_CODE"));
+  }
+
+  #[test]
   fn rejects_source_struct_index_access_in_generic_helpers() {
     let _guard = WarnDynMethodGuard::new(true);
     let expr = Cirru::List(vec![
@@ -11763,6 +11903,8 @@ mod tests {
 
   #[test]
   fn accepts_persisted_struct_index_ir_with_matching_nominal_layout() {
+    let _lock = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
     let _guard = WarnDynMethodGuard::new(true);
     let expr = Cirru::List(vec![
       Cirru::leaf("&struct:nth"),

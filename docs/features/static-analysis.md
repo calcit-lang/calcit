@@ -152,6 +152,14 @@ and its visible `option:*` / `result:*` helper. Compatibility mode retains the
 migrate. A concrete inferred type, trait constraint, or external-object trait
 remains statically dispatchable and does not trigger this rule.
 
+Strict project source also rejects hand-written representation primitives with
+`E_RAW_PRIMITIVE_IN_TYPED_CODE`: `&get-raw`, `&struct:get`, raw `&%{}`, and
+`&struct:nth` without an exact nominal layout/index/tag proof. Prefer public
+typed lookup, named Struct field syntax, and `%{}` construction. The check is
+evidence based: compiler or reviewed macro lowering, core internals, reusable
+`defimpl` access, and persisted indexed IR with a matching concrete layout are
+preserved.
+
 `analyze quality` combines the release-facing metrics from `check-types`, `weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce --intent unresolved,intentional-macro-syntax,declared-unit,declared-optional,explicit-unsafe`, and `deprecated`. Intentional macro syntax remains in the `schemaDynamic` budget so new open macro positions cannot bypass review, while only unresolved positions increment the `unresolved` budget. `unsafeCoerce` is an independent budget for explicit host assertions; it is not folded into unresolved Dynamic debt. With no baseline it is a zero-debt gate. `--baseline <file>` compares against a committed baseline and exits non-zero on regression; `--write-baseline <file>` atomically writes a reviewed native baseline. Native v2 baselines keep budgets per definition, so improving one definition cannot hide new debt in another. Native v1 and the older flat eight-metric shape remain readable and preserve their original eight-metric enforcement; v1 is reported as `native-baseline-v1` and does not claim an `unsafeCoerce` delta. Regenerate a reviewed baseline to adopt that budget. Scope flags (`--ns`, `--ns-prefix`, `--deps`) are recorded in native baselines and must match when they are enforced.
 
 Calcit's bundled Cirru core uses `config/calcit-core-quality.cirru` as a per-definition Cirru EDN migration baseline. `yarn check-core-quality`, the pull-request workflow, and the release workflow reject new or increased Dynamic/type-coverage debt while existing contracts are migrated incrementally. After a reviewed cleanup, regenerate the baseline with `calcit src/cirru/calcit-core.cirru analyze quality --write-baseline config/calcit-core-quality.cirru --format json`; never regenerate it merely to make an unexplained regression pass. A `.json` output path remains available only for external tooling that explicitly requires JSON. Track retained open boundaries and cleanup batches in [calcit#579](https://github.com/calcit-lang/calcit/issues/579).

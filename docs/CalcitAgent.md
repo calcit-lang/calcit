@@ -414,7 +414,7 @@ update-in data ([] :profile :visits)
 
 这样可以让缺失、默认值和失败在类型上分开，而不是继续依赖 `nil` 或组件临时的 `read-field` 函数。
 
-已知具名 Struct 的字段读取一律写成 `(:field value)`（接收者优先的 invoke 简写为 `value.:field`），不要在应用代码中生成 `&struct:get`。检查器会验证字段、返回声明类型，并把读取自动降为 `&struct:nth value <index>`；直接写低层 primitive 会隐藏源码中的类型意图，并触发 `W_STRUCT_RAW_ACCESS`。如果 `(:field value)` 报 `W_REQUIRED_STRUCT_FIELD_TYPE`，应补全 schema、先 narrow/unwrap，不能改写成 `&struct:get` 绕过分析。若诊断中的接收者只剩未限定的 `'Router` 一类 nominal TypeRef，应恢复或显式写成 `'app.schema/Router`，并检查声明所在依赖是否正确加载；嵌套字段声明中的同 namespace 短类型会由检查器自动保留声明 namespace。只有可复用 `defimpl` 尚未绑定具体 Struct 的实现体以及 core/runtime 底层代码，才把 `&struct:get` 作为明确的动态边界。`W_STRUCT_*` 属于项目源码迁移提示，不会要求调用方修改已安装依赖中的旧实现。
+已知具名 Struct 的字段读取一律写成 `(:field value)`（接收者优先的 invoke 简写为 `value.:field`），不要在应用代码中生成 `&struct:get`。检查器会验证字段、返回声明类型，并把读取自动降为 `&struct:nth value <index>`；兼容模式直接写低层 primitive 会触发 `W_STRUCT_RAW_ACCESS`，strict mode 会报告 `E_RAW_PRIMITIVE_IN_TYPED_CODE`。如果 `(:field value)` 报 `W_REQUIRED_STRUCT_FIELD_TYPE`，应补全 schema、先 narrow/unwrap，不能改写成 `&struct:get` 绕过分析。若诊断中的接收者只剩未限定的 `'Router` 一类 nominal TypeRef，应恢复或显式写成 `'app.schema/Router`，并检查声明所在依赖是否正确加载；嵌套字段声明中的同 namespace 短类型会由检查器自动保留声明 namespace。只有可复用 `defimpl` 尚未绑定具体 Struct 的实现体以及 core/runtime 底层代码，才把 `&struct:get` 作为明确的动态边界。`W_STRUCT_*` 属于项目源码迁移提示，不会要求调用方修改已安装依赖中的旧实现。
 
 ### 5.4 CLI 的 `quote` 是代码/数据边界
 

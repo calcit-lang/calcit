@@ -20,6 +20,7 @@
 - `cargo run --bin calcit -- calcit/type-fail/whole-dynamic-schema-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/dynamic-nominal-method-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/dynamic-method-dispatch-strict.cirru --strict-types --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/raw-primitive-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/erased-generic-relation-strict.cirru --strict-types --check-only`
 
 其中：
@@ -35,6 +36,7 @@
 - `whole-dynamic-schema-strict.cirru` 会验证 strict 模式拒绝可达定义的 whole-Dynamic function contract，并报告稳定的 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`。
 - `dynamic-nominal-method-strict.cirru` 会验证 strict 模式拒绝 Dynamic receiver 上的 Option/Result nominal method dispatch，并报告稳定的 `E_DYNAMIC_POSTFIX_METHOD`。
 - `dynamic-method-dispatch-strict.cirru` 会验证 strict 模式拒绝普通 Dynamic receiver method，并报告 receiver source 与稳定的 `E_DYNAMIC_POSTFIX_METHOD`。
+- `raw-primitive-strict.cirru` 会验证 strict 模式拒绝项目源码直接调用 `&get-raw`，并报告稳定的 `E_RAW_PRIMITIVE_IN_TYPED_CODE`。
 - `erased-generic-relation-strict.cirru` 会验证 strict 模式拒绝把 Dynamic 实参传入重复泛型关系，并报告稳定的 `E_ERASED_GENERIC_RELATION`。
 
 ## 自动化测试
@@ -48,6 +50,7 @@
 - strict whole-Dynamic fixture：断言错误文本包含 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`、schema 根路径与 `Fn` 迁移建议
 - strict Dynamic nominal-method fixture：断言错误文本包含 `E_DYNAMIC_POSTFIX_METHOD`、method 名称、receiver schema 与低层 helper 迁移建议
 - strict general Dynamic method fixture：断言错误文本包含 `E_DYNAMIC_POSTFIX_METHOD`、method 名称、receiver-loss 分类与 typed adapter 迁移建议
+- strict raw primitive fixture：断言错误文本包含 `E_RAW_PRIMITIVE_IN_TYPED_CODE`、primitive 名称与 typed public API 迁移建议
 - strict erased-generic fixture：断言错误文本包含 `E_ERASED_GENERIC_RELATION`、callee、参数位置、泛型变量与 narrow/adapter 迁移建议
 
 相关测试位于 [src/bin/calcit.rs](src/bin/calcit.rs)。
@@ -64,6 +67,7 @@
 - `E_UNBOUND_TYPE_SLOT`：strict 模式下可达定义的 schema 引用了未配置或未局部绑定的 type slot
 - `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`：strict 模式下可达 function 或直接进入预处理的 programmatic macro 既没有结构化根 schema，也没有嵌入式结构化契约；普通 legacy Snapshot macro 会更早被 loader 拒绝
 - `E_DYNAMIC_METHOD_DISPATCH` / `E_DYNAMIC_POSTFIX_METHOD`：strict 模式下 method receiver 缺少可静态 specialization 的 schema、generic/slot 绑定或 typed FFI evidence
+- `E_RAW_PRIMITIVE_IN_TYPED_CODE`：strict 项目源码手写 raw constructor/lookup/index primitive，且没有 compiler/macro origin 或匹配的 nominal layout evidence
 - `E_ERASED_GENERIC_RELATION`：strict 模式下 Dynamic 实参擦除了 callee 声明的重复泛型关系
 - `W_FN_ARG_TYPE_MISMATCH`：用户函数调用参数类型不匹配
 - `W_METHOD_ARG_TYPE_MISMATCH`：静态方法调用参数类型不匹配

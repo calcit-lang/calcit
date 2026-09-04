@@ -250,6 +250,23 @@ fn strict_type_fail_general_dynamic_method_reports_receiver_source() {
 }
 
 #[test]
+fn strict_type_fail_raw_primitive_reports_stable_error_code() {
+  run_with_large_stack(|| {
+    let fixture = "calcit/type-fail/raw-primitive-strict.cirru";
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries(fixture);
+    let err = run_check_only(&entries).expect_err("hand-written raw primitive must fail strict check-only");
+
+    assert!(err.contains("E_RAW_PRIMITIVE_IN_TYPED_CODE"), "unexpected strict raw error: {err}");
+    assert!(err.contains("`&get-raw`"), "primitive should be explicit: {err}");
+    assert!(
+      err.contains("typed collection lookup returning Option<T>"),
+      "migration should point to the typed public API: {err}"
+    );
+  });
+}
+
+#[test]
 fn strict_type_fail_erased_generic_relation_reports_stable_error_code() {
   run_with_large_stack(|| {
     let fixture = "calcit/type-fail/erased-generic-relation-strict.cirru";
