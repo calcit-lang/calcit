@@ -981,13 +981,19 @@ impl CalcitTypeAnnotation {
     {
       return true;
     }
-    if resolve_type_ref_as_schema(stripped).is_some_and(|resolved| {
-      matches!(resolved.as_ref(), Self::Trait(resolved_trait) if resolved_trait.matches_reference(target) || target.matches_reference(resolved_trait))
-    })
-    {
+    if resolve_type_ref_as_schema(stripped).is_some_and(
+      |resolved| matches!(resolved.as_ref(), Self::Trait(resolved_trait) if Self::trait_references_match(resolved_trait, target)),
+    ) {
       return true;
     }
     target.definition_ref.is_none() && target.runtime_id.is_none() && Self::type_ref_name_matches(stripped, target.name.ref_str())
+  }
+
+  /// Match an actual trait reference against an expected one without letting
+  /// an unqualified placeholder erase runtime identity in the reverse direction.
+  fn trait_references_match(actual: &CalcitTrait, expected: &CalcitTrait) -> bool {
+    actual.matches_reference(expected)
+      || (actual.definition_ref.is_some() && expected.definition_ref.is_some() && expected.matches_reference(actual))
   }
 
   fn is_hint_fn_form(list: &CalcitList) -> bool {
@@ -3006,13 +3012,13 @@ impl CalcitTypeAnnotation {
 
   fn satisfies_trait_bound(&self, expected_trait: &CalcitTrait) -> bool {
     match self {
-      Self::Trait(actual_trait) if actual_trait.matches_reference(expected_trait) || expected_trait.matches_reference(actual_trait) => {
+      Self::Trait(actual_trait) if Self::trait_references_match(actual_trait, expected_trait) => {
         return true;
       }
       Self::TraitSet(actual_traits)
         if actual_traits
           .iter()
-          .any(|actual_trait| actual_trait.matches_reference(expected_trait) || expected_trait.matches_reference(actual_trait)) =>
+          .any(|actual_trait| Self::trait_references_match(actual_trait, expected_trait)) =>
       {
         return true;
       }
@@ -3246,20 +3252,17 @@ impl CalcitTypeAnnotation {
       (Self::TypeRef(name, args), Self::Trait(trait_def)) | (Self::Trait(trait_def), Self::TypeRef(name, args)) => {
         args.is_empty() && Self::type_ref_matches_trait(name, trait_def.as_ref())
       }
-      (Self::Trait(a), Self::Trait(b)) => a.matches_reference(b) || b.matches_reference(a),
-      (Self::TraitSet(actual), Self::Trait(expected)) => actual
-        .iter()
-        .any(|trait_def| trait_def.matches_reference(expected) || expected.matches_reference(trait_def)),
+      (Self::Trait(a), Self::Trait(b)) => Self::trait_references_match(a, b),
+      (Self::TraitSet(actual), Self::Trait(expected)) => {
+        actual.iter().any(|trait_def| Self::trait_references_match(trait_def, expected))
+      }
       (Self::Trait(actual), Self::TraitSet(expected)) => {
-        expected.len() == 1
-          && expected
-            .iter()
-            .any(|trait_def| actual.matches_reference(trait_def) || trait_def.matches_reference(actual))
+        expected.len() == 1 && expected.iter().any(|trait_def| Self::trait_references_match(actual, trait_def))
       }
       (Self::TraitSet(actual), Self::TraitSet(expected)) => expected.iter().all(|expected_trait| {
         actual
           .iter()
-          .any(|actual_trait| actual_trait.matches_reference(expected_trait) || expected_trait.matches_reference(actual_trait))
+          .any(|actual_trait| Self::trait_references_match(actual_trait, expected_trait))
       }),
       (actual, Self::Trait(expected)) => actual.satisfies_trait_bound(expected.as_ref()),
       (actual, Self::TraitSet(expected)) => actual.satisfies_trait_bounds(expected.as_ref()),
@@ -4394,6 +4397,21 @@ mod tests {
       unreachable!();
     };
     assert!(CalcitTypeAnnotation::Trait(dom_element).satisfies_trait_bound(evaluated_dom_element));
+  }
+
+  #[test]
+  fn nominal_trait_matching_does_not_reverse_unqualified_placeholders() {
+    let bare_placeholder = CalcitTrait::new_reference("DomElement");
+    let runtime_trait = CalcitTrait::new_runtime(EdnTag::new("DomElement"), vec![], vec![]);
+
+    assert!(
+      CalcitTypeAnnotation::trait_references_match(&runtime_trait, &bare_placeholder),
+      "an explicitly bare expected trait remains a legacy name-only contract"
+    );
+    assert!(
+      !CalcitTypeAnnotation::trait_references_match(&bare_placeholder, &runtime_trait),
+      "a bare actual placeholder must not satisfy a runtime-identified trait by reverse matching"
+    );
   }
 
   fn symbol(name: &str) -> Calcit {
