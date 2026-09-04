@@ -554,9 +554,10 @@ calcit calcit.cirru analyze deprecated --summary-only
 使用 `Option`，需要错误信息时使用 `Result`，不要让旧 `Optional<T>` 或裸 `nil` 无限保留。
 
 strict mode 还会以 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA` 拒绝既没有结构化根 schema、也没有嵌入式
-结构化 `Fn` hint 的可达项目函数，以及绕过 Snapshot loader、直接进入预处理的 programmatic macro。
-迁移时先声明完整 `Fn` 或 phase-aware `Macro` 结构；旧 Snapshot 中已有的嵌入式 `Fn` hint 仍可作为
-函数契约证据。正常从 Snapshot 加载的 legacy runtime `Fn` / whole-Dynamic macro 会更早在 loader
+结构化 `Fn` hint 的可达项目函数，以及绕过 Snapshot loader、没有结构化根 schema 就直接进入预处理的
+programmatically supplied macro；宏体内嵌套的函数 hint 不属于 macro contract。迁移时先声明完整 `Fn`
+或 phase-aware `Macro` 结构；旧 Snapshot 中已有的嵌入式 `Fn` hint 仍可作为函数契约证据。正常从
+Snapshot 加载的 legacy runtime `Fn` / whole-`Dynamic` macro 会更早在 loader
 阶段携定义路径失败。若参数、返回值或宏表达式确实开放，只在对应位置写 `Dynamic` /
 `Expr<Dynamic>`，不要用根 `Dynamic` 擦除整个契约。
 
