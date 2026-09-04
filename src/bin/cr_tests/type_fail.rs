@@ -325,6 +325,51 @@ fn strict_type_fail_raw_primitive_reports_stable_error_code() {
 }
 
 #[test]
+fn strict_type_fail_unsupported_indexed_receiver_reports_stable_error_code() {
+  run_with_large_stack(|| {
+    builtins::effects::init_effects_states();
+    let mut snapshot = snapshot::Snapshot::default();
+    let mut file = snapshot::create_file_from_snippet(concat!(
+      "defn read-first (value)\n  first value\n\n",
+      "defn main! ()\n  read-first 1\n\n",
+      "defn reload! () $ identity &unit",
+    ))
+    .expect("unsupported indexed receiver snippet should parse");
+    let fn_schema = |args, return_type| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: args,
+        return_type,
+        fn_kind: calcit::calcit::SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })))
+    };
+    file.defs.get_mut("read-first").expect("read-first entry").schema =
+      fn_schema(vec![Arc::new(CalcitTypeAnnotation::Number)], calcit::calcit::DYNAMIC_TYPE.clone());
+    file.defs.get_mut("main!").expect("main entry").schema = fn_schema(vec![], calcit::calcit::DYNAMIC_TYPE.clone());
+    file.defs.get_mut("reload!").expect("reload entry").schema = fn_schema(vec![], Arc::new(CalcitTypeAnnotation::Unit));
+    snapshot.files.insert("app.main".to_owned(), file);
+
+    let entries = prepare_snapshot_entries(snapshot);
+    let _strict = StrictTypesReset::enabled();
+    let err = run_check_only(&entries).expect_err("Number receiver must fail strict indexed access during full preprocessing");
+
+    assert!(
+      err.contains("E_UNSUPPORTED_INDEXED_RECEIVER"),
+      "unexpected strict indexed receiver error: {err}"
+    );
+    assert!(err.contains("`first`"), "operation should be explicit: {err}");
+    assert!(err.contains("`:number`"), "resolved receiver type should be explicit: {err}");
+    assert!(
+      err.contains("List<T>, String, or Enum"),
+      "supported receivers should be named: {err}"
+    );
+  });
+}
+
+#[test]
 fn strict_type_fail_untyped_js_object_access_reports_stable_error_code() {
   run_with_large_stack(|| {
     let fixture = "calcit/type-fail/untyped-js-object-access-strict.cirru";
