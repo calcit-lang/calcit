@@ -217,6 +217,15 @@ the callee is intentionally open, put that operation behind a small adapter
 whose structured contract does not claim the generic relationship. Outside
 `--strict-types`, the existing compatibility behavior is unchanged.
 
+`E_DYNAMIC_NOMINAL_ARGUMENT` rejects a project call when an explicitly open
+`Dynamic` value, or a matching container with a `Dynamic` member, enters an
+argument whose contract contains a closed Struct or Enum. Decode text with
+`parse-cirru-edn-as` / `try-parse-cirru-edn-as`, decode an evaluated host value
+with `decode-map-as` / `try-decode-map-as`, or validate and narrow it inside a
+small typed FFI adapter. The diagnostic identifies the argument and target
+contract. It does not reject unrelated `Dynamic` to primitive calls, and
+compatibility mode keeps the existing gradual migration behavior.
+
 `--strict-types` reports `E_RAW_PRIMITIVE_IN_TYPED_CODE` for hand-written
 `&get-raw`, `record-get` / `&struct:get`, raw `&%{}`, and `&struct:nth` without matching
 nominal layout evidence. Use Option-returning collection lookup, named Struct

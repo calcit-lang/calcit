@@ -559,6 +559,12 @@ strict mode 还会以 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA` 拒绝既没有结构化�
 类型，再调用泛型 API。确实开放的操作应收拢到一个小型 adapter，并让 adapter 的结构化契约明确
 不承诺该泛型关系。非 strict 模式保持原有兼容行为，便于渐进迁移。
 
+当开放 `Dynamic`（或同形容器中的 `Dynamic` 成员）进入包含 Struct / Enum 的封闭参数契约时，
+strict mode 报告 `E_DYNAMIC_NOMINAL_ARGUMENT`，并指出参数位置和目标契约。文本边界使用
+`parse-cirru-edn-as` / `try-parse-cirru-edn-as`，已求值的 host/FFI 数据使用 `decode-map-as` /
+`try-decode-map-as`；更复杂的 host 值在小型 typed FFI adapter 内完成验证和收窄。该规则不扩大为
+所有 `Dynamic` 到 primitive 的调用，非 strict 模式也继续支持渐进迁移。
+
 再对每个 entry 运行独立的动态方法报告；已有项目可以先记录非零上限，再逐步降低：
 
 ```bash

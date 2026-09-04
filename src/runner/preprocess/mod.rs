@@ -2352,10 +2352,19 @@ fn preprocess_list_call(
           call_location.clone(),
           check_warnings,
         );
+        let effective_schema = effective_user_call_schema(info.as_ref());
+        reject_strict_dynamic_nominal_argument(
+          &head_form,
+          &current_args,
+          effective_schema.as_ref(),
+          scope_types,
+          file_ns,
+          call_stack,
+        )?;
         reject_strict_erased_generic_relation(
           &head_form,
           &current_args,
-          effective_user_call_schema(info.as_ref()).as_ref(),
+          effective_schema.as_ref(),
           scope_types,
           file_ns,
           call_stack,
@@ -2903,6 +2912,7 @@ fn preprocess_list_call(
             if let Some(local_type) = local_type
               && let CalcitTypeAnnotation::Fn(signature) = local_type.as_ref()
             {
+              reject_strict_dynamic_nominal_argument(&head_form, &updated_args, signature, scope_types, file_ns, call_stack)?;
               reject_strict_erased_generic_relation(&head_form, &updated_args, signature, scope_types, file_ns, call_stack)?;
             }
             check_local_fn_call_arg_types(&head_form, local, &updated_args, scope_types, &call_info, check_warnings);
@@ -8833,6 +8843,181 @@ fn reject_strict_erased_generic_relation(
     call_stack,
     argument.and_then(Calcit::get_location).or_else(|| head.get_location()),
   ))
+}
+
+fn contains_nominal_contract(annotation: &CalcitTypeAnnotation) -> bool {
+  if annotation.resolve_to_struct_with_ref().is_some() || annotation.resolve_to_enum().is_some() {
+    return true;
+  }
+  match annotation {
+    CalcitTypeAnnotation::List(inner)
+    | CalcitTypeAnnotation::Set(inner)
+    | CalcitTypeAnnotation::Ref(inner)
+    | CalcitTypeAnnotation::Optional(inner)
+    | CalcitTypeAnnotation::JsNullish(inner)
+    | CalcitTypeAnnotation::Variadic(inner) => contains_nominal_contract(inner.as_ref()),
+    CalcitTypeAnnotation::Map(key, value) => contains_nominal_contract(key.as_ref()) || contains_nominal_contract(value.as_ref()),
+    CalcitTypeAnnotation::TypeRef(_, args) => args.iter().any(|arg| contains_nominal_contract(arg.as_ref())),
+    CalcitTypeAnnotation::Fn(signature) => {
+      signature.arg_types.iter().any(|arg| contains_nominal_contract(arg.as_ref()))
+        || signature
+          .rest_type
+          .as_ref()
+          .is_some_and(|rest| contains_nominal_contract(rest.as_ref()))
+        || contains_nominal_contract(signature.return_type.as_ref())
+    }
+    _ => false,
+  }
+}
+
+fn dynamic_erases_nominal_contract(actual: &CalcitTypeAnnotation, expected: &CalcitTypeAnnotation) -> bool {
+  if matches!(actual, CalcitTypeAnnotation::Dynamic) {
+    return contains_nominal_contract(expected);
+  }
+  match (actual, expected) {
+    (CalcitTypeAnnotation::List(actual), CalcitTypeAnnotation::List(expected))
+    | (CalcitTypeAnnotation::Set(actual), CalcitTypeAnnotation::Set(expected))
+    | (CalcitTypeAnnotation::Ref(actual), CalcitTypeAnnotation::Ref(expected))
+    | (CalcitTypeAnnotation::Optional(actual), CalcitTypeAnnotation::Optional(expected))
+    | (CalcitTypeAnnotation::JsNullish(actual), CalcitTypeAnnotation::JsNullish(expected)) => {
+      dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref())
+    }
+    (CalcitTypeAnnotation::Map(actual_key, actual_value), CalcitTypeAnnotation::Map(expected_key, expected_value)) => {
+      dynamic_erases_nominal_contract(actual_key.as_ref(), expected_key.as_ref())
+        || dynamic_erases_nominal_contract(actual_value.as_ref(), expected_value.as_ref())
+    }
+    (CalcitTypeAnnotation::Struct(actual_def, actual_args), CalcitTypeAnnotation::Struct(expected_def, expected_args))
+      if actual_def == expected_def && actual_args.len() == expected_args.len() =>
+    {
+      actual_args
+        .iter()
+        .zip(expected_args.iter())
+        .any(|(actual, expected)| dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref()))
+    }
+    (CalcitTypeAnnotation::Enum(actual_def, actual_args), CalcitTypeAnnotation::Enum(expected_def, expected_args))
+      if actual_def == expected_def && actual_args.len() == expected_args.len() =>
+    {
+      actual_args
+        .iter()
+        .zip(expected_args.iter())
+        .any(|(actual, expected)| dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref()))
+    }
+    (CalcitTypeAnnotation::TypeRef(actual_name, actual_args), CalcitTypeAnnotation::TypeRef(expected_name, expected_args))
+      if actual_name == expected_name && actual_args.len() == expected_args.len() =>
+    {
+      actual_args
+        .iter()
+        .zip(expected_args.iter())
+        .any(|(actual, expected)| dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref()))
+    }
+    (CalcitTypeAnnotation::Fn(actual), CalcitTypeAnnotation::Fn(expected)) if actual.arg_types.len() == expected.arg_types.len() => {
+      actual
+        .arg_types
+        .iter()
+        .zip(expected.arg_types.iter())
+        .any(|(actual, expected)| dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref()))
+        || match (actual.rest_type.as_ref(), expected.rest_type.as_ref()) {
+          (Some(actual), Some(expected)) => dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref()),
+          _ => false,
+        }
+        || dynamic_erases_nominal_contract(actual.return_type.as_ref(), expected.return_type.as_ref())
+    }
+    _ => false,
+  }
+}
+
+fn contains_dynamic_type(annotation: &CalcitTypeAnnotation) -> bool {
+  match annotation {
+    CalcitTypeAnnotation::Dynamic => true,
+    CalcitTypeAnnotation::List(inner)
+    | CalcitTypeAnnotation::Set(inner)
+    | CalcitTypeAnnotation::Ref(inner)
+    | CalcitTypeAnnotation::Optional(inner)
+    | CalcitTypeAnnotation::JsNullish(inner)
+    | CalcitTypeAnnotation::Variadic(inner) => contains_dynamic_type(inner.as_ref()),
+    CalcitTypeAnnotation::Map(key, value) => contains_dynamic_type(key.as_ref()) || contains_dynamic_type(value.as_ref()),
+    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
+      args.iter().any(|arg| contains_dynamic_type(arg.as_ref()))
+    }
+    CalcitTypeAnnotation::Fn(signature) => {
+      signature.arg_types.iter().any(|arg| contains_dynamic_type(arg.as_ref()))
+        || signature
+          .rest_type
+          .as_ref()
+          .is_some_and(|rest| contains_dynamic_type(rest.as_ref()))
+        || contains_dynamic_type(signature.return_type.as_ref())
+    }
+    _ => false,
+  }
+}
+
+fn resolve_strict_boundary_argument_type(arg: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  let Calcit::List(items) = arg else {
+    return resolve_type_value(arg, scope_types);
+  };
+  let declared_schema = match items.first() {
+    Some(Calcit::Import(CalcitImport { ns, def, .. })) => Some(program::lookup_def_schema(ns, def)),
+    Some(Calcit::Fn { info, .. }) => Some(program::lookup_def_schema(&info.def_ns, &info.name)),
+    Some(Calcit::Symbol { sym, info, .. }) => Some(program::lookup_def_schema(&info.at_ns, sym)),
+    _ => None,
+  };
+  if let Some(schema) = declared_schema
+    && !crate::snapshot::schema_annotation_is_missing(&schema)
+    && let CalcitTypeAnnotation::Fn(signature) = schema.as_ref()
+    && matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+  {
+    return Some(signature.return_type.clone());
+  }
+  resolve_type_value(arg, scope_types)
+}
+
+fn reject_strict_dynamic_nominal_argument(
+  head: &Calcit,
+  args: &CalcitList,
+  signature: &CalcitFnTypeAnnotation,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  if !strict_types_enabled() || !should_emit_project_source_lint(file_ns) {
+    return Ok(());
+  }
+
+  let mut expected_types = signature.arg_types.iter().collect::<Vec<_>>();
+  if let Some(rest) = signature.rest_type.as_ref() {
+    expected_types.extend(std::iter::repeat_n(rest, args.len().saturating_sub(expected_types.len())));
+  }
+  let actual_types = args
+    .iter()
+    .map(|arg| resolve_strict_boundary_argument_type(arg, scope_types))
+    .collect::<Vec<_>>();
+  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+  for (actual, expected) in actual_types.iter().zip(expected_types.iter()) {
+    if let Some(actual) = actual
+      && !contains_dynamic_type(actual.as_ref())
+    {
+      actual.as_ref().matches_with_bindings(expected.as_ref(), &mut bindings);
+    }
+  }
+  for (index, ((arg, actual), expected)) in args.iter().zip(actual_types).zip(expected_types).enumerate() {
+    let Some(actual) = actual else { continue };
+    let resolved_expected = expected.substitute_type_vars(&bindings);
+    if dynamic_erases_nominal_contract(actual.as_ref(), resolved_expected.as_ref()) {
+      return Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!(
+          "call to `{head}` passes open `{}` data at argument {} into closed nominal contract `{}`; decode JSON/Cirru EDN with `parse-cirru-edn-as` or `try-parse-cirru-edn-as`, decode an evaluated host value with `decode-map-as` or `try-decode-map-as`, or validate and narrow it inside a typed FFI adapter before this call",
+          actual.describe(),
+          index + 1,
+          resolved_expected.describe(),
+        ),
+        "E_DYNAMIC_NOMINAL_ARGUMENT",
+        call_stack,
+        arg.get_location().or_else(|| head.get_location()),
+      ));
+    }
+  }
+  Ok(())
 }
 
 fn effective_user_call_schema(info: &CalcitFn) -> Arc<CalcitFnTypeAnnotation> {
@@ -16012,6 +16197,126 @@ mod tests {
     );
     let args = CalcitList::from(&[Calcit::Number(1.0), value][..]);
     assert!(find_erased_generic_argument(&relation_plus_open_boundary, &args, &scope_types).is_none());
+  }
+
+  #[test]
+  fn strict_types_reject_dynamic_values_crossing_into_nominal_arguments() {
+    let _state = lock_preprocess_test_state();
+    let person_def = Arc::new(CalcitStructDef {
+      name: EdnTag::new("Person"),
+      fields: Arc::new(vec![EdnTag::new("name")]),
+      field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    });
+    let person_type = Arc::new(CalcitTypeAnnotation::Struct(person_def, Arc::new(vec![])));
+    let signature = generic_relation_test_signature(vec![person_type.clone()], Arc::new(CalcitTypeAnnotation::Unit), None);
+    let dynamic = calcit::DYNAMIC_TYPE.clone();
+    let open_value = generic_relation_test_local("open-value", dynamic.clone());
+    let scope_types = ScopeTypes::from([(Arc::from("open-value"), dynamic)]);
+    let args = CalcitList::from(&[open_value][..]);
+
+    {
+      let _compat = StrictTypesGuard::new(false);
+      reject_strict_dynamic_nominal_argument(
+        &test_symbol("consume-person"),
+        &args,
+        &signature,
+        &scope_types,
+        "tests.dynamic-boundary",
+        &CallStackList::default(),
+      )
+      .expect("compatibility mode should preserve the existing Dynamic boundary during migration");
+    }
+
+    let _strict = StrictTypesGuard::new(true);
+    let error = reject_strict_dynamic_nominal_argument(
+      &test_symbol("consume-person"),
+      &args,
+      &signature,
+      &scope_types,
+      "tests.dynamic-boundary",
+      &CallStackList::default(),
+    )
+    .expect_err("strict mode should reject Dynamic entering a closed nominal argument");
+    assert_eq!(error.code.as_deref(), Some("E_DYNAMIC_NOMINAL_ARGUMENT"));
+    assert!(error.msg.contains("open `dynamic` data at argument 1"));
+    assert!(error.msg.contains("closed nominal contract `struct Person`"));
+    assert!(error.msg.contains("parse-cirru-edn-as"));
+    assert!(error.msg.contains("decode-map-as"));
+
+    let open_list = CalcitTypeAnnotation::List(calcit::DYNAMIC_TYPE.clone());
+    let people = CalcitTypeAnnotation::List(person_type.clone());
+    assert!(dynamic_erases_nominal_contract(&open_list, &people));
+    assert!(!dynamic_erases_nominal_contract(
+      &CalcitTypeAnnotation::Dynamic,
+      &CalcitTypeAnnotation::Number
+    ));
+
+    let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let related_signature = generic_relation_test_signature(vec![generic.clone(), generic], Arc::new(CalcitTypeAnnotation::Unit), None);
+    let person_value = generic_relation_test_local("person", person_type.clone());
+    let related_scope = ScopeTypes::from([
+      (Arc::from("open-value"), calcit::DYNAMIC_TYPE.clone()),
+      (Arc::from("person"), person_type.clone()),
+    ]);
+    let related_args = CalcitList::from(
+      &[
+        generic_relation_test_local("open-value", calcit::DYNAMIC_TYPE.clone()),
+        person_value,
+      ][..],
+    );
+    let related_error = reject_strict_dynamic_nominal_argument(
+      &test_symbol("same-type"),
+      &related_args,
+      &related_signature,
+      &related_scope,
+      "tests.dynamic-boundary",
+      &CallStackList::default(),
+    )
+    .expect_err("later nominal arguments should bind generics before earlier Dynamic arguments are checked");
+    assert_eq!(related_error.code.as_deref(), Some("E_DYNAMIC_NOMINAL_ARGUMENT"));
+    assert!(related_error.msg.contains("argument 1"));
+    assert!(related_error.msg.contains("struct Person"));
+
+    let box_def = Arc::new(CalcitStructDef {
+      name: EdnTag::new("Box"),
+      fields: Arc::new(vec![EdnTag::new("value")]),
+      field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]),
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    });
+    assert!(dynamic_erases_nominal_contract(
+      &CalcitTypeAnnotation::Struct(box_def.clone(), Arc::new(vec![calcit::DYNAMIC_TYPE.clone()])),
+      &CalcitTypeAnnotation::Struct(box_def, Arc::new(vec![person_type.clone()])),
+    ));
+
+    let wrapper_def = Arc::new(indexed_match_enum());
+    assert!(dynamic_erases_nominal_contract(
+      &CalcitTypeAnnotation::Enum(wrapper_def.clone(), Arc::new(vec![calcit::DYNAMIC_TYPE.clone()])),
+      &CalcitTypeAnnotation::Enum(wrapper_def, Arc::new(vec![person_type.clone()])),
+    ));
+
+    assert!(dynamic_erases_nominal_contract(
+      &CalcitTypeAnnotation::TypeRef(Arc::from("tests/Box"), Arc::new(vec![calcit::DYNAMIC_TYPE.clone()])),
+      &CalcitTypeAnnotation::TypeRef(Arc::from("tests/Box"), Arc::new(vec![person_type.clone()])),
+    ));
+
+    let open_callback = generic_relation_test_signature(vec![calcit::DYNAMIC_TYPE.clone()], Arc::new(CalcitTypeAnnotation::Unit), None);
+    let person_callback = generic_relation_test_signature(vec![person_type.clone()], Arc::new(CalcitTypeAnnotation::Unit), None);
+    assert!(contains_nominal_contract(&CalcitTypeAnnotation::Fn(Arc::new(
+      person_callback.clone()
+    ))));
+    assert!(dynamic_erases_nominal_contract(
+      &CalcitTypeAnnotation::Fn(Arc::new(open_callback)),
+      &CalcitTypeAnnotation::Fn(Arc::new(person_callback)),
+    ));
+    assert!(contains_nominal_contract(&CalcitTypeAnnotation::TypeRef(
+      Arc::from("tests/Envelope"),
+      Arc::new(vec![person_type]),
+    )));
   }
 
   #[test]
