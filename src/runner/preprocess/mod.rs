@@ -8864,6 +8864,30 @@ fn dynamic_erases_nominal_contract(actual: &CalcitTypeAnnotation, expected: &Cal
       dynamic_erases_nominal_contract(actual_key.as_ref(), expected_key.as_ref())
         || dynamic_erases_nominal_contract(actual_value.as_ref(), expected_value.as_ref())
     }
+    (CalcitTypeAnnotation::Struct(actual_def, actual_args), CalcitTypeAnnotation::Struct(expected_def, expected_args))
+      if actual_def == expected_def && actual_args.len() == expected_args.len() =>
+    {
+      actual_args
+        .iter()
+        .zip(expected_args.iter())
+        .any(|(actual, expected)| dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref()))
+    }
+    (CalcitTypeAnnotation::Enum(actual_def, actual_args), CalcitTypeAnnotation::Enum(expected_def, expected_args))
+      if actual_def == expected_def && actual_args.len() == expected_args.len() =>
+    {
+      actual_args
+        .iter()
+        .zip(expected_args.iter())
+        .any(|(actual, expected)| dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref()))
+    }
+    (CalcitTypeAnnotation::TypeRef(actual_name, actual_args), CalcitTypeAnnotation::TypeRef(expected_name, expected_args))
+      if actual_name == expected_name && actual_args.len() == expected_args.len() =>
+    {
+      actual_args
+        .iter()
+        .zip(expected_args.iter())
+        .any(|(actual, expected)| dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref()))
+    }
     _ => false,
   }
 }
@@ -16221,6 +16245,30 @@ mod tests {
     assert_eq!(related_error.code.as_deref(), Some("E_DYNAMIC_NOMINAL_ARGUMENT"));
     assert!(related_error.msg.contains("argument 1"));
     assert!(related_error.msg.contains("struct Person"));
+
+    let box_def = Arc::new(CalcitStructDef {
+      name: EdnTag::new("Box"),
+      fields: Arc::new(vec![EdnTag::new("value")]),
+      field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]),
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    });
+    assert!(dynamic_erases_nominal_contract(
+      &CalcitTypeAnnotation::Struct(box_def.clone(), Arc::new(vec![calcit::DYNAMIC_TYPE.clone()])),
+      &CalcitTypeAnnotation::Struct(box_def, Arc::new(vec![person_type.clone()])),
+    ));
+
+    let wrapper_def = Arc::new(indexed_match_enum());
+    assert!(dynamic_erases_nominal_contract(
+      &CalcitTypeAnnotation::Enum(wrapper_def.clone(), Arc::new(vec![calcit::DYNAMIC_TYPE.clone()])),
+      &CalcitTypeAnnotation::Enum(wrapper_def, Arc::new(vec![person_type.clone()])),
+    ));
+
+    assert!(dynamic_erases_nominal_contract(
+      &CalcitTypeAnnotation::TypeRef(Arc::from("tests/Box"), Arc::new(vec![calcit::DYNAMIC_TYPE.clone()])),
+      &CalcitTypeAnnotation::TypeRef(Arc::from("tests/Box"), Arc::new(vec![person_type])),
+    ));
   }
 
   #[test]
