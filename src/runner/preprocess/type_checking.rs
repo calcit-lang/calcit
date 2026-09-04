@@ -133,7 +133,12 @@ fn specialize_core_expected_types(
   if fn_info.def_ns.as_ref() != calcit::CORE_NS {
     return None;
   }
-  if !matches!(fn_info.name.as_ref(), "get" | "includes?" | "update") {
+  let required_arity = match fn_info.name.as_ref() {
+    "get" | "includes?" => 2,
+    "update" => 3,
+    _ => return None,
+  };
+  if expected_types.len() < required_arity || args.len() < required_arity {
     return None;
   }
   let receiver = args.first()?;
@@ -141,7 +146,7 @@ fn specialize_core_expected_types(
   let mut specialized = expected_types.to_vec();
 
   match fn_info.name.as_ref() {
-    "get" if expected_types.len() >= 2 && args.len() >= 2 => {
+    "get" => {
       specialized[1] = match receiver_type.as_ref() {
         CalcitTypeAnnotation::Map(key_type, _) => key_type.clone(),
         CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::String => Arc::new(CalcitTypeAnnotation::Number),
@@ -151,7 +156,7 @@ fn specialize_core_expected_types(
       };
       Some(specialized)
     }
-    "includes?" if expected_types.len() >= 2 && args.len() >= 2 => {
+    "includes?" => {
       specialized[1] = match receiver_type.as_ref() {
         CalcitTypeAnnotation::Map(_, value_type) => value_type.clone(),
         CalcitTypeAnnotation::List(item_type) | CalcitTypeAnnotation::Set(item_type) => item_type.clone(),
@@ -171,10 +176,6 @@ fn specialize_update_expected_types(
   scope_types: &ScopeTypes,
   expected_types: &[Arc<CalcitTypeAnnotation>],
 ) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
-  if expected_types.len() < 3 || args.len() < 3 {
-    return None;
-  }
-
   let receiver = args.first()?;
   let mut specialized = expected_types.to_vec();
   let value_type = match receiver_type {
