@@ -1392,9 +1392,19 @@ fn try_expand_typed_optional_access_call(
   let Some(receiver_expr) = args.first() else {
     return Ok(None);
   };
-  let Some(receiver_type) = resolve_type_value(receiver_expr, scope_types) else {
+  let Some(mut receiver_type) = resolve_type_value(receiver_expr, scope_types) else {
     return Ok(None);
   };
+  let mut resolving_slots = HashSet::new();
+  while let T::TypeSlot(name) = receiver_type.as_ref() {
+    if !resolving_slots.insert(name.clone()) {
+      break;
+    }
+    let Some(bound) = calcit::resolve_type_slot(name) else {
+      break;
+    };
+    receiver_type = bound;
+  }
 
   let indexed_procs = match receiver_type.as_ref() {
     T::List(_) => Some((CalcitProc::NativeListCount, CalcitProc::NativeListNth)),
@@ -9922,6 +9932,7 @@ mod tests {
   #[test]
   fn strict_types_reject_concrete_unsupported_optional_access_receivers() {
     let _guard = lock_preprocess_test_state();
+    let _slots = TypeSlotsGuard::cleared();
     let stack = CallStackList::default();
 
     {
@@ -10002,6 +10013,45 @@ mod tests {
       .expect("an explicitly Dynamic receiver remains a reviewed open boundary")
       .is_none()
     );
+
+    calcit::push_type_slot_override(
+      Arc::from("indexed-receiver"),
+      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String))),
+    );
+    let bound_list = generic_relation_test_local(
+      "bound-list",
+      Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from("indexed-receiver"))),
+    );
+    let bound_list_args = CalcitList::from(&[bound_list, Calcit::Number(0.0)] as &[Calcit]);
+    let bound_list_expansion = try_expand_typed_optional_access_call(
+      calcit::CORE_NS,
+      "nth",
+      &bound_list_args,
+      &ScopeTypes::new(),
+      "tests.typed-access",
+      &stack,
+    )
+    .expect("a bound List slot should be accepted")
+    .expect("a bound List slot should specialize indexed access");
+    assert!(bound_list_expansion.lisp_str().contains("&list:nth"));
+    calcit::pop_type_slot_override("indexed-receiver");
+
+    calcit::push_type_slot_override(Arc::from("unsupported-receiver"), Arc::new(CalcitTypeAnnotation::Number));
+    let bound_number = generic_relation_test_local(
+      "bound-number",
+      Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from("unsupported-receiver"))),
+    );
+    let bound_number_args = CalcitList::from(&[bound_number, Calcit::Tag(EdnTag::new("field"))] as &[Calcit]);
+    let bound_number_error = try_expand_typed_optional_access_call(
+      calcit::CORE_NS,
+      "get",
+      &bound_number_args,
+      &ScopeTypes::new(),
+      "tests.typed-access",
+      &stack,
+    )
+    .expect_err("a bound Number slot should be rejected as a concrete unsupported receiver");
+    assert_eq!(bound_number_error.code.as_deref(), Some("E_UNSUPPORTED_INDEXED_RECEIVER"));
   }
 
   #[test]
