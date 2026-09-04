@@ -103,6 +103,12 @@ wrong type-argument arity, trait-bounded declarations, `Dynamic`, callbacks,
 callable boundaries produce explicit diagnostics. A rejected signature is
 `null`; there is no Dynamic fallback or declaration-name guessing.
 
+The core `FfiTask` and `FfiResponse` capabilities are known host-managed types,
+not missing application declarations. Interface IR reports them with stable
+`E_FFI_IR_HOST_MANAGED_TYPE` diagnostics. Keep those lifecycle boundaries in a
+handwritten Calcit adapter and wrap opaque native tokens with `ffi:task` or
+`ffi:response`; generators must not copy or synthesize their representation.
+
 Declaration IDs follow the resolved nominal Struct/Enum name, not necessarily
 the snapshot binding that stores the base definition. This supports the normal
 top-level trait pattern `Foo0 = defstruct Foo ...` plus
@@ -116,6 +122,11 @@ Option/Result 使用明确类型节点；只纳入从 FFI signature 传递可达
 歧义、参数数量错误或无法表示的声明会产生结构化错误，不会按名称猜测或静默退化
 为动态调用。生成器必须先检查 interface `version`、definition `status` 和顶层
 `diagnostics`。
+
+core 的 `FfiTask` 与 `FfiResponse` 是已知的宿主管理 capability，并非应用声明
+遗漏。Interface IR 使用稳定的 `E_FFI_IR_HOST_MANAGED_TYPE` 诊断区分这类边界；
+应在手写 Calcit adapter 中用 `ffi:task` / `ffi:response` 包装不透明 native token，
+生成器不得复制或猜测其底层表示。
 
 Declaration ID 以解析出的 nominal Struct/Enum 名称为准，不强制等于保存 base
 definition 的 Snapshot binding 名称，因此支持顶层 `Foo0 = defstruct Foo ...` 与
