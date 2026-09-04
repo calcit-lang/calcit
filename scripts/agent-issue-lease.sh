@@ -283,16 +283,23 @@ The issue currently has no active write lease."
   replacement_sha="$(remote_sha "$ref")"
   if [[ -n "$replacement_sha" ]]; then
     if ! fetch_lock "$ref"; then
-      echo "WARN: the newer lease disappeared during mirror repair; its release owns the final Issue state" >&2
-      echo "RELEASED issue #$issue by $agent to agent:$target"
-      return
+      replacement_sha="$(remote_sha "$ref")"
+      if [[ -z "$replacement_sha" ]]; then
+        echo "WARN: the newer lease disappeared during mirror repair; its release owns the final Issue state" >&2
+        echo "RELEASED issue #$issue by $agent to agent:$target"
+        return
+      fi
+      die "newer lease $replacement_sha still exists but could not be fetched for mirror repair"
     fi
+    # The ref may advance after the initial ls-remote. Read metadata from the
+    # commit that fetch_lock actually fetched, never from the stale observation.
+    replacement_sha="$(git rev-parse FETCH_HEAD)"
     replacement_agent="$(field "$replacement_sha" agent_id)"
     replacement_claimed="$(field "$replacement_sha" claimed_at)"
     replacement_heartbeat="$(field "$replacement_sha" heartbeat_at)"
     replacement_expires="$(field "$replacement_sha" expires_at)"
     replacement_scope="$(field "$replacement_sha" scope)"
-    if [[ "$replacement_claimed" =~ ^[0-9]+$ && "$replacement_heartbeat" =~ ^[0-9]+$ && "$replacement_expires" =~ ^[0-9]+$ ]]; then
+    if [[ -n "$replacement_agent" && -n "$replacement_scope" && "$replacement_claimed" =~ ^[0-9]+$ && "$replacement_heartbeat" =~ ^[0-9]+$ && "$replacement_expires" =~ ^[0-9]+$ ]]; then
       sync_claimed_issue \
         "$issue" "$repo" "$replacement_agent" "$replacement_claimed" "$replacement_heartbeat" \
         "$replacement_expires" "$replacement_scope" "$replacement_sha"
