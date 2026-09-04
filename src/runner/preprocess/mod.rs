@@ -4645,11 +4645,14 @@ fn check_struct_method_args(
     // Handle variadic argument type (same as check_user_fn_arg_types)
     if let CalcitTypeAnnotation::Variadic(inner_type) = expected_type.as_ref() {
       for (rest_idx, rest_arg) in method_args.iter().skip(idx).enumerate() {
+        let expected_rest_type = inner_type.substitute_type_vars(&bindings);
         if let Some(actual_type) = resolve_type_value(rest_arg, scope_types)
-          && !actual_type.as_ref().matches_with_bindings(inner_type.as_ref(), &mut bindings)
+          && !actual_type
+            .as_ref()
+            .matches_with_bindings(expected_rest_type.as_ref(), &mut bindings)
         {
-          let expected_str = inner_type.as_ref().to_brief_string();
-          let actual_str = actual_type.as_ref().to_brief_string();
+          let expected_str = expected_rest_type.describe();
+          let actual_str = actual_type.as_ref().describe();
           gen_check_warning_code(
             format!(
               "[Warn] Method `.{method_name}` variadic arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",

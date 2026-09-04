@@ -1217,6 +1217,21 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       }),
       "remove-watch should require a Tag key: {watch_warnings:?}"
     );
+    let variadic_method_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_METHOD_ARG_TYPE_MISMATCH") && warning.message().contains("Method `.merge` variadic"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      variadic_method_warnings.len(),
+      1,
+      "variadic methods should validate every argument against receiver-bound generics: {warnings:?}"
+    );
+    assert!(
+      variadic_method_warnings[0]
+        .message()
+        .contains("expects type `map<tag, number>`, but got `map<tag, tag>`"),
+      "variadic method diagnostics should render substituted full container types: {variadic_method_warnings:?}"
+    );
   });
 }
 
