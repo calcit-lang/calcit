@@ -53,10 +53,20 @@
               (&{} :a 1) .merge $ &{} :b :bad
               add-watch (atom |x) |change inc
               remove-watch (atom 1) |change
+              interleave ([] 1 2) ([] :bad)
+              partial-generic-check (&{} :a |bad) 1
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
+        'partial-generic-check $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn partial-generic-check (items fallback) &unit
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ [] (:: 'Map 'T 'Number) 'T
+              :generics $ [] 'T
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote
             defn reload! () nil

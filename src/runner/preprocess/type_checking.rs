@@ -526,8 +526,19 @@ where
       } else {
         actual_type
       };
-      if !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings) {
-        ctx.emit_warning(idx + 1, expected_type.as_ref(), actual_type.as_ref(), &make_warning);
+      let matches = if expected_type.contains_type_var() || actual_type.contains_type_var() {
+        let mut candidate = bindings.clone();
+        let matches = actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut candidate);
+        if matches {
+          bindings = candidate;
+        }
+        matches
+      } else {
+        actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings)
+      };
+      if !matches {
+        let diagnostic_expected = expected_type.substitute_type_vars(&bindings);
+        ctx.emit_warning(idx + 1, diagnostic_expected.as_ref(), actual_type.as_ref(), &make_warning);
       }
     }
   }
@@ -864,6 +875,7 @@ pub(crate) fn check_user_fn_arg_types(
   let fn_name = fn_info.name.clone();
   let equality_migration = fn_def_ns.as_ref() == crate::calcit::CORE_NS && matches!(fn_name.as_ref(), "=" | "not=" | "/=");
   let list_apply_migration = fn_def_ns.as_ref() == crate::calcit::CORE_NS && fn_name.as_ref() == "&list:apply";
+  let interleave_migration = fn_def_ns.as_ref() == crate::calcit::CORE_NS && fn_name.as_ref() == "interleave";
   let def_name = call_info.def_name.to_owned();
   let file_ns_owned = call_info.file_ns.to_owned();
   let ctx = CheckContext {
@@ -882,6 +894,8 @@ pub(crate) fn check_user_fn_arg_types(
       "\n  Migration: public equality now requires operands of one static type. Normalize both values, narrow Dynamic/FFI values with a typed adapter, validator, or assert-type, use a type predicate for category checks, or pattern-match nominal values before comparing."
     } else if list_apply_migration {
       LIST_APPLY_MIGRATION_HINT
+    } else if interleave_migration {
+      "\n  Migration: interleave preserves one shared element type across both inputs and the result. Normalize both lists to the same type, or declare List<Dynamic> explicitly only at a reviewed heterogeneous boundary."
     } else {
       ""
     };

@@ -5843,7 +5843,7 @@
                   assert= (%none)
                     index-of ([] :a :b :c) :missing
               :tags $ #{} :core :unit
-        'interleave $ %{} 'CodeEntry (:doc |)
+        'interleave $ %{} 'CodeEntry (:doc "|Interleave two homogeneous lists, truncating to the shorter input. Both inputs and the result share one element type; explicitly use List<Dynamic> only at a reviewed heterogeneous boundary.")
           :code $ quote
             defn interleave (xs0 ys0)
               apply-args
@@ -5851,9 +5851,9 @@
                   , xs0 ys0
                 defn %interleave (acc xs ys)
                   hint-fn $ {}
-                    :args $ [] (:: 'List 'Dynamic) (:: 'List 'T) (:: 'List 'U)
-                    :generics $ [] 'T 'U
-                    :return $ :: 'List 'Dynamic
+                    :args $ [] (:: 'List 'T) (:: 'List 'T) (:: 'List 'T)
+                    :generics $ [] 'T
+                    :return $ :: 'List 'T
                   if
                     if (&list:empty? xs) true $ &list:empty? ys
                     , acc $ recur
@@ -5864,14 +5864,15 @@
                       rest ys
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'List)
-              :args $ [] (:: 'List 'T) (:: 'List 'U)
-              :generics $ [] 'T 'U
+            {}
+              :args $ [] (:: 'List 'T) (:: 'List 'T)
+              :generics $ [] 'T
+              :return $ :: 'List 'T
           :tests $ []
             %{} 'TestEntry (:name |truncates-to-shortest-list)
               :code $ quote
-                assert= ([] :a 1 :b 2)
-                  interleave ([] :a :b :c) ([] 1 2)
+                assert= ([] :a :x :b :y)
+                  interleave ([] :a :b :c) ([] :x :y)
               :tags $ #{} :core :unit
         'intersection $ %{} 'CodeEntry (:doc |)
           :code $ quote
