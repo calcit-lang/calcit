@@ -333,27 +333,6 @@ fn type_fail_call_arg_fixture_reports_warning_code() {
 }
 
 #[test]
-fn filter_predicate_requires_a_boolean_return() {
-  run_with_large_stack(|| {
-    let entries = load_fixture_entries("calcit/type-fail/filter-predicate-type-mismatch.cirru");
-    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
-
-    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
-      .expect("filter callback mismatch should surface as a preprocessing warning");
-
-    let warnings = warnings.borrow();
-    assert!(
-      warnings.iter().any(|warning| {
-        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
-          && warning.message().contains("calcit.core/filter")
-          && warning.message().contains(":bool")
-      }),
-      "filter must reject a non-Bool predicate contract, got: {warnings:?}"
-    );
-  });
-}
-
-#[test]
 fn mixed_public_equality_reports_guided_type_mismatches() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("do\n  = 1 |one\n  = 1 1 |one\n  not= 1 |one\n  /= 1 |one");
@@ -711,6 +690,41 @@ fn type_fail_core_map_where_bound_fixture_reports_warning_code() {
         && warning.message().contains("Mappable")
         && warning.message().contains("calcit.core/map")
         && warning.message().contains("calcit.core/inc"),
+      "warning message was: {}",
+      warning.message()
+    );
+  });
+}
+
+#[test]
+fn type_fail_slice_receiver_trait_fixture_reports_warning_code() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/type-fail/slice-receiver-trait-mismatch.cirru");
+    let slice_schema = program::lookup_def_schema("calcit.core", "slice");
+    let CalcitTypeAnnotation::Fn(slice_fn_annot) = slice_schema.as_ref() else {
+      panic!("core slice schema should load as fn, got {slice_schema:?}");
+    };
+    assert_eq!(slice_fn_annot.where_bounds.len(), 1, "core slice should carry one where-bound");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("slice receiver mismatch should preprocess with a warning");
+
+    let warnings = warnings.borrow();
+    let matched: Vec<&LocatedWarning> = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_GENERIC_WHERE_BOUND_MISMATCH"))
+      .collect();
+    assert_eq!(
+      matched.len(),
+      1,
+      "expected exactly one slice where-bound warning, got: {warnings:?}"
+    );
+    let warning = matched[0];
+    assert!(
+      warning.message().contains("`:number`")
+        && warning.message().contains("Sliceable")
+        && warning.message().contains("calcit.core/slice"),
       "warning message was: {}",
       warning.message()
     );

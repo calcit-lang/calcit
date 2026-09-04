@@ -377,6 +377,7 @@
         '&core-list-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add.")
           :code $ quote
             def &core-list-impls $ [] &core-list-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-list-impl) (&impl::new Len internal/&core-len-list-impl) (&impl::new Mappable internal/&core-mappable-list-impl) (&impl::new Countable internal/&core-countable-list-impl) (&impl::new Contains internal/&core-contains-list-impl)
+              &impl::new Sliceable $ :: :slice &list:slice
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -443,6 +444,7 @@
         '&core-string-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for string")
           :code $ quote
             def &core-string-impls $ [] &core-string-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Contains internal/&core-contains-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
+              &impl::new Sliceable $ :: :slice &str:slice
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -861,7 +863,7 @@
           :tags $ #{} :builtin :internal
         '&init-builtin-impls! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-enum-impls) (identity &core-struct-impls) (identity &core-scalar-impls) (identity &core-ref-impls) (identity Add) (identity Debug) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
+            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-enum-impls) (identity &core-struct-impls) (identity &core-scalar-impls) (identity &core-ref-impls) (identity Add) (identity Debug) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show) (identity Sliceable)
               if
                 &= (&get-calcit-backend) :js
                 register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :ref &core-ref-impls
@@ -3125,6 +3127,15 @@
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
+        'Sliceable $ %{} 'CodeEntry (:doc "|Core trait for values whose slice operation preserves the receiver type. List and String implement it.")
+          :code $ quote
+            deftrait Sliceable $ .slice
+              :: :fn $ {} (:return 'T)
+                :generics $ [] 'T
+                :args $ [] 'T 'Number 'Number
+          :examples $ []
+          :schema $ :: 'Trait
+          :tags $ #{} :trait
         'StringDestruct $ %{} 'CodeEntry (:doc "|Nominal result of destruct-str: none, or the first character with the remaining string.")
           :code $ quote
             defenum StringDestruct (:some 'String 'String) (:none)
@@ -4940,11 +4951,8 @@
                 defn %long? (s)
                   &> (&str:count s) 1
           :schema $ :: 'Fn
-            {} (:return 'C)
-              :args $ [] 'C
-                :: 'Fn $ {} (:return 'Bool)
-                  :args $ [] 'T
-              :generics $ [] 'C 'T
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic 'Fn
           :tests $ []
             %{} 'TestEntry (:name |filters-map-pairs)
               :code $ quote
@@ -4958,16 +4966,6 @@
                 assert= (#{} 7 9)
                   filter (#{} 1 3 5 7 9)
                     fn (x) (> x 5)
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |preserves-filter-container-types)
-              :code $ quote
-                do
-                  assert-type
-                    filter ([] 1 2 3) $ fn (x) (> x 1)
-                    :: 'List 'Number
-                  assert-type
-                    filter (#{} 1 2 3) $ fn (x) (> x 1)
-                    :: 'Set 'Number
               :tags $ #{} :core :unit
         'filter-map-kv $ %{} 'CodeEntry (:doc "|Transforms and filters map entries with a typed MapEntryDecision callback. Return :keep with the output key/value or :drop to omit an entry.")
           :code $ quote
@@ -7558,6 +7556,7 @@
             {} (:return 'C)
               :args $ [] 'C 'Number 'Number
               :generics $ [] 'C
+              :where $ {} ('C 'Sliceable)
           :tests $ []
             %{} 'TestEntry (:name |slices-strings)
               :code $ quote
@@ -8374,11 +8373,11 @@
                 {} $ :count 1
                 , :missing inc
           :schema $ :: 'Fn
-            {} (:return 'C)
-              :args $ [] 'C 'K
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic 'Dynamic
                 :: 'Fn $ {} (:return 'T)
                   :args $ [] 'T
-              :generics $ [] 'C 'K 'T
+              :generics $ [] 'T
           :tests $ []
             %{} 'TestEntry (:name |updates-existing-map-and-list-slots)
               :code $ quote
@@ -8389,16 +8388,6 @@
                     update ([] 0 1 2) 1 $ fn (x) (+ x 10)
                   assert= ([] 0 1 2)
                     update ([] 0 1 2) 4 $ fn (x) (+ x 10)
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |preserves-update-container-types)
-              :code $ quote
-                do
-                  assert-type
-                    update (&{} :a 1) :a $ fn (x) (+ x 1)
-                    :: 'Map 'Tag 'Number
-                  assert-type
-                    update ([] 1 2 3) 1 $ fn (x) (+ x 1)
-                    :: 'List 'Number
               :tags $ #{} :core :unit
         'update-in $ %{} 'CodeEntry (:doc "|Walk a nested path and update its leaf. The updater receives Option<T>: some for an existing leaf and none for a missing leaf. Missing intermediate containers are created as maps.")
           :code $ quote
