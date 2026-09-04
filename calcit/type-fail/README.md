@@ -22,6 +22,8 @@
 - `cargo run --bin calcit -- calcit/type-fail/dynamic-method-dispatch-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/raw-primitive-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/untyped-js-object-access-strict.cirru --strict-types --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/js-nullish-dereference-strict.cirru --strict-types --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/js-nullish-predicate-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/unsafe-coerce-unscoped-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/erased-generic-relation-strict.cirru --strict-types --check-only`
 
@@ -40,6 +42,8 @@
 - `dynamic-method-dispatch-strict.cirru` 会验证 strict 模式拒绝普通 Dynamic receiver method，并报告 receiver source 与稳定的 `E_DYNAMIC_POSTFIX_METHOD`。
 - `raw-primitive-strict.cirru` 会验证 strict 模式拒绝项目源码直接调用 `&get-raw`，并报告稳定的 `E_RAW_PRIMITIVE_IN_TYPED_CODE`。
 - `untyped-js-object-access-strict.cirru` 会验证 strict 模式拒绝裸 `JsObject` 上的静态成员访问，并报告稳定的 `E_UNTYPED_JS_OBJECT_ACCESS` 与 external-object trait 迁移建议。
+- `js-nullish-dereference-strict.cirru` 会验证 strict 模式拒绝直接解引用 `JsNullish<JsObject>`，并报告稳定的 `E_JS_FFI_NULLABLE_DEREF` 与显式 narrow/optional access 建议。
+- `js-nullish-predicate-strict.cirru` 会验证 strict 模式拒绝以 legacy `nil?`/`some?` 检查 `JsNullish<T>`，并报告稳定的 `E_JS_FFI_NULLABLE_PREDICATE` 与专用 predicate 建议。
 - `unsafe-coerce-unscoped-strict.cirru` 会验证 strict 模式拒绝未声明 `:js-ffi` 的 `unsafe-coerce`，并报告稳定的 `E_UNSCOPED_UNSAFE_COERCE`。
 - `unsafe-coerce-scoped-strict.cirru` 是 integration preprocessing 正例：标记 adapter 可使用 assertion，普通 typed caller 不继承也不需要该 capability；完整 strict quality gate 仍要求显式 `unsafeCoerce` baseline。
 - `erased-generic-relation-strict.cirru` 会验证 strict 模式拒绝把 Dynamic 实参传入重复泛型关系，并报告稳定的 `E_ERASED_GENERIC_RELATION`。
@@ -57,6 +61,7 @@
 - strict general Dynamic method fixture：断言错误文本包含 `E_DYNAMIC_POSTFIX_METHOD`、method 名称、receiver-loss 分类与 typed adapter 迁移建议
 - strict raw primitive fixture：断言错误文本包含 `E_RAW_PRIMITIVE_IN_TYPED_CODE`、primitive 名称与 typed public API 迁移建议
 - strict untyped JS object fixture：断言错误文本包含 `E_UNTYPED_JS_OBJECT_ACCESS`、成员名、receiver evidence 与 external-object trait 迁移建议
+- strict nullable JS fixtures：断言直接 dereference 报 `E_JS_FFI_NULLABLE_DEREF`，legacy predicate 报 `E_JS_FFI_NULLABLE_PREDICATE`，且两者都提供专用 host-nullability 迁移建议
 - strict unsafe-coerce fixtures：断言未标记 adapter 报 `E_UNSCOPED_UNSAFE_COERCE`，而词法标记的 adapter 与普通 caller 可通过 preprocessing
 - strict erased-generic fixture：断言错误文本包含 `E_ERASED_GENERIC_RELATION`、callee、参数位置、泛型变量与 narrow/adapter 迁移建议
 
@@ -76,6 +81,8 @@
 - `E_DYNAMIC_METHOD_DISPATCH` / `E_DYNAMIC_POSTFIX_METHOD`：strict 模式下 method receiver 缺少可静态 specialization 的 schema、generic/slot 绑定或 typed FFI evidence
 - `E_RAW_PRIMITIVE_IN_TYPED_CODE`：strict 项目源码手写 raw constructor/lookup/index primitive，且没有 compiler/macro origin 或匹配的 nominal layout evidence
 - `E_UNTYPED_JS_OBJECT_ACCESS`：strict 项目源码在裸 `JsObject` 上以静态成员名执行读取、调用或写入，需在 lexical adapter 内绑定 external-object trait；动态 key 保留 raw lookup 语义
+- `E_JS_FFI_NULLABLE_DEREF`：strict 项目源码未 narrow `JsNullish<JsObject>` 就直接读取或调用宿主成员
+- `E_JS_FFI_NULLABLE_PREDICATE`：strict 项目源码用 legacy `nil?`/`some?` 擦除 `JsNullish<T>` 的宿主空值语义
 - `E_UNSCOPED_UNSAFE_COERCE`：strict 项目源码在当前 definition 未声明 `:js-ffi` 时使用 `unsafe-coerce`
 - `E_ERASED_GENERIC_RELATION`：strict 模式下 Dynamic 实参擦除了 callee 声明的重复泛型关系
 - `W_FN_ARG_TYPE_MISMATCH`：用户函数调用参数类型不匹配

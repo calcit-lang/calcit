@@ -285,6 +285,40 @@ fn strict_type_fail_untyped_js_object_access_reports_stable_error_code() {
 }
 
 #[test]
+fn strict_type_fail_js_nullish_dereference_reports_stable_error_code() {
+  run_with_large_stack(|| {
+    let fixture = "calcit/type-fail/js-nullish-dereference-strict.cirru";
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries(fixture);
+    let err = run_check_only(&entries).expect_err("direct dereference of a JsNullish host value must fail strict check-only");
+
+    assert!(
+      err.contains("E_JS_FFI_NULLABLE_DEREF"),
+      "unexpected nullable dereference error: {err}"
+    );
+    assert!(err.contains(".-length"), "operation should be explicit: {err}");
+    assert!(err.contains("js-present?"), "narrowing migration should be actionable: {err}");
+  });
+}
+
+#[test]
+fn strict_type_fail_js_nullish_predicate_reports_stable_error_code() {
+  run_with_large_stack(|| {
+    let fixture = "calcit/type-fail/js-nullish-predicate-strict.cirru";
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries(fixture);
+    let err = run_check_only(&entries).expect_err("legacy nil? on a JsNullish host value must fail strict check-only");
+
+    assert!(
+      err.contains("E_JS_FFI_NULLABLE_PREDICATE"),
+      "unexpected nullable predicate error: {err}"
+    );
+    assert!(err.contains("`nil?`"), "legacy predicate should be explicit: {err}");
+    assert!(err.contains("js-nullish?"), "predicate migration should be actionable: {err}");
+  });
+}
+
+#[test]
 fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();

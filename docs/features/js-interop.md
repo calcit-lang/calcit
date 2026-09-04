@@ -47,18 +47,22 @@ conservatively inferred as `JsNullish<JsObject>`. The deliberate exception is
   with a boundary decoder. `unsafe-coerce` is available only when an external
   API contract is trusted and the unchecked conversion is intentional.
 
-Plain `.-name` and `.!name` dereference their receiver. If the receiver is an
-`JsNullish<JsObject>`, preprocessing reports `W_JS_FFI_NULLABLE_DEREF`. Use
-`.?-name`/`.?!name`, or narrow the receiver before dereferencing it.
+Plain `.-name` and `.!name` dereference their receiver. If the receiver is a
+`JsNullish<JsObject>`, strict project source fails with
+`E_JS_FFI_NULLABLE_DEREF`; compatibility mode reports
+`W_JS_FFI_NULLABLE_DEREF`. Use `.?-name`/`.?!name`, or narrow the receiver
+before dereferencing it.
 
 Functions containing raw interop should declare `:features $ #{} :js-ffi` in
 their schema. The feature identifies the boundary but does not suppress
 nullable dereference or strong-type mismatch diagnostics.
 
 Use `js-nullish?` and `js-present?` to narrow a JavaScript boundary. Applying
-legacy `nil?`/`some?` reports `W_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly
-with `js-nullish->option` only after accepting the opaque payload contract;
-generic `optionally` does not accept `JsNullish<T>`.
+legacy `nil?`/`some?` fails strict project source with
+`E_JS_FFI_NULLABLE_PREDICATE`; compatibility mode reports
+`W_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly with
+`js-nullish->option` only after accepting the opaque payload contract; generic
+`optionally` does not accept `JsNullish<T>`.
 
 ## 2. Capability and target policy
 
@@ -449,5 +453,8 @@ Common diagnostics:
 | `E_UNSCOPED_UNSAFE_COERCE` | Strict preprocessing finds `unsafe-coerce` outside the current function's lexical FFI scope. | Move it into a small structured `Fn` adapter declaring `:js-ffi`; validate/convert there and return typed data. |
 | `E_JS_FFI_TARGET_MISMATCH` | The selected entry targets another host. | Correct the entry `:target` or use the matching adapter. |
 | `W_JS_FFI_NULLABLE_DEREF` | A nullable host value is dereferenced directly. | Use optional access or narrow with `js-present?`. |
+| `W_JS_FFI_NULLABLE_PREDICATE` | Compatibility source applies legacy `nil?`/`some?` to a host-nullish value. | Use `js-nullish?`/`js-present?` so host semantics remain visible. |
+| `E_JS_FFI_NULLABLE_DEREF` | Strict project source dereferences `JsNullish<JsObject>` directly. | Use optional access or narrow with a dedicated JS predicate. |
+| `E_JS_FFI_NULLABLE_PREDICATE` | Strict project source applies legacy `nil?`/`some?` to `JsNullish<T>`. | Use `js-nullish?`/`js-present?`, then convert explicitly if needed. |
 | `E_JS_FFI_FIELD_READONLY` | A typed external field is written without permission. | Add the field to `:ffi :writable` only if the host API permits it. |
 ```
