@@ -25,6 +25,8 @@ calcit analyze check-types --summary-only
 calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json
 ```
 
+兼容性的多态 collection facade 可能仍在 core schema 中保留局部 `Dynamic`，但已知 receiver 会在预处理阶段专门化。例如 `update` 对 `List<T>` 要求 `Number` 索引和 `T -> T` updater，对 `Map<K,V>` 要求 `K` 键和 `V -> V` updater；Struct 则按静态字段类型检查。未标注的 inline callback 若能从函数体恢复返回类型，也会参与这项检查。不要把 receiver 擦除为 `Dynamic` 来绕过这些关系：在 FFI/open-data adapter 中先校验或转换，再进入集合操作。
+
 ## 用原生 quality gate 阻止类型债务回归
 
 新项目直接要求所有发布指标归零：

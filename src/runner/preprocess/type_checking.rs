@@ -138,16 +138,29 @@ fn specialize_update_expected_types(
   }
 
   let receiver = args.first()?;
-  let field_name = match args.get(1)? {
-    Calcit::Tag(tag) => tag.ref_str(),
-    Calcit::Str(text) => text.as_ref(),
-    Calcit::Symbol { sym, .. } => sym.as_ref(),
+  let receiver_type = resolve_type_value(receiver, scope_types)?;
+  let mut specialized = expected_types.to_vec();
+  let value_type = match receiver_type.as_ref() {
+    CalcitTypeAnnotation::List(item_type) => {
+      specialized[1] = Arc::new(CalcitTypeAnnotation::Number);
+      item_type.clone()
+    }
+    CalcitTypeAnnotation::Map(key_type, value_type) => {
+      specialized[1] = key_type.clone();
+      value_type.clone()
+    }
+    CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::StructValue(_) => {
+      let field_name = match args.get(1)? {
+        Calcit::Tag(tag) => tag.ref_str(),
+        Calcit::Str(text) => text.as_ref(),
+        Calcit::Symbol { sym, .. } => sym.as_ref(),
+        _ => return None,
+      };
+      infer_struct_field_type(receiver, field_name, scope_types)?
+    }
     _ => return None,
   };
-
-  let field_type = infer_struct_field_type(receiver, field_name, scope_types)?;
-  let mut specialized = expected_types.to_vec();
-  specialized[2] = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![field_type.clone()], field_type));
+  specialized[2] = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![value_type.clone()], value_type));
   Some(specialized)
 }
 
@@ -206,11 +219,6 @@ where
   }
 
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
-  let is_option_fold = matches!(
-    ctx.head_form,
-    Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "option:fold"
-  );
-
   for (idx, (arg, expected_type)) in ctx.args.iter().zip(ctx.expected_types.iter()).enumerate() {
     if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
       continue;
@@ -229,8 +237,9 @@ where
     }
 
     if let Some(actual_type) = resolve_type_value(arg, ctx.scope_types) {
-      let actual_type = if is_option_fold
-        && matches!(actual_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
+      let callback_needs_inference = matches!(actual_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
+        || matches!(actual_type.as_ref(), CalcitTypeAnnotation::Fn(signature) if matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Dynamic) || signature.return_type.contains_type_var());
+      let actual_type = if callback_needs_inference
         && matches!(expected_type.as_ref(), CalcitTypeAnnotation::Fn(_))
         && let Calcit::List(callback) = arg
       {
@@ -748,5 +757,63 @@ mod tests {
     };
     assert!(matches!(callback.arg_types.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Bool)));
     assert!(matches!(callback.return_type.as_ref(), CalcitTypeAnnotation::Bool));
+  }
+
+  #[test]
+  fn specialize_update_uses_collection_key_and_value_types() {
+    let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let fn_info = CalcitFn {
+      name: Arc::from("update"),
+      def_ns: Arc::from(calcit::CORE_NS),
+      def_ref: None,
+      usage: Default::default(),
+      scope: Arc::new(Default::default()),
+      args: Arc::new(crate::calcit::CalcitFnArgs::Args(vec![])),
+      call_shape: crate::calcit::CalcitFnCallShape::fixed(0),
+      body: vec![],
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+      arg_types: vec![
+        crate::calcit::DYNAMIC_TYPE.clone(),
+        crate::calcit::DYNAMIC_TYPE.clone(),
+        Arc::new(CalcitTypeAnnotation::from_function_parts(vec![generic.clone()], generic)),
+      ],
+      rest_type: None,
+    };
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let string = Arc::new(CalcitTypeAnnotation::String);
+    let callback = make_local(
+      "identity",
+      Arc::new(CalcitTypeAnnotation::from_function_parts(vec![number.clone()], number.clone())),
+    );
+
+    let list_args = CalcitList::from(&[
+      make_local("items", Arc::new(CalcitTypeAnnotation::List(string.clone()))),
+      Calcit::Number(0.0),
+      callback.clone(),
+    ]);
+    let list_specialized = specialize_update_expected_types(&fn_info, &list_args, &ScopeTypes::new(), &fn_info.arg_types)
+      .expect("list update should specialize");
+    assert!(matches!(list_specialized[1].as_ref(), CalcitTypeAnnotation::Number));
+    let CalcitTypeAnnotation::Fn(list_callback) = list_specialized[2].as_ref() else {
+      panic!("list updater should be a function");
+    };
+    assert!(matches!(list_callback.arg_types.as_slice(), [arg] if arg == &string));
+    assert_eq!(list_callback.return_type, string);
+
+    let map_args = CalcitList::from(&[
+      make_local("counts", Arc::new(CalcitTypeAnnotation::Map(string.clone(), number.clone()))),
+      Calcit::Str(Arc::from("a")),
+      callback,
+    ]);
+    let map_specialized = specialize_update_expected_types(&fn_info, &map_args, &ScopeTypes::new(), &fn_info.arg_types)
+      .expect("map update should specialize");
+    assert_eq!(map_specialized[1], string);
+    let CalcitTypeAnnotation::Fn(map_callback) = map_specialized[2].as_ref() else {
+      panic!("map updater should be a function");
+    };
+    assert!(matches!(map_callback.arg_types.as_slice(), [arg] if arg == &number));
+    assert_eq!(map_callback.return_type, number);
   }
 }

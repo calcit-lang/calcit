@@ -14,6 +14,7 @@
 - `cargo run --bin calcit -- calcit/type-fail/trait-method-generic-receiver-mismatch.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/generic-where-bound-mismatch.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/slice-receiver-trait-mismatch.cirru --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/update-collection-contract-mismatch.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/type-slot-record-call-arg-type-mismatch.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/type-slot-bind-unknown.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/type-slot-bind-duplicate.cirru --check-only`
@@ -31,6 +32,7 @@
 - `trait-method-generic-receiver-mismatch.cirru` 会验证泛型方法根据 receiver 的 `Option<String>` 绑定其 fallback 类型，并拒绝 `Number` fallback；同时验证 `.and-then` callback 不能返回裸 payload。
 - `generic-where-bound-mismatch.cirru` 会触发 `W_GENERIC_WHERE_BOUND_MISMATCH`，验证泛型 `:where` 约束在调用点能被发现，并在 `--check-only` 下被当作错误处理。
 - `slice-receiver-trait-mismatch.cirru` 会验证 `slice` 只接受实现 `Sliceable` 的 receiver，拒绝用 `C -> C` 泛型伪装不可切片的值。
+- `update-collection-contract-mismatch.cirru` 会验证已知 `List<T>` / `Map<K,V>` receiver 将索引/键与 `T -> T` / `V -> V` updater contract 带到调用点。
 - `type-slot-record-call-arg-type-mismatch.cirru` 会验证 `bind-type` 绑定 struct 实例后，`*slot` 参与调用点类型检查。
 - `type-slot-bind-unknown.cirru` 会验证未声明 slot 的 `bind-type` 会直接失败。
 - `type-slot-bind-duplicate.cirru` 会验证同一个 slot 重复绑定会直接失败。
