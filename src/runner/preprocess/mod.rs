@@ -3919,7 +3919,7 @@ fn reject_raw_primitive_in_strict_source(
 
   let violation = match head {
     Calcit::Proc(CalcitProc::NativeStruct)
-      if !public_struct_constructor_origin && !raw_struct_constructor_matches_known_layout(args) =>
+      if !public_struct_constructor_origin && !raw_struct_constructor_matches_known_layout(args, scope_types) =>
     {
       Some((
         "`&%{}`",
@@ -3971,7 +3971,7 @@ fn reject_raw_primitive_in_strict_source(
   ))
 }
 
-fn raw_struct_constructor_matches_known_layout(args: &CalcitList) -> bool {
+fn raw_struct_constructor_matches_known_layout(args: &CalcitList, scope_types: &ScopeTypes) -> bool {
   let Some(definition) = args.first() else {
     return false;
   };
@@ -3980,7 +3980,9 @@ fn raw_struct_constructor_matches_known_layout(args: &CalcitList) -> bool {
     Calcit::Import(CalcitImport { ns, def, .. }) if data_definition_kind(ns, def) == Some("defstruct") => {
       CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![])).resolve_to_struct()
     }
-    Calcit::Symbol { sym, info, .. } if data_definition_kind(&info.at_ns, sym) == Some("defstruct") => {
+    Calcit::Symbol { sym, info, .. }
+      if !scope_types.contains_key(sym) && data_definition_kind(&info.at_ns, sym) == Some("defstruct") =>
+    {
       CalcitTypeAnnotation::TypeRef(Arc::from(format!("{}/{sym}", info.at_ns)), Arc::new(vec![])).resolve_to_struct()
     }
     _ => None,
@@ -12000,6 +12002,15 @@ mod tests {
       None,
     )
     .expect("namespace-local Snapshot symbols must resolve back to their concrete defstruct layout");
+
+    let shadowed_scope = ScopeTypes::from([(
+      Arc::from("Person"),
+      Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(person.clone()))),
+    )]);
+    let shadowed_error =
+      reject_raw_primitive_in_strict_source(&head, &snapshot_args, &shadowed_scope, snapshot_ns, &CallStackList::default(), None)
+        .expect_err("a lexical binding must not borrow evidence from a shadowed global defstruct");
+    assert_eq!(shadowed_error.code.as_deref(), Some("E_RAW_PRIMITIVE_IN_TYPED_CODE"));
 
     for invalid_args in [
       list(vec![
