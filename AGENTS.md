@@ -240,7 +240,7 @@ npm view @calcit/procs version
 
 - PR 必须关联主 Issue，并在 PR 或 Issue 中记录 PR URL、head commit、base commit、改动仓库与路径、验证命令和结果。
 - 一个主 Issue 涉及多个仓库时，每个有改动的仓库都必须创建各自的 PR，并在主 Issue 汇总全部 PR；不能只为其中一个仓库创建 PR。
-- GitHub Wiki 仓库没有 PR 审查界面，是上述规则的唯一文档例外：Wiki 修改仍需独立 checkout、独立 commit 并直接 push 到 `calcit.wiki.git`，随后在主 Issue 和主仓库 PR 中记录 Wiki commit 与页面 URL；Wiki 正文不得复制回主仓库规避此例外。
+- GitHub Wiki 仓库没有 PR 审查界面，是上述规则的唯一文档例外：Wiki 修改仍需独立 checkout、独立 commit 并直接 push 到 `calcit.wiki.git`，随后始终在主 Issue 中记录 Wiki commit 与页面 URL；只有任务同时存在主仓库 PR 时，才在该 PR 中重复记录。Wiki 正文不得复制回主仓库规避此例外。
 - 已合并或已关闭的 PR 不覆盖其 head 分支后来新增的提交。分支在 PR 合并或关闭后继续产生改动时，必须创建新的关联 PR；不得把旧 PR 当作这些提交已经 review 的证据。
 - 只有所需 PR 均已创建、最新提交均已推送且 Issue 已记录上述信息后，才能执行 `release ... review`。没有 PR 时，任务仍可交接则使用 `ready`；确实等待人员权限或外部依赖则使用 `blocked`，并说明分支、commit 和恢复方式。
 - 纯版本号 release commit 的直接 `main` 例外只适用于既有发布流程，不适用于夹带功能、修复、测试、CI 或文档改动的提交。
