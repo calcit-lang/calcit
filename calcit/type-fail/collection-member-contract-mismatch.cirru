@@ -29,6 +29,8 @@
               dissoc (&{} :a 1) 0
               dissoc (&{} :a 1 :b 2) :a 0
               &map:dissoc (&{} :a 1 :b 2) :a 0
+              &list:concat ([] 1) ([] 2) ([] :bad)
+              &merge (&{} :a 1) (&{} :b 2) (&{} :c :bad)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

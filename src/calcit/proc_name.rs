@@ -499,8 +499,9 @@ use crate::CalcitTypeAnnotation;
 pub struct ProcTypeSignature {
   /// return type declared
   pub return_type: Arc<CalcitTypeAnnotation>,
-  /// Argument value types in order. Parameter omission is CalcitProc arity metadata;
-  /// use Variadic to type every remaining argument.
+  /// Argument value types in order. Parameter omission is CalcitProc arity metadata.
+  /// `Variadic<T>` supplies rest-element inference evidence; procs whose runtime
+  /// contract requires every rest argument to match `T` opt into checking it.
   pub arg_types: Vec<Arc<CalcitTypeAnnotation>>,
 }
 
@@ -600,6 +601,12 @@ fn some_fn() -> Arc<CalcitTypeAnnotation> {
 }
 
 impl CalcitProc {
+  /// Whether a typed `Variadic<T>` is a homogeneous call contract rather than
+  /// collection-literal inference evidence.
+  pub(crate) fn checks_variadic_arg_types(&self) -> bool {
+    matches!(self, Self::NativeListConcat | Self::NativeMerge | Self::NativeMapDissoc)
+  }
+
   /// Get the namespace and definition name for this proc.
   /// All built-in procs are defined in calcit.core namespace.
   /// Returns (namespace, definition_name)
@@ -1636,6 +1643,19 @@ mod tests {
       atom.arg_types.first().map(AsRef::as_ref),
       Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "T"
     ));
+  }
+
+  #[test]
+  fn typed_variadic_proc_policy_distinguishes_contracts_from_literal_inference() {
+    for proc in [CalcitProc::NativeListConcat, CalcitProc::NativeMerge, CalcitProc::NativeMapDissoc] {
+      assert!(proc.checks_variadic_arg_types(), "{proc} should enforce every typed rest argument");
+    }
+    for proc in [CalcitProc::List, CalcitProc::Set] {
+      assert!(
+        !proc.checks_variadic_arg_types(),
+        "{proc} should infer a common literal item type and preserve heterogeneous fallback"
+      );
+    }
   }
 
   #[test]

@@ -54,6 +54,15 @@ fn append_js_ffi_type_hint(mut message: String, actual_type: &str) -> String {
   message
 }
 
+fn diagnostic_type_string(annotation: &CalcitTypeAnnotation) -> String {
+  match annotation {
+    CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::Set(_) | CalcitTypeAnnotation::Ref(_) => {
+      annotation.describe()
+    }
+    _ => annotation.to_brief_string(),
+  }
+}
+
 fn append_option_migration_hint(
   mut message: String,
   expected_type: &CalcitTypeAnnotation,
@@ -62,7 +71,7 @@ fn append_option_migration_hint(
   if actual_type.is_option_type() && !expected_type.is_option_type() {
     message.push_str(&format!(
       "; inferred type `{}` is an Option rather than its payload; use a matching typed `*-or` query helper when available or `.unwrap-or` for a safe default, or native `match` (legacy `tag-match`) to handle both variants before passing it here",
-      actual_type.to_brief_string()
+      diagnostic_type_string(actual_type)
     ));
   }
   message
@@ -100,8 +109,8 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
       format!(
         "[Warn] call binds generic `'{}' to `{}`, but it does not satisfy trait bound `{}` at {}/{}\n  Expression: `{}`",
         bound.name,
-        actual_type.to_brief_string(),
-        required.to_brief_string(),
+        diagnostic_type_string(actual_type),
+        diagnostic_type_string(required.as_ref()),
         ctx.file_ns,
         match ctx.head_form {
           Calcit::Import(import) => import.def.as_ref(),
@@ -304,8 +313,8 @@ impl<'a> CheckContext<'a> {
     actual_type: &CalcitTypeAnnotation,
     make_warning: impl Fn(usize, &str, &str, String) -> String,
   ) {
-    let expected_str = expected_type.to_brief_string();
-    let actual_str = actual_type.to_brief_string();
+    let expected_str = diagnostic_type_string(expected_type);
+    let actual_str = diagnostic_type_string(actual_type);
     let expr_str = format!(
       "{} {}",
       self.head_form,
@@ -488,10 +497,10 @@ pub(crate) fn check_proc_arg_types(
 
   for (idx, (arg, expected_type)) in args.iter().zip(signature.arg_types.iter()).enumerate() {
     if let CalcitTypeAnnotation::Variadic(inner_type) = expected_type.as_ref() {
-      // Several legacy constructor signatures use Variadic<T> as return-type inference
-      // evidence while still accepting heterogeneous values at runtime. Enable concrete
-      // proc rest validation only where the runtime collection already fixes one item type.
-      if !matches!(proc, CalcitProc::NativeMapDissoc) {
+      // Collection constructors use Variadic<T> as common-type inference evidence and
+      // deliberately fall back to Dynamic for heterogeneous literals. Other operations
+      // opt into using it as a homogeneous call contract.
+      if !proc.checks_variadic_arg_types() {
         break;
       }
       for (rest_idx, rest_arg) in args.iter().skip(idx).enumerate() {
@@ -501,8 +510,8 @@ pub(crate) fn check_proc_arg_types(
             .as_ref()
             .matches_with_bindings(expected_rest_type.as_ref(), &mut bindings)
         {
-          let expected_str = expected_rest_type.to_brief_string();
-          let actual_str = actual_type.to_brief_string();
+          let expected_str = diagnostic_type_string(expected_rest_type.as_ref());
+          let actual_str = diagnostic_type_string(actual_type.as_ref());
           let warning_location = rest_arg.get_location().or_else(|| call_location.clone());
           gen_check_warning_code_at(
             append_option_migration_hint(
@@ -531,8 +540,8 @@ pub(crate) fn check_proc_arg_types(
     if let Some(actual_type) = resolve_type_value(arg, scope_types)
       && !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings)
     {
-      let expected_str = expected_type.as_ref().to_brief_string();
-      let actual_str = actual_type.as_ref().to_brief_string();
+      let expected_str = diagnostic_type_string(expected_type.as_ref());
+      let actual_str = diagnostic_type_string(actual_type.as_ref());
       let warning_location = arg.get_location().or_else(|| call_location.clone());
       gen_check_warning_code_at(
         append_option_migration_hint(
@@ -587,7 +596,7 @@ pub(crate) fn check_core_fn_arg_types(
     if let Some(actual_type) = resolve_type_value(arg, scope_types)
       && !actual_type.as_ref().matches_annotation(expected_type.as_ref())
     {
-      let actual_str = actual_type.as_ref().to_brief_string();
+      let actual_str = diagnostic_type_string(actual_type.as_ref());
       let warning_location = arg.get_location().or_else(|| call_location.clone());
       gen_check_warning_code_at(
         append_option_migration_hint(
@@ -779,8 +788,8 @@ pub(crate) fn check_function_return_type(
     .as_ref()
     .matches_with_bindings(declared_return_type.as_ref(), &mut bindings)
   {
-    let expected_str = declared_return_type.as_ref().to_brief_string();
-    let actual_str = actual_type.as_ref().to_brief_string();
+    let expected_str = diagnostic_type_string(declared_return_type.as_ref());
+    let actual_str = diagnostic_type_string(actual_type.as_ref());
     gen_check_warning_code(
       append_js_ffi_type_hint(
         format!("[Warn] Function `{file_ns}/{def_name}` declares return type `{expected_str}`, but body returns `{actual_str}`"),
@@ -841,6 +850,16 @@ mod tests {
     let message = append_js_ffi_type_hint("type mismatch".to_owned(), "js-nullish<:js-object>");
     assert!(message.contains("stay opaque after JsNullish checks"));
     assert!(message.contains("unsafe-coerce"));
+  }
+
+  #[test]
+  fn diagnostic_types_preserve_container_members_and_scalar_tags() {
+    let list = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number));
+    let map = CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Tag), Arc::new(CalcitTypeAnnotation::String));
+
+    assert_eq!(diagnostic_type_string(&list), "list<number>");
+    assert_eq!(diagnostic_type_string(&map), "map<tag, string>");
+    assert_eq!(diagnostic_type_string(&CalcitTypeAnnotation::Number), ":number");
   }
 
   #[test]
