@@ -3707,6 +3707,7 @@ mod tests {
 
   #[test]
   fn test_schema_named_type_refs_round_trip_without_becoming_type_vars() {
+    let _guard = crate::program::lock_program_test_state();
     let schema_text = "{} (:kind :fn) (:generics ([] 'T 'E)) (:args ([] 'T)) (:return (:: 'Result 'T 'E))";
     let schema_cirru = cirru_parser::parse(schema_text)
       .expect("should parse")
@@ -4163,6 +4164,7 @@ mod tests {
 
   #[test]
   fn test_load_snapshot_preserves_selected_real_world_schemas() {
+    let _guard = crate::program::lock_program_test_state();
     let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
     let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
     let snapshot = load_snapshot_data(&edn_data, "src/cirru/calcit-core.cirru").expect("Failed to parse snapshot");
@@ -4720,6 +4722,7 @@ mod tests {
 
   #[test]
   fn optionally_schema_bridges_nullable_values_to_nominal_option() {
+    let _guard = crate::program::lock_program_test_state();
     let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
     let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
     let snapshot = load_snapshot_data(&edn_data, "src/cirru/calcit-core.cirru").expect("Failed to parse snapshot");
