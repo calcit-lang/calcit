@@ -69,14 +69,14 @@ not ordinary executable call sites.
 
 ## Ecosystem evidence for 0.13.78 / 0.13.78 生态证据
 
-The 2026-09-05 follow-up audit used Calcit 0.13.77 main at
-`5915ccf362fbb759e34812682d4cf2ac0e72deac`. It intentionally reports the nil
+The 2026-09-04 UTC follow-up audit used Calcit 0.13.77 main at
+`5915ccf38ef3b57ea26897599646eefdbc9e3ba6`. It intentionally reports the nil
 slice separately from the first failure of the whole strict preflight: a
 project can have no project-local nil debt while still being blocked by a
 Dynamic or generic-contract diagnostic.
 
-2026-09-05 的后续审计基于 Calcit 0.13.77 main
-`5915ccf362fbb759e34812682d4cf2ac0e72deac`。审计刻意把 nil 专项结果与完整 strict
+2026-09-04 UTC 的后续审计基于 Calcit 0.13.77 main
+`5915ccf38ef3b57ea26897599646eefdbc9e3ba6`。审计刻意把 nil 专项结果与完整 strict
 预检的首个失败分开：项目可能没有自身 nil 债务，但仍被 Dynamic 或泛型契约诊断阻断。
 
 | Consumer | Frozen revision | Project nil audit | Dependency-inclusive nil audit | Legacy syntax/schema candidates | First whole-strict blocker | Migration owner |
