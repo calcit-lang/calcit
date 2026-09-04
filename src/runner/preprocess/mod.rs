@@ -1392,9 +1392,19 @@ fn try_expand_typed_optional_access_call(
   let Some(receiver_expr) = args.first() else {
     return Ok(None);
   };
-  let Some(receiver_type) = resolve_type_value(receiver_expr, scope_types) else {
+  let Some(mut receiver_type) = resolve_type_value(receiver_expr, scope_types) else {
     return Ok(None);
   };
+  let mut resolving_slots = HashSet::new();
+  while let T::TypeSlot(name) = receiver_type.as_ref() {
+    if !resolving_slots.insert(name.clone()) {
+      break;
+    }
+    let Some(bound) = calcit::resolve_type_slot(name) else {
+      break;
+    };
+    receiver_type = bound;
+  }
 
   let indexed_procs = match receiver_type.as_ref() {
     T::List(_) => Some((CalcitProc::NativeListCount, CalcitProc::NativeListNth)),
@@ -1823,9 +1833,16 @@ fn preprocess_list_call(
     call_location: call_location.clone(),
   };
 
+  let is_constructor_named = |name: &str| {
+    matches!(&head_form, Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == name)
+      || matches!(&head_form, Calcit::Symbol { sym, .. } if sym.as_ref() == name)
+  };
+
   if strict_types_enabled()
     && should_emit_project_source_lint(file_ns)
-    && (matches!(def_name.as_ref(), "%{}?" | "&%{}?") || matches!(head_form, Calcit::Proc(CalcitProc::NativeStructPartial)))
+    && (is_constructor_named("%{}?")
+      || is_constructor_named("&%{}?")
+      || matches!(head_form, Calcit::Proc(CalcitProc::NativeStructPartial)))
   {
     return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
@@ -1839,11 +1856,6 @@ fn preprocess_list_call(
   warn_on_removed_data_api_call(&head_form, call_location.clone(), file_ns, check_warnings);
 
   let has_anonymous_definition_marker = matches!(args.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "_");
-  let is_constructor_named = |name: &str| {
-    matches!(&head_form, Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == name)
-      || matches!(&head_form, Calcit::Symbol { sym, .. } if sym.as_ref() == name)
-  };
-
   if strict_types_enabled()
     && should_emit_project_source_lint(file_ns)
     && is_constructor_named("map-kv")
@@ -9107,7 +9119,7 @@ fn reject_strict_whole_dynamic_public_schema(
   if !strict_types_enabled()
     || !should_emit_project_source_lint(ns)
     || !matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic)
-    || has_embedded_fn_schema
+    || (has_embedded_fn_schema && !matches!(head, CalcitSyntax::Defmacro))
   {
     return Ok(());
   }
@@ -9922,6 +9934,7 @@ mod tests {
   #[test]
   fn strict_types_reject_concrete_unsupported_optional_access_receivers() {
     let _guard = lock_preprocess_test_state();
+    let _slots = TypeSlotsGuard::cleared();
     let stack = CallStackList::default();
 
     {
@@ -10002,6 +10015,45 @@ mod tests {
       .expect("an explicitly Dynamic receiver remains a reviewed open boundary")
       .is_none()
     );
+
+    calcit::push_type_slot_override(
+      Arc::from("indexed-receiver"),
+      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String))),
+    );
+    let bound_list = generic_relation_test_local(
+      "bound-list",
+      Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from("indexed-receiver"))),
+    );
+    let bound_list_args = CalcitList::from(&[bound_list, Calcit::Number(0.0)] as &[Calcit]);
+    let bound_list_expansion = try_expand_typed_optional_access_call(
+      calcit::CORE_NS,
+      "nth",
+      &bound_list_args,
+      &ScopeTypes::new(),
+      "tests.typed-access",
+      &stack,
+    )
+    .expect("a bound List slot should be accepted")
+    .expect("a bound List slot should specialize indexed access");
+    assert!(bound_list_expansion.lisp_str().contains("&list:nth"));
+    calcit::pop_type_slot_override("indexed-receiver");
+
+    calcit::push_type_slot_override(Arc::from("unsupported-receiver"), Arc::new(CalcitTypeAnnotation::Number));
+    let bound_number = generic_relation_test_local(
+      "bound-number",
+      Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from("unsupported-receiver"))),
+    );
+    let bound_number_args = CalcitList::from(&[bound_number, Calcit::Tag(EdnTag::new("field"))] as &[Calcit]);
+    let bound_number_error = try_expand_typed_optional_access_call(
+      calcit::CORE_NS,
+      "get",
+      &bound_number_args,
+      &ScopeTypes::new(),
+      "tests.typed-access",
+      &stack,
+    )
+    .expect_err("a bound Number slot should be rejected as a concrete unsupported receiver");
+    assert_eq!(bound_number_error.code.as_deref(), Some("E_UNSUPPORTED_INDEXED_RECEIVER"));
   }
 
   #[test]
@@ -10929,6 +10981,12 @@ mod tests {
     let error = preprocess_test_expr(&code).expect_err("strict mode should reject omitted Struct fields");
     assert_eq!(error.code.as_deref(), Some("E_PARTIAL_STRUCT_NIL_FILL"));
     assert!(error.msg.contains("%none"));
+
+    let source_call = Cirru::List(vec![Cirru::leaf("%{}?"), Cirru::leaf("Profile")]);
+    let source_code =
+      code_to_calcit(&source_call, "tests.strict-nil", "build-profile", vec![]).expect("parse source partial Struct constructor");
+    let source_error = preprocess_test_expr(&source_code).expect_err("strict mode should reject the core %{}? macro before expansion");
+    assert_eq!(source_error.code.as_deref(), Some("E_PARTIAL_STRUCT_NIL_FILL"));
   }
 
   #[test]
@@ -16204,6 +16262,18 @@ mod tests {
     assert!(explicit_error.msg.contains("whole-Dynamic macro schema"));
     assert!(explicit_error.msg.contains("structured `Macro` schema"));
     assert!(explicit_error.msg.contains("`Expr<Dynamic>`"));
+
+    let macro_with_nested_fn_hint = reject_strict_whole_dynamic_public_schema(
+      &CalcitSyntax::Defmacro,
+      "tests.schema",
+      "open-macro-with-nested-function",
+      &explicit_dynamic_schema,
+      true,
+      &CallStackList::default(),
+      None,
+    )
+    .expect_err("an embedded function hint is not contract evidence for a macro");
+    assert_eq!(macro_with_nested_fn_hint.code.as_deref(), Some("E_WHOLE_DYNAMIC_PUBLIC_SCHEMA"));
 
     let structured_open_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       generics: Arc::new(vec![]),

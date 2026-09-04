@@ -117,7 +117,6 @@ require_claimable_issue() {
   # A claimed label without a lock is a recoverable partial update from an
   # interrupted release. The Git ref remains the ownership authority.
   if issue_has_label "$issue" "$repo" agent:claimed; then
-    echo "WARN: repairing stale agent:claimed label without a lock" >&2
     return
   fi
   die "issue #$issue is neither agent:ready nor agent:review"
@@ -212,6 +211,9 @@ command_claim() {
     die "issue #$issue is held by $old_agent until $(iso_time "$old_expires")"
   fi
 
+  # A maintainer may close or block an Issue while its prior lease is still
+  # present. Revalidate immediately before renewing or taking it over.
+  require_claimable_issue "$issue" "$repo"
   new_sha="$(make_lock_commit "$issue" "$agent" "$claimed" "$expires" "$scope" "$old_sha")"
   git push --force-with-lease="$ref:$old_sha" "$remote" "$new_sha:$ref" >/dev/null
   sync_claimed_issue "$issue" "$repo" "$agent" "$claimed" "$now" "$expires" "$scope" "$new_sha"
@@ -230,14 +232,16 @@ command_heartbeat() {
   fetch_lock "$ref"
   old_agent="$(field "$old_sha" agent_id)"
   [[ "$old_agent" == "$agent" ]] || die "issue #$issue is held by $old_agent, not $agent"
+  repo="$(repo_slug)"
+  ensure_labels "$repo"
+  # Do not extend ownership after the Issue has been closed or blocked.
+  require_claimable_issue "$issue" "$repo"
   claimed="$(field "$old_sha" claimed_at)"
   scope="$(field "$old_sha" scope)"
   now="$(date +%s)"
   expires="$((now + ttl * 60))"
   new_sha="$(make_lock_commit "$issue" "$agent" "$claimed" "$expires" "$scope" "$old_sha")"
   git push --force-with-lease="$ref:$old_sha" "$remote" "$new_sha:$ref" >/dev/null
-  repo="$(repo_slug)"
-  ensure_labels "$repo"
   sync_claimed_issue "$issue" "$repo" "$agent" "$claimed" "$now" "$expires" "$scope" "$new_sha"
   echo "HEARTBEAT issue #$issue by $agent until $(iso_time "$expires")"
 }
@@ -271,6 +275,33 @@ command_release() {
 
 The issue currently has no active write lease."
   upsert_comment "$issue" "$repo" "$body"
+  # A new claim may land after the authoritative ref deletion but before the
+  # human-readable Issue mirror above is complete. Re-read the ref last and
+  # repair the mirror when that race occurred; if a claim starts after this
+  # check, its own synchronization naturally wins.
+  local replacement_sha replacement_agent replacement_claimed replacement_heartbeat replacement_expires replacement_scope
+  replacement_sha="$(remote_sha "$ref")"
+  if [[ -n "$replacement_sha" ]]; then
+    if ! fetch_lock "$ref"; then
+      echo "WARN: the newer lease disappeared during mirror repair; its release owns the final Issue state" >&2
+      echo "RELEASED issue #$issue by $agent to agent:$target"
+      return
+    fi
+    replacement_agent="$(field "$replacement_sha" agent_id)"
+    replacement_claimed="$(field "$replacement_sha" claimed_at)"
+    replacement_heartbeat="$(field "$replacement_sha" heartbeat_at)"
+    replacement_expires="$(field "$replacement_sha" expires_at)"
+    replacement_scope="$(field "$replacement_sha" scope)"
+    if [[ "$replacement_claimed" =~ ^[0-9]+$ && "$replacement_heartbeat" =~ ^[0-9]+$ && "$replacement_expires" =~ ^[0-9]+$ ]]; then
+      sync_claimed_issue \
+        "$issue" "$repo" "$replacement_agent" "$replacement_claimed" "$replacement_heartbeat" \
+        "$replacement_expires" "$replacement_scope" "$replacement_sha"
+      echo "WARN: a newer lease appeared during release; repaired the Issue mirror from $replacement_sha" >&2
+    else
+      set_issue_state "$issue" "$repo" claimed
+      echo "WARN: a newer lease appeared during release with invalid metadata; preserved agent:claimed for human repair" >&2
+    fi
+  fi
   echo "RELEASED issue #$issue by $agent to agent:$target"
 }
 

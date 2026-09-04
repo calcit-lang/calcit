@@ -948,7 +948,8 @@ fn emit_map_kv_impl(ctx: &mut WasmGenCtx, args: &[Calcit], uses_decision: bool) 
   let op_name = if uses_decision { "filter-map-kv" } else { "map-kv" };
   expect_arity(2, args, op_name)?;
 
-  // Resolve binary callee: f(k, v) → [k', v']
+  // Resolve the binary callee. map-kv returns [k', v']; filter-map-kv
+  // returns MapEntryDecision so :drop can omit an entry without a sentinel.
   let kind = if let Some((params, body)) = try_extract_inline_lambda(&args[1]) {
     if params.len() < 2 {
       return Err(format!("{op_name}: inline lambda needs at least 2 params"));

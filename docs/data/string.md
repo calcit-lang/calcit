@@ -14,7 +14,7 @@ The way strings are represented in Calcit is a bit unique. Strings are distingui
 
 This somewhat unusual design exists because the structural editor naturally wraps strings in double quotes. When writing with indentation-based syntax, the outermost double quotes can be omitted for convenience.
 
-### Character count and wire size
+## Character count and wire size
 
 String `.count` returns the number of Unicode scalar values consistently on the native, JavaScript, and WASM backends. Use `.utf8-byte-count` when a protocol, queue, file, or metric needs the encoded UTF-8 byte length:
 
