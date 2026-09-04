@@ -137,6 +137,14 @@ function classify(entry) {
   const separator = entry.definition.indexOf("/");
   const namespace = entry.definition.slice(0, separator);
   const name = entry.definition.slice(separator + 1);
+  if (namespace === "calcit.core" && name === "apply" && entry.path === "schema.return") {
+    return {
+      owner: "compiler-specialized-contracts",
+      decision: "retain-reviewed",
+      rationale:
+        "Arbitrary callable arity is not representable in the schema; compatible homogeneous List calls recover the callable return type at preprocessing time, while unproved calls remain Dynamic.",
+    };
+  }
   if (entry.intent === "intentional-macro-syntax") {
     return {
       owner: "macro-system",
