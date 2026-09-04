@@ -1,0 +1,75 @@
+name: Agent-ready task
+description: A scoped task that may be claimed by a human or coding agent
+title: "[Task] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository is the coordination source of truth, including for work implemented in related Calcit repositories. A maintainer adds `agent:ready` after the scope and dependencies are clear.
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome / 预期结果
+      description: Describe observable completion, not implementation details. 请描述可验证的完成结果。
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Owned scope / 修改范围
+      description: List every repository and path this task may modify. One task owns these paths while leased.
+      placeholder: |
+        calcit-lang/calcit: src/codegen/**, calcit/**
+        calcit-lang/calcit-bindgen: tests/**
+    validations:
+      required: true
+
+  - type: textarea
+    id: exclusions
+    attributes:
+      label: Out of scope / 不修改范围
+      description: State nearby code or behavior that must remain untouched.
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and related Issues / 依赖与关联 Issue
+      description: Link blockers, umbrella/child Issues, and potentially overlapping active work.
+      placeholder: "Blocked by #123; related to calcit-lang/calcit-bindgen#45"
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance checks / 验收方式
+      description: Commands or observations that prove the task is complete.
+      placeholder: |
+        - cargo test ...
+        - yarn check-...
+        - Cross-repository smoke test ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Validation evidence / 验证证据
+      description: Update this field or add an Issue comment before review with commands run, results, commits, and PR URLs. 进入 review 前请补充命令、结果、提交和 PR 链接。
+      placeholder: |
+        Planned: cargo test ...
+        Completed: command, result, commit SHA, PR URL
+
+  - type: checkboxes
+    id: readiness
+    attributes:
+      label: Readiness checklist
+      options:
+        - label: The owned scope does not overlap another open `agent:claimed` Issue.
+          required: true
+        - label: Dependencies and related repositories are recorded above.
+          required: true
+        - label: Implementation will use an Issue-scoped branch and a dedicated worktree for every modified repository.
+          required: true
+        - label: Every non-release change will be delivered through a PR; a pushed branch alone is not completion.
+          required: true
