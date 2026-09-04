@@ -1435,7 +1435,9 @@
           :examples $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] (:: 'List 'T) 'Fn
+              :args $ [] (:: 'List 'T)
+                :: 'Fn $ {} (:return 'Number)
+                  :args $ [] 'T 'T
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
@@ -7603,7 +7605,9 @@
           :examples $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] (:: 'List 'T) 'Fn
+              :args $ [] (:: 'List 'T)
+                :: 'Fn $ {} (:return 'Number)
+                  :args $ [] 'T 'T
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal

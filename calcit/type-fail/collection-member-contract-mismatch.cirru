@@ -44,6 +44,9 @@
               foldl (#{} |a |b) 0 +
               foldl (&{} :a 1) 0 +
               reduce (#{} |a |b) 0 +
+              sort ([] |a |b) +
+              &list:sort ([] |a |b) +
+              sort ([] |a |b) inc
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

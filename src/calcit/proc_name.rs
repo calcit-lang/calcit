@@ -937,10 +937,19 @@ impl CalcitProc {
         return_type: some_tag("list"),
         arg_types: vec![some_tag("number"), some_tag("number"), some_tag("number")],
       }),
-      Sort | NativeListSort => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
-        arg_types: vec![some_tag("list"), some_fn()],
-      }),
+      Sort | NativeListSort => {
+        let item_type = type_var("T");
+        Some(ProcTypeSignature {
+          return_type: list_of(item_type.clone()),
+          arg_types: vec![
+            list_of(item_type.clone()),
+            Arc::new(CalcitTypeAnnotation::from_function_parts(
+              vec![item_type.clone(), item_type],
+              tag_type("number"),
+            )),
+          ],
+        })
+      }
       NativeListConcat => Some(ProcTypeSignature {
         return_type: list_of(type_var("T")),
         arg_types: vec![variadic_of(list_of(type_var("T")))],
@@ -1632,6 +1641,23 @@ mod tests {
       set_includes.arg_types.get(1).map(AsRef::as_ref),
       Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "T"
     ));
+
+    for proc in [CalcitProc::Sort, CalcitProc::NativeListSort] {
+      let sort = proc.get_type_signature().expect("sort signature");
+      assert!(matches!(
+        sort.return_type.as_ref(),
+        CalcitTypeAnnotation::List(inner)
+          if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T")
+      ));
+      assert!(matches!(
+        sort.arg_types.get(1).map(AsRef::as_ref),
+        Some(CalcitTypeAnnotation::Fn(comparator))
+          if matches!(comparator.arg_types.as_slice(), [left, right]
+            if matches!(left.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T")
+              && matches!(right.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T"))
+            && matches!(comparator.return_type.as_ref(), CalcitTypeAnnotation::Number)
+      ));
+    }
 
     let atom = CalcitProc::Atom.get_type_signature().expect("atom signature");
     assert!(matches!(
