@@ -34,8 +34,9 @@ and portability rules that apply to every form.
 ## 1. Boundary model: opaque first, typed second
 
 Raw JavaScript values are not ordinary `Dynamic` Calcit values. Property reads,
-native method calls, `aget`, untyped `js-get`, and `js/...` calls are
-conservatively inferred as `JsNullish<JsObject>`:
+native method calls, `aget`, untyped `js-get`, and arbitrary `js/...` calls are
+conservatively inferred as `JsNullish<JsObject>`. The deliberate exception is
+`js/typeof`, whose JavaScript-language result is always inferred as `String`:
 
 - `JsNullish` is reserved for the actual JavaScript `null`/`undefined` boundary;
   it is deliberately distinct from legacy `Optional` and nominal `Option`.

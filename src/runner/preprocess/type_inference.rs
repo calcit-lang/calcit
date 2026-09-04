@@ -549,6 +549,10 @@ fn infer_external_field_type(base_type: &CalcitTypeAnnotation, key_arg: Option<&
 
 fn infer_js_ffi_call_return_type(name: &str, call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   match name {
+    // JavaScript's `typeof` operator always produces one of the specified
+    // string tags. Unlike arbitrary host calls, its result is neither opaque
+    // nor nullish, even when the inspected value is null or undefined.
+    "js/typeof" => Some(tag_annotation("string")),
     // JavaScript indexed/property reads may yield `undefined` or `null`. Keep
     // the raw host value opaque as well as nullable so a nil check alone does
     // not silently prove that it is a Calcit Number/String/etc.
@@ -763,6 +767,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           None
         }
 
+        Calcit::RawCode(calcit::RawCodeType::Js, code) if code.as_ref() == "typeof" => Some(tag_annotation("string")),
         Calcit::RawCode(..) => Some(js_nullish_host_value_type()),
 
         // Direct Fn call: return the function's return type
@@ -2173,6 +2178,23 @@ mod tests {
     assert!(opaque.matches_annotation(&CalcitTypeAnnotation::JsObject));
     assert!(!opaque.matches_annotation(&CalcitTypeAnnotation::String));
     assert!(!opaque.matches_annotation(&CalcitTypeAnnotation::Number));
+  }
+
+  #[test]
+  fn js_typeof_has_a_concrete_string_result() {
+    let value = local("host", js_nullish_host_value_type());
+    let typeof_call = Calcit::from(vec![symbol("js/typeof"), value]);
+    let processed_typeof_call = Calcit::from(vec![
+      Calcit::RawCode(calcit::RawCodeType::Js, Arc::from("typeof")),
+      local("host", js_nullish_host_value_type()),
+    ]);
+
+    for expression in [typeof_call, processed_typeof_call] {
+      assert!(matches!(
+        infer_static_type_from_expr(&expression).as_deref(),
+        Some(CalcitTypeAnnotation::String)
+      ));
+    }
   }
 
   #[test]
