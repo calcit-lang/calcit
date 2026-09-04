@@ -84,7 +84,7 @@
 
 - `E_SCHEMA_DEF_MISMATCH`：定义与 `:schema` 的 `:kind` / `:args` / `:rest` 不匹配
 - `E_UNBOUND_TYPE_SLOT`：strict 模式下可达定义的 schema 引用了未配置或未局部绑定的 type slot
-- `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`：strict 模式下可达 function 或直接进入预处理的 programmatic macro 既没有结构化根 schema，也没有嵌入式结构化契约；普通 legacy Snapshot macro 会更早被 loader 拒绝
+- `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`：strict 模式下可达 function 既没有结构化根 schema 也没有嵌入式结构化 `Fn` hint，或直接进入预处理的 programmatically supplied macro 没有结构化根 schema；宏体内的函数 hint 不算 macro contract，普通 legacy Snapshot macro 会更早被 loader 拒绝
 - `E_DYNAMIC_METHOD_DISPATCH` / `E_DYNAMIC_POSTFIX_METHOD`：strict 模式下 method receiver 缺少可静态 specialization 的 schema、generic/slot 绑定或 typed FFI evidence
 - `E_RAW_PRIMITIVE_IN_TYPED_CODE`：strict 项目源码手写 raw constructor/lookup/index primitive，且没有 compiler/macro origin 或匹配的 nominal layout evidence
 - `E_UNSUPPORTED_INDEXED_RECEIVER`：strict 项目源码把静态可解析但不支持的具体类型传给 `first`、`last`、`nth` 或 `get`；应转换到支持的 collection、先 narrow optional/FFI value，或对 Struct 使用字段访问

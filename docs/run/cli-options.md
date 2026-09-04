@@ -204,17 +204,18 @@ explicitly; it remains visible to `analyze weak-types` and quality baselines but
 is no longer confused with an omitted configuration. Compatibility mode keeps
 the existing warning/inventory behavior while projects migrate.
 
-`E_WHOLE_DYNAMIC_PUBLIC_SCHEMA` rejects a reachable project function, or a
-programmatically supplied macro that reaches preprocessing, when neither its
-root schema nor an embedded hint provides a structured contract. Replace a
-missing or whole-Dynamic root with a structured `Fn` or phase-aware `Macro`
-contract. Existing embedded `Fn` hints remain valid function evidence during
-Snapshot migration. Normal Snapshot-loaded macros are validated earlier: a
-legacy runtime `Fn` or whole-Dynamic macro schema fails during loading with its
+`E_WHOLE_DYNAMIC_PUBLIC_SCHEMA` rejects a reachable project function when
+neither its root schema nor an embedded `Fn` hint provides a structured
+contract. It also rejects a programmatically supplied macro that reaches
+preprocessing without a structured root schema; a nested function hint is not
+macro-contract evidence. Replace a missing or whole-`Dynamic` root with a
+structured `Fn` or phase-aware `Macro` contract. Existing embedded `Fn` hints
+remain valid function evidence during Snapshot migration. Normal Snapshot-loaded macros are validated earlier: a
+legacy runtime `Fn` or whole-`Dynamic` macro schema fails during loading with its
 definition path. When a boundary is genuinely open, keep `Dynamic` only in the
 specific argument, return, or `Expr<Dynamic>` position so `analyze weak-types`
 can report and baseline that exact decision. Compatibility mode continues to
-inventory function definitions while their schemas are migrated.
+inventory these definitions while their schemas are migrated.
 
 `E_ERASED_GENERIC_RELATION` rejects a project call when a `Dynamic` argument
 occupies a declared generic position that is related to another argument,

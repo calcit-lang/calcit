@@ -9117,7 +9117,7 @@ fn reject_strict_whole_dynamic_public_schema(
   if !strict_types_enabled()
     || !should_emit_project_source_lint(ns)
     || !matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic)
-    || has_embedded_fn_schema
+    || (has_embedded_fn_schema && !matches!(head, CalcitSyntax::Defmacro))
   {
     return Ok(());
   }
@@ -16300,6 +16300,18 @@ mod tests {
     assert!(explicit_error.msg.contains("whole-Dynamic macro schema"));
     assert!(explicit_error.msg.contains("structured `Macro` schema"));
     assert!(explicit_error.msg.contains("`Expr<Dynamic>`"));
+
+    let macro_with_nested_fn_hint = reject_strict_whole_dynamic_public_schema(
+      &CalcitSyntax::Defmacro,
+      "tests.schema",
+      "open-macro-with-nested-function",
+      &explicit_dynamic_schema,
+      true,
+      &CallStackList::default(),
+      None,
+    )
+    .expect_err("an embedded function hint is not contract evidence for a macro");
+    assert_eq!(macro_with_nested_fn_hint.code.as_deref(), Some("E_WHOLE_DYNAMIC_PUBLIC_SCHEMA"));
 
     let structured_open_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       generics: Arc::new(vec![]),
