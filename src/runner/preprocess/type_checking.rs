@@ -504,12 +504,16 @@ where
     if let CalcitTypeAnnotation::Variadic(inner_type) = expected_type.as_ref() {
       for (rest_idx, rest_arg) in ctx.args.iter().skip(idx).enumerate() {
         let expected_rest_type = inner_type.substitute_type_vars(&bindings);
-        if let Some(actual_type) = resolve_type_value(rest_arg, ctx.scope_types)
-          && !actual_type
+        if let Some(actual_type) = resolve_type_value(rest_arg, ctx.scope_types) {
+          let mut candidate = bindings.clone();
+          let matches = actual_type
             .as_ref()
-            .matches_with_bindings(expected_rest_type.as_ref(), &mut bindings)
-        {
-          ctx.emit_warning(idx + rest_idx + 1, expected_rest_type.as_ref(), actual_type.as_ref(), &make_warning);
+            .matches_with_bindings(expected_rest_type.as_ref(), &mut candidate);
+          if matches {
+            bindings = candidate;
+          } else {
+            ctx.emit_warning(idx + rest_idx + 1, expected_rest_type.as_ref(), actual_type.as_ref(), &make_warning);
+          }
         }
       }
       break;

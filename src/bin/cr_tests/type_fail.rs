@@ -1328,6 +1328,27 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
         && partial_binding_warnings[0].message().contains("got `map<tag, string>`"),
       "the original mismatching generic container should remain actionable: {partial_binding_warnings:?}"
     );
+    let partial_variadic_binding_warnings = warnings
+      .iter()
+      .filter(|warning| {
+        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+          && warning
+            .message()
+            .contains("type-fail-collection-member-contract.main/partial-variadic-check")
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(
+      partial_variadic_binding_warnings.len(),
+      1,
+      "a rejected variadic generic argument must not leak bindings into later rest arguments: {partial_variadic_binding_warnings:?}"
+    );
+    assert!(
+      partial_variadic_binding_warnings[0]
+        .message()
+        .contains("arg 1 expects type `map<'T, number>`")
+        && partial_variadic_binding_warnings[0].message().contains("got `map<tag, string>`"),
+      "the original mismatching variadic generic container should remain actionable: {partial_variadic_binding_warnings:?}"
+    );
     let watch_warnings = warnings
       .iter()
       .filter(|warning| {

@@ -55,6 +55,7 @@
               remove-watch (atom 1) |change
               interleave ([] 1 2) ([] :bad)
               partial-generic-check (&{} :a |bad) 1
+              partial-variadic-check (&{} :a |bad) (&{} 1 2)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -67,6 +68,15 @@
             {} (:return 'Unit)
               :args $ [] (:: 'Map 'T 'Number) 'T
               :generics $ [] 'T
+        'partial-variadic-check $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn partial-variadic-check (& items) &unit
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+              :generics $ [] 'T
+              :rest $ :: 'Map 'T 'Number
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote
             defn reload! () nil
