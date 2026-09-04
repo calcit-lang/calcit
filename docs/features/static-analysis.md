@@ -156,6 +156,15 @@ remains statically dispatchable and does not trigger this rule.
 
 Calcit's bundled Cirru core uses `config/calcit-core-quality.cirru` as a per-definition Cirru EDN migration baseline. `yarn check-core-quality`, the pull-request workflow, and the release workflow reject new or increased Dynamic/type-coverage debt while existing contracts are migrated incrementally. After a reviewed cleanup, regenerate the baseline with `calcit src/cirru/calcit-core.cirru analyze quality --write-baseline config/calcit-core-quality.cirru --format json`; never regenerate it merely to make an unexplained regression pass. A `.json` output path remains available only for external tooling that explicitly requires JSON. Track retained open boundaries and cleanup batches in [calcit#579](https://github.com/calcit-lang/calcit/issues/579).
 
+The complete position-level review lives in
+[`docs/core-dynamic-classification.md`](../core-dynamic-classification.md).
+Every schema-Dynamic path names its owning subsystem, a `migrate` or
+`retain-reviewed` decision, and the reason. `yarn check-core-dynamic-classification`
+regenerates the analysis in memory and fails when the checked-in table differs;
+after reviewing a deliberate contract change, update it with
+`yarn generate-core-dynamic-classification`. A retained position is still
+locked by the per-definition quality baseline and cannot grow silently.
+
 `analyze deprecated` scans calls to definitions tagged `:deprecated`. It reports every calling definition and a stable `code@...` path, and includes the target definition's documentation so migrations can be automated without maintaining a second hard-coded legacy API list. Use `--summary-only --format json` for migration gates that only need aggregate counts.
 
 `tag-match` is deprecated in favor of native `match`. Its calls are ordinary deprecated findings and therefore consume the `deprecatedCalls` quality budget. Native `match` keeps branch structure visible to exhaustiveness, payload-arity, type, and backend optimization passes.
