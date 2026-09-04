@@ -272,18 +272,28 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   // compiled metadata so generic collection/ref shapes survive call sites.
   let declared_schema = program::lookup_def_schema(ns, def);
   if let CalcitTypeAnnotation::Fn(info) = declared_schema.as_ref() {
-    if let Some(resolved) = resolve_generic_return_type_parts(
+    let declared_return = resolve_generic_return_type_parts(
       info.generics.as_ref(),
       &info.arg_types,
       info.rest_type.as_ref(),
       &info.return_type,
       call_expr.iter().skip(1),
       scope_types,
-    ) {
-      return Some(resolved);
-    }
-    if !matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
-      return Some(info.return_type.clone());
+    )
+    .or_else(|| (!matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Dynamic)).then(|| info.return_type.clone()));
+    if let Some(declared_return) = declared_return {
+      // A public schema remains authoritative for the nominal shape and type
+      // arguments, but an implementation can construct that same nominal
+      // type through a top-level `impl-traits` alias. Preserve the attached
+      // method table when compiled inference has that stronger evidence.
+      if declared_return.resolve_to_struct().is_some()
+        && let Some(compiled) = program::lookup_compiled_def(ns, def)
+        && let Some(inferred_body_return) = infer_compiled_callable_body_return(ns, def, &compiled.preprocessed_code)
+        && let Some(enriched) = enrich_declared_struct_return_with_impls(&declared_return, &inferred_body_return)
+      {
+        return Some(enriched);
+      }
+      return Some(declared_return);
     }
   }
 
@@ -343,6 +353,137 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     return None;
   }
   (resolved.resolve_to_struct().is_some() || resolved.resolve_to_enum().is_some()).then_some(resolved)
+}
+
+thread_local! {
+  static INFERRED_CALLABLE_IMPL_RETURNS: RefCell<HashSet<(String, String)>> = RefCell::new(HashSet::new());
+}
+
+fn infer_compiled_callable_body_return(ns: &str, def: &str, code: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+  let key = (ns.to_owned(), def.to_owned());
+  let entered = INFERRED_CALLABLE_IMPL_RETURNS.with(|definitions| definitions.borrow_mut().insert(key.clone()));
+  if !entered {
+    return None;
+  }
+  let inferred = (|| {
+    let body = match code {
+      Calcit::Fn { info, .. } => info.body.last()?,
+      Calcit::List(items)
+        if matches!(
+          items.first(),
+          Some(Calcit::Syntax(
+            CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport,
+            _
+          ))
+        ) =>
+      {
+        items.get(items.len().checked_sub(1)?)?
+      }
+      _ => return None,
+    };
+    infer_guaranteed_nominal_impl_return(body)
+  })();
+  INFERRED_CALLABLE_IMPL_RETURNS.with(|definitions| {
+    definitions.borrow_mut().remove(&key);
+  });
+  inferred
+}
+
+fn infer_guaranteed_nominal_impl_return(expr: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+  if let Calcit::List(items) = expr
+    && let Some(head) = items.first()
+  {
+    match head {
+      Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
+        return items
+          .get(items.len().checked_sub(1)?)
+          .and_then(infer_guaranteed_nominal_impl_return);
+      }
+      Calcit::Syntax(CalcitSyntax::If, _) => {
+        let true_type = infer_guaranteed_nominal_impl_return(items.get(2)?);
+        let false_expr = items.get(3)?;
+        let false_type = infer_guaranteed_nominal_impl_return(false_expr);
+        return merge_guaranteed_impl_returns(items.get(2)?, true_type, false_expr, false_type);
+      }
+      Calcit::Syntax(CalcitSyntax::Match, _) => {
+        let mut merged = None;
+        for branch in items.iter().skip(2) {
+          let Calcit::List(pair) = branch else { return None };
+          let branch_expr = pair.get(1)?;
+          if expression_definitely_diverges(branch_expr) {
+            continue;
+          }
+          let branch_type = infer_guaranteed_nominal_impl_return(branch_expr)?;
+          if let Some(previous) = &merged
+            && previous != &branch_type
+          {
+            return None;
+          }
+          merged = Some(branch_type);
+        }
+        return merged;
+      }
+      _ => {}
+    }
+  }
+
+  infer_type_from_expr(expr, &ScopeTypes::new()).filter(|annotation| match annotation.as_ref() {
+    CalcitTypeAnnotation::Struct(struct_def, _) | CalcitTypeAnnotation::StructValue(struct_def) => !struct_def.impls.is_empty(),
+    _ => false,
+  })
+}
+
+fn merge_guaranteed_impl_returns(
+  true_expr: &Calcit,
+  true_type: Option<Arc<CalcitTypeAnnotation>>,
+  false_expr: &Calcit,
+  false_type: Option<Arc<CalcitTypeAnnotation>>,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  match (true_type, false_type) {
+    (Some(a), Some(b)) if a == b => Some(a),
+    (Some(a), None) if expression_definitely_diverges(false_expr) => Some(a),
+    (None, Some(b)) if expression_definitely_diverges(true_expr) => Some(b),
+    _ => None,
+  }
+}
+
+fn expression_definitely_diverges(expr: &Calcit) -> bool {
+  let Calcit::List(items) = expr else { return false };
+  matches!(items.first(), Some(Calcit::Proc(CalcitProc::Raise)))
+    || matches!(items.first(), Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "raise")
+    || matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "raise")
+}
+
+fn enrich_declared_struct_return_with_impls(
+  declared: &Arc<CalcitTypeAnnotation>,
+  inferred: &Arc<CalcitTypeAnnotation>,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  let inferred_struct = match inferred.as_ref() {
+    CalcitTypeAnnotation::Struct(struct_def, _) | CalcitTypeAnnotation::StructValue(struct_def) => struct_def,
+    _ => return None,
+  };
+  if inferred_struct.impls.is_empty() {
+    return None;
+  }
+
+  let mut declared_struct = declared.resolve_to_struct()?;
+  if declared_struct.name != inferred_struct.name
+    || declared_struct.fields != inferred_struct.fields
+    || declared_struct.field_types != inferred_struct.field_types
+    || declared_struct.generics != inferred_struct.generics
+    || declared_struct.where_bounds != inferred_struct.where_bounds
+  {
+    return None;
+  }
+  declared_struct.impls = inferred_struct.impls.clone();
+
+  match declared.as_ref() {
+    CalcitTypeAnnotation::TypeRef(_, args) | CalcitTypeAnnotation::Struct(_, args) => {
+      Some(Arc::new(CalcitTypeAnnotation::Struct(Arc::new(declared_struct), args.clone())))
+    }
+    CalcitTypeAnnotation::StructValue(_) => Some(Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(declared_struct)))),
+    _ => None,
+  }
 }
 
 /// Recover the result of `apply f args` from the concrete callable contract.
@@ -2763,5 +2904,83 @@ mod tests {
       Some(CalcitTypeAnnotation::EnumDef(inferred))
         if inferred.name() == enum_def.name() && inferred.impls().iter().any(|item| item.get("show").is_some())
     ));
+  }
+
+  #[test]
+  fn declared_struct_return_keeps_impl_evidence_from_compiled_body() {
+    let method_impl = Arc::new(CalcitImpl {
+      name: EdnTag::from("DateImpl"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::from("format")]),
+      values: Arc::new(vec![Calcit::Nil]),
+    });
+    let mut declared_struct = CalcitStructDef::from_fields(EdnTag::from("Date0"), vec![EdnTag::from("date")]);
+    declared_struct.field_types = Arc::new(vec![calcit::DYNAMIC_TYPE.clone()]);
+    let mut attached_struct = declared_struct.clone();
+    attached_struct.impls = vec![method_impl];
+    let constructed = Calcit::Struct(CalcitStructValue {
+      struct_ref: Arc::new(attached_struct),
+      values: Arc::new(vec![Calcit::Number(0.0)]),
+    });
+    let compiled_defn = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::Defn, Arc::from("tests.date")),
+      symbol("from-ywd"),
+      Calcit::from(CalcitList::default()),
+      constructed.clone(),
+    ]);
+
+    let inferred_body =
+      infer_compiled_callable_body_return("tests.date", "from-ywd", &compiled_defn).expect("compiled body return type");
+    let declared = Arc::new(CalcitTypeAnnotation::Struct(Arc::new(declared_struct.clone()), Arc::new(vec![])));
+    let enriched = enrich_declared_struct_return_with_impls(&declared, &inferred_body).expect("matching nominal impl evidence");
+    assert!(matches!(
+      enriched.as_ref(),
+      CalcitTypeAnnotation::Struct(struct_def, args)
+        if args.is_empty()
+          && struct_def.fields == declared_struct.fields
+          && struct_def.impls.iter().any(|item| item.get("format").is_some())
+    ));
+
+    let other = Arc::new(CalcitTypeAnnotation::Struct(
+      Arc::new(CalcitStructDef::from_fields(EdnTag::from("Other"), vec![EdnTag::from("date")])),
+      Arc::new(vec![]),
+    ));
+    assert!(
+      enrich_declared_struct_return_with_impls(&other, &inferred_body).is_none(),
+      "impl evidence must not cross nominal types"
+    );
+
+    let diverging_match = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::Match, Arc::from("tests.date")),
+      Calcit::Tag(EdnTag::from("single")),
+      Calcit::from(vec![Calcit::Tag(EdnTag::from("single")), constructed.clone()]),
+      Calcit::from(vec![
+        Calcit::Tag(EdnTag::from("none")),
+        proc_call(CalcitProc::Raise, vec![Calcit::Str(Arc::from("cannot construct"))]),
+      ]),
+    ]);
+    assert_eq!(infer_guaranteed_nominal_impl_return(&diverging_match), Some(inferred_body.clone()));
+
+    let mut incompatible_struct = declared_struct;
+    incompatible_struct.impls = vec![Arc::new(CalcitImpl {
+      name: EdnTag::from("OtherImpl"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::from("other")]),
+      values: Arc::new(vec![Calcit::Nil]),
+    })];
+    let incompatible = Calcit::Struct(CalcitStructValue {
+      struct_ref: Arc::new(incompatible_struct),
+      values: Arc::new(vec![Calcit::Number(0.0)]),
+    });
+    let ambiguous_match = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::Match, Arc::from("tests.date")),
+      Calcit::Tag(EdnTag::from("single")),
+      Calcit::from(vec![Calcit::Tag(EdnTag::from("left")), constructed]),
+      Calcit::from(vec![Calcit::Tag(EdnTag::from("right")), incompatible]),
+    ]);
+    assert!(
+      infer_guaranteed_nominal_impl_return(&ambiguous_match).is_none(),
+      "different alias attachments across live branches are not guaranteed"
+    );
   }
 }
