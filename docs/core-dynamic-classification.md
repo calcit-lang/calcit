@@ -9,10 +9,10 @@ Every position has an owning subsystem and an explicit migration decision. `reta
 
 | Decision / owner | Positions |
 | --- | ---: |
-| migrate/public-core-api | 37 |
+| migrate/public-core-api | 29 |
 | migrate/test-library | 1 |
 | retain-reviewed/compiler-forms | 28 |
-| retain-reviewed/compiler-specialized-contracts | 1 |
+| retain-reviewed/compiler-specialized-contracts | 9 |
 | retain-reviewed/macro-system | 94 |
 | retain-reviewed/open-data-boundaries | 22 |
 | retain-reviewed/runtime-internals | 51 |
@@ -156,7 +156,7 @@ Every position has an owning subsystem and an explicit migration decision. `reta
 | `calcit.core/filter` | `schema.args.0` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
 | `calcit.core/filter` | `schema.return` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
 | `calcit.core/first` | `schema.args.0` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
-| `calcit.core/first` | `schema.return.type-arg.0` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
+| `calcit.core/first` | `schema.return.type-arg.0` | unresolved | compiler-specialized-contracts | retain-reviewed | Supported sequence receivers recover the Option payload from List, String, or Enum evidence; the separate Dynamic receiver position remains in the migration queue until its capability is expressible. |
 | `calcit.core/flipped` | `schema.inputs.0.expr` | intentional-macro-syntax | macro-system | retain-reviewed | Phase-aware macro syntax is intentionally open; the per-definition quality baseline prevents growth. |
 | `calcit.core/flipped` | `schema.rest.expr` | intentional-macro-syntax | macro-system | retain-reviewed | Phase-aware macro syntax is intentionally open; the per-definition quality baseline prevents growth. |
 | `calcit.core/flipped` | `schema.expansion` | intentional-macro-syntax | macro-system | retain-reviewed | Phase-aware macro syntax is intentionally open; the per-definition quality baseline prevents growth. |
@@ -165,8 +165,8 @@ Every position has an owning subsystem and an explicit migration decision. `reta
 | `calcit.core/format-cirru-one-liner` | `schema.args.0.item` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
 | `calcit.core/gensym` | `schema` | unresolved | compiler-forms | retain-reviewed | This compiler form consumes or produces code/syntax whose value shape is phase-dependent. |
 | `calcit.core/get` | `schema.args.0` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
-| `calcit.core/get` | `schema.args.1` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
-| `calcit.core/get` | `schema.return.type-arg.0` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
+| `calcit.core/get` | `schema.args.1` | unresolved | compiler-specialized-contracts | retain-reviewed | The receiver specializes the lookup key to the Map key or indexed Number contract; the separate Dynamic receiver position remains in the migration queue until its capability is expressible. |
+| `calcit.core/get` | `schema.return.type-arg.0` | unresolved | compiler-specialized-contracts | retain-reviewed | The receiver specializes the Option payload to the Map value, List member, or String character contract; the separate Dynamic receiver position remains in the migration queue until its capability is expressible. |
 | `calcit.core/get-in` | `schema.args.0` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
 | `calcit.core/get-in` | `schema.return.type-arg.0` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
 | `calcit.core/hint-fn` | `schema` | unresolved | compiler-forms | retain-reviewed | This compiler form consumes or produces code/syntax whose value shape is phase-dependent. |
@@ -179,10 +179,10 @@ Every position has an owning subsystem and an explicit migration decision. `reta
 | `calcit.core/impl-traits` | `schema.args.0` | unresolved | runtime-primitives | retain-reviewed | The low-level runtime operation is deliberately representation-polymorphic; typed project APIs must not use it as an escape hatch. |
 | `calcit.core/impl-traits` | `schema.return` | unresolved | runtime-primitives | retain-reviewed | The low-level runtime operation is deliberately representation-polymorphic; typed project APIs must not use it as an escape hatch. |
 | `calcit.core/includes?` | `schema.args.0` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
-| `calcit.core/includes?` | `schema.args.1` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
+| `calcit.core/includes?` | `schema.args.1` | unresolved | compiler-specialized-contracts | retain-reviewed | The receiver specializes the searched value to the Map value, collection member, or String contract; the separate Dynamic receiver position remains in the migration queue until its capability is expressible. |
 | `calcit.core/json-parse` | `schema.return` | unresolved | open-data-boundaries | retain-reviewed | The parser/decoder boundary accepts open data; callers must decode or narrow before entering nominal business APIs. |
 | `calcit.core/last` | `schema.args.0` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
-| `calcit.core/last` | `schema.return.type-arg.0` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
+| `calcit.core/last` | `schema.return.type-arg.0` | unresolved | compiler-specialized-contracts | retain-reviewed | Supported sequence receivers recover the Option payload from List, String, or Enum evidence; the separate Dynamic receiver position remains in the migration queue until its capability is expressible. |
 | `calcit.core/let` | `schema.expansion` | intentional-macro-syntax | macro-system | retain-reviewed | Phase-aware macro syntax is intentionally open; the per-definition quality baseline prevents growth. |
 | `calcit.core/let-destruct` | `schema.inputs.1.expr` | intentional-macro-syntax | macro-system | retain-reviewed | Phase-aware macro syntax is intentionally open; the per-definition quality baseline prevents growth. |
 | `calcit.core/let-destruct` | `schema.rest.expr` | intentional-macro-syntax | macro-system | retain-reviewed | Phase-aware macro syntax is intentionally open; the per-definition quality baseline prevents growth. |
@@ -203,7 +203,7 @@ Every position has an owning subsystem and an explicit migration decision. `reta
 | `calcit.core/macroexpand-all` | `schema` | unresolved | compiler-forms | retain-reviewed | This compiler form consumes or produces code/syntax whose value shape is phase-dependent. |
 | `calcit.core/map` | `schema.return` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
 | `calcit.core/nth` | `schema.args.0` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
-| `calcit.core/nth` | `schema.return.type-arg.0` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
+| `calcit.core/nth` | `schema.return.type-arg.0` | unresolved | compiler-specialized-contracts | retain-reviewed | Supported indexed receivers recover the Option payload from List, String, or Enum evidence; the separate Dynamic receiver position remains in the migration queue until its capability is expressible. |
 | `calcit.core/option:let` | `schema.expansion.type-arg.0` | intentional-macro-syntax | macro-system | retain-reviewed | Phase-aware macro syntax is intentionally open; the per-definition quality baseline prevents growth. |
 | `calcit.core/or` | `schema.inputs.0.expr` | intentional-macro-syntax | macro-system | retain-reviewed | Phase-aware macro syntax is intentionally open; the per-definition quality baseline prevents growth. |
 | `calcit.core/or` | `schema.rest.expr` | intentional-macro-syntax | macro-system | retain-reviewed | Phase-aware macro syntax is intentionally open; the per-definition quality baseline prevents growth. |
@@ -240,8 +240,8 @@ Every position has an owning subsystem and an explicit migration decision. `reta
 | `calcit.core/turn-symbol` | `schema.return` | unresolved | open-data-boundaries | retain-reviewed | The parser/decoder boundary accepts open data; callers must decode or narrow before entering nominal business APIs. |
 | `calcit.core/unsafe-coerce` | `schema` | unresolved | runtime-primitives | retain-reviewed | The low-level runtime operation is deliberately representation-polymorphic; typed project APIs must not use it as an escape hatch. |
 | `calcit.core/update` | `schema.args.0` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
-| `calcit.core/update` | `schema.args.1` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
-| `calcit.core/update` | `schema.return` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
+| `calcit.core/update` | `schema.args.1` | unresolved | compiler-specialized-contracts | retain-reviewed | The receiver specializes the update key or index and the updater callback contract; the separate Dynamic receiver position remains in the migration queue until its capability is expressible. |
+| `calcit.core/update` | `schema.return` | unresolved | compiler-specialized-contracts | retain-reviewed | Preprocessing preserves the concrete collection or Struct receiver as the update result; the separate Dynamic receiver position remains in the migration queue until its capability is expressible. |
 | `calcit.core/update-in` | `schema.args.0` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
 | `calcit.core/update-in` | `schema.return` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and should move to a generic, trait, or nominal relationship. |
 | `calcit.core/when` | `schema.inputs.0.expr` | intentional-macro-syntax | macro-system | retain-reviewed | Phase-aware macro syntax is intentionally open; the per-definition quality baseline prevents growth. |
