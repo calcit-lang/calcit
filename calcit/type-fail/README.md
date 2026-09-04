@@ -47,6 +47,7 @@
 - `dynamic-nominal-method-strict.cirru` 会验证 strict 模式拒绝 Dynamic receiver 上的 Option/Result nominal method dispatch，并报告稳定的 `E_DYNAMIC_POSTFIX_METHOD`。
 - `dynamic-method-dispatch-strict.cirru` 会验证 strict 模式拒绝普通 Dynamic receiver method，并报告 receiver source 与稳定的 `E_DYNAMIC_POSTFIX_METHOD`。
 - `raw-primitive-strict.cirru` 会验证 strict 模式拒绝项目源码直接调用 `&get-raw`，并报告稳定的 `E_RAW_PRIMITIVE_IN_TYPED_CODE`。
+- strict indexed-access integration 会验证完整预处理路径拒绝 Number 等静态不支持的 `first` / `last` / `nth` / `get` receiver，并报告稳定的 `E_UNSUPPORTED_INDEXED_RECEIVER`；该检查属于 native/JS 共用的前端语义。
 - `untyped-js-object-access-strict.cirru` 会验证 strict 模式拒绝裸 `JsObject` 上的静态成员访问，并报告稳定的 `E_UNTYPED_JS_OBJECT_ACCESS` 与 external-object trait 迁移建议。
 - `js-nullish-dereference-strict.cirru` 会验证 strict 模式拒绝直接解引用 `JsNullish<JsObject>`，并报告稳定的 `E_JS_FFI_NULLABLE_DEREF` 与显式 narrow/optional access 建议。
 - `js-nullish-predicate-strict.cirru` 会验证 strict 模式拒绝以 legacy `nil?`/`some?` 检查 `JsNullish<T>`，并报告稳定的 `E_JS_FFI_NULLABLE_PREDICATE` 与专用 predicate 建议。
@@ -86,6 +87,7 @@
 - `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`：strict 模式下可达 function 或直接进入预处理的 programmatic macro 既没有结构化根 schema，也没有嵌入式结构化契约；普通 legacy Snapshot macro 会更早被 loader 拒绝
 - `E_DYNAMIC_METHOD_DISPATCH` / `E_DYNAMIC_POSTFIX_METHOD`：strict 模式下 method receiver 缺少可静态 specialization 的 schema、generic/slot 绑定或 typed FFI evidence
 - `E_RAW_PRIMITIVE_IN_TYPED_CODE`：strict 项目源码手写 raw constructor/lookup/index primitive，且没有 compiler/macro origin 或匹配的 nominal layout evidence
+- `E_UNSUPPORTED_INDEXED_RECEIVER`：strict 项目源码把静态可解析但不支持的具体类型传给 `first`、`last`、`nth` 或 `get`；应转换到支持的 collection、先 narrow optional/FFI value，或对 Struct 使用字段访问
 - `E_UNTYPED_JS_OBJECT_ACCESS`：strict 项目源码在裸 `JsObject` 上以静态成员名执行读取、调用或写入，需在 lexical adapter 内绑定 external-object trait；动态 key 保留 raw lookup 语义
 - `E_JS_FFI_NULLABLE_DEREF`：strict 项目源码未 narrow `JsNullish<JsObject>` 就直接读取或调用宿主成员
 - `E_JS_FFI_NULLABLE_PREDICATE`：strict 项目源码用 legacy `nil?`/`some?` 擦除 `JsNullish<T>` 的宿主空值语义

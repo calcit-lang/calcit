@@ -397,6 +397,13 @@ Struct 字段是定义的一部分，因此已知 struct 上的 `get`、`:field`
 | `get-in` | `Option<T>`（开放动态路径常为 `Option<Dynamic>`） | 任一路径缺失都是 `%none` |
 | `get-env` | `Option<String>` | 未设置的环境变量是 `%none` |
 
+`--strict-types` 还会检查这些访问 API 的接收者能力。`first`、`last`、`nth` 只接受可静态确认的
+`List<T>`、`String` 或 `Enum`，`get` 另外接受 `Map<K,V>`；把 Number、Set、Struct、函数或未收窄的
+optional/FFI host value 传入时会报告 `E_UNSUPPORTED_INDEXED_RECEIVER`，而不是把 core schema 中保留的
+Dynamic 接收者位置当成任意值逃生口。Struct 字段改用 `(:field value)`，optional receiver 先 match/unwrap，
+FFI value 在 adapter 边界完成 validate/convert。普通兼容模式和显式声明的 `Dynamic` receiver 仍保留原运行时路径，
+便于按边界渐进迁移。
+
 ```cirru
 let
     xs $ [] 1 2 3

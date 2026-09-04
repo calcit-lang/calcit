@@ -1404,6 +1404,12 @@ fn try_expand_typed_optional_access_call(
     _ => None,
   };
 
+  let receiver_is_open = match receiver_type.as_ref() {
+    T::Dynamic | T::Custom(_) | T::TypeVar(_) | T::Trait(_) | T::TraitSet(_) | T::TypeSlot(_) => true,
+    value @ T::TypeRef(_, _) => value.resolve_to_enum().is_none() && value.resolve_to_struct().is_none(),
+    _ => false,
+  };
+
   match (fn_def, args.len(), receiver_type.as_ref()) {
     ("get", 2, T::Map(_, _)) => {
       let receiver = generated_path_symbol("typed_get_receiver", file_ns, call_stack)?;
@@ -1460,6 +1466,36 @@ fn try_expand_typed_optional_access_call(
       let body = generated_optional_last_access(receiver.to_owned(), receiver_type.as_ref(), file_ns, call_stack)?
         .expect("guarded typed last receiver");
       Ok(Some(generated_let(receiver, receiver_expr.to_owned(), body, file_ns)))
+    }
+    _ if strict_types_enabled()
+      && should_emit_project_source_lint(file_ns)
+      && matches!((fn_def, args.len()), ("first" | "last", 1) | ("get" | "nth", 2))
+      && !receiver_is_open =>
+    {
+      let supported = if fn_def == "get" {
+        "Map<K,V>, List<T>, String, or Enum"
+      } else {
+        "List<T>, String, or Enum"
+      };
+      let migration = if fn_def == "get" && receiver_type.resolve_to_struct().is_some() {
+        "use `(:field value)` for a Struct field so its declared type is checked"
+      } else if matches!(receiver_type.as_ref(), T::Optional(_) | T::JsNullish(_)) || receiver_type.is_option_type() {
+        "narrow or unwrap the optional receiver before access"
+      } else if matches!(receiver_type.as_ref(), T::JsObject) {
+        "validate or convert the FFI value at its boundary before access"
+      } else {
+        "convert the value to a supported collection or choose an operation for its concrete type"
+      };
+      Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!(
+          "`{fn_def}` cannot use statically resolved receiver `{}`; strict indexed access supports {supported}; {migration}",
+          receiver_type.to_brief_string()
+        ),
+        "E_UNSUPPORTED_INDEXED_RECEIVER",
+        call_stack,
+        receiver_expr.get_location(),
+      ))
     }
     _ => Ok(None),
   }
@@ -9852,6 +9888,7 @@ mod tests {
 
   #[test]
   fn leaves_dynamic_optional_access_on_the_compatibility_path() {
+    let _guard = lock_preprocess_test_state();
     let dynamic_receiver = Calcit::Local(CalcitLocal {
       idx: CalcitLocal::track_sym(&Arc::from("dynamic-source")),
       sym: Arc::from("dynamic-source"),
@@ -9873,6 +9910,91 @@ mod tests {
         &CallStackList::default(),
       )
       .expect("dynamic access should remain valid")
+      .is_none()
+    );
+  }
+
+  #[test]
+  fn strict_types_reject_concrete_unsupported_optional_access_receivers() {
+    let _guard = lock_preprocess_test_state();
+    let stack = CallStackList::default();
+
+    {
+      let _compat = StrictTypesGuard::new(false);
+      let args = CalcitList::from(&[Calcit::Number(1.0)] as &[Calcit]);
+      assert!(
+        try_expand_typed_optional_access_call(calcit::CORE_NS, "first", &args, &ScopeTypes::new(), "tests.typed-access", &stack)
+          .expect("compatibility mode keeps runtime dispatch")
+          .is_none()
+      );
+    }
+
+    let _strict = StrictTypesGuard::new(true);
+    for (fn_def, args) in [
+      ("first", CalcitList::from(&[Calcit::Number(1.0)] as &[Calcit])),
+      ("last", CalcitList::from(&[Calcit::Bool(true)] as &[Calcit])),
+      (
+        "nth",
+        CalcitList::from(&[Calcit::Tag(EdnTag::new("not-indexed")), Calcit::Number(0.0)] as &[Calcit]),
+      ),
+      (
+        "get",
+        CalcitList::from(&[Calcit::Number(1.0), Calcit::Tag(EdnTag::new("field"))] as &[Calcit]),
+      ),
+    ] {
+      let error =
+        try_expand_typed_optional_access_call(calcit::CORE_NS, fn_def, &args, &ScopeTypes::new(), "tests.typed-access", &stack)
+          .expect_err("strict mode should reject a concrete unsupported receiver");
+      assert_eq!(error.code.as_deref(), Some("E_UNSUPPORTED_INDEXED_RECEIVER"));
+      assert!(error.msg.contains(fn_def));
+      assert!(error.msg.contains("strict indexed access supports"));
+    }
+
+    let struct_def = Arc::new(CalcitStructDef {
+      name: EdnTag::new("Task"),
+      fields: Arc::new(vec![EdnTag::new("done?")]),
+      field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::Bool)]),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    });
+    let struct_args = CalcitList::from(&[
+      generic_relation_test_local("task", Arc::new(CalcitTypeAnnotation::StructValue(struct_def))),
+      Calcit::Tag(EdnTag::new("done?")),
+    ] as &[Calcit]);
+    let struct_error = try_expand_typed_optional_access_call(
+      calcit::CORE_NS,
+      "get",
+      &struct_args,
+      &ScopeTypes::new(),
+      "tests.typed-access",
+      &stack,
+    )
+    .expect_err("strict mode should direct Struct lookup to declared field access");
+    assert_eq!(struct_error.code.as_deref(), Some("E_UNSUPPORTED_INDEXED_RECEIVER"));
+    assert!(struct_error.msg.contains("use `(:field value)`"));
+
+    let dynamic_receiver = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("reviewed-open-source")),
+      sym: Arc::from("reviewed-open-source"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.typed-access"),
+        at_def: Arc::from("main"),
+      }),
+      location: None,
+      type_info: calcit::DYNAMIC_TYPE.clone(),
+    });
+    let dynamic_args = CalcitList::from(&[dynamic_receiver, Calcit::Number(0.0)] as &[Calcit]);
+    assert!(
+      try_expand_typed_optional_access_call(
+        calcit::CORE_NS,
+        "get",
+        &dynamic_args,
+        &ScopeTypes::new(),
+        "tests.typed-access",
+        &stack,
+      )
+      .expect("an explicitly Dynamic receiver remains a reviewed open boundary")
       .is_none()
     );
   }
