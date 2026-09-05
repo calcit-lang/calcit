@@ -15,6 +15,12 @@
 - **一致性**：复用现有模式，保持日志和错误信息风格统一。
 - **测试覆盖**：新功能必须补齐正常路径与异常分支的测试用例。
 
+### 依赖版本引用
+
+- **版本号是 source of truth**：正式依赖、CLI 和 GitHub Actions 必须优先使用明确、已发布的精确版本或 release tag（例如 `v1.4.0`）。不要在版本位置使用裸 commit hash 代替版本号，也不要用 `@<sha> # v1.4.0` 这类注释让 hash 代理版本语义。
+- **hash 只表示 revision 或完整性**：仅在上游尚未发布、复现/二分问题，或已有明确供应链策略要求不可变 revision 时使用完整 commit hash；必须在 Issue/PR 中说明原因，并另外记录对应的正式版本/tag（没有则明确写 `unreleased`）。hash/checksum 可以作为版本之外的完整性证据，不能冒充版本本身。
+- **避免可移动版本**：工具支持时使用精确 release tag（如 `v1.4.0`），不使用会随发布移动的宽泛 tag（如 `v1`）。升级时直接更新可读版本，并按仓库门禁重新验证。
+
 ### 语言定位与文档一致性
 
 - **以 Calcit 自身为中心**：文档直接介绍 nominal struct/enum、traits 与方法、Option/Result、静态分析、typed FFI、Cirru source model 和跨 backend 语义，不再以 “ClojureScript dialect” 或其他语言类比作为主要解释框架。
