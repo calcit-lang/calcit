@@ -121,8 +121,8 @@ calcit docs agents --full
 
 1. **先合并功能改动到 main**：功能分支完成后推送并等待 GitHub Actions 全绿；确认稳定后通过 PR 合并到 `main`。
 2. **升级版本**：版本号更新允许直接在已验证的 `main` 上进行，不需要为版本号本身创建 PR。同步更新 `Cargo.toml`、`package.json`，执行 `cargo update --workspace`，提交 `chore: release <version>` 并推送 `main`。如果项目维护者希望版本变更单独审核，也可以自愿使用 `codex/release-<version>` 分支和 PR，但不是硬性要求。
-3. **准备发布提交**：release PR 合并后拉取最新 `main`，确认版本提交确实位于 `main` HEAD 且目标 tag 尚不存在。可以先检查 Actions 状态，但不要求等待所有 Actions 完成后再继续。
-4. **从 main 打 tag 并发布**：直接在已同步的 `main` 上创建并推送不带 `v` 前缀的 tag，然后创建 GitHub release；这一步不需要再创建发布分支。打 tag 本身可以在 Actions 尚未完全验证时进行。这一步触发 `publish.yaml` 自动发布到 crates.io 和 npm，之后继续轮询并确认发布 workflow 成功。
+3. **等待 main 验证**：release PR 合并或版本提交推送后拉取最新 `main`，确认版本提交位于 `main` HEAD、目标 tag 尚不存在，并等待该精确 HEAD 的 required Actions 全部成功。失败或仍在运行时不得打 tag。
+4. **从 main 打 tag 并发布**：只在上述 main 验证成功后，直接在已同步的 `main` 上创建并推送不带 `v` 前缀的 annotated tag，然后创建 GitHub release；这一步不需要再创建发布分支。它会触发 `publish.yaml` 自动发布到 crates.io 和 npm，之后继续轮询并确认发布 workflow 成功。
 5. **最终确认发布成功**：轮询 GitHub Actions 直到 publish workflow 成功，并在 crates.io / npm 上确认新版本可见（版本号一致）。
 
 ```bash
@@ -182,103 +182,12 @@ npm view @calcit/procs version
 
 每次 commit 之前, 都产生一个时间戳(年月日时分)开头的文件, 记录本次修改的知识点和概要, 方便未来修改类似功能时查阅. 统一存储在 `editing-history/` 目录.
 
-## 多 Agent Issue 协作
+## Issue、分支与 PR
 
-`calcit-lang/calcit` 的 GitHub Issues 是 Calcit 主项目及关联仓库工作的唯一协调状态源。即使代码实际修改在 `calcit-bindgen`、`calcit-calx-bench` 等关联仓库，也必须先在本仓库建立或关联一个主 Issue，并在其中写明所有目标仓库和路径。
-
-### Release manager / 协调 Agent
-
-每轮发布指定一个 release manager 负责协调，不直接认领或实现普通 `agent:ready` Issue，不进入实现 Agent 的 worktree，也不修改 Issue `Owned scope` 中的源码。release manager 的职责是维护 GitHub Issues、PR 状态、依赖关系、milestones、优先级和发布门槛，并推动其他 Agent 在各自 worktree 中完成工作。
-
-- 所有开放 Issue 都必须归入一个 milestone；新 Issue 出现后立即判断属于当前版本、后续版本或无截止日期的长期迭代，不能长期处于无 milestone 状态。
-- 每个 milestone 必须有双语目标、截止日期（长期迭代可省略）和可验证的退出条件。当前版本只包含确实阻塞该版本的工作；未完成事项在发版前移动到下一 milestone，并在 Issue 留言说明理由，不得为清空 milestone 而虚假关闭。
-- release manager 维护状态一致性：只有依赖满足且范围可执行的 Issue 使用 `agent:ready`；持有有效租约时使用 `agent:claimed`；已有覆盖最新提交的 PR 时才使用 `agent:review`；等待明确依赖、权限或人工决策时使用 `agent:blocked`。
-- release manager 定期检查当前 milestone 的开放 PR、required checks、review threads、mergeability 和依赖变化。只在状态变化、失败、冲突或需要行动时更新 Issue，状态不变时不重复留言或紧密轮询。
-- 当前版本建立独立的 release Issue，并标记 `priority:p0`。依赖未完成时保持 `agent:blocked`；所有版本内实现 Issue 已关闭或明确移出、required PR 已合并且 release 验收条件满足后，release manager 才把它切换为 `agent:ready`，交给另一个 Agent 认领和执行发布。
-- release manager 不用实现租约来修改 GitHub milestone、Issue 标签、依赖、状态和协调评论；但任何仓库文件改动（包括已经合入后的 `AGENTS.md`、workflow 或 release script）仍必须建立 Issue，由实现 Agent 认领、在独立 worktree 修改并创建 PR。
-- release manager 不把“分支已 push”视为进度完成。发现分支有新提交但没有覆盖该提交的开放 PR 时，将对应 Issue 退回 `agent:ready` 或标记 `agent:blocked`，并要求实现 Agent 创建 PR；release manager 自己不接管该分支补实现。
-- tag、GitHub release、crates.io/npm 发布均验证成功后才能关闭 release Issue 和对应 milestone，并立即确认下一 milestone 成为唯一的当前迭代。
-
-仓库维护者首次启用时执行 `scripts/agent-issue-lease.sh init` 创建四个状态标签。执行认领的环境必须具备可 push `agent-lock/*` 分支、编辑 Issue 和标签的 `git`/`gh` 权限。
-
-### 开始写入前
-
-1. 只处理开放且带 `agent:ready` 标签的 Issue；先阅读 Issue、依赖项和关联 Issue。
-2. 为本次运行选择全局唯一且不易碰撞的 ID，建议包含客户端、完整任务/会话标识和随机后缀，例如 `codex-01a06d08-654-a91f`。不得只截取很短的公共前缀（如 `codex-01a06d`），也不要复用其他正在运行的 ID。
-3. 在本仓库执行：
-
-   ```bash
-   scripts/agent-issue-lease.sh claim <issue-number> <agent-id> '<repo:path, repo:path>'
-   ```
-
-4. 只有命令显示 `CLAIMED` 或 `RENEWED` 后才能修改文件。认领失败时立即停止，不得绕过锁。
-5. 每个 Agent 同时只持有一个写入租约，但可以跟踪多个已进入 `agent:review` 的 Issue/PR。不同 Issue 的修改范围如果重叠，也不得并行写入；在两个 Issue 留言说明冲突后等待拆分或释放。
-
-远端 `agent-lock/issue-<number>` 分支是认领权的权威来源；Issue 标签与租约评论用于人员和 Agent 查看。不要手工创建、覆盖或删除该分支。脚本使用原子 Git ref 更新防止同时认领，并能在租约过期后安全接管。
-
-### 工作期间
-
-- 默认租约为 45 分钟。长时间工作至少每 15 分钟续租一次：
-
-  ```bash
-  scripts/agent-issue-lease.sh heartbeat <issue-number> <agent-id>
-  ```
-
-  heartbeat 以远端 lock 为权威：确认 owner 匹配、Issue 仍开放且未显式标记 `agent:blocked` 后，会修复缺失或陈旧的 Issue 状态标签与租约评论。`agent:blocked` 与其他状态标签异常共存时仍具有最高优先级，claim 与 heartbeat 都必须拒绝。不要因为人类可读镜像短暂丢失而手工创建、覆盖或删除 lock 分支。
-
-- 在 Issue 的 `Owned scope` 范围内修改；新增仓库或路径前，先更新 Issue 并确认不与其他活跃 Issue 重叠。
-- 每个执行写入的 Agent 必须为当前认领的 Issue 使用独立 Git worktree，并使用独立分支 `agent/issue-<number>-<agent-id>`。不得让多个 Agent 共用同一个 checkout，不得直接在共享主 checkout、其他 Agent 的 worktree、其他 Agent 的分支或含有他人未提交改动的目录中实现功能。
-- 共享主 checkout 只用于认领、状态查询、只读检查和创建 worktree；实现、格式化、测试、提交及 push 必须在当前 Agent 自己的 worktree 中完成。创建 worktree 前先确认目标分支名和路径均未被其他 Agent 使用。
-- 推荐在认领成功后从最新目标分支创建 worktree：
-
-  ```bash
-  git fetch origin main
-  git worktree add ../calcit-issue-<number>-<agent-id> -b agent/issue-<number>-<agent-id> origin/main
-  ```
-
-  若 Issue 指定其他 base branch，使用 Issue 明确记录的 base；不得自行猜测。一个 Issue 修改多个仓库时，每个被修改仓库都建立独立 worktree，并在 Issue 的 `Owned scope` 中记录路径和分支。
-- 一个 worktree 在同一时间只服务一个 Issue 和一个 Agent。切换 Issue、租约转交或恢复旧任务时，不复用仍含另一任务状态的 worktree；先确认原任务已提交、推送并记录，或为新任务创建新的 worktree。
-- 不得删除、移动、清理或重置其他 Agent 的 worktree。当前 Agent 的 worktree 只有在关联 PR 已合并或关闭、Issue 已记录最终状态且确认没有未提交或未推送成果后才能清理。
-- 发现租约丢失、远端锁所有者改变或 Issue 被关闭时，立即停止写入并保留本地成果，不得强推。
-- 只读调查可以并行，但不得借只读任务修改代码、格式化文件或生成构建产物。
-
-### 完成、PR 与租约释放
-
-除“发布流程规范”中明确允许直接提交 `main` 的纯版本号 release commit 外，所有由 Issue 驱动的功能、修复、重构、测试、CI、文档和跨仓库改动，完成验证后都必须推送独立分支并创建关联 PR。仅推送分支、记录 commit URL 或在 Issue 留言都不能替代 PR，也不算进入 review。
-
-- PR 必须关联主 Issue，并在 PR 或 Issue 中记录 PR URL、head commit、base commit、改动仓库与路径、验证命令和结果。
-- 一个主 Issue 涉及多个仓库时，每个有改动的仓库都必须创建各自的 PR，并在主 Issue 汇总全部 PR；不能只为其中一个仓库创建 PR。
-- GitHub Wiki 仓库没有 PR 审查界面，是上述规则的唯一文档例外：Wiki 修改仍需独立 checkout、独立 commit 并直接 push 到 `calcit.wiki.git`，随后始终在主 Issue 中记录 Wiki commit 与页面 URL；只有任务同时存在主仓库 PR 时，才在该 PR 中重复记录。Wiki 正文不得复制回主仓库规避此例外。
-- 已合并或已关闭的 PR 不覆盖其 head 分支后来新增的提交。分支在 PR 合并或关闭后继续产生改动时，必须创建新的关联 PR；不得把旧 PR 当作这些提交已经 review 的证据。
-- 只有所需 PR 均已创建、最新提交均已推送且 Issue 已记录上述信息后，才能执行 `release ... review`。没有 PR 时，任务仍可交接则使用 `ready`；确实等待人员权限或外部依赖则使用 `blocked`，并说明分支、commit 和恢复方式。
-- 纯版本号 release commit 的直接 `main` 例外只适用于既有发布流程，不适用于夹带功能、修复、测试、CI 或文档改动的提交。
-
-满足以上条件后执行：
-
-```bash
-scripts/agent-issue-lease.sh release <issue-number> <agent-id> review
-```
-
-若任务仍可由其他 Agent 继续，使用 `ready`；若必须等待人或外部依赖，使用 `blocked`。Agent 异常退出后不需要人工删锁：租约过期时，下一个 `claim` 会用 compare-and-swap 接管，并在 Issue 中更新所有者。查看权威状态使用：
-
-```bash
-scripts/agent-issue-lease.sh status <issue-number>
-```
-
-### PR 创建后的持续跟进
-
-发出 PR 不代表任务结束。创建 PR 的 Agent 继续负责该 PR，直到合并、关闭或在 Issue 中明确完成交接：
-
-- PR 创建、最新提交推送并记录验证结果后，立即 `release ... review` 释放写入租约。Actions 或 review bot 仍在运行且没有可执行反馈时，不原地等待，可以认领下一个不冲突的 `agent:ready` Issue。
-- 一个 Agent 可以维护多个待审 PR 的观察列表，但同一时间只能持有一个 Issue 的写入租约。开始新任务不解除原 PR 的跟进责任。
-- 在认领新 Issue 前、完成一个实现检查点后、准备 push 前，以及距上次检查达到 10–15 分钟时，批量检查所有观察中的 PR。不要为单个 pending check 使用紧密轮询，也不使用会阻塞脚本的 `gh run watch`。
-- 批量处理 GitHub notifications 时使用唯一的全序：先按“安全风险 → 当前发布阻塞 → required check 新失败 → 其他”的优先级，再按 `updated_at` 升序，最后按数字 notification ID 升序；没有 ID 时用 canonical thread URL 的字典序作为 tie-breaker。前三类越过普通时间顺序时，在关联 Issue 记录原因。
-- 通知对应的 Issue 若由其他有效租约持有，只做只读归因，不修改其分支、不把仍需 owner 行动的通知标记已读，随后继续下一个可执行通知。已完成、已失效或已有明确阻塞证据的通知，分类后再标记已读，使未来状态变化可以重新通知。
-- 至少使用 `gh pr checks <pr-number>` 检查 Actions，并用 `gh pr view <pr-number> --json state,mergeStateStatus,reviewDecision,statusCheckRollup,reviews,comments` 查看总体状态；inline comments 另外通过 `gh api repos/{owner}/{repo}/pulls/<pr-number>/comments` 检查。
-- Actions 失败时先读取失败日志并判断是否由本 PR 引入；能修复的立即修复并重新验证，外部或偶发失败要在 PR 留下证据，不能只重跑后忽略。
-- 对每条有效 review 意见进行处理：修改代码或明确回复不修改的理由。不要只回复评论而遗漏对应代码、测试或文档更新。
-- Issue 处于 `agent:review` 且出现失败或修改请求时，优先于认领新的普通任务处理。若当前正持有另一个 Issue 的租约，先做到安全检查点并执行 `release ... ready`，再重新 `claim` 待审 Issue；不得同时持有两个写入租约。修复完成、推送并记录验证结果后，再 `release ... review`，随后可恢复之前释放的任务。
-- 所有必需 checks 成功且 review 意见已处理后，在 Issue/PR 留下最终状态。若暂时无法继续，标记 `agent:blocked` 并写清阻塞条件和恢复方式。
-- PR 合并或关闭后，确认没有残留的 `agent-lock/issue-<number>` 远端锁分支，再关闭或更新主 Issue；涉及关联仓库的 PR 必须逐个记录和确认。
-
-推荐调度优先级为：需要修改的既有 PR → 已认领且未完成的当前 Issue → 新的 `agent:ready` Issue → 仅等待中的 PR。等待中的 PR 只需要周期性批量巡检，不应占用 Agent 的主要执行时间。
+- GitHub Issues 与 milestones 记录目标、范围、依赖、优先级和验收条件；只把确实阻塞当前版本的工作放进当前 milestone，延期事项移动到后续 milestone 并说明原因。
+- 开始修改前检查相关开放 Issue、PR 和目标路径，避免与进行中的工作重叠。并行任务各用独立 branch 与 worktree；不要进入、清理或重置他人的 worktree。
+- 除纯版本号 release commit 外，功能、修复、重构、测试、CI 和文档改动都必须通过 PR。只 push 分支或贴 commit 链接不算完成。
+- PR 应关联 Issue，并记录修改范围与验证结果。一个 Issue 修改多个仓库时，每个仓库分别创建 PR，并在主 Issue 汇总。
+- PR 必须等待最新 head 的 bot 或用户 review 完成，处理所有有效意见并清零 review threads；required Actions 全绿且 mergeability 为 CLEAN 后才能合并。Actions 失败时查明并修复原因，不能用重跑代替处理。
+- PR 合并后等待精确 main HEAD 的 required Actions 成功，再进行依赖发布或关闭发布门槛。Wiki 内容只维护在外部 Wiki，不在仓库重复保存。
+- 纯版本号 release commit 可直接在已验证的 `main` 完成；不得夹带源码、测试、CI 或文档改动，且必须在新 main HEAD Actions 成功后才创建 annotated tag 与 GitHub Release。
