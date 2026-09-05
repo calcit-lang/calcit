@@ -143,9 +143,21 @@ export LEASE_TEST_ISSUE_LABELS=""
   PATH="$fake_bin:$PATH" "$lease_script" heartbeat 1 heartbeat-owner
 )
 [[ "$(grep '^MIRROR ' "$log_file" | tail -n 1)" == "MIRROR agent:claimed" ]]
+grep -Fq '<!-- agent-lease:1 -->' "$log_file"
 renewed_sha="$("$real_git" -C "$work_repo" ls-remote --heads origin refs/heads/agent-lock/issue-1 | awk 'NR == 1 { print $1 }')"
 [[ -n "$renewed_sha" && "$renewed_sha" != "$heartbeat_sha" ]]
 [[ "$("$real_git" -C "$work_repo" show -s --format=%B "$renewed_sha" | sed -n 's/^agent_id=//p')" == "heartbeat-owner" ]]
+
+# A stale claimable state is repaired just like a missing state: the
+# authoritative lock wins, and both the label and lease comment are restored.
+: >"$log_file"
+export LEASE_TEST_ISSUE_LABELS=agent:review
+(
+  cd "$work_repo"
+  PATH="$fake_bin:$PATH" "$lease_script" heartbeat 1 heartbeat-owner
+)
+[[ "$(grep '^MIRROR ' "$log_file" | tail -n 1)" == "MIRROR agent:claimed" ]]
+grep -Fq '<!-- agent-lease:1 -->' "$log_file"
 
 # Explicit blocked and closed Issue states remain non-renewable, and neither
 # failure may advance the authoritative lock.
