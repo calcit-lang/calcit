@@ -1,11 +1,11 @@
-name: Agent-ready task
-description: A scoped task that may be claimed by a human or coding agent
+name: Implementation task
+description: A scoped implementation or ecosystem task
 title: "[Task] "
 body:
   - type: markdown
     attributes:
       value: |
-        This repository is the coordination source of truth, including for work implemented in related Calcit repositories. A maintainer adds `agent:ready` after the scope and dependencies are clear.
+        Use this template for scoped work in Calcit or a related repository. Keep the outcome, dependencies, acceptance checks, and PR evidence current.
 
   - type: textarea
     id: outcome
@@ -18,8 +18,8 @@ body:
   - type: textarea
     id: scope
     attributes:
-      label: Owned scope / 修改范围
-      description: List every repository and path this task may modify. One task owns these paths while leased.
+      label: Scope / 修改范围
+      description: List every repository and path this task may modify.
       placeholder: |
         calcit-lang/calcit: src/codegen/**, calcit/**
         calcit-lang/calcit-bindgen: tests/**
@@ -65,7 +65,7 @@ body:
     attributes:
       label: Readiness checklist
       options:
-        - label: The owned scope does not overlap another open `agent:claimed` Issue.
+        - label: The scope has been checked against other open Issues and PRs for overlap.
           required: true
         - label: Dependencies and related repositories are recorded above.
           required: true
