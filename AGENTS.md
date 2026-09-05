@@ -266,6 +266,8 @@ scripts/agent-issue-lease.sh status <issue-number>
 - PR 创建、最新提交推送并记录验证结果后，立即 `release ... review` 释放写入租约。Actions 或 review bot 仍在运行且没有可执行反馈时，不原地等待，可以认领下一个不冲突的 `agent:ready` Issue。
 - 一个 Agent 可以维护多个待审 PR 的观察列表，但同一时间只能持有一个 Issue 的写入租约。开始新任务不解除原 PR 的跟进责任。
 - 在认领新 Issue 前、完成一个实现检查点后、准备 push 前，以及距上次检查达到 10–15 分钟时，批量检查所有观察中的 PR。不要为单个 pending check 使用紧密轮询，也不使用会阻塞脚本的 `gh run watch`。
+- 批量处理 GitHub notifications 时，默认按 `updated_at` 升序处理最早的可执行 PR 通知。只有安全风险、发布阻塞或 required check 新失败等明确高优先级变化可以越过时间顺序，并在关联 Issue 记录原因。
+- 通知对应的 Issue 若由其他有效租约持有，只做只读归因，不修改其分支、不把仍需 owner 行动的通知标记已读，随后继续下一个可执行通知。已完成、已失效或已有明确阻塞证据的通知，分类后再标记已读，使未来状态变化可以重新通知。
 - 至少使用 `gh pr checks <pr-number>` 检查 Actions，并用 `gh pr view <pr-number> --json state,mergeStateStatus,reviewDecision,statusCheckRollup,reviews,comments` 查看总体状态；inline comments 另外通过 `gh api repos/{owner}/{repo}/pulls/<pr-number>/comments` 检查。
 - Actions 失败时先读取失败日志并判断是否由本 PR 引入；能修复的立即修复并重新验证，外部或偶发失败要在 PR 留下证据，不能只重跑后忽略。
 - 对每条有效 review 意见进行处理：修改代码或明确回复不修改的理由。不要只回复评论而遗漏对应代码、测试或文档更新。
