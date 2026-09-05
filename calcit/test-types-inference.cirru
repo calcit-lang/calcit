@@ -108,6 +108,14 @@
               assert-type applied-string 'String
               &inspect-type n
               &inspect-type s
+              match (parse-float |41)
+                (:ok value)
+                  assert= 42 $ + value 1
+                (:err error) (raise error)
+              match (parse-float |bad)
+                (:ok _) (raise |Expected-parse-error)
+                (:err error)
+                  assert= true $ starts-with? error |b
           :examples $ []
           :schema $ :: 'Dynamic
         'test-list-inference $ %{} 'CodeEntry (:doc |)

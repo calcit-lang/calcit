@@ -6,7 +6,7 @@ use cirru_edn::EdnTag;
 
 use crate::builtins::meta::type_of;
 use crate::calcit::CORE_NS;
-use crate::calcit::type_annotation::{collect_runtime_type_bindings, validate_runtime_generic_where_bounds};
+use crate::calcit::type_annotation::{collect_runtime_type_bindings, dedup_generic_names, validate_runtime_generic_where_bounds};
 use crate::calcit::{
   Calcit, CalcitEnumDef, CalcitErr, CalcitErrKind, CalcitImpl, CalcitImport, CalcitList, CalcitProc, CalcitStructDef,
   CalcitStructValue, CalcitSyntax, CalcitTypeAnnotation, brief_type_of_value, format_proc_examples_hint, value_matches_type_annotation,
@@ -377,8 +377,7 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
   }
 
-  generics.sort();
-  generics.dedup();
+  dedup_generic_names(&mut generics);
 
   let field_names: Vec<EdnTag> = fields.iter().map(|(name, _)| name.to_owned()).collect();
   let field_types: Vec<Arc<CalcitTypeAnnotation>> = fields.iter().map(|(_, t)| t.to_owned()).collect();
@@ -477,8 +476,7 @@ pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let values: Vec<Calcit> = variants.iter().map(|(_, value)| value.to_owned()).collect();
 
   let mut struct_ref = CalcitStructDef::from_fields(name_id, fields);
-  generics.sort();
-  generics.dedup();
+  dedup_generic_names(&mut generics);
   struct_ref.generics = Arc::new(generics);
   struct_ref.where_bounds = Arc::new(where_bounds);
   struct_ref.impls = vec![Arc::new(enum_prototype_marker())];
