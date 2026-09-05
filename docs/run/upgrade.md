@@ -112,7 +112,9 @@ calcit calcit.cirru --check-only
 以免改动代码字符串中的同名文本。不要删除备份或旧文件，直到所有 entry 与原有 native/JS 测试均通过。现在反序列化错误会带上失败的
 Snapshot 路径；如果同目录存在 `compact.cirru`，还会直接给出上述恢复方向。严格版本不能直接格式化名为
 `compact.cirru` 的文件；必须先复制或重命名为 `calcit.cirru`。如果迁移日志报告 direct quote/configs 计数，需单独审阅生成的
-`CodeEntry` / `NsEntry` 和 `entries.default`；旧 definition 会得到明确的 `Dynamic` schema，不会自动猜测业务类型。
+`CodeEntry` / `NsEntry` 和 `entries.default`。旧普通 definition 会得到明确的 `Dynamic` schema；direct-quote `defmacro`
+会按参数列表恢复为保守的严格 `Macro` contract：每个参数为 `Syntax`，expansion 为 `Expr<Dynamic>`，capabilities 为空。
+这只让迁移结果可被当前严格 loader 读取，不会猜测业务类型或授权编译期副作用；随后应人工收窄语义类型并声明确需的 capability。
 
 旧 namespace 里的 `:require-macros` 也必须在 Snapshot 规范化前处理。宏与普通值现在共用
 `:require` 规则，例如把：
@@ -543,7 +545,12 @@ calcit calcit.cirru analyze weak-types \
 calcit calcit.cirru analyze deprecated --summary-only
 ```
 
-旧的 macro `Fn` / whole-`Dynamic` schema 不再作为运行时兼容格式：Snapshot loader 会在解析阶段以 definition 的完整 path 拒绝它。应使用最终兼容版本 Calcit 0.13.51 先将模块改成严格 `Macro` contract（显式声明 `:required` / `:optional` / `:rest`、`:expansion` 和 `:capabilities`），再使用新版本检查。必须使用 `--deps` 检查实际解析的模块版本，不能用依赖仓库尚未发布的 main 代替。
+旧的 macro `Fn` / whole-`Dynamic` schema 不再作为运行时兼容格式：Snapshot loader 会在解析阶段以 definition 的完整 path 拒绝它。
+若旧 Snapshot 已经包含结构化 `CodeEntry` 和这类 schema，应使用最终兼容版本 Calcit 0.13.51 先将模块改成严格
+`Macro` contract（显式声明 `:required` / `:optional` / `:rest`、`:expansion` 和 `:capabilities`），再使用新版本检查。
+若来源仍是更早的 direct-quote Snapshot，则直接用当前 `calcit calcit.cirru edit format`：隔离 formatter 会从参数形状生成
+`Syntax` / `Expr<Dynamic>` / 空 capabilities 的保守严格 contract，避免要求一个无法读取该 direct-quote 格式的中间版本。
+两条路径都必须审阅并收窄生成的 contract，并使用 `--deps` 检查实际解析的模块版本，不能用依赖仓库尚未发布的 main 代替。
 
 有命中时去掉 `--summary-only` 查看 definition、Snapshot path、impact、suggestion 和 deprecated
 目标文档。`check-types` 会把缺失或部分 schema（包括没有元素类型的 List/Map/Ref）列出来；
