@@ -135,6 +135,23 @@ fn load_fixture_entries(path: &str) -> ProgramEntries {
 }
 
 #[test]
+fn result_generic_declaration_order_preserves_ok_and_err_payload_types() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "do\n  match (parse-float |41)\n    (:ok value) (+ value 1)\n    (:err error) (str error |!)\n  match (parse-float |bad)\n    (:ok value) (+ value 1)\n    (:err error) (starts-with? error |b)",
+    );
+    run_check_only(&entries).expect("Result<Number,String> must bind ok to Number and err to String");
+    for snippet in [
+      "match (parse-float |41)\n  (:ok value) (starts-with? value |4)\n  (:err _) false",
+      "match (parse-float |bad)\n  (:ok _) 0\n  (:err error) (+ error 1)",
+    ] {
+      let entries = load_snippet_entries(snippet);
+      run_check_only(&entries).expect_err("Result payloads must not accept operations for the opposite type");
+    }
+  });
+}
+
+#[test]
 fn type_fail_schema_mismatch_fixtures_report_error_code() {
   run_with_large_stack(|| {
     let fixtures = [

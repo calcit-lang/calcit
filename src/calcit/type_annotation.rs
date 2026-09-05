@@ -4055,6 +4055,12 @@ fn is_list_literal_head(head: &Calcit) -> bool {
     || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "[]")
 }
 
+/// Generic arguments are positional: deduplicate without changing declaration order.
+pub(crate) fn dedup_generic_names(generics: &mut Vec<Arc<str>>) {
+  let mut seen = HashSet::with_capacity(generics.len());
+  generics.retain(|name| seen.insert(name.clone()));
+}
+
 fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStructDef> {
   let forms = normalized_data_definition_forms(items);
   let name_form = forms.get(1)?;
@@ -4102,8 +4108,7 @@ fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStructDef> {
     }
   }
 
-  generics.sort();
-  generics.dedup();
+  dedup_generic_names(&mut generics);
 
   let field_names: Vec<EdnTag> = fields.iter().map(|(name, _)| name.to_owned()).collect();
   let field_types: Vec<Arc<CalcitTypeAnnotation>> = fields.iter().map(|(_, t)| t.to_owned()).collect();
@@ -4168,8 +4173,7 @@ fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnumDef> {
 
   let fields: Vec<EdnTag> = variants.iter().map(|(tag, _)| tag.to_owned()).collect();
   let values: Vec<Calcit> = variants.iter().map(|(_, value)| value.to_owned()).collect();
-  generics.sort();
-  generics.dedup();
+  dedup_generic_names(&mut generics);
   let mut struct_ref = CalcitStructDef::from_fields(name, fields);
   struct_ref.generics = Arc::new(generics);
   struct_ref.where_bounds = Arc::new(where_bounds);
@@ -4492,6 +4496,35 @@ mod tests {
     let enum_def = parse_defenum_code(&enum_code).expect("map-wrapped enum definition");
     assert!(enum_def.find_variant_by_name("some").is_some());
     assert!(enum_def.find_variant_by_name("none").is_some());
+  }
+
+  #[test]
+  fn nominal_generic_declaration_order_matches_static_and_runtime_paths() {
+    let quoted = |name: &str| Calcit::from(vec![symbol("quote"), symbol(name)]);
+    // Include a non-adjacent duplicate to preserve the previous deduplication behavior.
+    let generics = Calcit::from(vec![Calcit::Proc(CalcitProc::List), quoted("T"), quoted("E"), quoted("T")]);
+    let fields = [
+      Calcit::from(vec![Calcit::tag("value"), quoted("T")]),
+      Calcit::from(vec![Calcit::tag("error"), quoted("E")]),
+    ];
+    let expected = vec![Arc::<str>::from("T"), Arc::<str>::from("E")];
+    let args = vec![symbol("Ordered"), generics, fields[0].clone(), fields[1].clone()];
+    let struct_code = CalcitList::from(&[vec![symbol("defstruct")], args.clone()].concat()[..]);
+    let enum_code = CalcitList::from(&[vec![symbol("defenum")], args.clone()].concat()[..]);
+    let static_struct = parse_defstruct_code(&struct_code).expect("static struct");
+    let static_enum = parse_defenum_code(&enum_code).expect("static enum");
+    let Calcit::StructDef(runtime_struct) = crate::builtins::structs::new_struct(&args).expect("runtime struct") else {
+      panic!("expected StructDef");
+    };
+    let Calcit::EnumDef(runtime_enum) = crate::builtins::structs::new_enum(&args).expect("runtime enum") else {
+      panic!("expected EnumDef");
+    };
+    assert_eq!(static_struct.generics.as_ref(), &expected);
+    assert_eq!(runtime_struct.generics.as_ref(), &expected);
+    assert_eq!(static_enum.generics(), expected.as_slice());
+    assert_eq!(runtime_enum.generics(), expected.as_slice());
+    // Field/variant sorting is independent of generic parameter order.
+    assert_eq!(static_struct.fields.as_ref(), &[EdnTag::new("error"), EdnTag::new("value")]);
   }
 
   fn generic_result_enum() -> Arc<CalcitEnumDef> {
