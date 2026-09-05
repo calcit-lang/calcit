@@ -139,7 +139,7 @@ git push origin main
 git switch main
 git pull --ff-only origin main
 VERIFIED_SHA="$(git rev-parse HEAD)"
-gh run list --commit "$VERIFIED_SHA" --limit 20 \
+gh run list --commit "$VERIFIED_SHA" --limit 100 \
   --json name,status,conclusion,headSha,url
 # 人工确认每个 required workflow 的 headSha 都是 VERIFIED_SHA，且为 completed/success。
 test "$(git rev-parse HEAD)" = "$VERIFIED_SHA"
