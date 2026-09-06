@@ -11238,6 +11238,7 @@ mod tests {
 
   #[test]
   fn unsafe_coerce_preserves_boundary_node_and_declared_expression_type() {
+    let _state = lock_preprocess_test_state();
     let expr = Cirru::List(vec![Cirru::leaf("unsafe-coerce"), Cirru::leaf("x"), Cirru::leaf(":number")]);
     let code = code_to_calcit(&expr, "tests.unsafe-coerce", "main", vec![]).expect("parse cirru");
     let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
