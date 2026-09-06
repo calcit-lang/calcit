@@ -89,8 +89,8 @@ name；direct tail call 与 `recur` 降为 `return-call`。
 - fixed arity top-level function；
 - Number/Bool literal、typed local、单 binding `&let`、有 else 的 `if`；
 - `&+`、一元/二元 `&-`、`&*`、`&/`、`&=`、`&<`、`&>`；
-- internal typed-buffer intrinsics：`&f64-buffer:len`、`&f64:to-i64-index`、`&f64-buffer:get`；后两者的
-  conversion/bounds failure 在 VM 中 trap，绝不返回 `Nil`；
+- internal typed-buffer intrinsics：`&f64:to-i64-index`、`&f64-buffer:get`；conversion/bounds failure
+  在 VM 中 trap，绝不返回 `Nil`；
 - fixed-arity direct call 与 tail-position `recur`；
 - 显式 allowlist 的 zero-result / single-result typed host import；
 - 条件必须静态为 Bool，不复用 Calcit 或 Calx 的 numeric truthiness。
@@ -101,6 +101,17 @@ name；direct tail call 与 `recur` 降为 `return-call`。
 - closure、function value、local/dynamic operator、HOF、rest/optional arity；
 - 无 else 的 `if`、非 tail `recur`、global/ref/atom、collection/nominal value；
 - 未加入 allowlist 的 host/native capability。
+
+`&f64-buffer:len` 暂不属于 producer 子集：Calcit 的公开返回类型是 `Number`/F64，而 Calx VM 的
+严格指令结果是 I64。eligibility 会在 lowering 前拒绝它，直到 Calcit 拥有显式、语义无损的 I64
+结果表示或转换；不得把 I64 暗中解释为 F64，也不得用 Nil/Dynamic 兜底。Calx VM 自身的
+`f64-buffer.len` 支持不受影响。
+
+`&f64-buffer:len` is not currently part of the producer subset: its public Calcit result is
+`Number`/F64, while the strict Calx VM instruction produces I64. Eligibility rejects it before
+lowering until Calcit has an explicit, semantics-preserving I64 result representation or conversion.
+The producer must not reinterpret I64 as F64 or fall back through Nil/Dynamic. The VM-level
+`f64-buffer.len` instruction remains supported.
 
 ## Typed host import contract
 

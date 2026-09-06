@@ -691,7 +691,6 @@ enum PlannedOperation {
   Equal,
   LessThan,
   GreaterThan,
-  F64BufferLen,
   F64ToI64Index,
   F64BufferGet,
 }
@@ -969,7 +968,6 @@ fn plan_proc(
     CalcitProc::NativeEquals => (Some(PlannedOperation::Equal), Some(CalxScalarType::Bool)),
     CalcitProc::NativeLessThan => (Some(PlannedOperation::LessThan), Some(CalxScalarType::Bool)),
     CalcitProc::NativeGreaterThan => (Some(PlannedOperation::GreaterThan), Some(CalxScalarType::Bool)),
-    CalcitProc::NativeF64BufferLen => (Some(PlannedOperation::F64BufferLen), Some(CalxScalarType::F64)),
     CalcitProc::NativeF64ToI64Index => (Some(PlannedOperation::F64ToI64Index), Some(CalxScalarType::F64)),
     CalcitProc::NativeF64BufferGet => (Some(PlannedOperation::F64BufferGet), Some(CalxScalarType::F64)),
     CalcitProc::Recur => {
@@ -1191,7 +1189,6 @@ fn emit_expression(
         PlannedOperation::Equal => body.emit(VmSyntax::F64Eq)?,
         PlannedOperation::LessThan => body.emit(VmSyntax::F64Lt)?,
         PlannedOperation::GreaterThan => body.emit(VmSyntax::F64Gt)?,
-        PlannedOperation::F64BufferLen => body.f64_buffer_len()?,
         PlannedOperation::F64ToI64Index => body.f64_to_i64_index()?,
         PlannedOperation::F64BufferGet => body.f64_buffer_get()?,
       };
