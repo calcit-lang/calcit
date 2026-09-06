@@ -77,7 +77,7 @@ or `:error` to reject them during preprocessing:
   :js-ffi :error
 ```
 
-When `--strict-types` is present and the selected entry omits `:js-ffi`, the
+Under the default strict diagnostics, when the selected entry omits `:js-ffi`, the
 effective in-memory default is `:error`; running the check never rewrites the
 Snapshot. An explicitly configured `:allow` or `:warn` remains available while
 migrating an older entry. Inspect and update the selected entry without hand
@@ -96,7 +96,7 @@ without declaring `:js-ffi`; only the wrapper's own implementation body needs
 the feature. An anonymous function uses the feature declared in its own
 `hint-fn` schema.
 
-In `--strict-types`, `unsafe-coerce` has an additional backend-independent
+Under the default strict diagnostics, `unsafe-coerce` has an additional backend-independent
 gate: the current function's structured schema must declare `:js-ffi`, or
 preprocessing fails with `E_UNSCOPED_UNSAFE_COERCE`. An adapter-like namespace
 name is inventory evidence, not authorization. A scoped assertion remains in

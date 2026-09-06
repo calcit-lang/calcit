@@ -132,37 +132,59 @@ not authorize runtime method lookup. Legacy Optional means an Optional chain
 whose payload is an open Dynamic value; `Optional<DynFn>` is classified as a
 dynamic callable instead.
 
-`unsafe-coerce` is stricter still: in `--strict-types` it must appear inside
+`unsafe-coerce` is stricter still: under the default strict diagnostics it must appear inside
 the current function's structured `Fn` schema with `:features $ #{} :js-ffi`,
 independent of codegen mode or the compatibility feature policy. Otherwise
 preprocessing reports `E_UNSCOPED_UNSAFE_COERCE`. Namespace naming does not
 grant an exemption, and scoped assertions remain subject to the
 per-definition `unsafeCoerce` quality baseline.
 
-### Strict type preflight (`--strict-types`)
+### Default strict diagnostics, zero-debt preflight, and compatibility mode
 
-Use `--strict-types` for new or fully migrated modules that must carry no local
-type debt:
+Starting with Calcit 0.14, normal invocations enable strict preprocessing
+diagnostics by default. A project therefore receives stable `E_*` diagnostics
+for unsafe typing constructs without adding a flag:
+
+```bash
+calcit --check-only
+calcit js
+```
+
+Use `--strict-types` when a new or fully migrated module must additionally
+assert that it carries no local type debt:
 
 ```bash
 calcit --check-only --strict-types
 calcit --strict-types js
 ```
 
-If the selected entry omits `:feature-policy :js-ffi`, strict mode uses
+If the selected entry omits `:feature-policy :js-ffi`, default strict diagnostics use
 `:error` as its effective in-memory default without rewriting the Snapshot.
 Older entries may opt into a staged migration explicitly with
 `calcit config set feature-policy.js-ffi warn` (or `allow`); use
 `calcit config show` to audit the selected policy.
 
-The flag enables the location-aware untyped JS FFI diagnostics from
-`--warn-dyn-method`, then runs the zero-baseline static quality gate before
-execution or code generation. It rejects unresolved or schema `Dynamic`, code
+Default strict diagnostics include the location-aware untyped JS FFI checks
+from `--warn-dyn-method`. The explicit `--strict-types` flag also runs the
+zero-baseline static quality gate before execution or code generation. That gate rejects unresolved or schema `Dynamic`, code
 `nil`, declared legacy optional values, deprecated calls, and explicit
 `unsafe-coerce` boundaries. Deep/open payloads may still use `Dynamic`, but a
 project that intentionally retains such boundaries should document and freeze
 them with `calcit analyze quality --baseline <file>` instead of claiming the
 zero-debt strict policy.
+
+Use `--compat-types` only as a temporary migration escape hatch when an older
+project still needs the pre-0.14 warning behavior:
+
+```bash
+calcit --compat-types --check-only
+calcit calcit.cirru --compat-types js
+```
+
+`--compat-types` disables the default strict diagnostic promotion and the
+implicit JS FFI `:error` policy. It does not erase explicitly configured entry
+policies. It cannot be combined with `--strict-types`; the CLI rejects that
+contradictory request.
 
 Strict preprocessing also rejects two constructs that manufacture `nil`
 implicitly:
@@ -192,7 +214,7 @@ these diagnostics are not limited to callbacks that return nil:
   It rejects both prefix `map-kv` and postfix `.map-kv` calls rather than
   allowing an expected result type to invent unproven key/value bindings.
 
-These compatibility paths remain available outside `--strict-types` during
+These compatibility paths remain available only with `--compat-types` during
 ecosystem migration. Partial Struct construction is not auto-fixed because the
 compiler cannot infer whether an omitted business field should become
 `Option<T>`, gain a default, or be supplied by the caller.
@@ -233,8 +255,8 @@ variadic item, nested type, or return position. For example, passing `Dynamic`
 to `Fn<T>(T) -> T` prevents strict preprocessing from proving the promised
 input/output relationship. Narrow or validate the value before the call. If
 the callee is intentionally open, put that operation behind a small adapter
-whose structured contract does not claim the generic relationship. Outside
-`--strict-types`, the existing compatibility behavior is unchanged.
+whose structured contract does not claim the generic relationship. With
+`--compat-types`, the existing compatibility behavior is unchanged.
 
 `E_DYNAMIC_NOMINAL_ARGUMENT` rejects a project call when an explicitly open
 `Dynamic` value, or a matching container with a `Dynamic` member, enters an
@@ -249,7 +271,7 @@ and scoped slot configuration cannot erase the nominal boundary. Cyclic slot
 bindings are treated conservatively as protected boundaries instead of being
 followed recursively or allowed to bypass the strict check.
 
-`--strict-types` reports `E_RAW_PRIMITIVE_IN_TYPED_CODE` for hand-written
+Default strict diagnostics report `E_RAW_PRIMITIVE_IN_TYPED_CODE` for hand-written
 `&get-raw`, `record-get` / `&struct:get`, raw `&%{}`, and `&struct:nth` without matching
 nominal layout evidence. Use Option-returning collection lookup, named Struct
 field syntax, and the public `%{}` constructor. Core/reviewed macro lowering,

@@ -130,7 +130,7 @@ calcit calcit.cirru analyze check-types --deps --summary-only --format json
 
 An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. A strict `MacroSignature` classifies `Dynamic` nested specifically inside `Expr<...>` inputs or expansion as `intentional-macro-syntax`: the phase-aware syntax contract remains checked, while the semantic value is deliberately open. Whole-Dynamic macro schemas, `Dynamic` expansions, and `Definition<Dynamic>` remain unresolved. A selected entry binding of `:type-slots` to `:dynamic` stays visible as `intentional-type-slot-dynamic`. These intent classes do not hide locations or remove schema-Dynamic coverage inventory; they separate reviewed boundary choices from unresolved type debt. The FFI feature does not classify `nil`, because an FFI capability does not imply that every nullable branch is intentional.
 
-For `code-nil`, the report includes raw `nil` and the legacy `;nil` compatibility marker. Nil and Unit are distinct: only structurally proven return positions in a function declared to return `Unit` are classified as `declared-unit`, and those findings are migration debt because the returned value is still Nil. Intermediate nil values remain unresolved. The same return-position rule applies to legacy `Optional<T>` as `declared-optional`. The explicit `&unit` literal is the canonical Unit value and is not nil debt. In `--strict-types`, a statically Nil return for a declared Unit function fails during preprocessing with `E_NIL_FOR_UNIT`; ordinary mode retains the existing return-mismatch warning for migration. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-unit,declared-optional` and requires no findings.
+For `code-nil`, the report includes raw `nil` and the legacy `;nil` compatibility marker. Nil and Unit are distinct: only structurally proven return positions in a function declared to return `Unit` are classified as `declared-unit`, and those findings are migration debt because the returned value is still Nil. Intermediate nil values remain unresolved. The same return-position rule applies to legacy `Optional<T>` as `declared-optional`. The explicit `&unit` literal is the canonical Unit value and is not nil debt. Under the default strict diagnostics, a statically Nil return for a declared Unit function fails during preprocessing with `E_NIL_FOR_UNIT`; `--compat-types` retains the existing return-mismatch warning for migration. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-unit,declared-optional` and requires no findings.
 
 `unsafe-coerce` is reported separately as `unsafe-coerce` with the explicit `explicit-unsafe` intent, its exact `code@...` path, and the asserted target schema. JSON occurrence rows add an `evidence` object with the static input form, whether the containing definition declares `:js-ffi`, and whether the namespace follows the `js-ffi.raw.*` adapter convention. This is static source evidence, not a claimed runtime proof of the host value. JSON adds `W_JS_FFI_UNCHECKED_COERCE` whenever the selected scope contains one or more assertions. Keep each assertion in a narrow adapter and cover both accepted and rejected host values with runtime-contract tests.
 
@@ -142,7 +142,7 @@ For one expression, `calcit query type-at '<ns/def>' --path code@... --format js
 
 `analyze dynamic-methods` reports only `P_DYNAMIC_METHOD_DISPATCH` and `P_DYNAMIC_POSTFIX_METHOD`; ordinary type warnings and JS FFI diagnostics do not contaminate its count. Project namespaces are the default scope, while `--deps` includes reachable modules. `--summary-only` omits individual findings. `--max <count>` turns the report into a focused CI policy and emits `E_DYNAMIC_METHOD_POLICY` with a non-zero status when the count grows beyond the reviewed budget. A receiver made concrete by normal inference, a trait constraint, or an explicit reviewed `unsafe-coerce` boundary is not unresolved dispatch.
 
-Under `--strict-types`, every unspecialized project method is rejected with
+Under the default strict diagnostics, every unspecialized project method is rejected with
 `E_DYNAMIC_METHOD_DISPATCH` or `E_DYNAMIC_POSTFIX_METHOD`. Diagnostics classify
 the receiver loss as a missing schema, Dynamic value/callable, legacy Optional,
 unbound generic/type slot, or explicit `:js-ffi` Dynamic boundary. The
@@ -438,7 +438,7 @@ If the body only needs a capability, add a trait bound rather than replacing `'T
 
 The same rule applies inside containers and callbacks: `:: :list 'T` preserves a homogeneous item relationship, while bare `:list` means `list<dynamic>`; a complete `:: :fn` callback schema preserves argument/return checking, while bare `:fn` does not.
 
-With `--strict-types`, the relationship must also survive each call site. A
+With the default strict diagnostics, the relationship must also survive each call site. A
 `Dynamic` value cannot be passed directly into one of these related generic
 positions, because accepting it would make the declared relationship
 uncheckable. First decode, validate, pattern-match, or otherwise narrow the
@@ -539,8 +539,8 @@ defn factorial (n acc)
 - Macro-generated functions (e.g., from `loop` macro)
 - `calcit.core` namespace functions
 
-This compatibility exception applies to ordinary preprocessing. Under
-`--strict-types`, `?` parameters fail earlier with `E_LEGACY_OPTIONAL_PARAM` and
+This compatibility exception applies only with `--compat-types`. Under the
+default strict diagnostics, `?` parameters fail earlier with `E_LEGACY_OPTIONAL_PARAM` and
 must migrate to trailing `Option<T>` parameters.
 
 ## Type Inference

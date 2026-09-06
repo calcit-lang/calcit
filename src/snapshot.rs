@@ -8,8 +8,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::calcit::{
-  Calcit, CalcitTypeAnnotation, DYNAMIC_TYPE, MacroExpansionType, MacroSignature, MacroSyntaxType, ParamShape, ParamShapeToken,
-  SchemaKind, with_type_annotation_warning_context,
+  Calcit, CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, MacroExpansionType, MacroSignature, MacroSyntaxType, ParamShape,
+  ParamShapeToken, SchemaKind, with_type_annotation_warning_context,
 };
 use crate::data::edn::{format_deserialize_error, format_edn_display};
 
@@ -2630,6 +2630,24 @@ fn extract_def_name(items: &[Cirru]) -> Option<&str> {
   }
 }
 
+/// Synthetic snippet entry points are reviewed open boundaries: their
+/// argument shape is fixed even though an ad-hoc expression may return any
+/// value. Keeping that distinction explicit lets default strict diagnostics
+/// validate `eval`/`exec` bodies without rejecting the wrapper itself.
+fn snippet_runtime_entry(code: Cirru) -> CodeEntry {
+  let mut entry = CodeEntry::from_code(code);
+  entry.schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+    generics: Arc::new(vec![]),
+    where_bounds: Arc::new(vec![]),
+    arg_types: vec![],
+    return_type: DYNAMIC_TYPE.clone(),
+    fn_kind: SchemaKind::Fn,
+    rest_type: None,
+    features: Arc::new(HashSet::new()),
+  })));
+  entry
+}
+
 pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
   match cirru_parser::parse(raw) {
     Ok(lines) => {
@@ -2680,15 +2698,15 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
         for line in body_lines {
           func_code.push(line);
         }
-        def_dict.insert("main!".into(), CodeEntry::from_code(Cirru::List(func_code)));
+        def_dict.insert("main!".into(), snippet_runtime_entry(Cirru::List(func_code)));
       }
 
       def_dict
         .entry("main!".to_string())
-        .or_insert_with(|| CodeEntry::from_code(vec![Cirru::leaf("defn"), "main!".into(), Cirru::List(vec![])].into()));
+        .or_insert_with(|| snippet_runtime_entry(vec![Cirru::leaf("defn"), "main!".into(), Cirru::List(vec![])].into()));
       def_dict
         .entry("reload!".to_string())
-        .or_insert_with(|| CodeEntry::from_code(vec![Cirru::leaf("defn"), "reload!".into(), Cirru::List(vec![])].into()));
+        .or_insert_with(|| snippet_runtime_entry(vec![Cirru::leaf("defn"), "reload!".into(), Cirru::List(vec![])].into()));
 
       Ok(FileInSnapShot {
         ns: NsEntry {
@@ -5319,5 +5337,17 @@ defcomp comp-space (w h)
     // main! and reload! are always injected as no-op entry points
     assert!(file.defs.contains_key("main!"));
     assert!(file.defs.contains_key("reload!"));
+    assert!(matches!(file.defs["main!"].schema.as_ref(), CalcitTypeAnnotation::Fn(_)));
+    assert!(matches!(file.defs["reload!"].schema.as_ref(), CalcitTypeAnnotation::Fn(_)));
+  }
+
+  #[test]
+  fn create_file_from_expression_uses_a_structured_open_entry_schema() {
+    let file = create_file_from_snippet("+ 1 2").expect("expression snippet should parse");
+    let CalcitTypeAnnotation::Fn(schema) = file.defs["main!"].schema.as_ref() else {
+      panic!("synthetic expression entry should use a structured Fn schema");
+    };
+    assert!(schema.arg_types.is_empty());
+    assert!(matches!(schema.return_type.as_ref(), CalcitTypeAnnotation::Dynamic));
   }
 }

@@ -199,16 +199,16 @@ Local validation commands:
 
 ```bash
 # run tests in Rust
-cargo run --bin calcit -- calcit/test.cirru
+cargo run --bin calcit -- calcit/test.cirru --compat-types
 
 # run tests in Node.js
-cargo run --bin calcit -- calcit/test.cirru js && yarn try-js
+cargo run --bin calcit -- calcit/test.cirru --compat-types js && yarn try-js
 
 # run snippet
 cargo run --bin calcit -- eval 'range 100'
 
 # internal compiler/WASM validation when working on this repository
-cargo run --bin calcit -- calcit/test.cirru ir
+cargo run --bin calcit -- calcit/test.cirru --compat-types ir
 yarn try-wasm
 ```
 

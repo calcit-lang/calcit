@@ -222,7 +222,7 @@ let
 ```
 
 This is a compatibility surface, not a typed construction pattern.
-`--strict-types` rejects both `%{}?` and its low-level `&%{}?` spelling with
+The default strict diagnostics reject both `%{}?` and its low-level `&%{}?` spelling with
 `E_PARTIAL_STRUCT_NIL_FILL`. Migrate by using `%{}` with every field present, or
 change fields that are genuinely absent to `Option<T>` and provide `%none`.
 There is no automatic rewrite because omitted fields may require business
