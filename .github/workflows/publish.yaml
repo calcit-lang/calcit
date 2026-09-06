@@ -90,5 +90,10 @@ jobs:
       - name: "generate procs.mjs"
         run: yarn && yarn tsc
 
-      # - run: npm publish --provenance --access public --tag next
-      - run: npm publish --provenance --access public
+      - name: Publish npm prerelease to next
+        if: github.event.release.prerelease
+        run: npm publish --provenance --access public --tag next
+
+      - name: Publish stable npm release to latest
+        if: github.event.release.prerelease == false
+        run: npm publish --provenance --access public
