@@ -152,6 +152,97 @@ fn result_generic_declaration_order_preserves_ok_and_err_payload_types() {
 }
 
 #[test]
+fn reset_rejects_incompatible_inferred_reference_payloads() {
+  run_with_large_stack(|| {
+    for snippet in [
+      "let ((state $ atom 1)) (reset! state |wrong)",
+      "let ((state $ atom $ {} $ :states $ {} $ :cursor $ [])) (reset! state $ {} $ :states $ {} $ :login $ {} (:data 1))",
+      "reset! 1 2",
+      "fn (state value)\n  hint-fn $ {} (:args $ [] (:: 'Ref 'T) 'T) (:generics $ [] 'T) (:return 'Unit)\n  reset! state |wrong\n  , &unit",
+      "fn (state value)\n  hint-fn $ {} (:args $ [] (:: 'Ref 'Number) 'T) (:generics $ [] 'T) (:return 'Unit)\n  reset! state value\n  , &unit",
+      "fn (state value)\n  hint-fn $ {} (:args $ [] (:: 'Ref $ :: 'List 'T) (:: 'List 'U)) (:generics $ [] 'T 'U) (:return 'Unit)\n  reset! state value\n  , &unit",
+      "fn (state)\n  hint-fn $ {} (:args $ [] $ :: 'Ref 'Number) (:return 'Unit)\n  reset! state |wrong\n  , &unit",
+    ] {
+      let entries = load_snippet_entries(snippet);
+      run_check_only(&entries).expect_err("incompatible reset! must fail before typed reads can use stale evidence");
+    }
+    for snippet in [
+      "let ((state $ atom 1)) (reset! state 2) (+ @state 1)",
+      "fn (state value)\n  hint-fn $ {} (:args $ [] (:: 'Ref 'T) 'T) (:generics $ [] 'T) (:return 'Unit)\n  reset! state value\n  , &unit",
+      "fn (state value)\n  hint-fn $ {} (:args $ [] (:: 'Ref $ :: 'List 'T) (:: 'List 'T)) (:generics $ [] 'T) (:return 'Unit)\n  reset! state value\n  , &unit",
+      "let ((state $ atom $ {} (:count 1))) (reset! state $ {} (:count 2)) (get-in @state $ [] :count)",
+      "fn (state)\n  hint-fn $ {} (:args $ [] $ :: 'Ref 'Number) (:return 'Unit)\n  reset! state 2\n  , &unit",
+      "fn (state)\n  hint-fn $ {} (:args $ [] $ :: 'Ref 'Dynamic) (:return 'Unit)\n  reset! state |open-boundary\n  , &unit",
+    ] {
+      let entries = load_snippet_entries(snippet);
+      run_check_only(&entries).expect("compatible reference writes should retain their payload types");
+    }
+  });
+}
+
+#[test]
+fn strict_reset_requires_known_outer_payload_or_explicit_open_reference() {
+  run_with_large_stack(|| {
+    for (payload, passes) in [
+      ("'Number", false),
+      ("(:: 'List 'Dynamic)", false),
+      ("'T", false),
+      ("'Dynamic", true),
+    ] {
+      let snippet = format!(
+        "hint-fn $ {{}} (:args $ []) (:return 'Unit)\nlet\n    write $ fn (state value)\n      hint-fn $ {{}} (:args $ [] (:: 'Ref {payload}) 'Dynamic) (:generics $ [] 'T) (:return 'Unit)\n      reset! state value\n      , &unit\n  , &unit"
+      );
+      let mut entries = load_snippet_entries(&snippet);
+      // Both entries use the explicitly hinted function, so a missing schema
+      // on the synthetic reload stub cannot masquerade as write rejection.
+      entries.reload_fn = entries.init_fn.clone();
+      entries.reload_ns = entries.init_ns.clone();
+      entries.reload_def = entries.init_def.clone();
+      let _strict = StrictTypesReset::enabled();
+      let result = run_check_only(&entries);
+      if passes {
+        result.expect("Ref<Dynamic> intentionally accepts an unknown payload");
+      } else {
+        result.expect_err("strict reset! must not write whole Dynamic into a constrained reference");
+      }
+    }
+  });
+}
+
+#[test]
+fn strict_reset_checks_nested_unknowns_and_literal_empty_values() {
+  run_with_large_stack(|| {
+    for (payload, input, value, passes) in [
+      ("(:: 'List 'Number)", "(:: 'List 'Dynamic)", "value", false),
+      ("(:: 'Map 'Tag 'Number)", "(:: 'Map 'Tag 'Dynamic)", "value", false),
+      ("(:: 'Option 'Number)", "(:: 'Option 'Dynamic)", "value", false),
+      ("(:: 'List 'Dynamic)", "(:: 'List 'Dynamic)", "value", true),
+      ("(:: 'List 'Number)", "'Number", "([])", true),
+      ("(:: 'Set 'Number)", "'Number", "(#{})", true),
+      ("(:: 'Map 'Tag 'Number)", "'Number", "({})", true),
+      ("(:: 'List $ :: 'List 'Number)", "'Number", "([] $ [])", true),
+      ("(:: 'Option 'Number)", "'Number", "(%none)", true),
+      ("(:: 'List 'Number)", "'Dynamic", "([] value)", false),
+    ] {
+      let snippet = format!(
+        "hint-fn $ {{}} (:args $ []) (:return 'Unit)\nlet\n    write $ fn (state value)\n      hint-fn $ {{}} (:args $ [] (:: 'Ref {payload}) {input}) (:return 'Unit)\n      reset! state {value}\n      , &unit\n  , &unit"
+      );
+      let mut entries = load_snippet_entries(&snippet);
+      entries.reload_fn = entries.init_fn.clone();
+      entries.reload_ns = entries.init_ns.clone();
+      entries.reload_def = entries.init_def.clone();
+      let _strict = StrictTypesReset::enabled();
+      let result = run_check_only(&entries);
+      assert_eq!(
+        result.is_ok(),
+        passes,
+        "payload={payload}, input={input}, value={value}: {result:?}"
+      );
+    }
+  });
+}
+
+#[test]
 fn type_fail_schema_mismatch_fixtures_report_error_code() {
   run_with_large_stack(|| {
     let fixtures = [
