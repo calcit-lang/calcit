@@ -3,7 +3,10 @@ use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
-use crate::calcit::{Calcit, CalcitGenericBound, CalcitImpl, CalcitList, CalcitStructDef, CalcitStructValue, CalcitTypeAnnotation};
+use crate::calcit::{
+  Calcit, CalcitGenericBound, CalcitImpl, CalcitList, CalcitStructDef, CalcitStructValue, CalcitTypeAnnotation,
+  type_annotation::same_data_schema_annotation,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumVariant {
@@ -87,7 +90,7 @@ impl CalcitEnumDef {
                 .payload_types
                 .iter()
                 .zip(expected.payload_types.iter())
-                .all(|(actual, expected)| actual.to_type_edn() == expected.to_type_edn())
+                .all(|(actual, expected)| same_data_schema_annotation(actual, expected))
           })
       }
       _ => false,
@@ -311,5 +314,43 @@ mod tests {
         && err.contains("struct `Pair` is not generic but received 2 type argument(s)"),
       "unexpected error: {err}"
     );
+  }
+
+  fn nested_struct(namespace: &str) -> Arc<CalcitTypeAnnotation> {
+    Arc::new(CalcitTypeAnnotation::Struct(
+      Arc::new(CalcitStructDef {
+        definition_ref: Some(Arc::from(format!("{namespace}/Item"))),
+        name: EdnTag::new("Item"),
+        fields: Arc::new(vec![]),
+        field_types: Arc::new(vec![]),
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        impls: vec![],
+      }),
+      Arc::new(vec![]),
+    ))
+  }
+
+  fn wrapper_enum(payload: Arc<CalcitTypeAnnotation>) -> CalcitEnumDef {
+    CalcitEnumDef {
+      definition_ref: Some(Arc::from("app/Wrapper")),
+      name: EdnTag::new("Wrapper"),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      variants: Arc::new(vec![EnumVariant {
+        tag: EdnTag::new("item"),
+        payload_types: Arc::new(vec![payload]),
+      }]),
+      impls: vec![],
+      variant_index: Arc::new(HashMap::from([(String::from("item"), 0)])),
+    }
+  }
+
+  #[test]
+  fn nested_nominal_payload_identity_keeps_qualified_definition() {
+    let left = wrapper_enum(nested_struct("alpha.models"));
+    let right = wrapper_enum(nested_struct("beta.models"));
+
+    assert!(!left.same_nominal_definition(&right));
   }
 }

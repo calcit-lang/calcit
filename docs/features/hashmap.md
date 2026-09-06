@@ -122,7 +122,7 @@ assoc-in config $ [] :server :port $ 8080
 Returns a new map. The callback transforms each entry and returns a two-item list
 containing the output key and value:
 
-```cirru
+```cirru.no-check
 let
     m $ {} (:a 1) (:b 2) (:c 13)
     doubled $ map-kv m $ fn (k v) ([] k (* v 2))
@@ -130,13 +130,14 @@ let
   ; => ({} (:a 2) (:b 4) (:c 26))
 ```
 
-Legacy native and JavaScript execution accepts `nil` or an enum value as a
-drop sentinel, but new code must not rely on that behavior. It cannot describe
-the callback result precisely and historically was not consistent across
-backends. Use `filter-map-kv` when entries may be omitted. In `--strict-types`,
-an inline callback with a structurally visible nil return path is rejected with
-`E_NIL_CALLBACK_SENTINEL`; a nil nested inside the returned pair remains valid
-map data.
+This is a legacy compatibility boundary. Native and JavaScript execution also
+accepts `nil` or an enum value as a drop sentinel, so the callback result cannot
+prove the output key/value relation. Its static result is therefore explicitly
+`Dynamic`, and compatibility mode reports
+`W_MAP_KV_UNPROVEN_CONTRACT` at every typed project call. Strict mode rejects
+the call with `E_MAP_KV_UNPROVEN_CONTRACT`; a structurally visible nil return
+keeps the more specific `E_NIL_CALLBACK_SENTINEL`. Migrate both transform-only
+and transform-and-drop code to `filter-map-kv`.
 
 ### `filter-map-kv` — typed transform and filter
 
@@ -155,9 +156,9 @@ let
   ; => ({} (:a 1) (:b 2))
 ```
 
-The method form is also available as `.filter-map-kv`. Prefer this API over a
-`nil` callback sentinel so the compiler can relate the callback payload to the
-resulting map's key and value types.
+The method form is also available as `.filter-map-kv`. This is the single
+recommended typed map-entry transformation API: its nominal decision lets the
+compiler relate callback payloads to the resulting map's key and value types.
 
 ### `to-pairs` — convert to set of pairs
 

@@ -1098,6 +1098,15 @@
       :typeNotFull 1
       :unresolved 1
       :unsafeCoerce 0
+    |calcit.core/map-kv $ {} (:codeDynamic 0)
+      :codeNil 0
+      :declaredOptional 0
+      :deprecatedCalls 0
+      :schemaDynamic 1
+      :typeNone 0
+      :typeNotFull 1
+      :unresolved 1
+      :unsafeCoerce 0
     |calcit.core/nth $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
@@ -1741,10 +1750,10 @@
     :codeNil 0
     :declaredOptional 0
     :deprecatedCalls 0
-    :schemaDynamic 277
+    :schemaDynamic 278
     :typeNone 47
-    :typeNotFull 133
-    :unresolved 183
+    :typeNotFull 134
+    :unresolved 184
     :unsafeCoerce 0
   :scope $ {} (:includeDependencies false)
     :namespace nil
