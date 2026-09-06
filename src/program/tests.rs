@@ -160,8 +160,8 @@ fn nominal_impl_wrapper_type_ref_matches_its_concrete_enum_value() {
     Arc::new(vec![]),
   );
 
-  assert!(wrapper_ref.matches_annotation(&concrete));
-  assert!(concrete.matches_annotation(&wrapper_ref));
+  assert!(wrapper_ref.is_compatible_with(&concrete));
+  assert!(concrete.is_compatible_with(&wrapper_ref));
 }
 
 #[test]

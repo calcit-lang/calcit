@@ -103,9 +103,17 @@ fn merge_if_branch_types(
   true_type: Arc<CalcitTypeAnnotation>,
   false_type: Arc<CalcitTypeAnnotation>,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
-  if true_type.as_ref().matches_annotation(false_type.as_ref()) {
+  let true_accepts_false = true_type.as_ref().is_compatible_with(false_type.as_ref());
+  let false_accepts_true = false_type.as_ref().is_compatible_with(true_type.as_ref());
+  let true_weight = super::annotation_dynamic_weight(true_type.as_ref());
+  let false_weight = super::annotation_dynamic_weight(false_type.as_ref());
+
+  // A compatibility join may retain the weaker branch shape, but must never
+  // turn Dynamic evidence into a more concrete result merely because the
+  // legacy matcher accepts Dynamic symmetrically.
+  if true_accepts_false && true_weight >= false_weight {
     Some(true_type)
-  } else if false_type.as_ref().matches_annotation(true_type.as_ref()) {
+  } else if false_accepts_true && false_weight >= true_weight {
     Some(false_type)
   } else {
     None
@@ -198,9 +206,13 @@ fn resolve_generic_return_type_parts<'a>(
     if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
       continue;
     }
-    if let Some(actual_type) = resolve_type_value(arg, scope_types) {
-      // Use matches_with_bindings to populate TypeVar bindings
-      actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings);
+    let actual_type = resolve_type_value(arg, scope_types)?;
+    if actual_type
+      .as_ref()
+      .prove_available_bindings(expected_type.as_ref(), &mut bindings)
+      .is_mismatch()
+    {
+      return None;
     }
   }
 
@@ -338,8 +350,12 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   for (arg, expected_type) in call_expr.iter().skip(1).zip(info.arg_types.iter()) {
     if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
       && let Some(actual_type) = resolve_type_value(arg, scope_types)
+      && !actual_type
+        .as_ref()
+        .prove_with_bindings(expected_type.as_ref(), &mut bindings)
+        .is_proven()
     {
-      actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings);
+      return None;
     }
   }
   // A constructor such as `%none` has no payload from which to infer one or
@@ -520,7 +536,11 @@ fn infer_core_apply_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes
   let mut bindings = HashMap::new();
   for expected in signature.arg_types.iter().chain(signature.rest_type.iter()) {
     let mut candidate = bindings.clone();
-    if !item_type.as_ref().matches_with_bindings(expected.as_ref(), &mut candidate) {
+    if !item_type
+      .as_ref()
+      .prove_with_bindings(expected.as_ref(), &mut candidate)
+      .is_proven()
+    {
       return None;
     }
     bindings = candidate;
@@ -997,8 +1017,13 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           };
           let mut bindings = HashMap::new();
           for (argument, expected) in xs.iter().skip(1).zip(info.arg_types.iter()) {
-            if let Some(actual) = resolve_type_value(argument, scope_types) {
-              actual.as_ref().matches_with_bindings(expected.as_ref(), &mut bindings);
+            if let Some(actual) = resolve_type_value(argument, scope_types)
+              && actual
+                .as_ref()
+                .prove_available_bindings(expected.as_ref(), &mut bindings)
+                .is_mismatch()
+            {
+              return Some(calcit::DYNAMIC_TYPE.clone());
             }
           }
           Some(info.return_type.substitute_type_vars(&bindings))
@@ -1467,7 +1492,7 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
     };
     if let Some(member_type) = member_type {
       let expected_reducer = CalcitTypeAnnotation::from_function_parts(vec![initial_type.clone(), member_type], initial_type.clone());
-      if matches!(reducer_type.as_ref(), CalcitTypeAnnotation::Fn(_)) && reducer_type.as_ref().matches_annotation(&expected_reducer) {
+      if matches!(reducer_type.as_ref(), CalcitTypeAnnotation::Fn(_)) && reducer_type.as_ref().is_proven_for(&expected_reducer) {
         return Some(initial_type);
       }
     }
@@ -1634,7 +1659,7 @@ fn infer_homogeneous_type<'a>(values: impl Iterator<Item = &'a Calcit>, scope_ty
       return calcit::DYNAMIC_TYPE.clone();
     }
     match &inferred {
-      Some(current) if !current.as_ref().matches_annotation(next.as_ref()) || !next.as_ref().matches_annotation(current.as_ref()) => {
+      Some(current) if !current.as_ref().is_proven_for(next.as_ref()) || !next.as_ref().is_proven_for(current.as_ref()) => {
         return calcit::DYNAMIC_TYPE.clone();
       }
       Some(_) => {}
@@ -1783,9 +1808,13 @@ fn infer_enum_applied_args<'a>(
   for (payload, expected_type) in payload_args.zip(variant.payload_types().iter()) {
     let actual_type = resolve_type_value(payload, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
     let resolved_expected = resolve_local_type_refs_for_body(expected_type.clone(), scope_types);
-    actual_type
+    if !actual_type
       .as_ref()
-      .matches_with_bindings(resolved_expected.as_ref(), &mut bindings);
+      .prove_with_bindings(resolved_expected.as_ref(), &mut bindings)
+      .is_proven()
+    {
+      return None;
+    }
   }
 
   Some(
@@ -1923,7 +1952,13 @@ fn infer_struct_applied_args<'a>(
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
   for (value, expected_type) in values.zip(struct_def.field_types.iter()) {
     let actual_type = resolve_type_value(value, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
-    actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings);
+    if !actual_type
+      .as_ref()
+      .prove_with_bindings(expected_type.as_ref(), &mut bindings)
+      .is_proven()
+    {
+      return struct_def.generics.iter().map(|_| calcit::DYNAMIC_TYPE.clone()).collect();
+    }
   }
 
   struct_def
@@ -2152,6 +2187,18 @@ mod tests {
   }
 
   #[test]
+  fn dynamic_if_branch_does_not_authorize_a_concrete_merge() {
+    assert!(matches!(
+      merge_if_branch_types(Arc::new(CalcitTypeAnnotation::Number), calcit::DYNAMIC_TYPE.clone()).as_deref(),
+      Some(CalcitTypeAnnotation::Dynamic)
+    ));
+    assert!(matches!(
+      merge_if_branch_types(calcit::DYNAMIC_TYPE.clone(), Arc::new(CalcitTypeAnnotation::Number)).as_deref(),
+      Some(CalcitTypeAnnotation::Dynamic)
+    ));
+  }
+
+  #[test]
   fn sort_preserves_the_concrete_list_type() {
     let string_list = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String)));
     for proc in [CalcitProc::Sort, CalcitProc::NativeListSort] {
@@ -2213,7 +2260,7 @@ mod tests {
   }
 
   #[test]
-  fn unresolved_generic_payload_keeps_nominal_return_wrapper() {
+  fn unresolved_generic_payload_does_not_authorize_a_static_return() {
     let type_var: Arc<CalcitTypeAnnotation> = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     let fn_info = CalcitFn {
       name: Arc::from("find"),
@@ -2234,15 +2281,7 @@ mod tests {
       rest_type: None,
     };
     let unknown_list = local("xs", calcit::DYNAMIC_TYPE.clone());
-    let inferred = resolve_generic_return_type(&fn_info, std::iter::once(&unknown_list), &ScopeTypes::new())
-      .expect("outer nominal return type should remain visible");
-
-    assert!(matches!(
-      inferred.as_ref(),
-      CalcitTypeAnnotation::TypeRef(name, args)
-        if name.as_ref() == "calcit.core/Option"
-          && matches!(args.first().map(AsRef::as_ref), Some(CalcitTypeAnnotation::Dynamic))
-    ));
+    assert!(resolve_generic_return_type(&fn_info, std::iter::once(&unknown_list), &ScopeTypes::new()).is_none());
   }
 
   #[test]
@@ -2569,9 +2608,9 @@ mod tests {
     }
 
     let opaque = CalcitTypeAnnotation::JsObject;
-    assert!(opaque.matches_annotation(&CalcitTypeAnnotation::JsObject));
-    assert!(!opaque.matches_annotation(&CalcitTypeAnnotation::String));
-    assert!(!opaque.matches_annotation(&CalcitTypeAnnotation::Number));
+    assert!(opaque.is_compatible_with(&CalcitTypeAnnotation::JsObject));
+    assert!(!opaque.is_compatible_with(&CalcitTypeAnnotation::String));
+    assert!(!opaque.is_compatible_with(&CalcitTypeAnnotation::Number));
   }
 
   #[test]

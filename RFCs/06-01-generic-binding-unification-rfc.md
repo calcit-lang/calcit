@@ -11,7 +11,7 @@
 - 函数级泛型变量 `TypeVar`
 - `:where` trait 约束
 - `Struct` / `Enum` / `TypeRef` 三类命名类型表示
-- 在 `matches_with_bindings` 中边匹配边收集泛型绑定
+- 在 `compatible_with_bindings` 中边匹配边收集泛型绑定
 
 但是这条链路还不够统一。
 
@@ -356,7 +356,7 @@ defn demo-result ()
 
 或者至少在仅一侧 applied 的情况下，把已有那一侧参数回填到 enum 声明的泛型名上。
 
-新版里这块底层元数据已经补齐：`CalcitEnum` 本身就保存 `generics`。因此这里的剩余工作不再是“先改数据结构”，而是把 `matches_with_bindings` 里的 enum 分支改成与 struct 一样的单边绑定策略。
+新版里这块底层元数据已经补齐：`CalcitEnum` 本身就保存 `generics`。因此这里的剩余工作不再是“先改数据结构”，而是把 `compatible_with_bindings` 里的 enum 分支改成与 struct 一样的单边绑定策略。
 
 ## 为什么这些 Calcit 片段今天还“不够显眼”
 
@@ -551,7 +551,7 @@ enum 侧的结构升级在当前版本里已经完成，真正还更深的一步
 
 落点：
 
-- `matches_with_bindings`
+- `compatible_with_bindings`
 - 抽出复用 helper，避免同类分支各写一遍绑定逻辑
 
 ### 阶段 2：补齐 `Enum <-> TypeRef` 的单边绑定

@@ -211,6 +211,46 @@ pub static DYNAMIC_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| 
 
 pub(crate) type TypeBindings = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
+/// Result of asking whether an annotation is strong enough to authorize
+/// static inference or unchecked lowering. Compatibility may still accept a
+/// boundary that proof deliberately refuses to cross.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TypeProof {
+  Proven,
+  NeedsBoundary(TypeBoundaryReason),
+  Mismatch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TypeBoundaryReason {
+  Dynamic,
+  LegacyAny,
+  UnknownCallable,
+  TagCallable,
+  UnresolvedTypeSlot,
+  LegacyNullish,
+  ErasedTypeArguments,
+  RecursiveTypeVariable,
+}
+
+impl TypeProof {
+  pub(crate) fn is_proven(self) -> bool {
+    matches!(self, Self::Proven)
+  }
+
+  pub(crate) fn is_mismatch(self) -> bool {
+    matches!(self, Self::Mismatch)
+  }
+
+  fn and(self, other: Self) -> Self {
+    match (self, other) {
+      (Self::Mismatch, _) | (_, Self::Mismatch) => Self::Mismatch,
+      (Self::NeedsBoundary(reason), _) | (_, Self::NeedsBoundary(reason)) => Self::NeedsBoundary(reason),
+      (Self::Proven, Self::Proven) => Self::Proven,
+    }
+  }
+}
+
 #[derive(Default)]
 struct FnSchemaFields<'a> {
   has_any: bool,
@@ -631,7 +671,7 @@ impl CalcitTypeAnnotation {
         return false;
       };
       let var = Arc::new(CalcitTypeAnnotation::TypeVar(var_name.to_owned()));
-      if !arg.matches_with_bindings(var.as_ref(), bindings) {
+      if !arg.compatible_with_bindings(var.as_ref(), bindings) {
         return false;
       }
     }
@@ -3068,12 +3108,17 @@ impl CalcitTypeAnnotation {
       .all(|trait_def| self.satisfies_trait_bound(trait_def.as_ref()))
   }
 
-  pub fn matches_annotation(&self, expected: &CalcitTypeAnnotation) -> bool {
+  pub fn is_compatible_with(&self, expected: &CalcitTypeAnnotation) -> bool {
     let mut bindings = TypeBindings::new();
-    self.matches_with_bindings(expected, &mut bindings)
+    self.compatible_with_bindings(expected, &mut bindings)
   }
 
-  pub(crate) fn matches_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
+  pub(crate) fn is_proven_for(&self, expected: &CalcitTypeAnnotation) -> bool {
+    let mut bindings = TypeBindings::new();
+    self.prove_with_bindings(expected, &mut bindings).is_proven()
+  }
+
+  pub(crate) fn compatible_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
     match (self, expected) {
       (_, Self::Dynamic) | (Self::Dynamic, _) => true,
       (Self::Macro(actual), Self::Macro(expected)) => actual == expected,
@@ -3102,7 +3147,7 @@ impl CalcitTypeAnnotation {
         }
         Some(bound) => {
           let bound = bound.clone();
-          actual.matches_with_bindings(bound.as_ref(), bindings)
+          actual.compatible_with_bindings(bound.as_ref(), bindings)
         }
         None if actual.contains_type_var_named_with_bindings(var, bindings) => true,
         None => {
@@ -3111,17 +3156,17 @@ impl CalcitTypeAnnotation {
         }
       },
       (_, Self::Optional(expected_inner)) => match self {
-        Self::Optional(actual_inner) => actual_inner.matches_with_bindings(expected_inner, bindings),
+        Self::Optional(actual_inner) => actual_inner.compatible_with_bindings(expected_inner, bindings),
         Self::JsNullish(_) => false,
         Self::Nil => true,
-        _ => self.matches_with_bindings(expected_inner, bindings),
+        _ => self.compatible_with_bindings(expected_inner, bindings),
       },
       (Self::Optional(_), _) => false,
       (_, Self::JsNullish(expected_inner)) => match self {
-        Self::JsNullish(actual_inner) => actual_inner.matches_with_bindings(expected_inner, bindings),
+        Self::JsNullish(actual_inner) => actual_inner.compatible_with_bindings(expected_inner, bindings),
         Self::Optional(_) => false,
         Self::Nil => true,
-        _ => self.matches_with_bindings(expected_inner, bindings),
+        _ => self.compatible_with_bindings(expected_inner, bindings),
       },
       (Self::JsNullish(_), _) => false,
       (Self::Bool, Self::Bool)
@@ -3155,7 +3200,7 @@ impl CalcitTypeAnnotation {
         }
         Some(bound) => {
           let bound = bound.clone();
-          bound.as_ref().matches_with_bindings(expected_type, bindings)
+          bound.as_ref().compatible_with_bindings(expected_type, bindings)
         }
         None if expected_type.contains_type_var_named_with_bindings(var, bindings) => true,
         None => {
@@ -3170,12 +3215,16 @@ impl CalcitTypeAnnotation {
         if a_args.is_empty() || b_args.is_empty() {
           return true;
         }
-        a_args.len() == b_args.len() && a_args.iter().zip(b_args.iter()).all(|(x, y)| x.matches_with_bindings(y, bindings))
+        a_args.len() == b_args.len()
+          && a_args
+            .iter()
+            .zip(b_args.iter())
+            .all(|(x, y)| x.compatible_with_bindings(y, bindings))
       }
-      (Self::List(a), Self::List(b)) => a.matches_with_bindings(b, bindings),
-      (Self::Map(ak, av), Self::Map(bk, bv)) => ak.matches_with_bindings(bk, bindings) && av.matches_with_bindings(bv, bindings),
-      (Self::Set(a), Self::Set(b)) => a.matches_with_bindings(b, bindings),
-      (Self::Ref(a), Self::Ref(b)) => a.matches_with_bindings(b, bindings),
+      (Self::List(a), Self::List(b)) => a.compatible_with_bindings(b, bindings),
+      (Self::Map(ak, av), Self::Map(bk, bv)) => ak.compatible_with_bindings(bk, bindings) && av.compatible_with_bindings(bv, bindings),
+      (Self::Set(a), Self::Set(b)) => a.compatible_with_bindings(b, bindings),
+      (Self::Ref(a), Self::Ref(b)) => a.compatible_with_bindings(b, bindings),
       (Self::TypeRef(name, args), Self::Struct(base, other_args)) | (Self::Struct(base, other_args), Self::TypeRef(name, args)) => {
         if !Self::type_ref_name_matches(name, base.name.ref_str()) && !Self::type_ref_resolves_to_struct_name(name, base.name.ref_str())
         {
@@ -3188,7 +3237,7 @@ impl CalcitTypeAnnotation {
               && args
                 .iter()
                 .zip(other_args.iter())
-                .all(|(x, y)| x.matches_with_bindings(y, bindings))
+                .all(|(x, y)| x.compatible_with_bindings(y, bindings))
           }
           (true, false) => Self::bind_declared_generics_from_applied_args(base.generics.as_ref(), other_args.as_ref(), bindings),
           (false, true) => Self::bind_declared_generics_from_applied_args(base.generics.as_ref(), args.as_ref(), bindings),
@@ -3207,7 +3256,7 @@ impl CalcitTypeAnnotation {
               && args
                 .iter()
                 .zip(other_args.iter())
-                .all(|(x, y)| x.matches_with_bindings(y, bindings))
+                .all(|(x, y)| x.compatible_with_bindings(y, bindings))
           }
           (true, false) => Self::bind_declared_generics_from_applied_args(base.generics(), other_args.as_ref(), bindings),
           (false, true) => Self::bind_declared_generics_from_applied_args(base.generics(), args.as_ref(), bindings),
@@ -3231,7 +3280,11 @@ impl CalcitTypeAnnotation {
         match (a_args.is_empty(), b_args.is_empty()) {
           (true, true) => true,
           (false, false) => {
-            a_args.len() == b_args.len() && a_args.iter().zip(b_args.iter()).all(|(x, y)| x.matches_with_bindings(y, bindings))
+            a_args.len() == b_args.len()
+              && a_args
+                .iter()
+                .zip(b_args.iter())
+                .all(|(x, y)| x.compatible_with_bindings(y, bindings))
           }
           _ => {
             // one applied, one bare — bind generics from the applied side
@@ -3247,7 +3300,11 @@ impl CalcitTypeAnnotation {
         if a_args.is_empty() || b_args.is_empty() {
           return true;
         }
-        a_args.len() == b_args.len() && a_args.iter().zip(b_args.iter()).all(|(x, y)| x.matches_with_bindings(y, bindings))
+        a_args.len() == b_args.len()
+          && a_args
+            .iter()
+            .zip(b_args.iter())
+            .all(|(x, y)| x.compatible_with_bindings(y, bindings))
       }
       (Self::TypeRef(name, args), Self::Trait(trait_def)) | (Self::Trait(trait_def), Self::TypeRef(name, args)) => {
         args.is_empty() && Self::type_ref_matches_trait(name, trait_def.as_ref())
@@ -3299,8 +3356,8 @@ impl CalcitTypeAnnotation {
       (Self::Fn(_), Self::DynFn) | (Self::DynFn, Self::Fn(_)) => true,
       // Tags are callable in Calcit (as map key accessors), so they satisfy :fn requirements
       (Self::Tag, Self::DynFn) | (Self::Tag, Self::Fn(_)) => true,
-      (Self::Fn(a), Self::Fn(b)) => a.matches_signature_with_bindings(b.as_ref(), bindings),
-      (Self::Variadic(a), Self::Variadic(b)) => a.matches_with_bindings(b, bindings),
+      (Self::Fn(a), Self::Fn(b)) => a.compatible_signature_with_bindings(b.as_ref(), bindings),
+      (Self::Variadic(a), Self::Variadic(b)) => a.compatible_with_bindings(b, bindings),
       (Self::Custom(a), Self::Custom(b)) => a.as_ref() == b.as_ref(),
       (Self::StructValue(a), Self::StructValue(b)) => a.name == b.name,
       (Self::StructValue(a), Self::Struct(b, _)) => a.name == b.name,
@@ -3336,20 +3393,186 @@ impl CalcitTypeAnnotation {
       // try to resolve it as a type alias by looking up the definition's schema.
       (Self::TypeRef(name, _), other) | (other, Self::TypeRef(name, _)) => {
         if let Some(resolved) = resolve_type_ref_as_schema(name) {
-          return resolved.matches_with_bindings(other, bindings);
+          return resolved.compatible_with_bindings(other, bindings);
         }
         false
       }
       // TypeSlot: resolve the bound type from the global registry and delegate
       (Self::TypeSlot(name), other) | (other, Self::TypeSlot(name)) => {
         if let Some(resolved) = resolve_type_slot(name) {
-          return resolved.matches_with_bindings(other, bindings);
+          return resolved.compatible_with_bindings(other, bindings);
         }
         // Slot not yet bound — treat as Dynamic (no checking)
         true
       }
       _ => false,
     }
+  }
+
+  /// Prove that `self` satisfies `expected` using only concrete static
+  /// evidence. Bindings are committed atomically only for a complete proof.
+  /// Legacy compatibility boundaries remain observable as `NeedsBoundary`.
+  pub(crate) fn prove_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
+    let mut staged = bindings.clone();
+    let result = self.prove_with_staged_bindings(expected, &mut staged);
+    if result.is_proven() {
+      *bindings = staged;
+    }
+    result
+  }
+
+  /// Collect concrete bindings that were proven before an unrelated boundary
+  /// was encountered. A mismatch still rolls the whole relation back. This is
+  /// intended for output projections such as `Result<T, Dynamic> -> T`.
+  pub(crate) fn prove_available_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
+    let mut staged = bindings.clone();
+    let result = self.prove_with_staged_bindings(expected, &mut staged);
+    if !result.is_mismatch() {
+      *bindings = staged;
+    }
+    result
+  }
+
+  fn prove_with_staged_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
+    use TypeBoundaryReason as Boundary;
+    use TypeProof::{Mismatch, NeedsBoundary, Proven};
+
+    match (self, expected) {
+      (_, Self::Dynamic) | (Self::Dynamic, _) => NeedsBoundary(Boundary::Dynamic),
+      (_, Self::Custom(value)) if Self::custom_keyword_matches(value, "any") => NeedsBoundary(Boundary::LegacyAny),
+      (Self::Custom(value), _) if Self::custom_keyword_matches(value, "any") => NeedsBoundary(Boundary::LegacyAny),
+      (Self::TypeVar(actual), Self::TypeVar(expected)) if actual == expected => Proven,
+      (actual, Self::TypeVar(var)) => match bindings.get(var).cloned() {
+        Some(bound) => actual.prove_with_staged_bindings(bound.as_ref(), bindings),
+        None if actual.contains_type_var_named_with_bindings(var, bindings) => NeedsBoundary(Boundary::RecursiveTypeVariable),
+        None => {
+          bindings.insert(var.clone(), Arc::new(actual.clone()));
+          Proven
+        }
+      },
+      (Self::TypeVar(var), expected_type) => match bindings.get(var).cloned() {
+        Some(bound) => bound.prove_with_staged_bindings(expected_type, bindings),
+        None if expected_type.contains_type_var_named_with_bindings(var, bindings) => NeedsBoundary(Boundary::RecursiveTypeVariable),
+        None => {
+          bindings.insert(var.clone(), Arc::new(expected_type.clone()));
+          Proven
+        }
+      },
+      (Self::Optional(actual), Self::Optional(expected)) | (Self::JsNullish(actual), Self::JsNullish(expected)) => {
+        actual.prove_with_staged_bindings(expected, bindings)
+      }
+      (_, Self::Optional(_)) | (Self::Optional(_), _) | (_, Self::JsNullish(_)) | (Self::JsNullish(_), _) => {
+        if self.compatible_with_bindings(expected, &mut bindings.clone()) {
+          NeedsBoundary(Boundary::LegacyNullish)
+        } else {
+          Mismatch
+        }
+      }
+      (Self::TypeRef(a_name, a_args), Self::TypeRef(b_name, b_args)) => {
+        if !Self::type_ref_name_matches(a_name, b_name) && !Self::type_ref_name_matches(b_name, a_name) {
+          return Mismatch;
+        }
+        if a_args.is_empty() != b_args.is_empty() {
+          return NeedsBoundary(Boundary::ErasedTypeArguments);
+        }
+        Self::prove_slices(a_args, b_args, bindings)
+      }
+      (Self::TypeRef(name, args), Self::Struct(base, other_args)) | (Self::Struct(base, other_args), Self::TypeRef(name, args)) => {
+        if !Self::type_ref_name_matches(name, base.name.ref_str()) && !Self::type_ref_resolves_to_struct_name(name, base.name.ref_str())
+        {
+          return Mismatch;
+        }
+        match (args.is_empty(), other_args.is_empty()) {
+          (true, true) => Proven,
+          (false, false) => Self::prove_slices(args, other_args, bindings),
+          (true, false) => Self::prove_declared_generics(base.generics.as_ref(), other_args, bindings),
+          (false, true) => Self::prove_declared_generics(base.generics.as_ref(), args, bindings),
+        }
+      }
+      (Self::TypeRef(name, args), Self::Enum(base, other_args)) | (Self::Enum(base, other_args), Self::TypeRef(name, args)) => {
+        if !Self::type_ref_name_matches(name, base.name().ref_str())
+          && !Self::type_ref_resolves_to_enum_name(name, base.name().ref_str())
+        {
+          return Mismatch;
+        }
+        match (args.is_empty(), other_args.is_empty()) {
+          (true, true) => Proven,
+          (false, false) => Self::prove_slices(args, other_args, bindings),
+          (true, false) => Self::prove_declared_generics(base.generics(), other_args, bindings),
+          (false, true) => Self::prove_declared_generics(base.generics(), args, bindings),
+        }
+      }
+      (Self::List(actual), Self::List(expected))
+      | (Self::Set(actual), Self::Set(expected))
+      | (Self::Variadic(actual), Self::Variadic(expected)) => actual.prove_with_staged_bindings(expected, bindings),
+      (Self::Ref(actual), Self::Ref(expected)) => {
+        let mut invariant_bindings = bindings.clone();
+        let result = actual
+          .prove_with_staged_bindings(expected, &mut invariant_bindings)
+          .and(expected.prove_with_staged_bindings(actual, &mut invariant_bindings));
+        if result.is_proven() {
+          *bindings = invariant_bindings;
+        }
+        result
+      }
+      (Self::Map(actual_key, actual_value), Self::Map(expected_key, expected_value)) => actual_key
+        .prove_with_staged_bindings(expected_key, bindings)
+        .and(actual_value.prove_with_staged_bindings(expected_value, bindings)),
+      (Self::Struct(actual, actual_args), Self::Struct(expected, expected_args)) if actual.name == expected.name => {
+        if actual_args.is_empty() != expected_args.is_empty() {
+          NeedsBoundary(Boundary::ErasedTypeArguments)
+        } else {
+          Self::prove_slices(actual_args, expected_args, bindings)
+        }
+      }
+      (Self::Enum(actual, actual_args), Self::Enum(expected, expected_args)) if actual.name() == expected.name() => {
+        if actual_args.is_empty() != expected_args.is_empty() {
+          NeedsBoundary(Boundary::ErasedTypeArguments)
+        } else {
+          Self::prove_slices(actual_args, expected_args, bindings)
+        }
+      }
+      (Self::Fn(actual), Self::Fn(expected)) => actual.prove_signature_with_bindings(expected, bindings),
+      (Self::Fn(_), Self::DynFn) | (Self::DynFn, Self::Fn(_)) => NeedsBoundary(Boundary::UnknownCallable),
+      (Self::Tag, Self::DynFn) | (Self::Tag, Self::Fn(_)) => NeedsBoundary(Boundary::TagCallable),
+      (Self::TypeSlot(name), other) | (other, Self::TypeSlot(name)) => match resolve_type_slot(name) {
+        Some(resolved) => resolved.prove_with_staged_bindings(other, bindings),
+        None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
+      },
+      (Self::TypeRef(name, _), other) | (other, Self::TypeRef(name, _)) => match resolve_type_ref_as_schema(name) {
+        Some(resolved) => resolved.prove_with_staged_bindings(other, bindings),
+        None => Mismatch,
+      },
+      _ => {
+        if self.compatible_with_bindings(expected, &mut bindings.clone()) {
+          Proven
+        } else {
+          Mismatch
+        }
+      }
+    }
+  }
+
+  fn prove_slices(
+    actual: &[Arc<CalcitTypeAnnotation>],
+    expected: &[Arc<CalcitTypeAnnotation>],
+    bindings: &mut TypeBindings,
+  ) -> TypeProof {
+    if actual.len() != expected.len() {
+      return TypeProof::Mismatch;
+    }
+    actual.iter().zip(expected).fold(TypeProof::Proven, |result, (actual, expected)| {
+      result.and(actual.prove_with_staged_bindings(expected, bindings))
+    })
+  }
+
+  fn prove_declared_generics(declared: &[Arc<str>], applied: &[Arc<CalcitTypeAnnotation>], bindings: &mut TypeBindings) -> TypeProof {
+    if declared.len() != applied.len() {
+      return TypeProof::Mismatch;
+    }
+    declared.iter().zip(applied).fold(TypeProof::Proven, |result, (name, actual)| {
+      result.and(actual.prove_with_staged_bindings(&Self::TypeVar(name.clone()), bindings))
+    })
   }
 
   pub fn from_calcit(value: &Calcit) -> Self {
@@ -4379,10 +4602,10 @@ mod tests {
     let user_debug = Arc::new(CalcitTrait::new_reference("app.main/Debug"));
     let runtime_user_debug = Arc::new(CalcitTrait::new_runtime(EdnTag::new("Debug"), vec![], vec![]));
 
-    assert!(number.matches_annotation(&CalcitTypeAnnotation::Trait(core_debug)));
-    assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(core_show)));
-    assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(user_debug)));
-    assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(runtime_user_debug)));
+    assert!(number.is_compatible_with(&CalcitTypeAnnotation::Trait(core_debug)));
+    assert!(!number.is_compatible_with(&CalcitTypeAnnotation::Trait(core_show)));
+    assert!(!number.is_compatible_with(&CalcitTypeAnnotation::Trait(user_debug)));
+    assert!(!number.is_compatible_with(&CalcitTypeAnnotation::Trait(runtime_user_debug)));
   }
 
   #[test]
@@ -4393,8 +4616,8 @@ mod tests {
     evaluated_dom_element.runtime_id = Some(7);
     let annotation = CalcitTypeAnnotation::Trait(Arc::new(evaluated_dom_element));
 
-    assert!(annotation.matches_annotation(&CalcitTypeAnnotation::TypeRef(Arc::from("respo.dom/DomElement"), Arc::new(vec![]),)));
-    assert!(!annotation.matches_annotation(&CalcitTypeAnnotation::TypeRef(Arc::from("other.dom/DomElement"), Arc::new(vec![]),)));
+    assert!(annotation.is_compatible_with(&CalcitTypeAnnotation::TypeRef(Arc::from("respo.dom/DomElement"), Arc::new(vec![]),)));
+    assert!(!annotation.is_compatible_with(&CalcitTypeAnnotation::TypeRef(Arc::from("other.dom/DomElement"), Arc::new(vec![]),)));
     assert!(annotation.satisfies_trait_bound(dom_element.as_ref()));
     assert!(!annotation.satisfies_trait_bound(other_dom_element.as_ref()));
     let CalcitTypeAnnotation::Trait(evaluated_dom_element) = &annotation else {
@@ -4583,15 +4806,15 @@ mod tests {
     let result_def = CalcitTypeAnnotation::EnumDef(result.clone());
     let result_value = CalcitTypeAnnotation::EnumValue(result.clone());
 
-    assert!(!person_def.matches_annotation(&CalcitTypeAnnotation::from_tag_name("Struct")));
-    assert!(person_def.matches_annotation(&CalcitTypeAnnotation::from_tag_name("StructDef")));
-    assert!(person_value.matches_annotation(&CalcitTypeAnnotation::from_tag_name("Struct")));
-    assert!(!person_value.matches_annotation(&CalcitTypeAnnotation::from_tag_name("StructDef")));
+    assert!(!person_def.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("Struct")));
+    assert!(person_def.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("StructDef")));
+    assert!(person_value.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("Struct")));
+    assert!(!person_value.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("StructDef")));
 
-    assert!(!result_def.matches_annotation(&CalcitTypeAnnotation::from_tag_name("Enum")));
-    assert!(result_def.matches_annotation(&CalcitTypeAnnotation::from_tag_name("EnumDef")));
-    assert!(result_value.matches_annotation(&CalcitTypeAnnotation::from_tag_name("Enum")));
-    assert!(!result_value.matches_annotation(&CalcitTypeAnnotation::from_tag_name("EnumDef")));
+    assert!(!result_def.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("Enum")));
+    assert!(result_def.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("EnumDef")));
+    assert!(result_value.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("Enum")));
+    assert!(!result_value.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("EnumDef")));
 
     assert_eq!(person_def.to_brief_string(), "struct-def Person");
     assert_eq!(result_def.to_brief_string(), "enum-def Result");
@@ -4650,13 +4873,13 @@ mod tests {
     let map_type = CalcitTypeAnnotation::TypeRef(Arc::from("map"), Arc::new(vec![]));
 
     let mut bindings = TypeBindings::new();
-    assert!(struct_type.matches_with_bindings(&map_type, &mut bindings));
-    assert!(map_type.matches_with_bindings(&struct_type, &mut bindings));
+    assert!(struct_type.compatible_with_bindings(&map_type, &mut bindings));
+    assert!(map_type.compatible_with_bindings(&struct_type, &mut bindings));
 
     // unrelated type-ref names still must not match a struct structurally
     let person_type = CalcitTypeAnnotation::TypeRef(Arc::from("SomeOtherName"), Arc::new(vec![]));
     let mut bindings2 = TypeBindings::new();
-    assert!(!struct_type.matches_with_bindings(&person_type, &mut bindings2));
+    assert!(!struct_type.compatible_with_bindings(&person_type, &mut bindings2));
   }
 
   #[test]
@@ -4664,8 +4887,8 @@ mod tests {
     let type_var = CalcitTypeAnnotation::TypeVar(Arc::from("T"));
     let mut bindings = TypeBindings::new();
 
-    assert!(type_var.matches_with_bindings(&type_var, &mut bindings));
-    assert!(type_var.matches_with_bindings(&type_var, &mut bindings));
+    assert!(type_var.compatible_with_bindings(&type_var, &mut bindings));
+    assert!(type_var.compatible_with_bindings(&type_var, &mut bindings));
     assert!(bindings.is_empty(), "an identical type variable needs no self-binding");
   }
 
@@ -4676,21 +4899,21 @@ mod tests {
     let expected_type_var = CalcitTypeAnnotation::TypeVar(Arc::from("T"));
     let mut bindings = TypeBindings::new();
 
-    assert!(optional_type_var.matches_with_bindings(&expected_type_var, &mut bindings));
+    assert!(optional_type_var.compatible_with_bindings(&expected_type_var, &mut bindings));
     assert!(bindings.is_empty(), "T must not be bound to Optional<T>");
 
-    assert!(CalcitTypeAnnotation::Tag.matches_with_bindings(&expected_type_var, &mut bindings));
+    assert!(CalcitTypeAnnotation::Tag.compatible_with_bindings(&expected_type_var, &mut bindings));
     assert_eq!(bindings.get("T").map(AsRef::as_ref), Some(&CalcitTypeAnnotation::Tag));
 
     let reverse_type_var = CalcitTypeAnnotation::TypeVar(Arc::from("T"));
     let reverse_optional = CalcitTypeAnnotation::Optional(Arc::new(reverse_type_var.clone()));
     let mut reverse_bindings = TypeBindings::new();
-    assert!(reverse_type_var.matches_with_bindings(&reverse_optional, &mut reverse_bindings));
+    assert!(reverse_type_var.compatible_with_bindings(&reverse_optional, &mut reverse_bindings));
     assert!(
       reverse_bindings.is_empty(),
       "T must not be bound to Optional<T> in the reverse direction"
     );
-    assert!(reverse_type_var.matches_with_bindings(&CalcitTypeAnnotation::String, &mut reverse_bindings));
+    assert!(reverse_type_var.compatible_with_bindings(&CalcitTypeAnnotation::String, &mut reverse_bindings));
     assert_eq!(reverse_bindings.get("T").map(AsRef::as_ref), Some(&CalcitTypeAnnotation::String));
   }
 
@@ -4701,16 +4924,16 @@ mod tests {
     let optional_t = CalcitTypeAnnotation::Optional(Arc::new(generic_t.clone()));
     let mut bindings = TypeBindings::new();
 
-    assert!(generic_u.matches_with_bindings(&generic_t, &mut bindings));
+    assert!(generic_u.compatible_with_bindings(&generic_t, &mut bindings));
     assert_eq!(bindings.get("T").map(AsRef::as_ref), Some(&generic_u));
 
-    assert!(optional_t.matches_with_bindings(&generic_t, &mut bindings));
+    assert!(optional_t.compatible_with_bindings(&generic_t, &mut bindings));
     assert!(
       !bindings.contains_key("U"),
       "U must not be bound to Optional<T> through the T -> U alias"
     );
 
-    assert!(CalcitTypeAnnotation::Tag.matches_with_bindings(&generic_t, &mut bindings));
+    assert!(CalcitTypeAnnotation::Tag.compatible_with_bindings(&generic_t, &mut bindings));
     assert_eq!(bindings.get("U").map(AsRef::as_ref), Some(&CalcitTypeAnnotation::Tag));
   }
 
@@ -4725,9 +4948,9 @@ mod tests {
       CalcitTypeAnnotation::from_function_parts(vec![Arc::new(CalcitTypeAnnotation::Number)], Arc::new(CalcitTypeAnnotation::Number));
     let mut bindings = TypeBindings::new();
 
-    assert!(actual_none.matches_with_bindings(&expected_none, &mut bindings));
+    assert!(actual_none.compatible_with_bindings(&expected_none, &mut bindings));
     assert!(
-      !actual_some.matches_with_bindings(&expected_some, &mut bindings),
+      !actual_some.compatible_with_bindings(&expected_some, &mut bindings),
       "a sibling callback must return the U bound by the first callback"
     );
   }
@@ -4742,7 +4965,7 @@ mod tests {
     );
     let mut bindings = TypeBindings::new();
 
-    assert!(!actual.matches_with_bindings(&expected, &mut bindings));
+    assert!(!actual.compatible_with_bindings(&expected, &mut bindings));
     assert!(bindings.is_empty(), "a failed callback match must not constrain later arguments");
   }
 
@@ -5305,14 +5528,14 @@ mod tests {
       CalcitTypeAnnotation::from_calcit(&Calcit::Tag(EdnTag::from("any"))),
       CalcitTypeAnnotation::Dynamic
     ));
-    assert!(CalcitTypeAnnotation::Number.matches_annotation(&any));
-    assert!(any.matches_annotation(&CalcitTypeAnnotation::Number));
+    assert!(CalcitTypeAnnotation::Number.is_compatible_with(&any));
+    assert!(any.is_compatible_with(&CalcitTypeAnnotation::Number));
     assert_eq!(any.to_type_edn(), Edn::Symbol(Arc::from("Dynamic")));
 
     let list_of_numbers = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number));
     let list_of_any = CalcitTypeAnnotation::List(Arc::new(any));
-    assert!(list_of_numbers.matches_annotation(&list_of_any));
-    assert!(list_of_any.matches_annotation(&list_of_numbers));
+    assert!(list_of_numbers.is_compatible_with(&list_of_any));
+    assert!(list_of_any.is_compatible_with(&list_of_numbers));
   }
 
   #[test]
@@ -5390,7 +5613,7 @@ mod tests {
     let expected = CalcitTypeAnnotation::TypeRef(Arc::from("Pair"), Arc::new(vec![]));
     let mut bindings = TypeBindings::new();
 
-    assert!(actual.matches_with_bindings(&expected, &mut bindings));
+    assert!(actual.compatible_with_bindings(&expected, &mut bindings));
     assert!(matches!(bindings.get("A"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::Number)));
     assert!(matches!(bindings.get("B"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::String)));
   }
@@ -5412,7 +5635,7 @@ mod tests {
     let expected = CalcitTypeAnnotation::Struct(pair, Arc::new(vec![]));
     let mut bindings = TypeBindings::new();
 
-    assert!(actual.matches_with_bindings(&expected, &mut bindings));
+    assert!(actual.compatible_with_bindings(&expected, &mut bindings));
     assert!(matches!(bindings.get("A"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::Number)));
     assert!(matches!(bindings.get("B"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::String)));
   }
@@ -5427,7 +5650,7 @@ mod tests {
     let expected = CalcitTypeAnnotation::TypeRef(Arc::from("Result"), Arc::new(vec![]));
     let mut bindings = TypeBindings::new();
 
-    assert!(actual.matches_with_bindings(&expected, &mut bindings));
+    assert!(actual.compatible_with_bindings(&expected, &mut bindings));
     assert!(matches!(bindings.get("T"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::Number)));
     assert!(matches!(bindings.get("E"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::String)));
   }
@@ -5442,9 +5665,128 @@ mod tests {
     let expected = CalcitTypeAnnotation::Enum(result, Arc::new(vec![]));
     let mut bindings = TypeBindings::new();
 
-    assert!(actual.matches_with_bindings(&expected, &mut bindings));
+    assert!(actual.compatible_with_bindings(&expected, &mut bindings));
     assert!(matches!(bindings.get("T"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::Number)));
     assert!(matches!(bindings.get("E"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::String)));
+  }
+
+  #[test]
+  fn proof_distinguishes_legacy_compatibility_boundaries() {
+    let mut bindings = TypeBindings::new();
+    assert_eq!(
+      CalcitTypeAnnotation::Dynamic.prove_with_bindings(&CalcitTypeAnnotation::Number, &mut bindings),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic)
+    );
+    assert_eq!(
+      CalcitTypeAnnotation::Tag.prove_with_bindings(&CalcitTypeAnnotation::DynFn, &mut bindings),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::TagCallable)
+    );
+    assert_eq!(
+      CalcitTypeAnnotation::TypeSlot(Arc::from("unbound")).prove_with_bindings(&CalcitTypeAnnotation::String, &mut bindings),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::UnresolvedTypeSlot)
+    );
+    assert!(bindings.is_empty());
+  }
+
+  #[test]
+  fn proof_is_transactional_and_does_not_synthesize_optional_bindings() {
+    let var: Arc<str> = Arc::from("T");
+    let expected = CalcitTypeAnnotation::TypeVar(var.clone());
+    let mut bindings = TypeBindings::new();
+
+    assert_eq!(
+      CalcitTypeAnnotation::Nil.prove_with_bindings(&expected, &mut bindings),
+      TypeProof::Proven
+    );
+    assert!(matches!(bindings.get(&var).map(AsRef::as_ref), Some(CalcitTypeAnnotation::Nil)));
+
+    let before = bindings.clone();
+    assert_eq!(
+      CalcitTypeAnnotation::Number.prove_with_bindings(&expected, &mut bindings),
+      TypeProof::Mismatch
+    );
+    assert_eq!(bindings, before, "a failed sibling proof must not widen or leak bindings");
+  }
+
+  #[test]
+  fn proof_rejects_dynamic_inside_ref_and_erased_applied_arguments() {
+    let mut bindings = TypeBindings::new();
+    let dynamic_ref = CalcitTypeAnnotation::Ref(Arc::new(CalcitTypeAnnotation::Dynamic));
+    let number_ref = CalcitTypeAnnotation::Ref(Arc::new(CalcitTypeAnnotation::Number));
+    assert_eq!(
+      dynamic_ref.prove_with_bindings(&number_ref, &mut bindings),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic)
+    );
+    assert_eq!(
+      number_ref.prove_with_bindings(&dynamic_ref, &mut bindings),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic)
+    );
+
+    let optional_number_ref =
+      CalcitTypeAnnotation::Ref(Arc::new(CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Number))));
+    assert!(!number_ref.prove_with_bindings(&optional_number_ref, &mut bindings).is_proven());
+
+    let bare = CalcitTypeAnnotation::TypeRef(Arc::from("app/Box"), Arc::new(vec![]));
+    let applied = CalcitTypeAnnotation::TypeRef(Arc::from("app/Box"), Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]));
+    assert!(bare.is_compatible_with(&applied));
+    assert_eq!(
+      bare.prove_with_bindings(&applied, &mut bindings),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::ErasedTypeArguments)
+    );
+  }
+
+  #[test]
+  fn projection_proof_keeps_only_concrete_bindings_across_an_unrelated_boundary() {
+    let actual = CalcitTypeAnnotation::TypeRef(
+      Arc::from("app/Result"),
+      Arc::new(vec![
+        Arc::new(CalcitTypeAnnotation::Number),
+        Arc::new(CalcitTypeAnnotation::Dynamic),
+      ]),
+    );
+    let expected = CalcitTypeAnnotation::TypeRef(
+      Arc::from("app/Result"),
+      Arc::new(vec![
+        Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))),
+        Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("E"))),
+      ]),
+    );
+    let mut bindings = TypeBindings::new();
+    assert_eq!(
+      actual.prove_available_bindings(&expected, &mut bindings),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic)
+    );
+    assert!(matches!(bindings.get("T").map(AsRef::as_ref), Some(CalcitTypeAnnotation::Number)));
+    assert!(!bindings.contains_key("E"), "Dynamic must not become a concrete generic binding");
+  }
+
+  #[test]
+  fn proof_requires_a_declared_callable_signature() {
+    let signature =
+      CalcitTypeAnnotation::from_function_parts(vec![Arc::new(CalcitTypeAnnotation::Number)], Arc::new(CalcitTypeAnnotation::String));
+    let mut bindings = TypeBindings::new();
+    assert_eq!(
+      CalcitTypeAnnotation::DynFn.prove_with_bindings(&signature, &mut bindings),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::UnknownCallable)
+    );
+    assert_eq!(signature.prove_with_bindings(&signature, &mut bindings), TypeProof::Proven);
+  }
+
+  #[test]
+  fn conflicting_generic_siblings_roll_back_the_whole_projection() {
+    let var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let actual = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number));
+    let expected = CalcitTypeAnnotation::List(var.clone());
+    let mut bindings = TypeBindings::new();
+    assert_eq!(actual.prove_available_bindings(&expected, &mut bindings), TypeProof::Proven);
+    let committed = bindings.clone();
+
+    let conflicting = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String));
+    assert_eq!(
+      conflicting.prove_available_bindings(&CalcitTypeAnnotation::List(var), &mut bindings),
+      TypeProof::Mismatch
+    );
+    assert_eq!(bindings, committed);
   }
 
   #[test]
@@ -5455,14 +5797,14 @@ mod tests {
     );
     let dynamic_enum = CalcitTypeAnnotation::AnonymousEnum;
 
-    assert!(named.matches_annotation(&dynamic_enum));
-    assert!(!dynamic_enum.matches_annotation(&named));
+    assert!(named.is_compatible_with(&dynamic_enum));
+    assert!(!dynamic_enum.is_compatible_with(&named));
 
     // A named reference must never be accepted in the reverse direction. The
     // forward, resolvable TypeRef path is covered by the same matcher arm as
     // the concrete enum assertion above.
     let named_ref = CalcitTypeAnnotation::TypeRef(Arc::from("tests/Result"), Arc::new(vec![]));
-    assert!(!dynamic_enum.matches_annotation(&named_ref));
+    assert!(!dynamic_enum.is_compatible_with(&named_ref));
   }
 
   #[test]
@@ -5501,7 +5843,7 @@ mod tests {
       features: Arc::new(HashSet::new()),
     }));
 
-    assert!(actual.matches_annotation(&expected));
+    assert!(actual.is_compatible_with(&expected));
     assert_eq!(actual.to_brief_string(), "fn(:number, & :number) -> :number");
   }
 
@@ -5520,8 +5862,8 @@ mod tests {
       features: Arc::new(HashSet::new()),
     }));
 
-    assert!(!actual.matches_annotation(&binary_expected));
-    assert!(!actual.matches_annotation(&variadic_expected));
+    assert!(!actual.is_compatible_with(&binary_expected));
+    assert!(!actual.is_compatible_with(&variadic_expected));
   }
 
   #[test]
@@ -5533,7 +5875,7 @@ mod tests {
     );
     let expected = CalcitTypeAnnotation::from_function_parts(vec![number.clone()], Arc::new(CalcitTypeAnnotation::Optional(number)));
 
-    assert!(actual.matches_annotation(&expected));
+    assert!(actual.is_compatible_with(&expected));
   }
 
   #[test]
@@ -5542,11 +5884,11 @@ mod tests {
     let optional = CalcitTypeAnnotation::Optional(number.clone());
     let js_nullish = CalcitTypeAnnotation::JsNullish(number.clone());
 
-    assert!(!js_nullish.matches_annotation(&optional));
-    assert!(!optional.matches_annotation(&js_nullish));
-    assert!(CalcitTypeAnnotation::Number.matches_annotation(&js_nullish));
-    assert!(CalcitTypeAnnotation::Nil.matches_annotation(&js_nullish));
-    assert!(!CalcitTypeAnnotation::Unit.matches_annotation(&js_nullish));
+    assert!(!js_nullish.is_compatible_with(&optional));
+    assert!(!optional.is_compatible_with(&js_nullish));
+    assert!(CalcitTypeAnnotation::Number.is_compatible_with(&js_nullish));
+    assert!(CalcitTypeAnnotation::Nil.is_compatible_with(&js_nullish));
+    assert!(!CalcitTypeAnnotation::Unit.is_compatible_with(&js_nullish));
     assert_eq!(js_nullish.to_type_edn(), Edn::enum_value("JsNullish", vec![number.to_type_edn()]));
   }
 
@@ -5560,8 +5902,8 @@ mod tests {
       CalcitTypeAnnotation::builtin_type_from_tag_name("unit"),
       Some(CalcitTypeAnnotation::Unit)
     );
-    assert!(!CalcitTypeAnnotation::Nil.matches_annotation(&CalcitTypeAnnotation::Unit));
-    assert!(!CalcitTypeAnnotation::Unit.matches_annotation(&CalcitTypeAnnotation::Nil));
+    assert!(!CalcitTypeAnnotation::Nil.is_compatible_with(&CalcitTypeAnnotation::Unit));
+    assert!(!CalcitTypeAnnotation::Unit.is_compatible_with(&CalcitTypeAnnotation::Nil));
     assert!(value_matches_type_annotation(&Calcit::Nil, &CalcitTypeAnnotation::Nil));
     assert!(!value_matches_type_annotation(&Calcit::Nil, &CalcitTypeAnnotation::Unit));
     assert!(value_matches_type_annotation(&Calcit::Unit, &CalcitTypeAnnotation::Unit));
@@ -5574,22 +5916,22 @@ mod tests {
   fn generic_bindings_lift_nil_and_values_into_optional() {
     let var = Arc::<str>::from("T");
     let mut nil_first = TypeBindings::new();
-    assert!(CalcitTypeAnnotation::Nil.matches_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut nil_first));
-    assert!(CalcitTypeAnnotation::Bool.matches_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut nil_first));
+    assert!(CalcitTypeAnnotation::Nil.compatible_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut nil_first));
+    assert!(CalcitTypeAnnotation::Bool.compatible_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut nil_first));
     assert!(matches!(
       nil_first.get(&var).map(Arc::as_ref),
       Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
     ));
 
     let mut value_first = TypeBindings::new();
-    assert!(CalcitTypeAnnotation::Bool.matches_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut value_first));
-    assert!(CalcitTypeAnnotation::Nil.matches_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut value_first));
+    assert!(CalcitTypeAnnotation::Bool.compatible_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut value_first));
+    assert!(CalcitTypeAnnotation::Nil.compatible_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut value_first));
     assert!(matches!(
       value_first.get(&var).map(Arc::as_ref),
       Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
     ));
 
-    assert!(!CalcitTypeAnnotation::Unit.matches_with_bindings(
+    assert!(!CalcitTypeAnnotation::Unit.compatible_with_bindings(
       &CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Bool)),
       &mut TypeBindings::new()
     ));
@@ -5603,7 +5945,7 @@ mod tests {
     );
     let expected = CalcitTypeAnnotation::from_tag_name("struct");
 
-    assert!(actual.matches_annotation(&expected));
+    assert!(actual.is_compatible_with(&expected));
   }
 }
 
@@ -6038,13 +6380,13 @@ impl CalcitFnTypeAnnotation {
 
   pub fn matches_signature(&self, other: &CalcitFnTypeAnnotation) -> bool {
     let mut bindings = TypeBindings::new();
-    self.matches_signature_with_bindings(other, &mut bindings)
+    self.compatible_signature_with_bindings(other, &mut bindings)
   }
 
   /// Match a callable signature while preserving bindings from its enclosing
   /// generic call. This lets sibling callbacks share a return type variable,
   /// such as the two branches accepted by `option:fold`.
-  pub(crate) fn matches_signature_with_bindings(&self, other: &CalcitFnTypeAnnotation, bindings: &mut TypeBindings) -> bool {
+  pub(crate) fn compatible_signature_with_bindings(&self, other: &CalcitFnTypeAnnotation, bindings: &mut TypeBindings) -> bool {
     // `self` is the actual callable and `other` is the expected callback shape. An actual
     // callable cannot require more fixed arguments than the expected contract guarantees.
     if self.arg_types.len() > other.arg_types.len() {
@@ -6064,7 +6406,7 @@ impl CalcitFnTypeAnnotation {
       // Callback parameters are contravariant: every value promised by the expected contract
       // must be accepted by the actual callable. This matters for a function accepting
       // `optional<T>` being used where a callback receives `T`.
-      if !expected.matches_with_bindings(actual, &mut staged_bindings) {
+      if !expected.compatible_with_bindings(actual, &mut staged_bindings) {
         return false;
       }
     }
@@ -6075,19 +6417,46 @@ impl CalcitFnTypeAnnotation {
       let Some(actual_rest) = &self.rest_type else {
         return false;
       };
-      if !expected_rest.matches_with_bindings(actual_rest, &mut staged_bindings) {
+      if !expected_rest.compatible_with_bindings(actual_rest, &mut staged_bindings) {
         return false;
       }
     }
 
     if !self
       .return_type
-      .matches_with_bindings(other.return_type.as_ref(), &mut staged_bindings)
+      .compatible_with_bindings(other.return_type.as_ref(), &mut staged_bindings)
     {
       return false;
     }
     *bindings = staged_bindings;
     true
+  }
+
+  fn prove_signature_with_bindings(&self, other: &CalcitFnTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
+    if self.arg_types.len() > other.arg_types.len() {
+      return TypeProof::Mismatch;
+    }
+
+    let mut staged = bindings.clone();
+    let mut result = TypeProof::Proven;
+    for (idx, expected) in other.arg_types.iter().enumerate() {
+      let Some(actual) = self.arg_types.get(idx).or(self.rest_type.as_ref()) else {
+        return TypeProof::Mismatch;
+      };
+      result = result.and(expected.prove_with_staged_bindings(actual, &mut staged));
+    }
+    match (&self.rest_type, &other.rest_type) {
+      (Some(actual), Some(expected)) => {
+        result = result.and(expected.prove_with_staged_bindings(actual, &mut staged));
+      }
+      (None, Some(_)) => return TypeProof::Mismatch,
+      _ => {}
+    }
+    result = result.and(self.return_type.prove_with_staged_bindings(&other.return_type, &mut staged));
+    if result.is_proven() {
+      *bindings = staged;
+    }
+    result
   }
 }
 
@@ -6293,7 +6662,7 @@ pub fn infer_runtime_value_type(value: &Calcit) -> Arc<CalcitTypeAnnotation> {
 
 pub fn collect_runtime_type_bindings(value: &Calcit, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
   let actual = infer_runtime_value_type(value);
-  actual.as_ref().matches_with_bindings(expected, bindings)
+  actual.as_ref().compatible_with_bindings(expected, bindings)
 }
 
 pub fn validate_runtime_generic_where_bounds(bindings: &TypeBindings, where_bounds: &[CalcitGenericBound]) -> Result<(), String> {
@@ -6306,7 +6675,7 @@ pub fn validate_runtime_generic_where_bounds(bindings: &TypeBindings, where_boun
     }
 
     let required = bound.as_type_annotation();
-    if actual_type.as_ref().matches_annotation(required.as_ref()) {
+    if actual_type.as_ref().is_compatible_with(required.as_ref()) {
       continue;
     }
 

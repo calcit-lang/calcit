@@ -4840,8 +4840,8 @@ mod tests {
       // semantic type equality, while the assertions below separately protect
       // the serialized Fn/Macro markers.
       assert!(
-        saved_entry.schema.matches_annotation(source_entry.schema.as_ref())
-          && source_entry.schema.matches_annotation(saved_entry.schema.as_ref()),
+        saved_entry.schema.is_compatible_with(source_entry.schema.as_ref())
+          && source_entry.schema.is_compatible_with(saved_entry.schema.as_ref()),
         "schema should round-trip for {def_name}: source={:?}, saved={:?}",
         source_entry.schema,
         saved_entry.schema

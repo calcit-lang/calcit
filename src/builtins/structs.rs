@@ -90,7 +90,7 @@ fn validate_trait_impl_entries(trait_def: &crate::calcit::CalcitTrait, entries: 
     if matches!(value, Calcit::Proc(proc) if proc.get_type_signature().is_none()) {
       continue;
     }
-    if !actual.matches_annotation(expected.as_ref()) {
+    if !actual.is_compatible_with(expected.as_ref()) {
       return Err(CalcitErr::use_str(
         CalcitErrKind::Type,
         format!(

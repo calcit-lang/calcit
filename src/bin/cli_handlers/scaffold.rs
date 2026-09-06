@@ -621,7 +621,7 @@ fn scaffold_schema_compatible(existing: &CalcitTypeAnnotation, planned: &CalcitT
   existing == planned
     || (matches!(existing, CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_))
       && matches!(planned, CalcitTypeAnnotation::Custom(_))
-      && existing.matches_annotation(planned))
+      && existing.is_compatible_with(planned))
 }
 
 fn report_to_edn(report: &ScaffoldPlanReport, dry_run: bool, apply_result: &ScaffoldApplyResult) -> Edn {
