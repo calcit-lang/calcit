@@ -453,7 +453,7 @@ Native codegen 不应尝试解释 JS external trait。反过来，JS codegen 也
 - 异常、trap、panic 与异步机制；
 - 所有权和生命周期。
 
-这些后端事实不进入普通 `CalcitTypeAnnotation::matches_with_bindings`。
+这些后端事实不进入普通 `CalcitTypeAnnotation::compatible_with_bindings`。
 
 ## 10. 诊断
 

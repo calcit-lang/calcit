@@ -160,7 +160,7 @@ read-only 与 writable。DOM、Node 和 npm API 中大量属性只读；仅检�
 
 - 不新增 `JsPromise<T>`、`JsArray<T>`、`JsEvent<T>`、`JsIterator<T>` 等核心 type
   variant；
-- 不修改 `CalcitTypeAnnotation::matches_with_bindings` 来解释 `:ffi` 或 `:features`；
+- 不修改 `CalcitTypeAnnotation::compatible_with_bindings` 来解释 `:ffi` 或 `:features`；
 - 不为 FFI 增加普通 trait 的 structural satisfaction、自动 impl 或特殊 where-bound；
 - 不改变普通 trait 的 method candidate、requires、impl-traits 与 generic unification；
 - external-object 分支只在 trait definition 显式具有
@@ -807,7 +807,7 @@ operation。它读取已经完成的类型结果，但不得回写 type binding�
 
 所有从 schema、函数实现体、import 或 callback hint 建立 capability context 的路径都应
 保留 features，query/analyze 也应能报告它们。但 MVP 不把 feature set 加入
-`CalcitTypeAnnotation::matches_with_bindings`、`matches_signature`、trait method selection
+`CalcitTypeAnnotation::compatible_with_bindings`、`matches_signature`、trait method selection
 或 generic unification；也不要求因 FFI 修改核心类型的 `Eq`、`Ord` 和 `Hash` 语义。
 
 编译器在普通类型检查完成后运行独立的 capability validation：遍历已经归属到 lexical
@@ -938,7 +938,7 @@ trait satisfaction 规则。
 - 先 warning，再在 `js-ffi` 自身切到 error。
 
 HostOperation 分类与 `:js-ffi` 检查是独立 validation，不进入
-`matches_with_bindings`、trait candidate 或 generic unification。
+`compatible_with_bindings`、trait candidate 或 generic unification。
 
 ### Phase 2：capability metadata 与 target 检查
 

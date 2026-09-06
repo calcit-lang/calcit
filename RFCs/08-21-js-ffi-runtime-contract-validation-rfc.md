@@ -129,7 +129,7 @@ evidence 时，测试/调试模式至少可以验证：
 - assertion kind：checked/decoded/unsafe；
 - definition/path。
 
-它是类型检查后的 contract analysis，不参与普通 `matches_with_bindings`、泛型统一或 trait
+它是类型检查后的 contract analysis，不参与普通 `compatible_with_bindings`、泛型统一或 trait
 candidate selection。
 
 ### 诊断

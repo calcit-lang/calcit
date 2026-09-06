@@ -3257,7 +3257,7 @@ fn try_rewrite_struct_enum_constructor_head_call(
         continue;
       }
       if let Some(actual_type) = resolve_type_value(value, scope_types)
-        && !actual_type.as_ref().matches_annotation(expected_type.as_ref())
+        && !actual_type.as_ref().is_compatible_with(expected_type.as_ref())
       {
         gen_check_warning(
           format!(
@@ -4292,7 +4292,7 @@ fn check_struct_update_fields(
       continue;
     }
     if let Some(actual_type) = resolve_type_value(value_arg, scope_types)
-      && !actual_type.as_ref().matches_annotation(expected_type.as_ref())
+      && !actual_type.as_ref().is_compatible_with(expected_type.as_ref())
     {
       gen_check_warning(
         format!(
@@ -4459,7 +4459,7 @@ pub(crate) fn check_enum_construction(
     }
 
     if let Some(actual_type) = resolve_type_value(payload_arg, scope_types)
-      && !actual_type.as_ref().matches_annotation(expected_type.as_ref())
+      && !actual_type.as_ref().is_compatible_with(expected_type.as_ref())
     {
       let expected_str = expected_type.as_ref().to_brief_string();
       let actual_str = actual_type.as_ref().to_brief_string();
@@ -4537,7 +4537,7 @@ fn check_struct_method_args(
     {
       receiver_type
         .as_ref()
-        .matches_with_bindings(expected_receiver.as_ref(), &mut bindings);
+        .compatible_with_bindings(expected_receiver.as_ref(), &mut bindings);
     }
     let arg_types_without_receiver = signature.arg_types.iter().skip(1);
     for (idx, (arg, expected_type)) in method_args.iter().zip(arg_types_without_receiver).enumerate() {
@@ -4546,7 +4546,7 @@ fn check_struct_method_args(
       }
 
       if let Some(actual_type) = resolve_type_value(arg, scope_types)
-        && !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings)
+        && !actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
       {
         let expected_str = expected_type.substitute_type_vars(&bindings).to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
@@ -4618,14 +4618,16 @@ fn check_struct_method_args(
 
     let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
     if let Some(expected_receiver) = signature.arg_types.first() {
-      type_value.as_ref().matches_with_bindings(expected_receiver.as_ref(), &mut bindings);
+      type_value
+        .as_ref()
+        .compatible_with_bindings(expected_receiver.as_ref(), &mut bindings);
     }
     for (idx, (arg, expected_type)) in method_args.iter().zip(signature.arg_types.iter().skip(1)).enumerate() {
       if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
         continue;
       }
       if let Some(actual_type) = resolve_type_value(arg, scope_types)
-        && !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings)
+        && !actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
       {
         let expected_str = expected_type.substitute_type_vars(&bindings).to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
@@ -4700,7 +4702,9 @@ fn check_struct_method_args(
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
   let arg_types_without_receiver: Vec<Arc<CalcitTypeAnnotation>> = fn_info.arg_types.iter().skip(1).cloned().collect();
   if let Some(expected_receiver) = fn_info.arg_types.first() {
-    type_value.as_ref().matches_with_bindings(expected_receiver.as_ref(), &mut bindings);
+    type_value
+      .as_ref()
+      .compatible_with_bindings(expected_receiver.as_ref(), &mut bindings);
   }
 
   for (idx, (arg, expected_type)) in method_args.iter().zip(arg_types_without_receiver.iter()).enumerate() {
@@ -4715,7 +4719,7 @@ fn check_struct_method_args(
         if let Some(actual_type) = resolve_type_value(rest_arg, scope_types)
           && !actual_type
             .as_ref()
-            .matches_with_bindings(expected_rest_type.as_ref(), &mut bindings)
+            .compatible_with_bindings(expected_rest_type.as_ref(), &mut bindings)
         {
           let expected_str = expected_rest_type.describe();
           let actual_str = actual_type.as_ref().describe();
@@ -4735,7 +4739,7 @@ fn check_struct_method_args(
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
       // Compare types
-      if !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings) {
+      if !actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings) {
         let expected_str = expected_type.substitute_type_vars(&bindings).describe();
         let actual_str = actual_type.as_ref().describe();
         let migration = if method_name.as_ref() == "apply" && matches!(type_value.as_ref(), CalcitTypeAnnotation::List(_)) {
@@ -4784,7 +4788,10 @@ fn expected_method_argument_types(type_value: &CalcitTypeAnnotation, method_name
   let fn_annotation = signature.as_function()?;
   let expected_receiver = fn_annotation.arg_types.first()?;
   let mut bindings = HashMap::new();
-  if !type_value.matches_with_bindings(expected_receiver.as_ref(), &mut bindings) {
+  if !type_value
+    .prove_with_bindings(expected_receiver.as_ref(), &mut bindings)
+    .is_proven()
+  {
     return None;
   }
   Some(
@@ -5039,7 +5046,7 @@ fn check_typed_js_field_operation(
   if operation == "js-set"
     && let Some(value) = args.get(2)
     && let Some(value_type) = resolve_type_value(value, scope_types)
-    && !value_type.as_ref().matches_annotation(field_type.as_ref())
+    && !value_type.as_ref().is_compatible_with(field_type.as_ref())
   {
     let message = format!(
       "[Warn] `js-set` field `:{field_name}` expects {}, got {} in {file_ns}/{def_name}",
@@ -6374,7 +6381,7 @@ fn validate_macro_call_inputs(
     if let MacroSyntaxType::Expr(expected) = contract
       && let Some(actual) = infer_type_from_expr(arg, scope_types)
       && !matches!(actual.as_ref(), CalcitTypeAnnotation::Dynamic)
-      && !actual.as_ref().matches_with_bindings(expected.as_ref(), &mut bindings)
+      && !actual.as_ref().compatible_with_bindings(expected.as_ref(), &mut bindings)
     {
       return Err(CalcitErr::use_msg_stack_location_with_code(
         CalcitErrKind::Type,
@@ -6450,7 +6457,7 @@ fn validate_macro_expansion_result(
       }
       if let Some(actual) = resolve_type_value(processed, scope_types)
         && !matches!(actual.as_ref(), CalcitTypeAnnotation::Dynamic)
-        && !actual.as_ref().matches_with_bindings(expected.as_ref(), &mut bindings)
+        && !actual.as_ref().compatible_with_bindings(expected.as_ref(), &mut bindings)
       {
         return Err(CalcitErr::use_msg_stack_location_with_code(
           CalcitErrKind::Type,
@@ -6471,7 +6478,7 @@ fn validate_macro_expansion_result(
         return Ok(());
       };
       if matches!(actual.as_ref(), CalcitTypeAnnotation::Dynamic)
-        || actual.as_ref().matches_with_bindings(expected.as_ref(), &mut bindings)
+        || actual.as_ref().compatible_with_bindings(expected.as_ref(), &mut bindings)
       {
         Ok(())
       } else {
@@ -8200,7 +8207,7 @@ pub fn preprocess_assert_type(
   if let Calcit::Local(local) = &asserted_target {
     let asserted_type = local_nominal_type.unwrap_or_else(|| CalcitTypeAnnotation::parse_type_annotation_form(&asserted_type_form));
     let current_type = resolve_type_value(&asserted_target, ctx.scope_types).unwrap_or_else(|| local.type_info.clone());
-    let type_entry = if current_type.as_ref().matches_annotation(asserted_type.as_ref())
+    let type_entry = if current_type.as_ref().is_compatible_with(asserted_type.as_ref())
       && annotation_dynamic_weight(current_type.as_ref()) < annotation_dynamic_weight(asserted_type.as_ref())
     {
       current_type
@@ -9079,7 +9086,7 @@ fn reject_strict_dynamic_nominal_argument(
       && expected.contains_type_var()
     {
       let mut candidate = bindings.clone();
-      if actual.as_ref().matches_with_bindings(expected.as_ref(), &mut candidate) {
+      if actual.as_ref().prove_with_bindings(expected.as_ref(), &mut candidate).is_proven() {
         bindings = candidate;
       }
     }
@@ -13036,11 +13043,11 @@ mod tests {
     let enum_ref = CalcitTypeAnnotation::TypeRef(Arc::from("Event"), Arc::new(vec![]));
     crate::calcit::with_type_annotation_warning_context(format!("{ns}/ClientStore"), || {
       assert!(
-        struct_ref.matches_annotation(&struct_marker),
+        struct_ref.is_compatible_with(&struct_marker),
         "unqualified struct TypeRef should resolve in its source namespace"
       );
       assert!(
-        enum_ref.matches_annotation(&enum_marker),
+        enum_ref.is_compatible_with(&enum_marker),
         "unqualified enum TypeRef should resolve in its source namespace"
       );
     });

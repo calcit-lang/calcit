@@ -99,7 +99,7 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
     }
 
     let required = bound.as_type_annotation();
-    if actual_type.as_ref().matches_annotation(required.as_ref()) {
+    if actual_type.as_ref().is_compatible_with(required.as_ref()) {
       continue;
     }
 
@@ -508,7 +508,7 @@ where
           let mut candidate = bindings.clone();
           let matches = actual_type
             .as_ref()
-            .matches_with_bindings(expected_rest_type.as_ref(), &mut candidate);
+            .compatible_with_bindings(expected_rest_type.as_ref(), &mut candidate);
           if matches {
             bindings = candidate;
           } else {
@@ -532,13 +532,15 @@ where
       };
       let matches = if expected_type.contains_type_var() || actual_type.contains_type_var() {
         let mut candidate = bindings.clone();
-        let matches = actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut candidate);
+        let matches = actual_type
+          .as_ref()
+          .compatible_with_bindings(expected_type.as_ref(), &mut candidate);
         if matches {
           bindings = candidate;
         }
         matches
       } else {
-        actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings)
+        actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
       };
       if !matches {
         let diagnostic_expected = expected_type.substitute_type_vars(&bindings);
@@ -668,7 +670,7 @@ pub(crate) fn check_proc_arg_types(
         if let Some(actual_type) = resolve_type_value(rest_arg, scope_types)
           && !actual_type
             .as_ref()
-            .matches_with_bindings(expected_rest_type.as_ref(), &mut bindings)
+            .compatible_with_bindings(expected_rest_type.as_ref(), &mut bindings)
         {
           let expected_str = diagnostic_type_string(expected_rest_type.as_ref());
           let actual_str = diagnostic_type_string(actual_type.as_ref());
@@ -699,7 +701,7 @@ pub(crate) fn check_proc_arg_types(
     }
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types)
-      && !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings)
+      && !actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
     {
       let expected_str = diagnostic_type_string(expected_type.as_ref());
       let actual_str = diagnostic_type_string(actual_type.as_ref());
@@ -755,7 +757,7 @@ pub(crate) fn check_core_fn_arg_types(
 
   for (idx, arg) in args.iter().enumerate() {
     if let Some(actual_type) = resolve_type_value(arg, scope_types)
-      && !actual_type.as_ref().matches_annotation(expected_type.as_ref())
+      && !actual_type.as_ref().is_compatible_with(expected_type.as_ref())
     {
       let actual_str = diagnostic_type_string(actual_type.as_ref());
       let warning_location = arg.get_location().or_else(|| call_location.clone());
@@ -846,7 +848,7 @@ fn reset_value_erases_contract(value: &Calcit, expected: &CalcitTypeAnnotation, 
     }
   }
   let actual = resolve_type_value(value, scope).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
-  reset_type_erases_contract(actual.as_ref(), expected) || !actual.matches_annotation(expected)
+  reset_type_erases_contract(actual.as_ref(), expected) || !actual.is_compatible_with(expected)
 }
 
 /// A mutable reference's payload type is fixed by its declaration/initializer,
@@ -895,7 +897,7 @@ pub(super) fn check_reset_arg_types(
     // existing reference's type variables, nor assume an unrelated input T is
     // the reference's concrete payload type. Identical variables need no binding.
     let mut bindings = HashMap::new();
-    if actual.matches_with_bindings(expected, &mut bindings) && !bindings.is_empty() {
+    if actual.compatible_with_bindings(expected, &mut bindings) && !bindings.is_empty() {
       ctx.emit_warning(2, expected, actual.as_ref(), message);
       return;
     }
@@ -1078,7 +1080,7 @@ pub(crate) fn check_function_return_type(
   let mut bindings = HashMap::new();
   if !actual_type
     .as_ref()
-    .matches_with_bindings(declared_return_type.as_ref(), &mut bindings)
+    .compatible_with_bindings(declared_return_type.as_ref(), &mut bindings)
   {
     let expected_str = diagnostic_type_string(declared_return_type.as_ref());
     let actual_str = diagnostic_type_string(actual_type.as_ref());

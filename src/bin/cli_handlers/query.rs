@@ -863,8 +863,8 @@ mod type_query_tests {
       "'Dynamic"
     );
     assert!(matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic));
-    assert!(CalcitTypeAnnotation::String.matches_annotation(annotation.as_ref()));
-    assert!(annotation.matches_annotation(&CalcitTypeAnnotation::String));
+    assert!(CalcitTypeAnnotation::String.is_compatible_with(annotation.as_ref()));
+    assert!(annotation.is_compatible_with(&CalcitTypeAnnotation::String));
   }
 
   #[test]
@@ -1187,7 +1187,7 @@ mod type_query_tests {
     let result_type = CalcitTypeAnnotation::TypeRef(Arc::from("test-enum.main/Result0"), Arc::new(vec![]));
     assert!(result_type.resolve_to_enum().is_some(), "source-backed Result0 should resolve");
     assert!(
-      result_type.matches_annotation(&CalcitTypeAnnotation::AnonymousEnum),
+      result_type.is_compatible_with(&CalcitTypeAnnotation::AnonymousEnum),
       "a source-backed enum reference should satisfy enum operations"
     );
     let person_symbol =
@@ -1950,7 +1950,7 @@ fn type_at_expected_mismatch_diagnostic(
   source: &str,
   path: &str,
 ) -> Option<ContextDiagnostic> {
-  if actual.matches_annotation(required) {
+  if actual.is_compatible_with(required) {
     return None;
   }
   Some(ContextDiagnostic {
