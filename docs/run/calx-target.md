@@ -162,14 +162,14 @@ Calcit 执行，并拒绝 Nil、List、byte Buffer 和越界访问；VM trap 后
 
 [`tests/fixtures/calx/f64-buffer-gather-kernel.cirru`](../../tests/fixtures/calx/f64-buffer-gather-kernel.cirru)
 增加第二种访存模式：顺序读取 concrete `F64Buffer` index stream，经 checked conversion 后对另一个
-`F64Buffer` 做间接 gather，并以尾递归求和。它复用 ABI `/2` 与现有三个 typed-buffer intrinsic，
-不新增 opcode 或动态兜底。golden 固定两级读取及 source origin；differential 测试覆盖乱序/重复索引、
+`F64Buffer` 做间接 gather，并以尾递归求和。它复用 ABI `/2` 与现有的 `F64BufferGet`、
+`F64ToI64Index` 两个 intrinsic，不新增 opcode 或动态兜底。golden 固定两级读取及 source origin；differential 测试覆盖乱序/重复索引、
 zero remaining，以及 index stream 越界、非整数/负数/非 finite index 和 value buffer 越界 trap。
 
 The independent `f64-buffer-gather-kernel.cirru` fixture adds a second access pattern:
 sequentially read a concrete `F64Buffer` index stream, apply checked conversion, and gather
 indirectly from another `F64Buffer` while accumulating through tail recursion. It reuses ABI `/2`
-and the three existing typed-buffer intrinsics, with no new opcode or dynamic fallback. Its golden
+and the existing `F64BufferGet` and `F64ToI64Index` intrinsics, with no new opcode or dynamic fallback. Its golden
 fixes both reads and source origins; differential tests cover permuted/repeated indices, zero
 remaining, index-stream bounds, fractional/negative/non-finite indices, and value-buffer bounds.
 

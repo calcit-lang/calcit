@@ -606,6 +606,7 @@ fn calx_f64_buffer_dot_product_is_source_backed_strict_and_differential() {
   assert!(matches!(trap, CalxKernelRunError::Runtime(_)));
 }
 
+/// Install and preprocess the source-backed gather fixture with its concrete schema.
 fn install_calx_f64_buffer_gather_fixture(namespace: &str) {
   let mut source_defs = calx_test_defs_from_source(namespace, include_str!("../../tests/fixtures/calx/f64-buffer-gather-kernel.cirru"));
   install_calx_test_defs(
@@ -627,6 +628,7 @@ fn install_calx_f64_buffer_gather_fixture(namespace: &str) {
   compile_calx_test_entry(namespace, "gather-sum");
 }
 
+/// Verify strict lowering, native parity, boundary rejection, and gather trap origins.
 #[test]
 fn calx_f64_buffer_gather_is_source_backed_strict_and_differential() {
   let _guard = lock_program_test_state();
@@ -670,10 +672,11 @@ fn calx_f64_buffer_gather_is_source_backed_strict_and_differential() {
     Calcit::Number(0.0),
     Calcit::Number(7.0),
   ];
-  assert_eq!(
-    kernel.run(&empty_args).expect("zero remaining performs no buffer access"),
-    Calcit::Number(7.0)
-  );
+  let empty_calx_result = kernel.run(&empty_args).expect("zero remaining performs no buffer access");
+  let empty_native_result =
+    run_program_with_docs(Arc::from(namespace), Arc::from("gather-sum"), &empty_args).expect("run native zero-remaining gather");
+  assert_eq!(empty_calx_result, Calcit::Number(7.0));
+  assert_eq!(empty_calx_result, empty_native_result);
 
   for invalid in [Calcit::Nil, Calcit::from(vec![Calcit::Number(1.0)]), Calcit::Buffer(vec![0, 1])] {
     for position in [0, 1] {
