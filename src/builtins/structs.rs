@@ -383,6 +383,7 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let field_types: Vec<Arc<CalcitTypeAnnotation>> = fields.iter().map(|(_, t)| t.to_owned()).collect();
 
   Ok(Calcit::StructDef(CalcitStructDef {
+    definition_ref: None,
     name: name_id,
     fields: Arc::new(field_names),
     field_types: Arc::new(field_types),
@@ -1544,6 +1545,7 @@ mod tests {
   #[test]
   fn required_recursive_field_returns_a_type_error_without_recursing() {
     let struct_def = CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("RequiredNode"),
       fields: Arc::new(vec![EdnTag::new("next")]),
       field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeRef(
@@ -1673,6 +1675,7 @@ mod tests {
 
   fn shown_box_struct(show_trait: Arc<CalcitTrait>) -> CalcitStructDef {
     CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("ShownBox"),
       fields: Arc::new(vec![EdnTag::new("value")]),
       field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]),

@@ -532,6 +532,7 @@ impl Hash for Calcit {
         values.hash(_state);
       }
       StructDef(CalcitStructDef {
+        definition_ref,
         name,
         fields,
         field_types,
@@ -541,6 +542,7 @@ impl Hash for Calcit {
         ..
       }) => {
         "struct:".hash(_state);
+        definition_ref.hash(_state);
         name.hash(_state);
         fields.hash(_state);
         field_types.hash(_state);
@@ -555,6 +557,7 @@ impl Hash for Calcit {
       }
       EnumDef(enum_def) => {
         "enum:".hash(_state);
+        enum_def.definition_ref().hash(_state);
         enum_def.name().hash(_state);
         enum_def.generics().hash(_state);
         enum_def.where_bounds().hash(_state);
@@ -822,7 +825,7 @@ impl PartialEq for Calcit {
       (Map(a), Map(b)) => a == b,
       (Struct(a), Struct(b)) => a == b,
       (StructDef(a), StructDef(b)) => a == b,
-      (EnumDef(a), EnumDef(b)) => a.name() == b.name() && a.variants() == b.variants(),
+      (EnumDef(a), EnumDef(b)) => a == b,
       (Trait(a), Trait(b)) => a == b,
       (Impl(a), Impl(b)) => a == b,
       (Proc(a), Proc(b)) => a == b,
@@ -1616,6 +1619,7 @@ mod tests {
     assert_ne!(impl_left.cmp(&impl_right), Equal);
 
     let struct_left = Calcit::StructDef(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("Person"),
       fields: Arc::new(vec![EdnTag::new("age")]),
       field_types: Arc::new(vec![DYNAMIC_TYPE.clone()]),
@@ -1624,6 +1628,7 @@ mod tests {
       impls: vec![],
     });
     let struct_right = Calcit::StructDef(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("Person"),
       fields: Arc::new(vec![EdnTag::new("age")]),
       field_types: Arc::new(vec![DYNAMIC_TYPE.clone()]),
@@ -1714,6 +1719,7 @@ mod tests {
       }]),
     });
     let struct_value = Calcit::StructDef(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("S"),
       fields: Arc::new(vec![EdnTag::new("v")]),
       field_types: Arc::new(vec![DYNAMIC_TYPE.clone()]),

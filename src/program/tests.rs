@@ -1336,6 +1336,33 @@ fn write_runtime_ready_attaches_trait_definition_identity() {
 }
 
 #[test]
+fn write_runtime_ready_attaches_struct_and_enum_definition_identity() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let struct_value = crate::calcit::CalcitStructDef::from_fields(cirru_edn::EdnTag::new("User"), vec![]);
+  write_runtime_ready("app.models", "User", Calcit::StructDef(struct_value)).expect("store runtime struct");
+  let Calcit::StructDef(stored_struct) = lookup_runtime_ready("app.models", "User").expect("stored struct") else {
+    panic!("expected stored struct");
+  };
+  assert_eq!(stored_struct.definition_ref.as_deref(), Some("app.models/User"));
+
+  let enum_struct = crate::calcit::CalcitStructValue {
+    struct_ref: Arc::new(crate::calcit::CalcitStructDef::from_fields(
+      cirru_edn::EdnTag::new("Status"),
+      vec![cirru_edn::EdnTag::new("ready")],
+    )),
+    values: Arc::new(vec![Calcit::Nil]),
+  };
+  let enum_value = crate::calcit::CalcitEnumDef::from_struct(enum_struct).expect("build runtime enum");
+  write_runtime_ready("app.models", "Status", Calcit::EnumDef(enum_value)).expect("store runtime enum");
+  let Calcit::EnumDef(stored_enum) = lookup_runtime_ready("app.models", "Status").expect("stored enum") else {
+    panic!("expected stored enum");
+  };
+  assert_eq!(stored_enum.definition_ref().map(AsRef::as_ref), Some("app.models/Status"));
+}
+
+#[test]
 fn clear_runtime_caches_for_changes_clears_transitive_dependents() {
   let _guard = lock_program_test_state();
   reset_program_test_state();

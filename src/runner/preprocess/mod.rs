@@ -10030,6 +10030,7 @@ mod tests {
     }
 
     let struct_def = Arc::new(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("Task"),
       fields: Arc::new(vec![EdnTag::new("done?")]),
       field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::Bool)]),
@@ -11137,6 +11138,7 @@ mod tests {
     });
     let type_value = CalcitTypeAnnotation::Struct(
       Arc::new(CalcitStructDef {
+        definition_ref: None,
         name: EdnTag::new("Demo"),
         fields: Arc::new(vec![]),
         field_types: Arc::new(vec![]),
@@ -13059,6 +13061,7 @@ mod tests {
 
     let generic: Arc<str> = Arc::from("T");
     let enum_struct = CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::from("Wrapped"),
       fields: Arc::new(vec![EdnTag::from("empty"), EdnTag::from("some")]),
       field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(), crate::calcit::DYNAMIC_TYPE.clone()]),
@@ -14537,6 +14540,7 @@ mod tests {
 
     let class_struct = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
+        definition_ref: None,
         name: EdnTag::from("Greeter"),
         fields: Arc::new(vec![EdnTag::from("greet")]),
         field_types: Arc::new(vec![calcit::DYNAMIC_TYPE.clone()]),
@@ -15635,6 +15639,7 @@ mod tests {
 
     let class_struct = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
+        definition_ref: None,
         name: EdnTag::from("Person"),
         fields: Arc::new(vec![EdnTag::from("greet")]),
         field_types: Arc::new(vec![calcit::DYNAMIC_TYPE.clone()]),
@@ -16491,6 +16496,7 @@ mod tests {
     let _state = lock_preprocess_test_state();
     let _slots = TypeSlotsGuard::cleared();
     let person_def = Arc::new(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("Person"),
       fields: Arc::new(vec![EdnTag::new("name")]),
       field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]),
@@ -16587,6 +16593,7 @@ mod tests {
     assert!(related_error.msg.contains("struct Person"));
 
     let box_def = Arc::new(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("Box"),
       fields: Arc::new(vec![EdnTag::new("value")]),
       field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]),
@@ -16669,6 +16676,7 @@ mod tests {
   fn type_slot_struct_annotations_preserve_generic_arguments_for_erasure_checks() {
     let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     let box_def = Arc::new(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("Box"),
       fields: Arc::new(vec![EdnTag::new("value")]),
       field_types: Arc::new(vec![type_var.clone()]),

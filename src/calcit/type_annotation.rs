@@ -231,6 +231,7 @@ pub(crate) enum TypeBoundaryReason {
   LegacyNullish,
   ErasedTypeArguments,
   RecursiveTypeVariable,
+  UnresolvedNominalIdentity,
 }
 
 impl TypeProof {
@@ -756,9 +757,26 @@ impl CalcitTypeAnnotation {
 
         Ok(())
       }
-      Self::TypeRef(_, args) => {
+      Self::TypeRef(name, args) => {
         for arg in args.iter() {
           arg.validate_applied_type_args()?;
+        }
+        let declared_arity = self
+          .resolve_to_struct()
+          .map(|definition| ("struct", definition.name.to_string(), definition.generics.len()))
+          .or_else(|| {
+            self
+              .resolve_to_enum()
+              .map(|definition| ("enum", definition.name().to_string(), definition.generics().len()))
+          });
+        if let Some((kind, definition, expected)) = declared_arity
+          && args.len() != expected
+        {
+          return Err(format!(
+            "{kind} `{definition}` referenced by `{}` expects {expected} type argument(s), but received {}; apply every declared argument or use a context that can infer them",
+            name.trim_start_matches('\''),
+            args.len()
+          ));
         }
         Ok(())
       }
@@ -1010,6 +1028,84 @@ impl CalcitTypeAnnotation {
     Self::TypeRef(Arc::from(name), Arc::new(vec![]))
       .resolve_to_enum()
       .is_some_and(|resolved| resolved.name().ref_str() == target)
+  }
+
+  fn struct_nominal_match(actual: &Arc<CalcitStructDef>, expected: &Arc<CalcitStructDef>) -> Option<bool> {
+    if Arc::ptr_eq(actual, expected) {
+      return Some(true);
+    }
+    if actual.definition_ref.is_some() && expected.definition_ref.is_some() {
+      Some(actual.same_nominal_definition(expected))
+    } else {
+      None
+    }
+  }
+
+  fn enum_nominal_match(actual: &Arc<CalcitEnumDef>, expected: &Arc<CalcitEnumDef>) -> Option<bool> {
+    if Arc::ptr_eq(actual, expected) {
+      return Some(true);
+    }
+    if actual.definition_ref().is_some() && expected.definition_ref().is_some() {
+      Some(actual.same_nominal_definition(expected))
+    } else {
+      None
+    }
+  }
+
+  fn type_ref_matches_struct_definition(name: &str, expected: &Arc<CalcitStructDef>) -> Option<bool> {
+    let normalized = name.trim_start_matches('\'').trim_start_matches(':');
+    let resolved = Self::TypeRef(Arc::from(normalized), Arc::new(vec![])).resolve_to_struct();
+    if let Some(actual) = resolved.map(Arc::new)
+      && let Some(matches) = Self::struct_nominal_match(&actual, expected)
+    {
+      return Some(matches);
+    }
+    expected
+      .definition_ref
+      .as_deref()
+      .filter(|_| normalized.contains('/'))
+      .map(|definition_ref| definition_ref == normalized)
+  }
+
+  fn type_ref_matches_enum_definition(name: &str, expected: &Arc<CalcitEnumDef>) -> Option<bool> {
+    let normalized = name.trim_start_matches('\'').trim_start_matches(':');
+    let resolved = Self::TypeRef(Arc::from(normalized), Arc::new(vec![])).resolve_to_enum();
+    if let Some(actual) = resolved.map(Arc::new)
+      && let Some(matches) = Self::enum_nominal_match(&actual, expected)
+    {
+      return Some(matches);
+    }
+    expected
+      .definition_ref()
+      .map(AsRef::as_ref)
+      .filter(|_| normalized.contains('/'))
+      .map(|definition_ref| definition_ref == normalized)
+  }
+
+  fn type_ref_nominal_match(actual: &str, expected: &str) -> Option<bool> {
+    let actual = actual.trim_start_matches('\'').trim_start_matches(':');
+    let expected = expected.trim_start_matches('\'').trim_start_matches(':');
+    let actual_ref = Self::TypeRef(Arc::from(actual), Arc::new(vec![]));
+    let expected_ref = Self::TypeRef(Arc::from(expected), Arc::new(vec![]));
+
+    if let (Some(actual_def), Some(expected_def)) = (
+      actual_ref.resolve_to_struct().map(Arc::new),
+      expected_ref.resolve_to_struct().map(Arc::new),
+    ) && let Some(matches) = Self::struct_nominal_match(&actual_def, &expected_def)
+    {
+      return Some(matches);
+    }
+    if let (Some(actual_def), Some(expected_def)) = (
+      actual_ref.resolve_to_enum().map(Arc::new),
+      expected_ref.resolve_to_enum().map(Arc::new),
+    ) && let Some(matches) = Self::enum_nominal_match(&actual_def, &expected_def)
+    {
+      return Some(matches);
+    }
+    if actual.contains('/') && expected.contains('/') {
+      return Some(actual == expected);
+    }
+    None
   }
 
   fn type_ref_matches_trait(name: &str, target: &CalcitTrait) -> bool {
@@ -2855,8 +2951,8 @@ impl CalcitTypeAnnotation {
   #[allow(clippy::type_complexity)]
   pub fn resolve_to_struct_with_ref(&self) -> Option<(CalcitStructDef, Option<(Arc<str>, Arc<str>)>)> {
     match self {
-      Self::Struct(base, _) => Some((base.as_ref().clone(), None)),
-      Self::StructValue(base) => Some((base.as_ref().clone(), None)),
+      Self::Struct(base, _) => Some((base.as_ref().clone(), split_nominal_definition_ref(base.definition_ref.as_deref()))),
+      Self::StructValue(base) => Some((base.as_ref().clone(), split_nominal_definition_ref(base.definition_ref.as_deref()))),
       Self::TypeRef(name, _) => {
         // TypeRef name may be "ns/def" or just "def" — try to split on '/'
         let stripped = name.trim_start_matches('\'').trim_start_matches(':');
@@ -2885,8 +2981,14 @@ impl CalcitTypeAnnotation {
   #[allow(clippy::type_complexity)]
   pub fn resolve_to_enum_with_ref(&self) -> Option<(CalcitEnumDef, Option<(Arc<str>, Arc<str>)>)> {
     match self {
-      Self::Enum(base, _) => Some((base.as_ref().clone(), None)),
-      Self::EnumValue(base) => Some((base.as_ref().clone(), None)),
+      Self::Enum(base, _) => Some((
+        base.as_ref().clone(),
+        split_nominal_definition_ref(base.definition_ref().map(AsRef::as_ref)),
+      )),
+      Self::EnumValue(base) => Some((
+        base.as_ref().clone(),
+        split_nominal_definition_ref(base.definition_ref().map(AsRef::as_ref)),
+      )),
       Self::TypeRef(name, _) => {
         let stripped = name.trim_start_matches('\'').trim_start_matches(':');
         if let Some((ns, def)) = stripped.rsplit_once('/') {
@@ -3209,7 +3311,9 @@ impl CalcitTypeAnnotation {
         }
       },
       (Self::TypeRef(a_name, a_args), Self::TypeRef(b_name, b_args)) => {
-        if !Self::type_ref_name_matches(a_name, b_name) && !Self::type_ref_name_matches(b_name, a_name) {
+        let nominal_matches = Self::type_ref_nominal_match(a_name, b_name)
+          .unwrap_or_else(|| Self::type_ref_name_matches(a_name, b_name) || Self::type_ref_name_matches(b_name, a_name));
+        if !nominal_matches {
           return false;
         }
         if a_args.is_empty() || b_args.is_empty() {
@@ -3226,8 +3330,10 @@ impl CalcitTypeAnnotation {
       (Self::Set(a), Self::Set(b)) => a.compatible_with_bindings(b, bindings),
       (Self::Ref(a), Self::Ref(b)) => a.compatible_with_bindings(b, bindings),
       (Self::TypeRef(name, args), Self::Struct(base, other_args)) | (Self::Struct(base, other_args), Self::TypeRef(name, args)) => {
-        if !Self::type_ref_name_matches(name, base.name.ref_str()) && !Self::type_ref_resolves_to_struct_name(name, base.name.ref_str())
-        {
+        let nominal_matches = Self::type_ref_matches_struct_definition(name, base).unwrap_or_else(|| {
+          Self::type_ref_name_matches(name, base.name.ref_str()) || Self::type_ref_resolves_to_struct_name(name, base.name.ref_str())
+        });
+        if !nominal_matches {
           return false;
         }
         match (args.is_empty(), other_args.is_empty()) {
@@ -3244,9 +3350,10 @@ impl CalcitTypeAnnotation {
         }
       }
       (Self::TypeRef(name, args), Self::Enum(base, other_args)) | (Self::Enum(base, other_args), Self::TypeRef(name, args)) => {
-        if !Self::type_ref_name_matches(name, base.name().ref_str())
-          && !Self::type_ref_resolves_to_enum_name(name, base.name().ref_str())
-        {
+        let nominal_matches = Self::type_ref_matches_enum_definition(name, base).unwrap_or_else(|| {
+          Self::type_ref_name_matches(name, base.name().ref_str()) || Self::type_ref_resolves_to_enum_name(name, base.name().ref_str())
+        });
+        if !nominal_matches {
           return false;
         }
         match (args.is_empty(), other_args.is_empty()) {
@@ -3266,15 +3373,18 @@ impl CalcitTypeAnnotation {
         // Structs are structurally map-like (field name -> value), so procs typed as
         // accepting a generic "map" (e.g. `to-pairs`/`keys`) should also accept structs,
         // in addition to matching the struct's own type name.
-        Self::type_ref_name_matches(name, base.name.ref_str())
-          || Self::type_ref_resolves_to_struct_name(name, base.name.ref_str())
-          || Self::type_ref_name_matches(name, "map")
+        Self::type_ref_name_matches(name, "map")
+          || Self::type_ref_matches_struct_definition(name, base).unwrap_or_else(|| {
+            Self::type_ref_name_matches(name, base.name.ref_str()) || Self::type_ref_resolves_to_struct_name(name, base.name.ref_str())
+          })
       }
       (Self::TypeRef(name, _), Self::EnumValue(base)) | (Self::EnumValue(base), Self::TypeRef(name, _)) => {
-        Self::type_ref_name_matches(name, base.name().ref_str()) || Self::type_ref_resolves_to_enum_name(name, base.name().ref_str())
+        Self::type_ref_matches_enum_definition(name, base).unwrap_or_else(|| {
+          Self::type_ref_name_matches(name, base.name().ref_str()) || Self::type_ref_resolves_to_enum_name(name, base.name().ref_str())
+        })
       }
       (Self::Struct(a, a_args), Self::Struct(b, b_args)) => {
-        if a.name != b.name {
+        if !Self::struct_nominal_match(a, b).unwrap_or_else(|| a.name == b.name) {
           return false;
         }
         match (a_args.is_empty(), b_args.is_empty()) {
@@ -3294,7 +3404,7 @@ impl CalcitTypeAnnotation {
         }
       }
       (Self::Enum(a, a_args), Self::Enum(b, b_args)) => {
-        if a.name() != b.name() {
+        if !Self::enum_nominal_match(a, b).unwrap_or_else(|| a.name() == b.name()) {
           return false;
         }
         if a_args.is_empty() || b_args.is_empty() {
@@ -3339,8 +3449,12 @@ impl CalcitTypeAnnotation {
       (Self::TypeRef(_, _), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "enum-def") => {
         self.resolve_to_enum().is_some()
       }
-      (Self::StructDef(actual), Self::StructDef(expected)) => actual.name == expected.name,
-      (Self::EnumDef(actual), Self::EnumDef(expected)) => actual.name() == expected.name(),
+      (Self::StructDef(actual), Self::StructDef(expected)) => {
+        Self::struct_nominal_match(actual, expected).unwrap_or_else(|| actual.name == expected.name)
+      }
+      (Self::EnumDef(actual), Self::EnumDef(expected)) => {
+        Self::enum_nominal_match(actual, expected).unwrap_or_else(|| actual.name() == expected.name())
+      }
       (Self::StructDef(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "struct-def") => true,
       (Self::EnumDef(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "enum-def") => true,
       (Self::Trait(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "trait") => true,
@@ -3359,15 +3473,17 @@ impl CalcitTypeAnnotation {
       (Self::Fn(a), Self::Fn(b)) => a.compatible_signature_with_bindings(b.as_ref(), bindings),
       (Self::Variadic(a), Self::Variadic(b)) => a.compatible_with_bindings(b, bindings),
       (Self::Custom(a), Self::Custom(b)) => a.as_ref() == b.as_ref(),
-      (Self::StructValue(a), Self::StructValue(b)) => a.name == b.name,
-      (Self::StructValue(a), Self::Struct(b, _)) => a.name == b.name,
+      (Self::StructValue(a), Self::StructValue(b)) => Self::struct_nominal_match(a, b).unwrap_or_else(|| a.name == b.name),
+      (Self::StructValue(a), Self::Struct(b, _)) => Self::struct_nominal_match(a, b).unwrap_or_else(|| a.name == b.name),
       (Self::StructValue(_), Self::Custom(expected))
         if Self::custom_keyword_matches(expected, "record") || Self::custom_keyword_matches(expected, "struct") =>
       {
         true
       }
-      (Self::EnumValue(a), Self::EnumValue(b)) => a.name() == b.name(),
-      (Self::EnumValue(a), Self::Enum(b, _)) | (Self::Enum(b, _), Self::EnumValue(a)) => a.name() == b.name(),
+      (Self::EnumValue(a), Self::EnumValue(b)) => Self::enum_nominal_match(a, b).unwrap_or_else(|| a.name() == b.name()),
+      (Self::EnumValue(a), Self::Enum(b, _)) | (Self::Enum(b, _), Self::EnumValue(a)) => {
+        Self::enum_nominal_match(a, b).unwrap_or_else(|| a.name() == b.name())
+      }
       (Self::EnumValue(_), Self::Custom(expected))
         if Self::custom_keyword_matches(expected, "tuple") || Self::custom_keyword_matches(expected, "enum") =>
       {
@@ -3469,37 +3585,78 @@ impl CalcitTypeAnnotation {
         }
       }
       (Self::TypeRef(a_name, a_args), Self::TypeRef(b_name, b_args)) => {
-        if !Self::type_ref_name_matches(a_name, b_name) && !Self::type_ref_name_matches(b_name, a_name) {
-          return Mismatch;
+        match Self::type_ref_nominal_match(a_name, b_name) {
+          Some(true) => {}
+          Some(false) => return Mismatch,
+          None => return NeedsBoundary(Boundary::UnresolvedNominalIdentity),
         }
         if a_args.is_empty() != b_args.is_empty() {
           return NeedsBoundary(Boundary::ErasedTypeArguments);
         }
         Self::prove_slices(a_args, b_args, bindings)
       }
-      (Self::TypeRef(name, args), Self::Struct(base, other_args)) | (Self::Struct(base, other_args), Self::TypeRef(name, args)) => {
-        if !Self::type_ref_name_matches(name, base.name.ref_str()) && !Self::type_ref_resolves_to_struct_name(name, base.name.ref_str())
-        {
-          return Mismatch;
+      (Self::TypeRef(name, actual_args), Self::Struct(base, expected_args)) => {
+        match Self::type_ref_matches_struct_definition(name, base) {
+          Some(true) => {}
+          Some(false) => return Mismatch,
+          None => return NeedsBoundary(Boundary::UnresolvedNominalIdentity),
         }
-        match (args.is_empty(), other_args.is_empty()) {
+        match (actual_args.is_empty(), expected_args.is_empty()) {
           (true, true) => Proven,
-          (false, false) => Self::prove_slices(args, other_args, bindings),
-          (true, false) => Self::prove_declared_generics(base.generics.as_ref(), other_args, bindings),
-          (false, true) => Self::prove_declared_generics(base.generics.as_ref(), args, bindings),
+          (false, false) => Self::prove_slices(actual_args, expected_args, bindings),
+          _ => NeedsBoundary(Boundary::ErasedTypeArguments),
         }
       }
-      (Self::TypeRef(name, args), Self::Enum(base, other_args)) | (Self::Enum(base, other_args), Self::TypeRef(name, args)) => {
-        if !Self::type_ref_name_matches(name, base.name().ref_str())
-          && !Self::type_ref_resolves_to_enum_name(name, base.name().ref_str())
-        {
-          return Mismatch;
+      (Self::Struct(base, actual_args), Self::TypeRef(name, expected_args)) => {
+        match Self::type_ref_matches_struct_definition(name, base) {
+          Some(true) => {}
+          Some(false) => return Mismatch,
+          None => return NeedsBoundary(Boundary::UnresolvedNominalIdentity),
         }
-        match (args.is_empty(), other_args.is_empty()) {
+        match (actual_args.is_empty(), expected_args.is_empty()) {
           (true, true) => Proven,
-          (false, false) => Self::prove_slices(args, other_args, bindings),
-          (true, false) => Self::prove_declared_generics(base.generics(), other_args, bindings),
-          (false, true) => Self::prove_declared_generics(base.generics(), args, bindings),
+          (false, false) => Self::prove_slices(actual_args, expected_args, bindings),
+          _ => NeedsBoundary(Boundary::ErasedTypeArguments),
+        }
+      }
+      (Self::TypeRef(name, actual_args), Self::Enum(base, expected_args)) => {
+        match Self::type_ref_matches_enum_definition(name, base) {
+          Some(true) => {}
+          Some(false) => return Mismatch,
+          None => return NeedsBoundary(Boundary::UnresolvedNominalIdentity),
+        }
+        match (actual_args.is_empty(), expected_args.is_empty()) {
+          (true, true) => Proven,
+          (false, false) => Self::prove_slices(actual_args, expected_args, bindings),
+          _ => NeedsBoundary(Boundary::ErasedTypeArguments),
+        }
+      }
+      (Self::Enum(base, actual_args), Self::TypeRef(name, expected_args)) => {
+        match Self::type_ref_matches_enum_definition(name, base) {
+          Some(true) => {}
+          Some(false) => return Mismatch,
+          None => return NeedsBoundary(Boundary::UnresolvedNominalIdentity),
+        }
+        match (actual_args.is_empty(), expected_args.is_empty()) {
+          (true, true) => Proven,
+          (false, false) => Self::prove_slices(actual_args, expected_args, bindings),
+          _ => NeedsBoundary(Boundary::ErasedTypeArguments),
+        }
+      }
+      (Self::TypeRef(name, args), Self::StructValue(base)) | (Self::StructValue(base), Self::TypeRef(name, args)) => {
+        match Self::type_ref_matches_struct_definition(name, base) {
+          Some(false) => Mismatch,
+          Some(true) if args.is_empty() && base.generics.is_empty() => Proven,
+          Some(true) => NeedsBoundary(Boundary::ErasedTypeArguments),
+          None => NeedsBoundary(Boundary::UnresolvedNominalIdentity),
+        }
+      }
+      (Self::TypeRef(name, args), Self::EnumValue(base)) | (Self::EnumValue(base), Self::TypeRef(name, args)) => {
+        match Self::type_ref_matches_enum_definition(name, base) {
+          Some(false) => Mismatch,
+          Some(true) if args.is_empty() && base.generics().is_empty() => Proven,
+          Some(true) => NeedsBoundary(Boundary::ErasedTypeArguments),
+          None => NeedsBoundary(Boundary::UnresolvedNominalIdentity),
         }
       }
       (Self::List(actual), Self::List(expected))
@@ -3518,29 +3675,86 @@ impl CalcitTypeAnnotation {
       (Self::Map(actual_key, actual_value), Self::Map(expected_key, expected_value)) => actual_key
         .prove_with_staged_bindings(expected_key, bindings)
         .and(actual_value.prove_with_staged_bindings(expected_value, bindings)),
-      (Self::Struct(actual, actual_args), Self::Struct(expected, expected_args)) if actual.name == expected.name => {
+      (Self::Struct(actual, actual_args), Self::Struct(expected, expected_args)) => {
+        match Self::struct_nominal_match(actual, expected) {
+          Some(true) => {}
+          Some(false) => return Mismatch,
+          None => return NeedsBoundary(Boundary::UnresolvedNominalIdentity),
+        }
         if actual_args.is_empty() != expected_args.is_empty() {
           NeedsBoundary(Boundary::ErasedTypeArguments)
         } else {
           Self::prove_slices(actual_args, expected_args, bindings)
         }
       }
-      (Self::Enum(actual, actual_args), Self::Enum(expected, expected_args)) if actual.name() == expected.name() => {
+      (Self::Enum(actual, actual_args), Self::Enum(expected, expected_args)) => {
+        match Self::enum_nominal_match(actual, expected) {
+          Some(true) => {}
+          Some(false) => return Mismatch,
+          None => return NeedsBoundary(Boundary::UnresolvedNominalIdentity),
+        }
         if actual_args.is_empty() != expected_args.is_empty() {
           NeedsBoundary(Boundary::ErasedTypeArguments)
         } else {
           Self::prove_slices(actual_args, expected_args, bindings)
         }
       }
+      (Self::StructValue(actual), Self::StructValue(expected)) => match Self::struct_nominal_match(actual, expected) {
+        Some(true) => Proven,
+        Some(false) => Mismatch,
+        None => NeedsBoundary(Boundary::UnresolvedNominalIdentity),
+      },
+      (Self::StructValue(actual), Self::Struct(expected, expected_args)) => match Self::struct_nominal_match(actual, expected) {
+        Some(false) => Mismatch,
+        Some(true) if expected_args.is_empty() && actual.generics.is_empty() => Proven,
+        Some(true) => NeedsBoundary(Boundary::ErasedTypeArguments),
+        None => NeedsBoundary(Boundary::UnresolvedNominalIdentity),
+      },
+      (Self::Struct(actual, actual_args), Self::StructValue(expected)) => match Self::struct_nominal_match(actual, expected) {
+        Some(false) => Mismatch,
+        Some(true) if actual_args.is_empty() && expected.generics.is_empty() => Proven,
+        Some(true) => NeedsBoundary(Boundary::ErasedTypeArguments),
+        None => NeedsBoundary(Boundary::UnresolvedNominalIdentity),
+      },
+      (Self::EnumValue(actual), Self::EnumValue(expected)) => match Self::enum_nominal_match(actual, expected) {
+        Some(true) => Proven,
+        Some(false) => Mismatch,
+        None => NeedsBoundary(Boundary::UnresolvedNominalIdentity),
+      },
+      (Self::EnumValue(actual), Self::Enum(expected, expected_args))
+      | (Self::Enum(expected, expected_args), Self::EnumValue(actual)) => match Self::enum_nominal_match(actual, expected) {
+        Some(false) => Mismatch,
+        Some(true) if expected_args.is_empty() && actual.generics().is_empty() => Proven,
+        Some(true) => NeedsBoundary(Boundary::ErasedTypeArguments),
+        None => NeedsBoundary(Boundary::UnresolvedNominalIdentity),
+      },
+      (Self::StructDef(actual), Self::StructDef(expected)) => match Self::struct_nominal_match(actual, expected) {
+        Some(true) => Proven,
+        Some(false) => Mismatch,
+        None => NeedsBoundary(Boundary::UnresolvedNominalIdentity),
+      },
+      (Self::EnumDef(actual), Self::EnumDef(expected)) => match Self::enum_nominal_match(actual, expected) {
+        Some(true) => Proven,
+        Some(false) => Mismatch,
+        None => NeedsBoundary(Boundary::UnresolvedNominalIdentity),
+      },
       (Self::Fn(actual), Self::Fn(expected)) => actual.prove_signature_with_bindings(expected, bindings),
       (Self::Fn(_), Self::DynFn) | (Self::DynFn, Self::Fn(_)) => NeedsBoundary(Boundary::UnknownCallable),
       (Self::Tag, Self::DynFn) | (Self::Tag, Self::Fn(_)) => NeedsBoundary(Boundary::TagCallable),
-      (Self::TypeSlot(name), other) | (other, Self::TypeSlot(name)) => match resolve_type_slot(name) {
+      (Self::TypeSlot(name), other) => match resolve_type_slot(name) {
         Some(resolved) => resolved.prove_with_staged_bindings(other, bindings),
         None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
       },
-      (Self::TypeRef(name, _), other) | (other, Self::TypeRef(name, _)) => match resolve_type_ref_as_schema(name) {
+      (other, Self::TypeSlot(name)) => match resolve_type_slot(name) {
+        Some(resolved) => other.prove_with_staged_bindings(resolved.as_ref(), bindings),
+        None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
+      },
+      (Self::TypeRef(name, _), other) => match resolve_type_ref_as_schema(name) {
         Some(resolved) => resolved.prove_with_staged_bindings(other, bindings),
+        None => Mismatch,
+      },
+      (other, Self::TypeRef(name, _)) => match resolve_type_ref_as_schema(name) {
+        Some(resolved) => other.prove_with_staged_bindings(resolved.as_ref(), bindings),
         None => Mismatch,
       },
       _ => {
@@ -3563,15 +3777,6 @@ impl CalcitTypeAnnotation {
     }
     actual.iter().zip(expected).fold(TypeProof::Proven, |result, (actual, expected)| {
       result.and(actual.prove_with_staged_bindings(expected, bindings))
-    })
-  }
-
-  fn prove_declared_generics(declared: &[Arc<str>], applied: &[Arc<CalcitTypeAnnotation>], bindings: &mut TypeBindings) -> TypeProof {
-    if declared.len() != applied.len() {
-      return TypeProof::Mismatch;
-    }
-    declared.iter().zip(applied).fold(TypeProof::Proven, |result, (name, actual)| {
-      result.and(actual.prove_with_staged_bindings(&Self::TypeVar(name.clone()), bindings))
     })
   }
 
@@ -4075,6 +4280,12 @@ fn resolve_struct_annotation(struct_form: &Calcit, class_form: Option<&Calcit>) 
   Some(struct_def)
 }
 
+fn split_nominal_definition_ref(definition_ref: Option<&str>) -> Option<(Arc<str>, Arc<str>)> {
+  definition_ref
+    .and_then(|path| path.rsplit_once('/'))
+    .map(|(namespace, definition)| (Arc::from(namespace), Arc::from(definition)))
+}
+
 fn resolve_enum_annotation(enum_form: &Calcit, class_form: Option<&Calcit>) -> Option<CalcitEnumDef> {
   let mut enum_def = resolve_enum_def(enum_form)?;
   if let Some(class_struct) = class_form.and_then(resolve_struct_value) {
@@ -4114,6 +4325,13 @@ fn resolve_struct_from_program(ns: &str, def: &str) -> Option<CalcitStructDef> {
         })
       })
     })
+    .map(|struct_def| {
+      if struct_def.definition_ref.is_some() {
+        struct_def
+      } else {
+        struct_def.with_definition_ref(ns, def)
+      }
+    })
 }
 
 /// Resolve an enum definition by namespace and definition name from the program registry.
@@ -4137,6 +4355,13 @@ fn resolve_enum_from_program(ns: &str, def: &str) -> Option<CalcitEnumDef> {
           _ => None,
         })
       })
+    })
+    .map(|enum_def| {
+      if enum_def.definition_ref().is_some() {
+        enum_def
+      } else {
+        enum_def.with_definition_ref(ns, def)
+      }
     })
 }
 
@@ -4288,6 +4513,10 @@ fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStructDef> {
   let forms = normalized_data_definition_forms(items);
   let name_form = forms.get(1)?;
   let name = parse_type_name(name_form)?;
+  let definition_ref = match name_form {
+    Calcit::Symbol { info, .. } => Some(Arc::from(format!("{}/{}", info.at_ns, name.ref_str()))),
+    _ => None,
+  };
   let mut generics: Vec<Arc<str>> = vec![];
   let mut where_bounds = vec![];
   let mut start_idx = 2;
@@ -4337,6 +4566,7 @@ fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStructDef> {
   let field_types: Vec<Arc<CalcitTypeAnnotation>> = fields.iter().map(|(_, t)| t.to_owned()).collect();
 
   Some(CalcitStructDef {
+    definition_ref,
     name,
     fields: Arc::new(field_names),
     field_types: Arc::new(field_types),
@@ -4350,6 +4580,10 @@ fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnumDef> {
   let forms = normalized_data_definition_forms(items);
   let name_form = forms.get(1)?;
   let name = parse_type_name(name_form)?;
+  let definition_ref = match name_form {
+    Calcit::Symbol { info, .. } => Some(Arc::from(format!("{}/{}", info.at_ns, name.ref_str()))),
+    _ => None,
+  };
   let mut generics: Vec<Arc<str>> = vec![];
   let mut where_bounds = vec![];
   let mut start_idx = 2;
@@ -4398,6 +4632,7 @@ fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnumDef> {
   let values: Vec<Calcit> = variants.iter().map(|(_, value)| value.to_owned()).collect();
   dedup_generic_names(&mut generics);
   let mut struct_ref = CalcitStructDef::from_fields(name, fields);
+  struct_ref.definition_ref = definition_ref;
   struct_ref.generics = Arc::new(generics);
   struct_ref.where_bounds = Arc::new(where_bounds);
   let struct_value = CalcitStructValue {
@@ -4704,6 +4939,7 @@ mod tests {
       Calcit::from(vec![symbol("{}"), Calcit::from(vec![Calcit::tag("text"), symbol("'String")])]),
     ] as &[Calcit]);
     let struct_def = parse_defstruct_code(&struct_code).expect("map-wrapped struct definition");
+    assert_eq!(struct_def.definition_ref.as_deref(), Some("tests/Store"));
     assert_eq!(struct_def.fields.as_ref(), &[EdnTag::new("text")]);
     assert_eq!(struct_def.field_types.len(), 1);
 
@@ -4717,6 +4953,7 @@ mod tests {
       ]),
     ] as &[Calcit]);
     let enum_def = parse_defenum_code(&enum_code).expect("map-wrapped enum definition");
+    assert_eq!(enum_def.definition_ref().map(AsRef::as_ref), Some("tests/Choice"));
     assert!(enum_def.find_variant_by_name("some").is_some());
     assert!(enum_def.find_variant_by_name("none").is_some());
   }
@@ -4754,6 +4991,7 @@ mod tests {
     Arc::new(
       CalcitEnumDef::from_struct(CalcitStructValue {
         struct_ref: Arc::new(CalcitStructDef {
+          definition_ref: None,
           name: EdnTag::new("Result"),
           fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
           field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),
@@ -4782,6 +5020,7 @@ mod tests {
 
     let user_option = CalcitEnumDef::from_struct(CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
+        definition_ref: None,
         name: EdnTag::new("Option"),
         fields: Arc::new(vec![EdnTag::new("some"), EdnTag::new("none")]),
         field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),
@@ -5557,6 +5796,7 @@ mod tests {
   #[test]
   fn rejects_type_args_on_non_generic_struct_annotation() {
     let pair = CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("Pair"),
       fields: Arc::new(vec![]),
       field_types: Arc::new(vec![]),
@@ -5578,6 +5818,7 @@ mod tests {
   #[test]
   fn rejects_wrong_arity_on_generic_struct_annotation() {
     let pair = CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("Pair"),
       fields: Arc::new(vec![]),
       field_types: Arc::new(vec![]),
@@ -5599,6 +5840,7 @@ mod tests {
   #[test]
   fn matching_named_struct_ref_binds_generic_args_from_struct_annotation() {
     let pair = Arc::new(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("Pair"),
       fields: Arc::new(vec![]),
       field_types: Arc::new(vec![]),
@@ -5621,6 +5863,7 @@ mod tests {
   #[test]
   fn matching_bare_struct_annotation_binds_generic_args_from_named_struct_ref() {
     let pair = Arc::new(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("Pair"),
       fields: Arc::new(vec![]),
       field_types: Arc::new(vec![]),
@@ -5689,6 +5932,26 @@ mod tests {
   }
 
   #[test]
+  fn proof_preserves_direction_when_the_expected_type_slot_resolves() {
+    clear_type_slots();
+    let slot_name: Arc<str> = Arc::from("dispatch");
+    let concrete_enum = Arc::new(CalcitTypeAnnotation::Enum(generic_result_enum(), Arc::new(vec![])));
+    push_type_slot_override(slot_name.clone(), concrete_enum.clone());
+
+    let mut bindings = TypeBindings::new();
+    let anonymous = CalcitTypeAnnotation::AnonymousEnum;
+    let slot = CalcitTypeAnnotation::TypeSlot(slot_name.clone());
+    assert_eq!(anonymous.prove_with_bindings(&slot, &mut bindings), TypeProof::Mismatch);
+    assert_eq!(
+      concrete_enum.prove_with_bindings(&CalcitTypeAnnotation::AnonymousEnum, &mut bindings),
+      TypeProof::Proven
+    );
+
+    pop_type_slot_override(&slot_name);
+    clear_type_slots();
+  }
+
+  #[test]
   fn proof_is_transactional_and_does_not_synthesize_optional_bindings() {
     let var: Arc<str> = Arc::from("T");
     let expected = CalcitTypeAnnotation::TypeVar(var.clone());
@@ -5732,6 +5995,107 @@ mod tests {
     assert_eq!(
       bare.prove_with_bindings(&applied, &mut bindings),
       TypeProof::NeedsBoundary(TypeBoundaryReason::ErasedTypeArguments)
+    );
+  }
+
+  #[test]
+  fn nominal_proof_uses_qualified_definition_and_schema_identity() {
+    let user = |namespace: &str, field_type: Arc<CalcitTypeAnnotation>| {
+      Arc::new(CalcitStructDef {
+        definition_ref: Some(Arc::from(format!("{namespace}/User"))),
+        name: EdnTag::new("User"),
+        fields: Arc::new(vec![EdnTag::new("id")]),
+        field_types: Arc::new(vec![field_type]),
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        impls: vec![],
+      })
+    };
+    let app_user = user("app.models", Arc::new(CalcitTypeAnnotation::Number));
+    let admin_user = user("admin.models", Arc::new(CalcitTypeAnnotation::Number));
+    let reloaded_user = user("app.models", Arc::new(CalcitTypeAnnotation::String));
+
+    let app_type = CalcitTypeAnnotation::Struct(app_user.clone(), Arc::new(vec![]));
+    let admin_type = CalcitTypeAnnotation::Struct(admin_user, Arc::new(vec![]));
+    let reloaded_type = CalcitTypeAnnotation::Struct(reloaded_user, Arc::new(vec![]));
+    assert!(!app_type.is_compatible_with(&admin_type));
+    assert_eq!(
+      app_type.prove_with_bindings(&admin_type, &mut TypeBindings::new()),
+      TypeProof::Mismatch
+    );
+    assert_eq!(
+      app_type.prove_with_bindings(&reloaded_type, &mut TypeBindings::new()),
+      TypeProof::Mismatch,
+      "a schema change at the same declaration path must invalidate an old proof"
+    );
+
+    let mut decorated = app_user.as_ref().clone();
+    decorated.impls.push(Arc::new(CalcitImpl {
+      name: EdnTag::new("UserDebug"),
+      origin: None,
+      fields: Arc::new(vec![]),
+      values: Arc::new(vec![]),
+    }));
+    let decorated_type = CalcitTypeAnnotation::Struct(Arc::new(decorated), Arc::new(vec![]));
+    assert_eq!(
+      app_type.prove_with_bindings(&decorated_type, &mut TypeBindings::new()),
+      TypeProof::Proven,
+      "impl decoration must preserve the base data identity"
+    );
+
+    let app_ref = CalcitTypeAnnotation::TypeRef(Arc::from("app.models/User"), Arc::new(vec![]));
+    let admin_ref = CalcitTypeAnnotation::TypeRef(Arc::from("admin.models/User"), Arc::new(vec![]));
+    assert_eq!(app_ref.prove_with_bindings(&app_type, &mut TypeBindings::new()), TypeProof::Proven);
+    assert_eq!(
+      admin_ref.prove_with_bindings(&app_type, &mut TypeBindings::new()),
+      TypeProof::Mismatch
+    );
+  }
+
+  #[test]
+  fn nominal_proof_preserves_applied_arguments_and_rejects_bare_wildcards() {
+    let box_def = Arc::new(CalcitStructDef {
+      definition_ref: Some(Arc::from("app.models/Box")),
+      name: EdnTag::new("Box"),
+      fields: Arc::new(vec![EdnTag::new("value")]),
+      field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]),
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    });
+    let number = CalcitTypeAnnotation::Struct(box_def.clone(), Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]));
+    let string = CalcitTypeAnnotation::Struct(box_def.clone(), Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]));
+    let bare = CalcitTypeAnnotation::Struct(box_def, Arc::new(vec![]));
+
+    assert_eq!(number.prove_with_bindings(&string, &mut TypeBindings::new()), TypeProof::Mismatch);
+    assert_ne!(
+      number.cmp(&string),
+      Ordering::Equal,
+      "applied nominal arguments participate in ordering"
+    );
+    assert_eq!(
+      bare.prove_with_bindings(&number, &mut TypeBindings::new()),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::ErasedTypeArguments)
+    );
+  }
+
+  #[test]
+  fn nominal_enum_proof_rejects_same_short_name_from_another_namespace() {
+    let app_result = Arc::new(generic_result_enum().as_ref().clone().with_definition_ref("app.models", "Result"));
+    let admin_result = Arc::new(generic_result_enum().as_ref().clone().with_definition_ref("admin.models", "Result"));
+    let app_type = CalcitTypeAnnotation::Enum(
+      app_result,
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
+    );
+    let admin_type = CalcitTypeAnnotation::Enum(
+      admin_result,
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
+    );
+
+    assert!(!app_type.is_compatible_with(&admin_type));
+    assert_eq!(
+      app_type.prove_with_bindings(&admin_type, &mut TypeBindings::new()),
+      TypeProof::Mismatch
     );
   }
 
@@ -6104,8 +6468,8 @@ impl Ord for CalcitTypeAnnotation {
       | (Self::CirruQuote, Self::CirruQuote) => Ordering::Equal,
       (Self::List(a), Self::List(b)) => a.cmp(b),
       (Self::Map(ak, av), Self::Map(bk, bv)) => ak.cmp(bk).then_with(|| av.cmp(bv)),
-      (Self::StructValue(a), Self::StructValue(b)) => a.name.cmp(&b.name).then_with(|| a.fields.cmp(&b.fields)),
-      (Self::EnumValue(a), Self::EnumValue(b)) => a.name().cmp(b.name()),
+      (Self::StructValue(a), Self::StructValue(b)) => super::compare::compare_calcit_struct_values(a, b),
+      (Self::EnumValue(a), Self::EnumValue(b)) => super::compare::compare_calcit_enum_values(a, b),
       (Self::Fn(a), Self::Fn(b)) => a
         .generics
         .cmp(&b.generics)
@@ -6122,10 +6486,14 @@ impl Ord for CalcitTypeAnnotation {
       (Self::Dynamic, Self::Dynamic) => Ordering::Equal,
       (Self::TypeVar(a), Self::TypeVar(b)) => a.cmp(b),
       (Self::TypeRef(a_name, a_args), Self::TypeRef(b_name, b_args)) => a_name.cmp(b_name).then_with(|| a_args.cmp(b_args)),
-      (Self::Struct(a, _), Self::Struct(b, _)) => a.name.cmp(&b.name).then_with(|| a.fields.cmp(&b.fields)),
-      (Self::Enum(a, _), Self::Enum(b, _)) => a.name().cmp(b.name()),
-      (Self::StructDef(a), Self::StructDef(b)) => a.name.cmp(&b.name).then_with(|| a.fields.cmp(&b.fields)),
-      (Self::EnumDef(a), Self::EnumDef(b)) => a.name().cmp(b.name()),
+      (Self::Struct(a, a_args), Self::Struct(b, b_args)) => {
+        super::compare::compare_calcit_struct_values(a, b).then_with(|| a_args.cmp(b_args))
+      }
+      (Self::Enum(a, a_args), Self::Enum(b, b_args)) => {
+        super::compare::compare_calcit_enum_values(a, b).then_with(|| a_args.cmp(b_args))
+      }
+      (Self::StructDef(a), Self::StructDef(b)) => super::compare::compare_calcit_struct_values(a, b),
+      (Self::EnumDef(a), Self::EnumDef(b)) => super::compare::compare_calcit_enum_values(a, b),
       (Self::Trait(a), Self::Trait(b)) => a.name.cmp(&b.name),
       (Self::TraitSet(a), Self::TraitSet(b)) => a.iter().map(|t| &t.name).cmp(b.iter().map(|t| &t.name)),
       _ => Ordering::Equal, // other variants already separated by kind order

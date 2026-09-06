@@ -23,6 +23,7 @@ impl EnumVariant {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CalcitEnumDef {
+  definition_ref: Option<Arc<str>>,
   name: EdnTag,
   generics: Arc<Vec<Arc<str>>>,
   where_bounds: Arc<Vec<CalcitGenericBound>>,
@@ -47,6 +48,7 @@ impl CalcitEnumDef {
     let where_bounds = struct_value.struct_ref.where_bounds.clone();
     let impls = struct_value.struct_ref.impls.clone();
     Ok(Self {
+      definition_ref: struct_value.struct_ref.definition_ref.clone(),
       name,
       generics,
       where_bounds,
@@ -58,6 +60,38 @@ impl CalcitEnumDef {
 
   pub fn name(&self) -> &EdnTag {
     &self.name
+  }
+
+  pub fn definition_ref(&self) -> Option<&Arc<str>> {
+    self.definition_ref.as_ref()
+  }
+
+  pub fn with_definition_ref(mut self, ns: &str, def: &str) -> Self {
+    self.definition_ref = Some(Arc::from(format!("{ns}/{def}")));
+    self
+  }
+
+  /// Compare nominal data identity without attached method implementations.
+  pub fn same_nominal_definition(&self, other: &Self) -> bool {
+    match (&self.definition_ref, &other.definition_ref) {
+      (Some(actual), Some(expected)) => {
+        actual == expected
+          && self.name == other.name
+          && self.generics == other.generics
+          && self.where_bounds == other.where_bounds
+          && self.variants.len() == other.variants.len()
+          && self.variants.iter().zip(other.variants.iter()).all(|(actual, expected)| {
+            actual.tag == expected.tag
+              && actual.payload_types.len() == expected.payload_types.len()
+              && actual
+                .payload_types
+                .iter()
+                .zip(expected.payload_types.iter())
+                .all(|(actual, expected)| actual.to_type_edn() == expected.to_type_edn())
+          })
+      }
+      _ => false,
+    }
   }
 
   pub fn generics(&self) -> &[Arc<str>] {
@@ -85,6 +119,7 @@ impl CalcitEnumDef {
       })
       .collect();
     let struct_def = CalcitStructDef {
+      definition_ref: self.definition_ref.clone(),
       name: self.name.clone(),
       fields: Arc::new(fields),
       field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); values.len()]),
@@ -234,6 +269,7 @@ mod tests {
   fn parses_generic_enum_prototype() {
     let struct_value = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
+        definition_ref: None,
         name: EdnTag::new("Result"),
         fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
         field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),

@@ -2172,6 +2172,7 @@ mod tests {
   fn shown_maybe_enum(show_trait: Arc<CalcitTrait>) -> CalcitEnumDef {
     CalcitEnumDef::from_struct(CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
+        definition_ref: None,
         name: EdnTag::new("ShownMaybe"),
         fields: Arc::new(vec![EdnTag::new("none"), EdnTag::new("some")]),
         field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),

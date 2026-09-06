@@ -242,7 +242,7 @@ impl DataShapeGraph {
           if enum_value
             .sum_type
             .as_ref()
-            .is_some_and(|actual| Arc::ptr_eq(actual, nominal) || actual.name() == nominal.name()) =>
+            .is_some_and(|actual| Arc::ptr_eq(actual, nominal) || actual.same_nominal_definition(nominal)) =>
         {
           match (enum_value.tag.as_ref(), enum_value.extra.as_slice()) {
             (Calcit::Tag(tag), []) if tag.ref_str() == "none" => Ok(()),
@@ -295,7 +295,7 @@ impl DataShapeGraph {
         let Calcit::Struct(struct_value) = value else {
           return Err(shape_kind_mismatch(path, &format!("struct :{}", nominal.name), value));
         };
-        if !Arc::ptr_eq(&struct_value.struct_ref, nominal) {
+        if !Arc::ptr_eq(&struct_value.struct_ref, nominal) && !struct_value.struct_ref.same_nominal_definition(nominal) {
           return Err(DataShapeValueError::at(
             path,
             format!("expected nominal struct :{}, got :{}", nominal.name, struct_value.struct_ref.name),
@@ -333,7 +333,7 @@ impl DataShapeGraph {
             format!("expected nominal enum :{}, got anonymous enum", nominal.name()),
           ));
         };
-        if !Arc::ptr_eq(actual_enum, nominal) {
+        if !Arc::ptr_eq(actual_enum, nominal) && !actual_enum.same_nominal_definition(nominal) {
           return Err(DataShapeValueError::at(
             path,
             format!("expected nominal enum :{}, got :{}", nominal.name(), actual_enum.name()),
@@ -456,19 +456,35 @@ impl GraphBuilder {
         Ok(self.push(DataShapeNode::Ref(inner)))
       }
       CalcitTypeAnnotation::Struct(nominal, args) => {
-        let path = infer_nominal_path(default_ns, nominal.name.ref_str());
+        let path = nominal
+          .definition_ref
+          .as_deref()
+          .and_then(split_nominal_path)
+          .or_else(|| infer_nominal_path(default_ns, nominal.name.ref_str()));
         self.build_struct(nominal.clone(), args, path, default_ns)
       }
       CalcitTypeAnnotation::StructValue(nominal) => {
-        let path = infer_nominal_path(default_ns, nominal.name.ref_str());
+        let path = nominal
+          .definition_ref
+          .as_deref()
+          .and_then(split_nominal_path)
+          .or_else(|| infer_nominal_path(default_ns, nominal.name.ref_str()));
         self.build_struct(nominal.clone(), &Arc::new(vec![]), path, default_ns)
       }
       CalcitTypeAnnotation::Enum(nominal, args) => {
-        let path = infer_nominal_path(default_ns, nominal.name().ref_str());
+        let path = nominal
+          .definition_ref()
+          .map(AsRef::as_ref)
+          .and_then(split_nominal_path)
+          .or_else(|| infer_nominal_path(default_ns, nominal.name().ref_str()));
         self.build_enum(nominal.clone(), args, path, default_ns)
       }
       CalcitTypeAnnotation::EnumValue(nominal) => {
-        let path = infer_nominal_path(default_ns, nominal.name().ref_str());
+        let path = nominal
+          .definition_ref()
+          .map(AsRef::as_ref)
+          .and_then(split_nominal_path)
+          .or_else(|| infer_nominal_path(default_ns, nominal.name().ref_str()));
         self.build_enum(nominal.clone(), &Arc::new(vec![]), path, default_ns)
       }
       CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_) => Err(unsupported_type(
@@ -686,6 +702,12 @@ fn infer_nominal_path(default_ns: &str, name: &str) -> Option<(Arc<str>, Arc<str
   }
 }
 
+fn split_nominal_path(path: &str) -> Option<(Arc<str>, Arc<str>)> {
+  path
+    .rsplit_once('/')
+    .map(|(namespace, definition)| (Arc::from(namespace), Arc::from(definition)))
+}
+
 fn nominal_key(
   kind: &str,
   name: &EdnTag,
@@ -789,6 +811,7 @@ mod tests {
 
   fn phantom_box() -> Arc<CalcitStructDef> {
     Arc::new(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("PhantomBox"),
       fields: Arc::new(vec![]),
       field_types: Arc::new(vec![]),
@@ -827,6 +850,7 @@ mod tests {
     assert!(dynamic.to_string().contains("Dynamic is forbidden"));
 
     let generic = Arc::new(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("Box"),
       fields: Arc::new(vec![EdnTag::new("value")]),
       field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]),
@@ -884,9 +908,36 @@ mod tests {
   }
 
   #[test]
+  fn qualified_nominal_shapes_accept_clones_but_reject_stale_schema_reloads() {
+    let nominal = Arc::new(CalcitStructDef::from_fields(EdnTag::new("User"), vec![]).with_definition_ref("app.models", "User"));
+    let shape = DataShapeGraph::build(&CalcitTypeAnnotation::Struct(nominal.clone(), Arc::new(vec![])), "tests.shape")
+      .expect("qualified user shape");
+    let cloned_value = Calcit::Struct(CalcitStructValue {
+      struct_ref: Arc::new(nominal.as_ref().clone()),
+      values: Arc::new(vec![]),
+    });
+    shape
+      .validate_value(&cloned_value)
+      .expect("a clone of the same qualified declaration and schema remains the same data type");
+
+    let mut reloaded = CalcitStructDef::from_fields(EdnTag::new("User"), vec![EdnTag::new("name")]);
+    reloaded.definition_ref = Some(Arc::from("app.models/User"));
+    reloaded.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]);
+    let stale_value = Calcit::Struct(CalcitStructValue {
+      struct_ref: Arc::new(reloaded),
+      values: Arc::new(vec![Calcit::Str(Arc::from("Ada"))]),
+    });
+    let error = shape
+      .validate_value(&stale_value)
+      .expect_err("a changed schema must invalidate the old shape proof");
+    assert!(error.message.contains("expected nominal struct"), "unexpected error: {error}");
+  }
+
+  #[test]
   fn enforces_generic_where_bounds_while_deriving() {
     let marker = Arc::new(CalcitTrait::new(EdnTag::new("DataMarker"), vec![], vec![]));
     let bounded = Arc::new(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("MarkedBox"),
       fields: Arc::new(vec![EdnTag::new("value")]),
       field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]),

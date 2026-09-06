@@ -1102,6 +1102,12 @@ pub fn write_runtime_ready(ns: &str, def: &str, value: Calcit) -> Result<(), Str
     Calcit::Trait(trait_def) if trait_def.definition_ref.is_none() => {
       write_runtime_value(def_id, Calcit::Trait(trait_def.with_definition_ref(ns, def)))
     }
+    Calcit::StructDef(struct_def) if struct_def.definition_ref.is_none() => {
+      write_runtime_value(def_id, Calcit::StructDef(struct_def.with_definition_ref(ns, def)))
+    }
+    Calcit::EnumDef(enum_def) if enum_def.definition_ref().is_none() => {
+      write_runtime_value(def_id, Calcit::EnumDef(enum_def.with_definition_ref(ns, def)))
+    }
     other => write_runtime_value(def_id, other),
   }
 

@@ -131,6 +131,7 @@ pub(super) fn try_parse_defrecord_form(code: &Calcit) -> Option<CalcitStructDef>
   }
   fields.sort();
   Some(CalcitStructDef {
+    definition_ref: None,
     name,
     fields: std::sync::Arc::new(fields),
     field_types: std::sync::Arc::new(vec![]),

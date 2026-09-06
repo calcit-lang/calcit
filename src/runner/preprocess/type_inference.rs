@@ -2836,6 +2836,7 @@ mod tests {
   fn enum_constructor_keeps_nominal_type_without_payload_evidence() {
     let generic: Arc<str> = Arc::from("T");
     let struct_def = CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::from("MaybeX"),
       fields: Arc::new(vec![EdnTag::from("none"), EdnTag::from("some")]),
       field_types: Arc::new(vec![calcit::DYNAMIC_TYPE.clone(), calcit::DYNAMIC_TYPE.clone()]),
@@ -2876,6 +2877,22 @@ mod tests {
         if inferred.name() == enum_def.name()
           && matches!(args.first().map(AsRef::as_ref), Some(CalcitTypeAnnotation::Number))
     ));
+
+    let some_list_call = CalcitList::from(&[
+      Calcit::Proc(CalcitProc::NativeNamedEnumNew),
+      Calcit::EnumDef(enum_def.clone()),
+      Calcit::Tag(EdnTag::from("some")),
+      Calcit::from(vec![Calcit::Proc(CalcitProc::List), Calcit::Number(1.0), Calcit::Number(2.0)]),
+    ] as &[Calcit]);
+    assert!(matches!(
+      infer_enum_annotation(&some_list_call, &ScopeTypes::new()).as_deref(),
+      Some(CalcitTypeAnnotation::Enum(inferred, args))
+        if inferred.name() == enum_def.name()
+          && matches!(
+            args.first().map(AsRef::as_ref),
+            Some(CalcitTypeAnnotation::List(item)) if matches!(item.as_ref(), CalcitTypeAnnotation::Number)
+          )
+    ));
   }
 
   #[test]
@@ -2887,6 +2904,7 @@ mod tests {
     let box_def = Arc::new(box_def);
 
     let enum_struct = CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::from("MaybeBox"),
       fields: Arc::new(vec![EdnTag::from("empty"), EdnTag::from("box")]),
       field_types: Arc::new(vec![calcit::DYNAMIC_TYPE.clone(), calcit::DYNAMIC_TYPE.clone()]),

@@ -105,6 +105,10 @@ fn compare_impl_origin(a: Option<&Arc<CalcitTrait>>, b: Option<&Arc<CalcitTrait>
 }
 
 pub(super) fn compare_calcit_struct_values(a: &CalcitStructDef, b: &CalcitStructDef) -> Ordering {
+  match a.definition_ref.cmp(&b.definition_ref) {
+    Equal => {}
+    ord => return ord,
+  }
   match a.name.cmp(&b.name) {
     Equal => match a.fields.cmp(&b.fields) {
       Equal => match a.field_types.cmp(&b.field_types) {
@@ -139,6 +143,10 @@ fn compare_struct_impls(a: &[Arc<CalcitImpl>], b: &[Arc<CalcitImpl>]) -> Orderin
 }
 
 pub(super) fn compare_calcit_enum_values(a: &CalcitEnumDef, b: &CalcitEnumDef) -> Ordering {
+  match a.definition_ref().cmp(&b.definition_ref()) {
+    Equal => {}
+    ord => return ord,
+  }
   match a.name().cmp(b.name()) {
     Equal => a
       .generics()
@@ -168,7 +176,8 @@ pub(super) fn compare_calcit_enum_values(a: &CalcitEnumDef, b: &CalcitEnumDef) -
           }
           Equal
         })
-      }),
+      })
+      .then_with(|| compare_struct_impls(&a.impls, &b.impls)),
     ord => ord,
   }
 }
