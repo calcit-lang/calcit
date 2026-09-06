@@ -1857,19 +1857,46 @@ fn preprocess_list_call(
 
   let has_anonymous_definition_marker = matches!(args.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "_");
 
-  if strict_types_enabled()
-    && should_emit_project_source_lint(file_ns)
-    && is_constructor_named("map-kv")
-    && let Some(callback) = args.get(1)
-    && inline_callback_has_nil_return_path(callback)
-  {
-    return Err(CalcitErr::use_msg_stack_location_with_code(
-      CalcitErrKind::Type,
-      "`map-kv` callback uses nil as a legacy drop sentinel; use `filter-map-kv` and return `MapEntryDecision :keep key value` or `MapEntryDecision :drop` on every path",
-      "E_NIL_CALLBACK_SENTINEL",
-      call_stack,
-      call_location,
-    ));
+  let uses_legacy_map_kv = is_constructor_named("map-kv")
+    || matches!(args.first(), Some(Calcit::Method(name, calcit::MethodKind::Invoke(_))) if name.as_ref() == "map-kv");
+  // The two definition-attached tests on calcit.core/map-kv deliberately pin
+  // the retained runtime compatibility behavior. They compile as synthetic
+  // core definitions; ordinary project tests and source calls still lint.
+  let intentional_core_contract_test = file_ns == calcit::CORE_NS
+    && call_location
+      .as_ref()
+      .is_some_and(|location| location.def.starts_with("&calcit:test:"));
+  if should_emit_project_source_lint(file_ns) && uses_legacy_map_kv && !intentional_core_contract_test {
+    if strict_types_enabled()
+      && let Some(callback) = args.get(1)
+      && inline_callback_has_nil_return_path(callback)
+    {
+      return Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        "`map-kv` callback uses nil as a legacy drop sentinel; use `filter-map-kv` and return `MapEntryDecision :keep key value` or `MapEntryDecision :drop` on every path",
+        "E_NIL_CALLBACK_SENTINEL",
+        call_stack,
+        call_location,
+      ));
+    }
+
+    let message = "`map-kv` has an unproven legacy pair/drop contract and its result is Dynamic; use `filter-map-kv` with `MapEntryDecision :keep key value` or `MapEntryDecision :drop` so output key/value types are proven";
+    if strict_types_enabled() {
+      return Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        message,
+        "E_MAP_KV_UNPROVEN_CONTRACT",
+        call_stack,
+        call_location,
+      ));
+    }
+    gen_check_warning_code_at(
+      format!("[Warn] {message}"),
+      "W_MAP_KV_UNPROVEN_CONTRACT",
+      file_ns,
+      call_location.clone(),
+      check_warnings,
+    );
   }
 
   // `%{} _ (:field value) ...` is the canonical anonymous-struct

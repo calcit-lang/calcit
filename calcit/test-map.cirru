@@ -30,6 +30,25 @@
                 .filter-map-kv
                   {} $ :a 1
                   fn (k v) (%:: MapEntryDecision :drop)
+              do
+                let
+                    calls $ atom 0
+                    result $ filter-map-kv
+                      {} (:a 1) (:b 2) (:c 3)
+                      fn (_k v)
+                        reset! calls $ + 1 @calls
+                        %:: MapEntryDecision :keep :same v
+                  assert= 3 @calls
+                  assert= 1 $ count result
+                  assert= true $ contains? result :same
+                assert= ({})
+                  filter-map-kv ({})
+                    fn (_k _v) (raise |empty-map-callback-must-not-run)
+                assert= |callback-failed $ try
+                  filter-map-kv
+                    {} $ :a 1
+                    fn (_k _v) (raise |callback-failed)
+                  fn (error) error
           :examples $ []
           :schema $ :: 'Dynamic
         'test-get $ %{} 'CodeEntry (:doc |)

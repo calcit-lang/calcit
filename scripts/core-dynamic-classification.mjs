@@ -178,6 +178,12 @@ const compilerSpecializedPositions = new Map([
     "Preprocessing preserves the concrete collection or Struct receiver as the update result; the separate Dynamic receiver position remains in the migration queue until its capability is expressible.",
   ],
 ]);
+const reviewedCompatibilityPositions = new Map([
+  [
+    "map-kv|schema.return",
+    "Legacy map-kv accepts an untyped two-item List or a nil/enum drop sentinel, so its output key/value relation cannot be proven. Typed callers receive W_MAP_KV_UNPROVEN_CONTRACT and must migrate to filter-map-kv.",
+  ],
+]);
 
 function classify(entry) {
   const separator = entry.definition.indexOf("/");
@@ -189,6 +195,14 @@ function classify(entry) {
       owner: "compiler-specialized-contracts",
       decision: "retain-reviewed",
       rationale: specializedRationale,
+    };
+  }
+  const compatibilityRationale = namespace === "calcit.core" ? reviewedCompatibilityPositions.get(`${name}|${entry.path}`) : undefined;
+  if (compatibilityRationale !== undefined) {
+    return {
+      owner: "legacy-compatibility-boundaries",
+      decision: "retain-reviewed",
+      rationale: compatibilityRationale,
     };
   }
   if (entry.intent === "intentional-macro-syntax") {
@@ -258,6 +272,16 @@ const classifiedSpecializedPositions = new Set(
 for (const position of compilerSpecializedPositions.keys()) {
   if (!classifiedSpecializedPositions.has(position)) {
     throw new Error(`configured compiler-specialized position is absent from the current inventory: ${position}`);
+  }
+}
+const classifiedCompatibilityPositions = new Set(
+  rows
+    .filter((row) => row.owner === "legacy-compatibility-boundaries")
+    .map((row) => `${row.definition.slice(row.definition.indexOf("/") + 1)}|${row.path}`),
+);
+for (const position of reviewedCompatibilityPositions.keys()) {
+  if (!classifiedCompatibilityPositions.has(position)) {
+    throw new Error(`configured reviewed compatibility position is absent from the current inventory: ${position}`);
   }
 }
 

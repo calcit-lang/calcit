@@ -205,11 +205,118 @@ fn resolve_type_ref_as_schema(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
 
 thread_local! {
   static IMPORT_RESOLUTION_STACK: RefCell<Vec<(Arc<str>, Arc<str>)>> = const { RefCell::new(vec![]) };
+  /// TypeRef arity validation may parse the same nominal definition that is
+  /// currently being built (for example, an enum containing itself). Keep the
+  /// recursive edge symbolic while still validating the outer application.
+  static TYPE_REF_ARITY_RESOLUTION_STACK: RefCell<HashSet<Arc<str>>> = RefCell::new(HashSet::new());
 }
 
 pub static DYNAMIC_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| Arc::new(CalcitTypeAnnotation::Dynamic));
 
 pub(crate) type TypeBindings = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
+
+fn type_ref_arity_resolution_key(name: &str) -> Arc<str> {
+  let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+  if stripped.contains('/') {
+    Arc::from(stripped)
+  } else if let Some(namespace) = current_type_annotation_namespace() {
+    Arc::from(format!("{namespace}/{stripped}"))
+  } else {
+    Arc::from(stripped)
+  }
+}
+
+fn annotation_slices_share_data_schema(actual: &[Arc<CalcitTypeAnnotation>], expected: &[Arc<CalcitTypeAnnotation>]) -> bool {
+  actual.len() == expected.len()
+    && actual
+      .iter()
+      .zip(expected.iter())
+      .all(|(actual, expected)| same_data_schema_annotation(actual, expected))
+}
+
+fn same_macro_syntax_data_schema(actual: &MacroSyntaxType, expected: &MacroSyntaxType) -> bool {
+  match (actual, expected) {
+    (MacroSyntaxType::Expr(actual), MacroSyntaxType::Expr(expected)) => same_data_schema_annotation(actual, expected),
+    _ => actual == expected,
+  }
+}
+
+fn macro_syntax_slices_share_data_schema(actual: &[MacroSyntaxType], expected: &[MacroSyntaxType]) -> bool {
+  actual.len() == expected.len()
+    && actual
+      .iter()
+      .zip(expected.iter())
+      .all(|(actual, expected)| same_macro_syntax_data_schema(actual, expected))
+}
+
+fn same_macro_expansion_data_schema(actual: &MacroExpansionType, expected: &MacroExpansionType) -> bool {
+  match (actual, expected) {
+    (MacroExpansionType::Expr(actual), MacroExpansionType::Expr(expected))
+    | (MacroExpansionType::Definition(actual), MacroExpansionType::Definition(expected)) => {
+      same_data_schema_annotation(actual, expected)
+    }
+    _ => actual == expected,
+  }
+}
+
+/// Compare the static data-schema identity of annotations without allowing
+/// attached struct/enum impls to change nominal identity. Unlike the display
+/// EDN form, this preserves qualified nested nominal definitions.
+pub(crate) fn same_data_schema_annotation(actual: &CalcitTypeAnnotation, expected: &CalcitTypeAnnotation) -> bool {
+  use CalcitTypeAnnotation as Type;
+
+  match (actual, expected) {
+    (Type::List(a), Type::List(b))
+    | (Type::Set(a), Type::Set(b))
+    | (Type::Ref(a), Type::Ref(b))
+    | (Type::Variadic(a), Type::Variadic(b))
+    | (Type::Optional(a), Type::Optional(b))
+    | (Type::JsNullish(a), Type::JsNullish(b)) => same_data_schema_annotation(a, b),
+    (Type::Map(ak, av), Type::Map(bk, bv)) => same_data_schema_annotation(ak, bk) && same_data_schema_annotation(av, bv),
+    (Type::Struct(a, a_args), Type::Struct(b, b_args)) => {
+      a.same_nominal_definition(b) && annotation_slices_share_data_schema(a_args, b_args)
+    }
+    (Type::Enum(a, a_args), Type::Enum(b, b_args)) => {
+      a.same_nominal_definition(b) && annotation_slices_share_data_schema(a_args, b_args)
+    }
+    (Type::StructValue(a), Type::StructValue(b)) | (Type::StructDef(a), Type::StructDef(b)) => a.same_nominal_definition(b),
+    (Type::EnumValue(a), Type::EnumValue(b)) | (Type::EnumDef(a), Type::EnumDef(b)) => a.same_nominal_definition(b),
+    (Type::TypeRef(a_name, a_args), Type::TypeRef(b_name, b_args)) => {
+      a_name == b_name && annotation_slices_share_data_schema(a_args, b_args)
+    }
+    (Type::Fn(a), Type::Fn(b)) => {
+      a.generics == b.generics
+        && a.where_bounds == b.where_bounds
+        && a.fn_kind == b.fn_kind
+        && a.features == b.features
+        && annotation_slices_share_data_schema(&a.arg_types, &b.arg_types)
+        && same_data_schema_annotation(&a.return_type, &b.return_type)
+        && match (&a.rest_type, &b.rest_type) {
+          (Some(a), Some(b)) => same_data_schema_annotation(a, b),
+          (None, None) => true,
+          _ => false,
+        }
+    }
+    (Type::Macro(a), Type::Macro(b)) => {
+      a.generics == b.generics
+        && a.where_bounds == b.where_bounds
+        && a.capabilities == b.capabilities
+        && a.features == b.features
+        && macro_syntax_slices_share_data_schema(&a.required_inputs, &b.required_inputs)
+        && macro_syntax_slices_share_data_schema(&a.optional_inputs, &b.optional_inputs)
+        && match (&a.rest_input, &b.rest_input) {
+          (Some(a), Some(b)) => same_macro_syntax_data_schema(a, b),
+          (None, None) => true,
+          _ => false,
+        }
+        && same_macro_expansion_data_schema(&a.expansion, &b.expansion)
+    }
+    (Type::Syntax(a), Type::Syntax(b)) => same_macro_syntax_data_schema(a, b),
+    // The remaining variants contain no nested struct/enum data annotations,
+    // or have their own nominal identity rules (traits and opaque custom data).
+    _ => actual == expected,
+  }
+}
 
 /// Result of asking whether an annotation is strong enough to authorize
 /// static inference or unchecked lowering. Compatibility may still accept a
@@ -761,6 +868,12 @@ impl CalcitTypeAnnotation {
         for arg in args.iter() {
           arg.validate_applied_type_args()?;
         }
+
+        let resolution_key = type_ref_arity_resolution_key(name);
+        let entered = TYPE_REF_ARITY_RESOLUTION_STACK.with(|active| active.borrow_mut().insert(resolution_key.clone()));
+        if !entered {
+          return Ok(());
+        }
         let declared_arity = self
           .resolve_to_struct()
           .map(|definition| ("struct", definition.name.to_string(), definition.generics.len()))
@@ -769,6 +882,9 @@ impl CalcitTypeAnnotation {
               .resolve_to_enum()
               .map(|definition| ("enum", definition.name().to_string(), definition.generics().len()))
           });
+        TYPE_REF_ARITY_RESOLUTION_STACK.with(|active| {
+          active.borrow_mut().remove(&resolution_key);
+        });
         if let Some((kind, definition, expected)) = declared_arity
           && args.len() != expected
         {

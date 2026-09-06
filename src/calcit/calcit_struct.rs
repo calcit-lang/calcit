@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
-use super::{CalcitGenericBound, CalcitImpl, CalcitTypeAnnotation};
+use super::{CalcitGenericBound, CalcitImpl, CalcitTypeAnnotation, type_annotation::same_data_schema_annotation};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CalcitStructDef {
@@ -53,7 +53,7 @@ impl CalcitStructDef {
             .field_types
             .iter()
             .zip(other.field_types.iter())
-            .all(|(actual, expected)| actual.to_type_edn() == expected.to_type_edn())
+            .all(|(actual, expected)| same_data_schema_annotation(actual, expected))
           && self.generics == other.generics
           && self.where_bounds == other.where_bounds
       }
@@ -79,5 +79,45 @@ impl Hash for CalcitStructDef {
       imp.name().hash(state);
       imp.fields().hash(state);
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn nested_struct(namespace: &str) -> Arc<CalcitTypeAnnotation> {
+    Arc::new(CalcitTypeAnnotation::Struct(
+      Arc::new(CalcitStructDef {
+        definition_ref: Some(Arc::from(format!("{namespace}/Item"))),
+        name: EdnTag::new("Item"),
+        fields: Arc::new(vec![]),
+        field_types: Arc::new(vec![]),
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        impls: vec![],
+      }),
+      Arc::new(vec![]),
+    ))
+  }
+
+  fn wrapper(field_type: Arc<CalcitTypeAnnotation>) -> CalcitStructDef {
+    CalcitStructDef {
+      definition_ref: Some(Arc::from("app/Wrapper")),
+      name: EdnTag::new("Wrapper"),
+      fields: Arc::new(vec![EdnTag::new("item")]),
+      field_types: Arc::new(vec![field_type]),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    }
+  }
+
+  #[test]
+  fn nested_nominal_field_identity_keeps_qualified_definition() {
+    let left = wrapper(nested_struct("alpha.models"));
+    let right = wrapper(nested_struct("beta.models"));
+
+    assert!(!left.same_nominal_definition(&right));
   }
 }

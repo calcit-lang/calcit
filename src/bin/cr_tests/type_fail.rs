@@ -1,5 +1,7 @@
 use super::*;
-use calcit::calcit::{Calcit, CalcitProc, CalcitTypeAnnotation, MacroExpansionType, MacroSignature, MacroSyntaxType};
+use calcit::calcit::{
+  Calcit, CalcitFnTypeAnnotation, CalcitProc, CalcitTypeAnnotation, MacroExpansionType, MacroSignature, MacroSyntaxType, SchemaKind,
+};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::fs;
@@ -57,6 +59,10 @@ fn load_fixture_entries_with_entry(path: &str, selected_entry: Option<&str>) -> 
 }
 
 fn load_snippet_entries(snippet: &str) -> ProgramEntries {
+  load_snippet_entries_with_main_schema(snippet, None)
+}
+
+fn load_snippet_entries_with_main_schema(snippet: &str, main_schema: Option<Arc<CalcitTypeAnnotation>>) -> ProgramEntries {
   builtins::effects::init_effects_states();
 
   let mut snapshot = snapshot::Snapshot::default();
@@ -83,6 +89,11 @@ fn load_snippet_entries(snippet: &str) -> ProgramEntries {
       capabilities: Arc::new(HashSet::new()),
       features: Arc::new(HashSet::new()),
     })));
+  }
+  if let Some(schema) = main_schema
+    && let Some(entry) = file.defs.get_mut("main!")
+  {
+    entry.schema = schema;
   }
   snapshot.files.insert("app.main".to_owned(), file);
 
@@ -148,6 +159,63 @@ fn result_generic_declaration_order_preserves_ok_and_err_payload_types() {
       let entries = load_snippet_entries(snippet);
       run_check_only(&entries).expect_err("Result payloads must not accept operations for the opposite type");
     }
+  });
+}
+
+#[test]
+fn legacy_map_kv_contract_warns_in_compatibility_and_fails_in_strict_mode() {
+  run_with_large_stack(|| {
+    let snippets = [
+      "let\n    output $ map-kv ({} (:a 1)) $ fn (k v) ([] k 1)\n  assert-type output $ :: 'Map 'Tag 'String\n  , output",
+      "({} (:a 1)) .map-kv $ fn (k v) (:: :skip)",
+    ];
+
+    for snippet in snippets {
+      let entries = load_snippet_entries(snippet);
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect("compatibility mode should retain the legacy map-kv boundary as a warning");
+      let warnings = warnings.borrow();
+      let contract_warnings = warnings
+        .iter()
+        .filter(|warning| warning.code() == Some("W_MAP_KV_UNPROVEN_CONTRACT"))
+        .collect::<Vec<_>>();
+      assert_eq!(contract_warnings.len(), 1, "expected one map-kv migration warning: {warnings:?}");
+      assert!(contract_warnings[0].message().contains("result is Dynamic"));
+      assert!(contract_warnings[0].message().contains("filter-map-kv"));
+    }
+
+    let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: Arc::new(CalcitTypeAnnotation::Unit),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    let _strict = StrictTypesReset::enabled();
+    for snippet in snippets {
+      let entries = load_snippet_entries_with_main_schema(snippet, Some(main_schema.clone()));
+      let error = run_check_only(&entries).expect_err("strict mode must reject the unproven map-kv contract");
+      assert!(
+        error.contains("E_MAP_KV_UNPROVEN_CONTRACT"),
+        "unexpected strict map-kv error: {error}"
+      );
+      assert!(
+        error.contains("MapEntryDecision"),
+        "migration must name the typed replacement: {error}"
+      );
+    }
+  });
+}
+
+#[test]
+fn self_referential_enum_type_ref_validation_is_finite() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries("defenum Tree (:leaf 'Number) (:branch Tree)\ndefn main! ()\n  Tree :branch $ Tree :leaf 1");
+
+    run_check_only(&entries).expect("self-referential enum payload validation must not recurse while rebuilding Tree");
   });
 }
 

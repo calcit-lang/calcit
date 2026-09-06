@@ -6511,7 +6511,7 @@
                     fn (idx x)
                       [] idx $ &str x
               :tags $ #{} :core :unit
-        'map-kv $ %{} 'CodeEntry (:doc |)
+        'map-kv $ %{} 'CodeEntry (:doc "|Legacy compatibility boundary. Its callback may return a two-item list or a legacy nil/enum drop sentinel, so the result is intentionally Dynamic. Typed code must migrate to filter-map-kv and MapEntryDecision :keep/:drop.")
           :code $ quote
             defn map-kv (xs f)
               foldl xs ({})
@@ -6530,12 +6530,11 @@
                         , acc $ raise (str-spaced "|map-kv expected list or nil, got:" result)
           :examples $ []
           :schema $ :: 'Fn
-            {}
+            {} (:return 'Dynamic)
               :args $ [] (:: 'Map 'K 'V)
                 :: 'Fn $ {} (:return 'Q)
                   :args $ [] 'K 'V
-              :generics $ [] 'K 'V 'Q 'R 'S
-              :return $ :: 'Map 'R 'S
+              :generics $ [] 'K 'V 'Q
           :tests $ []
             %{} 'TestEntry (:name |transforms-each-entry)
               :code $ quote
@@ -7963,8 +7962,8 @@
             defn tagging-edn (data)
               if (list? data) (map data tagging-edn)
                 if (map? data)
-                  map-kv data $ defn %tagging (k v)
-                    []
+                  filter-map-kv data $ defn %tagging (k v)
+                    %:: MapEntryDecision :keep
                       if (string? k) (turn-tag k) k
                       tagging-edn v
                   , data
