@@ -152,6 +152,26 @@ fn result_generic_declaration_order_preserves_ok_and_err_payload_types() {
 }
 
 #[test]
+fn reset_diagnostic_renders_the_call_head_once() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries("let ((state $ atom 1)) (reset! state |wrong)");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("mismatched reset should produce a warning");
+    let warnings = warnings.borrow();
+    let matched: Vec<_> = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_RESET_ARG_TYPE_MISMATCH"))
+      .collect();
+    assert_eq!(matched.len(), 1, "{warnings:?}");
+    let message = matched[0].message();
+    assert!(message.contains("arg 2 expects type `:number`, but got `:string`"), "{message}");
+    let expression = message.split("Expression: ").nth(1).expect("diagnostic includes expression");
+    assert_eq!(expression.matches("reset!").count(), 1, "{expression}");
+  });
+}
+
+#[test]
 fn reset_rejects_incompatible_inferred_reference_payloads() {
   run_with_large_stack(|| {
     for snippet in [

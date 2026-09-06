@@ -876,7 +876,7 @@ pub(super) fn check_reset_arg_types(
     check_warnings,
   };
   let message = |index, expected: &str, actual: &str, expr: String| {
-    format!("[Warn] `reset!` arg {index} expects type `{expected}`, but got `{actual}`\n  Expression: (reset! {expr})")
+    format!("[Warn] `reset!` arg {index} expects type `{expected}`, but got `{actual}`\n  Expression: ({expr})")
   };
   if let Some(value) = args.get(1) {
     let actual = resolve_type_value(value, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
