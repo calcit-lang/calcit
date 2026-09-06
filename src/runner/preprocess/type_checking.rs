@@ -778,6 +778,131 @@ pub(crate) fn check_core_fn_arg_types(
   }
 }
 
+/// Find erased positions relative to a fixed write contract, not merely any
+/// Dynamic nested somewhere in a type (which may be intentionally open).
+fn reset_type_erases_contract(actual: &CalcitTypeAnnotation, expected: &CalcitTypeAnnotation) -> bool {
+  use CalcitTypeAnnotation as T;
+  match (actual, expected) {
+    (_, T::Dynamic) => false,
+    (T::Dynamic | T::DynFn, _) => true,
+    (T::List(a), T::List(e))
+    | (T::Set(a), T::Set(e))
+    | (T::Ref(a), T::Ref(e))
+    | (T::Optional(a), T::Optional(e))
+    | (T::JsNullish(a), T::JsNullish(e))
+    | (T::Variadic(a), T::Variadic(e)) => reset_type_erases_contract(a, e),
+    (T::Map(ak, av), T::Map(ek, ev)) => reset_type_erases_contract(ak, ek) || reset_type_erases_contract(av, ev),
+    (T::TypeRef(_, a), T::TypeRef(_, e)) | (T::Struct(_, a), T::Struct(_, e)) | (T::Enum(_, a), T::Enum(_, e)) => {
+      a.iter().zip(e.iter()).any(|(a, e)| reset_type_erases_contract(a, e))
+    }
+    (T::Fn(a), T::Fn(e)) => {
+      a.arg_types
+        .iter()
+        .zip(e.arg_types.iter())
+        .any(|(a, e)| reset_type_erases_contract(a, e))
+        || reset_type_erases_contract(&a.return_type, &e.return_type)
+        || a
+          .rest_type
+          .as_ref()
+          .zip(e.rest_type.as_ref())
+          .is_some_and(|(a, e)| reset_type_erases_contract(a, e))
+    }
+    _ => false,
+  }
+}
+
+/// Literal constructors provide stronger evidence than their homogeneous
+/// inferred types, especially for empty collections and nested empty values.
+fn reset_value_erases_contract(value: &Calcit, expected: &CalcitTypeAnnotation, scope: &ScopeTypes) -> bool {
+  use CalcitTypeAnnotation as T;
+  if matches!(expected, T::Dynamic) {
+    return false;
+  }
+  if let Calcit::List(items) = value {
+    match (items.first(), expected) {
+      (Some(Calcit::Proc(CalcitProc::List)), T::List(inner)) | (Some(Calcit::Proc(CalcitProc::Set)), T::Set(inner)) => {
+        return items.iter().skip(1).any(|item| reset_value_erases_contract(item, inner, scope));
+      }
+      (Some(Calcit::Proc(CalcitProc::NativeMap)), T::Map(key, val)) if items.len() % 2 == 1 => {
+        return items
+          .iter()
+          .skip(1)
+          .enumerate()
+          .any(|(index, item)| reset_value_erases_contract(item, if index % 2 == 0 { key } else { val }, scope));
+      }
+      (Some(Calcit::Import(import)), _) if import.ns.as_ref() == calcit::CORE_NS && expected.is_option_type() => {
+        if import.def.as_ref() == "%none" && items.len() == 1 {
+          return false;
+        }
+        if import.def.as_ref() == "%some"
+          && items.len() == 2
+          && let T::TypeRef(_, args) = expected
+          && let Some(inner) = args.first()
+        {
+          return reset_value_erases_contract(&items[1], inner, scope);
+        }
+      }
+      _ => {}
+    }
+  }
+  let actual = resolve_type_value(value, scope).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+  reset_type_erases_contract(actual.as_ref(), expected) || !actual.matches_annotation(expected)
+}
+
+/// A mutable reference's payload type is fixed by its declaration/initializer,
+/// not widened by an incompatible write before a later typed read.
+pub(super) fn check_reset_arg_types(
+  head_form: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  let payload = args.first().and_then(|target| resolve_type_value(target, scope_types));
+  let payload = match payload.as_deref() {
+    Some(CalcitTypeAnnotation::Ref(inner)) => inner.clone(),
+    _ => calcit::DYNAMIC_TYPE.clone(),
+  };
+  let expected_types = [Arc::new(CalcitTypeAnnotation::Ref(payload.clone())), payload];
+  let ctx = CheckContext {
+    head_form,
+    args,
+    expected_types: &expected_types,
+    where_bounds: &[],
+    scope_types,
+    file_ns,
+    call_location: head_form.get_location(),
+    warning_code: "W_RESET_ARG_TYPE_MISMATCH",
+    check_warnings,
+  };
+  let message = |index, expected: &str, actual: &str, expr: String| {
+    format!("[Warn] `reset!` arg {index} expects type `{expected}`, but got `{actual}`\n  Expression: (reset! {expr})")
+  };
+  if let Some(value) = args.get(1) {
+    let actual = resolve_type_value(value, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+    let expected = expected_types[1].as_ref();
+    // Unknown positions cannot establish a concrete payload contract. Literal
+    // constructors can prove empty/nested values without inventing element types.
+    // Explicit Dynamic positions stay open; compatibility mode is unchanged.
+    if super::strict_types_enabled()
+      && super::should_emit_project_source_lint(file_ns)
+      && reset_value_erases_contract(value, expected, scope_types)
+    {
+      ctx.emit_warning(2, expected, actual.as_ref(), message);
+      return;
+    }
+    // Unlike a fresh polymorphic function call, a write cannot specialize an
+    // existing reference's type variables, nor assume an unrelated input T is
+    // the reference's concrete payload type. Identical variables need no binding.
+    let mut bindings = HashMap::new();
+    if actual.matches_with_bindings(expected, &mut bindings) && !bindings.is_empty() {
+      ctx.emit_warning(2, expected, actual.as_ref(), message);
+      return;
+    }
+  }
+  check_arg_types_loop(ctx, message);
+}
+
 /// Check argument types when calling a local variable with a known Fn type.
 pub(crate) fn check_local_fn_call_arg_types(
   head_form: &Calcit,

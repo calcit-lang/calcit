@@ -17,7 +17,7 @@ use crate::{
 
 use type_checking::{
   CallTypeCheckInfo, check_core_fn_arg_types, check_function_return_type, check_local_fn_call_arg_types, check_proc_arg_types,
-  check_user_fn_arg_types, detect_return_type_hint_from_processed_body,
+  check_reset_arg_types, check_user_fn_arg_types, detect_return_type_hint_from_processed_body,
 };
 pub use type_inference::infer_static_type_from_expr;
 use type_inference::{
@@ -2560,10 +2560,17 @@ fn preprocess_list_call(
         | CalcitSyntax::Macroexpand
         | CalcitSyntax::MacroexpandAll
         | CalcitSyntax::Macroexpand1
-        | CalcitSyntax::Gensym
-        | CalcitSyntax::Reset => {
+        | CalcitSyntax::Gensym => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_each_items(name, name_ns, &args, &mut ctx)?)
+        }
+        CalcitSyntax::Reset => {
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+          let form = preprocess_each_items(name, name_ns, &args, &mut ctx)?;
+          if let Calcit::List(items) = &form {
+            check_reset_arg_types(&head_form, &items.drop_left(), scope_types, file_ns, check_warnings);
+          }
+          Ok(form)
         }
         CalcitSyntax::Quote | CalcitSyntax::Eval => Ok(preprocess_quote(name, name_ns, &args, scope_defs, file_ns)?),
         CalcitSyntax::HintFn => {
