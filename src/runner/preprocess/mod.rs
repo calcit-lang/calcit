@@ -1857,8 +1857,14 @@ fn preprocess_list_call(
 
   let has_anonymous_definition_marker = matches!(args.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "_");
 
+  let postfix_receiver_type = resolve_type_value(&head_form, scope_types);
+  let postfix_receiver_could_be_map = matches!(
+    postfix_receiver_type.as_deref(),
+    None | Some(CalcitTypeAnnotation::Dynamic) | Some(CalcitTypeAnnotation::Map(_, _))
+  );
   let uses_legacy_map_kv = is_constructor_named("map-kv")
-    || matches!(args.first(), Some(Calcit::Method(name, calcit::MethodKind::Invoke(_))) if name.as_ref() == "map-kv");
+    || (postfix_receiver_could_be_map
+      && matches!(args.first(), Some(Calcit::Method(name, calcit::MethodKind::Invoke(_))) if name.as_ref() == "map-kv"));
   // The two definition-attached tests on calcit.core/map-kv deliberately pin
   // the retained runtime compatibility behavior. They compile as synthetic
   // core definitions; ordinary project tests and source calls still lint.

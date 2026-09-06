@@ -220,6 +220,26 @@ fn self_referential_enum_type_ref_validation_is_finite() {
 }
 
 #[test]
+fn postfix_map_kv_gate_ignores_concrete_non_map_receivers() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries("|text .map-kv $ fn (value) value");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+
+    if let Err(error) = result {
+      assert!(!error.to_string().contains("E_MAP_KV_UNPROVEN_CONTRACT"), "{error}");
+    }
+    assert!(
+      warnings
+        .borrow()
+        .iter()
+        .all(|warning| warning.code() != Some("W_MAP_KV_UNPROVEN_CONTRACT")),
+      "a concrete non-Map receiver must not be diagnosed as the legacy core map-kv contract"
+    );
+  });
+}
+
+#[test]
 fn reset_diagnostic_renders_the_call_head_once() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("let ((state $ atom 1)) (reset! state |wrong)");

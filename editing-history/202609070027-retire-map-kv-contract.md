@@ -13,7 +13,8 @@ that arrived after PR #892 had already merged.
 - Marked the legacy `map-kv` result as an explicit `Dynamic` compatibility
   boundary. Compatibility mode emits `W_MAP_KV_UNPROVEN_CONTRACT`; strict mode
   emits `E_MAP_KV_UNPROVEN_CONTRACT` and directs callers to `filter-map-kv` with
-  `MapEntryDecision`.
+  `MapEntryDecision`. Postfix detection uses receiver type evidence so a
+  non-Map user method with the same name is not gated.
 - Migrated bundled `tagging-edn` to the typed API and documented
   `filter-map-kv` as the sole recommended typed entry transformation API in
   both the HashMap reference and the central type-guidance page.
