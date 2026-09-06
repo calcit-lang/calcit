@@ -3,6 +3,17 @@
 Calcit 正在验证一个很窄的 typed kernel 子集能否编译到 Calx。这个实验不改变默认 native
 runner、JS codegen 或仓库内部 WASM backend，也不会把任意 Calcit 函数静默发送给另一个运行时。
 
+当前依赖精确锁定 crates.io 发布的 `calx_vm = "=0.5.0"`。该版本收紧 strict value domain，
+并复用尾调用的 locals 容量；Calcit 的 typed lowering 边界、ABI edition 和 benchmark session
+edition 不变，不新增动态值回退或运行模式。性能采样与消费者版本组合仍由
+[独立 harness](https://github.com/calcit-lang/calcit-calx-bench) 的 `pins.json` 和报告记录。
+
+The dependency is pinned to the published crates.io release `calx_vm = "=0.5.0"`, which tightens
+the strict value domain and reuses tail-call locals capacity. Calcit's typed lowering boundary,
+ABI edition, and benchmark session edition remain unchanged; this adds no dynamic-value fallback
+or execution mode. Performance sampling and consumer version combinations remain owned by the
+[standalone harness](https://github.com/calcit-lang/calcit-calx-bench), its `pins.json`, and reports.
+
 当前阶段建立 eligibility boundary，并把通过证明的 closed kernel 降为可执行的 strict Calx program：
 
 ```text
