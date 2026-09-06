@@ -606,6 +606,137 @@ fn calx_f64_buffer_dot_product_is_source_backed_strict_and_differential() {
   assert!(matches!(trap, CalxKernelRunError::Runtime(_)));
 }
 
+fn install_calx_f64_buffer_gather_fixture(namespace: &str) {
+  let mut source_defs = calx_test_defs_from_source(namespace, include_str!("../../tests/fixtures/calx/f64-buffer-gather-kernel.cirru"));
+  install_calx_test_defs(
+    namespace,
+    vec![(
+      "gather-sum",
+      source_defs.remove("gather-sum").expect("gather-sum source"),
+      calx_test_fn_schema(
+        vec![
+          CalcitTypeAnnotation::F64Buffer,
+          CalcitTypeAnnotation::F64Buffer,
+          CalcitTypeAnnotation::Number,
+          CalcitTypeAnnotation::Number,
+        ],
+        CalcitTypeAnnotation::Number,
+      ),
+    )],
+  );
+  compile_calx_test_entry(namespace, "gather-sum");
+}
+
+#[test]
+fn calx_f64_buffer_gather_is_source_backed_strict_and_differential() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-f64-gather";
+  install_calx_f64_buffer_gather_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed F64Buffer gather fixture");
+
+  let graph = analyze_calx_eligibility(&snapshot, namespace, "gather-sum").expect("F64Buffer gather should be eligible");
+  assert_eq!(graph.abi_edition.as_ref(), "calcit-calx-kernel/2");
+  assert_eq!(
+    graph.functions[0].params,
+    vec![
+      CalxScalarType::F64Buffer,
+      CalxScalarType::F64Buffer,
+      CalxScalarType::F64,
+      CalxScalarType::F64,
+    ]
+  );
+
+  let kernel = compile_calx_kernel(&snapshot, namespace, "gather-sum").expect("compile strict F64Buffer gather");
+  assert_eq!(
+    kernel.stable_program_summary(),
+    include_str!("../../tests/fixtures/calx/f64-buffer-gather-kernel.golden.txt")
+  );
+
+  let args = vec![
+    Calcit::F64Buffer(Arc::from([10.0, 20.0, 30.0])),
+    Calcit::F64Buffer(Arc::from([2.0, 0.0, 2.0])),
+    Calcit::Number(3.0),
+    Calcit::Number(0.0),
+  ];
+  let calx_result = kernel.run(&args).expect("run strict F64Buffer gather");
+  let native_result = run_program_with_docs(Arc::from(namespace), Arc::from("gather-sum"), &args).expect("run native F64Buffer gather");
+  assert_eq!(calx_result, Calcit::Number(70.0));
+  assert_eq!(calx_result, native_result);
+
+  let empty_args = vec![
+    Calcit::F64Buffer(Arc::from([])),
+    Calcit::F64Buffer(Arc::from([])),
+    Calcit::Number(0.0),
+    Calcit::Number(7.0),
+  ];
+  assert_eq!(
+    kernel.run(&empty_args).expect("zero remaining performs no buffer access"),
+    Calcit::Number(7.0)
+  );
+
+  for invalid in [Calcit::Nil, Calcit::from(vec![Calcit::Number(1.0)]), Calcit::Buffer(vec![0, 1])] {
+    for position in [0, 1] {
+      let mut invalid_args = args.clone();
+      invalid_args[position] = invalid.clone();
+      let error = kernel
+        .run(&invalid_args)
+        .expect_err("only concrete F64Buffer crosses the gather boundary");
+      assert!(
+        matches!(error, CalxKernelRunError::Boundary(ref boundary) if boundary.kind == CalxKernelBoundaryErrorKind::ArgumentType)
+      );
+    }
+  }
+
+  let trap_cases = [
+    (
+      Calcit::F64Buffer(Arc::from([10.0, 20.0, 30.0])),
+      Calcit::F64Buffer(Arc::from([0.0, 1.0])),
+      3.0,
+      "index buffer bounds",
+    ),
+    (
+      Calcit::F64Buffer(Arc::from([10.0, 20.0, 30.0])),
+      Calcit::F64Buffer(Arc::from([1.5])),
+      1.0,
+      "fractional gathered index",
+    ),
+    (
+      Calcit::F64Buffer(Arc::from([10.0, 20.0, 30.0])),
+      Calcit::F64Buffer(Arc::from([-1.0])),
+      1.0,
+      "negative gathered index",
+    ),
+    (
+      Calcit::F64Buffer(Arc::from([10.0, 20.0, 30.0])),
+      Calcit::F64Buffer(Arc::from([f64::INFINITY])),
+      1.0,
+      "non-finite gathered index",
+    ),
+    (
+      Calcit::F64Buffer(Arc::from([10.0, 20.0, 30.0])),
+      Calcit::F64Buffer(Arc::from([3.0])),
+      1.0,
+      "values buffer bounds",
+    ),
+  ];
+  for (values, indices, remaining, label) in trap_cases {
+    let error = kernel
+      .run(&[values, indices, Calcit::Number(remaining), Calcit::Number(0.0)])
+      .unwrap_err();
+    let CalxKernelRunError::Runtime(runtime) = error else {
+      panic!("{label} must remain a Calx runtime trap: {error}");
+    };
+    let span = runtime
+      .source_span()
+      .unwrap_or_else(|| panic!("{label} must retain a Calcit source origin"));
+    assert!(
+      span.source.starts_with("calcit:tests.calx-f64-gather/gather-sum@3."),
+      "{label} has unexpected source origin: {span}"
+    );
+  }
+}
+
 #[test]
 fn calx_measured_compile_reports_non_overlapping_stages() {
   let _guard = lock_program_test_state();
