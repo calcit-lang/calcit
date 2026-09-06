@@ -15,7 +15,8 @@ that arrived after PR #892 had already merged.
   emits `E_MAP_KV_UNPROVEN_CONTRACT` and directs callers to `filter-map-kv` with
   `MapEntryDecision`.
 - Migrated bundled `tagging-edn` to the typed API and documented
-  `filter-map-kv` as the sole recommended typed entry transformation API.
+  `filter-map-kv` as the sole recommended typed entry transformation API in
+  both the HashMap reference and the central type-guidance page.
 - Classified and locked the single new reviewed core Dynamic position. This is
   an intentional replacement of false generic evidence, not unrelated Dynamic
   growth.
