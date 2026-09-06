@@ -555,6 +555,44 @@ fn install_calx_f64_buffer_kernel_fixture(namespace: &str) {
   compile_calx_test_entry(namespace, "dot-product");
 }
 
+fn install_calx_f64_buffer_len_fixture(namespace: &str) {
+  let mut source_defs = calx_test_defs_from_source(namespace, include_str!("../../tests/fixtures/calx/f64-buffer-len-kernel.cirru"));
+  install_calx_test_defs(
+    namespace,
+    vec![(
+      "buffer-length",
+      source_defs.remove("buffer-length").expect("buffer-length source"),
+      calx_test_fn_schema(vec![CalcitTypeAnnotation::F64Buffer], CalcitTypeAnnotation::Number),
+    )],
+  );
+  compile_calx_test_entry(namespace, "buffer-length");
+}
+
+#[test]
+fn calx_f64_buffer_len_falls_back_before_lowering() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-f64-buffer-len";
+  install_calx_f64_buffer_len_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed F64Buffer length fixture");
+
+  let args = [Calcit::F64Buffer(Arc::from([1.0, 2.0, 3.0]))];
+  let native_result =
+    run_program_with_docs(Arc::from(namespace), Arc::from("buffer-length"), &args).expect("run native F64Buffer length kernel");
+  assert_eq!(native_result, Calcit::Number(3.0));
+
+  let report = analyze_calx_eligibility(&snapshot, namespace, "buffer-length")
+    .expect_err("F64Buffer length must fall back until Calcit can represent the Calx I64 result");
+  assert_eq!(report.issues.len(), 1);
+  assert_eq!(report.issues[0].code, CalxFallbackCode::UnsupportedForm);
+  assert!(report.issues[0].message.contains("Calcit Number/F64"));
+  assert!(report.issues[0].message.contains("Calx `f64-buffer.len` returns I64"));
+  assert!(matches!(
+    compile_calx_kernel(&snapshot, namespace, "buffer-length"),
+    Err(CalxKernelCompileError::Eligibility(_))
+  ));
+}
+
 #[test]
 fn calx_f64_buffer_dot_product_is_source_backed_strict_and_differential() {
   let _guard = lock_program_test_state();

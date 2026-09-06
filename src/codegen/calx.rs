@@ -914,8 +914,14 @@ fn analyze_proc(proc: CalcitProc, args: &[Calcit], tail: bool, context: &mut Exp
       Some(Some(CalxScalarType::Bool))
     }
     CalcitProc::NativeF64BufferLen => {
-      analyze_typed_args(proc, args, &[CalxScalarType::F64Buffer], context)?;
-      Some(Some(CalxScalarType::F64))
+      issue(
+        context,
+        CalxFallbackCode::UnsupportedForm,
+        args.first().and_then(source_path),
+        "`&f64-buffer:len` returns Calcit Number/F64, but strict Calx `f64-buffer.len` returns I64; an explicit result conversion is required"
+          .to_owned(),
+      );
+      None
     }
     CalcitProc::NativeF64ToI64Index => {
       analyze_typed_args(proc, args, &[CalxScalarType::F64], context)?;
