@@ -1263,6 +1263,7 @@ mod tests {
   #[test]
   fn specialize_update_uses_struct_field_type_for_callback() {
     let task_struct = Arc::new(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("Task"),
       fields: Arc::new(vec![EdnTag::new("done?")]),
       field_types: Arc::new(vec![tag_annotation("bool")]),
@@ -1761,6 +1762,7 @@ mod tests {
     assert_eq!(map_specialized[2], number);
 
     let task_struct = Arc::new(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("Task"),
       fields: Arc::new(vec![EdnTag::new("done?")]),
       field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::Bool)]),

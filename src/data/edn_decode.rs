@@ -587,6 +587,7 @@ mod tests {
 
   fn person_struct() -> Arc<CalcitStructDef> {
     Arc::new(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("Person"),
       fields: Arc::new(vec![EdnTag::new("age"), EdnTag::new("name")]),
       field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
@@ -599,6 +600,7 @@ mod tests {
   fn option_enum() -> Arc<CalcitEnumDef> {
     let prototype = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
+        definition_ref: None,
         name: EdnTag::new("Option"),
         fields: Arc::new(vec![EdnTag::new("none"), EdnTag::new("some")]),
         field_types: Arc::new(vec![
@@ -620,6 +622,7 @@ mod tests {
   #[test]
   fn runtime_map_decode_requires_fields_lifts_option_and_rejects_unknown_keys() {
     let response = Arc::new(CalcitStructDef {
+      definition_ref: None,
       name: EdnTag::new("Response"),
       fields: Arc::new(vec![EdnTag::new("code"), EdnTag::new("message"), EdnTag::new("body")]),
       field_types: Arc::new(vec![
@@ -803,6 +806,7 @@ mod tests {
   fn decodes_enum_and_checks_payload_arity() {
     let prototype = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
+        definition_ref: None,
         name: EdnTag::new("ResultText"),
         fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
         field_types: Arc::new(vec![calcit::DYNAMIC_TYPE.clone(), calcit::DYNAMIC_TYPE.clone()]),
