@@ -16,7 +16,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.97.1
+          toolchain: 1.98.1
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
       - name: Install Wasmtime 18.0.3
@@ -63,7 +63,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.97.1
+          toolchain: 1.98.1
           components: clippy
           targets: wasm32-unknown-unknown
 
