@@ -9,8 +9,25 @@ use super::{CalcitGenericBound, CalcitImpl, CalcitTypeAnnotation, type_annotatio
 
 const STRUCT_FIELD_INDEX_CACHE_THRESHOLD: usize = 32;
 const STRUCT_FIELD_INDEX_CACHE_LIMIT: usize = 256;
+const STRUCT_FIELD_INDEX_CACHE_MAX_FIELDS: usize = 65_536;
+const STRUCT_FIELD_INDEX_CACHE_MAX_NAME_BYTES: usize = 8 * 1_024 * 1_024;
 
-type FieldIndexCacheEntry = (Weak<Vec<EdnTag>>, Arc<HashMap<String, usize>>);
+type FieldIndexCacheEntry = (Weak<Vec<EdnTag>>, Arc<HashMap<String, usize>>, usize);
+
+/// Decide whether one more immutable field index fits every thread-local cache
+/// budget. Field count bounds map overhead while copied-name bytes bound owned
+/// string payloads.
+fn field_index_cache_admissible(
+  entries: usize,
+  fields: usize,
+  name_bytes: usize,
+  added_fields: usize,
+  added_name_bytes: usize,
+) -> bool {
+  entries < STRUCT_FIELD_INDEX_CACHE_LIMIT
+    && fields.saturating_add(added_fields) <= STRUCT_FIELD_INDEX_CACHE_MAX_FIELDS
+    && name_bytes.saturating_add(added_name_bytes) <= STRUCT_FIELD_INDEX_CACHE_MAX_NAME_BYTES
+}
 
 thread_local! {
   /// Wide struct definitions are immutable. Cache by the live `fields` Arc
@@ -86,17 +103,25 @@ impl CalcitStructDef {
     let cache_key = Arc::as_ptr(&self.fields) as usize;
     STRUCT_FIELD_INDEX_CACHE.with(|cache| {
       let mut cache = cache.borrow_mut();
-      if let Some((fields, index)) = cache.get(&cache_key)
+      if let Some((fields, index, _)) = cache.get(&cache_key)
         && fields.upgrade().is_some_and(|fields| Arc::ptr_eq(&fields, &self.fields))
       {
         return index.get(y).copied();
       }
 
-      if cache.len() >= STRUCT_FIELD_INDEX_CACHE_LIMIT {
-        cache.retain(|_, (fields, _)| fields.strong_count() > 0);
-        if cache.len() >= STRUCT_FIELD_INDEX_CACHE_LIMIT {
-          cache.clear();
-        }
+      cache.retain(|_, (fields, _, _)| fields.strong_count() > 0);
+      let added_name_bytes = self
+        .fields
+        .iter()
+        .fold(0usize, |total, field| total.saturating_add(field.ref_str().len()));
+      let (cached_fields, cached_name_bytes) = cache.values().fold((0usize, 0usize), |(field_total, byte_total), entry| {
+        (
+          field_total.saturating_add(entry.0.upgrade().map_or(0, |fields| fields.len())),
+          byte_total.saturating_add(entry.2),
+        )
+      });
+      if !field_index_cache_admissible(cache.len(), cached_fields, cached_name_bytes, self.fields.len(), added_name_bytes) {
+        return self.fields.iter().position(|field| field.ref_str() == y);
       }
       let index = Arc::new(self.fields.iter().enumerate().fold(HashMap::new(), |mut index, (position, field)| {
         // Preserve the historical `position` behavior for malformed
@@ -105,7 +130,7 @@ impl CalcitStructDef {
         index
       }));
       let result = index.get(y).copied();
-      cache.insert(cache_key, (Arc::downgrade(&self.fields), index));
+      cache.insert(cache_key, (Arc::downgrade(&self.fields), index, added_name_bytes));
       result
     })
   }
@@ -117,7 +142,7 @@ impl CalcitStructDef {
       cache
         .borrow()
         .get(&cache_key)
-        .is_some_and(|(fields, _)| fields.upgrade().is_some_and(|fields| Arc::ptr_eq(&fields, &self.fields)))
+        .is_some_and(|(fields, _, _)| fields.upgrade().is_some_and(|fields| Arc::ptr_eq(&fields, &self.fields)))
     })
   }
 }
@@ -213,5 +238,37 @@ mod tests {
       Some(0),
       "wide cache must preserve first-match semantics"
     );
+  }
+
+  #[test]
+  fn wide_struct_cache_keeps_live_entries_and_rejects_over_budget_admission() {
+    STRUCT_FIELD_INDEX_CACHE.with(|cache| cache.borrow_mut().clear());
+    let definitions = (0..STRUCT_FIELD_INDEX_CACHE_LIMIT)
+      .map(|definition_index| {
+        let definition = CalcitStructDef::from_fields(
+          EdnTag::new(format!("Wide{definition_index}")),
+          (0..STRUCT_FIELD_INDEX_CACHE_THRESHOLD)
+            .map(|field_index| EdnTag::new(format!("field-{field_index:04}")))
+            .collect(),
+        );
+        assert_eq!(definition.index_of("field-0031"), Some(31));
+        definition
+      })
+      .collect::<Vec<_>>();
+    assert!(definitions[0].has_cached_field_index());
+
+    let overflow = CalcitStructDef::from_fields(
+      EdnTag::new("Overflow"),
+      (0..STRUCT_FIELD_INDEX_CACHE_THRESHOLD)
+        .map(|field_index| EdnTag::new(format!("field-{field_index:04}")))
+        .collect(),
+    );
+    assert_eq!(overflow.index_of("field-0031"), Some(31));
+    assert!(!overflow.has_cached_field_index(), "over-budget definitions must use linear lookup");
+    assert!(definitions[0].has_cached_field_index(), "existing live indexes must not be evicted");
+
+    assert!(!field_index_cache_admissible(0, STRUCT_FIELD_INDEX_CACHE_MAX_FIELDS, 0, 1, 0));
+    assert!(!field_index_cache_admissible(0, 0, STRUCT_FIELD_INDEX_CACHE_MAX_NAME_BYTES, 0, 1));
+    STRUCT_FIELD_INDEX_CACHE.with(|cache| cache.borrow_mut().clear());
   }
 }
