@@ -13,6 +13,6 @@ cargo run --bin calcit -- --compat-types --check-only "$FIXTURE"
 cargo build --bin cr-wasm --target "$TARGET"
 
 WASMTIME_NEW_CLI=0 wasmtime run \
-  --dir "$PWD::/workspace" \
+  --dir "$PWD/calcit::/workspace" \
   "$WASM_BIN" \
-  -- --check-only "/workspace/$FIXTURE"
+  -- --check-only "/workspace/$(basename "$FIXTURE")"
