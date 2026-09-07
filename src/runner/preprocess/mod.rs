@@ -10148,14 +10148,14 @@ mod tests {
     let bound_list_args = CalcitList::from(&[bound_list, Calcit::Number(0.0)] as &[Calcit]);
     let bound_list_expansion = try_expand_typed_optional_access_call(
       calcit::CORE_NS,
-      "nth",
+      "get",
       &bound_list_args,
       &ScopeTypes::new(),
       "tests.typed-access",
       &stack,
     )
     .expect("a bound List slot should be accepted")
-    .expect("a bound List slot should specialize indexed access");
+    .expect("a bound List slot should specialize checked optional access");
     assert!(bound_list_expansion.lisp_str().contains("&list:nth"));
     calcit::pop_type_slot_override("indexed-receiver");
 
