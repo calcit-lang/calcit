@@ -31,6 +31,8 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --bin calcit
@@ -52,6 +54,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-node@v6
         with:
@@ -118,10 +121,16 @@ jobs:
         run: |
           if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
-          elif git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- docs/; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            set +e
+            git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- docs/
+            status=$?
+            set -e
+            case "$status" in
+              0) echo "changed=false" >> "$GITHUB_OUTPUT" ;;
+              1) echo "changed=true" >> "$GITHUB_OUTPUT" ;;
+              *) echo "::error::Unable to compare pushed range"; exit "$status" ;;
+            esac
           fi
 
       - name: Deploy CalcitAgent.md to server
