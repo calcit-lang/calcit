@@ -50,6 +50,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v6
         with:
@@ -108,7 +110,22 @@ jobs:
           && cp -v scripts/main.mjs js-out/
           && node js-out/main.mjs
 
+      - name: Detect documentation changes
+        id: docs_changes
+        if: github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- docs/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Deploy CalcitAgent.md to server
+        if: steps.docs_changes.outputs.changed == 'true'
         id: deploy
         uses: Pendect/action-rsyncer@v2.0.0
         env:
