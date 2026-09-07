@@ -7846,7 +7846,7 @@ pub fn preprocess_defn(
         }
       })?;
       let def_schema = program::lookup_def_schema(ctx.file_ns, def_name.as_ref());
-      let generated_by_macro = ctx.call_stack.0.iter().any(|frame| matches!(frame.kind, StackKind::Macro));
+      let generated_by_macro = newest_call_stack_frame_is_macro(ctx.call_stack);
       let strict_generated_by_macro = strict_types_enabled() && generated_by_macro;
       if matches!(head, CalcitSyntax::DefWasmImport) && !has_valid_wasm_import_body(args) {
         return Err(CalcitErr::use_msg_stack_location(
@@ -9366,6 +9366,10 @@ fn effective_user_call_schema(info: &CalcitFn) -> Arc<CalcitFnTypeAnnotation> {
   signature
 }
 
+fn newest_call_stack_frame_is_macro(call_stack: &CallStackList) -> bool {
+  call_stack.0.first().is_some_and(|frame| matches!(frame.kind, StackKind::Macro))
+}
+
 fn reject_strict_whole_dynamic_public_schema(
   head: &CalcitSyntax,
   ns: &str,
@@ -9375,7 +9379,7 @@ fn reject_strict_whole_dynamic_public_schema(
   call_stack: &CallStackList,
   definition_location: Option<NodeLocation>,
 ) -> Result<(), CalcitErr> {
-  let generated_by_macro = call_stack.0.iter().any(|frame| matches!(frame.kind, StackKind::Macro));
+  let generated_by_macro = newest_call_stack_frame_is_macro(call_stack);
   if !strict_types_enabled()
     || !should_emit_project_source_lint(ns)
     || generated_by_macro
