@@ -43,6 +43,22 @@ fn callback_return_type(callback: &Calcit, scope_types: &ScopeTypes) -> Option<A
   }
 }
 
+/// Follow concrete type-slot bindings while leaving unresolved or cyclic slots
+/// open for compatibility handling by the caller.
+pub(crate) fn resolve_bound_type_slot_chain(mut type_value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  let mut resolving_slots = HashSet::new();
+  while let CalcitTypeAnnotation::TypeSlot(name) = type_value.as_ref() {
+    if !resolving_slots.insert(name.clone()) {
+      break;
+    }
+    let Some(bound) = calcit::resolve_type_slot(name) else {
+      break;
+    };
+    type_value = bound;
+  }
+  type_value
+}
+
 /// Resolve one concrete collection contract from the receiver and current call
 /// scope. Returning `None` keeps Dynamic/open receivers on the compatibility
 /// path and never authorizes static lowering.
@@ -66,17 +82,7 @@ pub(crate) fn resolve_checked_call_contract(
     return None;
   }
 
-  let mut receiver_type = resolve_type_value(args.first()?, scope_types)?;
-  let mut resolving_slots = HashSet::new();
-  while let T::TypeSlot(name) = receiver_type.as_ref() {
-    if !resolving_slots.insert(name.clone()) {
-      break;
-    }
-    let Some(bound) = calcit::resolve_type_slot(name) else {
-      break;
-    };
-    receiver_type = bound;
-  }
+  let receiver_type = resolve_bound_type_slot_chain(resolve_type_value(args.first()?, scope_types)?);
   match (fn_def, receiver_type.as_ref()) {
     ("get", T::Map(key_type, value_type)) => Some(CheckedCallContract {
       expected_types: Some(vec![receiver_type.clone(), key_type.clone()]),
