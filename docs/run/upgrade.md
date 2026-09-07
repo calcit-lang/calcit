@@ -23,6 +23,24 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.14 默认严格诊断
+
+Calcit 0.14 起，普通运行、`--check-only` 和代码生成默认启用严格预处理诊断；无需再通过
+`--strict-types` 才把不安全类型路径提升为稳定的 `E_*` 错误。`--strict-types` 仍保留，但语义是额外声明
+“零类型债务”，因此还会运行 zero-baseline quality gate。尚未迁移完成的旧项目可以暂时显式使用
+`--compat-types` 恢复 0.14 之前的 warning 行为；两个开关互斥。
+
+推荐先通过 0.13.79 这个迁移桥接版本清理 warning 和质量报告，再升级到 0.14：
+
+```bash
+calcit calcit.cirru --compat-types --check-only  # 临时保留旧行为
+calcit calcit.cirru --check-only                 # 0.14 默认严格诊断
+calcit calcit.cirru --strict-types --check-only  # 完成迁移后声明零债务
+```
+
+`--compat-types` 只用于限时迁移，不应成为新项目或长期 CI 的默认参数。已经在 entry 中显式配置的
+feature policy 仍然生效；兼容开关不会覆写 Snapshot。
+
 适用对象：通过 Calcit CLI 运行并产出 JS 的项目（例如 Respo）。
 
 升级完成的标准不是“`caps upgrade --all` 执行成功”，而是：
@@ -399,7 +417,7 @@ Struct 字段是定义的一部分，因此已知 struct 上的 `get`、`:field`
 | `get-in` | `Option<T>`（开放动态路径常为 `Option<Dynamic>`） | 任一路径缺失都是 `%none` |
 | `get-env` | `Option<String>` | 未设置的环境变量是 `%none` |
 
-`--strict-types` 还会检查这些访问 API 的接收者能力。`first`、`last`、`nth` 只接受可静态确认的
+默认严格诊断还会检查这些访问 API 的接收者能力。`first`、`last`、`nth` 只接受可静态确认的
 `List<T>`、`String` 或 `Enum`，`get` 另外接受 `Map<K,V>`；把 Number、Set、Struct、函数或未收窄的
 optional/FFI host value 传入时会报告 `E_UNSUPPORTED_INDEXED_RECEIVER`，而不是把 core schema 中保留的
 Dynamic 接收者位置当成任意值逃生口。Struct 字段改用 `(:field value)`，optional receiver 先 match/unwrap，
@@ -463,7 +481,7 @@ compiler/macro lowering、core internals、可复用 `defimpl`，以及 evidence
 已持久化的 `&%{}` IR 也可以保留，但必须能解析到具体 `defstruct`，并且每个声明字段恰好出现一次；
 缺字段、重复字段或未知字段仍会被拒绝。
 
-`--strict-types` 下，`unsafe-coerce` 还必须位于当前 definition 的结构化 `Fn` schema 所声明的
+默认严格诊断下，`unsafe-coerce` 还必须位于当前 definition 的结构化 `Fn` schema 所声明的
 `:features $ #{} :js-ffi` 词法范围内，否则报告 `E_UNSCOPED_UNSAFE_COERCE`。`js-ffi.raw.*`
 一类 namespace 约定只用于 inventory，不授予权限。迁移时把 assertion 收拢到小 adapter，完成 host
 value 的 validate/convert 后只返回 typed Calcit data；即使已正确标记，release quality gate 仍需审核

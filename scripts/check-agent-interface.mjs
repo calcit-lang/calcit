@@ -408,7 +408,10 @@ const scenarios = [
 const rows = [];
 for (const scenario of scenarios) {
   const started = process.hrtime.bigint();
-  const child = spawnSync(binary, scenario.args, {
+  // These scenarios exercise the historical all-features fixture and its
+  // machine envelopes, not the 0.14 strict-default acceptance path.
+  const fixtureArgs = [scenario.args[0], "--compat-types", ...scenario.args.slice(1)];
+  const child = spawnSync(binary, fixtureArgs, {
     cwd: process.cwd(),
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,

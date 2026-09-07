@@ -20,7 +20,7 @@ for (const [label, initFn] of cases) {
 
 /** Run one isolated native sample, verify its result, and return Calcit's elapsed time. */
 function runOnce(initFn) {
-  const result = spawnSync(executable, ["--init-fn", initFn, fixture], { encoding: "utf8" });
+  const result = spawnSync(executable, ["--compat-types", "--init-fn", initFn, fixture], { encoding: "utf8" });
   if (result.status !== 0) {
     throw new Error(`native benchmark failed for ${initFn}\n${result.stdout}\n${result.stderr}`);
   }

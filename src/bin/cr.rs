@@ -284,12 +284,14 @@ fn run_cli() -> Result<(), String> {
     cli_handlers::set_tips_level("full")?;
   }
 
+  let strict_type_policy = resolve_strict_type_policy(cli_args.strict_types, cli_args.compat_types)?;
+
   // Query/analyze commands may run preprocessing before the normal program-loading path.
-  // Strict type mode includes every location-aware JS FFI diagnostic. The
-  // ordinary flag remains available for migration audits that are not ready
-  // for the zero-debt Dynamic/nil quality gate yet.
-  runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method || cli_args.strict_types);
-  runner::preprocess::set_strict_types(cli_args.strict_types);
+  // Starting with 0.14, strict diagnostics are the default. `--strict-types`
+  // additionally requests the zero-debt quality preflight, while the explicit
+  // compatibility switch is the temporary migration escape hatch.
+  runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method || strict_type_policy.diagnostics);
+  runner::preprocess::set_strict_types(strict_type_policy.diagnostics);
   runner::preprocess::set_verbose_preprocess(cli_args.verbose);
   let _macro_metrics_report = runner::macro_metrics::ReportOnDrop::new(cli_args.macro_metrics);
   #[cfg(not(target_arch = "wasm32"))]
@@ -464,7 +466,7 @@ fn run_cli() -> Result<(), String> {
       calcit::merge_project_module_files(&mut snapshot, &module_data, module_path)?;
     }
   }
-  apply_strict_feature_policy_defaults(&mut snapshot, cli_args.strict_types)?;
+  apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
   let selected_entry = snapshot.active_entry()?.clone();
   let configured_run_mode = selected_entry.mode;
   let config_init = selected_entry.init_fn;
@@ -539,11 +541,10 @@ fn run_cli() -> Result<(), String> {
     )
   };
 
-  // `--strict-types` is a preflight for every execution/codegen mode, not just
-  // another spelling of check-only. Existing projects with reviewed debt keep
-  // using `analyze quality --baseline ...`; strict mode is intentionally the
-  // zero-debt policy for new modules and fully migrated libraries.
-  if cli_args.strict_types && !check_only {
+  // `--strict-types` remains the explicit zero-debt preflight for every
+  // execution/codegen mode. Default strict diagnostics do not claim that an
+  // audited project has no reviewed open boundaries.
+  if strict_type_policy.zero_debt && !check_only {
     // Eval/exec already preprocess above so they can fail before evaluating.
     // Other run/codegen modes still need the explicit strict preflight here.
     if !is_eval_mode {
@@ -555,7 +556,13 @@ fn run_cli() -> Result<(), String> {
   let use_configured_js_mode = should_emit_js(&cli_args.subcommand, configured_run_mode);
 
   let task = if check_only {
-    run_check_only(&entries).and_then(|_| if cli_args.strict_types { run_strict_type_gate() } else { Ok(()) })
+    run_check_only(&entries).and_then(|_| {
+      if strict_type_policy.zero_debt {
+        run_strict_type_gate()
+      } else {
+        Ok(())
+      }
+    })
   } else if let Some(CalcitCommand::Test(test_options)) = &cli_args.subcommand {
     eval_once = true;
     run_tests(test_options, &snapshot, &project_namespaces)
@@ -1127,11 +1134,29 @@ fn should_emit_js(subcommand: &Option<CalcitCommand>, configured_run_mode: snaps
   matches!(subcommand, Some(CalcitCommand::EmitJs(_))) || (subcommand.is_none() && configured_run_mode == snapshot::SnapshotRunMode::Js)
 }
 
-/// Strict mode is an explicit opt-in, so a missing JS FFI policy can safely
-/// become an in-memory error default without rewriting an existing Snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StrictTypePolicy {
+  diagnostics: bool,
+  zero_debt: bool,
+}
+
+/// Resolve the 0.14 type policy without letting the migration escape hatch and
+/// the zero-debt assertion silently override each other.
+fn resolve_strict_type_policy(strict_types: bool, compat_types: bool) -> Result<StrictTypePolicy, String> {
+  if strict_types && compat_types {
+    return Err("`--strict-types` and `--compat-types` cannot be used together".to_owned());
+  }
+  Ok(StrictTypePolicy {
+    diagnostics: !compat_types,
+    zero_debt: strict_types,
+  })
+}
+
+/// Strict diagnostics are the default, so a missing JS FFI policy becomes an
+/// in-memory error default without rewriting an existing Snapshot.
 /// An entry that deliberately declares allow/warn/error keeps that choice.
-fn apply_strict_feature_policy_defaults(snapshot: &mut snapshot::Snapshot, strict_types: bool) -> Result<(), String> {
-  if !strict_types {
+fn apply_strict_feature_policy_defaults(snapshot: &mut snapshot::Snapshot, strict_diagnostics: bool) -> Result<(), String> {
+  if !strict_diagnostics {
     return Ok(());
   }
   let entry_name = snapshot.active_entry_name().to_owned();
@@ -1972,7 +1997,7 @@ mod tests {
   }
 
   #[test]
-  fn strict_types_default_missing_js_ffi_policy_to_error_without_overriding_explicit_choices() {
+  fn strict_diagnostics_default_missing_js_ffi_policy_to_error_without_overriding_explicit_choices() {
     let mut compatibility = snapshot::Snapshot::default();
     apply_strict_feature_policy_defaults(&mut compatibility, false).expect("compatibility policy");
     assert!(!compatibility.active_entry().unwrap().feature_policy.contains_key("js-ffi"));
@@ -1999,6 +2024,32 @@ mod tests {
       apply_strict_feature_policy_defaults(&mut configured, true).expect("explicit policy");
       assert_eq!(configured.active_entry().unwrap().feature_policy.get("js-ffi"), Some(&policy));
     }
+  }
+
+  #[test]
+  fn strict_type_policy_defaults_diagnostics_and_keeps_zero_debt_explicit() {
+    assert_eq!(
+      resolve_strict_type_policy(false, false),
+      Ok(StrictTypePolicy {
+        diagnostics: true,
+        zero_debt: false,
+      })
+    );
+    assert_eq!(
+      resolve_strict_type_policy(true, false),
+      Ok(StrictTypePolicy {
+        diagnostics: true,
+        zero_debt: true,
+      })
+    );
+    assert_eq!(
+      resolve_strict_type_policy(false, true),
+      Ok(StrictTypePolicy {
+        diagnostics: false,
+        zero_debt: false,
+      })
+    );
+    assert!(resolve_strict_type_policy(true, true).is_err());
   }
 
   #[test]

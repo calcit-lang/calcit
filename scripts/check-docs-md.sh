@@ -31,7 +31,9 @@ while IFS= read -r file; do
 
   output=""
   exit_code=0
-  if output="$("${CR_CMD[@]}" "$ENTRY" docs check-md "$file" --entry "$ENTRY" "${QUIET_ARGS[@]}" 2>&1)"; then
+  # Documentation snippets intentionally include historical and partial forms;
+  # strict-default behavior has dedicated fixtures and CLI tests.
+  if output="$("${CR_CMD[@]}" "$ENTRY" --compat-types docs check-md "$file" --entry "$ENTRY" "${QUIET_ARGS[@]}" 2>&1)"; then
     :
   else
     exit_code=$?

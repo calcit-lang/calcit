@@ -40,12 +40,14 @@ jobs:
         env:
           RUST_MIN_STACK: "16777216"
       - name: "run definition-attached core tests"
-        run: cargo run --bin calcit -- src/cirru/calcit-core.cirru test --tag unit
+        run: cargo run --bin calcit -- src/cirru/calcit-core.cirru --compat-types test --tag unit
       - name: "prevent bundled core type-debt regressions"
         run: cargo run --bin calcit -- src/cirru/calcit-core.cirru analyze quality --baseline config/calcit-core-quality.cirru --format json
       - name: "prevent bundled core Dynamic classification drift"
         run: cargo build --bin calcit && node scripts/core-dynamic-classification.mjs --check
-      - run: cargo run --bin calcit -- calcit/test.cirru
+      - name: "verify strict diagnostics default and compatibility escape hatch"
+        run: node scripts/check-strict-default.mjs
+      - run: cargo run --bin calcit -- calcit/test.cirru --compat-types
 
       - name: "verify WASM exports and FFI"
         run: >
@@ -56,7 +58,7 @@ jobs:
         run: >
           yarn
           && yarn tsc
-          && cargo run --bin calcit -- calcit/test.cirru js
+          && cargo run --bin calcit -- calcit/test.cirru --compat-types js
           && ln -s ../../ node_modules/@calcit/procs
           && cp -v scripts/main.mjs js-out/
           && node js-out/main.mjs

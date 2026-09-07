@@ -64,14 +64,14 @@ calcit docs agents --full
 
 - **用途定位**：`calcit eval` 适合快速验证语义/类型提示与宏展开，不等同于完整项目运行。
 - **可加载外部模块**：`calcit eval` 支持重复传入 `--dep`，可加载多个模块目录（路径以 `/` 结尾时读取其中的 `calcit.cirru`；仅有 `compact.cirru` 的模块会被拒绝并提示迁移）。
-  - ✅ `cargo run --bin calcit -- calcit/test.cirru eval --dep ~/.config/calcit/modules/respo.calcit/ -- 'ns app.demo $ :require respo.util.detect :refer $ element?\n\nelement? nil'`
+  - ✅ `cargo run --bin calcit -- calcit/test.cirru --compat-types eval --dep ~/.config/calcit/modules/respo.calcit/ -- 'ns app.demo $ :require respo.util.detect :refer $ element?\n\nelement? nil'`
 - **首表达式 `ns` 会注入当前 eval 程序**：当 snippet 第一个表达式是 `ns` 时，会把 `ns <NS> ...` 从第 3 个节点开始（通常是 `:require` 等规则）合并到运行用的 `ns app.main`，用于在 eval 中显式导入命名空间。
 - **`docs check-md` 也支持依赖模块**：`calcit docs check-md` 可通过多次 `--dep` 传参，内部会透传给 `eval`/`--check-only`。这样 markdown 代码块可配合首行 `ns ... :require ...` 访问模块函数。
-  - ✅ `cargo run --bin calcit -- calcit/test.cirru docs check-md docs/CalcitAgent.md --dep ~/.config/calcit/modules/respo.calcit/`
+  - ✅ `cargo run --bin calcit -- calcit/test.cirru --compat-types docs check-md docs/CalcitAgent.md --dep ~/.config/calcit/modules/respo.calcit/`
 - **顶层无需额外括号**：Cirru 语法本身就不需要"最外层括号"，顶层可以直接是表达式。可用 `calcit cirru parse -e` 观察解析结果。
-  - ✅ `cargo run --bin calcit -- calcit/test.cirru eval 'range 3'`
-  - ✅ `cargo run --bin calcit -- calcit/test.cirru eval 'let ((x 1)) (+ x 2)'`
-  - ❌ `cargo run --bin calcit -- calcit/test.cirru eval '(range 3)'`（多一层括号会改变调用语义）
+  - ✅ `cargo run --bin calcit -- calcit/test.cirru --compat-types eval 'range 3'`
+  - ✅ `cargo run --bin calcit -- calcit/test.cirru --compat-types eval 'let ((x 1)) (+ x 2)'`
+  - ❌ `cargo run --bin calcit -- calcit/test.cirru --compat-types eval '(range 3)'`（多一层括号会改变调用语义）
 - **`let` 绑定语法**：必须用成对列表，形如 `((name value))`。
   - ✅ `let ((x 1)) x`
   - ❌ `let (x 1) x`（会触发"expects pairs in list for let"）
@@ -81,13 +81,13 @@ calcit docs agents --full
   - ✅ `fn (acc item) if flag (acc) , acc`（`, acc` 表示"按值传递"）
 - **`foldl` 初始空集合语法**：`foldl xs [] $ fn ...` 中，`[]` 会因 `$` 右结合被解析为 `([] (fn ...))` 而非空列表。正确写法是先绑定 `init $ []`，再传 `init`；或对空 map 同理使用 `init $ {}`。
 - **告警会使 eval 失败**：有类型告警时，`calcit eval` 会以错误退出（这是预期行为，便于阻断不安全用法）。
-  - 例：`cargo run --bin calcit -- calcit/test.cirru eval '&list:nth 1 0'` 会提示 `:list` vs `:number` 的类型告警。
+  - 例：`cargo run --bin calcit -- calcit/test.cirru --compat-types eval '&list:nth 1 0'` 会提示 `:list` vs `:number` 的类型告警。
 - **JS FFI 动态访问告警（opt-in）**：传 `--warn-dyn-method` 时，裸 `JsObject` 上的 `.-`/`.!`/`aget`/`aset`/`js-get`/`js-set`（静态字面量 key）会额外报告 `W_JS_FFI_UNTYPED_ACCESS`，提示声明 external-object trait 提升类型覆盖度；不传 flag 时静默。
 - **assert-type 仅做检查**：`assert-type` 在预处理阶段生效，不会改变运行值。
-  - 例：`cargo run --bin calcit -- calcit/test.cirru eval 'let ((x 1)) (assert-type x :list) x'` 依然返回 `1`，并在检查阶段报告类型不匹配。
+  - 例：`cargo run --bin calcit -- calcit/test.cirru --compat-types eval 'let ((x 1)) (assert-type x :list) x'` 依然返回 `1`，并在检查阶段报告类型不匹配。
 - **常用排错方式**：遇到报错先看 `.calcit/error.cirru`，它会提供更完整的栈信息。
 - **查示例用法**：可用 `calcit query examples <namespace/definition>` 查目标定义的示例。
-  - 例：`cargo run --bin calcit -- calcit/test.cirru query examples calcit.core/let`
+  - 例：`cargo run --bin calcit -- calcit/test.cirru --compat-types query examples calcit.core/let`
 
 ### CLI 修改指南与约束
 
