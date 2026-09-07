@@ -6,7 +6,7 @@ Issue: calcit-lang/calcit#845
 
 - Added an iterative, pair-memoized relation path for deeply nested lists,
   maps, options, references, nominal arguments, and shared type DAGs. A fixed
-  8,192-node budget returns an explicit complexity boundary instead of
+  16,384-node budget returns an explicit complexity boundary instead of
   authorizing a Dynamic fallback.
 - Made nominal data-schema identity traversal iterative and bounded. Protected
   schema-alias expansion with relation-local cycle state so mutually recursive
@@ -31,7 +31,7 @@ Issue: calcit-lang/calcit#845
 ## 中文
 
 - 为深层 List、Map、Option、Ref、名义类型参数及共享类型 DAG 增加显式 worklist
-  与成对访问记忆。固定 8,192 节点预算，超限时返回明确的 complexity boundary，
+  与成对访问记忆。固定 16,384 节点预算，超限时返回明确的 complexity boundary，
   不允许借 Dynamic 静默放宽。
 - 将名义数据 schema identity 比较改为迭代且有界；schema alias 展开使用关系局部
   的环状态，使合法具名互递归继续成立，同时明确拒绝纯 alias cycle。
