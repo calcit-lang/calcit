@@ -3644,6 +3644,9 @@
               if
                 not $ every? patterns
                   fn (pair)
+                    hint-fn $ {}
+                      :args $ [] 'List
+                      :return 'Bool
                     &= 2 $ &list:count pair
                 raise $ str-spaced "|case-default expects each pattern as pair, got:" patterns
               &let
