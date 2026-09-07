@@ -1,5 +1,5 @@
 use std::{
-  cell::RefCell,
+  cell::{Cell, RefCell},
   cmp::Ordering,
   collections::{HashMap, HashSet},
   fmt,
@@ -213,6 +213,7 @@ thread_local! {
   /// malformed alias graph from recursively re-entering the same symbolic
   /// edge while keeping independent compatibility checks isolated.
   static TYPE_RELATION_SLOT_STACK: RefCell<HashSet<Arc<str>>> = RefCell::new(HashSet::new());
+  static COMPATIBILITY_RELATION_VISITS: Cell<Option<usize>> = const { Cell::new(None) };
 }
 
 pub static DYNAMIC_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| Arc::new(CalcitTypeAnnotation::Dynamic));
@@ -220,6 +221,38 @@ pub static DYNAMIC_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| 
 pub(crate) type TypeBindings = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
 const TYPE_DIAGNOSTIC_DEPTH_LIMIT: usize = 32;
+
+struct CompatibilityRelationGuard {
+  owns_context: bool,
+}
+
+impl Drop for CompatibilityRelationGuard {
+  fn drop(&mut self) {
+    if self.owns_context {
+      COMPATIBILITY_RELATION_VISITS.with(|visits| visits.set(None));
+    }
+  }
+}
+
+fn enter_compatibility_relation() -> CompatibilityRelationGuard {
+  let owns_context = COMPATIBILITY_RELATION_VISITS.with(|visits| {
+    if visits.get().is_none() {
+      visits.set(Some(0));
+      true
+    } else {
+      false
+    }
+  });
+  CompatibilityRelationGuard { owns_context }
+}
+
+fn consume_compatibility_relation_visit() -> bool {
+  COMPATIBILITY_RELATION_VISITS.with(|visits| {
+    let next = visits.get().unwrap_or(0).saturating_add(1);
+    visits.set(Some(next));
+    next <= TYPE_RELATION_NODE_LIMIT
+  })
+}
 
 fn with_type_relation_symbol<T>(
   stack: &'static std::thread::LocalKey<RefCell<HashSet<Arc<str>>>>,
@@ -587,6 +620,9 @@ fn bounded_plain_type_relation<'a>(
     if stats.node_visits > TYPE_RELATION_NODE_LIMIT {
       return Err(stats);
     }
+    if matches!(mode, PlainRelationMode::Compatibility) && !consume_compatibility_relation_visit() {
+      return Err(stats);
+    }
 
     match (actual, expected) {
       (_, Type::Dynamic) | (Type::Dynamic, _) => {
@@ -749,6 +785,23 @@ fn bounded_plain_type_relation<'a>(
   }
 
   Ok(Some((result, stats)))
+}
+
+fn render_bounded_type_list(
+  types: &[Arc<CalcitTypeAnnotation>],
+  depth: usize,
+  remaining: &mut usize,
+  render: fn(&CalcitTypeAnnotation, usize, &mut usize) -> String,
+) -> String {
+  let mut parts = vec![];
+  for annotation in types {
+    if *remaining == 0 {
+      parts.push("…".to_owned());
+      break;
+    }
+    parts.push(render(annotation.as_ref(), depth, remaining));
+  }
+  parts.join(", ")
 }
 
 impl TypeProof {
@@ -3288,7 +3341,7 @@ impl CalcitTypeAnnotation {
     }
 
     match self {
-      Self::Fn(signature) => signature.render_signature_brief(),
+      Self::Fn(signature) => signature.render_signature_brief_bounded(depth + 1, remaining),
       Self::Variadic(inner) => format!("&{}", inner.to_brief_string_bounded(depth + 1, remaining)),
       Self::List(inner) => format!("list<{}>", inner.to_brief_string_bounded(depth + 1, remaining)),
       Self::Map(k, v) => format!(
@@ -3305,11 +3358,7 @@ impl CalcitTypeAnnotation {
         if args.is_empty() {
           format!("struct {}", base.name)
         } else {
-          let rendered = args
-            .iter()
-            .map(|t| t.to_brief_string_bounded(depth + 1, remaining))
-            .collect::<Vec<_>>()
-            .join(", ");
+          let rendered = render_bounded_type_list(args, depth + 1, remaining, CalcitTypeAnnotation::to_brief_string_bounded);
           format!("struct {}<{}>", base.name, rendered)
         }
       }
@@ -3323,11 +3372,7 @@ impl CalcitTypeAnnotation {
         if args.is_empty() {
           format!("'{name}")
         } else {
-          let rendered = args
-            .iter()
-            .map(|t| t.to_brief_string_bounded(depth + 1, remaining))
-            .collect::<Vec<_>>()
-            .join(", ");
+          let rendered = render_bounded_type_list(args, depth + 1, remaining, CalcitTypeAnnotation::to_brief_string_bounded);
           format!("'{name}<{rendered}>")
         }
       }
@@ -3335,11 +3380,7 @@ impl CalcitTypeAnnotation {
         if args.is_empty() {
           format!("enum {}", enum_def.name())
         } else {
-          let rendered = args
-            .iter()
-            .map(|t| t.to_brief_string_bounded(depth + 1, remaining))
-            .collect::<Vec<_>>()
-            .join(", ");
+          let rendered = render_bounded_type_list(args, depth + 1, remaining, CalcitTypeAnnotation::to_brief_string_bounded);
           format!("enum {}<{}>", enum_def.name(), rendered)
         }
       }
@@ -3915,6 +3956,7 @@ impl CalcitTypeAnnotation {
   }
 
   pub(crate) fn compatible_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
+    let _relation_guard = enter_compatibility_relation();
     match bounded_plain_type_relation(self, expected, PlainRelationMode::Compatibility) {
       Ok(Some((result, _))) => return !result.is_mismatch(),
       Err(_) => return false,
@@ -3926,7 +3968,7 @@ impl CalcitTypeAnnotation {
       if !visited.insert((actual as *const Self as usize, expected as *const Self as usize)) {
         continue;
       }
-      if visited.len() > TYPE_RELATION_NODE_LIMIT {
+      if !consume_compatibility_relation_visit() {
         return false;
       }
       match (actual, expected) {
@@ -5001,7 +5043,7 @@ impl CalcitTypeAnnotation {
     }
 
     match self {
-      Self::Fn(signature) => signature.describe(),
+      Self::Fn(signature) => signature.describe_bounded(depth + 1, remaining),
       Self::Macro(_) => "macro-signature".to_owned(),
       Self::Syntax(contract) => match contract.as_ref() {
         MacroSyntaxType::Syntax => "syntax".to_owned(),
@@ -5017,11 +5059,7 @@ impl CalcitTypeAnnotation {
         if args.is_empty() {
           format!("struct {}", base.name)
         } else {
-          let rendered = args
-            .iter()
-            .map(|t| t.describe_bounded(depth + 1, remaining))
-            .collect::<Vec<_>>()
-            .join(", ");
+          let rendered = render_bounded_type_list(args, depth + 1, remaining, CalcitTypeAnnotation::describe_bounded);
           format!("struct {}<{}>", base.name, rendered)
         }
       }
@@ -5030,11 +5068,7 @@ impl CalcitTypeAnnotation {
         if args.is_empty() {
           format!("type {name}")
         } else {
-          let rendered = args
-            .iter()
-            .map(|t| t.describe_bounded(depth + 1, remaining))
-            .collect::<Vec<_>>()
-            .join(", ");
+          let rendered = render_bounded_type_list(args, depth + 1, remaining, CalcitTypeAnnotation::describe_bounded);
           format!("type {name}<{rendered}>")
         }
       }
@@ -5042,11 +5076,7 @@ impl CalcitTypeAnnotation {
         if args.is_empty() {
           format!("enum {}", enum_def.name())
         } else {
-          let rendered = args
-            .iter()
-            .map(|t| t.describe_bounded(depth + 1, remaining))
-            .collect::<Vec<_>>()
-            .join(", ");
+          let rendered = render_bounded_type_list(args, depth + 1, remaining, CalcitTypeAnnotation::describe_bounded);
           format!("enum {}<{}>", enum_def.name(), rendered)
         }
       }
@@ -5724,6 +5754,45 @@ mod tests {
       "described diagnostic is unexpectedly large: {} bytes",
       described.len()
     );
+
+    let signature = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![annotation.clone(); 1_024],
+      return_type: annotation,
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    }));
+    let fn_brief = signature.to_brief_string();
+    let fn_description = signature.describe();
+    assert!(
+      fn_brief.contains('…') && fn_brief.len() < 8_192,
+      "function brief must share the render budget"
+    );
+    assert!(
+      fn_description.contains('…') && fn_description.len() < 8_192,
+      "function description must share the render budget"
+    );
+  }
+
+  #[test]
+  fn compatibility_budget_spans_nested_function_signature_relations() {
+    let width = TYPE_RELATION_NODE_LIMIT + 1;
+    let signature = |arg_types| {
+      CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types,
+        return_type: Arc::new(CalcitTypeAnnotation::Unit),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      }))
+    };
+    let actual = signature((0..width).map(|_| Arc::new(CalcitTypeAnnotation::Number)).collect());
+    let expected = signature((0..width).map(|_| Arc::new(CalcitTypeAnnotation::Number)).collect());
+    assert!(!actual.is_compatible_with(&expected));
   }
 
   #[test]
@@ -7919,6 +7988,15 @@ impl CalcitFnTypeAnnotation {
   }
 
   pub fn describe(&self) -> String {
+    let mut remaining = 128;
+    self.describe_bounded(0, &mut remaining)
+  }
+
+  fn describe_bounded(&self, depth: usize, remaining: &mut usize) -> String {
+    if depth >= TYPE_DIAGNOSTIC_DEPTH_LIMIT || *remaining == 0 {
+      return "…".to_owned();
+    }
+    *remaining -= 1;
     let generics = if self.generics.is_empty() {
       "".to_string()
     } else {
@@ -7936,15 +8014,40 @@ impl CalcitFnTypeAnnotation {
         .join(", ");
       format!(" where {rendered}")
     };
-    let mut rendered_args = self.arg_types.iter().map(|t| t.describe()).collect::<Vec<_>>();
+    let mut rendered_args = vec![];
+    for annotation in &self.arg_types {
+      if *remaining == 0 {
+        rendered_args.push("…".to_owned());
+        break;
+      }
+      rendered_args.push(annotation.describe_bounded(depth + 1, remaining));
+    }
     if let Some(rest) = &self.rest_type {
-      rendered_args.push(format!("& {}", rest.describe()));
+      if *remaining == 0 {
+        if rendered_args.last().is_none_or(|part| part != "…") {
+          rendered_args.push("…".to_owned());
+        }
+      } else {
+        rendered_args.push(format!("& {}", rest.describe_bounded(depth + 1, remaining)));
+      }
     }
     let args = format!("({})", rendered_args.join(", "));
-    format!("fn{generics}{where_clause}{args} -> {}", self.return_type.describe())
+    format!(
+      "fn{generics}{where_clause}{args} -> {}",
+      self.return_type.describe_bounded(depth + 1, remaining)
+    )
   }
 
   pub fn render_signature_brief(&self) -> String {
+    let mut remaining = 128;
+    self.render_signature_brief_bounded(0, &mut remaining)
+  }
+
+  fn render_signature_brief_bounded(&self, depth: usize, remaining: &mut usize) -> String {
+    if depth >= TYPE_DIAGNOSTIC_DEPTH_LIMIT || *remaining == 0 {
+      return "…".to_owned();
+    }
+    *remaining -= 1;
     let generics = if self.generics.is_empty() {
       "".to_string()
     } else {
@@ -7962,13 +8065,29 @@ impl CalcitFnTypeAnnotation {
         .join(", ");
       format!(" where {rendered}")
     };
-    let mut parts = self.arg_types.iter().map(|t| t.to_brief_string()).collect::<Vec<_>>();
+    let mut parts = vec![];
+    for annotation in &self.arg_types {
+      if *remaining == 0 {
+        parts.push("…".to_owned());
+        break;
+      }
+      parts.push(annotation.to_brief_string_bounded(depth + 1, remaining));
+    }
     if let Some(rest) = &self.rest_type {
-      parts.push(format!("& {}", rest.to_brief_string()));
+      if *remaining == 0 {
+        if parts.last().is_none_or(|part| part != "…") {
+          parts.push("…".to_owned());
+        }
+      } else {
+        parts.push(format!("& {}", rest.to_brief_string_bounded(depth + 1, remaining)));
+      }
     }
     let args_repr = format!("({})", parts.join(", "));
 
-    format!("fn{generics}{where_clause}{args_repr} -> {}", self.return_type.to_brief_string())
+    format!(
+      "fn{generics}{where_clause}{args_repr} -> {}",
+      self.return_type.to_brief_string_bounded(depth + 1, remaining)
+    )
   }
 
   pub fn matches_signature(&self, other: &CalcitFnTypeAnnotation) -> bool {
