@@ -575,6 +575,13 @@ fn main() {
     // AppKit event loops can own it. Match the worker stack used elsewhere.
     println!("cargo:rustc-link-arg-bin=calcit=-Wl,-stack_size,0x2000000");
   }
+  if target.starts_with("wasm32-wasi") {
+    // The standalone compiler recursively preprocesses the bundled core before
+    // user code. wasm-ld's 1 MiB default stack is too small for that valid
+    // workload in an unoptimized WASI build, where it otherwise underflows the
+    // shadow stack and traps as an out-of-bounds linear-memory access.
+    println!("cargo:rustc-link-arg-bin=cr-wasm=-zstack-size=4194304");
+  }
 
   let out_dir = env::var_os("OUT_DIR").unwrap();
   let dest_path = Path::new(&out_dir).join("calcit-core.rmp");
