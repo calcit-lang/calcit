@@ -444,6 +444,31 @@ fn strict_mode_accepts_macro_generated_closures_without_public_schemas() {
 }
 
 #[test]
+fn strict_mode_rejects_source_definition_reached_from_macro_expansion_without_public_schema() {
+  run_with_large_stack(|| {
+    let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: Arc::new(CalcitTypeAnnotation::Number),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    let entries = load_snippet_entries_with_main_schema(
+      "defn independent-source () 1\n\ndefmacro call-independent ()\n  quasiquote $ independent-source\n\ndefn main! ()\n  call-independent",
+      Some(main_schema),
+    );
+    let _strict = StrictTypesReset::enabled();
+
+    let err =
+      run_check_only(&entries).expect_err("a source definition reached through a macro expansion must still declare a public schema");
+    assert!(err.contains("E_WHOLE_DYNAMIC_PUBLIC_SCHEMA"), "unexpected strict error: {err}");
+    assert!(err.contains("independent-source"), "error should name the source definition: {err}");
+  });
+}
+
+#[test]
 fn strict_mode_runs_definition_tests_with_generated_function_schemas() {
   run_with_large_stack(|| {
     let namespace = format!("app.strict-definition-test-{}", std::process::id());
