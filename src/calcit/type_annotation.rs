@@ -209,11 +209,46 @@ thread_local! {
   /// currently being built (for example, an enum containing itself). Keep the
   /// recursive edge symbolic while still validating the outer application.
   static TYPE_REF_ARITY_RESOLUTION_STACK: RefCell<HashSet<Arc<str>>> = RefCell::new(HashSet::new());
+  /// Alias and slot expansion are relation-local. These stacks prevent a
+  /// malformed alias graph from recursively re-entering the same symbolic
+  /// edge while keeping independent compatibility checks isolated.
+  static TYPE_RELATION_ALIAS_STACK: RefCell<HashSet<Arc<str>>> = RefCell::new(HashSet::new());
+  static TYPE_RELATION_SLOT_STACK: RefCell<HashSet<Arc<str>>> = RefCell::new(HashSet::new());
 }
 
 pub static DYNAMIC_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| Arc::new(CalcitTypeAnnotation::Dynamic));
 
 pub(crate) type TypeBindings = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
+
+const TYPE_RELATION_VISIT_LIMIT: usize = 16_384;
+const TYPE_DIAGNOSTIC_DEPTH_LIMIT: usize = 32;
+
+fn with_type_relation_symbol<T>(
+  stack: &'static std::thread::LocalKey<RefCell<HashSet<Arc<str>>>>,
+  name: &str,
+  f: impl FnOnce() -> T,
+) -> Option<T> {
+  struct SymbolGuard {
+    stack: &'static std::thread::LocalKey<RefCell<HashSet<Arc<str>>>>,
+    key: Arc<str>,
+  }
+
+  impl Drop for SymbolGuard {
+    fn drop(&mut self) {
+      self.stack.with(|active| {
+        active.borrow_mut().remove(&self.key);
+      });
+    }
+  }
+
+  let key: Arc<str> = Arc::from(name.trim_start_matches('\'').trim_start_matches(':'));
+  let entered = stack.with(|active| active.borrow_mut().insert(key.clone()));
+  if !entered {
+    return None;
+  }
+  let _guard = SymbolGuard { stack, key };
+  Some(f())
+}
 
 fn type_ref_arity_resolution_key(name: &str) -> Arc<str> {
   let stripped = name.trim_start_matches('\'').trim_start_matches(':');
@@ -2864,25 +2899,41 @@ impl CalcitTypeAnnotation {
 
   /// Render a concise representation used in warnings or logs
   pub fn to_brief_string(&self) -> String {
+    self.to_brief_string_at_depth(0)
+  }
+
+  fn to_brief_string_at_depth(&self, depth: usize) -> String {
+    if depth >= TYPE_DIAGNOSTIC_DEPTH_LIMIT {
+      return "…".to_string();
+    }
+    let next_depth = depth + 1;
     if let Some(tag) = self.builtin_tag_name() {
       return format!(":{tag}");
     }
 
     match self {
       Self::Fn(signature) => signature.render_signature_brief(),
-      Self::Variadic(inner) => format!("&{}", inner.to_brief_string()),
-      Self::List(inner) => format!("list<{}>", inner.to_brief_string()),
-      Self::Map(k, v) => format!("map<{},{}>", k.to_brief_string(), v.to_brief_string()),
-      Self::Set(inner) => format!("set<{}>", inner.to_brief_string()),
-      Self::Ref(inner) => format!("ref<{}>", inner.to_brief_string()),
+      Self::Variadic(inner) => format!("&{}", inner.to_brief_string_at_depth(next_depth)),
+      Self::List(inner) => format!("list<{}>", inner.to_brief_string_at_depth(next_depth)),
+      Self::Map(k, v) => format!(
+        "map<{},{}>",
+        k.to_brief_string_at_depth(next_depth),
+        v.to_brief_string_at_depth(next_depth)
+      ),
+      Self::Set(inner) => format!("set<{}>", inner.to_brief_string_at_depth(next_depth)),
+      Self::Ref(inner) => format!("ref<{}>", inner.to_brief_string_at_depth(next_depth)),
       Self::Custom(inner) => format!("{inner}"),
-      Self::Optional(inner) => format!("{}?", inner.to_brief_string()),
-      Self::JsNullish(inner) => format!("js-nullish<{}>", inner.to_brief_string()),
+      Self::Optional(inner) => format!("{}?", inner.to_brief_string_at_depth(next_depth)),
+      Self::JsNullish(inner) => format!("js-nullish<{}>", inner.to_brief_string_at_depth(next_depth)),
       Self::Struct(base, args) => {
         if args.is_empty() {
           format!("struct {}", base.name)
         } else {
-          let rendered = args.iter().map(|t| t.to_brief_string()).collect::<Vec<_>>().join(", ");
+          let rendered = args
+            .iter()
+            .map(|t| t.to_brief_string_at_depth(next_depth))
+            .collect::<Vec<_>>()
+            .join(", ");
           format!("struct {}<{}>", base.name, rendered)
         }
       }
@@ -2896,7 +2947,11 @@ impl CalcitTypeAnnotation {
         if args.is_empty() {
           format!("'{name}")
         } else {
-          let rendered = args.iter().map(|t| t.to_brief_string()).collect::<Vec<_>>().join(", ");
+          let rendered = args
+            .iter()
+            .map(|t| t.to_brief_string_at_depth(next_depth))
+            .collect::<Vec<_>>()
+            .join(", ");
           format!("'{name}<{rendered}>")
         }
       }
@@ -2904,7 +2959,11 @@ impl CalcitTypeAnnotation {
         if args.is_empty() {
           format!("enum {}", enum_def.name())
         } else {
-          let rendered = args.iter().map(|t| t.to_brief_string()).collect::<Vec<_>>().join(", ");
+          let rendered = args
+            .iter()
+            .map(|t| t.to_brief_string_at_depth(next_depth))
+            .collect::<Vec<_>>()
+            .join(", ");
           format!("enum {}<{}>", enum_def.name(), rendered)
         }
       }
@@ -2921,62 +2980,178 @@ impl CalcitTypeAnnotation {
   /// Substitute all `TypeVar` occurrences with their bound types from `bindings`.
   /// Returns a new annotation with variables resolved; unbound variables remain as-is.
   pub fn substitute_type_vars(&self, bindings: &TypeBindings) -> Arc<CalcitTypeAnnotation> {
-    match self {
-      Self::TypeVar(name) => bindings.get(name).cloned().unwrap_or_else(|| Arc::new(self.clone())),
-      Self::TypeRef(name, args) => {
-        let new_args: Vec<_> = args.iter().map(|a| a.substitute_type_vars(bindings)).collect();
-        Arc::new(Self::TypeRef(name.clone(), Arc::new(new_args)))
-      }
-      Self::List(inner) => Arc::new(Self::List(inner.substitute_type_vars(bindings))),
-      Self::Map(k, v) => Arc::new(Self::Map(k.substitute_type_vars(bindings), v.substitute_type_vars(bindings))),
-      Self::Set(inner) => Arc::new(Self::Set(inner.substitute_type_vars(bindings))),
-      Self::Ref(inner) => Arc::new(Self::Ref(inner.substitute_type_vars(bindings))),
-      Self::Optional(inner) => Arc::new(Self::Optional(inner.substitute_type_vars(bindings))),
-      Self::JsNullish(inner) => Arc::new(Self::JsNullish(inner.substitute_type_vars(bindings))),
-      Self::Variadic(inner) => Arc::new(Self::Variadic(inner.substitute_type_vars(bindings))),
-      Self::Fn(sig) => {
-        let new_args = sig.arg_types.iter().map(|a| a.substitute_type_vars(bindings)).collect();
-        let new_ret = sig.return_type.substitute_type_vars(bindings);
-        let new_rest = sig.rest_type.as_ref().map(|r| r.substitute_type_vars(bindings));
-        Arc::new(Self::Fn(Arc::new(CalcitFnTypeAnnotation {
-          generics: sig.generics.clone(),
-          where_bounds: sig.where_bounds.clone(),
-          arg_types: new_args,
-          return_type: new_ret,
-          fn_kind: sig.fn_kind,
-          rest_type: new_rest,
-          features: sig.features.clone(),
-        })))
-      }
-      Self::Struct(base, args) => {
-        let new_args: Vec<_> = args.iter().map(|a| a.substitute_type_vars(bindings)).collect();
-        Arc::new(Self::Struct(base.clone(), Arc::new(new_args)))
-      }
-      Self::Enum(base, args) => {
-        let new_args: Vec<_> = args.iter().map(|a| a.substitute_type_vars(bindings)).collect();
-        Arc::new(Self::Enum(base.clone(), Arc::new(new_args)))
-      }
-      // Leaf types: no TypeVars inside
-      _ => Arc::new(self.clone()),
+    enum Unary {
+      List,
+      Set,
+      Ref,
+      Optional,
+      JsNullish,
+      Variadic,
     }
+
+    enum Task<'a> {
+      Visit(&'a CalcitTypeAnnotation),
+      Cache(usize),
+      BuildUnary(Unary),
+      BuildMap,
+      BuildTypeRef(Arc<str>, usize),
+      BuildStruct(Arc<CalcitStructDef>, usize),
+      BuildEnum(Arc<CalcitEnumDef>, usize),
+      BuildFn(Arc<CalcitFnTypeAnnotation>, usize, bool),
+    }
+
+    let mut tasks = vec![Task::Visit(self)];
+    let mut values: Vec<Arc<CalcitTypeAnnotation>> = vec![];
+    let mut cache: HashMap<usize, Arc<CalcitTypeAnnotation>> = HashMap::new();
+    while let Some(task) = tasks.pop() {
+      match task {
+        Task::Visit(annotation) => {
+          let cache_key = std::ptr::from_ref(annotation) as usize;
+          if let Some(cached) = cache.get(&cache_key) {
+            values.push(cached.clone());
+            continue;
+          }
+          tasks.push(Task::Cache(cache_key));
+          match annotation {
+            Self::TypeVar(name) => values.push(bindings.get(name).cloned().unwrap_or_else(|| Arc::new(annotation.clone()))),
+            Self::TypeRef(name, args) => {
+              tasks.push(Task::BuildTypeRef(name.clone(), args.len()));
+              tasks.extend(args.iter().rev().map(|arg| Task::Visit(arg)));
+            }
+            Self::List(inner) => {
+              tasks.push(Task::BuildUnary(Unary::List));
+              tasks.push(Task::Visit(inner));
+            }
+            Self::Set(inner) => {
+              tasks.push(Task::BuildUnary(Unary::Set));
+              tasks.push(Task::Visit(inner));
+            }
+            Self::Ref(inner) => {
+              tasks.push(Task::BuildUnary(Unary::Ref));
+              tasks.push(Task::Visit(inner));
+            }
+            Self::Optional(inner) => {
+              tasks.push(Task::BuildUnary(Unary::Optional));
+              tasks.push(Task::Visit(inner));
+            }
+            Self::JsNullish(inner) => {
+              tasks.push(Task::BuildUnary(Unary::JsNullish));
+              tasks.push(Task::Visit(inner));
+            }
+            Self::Variadic(inner) => {
+              tasks.push(Task::BuildUnary(Unary::Variadic));
+              tasks.push(Task::Visit(inner));
+            }
+            Self::Map(key, value) => {
+              tasks.push(Task::BuildMap);
+              tasks.push(Task::Visit(value));
+              tasks.push(Task::Visit(key));
+            }
+            Self::Struct(base, args) => {
+              tasks.push(Task::BuildStruct(base.clone(), args.len()));
+              tasks.extend(args.iter().rev().map(|arg| Task::Visit(arg)));
+            }
+            Self::Enum(base, args) => {
+              tasks.push(Task::BuildEnum(base.clone(), args.len()));
+              tasks.extend(args.iter().rev().map(|arg| Task::Visit(arg)));
+            }
+            Self::Fn(signature) => {
+              tasks.push(Task::BuildFn(
+                signature.clone(),
+                signature.arg_types.len(),
+                signature.rest_type.is_some(),
+              ));
+              if let Some(rest) = &signature.rest_type {
+                tasks.push(Task::Visit(rest));
+              }
+              tasks.push(Task::Visit(&signature.return_type));
+              tasks.extend(signature.arg_types.iter().rev().map(|arg| Task::Visit(arg)));
+            }
+            _ => values.push(Arc::new(annotation.clone())),
+          }
+        }
+        Task::Cache(cache_key) => {
+          cache.insert(cache_key, values.last().expect("substitution cached result").clone());
+        }
+        Task::BuildUnary(kind) => {
+          let inner = values.pop().expect("substitution unary result");
+          values.push(Arc::new(match kind {
+            Unary::List => Self::List(inner),
+            Unary::Set => Self::Set(inner),
+            Unary::Ref => Self::Ref(inner),
+            Unary::Optional => Self::Optional(inner),
+            Unary::JsNullish => Self::JsNullish(inner),
+            Unary::Variadic => Self::Variadic(inner),
+          }));
+        }
+        Task::BuildMap => {
+          let value = values.pop().expect("substitution map value");
+          let key = values.pop().expect("substitution map key");
+          values.push(Arc::new(Self::Map(key, value)));
+        }
+        Task::BuildTypeRef(name, count) => {
+          let args = values.split_off(values.len() - count);
+          values.push(Arc::new(Self::TypeRef(name, Arc::new(args))));
+        }
+        Task::BuildStruct(base, count) => {
+          let args = values.split_off(values.len() - count);
+          values.push(Arc::new(Self::Struct(base, Arc::new(args))));
+        }
+        Task::BuildEnum(base, count) => {
+          let args = values.split_off(values.len() - count);
+          values.push(Arc::new(Self::Enum(base, Arc::new(args))));
+        }
+        Task::BuildFn(signature, arg_count, has_rest) => {
+          let child_count = arg_count + 1 + usize::from(has_rest);
+          let mut children = values.split_off(values.len() - child_count);
+          let args = children.drain(..arg_count).collect();
+          let return_type = children.remove(0);
+          let rest_type = has_rest.then(|| children.remove(0));
+          values.push(Arc::new(Self::Fn(Arc::new(CalcitFnTypeAnnotation {
+            generics: signature.generics.clone(),
+            where_bounds: signature.where_bounds.clone(),
+            arg_types: args,
+            return_type,
+            fn_kind: signature.fn_kind,
+            rest_type,
+            features: signature.features.clone(),
+          }))));
+        }
+      }
+    }
+    values.pop().expect("substitution root result")
   }
 
   /// Check whether this annotation contains any `TypeVar`.
   pub fn contains_type_var(&self) -> bool {
-    match self {
-      Self::TypeVar(_) => true,
-      Self::TypeRef(_, args) => args.iter().any(|a| a.contains_type_var()),
-      Self::List(inner)
-      | Self::Set(inner)
-      | Self::Ref(inner)
-      | Self::Optional(inner)
-      | Self::JsNullish(inner)
-      | Self::Variadic(inner) => inner.contains_type_var(),
-      Self::Map(k, v) => k.contains_type_var() || v.contains_type_var(),
-      Self::Fn(sig) => sig.arg_types.iter().any(|a| a.contains_type_var()) || sig.return_type.contains_type_var(),
-      Self::Struct(_, args) | Self::Enum(_, args) => args.iter().any(|a| a.contains_type_var()),
-      _ => false,
+    let mut pending = vec![self];
+    while let Some(annotation) = pending.pop() {
+      match annotation {
+        Self::TypeVar(_) => return true,
+        Self::TypeRef(_, args) | Self::Struct(_, args) | Self::Enum(_, args) => {
+          pending.extend(args.iter().map(Arc::as_ref));
+        }
+        Self::List(inner)
+        | Self::Set(inner)
+        | Self::Ref(inner)
+        | Self::Optional(inner)
+        | Self::JsNullish(inner)
+        | Self::Variadic(inner) => pending.push(inner),
+        Self::Map(key, value) => {
+          pending.push(value);
+          pending.push(key);
+        }
+        Self::Fn(signature) => {
+          pending.extend(signature.arg_types.iter().map(Arc::as_ref));
+          pending.push(&signature.return_type);
+          if let Some(rest) = &signature.rest_type {
+            pending.push(rest);
+          }
+        }
+        _ => {}
+      }
     }
+    false
   }
 
   /// Check whether this annotation recursively contains one named `TypeVar`.
@@ -2985,24 +3160,34 @@ impl CalcitTypeAnnotation {
   /// so a value such as `Optional<T>` cannot bind `T` to a type containing
   /// itself and make later comparisons recurse forever.
   fn contains_type_var_named(&self, name: &str) -> bool {
-    match self {
-      Self::TypeVar(current) => current.as_ref() == name,
-      Self::TypeRef(_, args) => args.iter().any(|arg| arg.contains_type_var_named(name)),
-      Self::List(inner)
-      | Self::Set(inner)
-      | Self::Ref(inner)
-      | Self::Optional(inner)
-      | Self::JsNullish(inner)
-      | Self::Variadic(inner) => inner.contains_type_var_named(name),
-      Self::Map(key, value) => key.contains_type_var_named(name) || value.contains_type_var_named(name),
-      Self::Fn(signature) => {
-        signature.arg_types.iter().any(|arg| arg.contains_type_var_named(name))
-          || signature.return_type.contains_type_var_named(name)
-          || signature.rest_type.as_ref().is_some_and(|rest| rest.contains_type_var_named(name))
+    let mut pending = vec![self];
+    while let Some(annotation) = pending.pop() {
+      match annotation {
+        Self::TypeVar(current) if current.as_ref() == name => return true,
+        Self::TypeRef(_, args) | Self::Struct(_, args) | Self::Enum(_, args) => {
+          pending.extend(args.iter().map(Arc::as_ref));
+        }
+        Self::List(inner)
+        | Self::Set(inner)
+        | Self::Ref(inner)
+        | Self::Optional(inner)
+        | Self::JsNullish(inner)
+        | Self::Variadic(inner) => pending.push(inner),
+        Self::Map(key, value) => {
+          pending.push(value);
+          pending.push(key);
+        }
+        Self::Fn(signature) => {
+          pending.extend(signature.arg_types.iter().map(Arc::as_ref));
+          pending.push(&signature.return_type);
+          if let Some(rest) = &signature.rest_type {
+            pending.push(rest);
+          }
+        }
+        _ => {}
       }
-      Self::Struct(_, args) | Self::Enum(_, args) => args.iter().any(|arg| arg.contains_type_var_named(name)),
-      _ => false,
     }
+    false
   }
 
   /// Binding-aware occurs-check used before inserting a generic binding.
@@ -3354,6 +3539,78 @@ impl CalcitTypeAnnotation {
   }
 
   pub(crate) fn compatible_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
+    let mut pending = vec![(self, expected)];
+    let mut visits = 0usize;
+
+    while let Some((actual, expected)) = pending.pop() {
+      visits += 1;
+      if visits > TYPE_RELATION_VISIT_LIMIT {
+        // A bounded rejection is safer than widening the unresolved relation
+        // to Dynamic. Callers will report the original actual/expected path.
+        return false;
+      }
+
+      match (actual, expected) {
+        (Self::List(a), Self::List(b))
+        | (Self::Set(a), Self::Set(b))
+        | (Self::Ref(a), Self::Ref(b))
+        | (Self::Variadic(a), Self::Variadic(b))
+        | (Self::Optional(a), Self::Optional(b))
+        | (Self::JsNullish(a), Self::JsNullish(b)) => pending.push((a, b)),
+        (Self::Map(actual_key, actual_value), Self::Map(expected_key, expected_value)) => {
+          // Preserve the recursive implementation's left-to-right binding order.
+          pending.push((actual_value, expected_value));
+          pending.push((actual_key, expected_key));
+        }
+        (Self::TypeRef(actual_name, actual_args), Self::TypeRef(expected_name, expected_args))
+          if actual_args.len() == expected_args.len()
+            && !actual_args.is_empty()
+            && Self::type_ref_nominal_match(actual_name, expected_name).unwrap_or_else(|| {
+              Self::type_ref_name_matches(actual_name, expected_name) || Self::type_ref_name_matches(expected_name, actual_name)
+            }) =>
+        {
+          pending.extend(
+            actual_args
+              .iter()
+              .zip(expected_args.iter())
+              .rev()
+              .map(|(actual, expected)| (actual.as_ref(), expected.as_ref())),
+          );
+        }
+        (Self::Struct(actual_base, actual_args), Self::Struct(expected_base, expected_args))
+          if actual_args.len() == expected_args.len()
+            && !actual_args.is_empty()
+            && Self::struct_nominal_match(actual_base, expected_base).unwrap_or_else(|| actual_base.name == expected_base.name) =>
+        {
+          pending.extend(
+            actual_args
+              .iter()
+              .zip(expected_args.iter())
+              .rev()
+              .map(|(actual, expected)| (actual.as_ref(), expected.as_ref())),
+          );
+        }
+        (Self::Enum(actual_base, actual_args), Self::Enum(expected_base, expected_args))
+          if actual_args.len() == expected_args.len()
+            && !actual_args.is_empty()
+            && Self::enum_nominal_match(actual_base, expected_base).unwrap_or_else(|| actual_base.name() == expected_base.name()) =>
+        {
+          pending.extend(
+            actual_args
+              .iter()
+              .zip(expected_args.iter())
+              .rev()
+              .map(|(actual, expected)| (actual.as_ref(), expected.as_ref())),
+          );
+        }
+        _ if actual.compatible_one_with_bindings(expected, bindings) => {}
+        _ => return false,
+      }
+    }
+    true
+  }
+
+  fn compatible_one_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
     match (self, expected) {
       (_, Self::Dynamic) | (Self::Dynamic, _) => true,
       (Self::Macro(actual), Self::Macro(expected)) => actual == expected,
@@ -3642,14 +3899,20 @@ impl CalcitTypeAnnotation {
       // try to resolve it as a type alias by looking up the definition's schema.
       (Self::TypeRef(name, _), other) | (other, Self::TypeRef(name, _)) => {
         if let Some(resolved) = resolve_type_ref_as_schema(name) {
-          return resolved.compatible_with_bindings(other, bindings);
+          return with_type_relation_symbol(&TYPE_RELATION_ALIAS_STACK, name, || {
+            resolved.compatible_with_bindings(other, bindings)
+          })
+          .unwrap_or(false);
         }
         false
       }
       // TypeSlot: resolve the bound type from the global registry and delegate
       (Self::TypeSlot(name), other) | (other, Self::TypeSlot(name)) => {
         if let Some(resolved) = resolve_type_slot(name) {
-          return resolved.compatible_with_bindings(other, bindings);
+          return with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || {
+            resolved.compatible_with_bindings(other, bindings)
+          })
+          .unwrap_or(false);
         }
         // Slot not yet bound — treat as Dynamic (no checking)
         true
@@ -4285,30 +4548,38 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn describe(&self) -> String {
+    self.describe_at_depth(0)
+  }
+
+  fn describe_at_depth(&self, depth: usize) -> String {
+    if depth >= TYPE_DIAGNOSTIC_DEPTH_LIMIT {
+      return "…".to_string();
+    }
+    let next_depth = depth + 1;
     match self {
       Self::List(inner) => {
         if matches!(inner.as_ref(), Self::Dynamic) {
           return "list".to_string();
         }
-        return format!("list<{}>", inner.describe());
+        return format!("list<{}>", inner.describe_at_depth(next_depth));
       }
       Self::Map(k, v) => {
         if matches!(k.as_ref(), Self::Dynamic) && matches!(v.as_ref(), Self::Dynamic) {
           return "map".to_string();
         }
-        return format!("map<{}, {}>", k.describe(), v.describe());
+        return format!("map<{}, {}>", k.describe_at_depth(next_depth), v.describe_at_depth(next_depth));
       }
       Self::Set(inner) => {
         if matches!(inner.as_ref(), Self::Dynamic) {
           return "set".to_string();
         }
-        return format!("set<{}>", inner.describe());
+        return format!("set<{}>", inner.describe_at_depth(next_depth));
       }
       Self::Ref(inner) => {
         if matches!(inner.as_ref(), Self::Dynamic) {
           return "ref".to_string();
         }
-        return format!("ref<{}>", inner.describe());
+        return format!("ref<{}>", inner.describe_at_depth(next_depth));
       }
       _ => {}
     }
@@ -4324,17 +4595,17 @@ impl CalcitTypeAnnotation {
         MacroSyntaxType::Syntax => "syntax".to_owned(),
         MacroSyntaxType::SyntaxSymbol => "syntax-symbol".to_owned(),
         MacroSyntaxType::SyntaxList => "syntax-list".to_owned(),
-        MacroSyntaxType::Expr(semantic) => format!("syntax-expr<{}>", semantic.describe()),
+        MacroSyntaxType::Expr(semantic) => format!("syntax-expr<{}>", semantic.describe_at_depth(next_depth)),
       },
-      Self::Variadic(inner) => format!("variadic {}", inner.describe()),
+      Self::Variadic(inner) => format!("variadic {}", inner.describe_at_depth(next_depth)),
       Self::Custom(_) => "custom".to_string(),
-      Self::Optional(inner) => format!("optional<{}>", inner.describe()),
-      Self::JsNullish(inner) => format!("js-nullish<{}>", inner.describe()),
+      Self::Optional(inner) => format!("optional<{}>", inner.describe_at_depth(next_depth)),
+      Self::JsNullish(inner) => format!("js-nullish<{}>", inner.describe_at_depth(next_depth)),
       Self::Struct(base, args) => {
         if args.is_empty() {
           format!("struct {}", base.name)
         } else {
-          let rendered = args.iter().map(|t| t.describe()).collect::<Vec<_>>().join(", ");
+          let rendered = args.iter().map(|t| t.describe_at_depth(next_depth)).collect::<Vec<_>>().join(", ");
           format!("struct {}<{}>", base.name, rendered)
         }
       }
@@ -4343,7 +4614,7 @@ impl CalcitTypeAnnotation {
         if args.is_empty() {
           format!("type {name}")
         } else {
-          let rendered = args.iter().map(|t| t.describe()).collect::<Vec<_>>().join(", ");
+          let rendered = args.iter().map(|t| t.describe_at_depth(next_depth)).collect::<Vec<_>>().join(", ");
           format!("type {name}<{rendered}>")
         }
       }
@@ -4351,7 +4622,7 @@ impl CalcitTypeAnnotation {
         if args.is_empty() {
           format!("enum {}", enum_def.name())
         } else {
-          let rendered = args.iter().map(|t| t.describe()).collect::<Vec<_>>().join(", ");
+          let rendered = args.iter().map(|t| t.describe_at_depth(next_depth)).collect::<Vec<_>>().join(", ");
           format!("enum {}<{}>", enum_def.name(), rendered)
         }
       }
@@ -5321,6 +5592,121 @@ mod tests {
     );
     assert!(reverse_type_var.compatible_with_bindings(&CalcitTypeAnnotation::String, &mut reverse_bindings));
     assert_eq!(reverse_bindings.get("T").map(AsRef::as_ref), Some(&CalcitTypeAnnotation::String));
+  }
+
+  fn nested_list_type(depth: usize, leaf: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+    (0..depth).fold(leaf, |inner, _| Arc::new(CalcitTypeAnnotation::List(inner)))
+  }
+
+  #[test]
+  fn deep_type_analysis_uses_bounded_iterative_paths() {
+    let depth = 2_048;
+    let actual = nested_list_type(depth, Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))));
+    let expected = nested_list_type(depth, Arc::new(CalcitTypeAnnotation::String));
+    let mut bindings = TypeBindings::new();
+    bindings.insert(Arc::from("T"), Arc::new(CalcitTypeAnnotation::String));
+
+    let started = std::time::Instant::now();
+    assert!(actual.contains_type_var());
+    let substituted = actual.substitute_type_vars(&bindings);
+    assert!(!substituted.contains_type_var());
+    assert!(substituted.is_compatible_with(&expected));
+    let diagnostic = substituted.describe();
+    let elapsed = started.elapsed();
+
+    assert!(diagnostic.contains('…'), "deep diagnostics must preserve a truncation marker");
+    assert!(
+      diagnostic.len() < 512,
+      "deep diagnostics must stay bounded, got {} bytes",
+      diagnostic.len()
+    );
+    eprintln!(
+      "type-analysis depth={depth} visits={} elapsed_us={}",
+      depth + 1,
+      elapsed.as_micros()
+    );
+  }
+
+  #[test]
+  fn deep_map_option_and_nominal_relations_remain_precise() {
+    for depth in [32usize, 256, 2_048] {
+      let map_actual = (0..depth).fold(Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))), |value, _| {
+        Arc::new(CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::String), value))
+      });
+      let map_expected = (0..depth).fold(Arc::new(CalcitTypeAnnotation::Number), |value, _| {
+        Arc::new(CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::String), value))
+      });
+      let option_actual = (0..depth).fold(Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))), |value, _| {
+        Arc::new(CalcitTypeAnnotation::TypeRef(
+          Arc::from("calcit.core/Option"),
+          Arc::new(vec![value]),
+        ))
+      });
+      let option_expected = (0..depth).fold(Arc::new(CalcitTypeAnnotation::Number), |value, _| {
+        Arc::new(CalcitTypeAnnotation::TypeRef(
+          Arc::from("calcit.core/Option"),
+          Arc::new(vec![value]),
+        ))
+      });
+      let nominal_actual = (0..depth).fold(Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))), |value, _| {
+        Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("tests/Node"), Arc::new(vec![value])))
+      });
+      let nominal_expected = (0..depth).fold(Arc::new(CalcitTypeAnnotation::Number), |value, _| {
+        Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("tests/Node"), Arc::new(vec![value])))
+      });
+
+      for (actual, expected) in [
+        (&map_actual, &map_expected),
+        (&option_actual, &option_expected),
+        (&nominal_actual, &nominal_expected),
+      ] {
+        let mut bindings = TypeBindings::new();
+        assert!(actual.compatible_with_bindings(expected, &mut bindings));
+        assert_eq!(bindings.get("T").map(Arc::as_ref), Some(&CalcitTypeAnnotation::Number));
+      }
+    }
+  }
+
+  #[test]
+  fn substituted_shared_subtypes_keep_arc_identity() {
+    let shared = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("tests/Shared"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]),
+    ));
+    let root = CalcitTypeAnnotation::TypeRef(Arc::from("tests/Pair"), Arc::new(vec![shared.clone(), shared]));
+    let bindings = TypeBindings::from([(Arc::from("T"), Arc::new(CalcitTypeAnnotation::String))]);
+
+    let substituted = root.substitute_type_vars(&bindings);
+    let CalcitTypeAnnotation::TypeRef(_, args) = substituted.as_ref() else {
+      panic!("expected substituted named pair");
+    };
+    assert!(Arc::ptr_eq(&args[0], &args[1]));
+    assert!(!substituted.contains_type_var());
+  }
+
+  #[test]
+  fn relation_budget_rejects_oversized_shapes_without_dynamic_fallback() {
+    let leaf = Arc::new(CalcitTypeAnnotation::String);
+    let oversized = TYPE_RELATION_VISIT_LIMIT + 1;
+    let actual = CalcitTypeAnnotation::TypeRef(Arc::from("app/Wide"), Arc::new(vec![leaf.clone(); oversized]));
+    let expected = CalcitTypeAnnotation::TypeRef(Arc::from("app/Wide"), Arc::new(vec![leaf; oversized]));
+
+    assert!(!actual.is_compatible_with(&expected));
+  }
+
+  #[test]
+  fn recursive_type_slot_relation_is_rejected_and_scope_is_cleaned_up() {
+    let left: Arc<str> = Arc::from("tests/Left");
+    let right: Arc<str> = Arc::from("tests/Right");
+    push_type_slot_override(left.clone(), Arc::new(CalcitTypeAnnotation::TypeSlot(right.clone())));
+    push_type_slot_override(right.clone(), Arc::new(CalcitTypeAnnotation::TypeSlot(left.clone())));
+
+    let recursive = CalcitTypeAnnotation::TypeSlot(left.clone());
+    assert!(!recursive.is_compatible_with(&CalcitTypeAnnotation::Number));
+
+    pop_type_slot_override(&right);
+    pop_type_slot_override(&left);
+    assert!(recursive.is_compatible_with(&CalcitTypeAnnotation::Number));
   }
 
   #[test]

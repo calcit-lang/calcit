@@ -165,6 +165,35 @@ fn nominal_impl_wrapper_type_ref_matches_its_concrete_enum_value() {
 }
 
 #[test]
+fn recursive_type_alias_relation_is_finite_and_incompatible() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  calcit::register_program_lookups(lookup_runtime_ready, lookup_def_code, lookup_def_schema);
+
+  let alias = |target: &str| ProgramDefEntry {
+    code: Calcit::Nil,
+    schema: Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(target), Arc::new(vec![]))),
+    doc: Arc::from(""),
+    examples: vec![],
+    ffi: None,
+  };
+  PROGRAM_CODE_DATA.write().expect("seed recursive aliases").insert(
+    Arc::from("tests.alias-cycle"),
+    ProgramFileData {
+      import_map: HashMap::new(),
+      defs: HashMap::from([
+        (Arc::from("Left"), alias("tests.alias-cycle/Right")),
+        (Arc::from("Right"), alias("tests.alias-cycle/Left")),
+      ]),
+    },
+  );
+
+  let recursive = CalcitTypeAnnotation::TypeRef(Arc::from("tests.alias-cycle/Left"), Arc::new(vec![]));
+  assert!(!recursive.is_compatible_with(&CalcitTypeAnnotation::Number));
+  reset_program_test_state();
+}
+
+#[test]
 fn import_rule_validation_rejects_short_rules_without_panicking() {
   let error =
     validate_import_rules(&[cirru_list(vec![cirru_leaf("audit.invalid")])]).expect_err("short import rule should be rejected");

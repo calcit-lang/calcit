@@ -61,7 +61,8 @@ impl CalcitStructDef {
     }
   }
 
-  /// Binary search for the position of a field name (fields must be sorted)
+  /// Find a field without changing declaration order. Some embedders create
+  /// unsorted definitions directly, so this cannot assume parser sorting.
   pub fn index_of(&self, y: &str) -> Option<usize> {
     self.fields.iter().position(|f| f.ref_str() == y)
   }
@@ -119,5 +120,25 @@ mod tests {
     let right = wrapper(nested_struct("beta.models"));
 
     assert!(!left.same_nominal_definition(&right));
+  }
+
+  #[test]
+  fn wide_struct_lookup_preserves_unsorted_declaration_order() {
+    for width in [32usize, 256, 1_024] {
+      let fields = (0..width)
+        .rev()
+        .map(|idx| EdnTag::new(format!("field-{idx:04}")))
+        .collect::<Vec<_>>();
+      let target = fields.last().expect("wide struct field").clone();
+      let definition = CalcitStructDef::from_fields(EdnTag::new("Wide"), fields);
+      let started = std::time::Instant::now();
+      for _ in 0..10_000 {
+        assert_eq!(definition.index_of(target.ref_str()), Some(width - 1));
+      }
+      eprintln!(
+        "struct-index width={width} lookups=10000 elapsed_us={}",
+        started.elapsed().as_micros()
+      );
+    }
   }
 }
