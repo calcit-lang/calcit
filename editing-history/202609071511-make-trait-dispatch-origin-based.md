@@ -24,7 +24,7 @@ Issue: calcit-lang/calcit#844
 
 ## Verification / 验证
 
-- `cargo test --workspace --all-features` (747 library, 308 native CLI, 23 WASM, and 0 doc tests passed)
+- `cargo test --workspace --all-features` (748 library, 308 native CLI, 23 WASM, and 0 doc tests passed after review fix)
 - focused exact-origin, duplicate-impl, originless, requires-cycle, invalid/default-schema, compatibility-order, cache-dependency, and explicit `&trait-call` tests
 - `cargo fmt --check`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`

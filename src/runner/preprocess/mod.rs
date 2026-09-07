@@ -6276,7 +6276,17 @@ fn validate_method_call(
     ImplMethodResolution::Selected(_) => return Ok(()),
     ImplMethodResolution::Ambiguous(candidates) if strict_types_enabled() => {
       let origins = candidates.iter().map(impl_candidate_origin).collect::<Vec<_>>();
-      let duplicate_origin = origins.iter().skip(1).all(|origin| origin == &origins[0]);
+      let duplicate_origin = candidates
+        .first()
+        .and_then(|candidate| candidate.impl_value.origin())
+        .is_some_and(|first_origin| {
+          candidates.iter().skip(1).all(|candidate| {
+            candidate
+              .impl_value
+              .origin()
+              .is_some_and(|origin| origin.has_same_origin(first_origin))
+          })
+        });
       let (code, detail) = if duplicate_origin {
         (
           "E_DUPLICATE_TRAIT_IMPL",

@@ -122,6 +122,13 @@ impl CalcitTrait {
     }
   }
 
+  /// Stable machine-facing ordering key for nominal origins. A source label
+  /// alone is insufficient after hot reload because two evaluated traits may
+  /// retain one definition path while carrying distinct runtime identities.
+  fn nominal_origin_sort_key(&self) -> (String, Option<u64>) {
+    (self.origin_label(), self.runtime_id)
+  }
+
   /// Nominal-origin equality for candidate de-duplication. This deliberately
   /// does not compare the short printed name.
   pub fn has_same_origin(&self, other: &Self) -> bool {
@@ -162,7 +169,7 @@ impl CalcitTrait {
 
     let mut output = vec![];
     visit(self, &mut vec![], &mut output)?;
-    output.sort_by_key(|item| item.origin_label());
+    output.sort_by_key(|item| item.nominal_origin_sort_key());
     Ok(output)
   }
 
@@ -524,6 +531,43 @@ mod tests {
       .collect::<Vec<_>>();
     assert_eq!(forward_labels, reversed_labels);
     assert_eq!(forward_labels, vec!["app.left/Left", "app.right/Right", "app.root/Root"]);
+  }
+
+  #[test]
+  fn reachable_runtime_traits_with_one_definition_ref_keep_distinct_stable_origins() {
+    let left = Arc::new(
+      CalcitTrait::new_runtime(
+        EdnTag::new("Reloaded"),
+        vec![EdnTag::new("run")],
+        vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+      )
+      .with_definition_ref("app.shared", "Reloaded"),
+    );
+    let right = Arc::new(
+      CalcitTrait::new_runtime(
+        EdnTag::new("Reloaded"),
+        vec![EdnTag::new("run")],
+        vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+      )
+      .with_definition_ref("app.shared", "Reloaded"),
+    );
+    assert!(!left.has_same_origin(right.as_ref()));
+
+    let mut forward = callable_source_trait("app.root", "Root");
+    forward.requires = Arc::new(vec![left.clone(), right.clone()]);
+    let mut reversed = callable_source_trait("app.root", "Root");
+    reversed.requires = Arc::new(vec![right.clone(), left.clone()]);
+
+    let runtime_ids = |trait_def: &CalcitTrait| {
+      trait_def
+        .normalized_reachable_traits()
+        .expect("distinct reload origins are valid")
+        .iter()
+        .filter_map(|item| item.runtime_id)
+        .collect::<Vec<_>>()
+    };
+    assert_eq!(runtime_ids(&forward), runtime_ids(&reversed));
+    assert_eq!(runtime_ids(&forward), vec![left.runtime_id.unwrap(), right.runtime_id.unwrap()]);
   }
 
   #[test]
