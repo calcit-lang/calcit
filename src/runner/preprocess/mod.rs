@@ -2093,8 +2093,8 @@ fn preprocess_list_call(
               processed_args = processed_args.push(processed?);
             }
             let processed_args = CalcitList::from(processed_args);
-            if is_display_contract {
-              validate_method_call(&typed_method, &processed_args, scope_types, call_stack)?;
+            if strict_types_enabled() || is_display_contract {
+              validate_method_call(&typed_method, &processed_args, scope_types, file_ns, call_stack)?;
             }
             check_struct_method_args(&typed_method, &processed_args, scope_types, file_ns, &def_name, check_warnings);
             require_js_ffi_feature_for_operation(&typed_method, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
@@ -2766,7 +2766,7 @@ fn preprocess_list_call(
 
         // Check for struct field access after processing arguments
         let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
-        validate_method_call(&head_form, &processed_args, scope_types, call_stack)?;
+        validate_method_call(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
         check_struct_field_access(&head_form, &processed_args, scope_types, file_ns, call_stack, check_warnings);
         check_struct_update_fields(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         check_struct_method_args(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
@@ -4554,8 +4554,10 @@ fn check_struct_method_args(
   };
 
   if let Some(traits) = trait_list_from_type(type_value.as_ref())
-    && let Some((trait_def, method_type)) = find_trait_method_type(&traits, method_name.as_ref())
+    && let Some(candidate) = selected_trait_method(&traits, method_name.as_ref())
   {
+    let trait_def = candidate.trait_def;
+    let method_type = candidate.method_type;
     let Some(signature) = method_type.as_function() else {
       return;
     };
@@ -4818,7 +4820,7 @@ fn check_struct_method_args(
 /// return contracts are available while the callback body is checked.
 fn expected_method_argument_types(type_value: &CalcitTypeAnnotation, method_name: &str) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
   let signature = if let Some(traits) = trait_list_from_type(type_value) {
-    find_trait_method_type(&traits, method_name).map(|(_, method_type)| method_type.clone())?
+    selected_trait_method(&traits, method_name).map(|candidate| candidate.method_type)?
   } else {
     let impl_values = get_impls_from_type(type_value)?;
     let method_entry = find_method_entry_for_type(type_value, &impl_values, method_name)?;
@@ -5605,60 +5607,41 @@ fn warn_on_method_name_conflict(
     return;
   };
 
-  let Some(impl_values) = get_impls_from_type(type_value.as_ref()) else {
-    return;
-  };
-
-  if impl_values.len() < 2 {
-    return;
-  }
-
-  let last_wins = core_impl_list_symbol_from_type_annotation(type_value.as_ref()).is_none();
-  let matched_impls: Vec<&Arc<CalcitImpl>> = if last_wins {
-    impl_values
-      .iter()
-      .rev()
-      .filter(|imp| imp.get(method_name.as_ref()).is_some() && imp.origin().is_some())
-      .collect()
-  } else {
-    impl_values
-      .iter()
-      .filter(|imp| imp.get(method_name.as_ref()).is_some() && imp.origin().is_some())
-      .collect()
-  };
-
-  if matched_impls.len() < 2 {
-    return;
-  }
-
-  let mut trait_names: Vec<String> = vec![];
-  let mut seen = HashSet::new();
-  for imp in &matched_impls {
-    if let Some(origin) = imp.origin() {
-      let trait_name = origin.name.to_string();
-      if seen.insert(trait_name.clone()) {
-        trait_names.push(trait_name);
+  let candidates = if let Some(traits) = trait_list_from_type(type_value.as_ref()) {
+    match resolve_trait_method(&traits, method_name.as_ref()) {
+      TraitMethodResolution::Ambiguous(candidates) => candidates
+        .iter()
+        .map(|candidate| candidate.trait_def.origin_label())
+        .collect::<Vec<_>>(),
+      TraitMethodResolution::Invalid(error) => {
+        let message = format!("[Warn] method `.{method_name}` cannot use invalid trait metadata in {file_ns}/{def_name}: {error}");
+        if let Some(loc) = head.get_location().or_else(|| receiver.get_location()) {
+          gen_check_warning_with_location(message, loc, check_warnings);
+        } else {
+          gen_check_warning(message, file_ns, check_warnings);
+        }
+        return;
       }
+      _ => return,
     }
-  }
-
-  if trait_names.len() < 2 {
-    return;
-  }
-
-  let selected_trait = matched_impls
-    .first()
-    .and_then(|imp| imp.origin())
-    .map(|origin| origin.name.to_string())
-    .unwrap_or_else(|| "<unknown>".to_string());
+  } else {
+    let Some(impl_values) = get_impls_from_type(type_value.as_ref()) else {
+      return;
+    };
+    match resolve_impl_method(type_value.as_ref(), &impl_values, method_name.as_ref()) {
+      ImplMethodResolution::Ambiguous(candidates) => candidates.iter().map(impl_candidate_origin).collect::<Vec<_>>(),
+      _ => return,
+    }
+  };
+  let selected_origin = candidates.first().cloned().unwrap_or_else(|| "<unknown>".to_owned());
 
   let message = format!(
-    "[Warn] method `.{}` has multiple trait candidates ({}) in {}/{}; current dispatch picks `{}` by precedence, use `&trait-call` to disambiguate",
+    "[Warn] method `.{}` has multiple origin candidates ({}) in {}/{}; compatibility dispatch picks `{}` by precedence, use `&trait-call` to disambiguate",
     method_name,
-    trait_names.join(", "),
+    candidates.join(", "),
     file_ns,
     def_name,
-    selected_trait,
+    selected_origin,
   );
 
   if let Some(loc) = head.get_location().or_else(|| receiver.get_location()) {
@@ -5828,10 +5811,27 @@ fn try_inline_method_call(
       let Some(impl_values) = get_impls_from_type(type_ref) else {
         return Ok(None);
       };
-      let Some((_impl_index, impl_value, method_entry)) = find_method_entry_with_impl(type_ref, &impl_values, method_name.as_ref())
-      else {
-        return Ok(None);
+      let selected = match resolve_impl_method(type_ref, &impl_values, method_name.as_ref()) {
+        ImplMethodResolution::Missing => return Ok(None),
+        ImplMethodResolution::Selected(candidate) => candidate,
+        ImplMethodResolution::Ambiguous(mut candidates) => {
+          if strict_types_enabled() {
+            let origins = candidates.iter().map(impl_candidate_origin).collect::<Vec<_>>().join(", ");
+            return Err(CalcitErr::use_msg_stack_location_with_code(
+              CalcitErrKind::Type,
+              format!(
+                "ambiguous strict method `.{method_name}` has candidates from {origins}; use `&trait-call Trait :{method_name} receiver ...` to select a nominal trait origin"
+              ),
+              "E_AMBIGUOUS_TRAIT_METHOD",
+              call_stack,
+              head.get_location(),
+            ));
+          }
+          candidates.remove(0)
+        }
       };
+      let impl_value = selected.impl_value;
+      let method_entry = selected.entry;
 
       if let Some(callable_head) =
         pick_callable_from_method_entry(method_entry, impl_value, type_ref, method_name.as_ref(), file_ns, call_stack)?
@@ -5999,6 +5999,15 @@ fn nominal_callable_owner_deps(target_ns: &str, impl_value: &CalcitImpl, receive
   if let Some(owner_def) = program::find_source_def_for_runtime_value(target_ns, &Calcit::Impl(impl_value.clone())) {
     deps.push(program::ensure_def_id(target_ns, owner_def.as_ref()));
   }
+  if let Some(origin_ref) = impl_value.origin().and_then(|origin| origin.definition_ref.as_deref())
+    && let Some((trait_ns, trait_def)) = origin_ref.rsplit_once('/')
+    && program::has_def_code(trait_ns, trait_def)
+  {
+    // Defaults and method schemas belong to the nominal trait definition.
+    // Keeping this edge invalidates a synthesized direct callable when either
+    // changes during incremental compilation or hot reload.
+    deps.push(program::ensure_def_id(trait_ns, trait_def));
+  }
 
   let type_ref = match receiver_type {
     CalcitTypeAnnotation::TypeRef(path, _) => Some(path.as_ref()),
@@ -6135,28 +6144,6 @@ fn build_inlined_call(callable_head: Calcit, args: &CalcitList, scope_types: &Sc
   Calcit::from(CalcitList::executable(call_nodes, kind))
 }
 
-fn find_method_entry_with_impl<'a>(
-  type_ref: &CalcitTypeAnnotation,
-  impls: &'a [Arc<CalcitImpl>],
-  name: &str,
-) -> Option<(usize, &'a Arc<CalcitImpl>, &'a Calcit)> {
-  let last_wins = core_impl_list_symbol_from_type_annotation(type_ref).is_none();
-  if last_wins {
-    for (idx, imp) in impls.iter().enumerate().rev() {
-      if let Some(entry) = imp.get(name) {
-        return Some((idx, imp, entry));
-      }
-    }
-  } else {
-    for (idx, imp) in impls.iter().enumerate() {
-      if let Some(entry) = imp.get(name) {
-        return Some((idx, imp, entry));
-      }
-    }
-  }
-  None
-}
-
 fn append_string_method_receiver_hint(mut message: String, method_name: &str, type_desc: &str) -> String {
   let replacement = match method_name {
     "trim" => "trim",
@@ -6173,6 +6160,7 @@ fn validate_method_call(
   head: &Calcit,
   args: &CalcitList,
   scope_types: &ScopeTypes,
+  file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
   // Only validate Method(Invoke) calls
@@ -6200,14 +6188,36 @@ fn validate_method_call(
 
   if let Some(traits) = trait_list_from_type(type_value.as_ref()) {
     let method_str = method_name.as_ref();
-    if traits.iter().rev().any(|trait_def| {
-      trait_def
-        .methods
-        .iter()
-        .zip(trait_def.member_kinds.iter())
-        .any(|(method, kind)| *kind == CalcitTraitMemberKind::Method && method.ref_str() == method_str)
-    }) {
-      return Ok(());
+    match resolve_trait_method(&traits, method_str) {
+      TraitMethodResolution::Selected(_) => return Ok(()),
+      TraitMethodResolution::Ambiguous(candidates) if strict_types_enabled() => {
+        let origins = candidates
+          .iter()
+          .map(|candidate| candidate.trait_def.origin_label())
+          .collect::<Vec<_>>()
+          .join(", ");
+        return Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          format!(
+            "ambiguous strict method `.{method_name}` is declared by {origins}; use `&trait-call Trait :{method_name} receiver ...` to select a nominal trait origin"
+          ),
+          "E_AMBIGUOUS_TRAIT_METHOD",
+          call_stack,
+          head.get_location(),
+        ));
+      }
+      TraitMethodResolution::Ambiguous(_) => return Ok(()),
+      TraitMethodResolution::Invalid(error) if strict_types_enabled() => {
+        return Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          error,
+          "E_INVALID_TRAIT_SCHEMA",
+          call_stack,
+          head.get_location(),
+        ));
+      }
+      TraitMethodResolution::Invalid(_) => return Ok(()),
+      TraitMethodResolution::Missing => {}
     }
 
     let methods_list = collect_trait_method_names(&traits).join(" ");
@@ -6248,11 +6258,56 @@ fn validate_method_call(
 
   // Check if method exists in the impls
   let method_str = method_name.as_ref();
-  if impl_values
-    .iter()
-    .any(|struct_def| struct_def.fields().iter().any(|field| field.ref_str() == method_str))
-  {
-    return Ok(()); // Method found, validation passed
+  match resolve_impl_method(type_value.as_ref(), &impl_values, method_str) {
+    ImplMethodResolution::Selected(candidate)
+      if strict_types_enabled() && should_emit_project_source_lint(file_ns) && candidate.impl_value.is_inherent() =>
+    {
+      return Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!(
+          "strict method `.{method_name}` resolves only through originless legacy impl bag `{}`; define a nominal trait with `deftrait`/`defimpl`, or call a typed named function directly",
+          candidate.impl_value.name()
+        ),
+        "E_ORIGINLESS_METHOD_DISPATCH",
+        call_stack,
+        head.get_location(),
+      ));
+    }
+    ImplMethodResolution::Selected(_) => return Ok(()),
+    ImplMethodResolution::Ambiguous(candidates) if strict_types_enabled() => {
+      let origins = candidates.iter().map(impl_candidate_origin).collect::<Vec<_>>();
+      let duplicate_origin = candidates
+        .first()
+        .and_then(|candidate| candidate.impl_value.origin())
+        .is_some_and(|first_origin| {
+          candidates.iter().skip(1).all(|candidate| {
+            candidate
+              .impl_value
+              .origin()
+              .is_some_and(|origin| origin.has_same_origin(first_origin))
+          })
+        });
+      let (code, detail) = if duplicate_origin {
+        (
+          "E_DUPLICATE_TRAIT_IMPL",
+          "multiple implementations of the same nominal trait origin",
+        )
+      } else {
+        ("E_AMBIGUOUS_TRAIT_METHOD", "multiple nominal trait origins")
+      };
+      return Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!(
+          "ambiguous strict method `.{method_name}` has {detail}: {}; use `&trait-call Trait :{method_name} receiver ...` when the origins differ, and remove duplicate impl attachments when they are the same",
+          origins.join(", ")
+        ),
+        code,
+        call_stack,
+        head.get_location(),
+      ));
+    }
+    ImplMethodResolution::Ambiguous(_) => return Ok(()),
+    ImplMethodResolution::Missing => {}
   }
 
   // Method not found, generate error
@@ -6815,18 +6870,110 @@ fn annotation_dynamic_weight(type_value: &CalcitTypeAnnotation) -> usize {
   }
 }
 
-fn find_trait_method_type<'a>(
-  traits: &'a [Arc<CalcitTrait>],
-  method_name: &str,
-) -> Option<(&'a CalcitTrait, &'a Arc<CalcitTypeAnnotation>)> {
+#[derive(Debug)]
+struct TraitMethodCandidate {
+  trait_def: Arc<CalcitTrait>,
+  method_type: Arc<CalcitTypeAnnotation>,
+}
+
+#[derive(Debug)]
+enum TraitMethodResolution {
+  Missing,
+  Selected(TraitMethodCandidate),
+  Ambiguous(Vec<TraitMethodCandidate>),
+  Invalid(String),
+}
+
+/// Resolve a trait-set method once for checking, callback inference and
+/// diagnostics. Candidates are de-duplicated by nominal origin, never by the
+/// short trait name. The vector remains in compatibility precedence order.
+fn resolve_trait_method(traits: &[Arc<CalcitTrait>], method_name: &str) -> TraitMethodResolution {
+  let mut reachable: Vec<Arc<CalcitTrait>> = vec![];
   for trait_def in traits.iter().rev() {
-    if let Some(method_idx) = trait_def.method_index(method_name)
-      && let Some(method_type) = trait_def.method_types.get(method_idx)
+    if let Err(error) = trait_def.validate_reachable_method_schemas() {
+      return TraitMethodResolution::Invalid(error);
+    }
+    let Ok(required) = trait_def.normalized_reachable_traits() else {
+      unreachable!("schema validation already checked requires cycles")
+    };
+    for item in std::iter::once(trait_def.clone()).chain(required.into_iter().filter(|item| !item.has_same_origin(trait_def.as_ref())))
     {
-      return Some((trait_def.as_ref(), method_type));
+      if !reachable.iter().any(|existing| existing.has_same_origin(item.as_ref())) {
+        reachable.push(item);
+      }
     }
   }
-  None
+
+  let mut candidates: Vec<TraitMethodCandidate> = vec![];
+  for trait_def in reachable {
+    let Some(method_idx) = trait_def.method_index(method_name) else {
+      continue;
+    };
+    let Some(method_type) = trait_def.method_types.get(method_idx).cloned() else {
+      return TraitMethodResolution::Invalid(format!(
+        "trait {} method .{method_name} is missing signature metadata",
+        trait_def.origin_label()
+      ));
+    };
+    if candidates
+      .iter()
+      .any(|candidate| candidate.trait_def.has_same_origin(trait_def.as_ref()))
+    {
+      continue;
+    }
+    candidates.push(TraitMethodCandidate { trait_def, method_type });
+  }
+  match candidates.len() {
+    0 => TraitMethodResolution::Missing,
+    1 => TraitMethodResolution::Selected(candidates.remove(0)),
+    _ => TraitMethodResolution::Ambiguous(candidates),
+  }
+}
+
+fn selected_trait_method(traits: &[Arc<CalcitTrait>], method_name: &str) -> Option<TraitMethodCandidate> {
+  match resolve_trait_method(traits, method_name) {
+    TraitMethodResolution::Selected(candidate) => Some(candidate),
+    TraitMethodResolution::Ambiguous(mut candidates) => Some(candidates.remove(0)),
+    TraitMethodResolution::Missing | TraitMethodResolution::Invalid(_) => None,
+  }
+}
+
+#[derive(Debug)]
+struct ImplMethodCandidate<'a> {
+  impl_value: &'a Arc<CalcitImpl>,
+  entry: &'a Calcit,
+}
+
+#[derive(Debug)]
+enum ImplMethodResolution<'a> {
+  Missing,
+  Selected(ImplMethodCandidate<'a>),
+  Ambiguous(Vec<ImplMethodCandidate<'a>>),
+}
+
+fn resolve_impl_method<'a>(type_ref: &CalcitTypeAnnotation, impls: &'a [Arc<CalcitImpl>], name: &str) -> ImplMethodResolution<'a> {
+  let last_wins = core_impl_list_symbol_from_type_annotation(type_ref).is_none();
+  let ordered: Box<dyn Iterator<Item = &'a Arc<CalcitImpl>>> = if last_wins {
+    Box::new(impls.iter().rev())
+  } else {
+    Box::new(impls.iter())
+  };
+  let candidates: Vec<_> = ordered
+    .filter_map(|impl_value| impl_value.get(name).map(|entry| ImplMethodCandidate { impl_value, entry }))
+    .collect();
+  match candidates.len() {
+    0 => ImplMethodResolution::Missing,
+    1 => ImplMethodResolution::Selected(candidates.into_iter().next().expect("checked one candidate")),
+    _ => ImplMethodResolution::Ambiguous(candidates),
+  }
+}
+
+fn impl_candidate_origin(candidate: &ImplMethodCandidate<'_>) -> String {
+  candidate
+    .impl_value
+    .origin()
+    .map(|origin| origin.origin_label())
+    .unwrap_or_else(|| format!("<originless>/{}", candidate.impl_value.name()))
 }
 
 pub(crate) fn find_trait_field_type<'a>(
@@ -6898,7 +7045,7 @@ pub fn static_method_descriptors(type_value: &CalcitTypeAnnotation) -> Option<Ve
         if seen.insert(name.clone()) {
           methods.push(StaticMethodDescriptor {
             name,
-            origin: trait_def.name.ref_str().to_owned(),
+            origin: trait_def.origin_label(),
           });
         }
       }
@@ -6917,7 +7064,10 @@ pub fn static_method_descriptors(type_value: &CalcitTypeAnnotation) -> Option<Ve
     let mut methods = vec![];
 
     for imp in ordered_impls {
-      let origin = imp.trait_name().unwrap_or_else(|| imp.name()).ref_str().to_owned();
+      let origin = imp
+        .origin()
+        .map(|trait_def| trait_def.origin_label())
+        .unwrap_or_else(|| format!("<originless>/{}", imp.name()));
       for field in imp.fields().iter() {
         let name = format!(".{}", field.ref_str());
         if seen.insert(name.clone()) {
@@ -6942,28 +7092,12 @@ pub fn static_method_descriptors(type_value: &CalcitTypeAnnotation) -> Option<Ve
   }
 }
 
-fn find_method_entry<'a>(impls: &'a [Arc<CalcitImpl>], name: &str, last_wins: bool) -> Option<&'a Calcit> {
-  if last_wins {
-    for imp in impls.iter().rev() {
-      if let Some(entry) = imp.get(name) {
-        return Some(entry);
-      }
-    }
-  } else {
-    for imp in impls.iter() {
-      if let Some(entry) = imp.get(name) {
-        return Some(entry);
-      }
-    }
-  }
-  None
-}
-
 fn find_method_entry_for_type<'a>(type_ref: &CalcitTypeAnnotation, impls: &'a [Arc<CalcitImpl>], name: &str) -> Option<&'a Calcit> {
-  // builtin impl lists are ordered by priority in calcit-core
-  let last_wins = core_impl_list_symbol_from_type_annotation(type_ref).is_none();
-  // user-defined values: impl-traits appends, so later impls override earlier ones
-  find_method_entry(impls, name, last_wins)
+  match resolve_impl_method(type_ref, impls, name) {
+    ImplMethodResolution::Selected(candidate) => Some(candidate.entry),
+    ImplMethodResolution::Ambiguous(mut candidates) => Some(candidates.remove(0).entry),
+    ImplMethodResolution::Missing => None,
+  }
 }
 
 /// Describe the type for error messages
@@ -11206,18 +11340,167 @@ mod tests {
       vec![
         StaticMethodDescriptor {
           name: ".high".to_owned(),
-          origin: "HighImpl".to_owned(),
+          origin: "<originless>/HighImpl".to_owned(),
         },
         StaticMethodDescriptor {
           name: ".shared".to_owned(),
-          origin: "HighImpl".to_owned(),
+          origin: "<originless>/HighImpl".to_owned(),
         },
         StaticMethodDescriptor {
           name: ".low".to_owned(),
-          origin: "LowImpl".to_owned(),
+          origin: "<originless>/LowImpl".to_owned(),
         },
       ]
     );
+  }
+
+  fn source_trait(ns: &str, name: &str, method: &str) -> Arc<CalcitTrait> {
+    Arc::new(
+      CalcitTrait::new(
+        EdnTag::new(name),
+        vec![EdnTag::new(method)],
+        vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+      )
+      .with_definition_ref(ns, name),
+    )
+  }
+
+  fn method_test_receiver(type_info: Arc<CalcitTypeAnnotation>) -> Calcit {
+    Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("value")),
+      sym: Arc::from("value"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.trait-origin"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info,
+    })
+  }
+
+  #[test]
+  fn strict_trait_set_rejects_same_short_name_from_distinct_origins() {
+    let _guard = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+    let left = source_trait("app.a", "Show", "render");
+    let right = source_trait("app.b", "Show", "render");
+    let receiver_type = Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(vec![left, right])));
+    let receiver = method_test_receiver(receiver_type.clone());
+    let head = Calcit::Method(Arc::from("render"), calcit::MethodKind::Invoke(receiver_type));
+    let args = CalcitList::from(&[receiver][..]);
+
+    let error = validate_method_call(&head, &args, &ScopeTypes::new(), "tests.trait-origin", &CallStackList::default())
+      .expect_err("strict dispatch must not pick between distinct Show origins");
+    assert_eq!(error.code(), Some("E_AMBIGUOUS_TRAIT_METHOD"));
+    assert!(error.msg.contains("app.a/Show"), "error: {error}");
+    assert!(error.msg.contains("app.b/Show"), "error: {error}");
+    assert!(error.msg.contains("&trait-call"), "error: {error}");
+  }
+
+  #[test]
+  fn compatibility_trait_set_keeps_historical_last_wins_order() {
+    let left = source_trait("app.a", "Show", "render");
+    let right = source_trait("app.b", "Show", "render");
+    let traits = vec![left, right];
+    let candidate = selected_trait_method(&traits, "render").expect("compatibility candidate");
+    assert_eq!(candidate.trait_def.origin_label(), "app.b/Show");
+  }
+
+  #[test]
+  fn strict_nominal_dispatch_rejects_duplicate_impls_of_one_trait() {
+    let _guard = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+    let show = source_trait("app.shared", "Show", "render");
+    let make_impl = |name: &str| {
+      Arc::new(CalcitImpl {
+        name: EdnTag::new(name),
+        origin: Some(show.clone()),
+        fields: Arc::new(vec![EdnTag::new("render")]),
+        values: Arc::new(vec![Calcit::Nil]),
+      })
+    };
+    let mut nominal = CalcitStructDef::from_fields(EdnTag::new("Card"), vec![]);
+    nominal.impls = vec![make_impl("FirstShow"), make_impl("SecondShow")];
+    let receiver_type = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(nominal)));
+    let receiver = method_test_receiver(receiver_type.clone());
+    let head = Calcit::Method(Arc::from("render"), calcit::MethodKind::Invoke(receiver_type));
+
+    let error = validate_method_call(
+      &head,
+      &CalcitList::from(&[receiver][..]),
+      &ScopeTypes::new(),
+      "tests.trait-origin",
+      &CallStackList::default(),
+    )
+    .expect_err("strict dispatch must reject duplicate impl attachments");
+    assert_eq!(error.code(), Some("E_DUPLICATE_TRAIT_IMPL"));
+    assert!(error.msg.contains("app.shared/Show"), "error: {error}");
+  }
+
+  #[test]
+  fn strict_nominal_dispatch_rejects_originless_legacy_method_bag() {
+    let _guard = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+    let mut nominal = CalcitStructDef::from_fields(EdnTag::new("Card"), vec![]);
+    nominal.impls = vec![Arc::new(CalcitImpl {
+      name: EdnTag::new("LegacyRenderMethods"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("render")]),
+      values: Arc::new(vec![Calcit::Nil]),
+    })];
+    let receiver_type = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(nominal)));
+    let receiver = method_test_receiver(receiver_type.clone());
+    let head = Calcit::Method(Arc::from("render"), calcit::MethodKind::Invoke(receiver_type));
+
+    let error = validate_method_call(
+      &head,
+      &CalcitList::from(&[receiver][..]),
+      &ScopeTypes::new(),
+      "tests.trait-origin",
+      &CallStackList::default(),
+    )
+    .expect_err("strict typed source must not dispatch through an originless method bag");
+    assert_eq!(error.code(), Some("E_ORIGINLESS_METHOD_DISPATCH"));
+    assert!(error.msg.contains("LegacyRenderMethods"), "error: {error}");
+    assert!(error.msg.contains("deftrait"), "error: {error}");
+  }
+
+  #[test]
+  fn compatibility_dispatch_keeps_precedence_and_warns_with_full_origins() {
+    let _guard = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(false);
+    let _warn = WarnDynMethodGuard::new(true);
+    let left = source_trait("app.a", "Show", "render");
+    let right = source_trait("app.b", "Show", "render");
+    let make_impl = |name: &str, origin: Arc<CalcitTrait>| {
+      Arc::new(CalcitImpl {
+        name: EdnTag::new(name),
+        origin: Some(origin),
+        fields: Arc::new(vec![EdnTag::new("render")]),
+        values: Arc::new(vec![Calcit::Str(Arc::from(name))]),
+      })
+    };
+    let mut nominal = CalcitStructDef::from_fields(EdnTag::new("Card"), vec![]);
+    nominal.impls = vec![make_impl("LeftShow", left), make_impl("RightShow", right)];
+    let receiver_type = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(nominal)));
+    let receiver = method_test_receiver(receiver_type.clone());
+    let head = Calcit::Method(Arc::from("render"), calcit::MethodKind::Invoke(receiver_type.clone()));
+    let args = CalcitList::from(&[receiver][..]);
+
+    validate_method_call(&head, &args, &ScopeTypes::new(), "tests.trait-origin", &CallStackList::default())
+      .expect("compatibility mode retains last-wins dispatch");
+    let impls = get_impls_from_type(receiver_type.as_ref()).expect("nominal impls");
+    let ImplMethodResolution::Ambiguous(candidates) = resolve_impl_method(receiver_type.as_ref(), &impls, "render") else {
+      panic!("two trait origins must remain visible")
+    };
+    assert_eq!(impl_candidate_origin(&candidates[0]), "app.b/Show");
+
+    let warnings = RefCell::new(vec![]);
+    warn_on_method_name_conflict(&head, &args, &ScopeTypes::new(), "tests.trait-origin", "demo", &warnings);
+    let message = warnings.borrow()[0].to_string();
+    assert!(message.contains("app.a/Show"), "warning: {message}");
+    assert!(message.contains("app.b/Show"), "warning: {message}");
+    assert!(message.contains("compatibility dispatch picks `app.b/Show`"), "warning: {message}");
   }
 
   #[test]
@@ -14190,6 +14473,61 @@ mod tests {
   }
 
   #[test]
+  fn nominal_callable_cache_tracks_trait_schema_owner() {
+    let _guard = lock_preprocess_test_state();
+    let owner_ns: Arc<str> = Arc::from("tests.trait-cache-owner");
+    program::install_internal_source_namespace(
+      owner_ns.clone(),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([
+          (
+            Arc::from("Render"),
+            program::ProgramDefEntry {
+              code: Calcit::Nil,
+              schema: calcit::DYNAMIC_TYPE.clone(),
+              doc: Arc::from(""),
+              examples: vec![],
+              ffi: None,
+            },
+          ),
+          (
+            Arc::from("CardRenderImpl"),
+            program::ProgramDefEntry {
+              code: Calcit::Nil,
+              schema: calcit::DYNAMIC_TYPE.clone(),
+              doc: Arc::from(""),
+              examples: vec![],
+              ffi: None,
+            },
+          ),
+        ]),
+      },
+    )
+    .expect("install cache owner fixture");
+    let origin = source_trait(owner_ns.as_ref(), "Render", "render");
+    let impl_value = CalcitImpl {
+      name: EdnTag::new("CardRenderImpl"),
+      origin: Some(origin),
+      fields: Arc::new(vec![EdnTag::new("render")]),
+      values: Arc::new(vec![Calcit::Nil]),
+    };
+    program::write_runtime_ready(&owner_ns, "CardRenderImpl", Calcit::Impl(impl_value.clone())).expect("install impl runtime fixture");
+
+    let deps = nominal_callable_owner_deps(
+      owner_ns.as_ref(),
+      &impl_value,
+      &CalcitTypeAnnotation::TypeRef(Arc::from("tests.trait-cache-owner/Card"), Arc::new(vec![])),
+    );
+    assert!(deps.contains(&program::ensure_def_id(&owner_ns, "CardRenderImpl")));
+    assert!(
+      deps.contains(&program::ensure_def_id(&owner_ns, "Render")),
+      "changing a trait method/default schema must invalidate its generated callable"
+    );
+    program::remove_internal_source_namespace(&owner_ns);
+  }
+
+  #[test]
   fn nominal_callable_tracks_inline_type_owner_or_falls_back_without_source() {
     let _guard = lock_preprocess_test_state();
     let owner_ns: Arc<str> = Arc::from("tests.inline-impl-owner");
@@ -14954,7 +15292,7 @@ mod tests {
     });
     let args = CalcitList::from(&[receiver][..]);
 
-    let error = validate_method_call(&head, &args, &ScopeTypes::new(), &CallStackList::default())
+    let error = validate_method_call(&head, &args, &ScopeTypes::new(), "tests.method", &CallStackList::default())
       .expect_err("trim should reject a non-String receiver through method validation");
     let message = error.to_string();
 
@@ -15209,7 +15547,7 @@ mod tests {
     let show_trait = Arc::new(crate::calcit::CalcitTrait::new(
       EdnTag::new("Renderable"),
       vec![EdnTag::new("show")],
-      vec![crate::calcit::DYNAMIC_TYPE.clone()],
+      vec![Arc::new(CalcitTypeAnnotation::DynFn)],
     ));
     let hint_generics = Calcit::List(Arc::new(CalcitList::from(&[
       Calcit::Symbol {
@@ -15359,7 +15697,7 @@ mod tests {
     let show_trait = Arc::new(crate::calcit::CalcitTrait::new(
       EdnTag::new("Renderable"),
       vec![EdnTag::new("show")],
-      vec![crate::calcit::DYNAMIC_TYPE.clone()],
+      vec![Arc::new(CalcitTypeAnnotation::DynFn)],
     ));
 
     let local_fn = CalcitLocal {

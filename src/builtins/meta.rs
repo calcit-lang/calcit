@@ -1579,19 +1579,32 @@ pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
   let receiver = &xs[2];
   let impls = collect_impls_for_value(receiver, call_stack)?;
 
-  let mut selected_impl: Option<&Arc<CalcitImpl>> = None;
+  let mut matching_impls: Vec<&Arc<CalcitImpl>> = vec![];
   for imp in iter_impls_in_precedence_order(receiver, &impls) {
     if imp.implements_trait(&trait_def) {
-      selected_impl = Some(imp);
-      break;
+      matching_impls.push(imp);
     }
+  }
+
+  if runner::preprocess::is_strict_types_enabled() && matching_impls.len() > 1 {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "&trait-call: trait {} has {} implementations attached to the same receiver; strict dispatch cannot choose between duplicate impls",
+        trait_def.origin_label(),
+        matching_impls.len()
+      ),
+      "E_DUPLICATE_TRAIT_IMPL",
+      call_stack,
+      receiver.get_location(),
+    ));
   }
 
   let mut method_args: Vec<Calcit> = Vec::with_capacity(xs.len().saturating_sub(2));
   method_args.push(receiver.to_owned());
   method_args.extend_from_slice(&xs[3..]);
 
-  if let Some(impl_value) = selected_impl {
+  if let Some(impl_value) = matching_impls.first() {
     return invoke_impl_method(impl_value.as_ref(), receiver, &method_name, &method_args, call_stack);
   }
 
@@ -1603,7 +1616,7 @@ pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
     CalcitErrKind::Type,
     format!(
       "&trait-call: cannot find impl for trait {} on {receiver}. Hint: use `defimpl` to create impls tagged by trait.",
-      trait_def.name
+      trait_def.origin_label()
     ),
     call_stack,
     receiver.get_location(),
@@ -2156,7 +2169,9 @@ pub fn with_type_slot_runtime(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitGenericBound, CalcitSymbolInfo};
+  use crate::calcit::{
+    CalcitFn, CalcitFnArgs, CalcitFnCallShape, CalcitFnUsageMeta, CalcitGenericBound, CalcitLocal, CalcitScope, CalcitSymbolInfo,
+  };
 
   fn symbol(name: &str) -> Calcit {
     Calcit::Symbol {
@@ -2203,6 +2218,79 @@ mod tests {
       struct_ref: Arc::new(struct_def),
       values: Arc::new(vec![]),
     })
+  }
+
+  fn constant_method(value: &str) -> Calcit {
+    Calcit::Fn {
+      id: crate::calcit::gen_core_id(),
+      info: Arc::new(CalcitFn {
+        name: Arc::from("render"),
+        def_ns: Arc::from("test.meta"),
+        def_ref: None,
+        usage: CalcitFnUsageMeta::default(),
+        scope: Arc::new(CalcitScope::default()),
+        args: Arc::new(CalcitFnArgs::Args(vec![CalcitLocal::track_sym(&Arc::from("self"))])),
+        call_shape: CalcitFnCallShape::fixed(1),
+        body: vec![Calcit::Str(Arc::from(value))],
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
+        return_type: Arc::new(CalcitTypeAnnotation::String),
+        rest_type: None,
+      }),
+    }
+  }
+
+  #[test]
+  fn explicit_trait_call_selects_exact_nominal_origin() {
+    let left = Arc::new(
+      CalcitTrait::new_runtime(
+        EdnTag::new("Show"),
+        vec![EdnTag::new("render")],
+        vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+      )
+      .with_definition_ref("app.a", "Show"),
+    );
+    let right = Arc::new(
+      CalcitTrait::new_runtime(
+        EdnTag::new("Show"),
+        vec![EdnTag::new("render")],
+        vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+      )
+      .with_definition_ref("app.b", "Show"),
+    );
+    let mut receiver_def = CalcitStructDef::from_fields(EdnTag::new("Card"), vec![]);
+    receiver_def.impls = vec![
+      Arc::new(CalcitImpl {
+        name: EdnTag::new("LeftShow"),
+        origin: Some(left.clone()),
+        fields: Arc::new(vec![EdnTag::new("render")]),
+        values: Arc::new(vec![constant_method("A")]),
+      }),
+      Arc::new(CalcitImpl {
+        name: EdnTag::new("RightShow"),
+        origin: Some(right.clone()),
+        fields: Arc::new(vec![EdnTag::new("render")]),
+        values: Arc::new(vec![constant_method("B")]),
+      }),
+    ];
+    let receiver = Calcit::Struct(CalcitStructValue {
+      struct_ref: Arc::new(receiver_def),
+      values: Arc::new(vec![]),
+    });
+
+    let left_result = trait_call(
+      &[Calcit::Trait(left.as_ref().clone()), Calcit::tag("render"), receiver.clone()],
+      &CallStackList::default(),
+    )
+    .expect("left origin call");
+    let right_result = trait_call(
+      &[Calcit::Trait(right.as_ref().clone()), Calcit::tag("render"), receiver],
+      &CallStackList::default(),
+    )
+    .expect("right origin call");
+    assert_eq!(left_result, Calcit::Str(Arc::from("A")));
+    assert_eq!(right_result, Calcit::Str(Arc::from("B")));
   }
 
   #[test]

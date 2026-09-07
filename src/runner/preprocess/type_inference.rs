@@ -29,8 +29,8 @@ use cirru_edn::EdnTag;
 
 use super::{
   ScopeTypes, checked_call_contract::resolve_checked_call_contract, find_method_entry_for_type, find_trait_field_type,
-  find_trait_method_type, get_impls_from_type, resolve_local_type_refs_for_body, resolve_namespace_type_refs_for_body,
-  resolve_trait_def_from_source_code, tag_annotation, trait_is_external_object, trait_list_from_type,
+  get_impls_from_type, resolve_local_type_refs_for_body, resolve_namespace_type_refs_for_body, resolve_trait_def_from_source_code,
+  selected_trait_method, tag_annotation, trait_is_external_object, trait_list_from_type,
 };
 
 // ---------------------------------------------------------------------------
@@ -989,7 +989,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
             .and_then(|receiver| resolve_type_value(receiver, scope_types))
             .unwrap_or_else(|| receiver_hint.clone());
           let method_type = if let Some(traits) = trait_list_from_type(receiver_type.as_ref()) {
-            find_trait_method_type(&traits, method_name).map(|(_, method_type)| method_type.clone())?
+            selected_trait_method(&traits, method_name).map(|candidate| candidate.method_type)?
           } else {
             let impls = get_impls_from_type(receiver_type.as_ref())?;
             let method = find_method_entry_for_type(receiver_type.as_ref(), &impls, method_name)?;

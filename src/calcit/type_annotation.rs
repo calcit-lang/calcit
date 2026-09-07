@@ -3242,7 +3242,24 @@ impl CalcitTypeAnnotation {
   }
 
   fn impl_matches_trait(imp: &CalcitImpl, expected_trait: &CalcitTrait) -> bool {
-    imp.matches_trait_reference(expected_trait)
+    let Some(origin) = imp.origin() else {
+      return false;
+    };
+    if expected_trait.validate_reachable_method_schemas().is_err() || origin.validate_reachable_method_schemas().is_err() {
+      return false;
+    }
+    origin
+      .normalized_reachable_traits()
+      .is_ok_and(|traits| traits.iter().any(|actual| Self::trait_references_match(actual, expected_trait)))
+  }
+
+  fn trait_annotation_proves(actual: &CalcitTrait, expected: &CalcitTrait) -> bool {
+    if expected.validate_reachable_method_schemas().is_err() || actual.validate_reachable_method_schemas().is_err() {
+      return false;
+    }
+    actual
+      .normalized_reachable_traits()
+      .is_ok_and(|traits| traits.iter().any(|reachable| Self::trait_references_match(reachable, expected)))
   }
 
   /// Bootstrap metadata used only before a core impl list has been evaluated.
@@ -3270,13 +3287,13 @@ impl CalcitTypeAnnotation {
 
   fn satisfies_trait_bound(&self, expected_trait: &CalcitTrait) -> bool {
     match self {
-      Self::Trait(actual_trait) if Self::trait_references_match(actual_trait, expected_trait) => {
+      Self::Trait(actual_trait) if Self::trait_annotation_proves(actual_trait, expected_trait) => {
         return true;
       }
       Self::TraitSet(actual_traits)
         if actual_traits
           .iter()
-          .any(|actual_trait| Self::trait_references_match(actual_trait, expected_trait)) =>
+          .any(|actual_trait| Self::trait_annotation_proves(actual_trait, expected_trait)) =>
       {
         return true;
       }
@@ -4975,6 +4992,40 @@ mod tests {
       unreachable!();
     };
     assert!(CalcitTypeAnnotation::Trait(dom_element).satisfies_trait_bound(evaluated_dom_element));
+  }
+
+  #[test]
+  fn transitive_trait_requirements_prove_bounds_but_invalid_schemas_do_not() {
+    let required = Arc::new(
+      CalcitTrait::new(
+        EdnTag::new("Display"),
+        vec![EdnTag::new("display")],
+        vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+      )
+      .with_definition_ref("app.display", "Display"),
+    );
+    let mut composite = CalcitTrait::new(
+      EdnTag::new("Widget"),
+      vec![EdnTag::new("render")],
+      vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+    )
+    .with_definition_ref("app.widget", "Widget");
+    composite.requires = Arc::new(vec![required.clone()]);
+    let annotation = CalcitTypeAnnotation::Trait(Arc::new(composite));
+    assert!(annotation.satisfies_trait_bound(required.as_ref()));
+
+    let invalid = CalcitTrait {
+      runtime_id: None,
+      definition_ref: Some(Arc::from("app.invalid/Broken")),
+      name: EdnTag::new("Broken"),
+      methods: Arc::new(vec![EdnTag::new("missing")]),
+      defaults: Arc::new(vec![None]),
+      method_types: Arc::new(vec![]),
+      member_kinds: Arc::new(vec![crate::calcit::CalcitTraitMemberKind::Method]),
+      requires: Arc::new(vec![]),
+    };
+    let invalid_annotation = CalcitTypeAnnotation::Trait(Arc::new(invalid.clone()));
+    assert!(!invalid_annotation.satisfies_trait_bound(&invalid));
   }
 
   #[test]

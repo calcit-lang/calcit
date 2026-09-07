@@ -140,7 +140,7 @@ Implementation notes:
 
 ## Attach impls to struct/enum definitions
 
-`impl-traits` attaches impl records to a **struct/enum type**. For user values, later impls override earlier impls for the same method name ("last-wins").
+`impl-traits` attaches impl records to a **struct/enum type**. In compatibility mode, user values retain the historical rule that later impls override earlier impls for the same method name ("last-wins"). Strict mode rejects that call as ambiguous when the candidates have different nominal trait origins. It also rejects attaching multiple implementations of the same nominal trait when the duplicated method is called; remove the duplicate rather than relying on attachment order.
 
 Constraints:
 
@@ -223,8 +223,10 @@ evidence; live branches with different attachments remain conservative.
 
 When running `warn-dyn-method`, preprocess emits extra diagnostics for:
 
-- `.method` call sites that have multiple trait candidates with the same method name.
+- `.method` call sites that have multiple origin candidates with the same method name. Diagnostics print namespace-qualified source origins (or a runtime identity), so `app.a/Show` and `app.b/Show` are never collapsed to the short name `Show`.
 - `impl-traits` used inside function/macro bodies (non-top-level attachment).
+
+Method checking, callback signature inference, static lowering, and these diagnostics consume the same candidate resolution. Trait requirements are de-duplicated by nominal origin and normalized independently of declaration order. A requires cycle or a reachable method/default without callable signature metadata is invalid static evidence; it cannot satisfy a generic `:where` bound.
 
 ## Docs as tests
 
@@ -236,7 +238,9 @@ Key trait docs examples are mirrored by executable smoke cases in `calcit/test-d
 
 ## Method call vs explicit trait call
 
-Normal method invocation uses `.method` dispatch. If multiple traits provide the same method name, `.method` resolves by impl precedence.
+Normal method invocation uses `.method` dispatch. In strict mode, one method name must resolve to exactly one nominal trait origin and one attached impl. If multiple traits provide it, `.method` reports `E_AMBIGUOUS_TRAIT_METHOD`; duplicate implementations of one origin report `E_DUPLICATE_TRAIT_IMPL`. Use `&trait-call` for the former and remove duplicate attachments for the latter.
+
+Compatibility mode continues to resolve by the historical built-in/user precedence rules. `--warn-dyn-method` reports the selected origin and every competing full origin so migrations can be made before enabling strict types.
 
 When you want to **disambiguate** (or bypass `.method` resolution), use `&trait-call`.
 
@@ -269,7 +273,7 @@ let
     Person0 $ defstruct Person (:name 'String)
     Person $ impl-traits Person0 MyZapAImpl MyZapBImpl
     p $ %{} Person (:name |Alice)
-  ; .zap follows normal dispatch $ last-wins for user impls
+  ; compatibility mode keeps last-wins; strict mode rejects this ambiguous call
   p .zap
   ; explicitly pick a "trait’s" implementation
   &trait-call MyZapA :zap p
