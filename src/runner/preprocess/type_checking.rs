@@ -147,7 +147,7 @@ fn specialize_core_expected_types(
     return None;
   }
   if let Some(contract) = resolve_checked_call_contract(&fn_info.def_ns, &fn_info.name, args, scope_types) {
-    return Some(contract.expected_types);
+    return contract.expected_types;
   }
   let required_arity = match fn_info.name.as_ref() {
     "&list:apply" | "&list:sort-by" | "any?" | "contains?" | "each" | "every?" | "includes?" => 2,

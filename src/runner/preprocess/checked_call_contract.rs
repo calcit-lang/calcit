@@ -15,7 +15,9 @@ pub(crate) enum CheckedCallLowering {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CheckedCallContract {
-  pub expected_types: Vec<Arc<CalcitTypeAnnotation>>,
+  /// Bound checking evidence. Syntax-member collections intentionally keep
+  /// this open while still carrying their proven lowering target.
+  pub expected_types: Option<Vec<Arc<CalcitTypeAnnotation>>>,
   pub return_type: Arc<CalcitTypeAnnotation>,
   pub lowering: Option<CheckedCallLowering>,
 }
@@ -67,42 +69,42 @@ pub(crate) fn resolve_checked_call_contract(
   let receiver_type = resolve_type_value(args.first()?, scope_types)?;
   match (fn_def, receiver_type.as_ref()) {
     ("get", T::Map(key_type, value_type)) => Some(CheckedCallContract {
-      expected_types: vec![receiver_type.clone(), key_type.clone()],
+      expected_types: Some(vec![receiver_type.clone(), key_type.clone()]),
       return_type: core_type_ref("Option", vec![value_type.clone()]),
       lowering: Some(CheckedCallLowering::TypedOptionalAccess),
     }),
     ("get", T::List(item_type)) => Some(CheckedCallContract {
-      expected_types: vec![receiver_type.clone(), Arc::new(T::Number)],
+      expected_types: Some(vec![receiver_type.clone(), Arc::new(T::Number)]),
       return_type: core_type_ref("Option", vec![item_type.clone()]),
       lowering: Some(CheckedCallLowering::TypedOptionalAccess),
     }),
     ("get", T::String) => Some(CheckedCallContract {
-      expected_types: vec![receiver_type.clone(), Arc::new(T::Number)],
+      expected_types: Some(vec![receiver_type.clone(), Arc::new(T::Number)]),
       return_type: core_type_ref("Option", vec![Arc::new(T::String)]),
       lowering: Some(CheckedCallLowering::TypedOptionalAccess),
     }),
     ("get", value) if matches!(value, T::EnumValue(_) | T::AnonymousEnum) || value.resolve_to_enum().is_some() => {
       Some(CheckedCallContract {
-        expected_types: vec![receiver_type, Arc::new(T::Number)],
+        expected_types: Some(vec![receiver_type, Arc::new(T::Number)]),
         return_type: core_type_ref("Option", vec![crate::calcit::DYNAMIC_TYPE.clone()]),
         lowering: Some(CheckedCallLowering::TypedOptionalAccess),
       })
     }
     ("update", T::List(item_type)) => Some(CheckedCallContract {
-      expected_types: vec![
+      expected_types: Some(vec![
         receiver_type.clone(),
         Arc::new(T::Number),
         fn_type(vec![item_type.clone()], item_type.clone()),
-      ],
+      ]),
       return_type: receiver_type,
       lowering: None,
     }),
     ("update", T::Map(key_type, value_type)) => Some(CheckedCallContract {
-      expected_types: vec![
+      expected_types: Some(vec![
         receiver_type.clone(),
         key_type.clone(),
         fn_type(vec![value_type.clone()], value_type.clone()),
-      ],
+      ]),
       return_type: receiver_type,
       lowering: None,
     }),
@@ -113,16 +115,16 @@ pub(crate) fn resolve_checked_call_contract(
         "&set:filter"
       };
       Some(CheckedCallContract {
-        expected_types: vec![receiver_type.clone(), fn_type(vec![item_type.clone()], Arc::new(T::Bool))],
+        expected_types: Some(vec![receiver_type.clone(), fn_type(vec![item_type.clone()], Arc::new(T::Bool))]),
         return_type: receiver_type,
         lowering: Some(CheckedCallLowering::CoreDef(target)),
       })
     }
     ("filter", T::Map(_, _)) => Some(CheckedCallContract {
-      expected_types: vec![
+      expected_types: Some(vec![
         receiver_type.clone(),
         fn_type(vec![Arc::new(T::List(crate::calcit::DYNAMIC_TYPE.clone()))], Arc::new(T::Bool)),
-      ],
+      ]),
       return_type: receiver_type,
       lowering: Some(CheckedCallLowering::CoreDef("&map:filter")),
     }),
@@ -134,7 +136,7 @@ pub(crate) fn resolve_checked_call_contract(
         (Arc::new(T::Set(output_type.clone())), "&set:map")
       };
       Some(CheckedCallContract {
-        expected_types: vec![receiver_type.clone(), fn_type(vec![item_type.clone()], output_type)],
+        expected_types: Some(vec![receiver_type.clone(), fn_type(vec![item_type.clone()], output_type)]),
         return_type,
         lowering: Some(CheckedCallLowering::CoreDef(target)),
       })
@@ -142,9 +144,34 @@ pub(crate) fn resolve_checked_call_contract(
     ("map", T::Map(_, _)) => {
       let pair_type = Arc::new(T::List(crate::calcit::DYNAMIC_TYPE.clone()));
       Some(CheckedCallContract {
-        expected_types: vec![receiver_type, fn_type(vec![pair_type.clone()], pair_type)],
+        expected_types: Some(vec![receiver_type, fn_type(vec![pair_type.clone()], pair_type)]),
         return_type: Arc::new(T::Map(crate::calcit::DYNAMIC_TYPE.clone(), crate::calcit::DYNAMIC_TYPE.clone())),
         lowering: Some(CheckedCallLowering::CoreDef("&map:map")),
+      })
+    }
+    ("filter", T::List(item_type)) | ("filter", T::Set(item_type)) if matches!(item_type.as_ref(), T::Syntax(_)) => {
+      let target = if matches!(receiver_type.as_ref(), T::List(_)) {
+        "&list:filter"
+      } else {
+        "&set:filter"
+      };
+      Some(CheckedCallContract {
+        expected_types: None,
+        return_type: receiver_type,
+        lowering: Some(CheckedCallLowering::CoreDef(target)),
+      })
+    }
+    ("map", T::List(item_type)) | ("map", T::Set(item_type)) if matches!(item_type.as_ref(), T::Syntax(_)) => {
+      let output_type = Arc::new(T::TypeVar(Arc::from("MapOutput")));
+      let (return_type, target) = if matches!(receiver_type.as_ref(), T::List(_)) {
+        (Arc::new(T::List(output_type)), "&list:map")
+      } else {
+        (Arc::new(T::Set(output_type)), "&set:map")
+      };
+      Some(CheckedCallContract {
+        expected_types: None,
+        return_type,
+        lowering: Some(CheckedCallLowering::CoreDef(target)),
       })
     }
     _ => None,
@@ -179,8 +206,9 @@ mod tests {
 
     let contract = resolve_checked_call_contract(calcit::CORE_NS, "map", &args, &ScopeTypes::new())
       .expect("typed list map should have one checked contract");
-    assert_eq!(contract.expected_types[0], receiver);
-    let CalcitTypeAnnotation::Fn(callback) = contract.expected_types[1].as_ref() else {
+    let expected_types = contract.expected_types.as_ref().expect("typed map should bind checking evidence");
+    assert_eq!(expected_types[0], receiver);
+    let CalcitTypeAnnotation::Fn(callback) = expected_types[1].as_ref() else {
       panic!("map callback should be checked as a function");
     };
     assert_eq!(callback.arg_types.as_slice(), &[number]);
@@ -197,7 +225,7 @@ mod tests {
     let get_args = CalcitList::from(&[local("counts", map_type), Calcit::Str(Arc::from("a"))] as &[Calcit]);
     let get_contract = resolve_checked_call_contract(calcit::CORE_NS, "get", &get_args, &ScopeTypes::new())
       .expect("typed map get should have one checked contract");
-    assert_eq!(get_contract.expected_types[1], string);
+    assert_eq!(get_contract.expected_types.as_ref().unwrap()[1], string);
     assert_eq!(get_contract.return_type, core_type_ref("Option", vec![number.clone()]));
     assert_eq!(get_contract.lowering, Some(CheckedCallLowering::TypedOptionalAccess));
 
@@ -208,7 +236,7 @@ mod tests {
     let update_contract = resolve_checked_call_contract(calcit::CORE_NS, "update", &update_args, &ScopeTypes::new())
       .expect("typed list update should have one checked contract");
     assert_eq!(update_contract.return_type, list_type);
-    let CalcitTypeAnnotation::Fn(callback) = update_contract.expected_types[2].as_ref() else {
+    let CalcitTypeAnnotation::Fn(callback) = update_contract.expected_types.as_ref().unwrap()[2].as_ref() else {
       panic!("update callback should be checked as a function");
     };
     assert_eq!(callback.arg_types.as_slice(), std::slice::from_ref(&number));
@@ -239,6 +267,20 @@ mod tests {
       local("mapper", Arc::new(CalcitTypeAnnotation::DynFn)),
     ] as &[Calcit]);
     assert!(resolve_checked_call_contract(calcit::CORE_NS, "map", &slot_args, &ScopeTypes::new()).is_none());
+
+    let syntax_args = CalcitList::from(&[
+      local(
+        "forms",
+        Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Syntax(Arc::new(
+          calcit::MacroSyntaxType::Syntax,
+        ))))),
+      ),
+      local("transform", Arc::new(CalcitTypeAnnotation::DynFn)),
+    ] as &[Calcit]);
+    let syntax_contract = resolve_checked_call_contract(calcit::CORE_NS, "map", &syntax_args, &ScopeTypes::new())
+      .expect("a proven Syntax list should retain its existing lowering");
+    assert!(syntax_contract.expected_types.is_none());
+    assert_eq!(syntax_contract.lowering, Some(CheckedCallLowering::CoreDef("&list:map")));
   }
 
   #[test]
@@ -250,7 +292,7 @@ mod tests {
 
     let contract = resolve_checked_call_contract(calcit::CORE_NS, "get", &args, &ScopeTypes::new())
       .expect("a cross-namespace nominal key remains a valid typed map lookup");
-    assert_eq!(contract.expected_types[1], account);
+    assert_eq!(contract.expected_types.as_ref().unwrap()[1], account);
     assert_eq!(
       contract.return_type,
       core_type_ref("Option", vec![optional_number]),

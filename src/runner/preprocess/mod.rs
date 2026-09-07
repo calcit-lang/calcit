@@ -2342,7 +2342,7 @@ fn preprocess_list_call(
       let checked_contract = resolve_checked_call_contract(&info.def_ns, &info.name, &args, scope_types);
       let preprocessing_expected_types = checked_contract
         .as_ref()
-        .map(|contract| contract.expected_types.as_slice())
+        .and_then(|contract| contract.expected_types.as_deref())
         .unwrap_or(&info.arg_types);
 
       // Process arguments with type-aware preprocessing for Fn-typed params.
@@ -2394,7 +2394,7 @@ fn preprocess_list_call(
       if !has_spread {
         let mut current_args = CalcitList::from(ys.drop_left());
         let checked_contract = resolve_checked_call_contract(&info.def_ns, &info.name, &current_args, scope_types);
-        let checked_expected_types = checked_contract.as_ref().map(|contract| contract.expected_types.as_slice());
+        let checked_expected_types = checked_contract.as_ref().and_then(|contract| contract.expected_types.as_deref());
         // Core helpers such as `get` resolve to ordinary functions, so validate
         // their statically known struct fields in this branch as well.
         check_struct_field_access(&head_form, &current_args, scope_types, file_ns, call_stack, check_warnings);
