@@ -23,13 +23,16 @@
                 filter-map-kv
                   {} (:a 1) (:b 2) (:c 3)
                   fn (k v)
+                    hint-fn $ {}
+                      :args $ [] 'Tag 'Number
+                      :return $ :: 'MapEntryDecision 'Tag 'Number
                     if (> v 1)
-                      %:: MapEntryDecision :keep k $ * v 10
-                      %:: MapEntryDecision :drop
+                      MapEntryDecision :keep k $ * v 10
+                      MapEntryDecision :drop
               assert= ({})
                 .filter-map-kv
                   {} $ :a 1
-                  fn (k v) (%:: MapEntryDecision :drop)
+                  fn (k v) (MapEntryDecision :drop)
               do
                 let
                     calls $ atom 0
@@ -37,7 +40,7 @@
                       {} (:a 1) (:b 2) (:c 3)
                       fn (_k v)
                         reset! calls $ + 1 @calls
-                        %:: MapEntryDecision :keep :same v
+                        MapEntryDecision :keep :same v
                   assert= 3 @calls
                   assert= 1 $ count result
                   assert= true $ contains? result :same

@@ -3457,12 +3457,22 @@ fn constructor_definition_path(head_form: &Calcit) -> Option<(Arc<str>, Arc<str>
 }
 
 fn data_definition_kind(ns: &str, def: &str) -> Option<&'static str> {
-  let Calcit::List(code) = program::lookup_def_code(ns, def)? else {
-    return None;
-  };
-  match code.first() {
-    Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defstruct" => Some("defstruct"),
-    Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defenum" => Some("defenum"),
+  data_definition_kind_from_code(&program::lookup_def_code(ns, def)?)
+}
+
+fn data_definition_kind_from_code(code: &Calcit) -> Option<&'static str> {
+  // Keep accepting the minimal source markers used while definitions are still
+  // bootstrapping; wrapped definitions need the complete nominal resolver.
+  if let Calcit::List(items) = code {
+    match items.first() {
+      Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defstruct" => return Some("defstruct"),
+      Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defenum" => return Some("defenum"),
+      _ => {}
+    }
+  }
+  match calcit::type_annotation::resolve_type_def_from_code(code)? {
+    Calcit::StructDef(_) => Some("defstruct"),
+    Calcit::EnumDef(_) => Some("defenum"),
     _ => None,
   }
 }
@@ -14036,6 +14046,23 @@ mod tests {
       constructor_definition_path(&head),
       Some((Arc::from("tests.schema"), Arc::from("Op")))
     );
+  }
+
+  #[test]
+  fn recognizes_generic_enum_constructor_behind_impl_traits() {
+    let generic_params = Calcit::from(vec![test_symbol("[]"), test_symbol("K"), test_symbol("V")]);
+    let keep_variant = Calcit::from(vec![Calcit::Tag(EdnTag::from("keep")), test_symbol("K"), test_symbol("V")]);
+    let drop_variant = Calcit::from(vec![Calcit::Tag(EdnTag::from("drop"))]);
+    let enum_form = Calcit::from(vec![
+      test_symbol("defenum"),
+      test_symbol("MapEntryDecision"),
+      generic_params,
+      keep_variant,
+      drop_variant,
+    ]);
+    let wrapped = Calcit::from(vec![test_symbol("impl-traits"), enum_form, test_symbol("MapEntryDecisionOps")]);
+
+    assert_eq!(data_definition_kind_from_code(&wrapped), Some("defenum"));
   }
 
   #[test]
