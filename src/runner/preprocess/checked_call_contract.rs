@@ -34,7 +34,14 @@ fn fn_type(args: Vec<Arc<CalcitTypeAnnotation>>, return_type: Arc<CalcitTypeAnno
 }
 
 fn callback_return_type(callback: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
-  let callback_type = resolve_type_value(callback, scope_types)?;
+  let embedded_schema = || {
+    let Calcit::List(items) = callback else { return None };
+    items
+      .iter()
+      .skip(3)
+      .find_map(CalcitTypeAnnotation::extract_fn_annotation_from_hint_form)
+  };
+  let callback_type = embedded_schema().or_else(|| resolve_type_value(callback, scope_types))?;
   match callback_type.as_ref() {
     CalcitTypeAnnotation::Fn(signature) if !matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Dynamic) => {
       Some(signature.return_type.clone())
@@ -73,17 +80,49 @@ pub(crate) fn resolve_checked_call_contract(
   if fn_ns != calcit::CORE_NS {
     return None;
   }
+  if fn_def == "option:fold" && !super::strict_types_enabled() {
+    return None;
+  }
   let required_arity = match fn_def {
     "get" | "filter" | "map" => 2,
-    "update" => 3,
+    "option:fold" | "update" => 3,
     _ => return None,
   };
   if args.len() != required_arity {
     return None;
   }
 
-  let receiver_type = resolve_bound_type_slot_chain(resolve_type_value(args.first()?, scope_types)?);
+  let receiver_type = resolve_type_value(args.first()?, scope_types)
+    .map(resolve_bound_type_slot_chain)
+    .or_else(|| {
+      if fn_def != "option:fold" {
+        return None;
+      }
+      let Calcit::List(items) = args.first()? else { return None };
+      let is_some_constructor = matches!(items.first(), Some(Calcit::Import(import)) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "%some")
+        || matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "%some");
+      if !is_some_constructor {
+        return None;
+      }
+      let payload = resolve_type_value(items.get(1)?, scope_types)?;
+      Some(core_type_ref("Option", vec![payload]))
+    })?;
   match (fn_def, receiver_type.as_ref()) {
+    ("option:fold", T::TypeRef(_, type_args) | T::Enum(_, type_args)) if receiver_type.is_option_type() => {
+      let input_type = type_args.first()?.clone();
+      let output_type = callback_return_type(args.get(1)?, scope_types)
+        .or_else(|| callback_return_type(args.get(2)?, scope_types))
+        .unwrap_or_else(|| Arc::new(T::TypeVar(Arc::from("OptionFoldOutput"))));
+      Some(CheckedCallContract {
+        expected_types: Some(vec![
+          receiver_type.clone(),
+          fn_type(vec![], output_type.clone()),
+          fn_type(vec![input_type], output_type.clone()),
+        ]),
+        return_type: output_type,
+        lowering: None,
+      })
+    }
     ("get", T::Map(key_type, value_type)) => Some(CheckedCallContract {
       expected_types: Some(vec![receiver_type.clone(), key_type.clone()]),
       return_type: core_type_ref("Option", vec![value_type.clone()]),

@@ -969,6 +969,12 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         // Direct Fn call: return the function's return type
         Calcit::Fn { info, .. } => {
           if info.def_ns.as_ref() == calcit::CORE_NS
+            && let Some(contract) = resolve_checked_call_contract(&info.def_ns, &info.name, &xs.drop_left(), scope_types)
+            && !contract.return_type.contains_type_var()
+          {
+            return Some(contract.return_type);
+          }
+          if info.def_ns.as_ref() == calcit::CORE_NS
             && let Some(inferred) = infer_core_nominal_absence_return_type(info.name.as_ref(), xs, scope_types)
           {
             return Some(inferred);
