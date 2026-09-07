@@ -7,6 +7,23 @@ on:
 name: Test
 
 jobs:
+  wasi_preprocess:
+    name: WASI preprocess regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Wasmtime 18.0.3
+        uses: bytecodealliance/actions/wasmtime/setup@v1.1.3
+        with:
+          version: "18.0.3"
+      - name: Verify native and WASI preprocessing parity
+        run: bash scripts/test-wasi-preprocess.sh
+
   macos_main_thread:
     name: macOS main-thread CLI
     runs-on: macos-14
