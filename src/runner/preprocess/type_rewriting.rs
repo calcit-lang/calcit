@@ -83,40 +83,51 @@ pub(crate) fn try_rewrite_local_fn_enum_args_to_named_enums(
 /// Rewrite hashmap literal arguments to struct literals when struct-typed.
 pub(crate) fn try_rewrite_map_args_to_structs(
   fn_info: &CalcitFn,
+  expected_types: Option<&[Arc<CalcitTypeAnnotation>]>,
   processed_args: &CalcitList,
   file_ns: &str,
   def_name: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) -> Option<CalcitList> {
-  rewrite_args_by_expected_type(&fn_info.arg_types, processed_args, |arg, expected, idx| {
-    try_rewrite_single_map_to_struct(arg, expected, file_ns, def_name, &fn_info.name, idx, check_warnings)
-  })
+  rewrite_args_by_expected_type(
+    expected_types.unwrap_or(&fn_info.arg_types),
+    processed_args,
+    |arg, expected, idx| try_rewrite_single_map_to_struct(arg, expected, file_ns, def_name, &fn_info.name, idx, check_warnings),
+  )
 }
 
 /// Rewrite loose struct literal arguments to struct literals when struct-typed.
 pub(crate) fn try_rewrite_loose_struct_args_to_structs(
   fn_info: &CalcitFn,
+  expected_types: Option<&[Arc<CalcitTypeAnnotation>]>,
   processed_args: &CalcitList,
   file_ns: &str,
   def_name: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) -> Option<CalcitList> {
-  rewrite_args_by_expected_type(&fn_info.arg_types, processed_args, |arg, expected, idx| {
-    try_rewrite_single_loose_struct_to_struct(arg, expected, file_ns, def_name, &fn_info.name, idx, check_warnings)
-  })
+  rewrite_args_by_expected_type(
+    expected_types.unwrap_or(&fn_info.arg_types),
+    processed_args,
+    |arg, expected, idx| {
+      try_rewrite_single_loose_struct_to_struct(arg, expected, file_ns, def_name, &fn_info.name, idx, check_warnings)
+    },
+  )
 }
 
 /// Rewrite untyped enum literal arguments to named enums when enum-typed.
 pub(crate) fn try_rewrite_enum_args_to_named_enums(
   fn_info: &CalcitFn,
+  expected_types: Option<&[Arc<CalcitTypeAnnotation>]>,
   processed_args: &CalcitList,
   file_ns: &str,
   def_name: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) -> Option<CalcitList> {
-  rewrite_args_by_expected_type(&fn_info.arg_types, processed_args, |arg, expected, idx| {
-    try_rewrite_single_enum_to_named_enum(arg, expected, file_ns, def_name, &fn_info.name, idx, check_warnings)
-  })
+  rewrite_args_by_expected_type(
+    expected_types.unwrap_or(&fn_info.arg_types),
+    processed_args,
+    |arg, expected, idx| try_rewrite_single_enum_to_named_enum(arg, expected, file_ns, def_name, &fn_info.name, idx, check_warnings),
+  )
 }
 
 // ---------------------------------------------------------------------------

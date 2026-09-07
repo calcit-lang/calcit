@@ -17,6 +17,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::checked_call_contract::resolve_checked_call_contract;
 use super::type_inference::{infer_struct_field_type, infer_unhinted_callback_signature};
 use crate::calcit::{
   self, Calcit, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
@@ -145,8 +146,11 @@ fn specialize_core_expected_types(
   if fn_info.def_ns.as_ref() != calcit::CORE_NS {
     return None;
   }
+  if let Some(contract) = resolve_checked_call_contract(&fn_info.def_ns, &fn_info.name, args, scope_types) {
+    return Some(contract.expected_types);
+  }
   let required_arity = match fn_info.name.as_ref() {
-    "&list:apply" | "&list:sort-by" | "any?" | "contains?" | "each" | "every?" | "filter" | "get" | "includes?" | "map" => 2,
+    "&list:apply" | "&list:sort-by" | "any?" | "contains?" | "each" | "every?" | "includes?" => 2,
     "assoc" | "foldl" | "reduce" | "update" => 3,
     _ => return None,
   };
@@ -172,22 +176,11 @@ fn specialize_core_expected_types(
       };
       Some(specialized)
     }
-    "any?" | "each" | "every?" | "filter" | "map" => {
-      specialize_collection_callback_expected_types(fn_info.name.as_ref(), receiver_type.as_ref(), expected_types)
+    "any?" | "each" | "every?" => {
+      specialize_collection_iteration_expected_types(fn_info.name.as_ref(), receiver_type.as_ref(), expected_types)
     }
     "foldl" | "reduce" => specialize_collection_fold_expected_types(args, scope_types, expected_types),
     "&list:sort-by" => specialize_list_sort_by_expected_types(args, scope_types, expected_types),
-    "get" => {
-      let mut specialized = expected_types.to_vec();
-      specialized[1] = match receiver_type.as_ref() {
-        CalcitTypeAnnotation::Map(key_type, _) => key_type.clone(),
-        CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::String => Arc::new(CalcitTypeAnnotation::Number),
-        CalcitTypeAnnotation::EnumValue(_) | CalcitTypeAnnotation::AnonymousEnum => Arc::new(CalcitTypeAnnotation::Number),
-        value if value.resolve_to_enum().is_some() => Arc::new(CalcitTypeAnnotation::Number),
-        _ => return None,
-      };
-      Some(specialized)
-    }
     "includes?" => {
       let mut specialized = expected_types.to_vec();
       specialized[1] = match receiver_type.as_ref() {
@@ -302,12 +295,11 @@ fn specialize_collection_sort_expected_types(
   Some(specialized)
 }
 
-fn specialize_collection_callback_expected_types(
+fn specialize_collection_iteration_expected_types(
   fn_name: &str,
   receiver_type: &CalcitTypeAnnotation,
   expected_types: &[Arc<CalcitTypeAnnotation>],
 ) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
-  let is_map_receiver = matches!(receiver_type, CalcitTypeAnnotation::Map(_, _));
   let callback_arg = match receiver_type {
     CalcitTypeAnnotation::List(item_type) | CalcitTypeAnnotation::Set(item_type)
       if !matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) =>
@@ -323,8 +315,6 @@ fn specialize_collection_callback_expected_types(
   specialized[0] = Arc::new(receiver_type.clone());
   let callback_return = match fn_name {
     "each" => crate::calcit::DYNAMIC_TYPE.clone(),
-    "map" if is_map_receiver => Arc::new(CalcitTypeAnnotation::List(crate::calcit::DYNAMIC_TYPE.clone())),
-    "map" => Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("MapOutput"))),
     _ => Arc::new(CalcitTypeAnnotation::Bool),
   };
   specialized[1] = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![callback_arg], callback_return));
@@ -416,26 +406,16 @@ fn specialize_update_expected_types(
 ) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
   let receiver = args.first()?;
   let mut specialized = expected_types.to_vec();
-  let value_type = match receiver_type {
-    CalcitTypeAnnotation::List(item_type) => {
-      specialized[1] = Arc::new(CalcitTypeAnnotation::Number);
-      item_type.clone()
-    }
-    CalcitTypeAnnotation::Map(key_type, value_type) => {
-      specialized[1] = key_type.clone();
-      value_type.clone()
-    }
-    value if is_direct_struct_receiver(value) => {
-      let field_name = match args.get(1)? {
-        Calcit::Tag(tag) => tag.ref_str(),
-        Calcit::Str(text) => text.as_ref(),
-        Calcit::Symbol { sym, .. } => sym.as_ref(),
-        _ => return None,
-      };
-      infer_struct_field_type(receiver, field_name, scope_types)?
-    }
+  if !is_direct_struct_receiver(receiver_type) {
+    return None;
+  }
+  let field_name = match args.get(1)? {
+    Calcit::Tag(tag) => tag.ref_str(),
+    Calcit::Str(text) => text.as_ref(),
+    Calcit::Symbol { sym, .. } => sym.as_ref(),
     _ => return None,
   };
+  let value_type = infer_struct_field_type(receiver, field_name, scope_types)?;
   specialized[2] = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![value_type.clone()], value_type));
   Some(specialized)
 }

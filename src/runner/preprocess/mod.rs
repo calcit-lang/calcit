@@ -1,3 +1,4 @@
+mod checked_call_contract;
 mod type_checking;
 mod type_inference;
 mod type_rewriting;
@@ -15,6 +16,7 @@ use crate::{
   codegen, program, runner,
 };
 
+use checked_call_contract::{CheckedCallLowering, resolve_checked_call_contract};
 use type_checking::{
   CallTypeCheckInfo, check_core_fn_arg_types, check_function_return_type, check_local_fn_call_arg_types, check_proc_arg_types,
   check_reset_arg_types, check_user_fn_arg_types, detect_return_type_hint_from_processed_body,
@@ -1389,6 +1391,7 @@ fn try_expand_typed_optional_access_call(
   if fn_ns != calcit::CORE_NS {
     return Ok(None);
   }
+  let checked_lowering = resolve_checked_call_contract(fn_ns, fn_def, args, scope_types).and_then(|contract| contract.lowering);
   let Some(receiver_expr) = args.first() else {
     return Ok(None);
   };
@@ -1421,7 +1424,7 @@ fn try_expand_typed_optional_access_call(
   };
 
   match (fn_def, args.len(), receiver_type.as_ref()) {
-    ("get", 2, T::Map(_, _)) => {
+    ("get", 2, T::Map(_, _)) if matches!(checked_lowering, Some(CheckedCallLowering::TypedOptionalAccess)) => {
       let receiver = generated_path_symbol("typed_get_receiver", file_ns, call_stack)?;
       let key = generated_path_symbol("typed_get_key", file_ns, call_stack)?;
       let body = generated_if(
@@ -1443,7 +1446,7 @@ fn try_expand_typed_optional_access_call(
         file_ns,
       )))
     }
-    ("get", 2, _) if indexed_procs.is_some() => {
+    ("get", 2, _) if indexed_procs.is_some() && matches!(checked_lowering, Some(CheckedCallLowering::TypedOptionalAccess)) => {
       let (count_proc, nth_proc) = indexed_procs.expect("guarded indexed procs");
       let receiver = generated_path_symbol("typed_get_receiver", file_ns, call_stack)?;
       let index = generated_path_symbol("typed_get_index", file_ns, call_stack)?;
@@ -2336,6 +2339,11 @@ fn preprocess_list_call(
       }
       let mut ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
       let mut has_spread = false;
+      let checked_contract = resolve_checked_call_contract(&info.def_ns, &info.name, &args, scope_types);
+      let preprocessing_expected_types = checked_contract
+        .as_ref()
+        .map(|contract| contract.expected_types.as_slice())
+        .unwrap_or(&info.arg_types);
 
       // Process arguments with type-aware preprocessing for Fn-typed params.
       // When the expected param type is Fn(...), set EXPECTED_FN_TYPE so that
@@ -2348,8 +2356,8 @@ fn preprocess_list_call(
         }
 
         // Set expected fn type hint if this arg position has a Fn-typed param
-        let expected_fn = if arg_idx < info.arg_types.len() {
-          if let CalcitTypeAnnotation::Fn(fn_annot) = info.arg_types[arg_idx].as_ref() {
+        let expected_fn = if arg_idx < preprocessing_expected_types.len() {
+          if let CalcitTypeAnnotation::Fn(fn_annot) = preprocessing_expected_types[arg_idx].as_ref() {
             Some(fn_annot.clone())
           } else {
             None
@@ -2360,8 +2368,8 @@ fn preprocess_list_call(
 
         // Set expected struct type hint if this arg position has a struct-typed param
         // This enables field-type-aware preprocessing of hashmap literals (e.g., DomProps)
-        let expected_struct = if arg_idx < info.arg_types.len() {
-          info.arg_types[arg_idx].resolve_to_struct_with_ref().map(|(s, _)| s)
+        let expected_struct = if arg_idx < preprocessing_expected_types.len() {
+          preprocessing_expected_types[arg_idx].resolve_to_struct_with_ref().map(|(s, _)| s)
         } else {
           None
         };
@@ -2385,6 +2393,8 @@ fn preprocess_list_call(
       }
       if !has_spread {
         let mut current_args = CalcitList::from(ys.drop_left());
+        let checked_contract = resolve_checked_call_contract(&info.def_ns, &info.name, &current_args, scope_types);
+        let checked_expected_types = checked_contract.as_ref().map(|contract| contract.expected_types.as_slice());
         // Core helpers such as `get` resolve to ordinary functions, so validate
         // their statically known struct fields in this branch as well.
         check_struct_field_access(&head_form, &current_args, scope_types, file_ns, call_stack, check_warnings);
@@ -2400,20 +2410,38 @@ fn preprocess_list_call(
         )?;
         let mut any_rewritten = false;
         // Rewrite hashmap literal args to struct literals when the expected type is a struct
-        if let Some(rewritten) = try_rewrite_map_args_to_structs(info.as_ref(), &current_args, file_ns, &def_name, check_warnings) {
+        if let Some(rewritten) = try_rewrite_map_args_to_structs(
+          info.as_ref(),
+          checked_expected_types,
+          &current_args,
+          file_ns,
+          &def_name,
+          check_warnings,
+        ) {
           current_args = rewritten;
           any_rewritten = true;
         }
         // Rewrite loose struct literal args (`?{}`) to struct literals when the expected type is a struct
-        if let Some(rewritten) =
-          try_rewrite_loose_struct_args_to_structs(info.as_ref(), &current_args, file_ns, &def_name, check_warnings)
-        {
+        if let Some(rewritten) = try_rewrite_loose_struct_args_to_structs(
+          info.as_ref(),
+          checked_expected_types,
+          &current_args,
+          file_ns,
+          &def_name,
+          check_warnings,
+        ) {
           current_args = rewritten;
           any_rewritten = true;
         }
         // Rewrite untyped enum literal args to named enums when the expected type is an enum
-        if let Some(rewritten) = try_rewrite_enum_args_to_named_enums(info.as_ref(), &current_args, file_ns, &def_name, check_warnings)
-        {
+        if let Some(rewritten) = try_rewrite_enum_args_to_named_enums(
+          info.as_ref(),
+          checked_expected_types,
+          &current_args,
+          file_ns,
+          &def_name,
+          check_warnings,
+        ) {
           current_args = rewritten;
           any_rewritten = true;
         }
@@ -5716,15 +5744,13 @@ fn try_specialize_polymorphic_call(
   }
 
   // --- Calcit-level (user def) specializations: higher-order collection ops ---
-  let core_def_name: Option<&'static str> = match (fn_def, receiver_type.as_ref()) {
-    ("map", T::List(_)) => Some("&list:map"),
-    ("map", T::Map(_, _)) => Some("&map:map"),
-    ("map", T::Set(_)) => Some("&set:map"),
-    ("filter", T::List(_)) => Some("&list:filter"),
-    ("filter", T::Map(_, _)) => Some("&map:filter"),
-    ("filter", T::Set(_)) => Some("&set:filter"),
-    _ => None,
-  };
+  let core_def_name = resolve_checked_call_contract(fn_ns, fn_def, processed_args, scope_types).and_then(|contract| {
+    if let Some(CheckedCallLowering::CoreDef(def_name)) = contract.lowering {
+      Some(def_name)
+    } else {
+      None
+    }
+  });
   if let Some(def_name) = core_def_name {
     let head = Calcit::Import(CalcitImport {
       ns: calcit::CORE_NS.into(),

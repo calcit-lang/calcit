@@ -34,10 +34,16 @@
               filter ([] 1 2) inc
               filter (#{} 1 2) inc
               filter (&{} :a 1) inc
+              filter ([] 1 2)
+                fn (x) (+ x 1)
+              filter ([] 1 2) identity
               any? ([] 1 2) inc
               every? (&{} :a 1) inc
               each ([] |a |b) inc
               map ([] |a |b) inc
+              map ([] |a |b)
+                fn (x) (str x)
+              map ([] |a |b) identity
               map (#{} |a |b) inc
               map (&{} :a 1) inc
               foldl ([] |a |b) 0 +

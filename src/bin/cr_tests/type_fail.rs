@@ -1148,9 +1148,9 @@ fn type_fail_update_collection_contract_fixture_reports_warning_codes() {
     assert!(
       matched.iter().any(|warning| {
         warning.message().contains("arg 3 expects type `fn(:number) -> :number`")
-          && warning.message().contains("got `fn('T) -> :string`")
+          && warning.message().contains("got `fn(:number) -> :string`")
       }),
-      "inline update callbacks should validate their inferred return type: {matched:?}"
+      "inline update callbacks should receive the bound member type before validating their return type: {matched:?}"
     );
   });
 }
@@ -1341,7 +1341,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       .collect::<Vec<_>>();
     assert_eq!(
       filter_warnings.len(),
-      3,
+      5,
       "collection filters should validate predicate contracts: {warnings:?}"
     );
     assert_eq!(
@@ -1352,8 +1352,8 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
             && warning.message().contains("got `fn(:number) -> :number`")
         })
         .count(),
-      2,
-      "List and Set filters should pass their Number member type to a Bool predicate: {filter_warnings:?}"
+      3,
+      "named and inline List/Set filters should pass their Number member type to a Bool predicate: {filter_warnings:?}"
     );
     assert!(
       filter_warnings.iter().any(|warning| {
@@ -1361,6 +1361,18 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
           && warning.message().contains("got `fn(:number) -> :number`")
       }),
       "Map filters should expose their heterogeneous pair as a List-shaped predicate argument: {filter_warnings:?}"
+    );
+    assert!(
+      filter_warnings.iter().any(|warning| {
+        warning.message().contains("got `fn(:number) -> :number`") && warning.message().contains("([] (&syntax defn)")
+      }),
+      "inline filter callbacks should receive the bound member type and retain their inferred return: {filter_warnings:?}"
+    );
+    assert!(
+      filter_warnings
+        .iter()
+        .any(|warning| warning.message().contains("got `fn<'T>('T) -> 'T`")),
+      "generic filter callbacks must not use the expected Bool output to prove an unknown payload: {filter_warnings:?}"
     );
     let iteration_warnings = warnings
       .iter()
@@ -1413,7 +1425,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       map_warnings
         .iter()
         .filter(|warning| {
-          warning.message().contains("arg 2 expects type `fn(:string) -> 'MapOutput`")
+          warning.message().contains("arg 2 expects type `fn(:string) -> :number`")
             && warning.message().contains("got `fn(:number) -> :number`")
         })
         .count(),
