@@ -452,6 +452,7 @@ pub(crate) enum TypeBoundaryReason {
   ErasedTypeArguments,
   RecursiveTypeVariable,
   RecursiveTypeAlias,
+  RecursiveTypeSlot,
   UnresolvedNominalIdentity,
   TypeComplexityLimit,
 }
@@ -4532,11 +4533,17 @@ impl CalcitTypeAnnotation {
       (Self::Fn(_), Self::DynFn) | (Self::DynFn, Self::Fn(_)) => NeedsBoundary(Boundary::UnknownCallable),
       (Self::Tag, Self::DynFn) | (Self::Tag, Self::Fn(_)) => NeedsBoundary(Boundary::TagCallable),
       (Self::TypeSlot(name), other) => match resolve_type_slot(name) {
-        Some(resolved) => resolved.prove_with_staged_bindings(other, bindings),
+        Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || {
+          resolved.prove_with_staged_bindings(other, bindings)
+        })
+        .unwrap_or(NeedsBoundary(Boundary::RecursiveTypeSlot)),
         None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
       },
       (other, Self::TypeSlot(name)) => match resolve_type_slot(name) {
-        Some(resolved) => other.prove_with_staged_bindings(resolved.as_ref(), bindings),
+        Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || {
+          other.prove_with_staged_bindings(resolved.as_ref(), bindings)
+        })
+        .unwrap_or(NeedsBoundary(Boundary::RecursiveTypeSlot)),
         None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
       },
       (Self::TypeRef(name, _), other) => match resolve_type_ref_as_schema(name) {
@@ -6364,6 +6371,10 @@ mod tests {
 
     let recursive = CalcitTypeAnnotation::TypeSlot(left.clone());
     assert!(!recursive.is_compatible_with(&CalcitTypeAnnotation::Number));
+    assert_eq!(
+      recursive.prove_with_bindings(&CalcitTypeAnnotation::Number, &mut TypeBindings::new()),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::RecursiveTypeSlot)
+    );
 
     pop_type_slot_override(&right);
     pop_type_slot_override(&left);
