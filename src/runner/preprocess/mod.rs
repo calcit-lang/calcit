@@ -2335,6 +2335,7 @@ fn preprocess_list_call(
         .as_ref()
         .and_then(|contract| contract.expected_types.as_deref())
         .unwrap_or(&info.arg_types);
+      let mut preprocessing_type_bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
 
       // Process arguments with type-aware preprocessing for Fn-typed params.
       // When the expected param type is Fn(...), set EXPECTED_FN_TYPE so that
@@ -2347,8 +2348,15 @@ fn preprocess_list_call(
         }
 
         // Set expected fn type hint if this arg position has a Fn-typed param
-        let expected_fn = if arg_idx < preprocessing_expected_types.len() {
-          if let CalcitTypeAnnotation::Fn(fn_annot) = preprocessing_expected_types[arg_idx].as_ref() {
+        let expected_type = preprocessing_expected_types.get(arg_idx).map(|expected| {
+          if strict_types_enabled() {
+            expected.substitute_type_vars(&preprocessing_type_bindings)
+          } else {
+            expected.clone()
+          }
+        });
+        let expected_fn = if let Some(expected_type) = expected_type.as_ref() {
+          if let CalcitTypeAnnotation::Fn(fn_annot) = expected_type.as_ref() {
             Some(fn_annot.clone())
           } else {
             None
@@ -2379,6 +2387,18 @@ fn preprocess_list_call(
         EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = None);
 
         let form = result?;
+
+        if strict_types_enabled()
+          && checked_contract.is_some()
+          && let Some(expected) = preprocessing_expected_types.get(arg_idx)
+          && let Some(actual) = resolve_type_value(&form, scope_types)
+          && !contains_dynamic_type(actual.as_ref())
+        {
+          let mut candidate = preprocessing_type_bindings.clone();
+          if actual.as_ref().prove_with_bindings(expected.as_ref(), &mut candidate).is_proven() {
+            preprocessing_type_bindings = candidate;
+          }
+        }
 
         ys = ys.push(form);
       }
@@ -7826,6 +7846,8 @@ pub fn preprocess_defn(
         }
       })?;
       let def_schema = program::lookup_def_schema(ctx.file_ns, def_name.as_ref());
+      let generated_by_macro = ctx.call_stack.0.iter().any(|frame| matches!(frame.kind, StackKind::Macro));
+      let strict_generated_by_macro = strict_types_enabled() && generated_by_macro;
       if matches!(head, CalcitSyntax::DefWasmImport) && !has_valid_wasm_import_body(args) {
         return Err(CalcitErr::use_msg_stack_location(
           CalcitErrKind::Syntax,
@@ -7964,10 +7986,17 @@ pub fn preprocess_defn(
       let prev_features = CURRENT_FN_FEATURES.with(|cell| {
         let mut guard = cell.borrow_mut();
         let old = guard.take();
-        *guard = match def_schema.as_ref() {
+        let mut current = match def_schema.as_ref() {
           CalcitTypeAnnotation::Macro(signature) => Some(signature.features.clone()),
           _ => effective_fn_schema.as_ref().map(|fn_annot| fn_annot.features.clone()),
         };
+        if strict_generated_by_macro && let Some(parent) = old.as_ref() {
+          current = Some(match current {
+            Some(features) => Arc::new(features.union(parent.as_ref()).cloned().collect()),
+            None => parent.clone(),
+          });
+        }
+        *guard = current;
         old
       });
 
@@ -7984,8 +8013,39 @@ pub fn preprocess_defn(
 
       // Check function return type if declared
       // Extract return type hint from processed body (after preprocessing)
-      let detected_return_type = detect_return_type_hint_from_processed_body(&processed_body);
-      let return_type_hint = if matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      let mut detected_return_type = detect_return_type_hint_from_processed_body(&processed_body);
+      if strict_generated_by_macro
+        && matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+        && let Some(inferred) = processed_body.last().and_then(|body| resolve_type_value(body, &body_types))
+        && !matches!(inferred.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
+      {
+        detected_return_type = inferred;
+      }
+      let generated_fn_schema = if matches!(def_schema.as_ref(), CalcitTypeAnnotation::Dynamic) && strict_generated_by_macro {
+        effective_fn_schema.as_ref().map(|schema| {
+          let mut schema = schema.as_ref().to_owned();
+          if !matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+            schema.return_type = detected_return_type.clone();
+          }
+          if let Some(parent) = prev_features.as_ref() {
+            schema.features = Arc::new(schema.features.union(parent.as_ref()).cloned().collect());
+          }
+          Arc::new(schema)
+        })
+      } else {
+        None
+      };
+      if let Some(fn_annot) = generated_fn_schema.as_ref() {
+        let schema_hint = Calcit::from(vec![
+          Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ctx.file_ns)),
+          fn_annot.to_schema_calcit(),
+        ]);
+        processed_body.push(schema_hint.clone());
+        xs = xs.push_right(schema_hint);
+      }
+      let return_type_hint = if let Some(fn_annot) = generated_fn_schema.as_ref() {
+        fn_annot.return_type.clone()
+      } else if matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
         effective_fn_schema
           .as_ref()
           .map(|schema| schema.return_type.clone())
@@ -9315,8 +9375,10 @@ fn reject_strict_whole_dynamic_public_schema(
   call_stack: &CallStackList,
   definition_location: Option<NodeLocation>,
 ) -> Result<(), CalcitErr> {
+  let generated_by_macro = call_stack.0.iter().any(|frame| matches!(frame.kind, StackKind::Macro));
   if !strict_types_enabled()
     || !should_emit_project_source_lint(ns)
+    || generated_by_macro
     || !matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic)
     || (has_embedded_fn_schema && !matches!(head, CalcitSyntax::Defmacro))
   {
@@ -16762,6 +16824,18 @@ mod tests {
       None,
     )
     .expect("an embedded structured Fn hint is valid static contract evidence");
+
+    let generated_stack = CallStackList::default().extend(calcit::CORE_NS, "if-let", StackKind::Macro, &Calcit::Nil, &[]);
+    reject_strict_whole_dynamic_public_schema(
+      &CalcitSyntax::Defn,
+      "tests.schema",
+      "generated-closure",
+      &missing_schema,
+      false,
+      &generated_stack,
+      None,
+    )
+    .expect("macro-generated definitions have no independently maintainable public schema");
   }
 
   fn generic_relation_test_signature(

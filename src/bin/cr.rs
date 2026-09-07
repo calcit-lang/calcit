@@ -898,7 +898,9 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
       Cirru::List(vec![]),
       test.code.clone(),
     ]);
-    file.defs.insert(synthetic.clone(), snapshot::CodeEntry::from_code(code));
+    let mut entry = snapshot::CodeEntry::from_code(code);
+    entry.schema = generated_zero_arg_fn_schema(HashSet::new());
+    file.defs.insert(synthetic.clone(), entry);
     test.synthetic_definition = synthetic;
   }
 
@@ -1811,7 +1813,7 @@ fn js_examples_runner_source(target_ns: &str, check_fn_name: &str) -> String {
   format!("import * as examples from {module_path};\nexamples.{check_fn}();\n")
 }
 
-fn check_examples_js_schema() -> Arc<CalcitTypeAnnotation> {
+fn generated_zero_arg_fn_schema(features: HashSet<EdnTag>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
     generics: Arc::new(vec![]),
     where_bounds: Arc::new(vec![]),
@@ -1819,8 +1821,12 @@ fn check_examples_js_schema() -> Arc<CalcitTypeAnnotation> {
     return_type: calcit::calcit::DYNAMIC_TYPE.clone(),
     fn_kind: SchemaKind::Fn,
     rest_type: None,
-    features: Arc::new(HashSet::from([EdnTag::from("js-ffi")])),
+    features: Arc::new(features),
   })))
+}
+
+fn check_examples_js_schema() -> Arc<CalcitTypeAnnotation> {
+  generated_zero_arg_fn_schema(HashSet::from([EdnTag::from("js-ffi")]))
 }
 
 fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapshot: &snapshot::Snapshot) -> Result<(), String> {
