@@ -28,9 +28,9 @@ use crate::{
 use cirru_edn::EdnTag;
 
 use super::{
-  ScopeTypes, find_method_entry_for_type, find_trait_field_type, find_trait_method_type, get_impls_from_type,
-  resolve_local_type_refs_for_body, resolve_namespace_type_refs_for_body, resolve_trait_def_from_source_code, tag_annotation,
-  trait_is_external_object, trait_list_from_type,
+  ScopeTypes, checked_call_contract::resolve_checked_call_contract, find_method_entry_for_type, find_trait_field_type,
+  find_trait_method_type, get_impls_from_type, resolve_local_type_refs_for_body, resolve_namespace_type_refs_for_body,
+  resolve_trait_def_from_source_code, tag_annotation, trait_is_external_object, trait_list_from_type,
 };
 
 // ---------------------------------------------------------------------------
@@ -231,6 +231,14 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   call_expr: &CalcitList,
   scope_types: &ScopeTypes,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
+  if ns == calcit::CORE_NS {
+    let args = call_expr.drop_left();
+    if let Some(contract) = resolve_checked_call_contract(ns, def, &args, scope_types)
+      && !contract.return_type.contains_type_var()
+    {
+      return Some(contract.return_type);
+    }
+  }
   if ns == calcit::CORE_NS
     && def == "apply"
     && let Some(inferred) = infer_core_apply_return_type(call_expr, scope_types)
@@ -243,12 +251,6 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     return Some(inferred);
   }
   if ns == calcit::CORE_NS
-    && def == "get"
-    && let Some(inferred) = infer_core_get_return_type(call_expr, scope_types)
-  {
-    return Some(inferred);
-  }
-  if ns == calcit::CORE_NS
     && def == "get-in"
     && let Some(inferred) = infer_core_get_in_return_type(call_expr, scope_types)
   {
@@ -257,11 +259,10 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   if ns == calcit::CORE_NS
     && def == "update"
     && let Some(receiver_type) = call_expr.get(1).and_then(|receiver| resolve_type_value(receiver, scope_types))
+    && receiver_type.resolve_to_struct().is_some()
   {
-    // `update` preserves its collection/Struct receiver. This is especially
-    // important when a required field access follows the update: losing the
-    // nominal Struct here would incorrectly turn a checked field into an
-    // untyped access.
+    // Struct update is outside the collection contract but still preserves
+    // the nominal receiver for checked field access after the call.
     return Some(receiver_type);
   }
   if ns == calcit::CORE_NS
@@ -593,13 +594,6 @@ fn infer_core_nominal_absence_return_type(
   }
 }
 
-fn infer_core_get_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
-  let base_arg = call_expr.get(1)?;
-  let base_type = resolve_type_value(base_arg, scope_types)?;
-  let key_arg = call_expr.get(2);
-  infer_get_return_type_from_type(base_type.as_ref(), key_arg)
-}
-
 fn infer_core_get_in_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   let base_arg = call_expr.get(1)?;
   let path_arg = call_expr.get(2)?;
@@ -693,17 +687,6 @@ pub(super) fn fully_typed_literal_assoc_path(base_type: &CalcitTypeAnnotation, p
 
   (!matches!(current_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn))
     .then(|| path_items.into_iter().cloned().collect())
-}
-
-fn infer_get_return_type_from_type(base_type: &CalcitTypeAnnotation, key_arg: Option<&Calcit>) -> Option<Arc<CalcitTypeAnnotation>> {
-  // Required Struct fields use `(:field value)` and are lowered to
-  // `&struct:nth`/`&struct:get`. Keeping Struct out of `get` gives this public
-  // API one stable contract: a partial collection lookup returns Option<T>.
-  if base_type.resolve_to_struct().is_some() {
-    return None;
-  }
-  let payload = infer_lookup_payload_type_from_type(base_type, key_arg)?;
-  Some(core_type_ref("Option", vec![payload]))
 }
 
 fn infer_sequence_payload_type(base_type: &CalcitTypeAnnotation) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -2637,10 +2620,62 @@ mod tests {
     let user_type = CalcitTypeAnnotation::Struct(Arc::new(struct_def), Arc::new(vec![]));
     let key = Calcit::Tag(EdnTag::from("name"));
 
-    assert!(infer_get_return_type_from_type(&user_type, Some(&key)).is_none());
+    let user_args = CalcitList::from(&[local("user", Arc::new(user_type.clone())), key.clone()] as &[Calcit]);
+    assert!(resolve_checked_call_contract(calcit::CORE_NS, "get", &user_args, &ScopeTypes::new()).is_none());
+    let optional_args = CalcitList::from(&[
+      local("maybe-user", Arc::new(CalcitTypeAnnotation::Optional(Arc::new(user_type)))),
+      key,
+    ] as &[Calcit]);
     assert!(
-      infer_get_return_type_from_type(&CalcitTypeAnnotation::Optional(Arc::new(user_type)), Some(&key)).is_none(),
+      resolve_checked_call_contract(calcit::CORE_NS, "get", &optional_args, &ScopeTypes::new()).is_none(),
       "legacy Optional receivers must be narrowed or converted before nominal lookup"
+    );
+  }
+
+  #[test]
+  fn typed_collection_calls_infer_from_the_checked_contract() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let string = Arc::new(CalcitTypeAnnotation::String);
+    let list_type = Arc::new(CalcitTypeAnnotation::List(number.clone()));
+    let mapper_type = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![number.clone()], string.clone()));
+    let map_call = CalcitList::from(&[symbol("map"), local("items", list_type), local("render", mapper_type)] as &[Calcit]);
+    assert_eq!(
+      infer_return_type_from_compiled_callable(calcit::CORE_NS, "map", &map_call, &ScopeTypes::new()),
+      Some(Arc::new(CalcitTypeAnnotation::List(string.clone())))
+    );
+
+    let map_type = Arc::new(CalcitTypeAnnotation::Map(string.clone(), number.clone()));
+    let get_call = CalcitList::from(&[symbol("get"), local("counts", map_type.clone()), Calcit::Str(Arc::from("a"))] as &[Calcit]);
+    assert_eq!(
+      infer_return_type_from_compiled_callable(calcit::CORE_NS, "get", &get_call, &ScopeTypes::new()),
+      Some(core_type_ref("Option", vec![number.clone()]))
+    );
+
+    let predicate_type = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![number.clone()],
+      Arc::new(CalcitTypeAnnotation::Bool),
+    ));
+    let set_type = Arc::new(CalcitTypeAnnotation::Set(number));
+    let filter_call =
+      CalcitList::from(&[symbol("filter"), local("ids", set_type.clone()), local("positive?", predicate_type)] as &[Calcit]);
+    assert_eq!(
+      infer_return_type_from_compiled_callable(calcit::CORE_NS, "filter", &filter_call, &ScopeTypes::new()),
+      Some(set_type)
+    );
+
+    let updater_type = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::Number)],
+      Arc::new(CalcitTypeAnnotation::Number),
+    ));
+    let update_call = CalcitList::from(&[
+      symbol("update"),
+      local("counts", map_type.clone()),
+      Calcit::Str(Arc::from("a")),
+      local("increment", updater_type),
+    ] as &[Calcit]);
+    assert_eq!(
+      infer_return_type_from_compiled_callable(calcit::CORE_NS, "update", &update_call, &ScopeTypes::new()),
+      Some(map_type)
     );
   }
 
