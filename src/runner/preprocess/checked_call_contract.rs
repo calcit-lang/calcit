@@ -1,7 +1,7 @@
 //! Receiver-specialized contracts shared by checking, inference, rewriting,
 //! and lowering for polymorphic collection calls.
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use crate::calcit::{self, Calcit, CalcitList, CalcitTypeAnnotation};
 
@@ -66,7 +66,17 @@ pub(crate) fn resolve_checked_call_contract(
     return None;
   }
 
-  let receiver_type = resolve_type_value(args.first()?, scope_types)?;
+  let mut receiver_type = resolve_type_value(args.first()?, scope_types)?;
+  let mut resolving_slots = HashSet::new();
+  while let T::TypeSlot(name) = receiver_type.as_ref() {
+    if !resolving_slots.insert(name.clone()) {
+      break;
+    }
+    let Some(bound) = calcit::resolve_type_slot(name) else {
+      break;
+    };
+    receiver_type = bound;
+  }
   match (fn_def, receiver_type.as_ref()) {
     ("get", T::Map(key_type, value_type)) => Some(CheckedCallContract {
       expected_types: Some(vec![receiver_type.clone(), key_type.clone()]),
