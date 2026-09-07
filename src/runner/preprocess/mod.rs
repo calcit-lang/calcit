@@ -16,7 +16,7 @@ use crate::{
   codegen, program, runner,
 };
 
-use checked_call_contract::{CheckedCallLowering, resolve_checked_call_contract};
+use checked_call_contract::{CheckedCallLowering, resolve_bound_type_slot_chain, resolve_checked_call_contract};
 use type_checking::{
   CallTypeCheckInfo, check_core_fn_arg_types, check_function_return_type, check_local_fn_call_arg_types, check_proc_arg_types,
   check_reset_arg_types, check_user_fn_arg_types, detect_return_type_hint_from_processed_body,
@@ -1395,19 +1395,10 @@ fn try_expand_typed_optional_access_call(
   let Some(receiver_expr) = args.first() else {
     return Ok(None);
   };
-  let Some(mut receiver_type) = resolve_type_value(receiver_expr, scope_types) else {
+  let Some(receiver_type) = resolve_type_value(receiver_expr, scope_types) else {
     return Ok(None);
   };
-  let mut resolving_slots = HashSet::new();
-  while let T::TypeSlot(name) = receiver_type.as_ref() {
-    if !resolving_slots.insert(name.clone()) {
-      break;
-    }
-    let Some(bound) = calcit::resolve_type_slot(name) else {
-      break;
-    };
-    receiver_type = bound;
-  }
+  let receiver_type = resolve_bound_type_slot_chain(receiver_type);
 
   let indexed_procs = match receiver_type.as_ref() {
     T::List(_) => Some((CalcitProc::NativeListCount, CalcitProc::NativeListNth)),
@@ -10148,14 +10139,14 @@ mod tests {
     let bound_list_args = CalcitList::from(&[bound_list, Calcit::Number(0.0)] as &[Calcit]);
     let bound_list_expansion = try_expand_typed_optional_access_call(
       calcit::CORE_NS,
-      "nth",
+      "get",
       &bound_list_args,
       &ScopeTypes::new(),
       "tests.typed-access",
       &stack,
     )
     .expect("a bound List slot should be accepted")
-    .expect("a bound List slot should specialize indexed access");
+    .expect("a bound List slot should specialize checked optional access");
     assert!(bound_list_expansion.lisp_str().contains("&list:nth"));
     calcit::pop_type_slot_override("indexed-receiver");
 
