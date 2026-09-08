@@ -80,6 +80,10 @@ fn run_deprecated(options: &DeprecatedCommand, snapshot: &snapshot::Snapshot) ->
 }
 
 fn run_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
+  run_quality_with_output(options, snapshot, true)
+}
+
+fn run_quality_with_output(options: &QualityCommand, snapshot: &snapshot::Snapshot, emit_output: bool) -> Result<(), String> {
   if !matches!(options.format.as_str(), "human" | "text" | "json") {
     return Err(format!(
       "Unknown quality output format `{}`. Expected `human` or `json`.",
@@ -87,10 +91,12 @@ fn run_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) -> Resul
     ));
   }
   let outcome = quality_gate::analyze_quality(options, snapshot)?;
-  match options.format.as_str() {
-    "human" | "text" => print!("{}", quality_gate::format_quality_report(&outcome)),
-    "json" => println!("{}", quality_gate::format_quality_json(&outcome)?),
-    _ => unreachable!("quality output format was validated before analysis"),
+  if emit_output {
+    match options.format.as_str() {
+      "human" | "text" => print!("{}", quality_gate::format_quality_report(&outcome)),
+      "json" => println!("{}", quality_gate::format_quality_json(&outcome)?),
+      _ => unreachable!("quality output format was validated before analysis"),
+    }
   }
   if outcome.passed {
     Ok(())
@@ -521,6 +527,10 @@ fn run_cli() -> Result<(), String> {
 
   // Check-only mode: just preprocess/validate without execution or codegen
   let check_only = cli_args.check_only || matches!(&cli_args.subcommand, Some(CalcitCommand::EmitJs(js_opts)) if js_opts.check_only);
+  let is_public_check = matches!(
+    &cli_args.subcommand,
+    Some(CalcitCommand::Analyze(analyze_cmd)) if matches!(&analyze_cmd.subcommand, AnalyzeSubcommand::CheckPublic(_))
+  );
 
   if check_only {
     eval_once = true;
@@ -547,7 +557,7 @@ fn run_cli() -> Result<(), String> {
   // `--strict-types` remains the explicit zero-debt preflight for every
   // execution/codegen mode. Default strict diagnostics do not claim that an
   // audited project has no reviewed open boundaries.
-  if strict_type_policy.zero_debt && !check_only {
+  if strict_type_policy.zero_debt && !check_only && !is_public_check {
     // Eval/exec already preprocess above so they can fail before evaluating.
     // Other run/codegen modes still need the explicit strict preflight here.
     if !is_eval_mode {
@@ -602,7 +612,32 @@ fn run_cli() -> Result<(), String> {
         &cli_args.emit_path,
         &snapshot,
       ),
-      AnalyzeSubcommand::CheckPublic(options) => public_api_check::run(options, &snapshot, &project_namespaces),
+      AnalyzeSubcommand::CheckPublic(options) => {
+        let emit_preflight_output = options.format != "json";
+        let strict_preflight = || {
+          run_check_only_with_output(&entries, emit_preflight_output)?;
+          run_quality_with_output(
+            &QualityCommand {
+              ns: None,
+              ns_prefix: None,
+              deps: false,
+              baseline: None,
+              write_baseline: None,
+              format: "human".to_owned(),
+            },
+            &snapshot,
+            emit_preflight_output,
+          )
+        };
+        public_api_check::run(
+          options,
+          &snapshot,
+          &project_namespaces,
+          strict_type_policy
+            .zero_debt
+            .then_some(&strict_preflight as &dyn Fn() -> Result<(), String>),
+        )
+      }
       AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot),
       AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(weak_type_options, &snapshot),
       AnalyzeSubcommand::DynamicMethods(options) => run_dynamic_methods(options, &entries, &snapshot, &project_namespaces),
@@ -1376,6 +1411,10 @@ fn ensure_host_running(operation: &str) -> Result<(), String> {
 
 /// Check-only mode: preprocess init_fn and reload_fn to validate code without execution
 fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
+  run_check_only_with_output(entries, true)
+}
+
+fn run_check_only_with_output(entries: &ProgramEntries, emit_output: bool) -> Result<(), String> {
   let started_time = Instant::now();
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
@@ -1384,7 +1423,9 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
   // preprocess init_fn
   match runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
     Ok(_) => {
-      println!("  {} {}", "✓".green(), format!("{} preprocessed", entries.init_fn).dimmed());
+      if emit_output {
+        println!("  {} {}", "✓".green(), format!("{} preprocessed", entries.init_fn).dimmed());
+      }
     }
     Err(failure) => {
       eprintln!("\n{} preprocessing init_fn", "✗".red());
@@ -1397,7 +1438,9 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
   // preprocess reload_fn
   match runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default()) {
     Ok(_) => {
-      println!("  {} {}", "✓".green(), format!("{} preprocessed", entries.reload_fn).dimmed());
+      if emit_output {
+        println!("  {} {}", "✓".green(), format!("{} preprocessed", entries.reload_fn).dimmed());
+      }
     }
     Err(failure) => {
       eprintln!("\n{} preprocessing reload_fn", "✗".red());
@@ -1416,11 +1459,13 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
   }
 
   let duration = Instant::now().duration_since(started_time);
-  println!(
-    "\n{} {}",
-    "✓ Check passed".green().bold(),
-    format!("({}ms)", duration.as_micros() as f64 / 1000.0).dimmed()
-  );
+  if emit_output {
+    println!(
+      "\n{} {}",
+      "✓ Check passed".green().bold(),
+      format!("({}ms)", duration.as_micros() as f64 / 1000.0).dimmed()
+    );
+  }
 
   Ok(())
 }

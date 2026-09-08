@@ -199,6 +199,15 @@ pub fn ffi_metadata_value<'a>(ffi: &'a Edn, key: &str) -> Option<&'a Edn> {
 /// implement fail-closed checks should surface the returned error instead of
 /// treating malformed target metadata as shared.
 pub fn parse_ffi_target(ffi: &Edn) -> Result<Option<SnapshotTarget>, String> {
+  match ffi {
+    Edn::Struct(_) => {}
+    Edn::Map(value) => {
+      if let Some(key) = value.0.keys().find(|key| !matches!(key, Edn::Tag(_))) {
+        return Err(format!("expected definition :ffi map keys to be tags, got `{key}`"));
+      }
+    }
+    _ => return Err(format!("expected definition :ffi metadata to be a map or struct, got `{ffi}`")),
+  }
   let value = ffi_metadata_value(ffi, "target");
   let Some(value) = value else {
     return Ok(None);
@@ -926,6 +935,7 @@ impl TryFrom<Edn> for CodeEntry {
               schema = parse_loaded_schema_annotation(value, "CodeEntry.schema")?;
             }
             "ffi" if !matches!(value, Edn::Nil) => {
+              parse_ffi_target(value).map_err(|e| format!("failed to parse CodeEntry.ffi: {e}"))?;
               ffi = Some(value.to_owned());
             }
             _ => {}
@@ -964,6 +974,7 @@ impl TryFrom<Edn> for CodeEntry {
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("ffi")))
           && !matches!(value, Edn::Nil)
         {
+          parse_ffi_target(value).map_err(|e| format!("failed to parse CodeEntry.ffi: {e}"))?;
           ffi = Some(value.to_owned());
         }
       }
@@ -3277,6 +3288,28 @@ mod tests {
     );
     let error = CodeEntry::try_from(edn).expect_err("duplicate test names should be rejected");
     assert!(error.contains("duplicate test name `duplicate`"), "unexpected error: {error}");
+  }
+
+  #[test]
+  fn code_entry_rejects_malformed_ffi_metadata() {
+    let make_entry = |ffi| {
+      Edn::struct_from_pairs(
+        "CodeEntry",
+        &[
+          (EdnTag::new("doc"), Edn::Str(Arc::from(""))),
+          (EdnTag::new("examples"), Edn::List(EdnListView(vec![]))),
+          (EdnTag::new("code"), Cirru::leaf("nil").into()),
+          (EdnTag::new("ffi"), ffi),
+        ],
+      )
+    };
+
+    let error = CodeEntry::try_from(make_entry(Edn::str("browser"))).expect_err("scalar ffi metadata should be rejected");
+    assert!(error.contains("ffi metadata to be a map or struct"), "unexpected error: {error}");
+
+    let malformed_map = Edn::map_from_iter([(Edn::str("target"), Edn::tag("browser"))]);
+    let error = CodeEntry::try_from(make_entry(malformed_map)).expect_err("non-tag ffi keys should be rejected");
+    assert!(error.contains("ffi map keys to be tags"), "unexpected error: {error}");
   }
 
   #[test]

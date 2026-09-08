@@ -514,6 +514,7 @@ fn public_check_reaches_unused_definitions_without_changing_entry_check_semantic
       },
       &snapshot,
       &project_namespaces,
+      None,
     )
     .expect_err("public check must preprocess an unused invalid definition");
     assert!(error.contains("2 passed"), "unexpected public-check outcome: {error}");

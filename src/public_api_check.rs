@@ -21,6 +21,15 @@ struct DefinitionResult {
   status: &'static str,
 }
 
+struct PreparedDefinition {
+  id: String,
+  namespace: String,
+  definition: String,
+  kind: &'static str,
+  declared_target: Option<SnapshotTarget>,
+  rejected: bool,
+}
+
 fn definition_target(entry: &snapshot::CodeEntry) -> Result<Option<SnapshotTarget>, String> {
   let Some(ffi) = &entry.ffi else {
     return Ok(None);
@@ -65,7 +74,12 @@ fn result_json(row: &DefinitionResult) -> Value {
   })
 }
 
-pub fn run(options: &CheckPublicCommand, snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) -> Result<(), String> {
+pub fn run(
+  options: &CheckPublicCommand,
+  snapshot: &snapshot::Snapshot,
+  project_namespaces: &HashSet<String>,
+  strict_preflight: Option<&dyn Fn() -> Result<(), String>>,
+) -> Result<(), String> {
   if !matches!(options.format.as_str(), "human" | "text" | "json") {
     return Err(format!(
       "Unknown check-public output format `{}`. Expected `human` or `json`.",
@@ -146,6 +160,7 @@ pub fn run(options: &CheckPublicCommand, snapshot: &snapshot::Snapshot, project_
   let warnings = RefCell::new(Vec::<LocatedWarning>::new());
   let mut results = Vec::<DefinitionResult>::new();
   let mut checked_definition_ids = Vec::<String>::new();
+  let mut prepared = Vec::<PreparedDefinition>::new();
 
   if let Some(target) = active_target {
     for (namespace, definition, entry) in selected {
@@ -161,13 +176,13 @@ pub fn run(options: &CheckPublicCommand, snapshot: &snapshot::Snapshot, project_
             "definition": id,
             "message": message,
           }));
-          results.push(DefinitionResult {
+          prepared.push(PreparedDefinition {
             id,
             namespace,
             definition,
             kind,
             declared_target: None,
-            status: "rejected",
+            rejected: true,
           });
           continue;
         }
@@ -182,17 +197,55 @@ pub fn run(options: &CheckPublicCommand, snapshot: &snapshot::Snapshot, project_
           "definition": id,
           "message": format!("Definition `{id}` requires `{}` target, but entry `{}` targets `{}`.", expected.as_str(), snapshot.active_entry_name(), target.as_str()),
         }));
-        results.push(DefinitionResult {
+        prepared.push(PreparedDefinition {
           id,
           namespace,
           definition,
           kind,
           declared_target,
-          status: "rejected",
+          rejected: true,
         });
         continue;
       }
 
+      prepared.push(PreparedDefinition {
+        id,
+        namespace,
+        definition,
+        kind,
+        declared_target,
+        rejected: false,
+      });
+    }
+  }
+
+  // Validate the complete selected scope before any selected definition is
+  // preprocessed. A partial run could otherwise make a target-invalid report
+  // look as though some of its public surface had been checked successfully.
+  let mut preflight_ready = selection_complete && active_target.is_some() && prepared.iter().all(|row| !row.rejected);
+  if preflight_ready
+    && let Some(preflight) = strict_preflight
+    && let Err(message) = preflight()
+  {
+    diagnostics.push(json!({
+      "code": "E_PUBLIC_CHECK_STRICT_PREFLIGHT",
+      "phase": "preflight",
+      "severity": "error",
+      "message": message,
+    }));
+    preflight_ready = false;
+  }
+
+  for row in prepared {
+    if preflight_ready {
+      let PreparedDefinition {
+        id,
+        namespace,
+        definition,
+        kind,
+        declared_target,
+        ..
+      } = row;
       checked_definition_ids.push(id.clone());
       let warning_count = warnings.borrow().len();
       let result = runner::preprocess::ensure_ns_def_compiled(&namespace, &definition, &warnings, &CallStackList::default());
@@ -212,6 +265,15 @@ pub fn run(options: &CheckPublicCommand, snapshot: &snapshot::Snapshot, project_
         kind,
         declared_target,
         status,
+      });
+    } else {
+      results.push(DefinitionResult {
+        id: row.id,
+        namespace: row.namespace,
+        definition: row.definition,
+        kind: row.kind,
+        declared_target: row.declared_target,
+        status: if row.rejected { "rejected" } else { "not_checked" },
       });
     }
   }
@@ -324,6 +386,10 @@ mod tests {
 
     let ffi = Edn::map_from_iter([(Edn::tag("target"), Edn::tag("desktop"))]);
     assert!(definition_target(&entry_with_ffi(Some(ffi))).is_err());
+    assert!(definition_target(&entry_with_ffi(Some(Edn::str("browser")))).is_err());
+
+    let malformed_key = Edn::map_from_iter([(Edn::str("target"), Edn::tag("browser"))]);
+    assert!(definition_target(&entry_with_ffi(Some(malformed_key))).is_err());
     assert_eq!(definition_target(&entry_with_ffi(None)).unwrap(), None);
   }
 }
