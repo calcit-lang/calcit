@@ -79,6 +79,7 @@ fn canonical_schema_field_name(text: &str) -> Option<&'static str> {
     "generics" => Some("generics"),
     "where" => Some("where"),
     "features" => Some("features"),
+    "async" => Some("async"),
     "capabilities" => Some("capabilities"),
     _ => None,
   }
@@ -3901,13 +3902,14 @@ mod tests {
   }
 
   #[test]
-  fn test_normalize_schema_canonicalizes_string_keys_and_kind_values() {
+  fn test_normalize_schema_canonicalizes_string_keys_kind_and_async_values() {
     let wrapped = Edn::enum_value(
       "fn",
       vec![Edn::Map(EdnMapView::from(HashMap::from([
         (Edn::Str(Arc::from(":args")), Edn::List(EdnListView(vec![Edn::tag("set")]))),
         (Edn::Str(Arc::from(":return")), Edn::tag("bool")),
         (Edn::Str(Arc::from(":kind")), Edn::Str(Arc::from(":fn"))),
+        (Edn::Str(Arc::from(":async")), Edn::Bool(true)),
       ])))],
     );
 
@@ -3919,7 +3921,9 @@ mod tests {
     assert!(matches!(map.tag_get("args"), Some(Edn::List(_))));
     assert!(matches!(map.tag_get("return"), Some(Edn::Tag(tag)) if tag.ref_str() == "bool"));
     assert!(matches!(map.tag_get("kind"), Some(Edn::Tag(tag)) if tag.ref_str() == "fn"));
-    assert!(CalcitTypeAnnotation::parse_fn_schema_from_edn(&Edn::Map(map)).is_some());
+    assert!(matches!(map.tag_get("async"), Some(Edn::Bool(true))));
+    let parsed = CalcitTypeAnnotation::parse_fn_schema_from_edn(&Edn::Map(map)).expect("normalized async fn schema");
+    assert!(parsed.is_async_invocation());
   }
 
   #[test]

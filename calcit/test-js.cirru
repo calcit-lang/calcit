@@ -20,7 +20,18 @@
               :required $ [] (:: 'Expr 'String)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing js") (test-js) (test-let-example) (test-collection) (test-async) (test-async-in-data) (test-data-gen) (test-regexp) (test-property) (test-tag-keys)
+            defn main! ()
+              hint-fn $ {} (:async true)
+              log-title "|Testing js"
+              test-js
+              test-let-example
+              test-collection
+              test-async
+              js-await $ test-async-in-data
+              test-data-gen
+              test-regexp
+              test-property
+              test-tag-keys
               when (> 1 2)
                 raise $ str "|error of math" 2 1
                 raise "|base error"
@@ -65,19 +76,21 @@
               :features $ #{} :js-ffi
         'test-async-in-data $ %{} 'CodeEntry (:doc "|async fn inside data. if wrong, it will be a syntax error from await outside async")
           :code $ quote
-            fn () $ let
-                timeout $ fn (ms)
-                  new js/Promise $ fn (resolve reject) (js/setTimeout resolve ms)
-                f 0
-                f $ let
-                    b $ fn ()
-                      hint-fn $ {} (:async true)
-                      let
-                          a 1
-                          a $ js-await (timeout 200)
-                        assert= &unit a
-                  b
-              js/console.log "|a promise from nested let" f
+            fn ()
+              hint-fn $ {} (:async true)
+              let
+                  timeout $ fn (ms)
+                    new js/Promise $ fn (resolve reject) (js/setTimeout resolve ms)
+                  f 0
+                  f $ let
+                      b $ fn ()
+                        hint-fn $ {} (:async true)
+                        let
+                            a 1
+                            a $ js-await (timeout 200)
+                          assert= &unit a
+                    b
+                js/console.log "|a promise from nested let" $ js-await f
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

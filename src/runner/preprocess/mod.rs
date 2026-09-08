@@ -1806,6 +1806,15 @@ fn reject_pending_async_arguments(
   if is_js_await {
     return Ok(());
   }
+  if resolve_type_value(head, scope_types).as_deref().is_some_and(is_pending_async_value) {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!("async invocation result is used without `js-await` as the receiver of `{head}`; await it first"),
+      "E_ASYNC_INVOCATION_REQUIRES_AWAIT",
+      call_stack,
+      head.get_location(),
+    ));
+  }
   for (index, arg) in args.iter().enumerate() {
     if resolve_type_value(arg, scope_types).as_deref().is_some_and(is_pending_async_value) {
       return Err(CalcitErr::use_msg_stack_location_with_code(
@@ -17450,5 +17459,44 @@ mod tests {
     .expect_err("pending async values must not flow into synchronous calls");
     assert_eq!(error.code.as_deref(), Some("E_ASYNC_INVOCATION_REQUIRES_AWAIT"));
     assert!(error.msg.contains("argument 1"));
+  }
+
+  #[test]
+  fn preprocess_rejects_pending_async_value_as_call_receiver() {
+    let signature = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: Arc::new(CalcitTypeAnnotation::String),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    };
+    let fn_type = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature.with_async_invocation())));
+    let async_name: Arc<str> = Arc::from("load-text");
+    let async_local = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&async_name),
+      sym: async_name,
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.async"),
+        at_def: Arc::from("main!"),
+      }),
+      location: Some(Arc::from(vec![4, 2])),
+      type_info: fn_type,
+    });
+    let pending_receiver = Calcit::from(vec![async_local]);
+    let call = CalcitList::from(&[pending_receiver, Calcit::Tag(EdnTag::from("name"))] as &[Calcit]);
+
+    let error = preprocess_list_call(
+      &call,
+      &HashSet::new(),
+      &mut ScopeTypes::new(),
+      "tests.async",
+      &RefCell::new(vec![]),
+      &CallStackList::default(),
+    )
+    .expect_err("pending async receivers must be awaited before postfix calls");
+    assert_eq!(error.code.as_deref(), Some("E_ASYNC_INVOCATION_REQUIRES_AWAIT"));
+    assert!(error.msg.contains("receiver"));
   }
 }

@@ -1847,8 +1847,11 @@ impl CalcitTypeAnnotation {
             fields.features = Some(value);
           }
         }
-        "async" if fields.async_invocation.is_none() => {
-          fields.async_invocation = Some(value);
+        "async" => {
+          fields.has_any = true;
+          if fields.async_invocation.is_none() {
+            fields.async_invocation = Some(value);
+          }
         }
         _ => {}
       }
@@ -2208,7 +2211,9 @@ impl CalcitTypeAnnotation {
       Calcit::Set(xs) => {
         let mut features = HashSet::with_capacity(xs.size());
         for item in xs.iter() {
-          if let Calcit::Tag(tag) = item {
+          if let Calcit::Tag(tag) = item
+            && tag.ref_str() != ASYNC_INVOCATION_FEATURE
+          {
             features.insert(tag.clone());
           }
         }
@@ -2224,10 +2229,10 @@ impl CalcitTypeAnnotation {
     let Some(items) = Self::get_hint_fn_items(form) else {
       return false;
     };
-    items.iter().skip(1).any(|item| {
-      Self::extract_schema_value_single(item, "async")
-        .is_some_and(|value| !matches!(value, Calcit::Nil | Calcit::Unit | Calcit::Bool(false)))
-    })
+    items
+      .get(1)
+      .and_then(|item| Self::extract_schema_value_single(item, "async"))
+      .is_some_and(|value| !matches!(value, Calcit::Nil | Calcit::Unit | Calcit::Bool(false)))
   }
 
   /// Return whether a source or preprocessed function definition carries an async hint.
@@ -2559,6 +2564,7 @@ impl CalcitTypeAnnotation {
       .unwrap_or_default()
       .as_ref()
       .clone();
+    features.retain(|feature| feature.ref_str() != ASYNC_INVOCATION_FEATURE);
     if matches!(map.tag_get("async"), Some(Edn::Bool(true))) {
       features.insert(EdnTag::from(ASYNC_INVOCATION_FEATURE));
     }
@@ -6602,6 +6608,56 @@ mod tests {
       CalcitTypeAnnotation::Fn(async_signature.clone()).cmp(&CalcitTypeAnnotation::Fn(Arc::new(sync_signature))),
       Ordering::Equal
     );
+  }
+
+  #[test]
+  fn async_only_schema_is_valid_but_target_hint_does_not_mark_definition() {
+    let async_schema = Calcit::from(vec![
+      symbol("{}"),
+      Calcit::from(vec![Calcit::Tag(EdnTag::from("async")), Calcit::Bool(true)]),
+    ]);
+    let definition_hint = Calcit::from(vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), async_schema.clone()]);
+
+    let annotation = CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(&definition_hint).expect("async-only fn schema");
+    assert!(matches!(annotation.as_ref(), CalcitTypeAnnotation::Fn(signature) if signature.is_async_invocation()));
+    assert!(CalcitTypeAnnotation::hint_form_marks_async(&definition_hint));
+
+    let target_hint = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")),
+      symbol("target"),
+      async_schema,
+    ]);
+    assert!(!CalcitTypeAnnotation::hint_form_marks_async(&target_hint));
+  }
+
+  #[test]
+  fn reserved_async_feature_cannot_override_explicit_false() {
+    let reserved = EdnTag::from(ASYNC_INVOCATION_FEATURE);
+    let source_schema = Calcit::from(vec![
+      symbol("{}"),
+      Calcit::from(vec![
+        Calcit::Tag(EdnTag::from("features")),
+        Calcit::Set([Calcit::Tag(reserved.clone())].into_iter().collect()),
+      ]),
+      Calcit::from(vec![Calcit::Tag(EdnTag::from("async")), Calcit::Bool(false)]),
+    ]);
+    let source_hint = Calcit::from(vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), source_schema]);
+    let source = CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(&source_hint).expect("source fn schema");
+    let CalcitTypeAnnotation::Fn(source) = source.as_ref() else {
+      panic!("expected source fn annotation")
+    };
+    assert!(!source.is_async_invocation());
+    assert!(!source.features.contains(&reserved));
+
+    let mut features = EdnSetView::default();
+    features.insert(Edn::Tag(reserved.clone()));
+    let edn_schema = Edn::Map(EdnMapView::from(HashMap::from([
+      (Edn::tag("features"), Edn::Set(features)),
+      (Edn::tag("async"), Edn::Bool(false)),
+    ])));
+    let edn = CalcitTypeAnnotation::parse_fn_schema_from_edn(&edn_schema).expect("EDN fn schema");
+    assert!(!edn.is_async_invocation());
+    assert!(!edn.features.contains(&reserved));
   }
 
   #[test]
