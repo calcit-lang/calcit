@@ -899,7 +899,7 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
       test.code.clone(),
     ]);
     let mut entry = snapshot::CodeEntry::from_code(code);
-    entry.schema = generated_zero_arg_fn_schema(HashSet::new());
+    entry.schema = generated_zero_arg_fn_schema(calcit::calcit::DYNAMIC_TYPE.clone(), HashSet::new());
     file.defs.insert(synthetic.clone(), entry);
     test.synthetic_definition = synthetic;
   }
@@ -1670,11 +1670,12 @@ fn run_check_examples(
       Cirru::Leaf(Arc::from("defn")),
       Cirru::Leaf(Arc::from("&calcit:check-examples")),
       Cirru::List(vec![]), // empty parameter list
-      Cirru::Leaf(Arc::from("nil")),
+      Cirru::Leaf(Arc::from("&unit")),
     ])
   } else {
     let mut fn_body = vec![Cirru::Leaf(Arc::from("do"))];
     fn_body.extend(example_calls);
+    fn_body.push(Cirru::Leaf(Arc::from("&unit")));
 
     Cirru::List(vec![
       Cirru::Leaf(Arc::from("defn")),
@@ -1697,11 +1698,7 @@ fn run_check_examples(
         tests: Vec::new(),
         tags: std::collections::HashSet::new(),
         code: check_function_code,
-        schema: if js_mode {
-          check_examples_js_schema()
-        } else {
-          calcit::calcit::DYNAMIC_TYPE.clone()
-        },
+        schema: check_examples_schema(),
         ffi: None,
       },
     );
@@ -1813,20 +1810,20 @@ fn js_examples_runner_source(target_ns: &str, check_fn_name: &str) -> String {
   format!("import * as examples from {module_path};\nexamples.{check_fn}();\n")
 }
 
-fn generated_zero_arg_fn_schema(features: HashSet<EdnTag>) -> Arc<CalcitTypeAnnotation> {
+fn generated_zero_arg_fn_schema(return_type: Arc<CalcitTypeAnnotation>, features: HashSet<EdnTag>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
     generics: Arc::new(vec![]),
     where_bounds: Arc::new(vec![]),
     arg_types: vec![],
-    return_type: calcit::calcit::DYNAMIC_TYPE.clone(),
+    return_type,
     fn_kind: SchemaKind::Fn,
     rest_type: None,
     features: Arc::new(features),
   })))
 }
 
-fn check_examples_js_schema() -> Arc<CalcitTypeAnnotation> {
-  generated_zero_arg_fn_schema(HashSet::from([EdnTag::from("js-ffi")]))
+fn check_examples_schema() -> Arc<CalcitTypeAnnotation> {
+  generated_zero_arg_fn_schema(Arc::new(CalcitTypeAnnotation::Unit), HashSet::from([EdnTag::from("js-ffi")]))
 }
 
 fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapshot: &snapshot::Snapshot) -> Result<(), String> {
@@ -2068,12 +2065,14 @@ mod tests {
   }
 
   #[test]
-  fn js_examples_schema_allows_js_ffi() {
-    let generated_schema = check_examples_js_schema();
+  fn examples_schema_is_strict_and_allows_js_ffi() {
+    let generated_schema = check_examples_schema();
     let CalcitTypeAnnotation::Fn(schema) = generated_schema.as_ref() else {
-      panic!("generated JavaScript examples should use a function schema");
+      panic!("generated examples should use a function schema");
     };
 
+    assert_eq!(schema.arg_types, Vec::<Arc<CalcitTypeAnnotation>>::new());
+    assert!(matches!(schema.return_type.as_ref(), CalcitTypeAnnotation::Unit));
     assert!(schema.features.contains(&EdnTag::from("js-ffi")));
   }
 
