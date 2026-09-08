@@ -619,7 +619,7 @@ fn infer_core_apply_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes
     bindings.entry(generic.clone()).or_insert_with(|| calcit::DYNAMIC_TYPE.clone());
   }
   let resolved = signature.return_type.substitute_type_vars(&bindings);
-  (!resolved.contains_type_var()).then_some(resolved)
+  (!resolved.contains_type_var()).then(|| invocation_return_type(signature.as_ref(), resolved, false))
 }
 
 fn core_type_ref(name: &str, args: Vec<Arc<CalcitTypeAnnotation>>) -> Arc<CalcitTypeAnnotation> {
@@ -2479,6 +2479,26 @@ mod tests {
       infer_core_apply_return_type(&call, &ScopeTypes::new()).as_deref(),
       Some(CalcitTypeAnnotation::String)
     ));
+  }
+
+  #[test]
+  fn apply_preserves_an_async_callable_pending_result() {
+    let signature = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::String)],
+      return_type: Arc::new(CalcitTypeAnnotation::String),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    }
+    .with_async_invocation();
+    let callable = local("load-text", Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature))));
+    let arguments = proc_call(CalcitProc::List, vec![Calcit::Str(Arc::from("notes.txt"))]);
+    let call = CalcitList::from(&[symbol("apply"), callable, arguments][..]);
+
+    let inferred = infer_core_apply_return_type(&call, &ScopeTypes::new()).expect("async apply result");
+    assert!(is_pending_async_value(inferred.as_ref()));
   }
 
   #[test]
