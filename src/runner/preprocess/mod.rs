@@ -24,7 +24,7 @@ use type_checking::{
 pub use type_inference::infer_static_type_from_expr;
 use type_inference::{
   extract_literal_list_items, find_struct_lookup_in_literal_path, fully_typed_literal_assoc_path, fully_typed_literal_lookup_path,
-  infer_struct_field_type, infer_struct_value_annotation, infer_type_from_expr, resolve_enum_value,
+  infer_struct_field_type, infer_struct_value_annotation, infer_type_from_expr, is_pending_async_value, resolve_enum_value,
   resolve_program_value_for_preprocess, resolve_type_value,
 };
 use type_rewriting::{
@@ -1795,6 +1795,34 @@ pub fn preprocess_expr(
   }
 }
 
+fn reject_pending_async_arguments(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let is_js_await = matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "js-await")
+    || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "js-await");
+  if is_js_await {
+    return Ok(());
+  }
+  for (index, arg) in args.iter().enumerate() {
+    if resolve_type_value(arg, scope_types).as_deref().is_some_and(is_pending_async_value) {
+      return Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!(
+          "async invocation result is used without `js-await` at argument {}; await it before passing it to `{head}`",
+          index + 1
+        ),
+        "E_ASYNC_INVOCATION_REQUIRES_AWAIT",
+        call_stack,
+        arg.get_location().or_else(|| head.get_location()),
+      ));
+    }
+  }
+  Ok(())
+}
+
 fn preprocess_list_call(
   xs: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
@@ -2093,6 +2121,7 @@ fn preprocess_list_call(
               processed_args = processed_args.push(processed?);
             }
             let processed_args = CalcitList::from(processed_args);
+            reject_pending_async_arguments(&typed_method, &processed_args, scope_types, call_stack)?;
             if strict_types_enabled() || is_display_contract {
               validate_method_call(&typed_method, &processed_args, scope_types, file_ns, call_stack)?;
             }
@@ -2402,8 +2431,10 @@ fn preprocess_list_call(
 
         ys = ys.push(form);
       }
+      let processed_call_args = CalcitList::from(ys.drop_left());
+      reject_pending_async_arguments(&head_form, &processed_call_args, scope_types, call_stack)?;
       if !has_spread {
-        let mut current_args = CalcitList::from(ys.drop_left());
+        let mut current_args = processed_call_args;
         let checked_contract = resolve_checked_call_contract(&info.def_ns, &info.name, &current_args, scope_types);
         let checked_expected_types = checked_contract.as_ref().and_then(|contract| contract.expected_types.as_deref());
         // Core helpers such as `get` resolve to ordinary functions, so validate
@@ -2786,6 +2817,7 @@ fn preprocess_list_call(
 
         // Check for struct field access after processing arguments
         let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
+        reject_pending_async_arguments(&head_form, &processed_args, scope_types, call_stack)?;
         validate_method_call(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
         check_struct_field_access(&head_form, &processed_args, scope_types, file_ns, call_stack, check_warnings);
         check_struct_update_fields(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
@@ -7929,11 +7961,16 @@ pub fn preprocess_defn(
       // Inject declared argument types into the function body. Call-site checks alone are not
       // enough: without these bindings, local method dispatch and return inference inside a named
       // `defn` unnecessarily fall back to Dynamic. Anonymous callbacks still use EXPECTED_FN_TYPE.
-      let effective_fn_schema: Option<Arc<CalcitFnTypeAnnotation>> = body_fn_hint.or_else(|| match def_schema.as_ref() {
+      let mut effective_fn_schema: Option<Arc<CalcitFnTypeAnnotation>> = body_fn_hint.or_else(|| match def_schema.as_ref() {
         CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.clone()),
         CalcitTypeAnnotation::Dynamic => EXPECTED_FN_TYPE.with(|cell| cell.borrow().clone()),
         _ => None,
       });
+      if args.iter().skip(2).any(CalcitTypeAnnotation::hint_form_marks_async)
+        && let Some(signature) = effective_fn_schema.as_ref()
+      {
+        effective_fn_schema = Some(Arc::new(signature.with_async_invocation()));
+      }
       if let CalcitTypeAnnotation::Macro(signature) = def_schema.as_ref() {
         for (param_sym, type_info) in param_symbols.iter().zip(strict_macro_body_parameter_types(signature)) {
           body_types.insert(param_sym.clone(), type_info);
@@ -17374,5 +17411,44 @@ mod tests {
     assert_eq!(shape.optional, 1);
     assert!(!shape.has_rest);
     assert!(shape.errors.is_empty());
+  }
+
+  #[test]
+  fn preprocess_rejects_pending_async_value_as_call_argument() {
+    let signature = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: Arc::new(CalcitTypeAnnotation::String),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    };
+    let fn_type = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature.with_async_invocation())));
+    let async_name: Arc<str> = Arc::from("load-text");
+    let async_local = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&async_name),
+      sym: async_name,
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.async"),
+        at_def: Arc::from("main!"),
+      }),
+      location: Some(Arc::from(vec![4, 2])),
+      type_info: fn_type,
+    });
+    let invocation = Calcit::from(vec![async_local]);
+    let call = CalcitList::from(&[Calcit::Proc(CalcitProc::NativeStr), invocation] as &[Calcit]);
+
+    let error = preprocess_list_call(
+      &call,
+      &HashSet::new(),
+      &mut ScopeTypes::new(),
+      "tests.async",
+      &RefCell::new(vec![]),
+      &CallStackList::default(),
+    )
+    .expect_err("pending async values must not flow into synchronous calls");
+    assert_eq!(error.code.as_deref(), Some("E_ASYNC_INVOCATION_REQUIRES_AWAIT"));
+    assert!(error.msg.contains("argument 1"));
   }
 }
