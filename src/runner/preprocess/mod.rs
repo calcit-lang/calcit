@@ -15056,6 +15056,7 @@ mod tests {
 
   #[test]
   fn validates_method_field_access() {
+    let _state = lock_preprocess_test_state();
     use cirru_edn::EdnTag;
 
     // Create a test struct type with fields: name, age

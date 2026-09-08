@@ -64,6 +64,23 @@ calcit query def calcit.core/to-js-data
 
 For source-backed definitions, `query def` prints the stored Cirru body. For special builtin helpers such as `calcit.core/to-js-data`, it falls back to builtin metadata (doc, schema, examples count) even when no snapshot source exists.
 
+Since 0.14.3, automation should use `calcit query def namespace/name --format json`.
+Stdout is one JSON envelope (`schema_version: 1`, `command: "query.def"`, `revision`,
+`data`, `diagnostics`); command echoes and warnings remain on stderr. Failures exit
+nonzero with diagnostics on stderr, not a partial success object. `data` contains
+`id`, `doc`, `tags`, `examples`, `tests`, `code`, `schema`, `ffi`, and `ffi_edn`.
+`ffi` is complete EDN-encoded JSON, using the same representation as `cirru parse-edn`:
+tag map keys retain `:`, tag values use `{"__edn_tag":"js"}`, and sets use
+`{"__edn_set":[...]}`. `ffi_edn` is complete, parseable Cirru EDN text. Both are
+`null` when absent; neither is a preview. Source-backed definitions have a content
+revision; source-less builtins have `revision: null`, `code: null`, and `builtin: true`.
+The schema field remains a Cirru syntax tree, not raw persisted schema data.
+
+兼容性：`--json` 仍在 human 输出末尾附加 `JSON:` 与旧字段对象，其中 `ffi` 保持
+字符串类型，但不再截断。`--format json` 优先于 `--json`，不需要 `--raw` 就会返回
+完整元数据。human 模式默认标明 FFI preview；`--raw` 同时输出完整代码与 FFI。
+本接口只查询声明，不改变 Interface IR v2、目标可用性检查或 async 调用语义。
+
 Local metadata queries (`ns <name>`, `defs`, `def`, `peek`, `examples`, `schema`, `pkg`, and `config`) first read only the main Snapshot. Modules/core are loaded only when the requested namespace is not local. This keeps repeated Agent navigation fast and avoids unrelated dependency warnings; semantic queries such as `type`, `type-at`, and `context` still load the metadata needed for static resolution.
 
 ### Peek Signature (`peek`)

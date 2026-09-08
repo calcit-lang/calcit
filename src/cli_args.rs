@@ -712,9 +712,12 @@ pub struct QueryDefCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// also output JSON format for programmatic consumption
+  /// append legacy JSON to human output; prefer --format json for automation
   #[argh(switch)]
   pub json: bool,
+  /// output format: human (default) or a single versioned json envelope
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
   /// preferred nodes per display fragment when large expressions are chunked
   #[argh(option, default = "56")]
   pub chunk_target_nodes: usize,

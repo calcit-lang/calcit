@@ -670,6 +670,7 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
       tokens,
       pos "target" => &opts.target,
       switch "json" => opts.json,
+      value "format" => &opts.format; default "human",
       value "chunk-target-nodes" => opts.chunk_target_nodes; default "56",
       value "chunk-max-nodes" => opts.chunk_max_nodes; default "68",
       value "chunk-trigger-nodes" => opts.chunk_trigger_nodes; default "88",
