@@ -26,6 +26,9 @@ const scenarios = [
       if (result.command !== "query.def" || !result.data.builtin || result.data.code !== null || result.data.ffi !== null) {
         throw new Error("query.def lost builtin metadata contract");
       }
+      if (!result.data.tags.includes("js-ffi")) {
+        throw new Error("query.def lost special-builtin semantic tags");
+      }
     },
   },
   {

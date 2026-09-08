@@ -3462,7 +3462,7 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
       let data = serde_json::json!({
         "id": format!("{namespace}/{definition}"),
         "doc": meta.doc,
-        "tags": [],
+        "tags": meta.semantic_tags,
         "examples": meta.examples.iter().map(cirru_to_json).collect::<Vec<_>>(),
         "tests": [],
         "code": null,
