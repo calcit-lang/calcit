@@ -623,6 +623,57 @@ fn calx_f64_buffer_len_falls_back_before_lowering() {
 }
 
 #[test]
+fn calx_buffer_index_cannot_escape_as_number_or_skip_conversion() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-index-boundary";
+  let mut defs = calx_test_defs_from_source(namespace, include_str!("../../tests/fixtures/calx/f64-buffer-index-boundary.cirru"));
+  let cases = [
+    ("index-result", false, 1.0),
+    ("index-local", false, 2.0),
+    ("index-arithmetic", false, 2.0),
+    ("index-branch", false, 1.0),
+    ("index-recur", false, 0.0),
+    ("unchecked-read", true, 20.0),
+    ("nested-conversion", true, 20.0),
+  ];
+  for (name, has_buffer, expected) in cases {
+    let mut arg_types = vec![];
+    let mut args = vec![];
+    if has_buffer {
+      arg_types.push(CalcitTypeAnnotation::F64Buffer);
+      args.push(Calcit::F64Buffer(Arc::from([10.0, 20.0])));
+    }
+    arg_types.push(CalcitTypeAnnotation::Number);
+    args.push(Calcit::Number(1.0));
+    install_calx_test_defs(
+      namespace,
+      vec![(
+        name,
+        defs.remove(name).expect("index boundary source"),
+        calx_test_fn_schema(arg_types, CalcitTypeAnnotation::Number),
+      )],
+    );
+    compile_calx_test_entry(namespace, name);
+    let snapshot = clone_compiled_program_snapshot().expect("index boundary snapshot");
+    assert_eq!(
+      run_program_with_docs(Arc::from(namespace), Arc::from(name), &args).expect("native index semantics"),
+      Calcit::Number(expected)
+    );
+    let Err(CalxKernelCompileError::Eligibility(report)) = compile_calx_kernel(&snapshot, namespace, name) else {
+      panic!("{name} must be rejected during eligibility, not VM validation");
+    };
+    assert!(
+      report
+        .issues
+        .iter()
+        .any(|issue| issue.code == CalxFallbackCode::UnsupportedForm && issue.message.contains("&f64:to-i64-index")),
+      "{name}: {report:?}"
+    );
+  }
+}
+
+#[test]
 fn calx_f64_buffer_dot_product_is_source_backed_strict_and_differential() {
   let _guard = lock_program_test_state();
   reset_program_test_state();

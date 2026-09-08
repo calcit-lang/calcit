@@ -691,7 +691,6 @@ enum PlannedOperation {
   Equal,
   LessThan,
   GreaterThan,
-  F64ToI64Index,
   F64BufferGet,
 }
 
@@ -968,8 +967,31 @@ fn plan_proc(
     CalcitProc::NativeEquals => (Some(PlannedOperation::Equal), Some(CalxScalarType::Bool)),
     CalcitProc::NativeLessThan => (Some(PlannedOperation::LessThan), Some(CalxScalarType::Bool)),
     CalcitProc::NativeGreaterThan => (Some(PlannedOperation::GreaterThan), Some(CalxScalarType::Bool)),
-    CalcitProc::NativeF64ToI64Index => (Some(PlannedOperation::F64ToI64Index), Some(CalxScalarType::F64)),
-    CalcitProc::NativeF64BufferGet => (Some(PlannedOperation::F64BufferGet), Some(CalxScalarType::F64)),
+    CalcitProc::NativeF64BufferGet => {
+      let [buffer, index] = args else {
+        return Err(lower_error(
+          context.function,
+          None,
+          "eligible buffer read changed arity before lowering",
+        ));
+      };
+      let operand = super::checked_buffer_index_operand(index).ok_or_else(|| {
+        lower_error(
+          context.function,
+          source_path(index),
+          "eligible buffer index changed shape before lowering",
+        )
+      })?;
+      let args = vec![plan_expression(buffer, false, context)?, plan_expression(operand, false, context)?];
+      return Ok(planned(
+        Some(CalxScalarType::F64),
+        source_path(buffer),
+        PlannedExpressionKind::Operation {
+          operation: PlannedOperation::F64BufferGet,
+          args,
+        },
+      ));
+    }
     CalcitProc::Recur => {
       let name = context
         .names
@@ -1189,8 +1211,8 @@ fn emit_expression(
         PlannedOperation::Equal => body.emit(VmSyntax::F64Eq)?,
         PlannedOperation::LessThan => body.emit(VmSyntax::F64Lt)?,
         PlannedOperation::GreaterThan => body.emit(VmSyntax::F64Gt)?,
-        PlannedOperation::F64ToI64Index => body.f64_to_i64_index()?,
-        PlannedOperation::F64BufferGet => body.f64_buffer_get()?,
+        // Keep the temporary I64 on the stack only for the immediately following read.
+        PlannedOperation::F64BufferGet => body.f64_to_i64_index()?.f64_buffer_get()?,
       };
     }
     PlannedExpressionKind::Call {

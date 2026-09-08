@@ -1414,15 +1414,14 @@ pub(crate) fn maintain_cursor_after_split_definition(
   if document.active.target != source {
     return Ok(());
   }
-  let detail;
-  if document.active.path.starts_with(split_path) {
+  let detail = if document.active.path.starts_with(split_path) {
     document.active.target = target.to_string();
     document.active.path = document.active.path[split_path.len()..].to_vec();
-    detail = format!("followed extracted subtree: {source} → {target}");
+    format!("followed extracted subtree: {source} → {target}")
   } else {
     document.active.path = transform_cursor_path(&document.active.path, &TreeCursorMutation::Replace { path: split_path.to_vec() }).0;
-    detail = "split expression replaced by new definition reference".to_string();
-  }
+    "split expression replaced by new definition reference".to_string()
+  };
   refresh_cursor_state(&mut document.active, snapshot_file)?;
   save_cursor_document(snapshot_file, &document)?;
   emit_cursor_after(snapshot_file, &document.active, &detail)
