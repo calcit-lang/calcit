@@ -4684,9 +4684,9 @@ impl CalcitTypeAnnotation {
           Self::Tag
         }
       }
-      Calcit::List(_) => Self::List(Arc::new(Self::Dynamic)),
-      Calcit::Map(_) => Self::Map(Arc::new(Self::Dynamic), Arc::new(Self::Dynamic)),
-      Calcit::Set(_) => Self::Set(Arc::new(Self::Dynamic)),
+      Calcit::List(_) => Self::List(DYNAMIC_TYPE.clone()),
+      Calcit::Map(_) => Self::Map(DYNAMIC_TYPE.clone(), DYNAMIC_TYPE.clone()),
+      Calcit::Set(_) => Self::Set(DYNAMIC_TYPE.clone()),
       Calcit::Struct(struct_value) => Self::StructValue(struct_value.struct_ref.clone()),
       Calcit::EnumDef(enum_def) => Self::EnumDef(Arc::new(enum_def.to_owned())),
       Calcit::StructDef(struct_def) => Self::StructDef(Arc::new(struct_def.to_owned())),
@@ -4718,7 +4718,7 @@ impl CalcitTypeAnnotation {
           Self::Dynamic
         }
       }
-      Calcit::Ref(_, _) => Self::Ref(Arc::new(Self::Dynamic)),
+      Calcit::Ref(_, _) => Self::Ref(DYNAMIC_TYPE.clone()),
       Calcit::Symbol { .. } => Self::Symbol,
       Calcit::Buffer(_) => Self::Buffer,
       Calcit::F64Buffer(_) => Self::F64Buffer,
@@ -7239,6 +7239,15 @@ mod tests {
     );
     let bare_map = CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::Symbol(Arc::from("Map")));
     assert_eq!(bare_map.to_type_edn(), Edn::Symbol(Arc::from("Map")));
+
+    let nested = CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::enum_value(
+      "List",
+      vec![Edn::enum_value("List", vec![Edn::Symbol(Arc::from("Dynamic"))])],
+    ));
+    assert_eq!(
+      nested.to_type_edn(),
+      Edn::enum_value("List", vec![Edn::enum_value("List", vec![Edn::Symbol(Arc::from("Dynamic"))])])
+    );
   }
 
   #[test]
