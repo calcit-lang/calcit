@@ -89,8 +89,8 @@ name；direct tail call 与 `recur` 降为 `return-call`。
 - fixed arity top-level function；
 - Number/Bool literal、typed local、单 binding `&let`、有 else 的 `if`；
 - `&+`、一元/二元 `&-`、`&*`、`&/`、`&=`、`&<`、`&>`；
-- internal typed-buffer intrinsics：`&f64:to-i64-index`、`&f64-buffer:get`；conversion/bounds failure
-  在 VM 中 trap，绝不返回 `Nil`；
+- internal typed-buffer read：`&f64-buffer:get buffer (&f64:to-i64-index index)`；转换仅支持直接位于
+  读取的 index 位置，产生的 I64 只供紧随其后的读取指令使用；conversion/bounds failure 在 VM 中 trap，绝不返回 `Nil`；
 - fixed-arity direct call 与 tail-position `recur`；
 - 显式 allowlist 的 zero-result / single-result typed host import；
 - 条件必须静态为 Bool，不复用 Calcit 或 Calx 的 numeric truthiness。
@@ -101,6 +101,11 @@ name；direct tail call 与 `recur` 降为 `return-call`。
 - closure、function value、local/dynamic operator、HOF、rest/optional arity；
 - 无 else 的 `if`、非 tail `recur`、global/ref/atom、collection/nominal value；
 - 未加入 allowlist 的 host/native capability。
+
+`&f64:to-i64-index` 不能独立返回、绑定到 Number local、参与算术或作为普通函数参数；
+这些位置在 Calcit 中仍是 Number/F64，而 VM 转换结果是 I64。省略显式转换的 buffer 读取也会在
+eligibility 阶段拒绝，而不是拖到 VM validation 才报告栈类型错误。嵌套 buffer 读取仍支持：
+转换的 F64 operand 可以是另一次合法的 buffer 读取结果。这里不引入公开 I64 类型或隐式转换。
 
 `&f64-buffer:len` 暂不属于 producer 子集：Calcit 的公开返回类型是 `Number`/F64，而 Calx VM 的
 严格指令结果是 I64。eligibility 会在 lowering 前拒绝它，直到 Calcit 拥有显式、语义无损的 I64

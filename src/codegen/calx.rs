@@ -924,11 +924,48 @@ fn analyze_proc(proc: CalcitProc, args: &[Calcit], tail: bool, context: &mut Exp
       None
     }
     CalcitProc::NativeF64ToI64Index => {
-      analyze_typed_args(proc, args, &[CalxScalarType::F64], context)?;
-      Some(Some(CalxScalarType::F64))
+      issue(
+        context,
+        CalxFallbackCode::UnsupportedForm,
+        args.first().and_then(source_path),
+        "`&f64:to-i64-index` produces an internal Calx I64, not Number/F64; it is only supported directly in the index position of `&f64-buffer:get`".to_owned(),
+      );
+      None
     }
     CalcitProc::NativeF64BufferGet => {
-      analyze_typed_args(proc, args, &[CalxScalarType::F64Buffer, CalxScalarType::F64], context)?;
+      let [buffer, index] = args else {
+        issue(
+          context,
+          CalxFallbackCode::Arity,
+          args.first().and_then(source_path),
+          format!("`{proc}` expects 2 arguments, found {}", args.len()),
+        );
+        return None;
+      };
+      let Some(operand) = checked_buffer_index_operand(index) else {
+        issue(
+          context,
+          CalxFallbackCode::UnsupportedForm,
+          source_path(index),
+          "`&f64-buffer:get` requires a direct `&f64:to-i64-index` call with one Number/F64 operand".to_owned(),
+        );
+        return None;
+      };
+      let mut valid = true;
+      for (argument, expected) in [(buffer, CalxScalarType::F64Buffer), (operand, CalxScalarType::F64)] {
+        if analyze_expression(argument, false, context) != Some(Some(expected)) {
+          issue(
+            context,
+            CalxFallbackCode::UnsupportedType,
+            source_path(argument),
+            format!("`{proc}` checked read requires {expected:?} at this position"),
+          );
+          valid = false;
+        }
+      }
+      if !valid {
+        return None;
+      }
       Some(Some(CalxScalarType::F64))
     }
     CalcitProc::Recur => {
@@ -953,6 +990,16 @@ fn analyze_proc(proc: CalcitProc, args: &[Calcit], tail: bool, context: &mut Exp
       );
       None
     }
+  }
+}
+
+// I64 is an instruction-local index, never a Calcit Number local or result.
+fn checked_buffer_index_operand(expression: &Calcit) -> Option<&Calcit> {
+  let Calcit::List(items) = expression else { return None };
+  if items.len() == 2 && matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeF64ToI64Index))) {
+    items.get(1)
+  } else {
+    None
   }
 }
 
@@ -1231,6 +1278,58 @@ fn source_path(expression: &Calcit) -> Option<Vec<u16>> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn checked_buffer_index_requires_exact_conversion_shape() {
+    let list = |items: Vec<Calcit>| Calcit::from(crate::calcit::CalcitList::from(items.as_slice()));
+    let proc = Calcit::Proc(CalcitProc::NativeF64ToI64Index);
+    let valid = list(vec![proc.clone(), Calcit::Number(1.0)]);
+    assert_eq!(checked_buffer_index_operand(&valid), Some(&Calcit::Number(1.0)));
+    for invalid in [
+      Calcit::Number(1.0),
+      list(vec![proc.clone()]),
+      list(vec![proc, Calcit::Number(1.0), Calcit::Number(2.0)]),
+      list(vec![Calcit::Proc(CalcitProc::NativeMinus), Calcit::Number(1.0)]),
+    ] {
+      assert!(checked_buffer_index_operand(&invalid).is_none(), "{invalid}");
+    }
+  }
+
+  #[test]
+  fn malformed_checked_reads_always_record_fallback_issues() {
+    let checked = |value| {
+      Calcit::from(crate::calcit::CalcitList::from(&[
+        Calcit::Proc(CalcitProc::NativeF64ToI64Index),
+        value,
+      ]))
+    };
+    for (args, expected) in [
+      (vec![], CalxFallbackCode::Arity),
+      (
+        vec![Calcit::Bool(true), checked(Calcit::Number(0.0))],
+        CalxFallbackCode::UnsupportedType,
+      ),
+      (
+        vec![Calcit::Bool(true), checked(Calcit::Bool(false))],
+        CalxFallbackCode::UnsupportedType,
+      ),
+      (vec![Calcit::Bool(true), Calcit::Number(0.0)], CalxFallbackCode::UnsupportedForm),
+    ] {
+      let mut issues = vec![];
+      let mut context = ExpressionContext {
+        program: &CompiledProgram::new(),
+        function: &CalxDefinitionRef::new("test", "checked-read"),
+        signature: None,
+        call_path: &[],
+        direct_calls: &mut BTreeSet::new(),
+        host_imports: &mut BTreeSet::new(),
+        imports: &CalxHostImports::new(),
+        issues: &mut issues,
+      };
+      assert_eq!(analyze_proc(CalcitProc::NativeF64BufferGet, &args, false, &mut context), None);
+      assert!(issues.iter().any(|issue| issue.code == expected), "{args:?}: {issues:?}");
+    }
+  }
 
   #[test]
   fn fallback_codes_keep_the_v1_abi_names() {
