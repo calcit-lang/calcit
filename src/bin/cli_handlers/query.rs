@@ -811,6 +811,34 @@ mod type_query_tests {
   use super::*;
   use crate::cli_handlers::test_support::TestProject;
 
+  #[test]
+  fn definition_ffi_json_is_complete_and_round_trips() {
+    use cirru_edn::{Edn, EdnMapView};
+    let mut names = EdnMapView::default();
+    for index in 0..300 {
+      names.insert(Edn::tag(format!("member-{index}")), Edn::str(format!("宿主\\\"\n{index}")));
+    }
+    let mut ffi = EdnMapView::default();
+    ffi.insert(Edn::tag("names"), names.into());
+    let ffi: Edn = ffi.into();
+    let mut entry = snapshot::CodeEntry::from_code(vec!["def", "example", "nil"].into());
+    entry.ffi = Some(ffi.clone());
+    let legacy = code_entry_to_json(&entry).unwrap();
+    let full = legacy["ffi"].as_str().unwrap();
+    assert!(full.len() > 5000);
+    assert_eq!(cirru_edn::parse(full).unwrap(), ffi);
+    assert_ne!(format_edn_display(&ffi), full);
+    let structured = serde_json::to_value(&ffi).unwrap();
+    assert_eq!(structured[":names"].as_object().unwrap().len(), 300);
+    assert_eq!(structured[":names"][":member-299"], "宿主\\\"\n299");
+    let encoded = format_def_query_json(structured.clone(), Some(snapshot::definition_revision(&entry).unwrap())).unwrap();
+    let decoded: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(decoded["data"], structured);
+    assert_eq!(decoded["command"], "query.def");
+    entry.ffi = None;
+    assert!(code_entry_to_json(&entry).unwrap()["ffi"].is_null());
+  }
+
   fn on_cli_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
     std::thread::Builder::new()
       .name("calcit-query-test".into())
@@ -3414,6 +3442,7 @@ fn render_chunked_display(display: &ChunkedDisplay) -> String {
 }
 
 fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryDefCommand) -> Result<(), String> {
+  let json_only = matches!(parse_query_render_format(&opts.format)?, QueryRenderFormat::Json);
   let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
 
   let file_data = snapshot
@@ -3424,6 +3453,28 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
   if !file_data.defs.contains_key(definition)
     && let Some(meta) = lookup_special_builtin_query_meta(namespace, definition)?
   {
+    if json_only {
+      let schema = meta
+        .schema
+        .as_function()
+        .map(|annot| annot.to_schema_edn())
+        .unwrap_or(cirru_edn::Edn::Nil);
+      let data = serde_json::json!({
+        "id": format!("{namespace}/{definition}"),
+        "doc": meta.doc,
+        "tags": meta.semantic_tags,
+        "examples": meta.examples.iter().map(cirru_to_json).collect::<Vec<_>>(),
+        "tests": [],
+        "code": null,
+        "schema": cirru_to_json(&snapshot::schema_edn_to_cirru(&schema)?),
+        "ffi": null,
+        "ffi_edn": null,
+        "builtin": true,
+        "kind": "special-proc"
+      });
+      println!("{}", format_def_query_json(data, None)?);
+      return Ok(());
+    }
     let mut out = String::new();
     let _ = writeln!(&mut out, "{} {}", "Type:".bold(), meta.expr_preview);
     let _ = writeln!(&mut out, "{} {}", "Doc:".bold(), meta.doc);
@@ -3471,6 +3522,15 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
     .get(resolved_definition.as_str())
     .expect("resolved definition exists");
 
+  if json_only {
+    let mut data = code_entry_to_json(code_entry)?;
+    data["id"] = serde_json::json!(format!("{namespace}/{resolved_definition}"));
+    data["ffi_edn"] = data["ffi"].take();
+    data["ffi"] = serde_json::to_value(&code_entry.ffi).map_err(|e| format!("Failed to serialize FFI metadata: {e}"))?;
+    println!("{}", format_def_query_json(data, Some(snapshot::definition_revision(code_entry)?))?);
+    return Ok(());
+  }
+
   let mut out = String::new();
 
   if let Ok(code_data) = calcit::data::cirru::code_to_calcit(&code_entry.code, namespace, &resolved_definition, vec![])
@@ -3491,7 +3551,21 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
   }
 
   if let Some(ffi) = &code_entry.ffi {
-    let _ = writeln!(&mut out, "{} {}", "FFI:".bold(), format_edn_display(ffi));
+    let full = format_ffi_edn(ffi)?;
+    let (label, text) = if opts.raw {
+      ("FFI:", full)
+    } else {
+      let preview = format_edn_display(ffi);
+      (
+        if preview == full {
+          "FFI:"
+        } else {
+          "FFI (preview; use --raw for full metadata):"
+        },
+        preview,
+      )
+    };
+    let _ = writeln!(&mut out, "{} {}", label.bold(), text);
   }
 
   if !code_entry.examples.is_empty() {
@@ -3530,7 +3604,7 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
 
   if opts.json {
     let _ = writeln!(&mut out, "\n{}", "JSON:".bold());
-    let json = code_entry_to_json(code_entry);
+    let json = code_entry_to_json(code_entry)?;
     let _ = writeln!(&mut out, "{}", serde_json::to_string(&json).unwrap());
   }
 
@@ -3545,14 +3619,28 @@ fn cirru_to_json(cirru: &Cirru) -> serde_json::Value {
   }
 }
 
-fn code_entry_to_json(entry: &snapshot::CodeEntry) -> serde_json::Value {
-  let schema_json = query_schema_cirru(entry.schema.as_ref(), false)
-    .ok()
-    .flatten()
-    .map(|cirru| cirru_to_json(&cirru));
+fn format_ffi_edn(ffi: &cirru_edn::Edn) -> Result<String, String> {
+  cirru_edn::format(ffi, true)
+    .map(|text| text.trim().to_owned())
+    .map_err(|e| format!("Failed to format FFI metadata: {e}"))
+}
+
+fn format_def_query_json(data: serde_json::Value, revision: Option<String>) -> Result<String, String> {
+  serde_json::to_string(&serde_json::json!({
+    "schema_version": 1,
+    "command": "query.def",
+    "revision": revision,
+    "data": data,
+    "diagnostics": [],
+  }))
+  .map_err(|e| format!("Failed to encode definition query JSON: {e}"))
+}
+
+fn code_entry_to_json(entry: &snapshot::CodeEntry) -> Result<serde_json::Value, String> {
+  let schema_json = query_schema_cirru(entry.schema.as_ref(), false)?.map(|cirru| cirru_to_json(&cirru));
   let mut tags: Vec<String> = entry.tags.iter().map(|tag| tag.ref_str().to_string()).collect();
   tags.sort();
-  serde_json::json!({
+  Ok(serde_json::json!({
     "doc": entry.doc,
     "tags": tags,
     "examples": entry.examples.iter().map(cirru_to_json).collect::<Vec<_>>(),
@@ -3563,8 +3651,8 @@ fn code_entry_to_json(entry: &snapshot::CodeEntry) -> serde_json::Value {
     }).collect::<Vec<_>>(),
     "code": cirru_to_json(&entry.code),
     "schema": schema_json,
-    "ffi": entry.ffi.as_ref().map(format_edn_display),
-  })
+    "ffi": entry.ffi.as_ref().map(format_ffi_edn).transpose()?,
+  }))
 }
 
 fn format_example_node(example: &Cirru) -> String {

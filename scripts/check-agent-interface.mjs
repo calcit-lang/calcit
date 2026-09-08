@@ -1,8 +1,36 @@
 import { spawnSync } from "node:child_process";
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import assert from "node:assert/strict";
 
 const binary = process.env.CALCIT_AGENT_BIN ?? process.env.CALCIT_AGENT_CR ?? "./target/debug/calcit";
 
 const scenarios = [
+  {
+    name: "complete definition metadata",
+    args: ["calcit/test.cirru", "query", "def", "app.main/main!", "--raw", "--format", "json"],
+    check(result) {
+      if (result.schema_version !== 1 || result.command !== "query.def" || result.data.id !== "app.main/main!") {
+        throw new Error("unexpected query.def envelope");
+      }
+      if (!Array.isArray(result.data.code) || result.data.ffi !== null || result.data.ffi_edn !== null || !result.revision.startsWith("md5:")) {
+        throw new Error("query.def lost code, absent metadata, or revision");
+      }
+    },
+  },
+  {
+    name: "builtin definition metadata",
+    args: ["calcit/test.cirru", "query", "def", "calcit.core/to-js-data", "--format", "json"],
+    check(result) {
+      if (result.command !== "query.def" || !result.data.builtin || result.data.code !== null || result.data.ffi !== null) {
+        throw new Error("query.def lost builtin metadata contract");
+      }
+      if (!result.data.tags.includes("js-ffi")) {
+        throw new Error("query.def lost special-builtin semantic tags");
+      }
+    },
+  },
   {
     name: "typed FFI Interface IR",
     args: ["calcit/test.cirru", "ffi", "export", "--json"],
@@ -440,5 +468,46 @@ for (const scenario of scenarios) {
   });
 }
 
-console.log(`Agent interface smoke passed: ${rows.length}/${scenarios.length}`);
+// Real CLI round trips, including the legacy wire format and negative paths.
+const fixtureDir = mkdtempSync(join(tmpdir(), "calcit-query-def-"));
+try {
+  const fixture = join(fixtureDir, "calcit.cirru");
+  copyFileSync("calcit/test.cirru", fixture);
+  const run = (...args) => {
+    const child = spawnSync(binary, [fixture, ...args], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
+    assert.ifError(child.error);
+    return child;
+  };
+  const names = Array.from({ length: 300 }, (_, i) => `(:member-${i} ${JSON.stringify(`|宿主\\\"\n${i}`)})`).join(" ");
+  const ffi = `{} (:backend :js) (:names $ {} ${names})`;
+  const edit = run("edit", "ffi", "app.main/main!", "--code", ffi);
+  assert.equal(edit.status, 0, edit.stderr);
+  const query = (...flags) => run("query", "def", "app.main/main!", ...flags);
+  const machine = query("--format", "json", "--json", "--raw");
+  assert.equal(machine.status, 0, machine.stderr);
+  const data = JSON.parse(machine.stdout).data;
+  assert.equal(Object.keys(data.ffi[":names"]).length, 300);
+  assert.equal(data.ffi[":names"][":member-299"], "宿主\\\"\n299");
+  const roundTrip = run("cirru", "parse-edn", data.ffi_edn);
+  assert.equal(roundTrip.status, 0, roundTrip.stderr);
+  assert.deepEqual(JSON.parse(roundTrip.stdout), data.ffi);
+  const legacy = query("--raw", "--json");
+  assert.equal(legacy.status, 0, legacy.stderr);
+  assert.equal(JSON.parse(legacy.stdout.split("\nJSON:\n").at(-1)).ffi, data.ffi_edn);
+  assert.ok(legacy.stdout.includes(data.ffi_edn), "raw human FFI must also be complete");
+  assert.match(query().stdout, /FFI \(preview; use --raw/);
+  for (const args of [
+    ["query", "def", "app.main/nonexistent-875", "--format", "json"],
+    ["query", "def", "app.main/main!", "--format", "invalid"],
+  ]) {
+    const failed = run(...args);
+    assert.notEqual(failed.status, 0);
+    assert.equal(failed.stdout, "", "query failure must not emit partial success JSON");
+    assert.ok(failed.stderr.length > 0);
+  }
+} finally {
+  rmSync(fixtureDir, { recursive: true, force: true });
+}
+
+console.log(`Agent interface smoke passed: ${rows.length}/${scenarios.length}, plus definition protocol round trips`);
 console.table(rows);
