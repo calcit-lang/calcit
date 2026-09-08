@@ -323,6 +323,30 @@ const scenarios = [
     },
   },
   {
+    name: "target-aware public check failure",
+    args: [
+      "calcit/type-fail/js-nullish-dereference-strict.cirru",
+      "analyze",
+      "check-public",
+      "--ns",
+      "type-fail-js-nullish-dereference-strict.main",
+      "--format",
+      "json",
+    ],
+    expectedStatus: 1,
+    check(result) {
+      if (result.schema_version !== 1 || result.command !== "analyze.check-public") {
+        throw new Error("unexpected analyze.check-public envelope");
+      }
+      if (result.data.target !== "node" || result.data.summary.complete !== true || result.data.summary.passed !== false) {
+        throw new Error("check-public lost target, completeness, or failure state");
+      }
+      if (result.data.checked_definition_ids.length !== 2 || result.diagnostics.length === 0) {
+        throw new Error("check-public omitted checked definition IDs or diagnostics");
+      }
+    },
+  },
+  {
     name: "dynamic method summary",
     args: [
       "calcit/test-method-errors.cirru",

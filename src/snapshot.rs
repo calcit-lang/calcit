@@ -184,6 +184,39 @@ impl SnapshotTarget {
   }
 }
 
+/// Read one field from definition-level `:ffi` metadata.
+pub fn ffi_metadata_value<'a>(ffi: &'a Edn, key: &str) -> Option<&'a Edn> {
+  match ffi {
+    Edn::Struct(value) => value.pairs.iter().find(|(field, _)| field.ref_str() == key).map(|(_, value)| value),
+    Edn::Map(value) => value.get(&Edn::tag(key)),
+    _ => None,
+  }
+}
+
+/// Read the optional host target from definition-level `:ffi` metadata.
+///
+/// Definitions without a target are shared across entry targets. Callers that
+/// implement fail-closed checks should surface the returned error instead of
+/// treating malformed target metadata as shared.
+pub fn parse_ffi_target(ffi: &Edn) -> Result<Option<SnapshotTarget>, String> {
+  let value = ffi_metadata_value(ffi, "target");
+  let Some(value) = value else {
+    return Ok(None);
+  };
+  let name = match value {
+    Edn::Tag(tag) => tag.ref_str(),
+    Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':'),
+    _ => return Err(format!("expected :ffi :target to be a tag, string, or symbol, got `{value}`")),
+  };
+  match name {
+    "browser" => Ok(Some(SnapshotTarget::Browser)),
+    "node" => Ok(Some(SnapshotTarget::Node)),
+    "native" => Ok(Some(SnapshotTarget::Native)),
+    "wasm" => Ok(Some(SnapshotTarget::Wasm)),
+    _ => Err(format!("unknown :ffi :target `{name}`; expected browser, node, native, or wasm")),
+  }
+}
+
 /// Per-entry capability policy. Features remain implementation metadata; this
 /// policy only controls the diagnostics emitted when a body uses a capability
 /// without declaring it.

@@ -15,6 +15,8 @@ mod cli_handlers;
 
 #[path = "../deprecated_api.rs"]
 mod deprecated_api;
+#[path = "../public_api_check.rs"]
+mod public_api_check;
 #[path = "../quality_gate.rs"]
 mod quality_gate;
 #[path = "../type_coverage.rs"]
@@ -355,6 +357,7 @@ fn run_cli() -> Result<(), String> {
         let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
         return run_check_types(options, &snapshot);
       }
+      AnalyzeSubcommand::CheckPublic(_) => {}
       AnalyzeSubcommand::WeakTypes(options) => {
         let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
         return run_weak_types(options, &snapshot);
@@ -599,6 +602,7 @@ fn run_cli() -> Result<(), String> {
         &cli_args.emit_path,
         &snapshot,
       ),
+      AnalyzeSubcommand::CheckPublic(options) => public_api_check::run(options, &snapshot, &project_namespaces),
       AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot),
       AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(weak_type_options, &snapshot),
       AnalyzeSubcommand::DynamicMethods(options) => run_dynamic_methods(options, &entries, &snapshot, &project_namespaces),
