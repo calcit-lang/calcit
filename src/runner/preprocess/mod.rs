@@ -17415,17 +17415,16 @@ mod tests {
 
   #[test]
   fn preprocess_rejects_pending_async_value_as_call_argument() {
-    let mut features = HashSet::new();
-    features.insert(EdnTag::from("async"));
-    let fn_type = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+    let signature = CalcitFnTypeAnnotation {
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![],
       return_type: Arc::new(CalcitTypeAnnotation::String),
       fn_kind: SchemaKind::Fn,
       rest_type: None,
-      features: Arc::new(features),
-    })));
+      features: Arc::new(HashSet::new()),
+    };
+    let fn_type = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature.with_async_invocation())));
     let async_name: Arc<str> = Arc::from("load-text");
     let async_local = Calcit::Local(CalcitLocal {
       idx: CalcitLocal::track_sym(&async_name),

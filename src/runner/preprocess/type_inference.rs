@@ -2228,17 +2228,16 @@ mod tests {
 
   #[test]
   fn async_callable_alias_requires_await_for_its_logical_value() {
-    let mut features = HashSet::new();
-    features.insert(EdnTag::from("async"));
-    let async_fn = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+    let signature = CalcitFnTypeAnnotation {
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![],
       return_type: Arc::new(CalcitTypeAnnotation::String),
       fn_kind: SchemaKind::Fn,
       rest_type: None,
-      features: Arc::new(features),
-    })));
+      features: Arc::new(HashSet::new()),
+    };
+    let async_fn = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature.with_async_invocation())));
     let invocation = Calcit::from(vec![typed_local("load-text", async_fn)]);
 
     let pending = infer_type_from_expr(&invocation, &ScopeTypes::new()).expect("async invocation type");

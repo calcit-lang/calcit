@@ -835,6 +835,8 @@ struct FnSchemaFields<'a> {
   async_invocation: Option<&'a Calcit>,
 }
 
+const ASYNC_INVOCATION_FEATURE: &str = "$async-invocation";
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CalcitGenericBound {
   pub name: Arc<str>,
@@ -2274,7 +2276,7 @@ impl CalcitTypeAnnotation {
       .async_invocation
       .is_some_and(|value| !matches!(value, Calcit::Nil | Calcit::Unit | Calcit::Bool(false)))
     {
-      features.insert(EdnTag::from("async"));
+      features.insert(EdnTag::from(ASYNC_INVOCATION_FEATURE));
     }
     let features = Arc::new(features);
 
@@ -2558,7 +2560,7 @@ impl CalcitTypeAnnotation {
       .as_ref()
       .clone();
     if matches!(map.tag_get("async"), Some(Edn::Bool(true))) {
-      features.insert(EdnTag::from("async"));
+      features.insert(EdnTag::from(ASYNC_INVOCATION_FEATURE));
     }
     let features = Arc::new(features);
     Some(CalcitFnTypeAnnotation {
@@ -7920,13 +7922,13 @@ impl Hash for CalcitFnTypeAnnotation {
 
 impl CalcitFnTypeAnnotation {
   pub(crate) fn is_async_invocation(&self) -> bool {
-    self.features.iter().any(|feature| feature.ref_str() == "async")
+    self.features.iter().any(|feature| feature.ref_str() == ASYNC_INVOCATION_FEATURE)
   }
 
   pub(crate) fn with_async_invocation(&self) -> Self {
     let mut cloned = self.clone();
     let mut features = cloned.features.as_ref().clone();
-    features.insert(EdnTag::from("async"));
+    features.insert(EdnTag::from(ASYNC_INVOCATION_FEATURE));
     cloned.features = Arc::new(features);
     cloned
   }
@@ -7969,7 +7971,7 @@ impl CalcitFnTypeAnnotation {
     let visible_features = self
       .features
       .iter()
-      .filter(|feature| feature.ref_str() != "async")
+      .filter(|feature| feature.ref_str() != ASYNC_INVOCATION_FEATURE)
       .cloned()
       .collect::<Vec<_>>();
     if visible_features.is_empty() {
