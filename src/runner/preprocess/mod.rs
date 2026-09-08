@@ -14428,6 +14428,8 @@ mod tests {
     use cirru_edn::EdnTag;
     use cirru_parser::Cirru;
 
+    let _guard = lock_preprocess_test_state();
+
     let internal_target = Calcit::Import(CalcitImport {
       ns: Arc::from(calcit::CORE_NS),
       def: Arc::from("&demo:rename"),

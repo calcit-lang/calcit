@@ -2975,18 +2975,14 @@ impl CalcitTypeAnnotation {
           if let Some(inner_form) = enum_value.extra.first() {
             return Arc::new(CalcitTypeAnnotation::List(parse_nested(inner_form)));
           }
-          return Arc::new(CalcitTypeAnnotation::List(Arc::new(Self::Dynamic)));
+          return Arc::new(CalcitTypeAnnotation::List(DYNAMIC_TYPE.clone()));
         }
         if is_map_tag(tag) {
           if enum_value.extra.len() > 2 {
             eprintln!("[Warn] :map expects at most 2 arguments, got {}", enum_value.extra.len());
           }
-          let key_type = enum_value
-            .extra
-            .first()
-            .map(parse_nested)
-            .unwrap_or_else(|| Arc::new(Self::Dynamic));
-          let val_type = enum_value.extra.get(1).map(parse_nested).unwrap_or_else(|| Arc::new(Self::Dynamic));
+          let key_type = enum_value.extra.first().map(parse_nested).unwrap_or_else(|| DYNAMIC_TYPE.clone());
+          let val_type = enum_value.extra.get(1).map(parse_nested).unwrap_or_else(|| DYNAMIC_TYPE.clone());
           return Arc::new(CalcitTypeAnnotation::Map(key_type, val_type));
         }
         if is_set_tag(tag) {
@@ -2996,7 +2992,7 @@ impl CalcitTypeAnnotation {
           if let Some(inner_form) = enum_value.extra.first() {
             return Arc::new(CalcitTypeAnnotation::Set(parse_nested(inner_form)));
           }
-          return Arc::new(CalcitTypeAnnotation::Set(Arc::new(Self::Dynamic)));
+          return Arc::new(CalcitTypeAnnotation::Set(DYNAMIC_TYPE.clone()));
         }
         if is_ref_tag(tag) {
           if enum_value.extra.len() > 1 {
@@ -3005,7 +3001,7 @@ impl CalcitTypeAnnotation {
           if let Some(inner_form) = enum_value.extra.first() {
             return Arc::new(CalcitTypeAnnotation::Ref(parse_nested(inner_form)));
           }
-          return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
+          return Arc::new(CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone()));
         }
         if tag.ref_str().trim_start_matches(':') == "fn" {
           if let Some(schema_form) = enum_value.extra.first()
@@ -3123,14 +3119,14 @@ impl CalcitTypeAnnotation {
           if let Some(inner_form) = xs.get(1) {
             return Arc::new(CalcitTypeAnnotation::List(parse_nested(inner_form)));
           }
-          return Arc::new(CalcitTypeAnnotation::List(Arc::new(Self::Dynamic)));
+          return Arc::new(CalcitTypeAnnotation::List(DYNAMIC_TYPE.clone()));
         }
         if is_map_tag(tag) {
           if xs.len() > 3 {
             eprintln!("[Warn] :map expects at most 2 arguments, got {}", xs.len() as i64 - 1);
           }
-          let key_type = xs.get(1).map(parse_nested).unwrap_or_else(|| Arc::new(Self::Dynamic));
-          let val_type = xs.get(2).map(parse_nested).unwrap_or_else(|| Arc::new(Self::Dynamic));
+          let key_type = xs.get(1).map(parse_nested).unwrap_or_else(|| DYNAMIC_TYPE.clone());
+          let val_type = xs.get(2).map(parse_nested).unwrap_or_else(|| DYNAMIC_TYPE.clone());
           return Arc::new(CalcitTypeAnnotation::Map(key_type, val_type));
         }
         if is_set_tag(tag) {
@@ -3140,7 +3136,7 @@ impl CalcitTypeAnnotation {
           if let Some(inner_form) = xs.get(1) {
             return Arc::new(CalcitTypeAnnotation::Set(parse_nested(inner_form)));
           }
-          return Arc::new(CalcitTypeAnnotation::Set(Arc::new(Self::Dynamic)));
+          return Arc::new(CalcitTypeAnnotation::Set(DYNAMIC_TYPE.clone()));
         }
         if is_ref_tag(tag) {
           if xs.len() > 2 {
@@ -3149,7 +3145,7 @@ impl CalcitTypeAnnotation {
           if let Some(inner_form) = xs.get(1) {
             return Arc::new(CalcitTypeAnnotation::Ref(parse_nested(inner_form)));
           }
-          return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
+          return Arc::new(CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone()));
         }
         if tag_name == "fn" {
           if let Some(schema_form) = xs.get(1)
@@ -3210,24 +3206,24 @@ impl CalcitTypeAnnotation {
             if let Some(inner_form) = xs.get(2) {
               return Arc::new(CalcitTypeAnnotation::List(parse_nested(inner_form)));
             }
-            return Arc::new(CalcitTypeAnnotation::List(Arc::new(Self::Dynamic)));
+            return Arc::new(CalcitTypeAnnotation::List(DYNAMIC_TYPE.clone()));
           }
           if tag_name == "map" {
-            let key_type = xs.get(2).map(parse_nested).unwrap_or_else(|| Arc::new(Self::Dynamic));
-            let val_type = xs.get(3).map(parse_nested).unwrap_or_else(|| Arc::new(Self::Dynamic));
+            let key_type = xs.get(2).map(parse_nested).unwrap_or_else(|| DYNAMIC_TYPE.clone());
+            let val_type = xs.get(3).map(parse_nested).unwrap_or_else(|| DYNAMIC_TYPE.clone());
             return Arc::new(CalcitTypeAnnotation::Map(key_type, val_type));
           }
           if tag_name == "set" {
             if let Some(inner_form) = xs.get(2) {
               return Arc::new(CalcitTypeAnnotation::Set(parse_nested(inner_form)));
             }
-            return Arc::new(CalcitTypeAnnotation::Set(Arc::new(Self::Dynamic)));
+            return Arc::new(CalcitTypeAnnotation::Set(DYNAMIC_TYPE.clone()));
           }
           if tag_name == "ref" {
             if let Some(inner_form) = xs.get(2) {
               return Arc::new(CalcitTypeAnnotation::Ref(parse_nested(inner_form)));
             }
-            return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
+            return Arc::new(CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone()));
           }
           if tag_name == "fn" {
             if let Some(schema_form) = xs.get(2)
@@ -4688,9 +4684,9 @@ impl CalcitTypeAnnotation {
           Self::Tag
         }
       }
-      Calcit::List(_) => Self::List(Arc::new(Self::Dynamic)),
-      Calcit::Map(_) => Self::Map(Arc::new(Self::Dynamic), Arc::new(Self::Dynamic)),
-      Calcit::Set(_) => Self::Set(Arc::new(Self::Dynamic)),
+      Calcit::List(_) => Self::List(DYNAMIC_TYPE.clone()),
+      Calcit::Map(_) => Self::Map(DYNAMIC_TYPE.clone(), DYNAMIC_TYPE.clone()),
+      Calcit::Set(_) => Self::Set(DYNAMIC_TYPE.clone()),
       Calcit::Struct(struct_value) => Self::StructValue(struct_value.struct_ref.clone()),
       Calcit::EnumDef(enum_def) => Self::EnumDef(Arc::new(enum_def.to_owned())),
       Calcit::StructDef(struct_def) => Self::StructDef(Arc::new(struct_def.to_owned())),
@@ -4722,7 +4718,7 @@ impl CalcitTypeAnnotation {
           Self::Dynamic
         }
       }
-      Calcit::Ref(_, _) => Self::Ref(Arc::new(Self::Dynamic)),
+      Calcit::Ref(_, _) => Self::Ref(DYNAMIC_TYPE.clone()),
       Calcit::Symbol { .. } => Self::Symbol,
       Calcit::Buffer(_) => Self::Buffer,
       Calcit::F64Buffer(_) => Self::F64Buffer,
@@ -4933,30 +4929,31 @@ impl CalcitTypeAnnotation {
           Edn::enum_value(name.trim_start_matches('\''), args.iter().map(|arg| arg.to_type_edn()).collect())
         }
       }
-      // Parameterized builtins – keep inner type if non-dynamic
+      // Bare containers share DYNAMIC_TYPE for their omitted arguments. An
+      // explicitly written Dynamic is a distinct Arc and must round-trip.
       Self::List(inner) => {
-        if matches!(inner.as_ref(), Self::Dynamic) {
+        if Arc::ptr_eq(inner, &DYNAMIC_TYPE) {
           Edn::Symbol(Arc::from("List"))
         } else {
           Edn::enum_value("List", vec![inner.to_type_edn()])
         }
       }
       Self::Map(k, v) => {
-        if matches!(k.as_ref(), Self::Dynamic) && matches!(v.as_ref(), Self::Dynamic) {
+        if Arc::ptr_eq(k, &DYNAMIC_TYPE) && Arc::ptr_eq(v, &DYNAMIC_TYPE) {
           Edn::Symbol(Arc::from("Map"))
         } else {
           Edn::enum_value("Map", vec![k.to_type_edn(), v.to_type_edn()])
         }
       }
       Self::Set(inner) => {
-        if matches!(inner.as_ref(), Self::Dynamic) {
+        if Arc::ptr_eq(inner, &DYNAMIC_TYPE) {
           Edn::Symbol(Arc::from("Set"))
         } else {
           Edn::enum_value("Set", vec![inner.to_type_edn()])
         }
       }
       Self::Ref(inner) => {
-        if matches!(inner.as_ref(), Self::Dynamic) {
+        if Arc::ptr_eq(inner, &DYNAMIC_TYPE) {
           Edn::Symbol(Arc::from("Ref"))
         } else {
           Edn::enum_value("Ref", vec![inner.to_type_edn()])
@@ -7211,6 +7208,46 @@ mod tests {
       CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::Symbol(Arc::from("Dynamic"))).as_ref(),
       CalcitTypeAnnotation::Dynamic
     ));
+  }
+
+  #[test]
+  fn explicit_dynamic_container_arguments_round_trip_without_becoming_bare() {
+    for name in ["List", "Set", "Ref"] {
+      let explicit =
+        CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::enum_value(name, vec![Edn::Symbol(Arc::from("Dynamic"))]));
+      assert_eq!(
+        explicit.to_type_edn(),
+        Edn::enum_value(name, vec![Edn::Symbol(Arc::from("Dynamic"))]),
+        "explicit {name}<Dynamic> must remain auditable"
+      );
+
+      let bare = CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::Symbol(Arc::from(name)));
+      assert_eq!(
+        bare.to_type_edn(),
+        Edn::Symbol(Arc::from(name)),
+        "bare {name} must remain distinguishable"
+      );
+    }
+
+    let explicit_map = CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::enum_value(
+      "Map",
+      vec![Edn::Symbol(Arc::from("Dynamic")), Edn::Symbol(Arc::from("Dynamic"))],
+    ));
+    assert_eq!(
+      explicit_map.to_type_edn(),
+      Edn::enum_value("Map", vec![Edn::Symbol(Arc::from("Dynamic")), Edn::Symbol(Arc::from("Dynamic"))])
+    );
+    let bare_map = CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::Symbol(Arc::from("Map")));
+    assert_eq!(bare_map.to_type_edn(), Edn::Symbol(Arc::from("Map")));
+
+    let nested = CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::enum_value(
+      "List",
+      vec![Edn::enum_value("List", vec![Edn::Symbol(Arc::from("Dynamic"))])],
+    ));
+    assert_eq!(
+      nested.to_type_edn(),
+      Edn::enum_value("List", vec![Edn::enum_value("List", vec![Edn::Symbol(Arc::from("Dynamic"))])])
+    );
   }
 
   #[test]

@@ -2840,15 +2840,18 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
 mod tests {
   use super::{
     TransactionOperationReport, bump_semver_value, collect_format_advisories, count_legacy_any_schema_fields,
-    count_legacy_inherent_impls, handle_add_import, handle_add_test, handle_imports, handle_rm_test, load_snapshot,
+    count_legacy_inherent_impls, handle_add_import, handle_add_test, handle_imports, handle_rm_test, handle_schema, load_snapshot,
     parse_examples_input, parse_import_rules_input, parse_input_to_cirru, parse_schema_input, parse_transaction_operations,
     rename_definition_declaration, run_staged_transaction_with, save_schema_preserving_snapshot, save_snapshot,
   };
-  use crate::cli_args::{EditAddImportCommand, EditAddTestCommand, EditImportsCommand, EditRmTestCommand};
+  use crate::cli_args::{EditAddImportCommand, EditAddTestCommand, EditImportsCommand, EditRmTestCommand, EditSchemaCommand};
   use crate::cli_handlers::test_support::TestProject;
+  use calcit::calcit::CalcitTypeAnnotation;
+  use cirru_edn::Edn;
   use cirru_parser::Cirru;
   use std::fs;
   use std::path::Path;
+  use std::sync::Arc;
 
   type TestSnapshot = TestProject;
 
@@ -3230,6 +3233,28 @@ mod tests {
     );
     let error = parse_schema_input(":: :ref :bool").expect_err("bare schema should fail");
     assert!(error.contains("Schema examples: `quote :string`"), "error: {error}");
+  }
+
+  #[test]
+  fn schema_edit_preserves_explicit_dynamic_container_arguments() {
+    let fixture = TestSnapshot::from_fixture();
+    let path = fixture.snapshot_string();
+    let opts = EditSchemaCommand {
+      target: "app.main/test-fn".to_owned(),
+      file: None,
+      code: Some("quote $ :: 'Fn $ {} (:args ([] (:: 'List 'Dynamic))) (:return (:: 'List 'Dynamic))".to_owned()),
+      clear: false,
+    };
+
+    handle_schema(&opts, &path).expect("explicit List<Dynamic> schema should be written");
+    let snapshot = load_snapshot(&path).expect("edited snapshot should load");
+    let schema = &snapshot.files["app.main"].defs["test-fn"].schema;
+    let CalcitTypeAnnotation::Fn(signature) = schema.as_ref() else {
+      panic!("expected Fn schema, got {schema:?}")
+    };
+    let explicit_list = Edn::enum_value("List", vec![Edn::Symbol(Arc::from("Dynamic"))]);
+    assert_eq!(signature.arg_types[0].to_type_edn(), explicit_list);
+    assert_eq!(signature.return_type.to_type_edn(), explicit_list);
   }
 
   #[test]
