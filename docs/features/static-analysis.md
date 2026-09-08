@@ -14,6 +14,7 @@ aliases:
 entry_for:
   - "assert-type"
   - "calcit analyze check-types"
+  - "calcit analyze check-public"
   - "calcit analyze weak-types"
   - "calcit analyze deprecated"
   - "calcit analyze quality"
@@ -56,6 +57,10 @@ Use the CLI reports when you need to understand type quality without running the
 ```bash
 # Coverage by definition; unknown code is reported as none, never as full
 calcit analyze check-types --ns app.main
+
+# Preprocess every definition in shared and Node-specific public namespaces
+calcit --entry node calcit.cirru analyze check-public \
+  --ns package.shared --ns package.node --format json
 
 # All weak type locations
 calcit analyze weak-types --ns app.main
@@ -111,6 +116,29 @@ calcit query type-at app.main/calculate-total --path code@3.2 --format json
 ```
 
 `check-types` treats nested dynamic slots such as bare `:ref`, `:list`, or `:map` as partial coverage and includes actionable `[W_SCHEMA_DYNAMIC]` entries in `schema_issues`. An unbound `*type-slot` is also partial and emits `[W_UNRESOLVED_TYPE_SLOT]`; bind it in the selected entry or explicitly choose `:dynamic` for a documented boundary. When partial/none definitions exist, human output adds an `agent-note` and JSON emits `W_TYPE_COVERAGE_GAPS`. Strict preprocessing reports `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA` when a reachable project function has neither a structured root schema nor an embedded structured `Fn` hint, or when a programmatically supplied macro that reaches preprocessing has no structured root schema; a nested function hint is not macro-contract evidence. Replace a missing or whole-`Dynamic` root with a structured contract and keep any reviewed `Dynamic` at an exact nested position. Existing embedded `Fn` hints remain valid function-contract evidence during Snapshot migration. Normal Snapshot-loaded macros follow an earlier, stricter path: a legacy runtime `Fn` or whole-`Dynamic` macro schema is rejected with its definition path during Snapshot loading, before static analysis starts. For an already structured `CodeEntry`, migrate it with the final compatible Calcit 0.13.51 release, then declare phase-aware `Macro` fields explicitly. An earlier direct-quote definition instead uses current `edit format`, which derives only parameter arity as `Syntax`, emits `Expr<Dynamic>`, and grants no capabilities; it does not rewrite existing Dynamic schemas or guess semantic contracts. Use `--deps`: release audits must inspect resolved module artifacts, not only each dependency's current source branch. `weak-types --format json` reports the exact Snapshot/schema path plus an `impact` and `suggestion` for every occurrence; unresolved dynamic debt emits `W_DYNAMIC_TYPE_DEBT`, unbound slots emit `W_UNRESOLVED_TYPE_SLOT`, while unresolved or compatibility-Optional nil debt emits `W_NIL_TYPE_DEBT`. Definitions marked with the explicit `:js-ffi` feature remain classified as intentional boundaries rather than ordinary unresolved dynamic debt. The bundled-core classification is position-specific: a receiver may remain queued for a future capability while its key, callback, or return position is retained as `compiler-specialized-contracts` only when preprocessing has focused receiver-driven checking or inference regressions. This records recovered type flow without treating the whole fallback contract as fully typed.
+
+### Target-aware public definition checks
+
+`analyze check-public` preprocesses every top-level definition in each exact
+`--ns` scope without running the entry or host effects. Calcit has no separate
+private-export marker, so every definition stored in a selected namespace is
+public for this command; functions, values, macros, structs, enums, traits, and
+implementations are all enumerated. Repeat `--ns` to combine a shared namespace
+with the namespace for one runtime.
+
+The selected entry must declare `:target :browser`, `:node`, `:native`, or
+`:wasm`. A definition without `:ffi :target` is shared. A definition whose
+target differs from the entry fails with `E_JS_FFI_TARGET_MISMATCH` before its
+body is preprocessed. Missing, empty, dependency-owned, or malformed scopes
+also fail closed; pass `--deps` only when checking an explicitly selected
+loaded dependency namespace. Ordinary `--check-only` keeps its entry-reachable
+semantics.
+
+JSON output uses the `analyze.check-public` schema-version 1 envelope. It always
+includes `checked_definition_ids`, completeness/pass counts, diagnostics,
+target, duration, and a deterministic scope revision. `--summary-only` omits
+the per-definition rows but retains checked IDs so CI can prove what was
+actually covered. Any preprocessing warning or error produces a non-zero exit.
 
 Strict call preprocessing also reports `E_ERASED_GENERIC_RELATION` when an
 argument still contains `Dynamic` at a position tied to another occurrence of

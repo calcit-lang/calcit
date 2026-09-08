@@ -469,6 +469,59 @@ fn strict_mode_rejects_source_definition_reached_from_macro_expansion_without_pu
 }
 
 #[test]
+fn public_check_reaches_unused_definitions_without_changing_entry_check_semantics() {
+  run_with_large_stack(|| {
+    builtins::effects::init_effects_states();
+    let mut snapshot = snapshot::Snapshot::default();
+    snapshot
+      .entries
+      .get_mut(snapshot::DEFAULT_ENTRY_NAME)
+      .expect("default entry")
+      .target = Some(snapshot::SnapshotTarget::Node);
+    let mut file = snapshot::create_file_from_snippet(concat!(
+      "defn main! () &unit\n\n",
+      "defn reload! () &unit\n\n",
+      "defn unused-bad ()\n  + 1 |bad",
+    ))
+    .expect("public-check snippet should parse");
+    let fn_schema = |return_type| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![],
+        return_type: Arc::new(return_type),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })))
+    };
+    file.defs.get_mut("main!").expect("main entry").schema = fn_schema(CalcitTypeAnnotation::Unit);
+    file.defs.get_mut("reload!").expect("reload entry").schema = fn_schema(CalcitTypeAnnotation::Unit);
+    file.defs.get_mut("unused-bad").expect("unused entry").schema = fn_schema(CalcitTypeAnnotation::Number);
+    snapshot.files.insert("app.main".to_owned(), file);
+
+    let project_namespaces = HashSet::from(["app.main".to_owned()]);
+    let entries = prepare_snapshot_entries(snapshot.clone());
+    let _strict = StrictTypesReset::enabled();
+    run_check_only(&entries).expect("ordinary entry check must retain reachability semantics");
+
+    let error = public_api_check::run(
+      &calcit::cli_args::CheckPublicCommand {
+        ns: vec!["app.main".to_owned()],
+        format: "json".to_owned(),
+        deps: false,
+        summary_only: false,
+      },
+      &snapshot,
+      &project_namespaces,
+      None,
+    )
+    .expect_err("public check must preprocess an unused invalid definition");
+    assert!(error.contains("2 passed"), "unexpected public-check outcome: {error}");
+  });
+}
+
+#[test]
 fn strict_mode_runs_definition_tests_with_generated_function_schemas() {
   run_with_large_stack(|| {
     let namespace = format!("app.strict-definition-test-{}", std::process::id());

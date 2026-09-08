@@ -290,6 +290,22 @@ calcit analyze dynamic-methods --deps
 
 The default scope contains project namespaces only. `--deps` includes reachable dependency namespaces, and `--max` returns a non-zero status when the finding count exceeds the reviewed limit.
 
+To preprocess every definition in explicitly selected public namespaces under
+the active entry target, use:
+
+```bash
+calcit --entry node calcit.cirru analyze check-public \
+  --ns package.shared --ns package.node --format json
+```
+
+`check-public` requires one or more exact `--ns` values and an entry with an
+explicit target. Definitions without `:ffi :target` are shared; mismatched
+definition targets fail before preprocessing. Project namespaces are admitted
+by default, while `--deps` explicitly admits selected loaded dependency/core
+namespaces. Zero matches and partial checks fail. JSON schema version 1 reports
+the checked definition IDs, per-definition status, diagnostics, completeness,
+duration, and scope revision; `--summary-only` omits only the detailed rows.
+
 ### Macro Expansion Metrics (--macro-metrics)
 
 Use opt-in macro metrics to profile compile, check, and hot-reload work without

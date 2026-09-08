@@ -323,6 +323,55 @@ const scenarios = [
     },
   },
   {
+    name: "target-aware public check failure",
+    args: [
+      "calcit/type-fail/js-nullish-dereference-strict.cirru",
+      "analyze",
+      "check-public",
+      "--ns",
+      "type-fail-js-nullish-dereference-strict.main",
+      "--format",
+      "json",
+    ],
+    expectedStatus: 1,
+    check(result) {
+      if (result.schema_version !== 1 || result.command !== "analyze.check-public") {
+        throw new Error("unexpected analyze.check-public envelope");
+      }
+      if (result.data.target !== "node" || result.data.summary.complete !== true || result.data.summary.passed !== false) {
+        throw new Error("check-public lost target, completeness, or failure state");
+      }
+      if (result.data.checked_definition_ids.length !== 2 || result.diagnostics.length === 0) {
+        throw new Error("check-public omitted checked definition IDs or diagnostics");
+      }
+    },
+  },
+  {
+    name: "strict public check failure stays structured",
+    strictTypes: true,
+    args: [
+      "calcit/type-fail/js-nullish-dereference-strict.cirru",
+      "analyze",
+      "check-public",
+      "--ns",
+      "type-fail-js-nullish-dereference-strict.main",
+      "--format",
+      "json",
+    ],
+    expectedStatus: 1,
+    check(result) {
+      if (result.schema_version !== 1 || result.command !== "analyze.check-public") {
+        throw new Error("strict check-public lost its structured envelope");
+      }
+      if (result.data.summary.complete !== false || result.data.summary.definitions_checked !== 0) {
+        throw new Error("strict preflight failure reported partial public coverage");
+      }
+      if (result.diagnostics[0]?.code !== "E_PUBLIC_CHECK_STRICT_PREFLIGHT") {
+        throw new Error("strict preflight failure lost its structured diagnostic");
+      }
+    },
+  },
+  {
     name: "dynamic method summary",
     args: [
       "calcit/test-method-errors.cirru",
@@ -438,7 +487,9 @@ for (const scenario of scenarios) {
   const started = process.hrtime.bigint();
   // These scenarios exercise the historical all-features fixture and its
   // machine envelopes, not the 0.14 strict-default acceptance path.
-  const fixtureArgs = [scenario.args[0], "--compat-types", ...scenario.args.slice(1)];
+  const fixtureArgs = scenario.strictTypes
+    ? [scenario.args[0], "--strict-types", ...scenario.args.slice(1)]
+    : [scenario.args[0], "--compat-types", ...scenario.args.slice(1)];
   const child = spawnSync(binary, fixtureArgs, {
     cwd: process.cwd(),
     encoding: "utf8",

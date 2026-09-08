@@ -3701,28 +3701,12 @@ fn require_js_ffi_feature(
   Ok(())
 }
 
-fn ffi_metadata_value<'a>(ffi: &'a cirru_edn::Edn, key: &str) -> Option<&'a cirru_edn::Edn> {
-  match ffi {
-    cirru_edn::Edn::Struct(value) => value.pairs.iter().find(|(field, _)| field.ref_str() == key).map(|(_, value)| value),
-    cirru_edn::Edn::Map(value) => value.get(&cirru_edn::Edn::tag(key)),
-    _ => None,
-  }
+fn ffi_metadata_target(ffi: &cirru_edn::Edn) -> Option<crate::snapshot::SnapshotTarget> {
+  crate::snapshot::parse_ffi_target(ffi).ok().flatten()
 }
 
-fn ffi_metadata_target(ffi: &cirru_edn::Edn) -> Option<crate::snapshot::SnapshotTarget> {
-  let value = ffi_metadata_value(ffi, "target")?;
-  let name = match value {
-    cirru_edn::Edn::Tag(tag) => tag.ref_str(),
-    cirru_edn::Edn::Str(text) | cirru_edn::Edn::Symbol(text) => text.trim_start_matches(':'),
-    _ => return None,
-  };
-  match name {
-    "browser" => Some(crate::snapshot::SnapshotTarget::Browser),
-    "node" => Some(crate::snapshot::SnapshotTarget::Node),
-    "native" => Some(crate::snapshot::SnapshotTarget::Native),
-    "wasm" => Some(crate::snapshot::SnapshotTarget::Wasm),
-    _ => None,
-  }
+fn ffi_metadata_value<'a>(ffi: &'a cirru_edn::Edn, key: &str) -> Option<&'a cirru_edn::Edn> {
+  crate::snapshot::ffi_metadata_value(ffi, key)
 }
 
 fn validate_js_ffi_target(

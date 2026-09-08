@@ -163,6 +163,21 @@ calcit calcit.cirru analyze call-graph --show-unused --ns-prefix package
 
 这是 entry-relative 报告。公开 API、外部回调、替代入口和由消费者调用的定义都可能显示为 unreachable；不得仅凭该报告自动删除。发布前应把每个命中分类为：真正 dead code、公开 API、替代入口、动态/FFI 调用，或缺失测试覆盖。
 
+类库应另外显式检查每个承诺的运行目标。每条命令选择 shared namespace
+和对应 target namespace，且 entry 必须配置同名 `:target`：
+
+```bash
+calcit --entry node calcit.cirru analyze check-public \
+  --ns package.shared --ns package.node --format json
+calcit --entry browser calcit.cirru analyze check-public \
+  --ns package.shared --ns package.browser --format json
+```
+
+该检查枚举 namespace 中全部 definitions，因此未被测试入口引用的公开函数、
+data declaration 和 external trait 也会预处理。空 scope、缺少 target、错误
+runtime target 或任何诊断都会返回非零；不要用生成的引用函数或手写 export
+清单替代它。普通 `--check-only` 仍只验证 entry 可达路径。
+
 ## 6. 真实消费者回归
 
 CLI 查询、编辑、类型分析或公共 API 改动后，使用全局安装的新 `calcit` 在 Respo 等真实项目验证：
@@ -180,6 +195,8 @@ caps --ci
 calcit calcit.cirru edit format
 git diff --exit-code -- calcit.cirru
 calcit calcit.cirru --check-only
+calcit --entry node calcit.cirru analyze check-public \
+  --ns package.shared --ns package.node --summary-only --format json
 calcit calcit.cirru analyze check-types --summary-only --format json
 calcit calcit.cirru analyze weak-types \
   --only schema-dynamic,unresolved-type-slot,code-dynamic \
