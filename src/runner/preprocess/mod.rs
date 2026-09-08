@@ -4176,7 +4176,7 @@ fn raw_struct_constructor_matches_known_layout(args: &CalcitList, scope_types: &
 
   let mut provided_fields = HashSet::with_capacity(struct_def.fields.len());
   let items = args.to_vec();
-  for pair in items[1..].chunks_exact(2) {
+  for pair in items[1..].as_chunks::<2>().0 {
     let Calcit::Tag(field) = &pair[0] else {
       return false;
     };
@@ -4348,11 +4348,11 @@ fn check_struct_update_fields(
     },
     Calcit::Proc(CalcitProc::NativeStructWith) if args.len() >= 3 && (args.len() - 1).is_multiple_of(2) => {
       let items = args.iter().skip(1).collect::<Vec<_>>();
-      items.chunks_exact(2).map(|pair| (pair[0], pair[1])).collect()
+      items.as_chunks::<2>().0.iter().map(|pair| (pair[0], pair[1])).collect()
     }
     Calcit::Proc(CalcitProc::NativeStructWithAt) if args.len() >= 4 && (args.len() - 1).is_multiple_of(3) => {
       let items = args.iter().skip(1).collect::<Vec<_>>();
-      items.chunks_exact(3).map(|triple| (triple[1], triple[2])).collect()
+      items.as_chunks::<3>().0.iter().map(|triple| (triple[1], triple[2])).collect()
     }
     _ => return,
   };
