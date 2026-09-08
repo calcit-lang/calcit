@@ -37,6 +37,62 @@ use super::{
 // Core resolution
 // ---------------------------------------------------------------------------
 
+const ASYNC_INVOCATION_VALUE_TYPE: &str = "calcit.core/$AsyncInvocation";
+
+fn pending_async_value(logical_return: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::TypeRef(
+    Arc::from(ASYNC_INVOCATION_VALUE_TYPE),
+    Arc::new(vec![logical_return]),
+  ))
+}
+
+pub(crate) fn is_pending_async_value(value: &CalcitTypeAnnotation) -> bool {
+  matches!(value, CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == ASYNC_INVOCATION_VALUE_TYPE && args.len() == 1)
+}
+
+fn awaited_async_value(value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  match value.as_ref() {
+    CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == ASYNC_INVOCATION_VALUE_TYPE && args.len() == 1 => args[0].clone(),
+    _ => calcit::DYNAMIC_TYPE.clone(),
+  }
+}
+
+fn definition_marks_async(ns: &str, def: &str) -> bool {
+  program::lookup_def_code(ns, def).is_some_and(|code| CalcitTypeAnnotation::function_form_marks_async(&code))
+}
+
+fn invocation_return_type(
+  signature: &CalcitFnTypeAnnotation,
+  logical_return: Arc<CalcitTypeAnnotation>,
+  definition_async: bool,
+) -> Arc<CalcitTypeAnnotation> {
+  if signature.is_async_invocation() || definition_async {
+    pending_async_value(logical_return)
+  } else {
+    logical_return
+  }
+}
+
+fn definition_value_schema(ns: &str, def: &str, schema: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  if !definition_marks_async(ns, def) {
+    return schema;
+  }
+  match schema.as_ref() {
+    CalcitTypeAnnotation::Fn(signature) => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature.with_async_invocation()))),
+    _ => schema,
+  }
+}
+
+fn mark_async_callable(annotation: Arc<CalcitTypeAnnotation>, is_async: bool) -> Arc<CalcitTypeAnnotation> {
+  if !is_async {
+    return annotation;
+  }
+  match annotation.as_ref() {
+    CalcitTypeAnnotation::Fn(signature) => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature.with_async_invocation()))),
+    _ => annotation,
+  }
+}
+
 pub(crate) fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   match target {
     Calcit::Local(local) => {
@@ -304,9 +360,9 @@ pub(crate) fn infer_return_type_from_compiled_callable(
         && let Some(inferred_body_return) = infer_compiled_callable_body_return(ns, def, &compiled.preprocessed_code)
         && let Some(enriched) = enrich_declared_struct_return_with_impls(&declared_return, &inferred_body_return)
       {
-        return Some(enriched);
+        return Some(invocation_return_type(info, enriched, definition_marks_async(ns, def)));
       }
-      return Some(declared_return);
+      return Some(invocation_return_type(info, declared_return, definition_marks_async(ns, def)));
     }
   }
 
@@ -319,10 +375,18 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     match compiled.preprocessed_code {
       Calcit::Fn { info, .. } => {
         if let Some(resolved) = resolve_generic_return_type(&info, call_expr.iter().skip(1), scope_types) {
-          return Some(resolved);
+          return Some(if definition_marks_async(ns, def) {
+            pending_async_value(resolved)
+          } else {
+            resolved
+          });
         }
         if !is_core_enum_constructor || !info.return_type.contains_type_var() {
-          return Some(info.return_type.clone());
+          return Some(if definition_marks_async(ns, def) {
+            pending_async_value(info.return_type.clone())
+          } else {
+            info.return_type.clone()
+          });
         }
       }
       Calcit::Proc(proc) => {
@@ -344,7 +408,11 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     return None;
   };
   if info.generics.is_empty() || !info.return_type.contains_type_var() {
-    return Some(info.return_type.clone());
+    return Some(invocation_return_type(
+      info,
+      info.return_type.clone(),
+      definition_marks_async(ns, def),
+    ));
   }
 
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
@@ -369,7 +437,8 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   if resolved.contains_type_var() {
     return None;
   }
-  (resolved.resolve_to_struct().is_some() || resolved.resolve_to_enum().is_some()).then_some(resolved)
+  (resolved.resolve_to_struct().is_some() || resolved.resolve_to_enum().is_some())
+    .then(|| invocation_return_type(info, resolved, definition_marks_async(ns, def)))
 }
 
 thread_local! {
@@ -920,7 +989,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         Calcit::Local(local) => {
           let type_ann = &local.type_info;
           match type_ann.as_ref() {
-            CalcitTypeAnnotation::Fn(fn_type) => Some(fn_type.return_type.clone()),
+            CalcitTypeAnnotation::Fn(fn_type) => Some(invocation_return_type(fn_type, fn_type.return_type.clone(), false)),
             CalcitTypeAnnotation::DynFn => Some(calcit::DYNAMIC_TYPE.clone()),
             _ => Some(type_ann.clone()),
           }
@@ -931,6 +1000,12 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
 
         // Import: could be a function, try to get its return type
         Calcit::Import(CalcitImport { ns, def, .. }) => {
+          if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "js-await" {
+            return xs
+              .get(1)
+              .and_then(|value| resolve_type_value(value, scope_types))
+              .map(awaited_async_value);
+          }
           if &**ns == calcit::CORE_NS
             && (&**def == "record-get" || &**def == "&struct:get")
             && let Some(field_type) = infer_struct_get_type(xs, scope_types)
@@ -943,6 +1018,12 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         // Symbol: might be a function reference before preprocessing
         // Try to resolve it and get the return type
         Calcit::Symbol { sym, info, .. } => {
+          if sym.as_ref() == "js-await" {
+            return xs
+              .get(1)
+              .and_then(|value| resolve_type_value(value, scope_types))
+              .map(awaited_async_value);
+          }
           if let Some(inferred) = infer_js_ffi_call_return_type(sym, xs, scope_types) {
             return Some(inferred);
           }
@@ -982,9 +1063,17 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           if info.return_type.contains_type_var()
             && let Some(resolved) = resolve_generic_return_type(info, xs.iter().skip(1), scope_types)
           {
-            return Some(resolved);
+            return Some(if definition_marks_async(&info.def_ns, &info.name) {
+              pending_async_value(resolved)
+            } else {
+              resolved
+            });
           }
-          Some(info.return_type.clone())
+          Some(if definition_marks_async(&info.def_ns, &info.name) {
+            pending_async_value(info.return_type.clone())
+          } else {
+            info.return_type.clone()
+          })
         }
 
         // Typed method invocation: resolve the selected trait signature and
@@ -1015,7 +1104,11 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
               return Some(calcit::DYNAMIC_TYPE.clone());
             }
           }
-          Some(info.return_type.substitute_type_vars(&bindings))
+          Some(invocation_return_type(
+            info,
+            info.return_type.substitute_type_vars(&bindings),
+            false,
+          ))
         }
 
         // Method access: infer struct field type when available
@@ -1070,7 +1163,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         Calcit::List(_) => {
           if let Some(head_type) = infer_type_from_expr(head, scope_types) {
             match head_type.as_ref() {
-              CalcitTypeAnnotation::Fn(fn_type) => Some(fn_type.return_type.clone()),
+              CalcitTypeAnnotation::Fn(fn_type) => Some(invocation_return_type(fn_type, fn_type.return_type.clone(), false)),
               CalcitTypeAnnotation::DynFn => Some(calcit::DYNAMIC_TYPE.clone()),
               // If head returns a non-function type, the call will fail at runtime
               // Return the non-callable type so caller can detect this issue
@@ -1090,6 +1183,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
 }
 
 fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation> {
+  let is_async = xs.iter().skip(3).any(CalcitTypeAnnotation::hint_form_marks_async);
   let hinted = xs
     .iter()
     .skip(3)
@@ -1108,10 +1202,13 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
     if !signature.arg_types.is_empty() || signature.rest_type.is_some() {
       return Arc::new(CalcitTypeAnnotation::DynFn);
     }
-    return inferred;
+    return mark_async_callable(inferred, is_async);
   };
   let CalcitTypeAnnotation::Fn(fn_annotation) = hinted.as_ref() else {
-    return hinted;
+    if is_async && let Some(inferred) = infer_unhinted_callback_signature(xs, &ScopeTypes::new()) {
+      return mark_async_callable(inferred, true);
+    }
+    return mark_async_callable(hinted, is_async);
   };
 
   let (parameter_types, inferred_rest_type) = infer_preprocessed_function_parameters(xs.get(2));
@@ -1125,15 +1222,18 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
     _ => fn_annotation.fn_kind,
   };
 
-  Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-    generics: fn_annotation.generics.clone(),
-    where_bounds: fn_annotation.where_bounds.clone(),
-    arg_types,
-    return_type: fn_annotation.return_type.clone(),
-    fn_kind,
-    rest_type: fn_annotation.rest_type.clone().or(inferred_rest_type),
-    features: fn_annotation.features.clone(),
-  })))
+  mark_async_callable(
+    Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: fn_annotation.generics.clone(),
+      where_bounds: fn_annotation.where_bounds.clone(),
+      arg_types,
+      return_type: fn_annotation.return_type.clone(),
+      fn_kind,
+      rest_type: fn_annotation.rest_type.clone().or(inferred_rest_type),
+      features: fn_annotation.features.clone(),
+    }))),
+    is_async,
+  )
 }
 
 /// Recover a concrete signature from an already preprocessed anonymous
@@ -1147,10 +1247,12 @@ pub(crate) fn infer_unhinted_callback_signature(xs: &CalcitList, scope_types: &S
     _ => return None,
   };
   if xs.len() <= 3
-    || xs
-      .iter()
-      .skip(3)
-      .any(|form| CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(form).is_some())
+    || xs.iter().skip(3).any(|form| {
+      matches!(
+        CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(form).as_deref(),
+        Some(CalcitTypeAnnotation::Fn(_))
+      )
+    })
   {
     return None;
   }
@@ -1721,7 +1823,7 @@ fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTy
   }
 
   if !matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
-    return Some(schema);
+    return Some(definition_value_schema(ns, def, schema));
   }
 
   // Data definitions often keep `:dynamic` as their value schema because their concrete field
@@ -1734,7 +1836,11 @@ fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTy
 
   let compiled = program::lookup_compiled_def(ns, def)?;
   match compiled.preprocessed_code {
-    Calcit::Fn { info, .. } => Some(Arc::new(CalcitTypeAnnotation::from_calcit_fn(&info))),
+    Calcit::Fn { info, .. } => Some(definition_value_schema(
+      ns,
+      def,
+      Arc::new(CalcitTypeAnnotation::from_calcit_fn(&info)),
+    )),
     Calcit::Proc(proc) => proc.get_type_signature().map(|signature| {
       Arc::new(CalcitTypeAnnotation::from_function_parts(
         signature.arg_types.clone(),
@@ -2104,6 +2210,60 @@ mod tests {
     items.push(Calcit::Proc(proc));
     items.extend(args);
     Calcit::from(items)
+  }
+
+  fn typed_local(name: &str, type_info: Arc<CalcitTypeAnnotation>) -> Calcit {
+    let sym: Arc<str> = Arc::from(name);
+    Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&sym),
+      sym,
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.async"),
+        at_def: Arc::from("main!"),
+      }),
+      location: None,
+      type_info,
+    })
+  }
+
+  #[test]
+  fn async_callable_alias_requires_await_for_its_logical_value() {
+    let mut features = HashSet::new();
+    features.insert(EdnTag::from("async"));
+    let async_fn = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: Arc::new(CalcitTypeAnnotation::String),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(features),
+    })));
+    let invocation = Calcit::from(vec![typed_local("load-text", async_fn)]);
+
+    let pending = infer_type_from_expr(&invocation, &ScopeTypes::new()).expect("async invocation type");
+    assert!(is_pending_async_value(pending.as_ref()));
+    assert!(!pending.is_compatible_with(&CalcitTypeAnnotation::String));
+
+    let awaited = Calcit::from(vec![symbol("js-await"), invocation]);
+    assert!(matches!(
+      infer_type_from_expr(&awaited, &ScopeTypes::new()).as_deref(),
+      Some(CalcitTypeAnnotation::String)
+    ));
+  }
+
+  #[test]
+  fn sync_callable_control_keeps_its_logical_return() {
+    let sync_fn = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![],
+      Arc::new(CalcitTypeAnnotation::String),
+    ));
+    let invocation = Calcit::from(vec![typed_local("read-text", sync_fn)]);
+
+    assert!(matches!(
+      infer_type_from_expr(&invocation, &ScopeTypes::new()).as_deref(),
+      Some(CalcitTypeAnnotation::String)
+    ));
   }
 
   fn symbol(name: &str) -> Calcit {

@@ -832,6 +832,7 @@ struct FnSchemaFields<'a> {
   rest: Option<&'a Calcit>,
   kind: Option<&'a Calcit>,
   features: Option<&'a Calcit>,
+  async_invocation: Option<&'a Calcit>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -1844,6 +1845,9 @@ impl CalcitTypeAnnotation {
             fields.features = Some(value);
           }
         }
+        "async" if fields.async_invocation.is_none() => {
+          fields.async_invocation = Some(value);
+        }
         _ => {}
       }
     };
@@ -2212,6 +2216,26 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// Return whether a `hint-fn` schema marks the surrounding function as async.
+  /// This is the checked invocation contract shared with JavaScript lowering.
+  pub(crate) fn hint_form_marks_async(form: &Calcit) -> bool {
+    let Some(items) = Self::get_hint_fn_items(form) else {
+      return false;
+    };
+    items.iter().skip(1).any(|item| {
+      Self::extract_schema_value_single(item, "async")
+        .is_some_and(|value| !matches!(value, Calcit::Nil | Calcit::Unit | Calcit::Bool(false)))
+    })
+  }
+
+  /// Return whether a source or preprocessed function definition carries an async hint.
+  pub(crate) fn function_form_marks_async(form: &Calcit) -> bool {
+    let Calcit::List(items) = form else {
+      return false;
+    };
+    items.iter().skip(3).any(Self::hint_form_marks_async)
+  }
+
   fn parse_fn_annotation_from_schema_form(
     form: &Calcit,
     generics: &[Arc<str>],
@@ -2245,7 +2269,14 @@ impl CalcitTypeAnnotation {
       _ => SchemaKind::Fn,
     };
 
-    let features = Self::parse_fn_features_from_form(fields.features);
+    let mut features = Self::parse_fn_features_from_form(fields.features).as_ref().clone();
+    if fields
+      .async_invocation
+      .is_some_and(|value| !matches!(value, Calcit::Nil | Calcit::Unit | Calcit::Bool(false)))
+    {
+      features.insert(EdnTag::from("async"));
+    }
+    let features = Arc::new(features);
 
     Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       generics: Arc::new(local_generics),
@@ -2455,7 +2486,7 @@ impl CalcitTypeAnnotation {
       _ => return None,
     };
 
-    let has_schema_fields = ["kind", "args", "return", "generics", "where", "rest", "features"]
+    let has_schema_fields = ["kind", "args", "return", "generics", "where", "rest", "features", "async"]
       .iter()
       .any(|key| map.tag_get(key).is_some());
     if !has_schema_fields {
@@ -2508,7 +2539,7 @@ impl CalcitTypeAnnotation {
     let rest_type = map
       .tag_get("rest")
       .map(|v| Self::parse_type_annotation_form_with_generics(&Self::edn_type_to_calcit(v), generics.as_slice()));
-    let features = map
+    let mut features = map
       .tag_get("features")
       .and_then(|v| {
         if let Edn::Set(xs) = v {
@@ -2523,7 +2554,13 @@ impl CalcitTypeAnnotation {
           None
         }
       })
-      .unwrap_or_default();
+      .unwrap_or_default()
+      .as_ref()
+      .clone();
+    if matches!(map.tag_get("async"), Some(Edn::Bool(true))) {
+      features.insert(EdnTag::from("async"));
+    }
+    let features = Arc::new(features);
     Some(CalcitFnTypeAnnotation {
       generics: Arc::new(generics),
       where_bounds: Arc::new(where_bounds),
@@ -6535,6 +6572,37 @@ mod tests {
   }
 
   #[test]
+  fn async_fn_schema_roundtrips_and_changes_callback_contract() {
+    let schema_form = Calcit::from(vec![
+      symbol("{}"),
+      Calcit::from(vec![Calcit::Tag(EdnTag::from("args")), Calcit::from(vec![symbol("[]")])]),
+      Calcit::from(vec![Calcit::Tag(EdnTag::from("return")), symbol("String")]),
+      Calcit::from(vec![Calcit::Tag(EdnTag::from("async")), Calcit::Bool(true)]),
+    ]);
+    let hint = Calcit::from(vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), schema_form]);
+    let annotation = CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(&hint).expect("async fn annotation");
+    let CalcitTypeAnnotation::Fn(async_signature) = annotation.as_ref() else {
+      panic!("expected fn annotation")
+    };
+    assert!(async_signature.is_async_invocation());
+
+    let serialized = async_signature.to_schema_edn();
+    let parsed = CalcitTypeAnnotation::parse_fn_schema_from_edn(&serialized).expect("roundtrip async schema");
+    assert!(parsed.is_async_invocation());
+
+    let sync_signature = CalcitFnTypeAnnotation {
+      features: Arc::new(HashSet::new()),
+      ..async_signature.as_ref().clone()
+    };
+    assert!(!async_signature.matches_signature(&sync_signature));
+    assert!(!sync_signature.matches_signature(async_signature));
+    assert_ne!(
+      CalcitTypeAnnotation::Fn(async_signature.clone()).cmp(&CalcitTypeAnnotation::Fn(Arc::new(sync_signature))),
+      Ordering::Equal
+    );
+  }
+
+  #[test]
   fn extracts_generics_from_schema_first_hint() {
     let ns: Arc<str> = Arc::from("tests");
     let hint_form = Calcit::List(Arc::new(CalcitList::from(&[
@@ -7768,7 +7836,8 @@ impl Ord for CalcitTypeAnnotation {
         .generics
         .cmp(&b.generics)
         .then_with(|| a.arg_types.cmp(&b.arg_types))
-        .then_with(|| a.return_type.cmp(&b.return_type)),
+        .then_with(|| a.return_type.cmp(&b.return_type))
+        .then_with(|| a.is_async_invocation().cmp(&b.is_async_invocation())),
       (Self::Macro(a), Self::Macro(b)) => a.cmp(b),
       (Self::Syntax(a), Self::Syntax(b)) => a.cmp(b),
       (Self::Set(a), Self::Set(b)) => a.cmp(b),
@@ -7833,6 +7902,7 @@ impl Ord for CalcitFnTypeAnnotation {
       .then_with(|| self.return_type.cmp(&other.return_type))
       .then_with(|| self.fn_kind.cmp(&other.fn_kind))
       .then_with(|| self.rest_type.cmp(&other.rest_type))
+      .then_with(|| self.is_async_invocation().cmp(&other.is_async_invocation()))
   }
 }
 
@@ -7844,10 +7914,23 @@ impl Hash for CalcitFnTypeAnnotation {
     self.return_type.hash(state);
     self.fn_kind.hash(state);
     self.rest_type.hash(state);
+    self.is_async_invocation().hash(state);
   }
 }
 
 impl CalcitFnTypeAnnotation {
+  pub(crate) fn is_async_invocation(&self) -> bool {
+    self.features.iter().any(|feature| feature.ref_str() == "async")
+  }
+
+  pub(crate) fn with_async_invocation(&self) -> Self {
+    let mut cloned = self.clone();
+    let mut features = cloned.features.as_ref().clone();
+    features.insert(EdnTag::from("async"));
+    cloned.features = Arc::new(features);
+    cloned
+  }
+
   fn where_bounds_to_edn(&self) -> Option<Edn> {
     if self.where_bounds.is_empty() {
       return None;
@@ -7883,12 +7966,18 @@ impl CalcitFnTypeAnnotation {
   }
 
   fn features_to_edn(&self) -> Option<Edn> {
-    if self.features.is_empty() {
+    let visible_features = self
+      .features
+      .iter()
+      .filter(|feature| feature.ref_str() != "async")
+      .cloned()
+      .collect::<Vec<_>>();
+    if visible_features.is_empty() {
       return None;
     }
     let mut set = EdnSetView::default();
-    for tag in self.features.iter() {
-      set.insert(Edn::Tag(tag.clone()));
+    for tag in visible_features {
+      set.insert(Edn::Tag(tag));
     }
     Some(Edn::Set(set))
   }
@@ -7916,6 +8005,9 @@ impl CalcitFnTypeAnnotation {
     }
     if let Some(rest) = &self.rest_type {
       map.insert_key("rest", rest.to_type_edn());
+    }
+    if self.is_async_invocation() {
+      map.insert_key("async", Edn::Bool(true));
     }
     if let Some(features) = self.features_to_edn() {
       map.insert_key("features", features);
@@ -7955,6 +8047,9 @@ impl CalcitFnTypeAnnotation {
     if let Some(rest) = &self.rest_type {
       map.insert_key("rest", rest.to_type_edn());
     }
+    if self.is_async_invocation() {
+      map.insert_key("async", Edn::Bool(true));
+    }
     if let Some(features) = self.features_to_edn() {
       map.insert_key("features", features);
     }
@@ -7979,6 +8074,9 @@ impl CalcitFnTypeAnnotation {
     }
     if let Some(rest) = &self.rest_type {
       map.insert_key("rest", rest.to_type_edn());
+    }
+    if self.is_async_invocation() {
+      map.insert_key("async", Edn::Bool(true));
     }
     if let Some(features) = self.features_to_edn() {
       map.insert_key("features", features);
@@ -8033,7 +8131,8 @@ impl CalcitFnTypeAnnotation {
     }
     let args = format!("({})", rendered_args.join(", "));
     format!(
-      "fn{generics}{where_clause}{args} -> {}",
+      "{}fn{generics}{where_clause}{args} -> {}",
+      if self.is_async_invocation() { "async " } else { "" },
       self.return_type.describe_bounded(depth + 1, remaining)
     )
   }
@@ -8085,7 +8184,8 @@ impl CalcitFnTypeAnnotation {
     let args_repr = format!("({})", parts.join(", "));
 
     format!(
-      "fn{generics}{where_clause}{args_repr} -> {}",
+      "{}fn{generics}{where_clause}{args_repr} -> {}",
+      if self.is_async_invocation() { "async " } else { "" },
       self.return_type.to_brief_string_bounded(depth + 1, remaining)
     )
   }
@@ -8099,6 +8199,9 @@ impl CalcitFnTypeAnnotation {
   /// generic call. This lets sibling callbacks share a return type variable,
   /// such as the two branches accepted by `option:fold`.
   pub(crate) fn compatible_signature_with_bindings(&self, other: &CalcitFnTypeAnnotation, bindings: &mut TypeBindings) -> bool {
+    if self.is_async_invocation() != other.is_async_invocation() {
+      return false;
+    }
     // `self` is the actual callable and `other` is the expected callback shape. An actual
     // callable cannot require more fixed arguments than the expected contract guarantees.
     if self.arg_types.len() > other.arg_types.len() {
@@ -8145,6 +8248,9 @@ impl CalcitFnTypeAnnotation {
   }
 
   fn prove_signature_with_bindings(&self, other: &CalcitFnTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
+    if self.is_async_invocation() != other.is_async_invocation() {
+      return TypeProof::Mismatch;
+    }
     if self.arg_types.len() > other.arg_types.len() {
       return TypeProof::Mismatch;
     }

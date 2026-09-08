@@ -365,6 +365,23 @@ Use `hint-fn $ {} (:async true)` in function body when using `js-await`:
 
 `js-await` should stay inside async-marked function bodies.
 
+When a function also declares a checked function schema, `:async true` is part
+of its invocation contract. The schema's `:return T` describes the value after
+awaiting, not the Promise-like value returned by the JavaScript call:
+
+```cirru.no-check
+hint-fn $ {}
+  :args $ []
+  :return String
+  :async true
+```
+
+Calling this function produces a pending async value in static checking. Pass
+the call through `js-await` before using it as `T`; otherwise checking fails
+with `E_ASYNC_INVOCATION_REQUIRES_AWAIT`. Function aliases and callback schemas
+retain this contract, so async and synchronous callbacks are not interchangeable.
+The checker does not insert `await`, retry calls, or model effects automatically.
+
 ```cirru.no-check
 let
     fetch-data $ fn () nil

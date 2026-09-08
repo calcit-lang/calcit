@@ -25,7 +25,7 @@ use crate::builtins::syntax::get_raw_args_fn;
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
 use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
 use crate::calcit::{self, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, MethodKind};
-use crate::calcit::{Calcit, CalcitSyntax, ImportInfo};
+use crate::calcit::{Calcit, CalcitSyntax, CalcitTypeAnnotation, ImportInfo};
 use crate::call_stack::StackKind;
 use crate::codegen::skip_arity_check;
 use crate::program;
@@ -500,6 +500,7 @@ fn gen_call_code(
               JsFnParams {
                 args: &raw_args,
                 arg_types: &arg_types,
+                async_invocation: false,
               },
               &func_body.to_vec(),
               &passed_defs,
@@ -1673,6 +1674,7 @@ fn uses_recur(xs: &Calcit) -> bool {
 struct JsFnParams<'a> {
   args: &'a CalcitFnArgs,
   arg_types: &'a [Arc<calcit::CalcitTypeAnnotation>],
+  async_invocation: bool,
 }
 
 fn gen_js_func(
@@ -1843,7 +1845,11 @@ fn gen_js_func(
   };
 
   let mut body: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
-  let mut async_prefix: String = String::from("");
+  let mut async_prefix = if params.async_invocation {
+    String::from("async ")
+  } else {
+    String::new()
+  };
 
   for line in raw_body {
     if let Calcit::List(xs) = line {
@@ -1936,50 +1942,7 @@ fn gen_js_func(
 
 /// this is a very rough implementation for now
 fn hinted_async(xs: &CalcitList) -> bool {
-  fn is_async_key(form: &Calcit) -> bool {
-    match form {
-      Calcit::Tag(tag) => tag.ref_str().trim_start_matches(':') == "async",
-      Calcit::Symbol { sym, .. } => {
-        let raw = sym.as_ref();
-        raw == "async" || raw.trim_start_matches(':') == "async"
-      }
-      Calcit::Str(text) => text.as_ref() == "async",
-      _ => false,
-    }
-  }
-
-  fn is_truthy(form: &Calcit) -> bool {
-    !matches!(form, Calcit::Nil | Calcit::Unit | Calcit::Bool(false))
-  }
-
-  fn schema_marks_async(form: &Calcit) -> bool {
-    match form {
-      Calcit::Map(map) => map.iter().any(|(key, value)| is_async_key(key) && is_truthy(value)),
-      Calcit::List(list) => {
-        let is_map_literal = matches!(list.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "{}")
-          || matches!(list.first(), Some(Calcit::Proc(CalcitProc::NativeMap)));
-        if !is_map_literal {
-          return false;
-        }
-
-        list.iter().skip(1).any(|entry| {
-          let Calcit::List(pair) = entry else {
-            return false;
-          };
-          if pair.len() < 2 {
-            return false;
-          }
-          match (pair.get(0), pair.get(1)) {
-            (Some(key), Some(value)) => is_async_key(key) && is_truthy(value),
-            _ => false,
-          }
-        })
-      }
-      _ => false,
-    }
-  }
-
-  xs.iter().skip(1).any(schema_marks_async)
+  CalcitTypeAnnotation::hint_form_marks_async(&Calcit::List(Arc::new(xs.clone())))
 }
 
 /// Returns true when a value is in the schema map form recognised by hint-fn:
@@ -2137,6 +2100,10 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
             JsFnParams {
               args: &fn_parts.args,
               arg_types: &fn_parts.arg_types,
+              async_invocation: matches!(
+                program::lookup_def_schema(ns, &def).as_ref(),
+                CalcitTypeAnnotation::Fn(signature) if signature.is_async_invocation()
+              ),
             },
             &fn_parts.body,
             &passed_defs,
@@ -2458,6 +2425,35 @@ mod tests {
   }
 
   #[test]
+  fn declared_async_invocation_emits_async_function() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+    let passed_defs = PassedDefs {
+      ns: "tests.emit-js",
+      local_defs: &local_defs,
+      file_imports: &file_imports,
+    };
+    let args = CalcitFnArgs::Args(vec![]);
+    let code = gen_js_func(
+      "load-text",
+      JsFnParams {
+        args: &args,
+        arg_types: &[],
+        async_invocation: true,
+      },
+      &[Calcit::Str(Arc::from("ready"))],
+      &passed_defs,
+      true,
+      &tags,
+      "tests.emit-js",
+    )
+    .expect("declared async function should compile");
+
+    assert!(code.starts_with("export async function load_text()"), "{code}");
+  }
+
+  #[test]
   fn external_member_defaults_follow_calcit_naming_conventions() {
     assert_eq!(default_external_js_member_name("text-content"), "textContent");
     assert_eq!(default_external_js_member_name("matches?"), "matches");
@@ -2509,6 +2505,7 @@ mod tests {
       JsFnParams {
         args: &args,
         arg_types: &[],
+        async_invocation: false,
       },
       &raw_body,
       &passed_defs,
@@ -2538,6 +2535,7 @@ mod tests {
       JsFnParams {
         args: &args,
         arg_types: &[],
+        async_invocation: false,
       },
       &[Calcit::Nil],
       &passed_defs,
@@ -2579,6 +2577,7 @@ mod tests {
       JsFnParams {
         args: &args,
         arg_types: &[],
+        async_invocation: false,
       },
       &raw_body,
       &passed_defs,
@@ -2630,6 +2629,7 @@ mod tests {
       JsFnParams {
         args: &args,
         arg_types: &arg_types,
+        async_invocation: false,
       },
       &raw_body,
       &passed_defs,

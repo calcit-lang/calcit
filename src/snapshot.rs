@@ -1263,6 +1263,7 @@ pub const VALID_SCHEMA_FIELDS: &[&str] = &[
   ":generics",
   ":where",
   ":features",
+  ":async",
   ":legacy-origin",
 ];
 
@@ -1615,6 +1616,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   let mut legacy_origin_node: Option<&Cirru> = None;
   let mut where_node: Option<&Cirru> = None;
   let mut features_node: Option<&Cirru> = None;
+  let mut async_node: Option<&Cirru> = None;
 
   for pair in items.iter().skip(1) {
     if let Cirru::List(xs) = pair
@@ -1632,6 +1634,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
         ":rest" => rest_node = Some(val),
         ":where" => where_node = Some(val),
         ":features" => features_node = Some(val),
+        ":async" => async_node = Some(val),
         _ => {}
       }
     }
@@ -1724,6 +1727,12 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
     && !matches!(legacy_origin, Cirru::Leaf(value) if matches!(value.as_ref(), ":fn" | ":dynamic"))
   {
     return Err("`:legacy-origin` must be `:fn` or `:dynamic`".to_owned());
+  }
+
+  if let Some(async_value) = async_node
+    && !matches!(async_value, Cirru::Leaf(value) if matches!(value.as_ref(), "true" | "false"))
+  {
+    return Err("`:async` must be `true` or `false`".to_owned());
   }
 
   // Validate :features value — must be a hashset of tags
@@ -3466,6 +3475,14 @@ mod tests {
   fn test_validate_schema_for_write() {
     let valid = parse_one(":: :fn $ {} (:args ([] :string)) (:return :bool)");
     assert!(validate_schema_for_write(&valid).is_ok(), "valid schema should pass");
+
+    let valid_async = parse_one(":: :fn $ {} (:args ([])) (:return :string) (:async true)");
+    assert!(validate_schema_for_write(&valid_async).is_ok(), "async schema should pass");
+    let invalid_async = parse_one(":: :fn $ {} (:args ([])) (:return :string) (:async :yes)");
+    assert_eq!(
+      validate_schema_for_write(&invalid_async).expect_err("invalid async marker should fail"),
+      "`:async` must be `true` or `false`"
+    );
 
     let valid_with_where = parse_one(":: :fn $ {} (:generics ([] 'T)) (:args ([] 'T)) (:where {} ('T Show)) (:return :string)");
     assert!(
