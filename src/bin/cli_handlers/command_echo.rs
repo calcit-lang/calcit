@@ -1432,9 +1432,15 @@ fn push_ffi(tokens: &mut Vec<String>, cmd: &FfiCommand) {
 
 fn push_config(tokens: &mut Vec<String>, cmd: &ConfigCommand) {
   match &cmd.subcommand {
-    ConfigSubcommand::Show(opts) => echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none"),
-    ConfigSubcommand::Modules(opts) => echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none"),
-    ConfigSubcommand::TypeSlots(opts) => echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none"),
+    ConfigSubcommand::Show(opts) => {
+      echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none", opt "format" => Some(opts.format.as_str()); default "human")
+    }
+    ConfigSubcommand::Modules(opts) => {
+      echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none", opt "format" => Some(opts.format.as_str()); default "human")
+    }
+    ConfigSubcommand::TypeSlots(opts) => {
+      echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none", opt "format" => Some(opts.format.as_str()); default "human")
+    }
     ConfigSubcommand::Version(opts) => echo_items!(tokens, opt "value" => opts.value.as_deref(); default "none"),
     ConfigSubcommand::Set(opts) => {
       echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");

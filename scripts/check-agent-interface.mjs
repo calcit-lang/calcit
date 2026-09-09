@@ -194,6 +194,82 @@ const scenarios = [
     },
   },
   {
+    name: "machine-readable config entries",
+    args: ["calcit/type-fail/type-slot-entry-scope.cirru", "config", "show", "--format", "json"],
+    check(result) {
+      if (result.schema_version !== 1 || result.command !== "config.show" || result.diagnostics.length !== 0) {
+        throw new Error("unexpected config.show envelope");
+      }
+      if (result.data.entries.map((entry) => entry.name).join(",") !== "default,server") {
+        throw new Error("config.show entries are not deterministically ordered");
+      }
+      const server = result.data.entries[1];
+      if (server.mode !== "native" || server.type_slots["dispatch-op"] !== "type-fail-type-slot-entry-scope.main/ServerOp") {
+        throw new Error("config.show lost entry mode or type slots");
+      }
+      if (!result.revision.startsWith("md5:")) {
+        throw new Error("config.show lost its Snapshot revision");
+      }
+    },
+  },
+  {
+    name: "core library config inventory",
+    args: ["src/cirru/calcit-core.cirru", "config", "show", "--format", "json"],
+    check(result) {
+      const entry = result.data?.entries?.[0];
+      if (result.command !== "config.show" || result.data?.package !== "calcit" || entry?.name !== "default") {
+        throw new Error("calcit-core automation could not read its config inventory");
+      }
+      if (entry.target !== null || entry.modules.length !== 0 || Object.keys(entry.type_slots).length !== 0) {
+        throw new Error("calcit-core empty config fields did not round-trip");
+      }
+    },
+  },
+  {
+    name: "machine-readable config modules",
+    args: ["calcit/test.cirru", "config", "modules", "--format", "json"],
+    check(result) {
+      if (result.command !== "config.modules" || result.data.entry.name !== "default") {
+        throw new Error("unexpected config.modules envelope");
+      }
+      if (result.data.modules.length !== result.data.entry.modules.length || result.data.modules.some((module) => module.status !== "loaded")) {
+        throw new Error("config.modules lost resolved module status");
+      }
+    },
+  },
+  {
+    name: "machine-readable config type slots",
+    args: ["calcit/type-fail/type-slot-entry-scope.cirru", "config", "type-slots", "--entry", "server", "--format", "json"],
+    check(result) {
+      if (result.command !== "config.type-slots" || result.data.entry.name !== "server") {
+        throw new Error("unexpected config.type-slots envelope");
+      }
+      if (result.data.type_slots["dispatch-op"] !== "type-fail-type-slot-entry-scope.main/ServerOp") {
+        throw new Error("config.type-slots lost the selected binding");
+      }
+    },
+  },
+  {
+    name: "missing config entry stays structured",
+    args: ["calcit/test.cirru", "config", "show", "--entry", "missing", "--format", "json"],
+    expectedStatus: 1,
+    check(result) {
+      if (result.command !== "config.show" || result.data !== null || result.diagnostics[0]?.code !== "E_CONFIG_ENTRY_NOT_FOUND") {
+        throw new Error("missing config entry lost its structured diagnostic");
+      }
+    },
+  },
+  {
+    name: "malformed config stays structured",
+    args: ["package.json", "config", "show", "--format", "json"],
+    expectedStatus: 1,
+    check(result) {
+      if (result.command !== "config.show" || result.data !== null || result.diagnostics[0]?.code !== "E_CONFIG_SNAPSHOT_INVALID") {
+        throw new Error("malformed config lost its structured diagnostic");
+      }
+    },
+  },
+  {
     name: "staged edit transaction",
     args: [
       "calcit/test.cirru",
