@@ -220,6 +220,92 @@ fn self_referential_enum_type_ref_validation_is_finite() {
 }
 
 #[test]
+fn strict_rejects_bare_zero_argument_enum_constructor_value_positions() {
+  run_with_large_stack(|| {
+    let option_number = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+    ));
+    let main_schema = |return_type| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![],
+        return_type,
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })))
+    };
+    let _strict = StrictTypesReset::enabled();
+
+    for snippet in [
+      "let\n    _ &unit\n  , %none",
+      "if true %none (%none)",
+      "match (%some 1)\n  (:some _) %none\n  (:none) (%none)",
+    ] {
+      let entries = load_snippet_entries_with_main_schema(snippet, Some(main_schema(option_number.clone())));
+      let error = run_check_only(&entries).expect_err("bare %none must not satisfy an Option return or branch type");
+      assert!(error.contains("E_BARE_ENUM_CONSTRUCTOR_VALUE"), "unexpected error: {error}");
+      assert!(
+        error.contains("(%none)"),
+        "diagnostic must suggest invoking the constructor: {error}"
+      );
+    }
+
+    let entries = load_snippet_entries_with_main_schema("= %none %none", Some(main_schema(Arc::new(CalcitTypeAnnotation::Bool))));
+    let error = run_check_only(&entries).expect_err("comparing the same bare constructor must not mask the missing invocation");
+    assert!(error.contains("E_BARE_ENUM_CONSTRUCTOR_VALUE"), "unexpected error: {error}");
+    assert!(
+      error.contains("mask the missing invocation"),
+      "comparison diagnostic must explain the trap: {error}"
+    );
+
+    let entries = load_snippet_entries_with_main_schema("option:none? %none", Some(main_schema(Arc::new(CalcitTypeAnnotation::Bool))));
+    let error = run_check_only(&entries).expect_err("bare %none must not satisfy an Option-valued call argument");
+    assert!(error.contains("E_BARE_ENUM_CONSTRUCTOR_VALUE"), "unexpected error: {error}");
+  });
+}
+
+#[test]
+fn strict_accepts_invoked_enum_constructor_and_intentional_constructor_function() {
+  run_with_large_stack(|| {
+    let option_number = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+    ));
+    let main_schema = |return_type| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![],
+        return_type,
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })))
+    };
+    let _strict = StrictTypesReset::enabled();
+
+    // A single top-level Cirru line is a call, so this snippet body is `(%none)`.
+    let invoked = load_snippet_entries_with_main_schema("%none", Some(main_schema(option_number.clone())));
+    run_check_only(&invoked).expect("(%none) must remain a valid Option value");
+
+    let constructor_type = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: option_number,
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    let constructor = load_snippet_entries_with_main_schema("let\n    _ &unit\n  , %none", Some(main_schema(constructor_type)));
+    run_check_only(&constructor).expect("bare %none must remain valid when a constructor function is expected");
+  });
+}
+
+#[test]
 fn postfix_map_kv_gate_ignores_concrete_non_map_receivers() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("|text .map-kv $ fn (value) value");

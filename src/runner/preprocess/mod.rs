@@ -2426,6 +2426,18 @@ fn preprocess_list_call(
 
         let form = result?;
 
+        if let Some(expected) = expected_type.as_ref() {
+          reject_strict_bare_enum_constructor_value(
+            &form,
+            expected,
+            scope_types,
+            file_ns,
+            def_name.as_ref(),
+            call_stack,
+            call_location.clone(),
+          )?;
+        }
+
         if strict_types_enabled()
           && checked_contract.is_some()
           && let Some(expected) = preprocessing_expected_types.get(arg_idx)
@@ -2449,6 +2461,7 @@ fn preprocess_list_call(
         // Core helpers such as `get` resolve to ordinary functions, so validate
         // their statically known struct fields in this branch as well.
         check_struct_field_access(&head_form, &current_args, scope_types, file_ns, call_stack, check_warnings);
+        reject_strict_bare_enum_constructor_comparison(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
         warn_on_nominal_enum_legacy_absence_use(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
         reject_or_warn_on_legacy_js_nullish_predicate(
           &head_form,
@@ -2967,6 +2980,14 @@ fn preprocess_list_call(
             file_ns,
             def_name.as_ref(),
             check_warnings,
+            call_stack,
+          )?;
+          reject_strict_bare_enum_constructor_comparison(
+            call_head,
+            &processed_args,
+            scope_types,
+            file_ns,
+            def_name.as_ref(),
             call_stack,
           )?;
           warn_on_nominal_enum_legacy_absence_use(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
@@ -7766,6 +7787,175 @@ fn reject_strict_nil_for_unit_return(
   ))
 }
 
+/// Return constructor name and produced enum type for a bare zero-argument
+/// `%name` function value. A list call is intentionally excluded.
+fn bare_zero_argument_enum_producer(value: &Calcit, scope_types: &ScopeTypes) -> Option<(Arc<str>, Arc<CalcitTypeAnnotation>)> {
+  let name = match value {
+    Calcit::Fn { info, .. } => info.name.clone(),
+    Calcit::Import(CalcitImport { def, .. }) => def.clone(),
+    Calcit::Symbol { sym, .. } => sym.clone(),
+    Calcit::Local(local) => local.sym.clone(),
+    _ => return None,
+  };
+  // `%name` is the source convention for enum-variant constructor functions.
+  // Ordinary zero-argument functions that happen to return an enum stay
+  // first-class values and continue through the normal Fn type checks.
+  if !name.starts_with('%') {
+    return None;
+  }
+  let signature = resolve_type_value(value, scope_types)?.resolve_to_fn()?;
+  if !signature.arg_types.is_empty() || signature.rest_type.is_some() || signature.return_type.resolve_to_enum().is_none() {
+    return None;
+  }
+  Some((name, signature.return_type.clone()))
+}
+
+/// Reject a bare enum constructor where the surrounding strict context
+/// requires an enum value, descending through value-producing control flow.
+fn reject_strict_bare_enum_constructor_value(
+  value: &Calcit,
+  expected_type: &Arc<CalcitTypeAnnotation>,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  call_stack: &CallStackList,
+  fallback_location: Option<NodeLocation>,
+) -> Result<(), CalcitErr> {
+  if !strict_types_enabled() || !should_emit_project_source_lint(file_ns) || expected_type.resolve_to_enum().is_none() {
+    return Ok(());
+  }
+
+  if let Calcit::List(items) = value {
+    match items.first() {
+      Some(Calcit::Syntax(CalcitSyntax::If, _)) => {
+        for branch in items.iter().skip(2).take(2) {
+          reject_strict_bare_enum_constructor_value(
+            branch,
+            expected_type,
+            scope_types,
+            file_ns,
+            def_name,
+            call_stack,
+            fallback_location.clone(),
+          )?;
+        }
+        return Ok(());
+      }
+      Some(Calcit::Syntax(CalcitSyntax::Match, _)) => {
+        let branches: Vec<&Calcit> = match (items.get(2), items.get(3)) {
+          (Some(Calcit::EnumDef(_)), Some(Calcit::List(table))) => {
+            table.iter().filter(|branch| !matches!(branch, Calcit::Nil)).collect()
+          }
+          _ => items.iter().skip(2).collect(),
+        };
+        for branch in branches {
+          if let Calcit::List(pair) = branch
+            && let Some(branch_value) = pair.get(1)
+          {
+            reject_strict_bare_enum_constructor_value(
+              branch_value,
+              expected_type,
+              scope_types,
+              file_ns,
+              def_name,
+              call_stack,
+              fallback_location.clone(),
+            )?;
+          }
+        }
+        return Ok(());
+      }
+      Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) => {
+        if let Some(returned) = items.get(items.len().saturating_sub(1)) {
+          return reject_strict_bare_enum_constructor_value(
+            returned,
+            expected_type,
+            scope_types,
+            file_ns,
+            def_name,
+            call_stack,
+            fallback_location,
+          );
+        }
+      }
+      _ => {}
+    }
+  }
+
+  let Some((constructor, produced_type)) = bare_zero_argument_enum_producer(value, scope_types) else {
+    return Ok(());
+  };
+  let mut bindings = HashMap::new();
+  if !produced_type
+    .as_ref()
+    .compatible_with_bindings(expected_type.as_ref(), &mut bindings)
+  {
+    return Ok(());
+  }
+
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!(
+      "bare zero-argument enum constructor `{}` is used as a value in `{file_ns}/{def_name}`; expected `{}`, but the bare symbol is a function returning `{}`; invoke it as `({})`",
+      constructor,
+      expected_type.to_brief_string(),
+      produced_type.to_brief_string(),
+      constructor,
+    ),
+    "E_BARE_ENUM_CONSTRUCTOR_VALUE",
+    call_stack,
+    value.get_location().or(fallback_location),
+  ))
+}
+
+/// Reject equality that compares enum constructor functions and can therefore
+/// make the same missing invocation appear to pass.
+fn reject_strict_bare_enum_constructor_comparison(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  if !strict_types_enabled()
+    || !should_emit_project_source_lint(file_ns)
+    || !matches!(canonical_absence_operation_name(head), Some("=" | "&="))
+  {
+    return Ok(());
+  }
+
+  let producers = args
+    .iter()
+    .filter_map(|value| {
+      bare_zero_argument_enum_producer(value, scope_types).map(|(constructor, produced)| (value, constructor, produced))
+    })
+    .collect::<Vec<_>>();
+  if producers.len() < 2 {
+    return Ok(());
+  }
+  if !producers.iter().all(|(_, _, produced)| {
+    let mut bindings = HashMap::new();
+    produced.as_ref().compatible_with_bindings(producers[0].2.as_ref(), &mut bindings)
+  }) {
+    return Ok(());
+  }
+
+  let (value, constructor, produced_type) = &producers[0];
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!(
+      "comparison in `{file_ns}/{def_name}` uses bare zero-argument enum constructor `{}` as a value; both operands can compare as functions and mask the missing invocation; compare constructed `{}` values by writing `({})`",
+      constructor,
+      produced_type.to_brief_string(),
+      constructor,
+    ),
+    "E_BARE_ENUM_CONSTRUCTOR_VALUE",
+    call_stack,
+    value.get_location().or_else(|| head.get_location()),
+  ))
+}
+
 pub fn preprocess_defn(
   head: &CalcitSyntax,
   head_ns: &str,
@@ -8093,6 +8283,17 @@ pub fn preprocess_defn(
       } else {
         detected_return_type
       };
+      if let Some(returned_expr) = processed_body.last() {
+        reject_strict_bare_enum_constructor_value(
+          returned_expr,
+          &return_type_hint,
+          &body_types,
+          ctx.file_ns,
+          def_name.as_ref(),
+          ctx.call_stack,
+          ctx.call_location.clone().or(Some(definition_location.clone())),
+        )?;
+      }
       reject_strict_nil_for_unit_return(
         &processed_body,
         &return_type_hint,
