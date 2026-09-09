@@ -1,4 +1,7 @@
-# 实验性 Calx target：typed kernel lowering
+# 实验性 Calx kernel 兼容路径：typed kernel lowering
+
+> Calx 的主方向已扩展为编译静态 Calcit 程序；程序级所有权、覆盖清单和分阶段边界见
+> [Calx program backend](./calx-program-target.md)。本文只记录当前已经可执行的 kernel compatibility path。
 
 Calcit 正在验证一个很窄的 typed kernel 子集能否编译到 Calx。这个实验不改变默认 native
 runner、JS codegen 或仓库内部 WASM backend，也不会把任意 Calcit 函数静默发送给另一个运行时。
