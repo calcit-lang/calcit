@@ -7787,6 +7787,8 @@ fn reject_strict_nil_for_unit_return(
   ))
 }
 
+/// Return constructor name and produced enum type for a bare zero-argument
+/// `%name` function value. A list call is intentionally excluded.
 fn bare_zero_argument_enum_producer(value: &Calcit, scope_types: &ScopeTypes) -> Option<(Arc<str>, Arc<CalcitTypeAnnotation>)> {
   let name = match value {
     Calcit::Fn { info, .. } => info.name.clone(),
@@ -7801,15 +7803,15 @@ fn bare_zero_argument_enum_producer(value: &Calcit, scope_types: &ScopeTypes) ->
   if !name.starts_with('%') {
     return None;
   }
-  let CalcitTypeAnnotation::Fn(signature) = resolve_type_value(value, scope_types)?.as_ref().clone() else {
-    return None;
-  };
+  let signature = resolve_type_value(value, scope_types)?.resolve_to_fn()?;
   if !signature.arg_types.is_empty() || signature.rest_type.is_some() || signature.return_type.resolve_to_enum().is_none() {
     return None;
   }
   Some((name, signature.return_type.clone()))
 }
 
+/// Reject a bare enum constructor where the surrounding strict context
+/// requires an enum value, descending through value-producing control flow.
 fn reject_strict_bare_enum_constructor_value(
   value: &Calcit,
   expected_type: &Arc<CalcitTypeAnnotation>,
@@ -7840,7 +7842,13 @@ fn reject_strict_bare_enum_constructor_value(
         return Ok(());
       }
       Some(Calcit::Syntax(CalcitSyntax::Match, _)) => {
-        for branch in items.iter().skip(2) {
+        let branches: Vec<&Calcit> = match (items.get(2), items.get(3)) {
+          (Some(Calcit::EnumDef(_)), Some(Calcit::List(table))) => {
+            table.iter().filter(|branch| !matches!(branch, Calcit::Nil)).collect()
+          }
+          _ => items.iter().skip(2).collect(),
+        };
+        for branch in branches {
           if let Calcit::List(pair) = branch
             && let Some(branch_value) = pair.get(1)
           {
@@ -7900,6 +7908,8 @@ fn reject_strict_bare_enum_constructor_value(
   ))
 }
 
+/// Reject equality that compares enum constructor functions and can therefore
+/// make the same missing invocation appear to pass.
 fn reject_strict_bare_enum_constructor_comparison(
   head: &Calcit,
   args: &CalcitList,

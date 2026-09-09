@@ -1740,6 +1740,8 @@ fn expected_type_at_path(
     .map(|expected| (expected, "callable parameter".to_owned()))
 }
 
+/// Prefer processed static evidence, then recover source and implicit-core
+/// definition schemas when preprocessing stopped before node correlation.
 fn infer_type_at_target(source: &Calcit, processed: Option<&Calcit>, namespace: &str) -> Option<Arc<CalcitTypeAnnotation>> {
   processed
     .and_then(runner::preprocess::infer_static_type_from_expr)

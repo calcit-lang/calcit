@@ -239,7 +239,11 @@ fn strict_rejects_bare_zero_argument_enum_constructor_value_positions() {
     };
     let _strict = StrictTypesReset::enabled();
 
-    for snippet in ["let\n    _ &unit\n  , %none", "if true %none (%none)"] {
+    for snippet in [
+      "let\n    _ &unit\n  , %none",
+      "if true %none (%none)",
+      "match (%some 1)\n  (:some _) %none\n  (:none) (%none)",
+    ] {
       let entries = load_snippet_entries_with_main_schema(snippet, Some(main_schema(option_number.clone())));
       let error = run_check_only(&entries).expect_err("bare %none must not satisfy an Option return or branch type");
       assert!(error.contains("E_BARE_ENUM_CONSTRUCTOR_VALUE"), "unexpected error: {error}");
@@ -283,6 +287,7 @@ fn strict_accepts_invoked_enum_constructor_and_intentional_constructor_function(
     };
     let _strict = StrictTypesReset::enabled();
 
+    // A single top-level Cirru line is a call, so this snippet body is `(%none)`.
     let invoked = load_snippet_entries_with_main_schema("%none", Some(main_schema(option_number.clone())));
     run_check_only(&invoked).expect("(%none) must remain a valid Option value");
 
