@@ -71,6 +71,10 @@ fn format_feature_policy(feature_policy: &HashMap<String, snapshot::FeaturePolic
   format!("{{{}}}", pairs.join(", "))
 }
 
+fn format_target(target: Option<snapshot::SnapshotTarget>) -> &'static str {
+  target.map(snapshot::SnapshotTarget::as_str).unwrap_or("(none)")
+}
+
 fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String> {
   let snapshot = load_snapshot_for_display(input_path)?;
 
@@ -83,6 +87,7 @@ fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String>
     })?;
     println!("{}", format!("Entry '{name}':").bold());
     println!("  {}: {}", "mode".cyan(), entry.mode);
+    println!("  {}: {}", "target".cyan(), format_target(entry.target));
     println!("  {}: {}", "init_fn".cyan(), entry.init_fn);
     println!("  {}: {}", "reload_fn".cyan(), entry.reload_fn);
     println!("  {}: {}", "description".cyan(), entry.description);
@@ -108,6 +113,7 @@ fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String>
 
     println!("  {}", name.cyan());
     println!("    {}: {}", "mode".cyan(), entry.mode);
+    println!("    {}: {}", "target".cyan(), format_target(entry.target));
     println!("    {}: {}", "init_fn".cyan(), entry.init_fn);
     println!("    {}: {}", "reload_fn".cyan(), entry.reload_fn);
     println!("    {}: {}", "description".cyan(), entry.description);
@@ -249,6 +255,20 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
       };
       format!("{} Set [{entry_label}] mode = '{}'", "✓".green(), entry.mode)
     }
+    "target" => {
+      entry.target = Some(match opts.value.trim().trim_start_matches(':') {
+        "browser" => snapshot::SnapshotTarget::Browser,
+        "node" => snapshot::SnapshotTarget::Node,
+        "native" => snapshot::SnapshotTarget::Native,
+        "wasm" => snapshot::SnapshotTarget::Wasm,
+        value => {
+          return Err(format!(
+            "Unknown entry target '{value}'. Valid targets: browser, node, native, wasm"
+          ));
+        }
+      });
+      format!("{} Set [{entry_label}] target = '{}'", "✓".green(), format_target(entry.target))
+    }
     "init-fn" | "init_fn" => {
       entry.init_fn = opts.value.clone();
       format!("{} Set [{entry_label}] '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
@@ -282,7 +302,7 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
     }
     _ => {
       return Err(format!(
-        "Unknown config key '{}'. Valid keys: mode, init-fn, reload-fn, description, feature-policy.<name>, version (accepts semver string or patch|minor|major)",
+        "Unknown config key '{}'. Valid keys: mode, target, init-fn, reload-fn, description, feature-policy.<name>, version (accepts semver string or patch|minor|major)",
         opts.key
       ));
     }
@@ -559,6 +579,55 @@ mod tests {
     assert_eq!(fs::read_to_string(&temp_path).expect("read unchanged fixture"), before_invalid);
 
     fs::remove_file(temp_path).expect("remove fixture");
+  }
+
+  #[test]
+  fn config_set_target_validates_and_persists_default_and_named_entries() {
+    let source = "{} (:package |demo)\n  :entries $ {}\n    :default $ {} (:mode :js) (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)\n      :modules $ []\n    :server $ {} (:mode :native) (:init-fn |app.server/main!) (:reload-fn |app.server/reload!)\n      :modules $ []\n  :files $ {}\n";
+    let temp_path = std::env::temp_dir().join(format!("calcit-entry-target-{}.cirru", std::process::id()));
+    fs::write(&temp_path, source).expect("write fixture");
+    let path = temp_path.to_string_lossy();
+
+    for (entry_name, value, expected) in [
+      (None, ":browser", snapshot::SnapshotTarget::Browser),
+      (None, "node", snapshot::SnapshotTarget::Node),
+      (Some("server"), ":native", snapshot::SnapshotTarget::Native),
+      (Some("server"), "wasm", snapshot::SnapshotTarget::Wasm),
+    ] {
+      handle_set(
+        &ConfigSetCommand {
+          entry: entry_name.map(str::to_owned),
+          key: "target".to_owned(),
+          value: value.to_owned(),
+        },
+        &path,
+      )
+      .expect("set entry target");
+      let saved = load_snapshot_for_display(&path).expect("reload configured snapshot");
+      let name = entry_name.unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
+      assert_eq!(saved.entries[name].target, Some(expected));
+    }
+
+    let before_invalid = fs::read_to_string(&temp_path).expect("read configured fixture");
+    let error = handle_set(
+      &ConfigSetCommand {
+        entry: Some("server".to_owned()),
+        key: "target".to_owned(),
+        value: "desktop".to_owned(),
+      },
+      &path,
+    )
+    .expect_err("unknown target should fail before writing");
+    assert_eq!(error, "Unknown entry target 'desktop'. Valid targets: browser, node, native, wasm");
+    assert_eq!(fs::read_to_string(&temp_path).expect("read unchanged fixture"), before_invalid);
+
+    fs::remove_file(temp_path).expect("remove fixture");
+  }
+
+  #[test]
+  fn entry_target_display_marks_unset_values() {
+    assert_eq!(format_target(Some(snapshot::SnapshotTarget::Node)), "node");
+    assert_eq!(format_target(None), "(none)");
   }
 
   #[test]

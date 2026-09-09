@@ -51,13 +51,23 @@ Bare `calcit calcit.cirru` selects `entries.default` and emits JavaScript becaus
 
 Use `:description` for a concise, human- and agent-readable explanation of the entry's purpose. It has no runtime effect and may be omitted in existing snapshots. Update it with `calcit config set description "Interactive browser client"` (or add `--entry server` for a named entry).
 
+Use the structured config command to declare the host target rather than editing the Snapshot as plain text. Accepted values are `browser`, `node`, `native`, and `wasm`; add `--entry <name>` to update a named entry. `calcit config show` displays the parsed target and prints `(none)` for an entry that has not declared one.
+
+```bash
+calcit config set target browser
+calcit config set --entry server target native
+calcit config show
+```
+
 `:init-fn` and `:reload-fn` are Calcit definition symbols, written as `'app.main/main!` rather than strings. Existing string-valued entries remain compatible on read and are converted on the next canonical snapshot write.
 
 A named entry is a complete configuration, not a partial override. In particular, it does not inherit the default entry's modules or type slots. Bind a slot for each entry that needs it:
 
 ```bash
 calcit config set mode js
+calcit config set target browser
 calcit config set-type-slot :dispatch-op app.schema/ClientOp
+calcit config set --entry server target native
 calcit config set-type-slot --entry server :dispatch-op app.schema/ServerOp
 calcit config type-slots
 calcit config type-slots --entry server
