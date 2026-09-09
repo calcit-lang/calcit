@@ -203,6 +203,9 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
       if opts.max_depth > 0 {
         desc.push_str(&format!(", max tree depth={}", opts.max_depth));
       }
+      if opts.source != "all" {
+        desc.push_str(&format!(", source={}", opts.source));
+      }
       if let Some(index) = opts.set_cursor {
         desc.push_str(&format!("; sets the cursor to global match #{index}"));
       }
@@ -707,6 +710,7 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
       value "max-depth" => opts.max_depth; default "0",
       opt "start-path" => opts.start_path.as_deref(); default "none",
       opt "entry" => opts.entry.as_deref(); default "none",
+      value "source" => &opts.source; default "all",
       value "detail-offset" => opts.detail_offset; default "0",
       switch "parent-path" => opts.parent_path,
       value "format" => &opts.format; default "human",

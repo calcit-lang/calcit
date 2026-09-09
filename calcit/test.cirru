@@ -154,6 +154,11 @@
             {} (:return 'Dynamic)
               :args $ []
               :features $ #{} :js-ffi
+        'query-search-node-kinds $ %{} 'CodeEntry (:doc "|Fixture for machine-readable leaf and call search results")
+          :code $ quote
+            def query-search-node-kinds $ [] %none (%none)
+          :examples $ []
+          :schema $ :: 'List 'Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: 'Unit

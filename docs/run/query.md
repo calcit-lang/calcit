@@ -132,8 +132,14 @@ calcit query usages app.main/main!
 ### Search Text (`search`)
 
 ```bash
-# Search for raw text (leaf values) across project
+# Backward-compatible default: search project, configured dependencies, and bundled core
 calcit query search hello
+
+# Bound the inventory to one source class
+calcit query search hello --source project
+calcit query search hello --source core
+calcit query search hello --source deps
+calcit query search hello --source all
 
 # Limit to one definition
 calcit query search hello --filter app.main/main!
@@ -155,7 +161,17 @@ calcit query search-expr "fn (x)" --filter app.main/main!
 calcit query search-expr '["fn",["x"]]' --json --filter app.main/main! --format json
 ```
 
-Search JSON results contain a summary plus definition rows with `code@...` paths and the matched Cirru tree. `--parent-path` also returns the editable parent path for leaf searches. A local `--filter` uses shallow Snapshot loading; dependency modules are loaded only if the filtered namespace is not local or an explicit `--entry` is requested.
+`query search` defaults to `--source all` for compatibility. `project` means namespaces stored in the input Snapshot,
+`core` means the bundled `calcit.core`/`calcit.internal` Snapshot, and `deps` means modules configured by the selected
+entry (`--entry` selects a different complete entry configuration). Source filtering happens before deterministic
+definition ordering and global `cursor_index` assignment.
+
+Search JSON results contain a summary plus definition rows with `code@...` paths and the matched Cirru tree. Every
+definition and match reports `source` plus an `origin` object containing its package and module path. `node_kind`
+is `leaf`, `call`, or `expr`; in particular, a bare `%none` leaf and the callee inside `(%none)` no longer require
+parent-tree inference. `--parent-path` also returns the editable parent path for leaf searches. JSON stdout remains
+one schema-versioned envelope. With the default source and no explicit `--entry`, a project/core namespace filter
+keeps the previous shallow-loading behavior and does not load unrelated dependency modules.
 
 ### Inspect Static Type Methods (`type`)
 

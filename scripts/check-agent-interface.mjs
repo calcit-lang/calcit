@@ -176,20 +176,67 @@ const scenarios = [
       "calcit/test.cirru",
       "query",
       "search",
-      "defstruct",
+      "%none",
+      "--exact",
+      "--source",
+      "project",
       "--filter",
-      "test-struct.main/Person",
+      "app.main/query-search-node-kinds",
       "--parent-path",
       "--format",
       "json",
     ],
     check(result) {
-      if (result.command !== "query.search" || result.data.summary.matches !== 1) {
+      if (result.command !== "query.search" || result.data.summary.matches !== 2) {
         throw new Error("query.search JSON summary is incorrect");
       }
-      const match = result.data.definitions[0]?.matches[0];
-      if (match?.path !== "code@0" || match?.parent_path !== "code") {
-        throw new Error("query.search did not expose stable edit paths");
+      const definition = result.data.definitions[0];
+      if (definition?.source !== "project" || definition?.origin.package !== "app") {
+        throw new Error("query.search did not expose the project definition origin");
+      }
+      const matches = definition.matches;
+      if (matches[0]?.cursor_index !== 0 || matches[0]?.path !== "code@2.1" || matches[0]?.node_kind !== "leaf") {
+        throw new Error("query.search did not identify the bare constructor leaf");
+      }
+      if (matches[1]?.cursor_index !== 1 || matches[1]?.path !== "code@2.2.0" || matches[1]?.node_kind !== "call") {
+        throw new Error("query.search did not identify the invoked zero-argument constructor");
+      }
+      if (matches.some((match) => match.source !== "project" || match.origin.package !== "app")) {
+        throw new Error("query.search matches lost their project origins");
+      }
+    },
+  },
+  {
+    name: "core-only structural search",
+    args: ["calcit/test.cirru", "query", "search", "%none", "--exact", "--source", "core", "--format", "json"],
+    check(result) {
+      const wrongOrigin = result.data.definitions.some(
+        (definition) => definition.source !== "core" || definition.origin.package !== "calcit" || definition.origin.module !== "builtin",
+      );
+      if (result.data.summary.matches !== 32 || wrongOrigin) {
+        throw new Error("core-only query.search count or origins changed");
+      }
+    },
+  },
+  {
+    name: "dependency-only structural search",
+    args: ["calcit/test.cirru", "query", "search", "%none", "--exact", "--source", "deps", "--format", "json"],
+    check(result) {
+      const wrongOrigin = result.data.definitions.some(
+        (definition) => definition.source !== "deps" || !definition.origin.module?.startsWith("./"),
+      );
+      if (result.data.summary.matches !== 20 || wrongOrigin) {
+        throw new Error("dependency-only query.search count or origins changed");
+      }
+    },
+  },
+  {
+    name: "all-source structural search",
+    args: ["calcit/test.cirru", "query", "search", "%none", "--exact", "--source", "all", "--format", "json"],
+    check(result) {
+      const sources = new Set(result.data.definitions.map((definition) => definition.source));
+      if (result.data.summary.matches !== 57 || [...sources].sort().join(",") !== "core,deps,project") {
+        throw new Error("all-source query.search count or origins changed");
       }
     },
   },

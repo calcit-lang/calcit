@@ -817,7 +817,7 @@ pub struct QueryUsagesCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "search")]
-/// search for leaf nodes (strings) across project or in specific namespace/definition (fuzzy match by default)
+/// search for leaf nodes across selected sources or a specific namespace/definition (fuzzy match by default)
 pub struct QuerySearchCommand {
   /// string pattern to search for in leaf nodes
   #[argh(positional)]
@@ -840,6 +840,9 @@ pub struct QuerySearchCommand {
   /// include modules configured for a specific entry in `entries`
   #[argh(option, long = "entry")]
   pub entry: Option<String>,
+  /// source scope: project, core, deps, or all (default)
+  #[argh(option, default = "String::from(\"all\")")]
+  pub source: String,
   /// start index for detailed display window (3 detailed items)
   #[argh(option, long = "detail-offset", default = "0")]
   pub detail_offset: usize,
