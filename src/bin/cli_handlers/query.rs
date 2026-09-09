@@ -1329,6 +1329,46 @@ mod type_query_tests {
   }
 
   #[test]
+  fn definition_return_schema_propagates_into_if_branches() {
+    let mut nodes = cirru_parser::parse("fn ()\n  if true %none (%none)").expect("test function should parse");
+    let mut entry = snapshot::CodeEntry::from_code(nodes.remove(0));
+    let option_number = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+    ));
+    entry.schema = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![], option_number.clone()));
+
+    for path in [&[2, 2][..], &[2, 3][..]] {
+      let (expected, source) = expected_type_at_path(&entry, None, "tests.type-at", "demo", path)
+        .expect("each if result branch should inherit the definition return schema");
+      assert_eq!(expected, option_number);
+      assert_eq!(source, "if branch inherited from definition return schema");
+    }
+  }
+
+  #[test]
+  fn type_at_recovers_implicit_core_constructor_schema_after_preprocess_failure() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_core_snapshot().expect("core snapshot should load");
+    prepare_program_for_type_query_on_cli_stack(snapshot);
+    let source = Calcit::Symbol {
+      sym: Arc::from("%none"),
+      info: Arc::new(calcit::calcit::CalcitSymbolInfo {
+        at_ns: Arc::from("tests.type-at"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+    };
+
+    let inferred = infer_type_at_target(&source, None, "tests.type-at").expect("implicit core constructor should retain its schema");
+    let CalcitTypeAnnotation::Fn(signature) = inferred.as_ref() else {
+      panic!("expected constructor function schema, got {inferred:?}");
+    };
+    assert!(signature.arg_types.is_empty());
+    assert!(signature.return_type.to_brief_string().contains("Option"));
+  }
+
+  #[test]
   fn type_at_reports_expected_type_mismatches_without_rejecting_optional_values() {
     let mismatch = type_at_expected_mismatch_diagnostic(
       &CalcitTypeAnnotation::Number,
@@ -1671,6 +1711,10 @@ fn expected_type_at_path(
   if matches!(head_name, Some("if" | "&if")) && target_index == 1 {
     return Some((Arc::new(CalcitTypeAnnotation::Bool), "if condition".to_owned()));
   }
+  if matches!(head_name, Some("if" | "&if")) && matches!(target_index, 2 | 3) {
+    return expected_type_at_path(entry, processed_root, namespace, definition, parent_path)
+      .map(|(expected, source)| (expected, format!("if branch inherited from {source}")));
+  }
 
   let processed_parent = processed_root.and_then(|root| {
     find_preprocessed_node_at_path(root, namespace, definition, parent_path, true).and_then(|node| match node {
@@ -1694,6 +1738,24 @@ fn expected_type_at_path(
   signature
     .expected_arg(arg_index)
     .map(|expected| (expected, "callable parameter".to_owned()))
+}
+
+fn infer_type_at_target(source: &Calcit, processed: Option<&Calcit>, namespace: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  processed
+    .and_then(runner::preprocess::infer_static_type_from_expr)
+    .or_else(|| runner::preprocess::infer_static_type_from_expr(source))
+    .or_else(|| match source {
+      Calcit::Symbol { sym, .. } => {
+        let local = program::lookup_def_schema(namespace, sym);
+        if !matches!(local.as_ref(), CalcitTypeAnnotation::Dynamic) {
+          Some(local)
+        } else {
+          let core = program::lookup_def_schema(calcit::calcit::CORE_NS, sym);
+          (!matches!(core.as_ref(), CalcitTypeAnnotation::Dynamic)).then_some(core)
+        }
+      }
+      _ => None,
+    })
 }
 
 fn type_at_evidence(node: &Calcit, path: &str, used_preprocessed: bool) -> TypeAtEvidence {
@@ -2108,7 +2170,7 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
       .collect::<Result<Vec<_>, _>>()?,
   )?;
   let inference_target = processed_target.unwrap_or(&source_target);
-  let inferred = runner::preprocess::infer_static_type_from_expr(inference_target);
+  let inferred = infer_type_at_target(&source_target, processed_target, namespace);
   let expected = expected_type_at_path(entry, processed_root, namespace, &definition, &target_path);
   let inferred_rendered = inferred
     .as_ref()
