@@ -1019,6 +1019,58 @@ fn option_migration_source_calls_fail_during_preprocessing() {
 }
 
 #[test]
+fn strict_mode_rejects_implicit_option_and_result_stringification() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: Arc::new(CalcitTypeAnnotation::String),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    for (source, operation, nominal) in [
+      ("defn main! ()\n  str $ %some :remove", "str", "Option"),
+      ("defn main! ()\n  turn-string $ %err |failed", "turn-string", "Result"),
+    ] {
+      let entries = load_snippet_entries_with_main_schema(source, Some(main_schema.clone()));
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      let error = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect_err("strict stringification should fail during preprocessing");
+      assert_eq!(error.code.as_deref(), Some("E_NOMINAL_ENUM_STRINGIFICATION"));
+      assert!(error.msg.contains(&format!("`{operation}`")), "unexpected error: {error:?}");
+      assert!(error.msg.contains(nominal), "unexpected error: {error:?}");
+      assert!(error.msg.contains("to-lispy-string"), "unexpected error: {error:?}");
+    }
+  });
+}
+
+#[test]
+fn strict_mode_keeps_explicit_enum_representation_and_plain_stringification() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: Arc::new(CalcitTypeAnnotation::String),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    let entries = load_snippet_entries_with_main_schema(
+      "defn main! ()\n  str |prefix 1 $ to-lispy-string $ %some :remove",
+      Some(main_schema),
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("strict code should accept ordinary values and an explicit Option representation");
+  });
+}
+
+#[test]
 fn dynamic_option_method_receiver_fails_during_preprocessing() {
   run_with_large_stack(|| {
     let entries =

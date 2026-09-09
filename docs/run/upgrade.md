@@ -417,6 +417,11 @@ Struct 字段是定义的一部分，因此已知 struct 上的 `get`、`:field`
 | `get-in` | `Option<T>`（开放动态路径常为 `Option<Dynamic>`） | 任一路径缺失都是 `%none` |
 | `get-env` | `Option<String>` | 未设置的环境变量是 `%none` |
 
+不要用 `str` 或 `turn-string` 掩盖尚未处理的 `Option<T>` / `Result<T,E>`。默认 strict mode 会以
+`E_NOMINAL_ENUM_STRINGIFICATION` 拒绝这种隐式转换；先用 `match`、`.unwrap-or` 或对应 helper 取出 payload。
+如果目的就是打印 enum 的诊断表示，显式使用 `to-lispy-string`。迁移期间可用
+`--compat-types` 暂时保留旧渲染路径。
+
 默认严格诊断还会检查这些访问 API 的接收者能力。`first`、`last`、`nth` 只接受可静态确认的
 `List<T>`、`String` 或 `Enum`，`get` 另外接受 `Map<K,V>`；把 Number、Set、Struct、函数或未收窄的
 optional/FFI host value 传入时会报告 `E_UNSUPPORTED_INDEXED_RECEIVER`，而不是把 core schema 中保留的
