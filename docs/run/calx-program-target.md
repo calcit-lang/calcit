@@ -46,7 +46,9 @@ The compilation unit is derived from one explicitly selected Snapshot entry and 
 
 Both roles remain present when they name the same definition, while later reachability analysis may deduplicate the shared definition body. A malformed root or missing selected entry produces `CALX_PROGRAM_DEFINITION_REF` or `CALX_PROGRAM_ENTRY_SELECTION`; it never falls back to another entry.
 
-This edition defines compilation input only. calx-vm 0.5.0 still executes the compatibility function named `main`, so program-level multi-root eligibility remains follow-up work and [calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) tracks strict named-root execution. Existing `:mode :native` and `:mode :js` behavior is unchanged; this contract does not prematurely expose a `:calx` runtime mode.
+Whole-program eligibility checks `init` and `reload` as one atomic unit. It deduplicates shared reachable function bodies, preserves both lifecycle roles, and publishes no partial eligible program when either root fails. Explicit typed imports are shared across the roots; undeclared host behavior remains ineligible. Invalid editions and root sets fail before definition analysis with `CALX_PROGRAM_ELIGIBILITY_ABI_EDITION` or `CALX_PROGRAM_ELIGIBILITY_ROOT_SET`.
+
+This edition now defines compilation input and a checked reachable program, but not program lowering or execution. calx-vm 0.5.0 still executes the compatibility function named `main`; [calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) tracks strict named-root execution required before lifecycle roots can be lowered without a dispatcher. Existing `:mode :native` and `:mode :js` behavior is unchanged; this contract does not prematurely expose a `:calx` runtime mode.
 
 ### Hard boundaries
 
@@ -105,7 +107,9 @@ Calx 规划为可静态分析的 Calcit 语言核心的执行 backend。一次�
 
 两个角色指向同一 definition 时仍分别保留；后续 reachability analysis 可以去重共享 definition body。root 格式错误或 selected entry 缺失时分别产生 `CALX_PROGRAM_DEFINITION_REF` 或 `CALX_PROGRAM_ENTRY_SELECTION`，绝不回退到其他 entry。
 
-本 edition 只定义编译输入。calx-vm 0.5.0 仍只执行名为 `main` 的兼容函数，所以 program-level multi-root eligibility 仍是后续任务，严格 named-root execution 由 [calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) 追踪。已有 `:mode :native`、`:mode :js` 行为保持不变；本契约不提前暴露 `:calx` runtime mode。
+整程序 eligibility 将 `init` 和 `reload` 作为一个原子单元检查：共享的可达函数体会去重，两个生命周期角色仍被保留；任一 root 失败时都不发布部分 eligible program。两个 roots 共享同一组显式 typed imports，未声明的 host 行为仍然不合格。无效 edition 或 root 集合会在 definition analysis 前分别以 `CALX_PROGRAM_ELIGIBILITY_ABI_EDITION`、`CALX_PROGRAM_ELIGIBILITY_ROOT_SET` 失败。
+
+本 edition 现在定义编译输入和经过检查的可达 program，但还不包含 program lowering 或执行。calx-vm 0.5.0 仍只执行名为 `main` 的兼容函数；在不引入 dispatcher 的前提下 lowering 生命周期 roots 所需的严格 named-root execution 由 [calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) 追踪。已有 `:mode :native`、`:mode :js` 行为保持不变；本契约不提前暴露 `:calx` runtime mode。
 
 ### 硬边界
 

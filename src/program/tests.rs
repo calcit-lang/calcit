@@ -3,14 +3,17 @@ use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
 use crate::calcit::{CalcitFnTypeAnnotation, CalcitImpl, CalcitImport, CalcitStructDef, CalcitSyntax, ImportInfo, SchemaKind};
 use crate::call_stack::CallStackList;
 use crate::codegen::calx::{
-  CalxCacheMissReason, CalxCompileCache, CalxDefinitionRef, CalxError, CalxFallbackCode, CalxHostImport, CalxHostImports,
-  CalxKernelBoundaryErrorKind, CalxKernelCompileError, CalxKernelRunError, CalxScalarType, CalxValue, analyze_calx_eligibility,
-  analyze_calx_eligibility_with_imports, compile_calx_kernel, compile_calx_kernel_measured, compile_calx_kernel_with_imports,
+  CALX_PROGRAM_ABI_EDITION, CalxCacheMissReason, CalxCompileCache, CalxDefinitionRef, CalxError, CalxFallbackCode, CalxHostImport,
+  CalxHostImports, CalxKernelBoundaryErrorKind, CalxKernelCompileError, CalxKernelRunError, CalxProgramCompilationUnit,
+  CalxProgramEligibilityCode, CalxProgramRoot, CalxProgramRootRole, CalxScalarType, CalxValue, analyze_calx_eligibility,
+  analyze_calx_eligibility_with_imports, analyze_calx_program_eligibility, analyze_calx_program_eligibility_with_imports,
+  compile_calx_kernel, compile_calx_kernel_measured, compile_calx_kernel_with_imports,
 };
 use crate::data::cirru::code_to_calcit;
 use crate::run_program_with_docs;
+use crate::snapshot::SnapshotTarget;
 use cirru_edn::EdnTag;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 static CALX_VOID_IMPORT_CALLS: AtomicUsize = AtomicUsize::new(0);
 
@@ -513,6 +516,101 @@ fn calx_eligibility_accepts_five_real_preprocessed_scalar_kernels() {
     bounded_simulation.stable_summary()
   );
   assert_eq!(summary, include_str!("../../tests/fixtures/calx/scalar-kernels.golden.txt"));
+}
+
+fn calx_program_unit(namespace: &str, init: &str, reload: &str) -> CalxProgramCompilationUnit {
+  CalxProgramCompilationUnit {
+    abi_edition: Arc::from(CALX_PROGRAM_ABI_EDITION),
+    entry_name: Arc::from("server"),
+    host_target: Some(SnapshotTarget::Native),
+    roots: vec![
+      CalxProgramRoot {
+        role: CalxProgramRootRole::Init,
+        definition: CalxDefinitionRef::new(namespace, init),
+      },
+      CalxProgramRoot {
+        role: CalxProgramRootRole::Reload,
+        definition: CalxDefinitionRef::new(namespace, reload),
+      },
+    ],
+  }
+}
+
+#[test]
+fn calx_program_eligibility_merges_lifecycle_call_closures() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-program";
+  install_calx_scalar_kernel_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed preprocessed Calx fixtures");
+  let unit = calx_program_unit(namespace, "range-sum", "affine");
+
+  let program = analyze_calx_program_eligibility(&snapshot, &unit).expect("program roots should be eligible together");
+  assert_eq!(program.abi_edition.as_ref(), CALX_PROGRAM_ABI_EDITION);
+  assert_eq!(program.kernel_abi_edition.as_ref(), "calcit-calx-kernel/1");
+  assert_eq!(program.roots, unit.roots);
+  assert_eq!(
+    program
+      .functions
+      .iter()
+      .map(|function| function.definition.definition.as_ref())
+      .collect::<Vec<_>>(),
+    vec!["affine", "affine-helper", "range-sum"]
+  );
+  assert_eq!(
+    program.stable_summary(),
+    include_str!("../../tests/fixtures/calx/program-eligibility.golden.txt")
+  );
+}
+
+#[test]
+fn calx_program_eligibility_preserves_shared_root_roles_without_duplicate_functions() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-program-shared";
+  install_calx_scalar_kernel_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed preprocessed Calx fixtures");
+  let unit = calx_program_unit(namespace, "affine", "affine");
+
+  let program = analyze_calx_program_eligibility(&snapshot, &unit).expect("shared lifecycle root should be eligible");
+  assert_eq!(program.roots.len(), 2);
+  assert_eq!(program.roots[0].definition, program.roots[1].definition);
+  assert_eq!(program.functions.len(), 2);
+}
+
+#[test]
+fn calx_program_eligibility_rejects_the_whole_unit_when_one_root_fails() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-program-failure";
+  install_calx_scalar_kernel_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed preprocessed Calx fixtures");
+  let unit = calx_program_unit(namespace, "range-sum", "missing");
+
+  let report = analyze_calx_program_eligibility(&snapshot, &unit).expect_err("one failed root must reject the whole program");
+  assert!(report.program_issues.is_empty());
+  assert_eq!(report.root_issues.len(), 1);
+  assert_eq!(report.root_issues[0].root_roles, vec![CalxProgramRootRole::Reload]);
+  assert_eq!(report.root_issues[0].issue.code, CalxFallbackCode::UnsupportedForm);
+  assert!(report.stable_summary().contains("roles=reload"));
+}
+
+#[test]
+fn calx_program_eligibility_rejects_unversioned_or_incomplete_units_before_analysis() {
+  let snapshot = CompiledProgram::default();
+  let unit = CalxProgramCompilationUnit {
+    abi_edition: Arc::from("calcit-calx-program/unknown"),
+    entry_name: Arc::from("server"),
+    host_target: None,
+    roots: vec![],
+  };
+
+  let report = analyze_calx_program_eligibility(&snapshot, &unit).expect_err("invalid program contract must fail closed");
+  assert_eq!(
+    report.program_issues.iter().map(|issue| issue.code).collect::<Vec<_>>(),
+    vec![CalxProgramEligibilityCode::AbiEdition, CalxProgramEligibilityCode::RootSet]
+  );
+  assert!(report.root_issues.is_empty());
 }
 
 #[test]
@@ -1229,6 +1327,34 @@ fn calx_typed_imports_cover_void_value_and_generated_program_golden() {
   assert_eq!(calx_result, native_result);
   assert_eq!(calx_result, Calcit::Number(7.0));
   assert_eq!(CALX_VOID_IMPORT_CALLS.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn calx_program_eligibility_keeps_host_capabilities_explicit_across_roots() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-program-imports";
+  install_calx_typed_import_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed import fixtures");
+  let imports = calx_test_host_imports(namespace);
+  let unit = calx_program_unit(namespace, "imported-pipeline", "imported-trap");
+
+  let program = analyze_calx_program_eligibility_with_imports(&snapshot, &unit, &imports)
+    .expect("both roots should use only declared typed capabilities");
+  assert_eq!(program.functions.len(), 2);
+  assert_eq!(
+    program
+      .functions
+      .iter()
+      .flat_map(|function| function.host_imports.iter())
+      .cloned()
+      .collect::<BTreeSet<_>>(),
+    BTreeSet::from([
+      CalxDefinitionRef::new(namespace, "host-observe"),
+      CalxDefinitionRef::new(namespace, "host-scale"),
+      CalxDefinitionRef::new(namespace, "host-trap"),
+    ])
+  );
 }
 
 #[test]
