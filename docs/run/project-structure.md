@@ -81,7 +81,9 @@ Type slot 优先用配置命令维护，避免直接改 snapshot：
 ```bash
 calcit config set-type-slot :dispatch-op app.schema/Op
 calcit config set mode js
+calcit config set target browser
 calcit config set description "Browser client"
+calcit config set --entry test target node
 calcit config set-type-slot --entry test :dispatch-op app.test-schema/TestOp
 calcit config rm-type-slot :dispatch-op
 ```
