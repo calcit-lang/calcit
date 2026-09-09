@@ -96,6 +96,16 @@ fn entry_config_json(name: &str, entry: &snapshot::SnapshotEntry) -> EntryConfig
   }
 }
 
+fn available_entry_names(snapshot: &snapshot::Snapshot) -> String {
+  let mut names = snapshot.entries.keys().cloned().collect::<Vec<_>>();
+  names.sort();
+  names.join(", ")
+}
+
+fn missing_entry_error(snapshot: &snapshot::Snapshot, name: &str) -> String {
+  format!("Entry '{name}' not found. Available: {}", available_entry_names(snapshot))
+}
+
 fn config_show_json(
   snapshot: &snapshot::Snapshot,
   selected_entry: Option<&str>,
@@ -104,10 +114,7 @@ fn config_show_json(
   let mut names = match selected_entry {
     Some(name) => {
       if !snapshot.entries.contains_key(name) {
-        return Err(format!(
-          "Entry '{name}' not found. Available: {}",
-          snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ")
-        ));
+        return Err(missing_entry_error(snapshot, name));
       }
       vec![name.to_owned()]
     }
@@ -132,11 +139,10 @@ fn config_show_json(
   })
 }
 
-fn snapshot_content_revision(input_path: &str) -> Result<String, String> {
-  let content = fs::read(input_path).map_err(|error| format!("Failed to read {input_path}: {error}"))?;
+fn snapshot_content_revision(content: &[u8]) -> String {
   let mut hasher = Md5::new();
   hasher.update(content);
-  Ok(format!("md5:{}", hex::encode(hasher.finalize())))
+  format!("md5:{}", hex::encode(hasher.finalize()))
 }
 
 fn config_error_code(error: &str) -> &'static str {
@@ -149,8 +155,7 @@ fn config_error_code(error: &str) -> &'static str {
   }
 }
 
-fn emit_config_json<T: Serialize>(command: &'static str, input_path: &str, result: Result<T, String>) -> Result<(), String> {
-  let revision = snapshot_content_revision(input_path).ok();
+fn emit_config_json<T: Serialize>(command: &'static str, revision: Option<String>, result: Result<T, String>) -> Result<(), String> {
   match result {
     Ok(data) => {
       let envelope = ConfigJsonEnvelope {
@@ -194,11 +199,15 @@ fn json_output_requested(format: &str) -> Result<bool, String> {
   }
 }
 
-fn load_snapshot_for_display(input_path: &str) -> Result<snapshot::Snapshot, String> {
+fn read_snapshot_content(input_path: &str) -> Result<Vec<u8>, String> {
   if !Path::new(input_path).exists() {
     return Err(format!("{input_path} does not exist"));
   }
-  let mut content = fs::read_to_string(input_path).map_err(|e| format!("Failed to read file: {e}"))?;
+  fs::read(input_path).map_err(|e| format!("Failed to read file: {e}"))
+}
+
+fn parse_snapshot_content(content: Vec<u8>, input_path: &str) -> Result<snapshot::Snapshot, String> {
+  let mut content = String::from_utf8(content).map_err(|e| format!("Failed to read file: {e}"))?;
   strip_shebang(&mut content);
   let data = cirru_edn::parse(&content).map_err(|e| {
     eprintln!("\nFailed to parse file '{input_path}':");
@@ -206,6 +215,24 @@ fn load_snapshot_for_display(input_path: &str) -> Result<snapshot::Snapshot, Str
     format!("Failed to parse file '{input_path}'")
   })?;
   snapshot::load_snapshot_data(&data, input_path)
+}
+
+fn load_snapshot_for_display(input_path: &str) -> Result<snapshot::Snapshot, String> {
+  parse_snapshot_content(read_snapshot_content(input_path)?, input_path)
+}
+
+fn config_json_query<T>(
+  input_path: &str,
+  query: impl FnOnce(snapshot::Snapshot) -> Result<T, String>,
+) -> (Option<String>, Result<T, String>) {
+  match read_snapshot_content(input_path) {
+    Ok(content) => {
+      let revision = Some(snapshot_content_revision(&content));
+      let result = parse_snapshot_content(content, input_path).and_then(query);
+      (revision, result)
+    }
+    Err(error) => (None, Err(error)),
+  }
 }
 
 pub fn handle_config_command(cmd: &ConfigCommand, snapshot_file: &str) -> Result<(), String> {
@@ -254,21 +281,15 @@ fn format_target(target: Option<snapshot::SnapshotTarget>) -> &'static str {
 
 fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String> {
   if json_output_requested(&opts.format)? {
-    let result = (|| {
-      let snapshot = load_snapshot_for_display(input_path)?;
+    let (revision, result) = config_json_query(input_path, |snapshot| {
       config_show_json(&snapshot, opts.entry.as_deref(), package_version_for_snapshot(input_path)?)
-    })();
-    return emit_config_json("config.show", input_path, result);
+    });
+    return emit_config_json("config.show", revision, result);
   }
   let snapshot = load_snapshot_for_display(input_path)?;
 
   if let Some(name) = &opts.entry {
-    let entry = snapshot.entries.get(name).ok_or_else(|| {
-      format!(
-        "Entry '{name}' not found. Available: {}",
-        snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ")
-      )
-    })?;
+    let entry = snapshot.entries.get(name).ok_or_else(|| missing_entry_error(&snapshot, name))?;
     println!("{}", format!("Entry '{name}':").bold());
     println!("  {}: {}", "mode".cyan(), entry.mode);
     println!("  {}: {}", "target".cyan(), format_target(entry.target));
@@ -311,33 +332,22 @@ fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String>
 
 fn handle_type_slots(opts: &ConfigTypeSlotsCommand, input_path: &str) -> Result<(), String> {
   if json_output_requested(&opts.format)? {
-    let result = (|| {
-      let snapshot = load_snapshot_for_display(input_path)?;
+    let (revision, result) = config_json_query(input_path, |snapshot| {
       let name = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
-      let entry = snapshot.entries.get(name).ok_or_else(|| {
-        format!(
-          "Entry '{name}' not found. Available: {}",
-          snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ")
-        )
-      })?;
+      let entry = snapshot.entries.get(name).ok_or_else(|| missing_entry_error(&snapshot, name))?;
       let entry = entry_config_json(name, entry);
       Ok(ConfigTypeSlotsJson {
         package: snapshot.package,
         type_slots: entry.type_slots.clone(),
         entry,
       })
-    })();
-    return emit_config_json("config.type-slots", input_path, result);
+    });
+    return emit_config_json("config.type-slots", revision, result);
   }
   let snapshot = load_snapshot_for_display(input_path)?;
   let name = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
   let (label, type_slots) = {
-    let entry = snapshot.entries.get(name).ok_or_else(|| {
-      format!(
-        "Entry '{name}' not found. Available: {}",
-        snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ")
-      )
-    })?;
+    let entry = snapshot.entries.get(name).ok_or_else(|| missing_entry_error(&snapshot, name))?;
     (format!("Type slots in entry '{name}':"), &entry.type_slots)
   };
 
@@ -356,17 +366,11 @@ fn handle_type_slots(opts: &ConfigTypeSlotsCommand, input_path: &str) -> Result<
 
 fn handle_modules(opts: &ConfigModulesCommand, input_path: &str) -> Result<(), String> {
   if json_output_requested(&opts.format)? {
-    let result = (|| {
-      let snapshot = load_snapshot_for_display(input_path)?;
+    let (revision, result) = config_json_query(input_path, |snapshot| {
       let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
       let module_folder = calcit::project_module_folder(base_dir);
       let name = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
-      let entry = snapshot.entries.get(name).ok_or_else(|| {
-        format!(
-          "Entry '{name}' not found. Available: {}",
-          snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ")
-        )
-      })?;
+      let entry = snapshot.entries.get(name).ok_or_else(|| missing_entry_error(&snapshot, name))?;
       let modules = entry
         .modules
         .iter()
@@ -388,8 +392,8 @@ fn handle_modules(opts: &ConfigModulesCommand, input_path: &str) -> Result<(), S
         entry: entry_config_json(name, entry),
         modules,
       })
-    })();
-    return emit_config_json("config.modules", input_path, result);
+    });
+    return emit_config_json("config.modules", revision, result);
   }
   let snapshot = load_snapshot_for_display(input_path)?;
 
@@ -398,12 +402,7 @@ fn handle_modules(opts: &ConfigModulesCommand, input_path: &str) -> Result<(), S
 
   let name = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
   let (label, modules) = {
-    let entry = snapshot.entries.get(name).ok_or_else(|| {
-      format!(
-        "Entry '{name}' not found. Available: {}",
-        snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ")
-      )
-    })?;
+    let entry = snapshot.entries.get(name).ok_or_else(|| missing_entry_error(&snapshot, name))?;
     (format!("Modules in entry '{name}':"), entry.modules.clone())
   };
 
@@ -567,8 +566,7 @@ fn handle_add_module(opts: &ConfigAddModuleCommand, snapshot_file: &str) -> Resu
   if let Some(name) = &opts.entry
     && !snapshot.entries.contains_key(name)
   {
-    let available: Vec<_> = snapshot.entries.keys().cloned().collect();
-    return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
+    return Err(missing_entry_error(&snapshot, name));
   }
 
   let configs = select_entry_mut(&mut snapshot, opts.entry.as_deref())?;
@@ -591,8 +589,7 @@ fn handle_rm_module(opts: &ConfigRmModuleCommand, snapshot_file: &str) -> Result
   if let Some(name) = &opts.entry
     && !snapshot.entries.contains_key(name)
   {
-    let available: Vec<_> = snapshot.entries.keys().cloned().collect();
-    return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
+    return Err(missing_entry_error(&snapshot, name));
   }
 
   let configs = select_entry_mut(&mut snapshot, opts.entry.as_deref())?;
@@ -621,7 +618,7 @@ fn normalize_type_slot_name(raw: &str) -> Result<String, String> {
 
 fn select_entry_mut<'a>(snapshot: &'a mut snapshot::Snapshot, entry: Option<&str>) -> Result<&'a mut snapshot::SnapshotEntry, String> {
   let name = entry.unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
-  let available = snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ");
+  let available = available_entry_names(snapshot);
   snapshot
     .entries
     .get_mut(name)
@@ -927,6 +924,10 @@ mod tests {
     assert_eq!(selected.entries.len(), 1);
     assert_eq!(selected.entries[0].target, Some("wasm"));
     assert_eq!(selected.selected_entry.as_deref(), Some("zeta"));
+    assert_eq!(
+      config_show_json(&snapshot, Some("missing"), None).expect_err("missing entry"),
+      "Entry 'missing' not found. Available: alpha, default, zeta"
+    );
   }
 
   #[test]
