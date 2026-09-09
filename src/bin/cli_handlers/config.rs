@@ -10,18 +10,204 @@ use calcit::snapshot;
 use calcit::util::string::strip_shebang;
 use cirru_edn::{Edn, EdnMapView};
 use colored::Colorize;
-use std::collections::HashMap;
+use md5::{Digest, Md5};
+use serde::Serialize;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
 
-use super::common::{deps_path_for_snapshot, guard_snapshot_mutation_toolchain};
+use super::common::{deps_path_for_snapshot, guard_snapshot_mutation_toolchain, package_version_for_snapshot};
 use super::edit::{load_snapshot, save_snapshot};
 
-fn load_snapshot_for_display(input_path: &str) -> Result<snapshot::Snapshot, String> {
+const CONFIG_JSON_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Serialize)]
+struct ConfigDiagnostic {
+  code: &'static str,
+  message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ConfigJsonEnvelope<T> {
+  schema_version: u32,
+  command: &'static str,
+  data: Option<T>,
+  diagnostics: Vec<ConfigDiagnostic>,
+  revision: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct EntryConfigJson {
+  name: String,
+  mode: &'static str,
+  target: Option<&'static str>,
+  init_fn: String,
+  reload_fn: String,
+  description: String,
+  modules: Vec<String>,
+  type_slots: BTreeMap<String, String>,
+  feature_policy: BTreeMap<String, &'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct ConfigShowJson {
+  package: String,
+  version: Option<String>,
+  selected_entry: Option<String>,
+  entries: Vec<EntryConfigJson>,
+}
+
+#[derive(Debug, Serialize)]
+struct ModuleConfigJson {
+  path: String,
+  package: Option<String>,
+  status: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct ConfigModulesJson {
+  package: String,
+  entry: EntryConfigJson,
+  modules: Vec<ModuleConfigJson>,
+}
+
+#[derive(Debug, Serialize)]
+struct ConfigTypeSlotsJson {
+  package: String,
+  entry: EntryConfigJson,
+  type_slots: BTreeMap<String, String>,
+}
+
+fn entry_config_json(name: &str, entry: &snapshot::SnapshotEntry) -> EntryConfigJson {
+  EntryConfigJson {
+    name: name.to_owned(),
+    mode: entry.mode.as_str(),
+    target: entry.target.map(snapshot::SnapshotTarget::as_str),
+    init_fn: entry.init_fn.clone(),
+    reload_fn: entry.reload_fn.clone(),
+    description: entry.description.clone(),
+    modules: entry.modules.clone(),
+    type_slots: entry.type_slots.iter().map(|(key, value)| (key.clone(), value.clone())).collect(),
+    feature_policy: entry
+      .feature_policy
+      .iter()
+      .map(|(feature, policy)| (feature.clone(), policy.as_str()))
+      .collect(),
+  }
+}
+
+fn available_entry_names(snapshot: &snapshot::Snapshot) -> String {
+  let mut names = snapshot.entries.keys().cloned().collect::<Vec<_>>();
+  names.sort();
+  names.join(", ")
+}
+
+fn missing_entry_error(snapshot: &snapshot::Snapshot, name: &str) -> String {
+  format!("Entry '{name}' not found. Available: {}", available_entry_names(snapshot))
+}
+
+fn config_show_json(
+  snapshot: &snapshot::Snapshot,
+  selected_entry: Option<&str>,
+  version: Option<String>,
+) -> Result<ConfigShowJson, String> {
+  let mut names = match selected_entry {
+    Some(name) => {
+      if !snapshot.entries.contains_key(name) {
+        return Err(missing_entry_error(snapshot, name));
+      }
+      vec![name.to_owned()]
+    }
+    None => snapshot.entries.keys().cloned().collect::<Vec<_>>(),
+  };
+  names.sort();
+  let entries = names
+    .iter()
+    .map(|name| {
+      let entry = snapshot
+        .entries
+        .get(name)
+        .ok_or_else(|| format!("Missing entry config for '{name}'"))?;
+      Ok(entry_config_json(name, entry))
+    })
+    .collect::<Result<Vec<_>, String>>()?;
+  Ok(ConfigShowJson {
+    package: snapshot.package.clone(),
+    version,
+    selected_entry: selected_entry.map(str::to_owned),
+    entries,
+  })
+}
+
+fn snapshot_content_revision(content: &[u8]) -> String {
+  let mut hasher = Md5::new();
+  hasher.update(content);
+  format!("md5:{}", hex::encode(hasher.finalize()))
+}
+
+fn config_error_code(error: &str) -> &'static str {
+  if error.starts_with("Entry '") && error.contains(" not found") {
+    "E_CONFIG_ENTRY_NOT_FOUND"
+  } else if error.ends_with(" does not exist") {
+    "E_CONFIG_SNAPSHOT_NOT_FOUND"
+  } else {
+    "E_CONFIG_SNAPSHOT_INVALID"
+  }
+}
+
+fn emit_config_json<T: Serialize>(command: &'static str, revision: Option<String>, result: Result<T, String>) -> Result<(), String> {
+  match result {
+    Ok(data) => {
+      let envelope = ConfigJsonEnvelope {
+        schema_version: CONFIG_JSON_SCHEMA_VERSION,
+        command,
+        data: Some(data),
+        diagnostics: vec![],
+        revision,
+      };
+      println!(
+        "{}",
+        serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to serialize config JSON: {error}"))?
+      );
+      Ok(())
+    }
+    Err(error) => {
+      let envelope = ConfigJsonEnvelope::<serde_json::Value> {
+        schema_version: CONFIG_JSON_SCHEMA_VERSION,
+        command,
+        data: None,
+        diagnostics: vec![ConfigDiagnostic {
+          code: config_error_code(&error),
+          message: error.clone(),
+        }],
+        revision,
+      };
+      println!(
+        "{}",
+        serde_json::to_string_pretty(&envelope).map_err(|json_error| format!("Failed to serialize config JSON: {json_error}"))?
+      );
+      Err(error)
+    }
+  }
+}
+
+fn json_output_requested(format: &str) -> Result<bool, String> {
+  match format {
+    "human" | "text" => Ok(false),
+    "json" => Ok(true),
+    other => Err(format!("Unknown config output format `{other}`. Expected `human` or `json`.")),
+  }
+}
+
+fn read_snapshot_content(input_path: &str) -> Result<Vec<u8>, String> {
   if !Path::new(input_path).exists() {
     return Err(format!("{input_path} does not exist"));
   }
-  let mut content = fs::read_to_string(input_path).map_err(|e| format!("Failed to read file: {e}"))?;
+  fs::read(input_path).map_err(|e| format!("Failed to read file: {e}"))
+}
+
+fn parse_snapshot_content(content: Vec<u8>, input_path: &str) -> Result<snapshot::Snapshot, String> {
+  let mut content = String::from_utf8(content).map_err(|e| format!("Failed to read file: {e}"))?;
   strip_shebang(&mut content);
   let data = cirru_edn::parse(&content).map_err(|e| {
     eprintln!("\nFailed to parse file '{input_path}':");
@@ -29,6 +215,24 @@ fn load_snapshot_for_display(input_path: &str) -> Result<snapshot::Snapshot, Str
     format!("Failed to parse file '{input_path}'")
   })?;
   snapshot::load_snapshot_data(&data, input_path)
+}
+
+fn load_snapshot_for_display(input_path: &str) -> Result<snapshot::Snapshot, String> {
+  parse_snapshot_content(read_snapshot_content(input_path)?, input_path)
+}
+
+fn config_json_query<T>(
+  input_path: &str,
+  query: impl FnOnce(snapshot::Snapshot) -> Result<T, String>,
+) -> (Option<String>, Result<T, String>) {
+  match read_snapshot_content(input_path) {
+    Ok(content) => {
+      let revision = Some(snapshot_content_revision(&content));
+      let result = parse_snapshot_content(content, input_path).and_then(query);
+      (revision, result)
+    }
+    Err(error) => (None, Err(error)),
+  }
 }
 
 pub fn handle_config_command(cmd: &ConfigCommand, snapshot_file: &str) -> Result<(), String> {
@@ -76,15 +280,16 @@ fn format_target(target: Option<snapshot::SnapshotTarget>) -> &'static str {
 }
 
 fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String> {
+  if json_output_requested(&opts.format)? {
+    let (revision, result) = config_json_query(input_path, |snapshot| {
+      config_show_json(&snapshot, opts.entry.as_deref(), package_version_for_snapshot(input_path)?)
+    });
+    return emit_config_json("config.show", revision, result);
+  }
   let snapshot = load_snapshot_for_display(input_path)?;
 
   if let Some(name) = &opts.entry {
-    let entry = snapshot.entries.get(name).ok_or_else(|| {
-      format!(
-        "Entry '{name}' not found. Available: {}",
-        snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ")
-      )
-    })?;
+    let entry = snapshot.entries.get(name).ok_or_else(|| missing_entry_error(&snapshot, name))?;
     println!("{}", format!("Entry '{name}':").bold());
     println!("  {}: {}", "mode".cyan(), entry.mode);
     println!("  {}: {}", "target".cyan(), format_target(entry.target));
@@ -126,15 +331,23 @@ fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String>
 }
 
 fn handle_type_slots(opts: &ConfigTypeSlotsCommand, input_path: &str) -> Result<(), String> {
+  if json_output_requested(&opts.format)? {
+    let (revision, result) = config_json_query(input_path, |snapshot| {
+      let name = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
+      let entry = snapshot.entries.get(name).ok_or_else(|| missing_entry_error(&snapshot, name))?;
+      let entry = entry_config_json(name, entry);
+      Ok(ConfigTypeSlotsJson {
+        package: snapshot.package,
+        type_slots: entry.type_slots.clone(),
+        entry,
+      })
+    });
+    return emit_config_json("config.type-slots", revision, result);
+  }
   let snapshot = load_snapshot_for_display(input_path)?;
   let name = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
   let (label, type_slots) = {
-    let entry = snapshot.entries.get(name).ok_or_else(|| {
-      format!(
-        "Entry '{name}' not found. Available: {}",
-        snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ")
-      )
-    })?;
+    let entry = snapshot.entries.get(name).ok_or_else(|| missing_entry_error(&snapshot, name))?;
     (format!("Type slots in entry '{name}':"), &entry.type_slots)
   };
 
@@ -152,6 +365,36 @@ fn handle_type_slots(opts: &ConfigTypeSlotsCommand, input_path: &str) -> Result<
 }
 
 fn handle_modules(opts: &ConfigModulesCommand, input_path: &str) -> Result<(), String> {
+  if json_output_requested(&opts.format)? {
+    let (revision, result) = config_json_query(input_path, |snapshot| {
+      let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
+      let module_folder = calcit::project_module_folder(base_dir);
+      let name = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
+      let entry = snapshot.entries.get(name).ok_or_else(|| missing_entry_error(&snapshot, name))?;
+      let modules = entry
+        .modules
+        .iter()
+        .map(|module_path| match load_module_silent(module_path, base_dir, &module_folder) {
+          Ok(module_snapshot) => ModuleConfigJson {
+            path: module_path.clone(),
+            package: Some(module_snapshot.package),
+            status: "loaded",
+          },
+          Err(_) => ModuleConfigJson {
+            path: module_path.clone(),
+            package: None,
+            status: "failed",
+          },
+        })
+        .collect();
+      Ok(ConfigModulesJson {
+        package: snapshot.package,
+        entry: entry_config_json(name, entry),
+        modules,
+      })
+    });
+    return emit_config_json("config.modules", revision, result);
+  }
   let snapshot = load_snapshot_for_display(input_path)?;
 
   let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
@@ -159,12 +402,7 @@ fn handle_modules(opts: &ConfigModulesCommand, input_path: &str) -> Result<(), S
 
   let name = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
   let (label, modules) = {
-    let entry = snapshot.entries.get(name).ok_or_else(|| {
-      format!(
-        "Entry '{name}' not found. Available: {}",
-        snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ")
-      )
-    })?;
+    let entry = snapshot.entries.get(name).ok_or_else(|| missing_entry_error(&snapshot, name))?;
     (format!("Modules in entry '{name}':"), entry.modules.clone())
   };
 
@@ -328,8 +566,7 @@ fn handle_add_module(opts: &ConfigAddModuleCommand, snapshot_file: &str) -> Resu
   if let Some(name) = &opts.entry
     && !snapshot.entries.contains_key(name)
   {
-    let available: Vec<_> = snapshot.entries.keys().cloned().collect();
-    return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
+    return Err(missing_entry_error(&snapshot, name));
   }
 
   let configs = select_entry_mut(&mut snapshot, opts.entry.as_deref())?;
@@ -352,8 +589,7 @@ fn handle_rm_module(opts: &ConfigRmModuleCommand, snapshot_file: &str) -> Result
   if let Some(name) = &opts.entry
     && !snapshot.entries.contains_key(name)
   {
-    let available: Vec<_> = snapshot.entries.keys().cloned().collect();
-    return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
+    return Err(missing_entry_error(&snapshot, name));
   }
 
   let configs = select_entry_mut(&mut snapshot, opts.entry.as_deref())?;
@@ -382,7 +618,7 @@ fn normalize_type_slot_name(raw: &str) -> Result<String, String> {
 
 fn select_entry_mut<'a>(snapshot: &'a mut snapshot::Snapshot, entry: Option<&str>) -> Result<&'a mut snapshot::SnapshotEntry, String> {
   let name = entry.unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
-  let available = snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ");
+  let available = available_entry_names(snapshot);
   snapshot
     .entries
     .get_mut(name)
@@ -628,6 +864,83 @@ mod tests {
   fn entry_target_display_marks_unset_values() {
     assert_eq!(format_target(Some(snapshot::SnapshotTarget::Node)), "node");
     assert_eq!(format_target(None), "(none)");
+  }
+
+  #[test]
+  fn config_json_round_trips_targets_and_orders_entries_and_maps() {
+    let make_entry = |target| snapshot::SnapshotEntry {
+      mode: snapshot::SnapshotRunMode::Js,
+      init_fn: "app.main/main!".to_owned(),
+      reload_fn: "app.main/reload!".to_owned(),
+      description: "demo".to_owned(),
+      modules: vec!["z/".to_owned(), "a/".to_owned()],
+      type_slots: HashMap::from([
+        ("z-slot".to_owned(), "app.schema/Z".to_owned()),
+        ("a-slot".to_owned(), "app.schema/A".to_owned()),
+      ]),
+      feature_policy: HashMap::from([
+        ("z-feature".to_owned(), snapshot::FeaturePolicy::Warn),
+        ("js-ffi".to_owned(), snapshot::FeaturePolicy::Error),
+      ]),
+      target,
+    };
+    for (target, expected) in [
+      (Some(snapshot::SnapshotTarget::Browser), Some("browser")),
+      (Some(snapshot::SnapshotTarget::Node), Some("node")),
+      (Some(snapshot::SnapshotTarget::Native), Some("native")),
+      (Some(snapshot::SnapshotTarget::Wasm), Some("wasm")),
+      (None, None),
+    ] {
+      let entry = entry_config_json("default", &make_entry(target));
+      assert_eq!(entry.target, expected);
+      assert_eq!(entry.type_slots.keys().cloned().collect::<Vec<_>>(), ["a-slot", "z-slot"]);
+      assert_eq!(entry.feature_policy.keys().cloned().collect::<Vec<_>>(), ["js-ffi", "z-feature"]);
+      assert_eq!(
+        entry.modules,
+        ["z/", "a/"],
+        "module declaration order is semantic and must be preserved"
+      );
+    }
+
+    let snapshot = snapshot::Snapshot {
+      package: "demo".to_owned(),
+      about: None,
+      version: "0.0.1".to_owned(),
+      entries: HashMap::from([
+        ("zeta".to_owned(), make_entry(Some(snapshot::SnapshotTarget::Wasm))),
+        ("default".to_owned(), make_entry(Some(snapshot::SnapshotTarget::Native))),
+        ("alpha".to_owned(), make_entry(Some(snapshot::SnapshotTarget::Browser))),
+      ]),
+      files: HashMap::new(),
+      active_entry: snapshot::DEFAULT_ENTRY_NAME.to_owned(),
+    };
+    let all = config_show_json(&snapshot, None, Some("1.2.3".to_owned())).expect("all entries");
+    assert_eq!(
+      all.entries.iter().map(|entry| entry.name.as_str()).collect::<Vec<_>>(),
+      ["alpha", "default", "zeta"]
+    );
+    assert_eq!(all.version.as_deref(), Some("1.2.3"));
+    let selected = config_show_json(&snapshot, Some("zeta"), None).expect("selected entry");
+    assert_eq!(selected.entries.len(), 1);
+    assert_eq!(selected.entries[0].target, Some("wasm"));
+    assert_eq!(selected.selected_entry.as_deref(), Some("zeta"));
+    assert_eq!(
+      config_show_json(&snapshot, Some("missing"), None).expect_err("missing entry"),
+      "Entry 'missing' not found. Available: alpha, default, zeta"
+    );
+  }
+
+  #[test]
+  fn config_json_error_codes_are_stable() {
+    assert_eq!(
+      config_error_code("Entry 'missing' not found. Available: default"),
+      "E_CONFIG_ENTRY_NOT_FOUND"
+    );
+    assert_eq!(config_error_code("missing.cirru does not exist"), "E_CONFIG_SNAPSHOT_NOT_FOUND");
+    assert_eq!(
+      config_error_code("Failed to parse file 'calcit.cirru'"),
+      "E_CONFIG_SNAPSHOT_INVALID"
+    );
   }
 
   #[test]

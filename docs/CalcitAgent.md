@@ -113,6 +113,9 @@ caps tree
 caps why '<owner/repo>'
 calcit calcit.cirru config modules
 calcit calcit.cirru config modules --entry '<entry-name>'
+calcit calcit.cirru config show --format json
+calcit calcit.cirru config modules --entry '<entry-name>' --format json
+calcit calcit.cirru config type-slots --entry '<entry-name>' --format json
 calcit calcit.cirru --check-only
 calcit calcit.cirru --entry '<entry-name>' --check-only
 # Here --entry is the snapshot filename, not a named entry:
@@ -127,6 +130,10 @@ entry 都是独立配置，不能假设其模块继承 default。`--check-only` 
 
 注意：`config modules --entry` 与顶层 `--entry` 选择 named entry；`docs check-md --entry` 则选择用于
 检查的 snapshot 文件（`calcit.cirru`），两者不是同一种参数。
+
+Agent 和 CI 读取 entry 配置时使用 config 查询的 `--format json`，不要解析彩色 human 输出。三个命令
+都返回带 `schema_version`、`command`、`data`、`diagnostics` 与 Snapshot `revision` 的单一 envelope；
+entry 不存在或 Snapshot 配置无效时仍输出结构化诊断并以非零状态退出。
 
 读取源码优先使用 human/Cirru 输出；只有需要稳定字段、自动分支或静态证据时才使用 `--format json`。`--format json` 承诺 stdout 为单个 JSON envelope；某些命令的 `--json` 只是在人类输出后附加 JSON，具体以子命令 `--help` 为准。
 

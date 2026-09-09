@@ -95,6 +95,7 @@ caps why calcit-lang/memof
 # Inspect the module list for each relevant executable entry.
 calcit calcit.cirru config modules
 calcit calcit.cirru config modules --entry test
+calcit calcit.cirru config modules --entry test --format json
 
 # Validate the reachable paths for those entries.
 calcit calcit.cirru --check-only
@@ -107,6 +108,9 @@ metadata, or Markdown snippets. They also currently merge root `:dependencies` a
 `:dev-dependencies` in their display, so use `deps.cirru` as the authority for a root module's declared
 group. An installed module is therefore not automatically a runtime dependency: it can be a development
 module, a module configured only for another entry, or a module retained for a documentation check.
+
+Automation should add `--format json`: the single versioned envelope includes the complete selected entry and a
+deterministic module list whose rows distinguish `loaded` paths and unresolved `failed` paths.
 
 Named entries do not inherit the default entry's modules. Audit each entry that CI or a release supports.
 For Markdown code, `calcit docs check-md` defaults to modules from the default entry; use an explicit

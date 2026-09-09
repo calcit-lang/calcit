@@ -2519,6 +2519,9 @@ pub struct ConfigShowCommand {
   /// show a named entry (e.g. "test"); defaults to showing all entries
   #[argh(option)]
   pub entry: Option<String>,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -2528,6 +2531,9 @@ pub struct ConfigModulesCommand {
   /// list modules for a named entry (e.g. "test"); defaults to "default"
   #[argh(option)]
   pub entry: Option<String>,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -2537,6 +2543,9 @@ pub struct ConfigTypeSlotsCommand {
   /// list bindings for a named entry; defaults to "default"
   #[argh(option)]
   pub entry: Option<String>,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

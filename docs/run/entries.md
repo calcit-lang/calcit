@@ -57,7 +57,14 @@ Use the structured config command to declare the host target rather than editing
 calcit config set target browser
 calcit config set --entry server target native
 calcit config show
+calcit config show --format json
 ```
+
+`config show`, `config modules`, and `config type-slots` accept `--format human|json`. JSON mode writes one
+schema-versioned envelope to stdout and keeps command explanations and incidental log output on stderr. Each selected entry
+includes its name, mode, optional target, init/reload definitions, description, modules, type slots, and feature
+policy. The all-entry `config show` form sorts entries by name; missing entries return a non-zero status with a
+structured diagnostic instead of partial success output.
 
 `:init-fn` and `:reload-fn` are Calcit definition symbols, written as `'app.main/main!` rather than strings. Existing string-valued entries remain compatible on read and are converted on the next canonical snapshot write.
 
@@ -71,6 +78,7 @@ calcit config set --entry server target native
 calcit config set-type-slot --entry server :dispatch-op app.schema/ServerOp
 calcit config type-slots
 calcit config type-slots --entry server
+calcit config type-slots --entry server --format json
 ```
 
 The type-slot environment is selected before preprocessing starts, so the binding applies to the whole reachable call graph. Entry functions do not need a `with-type-slot` wrapper.
