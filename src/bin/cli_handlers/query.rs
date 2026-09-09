@@ -1684,6 +1684,8 @@ fn callable_signature_from_head(head: &Calcit) -> Option<StaticCallableSignature
   }
 }
 
+/// Infer the type required by the target's parent context and describe the
+/// source of that expectation for diagnostics.
 fn expected_type_at_path(
   entry: &snapshot::CodeEntry,
   processed_root: Option<&Calcit>,
