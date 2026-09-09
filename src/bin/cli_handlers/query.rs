@@ -53,6 +53,7 @@ struct SearchCommonOpts<'a> {
   regex: bool,
   max_depth: usize,
   entry: Option<&'a str>,
+  source: SearchSource,
   detail_offset: usize,
   parent_path: bool,
   format: QueryRenderFormat,
@@ -76,6 +77,50 @@ struct SpecialBuiltinQueryMeta {
 enum QueryRenderFormat {
   Human,
   Json,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum SearchSource {
+  Project,
+  Core,
+  Deps,
+  All,
+}
+
+impl SearchSource {
+  fn parse(raw: &str) -> Result<Self, String> {
+    match raw {
+      "project" => Ok(Self::Project),
+      "core" => Ok(Self::Core),
+      "deps" => Ok(Self::Deps),
+      "all" => Ok(Self::All),
+      other => Err(format!(
+        "Unknown query search source `{other}`. Expected `project`, `core`, `deps`, or `all`."
+      )),
+    }
+  }
+
+  fn as_str(self) -> &'static str {
+    match self {
+      Self::Project => "project",
+      Self::Core => "core",
+      Self::Deps => "deps",
+      Self::All => "all",
+    }
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct SearchOrigin {
+  package: String,
+  module: Option<String>,
+}
+
+#[derive(Debug)]
+struct SearchCatalog {
+  snapshot: snapshot::Snapshot,
+  sources: BTreeMap<String, (SearchSource, SearchOrigin)>,
 }
 
 fn parse_query_render_format(raw: &str) -> Result<QueryRenderFormat, String> {
@@ -693,6 +738,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
         regex: opts.regex,
         max_depth: opts.max_depth,
         entry: opts.entry.as_deref(),
+        source: SearchSource::parse(&opts.source)?,
         detail_offset: opts.detail_offset,
         parent_path: opts.parent_path,
         format: parse_query_render_format(&opts.format)?,
@@ -708,6 +754,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
         regex: false,
         max_depth: opts.max_depth,
         entry: opts.entry.as_deref(),
+        source: SearchSource::All,
         detail_offset: opts.detail_offset,
         parent_path: false,
         format: parse_query_render_format(&opts.format)?,
@@ -999,6 +1046,7 @@ mod type_query_tests {
       max_depth: 0,
       start_path: None,
       entry: None,
+      source: "project".to_string(),
       pattern_is_json: false,
       selected_index: 1,
       snapshot_revision: snapshot_content_revision(&snapshot_path).expect("snapshot revision should compute"),
@@ -1049,17 +1097,25 @@ mod type_query_tests {
       regex: false,
       max_depth: 0,
       entry: None,
+      source: SearchSource::Project,
       detail_offset: 0,
       parent_path: false,
       format: QueryRenderFormat::Json,
       set_cursor: None,
       compact_output: false,
     };
-    let output = format_search_results_json("query.search", "true", false, None, &options, &snapshot, &results)
-      .expect("search JSON should format");
+    let sources = snapshot_search_sources(&snapshot, SearchSource::Project, None);
+    let catalog = SearchCatalog { snapshot, sources };
+    let output =
+      format_search_results_json("query.search", "true", false, None, &options, &catalog, &results).expect("search JSON should format");
     let value: serde_json::Value = serde_json::from_str(&output).expect("search output should be valid JSON");
+    assert_eq!(value["data"]["filters"]["source"], "project");
+    assert_eq!(value["data"]["definitions"][0]["source"], "project");
+    assert_eq!(value["data"]["definitions"][0]["origin"]["package"], "app");
     assert_eq!(value["data"]["definitions"][0]["matches"][0]["cursor_index"], 0);
+    assert_eq!(value["data"]["definitions"][0]["matches"][0]["node_kind"], "call");
     assert_eq!(value["data"]["definitions"][0]["matches"][1]["cursor_index"], 1);
+    assert_eq!(value["data"]["definitions"][0]["matches"][1]["node_kind"], "leaf");
 
     handle_repeat_cursor_search(&snapshot_path, false).expect("saved search should recompute its previous result");
     assert_eq!(
@@ -3090,15 +3146,117 @@ fn load_snapshot_for_namespace(input_path: &str, namespace: &str) -> Result<snap
   load_snapshot(input_path)
 }
 
-fn load_snapshot_for_search(input_path: &str, options: &SearchCommonOpts) -> Result<snapshot::Snapshot, String> {
-  if let Some(entry) = options.entry {
-    return load_snapshot_with_entry(input_path, Some(entry));
+fn snapshot_search_sources(
+  snapshot: &snapshot::Snapshot,
+  source: SearchSource,
+  module: Option<&str>,
+) -> BTreeMap<String, (SearchSource, SearchOrigin)> {
+  snapshot
+    .files
+    .keys()
+    .map(|namespace| {
+      (
+        namespace.clone(),
+        (
+          source,
+          SearchOrigin {
+            package: snapshot.package.clone(),
+            module: module.map(str::to_owned),
+          },
+        ),
+      )
+    })
+    .collect()
+}
+
+fn load_snapshot_for_search(input_path: &str, options: &SearchCommonOpts) -> Result<SearchCatalog, String> {
+  let mut snapshot = load_main_snapshot(input_path)?;
+  snapshot.select_entry(options.entry)?;
+
+  if options.source == SearchSource::Core {
+    let snapshot = load_core_snapshot()?;
+    let sources = snapshot_search_sources(&snapshot, SearchSource::Core, Some("builtin"));
+    return Ok(SearchCatalog { snapshot, sources });
   }
-  if let Some(filter) = options.filter {
+
+  let mut sources = snapshot_search_sources(&snapshot, SearchSource::Project, None);
+  if options.source == SearchSource::Project {
+    return Ok(SearchCatalog { snapshot, sources });
+  }
+  if options.source == SearchSource::All
+    && options.entry.is_none()
+    && let Some(filter) = options.filter
+  {
     let namespace = filter.split_once('/').map(|(namespace, _)| namespace).unwrap_or(filter);
-    return load_snapshot_for_namespace(input_path, namespace);
+    if snapshot.files.contains_key(namespace) {
+      return Ok(SearchCatalog { snapshot, sources });
+    }
+    if namespace == calcit::calcit::CORE_NS || namespace == "calcit.internal" {
+      let snapshot = load_core_snapshot()?;
+      let sources = snapshot_search_sources(&snapshot, SearchSource::Core, Some("builtin"));
+      return Ok(SearchCatalog { snapshot, sources });
+    }
   }
-  load_snapshot(input_path)
+
+  let mut modules_to_load = snapshot.active_entry()?.modules.clone();
+  let mut seen_modules = HashSet::new();
+  modules_to_load.retain(|module_path| seen_modules.insert(module_path.to_owned()));
+  let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
+  let module_folder = calcit::project_module_folder(base_dir);
+
+  for module_path in &modules_to_load {
+    match load_module_silent(module_path, base_dir, &module_folder) {
+      Ok(module_snapshot) => {
+        let module_package = module_snapshot.package.clone();
+        let module_namespaces = module_snapshot.files.keys().cloned().collect::<Vec<_>>();
+        calcit::merge_project_module_files(&mut snapshot, &module_snapshot, module_path)?;
+        for namespace in module_namespaces {
+          if snapshot.files.contains_key(&namespace) && !sources.contains_key(&namespace) {
+            sources.insert(
+              namespace,
+              (
+                SearchSource::Deps,
+                SearchOrigin {
+                  package: module_package.clone(),
+                  module: Some(module_path.clone()),
+                },
+              ),
+            );
+          }
+        }
+      }
+      Err(error) => eprintln!("Warning: Failed to load module '{module_path}': {error}"),
+    }
+  }
+
+  if options.source == SearchSource::All {
+    let core_snapshot = load_core_snapshot()?;
+    let core_package = core_snapshot.package.clone();
+    for (namespace, file_data) in core_snapshot.files {
+      if let std::collections::hash_map::Entry::Vacant(entry) = snapshot.files.entry(namespace.clone()) {
+        sources.insert(
+          namespace,
+          (
+            SearchSource::Core,
+            SearchOrigin {
+              package: core_package.clone(),
+              module: Some("builtin".to_owned()),
+            },
+          ),
+        );
+        entry.insert(file_data);
+      }
+    }
+  }
+
+  if options.source == SearchSource::Deps {
+    snapshot
+      .files
+      .retain(|namespace, _| sources.get(namespace).is_some_and(|(source, _)| *source == SearchSource::Deps));
+    sources.retain(|_, (source, _)| *source == SearchSource::Deps);
+  }
+
+  Ok(SearchCatalog { snapshot, sources })
 }
 
 pub(crate) fn load_snapshot_for_static_analysis(input_path: &str) -> Result<snapshot::Snapshot, String> {
@@ -4482,24 +4640,51 @@ fn snapshot_code_path(path: &[usize]) -> String {
   }
 }
 
+fn search_node_kind(code: &Cirru, path: &[usize], node: &Cirru) -> &'static str {
+  match node {
+    Cirru::List(_) => "expr",
+    Cirru::Leaf(_) => {
+      if path.last() == Some(&0)
+        && navigate_to_path(code, &path[..path.len().saturating_sub(1)]).is_ok_and(|parent| matches!(parent, Cirru::List(_)))
+      {
+        "call"
+      } else {
+        "leaf"
+      }
+    }
+  }
+}
+
 fn format_search_results_json(
   command: &'static str,
   pattern: &str,
   pattern_is_json: bool,
   start_path: Option<&str>,
   common_opts: &SearchCommonOpts,
-  snapshot: &snapshot::Snapshot,
+  catalog: &SearchCatalog,
   results: &SearchResults,
 ) -> Result<String, String> {
+  let snapshot = &catalog.snapshot;
   let total_matches = results.iter().map(|(_, _, matches)| matches.len()).sum::<usize>();
   let mut cursor_index = 0_usize;
   let definitions = results
     .iter()
-    .map(|(namespace, definition, matches)| {
-      serde_json::json!({
+    .map(|(namespace, definition, matches)| -> Result<serde_json::Value, String> {
+      let code_entry = snapshot
+        .files
+        .get(namespace)
+        .and_then(|file| file.defs.get(definition))
+        .ok_or_else(|| format!("Definition disappeared while formatting search results: {namespace}/{definition}"))?;
+      let (source, origin) = catalog
+        .sources
+        .get(namespace)
+        .ok_or_else(|| format!("Source origin disappeared while formatting search results: {namespace}/{definition}"))?;
+      Ok(serde_json::json!({
         "id": format!("{namespace}/{definition}"),
         "namespace": namespace,
         "name": definition,
+        "source": source,
+        "origin": origin,
         "match_count": matches.len(),
         "matches": matches.iter().map(|(path, node)| {
           let current_cursor_index = cursor_index;
@@ -4515,17 +4700,21 @@ fn format_search_results_json(
             "cursor_index": current_cursor_index,
             "path": snapshot_code_path(path),
             "parent_path": parent_path,
+            "node_kind": search_node_kind(&code_entry.code, path, node),
             "tree": cirru_to_json_value(node),
+            "source": source,
+            "origin": origin,
           })
         }).collect::<Vec<_>>(),
-      })
+      }))
     })
-    .collect::<Vec<_>>();
+    .collect::<Result<Vec<_>, String>>()?;
 
   let mut revision_parts = vec![
     command.to_owned(),
     pattern.to_owned(),
     common_opts.filter.unwrap_or_default().to_owned(),
+    common_opts.source.as_str().to_owned(),
     start_path.unwrap_or_default().to_owned(),
   ];
   for (namespace, definition, _) in results {
@@ -4551,6 +4740,7 @@ fn format_search_results_json(
         "max_depth": common_opts.max_depth,
         "start_path": start_path,
         "entry": common_opts.entry,
+        "source": common_opts.source,
         "pattern_is_json": pattern_is_json,
       },
       "summary": {
@@ -4622,6 +4812,7 @@ fn cursor_last_query(
     max_depth: common_opts.max_depth,
     start_path: start_path.map(str::to_string),
     entry: common_opts.entry.map(str::to_string),
+    source: common_opts.source.as_str().to_owned(),
     pattern_is_json,
     selected_index,
     snapshot_revision: snapshot_content_revision(input_path)?,
@@ -4654,6 +4845,7 @@ fn handle_repeat_cursor_search(input_path: &str, forward: bool) -> Result<(), St
     regex: last_query.regex,
     max_depth: last_query.max_depth,
     entry: last_query.entry.as_deref(),
+    source: SearchSource::parse(&last_query.source)?,
     detail_offset: 0,
     parent_path: false,
     format: QueryRenderFormat::Human,
@@ -4751,11 +4943,12 @@ struct SearchResultDisplay<'a> {
 }
 
 fn print_search_results_human(
-  snapshot: &snapshot::Snapshot,
+  catalog: &SearchCatalog,
   all_results: &SearchResults,
   common_opts: &SearchCommonOpts,
   display: SearchResultDisplay<'_>,
 ) {
+  let snapshot = &catalog.snapshot;
   if all_results.is_empty() {
     println!("{}", "No matches found.".yellow());
     return;
@@ -4771,7 +4964,22 @@ fn print_search_results_human(
 
   let mut definition_offset = 0_usize;
   for (ns, def_name, results) in all_results {
-    println!("{} {}/{} ({} matches)", "●".cyan(), ns.dimmed(), def_name.green(), results.len());
+    let source_label = catalog
+      .sources
+      .get(ns)
+      .map(|(source, origin)| {
+        let origin_label = origin.module.as_deref().unwrap_or(origin.package.as_str());
+        format!("{}:{origin_label}", source.as_str())
+      })
+      .unwrap_or_else(|| "unknown".to_owned());
+    println!(
+      "{} {}/{} ({} matches) {}",
+      "●".cyan(),
+      ns.dimmed(),
+      def_name.green(),
+      results.len(),
+      format!("[{source_label}]").dimmed()
+    );
     print_detail_window_hint(results.len(), common_opts.detail_offset, "matches");
 
     if let Some(file_data) = snapshot.files.get(ns)
@@ -4884,7 +5092,7 @@ struct SearchCommandInfo<'a> {
 
 fn finish_search_results(
   input_path: &str,
-  snapshot: &snapshot::Snapshot,
+  catalog: &SearchCatalog,
   all_results: &SearchResults,
   common_opts: &SearchCommonOpts,
   info: SearchCommandInfo<'_>,
@@ -4914,22 +5122,22 @@ fn finish_search_results(
         info.pattern_is_json,
         info.start_path,
         common_opts,
-        snapshot,
+        catalog,
         all_results,
       )?
     );
     return Ok(());
   }
-  print_search_results_human(snapshot, all_results, common_opts, info.display);
+  print_search_results_human(catalog, all_results, common_opts, info.display);
   Ok(())
 }
 
 /// Search for leaf nodes (strings) in a definition
 fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>, common_opts: &SearchCommonOpts) -> Result<(), String> {
-  let snapshot = load_snapshot_for_search(input_path, common_opts)?;
+  let catalog = load_snapshot_for_search(input_path, common_opts)?;
   let parsed_start_path = parse_search_start_path(start_path)?;
   let all_results = collect_search_results(
-    &snapshot,
+    &catalog.snapshot,
     parsed_start_path.as_deref(),
     common_opts.filter,
     |search_root, base_path| {
@@ -4946,7 +5154,7 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
 
   finish_search_results(
     input_path,
-    &snapshot,
+    &catalog,
     &all_results,
     common_opts,
     SearchCommandInfo {
@@ -4972,7 +5180,7 @@ fn handle_search_expr(
   start_path: Option<&str>,
   common_opts: &SearchCommonOpts,
 ) -> Result<(), String> {
-  let snapshot = load_snapshot_for_search(input_path, common_opts)?;
+  let catalog = load_snapshot_for_search(input_path, common_opts)?;
   let parsed_start_path = parse_search_start_path(start_path)?;
 
   let pattern_node = if json {
@@ -4992,7 +5200,7 @@ fn handle_search_expr(
   };
 
   let all_results = collect_search_results(
-    &snapshot,
+    &catalog.snapshot,
     parsed_start_path.as_deref(),
     common_opts.filter,
     |search_root, base_path| search_expr_nodes(search_root, &pattern_node, common_opts.loose, common_opts.max_depth, base_path),
@@ -5000,7 +5208,7 @@ fn handle_search_expr(
 
   finish_search_results(
     input_path,
-    &snapshot,
+    &catalog,
     &all_results,
     common_opts,
     SearchCommandInfo {

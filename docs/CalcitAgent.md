@@ -155,8 +155,12 @@ path 使用从零开始的 child index：`@3.2` 表示先取 definition 根 list
 搜索选择规则：
 
 - 按定义名跨 namespace 找：`calcit query find <symbol>`。
-- 在源码 leaf 中找字符串、symbol、tag：`calcit query search <leaf> --filter '<ns/def>'`。
+- 在源码 leaf 中找字符串、symbol、tag：`calcit query search <leaf> --source project --filter '<ns/def>'`。
 - 按一段树形表达式找：`calcit query search-expr '<cirru-expr>' --filter '<ns/def>'`。
+
+`query search` 默认为兼容的 `--source all`，会包含 project、所选 entry 的 dependencies 与 bundled core。
+Agent 做本项目编辑定位时优先显式传 `--source project`；盘点 core 或依赖时分别使用 `core`/`deps`。
+JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: leaf|call|expr` 区分裸值与调用位置。
 
 编辑选择规则：
 
@@ -282,7 +286,7 @@ calcit cursor show
 - `cursor next/prev --count N`：跨多个 sibling；跨 list 边界使用 `forward/backward --count N`。
 - `cursor duplicate --at before|after`：复制选中表达式并选中新副本，不覆盖 clipboard。
 - `cursor cut` 后选中 parent；`cursor paste` 后选中新节点，`--at` 支持 `before|after|prepend-child|append-child|replace`。
-- `query search ... --start-path @cursor --set-cursor N`：只在当前 subtree 中继续搜索。
+- `query search ... --source project --start-path @cursor --set-cursor N`：只在当前 subtree 中继续搜索。
 - `query next/prev`：重新计算上次通过 `--set-cursor` 保存的搜索并跳到相邻结果，不保存完整结果列表；Snapshot 已变化时先重跑原查询显式选中。
 - `cursor anchor` → 移动 → `cursor region`：确认同一 parent 下的连续 sibling 范围；结束后 `clear-anchor`。
 - `cursor mark <name>` / `goto <name>`：保存和恢复最多 16 个高频位置；短期绕行仍优先使用 `push/pop`。
