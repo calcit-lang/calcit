@@ -10,6 +10,7 @@ pub mod benchmark_session;
 mod cache;
 pub mod coverage;
 mod lowering;
+mod program_contract;
 
 pub use cache::{CalxCacheMissReason, CalxCachePreparation, CalxCachePrepareReport, CalxCompileCache, CalxCompileCacheStats};
 pub use calx_vm::{Calx as CalxValue, CalxBuildError, CalxError, CalxProgramError};
@@ -21,6 +22,10 @@ pub use lowering::{
   CalxCompiledArtifact, CalxCompiledKernel, CalxKernelBoundaryError, CalxKernelBoundaryErrorKind, CalxKernelCompileError,
   CalxKernelCompileTimings, CalxKernelRunError, CalxLoweringError, CalxPreparedKernel, compile_calx_kernel,
   compile_calx_kernel_measured, compile_calx_kernel_with_imports, compile_calx_kernel_with_imports_measured,
+};
+pub use program_contract::{
+  CALX_PROGRAM_ABI_EDITION, CalxProgramCompilationUnit, CalxProgramContractCode, CalxProgramContractError, CalxProgramRoot,
+  CalxProgramRootRole,
 };
 
 use std::collections::{BTreeMap, BTreeSet};

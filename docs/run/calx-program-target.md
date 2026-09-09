@@ -33,6 +33,21 @@ The initial stages are:
 
 The inventory is authoritative. A stage may be narrowed or reordered before implementation when validation or conformance evidence requires it.
 
+### Program contract edition 1
+
+`calcit-calx-program/1` identifies the first program-level compilation-unit contract. It is separate from the executable kernel ABI editions and does not change their meaning.
+
+The compilation unit is derived from one explicitly selected Snapshot entry and preserves:
+
+- the selected entry name;
+- the optional host target, which scopes externally injected capabilities but does not move them into Calx;
+- an `init` root from `:init-fn`;
+- a `reload` root from `:reload-fn`.
+
+Both roles remain present when they name the same definition, while later reachability analysis may deduplicate the shared definition body. A malformed root or missing selected entry produces `CALX_PROGRAM_DEFINITION_REF` or `CALX_PROGRAM_ENTRY_SELECTION`; it never falls back to another entry.
+
+This edition defines compilation input only. calx-vm 0.5.0 still executes the compatibility function named `main`, so program-level multi-root eligibility remains follow-up work and [calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) tracks strict named-root execution. Existing `:mode :native` and `:mode :js` behavior is unchanged; this contract does not prematurely expose a `:calx` runtime mode.
+
 ### Hard boundaries
 
 - Unsupported reachable code fails compilation; one compiled program does not silently mix Calx and Calcit execution.
@@ -76,6 +91,21 @@ Calx 规划为可静态分析的 Calcit 语言核心的执行 backend。一次�
 6. 显式选定的 reference、error 和其他 stateful semantics。
 
 清单是权威依据。若 validation 或 conformance 证据要求，具体阶段可以在实现前收窄或调整顺序。
+
+### Program contract edition 1
+
+`calcit-calx-program/1` 标识第一版程序级 compilation-unit contract。它与可执行 kernel ABI editions 分离，不改变后者语义。
+
+编译单元来自一个显式选中的 Snapshot entry，并保留：
+
+- 选中的 entry 名称；
+- 可选 host target：它约束外部注入 capability，但不把 capability 实现迁入 Calx；
+- 来自 `:init-fn` 的 `init` root；
+- 来自 `:reload-fn` 的 `reload` root。
+
+两个角色指向同一 definition 时仍分别保留；后续 reachability analysis 可以去重共享 definition body。root 格式错误或 selected entry 缺失时分别产生 `CALX_PROGRAM_DEFINITION_REF` 或 `CALX_PROGRAM_ENTRY_SELECTION`，绝不回退到其他 entry。
+
+本 edition 只定义编译输入。calx-vm 0.5.0 仍只执行名为 `main` 的兼容函数，所以 program-level multi-root eligibility 仍是后续任务，严格 named-root execution 由 [calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) 追踪。已有 `:mode :native`、`:mode :js` 行为保持不变；本契约不提前暴露 `:calx` runtime mode。
 
 ### 硬边界
 
