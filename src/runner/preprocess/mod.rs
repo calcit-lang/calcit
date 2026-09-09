@@ -2462,6 +2462,7 @@ fn preprocess_list_call(
         // their statically known struct fields in this branch as well.
         check_struct_field_access(&head_form, &current_args, scope_types, file_ns, call_stack, check_warnings);
         reject_strict_bare_enum_constructor_comparison(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
+        reject_strict_nominal_enum_stringification(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
         warn_on_nominal_enum_legacy_absence_use(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
         reject_or_warn_on_legacy_js_nullish_predicate(
           &head_form,
@@ -2990,6 +2991,7 @@ fn preprocess_list_call(
             def_name.as_ref(),
             call_stack,
           )?;
+          reject_strict_nominal_enum_stringification(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
           warn_on_nominal_enum_legacy_absence_use(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
           reject_or_warn_on_legacy_js_nullish_predicate(
             call_head,
@@ -5371,6 +5373,56 @@ fn nominal_enum_expression_name(value: &Calcit, scope_types: &ScopeTypes) -> Opt
     Some("%ok" | "%err" | "parse-float") => Some("Result".to_owned()),
     _ => None,
   }
+}
+
+fn core_stringification_operation(head: &Calcit) -> Option<&str> {
+  match head {
+    Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && matches!(def.as_ref(), "str" | "turn-string") => {
+      Some(def.as_ref())
+    }
+    Calcit::Fn { info, .. } if info.def_ns.as_ref() == calcit::CORE_NS && matches!(info.name.as_ref(), "str" | "turn-string") => {
+      Some(info.name.as_ref())
+    }
+    Calcit::Proc(CalcitProc::TurnString) => Some("turn-string"),
+    _ => None,
+  }
+}
+
+fn reject_strict_nominal_enum_stringification(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  if !strict_types_enabled() || !should_emit_project_source_lint(file_ns) {
+    return Ok(());
+  }
+  let Some(operation) = core_stringification_operation(head) else {
+    return Ok(());
+  };
+  let Some((value, enum_name)) = args.iter().find_map(|value| {
+    let enum_name = nominal_enum_expression_name(value, scope_types)?;
+    Some((value, enum_name))
+  }) else {
+    return Ok(());
+  };
+
+  let handling = if enum_name == "Option" {
+    "pattern-match the Option or use an explicit Option helper such as `.unwrap-or` before converting its payload"
+  } else {
+    "pattern-match the Result and convert the success or error payload deliberately"
+  };
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!(
+      "implicit `{operation}` stringification of `{enum_name}` is not allowed in strict code at {file_ns}/{def_name}; {handling}; use `to-lispy-string` only when the enum representation itself is intended"
+    ),
+    "E_NOMINAL_ENUM_STRINGIFICATION",
+    call_stack,
+    value.get_location().or_else(|| head.get_location()),
+  ))
 }
 
 /// Return the nominal element type used by a membership operation, when the
@@ -11322,6 +11374,83 @@ mod tests {
     warn_on_nominal_enum_truthiness(&option_value, &ScopeTypes::new(), "tests.option-migration", &truthiness_warnings);
     assert_eq!(truthiness_warnings.borrow().len(), 1, "Option truthiness should warn");
     assert_eq!(truthiness_warnings.borrow()[0].code(), Some("W_NOMINAL_ENUM_LEGACY_USE"));
+  }
+
+  #[test]
+  fn strict_types_reject_implicit_option_and_result_stringification() {
+    let _lock = lock_preprocess_test_state();
+    let typed_local = |name: &str, type_ref: &str, type_args: Vec<Arc<CalcitTypeAnnotation>>| {
+      let sym: Arc<str> = Arc::from(name);
+      Calcit::Local(CalcitLocal {
+        idx: CalcitLocal::track_sym(&sym),
+        sym,
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.nominal-stringification"),
+          at_def: Arc::from("demo"),
+        }),
+        location: None,
+        type_info: Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(type_ref), Arc::new(type_args))),
+      })
+    };
+    let option = typed_local("option-value", "calcit.core/Option", vec![Arc::new(CalcitTypeAnnotation::Tag)]);
+    let result = typed_local(
+      "result-value",
+      "calcit.core/Result",
+      vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)],
+    );
+    let core_str = core_import("str", "tests.nominal-stringification");
+    let stack = CallStackList::default();
+
+    {
+      let _compat = StrictTypesGuard::new(false);
+      reject_strict_nominal_enum_stringification(
+        &core_str,
+        &CalcitList::from(&[Calcit::Str(Arc::from("prefix")), option.to_owned()][..]),
+        &ScopeTypes::new(),
+        "tests.nominal-stringification",
+        "demo",
+        &stack,
+      )
+      .expect("compatibility mode should preserve enum rendering");
+    }
+
+    let _strict = StrictTypesGuard::new(true);
+    let option_error = reject_strict_nominal_enum_stringification(
+      &core_str,
+      &CalcitList::from(&[Calcit::Str(Arc::from("prefix")), option][..]),
+      &ScopeTypes::new(),
+      "tests.nominal-stringification",
+      "demo",
+      &stack,
+    )
+    .expect_err("strict str should reject an Option in any variadic position");
+    assert_eq!(option_error.code.as_deref(), Some("E_NOMINAL_ENUM_STRINGIFICATION"));
+    assert!(option_error.msg.contains("pattern-match the Option"));
+    assert!(option_error.msg.contains(".unwrap-or"));
+    assert!(option_error.msg.contains("to-lispy-string"));
+
+    let result_error = reject_strict_nominal_enum_stringification(
+      &Calcit::Proc(CalcitProc::TurnString),
+      &CalcitList::from(std::slice::from_ref(&result)),
+      &ScopeTypes::new(),
+      "tests.nominal-stringification",
+      "demo",
+      &stack,
+    )
+    .expect_err("strict turn-string should reject a Result");
+    assert_eq!(result_error.code.as_deref(), Some("E_NOMINAL_ENUM_STRINGIFICATION"));
+    assert!(result_error.msg.contains("pattern-match the Result"));
+
+    let application_option = typed_local("application-option", "app.model/Option", vec![Arc::new(CalcitTypeAnnotation::Tag)]);
+    reject_strict_nominal_enum_stringification(
+      &core_str,
+      &CalcitList::from(std::slice::from_ref(&application_option)),
+      &ScopeTypes::new(),
+      "tests.nominal-stringification",
+      "demo",
+      &stack,
+    )
+    .expect("an unrelated application enum named Option must not be treated as calcit.core/Option");
   }
 
   struct WarnDynMethodGuard {

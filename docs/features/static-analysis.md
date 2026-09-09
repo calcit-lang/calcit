@@ -397,6 +397,8 @@ Dynamic 应限制在 JS FFI、宏和框架开放数据边界。普通多态使�
 
 `get-in` 返回 `Option<T>`，适合开放 Map/List 路径；不要用它绕过 Struct 字段检查，Struct 应使用 `(:field value)`。`update-in` 的 updater 接收 `Option<T>`，必须显式处理缺失值。
 
+默认 strict mode 不允许把核心 `Option<T>` 或 `Result<T,E>` 直接传给 `str` / `turn-string`，并报告 `E_NOMINAL_ENUM_STRINGIFICATION`。应先用 `match`、`.unwrap-or` 或对应的 Option/Result helper 明确处理分支和 payload；只有确实需要诊断表示时才使用 `to-lispy-string`。`--compat-types` 仍保留旧的 enum 渲染行为，便于渐进迁移。
+
 ### Complex Types
 
 #### Legacy Optional Types
