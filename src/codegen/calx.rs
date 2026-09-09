@@ -1,16 +1,22 @@
-//! Eligibility analysis and lowering for the experimental Calcit-to-Calx scalar subset.
+//! Eligibility analysis and lowering for the Calcit-to-Calx program backend.
 //!
 //! This module consumes an immutable [`CompiledProgram`](crate::program::CompiledProgram)
-//! snapshot. It never emits a partial program: callers receive either a closed eligible
-//! call graph, or one stable fallback report. Eligible graphs can then be lowered through
-//! `calx_vm::ProgramBuilder` and strict validation without admitting Nil or Dynamic values.
+//! snapshot. The current executable surface remains the strict kernel compatibility
+//! foundation: callers receive either a closed eligible call graph or one stable fallback
+//! report. The checked [`coverage`] inventory defines how the wider static Calcit language
+//! is staged without admitting Nil or Dynamic values.
 
 pub mod benchmark_session;
 mod cache;
+pub mod coverage;
 mod lowering;
 
 pub use cache::{CalxCacheMissReason, CalxCachePreparation, CalxCachePrepareReport, CalxCompileCache, CalxCompileCacheStats};
 pub use calx_vm::{Calx as CalxValue, CalxBuildError, CalxError, CalxProgramError};
+pub use coverage::{
+  CALX_COVERAGE_PROC_COUNT_V1, CalxCoverage, CalxCoverageOwner, CalxCoverageStage, classify_calx_proc_surface,
+  classify_calx_syntax_surface, classify_calx_type_surface,
+};
 pub use lowering::{
   CalxCompiledArtifact, CalxCompiledKernel, CalxKernelBoundaryError, CalxKernelBoundaryErrorKind, CalxKernelCompileError,
   CalxKernelCompileTimings, CalxKernelRunError, CalxLoweringError, CalxPreparedKernel, compile_calx_kernel,
