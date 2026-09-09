@@ -11,6 +11,7 @@ mod cache;
 pub mod coverage;
 mod lowering;
 mod program_contract;
+mod program_eligibility;
 
 pub use cache::{CalxCacheMissReason, CalxCachePreparation, CalxCachePrepareReport, CalxCompileCache, CalxCompileCacheStats};
 pub use calx_vm::{Calx as CalxValue, CalxBuildError, CalxError, CalxProgramError};
@@ -26,6 +27,10 @@ pub use lowering::{
 pub use program_contract::{
   CALX_PROGRAM_ABI_EDITION, CalxProgramCompilationUnit, CalxProgramContractCode, CalxProgramContractError, CalxProgramRoot,
   CalxProgramRootRole,
+};
+pub use program_eligibility::{
+  CalxEligibleProgram, CalxProgramEligibilityCode, CalxProgramEligibilityIssue, CalxProgramEligibilityReport,
+  CalxProgramRootEligibilityIssue, analyze_calx_program_eligibility, analyze_calx_program_eligibility_with_imports,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -289,18 +294,22 @@ impl CalxEligibleCallGraph {
   /// experimental report format, not a serialized compiler ABI.
   pub fn stable_summary(&self) -> String {
     let mut output = format!("abi {}\nentry {}\n", self.abi_edition, self.entry.qualified());
-    for function in &self.functions {
-      let params = function.params.iter().map(|value| value.as_str()).collect::<Vec<_>>().join(",");
-      let result = function.result.map(CalxScalarType::as_str).unwrap_or("Void");
-      output.push_str(&format!("function {} ({params})->{result}\n", function.definition.qualified()));
-      for callee in &function.direct_calls {
-        output.push_str(&format!("  call {}\n", callee.qualified()));
-      }
-      for import in &function.host_imports {
-        output.push_str(&format!("  import {}\n", import.qualified()));
-      }
-    }
+    write_eligible_functions(&mut output, &self.functions);
     output
+  }
+}
+
+fn write_eligible_functions(output: &mut String, functions: &[CalxEligibleFunction]) {
+  for function in functions {
+    let params = function.params.iter().map(|value| value.as_str()).collect::<Vec<_>>().join(",");
+    let result = function.result.map(CalxScalarType::as_str).unwrap_or("Void");
+    output.push_str(&format!("function {} ({params})->{result}\n", function.definition.qualified()));
+    for callee in &function.direct_calls {
+      output.push_str(&format!("  call {}\n", callee.qualified()));
+    }
+    for import in &function.host_imports {
+      output.push_str(&format!("  import {}\n", import.qualified()));
+    }
   }
 }
 
