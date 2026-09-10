@@ -177,6 +177,7 @@ impl From<CalxProgramError> for CalxKernelCompileError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CalxKernelBoundaryErrorKind {
+  Entry,
   Arity,
   ArgumentType,
   ResultType,
@@ -516,12 +517,7 @@ pub struct CalxProgramInstance {
 
 impl CalxProgramInstance {
   pub fn run_root(&mut self, role: CalxProgramRootRole, args: &[Calcit]) -> Result<Calcit, CalxKernelRunError> {
-    let entry = self
-      .artifact
-      .entries
-      .iter()
-      .find(|entry| entry.role == role)
-      .expect("validated Calx program contract must contain each lifecycle role");
+    let entry = program_entry_for_role(&self.artifact.entries, role)?;
     let vm_args = convert_calx_arguments(args, &entry.params)?;
     let output = self
       .vm
@@ -529,6 +525,15 @@ impl CalxProgramInstance {
       .map_err(CalxKernelRunError::Runtime)?;
     convert_calx_result(entry.result, output)
   }
+}
+
+fn program_entry_for_role(entries: &[CalxProgramEntry], role: CalxProgramRootRole) -> Result<&CalxProgramEntry, CalxKernelRunError> {
+  entries.iter().find(|entry| entry.role == role).ok_or_else(|| {
+    CalxKernelRunError::Boundary(CalxKernelBoundaryError {
+      kind: CalxKernelBoundaryErrorKind::Entry,
+      message: format!("compiled Calx program has no entry for lifecycle role `{}`", role.as_str()),
+    })
+  })
 }
 
 /// Prove, lower, build, and validate all lifecycle roots as one strict Calx
@@ -1595,5 +1600,17 @@ mod tests {
     assert_eq!(error.function, definition);
     assert_eq!(error.source_path, Some(vec![3, 1]));
     assert!(error.message.contains("local index 42"));
+  }
+
+  #[test]
+  fn missing_program_role_returns_a_typed_error_instead_of_panicking() {
+    let error = program_entry_for_role(&[], CalxProgramRootRole::Init).expect_err("missing role must remain a typed error");
+    assert!(matches!(
+      error,
+      CalxKernelRunError::Boundary(CalxKernelBoundaryError {
+        kind: CalxKernelBoundaryErrorKind::Entry,
+        ..
+      })
+    ));
   }
 }
