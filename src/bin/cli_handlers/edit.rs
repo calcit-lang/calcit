@@ -3258,6 +3258,32 @@ mod tests {
   }
 
   #[test]
+  fn schema_edit_tag_value_survives_canonical_snapshot_formatting() {
+    let fixture = TestSnapshot::from_fixture();
+    let path = fixture.snapshot_string();
+    let opts = EditSchemaCommand {
+      target: "app.main/test-fn".to_owned(),
+      file: None,
+      code: Some("quote 'Tag".to_owned()),
+      clear: false,
+    };
+
+    handle_schema(&opts, &path).expect("Tag value schema should be written");
+    let snapshot = load_snapshot(&path).expect("edited snapshot should load");
+    assert!(matches!(
+      snapshot.files["app.main"].defs["test-fn"].schema.as_ref(),
+      CalcitTypeAnnotation::Tag
+    ));
+
+    save_snapshot(&snapshot, &path).expect("canonical formatting should preserve the Tag schema");
+    let formatted = load_snapshot(&path).expect("canonically formatted snapshot should reload");
+    assert!(matches!(
+      formatted.files["app.main"].defs["test-fn"].schema.as_ref(),
+      CalcitTypeAnnotation::Tag
+    ));
+  }
+
+  #[test]
   fn schema_edit_preserves_unrelated_legacy_schema_serialization() {
     let fixture = TestSnapshot::from_fixture();
     let source = r#"#! /usr/bin/env calcit
