@@ -1501,7 +1501,7 @@ fn validate_standalone_type_schema(schema: &Cirru) -> Result<(), String> {
   {
     return Ok(());
   }
-  if matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Tag) {
+  if matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic) {
     return Err(format!(
       "Unsupported standalone type schema: {}",
       cirru_parser::format(std::slice::from_ref(schema), true.into()).unwrap_or_else(|_| format!("{schema:?}"))
@@ -3628,6 +3628,12 @@ mod tests {
     let quoted_string = Cirru::Leaf(Arc::from("'String"));
     let parsed_quoted_string = parse_schema_annotation_for_write(&quoted_string).expect("'String leaf should parse");
     assert!(matches!(parsed_quoted_string.as_ref(), CalcitTypeAnnotation::String));
+    let quoted_tag = Cirru::Leaf(Arc::from("'Tag"));
+    let parsed_quoted_tag = parse_schema_annotation_for_write(&quoted_tag).expect("'Tag leaf should parse");
+    assert!(matches!(parsed_quoted_tag.as_ref(), CalcitTypeAnnotation::Tag));
+    let serialized_tag = parse_one(":: 'Tag");
+    let parsed_serialized_tag = parse_schema_annotation_for_write(&serialized_tag).expect("serialized Tag schema should parse");
+    assert!(matches!(parsed_serialized_tag.as_ref(), CalcitTypeAnnotation::Tag));
 
     for (legacy, replacement) in [
       ("'Record", "'Struct"),
