@@ -48,7 +48,7 @@ Both roles remain present when they name the same definition, while later reacha
 
 Whole-program eligibility checks `init` and `reload` as one atomic unit. It deduplicates shared reachable function bodies, preserves both lifecycle roles, and publishes no partial eligible program when either root fails. Explicit typed imports are shared across the roots; undeclared host behavior remains ineligible. Invalid editions and root sets fail before definition analysis with `CALX_PROGRAM_ELIGIBILITY_ABI_EDITION` or `CALX_PROGRAM_ELIGIBILITY_ROOT_SET`.
 
-This edition now defines compilation input and a checked reachable program, but not program lowering or execution. calx-vm 0.5.0 still executes the compatibility function named `main`; [calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) tracks strict named-root execution required before lifecycle roots can be lowered without a dispatcher. Existing `:mode :native` and `:mode :js` behavior is unchanged; this contract does not prematurely expose a `:calx` runtime mode.
+This edition now defines compilation input and a checked reachable program, but not program lowering or execution. calx-vm 0.5.1 provides strict named-entry execution, so the next compiler slice can lower lifecycle roots without synthesizing a dispatcher; [calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) records that completed VM prerequisite and its Calcit consumer validation. Existing `:mode :native` and `:mode :js` behavior is unchanged; this contract does not prematurely expose a `:calx` runtime mode.
 
 ### Hard boundaries
 
@@ -109,7 +109,7 @@ Calx 规划为可静态分析的 Calcit 语言核心的执行 backend。一次�
 
 整程序 eligibility 将 `init` 和 `reload` 作为一个原子单元检查：共享的可达函数体会去重，两个生命周期角色仍被保留；任一 root 失败时都不发布部分 eligible program。两个 roots 共享同一组显式 typed imports，未声明的 host 行为仍然不合格。无效 edition 或 root 集合会在 definition analysis 前分别以 `CALX_PROGRAM_ELIGIBILITY_ABI_EDITION`、`CALX_PROGRAM_ELIGIBILITY_ROOT_SET` 失败。
 
-本 edition 现在定义编译输入和经过检查的可达 program，但还不包含 program lowering 或执行。calx-vm 0.5.0 仍只执行名为 `main` 的兼容函数；在不引入 dispatcher 的前提下 lowering 生命周期 roots 所需的严格 named-root execution 由 [calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) 追踪。已有 `:mode :native`、`:mode :js` 行为保持不变；本契约不提前暴露 `:calx` runtime mode。
+本 edition 现在定义编译输入和经过检查的可达 program，但还不包含 program lowering 或执行。calx-vm 0.5.1 已提供严格 named-entry execution，下一阶段可以在不合成 dispatcher 的前提下 lowering 生命周期 roots；[calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) 记录该 VM 前置能力及其 Calcit consumer 验证。已有 `:mode :native`、`:mode :js` 行为保持不变；本契约不提前暴露 `:calx` runtime mode。
 
 ### 硬边界
 
