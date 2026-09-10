@@ -5,9 +5,10 @@ use crate::call_stack::CallStackList;
 use crate::codegen::calx::{
   CALX_PROGRAM_ABI_EDITION, CalxCacheMissReason, CalxCompileCache, CalxDefinitionRef, CalxError, CalxFallbackCode, CalxHostImport,
   CalxHostImports, CalxKernelBoundaryErrorKind, CalxKernelCompileError, CalxKernelRunError, CalxProgramCompilationUnit,
-  CalxProgramEligibilityCode, CalxProgramRoot, CalxProgramRootRole, CalxScalarType, CalxValue, analyze_calx_eligibility,
-  analyze_calx_eligibility_with_imports, analyze_calx_program_eligibility, analyze_calx_program_eligibility_with_imports,
-  compile_calx_kernel, compile_calx_kernel_measured, compile_calx_kernel_with_imports,
+  CalxProgramCompileError, CalxProgramEligibilityCode, CalxProgramRoot, CalxProgramRootRole, CalxScalarType, CalxValue,
+  analyze_calx_eligibility, analyze_calx_eligibility_with_imports, analyze_calx_program_eligibility,
+  analyze_calx_program_eligibility_with_imports, compile_calx_kernel, compile_calx_kernel_measured, compile_calx_kernel_with_imports,
+  compile_calx_program, compile_calx_program_with_imports,
 };
 use crate::data::cirru::code_to_calcit;
 use crate::run_program_with_docs;
@@ -640,6 +641,124 @@ fn reload (-> f64)
   );
   let missing = vm.run_typed_entry("main", vec![]).expect_err("named entry must not fall back");
   assert_eq!(missing.message, "main function is required");
+}
+
+#[test]
+fn calx_program_lowering_executes_distinct_roots_without_a_dispatcher() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-program-lowering";
+  install_calx_scalar_kernel_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed program fixtures");
+  let unit = calx_program_unit(namespace, "fibonacci", "affine");
+
+  let prepared = compile_calx_program(&snapshot, &unit).expect("lower both eligible roots");
+  let artifact = prepared.artifact();
+  assert_eq!(artifact.entries().len(), 2);
+  assert_eq!(artifact.validated_program().functions().len(), 3);
+  assert!(
+    artifact
+      .validated_program()
+      .functions()
+      .iter()
+      .all(|function| function.name.as_ref() != "main")
+  );
+  assert_eq!(artifact.entries()[0].vm_name.as_ref(), "tests.calx-program-lowering/fibonacci");
+  assert_eq!(artifact.entries()[1].vm_name.as_ref(), "tests.calx-program-lowering/affine");
+
+  let mut instance = prepared.instantiate().expect("instantiate checked Calx program");
+  let init_args = [Calcit::Number(10.0)];
+  let init_result = instance
+    .run_root(CalxProgramRootRole::Init, &init_args)
+    .expect("run exact init root");
+  let native_init = run_program_with_docs(Arc::from(namespace), Arc::from("fibonacci"), &init_args).expect("run native init root");
+  assert_eq!(init_result, native_init);
+
+  let reload_args = [Calcit::Number(3.0), Calcit::Number(4.0), Calcit::Number(5.0)];
+  let reload_result = instance
+    .run_root(CalxProgramRootRole::Reload, &reload_args)
+    .expect("run exact reload root");
+  let native_reload = run_program_with_docs(Arc::from(namespace), Arc::from("affine"), &reload_args).expect("run native reload root");
+  assert_eq!(reload_result, native_reload);
+  assert_eq!(
+    instance
+      .run_root(CalxProgramRootRole::Init, &init_args)
+      .expect("reused instance must reset to the selected root"),
+    native_init
+  );
+
+  let boundary = instance
+    .run_root(CalxProgramRootRole::Init, &[Calcit::Nil])
+    .expect_err("Nil must not enter the strict program boundary");
+  assert!(matches!(
+    boundary,
+    CalxKernelRunError::Boundary(ref error) if error.kind == CalxKernelBoundaryErrorKind::ArgumentType
+  ));
+}
+
+#[test]
+fn calx_program_lowering_preserves_shared_root_roles_on_one_function() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-program-lowering-shared";
+  install_calx_scalar_kernel_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed program fixtures");
+  let unit = calx_program_unit(namespace, "affine", "affine");
+
+  let prepared = compile_calx_program(&snapshot, &unit).expect("lower shared eligible root once");
+  let entries = prepared.artifact().entries();
+  assert_eq!(entries.len(), 2);
+  assert_eq!(entries[0].role, CalxProgramRootRole::Init);
+  assert_eq!(entries[1].role, CalxProgramRootRole::Reload);
+  assert_eq!(entries[0].definition, entries[1].definition);
+  assert_eq!(entries[0].vm_name, entries[1].vm_name);
+  assert_eq!(prepared.artifact().validated_program().functions().len(), 2);
+
+  let args = [Calcit::Number(3.0), Calcit::Number(4.0), Calcit::Number(5.0)];
+  let mut instance = prepared.instantiate().expect("instantiate shared-root program");
+  let init = instance
+    .run_root(CalxProgramRootRole::Init, &args)
+    .expect("run shared definition as init");
+  let reload = instance
+    .run_root(CalxProgramRootRole::Reload, &args)
+    .expect("run shared definition as reload");
+  assert_eq!(init, reload);
+}
+
+#[test]
+fn calx_program_lowering_keeps_eligibility_failure_separate_from_integration_errors() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-program-lowering-failure";
+  install_calx_scalar_kernel_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed program fixtures");
+  let unit = calx_program_unit(namespace, "range-sum", "missing");
+
+  let error = compile_calx_program(&snapshot, &unit).expect_err("an ineligible root must reject program compilation");
+  assert!(matches!(
+    error,
+    CalxProgramCompileError::Eligibility(ref report)
+      if report.root_issues.len() == 1 && report.root_issues[0].root_roles == vec![CalxProgramRootRole::Reload]
+  ));
+}
+
+#[test]
+fn calx_program_lowering_returns_unit_without_a_nil_completion_value() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-program-lowering-unit";
+  install_calx_typed_import_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed unit fixture");
+  let unit = calx_program_unit(namespace, "host-observe", "host-observe");
+
+  let prepared = compile_calx_program(&snapshot, &unit).expect("lower Unit lifecycle root");
+  let mut instance = prepared.instantiate().expect("instantiate Unit program");
+  assert_eq!(
+    instance
+      .run_root(CalxProgramRootRole::Init, &[Calcit::Number(1.0)])
+      .expect("run Unit root"),
+    Calcit::Unit
+  );
 }
 
 #[test]
@@ -1384,6 +1503,34 @@ fn calx_program_eligibility_keeps_host_capabilities_explicit_across_roots() {
       CalxDefinitionRef::new(namespace, "host-trap"),
     ])
   );
+}
+
+#[test]
+fn calx_program_lowering_attaches_one_typed_capability_set_to_both_roots() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-program-lowering-imports";
+  install_calx_typed_import_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed import fixtures");
+  let imports = calx_test_host_imports(namespace);
+  let unit = calx_program_unit(namespace, "imported-pipeline", "imported-trap");
+
+  let prepared = compile_calx_program_with_imports(&snapshot, &unit, &imports).expect("lower roots with typed host capabilities");
+  assert_eq!(prepared.artifact().validated_program().imports().len(), 3);
+  let mut instance = prepared.instantiate().expect("attach current typed callbacks");
+  CALX_VOID_IMPORT_CALLS.store(0, Ordering::SeqCst);
+  assert_eq!(
+    instance
+      .run_root(CalxProgramRootRole::Init, &[Calcit::Number(3.0)])
+      .expect("run imported init root"),
+    Calcit::Number(7.0)
+  );
+  assert_eq!(CALX_VOID_IMPORT_CALLS.load(Ordering::SeqCst), 1);
+
+  let trap = instance
+    .run_root(CalxProgramRootRole::Reload, &[Calcit::Number(3.0)])
+    .expect_err("host trap remains a runtime error without fallback");
+  assert!(matches!(trap, CalxKernelRunError::Runtime(_)));
 }
 
 #[test]

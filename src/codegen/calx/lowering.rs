@@ -17,8 +17,10 @@ use crate::calcit::{Calcit, CalcitFnArgs, CalcitLocal, CalcitProc, CalcitSyntax,
 use crate::program::{CompiledProgram, DefId};
 
 use super::{
-  CalxDefinitionRef, CalxEligibleCallGraph, CalxFallbackReport, CalxHostImports, CalxImportContract, CalxScalarType,
-  analyze_calx_eligibility_with_imports, extract_fn_parts, import_contract, lookup_compiled_def, source_path,
+  CalxDefinitionRef, CalxEligibleCallGraph, CalxEligibleFunction, CalxEligibleProgram, CalxFallbackReport, CalxHostImports,
+  CalxImportContract, CalxProgramCompilationUnit, CalxProgramEligibilityReport, CalxProgramRootRole, CalxScalarType,
+  analyze_calx_eligibility_with_imports, analyze_calx_program_eligibility_with_imports, extract_fn_parts, import_contract,
+  lookup_compiled_def, source_path,
 };
 
 /// A mismatch discovered while converting a graph that already passed the
@@ -72,6 +74,63 @@ impl Error for CalxKernelCompileError {
       Self::Build(error) => Some(error),
       Self::Validation(error) => Some(error),
     }
+  }
+}
+
+/// Program-level compile phases keep whole-program eligibility separate from
+/// compiler/VM integration failures. Only `Eligibility` is an expected
+/// rejection of user code.
+#[derive(Debug)]
+pub enum CalxProgramCompileError {
+  Eligibility(CalxProgramEligibilityReport),
+  Lowering(CalxLoweringError),
+  Build(CalxBuildError),
+  Validation(CalxProgramError),
+}
+
+impl fmt::Display for CalxProgramCompileError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Self::Eligibility(report) => write!(
+        f,
+        "Calx program eligibility rejected entry `{}` with {} program issue(s) and {} root issue(s)",
+        report.entry_name,
+        report.program_issues.len(),
+        report.root_issues.len()
+      ),
+      Self::Lowering(error) => error.fmt(f),
+      Self::Build(error) => write!(f, "Calx program build failed: {error}"),
+      Self::Validation(error) => write!(f, "Calx program validation failed: {error}"),
+    }
+  }
+}
+
+impl Error for CalxProgramCompileError {
+  fn source(&self) -> Option<&(dyn Error + 'static)> {
+    match self {
+      Self::Eligibility(_) => None,
+      Self::Lowering(error) => Some(error),
+      Self::Build(error) => Some(error),
+      Self::Validation(error) => Some(error),
+    }
+  }
+}
+
+impl From<CalxLoweringError> for CalxProgramCompileError {
+  fn from(error: CalxLoweringError) -> Self {
+    Self::Lowering(error)
+  }
+}
+
+impl From<CalxBuildError> for CalxProgramCompileError {
+  fn from(error: CalxBuildError) -> Self {
+    Self::Build(error)
+  }
+}
+
+impl From<CalxProgramError> for CalxProgramCompileError {
+  fn from(error: CalxProgramError) -> Self {
+    Self::Validation(error)
   }
 }
 
@@ -340,47 +399,289 @@ impl CalxPreparedKernel {
   }
 
   pub fn run(&self, args: &[Calcit]) -> Result<Calcit, CalxKernelRunError> {
-    if args.len() != self.artifact.params.len() {
-      return Err(CalxKernelRunError::Boundary(CalxKernelBoundaryError {
-        kind: CalxKernelBoundaryErrorKind::Arity,
-        message: format!("expected {} arguments, found {}", self.artifact.params.len(), args.len()),
-      }));
-    }
-    let mut vm_args = Vec::with_capacity(args.len());
-    for (index, (value, expected)) in args.iter().zip(&self.artifact.params).enumerate() {
-      let converted = match (expected, value) {
-        (CalxScalarType::F64, Calcit::Number(value)) => VmValue::F64(*value),
-        (CalxScalarType::Bool, Calcit::Bool(value)) => VmValue::Bool(*value),
-        (CalxScalarType::F64Buffer, Calcit::F64Buffer(values)) => VmValue::f64_buffer_copy_from_slice(values),
-        _ => {
-          return Err(CalxKernelRunError::Boundary(CalxKernelBoundaryError {
-            kind: CalxKernelBoundaryErrorKind::ArgumentType,
-            message: format!(
-              "argument {index} expected {}, found {}",
-              expected.as_str(),
-              brief_type_of_value(value)
-            ),
-          }));
-        }
-      };
-      vm_args.push(converted);
-    }
-
+    let vm_args = convert_calx_arguments(args, &self.artifact.params)?;
     let mut vm = self.instantiate()?;
     let output = vm.run_typed(vm_args).map_err(CalxKernelRunError::Runtime)?;
-    match (self.artifact.result, output) {
-      (None, CalxRunResult::Void) => Ok(Calcit::Unit),
-      (Some(CalxScalarType::F64), CalxRunResult::Value(VmValue::F64(value))) => Ok(Calcit::Number(value)),
-      (Some(CalxScalarType::Bool), CalxRunResult::Value(VmValue::Bool(value))) => Ok(Calcit::Bool(value)),
-      (Some(CalxScalarType::F64Buffer), CalxRunResult::Value(VmValue::F64Buffer(values))) => {
-        Ok(Calcit::F64Buffer(std::sync::Arc::from(values.as_ref())))
-      }
-      (expected, actual) => Err(CalxKernelRunError::Boundary(CalxKernelBoundaryError {
-        kind: CalxKernelBoundaryErrorKind::ResultType,
-        message: format!("validated result contract {expected:?} produced {actual:?}"),
-      })),
-    }
+    convert_calx_result(self.artifact.result, output)
   }
+}
+
+fn convert_calx_arguments(args: &[Calcit], expected_params: &[CalxScalarType]) -> Result<Vec<VmValue>, CalxKernelRunError> {
+  if args.len() != expected_params.len() {
+    return Err(CalxKernelRunError::Boundary(CalxKernelBoundaryError {
+      kind: CalxKernelBoundaryErrorKind::Arity,
+      message: format!("expected {} arguments, found {}", expected_params.len(), args.len()),
+    }));
+  }
+  args
+    .iter()
+    .zip(expected_params)
+    .enumerate()
+    .map(|(index, (value, expected))| match (expected, value) {
+      (CalxScalarType::F64, Calcit::Number(value)) => Ok(VmValue::F64(*value)),
+      (CalxScalarType::Bool, Calcit::Bool(value)) => Ok(VmValue::Bool(*value)),
+      (CalxScalarType::F64Buffer, Calcit::F64Buffer(values)) => Ok(VmValue::f64_buffer_copy_from_slice(values)),
+      _ => Err(CalxKernelRunError::Boundary(CalxKernelBoundaryError {
+        kind: CalxKernelBoundaryErrorKind::ArgumentType,
+        message: format!(
+          "argument {index} expected {}, found {}",
+          expected.as_str(),
+          brief_type_of_value(value)
+        ),
+      })),
+    })
+    .collect()
+}
+
+fn convert_calx_result(expected: Option<CalxScalarType>, output: CalxRunResult) -> Result<Calcit, CalxKernelRunError> {
+  match (expected, output) {
+    (None, CalxRunResult::Void) => Ok(Calcit::Unit),
+    (Some(CalxScalarType::F64), CalxRunResult::Value(VmValue::F64(value))) => Ok(Calcit::Number(value)),
+    (Some(CalxScalarType::Bool), CalxRunResult::Value(VmValue::Bool(value))) => Ok(Calcit::Bool(value)),
+    (Some(CalxScalarType::F64Buffer), CalxRunResult::Value(VmValue::F64Buffer(values))) => {
+      Ok(Calcit::F64Buffer(std::sync::Arc::from(values.as_ref())))
+    }
+    (expected, actual) => Err(CalxKernelRunError::Boundary(CalxKernelBoundaryError {
+      kind: CalxKernelBoundaryErrorKind::ResultType,
+      message: format!("validated result contract {expected:?} produced {actual:?}"),
+    })),
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CalxProgramEntry {
+  pub role: CalxProgramRootRole,
+  pub definition: CalxDefinitionRef,
+  pub vm_name: Arc<str>,
+  pub params: Vec<CalxScalarType>,
+  pub result: Option<CalxScalarType>,
+}
+
+/// Immutable result of whole-program eligibility, lowering, construction, and
+/// strict VM validation. Runtime state and callbacks are deliberately absent.
+#[derive(Debug, Clone)]
+pub struct CalxCompiledProgramArtifact {
+  eligible: CalxEligibleProgram,
+  entries: Vec<CalxProgramEntry>,
+  program: ValidatedProgram,
+  import_contract: Vec<CalxImportContract>,
+}
+
+impl CalxCompiledProgramArtifact {
+  pub fn eligible_program(&self) -> &CalxEligibleProgram {
+    &self.eligible
+  }
+
+  pub fn entries(&self) -> &[CalxProgramEntry] {
+    &self.entries
+  }
+
+  pub fn validated_program(&self) -> &ValidatedProgram {
+    &self.program
+  }
+
+  pub fn import_contract(&self) -> &[CalxImportContract] {
+    &self.import_contract
+  }
+}
+
+/// Whole-program artifact with current typed host callbacks attached.
+#[derive(Debug, Clone)]
+pub struct CalxPreparedProgram {
+  artifact: Rc<CalxCompiledProgramArtifact>,
+  host_bindings: CalxHostBindings,
+}
+
+impl CalxPreparedProgram {
+  pub fn artifact(&self) -> &Rc<CalxCompiledProgramArtifact> {
+    &self.artifact
+  }
+
+  pub fn instantiate(&self) -> Result<CalxProgramInstance, CalxKernelRunError> {
+    let vm = CalxVM::from_validated_program(self.artifact.program.clone(), self.host_bindings.clone())
+      .map_err(CalxKernelRunError::Instantiate)?;
+    Ok(CalxProgramInstance {
+      artifact: self.artifact.clone(),
+      vm,
+    })
+  }
+}
+
+/// One reusable VM instance. Running multiple lifecycle roots on this value
+/// preserves VM-owned state instead of rebuilding the program per root.
+pub struct CalxProgramInstance {
+  artifact: Rc<CalxCompiledProgramArtifact>,
+  vm: CalxVM,
+}
+
+impl CalxProgramInstance {
+  pub fn run_root(&mut self, role: CalxProgramRootRole, args: &[Calcit]) -> Result<Calcit, CalxKernelRunError> {
+    let entry = self
+      .artifact
+      .entries
+      .iter()
+      .find(|entry| entry.role == role)
+      .expect("validated Calx program contract must contain each lifecycle role");
+    let vm_args = convert_calx_arguments(args, &entry.params)?;
+    let output = self
+      .vm
+      .run_typed_entry(&entry.vm_name, vm_args)
+      .map_err(CalxKernelRunError::Runtime)?;
+    convert_calx_result(entry.result, output)
+  }
+}
+
+/// Prove, lower, build, and validate all lifecycle roots as one strict Calx
+/// program. No partial artifact is returned when eligibility fails.
+pub fn compile_calx_program(
+  program: &CompiledProgram,
+  unit: &CalxProgramCompilationUnit,
+) -> Result<CalxPreparedProgram, CalxProgramCompileError> {
+  compile_calx_program_with_imports(program, unit, &CalxHostImports::new())
+}
+
+/// Compile a whole program with one explicit set of typed host capabilities.
+pub fn compile_calx_program_with_imports(
+  program: &CompiledProgram,
+  unit: &CalxProgramCompilationUnit,
+  imports: &CalxHostImports,
+) -> Result<CalxPreparedProgram, CalxProgramCompileError> {
+  let eligible = analyze_calx_program_eligibility_with_imports(program, unit, imports).map_err(CalxProgramCompileError::Eligibility)?;
+  let names = eligible
+    .functions
+    .iter()
+    .map(|function| (function.definition.clone(), function.definition.qualified()))
+    .collect::<BTreeMap<_, _>>();
+  let signatures = eligible
+    .functions
+    .iter()
+    .map(|function| (function.definition.clone(), (function.params.clone(), function.result)))
+    .collect::<BTreeMap<_, _>>();
+  let plans = eligible
+    .functions
+    .iter()
+    .map(|function| {
+      plan_function(
+        program,
+        function.definition.clone(),
+        &function.params,
+        function.result,
+        &names,
+        &signatures,
+        imports,
+      )
+    })
+    .collect::<Result<Vec<_>, CalxLoweringError>>()?;
+
+  let used_imports = collect_used_imports(&eligible.functions);
+  let mut builder = ProgramBuilder::new();
+  let import_ids = declare_used_imports(&mut builder, &used_imports, imports)?;
+  for plan in &plans {
+    let function = emit_function(plan, &import_ids).map_err(|error| match error {
+      CalxKernelCompileError::Lowering(error) => CalxProgramCompileError::Lowering(error),
+      CalxKernelCompileError::Build(error) => CalxProgramCompileError::Build(error),
+      CalxKernelCompileError::Validation(error) => CalxProgramCompileError::Validation(error),
+      CalxKernelCompileError::Eligibility(_) => unreachable!("emission cannot perform eligibility analysis"),
+    })?;
+    builder.function(function)?;
+  }
+  let validated_program = ValidatedProgram::try_from_program(builder.build()?)?;
+
+  let error_context = eligible.roots.first().map(|root| root.definition.clone()).ok_or_else(|| {
+    CalxProgramCompileError::Lowering(lower_error(
+      &CalxDefinitionRef::new("<program>", "<root>"),
+      None,
+      "eligible program contains no lifecycle roots",
+    ))
+  })?;
+  let entries = eligible
+    .roots
+    .iter()
+    .map(|root| {
+      let signature = signatures.get(&root.definition).ok_or_else(|| {
+        CalxProgramCompileError::Lowering(lower_error(
+          &root.definition,
+          None,
+          "eligible program does not contain its lifecycle root",
+        ))
+      })?;
+      let vm_name = names.get(&root.definition).ok_or_else(|| {
+        CalxProgramCompileError::Lowering(lower_error(
+          &root.definition,
+          None,
+          "eligible lifecycle root has no Calx function name",
+        ))
+      })?;
+      Ok(CalxProgramEntry {
+        role: root.role,
+        definition: root.definition.clone(),
+        vm_name: Arc::from(vm_name.as_str()),
+        params: signature.0.clone(),
+        result: signature.1,
+      })
+    })
+    .collect::<Result<Vec<_>, CalxProgramCompileError>>()?;
+  let host_bindings = attach_used_imports(&used_imports, imports, &error_context)?;
+  Ok(CalxPreparedProgram {
+    artifact: Rc::new(CalxCompiledProgramArtifact {
+      eligible,
+      entries,
+      program: validated_program,
+      import_contract: import_contract(imports),
+    }),
+    host_bindings,
+  })
+}
+
+fn collect_used_imports(functions: &[CalxEligibleFunction]) -> BTreeSet<CalxDefinitionRef> {
+  functions
+    .iter()
+    .flat_map(|function| function.host_imports.iter().cloned())
+    .collect()
+}
+
+fn declare_used_imports(
+  builder: &mut ProgramBuilder,
+  used_imports: &BTreeSet<CalxDefinitionRef>,
+  imports: &CalxHostImports,
+) -> Result<BTreeMap<CalxDefinitionRef, ImportId>, CalxProgramCompileError> {
+  let mut import_ids = BTreeMap::new();
+  for target in used_imports {
+    let import = imports.get(target).ok_or_else(|| {
+      CalxProgramCompileError::Lowering(lower_error(
+        target,
+        None,
+        "eligible host import has no compile-time capability binding",
+      ))
+    })?;
+    let id = builder.import_at(
+      import.name(),
+      import.params().iter().copied().map(CalxScalarType::vm_type).collect(),
+      import.result().map(CalxScalarType::vm_type),
+      Some(SourceSpan::synthetic(source_origin(target, None))),
+    )?;
+    import_ids.insert(target.clone(), id);
+  }
+  Ok(import_ids)
+}
+
+fn attach_used_imports(
+  used_imports: &BTreeSet<CalxDefinitionRef>,
+  imports: &CalxHostImports,
+  error_context: &CalxDefinitionRef,
+) -> Result<CalxHostBindings, CalxProgramCompileError> {
+  let mut host_bindings = CalxHostBindings::new();
+  for target in used_imports {
+    let import = imports.get(target).ok_or_else(|| {
+      CalxProgramCompileError::Lowering(lower_error(
+        error_context,
+        None,
+        format!("compiled host import `{}` has no current capability binding", target.qualified()),
+      ))
+    })?;
+    host_bindings.insert(import.name().into(), import.binding().clone());
+  }
+  Ok(host_bindings)
 }
 
 /// Prove, lower, build, and validate one closed scalar kernel call graph.
