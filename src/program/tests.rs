@@ -12,6 +12,7 @@ use crate::codegen::calx::{
 use crate::data::cirru::code_to_calcit;
 use crate::run_program_with_docs;
 use crate::snapshot::SnapshotTarget;
+use calx_vm::{CalxHostBindings, CalxRunResult, CalxVM, parse_program};
 use cirru_edn::EdnTag;
 use std::collections::{BTreeSet, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -611,6 +612,34 @@ fn calx_program_eligibility_rejects_unversioned_or_incomplete_units_before_analy
     vec![CalxProgramEligibilityCode::AbiEdition, CalxProgramEligibilityCode::RootSet]
   );
   assert!(report.root_issues.is_empty());
+}
+
+#[test]
+fn calx_vm_named_entry_release_executes_distinct_program_roots_without_main() {
+  let parsed = parse_program(
+    "calcit-consumer-named-entry.cirru",
+    r#"fn init (-> f64)
+  const 1.0
+  return
+
+fn reload (-> f64)
+  const 2.0
+  return"#,
+  )
+  .expect("parse strict named-entry consumer fixture");
+  let program = parsed.into_program().expect("build strict named-entry consumer fixture");
+  let mut vm = CalxVM::from_program(program, CalxHostBindings::new()).expect("validate named-entry consumer fixture");
+
+  assert_eq!(
+    vm.run_typed_entry("init", vec![]).expect("run init by exact name"),
+    CalxRunResult::Value(CalxValue::F64(1.0))
+  );
+  assert_eq!(
+    vm.run_typed_entry("reload", vec![]).expect("run reload by exact name"),
+    CalxRunResult::Value(CalxValue::F64(2.0))
+  );
+  let missing = vm.run_typed_entry("main", vec![]).expect_err("named entry must not fall back");
+  assert_eq!(missing.message, "main function is required");
 }
 
 #[test]
