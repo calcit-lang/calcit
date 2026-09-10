@@ -1766,6 +1766,25 @@ fn calx_program_cache_keys_complete_units_and_bounds_lru_state() {
     ],
     ..unit_a.clone()
   };
+  let mut unit_c = calx_program_unit(namespace, "affine", "fibonacci");
+  unit_c.entry_name = Arc::from("third");
+
+  let mut recency = CalxProgramCompileCache::new(2);
+  recency.prepare(&snapshot, &unit_a, &imports).expect("insert LRU program A");
+  recency.prepare(&snapshot, &unit_b, &imports).expect("insert LRU program B");
+  assert!(
+    recency
+      .prepare(&snapshot, &unit_a, &imports)
+      .expect("refresh program A")
+      .report()
+      .cache_hit
+  );
+  recency.prepare(&snapshot, &unit_c, &imports).expect("insert program C and evict B");
+  let evicted_b = recency
+    .prepare(&snapshot, &unit_b, &imports)
+    .expect("recompile evicted LRU program B");
+  assert_eq!(evicted_b.report().miss_reason, Some(CalxCacheMissReason::Evicted));
+
   let mut bounded = CalxProgramCompileCache::new(1);
   bounded.prepare(&snapshot, &unit_a, &imports).expect("insert program A");
   bounded.prepare(&snapshot, &unit_b, &imports).expect("insert program B and evict A");
