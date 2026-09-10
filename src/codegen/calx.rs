@@ -20,9 +20,10 @@ pub use coverage::{
   classify_calx_syntax_surface, classify_calx_type_surface,
 };
 pub use lowering::{
-  CalxCompiledArtifact, CalxCompiledKernel, CalxKernelBoundaryError, CalxKernelBoundaryErrorKind, CalxKernelCompileError,
-  CalxKernelCompileTimings, CalxKernelRunError, CalxLoweringError, CalxPreparedKernel, compile_calx_kernel,
-  compile_calx_kernel_measured, compile_calx_kernel_with_imports, compile_calx_kernel_with_imports_measured,
+  CalxCompiledArtifact, CalxCompiledKernel, CalxCompiledProgramArtifact, CalxKernelBoundaryError, CalxKernelBoundaryErrorKind,
+  CalxKernelCompileError, CalxKernelCompileTimings, CalxKernelRunError, CalxLoweringError, CalxPreparedKernel, CalxPreparedProgram,
+  CalxProgramCompileError, CalxProgramEntry, CalxProgramInstance, compile_calx_kernel, compile_calx_kernel_measured,
+  compile_calx_kernel_with_imports, compile_calx_kernel_with_imports_measured, compile_calx_program, compile_calx_program_with_imports,
 };
 pub use program_contract::{
   CALX_PROGRAM_ABI_EDITION, CalxProgramCompilationUnit, CalxProgramContractCode, CalxProgramContractError, CalxProgramRoot,
