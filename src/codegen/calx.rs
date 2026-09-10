@@ -13,7 +13,10 @@ mod lowering;
 mod program_contract;
 mod program_eligibility;
 
-pub use cache::{CalxCacheMissReason, CalxCachePreparation, CalxCachePrepareReport, CalxCompileCache, CalxCompileCacheStats};
+pub use cache::{
+  CalxCacheMissReason, CalxCachePreparation, CalxCachePrepareReport, CalxCompileCache, CalxCompileCacheStats,
+  CalxProgramCachePreparation, CalxProgramCachePrepareReport, CalxProgramCompileCache,
+};
 pub use calx_vm::{Calx as CalxValue, CalxBuildError, CalxError, CalxProgramError};
 pub use coverage::{
   CALX_COVERAGE_PROC_COUNT_V1, CalxCoverage, CalxCoverageOwner, CalxCoverageStage, classify_calx_proc_surface,

@@ -2315,6 +2315,7 @@ mod tests {
 
   #[test]
   fn expand_store_schema_when_msg_buffer_available() {
+    let _guard = crate::program::lock_program_test_state();
     let path = std::path::Path::new("/Users/jon.chen/repo/termina/msg-buffer/calcit.cirru");
     if !path.exists() {
       return;

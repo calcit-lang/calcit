@@ -205,7 +205,9 @@ remaining, index-stream bounds, fractional/negative/non-finite indices, and valu
 
 当前 API 仍是 Rust embedding，不是 `calcit` CLI 的正式 backend。首批没有 collection/nominal value、closure、
 持久化 cache、VM pool 或 selection policy，也还没有基于 benchmark 的自动 offload。embedding-owned、
-容量有界、revision-safe 的 validated-artifact cache 已实现，但 cache-hit 性能报告仍等待独立 harness。
+容量有界、revision-safe 的 validated-artifact cache 已覆盖 kernel 与 whole-program compilation unit，
+但 program cache-hit 性能报告仍等待独立 harness。两者都只缓存 immutable compile artifact，命中时重新挂载
+typed callbacks；不缓存 VM instance 或 live state。
 correctness corpus 已覆盖 scalar
 kernel、zero/single-result typed imports、generated program、trap 与 fallback。分阶段 benchmark matrix、
 采样 crossover point 和首份 scalar baseline 已建立；[calx-vm #39](https://github.com/calcit-lang/calx-vm/issues/39)

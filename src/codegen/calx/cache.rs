@@ -8,10 +8,14 @@ use std::time::{Duration, Instant};
 use crate::program::CompiledProgram;
 
 use super::lowering::{
-  CalxCompiledArtifact, CalxKernelCompileError, CalxKernelCompileTimings, CalxPreparedKernel,
-  compile_calx_artifact_with_imports_measured, prepare_calx_artifact,
+  CalxCompiledArtifact, CalxCompiledProgramArtifact, CalxKernelCompileError, CalxKernelCompileTimings, CalxPreparedKernel,
+  CalxPreparedProgram, CalxProgramCompileError, compile_calx_artifact_with_imports_measured,
+  compile_calx_program_artifact_with_imports, prepare_calx_artifact, prepare_calx_program_artifact,
 };
-use super::{CALX_KERNEL_ABI_EDITION, CalxDefinitionRef, CalxHostImports, CalxImportContract, import_contract, lookup_compiled_def};
+use super::{
+  CALX_KERNEL_ABI_EDITION, CalxDefinitionRef, CalxHostImports, CalxImportContract, CalxProgramCompilationUnit, CalxProgramRootRole,
+  import_contract, lookup_compiled_def,
+};
 
 /// Stable reason assigned to one source-derived cache miss.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -21,6 +25,7 @@ pub enum CalxCacheMissReason {
   CalleeChanged,
   SchemaChanged,
   AbiChanged,
+  ProgramUnitChanged,
   ImportContractChanged,
   DependencyMissing,
   Evicted,
@@ -34,10 +39,49 @@ impl CalxCacheMissReason {
       Self::CalleeChanged => "callee-changed",
       Self::SchemaChanged => "schema-changed",
       Self::AbiChanged => "abi-changed",
+      Self::ProgramUnitChanged => "program-unit-changed",
       Self::ImportContractChanged => "import-contract-changed",
       Self::DependencyMissing => "dependency-missing",
       Self::Evicted => "evicted",
     }
+  }
+}
+
+/// Per-request evidence for whole-program artifact preparation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CalxProgramCachePrepareReport {
+  pub cache_hit: bool,
+  pub miss_reason: Option<CalxCacheMissReason>,
+  pub skipped_eligibility: bool,
+  pub skipped_planning: bool,
+  pub skipped_program_construction: bool,
+  pub skipped_validation_lowering: bool,
+  pub revision_validation: Duration,
+  pub binding_attachment: Duration,
+}
+
+/// A freshly prepared whole program and the cache decision that produced it.
+#[derive(Debug)]
+pub struct CalxProgramCachePreparation {
+  program: CalxPreparedProgram,
+  report: CalxProgramCachePrepareReport,
+}
+
+impl CalxProgramCachePreparation {
+  pub fn program(&self) -> &CalxPreparedProgram {
+    &self.program
+  }
+
+  pub fn report(&self) -> &CalxProgramCachePrepareReport {
+    &self.report
+  }
+
+  pub fn into_program(self) -> CalxPreparedProgram {
+    self.program
+  }
+
+  pub fn into_parts(self) -> (CalxPreparedProgram, CalxProgramCachePrepareReport) {
+    (self.program, self.report)
   }
 }
 
@@ -314,6 +358,240 @@ impl CalxCompileCache {
   }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct CalxProgramUnitKey {
+  abi_edition: Arc<str>,
+  entry_name: Arc<str>,
+  host_target: Option<Arc<str>>,
+  roots: Vec<(CalxProgramRootRole, CalxDefinitionRef)>,
+}
+
+impl CalxProgramUnitKey {
+  fn current(unit: &CalxProgramCompilationUnit) -> Self {
+    let mut roots = unit
+      .roots
+      .iter()
+      .map(|root| (root.role, root.definition.clone()))
+      .collect::<Vec<_>>();
+    roots.sort();
+    Self {
+      abi_edition: unit.abi_edition.clone(),
+      entry_name: unit.entry_name.clone(),
+      host_target: unit.host_target.map(|target| Arc::from(target.as_str())),
+      roots,
+    }
+  }
+
+  fn same_except_abi(&self, other: &Self) -> bool {
+    self.entry_name == other.entry_name && self.host_target == other.host_target && self.roots == other.roots
+  }
+
+  fn same_program_family(&self, other: &Self) -> bool {
+    self.entry_name == other.entry_name || self.roots == other.roots
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct CalxProgramCacheSlotKey {
+  unit: CalxProgramUnitKey,
+  imports: Vec<CalxImportContract>,
+}
+
+impl CalxProgramCacheSlotKey {
+  fn current(unit: &CalxProgramCompilationUnit, imports: &CalxHostImports) -> Self {
+    Self {
+      unit: CalxProgramUnitKey::current(unit),
+      imports: import_contract(imports),
+    }
+  }
+}
+
+#[derive(Debug, Clone)]
+struct CalxProgramCacheEntry {
+  artifact: Rc<CalxCompiledProgramArtifact>,
+  last_used: u64,
+}
+
+/// Explicit, capacity-bounded LRU cache for immutable whole-program artifacts.
+///
+/// Each prepare revalidates reachable source stamps and reattaches the current
+/// typed host callbacks. VM instances and live capability state are never cached.
+#[derive(Debug)]
+pub struct CalxProgramCompileCache {
+  capacity: usize,
+  clock: u64,
+  entries: BTreeMap<CalxProgramCacheSlotKey, CalxProgramCacheEntry>,
+  recently_evicted: BTreeMap<CalxProgramCacheSlotKey, u64>,
+  counters: CalxCacheCounters,
+}
+
+impl CalxProgramCompileCache {
+  /// Create a bounded cache. Capacity zero is a supported always-miss mode.
+  pub fn new(capacity: usize) -> Self {
+    Self {
+      capacity,
+      clock: 0,
+      entries: BTreeMap::new(),
+      recently_evicted: BTreeMap::new(),
+      counters: CalxCacheCounters::default(),
+    }
+  }
+
+  pub fn capacity(&self) -> usize {
+    self.capacity
+  }
+
+  /// Validate the complete program identity and source closure, compiling only on a miss.
+  pub fn prepare(
+    &mut self,
+    program: &CompiledProgram,
+    unit: &CalxProgramCompilationUnit,
+    imports: &CalxHostImports,
+  ) -> Result<CalxProgramCachePreparation, CalxProgramCompileError> {
+    let key = CalxProgramCacheSlotKey::current(unit, imports);
+    let revision_started = Instant::now();
+    let candidate = self.entries.get(&key).map(|entry| entry.artifact.clone());
+    let miss_reason = match candidate.as_ref() {
+      Some(artifact) => validate_program_stamps(program, artifact),
+      None => Some(self.classify_absent_slot(&key)),
+    };
+    let revision_validation = revision_started.elapsed();
+
+    if let (Some(artifact), None) = (candidate, miss_reason) {
+      let binding_started = Instant::now();
+      let prepared = prepare_calx_program_artifact(artifact, imports)?;
+      let binding_attachment = binding_started.elapsed();
+      let tick = self.next_tick();
+      if let Some(entry) = self.entries.get_mut(&key) {
+        entry.last_used = tick;
+      }
+      self.counters.hits += 1;
+      return Ok(CalxProgramCachePreparation {
+        program: prepared,
+        report: CalxProgramCachePrepareReport {
+          cache_hit: true,
+          miss_reason: None,
+          skipped_eligibility: true,
+          skipped_planning: true,
+          skipped_program_construction: true,
+          skipped_validation_lowering: true,
+          revision_validation,
+          binding_attachment,
+        },
+      });
+    }
+
+    let reason = miss_reason.unwrap_or(CalxCacheMissReason::Empty);
+    self.record_miss(reason);
+    let artifact = compile_calx_program_artifact_with_imports(program, unit, imports)?;
+    let binding_started = Instant::now();
+    let prepared = prepare_calx_program_artifact(artifact.clone(), imports)?;
+    let binding_attachment = binding_started.elapsed();
+    self.insert(key, artifact);
+    Ok(CalxProgramCachePreparation {
+      program: prepared,
+      report: CalxProgramCachePrepareReport {
+        cache_hit: false,
+        miss_reason: Some(reason),
+        skipped_eligibility: false,
+        skipped_planning: false,
+        skipped_program_construction: false,
+        skipped_validation_lowering: false,
+        revision_validation,
+        binding_attachment,
+      },
+    })
+  }
+
+  /// Remove artifacts and eviction provenance while retaining counters.
+  pub fn clear(&mut self) {
+    self.entries.clear();
+    self.recently_evicted.clear();
+    self.counters.clears += 1;
+  }
+
+  pub fn stats(&self) -> CalxCompileCacheStats {
+    let mut stats = CalxCompileCacheStats {
+      hits: self.counters.hits,
+      misses: self.counters.misses,
+      misses_by_reason: self.counters.misses_by_reason.clone(),
+      evictions: self.counters.evictions,
+      clears: self.counters.clears,
+      entry_count: self.entries.len(),
+      recently_evicted_count: self.recently_evicted.len(),
+      ..CalxCompileCacheStats::default()
+    };
+    for entry in self.entries.values() {
+      stats.reachable_function_count += entry.artifact.reachable_definition_count();
+      stats.syntax_instruction_count += entry.artifact.syntax_instruction_count();
+      stats.lowered_instruction_count += entry.artifact.lowered_instruction_count();
+      stats.estimated_bytes += entry.artifact.estimated_bytes();
+    }
+    stats
+  }
+
+  fn classify_absent_slot(&self, key: &CalxProgramCacheSlotKey) -> CalxCacheMissReason {
+    if self.recently_evicted.contains_key(key) {
+      return CalxCacheMissReason::Evicted;
+    }
+    for active in self.entries.keys() {
+      if active.unit.same_except_abi(&key.unit) && active.unit.abi_edition != key.unit.abi_edition {
+        return CalxCacheMissReason::AbiChanged;
+      }
+      if active.unit == key.unit && active.imports != key.imports {
+        return CalxCacheMissReason::ImportContractChanged;
+      }
+    }
+    for active in self.entries.keys() {
+      if active.unit.same_program_family(&key.unit) && active.unit != key.unit {
+        return CalxCacheMissReason::ProgramUnitChanged;
+      }
+    }
+    CalxCacheMissReason::Empty
+  }
+
+  fn record_miss(&mut self, reason: CalxCacheMissReason) {
+    self.counters.misses += 1;
+    *self.counters.misses_by_reason.entry(reason).or_insert(0) += 1;
+  }
+
+  fn insert(&mut self, key: CalxProgramCacheSlotKey, artifact: Rc<CalxCompiledProgramArtifact>) {
+    self.recently_evicted.remove(&key);
+    if self.capacity == 0 {
+      return;
+    }
+    if !self.entries.contains_key(&key)
+      && self.entries.len() >= self.capacity
+      && let Some(evicted) = least_recent_program_key(&self.entries)
+    {
+      self.entries.remove(&evicted);
+      self.counters.evictions += 1;
+      self.record_evicted(evicted);
+    }
+    let tick = self.next_tick();
+    self.entries.insert(key, CalxProgramCacheEntry { artifact, last_used: tick });
+  }
+
+  fn record_evicted(&mut self, key: CalxProgramCacheSlotKey) {
+    if self.capacity == 0 {
+      return;
+    }
+    let tick = self.next_tick();
+    self.recently_evicted.insert(key, tick);
+    while self.recently_evicted.len() > self.capacity {
+      let Some(oldest) = least_recent_program_tombstone(&self.recently_evicted) else {
+        break;
+      };
+      self.recently_evicted.remove(&oldest);
+    }
+  }
+
+  fn next_tick(&mut self) -> u64 {
+    self.clock = self.clock.wrapping_add(1);
+    self.clock
+  }
+}
+
 fn validate_reachable_stamps(program: &CompiledProgram, artifact: &CalxCompiledArtifact) -> Option<CalxCacheMissReason> {
   for stamp in &artifact.reachable_stamps {
     let Some(current) = lookup_compiled_def(program, &stamp.definition) else {
@@ -341,6 +619,39 @@ fn validate_reachable_stamps(program: &CompiledProgram, artifact: &CalxCompiledA
   None
 }
 
+fn validate_program_stamps(program: &CompiledProgram, artifact: &CalxCompiledProgramArtifact) -> Option<CalxCacheMissReason> {
+  let roots = artifact
+    .eligible_program()
+    .roots
+    .iter()
+    .map(|root| &root.definition)
+    .collect::<std::collections::BTreeSet<_>>();
+  for stamp in &artifact.reachable_stamps {
+    let Some(current) = lookup_compiled_def(program, &stamp.definition) else {
+      return Some(CalxCacheMissReason::DependencyMissing);
+    };
+    if current.schema != stamp.schema {
+      return Some(CalxCacheMissReason::SchemaChanged);
+    }
+    if current.def_id != stamp.def_id || current.preprocessed_code != stamp.preprocessed_code {
+      return Some(if roots.contains(&stamp.definition) {
+        CalxCacheMissReason::EntryChanged
+      } else {
+        CalxCacheMissReason::CalleeChanged
+      });
+    }
+  }
+  for stamp in &artifact.import_schema_stamps {
+    let Some(current) = lookup_compiled_def(program, &stamp.definition) else {
+      return Some(CalxCacheMissReason::DependencyMissing);
+    };
+    if current.schema != stamp.schema {
+      return Some(CalxCacheMissReason::SchemaChanged);
+    }
+  }
+  None
+}
+
 fn least_recent_key(entries: &BTreeMap<CalxCacheSlotKey, CalxCacheEntry>) -> Option<CalxCacheSlotKey> {
   entries
     .iter()
@@ -349,6 +660,20 @@ fn least_recent_key(entries: &BTreeMap<CalxCacheSlotKey, CalxCacheEntry>) -> Opt
 }
 
 fn least_recent_tombstone(entries: &BTreeMap<CalxCacheSlotKey, u64>) -> Option<CalxCacheSlotKey> {
+  entries
+    .iter()
+    .min_by(|(left_key, left), (right_key, right)| left.cmp(right).then_with(|| left_key.cmp(right_key)))
+    .map(|(key, _)| key.clone())
+}
+
+fn least_recent_program_key(entries: &BTreeMap<CalxProgramCacheSlotKey, CalxProgramCacheEntry>) -> Option<CalxProgramCacheSlotKey> {
+  entries
+    .iter()
+    .min_by(|(left_key, left), (right_key, right)| left.last_used.cmp(&right.last_used).then_with(|| left_key.cmp(right_key)))
+    .map(|(key, _)| key.clone())
+}
+
+fn least_recent_program_tombstone(entries: &BTreeMap<CalxProgramCacheSlotKey, u64>) -> Option<CalxProgramCacheSlotKey> {
   entries
     .iter()
     .min_by(|(left_key, left), (right_key, right)| left.cmp(right).then_with(|| left_key.cmp(right_key)))

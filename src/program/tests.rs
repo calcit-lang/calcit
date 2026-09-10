@@ -5,8 +5,8 @@ use crate::call_stack::CallStackList;
 use crate::codegen::calx::{
   CALX_PROGRAM_ABI_EDITION, CalxCacheMissReason, CalxCompileCache, CalxDefinitionRef, CalxError, CalxFallbackCode, CalxHostImport,
   CalxHostImports, CalxKernelBoundaryErrorKind, CalxKernelCompileError, CalxKernelRunError, CalxProgramCompilationUnit,
-  CalxProgramCompileError, CalxProgramEligibilityCode, CalxProgramRoot, CalxProgramRootRole, CalxScalarType, CalxValue,
-  analyze_calx_eligibility, analyze_calx_eligibility_with_imports, analyze_calx_program_eligibility,
+  CalxProgramCompileCache, CalxProgramCompileError, CalxProgramEligibilityCode, CalxProgramRoot, CalxProgramRootRole, CalxScalarType,
+  CalxValue, analyze_calx_eligibility, analyze_calx_eligibility_with_imports, analyze_calx_program_eligibility,
   analyze_calx_program_eligibility_with_imports, compile_calx_kernel, compile_calx_kernel_measured, compile_calx_kernel_with_imports,
   compile_calx_program, compile_calx_program_with_imports,
 };
@@ -1531,6 +1531,282 @@ fn calx_program_lowering_attaches_one_typed_capability_set_to_both_roots() {
     .run_root(CalxProgramRootRole::Reload, &[Calcit::Number(3.0)])
     .expect_err("host trap remains a runtime error without fallback");
   assert!(matches!(trap, CalxKernelRunError::Runtime(_)));
+}
+
+#[test]
+fn calx_program_cache_hits_and_reattaches_current_callbacks() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-program-cache-imports";
+  install_calx_typed_import_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed program cache fixture");
+  let unit = calx_program_unit(namespace, "imported-pipeline", "imported-pipeline");
+  let imports_a = calx_test_host_imports_with_scale(namespace, "fixture.scale", calx_test_scale);
+  let imports_b = calx_test_host_imports_with_scale(namespace, "fixture.scale", calx_test_scale_three);
+  let mut cache = CalxProgramCompileCache::new(2);
+
+  let first = cache
+    .prepare(&snapshot, &unit, &imports_a)
+    .expect("compile initial program artifact");
+  assert_eq!(first.report().miss_reason, Some(CalxCacheMissReason::Empty));
+  assert!(!first.report().cache_hit);
+  let first_artifact = first.program().artifact().clone();
+  let mut first_instance = first.program().instantiate().expect("instantiate first callback set");
+  assert_eq!(
+    first_instance
+      .run_root(CalxProgramRootRole::Init, &[Calcit::Number(3.0)])
+      .expect("run callback A"),
+    Calcit::Number(7.0)
+  );
+
+  let second = cache.prepare(&snapshot, &unit, &imports_b).expect("reuse artifact with callback B");
+  assert!(second.report().cache_hit);
+  assert!(second.report().miss_reason.is_none());
+  assert!(second.report().skipped_eligibility);
+  assert!(second.report().skipped_planning);
+  assert!(second.report().skipped_program_construction);
+  assert!(second.report().skipped_validation_lowering);
+  assert!(std::rc::Rc::ptr_eq(&first_artifact, second.program().artifact()));
+  let mut second_instance = second.program().instantiate().expect("instantiate replacement callback set");
+  assert_eq!(
+    second_instance
+      .run_root(CalxProgramRootRole::Reload, &[Calcit::Number(3.0)])
+      .expect("run callback B"),
+    Calcit::Number(10.0),
+    "program cache hits must attach current callbacks rather than cached capability state"
+  );
+
+  let mut host_schema_changed = snapshot.clone();
+  host_schema_changed
+    .get_mut(namespace)
+    .expect("fixture namespace")
+    .defs
+    .get_mut("host-scale")
+    .expect("host import definition")
+    .schema = calx_test_fn_schema(vec![CalcitTypeAnnotation::Bool], CalcitTypeAnnotation::Number);
+  assert!(matches!(
+    cache.prepare(&host_schema_changed, &unit, &imports_b),
+    Err(CalxProgramCompileError::Eligibility(_))
+  ));
+
+  let changed_contract = calx_test_host_imports_with_scale(namespace, "fixture.scale.v2", calx_test_scale_three);
+  let third = cache
+    .prepare(&snapshot, &unit, &changed_contract)
+    .expect("changed declaration recompiles the program artifact");
+  assert_eq!(third.report().miss_reason, Some(CalxCacheMissReason::ImportContractChanged));
+  assert!(!std::rc::Rc::ptr_eq(&first_artifact, third.program().artifact()));
+
+  let stats = cache.stats();
+  assert_eq!(stats.hits, 1);
+  assert_eq!(stats.misses, 3);
+  assert_eq!(stats.miss_count(CalxCacheMissReason::SchemaChanged), 1);
+  assert_eq!(stats.miss_count(CalxCacheMissReason::ImportContractChanged), 1);
+  assert_eq!(stats.entry_count, 2);
+  assert!(stats.reachable_function_count >= 2);
+  assert!(stats.syntax_instruction_count > 0);
+  assert!(stats.lowered_instruction_count > 0);
+  assert!(stats.estimated_bytes > 0);
+}
+
+#[test]
+fn calx_program_cache_revalidates_roots_callees_schemas_and_missing_dependencies() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-program-cache-revisions";
+  install_calx_scalar_kernel_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone program revision fixture");
+  let unit = calx_program_unit(namespace, "range-sum", "affine");
+  let imports = CalxHostImports::new();
+  let mut cache = CalxProgramCompileCache::new(1);
+
+  let initial = cache.prepare(&snapshot, &unit, &imports).expect("compile initial program");
+  let initial_artifact = initial.program().artifact().clone();
+
+  let mut unrelated = snapshot.clone();
+  unrelated
+    .get_mut(namespace)
+    .expect("fixture namespace")
+    .defs
+    .get_mut("polynomial")
+    .expect("unrelated definition")
+    .def_id
+    .0 += 10_000;
+  let unrelated_hit = cache.prepare(&unrelated, &unit, &imports).expect("unrelated change remains a hit");
+  assert!(unrelated_hit.report().cache_hit);
+  assert!(std::rc::Rc::ptr_eq(&initial_artifact, unrelated_hit.program().artifact()));
+
+  let mut body_changed = unrelated.clone();
+  body_changed
+    .get_mut(namespace)
+    .expect("fixture namespace")
+    .defs
+    .get_mut("range-sum")
+    .expect("init root")
+    .preprocessed_code = Calcit::Nil;
+  assert!(matches!(
+    cache.prepare(&body_changed, &unit, &imports),
+    Err(CalxProgramCompileError::Eligibility(_))
+  ));
+  let after_failed_body = cache
+    .prepare(&unrelated, &unit, &imports)
+    .expect("failed body rebuild must not replace the accepted artifact");
+  assert!(after_failed_body.report().cache_hit);
+  assert!(std::rc::Rc::ptr_eq(&initial_artifact, after_failed_body.program().artifact()));
+
+  let mut root_changed = unrelated.clone();
+  root_changed
+    .get_mut(namespace)
+    .expect("fixture namespace")
+    .defs
+    .get_mut("range-sum")
+    .expect("init root")
+    .def_id
+    .0 += 20_000;
+  let root_miss = cache.prepare(&root_changed, &unit, &imports).expect("root change recompiles");
+  assert_eq!(root_miss.report().miss_reason, Some(CalxCacheMissReason::EntryChanged));
+
+  let mut callee_changed = root_changed.clone();
+  callee_changed
+    .get_mut(namespace)
+    .expect("fixture namespace")
+    .defs
+    .get_mut("affine-helper")
+    .expect("shared reachable callee")
+    .def_id
+    .0 += 30_000;
+  let callee_miss = cache.prepare(&callee_changed, &unit, &imports).expect("callee change recompiles");
+  assert_eq!(callee_miss.report().miss_reason, Some(CalxCacheMissReason::CalleeChanged));
+  let accepted_artifact = callee_miss.program().artifact().clone();
+
+  let mut schema_changed = callee_changed.clone();
+  schema_changed
+    .get_mut(namespace)
+    .expect("fixture namespace")
+    .defs
+    .get_mut("affine-helper")
+    .expect("shared reachable callee")
+    .schema = DYNAMIC_TYPE.clone();
+  assert!(matches!(
+    cache.prepare(&schema_changed, &unit, &imports),
+    Err(CalxProgramCompileError::Eligibility(_))
+  ));
+
+  let mut dependency_missing = callee_changed.clone();
+  dependency_missing
+    .get_mut(namespace)
+    .expect("fixture namespace")
+    .defs
+    .remove("affine-helper");
+  assert!(matches!(
+    cache.prepare(&dependency_missing, &unit, &imports),
+    Err(CalxProgramCompileError::Eligibility(_))
+  ));
+
+  let recovered = cache
+    .prepare(&callee_changed, &unit, &imports)
+    .expect("failed rebuilds leave the last accepted artifact reusable");
+  assert!(recovered.report().cache_hit);
+  assert!(std::rc::Rc::ptr_eq(&accepted_artifact, recovered.program().artifact()));
+  let stats = cache.stats();
+  assert_eq!(stats.miss_count(CalxCacheMissReason::EntryChanged), 2);
+  assert_eq!(stats.miss_count(CalxCacheMissReason::CalleeChanged), 1);
+  assert_eq!(stats.miss_count(CalxCacheMissReason::SchemaChanged), 1);
+  assert_eq!(stats.miss_count(CalxCacheMissReason::DependencyMissing), 1);
+  assert_eq!(stats.entry_count, 1, "failed compilation must not publish a partial artifact");
+}
+
+#[test]
+fn calx_program_cache_keys_complete_units_and_bounds_lru_state() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-program-cache-unit";
+  install_calx_scalar_kernel_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone program unit fixture");
+  let imports = CalxHostImports::new();
+  let unit_a = calx_program_unit(namespace, "range-sum", "affine");
+  let mut target_changed = unit_a.clone();
+  target_changed.host_target = Some(SnapshotTarget::Browser);
+  let mut entry_changed = unit_a.clone();
+  entry_changed.entry_name = Arc::from("worker");
+  let mut roles_changed = unit_a.clone();
+  roles_changed.roots.swap(0, 1);
+  roles_changed.roots[0].role = CalxProgramRootRole::Init;
+  roles_changed.roots[1].role = CalxProgramRootRole::Reload;
+  let mut root_set_changed = unit_a.clone();
+  root_set_changed.roots[1].definition = CalxDefinitionRef::new(namespace, "polynomial");
+
+  let mut identity_cache = CalxProgramCompileCache::new(8);
+  identity_cache.prepare(&snapshot, &unit_a, &imports).expect("compile base unit");
+  for changed in [&target_changed, &entry_changed, &roles_changed, &root_set_changed] {
+    let preparation = identity_cache
+      .prepare(&snapshot, changed, &imports)
+      .expect("changed complete unit recompiles");
+    assert_eq!(preparation.report().miss_reason, Some(CalxCacheMissReason::ProgramUnitChanged));
+  }
+
+  let mut wrong_abi = unit_a.clone();
+  wrong_abi.abi_edition = Arc::from("calcit-calx-program/unknown");
+  assert!(matches!(
+    identity_cache.prepare(&snapshot, &wrong_abi, &imports),
+    Err(CalxProgramCompileError::Eligibility(_))
+  ));
+  assert_eq!(identity_cache.stats().miss_count(CalxCacheMissReason::AbiChanged), 1);
+
+  let unit_b = CalxProgramCompilationUnit {
+    entry_name: Arc::from("second"),
+    roots: vec![
+      CalxProgramRoot {
+        role: CalxProgramRootRole::Init,
+        definition: CalxDefinitionRef::new(namespace, "fibonacci"),
+      },
+      CalxProgramRoot {
+        role: CalxProgramRootRole::Reload,
+        definition: CalxDefinitionRef::new(namespace, "polynomial"),
+      },
+    ],
+    ..unit_a.clone()
+  };
+  let mut unit_c = calx_program_unit(namespace, "affine", "fibonacci");
+  unit_c.entry_name = Arc::from("third");
+
+  let mut recency = CalxProgramCompileCache::new(2);
+  recency.prepare(&snapshot, &unit_a, &imports).expect("insert LRU program A");
+  recency.prepare(&snapshot, &unit_b, &imports).expect("insert LRU program B");
+  assert!(
+    recency
+      .prepare(&snapshot, &unit_a, &imports)
+      .expect("refresh program A")
+      .report()
+      .cache_hit
+  );
+  recency.prepare(&snapshot, &unit_c, &imports).expect("insert program C and evict B");
+  let evicted_b = recency
+    .prepare(&snapshot, &unit_b, &imports)
+    .expect("recompile evicted LRU program B");
+  assert_eq!(evicted_b.report().miss_reason, Some(CalxCacheMissReason::Evicted));
+
+  let mut bounded = CalxProgramCompileCache::new(1);
+  bounded.prepare(&snapshot, &unit_a, &imports).expect("insert program A");
+  bounded.prepare(&snapshot, &unit_b, &imports).expect("insert program B and evict A");
+  assert_eq!(bounded.stats().entry_count, 1);
+  assert_eq!(bounded.stats().evictions, 1);
+  let evicted = bounded.prepare(&snapshot, &unit_a, &imports).expect("recompile evicted program A");
+  assert_eq!(evicted.report().miss_reason, Some(CalxCacheMissReason::Evicted));
+
+  bounded.clear();
+  assert_eq!(bounded.stats().entry_count, 0);
+  assert_eq!(bounded.stats().recently_evicted_count, 0);
+  assert_eq!(bounded.stats().clears, 1);
+  let after_clear = bounded.prepare(&snapshot, &unit_a, &imports).expect("compile after clear");
+  assert_eq!(after_clear.report().miss_reason, Some(CalxCacheMissReason::Empty));
+
+  let mut disabled = CalxProgramCompileCache::new(0);
+  for _ in 0..2 {
+    let preparation = disabled.prepare(&snapshot, &unit_a, &imports).expect("zero-capacity compile");
+    assert_eq!(preparation.report().miss_reason, Some(CalxCacheMissReason::Empty));
+  }
+  assert_eq!(disabled.stats().entry_count, 0);
+  assert_eq!(disabled.stats().misses, 2);
 }
 
 #[test]

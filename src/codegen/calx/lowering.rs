@@ -465,6 +465,8 @@ pub struct CalxCompiledProgramArtifact {
   eligible: CalxEligibleProgram,
   entries: Vec<CalxProgramEntry>,
   program: ValidatedProgram,
+  pub(super) reachable_stamps: Vec<CalxDefinitionStamp>,
+  pub(super) import_schema_stamps: Vec<CalxImportSchemaStamp>,
   import_contract: Vec<CalxImportContract>,
 }
 
@@ -483,6 +485,49 @@ impl CalxCompiledProgramArtifact {
 
   pub fn import_contract(&self) -> &[CalxImportContract] {
     &self.import_contract
+  }
+
+  pub fn reachable_definition_count(&self) -> usize {
+    self.reachable_stamps.len()
+  }
+
+  pub fn syntax_instruction_count(&self) -> usize {
+    self.program.functions().iter().map(|function| function.syntax.len()).sum()
+  }
+
+  pub fn lowered_instruction_count(&self) -> usize {
+    self.program.functions().iter().map(|function| function.instrs.len()).sum()
+  }
+
+  /// Deterministic shallow estimate for bounded-cache observability.
+  pub fn estimated_bytes(&self) -> usize {
+    let mut bytes = std::mem::size_of::<Self>();
+    bytes += self.entries.len() * std::mem::size_of::<CalxProgramEntry>();
+    bytes += self.reachable_stamps.len() * std::mem::size_of::<CalxDefinitionStamp>();
+    bytes += self.import_schema_stamps.len() * std::mem::size_of::<CalxImportSchemaStamp>();
+    bytes += self.import_contract.len() * std::mem::size_of::<CalxImportContract>();
+    for entry in &self.entries {
+      bytes += entry.definition.namespace.len() + entry.definition.definition.len() + entry.vm_name.len();
+      bytes += entry.params.len() * std::mem::size_of::<CalxScalarType>();
+    }
+    for stamp in &self.reachable_stamps {
+      bytes += stamp.definition.namespace.len() + stamp.definition.definition.len();
+      bytes += std::mem::size_of_val(&stamp.preprocessed_code) + std::mem::size_of_val(stamp.schema.as_ref());
+    }
+    for stamp in &self.import_schema_stamps {
+      bytes += stamp.definition.namespace.len() + stamp.definition.definition.len();
+      bytes += std::mem::size_of_val(stamp.schema.as_ref());
+    }
+    for contract in &self.import_contract {
+      bytes += contract.definition.namespace.len() + contract.definition.definition.len() + contract.export_name.len();
+      bytes += contract.params.len() * std::mem::size_of::<CalxScalarType>();
+    }
+    for function in self.program.functions() {
+      bytes += function.name.len();
+      bytes += std::mem::size_of_val(function.syntax.as_slice());
+      bytes += std::mem::size_of_val(function.instrs.as_slice());
+    }
+    bytes
   }
 }
 
@@ -551,6 +596,15 @@ pub fn compile_calx_program_with_imports(
   unit: &CalxProgramCompilationUnit,
   imports: &CalxHostImports,
 ) -> Result<CalxPreparedProgram, CalxProgramCompileError> {
+  let artifact = compile_calx_program_artifact_with_imports(program, unit, imports)?;
+  prepare_calx_program_artifact(artifact, imports)
+}
+
+pub(super) fn compile_calx_program_artifact_with_imports(
+  program: &CompiledProgram,
+  unit: &CalxProgramCompilationUnit,
+  imports: &CalxHostImports,
+) -> Result<Rc<CalxCompiledProgramArtifact>, CalxProgramCompileError> {
   let eligible = analyze_calx_program_eligibility_with_imports(program, unit, imports).map_err(CalxProgramCompileError::Eligibility)?;
   let names = eligible
     .functions
@@ -592,13 +646,6 @@ pub fn compile_calx_program_with_imports(
   }
   let validated_program = ValidatedProgram::try_from_program(builder.build()?)?;
 
-  let error_context = eligible.roots.first().map(|root| root.definition.clone()).ok_or_else(|| {
-    CalxProgramCompileError::Lowering(lower_error(
-      &CalxDefinitionRef::new("<program>", "<root>"),
-      None,
-      "eligible program contains no lifecycle roots",
-    ))
-  })?;
   let entries = eligible
     .roots
     .iter()
@@ -626,16 +673,77 @@ pub fn compile_calx_program_with_imports(
       })
     })
     .collect::<Result<Vec<_>, CalxProgramCompileError>>()?;
+  let reachable_stamps = eligible
+    .functions
+    .iter()
+    .map(|function| {
+      let compiled = lookup_compiled_def(program, &function.definition).ok_or_else(|| {
+        CalxProgramCompileError::Lowering(lower_error(
+          &function.definition,
+          None,
+          "eligible definition disappeared before program artifact stamping",
+        ))
+      })?;
+      Ok(CalxDefinitionStamp {
+        definition: function.definition.clone(),
+        def_id: compiled.def_id,
+        preprocessed_code: compiled.preprocessed_code.clone(),
+        schema: compiled.schema.clone(),
+      })
+    })
+    .collect::<Result<Vec<_>, CalxProgramCompileError>>()?;
+  let import_schema_stamps = used_imports
+    .iter()
+    .map(|definition| {
+      let compiled = lookup_compiled_def(program, definition).ok_or_else(|| {
+        CalxProgramCompileError::Lowering(lower_error(
+          definition,
+          None,
+          "eligible host import disappeared before program artifact stamping",
+        ))
+      })?;
+      Ok(CalxImportSchemaStamp {
+        definition: definition.clone(),
+        schema: compiled.schema.clone(),
+      })
+    })
+    .collect::<Result<Vec<_>, CalxProgramCompileError>>()?;
+  Ok(Rc::new(CalxCompiledProgramArtifact {
+    eligible,
+    entries,
+    program: validated_program,
+    reachable_stamps,
+    import_schema_stamps,
+    import_contract: import_contract(imports),
+  }))
+}
+
+pub(super) fn prepare_calx_program_artifact(
+  artifact: Rc<CalxCompiledProgramArtifact>,
+  imports: &CalxHostImports,
+) -> Result<CalxPreparedProgram, CalxProgramCompileError> {
+  if import_contract(imports) != artifact.import_contract {
+    let context = artifact
+      .eligible
+      .roots
+      .first()
+      .map(|root| root.definition.clone())
+      .unwrap_or_else(|| CalxDefinitionRef::new("<program>", "<root>"));
+    return Err(CalxProgramCompileError::Lowering(lower_error(
+      &context,
+      None,
+      "typed host import declarations changed while attaching a compiled program artifact",
+    )));
+  }
+  let used_imports = collect_used_imports(&artifact.eligible.functions);
+  let error_context = artifact
+    .eligible
+    .roots
+    .first()
+    .map(|root| root.definition.clone())
+    .unwrap_or_else(|| CalxDefinitionRef::new("<program>", "<root>"));
   let host_bindings = attach_used_imports(&used_imports, imports, &error_context)?;
-  Ok(CalxPreparedProgram {
-    artifact: Rc::new(CalxCompiledProgramArtifact {
-      eligible,
-      entries,
-      program: validated_program,
-      import_contract: import_contract(imports),
-    }),
-    host_bindings,
-  })
+  Ok(CalxPreparedProgram { artifact, host_bindings })
 }
 
 fn collect_used_imports(functions: &[CalxEligibleFunction]) -> BTreeSet<CalxDefinitionRef> {
