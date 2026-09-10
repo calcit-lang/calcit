@@ -50,7 +50,7 @@ Whole-program eligibility checks `init` and `reload` as one atomic unit. It dedu
 
 This edition now has a library-level lowering and execution foundation. `compile_calx_program` atomically proves the unit, lowers its merged reachable definitions into one validated program, and records each lifecycle role with its exact fully qualified VM function name and strict signature. A `CalxProgramInstance` can then invoke either role through calx-vm 0.5.1 named-entry execution. Shared roots keep both roles while reusing one emitted function body; no synthetic `main` dispatcher is generated.
 
-This API does not yet select a runtime backend, own lifecycle scheduling, or add program caching/watch invalidation. Existing `:mode :native` and `:mode :js` behavior is unchanged; the contract does not prematurely expose a `:calx` runtime mode. [calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) records the completed VM prerequisite and downstream release validation.
+This API now offers an embedding-owned, revision-safe cache for immutable whole-program artifacts. Cache hits revalidate reachable source stamps and reattach current typed callbacks; they do not preserve VM instances or live state. The API still does not select a runtime backend or own lifecycle/watch scheduling. Existing `:mode :native` and `:mode :js` behavior is unchanged; the contract does not prematurely expose a `:calx` runtime mode. [calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) records the completed VM prerequisite and downstream release validation.
 
 ### Hard boundaries
 
@@ -113,7 +113,7 @@ Calx 规划为可静态分析的 Calcit 语言核心的执行 backend。一次�
 
 本 edition 现在具备库级 lowering 与执行基础。`compile_calx_program` 会原子证明整个 unit，把合并后的可达 definitions lowering 为一份 validated program，并为每个生命周期角色记录准确的完整限定 VM 函数名与 strict signature。随后 `CalxProgramInstance` 通过 calx-vm 0.5.1 的 named-entry execution 调用任一角色。两个 roots 指向同一 definition 时仍保留两个角色，但只复用一份已生成函数体；不会合成 `main` dispatcher。
 
-该 API 尚不选择 runtime backend，不负责生命周期调度，也不增加 program cache/watch invalidation。已有 `:mode :native`、`:mode :js` 行为保持不变；本契约不提前暴露 `:calx` runtime mode。[calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) 记录已完成的 VM 前置能力与下游发布验证。
+该 API 现在提供由 embedding 显式拥有、revision-safe 的 immutable whole-program artifact cache。命中时重新校验 reachable source stamps 并挂载当前 typed callbacks，不保留 VM instance 或 live state。它仍不选择 runtime backend，也不负责 lifecycle/watch scheduling。已有 `:mode :native`、`:mode :js` 行为保持不变；本契约不提前暴露 `:calx` runtime mode。[calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) 记录已完成的 VM 前置能力与下游发布验证。
 
 ### 硬边界
 

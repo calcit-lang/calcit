@@ -1,6 +1,8 @@
 # Revision-safe Calx compile cache design / revision-safe Calx 编译缓存设计
 
-Tracking: [calcit#552](https://github.com/calcit-lang/calcit/issues/552) and [calx-vm#39](https://github.com/calcit-lang/calx-vm/issues/39)
+Tracking: [calcit#552](https://github.com/calcit-lang/calcit/issues/552),
+[calcit#950](https://github.com/calcit-lang/calcit/issues/950), and
+[calx-vm#39](https://github.com/calcit-lang/calx-vm/issues/39)
 
 Implementation status: the embedding-owned in-memory artifact cache described
 here is implemented in Calcit core. Benchmark execution and the cross-machine
@@ -41,6 +43,12 @@ callback、capability state、buffer input、VM instance、stack/frame 和 runti
 当前 Calx `ValidatedProgram` 含单线程 `Rc` 值，因此 artifact 也以 `Rc` 在一个 embedding thread 内共享，
 不承诺 `Send`/`Sync`；跨线程宿主应各自持有 cache，不能用 `Arc` 伪装线程安全。
 
+整程序路径沿用同一边界：`CalxCompiledProgramArtifact` 只增加已合并 lifecycle call graph、具名 entries
+和相同的 definition/import schema stamps；`CalxPreparedProgram` 每次重新挂载 callbacks，随后才可建立
+`CalxProgramInstance`。`CalxProgramCompileCache` 缓存前者，不缓存 instance、VM globals、平台 handle、
+WebSocket connection 或 capability state。因此这是 compile-artifact reuse，不是 runtime mode、watch
+scheduler 或 live-state migration。
+
 ### Revision key 与命中算法
 
 缓存由 embedding 显式创建并传入，不使用进程级 singleton。顶层 slot key 包含：
@@ -48,6 +56,10 @@ callback、capability state、buffer input、VM instance、stack/frame 和 runti
 1. fully-qualified entry；
 2. Calx kernel ABI edition；
 3. 排序后的 typed import declaration contract（definition、export name、参数与结果类型），不含 callback identity。
+
+整程序 slot key 则包含完整且规范化的 `CalxProgramCompilationUnit` identity：program ABI edition、selected
+entry、host target，以及按 role/definition 排序的完整 lifecycle roots；随后同样包含 typed import contract。
+root 顺序本身不改变语义，但 root role、root set、selected entry、target、ABI 或 import declaration 的变化都 miss。
 
 每个 artifact 另外保存排序后的 reachable definition stamps。当前 `CompiledDef::version_id` 尚未提供可用的
 内容 revision（现有路径仍写入 `0`），因此首版不能把它单独当作 correctness key。stamp 必须保存并比较：
@@ -85,10 +97,19 @@ let stats = cache.stats();
 cache.clear();
 ```
 
+整程序使用独立 embedding-owned cache，避免改变已有 kernel compatibility API：
+
+```rust
+let mut cache = CalxProgramCompileCache::new(4);
+let preparation = cache.prepare(program, unit, imports)?;
+let mut instance = preparation.program().instantiate()?;
+let value = instance.run_root(CalxProgramRootRole::Init, args)?;
+```
+
 `capacity` 首版按 artifact 个数设置硬上限，使用确定性的 LRU eviction；不得无界增长。stats 至少包含 hit、
 miss、miss reason、eviction、clear、entry count、reachable function count、syntax/instruction count 与估算字节数。
 miss reason 固定区分 `empty`、`entry-changed`、`callee-changed`、`schema-changed`、`abi-changed`、
-`import-contract-changed`、`dependency-missing` 和 `evicted`。命中报告明确标记跳过 eligibility、planning、
+`program-unit-changed`、`import-contract-changed`、`dependency-missing` 和 `evicted`。命中报告明确标记跳过 eligibility、planning、
 program construction、validation/lowering，但仍记录 revision validation 与 binding attachment 成本。
 `capacity == 0` 是受支持的 always-miss 模式：仍完整编译并重新附着 bindings，但不保存 artifact 或
 tombstone。`clear()` 清空 artifact 与 ledger、递增 clear counter，并保留其余历史 counters 供 embedding
@@ -106,6 +127,7 @@ artifact eviction 统计，之后该旧 key 按 `empty` 处理。
 - hot reload 改 entry、direct/transitive callee 或 schema 必须 miss；无关 definition 改动必须 hit；
 - callback A 编译后，以相同声明传 callback B 命中缓存，执行必须只调用 B；
 - import declaration 改动必须 miss，callback identity 改动本身不能污染 source-derived key；
+- whole-program root role/set、selected entry、host target 或 program ABI 变化必须 miss；
 - capacity、LRU eviction、显式 clear 与 stats 必须可测试；
 - eviction provenance 必须覆盖 capacity=1 下插入 A、插入 B、查询 A 得到 `evicted`；ledger 溢出后最旧
   tombstone 查询得到 `empty`；重新插入或 clear 后旧 tombstone 不得继续报告 `evicted`；
@@ -152,6 +174,12 @@ current Calx `ValidatedProgram` contains single-threaded `Rc` values, so an arti
 also shared with `Rc` inside one embedding thread and makes no `Send`/`Sync` promise. Cross-thread hosts own separate
 caches rather than using `Arc` to imply thread safety that the VM does not provide.
 
+The whole-program path keeps the same boundary. `CalxCompiledProgramArtifact` adds only the merged lifecycle call
+graph, named entries, and the same definition/import-schema stamps. `CalxPreparedProgram` reattaches callbacks on
+every request before it can create a `CalxProgramInstance`. `CalxProgramCompileCache` stores the former and never an
+instance, VM globals, platform handle, WebSocket connection, or capability state. This is compile-artifact reuse,
+not a runtime mode, watch scheduler, or live-state migration mechanism.
+
 ### Revision key and hit algorithm
 
 The embedding creates and passes the cache explicitly; there is no process singleton. The top-level slot key
@@ -160,6 +188,11 @@ contains:
 1. the fully qualified entry;
 2. the Calx kernel ABI edition;
 3. the sorted typed-import declaration contract (definition, export name, parameter types, and result type), excluding callback identity.
+
+A whole-program slot key contains the complete normalized `CalxProgramCompilationUnit` identity: program ABI
+edition, selected entry, host target, and the complete lifecycle roots sorted by role and definition. It then adds
+the typed import contract. Root ordering alone has no semantics, while a root role/set, selected entry, target, ABI,
+or import declaration change always misses.
 
 Each artifact also stores sorted reachable-definition stamps. `CompiledDef::version_id` is not yet a usable content
 revision because current paths still write `0`, so the first implementation must not use it as the sole correctness
@@ -199,10 +232,20 @@ let stats = cache.stats();
 cache.clear();
 ```
 
+Whole programs use a separate embedding-owned cache so the existing kernel compatibility API remains unchanged:
+
+```rust
+let mut cache = CalxProgramCompileCache::new(4);
+let preparation = cache.prepare(program, unit, imports)?;
+let mut instance = preparation.program().instantiate()?;
+let value = instance.run_root(CalxProgramRootRole::Init, args)?;
+```
+
 The first `capacity` is a hard artifact-count limit with deterministic LRU eviction; growth is never unbounded.
 Stats include hits, misses, miss reasons, evictions, clears, entry count, reachable function count,
 syntax/instruction count, and estimated bytes. Stable miss reasons distinguish `empty`, `entry-changed`,
-`callee-changed`, `schema-changed`, `abi-changed`, `import-contract-changed`, `dependency-missing`, and `evicted`.
+`callee-changed`, `schema-changed`, `abi-changed`, `program-unit-changed`, `import-contract-changed`,
+`dependency-missing`, and `evicted`.
 A hit reports that eligibility, planning, program construction, and validation/lowering were skipped while still
 recording revision-validation and binding-attachment cost.
 Capacity zero is a supported always-miss mode: compilation and fresh binding attachment still occur, but no artifact
@@ -223,6 +266,7 @@ an artifact eviction, and a later lookup of that forgotten key reports `empty`.
 - Hot reloads of the entry, a direct/transitive callee, or a schema must miss; an unrelated definition change must hit.
 - After compiling with callback A, a hit with the same declaration and callback B must execute only B.
 - Import declaration changes must miss; callback identity itself must not contaminate the source-derived key.
+- Whole-program root roles/sets, selected entry, host target, or program ABI changes must miss.
 - Capacity, deterministic LRU eviction, explicit clear, and stats must be covered.
 - Eviction-provenance coverage inserts A then B at capacity one and expects an A lookup to report `evicted`; after
   the ledger overflows its oldest tombstone reports `empty`; reinsertion and clear must not leave a stale `evicted`

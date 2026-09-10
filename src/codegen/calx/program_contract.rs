@@ -1,8 +1,8 @@
 //! Versioned compilation-unit contract for the Calx program backend.
 //!
 //! This module selects lifecycle roots from one configured Snapshot entry. It
-//! does not lower or execute them: the current VM still exposes the kernel
-//! compatibility entry named `main` only.
+//! does not lower or execute them; lowering maps each role to an exact named
+//! strict VM entry while keeping lifecycle scheduling outside the compiler.
 
 use std::fmt;
 use std::sync::Arc;
