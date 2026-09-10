@@ -349,10 +349,19 @@ fn to_js_code(
       }
       Calcit::Proc(s) => {
         let proc_prefix = get_proc_prefix(ns);
+        let runtime_proc = match s {
+          // These internal list primitives share the public runtime
+          // implementations; @calcit/procs does not export encoded
+          // `&list:*` bindings for them.
+          CalcitProc::NativeListAppend => CalcitProc::Append,
+          CalcitProc::NativeListPrepend => CalcitProc::Prepend,
+          CalcitProc::NativeListButlast => CalcitProc::Butlast,
+          _ => *s,
+        };
         // println!("gen proc {} under {}", s, ns,);
         // let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned()));
         // gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs)
-        Ok(format!("{proc_prefix}{}", escape_var(s.as_ref())))
+        Ok(format!("{proc_prefix}{}", escape_var(runtime_proc.as_ref())))
       }
       Calcit::Registered(alias) => {
         let proc_prefix = get_proc_prefix(ns);
@@ -2745,6 +2754,28 @@ mod tests {
     .expect("bare empty map should compile");
 
     assert_eq!(code, "$clt._$n__$M_()");
+  }
+
+  #[test]
+  fn native_list_aliases_use_existing_runtime_exports() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+
+    for (native, runtime_name) in [
+      (CalcitProc::NativeListAppend, "append"),
+      (CalcitProc::NativeListPrepend, "prepend"),
+      (CalcitProc::NativeListButlast, "butlast"),
+    ] {
+      let proc_code = to_js_code(&Calcit::Proc(native), "tests.emit-js", &local_defs, &file_imports, &tags, None)
+        .expect("native list alias should compile as a function value");
+      assert_eq!(proc_code, format!("$clt.{runtime_name}"));
+
+      let form = Calcit::from(vec![Calcit::Proc(native), symbol("xs"), symbol("value")]);
+      let call_code =
+        to_js_code(&form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("native list alias call should compile");
+      assert_eq!(call_code, format!("$clt.{runtime_name}(xs, value)"));
+    }
   }
 
   #[test]
