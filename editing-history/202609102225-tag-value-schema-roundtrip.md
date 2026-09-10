@@ -18,10 +18,10 @@ subsequent `calcit edit format` could not canonicalize the snapshot.
 Treat `Tag` like the other concrete primitive value schemas during standalone
 schema validation. Unknown standalone names still become `Dynamic` and remain
 rejected, so accepting canonical `Tag` does not weaken typo detection. Tests
-cover direct editor input, serialized validation, canonical formatting, and
-reload of the preserved type.
+cover direct editor input, serialized validation, the actual `edit format`
+handler, and reload of the preserved type.
 
 在 standalone schema validation 中把 `Tag` 与其他 concrete primitive value
 schema 一致处理。未知名称仍会解析为 `Dynamic` 并继续被拒绝，因此接受规范
-`Tag` 不会削弱拼写错误检测。测试覆盖 editor 直接输入、序列化校验、规范格式化
-以及保留类型后的重新加载。
+`Tag` 不会削弱拼写错误检测。测试覆盖 editor 直接输入、序列化校验、实际的
+`edit format` handler，以及保留类型后的重新加载。

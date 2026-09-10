@@ -2840,11 +2840,14 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
 mod tests {
   use super::{
     TransactionOperationReport, bump_semver_value, collect_format_advisories, count_legacy_any_schema_fields,
-    count_legacy_inherent_impls, handle_add_import, handle_add_test, handle_imports, handle_rm_test, handle_schema, load_snapshot,
-    parse_examples_input, parse_import_rules_input, parse_input_to_cirru, parse_schema_input, parse_transaction_operations,
-    rename_definition_declaration, run_staged_transaction_with, save_schema_preserving_snapshot, save_snapshot,
+    count_legacy_inherent_impls, handle_add_import, handle_add_test, handle_format, handle_imports, handle_rm_test, handle_schema,
+    load_snapshot, parse_examples_input, parse_import_rules_input, parse_input_to_cirru, parse_schema_input,
+    parse_transaction_operations, rename_definition_declaration, run_staged_transaction_with, save_schema_preserving_snapshot,
+    save_snapshot,
   };
-  use crate::cli_args::{EditAddImportCommand, EditAddTestCommand, EditImportsCommand, EditRmTestCommand, EditSchemaCommand};
+  use crate::cli_args::{
+    EditAddImportCommand, EditAddTestCommand, EditFormatCommand, EditImportsCommand, EditRmTestCommand, EditSchemaCommand,
+  };
   use crate::cli_handlers::test_support::TestProject;
   use calcit::calcit::CalcitTypeAnnotation;
   use cirru_edn::Edn;
@@ -3275,7 +3278,7 @@ mod tests {
       CalcitTypeAnnotation::Tag
     ));
 
-    save_snapshot(&snapshot, &path).expect("canonical formatting should preserve the Tag schema");
+    handle_format(&EditFormatCommand {}, &path).expect("edit format should preserve the Tag schema");
     let formatted = load_snapshot(&path).expect("canonically formatted snapshot should reload");
     assert!(matches!(
       formatted.files["app.main"].defs["test-fn"].schema.as_ref(),
