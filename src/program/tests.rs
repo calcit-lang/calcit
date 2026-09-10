@@ -538,6 +538,197 @@ fn calx_program_unit(namespace: &str, init: &str, reload: &str) -> CalxProgramCo
   }
 }
 
+fn install_calx_string_program_fixture(namespace: &str) {
+  let string = || CalcitTypeAnnotation::String;
+  let mut source_defs = calx_test_defs_from_source(namespace, include_str!("../../tests/fixtures/calx/string-values.cirru"));
+  install_calx_test_defs(
+    namespace,
+    vec![
+      (
+        "string-id",
+        source_defs.remove("string-id").expect("string-id source"),
+        calx_test_fn_schema(vec![string()], string()),
+      ),
+      (
+        "host-echo",
+        source_defs.remove("host-echo").expect("host-echo source"),
+        calx_test_fn_schema(vec![string()], string()),
+      ),
+      (
+        "init",
+        source_defs.remove("init").expect("init source"),
+        calx_test_fn_schema(vec![CalcitTypeAnnotation::Bool, string()], string()),
+      ),
+      (
+        "reload",
+        source_defs.remove("reload").expect("reload source"),
+        calx_test_fn_schema(vec![string()], string()),
+      ),
+    ],
+  );
+  for definition in ["init", "reload"] {
+    compile_calx_test_entry(namespace, definition);
+  }
+}
+
+fn calx_test_echo_string(args: &[CalxValue]) -> Result<CalxValue, CalxError> {
+  let [CalxValue::Str(value)] = args else {
+    return Err(CalxError::new_raw("fixture echo expected one Str".to_owned()));
+  };
+  Ok(CalxValue::Str(value.clone()))
+}
+
+fn calx_test_replace_string(args: &[CalxValue]) -> Result<CalxValue, CalxError> {
+  let [CalxValue::Str(_)] = args else {
+    return Err(CalxError::new_raw("fixture replacement expected one Str".to_owned()));
+  };
+  Ok(CalxValue::Str(std::rc::Rc::from("replacement")))
+}
+
+fn calx_test_string_imports(namespace: &str) -> CalxHostImports {
+  calx_test_string_imports_with_callback(namespace, calx_test_echo_string)
+}
+
+fn calx_test_string_imports_with_callback(
+  namespace: &str,
+  callback: fn(&[CalxValue]) -> Result<CalxValue, CalxError>,
+) -> CalxHostImports {
+  let mut imports = CalxHostImports::new();
+  imports.insert(
+    CalxDefinitionRef::new(namespace, "host-echo"),
+    CalxHostImport::value(
+      "fixture.echo-string",
+      vec![CalxScalarType::String],
+      CalxScalarType::String,
+      callback,
+    )
+    .expect("valid String host import"),
+  );
+  imports
+}
+
+#[test]
+fn calx_program_string_cache_reattaches_current_callback() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-program-string-cache";
+  install_calx_string_program_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed String cache fixture");
+  let unit = calx_program_unit(namespace, "reload", "reload");
+  let imports_a = calx_test_string_imports(namespace);
+  let imports_b = calx_test_string_imports_with_callback(namespace, calx_test_replace_string);
+  let mut cache = CalxProgramCompileCache::new(1);
+
+  let first = cache
+    .prepare(&snapshot, &unit, &imports_a)
+    .expect("compile String program artifact");
+  let first_artifact = first.program().artifact().clone();
+  let second = cache
+    .prepare(&snapshot, &unit, &imports_b)
+    .expect("reuse String artifact with current callback");
+  assert!(second.report().cache_hit);
+  assert!(std::rc::Rc::ptr_eq(&first_artifact, second.program().artifact()));
+  let mut instance = second.program().instantiate().expect("instantiate cached String program");
+  assert_eq!(
+    instance
+      .run_root(CalxProgramRootRole::Init, &[Calcit::Str(Arc::from("stale"))])
+      .expect("run current String callback"),
+    Calcit::Str(Arc::from("replacement"))
+  );
+}
+
+#[test]
+fn calx_program_string_values_cross_lifecycle_calls_locals_and_imports() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-program-string";
+  install_calx_string_program_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed String program fixture");
+  let unit = calx_program_unit(namespace, "init", "reload");
+  let imports = calx_test_string_imports(namespace);
+
+  let eligible =
+    analyze_calx_program_eligibility_with_imports(&snapshot, &unit, &imports).expect("String belongs to the whole-program profile");
+  assert!(
+    eligible
+      .functions
+      .iter()
+      .any(|function| function.params == [CalxScalarType::String] && function.result == Some(CalxScalarType::String))
+  );
+
+  let prepared = compile_calx_program_with_imports(&snapshot, &unit, &imports).expect("compile String lifecycle program");
+  let mut instance = prepared.instantiate().expect("instantiate String lifecycle program");
+  for (role, definition, args, expected) in [
+    (
+      CalxProgramRootRole::Init,
+      "init",
+      vec![Calcit::Bool(true), Calcit::Str(Arc::from("hello Calx"))],
+      Calcit::Str(Arc::from("hello Calx")),
+    ),
+    (
+      CalxProgramRootRole::Init,
+      "init",
+      vec![Calcit::Bool(false), Calcit::Str(Arc::from("ignored"))],
+      Calcit::Str(Arc::from("fallback")),
+    ),
+    (
+      CalxProgramRootRole::Reload,
+      "reload",
+      vec![Calcit::Str(Arc::from("hello Calx"))],
+      Calcit::Str(Arc::from("hello Calx")),
+    ),
+  ] {
+    let calx = instance.run_root(role, &args).expect("run String lifecycle root");
+    let native = run_program_with_docs(Arc::from(namespace), Arc::from(definition), &args).expect("run native String lifecycle root");
+    assert_eq!(calx, native);
+    assert_eq!(calx, expected);
+  }
+
+  let boundary = instance
+    .run_root(CalxProgramRootRole::Init, &[Calcit::Bool(true), Calcit::tag("hello")])
+    .expect_err("Tag must remain distinct from String at the program boundary");
+  assert!(matches!(
+    boundary,
+    CalxKernelRunError::Boundary(ref error) if error.kind == CalxKernelBoundaryErrorKind::ArgumentType
+  ));
+}
+
+#[test]
+fn calx_string_is_program_only_and_tag_symbol_schemas_remain_rejected() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let namespace = "tests.calx-program-string-profile";
+  install_calx_string_program_fixture(namespace);
+  let snapshot = clone_compiled_program_snapshot().expect("clone typed String profile fixture");
+
+  let kernel_report = analyze_calx_eligibility(&snapshot, namespace, "init").expect_err("kernel profile must stay String-free");
+  assert!(
+    kernel_report
+      .issues
+      .iter()
+      .any(|issue| issue.code == CalxFallbackCode::UnsupportedType)
+  );
+
+  for unsupported in [CalcitTypeAnnotation::Tag, CalcitTypeAnnotation::Symbol] {
+    let mut changed = snapshot.clone();
+    changed
+      .get_mut(namespace)
+      .expect("fixture namespace")
+      .defs
+      .get_mut("init")
+      .expect("init definition")
+      .schema = calx_test_fn_schema(vec![CalcitTypeAnnotation::Bool, unsupported.clone()], unsupported);
+    let report = analyze_calx_program_eligibility(&changed, &calx_program_unit(namespace, "init", "init"))
+      .expect_err("Tag and Symbol must remain outside the program profile");
+    assert!(
+      report
+        .root_issues
+        .iter()
+        .any(|root| root.issue.code == CalxFallbackCode::UnsupportedType)
+    );
+  }
+}
+
 #[test]
 fn calx_program_eligibility_merges_lifecycle_call_closures() {
   let _guard = lock_program_test_state();

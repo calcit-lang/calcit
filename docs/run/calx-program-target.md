@@ -25,7 +25,7 @@ Type and syntax variant classification uses exhaustive Rust matches. The larger 
 The initial stages are:
 
 1. the existing Number/Bool/`F64Buffer` kernel foundation;
-2. program entries, `Unit`, string/tag values, and typed imports;
+2. program entries, `Unit`, strict `String` values, and typed imports; `Tag`/`Symbol` remain planned and distinct;
 3. nominal struct/enum values, exhaustive match, and nominal `Option`/`Result`;
 4. typed persistent List/Map/Set;
 5. statically typed functions, closures, HOF, and arity features;
@@ -51,6 +51,8 @@ Whole-program eligibility checks `init` and `reload` as one atomic unit. It dedu
 This edition now has a library-level lowering and execution foundation. `compile_calx_program` atomically proves the unit, lowers its merged reachable definitions into one validated program, and records each lifecycle role with its exact fully qualified VM function name and strict signature. A `CalxProgramInstance` can then invoke either role through calx-vm 0.5.1 named-entry execution. Shared roots keep both roles while reusing one emitted function body; no synthetic `main` dispatcher is generated.
 
 This API now offers an embedding-owned, revision-safe cache for immutable whole-program artifacts. Cache hits revalidate reachable source stamps and reattach current typed callbacks; they do not preserve VM instances or live state. The API still does not select a runtime backend or own lifecycle/watch scheduling. Existing `:mode :native` and `:mode :js` behavior is unchanged; the contract does not prematurely expose a `:calx` runtime mode. [calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) records the completed VM prerequisite and downstream release validation.
+
+The program profile now admits exact Calcit `String` values in function boundaries, literals, typed locals, `if`/`&let`/`do`, fixed direct and tail calls, lifecycle roots, and exact typed host imports. The compatibility kernel analyzers deliberately continue to reject `String`, so `calcit-calx-kernel/1` and `/2` are unchanged. `Tag` and `Symbol` are not text aliases and remain rejected before lowering. Boundary conversion copies immutable text content between Calcit's `Arc<str>` and calx-vm's `Rc<str>`; this edition makes no zero-copy claim and adds no concatenation, slicing, hashing, ordering, parsing, or formatting operations.
 
 ### Hard boundaries
 
@@ -88,7 +90,7 @@ Calx 规划为可静态分析的 Calcit 语言核心的执行 backend。一次�
 初始阶段为：
 
 1. 已有 Number/Bool/`F64Buffer` kernel foundation；
-2. program entries、`Unit`、string/tag values 和 typed imports；
+2. program entries、`Unit`、严格 `String` 值和 typed imports；`Tag`/`Symbol` 继续作为彼此独立的后续能力；
 3. nominal struct/enum values、exhaustive match 和 nominal `Option`/`Result`；
 4. typed persistent List/Map/Set；
 5. 静态 typed functions、closures、HOF 和 arity features；
@@ -114,6 +116,8 @@ Calx 规划为可静态分析的 Calcit 语言核心的执行 backend。一次�
 本 edition 现在具备库级 lowering 与执行基础。`compile_calx_program` 会原子证明整个 unit，把合并后的可达 definitions lowering 为一份 validated program，并为每个生命周期角色记录准确的完整限定 VM 函数名与 strict signature。随后 `CalxProgramInstance` 通过 calx-vm 0.5.1 的 named-entry execution 调用任一角色。两个 roots 指向同一 definition 时仍保留两个角色，但只复用一份已生成函数体；不会合成 `main` dispatcher。
 
 该 API 现在提供由 embedding 显式拥有、revision-safe 的 immutable whole-program artifact cache。命中时重新校验 reachable source stamps 并挂载当前 typed callbacks，不保留 VM instance 或 live state。它仍不选择 runtime backend，也不负责 lifecycle/watch scheduling。已有 `:mode :native`、`:mode :js` 行为保持不变；本契约不提前暴露 `:calx` runtime mode。[calx-vm #70](https://github.com/calcit-lang/calx-vm/issues/70) 记录已完成的 VM 前置能力与下游发布验证。
+
+program profile 现在接受严格的 Calcit `String`：覆盖函数边界、literal、typed local、`if`/`&let`/`do`、固定 direct/tail call、lifecycle roots 与精确 typed host imports。兼容 kernel analyzer 仍刻意拒绝 `String`，因此 `calcit-calx-kernel/1`、`/2` 语义不变。`Tag`、`Symbol` 不是文本别名，继续在 lowering 前拒绝。边界转换会在 Calcit `Arc<str>` 与 calx-vm `Rc<str>` 之间复制 immutable text 内容；本 edition 不承诺 zero-copy，也不加入拼接、切片、hash、排序、解析或格式化操作。
 
 ### 硬边界
 
