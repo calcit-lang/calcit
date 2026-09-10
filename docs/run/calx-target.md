@@ -86,6 +86,10 @@ name；direct tail call 与 `recur` 降为 `return-call`。
 `F64Buffer` 不复用 byte `Buffer` 或 persistent `List`，也不做隐式 element conversion。`Nil`、Dynamic
 或任意不匹配的 runtime value 会在进入 VM 之前被拒绝，不会被编码为占位值。
 
+本文的 kernel compatibility profile 仍不接受 `String`。独立的 `calcit-calx-program/1` profile 已支持严格
+Calcit `String`，并通过复制内容在 `Arc<str>` 与 calx-vm `Rc<str>` 之间转换；它不改变 kernel ABI，也不把
+`Tag`/`Symbol` 当作 String。详见 [Calx program backend](./calx-program-target.md)。
+
 ## 首批接受范围
 
 - function boundary 与 local：`Number`、`Bool`、immutable `F64Buffer`；函数结果额外接受 `Unit`，映射为 void；

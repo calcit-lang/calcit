@@ -39,7 +39,7 @@ impl CalxCoverageOwner {
 pub enum CalxCoverageStage {
   /// Already supported by the strict kernel compatibility path.
   KernelFoundation,
-  /// Program entry, `Unit`, text/tag scalars, and typed imports.
+  /// Program entry, `Unit`, strict text values, and typed imports.
   ProgramFoundation,
   /// Nominal struct/enum values, exhaustive match, Option, and Result.
   NominalData,
@@ -83,7 +83,8 @@ pub fn classify_calx_type_surface(annotation: &CalcitTypeAnnotation) -> CalxCove
 
   match annotation {
     Bool | Number | F64Buffer | Unit => KERNEL,
-    String | Symbol | Tag | Buffer => PROGRAM,
+    String => coverage(CalxCoverageOwner::CalxCore, CalxCoverageStage::ProgramFoundation),
+    Symbol | Tag | Buffer => PROGRAM,
     List(_) | Map(_, _) | Set(_) => COLLECTIONS,
     StructValue(_) | EnumValue(_) | Struct(_, _) | Enum(_, _) => NOMINAL,
     Fn(_) | Variadic(_) => CALLABLES,
@@ -236,6 +237,13 @@ mod tests {
 
   #[test]
   fn value_families_follow_their_rollout_slices() {
+    assert_eq!(
+      classify_calx_type_surface(&CalcitTypeAnnotation::String),
+      coverage(CalxCoverageOwner::CalxCore, CalxCoverageStage::ProgramFoundation)
+    );
+    for annotation in [CalcitTypeAnnotation::Tag, CalcitTypeAnnotation::Symbol] {
+      assert_eq!(classify_calx_type_surface(&annotation), PROGRAM);
+    }
     assert_eq!(classify_calx_proc_surface(CalcitProc::NativeListCount), COLLECTIONS);
     assert_eq!(classify_calx_proc_surface(CalcitProc::NativeMapAssoc), COLLECTIONS);
     assert_eq!(classify_calx_proc_surface(CalcitProc::NativeEnumNth), NOMINAL);

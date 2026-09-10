@@ -12,7 +12,7 @@ use crate::snapshot::SnapshotTarget;
 
 use super::{
   CALX_PROGRAM_ABI_EDITION, CalxDefinitionRef, CalxEligibleFunction, CalxFallbackIssue, CalxHostImports, CalxProgramCompilationUnit,
-  CalxProgramRoot, CalxProgramRootRole, analyze_calx_eligibility_with_imports, calx_kernel_abi_edition, write_eligible_functions,
+  CalxProgramRoot, CalxProgramRootRole, analyze_calx_program_entry_with_imports, calx_kernel_abi_edition, write_eligible_functions,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -168,7 +168,7 @@ pub fn analyze_calx_program_eligibility_with_imports(
   let mut functions = BTreeMap::<CalxDefinitionRef, CalxEligibleFunction>::new();
   let mut root_issues = vec![];
   for (root, roles) in roots_by_definition {
-    match analyze_calx_eligibility_with_imports(program, root.namespace.clone(), root.definition.clone(), imports) {
+    match analyze_calx_program_entry_with_imports(program, root.namespace.clone(), root.definition.clone(), imports) {
       Ok(graph) => {
         for function in graph.functions {
           functions.entry(function.definition.clone()).or_insert(function);

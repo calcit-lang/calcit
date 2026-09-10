@@ -56,8 +56,12 @@ pub const CALX_TYPED_BUFFER_KERNEL_ABI_EDITION: &str = "calcit-calx-kernel/2";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CalxScalarType {
+  /// IEEE-754 64-bit floating-point number.
   F64,
+  /// Strict boolean value.
   Bool,
+  /// Immutable text value supported by the program profile only.
+  String,
   /// Immutable concrete buffer; the historic enum name is retained for API compatibility.
   F64Buffer,
 }
@@ -67,6 +71,7 @@ impl CalxScalarType {
     match self {
       Self::F64 => "F64",
       Self::Bool => "Bool",
+      Self::String => "String",
       Self::F64Buffer => "F64Buffer",
     }
   }
@@ -75,6 +80,7 @@ impl CalxScalarType {
     match self {
       Self::F64 => VmType::F64,
       Self::Bool => VmType::Bool,
+      Self::String => VmType::Str,
       Self::F64Buffer => VmType::F64Buffer,
     }
   }
@@ -99,7 +105,7 @@ impl CalxDefinitionRef {
   }
 }
 
-/// One explicitly approved scalar host capability for a Calx kernel.
+/// One explicitly approved scalar host capability for a Calx compilation.
 ///
 /// The Calcit definition is supplied as the key in [`CalxHostImports`]. Its
 /// typed snapshot signature must exactly match this declaration before the
@@ -318,7 +324,7 @@ fn write_eligible_functions(output: &mut String, functions: &[CalxEligibleFuncti
 }
 
 /// Proves that one explicit entry and its reachable direct-call closure belong
-/// to the first Calx scalar subset.
+/// to the kernel compatibility subset.
 ///
 /// Any issue returns a sorted [`CalxFallbackReport`]. The eligible graph is
 /// published only when every reachable definition succeeds.
@@ -338,10 +344,41 @@ pub fn analyze_calx_eligibility_with_imports(
   definition: impl Into<Arc<str>>,
   imports: &CalxHostImports,
 ) -> Result<CalxEligibleCallGraph, CalxFallbackReport> {
+  analyze_calx_eligibility_for_profile(program, namespace, definition, imports, CalxEligibilityProfile::Kernel)
+}
+
+pub(super) fn analyze_calx_program_entry_with_imports(
+  program: &CompiledProgram,
+  namespace: impl Into<Arc<str>>,
+  definition: impl Into<Arc<str>>,
+  imports: &CalxHostImports,
+) -> Result<CalxEligibleCallGraph, CalxFallbackReport> {
+  analyze_calx_eligibility_for_profile(program, namespace, definition, imports, CalxEligibilityProfile::Program)
+}
+
+fn analyze_calx_eligibility_for_profile(
+  program: &CompiledProgram,
+  namespace: impl Into<Arc<str>>,
+  definition: impl Into<Arc<str>>,
+  imports: &CalxHostImports,
+  profile: CalxEligibilityProfile,
+) -> Result<CalxEligibleCallGraph, CalxFallbackReport> {
   let entry = CalxDefinitionRef::new(namespace, definition);
-  let mut analyzer = EligibilityAnalyzer::new(program, entry.clone(), imports);
+  let mut analyzer = EligibilityAnalyzer::new(program, entry.clone(), imports, profile);
   analyzer.visit(entry.clone(), vec![entry.clone()]);
   analyzer.finish()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CalxEligibilityProfile {
+  Kernel,
+  Program,
+}
+
+impl CalxEligibilityProfile {
+  const fn allows_string(self) -> bool {
+    matches!(self, Self::Program)
+  }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -353,6 +390,7 @@ struct FunctionSignature {
 struct EligibilityAnalyzer<'a> {
   program: &'a CompiledProgram,
   imports: &'a CalxHostImports,
+  profile: CalxEligibilityProfile,
   entry: CalxDefinitionRef,
   visited: BTreeSet<CalxDefinitionRef>,
   functions: BTreeMap<CalxDefinitionRef, CalxEligibleFunction>,
@@ -360,10 +398,16 @@ struct EligibilityAnalyzer<'a> {
 }
 
 impl<'a> EligibilityAnalyzer<'a> {
-  fn new(program: &'a CompiledProgram, entry: CalxDefinitionRef, imports: &'a CalxHostImports) -> Self {
+  fn new(
+    program: &'a CompiledProgram,
+    entry: CalxDefinitionRef,
+    imports: &'a CalxHostImports,
+    profile: CalxEligibilityProfile,
+  ) -> Self {
     Self {
       program,
       imports,
+      profile,
       entry,
       visited: BTreeSet::new(),
       functions: BTreeMap::new(),
@@ -399,7 +443,7 @@ impl<'a> EligibilityAnalyzer<'a> {
       return;
     }
 
-    let signature = analyze_signature(compiled, &target, &call_path, &mut self.issues);
+    let signature = analyze_signature(compiled, &target, &call_path, self.profile, &mut self.issues);
     let parts = extract_fn_parts(compiled, &target, &call_path, &mut self.issues);
     let mut direct_calls = BTreeSet::new();
     let mut host_imports = BTreeSet::new();
@@ -438,6 +482,7 @@ impl<'a> EligibilityAnalyzer<'a> {
         direct_calls: &mut direct_calls,
         host_imports: &mut host_imports,
         imports: self.imports,
+        profile: self.profile,
         issues: &mut self.issues,
       };
       body_result = analyze_sequence(&body, true, &mut context);
@@ -546,6 +591,7 @@ fn analyze_signature(
   compiled: &CompiledDef,
   target: &CalxDefinitionRef,
   call_path: &[CalxDefinitionRef],
+  profile: CalxEligibilityProfile,
   issues: &mut Vec<CalxFallbackIssue>,
 ) -> Option<FunctionSignature> {
   let CalcitTypeAnnotation::Fn(signature) = compiled.schema.as_ref() else {
@@ -593,6 +639,7 @@ fn analyze_signature(
       target,
       source_path(&compiled.preprocessed_code),
       call_path,
+      profile,
       issues,
     ) {
       params.push(value_type);
@@ -604,6 +651,7 @@ fn analyze_signature(
     target,
     source_path(&compiled.preprocessed_code),
     call_path,
+    profile,
     issues,
   );
   if params.len() == signature.arg_types.len() && result.is_some() {
@@ -616,17 +664,21 @@ fn analyze_signature(
   }
 }
 
-fn signature_without_issues(compiled: &CompiledDef) -> Option<FunctionSignature> {
+fn signature_without_issues(compiled: &CompiledDef, profile: CalxEligibilityProfile) -> Option<FunctionSignature> {
   let CalcitTypeAnnotation::Fn(signature) = compiled.schema.as_ref() else {
     return None;
   };
   if !signature.generics.is_empty() || !signature.where_bounds.is_empty() || signature.rest_type.is_some() {
     return None;
   }
-  let params: Option<Vec<_>> = signature.arg_types.iter().map(|value| map_slot_type_quiet(value)).collect();
+  let params: Option<Vec<_>> = signature
+    .arg_types
+    .iter()
+    .map(|value| map_slot_type_quiet(value, profile))
+    .collect();
   Some(FunctionSignature {
     params: params?,
-    result: map_result_type_quiet(&signature.return_type)?,
+    result: map_result_type_quiet(&signature.return_type, profile)?,
   })
 }
 
@@ -700,6 +752,7 @@ struct ExpressionContext<'a> {
   direct_calls: &'a mut BTreeSet<CalxDefinitionRef>,
   host_imports: &'a mut BTreeSet<CalxDefinitionRef>,
   imports: &'a CalxHostImports,
+  profile: CalxEligibilityProfile,
   issues: &'a mut Vec<CalxFallbackIssue>,
 }
 
@@ -724,6 +777,7 @@ fn analyze_expression(expression: &Calcit, tail: bool, context: &mut ExpressionC
   match expression {
     Calcit::Number(_) => Some(Some(CalxScalarType::F64)),
     Calcit::Bool(_) => Some(Some(CalxScalarType::Bool)),
+    Calcit::Str(_) if context.profile.allows_string() => Some(Some(CalxScalarType::String)),
     Calcit::Unit => Some(None),
     Calcit::Nil => {
       issue(
@@ -740,6 +794,7 @@ fn analyze_expression(expression: &Calcit, tail: bool, context: &mut ExpressionC
       context.function,
       local.location.as_ref().map(|path| path.as_ref().clone()),
       context.call_path,
+      context.profile,
       context.issues,
     )
     .map(Some),
@@ -884,6 +939,7 @@ fn analyze_let(args: &[Calcit], tail: bool, context: &mut ExpressionContext<'_>)
           context.function,
           local.location.as_ref().map(|path| path.as_ref().clone()),
           context.call_path,
+          context.profile,
           context.issues,
         )
         .map(Some),
@@ -1083,7 +1139,7 @@ fn analyze_direct_call(
     return None;
   }
   context.direct_calls.insert(target.clone());
-  let Some(signature) = signature_without_issues(compiled) else {
+  let Some(signature) = signature_without_issues(compiled, context.profile) else {
     analyze_unknown_args(args, context);
     return None;
   };
@@ -1136,7 +1192,7 @@ fn analyze_host_import_call(
     );
     return None;
   }
-  let declared = analyze_signature(compiled, &target, context.call_path, context.issues)?;
+  let declared = analyze_signature(compiled, &target, context.call_path, context.profile, context.issues)?;
   if declared.params != import.params || declared.result != import.result {
     analyze_unknown_args(args, context);
     issue(
@@ -1194,11 +1250,13 @@ fn map_slot_type(
   target: &CalxDefinitionRef,
   source_path: Option<Vec<u16>>,
   call_path: &[CalxDefinitionRef],
+  profile: CalxEligibilityProfile,
   issues: &mut Vec<CalxFallbackIssue>,
 ) -> Option<CalxScalarType> {
   match annotation {
     CalcitTypeAnnotation::Number => Some(CalxScalarType::F64),
     CalcitTypeAnnotation::Bool => Some(CalxScalarType::Bool),
+    CalcitTypeAnnotation::String if profile.allows_string() => Some(CalxScalarType::String),
     CalcitTypeAnnotation::F64Buffer => Some(CalxScalarType::F64Buffer),
     CalcitTypeAnnotation::Dynamic => {
       push_expression_issue(
@@ -1242,29 +1300,31 @@ fn map_result_type(
   target: &CalxDefinitionRef,
   source_path: Option<Vec<u16>>,
   call_path: &[CalxDefinitionRef],
+  profile: CalxEligibilityProfile,
   issues: &mut Vec<CalxFallbackIssue>,
 ) -> Option<Option<CalxScalarType>> {
   if matches!(annotation, CalcitTypeAnnotation::Unit) {
     Some(None)
   } else {
-    map_slot_type(annotation, boundary, target, source_path, call_path, issues).map(Some)
+    map_slot_type(annotation, boundary, target, source_path, call_path, profile, issues).map(Some)
   }
 }
 
-fn map_slot_type_quiet(annotation: &CalcitTypeAnnotation) -> Option<CalxScalarType> {
+fn map_slot_type_quiet(annotation: &CalcitTypeAnnotation, profile: CalxEligibilityProfile) -> Option<CalxScalarType> {
   match annotation {
     CalcitTypeAnnotation::Number => Some(CalxScalarType::F64),
     CalcitTypeAnnotation::Bool => Some(CalxScalarType::Bool),
+    CalcitTypeAnnotation::String if profile.allows_string() => Some(CalxScalarType::String),
     CalcitTypeAnnotation::F64Buffer => Some(CalxScalarType::F64Buffer),
     _ => None,
   }
 }
 
-fn map_result_type_quiet(annotation: &CalcitTypeAnnotation) -> Option<Option<CalxScalarType>> {
+fn map_result_type_quiet(annotation: &CalcitTypeAnnotation, profile: CalxEligibilityProfile) -> Option<Option<CalxScalarType>> {
   if matches!(annotation, CalcitTypeAnnotation::Unit) {
     Some(None)
   } else {
-    map_slot_type_quiet(annotation).map(Some)
+    map_slot_type_quiet(annotation, profile).map(Some)
   }
 }
 
@@ -1348,6 +1408,7 @@ mod tests {
         direct_calls: &mut BTreeSet::new(),
         host_imports: &mut BTreeSet::new(),
         imports: &CalxHostImports::new(),
+        profile: CalxEligibilityProfile::Kernel,
         issues: &mut issues,
       };
       assert_eq!(analyze_proc(CalcitProc::NativeF64BufferGet, &args, false, &mut context), None);
