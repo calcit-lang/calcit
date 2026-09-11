@@ -415,17 +415,12 @@ const scenarios = [
       if (result.schema_version !== 6 || result.command !== "analyze.weak-types" || result.data.summary.hits === 0) {
         throw new Error("weak type result is incomplete");
       }
-      const usage = result.data.summary.dynamic_usage;
-      const accounted = Object.values(usage.intents).reduce((sum, count) => sum + count, 0);
-      if (!usage.reconciled || accounted !== usage.dynamic_positions || usage.total_positions < usage.dynamic_positions) {
-        throw new Error("weak-types dynamic usage accounting did not reconcile");
-      }
       const occurrences = result.data.definitions.flatMap((definition) => definition.occurrences);
       if (!occurrences.every((occurrence) => occurrence.intent === "intentional-js-ffi")) {
         throw new Error("weak-types --intent filter was not preserved");
       }
-      if (!occurrences.every((occurrence) => typeof occurrence.suggestion === "string" && typeof occurrence.impact === "string")) {
-        throw new Error("weak-type occurrences lost impact or actionable suggestions");
+      if (!occurrences.every((occurrence) => typeof occurrence.path === "string" && typeof occurrence.detail === "string")) {
+        throw new Error("weak-type occurrences lost source evidence");
       }
     },
   },

@@ -221,101 +221,6 @@ pub struct WeakTypeRow {
   pub occurrences: Vec<WeakTypeOccurrence>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct DynamicUsageSummary {
-  total_positions: usize,
-  dynamic_positions: usize,
-}
-
-impl DynamicUsageSummary {
-  fn ratio(self) -> f64 {
-    if self.total_positions == 0 {
-      0.0
-    } else {
-      self.dynamic_positions as f64 / self.total_positions as f64
-    }
-  }
-}
-
-fn count_annotation_positions(annotation: &CalcitTypeAnnotation) -> (usize, usize) {
-  let (mut total, mut dynamic) = (1, usize::from(matches!(annotation, CalcitTypeAnnotation::Dynamic)));
-  let mut add = |child: &CalcitTypeAnnotation| {
-    let (child_total, child_dynamic) = count_annotation_positions(child);
-    total += child_total;
-    dynamic += child_dynamic;
-  };
-  match annotation {
-    CalcitTypeAnnotation::List(inner)
-    | CalcitTypeAnnotation::Set(inner)
-    | CalcitTypeAnnotation::Ref(inner)
-    | CalcitTypeAnnotation::Variadic(inner)
-    | CalcitTypeAnnotation::Optional(inner)
-    | CalcitTypeAnnotation::JsNullish(inner) => add(inner),
-    CalcitTypeAnnotation::Map(key, value) => {
-      add(key);
-      add(value);
-    }
-    CalcitTypeAnnotation::Fn(fn_annot) => {
-      for arg in &fn_annot.arg_types {
-        add(arg);
-      }
-      add(&fn_annot.return_type);
-      if let Some(rest) = &fn_annot.rest_type {
-        add(rest);
-      }
-    }
-    CalcitTypeAnnotation::Macro(signature) => {
-      for contract in signature.required_inputs.iter().chain(signature.optional_inputs.iter()) {
-        if let MacroSyntaxType::Expr(semantic) = contract {
-          add(semantic);
-        }
-      }
-      if let Some(MacroSyntaxType::Expr(semantic)) = &signature.rest_input {
-        add(semantic);
-      }
-      match &signature.expansion {
-        MacroExpansionType::Expr(semantic) | MacroExpansionType::Definition(semantic) => add(semantic),
-        MacroExpansionType::Dynamic => {
-          total += 1;
-          dynamic += 1;
-        }
-        MacroExpansionType::Declarations => {}
-      }
-    }
-    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
-      for arg in args.iter() {
-        add(arg);
-      }
-    }
-    _ => {}
-  }
-  (total, dynamic)
-}
-
-fn count_code_dynamic_markers(code: &Cirru) -> usize {
-  match code {
-    Cirru::Leaf(text) => usize::from(matches!(text.as_ref(), ":dynamic" | ":any")),
-    Cirru::List(items) => items.iter().map(count_code_dynamic_markers).sum(),
-  }
-}
-
-fn collect_dynamic_usage_summary_scoped(
-  snapshot: &snapshot::Snapshot,
-  scope: AnalysisScope<'_>,
-) -> Result<DynamicUsageSummary, String> {
-  let mut summary = DynamicUsageSummary {
-    total_positions: 0,
-    dynamic_positions: 0,
-  };
-  visit_scoped_definitions(snapshot, scope, |_namespace, _definition, entry| {
-    let (schema_total, schema_dynamic) = count_annotation_positions(entry.schema.as_ref());
-    let code_dynamic = count_code_dynamic_markers(&entry.code);
-    summary.total_positions += schema_total + code_dynamic;
-    summary.dynamic_positions += schema_dynamic + code_dynamic;
-  })?;
-  Ok(summary)
-}
-
 pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String> {
   let mut selected = BTreeSet::new();
 
@@ -393,36 +298,6 @@ fn format_cirru_path(root: &str, path: &[usize]) -> String {
 
 fn weak_type_detail(kind: WeakTypeKind, detail: &str) -> String {
   format!("{}:{}", kind.as_str(), detail)
-}
-
-pub fn extract_schema_dynamic_position(detail: &str) -> Option<String> {
-  let mut parts = detail.split(':');
-  match (parts.next(), parts.next()) {
-    (Some("schema-dynamic"), Some(position)) => Some(position.to_owned()),
-    _ => None,
-  }
-}
-
-pub fn extract_schema_dynamic_shape(detail: &str) -> Option<String> {
-  let mut parts = detail.split(':');
-  match (parts.next(), parts.next(), parts.next()) {
-    (Some("schema-dynamic"), Some(_position), Some(shape)) => {
-      let mut result = shape.to_owned();
-      for part in parts {
-        result.push(':');
-        result.push_str(part);
-      }
-      Some(result)
-    }
-    _ => None,
-  }
-}
-
-pub fn extract_schema_dynamic_family(detail: &str) -> Option<String> {
-  let shape = extract_schema_dynamic_shape(detail)?;
-  let family = shape.split(':').next()?;
-  let family = family.split('-').next()?;
-  Some(family.to_owned())
 }
 
 fn extend_schema_dynamic_detail(detail: &str, segment: &str) -> String {
@@ -617,48 +492,6 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
     return "Use `:: :map <key-type> <value-type>` and replace each unresolved slot with a concrete type or a declared type variable.";
   }
   "Replace `:dynamic` with a concrete schema, a declared type variable, or a trait-bounded variable; mark `:features $ #{} :js-ffi` only for an intentional JS FFI boundary."
-}
-
-fn weak_type_impact(occurrence: &WeakTypeOccurrence) -> &'static str {
-  if occurrence.kind == WeakTypeKind::UnsafeCoerce {
-    return "This explicit assertion bypasses static compatibility, so an incompatible runtime value can enter typed code and fail only at runtime.";
-  }
-  if occurrence.intent == WeakTypeIntent::IntentionalJsFfi {
-    return "The value stays dynamic at an explicit boundary; typed callers must validate or convert it before relying on methods or generic relations.";
-  }
-  if occurrence.intent == WeakTypeIntent::IntentionalMacroSyntax {
-    return "The macro remains phase-aware, but this expression position intentionally accepts or produces any semantic value; callers retain syntax-shape checks while semantic relations stop at this boundary.";
-  }
-  if occurrence.intent == WeakTypeIntent::IntentionalTypeSlotDynamic {
-    return "The selected entry intentionally leaves this slot Dynamic; static relations do not cross this boundary until the value is narrowed or validated.";
-  }
-  if occurrence.kind == WeakTypeKind::CodeNil {
-    return match occurrence.intent {
-      WeakTypeIntent::DeclaredUnit => {
-        "Nil and Unit are distinct values, so this return violates the declared Unit contract and differs across generated runtimes."
-      }
-      WeakTypeIntent::DeclaredOptional => {
-        "The nil is covered by an Optional return contract but remains compatibility debt until callers use a nominal Option/Result API."
-      }
-      _ => "A nil form weakens branch and return inference because no Unit or Optional return contract covers this position.",
-    };
-  }
-  if occurrence.kind == WeakTypeKind::UnresolvedTypeSlot {
-    return "The slot currently accepts every value, so call checking and generic specialization can silently fall back as though this position were Dynamic.";
-  }
-  if occurrence.detail.contains("fn-arg") || occurrence.detail.contains("fn-return") {
-    return "The callback contract loses parameter/return checking and prevents reliable variance or generic substitution.";
-  }
-  if occurrence.detail.contains("list-item")
-    || occurrence.detail.contains("set-item")
-    || occurrence.detail.contains("map-key")
-    || occurrence.detail.contains("map-value")
-    || occurrence.detail.contains("ref-item")
-    || occurrence.detail.contains("type-arg")
-  {
-    return "The container or applied type loses its element relationship, so downstream generic inference and method specialization may fall back to runtime dispatch.";
-  }
-  "The dynamic slot erases type relations at this boundary, reducing call checking, generic binding, and compile-time method specialization."
 }
 
 fn entry_schema_issues(ns: &str, def_name: &str, code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -> Vec<String> {
@@ -1170,20 +1003,12 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
   let mut kind_count: BTreeMap<&'static str, usize> = BTreeMap::new();
   let mut intent_count: BTreeMap<&'static str, usize> = BTreeMap::new();
   let mut detail_count: BTreeMap<&'static str, BTreeMap<String, usize>> = BTreeMap::new();
-  let mut schema_shape_count: BTreeMap<String, usize> = BTreeMap::new();
-  let mut schema_shape_positions: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
-  let mut schema_shape_defs: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
-  let mut schema_shape_position_defs: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
-  let mut schema_family_count: BTreeMap<String, usize> = BTreeMap::new();
-  let mut schema_family_positions: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
-  let mut schema_family_defs: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
   let mut ns_set: BTreeSet<&str> = BTreeSet::new();
   let mut def_count = 0usize;
 
   for row in &rows {
     def_count += 1;
     ns_set.insert(row.ns.as_str());
-    let def_label = format!("{}/{}", row.ns, row.def);
     for occurrence in &row.occurrences {
       *kind_count.entry(occurrence.kind.as_str()).or_insert(0) += 1;
       *intent_count.entry(occurrence.intent.as_str()).or_insert(0) += 1;
@@ -1195,42 +1020,6 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
         .or_default()
         .entry(occurrence.detail.clone())
         .or_insert(0) += 1;
-      let schema_position = if occurrence.kind == WeakTypeKind::SchemaDynamic {
-        extract_schema_dynamic_position(&occurrence.detail)
-      } else {
-        None
-      };
-      if occurrence.kind == WeakTypeKind::SchemaDynamic
-        && let Some(shape) = extract_schema_dynamic_shape(&occurrence.detail)
-      {
-        *schema_shape_count.entry(shape.clone()).or_insert(0) += 1;
-        if let Some(position) = &schema_position {
-          *schema_shape_positions
-            .entry(shape.clone())
-            .or_default()
-            .entry(position.clone())
-            .or_insert(0) += 1;
-          *schema_shape_position_defs
-            .entry(format!("{shape}@{position}"))
-            .or_default()
-            .entry(def_label.clone())
-            .or_insert(0) += 1;
-        }
-        *schema_shape_defs.entry(shape).or_default().entry(def_label.clone()).or_insert(0) += 1;
-      }
-      if occurrence.kind == WeakTypeKind::SchemaDynamic
-        && let Some(family) = extract_schema_dynamic_family(&occurrence.detail)
-      {
-        *schema_family_count.entry(family.clone()).or_insert(0) += 1;
-        if let Some(position) = &schema_position {
-          *schema_family_positions
-            .entry(family.clone())
-            .or_default()
-            .entry(position.clone())
-            .or_insert(0) += 1;
-        }
-        *schema_family_defs.entry(family).or_default().entry(def_label.clone()).or_insert(0) += 1;
-      }
     }
   }
 
@@ -1350,59 +1139,6 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
       }
     }
   }
-  if !schema_shape_count.is_empty() {
-    let _ = writeln!(out, "- schema-shapes:");
-    for (shape, count) in &schema_shape_count {
-      let _ = writeln!(out, "  - {shape}={count}");
-    }
-    let _ = writeln!(out, "- schema-shape-positions:");
-    for (shape, positions) in &schema_shape_positions {
-      let _ = writeln!(out, "  - {shape}");
-      for (position, count) in positions {
-        let _ = writeln!(out, "    - {position}={count}");
-      }
-    }
-    let _ = writeln!(out, "- schema-shape-defs:");
-    for (shape, defs) in &schema_shape_defs {
-      let _ = writeln!(out, "  - {shape}");
-      let mut items = defs.iter().collect::<Vec<_>>();
-      items.sort_by(|(a_name, a_count), (b_name, b_count)| b_count.cmp(a_count).then(a_name.cmp(b_name)));
-      for (def_name, count) in items {
-        let _ = writeln!(out, "    - {def_name}={count}");
-      }
-    }
-    let _ = writeln!(out, "- schema-shape-position-defs:");
-    for (shape_position, defs) in &schema_shape_position_defs {
-      let _ = writeln!(out, "  - {shape_position}");
-      let mut items = defs.iter().collect::<Vec<_>>();
-      items.sort_by(|(a_name, a_count), (b_name, b_count)| b_count.cmp(a_count).then(a_name.cmp(b_name)));
-      for (def_name, count) in items {
-        let _ = writeln!(out, "    - {def_name}={count}");
-      }
-    }
-  }
-  if !schema_family_count.is_empty() {
-    let _ = writeln!(out, "- schema-families:");
-    for (family, count) in &schema_family_count {
-      let _ = writeln!(out, "  - {family}={count}");
-    }
-    let _ = writeln!(out, "- schema-family-positions:");
-    for (family, positions) in &schema_family_positions {
-      let _ = writeln!(out, "  - {family}");
-      for (position, count) in positions {
-        let _ = writeln!(out, "    - {position}={count}");
-      }
-    }
-    let _ = writeln!(out, "- schema-family-defs:");
-    for (family, defs) in &schema_family_defs {
-      let _ = writeln!(out, "  - {family}");
-      let mut items = defs.iter().collect::<Vec<_>>();
-      items.sort_by(|(a_name, a_count), (b_name, b_count)| b_count.cmp(a_count).then(a_name.cmp(b_name)));
-      for (def_name, count) in items {
-        let _ = writeln!(out, "    - {def_name}={count}");
-      }
-    }
-  }
   let _ = writeln!(out,);
 
   let mut current_ns: Option<&str> = None;
@@ -1422,7 +1158,6 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
         occurrence.detail,
         occurrence.path
       );
-      let _ = writeln!(out, "    impact: {}", weak_type_impact(occurrence));
       if let Some(evidence) = &occurrence.unsafe_evidence {
         let _ = writeln!(
           out,
@@ -2630,46 +2365,6 @@ pub fn format_check_types_json(options: &CheckTypesCommand, snapshot: &snapshot:
 
 pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<String, String> {
   let rows = collect_weak_type_rows(options, snapshot)?;
-  let accounting_options = WeakTypesCommand {
-    ns: options.ns.clone(),
-    ns_prefix: options.ns_prefix.clone(),
-    only: Some("schema-dynamic,code-dynamic".to_owned()),
-    intent: None,
-    format: "json".to_owned(),
-    deps: options.deps,
-    summary_only: true,
-  };
-  let accounting_rows = collect_weak_type_rows(&accounting_options, snapshot)?;
-  let usage = collect_dynamic_usage_summary_scoped(
-    snapshot,
-    AnalysisScope {
-      namespace: options.ns.as_deref(),
-      namespace_prefix: options.ns_prefix.as_deref(),
-      include_dependencies: options.deps,
-    },
-  )?;
-  let mut usage_intents = BTreeMap::<&str, usize>::new();
-  for intent in [
-    "unresolved",
-    "intentional-js-ffi",
-    "intentional-macro-syntax",
-    "intentional-type-slot-dynamic",
-  ] {
-    usage_intents.insert(intent, 0);
-  }
-  for occurrence in accounting_rows.iter().flat_map(|row| row.occurrences.iter()) {
-    *usage_intents.entry(occurrence.intent.as_str()).or_insert(0) += 1;
-  }
-  let classified_positions = usage_intents.values().sum::<usize>();
-  if classified_positions > usage.dynamic_positions {
-    return Err(format!(
-      "Dynamic accounting invariant failed: {classified_positions} classified positions exceed the {}-position startup numerator",
-      usage.dynamic_positions
-    ));
-  }
-  let unattributed_unresolved = usage.dynamic_positions - classified_positions;
-  *usage_intents.entry("unresolved").or_insert(0) += unattributed_unresolved;
-  let usage_reconciled = usage_intents.values().sum::<usize>() == usage.dynamic_positions;
   let mut kinds = BTreeMap::<&str, usize>::new();
   let mut intents = BTreeMap::<&str, usize>::new();
   let mut namespaces = BTreeSet::<&str>::new();
@@ -2722,7 +2417,6 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
             "detail": occurrence.detail,
             "path": occurrence.path,
             "evidence": evidence,
-            "impact": weak_type_impact(occurrence),
             "suggestion": weak_type_suggestion(occurrence),
           })
         }).collect::<Vec<_>>(),
@@ -2816,20 +2510,6 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
         "hits": hit_count,
         "kinds": kinds,
         "intents": intents,
-        "dynamic_usage": {
-          "dynamic_positions": usage.dynamic_positions,
-          "total_positions": usage.total_positions,
-          "ratio": usage.ratio(),
-          "intents": usage_intents,
-          "unattributed_unresolved": unattributed_unresolved,
-          "reconciled": usage_reconciled,
-          "policy": {
-            "scope": "stored project Snapshot definitions; dependencies only with --deps",
-            "position": "each schema annotation node plus each explicit :dynamic/:any code marker",
-            "nested": "container members, function arguments/return/rest, nominal type arguments, and semantic macro Expr/expansion positions are recursive",
-            "excluded": "runtime-generated definitions and metadata namespaces outside the selected project scope",
-          },
-        },
       },
       "definitions": definitions,
     },
@@ -2861,8 +2541,8 @@ mod tests {
   use cirru_parser::Cirru;
 
   use super::{
-    WeakTypeIntent, WeakTypeKind, classify_unsafe_coerce_source, count_annotation_positions, entry_schema_issues,
-    is_raw_adapter_namespace, scan_schema_dynamic_annotation,
+    WeakTypeIntent, WeakTypeKind, classify_unsafe_coerce_source, entry_schema_issues, is_raw_adapter_namespace,
+    scan_schema_dynamic_annotation,
   };
 
   fn leaf(value: &str) -> Cirru {
@@ -2942,13 +2622,6 @@ mod tests {
     assert_eq!(dynamic_expansion[0].intent, WeakTypeIntent::Unresolved);
     assert_eq!(dynamic_definition.len(), 1);
     assert_eq!(dynamic_definition[0].intent, WeakTypeIntent::Unresolved);
-  }
-
-  #[test]
-  fn dynamic_macro_expansion_is_a_position_in_both_usage_counts() {
-    let annotation = macro_schema(vec![], None, MacroExpansionType::Dynamic);
-
-    assert_eq!(count_annotation_positions(&annotation), (2, 1));
   }
 
   #[test]

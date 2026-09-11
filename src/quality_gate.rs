@@ -473,12 +473,6 @@ pub fn format_quality_report(outcome: &QualityOutcome) -> String {
       let _ = writeln!(out, "  - {metric}: {actual}");
     }
   }
-  if outcome.metrics.schema_dynamic != outcome.metrics.unresolved {
-    let _ = writeln!(
-      out,
-      "- accounting: schemaDynamic includes unresolved and reviewed macro-syntax schema positions; unresolved combines unresolved-intent schema/code Dynamic, type-slot, and nil positions. Use `analyze weak-types --only schema-dynamic,code-dynamic --summary-only --format json` for startup-numerator reconciliation."
-    );
-  }
   if !outcome.violations.is_empty() {
     let _ = writeln!(out, "- regressions:");
     for violation in &outcome.violations {
@@ -704,28 +698,5 @@ mod tests {
     assert_eq!(violations.len(), 1);
     assert_eq!(violations[0].metric, "codeNil");
     assert_eq!(violations[0].delta, 1);
-  }
-
-  #[test]
-  fn human_report_explains_distinct_dynamic_budgets() {
-    let outcome = QualityOutcome {
-      revision: "md5:test".to_owned(),
-      scope: default_scope(),
-      mode: "zero-debt".to_owned(),
-      baseline_path: None,
-      metrics: QualityMetrics {
-        schema_dynamic: 2,
-        unresolved: 3,
-        ..QualityMetrics::default()
-      },
-      limits: None,
-      deltas: BTreeMap::new(),
-      violations: vec![],
-      passed: false,
-    };
-
-    let report = format_quality_report(&outcome);
-    assert!(report.contains("schemaDynamic includes unresolved and reviewed macro-syntax schema positions"));
-    assert!(report.contains("weak-types --only schema-dynamic,code-dynamic"));
   }
 }

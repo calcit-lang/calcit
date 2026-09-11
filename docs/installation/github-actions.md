@@ -1,6 +1,6 @@
 ---
 title: "GitHub Actions"
-summary: "Use setup-calcit with the project version in deps.cirru, then run caps and the native quality gate."
+summary: "使用 deps.cirru 固定的 Calcit 版本安装工具链，并运行严格检查与目标后端测试。"
 scope: "core"
 kind: "reference"
 category: "installation"
@@ -64,8 +64,7 @@ Then to load packages defined in `deps.cirru` with `caps`:
 caps --ci
 ```
 
-For a JS project, install its locked runtime dependencies and run the same native quality gate used
-locally:
+JS 项目先安装锁定的 runtime 依赖，再运行与本地一致的严格检查：
 
 ```yaml
 - name: Install dependencies
@@ -79,25 +78,18 @@ locally:
     calcit calcit.cirru edit format
     git diff --exit-code -- calcit.cirru
     calcit calcit.cirru --check-only
-    calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 ```
 
-The workflow above covers installation and the static layer. A project that emits JavaScript must add
-its target-specific runtime command; for example, a Node project can compile and execute its smoke or
-contract test as a separate step:
+以上步骤只覆盖安装与静态层。生成 JavaScript 的项目还必须增加目标 runtime 命令，例如 Node 项目另行编译并执行 smoke/contract test：
 
 ```yaml
 - name: Run generated Node runtime test
   run: yarn run:node
 ```
 
-Browser projects should run an equivalent headless-browser test. Code generation alone is not runtime
-evidence.
+Browser 项目应运行等价的 headless-browser test；只有 codegen 成功不能证明 runtime 契约。
 
-New libraries without existing debt can omit `--baseline` and use the zero-debt gate. `check-types`
-and `weak-types` are reports for diagnosis; `analyze quality` is the CI command that fails on a
-regression. See [Calcit 类库项目验收与质量门禁](../run/library-quality.md) for entries, examples,
-backend tests, and consumer regression requirements.
+新项目不要生成 quality baseline。`check-types` 与 `weak-types` 只用于迁移定位；类型正确性由默认严格预处理的 warning/error 决定。已有项目可在 0.14.x 暂时保留 `analyze quality --baseline ...`，但只允许降低预算，清零后应删除。完整的 entry、example、后端测试与消费者回归要求见 [Calcit 类库项目验收与质量门禁](../run/library-quality.md)。
 
 The JavaScript runtime dependency remains in `package.json`/its lockfile. Keep it compatible with the
 Calcit release declared by the project, and execute generated JS in CI; a successful codegen alone does

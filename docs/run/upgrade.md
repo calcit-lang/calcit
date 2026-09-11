@@ -575,7 +575,7 @@ calcit calcit.cirru analyze deprecated --summary-only
 `Syntax` / `Expr<Dynamic>` / 空 capabilities 的保守严格 contract，避免要求一个无法读取该 direct-quote 格式的中间版本。
 两条路径都必须审阅并收窄生成的 contract，并使用 `--deps` 检查实际解析的模块版本，不能用依赖仓库尚未发布的 main 代替。
 
-有命中时去掉 `--summary-only` 查看 definition、Snapshot path、impact、suggestion 和 deprecated
+有命中时去掉 `--summary-only` 查看 definition、Snapshot path、detail、suggestion 和 deprecated
 目标文档。`check-types` 会把缺失或部分 schema（包括没有元素类型的 List/Map/Ref）列出来；
 `weak-types` 同时区分 unresolved dynamic、unbound type slot、明确 JS FFI 边界、Unit nil 和旧 Optional 兼容债务；
 `deprecated` 按调用位置指出已废弃 API。输入/输出共享类型时用 `:generics`，只约束能力时用 trait
@@ -622,15 +622,15 @@ calcit calcit.cirru --entry test analyze dynamic-methods --max 0
 - `--check-only` 和实际 native/JS codegen：预处理错误或 warning 会阻断并非零退出，必须修到通过；
 - `check-examples`、`docs check-md` 和 `calcit test`：所选示例/测试失败时阻断；测试应加
   `--require-match`，避免过滤条件拼错后“零测试通过”；
-- `check-types`、`weak-types`、`deprecated`：是静态定位报告，有命中不等于非零退出；`analyze quality`
-  聚合它们的发布指标，并按零目标或已审阅 baseline 返回失败退出码。
+- `check-types`、`weak-types`、`deprecated`：是静态定位报告，有命中不等于非零退出；已有 `analyze quality`
+  baseline 在 0.14.x 只作为存量项目清债 ratchet，不是类型正确性的另一套判定。
 
-老项目不必在第一次升级提交中把所有历史 dynamic 清零，但必须先让报告可重复，再阻止新增债务：
+老项目不必在第一次升级提交中把所有历史 Dynamic 清零，但必须先让严格检查通过，再逐步缩小边界：
 
-1. 运行 `analyze quality --write-baseline <file>` 生成原生 baseline，人工审阅后与 Calcit 版本、Snapshot revision 一起记录；baseline 本身保存 scope、汇总指标和每个 definition 的预算；
+1. 已有 baseline 的项目继续记录 Calcit 版本与 Snapshot revision；没有 baseline 的项目不再新建；
 2. 先要求 `--check-only`、测试和行为构建全绿；
-3. CI 拒绝 unresolved dynamic、nil/Optional debt、deprecated call 或 `unsafeCoerce` host-boundary 数量上升；旧 baseline 应审阅后重生成为 v2，才会开始约束最后一项；
-4. 按模块降低 baseline，降到 0 后改为零容忍；baseline 只能下降，不能无说明地更新；
+3. 现有 baseline 只允许按模块降低，不能无说明地更新；
+4. baseline 清零后从 CI 删除对应命令和文件，继续依赖严格检查、测试和目标后端验证；
 5. 对确实动态的 JS FFI 边界显式声明 `:features $ #{} :js-ffi`，不要用 ignore warning 伪造通过。
 
 baseline 不要只保存一个总数。类型覆盖至少比较 `levels.none` 和
@@ -640,16 +640,16 @@ baseline 不要只保存一个总数。类型覆盖至少比较 `levels.none` �
 还应比较 `unsafe-coerce` 的 occurrence 数；旧原生 v1 和扁平 baseline 只约束原有八项指标，不要求提供该数据。否则一种债务增加、另一种
 减少时，相同的总数会掩盖回归。
 
-新项目直接执行零容忍门禁：
+新项目直接执行默认严格检查，并运行实际目标测试：
 
 ```bash
-calcit calcit.cirru analyze quality
+calcit calcit.cirru --check-only
+calcit calcit.cirru --entry test
 ```
 
-存量项目先审阅现状并生成原生 baseline，再在 CI 中执行比较：
+已经提交 baseline 的存量项目可在 0.14.x 继续执行比较：
 
 ```bash
-calcit calcit.cirru analyze quality --write-baseline config/calcit-quality.cirru
 calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 ```
 
@@ -672,7 +672,7 @@ calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 无缝迁移，并继续执行原本八项指标；重新执行 `--write-baseline` 会生成 v2 的按 definition 格式并开始约束 `unsafeCoerce`。如果迁移把 `none` 改善为
 `partial`，`typeNone` 会下降且 `typeNotFull` 不变；改善为 `full` 时二者都会下降。确有类型债务在
 不同分类间迁移时，应在 PR 中解释并显式更新 baseline，而不是让一个总数相互抵消。baseline 归零后
-保留 `analyze quality`，以阻止后续重新引入。
+删除 `analyze quality` 调用；0.15 将不再把 coverage/Dynamic 数量作为独立类型正确性策略。
 
 #### 公共 equality 改为同类型契约
 
@@ -772,6 +772,7 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
         calcit calcit.cirru --entry "$entry" analyze dynamic-methods --max 0
       fi
     done < <(calcit calcit.cirru config show | awk '/^Snapshot Entries:/{in_entries=1; next} in_entries && /^  [^ ]/{print $1}')
+    # 仅在仍有非零 legacy baseline 时保留：
     calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 
 - name: Run project tests
@@ -784,9 +785,9 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
 
 说明：若项目依赖 `packageManager: "yarn@4.12.0"`，优先先执行 Corepack 激活，再让 CI 触发 Yarn。不要让 `setup-node` 的 Yarn cache 或其他 Yarn 调用早于 `corepack enable` / `corepack prepare`，否则可能误用 runner 上的全局 Yarn 1。 `caps --ci` 参数保证在 CI 加载模块时使用 HTTPS 协议，避免 CI 环境下的 SSH key 问题。
 
-注意：`check-types`、`weak-types`、`deprecated` 仍是展示报告，不按命中数量失败；CI 使用
-`analyze quality` 执行零目标或 baseline 策略。清零后则要求 unresolved dynamic、
-unresolved/declared-optional nil debt 和 deprecated calls 均为 0。
+注意：`check-types`、`weak-types`、`deprecated` 仍是展示报告，不按命中数量失败。只有仍有非零
+legacy baseline 的项目才在 CI 保留 `analyze quality --baseline ...`；baseline 清零后删除该命令，
+不再把数量策略当作独立类型正确性判定。
 `test --require-match` 会避免 tag 或 scope 写错后零测试仍退出成功。项目没有 named `test` entry 或
 definition-attached unit tests 时，应删除对应示例行并替换成项目真实测试命令，而不是机械照抄。
 
@@ -811,7 +812,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 6. default 与每个 named entry 的 `--check-only`
 7. 每个 entry 的 `analyze dynamic-methods --max <reviewed-limit>`；清零后使用 `--max 0`
 8. 所有声明支持的 entry 行为测试（默认 once；watch 另行验收）
-9. `analyze quality` 的 JSON baseline 或零目标（`check-types`、dynamic/nil `weak-types`、`deprecated` 仍作为定位报告）
+9. 非零 legacy baseline 项目继续运行 `analyze quality --baseline ...`；清零后删除该项（`check-types`、dynamic/nil `weak-types`、`deprecated` 仍只作为定位报告）
 10. `calcit test --require-match`、公开 namespace 的 `check-examples` 与 `docs check-md`
 11. JS 项目的 codegen 加 Node/Vite 行为测试，而不只是生成成功
 12. `package.json` 中与编译/构建相关的脚本
@@ -825,7 +826,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 | Snapshot 规范化 | `calcit edit format` + `git diff` | 旧 configs/schema 拼写和规范化建议 | format 告警不阻断，diff 需人工审阅 |
 | entry 预处理 | `calcit --entry ... --check-only` | 配置、缺失定义、参数/返回值、数据与 trait 类型错误 | 错误或 warning 均阻断 |
 | 动态分派 | `calcit analyze dynamic-methods --max <reviewed-limit>` | 动态 receiver 与无法专门化的方法；默认排除依赖和无关 FFI warning | 超过上限时阻断；`--deps` 可审计依赖 |
-| 静态债务 | `analyze check-types/weak-types/deprecated --format json` | 覆盖率、dynamic、nil/Optional、废弃调用 | 报告本身不按命中数阻断，CI 比较 summary |
+| 静态债务 | `analyze check-types/weak-types/deprecated --format json` | 覆盖率、dynamic、nil/Optional、废弃调用 | 报告本身不按命中数阻断；仅非零 legacy baseline 项目继续比较 |
 | 示例与测试 | `check-examples`、`docs check-md`、`calcit test --require-match` | API 示例、文档片段、definition-attached tests | 失败或未匹配测试时阻断 |
 | 行为与后端 | entry、Node/Vite、项目测试 | native/JS/FFI 的真实行为差异 | 由进程退出码阻断 |
 
