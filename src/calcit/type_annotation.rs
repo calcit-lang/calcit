@@ -5891,6 +5891,88 @@ mod tests {
   }
 
   #[test]
+  fn runtime_value_validation_expands_schema_aliases_and_rejects_cycles() {
+    use crate::program::{PROGRAM_CODE_DATA, ProgramDefEntry, ProgramFileData, lock_program_test_state};
+
+    let _guard = lock_program_test_state();
+    register_program_lookups(
+      crate::program::lookup_runtime_ready,
+      crate::program::lookup_def_code,
+      crate::program::lookup_def_schema,
+    );
+    let namespace = "tests.runtime-alias";
+    let alias_ref = |name: &'static str| {
+      Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from(format!("{namespace}/{name}")),
+        Arc::new(vec![]),
+      ))
+    };
+    let display_trait = Arc::new(CalcitTrait::new(EdnTag::new("Display"), vec![], vec![]).with_definition_ref(namespace, "Display"));
+    let entry = |schema| ProgramDefEntry {
+      code: Calcit::Nil,
+      schema,
+      doc: Arc::from(""),
+      examples: vec![],
+      ffi: None,
+    };
+    PROGRAM_CODE_DATA.write().expect("seed runtime aliases").insert(
+      Arc::from(namespace),
+      ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([
+          (
+            Arc::from("Items"),
+            entry(Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number)))),
+          ),
+          (
+            Arc::from("Callback"),
+            entry(Arc::new(CalcitTypeAnnotation::from_function_parts(
+              vec![Arc::new(CalcitTypeAnnotation::Number)],
+              Arc::new(CalcitTypeAnnotation::Number),
+            ))),
+          ),
+          (
+            Arc::from("Displayable"),
+            entry(Arc::new(CalcitTypeAnnotation::Trait(display_trait.clone()))),
+          ),
+          (Arc::from("A"), entry(alias_ref("B"))),
+          (Arc::from("B"), entry(alias_ref("A"))),
+        ]),
+      },
+    );
+
+    assert!(value_matches_type_annotation(
+      &Calcit::List(Arc::new(CalcitList::default())),
+      alias_ref("Items").as_ref()
+    ));
+    assert!(value_matches_type_annotation(
+      &Calcit::Proc(CalcitProc::List),
+      alias_ref("Callback").as_ref()
+    ));
+
+    let widget = CalcitStructDef {
+      definition_ref: Some(Arc::from(format!("{namespace}/Widget"))),
+      name: EdnTag::new("Widget"),
+      fields: Arc::new(vec![]),
+      field_types: Arc::new(vec![]),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![Arc::new(CalcitImpl {
+        name: EdnTag::new("WidgetDisplay"),
+        origin: Some(display_trait),
+        fields: Arc::new(vec![]),
+        values: Arc::new(vec![]),
+      })],
+    };
+    let widget_value = Calcit::Struct(CalcitStructValue {
+      struct_ref: Arc::new(widget),
+      values: Arc::new(vec![]),
+    });
+    assert!(value_matches_type_annotation(&widget_value, alias_ref("Displayable").as_ref()));
+    assert!(!value_matches_type_annotation(&Calcit::Number(1.0), alias_ref("A").as_ref()));
+  }
+
+  #[test]
   fn phase_aware_macro_signature_round_trips_without_fn_conflation() {
     let mut map = EdnMapView::default();
     map.insert_key("generics", Edn::List(EdnListView(vec![Edn::Symbol(Arc::from("T"))])));
@@ -8408,14 +8490,26 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
       Calcit::Enum(t) => t.sum_type.as_ref().is_some_and(|st| st.name() == expected_enum.name()),
       _ => false,
     },
-    CalcitTypeAnnotation::TypeRef(expected_name, _) => match value {
-      Calcit::Struct(r) => CalcitTypeAnnotation::type_ref_name_matches(expected_name, r.struct_ref.name.ref_str()),
-      Calcit::Enum(t) => t
-        .sum_type
-        .as_ref()
-        .is_some_and(|st| CalcitTypeAnnotation::type_ref_name_matches(expected_name, st.name().ref_str())),
-      _ => false,
-    },
+    CalcitTypeAnnotation::TypeRef(expected_name, _) => {
+      let nominal_match = match value {
+        Calcit::Struct(r) => CalcitTypeAnnotation::type_ref_name_matches(expected_name, r.struct_ref.name.ref_str()),
+        Calcit::Enum(t) => t
+          .sum_type
+          .as_ref()
+          .is_some_and(|st| CalcitTypeAnnotation::type_ref_name_matches(expected_name, st.name().ref_str())),
+        _ => false,
+      };
+      if nominal_match {
+        true
+      } else if let Some(resolved) = resolve_type_ref_as_schema(expected_name) {
+        let Ok(_guard) = enter_alias_relation(expected_name, expected, false, false) else {
+          return false;
+        };
+        value_matches_type_annotation(value, resolved.as_ref())
+      } else {
+        false
+      }
+    }
     CalcitTypeAnnotation::StructDef(expected_struct) => match value {
       Calcit::StructDef(struct_def) => struct_def.name == expected_struct.name,
       _ => false,

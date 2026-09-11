@@ -1564,6 +1564,54 @@ mod tests {
   }
 
   #[test]
+  fn struct_field_validation_expands_schema_aliases() {
+    use crate::program::{PROGRAM_CODE_DATA, ProgramDefEntry, ProgramFileData, lock_program_test_state};
+
+    let _guard = lock_program_test_state();
+    crate::calcit::register_program_lookups(
+      crate::program::lookup_runtime_ready,
+      crate::program::lookup_def_code,
+      crate::program::lookup_def_schema,
+    );
+    PROGRAM_CODE_DATA.write().expect("seed Items alias").insert(
+      Arc::from("tests.struct-alias"),
+      ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from("Items"),
+          ProgramDefEntry {
+            code: Calcit::Unit,
+            schema: Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number))),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: None,
+          },
+        )]),
+      },
+    );
+    let box_def = CalcitStructDef {
+      definition_ref: Some(Arc::from("tests.struct-alias/Box")),
+      name: EdnTag::new("Box"),
+      fields: Arc::new(vec![EdnTag::new("items")]),
+      field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("tests.struct-alias/Items"),
+        Arc::new(vec![]),
+      ))]),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    };
+
+    let result = call_struct(&[
+      Calcit::StructDef(box_def),
+      Calcit::tag("items"),
+      Calcit::List(Arc::new(CalcitList::default())),
+    ])
+    .expect("a List value should satisfy its schema alias in a Struct field");
+    assert!(matches!(result, Calcit::Struct(_)));
+  }
+
+  #[test]
   fn struct_get_rejects_missing_fields_instead_of_returning_nil() {
     let struct_value = indexed_struct_fixture();
     let err = get(&[struct_value, Calcit::tag("missing")]).expect_err("missing struct field must not become nil");

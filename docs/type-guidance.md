@@ -18,12 +18,23 @@ parent: core/features
 
 `Dynamic` 适合 JS FFI、框架开放数据、宏和确实无法提前知道的外部输入。普通函数不要用多个 `Dynamic` 表示“它们应该是同一个类型”：输入和返回关联时用 `:generics` 与 TypeVar；只需要能力时用 trait 与 `:where`；同质集合写出元素类型；有限异构数据定义为 Enum；可缺失值使用 `Option<T>`，带失败信息使用 `Result<T, E>`。
 
-每次执行和编译会在 stderr 输出 Dynamic 用量提示。它是趋势信号，不会替代具体路径检查：
+普通执行和编译不计算 Dynamic 使用率；预处理 warning/error 是类型判断来源。迁移存量项目时再显式运行定位命令：
 
 ```bash
 calcit analyze check-types --summary-only
 calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json
 ```
+
+## Schema 类型别名在各后端一致展开
+
+非 Dynamic definition schema 可以通过完整的 `'namespace/definition` 名称作为类型别名使用。别名只复用底层类型关系，不创建新的运行时包装；需要名义身份时仍应使用 `defstruct` 或 `defenum`。
+
+```bash
+calcit edit def app.schema/Items --code 'quote $ def Items &unit'
+calcit edit schema app.schema/Items --code "quote \$ :: 'List 'Number"
+```
+
+此后 `'app.schema/Items` 可用于 Struct 字段、Enum payload、callback 或 trait 边界。静态检查、Native 构造验证和 JavaScript codegen 都按同一底层 schema 判断值；不要为 Native 单独增加 coercion。类型别名不能接收泛型实参，循环别名也不会退化成 Dynamic，而是作为无法证明的类型关系拒绝。
 
 兼容性的多态 collection facade 可能仍在 core schema 中保留局部 `Dynamic`，或者使用彼此独立、无法表达容器成员关系的泛型，但已知 receiver 会在预处理阶段专门化。例如 `update` 对 `List<T>` 要求 `Number` 索引和 `T -> T` updater，对 `Map<K,V>` 要求 `K` 键和 `V -> V` updater；Struct 则按静态字段类型检查。`filter`、`any?` 与 `every?` 对 List/Set 要求 `T -> Bool` predicate，`each` 则约束 callback 输入为 `T`、允许任意返回类型；`map` 对 List/Set 要求 `T -> U` mapper，并把 Set receiver lowering 到 `&set:map`。`foldl` 与 `reduce` 从初始值恢复 accumulator `U`，并要求 reducer 为 `U, T -> U`；原生 `foldl` 只有在 reducer 具有具体且兼容的 `Fn` 签名时才把初始 accumulator 类型保留为返回类型，`DynFn` 仍推断为 `Dynamic`。普通 `apply f args` 只会在 `args` 是非 Dynamic 的同质 `List<T>`、`T` 能满足 `f` 的全部 fixed/rest 输入、且展开长度能证明 callable arity 时恢复 `f` 的具体或泛型返回类型；若参数位置异构、固定参数调用的 list 长度未知、callable 未知，或存在 trait-bounded 泛型，则兼容返回仍为 `Dynamic`，应改为直接调用、先归一化参数，或在审核过的开放边界显式保留 Dynamic。双参数 `sort` 与 `&list:sort` 保留 `List<T>`，并要求 comparator 为 `T, T -> Number`；函数形式的 `&list:sort-by` 要求 selector 为 `T -> K`，同时保留 Tag 字段选择器兼容路径。List 的 `.apply` 要求函数列表中的每一项共享 `T -> U` 契约，并返回 `List<U>`；它的 direct/method 诊断会用 receiver/input 已绑定的 `T` 显示具体 callback 类型，异构输入或函数列表必须先归一化或拆成多次调用。`interleave` 同样只接受两份 `List<T>` 并返回 `List<T>`；异构数据必须先归一化，或在经过审核的开放边界显式声明 `List<Dynamic>`。单参数自然排序不受影响，Syntax collection 继续使用 phase-aware 开放契约。Map callback 接收运行时的异构 `[key value]` pair；迭代、predicate 与 fold 输入只承诺 `List<Dynamic>`，而 `map` 同时要求 callback 返回另一个 `List<Dynamic>` pair，不会把不同的 `K` / `V` 伪装成同一种成员类型。旧 `map-kv` 还允许 nil/任意 Enum 作为 drop sentinel，因此返回只能是显式兼容边界：兼容模式警告，strict 模式拒绝。typed code 应统一改用 `filter-map-kv`，以 `MapEntryDecision :keep key value` 或 `:drop` 让输出 key/value 与 callback payload 保持可证明关联。`get` 同样要求 List/String/Enum 的 `Number` 索引或 Map 的 `K` 键，`includes?` 要求 List/Set 的成员 `T`、Map 的值 `V` 或 String substring；`contains?` 要求 List/String/Enum 的 `Number` 索引、Map 的键 `K` 或 Set 的成员 `T`。`assoc` 会同时约束 List 的索引/成员、Map 的键/值、静态 Struct 字段的值类型，以及 Enum 的 `Number` payload index；Enum payload 可以异构，因此新值在没有精确 variant/slot evidence 时仍保持开放。`dissoc` 会检查全部 rest 参数：List 只能接收 `Number` 索引，Map 的每个键都必须是 `K`。用户函数 schema 的 `:rest` 会逐项检查。原生 proc 按运行时契约区分两类 typed variadic：`&map:dissoc`、`&list:concat` 与 `&merge` 会检查每一个 rest 参数，并在容器不匹配时显示完整成员类型；`[]` 与 `#{}` 的 `Variadic<T>` 只用于推断公共成员类型，异构字面量仍有意回退为 `Dynamic`。未标注的 inline callback 若能从函数体恢复返回类型，也会参与这项检查。不要把 receiver 擦除为 `Dynamic` 来绕过这些关系：在 FFI/open-data adapter 中先校验或转换，再进入集合操作。
 
