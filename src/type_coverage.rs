@@ -221,34 +221,18 @@ pub struct WeakTypeRow {
   pub occurrences: Vec<WeakTypeOccurrence>,
 }
 
-/// Aggregate the amount of explicit dynamic type evidence in the current
-/// project scope. This is intentionally a heuristic: every annotation node is
-/// counted as one type position, and explicit `:dynamic` / `:any` code markers
-/// are counted as additional positions. It is meant as an execution-time
-/// hygiene signal, not as a replacement for `check-types`.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DynamicUsageSummary {
-  pub total_positions: usize,
-  pub dynamic_positions: usize,
+struct DynamicUsageSummary {
+  total_positions: usize,
+  dynamic_positions: usize,
 }
 
 impl DynamicUsageSummary {
-  pub fn ratio(self) -> f64 {
+  fn ratio(self) -> f64 {
     if self.total_positions == 0 {
       0.0
     } else {
       self.dynamic_positions as f64 / self.total_positions as f64
-    }
-  }
-
-  pub fn severity(self) -> Option<&'static str> {
-    if self.dynamic_positions == 0 {
-      return None;
-    }
-    match self.ratio() {
-      ratio if ratio >= 0.25 => Some("warning"),
-      ratio if ratio >= 0.10 => Some("notice"),
-      _ => None,
     }
   }
 }
@@ -315,17 +299,6 @@ fn count_code_dynamic_markers(code: &Cirru) -> usize {
   }
 }
 
-pub fn collect_dynamic_usage_summary(snapshot: &snapshot::Snapshot) -> Result<DynamicUsageSummary, String> {
-  collect_dynamic_usage_summary_scoped(
-    snapshot,
-    AnalysisScope {
-      namespace: None,
-      namespace_prefix: None,
-      include_dependencies: false,
-    },
-  )
-}
-
 fn collect_dynamic_usage_summary_scoped(
   snapshot: &snapshot::Snapshot,
   scope: AnalysisScope<'_>,
@@ -341,17 +314,6 @@ fn collect_dynamic_usage_summary_scoped(
     summary.dynamic_positions += schema_dynamic + code_dynamic;
   })?;
   Ok(summary)
-}
-
-pub fn format_dynamic_usage_notice(summary: DynamicUsageSummary) -> Option<String> {
-  let severity = summary.severity()?;
-  Some(format!(
-    "[{}] Dynamic type usage is {}/{} ({:.1}%) of analyzed type positions. Prefer concrete schemas, generics, traits, Option/Result, or named enums; keep Dynamic at documented FFI boundaries. Run `calcit analyze weak-types --only schema-dynamic,code-dynamic --summary-only --format json` to reconcile this numerator by intent.",
-    severity,
-    summary.dynamic_positions,
-    summary.total_positions,
-    summary.ratio() * 100.0,
-  ))
 }
 
 pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String> {

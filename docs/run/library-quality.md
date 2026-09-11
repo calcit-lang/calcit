@@ -92,7 +92,7 @@ calcit calcit.cirru analyze weak-types \
 
 `check-types` 与 `weak-types` 是定位报告；`analyze quality` 是带非零失败退出的发布门禁。新类库直接使用零容忍：
 
-启动时显示的 Dynamic 使用率、`weak-types --intent unresolved` 命中数和 quality 预算具有不同策略。前者覆盖项目 Snapshot 的全部显式 Dynamic schema/code 位置，包括已审阅边界；第二项只定位 unresolved intent；quality 的 `schemaDynamic` 包含受审阅的 macro syntax，而 `unresolved` 还会合并未绑定 type slot 与 nil 债务。用 `calcit calcit.cirru analyze weak-types --only schema-dynamic,code-dynamic --summary-only --format json` 的 `data.summary.dynamic_usage` 对账启动分子和分母，不要要求这三组指标互相相等。
+普通执行和编译不扫描 Dynamic 使用率。需要迁移概况时显式运行 `calcit calcit.cirru analyze weak-types --only schema-dynamic,code-dynamic --summary-only --format json`；其中 `data.summary.dynamic_usage` 覆盖分析 scope 内的显式 Dynamic schema/code 位置，`weak-types --intent unresolved` 只定位 unresolved intent，quality 的 `schemaDynamic` 则包含受审阅的 macro syntax，而 `unresolved` 还会合并未绑定 type slot 与 nil 债务。不要要求这些辅助数字互相相等，也不要把比例统计当成类型门禁。
 
 ```bash
 calcit calcit.cirru analyze quality
