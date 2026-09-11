@@ -163,6 +163,26 @@ fn result_generic_declaration_order_preserves_ok_and_err_payload_types() {
 }
 
 #[test]
+fn strict_fs_path_core_methods_bind_result_map_callback_payloads() {
+  run_with_large_stack(|| {
+    let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/FsPath"), Arc::new(vec![]))),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    let _strict = StrictTypesReset::enabled();
+    injection::inject_platform_apis();
+    let entries = load_snippet_entries_with_main_schema("fs:path |.", Some(main_schema));
+
+    run_check_only(&entries).expect("reachable FsPath methods should bind result:map callbacks without core warnings");
+  });
+}
+
+#[test]
 fn legacy_map_kv_contract_warns_in_compatibility_and_fails_in_strict_mode() {
   run_with_large_stack(|| {
     let snippets = [

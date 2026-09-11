@@ -55,7 +55,7 @@ pub(crate) fn checked_call_contract_arity(fn_ns: &str, fn_def: &str) -> Option<u
     return None;
   }
   match fn_def {
-    "get" | "filter" | "map" | "map-list-kv" => Some(2),
+    "get" | "filter" | "map" | "map-list-kv" | "result:map" => Some(2),
     "option:fold" | "update" => Some(3),
     _ => None,
   }
@@ -124,6 +124,23 @@ pub(crate) fn resolve_checked_call_contract(
           fn_type(vec![input_type], output_type.clone()),
         ]),
         return_type: output_type,
+        lowering: None,
+      })
+    }
+    ("result:map", T::TypeRef(name, type_args))
+      if type_args.len() == 2
+        && matches!(
+          name.trim_start_matches('\'').trim_start_matches(':'),
+          "Result" | "calcit.core/Result"
+        ) =>
+    {
+      let input_type = type_args[0].clone();
+      let error_type = type_args[1].clone();
+      let output_type =
+        callback_return_type(args.get(1)?, scope_types).unwrap_or_else(|| Arc::new(T::TypeVar(Arc::from("ResultMapOutput"))));
+      Some(CheckedCallContract {
+        expected_types: Some(vec![receiver_type.clone(), fn_type(vec![input_type], output_type.clone())]),
+        return_type: core_type_ref("Result", vec![output_type, error_type]),
         lowering: None,
       })
     }
@@ -310,6 +327,28 @@ mod tests {
     assert_eq!(callback.arg_types.as_slice(), &[key, value]);
     assert_eq!(callback.return_type, output.clone());
     assert_eq!(contract.return_type, Arc::new(CalcitTypeAnnotation::List(output)));
+    assert_eq!(contract.lowering, None);
+  }
+
+  #[test]
+  fn result_map_contract_preserves_ok_error_and_callback_output_types() {
+    let input = Arc::new(CalcitTypeAnnotation::Tag);
+    let error = Arc::new(CalcitTypeAnnotation::String);
+    let output = Arc::new(CalcitTypeAnnotation::Number);
+    let receiver = core_type_ref("Result", vec![input.clone(), error.clone()]);
+    let mapper = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![input.clone()], output.clone()));
+    let args = CalcitList::from(&[local("result", receiver.clone()), local("measure", mapper)] as &[Calcit]);
+
+    let contract = resolve_checked_call_contract(calcit::CORE_NS, "result:map", &args, &ScopeTypes::new())
+      .expect("typed result:map should have a checked contract");
+    let expected_types = contract.expected_types.as_ref().expect("result:map should bind checking evidence");
+    assert_eq!(expected_types[0], receiver);
+    let CalcitTypeAnnotation::Fn(callback) = expected_types[1].as_ref() else {
+      panic!("result:map callback should be checked as a function");
+    };
+    assert_eq!(callback.arg_types.as_slice(), &[input]);
+    assert_eq!(callback.return_type, output.clone());
+    assert_eq!(contract.return_type, core_type_ref("Result", vec![output, error]));
     assert_eq!(contract.lowering, None);
   }
 
