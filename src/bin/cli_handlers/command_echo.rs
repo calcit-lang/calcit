@@ -775,6 +775,7 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
       list "heading" => &opts.headings,
       switch "no-subheadings" => opts.no_subheadings,
       switch "full" => opts.full,
+      switch "contract" => opts.contract,
       switch "with-lines" => opts.with_lines,
       switch "refresh" => opts.refresh
     ),

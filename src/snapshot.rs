@@ -13,7 +13,7 @@ use crate::calcit::{
 };
 use crate::data::edn::{format_deserialize_error, format_edn_display};
 
-const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.";
+const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`.";
 
 fn default_version() -> String {
   "0.0.0".to_owned()

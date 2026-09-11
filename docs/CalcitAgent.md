@@ -29,13 +29,39 @@ Calcit 0.14 起，普通运行、检查和代码生成默认启用严格预处�
 `--compat-types` 暂时恢复旧 warning 行为；`--strict-types` 表示进一步执行零类型债务 quality gate，
 不能与 `--compat-types` 同时使用。Agent 不应把兼容开关写进新项目或长期 CI。
 
+## Mutation contract v1
+
+这是每次进入 Calcit 仓库、首次写入前必须读取的紧凑安全契约：
+
+1. 当前仓库的 `AGENTS.md`、README 和用户要求优先；CLI 参数若变化，查 live `--help`，不要绕过结构化工具。
+2. `calcit.cirru` 是 Cirru EDN Snapshot，绝不能用文本 patch、正则脚本或 formatter 修改；只用 `calcit edit`、`calcit tree`、`calcit cursor` 和 `calcit config`。
+3. 写入前运行 `calcit -v`、检查 `deps.cirru :calcit-version` 并用 `calcit query config` 确认目标 Snapshot/entry；版本不匹配时改用固定 CLI 或显式升级，不能绕过门禁。
+4. 同一 Snapshot 的 mutation 必须串行；原子多步变更使用 transaction、dry-run 和 `--expect-revision`，并行工作使用独立 worktree/Snapshot。
+5. target、path 和替换内容必须来自 `query` / `tree show`；修改前展示真实 subtree，修改后重新 show/search，并运行项目规定的 check、test 和目标 codegen。
+6. 不得把 `CURSOR`、`FOLDED:*`、chunk 标题、path annotation 或 `preview_tree` 写回 Snapshot；机器读取 cursor 时只信 `tree` 字段。
+7. 发现语言/编译器/CLI 缺陷，向 Calcit 核心仓库提交最小复现；发现模块缺陷，先用解析后的模块路径和 Git remote 确认 owner，再提交到模块仓库。不能猜仓库，也不能只留在聊天或提交说明中。
+
+按需加载权威细节：
+
+```bash
+calcit docs agents --full
+calcit docs read edit-tree.md 'Atomic Transactions'
+calcit docs read edit-tree.md 'Persistent Tree Cursor'
+calcit docs read query.md --full
+calcit docs read project-structure.md --full
+calcit docs read library-quality.md --full
+```
+
+`calcit docs agents --contract` 输出本节、contract version 和稳定 digest。digest 未变化时可在新仓库只重读本契约；首次使用、digest 变化或任务触及未覆盖能力时读取 `--full` 或上述相关 section。`--full` 始终是权威完整指南。
+
 ## 0. 开始修改前
 
 1. 先遵守当前仓库的 `AGENTS.md`、README 和用户要求；本文只补充 Calcit 源码操作规则。若仓库示例被当前 CLI 以 `Unrecognized argument` 拒绝，保持原约束意图，用该子命令的 live `--help` 换成当前参数，不要因此绕过 `calcit` 直接改 Snapshot。
-2. 每个任务第一次执行 `calcit edit`、`calcit tree` 或 cursor mutation 前，必须先读取当前 CLI 内嵌的完整指南：
+2. 每个任务第一次执行 `calcit edit`、`calcit tree` 或 cursor mutation 前，必须先读取当前 CLI 内嵌的紧凑 mutation contract；首次使用、digest 变化或任务超出契约覆盖范围时再读取完整指南：
 
    ```bash
-   calcit docs agents --full
+   calcit docs agents --contract
+   calcit docs agents --full # first orientation, changed digest, or task-specific need
    ```
 
 3. `calcit.cirru` 是 **Cirru EDN 树形 Snapshot**，不是按行维护的文本源码。旧项目若只有 `compact.cirru`，先按 upgrade 指南迁移；当前工具会拒绝旧文件名。不要用 line patch、正则脚本或 formatter 直接改 Snapshot；使用 `calcit edit`、`calcit tree`、`calcit cursor`。

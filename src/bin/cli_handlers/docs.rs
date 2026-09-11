@@ -4,6 +4,7 @@
 
 use calcit::cli_args::{DocsCommand, DocsGraphSubcommand, DocsSubcommand};
 use colored::Colorize;
+use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -25,7 +26,7 @@ use calcit::util;
 use super::atomic_write::stage_atomic_file;
 use super::docs_cache;
 use super::libs::handle_libs_command;
-use super::markdown_read::{RenderMarkdownOptions, render_markdown_sections};
+use super::markdown_read::{RenderMarkdownOptions, build_heading_sections, render_markdown_sections};
 use super::tips::command_guidance_enabled;
 
 const VALID_DOC_CATEGORIES: &[&str] = &[
@@ -168,7 +169,14 @@ pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
       opts.with_lines,
       opts.module.as_deref(),
     ),
-    DocsSubcommand::Agents(opts) => handle_agents(&opts.headings, !opts.no_subheadings, opts.full, opts.with_lines, opts.refresh),
+    DocsSubcommand::Agents(opts) => handle_agents(
+      &opts.headings,
+      !opts.no_subheadings,
+      opts.full,
+      opts.contract,
+      opts.with_lines,
+      opts.refresh,
+    ),
     DocsSubcommand::ReadLines(opts) => handle_read_lines(&opts.filename, opts.start, opts.lines, opts.module.as_deref()),
     DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry, &opts.dep, opts.quiet, opts.failures_only),
     DocsSubcommand::FormatMd(opts) => handle_format_md(&opts.file, opts.check),
@@ -405,11 +413,32 @@ fn handle_graph_command(command: &DocsGraphSubcommand) -> Result<(), String> {
 
 const AGENTS_DOC_URL: &str = "https://repo.calcit-lang.org/calcit/docs/CalcitAgent.md";
 const EMBEDDED_AGENTS_DOC: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/CalcitAgent.md"));
+const AGENT_MUTATION_CONTRACT_VERSION: u32 = 1;
+const AGENT_MUTATION_CONTRACT_HEADING: &str = "Mutation contract v1";
 
 struct AgentsDocument {
   content: String,
   display_path: String,
   refreshed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AgentMutationContract {
+  content: String,
+  digest: String,
+}
+
+fn extract_agent_mutation_contract(content: &str) -> Result<AgentMutationContract, String> {
+  let (_, content) = parse_doc_frontmatter(content);
+  let sections = build_heading_sections(&content);
+  let section = sections
+    .iter()
+    .find(|section| section.title == AGENT_MUTATION_CONTRACT_HEADING)
+    .ok_or_else(|| format!("Agents.md is missing the required `{AGENT_MUTATION_CONTRACT_HEADING}` section"))?;
+  let lines = content.lines().collect::<Vec<_>>();
+  let contract = lines[section.line - 1..section.content_end].join("\n") + "\n";
+  let digest = format!("md5:{}", hex::encode(Md5::digest(contract.as_bytes())));
+  Ok(AgentMutationContract { content: contract, digest })
 }
 
 fn get_agents_cache_path() -> Result<PathBuf, String> {
@@ -1097,9 +1126,15 @@ fn handle_agents(
   heading_queries: &[String],
   include_subheadings: bool,
   full: bool,
+  contract: bool,
   with_lines: bool,
   force_refresh: bool,
 ) -> Result<(), String> {
+  if contract && (full || with_lines || !heading_queries.is_empty() || !include_subheadings) {
+    return Err(
+      "`calcit docs agents --contract` cannot be combined with headings, --full, --with-lines, or --no-subheadings".to_string(),
+    );
+  }
   let document = load_agents_document(force_refresh)?;
   if document.refreshed {
     println!("{}", format!("Refreshed remote Agents doc cache from: {AGENTS_DOC_URL}").dimmed());
@@ -1108,6 +1143,22 @@ fn handle_agents(
   validate_doc_frontmatter(&document.display_path, &frontmatter)?;
   let byte_len = content.len();
   let line_len = content.lines().count();
+
+  if contract {
+    let contract = extract_agent_mutation_contract(&document.content)?;
+    println!("{} v{AGENT_MUTATION_CONTRACT_VERSION}", "Agent mutation contract:".dimmed());
+    println!("{} {}", "Agent source:".dimmed(), document.display_path.cyan());
+    println!("{} {}", "Agent contract digest:".dimmed(), contract.digest.cyan());
+    println!(
+      "{} {} bytes, {} lines",
+      "Agent contract length:".dimmed(),
+      contract.content.len().to_string().cyan(),
+      contract.content.lines().count().to_string().cyan()
+    );
+    println!();
+    print!("{}", contract.content);
+    return Ok(());
+  }
 
   println!("{} {}", "Agent source:".dimmed(), document.display_path.cyan());
   println!(

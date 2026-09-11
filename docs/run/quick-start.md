@@ -19,7 +19,7 @@ parent: core/run
 
 # 快速开始（新 LLM 必读）
 
-**硬前置步骤：在执行任何 `calcit edit` / `calcit tree` 修改前，必须先运行一次 `calcit docs agents --full`。**
+**硬前置步骤：在执行任何 `calcit edit` / `calcit tree` 修改前，必须先运行 `calcit docs agents --contract`。首次使用、contract digest 变化或任务超出紧凑契约范围时再运行 `calcit docs agents --full`。**
 
 这不是建议项，而是进入实际修改前的检查项。跳过这一步，往往会直接沿用旧用法假设，尤其容易误判 `calcit tree replace --path ''`、imports 输入格式和 watcher 验收边界。
 

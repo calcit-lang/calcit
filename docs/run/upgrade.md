@@ -227,7 +227,7 @@ caps --help
 更新依赖前先读取当前 Agent/CLI 指南，避免沿用旧命令边界：
 
 ```bash
-calcit docs agents --full
+calcit docs agents --contract
 ```
 
 ### Step C：检查并更新 `deps.cirru`

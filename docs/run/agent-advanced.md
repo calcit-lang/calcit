@@ -239,7 +239,8 @@ echo 'range 10' | calcit exec
 - `calcit docs search keyword` — 在 `docs/` 与 `~/.config/calcit/docs` 中 grep markdown
 - `# see: calcit cirru show-guide` — 读取 Cirru 语法指南
 - `calcit docs read path.md` — 读取任意文档文件
-- `calcit docs agents [<heading> ...] [--full]` — 结构化 Agent 指南
+- `calcit docs agents --contract` — 每个仓库边界重读的版本化 mutation contract
+- `calcit docs agents [<heading> ...] [--full]` — 权威完整 Agent 指南与按 heading 查询
 - `calcit docs read` / `sections` / `remote-libs` 等 — 见 [debugging.md](./debugging.md)
 
 ---

@@ -951,7 +951,7 @@ pub enum DocsSubcommand {
   Sections(DocsSectionsCommand),
   /// read markdown content from calcit guidebook or one installed module
   Read(DocsReadCommand),
-  /// read cached Agents guide (auto-refresh daily)
+  /// read the embedded Agents guide or compact mutation contract
   Agents(DocsAgentsCommand),
   /// read a specific line range from calcit guidebook or installed module docs
   ReadLines(DocsReadLinesCommand),
@@ -1145,7 +1145,7 @@ pub struct DocsReadCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "agents")]
-/// read Agents.md with local cache (~/.config/calcit/Agents.md), refresh if older than 1 day
+/// read the embedded Agents guide, compact mutation contract, or refreshed remote guide
 pub struct DocsAgentsCommand {
   /// heading keyword(s) for fuzzy match, can pass multiple; if omitted, list all markdown headings
   #[argh(positional)]
@@ -1156,6 +1156,9 @@ pub struct DocsAgentsCommand {
   /// show full file content directly
   #[argh(switch)]
   pub full: bool,
+  /// show the compact versioned mutation contract
+  #[argh(switch)]
+  pub contract: bool,
   /// show line numbers in heading list and section titles
   #[argh(switch)]
   pub with_lines: bool,
