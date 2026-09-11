@@ -150,7 +150,7 @@ fn specialize_core_expected_types(
     return contract.expected_types;
   }
   let required_arity = match fn_info.name.as_ref() {
-    "&list:apply" | "&list:sort-by" | "any?" | "contains?" | "each" | "every?" | "includes?" => 2,
+    "&list:apply" | "&list:sort-by" | "contains?" | "includes?" => 2,
     "assoc" | "foldl" | "reduce" | "update" => 3,
     _ => return None,
   };
@@ -175,9 +175,6 @@ fn specialize_core_expected_types(
         _ => return None,
       };
       Some(specialized)
-    }
-    "any?" | "each" | "every?" => {
-      specialize_collection_iteration_expected_types(fn_info.name.as_ref(), receiver_type.as_ref(), expected_types)
     }
     "foldl" | "reduce" => specialize_collection_fold_expected_types(args, scope_types, expected_types),
     "&list:sort-by" => specialize_list_sort_by_expected_types(args, scope_types, expected_types),
@@ -292,32 +289,6 @@ fn specialize_collection_sort_expected_types(
     vec![item_type.clone(), item_type.clone()],
     Arc::new(CalcitTypeAnnotation::Number),
   ));
-  Some(specialized)
-}
-
-fn specialize_collection_iteration_expected_types(
-  fn_name: &str,
-  receiver_type: &CalcitTypeAnnotation,
-  expected_types: &[Arc<CalcitTypeAnnotation>],
-) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
-  let callback_arg = match receiver_type {
-    CalcitTypeAnnotation::List(item_type) | CalcitTypeAnnotation::Set(item_type)
-      if !matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) =>
-    {
-      item_type.clone()
-    }
-    // Map iteration passes a heterogeneous `[key value]` pair. Preserve the
-    // reliable List shape without pretending that both positions have one type.
-    CalcitTypeAnnotation::Map(_, _) => Arc::new(CalcitTypeAnnotation::List(crate::calcit::DYNAMIC_TYPE.clone())),
-    _ => return None,
-  };
-  let mut specialized = expected_types.to_vec();
-  specialized[0] = Arc::new(receiver_type.clone());
-  let callback_return = match fn_name {
-    "each" => crate::calcit::DYNAMIC_TYPE.clone(),
-    _ => Arc::new(CalcitTypeAnnotation::Bool),
-  };
-  specialized[1] = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![callback_arg], callback_return));
   Some(specialized)
 }
 

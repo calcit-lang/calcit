@@ -74,7 +74,7 @@ pub(crate) fn checked_call_contract_arity(fn_ns: &str, fn_def: &str) -> Option<u
     return None;
   }
   match fn_def {
-    "get" | "filter" | "map" | "map-list-kv" | "result:map" => Some(2),
+    "any?" | "each" | "every?" | "get" | "filter" | "map" | "map-list-kv" | "result:map" => Some(2),
     "option:fold" | "update" => Some(3),
     _ => None,
   }
@@ -143,6 +143,49 @@ pub(crate) fn resolve_checked_call_contract(
     });
   }
   match (fn_def, receiver_type.as_ref()) {
+    ("any?" | "every?", T::List(item_type) | T::Set(item_type)) => {
+      let callback_type = if matches!(item_type.as_ref(), T::Syntax(_)) {
+        Arc::new(T::DynFn)
+      } else {
+        fn_type(vec![item_type.clone()], Arc::new(T::Bool))
+      };
+      Some(CheckedCallContract {
+        expected_types: Some(vec![receiver_type.clone(), callback_type]),
+        return_type: Arc::new(T::Bool),
+        lowering: None,
+      })
+    }
+    ("any?" | "every?", T::Map(_, _)) => Some(CheckedCallContract {
+      expected_types: Some(vec![
+        receiver_type.clone(),
+        fn_type(vec![Arc::new(T::List(crate::calcit::DYNAMIC_TYPE.clone()))], Arc::new(T::Bool)),
+      ]),
+      return_type: Arc::new(T::Bool),
+      lowering: None,
+    }),
+    ("each", T::List(item_type) | T::Set(item_type)) => {
+      let callback_type = if matches!(item_type.as_ref(), T::Syntax(_)) {
+        Arc::new(T::DynFn)
+      } else {
+        fn_type(vec![item_type.clone()], crate::calcit::DYNAMIC_TYPE.clone())
+      };
+      Some(CheckedCallContract {
+        expected_types: Some(vec![receiver_type.clone(), callback_type]),
+        return_type: Arc::new(T::Unit),
+        lowering: None,
+      })
+    }
+    ("each", T::Map(_, _)) => Some(CheckedCallContract {
+      expected_types: Some(vec![
+        receiver_type.clone(),
+        fn_type(
+          vec![Arc::new(T::List(crate::calcit::DYNAMIC_TYPE.clone()))],
+          crate::calcit::DYNAMIC_TYPE.clone(),
+        ),
+      ]),
+      return_type: Arc::new(T::Unit),
+      lowering: None,
+    }),
     ("option:fold", T::TypeRef(_, type_args) | T::Enum(_, type_args)) if receiver_type.is_option_type() => {
       let input_type = type_args.first()?.clone();
       let output_type = callback_return_type(args.get(1)?, scope_types)
@@ -463,6 +506,70 @@ mod tests {
   }
 
   #[test]
+  fn iteration_contracts_bind_receiver_members_before_callback_preprocessing() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let list_type = Arc::new(CalcitTypeAnnotation::List(number.clone()));
+    let predicate = Arc::new(CalcitTypeAnnotation::DynFn);
+
+    for fn_name in ["any?", "every?"] {
+      let args = CalcitList::from(&[local("items", list_type.clone()), local("predicate", predicate.clone())] as &[Calcit]);
+      let contract = resolve_checked_call_contract(calcit::CORE_NS, fn_name, &args, &ScopeTypes::new())
+        .expect("typed collection predicates should have one shared contract");
+      let expected = contract.expected_types.expect("predicate contract should carry callback evidence");
+      let CalcitTypeAnnotation::Fn(callback) = expected[1].as_ref() else {
+        panic!("predicate should receive a concrete callback type");
+      };
+      assert_eq!(callback.arg_types.as_slice(), std::slice::from_ref(&number));
+      assert!(matches!(callback.return_type.as_ref(), CalcitTypeAnnotation::Bool));
+      assert!(matches!(contract.return_type.as_ref(), CalcitTypeAnnotation::Bool));
+    }
+
+    let each_args = CalcitList::from(&[local("items", list_type), local("effect", predicate)] as &[Calcit]);
+    let each_contract = resolve_checked_call_contract(calcit::CORE_NS, "each", &each_args, &ScopeTypes::new())
+      .expect("typed each should share the receiver-bound callback contract");
+    let expected = each_contract.expected_types.expect("each should carry callback evidence");
+    let CalcitTypeAnnotation::Fn(callback) = expected[1].as_ref() else {
+      panic!("each should receive a concrete callback type");
+    };
+    assert_eq!(callback.arg_types.as_slice(), std::slice::from_ref(&number));
+    assert!(matches!(callback.return_type.as_ref(), CalcitTypeAnnotation::Dynamic));
+    assert!(matches!(each_contract.return_type.as_ref(), CalcitTypeAnnotation::Unit));
+  }
+
+  #[test]
+  fn iteration_contracts_keep_syntax_members_open_and_map_pairs_shaped() {
+    let syntax = Arc::new(CalcitTypeAnnotation::Syntax(Arc::new(calcit::MacroSyntaxType::Syntax)));
+    let syntax_args = CalcitList::from(&[
+      local("forms", Arc::new(CalcitTypeAnnotation::List(syntax))),
+      local("predicate", Arc::new(CalcitTypeAnnotation::DynFn)),
+    ] as &[Calcit]);
+    let syntax_contract = resolve_checked_call_contract(calcit::CORE_NS, "every?", &syntax_args, &ScopeTypes::new())
+      .expect("syntax iteration should retain a non-generic open callback contract");
+    assert!(matches!(
+      syntax_contract.expected_types.as_ref().unwrap()[1].as_ref(),
+      CalcitTypeAnnotation::DynFn
+    ));
+
+    let map_type = Arc::new(CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::Tag),
+      Arc::new(CalcitTypeAnnotation::Number),
+    ));
+    let map_args = CalcitList::from(&[
+      local("entries", map_type),
+      local("predicate", Arc::new(CalcitTypeAnnotation::DynFn)),
+    ] as &[Calcit]);
+    let map_contract = resolve_checked_call_contract(calcit::CORE_NS, "any?", &map_args, &ScopeTypes::new())
+      .expect("map iteration should preserve its pair shape");
+    let CalcitTypeAnnotation::Fn(callback) = map_contract.expected_types.as_ref().unwrap()[1].as_ref() else {
+      panic!("map predicate should be checked as a function");
+    };
+    assert!(matches!(
+      callback.arg_types.as_slice(),
+      [pair] if matches!(pair.as_ref(), CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic))
+    ));
+  }
+
+  #[test]
   fn get_update_and_filter_share_receiver_bound_types() {
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let string = Arc::new(CalcitTypeAnnotation::String);
@@ -506,6 +613,15 @@ mod tests {
       local("mapper", Arc::new(CalcitTypeAnnotation::DynFn)),
     ] as &[Calcit]);
     assert!(resolve_checked_call_contract(calcit::CORE_NS, "map", &args, &ScopeTypes::new()).is_none());
+
+    let predicate_args = CalcitList::from(&[
+      local("items", crate::calcit::DYNAMIC_TYPE.clone()),
+      local("predicate", Arc::new(CalcitTypeAnnotation::DynFn)),
+    ] as &[Calcit]);
+    assert!(
+      resolve_checked_call_contract(calcit::CORE_NS, "every?", &predicate_args, &ScopeTypes::new()).is_none(),
+      "an open receiver must not invent a callback member type"
+    );
 
     let slot_args = CalcitList::from(&[
       local("items", Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from("unbound-items")))),
