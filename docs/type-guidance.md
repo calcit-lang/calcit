@@ -18,7 +18,7 @@ parent: core/features
 
 `Dynamic` 适合 JS FFI、框架开放数据、宏和确实无法提前知道的外部输入。普通函数不要用多个 `Dynamic` 表示“它们应该是同一个类型”：输入和返回关联时用 `:generics` 与 TypeVar；只需要能力时用 trait 与 `:where`；同质集合写出元素类型；有限异构数据定义为 Enum；可缺失值使用 `Option<T>`，带失败信息使用 `Result<T, E>`。
 
-普通执行和编译不计算 Dynamic 使用率；预处理 warning/error 是类型判断来源。迁移存量项目时再显式运行定位命令：
+每次执行和编译会在 stderr 输出 Dynamic 用量提示。它是趋势信号，不会替代具体路径检查：
 
 ```bash
 calcit analyze check-types --summary-only

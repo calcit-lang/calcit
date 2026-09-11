@@ -5945,6 +5945,13 @@ mod tests {
       &Calcit::List(Arc::new(CalcitList::default())),
       alias_ref("Items").as_ref()
     ));
+    assert!(!value_matches_type_annotation(
+      &Calcit::List(Arc::new(CalcitList::default())),
+      &CalcitTypeAnnotation::TypeRef(
+        Arc::from(format!("{namespace}/Items")),
+        Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]),
+      )
+    ));
     assert!(value_matches_type_annotation(
       &Calcit::Proc(CalcitProc::List),
       alias_ref("Callback").as_ref()
@@ -8490,7 +8497,7 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
       Calcit::Enum(t) => t.sum_type.as_ref().is_some_and(|st| st.name() == expected_enum.name()),
       _ => false,
     },
-    CalcitTypeAnnotation::TypeRef(expected_name, _) => {
+    CalcitTypeAnnotation::TypeRef(expected_name, expected_args) => {
       let nominal_match = match value {
         Calcit::Struct(r) => CalcitTypeAnnotation::type_ref_name_matches(expected_name, r.struct_ref.name.ref_str()),
         Calcit::Enum(t) => t
@@ -8501,7 +8508,9 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
       };
       if nominal_match {
         true
-      } else if let Some(resolved) = resolve_type_ref_as_schema(expected_name) {
+      } else if expected_args.is_empty()
+        && let Some(resolved) = resolve_type_ref_as_schema(expected_name)
+      {
         let Ok(_guard) = enter_alias_relation(expected_name, expected, false, false) else {
           return false;
         };
