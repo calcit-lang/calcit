@@ -30,7 +30,7 @@ related:
 
 1. Snapshot 可解析、可规范化，且没有未审阅的旧配置迁移。
 2. 每个 entry 的 mode、模块和 type-slot 绑定明确。
-3. 类型覆盖没有新增 unresolved dynamic debt；新增公开 API 应优先达到 full coverage。
+3. 默认严格预处理没有类型 warning/error；新增公开 API 的类型关系可由 schema 与推导证明。
 4. 公开 API 的 examples、Markdown 示例和项目测试真实执行通过。
 5. 所有声明支持的 native/JS entry 都完成运行或 codegen。
 6. 至少一个真实消费者项目完成回归；结构性编辑先在 Snapshot 临时副本验证。
@@ -80,7 +80,7 @@ calcit calcit.cirru analyze weak-types \
   --summary-only
 ```
 
-若摘要有命中，去掉 `--summary-only` 获取 definition、Snapshot path、impact 和 suggestion。大型类库可用 `--ns-prefix <package-prefix>` 缩小范围；默认报告已排除依赖/core，不要为验收本库而随意加 `--deps`。
+若摘要有命中，去掉 `--summary-only` 获取 definition、Snapshot path、detail 和 suggestion。大型类库可用 `--ns-prefix <package-prefix>` 缩小范围；默认报告已排除依赖/core，不要为验收本库而随意加 `--deps`。
 
 推荐方案按语义选择：
 
@@ -90,22 +90,15 @@ calcit calcit.cirru analyze weak-types \
 - 有限的异构值：使用 enum，而不是用 `:dynamic` 绕过检查。
 - JS FFI、global state 或 macro 边界确实无法静态确定：保持边界窄，并显式声明 `:features $ #{} :js-ffi`；进入 typed code 前 validate/convert。
 
-`check-types` 与 `weak-types` 是定位报告；`analyze quality` 是带非零失败退出的发布门禁。新类库直接使用零容忍：
+`check-types` 与 `weak-types` 是定位报告；它们不重复判断 Dynamic 能否进入 typed code，也不提供比例、shape/family 排名。新类库以默认严格预处理的 warning/error 为类型门禁，不创建 quality baseline。
 
-普通执行和编译不扫描 Dynamic 使用率。需要迁移概况时显式运行 `calcit calcit.cirru analyze weak-types --only schema-dynamic,code-dynamic --summary-only --format json`；其中 `data.summary.dynamic_usage` 覆盖分析 scope 内的显式 Dynamic schema/code 位置，`weak-types --intent unresolved` 只定位 unresolved intent，quality 的 `schemaDynamic` 则包含受审阅的 macro syntax，而 `unresolved` 还会合并未绑定 type slot 与 nil 债务。不要要求这些辅助数字互相相等，也不要把比例统计当成类型门禁。
-
-```bash
-calcit calcit.cirru analyze quality
-```
-
-存量类库先审阅现状并生成 baseline，再在 CI 中阻止回归：
+已经提交 quality baseline 的存量类库可在 0.14.x 继续执行原命令，作为清债期间的兼容 ratchet：
 
 ```bash
-calcit calcit.cirru analyze quality --write-baseline config/calcit-quality.cirru
 calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 ```
 
-新生成的 v2 baseline 按 definition 保存独立预算，某处清债不能抵消另一处新增债务；其中 `unsafeCoerce` 是独立的 host-boundary 预算。旧 v1/扁平 baseline 仍可读取并维持原有八项检查，审阅后重新生成才会启用这一项。后续只应降低 baseline；不要用 ignore warning 或批量 `:dynamic` 让数字看起来通过。需要机器报告时追加 `--format json`，stdout 仍是单个 JSON envelope。
+后续只应降低已有 baseline；清零后删除命令和文件。不要为新项目生成 baseline，不要用 ignore warning 或批量 `:dynamic` 让数字看起来通过。0.15 将不再把 coverage/Dynamic 数量作为独立类型正确性策略；迁移后的 CI 直接依赖严格检查、公开 API 检查、目标后端测试与真实消费者回归。
 
 将 baseline 保持在 Git 中，并声明为文本形式的生成文件，使 GitHub 语言统计忽略其行数。在项目根目录的 `.gitattributes` 添加：
 
@@ -210,7 +203,7 @@ calcit calcit.cirru docs check-md README.md --failures-only
 calcit calcit.cirru --entry test
 ```
 
-在这条基础链路后追加仓库自己的 JS build、Node/Vite test、FFI build 和真实消费者 smoke test。发布门禁统一执行 `analyze quality`：新类库要求零容忍，存量类库传入已审阅的 `--baseline`；该命令的非零退出码就是回归信号，`--format json` 只用于机器读取和保留定位证据。`unsafeCoerce` 的通过只表示边界数未超预算，不表示 runtime contract 已执行。
+在这条基础链路后追加仓库自己的 JS build、Node/Vite test、FFI build 和真实消费者 smoke test。已有 baseline 的存量类库可暂时追加 `analyze quality --baseline ...`，但它只是 0.14.x 迁移 ratchet；新类库不要采用。`unsafeCoerce` 的数量从来不能证明 runtime contract 已执行。
 
 ## 8. 发布前记录
 

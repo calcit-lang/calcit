@@ -2908,7 +2908,7 @@ mod tests {
     assert_eq!(weak_value["command"], "analyze.weak-types");
     assert_eq!(weak_value["data"]["filters"]["intent"], "unresolved");
     assert_eq!(weak_value["data"]["definitions"][0]["occurrences"][0]["path"], "schema.args.0");
-    assert!(weak_value["data"]["definitions"][0]["occurrences"][0]["impact"].is_string());
+    assert!(weak_value["data"]["definitions"][0]["occurrences"][0]["suggestion"].is_string());
     assert_eq!(weak_value["diagnostics"][0]["code"], "W_DYNAMIC_TYPE_DEBT");
     assert!(
       weak_value["diagnostics"]
@@ -2918,23 +2918,7 @@ mod tests {
         .any(|diagnostic| diagnostic["code"] == "W_NIL_TYPE_DEBT")
     );
     assert_eq!(weak_value["data"]["summary"]["intents"]["declared-unit"], 0);
-    let dynamic_usage = &weak_value["data"]["summary"]["dynamic_usage"];
-    assert_eq!(dynamic_usage["dynamic_positions"], 2);
-    assert_eq!(dynamic_usage["total_positions"], 3);
-    assert_eq!(dynamic_usage["intents"]["unresolved"], 2);
-    assert_eq!(dynamic_usage["unattributed_unresolved"], 0);
-    assert_eq!(dynamic_usage["reconciled"], true);
-    assert_eq!(
-      dynamic_usage["intents"]
-        .as_object()
-        .expect("dynamic intent counts should be an object")
-        .values()
-        .map(|value| value.as_u64().expect("dynamic intent count should be unsigned"))
-        .sum::<u64>(),
-      dynamic_usage["dynamic_positions"]
-        .as_u64()
-        .expect("dynamic position count should be unsigned")
-    );
+    assert!(weak_value["data"]["summary"].get("dynamic_usage").is_none());
     assert_eq!(weak_value["data"]["summary"]["hits"], 3);
     let quality = quality_gate::analyze_quality(
       &QualityCommand {
@@ -3266,51 +3250,6 @@ mod tests {
     let details = row.occurrences.iter().map(|item| item.detail.as_str()).collect::<Vec<_>>();
 
     assert!(details.contains(&"schema-dynamic:root:map-value:list-item"), "details: {details:?}");
-  }
-
-  #[test]
-  fn extract_schema_dynamic_shape_keeps_nested_suffix() {
-    assert_eq!(
-      type_coverage::extract_schema_dynamic_position("schema-dynamic:arg:list-item"),
-      Some("arg".to_owned())
-    );
-    assert_eq!(
-      type_coverage::extract_schema_dynamic_position("schema-dynamic:return"),
-      Some("return".to_owned())
-    );
-    assert_eq!(type_coverage::extract_schema_dynamic_position("code-dynamic:list-item"), None);
-
-    assert_eq!(
-      type_coverage::extract_schema_dynamic_shape("schema-dynamic:arg:list-item"),
-      Some("list-item".to_owned())
-    );
-    assert_eq!(
-      type_coverage::extract_schema_dynamic_shape("schema-dynamic:root:map-value:list-item"),
-      Some("map-value:list-item".to_owned())
-    );
-    assert_eq!(type_coverage::extract_schema_dynamic_shape("schema-dynamic:arg"), None);
-    assert_eq!(type_coverage::extract_schema_dynamic_shape("code-dynamic:list-item"), None);
-  }
-
-  #[test]
-  fn extract_schema_dynamic_family_collapses_shape_variants() {
-    assert_eq!(
-      type_coverage::extract_schema_dynamic_family("schema-dynamic:arg:list-item"),
-      Some("list".to_owned())
-    );
-    assert_eq!(
-      type_coverage::extract_schema_dynamic_family("schema-dynamic:return:map-value"),
-      Some("map".to_owned())
-    );
-    assert_eq!(
-      type_coverage::extract_schema_dynamic_family("schema-dynamic:rest:fn-return"),
-      Some("fn".to_owned())
-    );
-    assert_eq!(
-      type_coverage::extract_schema_dynamic_family("schema-dynamic:root:map-value:list-item"),
-      Some("map".to_owned())
-    );
-    assert_eq!(type_coverage::extract_schema_dynamic_family("schema-dynamic:return"), None);
   }
 
   #[test]

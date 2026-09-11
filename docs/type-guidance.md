@@ -18,7 +18,7 @@ parent: core/features
 
 `Dynamic` 适合 JS FFI、框架开放数据、宏和确实无法提前知道的外部输入。普通函数不要用多个 `Dynamic` 表示“它们应该是同一个类型”：输入和返回关联时用 `:generics` 与 TypeVar；只需要能力时用 trait 与 `:where`；同质集合写出元素类型；有限异构数据定义为 Enum；可缺失值使用 `Option<T>`，带失败信息使用 `Result<T, E>`。
 
-每次执行和编译会在 stderr 输出 Dynamic 用量提示。它是趋势信号，不会替代具体路径检查：
+普通执行、编译和严格检查只报告可执行的 warning/error，不计算 Dynamic 比例。迁移存量代码时再显式查询具体位置：
 
 ```bash
 calcit analyze check-types --summary-only
@@ -40,22 +40,24 @@ calcit edit schema app.schema/Items --code "quote \$ :: 'List 'Number"
 
 对已知 receiver 的集合调用，成员类型会先进入 inline callback 的参数与函数体，再由同一份 contract 检查调用参数和推断返回值。`any?`、`every?` 与 `each` 因而不需要让 callback 暂存未实例化的泛型，也不需要为使用它们的宏增加例外。
 
-## 用原生 quality gate 阻止类型债务回归
+## 严格检查与迁移期 quality baseline
 
-新项目直接要求所有发布指标归零：
+新项目以默认严格预处理和实际目标测试作为发布门禁：
 
 ```bash
-calcit calcit.cirru analyze quality
+calcit calcit.cirru --check-only
+calcit calcit.cirru --entry test
 ```
 
-存量项目先审阅当前结果并写入 baseline，随后在 CI 中只执行比较命令：
+`analyze check-types` 与 `analyze weak-types` 只帮助定位迁移清单，不决定程序是否类型正确，也不输出 Dynamic 比例、shape/family 排名或另一套关系判断。需要清理时使用 kind、intent、definition、path 和 detail 回到源码；值能否进入 typed code 只由严格预处理诊断决定。
+
+已有 CI 的 `analyze quality` 与 baseline 在 0.14.x 保留为有界兼容面，便于存量项目逐步把债务清零：
 
 ```bash
-calcit calcit.cirru analyze quality --write-baseline config/calcit-quality.cirru
 calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 ```
 
-门禁同时覆盖未完整类型、unresolved Dynamic、未迁移的 nil/Optional、deprecated calls 与显式 `unsafe-coerce`。`unsafeCoerce` 是独立的 host-boundary 预算，不能当作已解决的 Dynamic。原生 v2 baseline 按 definition 保存预算，新债务不能被其他 definition 的改善抵消；旧 v1/扁平 baseline 仍只执行它们原来的八项指标，审阅后重新生成 baseline 才会启用这个新预算。`--write-baseline` 只用于明确审阅后的更新，不应作为每次 CI 的前置步骤。需要机器读取时追加 `--format json`，失败时 stdout 仍是单个 JSON，进度与错误摘要写入 stderr。
+兼容期不要为新项目生成 baseline，也不要增加 metric、intent 或统计协议。每次迁移应降低已有预算，并同时保证默认严格检查通过；清零后从 CI 删除 baseline 命令和文件。0.15 将不再把 coverage/Dynamic 数量当作独立的类型正确性策略，具体删除范围以届时 release migration note 为准。
 
 baseline 是已提交的 Cirru EDN 机器生成工件。为使 GitHub 语言统计忽略其行数，同时保留文本 diff，
 可在项目根目录的 `.gitattributes` 加入生成物标记：

@@ -47,7 +47,7 @@ The static analysis system provides:
 - **Type annotations** - Optional type hints for function parameters and return values
 - **Compile-time warnings** - Catches errors before code execution
 - **Completion warnings** - Keeps scaffolded `todo!` paths visible to Agents
-- **CI quality gate**: `calcit analyze quality --baseline config/calcit-quality.cirru`
+- **严格 CI 检查**：默认预处理 warning/error、公开 API 检查与目标后端测试
 - **Composable runtime assertions** - `assert-type` and `assert-traits` can validate values at runtime and return original values for chaining
 
 ## Static Project Reports
@@ -74,11 +74,7 @@ calcit analyze dynamic-methods
 # Enforce a reviewed dynamic-dispatch budget in CI
 calcit analyze dynamic-methods --max 4 --summary-only --format json
 
-# Enforce zero type/weak-type/deprecated debt with a non-zero failure exit
-calcit analyze quality
-
-# Bootstrap and enforce a reviewed baseline for an existing project
-calcit analyze quality --write-baseline config/calcit-quality.cirru
+# Existing 0.14.x projects may keep enforcing an already reviewed baseline
 calcit analyze quality --baseline config/calcit-quality.cirru
 
 # Focus only on unresolved type debt
@@ -115,7 +111,7 @@ calcit analyze check-examples --ns app.main --def 'detect-nodejs?' --js
 calcit query type-at app.main/calculate-total --path code@3.2 --format json
 ```
 
-`check-types` treats nested dynamic slots such as bare `:ref`, `:list`, or `:map` as partial coverage and includes actionable `[W_SCHEMA_DYNAMIC]` entries in `schema_issues`. An unbound `*type-slot` is also partial and emits `[W_UNRESOLVED_TYPE_SLOT]`; bind it in the selected entry or explicitly choose `:dynamic` for a documented boundary. When partial/none definitions exist, human output adds an `agent-note` and JSON emits `W_TYPE_COVERAGE_GAPS`. Strict preprocessing reports `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA` when a reachable project function has neither a structured root schema nor an embedded structured `Fn` hint, or when a programmatically supplied macro that reaches preprocessing has no structured root schema; a nested function hint is not macro-contract evidence. Replace a missing or whole-`Dynamic` root with a structured contract and keep any reviewed `Dynamic` at an exact nested position. Existing embedded `Fn` hints remain valid function-contract evidence during Snapshot migration. Normal Snapshot-loaded macros follow an earlier, stricter path: a legacy runtime `Fn` or whole-`Dynamic` macro schema is rejected with its definition path during Snapshot loading, before static analysis starts. For an already structured `CodeEntry`, migrate it with the final compatible Calcit 0.13.51 release, then declare phase-aware `Macro` fields explicitly. An earlier direct-quote definition instead uses current `edit format`, which derives only parameter arity as `Syntax`, emits `Expr<Dynamic>`, and grants no capabilities; it does not rewrite existing Dynamic schemas or guess semantic contracts. Use `--deps`: release audits must inspect resolved module artifacts, not only each dependency's current source branch. `weak-types --format json` reports the exact Snapshot/schema path plus an `impact` and `suggestion` for every occurrence; unresolved dynamic debt emits `W_DYNAMIC_TYPE_DEBT`, unbound slots emit `W_UNRESOLVED_TYPE_SLOT`, while unresolved or compatibility-Optional nil debt emits `W_NIL_TYPE_DEBT`. Definitions marked with the explicit `:js-ffi` feature remain classified as intentional boundaries rather than ordinary unresolved dynamic debt. The bundled-core classification is position-specific: a receiver may remain queued for a future capability while its key, callback, or return position is retained as `compiler-specialized-contracts` only when preprocessing has focused receiver-driven checking or inference regressions. This records recovered type flow without treating the whole fallback contract as fully typed.
+`check-types` 会把裸 `:ref`、`:list`、`:map` 等嵌套 Dynamic slot 记为 partial coverage，并在 `schema_issues` 中返回 `[W_SCHEMA_DYNAMIC]`；未绑定的 `*type-slot` 同样记为 partial 并返回 `[W_UNRESOLVED_TYPE_SLOT]`。严格预处理才负责类型正确性：可达项目函数缺少结构化 root schema 或嵌入式 `Fn` hint 时返回 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`；通过程序直接注入且没有结构化 root schema 的 macro 也会被拒绝。Snapshot loader 会更早拒绝旧 runtime `Fn` 或 whole-`Dynamic` macro schema。发布审计使用 `--deps` 检查实际解析的 module artifact。`weak-types --format json` 只提供迁移定位所需的 definition、path、detail、intent、evidence 与 suggestion；unresolved Dynamic、未绑定 slot、nil/Optional 债务分别产生 `W_DYNAMIC_TYPE_DEBT`、`W_UNRESOLVED_TYPE_SLOT`、`W_NIL_TYPE_DEBT`。声明 `:js-ffi` feature 的 definition 仍标记为明确边界，但 analyzer 不据此改变编译语义。
 
 ### Target-aware public definition checks
 
@@ -199,7 +195,7 @@ evidence based: compiler or reviewed macro lowering, core internals, reusable
 every declared field exactly once, and indexed IR with a matching concrete layout
 are preserved. Missing, duplicate, or unknown constructor fields do not qualify.
 
-`analyze quality` combines the release-facing metrics from `check-types`, `weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce --intent unresolved,intentional-macro-syntax,declared-unit,declared-optional,explicit-unsafe`, and `deprecated`. Intentional macro syntax remains in the `schemaDynamic` budget so new open macro positions cannot bypass review, while only unresolved positions increment the `unresolved` budget. `unsafeCoerce` is an independent budget for explicit host assertions; it is not folded into unresolved Dynamic debt. With no baseline it is a zero-debt gate. `--baseline <file>` compares against a committed baseline and exits non-zero on regression; `--write-baseline <file>` atomically writes a reviewed native baseline. Native v2 baselines keep budgets per definition, so improving one definition cannot hide new debt in another. Native v1 and the older flat eight-metric shape remain readable and preserve their original eight-metric enforcement; v1 is reported as `native-baseline-v1` and does not claim an `unsafeCoerce` delta. Regenerate a reviewed baseline to adopt that budget. Scope flags (`--ns`, `--ns-prefix`, `--deps`) are recorded in native baselines and must match when they are enforced.
+`analyze quality` 在 0.14.x 继续读取已有 v1/v2 baseline，兼容仍依赖它的 CI。它把 `check-types`、`weak-types` 与 `deprecated` 的迁移数量按 definition 比较，但不拥有类型正确性语义。新项目不要创建 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。`--write-baseline` 只为维护当前 core 或现有兼容工件保留，不能作为新项目的起点。
 
 Calcit's bundled Cirru core uses `config/calcit-core-quality.cirru` as a per-definition Cirru EDN migration baseline. `yarn check-core-quality`, the pull-request workflow, and the release workflow reject new or increased Dynamic/type-coverage debt while existing contracts are migrated incrementally. After a reviewed cleanup, regenerate the baseline with `calcit src/cirru/calcit-core.cirru analyze quality --write-baseline config/calcit-core-quality.cirru --format json`; never regenerate it merely to make an unexplained regression pass. A `.json` output path remains available only for external tooling that explicitly requires JSON. Track retained open boundaries and cleanup batches in [calcit#579](https://github.com/calcit-lang/calcit/issues/579).
 
@@ -245,15 +241,13 @@ warning remains a completion-gate failure until the body is implemented.
 `raise "|TODO..."` does not emit `W_TODO`, because ordinary exception behavior
 and implementation-completion status are separate concerns.
 
-`analyze.weak-types` 使用 `schema_version: 6`。v2 增加 nil intent 分类，v3 增加封闭的 `unresolved-type-slot` kind 与 `W_UNRESOLVED_TYPE_SLOT`，v4 增加封闭的 `unsafe-coerce` kind、`explicit-unsafe` intent、目标 schema 细节与 `W_JS_FFI_UNCHECKED_COERCE`，v5 增加每个 occurrence 的静态边界 `evidence`，v6 增加 `data.summary.dynamic_usage` 对账对象。消费者依赖新字段时应拒绝旧版本，不能接受旧 envelope 后静默漏掉新债务。
+`analyze.weak-types` 保留 `schema_version: 6` 兼容已有 envelope；迁移视图只输出一次共享扫描得到的 kind、intent、definition、path、detail、evidence 与 suggestion。不再输出 `data.summary.dynamic_usage`，也不再递归计算 Dynamic 比例、分母、shape/family 排名或对账策略。删除这些无人消费的辅助字段不改变严格预处理语义。
 
-普通执行和编译不会扫描或打印 Dynamic 使用率；静态类型判断由预处理阶段的 warning/error 负责。`data.summary.dynamic_usage` 仅在显式运行 `analyze weak-types --format json` 时生成，用于迁移审阅：它统计当前分析 scope 中持久化 definition 的显式 Dynamic 位置，schema annotation node 会递归计入容器成员、函数参数/返回/rest、nominal type argument，以及 macro 的 `Expr`/expansion 位置；代码中的显式 `:dynamic`/`:any` marker 也计入。分母是同一范围内的全部 schema annotation node 加这些显式代码 marker。
+普通执行、编译和严格检查只依据类型推导产生确定的 warning/error。需要迁移存量代码时，显式运行 `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json`，按 definition/path 返回源码处理；不要把命中数量解释成类型正确性，也不要围绕数量增加阈值或分类规则。
 
-需要迁移计数时运行 `calcit analyze weak-types --only schema-dynamic,code-dynamic --summary-only --format json`。`data.summary.dynamic_usage.dynamic_positions` 与 `total_positions` 对应同一分子和分母，`intents` 使用现有 weak-type intent taxonomy 划分分子；`unattributed_unresolved` 暂存尚无 occurrence path 的位置，且也合入 `intents.unresolved`。只有 `reconciled: true` 且全部 intent 计数之和等于 `dynamic_positions` 才表示内部对账成立。`--ns`、`--ns-prefix` 或 `--deps` 会同时改变明细与该对象的范围。这些计数不参与普通编译，也不根据比例产生 notice/warning。
+`analyze quality` 的 v1/v2 baseline 读取在 0.14.x 保留，服务仍依赖它的现有 CI。新项目不再生成 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。0.15 将不再把 coverage/Dynamic 数量作为独立的类型正确性策略，实际删除范围由对应 release migration note 确认。
 
-这些数字表达不同问题，因此不要求彼此相等：`dynamic_usage` 包含显式分析 scope 内的全部 Dynamic；`weak-types --intent unresolved` 只显示未解决位置；quality 的 `schemaDynamic` 还保留需要预算审阅的 macro syntax，而 `unresolved` 会合并 unresolved schema/code Dynamic、未绑定 type slot 与 nil 债务。human quality output 在 `schemaDynamic` 与 `unresolved` 不同时会提示这项策略差异。
-
-Use `--summary-only` when only aggregate counts are needed. Human output stops after the aggregate section; JSON keeps `data.summary` and the scope revision while returning an empty `data.definitions` array. `defstruct`, `defenum`, `deftrait`, and `defimpl` have explicit definition-kind schemas: `StructDef`, `EnumDef`, `Trait`, and `Impl`. Legacy snapshots that used `Dynamic` at these roots are normalized on load and written back with the marker. Their fields, enum payloads, and methods are still analyzed normally, but the declaration root itself neither creates a `schema-dynamic` finding nor increases Dynamic usage counts.
+只需要 kind/intent 汇总时使用 `--summary-only`；human 输出在汇总后停止，JSON 保留 `data.summary` 与 scope revision，并返回空的 `data.definitions`。`defstruct`、`defenum`、`deftrait`、`defimpl` 使用明确的 definition-kind schema：`StructDef`、`EnumDef`、`Trait`、`Impl`。旧 Snapshot 的 Dynamic root 会在加载时规范化；字段、Enum payload 和方法仍正常进入迁移扫描，但 declaration root 本身不产生 `schema-dynamic` finding。
 
 `check-examples` reports pass/fail and elapsed time without printing the final example value, which can be a very large function, struct, or component tree. Output explicitly produced by an example is still shown. Pass `--js` to compile the generated examples entry and execute it with Node.js; this is intended for definitions whose examples use JavaScript-only FFI syntax such as `exists? js/process`.
 
