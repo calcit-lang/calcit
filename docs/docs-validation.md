@@ -135,6 +135,9 @@ calcit docs graph orphans
 # Agents frontmatter should not leak into output
 calcit docs agents
 
+# Compact mutation contract should print a version, digest, and bounded rules
+calcit docs agents --contract
+
 # Module Agents and module docs should both participate in ranking
 calcit docs search render --module respo.calcit
 calcit docs search clear-cache --module respo.calcit

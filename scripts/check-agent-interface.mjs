@@ -642,6 +642,19 @@ for (const scenario of scenarios) {
   });
 }
 
+const contractChild = spawnSync(binary, ["docs", "agents", "--contract"], {
+  cwd: process.cwd(),
+  encoding: "utf8",
+  maxBuffer: 64 * 1024,
+  env: { ...process.env, NO_COLOR: "1" },
+});
+assert.ifError(contractChild.error);
+assert.equal(contractChild.status, 0, contractChild.stderr);
+assert.match(contractChild.stdout, /Agent mutation contract: v1/);
+assert.match(contractChild.stdout, /Agent contract digest: md5:[0-9a-f]{32}/);
+assert.match(contractChild.stdout, /calcit docs read edit-tree\.md 'Atomic Transactions'/);
+assert.ok(Buffer.byteLength(contractChild.stdout) < 5_000, "compact mutation contract should remain bounded");
+
 // Real CLI round trips, including the legacy wire format and negative paths.
 const fixtureDir = mkdtempSync(join(tmpdir(), "calcit-query-def-"));
 try {
@@ -683,5 +696,5 @@ try {
   rmSync(fixtureDir, { recursive: true, force: true });
 }
 
-console.log(`Agent interface smoke passed: ${rows.length}/${scenarios.length}, plus definition protocol round trips`);
+console.log(`Agent interface smoke passed: ${rows.length}/${scenarios.length}, plus mutation contract and definition protocol round trips`);
 console.table(rows);

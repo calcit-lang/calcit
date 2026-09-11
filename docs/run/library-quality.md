@@ -41,7 +41,7 @@ related:
 开始修改前先读取当前 Agent 指南：
 
 ```bash
-calcit docs agents --full
+calcit docs agents --contract
 ```
 
 检查并规范化目标 Snapshot：

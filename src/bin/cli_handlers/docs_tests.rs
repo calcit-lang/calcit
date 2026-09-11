@@ -1,9 +1,9 @@
 use super::{
-  CirruCheckMode, GuideDoc, GuideDocFrontmatter, GuideDocScope, collect_check_md_module_paths, collect_docs_for_query,
-  collect_search_results, extract_cirru_blocks, find_doc_by_query, format_markdown_cirru_blocks, handle_check_md, handle_format_md,
-  list_doc_scopes_for_project, load_agents_document, load_entry_snapshot_for_check_md, load_module_docs_for_project,
-  load_module_docs_from_dir, parse_doc_frontmatter, parse_doc_knowledge_metadata, run_edn_parse_only, score_doc_query, score_doc_shape,
-  validate_doc_frontmatter,
+  AGENT_MUTATION_CONTRACT_VERSION, CirruCheckMode, EMBEDDED_AGENTS_DOC, GuideDoc, GuideDocFrontmatter, GuideDocScope,
+  collect_check_md_module_paths, collect_docs_for_query, collect_search_results, extract_agent_mutation_contract, extract_cirru_blocks,
+  find_doc_by_query, format_markdown_cirru_blocks, handle_check_md, handle_format_md, list_doc_scopes_for_project,
+  load_agents_document, load_entry_snapshot_for_check_md, load_module_docs_for_project, load_module_docs_from_dir,
+  parse_doc_frontmatter, parse_doc_knowledge_metadata, run_edn_parse_only, score_doc_query, score_doc_shape, validate_doc_frontmatter,
 };
 use std::ffi::OsString;
 use std::fs;
@@ -110,6 +110,32 @@ fn agents_docs_default_to_the_version_matched_embedded_guide() {
   assert!(document.content.contains("symbol leaf:    quote new-name"));
   assert!(document.content.contains("calcit cirru parse -e --validate"));
   assert!(document.content.contains("calcit docs search 'cursor'"));
+}
+
+#[test]
+fn compact_agent_contract_is_versioned_bounded_and_embedded_in_the_full_guide() {
+  let contract = extract_agent_mutation_contract(EMBEDDED_AGENTS_DOC).expect("embedded guide should contain the mutation contract");
+  let repeated = extract_agent_mutation_contract(EMBEDDED_AGENTS_DOC).expect("contract extraction should be deterministic");
+
+  assert_eq!(AGENT_MUTATION_CONTRACT_VERSION, 1);
+  assert_eq!(contract, repeated);
+  assert_eq!(contract.digest, "md5:c57c723d4af4e4b3c43c3fd7469b4dae");
+  assert!(contract.content.lines().count() <= 40, "contract should stay cheap to reload");
+  assert!(contract.content.len() <= 5_000, "contract should stay compact");
+  assert!(EMBEDDED_AGENTS_DOC.contains(&contract.content));
+
+  for required in [
+    "AGENTS.md",
+    "绝不能用文本 patch",
+    "deps.cirru :calcit-version",
+    "mutation 必须串行",
+    "修改前展示真实 subtree",
+    "模块仓库",
+    "calcit docs agents --full",
+    "calcit docs read edit-tree.md 'Atomic Transactions'",
+  ] {
+    assert!(contract.content.contains(required), "compact contract is missing `{required}`");
+  }
 }
 
 #[test]
