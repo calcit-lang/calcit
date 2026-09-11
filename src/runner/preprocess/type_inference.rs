@@ -29,8 +29,8 @@ use cirru_edn::EdnTag;
 
 use super::{
   ScopeTypes, checked_call_contract::resolve_checked_call_contract, find_method_entry_for_type, find_trait_field_type,
-  get_impls_from_type, resolve_local_type_refs_for_body, resolve_namespace_type_refs_for_body, resolve_program_trait_refs_for_body,
-  resolve_trait_def_from_source_code, selected_trait_method, tag_annotation, trait_is_external_object, trait_list_from_type,
+  get_impls_from_type, lookup_source_backed_trait_def, resolve_local_type_refs_for_body, resolve_namespace_type_refs_for_body,
+  resolve_program_trait_refs_for_body, selected_trait_method, tag_annotation, trait_is_external_object, trait_list_from_type,
 };
 
 // ---------------------------------------------------------------------------
@@ -123,9 +123,7 @@ fn resolve_trait_type_ref(value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnn
   let Some((ns, def)) = name.rsplit_once('/') else {
     return value;
   };
-  if let Some(code) = program::lookup_def_code(ns, def)
-    && let Some(trait_def) = resolve_trait_def_from_source_code(&code)
-  {
+  if let Some(trait_def) = lookup_source_backed_trait_def(ns, def) {
     return Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def.with_definition_ref(ns, def))));
   }
   if let Some(resolved) = infer_definition_value_type(ns, def)

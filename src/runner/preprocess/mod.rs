@@ -616,6 +616,10 @@ fn resolve_trait_def_from_source_code(code: &Calcit) -> Option<CalcitTrait> {
   None
 }
 
+fn lookup_source_backed_trait_def(ns: &str, def: &str) -> Option<CalcitTrait> {
+  program::lookup_def_code(ns, def).and_then(|code| resolve_trait_def_from_source_code(&code))
+}
+
 fn parse_trait_name_from_source(form: &Calcit) -> Option<EdnTag> {
   match form {
     Calcit::Symbol { sym, .. } | Calcit::Str(sym) => Some(EdnTag::from(sym.as_ref())),
@@ -855,8 +859,7 @@ fn resolve_program_trait_refs_for_body(annotation: Arc<CalcitTypeAnnotation>) ->
     if !resolved_args.is_empty() {
       return Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args));
     }
-    program::lookup_def_code(ns, def)
-      .and_then(|code| resolve_trait_def_from_source_code(&code))
+    lookup_source_backed_trait_def(ns, def)
       .map(|trait_def| Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def.with_definition_ref(ns, def)))))
       .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args)))
   })
