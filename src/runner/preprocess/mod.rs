@@ -842,6 +842,26 @@ fn resolve_namespace_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, d
   })
 }
 
+/// Resolve a qualified source-backed trait reference when an expression-level
+/// type assertion carries it outside a function schema. Structs and enums have
+/// global `TypeRef` resolvers; traits need the same source lookup so JS
+/// external-object lowering does not fall back to dynamic method dispatch.
+fn resolve_program_trait_refs_for_body(annotation: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  map_type_refs_for_body(annotation, &|name, resolved_args| {
+    let normalized = name.trim_start_matches('\'').trim_start_matches(':');
+    let Some((ns, def)) = normalized.rsplit_once('/') else {
+      return Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args));
+    };
+    if !resolved_args.is_empty() {
+      return Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args));
+    }
+    program::lookup_def_code(ns, def)
+      .and_then(|code| resolve_trait_def_from_source_code(&code))
+      .map(|trait_def| Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def.with_definition_ref(ns, def)))))
+      .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args)))
+  })
+}
+
 fn unwrap_named_body_parameter_type(annotation: Arc<CalcitTypeAnnotation>, parameter: Option<&Arc<str>>) -> Arc<CalcitTypeAnnotation> {
   let Some(parameter) = parameter else {
     return annotation;
@@ -12720,6 +12740,39 @@ mod tests {
       },
     );
     Arc::new(trait_def)
+  }
+
+  #[test]
+  fn qualified_expression_type_ref_resolves_source_backed_external_trait() {
+    let _guard = lock_preprocess_test_state();
+    seed_external_field_trait(true);
+    let type_form = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::Quote, Arc::from("tests.external-field")),
+      external_field_test_symbol("tests.external-field/HostElement"),
+    ]);
+    let expression = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::UnsafeCoerce, Arc::from("tests.external-field")),
+      Calcit::Nil,
+      type_form,
+    ]);
+    let resolved = infer_type_from_expr(&expression, &ScopeTypes::new()).expect("unsafe-coerce should retain its declared trait type");
+
+    let CalcitTypeAnnotation::Trait(trait_def) = resolved.as_ref() else {
+      panic!("qualified external trait should resolve from source, got {resolved:?}");
+    };
+    assert_eq!(trait_def.definition_ref.as_deref(), Some("tests.external-field/HostElement"));
+    assert!(trait_is_external_object(trait_def.as_ref()));
+  }
+
+  #[test]
+  fn unresolved_expression_type_ref_is_not_invented_as_a_trait() {
+    let _guard = lock_preprocess_test_state();
+    let unresolved = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("tests.external-field/MissingType"),
+      Arc::new(vec![]),
+    ));
+    let resolved = resolve_program_trait_refs_for_body(unresolved.clone());
+    assert_eq!(resolved, unresolved);
   }
 
   struct JsFfiFeaturePolicyGuard;
