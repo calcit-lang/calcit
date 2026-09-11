@@ -242,6 +242,7 @@ let
 - `&map:contains?`, `&map:includes?` - key membership
 - `keys`, `vals` - extract keys/values
 - `to-pairs`, `pairs-map` - convert to/from pairs
+- `map-list-kv` - collect `List<U>` with a typed `Fn(K,V)->U` callback
 - `&map:filter`, `&map:filter-kv` - filter entries
 - `&map:common-keys`, `&map:diff-keys` - key operations
 

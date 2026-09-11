@@ -50,6 +50,17 @@ fn callback_return_type(callback: &Calcit, scope_types: &ScopeTypes) -> Option<A
   }
 }
 
+pub(crate) fn checked_call_contract_arity(fn_ns: &str, fn_def: &str) -> Option<usize> {
+  if fn_ns != calcit::CORE_NS {
+    return None;
+  }
+  match fn_def {
+    "get" | "filter" | "map" | "map-list-kv" => Some(2),
+    "option:fold" | "update" => Some(3),
+    _ => None,
+  }
+}
+
 /// Follow concrete type-slot bindings while leaving unresolved or cyclic slots
 /// open for compatibility handling by the caller.
 pub(crate) fn resolve_bound_type_slot_chain(mut type_value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
@@ -77,17 +88,10 @@ pub(crate) fn resolve_checked_call_contract(
 ) -> Option<CheckedCallContract> {
   use CalcitTypeAnnotation as T;
 
-  if fn_ns != calcit::CORE_NS {
-    return None;
-  }
   if fn_def == "option:fold" && !super::strict_types_enabled() {
     return None;
   }
-  let required_arity = match fn_def {
-    "get" | "filter" | "map" => 2,
-    "option:fold" | "update" => 3,
-    _ => return None,
-  };
+  let required_arity = checked_call_contract_arity(fn_ns, fn_def)?;
   if args.len() != required_arity {
     return None;
   }
@@ -204,6 +208,18 @@ pub(crate) fn resolve_checked_call_contract(
         lowering: Some(CheckedCallLowering::CoreDef("&map:map")),
       })
     }
+    ("map-list-kv", T::Map(key_type, value_type)) => {
+      let output_type =
+        callback_return_type(args.get(1)?, scope_types).unwrap_or_else(|| Arc::new(T::TypeVar(Arc::from("MapListOutput"))));
+      Some(CheckedCallContract {
+        expected_types: Some(vec![
+          receiver_type.clone(),
+          fn_type(vec![key_type.clone(), value_type.clone()], output_type.clone()),
+        ]),
+        return_type: Arc::new(T::List(output_type)),
+        lowering: None,
+      })
+    }
     ("filter", T::List(item_type)) | ("filter", T::Set(item_type)) if matches!(item_type.as_ref(), T::Syntax(_)) => {
       let target = if matches!(receiver_type.as_ref(), T::List(_)) {
         "&list:filter"
@@ -270,6 +286,31 @@ mod tests {
     assert_eq!(callback.return_type, string.clone());
     assert_eq!(contract.return_type, Arc::new(CalcitTypeAnnotation::List(string)));
     assert_eq!(contract.lowering, Some(CheckedCallLowering::CoreDef("&list:map")));
+  }
+
+  #[test]
+  fn map_list_kv_contract_preserves_both_map_members_and_callback_output() {
+    let key = Arc::new(CalcitTypeAnnotation::Tag);
+    let value = Arc::new(CalcitTypeAnnotation::String);
+    let output = Arc::new(CalcitTypeAnnotation::Number);
+    let receiver = Arc::new(CalcitTypeAnnotation::Map(key.clone(), value.clone()));
+    let mapper = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![key.clone(), value.clone()],
+      output.clone(),
+    ));
+    let args = CalcitList::from(&[local("options", receiver.clone()), local("measure", mapper)] as &[Calcit]);
+
+    let contract = resolve_checked_call_contract(calcit::CORE_NS, "map-list-kv", &args, &ScopeTypes::new())
+      .expect("typed map-list-kv should have a checked contract");
+    let expected_types = contract.expected_types.as_ref().expect("map-list-kv should bind checking evidence");
+    assert_eq!(expected_types[0], receiver);
+    let CalcitTypeAnnotation::Fn(callback) = expected_types[1].as_ref() else {
+      panic!("map-list-kv callback should be checked as a function");
+    };
+    assert_eq!(callback.arg_types.as_slice(), &[key, value]);
+    assert_eq!(callback.return_type, output.clone());
+    assert_eq!(contract.return_type, Arc::new(CalcitTypeAnnotation::List(output)));
+    assert_eq!(contract.lowering, None);
   }
 
   #[test]

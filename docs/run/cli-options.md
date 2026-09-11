@@ -209,7 +209,8 @@ these diagnostics are not limited to callbacks that return nil:
 
 - `W_MAP_KV_UNPROVEN_CONTRACT`: compatibility-mode typed project code called
   legacy `map-kv`. Its pair/drop protocol exposes only `Dynamic`;
-  migrate to `filter-map-kv` and `MapEntryDecision`.
+  migrate to `filter-map-kv` and `MapEntryDecision` for a Map result, or
+  `map-list-kv` for a typed `List<U>` result.
 - `E_MAP_KV_UNPROVEN_CONTRACT`: strict-mode form of the same migration gate.
   It rejects both prefix `map-kv` and postfix `.map-kv` calls rather than
   allowing an expected result type to invent unproven key/value bindings.

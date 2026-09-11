@@ -139,6 +139,25 @@ the call with `E_MAP_KV_UNPROVEN_CONTRACT`; a structurally visible nil return
 keeps the more specific `E_NIL_CALLBACK_SENTINEL`. Migrate both transform-only
 and transform-and-drop code to `filter-map-kv`.
 
+### `map-list-kv` — collect typed entry results
+
+`map-list-kv` calls a two-argument callback for every entry and collects its
+results in a list. Its contract preserves all three related types:
+`Map<K,V>`, `Fn(K,V)->U`, and `List<U>`.
+
+```cirru
+let
+    options $ {} (:color |red) (:size |large)
+    lines $ map-list-kv options $ fn (key value)
+      str (turn-string key) |= value
+  join-str (sort lines) |\n
+```
+
+Map iteration order is not an ordering contract; sort the returned list when
+deterministic rendered output is needed. Unlike `.to-list` followed by `.map`,
+the callback receives `K` and `V` directly, so neither side is erased to
+`Dynamic`.
+
 ### `filter-map-kv` — typed transform and filter
 
 `filter-map-kv` requires the callback to return a
@@ -156,8 +175,8 @@ let
   ; => ({} (:a 1) (:b 2))
 ```
 
-The method form is also available as `.filter-map-kv`. This is the single
-recommended typed map-entry transformation API: its nominal decision lets the
+The method form is also available as `.filter-map-kv`. Use it when the result
+must remain a map or entries may be dropped; its nominal decision lets the
 compiler relate callback payloads to the resulting map's key and value types.
 
 ### `to-pairs` — convert to set of pairs

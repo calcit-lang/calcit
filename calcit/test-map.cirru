@@ -10,7 +10,7 @@
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-get) (test-shorthand) (test-filter-map-kv) (do true)
+            defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-get) (test-shorthand) (test-filter-map-kv) (test-map-list-kv) (do true)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -90,6 +90,19 @@
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
+              :args $ []
+        'test-map-list-kv $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-map-list-kv () $ let
+                lines $ map-list-kv
+                  {} (:color |red) (:size |large)
+                  fn (key value)
+                    str (turn-string key) |= value
+              assert-type lines $ :: 'List 'String
+              assert= |color=red,size=large $ join-str (sort lines) |,
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
               :args $ []
         'test-maps $ %{} 'CodeEntry (:doc |)
           :code $ quote
