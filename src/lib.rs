@@ -247,6 +247,7 @@ pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Ca
       stack: CallStackList::default(),
       location: None,
       hint: None,
+      provenance: Box::default(),
     });
   }
 

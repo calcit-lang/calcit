@@ -259,6 +259,14 @@ the callee is intentionally open, put that operation behind a small adapter
 whose structured contract does not claim the generic relationship. With
 `--compat-types`, the existing compatibility behavior is unchanged.
 
+If a typed operation directly introduced the open value, the error includes a
+single bounded origin and migration direction. The first supported trace is
+`Map<K,Dynamic> -> get -> Option<Dynamic> -> generic consumer`: human output
+names the receiver and source path, while JSON diagnostics include a
+`provenance` array with `operation`, `definition`, `path`, `type`,
+`output_type`, `flow`, and `migration`. Direct `Dynamic` arguments do not gain
+a speculative trace.
+
 `E_DYNAMIC_NOMINAL_ARGUMENT` rejects a project call when an explicitly open
 `Dynamic` value, or a matching container with a `Dynamic` member, enters an
 argument whose contract contains a closed Struct or Enum. Decode text with

@@ -6,11 +6,12 @@ mod type_rewriting;
 use crate::{
   builtins::{self, is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
-    self, Calcit, CalcitArgLabel, CalcitCallKind, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl,
-    CalcitImport, CalcitList, CalcitLocal, CalcitNumberBinaryOp, CalcitProc, CalcitScope, CalcitStructDef, CalcitSymbolInfo,
-    CalcitSyntax, CalcitTrait, CalcitTraitMemberKind, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning,
-    MacroExpansionType, MacroSignature, MacroSyntaxType, NodeLocation, ParamShape, ParamShapeToken, RawCodeType, SchemaKind,
-    brief_type_of_value, compare_param_shapes, pop_type_slot_override, push_type_slot_override, register_type_slot,
+    self, Calcit, CalcitArgLabel, CalcitCallKind, CalcitErr, CalcitErrKind, CalcitErrProvenance, CalcitFn, CalcitFnArgs,
+    CalcitFnTypeAnnotation, CalcitImpl, CalcitImport, CalcitList, CalcitLocal, CalcitNumberBinaryOp, CalcitProc, CalcitScope,
+    CalcitStructDef, CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTraitMemberKind, CalcitTypeAnnotation, GENERATED_DEF,
+    ImportInfo, LocatedWarning, MacroExpansionType, MacroSignature, MacroSyntaxType, NodeLocation, ParamShape, ParamShapeToken,
+    RawCodeType, SchemaKind, brief_type_of_value, compare_param_shapes, pop_type_slot_override, push_type_slot_override,
+    register_type_slot,
   },
   call_stack::{CallStackList, StackKind, find_preferred_macro_location},
   codegen, program, runner,
@@ -2593,6 +2594,7 @@ fn preprocess_list_call(
         reject_strict_erased_generic_relation(
           &head_form,
           &current_args,
+          &args,
           effective_schema.as_ref(),
           scope_types,
           file_ns,
@@ -3159,7 +3161,7 @@ fn preprocess_list_call(
               && let CalcitTypeAnnotation::Fn(signature) = local_type.as_ref()
             {
               reject_strict_dynamic_nominal_argument(&head_form, &updated_args, signature, scope_types, file_ns, call_stack)?;
-              reject_strict_erased_generic_relation(&head_form, &updated_args, signature, scope_types, file_ns, call_stack)?;
+              reject_strict_erased_generic_relation(&head_form, &updated_args, &args, signature, scope_types, file_ns, call_stack)?;
             }
             check_local_fn_call_arg_types(&head_form, local, &updated_args, scope_types, &call_info, check_warnings);
           }
@@ -9437,6 +9439,63 @@ struct ErasedGenericArgument {
   generics: Vec<Arc<str>>,
 }
 
+fn nearest_dynamic_provenance(source: &Calcit, actual: &CalcitTypeAnnotation, scope_types: &ScopeTypes) -> Vec<CalcitErrProvenance> {
+  fn render_type(annotation: &CalcitTypeAnnotation) -> String {
+    match annotation {
+      CalcitTypeAnnotation::Dynamic => "Dynamic".to_owned(),
+      CalcitTypeAnnotation::Tag => "Tag".to_owned(),
+      CalcitTypeAnnotation::Map(key, value) => format!("Map<{},{}>", render_type(key), render_type(value)),
+      CalcitTypeAnnotation::Optional(inner) => format!("Option<{}>", render_type(inner)),
+      _ => annotation.to_brief_string(),
+    }
+  }
+
+  let Calcit::List(call) = source else {
+    return vec![];
+  };
+  let Some(head) = call.first() else {
+    return vec![];
+  };
+  let is_core_get = match head {
+    Calcit::Symbol { sym, .. } | Calcit::Local(CalcitLocal { sym, .. }) => sym.as_ref() == "get",
+    Calcit::Import(CalcitImport { ns, def, .. }) => ns.as_ref() == calcit::CORE_NS && def.as_ref() == "get",
+    Calcit::Fn { info, .. } => info.def_ns.as_ref() == calcit::CORE_NS && info.name.as_ref() == "get",
+    _ => false,
+  };
+  if !is_core_get || call.len() != 3 {
+    return vec![];
+  }
+  let Some(receiver_type) = call.get(1).and_then(|receiver| resolve_type_value(receiver, scope_types)) else {
+    return vec![];
+  };
+  let CalcitTypeAnnotation::Map(_, value_type) = receiver_type.as_ref() else {
+    return vec![];
+  };
+  if !matches!(value_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+    return vec![];
+  }
+  let location = head.get_location().or_else(|| source.get_location());
+  let definition = location.as_ref().map(|location| format!("{}/{}", location.ns, location.def));
+  let path = location.as_ref().map(|location| {
+    if location.coord.is_empty() {
+      "code".to_owned()
+    } else {
+      format!("code@{}", location.coord.iter().map(u16::to_string).collect::<Vec<_>>().join("."))
+    }
+  });
+  let output_type = render_type(actual);
+  vec![CalcitErrProvenance {
+    kind: "typed-operation".to_owned(),
+    operation: "calcit.core/get".to_owned(),
+    definition,
+    path,
+    r#type: render_type(receiver_type.as_ref()),
+    output_type: output_type.clone(),
+    flow: format!("Map value -> get return {output_type} -> generic consumer argument"),
+    migration: "Give the map value a concrete schema, or decode and narrow it at the open boundary before this call.".to_owned(),
+  }]
+}
+
 fn find_erased_generic_argument(
   signature: &CalcitFnTypeAnnotation,
   args: &CalcitList,
@@ -9483,6 +9542,7 @@ fn find_erased_generic_argument(
 fn reject_strict_erased_generic_relation(
   head: &Calcit,
   args: &CalcitList,
+  source_args: &CalcitList,
   signature: &CalcitFnTypeAnnotation,
   scope_types: &ScopeTypes,
   file_ns: &str,
@@ -9502,18 +9562,35 @@ fn reject_strict_erased_generic_relation(
   };
   let names = generics.iter().map(|name| format!("`'{name}`")).collect::<Vec<_>>().join(", ");
   let argument = args.get(index);
-  Err(CalcitErr::use_msg_stack_location_with_code(
+  let provenance = source_args
+    .get(index)
+    .map(|source| nearest_dynamic_provenance(source, actual.as_ref(), scope_types))
+    .unwrap_or_default();
+  let provenance_note = provenance.first().map(|origin| {
+    let at = match (&origin.definition, &origin.path) {
+      (Some(definition), Some(path)) => format!(" at `{definition}` {path}"),
+      _ => String::new(),
+    };
+    format!(
+      "; Dynamic origin: `{}` receiver is `{}`{at}. Flow: {}. Migration: {}",
+      origin.operation, origin.r#type, origin.flow, origin.migration
+    )
+  });
+  let mut error = CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
     format!(
-      "call to `{head}` passes `{}` at argument {}, so Dynamic erases generic relation {names} required by `{}`; narrow or validate the value before this call, or use an explicit open adapter whose contract does not claim that generic relation",
+      "call to `{head}` passes `{}` at argument {}, so Dynamic erases generic relation {names} required by `{}`; narrow or validate the value before this call, or use an explicit open adapter whose contract does not claim that generic relation{}",
       actual.to_brief_string(),
       index + 1,
       expected.to_brief_string(),
+      provenance_note.as_deref().unwrap_or_default(),
     ),
     "E_ERASED_GENERIC_RELATION",
     call_stack,
     argument.and_then(Calcit::get_location).or_else(|| head.get_location()),
-  ))
+  );
+  error.provenance = Box::new(provenance);
+  Err(error)
 }
 
 fn contains_nominal_contract(annotation: &CalcitTypeAnnotation) -> bool {
@@ -16935,6 +17012,7 @@ mod tests {
 
   #[test]
   fn reprocessed_dynamic_local_parameter_shadows_outer_type() {
+    let _state = lock_preprocess_test_state();
     let ns: Arc<str> = Arc::from("tests.local-shadow");
     let symbol_info = Arc::new(CalcitSymbolInfo {
       at_ns: ns.clone(),
@@ -17382,6 +17460,7 @@ mod tests {
       reject_strict_erased_generic_relation(
         &test_symbol("identity"),
         &dynamic_args,
+        &dynamic_args,
         &identity,
         &scope_types,
         "tests.generic-relation",
@@ -17393,6 +17472,7 @@ mod tests {
     let error = reject_strict_erased_generic_relation(
       &test_symbol("identity"),
       &dynamic_args,
+      &dynamic_args,
       &identity,
       &scope_types,
       "tests.generic-relation",
@@ -17400,6 +17480,10 @@ mod tests {
     )
     .expect_err("strict mode should reject an erased generic relation");
     assert_eq!(error.code.as_deref(), Some("E_ERASED_GENERIC_RELATION"));
+    assert!(
+      error.provenance.is_empty(),
+      "direct Dynamic arguments should keep the concise diagnostic"
+    );
 
     let erased = find_erased_generic_argument(&identity, &dynamic_args, &scope_types).expect("Dynamic should erase T -> T");
     assert_eq!(erased.index, 0);
@@ -17437,6 +17521,62 @@ mod tests {
     );
     let args = CalcitList::from(&[Calcit::Number(1.0), value][..]);
     assert!(find_erased_generic_argument(&relation_plus_open_boundary, &args, &scope_types).is_none());
+  }
+
+  #[test]
+  fn reports_bounded_map_get_dynamic_provenance() {
+    let _state = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+    let dynamic = calcit::DYNAMIC_TYPE.clone();
+    let map_type = Arc::new(CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Tag), dynamic.clone()));
+    let option_dynamic = Arc::new(CalcitTypeAnnotation::Optional(dynamic));
+    let receiver = generic_relation_test_local("store", map_type.clone());
+    let processed_value = generic_relation_test_local("state", option_dynamic.clone());
+    let get_head = Calcit::Symbol {
+      sym: Arc::from("get"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.generic-relation"),
+        at_def: Arc::from("consume-state"),
+      }),
+      location: Some(Arc::new(vec![3, 2])),
+    };
+    let source_get = Calcit::from(CalcitList::from(&[get_head, receiver, Calcit::Tag(EdnTag::new("states"))][..]));
+    let processed_args = CalcitList::from(&[processed_value, Calcit::Map(Default::default())][..]);
+    let source_args = CalcitList::from(&[source_get, Calcit::Map(Default::default())][..]);
+    let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let signature = generic_relation_test_signature(
+      vec![Arc::new(CalcitTypeAnnotation::Optional(type_var.clone())), type_var.clone()],
+      type_var,
+      None,
+    );
+    let scope_types = ScopeTypes::from([(Arc::from("store"), map_type)]);
+
+    let error = reject_strict_erased_generic_relation(
+      &test_symbol("option:unwrap-or"),
+      &processed_args,
+      &source_args,
+      &signature,
+      &scope_types,
+      "tests.generic-relation",
+      &CallStackList::default(),
+    )
+    .expect_err("Map<Tag,Dynamic> flowing through get should retain its nearest known origin");
+
+    assert_eq!(error.code.as_deref(), Some("E_ERASED_GENERIC_RELATION"));
+    assert!(
+      error
+        .msg
+        .contains("Dynamic origin: `calcit.core/get` receiver is `Map<Tag,Dynamic>`"),
+      "{}",
+      error.msg
+    );
+    assert_eq!(error.provenance.len(), 1, "provenance must stay bounded");
+    let origin = &error.provenance[0];
+    assert_eq!(origin.operation, "calcit.core/get");
+    assert_eq!(origin.definition.as_deref(), Some("tests.generic-relation/consume-state"));
+    assert_eq!(origin.path.as_deref(), Some("code@3.2"));
+    assert_eq!(origin.r#type, "Map<Tag,Dynamic>");
+    assert_eq!(origin.output_type, "Option<Dynamic>");
   }
 
   #[test]
