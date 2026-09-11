@@ -412,8 +412,13 @@ const scenarios = [
       "json",
     ],
     check(result) {
-      if (result.schema_version !== 5 || result.command !== "analyze.weak-types" || result.data.summary.hits === 0) {
+      if (result.schema_version !== 6 || result.command !== "analyze.weak-types" || result.data.summary.hits === 0) {
         throw new Error("weak type result is incomplete");
+      }
+      const usage = result.data.summary.dynamic_usage;
+      const accounted = Object.values(usage.intents).reduce((sum, count) => sum + count, 0);
+      if (!usage.reconciled || accounted !== usage.dynamic_positions || usage.total_positions < usage.dynamic_positions) {
+        throw new Error("weak-types dynamic usage accounting did not reconcile");
       }
       const occurrences = result.data.definitions.flatMap((definition) => definition.occurrences);
       if (!occurrences.every((occurrence) => occurrence.intent === "intentional-js-ffi")) {

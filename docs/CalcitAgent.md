@@ -517,7 +517,7 @@ calcit cirru show-guide
 
 不要用多个 `'Dynamic` 假装多态：参数与返回共享类型时声明 `:generics`/TypeVar，只依赖能力时增加 trait `:where`，同质 collection/ref 保留 type arg，有限异构值使用 enum。类型写法统一用 quoted symbols，例如 `'String`、`'Number`、`'List` 和 `'Dynamic`；`:any`、`:dynamic` 等旧 tag 写法仅为兼容输入，运行 `calcit edit format` 后会在类型位置规范化。只有明确的 FFI、global state 或 macro 边界保留 dynamic，并尽快在进入 typed code 时 validate/convert。
 
-每次 `calcit` 执行或编译都会在 stderr 审计项目自身的 Dynamic 类型位置：少量仅提示，达到较高占比会告警。该提示不写入 stdout，也不替代 `analyze check-types` / `analyze weak-types`；Agent 应先查看告警，再用 `calcit analyze weak-types --intent unresolved --format json` 定位并逐步收窄类型。
+每次 `calcit` 执行或编译都会在 stderr 审计项目自身的 Dynamic 类型位置：少量仅提示，达到较高占比会告警。该提示不写入 stdout，也不替代 `analyze check-types` / `analyze weak-types`。先用 `calcit analyze weak-types --only schema-dynamic,code-dynamic --summary-only --format json` 读取 `data.summary.dynamic_usage`：其分子、分母与默认启动提示同范围，`intents` 必须合计为 `dynamic_positions` 且 `reconciled` 为 true。随后再按 `--intent unresolved` 定位并逐步收窄真正的未解决债务；不要把 intentional JS FFI/macro/type-slot 边界或 quality 的组合预算误判为计数矛盾。
 
 `:: :tag ...` 是匿名 Enum 字面量；当已有 Enum 定义在头部时，直接使用 `Enum :tag ...`，类型分析会检查变体和 payload，并在预处理阶段降为命名构造。只有需要显式携带运行时 enum prototype、跨模块动态构造或兼容旧代码时才使用 `%:: Enum :tag ...`。不要为了绕过类型检查而主动选择 `%::`。
 

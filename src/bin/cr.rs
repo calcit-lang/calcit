@@ -2778,7 +2778,7 @@ mod tests {
     };
     let json = type_coverage::format_weak_types_json(&options, &snapshot).expect("unsafe evidence JSON should format");
     let value: serde_json::Value = serde_json::from_str(&json).expect("unsafe evidence JSON should parse");
-    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["schema_version"], 6);
     assert_eq!(
       value["data"]["definitions"][0]["occurrences"][0]["evidence"]["source_form"],
       "raw-js-value"
@@ -2939,7 +2939,7 @@ mod tests {
     };
     let weak_json = type_coverage::format_weak_types_json(&weak_options, &snapshot).expect("weak type JSON should format");
     let weak_value: serde_json::Value = serde_json::from_str(&weak_json).expect("weak type JSON should parse");
-    assert_eq!(weak_value["schema_version"], 5);
+    assert_eq!(weak_value["schema_version"], 6);
     assert_eq!(weak_value["command"], "analyze.weak-types");
     assert_eq!(weak_value["data"]["filters"]["intent"], "unresolved");
     assert_eq!(weak_value["data"]["definitions"][0]["occurrences"][0]["path"], "schema.args.0");
@@ -2953,6 +2953,38 @@ mod tests {
         .any(|diagnostic| diagnostic["code"] == "W_NIL_TYPE_DEBT")
     );
     assert_eq!(weak_value["data"]["summary"]["intents"]["declared-unit"], 0);
+    let dynamic_usage = &weak_value["data"]["summary"]["dynamic_usage"];
+    assert_eq!(dynamic_usage["dynamic_positions"], 2);
+    assert_eq!(dynamic_usage["total_positions"], 3);
+    assert_eq!(dynamic_usage["intents"]["unresolved"], 2);
+    assert_eq!(dynamic_usage["unattributed_unresolved"], 0);
+    assert_eq!(dynamic_usage["reconciled"], true);
+    assert_eq!(
+      dynamic_usage["intents"]
+        .as_object()
+        .expect("dynamic intent counts should be an object")
+        .values()
+        .map(|value| value.as_u64().expect("dynamic intent count should be unsigned"))
+        .sum::<u64>(),
+      dynamic_usage["dynamic_positions"]
+        .as_u64()
+        .expect("dynamic position count should be unsigned")
+    );
+    assert_eq!(weak_value["data"]["summary"]["hits"], 3);
+    let quality = quality_gate::analyze_quality(
+      &QualityCommand {
+        ns: Some("app.main".to_owned()),
+        ns_prefix: None,
+        deps: false,
+        baseline: None,
+        write_baseline: None,
+        format: "json".to_owned(),
+      },
+      &snapshot,
+    )
+    .expect("quality fixture should analyze");
+    assert_eq!(quality.metrics.schema_dynamic, 2);
+    assert_eq!(quality.metrics.unresolved, 3);
     assert_eq!(check_value["diagnostics"][0]["code"], "W_TYPE_COVERAGE_GAPS");
 
     let mut check_summary_options = check_options.clone();
