@@ -33,6 +33,7 @@ use cirru_edn::EdnAnyRef;
 use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
+use serde::Serialize;
 
 pub use calcit_impl::CalcitImpl;
 pub use calcit_struct::CalcitStructDef;
@@ -1031,6 +1032,18 @@ impl fmt::Display for CalcitErrKind {
   }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CalcitErrProvenance {
+  pub kind: String,
+  pub operation: String,
+  pub definition: Option<String>,
+  pub path: Option<String>,
+  pub r#type: String,
+  pub output_type: String,
+  pub flow: String,
+  pub migration: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CalcitErr {
   pub kind: CalcitErrKind,
@@ -1040,7 +1053,9 @@ pub struct CalcitErr {
   pub location: Option<Arc<NodeLocation>>,
   pub stack: CallStackList,
   /// Additional hint for error, such as usage examples
-  pub hint: Option<String>,
+  pub hint: Option<Box<str>>,
+  /// A bounded, deterministic explanation of where an open type entered the failing relation.
+  pub provenance: Box<Vec<CalcitErrProvenance>>,
 }
 
 impl fmt::Display for CalcitErr {
@@ -1071,6 +1086,7 @@ impl From<String> for CalcitErr {
       stack: CallStackList::default(),
       location: None,
       hint: None,
+      provenance: Box::default(),
     }
   }
 }
@@ -1085,6 +1101,7 @@ impl CalcitErr {
       stack: CallStackList::default(),
       location: None,
       hint: None,
+      provenance: Box::default(),
     }
   }
 
@@ -1097,6 +1114,7 @@ impl CalcitErr {
       stack: CallStackList::default(),
       location: None,
       hint: None,
+      provenance: Box::default(),
     })
   }
 
@@ -1109,6 +1127,7 @@ impl CalcitErr {
       stack: CallStackList::default(),
       location: None,
       hint: None,
+      provenance: Box::default(),
     })
   }
 
@@ -1121,6 +1140,7 @@ impl CalcitErr {
       stack: CallStackList::default(),
       location,
       hint: None,
+      provenance: Box::default(),
     })
   }
   pub fn use_msg_stack<T: Into<String>>(kind: CalcitErrKind, msg: T, stack: &CallStackList) -> Self {
@@ -1132,6 +1152,7 @@ impl CalcitErr {
       stack: stack.to_owned(),
       location: None,
       hint: None,
+      provenance: Box::default(),
     }
   }
   pub fn use_msg_stack_location<T: Into<String>>(
@@ -1148,6 +1169,7 @@ impl CalcitErr {
       stack: stack.to_owned(),
       location: location.map(Arc::new),
       hint: None,
+      provenance: Box::default(),
     }
   }
 
@@ -1165,7 +1187,8 @@ impl CalcitErr {
       warnings: Box::default(),
       stack: stack.to_owned(),
       location: location.map(Arc::new),
-      hint: Some(hint.into()),
+      hint: Some(hint.into().into_boxed_str()),
+      provenance: Box::default(),
     }
   }
 
@@ -1184,6 +1207,7 @@ impl CalcitErr {
       stack: stack.to_owned(),
       location: location.map(Arc::new),
       hint: None,
+      provenance: Box::default(),
     }
   }
 
@@ -1196,7 +1220,8 @@ impl CalcitErr {
       warnings: Box::default(),
       stack: CallStackList::default(),
       location: None,
-      hint: Some(hint.into()),
+      hint: Some(hint.into().into_boxed_str()),
+      provenance: Box::default(),
     })
   }
 
@@ -1214,7 +1239,8 @@ impl CalcitErr {
       warnings: Box::default(),
       stack: CallStackList::default(),
       location: None,
-      hint: Some(hint.into()),
+      hint: Some(hint.into().into_boxed_str()),
+      provenance: Box::default(),
     })
   }
 

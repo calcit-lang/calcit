@@ -129,17 +129,20 @@ fn check_policy(policy: CapabilityPolicy, operation: &str, call_stack: &CallStac
     helper_chain(call_stack)
   );
   let mut error = CalcitErr::use_msg_stack_location_with_code(CalcitErrKind::Effect, message, code, call_stack, context.call_location);
-  error.hint = Some(if capability.is_allowed() {
-    format!(
-      "Declare `:capabilities $ #{{}} :{}` on the strict Macro signature, or move the effect into generated runtime code.",
-      capability.as_str()
-    )
-  } else {
-    format!(
-      "Compile-time :{} cannot be enabled. Move the operation into generated runtime code or remove the host effect.",
-      capability.as_str()
-    )
-  });
+  error.hint = Some(
+    if capability.is_allowed() {
+      format!(
+        "Declare `:capabilities $ #{{}} :{}` on the strict Macro signature, or move the effect into generated runtime code.",
+        capability.as_str()
+      )
+    } else {
+      format!(
+        "Compile-time :{} cannot be enabled. Move the operation into generated runtime code or remove the host effect.",
+        capability.as_str()
+      )
+    }
+    .into_boxed_str(),
+  );
   Err(error)
 }
 

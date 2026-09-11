@@ -150,6 +150,14 @@ the argument before the relational call, or isolate genuinely open behavior in
 an adapter whose contract does not claim that relationship. Compatibility mode
 keeps accepting the call while projects migrate.
 
+When the nearest typed operation is statically known, the human diagnostic adds
+one bounded Dynamic-origin note. For example, a `Map<K,Dynamic>` lookup names
+`calcit.core/get`, its receiver type and source path, then recommends giving the
+map value a concrete schema or decoding it at the open boundary. Direct
+`Dynamic` arguments keep the concise message. Structured preprocess
+diagnostics expose the same deterministic entry in `provenance`; the array is
+empty when no reliable origin is available.
+
 For a strict-only release check, load every resolved dependency with `--deps`; loader acceptance proves that no legacy macro schema remains:
 
 ```bash

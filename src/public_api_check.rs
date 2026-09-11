@@ -51,6 +51,7 @@ fn error_diagnostic(error: &CalcitErr, definition_id: &str) -> Value {
       "coord": location.coord.to_vec(),
     })),
     "hint": error.hint,
+    "provenance": error.provenance,
   })
 }
 
@@ -360,7 +361,7 @@ mod tests {
   use super::*;
   use std::sync::Arc;
 
-  use calcit::calcit::DYNAMIC_TYPE;
+  use calcit::calcit::{CalcitErrKind, CalcitErrProvenance, DYNAMIC_TYPE};
   use cirru_edn::Edn;
   use cirru_parser::Cirru;
 
@@ -391,5 +392,28 @@ mod tests {
     let malformed_key = Edn::map_from_iter([(Edn::str("target"), Edn::tag("browser"))]);
     assert!(definition_target(&entry_with_ffi(Some(malformed_key))).is_err());
     assert_eq!(definition_target(&entry_with_ffi(None)).unwrap(), None);
+  }
+
+  #[test]
+  fn serializes_bounded_dynamic_provenance() {
+    let mut error = CalcitErr::use_str(CalcitErrKind::Type, "erased relation");
+    error.code = Some("E_ERASED_GENERIC_RELATION".to_owned());
+    *error.provenance = vec![CalcitErrProvenance {
+      kind: "typed-operation".to_owned(),
+      operation: "calcit.core/get".to_owned(),
+      definition: Some("app.main/consume".to_owned()),
+      path: Some("code@3.2".to_owned()),
+      r#type: "Map<Tag,Dynamic>".to_owned(),
+      output_type: "Option<Dynamic>".to_owned(),
+      flow: "Map value -> get return Option<Dynamic> -> generic consumer argument".to_owned(),
+      migration: "Give the map value a concrete schema.".to_owned(),
+    }];
+
+    let diagnostic = error_diagnostic(&error, "app.main/consume");
+    let provenance = diagnostic["provenance"].as_array().expect("provenance array");
+    assert_eq!(provenance.len(), 1);
+    assert_eq!(provenance[0]["definition"], "app.main/consume");
+    assert_eq!(provenance[0]["path"], "code@3.2");
+    assert_eq!(provenance[0]["type"], "Map<Tag,Dynamic>");
   }
 }

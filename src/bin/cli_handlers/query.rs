@@ -281,6 +281,8 @@ struct ContextDiagnostic {
   message: String,
   path: Option<String>,
   intent: Option<String>,
+  #[serde(skip_serializing_if = "Vec::is_empty")]
+  provenance: Vec<calcit::calcit::CalcitErrProvenance>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1556,6 +1558,7 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
       message: "`:any` is a legacy alias for `:dynamic`; the canonical type and generated schema use `'Dynamic`. Do not use it to model polymorphism.".to_owned(),
       path: None,
       intent: Some("migration".to_owned()),
+      provenance: vec![],
     }]
   } else {
     vec![]
@@ -2091,6 +2094,7 @@ fn warning_to_context_diagnostic(warning: &LocatedWarning) -> ContextDiagnostic 
       &warning.location().coord.iter().map(|idx| *idx as usize).collect::<Vec<_>>(),
     )),
     intent: None,
+    provenance: vec![],
   }
 }
 
@@ -2114,6 +2118,7 @@ fn type_at_expected_mismatch_diagnostic(
     ),
     path: Some(path.to_owned()),
     intent: None,
+    provenance: vec![],
   })
 }
 
@@ -2276,7 +2281,10 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
     .collect::<Vec<_>>();
   if let Some(error) = compile_error {
     diagnostics.push(ContextDiagnostic {
-      code: error.code.unwrap_or_else(|| format!("E_{}", error.kind.to_string().to_uppercase())),
+      code: error
+        .code
+        .clone()
+        .unwrap_or_else(|| format!("E_{}", error.kind.to_string().to_uppercase())),
       phase: "preprocess",
       severity: "error",
       message: error.msg,
@@ -2285,6 +2293,7 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
         .as_ref()
         .map(|location| semantic_code_path(&location.coord.iter().map(|idx| *idx as usize).collect::<Vec<_>>())),
       intent: None,
+      provenance: *error.provenance,
     });
   }
   if inferred.is_none() {
@@ -2295,6 +2304,7 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
       message: "Static inference could not determine a type for this expression without executing the program".to_owned(),
       path: Some(semantic_path.clone()),
       intent: dynamic_intent.map(str::to_owned),
+      provenance: vec![],
     });
   }
   if let (Some(actual), Some((required, source))) = (inferred.as_ref(), expected.as_ref())
@@ -2564,6 +2574,7 @@ fn context_docs(definition: &str, diagnostics: &mut Vec<ContextDiagnostic>) -> C
         message: error.lines().next().unwrap_or(&error).to_owned(),
         path: None,
         intent: None,
+        provenance: vec![],
       });
       ContextCollection::new(0, vec![])
     }
@@ -2616,6 +2627,7 @@ fn weak_type_diagnostics(entry: &snapshot::CodeEntry, budget: usize) -> Vec<Cont
         message: format!("{} ({})", occurrence.kind.as_str(), occurrence.detail),
         path: Some(occurrence.path),
         intent: Some(occurrence.intent.as_str().to_owned()),
+        provenance: vec![],
       }
     })
     .collect::<Vec<_>>();
@@ -2630,6 +2642,7 @@ fn weak_type_diagnostics(entry: &snapshot::CodeEntry, budget: usize) -> Vec<Cont
       ),
       path: None,
       intent: None,
+      provenance: vec![],
     });
   }
   diagnostics
@@ -2656,6 +2669,7 @@ fn build_regular_context(
         message: "definition has no trusted static type coverage".to_owned(),
         path: Some("schema".to_owned()),
         intent: None,
+        provenance: vec![],
       },
     );
   }
@@ -2667,6 +2681,7 @@ fn build_regular_context(
       message: issue.clone(),
       path: Some("schema".to_owned()),
       intent: None,
+      provenance: vec![],
     });
   }
 
@@ -2679,6 +2694,7 @@ fn build_regular_context(
       message: error.clone(),
       path: None,
       intent: None,
+      provenance: vec![],
     });
   }
 
@@ -2693,6 +2709,7 @@ fn build_regular_context(
           message: error,
           path: Some("code".to_owned()),
           intent: None,
+          provenance: vec![],
         });
         vec![]
       }
@@ -2845,6 +2862,7 @@ fn build_special_builtin_context(
         message: "dynamic values are intentional at this JS FFI boundary".to_owned(),
         path: Some("schema".to_owned()),
         intent: Some("intentional-js-ffi".to_owned()),
+        provenance: vec![],
       },
     );
   }
