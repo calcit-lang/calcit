@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, fragment_nesting_level, maybe_chunk_node};
 use super::common::{
   ERR_CODE_INPUT_REQUIRED, cirru_to_json, emit_cli_output, format_path, guard_snapshot_mutation_toolchain, parse_input_to_cirru,
-  parse_path, print_cli_warning_block, read_code_input, resolve_definition_lookup,
+  parse_path, print_cli_warning_block, read_code_input, resolve_definition_lookup, shell_quote,
 };
 use super::cursor::{
   maintain_cursor_after_tree_mutation, resolve_active_cursor_reference, resolve_cursor_path_argument, resolve_cursor_target_argument,
@@ -942,7 +942,7 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
   };
 
   if matches.is_empty() {
-    return Err("No matches found for target pattern".to_string());
+    return Err(search_replace_no_match_error(opts, snapshot_file));
   }
 
   if matches.len() > 1 {
@@ -1047,6 +1047,44 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
   println!("{} Replaced unique occurrence", "✓".green());
 
   Ok(())
+}
+
+fn search_replace_no_match_error(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -> String {
+  let parses_as_expression = if opts.regex {
+    false
+  } else {
+    cirru_parser::parse(&opts.pattern)
+      .map(|nodes| {
+        nodes.len() != 1
+          || matches!(nodes.first(), Some(Cirru::List(items)) if !(items.len() == 1 && matches!(items.first(), Some(Cirru::Leaf(_)))))
+      })
+      .unwrap_or(false)
+  };
+  if !parses_as_expression {
+    return format!(
+      "[E_TREE_SEARCH_REPLACE_LEAF_NOT_FOUND] No leaf nodes matched target pattern {:?}; search-replace searches leaf nodes only. No changes were written.",
+      opts.pattern
+    );
+  }
+
+  let snapshot_arg = if snapshot_file == "calcit.cirru" {
+    String::new()
+  } else {
+    format!(" {}", shell_quote(snapshot_file))
+  };
+  let replacement_arg = match (&opts.code, &opts.file) {
+    (Some(code), _) => format!("--code {}", shell_quote(code)),
+    (_, Some(file)) => format!("--file {}", shell_quote(file)),
+    _ => "--code 'quote $ <replacement-expression>'".to_string(),
+  };
+  format!(
+    "[E_TREE_SEARCH_REPLACE_EXPRESSION_PATTERN] search-replace matches one leaf, but --pattern parses as a Cirru expression. No changes were written.\n\
+     Recovery: calcit{snapshot_arg} query search-expr {} --filter {} --set-cursor 0\n\
+     Then replace the selected expression with: calcit{snapshot_arg} cursor apply replace {replacement_arg}\n\
+     Or use tree replace with the returned path and an --expect guard.",
+    shell_quote(&opts.pattern),
+    shell_quote(&opts.target)
+  )
 }
 
 /// Find leaf nodes matching the pattern; uses exact match or regex based on flag
@@ -1716,7 +1754,8 @@ fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String
 
 #[cfg(test)]
 mod tests {
-  use super::verify_expected_node;
+  use super::{find_all_leaf_matches, search_replace_no_match_error, verify_expected_node};
+  use crate::cli_args::TreeSearchReplaceCommand;
   use cirru_parser::Cirru;
 
   fn leaf(text: &str) -> Cirru {
@@ -1725,6 +1764,49 @@ mod tests {
 
   fn list(items: Vec<Cirru>) -> Cirru {
     Cirru::List(items)
+  }
+
+  fn search_replace(pattern: &str, regex: bool) -> TreeSearchReplaceCommand {
+    TreeSearchReplaceCommand {
+      target: "app.main/demo".to_string(),
+      pattern: pattern.to_string(),
+      regex,
+      file: None,
+      code: Some("quote replacement".to_string()),
+      depth: 2,
+      pick: None,
+      selector: None,
+    }
+  }
+
+  #[test]
+  fn expression_pattern_error_provides_structural_recovery_without_mutation_claims() {
+    let error = search_replace_no_match_error(&search_replace("js/document.querySelector |.app", false), "fixture.cirru");
+    assert!(error.contains("E_TREE_SEARCH_REPLACE_EXPRESSION_PATTERN"));
+    assert!(error.contains("searches one leaf") || error.contains("matches one leaf"));
+    assert!(error.contains("calcit 'fixture.cirru' query search-expr 'js/document.querySelector |.app'"));
+    assert!(error.contains("--filter 'app.main/demo' --set-cursor 0"));
+    assert!(error.contains("cursor apply replace --code 'quote replacement'"));
+    assert!(error.contains("No changes were written"));
+  }
+
+  #[test]
+  fn absent_leaf_error_names_the_leaf_only_search_scope() {
+    let error = search_replace_no_match_error(&search_replace("missing-leaf", false), "calcit.cirru");
+    assert!(error.contains("E_TREE_SEARCH_REPLACE_LEAF_NOT_FOUND"));
+    assert!(error.contains("search-replace searches leaf nodes only"));
+    assert!(error.contains("No changes were written"));
+  }
+
+  #[test]
+  fn regex_leaf_search_stays_on_the_leaf_matching_path() {
+    let tree = list(vec![leaf("alpha-1"), list(vec![leaf("beta"), leaf("alpha-2")])]);
+    let matches = find_all_leaf_matches(&tree, r"^alpha-\d$", true, &[]);
+    assert_eq!(matches.len(), 2);
+    assert_eq!(matches[0].0, vec![0]);
+    assert_eq!(matches[1].0, vec![1, 1]);
+    assert_eq!(matches[0].1, "alpha-1");
+    assert_eq!(matches[1].1, "alpha-2");
   }
 
   #[test]
