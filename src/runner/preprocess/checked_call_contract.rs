@@ -50,6 +50,17 @@ fn callback_return_type(callback: &Calcit, scope_types: &ScopeTypes) -> Option<A
   }
 }
 
+pub(crate) fn checked_call_contract_arity(fn_ns: &str, fn_def: &str) -> Option<usize> {
+  if fn_ns != calcit::CORE_NS {
+    return None;
+  }
+  match fn_def {
+    "get" | "filter" | "map" | "map-list-kv" => Some(2),
+    "option:fold" | "update" => Some(3),
+    _ => None,
+  }
+}
+
 /// Follow concrete type-slot bindings while leaving unresolved or cyclic slots
 /// open for compatibility handling by the caller.
 pub(crate) fn resolve_bound_type_slot_chain(mut type_value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
@@ -77,17 +88,10 @@ pub(crate) fn resolve_checked_call_contract(
 ) -> Option<CheckedCallContract> {
   use CalcitTypeAnnotation as T;
 
-  if fn_ns != calcit::CORE_NS {
-    return None;
-  }
   if fn_def == "option:fold" && !super::strict_types_enabled() {
     return None;
   }
-  let required_arity = match fn_def {
-    "get" | "filter" | "map" | "map-list-kv" => 2,
-    "option:fold" | "update" => 3,
-    _ => return None,
-  };
+  let required_arity = checked_call_contract_arity(fn_ns, fn_def)?;
   if args.len() != required_arity {
     return None;
   }

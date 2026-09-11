@@ -16,7 +16,9 @@ use crate::{
   codegen, program, runner,
 };
 
-use checked_call_contract::{CheckedCallLowering, resolve_bound_type_slot_chain, resolve_checked_call_contract};
+use checked_call_contract::{
+  CheckedCallLowering, checked_call_contract_arity, resolve_bound_type_slot_chain, resolve_checked_call_contract,
+};
 use type_checking::{
   CallTypeCheckInfo, check_core_fn_arg_types, check_function_return_type, check_local_fn_call_arg_types, check_proc_arg_types,
   check_reset_arg_types, check_user_fn_arg_types, detect_return_type_hint_from_processed_body,
@@ -2412,7 +2414,9 @@ fn preprocess_list_call(
         // been preprocessed. Raw collection literals may not expose K/V until
         // this point, while a following inline callback needs those concrete
         // types during its own preprocessing.
-        let refreshed_checked_contract = if arg_idx == 0 {
+        let can_refresh_checked_contract =
+          checked_call_contract_arity(&info.def_ns, &info.name).is_some_and(|required_arity| args.len() == required_arity);
+        let refreshed_checked_contract = if arg_idx == 0 || !can_refresh_checked_contract {
           None
         } else {
           let processed_count = ys.len().saturating_sub(1);
