@@ -441,6 +441,25 @@ mod tests {
       resolve_checked_call_contract(calcit::CORE_NS, "result:map", &user_args, &ScopeTypes::new()).is_none(),
       "a user enum with the same short name must not acquire the core Result contract"
     );
+
+    let user_ref = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("app.models/Result"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::String), Arc::new(CalcitTypeAnnotation::Tag)]),
+    ));
+    let args = CalcitList::from(&[
+      local("user-result-ref", user_ref),
+      local(
+        "measure",
+        Arc::new(CalcitTypeAnnotation::from_function_parts(
+          vec![Arc::new(CalcitTypeAnnotation::String)],
+          Arc::new(CalcitTypeAnnotation::Number),
+        )),
+      ),
+    ] as &[Calcit]);
+    assert!(
+      resolve_checked_call_contract(calcit::CORE_NS, "result:map", &args, &ScopeTypes::new()).is_none(),
+      "an explicitly user-qualified Result reference must not acquire the core contract"
+    );
   }
 
   #[test]
