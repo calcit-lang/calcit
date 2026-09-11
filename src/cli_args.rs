@@ -1522,7 +1522,7 @@ pub struct EditSchemaCommand {
   /// read one quoted Cirru type node from file
   #[argh(option)]
   pub file: Option<String>,
-  /// one quoted Cirru type node, for example `quote $ :: :ref :bool`
+  /// one quoted Cirru type node; core Option/Result may be short, project nominal types must be qualified
   #[argh(option, long = "code")]
   pub code: Option<String>,
   /// clear schema field
