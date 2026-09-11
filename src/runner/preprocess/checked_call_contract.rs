@@ -50,6 +50,25 @@ fn callback_return_type(callback: &Calcit, scope_types: &ScopeTypes) -> Option<A
   }
 }
 
+fn core_result_type_args(type_value: &CalcitTypeAnnotation) -> Option<&[Arc<CalcitTypeAnnotation>]> {
+  match type_value {
+    CalcitTypeAnnotation::TypeRef(name, args)
+      if matches!(
+        name.trim_start_matches('\'').trim_start_matches(':'),
+        "Result" | "calcit.core/Result"
+      ) && args.len() == 2 =>
+    {
+      Some(args.as_ref())
+    }
+    CalcitTypeAnnotation::Enum(enum_def, args)
+      if enum_def.definition_ref().is_some_and(|name| name.as_ref() == "calcit.core/Result") && args.len() == 2 =>
+    {
+      Some(args.as_ref())
+    }
+    _ => None,
+  }
+}
+
 pub(crate) fn checked_call_contract_arity(fn_ns: &str, fn_def: &str) -> Option<usize> {
   if fn_ns != calcit::CORE_NS {
     return None;
@@ -111,6 +130,18 @@ pub(crate) fn resolve_checked_call_contract(
       let payload = resolve_type_value(items.get(1)?, scope_types)?;
       Some(core_type_ref("Option", vec![payload]))
     })?;
+  if fn_def == "result:map" {
+    let type_args = core_result_type_args(receiver_type.as_ref())?;
+    let input_type = type_args[0].clone();
+    let error_type = type_args[1].clone();
+    let output_type =
+      callback_return_type(args.get(1)?, scope_types).unwrap_or_else(|| Arc::new(T::TypeVar(Arc::from("ResultMapOutput"))));
+    return Some(CheckedCallContract {
+      expected_types: Some(vec![receiver_type.clone(), fn_type(vec![input_type], output_type.clone())]),
+      return_type: core_type_ref("Result", vec![output_type, error_type]),
+      lowering: None,
+    });
+  }
   match (fn_def, receiver_type.as_ref()) {
     ("option:fold", T::TypeRef(_, type_args) | T::Enum(_, type_args)) if receiver_type.is_option_type() => {
       let input_type = type_args.first()?.clone();
@@ -124,23 +155,6 @@ pub(crate) fn resolve_checked_call_contract(
           fn_type(vec![input_type], output_type.clone()),
         ]),
         return_type: output_type,
-        lowering: None,
-      })
-    }
-    ("result:map", T::TypeRef(name, type_args))
-      if type_args.len() == 2
-        && matches!(
-          name.trim_start_matches('\'').trim_start_matches(':'),
-          "Result" | "calcit.core/Result"
-        ) =>
-    {
-      let input_type = type_args[0].clone();
-      let error_type = type_args[1].clone();
-      let output_type =
-        callback_return_type(args.get(1)?, scope_types).unwrap_or_else(|| Arc::new(T::TypeVar(Arc::from("ResultMapOutput"))));
-      Some(CheckedCallContract {
-        expected_types: Some(vec![receiver_type.clone(), fn_type(vec![input_type], output_type.clone())]),
-        return_type: core_type_ref("Result", vec![output_type, error_type]),
         lowering: None,
       })
     }
@@ -269,7 +283,41 @@ pub(crate) fn resolve_checked_call_contract(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitLocal, CalcitSymbolInfo};
+  use crate::calcit::{CalcitEnumDef, CalcitLocal, CalcitStructDef, CalcitStructValue, CalcitSymbolInfo};
+  use cirru_edn::EdnTag;
+
+  fn symbol(name: &str) -> Calcit {
+    Calcit::Symbol {
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests"),
+        at_def: Arc::from("checked_call_contract"),
+      }),
+      location: None,
+    }
+  }
+
+  fn result_enum(namespace: &str) -> Arc<CalcitEnumDef> {
+    Arc::new(
+      CalcitEnumDef::from_struct(CalcitStructValue {
+        struct_ref: Arc::new(CalcitStructDef {
+          definition_ref: None,
+          name: EdnTag::new("Result"),
+          fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
+          field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),
+          generics: Arc::new(vec![Arc::from("T"), Arc::from("E")]),
+          where_bounds: Arc::new(vec![]),
+          impls: vec![],
+        }),
+        values: Arc::new(vec![
+          Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("E")]))),
+          Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("T")]))),
+        ]),
+      })
+      .expect("valid Result enum")
+      .with_definition_ref(namespace, "Result"),
+    )
+  }
 
   fn local(name: &str, type_info: Arc<CalcitTypeAnnotation>) -> Calcit {
     Calcit::Local(CalcitLocal {
@@ -350,6 +398,49 @@ mod tests {
     assert_eq!(callback.return_type, output.clone());
     assert_eq!(contract.return_type, core_type_ref("Result", vec![output, error]));
     assert_eq!(contract.lowering, None);
+  }
+
+  #[test]
+  fn result_map_contract_checks_constructor_produced_core_result_locals() {
+    let input = Arc::new(CalcitTypeAnnotation::String);
+    let error = Arc::new(CalcitTypeAnnotation::Tag);
+    let output = Arc::new(CalcitTypeAnnotation::Number);
+    let receiver = Arc::new(CalcitTypeAnnotation::Enum(
+      result_enum(calcit::CORE_NS),
+      Arc::new(vec![input.clone(), error.clone()]),
+    ));
+    let mapper = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![input.clone()], output.clone()));
+    let args = CalcitList::from(&[local("constructed", receiver.clone()), local("measure", mapper)] as &[Calcit]);
+
+    let contract = resolve_checked_call_contract(calcit::CORE_NS, "result:map", &args, &ScopeTypes::new())
+      .expect("constructor-produced core Result should retain its checked map contract");
+    let expected_types = contract.expected_types.as_ref().expect("result:map should bind checking evidence");
+    assert_eq!(expected_types[0], receiver);
+    let CalcitTypeAnnotation::Fn(callback) = expected_types[1].as_ref() else {
+      panic!("result:map callback should be checked as a function");
+    };
+    assert_eq!(callback.arg_types.as_slice(), &[input]);
+    assert_eq!(callback.return_type, output.clone());
+    assert_eq!(contract.return_type, core_type_ref("Result", vec![output, error]));
+
+    let user_receiver = Arc::new(CalcitTypeAnnotation::Enum(
+      result_enum("app.models"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::String), Arc::new(CalcitTypeAnnotation::Tag)]),
+    ));
+    let user_args = CalcitList::from(&[
+      local("user-result", user_receiver),
+      local(
+        "measure",
+        Arc::new(CalcitTypeAnnotation::from_function_parts(
+          vec![Arc::new(CalcitTypeAnnotation::String)],
+          Arc::new(CalcitTypeAnnotation::Number),
+        )),
+      ),
+    ] as &[Calcit]);
+    assert!(
+      resolve_checked_call_contract(calcit::CORE_NS, "result:map", &user_args, &ScopeTypes::new()).is_none(),
+      "a user enum with the same short name must not acquire the core Result contract"
+    );
   }
 
   #[test]
