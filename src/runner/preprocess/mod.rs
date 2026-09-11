@@ -8784,6 +8784,11 @@ pub fn preprocess_unsafe_coerce(
   if strict_types_enabled()
     && should_emit_project_source_lint(ctx.file_ns)
     && ctx.file_ns != calcit::CORE_NS
+    // Syntax emitted by a trusted core macro keeps the namespace of the
+    // macro's source. The surrounding definition can still be a generated
+    // project test, so use this provenance instead of granting `gen%` an FFI
+    // capability or exempting generated definitions wholesale.
+    && head_ns != calcit::CORE_NS
     && !current_function_has_js_ffi_feature()
   {
     return Err(CalcitErr::use_msg_stack_location_with_code(

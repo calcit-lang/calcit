@@ -610,10 +610,14 @@ fn public_check_reaches_unused_definitions_without_changing_entry_check_semantic
 #[test]
 fn strict_mode_runs_definition_tests_with_generated_function_schemas() {
   run_with_large_stack(|| {
+    builtins::effects::init_effects_states();
+    injection::inject_platform_apis();
     let namespace = format!("app.strict-definition-test-{}", std::process::id());
     let mut project = snapshot::Snapshot::default();
-    let mut file =
-      snapshot::create_file_from_snippet(&format!("ns {namespace}\n\ndefn checked () true")).expect("test project should parse");
+    let mut file = snapshot::create_file_from_snippet(&format!(
+      "ns {namespace}\n  :require\n    calcit.test :refer $ is=\n\ndefn checked () true"
+    ))
+    .expect("test project should parse");
     let checked = file.defs.get_mut("checked").expect("checked should exist");
     checked.schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       generics: Arc::new(vec![]),
@@ -625,8 +629,8 @@ fn strict_mode_runs_definition_tests_with_generated_function_schemas() {
       features: Arc::new(HashSet::new()),
     })));
     checked.tests.push(snapshot::TestEntry {
-      name: "strict-wrapper".to_owned(),
-      code: Cirru::Leaf(Arc::from("true")),
+      name: "core-assert-equality".to_owned(),
+      code: Cirru::List(vec![Cirru::leaf("is="), Cirru::leaf("1"), Cirru::leaf("1")]),
       tags: HashSet::new(),
     });
     project.files.insert(namespace.clone(), file);
@@ -649,8 +653,9 @@ fn strict_mode_runs_definition_tests_with_generated_function_schemas() {
     };
     let _strict = StrictTypesReset::enabled();
 
-    run_tests(&options, &project, &project_namespaces)
-      .expect("strict mode should execute definition tests through a typed synthetic wrapper");
+    run_tests(&options, &project, &project_namespaces).expect(
+      "strict mode should preserve trusted core macro provenance while executing a definition test through a typed synthetic wrapper",
+    );
   });
 }
 
