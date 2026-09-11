@@ -291,7 +291,10 @@ fn count_annotation_positions(annotation: &CalcitTypeAnnotation) -> (usize, usiz
       }
       match &signature.expansion {
         MacroExpansionType::Expr(semantic) | MacroExpansionType::Definition(semantic) => add(semantic),
-        MacroExpansionType::Dynamic => dynamic += 1,
+        MacroExpansionType::Dynamic => {
+          total += 1;
+          dynamic += 1;
+        }
         MacroExpansionType::Declarations => {}
       }
     }
@@ -313,31 +316,37 @@ fn count_code_dynamic_markers(code: &Cirru) -> usize {
 }
 
 pub fn collect_dynamic_usage_summary(snapshot: &snapshot::Snapshot) -> Result<DynamicUsageSummary, String> {
-  let mut summary = DynamicUsageSummary {
-    total_positions: 0,
-    dynamic_positions: 0,
-  };
-  visit_scoped_definitions(
+  collect_dynamic_usage_summary_scoped(
     snapshot,
     AnalysisScope {
       namespace: None,
       namespace_prefix: None,
       include_dependencies: false,
     },
-    |_namespace, _definition, entry| {
-      let (schema_total, schema_dynamic) = count_annotation_positions(entry.schema.as_ref());
-      let code_dynamic = count_code_dynamic_markers(&entry.code);
-      summary.total_positions += schema_total + code_dynamic;
-      summary.dynamic_positions += schema_dynamic + code_dynamic;
-    },
-  )?;
+  )
+}
+
+fn collect_dynamic_usage_summary_scoped(
+  snapshot: &snapshot::Snapshot,
+  scope: AnalysisScope<'_>,
+) -> Result<DynamicUsageSummary, String> {
+  let mut summary = DynamicUsageSummary {
+    total_positions: 0,
+    dynamic_positions: 0,
+  };
+  visit_scoped_definitions(snapshot, scope, |_namespace, _definition, entry| {
+    let (schema_total, schema_dynamic) = count_annotation_positions(entry.schema.as_ref());
+    let code_dynamic = count_code_dynamic_markers(&entry.code);
+    summary.total_positions += schema_total + code_dynamic;
+    summary.dynamic_positions += schema_dynamic + code_dynamic;
+  })?;
   Ok(summary)
 }
 
 pub fn format_dynamic_usage_notice(summary: DynamicUsageSummary) -> Option<String> {
   let severity = summary.severity()?;
   Some(format!(
-    "[{}] Dynamic type usage is {}/{} ({:.1}%) of analyzed type positions. Prefer concrete schemas, generics, traits, Option/Result, or named enums; keep Dynamic at documented FFI and framework boundaries. Run `calcit analyze weak-types --intent unresolved` for paths.",
+    "[{}] Dynamic type usage is {}/{} ({:.1}%) of analyzed type positions. Prefer concrete schemas, generics, traits, Option/Result, or named enums; keep Dynamic at documented FFI boundaries. Run `calcit analyze weak-types --only schema-dynamic,code-dynamic --summary-only --format json` to reconcile this numerator by intent.",
     severity,
     summary.dynamic_positions,
     summary.total_positions,
@@ -2659,6 +2668,46 @@ pub fn format_check_types_json(options: &CheckTypesCommand, snapshot: &snapshot:
 
 pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<String, String> {
   let rows = collect_weak_type_rows(options, snapshot)?;
+  let accounting_options = WeakTypesCommand {
+    ns: options.ns.clone(),
+    ns_prefix: options.ns_prefix.clone(),
+    only: Some("schema-dynamic,code-dynamic".to_owned()),
+    intent: None,
+    format: "json".to_owned(),
+    deps: options.deps,
+    summary_only: true,
+  };
+  let accounting_rows = collect_weak_type_rows(&accounting_options, snapshot)?;
+  let usage = collect_dynamic_usage_summary_scoped(
+    snapshot,
+    AnalysisScope {
+      namespace: options.ns.as_deref(),
+      namespace_prefix: options.ns_prefix.as_deref(),
+      include_dependencies: options.deps,
+    },
+  )?;
+  let mut usage_intents = BTreeMap::<&str, usize>::new();
+  for intent in [
+    "unresolved",
+    "intentional-js-ffi",
+    "intentional-macro-syntax",
+    "intentional-type-slot-dynamic",
+  ] {
+    usage_intents.insert(intent, 0);
+  }
+  for occurrence in accounting_rows.iter().flat_map(|row| row.occurrences.iter()) {
+    *usage_intents.entry(occurrence.intent.as_str()).or_insert(0) += 1;
+  }
+  let classified_positions = usage_intents.values().sum::<usize>();
+  if classified_positions > usage.dynamic_positions {
+    return Err(format!(
+      "Dynamic accounting invariant failed: {classified_positions} classified positions exceed the {}-position startup numerator",
+      usage.dynamic_positions
+    ));
+  }
+  let unattributed_unresolved = usage.dynamic_positions - classified_positions;
+  *usage_intents.entry("unresolved").or_insert(0) += unattributed_unresolved;
+  let usage_reconciled = usage_intents.values().sum::<usize>() == usage.dynamic_positions;
   let mut kinds = BTreeMap::<&str, usize>::new();
   let mut intents = BTreeMap::<&str, usize>::new();
   let mut namespaces = BTreeSet::<&str>::new();
@@ -2787,7 +2836,7 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
     }));
   }
   let envelope = serde_json::json!({
-    "schema_version": 5,
+    "schema_version": 6,
     "command": "analyze.weak-types",
     "revision": analysis_revision(snapshot, &ids)?,
     "data": {
@@ -2805,6 +2854,20 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
         "hits": hit_count,
         "kinds": kinds,
         "intents": intents,
+        "dynamic_usage": {
+          "dynamic_positions": usage.dynamic_positions,
+          "total_positions": usage.total_positions,
+          "ratio": usage.ratio(),
+          "intents": usage_intents,
+          "unattributed_unresolved": unattributed_unresolved,
+          "reconciled": usage_reconciled,
+          "policy": {
+            "scope": "stored project Snapshot definitions; dependencies only with --deps",
+            "position": "each schema annotation node plus each explicit :dynamic/:any code marker",
+            "nested": "container members, function arguments/return/rest, nominal type arguments, and semantic macro Expr/expansion positions are recursive",
+            "excluded": "runtime-generated definitions and metadata namespaces outside the selected project scope",
+          },
+        },
       },
       "definitions": definitions,
     },
@@ -2836,8 +2899,8 @@ mod tests {
   use cirru_parser::Cirru;
 
   use super::{
-    WeakTypeIntent, WeakTypeKind, classify_unsafe_coerce_source, entry_schema_issues, is_raw_adapter_namespace,
-    scan_schema_dynamic_annotation,
+    WeakTypeIntent, WeakTypeKind, classify_unsafe_coerce_source, count_annotation_positions, entry_schema_issues,
+    is_raw_adapter_namespace, scan_schema_dynamic_annotation,
   };
 
   fn leaf(value: &str) -> Cirru {
@@ -2917,6 +2980,13 @@ mod tests {
     assert_eq!(dynamic_expansion[0].intent, WeakTypeIntent::Unresolved);
     assert_eq!(dynamic_definition.len(), 1);
     assert_eq!(dynamic_definition[0].intent, WeakTypeIntent::Unresolved);
+  }
+
+  #[test]
+  fn dynamic_macro_expansion_is_a_position_in_both_usage_counts() {
+    let annotation = macro_schema(vec![], None, MacroExpansionType::Dynamic);
+
+    assert_eq!(count_annotation_positions(&annotation), (2, 1));
   }
 
   #[test]
