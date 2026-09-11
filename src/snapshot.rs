@@ -1450,6 +1450,14 @@ fn is_qualified_nominal_schema_ref(value: &str) -> bool {
   !namespace.is_empty() && !definition.is_empty()
 }
 
+fn core_nominal_schema_short_ref_arity(value: &str) -> Option<usize> {
+  match value.trim_start_matches('\'') {
+    "Option" => Some(1),
+    "Result" => Some(2),
+    _ => None,
+  }
+}
+
 fn check_no_legacy_data_type_names(schema: &Cirru) -> Result<(), String> {
   match schema {
     Cirru::Leaf(value) => {
@@ -1485,9 +1493,23 @@ fn validate_standalone_type_schema(schema: &Cirru) -> Result<(), String> {
     && let Some(Cirru::Leaf(type_name)) = items.get(1)
     && canonical_schema_symbol_from_cirru(&items[1]).is_none()
     && !is_qualified_nominal_schema_ref(type_name)
+    && core_nominal_schema_short_ref_arity(type_name).is_none()
   {
     return Err(format!(
       "Unknown standalone type `{type_name}`. Use a built-in type name or a fully qualified nominal type such as `'app.schema/Store`."
+    ));
+  }
+
+  if let Cirru::List(items) = schema
+    && matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "::")
+    && let Some(Cirru::Leaf(type_name)) = items.get(1)
+    && let Some(expected_args) = core_nominal_schema_short_ref_arity(type_name)
+    && items.len() != expected_args + 2
+  {
+    return Err(format!(
+      "Core nominal type `{type_name}` expects {expected_args} type argument{}, got {}.",
+      if expected_args == 1 { "" } else { "s" },
+      items.len().saturating_sub(2)
     ));
   }
 
@@ -3595,6 +3617,25 @@ mod tests {
     let unqualified_struct = Cirru::Leaf(Arc::from("'Store"));
     let error = validate_schema_for_write(&unqualified_struct).expect_err("unqualified nominal value schema should fail");
     assert!(error.contains("fully qualified nominal type"), "error: {error}");
+
+    for (source, name, arg_count) in [(":: 'Option 'Dynamic", "Option", 1), (":: 'Result 'String 'Tag", "Result", 2)] {
+      let schema = parse_one(source);
+      let annotation = parse_schema_annotation_for_write(&schema)
+        .unwrap_or_else(|error| panic!("core nominal short name should parse: {source}: {error}"));
+      assert!(
+        matches!(annotation.as_ref(), CalcitTypeAnnotation::TypeRef(parsed_name, args) if parsed_name.as_ref() == name && args.len() == arg_count),
+        "unexpected annotation for {source}: {annotation}"
+      );
+      let queried = schema_annotation_to_edn(annotation.as_ref());
+      let reparsed = parse_loaded_schema_annotation(&queried, "tests/core-nominal")
+        .unwrap_or_else(|error| panic!("query-style schema should reload: {source}: {error}"));
+      assert_eq!(schema_annotation_to_edn(reparsed.as_ref()), queried, "{source} should round-trip");
+    }
+
+    for source in [":: 'Option", ":: 'Option 'String 'Tag", ":: 'Result 'String"] {
+      let error = validate_schema_for_write(&parse_one(source)).expect_err("wrong core nominal arity should fail");
+      assert!(error.contains("expects"), "error for {source}: {error}");
+    }
 
     // Legacy unwrapped callable maps are rejected even when they carry :kind.
     let legacy_unwrapped = parse_one("{} (:kind :fn) (:args ([] :string)) (:return :bool)");
