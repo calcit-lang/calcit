@@ -6555,6 +6555,34 @@
                         [] k $ + v 10
                         :: :none
               :tags $ #{} :core :unit
+        'map-list-kv $ %{} 'CodeEntry (:doc "|Collects one output value per map entry with a typed key/value callback. Returns List<U> from Map<K,V> and Fn(K,V)->U without erasing the key/value relation.")
+          :code $ quote
+            defn map-list-kv (xs f)
+              foldl xs ([])
+                defn %map-list-kv (acc pair)
+                  hint-fn $ {}
+                    :args $ [] (:: 'List 'U) (:: 'List 'Dynamic)
+                    :return $ :: 'List 'U
+                  append acc $ f (&list:nth pair 0) (&list:nth pair 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] (:: 'Map 'K 'V)
+                :: 'Fn $ {} (:return 'U)
+                  :args $ [] 'K 'V
+              :generics $ [] 'K 'V 'U
+              :return $ :: 'List 'U
+          :tests $ []
+            %{} 'TestEntry (:name |collects-typed-key-value-results)
+              :code $ quote
+                do
+                  assert= (#{} 10 20)
+                    &list:to-set $ map-list-kv (&{} :a 1 :b 2)
+                      fn (key value) (* value 10)
+                  assert= (#{} |a=1 |b=2)
+                    &list:to-set $ map-list-kv (&{} |a 1 |b 2)
+                      fn (key value) (str key |= value)
+              :tags $ #{} :core :unit
         'map? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is a map")
           :code $ quote &runtime-implementation
           :examples $ []

@@ -2408,8 +2408,35 @@ fn preprocess_list_call(
           continue;
         }
 
+        // Recompute receiver-specialized contracts after earlier arguments have
+        // been preprocessed. Raw collection literals may not expose K/V until
+        // this point, while a following inline callback needs those concrete
+        // types during its own preprocessing.
+        let refreshed_checked_contract = if arg_idx == 0 {
+          None
+        } else {
+          let processed_count = ys.len().saturating_sub(1);
+          let staged_values = args
+            .iter()
+            .enumerate()
+            .map(|(idx, original)| {
+              if idx < processed_count {
+                ys.get(idx + 1).cloned().unwrap_or_else(|| original.clone())
+              } else {
+                original.clone()
+              }
+            })
+            .collect::<Vec<_>>();
+          let staged_args = CalcitList::from(staged_values.as_slice());
+          resolve_checked_call_contract(&info.def_ns, &info.name, &staged_args, scope_types)
+        };
+        let active_expected_types = refreshed_checked_contract
+          .as_ref()
+          .and_then(|contract| contract.expected_types.as_deref())
+          .unwrap_or(preprocessing_expected_types);
+
         // Set expected fn type hint if this arg position has a Fn-typed param
-        let expected_type = preprocessing_expected_types.get(arg_idx).map(|expected| {
+        let expected_type = active_expected_types.get(arg_idx).map(|expected| {
           if strict_types_enabled() {
             expected.substitute_type_vars(&preprocessing_type_bindings)
           } else {
@@ -2428,8 +2455,8 @@ fn preprocess_list_call(
 
         // Set expected struct type hint if this arg position has a struct-typed param
         // This enables field-type-aware preprocessing of hashmap literals (e.g., DomProps)
-        let expected_struct = if arg_idx < preprocessing_expected_types.len() {
-          preprocessing_expected_types[arg_idx].resolve_to_struct_with_ref().map(|(s, _)| s)
+        let expected_struct = if arg_idx < active_expected_types.len() {
+          active_expected_types[arg_idx].resolve_to_struct_with_ref().map(|(s, _)| s)
         } else {
           None
         };
@@ -2462,8 +2489,8 @@ fn preprocess_list_call(
         }
 
         if strict_types_enabled()
-          && checked_contract.is_some()
-          && let Some(expected) = preprocessing_expected_types.get(arg_idx)
+          && (checked_contract.is_some() || refreshed_checked_contract.is_some())
+          && let Some(expected) = active_expected_types.get(arg_idx)
           && let Some(actual) = resolve_type_value(&form, scope_types)
           && !contains_dynamic_type(actual.as_ref())
         {

@@ -211,6 +211,34 @@ fn legacy_map_kv_contract_warns_in_compatibility_and_fails_in_strict_mode() {
 }
 
 #[test]
+fn strict_map_list_kv_preserves_key_value_and_result_types() {
+  run_with_large_stack(|| {
+    let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: Arc::new(CalcitTypeAnnotation::Unit),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    let _strict = StrictTypesReset::enabled();
+
+    let entries = load_snippet_entries_with_main_schema(
+      "let\n    output $ map-list-kv ({} (:a |x)) $ fn (key value) (starts-with? value |x)\n  assert-type output $ :: 'List 'Bool\n  , &unit",
+      Some(main_schema.clone()),
+    );
+    run_check_only(&entries).expect("map-list-kv should preserve K, V, and callback result U in strict mode");
+
+    let entries = load_snippet_entries_with_main_schema(
+      "let\n    output $ map-list-kv ({} (:a |x)) $ fn (key value) (+ value 1)\n  assert-type output $ :: 'List 'Number\n  , &unit",
+      Some(main_schema),
+    );
+    run_check_only(&entries).expect_err("map-list-kv callback values must keep the Map value type");
+  });
+}
+
+#[test]
 fn self_referential_enum_type_ref_validation_is_finite() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("defenum Tree (:leaf 'Number) (:branch Tree)\ndefn main! ()\n  Tree :branch $ Tree :leaf 1");
