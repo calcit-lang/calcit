@@ -772,6 +772,7 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
         calcit calcit.cirru --entry "$entry" analyze dynamic-methods --max 0
       fi
     done < <(calcit calcit.cirru config show | awk '/^Snapshot Entries:/{in_entries=1; next} in_entries && /^  [^ ]/{print $1}')
+    # 仅在仍有非零 legacy baseline 时保留：
     calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 
 - name: Run project tests
@@ -784,9 +785,9 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
 
 说明：若项目依赖 `packageManager: "yarn@4.12.0"`，优先先执行 Corepack 激活，再让 CI 触发 Yarn。不要让 `setup-node` 的 Yarn cache 或其他 Yarn 调用早于 `corepack enable` / `corepack prepare`，否则可能误用 runner 上的全局 Yarn 1。 `caps --ci` 参数保证在 CI 加载模块时使用 HTTPS 协议，避免 CI 环境下的 SSH key 问题。
 
-注意：`check-types`、`weak-types`、`deprecated` 仍是展示报告，不按命中数量失败；CI 使用
-`analyze quality` 执行零目标或 baseline 策略。清零后则要求 unresolved dynamic、
-unresolved/declared-optional nil debt 和 deprecated calls 均为 0。
+注意：`check-types`、`weak-types`、`deprecated` 仍是展示报告，不按命中数量失败。只有仍有非零
+legacy baseline 的项目才在 CI 保留 `analyze quality --baseline ...`；baseline 清零后删除该命令，
+不再把数量策略当作独立类型正确性判定。
 `test --require-match` 会避免 tag 或 scope 写错后零测试仍退出成功。项目没有 named `test` entry 或
 definition-attached unit tests 时，应删除对应示例行并替换成项目真实测试命令，而不是机械照抄。
 
@@ -811,7 +812,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 6. default 与每个 named entry 的 `--check-only`
 7. 每个 entry 的 `analyze dynamic-methods --max <reviewed-limit>`；清零后使用 `--max 0`
 8. 所有声明支持的 entry 行为测试（默认 once；watch 另行验收）
-9. `analyze quality` 的 JSON baseline 或零目标（`check-types`、dynamic/nil `weak-types`、`deprecated` 仍作为定位报告）
+9. 非零 legacy baseline 项目继续运行 `analyze quality --baseline ...`；清零后删除该项（`check-types`、dynamic/nil `weak-types`、`deprecated` 仍只作为定位报告）
 10. `calcit test --require-match`、公开 namespace 的 `check-examples` 与 `docs check-md`
 11. JS 项目的 codegen 加 Node/Vite 行为测试，而不只是生成成功
 12. `package.json` 中与编译/构建相关的脚本
@@ -825,7 +826,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 | Snapshot 规范化 | `calcit edit format` + `git diff` | 旧 configs/schema 拼写和规范化建议 | format 告警不阻断，diff 需人工审阅 |
 | entry 预处理 | `calcit --entry ... --check-only` | 配置、缺失定义、参数/返回值、数据与 trait 类型错误 | 错误或 warning 均阻断 |
 | 动态分派 | `calcit analyze dynamic-methods --max <reviewed-limit>` | 动态 receiver 与无法专门化的方法；默认排除依赖和无关 FFI warning | 超过上限时阻断；`--deps` 可审计依赖 |
-| 静态债务 | `analyze check-types/weak-types/deprecated --format json` | 覆盖率、dynamic、nil/Optional、废弃调用 | 报告本身不按命中数阻断，CI 比较 summary |
+| 静态债务 | `analyze check-types/weak-types/deprecated --format json` | 覆盖率、dynamic、nil/Optional、废弃调用 | 报告本身不按命中数阻断；仅非零 legacy baseline 项目继续比较 |
 | 示例与测试 | `check-examples`、`docs check-md`、`calcit test --require-match` | API 示例、文档片段、definition-attached tests | 失败或未匹配测试时阻断 |
 | 行为与后端 | entry、Node/Vite、项目测试 | native/JS/FFI 的真实行为差异 | 由进程退出码阻断 |
 

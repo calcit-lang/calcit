@@ -111,7 +111,7 @@ calcit analyze check-examples --ns app.main --def 'detect-nodejs?' --js
 calcit query type-at app.main/calculate-total --path code@3.2 --format json
 ```
 
-`check-types` 会把裸 `:ref`、`:list`、`:map` 等嵌套 Dynamic slot 记为 partial coverage，并在 `schema_issues` 中返回 `[W_SCHEMA_DYNAMIC]`；未绑定的 `*type-slot` 同样记为 partial 并返回 `[W_UNRESOLVED_TYPE_SLOT]`。严格预处理才负责类型正确性：可达项目函数缺少结构化 root schema 或嵌入式 `Fn` hint 时返回 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`；通过程序直接注入且没有结构化 root schema 的 macro 也会被拒绝。Snapshot loader 会更早拒绝旧 runtime `Fn` 或 whole-`Dynamic` macro schema。发布审计使用 `--deps` 检查实际解析的 module artifact。`weak-types --format json` 只提供迁移定位所需的 definition、path、detail、intent、evidence 与 suggestion；unresolved Dynamic、未绑定 slot、nil/Optional 债务分别产生 `W_DYNAMIC_TYPE_DEBT`、`W_UNRESOLVED_TYPE_SLOT`、`W_NIL_TYPE_DEBT`。声明 `:js-ffi` feature 的 definition 仍标记为明确边界，但 analyzer 不据此改变编译语义。
+`check-types` 会把裸 `:ref`、`:list`、`:map` 等嵌套 Dynamic slot 记为 partial coverage，并在 `schema_issues` 中返回 `[W_SCHEMA_DYNAMIC]`；未绑定的 `*type-slot` 同样记为 partial 并返回 `[W_UNRESOLVED_TYPE_SLOT]`。严格预处理才负责类型正确性：可达项目函数缺少结构化 root schema 或嵌入式 `Fn` hint 时返回 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`；通过程序直接注入且没有结构化 root schema 的 macro 也会被拒绝。Snapshot loader 会更早拒绝旧 runtime `Fn` 或 whole-`Dynamic` macro schema。发布审计使用 `--deps` 检查实际解析的 module artifact。`weak-types --format json` 只提供迁移定位所需的 kind、definition、path、detail、intent、evidence 与 suggestion；unresolved Dynamic、未绑定 slot、nil/Optional 债务分别产生 `W_DYNAMIC_TYPE_DEBT`、`W_UNRESOLVED_TYPE_SLOT`、`W_NIL_TYPE_DEBT`。声明 `:js-ffi` feature 的 definition 仍标记为明确边界，但 analyzer 不据此改变编译语义。
 
 ### Target-aware public definition checks
 
@@ -388,7 +388,7 @@ let
 
 ### Dynamic 用量审计
 
-每次 `calcit` 执行或编译都会在 stderr 统计当前项目的 Dynamic 类型位置。少量使用只保留静默结果；达到一定数量且占比超过阈值时输出 notice 或 warning。该审计不会改变程序语义，也不会污染 stdout；需要定位时运行：
+普通执行与编译只运行默认严格预处理，以确定的 warning/error 判断类型关系，不扫描、统计或打印 Dynamic 用量。`--strict-types` 额外执行零债务 quality gate，但也不恢复用量 notice。只有迁移存量代码需要定位时，才显式运行：
 
 ```bash
 calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json
