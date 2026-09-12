@@ -39,7 +39,7 @@ impl CalxCoverageOwner {
 pub enum CalxCoverageStage {
   /// Already supported by the strict kernel compatibility path.
   KernelFoundation,
-  /// Program entry, `Unit`, strict text values, and typed imports.
+  /// Program entry, `Unit`, strict text and tag values, and typed imports.
   ProgramFoundation,
   /// Nominal struct/enum values, exhaustive match, Option, and Result.
   NominalData,

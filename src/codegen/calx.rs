@@ -5,6 +5,11 @@
 //! foundation: callers receive either a closed eligible call graph or one stable fallback
 //! report. The checked [`coverage`] inventory defines how the wider static Calcit language
 //! is staged without admitting Nil or Dynamic values.
+//!
+//! This is an experimental compiler-internal surface for the revision-pinned Calx session
+//! adapter, not a stable public API. Strict scalar slices may add variants such as
+//! [`CalxScalarType::Tag`] within the 0.14.x line; consumers must not assume exhaustive
+//! matches stay closed across patch releases.
 
 pub mod benchmark_session;
 mod cache;
