@@ -4010,7 +4010,7 @@
               :code $ quote
                 assert= 4 $ count |good
               :tags $ #{} :core :unit
-        'cpu-time $ %{} 'CodeEntry (:doc "|internal function for getting CPU time\nSyntax: (cpu-time)\nParams: none\nReturns: number\nReturns current CPU time in milliseconds for performance measurement")
+        'cpu-time $ %{} 'CodeEntry (:doc "|返回单调时钟的毫秒读数，用于测量经过时间。只比较同一进程内两次调用的差值，不依赖绝对起点。")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
@@ -8649,7 +8649,7 @@
                 assert= (#{} 1 2 3)
                   union (#{} 1) (#{} 2) (#{} 3)
               :tags $ #{} :core :unit
-        'unix-time-ms $ %{} 'CodeEntry (:doc "|Return the current Unix timestamp in milliseconds.\nSyntax: (unix-time-ms)\nReturns: number")
+        'unix-time-ms $ %{} 'CodeEntry (:doc "|返回 Unix epoch 以来的系统时间，单位为毫秒。系统时钟可能被宿主校准，不保证单调递增。")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn

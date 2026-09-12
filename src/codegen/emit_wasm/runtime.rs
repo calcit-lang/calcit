@@ -129,6 +129,12 @@ pub(super) fn host_imports_for_target(target: WasmTarget) -> Vec<HostImport> {
         params: vec![ValType::I32],
         results: vec![],
       },
+      HostImport {
+        module: "wasi_snapshot_preview1".into(),
+        name: "clock_time_get".into(),
+        params: vec![ValType::I32, ValType::I64, ValType::I32],
+        results: vec![ValType::I32],
+      },
     ],
   }
 }

@@ -2353,6 +2353,14 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.call_rt("__rt_wasi_get_args");
       Ok(())
     }
+    CalcitProc::UnixTimeMs => {
+      expect_arity(0, args, "unix-time-ms")?;
+      emit_wasi_clock_ms(ctx, 0, "unix-time-ms")
+    }
+    CalcitProc::CpuTime => {
+      expect_arity(0, args, "cpu-time")?;
+      emit_wasi_clock_ms(ctx, 1, "cpu-time")
+    }
 
     // @atom deref: just emit the argument (which should already be a GlobalGet)
     CalcitProc::AtomDeref => {
@@ -2586,6 +2594,30 @@ fn emit_wasi_write_literal(ctx: &mut WasmGenCtx, fd: i32, text: &str) -> Result<
     .ok_or_else(|| format!("internal WASI output literal missing from string pool: {text:?}"))?;
   let ptr_local = ctx.alloc_i32(ptr as i32);
   emit_wasi_write_string(ctx, fd, ptr_local);
+  Ok(())
+}
+
+/// Read a Preview 1 clock into the runtime scratch area and return milliseconds.
+fn emit_wasi_clock_ms(ctx: &mut WasmGenCtx, clock_id: i32, proc_name: &str) -> Result<(), String> {
+  if ctx.target != WasmTarget::Wasi {
+    return Err(format!("E_WASM_CAPABILITY: {proc_name} is unavailable for the core WASM target"));
+  }
+  ctx.emit(Instruction::I32Const(clock_id));
+  ctx.emit(Instruction::I64Const(1_000_000));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::Call(resolve_host_import(
+    ctx,
+    "wasi_snapshot_preview1",
+    "clock_time_get",
+  )?));
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::F64ConvertI64U);
+  ctx.emit(f64_const(1_000_000.0));
+  ctx.emit(Instruction::F64Div);
   Ok(())
 }
 
@@ -3653,6 +3685,7 @@ mod tests {
         ("environ_sizes_get", vec![ValType::I32; 2], vec![ValType::I32]),
         ("environ_get", vec![ValType::I32; 2], vec![ValType::I32]),
         ("proc_exit", vec![ValType::I32], vec![]),
+        ("clock_time_get", vec![ValType::I32, ValType::I64, ValType::I32], vec![ValType::I32],),
       ]
     );
     assert!(imports.iter().all(|import| import.module == "wasi_snapshot_preview1"));

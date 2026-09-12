@@ -71,7 +71,8 @@ no-op or fabricated success value.
 | --- | --- | --- | --- | --- | --- |
 | Pure Calcit data/control and typed `Option`/`Result` composition | yes | yes | yes | supported subset | core definitions and methods |
 | JSON parse/stringify | yes | yes | yes | unavailable | String `.parse-json` / Result wrappers; core JSON procedures |
-| Current Unix time in milliseconds | yes | unavailable | unavailable | unavailable | `unix-time-ms` (native-only exception; do not infer cross-backend support) |
+| Current Unix time in milliseconds | yes | unavailable | unavailable | Preview 1 realtime clock | `unix-time-ms` |
+| Monotonic milliseconds for elapsed-time measurement | yes | unavailable | unavailable | Preview 1 monotonic clock | `cpu-time`（只比较同一进程内两次调用的差值） |
 | Construct and inspect a path value without I/O | yes | yes | yes | value-level support only | `fs:path`, `FsPath .to-string` |
 | `FsPath .read-text` / `.write-text` | yes | host injection | browser `localStorage` adapter | unavailable | `FsPath` Result-returning methods |
 | `FsPath .read-dir` / `.walk-dir` | yes | host injection | unavailable | unavailable | `FsPath` Result-returning methods |
@@ -85,12 +86,8 @@ no-op or fabricated success value.
 | Native dylib sync/async/blocking/resource transport | C-safe FFI v1 | not applicable | not applicable | separate future adapter | raw runtime boundary plus typed library methods |
 
 The matrix records what exists today, not an entitlement for every backend.
-For example, `unix-time-ms` is a canonical native core API but remains an
-explicit backend-coverage exception. New code must not copy that exception
-without a reviewed reason and a planned unsupported diagnostic.
-
-该矩阵描述当前事实，不承诺所有能力必须补齐所有后端。特别是 `unix-time-ms`
-目前是 native-only 的 core 例外；新增 API 不得据此绕过跨后端审查。
+该矩阵描述当前事实，不承诺所有能力必须补齐所有后端。新增 API 不得因某个
+现存能力已覆盖多个 backend，就绕过跨后端审查与 unsupported diagnostic。
 
 ## Canonical core APIs / 当前 core 规范入口
 
@@ -99,9 +96,10 @@ without a reviewed reason and a planned unsupported diagnostic.
 - Filesystem paths: construct `FsPath` with `fs:path`; use `.read-text`,
   `.write-text`, `.read-dir`, and `.walk-dir`. String-path `try-read-*` and raw
   raising procedures are compatibility or implementation entries.
-- Clock: `unix-time-ms` is the native canonical clock primitive, with the
-  backend limitation shown above. Higher-level date/timezone behavior belongs
-  in `calcit.std`.
+- 时钟：`unix-time-ms` 返回 Unix epoch 以来的系统时间；`cpu-time` 用于测量
+  经过时间，其绝对起点没有跨宿主语义。WASI command 通过 Preview 1
+  `clock_time_get` 实现这两个入口，并在宿主返回错误时直接失败，不伪造数值。
+  更高层的日期、时区行为仍属于 `calcit.std`。
 - Native async/resource values: expose `FfiTask`, `FfiResponse`, and other
   nominal capabilities through methods. Keep raw `&ffi-*`, handles, status
   codes, and symbol strings at module/runtime boundaries.
