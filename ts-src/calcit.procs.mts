@@ -1549,7 +1549,15 @@ export let _$n_wait_ms = (resultType: CalcitEnumDef, milliseconds: number, hostE
   try {
     const injection = get_wait_injection();
     if (typeof injection === "function") {
-      injection(milliseconds);
+      const outcome = injection(milliseconds);
+      if (
+        outcome != null &&
+        (typeof outcome === "object" || typeof outcome === "function") &&
+        typeof (outcome as PromiseLike<unknown>).then === "function"
+      ) {
+        void Promise.resolve(outcome).catch((_cause: unknown): void => {});
+        return error(`${hostError}: wait_ms injection must complete synchronously`);
+      }
       return success();
     }
     if (typeof SharedArrayBuffer === "undefined" || typeof Atomics.wait !== "function") {

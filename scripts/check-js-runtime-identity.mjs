@@ -106,6 +106,13 @@ try {
   const failedWait = runtimeA._$n_wait_ms(todoEnum, 1, "wait failed");
   assert.equal(failedWait.tag, runtimeA.newTag("err"));
   assert.deepEqual(failedWait.extra, ["wait failed: interrupted"]);
+  globalThis.__calcit_injections__.wait_ms = async () => {
+    throw new Error("late rejection");
+  };
+  const asyncWait = runtimeA._$n_wait_ms(todoEnum, 1, "wait failed");
+  assert.equal(asyncWait.tag, runtimeA.newTag("err"));
+  assert.deepEqual(asyncWait.extra, ["wait failed: wait_ms injection must complete synchronously"]);
+  await new Promise((resolve) => setImmediate(resolve));
   globalThis.__calcit_injections__.read_file = (path) => `typed:${path}`;
   globalThis.__calcit_injections__.write_file = (path, content) => writes.push([path, content]);
   const typedRead = runtimeA._$n_fs_read_text(todoEnum, "typed.txt", "read failed");

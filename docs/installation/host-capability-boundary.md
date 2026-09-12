@@ -111,7 +111,8 @@ The matrix records what exists today, not an entitlement for every backend.
 - 同步等待：`wait-ms` 接收 `0..4294967295` 范围内的整数毫秒，返回
   `Result<Unit,String>`。零值立即成功且不触发宿主调用；小数、负数、溢出和宿主失败
   都进入错误分支，不做隐式舍入。Native 阻塞当前线程，生成的 JavaScript 优先使用
-  host injection、否则尝试 `Atomics.wait`，WASI command 通过 Preview 1 `poll_oneoff`
+  host injection、否则尝试 `Atomics.wait`；同步 injection 不得返回 Promise/thenable，异步结果会立即转为错误，
+  不能先报告成功再丢失稍后的 rejection。WASI command 通过 Preview 1 `poll_oneoff`
   使用相对单调时钟；core WASM 明确拒绝。异步 callback API `timeout-call` 保持独立。
   `async-sleep` 是 fire-and-forget 的兼容任务，单位和生命周期也不同，因此 migration/fix
   不得把这两个旧入口自动改写成 `wait-ms`。类型驱动工具只能报告语义差异并给出两个候选方向：
