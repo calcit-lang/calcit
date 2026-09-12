@@ -192,19 +192,79 @@ pub(super) fn build_wasi_write_all_fn(fd_write_idx: u32) -> CompiledFn {
   }
 }
 
-fn rt_emit_reserve_raw(builder: &mut RuntimeFnBuilder, size_local: u32, dst_local: u32) {
-  builder.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
-  builder.emit(Instruction::LocalTee(dst_local));
+/// Reserve a temporary region at the top of linear memory without advancing
+/// the managed bump allocator. `managed_size_local` keeps allocations made
+/// while the adapter is active below the scratch region.
+fn rt_emit_reserve_scratch(builder: &mut RuntimeFnBuilder, size_local: u32, managed_size_local: u32, dst_local: u32) {
+  let aligned_size = builder.alloc_i64();
+  let memory_bytes = builder.alloc_i64();
+  let required_bytes = builder.alloc_i64();
+
   builder.emit(Instruction::LocalGet(size_local));
-  builder.emit(Instruction::I32Const(7));
-  builder.emit(Instruction::I32Add);
-  builder.emit(Instruction::I32Const(-8));
-  builder.emit(Instruction::I32And);
-  builder.emit(Instruction::I32Add);
-  builder.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
+  builder.emit(Instruction::I64Const(7));
+  builder.emit(Instruction::I64Add);
+  builder.emit(Instruction::I64Const(-8));
+  builder.emit(Instruction::I64And);
+  builder.emit(Instruction::LocalSet(aligned_size));
+  builder.emit(Instruction::MemorySize(0));
+  builder.emit(Instruction::I64ExtendI32U);
+  builder.emit(Instruction::I64Const(16));
+  builder.emit(Instruction::I64Shl);
+  builder.emit(Instruction::LocalSet(memory_bytes));
+  builder.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  builder.emit(Instruction::I64ExtendI32U);
+  builder.emit(Instruction::LocalGet(managed_size_local));
+  builder.emit(Instruction::I64Add);
+  builder.emit(Instruction::LocalGet(aligned_size));
+  builder.emit(Instruction::I64Add);
+  builder.emit(Instruction::LocalSet(required_bytes));
+  builder.emit(Instruction::LocalGet(required_bytes));
+  builder.emit(Instruction::I64Const(u32::MAX as i64));
+  builder.emit(Instruction::I64GtU);
+  builder.emit(Instruction::If(BlockType::Empty));
+  builder.emit(Instruction::Unreachable);
+  builder.emit(Instruction::End);
+  builder.emit(Instruction::LocalGet(required_bytes));
+  builder.emit(Instruction::LocalGet(memory_bytes));
+  builder.emit(Instruction::I64GtU);
+  builder.emit(Instruction::If(BlockType::Empty));
+  builder.emit(Instruction::LocalGet(required_bytes));
+  builder.emit(Instruction::LocalGet(memory_bytes));
+  builder.emit(Instruction::I64Sub);
+  builder.emit(Instruction::I64Const(65535));
+  builder.emit(Instruction::I64Add);
+  builder.emit(Instruction::I64Const(16));
+  builder.emit(Instruction::I64ShrU);
+  builder.emit(Instruction::I32WrapI64);
+  builder.emit(Instruction::MemoryGrow(0));
+  builder.emit(Instruction::I32Const(-1));
+  builder.emit(Instruction::I32Eq);
+  builder.emit(Instruction::If(BlockType::Empty));
+  builder.emit(Instruction::Unreachable);
+  builder.emit(Instruction::End);
+  builder.emit(Instruction::MemorySize(0));
+  builder.emit(Instruction::I64ExtendI32U);
+  builder.emit(Instruction::I64Const(16));
+  builder.emit(Instruction::I64Shl);
+  builder.emit(Instruction::LocalSet(memory_bytes));
+  builder.emit(Instruction::End);
+  builder.emit(Instruction::LocalGet(memory_bytes));
+  builder.emit(Instruction::LocalGet(aligned_size));
+  builder.emit(Instruction::I64Sub);
+  builder.emit(Instruction::I32WrapI64);
+  builder.emit(Instruction::LocalSet(dst_local));
 }
 
 fn rt_emit_trap_on_errno(builder: &mut RuntimeFnBuilder) {
+  builder.emit(Instruction::If(BlockType::Empty));
+  builder.emit(Instruction::Unreachable);
+  builder.emit(Instruction::End);
+}
+
+fn rt_emit_trap_if_i64_exceeds_memory32(builder: &mut RuntimeFnBuilder, value_local: u32) {
+  builder.emit(Instruction::LocalGet(value_local));
+  builder.emit(Instruction::I64Const(u32::MAX as i64));
+  builder.emit(Instruction::I64GtU);
   builder.emit(Instruction::If(BlockType::Empty));
   builder.emit(Instruction::Unreachable);
   builder.emit(Instruction::End);
@@ -216,7 +276,8 @@ pub(super) fn build_wasi_get_args_fn(args_sizes_get_idx: u32, args_get_idx: u32,
   let mut b = RuntimeFnBuilder::new(0);
   let count = b.alloc_i32();
   let buffer_size = b.alloc_i32();
-  let raw_size = b.alloc_i32();
+  let raw_size = b.alloc_i64();
+  let managed_size = b.alloc_i64();
   let argv = b.alloc_i32();
   let buffer = b.alloc_i32();
   let buffer_end = b.alloc_i32();
@@ -225,6 +286,7 @@ pub(super) fn build_wasi_get_args_fn(args_sizes_get_idx: u32, args_get_idx: u32,
   let index = b.alloc_i32();
   let arg_start = b.alloc_i32();
   let arg_end = b.alloc_i32();
+  let next_arg_min = b.alloc_i32();
 
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::I32Const(4));
@@ -238,12 +300,26 @@ pub(super) fn build_wasi_get_args_fn(args_sizes_get_idx: u32, args_get_idx: u32,
   b.emit(Instruction::LocalSet(buffer_size));
 
   b.emit(Instruction::LocalGet(count));
-  b.emit(Instruction::I32Const(4));
-  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Const(4));
+  b.emit(Instruction::I64Mul);
   b.emit(Instruction::LocalGet(buffer_size));
-  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Add);
   b.emit(Instruction::LocalSet(raw_size));
-  rt_emit_reserve_raw(&mut b, raw_size, argv);
+  rt_emit_trap_if_i64_exceeds_memory32(&mut b, raw_size);
+  // list header/payload plus per-string headers and worst-case alignment.
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Const(31));
+  b.emit(Instruction::I64Mul);
+  b.emit(Instruction::LocalGet(buffer_size));
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::I64Const(16));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalSet(managed_size));
+  rt_emit_reserve_scratch(&mut b, raw_size, managed_size, argv);
   b.emit(Instruction::LocalGet(argv));
   b.emit(Instruction::LocalGet(count));
   b.emit(Instruction::I32Const(4));
@@ -273,6 +349,8 @@ pub(super) fn build_wasi_get_args_fn(args_sizes_get_idx: u32, args_get_idx: u32,
 
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::LocalGet(buffer));
+  b.emit(Instruction::LocalSet(next_arg_min));
   b.emit(Instruction::Block(BlockType::Empty));
   b.emit(Instruction::Loop(BlockType::Empty));
   b.emit(Instruction::LocalGet(index));
@@ -287,6 +365,12 @@ pub(super) fn build_wasi_get_args_fn(args_sizes_get_idx: u32, args_get_idx: u32,
   b.emit(Instruction::I32Load(mem_arg_i32(0)));
   b.emit(Instruction::LocalTee(arg_start));
   b.emit(Instruction::LocalGet(buffer));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Unreachable);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(arg_start));
+  b.emit(Instruction::LocalGet(next_arg_min));
   b.emit(Instruction::I32LtU);
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::Unreachable);
@@ -312,6 +396,10 @@ pub(super) fn build_wasi_get_args_fn(args_sizes_get_idx: u32, args_get_idx: u32,
   b.emit(Instruction::Br(0));
   b.emit(Instruction::End);
   b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(arg_end));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(next_arg_min));
   b.emit(Instruction::LocalGet(list));
   b.emit(Instruction::I32Const(8));
   b.emit(Instruction::I32Add);
@@ -345,7 +433,8 @@ pub(super) fn build_wasi_get_env_fn(environ_sizes_get_idx: u32, environ_get_idx:
   let name_bytes = b.alloc_i32();
   let count = b.alloc_i32();
   let buffer_size = b.alloc_i32();
-  let raw_size = b.alloc_i32();
+  let raw_size = b.alloc_i64();
+  let managed_size = b.alloc_i64();
   let entries = b.alloc_i32();
   let buffer = b.alloc_i32();
   let buffer_end = b.alloc_i32();
@@ -375,12 +464,21 @@ pub(super) fn build_wasi_get_env_fn(environ_sizes_get_idx: u32, environ_get_idx:
   b.emit(Instruction::I32Load(mem_arg_i32(0)));
   b.emit(Instruction::LocalSet(buffer_size));
   b.emit(Instruction::LocalGet(count));
-  b.emit(Instruction::I32Const(4));
-  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Const(4));
+  b.emit(Instruction::I64Mul);
   b.emit(Instruction::LocalGet(buffer_size));
-  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Add);
   b.emit(Instruction::LocalSet(raw_size));
-  rt_emit_reserve_raw(&mut b, raw_size, entries);
+  rt_emit_trap_if_i64_exceeds_memory32(&mut b, raw_size);
+  // At most one returned string is allocated while the scratch data is live.
+  b.emit(Instruction::LocalGet(buffer_size));
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Const(23));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalSet(managed_size));
+  rt_emit_reserve_scratch(&mut b, raw_size, managed_size, entries);
   b.emit(Instruction::LocalGet(entries));
   b.emit(Instruction::LocalGet(count));
   b.emit(Instruction::I32Const(4));
@@ -1105,6 +1203,13 @@ impl RuntimeFnBuilder {
     let idx = self.next_local;
     self.next_local += 1;
     self.locals.push(ValType::I32);
+    idx
+  }
+
+  fn alloc_i64(&mut self) -> u32 {
+    let idx = self.next_local;
+    self.next_local += 1;
+    self.locals.push(ValType::I64);
     idx
   }
 
