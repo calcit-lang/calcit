@@ -20,6 +20,7 @@ Core design:
 
 Current direction:
 
+- 编译后端的新增投入集中在 WebAssembly，并以共享 Calcit 语义用例逐步扩大可编译范围
 - `calcit.cirru` is the canonical source snapshot; retired `compact.cirru` inputs receive migration guidance
 - CLI-first development with the `calcit` runtime and the independently released `caps` package manager, designed to work well with AI agents in terminal workflows
 - Better CLI editing and validation for CI, docs lookup, module management, and incremental updates
@@ -36,7 +37,6 @@ cadence are maintained separately or tracked for extraction:
 | [`calcit-bindgen`](https://github.com/calcit-lang/calcit-bindgen) | Independent experimental production generator owning deterministic Rust/Calcit/TypeScript/WIT generation, manifests, compatibility diff, and stale checks. Core retains only Interface IR export/schema/conformance; the completed cutover is tracked in [#544](https://github.com/calcit-lang/calcit/issues/544). |
 | [`calcit-native-ffi`](https://github.com/calcit-lang/calcit-native-ffi) | Independent production shared ABI/helper crate for native modules; canonical ABI ownership is tracked in [calcit-native-ffi#7](https://github.com/calcit-lang/calcit-native-ffi/issues/7). |
 | [`caps`](https://github.com/calcit-lang/caps) | Independent production package manager released as the `calcit-caps` crate; the completed core cutover is tracked in [#555](https://github.com/calcit-lang/calcit/issues/555). |
-| [`calcit-calx-bench`](https://github.com/calcit-lang/calcit-calx-bench) | Independent experimental harness and report archive consuming core's revision-pinned session adapter; the completed adapter migration and core product-asset cutover are tracked in [#558](https://github.com/calcit-lang/calcit/issues/558) and [#559](https://github.com/calcit-lang/calcit/issues/559), while Calx lowering, cache, runtime semantics, and correctness gates remain in core. |
 
 See [#549](https://github.com/calcit-lang/calcit/issues/549) for the bilingual repository-boundary roadmap.
 Calcit has no near-term LSP plan, so analysis and Agent CLI capabilities remain in this repository and release

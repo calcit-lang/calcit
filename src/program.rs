@@ -1212,11 +1212,8 @@ pub fn clone_existing_compiled_program() -> CompiledProgram {
   PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled program data").clone()
 }
 
-/// Install one explicitly named source namespace for an internal isolated session.
-///
-/// This is intentionally crate-private: external adapters must not receive mutable
-/// access to the process-wide source and compiled registries. Existing namespaces
-/// are never overwritten by benchmark setup.
+/// Install one explicitly named source namespace for an isolated compiler test.
+#[cfg(test)]
 pub(crate) fn install_internal_source_namespace(ns: Arc<str>, file: ProgramFileData) -> Result<(), String> {
   let mut source = PROGRAM_CODE_DATA.write().map_err(|error| error.to_string())?;
   if source.contains_key(&ns) {
@@ -1232,6 +1229,7 @@ pub(crate) fn install_internal_source_namespace(ns: Arc<str>, file: ProgramFileD
 }
 
 /// Remove a namespace installed by an internal isolated session.
+#[cfg(test)]
 pub(crate) fn remove_internal_source_namespace(ns: &str) {
   clear_runtime_ns(ns);
   PROGRAM_CODE_DATA.write().expect("write program code").remove(ns);

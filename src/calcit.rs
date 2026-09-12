@@ -100,11 +100,6 @@ pub enum Calcit {
   Enum(CalcitEnumValue),
   /// binary data, to be used by FFIs
   Buffer(Vec<u8>),
-  /// Immutable homogeneous numeric storage for strict Calx kernels.
-  ///
-  /// This is deliberately distinct from byte `Buffer` and persistent `List`:
-  /// it is a concrete shared value with no element boxing.
-  F64Buffer(Arc<[f64]>),
   /// mutable append-only list, for performance-sensitive accumulation patterns.
   /// Only supports push/concat at the tail, no head/middle mutation.
   BufList(Arc<Mutex<Vec<Calcit>>>),
@@ -222,7 +217,6 @@ impl fmt::Display for Calcit {
         }
         f.write_str(")")
       }
-      F64Buffer(values) => f.write_str(&format!("(&f64-buffer count={})", values.len())),
       BufList(items) => {
         let items = items.lock().expect("BufList lock");
         f.write_str(&format!("(&buf-list count={})", items.len()))
@@ -485,12 +479,6 @@ impl Hash for Calcit {
         "buffer:".hash(_state);
         buf.hash(_state);
       }
-      F64Buffer(values) => {
-        "f64-buffer:".hash(_state);
-        for value in values.iter() {
-          value.to_bits().hash(_state);
-        }
-      }
       BufList(items) => {
         "buf-list:".hash(_state);
         let items = items.lock().expect("BufList lock");
@@ -698,17 +686,6 @@ impl Ord for Calcit {
       (Buffer(..), _) => Less,
       (_, Buffer(..)) => Greater,
 
-      (F64Buffer(a), F64Buffer(b)) => a
-        .iter()
-        .zip(b.iter())
-        .find_map(|(left, right)| {
-          let order = left.total_cmp(right);
-          (order != Equal).then_some(order)
-        })
-        .unwrap_or_else(|| a.len().cmp(&b.len())),
-      (F64Buffer(..), _) => Less,
-      (_, F64Buffer(..)) => Greater,
-
       (BufList(a), BufList(b)) => {
         let a = a.lock().expect("BufList lock");
         let b = b.lock().expect("BufList lock");
@@ -812,9 +789,6 @@ impl PartialEq for Calcit {
       (Ref(a, _), Ref(b, _)) => a == b,
       (Enum(a), Enum(b)) => a == b,
       (Buffer(b), Buffer(d)) => b == d,
-      (F64Buffer(b), F64Buffer(d)) => {
-        b.len() == d.len() && b.iter().zip(d.iter()).all(|(left, right)| left.to_bits() == right.to_bits())
-      }
       (BufList(a), BufList(b)) => {
         let a = a.lock().expect("BufList lock");
         let b = b.lock().expect("BufList lock");
@@ -958,7 +932,6 @@ impl Calcit {
         format!("**Calcit enum value** (`{}`) — a tagged union variant", enum_value.tag)
       }
       Buffer(buf) => format!("**Calcit buffer** ({} bytes) — binary data", buf.len()),
-      F64Buffer(values) => format!("**Calcit F64Buffer** ({} values) — immutable numeric storage", values.len()),
       BufList(items) => {
         format!(
           "**Calcit buffer list** ({} items) — mutable list",
