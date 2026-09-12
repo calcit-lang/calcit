@@ -108,7 +108,8 @@ let
 `.read-dir`、`.walk-dir` 或 `.write-text`，这些方法返回 `Result<...,String>`。
 String 本身不携带文件系统语义；`try-read-file`、`try-read-dir`、
 `try-write-file` 与底层 raising procedures 仅保留为兼容入口。
-这些文件效果支持 native 与生成的 JavaScript；WASM 尚未提供宿主文件效果。
+这些文件效果支持 native 与生成的 JavaScript。WASI command 支持基于 preopen 的
+文本读写和 `.read-dir`；core WASM 明确拒绝宿主文件效果，`.walk-dir` 尚未接入 WASI。
 
 Native 异步 FFI capability 也遵循相同边界原则。模块适配层用 `ffi:task`、
 `ffi:response` 把不透明 AnyRef 提升为 nominal `FfiTask`、`FfiResponse`，业务层调用

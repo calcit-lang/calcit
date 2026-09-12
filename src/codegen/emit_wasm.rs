@@ -46,8 +46,8 @@ mod structs;
 use methods::{emit_call_args, emit_method_invoke};
 use runtime::{
   HostImport, ModuleFunctionLayout, build_runtime_fns, build_utf8_valid_fn, build_wasi_get_args_fn, build_wasi_get_env_fn,
-  build_wasi_open_path_fn, build_wasi_read_text_fn, build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module,
-  core_host_import, host_imports_for_target,
+  build_wasi_open_path_fn, build_wasi_read_dir_fn, build_wasi_read_text_fn, build_wasi_write_all_fn, build_wasi_write_text_fn,
+  build_wasm_module, core_host_import, host_imports_for_target,
 };
 use structs::{
   emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_contains, emit_struct_count,
@@ -275,6 +275,19 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
       wasi_import("fd_read"),
       wasi_import("fd_close"),
       utf8_valid_idx,
+      str_tag_id,
+    ));
+    let read_dir_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_read_dir".into(), read_dir_idx);
+    compiled_fns.push(build_wasi_read_dir_fn(
+      open_path_idx,
+      wasi_import("fd_readdir"),
+      wasi_import("fd_close"),
+      utf8_valid_idx,
+      *runtime_fn_index
+        .get("__rt_str_compare")
+        .expect("string comparison helper must exist"),
+      *tag_index.get("list").expect("list tag must exist") as i32,
       str_tag_id,
     ));
     let write_text_idx = num_imports + compiled_fns.len() as u32;
@@ -2391,6 +2404,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     }
     CalcitProc::NativeSecureRandomBytes => emit_wasi_secure_random_bytes(ctx, args),
     CalcitProc::NativeFsReadText => emit_wasi_fs_read_text(ctx, args),
+    CalcitProc::NativeFsReadDir => emit_wasi_fs_read_dir(ctx, args),
     CalcitProc::NativeFsWriteText => emit_wasi_fs_write_text(ctx, args),
 
     // @atom deref: just emit the argument (which should already be a GlobalGet)
@@ -2742,6 +2756,79 @@ fn emit_wasi_fs_read_text(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   ctx.emit(Instruction::F64ConvertI32U);
   ctx.emit(Instruction::LocalSet(content));
   emit_result_enum(ctx, "ok", content)?;
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
+/// Lower the typed filesystem directory boundary through a private Preview 1 helper.
+fn emit_wasi_fs_read_dir(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(4, args, "&fs-read-dir")?;
+  if ctx.target != WasmTarget::Wasi {
+    return Err("E_WASM_CAPABILITY: filesystem directory reads are unavailable for the core WASM target".into());
+  }
+  let path = emit_ptr_to_i32(ctx, &args[2])?;
+  let host_error = ctx.alloc_local();
+  emit_expr(ctx, &args[3])?;
+  ctx.emit(Instruction::LocalSet(host_error));
+  ctx.emit(Instruction::LocalGet(path));
+  ctx.call_rt("__rt_wasi_read_dir");
+  let list = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalTee(list));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_result_enum(ctx, "err", host_error)?;
+  ctx.emit(Instruction::Else);
+
+  let count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(list));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(count));
+  let index = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(index));
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
+  let value = ctx.alloc_local();
+  emit_list_load_elem(ctx, list, index);
+  ctx.emit(Instruction::LocalSet(value));
+  let struct_ptr = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc(ctx, 24, struct_ptr, "struct");
+  ctx.emit(Instruction::LocalGet(struct_ptr));
+  ctx.emit(f64_const(1.0));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(struct_ptr));
+  ctx.emit(f64_const(get_type_tag(ctx, "FsPath")));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalGet(struct_ptr));
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(16)));
+  ctx.emit(Instruction::LocalGet(list));
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(struct_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(index));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  let list_value = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(list));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(list_value));
+  emit_result_enum(ctx, "ok", list_value)?;
   ctx.emit(Instruction::End);
   Ok(())
 }
@@ -3856,6 +3943,11 @@ mod tests {
         ),
         ("fd_filestat_get", vec![ValType::I32; 2], vec![ValType::I32]),
         ("fd_read", vec![ValType::I32; 4], vec![ValType::I32]),
+        (
+          "fd_readdir",
+          vec![ValType::I32, ValType::I32, ValType::I32, ValType::I64, ValType::I32],
+          vec![ValType::I32],
+        ),
         ("fd_close", vec![ValType::I32], vec![ValType::I32]),
       ]
     );

@@ -75,7 +75,8 @@ no-op or fabricated success value.
 | Monotonic milliseconds for elapsed-time measurement | yes | unavailable | unavailable | WASI Preview 1 monotonic clock; core WASM unavailable | `cpu-time`（只比较同一进程内两次调用的差值） |
 | Construct and inspect a path value without I/O | yes | yes | yes | value-level support only | `fs:path`, `FsPath .to-string` |
 | `FsPath .read-text` / `.write-text` | yes | host injection | browser `localStorage` adapter | WASI Preview 1 preopen；core WASM unavailable | `FsPath` Result-returning methods |
-| `FsPath .read-dir` / `.walk-dir` | yes | host injection | unavailable | unavailable | `FsPath` Result-returning methods |
+| `FsPath .read-dir` | yes | host injection | unavailable | WASI Preview 1 preopen；core WASM unavailable | `FsPath` Result-returning methods |
+| `FsPath .walk-dir` | yes | host injection | unavailable | unavailable | `FsPath` Result-returning methods |
 | Process and signal lifecycle | `calcit.std` native module | Node adapter | unavailable | unavailable | typed process/signal APIs in `calcit.std` |
 | Repeating timer and timezone/date | `calcit.std` native module | Node adapter | browser adapter | unavailable | typed timer/date APIs in `calcit.std` |
 | Glob | focused native module | Node adapter | unavailable | unavailable | focused glob module; do not infer browser support |
@@ -97,10 +98,11 @@ The matrix records what exists today, not an entitlement for every backend.
 - Filesystem paths: construct `FsPath` with `fs:path`; use `.read-text`,
   `.write-text`, `.read-dir`, and `.walk-dir`. String-path `try-read-*` and raw
   raising procedures are compatibility or implementation entries.
-- 文件系统：WASI command 的 `.read-text` / `.write-text` 只解析 host 显式授予的
+- 文件系统：WASI command 的 `.read-text` / `.write-text` / `.read-dir` 只解析 host 显式授予的
   preopen，选择最长 guest 路径前缀，并拒绝绝对路径、`..` 越界、非法 UTF-8 与
-  无法推进的 partial I/O。descriptor 生命周期完全留在 adapter 内部；目录读取与
-  walk 仍保持 unavailable，直到复用同一权限解析边界。
+  无法推进的 partial I/O。`.read-dir` 通过 cookie 分页枚举即时子项、过滤 `.` 与
+  `..` 并按完整 guest path 排序；descriptor 生命周期完全留在 adapter 内部。
+  递归 `.walk-dir` 仍保持 unavailable。
 - 时钟：`unix-time-ms` 返回 Unix epoch 以来的系统时间；`cpu-time` 用于测量
   经过时间，其绝对起点没有跨宿主语义。WASI command 通过 Preview 1
   `clock_time_get` 实现这两个入口，并在宿主返回错误时直接失败，不伪造数值。

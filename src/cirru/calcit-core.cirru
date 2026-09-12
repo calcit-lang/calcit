@@ -713,6 +713,14 @@
             {} (:return 'String)
               :args $ [] 'List
           :tags $ #{} :builtin :internal
+        '&fs-read-dir $ %{} 'CodeEntry (:doc "|内部目录枚举边界；显式接收 Result 与 FsPath 定义、guest path 和宿主错误前缀。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'EnumDef 'StructDef 'String 'String
+              :return $ :: 'Result (:: 'List 'FsPath) 'String
+          :tags $ #{} :builtin :file :internal :io
         '&fs-read-text $ %{} 'CodeEntry (:doc "|内部 UTF-8 文件读取边界；显式接收 Result 原型和宿主错误前缀，供 FsPath wrapper 与 backend lowering 使用。")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5551,12 +5559,10 @@
                 assert= (&{} 1 1 2 2 3 3)
                   frequencies $ [] 1 2 2 3 3 3
               :tags $ #{} :core :unit
-        'fs-path:read-dir $ %{} 'CodeEntry (:doc "|List immediate children as Result<List<FsPath>,String>.")
+        'fs-path:read-dir $ %{} 'CodeEntry (:doc "|枚举 FsPath 的即时子项，并以确定顺序返回 Result<List<FsPath>,String>。")
           :code $ quote
             defn fs-path:read-dir (self)
-              result:map
-                try-read-dir (:value self) (%none)
-                fn (paths) (map paths fs:path)
+              &fs-read-dir Result FsPath (:value self) "|fs-path:read-dir failed"
           :examples $ []
           :schema $ :: 'Fn
             {}

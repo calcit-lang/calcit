@@ -5,6 +5,10 @@ use wasm_encoder::{BlockType, Ieee64};
 const WASI_PREOPEN_FD_LIMIT: i32 = 64;
 const WASI_PREOPEN_NAME_LIMIT: i32 = 4096;
 const WASI_TEXT_FILE_LIMIT: i64 = 4 * 1024 * 1024;
+const WASI_DIR_BUFFER_SIZE: i32 = 64 * 1024;
+const WASI_DIR_ENTRY_LIMIT: i32 = 4096;
+const WASI_DIR_NAME_LIMIT: i32 = 4096;
+const WASI_DIR_PATH_BYTES_LIMIT: i32 = 4 * 1024 * 1024;
 
 #[derive(Clone, Debug)]
 pub(super) struct HostImport {
@@ -183,6 +187,12 @@ pub(super) fn host_imports_for_target(target: WasmTarget) -> Vec<HostImport> {
         module: "wasi_snapshot_preview1".into(),
         name: "fd_read".into(),
         params: vec![ValType::I32; 4],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "wasi_snapshot_preview1".into(),
+        name: "fd_readdir".into(),
+        params: vec![ValType::I32, ValType::I32, ValType::I32, ValType::I64, ValType::I32],
         results: vec![ValType::I32],
       },
       HostImport {
@@ -1012,6 +1022,441 @@ pub(super) fn build_wasi_write_text_fn(open_path_idx: u32, fd_write_idx: u32, fd
   b.emit(Instruction::Call(fd_close_idx));
   b.emit(Instruction::I32Eqz);
   b.finish(vec![ValType::I32, ValType::I32], vec![ValType::I32])
+}
+
+fn emit_wasi_dir_failure(builder: &mut RuntimeFnBuilder, fd: u32, fd_close_idx: u32) {
+  builder.emit(Instruction::LocalGet(fd));
+  builder.emit(Instruction::Call(fd_close_idx));
+  builder.emit(Instruction::Drop);
+  builder.emit(Instruction::I32Const(0));
+  builder.emit(Instruction::Return);
+}
+
+/// Read a bounded Preview 1 directory into a sorted list of Calcit String pointers.
+/// Returns zero on validation, authority, UTF-8, capacity, or host failures.
+pub(super) fn build_wasi_read_dir_fn(
+  open_path_idx: u32,
+  fd_readdir_idx: u32,
+  fd_close_idx: u32,
+  utf8_valid_idx: u32,
+  str_compare_idx: u32,
+  list_tag: i32,
+  string_tag: i32,
+) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(1);
+  let path_len = b.alloc_i32();
+  let separator_len = b.alloc_i32();
+  let fd = b.alloc_i32();
+  let list_size = b.alloc_i32();
+  let list = b.alloc_i32();
+  let buffer_size = b.alloc_i32();
+  let buffer = b.alloc_i32();
+  let count = b.alloc_i32();
+  let cookie = b.alloc_i64();
+  let page_cookie = b.alloc_i64();
+  let used = b.alloc_i32();
+  let offset = b.alloc_i32();
+  let remaining = b.alloc_i32();
+  let next_cookie = b.alloc_i64();
+  let name_len = b.alloc_i32();
+  let name = b.alloc_i32();
+  let complete = b.alloc_i32();
+  let truncated = b.alloc_i32();
+  let skip = b.alloc_i32();
+  let name_index = b.alloc_i32();
+  let name_byte = b.alloc_i32();
+  let new_len = b.alloc_i32();
+  let total_path_bytes = b.alloc_i32();
+  let padded = b.alloc_i32();
+  let string_size = b.alloc_i32();
+  let string = b.alloc_i32();
+  let string_data = b.alloc_i32();
+  let insert_at = b.alloc_i32();
+  let previous = b.alloc_i32();
+
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalTee(path_len));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(path_len));
+  b.emit(Instruction::I32Const(WASI_DIR_PATH_BYTES_LIMIT));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(separator_len));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(path_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Const(b'/' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(separator_len));
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(2));
+  b.emit(Instruction::I64Const(1_i64 << 14));
+  b.emit(Instruction::Call(open_path_idx));
+  b.emit(Instruction::LocalTee(fd));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::I32Const(8 + WASI_DIR_ENTRY_LIMIT * 8));
+  b.emit(Instruction::LocalSet(list_size));
+  rt_emit_alloc_dynamic(&mut b, list_size, list, list_tag);
+  b.emit(Instruction::I32Const(WASI_DIR_BUFFER_SIZE));
+  b.emit(Instruction::LocalSet(buffer_size));
+  rt_emit_alloc_dynamic(&mut b, buffer_size, buffer, 0);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(count));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(total_path_bytes));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::LocalSet(cookie));
+
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(cookie));
+  b.emit(Instruction::LocalSet(page_cookie));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::LocalGet(buffer));
+  b.emit(Instruction::I32Const(WASI_DIR_BUFFER_SIZE));
+  b.emit(Instruction::LocalGet(cookie));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Call(fd_readdir_idx));
+  b.emit(Instruction::If(BlockType::Empty));
+  emit_wasi_dir_failure(&mut b, fd, fd_close_idx);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalTee(used));
+  b.emit(Instruction::I32Const(WASI_DIR_BUFFER_SIZE));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  emit_wasi_dir_failure(&mut b, fd, fd_close_idx);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(used));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(offset));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(complete));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(truncated));
+
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::LocalGet(used));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(used));
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalTee(remaining));
+  b.emit(Instruction::I32Const(24));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(truncated));
+  b.emit(Instruction::Br(2));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(buffer));
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I64Load(mem_arg_f64(0)));
+  b.emit(Instruction::LocalSet(next_cookie));
+  b.emit(Instruction::LocalGet(buffer));
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load(mem_arg_i32(16)));
+  b.emit(Instruction::LocalTee(name_len));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  emit_wasi_dir_failure(&mut b, fd, fd_close_idx);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::I32Const(WASI_DIR_NAME_LIMIT));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  emit_wasi_dir_failure(&mut b, fd, fd_close_idx);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(remaining));
+  b.emit(Instruction::I32Const(24));
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(truncated));
+  b.emit(Instruction::Br(2));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(next_cookie));
+  b.emit(Instruction::LocalGet(cookie));
+  b.emit(Instruction::I64Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  emit_wasi_dir_failure(&mut b, fd, fd_close_idx);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(buffer));
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(24));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(name));
+  b.emit(Instruction::LocalGet(name));
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::Call(utf8_valid_idx));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  emit_wasi_dir_failure(&mut b, fd, fd_close_idx);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(name_index));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(name_index));
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(name));
+  b.emit(Instruction::LocalGet(name_index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::LocalTee(name_byte));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::LocalGet(name_byte));
+  b.emit(Instruction::I32Const(b'/' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::If(BlockType::Empty));
+  emit_wasi_dir_failure(&mut b, fd, fd_close_idx);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(name_index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(name_index));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(skip));
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(name));
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Const(b'.' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalSet(skip));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::I32Const(2));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(name));
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Const(b'.' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(name));
+  b.emit(Instruction::I32Load8U(mem_arg_byte(1)));
+  b.emit(Instruction::I32Const(b'.' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalSet(skip));
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(skip));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(WASI_DIR_ENTRY_LIMIT));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::If(BlockType::Empty));
+  emit_wasi_dir_failure(&mut b, fd, fd_close_idx);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(path_len));
+  b.emit(Instruction::LocalGet(separator_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalTee(new_len));
+  b.emit(Instruction::LocalGet(total_path_bytes));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalTee(total_path_bytes));
+  b.emit(Instruction::I32Const(WASI_DIR_PATH_BYTES_LIMIT));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  emit_wasi_dir_failure(&mut b, fd, fd_close_idx);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(new_len));
+  b.emit(Instruction::I32Const(7));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(-8));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalSet(padded));
+  b.emit(Instruction::LocalGet(padded));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(string_size));
+  rt_emit_alloc_dynamic(&mut b, string_size, string, string_tag);
+  b.emit(Instruction::LocalGet(string));
+  b.emit(Instruction::LocalGet(new_len));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(string));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalTee(string_data));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(path_len));
+  b.emit(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
+  b.emit(Instruction::LocalGet(separator_len));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(string_data));
+  b.emit(Instruction::LocalGet(path_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(b'/' as i32));
+  b.emit(Instruction::I32Store8(mem_arg_byte(0)));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(string_data));
+  b.emit(Instruction::LocalGet(path_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(separator_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(name));
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
+
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::LocalSet(insert_at));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(insert_at));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(list));
+  b.emit(Instruction::LocalGet(insert_at));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(previous));
+  b.emit(Instruction::LocalGet(string));
+  b.emit(Instruction::LocalGet(previous));
+  b.emit(Instruction::Call(str_compare_idx));
+  b.emit(Instruction::F64Const(Ieee64::from(0.0)));
+  b.emit(Instruction::F64Ge);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(list));
+  b.emit(Instruction::LocalGet(insert_at));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(previous));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(insert_at));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(insert_at));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(list));
+  b.emit(Instruction::LocalGet(insert_at));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(string));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(count));
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(next_cookie));
+  b.emit(Instruction::LocalSet(cookie));
+  b.emit(Instruction::LocalGet(complete));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(complete));
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::I32Const(24));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(offset));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(truncated));
+  b.emit(Instruction::LocalGet(used));
+  b.emit(Instruction::I32Const(WASI_DIR_BUFFER_SIZE));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Empty));
+  emit_wasi_dir_failure(&mut b, fd, fd_close_idx);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(used));
+  b.emit(Instruction::I32Const(WASI_DIR_BUFFER_SIZE));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(complete));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::LocalGet(cookie));
+  b.emit(Instruction::LocalGet(page_cookie));
+  b.emit(Instruction::I64Eq);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::If(BlockType::Empty));
+  emit_wasi_dir_failure(&mut b, fd, fd_close_idx);
+  b.emit(Instruction::End);
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::Call(fd_close_idx));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(list));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(list));
+  b.finish(vec![ValType::I32], vec![ValType::I32])
 }
 
 /// Reserve a temporary region at the top of linear memory without advancing

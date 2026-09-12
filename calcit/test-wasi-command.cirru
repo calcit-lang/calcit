@@ -99,6 +99,50 @@
           :schema $ :: 'Fn
             {} (:return 'Unit)
               :args $ []
+        'filesystem-read-dir-error-main! $ %{} 'CodeEntry (:doc "|通过 WASI 假宿主验证畸形目录记录仍返回 Result :err。")
+          :code $ quote
+            defn filesystem-read-dir-error-main! () $ if (filesystem-read-dir-error? |workspace/listing) (println "|WASI-read-dir-error: ok") (quit! 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+          :tags $ #{} :file :wasi
+        'filesystem-read-dir-error? $ %{} 'CodeEntry (:doc "|验证目录枚举失败仍以 Result :err 表达。")
+          :code $ quote
+            defn filesystem-read-dir-error? (path)
+              match
+                .read-dir $ fs:path path
+                (:ok _) false
+                (:err _) true
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] 'String
+          :tags $ #{} :file :unit :wasi
+          :tests $ []
+            %{} 'TestEntry (:name |missing-directory)
+              :code $ quote
+                assert= true $ filesystem-read-dir-error? |/calcit-wasi-filesystem-does-not-exist
+              :tags $ #{} :file :unit :wasi
+        'filesystem-read-dir-main! $ %{} 'CodeEntry (:doc "|通过真实与假 WASI 宿主验证目录分页、UTF-8 名称和确定排序。")
+          :code $ quote
+            defn filesystem-read-dir-main! () $ match
+              .read-dir $ fs:path |workspace/listing
+              (:ok paths)
+                if
+                  and
+                    = 3 $ count paths
+                    = |workspace/listing/a.txt $ &struct:nth (&list:nth paths 0) 0 :value
+                    = |workspace/listing/b.txt $ &struct:nth (&list:nth paths 1) 0 :value
+                    = "|workspace/listing/子.txt" $ &struct:nth (&list:nth paths 2) 0 :value
+                  println "|WASI-read-dir: ok"
+                  quit! 1
+              (:err _) (quit! 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+          :tags $ #{} :file :wasi
         'filesystem-read-error? $ %{} 'CodeEntry (:doc "|验证 FsPath 文本读取失败仍以 Result :err 表达，不把 host error 泄漏为异常。")
           :code $ quote
             defn filesystem-read-error? (path)

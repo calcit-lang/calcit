@@ -213,7 +213,7 @@ const scenarios = [
       const wrongOrigin = result.data.definitions.some(
         (definition) => definition.source !== "core" || definition.origin.package !== "calcit" || definition.origin.module !== "builtin",
       );
-      if (result.data.summary.matches !== 32 || wrongOrigin) {
+      if (result.data.summary.matches !== 31 || wrongOrigin) {
         throw new Error("core-only query.search count or origins changed");
       }
     },
@@ -235,7 +235,7 @@ const scenarios = [
     args: ["calcit/test.cirru", "query", "search", "%none", "--exact", "--source", "all", "--format", "json"],
     check(result) {
       const sources = new Set(result.data.definitions.map((definition) => definition.source));
-      if (result.data.summary.matches !== 57 || [...sources].sort().join(",") !== "core,deps,project") {
+      if (result.data.summary.matches !== 56 || [...sources].sort().join(",") !== "core,deps,project") {
         throw new Error("all-source query.search count or origins changed");
       }
     },

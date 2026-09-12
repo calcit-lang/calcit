@@ -419,6 +419,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     RegisterCalcitBuiltinImpls => meta::register_calcit_builtin_impls(args),
     ReadFile => effects::read_file(args),
     NativeFsReadText => effects::fs_read_text(args),
+    NativeFsReadDir => effects::fs_read_dir(args),
     ReadDir => effects::read_dir(args),
     WriteFile => effects::write_file(args),
     NativeFsWriteText => effects::fs_write_text(args),

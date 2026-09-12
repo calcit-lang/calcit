@@ -7,7 +7,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::{
   builtins::meta::{new_named_enum_value, type_of},
-  calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, format_proc_examples_hint},
+  calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, CalcitStructValue, format_proc_examples_hint},
 };
 
 const MAX_SECURE_RANDOM_BYTES: usize = 65_536;
@@ -239,6 +239,65 @@ pub fn fs_read_text(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   };
   let result = match fs::read_to_string(&**path) {
     Ok(content) => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("ok"), Calcit::new_str(content)]),
+    Err(error) => new_named_enum_value(&[
+      result_type.to_owned(),
+      Calcit::tag("err"),
+      Calcit::new_str(format!("{host_error}: {error}")),
+    ]),
+  }?;
+  Ok(result)
+}
+
+/// List immediate children as nominal filesystem paths and preserve host failures as Result values.
+pub fn fs_read_dir(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  let [
+    result_type @ Calcit::EnumDef(_),
+    Calcit::StructDef(path_type),
+    Calcit::Str(path),
+    Calcit::Str(host_error),
+  ] = xs
+  else {
+    return CalcitErr::err_str(
+      CalcitErrKind::Type,
+      "&fs-read-dir expected Result and FsPath definitions, a path string, and a host error prefix",
+    );
+  };
+  let result = match fs::read_dir(&**path) {
+    Ok(entries) => {
+      let mut paths = vec![];
+      for entry in entries {
+        match entry {
+          Ok(entry) => match entry.path().into_os_string().into_string() {
+            Ok(path) => paths.push(path),
+            Err(_) => {
+              return new_named_enum_value(&[
+                result_type.to_owned(),
+                Calcit::tag("err"),
+                Calcit::new_str(format!("{host_error}: directory entry is not valid UTF-8")),
+              ]);
+            }
+          },
+          Err(error) => {
+            return new_named_enum_value(&[
+              result_type.to_owned(),
+              Calcit::tag("err"),
+              Calcit::new_str(format!("{host_error}: {error}")),
+            ]);
+          }
+        }
+      }
+      paths.sort();
+      let values = paths
+        .into_iter()
+        .map(|child| {
+          Calcit::Struct(CalcitStructValue {
+            struct_ref: std::sync::Arc::new(path_type.to_owned()),
+            values: std::sync::Arc::new(vec![Calcit::new_str(child)]),
+          })
+        })
+        .collect::<Vec<_>>();
+      new_named_enum_value(&[result_type.to_owned(), Calcit::tag("ok"), Calcit::from(values)])
+    }
     Err(error) => new_named_enum_value(&[
       result_type.to_owned(),
       Calcit::tag("err"),

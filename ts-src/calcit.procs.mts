@@ -1783,6 +1783,23 @@ export let _$n_fs_read_text = (resultType: CalcitEnumDef, path: string, hostErro
     return new CalcitEnumValue(newTag("err"), [`${hostError}: ${message}`], resultType);
   }
 };
+/** List immediate children as nominal filesystem paths and preserve host failures as Result values. */
+export let _$n_fs_read_dir = (
+  resultType: CalcitEnumDef,
+  pathType: CalcitStructDef,
+  path: string,
+  hostError: string,
+): CalcitEnumValue => {
+  try {
+    const paths = Array.from(read_dir(path, false).items()).map(
+      (child) => new CalcitStructValue(pathType.name, pathType.fields, [child], pathType),
+    );
+    return new CalcitEnumValue(newTag("ok"), [new CalcitSliceList(paths)], resultType);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    return new CalcitEnumValue(newTag("err"), [`${hostError}: ${message}`], resultType);
+  }
+};
 export let read_dir = (path: string, recursive: boolean): CalcitSliceList => {
   if (!inNodeJs) {
     throw new Error("read_dir is unavailable in browser JavaScript hosts");

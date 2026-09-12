@@ -97,6 +97,22 @@ try {
   assert.equal(typedWrite.tag, runtimeA.newTag("ok"));
   assert.deepEqual(typedWrite.extra, [undefined]);
   assert.deepEqual(writes.at(-1), ["typed.txt", "内容"]);
+  const fsPathName = runtimeA.newTag("FsPath");
+  const fsPathField = runtimeA.newTag("value");
+  const fsPathType = new runtimeA.CalcitStructDef(fsPathName, [fsPathField], [todoType]);
+  globalThis.__calcit_injections__.read_dir = (path, recursive) => {
+    assert.equal(recursive, false);
+    return [`${path}/z`, `${path}/a`];
+  };
+  const typedDirectory = runtimeA._$n_fs_read_dir(todoEnum, fsPathType, "typed", "read-dir failed");
+  assert.equal(typedDirectory.tag, runtimeA.newTag("ok"));
+  const typedPaths = runtimeA.listToArray(typedDirectory.extra[0]);
+  assert.deepEqual(
+    typedPaths.map((path) => path.values[0]),
+    ["typed/a", "typed/z"],
+    "typed directory reads must preserve deterministic sorting and nominal FsPath values",
+  );
+  assert.ok(typedPaths.every((path) => path.structRef === fsPathType));
   globalThis.__calcit_injections__.read_file = () => {
     throw new Error("denied");
   };

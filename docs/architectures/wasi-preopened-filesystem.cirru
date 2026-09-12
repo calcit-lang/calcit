@@ -1,7 +1,7 @@
 {}
   :schema-version 1
   :feature 'wasi-preopened-filesystem
-  :doc "|让 FsPath 的 Result API 直接经过类型化 runtime boundary；WASI lowering 在内部解析 host preopen，拒绝未授权绝对路径与越界路径，不向 Calcit 暴露 descriptor。第一切片覆盖 UTF-8 read/write，read-dir 与递归 walk 后续接入同一边界。"
+  :doc "|让 FsPath 的 Result API 直接经过类型化 runtime boundary；WASI lowering 在内部解析 host preopen，拒绝未授权绝对路径与越界路径，不向 Calcit 暴露 descriptor。第一切片覆盖 UTF-8 read/write，后续切片已接入即时 read-dir，递归 walk 继续复用同一边界。"
   :roots $ #{} 'calcit.core/fs-path:read-text 'calcit.core/fs-path:write-text
   :definitions $ {}
     'calcit.core/&fs-read-text $ {}

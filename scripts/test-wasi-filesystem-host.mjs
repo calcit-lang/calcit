@@ -92,6 +92,9 @@ const wasi = {
     view().setUint32(readPtr, length, true);
     return 0;
   },
+  fd_readdir() {
+    throw new Error("filesystem text fixture unexpectedly read a directory");
+  },
   fd_write(fd, iovsPtr, iovsLength, writtenPtr) {
     assert.equal(iovsLength, 1);
     const ptr = view().getUint32(iovsPtr, true);
