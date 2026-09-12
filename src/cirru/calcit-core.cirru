@@ -3815,6 +3815,30 @@
                 assert= ([] 1 2 4 5 7 8)
                   concat ([] 1 2) ([] 4 5) ([] 7 8)
               :tags $ #{} :core :unit
+        'concat-dynamic $ %{} 'CodeEntry (:doc "|Concatenates open List<Dynamic> values without claiming a homogeneous member relation; keeps an explicit open-container boundary.")
+          :code $ quote
+            defn concat-dynamic (& args)
+              list-match args
+                () $ []
+                (a0 as) (&list:concat a0 & as)
+          :examples $ []
+            quote $ assert= 3
+              count $ concat-dynamic
+                assert-type ([] 1 2) (:: 'List 'Dynamic)
+                assert-type ([] 3) (:: 'List 'Dynamic)
+          :schema $ :: 'Fn
+            {}
+              :args $ []
+              :rest $ :: 'List 'Dynamic
+              :return $ :: 'List 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |joins-open-lists)
+              :code $ quote
+                assert= 3 $ count
+                  concat-dynamic
+                    assert-type ([] 1 2) (:: 'List 'Dynamic)
+                    assert-type ([] 3) (:: 'List 'Dynamic)
+              :tags $ #{} :core :unit
         'cond $ %{} 'CodeEntry (:doc "|Multi-branch conditional macro. Requires a final true branch so unmatched control flow cannot return nil.")
           :code $ quote
             defmacro cond (& pairs)
@@ -6750,6 +6774,36 @@
               :code $ quote
                 assert= ({,} :a nil :b 12 :c nil :d 14)
                   merge ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
+              :tags $ #{} :core :unit
+        'merge-dynamic $ %{} 'CodeEntry (:doc "|Combines open Map<K,Dynamic> values left-to-right with later maps overwriting earlier keys, without claiming a homogeneous value relation.")
+          :code $ quote
+            defn merge-dynamic (x0 & xs) (reduce xs x0 &merge)
+          :examples $ []
+            quote $ assert= 2
+              count $ merge-dynamic
+                assert-type
+                  {} $ :a 1
+                  :: 'Map 'Tag 'Dynamic
+                assert-type
+                  {} $ :b 2
+                  :: 'Map 'Tag 'Dynamic
+          :schema $ :: 'Fn
+            {}
+              :args $ [] (:: 'Map 'K 'Dynamic)
+              :generics $ [] 'K
+              :rest $ :: 'Map 'K 'Dynamic
+              :return $ :: 'Map 'K 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |combines-open-maps)
+              :code $ quote
+                assert= 2 $ count
+                  merge-dynamic
+                    assert-type
+                      {} $ :a 1
+                      :: 'Map 'Tag 'Dynamic
+                    assert-type
+                      {} $ :b 2
+                      :: 'Map 'Tag 'Dynamic
               :tags $ #{} :core :unit
         'merge-non-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote

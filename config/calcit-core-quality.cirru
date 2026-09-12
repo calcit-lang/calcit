@@ -693,6 +693,15 @@
       :typeNotFull 1
       :unresolved 0
       :unsafeCoerce 0
+    |calcit.core/concat-dynamic $ {} (:codeDynamic 0)
+      :codeNil 0
+      :declaredOptional 0
+      :deprecatedCalls 0
+      :schemaDynamic 2
+      :typeNone 0
+      :typeNotFull 1
+      :unresolved 2
+      :unsafeCoerce 0
     |calcit.core/cond $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
@@ -1088,6 +1097,15 @@
       :typeNone 0
       :typeNotFull 1
       :unresolved 1
+      :unsafeCoerce 0
+    |calcit.core/merge-dynamic $ {} (:codeDynamic 0)
+      :codeNil 0
+      :declaredOptional 0
+      :deprecatedCalls 0
+      :schemaDynamic 3
+      :typeNone 0
+      :typeNotFull 1
+      :unresolved 3
       :unsafeCoerce 0
     |calcit.core/nth $ {} (:codeDynamic 0)
       :codeNil 0
@@ -1732,10 +1750,10 @@
     :codeNil 0
     :declaredOptional 0
     :deprecatedCalls 0
-    :schemaDynamic 276
+    :schemaDynamic 281
     :typeNone 45
-    :typeNotFull 132
-    :unresolved 182
+    :typeNotFull 134
+    :unresolved 187
     :unsafeCoerce 0
   :scope $ {} (:includeDependencies false)
     :namespace nil

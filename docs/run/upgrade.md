@@ -595,7 +595,9 @@ Snapshot 加载的 legacy runtime `Fn` / whole-`Dynamic` macro 会更早在 load
 `E_ERASED_GENERIC_RELATION`。例如 `Fn<T>(T) -> T`、同类型比较或参数化容器转换都依赖调用点保留
 `T` 的关系；把未知值直接传入会让返回值或其他参数无法再被静态关联。应先 narrow/validate 成具体
 类型，再调用泛型 API。确实开放的操作应收拢到一个小型 adapter，并让 adapter 的结构化契约明确
-不承诺该泛型关系。非 strict 模式保持原有兼容行为，便于渐进迁移。
+不承诺该泛型关系；core 已提供公开的开放容器入口：`Map<K,Dynamic>` 用 `merge-dynamic`，
+`List<Dynamic>` 用 `concat-dynamic`，不要再在业务代码里直接使用 `&merge` / `&list:concat`。
+非 strict 模式保持原有兼容行为，便于渐进迁移。
 
 当开放 `Dynamic`（或同形容器中的 `Dynamic` 成员）进入包含 Struct / Enum 的封闭参数契约时，
 strict mode 报告 `E_DYNAMIC_NOMINAL_ARGUMENT`，并指出参数位置和目标契约。文本边界使用
