@@ -15,7 +15,8 @@ Calcit 不再生成或维护 Calx target。已完成的 Calx 实验保留在 Git
 ## 保留边界
 
 - 不删除历史 editing records，以保留此前实验的设计和验证证据。
-- 不改变现有 WASM emitter、runtime、scripts 或执行用例；这次先缩小维护面，再按 #1011 的独立语义切片扩大 WASM 覆盖。
+- 不改变现有 WASM emitter 或 runtime；这次先缩小维护面，再按 #1011 的独立语义切片扩大 WASM 覆盖。
+- WASM codegen 在任一目标 definition 预处理失败时停止发射并返回非零结果；CLI 回归检查复用 schema arity failure fixture，防止不完整模块伪装成成功输出。
 - compiler test 使用的 isolated source namespace helper 仍被 preprocess 测试复用，因此保留并限制为 `cfg(test)`，不作为外部 adapter surface。
 
 ## 验证

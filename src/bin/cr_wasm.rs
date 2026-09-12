@@ -188,16 +188,15 @@ fn run_wasm_codegen(entries: &ProgramEntries, emit_path: &str) -> Result<(), Str
   // WASM codegen exports every compilable function, so preprocess all defs in target namespace.
   let all_defs = program::list_source_def_names(&entries.init_ns);
   for def_name in &all_defs {
-    match runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, def_name, check_warnings, &CallStackList::default()) {
-      Ok(_) => (),
-      Err(failure) => {
-        eprintln!(
-          "[wasm] preprocessing failed for {}/{}: {}",
-          entries.init_ns,
-          def_name,
-          failure.headline()
-        );
-      }
+    if let Err(failure) =
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, def_name, check_warnings, &CallStackList::default())
+    {
+      let headline = failure.headline();
+      call_stack::display_stack_with_docs(&headline, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
+      return Err(format!(
+        "WASM preprocessing failed for {}/{}: {headline}",
+        entries.init_ns, def_name
+      ));
     }
   }
 
