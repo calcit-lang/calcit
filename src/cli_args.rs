@@ -89,6 +89,8 @@ pub enum CalcitCommand {
   Eval(EvalCommand),
   /// discover and run definition-attached tests
   Test(TestCommand),
+  /// preview or apply compiler-guided source migrations
+  Fix(FixCommand),
   /// analyze code structure and helpers (call-graph, call-graph-diff, count-calls, def-diff, check-examples)
   Analyze(AnalyzeCommand),
   /// query project information (namespaces, definitions, configs)
@@ -111,6 +113,39 @@ pub enum CalcitCommand {
   Config(ConfigCommand),
   /// inspect and export typed FFI interface contracts
   Ffi(FfiCommand),
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "fix")]
+/// preview or apply deterministic compiler-guided source migrations
+pub struct FixCommand {
+  /// write applicable fixes atomically after validation
+  #[argh(switch)]
+  pub apply: bool,
+  /// explicitly request preview mode; preview is also the default
+  #[argh(switch, long = "dry-run")]
+  pub dry_run: bool,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+  /// restrict fixes to one exact project namespace
+  #[argh(option)]
+  pub ns: Option<String>,
+  /// restrict fixes to one definition; requires --ns
+  #[argh(option, long = "def")]
+  pub definition: Option<String>,
+  /// restrict fixes to one stable rule ID
+  #[argh(option)]
+  pub rule: Option<String>,
+  /// require the snapshot content to match this revision before applying
+  #[argh(option, long = "expect-revision")]
+  pub expect_revision: Option<String>,
+  /// allow applying while the Git working tree contains changes
+  #[argh(switch, long = "allow-dirty")]
+  pub allow_dirty: bool,
+  /// allow applying when the project is not inside a Git worktree
+  #[argh(switch, long = "allow-no-vcs")]
+  pub allow_no_vcs: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

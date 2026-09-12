@@ -161,9 +161,15 @@ pub(crate) fn tag_annotation(name: &str) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::from_tag_name(name))
 }
 
-fn removed_data_api_replacement(name: &str) -> Option<String> {
-  match name {
-    "tuple?" => Some("enum? (values) or enum-def? (definitions)".to_owned()),
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemovedDataApiMigration {
+  pub replacement: Option<String>,
+  pub guidance: String,
+}
+
+pub fn removed_data_api_migration(name: &str) -> Option<RemovedDataApiMigration> {
+  let replacement = match name {
+    "tuple?" => None,
     "tuple-enum" => Some("enum-definition".to_owned()),
     "&record:struct" => Some("&struct:definition".to_owned()),
     "&tuple:enum" => Some("&enum:definition".to_owned()),
@@ -172,8 +178,12 @@ fn removed_data_api_replacement(name: &str) -> Option<String> {
     "&tuple:validate-enum" => Some("&enum:validate".to_owned()),
     _ if name.starts_with("&record:") => Some(name.replacen("&record:", "&struct:", 1)),
     _ if name.starts_with("&tuple:") => Some(name.replacen("&tuple:", "&enum:", 1)),
-    _ => None,
-  }
+    _ => return None,
+  };
+  let guidance = replacement
+    .clone()
+    .unwrap_or_else(|| "enum? (values) or enum-def? (definitions)".to_owned());
+  Some(RemovedDataApiMigration { replacement, guidance })
 }
 
 fn warn_on_removed_data_api_call(
@@ -188,10 +198,13 @@ fn warn_on_removed_data_api_call(
   if ns.as_ref() != calcit::CORE_NS {
     return;
   }
-  let Some(replacement) = removed_data_api_replacement(def) else {
+  let Some(migration) = removed_data_api_migration(def) else {
     return;
   };
-  let message = format!("[Warn] `{def}` was removed by the struct/enum data-model migration; use `{replacement}`");
+  let message = format!(
+    "[Warn] `{def}` was removed by the struct/enum data-model migration; use `{}`",
+    migration.guidance
+  );
   if let Some(location) = call_location {
     gen_check_warning_with_location_code(message, "W_REMOVED_DATA_API", location, check_warnings);
   } else {
@@ -1763,9 +1776,12 @@ pub fn preprocess_expr(
                     names.push(def.to_owned());
                   }
                   let node_location = NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default());
-                  if let Some(replacement) = removed_data_api_replacement(def) {
+                  if let Some(migration) = removed_data_api_migration(def) {
                     gen_check_warning_with_location_code(
-                      format!("[Warn] `{def}` was removed by the struct/enum data-model migration; use `{replacement}`"),
+                      format!(
+                        "[Warn] `{def}` was removed by the struct/enum data-model migration; use `{}`",
+                        migration.guidance
+                      ),
                       "W_REMOVED_DATA_API",
                       node_location,
                       check_warnings,
@@ -11003,7 +11019,6 @@ mod tests {
   #[test]
   fn removed_data_apis_point_to_their_struct_enum_replacements() {
     let cases = [
-      ("tuple?", "enum? (values) or enum-def? (definitions)"),
       ("tuple-enum", "enum-definition"),
       ("&record:get", "&struct:get"),
       ("&record:struct", "&struct:definition"),
@@ -11015,9 +11030,19 @@ mod tests {
     ];
 
     for (legacy, replacement) in cases {
-      assert_eq!(removed_data_api_replacement(legacy).as_deref(), Some(replacement));
+      assert_eq!(
+        removed_data_api_migration(legacy).and_then(|migration| migration.replacement),
+        Some(replacement.to_owned())
+      );
     }
-    assert_eq!(removed_data_api_replacement("&map:get"), None);
+    assert_eq!(
+      removed_data_api_migration("tuple?"),
+      Some(RemovedDataApiMigration {
+        replacement: None,
+        guidance: "enum? (values) or enum-def? (definitions)".to_owned(),
+      })
+    );
+    assert_eq!(removed_data_api_migration("&map:get"), None);
   }
 
   #[test]

@@ -454,7 +454,7 @@ struct TransactionReport {
   operations: Vec<TransactionOperationReport>,
 }
 
-fn snapshot_content_revision(content: &str) -> String {
+pub(crate) fn snapshot_content_revision(content: &str) -> String {
   let mut hasher = Md5::new();
   hasher.update(content.as_bytes());
   format!("md5:{}", hex::encode(hasher.finalize()))
@@ -689,6 +689,76 @@ fn run_transaction_child(stage_path: &Path, index: usize, args: &[String]) -> Re
     stdout,
     stderr,
   })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StagedFixReport {
+  pub(crate) changed: bool,
+  pub(crate) original_revision: String,
+  pub(crate) new_revision: String,
+}
+
+pub(crate) fn run_staged_fix_transaction(
+  snapshot_file: &Path,
+  operations: &[Vec<String>],
+  expected_revision: Option<&str>,
+  dry_run: bool,
+  validation_args: &[String],
+) -> Result<StagedFixReport, String> {
+  if operations.is_empty() {
+    let content =
+      fs::read_to_string(snapshot_file).map_err(|error| format!("Failed to read snapshot '{}': {error}", snapshot_file.display()))?;
+    let revision = snapshot_content_revision(&content);
+    if let Some(expected) = expected_revision
+      && expected != revision
+    {
+      return Err(format!(
+        "Snapshot revision mismatch: expected '{expected}', current revision is '{revision}'. Re-run `calcit fix` and review the new plan."
+      ));
+    }
+    return Ok(StagedFixReport {
+      changed: false,
+      original_revision: revision.clone(),
+      new_revision: revision,
+    });
+  }
+
+  guard_snapshot_mutation_toolchain(&snapshot_file.to_string_lossy())?;
+  let operation_count = operations.len();
+  let report = run_staged_transaction_with(snapshot_file, operations, expected_revision, dry_run, |stage_path, index, args| {
+    let operation = run_transaction_child(stage_path, index, args)?;
+    if index + 1 == operation_count {
+      validate_staged_fix(stage_path, validation_args)?;
+    }
+    Ok(operation)
+  })?;
+  Ok(StagedFixReport {
+    changed: report.changed,
+    original_revision: report.original_revision,
+    new_revision: report.new_revision,
+  })
+}
+
+fn validate_staged_fix(stage_path: &Path, validation_args: &[String]) -> Result<(), String> {
+  let executable = std::env::current_exe().map_err(|error| format!("Failed to locate current calcit executable: {error}"))?;
+  let output = Command::new(&executable)
+    .arg("--tips-level")
+    .arg("none")
+    .arg(stage_path)
+    .arg("fix")
+    .args(validation_args)
+    .env("CALCIT_FIX_VALIDATE_ONLY", "1")
+    .output()
+    .map_err(|error| format!("Failed to validate staged fixes: {error}"))?;
+  if output.status.success() {
+    Ok(())
+  } else {
+    Err(format!(
+      "Staged fixes failed preprocessing; no changes were written.\nstdout:\n{}\nstderr:\n{}",
+      String::from_utf8_lossy(&output.stdout).trim_end(),
+      String::from_utf8_lossy(&output.stderr).trim_end()
+    ))
+  }
 }
 
 fn handle_transaction(opts: &EditTransactionCommand, snapshot_file: &str) -> Result<(), String> {
@@ -2842,8 +2912,8 @@ mod tests {
     TransactionOperationReport, bump_semver_value, collect_format_advisories, count_legacy_any_schema_fields,
     count_legacy_inherent_impls, handle_add_import, handle_add_test, handle_format, handle_imports, handle_rm_test, handle_schema,
     load_snapshot, parse_examples_input, parse_import_rules_input, parse_input_to_cirru, parse_schema_input,
-    parse_transaction_operations, rename_definition_declaration, run_staged_transaction_with, save_schema_preserving_snapshot,
-    save_snapshot,
+    parse_transaction_operations, rename_definition_declaration, run_staged_fix_transaction, run_staged_transaction_with,
+    save_schema_preserving_snapshot, save_snapshot,
   };
   use crate::cli_args::{
     EditAddImportCommand, EditAddTestCommand, EditFormatCommand, EditImportsCommand, EditRmTestCommand, EditSchemaCommand,
@@ -3090,6 +3160,16 @@ mod tests {
     assert!(!called);
     assert!(error.contains("revision mismatch"), "error: {error}");
     assert_eq!(fs::read_to_string(&fixture.path).expect("fixture should remain"), original);
+  }
+
+  #[test]
+  fn empty_fix_plan_still_rejects_a_stale_planning_revision() {
+    let fixture = TestSnapshot::from_fixture();
+
+    let error = run_staged_fix_transaction(&fixture.path, &[], Some("md5:stale"), true, &[])
+      .expect_err("an empty fix plan should still be bound to its planning revision");
+
+    assert!(error.contains("revision mismatch"), "error: {error}");
   }
 
   #[test]
