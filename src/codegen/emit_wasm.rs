@@ -185,6 +185,9 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   if fn_defs.is_empty() {
     return Err(format!("namespace not found or no functions: {init_ns}"));
   }
+  if target == WasmTarget::Wasi && fn_defs.iter().any(|(_, name, _, _)| name == "_start") {
+    return Err("E_WASM_TARGET: `_start` is reserved for the generated WASI command entry".into());
+  }
 
   // Build the import table before assigning user function indices. Built-in imports
   // stay first so internal lowering keeps its stable indices; user declarations
