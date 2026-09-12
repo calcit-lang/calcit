@@ -131,9 +131,10 @@ the field's declared type directly. A missing field or an untyped receiver is a
 checking error. It never changes into an `Option` lookup merely because type
 information is missing.
 
-Use `get` for maps and indexed collections when absence is intentional; it
-always returns `Option<T>`. Struct fields do not use `get`, which keeps the two
-contracts visibly distinct in source code.
+静态已知的 Struct 不使用 `get`：必填字段继续写成 `(:field value)`，让检查器证明字段存在并直接返回
+声明类型。只有 receiver 已被显式声明为 `Dynamic`、调用者确实需要按运行时 tag 做可选查询时，普通
+`get` 才会在运行值为 Struct 时返回 `Option<Dynamic>`。这样“静态必填字段”和“开放数据可选查询”
+在源码中保持可见区别，也不需要增加平行的 dynamic API。
 
 Nested nominal fields keep the namespace where their declaration was written.
 This means a concise same-namespace field type such as `'Router` remains
@@ -431,14 +432,12 @@ Fields are automatically sorted alphabetically, matching the field ordering of n
 
 ### Accessing Fields
 
-Anonymous structs still have a runtime field set, but they do not carry the
-declaration needed for typed required-field access. Do not use them as a way to
-bypass field analysis in application code. Convert/rewrite the value to an
-expected named Struct before reading fields. `&struct:get` remains available
-only to core/runtime code or an explicit reusable `defimpl` that intentionally
-implements a dynamic boundary.
-The following block deliberately demonstrates that low-level runtime behavior;
-using the same call in application code produces a typed-access warning.
+匿名 Struct 虽然在运行时携带字段集合，但不具备类型化必填字段访问所需的具名声明。应用代码不应借此
+绕过字段分析；需要必填字段时，先把值转换或改写为预期的具名 Struct。若数据本来就是显式开放的
+`Dynamic`，并且字段允许缺失，则使用普通 `get` 获得 `Option<Dynamic>`。`&struct:get` 只保留给
+core/runtime 或有意实现动态边界的可复用 `defimpl`。
+
+下面的代码只演示低层运行时行为；应用代码直接写相同调用仍会触发类型化访问告警。
 
 ```cirru.no-check
 let
