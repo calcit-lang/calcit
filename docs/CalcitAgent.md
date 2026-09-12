@@ -165,6 +165,18 @@ entry 不存在或 Snapshot 配置无效时仍输出结构化诊断并以非零�
 
 ## 2. 最小心智模型
 
+### 2.0 Source、core 与 backend 不是同一棵可写树
+
+Agent 修改的是 Snapshot 中的表层 quoted AST。macro 展开、名称解析、类型导向 lowering 和 backend 生成结果是
+编译器拥有的语义视图，只用于理解、诊断和验证；不能把展开树或生成 JS 直接回写成 source。
+
+诊断若来自 core/backend，应沿 origin 回到真实 definition/path。只有建议能唯一定位表层节点、证明求值顺序与
+失败行为不变，并携带当前 revision/fingerprint 时，才允许自动应用。无法回溯的建议只报告；不得自动加入
+`unsafe-coerce`、扩大 Dynamic、选择业务默认值或修改 `:tests` 预期。
+
+完整契约见 `../RFCs/09-12-layered-semantics-and-agent-fixes-rfc.md`。未来 `calcit fix` 只会复用这些编译器证据和
+结构化 transaction，不要求 Agent 解析 human warning 或自己逆向 macro expansion。
+
 | 概念       | 含义                                                         | 操作习惯                                      |
 | ---------- | ------------------------------------------------------------ | --------------------------------------------- |
 | Snapshot   | 整个项目的 EDN 数据树                                        | 只通过 `calcit` 修改                              |

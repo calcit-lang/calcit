@@ -14,6 +14,11 @@ Calcit 长期继续借鉴 Rust 与 MoonBit：使用名义数据类型、Enum、O
 多后端特点；不因为 Rust 成功就引入与当前 value model 不相容的 borrow checker，也不因为 JS
 生态复杂就复制 TypeScript 的结构类型、union 与 overload。
 
+2026-09-12 补充：本路线只描述类型能力的演进顺序。表层语言、macro 展开后的 typed core、backend/host
+boundary 的 owner，以及 Dynamic 安全携带和 Agent source fix 的共同契约，以
+`09-12-layered-semantics-and-agent-fixes-rfc.md` 为准。后续优先让推导和共同语义取代 compiler special case，
+不再用新增 analyzer、质量分类或平行 `*-dynamic` API 推动类型系统演进。
+
 路线优先级是：先堵住精度静默丢失和 FFI unsafe 边界，再完善控制流与局部推断，然后根据真实
 抽象需求扩展 trait。每一步必须通过生态 quality baseline 与真实消费者回归渐进落地。
 

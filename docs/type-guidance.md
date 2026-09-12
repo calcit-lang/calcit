@@ -14,9 +14,18 @@ parent: core/features
 
 # Calcit 类型使用指南
 
+Calcit 的类型规则处于表层语言与 macro 展开后的 typed core 之间，native、JS 和 Calx 复用同一份已经建立的
+类型关系。完整的分层 owner、开放值与 Agent source-fix 契约见
+[`09-12-layered-semantics-and-agent-fixes-rfc.md`](../RFCs/09-12-layered-semantics-and-agent-fixes-rfc.md)。
+
 ## Dynamic 是边界，不是默认多态
 
 `Dynamic` 适合 JS FFI、框架开放数据、宏和确实无法提前知道的外部输入。普通函数不要用多个 `Dynamic` 表示“它们应该是同一个类型”：输入和返回关联时用 `:generics` 与 TypeVar；只需要能力时用 trait 与 `:where`；同质集合写出元素类型；有限异构数据定义为 Enum；可缺失值使用 `Option<T>`，带失败信息使用 `Result<T, E>`。
+
+Dynamic 表示用户明确选择的开放 Calcit 值，不等于编译器尚未推断出的 Unknown/Unresolved，也不等于宿主拥有的
+`JsObject`。开放值可以被保存、传递、放入开放容器或包装进 `Option<Dynamic>`；只有将其当成 Number、String、
+具体 Struct/Enum 或某个 trait 能力使用时，才需要 decode、narrow 或显式 unsafe boundary。真正参数化且不观察
+内容的泛型函数可以携带 Dynamic；声称具体内容关系但没有证据的调用继续拒绝。
 
 普通执行、编译和严格检查只报告可执行的 warning/error，不计算 Dynamic 比例。迁移存量代码时再显式查询具体位置：
 

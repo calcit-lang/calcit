@@ -93,6 +93,33 @@ adapters and existing scripts.
 实现应为 EDN/JSON 各保留一组同构 fixture，并至少覆盖该嵌套案例、空 Set/空
 List、`nil`、Quote 和带类型名的 Enum/Struct。
 
+### 3.2 Semantic layer、origin 与 source fix
+
+机器结果需要区分用户 source、compiler-owned core lowering、backend 和 host boundary。诊断或改写不能只给出
+生成节点的位置，再要求 Agent 从展开文本或生成 JS 猜测原始 source。
+
+在现有 envelope 中渐进加入下列 typed 字段：
+
+```cirru
+{}
+  :semantic-layer :surface
+  :definition 'app.core/main!
+  :path |code@3.2
+  :fingerprint |opaque-subtree-hash
+  :origin-chain $ []
+  :diagnostic-code |E_EXAMPLE
+  :replacement nil
+```
+
+- `:semantic-layer` 使用 `:surface`、`:core`、`:backend` 或 `:host-boundary`；
+- `:origin-chain` 保存 macro/lowering 节点回到调用点和 source AST 的路径；
+- 自动 source fix 必须指向唯一表层节点，并携带当前 revision 与 subtree fingerprint；
+- replacement 使用 quoted AST；无法证明等价或无法唯一回溯时必须为 `nil`；
+- human renderer 可以解释 core/backend 细节，但 machine consumer 只依赖 typed 字段与稳定 diagnostic/rule ID。
+
+完整分层语义与可应用修复边界见 `09-12-layered-semantics-and-agent-fixes-rfc.md`。具体 fix command 和
+transaction 闭环由 #998 实现，本节不提前承诺尚未交付的子命令。
+
 ## 4. 统一 Definition Descriptor
 
 query、docs、静态分析与 builtin fallback 应从同一只读描述视图组装结果：
