@@ -1,5 +1,5 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-wasm)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-wasm)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-wasm.main/main!) (:mode :native) (:reload-fn 'test-wasm.main/reload!)
       :feature-policy $ {}
@@ -219,6 +219,47 @@
             defn test-ceil (x) (ceil x)
           :examples $ []
           :schema $ :: 'Dynamic
+        'test-closure-capture-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defwasm-export test-closure-capture-map () $ let
+                offset 10
+                add-offset $ fn (x)
+                  hint-fn $ {}
+                    :args $ [] 'Number
+                    :return 'Number
+                  + x offset
+              let
+                  offset 100
+                  values $ map ([] 1 2 3) add-offset
+                if (&list:includes? values 11) 1 0
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ []
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-lexical-capture-through-map)
+              :code $ quote
+                assert= 1 $ test-closure-capture-map
+              :tags $ #{} :core :unit :wasm
+        'test-closure-map-indexed $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defwasm-export test-closure-map-indexed () $ let
+                values $ map-indexed ([] 4 5)
+                  fn (x idx)
+                    hint-fn $ {}
+                      :args $ [] 'Number 'Number
+                      :return 'Number
+                    + x idx
+              if (&list:includes? values 6) 1 0
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ []
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-number-index-in-wasm)
+              :code $ quote
+                assert= 1 $ test-closure-map-indexed
+              :tags $ #{} :core :unit :wasm
         'test-compare $ %{} 'CodeEntry (:doc "|comparison chain")
           :code $ quote
             defn test-compare (a b)

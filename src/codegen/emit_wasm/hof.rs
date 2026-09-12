@@ -164,7 +164,7 @@ pub(super) fn emit_foldl(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
 /// Helper enum for foldl call strategy.
 pub(super) enum FoldlCallKind {
   Static(u32),
-  Inline(Vec<String>, Vec<Calcit>),
+  Inline(Arc<InlineClosure>),
   /// A native builtin proc (e.g. `&+`, `&merge`).
   Proc(CalcitProc),
   /// A local variable holding a function table index (f64) — uses call_indirect.
@@ -222,11 +222,11 @@ pub(super) fn emit_foldl_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, acc:
 
 /// Resolve a callee to a `FoldlCallKind`, also accepting native procs.
 pub(super) fn resolve_callee_kind(ctx: &WasmGenCtx, callee: &Calcit, _acc: u32, _elem: u32) -> Result<FoldlCallKind, String> {
+  if let Some(closure) = resolve_inline_closure(ctx, callee) {
+    return Ok(FoldlCallKind::Inline(closure));
+  }
   if let Ok(fn_idx) = resolve_callee_fn_idx(ctx, callee) {
     return Ok(FoldlCallKind::Static(fn_idx));
-  }
-  if let Some((params, body)) = try_extract_inline_lambda(callee) {
-    return Ok(FoldlCallKind::Inline(params, body));
   }
   if let Calcit::Proc(proc) = callee {
     return Ok(FoldlCallKind::Proc(*proc));
@@ -253,28 +253,7 @@ pub(super) fn emit_foldl_step(ctx: &mut WasmGenCtx, fn_call_kind: &FoldlCallKind
       ctx.emit(Instruction::Call(*fn_idx));
       Ok(())
     }
-    FoldlCallKind::Inline(params, body) => {
-      let old0 = ctx.locals.insert(params[0].clone(), acc);
-      let old1 = ctx.locals.insert(params[1].clone(), elem);
-      emit_body(ctx, body)?;
-      match old0 {
-        Some(v) => {
-          ctx.locals.insert(params[0].clone(), v);
-        }
-        None => {
-          ctx.locals.remove(&params[0]);
-        }
-      }
-      match old1 {
-        Some(v) => {
-          ctx.locals.insert(params[1].clone(), v);
-        }
-        None => {
-          ctx.locals.remove(&params[1]);
-        }
-      }
-      Ok(())
-    }
+    FoldlCallKind::Inline(closure) => emit_inline_closure_body(ctx, closure, &[acc, elem]),
     FoldlCallKind::Proc(proc) => emit_foldl_proc_call(ctx, proc, acc, elem),
     // Dynamic dispatch via call_indirect: (acc_f64, elem_f64) → f64. Canonical type 2.
     FoldlCallKind::Dynamic(fn_local_idx) => {
@@ -508,20 +487,7 @@ fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32) -> Resu
       ctx.emit(Instruction::Call(*fn_idx));
       Ok(())
     }
-    FoldlCallKind::Inline(params, body) => {
-      let param = params.first().ok_or("inline lambda has no params")?;
-      let old = ctx.locals.insert(param.clone(), arg);
-      emit_body(ctx, body)?;
-      match old {
-        Some(v) => {
-          ctx.locals.insert(param.clone(), v);
-        }
-        None => {
-          ctx.locals.remove(param);
-        }
-      }
-      Ok(())
-    }
+    FoldlCallKind::Inline(closure) => emit_inline_closure_body(ctx, closure, &[arg]),
     FoldlCallKind::Proc(proc) => {
       let sym: Arc<str> = Arc::from("__hof_arg__");
       let dummy_info = Arc::new(CalcitSymbolInfo {
@@ -571,30 +537,14 @@ fn emit_binary_step_ei(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, elem: u32, id
       ctx.emit(Instruction::Call(*fn_idx));
       Ok(())
     }
-    FoldlCallKind::Inline(params, body) => {
-      if params.len() < 2 {
+    FoldlCallKind::Inline(closure) => {
+      if closure.params.len() < 2 {
         return Err("map-indexed inline lambda needs at least 2 params".into());
       }
-      let old0 = ctx.locals.insert(params[0].clone(), elem);
-      let old1 = ctx.locals.insert(params[1].clone(), idx);
-      emit_body(ctx, body)?;
-      match old0 {
-        Some(v) => {
-          ctx.locals.insert(params[0].clone(), v);
-        }
-        None => {
-          ctx.locals.remove(&params[0]);
-        }
-      }
-      match old1 {
-        Some(v) => {
-          ctx.locals.insert(params[1].clone(), v);
-        }
-        None => {
-          ctx.locals.remove(&params[1]);
-        }
-      }
-      Ok(())
+      let idx_f64 = ctx.alloc_local();
+      ctx.ptr_to_f64(idx);
+      ctx.emit(Instruction::LocalSet(idx_f64));
+      emit_inline_closure_body(ctx, closure, &[elem, idx_f64])
     }
     FoldlCallKind::Proc(_) => Err("map-indexed proc callee not supported".into()),
     // Dynamic dispatch: (elem_f64, idx_as_f64) → f64. Canonical type 2.
@@ -614,11 +564,11 @@ fn emit_binary_step_ei(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, elem: u32, id
 
 /// Resolve a single-arg HOF callee (map, filter, each, any?, etc.).
 fn resolve_unary_callee(ctx: &WasmGenCtx, callee: &Calcit) -> Result<FoldlCallKind, String> {
+  if let Some(closure) = resolve_inline_closure(ctx, callee) {
+    return Ok(FoldlCallKind::Inline(closure));
+  }
   if let Ok(fn_idx) = resolve_callee_fn_idx(ctx, callee) {
     return Ok(FoldlCallKind::Static(fn_idx));
-  }
-  if let Some((params, body)) = try_extract_inline_lambda(callee) {
-    return Ok(FoldlCallKind::Inline(params, body));
   }
   if let Calcit::Proc(proc) = callee {
     return Ok(FoldlCallKind::Proc(*proc));
@@ -949,11 +899,11 @@ fn emit_map_kv_impl(ctx: &mut WasmGenCtx, args: &[Calcit], uses_decision: bool) 
   expect_arity(2, args, op_name)?;
 
   // Resolve binary callee: f(k, v) → [k', v']
-  let kind = if let Some((params, body)) = try_extract_inline_lambda(&args[1]) {
-    if params.len() < 2 {
+  let kind = if let Some(closure) = resolve_inline_closure(ctx, &args[1]) {
+    if closure.params.len() < 2 {
       return Err(format!("{op_name}: inline lambda needs at least 2 params"));
     }
-    FoldlCallKind::Inline(params, body)
+    FoldlCallKind::Inline(closure)
   } else {
     return Err(format!("{op_name}: callee must be an inline lambda in WASM"));
   };
@@ -1022,27 +972,7 @@ fn emit_map_kv_impl(ctx: &mut WasmGenCtx, args: &[Calcit], uses_decision: bool) 
 
   // result = f(key, val) — inline the lambda
   match &kind {
-    FoldlCallKind::Inline(params, body) => {
-      let old0 = ctx.locals.insert(params[0].clone(), key);
-      let old1 = ctx.locals.insert(params[1].clone(), val);
-      emit_body(ctx, body)?;
-      match old0 {
-        Some(v) => {
-          ctx.locals.insert(params[0].clone(), v);
-        }
-        None => {
-          ctx.locals.remove(&params[0]);
-        }
-      }
-      match old1 {
-        Some(v) => {
-          ctx.locals.insert(params[1].clone(), v);
-        }
-        None => {
-          ctx.locals.remove(&params[1]);
-        }
-      }
-    }
+    FoldlCallKind::Inline(closure) => emit_inline_closure_body(ctx, closure, &[key, val])?,
     _ => unreachable!(),
   }
 

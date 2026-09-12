@@ -21,6 +21,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 use wasm_encoder::{
   CodeSection, ConstExpr, ElementSection, Elements, ExportKind, ExportSection, Function, FunctionSection, GlobalSection, GlobalType,
@@ -473,6 +474,19 @@ fn wasm_import_arity(args: &CalcitFnArgs) -> Result<u32, String> {
   }
 }
 
+#[derive(Clone)]
+struct InlineClosure {
+  params: Vec<String>,
+  body: Vec<Calcit>,
+  captured_locals: HashMap<String, u32>,
+  captured_closures: HashMap<String, Arc<InlineClosure>>,
+}
+
+enum InlineArgument {
+  Value(u32),
+  Closure(Arc<InlineClosure>),
+}
+
 /// Context for WASM code generation within a single function.
 struct WasmGenCtx {
   /// Map from local variable name to WASM local index
@@ -512,9 +526,9 @@ struct WasmGenCtx {
   value_imports: HashMap<String, Calcit>,
   /// qualified function name → funcref table slot index (for call_indirect)
   fn_table_index: HashMap<String, u32>,
-  /// inline lambda locals: local name → (params, body)
-  /// When a let-binding holds a `fn`/`defn` form, it's stored here for inlining at call sites.
-  lambda_locals: HashMap<String, (Vec<String>, Vec<Calcit>)>,
+  /// Statically known closures retain the lexical local bindings visible at creation.
+  /// They are specialized at known call sites instead of receiving a dynamic heap ABI.
+  lambda_locals: HashMap<String, Arc<InlineClosure>>,
 }
 
 impl WasmGenCtx {
@@ -730,6 +744,89 @@ impl WasmGenCtx {
     self.emit(Instruction::LocalSet(local));
     local
   }
+}
+
+fn capture_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineClosure>> {
+  let (params, body) = try_extract_inline_lambda(expr)?;
+  Some(Arc::new(InlineClosure {
+    params,
+    body,
+    captured_locals: ctx.locals.clone(),
+    captured_closures: ctx.lambda_locals.clone(),
+  }))
+}
+
+fn resolve_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineClosure>> {
+  match expr {
+    Calcit::Local(local) => ctx.lambda_locals.get(local.sym.as_ref()).cloned(),
+    Calcit::Symbol { sym, .. } => ctx.lambda_locals.get(sym.as_ref()).cloned(),
+    _ => capture_inline_closure(ctx, expr),
+  }
+}
+
+fn emit_inline_closure_body(ctx: &mut WasmGenCtx, closure: &InlineClosure, param_locals: &[u32]) -> Result<(), String> {
+  if closure.params.len() != param_locals.len() {
+    return Err(format!(
+      "inline closure expects {} argument(s), got {}",
+      closure.params.len(),
+      param_locals.len()
+    ));
+  }
+  if closure.body.iter().any(check_uses_recur) {
+    return Err("recur in a statically specialized closure is not yet supported in WASM codegen".into());
+  }
+
+  let caller_locals = std::mem::replace(&mut ctx.locals, closure.captured_locals.clone());
+  let caller_closures = std::mem::replace(&mut ctx.lambda_locals, closure.captured_closures.clone());
+  for (param, local) in closure.params.iter().zip(param_locals) {
+    ctx.locals.insert(param.clone(), *local);
+  }
+  let result = emit_body(ctx, &closure.body);
+  ctx.locals = caller_locals;
+  ctx.lambda_locals = caller_closures;
+  result
+}
+
+fn emit_inline_closure_call(ctx: &mut WasmGenCtx, closure: &InlineClosure, args: &[Calcit]) -> Result<(), String> {
+  if closure.params.len() != args.len() {
+    return Err(format!(
+      "inline closure expects {} argument(s), got {}",
+      closure.params.len(),
+      args.len()
+    ));
+  }
+  if closure.body.iter().any(check_uses_recur) {
+    return Err("recur in a statically specialized closure is not yet supported in WASM codegen".into());
+  }
+
+  let mut bindings = Vec::with_capacity(args.len());
+  for arg in args {
+    if let Some(arg_closure) = resolve_inline_closure(ctx, arg) {
+      bindings.push(InlineArgument::Closure(arg_closure));
+    } else {
+      emit_expr(ctx, arg)?;
+      let idx = ctx.alloc_local();
+      ctx.emit(Instruction::LocalSet(idx));
+      bindings.push(InlineArgument::Value(idx));
+    }
+  }
+
+  let caller_locals = std::mem::replace(&mut ctx.locals, closure.captured_locals.clone());
+  let caller_closures = std::mem::replace(&mut ctx.lambda_locals, closure.captured_closures.clone());
+  for (param, binding) in closure.params.iter().zip(bindings) {
+    match binding {
+      InlineArgument::Value(local) => {
+        ctx.locals.insert(param.clone(), local);
+      }
+      InlineArgument::Closure(value) => {
+        ctx.lambda_locals.insert(param.clone(), value);
+      }
+    }
+  }
+  let result = emit_body(ctx, &closure.body);
+  ctx.locals = caller_locals;
+  ctx.lambda_locals = caller_closures;
+  result
 }
 
 /// Check that `args` has exactly `n` elements and return an error if not.
@@ -1300,24 +1397,8 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         _ => {}
       }
       // Check if this symbol refers to an inline lambda captured in this scope.
-      if let Some((params, body)) = ctx.lambda_locals.get(name).cloned()
-        && params.len() == args_list.len()
-      {
-        for (param, arg) in params.iter().zip(args_list.iter()) {
-          let arg_lambda = match arg {
-            Calcit::Local(a) => ctx.lambda_locals.get(a.sym.as_ref()).cloned(),
-            Calcit::Symbol { sym: s, .. } => ctx.lambda_locals.get(s.as_ref()).cloned(),
-            _ => None,
-          };
-          if let Some(captured) = arg_lambda {
-            ctx.lambda_locals.insert(param.clone(), captured);
-          } else {
-            emit_expr(ctx, arg)?;
-            let idx = ctx.declare_local(param);
-            ctx.emit(Instruction::LocalSet(idx));
-          }
-        }
-        return emit_body(ctx, &body);
+      if let Some(closure) = ctx.lambda_locals.get(name).cloned() {
+        return emit_inline_closure_call(ctx, &closure, &args_list);
       }
       let fn_idx = *ctx
         .fn_index
@@ -1420,26 +1501,8 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
     Calcit::Local(local) => {
       let local_name = local.sym.as_ref().to_string();
       // If this local is an inline lambda, inline the call directly.
-      if let Some((params, body)) = ctx.lambda_locals.get(&local_name).cloned()
-        && params.len() == args_list.len()
-      {
-        // Bind each arg to its param local then emit the body.
-        // If an arg is itself a lambda_local (a thunk/lambda), propagate rather than evaluate.
-        for (param, arg) in params.iter().zip(args_list.iter()) {
-          let arg_lambda = match arg {
-            Calcit::Local(a) => ctx.lambda_locals.get(a.sym.as_ref()).cloned(),
-            Calcit::Symbol { sym, .. } => ctx.lambda_locals.get(sym.as_ref()).cloned(),
-            _ => None,
-          };
-          if let Some(captured) = arg_lambda {
-            ctx.lambda_locals.insert(param.clone(), captured);
-          } else {
-            emit_expr(ctx, arg)?;
-            let idx = ctx.declare_local(param);
-            ctx.emit(Instruction::LocalSet(idx));
-          }
-        }
-        return emit_body(ctx, &body);
+      if let Some(closure) = ctx.lambda_locals.get(&local_name).cloned() {
+        return emit_inline_closure_call(ctx, &closure, &args_list);
       }
       let local_idx = *ctx
         .locals
@@ -2827,9 +2890,14 @@ fn emit_let_pairs(ctx: &mut WasmGenCtx, pairs: &[Calcit], body: &[Calcit]) -> Re
     Calcit::Symbol { sym, .. } => sym.to_string(),
     other => return Err(format!("let binding expected symbol, got: {other}")),
   };
-  emit_expr(ctx, &xs[1])?;
-  let idx = ctx.declare_local(&var_name);
-  ctx.emit(Instruction::LocalSet(idx));
+  if let Some(closure) = capture_inline_closure(ctx, &xs[1]) {
+    ctx.lambda_locals.insert(var_name.clone(), closure);
+    ctx.declare_local(&var_name);
+  } else {
+    emit_expr(ctx, &xs[1])?;
+    let idx = ctx.declare_local(&var_name);
+    ctx.emit(Instruction::LocalSet(idx));
+  }
   emit_let_pairs(ctx, &pairs[1..], body)
 }
 
@@ -2855,8 +2923,8 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
 
       // Check if the binding value is an inline lambda.
       // If so, store it for inlining at call sites instead of emitting as runtime value.
-      if let Some((params, body)) = try_extract_inline_lambda(&xs[1]) {
-        ctx.lambda_locals.insert(var_name.clone(), (params, body));
+      if let Some(closure) = capture_inline_closure(ctx, &xs[1]) {
+        ctx.lambda_locals.insert(var_name.clone(), closure);
         // Allocate a local slot (unused at runtime) so shadowing cleanup works.
         ctx.declare_local(&var_name);
         // Flatten nested lets
