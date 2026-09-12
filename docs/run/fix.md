@@ -43,8 +43,11 @@ operation 数量；没有可应用 operation 时状态为 `not-needed`。日志�
 确认预览后再应用：
 
 ```bash
-calcit calcit.cirru fix --apply --expect-revision 'md5:...'
+calcit calcit.cirru fix --ns app.main --def render! --apply --expect-revision 'md5:...'
 ```
+
+apply 必须原样重复 preview 使用的 `--ns`、`--def` 和 `--rule` selectors。revision 只证明 Snapshot 没有变化，不能证明
+更大 scope 中的其他建议也经过审阅；省略 selectors 会重新规划整个项目，而不是只应用上一次预览的子集。
 
 写入流程复用 `tree replace` 的 `--expect` guard 和现有 transaction：规划完成后即使调用方没有显式传
 `--expect-revision`，transaction 也必须绑定规划时捕获的 revision。全部 replacement 先在 staged Snapshot 上执行，重新加载并
