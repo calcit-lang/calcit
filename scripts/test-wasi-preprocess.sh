@@ -17,6 +17,11 @@ readonly CLOCK_OUT="${CARGO_TARGET_DIR:-target}/wasi-clock-smoke"
 readonly CLOCK_STDOUT="${CLOCK_OUT}/stdout.txt"
 readonly FIXED_CLOCK_OUT="${CARGO_TARGET_DIR:-target}/wasi-fixed-clock-smoke"
 readonly CORE_CLOCK_OUT="${CARGO_TARGET_DIR:-target}/core-clock-reject"
+readonly WAIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-wait-smoke"
+readonly WAIT_STDOUT="${WAIT_OUT}/stdout.txt"
+readonly FIXED_WAIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-fixed-wait-smoke"
+readonly FAILED_WAIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-failed-wait-smoke"
+readonly CORE_WAIT_OUT="${CARGO_TARGET_DIR:-target}/core-wait-reject"
 readonly RANDOM_OUT="${CARGO_TARGET_DIR:-target}/wasi-random-smoke"
 readonly RANDOM_STDOUT="${RANDOM_OUT}/stdout.txt"
 readonly FIXED_RANDOM_OUT="${CARGO_TARGET_DIR:-target}/wasi-fixed-random-smoke"
@@ -120,6 +125,22 @@ if clock_capability_error=$("$CALCIT_BIN" wasm "$COMMAND_FIXTURE" --init-fn app.
   exit 1
 fi
 grep -Fq "E_WASM_CAPABILITY" <<<"$clock_capability_error"
+
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/wait-main! --emit-path "$WAIT_OUT"
+wasmtime run "$WAIT_OUT/program.wasm" >"$WAIT_STDOUT"
+grep -Fxq "WASI-wait: ok" "$WAIT_STDOUT"
+
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/wait-fixed-main! --emit-path "$FIXED_WAIT_OUT"
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/wait-failure-main! --emit-path "$FAILED_WAIT_OUT"
+node scripts/test-wasi-wait-host.mjs "$FIXED_WAIT_OUT/program.wasm" "$FAILED_WAIT_OUT/program.wasm"
+
+if wait_capability_error=$(
+  "$CALCIT_BIN" wasm "$COMMAND_FIXTURE" --init-fn app.main/wait-main! --emit-path "$CORE_WAIT_OUT" 2>&1
+); then
+  echo "core WASM unexpectedly accepted synchronous wait" >&2
+  exit 1
+fi
+grep -Fq "E_WASM_CAPABILITY" <<<"$wait_capability_error"
 
 "$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/random-main! --emit-path "$RANDOM_OUT"
 wasmtime run "$RANDOM_OUT/program.wasm" >"$RANDOM_STDOUT"

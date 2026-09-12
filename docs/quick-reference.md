@@ -394,6 +394,7 @@ lowered to indexed access; an undeclared field is a diagnostic, not `nil`.
 - `recur` - tail recursion
 - `generate-id!` - unique ID generation
 - `cpu-time` - timing
+- `wait-ms`：同步等待整数毫秒，返回 `Result<Unit,String>`；与异步 `timeout-call` 无关
 - `&get-os`, `&get-calcit-backend` - environment info
 
 ### EDN/Data Operations
@@ -413,6 +414,7 @@ lowered to indexed access; an undeclared field is a diagnostic, not `nil`.
 - `ffi:task`, `FfiTask .cancel` / `.cancel-with` - nominal native async task lifecycle API
 - `ffi:response`, `FfiResponse .resolve` / `.reject` - nominal exactly-once native response API
 - `get-env` - environment variables
+- `wait-ms`：跨 backend 的同步等待边界；零值不调用宿主，缺少能力时返回错误
 - `raise` - throw error
 - `quit!` - exit program
 

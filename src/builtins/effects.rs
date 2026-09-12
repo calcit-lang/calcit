@@ -3,6 +3,8 @@ use std::fs;
 use std::process::exit;
 use std::sync::LazyLock;
 use std::sync::RwLock;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Duration;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::{
@@ -11,6 +13,7 @@ use crate::{
 };
 
 const MAX_SECURE_RANDOM_BYTES: usize = 65_536;
+const MAX_WAIT_MILLISECONDS: f64 = u32::MAX as f64;
 
 #[derive(Clone, Debug, Copy)]
 pub enum CliRunningMode {
@@ -169,6 +172,48 @@ pub fn unix_time_ms(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     .map_err(|e| CalcitErr::use_str(CalcitErrKind::Effect, format!("unix-time-ms failed: {e}")))?
     .as_millis() as f64;
   Ok(Calcit::Number(millis))
+}
+
+/// Block the current thread for a portable integral millisecond duration.
+pub fn wait_ms(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  let [
+    result_type @ Calcit::EnumDef(_),
+    Calcit::Number(milliseconds),
+    Calcit::Str(_host_error),
+  ] = xs
+  else {
+    return CalcitErr::err_str(
+      CalcitErrKind::Type,
+      "&wait-ms expected the Result enum definition, a millisecond duration, and a host error prefix",
+    );
+  };
+  let result =
+    if !milliseconds.is_finite() || milliseconds.fract() != 0.0 || *milliseconds < 0.0 || *milliseconds > MAX_WAIT_MILLISECONDS {
+      new_named_enum_value(&[
+        result_type.to_owned(),
+        Calcit::tag("err"),
+        Calcit::new_str(format!(
+          "wait-ms expected an integer millisecond duration in 0..{}, got: {milliseconds}",
+          u32::MAX
+        )),
+      ])
+    } else {
+      #[cfg(not(target_arch = "wasm32"))]
+      let result = {
+        if *milliseconds > 0.0 {
+          std::thread::sleep(Duration::from_millis(*milliseconds as u64));
+        }
+        new_named_enum_value(&[result_type.to_owned(), Calcit::tag("ok"), Calcit::Unit])
+      };
+      #[cfg(target_arch = "wasm32")]
+      let result = new_named_enum_value(&[
+        result_type.to_owned(),
+        Calcit::tag("err"),
+        Calcit::new_str(format!("{_host_error}: native interpreter blocking wait is unavailable on wasm32")),
+      ]);
+      result
+    }?;
+  Ok(result)
 }
 
 /// Fill a Buffer from the operating system CSPRNG and preserve expected failures as Result values.

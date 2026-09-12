@@ -149,6 +149,12 @@ pub(super) fn host_imports_for_target(target: WasmTarget) -> Vec<HostImport> {
       },
       HostImport {
         module: "wasi_snapshot_preview1".into(),
+        name: "poll_oneoff".into(),
+        params: vec![ValType::I32; 4],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "wasi_snapshot_preview1".into(),
         name: "random_get".into(),
         params: vec![ValType::I32, ValType::I32],
         results: vec![ValType::I32],
@@ -272,6 +278,91 @@ pub(super) fn build_wasi_write_all_fn(fd_write_idx: u32) -> CompiledFn {
     locals: vec![ValType::I32],
     instructions,
   }
+}
+
+/// Build the Preview 1 relative monotonic-clock adapter used by `wait-ms`.
+/// Returns zero on a single successful clock event and a non-zero status for
+/// host errors or malformed event records.
+pub(super) fn build_wasi_wait_fn(poll_oneoff_idx: u32) -> CompiledFn {
+  // param: 0=relative duration in nanoseconds
+  let mut b = RuntimeFnBuilder::new(1);
+  let scratch_size = b.alloc_i64();
+  let managed_size = b.alloc_i64();
+  let scratch = b.alloc_i32();
+  let event = b.alloc_i32();
+  let nevents = b.alloc_i32();
+  let status = b.alloc_i32();
+
+  b.emit(Instruction::I64Const(88));
+  b.emit(Instruction::LocalSet(scratch_size));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::LocalSet(managed_size));
+  rt_emit_reserve_scratch(&mut b, scratch_size, managed_size, scratch);
+  b.emit(Instruction::LocalGet(scratch));
+  b.emit(Instruction::I32Const(48));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(event));
+  b.emit(Instruction::LocalGet(scratch));
+  b.emit(Instruction::I32Const(80));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(nevents));
+
+  // __wasi_subscription_t: userdata, tagged union, then clock payload.
+  b.emit(Instruction::LocalGet(scratch));
+  b.emit(Instruction::I64Const(0x4341_4c43_4954_5741));
+  b.emit(Instruction::I64Store(mem_arg_i64(0)));
+  b.emit(Instruction::LocalGet(scratch));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Store8(mem_arg_byte(8)));
+  b.emit(Instruction::LocalGet(scratch));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Store(mem_arg_i32(16)));
+  b.emit(Instruction::LocalGet(scratch));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I64Store(mem_arg_i64(24)));
+  b.emit(Instruction::LocalGet(scratch));
+  b.emit(Instruction::I64Const(1_000_000));
+  b.emit(Instruction::I64Store(mem_arg_i64(32)));
+  b.emit(Instruction::LocalGet(scratch));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Store16(mem_arg_byte(40)));
+
+  b.emit(Instruction::LocalGet(scratch));
+  b.emit(Instruction::LocalGet(event));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalGet(nevents));
+  b.emit(Instruction::Call(poll_oneoff_idx));
+  b.emit(Instruction::LocalSet(status));
+
+  b.emit(Instruction::LocalGet(status));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(nevents));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::LocalGet(event));
+  b.emit(Instruction::I64Load(mem_arg_i64(0)));
+  b.emit(Instruction::I64Const(0x4341_4c43_4954_5741));
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::LocalGet(event));
+  b.emit(Instruction::I32Load16U(mem_arg_byte(8)));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::LocalGet(event));
+  b.emit(Instruction::I32Load8U(mem_arg_byte(10)));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(status));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(status));
+  b.finish(vec![ValType::I64], vec![ValType::I32])
 }
 
 /// Resolve a relative Calcit path against the most specific Preview 1 preopen

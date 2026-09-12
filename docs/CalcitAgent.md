@@ -461,6 +461,10 @@ let
 这些文件效果支持 native 与生成的 JavaScript。WASI command 还支持基于 preopen 的
 文本读写与 `.read-dir`；core WASM 明确拒绝宿主文件效果，`.walk-dir` 尚未接入 WASI。
 
+`wait-ms` 是同步等待接口，接收 `0..4294967295` 的整数毫秒并返回
+`Result<Unit,String>`。零值不触发 host；小数、负数、溢出或缺少阻塞能力都进入错误
+分支。不要把它改写为 `timeout-call`：后者是独立的 JavaScript callback API。
+
 `option:let` 使用普通 `let` 的 binding pair 结构。每个右侧和最终 body 都必须保持
 Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。
 
