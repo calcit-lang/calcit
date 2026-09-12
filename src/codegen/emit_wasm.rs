@@ -152,7 +152,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
           fn_defs.push((ns.to_string(), def_name.to_string(), args, body));
         }
         Err(e) => {
-          if ns == init_ns {
+          if must_reject_extraction_failure(init_ns, ns, &compiled.preprocessed_code) {
             return Err(format!("[wasm] target function {ns}/{def_name} is not compilable: {e}"));
           }
           eprintln!("[wasm] omitting unsupported dependency {ns}/{def_name}: {e}");
@@ -421,6 +421,10 @@ fn extract_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Calcit>), String
 
 fn is_wasm_export_def(code: &Calcit) -> bool {
   matches!(code, Calcit::List(xs) if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::DefWasmExport, _))))
+}
+
+fn must_reject_extraction_failure(init_ns: &str, ns: &str, code: &Calcit) -> bool {
+  ns == init_ns || is_wasm_export_def(code)
 }
 
 fn is_wasm_import_def(code: &Calcit) -> bool {
@@ -3237,5 +3241,32 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
       }
     }
     _ => {}
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use std::sync::Arc;
+
+  use super::must_reject_extraction_failure;
+  use crate::calcit::{Calcit, CalcitList, CalcitSyntax};
+
+  fn declaration(head: CalcitSyntax) -> Calcit {
+    let items = [Calcit::Syntax(head, Arc::from("dependency.ns"))];
+    Calcit::List(Arc::new(CalcitList::from(&items[..])))
+  }
+
+  #[test]
+  fn extraction_failure_rejects_target_and_explicit_dependency_export() {
+    let ordinary_dependency = declaration(CalcitSyntax::Defn);
+    let explicit_dependency_export = declaration(CalcitSyntax::DefWasmExport);
+
+    assert!(must_reject_extraction_failure("target.ns", "target.ns", &ordinary_dependency));
+    assert!(must_reject_extraction_failure(
+      "target.ns",
+      "dependency.ns",
+      &explicit_dependency_export
+    ));
+    assert!(!must_reject_extraction_failure("target.ns", "dependency.ns", &ordinary_dependency));
   }
 }
