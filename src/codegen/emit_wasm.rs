@@ -2802,7 +2802,7 @@ fn emit_wasi_fs_read_dir(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   ctx.emit(f64_const(1.0));
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(struct_ptr));
-  ctx.emit(f64_const(get_type_tag(ctx, "FsPath")));
+  emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
   ctx.emit(Instruction::LocalGet(struct_ptr));
   ctx.emit(Instruction::LocalGet(value));

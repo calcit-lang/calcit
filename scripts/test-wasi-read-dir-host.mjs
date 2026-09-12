@@ -120,6 +120,7 @@ memory = successInstance.exports.memory;
 successInstance.exports._start();
 assert.equal(decoder.decode(Uint8Array.from(stdout)), "WASI-read-dir: ok\n");
 assert.equal(readdirCalls, 2, "directory adapter must continue from the last complete cookie");
+assert.ok(memory.buffer.byteLength >= 4_517_944, "directory adapter must reserve its bounded managed allocations");
 
 const errorModule = await WebAssembly.compile(await readFile(errorWasmPath));
 const assertMalformedDirectoryReturnsError = async (fdReaddir) => {

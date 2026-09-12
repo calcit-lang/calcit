@@ -9,6 +9,10 @@ const WASI_DIR_BUFFER_SIZE: i32 = 64 * 1024;
 const WASI_DIR_ENTRY_LIMIT: i32 = 4096;
 const WASI_DIR_NAME_LIMIT: i32 = 4096;
 const WASI_DIR_PATH_BYTES_LIMIT: i32 = 4 * 1024 * 1024;
+// Covers allocation headers, the list, read buffer, padded strings, FsPath
+// wrappers, and the successful Result value at the public boundary.
+const WASI_DIR_MANAGED_BYTES_LIMIT: i64 =
+  56 + WASI_DIR_BUFFER_SIZE as i64 + WASI_DIR_PATH_BYTES_LIMIT as i64 + 63 * WASI_DIR_ENTRY_LIMIT as i64;
 
 #[derive(Clone, Debug)]
 pub(super) struct HostImport {
@@ -1073,6 +1077,8 @@ pub(super) fn build_wasi_read_dir_fn(
   let string_data = b.alloc_i32();
   let insert_at = b.alloc_i32();
   let previous = b.alloc_i32();
+  let managed_size = b.alloc_i64();
+  let reserve_status = b.alloc_i32();
 
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
@@ -1117,6 +1123,14 @@ pub(super) fn build_wasi_read_dir_fn(
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::I64Const(WASI_DIR_MANAGED_BYTES_LIMIT));
+  b.emit(Instruction::LocalSet(managed_size));
+  rt_emit_try_reserve_managed(&mut b, managed_size, reserve_status);
+  b.emit(Instruction::LocalGet(reserve_status));
+  b.emit(Instruction::If(BlockType::Empty));
+  emit_wasi_dir_failure(&mut b, fd, fd_close_idx);
   b.emit(Instruction::End);
 
   b.emit(Instruction::I32Const(8 + WASI_DIR_ENTRY_LIMIT * 8));
@@ -1520,6 +1534,52 @@ fn rt_emit_reserve_scratch(builder: &mut RuntimeFnBuilder, size_local: u32, mana
   builder.emit(Instruction::I64Sub);
   builder.emit(Instruction::I32WrapI64);
   builder.emit(Instruction::LocalSet(dst_local));
+}
+
+/// Ensure bounded managed allocations fit in memory without trapping.
+/// `status_local` is zero on success and non-zero on address overflow or a
+/// failed `memory.grow`, so Result-returning adapters can fail explicitly.
+fn rt_emit_try_reserve_managed(builder: &mut RuntimeFnBuilder, size_local: u32, status_local: u32) {
+  let memory_bytes = builder.alloc_i64();
+  let required_bytes = builder.alloc_i64();
+
+  builder.emit(Instruction::I32Const(0));
+  builder.emit(Instruction::LocalSet(status_local));
+  builder.emit(Instruction::MemorySize(0));
+  builder.emit(Instruction::I64ExtendI32U);
+  builder.emit(Instruction::I64Const(16));
+  builder.emit(Instruction::I64Shl);
+  builder.emit(Instruction::LocalSet(memory_bytes));
+  builder.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  builder.emit(Instruction::I64ExtendI32U);
+  builder.emit(Instruction::LocalGet(size_local));
+  builder.emit(Instruction::I64Add);
+  builder.emit(Instruction::LocalSet(required_bytes));
+  builder.emit(Instruction::LocalGet(required_bytes));
+  builder.emit(Instruction::I64Const(u32::MAX as i64));
+  builder.emit(Instruction::I64GtU);
+  builder.emit(Instruction::If(BlockType::Empty));
+  builder.emit(Instruction::I32Const(1));
+  builder.emit(Instruction::LocalSet(status_local));
+  builder.emit(Instruction::Else);
+  builder.emit(Instruction::LocalGet(required_bytes));
+  builder.emit(Instruction::LocalGet(memory_bytes));
+  builder.emit(Instruction::I64GtU);
+  builder.emit(Instruction::If(BlockType::Empty));
+  builder.emit(Instruction::LocalGet(required_bytes));
+  builder.emit(Instruction::LocalGet(memory_bytes));
+  builder.emit(Instruction::I64Sub);
+  builder.emit(Instruction::I64Const(65535));
+  builder.emit(Instruction::I64Add);
+  builder.emit(Instruction::I64Const(16));
+  builder.emit(Instruction::I64ShrU);
+  builder.emit(Instruction::I32WrapI64);
+  builder.emit(Instruction::MemoryGrow(0));
+  builder.emit(Instruction::I32Const(-1));
+  builder.emit(Instruction::I32Eq);
+  builder.emit(Instruction::LocalSet(status_local));
+  builder.emit(Instruction::End);
+  builder.emit(Instruction::End);
 }
 
 fn rt_emit_trap_on_errno(builder: &mut RuntimeFnBuilder) {
