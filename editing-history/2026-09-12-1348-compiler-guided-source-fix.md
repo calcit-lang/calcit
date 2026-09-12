@@ -9,13 +9,14 @@ AI Agent 共用。首个切片选择既有 `W_REMOVED_DATA_API`，避免为 migr
 
 - 新增 `calcit fix`：默认 preview，支持 `--format json`、`--ns`、`--def`、`--rule`、`--expect-revision` 与 `--apply`。
 - 将 removed data API 的诊断说明与一对一 replacement 集中到同一份 compiler mapping；`tuple?` 保持只读语义选择。
-- suggestion 输出 stable rule ID、diagnostic code、surface definition/path、subtree fingerprint、quoted AST replacement 与 applicability。
+- suggestion 输出 Snapshot `source_file`、stable rule ID、diagnostic code、surface definition/path、subtree fingerprint、quoted AST replacement 与 applicability。
 - 应用流程复用现有 `tree replace` transaction，每个节点带 `--expect` guard；在同目录 staged Snapshot 上重新加载并只预处理
-  选定 scope，全部通过后才原子替换源文件。
+  选定 scope，全部通过后才原子替换源文件；transaction 始终绑定规划时捕获的 revision，即使调用方没有显式传 revision。
 - 实际写入默认要求干净 Git worktree；非 Git 或已有修改必须分别显式授权 `--allow-no-vcs` / `--allow-dirty`，但不能跳过
   revision、fingerprint、preprocess 或 atomic write。
 - 新增中文使用文档和 Agent 操作约束；Agent interface smoke 验证 stdout 只有一个 JSON envelope。
-- migration fixture 在 definition `:tests` 中验证替换后的 Calcit 行为；staged validation 同时阻断本规则之外的新 warning。
+- migration fixture 在 definition `:tests` 中验证替换后的 Calcit 行为；staged validation 同时阻断本规则之外的新 warning，并在
+  JSON report 中记录 validation 状态与已检查 operation 数量。
 
 ## 验证
 

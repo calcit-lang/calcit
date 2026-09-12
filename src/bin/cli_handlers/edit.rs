@@ -709,6 +709,13 @@ pub(crate) fn run_staged_fix_transaction(
     let content =
       fs::read_to_string(snapshot_file).map_err(|error| format!("Failed to read snapshot '{}': {error}", snapshot_file.display()))?;
     let revision = snapshot_content_revision(&content);
+    if let Some(expected) = expected_revision
+      && expected != revision
+    {
+      return Err(format!(
+        "Snapshot revision mismatch: expected '{expected}', current revision is '{revision}'. Re-run `calcit fix` and review the new plan."
+      ));
+    }
     return Ok(StagedFixReport {
       changed: false,
       original_revision: revision.clone(),
@@ -2905,8 +2912,8 @@ mod tests {
     TransactionOperationReport, bump_semver_value, collect_format_advisories, count_legacy_any_schema_fields,
     count_legacy_inherent_impls, handle_add_import, handle_add_test, handle_format, handle_imports, handle_rm_test, handle_schema,
     load_snapshot, parse_examples_input, parse_import_rules_input, parse_input_to_cirru, parse_schema_input,
-    parse_transaction_operations, rename_definition_declaration, run_staged_transaction_with, save_schema_preserving_snapshot,
-    save_snapshot,
+    parse_transaction_operations, rename_definition_declaration, run_staged_fix_transaction, run_staged_transaction_with,
+    save_schema_preserving_snapshot, save_snapshot,
   };
   use crate::cli_args::{
     EditAddImportCommand, EditAddTestCommand, EditFormatCommand, EditImportsCommand, EditRmTestCommand, EditSchemaCommand,
@@ -3153,6 +3160,16 @@ mod tests {
     assert!(!called);
     assert!(error.contains("revision mismatch"), "error: {error}");
     assert_eq!(fs::read_to_string(&fixture.path).expect("fixture should remain"), original);
+  }
+
+  #[test]
+  fn empty_fix_plan_still_rejects_a_stale_planning_revision() {
+    let fixture = TestSnapshot::from_fixture();
+
+    let error = run_staged_fix_transaction(&fixture.path, &[], Some("md5:stale"), true, &[])
+      .expect_err("an empty fix plan should still be bound to its planning revision");
+
+    assert!(error.contains("revision mismatch"), "error: {error}");
   }
 
   #[test]

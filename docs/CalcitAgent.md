@@ -206,7 +206,7 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 - 一次局部节点修改：`calcit tree`，优先 `search-replace`，其次明确 path 的操作。
 - 在一个复杂表达式中连续移动和修改：`calcit cursor` 与 `@cursor`。
 - 多个 mutation 必须一起成功：`calcit edit transaction`，先 `--dry-run`；主格式是 Cirru EDN，先运行 `calcit docs read edit-tree.md 'Atomic Transactions'` 查看最小 operation 文件和 revision 提交流程。
-- 编译器已经证明等价的迁移：先运行 `calcit fix --format json`，只选择 `machine-applicable` suggestion；提交时使用 `calcit fix --apply --expect-revision <revision>`。`requires-review` 或 `replacement: null` 需要人类决定，Agent 不得自行猜测。完整字段与 VCS guard 见 `calcit docs read fix.md --full`。
+- 编译器已经证明等价的迁移：先运行 `calcit fix --format json`，核对 suggestion 的 `source_file`、definition/path、fingerprint，只选择 `machine-applicable`；提交时使用 `calcit fix --apply --expect-revision <revision>`，并确认 `validation.status` 为 `passed`。`requires-review` 或 `replacement: null` 需要人类决定，Agent 不得自行猜测。完整字段与 VCS guard 见 `calcit docs read fix.md --full`。
 
 同一个 Snapshot 的写命令必须串行执行，包括 `config`、`edit`、`tree` 和 cursor mutation；两个进程同时读取再保存会发生最后写入覆盖。需要并行时使用独立 Snapshot/worktree，需要同一文件内的原子多步修改时使用 transaction 和 `--expect-revision`。
 

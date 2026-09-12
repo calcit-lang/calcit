@@ -25,6 +25,7 @@ struct FixSuggestion {
   rule_id: &'static str,
   diagnostic_code: &'static str,
   semantic_layer: &'static str,
+  source_file: String,
   definition: String,
   path: String,
   fingerprint: String,
@@ -57,7 +58,15 @@ struct FixReportData<'a> {
   filters: FixFilters<'a>,
   changed: bool,
   new_revision: &'a str,
+  validation: FixValidation,
   suggestions: &'a [FixSuggestion],
+}
+
+#[derive(Debug, Serialize)]
+struct FixValidation {
+  status: &'static str,
+  staged_scope_preprocess: bool,
+  checked_operations: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -87,7 +96,7 @@ pub(crate) fn handle_fix_command(
 
   let selected_definitions = select_definitions(options, compiled_snapshot, project_namespaces)?;
   let warnings = compile_selected_definitions(&selected_definitions)?;
-  let suggestions = plan_removed_data_api_fixes(options, &source_snapshot, &warnings)?;
+  let suggestions = plan_removed_data_api_fixes(options, &source_snapshot, snapshot_file, &warnings)?;
   let operations = suggestions.iter().filter_map(suggestion_operation).collect::<Vec<_>>();
 
   if std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1") {
@@ -113,13 +122,7 @@ pub(crate) fn handle_fix_command(
   }
   let dry_run = !options.apply;
   let validation_args = fix_scope_args(options);
-  let transaction = run_staged_fix_transaction(
-    Path::new(snapshot_file),
-    &operations,
-    options.expect_revision.as_deref(),
-    dry_run,
-    &validation_args,
-  )?;
+  let transaction = run_staged_fix_transaction(Path::new(snapshot_file), &operations, Some(&revision), dry_run, &validation_args)?;
 
   let mode = if options.apply { "apply" } else { "preview" };
   let report = FixReport {
@@ -135,6 +138,11 @@ pub(crate) fn handle_fix_command(
       },
       changed: transaction.changed,
       new_revision: &transaction.new_revision,
+      validation: FixValidation {
+        status: if operations.is_empty() { "not-needed" } else { "passed" },
+        staged_scope_preprocess: !operations.is_empty(),
+        checked_operations: operations.len(),
+      },
       suggestions: &suggestions,
     },
     diagnostics: vec![],
@@ -235,6 +243,7 @@ fn compile_selected_definitions(definitions: &[(String, String)]) -> Result<Vec<
 fn plan_removed_data_api_fixes(
   options: &FixCommand,
   snapshot: &Snapshot,
+  snapshot_file: &str,
   warnings: &[LocatedWarning],
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = BTreeMap::new();
@@ -277,6 +286,7 @@ fn plan_removed_data_api_fixes(
       rule_id: REMOVED_DATA_API_RULE,
       diagnostic_code: REMOVED_DATA_API_DIAGNOSTIC,
       semantic_layer: "surface",
+      source_file: snapshot_file.to_owned(),
       definition: format!("{}/{}", location.ns, location.def),
       path: format!("code{}", format_path(&target_path)),
       fingerprint: node_fingerprint(&original_node),
@@ -290,20 +300,29 @@ fn plan_removed_data_api_fixes(
       replacement_leaf,
     };
     let key = (location.ns.to_string(), location.def.to_string(), target_path);
-    if let Some(existing) = suggestions.get(&key) {
-      if existing != &suggestion {
-        return Err(format!(
-          "Fix suggestions overlap at {}/{} {}; refusing to choose between different replacements.",
-          key.0,
-          key.1,
-          format_path(&key.2)
-        ));
-      }
-    } else {
-      suggestions.insert(key, suggestion);
-    }
+    insert_fix_suggestion(&mut suggestions, key, suggestion)?;
   }
   Ok(suggestions.into_values().collect())
+}
+
+fn insert_fix_suggestion(
+  suggestions: &mut BTreeMap<(String, String, Vec<usize>), FixSuggestion>,
+  key: (String, String, Vec<usize>),
+  suggestion: FixSuggestion,
+) -> Result<(), String> {
+  if let Some(existing) = suggestions.get(&key) {
+    if existing != &suggestion {
+      return Err(format!(
+        "Fix suggestions overlap at {}/{} {}; refusing to choose between different replacements.",
+        key.0,
+        key.1,
+        format_path(&key.2)
+      ));
+    }
+  } else {
+    suggestions.insert(key, suggestion);
+  }
+  Ok(())
 }
 
 fn resolve_fix_target(code: &Cirru, coordinate: &[usize]) -> Option<(Vec<usize>, String)> {
@@ -422,9 +441,10 @@ fn print_human_report(report: &FixReport<'_>) {
 
 #[cfg(test)]
 mod tests {
-  use super::{FixSuggestion, migration_for_source_leaf, resolve_fix_target, suggestion_operation};
+  use super::{FixSuggestion, insert_fix_suggestion, migration_for_source_leaf, resolve_fix_target, suggestion_operation};
   use cirru_parser::Cirru;
   use serde_json::Value;
+  use std::collections::BTreeMap;
 
   fn leaf(value: &str) -> Cirru {
     Cirru::leaf(value)
@@ -459,6 +479,7 @@ mod tests {
       rule_id: "removed-data-api-v1",
       diagnostic_code: "W_REMOVED_DATA_API",
       semantic_layer: "surface",
+      source_file: "calcit.cirru".to_owned(),
       definition: "app.main/main!".to_owned(),
       path: "code@3.0".to_owned(),
       fingerprint: "md5:test".to_owned(),
@@ -486,5 +507,37 @@ mod tests {
         "quote enum-definition",
       ]
     );
+  }
+
+  #[test]
+  fn conflicting_suggestions_for_one_source_node_are_rejected() {
+    let mut suggestions = BTreeMap::new();
+    let key = ("app.main".to_owned(), "main!".to_owned(), vec![3, 0]);
+    let first = FixSuggestion {
+      rule_id: "removed-data-api-v1",
+      diagnostic_code: "W_REMOVED_DATA_API",
+      semantic_layer: "surface",
+      source_file: "calcit.cirru".to_owned(),
+      definition: "app.main/main!".to_owned(),
+      path: "code@3.0".to_owned(),
+      fingerprint: "md5:test".to_owned(),
+      origin_chain: vec![],
+      original: Value::Null,
+      replacement: Some(Value::String("enum-definition".to_owned())),
+      applicability: "machine-applicable",
+      message: String::new(),
+      target_path: vec![3, 0],
+      original_leaf: "tuple-enum".to_owned(),
+      replacement_leaf: Some("enum-definition".to_owned()),
+    };
+    insert_fix_suggestion(&mut suggestions, key.clone(), first.clone()).expect("first suggestion should insert");
+    insert_fix_suggestion(&mut suggestions, key.clone(), first.clone()).expect("identical duplicate should be idempotent");
+
+    let mut conflicting = first;
+    conflicting.replacement_leaf = Some("enum?".to_owned());
+    let error = insert_fix_suggestion(&mut suggestions, key, conflicting).expect_err("conflicting overlap should fail");
+
+    assert!(error.contains("overlap at app.main/main! @3.0"), "error: {error}");
+    assert_eq!(suggestions.len(), 1);
   }
 }

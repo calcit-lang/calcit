@@ -76,7 +76,14 @@ fn fix_preview_apply_and_repeat_are_revision_safe() {
   assert_eq!(preview_json["data"]["mode"], "preview");
   assert_eq!(preview_json["data"]["changed"], true);
   assert_eq!(preview_json["data"]["suggestions"][0]["rule_id"], "removed-data-api-v1");
+  assert_eq!(
+    preview_json["data"]["suggestions"][0]["source_file"],
+    snapshot.to_string_lossy().as_ref()
+  );
   assert_eq!(preview_json["data"]["suggestions"][0]["replacement"]["value"], "enum-definition");
+  assert_eq!(preview_json["data"]["validation"]["status"], "passed");
+  assert_eq!(preview_json["data"]["validation"]["staged_scope_preprocess"], true);
+  assert_eq!(preview_json["data"]["validation"]["checked_operations"], 1);
   assert_eq!(fs::read(&snapshot).expect("preview fixture should read"), original);
 
   let revision = preview_json["revision"].as_str().expect("preview revision should be a string");
@@ -151,6 +158,9 @@ fn fix_preview_apply_and_repeat_are_revision_safe() {
   assert!(repeated.status.success(), "stderr:\n{}", String::from_utf8_lossy(&repeated.stderr));
   let repeated_json = parse_stdout(&repeated);
   assert_eq!(repeated_json["data"]["changed"], false);
+  assert_eq!(repeated_json["data"]["validation"]["status"], "not-needed");
+  assert_eq!(repeated_json["data"]["validation"]["staged_scope_preprocess"], false);
+  assert_eq!(repeated_json["data"]["validation"]["checked_operations"], 0);
   assert_eq!(repeated_json["data"]["suggestions"].as_array().map(Vec::len), Some(0));
 }
 
