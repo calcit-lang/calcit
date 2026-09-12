@@ -7,8 +7,8 @@
 ## 修改
 
 - `query type-at` 的 `ContextDiagnostic` 移除 `provenance` 上的 `skip_serializing_if`。文档与 `analyze check-public` 都要求该字段始终为数组，空时也应为 `[]`，不再因省略字段破坏消费者。
-- `nearest_dynamic_provenance` 判断原始 `get` 符号时，改用当前 `scope_types` 与 `program::has_def_code` 核实是否被局部绑定或同命名空间定义遮蔽；只有未被遮蔽的 `get` 才标记为 `calcit.core/get`，并删除把 `Calcit::Local` 当作 core `get` 的分支。
-- 新增回归测试：空 provenance 的 `ContextDiagnostic` 序列化后仍包含 `provenance: []`；被局部 `get` 遮蔽的调用不会产生 `calcit.core/get` 来源，且保持简洁诊断。
+- `nearest_dynamic_provenance` 判断原始 `get` 符号时，只在它未被局部绑定（`scope_types`）遮蔽、且不是指向同名外层定义的 self-reference 时，才标记为 `calcit.core/get`；符号解析中 core 先于同命名空间定义，因此同命名空间存在 `get` 不会遮蔽 core `get`。删除把 `Calcit::Local` 当作 core `get` 的分支。
+- 新增回归测试：空 provenance 的 `ContextDiagnostic` 序列化后仍包含 `provenance: []`；被局部 `get` 遮蔽或 self-reference 到项目 `get` 的调用都不会产生 `calcit.core/get` 来源，且保持简洁诊断。
 
 ## 验证
 
