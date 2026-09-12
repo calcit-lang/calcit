@@ -59,7 +59,7 @@ calcit wasm calcit.cirru --emit-path js-out
 
 ```bash
 calcit wasi calcit/test-wasi-command.cirru --emit-path target/wasi-command
-wasmtime run target/wasi-command/program.wasm
+wasmtime run --env APP_MODE=release target/wasi-command/program.wasm alpha beta
 ```
 
 两个命令都支持 `--check-only`，只执行同一套 target validation，不写出 `program.wasm`。`--help` 会分别说明输出类型和 command entry 约束。
@@ -77,9 +77,9 @@ yarn try-wasm
 公开命令名称明确区分两种宿主契约：
 
 - `core` 是默认值，保持浏览器或嵌入式宿主现有的 `math`、`io` imports 和导出行为。
-- `wasi` 生成 command module，并增加无参数、无返回值的 `_start` 入口。当前阶段可在 Wasmtime 中运行不需要宿主效果的 Calcit 程序。
+- `wasi` 生成 command module，并增加无参数、无返回值的 `_start` 入口。当前支持 `println`、`eprintln`、`echo`、`get-env` 和 `get-args`；`get-args` 返回宿主传入的完整参数列表，包含第 0 项。
 
-WASI 目标不会接受 `defwasm-import` 声明的任意宿主函数，也不会继承 core 目标的 JS `io` imports。遇到尚未注册的宿主能力时，codegen 以 `E_WASM_CAPABILITY` 失败；无效目标或 command 入口形状以 `E_WASM_TARGET` 失败。后续 stdio、参数、环境变量、退出、时钟、随机数和预开放文件系统均从集中式 capability registry 接入，Preview 1 的 ABI 名称不会成为 Calcit 源码 API。
+WASI 目标不会接受 `defwasm-import` 声明的任意宿主函数，也不会继承 core 目标的 JS `io` imports。遇到尚未注册的宿主能力时，codegen 以 `E_WASM_CAPABILITY` 失败；无效目标或 command 入口形状以 `E_WASM_TARGET` 失败。后续退出、时钟、随机数和预开放文件系统均从集中式 capability registry 接入，Preview 1 的 ABI 名称不会成为 Calcit 源码 API。
 
 ## 声明式 WASM FFI
 

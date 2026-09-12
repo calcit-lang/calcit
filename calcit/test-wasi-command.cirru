@@ -10,7 +10,11 @@
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (println |WASI-stdout: "|你好") (echo |WASI-echo) (eprintln |WASI-stderr: 42) (+ 1 2)
+            defn main! () (println |WASI-stdout: "|你好") (echo |WASI-echo) (eprintln |WASI-stderr: 42)
+              println |WASI-env: $ option:unwrap-or (get-env |CALCIT_WASI_TEST_ENV) |missing
+              each (get-args)
+                fn (arg) (println |WASI-arg: arg)
+              + 1 2
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Number)
@@ -32,6 +36,20 @@
               :code $ quote
                 assert= 3 $ needs-arg 3
               :tags $ #{} :core :unit :wasi :wasm
+        'read-args $ %{} 'CodeEntry (:doc "|读取当前宿主进程的完整参数列表。")
+          :code $ quote
+            defn read-args () $ get-args
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ []
+              :features $ #{} :env :io
+              :return $ :: 'List 'String
+          :tests $ []
+            %{} 'TestEntry (:name |returns-strings)
+              :code $ quote
+                assert= true $ every? (read-args) string?
+              :tags $ #{} :core :env :unit :wasi :wasm
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! () &unit

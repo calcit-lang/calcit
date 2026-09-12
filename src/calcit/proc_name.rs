@@ -112,6 +112,8 @@ pub enum CalcitProc {
   Quit,
   #[strum(serialize = "&get-env")]
   GetEnv,
+  #[strum(serialize = "&get-args")]
+  GetArgs,
   #[strum(serialize = "unix-time-ms")]
   UnixTimeMs,
   #[strum(serialize = "&get-calcit-backend")]
@@ -1386,6 +1388,10 @@ impl CalcitProc {
       GetEnv => Some(ProcTypeSignature {
         return_type: optional_dynamic(),
         arg_types: vec![some_tag("string"), dynamic_tag()],
+      }),
+      GetArgs => Some(ProcTypeSignature {
+        return_type: list_of(some_tag("string")),
+        arg_types: vec![],
       }),
       UnixTimeMs => Some(ProcTypeSignature {
         return_type: some_tag("number"),

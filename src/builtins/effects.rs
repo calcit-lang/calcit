@@ -7,7 +7,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::{
   builtins::meta::type_of,
-  calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitProc, format_proc_examples_hint},
+  calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, format_proc_examples_hint},
   util::number::f64_to_i32,
 };
 
@@ -138,6 +138,21 @@ pub fn get_env(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
     None => CalcitErr::err_str(CalcitErrKind::Arity, "get-env expected an argument, got nothing"),
   }
+}
+
+pub fn get_args(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if !xs.is_empty() {
+    return CalcitErr::err_str(CalcitErrKind::Arity, format!("get-args expected no arguments, got {}", xs.len()));
+  }
+  let args = env::args_os()
+    .map(|arg| {
+      arg
+        .into_string()
+        .map(|text| Calcit::Str(text.into()))
+        .map_err(|_| CalcitErr::use_str(CalcitErrKind::Effect, "get-args received a non-UTF-8 argument"))
+    })
+    .collect::<Result<Vec<_>, _>>()?;
+  Ok(Calcit::from(CalcitList::from(args.as_slice())))
 }
 
 pub fn unix_time_ms(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {

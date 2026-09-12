@@ -45,8 +45,8 @@ mod structs;
 
 use methods::{emit_call_args, emit_method_invoke};
 use runtime::{
-  HostImport, ModuleFunctionLayout, build_runtime_fns, build_wasi_write_all_fn, build_wasm_module, core_host_import,
-  host_imports_for_target,
+  HostImport, ModuleFunctionLayout, build_runtime_fns, build_wasi_get_args_fn, build_wasi_get_env_fn, build_wasi_write_all_fn,
+  build_wasm_module, core_host_import, host_imports_for_target,
 };
 use structs::{
   emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_contains, emit_struct_count,
@@ -248,6 +248,30 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   let str_new_idx = num_imports + compiled_fns.len() as u32;
   runtime_fn_index.insert("__str_new".to_string(), str_new_idx);
   compiled_fns.push(build_str_new_fn(str_tag_id));
+
+  if target == WasmTarget::Wasi {
+    let import_indices = index_host_imports(&host_imports);
+    let wasi_import = |name: &str| {
+      *import_indices
+        .get(&("wasi_snapshot_preview1".into(), name.into()))
+        .unwrap_or_else(|| panic!("WASI {name} import must be registered"))
+    };
+    let get_args_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_get_args".into(), get_args_idx);
+    compiled_fns.push(build_wasi_get_args_fn(
+      wasi_import("args_sizes_get"),
+      wasi_import("args_get"),
+      str_new_idx,
+      *tag_index.get("list").expect("list tag must exist") as i32,
+    ));
+    let get_env_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_get_env".into(), get_env_idx);
+    compiled_fns.push(build_wasi_get_env_fn(
+      wasi_import("environ_sizes_get"),
+      wasi_import("environ_get"),
+      str_new_idx,
+    ));
+  }
 
   // Pad helpers (need str_tag_id for heap allocation).
   let str_pad_left_idx = num_imports + compiled_fns.len() as u32;
@@ -2281,8 +2305,54 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::FormatToLisp => emit_format_to_lisp(ctx, args),
     // to-lispy-string — stub, only used in raise/error message paths
     CalcitProc::PrStr => ctx.stub_proc(args),
-    // get-env — returns nil in WASM (env vars not available)
-    CalcitProc::GetEnv => ctx.stub_proc(args),
+    CalcitProc::GetEnv => {
+      if !(1..=2).contains(&args.len()) {
+        return Err(format!("get-env expects 1~2 args, got {}", args.len()));
+      }
+      emit_expr(ctx, &args[0])?;
+      let name = ctx.alloc_local();
+      ctx.emit(Instruction::LocalSet(name));
+      let default = if let Some(default) = args.get(1) {
+        emit_expr(ctx, default)?;
+        let value = ctx.alloc_local();
+        ctx.emit(Instruction::LocalSet(value));
+        Some(value)
+      } else {
+        None
+      };
+      match ctx.target {
+        WasmTarget::Core => {
+          ctx.emit(Instruction::LocalGet(name));
+          ctx.emit(Instruction::Call(resolve_host_import(ctx, "io", "get_env")?));
+        }
+        WasmTarget::Wasi => {
+          ctx.emit(Instruction::LocalGet(name));
+          ctx.emit(Instruction::I32TruncF64U);
+          ctx.call_rt("__rt_wasi_get_env");
+        }
+      }
+      if let Some(default) = default {
+        let value = ctx.alloc_local();
+        ctx.emit(Instruction::LocalSet(value));
+        ctx.emit(Instruction::LocalGet(value));
+        ctx.emit(f64_const(0.0));
+        ctx.emit(Instruction::F64Eq);
+        ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+        ctx.emit(Instruction::LocalGet(default));
+        ctx.emit(Instruction::Else);
+        ctx.emit(Instruction::LocalGet(value));
+        ctx.emit(Instruction::End);
+      }
+      Ok(())
+    }
+    CalcitProc::GetArgs => {
+      expect_arity(0, args, "get-args")?;
+      if ctx.target != WasmTarget::Wasi {
+        return Err("E_WASM_CAPABILITY: process arguments are unavailable for the core WASM target".into());
+      }
+      ctx.call_rt("__rt_wasi_get_args");
+      Ok(())
+    }
 
     // @atom deref: just emit the argument (which should already be a GlobalGet)
     CalcitProc::AtomDeref => {
@@ -3543,14 +3613,22 @@ mod tests {
   }
 
   #[test]
-  fn wasi_target_registers_the_preview1_fd_write_abi() {
+  fn wasi_target_registers_the_preview1_command_abi() {
     let imports = host_imports_for_target(WasmTarget::Wasi);
-    let [fd_write] = imports.as_slice() else {
-      panic!("WASI stdio slice must register exactly fd_write");
-    };
-    assert_eq!(fd_write.module, "wasi_snapshot_preview1");
-    assert_eq!(fd_write.name, "fd_write");
-    assert_eq!(fd_write.params, vec![ValType::I32; 4]);
-    assert_eq!(fd_write.results, vec![ValType::I32]);
+    let signatures = imports
+      .iter()
+      .map(|import| (import.name.as_str(), import.params.clone(), import.results.clone()))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      signatures,
+      vec![
+        ("fd_write", vec![ValType::I32; 4], vec![ValType::I32]),
+        ("args_sizes_get", vec![ValType::I32; 2], vec![ValType::I32]),
+        ("args_get", vec![ValType::I32; 2], vec![ValType::I32]),
+        ("environ_sizes_get", vec![ValType::I32; 2], vec![ValType::I32]),
+        ("environ_get", vec![ValType::I32; 2], vec![ValType::I32]),
+      ]
+    );
+    assert!(imports.iter().all(|import| import.module == "wasi_snapshot_preview1"));
   }
 }

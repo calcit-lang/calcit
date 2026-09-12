@@ -473,6 +473,8 @@ calcit wasi calcit.cirru --emit-path target/wasi-command
 
 两个命令都支持 `--entry`、`--init-fn`、`--reload-fn` 和 `--check-only`。`--check-only` 会执行与实际生成相同的 target validation，但不会写出 `program.wasm`。WASI command 的 init definition 必须为零参数；不支持的宿主能力以稳定的 `E_WASM_CAPABILITY` 失败，不会退回 core module 的 JavaScript imports。
 
+WASI command 当前可通过与原生、JavaScript 相同的 `get-env` 和 `get-args` API 读取环境变量与命令参数。`get-env` 返回 `Option<String>`；`get-args` 返回包含第 0 项的完整 `List<String>`。Preview 1 的缓冲区和指针 ABI 只存在于编译器内部，不进入 Calcit 源码接口。
+
 ## Markdown code checking
 
 Use `docs check-md` to validate fenced code blocks in markdown files:
