@@ -7727,7 +7727,7 @@ mod tests {
     let wrapped = Calcit::from(vec![
       symbol("def"),
       symbol("Result"),
-      Calcit::from(vec![symbol("impl-traits"), enum_form, symbol("ResultMethods")]),
+      Calcit::from(vec![symbol("impl-traits"), enum_form, symbol("ResultOpsImpl")]),
     ]);
 
     assert!(matches!(resolve_type_def_from_code(&wrapped), Some(Calcit::EnumDef(_))));
