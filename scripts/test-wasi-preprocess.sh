@@ -10,6 +10,9 @@ readonly COMMAND_OUT="${CARGO_TARGET_DIR:-target}/wasi-command-smoke"
 readonly COMMAND_STDOUT="${COMMAND_OUT}/stdout.txt"
 readonly COMMAND_STDERR="${COMMAND_OUT}/stderr.txt"
 readonly COMMAND_MISSING_STDOUT="${COMMAND_OUT}/missing-env-stdout.txt"
+readonly EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-exit-smoke"
+readonly INVALID_EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-invalid-exit-smoke"
+readonly INVALID_EXIT_STDERR="${INVALID_EXIT_OUT}/stderr.txt"
 readonly CHECK_ONLY_OUT="${CARGO_TARGET_DIR:-target}/wasi-check-only-smoke"
 readonly NATIVE_WASM_BIN="${CARGO_TARGET_DIR:-target}/debug/cr-wasm"
 readonly CALCIT_BIN="${CARGO_TARGET_DIR:-target}/debug/calcit"
@@ -49,6 +52,35 @@ grep -Fxq "WASI-stderr: 42" "$COMMAND_STDERR"
 [ "$(wc -l <"$COMMAND_STDERR")" -eq 1 ]
 wasmtime run --env A=x "$COMMAND_OUT/program.wasm" >"$COMMAND_MISSING_STDOUT" 2>/dev/null
 grep -Fxq "WASI-env: missing" "$COMMAND_MISSING_STDOUT"
+
+native_exit_status=0
+"$CALCIT_BIN" --init-fn app.main/exit-7! "$COMMAND_FIXTURE" >/dev/null 2>&1 || native_exit_status=$?
+if [[ "$native_exit_status" -ne 7 ]]; then
+  echo "native quit! returned status $native_exit_status instead of 7" >&2
+  exit 1
+fi
+
+if native_invalid_error=$("$CALCIT_BIN" --init-fn app.main/exit-invalid! "$COMMAND_FIXTURE" 2>&1); then
+  echo "native quit! unexpectedly accepted exit status 256" >&2
+  exit 1
+fi
+grep -Fq "integer exit code in 0..255" <<<"$native_invalid_error"
+
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/exit-7! --emit-path "$EXIT_OUT"
+wasi_exit_status=0
+wasmtime run "$EXIT_OUT/program.wasm" >/dev/null 2>&1 || wasi_exit_status=$?
+if [[ "$wasi_exit_status" -ne 7 ]]; then
+  echo "WASI quit! returned status $wasi_exit_status instead of 7" >&2
+  exit 1
+fi
+
+
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/exit-invalid! --emit-path "$INVALID_EXIT_OUT"
+if wasmtime run "$INVALID_EXIT_OUT/program.wasm" >/dev/null 2>"$INVALID_EXIT_STDERR"; then
+  echo "WASI quit! unexpectedly accepted exit status 256" >&2
+  exit 1
+fi
+grep -Fq "unreachable" "$INVALID_EXIT_STDERR"
 
 if target_error=$("$NATIVE_WASM_BIN" "$COMMAND_FIXTURE" --target unknown 2>&1); then
   echo "cr-wasm unexpectedly accepted an unknown target" >&2

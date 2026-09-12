@@ -2360,8 +2360,33 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       emit_expr(ctx, &args[0])
     }
 
-    // quit! — trap (abort) the WASM instance
     CalcitProc::Quit => {
+      expect_arity(1, args, "quit!")?;
+      emit_expr(ctx, &args[0])?;
+      let code = ctx.alloc_local();
+      ctx.emit(Instruction::LocalSet(code));
+      if ctx.target == WasmTarget::Wasi {
+        ctx.emit(Instruction::LocalGet(code));
+        ctx.emit(f64_const(0.0));
+        ctx.emit(Instruction::F64Lt);
+        ctx.emit(Instruction::LocalGet(code));
+        ctx.emit(f64_const(255.0));
+        ctx.emit(Instruction::F64Gt);
+        ctx.emit(Instruction::I32Or);
+        ctx.emit(Instruction::LocalGet(code));
+        ctx.emit(Instruction::LocalGet(code));
+        ctx.emit(Instruction::F64Trunc);
+        ctx.emit(Instruction::F64Ne);
+        ctx.emit(Instruction::I32Or);
+        ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+        ctx.emit(Instruction::Unreachable);
+        ctx.emit(Instruction::End);
+        ctx.emit(Instruction::LocalGet(code));
+        ctx.emit(Instruction::I32TruncF64U);
+        ctx.emit(Instruction::Call(resolve_host_import(ctx, "wasi_snapshot_preview1", "proc_exit")?));
+      }
+      // Core WASM has no process-exit capability, and a conforming WASI host
+      // never returns from proc_exit. Trap if either path reaches this point.
       ctx.emit(Instruction::Unreachable);
       ctx.emit(f64_const(0.0)); // unreachable, but keeps type stack valid
       Ok(())
@@ -3627,6 +3652,7 @@ mod tests {
         ("args_get", vec![ValType::I32; 2], vec![ValType::I32]),
         ("environ_sizes_get", vec![ValType::I32; 2], vec![ValType::I32]),
         ("environ_get", vec![ValType::I32; 2], vec![ValType::I32]),
+        ("proc_exit", vec![ValType::I32], vec![]),
       ]
     );
     assert!(imports.iter().all(|import| import.module == "wasi_snapshot_preview1"));

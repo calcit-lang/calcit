@@ -8,7 +8,6 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use crate::{
   builtins::meta::type_of,
   calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, format_proc_examples_hint},
-  util::number::f64_to_i32,
 };
 
 #[derive(Clone, Debug, Copy)]
@@ -90,20 +89,21 @@ pub fn call_get_calcit_backend(_xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn quit(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  match xs.first() {
-    Some(Calcit::Number(n)) => match f64_to_i32(*n) {
-      Ok(code) => exit(code),
-      Err(e) => unreachable!("quit failed to get code from f64, {}", e),
-    },
-    Some(a) => {
+  match xs {
+    [Calcit::Number(n)] if n.is_finite() && n.fract() == 0.0 && (0.0..=255.0).contains(n) => exit(*n as i32),
+    [Calcit::Number(n)] => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("quit requires an integer exit code in 0..255, got: {n}"),
+    ),
+    [a] => {
       let msg = format!(
-        "quit requires an i32 number, but received: {}",
+        "quit requires an integer exit code in 0..255, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::Quit).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
-    None => CalcitErr::err_str(CalcitErrKind::Arity, "quit expected a code, got nothing"),
+    _ => CalcitErr::err_str(CalcitErrKind::Arity, format!("quit expected 1 argument, got {}", xs.len())),
   }
 }
 

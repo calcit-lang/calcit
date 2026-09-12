@@ -79,6 +79,8 @@ yarn try-wasm
 - `core` 是默认值，保持浏览器或嵌入式宿主现有的 `math`、`io` imports 和导出行为。
 - `wasi` 生成 command module，并增加无参数、无返回值的 `_start` 入口。当前支持 `println`、`eprintln`、`echo`、`get-env` 和 `get-args`；`get-args` 返回宿主传入的完整参数列表，包含第 0 项。
 
+command init definition 正常返回时状态为 `0`；`quit!` 接受 `0..255` 的整数，并映射到 WASI `proc_exit`。该限制与原生、JavaScript 后端一致，避免宿主各自执行隐式饱和或取模。
+
 WASI 目标不会接受 `defwasm-import` 声明的任意宿主函数，也不会继承 core 目标的 JS `io` imports。遇到尚未注册的宿主能力时，codegen 以 `E_WASM_CAPABILITY` 失败；无效目标或 command 入口形状以 `E_WASM_TARGET` 失败。后续退出、时钟、随机数和预开放文件系统均从集中式 capability registry 接入，Preview 1 的 ABI 名称不会成为 Calcit 源码 API。
 
 ## 声明式 WASM FFI

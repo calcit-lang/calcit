@@ -1580,11 +1580,14 @@ export let cpu_time = (): number => {
   return performance.now();
 };
 
-export let quit_$x_ = (): void => {
+export let quit_$x_ = (code: number): void => {
+  if (!Number.isInteger(code) || code < 0 || code > 255) {
+    throw new TypeError(`quit! expected an integer exit code in 0..255, got: ${code}`);
+  }
   if (inNodeJs) {
-    process.exit(1);
+    process.exit(code);
   } else {
-    throw new Error("quit!()");
+    throw new Error(`quit!(${code})`);
   }
 };
 

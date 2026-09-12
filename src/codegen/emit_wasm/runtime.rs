@@ -123,6 +123,12 @@ pub(super) fn host_imports_for_target(target: WasmTarget) -> Vec<HostImport> {
         params: vec![ValType::I32; 2],
         results: vec![ValType::I32],
       },
+      HostImport {
+        module: "wasi_snapshot_preview1".into(),
+        name: "proc_exit".into(),
+        params: vec![ValType::I32],
+        results: vec![],
+      },
     ],
   }
 }

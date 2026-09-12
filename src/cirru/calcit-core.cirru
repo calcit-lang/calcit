@@ -7457,7 +7457,7 @@
             quote $ quasiquote ([] ~x ~@xs)
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        'quit! $ %{} 'CodeEntry (:doc "|internal function for quitting program\nSyntax: (quit! exit-code)\nParams: exit-code (number, optional, defaults to 0)\nReturns: never returns (exits program)\nTerminates the program with specified exit code")
+        'quit! $ %{} 'CodeEntry (:doc "|以指定状态码终止宿主进程。语法：(quit! exit-code)。exit-code 必须是 0..255 的整数；函数不会返回。")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
