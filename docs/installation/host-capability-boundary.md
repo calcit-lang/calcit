@@ -71,8 +71,8 @@ no-op or fabricated success value.
 | --- | --- | --- | --- | --- | --- |
 | Pure Calcit data/control and typed `Option`/`Result` composition | yes | yes | yes | supported subset | core definitions and methods |
 | JSON parse/stringify | yes | yes | yes | unavailable | String `.parse-json` / Result wrappers; core JSON procedures |
-| Current Unix time in milliseconds | yes | unavailable | unavailable | Preview 1 realtime clock | `unix-time-ms` |
-| Monotonic milliseconds for elapsed-time measurement | yes | unavailable | unavailable | Preview 1 monotonic clock | `cpu-time`（只比较同一进程内两次调用的差值） |
+| Current Unix time in milliseconds | yes | unavailable | unavailable | WASI Preview 1 realtime clock; core WASM unavailable | `unix-time-ms` |
+| Monotonic milliseconds for elapsed-time measurement | yes | unavailable | unavailable | WASI Preview 1 monotonic clock; core WASM unavailable | `cpu-time`（只比较同一进程内两次调用的差值） |
 | Construct and inspect a path value without I/O | yes | yes | yes | value-level support only | `fs:path`, `FsPath .to-string` |
 | `FsPath .read-text` / `.write-text` | yes | host injection | browser `localStorage` adapter | unavailable | `FsPath` Result-returning methods |
 | `FsPath .read-dir` / `.walk-dir` | yes | host injection | unavailable | unavailable | `FsPath` Result-returning methods |
