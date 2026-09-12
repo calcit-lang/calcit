@@ -157,9 +157,9 @@ low-level boundaries a Calcit program cannot reasonably construct.
 - Do not add Rust/Calcit test-count ratios, coverage percentages, or a
   statistics analyzer. Placement follows reviewable semantic boundaries.
 
-Example: the strict Tag slice attaches a `:tests` to `calcit.core/&compare` for
-the user-observable Tag/String distinction, while the Calx lowering keeps a Rust
-backend fixture because no user-facing Calx runtime exists yet.
+例如，严格 Tag 语义把用户可观察的 Tag/String 区分写在 `calcit.core/&compare`
+的 `:tests` 中。WASM 若复用这项语义，应执行同一份 Calcit case；只有编码、ABI、
+memory layout 或 unsupported lowering 这类 backend 内部边界才保留 Rust/脚本 fixture。
 
 ### PR checklist
 

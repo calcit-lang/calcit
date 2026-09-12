@@ -14,7 +14,7 @@ Calcit 的语言语义面向人，程序存储和工具协议同时面向人和�
 Cirru/Snapshot 结构化程序
   → 人编写和审查的表层语言
   → macro 展开、名称解析和类型分析后的 core language
-  → native / JS / Calx backend
+  → native / JS / WASM backend
   → 显式 host/FFI 边界
 ```
 
@@ -81,12 +81,13 @@ compiler-owned lowering 不直接写回 Snapshot。即使某段展开树是正�
 native 和 JS 是公开语义 backend。它们对共同支持的表层程序必须产生一致的可观察结果；生成成功只证明
 lowering 完成，不证明生成模块可以加载或程序行为正确，因此共同语义需要实际执行验证。
 
-Calx 可以只支持 typed core 的明确子集。它必须：
+WASM 是优先扩展的编译 backend，可以阶段性只支持 typed core 的明确子集。它必须：
 
 - 在 lowering 前验证整个可达单元；
 - 对未支持的 syntax/type/capability 给出结构化诊断；
 - 保留原始 definition、source path 和 origin chain；
-- 不静默转回 native/JS，也不发展独立的表层类型政策。
+- 不静默转回 native/JS，也不发展独立的表层类型政策；
+- 以共享 Calcit 语义用例逐步扩大覆盖，而不是为快速通过 lowering 引入 backend 专属语言规则。
 
 JS/native FFI、网络数据和硬件输入属于 host boundary。外部声明提供静态契约，但编译器无法证明声明与
 宿主实现或实际数据一致；adapter 必须通过 decode/validation 将外部事实转换成普通 Calcit nominal
@@ -211,7 +212,7 @@ Calcit 生态规模仍小，且维护中的消费者多数在 JS 路径，因此
 | macro 语义 | 表层调用 + 展开 origin fixture | 某一次 pretty-print 展开文本 |
 | typed core lowering | 等价前后行为、求值顺序、source mapping | 仅比较内部 enum variant |
 | native/JS 共同语义 | 同一 Calcit case 的实际执行 | check-only、JS emit 成功 |
-| Calx 子集 | coverage validation + 执行或明确 unsupported | 清单分类本身 |
+| WASM 子集 | 共享 Calcit case + 实际执行或明确 unsupported | emit 成功、清单分类本身 |
 | host/FFI | adapter contract、错误路径、真实或 faithful fake host | 类型声明本身 |
 | source fix | before/after/must-not-rewrite、幂等和 post-check | suggestion 数量或应用率 |
 
@@ -225,7 +226,7 @@ Rust 测试继续承担 parser/serializer、内部数据结构、原子写入、
   origin chain 和 source fix 的约束。
 - `07-26-safe-structured-editing-rfc.md` 继续拥有 revision、fingerprint、transaction 和 atomic write。
 - `04-13-call-arg-literal-rewrite-rfc.md` 与类型导向优化继续属于 compiler-owned lowering，不自动成为 source fix。
-- Calx program contract 继续限定 backend 支持子集，并复用这里的表层身份与诊断规则。
+- WASM lowering 继续限定 backend 支持子集，并复用这里的表层身份、类型证明与诊断规则；后续按共享语义用例扩大覆盖。
 
 后续新增语言规则应先回答它属于哪一层、替代了什么旧规则、用户需要理解什么，以及能否删除已有特例。若只能
 通过增加新 analyzer、平行 API 或 backend-specific 表层政策解释，默认回到共同语义重新设计。

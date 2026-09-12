@@ -639,27 +639,6 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :meta
-        '&f64-buffer:get $ %{} 'CodeEntry (:doc "|strict immutable F64Buffer checked read")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'F64Buffer 'Number
-          :tags $ #{} :builtin :internal
-        '&f64-buffer:len $ %{} 'CodeEntry (:doc "|strict immutable F64Buffer length")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'F64Buffer
-          :tags $ #{} :builtin :internal
-        '&f64:to-i64-index $ %{} 'CodeEntry (:doc "|checked strict F64Buffer index conversion")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number
-          :tags $ #{} :builtin :internal
         '&fn:apply $ %{} 'CodeEntry (:doc "|internal helper for fn :apply method entry")
           :code $ quote
             defn &fn:apply (f g)

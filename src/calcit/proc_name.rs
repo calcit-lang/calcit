@@ -38,12 +38,6 @@ pub enum CalcitProc {
   NativeFormatTernaryTree,
   #[strum(serialize = "&buffer")]
   NativeBuffer,
-  #[strum(serialize = "&f64-buffer:len")]
-  NativeF64BufferLen,
-  #[strum(serialize = "&f64:to-i64-index")]
-  NativeF64ToI64Index,
-  #[strum(serialize = "&f64-buffer:get")]
-  NativeF64BufferGet,
   #[strum(serialize = "&hash")]
   NativeHash,
   #[strum(serialize = "&extract-code-into-edn")]
@@ -1446,18 +1440,6 @@ impl CalcitProc {
       NativeBuffer => Some(ProcTypeSignature {
         return_type: some_tag("buffer"),
         arg_types: vec![variadic_dynamic()],
-      }),
-      NativeF64BufferLen => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("f64-buffer")],
-      }),
-      NativeF64ToI64Index => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("number")],
-      }),
-      NativeF64BufferGet => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("f64-buffer"), some_tag("number")],
       }),
       NativeFormatTernaryTree => Some(ProcTypeSignature {
         return_type: some_tag("string"),

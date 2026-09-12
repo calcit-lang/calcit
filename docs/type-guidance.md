@@ -14,7 +14,7 @@ parent: core/features
 
 # Calcit 类型使用指南
 
-Calcit 的类型规则处于表层语言与 macro 展开后的 typed core 之间，native、JS 和 Calx 复用同一份已经建立的
+Calcit 的类型规则处于表层语言与 macro 展开后的 typed core 之间，native、JS 和 WASM 复用同一份已经建立的
 类型关系。完整的分层 owner、开放值与 Agent source-fix 契约见
 [`09-12-layered-semantics-and-agent-fixes-rfc.md`](../RFCs/09-12-layered-semantics-and-agent-fixes-rfc.md)。
 

@@ -39,22 +39,20 @@
 - **双语协作记录**：关联 Issue 与 PR 的标题、正文和阶段性进度保持中英双语，便于跨项目追踪同一设计方向。
 - **PR 双语分段**：新建或更新 PR 时，正文必须分别提供完整的中文段落和英文段落，不把两种语言混写在同一段中；已有 PR 不要求追溯改写。
 - **文档与注释语言**：新增或修改面向用户的仓库文档使用中文；源代码中的注释和 doc comment 使用英文。已有内容不要求仅为统一语言而改写。
-- **分层语义**：以 `RFCs/09-12-layered-semantics-and-agent-fixes-rfc.md` 为共同契约。Cirru/Snapshot 保存结构化 source；表层语言拥有用户语义；macro 展开和 typed core 只做保持语义的解析、证明与 lowering；native/JS/Calx backend 实现共同语义或明确报告 unsupported。不得让 backend 限制静默变成新的表层类型规则。
+- **分层语义**：以 `RFCs/09-12-layered-semantics-and-agent-fixes-rfc.md` 为共同契约。Cirru/Snapshot 保存结构化 source；表层语言拥有用户语义；macro 展开和 typed core 只做保持语义的解析、证明与 lowering；native/JS/WASM backend 实现共同语义或明确报告 unsupported。不得让 backend 限制静默变成新的表层类型规则。
 - **开放值语义**：内部 Unknown/Unresolved、用户显式 Dynamic 与 JsObject/host value 是不同概念。Dynamic 可以被保存、传递和包装，只有具体使用其内容时才要求 decode/narrow/unsafe 证据；优先修正通用类型关系，不扩展普通/动态两套平行 API。
 - **Agent 可执行修复**：编译器内部 lowering 不直接写回 Snapshot。只有能唯一回到 source AST、证明保持求值与失败语义、并携带 revision/fingerprint 前置条件的建议才能成为自动 fix；不得自动插入 `unsafe-coerce`、扩大 Dynamic、选择业务默认值或修改测试预期。
 
 ### 仓库职责与拆分模块追踪
 
-- **主仓库边界**：parser/source model、Snapshot、preprocess/type system、runtime、JS/WASM/Calx backend 语义、`@calcit/procs`、`calcit` CLI/Agent interface 以及权威 RFC/离线文档留在本仓库。短期不规划 LSP，不为假设中的 LSP consumer 拆独立 analysis 仓库。
-- **拆分总索引**：跨仓库职责和迁移顺序由 [calcit#549](https://github.com/calcit-lang/calcit/issues/549) 追踪；bindgen、caps、Calx benchmark 和 native ABI 的具体任务使用总索引中的 child Issues，避免重复立项。
+- **主仓库边界**：parser/source model、Snapshot、preprocess/type system、runtime、JS/WASM backend 语义、`@calcit/procs`、`calcit` CLI/Agent interface 以及权威 RFC/离线文档留在本仓库。短期不规划 LSP，不为假设中的 LSP consumer 拆独立 analysis 仓库。
+- **拆分总索引**：跨仓库职责和迁移顺序由 [calcit#549](https://github.com/calcit-lang/calcit/issues/549) 追踪；bindgen、caps 和 native ABI 的具体任务使用总索引中的 child Issues，避免重复立项。
 - **生态 Wiki 外置**：生态目录、边界、依赖层次和批量演进说明只维护在独立的 [`calcit-lang/calcit` GitHub Wiki](https://github.com/calcit-lang/calcit/wiki)，不在主仓库保存正文副本或自动镜像脚本。Wiki 用于发现和导航，各模块仓库 README/AGENTS.md、主仓库版本化文档与测试仍是具体契约的 source of truth。
 - **状态必须可发现**：每个拆出或供多个仓库复用的模块，都必须在自己的 README 或 AGENTS.md 说明状态（production / experimental / template / internal）、职责与非职责、上游/下游契约和 source of truth、兼容矩阵、版本与发布策略、迁移/验证命令以及关联 umbrella/child Issues。
 - **模板不冒充产品**：workflow/template 仓库必须明确标记用途及“不随业务功能迭代版本”；实验性 benchmark 也必须明确结果可比性和非生产定位。
-- **Calx profile 证据**：机器相关的 Calx 采样策略、raw reports 与性能 provenance 由 [`calcit-lang/calcit-calx-bench`](https://github.com/calcit-lang/calcit-calx-bench) 独立维护；core 的 `docs/run/calx-compile-cache.md` 只拥有 cache/runtime 语义与设计约束。报告必须记录干净 commit、环境、命令、迭代数、原始文件哈希与 inclusive-stack 限制，不把原始 profiler 资产提交回 core。
 - **迁移完成才删除**：只有目标仓库具备文档、Actions、发布或实验运行入口、兼容验证与跨仓库 smoke 后，才能从主仓库删除原实现；迁移期 README 必须同时说明当前入口与目标状态。
 - **Bindgen 契约**：拆分已完成；core 只拥有 `calcit ffi export`、版本化 Interface IR schema、导出语义和最小 conformance tests。确定性 Rust/Calcit/TypeScript/WIT generation、compatibility diff、manifest、stale check、WIT validation 与 capability matrix 以 [`calcit-lang/calcit-bindgen`](https://github.com/calcit-lang/calcit-bindgen) 为准；不得把 generator preview、golden 或 WIT tooling 重新加入 core release。
-- **Calx harness 契约**：拆分已完成；core 的 `docs/run/calx-harness-extraction.md` 只保留 ownership/discovery，产品契约、`pins.json`、运行方法与报告 schema 以 standalone 仓库为准。lowering/correctness 留在 core，外部 harness 必须 pin Calcit revision，不能依赖可变全局或把机器阈值写成 correctness gate。
-- **Calx session adapter**：外部 harness 只能经 `calcit::codegen::calx::benchmark_session` 使用固定 revision 的内部接口，并记录 `CALX_BENCHMARK_SESSION_EDITION`；不得重新引入 `PROGRAM_CODE_DATA`、`ProgramFileData`、`ensure_def_id`、`run_fn` 或其他 mutable-global 访问。
+- **WASM 优先**：Calcit 不再生成 Calx target。backend 投入集中在现有 WASM lowering，以可验证的小步扩大支持的表层语义；共同能力优先复用 Calcit definition `:tests`，WASM 专属 Rust/脚本测试只覆盖编码、ABI、memory layout 与 unsupported 边界。
 
 直接使用命令修改 calcit 程序时不需要调用 cargo, 直接按照文档给出的命令行示例执行即可。
 
