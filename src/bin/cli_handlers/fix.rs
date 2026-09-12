@@ -19,6 +19,14 @@ use super::edit::{load_snapshot, navigate_to_path, run_staged_fix_transaction, s
 
 const REMOVED_DATA_API_RULE: &str = "removed-data-api-v1";
 const REMOVED_DATA_API_DIAGNOSTIC: &str = "W_REMOVED_DATA_API";
+const REDUNDANT_DO_RULE: &str = "redundant-do-v1";
+const REDUNDANT_DO_DIAGNOSTIC: &str = "FIX_REDUNDANT_DO";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FixOperation {
+  ReplaceLeaf { original: String, replacement: String },
+  SpliceDo,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct FixSuggestion {
@@ -37,9 +45,7 @@ struct FixSuggestion {
   #[serde(skip)]
   target_path: Vec<usize>,
   #[serde(skip)]
-  original_leaf: String,
-  #[serde(skip)]
-  replacement_leaf: Option<String>,
+  operation: Option<FixOperation>,
 }
 
 #[derive(Debug, Serialize)]
@@ -73,7 +79,7 @@ struct FixValidation {
 struct FixFilters<'a> {
   namespace: Option<&'a str>,
   definition: Option<&'a str>,
-  rule_id: &'static str,
+  rule_id: &'a str,
 }
 
 pub(crate) fn handle_fix_command(
@@ -96,11 +102,17 @@ pub(crate) fn handle_fix_command(
 
   let selected_definitions = select_definitions(options, compiled_snapshot, project_namespaces)?;
   let warnings = compile_selected_definitions(&selected_definitions)?;
-  let suggestions = plan_removed_data_api_fixes(options, &source_snapshot, snapshot_file, &warnings)?;
-  let operations = suggestions.iter().filter_map(suggestion_operation).collect::<Vec<_>>();
+  let mut suggestions = Vec::new();
+  if options.rule.as_deref().is_none_or(|rule| rule == REMOVED_DATA_API_RULE) {
+    suggestions.extend(plan_removed_data_api_fixes(options, &source_snapshot, snapshot_file, &warnings)?);
+  }
+  if options.rule.as_deref().is_none_or(|rule| rule == REDUNDANT_DO_RULE) {
+    suggestions.extend(plan_redundant_do_fixes(&source_snapshot, snapshot_file, &selected_definitions)?);
+  }
+  let operations = suggestions.iter().flat_map(suggestion_operations).collect::<Vec<_>>();
 
   if std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1") {
-    if suggestions.iter().any(|suggestion| suggestion.replacement_leaf.is_some()) {
+    if suggestions.iter().any(|suggestion| suggestion.operation.is_some()) {
       return Err("Staged fix validation found an applicable migration that was not removed.".to_owned());
     }
     let unexpected = warnings
@@ -134,7 +146,7 @@ pub(crate) fn handle_fix_command(
       filters: FixFilters {
         namespace: options.ns.as_deref(),
         definition: options.definition.as_deref(),
-        rule_id: REMOVED_DATA_API_RULE,
+        rule_id: options.rule.as_deref().unwrap_or("all"),
       },
       changed: transaction.changed,
       new_revision: &transaction.new_revision,
@@ -191,9 +203,11 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     return Err("`calcit fix --def` requires an exact `--ns` scope.".to_owned());
   }
   if let Some(rule) = options.rule.as_deref()
-    && rule != REMOVED_DATA_API_RULE
+    && !matches!(rule, REMOVED_DATA_API_RULE | REDUNDANT_DO_RULE)
   {
-    return Err(format!("Unknown fix rule `{rule}`. Available rule: `{REMOVED_DATA_API_RULE}`."));
+    return Err(format!(
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`."
+    ));
   }
   Ok(())
 }
@@ -296,13 +310,95 @@ fn plan_removed_data_api_fixes(
       applicability,
       message,
       target_path: target_path.clone(),
-      original_leaf,
-      replacement_leaf,
+      operation: replacement_leaf.map(|replacement| FixOperation::ReplaceLeaf {
+        original: original_leaf,
+        replacement,
+      }),
     };
     let key = (location.ns.to_string(), location.def.to_string(), target_path);
     insert_fix_suggestion(&mut suggestions, key, suggestion)?;
   }
   Ok(suggestions.into_values().collect())
+}
+
+fn plan_redundant_do_fixes(
+  snapshot: &Snapshot,
+  snapshot_file: &str,
+  selected_definitions: &[(String, String)],
+) -> Result<Vec<FixSuggestion>, String> {
+  let mut suggestions = Vec::new();
+  for (namespace, definition) in selected_definitions {
+    let entry = snapshot
+      .files
+      .get(namespace)
+      .and_then(|file| file.defs.get(definition))
+      .ok_or_else(|| format!("Selected definition `{namespace}/{definition}` is missing from the source snapshot."))?;
+    let mut paths = Vec::new();
+    collect_redundant_do_paths(&entry.code, &mut Vec::new(), &mut paths);
+    paths.sort_by(|left, right| right.cmp(left));
+    for target_path in paths {
+      let original_node = navigate_to_path(&entry.code, &target_path)?;
+      let Cirru::List(ref items) = original_node else {
+        continue;
+      };
+      let replacement_items = items.iter().skip(1).map(cirru_to_json_value).collect::<Vec<_>>();
+      suggestions.push(FixSuggestion {
+        rule_id: REDUNDANT_DO_RULE,
+        diagnostic_code: REDUNDANT_DO_DIAGNOSTIC,
+        semantic_layer: "surface",
+        source_file: snapshot_file.to_owned(),
+        definition: format!("{namespace}/{definition}"),
+        path: format!("code{}", format_path(&target_path)),
+        fingerprint: node_fingerprint(&original_node),
+        origin_chain: vec![],
+        original: quoted_json(&original_node),
+        replacement: Some(serde_json::json!({
+          "$type": "splice",
+          "value": replacement_items,
+        })),
+        applicability: "machine-applicable",
+        message: "Splice a redundant `do` into the surrounding variadic body; sequencing and the final-value type are unchanged."
+          .to_owned(),
+        target_path,
+        operation: Some(FixOperation::SpliceDo),
+      });
+    }
+  }
+  Ok(suggestions)
+}
+
+fn collect_redundant_do_paths(node: &Cirru, path: &mut Vec<usize>, output: &mut Vec<Vec<usize>>) {
+  let Cirru::List(items) = node else {
+    return;
+  };
+  let head = items.first().and_then(|item| match item {
+    Cirru::Leaf(value) => Some(value.as_ref()),
+    Cirru::List(_) => None,
+  });
+  if matches!(head, Some("quote" | "quasiquote")) {
+    return;
+  }
+  let body_start = match head {
+    Some("defn" | "defmacro") => Some(3),
+    Some("fn" | "let") => Some(2),
+    Some("do") => Some(1),
+    _ => None,
+  };
+  if let Some(body_start) = body_start {
+    for (index, child) in items.iter().enumerate().skip(body_start) {
+      if matches!(child, Cirru::List(children) if children.len() > 1 && matches!(children.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "do"))
+      {
+        let mut target = path.clone();
+        target.push(index);
+        output.push(target);
+      }
+    }
+  }
+  for (index, child) in items.iter().enumerate() {
+    path.push(index);
+    collect_redundant_do_paths(child, path, output);
+    path.pop();
+  }
 }
 
 fn insert_fix_suggestion(
@@ -354,19 +450,43 @@ fn migration_for_source_leaf(source: &str) -> Option<(Option<String>, String)> {
   Some((replacement, guidance))
 }
 
-fn suggestion_operation(suggestion: &FixSuggestion) -> Option<Vec<String>> {
-  let replacement = suggestion.replacement_leaf.as_deref()?;
-  Some(vec![
-    "tree".to_owned(),
-    "replace".to_owned(),
-    suggestion.definition.clone(),
-    "--path".to_owned(),
-    format_path(&suggestion.target_path),
-    "--expect".to_owned(),
-    format!("quote {}", suggestion.original_leaf),
-    "--code".to_owned(),
-    format!("quote {replacement}"),
-  ])
+fn suggestion_operations(suggestion: &FixSuggestion) -> Vec<Vec<String>> {
+  match &suggestion.operation {
+    Some(FixOperation::ReplaceLeaf { original, replacement }) => vec![vec![
+      "tree".to_owned(),
+      "replace".to_owned(),
+      suggestion.definition.clone(),
+      "--path".to_owned(),
+      format_path(&suggestion.target_path),
+      "--expect".to_owned(),
+      format!("quote {original}"),
+      "--code".to_owned(),
+      format!("quote {replacement}"),
+    ]],
+    Some(FixOperation::SpliceDo) => {
+      let mut head_path = suggestion.target_path.clone();
+      head_path.push(0);
+      vec![
+        vec![
+          "tree".to_owned(),
+          "delete".to_owned(),
+          suggestion.definition.clone(),
+          "--path".to_owned(),
+          format_path(&head_path),
+          "--expect".to_owned(),
+          "quote do".to_owned(),
+        ],
+        vec![
+          "tree".to_owned(),
+          "unwrap".to_owned(),
+          suggestion.definition.clone(),
+          "--path".to_owned(),
+          format_path(&suggestion.target_path),
+        ],
+      ]
+    }
+    None => vec![],
+  }
 }
 
 fn quoted_json(node: &Cirru) -> Value {
@@ -441,7 +561,10 @@ fn print_human_report(report: &FixReport<'_>) {
 
 #[cfg(test)]
 mod tests {
-  use super::{FixSuggestion, insert_fix_suggestion, migration_for_source_leaf, resolve_fix_target, suggestion_operation};
+  use super::{
+    FixOperation, FixSuggestion, collect_redundant_do_paths, insert_fix_suggestion, migration_for_source_leaf, resolve_fix_target,
+    suggestion_operations,
+  };
   use cirru_parser::Cirru;
   use serde_json::Value;
   use std::collections::BTreeMap;
@@ -489,13 +612,15 @@ mod tests {
       applicability: "machine-applicable",
       message: String::new(),
       target_path: vec![3, 0],
-      original_leaf: "tuple-enum".to_owned(),
-      replacement_leaf: Some("enum-definition".to_owned()),
+      operation: Some(FixOperation::ReplaceLeaf {
+        original: "tuple-enum".to_owned(),
+        replacement: "enum-definition".to_owned(),
+      }),
     };
-    let operation = suggestion_operation(&suggestion).expect("applicable suggestion should produce an operation");
+    let operations = suggestion_operations(&suggestion);
     assert_eq!(
-      operation,
-      vec![
+      operations,
+      vec![vec![
         "tree",
         "replace",
         "app.main/main!",
@@ -505,6 +630,61 @@ mod tests {
         "quote tuple-enum",
         "--code",
         "quote enum-definition",
+      ]]
+    );
+  }
+
+  #[test]
+  fn redundant_do_is_found_only_in_variadic_sequence_positions() {
+    let code = Cirru::List(vec![
+      leaf("defn"),
+      leaf("demo"),
+      Cirru::List(vec![]),
+      Cirru::List(vec![leaf("do"), leaf("a"), leaf("b")]),
+      Cirru::List(vec![
+        leaf("if"),
+        leaf("ready?"),
+        Cirru::List(vec![leaf("do"), leaf("c"), leaf("d")]),
+        leaf("e"),
+      ]),
+      Cirru::List(vec![
+        leaf("let"),
+        Cirru::List(vec![]),
+        Cirru::List(vec![leaf("do"), leaf("f"), leaf("g")]),
+      ]),
+      Cirru::List(vec![
+        leaf("quote"),
+        Cirru::List(vec![leaf("fn"), Cirru::List(vec![]), Cirru::List(vec![leaf("do"), leaf("h")])]),
+      ]),
+    ]);
+    let mut paths = Vec::new();
+    collect_redundant_do_paths(&code, &mut Vec::new(), &mut paths);
+    assert_eq!(paths, vec![vec![3], vec![5, 2]]);
+  }
+
+  #[test]
+  fn redundant_do_operation_deletes_the_head_then_splices_the_body() {
+    let suggestion = FixSuggestion {
+      rule_id: "redundant-do-v1",
+      diagnostic_code: "FIX_REDUNDANT_DO",
+      semantic_layer: "surface",
+      source_file: "calcit.cirru".to_owned(),
+      definition: "app.main/demo".to_owned(),
+      path: "code@3".to_owned(),
+      fingerprint: "md5:test".to_owned(),
+      origin_chain: vec![],
+      original: Value::Null,
+      replacement: Some(Value::Null),
+      applicability: "machine-applicable",
+      message: String::new(),
+      target_path: vec![3],
+      operation: Some(FixOperation::SpliceDo),
+    };
+    assert_eq!(
+      suggestion_operations(&suggestion),
+      vec![
+        vec!["tree", "delete", "app.main/demo", "--path", "@3.0", "--expect", "quote do"],
+        vec!["tree", "unwrap", "app.main/demo", "--path", "@3"],
       ]
     );
   }
@@ -527,14 +707,19 @@ mod tests {
       applicability: "machine-applicable",
       message: String::new(),
       target_path: vec![3, 0],
-      original_leaf: "tuple-enum".to_owned(),
-      replacement_leaf: Some("enum-definition".to_owned()),
+      operation: Some(FixOperation::ReplaceLeaf {
+        original: "tuple-enum".to_owned(),
+        replacement: "enum-definition".to_owned(),
+      }),
     };
     insert_fix_suggestion(&mut suggestions, key.clone(), first.clone()).expect("first suggestion should insert");
     insert_fix_suggestion(&mut suggestions, key.clone(), first.clone()).expect("identical duplicate should be idempotent");
 
     let mut conflicting = first;
-    conflicting.replacement_leaf = Some("enum?".to_owned());
+    conflicting.operation = Some(FixOperation::ReplaceLeaf {
+      original: "tuple-enum".to_owned(),
+      replacement: "enum?".to_owned(),
+    });
     let error = insert_fix_suggestion(&mut suggestions, key, conflicting).expect_err("conflicting overlap should fail");
 
     assert!(error.contains("overlap at app.main/main! @3.0"), "error: {error}");
