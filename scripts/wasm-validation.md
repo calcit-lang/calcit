@@ -53,6 +53,20 @@ yarn try-wasm
 
 脚本会通过 `internal-wasm` feature 构建内部 runner，生成 `js-out/program.wasm`，再使用 Node.js 验证导出函数。不支持的函数会把 skip 信息写到 stderr。
 
+## Core 与 WASI command 目标
+
+`cr-wasm` 的 `--target` 明确区分两种宿主契约：
+
+- `core` 是默认值，保持浏览器或嵌入式宿主现有的 `math`、`io` imports 和导出行为。
+- `wasi` 生成 command module，并增加无参数、无返回值的 `_start` 入口。当前阶段可在 Wasmtime 中运行不需要宿主效果的 Calcit 程序。
+
+```bash
+cr-wasm calcit/test-wasi-command.cirru --target wasi --emit-path target/wasi-command
+wasmtime run target/wasi-command/program.wasm
+```
+
+WASI 目标不会接受 `defwasm-import` 声明的任意宿主函数，也不会继承 core 目标的 JS `io` imports。遇到尚未注册的宿主能力时，codegen 以 `E_WASM_CAPABILITY` 失败；无效目标或 command 入口形状以 `E_WASM_TARGET` 失败。后续 stdio、参数、环境变量、退出、时钟、随机数和预开放文件系统均从集中式 capability registry 接入，Preview 1 的 ABI 名称不会成为 Calcit 源码 API。
+
 ## 声明式 WASM FFI
 
 `defwasm-export` 标记提供给宿主程序的稳定入口；它和 `defn` 使用同一函数形状。若带该标记的定义无法被 WASM codegen 编译，编译会失败，避免把错误的占位函数暴露给宿主：

@@ -21,6 +21,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use wasm_encoder::{
@@ -43,7 +44,7 @@ mod runtime;
 mod structs;
 
 use methods::{emit_call_args, emit_method_invoke};
-use runtime::{HOST_IMPORTS, HostImport, build_runtime_fns, build_wasm_module};
+use runtime::{HostImport, ModuleFunctionLayout, build_runtime_fns, build_wasm_module, core_host_import, host_imports_for_target};
 use structs::{
   emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_contains, emit_struct_count,
   emit_struct_def, emit_struct_field_tag, emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth,
@@ -117,8 +118,28 @@ use maps::*;
 use sets::*;
 use strings::*;
 
-pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum WasmTarget {
+  #[default]
+  Core,
+  Wasi,
+}
+
+impl FromStr for WasmTarget {
+  type Err = String;
+
+  fn from_str(value: &str) -> Result<Self, Self::Err> {
+    match value {
+      "core" => Ok(Self::Core),
+      "wasi" => Ok(Self::Wasi),
+      _ => Err(format!("E_WASM_TARGET: unknown WASM target `{value}`; expected `core` or `wasi`")),
+    }
+  }
+}
+
+pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTarget) -> Result<(), String> {
   let program_data = program::clone_compiled_program_snapshot()?;
+  validate_wasm_target_in_program(&program_data, init_ns, init_def, target)?;
 
   // First pass: extract all function signatures from all namespaces
   let mut fn_defs: Vec<(String, String, CalcitFnArgs, Vec<Calcit>)> = Vec::new(); // (ns, def_name, args, body)
@@ -165,11 +186,10 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   if fn_defs.is_empty() {
     return Err(format!("namespace not found or no functions: {init_ns}"));
   }
-
   // Build the import table before assigning user function indices. Built-in imports
   // stay first so internal lowering keeps its stable indices; user declarations
   // append after them.
-  let mut host_imports = HOST_IMPORTS.to_vec();
+  let mut host_imports = host_imports_for_target(target);
   let mut wasm_import_names: HashMap<String, u32> = HashMap::new();
   let mut wasm_import_arities: HashMap<String, u32> = HashMap::new();
   for &ns in &ns_order {
@@ -312,6 +332,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     atom_globals,
     value_imports,
     fn_table_index,
+    host_imports: index_host_imports(&host_imports),
   };
 
   // Second pass: target failures reject the artifact. Dependency failures keep
@@ -348,6 +369,28 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     }
   }
 
+  if target == WasmTarget::Wasi {
+    let qualified_init = format!("{init_ns}/{init_def}");
+    let init_index = env
+      .fn_index
+      .get(&qualified_init)
+      .copied()
+      .ok_or_else(|| format!("E_WASM_TARGET: command entry `{qualified_init}` was not compiled"))?;
+    let init_arity = env.fn_arity.get(&qualified_init).copied().unwrap_or(0);
+    if init_arity != 0 {
+      return Err(format!(
+        "E_WASM_TARGET: WASI command entry `{qualified_init}` must take no arguments, got {init_arity}"
+      ));
+    }
+    compiled_fns.push(CompiledFn {
+      export_name: Some("_start".into()),
+      params: vec![],
+      results: vec![],
+      locals: vec![],
+      instructions: vec![Instruction::Call(init_index), Instruction::Drop],
+    });
+  }
+
   if compiled_fns.is_empty() {
     return Err("no functions could be compiled to WASM".into());
   }
@@ -360,7 +403,10 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     &string_data_segment,
     &atom_initial_values,
     str_tag_id,
-    runtime_fn_count,
+    ModuleFunctionLayout {
+      runtime_fn_count,
+      table_fn_count: fn_defs.len() as u32,
+    },
   )?;
 
   // Write output
@@ -372,6 +418,53 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   fs::write(&wasm_file, &wasm_bytes).map_err(|e| format!("failed to write WASM: {e}"))?;
   println!("wrote WASM to: {}", wasm_file.display());
 
+  Ok(())
+}
+
+pub fn validate_wasm_target(init_ns: &str, init_def: &str, target: WasmTarget) -> Result<(), String> {
+  let program_data = program::clone_compiled_program_snapshot()?;
+  validate_wasm_target_in_program(&program_data, init_ns, init_def, target)
+}
+
+fn validate_wasm_target_in_program(
+  program_data: &program::CompiledProgram,
+  init_ns: &str,
+  init_def: &str,
+  target: WasmTarget,
+) -> Result<(), String> {
+  if target == WasmTarget::Core {
+    return Ok(());
+  }
+
+  for (ns, file_info) in program_data {
+    for (def_name, compiled) in &file_info.defs {
+      if compiled.kind != program::CompiledDefKind::Fn {
+        continue;
+      }
+      if is_wasm_import_def(&compiled.preprocessed_code) {
+        return Err(format!(
+          "E_WASM_CAPABILITY: `{ns}/{def_name}` declares a custom WASM import; the `wasi` target only permits registered capabilities"
+        ));
+      }
+      if def_name.as_ref() == "_start" {
+        return Err("E_WASM_TARGET: `_start` is reserved for the generated WASI command entry".into());
+      }
+    }
+  }
+
+  let qualified_init = format!("{init_ns}/{init_def}");
+  let compiled_init = program_data
+    .get(init_ns)
+    .and_then(|file| file.defs.get(init_def))
+    .ok_or_else(|| format!("E_WASM_TARGET: command entry `{qualified_init}` was not compiled"))?;
+  let (args, _) = extract_fn_parts(&compiled_init.preprocessed_code)
+    .map_err(|reason| format!("E_WASM_TARGET: command entry `{qualified_init}` is not a function: {reason}"))?;
+  let (init_arity, _) = compute_fn_arity(&args);
+  if init_arity != 0 {
+    return Err(format!(
+      "E_WASM_TARGET: WASI command entry `{qualified_init}` must take no arguments, got {init_arity}"
+    ));
+  }
   Ok(())
 }
 
@@ -401,6 +494,8 @@ struct WasmCompileEnv {
   value_imports: HashMap<String, Calcit>,
   /// qualified function name → funcref table slot index (0-based, for call_indirect)
   fn_table_index: HashMap<String, u32>,
+  /// Target-approved host imports keyed by `(module, field)`.
+  host_imports: HashMap<(String, String), u32>,
 }
 
 fn extract_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Calcit>), String> {
@@ -526,6 +621,8 @@ struct WasmGenCtx {
   value_imports: HashMap<String, Calcit>,
   /// qualified function name → funcref table slot index (for call_indirect)
   fn_table_index: HashMap<String, u32>,
+  /// Target-approved host imports keyed by `(module, field)`.
+  host_imports: HashMap<(String, String), u32>,
   /// Statically known closures retain the lexical local bindings visible at creation.
   /// They are specialized at known call sites instead of receiving a dynamic heap ABI.
   lambda_locals: HashMap<String, Arc<InlineClosure>>,
@@ -551,6 +648,7 @@ impl WasmGenCtx {
       atom_globals: env.atom_globals,
       value_imports: env.value_imports,
       fn_table_index: env.fn_table_index,
+      host_imports: env.host_imports,
       lambda_locals: HashMap::new(),
     }
   }
@@ -1361,10 +1459,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       let name = sym.as_ref();
       // IO functions: call host log_value for each arg, return nil
       if matches!(name, "println" | "eprintln" | "echo") {
-        let log_idx = HOST_IMPORTS
-          .iter()
-          .position(|imp| imp.module == "io" && imp.name == "log_value")
-          .expect("log_value host import") as u32;
+        let log_idx = resolve_host_import(ctx, "io", "log_value")?;
         for arg in &args_list {
           emit_expr(ctx, arg)?;
           ctx.emit(Instruction::Call(log_idx));
@@ -1414,10 +1509,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       // Registered procs (eprintln, println, echo, etc.)
       let name = name.as_ref();
       if matches!(name, "println" | "eprintln" | "echo") {
-        let log_idx = HOST_IMPORTS
-          .iter()
-          .position(|imp| imp.module == "io" && imp.name == "log_value")
-          .expect("log_value host import") as u32;
+        let log_idx = resolve_host_import(ctx, "io", "log_value")?;
         for arg in &args_list {
           emit_expr(ctx, arg)?;
           ctx.emit(Instruction::Call(log_idx));
@@ -2342,19 +2434,32 @@ fn emit_type_predicate(ctx: &mut WasmGenCtx, type_name: &str, args: &[Calcit]) -
 
 /// Emit a call to a host-imported function by name.
 fn emit_host_call(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
-  let import_idx = HOST_IMPORTS
-    .iter()
-    .position(|imp| imp.name == name)
-    .ok_or_else(|| format!("unknown host import: {name}"))?;
-  let expected_arity = HOST_IMPORTS[import_idx].arity;
+  let import = core_host_import(name).ok_or_else(|| format!("unknown host import: {name}"))?;
+  let expected_arity = import.arity;
   if args.len() != expected_arity {
     return Err(format!("{name} expects {expected_arity} args, got {}", args.len()));
   }
   for arg in args {
     emit_expr(ctx, arg)?;
   }
-  ctx.emit(Instruction::Call(import_idx as u32));
+  ctx.emit(Instruction::Call(resolve_host_import(ctx, &import.module, &import.name)?));
   Ok(())
+}
+
+fn resolve_host_import(ctx: &WasmGenCtx, module: &str, name: &str) -> Result<u32, String> {
+  ctx
+    .host_imports
+    .get(&(module.to_owned(), name.to_owned()))
+    .copied()
+    .ok_or_else(|| format!("E_WASM_CAPABILITY: host capability `{module}/{name}` is unavailable for this WASM target"))
+}
+
+fn index_host_imports(imports: &[HostImport]) -> HashMap<(String, String), u32> {
+  let mut indices = HashMap::new();
+  for (index, import) in imports.iter().enumerate() {
+    indices.entry((import.module.clone(), import.name.clone())).or_insert(index as u32);
+  }
+  indices
 }
 
 fn emit_binary(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) -> Result<(), String> {
@@ -3314,9 +3419,10 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
 
 #[cfg(test)]
 mod tests {
+  use std::str::FromStr;
   use std::sync::Arc;
 
-  use super::must_reject_extraction_failure;
+  use super::{HostImport, WasmTarget, index_host_imports, must_reject_extraction_failure};
   use crate::calcit::{Calcit, CalcitList, CalcitSyntax};
 
   fn declaration(head: CalcitSyntax) -> Calcit {
@@ -3336,5 +3442,29 @@ mod tests {
       &explicit_dependency_export
     ));
     assert!(!must_reject_extraction_failure("target.ns", "dependency.ns", &ordinary_dependency));
+  }
+
+  #[test]
+  fn wasm_target_parser_is_explicit_and_stable() {
+    assert_eq!(WasmTarget::from_str("core"), Ok(WasmTarget::Core));
+    assert_eq!(WasmTarget::from_str("wasi"), Ok(WasmTarget::Wasi));
+    assert!(WasmTarget::from_str("browser").unwrap_err().starts_with("E_WASM_TARGET:"));
+  }
+
+  #[test]
+  fn host_import_index_keeps_the_registered_capability() {
+    let imports = [
+      HostImport {
+        module: "io".into(),
+        name: "log_value".into(),
+        arity: 1,
+      },
+      HostImport {
+        module: "io".into(),
+        name: "log_value".into(),
+        arity: 2,
+      },
+    ];
+    assert_eq!(index_host_imports(&imports).get(&("io".into(), "log_value".into())), Some(&0));
   }
 }

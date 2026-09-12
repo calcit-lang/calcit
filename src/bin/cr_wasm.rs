@@ -18,6 +18,7 @@ use calcit::call_stack::CallStackList;
 use calcit::util::string::strip_shebang;
 use calcit::{ProgramEntries, builtins, call_stack, codegen, program, runner, snapshot, util};
 use colored::Colorize;
+use std::str::FromStr;
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 /// Standalone WASM codegen command.
@@ -37,6 +38,9 @@ struct WasmArgs {
   /// check-only mode: validate without codegen
   #[argh(switch)]
   check_only: bool,
+  /// output target: core (browser/embedded, default) or wasi (command module)
+  #[argh(option, default = "String::from(\"core\")")]
+  target: String,
   /// print version only
   #[argh(switch, short = 'v')]
   version: bool,
@@ -52,6 +56,7 @@ fn main() -> Result<(), String> {
     println!("{}", calcit::cli_args::CALCIT_VERSION);
     return Ok(());
   }
+  let target = codegen::emit_wasm::WasmTarget::from_str(&cli_args.target)?;
 
   builtins::effects::init_effects_states();
 
@@ -125,14 +130,14 @@ fn main() -> Result<(), String> {
   .map_err(|e| e.msg)?;
 
   if cli_args.check_only {
-    run_check_only(&entries)?;
+    run_check_only(&entries, target)?;
     return Ok(());
   }
 
-  run_wasm_codegen(&entries, &cli_args.emit_path)
+  run_wasm_codegen(&entries, &cli_args.emit_path, target)
 }
 
-fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
+fn run_check_only(entries: &ProgramEntries, target: codegen::emit_wasm::WasmTarget) -> Result<(), String> {
   let started_time = Instant::now();
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
@@ -162,6 +167,11 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
     }
   }
 
+  if target == codegen::emit_wasm::WasmTarget::Wasi {
+    preprocess_wasm_namespace(entries, check_warnings)?;
+    codegen::emit_wasm::validate_wasm_target(&entries.init_ns, &entries.init_def, target)?;
+  }
+
   let warnings = check_warnings.borrow();
   if !warnings.is_empty() {
     eprintln!("\n{} ({} warnings)", "Warnings:".yellow(), warnings.len());
@@ -179,12 +189,22 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
   Ok(())
 }
 
-fn run_wasm_codegen(entries: &ProgramEntries, emit_path: &str) -> Result<(), String> {
+fn run_wasm_codegen(entries: &ProgramEntries, emit_path: &str, target: codegen::emit_wasm::WasmTarget) -> Result<(), String> {
   let started_time = Instant::now();
   codegen::set_codegen_mode(true);
 
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
+  preprocess_wasm_namespace(entries, check_warnings)?;
+
+  codegen::emit_wasm::emit_wasm(&entries.init_ns, &entries.init_def, emit_path, target)?;
+
+  let duration = Instant::now().duration_since(started_time);
+  println!("{}", format!("took {}ms", duration.as_micros() as f64 / 1000.0).dimmed());
+  Ok(())
+}
+
+fn preprocess_wasm_namespace(entries: &ProgramEntries, check_warnings: &RefCell<Vec<LocatedWarning>>) -> Result<(), String> {
   // WASM codegen exports every compilable function, so preprocess all defs in target namespace.
   let all_defs = program::list_source_def_names(&entries.init_ns);
   for def_name in &all_defs {
@@ -199,10 +219,5 @@ fn run_wasm_codegen(entries: &ProgramEntries, emit_path: &str) -> Result<(), Str
       ));
     }
   }
-
-  codegen::emit_wasm::emit_wasm(&entries.init_ns, emit_path)?;
-
-  let duration = Instant::now().duration_since(started_time);
-  println!("{}", format!("took {}ms", duration.as_micros() as f64 / 1000.0).dimmed());
   Ok(())
 }

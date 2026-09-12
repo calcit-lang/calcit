@@ -9,9 +9,14 @@ pub(super) struct HostImport {
   pub(super) arity: usize,
 }
 
+pub(super) struct ModuleFunctionLayout {
+  pub(super) runtime_fn_count: u32,
+  pub(super) table_fn_count: u32,
+}
+
 /// List of host-imported functions.
 /// These are provided by the JS environment and indexed before user functions.
-pub(super) static HOST_IMPORTS: LazyLock<Vec<HostImport>> = LazyLock::new(|| {
+static CORE_HOST_IMPORTS: LazyLock<Vec<HostImport>> = LazyLock::new(|| {
   vec![
     HostImport {
       module: "math".into(),
@@ -73,17 +78,28 @@ pub(super) static HOST_IMPORTS: LazyLock<Vec<HostImport>> = LazyLock::new(|| {
   ]
 });
 
+pub(super) fn host_imports_for_target(target: WasmTarget) -> Vec<HostImport> {
+  match target {
+    WasmTarget::Core => CORE_HOST_IMPORTS.to_vec(),
+    WasmTarget::Wasi => vec![],
+  }
+}
+
+pub(super) fn core_host_import(name: &str) -> Option<&'static HostImport> {
+  CORE_HOST_IMPORTS.iter().find(|import| import.name == name)
+}
+
 /// Maximum arity covered by canonical call_indirect type entries.
 /// Types 0..MAX_CANONICAL_ARITY are reserved: type N = (f64 × N) → f64.
 pub(super) const MAX_CANONICAL_ARITY: u32 = 8;
 
 /// Build a binary WASM module from compiled functions.
-/// Host imports occupy the first function indices (0..HOST_IMPORTS.len()),
-/// then user functions follow at indices HOST_IMPORTS.len()..
+/// Host imports occupy the first function indices, then generated functions follow.
 ///
-/// `runtime_fn_count`: how many leading entries in `fns` are runtime helper
-/// functions (not user-defined calcit functions). Only the user calcit fns
-/// (fns[runtime_fn_count..]) are registered in the funcref table.
+/// `layout.runtime_fn_count`: how many leading entries in `fns` are runtime helper
+/// functions (not user-defined calcit functions). User functions immediately
+/// after that prefix are registered in the funcref table.
+/// `layout.table_fn_count` excludes target-specific entry adapters such as `_start`.
 pub(super) fn build_wasm_module(
   fns: &[CompiledFn],
   host_imports: &[HostImport],
@@ -91,11 +107,10 @@ pub(super) fn build_wasm_module(
   string_data: &[u8],
   atom_initial_values: &[f64],
   string_tag_id: i32,
-  runtime_fn_count: u32,
+  layout: ModuleFunctionLayout,
 ) -> Result<Vec<u8>, String> {
   let mut module = Module::new();
   let num_imports = host_imports.len() as u32;
-  let user_fn_count = fns.len() as u32 - runtime_fn_count;
 
   // Type section:
   //   0..MAX_CANONICAL_ARITY  — canonical HOF callback types: (f64×N) → f64
@@ -137,8 +152,8 @@ pub(super) fn build_wasm_module(
   let mut tables = TableSection::new();
   tables.table(TableType {
     element_type: RefType::FUNCREF,
-    minimum: user_fn_count as u64,
-    maximum: Some(user_fn_count as u64),
+    minimum: layout.table_fn_count as u64,
+    maximum: Some(layout.table_fn_count as u64),
     table64: false,
     shared: false,
   });
@@ -200,8 +215,10 @@ pub(super) fn build_wasm_module(
 
   // Element section: populate the funcref table with user calcit function indices.
   // table slot i → function index (num_imports + runtime_fn_count + i).
-  if user_fn_count > 0 {
-    let fn_indices: Vec<u32> = (0..user_fn_count).map(|i| num_imports + runtime_fn_count + i).collect();
+  if layout.table_fn_count > 0 {
+    let fn_indices: Vec<u32> = (0..layout.table_fn_count)
+      .map(|i| num_imports + layout.runtime_fn_count + i)
+      .collect();
     let mut elements = ElementSection::new();
     elements.active(Some(0), &ConstExpr::i32_const(0), Elements::Functions(fn_indices.as_slice().into()));
     module.section(&elements);

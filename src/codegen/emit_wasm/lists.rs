@@ -1743,6 +1743,7 @@ mod sort_tests {
         atom_globals: HashMap::new(),
         value_imports: HashMap::new(),
         fn_table_index: HashMap::new(),
+        host_imports: HashMap::new(),
       },
     )
   }
