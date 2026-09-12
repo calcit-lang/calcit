@@ -8,6 +8,8 @@ Calx is planned as an execution backend for the statically analyzable Calcit lan
 
 The compiler consumes a typed, macro-expanded `CompiledProgram` snapshot. Calcit owns parsing, source/Snapshot handling, preprocessing, type analysis, macro expansion, reachability, lowering, lifecycle, and user-facing diagnostics. Calx owns strict program validation, core values and operations, typed imports, execution, traps, and source mapping.
 
+The shared surface/core/backend ownership contract is defined in `RFCs/09-12-layered-semantics-and-agent-fixes-rfc.md`. Calx coverage is a backend subset of that contract: it must not introduce an independent surface type policy, and unsupported results must retain the original Calcit definition/path.
+
 Platform and application FFI stays outside Calx. I/O, JS/native modules, watch mode, long-lived connections, package loading, and capability state enter a compiled program only through explicit typed host imports.
 
 ### Coverage contract
@@ -72,6 +74,8 @@ The current executable API and exact kernel ABI are documented in [Experimental 
 Calx 规划为可静态分析的 Calcit 语言核心的执行 backend。一次编译从配置入口集合开始，包含这些入口静态可达的 definitions。Calx 不再只定义为手工挑选的数值 kernel，但现有 strict kernel path 继续作为可执行的兼容基础。
 
 编译器消费已经完成类型分析和宏展开的 `CompiledProgram` snapshot。Calcit 拥有 parsing、source/Snapshot、preprocessing、类型分析、宏展开、reachability、lowering、生命周期和用户侧诊断。Calx 拥有 strict program validation、核心值与操作、typed imports、执行、traps 和 source mapping。
+
+共同的 surface/core/backend owner 契约见 `RFCs/09-12-layered-semantics-and-agent-fixes-rfc.md`。Calx coverage 是该契约的 backend 子集：不得形成独立的表层类型政策；unsupported 结果必须保留原始 Calcit definition/path。
 
 平台与应用 FFI 留在 Calx 外部。I/O、JS/native modules、watch mode、长期连接、包加载和 capability state 只能通过显式 typed host imports 进入已编译程序。
 

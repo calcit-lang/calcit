@@ -39,6 +39,9 @@
 - **双语协作记录**：关联 Issue 与 PR 的标题、正文和阶段性进度保持中英双语，便于跨项目追踪同一设计方向。
 - **PR 双语分段**：新建或更新 PR 时，正文必须分别提供完整的中文段落和英文段落，不把两种语言混写在同一段中；已有 PR 不要求追溯改写。
 - **文档与注释语言**：新增或修改面向用户的仓库文档使用中文；源代码中的注释和 doc comment 使用英文。已有内容不要求仅为统一语言而改写。
+- **分层语义**：以 `RFCs/09-12-layered-semantics-and-agent-fixes-rfc.md` 为共同契约。Cirru/Snapshot 保存结构化 source；表层语言拥有用户语义；macro 展开和 typed core 只做保持语义的解析、证明与 lowering；native/JS/Calx backend 实现共同语义或明确报告 unsupported。不得让 backend 限制静默变成新的表层类型规则。
+- **开放值语义**：内部 Unknown/Unresolved、用户显式 Dynamic 与 JsObject/host value 是不同概念。Dynamic 可以被保存、传递和包装，只有具体使用其内容时才要求 decode/narrow/unsafe 证据；优先修正通用类型关系，不扩展普通/动态两套平行 API。
+- **Agent 可执行修复**：编译器内部 lowering 不直接写回 Snapshot。只有能唯一回到 source AST、证明保持求值与失败语义、并携带 revision/fingerprint 前置条件的建议才能成为自动 fix；不得自动插入 `unsafe-coerce`、扩大 Dynamic、选择业务默认值或修改测试预期。
 
 ### 仓库职责与拆分模块追踪
 
