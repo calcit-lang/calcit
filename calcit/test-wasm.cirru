@@ -1077,6 +1077,25 @@
             defn test-sqrt (x) (sqrt x)
           :examples $ []
           :schema $ :: 'Dynamic
+        'test-static-option-result-methods $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defwasm-export test-static-option-result-methods () $ let
+                option-value $ .unwrap-or
+                  .map (%some 3) wasm-add-four
+                  , 0
+                result-value $ .unwrap-or
+                  .map (%ok 5) wasm-add-four
+                  , 0
+              + option-value result-value
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ []
+          :tests $ []
+            %{} 'TestEntry (:name |lowers-static-trait-methods)
+              :code $ quote
+                assert= 16 $ test-static-option-result-methods
+              :tags $ #{} :core :unit :wasm
         'test-str-character-count $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-str-character-count () $ &str:count "|A😀"
@@ -1314,6 +1333,17 @@
               , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
+        'wasm-add-four $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn wasm-add-four (x)
+              hint-fn $ {}
+                :args $ [] 'Number
+                :return 'Number
+              + x 4
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'Number
         'wasm-ffi-add $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defwasm-export wasm-ffi-add (a b) (&+ a b)
