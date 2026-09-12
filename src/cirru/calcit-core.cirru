@@ -713,6 +713,15 @@
             {} (:return 'String)
               :args $ [] 'List
           :tags $ #{} :builtin :internal
+        '&get-args $ %{} 'CodeEntry (:doc "|读取宿主进程参数的内部实现。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ []
+              :features $ #{} :env :io
+              :return $ :: 'List 'String
+          :tags $ #{} :builtin :env :internal :io
         '&get-calcit-backend $ %{} 'CodeEntry (:doc "|internal function for getting Calcit backend\nSyntax: (&get-calcit-backend)\nParams: none\nReturns: keyword indicating backend\nReturns current backend like :cr (Calcit Runner) or :js (JavaScript)")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5673,6 +5682,21 @@
                     assert= (%some 1) (get m :a)
                     assert= (%none) (get m :missing)
               :tags $ #{} :core :unit
+        'get-args $ %{} 'CodeEntry (:doc "|读取宿主进程传入的完整参数列表，包含第 0 项。")
+          :code $ quote
+            defn get-args () $ &get-args
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ []
+              :features $ #{} :env :io
+              :return $ :: 'List 'String
+          :tags $ #{} :env :io
+          :tests $ []
+            %{} 'TestEntry (:name |returns-strings)
+              :code $ quote
+                assert= true $ every? (get-args) string?
+              :tags $ #{} :core :env :unit
         'get-char-code $ %{} 'CodeEntry (:doc "|internal function for getting character code\nSyntax: (get-char-code char)\nParams: char (string, single character)\nReturns: number\nReturns Unicode code point of character")
           :code $ quote &runtime-implementation
           :examples $ []

@@ -53,6 +53,7 @@ import { CalcitSet } from "./js-set.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { to_calcit_data, extract_cirru_edn, extract_cirru_edn_for_typed, CalcitCirruQuote } from "./js-cirru.mjs";
 import { TypedEdnSetView } from "./typed-edn.mjs";
+import { initTernaryTreeList } from "@calcit/ternary-tree";
 
 let inNodeJs = typeof process !== "undefined" && process?.release?.name === "node";
 
@@ -1524,6 +1525,13 @@ export let _$n_get_env = (name: string, v0?: CalcitValue): CalcitValue => {
 // Newly generated code calls the internal raw proc; source-level `get-env`
 // remains the typed Option wrapper defined in calcit.core.
 export let get_env = _$n_get_env;
+
+export let _$n_get_args = (): CalcitList => {
+  const args = inNodeJs ? process.argv : [];
+  return new CalcitList(initTernaryTreeList(args));
+};
+
+export let get_args = _$n_get_args;
 
 export let turn_tag = (x: CalcitValue): CalcitTag => {
   if (typeof x === "string") {

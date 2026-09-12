@@ -92,12 +92,38 @@ static CORE_HOST_IMPORTS: LazyLock<Vec<HostImport>> = LazyLock::new(|| {
 pub(super) fn host_imports_for_target(target: WasmTarget) -> Vec<HostImport> {
   match target {
     WasmTarget::Core => CORE_HOST_IMPORTS.to_vec(),
-    WasmTarget::Wasi => vec![HostImport {
-      module: "wasi_snapshot_preview1".into(),
-      name: "fd_write".into(),
-      params: vec![ValType::I32; 4],
-      results: vec![ValType::I32],
-    }],
+    WasmTarget::Wasi => vec![
+      HostImport {
+        module: "wasi_snapshot_preview1".into(),
+        name: "fd_write".into(),
+        params: vec![ValType::I32; 4],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "wasi_snapshot_preview1".into(),
+        name: "args_sizes_get".into(),
+        params: vec![ValType::I32; 2],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "wasi_snapshot_preview1".into(),
+        name: "args_get".into(),
+        params: vec![ValType::I32; 2],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "wasi_snapshot_preview1".into(),
+        name: "environ_sizes_get".into(),
+        params: vec![ValType::I32; 2],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "wasi_snapshot_preview1".into(),
+        name: "environ_get".into(),
+        params: vec![ValType::I32; 2],
+        results: vec![ValType::I32],
+      },
+    ],
   }
 }
 
@@ -164,6 +190,331 @@ pub(super) fn build_wasi_write_all_fn(fd_write_idx: u32) -> CompiledFn {
     locals: vec![ValType::I32],
     instructions,
   }
+}
+
+fn rt_emit_reserve_raw(builder: &mut RuntimeFnBuilder, size_local: u32, dst_local: u32) {
+  builder.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  builder.emit(Instruction::LocalTee(dst_local));
+  builder.emit(Instruction::LocalGet(size_local));
+  builder.emit(Instruction::I32Const(7));
+  builder.emit(Instruction::I32Add);
+  builder.emit(Instruction::I32Const(-8));
+  builder.emit(Instruction::I32And);
+  builder.emit(Instruction::I32Add);
+  builder.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
+}
+
+fn rt_emit_trap_on_errno(builder: &mut RuntimeFnBuilder) {
+  builder.emit(Instruction::If(BlockType::Empty));
+  builder.emit(Instruction::Unreachable);
+  builder.emit(Instruction::End);
+}
+
+/// Build the Preview 1 argv adapter. The host buffers stay private while the
+/// caller receives a normal tagged `List<String>` value.
+pub(super) fn build_wasi_get_args_fn(args_sizes_get_idx: u32, args_get_idx: u32, str_new_idx: u32, list_tag: i32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(0);
+  let count = b.alloc_i32();
+  let buffer_size = b.alloc_i32();
+  let raw_size = b.alloc_i32();
+  let argv = b.alloc_i32();
+  let buffer = b.alloc_i32();
+  let buffer_end = b.alloc_i32();
+  let list_size = b.alloc_i32();
+  let list = b.alloc_i32();
+  let index = b.alloc_i32();
+  let arg_start = b.alloc_i32();
+  let arg_end = b.alloc_i32();
+
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::Call(args_sizes_get_idx));
+  rt_emit_trap_on_errno(&mut b);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalSet(count));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalSet(buffer_size));
+
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::LocalGet(buffer_size));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(raw_size));
+  rt_emit_reserve_raw(&mut b, raw_size, argv);
+  b.emit(Instruction::LocalGet(argv));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(buffer));
+  b.emit(Instruction::LocalGet(buffer));
+  b.emit(Instruction::LocalGet(buffer_size));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(buffer_end));
+  b.emit(Instruction::LocalGet(argv));
+  b.emit(Instruction::LocalGet(buffer));
+  b.emit(Instruction::Call(args_get_idx));
+  rt_emit_trap_on_errno(&mut b);
+
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::LocalSet(list_size));
+  rt_emit_alloc_dynamic(&mut b, list_size, list, list_tag);
+  b.emit(Instruction::LocalGet(list));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(argv));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalTee(arg_start));
+  b.emit(Instruction::LocalGet(buffer));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Unreachable);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(arg_start));
+  b.emit(Instruction::LocalSet(arg_end));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(arg_end));
+  b.emit(Instruction::LocalGet(buffer_end));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Unreachable);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(arg_end));
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(arg_end));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(arg_end));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(list));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(arg_start));
+  b.emit(Instruction::LocalGet(arg_end));
+  b.emit(Instruction::LocalGet(arg_start));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::Call(str_new_idx));
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(list));
+  b.emit(Instruction::F64ConvertI32U);
+  b.finish(vec![], vec![ValType::F64])
+}
+
+/// Build the Preview 1 environment adapter. Missing keys return nil; malformed
+/// host buffers and non-zero WASI errno values trap instead of becoming nil.
+pub(super) fn build_wasi_get_env_fn(environ_sizes_get_idx: u32, environ_get_idx: u32, str_new_idx: u32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(1);
+  let name_len = b.alloc_i32();
+  let name_bytes = b.alloc_i32();
+  let count = b.alloc_i32();
+  let buffer_size = b.alloc_i32();
+  let raw_size = b.alloc_i32();
+  let entries = b.alloc_i32();
+  let buffer = b.alloc_i32();
+  let buffer_end = b.alloc_i32();
+  let index = b.alloc_i32();
+  let entry = b.alloc_i32();
+  let byte_index = b.alloc_i32();
+  let matched = b.alloc_i32();
+  let value_start = b.alloc_i32();
+  let value_end = b.alloc_i32();
+
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(name_len));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(name_bytes));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::Call(environ_sizes_get_idx));
+  rt_emit_trap_on_errno(&mut b);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalSet(count));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalSet(buffer_size));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::LocalGet(buffer_size));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(raw_size));
+  rt_emit_reserve_raw(&mut b, raw_size, entries);
+  b.emit(Instruction::LocalGet(entries));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(buffer));
+  b.emit(Instruction::LocalGet(buffer));
+  b.emit(Instruction::LocalGet(buffer_size));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(buffer_end));
+  b.emit(Instruction::LocalGet(entries));
+  b.emit(Instruction::LocalGet(buffer));
+  b.emit(Instruction::Call(environ_get_idx));
+  rt_emit_trap_on_errno(&mut b);
+
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(entries));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalTee(entry));
+  b.emit(Instruction::LocalGet(buffer));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Unreachable);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(matched));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(byte_index));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(byte_index));
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(entry));
+  b.emit(Instruction::LocalGet(byte_index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(buffer_end));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Unreachable);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(entry));
+  b.emit(Instruction::LocalGet(byte_index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::LocalGet(name_bytes));
+  b.emit(Instruction::LocalGet(byte_index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(matched));
+  b.emit(Instruction::Br(2));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(byte_index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(byte_index));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(matched));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(entry));
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(buffer_end));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Unreachable);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(entry));
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Const(61));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(entry));
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalTee(value_start));
+  b.emit(Instruction::LocalSet(value_end));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(value_end));
+  b.emit(Instruction::LocalGet(buffer_end));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Unreachable);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(value_end));
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(value_end));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(value_end));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(value_start));
+  b.emit(Instruction::LocalGet(value_end));
+  b.emit(Instruction::LocalGet(value_start));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::Call(str_new_idx));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(f64_const(0.0));
+  b.finish(vec![ValType::I32], vec![ValType::F64])
 }
 
 /// Maximum arity covered by canonical call_indirect type entries.

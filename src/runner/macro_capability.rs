@@ -63,7 +63,7 @@ impl CapabilityPolicy {
 fn proc_policy(proc: CalcitProc) -> Option<CapabilityPolicy> {
   use CalcitProc::*;
   let required = match proc {
-    GetEnv => MacroCapability::EnvRead,
+    GetEnv | GetArgs => MacroCapability::EnvRead,
     ReadFile | ReadDir => MacroCapability::FsRead,
     NativeGetOs | NativeGetCalcitBackend | NativeGetCalcitRunningMode => MacroCapability::PlatformRead,
     UnixTimeMs | CpuTime => MacroCapability::ClockRead,
