@@ -15,6 +15,14 @@
 - **一致性**：复用现有模式，保持日志和错误信息风格统一。
 - **测试覆盖**：新功能必须补齐正常路径与异常分支的测试用例。
 
+### 测试放置（Calcit-first）
+
+- **优先 definition `:tests`**：用户可观察的语言语义、类型推导、macro 展开、core API、runtime 行为与跨 backend 契约，默认写成 Calcit definition 的 `:tests`，用用户会写的表达式断言输入与预期结果，便于 reviewer 直接看到契约。
+- **Rust 测试的边界**：parser/serializer、内部数据结构、host/FFI 边界、内存与并发 invariant、错误恢复，以及无法通过稳定 Calcit 接口合理构造的低层条件留在 Rust。backend-specific 实现可保留 Rust 精确测试，但应同时有 Calcit 侧共享语义测试。
+- **迁移而非重复**：修改已有行为时，若 Rust 测试只是在间接验证可由 Calcit 表达的语义，优先迁移到 `:tests`；确认 Calcit 覆盖等价或更强后，可以删除重复的 Rust 测试。
+- **不追指标**：不新增 Rust/Calcit 测试数量比例、coverage 百分比或统计 analyzer；测试位置由可 review 的语义边界决定。
+- **CI 防呆**：CI 继续执行 definition-attached tests，并用 `--require-match` 或等价机制避免选择条件错误时出现“零测试通过”。新增或修改语义的 PR 需说明测试放在 `:tests` 的原因，或必须留在 Rust 的具体低层理由。详见 `docs/features/testing.md`。
+
 ### 依赖版本引用
 
 - **版本号是 source of truth**：正式依赖、CLI 和 GitHub Actions 必须优先使用明确、已发布的精确版本或 release tag（例如 `v1.4.0`）。不要在版本位置使用裸 commit hash 代替版本号，也不要用 `@<sha> # v1.4.0` 这类注释让 hash 代理版本语义。
