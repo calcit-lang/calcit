@@ -281,7 +281,6 @@ struct ContextDiagnostic {
   message: String,
   path: Option<String>,
   intent: Option<String>,
-  #[serde(skip_serializing_if = "Vec::is_empty")]
   provenance: Vec<calcit::calcit::CalcitErrProvenance>,
 }
 
@@ -1317,6 +1316,25 @@ mod type_query_tests {
     assert_eq!(parse_type_at_path("code@3.2"), Ok(vec![3, 2]));
     assert_eq!(parse_type_at_path("@3.2"), Ok(vec![3, 2]));
     assert_eq!(parse_type_at_path("3.2"), Ok(vec![3, 2]));
+  }
+
+  #[test]
+  fn context_diagnostic_always_serializes_provenance_array() {
+    let diagnostic = ContextDiagnostic {
+      code: "W_TYPE_AT_UNRESOLVED".to_owned(),
+      phase: "type-inference",
+      severity: "warning",
+      message: "unresolved".to_owned(),
+      path: Some("code@1".to_owned()),
+      intent: None,
+      provenance: vec![],
+    };
+    let value = serde_json::to_value(&diagnostic).expect("diagnostic should serialize");
+    assert_eq!(
+      value["provenance"],
+      serde_json::json!([]),
+      "the documented contract requires an always-present provenance array"
+    );
   }
 
   fn parse_query_test_expression(source: &str) -> Calcit {

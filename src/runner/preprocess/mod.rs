@@ -9457,7 +9457,12 @@ fn nearest_dynamic_provenance(source: &Calcit, actual: &CalcitTypeAnnotation, sc
     return vec![];
   };
   let is_core_get = match head {
-    Calcit::Symbol { sym, .. } | Calcit::Local(CalcitLocal { sym, .. }) => sym.as_ref() == "get",
+    // A raw `get` symbol is only core `calcit.core/get` when no local binding
+    // or project definition shadows it. `scope_types` tracks enclosing locals,
+    // so this keeps provenance from mislabeling a shadowed call.
+    Calcit::Symbol { sym, info, .. } => {
+      sym.as_ref() == "get" && !scope_types.contains_key(sym.as_ref()) && !program::has_def_code(&info.at_ns, sym.as_ref())
+    }
     Calcit::Import(CalcitImport { ns, def, .. }) => ns.as_ref() == calcit::CORE_NS && def.as_ref() == "get",
     Calcit::Fn { info, .. } => info.def_ns.as_ref() == calcit::CORE_NS && info.name.as_ref() == "get",
     _ => false,
@@ -17577,6 +17582,59 @@ mod tests {
     assert_eq!(origin.path.as_deref(), Some("code@3.2"));
     assert_eq!(origin.r#type, "Map<Tag,Dynamic>");
     assert_eq!(origin.output_type, "Option<Dynamic>");
+  }
+
+  #[test]
+  fn skips_dynamic_provenance_for_shadowed_get_binding() {
+    let _state = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+    let dynamic = calcit::DYNAMIC_TYPE.clone();
+    let map_type = Arc::new(CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Tag), dynamic.clone()));
+    let option_dynamic = Arc::new(CalcitTypeAnnotation::Optional(dynamic.clone()));
+    let receiver = generic_relation_test_local("store", map_type.clone());
+    let processed_value = generic_relation_test_local("state", option_dynamic.clone());
+    let get_head = Calcit::Symbol {
+      sym: Arc::from("get"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.generic-relation"),
+        at_def: Arc::from("consume-state"),
+      }),
+      location: Some(Arc::new(vec![3, 2])),
+    };
+    let source_get = Calcit::from(CalcitList::from(&[get_head, receiver, Calcit::Tag(EdnTag::new("states"))][..]));
+    let processed_args = CalcitList::from(&[processed_value, Calcit::Map(Default::default())][..]);
+    let source_args = CalcitList::from(&[source_get, Calcit::Map(Default::default())][..]);
+    let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let signature = generic_relation_test_signature(
+      vec![Arc::new(CalcitTypeAnnotation::Optional(type_var.clone())), type_var.clone()],
+      type_var,
+      None,
+    );
+    // A local binding named `get` shadows `calcit.core/get`, so the diagnostic
+    // must not claim a core origin for it.
+    let scope_types = ScopeTypes::from([(Arc::from("store"), map_type), (Arc::from("get"), dynamic)]);
+
+    let error = reject_strict_erased_generic_relation(
+      &test_symbol("option:unwrap-or"),
+      &processed_args,
+      &source_args,
+      &signature,
+      &scope_types,
+      "tests.generic-relation",
+      &CallStackList::default(),
+    )
+    .expect_err("a shadowed get should still reject the erased generic relation");
+
+    assert_eq!(error.code.as_deref(), Some("E_ERASED_GENERIC_RELATION"));
+    assert!(
+      error.provenance.is_empty(),
+      "a shadowed local `get` must not be reported as `calcit.core/get`"
+    );
+    assert!(
+      !error.msg.contains("Dynamic origin"),
+      "shadowed get should keep the concise diagnostic: {}",
+      error.msg
+    );
   }
 
   #[test]
