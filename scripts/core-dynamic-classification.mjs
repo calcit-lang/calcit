@@ -287,6 +287,26 @@ const reviewedPublicBoundaryPositions = new Map([
     "tuple?|schema.args.0",
     "A runtime shape predicate must accept arbitrary values in order to narrow them; its Dynamic input is intentional and its Bool output is concrete.",
   ],
+  [
+    "concat-dynamic|schema.rest.item",
+    "This public open-container helper concatenates List<Dynamic> values on purpose; the explicit Dynamic item is the reviewed boundary rather than an erased generic relation.",
+  ],
+  [
+    "concat-dynamic|schema.return.item",
+    "This public open-container helper returns List<Dynamic> on purpose; callers must narrow entries before typed processing.",
+  ],
+  [
+    "merge-dynamic|schema.args.0.value",
+    "This public open-container helper merges Map<K,Dynamic> values on purpose; the explicit Dynamic value is the reviewed boundary instead of an erased generic relation.",
+  ],
+  [
+    "merge-dynamic|schema.rest.value",
+    "This public open-container helper merges Map<K,Dynamic> values on purpose; the explicit Dynamic value is the reviewed boundary instead of an erased generic relation.",
+  ],
+  [
+    "merge-dynamic|schema.return.value",
+    "This public open-container helper returns Map<K,Dynamic> on purpose; callers must narrow values before typed processing.",
+  ],
 ]);
 const reviewedTestPositions = new Map([
   [

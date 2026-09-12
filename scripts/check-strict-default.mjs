@@ -54,4 +54,24 @@ if (!resultMethod.stdout.split("\n").some((line) => line.trim().endsWith(": (%::
   throw new Error(`strict core Result receiver method returned an unexpected value:\n${resultMethod.stdout}`);
 }
 
-console.log("Strict-default CLI smoke passed: valid, failure, compatibility, conflict, eval, and core Option/Result methods");
+const openMerge = run([
+  "eval",
+  "count $ merge-dynamic (assert-type ({} (:a 1)) (:: 'Map 'Tag 'Dynamic)) (assert-type ({} (:b 2)) (:: 'Map 'Tag 'Dynamic))",
+]);
+expectStatus(openMerge, 0, "strict open-container merge");
+if (!openMerge.stdout.split("\n").some((line) => line.trim().endsWith(": 2"))) {
+  throw new Error(`strict open-container merge returned an unexpected value:\n${openMerge.stdout}`);
+}
+
+const openConcat = run([
+  "eval",
+  "count $ concat-dynamic (assert-type ([] 1 2) (:: 'List 'Dynamic)) (assert-type ([] 3) (:: 'List 'Dynamic))",
+]);
+expectStatus(openConcat, 0, "strict open-container concat");
+if (!openConcat.stdout.split("\n").some((line) => line.trim().endsWith(": 3"))) {
+  throw new Error(`strict open-container concat returned an unexpected value:\n${openConcat.stdout}`);
+}
+
+console.log(
+  "Strict-default CLI smoke passed: valid, failure, compatibility, conflict, eval, core Option/Result methods, and open-container merge/concat",
+);
