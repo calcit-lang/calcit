@@ -82,6 +82,7 @@ struct FixFilters<'a> {
   rule_id: &'a str,
 }
 
+/// Plan deterministic source migrations, validate them on a staged Snapshot, and optionally commit them atomically.
 pub(crate) fn handle_fix_command(
   options: &FixCommand,
   compiled_snapshot: &Snapshot,
@@ -172,6 +173,7 @@ pub(crate) fn handle_fix_command(
   Ok(())
 }
 
+/// Recreate the exact selection arguments for staged post-fix validation.
 fn fix_scope_args(options: &FixCommand) -> Vec<String> {
   let mut args = Vec::new();
   if let Some(namespace) = &options.ns {
@@ -189,6 +191,7 @@ fn fix_scope_args(options: &FixCommand) -> Vec<String> {
   args
 }
 
+/// Reject ambiguous modes, incomplete scopes, and unknown stable rule IDs.
 fn validate_options(options: &FixCommand) -> Result<(), String> {
   if !matches!(options.format.as_str(), "human" | "text" | "json") {
     return Err(format!(
@@ -212,6 +215,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   Ok(())
 }
 
+/// Resolve an editable, deterministic definition list from the requested project scope.
 fn select_definitions(
   options: &FixCommand,
   snapshot: &Snapshot,
@@ -245,6 +249,7 @@ fn select_definitions(
   Ok(selected)
 }
 
+/// Preprocess selected definitions once and retain compiler evidence used by fix planners.
 fn compile_selected_definitions(definitions: &[(String, String)]) -> Result<Vec<LocatedWarning>, String> {
   let warnings = RefCell::new(Vec::new());
   for (namespace, definition) in definitions {
@@ -254,6 +259,7 @@ fn compile_selected_definitions(definitions: &[(String, String)]) -> Result<Vec<
   Ok(warnings.into_inner())
 }
 
+/// Convert removed-data diagnostics back to guarded source-leaf replacements.
 fn plan_removed_data_api_fixes(
   options: &FixCommand,
   snapshot: &Snapshot,
@@ -321,6 +327,7 @@ fn plan_removed_data_api_fixes(
   Ok(suggestions.into_values().collect())
 }
 
+/// Build structural splice suggestions for redundant `do` wrappers in proven variadic bodies.
 fn plan_redundant_do_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
@@ -367,6 +374,7 @@ fn plan_redundant_do_fixes(
   Ok(suggestions)
 }
 
+/// Collect source paths in evaluation order while treating quoted trees as data.
 fn collect_redundant_do_paths(node: &Cirru, path: &mut Vec<usize>, output: &mut Vec<Vec<usize>>) {
   let Cirru::List(items) = node else {
     return;
@@ -379,7 +387,7 @@ fn collect_redundant_do_paths(node: &Cirru, path: &mut Vec<usize>, output: &mut 
     return;
   }
   let body_start = match head {
-    Some("defn" | "defmacro") => Some(3),
+    Some("defn") => Some(3),
     Some("fn" | "let") => Some(2),
     Some("do") => Some(1),
     _ => None,
@@ -401,6 +409,7 @@ fn collect_redundant_do_paths(node: &Cirru, path: &mut Vec<usize>, output: &mut 
   }
 }
 
+/// Deduplicate identical compiler suggestions and fail closed on conflicting replacements.
 fn insert_fix_suggestion(
   suggestions: &mut BTreeMap<(String, String, Vec<usize>), FixSuggestion>,
   key: (String, String, Vec<usize>),
@@ -421,6 +430,7 @@ fn insert_fix_suggestion(
   Ok(())
 }
 
+/// Resolve a diagnostic coordinate to the exact source leaf that owns the migration.
 fn resolve_fix_target(code: &Cirru, coordinate: &[usize]) -> Option<(Vec<usize>, String)> {
   let node = navigate_to_path(code, coordinate).ok()?;
   match node {
@@ -436,6 +446,7 @@ fn resolve_fix_target(code: &Cirru, coordinate: &[usize]) -> Option<(Vec<usize>,
   }
 }
 
+/// Preserve namespace qualification while resolving a removed data API migration.
 fn migration_for_source_leaf(source: &str) -> Option<(Option<String>, String)> {
   let (prefix, name) = source.rsplit_once('/').map_or(("", source), |(prefix, name)| (prefix, name));
   let migration = runner::preprocess::removed_data_api_migration(name)?;
@@ -450,6 +461,7 @@ fn migration_for_source_leaf(source: &str) -> Option<(Option<String>, String)> {
   Some((replacement, guidance))
 }
 
+/// Lower one typed suggestion into guarded tree commands for the staged transaction.
 fn suggestion_operations(suggestion: &FixSuggestion) -> Vec<Vec<String>> {
   match &suggestion.operation {
     Some(FixOperation::ReplaceLeaf { original, replacement }) => vec![vec![
@@ -489,6 +501,7 @@ fn suggestion_operations(suggestion: &FixSuggestion) -> Vec<Vec<String>> {
   }
 }
 
+/// Encode one Cirru node as the public quoted-AST JSON envelope.
 fn quoted_json(node: &Cirru) -> Value {
   serde_json::json!({
     "$type": "quote",
@@ -496,12 +509,14 @@ fn quoted_json(node: &Cirru) -> Value {
   })
 }
 
+/// Fingerprint the canonical JSON shape used in machine-readable fix plans.
 fn node_fingerprint(node: &Cirru) -> String {
   let mut hasher = Md5::new();
   hasher.update(cirru_to_json_value(node).to_string().as_bytes());
   format!("md5:{}", hex::encode(hasher.finalize()))
 }
 
+/// Require an inspectable, clean VCS boundary unless the caller explicitly opts out.
 fn guard_git_worktree(snapshot_file: &str, allow_dirty: bool, allow_no_vcs: bool) -> Result<(), String> {
   let project_dir = Path::new(snapshot_file).parent().unwrap_or_else(|| Path::new("."));
   let probe = Command::new("git")
@@ -542,6 +557,7 @@ fn guard_git_worktree(snapshot_file: &str, allow_dirty: bool, allow_no_vcs: bool
   Ok(())
 }
 
+/// Render the compact human view without changing the JSON protocol.
 fn print_human_report(report: &FixReport<'_>) {
   println!("Compiler-guided source fixes");
   println!("- mode: {}", report.data.mode);
@@ -655,6 +671,12 @@ mod tests {
       Cirru::List(vec![
         leaf("quote"),
         Cirru::List(vec![leaf("fn"), Cirru::List(vec![]), Cirru::List(vec![leaf("do"), leaf("h")])]),
+      ]),
+      Cirru::List(vec![
+        leaf("defmacro"),
+        leaf("pack"),
+        Cirru::List(vec![]),
+        Cirru::List(vec![leaf("do"), leaf("i"), leaf("j")]),
       ]),
     ]);
     let mut paths = Vec::new();

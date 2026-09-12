@@ -2,9 +2,9 @@
 
 ## 结论
 
-`defn`、`defmacro`、`fn` 与 `let` 的 body 本身按顺序处理多个表达式，并以最后一项作为返回值。`do` 展开为一个空 binding 的 `&let`，所以在这些 variadic body 中额外包装 `do` 不会补充基础类型推断。
+`defn`、`fn` 与 `let` 的 body 本身按顺序处理多个表达式，并以最后一项作为返回值。`do` 展开为一个空 binding 的 `&let`，所以在这些 variadic body 中额外包装 `do` 不会补充基础类型推断。
 
-`do` 在 `if` 分支、调用参数、binding value 等只接受单个表达式的位置仍有必要；quote/quasiquote 中的节点属于代码数据，也不能按运行时 body 改写。
+`do` 在 `if` 分支、调用参数、binding value 等只接受单个表达式的位置仍有必要；`defmacro` 还可能显式打包 macro body，quote/quasiquote 中的节点则属于代码数据，这些位置都不能按普通运行时 body 改写。
 
 ## 实现
 

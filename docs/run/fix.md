@@ -36,9 +36,9 @@ calcit calcit.cirru fix --ns app.main --def render! --format json
 - `removed-data-api-v1` 复用编译器已有的 `W_REMOVED_DATA_API` 解析结果。只有一对一的名称迁移
   （例如 `tuple-enum` 到 `enum-definition`）标为 `machine-applicable`；`tuple?` 需要在值判断与定义判断之间选择，因而只返回
   `requires-review`，其 `replacement` 为 `null`。
-- `redundant-do-v1` 整理 `defn`、`defmacro`、`fn`、`let` 及嵌套 `do` 的 variadic body。父结构本来就按顺序执行多项、
+- `redundant-do-v1` 整理 `defn`、`fn`、`let` 及嵌套 `do` 的 variadic body。父结构本来就按顺序执行多项、
   并以最后一项作为返回值时，这条规则会把直接子节点的单层 `do` splice 到父 body。`if` 分支、调用参数、binding value
-  以及 `quote`/`quasiquote` 数据不在自动修改范围内。
+  以及 `defmacro`、`quote`/`quasiquote` 数据不在自动修改范围内；macro 是否把多项 body 打包成一个表达式需要保留显式语义。
 
 JSON stdout 是一个完整 value，包含 `schema_version`、`command`、Snapshot `revision`、filters、validation、suggestions、diagnostics
 和 `next`。每条 suggestion 携带 Snapshot `source_file`、stable rule ID、diagnostic code、表层 definition/path、subtree fingerprint、
