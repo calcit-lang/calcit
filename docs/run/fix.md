@@ -31,13 +31,19 @@ calcit calcit.cirru fix
 calcit calcit.cirru fix --ns app.main --def render! --format json
 ```
 
-当前首条稳定规则是 `removed-data-api-v1`，复用编译器已有的 `W_REMOVED_DATA_API` 解析结果。只有一对一的名称迁移
-（例如 `tuple-enum` 到 `enum-definition`）标为 `machine-applicable`；`tuple?` 需要在值判断与定义判断之间选择，因而只返回
-`requires-review`，其 `replacement` 为 `null`。
+当前稳定规则包括：
+
+- `removed-data-api-v1` 复用编译器已有的 `W_REMOVED_DATA_API` 解析结果。只有一对一的名称迁移
+  （例如 `tuple-enum` 到 `enum-definition`）标为 `machine-applicable`；`tuple?` 需要在值判断与定义判断之间选择，因而只返回
+  `requires-review`，其 `replacement` 为 `null`。
+- `redundant-do-v1` 整理 `defn`、`fn`、`let` 及嵌套 `do` 的 variadic body。父结构本来就按顺序执行多项、
+  并以最后一项作为返回值时，这条规则会把直接子节点的单层 `do` splice 到父 body。`if` 分支、调用参数、binding value
+  以及 `defmacro`、`quote`/`quasiquote` 数据不在自动修改范围内；macro 是否把多项 body 打包成一个表达式需要保留显式语义。
 
 JSON stdout 是一个完整 value，包含 `schema_version`、`command`、Snapshot `revision`、filters、validation、suggestions、diagnostics
 和 `next`。每条 suggestion 携带 Snapshot `source_file`、stable rule ID、diagnostic code、表层 definition/path、subtree fingerprint、
-quoted AST 的 original/replacement 与 applicability。`validation` 说明 staged scope preprocess 是否执行并通过，以及实际检查的
+quoted AST 的 original/replacement 与 applicability。结构化 splice 的 replacement 使用 `{"$type":"splice","value":[...]}`，
+明确表示多个 sibling，而不是伪装成单个表达式。`validation` 说明 staged scope preprocess 是否执行并通过，以及实际检查的
 operation 数量；没有可应用 operation 时状态为 `not-needed`。日志和 command echo 只写 stderr，Agent 不需要解析人类文本或生成的 JS。
 
 确认预览后再应用：

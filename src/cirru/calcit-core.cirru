@@ -4767,6 +4767,23 @@
               :required $ []
               :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
+          :tests $ []
+            %{} 'TestEntry (:name |supports-multiple-fn-body-without-do)
+              :code $ quote
+                let
+                    state $ atom 0
+                    f $ fn () (reset! state 1) (deref state)
+                  assert= 1 $ assert-type (f) 'Number
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |supports-multiple-let-body-without-do)
+              :code $ quote
+                let
+                    state $ atom 0
+                  assert= 1 $ let
+                      x 1
+                    reset! state x
+                    assert-type (deref state) 'Number
+              :tags $ #{} :core :unit
         'drop $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn drop (xs n)
