@@ -83,8 +83,8 @@ pub fn classify_calx_type_surface(annotation: &CalcitTypeAnnotation) -> CalxCove
 
   match annotation {
     Bool | Number | F64Buffer | Unit => KERNEL,
-    String => coverage(CalxCoverageOwner::CalxCore, CalxCoverageStage::ProgramFoundation),
-    Symbol | Tag | Buffer => PROGRAM,
+    String | Tag => coverage(CalxCoverageOwner::CalxCore, CalxCoverageStage::ProgramFoundation),
+    Symbol | Buffer => PROGRAM,
     List(_) | Map(_, _) | Set(_) => COLLECTIONS,
     StructValue(_) | EnumValue(_) | Struct(_, _) | Enum(_, _) => NOMINAL,
     Fn(_) | Variadic(_) => CALLABLES,
@@ -237,13 +237,13 @@ mod tests {
 
   #[test]
   fn value_families_follow_their_rollout_slices() {
-    assert_eq!(
-      classify_calx_type_surface(&CalcitTypeAnnotation::String),
-      coverage(CalxCoverageOwner::CalxCore, CalxCoverageStage::ProgramFoundation)
-    );
-    for annotation in [CalcitTypeAnnotation::Tag, CalcitTypeAnnotation::Symbol] {
-      assert_eq!(classify_calx_type_surface(&annotation), PROGRAM);
+    for annotation in [CalcitTypeAnnotation::String, CalcitTypeAnnotation::Tag] {
+      assert_eq!(
+        classify_calx_type_surface(&annotation),
+        coverage(CalxCoverageOwner::CalxCore, CalxCoverageStage::ProgramFoundation)
+      );
     }
+    assert_eq!(classify_calx_type_surface(&CalcitTypeAnnotation::Symbol), PROGRAM);
     assert_eq!(classify_calx_proc_surface(CalcitProc::NativeListCount), COLLECTIONS);
     assert_eq!(classify_calx_proc_surface(CalcitProc::NativeMapAssoc), COLLECTIONS);
     assert_eq!(classify_calx_proc_surface(CalcitProc::NativeEnumNth), NOMINAL);

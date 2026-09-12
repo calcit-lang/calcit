@@ -338,6 +338,13 @@
                   assert= 1 $ &compare |b |a
                   assert= 0 $ &compare |a |a
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |distinguishes-tag-from-string)
+              :code $ quote
+                do
+                  assert= -1 $ &compare :a |a
+                  assert= 1 $ &compare |a :a
+                  assert= 0 $ &compare :a :a
+              :tags $ #{} :core :unit
         '&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
           :code $ quote
             def &core-enum-impls $ [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl)

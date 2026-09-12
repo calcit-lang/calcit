@@ -64,6 +64,8 @@ pub enum CalxScalarType {
   String,
   /// Immutable concrete buffer; the historic enum name is retained for API compatibility.
   F64Buffer,
+  /// Immutable tag value, distinct from a string with the same text.
+  Tag,
 }
 
 impl CalxScalarType {
@@ -72,6 +74,7 @@ impl CalxScalarType {
       Self::F64 => "F64",
       Self::Bool => "Bool",
       Self::String => "String",
+      Self::Tag => "Tag",
       Self::F64Buffer => "F64Buffer",
     }
   }
@@ -81,6 +84,7 @@ impl CalxScalarType {
       Self::F64 => VmType::F64,
       Self::Bool => VmType::Bool,
       Self::String => VmType::Str,
+      Self::Tag => VmType::Tag,
       Self::F64Buffer => VmType::F64Buffer,
     }
   }
@@ -377,6 +381,10 @@ enum CalxEligibilityProfile {
 
 impl CalxEligibilityProfile {
   const fn allows_string(self) -> bool {
+    matches!(self, Self::Program)
+  }
+
+  const fn allows_tag(self) -> bool {
     matches!(self, Self::Program)
   }
 }
@@ -778,6 +786,7 @@ fn analyze_expression(expression: &Calcit, tail: bool, context: &mut ExpressionC
     Calcit::Number(_) => Some(Some(CalxScalarType::F64)),
     Calcit::Bool(_) => Some(Some(CalxScalarType::Bool)),
     Calcit::Str(_) if context.profile.allows_string() => Some(Some(CalxScalarType::String)),
+    Calcit::Tag(_) if context.profile.allows_tag() => Some(Some(CalxScalarType::Tag)),
     Calcit::Unit => Some(None),
     Calcit::Nil => {
       issue(
@@ -1257,6 +1266,7 @@ fn map_slot_type(
     CalcitTypeAnnotation::Number => Some(CalxScalarType::F64),
     CalcitTypeAnnotation::Bool => Some(CalxScalarType::Bool),
     CalcitTypeAnnotation::String if profile.allows_string() => Some(CalxScalarType::String),
+    CalcitTypeAnnotation::Tag if profile.allows_tag() => Some(CalxScalarType::Tag),
     CalcitTypeAnnotation::F64Buffer => Some(CalxScalarType::F64Buffer),
     CalcitTypeAnnotation::Dynamic => {
       push_expression_issue(
@@ -1315,6 +1325,7 @@ fn map_slot_type_quiet(annotation: &CalcitTypeAnnotation, profile: CalxEligibili
     CalcitTypeAnnotation::Number => Some(CalxScalarType::F64),
     CalcitTypeAnnotation::Bool => Some(CalxScalarType::Bool),
     CalcitTypeAnnotation::String if profile.allows_string() => Some(CalxScalarType::String),
+    CalcitTypeAnnotation::Tag if profile.allows_tag() => Some(CalxScalarType::Tag),
     CalcitTypeAnnotation::F64Buffer => Some(CalxScalarType::F64Buffer),
     _ => None,
   }
