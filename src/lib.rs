@@ -21,6 +21,7 @@ pub mod project_state;
 pub mod runner;
 pub mod snapshot;
 pub mod util;
+pub mod wasm_cli;
 
 use calcit::{CalcitErrKind, LocatedWarning};
 use call_stack::CallStackList;

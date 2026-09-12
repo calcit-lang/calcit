@@ -83,6 +83,10 @@ pub struct ToplevelCalcit {
 pub enum CalcitCommand {
   /// emit JavaScript rather than interpreting
   EmitJs(EmitJsCommand),
+  /// emit a browser or embedded WebAssembly core module
+  EmitWasm(EmitWasmCommand),
+  /// emit a WebAssembly command module for a WASI host
+  EmitWasi(EmitWasiCommand),
   /// emit Cirru EDN representation of program to program-ir.cirru
   EmitIr(EmitIrCommand),
   /// evaluate snippet
@@ -219,6 +223,54 @@ pub struct EmitJsCommand {
   #[argh(switch, short = 'w')]
   pub watch: bool,
   /// check-only mode for JS emit
+  #[argh(switch)]
+  pub check_only: bool,
+}
+
+/// emit a browser or embedded WebAssembly core module
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "wasm")]
+pub struct EmitWasmCommand {
+  /// input source file, defaults to "calcit.cirru"
+  #[argh(positional)]
+  pub input: Option<String>,
+  /// output directory for program.wasm; defaults to the top-level emit path
+  #[argh(option)]
+  pub emit_path: Option<String>,
+  /// select a configured entry
+  #[argh(option)]
+  pub entry: Option<String>,
+  /// override the configured initialization definition
+  #[argh(option)]
+  pub init_fn: Option<String>,
+  /// override the configured reload definition
+  #[argh(option)]
+  pub reload_fn: Option<String>,
+  /// validate the core module without writing program.wasm
+  #[argh(switch)]
+  pub check_only: bool,
+}
+
+/// emit a WebAssembly command module for a WASI host
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "wasi")]
+pub struct EmitWasiCommand {
+  /// input source file, defaults to "calcit.cirru"
+  #[argh(positional)]
+  pub input: Option<String>,
+  /// output directory for program.wasm; defaults to the top-level emit path
+  #[argh(option)]
+  pub emit_path: Option<String>,
+  /// select a configured entry
+  #[argh(option)]
+  pub entry: Option<String>,
+  /// override the configured initialization definition; it must take no arguments
+  #[argh(option)]
+  pub init_fn: Option<String>,
+  /// override the configured reload definition
+  #[argh(option)]
+  pub reload_fn: Option<String>,
+  /// validate the WASI command without writing program.wasm
   #[argh(switch)]
   pub check_only: bool,
 }
@@ -2662,4 +2714,30 @@ pub struct ConfigRmTypeSlotCommand {
   /// slot name, with or without a leading colon
   #[argh(positional)]
   pub slot: String,
+}
+
+#[cfg(test)]
+mod wasm_command_tests {
+  use super::*;
+
+  #[test]
+  fn parses_public_wasm_commands_with_distinct_targets() {
+    let wasm = ToplevelCalcit::from_args(&["calcit"], &["wasm", "app.cirru", "--emit-path", "target/core", "--check-only"])
+      .expect("parse calcit wasm");
+    let Some(CalcitCommand::EmitWasm(options)) = wasm.subcommand else {
+      panic!("expected wasm subcommand");
+    };
+    assert_eq!(options.input.as_deref(), Some("app.cirru"));
+    assert_eq!(options.emit_path.as_deref(), Some("target/core"));
+    assert!(options.check_only);
+
+    let wasi =
+      ToplevelCalcit::from_args(&["calcit"], &["wasi", "command.cirru", "--init-fn", "app.main/main!"]).expect("parse calcit wasi");
+    let Some(CalcitCommand::EmitWasi(options)) = wasi.subcommand else {
+      panic!("expected wasi subcommand");
+    };
+    assert_eq!(options.input.as_deref(), Some("command.cirru"));
+    assert_eq!(options.init_fn.as_deref(), Some("app.main/main!"));
+    assert!(!options.check_only);
+  }
 }

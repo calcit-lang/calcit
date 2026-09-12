@@ -1,8 +1,10 @@
-# Internal WASM Codegen Validation
+# WASM 编译与验证
 
 ## 概述
 
-这是 Calcit 仓库内部的 codegen 验证后端，用于测试编译器、数据布局和运行时假设。它不是公开的 Calcit 编译目标，也不构成用户 CLI 契约。内部 binary 由 `internal-wasm` feature gate 保护，只通过仓库测试脚本调用。
+Calcit 通过两个公开 preview 子命令暴露 WASM codegen：`calcit wasm` 生成 browser/embedded core module，`calcit wasi` 生成 WASI command module。两者共享同一套 Snapshot 加载、预处理、target validation 与 codegen 实现；当前支持范围仍以本文和明确的 unsupported 错误为准。
+
+仓库继续保留 `cr-wasm` 作为过渡期内部兼容 wrapper，供旧脚本和 WASI 自举回归使用。新的人类与 Agent 工作流应使用 `calcit wasm` / `calcit wasi`，不要依据内部 binary 名称猜测输出契约。
 
 ## 支持的子集
 
@@ -45,25 +47,37 @@
 - Atom / Ref
 - 可变参数 (`&`) 和可选参数 (`?`)
 
-## 内部验证方式
+## 编译与验证方式
+
+生成 browser/embedded core module：
+
+```bash
+calcit wasm calcit.cirru --emit-path js-out
+```
+
+生成并运行 WASI command module：
+
+```bash
+calcit wasi calcit/test-wasi-command.cirru --emit-path target/wasi-command
+wasmtime run target/wasi-command/program.wasm
+```
+
+两个命令都支持 `--check-only`，只执行同一套 target validation，不写出 `program.wasm`。`--help` 会分别说明输出类型和 command entry 约束。
+
+仓库全量验证：
 
 ```bash
 yarn try-wasm
 ```
 
-脚本会通过 `internal-wasm` feature 构建内部 runner，生成 `js-out/program.wasm`，再使用 Node.js 验证导出函数。不支持的函数会把 skip 信息写到 stderr。
+脚本通过公开 `calcit wasm` 命令生成 `js-out/program.wasm`，再使用 Node.js 验证导出函数。不支持的函数会把 skip 信息写到 stderr。
 
 ## Core 与 WASI command 目标
 
-`cr-wasm` 的 `--target` 明确区分两种宿主契约：
+公开命令名称明确区分两种宿主契约：
 
 - `core` 是默认值，保持浏览器或嵌入式宿主现有的 `math`、`io` imports 和导出行为。
 - `wasi` 生成 command module，并增加无参数、无返回值的 `_start` 入口。当前阶段可在 Wasmtime 中运行不需要宿主效果的 Calcit 程序。
-
-```bash
-cr-wasm calcit/test-wasi-command.cirru --target wasi --emit-path target/wasi-command
-wasmtime run target/wasi-command/program.wasm
-```
 
 WASI 目标不会接受 `defwasm-import` 声明的任意宿主函数，也不会继承 core 目标的 JS `io` imports。遇到尚未注册的宿主能力时，codegen 以 `E_WASM_CAPABILITY` 失败；无效目标或 command 入口形状以 `E_WASM_TARGET` 失败。后续 stdio、参数、环境变量、退出、时钟、随机数和预开放文件系统均从集中式 capability registry 接入，Preview 1 的 ABI 名称不会成为 Calcit 源码 API。
 
@@ -140,7 +154,8 @@ defn fibo (n)
 - `src/codegen/emit_wasm.rs` — WASM 二进制代码生成（via wasm-encoder）
 - `src/codegen.rs` — 模块注册
 - `src/cli_args.rs` — `EmitWasmCommand` CLI 定义
-- `src/bin/cr_wasm.rs` — feature-gated 内部 runner
+- `src/wasm_cli.rs` — 两个公开命令与兼容 wrapper 共用的加载和编译流程
+- `src/bin/cr_wasm.rs` — 过渡期内部兼容 wrapper
 - `calcit/test-wasm.cirru` — 测试用例
 - `scripts/test-wasm.sh` — WASM 验证脚本（生成 + Node.js 验证，集成在 `yarn check-all` 中）
 - `scripts/test-wasm.mjs` — Node.js 测试运行器

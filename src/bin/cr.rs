@@ -272,10 +272,34 @@ fn main() -> Result<(), String> {
   }
 }
 
+fn resolve_public_wasm_options(
+  cli_args: &ToplevelCalcit,
+  input: Option<&str>,
+  emit_path: Option<&str>,
+  init_fn: Option<&str>,
+  reload_fn: Option<&str>,
+  entry: Option<&str>,
+  check_only: bool,
+) -> calcit::wasm_cli::WasmCliOptions {
+  calcit::wasm_cli::WasmCliOptions {
+    input: input.unwrap_or(&cli_args.input).to_owned(),
+    emit_path: emit_path.unwrap_or(&cli_args.emit_path).to_owned(),
+    init_fn: init_fn.or(cli_args.init_fn.as_deref()).map(str::to_owned),
+    reload_fn: reload_fn.or(cli_args.reload_fn.as_deref()).map(str::to_owned),
+    entry: entry.or(cli_args.entry.as_deref()).map(str::to_owned),
+    check_only: check_only || cli_args.check_only,
+  }
+}
+
 fn run_cli() -> Result<(), String> {
   let cli_args: ToplevelCalcit = argh::from_env();
-  cli_handlers::warn_on_global_temp_snapshot_path(&cli_args.input);
-  calcit::project_state::set_active_project_directory_from_snapshot(&cli_args.input);
+  let active_input = match &cli_args.subcommand {
+    Some(CalcitCommand::EmitWasm(command)) => command.input.as_deref().unwrap_or(&cli_args.input),
+    Some(CalcitCommand::EmitWasi(command)) => command.input.as_deref().unwrap_or(&cli_args.input),
+    _ => &cli_args.input,
+  };
+  cli_handlers::warn_on_global_temp_snapshot_path(active_input);
+  calcit::project_state::set_active_project_directory_from_snapshot(active_input);
 
   cli_handlers::set_cursor_after_mode(&cli_args.cursor_after)?;
 
@@ -325,6 +349,34 @@ fn run_cli() -> Result<(), String> {
 
   // Handle standalone commands that don't need full program loading
   match &cli_args.subcommand {
+    Some(CalcitCommand::EmitWasm(command)) => {
+      return calcit::wasm_cli::run(
+        &resolve_public_wasm_options(
+          &cli_args,
+          command.input.as_deref(),
+          command.emit_path.as_deref(),
+          command.init_fn.as_deref(),
+          command.reload_fn.as_deref(),
+          command.entry.as_deref(),
+          command.check_only,
+        ),
+        codegen::emit_wasm::WasmTarget::Core,
+      );
+    }
+    Some(CalcitCommand::EmitWasi(command)) => {
+      return calcit::wasm_cli::run(
+        &resolve_public_wasm_options(
+          &cli_args,
+          command.input.as_deref(),
+          command.emit_path.as_deref(),
+          command.init_fn.as_deref(),
+          command.reload_fn.as_deref(),
+          command.entry.as_deref(),
+          command.check_only,
+        ),
+        codegen::emit_wasm::WasmTarget::Wasi,
+      );
+    }
     Some(CalcitCommand::Query(query_cmd)) => {
       return cli_handlers::handle_query_command(query_cmd, &cli_args.input);
     }

@@ -69,7 +69,7 @@ calcit docs agents --full
 - `calcit <entry>`、`calcit <entry> js` 默认都是**单次执行**（once）。
 - 需要监听时，显式传 `-w` 或 `--watch`（如 `calcit -w <entry>`、`calcit <entry> js -w`）。
 - `calcit <entry> ir` 仅用于编译器与生成结果调试，不作为普通项目的运行或验证方式。
-- WASM codegen 是仓库内部验证后端，不向用户提供命令；维护者统一通过 `yarn try-wasm` 验证。
+- WASM codegen 通过 `calcit wasm`（browser/embedded core module）与 `calcit wasi`（WASI command module）提供公开 preview 命令；两者必须共享加载、预处理、target validation 与 codegen 语义。`cr-wasm` 仅为仓库内部过渡兼容 wrapper，维护者继续通过 `yarn try-wasm` 与 `scripts/test-wasi-preprocess.sh` 验证。
 
 ### calcit eval 基础与常见踩坑
 
