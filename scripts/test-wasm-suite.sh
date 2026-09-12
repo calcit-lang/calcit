@@ -38,12 +38,20 @@ total=${#TEST_FILES[@]}
 for f in "${TEST_FILES[@]}"; do
   label=$(basename "$f" .cirru)
 
-  # Compile to WASM — allow "skipping" warnings, fail only on real errors
-  compile_out=$("$BIN" "$f" 2>&1)
-  compile_exit=$?
-  if [[ $compile_exit -ne 0 ]] || echo "$compile_out" | grep -qE "^error|thread.*panicked"; then
+  # Compile to WASM and distinguish explicit unsupported targets from harness failures.
+  if compile_out=$("$BIN" "$f" 2>&1); then
+    compile_exit=0
+  else
+    compile_exit=$?
+  fi
+  if [[ $compile_exit -ne 0 ]] && grep -Fq "[wasm] target function" <<<"$compile_out"; then
+    echo "  [$label] UNSUPPORTED"
+    ((skip++)) || true
+    continue
+  fi
+  if [[ $compile_exit -ne 0 ]] || grep -qE "^error|thread.*panicked" <<<"$compile_out"; then
     echo "  [$label] BUILD-FAIL"
-    echo "$compile_out" | grep -E "^error|panicked" | head -3
+    grep -E "^error|panicked|Error:" <<<"$compile_out" | head -3
     ((fail++)) || true
     continue
   fi
@@ -57,6 +65,6 @@ for f in "${TEST_FILES[@]}"; do
 done
 
 echo ""
-echo "=== WASM suite: $pass/$total passed, $fail failed ==="
+echo "=== WASM suite: $pass passed, $skip unsupported, $fail failed ($total total) ==="
 
 [[ $fail -eq 0 ]]

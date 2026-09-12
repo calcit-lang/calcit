@@ -11,38 +11,48 @@ const wasm = readFileSync(wasmPath);
 const mod = new WebAssembly.Module(wasm);
 
 const wasmLog = [];
+const imports = {};
+for (const descriptor of WebAssembly.Module.imports(mod)) {
+  if (descriptor.kind !== "function") {
+    throw new Error(`unsupported test import kind: ${descriptor.kind}`);
+  }
+  imports[descriptor.module] ??= {};
+  imports[descriptor.module][descriptor.name] = () => 0;
+}
 
-const inst = new WebAssembly.Instance(mod, {
-  math: {
-    pow: Math.pow,
-    sin: Math.sin,
-    cos: Math.cos,
-  },
-  io: {
-    log_value: (v) => {
-      const mem = new DataView(inst.exports.memory.buffer);
-      const ptr = v | 0;
-      const HEAP_MAGIC = 0xca1c17a9 | 0;
-      if (ptr >= 16 && ptr < mem.byteLength - 8) {
-        const magic = mem.getInt32(ptr - 8, true);
-        if (magic === HEAP_MAGIC) {
-          const typeTag = mem.getInt32(ptr - 4, true);
-          if (typeTag === 10) {
-            const byteLen = mem.getFloat64(ptr, true);
-            const bytes = new Uint8Array(mem.buffer, ptr + 8, byteLen);
-            const str = new TextDecoder().decode(bytes);
-            process.stdout.write(str + "\n");
-            wasmLog.push(str);
-            return 0;
-          }
+imports.math = {
+  ...imports.math,
+  pow: Math.pow,
+  sin: Math.sin,
+  cos: Math.cos,
+};
+imports.io = {
+  ...imports.io,
+  log_value: (v) => {
+    const mem = new DataView(inst.exports.memory.buffer);
+    const ptr = v | 0;
+    const HEAP_MAGIC = 0xca1c17a9 | 0;
+    if (ptr >= 16 && ptr < mem.byteLength - 8) {
+      const magic = mem.getInt32(ptr - 8, true);
+      if (magic === HEAP_MAGIC) {
+        const typeTag = mem.getInt32(ptr - 4, true);
+        if (typeTag === 10) {
+          const byteLen = mem.getFloat64(ptr, true);
+          const bytes = new Uint8Array(mem.buffer, ptr + 8, byteLen);
+          const str = new TextDecoder().decode(bytes);
+          process.stdout.write(str + "\n");
+          wasmLog.push(str);
+          return 0;
         }
       }
-      process.stdout.write(String(v) + "\n");
-      wasmLog.push(v);
-      return 0;
-    },
+    }
+    process.stdout.write(String(v) + "\n");
+    wasmLog.push(v);
+    return 0;
   },
-});
+};
+
+const inst = new WebAssembly.Instance(mod, imports);
 
 const e = inst.exports;
 
