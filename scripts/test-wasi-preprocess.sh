@@ -7,6 +7,8 @@ readonly FIXTURE="calcit/test-wasi-preprocess.cirru"
 readonly WASM_BIN="${CARGO_TARGET_DIR:-target}/${TARGET}/debug/cr-wasm.wasm"
 readonly COMMAND_FIXTURE="calcit/test-wasi-command.cirru"
 readonly COMMAND_OUT="${CARGO_TARGET_DIR:-target}/wasi-command-smoke"
+readonly COMMAND_STDOUT="${COMMAND_OUT}/stdout.txt"
+readonly COMMAND_STDERR="${COMMAND_OUT}/stderr.txt"
 readonly CHECK_ONLY_OUT="${CARGO_TARGET_DIR:-target}/wasi-check-only-smoke"
 readonly NATIVE_WASM_BIN="${CARGO_TARGET_DIR:-target}/debug/cr-wasm"
 readonly CALCIT_BIN="${CARGO_TARGET_DIR:-target}/debug/calcit"
@@ -32,7 +34,12 @@ if [[ -e "$CHECK_ONLY_OUT/program.wasm" ]]; then
   exit 1
 fi
 "$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --emit-path "$COMMAND_OUT"
-wasmtime run "$COMMAND_OUT/program.wasm"
+wasmtime run "$COMMAND_OUT/program.wasm" >"$COMMAND_STDOUT" 2>"$COMMAND_STDERR"
+grep -Fxq "WASI-stdout: 你好" "$COMMAND_STDOUT"
+grep -Fxq "WASI-echo" "$COMMAND_STDOUT"
+grep -Fxq "WASI-stderr: 42" "$COMMAND_STDERR"
+[ "$(wc -l <"$COMMAND_STDOUT")" -eq 2 ]
+[ "$(wc -l <"$COMMAND_STDERR")" -eq 1 ]
 
 if target_error=$("$NATIVE_WASM_BIN" "$COMMAND_FIXTURE" --target unknown 2>&1); then
   echo "cr-wasm unexpectedly accepted an unknown target" >&2

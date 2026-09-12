@@ -1744,6 +1744,7 @@ mod sort_tests {
         value_imports: HashMap::new(),
         fn_table_index: HashMap::new(),
         host_imports: HashMap::new(),
+        target: WasmTarget::Core,
       },
     )
   }
