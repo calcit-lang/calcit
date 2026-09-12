@@ -340,11 +340,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     atom_globals,
     value_imports,
     fn_table_index,
-    host_imports: host_imports
-      .iter()
-      .enumerate()
-      .map(|(index, import)| ((import.module.clone(), import.name.clone()), index as u32))
-      .collect(),
+    host_imports: index_host_imports(&host_imports),
   };
 
   // Second pass: target failures reject the artifact. Dependency failures keep
@@ -2419,6 +2415,14 @@ fn resolve_host_import(ctx: &WasmGenCtx, module: &str, name: &str) -> Result<u32
     .ok_or_else(|| format!("E_WASM_CAPABILITY: host capability `{module}/{name}` is unavailable for this WASM target"))
 }
 
+fn index_host_imports(imports: &[HostImport]) -> HashMap<(String, String), u32> {
+  let mut indices = HashMap::new();
+  for (index, import) in imports.iter().enumerate() {
+    indices.entry((import.module.clone(), import.name.clone())).or_insert(index as u32);
+  }
+  indices
+}
+
 fn emit_binary(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 2 {
     return Err(format!("{instr:?} expects 2 args, got {}", args.len()));
@@ -3379,7 +3383,7 @@ mod tests {
   use std::str::FromStr;
   use std::sync::Arc;
 
-  use super::{WasmTarget, must_reject_extraction_failure};
+  use super::{HostImport, WasmTarget, index_host_imports, must_reject_extraction_failure};
   use crate::calcit::{Calcit, CalcitList, CalcitSyntax};
 
   fn declaration(head: CalcitSyntax) -> Calcit {
@@ -3406,5 +3410,22 @@ mod tests {
     assert_eq!(WasmTarget::from_str("core"), Ok(WasmTarget::Core));
     assert_eq!(WasmTarget::from_str("wasi"), Ok(WasmTarget::Wasi));
     assert!(WasmTarget::from_str("browser").unwrap_err().starts_with("E_WASM_TARGET:"));
+  }
+
+  #[test]
+  fn host_import_index_keeps_the_registered_capability() {
+    let imports = [
+      HostImport {
+        module: "io".into(),
+        name: "log_value".into(),
+        arity: 1,
+      },
+      HostImport {
+        module: "io".into(),
+        name: "log_value".into(),
+        arity: 2,
+      },
+    ];
+    assert_eq!(index_host_imports(&imports).get(&("io".into(), "log_value".into())), Some(&0));
   }
 }
