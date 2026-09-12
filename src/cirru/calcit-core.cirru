@@ -5667,6 +5667,16 @@
                   assert= (%some |a) (get |abc 0)
                   assert= (%some |b) (get |abc 1)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |reads-open-map-payload)
+              :code $ quote
+                let
+                    m $ assert-type
+                      {} (:a 1) (:b |x)
+                      :: 'Map 'Tag 'Dynamic
+                  do
+                    assert= (%some 1) (get m :a)
+                    assert= (%none) (get m :missing)
+              :tags $ #{} :core :unit
         'get-char-code $ %{} 'CodeEntry (:doc "|internal function for getting character code\nSyntax: (get-char-code char)\nParams: char (string, single character)\nReturns: number\nReturns Unicode code point of character")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5730,6 +5740,17 @@
                   get-in
                     &{} :a $ &{} :b 2
                     [] :a :b
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |reads-nested-open-map-payload)
+              :code $ quote
+                let
+                    m $ assert-type
+                      {}
+                        :a $ {} (:b 2)
+                        :other |x
+                      :: 'Map 'Tag 'Dynamic
+                  assert= (%some 2)
+                    get-in m $ [] :a :b
               :tags $ #{} :core :unit
         'group-by $ %{} 'CodeEntry (:doc "|Group elements by the result of applying function f to each element")
           :code $ quote
@@ -5829,6 +5850,13 @@
               :optional $ [] (:: 'Expr 'Dynamic)
               :required $ [] 'SyntaxList (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
+          :tests $ []
+            %{} 'TestEntry (:name |binds-open-option-payload)
+              :code $ quote
+                let
+                    present $ assert-type (%some 1) (:: 'Option 'Dynamic)
+                  assert= 1 $ if-let (value present) value 0
+              :tags $ #{} :core :unit
         'if-not $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro if-not (& xs)
@@ -6963,6 +6991,17 @@
             {}
               :args $ [] 'Dynamic 'Number
               :return $ :: 'Option 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |reads-open-list-payload)
+              :code $ quote
+                let
+                    xs $ assert-type
+                      [] 1 $ {} (:a 2)
+                      :: 'List 'Dynamic
+                  assert=
+                    %some $ {} (:a 2)
+                    nth xs 1
+              :tags $ #{} :core :unit
         'number? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is a numeric scalar")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -7019,6 +7058,20 @@
                   :args $ [] 'T
               :generics $ [] 'T 'U
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |folds-open-option-payload)
+              :code $ quote
+                let
+                    present $ assert-type (%some 1) (:: 'Option 'Dynamic)
+                    absent $ assert-type (%none) (:: 'Option 'Dynamic)
+                  do
+                    assert= 1 $ option:fold present
+                      fn () 0
+                      fn (value) value
+                    assert= 0 $ option:fold absent
+                      fn () 0
+                      fn (value) value
+              :tags $ #{} :core :unit
         'option:let $ %{} 'CodeEntry (:doc "|Sequentially bind Option payloads through the .and-then method; stops at the first none and requires the body to return Option.")
           :code $ quote
             defmacro option:let (pairs & body)
@@ -7165,6 +7218,16 @@
               :args $ [] (:: 'Option 'T) 'T
               :generics $ [] 'T
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |consumes-open-option-payload)
+              :code $ quote
+                let
+                    present $ assert-type (%some 1) (:: 'Option 'Dynamic)
+                    absent $ assert-type (%none) (:: 'Option 'Dynamic)
+                  do
+                    assert= 1 $ option:unwrap-or present 0
+                    assert= 0 $ option:unwrap-or absent 0
+              :tags $ #{} :core :unit
         'optionally $ %{} 'CodeEntry (:doc "|Convert a nullable Optional<T> value into nominal Option<T>.")
           :code $ quote
             defn optionally (s)
