@@ -764,8 +764,10 @@ pub(super) fn build_wasi_read_text_fn(
   let padded = b.alloc_i32();
   let payload = b.alloc_i32();
   let managed_size = b.alloc_i64();
-  let zero_scratch = b.alloc_i64();
+  let zero_size = b.alloc_i64();
   let unused_scratch = b.alloc_i32();
+  let filestat_size = b.alloc_i64();
+  let filestat = b.alloc_i32();
   let string = b.alloc_i32();
   let data = b.alloc_i32();
   let offset = b.alloc_i32();
@@ -782,8 +784,13 @@ pub(super) fn build_wasi_read_text_fn(
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
+  b.emit(Instruction::I64Const(64));
+  b.emit(Instruction::LocalSet(filestat_size));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::LocalSet(zero_size));
+  rt_emit_reserve_scratch(&mut b, filestat_size, zero_size, filestat);
   b.emit(Instruction::LocalGet(fd));
-  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalGet(filestat));
   b.emit(Instruction::Call(fd_filestat_get_idx));
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::LocalGet(fd));
@@ -792,7 +799,9 @@ pub(super) fn build_wasi_read_text_fn(
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(filestat));
   b.emit(Instruction::I32Const(32));
+  b.emit(Instruction::I32Add);
   b.emit(Instruction::I64Load(mem_arg_f64(0)));
   b.emit(Instruction::LocalTee(file_size_i64));
   b.emit(Instruction::I64Const(WASI_TEXT_FILE_LIMIT));
@@ -822,9 +831,7 @@ pub(super) fn build_wasi_read_text_fn(
   b.emit(Instruction::I64Const(8));
   b.emit(Instruction::I64Add);
   b.emit(Instruction::LocalSet(managed_size));
-  b.emit(Instruction::I64Const(0));
-  b.emit(Instruction::LocalSet(zero_scratch));
-  rt_emit_reserve_scratch(&mut b, zero_scratch, managed_size, unused_scratch);
+  rt_emit_reserve_scratch(&mut b, zero_size, managed_size, unused_scratch);
   rt_emit_alloc_dynamic(&mut b, payload, string, string_tag);
   b.emit(Instruction::LocalGet(string));
   b.emit(Instruction::LocalGet(file_size));

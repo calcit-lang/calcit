@@ -720,6 +720,7 @@
             {}
               :args $ [] 'EnumDef 'String 'String
               :return $ :: 'Result 'String 'String
+          :tags $ #{} :builtin :file :internal :io
         '&fs-write-text $ %{} 'CodeEntry (:doc "|内部 UTF-8 文件写入边界；显式接收 Result 原型和宿主错误前缀，供 FsPath wrapper 与 backend lowering 使用。")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -727,6 +728,7 @@
             {}
               :args $ [] 'EnumDef 'String 'String 'String
               :return $ :: 'Result 'Unit 'String
+          :tags $ #{} :builtin :file :internal :io
         '&get-args $ %{} 'CodeEntry (:doc "|读取宿主进程参数的内部实现。")
           :code $ quote &runtime-implementation
           :examples $ []

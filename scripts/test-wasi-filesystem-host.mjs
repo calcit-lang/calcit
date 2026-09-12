@@ -76,6 +76,7 @@ const wasi = {
   },
   fd_filestat_get(fd, statPtr) {
     assert.equal(fd, 5);
+    assert.equal(statPtr, memory.buffer.byteLength - 64, "filestat must use reserved scratch memory");
     view().setBigUint64(statPtr + 32, BigInt(input.length), true);
     return 0;
   },
