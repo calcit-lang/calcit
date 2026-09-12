@@ -5534,6 +5534,11 @@ fn warn_on_nominal_enum_legacy_absence_use(
   let Some(operation) = canonical_absence_operation_name(head) else {
     return;
   };
+  // `.some?` dispatches to the nominal Option receiver method, not the legacy
+  // nullable `some?` predicate; only the function form keeps the warning.
+  if operation == "some?" && matches!(head, Calcit::Method(_, _)) {
+    return;
+  }
   if !matches!(
     operation,
     "nil?"
@@ -11187,6 +11192,20 @@ mod tests {
     );
     assert_eq!(method_warnings.borrow().len(), 1, "structural Option methods should warn");
     assert!(method_warnings.borrow()[0].message().contains(".unwrap-or"));
+
+    let some_method_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &Calcit::Method(Arc::from("some?"), calcit::MethodKind::Invoke(calcit::DYNAMIC_TYPE.clone())),
+      &args,
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &some_method_warnings,
+    );
+    assert!(
+      some_method_warnings.borrow().is_empty(),
+      "the nominal `.some?` method must not reuse the legacy nullable `some?` warning"
+    );
 
     let direct_get = Calcit::from(vec![core_head("get"), Calcit::Nil, Calcit::Number(0.0)]);
     let direct_get_warnings = RefCell::new(vec![]);

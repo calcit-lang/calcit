@@ -77,9 +77,7 @@ const runtimeMetadata = new Set([
   "&trait::new",
   "MapEntryDecision",
   "Option",
-  "OptionMethods",
   "Result",
-  "ResultMethods",
 ]);
 const runtimePolymorphic = new Set([
   "%::",

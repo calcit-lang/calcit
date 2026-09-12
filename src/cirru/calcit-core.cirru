@@ -3070,7 +3070,7 @@
           :code $ quote
             def Option $ impl-traits
               defenum Option ([] 'T) (:some 'T) (:none)
-              , internal/&core-debug-impl internal/&core-eq-impl OptionMappableImpl OptionMethods
+              , internal/&core-debug-impl internal/&core-eq-impl OptionMappableImpl OptionOpsImpl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data :internal
@@ -3080,17 +3080,65 @@
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :trait-impl
-        'OptionMethods $ %{} 'CodeEntry (:doc |)
+        'OptionOps $ %{} 'CodeEntry (:doc "|Internal method contract for Option values.")
           :code $ quote
-            def OptionMethods $ &impl::new :OptionMethods (:: .some? option:some?) (:: .none? option:none?) (:: .unwrap option:unwrap) (:: .unwrap-or option:unwrap-or) (:: .and-then option:and-then) (:: .or-else option:or-else) (:: .fold option:fold)
+            deftrait OptionOps
+              .some? $ :: 'Fn
+                {} (:return 'Bool)
+                  :generics $ [] 'T
+                  :args $ [] (:: 'Option 'T)
+              .none? $ :: 'Fn
+                {} (:return 'Bool)
+                  :generics $ [] 'T
+                  :args $ [] (:: 'Option 'T)
+              .unwrap $ :: 'Fn
+                {} (:return 'T)
+                  :generics $ [] 'T
+                  :args $ [] (:: 'Option 'T)
+              .unwrap-or $ :: 'Fn
+                {} (:return 'T)
+                  :generics $ [] 'T
+                  :args $ [] (:: 'Option 'T) 'T
+              .and-then $ :: 'Fn
+                {}
+                  :return $ :: 'Option 'U
+                  :generics $ [] 'T 'U
+                  :args $ [] (:: 'Option 'T)
+                    :: 'Fn $ {}
+                      :args $ [] 'T
+                      :return $ :: 'Option 'U
+              .or-else $ :: 'Fn
+                {}
+                  :return $ :: 'Option 'T
+                  :generics $ [] 'T
+                  :args $ [] (:: 'Option 'T)
+                    :: 'Fn $ {}
+                      :args $ []
+                      :return $ :: 'Option 'T
+              .fold $ :: 'Fn
+                {} (:return 'U)
+                  :generics $ [] 'T 'U
+                  :args $ [] (:: 'Option 'T)
+                    :: 'Fn $ {}
+                      :args $ []
+                      :return 'U
+                    :: 'Fn $ {}
+                      :args $ [] 'T
+                      :return 'U
           :examples $ []
-          :schema $ :: 'Dynamic
-          :tags $ #{} :internal
+          :schema $ :: 'Trait
+          :tags $ #{} :internal :trait
+        'OptionOpsImpl $ %{} 'CodeEntry (:doc "|Internal Option method implementation.")
+          :code $ quote
+            defimpl OptionOpsImpl OptionOps (.some? option:some?) (.none? option:none?) (.unwrap option:unwrap) (.unwrap-or option:unwrap-or) (.and-then option:and-then) (.or-else option:or-else) (.fold option:fold)
+          :examples $ []
+          :schema $ :: 'Impl
+          :tags $ #{} :internal :trait-impl
         'Result $ %{} 'CodeEntry (:doc "|Rust-style Result enum")
           :code $ quote
             def Result $ impl-traits
               defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
-              , internal/&core-debug-impl internal/&core-eq-impl ResultMappableImpl ResultMethods
+              , internal/&core-debug-impl internal/&core-eq-impl ResultMappableImpl ResultOpsImpl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data :internal
@@ -3100,12 +3148,54 @@
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :trait-impl
-        'ResultMethods $ %{} 'CodeEntry (:doc |)
+        'ResultOps $ %{} 'CodeEntry (:doc "|Internal method contract for Result values.")
           :code $ quote
-            def ResultMethods $ &impl::new :ResultMethods (:: .ok? result:ok?) (:: .err? result:err?) (:: .unwrap-or result:unwrap-or) (:: .and-then result:and-then) (:: .map-err result:map-err) (:: .or-else result:or-else)
+            deftrait ResultOps
+              .ok? $ :: 'Fn
+                {} (:return 'Bool)
+                  :generics $ [] 'T 'E
+                  :args $ [] (:: 'Result 'T 'E)
+              .err? $ :: 'Fn
+                {} (:return 'Bool)
+                  :generics $ [] 'T 'E
+                  :args $ [] (:: 'Result 'T 'E)
+              .unwrap-or $ :: 'Fn
+                {} (:return 'T)
+                  :generics $ [] 'T 'E
+                  :args $ [] (:: 'Result 'T 'E) 'T
+              .and-then $ :: 'Fn
+                {}
+                  :return $ :: 'Result 'U 'E
+                  :generics $ [] 'T 'U 'E
+                  :args $ [] (:: 'Result 'T 'E)
+                    :: 'Fn $ {}
+                      :args $ [] 'T
+                      :return $ :: 'Result 'U 'E
+              .map-err $ :: 'Fn
+                {}
+                  :return $ :: 'Result 'T 'F
+                  :generics $ [] 'T 'E 'F
+                  :args $ [] (:: 'Result 'T 'E)
+                    :: 'Fn $ {}
+                      :args $ [] 'E
+                      :return 'F
+              .or-else $ :: 'Fn
+                {}
+                  :return $ :: 'Result 'T 'E
+                  :generics $ [] 'T 'E
+                  :args $ [] (:: 'Result 'T 'E)
+                    :: 'Fn $ {}
+                      :args $ []
+                      :return $ :: 'Result 'T 'E
           :examples $ []
-          :schema $ :: 'Dynamic
-          :tags $ #{} :internal
+          :schema $ :: 'Trait
+          :tags $ #{} :internal :trait
+        'ResultOpsImpl $ %{} 'CodeEntry (:doc "|Internal Result method implementation.")
+          :code $ quote
+            defimpl ResultOpsImpl ResultOps (.ok? result:ok?) (.err? result:err?) (.unwrap-or result:unwrap-or) (.and-then result:and-then) (.map-err result:map-err) (.or-else result:or-else)
+          :examples $ []
+          :schema $ :: 'Impl
+          :tags $ #{} :internal :trait-impl
         'RuntimeMapMeta $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct RuntimeMapMeta $ :kind 'Tag
