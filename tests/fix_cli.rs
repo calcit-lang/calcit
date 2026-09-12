@@ -218,3 +218,143 @@ fn staged_fix_rejects_a_new_compiler_warning_without_writing() {
   assert!(String::from_utf8_lossy(&preview.stderr).contains("W_FN_RETURN_TYPE_MISMATCH"));
   assert_eq!(fs::read(&snapshot).expect("rejected fixture should read"), before);
 }
+
+#[test]
+fn tag_match_fix_uses_resolved_source_origin_and_preserves_semantics() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let original = fs::read(&snapshot).expect("fixture should read");
+
+  let before = run_calcit(
+    &snapshot,
+    &["test", "fix-command.main/tag-match-case", "--summary-only", "--require-match"],
+  );
+  assert!(before.status.success(), "stderr:\n{}", String::from_utf8_lossy(&before.stderr));
+  let quoted_before = run_calcit(
+    &snapshot,
+    &["test", "fix-command.main/tag-match-quoted", "--summary-only", "--require-match"],
+  );
+  assert!(
+    quoted_before.status.success(),
+    "stderr:\n{}",
+    String::from_utf8_lossy(&quoted_before.stderr)
+  );
+  let shadow_tests = run_calcit(&snapshot, &["query", "tests", "fix-command.main/tag-match-shadowed"]);
+  assert!(
+    shadow_tests.status.success(),
+    "stderr:\n{}",
+    String::from_utf8_lossy(&shadow_tests.stderr)
+  );
+  assert!(String::from_utf8_lossy(&shadow_tests.stdout).contains("keeps-local-shadow"));
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "tag-match-case",
+      "--rule",
+      "tag-match-to-match-v1",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(preview.status.success(), "stderr:\n{}", String::from_utf8_lossy(&preview.stderr));
+  let preview_json = parse_stdout(&preview);
+  let suggestion = &preview_json["data"]["suggestions"][0];
+  assert_eq!(suggestion["rule_id"], "tag-match-to-match-v1");
+  assert_eq!(suggestion["diagnostic_code"], "W_DEPRECATED_API");
+  assert_eq!(suggestion["origin_chain"][0]["target"], "calcit.core/tag-match");
+  assert_eq!(suggestion["original"]["value"], "tag-match");
+  assert_eq!(suggestion["replacement"]["value"], "match");
+  assert!(
+    suggestion["message"]
+      .as_str()
+      .is_some_and(|message| message.contains("Calcit tests"))
+  );
+  assert_eq!(preview_json["data"]["validation"]["checked_operations"], 1);
+  assert_eq!(fs::read(&snapshot).expect("preview fixture should read"), original);
+
+  for definition in ["tag-match-shadowed", "tag-match-quoted"] {
+    let negative = run_fix(
+      &snapshot,
+      &[
+        "--ns",
+        "fix-command.main",
+        "--def",
+        definition,
+        "--rule",
+        "tag-match-to-match-v1",
+        "--format",
+        "json",
+      ],
+    );
+    assert!(
+      negative.status.success(),
+      "{definition} stderr:\n{}",
+      String::from_utf8_lossy(&negative.stderr)
+    );
+    let report = parse_stdout(&negative);
+    assert_eq!(report["data"]["changed"], false, "definition: {definition}");
+    assert_eq!(report["data"]["suggestions"].as_array().map(Vec::len), Some(0));
+  }
+
+  let revision = preview_json["revision"].as_str().expect("preview revision should be a string");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "tag-match-case",
+      "--rule",
+      "tag-match-to-match-v1",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      revision,
+      "--format",
+      "json",
+    ],
+  );
+  assert!(applied.status.success(), "stderr:\n{}", String::from_utf8_lossy(&applied.stderr));
+  let applied_json = parse_stdout(&applied);
+  assert_eq!(applied_json["data"]["changed"], true);
+  let updated = fs::read_to_string(&snapshot).expect("updated fixture should read");
+  assert!(updated.contains("match value"));
+  assert!(updated.contains("defn tag-match-shadowed (tag-match value) (tag-match value)"));
+  assert!(updated.contains("quote $ tag-match (%some 1)"));
+
+  let after = run_calcit(
+    &snapshot,
+    &["test", "fix-command.main/tag-match-case", "--summary-only", "--require-match"],
+  );
+  assert!(after.status.success(), "stderr:\n{}", String::from_utf8_lossy(&after.stderr));
+  let quoted_after = run_calcit(
+    &snapshot,
+    &["test", "fix-command.main/tag-match-quoted", "--summary-only", "--require-match"],
+  );
+  assert!(
+    quoted_after.status.success(),
+    "stderr:\n{}",
+    String::from_utf8_lossy(&quoted_after.stderr)
+  );
+  let repeated = run_fix(
+    &snapshot,
+    &[
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "tag-match-case",
+      "--rule",
+      "tag-match-to-match-v1",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(repeated.status.success(), "stderr:\n{}", String::from_utf8_lossy(&repeated.stderr));
+  let repeated_json = parse_stdout(&repeated);
+  assert_eq!(repeated_json["data"]["changed"], false);
+  assert_eq!(repeated_json["data"]["suggestions"].as_array().map(Vec::len), Some(0));
+}

@@ -39,6 +39,10 @@ calcit calcit.cirru fix --ns app.main --def render! --format json
 - `redundant-do-v1` 整理 `defn`、`fn`、`let` 及嵌套 `do` 的 variadic body。父结构本来就按顺序执行多项、
   并以最后一项作为返回值时，这条规则会把直接子节点的单层 `do` splice 到父 body。`if` 分支、调用参数、binding value
   以及 `defmacro`、`quote`/`quasiquote` 数据不在自动修改范围内；macro 是否把多项 body 打包成一个表达式需要保留显式语义。
+- `tag-match-to-match-v1` 复用 `analyze deprecated` 的名称解析，只改写确定指向 `calcit.core/tag-match` 的
+  source call head，分支 AST 与求值顺序保持不变。本地参数或 `let` 绑定的同名调用、其他 namespace 的同名定义、
+  `quote`/`quasiquote` 数据和无法唯一回到 source 的 macro expansion 不产生 replacement。该规则让原生 `match`
+  保留 enum 分支结构，供穷尽性、payload arity、类型推断与 backend 优化继续使用。
 
 JSON stdout 是一个完整 value，包含 `schema_version`、`command`、Snapshot `revision`、filters、validation、suggestions、diagnostics
 和 `next`。每条 suggestion 携带 Snapshot `source_file`、stable rule ID、diagnostic code、表层 definition/path、subtree fingerprint、

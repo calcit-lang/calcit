@@ -404,6 +404,41 @@ const scenarios = [
     },
   },
   {
+    name: "resolved deprecated macro fix preview",
+    args: [
+      "tests/fixtures/fix-command.cirru",
+      "fix",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "tag-match-case",
+      "--rule",
+      "tag-match-to-match-v1",
+      "--format",
+      "json",
+    ],
+    check(result) {
+      const suggestion = result.data?.suggestions?.[0];
+      if (
+        result.schema_version !== 1 ||
+        result.command !== "fix" ||
+        result.data.changed !== true ||
+        suggestion?.rule_id !== "tag-match-to-match-v1" ||
+        suggestion?.diagnostic_code !== "W_DEPRECATED_API"
+      ) {
+        throw new Error("tag-match fix preview lost its deterministic compiler evidence");
+      }
+      if (
+        suggestion.origin_chain?.[0]?.target !== "calcit.core/tag-match" ||
+        suggestion.original?.value !== "tag-match" ||
+        suggestion.replacement?.value !== "match" ||
+        suggestion.applicability !== "machine-applicable"
+      ) {
+        throw new Error("tag-match fix preview lost resolved origin or quoted AST replacement");
+      }
+    },
+  },
+  {
     name: "machine value schema",
     args: [
       "calcit/test.cirru",
