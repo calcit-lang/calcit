@@ -27,14 +27,21 @@ run_codegen() {
   fi
 }
 
-# Step 1: generate .wasm binary
+# Step 1: run the user-visible Calcit semantic contract before backend checks.
+if [[ -x ./target/debug/calcit ]]; then
+  ./target/debug/calcit "$ENTRY" test test-wasm.main/test-closure-capture-map --require-match
+else
+  bash scripts/cargo-with-sdk.sh run --bin calcit -- "$ENTRY" test test-wasm.main/test-closure-capture-map --require-match
+fi
+
+# Step 2: generate .wasm binary
 run_codegen "$ENTRY" 2>&1
 
-# Step 2: validate and run with Node.js
+# Step 3: validate and run with Node.js
 node scripts/test-wasm.mjs
 node scripts/test-wasm-fail-closed.mjs js-out/program.wasm
 
-# Step 3: a preprocessing failure must stop codegen with a non-zero result.
+# Step 4: a preprocessing failure must stop codegen with a non-zero result.
 if failure_out=$(run_codegen "$FAIL_ENTRY" 2>&1); then
   echo "WASM codegen unexpectedly accepted $FAIL_ENTRY" >&2
   exit 1
@@ -47,7 +54,7 @@ if ! grep -Fq "WASM preprocessing failed for type-fail-schema-required-arity.mai
   exit 1
 fi
 
-# Step 4: target lowering failures must reject the artifact before writing it.
+# Step 5: target lowering failures must reject the artifact before writing it.
 LOWERING_FAIL_OUT=$(mktemp -d "${TMPDIR:-/tmp}/calcit-wasm-fail-closed.XXXXXX")
 trap 'rm -rf "$LOWERING_FAIL_OUT"' EXIT
 if lowering_failure_out=$(run_codegen "$LOWERING_FAIL_ENTRY" --emit-path "$LOWERING_FAIL_OUT" 2>&1); then

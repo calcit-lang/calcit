@@ -367,6 +367,7 @@ check("test-list-count()", 3, e["test-list-count"]);
 check("test-list-nth(0)", 10, e["test-list-nth"], 0);
 check("test-list-nth(2)", 30, e["test-list-nth"], 2);
 check("test-list-first-generic()", 42, e["test-list-first-generic"]);
+check("test-closure-capture-map()", 1, e["test-closure-capture-map"]);
 check("test-list-nth(3)", 40, e["test-list-nth"], 3);
 assert.throws(
   () => e["test-list-nth"](4),
