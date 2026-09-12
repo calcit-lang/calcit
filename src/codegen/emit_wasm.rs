@@ -362,6 +362,38 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
 
   let struct_field_tags = collect_struct_field_tags_from_program(&program_data, &tag_index);
 
+  let mut static_fn_defs: HashMap<String, Arc<StaticFnDef>> = HashMap::new();
+  for (ns, name, args, body) in &fn_defs {
+    let Some(signature) = program_data
+      .get(ns.as_str())
+      .and_then(|file| file.defs.get(name.as_str()))
+      .and_then(|compiled| compiled.schema.resolve_to_fn())
+    else {
+      continue;
+    };
+    let callback_arities = signature
+      .arg_types
+      .iter()
+      .enumerate()
+      .filter_map(|(index, annotation)| {
+        annotation
+          .resolve_to_fn()
+          .filter(|callback| callback.rest_type.is_none())
+          .map(|callback| (index, callback.arg_types.len()))
+      })
+      .collect::<HashMap<_, _>>();
+    let definition = Arc::new(StaticFnDef {
+      params: fn_param_names(args),
+      body: body.clone(),
+      callback_arities,
+      fixed_arity: matches!(args, CalcitFnArgs::Args(_)),
+    });
+    static_fn_defs.insert(format!("{ns}/{name}"), definition.clone());
+    if export_name_counts.get(name).copied() == Some(1) {
+      static_fn_defs.insert(name.clone(), definition);
+    }
+  }
+
   // Build string literal pool: assigns each unique string a memory offset.
   let (string_pool, string_data_segment, heap_start) = build_string_pool(&fn_defs, &tag_index, target);
 
@@ -408,6 +440,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     string_pool,
     atom_globals,
     value_imports,
+    static_fn_defs,
     fn_table_index,
     host_imports: index_host_imports(&host_imports),
     target,
@@ -570,6 +603,8 @@ struct WasmCompileEnv {
   atom_globals: HashMap<String, u32>,
   /// qualified value name ("ns/def") → preprocessed expression for inlining.
   value_imports: HashMap<String, Calcit>,
+  /// Statically resolved function definitions available for closure-argument specialization.
+  static_fn_defs: HashMap<String, Arc<StaticFnDef>>,
   /// qualified function name → funcref table slot index (0-based, for call_indirect)
   fn_table_index: HashMap<String, u32>,
   /// Target-approved host imports keyed by `(module, field)`.
@@ -657,6 +692,14 @@ struct InlineClosure {
   captured_closures: HashMap<String, Arc<InlineClosure>>,
 }
 
+#[derive(Clone)]
+struct StaticFnDef {
+  params: Vec<String>,
+  body: Vec<Calcit>,
+  callback_arities: HashMap<usize, usize>,
+  fixed_arity: bool,
+}
+
 enum InlineArgument {
   Value(u32),
   Closure(Arc<InlineClosure>),
@@ -699,6 +742,8 @@ struct WasmGenCtx {
   atom_globals: HashMap<String, u32>,
   /// qualified value name ("ns/def") → preprocessed expression for inlining.
   value_imports: HashMap<String, Calcit>,
+  /// Statically resolved function definitions available for closure-argument specialization.
+  static_fn_defs: HashMap<String, Arc<StaticFnDef>>,
   /// qualified function name → funcref table slot index (for call_indirect)
   fn_table_index: HashMap<String, u32>,
   /// Target-approved host imports keyed by `(module, field)`.
@@ -708,6 +753,8 @@ struct WasmGenCtx {
   /// Statically known closures retain the lexical local bindings visible at creation.
   /// They are specialized at known call sites instead of receiving a dynamic heap ABI.
   lambda_locals: HashMap<String, Arc<InlineClosure>>,
+  /// Active static specializations, used to reject recursive inlining deterministically.
+  specialization_stack: Vec<String>,
 }
 
 impl WasmGenCtx {
@@ -729,10 +776,12 @@ impl WasmGenCtx {
       string_pool: env.string_pool,
       atom_globals: env.atom_globals,
       value_imports: env.value_imports,
+      static_fn_defs: env.static_fn_defs,
       fn_table_index: env.fn_table_index,
       host_imports: env.host_imports,
       target: env.target,
       lambda_locals: HashMap::new(),
+      specialization_stack: vec![],
     }
   }
 
@@ -1010,6 +1059,81 @@ fn emit_inline_closure_call(ctx: &mut WasmGenCtx, closure: &InlineClosure, args:
   result
 }
 
+fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[Calcit]) -> Result<bool, String> {
+  let Some(definition) = ctx.static_fn_defs.get(qualified).cloned() else {
+    return Ok(false);
+  };
+
+  let closures = args
+    .iter()
+    .enumerate()
+    .map(|(index, arg)| {
+      let closure = resolve_inline_closure(ctx, arg);
+      if let Some(closure) = &closure {
+        let expected_arity = definition.callback_arities.get(&index).ok_or_else(|| {
+          format!(
+            "E_WASM_CLOSURE_SPECIALIZATION: `{qualified}` argument {} is a closure but its static parameter contract is not callable",
+            index + 1
+          )
+        })?;
+        if closure.params.len() != *expected_arity {
+          return Err(format!(
+            "E_WASM_CLOSURE_SPECIALIZATION: `{qualified}` callback argument {} expects {expected_arity} parameter(s), got {}",
+            index + 1,
+            closure.params.len()
+          ));
+        }
+      }
+      Ok(closure)
+    })
+    .collect::<Result<Vec<_>, String>>()?;
+  if closures.iter().all(Option::is_none) {
+    return Ok(false);
+  }
+  if !definition.fixed_arity || definition.params.len() != args.len() {
+    return Err(format!(
+      "E_WASM_CLOSURE_SPECIALIZATION: `{qualified}` requires a fixed known arity for closure specialization"
+    ));
+  }
+  if definition.body.iter().any(check_uses_recur) || ctx.specialization_stack.iter().any(|active| active == qualified) {
+    return Err(format!(
+      "E_WASM_CLOSURE_SPECIALIZATION: recursive specialization of `{qualified}` is not supported"
+    ));
+  }
+
+  let mut bindings = Vec::with_capacity(args.len());
+  for (arg, closure) in args.iter().zip(closures) {
+    if let Some(closure) = closure {
+      bindings.push(InlineArgument::Closure(closure));
+    } else {
+      emit_expr(ctx, arg)?;
+      let local = ctx.alloc_local();
+      ctx.emit(Instruction::LocalSet(local));
+      bindings.push(InlineArgument::Value(local));
+    }
+  }
+
+  let caller_locals = std::mem::take(&mut ctx.locals);
+  let caller_closures = std::mem::take(&mut ctx.lambda_locals);
+  for (param, binding) in definition.params.iter().zip(bindings) {
+    match binding {
+      InlineArgument::Value(local) => {
+        ctx.locals.insert(param.clone(), local);
+      }
+      InlineArgument::Closure(closure) => {
+        ctx.lambda_locals.insert(param.clone(), closure);
+      }
+    }
+  }
+  ctx.specialization_stack.push(qualified.to_owned());
+  let result = emit_body(ctx, &definition.body);
+  ctx.specialization_stack.pop();
+  ctx.locals = caller_locals;
+  ctx.lambda_locals = caller_closures;
+  result?;
+  Ok(true)
+}
+
 /// Check that `args` has exactly `n` elements and return an error if not.
 #[inline]
 fn expect_arity(n: usize, args: &[Calcit], proc_name: &str) -> Result<(), String> {
@@ -1059,6 +1183,19 @@ fn compute_fn_arity(args: &CalcitFnArgs) -> (u32, Option<u32>) {
   }
 }
 
+fn fn_param_names(args: &CalcitFnArgs) -> Vec<String> {
+  match args {
+    CalcitFnArgs::Args(indices) => indices.iter().map(|index| CalcitLocal::read_name(*index)).collect(),
+    CalcitFnArgs::MarkedArgs(labels) => labels
+      .iter()
+      .filter_map(|label| match label {
+        CalcitArgLabel::Idx(index) => Some(CalcitLocal::read_name(*index)),
+        CalcitArgLabel::OptionalMark | CalcitArgLabel::RestMark => None,
+      })
+      .collect(),
+  }
+}
+
 fn try_custom_def_impl(
   ns: &str,
   def_name: &str,
@@ -1105,38 +1242,7 @@ fn compile_fn(
   body: &[Calcit],
   env: &WasmCompileEnv,
 ) -> Result<CompiledFn, String> {
-  let mut param_names = Vec::new();
-  match args {
-    CalcitFnArgs::Args(idxs) => {
-      for idx in idxs {
-        param_names.push(CalcitLocal::read_name(*idx));
-      }
-    }
-    CalcitFnArgs::MarkedArgs(labels) => {
-      // Track `&` marker: the next Idx after RestMark is the rest-args list param.
-      // We still add it as a regular f64 param (holding the list pointer),
-      // so no special handling is needed beyond accepting the marker.
-      let mut seen_rest = false;
-      for label in labels {
-        match label {
-          CalcitArgLabel::Idx(idx) => {
-            param_names.push(CalcitLocal::read_name(*idx));
-            if seen_rest {
-              // Only one rest param allowed — ignore any extras defensively.
-              seen_rest = false;
-            }
-          }
-          CalcitArgLabel::OptionalMark => {
-            // Optional marker — not a parameter slot, just skip it.
-            // The caller always passes all args (nil for omitted optional ones).
-          }
-          CalcitArgLabel::RestMark => {
-            seen_rest = true;
-          }
-        }
-      }
-    }
-  }
+  let param_names = fn_param_names(args);
 
   let arity = param_names.len();
   let mut ctx = WasmGenCtx::new(arity as u32, env.clone());
@@ -1288,6 +1394,11 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
     }
     Calcit::Local(local) => {
       let name = &*local.sym;
+      if ctx.lambda_locals.contains_key(name) {
+        return Err(format!(
+          "E_WASM_CLOSURE_SPECIALIZATION: closure `{name}` escapes a statically specialized call"
+        ));
+      }
       let idx = *ctx.locals.get(name).ok_or_else(|| format!("undefined local variable: {name}"))?;
       ctx.emit(Instruction::LocalGet(idx));
     }
@@ -1517,6 +1628,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       }
       // Try qualified "ns/def" first, then bare "def" as fallback
       let qualified = format!("{}/{}", import.ns, import.def);
+      if emit_specialized_static_call(ctx, &qualified, &args_list)? {
+        return Ok(());
+      }
       let fn_idx = ctx
         .fn_index
         .get(&qualified)
@@ -1581,6 +1695,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       if let Some(closure) = ctx.lambda_locals.get(name).cloned() {
         return emit_inline_closure_call(ctx, &closure, &args_list);
       }
+      if emit_specialized_static_call(ctx, name, &args_list)? {
+        return Ok(());
+      }
       let fn_idx = *ctx
         .fn_index
         .get(name)
@@ -1639,6 +1756,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         }
       }
       let qualified = format!("{}/{}", def_ref.def_ns, def_ref.def_name);
+      if emit_specialized_static_call(ctx, &qualified, &args_list)? {
+        return Ok(());
+      }
       let fn_idx = ctx
         .fn_index
         .get(&qualified)
@@ -1684,6 +1804,11 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       // If this local is an inline lambda, inline the call directly.
       if let Some(closure) = ctx.lambda_locals.get(&local_name).cloned() {
         return emit_inline_closure_call(ctx, &closure, &args_list);
+      }
+      if args_list.iter().any(|arg| resolve_inline_closure(ctx, arg).is_some()) {
+        return Err(format!(
+          "E_WASM_CLOSURE_SPECIALIZATION: dynamic callee `{local_name}` cannot receive an inline closure"
+        ));
       }
       let local_idx = *ctx
         .locals
