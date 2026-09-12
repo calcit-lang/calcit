@@ -1742,6 +1742,7 @@ mod sort_tests {
         string_pool: HashMap::new(),
         atom_globals: HashMap::new(),
         value_imports: HashMap::new(),
+        static_fn_defs: HashMap::new(),
         fn_table_index: HashMap::new(),
         host_imports: HashMap::new(),
         target: WasmTarget::Core,
