@@ -90,6 +90,69 @@
               :code $ quote
                 assert= 3 $ needs-arg 3
               :tags $ #{} :core :unit :wasi :wasm
+        'random-error? $ %{} 'CodeEntry (:doc "|验证越界的安全随机请求返回 String 错误。")
+          :code $ quote
+            defn random-error? (size)
+              tag-match (secure-random-bytes size)
+                (:ok _) false
+                (:err message) (string? message)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] 'Number
+          :tags $ #{} :core :crypto :unit :wasi :wasm
+          :tests $ []
+            %{} 'TestEntry (:name |rejects-negative-length)
+              :code $ quote
+                assert= true $ random-error? -1
+              :tags $ #{} :core :crypto :unit :wasi :wasm
+            %{} 'TestEntry (:name |rejects-oversized-length)
+              :code $ quote
+                assert= true $ random-error? 65537
+              :tags $ #{} :core :crypto :unit :wasi :wasm
+            %{} 'TestEntry (:name |rejects-fractional-length)
+              :code $ quote
+                assert= true $ random-error? 1.5
+              :tags $ #{} :core :crypto :unit :wasi :wasm
+        'random-fixed-main! $ %{} 'CodeEntry (:doc "|由确定性 WASI 假宿主验证四字节随机请求。")
+          :code $ quote
+            defn random-fixed-main! () $ if (random-success? 4) (println "|secure-random-fixed: ok") (quit! 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+          :tags $ #{} :crypto :wasi
+        'random-main! $ %{} 'CodeEntry (:doc "|验证安全随机 API 的成功与越界 Result 语义。")
+          :code $ quote
+            defn random-main! () $ if
+              and (random-success? 16) (random-error? 65537)
+              println "|secure-random: ok"
+              quit! 1
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+          :tags $ #{} :crypto :wasi
+        'random-success? $ %{} 'CodeEntry (:doc "|验证指定长度的安全随机请求返回 Buffer。")
+          :code $ quote
+            defn random-success? (size)
+              tag-match (secure-random-bytes size)
+                (:ok bytes) (buffer? bytes)
+                (:err _) false
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] 'Number
+          :tags $ #{} :core :crypto :unit :wasi :wasm
+          :tests $ []
+            %{} 'TestEntry (:name |returns-empty-buffer)
+              :code $ quote
+                assert= true $ random-success? 0
+              :tags $ #{} :core :crypto :unit :wasi :wasm
+            %{} 'TestEntry (:name |returns-buffer)
+              :code $ quote
+                assert= true $ random-success? 16
+              :tags $ #{} :core :crypto :unit :wasi :wasm
         'read-args $ %{} 'CodeEntry (:doc "|读取当前宿主进程的完整参数列表。")
           :code $ quote
             defn read-args () $ get-args

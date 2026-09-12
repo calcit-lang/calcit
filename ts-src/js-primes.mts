@@ -32,6 +32,7 @@ export type CalcitValue =
   | CalcitStructDef
   | CalcitEnumDef
   | CalcitCirruQuote
+  | Uint8Array
   | undefined
   | null;
 

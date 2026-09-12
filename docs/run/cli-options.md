@@ -479,6 +479,8 @@ command init definition 正常返回时，进程状态为 `0`；调用 `quit!` �
 
 WASI command 也复用 `unix-time-ms` 与 `cpu-time`。前者读取系统实时时钟；后者读取单调时钟，只保证同一进程内两次读数的差值有意义。两者均返回毫秒数；Preview 1 的纳秒结果与错误码由编译器内部转换和检查，宿主失败时不会返回 `0` 或 `nil`。
 
+安全随机字节统一通过 `secure-random-bytes` 获取。参数必须是 `0..65536` 范围内的整数，返回值为 `Result<Buffer,String>`；WASI command 由 Preview 1 `random_get` 填充缓冲区，宿主错误保留为 `Result` 的错误分支。Native 与生成的 JavaScript 保持相同的公开值形状，分别使用系统 CSPRNG 与 Web Crypto。`calcit wasm` 的 core module 没有默认随机数宿主协议，会以 `E_WASM_CAPABILITY` 明确拒绝。
+
 ## Markdown code checking
 
 Use `docs check-md` to validate fenced code blocks in markdown files:

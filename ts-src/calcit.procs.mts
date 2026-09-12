@@ -107,6 +107,9 @@ export let type_of = (x: any): CalcitTag => {
   if (x instanceof CalcitCirruQuote) {
     return newTag("cirru-quote");
   }
+  if (x instanceof Uint8Array) {
+    return newTag("buffer");
+  }
   if (x === true || x === false) {
     return newTag("bool");
   }
@@ -1533,6 +1536,24 @@ export let _$n_get_args = (): CalcitList => {
 
 export let get_args = _$n_get_args;
 
+/** Fill a Buffer with Web Crypto and preserve expected failures as Result values. */
+export let _$n_secure_random_bytes = (resultType: CalcitEnumDef, size: number, hostError: string): CalcitEnumValue => {
+  const error = (message: string) => new CalcitEnumValue(newTag("err"), [message], resultType);
+  if (!Number.isInteger(size) || size < 0 || size > 65_536) {
+    return error(`secure-random-bytes expected an integer byte count in 0..65536, got: ${size}`);
+  }
+  if (globalThis.crypto?.getRandomValues == null) {
+    return error(`${hostError}: Web Crypto getRandomValues is unavailable`);
+  }
+  try {
+    const bytes = new Uint8Array(size);
+    globalThis.crypto.getRandomValues(bytes);
+    return new CalcitEnumValue(newTag("ok"), [bytes], resultType);
+  } catch (cause) {
+    return error(`${hostError}: ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
+};
+
 export let turn_tag = (x: CalcitValue): CalcitTag => {
   if (typeof x === "string") {
     return newTag(x);
@@ -1716,8 +1737,7 @@ export let enum_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitEnumValue;
 };
 export let buffer_$q_ = (x: CalcitValue): boolean => {
-  console.warn("TODO, detecting buffer");
-  return false;
+  return x instanceof Uint8Array;
 };
 
 export let _$n_str_$o_escape = (x: string) => JSON.stringify(x);

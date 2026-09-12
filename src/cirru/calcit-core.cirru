@@ -1961,6 +1961,14 @@
             {} (:return 'Unit)
               :args $ []
           :tags $ #{} :builtin :internal
+        '&secure-random-bytes $ %{} 'CodeEntry (:doc "|内部安全随机字节入口；显式接收 Result 类型原型，仅供 public wrapper 与 backend lowering 使用。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'EnumDef 'Number 'String
+              :return $ :: 'Result 'Buffer 'String
+          :tags $ #{} :builtin :crypto :internal
         '&set:count $ %{} 'CodeEntry (:doc "|internal function for counting set elements\nSyntax: (&set:count set)\nParams: set (set)\nReturns: number\nReturns number of elements in set")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -7825,6 +7833,32 @@
                   [] ([] 0 1 2) ([] 3 4 5) ([] 6 7 8) ([] 9)
                   section-by (range 10) 3
               :tags $ #{} :core :unit
+        'secure-random-bytes $ %{} 'CodeEntry (:doc "|生成指定长度的密码学安全随机字节。长度必须是 0..65536 的整数；失败以 Result<String> 返回，不提供非安全伪随机退化路径。")
+          :code $ quote
+            defn secure-random-bytes (size)
+              if
+                and (round? size) (>= size 0) (<= size 65536)
+                &secure-random-bytes Result size "|secure-random-bytes failed"
+                %err "|secure-random-bytes expected an integer byte count in 0..65536"
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'Number
+              :return $ :: 'Result 'Buffer 'String
+          :tags $ #{} :crypto :io
+          :tests $ []
+            %{} 'TestEntry (:name |returns-buffer)
+              :code $ quote
+                assert= true $ tag-match (secure-random-bytes 16)
+                  (:ok bytes) (buffer? bytes)
+                  (:err _) false
+              :tags $ #{} :core :crypto :unit :wasi :wasm
+            %{} 'TestEntry (:name |rejects-invalid-length)
+              :code $ quote
+                assert= true $ tag-match (secure-random-bytes 65537)
+                  (:ok _) false
+                  (:err message) (string? message)
+              :tags $ #{} :core :crypto :unit :wasi :wasm
         'select-keys $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn select-keys (m xs)

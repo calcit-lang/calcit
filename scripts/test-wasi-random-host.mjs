@@ -3,13 +3,12 @@ import { readFile } from "node:fs/promises";
 
 const [wasmPath] = process.argv.slice(2);
 if (wasmPath == null) {
-  throw new Error("usage: node scripts/test-wasi-clock-host.mjs <program.wasm>");
+  throw new Error("usage: node scripts/test-wasi-random-host.mjs <program.wasm>");
 }
 
 let memory;
 let stdout = "";
-const requestedClocks = [];
-
+let randomDataPtr;
 const view = () => new DataView(memory.buffer);
 const bytes = () => new Uint8Array(memory.buffer);
 
@@ -19,17 +18,13 @@ const wasi = {
     view().setUint32(argvSizePtr, 0, true);
     return 0;
   },
-  args_get() {
-    return 0;
-  },
+  args_get: () => 0,
   environ_sizes_get(countPtr, sizePtr) {
     view().setUint32(countPtr, 0, true);
     view().setUint32(sizePtr, 0, true);
     return 0;
   },
-  environ_get() {
-    return 0;
-  },
+  environ_get: () => 0,
   fd_write(fd, iovsPtr, iovsLength, writtenPtr) {
     assert.equal(fd, 1);
     let written = 0;
@@ -45,17 +40,14 @@ const wasi = {
   proc_exit(code) {
     throw new Error(`unexpected proc_exit(${code})`);
   },
-  clock_time_get(clockId, precision, resultPtr) {
-    requestedClocks.push([clockId, precision]);
-    const nanoseconds = clockId === 0 ? 1_234_000_000n : clockId === 1 ? 5_678_000_000n : null;
-    if (nanoseconds == null) {
-      return 28;
-    }
-    view().setBigUint64(resultPtr, nanoseconds, true);
-    return 0;
+  clock_time_get() {
+    throw new Error("random fixture unexpectedly requested a clock");
   },
-  random_get() {
-    throw new Error("clock fixture unexpectedly requested random bytes");
+  random_get(ptr, length) {
+    assert.equal(length, 4);
+    randomDataPtr = ptr;
+    bytes().set([0, 127, 128, 255], ptr);
+    return 0;
   },
 };
 
@@ -64,13 +56,11 @@ const instance = await WebAssembly.instantiate(module, { wasi_snapshot_preview1:
 memory = instance.exports.memory;
 instance.exports._start();
 
-assert.equal(stdout, "WASI-fixed-clocks: ok\n");
-assert.deepEqual(requestedClocks, [
-  [0, 1_000_000n],
-  [1, 1_000_000n],
-]);
+assert.equal(stdout, "secure-random-fixed: ok\n");
+assert.equal(view().getFloat64(randomDataPtr - 8, true), 4);
+assert.deepEqual(Array.from(bytes().subarray(randomDataPtr, randomDataPtr + 4)), [0, 127, 128, 255]);
 
-const failingWasi = { ...wasi, clock_time_get: () => 5 };
+const failingWasi = { ...wasi, random_get: () => 5 };
 const failingInstance = await WebAssembly.instantiate(module, { wasi_snapshot_preview1: failingWasi });
 memory = failingInstance.exports.memory;
-assert.throws(() => failingInstance.exports._start(), WebAssembly.RuntimeError);
+assert.throws(() => failingInstance.exports._start(), /unexpected proc_exit\(1\)/);

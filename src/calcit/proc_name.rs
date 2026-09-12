@@ -116,6 +116,8 @@ pub enum CalcitProc {
   GetArgs,
   #[strum(serialize = "unix-time-ms")]
   UnixTimeMs,
+  #[strum(serialize = "&secure-random-bytes")]
+  NativeSecureRandomBytes,
   #[strum(serialize = "&get-calcit-backend")]
   NativeGetCalcitBackend,
   #[strum(serialize = "register-calcit-builtin-impls")]
@@ -1396,6 +1398,13 @@ impl CalcitProc {
       UnixTimeMs => Some(ProcTypeSignature {
         return_type: some_tag("number"),
         arg_types: vec![],
+      }),
+      NativeSecureRandomBytes => Some(ProcTypeSignature {
+        return_type: Arc::new(CalcitTypeAnnotation::TypeRef(
+          Arc::from("Result"),
+          Arc::new(vec![some_tag("buffer"), some_tag("string")]),
+        )),
+        arg_types: vec![some_tag("enum-def"), some_tag("number"), some_tag("string")],
       }),
 
       // === Time ===
