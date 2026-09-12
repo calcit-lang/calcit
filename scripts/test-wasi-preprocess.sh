@@ -33,6 +33,12 @@ if target_error=$("$NATIVE_WASM_BIN" "$COMMAND_FIXTURE" --target unknown 2>&1); 
 fi
 grep -Fq "E_WASM_TARGET" <<<"$target_error"
 
+if entry_error=$("$NATIVE_WASM_BIN" "$COMMAND_FIXTURE" --target wasi --init-fn app.main/needs-arg --emit-path "$COMMAND_OUT" 2>&1); then
+  echo "WASI target unexpectedly accepted a command entry with arguments" >&2
+  exit 1
+fi
+grep -Fq "E_WASM_TARGET" <<<"$entry_error"
+
 if capability_error=$("$NATIVE_WASM_BIN" calcit/test-wasm.cirru --target wasi --emit-path "$COMMAND_OUT" 2>&1); then
   echo "WASI target unexpectedly accepted a custom host import" >&2
   exit 1

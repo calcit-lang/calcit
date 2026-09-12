@@ -20,6 +20,18 @@
               :code $ quote
                 assert= 3 $ main!
               :tags $ #{} :core :unit :wasi :wasm
+        'needs-arg $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn needs-arg (x) x
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |returns-input)
+              :code $ quote
+                assert= 3 $ needs-arg 3
+              :tags $ #{} :core :unit :wasi :wasm
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require
