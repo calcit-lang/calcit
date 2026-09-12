@@ -6,9 +6,11 @@ use std::sync::RwLock;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::{
-  builtins::meta::type_of,
+  builtins::meta::{new_named_enum_value, type_of},
   calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, format_proc_examples_hint},
 };
+
+const MAX_SECURE_RANDOM_BYTES: usize = 65_536;
 
 #[derive(Clone, Debug, Copy)]
 pub enum CliRunningMode {
@@ -167,6 +169,46 @@ pub fn unix_time_ms(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     .map_err(|e| CalcitErr::use_str(CalcitErrKind::Effect, format!("unix-time-ms failed: {e}")))?
     .as_millis() as f64;
   Ok(Calcit::Number(millis))
+}
+
+/// Fill a Buffer from the operating system CSPRNG and preserve expected failures as Result values.
+pub fn secure_random_bytes(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  let [result_type @ Calcit::EnumDef(_), Calcit::Number(size), Calcit::Str(host_error)] = xs else {
+    return CalcitErr::err_str(
+      CalcitErrKind::Type,
+      "&secure-random-bytes expected the Result enum definition, a byte count, and a host error message",
+    );
+  };
+  let result = if !size.is_finite() || size.fract() != 0.0 || *size < 0.0 || *size > MAX_SECURE_RANDOM_BYTES as f64 {
+    new_named_enum_value(&[
+      result_type.to_owned(),
+      Calcit::tag("err"),
+      Calcit::new_str(format!(
+        "secure-random-bytes expected an integer byte count in 0..{MAX_SECURE_RANDOM_BYTES}, got: {size}"
+      )),
+    ])
+  } else {
+    #[cfg(not(target_arch = "wasm32"))]
+    let result = {
+      let mut bytes = vec![0; *size as usize];
+      match getrandom::fill(&mut bytes) {
+        Ok(()) => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("ok"), Calcit::Buffer(bytes)]),
+        Err(error) => new_named_enum_value(&[
+          result_type.to_owned(),
+          Calcit::tag("err"),
+          Calcit::new_str(format!("{host_error}: {error}")),
+        ]),
+      }
+    };
+    #[cfg(target_arch = "wasm32")]
+    let result = new_named_enum_value(&[
+      result_type.to_owned(),
+      Calcit::tag("err"),
+      Calcit::new_str(format!("{host_error}: native interpreter CSPRNG is unavailable on wasm32")),
+    ]);
+    result
+  }?;
+  Ok(result)
 }
 
 pub fn read_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {

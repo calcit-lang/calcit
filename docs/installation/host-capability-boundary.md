@@ -79,7 +79,8 @@ no-op or fabricated success value.
 | Process and signal lifecycle | `calcit.std` native module | Node adapter | unavailable | unavailable | typed process/signal APIs in `calcit.std` |
 | Repeating timer and timezone/date | `calcit.std` native module | Node adapter | browser adapter | unavailable | typed timer/date APIs in `calcit.std` |
 | Glob | focused native module | Node adapter | unavailable | unavailable | focused glob module; do not infer browser support |
-| Crypto | focused native module | Node adapter | browser crypto adapter | unavailable | focused crypto module or host adapter |
+| 安全随机字节 | 系统 CSPRNG | Web Crypto | Web Crypto | WASI Preview 1 `random_get`；core WASM unavailable | `secure-random-bytes`，返回 `Result<Buffer,String>` |
+| 其他密码学能力 | focused native module | Node adapter | browser crypto adapter | unavailable | focused crypto module or host adapter |
 | HTTP fetch | `calcit-fetch` native module | Node adapter | browser adapter | unavailable | typed task/response APIs in `calcit-fetch` or a host adapter |
 | HTTP and WebSocket servers | `calcit-http` / `calcit-wss` native modules | Node adapter | unavailable | unavailable | typed server/request/response capabilities in focused modules |
 | WebSocket client stream | focused native module | Node adapter | browser adapter | unavailable | typed stream capability in a focused module or host adapter |
@@ -100,6 +101,10 @@ The matrix records what exists today, not an entitlement for every backend.
   经过时间，其绝对起点没有跨宿主语义。WASI command 通过 Preview 1
   `clock_time_get` 实现这两个入口，并在宿主返回错误时直接失败，不伪造数值。
   更高层的日期、时区行为仍属于 `calcit.std`。
+- 安全随机数：`secure-random-bytes` 接收 `0..65536` 范围内的整数长度，返回
+  `Result<Buffer,String>`。Native 使用系统 CSPRNG，生成的 JavaScript 使用 Web
+  Crypto，WASI command 使用 Preview 1 `random_get`；core WASM 会明确拒绝该宿主能力。
+  随机数到领域值的编码、抽样和密码学协议仍放在 Calcit library 或专用模块中。
 - Native async/resource values: expose `FfiTask`, `FfiResponse`, and other
   nominal capabilities through methods. Keep raw `&ffi-*`, handles, status
   codes, and symbol strings at module/runtime boundaries.

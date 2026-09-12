@@ -17,6 +17,10 @@ readonly CLOCK_OUT="${CARGO_TARGET_DIR:-target}/wasi-clock-smoke"
 readonly CLOCK_STDOUT="${CLOCK_OUT}/stdout.txt"
 readonly FIXED_CLOCK_OUT="${CARGO_TARGET_DIR:-target}/wasi-fixed-clock-smoke"
 readonly CORE_CLOCK_OUT="${CARGO_TARGET_DIR:-target}/core-clock-reject"
+readonly RANDOM_OUT="${CARGO_TARGET_DIR:-target}/wasi-random-smoke"
+readonly RANDOM_STDOUT="${RANDOM_OUT}/stdout.txt"
+readonly FIXED_RANDOM_OUT="${CARGO_TARGET_DIR:-target}/wasi-fixed-random-smoke"
+readonly CORE_RANDOM_OUT="${CARGO_TARGET_DIR:-target}/core-random-reject"
 readonly CHECK_ONLY_OUT="${CARGO_TARGET_DIR:-target}/wasi-check-only-smoke"
 readonly NATIVE_WASM_BIN="${CARGO_TARGET_DIR:-target}/debug/cr-wasm"
 readonly CALCIT_BIN="${CARGO_TARGET_DIR:-target}/debug/calcit"
@@ -98,6 +102,19 @@ if clock_capability_error=$("$CALCIT_BIN" wasm "$COMMAND_FIXTURE" --init-fn app.
   exit 1
 fi
 grep -Fq "E_WASM_CAPABILITY" <<<"$clock_capability_error"
+
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/random-main! --emit-path "$RANDOM_OUT"
+wasmtime run "$RANDOM_OUT/program.wasm" >"$RANDOM_STDOUT"
+grep -Fxq "secure-random: ok" "$RANDOM_STDOUT"
+
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/random-fixed-main! --emit-path "$FIXED_RANDOM_OUT"
+node scripts/test-wasi-random-host.mjs "$FIXED_RANDOM_OUT/program.wasm"
+
+if random_capability_error=$("$CALCIT_BIN" wasm "$COMMAND_FIXTURE" --init-fn app.main/random-main! --emit-path "$CORE_RANDOM_OUT" 2>&1); then
+  echo "core WASM unexpectedly accepted secure random bytes" >&2
+  exit 1
+fi
+grep -Fq "E_WASM_CAPABILITY" <<<"$random_capability_error"
 
 if target_error=$("$NATIVE_WASM_BIN" "$COMMAND_FIXTURE" --target unknown 2>&1); then
   echo "cr-wasm unexpectedly accepted an unknown target" >&2

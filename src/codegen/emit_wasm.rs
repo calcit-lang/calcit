@@ -2361,6 +2361,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       expect_arity(0, args, "cpu-time")?;
       emit_wasi_clock_ms(ctx, 1, "cpu-time")
     }
+    CalcitProc::NativeSecureRandomBytes => emit_wasi_secure_random_bytes(ctx, args),
 
     // @atom deref: just emit the argument (which should already be a GlobalGet)
     CalcitProc::AtomDeref => {
@@ -2618,6 +2619,73 @@ fn emit_wasi_clock_ms(ctx: &mut WasmGenCtx, clock_id: i32, proc_name: &str) -> R
   ctx.emit(Instruction::F64ConvertI64U);
   ctx.emit(f64_const(1_000_000.0));
   ctx.emit(Instruction::F64Div);
+  Ok(())
+}
+
+/// Fill a managed Buffer through Preview 1 and wrap it in the caller's Result type.
+fn emit_wasi_secure_random_bytes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(3, args, "&secure-random-bytes")?;
+  if ctx.target != WasmTarget::Wasi {
+    return Err("E_WASM_CAPABILITY: secure-random-bytes is unavailable for the core WASM target".into());
+  }
+
+  let size = ctx.alloc_local();
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalSet(size));
+  let host_error = ctx.alloc_local();
+  emit_expr(ctx, &args[2])?;
+  ctx.emit(Instruction::LocalSet(host_error));
+
+  ctx.emit(Instruction::LocalGet(size));
+  ctx.emit(Instruction::LocalGet(size));
+  ctx.emit(Instruction::F64Trunc);
+  ctx.emit(Instruction::F64Ne);
+  ctx.emit(Instruction::LocalGet(size));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::LocalGet(size));
+  ctx.emit(f64_const(65_536.0));
+  ctx.emit(Instruction::F64Gt);
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_result_enum(ctx, "err", host_error)?;
+  ctx.emit(Instruction::Else);
+
+  let size_i32 = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(size));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(size_i32));
+  let allocation_size = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(size_i32));
+  ctx.emit(Instruction::I32Const(7));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Const(-8));
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(allocation_size));
+  let buffer_ptr = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc_dynamic(ctx, allocation_size, buffer_ptr, "buffer");
+  ctx.emit(Instruction::LocalGet(buffer_ptr));
+  ctx.emit(Instruction::LocalGet(size));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+
+  ctx.emit(Instruction::LocalGet(buffer_ptr));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(size_i32));
+  ctx.emit(Instruction::Call(resolve_host_import(ctx, "wasi_snapshot_preview1", "random_get")?));
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_result_enum(ctx, "err", host_error)?;
+  ctx.emit(Instruction::Else);
+  let buffer = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(buffer_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(buffer));
+  emit_result_enum(ctx, "ok", buffer)?;
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
   Ok(())
 }
 
@@ -3406,7 +3474,7 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
 /// Builtin type tags always registered in tag_index, so `type-of` can return them
 /// and heap objects can carry them in their header slot.
 const BUILTIN_TYPE_TAGS: &[&str] = &[
-  "buf-list", "list", "map", "set", "enum", "struct", "number", "bool", "nil", "tag", "fn", "string", "symbol",
+  "buf-list", "list", "map", "set", "enum", "struct", "number", "bool", "nil", "tag", "fn", "string", "symbol", "buffer",
 ];
 
 fn collect_all_tags_from(fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)]) -> HashMap<String, u32> {
@@ -3686,6 +3754,7 @@ mod tests {
         ("environ_get", vec![ValType::I32; 2], vec![ValType::I32]),
         ("proc_exit", vec![ValType::I32], vec![]),
         ("clock_time_get", vec![ValType::I32, ValType::I64, ValType::I32], vec![ValType::I32],),
+        ("random_get", vec![ValType::I32, ValType::I32], vec![ValType::I32]),
       ]
     );
     assert!(imports.iter().all(|import| import.module == "wasi_snapshot_preview1"));

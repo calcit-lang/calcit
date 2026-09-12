@@ -177,6 +177,30 @@ pub(super) fn emit_option_enum(ctx: &mut WasmGenCtx, payload_local: Option<u32>)
   Ok(())
 }
 
+/// Allocate a one-payload Result enum using the same layout as `%::`.
+pub(super) fn emit_result_enum(ctx: &mut WasmGenCtx, tag_name: &str, payload_local: u32) -> Result<(), String> {
+  let tag_id = *ctx
+    .tag_index
+    .get(tag_name)
+    .ok_or_else(|| format!("Result tag missing from WASM tag index: {tag_name}"))? as f64;
+  let ptr_local = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc(ctx, 24, ptr_local, "enum");
+
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(f64_const(1.0));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(f64_const(tag_id));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(Instruction::LocalGet(payload_local));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(16)));
+
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
+}
+
 // ===========================================================================
 // Shared data-structure helpers
 // ===========================================================================

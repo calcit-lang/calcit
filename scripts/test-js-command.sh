@@ -37,3 +37,9 @@ if node --input-type=module --eval \
   exit 1
 fi
 grep -Fq "integer exit code in 0..255" "$INVALID_EXIT_STDERR"
+
+"$CALCIT_BIN" --init-fn app.main/random-main! --emit-path "$OUTPUT_DIR" "$FIXTURE" js
+node --input-type=module --eval \
+  'import("./target/js-command-smoke/app.main.mjs").then((module) => module.random_main_$x_())' \
+  >"$STDOUT_FILE" 2>"$STDERR_FILE"
+grep -Fxq "secure-random: ok" "$STDOUT_FILE"
