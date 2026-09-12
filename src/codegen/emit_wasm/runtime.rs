@@ -2,6 +2,10 @@ use super::*;
 use std::sync::LazyLock;
 use wasm_encoder::{BlockType, Ieee64};
 
+const WASI_PREOPEN_FD_LIMIT: i32 = 64;
+const WASI_PREOPEN_NAME_LIMIT: i32 = 4096;
+const WASI_TEXT_FILE_LIMIT: i64 = 4 * 1024 * 1024;
+
 #[derive(Clone, Debug)]
 pub(super) struct HostImport {
   pub(super) module: String,
@@ -141,6 +145,52 @@ pub(super) fn host_imports_for_target(target: WasmTarget) -> Vec<HostImport> {
         params: vec![ValType::I32, ValType::I32],
         results: vec![ValType::I32],
       },
+      HostImport {
+        module: "wasi_snapshot_preview1".into(),
+        name: "fd_prestat_get".into(),
+        params: vec![ValType::I32, ValType::I32],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "wasi_snapshot_preview1".into(),
+        name: "fd_prestat_dir_name".into(),
+        params: vec![ValType::I32, ValType::I32, ValType::I32],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "wasi_snapshot_preview1".into(),
+        name: "path_open".into(),
+        params: vec![
+          ValType::I32,
+          ValType::I32,
+          ValType::I32,
+          ValType::I32,
+          ValType::I32,
+          ValType::I64,
+          ValType::I64,
+          ValType::I32,
+          ValType::I32,
+        ],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "wasi_snapshot_preview1".into(),
+        name: "fd_filestat_get".into(),
+        params: vec![ValType::I32, ValType::I32],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "wasi_snapshot_preview1".into(),
+        name: "fd_read".into(),
+        params: vec![ValType::I32; 4],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "wasi_snapshot_preview1".into(),
+        name: "fd_close".into(),
+        params: vec![ValType::I32],
+        results: vec![ValType::I32],
+      },
     ],
   }
 }
@@ -208,6 +258,760 @@ pub(super) fn build_wasi_write_all_fn(fd_write_idx: u32) -> CompiledFn {
     locals: vec![ValType::I32],
     instructions,
   }
+}
+
+/// Resolve a relative Calcit path against the most specific Preview 1 preopen
+/// and open it without exposing either the preopen or opened descriptor.
+/// Returns -1 for validation, authority, or host failures.
+pub(super) fn build_wasi_open_path_fn(fd_prestat_get_idx: u32, fd_prestat_dir_name_idx: u32, path_open_idx: u32) -> CompiledFn {
+  // params: path logical pointer, oflags, rights_base
+  let mut b = RuntimeFnBuilder::new(3);
+  let path_data = b.alloc_i32();
+  let path_len = b.alloc_i32();
+  let index = b.alloc_i32();
+  let segment_start = b.alloc_i32();
+  let byte = b.alloc_i32();
+  let scratch_size = b.alloc_i64();
+  let managed_size = b.alloc_i64();
+  let scratch = b.alloc_i32();
+  let fd = b.alloc_i32();
+  let name_len = b.alloc_i32();
+  let name_start = b.alloc_i32();
+  let normalized_len = b.alloc_i32();
+  let compare_index = b.alloc_i32();
+  let matched = b.alloc_i32();
+  let best_prefix = b.alloc_i32();
+  let best_fd = b.alloc_i32();
+  let candidate_rel_ptr = b.alloc_i32();
+  let candidate_rel_len = b.alloc_i32();
+  let best_rel_ptr = b.alloc_i32();
+  let best_rel_len = b.alloc_i32();
+
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(path_data));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalTee(path_len));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  // Absolute paths are never reinterpreted relative to a preopen.
+  b.emit(Instruction::LocalGet(path_data));
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Const(b'/' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+
+  // Reject NUL and every complete `..` component before consulting authority.
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(segment_start));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalGet(path_len));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalGet(path_len));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(b'/' as i32));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(path_data));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalTee(byte));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(byte));
+  b.emit(Instruction::I32Const(b'/' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalGet(segment_start));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32Const(2));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(path_data));
+  b.emit(Instruction::LocalGet(segment_start));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Const(b'.' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(path_data));
+  b.emit(Instruction::LocalGet(segment_start));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(1)));
+  b.emit(Instruction::I32Const(b'.' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(segment_start));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::I64Const(WASI_PREOPEN_NAME_LIMIT as i64));
+  b.emit(Instruction::LocalSet(scratch_size));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::LocalSet(managed_size));
+  rt_emit_reserve_scratch(&mut b, scratch_size, managed_size, scratch);
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::LocalSet(best_prefix));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::LocalSet(best_fd));
+  b.emit(Instruction::I32Const(3));
+  b.emit(Instruction::LocalSet(fd));
+
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::I32Const(WASI_PREOPEN_FD_LIMIT));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Call(fd_prestat_get_idx));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalTee(name_len));
+  b.emit(Instruction::I32Const(WASI_PREOPEN_NAME_LIMIT));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::LocalGet(scratch));
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::Call(fd_prestat_dir_name_idx));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(name_start));
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(scratch));
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Const(b'/' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(name_start));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::LocalGet(name_start));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(normalized_len));
+
+  // A guest preopen named `.` grants relative paths. Named roots require an
+  // exact first-component match and the longest matching root wins.
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(matched));
+  b.emit(Instruction::LocalGet(normalized_len));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(scratch));
+  b.emit(Instruction::LocalGet(name_start));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Const(b'.' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(matched));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(normalized_len));
+  b.emit(Instruction::LocalGet(path_data));
+  b.emit(Instruction::LocalSet(candidate_rel_ptr));
+  b.emit(Instruction::LocalGet(path_len));
+  b.emit(Instruction::LocalSet(candidate_rel_len));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(matched));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::LocalGet(normalized_len));
+  b.emit(Instruction::LocalGet(path_len));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(path_data));
+  b.emit(Instruction::LocalGet(normalized_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Const(b'/' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(matched));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(compare_index));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(compare_index));
+  b.emit(Instruction::LocalGet(normalized_len));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(path_data));
+  b.emit(Instruction::LocalGet(compare_index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::LocalGet(scratch));
+  b.emit(Instruction::LocalGet(name_start));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(compare_index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(matched));
+  b.emit(Instruction::Br(2));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(compare_index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(compare_index));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(path_data));
+  b.emit(Instruction::LocalGet(normalized_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(candidate_rel_ptr));
+  b.emit(Instruction::LocalGet(path_len));
+  b.emit(Instruction::LocalGet(normalized_len));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(candidate_rel_len));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(matched));
+  b.emit(Instruction::LocalGet(normalized_len));
+  b.emit(Instruction::LocalGet(best_prefix));
+  b.emit(Instruction::I32GtS);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(normalized_len));
+  b.emit(Instruction::LocalSet(best_prefix));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::LocalSet(best_fd));
+  b.emit(Instruction::LocalGet(candidate_rel_ptr));
+  b.emit(Instruction::LocalSet(best_rel_ptr));
+  b.emit(Instruction::LocalGet(candidate_rel_len));
+  b.emit(Instruction::LocalSet(best_rel_len));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(fd));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(best_fd));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(best_fd));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalGet(best_rel_ptr));
+  b.emit(Instruction::LocalGet(best_rel_len));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::LocalGet(2));
+  b.emit(Instruction::LocalGet(2));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Call(path_open_idx));
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::End);
+  b.finish(vec![ValType::I32, ValType::I32, ValType::I64], vec![ValType::I32])
+}
+
+/// Validate an RFC 3629 UTF-8 byte sequence without constructing a Calcit value.
+pub(super) fn build_utf8_valid_fn() -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(2);
+  let index = b.alloc_i32();
+  let first = b.alloc_i32();
+  let width = b.alloc_i32();
+  let second_min = b.alloc_i32();
+  let second_max = b.alloc_i32();
+  let continuation = b.alloc_i32();
+
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::LocalTee(first));
+  b.emit(Instruction::I32Const(0x80));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Br(1));
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(width));
+  b.emit(Instruction::I32Const(0x80));
+  b.emit(Instruction::LocalSet(second_min));
+  b.emit(Instruction::I32Const(0xbf));
+  b.emit(Instruction::LocalSet(second_max));
+  // Two-byte sequences start at C2, excluding overlong C0/C1 encodings.
+  b.emit(Instruction::LocalGet(first));
+  b.emit(Instruction::I32Const(0xc2));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::LocalGet(first));
+  b.emit(Instruction::I32Const(0xdf));
+  b.emit(Instruction::I32LeU);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(2));
+  b.emit(Instruction::LocalSet(width));
+  b.emit(Instruction::End);
+  // Three-byte sequences constrain E0 (overlong) and ED (surrogates).
+  b.emit(Instruction::LocalGet(first));
+  b.emit(Instruction::I32Const(0xe0));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::LocalGet(first));
+  b.emit(Instruction::I32Const(0xef));
+  b.emit(Instruction::I32LeU);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(3));
+  b.emit(Instruction::LocalSet(width));
+  b.emit(Instruction::LocalGet(first));
+  b.emit(Instruction::I32Const(0xe0));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0xa0));
+  b.emit(Instruction::LocalSet(second_min));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(first));
+  b.emit(Instruction::I32Const(0xed));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0x9f));
+  b.emit(Instruction::LocalSet(second_max));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  // Four-byte sequences constrain Unicode to U+10FFFF.
+  b.emit(Instruction::LocalGet(first));
+  b.emit(Instruction::I32Const(0xf0));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::LocalGet(first));
+  b.emit(Instruction::I32Const(0xf4));
+  b.emit(Instruction::I32LeU);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::LocalSet(width));
+  b.emit(Instruction::LocalGet(first));
+  b.emit(Instruction::I32Const(0xf0));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0x90));
+  b.emit(Instruction::LocalSet(second_min));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(first));
+  b.emit(Instruction::I32Const(0xf4));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0x8f));
+  b.emit(Instruction::LocalSet(second_max));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(width));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalGet(width));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(1)));
+  b.emit(Instruction::LocalTee(continuation));
+  b.emit(Instruction::LocalGet(second_min));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::LocalGet(continuation));
+  b.emit(Instruction::LocalGet(second_max));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(2));
+  b.emit(Instruction::LocalSet(continuation));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(continuation));
+  b.emit(Instruction::LocalGet(width));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(continuation));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Const(0xc0));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::I32Const(0x80));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(continuation));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(continuation));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalGet(width));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(1));
+  b.finish(vec![ValType::I32, ValType::I32], vec![ValType::I32])
+}
+
+/// Read one bounded regular file through a private Preview 1 descriptor.
+/// Returns a Calcit String pointer or zero on any validation/host failure.
+pub(super) fn build_wasi_read_text_fn(
+  open_path_idx: u32,
+  fd_filestat_get_idx: u32,
+  fd_read_idx: u32,
+  fd_close_idx: u32,
+  utf8_valid_idx: u32,
+  string_tag: i32,
+) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(1);
+  let fd = b.alloc_i32();
+  let file_size_i64 = b.alloc_i64();
+  let file_size = b.alloc_i32();
+  let padded = b.alloc_i32();
+  let payload = b.alloc_i32();
+  let managed_size = b.alloc_i64();
+  let zero_size = b.alloc_i64();
+  let unused_scratch = b.alloc_i32();
+  let filestat_size = b.alloc_i64();
+  let filestat = b.alloc_i32();
+  let string = b.alloc_i32();
+  let data = b.alloc_i32();
+  let offset = b.alloc_i32();
+  let read_now = b.alloc_i32();
+
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I64Const((1_i64 << 1) | (1_i64 << 21)));
+  b.emit(Instruction::Call(open_path_idx));
+  b.emit(Instruction::LocalTee(fd));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I64Const(64));
+  b.emit(Instruction::LocalSet(filestat_size));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::LocalSet(zero_size));
+  rt_emit_reserve_scratch(&mut b, filestat_size, zero_size, filestat);
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::LocalGet(filestat));
+  b.emit(Instruction::Call(fd_filestat_get_idx));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::Call(fd_close_idx));
+  b.emit(Instruction::Drop);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(filestat));
+  b.emit(Instruction::I32Const(32));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I64Load(mem_arg_f64(0)));
+  b.emit(Instruction::LocalTee(file_size_i64));
+  b.emit(Instruction::I64Const(WASI_TEXT_FILE_LIMIT));
+  b.emit(Instruction::I64GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::Call(fd_close_idx));
+  b.emit(Instruction::Drop);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(file_size_i64));
+  b.emit(Instruction::I32WrapI64);
+  b.emit(Instruction::LocalSet(file_size));
+  b.emit(Instruction::LocalGet(file_size));
+  b.emit(Instruction::I32Const(7));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(-8));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalSet(padded));
+  b.emit(Instruction::LocalGet(padded));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(payload));
+  b.emit(Instruction::LocalGet(payload));
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Const(8));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalSet(managed_size));
+  rt_emit_reserve_scratch(&mut b, zero_size, managed_size, unused_scratch);
+  rt_emit_alloc_dynamic(&mut b, payload, string, string_tag);
+  b.emit(Instruction::LocalGet(string));
+  b.emit(Instruction::LocalGet(file_size));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(string));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(data));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(offset));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::LocalGet(file_size));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalGet(data));
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::LocalGet(file_size));
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::Call(fd_read_idx));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::Call(fd_close_idx));
+  b.emit(Instruction::Drop);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalTee(read_now));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::Call(fd_close_idx));
+  b.emit(Instruction::Drop);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(read_now));
+  b.emit(Instruction::LocalGet(file_size));
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::Call(fd_close_idx));
+  b.emit(Instruction::Drop);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::LocalGet(read_now));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(offset));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::Call(fd_close_idx));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(data));
+  b.emit(Instruction::LocalGet(file_size));
+  b.emit(Instruction::Call(utf8_valid_idx));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(string));
+  b.finish(vec![ValType::I32], vec![ValType::I32])
+}
+
+/// Write one complete UTF-8 string through a private Preview 1 descriptor.
+/// Returns one on success and zero on validation, partial-write, or host failure.
+pub(super) fn build_wasi_write_text_fn(open_path_idx: u32, fd_write_idx: u32, fd_close_idx: u32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(2);
+  let fd = b.alloc_i32();
+  let data = b.alloc_i32();
+  let length = b.alloc_i32();
+  let offset = b.alloc_i32();
+  let written = b.alloc_i32();
+
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(length));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(data));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(9)); // CREAT | TRUNC
+  b.emit(Instruction::I64Const(1_i64 << 6)); // FD_WRITE
+  b.emit(Instruction::Call(open_path_idx));
+  b.emit(Instruction::LocalTee(fd));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(offset));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::LocalGet(length));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalGet(data));
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::LocalGet(length));
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::Call(fd_write_idx));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::Call(fd_close_idx));
+  b.emit(Instruction::Drop);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalTee(written));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::Call(fd_close_idx));
+  b.emit(Instruction::Drop);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(written));
+  b.emit(Instruction::LocalGet(length));
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::Call(fd_close_idx));
+  b.emit(Instruction::Drop);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(offset));
+  b.emit(Instruction::LocalGet(written));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(offset));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::Call(fd_close_idx));
+  b.emit(Instruction::I32Eqz);
+  b.finish(vec![ValType::I32, ValType::I32], vec![ValType::I32])
 }
 
 /// Reserve a temporary region at the top of linear memory without advancing

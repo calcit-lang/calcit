@@ -62,6 +62,66 @@
             {} (:return 'Unit)
               :args $ []
           :tags $ #{} :control :wasi
+        'filesystem-absolute-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn filesystem-absolute-main! () $ if (filesystem-read-error? |/workspace/input.txt) (println "|WASI-filesystem-absolute: ok") (quit! 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+        'filesystem-denied-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn filesystem-denied-main! () $ if (filesystem-read-error? |workspace/input.txt) (println "|WASI-filesystem-denied: ok") (quit! 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+        'filesystem-invalid-utf8-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn filesystem-invalid-utf8-main! () $ if (filesystem-read-error? |workspace/invalid.txt) (println "|WASI-filesystem-invalid-utf8: ok") (quit! 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+        'filesystem-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn filesystem-main! () $ let
+                input $ .read-text (fs:path |workspace/input.txt)
+                output $ .write-text (fs:path |workspace/output.txt) "|WASI-written: 好"
+                input-ok? $ match input
+                  (:ok content) (= content "|WASI-file: 你好")
+                  (:err _) false
+                output-ok? $ match output
+                  (:ok _) true
+                  (:err _) false
+              if (and input-ok? output-ok?) (println "|WASI-filesystem: ok") (quit! 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+        'filesystem-read-error? $ %{} 'CodeEntry (:doc "|验证 FsPath 文本读取失败仍以 Result :err 表达，不把 host error 泄漏为异常。")
+          :code $ quote
+            defn filesystem-read-error? (path)
+              match
+                .read-text $ fs:path path
+                (:ok _) false
+                (:err _) true
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] 'String
+          :tests $ []
+            %{} 'TestEntry (:name |missing-path)
+              :code $ quote
+                assert= true $ filesystem-read-error? |/calcit-wasi-filesystem-does-not-exist/input.txt
+              :tags $ #{} :file :unit :wasi
+        'filesystem-traversal-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn filesystem-traversal-main! () $ if (filesystem-read-error? |workspace/../secret.txt) (println "|WASI-filesystem-traversal: ok") (quit! 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (println |WASI-stdout: "|你好") (echo |WASI-echo) (eprintln |WASI-stderr: 42)

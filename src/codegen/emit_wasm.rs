@@ -45,8 +45,9 @@ mod structs;
 
 use methods::{emit_call_args, emit_method_invoke};
 use runtime::{
-  HostImport, ModuleFunctionLayout, build_runtime_fns, build_wasi_get_args_fn, build_wasi_get_env_fn, build_wasi_write_all_fn,
-  build_wasm_module, core_host_import, host_imports_for_target,
+  HostImport, ModuleFunctionLayout, build_runtime_fns, build_utf8_valid_fn, build_wasi_get_args_fn, build_wasi_get_env_fn,
+  build_wasi_open_path_fn, build_wasi_read_text_fn, build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module,
+  core_host_import, host_imports_for_target,
 };
 use structs::{
   emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_contains, emit_struct_count,
@@ -256,6 +257,33 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
         .get(&("wasi_snapshot_preview1".into(), name.into()))
         .unwrap_or_else(|| panic!("WASI {name} import must be registered"))
     };
+    let utf8_valid_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_utf8_valid".into(), utf8_valid_idx);
+    compiled_fns.push(build_utf8_valid_fn());
+    let open_path_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_open_path".into(), open_path_idx);
+    compiled_fns.push(build_wasi_open_path_fn(
+      wasi_import("fd_prestat_get"),
+      wasi_import("fd_prestat_dir_name"),
+      wasi_import("path_open"),
+    ));
+    let read_text_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_read_text".into(), read_text_idx);
+    compiled_fns.push(build_wasi_read_text_fn(
+      open_path_idx,
+      wasi_import("fd_filestat_get"),
+      wasi_import("fd_read"),
+      wasi_import("fd_close"),
+      utf8_valid_idx,
+      str_tag_id,
+    ));
+    let write_text_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_write_text".into(), write_text_idx);
+    compiled_fns.push(build_wasi_write_text_fn(
+      open_path_idx,
+      wasi_import("fd_write"),
+      wasi_import("fd_close"),
+    ));
     let get_args_idx = num_imports + compiled_fns.len() as u32;
     runtime_fn_index.insert("__rt_wasi_get_args".into(), get_args_idx);
     compiled_fns.push(build_wasi_get_args_fn(
@@ -2362,6 +2390,8 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       emit_wasi_clock_ms(ctx, 1, "cpu-time")
     }
     CalcitProc::NativeSecureRandomBytes => emit_wasi_secure_random_bytes(ctx, args),
+    CalcitProc::NativeFsReadText => emit_wasi_fs_read_text(ctx, args),
+    CalcitProc::NativeFsWriteText => emit_wasi_fs_write_text(ctx, args),
 
     // @atom deref: just emit the argument (which should already be a GlobalGet)
     CalcitProc::AtomDeref => {
@@ -2685,6 +2715,58 @@ fn emit_wasi_secure_random_bytes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   ctx.emit(Instruction::LocalSet(buffer));
   emit_result_enum(ctx, "ok", buffer)?;
   ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
+/// Lower the typed filesystem read boundary through private Preview 1 helpers.
+fn emit_wasi_fs_read_text(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(3, args, "&fs-read-text")?;
+  if ctx.target != WasmTarget::Wasi {
+    return Err("E_WASM_CAPABILITY: filesystem reads are unavailable for the core WASM target".into());
+  }
+  let path = emit_ptr_to_i32(ctx, &args[1])?;
+  let host_error = ctx.alloc_local();
+  emit_expr(ctx, &args[2])?;
+  ctx.emit(Instruction::LocalSet(host_error));
+  ctx.emit(Instruction::LocalGet(path));
+  ctx.call_rt("__rt_wasi_read_text");
+  let content_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalTee(content_ptr));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_result_enum(ctx, "err", host_error)?;
+  ctx.emit(Instruction::Else);
+  let content = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(content_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(content));
+  emit_result_enum(ctx, "ok", content)?;
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
+/// Lower the typed filesystem write boundary through private Preview 1 helpers.
+fn emit_wasi_fs_write_text(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(4, args, "&fs-write-text")?;
+  if ctx.target != WasmTarget::Wasi {
+    return Err("E_WASM_CAPABILITY: filesystem writes are unavailable for the core WASM target".into());
+  }
+  let path = emit_ptr_to_i32(ctx, &args[1])?;
+  let content = emit_ptr_to_i32(ctx, &args[2])?;
+  let host_error = ctx.alloc_local();
+  emit_expr(ctx, &args[3])?;
+  ctx.emit(Instruction::LocalSet(host_error));
+  ctx.emit(Instruction::LocalGet(path));
+  ctx.emit(Instruction::LocalGet(content));
+  ctx.call_rt("__rt_wasi_write_text");
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  let unit = ctx.alloc_local();
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::LocalSet(unit));
+  emit_result_enum(ctx, "ok", unit)?;
+  ctx.emit(Instruction::Else);
+  emit_result_enum(ctx, "err", host_error)?;
   ctx.emit(Instruction::End);
   Ok(())
 }
@@ -3755,6 +3837,26 @@ mod tests {
         ("proc_exit", vec![ValType::I32], vec![]),
         ("clock_time_get", vec![ValType::I32, ValType::I64, ValType::I32], vec![ValType::I32],),
         ("random_get", vec![ValType::I32, ValType::I32], vec![ValType::I32]),
+        ("fd_prestat_get", vec![ValType::I32; 2], vec![ValType::I32]),
+        ("fd_prestat_dir_name", vec![ValType::I32; 3], vec![ValType::I32]),
+        (
+          "path_open",
+          vec![
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I32,
+            ValType::I64,
+            ValType::I64,
+            ValType::I32,
+            ValType::I32,
+          ],
+          vec![ValType::I32],
+        ),
+        ("fd_filestat_get", vec![ValType::I32; 2], vec![ValType::I32]),
+        ("fd_read", vec![ValType::I32; 4], vec![ValType::I32]),
+        ("fd_close", vec![ValType::I32], vec![ValType::I32]),
       ]
     );
     assert!(imports.iter().all(|import| import.module == "wasi_snapshot_preview1"));

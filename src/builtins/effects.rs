@@ -229,6 +229,25 @@ pub fn read_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+/// Read UTF-8 text and preserve filesystem failures as nominal Result values.
+pub fn fs_read_text(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  let [result_type @ Calcit::EnumDef(_), Calcit::Str(path), Calcit::Str(host_error)] = xs else {
+    return CalcitErr::err_str(
+      CalcitErrKind::Type,
+      "&fs-read-text expected the Result enum definition, a path string, and a host error prefix",
+    );
+  };
+  let result = match fs::read_to_string(&**path) {
+    Ok(content) => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("ok"), Calcit::new_str(content)]),
+    Err(error) => new_named_enum_value(&[
+      result_type.to_owned(),
+      Calcit::tag("err"),
+      Calcit::new_str(format!("{host_error}: {error}")),
+    ]),
+  }?;
+  Ok(result)
+}
+
 pub fn read_dir(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() > 2 {
     return CalcitErr::err_str(
@@ -303,6 +322,31 @@ pub fn write_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       CalcitErr::err_str_with_hint(CalcitErrKind::Arity, msg, hint)
     }
   }
+}
+
+/// Write UTF-8 text and preserve filesystem failures as nominal Result values.
+pub fn fs_write_text(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  let [
+    result_type @ Calcit::EnumDef(_),
+    Calcit::Str(path),
+    Calcit::Str(content),
+    Calcit::Str(host_error),
+  ] = xs
+  else {
+    return CalcitErr::err_str(
+      CalcitErrKind::Type,
+      "&fs-write-text expected the Result enum definition, path and content strings, and a host error prefix",
+    );
+  };
+  let result = match fs::write(&**path, &**content) {
+    Ok(()) => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("ok"), Calcit::Unit]),
+    Err(error) => new_named_enum_value(&[
+      result_type.to_owned(),
+      Calcit::tag("err"),
+      Calcit::new_str(format!("{host_error}: {error}")),
+    ]),
+  }?;
+  Ok(result)
 }
 
 #[cfg(test)]

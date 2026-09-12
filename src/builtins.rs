@@ -418,8 +418,10 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeGetCalcitBackend => effects::call_get_calcit_backend(args),
     RegisterCalcitBuiltinImpls => meta::register_calcit_builtin_impls(args),
     ReadFile => effects::read_file(args),
+    NativeFsReadText => effects::fs_read_text(args),
     ReadDir => effects::read_dir(args),
     WriteFile => effects::write_file(args),
+    NativeFsWriteText => effects::fs_write_text(args),
     // external data format
     ParseCirru => meta::parse_cirru(args),
     ParseCirruList => meta::parse_cirru_list(args),

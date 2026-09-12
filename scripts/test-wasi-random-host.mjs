@@ -49,6 +49,24 @@ const wasi = {
     bytes().set([0, 127, 128, 255], ptr);
     return 0;
   },
+  fd_prestat_get() {
+    throw new Error("random fixture unexpectedly requested a filesystem preopen");
+  },
+  fd_prestat_dir_name() {
+    throw new Error("random fixture unexpectedly requested a preopen name");
+  },
+  path_open() {
+    throw new Error("random fixture unexpectedly opened a filesystem path");
+  },
+  fd_filestat_get() {
+    throw new Error("random fixture unexpectedly requested file metadata");
+  },
+  fd_read() {
+    throw new Error("random fixture unexpectedly read a file");
+  },
+  fd_close() {
+    throw new Error("random fixture unexpectedly closed a file");
+  },
 };
 
 const module = await WebAssembly.compile(await readFile(wasmPath));
