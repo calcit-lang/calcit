@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # Progressive WASM test suite: compile each eligible test file and run main!().
 # Usage: bash scripts/test-wasm-suite.sh
-# Set CR_WASM_BIN to override the cr-wasm binary path.
+# Set CALCIT_BIN to override the calcit binary path.
 set -euo pipefail
 
-if [[ -n "${CR_WASM_BIN:-}" ]]; then
-  BIN="$CR_WASM_BIN"
-elif [[ -x ./target/release/cr-wasm ]]; then
-  BIN="./target/release/cr-wasm"
-elif [[ -x ./target/debug/cr-wasm ]]; then
-  BIN="./target/debug/cr-wasm"
+if [[ -n "${CALCIT_BIN:-}" ]]; then
+  BIN="$CALCIT_BIN"
+elif [[ -x ./target/release/calcit ]]; then
+  BIN="./target/release/calcit"
+elif [[ -x ./target/debug/calcit ]]; then
+  BIN="./target/debug/calcit"
 else
   # Fall back to cargo build
-  bash scripts/cargo-with-sdk.sh build --bin cr-wasm --release 2>&1
-  BIN="./target/release/cr-wasm"
+  bash scripts/cargo-with-sdk.sh build --bin calcit --release 2>&1
+  BIN="./target/release/calcit"
 fi
 
 # Test files to try — pure-computation, no host FFI dependency
@@ -39,7 +39,7 @@ for f in "${TEST_FILES[@]}"; do
   label=$(basename "$f" .cirru)
 
   # Compile to WASM and distinguish explicit unsupported targets from harness failures.
-  if compile_out=$("$BIN" "$f" 2>&1); then
+  if compile_out=$("$BIN" --compat-types wasm "$f" 2>&1); then
     compile_exit=0
   else
     compile_exit=$?

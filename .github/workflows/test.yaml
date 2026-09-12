@@ -91,8 +91,8 @@ jobs:
 
       - name: "verify WASM exports and FFI"
         run: >
-          cargo build --bin cr-wasm
-          && CR_WASM_BIN="./target/debug/cr-wasm" bash scripts/test-wasm.sh
+          cargo build --bin calcit
+          && CALCIT_BIN="./target/debug/calcit" bash scripts/test-wasm.sh
 
       - uses: giraffate/clippy-action@v1
         with:

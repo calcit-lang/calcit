@@ -103,6 +103,8 @@ calcit .calcit/snippets/demo.cirru query config
 
 `calcit [snapshot-file]` 默认选择 `entries.default` 并按它的 `:mode`（`:native` / `:js`）单次运行；`--entry <name>` 选择其他入口。显式 `js` 保留为覆盖方式。只有明确需要监听时才加 `-w` / `--watch`。`calcit ir` 只用于编译器/生成结果调试，不作为日常构建或完成证明。这里的 snapshot 文件不要与 `--entry <named-entry>` 混淆。
 
+WASM 使用目标明确的公开 preview 子命令：`calcit wasm <snapshot>` 生成 browser/embedded core module，`calcit wasi <snapshot>` 生成 WASI command module。Agent 应先读取对应 `--help`，再用 `--check-only` 获取稳定的 target/capability 错误；不要调用内部 `cr-wasm` 或从 binary 名称猜测宿主契约。
+
 ## 1. 30 秒项目盘点
 
 如果用户已经给出 `namespace/definition`，可直接从 `query context` 开始；否则依次执行：

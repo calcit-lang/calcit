@@ -728,7 +728,7 @@ let
 
 建议在升级验证中显式覆盖两类负向用例：只有 `TraitA/.method` 时，`assert-traits value TraitB` 和 `&trait-call TraitB :method value` 都必须失败。
 
-WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在预处理阶段消除的 trait 元数据仍可参与编译；残留的 `&impl::new`、`impl-traits` 或 `&assert-traits` 会明确报出“不支持 runtime trait table”，而不是静默返回 `nil`。业务项目以 JS 为主，并用 native 执行宏和预处理。
+WASM 现在通过 `calcit wasm` 与 `calcit wasi` 提供公开 preview 命令，但仍不承诺 trait runtime table。能在预处理阶段消除的 trait 元数据仍可参与编译；残留的 `&impl::new`、`impl-traits` 或 `&assert-traits` 会明确报出“不支持 runtime trait table”，而不是静默返回 `nil`。现有 JS 生态可以继续以 JS 为主；希望迁移到 WASM 的项目应先用 `--check-only` 获取明确的 unsupported 边界，再逐步收窄宿主能力。
 
 ---
 

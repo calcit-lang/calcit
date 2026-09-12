@@ -462,6 +462,17 @@ calcit --disable-stack
 
 `calcit ir` emits an internal representation for compiler debugging. Ordinary application development and CI do not need it; inspect `calcit ir --help` only when debugging that layer.
 
+## WASM preview 命令
+
+`calcit wasm` 生成面向 browser/embedded host 的 core module；`calcit wasi` 生成可由 Wasmtime 等 WASI host 启动的 command module。两个命令把 Snapshot 路径放在子命令之后，并分别通过 help 暴露输出契约：
+
+```bash
+calcit wasm calcit.cirru --emit-path js-out
+calcit wasi calcit.cirru --emit-path target/wasi-command
+```
+
+两个命令都支持 `--entry`、`--init-fn`、`--reload-fn` 和 `--check-only`。`--check-only` 会执行与实际生成相同的 target validation，但不会写出 `program.wasm`。WASI command 的 init definition 必须为零参数；不支持的宿主能力以稳定的 `E_WASM_CAPABILITY` 失败，不会退回 core module 的 JavaScript imports。
+
 ## Markdown code checking
 
 Use `docs check-md` to validate fenced code blocks in markdown files:

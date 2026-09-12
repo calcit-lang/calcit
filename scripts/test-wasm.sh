@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Verify WASM codegen: generate binary .wasm and validate with Node.js.
 # Usage: bash scripts/test-wasm.sh
-# Set CR_WASM_BIN to override the cr-wasm binary path (default: release then debug build).
+# Set CALCIT_BIN to override the calcit binary path (default: release then debug build).
 set -euo pipefail
 
-if [[ -n "${CR_WASM_BIN:-}" ]]; then
-  BIN="$CR_WASM_BIN"
-elif [[ -x ./target/release/cr-wasm ]]; then
-  BIN="./target/release/cr-wasm"
-elif [[ -x ./target/debug/cr-wasm ]]; then
-  BIN="./target/debug/cr-wasm"
+if [[ -n "${CALCIT_BIN:-}" ]]; then
+  BIN="$CALCIT_BIN"
+elif [[ -x ./target/release/calcit ]]; then
+  BIN="./target/release/calcit"
+elif [[ -x ./target/debug/calcit ]]; then
+  BIN="./target/debug/calcit"
 else
   BIN=""
 fi
@@ -21,9 +21,9 @@ run_codegen() {
   local entry="$1"
   shift
   if [[ -n "$BIN" ]]; then
-    "$BIN" "$entry" "$@"
+    "$BIN" --compat-types wasm "$entry" "$@"
   else
-    bash scripts/cargo-with-sdk.sh run --bin cr-wasm -- "$entry" "$@"
+    bash scripts/cargo-with-sdk.sh run --bin calcit -- --compat-types wasm "$entry" "$@"
   fi
 }
 
