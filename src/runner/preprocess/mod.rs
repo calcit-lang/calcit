@@ -4159,7 +4159,7 @@ fn check_struct_field_access(
     {
       let field_text = args.get(1).map(Calcit::lisp_str).unwrap_or_else(|| "<field>".to_owned());
       let message = format!(
-        "[Warn] `get` is the Option-returning lookup API for maps and indexed collections, not Struct fields, at {file_ns}. Use `({field_text} value)` so the checker can return the field's declared type and reject unknown fields"
+        "[Warn] `get` on a statically known Struct would discard required-field evidence at {file_ns}. Use `({field_text} value)` so the checker can return the field's declared type and reject unknown fields; reserve `get` for receivers explicitly typed as Dynamic when optional runtime lookup is intended"
       );
       gen_check_warning_code_at(
         message,
@@ -14126,8 +14126,9 @@ mod tests {
     assert_eq!(warnings.len(), 1);
     let message = warnings[0].message();
     assert_eq!(warnings[0].code(), Some("W_STRUCT_FIELD_OPTIONAL_LOOKUP"));
-    assert!(message.contains("`get` is the Option-returning lookup API"));
+    assert!(message.contains("`get` on a statically known Struct would discard required-field evidence"));
     assert!(message.contains("Use `(:missing value)`"));
+    assert!(message.contains("receivers explicitly typed as Dynamic"));
   }
 
   #[test]

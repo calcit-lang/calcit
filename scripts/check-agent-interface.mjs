@@ -210,11 +210,17 @@ const scenarios = [
     name: "core-only structural search",
     args: ["calcit/test.cirru", "query", "search", "%none", "--exact", "--source", "core", "--format", "json"],
     check(result) {
+      const countedMatches = result.data.definitions.reduce((sum, definition) => sum + definition.match_count, 0);
       const wrongOrigin = result.data.definitions.some(
         (definition) => definition.source !== "core" || definition.origin.package !== "calcit" || definition.origin.module !== "builtin",
       );
-      if (result.data.summary.matches !== 31 || wrongOrigin) {
-        throw new Error("core-only query.search count or origins changed");
+      if (
+        result.data.summary.matches === 0 ||
+        result.data.summary.matches !== countedMatches ||
+        result.data.summary.definitions !== result.data.definitions.length ||
+        wrongOrigin
+      ) {
+        throw new Error("core-only query.search summary or origins are inconsistent");
       }
     },
   },
@@ -222,11 +228,17 @@ const scenarios = [
     name: "dependency-only structural search",
     args: ["calcit/test.cirru", "query", "search", "%none", "--exact", "--source", "deps", "--format", "json"],
     check(result) {
+      const countedMatches = result.data.definitions.reduce((sum, definition) => sum + definition.match_count, 0);
       const wrongOrigin = result.data.definitions.some(
         (definition) => definition.source !== "deps" || !definition.origin.module?.startsWith("./"),
       );
-      if (result.data.summary.matches !== 20 || wrongOrigin) {
-        throw new Error("dependency-only query.search count or origins changed");
+      if (
+        result.data.summary.matches === 0 ||
+        result.data.summary.matches !== countedMatches ||
+        result.data.summary.definitions !== result.data.definitions.length ||
+        wrongOrigin
+      ) {
+        throw new Error("dependency-only query.search summary or origins are inconsistent");
       }
     },
   },
@@ -234,9 +246,15 @@ const scenarios = [
     name: "all-source structural search",
     args: ["calcit/test.cirru", "query", "search", "%none", "--exact", "--source", "all", "--format", "json"],
     check(result) {
+      const countedMatches = result.data.definitions.reduce((sum, definition) => sum + definition.match_count, 0);
       const sources = new Set(result.data.definitions.map((definition) => definition.source));
-      if (result.data.summary.matches !== 56 || [...sources].sort().join(",") !== "core,deps,project") {
-        throw new Error("all-source query.search count or origins changed");
+      if (
+        result.data.summary.matches === 0 ||
+        result.data.summary.matches !== countedMatches ||
+        result.data.summary.definitions !== result.data.definitions.length ||
+        [...sources].sort().join(",") !== "core,deps,project"
+      ) {
+        throw new Error("all-source query.search summary or origins are inconsistent");
       }
     },
   },

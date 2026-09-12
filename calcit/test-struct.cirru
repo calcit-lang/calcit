@@ -1,5 +1,5 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-struct)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-struct)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-struct.main/main!) (:mode :native) (:reload-fn 'test-struct.main/reload!)
       :feature-policy $ {}
@@ -354,6 +354,15 @@
                   update p1 :age $ fn (age)
                     if (nil? age) 1 $ inc age
                 assert= 20 $ :age p1
+                let
+                    read-open $ fn (value)
+                      hint-fn $ {}
+                        :args $ [] 'Dynamic
+                        :return $ :: 'List (:: 'Option 'Dynamic)
+                      [] (get value :age) (get value |name) (get value :missing) (get value 0)
+                  assert=
+                    [] (%some 20) (%some |Chen) (%none) (%none)
+                    read-open p1
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

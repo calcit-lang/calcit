@@ -398,8 +398,8 @@ record / tuple 公开名称会产生 `W_REMOVED_DATA_API`，诊断中同时给�
 | `record-with` / `record-match` | `struct-with` / `struct-match` |
 | `&record:*` / `&tuple:*` | 对应的 `&struct:*` / `&enum:*`；定义元数据使用 `&struct-def:*` / `&enum-def:*` |
 
-Struct 字段是定义的一部分，因此已知 struct 上的 `get`、`:field` 和 `.field` 直接返回字段声明
-类型，不再自动包装 `Option<T>`。不存在的字段会在静态检查阶段报告，运行期也会抛出普通错误；
+Struct 字段是定义的一部分，因此已知 struct 上的 `:field` 和 `.field` 直接返回字段声明类型，
+不再自动包装 `Option<T>`。不存在的字段会在静态检查阶段报告，运行期也会抛出普通错误；
 升级业务代码时应删除这类访问后的 `.unwrap`。Map 等动态容器的访问仍返回 `Option<T>`，
 `get-in` 也继续保留可失败路径语义，不能批量删除其 unwrap。
 
@@ -416,7 +416,7 @@ Struct 字段是定义的一部分，因此已知 struct 上的 `get`、`:field`
 | `find-index` | `Option<Number>` | 不再用 `-1`；索引运算前先处理 `%none` |
 | `first` / `last` | `Option<T>` | 空集合和空字符串可能没有元素 |
 | `nth` | `Option<T>` | 越界是 `%none`；不要把结果直接当元素值 |
-| `get` | `Option<T>` | Map/List 等可缺失查找返回 Option；已知 Struct 的声明字段直接返回字段类型 |
+| `get` | `Option<T>` | Map/List 等可缺失查找返回 Option；显式 `Dynamic` 的运行值若为 Struct，则按运行时字段名返回 `Option<Dynamic>`；已知 Struct 改用 `(:field value)` |
 | `get-in` | `Option<T>`（开放动态路径常为 `Option<Dynamic>`） | 任一路径缺失都是 `%none` |
 | `get-env` | `Option<String>` | 未设置的环境变量是 `%none` |
 
@@ -426,11 +426,12 @@ Struct 字段是定义的一部分，因此已知 struct 上的 `get`、`:field`
 `--compat-types` 暂时保留旧渲染路径。
 
 默认严格诊断还会检查这些访问 API 的接收者能力。`first`、`last`、`nth` 只接受可静态确认的
-`List<T>`、`String` 或 `Enum`，`get` 另外接受 `Map<K,V>`；把 Number、Set、Struct、函数或未收窄的
+`List<T>`、`String` 或 `Enum`，`get` 另外接受 `Map<K,V>`；把 Number、Set、静态已知 Struct、函数或未收窄的
 optional/FFI host value 传入时会报告 `E_UNSUPPORTED_INDEXED_RECEIVER`，而不是把 core schema 中保留的
 Dynamic 接收者位置当成任意值逃生口。Struct 字段改用 `(:field value)`，optional receiver 先 match/unwrap，
-FFI value 在 adapter 边界完成 validate/convert。普通兼容模式和显式声明的 `Dynamic` receiver 仍保留原运行时路径，
-便于按边界渐进迁移。
+FFI value 在 adapter 边界完成 validate/convert。显式声明的 `Dynamic` receiver 仍保留开放数据运行时路径；
+当运行值为 Struct 时，`get` 按 tag/string/symbol 字段名返回 `Option<Dynamic>`，便于在不调用 raw primitive
+的前提下实现允许缺失的边界查询。
 
 ```cirru
 let

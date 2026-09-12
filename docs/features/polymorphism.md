@@ -284,7 +284,7 @@ Core lookup APIs that no longer need to preserve bootstrapping compatibility use
 - `parse-float` returns `Result<Number,String>`, with the invalid source in `:err`.
 - Reflection uses `enum-definition: Enum -> Option<EnumDef>`, `struct-definition: Struct -> Option<StructDef>`, and `impl-origin: Impl -> Option<Trait>`.
 - `destruct-list`, `destruct-map`, `destruct-set`, and `destruct-str` return named `*Destruct` enums, preserving the familiar `:some`/`:none` branches with checked payloads.
-- Public collection methods follow the same contract: Map/Set `.destruct` return their named destruct enums. Struct does not expose `.nth`, because field position is not stable across backends; field-name `get` returns the field's declared type directly.
+- 公开集合方法遵守同一契约：Map/Set 的 `.destruct` 返回对应具名 destruct enum。Struct 不暴露 `.nth`，因为字段位置不能作为跨后端稳定语义；静态已知字段使用 `(:field value)` 并直接返回声明类型。显式 `Dynamic` receiver 可用 `get` 做运行时可选字段查询，返回 `Option<Dynamic>`。
 - `when-let` consumes `Option<T>` and returns `Option<R>`; `update-in` passes `Option<T>` to its updater so a missing leaf is never represented by nil. The typed literal-path lowering evaluates the receiver, every path segment, and the updater exactly once in source order.
 
 When a query immediately ends in a business default, call `.unwrap-or` on its

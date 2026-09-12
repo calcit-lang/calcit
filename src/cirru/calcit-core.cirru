@@ -5686,7 +5686,7 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        'get $ %{} 'CodeEntry (:doc "|Optional lookup by key or index for maps and indexed collections. Returns Option<T>. Required Struct fields use (:field value) and return their declared type directly.")
+        'get $ %{} 'CodeEntry (:doc "|Optional lookup by key or index for open values, maps, and indexed collections. Returns Option<T>. A runtime Struct behind Dynamic supports tag/string/symbol field lookup and returns Option<Dynamic>; a statically known Struct must use (:field value) so the checker proves the field and its declared return type.")
           :code $ quote
             defn get (base k)
               cond
@@ -5694,7 +5694,13 @@
                   if (&map:contains? base k)
                     %some $ &map:get base k
                     %none
-                (struct? base) (raise "|get does not read Struct fields; use (:field value) so the checker can enforce the declared type")
+                (struct? base)
+                  if
+                    and
+                      or (tag? k) (string? k) (symbol? k)
+                      &struct:contains? base k
+                    %some $ &struct:get base k
+                    %none
                 (or (list? base) (string? base) (enum? base))
                   if (number? k) (nth base k) (%none)
                 true $ raise (str-spaced |get |expected |a |map |or |indexed |collection, |got: base)
@@ -5710,6 +5716,9 @@
               get
                 {} $ :a 1
                 , :missing
+            quote $ let
+                open-path $ assert-type (FsPath :value |demo) 'Dynamic
+              assert= (%some |demo) (get open-path :value)
           :schema $ :: 'Fn
             {}
               :args $ [] 'Dynamic 'Dynamic
@@ -5735,6 +5744,15 @@
                   do
                     assert= (%some 1) (get m :a)
                     assert= (%none) (get m :missing)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |reads-runtime-struct-from-open-value)
+              :code $ quote
+                let
+                    open-path $ assert-type (FsPath :value |demo) 'Dynamic
+                  assert= (%some |demo) (get open-path :value)
+                  assert= (%some |demo) (get open-path |value)
+                  assert= (%none) (get open-path :missing)
+                  assert= (%none) (get open-path 0)
               :tags $ #{} :core :unit
         'get-args $ %{} 'CodeEntry (:doc "|读取宿主进程传入的完整参数列表，包含第 0 项。")
           :code $ quote
