@@ -152,7 +152,10 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
           fn_defs.push((ns.to_string(), def_name.to_string(), args, body));
         }
         Err(e) => {
-          eprintln!("[wasm] skipping {ns}/{def_name}: {e}");
+          if ns == init_ns {
+            return Err(format!("[wasm] target function {ns}/{def_name} is not compilable: {e}"));
+          }
+          eprintln!("[wasm] omitting unsupported dependency {ns}/{def_name}: {e}");
         }
       }
     }
@@ -310,8 +313,8 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     fn_table_index,
   };
 
-  // Second pass: compile. If a function fails, we still reserve its slot
-  // with a trivial body so indices remain stable.
+  // Second pass: target failures reject the artifact. Dependency failures keep
+  // a trapping slot so preassigned call and table indices remain stable.
   for (ns, def_name, args, body) in &fn_defs {
     let explicit_export = program_data
       .get(ns.as_str())
@@ -328,17 +331,17 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     match result {
       Ok(func) => compiled_fns.push(func),
       Err(e) => {
-        if explicit_export {
-          return Err(format!("[wasm] exported function {ns}/{def_name} is not compilable: {e}"));
+        if ns == init_ns || explicit_export {
+          return Err(format!("[wasm] target function {ns}/{def_name} is not compilable: {e}"));
         }
-        eprintln!("[wasm] skipping {ns}/{def_name}: {e}");
+        eprintln!("[wasm] trapping unsupported dependency {ns}/{def_name}: {e}");
         let (arity, _) = compute_fn_arity(args);
         compiled_fns.push(CompiledFn {
           export_name: Some(export_name),
           params: vec![ValType::F64; arity as usize],
           results: vec![ValType::F64],
           locals: vec![],
-          instructions: vec![f64_const(0.0)],
+          instructions: vec![Instruction::Unreachable],
         });
       }
     }
@@ -1071,9 +1074,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
           .ok_or_else(|| format!("fn value not in table: {qualified}"))?;
         ctx.emit(f64_const(slot as f64));
       } else {
-        // Anonymous inline closure (no def_ref) — captured upvalues not representable.
-        eprintln!("[wasm] anonymous closure (no def_ref): emitting nil placeholder");
-        ctx.emit(f64_const(0.0));
+        return Err("anonymous closure values are not yet supported in WASM codegen".into());
       }
     }
     // `[]` used as a bare expression (not in call position) evaluates to an empty list.
@@ -1122,15 +1123,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::TryParseCirruEdnAs | CalcitSyntax::DecodeMapAs | CalcitSyntax::TryDecodeMapAs => {
         Err(format!("{syn} is not yet supported in WASM codegen"))
       }
-      CalcitSyntax::Defn => {
-        // A `fn`/`defn` form in value position creates a closure capturing outer variables.
-        // Closures with captured upvalues can't be represented as static WASM function
-        // indices in the current codegen. Emit nil as a placeholder so the outer function
-        // still compiles; callers that invoke the returned "closure" will receive nil.
-        eprintln!("[wasm] closure-as-value: emitting nil placeholder for nested fn/defn");
-        ctx.emit(f64_const(0.0));
-        Ok(())
-      }
+      CalcitSyntax::Defn => Err("nested fn/defn closure values are not yet supported in WASM codegen".into()),
       CalcitSyntax::Quote | CalcitSyntax::Quasiquote => {
         // Quote creates a runtime value (quoted symbol/expression).
         // In WASM, emit nil as a placeholder — quote values appear mainly in
