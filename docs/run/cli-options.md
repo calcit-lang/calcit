@@ -259,6 +259,13 @@ the callee is intentionally open, put that operation behind a small adapter
 whose structured contract does not claim the generic relationship. With
 `--compat-types`, the existing compatibility behavior is unchanged.
 
+当公开集合函数使用 `C: Mappable` 一类 trait facade 时，receiver 的具体 payload
+关系可能要等到 List、Set、Map、Option 或 Result 实现被选中后才完整。严格模式会把
+这份 receiver-specialized contract 交回同一套类型 proof：`List<Dynamic>` 可以交给
+继续接受并返回开放值的 callback，但不能交给只接受 `Number` 等具体类型的 callback。
+失败仍使用 `E_ERASED_GENERIC_RELATION`，并报告 callee、参数位置、实际 callback、
+特化后的期望契约以及显式 decode/narrow 建议；这里不另设 callback 扫描器或 warning。
+
 If a typed operation directly introduced the open value, the error includes a
 single bounded origin and migration direction. The first supported trace is
 `Map<K,Dynamic> -> get -> Option<Dynamic> -> generic consumer`: human output

@@ -2173,6 +2173,19 @@ fn preprocess_list_call(
             }
             let processed_args = CalcitList::from(processed_args);
             reject_pending_async_arguments(&typed_method, &processed_args, scope_types, call_stack)?;
+            if let Some(expected_method_args) = expected_method_args.as_deref()
+              && let Ok(method_args) = processed_args.skip(1)
+            {
+              reject_strict_unproven_specialized_contract(
+                &typed_method,
+                &method_args,
+                expected_method_args,
+                1,
+                scope_types,
+                file_ns,
+                call_stack,
+              )?;
+            }
             if strict_types_enabled() || is_display_contract {
               validate_method_call(&typed_method, &processed_args, scope_types, file_ns, call_stack)?;
             }
@@ -2607,6 +2620,9 @@ fn preprocess_list_call(
           file_ns,
           call_stack,
         )?;
+        if let Some(expected_types) = checked_expected_types {
+          reject_strict_unproven_specialized_contract(&head_form, &current_args, expected_types, 0, scope_types, file_ns, call_stack)?;
+        }
         reject_strict_unproven_generic_relation(
           &head_form,
           &current_args,
@@ -9310,6 +9326,74 @@ struct UnprovenGenericArgument {
   expected: Arc<CalcitTypeAnnotation>,
   actual: Arc<CalcitTypeAnnotation>,
   generics: Vec<Arc<str>>,
+}
+
+#[derive(Debug, PartialEq)]
+struct UnprovenSpecializedArgument {
+  index: usize,
+  expected: Arc<CalcitTypeAnnotation>,
+  actual: Arc<CalcitTypeAnnotation>,
+}
+
+/// Find an argument that would narrow an open payload exposed by a
+/// receiver-specialized call contract.
+fn find_unproven_specialized_argument(
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+) -> Option<UnprovenSpecializedArgument> {
+  let mut bindings = HashMap::new();
+  for (index, (arg, expected)) in args.iter().zip(expected_types).enumerate() {
+    let Some(actual) = resolve_type_value(arg, scope_types).or_else(|| match arg {
+      Calcit::Local(local) => Some(local.type_info.clone()),
+      _ => None,
+    }) else {
+      continue;
+    };
+    let proof = actual.prove_available_bindings(expected, &mut bindings);
+    if matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic)) {
+      return Some(UnprovenSpecializedArgument {
+        index,
+        expected: expected.clone(),
+        actual,
+      });
+    }
+  }
+  None
+}
+
+/// Reject a receiver-specialized contract when a concrete argument would
+/// narrow an open payload without an explicit boundary.
+fn reject_strict_unproven_specialized_contract(
+  head: &Calcit,
+  args: &CalcitList,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+  argument_offset: usize,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  if !strict_types_enabled() || !should_emit_project_source_lint(file_ns) {
+    return Ok(());
+  }
+  let Some(UnprovenSpecializedArgument { index, expected, actual }) =
+    find_unproven_specialized_argument(expected_types, args, scope_types)
+  else {
+    return Ok(());
+  };
+  let argument = args.get(index);
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!(
+      "call to `{head}` passes `{}` at argument {}, which cannot satisfy receiver-specialized contract `{}` without narrowing an open Dynamic payload; decode or narrow the payload before using concrete capabilities",
+      actual.to_brief_string(),
+      index + argument_offset + 1,
+      expected.to_brief_string(),
+    ),
+    "E_ERASED_GENERIC_RELATION",
+    call_stack,
+    argument.and_then(Calcit::get_location).or_else(|| head.get_location()),
+  ))
 }
 
 fn find_unproven_generic_argument(

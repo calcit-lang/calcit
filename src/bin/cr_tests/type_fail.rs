@@ -963,6 +963,58 @@ fn strict_type_fail_erased_generic_relation_reports_stable_error_code() {
 }
 
 #[test]
+fn strict_specialized_map_contracts_reject_concrete_callbacks_for_open_payload() {
+  run_with_large_stack(|| {
+    let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: Arc::new(CalcitTypeAnnotation::Dynamic),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries_with_main_schema(
+      "let\n    consume $ fn (xs)\n      hint-fn $ {} (:args $ [] (:: 'List 'Dynamic)) (:return 'Dynamic)\n      map xs $ fn (value)\n        hint-fn $ {} (:args $ [] 'Number) (:return 'Number)\n        + value 1\n  consume $ [] 1",
+      Some(main_schema.clone()),
+    );
+    let error = run_check_only(&entries).expect_err("a Number-only callback must not narrow List<Dynamic> through core map");
+
+    assert!(error.contains("E_ERASED_GENERIC_RELATION"), "unexpected strict map error: {error}");
+    assert!(error.contains("calcit.core/map"), "callee should be explicit: {error}");
+    assert!(error.contains("argument 2"), "callback position should be explicit: {error}");
+    assert!(
+      error.contains("fn(:number) -> :number"),
+      "actual callback type should be explicit: {error}"
+    );
+    assert!(
+      error.contains("fn(dynamic)"),
+      "specialized callback contract should expose the open payload: {error}"
+    );
+    assert!(
+      error.contains("decode or narrow the payload"),
+      "migration should be actionable: {error}"
+    );
+
+    let option_entries = load_snippet_entries_with_main_schema(
+      "let\n    consume $ fn (value)\n      hint-fn $ {} (:args $ [] (:: 'Option 'Dynamic)) (:return 'Dynamic)\n      value .map $ fn (item)\n        hint-fn $ {} (:args $ [] 'Number) (:return 'Number)\n        + item 1\n  consume $ %some 1",
+      Some(main_schema),
+    );
+    let option_error = run_check_only(&option_entries).expect_err("Option<Dynamic>.map must reject a Number-only callback");
+    assert!(
+      option_error.contains("E_ERASED_GENERIC_RELATION"),
+      "unexpected strict Option.map error: {option_error}"
+    );
+    assert!(option_error.contains("`.map"), "method should be explicit: {option_error}");
+    assert!(
+      option_error.contains("argument 2"),
+      "method callback position should include the receiver: {option_error}"
+    );
+  });
+}
+
+#[test]
 fn type_fail_call_arg_fixture_reports_warning_code() {
   run_with_large_stack(|| {
     let fixtures = [

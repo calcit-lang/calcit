@@ -6644,6 +6644,29 @@
                       [] (&list:first pair)
                         + 10 $ &list:last pair
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-open-payload-callback)
+              :code $ quote
+                let
+                    consume $ fn (xs)
+                      hint-fn $ {}
+                        :args $ []
+                          :: (quote List) (quote Dynamic)
+                        :return $ :: (quote List) (quote Dynamic)
+                      map xs $ fn (value)
+                        hint-fn $ {}
+                          :args $ [] (quote Dynamic)
+                          :return $ quote Dynamic
+                        , value
+                  assert= ([] 1 :ready)
+                    consume $ [] 1 :ready
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |infers-struct-fields-in-callback)
+              :code $ quote
+                assert= ([] |a |b)
+                  map
+                    [] (FsPath :value |a) (FsPath :value |b)
+                    fn (path) (:value path)
+              :tags $ #{} :core :unit
         'map-indexed $ %{} 'CodeEntry (:doc "|Map over a List<T> with indices. The callback receives (index value), and the result is List<U>.")
           :code $ quote
             defn map-indexed (xs f)
@@ -7160,6 +7183,23 @@
               :generics $ [] 'T 'U
               :return $ :: 'Option 'U
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-open-payload-callback)
+              :code $ quote
+                let
+                    consume $ fn (value)
+                      hint-fn $ {}
+                        :args $ []
+                          :: (quote Option) (quote Dynamic)
+                        :return $ :: (quote Option) (quote Dynamic)
+                      value .map $ fn (item)
+                        hint-fn $ {}
+                          :args $ [] (quote Dynamic)
+                          :return $ quote Dynamic
+                        , item
+                  assert= (%some :ready)
+                    consume $ %some :ready
+              :tags $ #{} :core :unit
         'option:none? $ %{} 'CodeEntry (:doc "|Returns true when an Option is :none.")
           :code $ quote
             defn option:none? (opt)
