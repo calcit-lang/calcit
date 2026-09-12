@@ -4,11 +4,11 @@
 
 ## 调整
 
-- 根据 #1046 review，在 generic argument 排序处补充英文源码注释。
-- 明确先检查 concrete type evidence 是为了先建立泛型绑定，再让开放 `Dynamic` 参数复用该证明。
-- 不改变已有实现与类型语义。
+- 根据 #1046 review 复核 generic argument 的排序，并补充英文源码注释说明既定语义。
+- review 建议将 concrete 参数排在开放参数之前，但这会让 #995 明确接受的 `Dynamic`/具体值双向安全传递失败：先绑定具体类型会把后续开放值误判为需要 narrow。
+- 保留开放参数优先，使有意声明的 `Dynamic` 可先建立开放泛型绑定；需要具体能力的 callback 仍由既有测试稳定拒绝。
 
 ## 验证
 
 - `cargo fmt --all -- --check`
-- `cargo test find_unproven_generic_argument`
+- `cargo test dynamic_generic_bindings_preserve_transport_but_reject_callback_narrowing`
