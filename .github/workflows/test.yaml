@@ -112,6 +112,7 @@ jobs:
           && ln -s ../../ node_modules/@calcit/procs
           && cp -v scripts/main.mjs js-out/
           && node js-out/main.mjs
+          && bash scripts/test-js-command.sh
 
       - name: Detect documentation changes
         id: docs_changes

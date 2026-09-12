@@ -475,6 +475,8 @@ calcit wasi calcit.cirru --emit-path target/wasi-command
 
 WASI command 当前可通过与原生、JavaScript 相同的 `get-env` 和 `get-args` API 读取环境变量与命令参数。`get-env` 返回 `Option<String>`；`get-args` 返回包含第 0 项的完整 `List<String>`。Preview 1 的缓冲区和指针 ABI 只存在于编译器内部，不进入 Calcit 源码接口。
 
+command init definition 正常返回时，进程状态为 `0`；调用 `quit!` 可显式设置 `0..255` 的整数退出状态。WASI target 会在内部调用 Preview 1 `proc_exit`，Calcit 源码无需感知该 ABI。
+
 ## Markdown code checking
 
 Use `docs check-md` to validate fenced code blocks in markdown files:

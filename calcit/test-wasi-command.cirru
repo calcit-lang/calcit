@@ -8,6 +8,22 @@
   :files $ {}
     'app.main $ %{} 'FileEntry
       :defs $ {}
+        'exit-7! $ %{} 'CodeEntry (:doc "|以状态码 7 终止进程，用于验证 command 退出边界。")
+          :code $ quote
+            defn exit-7! () $ quit! 7
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+          :tags $ #{} :control :wasi
+        'exit-invalid! $ %{} 'CodeEntry (:doc "|以越界状态码终止进程，用于验证各 command backend 拒绝隐式取模。")
+          :code $ quote
+            defn exit-invalid! () $ quit! 256
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+          :tags $ #{} :control :wasi
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (println |WASI-stdout: "|你好") (echo |WASI-echo) (eprintln |WASI-stderr: 42)
