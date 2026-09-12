@@ -139,6 +139,7 @@ impl FromStr for WasmTarget {
 
 pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTarget) -> Result<(), String> {
   let program_data = program::clone_compiled_program_snapshot()?;
+  validate_wasm_target_in_program(&program_data, init_ns, init_def, target)?;
 
   // First pass: extract all function signatures from all namespaces
   let mut fn_defs: Vec<(String, String, CalcitFnArgs, Vec<Calcit>)> = Vec::new(); // (ns, def_name, args, body)
@@ -185,10 +186,6 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   if fn_defs.is_empty() {
     return Err(format!("namespace not found or no functions: {init_ns}"));
   }
-  if target == WasmTarget::Wasi && fn_defs.iter().any(|(_, name, _, _)| name == "_start") {
-    return Err("E_WASM_TARGET: `_start` is reserved for the generated WASI command entry".into());
-  }
-
   // Build the import table before assigning user function indices. Built-in imports
   // stay first so internal lowering keeps its stable indices; user declarations
   // append after them.
@@ -202,11 +199,6 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     for (def_name, compiled) in &file_info.defs {
       if !is_wasm_import_def(&compiled.preprocessed_code) {
         continue;
-      }
-      if target == WasmTarget::Wasi {
-        return Err(format!(
-          "E_WASM_CAPABILITY: `{ns}/{def_name}` declares a custom WASM import; the `wasi` target only permits registered capabilities"
-        ));
       }
       let (module, name, args) = parse_wasm_import_def(&compiled.preprocessed_code).ok_or_else(|| {
         format!("[wasm] invalid import declaration {ns}/{def_name}: expected `defwasm-import name (args) |module |field`")
@@ -426,6 +418,53 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   fs::write(&wasm_file, &wasm_bytes).map_err(|e| format!("failed to write WASM: {e}"))?;
   println!("wrote WASM to: {}", wasm_file.display());
 
+  Ok(())
+}
+
+pub fn validate_wasm_target(init_ns: &str, init_def: &str, target: WasmTarget) -> Result<(), String> {
+  let program_data = program::clone_compiled_program_snapshot()?;
+  validate_wasm_target_in_program(&program_data, init_ns, init_def, target)
+}
+
+fn validate_wasm_target_in_program(
+  program_data: &program::CompiledProgram,
+  init_ns: &str,
+  init_def: &str,
+  target: WasmTarget,
+) -> Result<(), String> {
+  if target == WasmTarget::Core {
+    return Ok(());
+  }
+
+  for (ns, file_info) in program_data {
+    for (def_name, compiled) in &file_info.defs {
+      if compiled.kind != program::CompiledDefKind::Fn {
+        continue;
+      }
+      if is_wasm_import_def(&compiled.preprocessed_code) {
+        return Err(format!(
+          "E_WASM_CAPABILITY: `{ns}/{def_name}` declares a custom WASM import; the `wasi` target only permits registered capabilities"
+        ));
+      }
+      if def_name.as_ref() == "_start" {
+        return Err("E_WASM_TARGET: `_start` is reserved for the generated WASI command entry".into());
+      }
+    }
+  }
+
+  let qualified_init = format!("{init_ns}/{init_def}");
+  let compiled_init = program_data
+    .get(init_ns)
+    .and_then(|file| file.defs.get(init_def))
+    .ok_or_else(|| format!("E_WASM_TARGET: command entry `{qualified_init}` was not compiled"))?;
+  let (args, _) = extract_fn_parts(&compiled_init.preprocessed_code)
+    .map_err(|reason| format!("E_WASM_TARGET: command entry `{qualified_init}` is not a function: {reason}"))?;
+  let (init_arity, _) = compute_fn_arity(&args);
+  if init_arity != 0 {
+    return Err(format!(
+      "E_WASM_TARGET: WASI command entry `{qualified_init}` must take no arguments, got {init_arity}"
+    ));
+  }
   Ok(())
 }
 

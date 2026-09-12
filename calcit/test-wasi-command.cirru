@@ -32,6 +32,13 @@
               :code $ quote
                 assert= 3 $ needs-arg 3
               :tags $ #{} :core :unit :wasi :wasm
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn reload! () &unit
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require

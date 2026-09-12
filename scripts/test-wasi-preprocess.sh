@@ -7,6 +7,7 @@ readonly FIXTURE="calcit/test-wasi-preprocess.cirru"
 readonly WASM_BIN="${CARGO_TARGET_DIR:-target}/${TARGET}/debug/cr-wasm.wasm"
 readonly COMMAND_FIXTURE="calcit/test-wasi-command.cirru"
 readonly COMMAND_OUT="${CARGO_TARGET_DIR:-target}/wasi-command-smoke"
+readonly CHECK_ONLY_OUT="${CARGO_TARGET_DIR:-target}/wasi-check-only-smoke"
 readonly NATIVE_WASM_BIN="${CARGO_TARGET_DIR:-target}/debug/cr-wasm"
 
 command -v wasmtime >/dev/null
@@ -24,6 +25,11 @@ WASMTIME_NEW_CLI=0 wasmtime run \
 # through the conventional no-argument `_start` export.
 cargo build --bin cr-wasm
 cargo run --bin calcit -- "$COMMAND_FIXTURE" test --tag wasi --require-match
+"$NATIVE_WASM_BIN" "$COMMAND_FIXTURE" --target wasi --check-only --emit-path "$CHECK_ONLY_OUT"
+if [[ -e "$CHECK_ONLY_OUT/program.wasm" ]]; then
+  echo "WASI check-only unexpectedly wrote a module" >&2
+  exit 1
+fi
 "$NATIVE_WASM_BIN" "$COMMAND_FIXTURE" --target wasi --emit-path "$COMMAND_OUT"
 wasmtime run "$COMMAND_OUT/program.wasm"
 
@@ -33,13 +39,13 @@ if target_error=$("$NATIVE_WASM_BIN" "$COMMAND_FIXTURE" --target unknown 2>&1); 
 fi
 grep -Fq "E_WASM_TARGET" <<<"$target_error"
 
-if entry_error=$("$NATIVE_WASM_BIN" "$COMMAND_FIXTURE" --target wasi --init-fn app.main/needs-arg --emit-path "$COMMAND_OUT" 2>&1); then
+if entry_error=$("$NATIVE_WASM_BIN" "$COMMAND_FIXTURE" --target wasi --init-fn app.main/needs-arg --check-only 2>&1); then
   echo "WASI target unexpectedly accepted a command entry with arguments" >&2
   exit 1
 fi
 grep -Fq "E_WASM_TARGET" <<<"$entry_error"
 
-if capability_error=$("$NATIVE_WASM_BIN" calcit/test-wasm.cirru --target wasi --emit-path "$COMMAND_OUT" 2>&1); then
+if capability_error=$("$NATIVE_WASM_BIN" calcit/test-wasm.cirru --target wasi --check-only 2>&1); then
   echo "WASI target unexpectedly accepted a custom host import" >&2
   exit 1
 fi

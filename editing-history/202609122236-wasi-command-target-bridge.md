@@ -8,6 +8,7 @@
 - import 索引保留 registry 中最先登记的 capability，用户声明不能用重复 module/field 静默覆盖编译器内建 lowering。
 - Preview 1 只作为内部 core-module 兼容层；公开 Calcit API 后续按 args/env/stdio/exit 等 capability 建模，避免泄漏具体 ABI 名称。
 - 用户可观察的 command 语义放在 `calcit/test-wasi-command.cirru` 的 definition `:tests`；shell 只负责验证 target 错误、capability 错误与 Wasmtime 启动。
+- `--check-only` 与 emit 共享相同的 WASI target validation，但不会写出 module，避免检查通过后真正生成才因 entry/capability 失败。
 
 ## English
 
@@ -17,3 +18,4 @@
 - Import indexing preserves the first capability registered for a module/field pair, so a user declaration cannot silently shadow compiler-owned lowering.
 - Preview 1 remains an internal core-module compatibility layer. Public Calcit APIs will be modeled as capabilities such as args/env/stdio/exit without leaking concrete ABI names.
 - User-visible command semantics live in definition `:tests` in `calcit/test-wasi-command.cirru`; shell checks are limited to target errors, capability errors, and Wasmtime startup.
+- `--check-only` and emission share the same WASI target validation without writing a module during checks, preventing entries or capabilities from passing checks only to fail during generation.
