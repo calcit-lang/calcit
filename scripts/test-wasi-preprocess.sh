@@ -32,6 +32,10 @@ readonly FILESYSTEM_UTF8_STDOUT="${FILESYSTEM_UTF8_OUT}/stdout.txt"
 readonly FILESYSTEM_ABSOLUTE_OUT="${CARGO_TARGET_DIR:-target}/wasi-filesystem-absolute"
 readonly FILESYSTEM_ABSOLUTE_STDOUT="${FILESYSTEM_ABSOLUTE_OUT}/stdout.txt"
 readonly CORE_FILESYSTEM_OUT="${CARGO_TARGET_DIR:-target}/core-filesystem-reject"
+readonly READ_DIR_OUT="${CARGO_TARGET_DIR:-target}/wasi-read-dir-smoke"
+readonly READ_DIR_STDOUT="${READ_DIR_OUT}/stdout.txt"
+readonly READ_DIR_ERROR_OUT="${CARGO_TARGET_DIR:-target}/wasi-read-dir-error"
+readonly CORE_READ_DIR_OUT="${CARGO_TARGET_DIR:-target}/core-read-dir-reject"
 readonly CHECK_ONLY_OUT="${CARGO_TARGET_DIR:-target}/wasi-check-only-smoke"
 readonly NATIVE_WASM_BIN="${CARGO_TARGET_DIR:-target}/debug/cr-wasm"
 readonly CALCIT_BIN="${CARGO_TARGET_DIR:-target}/debug/calcit"
@@ -132,6 +136,10 @@ grep -Fq "E_WASM_CAPABILITY" <<<"$random_capability_error"
 
 printf '%s' 'WASI-file: 你好' >"$WASI_FS_HOST_DIR/input.txt"
 printf '\377\n' >"$WASI_FS_HOST_DIR/invalid.txt"
+mkdir -p "$WASI_FS_HOST_DIR/listing"
+: >"$WASI_FS_HOST_DIR/listing/b.txt"
+: >"$WASI_FS_HOST_DIR/listing/a.txt"
+: >"$WASI_FS_HOST_DIR/listing/子.txt"
 "$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/filesystem-main! --emit-path "$FILESYSTEM_OUT"
 wasmtime run \
   --dir "$WASI_FS_HOST_DIR::/workspace" \
@@ -139,6 +147,14 @@ wasmtime run \
 grep -Fxq "WASI-filesystem: ok" "$FILESYSTEM_STDOUT"
 grep -Fxq 'WASI-written: 好' "$WASI_FS_HOST_DIR/output.txt"
 node scripts/test-wasi-filesystem-host.mjs "$FILESYSTEM_OUT/program.wasm"
+
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/filesystem-read-dir-main! --emit-path "$READ_DIR_OUT"
+wasmtime run \
+  --dir "$WASI_FS_HOST_DIR::/workspace" \
+  "$READ_DIR_OUT/program.wasm" >"$READ_DIR_STDOUT"
+grep -Fxq "WASI-read-dir: ok" "$READ_DIR_STDOUT"
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/filesystem-read-dir-error-main! --emit-path "$READ_DIR_ERROR_OUT"
+node scripts/test-wasi-read-dir-host.mjs "$READ_DIR_OUT/program.wasm" "$READ_DIR_ERROR_OUT/program.wasm"
 
 "$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/filesystem-denied-main! --emit-path "$FILESYSTEM_DENIED_OUT"
 wasmtime run "$FILESYSTEM_DENIED_OUT/program.wasm" >"$FILESYSTEM_DENIED_STDOUT"
@@ -169,6 +185,14 @@ if filesystem_capability_error=$(
   exit 1
 fi
 grep -Fq "E_WASM_CAPABILITY" <<<"$filesystem_capability_error"
+
+if read_dir_capability_error=$(
+  "$CALCIT_BIN" wasm "$COMMAND_FIXTURE" --init-fn app.main/filesystem-read-dir-main! --emit-path "$CORE_READ_DIR_OUT" 2>&1
+); then
+  echo "core WASM unexpectedly accepted filesystem directory reads" >&2
+  exit 1
+fi
+grep -Fq "E_WASM_CAPABILITY" <<<"$read_dir_capability_error"
 
 if target_error=$("$NATIVE_WASM_BIN" "$COMMAND_FIXTURE" --target unknown 2>&1); then
   echo "cr-wasm unexpectedly accepted an unknown target" >&2

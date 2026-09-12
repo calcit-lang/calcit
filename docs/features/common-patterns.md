@@ -343,7 +343,7 @@ let
     %ok &unit
 ```
 
-`fs:path` constructs a nominal `FsPath` without normalizing or touching the filesystem. Its `.read-text`, `.read-dir`, `.walk-dir`, and `.write-text` methods return `Result`, so expected I/O failures stay in the typed flow; `.read-dir` lists immediate children and `.walk-dir` recurses. String has no file-effect methods. The `try-read-*`/`try-write-file` functions and raw raising procedures remain compatibility entries. Native and generated JavaScript support these host file effects; WASM does not yet expose them.
+`fs:path` 构造 nominal `FsPath`，不会规范化路径或触碰文件系统。`.read-text`、`.read-dir`、`.walk-dir` 与 `.write-text` 都返回 `Result`，因此预期内的 I/O 失败留在类型流中；`.read-dir` 只枚举即时子项，`.walk-dir` 递归枚举。String 不提供文件效果方法，`try-read-*`、`try-write-file` 与 raw raising procedure 仅保留为兼容入口。Native 与 Node-hosted 的生成 JavaScript 支持这些文件效果；browser JavaScript 不提供 `.read-dir` 与 `.walk-dir`。WASI command 目前支持文本读写和 `.read-dir`，core WASM 会明确拒绝，`.walk-dir` 仍待后续实现。
 
 ## Math Operations
 

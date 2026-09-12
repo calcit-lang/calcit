@@ -72,6 +72,9 @@ const wasi = {
   fd_read() {
     throw new Error("clock fixture unexpectedly read a file");
   },
+  fd_readdir() {
+    throw new Error("clock fixture unexpectedly read a directory");
+  },
   fd_close() {
     throw new Error("clock fixture unexpectedly closed a file");
   },

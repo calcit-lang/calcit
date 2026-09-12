@@ -64,6 +64,9 @@ const wasi = {
   fd_read() {
     throw new Error("random fixture unexpectedly read a file");
   },
+  fd_readdir() {
+    throw new Error("random fixture unexpectedly read a directory");
+  },
   fd_close() {
     throw new Error("random fixture unexpectedly closed a file");
   },

@@ -406,10 +406,10 @@ lowered to indexed access; an undeclared field is a diagnostic, not `nil`.
 ### Effects/IO
 
 - `echo`, `println` - output
-- `fs:path` - construct a nominal `FsPath` from a UTF-8 String without normalization
-- `FsPath .read-text`, `.read-dir`, `.walk-dir`, `.write-text` - recoverable file effects returning `Result` (native/JS; unavailable in WASM)
-- `try-read-file`, `try-read-dir`, `try-write-file` - String-path compatibility functions returning `Result`
-- `read-file`, `read-dir`, `write-file` - raising compatibility primitives (native/JS; unavailable in WASM)
+- `fs:path`：从 UTF-8 String 构造 nominal `FsPath`，不执行路径规范化
+- `FsPath .read-text`、`.read-dir`、`.walk-dir`、`.write-text`：返回 `Result` 的可恢复文件效果；WASI command 支持文本读写与 `.read-dir`，core WASM 不可用，`.walk-dir` 尚未接入 WASI
+- `try-read-file`、`try-read-dir`、`try-write-file`：基于 String path 的兼容函数，返回 `Result`
+- `read-file`、`read-dir`、`write-file`：保留异常语义的兼容 primitives（native/JS；WASM 不可用）
 - `ffi:task`, `FfiTask .cancel` / `.cancel-with` - nominal native async task lifecycle API
 - `ffi:response`, `FfiResponse .resolve` / `.reject` - nominal exactly-once native response API
 - `get-env` - environment variables

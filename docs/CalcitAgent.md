@@ -458,7 +458,8 @@ let
 `FsPath` 上的 `.read-text`、`.read-dir`、`.walk-dir` 与 `.write-text` 返回
 `Result<...,String>`；String 不提供文件效果方法。`try-read-file`、`try-read-dir`、
 `try-write-file` 以及底层 raising procedures 仍作为兼容入口。
-这些文件效果支持 native 与生成的 JavaScript；WASM 尚未提供宿主文件效果。
+这些文件效果支持 native 与生成的 JavaScript。WASI command 还支持基于 preopen 的
+文本读写与 `.read-dir`；core WASM 明确拒绝宿主文件效果，`.walk-dir` 尚未接入 WASI。
 
 `option:let` 使用普通 `let` 的 binding pair 结构。每个右侧和最终 body 都必须保持
 Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。
