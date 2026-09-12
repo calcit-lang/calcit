@@ -567,6 +567,9 @@ fn run_cli() -> Result<(), String> {
         Ok(())
       }
     })
+  } else if let Some(CalcitCommand::Fix(fix_options)) = &cli_args.subcommand {
+    eval_once = true;
+    cli_handlers::handle_fix_command(fix_options, &snapshot, &project_namespaces, &cli_args.input)
   } else if let Some(CalcitCommand::Test(test_options)) = &cli_args.subcommand {
     eval_once = true;
     run_tests(test_options, &snapshot, &project_namespaces)

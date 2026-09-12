@@ -350,6 +350,42 @@ const scenarios = [
     },
   },
   {
+    name: "compiler-guided fix preview",
+    args: [
+      "tests/fixtures/fix-command.cirru",
+      "fix",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "fixable",
+      "--rule",
+      "removed-data-api-v1",
+      "--format",
+      "json",
+    ],
+    check(result) {
+      if (result.schema_version !== 1 || result.command !== "fix" || result.data.mode !== "preview") {
+        throw new Error("unexpected fix preview envelope");
+      }
+      const suggestion = result.data.suggestions[0];
+      if (
+        result.data.changed !== true ||
+        suggestion?.rule_id !== "removed-data-api-v1" ||
+        suggestion?.diagnostic_code !== "W_REMOVED_DATA_API"
+      ) {
+        throw new Error("fix preview lost compiler evidence or deterministic rule identity");
+      }
+      if (
+        suggestion.path !== "code@3.0" ||
+        suggestion.applicability !== "machine-applicable" ||
+        suggestion.original?.value !== "tuple-enum" ||
+        suggestion.replacement?.value !== "enum-definition"
+      ) {
+        throw new Error("fix preview lost its source path or quoted AST replacement");
+      }
+    },
+  },
+  {
     name: "machine value schema",
     args: [
       "calcit/test.cirru",

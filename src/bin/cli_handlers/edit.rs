@@ -454,7 +454,7 @@ struct TransactionReport {
   operations: Vec<TransactionOperationReport>,
 }
 
-fn snapshot_content_revision(content: &str) -> String {
+pub(crate) fn snapshot_content_revision(content: &str) -> String {
   let mut hasher = Md5::new();
   hasher.update(content.as_bytes());
   format!("md5:{}", hex::encode(hasher.finalize()))
@@ -689,6 +689,69 @@ fn run_transaction_child(stage_path: &Path, index: usize, args: &[String]) -> Re
     stdout,
     stderr,
   })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StagedFixReport {
+  pub(crate) changed: bool,
+  pub(crate) original_revision: String,
+  pub(crate) new_revision: String,
+}
+
+pub(crate) fn run_staged_fix_transaction(
+  snapshot_file: &Path,
+  operations: &[Vec<String>],
+  expected_revision: Option<&str>,
+  dry_run: bool,
+  validation_args: &[String],
+) -> Result<StagedFixReport, String> {
+  if operations.is_empty() {
+    let content =
+      fs::read_to_string(snapshot_file).map_err(|error| format!("Failed to read snapshot '{}': {error}", snapshot_file.display()))?;
+    let revision = snapshot_content_revision(&content);
+    return Ok(StagedFixReport {
+      changed: false,
+      original_revision: revision.clone(),
+      new_revision: revision,
+    });
+  }
+
+  guard_snapshot_mutation_toolchain(&snapshot_file.to_string_lossy())?;
+  let operation_count = operations.len();
+  let report = run_staged_transaction_with(snapshot_file, operations, expected_revision, dry_run, |stage_path, index, args| {
+    let operation = run_transaction_child(stage_path, index, args)?;
+    if index + 1 == operation_count {
+      validate_staged_fix(stage_path, validation_args)?;
+    }
+    Ok(operation)
+  })?;
+  Ok(StagedFixReport {
+    changed: report.changed,
+    original_revision: report.original_revision,
+    new_revision: report.new_revision,
+  })
+}
+
+fn validate_staged_fix(stage_path: &Path, validation_args: &[String]) -> Result<(), String> {
+  let executable = std::env::current_exe().map_err(|error| format!("Failed to locate current calcit executable: {error}"))?;
+  let output = Command::new(&executable)
+    .arg("--tips-level")
+    .arg("none")
+    .arg(stage_path)
+    .arg("fix")
+    .args(validation_args)
+    .env("CALCIT_FIX_VALIDATE_ONLY", "1")
+    .output()
+    .map_err(|error| format!("Failed to validate staged fixes: {error}"))?;
+  if output.status.success() {
+    Ok(())
+  } else {
+    Err(format!(
+      "Staged fixes failed preprocessing; no changes were written.\nstdout:\n{}\nstderr:\n{}",
+      String::from_utf8_lossy(&output.stdout).trim_end(),
+      String::from_utf8_lossy(&output.stderr).trim_end()
+    ))
+  }
 }
 
 fn handle_transaction(opts: &EditTransactionCommand, snapshot_file: &str) -> Result<(), String> {

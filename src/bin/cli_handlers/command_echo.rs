@@ -62,6 +62,7 @@ pub fn should_echo_command(cli_args: &ToplevelCalcit) -> bool {
       | Some(CalcitCommand::Analyze(_))
       | Some(CalcitCommand::Cirru(_))
       | Some(CalcitCommand::Test(_))
+      | Some(CalcitCommand::Fix(_))
   )
 }
 
@@ -103,6 +104,7 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Analyze(cmd) => format!("{snapshot_command} analyze {}", analyze_name(&cmd.subcommand)),
     CalcitCommand::Cirru(cmd) => format!("{base_command} cirru {}", cirru_name(&cmd.subcommand)),
     CalcitCommand::Test(_) => format!("{snapshot_command} test"),
+    CalcitCommand::Fix(_) => format!("{snapshot_command} fix"),
     _ => return None,
   }];
 
@@ -130,6 +132,22 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
       push_switch(&mut tokens, "require-match", opts.require_match);
       push_switch(&mut tokens, "summary-only", opts.summary_only);
       push_value(&mut tokens, "format", &opts.format, Some("human"));
+    }
+    CalcitCommand::Fix(opts) => {
+      push_switch(&mut tokens, "apply", opts.apply);
+      push_switch(&mut tokens, "dry-run", opts.dry_run);
+      push_value(&mut tokens, "format", &opts.format, Some("human"));
+      push_optional(&mut tokens, "ns", opts.ns.as_deref(), "all project namespaces");
+      push_optional(&mut tokens, "def", opts.definition.as_deref(), "all definitions");
+      push_optional(&mut tokens, "rule", opts.rule.as_deref(), "all available rules");
+      push_optional(
+        &mut tokens,
+        "expect-revision",
+        opts.expect_revision.as_deref(),
+        "current snapshot revision",
+      );
+      push_switch(&mut tokens, "allow-dirty", opts.allow_dirty);
+      push_switch(&mut tokens, "allow-no-vcs", opts.allow_no_vcs);
     }
     _ => return None,
   }
@@ -170,6 +188,7 @@ fn render_command_explanation(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Ffi(_) => Some("exports versioned typed FFI Interface IR from local typed raw bindings".to_owned()),
     CalcitCommand::Cirru(cmd) => render_cirru_explanation(cmd),
     CalcitCommand::Test(_) => Some("discovers and runs definition-attached tests".to_owned()),
+    CalcitCommand::Fix(_) => Some("previews or applies deterministic compiler-guided source migrations".to_owned()),
     _ => None,
   }
 }

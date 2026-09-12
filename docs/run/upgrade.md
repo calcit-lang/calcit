@@ -23,6 +23,9 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+对于编译器能够证明等价的一对一迁移，先运行 `calcit calcit.cirru fix --format json` 审阅结构化计划，再用
+`--apply --expect-revision <revision>` 原子应用；完整安全边界见 [Compiler-guided Source Fixes](fix.md)。
+
 ## 0.14 默认严格诊断
 
 Calcit 0.14 起，普通运行、`--check-only` 和代码生成默认启用严格预处理诊断；无需再通过
