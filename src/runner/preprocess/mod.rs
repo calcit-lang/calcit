@@ -9416,6 +9416,7 @@ fn find_unproven_generic_argument(
         .map(|expected| (index, arg, expected))
     })
     .collect::<Vec<_>>();
+  // Inspect concrete evidence first so it can bind generics before an open Dynamic argument needs that proof.
   argument_contracts.sort_by_key(|(_, arg, _)| {
     !resolve_type_value(arg, scope_types)
       .or_else(|| match arg {
