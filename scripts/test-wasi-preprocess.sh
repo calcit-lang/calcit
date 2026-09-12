@@ -13,6 +13,10 @@ readonly COMMAND_MISSING_STDOUT="${COMMAND_OUT}/missing-env-stdout.txt"
 readonly EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-exit-smoke"
 readonly INVALID_EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-invalid-exit-smoke"
 readonly INVALID_EXIT_STDERR="${INVALID_EXIT_OUT}/stderr.txt"
+readonly CLOCK_OUT="${CARGO_TARGET_DIR:-target}/wasi-clock-smoke"
+readonly CLOCK_STDOUT="${CLOCK_OUT}/stdout.txt"
+readonly FIXED_CLOCK_OUT="${CARGO_TARGET_DIR:-target}/wasi-fixed-clock-smoke"
+readonly CORE_CLOCK_OUT="${CARGO_TARGET_DIR:-target}/core-clock-reject"
 readonly CHECK_ONLY_OUT="${CARGO_TARGET_DIR:-target}/wasi-check-only-smoke"
 readonly NATIVE_WASM_BIN="${CARGO_TARGET_DIR:-target}/debug/cr-wasm"
 readonly CALCIT_BIN="${CARGO_TARGET_DIR:-target}/debug/calcit"
@@ -81,6 +85,19 @@ if wasmtime run "$INVALID_EXIT_OUT/program.wasm" >/dev/null 2>"$INVALID_EXIT_STD
   exit 1
 fi
 grep -Fq "unreachable" "$INVALID_EXIT_STDERR"
+
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/clock-main! --emit-path "$CLOCK_OUT"
+wasmtime run "$CLOCK_OUT/program.wasm" >"$CLOCK_STDOUT"
+grep -Fxq "WASI-clocks: ok" "$CLOCK_STDOUT"
+
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/clock-fixed-main! --emit-path "$FIXED_CLOCK_OUT"
+node scripts/test-wasi-clock-host.mjs "$FIXED_CLOCK_OUT/program.wasm"
+
+if clock_capability_error=$("$CALCIT_BIN" wasm "$COMMAND_FIXTURE" --init-fn app.main/clock-main! --emit-path "$CORE_CLOCK_OUT" 2>&1); then
+  echo "core WASM unexpectedly accepted process clocks" >&2
+  exit 1
+fi
+grep -Fq "E_WASM_CAPABILITY" <<<"$clock_capability_error"
 
 if target_error=$("$NATIVE_WASM_BIN" "$COMMAND_FIXTURE" --target unknown 2>&1); then
   echo "cr-wasm unexpectedly accepted an unknown target" >&2

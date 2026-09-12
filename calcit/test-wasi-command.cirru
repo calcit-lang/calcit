@@ -8,6 +8,44 @@
   :files $ {}
     'app.main $ %{} 'FileEntry
       :defs $ {}
+        'clock-fixed-main! $ %{} 'CodeEntry (:doc "|用确定性的 WASI 假宿主验证时钟编号与纳秒到毫秒的换算。")
+          :code $ quote
+            defn clock-fixed-main! () $ if
+              and
+                = 1234 $ unix-time-ms
+                = 5678 $ cpu-time
+              println "|WASI-fixed-clocks: ok"
+              quit! 1
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+          :tags $ #{} :time :wasi
+        'clock-main! $ %{} 'CodeEntry (:doc "|输出系统时钟与单调时钟，用于验证 WASI capability wiring。")
+          :code $ quote
+            defn clock-main! () $ if (clocks-valid?) (println "|WASI-clocks: ok") (quit! 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+          :tags $ #{} :time :wasi
+        'clocks-valid? $ %{} 'CodeEntry (:doc "|验证系统时钟为正数，且单调时钟在同一进程内不会倒退。")
+          :code $ quote
+            defn clocks-valid? () $ let
+                wall $ unix-time-ms
+                before $ cpu-time
+                after $ cpu-time
+              and (number? wall) (> wall 0) (number? before) (number? after) (>= after before)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ []
+          :tags $ #{} :core :time :unit :wasi :wasm
+          :tests $ []
+            %{} 'TestEntry (:name |valid-readings)
+              :code $ quote
+                assert= true $ clocks-valid?
+              :tags $ #{} :core :time :unit :wasi :wasm
         'exit-7! $ %{} 'CodeEntry (:doc "|以状态码 7 终止进程，用于验证 command 退出边界。")
           :code $ quote
             defn exit-7! () $ quit! 7
@@ -66,6 +104,20 @@
               :code $ quote
                 assert= true $ every? (read-args) string?
               :tags $ #{} :core :env :unit :wasi :wasm
+        'read-clocks $ %{} 'CodeEntry (:doc "|读取系统时钟与单调时钟的毫秒值。")
+          :code $ quote
+            defn read-clocks () $ [] (unix-time-ms) (cpu-time)
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ []
+              :return $ :: 'List 'Number
+          :tags $ #{} :time :wasi
+          :tests $ []
+            %{} 'TestEntry (:name |returns-numbers)
+              :code $ quote
+                assert= true $ every? (read-clocks) number?
+              :tags $ #{} :core :time :unit :wasi :wasm
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! () &unit

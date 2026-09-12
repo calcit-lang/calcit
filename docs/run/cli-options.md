@@ -477,6 +477,8 @@ WASI command 当前可通过与原生、JavaScript 相同的 `get-env` 和 `get-
 
 command init definition 正常返回时，进程状态为 `0`；调用 `quit!` 可显式设置 `0..255` 的整数退出状态。WASI target 会在内部调用 Preview 1 `proc_exit`，Calcit 源码无需感知该 ABI。
 
+WASI command 也复用 `unix-time-ms` 与 `cpu-time`。前者读取系统实时时钟；后者读取单调时钟，只保证同一进程内两次读数的差值有意义。两者均返回毫秒数；Preview 1 的纳秒结果与错误码由编译器内部转换和检查，宿主失败时不会返回 `0` 或 `nil`。
+
 ## Markdown code checking
 
 Use `docs check-md` to validate fenced code blocks in markdown files:
