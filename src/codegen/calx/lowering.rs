@@ -422,6 +422,7 @@ fn convert_calx_arguments(args: &[Calcit], expected_params: &[CalxScalarType]) -
       (CalxScalarType::F64, Calcit::Number(value)) => Ok(VmValue::F64(*value)),
       (CalxScalarType::Bool, Calcit::Bool(value)) => Ok(VmValue::Bool(*value)),
       (CalxScalarType::String, Calcit::Str(value)) => Ok(VmValue::Str(Rc::from(value.as_ref()))),
+      (CalxScalarType::Tag, Calcit::Tag(value)) => Ok(VmValue::Tag(Rc::from(value.ref_str()))),
       (CalxScalarType::F64Buffer, Calcit::F64Buffer(values)) => Ok(VmValue::f64_buffer_copy_from_slice(values)),
       _ => Err(CalxKernelRunError::Boundary(CalxKernelBoundaryError {
         kind: CalxKernelBoundaryErrorKind::ArgumentType,
@@ -441,6 +442,7 @@ fn convert_calx_result(expected: Option<CalxScalarType>, output: CalxRunResult) 
     (Some(CalxScalarType::F64), CalxRunResult::Value(VmValue::F64(value))) => Ok(Calcit::Number(value)),
     (Some(CalxScalarType::Bool), CalxRunResult::Value(VmValue::Bool(value))) => Ok(Calcit::Bool(value)),
     (Some(CalxScalarType::String), CalxRunResult::Value(VmValue::Str(value))) => Ok(Calcit::Str(Arc::from(value.as_ref()))),
+    (Some(CalxScalarType::Tag), CalxRunResult::Value(VmValue::Tag(value))) => Ok(Calcit::Tag(cirru_edn::EdnTag::new(value.as_ref()))),
     (Some(CalxScalarType::F64Buffer), CalxRunResult::Value(VmValue::F64Buffer(values))) => {
       Ok(Calcit::F64Buffer(std::sync::Arc::from(values.as_ref())))
     }
@@ -1070,6 +1072,7 @@ enum PlannedExpressionKind {
   Number(f64),
   Bool(bool),
   String(Arc<str>),
+  Tag(Arc<str>),
   Unit,
   Local(u16),
   Sequence(Vec<PlannedExpression>),
@@ -1229,6 +1232,11 @@ fn plan_expression(expression: &Calcit, tail: bool, context: &mut PlanningContex
       Some(CalxScalarType::String),
       path,
       PlannedExpressionKind::String(value.clone()),
+    )),
+    Calcit::Tag(value) => Ok(planned(
+      Some(CalxScalarType::Tag),
+      path,
+      PlannedExpressionKind::Tag(Arc::from(value.ref_str())),
     )),
     Calcit::Unit => Ok(planned(None, path, PlannedExpressionKind::Unit)),
     Calcit::Local(local) => Ok(planned(
@@ -1496,6 +1504,7 @@ fn scalar_local_type(local: &CalcitLocal, function: &CalxDefinitionRef) -> Resul
     crate::calcit::CalcitTypeAnnotation::Number => Ok(Some(CalxScalarType::F64)),
     crate::calcit::CalcitTypeAnnotation::Bool => Ok(Some(CalxScalarType::Bool)),
     crate::calcit::CalcitTypeAnnotation::String => Ok(Some(CalxScalarType::String)),
+    crate::calcit::CalcitTypeAnnotation::Tag => Ok(Some(CalxScalarType::Tag)),
     crate::calcit::CalcitTypeAnnotation::F64Buffer => Ok(Some(CalxScalarType::F64Buffer)),
     other => Err(lower_error(
       function,
@@ -1588,6 +1597,9 @@ fn emit_expression(
     }
     PlannedExpressionKind::String(value) => {
       body.constant(VmValue::Str(Rc::from(value.as_ref())))?;
+    }
+    PlannedExpressionKind::Tag(value) => {
+      body.constant(VmValue::Tag(Rc::from(value.as_ref())))?;
     }
     PlannedExpressionKind::Unit => {}
     PlannedExpressionKind::Local(idx) => {
