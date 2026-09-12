@@ -625,12 +625,16 @@ fn bounded_plain_type_relation<'a>(
     }
 
     match (actual, expected) {
-      (_, Type::Dynamic) | (Type::Dynamic, _) => {
+      (Type::TypeVar(left), Type::TypeVar(right)) if left == right => {}
+      // Other generic-variable relations need the binding-aware path below,
+      // including when their exact inferred value is Dynamic.
+      (Type::TypeVar(_), _) | (_, Type::TypeVar(_)) => return Ok(None),
+      (_, Type::Dynamic) => {}
+      (Type::Dynamic, _) => {
         if matches!(mode, PlainRelationMode::Proof) {
           result = result.and(NeedsBoundary(Boundary::Dynamic));
         }
       }
-      (Type::TypeVar(left), Type::TypeVar(right)) if left == right => {}
       (Type::List(left), Type::List(right))
       | (Type::Set(left), Type::Set(right))
       | (Type::Variadic(left), Type::Variadic(right))
@@ -774,8 +778,6 @@ fn bounded_plain_type_relation<'a>(
       | (_, Type::StructValue(_))
       | (Type::EnumValue(_), _)
       | (_, Type::EnumValue(_))
-      | (Type::TypeVar(_), _)
-      | (_, Type::TypeVar(_))
       | (Type::TypeRef(_, _), _)
       | (_, Type::TypeRef(_, _)) => return Ok(None),
       _ if is_plain_mismatch_node(actual) && is_plain_mismatch_node(expected) => return Ok(Some((Mismatch, stats))),
@@ -3617,7 +3619,7 @@ impl CalcitTypeAnnotation {
   /// Generic matching uses this as an occurs-check before recording a binding,
   /// so a value such as `Optional<T>` cannot bind `T` to a type containing
   /// itself and make later comparisons recurse forever.
-  fn contains_type_var_named(&self, name: &str) -> bool {
+  pub(crate) fn contains_type_var_named(&self, name: &str) -> bool {
     let mut pending = vec![self];
     while let Some(annotation) = pending.pop() {
       match annotation {
@@ -4075,7 +4077,6 @@ impl CalcitTypeAnnotation {
 
   fn compatible_one_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
     match (self, expected) {
-      (_, Self::Dynamic) | (Self::Dynamic, _) => true,
       (Self::Macro(actual), Self::Macro(expected)) => actual == expected,
       (Self::Syntax(actual), Self::Syntax(expected)) => actual == expected,
       // Compatibility for annotations constructed by older embedders before
@@ -4110,6 +4111,7 @@ impl CalcitTypeAnnotation {
           true
         }
       },
+      (_, Self::Dynamic) | (Self::Dynamic, _) => true,
       (_, Self::Optional(expected_inner)) => match self {
         Self::Optional(actual_inner) => actual_inner.compatible_with_bindings(expected_inner, bindings),
         Self::JsNullish(_) => false,
@@ -4428,7 +4430,6 @@ impl CalcitTypeAnnotation {
     }
 
     match (self, expected) {
-      (_, Self::Dynamic) | (Self::Dynamic, _) => NeedsBoundary(Boundary::Dynamic),
       (_, Self::Custom(value)) if Self::custom_keyword_matches(value, "any") => NeedsBoundary(Boundary::LegacyAny),
       (Self::Custom(value), _) if Self::custom_keyword_matches(value, "any") => NeedsBoundary(Boundary::LegacyAny),
       (Self::TypeVar(actual), Self::TypeVar(expected)) if actual == expected => Proven,
@@ -4448,6 +4449,8 @@ impl CalcitTypeAnnotation {
           Proven
         }
       },
+      (_, Self::Dynamic) => Proven,
+      (Self::Dynamic, _) => NeedsBoundary(Boundary::Dynamic),
       (Self::Optional(actual), Self::Optional(expected)) | (Self::JsNullish(actual), Self::JsNullish(expected)) => {
         actual.prove_with_staged_bindings(expected, bindings)
       }
@@ -7646,7 +7649,7 @@ mod tests {
   }
 
   #[test]
-  fn projection_proof_keeps_only_concrete_bindings_across_an_unrelated_boundary() {
+  fn projection_proof_preserves_dynamic_as_an_open_generic_binding() {
     let actual = CalcitTypeAnnotation::TypeRef(
       Arc::from("app/Result"),
       Arc::new(vec![
@@ -7662,12 +7665,9 @@ mod tests {
       ]),
     );
     let mut bindings = TypeBindings::new();
-    assert_eq!(
-      actual.prove_available_bindings(&expected, &mut bindings),
-      TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic)
-    );
+    assert_eq!(actual.prove_available_bindings(&expected, &mut bindings), TypeProof::Proven);
     assert!(matches!(bindings.get("T").map(AsRef::as_ref), Some(CalcitTypeAnnotation::Number)));
-    assert!(!bindings.contains_key("E"), "Dynamic must not become a concrete generic binding");
+    assert!(matches!(bindings.get("E").map(AsRef::as_ref), Some(CalcitTypeAnnotation::Dynamic)));
   }
 
   #[test]
