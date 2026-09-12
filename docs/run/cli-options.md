@@ -481,6 +481,15 @@ WASI command 也复用 `unix-time-ms` 与 `cpu-time`。前者读取系统实时�
 
 安全随机字节统一通过 `secure-random-bytes` 获取。参数必须是 `0..65536` 范围内的整数，返回值为 `Result<Buffer,String>`；WASI command 由 Preview 1 `random_get` 填充缓冲区，宿主错误保留为 `Result` 的错误分支。Native 与生成的 JavaScript 保持相同的公开值形状，分别使用系统 CSPRNG 与 Web Crypto。`calcit wasm` 的 core module 没有默认随机数宿主协议，会以 `E_WASM_CAPABILITY` 明确拒绝。
 
+WASI command 可通过 `FsPath .read-text` 与 `.write-text` 访问 host 显式预开放的目录。Calcit 路径使用 guest 侧名称，例如 host 以 `--dir ./data::/workspace` 授权后，程序访问 `workspace/input.txt`；编译器会选择最长匹配的 preopen，并只把剩余相对路径交给 Preview 1 `path_open`：
+
+```bash
+calcit wasi calcit.cirru --emit-path target/wasi-command
+wasmtime run --dir ./data::/workspace target/wasi-command/program.wasm
+```
+
+未提供 preopen、以 `/` 开头的绝对路径、包含完整 `..` 分段的越界路径、非法 UTF-8、I/O 错误和无法继续推进的 partial I/O 都返回 `Result :err`。当前 WASI 文本读取单文件上限为 4 MiB，超过限制同样返回错误，避免模块为不受控输入分配过量线性内存。Calcit 不接触 raw descriptor；`calcit wasm` 的 core module 也不会继承文件权限，而是在 codegen 阶段以 `E_WASM_CAPABILITY` 拒绝。`.read-dir` 与 `.walk-dir` 尚未接入 WASI。
+
 ## Markdown code checking
 
 Use `docs check-md` to validate fenced code blocks in markdown files:

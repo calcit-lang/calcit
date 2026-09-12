@@ -87,6 +87,22 @@ try {
   const todoEnum = new runtimeA.CalcitEnumDef(new runtimeA.CalcitStructValue(todoName, [todoField], [todoType]));
   const todoEnumValue = new runtimeA.CalcitEnumValue(todoField, [""], todoEnum);
   const anonymousEnumValue = new runtimeA.CalcitEnumValue(todoField, [""]);
+  globalThis.__calcit_injections__.read_file = (path) => `typed:${path}`;
+  globalThis.__calcit_injections__.write_file = (path, content) => writes.push([path, content]);
+  const typedRead = runtimeA._$n_fs_read_text(todoEnum, "typed.txt", "read failed");
+  assert.equal(typedRead.tag, runtimeA.newTag("ok"));
+  assert.deepEqual(typedRead.extra, ["typed:typed.txt"]);
+  assert.equal(typedRead.enumPrototype, todoEnum);
+  const typedWrite = runtimeA._$n_fs_write_text(todoEnum, "typed.txt", "内容", "write failed");
+  assert.equal(typedWrite.tag, runtimeA.newTag("ok"));
+  assert.deepEqual(typedWrite.extra, [undefined]);
+  assert.deepEqual(writes.at(-1), ["typed.txt", "内容"]);
+  globalThis.__calcit_injections__.read_file = () => {
+    throw new Error("denied");
+  };
+  const typedFailure = runtimeA._$n_fs_read_text(todoEnum, "typed.txt", "read failed");
+  assert.equal(typedFailure.tag, runtimeA.newTag("err"));
+  assert.deepEqual(typedFailure.extra, ["read failed: denied"]);
   assert.equal(todoRecord.toString(), "(%{} 'TodoState (:draft |))");
   assert.equal(todoStruct.toString(), "(%struct-def 'TodoState (:draft 'String))");
   assert.equal(todoEnum.toString(), "(%enum-def 'TodoState)");

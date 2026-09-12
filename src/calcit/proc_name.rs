@@ -124,10 +124,14 @@ pub enum CalcitProc {
   RegisterCalcitBuiltinImpls,
   #[strum(serialize = "read-file")]
   ReadFile,
+  #[strum(serialize = "&fs-read-text")]
+  NativeFsReadText,
   #[strum(serialize = "read-dir")]
   ReadDir,
   #[strum(serialize = "write-file")]
   WriteFile,
+  #[strum(serialize = "&fs-write-text")]
+  NativeFsWriteText,
   #[strum(serialize = "list?")]
   ListQuestion,
   #[strum(serialize = "tag?")]
@@ -1364,6 +1368,13 @@ impl CalcitProc {
         return_type: some_tag("string"),
         arg_types: vec![some_tag("string")],
       }),
+      NativeFsReadText => Some(ProcTypeSignature {
+        return_type: Arc::new(CalcitTypeAnnotation::TypeRef(
+          Arc::from("Result"),
+          Arc::new(vec![some_tag("string"), some_tag("string")]),
+        )),
+        arg_types: vec![some_tag("enum-def"), some_tag("string"), some_tag("string")],
+      }),
       ReadDir => Some(ProcTypeSignature {
         return_type: list_of(some_tag("string")),
         arg_types: vec![some_tag("string"), some_tag("bool")],
@@ -1371,6 +1382,13 @@ impl CalcitProc {
       WriteFile => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
         arg_types: vec![some_tag("string"), some_tag("string")],
+      }),
+      NativeFsWriteText => Some(ProcTypeSignature {
+        return_type: Arc::new(CalcitTypeAnnotation::TypeRef(
+          Arc::from("Result"),
+          Arc::new(vec![some_tag("unit"), some_tag("string")]),
+        )),
+        arg_types: vec![some_tag("enum-def"), some_tag("string"), some_tag("string"), some_tag("string")],
       }),
       Raise => Some(ProcTypeSignature {
         return_type: dynamic_tag(),

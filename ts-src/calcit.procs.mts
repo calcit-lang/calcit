@@ -1773,6 +1773,16 @@ export let read_file = (path: string): string => {
     return content;
   }
 };
+
+/** Read UTF-8 text and preserve host failures as nominal Result values. */
+export let _$n_fs_read_text = (resultType: CalcitEnumDef, path: string, hostError: string): CalcitEnumValue => {
+  try {
+    return new CalcitEnumValue(newTag("ok"), [read_file(path)], resultType);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    return new CalcitEnumValue(newTag("err"), [`${hostError}: ${message}`], resultType);
+  }
+};
 export let read_dir = (path: string, recursive: boolean): CalcitSliceList => {
   if (!inNodeJs) {
     throw new Error("read_dir is unavailable in browser JavaScript hosts");
@@ -1789,6 +1799,22 @@ export let write_file = (path: string, content: string): void => {
   } else {
     // no actual File API in browser
     localStorage.setItem(path, content);
+  }
+};
+
+/** Write UTF-8 text and preserve host failures as nominal Result values. */
+export let _$n_fs_write_text = (
+  resultType: CalcitEnumDef,
+  path: string,
+  content: string,
+  hostError: string,
+): CalcitEnumValue => {
+  try {
+    write_file(path, content);
+    return new CalcitEnumValue(newTag("ok"), [undefined], resultType);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    return new CalcitEnumValue(newTag("err"), [`${hostError}: ${message}`], resultType);
   }
 };
 

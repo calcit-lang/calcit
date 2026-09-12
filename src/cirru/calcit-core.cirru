@@ -713,6 +713,20 @@
             {} (:return 'String)
               :args $ [] 'List
           :tags $ #{} :builtin :internal
+        '&fs-read-text $ %{} 'CodeEntry (:doc "|内部 UTF-8 文件读取边界；显式接收 Result 原型和宿主错误前缀，供 FsPath wrapper 与 backend lowering 使用。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'EnumDef 'String 'String
+              :return $ :: 'Result 'String 'String
+        '&fs-write-text $ %{} 'CodeEntry (:doc "|内部 UTF-8 文件写入边界；显式接收 Result 原型和宿主错误前缀，供 FsPath wrapper 与 backend lowering 使用。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'EnumDef 'String 'String 'String
+              :return $ :: 'Result 'Unit 'String
         '&get-args $ %{} 'CodeEntry (:doc "|读取宿主进程参数的内部实现。")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5547,10 +5561,10 @@
               :args $ [] 'FsPath
               :return $ :: 'Result (:: 'List 'FsPath) 'String
           :tags $ #{} :file :internal :io
-        'fs-path:read-text $ %{} 'CodeEntry (:doc "|Read an FsPath as UTF-8 text and return Result<String,String>.")
+        'fs-path:read-text $ %{} 'CodeEntry (:doc "|读取 FsPath 指向的 UTF-8 文本并返回 Result<String,String>；WASI 只访问 host 显式授予的 preopen。")
           :code $ quote
             defn fs-path:read-text (self)
-              try-read-file $ :value self
+              &fs-read-text Result (:value self) "|fs-path:read-text failed"
           :examples $ []
           :schema $ :: 'Fn
             {}
@@ -5577,10 +5591,10 @@
               :args $ [] 'FsPath
               :return $ :: 'Result (:: 'List 'FsPath) 'String
           :tags $ #{} :file :internal :io
-        'fs-path:write-text $ %{} 'CodeEntry (:doc "|Write UTF-8 text to an FsPath and return Result<Unit,String>.")
+        'fs-path:write-text $ %{} 'CodeEntry (:doc "|把 UTF-8 文本写入 FsPath 并返回 Result<Unit,String>；WASI 只访问 host 显式授予的 preopen。")
           :code $ quote
             defn fs-path:write-text (self content)
-              try-write-file (:value self) content
+              &fs-write-text Result (:value self) content "|fs-path:write-text failed"
           :examples $ []
           :schema $ :: 'Fn
             {}
@@ -8584,24 +8598,18 @@
             {}
               :args $ [] 'String (:: 'Option 'Bool)
               :return $ :: 'Result (:: 'List 'String) 'String
-        'try-read-file $ %{} 'CodeEntry (:doc "|Compatibility function that reads a UTF-8 path String as Result<String,String>. New code should construct FsPath with fs:path and call .read-text. Native and JavaScript hosts with file injections are supported; WASM file effects are not yet supported.")
+        'try-read-file $ %{} 'CodeEntry (:doc "|兼容 String path 的 UTF-8 读取入口，复用 FsPath 的类型化 runtime boundary；新代码应使用 FsPath .read-text。")
           :code $ quote
-            defn try-read-file (path)
-              try
-                %ok $ read-file path
-                fn (message) (%err message)
+            defn try-read-file (path) (&fs-read-text Result path "|try-read-file failed")
           :examples $ []
             quote $ try-read-file |/calcit-result-contract-does-not-exist/file
           :schema $ :: 'Fn
             {}
               :args $ [] 'String
               :return $ :: 'Result 'String 'String
-        'try-write-file $ %{} 'CodeEntry (:doc "|Compatibility function that writes UTF-8 content to a path String as Result<Unit,String>. New code should construct FsPath with fs:path and call .write-text. Native and JavaScript hosts with file injections are supported; WASM file effects are not yet supported.")
+        'try-write-file $ %{} 'CodeEntry (:doc "|兼容 String path 的 UTF-8 写入入口，复用 FsPath 的类型化 runtime boundary；新代码应使用 FsPath .write-text。")
           :code $ quote
-            defn try-write-file (path content)
-              try
-                %ok $ write-file path content
-                fn (message) (%err message)
+            defn try-write-file (path content) (&fs-write-text Result path content "|try-write-file failed")
           :examples $ []
             quote $ try-write-file |/calcit-result-contract-does-not-exist/file |content
           :schema $ :: 'Fn
