@@ -98,17 +98,23 @@ List、`nil`、Quote 和带类型名的 Enum/Struct。
 机器结果需要区分用户 source、compiler-owned core lowering、backend 和 host boundary。诊断或改写不能只给出
 生成节点的位置，再要求 Agent 从展开文本或生成 JS 猜测原始 source。
 
-在现有 envelope 中渐进加入下列 typed 字段：
+在现有 envelope 的 `:data` 中渐进加入下列 typed 字段：
 
 ```cirru
 {}
-  :semantic-layer :surface
-  :definition 'app.core/main!
-  :path |code@3.2
-  :fingerprint |opaque-subtree-hash
-  :origin-chain $ []
-  :diagnostic-code |E_EXAMPLE
-  :replacement nil
+  :schema-version 1
+  :command :fix.preview
+  :revision |opaque-content-hash
+  :data $ {}
+    :semantic-layer :surface
+    :definition 'app.core/main!
+    :path |code@3.2
+    :fingerprint |opaque-subtree-hash
+    :origin-chain $ []
+    :diagnostic-code |E_EXAMPLE
+    :replacement nil
+  :diagnostics $ []
+  :next $ []
 ```
 
 - `:semantic-layer` 使用 `:surface`、`:core`、`:backend` 或 `:host-boundary`；
