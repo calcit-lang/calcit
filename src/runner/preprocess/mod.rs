@@ -9534,6 +9534,16 @@ fn find_erased_generic_argument(
   }
 
   let inspect = |index: usize, arg: &Calcit, expected: &Arc<CalcitTypeAnnotation>| {
+    let empty_map_has_no_type_evidence = match (arg, expected.as_ref()) {
+      (Calcit::Map(values), CalcitTypeAnnotation::Map(_, _)) => values.is_empty(),
+      (Calcit::List(values), CalcitTypeAnnotation::Map(_, _)) if values.len() == 1 => {
+        matches!(values.first(), Some(Calcit::Proc(CalcitProc::NativeMap)))
+      }
+      _ => false,
+    };
+    if empty_map_has_no_type_evidence {
+      return None;
+    }
     let actual = resolve_type_value(arg, scope_types).or_else(|| match arg {
       Calcit::Local(local) => Some(local.type_info.clone()),
       _ => None,

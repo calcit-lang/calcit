@@ -6812,6 +6812,19 @@
                       {} $ :b 2
                       :: 'Map 'Tag 'Dynamic
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |accepts-empty-map-literal)
+              :code $ quote
+                assert= 1 $ count
+                  merge-dynamic
+                    {} $ :a 1
+                    {}
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |infers-key-after-empty-map-literal)
+              :code $ quote
+                assert= 1 $ count
+                  merge-dynamic ({})
+                    {} $ :a 1
+              :tags $ #{} :core :unit
         'merge-non-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn merge-non-nil (x0 & xs) (reduce xs x0 &merge-non-nil)
