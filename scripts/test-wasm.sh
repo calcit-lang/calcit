@@ -29,9 +29,9 @@ run_codegen() {
 
 # Step 1: run the user-visible Calcit semantic contract before backend checks.
 if [[ -x ./target/debug/calcit ]]; then
-  ./target/debug/calcit "$ENTRY" test test-wasm.main/test-closure-capture-map --require-match
+  ./target/debug/calcit "$ENTRY" test --tag wasm --require-match
 else
-  bash scripts/cargo-with-sdk.sh run --bin calcit -- "$ENTRY" test test-wasm.main/test-closure-capture-map --require-match
+  bash scripts/cargo-with-sdk.sh run --bin calcit -- "$ENTRY" test --tag wasm --require-match
 fi
 
 # Step 2: generate .wasm binary

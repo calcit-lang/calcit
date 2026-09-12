@@ -772,6 +772,9 @@ fn emit_inline_closure_body(ctx: &mut WasmGenCtx, closure: &InlineClosure, param
       param_locals.len()
     ));
   }
+  if closure.body.iter().any(check_uses_recur) {
+    return Err("recur in a statically specialized closure is not yet supported in WASM codegen".into());
+  }
 
   let caller_locals = std::mem::replace(&mut ctx.locals, closure.captured_locals.clone());
   let caller_closures = std::mem::replace(&mut ctx.lambda_locals, closure.captured_closures.clone());
@@ -791,6 +794,9 @@ fn emit_inline_closure_call(ctx: &mut WasmGenCtx, closure: &InlineClosure, args:
       closure.params.len(),
       args.len()
     ));
+  }
+  if closure.body.iter().any(check_uses_recur) {
+    return Err("recur in a statically specialized closure is not yet supported in WASM codegen".into());
   }
 
   let mut bindings = Vec::with_capacity(args.len());
@@ -1391,9 +1397,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         _ => {}
       }
       // Check if this symbol refers to an inline lambda captured in this scope.
-      if let Some(closure) = ctx.lambda_locals.get(name).cloned()
-        && closure.params.len() == args_list.len()
-      {
+      if let Some(closure) = ctx.lambda_locals.get(name).cloned() {
         return emit_inline_closure_call(ctx, &closure, &args_list);
       }
       let fn_idx = *ctx
@@ -1497,9 +1501,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
     Calcit::Local(local) => {
       let local_name = local.sym.as_ref().to_string();
       // If this local is an inline lambda, inline the call directly.
-      if let Some(closure) = ctx.lambda_locals.get(&local_name).cloned()
-        && closure.params.len() == args_list.len()
-      {
+      if let Some(closure) = ctx.lambda_locals.get(&local_name).cloned() {
         return emit_inline_closure_call(ctx, &closure, &args_list);
       }
       let local_idx = *ctx

@@ -241,6 +241,25 @@
               :code $ quote
                 assert= 1 $ test-closure-capture-map
               :tags $ #{} :core :unit :wasm
+        'test-closure-map-indexed $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defwasm-export test-closure-map-indexed () $ let
+                values $ map-indexed ([] 4 5)
+                  fn (x idx)
+                    hint-fn $ {}
+                      :args $ [] 'Number 'Number
+                      :return 'Number
+                    + x idx
+              if (&list:includes? values 6) 1 0
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ []
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-number-index-in-wasm)
+              :code $ quote
+                assert= 1 $ test-closure-map-indexed
+              :tags $ #{} :core :unit :wasm
         'test-compare $ %{} 'CodeEntry (:doc "|comparison chain")
           :code $ quote
             defn test-compare (a b)

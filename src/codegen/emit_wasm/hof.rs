@@ -541,7 +541,10 @@ fn emit_binary_step_ei(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, elem: u32, id
       if closure.params.len() < 2 {
         return Err("map-indexed inline lambda needs at least 2 params".into());
       }
-      emit_inline_closure_body(ctx, closure, &[elem, idx])
+      let idx_f64 = ctx.alloc_local();
+      ctx.ptr_to_f64(idx);
+      ctx.emit(Instruction::LocalSet(idx_f64));
+      emit_inline_closure_body(ctx, closure, &[elem, idx_f64])
     }
     FoldlCallKind::Proc(_) => Err("map-indexed proc callee not supported".into()),
     // Dynamic dispatch: (elem_f64, idx_as_f64) → f64. Canonical type 2.
