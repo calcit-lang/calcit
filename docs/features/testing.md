@@ -136,6 +136,41 @@ so the full `yarn try-js` flow continues to verify JavaScript bit operations,
 while its ordinary API assertions live beside the core definitions. WASM
 exports and FFI checks similarly remain in the dedicated WASM fixtures.
 
+## Choose the Test Surface (Calcit-first)
+
+Place user-observable behavior in definition `:tests`; keep Rust tests for the
+low-level boundaries a Calcit program cannot reasonably construct.
+
+- Prefer `:tests` for language semantics, type inference, macro expansion, core
+  APIs, runtime behavior, and cross-backend contracts. Write the same
+  expressions a user would, so reviewers see the input and expected result
+  directly.
+- Keep Rust tests for parsers/serializers, internal data structures, host/FFI
+  boundaries, memory or concurrency invariants, error recovery, and conditions
+  without a stable Calcit surface.
+- A backend-specific implementation may keep precise Rust tests, but should also
+  have a Calcit-side test for the shared semantic. Add target execution or
+  codegen evidence when JS, IR, or WASM is involved.
+- When behavior changes, migrate a Rust test to `:tests` if it only verifies
+  semantics Calcit can express; remove the duplicate once Calcit coverage is
+  equivalent or stronger.
+- Do not add Rust/Calcit test-count ratios, coverage percentages, or a
+  statistics analyzer. Placement follows reviewable semantic boundaries.
+
+Example: the strict Tag slice attaches a `:tests` to `calcit.core/&compare` for
+the user-observable Tag/String distinction, while the Calx lowering keeps a Rust
+backend fixture because no user-facing Calx runtime exists yet.
+
+### PR checklist
+
+- Why does this coverage belong in `:tests`, or what concrete low-level reason
+  keeps it in Rust?
+- Do the Calcit tests assert the relevant success, failure, or boundary branch
+  with user-level expressions?
+- If a Rust test only restates the same external semantics, was it migrated or
+  removed?
+- Do Native and the relevant JS/IR/WASM checks still pass?
+
 ## Core Test Placement
 
 For a core function, macro, or builtin whose behavior can be expressed in one

@@ -30,7 +30,7 @@
     "check-strict-default": "cargo build --bin calcit && node scripts/check-strict-default.mjs",
     "check-agent-interface": "cargo build --bin calcit && node scripts/check-agent-interface.mjs",
     "try-all": "yarn check-all",
-    "try-core-tests": "cargo run --bin calcit -- src/cirru/calcit-core.cirru --compat-types test --tag unit --summary-only",
+    "try-core-tests": "cargo run --bin calcit -- src/cirru/calcit-core.cirru --compat-types test --tag unit --summary-only --require-match",
     "check-core-quality": "cargo run --bin calcit -- src/cirru/calcit-core.cirru analyze quality --baseline config/calcit-core-quality.cirru --format json",
     "generate-core-dynamic-classification": "node scripts/core-dynamic-classification.mjs --write",
     "check-core-dynamic-classification": "node scripts/core-dynamic-classification.mjs --check",

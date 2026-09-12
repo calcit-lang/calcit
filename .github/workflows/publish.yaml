@@ -40,7 +40,7 @@ jobs:
         env:
           RUST_MIN_STACK: "16777216"
       - name: "run definition-attached core tests"
-        run: cargo run --bin calcit -- src/cirru/calcit-core.cirru --compat-types test --tag unit
+        run: cargo run --bin calcit -- src/cirru/calcit-core.cirru --compat-types test --tag unit --require-match
       - name: "prevent bundled core type-debt regressions"
         run: cargo run --bin calcit -- src/cirru/calcit-core.cirru analyze quality --baseline config/calcit-core-quality.cirru --format json
       - name: "prevent bundled core Dynamic classification drift"
