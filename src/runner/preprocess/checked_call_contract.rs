@@ -74,7 +74,7 @@ pub(crate) fn checked_call_contract_arity(fn_ns: &str, fn_def: &str) -> Option<u
     return None;
   }
   match fn_def {
-    "any?" | "each" | "every?" | "get" | "filter" | "map" | "map-list-kv" | "result:map" => Some(2),
+    "any?" | "each" | "every?" | "get" | "filter" | "map" | "map-indexed" | "map-list-kv" | "result:map" => Some(2),
     "option:fold" | "update" => Some(3),
     _ => None,
   }
@@ -274,6 +274,18 @@ pub(crate) fn resolve_checked_call_contract(
         lowering: Some(CheckedCallLowering::CoreDef(target)),
       })
     }
+    ("map-indexed", T::List(item_type)) if !matches!(item_type.as_ref(), T::Syntax(_)) => {
+      let output_type =
+        callback_return_type(args.get(1)?, scope_types).unwrap_or_else(|| Arc::new(T::TypeVar(Arc::from("MapIndexedOutput"))));
+      Some(CheckedCallContract {
+        expected_types: Some(vec![
+          receiver_type.clone(),
+          fn_type(vec![Arc::new(T::Number), item_type.clone()], output_type.clone()),
+        ]),
+        return_type: Arc::new(T::List(output_type)),
+        lowering: None,
+      })
+    }
     ("map", T::Map(_, _)) => {
       let pair_type = Arc::new(T::List(crate::calcit::DYNAMIC_TYPE.clone()));
       Some(CheckedCallContract {
@@ -416,6 +428,30 @@ mod tests {
       panic!("map-list-kv callback should be checked as a function");
     };
     assert_eq!(callback.arg_types.as_slice(), &[key, value]);
+    assert_eq!(callback.return_type, output.clone());
+    assert_eq!(contract.return_type, Arc::new(CalcitTypeAnnotation::List(output)));
+    assert_eq!(contract.lowering, None);
+  }
+
+  #[test]
+  fn map_indexed_contract_preserves_open_members_without_narrowing_them() {
+    let dynamic = crate::calcit::DYNAMIC_TYPE.clone();
+    let output = Arc::new(CalcitTypeAnnotation::List(dynamic.clone()));
+    let receiver = Arc::new(CalcitTypeAnnotation::List(dynamic.clone()));
+    let mapper = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::Number), dynamic.clone()],
+      output.clone(),
+    ));
+    let args = CalcitList::from(&[local("items", receiver.clone()), local("with-index", mapper)] as &[Calcit]);
+
+    let contract = resolve_checked_call_contract(calcit::CORE_NS, "map-indexed", &args, &ScopeTypes::new())
+      .expect("typed map-indexed should derive one receiver-bound contract");
+    let expected_types = contract.expected_types.as_ref().expect("map-indexed should bind callback evidence");
+    assert_eq!(expected_types[0], receiver);
+    let CalcitTypeAnnotation::Fn(callback) = expected_types[1].as_ref() else {
+      panic!("map-indexed callback should be checked as a function");
+    };
+    assert_eq!(callback.arg_types.as_slice(), &[Arc::new(CalcitTypeAnnotation::Number), dynamic]);
     assert_eq!(callback.return_type, output.clone());
     assert_eq!(contract.return_type, Arc::new(CalcitTypeAnnotation::List(output)));
     assert_eq!(contract.lowering, None);

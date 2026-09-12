@@ -9405,6 +9405,27 @@ fn find_unproven_generic_argument(
     return None;
   }
 
+  let mut argument_contracts = args
+    .iter()
+    .enumerate()
+    .filter_map(|(index, arg)| {
+      signature
+        .arg_types
+        .get(index)
+        .or(signature.rest_type.as_ref())
+        .map(|expected| (index, arg, expected))
+    })
+    .collect::<Vec<_>>();
+  // Inspect open evidence first so intentional Dynamic transport is not narrowed by a later concrete peer.
+  argument_contracts.sort_by_key(|(_, arg, _)| {
+    !resolve_type_value(arg, scope_types)
+      .or_else(|| match arg {
+        Calcit::Local(local) => Some(local.type_info.clone()),
+        _ => None,
+      })
+      .is_some_and(|actual| contains_dynamic_type(actual.as_ref()))
+  });
+
   let mut bindings = HashMap::new();
   let mut inspect = |index: usize, arg: &Calcit, expected: &Arc<CalcitTypeAnnotation>| {
     let empty_map_has_no_type_evidence = match (arg, expected.as_ref()) {
@@ -9443,16 +9464,9 @@ fn find_unproven_generic_argument(
     })
   };
 
-  for (index, (arg, expected)) in args.iter().zip(signature.arg_types.iter()).enumerate() {
+  for (index, arg, expected) in argument_contracts {
     if let Some(found) = inspect(index, arg, expected) {
       return Some(found);
-    }
-  }
-  if let Some(rest) = &signature.rest_type {
-    for (index, arg) in args.iter().enumerate().skip(signature.arg_types.len()) {
-      if let Some(found) = inspect(index, arg, rest) {
-        return Some(found);
-      }
     }
   }
   None
@@ -17385,6 +17399,21 @@ mod tests {
       find_unproven_generic_argument(&list_identity, &list_args, &list_scope).is_none(),
       "List<T> can preserve T as an explicitly open Dynamic binding"
     );
+
+    let same_type =
+      generic_relation_test_signature(vec![type_var.clone(), type_var.clone()], Arc::new(CalcitTypeAnnotation::Bool), None);
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let concrete = generic_relation_test_local("concrete", number.clone());
+    let same_scope = ScopeTypes::from([(Arc::from("value"), dynamic.clone()), (Arc::from("concrete"), number)]);
+    for same_args in [
+      CalcitList::from(&[value.clone(), concrete.clone()][..]),
+      CalcitList::from(&[concrete.clone(), value.clone()][..]),
+    ] {
+      assert!(
+        find_unproven_generic_argument(&same_type, &same_args, &same_scope).is_none(),
+        "a concrete value can be compared or transported through an open generic binding regardless of argument order"
+      );
+    }
 
     let mut concrete_callback = generic_relation_test_signature(
       vec![Arc::new(CalcitTypeAnnotation::Number)],

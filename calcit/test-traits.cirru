@@ -573,6 +573,14 @@
                     fn () 0
                     fn (value) value
                   assert= 1 $ if-let (value present) value 0
+                  assert= true $ =
+                    option:unwrap-or (first open-list) nil
+                    , 1
+                  assert= true $ = 1
+                    option:unwrap-or (first open-list) nil
+                  assert=
+                    [] ([] 0 1) ([] 1 |x)
+                    map-indexed open-list $ fn (idx value) ([] idx value)
               println "|  Option/Result map: ✓"
           :examples $ []
           :schema $ :: 'Fn

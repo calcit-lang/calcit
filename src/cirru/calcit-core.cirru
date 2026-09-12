@@ -2839,6 +2839,14 @@
                   assert= true $ = ([] 1 2) ([] 1 2)
                   assert= true $ = (%some 1) (%some 1)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |compares-open-binding-symmetrically)
+              :code $ quote
+                let
+                    x $ assert-type 1 'Dynamic
+                  assert= true $ = x 1
+                  assert= true $ = 1 x
+                  assert= false $ = 2 x
+              :tags $ #{} :core :unit
         '> $ %{} 'CodeEntry (:doc "|Greater-than comparison for one or more numbers\nReturns true only when the value strictly decreases across every argument.")
           :code $ quote
             defn > (x & ys)
@@ -3544,6 +3552,16 @@
                 assert= (&{} :a 1 :b 2 :c 3)
                   assoc (&{} :a 1 :b 2) :c 3
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |associates-concrete-value-into-open-map)
+              :code $ quote
+                let
+                    m $ assert-type
+                      {} (:a 1) (:b |x)
+                      :: 'Map 'Tag 'Dynamic
+                  assert=
+                    {} (:a 1) (:b |x) (:ready true)
+                    assoc m :ready true
+              :tags $ #{} :core :unit
         'assoc-in $ %{} 'CodeEntry (:doc "|associates a value at a nested path in a data structure, creates intermediate maps if needed")
           :code $ quote
             defn assoc-in (data path v)
@@ -3923,6 +3941,12 @@
               :code $ quote
                 assert= ([] 1 2 3 4 5)
                   conj ([] 1 2 3) 4 5
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |appends-concrete-value-to-open-list)
+              :code $ quote
+                let
+                    xs $ assert-type ([] 1 |x) (:: 'List 'Dynamic)
+                  assert= ([] 1 |x :ready) (conj xs :ready)
               :tags $ #{} :core :unit
         'contains-in? $ %{} 'CodeEntry (:doc "||Check whether every hop in a nested path exists across maps, enums, or lists. Struct fields are intentionally excluded; use direct field access instead.")
           :code $ quote
@@ -6735,6 +6759,14 @@
                   map-indexed (range 3)
                     fn (idx x)
                       [] idx $ &str x
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-open-payload-with-index)
+              :code $ quote
+                let
+                    xs $ assert-type ([] 1 :ready) (:: 'List 'Dynamic)
+                  assert=
+                    [] ([] 0 1) ([] 1 :ready)
+                    map-indexed xs $ fn (idx value) ([] idx value)
               :tags $ #{} :core :unit
         'map-kv $ %{} 'CodeEntry (:doc "|Legacy compatibility boundary. Its callback may return a two-item list or a legacy nil/enum drop sentinel, so the result is intentionally Dynamic. Typed code must migrate to filter-map-kv and MapEntryDecision :keep/:drop.")
           :code $ quote
