@@ -10,7 +10,7 @@
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () $ + 1 2
+            defn main! () (println |WASI-stdout: "|你好") (echo |WASI-echo) (eprintln |WASI-stderr: 42) (+ 1 2)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Number)

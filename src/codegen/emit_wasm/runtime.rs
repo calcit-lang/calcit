@@ -6,7 +6,8 @@ use wasm_encoder::{BlockType, Ieee64};
 pub(super) struct HostImport {
   pub(super) module: String,
   pub(super) name: String,
-  pub(super) arity: usize,
+  pub(super) params: Vec<ValType>,
+  pub(super) results: Vec<ValType>,
 }
 
 pub(super) struct ModuleFunctionLayout {
@@ -15,65 +16,75 @@ pub(super) struct ModuleFunctionLayout {
 }
 
 /// List of host-imported functions.
-/// These are provided by the JS environment and indexed before user functions.
+/// These are provided by the selected host and indexed before user functions.
 static CORE_HOST_IMPORTS: LazyLock<Vec<HostImport>> = LazyLock::new(|| {
   vec![
     HostImport {
       module: "math".into(),
       name: "pow".into(),
-      arity: 2,
+      params: vec![ValType::F64; 2],
+      results: vec![ValType::F64],
     },
     HostImport {
       module: "math".into(),
       name: "sin".into(),
-      arity: 1,
+      params: vec![ValType::F64],
+      results: vec![ValType::F64],
     },
     HostImport {
       module: "math".into(),
       name: "cos".into(),
-      arity: 1,
+      params: vec![ValType::F64],
+      results: vec![ValType::F64],
     },
     // IO: log a single value (f64) — host reads memory to decode type
     HostImport {
       module: "io".into(),
       name: "log_value".into(),
-      arity: 1,
+      params: vec![ValType::F64],
+      results: vec![ValType::F64],
     },
     // IO: log a string directly (ptr to heap string) — more efficient than log_value for strings
     HostImport {
       module: "io".into(),
       name: "log_str".into(),
-      arity: 1,
+      params: vec![ValType::F64],
+      results: vec![ValType::F64],
     },
     // IO: read file contents as string (ptr to path in heap)
     HostImport {
       module: "io".into(),
       name: "read_file_str".into(),
-      arity: 1,
+      params: vec![ValType::F64],
+      results: vec![ValType::F64],
     },
     // IO: check if file exists (ptr to path in heap) — returns 1.0 if exists, 0.0 otherwise
     HostImport {
       module: "io".into(),
       name: "file_exists".into(),
-      arity: 1,
+      params: vec![ValType::F64],
+      results: vec![ValType::F64],
     },
     // IO: parse JSON string (ptr to JSON string in heap) — returns parsed value or nil on error
     HostImport {
       module: "io".into(),
       name: "parse_json".into(),
-      arity: 1,
+      params: vec![ValType::F64],
+      results: vec![ValType::F64],
     },
     // IO: get current time in milliseconds
     HostImport {
       module: "io".into(),
       name: "current_time".into(),
-      arity: 0,
+      params: vec![],
+      results: vec![ValType::F64],
     },
     // IO: get environment variable (ptr to key in heap) — returns value string or nil
     HostImport {
       module: "io".into(),
       name: "get_env".into(),
-      arity: 1,
+      params: vec![ValType::F64],
+      results: vec![ValType::F64],
     },
   ]
 });
@@ -81,12 +92,78 @@ static CORE_HOST_IMPORTS: LazyLock<Vec<HostImport>> = LazyLock::new(|| {
 pub(super) fn host_imports_for_target(target: WasmTarget) -> Vec<HostImport> {
   match target {
     WasmTarget::Core => CORE_HOST_IMPORTS.to_vec(),
-    WasmTarget::Wasi => vec![],
+    WasmTarget::Wasi => vec![HostImport {
+      module: "wasi_snapshot_preview1".into(),
+      name: "fd_write".into(),
+      params: vec![ValType::I32; 4],
+      results: vec![ValType::I32],
+    }],
   }
 }
 
 pub(super) fn core_host_import(name: &str) -> Option<&'static HostImport> {
   CORE_HOST_IMPORTS.iter().find(|import| import.name == name)
+}
+
+/// Build the internal Preview 1 writer used by Calcit console operations.
+/// The iovec and result word use the 16-byte scratch area below `HEAP_BASE`.
+pub(super) fn build_wasi_write_all_fn(fd_write_idx: u32) -> CompiledFn {
+  // params: 0=fd, 1=remaining byte pointer, 2=remaining byte length
+  // local: 3=bytes written by the current call
+  let instructions = vec![
+    Instruction::Block(BlockType::Empty),
+    Instruction::Loop(BlockType::Empty),
+    Instruction::LocalGet(2),
+    Instruction::I32Eqz,
+    Instruction::BrIf(1),
+    // ciovec { buf: 0, buf_len: 4 }, nwritten at 8.
+    Instruction::I32Const(0),
+    Instruction::LocalGet(1),
+    Instruction::I32Store(mem_arg_i32(0)),
+    Instruction::I32Const(4),
+    Instruction::LocalGet(2),
+    Instruction::I32Store(mem_arg_i32(0)),
+    Instruction::LocalGet(0),
+    Instruction::I32Const(0),
+    Instruction::I32Const(1),
+    Instruction::I32Const(8),
+    Instruction::Call(fd_write_idx),
+    // A host error or a zero-byte successful write cannot make progress.
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::I32Const(8),
+    Instruction::I32Load(mem_arg_i32(0)),
+    Instruction::LocalTee(3),
+    Instruction::I32Eqz,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(3),
+    Instruction::LocalGet(2),
+    Instruction::I32GtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(1),
+    Instruction::LocalGet(3),
+    Instruction::I32Add,
+    Instruction::LocalSet(1),
+    Instruction::LocalGet(2),
+    Instruction::LocalGet(3),
+    Instruction::I32Sub,
+    Instruction::LocalSet(2),
+    Instruction::Br(0),
+    Instruction::End,
+    Instruction::End,
+  ];
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::I32; 3],
+    results: vec![],
+    locals: vec![ValType::I32],
+    instructions,
+  }
 }
 
 /// Maximum arity covered by canonical call_indirect type entries.
@@ -121,8 +198,7 @@ pub(super) fn build_wasm_module(
     types.ty().function(vec![ValType::F64; arity as usize], vec![ValType::F64]);
   }
   for imp in host_imports {
-    let params: Vec<ValType> = vec![ValType::F64; imp.arity];
-    types.ty().function(params, vec![ValType::F64]);
+    types.ty().function(imp.params.clone(), imp.results.clone());
   }
   for f in fns {
     types.ty().function(f.params.clone(), f.results.clone());

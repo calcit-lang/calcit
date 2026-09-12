@@ -44,7 +44,10 @@ mod runtime;
 mod structs;
 
 use methods::{emit_call_args, emit_method_invoke};
-use runtime::{HostImport, ModuleFunctionLayout, build_runtime_fns, build_wasm_module, core_host_import, host_imports_for_target};
+use runtime::{
+  HostImport, ModuleFunctionLayout, build_runtime_fns, build_wasi_write_all_fn, build_wasm_module, core_host_import,
+  host_imports_for_target,
+};
 use structs::{
   emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_contains, emit_struct_count,
   emit_struct_def, emit_struct_field_tag, emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth,
@@ -208,7 +211,8 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
       host_imports.push(HostImport {
         module,
         name,
-        arity: arity as usize,
+        params: vec![ValType::F64; arity as usize],
+        results: vec![ValType::F64],
       });
       let qualified = format!("{ns}/{def_name}");
       wasm_import_names.insert(qualified.clone(), index);
@@ -229,6 +233,14 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     *tag_index.get("list").expect("list tag must exist") as i32,
     *tag_index.get("string").expect("string tag must exist") as i32,
   );
+  if target == WasmTarget::Wasi {
+    let fd_write_idx = *index_host_imports(&host_imports)
+      .get(&("wasi_snapshot_preview1".into(), "fd_write".into()))
+      .expect("WASI fd_write import must be registered");
+    let wasi_write_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_write_all".into(), wasi_write_idx);
+    compiled_fns.push(build_wasi_write_all_fn(fd_write_idx));
+  }
 
   // Emit __str_new(src_ptr: i32, byte_len: i32) → f64 now that we know the string tag id.
   // This is a runtime helper exported for JS FFI: copies bytes into a tagged heap string.
@@ -286,7 +298,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   let struct_field_tags = collect_struct_field_tags_from_program(&program_data, &tag_index);
 
   // Build string literal pool: assigns each unique string a memory offset.
-  let (string_pool, string_data_segment, heap_start) = build_string_pool(&fn_defs, &tag_index);
+  let (string_pool, string_data_segment, heap_start) = build_string_pool(&fn_defs, &tag_index, target);
 
   // Scan for defatom definitions — each gets a mutable WASM global (f64).
   let mut atom_initial_values: Vec<f64> = Vec::new();
@@ -333,6 +345,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     value_imports,
     fn_table_index,
     host_imports: index_host_imports(&host_imports),
+    target,
   };
 
   // Second pass: target failures reject the artifact. Dependency failures keep
@@ -496,6 +509,8 @@ struct WasmCompileEnv {
   fn_table_index: HashMap<String, u32>,
   /// Target-approved host imports keyed by `(module, field)`.
   host_imports: HashMap<(String, String), u32>,
+  /// Selected output ABI. Surface Calcit calls stay target-independent.
+  target: WasmTarget,
 }
 
 fn extract_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Calcit>), String> {
@@ -623,6 +638,8 @@ struct WasmGenCtx {
   fn_table_index: HashMap<String, u32>,
   /// Target-approved host imports keyed by `(module, field)`.
   host_imports: HashMap<(String, String), u32>,
+  /// Selected output ABI. Surface Calcit calls stay target-independent.
+  target: WasmTarget,
   /// Statically known closures retain the lexical local bindings visible at creation.
   /// They are specialized at known call sites instead of receiving a dynamic heap ABI.
   lambda_locals: HashMap<String, Arc<InlineClosure>>,
@@ -649,6 +666,7 @@ impl WasmGenCtx {
       value_imports: env.value_imports,
       fn_table_index: env.fn_table_index,
       host_imports: env.host_imports,
+      target: env.target,
       lambda_locals: HashMap::new(),
     }
   }
@@ -1459,6 +1477,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       let name = sym.as_ref();
       // IO functions: call host log_value for each arg, return nil
       if matches!(name, "println" | "eprintln" | "echo") {
+        if ctx.target == WasmTarget::Wasi {
+          return emit_wasi_print(ctx, name, &args_list);
+        }
         let log_idx = resolve_host_import(ctx, "io", "log_value")?;
         for arg in &args_list {
           emit_expr(ctx, arg)?;
@@ -1509,6 +1530,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       // Registered procs (eprintln, println, echo, etc.)
       let name = name.as_ref();
       if matches!(name, "println" | "eprintln" | "echo") {
+        if ctx.target == WasmTarget::Wasi {
+          return emit_wasi_print(ctx, name, &args_list);
+        }
         let log_idx = resolve_host_import(ctx, "io", "log_value")?;
         for arg in &args_list {
           emit_expr(ctx, arg)?;
@@ -2435,7 +2459,7 @@ fn emit_type_predicate(ctx: &mut WasmGenCtx, type_name: &str, args: &[Calcit]) -
 /// Emit a call to a host-imported function by name.
 fn emit_host_call(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
   let import = core_host_import(name).ok_or_else(|| format!("unknown host import: {name}"))?;
-  let expected_arity = import.arity;
+  let expected_arity = import.params.len();
   if args.len() != expected_arity {
     return Err(format!("{name} expects {expected_arity} args, got {}", args.len()));
   }
@@ -2443,6 +2467,48 @@ fn emit_host_call(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(
     emit_expr(ctx, arg)?;
   }
   ctx.emit(Instruction::Call(resolve_host_import(ctx, &import.module, &import.name)?));
+  Ok(())
+}
+
+fn emit_wasi_write_string(ctx: &mut WasmGenCtx, fd: i32, ptr: u32) {
+  let len = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(len));
+  ctx.emit(Instruction::I32Const(fd));
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(len));
+  ctx.call_rt("__rt_wasi_write_all");
+}
+
+fn emit_wasi_write_literal(ctx: &mut WasmGenCtx, fd: i32, text: &str) -> Result<(), String> {
+  let ptr = *ctx
+    .string_pool
+    .get(text)
+    .ok_or_else(|| format!("internal WASI output literal missing from string pool: {text:?}"))?;
+  let ptr_local = ctx.alloc_i32(ptr as i32);
+  emit_wasi_write_string(ctx, fd, ptr_local);
+  Ok(())
+}
+
+/// Lower Calcit console output through a private Preview 1 adapter.
+fn emit_wasi_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
+  let fd = if name == "eprintln" { 2 } else { 1 };
+  for (index, arg) in args.iter().enumerate() {
+    if index > 0 {
+      emit_wasi_write_literal(ctx, fd, " ")?;
+    }
+    emit_expr(ctx, arg)?;
+    let value = ctx.alloc_local();
+    ctx.emit(Instruction::LocalSet(value));
+    let ptr = emit_turn_string_from_local(ctx, value);
+    emit_wasi_write_string(ctx, fd, ptr);
+  }
+  emit_wasi_write_literal(ctx, fd, "\n")?;
+  ctx.emit(f64_const(0.0));
   Ok(())
 }
 
@@ -3282,12 +3348,17 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
 fn build_string_pool(
   fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
   tag_index: &HashMap<String, u32>,
+  target: WasmTarget,
 ) -> (HashMap<String, u32>, Vec<u8>, i32) {
   let mut strings: Vec<String> = Vec::new();
   for (_, _, _, body) in fn_defs {
     for expr in body {
       collect_strings_from_expr(expr, &mut strings);
     }
+  }
+  if target == WasmTarget::Wasi {
+    strings.push(" ".into());
+    strings.push("\n".into());
   }
   strings.sort();
   strings.dedup();
@@ -3422,8 +3493,9 @@ mod tests {
   use std::str::FromStr;
   use std::sync::Arc;
 
-  use super::{HostImport, WasmTarget, index_host_imports, must_reject_extraction_failure};
+  use super::{HostImport, WasmTarget, host_imports_for_target, index_host_imports, must_reject_extraction_failure};
   use crate::calcit::{Calcit, CalcitList, CalcitSyntax};
+  use wasm_encoder::ValType;
 
   fn declaration(head: CalcitSyntax) -> Calcit {
     let items = [Calcit::Syntax(head, Arc::from("dependency.ns"))];
@@ -3457,14 +3529,28 @@ mod tests {
       HostImport {
         module: "io".into(),
         name: "log_value".into(),
-        arity: 1,
+        params: vec![ValType::F64],
+        results: vec![ValType::F64],
       },
       HostImport {
         module: "io".into(),
         name: "log_value".into(),
-        arity: 2,
+        params: vec![ValType::F64; 2],
+        results: vec![ValType::F64],
       },
     ];
     assert_eq!(index_host_imports(&imports).get(&("io".into(), "log_value".into())), Some(&0));
+  }
+
+  #[test]
+  fn wasi_target_registers_the_preview1_fd_write_abi() {
+    let imports = host_imports_for_target(WasmTarget::Wasi);
+    let [fd_write] = imports.as_slice() else {
+      panic!("WASI stdio slice must register exactly fd_write");
+    };
+    assert_eq!(fd_write.module, "wasi_snapshot_preview1");
+    assert_eq!(fd_write.name, "fd_write");
+    assert_eq!(fd_write.params, vec![ValType::I32; 4]);
+    assert_eq!(fd_write.results, vec![ValType::I32]);
   }
 }
