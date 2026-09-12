@@ -24,4 +24,16 @@ const unsupported = Object.entries(instance.exports).find(([name]) => name === "
 assert.equal(typeof unsupported, "function", "expected calcit.core/vals to remain addressable as a dependency slot");
 assert.throws(() => unsupported(), WebAssembly.RuntimeError, "unsupported dependency must trap instead of returning 0.0");
 
+for (const name of [
+  "test-closure-escape",
+  "test-recursive-closure-specialization",
+  "test-rest-closure-specialization",
+  "test-dynamic-closure-callee",
+]) {
+  const boundary = Object.entries(instance.exports).find(([exportName]) => exportName === name || exportName.endsWith(`/${name}`))?.[1];
+  assert.equal(typeof boundary, "function", `expected ${name} to remain addressable as a dependency slot`);
+  assert.throws(() => boundary(), WebAssembly.RuntimeError, `${name} must fail closed instead of returning a placeholder`);
+}
+
 console.log("  unsupported dependency trap  OK");
+console.log("  closure specialization boundaries trap  OK");
