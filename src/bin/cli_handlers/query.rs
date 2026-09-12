@@ -484,10 +484,9 @@ fn preview_node_oneline(node: &Cirru, max_len: usize) -> (String, bool) {
   if text.is_empty() {
     return ("(matched)".to_string(), false);
   }
-  if text.len() > max_len {
-    (text[..max_len].to_string(), true)
-  } else {
-    (text, false)
+  match char_prefix_if_truncated(&text, max_len) {
+    Some(prefix) => (prefix.to_owned(), true),
+    None => (text, false),
   }
 }
 
@@ -2387,14 +2386,22 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
   Ok(())
 }
 
+fn char_prefix_if_truncated(text: &str, max_chars: usize) -> Option<&str> {
+  text.char_indices().nth(max_chars).map(|(byte_index, _)| &text[..byte_index])
+}
+
 fn truncate_chars(text: &str, max_chars: usize) -> (String, bool) {
-  if max_chars == 0 {
-    return (String::new(), !text.is_empty());
+  match char_prefix_if_truncated(text, max_chars) {
+    Some(prefix) => (format!("{prefix}…"), true),
+    None => (text.to_owned(), false),
   }
-  let Some((byte_index, _)) = text.char_indices().nth(max_chars) else {
-    return (text.to_owned(), false);
-  };
-  (format!("{}…", &text[..byte_index]), true)
+}
+
+fn truncate_chars_with_dots(text: &str, max_chars: usize) -> String {
+  match char_prefix_if_truncated(text, max_chars) {
+    Some(prefix) => format!("{prefix}..."),
+    None => text.to_owned(),
+  }
 }
 
 fn count_cirru_nodes(node: &Cirru) -> usize {
@@ -3499,11 +3506,7 @@ fn handle_defs(input_path: &str, opts: &QueryDefsCommand) -> Result<(), String> 
     };
     if !entry.doc.is_empty() {
       let doc_first_line = entry.doc.lines().next().unwrap_or("");
-      let doc_display = if doc_first_line.len() > 50 {
-        format!("{}...", &doc_first_line[..50])
-      } else {
-        doc_first_line.to_string()
-      };
+      let doc_display = truncate_chars_with_dots(doc_first_line, 50);
       println!(
         "  {}{}{} - {}",
         def.green(),
@@ -4097,11 +4100,7 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
   match &code_entry.code {
     Cirru::List(items) if !items.is_empty() => {
       let preview = code_entry.code.format_one_liner()?;
-      let display = if preview.len() > 120 {
-        format!("{}...", &preview[..120])
-      } else {
-        preview
-      };
+      let display = truncate_chars_with_dots(&preview, 120);
       let _ = writeln!(&mut out, "{} {}", "Expr:".bold(), display.dimmed());
     }
     Cirru::Leaf(_) => {
@@ -4118,11 +4117,7 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
 
   if let Some(cirru) = query_schema_cirru(code_entry.schema.as_ref(), true)? {
     let preview = format_query_schema_oneline(&cirru)?;
-    let display = if preview.len() > 120 {
-      format!("{}...", &preview[..120])
-    } else {
-      preview
-    };
+    let display = truncate_chars_with_dots(&preview, 120);
     let _ = writeln!(&mut out, "{} {}", "Schema:".bold(), display.dimmed());
   } else {
     let _ = writeln!(&mut out, "{} -", "Schema:".bold());
@@ -4536,10 +4531,7 @@ fn get_symbol_context_cirru(code: &Cirru, symbol: &str) -> String {
   if let Some(context_node) = find_smallest_containing(code, symbol) {
     let cirru_str = context_node.format_one_liner().unwrap_or_default();
     let trimmed = cirru_str.trim();
-    if trimmed.len() > 50 {
-      return format!("{}...", &trimmed[..50]);
-    }
-    return trimmed.to_string();
+    return truncate_chars_with_dots(trimmed, 50);
   }
   String::new()
 }

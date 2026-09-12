@@ -678,6 +678,21 @@ for (const scenario of scenarios) {
   });
 }
 
+const unicodeDefsChild = spawnSync(binary, ["calcit/test-wasi-command.cirru", "query", "defs", "app.main"], {
+  cwd: process.cwd(),
+  encoding: "utf8",
+  maxBuffer: 4 * 1024 * 1024,
+  env: { ...process.env, NO_COLOR: "1" },
+});
+assert.ifError(unicodeDefsChild.error);
+assert.equal(unicodeDefsChild.status, 0, unicodeDefsChild.stderr);
+assert.match(unicodeDefsChild.stdout, /用确定性的 WASI 假宿主验证时钟编号与纳秒到毫秒的换算。/);
+assert.match(
+  unicodeDefsChild.stdout,
+  /filesystem-read-error\?.*泄漏\.\.\./,
+  "long definition summaries must keep the ASCII ellipsis format",
+);
+
 const contractChild = spawnSync(binary, ["docs", "agents", "--contract"], {
   cwd: process.cwd(),
   encoding: "utf8",
