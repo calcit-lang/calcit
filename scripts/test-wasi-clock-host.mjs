@@ -54,6 +54,9 @@ const wasi = {
     view().setBigUint64(resultPtr, nanoseconds, true);
     return 0;
   },
+  poll_oneoff() {
+    throw new Error("clock fixture unexpectedly waited");
+  },
   random_get() {
     throw new Error("clock fixture unexpectedly requested random bytes");
   },

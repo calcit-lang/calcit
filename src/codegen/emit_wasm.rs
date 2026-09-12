@@ -46,8 +46,8 @@ mod structs;
 use methods::{emit_call_args, emit_method_invoke};
 use runtime::{
   HostImport, ModuleFunctionLayout, build_runtime_fns, build_utf8_valid_fn, build_wasi_get_args_fn, build_wasi_get_env_fn,
-  build_wasi_open_path_fn, build_wasi_read_dir_fn, build_wasi_read_text_fn, build_wasi_write_all_fn, build_wasi_write_text_fn,
-  build_wasm_module, core_host_import, host_imports_for_target,
+  build_wasi_open_path_fn, build_wasi_read_dir_fn, build_wasi_read_text_fn, build_wasi_wait_fn, build_wasi_write_all_fn,
+  build_wasi_write_text_fn, build_wasm_module, core_host_import, host_imports_for_target,
 };
 use structs::{
   emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_contains, emit_struct_count,
@@ -77,6 +77,15 @@ fn mem_arg_f64(offset: u64) -> wasm_encoder::MemArg {
   wasm_encoder::MemArg {
     offset,
     align: 3, // log2(8) = 3
+    memory_index: 0,
+  }
+}
+
+/// MemArg for i64 load/store (8-byte aligned, memory 0).
+fn mem_arg_i64(offset: u64) -> wasm_encoder::MemArg {
+  wasm_encoder::MemArg {
+    offset,
+    align: 3,
     memory_index: 0,
   }
 }
@@ -260,6 +269,9 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     let utf8_valid_idx = num_imports + compiled_fns.len() as u32;
     runtime_fn_index.insert("__rt_utf8_valid".into(), utf8_valid_idx);
     compiled_fns.push(build_utf8_valid_fn());
+    let wait_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_wait".into(), wait_idx);
+    compiled_fns.push(build_wasi_wait_fn(wasi_import("poll_oneoff")));
     let open_path_idx = num_imports + compiled_fns.len() as u32;
     runtime_fn_index.insert("__rt_wasi_open_path".into(), open_path_idx);
     compiled_fns.push(build_wasi_open_path_fn(
@@ -2402,6 +2414,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       expect_arity(0, args, "cpu-time")?;
       emit_wasi_clock_ms(ctx, 1, "cpu-time")
     }
+    CalcitProc::NativeWaitMs => emit_wasi_wait_ms(ctx, args),
     CalcitProc::NativeSecureRandomBytes => emit_wasi_secure_random_bytes(ctx, args),
     CalcitProc::NativeFsReadText => emit_wasi_fs_read_text(ctx, args),
     CalcitProc::NativeFsReadDir => emit_wasi_fs_read_dir(ctx, args),
@@ -2663,6 +2676,61 @@ fn emit_wasi_clock_ms(ctx: &mut WasmGenCtx, clock_id: i32, proc_name: &str) -> R
   ctx.emit(Instruction::F64ConvertI64U);
   ctx.emit(f64_const(1_000_000.0));
   ctx.emit(Instruction::F64Div);
+  Ok(())
+}
+
+/// Lower the typed synchronous wait boundary through Preview 1 `poll_oneoff`.
+fn emit_wasi_wait_ms(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(3, args, "&wait-ms")?;
+  if ctx.target != WasmTarget::Wasi {
+    return Err("E_WASM_CAPABILITY: wait-ms is unavailable for the core WASM target".into());
+  }
+
+  let milliseconds = ctx.alloc_local();
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalSet(milliseconds));
+  let host_error = ctx.alloc_local();
+  emit_expr(ctx, &args[2])?;
+  ctx.emit(Instruction::LocalSet(host_error));
+
+  ctx.emit(Instruction::LocalGet(milliseconds));
+  ctx.emit(Instruction::LocalGet(milliseconds));
+  ctx.emit(Instruction::F64Trunc);
+  ctx.emit(Instruction::F64Ne);
+  ctx.emit(Instruction::LocalGet(milliseconds));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::LocalGet(milliseconds));
+  ctx.emit(f64_const(u32::MAX as f64));
+  ctx.emit(Instruction::F64Gt);
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_result_enum(ctx, "err", host_error)?;
+  ctx.emit(Instruction::Else);
+
+  let unit = ctx.alloc_local();
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::LocalSet(unit));
+  ctx.emit(Instruction::LocalGet(milliseconds));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_result_enum(ctx, "ok", unit)?;
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(milliseconds));
+  ctx.emit(f64_const(1_000_000.0));
+  ctx.emit(Instruction::F64Mul);
+  ctx.emit(Instruction::I64TruncF64U);
+  ctx.call_rt("__rt_wasi_wait");
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_result_enum(ctx, "ok", unit)?;
+  ctx.emit(Instruction::Else);
+  emit_result_enum(ctx, "err", host_error)?;
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
   Ok(())
 }
 
@@ -3923,6 +3991,7 @@ mod tests {
         ("environ_get", vec![ValType::I32; 2], vec![ValType::I32]),
         ("proc_exit", vec![ValType::I32], vec![]),
         ("clock_time_get", vec![ValType::I32, ValType::I64, ValType::I32], vec![ValType::I32],),
+        ("poll_oneoff", vec![ValType::I32; 4], vec![ValType::I32]),
         ("random_get", vec![ValType::I32, ValType::I32], vec![ValType::I32]),
         ("fd_prestat_get", vec![ValType::I32; 2], vec![ValType::I32]),
         ("fd_prestat_dir_name", vec![ValType::I32; 3], vec![ValType::I32]),

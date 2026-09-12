@@ -2580,6 +2580,14 @@
               :generics $ [] 'T
               :return $ :: 'Set 'T
           :tags $ #{} :builtin :internal
+        '&wait-ms $ %{} 'CodeEntry (:doc "|内部同步等待边界；显式接收 Result 原型和宿主错误前缀，供 public wrapper 与 backend lowering 使用。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'EnumDef 'Number 'String
+              :return $ :: 'Result 'Unit 'String
+          :tags $ #{} :builtin :internal :io :time
         '&{} $ %{} 'CodeEntry (:doc "|internal function for creating maps\nSyntax: (&{} & key-value-pairs)\nParams: key-value-pairs (any, variadic)\nReturns: map\nCreates new map from key-value pairs")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -8959,6 +8967,48 @@
               :generics $ [] 'T
               :required $ [] (:: 'Expr 'T)
           :tags $ #{} :macro
+        'wait-ms $ %{} 'CodeEntry (:doc "|同步等待整数毫秒并返回 Result<Unit,String>；允许 0..4294967295，不做隐式舍入。")
+          :code $ quote
+            defn wait-ms (milliseconds)
+              if
+                and (round? milliseconds) (>= milliseconds 0) (<= milliseconds 4294967295)
+                &wait-ms Result milliseconds "|wait-ms failed"
+                %err "|wait-ms expected an integer millisecond duration in 0..4294967295"
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'Number
+              :return $ :: 'Result 'Unit 'String
+          :tags $ #{} :io :time
+          :tests $ []
+            %{} 'TestEntry (:name |zero-succeeds)
+              :code $ quote
+                assert= true $ match (wait-ms 0)
+                  (:ok _) true
+                  (:err _) false
+              :tags $ #{} :core :time :unit :wasi
+            %{} 'TestEntry (:name |positive-succeeds)
+              :code $ quote
+                assert= true $ match (wait-ms 1)
+                  (:ok _) true
+                  (:err _) false
+              :tags $ #{} :core :time :unit :wasi
+            %{} 'TestEntry (:name |rejects-fractional)
+              :code $ quote
+                assert= true $ match (wait-ms 1.5)
+                  (:ok _) false
+                  (:err message) (string? message)
+              :tags $ #{} :core :time :unit :wasi
+            %{} 'TestEntry (:name |rejects-out-of-range)
+              :code $ quote
+                assert= true $ and
+                  match (wait-ms -1)
+                    (:ok _) false
+                    (:err message) (string? message)
+                  match (wait-ms 4294967296)
+                    (:ok _) false
+                    (:err message) (string? message)
+              :tags $ #{} :core :time :unit :wasi
         'when $ %{} 'CodeEntry (:doc "|Conditional macro that evaluates its body only when the test expression is truthy, returning the last body value.")
           :code $ quote
             defmacro when (condition & body)

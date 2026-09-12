@@ -292,6 +292,77 @@
           :schema $ :: 'Fn
             {} (:return 'Unit)
               :args $ []
+        'wait-error? $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn wait-error? (duration)
+              match (wait-ms duration)
+                (:ok _) false
+                (:err message) (string? message)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] 'Number
+          :tags $ #{} :core :io :time :unit :wasi
+          :tests $ []
+            %{} 'TestEntry (:name |rejects-negative)
+              :code $ quote
+                assert= true $ wait-error? -1
+              :tags $ #{} :core :time :unit :wasi
+            %{} 'TestEntry (:name |rejects-fractional)
+              :code $ quote
+                assert= true $ wait-error? 1.5
+              :tags $ #{} :core :time :unit :wasi
+            %{} 'TestEntry (:name |rejects-overflow)
+              :code $ quote
+                assert= true $ wait-error? 4294967296
+              :tags $ #{} :core :time :unit :wasi
+        'wait-failure-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn wait-failure-main! () $ if (wait-error? 1) (println "|WASI-wait-error: ok") (quit! 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+          :tags $ #{} :io :time :wasi
+        'wait-fixed-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn wait-fixed-main! () $ if
+              and (wait-success? 0) (wait-success? 4294967295)
+              println "|WASI-fixed-wait: ok"
+              quit! 1
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+          :tags $ #{} :io :time :wasi
+        'wait-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn wait-main! () $ if (wait-success? 1) (println "|WASI-wait: ok") (quit! 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
+          :tags $ #{} :io :time :wasi
+        'wait-success? $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn wait-success? (duration)
+              match (wait-ms duration)
+                (:ok _) true
+                (:err _) false
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] 'Number
+          :tags $ #{} :core :io :time :unit :wasi
+          :tests $ []
+            %{} 'TestEntry (:name |zero-succeeds)
+              :code $ quote
+                assert= true $ wait-success? 0
+              :tags $ #{} :core :time :unit :wasi
+            %{} 'TestEntry (:name |positive-succeeds)
+              :code $ quote
+                assert= true $ wait-success? 1
+              :tags $ #{} :core :time :unit :wasi
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require

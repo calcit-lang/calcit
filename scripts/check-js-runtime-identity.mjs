@@ -16,10 +16,12 @@ try {
   const runtimeA = await import(pathToFileURL(join(runtimeAPath, "calcit.procs.mjs")).href);
   const runtimeB = await import(pathToFileURL(join(runtimeBPath, "calcit.procs.mjs")).href);
   const writes = [];
+  const waits = [];
   globalThis.__calcit_injections__ = {
     read_file: (path) => `content:${path}`,
     read_dir: (path, recursive) => [`${path}/z`, `${path}/${recursive ? "deep/a" : "a"}`],
     write_file: (path, content) => writes.push([path, content]),
+    wait_ms: (milliseconds) => waits.push(milliseconds),
   };
   assert.equal(runtimeA.read_file("demo.txt"), "content:demo.txt", "read-file must return the injected host value");
   assert.deepEqual(
@@ -87,6 +89,30 @@ try {
   const todoEnum = new runtimeA.CalcitEnumDef(new runtimeA.CalcitStructValue(todoName, [todoField], [todoType]));
   const todoEnumValue = new runtimeA.CalcitEnumValue(todoField, [""], todoEnum);
   const anonymousEnumValue = new runtimeA.CalcitEnumValue(todoField, [""]);
+  const zeroWait = runtimeA._$n_wait_ms(todoEnum, 0, "wait failed");
+  assert.equal(zeroWait.tag, runtimeA.newTag("ok"));
+  assert.deepEqual(waits, [], "zero wait must not invoke the JavaScript host");
+  const positiveWait = runtimeA._$n_wait_ms(todoEnum, 7, "wait failed");
+  assert.equal(positiveWait.tag, runtimeA.newTag("ok"));
+  assert.deepEqual(waits, [7]);
+  delete globalThis.__calcit_injections__.wait_ms;
+  const nodeWait = runtimeA._$n_wait_ms(todoEnum, 1, "wait failed");
+  assert.equal(nodeWait.tag, runtimeA.newTag("ok"), "Node must provide a blocking Atomics.wait fallback");
+  const invalidWait = runtimeA._$n_wait_ms(todoEnum, 1.5, "wait failed");
+  assert.equal(invalidWait.tag, runtimeA.newTag("err"));
+  globalThis.__calcit_injections__.wait_ms = () => {
+    throw new Error("interrupted");
+  };
+  const failedWait = runtimeA._$n_wait_ms(todoEnum, 1, "wait failed");
+  assert.equal(failedWait.tag, runtimeA.newTag("err"));
+  assert.deepEqual(failedWait.extra, ["wait failed: interrupted"]);
+  globalThis.__calcit_injections__.wait_ms = async () => {
+    throw new Error("late rejection");
+  };
+  const asyncWait = runtimeA._$n_wait_ms(todoEnum, 1, "wait failed");
+  assert.equal(asyncWait.tag, runtimeA.newTag("err"));
+  assert.deepEqual(asyncWait.extra, ["wait failed: wait_ms injection must complete synchronously"]);
+  await new Promise((resolve) => setImmediate(resolve));
   globalThis.__calcit_injections__.read_file = (path) => `typed:${path}`;
   globalThis.__calcit_injections__.write_file = (path, content) => writes.push([path, content]);
   const typedRead = runtimeA._$n_fs_read_text(todoEnum, "typed.txt", "read failed");

@@ -46,6 +46,9 @@ const wasi = {
   clock_time_get() {
     throw new Error("directory fixture unexpectedly requested a clock");
   },
+  poll_oneoff() {
+    throw new Error("directory fixture unexpectedly waited");
+  },
   random_get() {
     throw new Error("directory fixture unexpectedly requested random bytes");
   },

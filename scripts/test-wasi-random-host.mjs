@@ -43,6 +43,9 @@ const wasi = {
   clock_time_get() {
     throw new Error("random fixture unexpectedly requested a clock");
   },
+  poll_oneoff() {
+    throw new Error("random fixture unexpectedly waited");
+  },
   random_get(ptr, length) {
     assert.equal(length, 4);
     randomDataPtr = ptr;

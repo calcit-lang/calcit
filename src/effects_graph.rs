@@ -726,7 +726,7 @@ fn classify_by_name(name: &str) -> Option<Vec<String>> {
     "hint-fn" => vec!["async"],
     "println" | "eprintln" | "echo" => vec!["console"],
     "render!" => vec!["render"],
-    "generate-id!" | "cpu-time" | "&get-os" | "async-sleep" => vec!["io"],
+    "generate-id!" | "cpu-time" | "wait-ms" | "&wait-ms" | "&get-os" | "async-sleep" => vec!["io"],
     "try" => vec!["control"],
     "&doseq" => vec!["effect/sequential"],
     // Respo convention: common project-level functions

@@ -1536,6 +1536,40 @@ export let _$n_get_args = (): CalcitList => {
 
 export let get_args = _$n_get_args;
 
+/** Block for an integral millisecond duration and preserve host failures as Result values. */
+export let _$n_wait_ms = (resultType: CalcitEnumDef, milliseconds: number, hostError: string): CalcitEnumValue => {
+  const error = (message: string) => new CalcitEnumValue(newTag("err"), [message], resultType);
+  const success = () => new CalcitEnumValue(newTag("ok"), [undefined], resultType);
+  if (!Number.isInteger(milliseconds) || milliseconds < 0 || milliseconds > 4_294_967_295) {
+    return error(`wait-ms expected an integer millisecond duration in 0..4294967295, got: ${milliseconds}`);
+  }
+  if (milliseconds === 0) {
+    return success();
+  }
+  try {
+    const injection = get_wait_injection();
+    if (typeof injection === "function") {
+      const outcome = injection(milliseconds);
+      if (
+        outcome != null &&
+        (typeof outcome === "object" || typeof outcome === "function") &&
+        typeof (outcome as PromiseLike<unknown>).then === "function"
+      ) {
+        void Promise.resolve(outcome).catch((_cause: unknown): void => {});
+        return error(`${hostError}: wait_ms injection must complete synchronously`);
+      }
+      return success();
+    }
+    if (typeof SharedArrayBuffer === "undefined" || typeof Atomics.wait !== "function") {
+      return error(`${hostError}: blocking wait is unavailable in this JavaScript host`);
+    }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+    return success();
+  } catch (cause) {
+    return error(`${hostError}: ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
+};
+
 /** Fill a Buffer with Web Crypto and preserve expected failures as Result values. */
 export let _$n_secure_random_bytes = (resultType: CalcitEnumDef, size: number, hostError: string): CalcitEnumValue => {
   const error = (message: string) => new CalcitEnumValue(newTag("err"), [message], resultType);
@@ -1748,14 +1782,23 @@ export type CalcitFileInjections = {
   write_file?: (path: string, content: string) => unknown;
 };
 
+export type CalcitWaitInjections = {
+  wait_ms?: (milliseconds: number) => unknown;
+};
+
+type CalcitHostInjections = CalcitFileInjections & CalcitWaitInjections;
+
 const get_file_injection = <K extends keyof CalcitFileInjections>(name: K): NonNullable<CalcitFileInjections[K]> => {
-  const injections = (globalThis as { __calcit_injections__?: CalcitFileInjections }).__calcit_injections__;
+  const injections = (globalThis as { __calcit_injections__?: CalcitHostInjections }).__calcit_injections__;
   const injection = injections?.[name];
   if (typeof injection !== "function") {
     throw new Error(`${name} is unavailable: the JavaScript host did not provide a __calcit_injections__.${name} function`);
   }
   return injection as NonNullable<CalcitFileInjections[K]>;
 };
+
+const get_wait_injection = (): CalcitWaitInjections["wait_ms"] =>
+  (globalThis as { __calcit_injections__?: CalcitHostInjections }).__calcit_injections__?.wait_ms;
 
 export let read_file = (path: string): string => {
   if (inNodeJs) {

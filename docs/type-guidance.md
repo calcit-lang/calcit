@@ -111,6 +111,10 @@ String 本身不携带文件系统语义；`try-read-file`、`try-read-dir`、
 这些文件效果支持 native 与生成的 JavaScript。WASI command 支持基于 preopen 的
 文本读写和 `.read-dir`；core WASM 明确拒绝宿主文件效果，`.walk-dir` 尚未接入 WASI。
 
+需要同步等待时使用 `wait-ms`，让缺少宿主能力或等待失败继续保留在
+`Result<Unit,String>` 中。参数是明确的整数毫秒，不接受隐式舍入；异步调度仍使用
+独立的 callback/task API，不把两种控制流混成一个动态接口。
+
 Native 异步 FFI capability 也遵循相同边界原则。模块适配层用 `ffi:task`、
 `ffi:response` 把不透明 AnyRef 提升为 nominal `FfiTask`、`FfiResponse`，业务层调用
 `.cancel`、`.cancel-with`、`.resolve`、`.reject`。raw 字段保持 `Dynamic`，但

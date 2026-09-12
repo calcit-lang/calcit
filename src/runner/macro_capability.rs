@@ -78,6 +78,7 @@ fn proc_policy(proc: CalcitProc) -> Option<CapabilityPolicy> {
     | AddWatch
     | RemoveWatch => MacroCapability::MutableState,
     WriteFile => return Some(CapabilityPolicy::Forbidden(MacroCapability::FsWrite)),
+    NativeWaitMs => return Some(CapabilityPolicy::Forbidden(MacroCapability::Process)),
     Quit => return Some(CapabilityPolicy::Forbidden(MacroCapability::Process)),
     _ => return None,
   };
