@@ -7849,13 +7849,13 @@
           :tests $ []
             %{} 'TestEntry (:name |returns-buffer)
               :code $ quote
-                assert= true $ tag-match (secure-random-bytes 16)
+                assert= true $ match (secure-random-bytes 16)
                   (:ok bytes) (buffer? bytes)
                   (:err _) false
               :tags $ #{} :core :crypto :unit :wasi :wasm
             %{} 'TestEntry (:name |rejects-invalid-length)
               :code $ quote
-                assert= true $ tag-match (secure-random-bytes 65537)
+                assert= true $ match (secure-random-bytes 65537)
                   (:ok _) false
                   (:err message) (string? message)
               :tags $ #{} :core :crypto :unit :wasi :wasm

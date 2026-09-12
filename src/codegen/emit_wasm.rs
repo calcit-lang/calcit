@@ -3474,7 +3474,7 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
 /// Builtin type tags always registered in tag_index, so `type-of` can return them
 /// and heap objects can carry them in their header slot.
 const BUILTIN_TYPE_TAGS: &[&str] = &[
-  "buf-list", "list", "map", "set", "enum", "struct", "number", "bool", "nil", "tag", "fn", "string", "symbol",
+  "buf-list", "list", "map", "set", "enum", "struct", "number", "bool", "nil", "tag", "fn", "string", "symbol", "buffer",
 ];
 
 fn collect_all_tags_from(fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)]) -> HashMap<String, u32> {

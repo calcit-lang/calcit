@@ -188,15 +188,25 @@ pub fn secure_random_bytes(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       )),
     ])
   } else {
-    let mut bytes = vec![0; *size as usize];
-    match getrandom::fill(&mut bytes) {
-      Ok(()) => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("ok"), Calcit::Buffer(bytes)]),
-      Err(error) => new_named_enum_value(&[
-        result_type.to_owned(),
-        Calcit::tag("err"),
-        Calcit::new_str(format!("{host_error}: {error}")),
-      ]),
-    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let result = {
+      let mut bytes = vec![0; *size as usize];
+      match getrandom::fill(&mut bytes) {
+        Ok(()) => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("ok"), Calcit::Buffer(bytes)]),
+        Err(error) => new_named_enum_value(&[
+          result_type.to_owned(),
+          Calcit::tag("err"),
+          Calcit::new_str(format!("{host_error}: {error}")),
+        ]),
+      }
+    };
+    #[cfg(target_arch = "wasm32")]
+    let result = new_named_enum_value(&[
+      result_type.to_owned(),
+      Calcit::tag("err"),
+      Calcit::new_str(format!("{host_error}: native interpreter CSPRNG is unavailable on wasm32")),
+    ]);
+    result
   }?;
   Ok(result)
 }

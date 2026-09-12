@@ -20,7 +20,6 @@ exclude = ["lib/*", "calcit/*", "ts-src/*", "js-out/*", "scripts/*", "docs/*", "
 # cirru_edn = { path = "/Users/chenyong/repo/cirru/edn.rs" }
 # cirru_parser = { path = "/Users/chenyong/repo/cirru/parser.rs" }
 argh = "0.1.19"
-getrandom = "0.3.3"
 hex = "0.4.3"
 md-5 = "0.11.0"
 rpds = "1.2.1"
@@ -47,6 +46,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 cirru_parser = "=0.2.15"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+getrandom = "0.3.3"
 notify = "8.0.0"
 notify-debouncer-mini = "0.7.0"
 ureq = "3.3.0"

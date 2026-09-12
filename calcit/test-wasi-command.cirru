@@ -93,7 +93,7 @@
         'random-error? $ %{} 'CodeEntry (:doc "|验证越界的安全随机请求返回 String 错误。")
           :code $ quote
             defn random-error? (size)
-              tag-match (secure-random-bytes size)
+              match (secure-random-bytes size)
                 (:ok _) false
                 (:err message) (string? message)
           :examples $ []
@@ -136,7 +136,7 @@
         'random-success? $ %{} 'CodeEntry (:doc "|验证指定长度的安全随机请求返回 Buffer。")
           :code $ quote
             defn random-success? (size)
-              tag-match (secure-random-bytes size)
+              match (secure-random-bytes size)
                 (:ok bytes) (buffer? bytes)
                 (:err _) false
           :examples $ []
