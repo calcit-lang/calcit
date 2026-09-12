@@ -528,6 +528,7 @@ check("test-number-compare-method()", -1, e["test-number-compare-method"]);
 check("test-string-compare-method()", -1, e["test-string-compare-method"]);
 check("test-option-unwrap-or()", 7, e["test-option-unwrap-or"]);
 check("test-result-unwrap-or()", 7, e["test-result-unwrap-or"]);
+check("test-static-option-result-methods()", 16, e["test-static-option-result-methods"]);
 check("test-str-contains-true()", 1, e["test-str-contains-true"]); // idx 1 < len 5
 check("test-str-contains-false()", 0, e["test-str-contains-false"]); // idx 10 >= len 5
 check("test-str-find-index-found()", 1, e["test-str-find-index-found"]); // "ell" at byte 1
