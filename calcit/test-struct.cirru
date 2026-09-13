@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-struct
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-struct.main/main!
-      :mode :native
-      :reload-fn 'test-struct.main/reload!
+    {} (:description |) (:init-fn 'test-struct.main/main!) (:mode :native) (:reload-fn 'test-struct.main/reload!)
       :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
@@ -70,8 +67,7 @@
             {} $ :text 'String
           :examples $ []
           :schema $ :: 'StructDef
-          :tests $ [] $ %{} 'TestEntry
-            :name |map-literal-fields
+          :tests $ [] $ %{} 'TestEntry (:name |map-literal-fields)
             :code $ quote $ let
                 store $ MapLiteralStore :text |ok
               assert= |ok $ :text store
@@ -92,15 +88,7 @@
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'test-struct.main/Point2D
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (test-struct) (test-methods) (test-match)
-            test-polymorphism
-            test-edn
-            test-struct-with
-            test-partial-struct
-            test-loose-struct-rewrite
-            test-map-to-struct
-            test-postfix
-            do true
+          :code $ quote $ defn main! () (test-struct) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-struct-with) (test-partial-struct) (test-loose-struct-rewrite) (test-map-to-struct) (test-postfix) (do true)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
@@ -112,8 +100,7 @@
               :text store
           :examples $ []
           :schema $ :: 'Dynamic
-          :tests $ [] $ %{} 'TestEntry
-            :name |assert-type-statement-narrows-struct
+          :tests $ [] $ %{} 'TestEntry (:name |assert-type-statement-narrows-struct)
             :code $ quote $ assert= |ok
               read-asserted-map-literal-store $ MapLiteralStore :text |ok
         'read-let-asserted-map-literal-store $ %{} 'CodeEntry (:doc |)
@@ -123,8 +110,7 @@
               :text store
           :examples $ []
           :schema $ :: 'Dynamic
-          :tests $ [] $ %{} 'TestEntry
-            :name |assert-type-expression-narrows-struct
+          :tests $ [] $ %{} 'TestEntry (:name |assert-type-expression-narrows-struct)
             :code $ quote $ assert= |ok
               read-let-asserted-map-literal-store $ MapLiteralStore :text |ok
         'reload! $ %{} 'CodeEntry (:doc |)
@@ -160,22 +146,19 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
         'test-loose-struct-rewrite $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing loose-to-struct rewrite"
+          :code $ quote $ fn () (log-title "|Testing loose-to-struct rewrite")
             assert= 30 $ sum-point $ ?{} :x 10 :y 20
             assert= true $ check-point-type $ ?{} :x 10 :y 20
           :examples $ []
           :schema $ :: 'Dynamic
         'test-map-to-struct $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing map-to-struct rewrite"
+          :code $ quote $ fn () (log-title "|Testing map-to-struct rewrite")
             assert= 30 $ sum-point $ {} (:x 10) (:y 20)
             assert= true $ check-point-type $ {} (:x 10) (:y 20)
           :examples $ []
           :schema $ :: 'Dynamic
         'test-match $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing struct match"
+          :code $ quote $ fn () (log-title "|Testing struct match")
             let
                 a1 $ %{} A $ :a 1
                 b1 $ %{} B $ :b 2
@@ -196,20 +179,14 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
         'test-methods $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing struct methods"
+          :code $ quote $ fn () (log-title "|Testing struct methods")
             &let
               kitty $ %{} Cat (:name |kitty) (:color :red)
               assert= :Cat $ &struct:get-name kitty
               assert= :red $ :color kitty
-              assert= true $ =
-                &struct:definition kitty
-                , Cat
+              assert= true $ = (&struct:definition kitty) Cat
               assert= true $ struct-def? $ &struct:definition kitty
-              assert= true $ &struct:matches? kitty $ %{}
-                &struct:definition kitty
-                :name |kitty
-                :color :red
+              assert= true $ &struct:matches? kitty $ %{} (&struct:definition kitty) (:name |kitty) (:color :red)
               assert= (&struct:to-map kitty) (&{} :name |kitty :color :red)
               assert= 2 $ &struct:count kitty
               assert= true $ &struct:contains? kitty $ &struct:field-tag kitty 0
@@ -230,8 +207,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
         'test-partial-struct $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing partial struct"
+          :code $ quote $ fn () (log-title "|Testing partial struct")
             let
                 p1 $ %{}? Person $ :name |Chen
                 p2 $ %{}? Person (:name |Chen) (:age 20) (:position :mainland)
@@ -247,9 +223,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
         'test-polymorphism $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Test struct polymorphism"
-            println Lagopus
+          :code $ quote $ fn () (log-title "|Test struct polymorphism") (println Lagopus)
             let
                 l1 $ %{} Lagopus $ :name |LagopusA
                 a1 A0
@@ -268,10 +242,8 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
-        'test-postfix $ %{} 'CodeEntry
-          :doc "|test postfix syntax"
-          :code $ quote $ fn ()
-            log-title "|Testing postfix syntax"
+        'test-postfix $ %{} 'CodeEntry (:doc "|test postfix syntax")
+          :code $ quote $ fn () (log-title "|Testing postfix syntax")
             let
                 p $ &%{} Point2D :x 10 :y 20
               assert= 10 $ p :x
@@ -298,9 +270,7 @@
                 p0 $ &%{} Person :name nil :age nil :position nil
                 p3 $ &%{} Person :name |Chen :age 23 :position :mainland
                 c1 $ %{} City (:name |Shanghai) (:province |Shanghai)
-              assert= true $ =
-                &struct:definition p0
-                , Person
+              assert= true $ = (&struct:definition p0) Person
               assert= nil $ :age p0
               assert= nil $ :name p0
               assert= nil $ :position p0
@@ -354,10 +324,8 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
             :features $ #{} :js-ffi
-        'test-struct-with $ %{} 'CodeEntry
-          :doc "|test struct-with"
-          :code $ quote $ fn ()
-            log-title "|Testing struct-with"
+        'test-struct-with $ %{} 'CodeEntry (:doc "|test struct-with")
+          :code $ quote $ fn () (log-title "|Testing struct-with")
             let
                 p1 $ %{} Person (:name |Chen) (:age 20) (:position :hangzhou)
                 p2 $ struct-with p1 (:age 21) (:position :shanghai)

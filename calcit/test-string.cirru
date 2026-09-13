@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-string
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-string.main/main!
-      :mode :native
-      :reload-fn 'test-string.main/reload!
+    {} (:description |) (:init-fn 'test-string.main/main!) (:mode :native) (:reload-fn 'test-string.main/reload!)
       :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
@@ -69,8 +66,7 @@
           :examples $ []
           :schema $ :: 'Dynamic
         'test-includes $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing includes"
+          :code $ quote $ fn () (log-title "|Testing includes")
             assert= true $ includes? |abc |abc
             assert= false $ includes? |abd |abc
             assert= (%some 3) (.find-index |0123456 |3)

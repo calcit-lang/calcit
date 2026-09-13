@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-edn
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-edn.main/main!
-      :mode :native
-      :reload-fn 'test-edn.main/reload!
+    {} (:description |) (:init-fn 'test-edn.main/main!) (:mode :native) (:reload-fn 'test-edn.main/reload!)
       :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
@@ -18,8 +15,7 @@
           :examples $ []
           :schema $ :: 'StructDef
         'A-typed-person $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def A-typed-person
-            parse-cirru-edn-as "|%{} :Person (:age 23) (:name |Top)" Person
+          :code $ quote $ def A-typed-person (parse-cirru-edn-as "|%{} :Person (:age 23) (:name |Top)" Person)
           :examples $ []
           :schema $ :: 'Dynamic
         'Box $ %{} 'CodeEntry (:doc |)
@@ -61,8 +57,7 @@
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-atom $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn test-atom ()
-            log-title "|Testing atom to edn"
+          :code $ quote $ defn test-atom () (log-title "|Testing atom to edn")
             let
                 a $ parse-cirru-edn "|atom 1"
               println "|Check a" a
@@ -134,16 +129,14 @@
           :examples $ []
           :schema $ :: 'Dynamic
         'test-edn-comment $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn test-edn-comment ()
-            log-title "|Testing edn comment"
+          :code $ quote $ defn test-edn-comment () (log-title "|Testing edn comment")
             assert=
               [] 1 2 (; comment) 3
               parse-cirru-edn "|[] 1 2 (; comment) 3"
             assert=
               {} (:a 1) (:b 2) (; comment)
               parse-cirru-edn "|{} (:a 1) (:b 2)"
-            assert= (:: :a 1)
-              parse-cirru-edn "|:: :a (; comment) 1"
+            assert= (:: :a 1) (parse-cirru-edn "|:: :a (; comment) 1")
           :examples $ []
           :schema $ :: 'Dynamic
         'test-imported-typed-edn $ %{} 'CodeEntry (:doc |)
@@ -190,10 +183,8 @@
           :examples $ []
           :schema $ :: 'Dynamic
         'test-symbol $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn test-symbol ()
-            log-title "|Testing symbol to edn"
-            assert=
-              &extract-code-into-edn 'aa
+          :code $ quote $ defn test-symbol () (log-title "|Testing symbol to edn")
+            assert= (&extract-code-into-edn 'aa)
               {} (:ns |test-edn.main) (:kind :symbol) (:val |aa) (:at-def |test-symbol)
                 :location $ [] 4 1 1
             let
@@ -245,9 +236,7 @@
                   , false
                 fn (error) true
               assert= true $ try
-                do
-                  parse-cirru-edn-as "|%{} :Person (:name |Ada)" Person
-                  , false
+                do (parse-cirru-edn-as "|%{} :Person (:name |Ada)" Person) false
                 fn (error) true
               assert= true $ try
                 do

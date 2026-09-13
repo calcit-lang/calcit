@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-list
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-list.main/main!
-      :mode :native
-      :reload-fn 'test-list.main/reload!
+    {} (:description |) (:init-fn 'test-list.main/main!) (:mode :native) (:reload-fn 'test-list.main/reload!)
       :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
@@ -18,12 +15,7 @@
           :examples $ []
           :schema $ :: 'Dynamic
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (test-alias) (test-doseq) (test-let[])
-            test-methods-shorthand
-            test-pair
-            test-match
-            test-range
-            do true
+          :code $ quote $ defn main! () (test-alias) (test-doseq) (test-let[]) (test-methods-shorthand) (test-pair) (test-match) (test-range) (do true)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
@@ -66,8 +58,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
         'test-match $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing list match"
+          :code $ quote $ fn () (log-title "|Testing list match")
             assert= :empty $ list-match ([])
               () :empty
               (a b) :something
@@ -86,9 +77,7 @@
               [] 1 $ [] 2 3
               list-match ([] 1 2 3)
                 () nil
-                (l0 ls)
-                  println "|...effect in match"
-                  [] l0 ls
+                (l0 ls) (println "|...effect in match") ([] l0 ls)
           :examples $ []
           :schema $ :: 'Dynamic
         'test-methods-shorthand $ %{} 'CodeEntry (:doc "|test shorthand")
@@ -125,9 +114,7 @@
                 do (range 0 4294967296) false
                 fn (_error) true
               assert= true $ try
-                do
-                  range 100000000000000000000 99999999999999000000 -1
-                  , false
+                do (range 100000000000000000000 99999999999999000000 -1) false
                 fn (_error) true
           :examples $ []
           :schema $ :: 'Dynamic

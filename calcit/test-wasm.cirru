@@ -3,18 +3,14 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-wasm
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-wasm.main/main!
-      :mode :native
-      :reload-fn 'test-wasm.main/reload!
+    {} (:description |) (:init-fn 'test-wasm.main/main!) (:mode :native) (:reload-fn 'test-wasm.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
   :files $ {}
     'test-wasm.helper $ %{} 'FileEntry
       :defs $ {} $ 'add-and-double
-        %{} 'CodeEntry
-          :doc "|Helper: add two numbers and double"
+        %{} 'CodeEntry (:doc "|Helper: add two numbers and double")
           :code $ quote $ defn add-and-double (a b)
             &* (&+ a b) 2
           :examples $ []
@@ -32,8 +28,7 @@
           :code $ quote $ defn add-two (a b) (&+ a b)
           :examples $ []
           :schema $ :: 'Dynamic
-        'collatz-steps $ %{} 'CodeEntry
-          :doc "|Collatz conjecture step counter"
+        'collatz-steps $ %{} 'CodeEntry (:doc "|Collatz conjecture step counter")
           :code $ quote $ defn collatz-steps (n)
             if (&< n 2) 0 $ if
               &= (&number:rem n 2) 0
@@ -41,8 +36,7 @@
               &+ 1 $ collatz-steps $ &+ (&* 3 n) 1
           :examples $ []
           :schema $ :: 'Dynamic
-        'collect-rest $ %{} 'CodeEntry
-          :doc "|returns rest list unchanged"
+        'collect-rest $ %{} 'CodeEntry (:doc "|returns rest list unchanged")
           :code $ quote $ defn collect-rest (a & xs) xs
           :examples $ []
           :schema $ :: 'Dynamic
@@ -50,22 +44,19 @@
           :code $ quote $ defn compare-wasm-ascending (a b) (&- a b)
           :examples $ []
           :schema $ :: 'Dynamic
-        'factorial $ %{} 'CodeEntry
-          :doc "|Factorial — recursive"
+        'factorial $ %{} 'CodeEntry (:doc "|Factorial — recursive")
           :code $ quote $ defn factorial (n)
             if (&< n 2) 1 $ &* n $ factorial (&- n 1)
           :examples $ []
           :schema $ :: 'Dynamic
-        'fibo $ %{} 'CodeEntry
-          :doc "|Fibonacci — recursive"
+        'fibo $ %{} 'CodeEntry (:doc "|Fibonacci — recursive")
           :code $ quote $ defn fibo (n)
             if (&< n 2) 1 $ &+
               fibo $ &- n 1
               fibo $ &- n 2
           :examples $ []
           :schema $ :: 'Dynamic
-        'gcd $ %{} 'CodeEntry
-          :doc "|Greatest common divisor"
+        'gcd $ %{} 'CodeEntry (:doc "|Greatest common divisor")
           :code $ quote $ defn gcd (a b)
             if (&= b 0) a $ recur b $ &number:rem a b
           :examples $ []
@@ -85,38 +76,32 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-        'sum-range $ %{} 'CodeEntry
-          :doc "|Sum 1..n via helper"
+        'sum-range $ %{} 'CodeEntry (:doc "|Sum 1..n via helper")
           :code $ quote $ defn sum-range (n) (sum-range-step 0 1 n)
           :examples $ []
           :schema $ :: 'Dynamic
-        'sum-range-step $ %{} 'CodeEntry
-          :doc "|Sum step helper: sum-range-step(acc, i, n)"
+        'sum-range-step $ %{} 'CodeEntry (:doc "|Sum step helper: sum-range-step(acc, i, n)")
           :code $ quote $ defn sum-range-step (acc i n)
             if (&> i n) acc $ recur (&+ acc i) (&+ i 1) n
           :examples $ []
           :schema $ :: 'Dynamic
-        'sum-rest $ %{} 'CodeEntry
-          :doc "|variadic sum: a + b + rest..."
+        'sum-rest $ %{} 'CodeEntry (:doc "|variadic sum: a + b + rest...")
           :code $ quote $ defn sum-rest (a b & xs)
             sum-rest-list (&+ a b) xs
           :examples $ []
           :schema $ :: 'Dynamic
-        'sum-rest-forward $ %{} 'CodeEntry
-          :doc "|forwards a rest list via &call-spread"
+        'sum-rest-forward $ %{} 'CodeEntry (:doc "|forwards a rest list via &call-spread")
           :code $ quote $ defn sum-rest-forward (a b & xs) (sum-rest a b & xs)
           :examples $ []
           :schema $ :: 'Dynamic
-        'sum-rest-list $ %{} 'CodeEntry
-          :doc "|helper: sums a list via recur"
+        'sum-rest-list $ %{} 'CodeEntry (:doc "|helper: sums a list via recur")
           :code $ quote $ defn sum-rest-list (acc xs)
             if (&list:empty? xs) acc $ recur
               &+ acc $ &list:first xs
               &list:rest xs
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-abs $ %{} 'CodeEntry
-          :doc "|abs from calcit.core"
+        'test-abs $ %{} 'CodeEntry (:doc "|abs from calcit.core")
           :code $ quote $ defn test-abs (x) (abs x)
           :examples $ []
           :schema $ :: 'Dynamic
@@ -132,13 +117,11 @@
           :code $ quote $ defn test-bit-or (a b) (bit-or a b)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-bit-shl $ %{} 'CodeEntry
-          :doc "|Bitwise shift left"
+        'test-bit-shl $ %{} 'CodeEntry (:doc "|Bitwise shift left")
           :code $ quote $ defn test-bit-shl (a b) (bit-shl a b)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-bit-shr $ %{} 'CodeEntry
-          :doc "|Bitwise shift right"
+        'test-bit-shr $ %{} 'CodeEntry (:doc "|Bitwise shift right")
           :code $ quote $ defn test-bit-shr (a b) (bit-shr a b)
           :examples $ []
           :schema $ :: 'Dynamic
@@ -146,8 +129,7 @@
           :code $ quote $ defn test-bit-xor (a b) (bit-xor a b)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-buf-list-doseq $ %{} 'CodeEntry
-          :doc "||buf-list: use doseq to push 4 items, count=4"
+        'test-buf-list-doseq $ %{} 'CodeEntry (:doc "||buf-list: use doseq to push 4 items, count=4")
           :code $ quote $ defn test-buf-list-doseq ()
             let
                 buf $ &buf-list:new
@@ -157,8 +139,7 @@
               &buf-list:count buf
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-buf-list-each $ %{} 'CodeEntry
-          :doc "||buf-list: use each to push 3 items, count=3"
+        'test-buf-list-each $ %{} 'CodeEntry (:doc "||buf-list: use each to push 3 items, count=3")
           :code $ quote $ defn test-buf-list-each ()
             let
                 buf $ &buf-list:new
@@ -173,25 +154,21 @@
             let
                 buf $ &buf-list:new
               &buf-list:concat buf $ [] 1 2 3 4 5
-              &list:count $ filter
-                &buf-list:to-list buf
+              &list:count $ filter (&buf-list:to-list buf)
                 fn (x)
                   &= (&number:rem x 2) 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-buf-list-map $ %{} 'CodeEntry
-          :doc "||buf-list: concat 3 items, map to-list, count=3"
+        'test-buf-list-map $ %{} 'CodeEntry (:doc "||buf-list: concat 3 items, map to-list, count=3")
           :code $ quote $ defn test-buf-list-map ()
             let
                 buf $ &buf-list:new
               &buf-list:concat buf $ [] 1 2 3
-              &list:count $ map
-                &buf-list:to-list buf
+              &list:count $ map (&buf-list:to-list buf)
                 fn (x) (&* x 2)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-buf-list-push $ %{} 'CodeEntry
-          :doc "||buf-list push 3 items, count=3"
+        'test-buf-list-push $ %{} 'CodeEntry (:doc "||buf-list push 3 items, count=3")
           :code $ quote $ defn test-buf-list-push ()
             let
                 buf $ &buf-list:new
@@ -201,8 +178,7 @@
               &buf-list:count buf
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-buf-list-to-list $ %{} 'CodeEntry
-          :doc "||buf-list concat [1,2,3] then to-list, count=3"
+        'test-buf-list-to-list $ %{} 'CodeEntry (:doc "||buf-list concat [1,2,3] then to-list, count=3")
           :code $ quote $ defn test-buf-list-to-list ()
             let
                 buf $ &buf-list:new
@@ -211,8 +187,7 @@
               &list:count $ &buf-list:to-list buf
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-call-spread-rest $ %{} 'CodeEntry
-          :doc "|rest list forwarding via &call-spread"
+        'test-call-spread-rest $ %{} 'CodeEntry (:doc "|rest list forwarding via &call-spread")
           :code $ quote $ defn test-call-spread-rest () (sum-rest-forward 1 2 3 4 5)
           :examples $ []
           :schema $ :: 'Dynamic
@@ -236,10 +211,8 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-          :tests $ [] $ %{} 'TestEntry
-            :name |preserves-lexical-capture-through-map
-            :code $ quote $ assert= 1
-              test-closure-capture-map
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-lexical-capture-through-map)
+            :code $ quote $ assert= 1 (test-closure-capture-map)
             :tags $ #{} :core :unit :wasm
         'test-closure-map-indexed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-closure-map-indexed ()
@@ -254,50 +227,40 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-          :tests $ [] $ %{} 'TestEntry
-            :name |preserves-number-index-in-wasm
-            :code $ quote $ assert= 1
-              test-closure-map-indexed
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-number-index-in-wasm)
+            :code $ quote $ assert= 1 (test-closure-map-indexed)
             :tags $ #{} :core :unit :wasm
-        'test-compare $ %{} 'CodeEntry
-          :doc "|comparison chain"
+        'test-compare $ %{} 'CodeEntry (:doc "|comparison chain")
           :code $ quote $ defn test-compare (a b)
             if (&< a b) -1 $ if (&> a b) 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-cos $ %{} 'CodeEntry
-          :doc "|cos via host import"
+        'test-cos $ %{} 'CodeEntry (:doc "|cos via host import")
           :code $ quote $ defn test-cos (x) (cos x)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-cross-ns $ %{} 'CodeEntry
-          :doc "|Cross-namespace function call"
-          :code $ quote $ defn test-cross-ns (a b)
-            helper/add-and-double a b
+        'test-cross-ns $ %{} 'CodeEntry (:doc "|Cross-namespace function call")
+          :code $ quote $ defn test-cross-ns (a b) (helper/add-and-double a b)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-display-by-bin $ %{} 'CodeEntry
-          :doc "|17 in binary = 0b10001, length 7"
+        'test-display-by-bin $ %{} 'CodeEntry (:doc "|17 in binary = 0b10001, length 7")
           :code $ quote $ defn test-display-by-bin ()
             &str:count $ &number:display-by 17 2
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-display-by-hex $ %{} 'CodeEntry
-          :doc "|17 in hex = 0x11, length 4"
+        'test-display-by-hex $ %{} 'CodeEntry (:doc "|17 in hex = 0x11, length 4")
           :code $ quote $ defn test-display-by-hex ()
             &str:count $ &number:display-by 17 16
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-enum-assoc $ %{} 'CodeEntry
-          :doc "|Enum assoc updates payload by index"
+        'test-enum-assoc $ %{} 'CodeEntry (:doc "|Enum assoc updates payload by index")
           :code $ quote $ defn test-enum-assoc ()
             &let
               t $ &enum:assoc (:: :pair 10 20) 1 9
               &+ (&enum:nth t 1) (&enum:nth t 2)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-enum-count $ %{} 'CodeEntry
-          :doc "|Enum count returns payload count"
+        'test-enum-count $ %{} 'CodeEntry (:doc "|Enum count returns payload count")
           :code $ quote $ defn test-enum-count ()
             &let
               t $ :: :pair 10 20
@@ -360,22 +323,19 @@
           :code $ quote $ defn test-floor (x) (floor x)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-gte $ %{} 'CodeEntry
-          :doc |greater-than-or-equal
+        'test-gte $ %{} 'CodeEntry (:doc |greater-than-or-equal)
           :code $ quote $ defn test-gte (a b)
             if (&> a b) 1 $ if (&= a b) 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-hash-number $ %{} 'CodeEntry
-          :doc "|hash on number returns stable non-zero value"
+        'test-hash-number $ %{} 'CodeEntry (:doc "|hash on number returns stable non-zero value")
           :code $ quote $ defn test-hash-number ()
             if
               &> (&hash 42) 0
               , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-let-chain $ %{} 'CodeEntry
-          :doc "|chained let bindings"
+        'test-let-chain $ %{} 'CodeEntry (:doc "|chained let bindings")
           :code $ quote $ defn test-let-chain (x)
             &let
               a $ &* x x
@@ -384,40 +344,35 @@
                 &* b 2
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-append $ %{} 'CodeEntry
-          :doc "|append returns correct count and last elem"
+        'test-list-append $ %{} 'CodeEntry (:doc "|append returns correct count and last elem")
           :code $ quote $ defn test-list-append ()
             &let
               xs $ append ([] 10 20) 30
               &+ (&list:count xs) (&list:nth xs 2)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-assoc $ %{} 'CodeEntry
-          :doc "|assoc replaces element"
+        'test-list-assoc $ %{} 'CodeEntry (:doc "|assoc replaces element")
           :code $ quote $ defn test-list-assoc ()
             &list:nth
               &list:assoc ([] 10 20 30) 1 99
               , 1
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-assoc-after $ %{} 'CodeEntry
-          :doc "|assoc-after inserts element after index"
+        'test-list-assoc-after $ %{} 'CodeEntry (:doc "|assoc-after inserts element after index")
           :code $ quote $ defn test-list-assoc-after ()
             &let
               xs $ &list:assoc-after ([] 10 20 30) 0 99
               &+ (&list:count xs) (&list:nth xs 1)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-assoc-before $ %{} 'CodeEntry
-          :doc "|assoc-before inserts element before index"
+        'test-list-assoc-before $ %{} 'CodeEntry (:doc "|assoc-before inserts element before index")
           :code $ quote $ defn test-list-assoc-before ()
             &let
               xs $ &list:assoc-before ([] 10 20 30) 1 99
               &+ (&list:count xs) (&list:nth xs 1)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-butlast $ %{} 'CodeEntry
-          :doc "|butlast drops last element"
+        'test-list-butlast $ %{} 'CodeEntry (:doc "|butlast drops last element")
           :code $ quote $ defn test-list-butlast ()
             &list:count $ butlast $ [] 10 20 30
           :examples $ []
@@ -427,16 +382,14 @@
             &list:count $ butlast $ []
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-concat $ %{} 'CodeEntry
-          :doc "|concat two lists"
+        'test-list-concat $ %{} 'CodeEntry (:doc "|concat two lists")
           :code $ quote $ defn test-list-concat ()
             &let
               xs $ &list:concat ([] 10 20) ([] 30 40)
               &+ (&list:count xs) (&list:nth xs 3)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-contains $ %{} 'CodeEntry
-          :doc "|contains checks index bounds"
+        'test-list-contains $ %{} 'CodeEntry (:doc "|contains checks index bounds")
           :code $ quote $ defn test-list-contains ()
             &let
               xs $ [] 10 20 30
@@ -445,8 +398,7 @@
                 if (&list:contains? xs 5) 10 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-contains-method $ %{} 'CodeEntry
-          :doc "|.contains? dispatches on list"
+        'test-list-contains-method $ %{} 'CodeEntry (:doc "|.contains? dispatches on list")
           :code $ quote $ defn test-list-contains-method ()
             &+
               if
@@ -462,58 +414,50 @@
             &list:count $ [] 10 20 30
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-dissoc $ %{} 'CodeEntry
-          :doc "|dissoc removes element"
+        'test-list-dissoc $ %{} 'CodeEntry (:doc "|dissoc removes element")
           :code $ quote $ defn test-list-dissoc ()
             &let
               xs $ &list:dissoc ([] 10 20 30) 1
               &+ (&list:count xs) (&list:nth xs 1)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-empty-false $ %{} 'CodeEntry
-          :doc "|non-empty list not empty"
+        'test-list-empty-false $ %{} 'CodeEntry (:doc "|non-empty list not empty")
           :code $ quote $ defn test-list-empty-false ()
             if
               &list:empty? $ [] 1
               , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-empty-method $ %{} 'CodeEntry
-          :doc "|.empty returns an empty list"
+        'test-list-empty-method $ %{} 'CodeEntry (:doc "|.empty returns an empty list")
           :code $ quote $ defn test-list-empty-method ()
             count $ .empty $ [] 10 20 30
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-empty-true $ %{} 'CodeEntry
-          :doc "|empty list is empty"
+        'test-list-empty-true $ %{} 'CodeEntry (:doc "|empty list is empty")
           :code $ quote $ defn test-list-empty-true ()
             if
               &list:empty? $ []
               , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-empty?-method $ %{} 'CodeEntry
-          :doc "|.empty? uses generic method dispatch"
+        'test-list-empty?-method $ %{} 'CodeEntry (:doc "|.empty? uses generic method dispatch")
           :code $ quote $ defn test-list-empty?-method ()
             if
               .empty? $ []
               , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-first $ %{} 'CodeEntry
-          :doc "|list first element"
+        'test-list-first $ %{} 'CodeEntry (:doc "|list first element")
           :code $ quote $ defn test-list-first ()
             &list:first $ [] 42 99
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-first-generic $ %{} 'CodeEntry
-          :doc "|generic first() on list via invoke"
+        'test-list-first-generic $ %{} 'CodeEntry (:doc "|generic first() on list via invoke")
           :code $ quote $ defn test-list-first-generic ()
             option:unwrap $ first $ [] 42 99
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-includes $ %{} 'CodeEntry
-          :doc "|includes checks value presence"
+        'test-list-includes $ %{} 'CodeEntry (:doc "|includes checks value presence")
           :code $ quote $ defn test-list-includes ()
             &+
               if
@@ -524,8 +468,7 @@
                 , 10 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-includes-method $ %{} 'CodeEntry
-          :doc "|.includes? dispatches on list"
+        'test-list-includes-method $ %{} 'CodeEntry (:doc "|.includes? dispatches on list")
           :code $ quote $ defn test-list-includes-method ()
             &+
               if
@@ -543,30 +486,26 @@
               , -1
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-max-method $ %{} 'CodeEntry
-          :doc "|.max dispatches on list"
+        'test-list-max-method $ %{} 'CodeEntry (:doc "|.max dispatches on list")
           :code $ quote $ defn test-list-max-method ()
             option:unwrap-or
               .max $ [] 10 20 30 15
               , -1
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-min-method $ %{} 'CodeEntry
-          :doc "|.min dispatches on list"
+        'test-list-min-method $ %{} 'CodeEntry (:doc "|.min dispatches on list")
           :code $ quote $ defn test-list-min-method ()
             option:unwrap-or
               .min $ [] 10 20 30 15
               , -1
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-nth $ %{} 'CodeEntry
-          :doc "|list nth element"
+        'test-list-nth $ %{} 'CodeEntry (:doc "|list nth element")
           :code $ quote $ defn test-list-nth (i)
             &list:nth ([] 10 20 30 40) i
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-prepend $ %{} 'CodeEntry
-          :doc "|prepend returns correct first elem"
+        'test-list-prepend $ %{} 'CodeEntry (:doc "|prepend returns correct first elem")
           :code $ quote $ defn test-list-prepend ()
             &list:first $ prepend ([] 10 20) 5
           :examples $ []
@@ -586,8 +525,7 @@
             &list:first $ &list:rest $ [] 10 20 30
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-rest-generic-first $ %{} 'CodeEntry
-          :doc "|generic rest() on list via invoke"
+        'test-list-rest-generic-first $ %{} 'CodeEntry (:doc "|generic rest() on list via invoke")
           :code $ quote $ defn test-list-rest-generic-first ()
             option:unwrap $ first $ rest ([] 10 20 30)
           :examples $ []
@@ -599,8 +537,7 @@
               &+ (&list:first xs) (&list:nth xs 2)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-slice $ %{} 'CodeEntry
-          :doc "|slice with start and end"
+        'test-list-slice $ %{} 'CodeEntry (:doc "|slice with start and end")
           :code $ quote $ defn test-list-slice ()
             &let
               xs $ &list:slice ([] 10 20 30 40 50) 1 4
@@ -628,8 +565,7 @@
           :schema $ :: 'Dynamic
         'test-list-sort-dynamic-callee $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-list-sort-dynamic-callee ()
-            &let
-              comparator compare-wasm-ascending
+            &let (comparator compare-wasm-ascending)
               &let
                 ys $ sort ([] 4 1 3 2) comparator
                 +
@@ -662,44 +598,38 @@
                   &list:nth (&list:nth ys 3) 1
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-to-set $ %{} 'CodeEntry
-          :doc "|list to set deduplicates elements"
+        'test-list-to-set $ %{} 'CodeEntry (:doc "|list to set deduplicates elements")
           :code $ quote $ defn test-list-to-set ()
             &let
               s $ &list:to-set $ [] 10 20 30 20 10
               &set:count s
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list?-false $ %{} 'CodeEntry
-          :doc "|list? on number returns false (0)"
+        'test-list?-false $ %{} 'CodeEntry (:doc "|list? on number returns false (0)")
           :code $ quote $ defn test-list?-false ()
             if (list? 42) 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list?-true $ %{} 'CodeEntry
-          :doc "|list? on a list returns true (1)"
+        'test-list?-true $ %{} 'CodeEntry (:doc "|list? on a list returns true (1)")
           :code $ quote $ defn test-list?-true ()
             if
               list? $ [] 1 2
               , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-lte $ %{} 'CodeEntry
-          :doc |less-than-or-equal
+        'test-lte $ %{} 'CodeEntry (:doc |less-than-or-equal)
           :code $ quote $ defn test-lte (a b)
             if (&< a b) 1 $ if (&= a b) 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-assoc-new $ %{} 'CodeEntry
-          :doc "|assoc adds new key"
+        'test-map-assoc-new $ %{} 'CodeEntry (:doc "|assoc adds new key")
           :code $ quote $ defn test-map-assoc-new ()
             &let
               m $ &map:assoc (&{} :a 1) :b 2
               &+ (&map:count m) (&map:get m :b)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-assoc-update $ %{} 'CodeEntry
-          :doc "|assoc updates existing key"
+        'test-map-assoc-update $ %{} 'CodeEntry (:doc "|assoc updates existing key")
           :code $ quote $ defn test-map-assoc-update ()
             &map:get
               &map:assoc (&{} :a 1 :b 2) :b 99
@@ -714,14 +644,12 @@
               &+ (&map:get m a) (&map:get m b)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-common-keys $ %{} 'CodeEntry
-          :doc "|common-keys: keys in both a and b"
+        'test-map-common-keys $ %{} 'CodeEntry (:doc "|common-keys: keys in both a and b")
           :code $ quote $ defn test-map-common-keys ()
             &set:count $ &map:common-keys (&{} :a 1 :b 2 :c 3) (&{} :b 10 :c 20 :d 30)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-contains $ %{} 'CodeEntry
-          :doc "|contains checks key presence"
+        'test-map-contains $ %{} 'CodeEntry (:doc "|contains checks key presence")
           :code $ quote $ defn test-map-contains ()
             &+
               if
@@ -732,8 +660,7 @@
                 , 10 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-contains-method $ %{} 'CodeEntry
-          :doc "|.contains? dispatches on map"
+        'test-map-contains-method $ %{} 'CodeEntry (:doc "|.contains? dispatches on map")
           :code $ quote $ defn test-map-contains-method ()
             &+
               if
@@ -749,42 +676,36 @@
             &map:count $ &{} :a 1 :b 2 :c 3
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-diff-keys $ %{} 'CodeEntry
-          :doc "|diff-keys: keys in a not in b"
+        'test-map-diff-keys $ %{} 'CodeEntry (:doc "|diff-keys: keys in a not in b")
           :code $ quote $ defn test-map-diff-keys ()
             &set:count $ &map:diff-keys (&{} :a 1 :b 2 :c 3) (&{} :b 10)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-diff-new $ %{} 'CodeEntry
-          :doc "|diff-new: entries in b not in a"
+        'test-map-diff-new $ %{} 'CodeEntry (:doc "|diff-new: entries in b not in a")
           :code $ quote $ defn test-map-diff-new ()
             &map:count $ &map:diff-new (&{} :a 1 :b 2) (&{} :b 3 :c 4 :d 5)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-dissoc $ %{} 'CodeEntry
-          :doc "|dissoc removes key"
+        'test-map-dissoc $ %{} 'CodeEntry (:doc "|dissoc removes key")
           :code $ quote $ defn test-map-dissoc ()
             &let
               m $ &map:dissoc (&{} :a 1 :b 2 :c 3) :b
               &+ (&map:count m) (&map:get m :c)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-empty-false $ %{} 'CodeEntry
-          :doc "|non-empty map not empty"
+        'test-map-empty-false $ %{} 'CodeEntry (:doc "|non-empty map not empty")
           :code $ quote $ defn test-map-empty-false ()
             if
               &map:empty? $ &{} :a 1
               , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-empty-method $ %{} 'CodeEntry
-          :doc "|.empty returns an empty map"
+        'test-map-empty-method $ %{} 'CodeEntry (:doc "|.empty returns an empty map")
           :code $ quote $ defn test-map-empty-method ()
             count $ .empty $ &{} :a 1 :b 2
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-empty-true $ %{} 'CodeEntry
-          :doc "|empty map is empty"
+        'test-map-empty-true $ %{} 'CodeEntry (:doc "|empty map is empty")
           :code $ quote $ defn test-map-empty-true ()
             if
               &map:empty? $ &{}
@@ -796,21 +717,18 @@
             &map:get (&{} :a 10 :b 20 :c 30) :b
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-hash-index1 $ %{} 'CodeEntry
-          :doc "|second 5 bits of number hash"
+        'test-map-hash-index1 $ %{} 'CodeEntry (:doc "|second 5 bits of number hash")
           :code $ quote $ defn test-map-hash-index1 (n)
             bit-and
               bit-shr (&hash n) 5
               , 31
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-hash-value $ %{} 'CodeEntry
-          :doc "|raw hash for numeric key"
+        'test-map-hash-value $ %{} 'CodeEntry (:doc "|raw hash for numeric key")
           :code $ quote $ defn test-map-hash-value (n) (&hash n)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-includes $ %{} 'CodeEntry
-          :doc "|map includes checks value"
+        'test-map-includes $ %{} 'CodeEntry (:doc "|map includes checks value")
           :code $ quote $ defn test-map-includes ()
             &+
               if
@@ -821,8 +739,7 @@
                 , 10 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-includes-method $ %{} 'CodeEntry
-          :doc "|.includes? dispatches on map"
+        'test-map-includes-method $ %{} 'CodeEntry (:doc "|.includes? dispatches on map")
           :code $ quote $ defn test-map-includes-method ()
             &+
               if
@@ -839,38 +756,33 @@
             &set:count $ .keys $ &{} :a 1 :b 2
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-merge $ %{} 'CodeEntry
-          :doc "|merge two maps, b overrides a"
+        'test-map-merge $ %{} 'CodeEntry (:doc "|merge two maps, b overrides a")
           :code $ quote $ defn test-map-merge ()
             &map:count $ &merge (&{} :a 1 :b 2) (&{} :b 3 :c 4)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-merge-value $ %{} 'CodeEntry
-          :doc "|merge override check via get"
+        'test-map-merge-value $ %{} 'CodeEntry (:doc "|merge override check via get")
           :code $ quote $ defn test-map-merge-value ()
             &map:get
               &merge (&{} :a 1 :b 2) (&{} :b 99)
               , :b
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map-two-keys-sum $ %{} 'CodeEntry
-          :doc "|sum lookups for two numeric keys"
+        'test-map-two-keys-sum $ %{} 'CodeEntry (:doc "|sum lookups for two numeric keys")
           :code $ quote $ defn test-map-two-keys-sum (a b)
             &let
               m $ &{} a 10 b 20
               &+ (&map:get m a) (&map:get m b)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-map?-true $ %{} 'CodeEntry
-          :doc "|map? on map returns true (1)"
+        'test-map?-true $ %{} 'CodeEntry (:doc "|map? on map returns true (1)")
           :code $ quote $ defn test-map?-true ()
             if
               map? $ &{} :a 1
               , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-match-sub $ %{} 'CodeEntry
-          :doc "|Match on second variant"
+        'test-match-sub $ %{} 'CodeEntry (:doc "|Match on second variant")
           :code $ quote $ defn test-match-sub (x y)
             &let
               t $ :: :sub x y
@@ -880,8 +792,7 @@
                 _ 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-match-tag $ %{} 'CodeEntry
-          :doc "|Match on enum tag"
+        'test-match-tag $ %{} 'CodeEntry (:doc "|Match on enum tag")
           :code $ quote $ defn test-match-tag (x y)
             &let
               t $ :: :add x y
@@ -891,8 +802,7 @@
                 _ 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-match-wildcard $ %{} 'CodeEntry
-          :doc "|Match falls to wildcard"
+        'test-match-wildcard $ %{} 'CodeEntry (:doc "|Match falls to wildcard")
           :code $ quote $ defn test-match-wildcard ()
             &let
               t $ :: :unknown 99
@@ -901,20 +811,17 @@
                 _ -1
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-max $ %{} 'CodeEntry
-          :doc "|max of two numbers"
+        'test-max $ %{} 'CodeEntry (:doc "|max of two numbers")
           :code $ quote $ defn test-max (a b)
             if (&> a b) a b
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-min $ %{} 'CodeEntry
-          :doc "|min of two numbers"
+        'test-min $ %{} 'CodeEntry (:doc "|min of two numbers")
           :code $ quote $ defn test-min (a b)
             if (&< a b) a b
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-negate $ %{} 'CodeEntry
-          :doc "|negate from calcit.core"
+        'test-negate $ %{} 'CodeEntry (:doc "|negate from calcit.core")
           :code $ quote $ defn test-negate (x) (negate x)
           :examples $ []
           :schema $ :: 'Dynamic
@@ -926,8 +833,7 @@
           :code $ quote $ defn test-number-compare-method () (.compare 1 2)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-number?-true $ %{} 'CodeEntry
-          :doc "|number? on number returns true (1)"
+        'test-number?-true $ %{} 'CodeEntry (:doc "|number? on number returns true (1)")
           :code $ quote $ defn test-number?-true ()
             if (number? 42) 1 0
           :examples $ []
@@ -937,8 +843,7 @@
             option:unwrap-or (%none) 7
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-pow $ %{} 'CodeEntry
-          :doc "|pow via host import"
+        'test-pow $ %{} 'CodeEntry (:doc "|pow via host import")
           :code $ quote $ defn test-pow (base exp) (pow base exp)
           :examples $ []
           :schema $ :: 'Dynamic
@@ -946,22 +851,19 @@
           :code $ quote $ defn test-println () do (println 42) 1
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-range $ %{} 'CodeEntry
-          :doc "|range creates list of numbers"
+        'test-range $ %{} 'CodeEntry (:doc "|range creates list of numbers")
           :code $ quote $ defn test-range ()
             &list:count $ range 5
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-range-sum $ %{} 'CodeEntry
-          :doc "|range 5 first+last: 0+4=4"
+        'test-range-sum $ %{} 'CodeEntry (:doc "|range 5 first+last: 0+4=4")
           :code $ quote $ defn test-range-sum ()
             &let
               xs $ range 5
               &+ (&list:nth xs 0) (&list:nth xs 4)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-range-two-args $ %{} 'CodeEntry
-          :doc "|range 2 5 creates 3 elements"
+        'test-range-two-args $ %{} 'CodeEntry (:doc "|range 2 5 creates 3 elements")
           :code $ quote $ defn test-range-two-args ()
             &list:count $ range 2 5
           :examples $ []
@@ -970,19 +872,16 @@
           :code $ quote $ defn test-rem (a b) (&number:rem a b)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-rest-count $ %{} 'CodeEntry
-          :doc "|rest args count: 3 extras"
+        'test-rest-count $ %{} 'CodeEntry (:doc "|rest args count: 3 extras")
           :code $ quote $ defn test-rest-count ()
             &list:count $ collect-rest 1 2 3 4
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-rest-empty $ %{} 'CodeEntry
-          :doc "|rest args with no extras: 10+20 = 30"
+        'test-rest-empty $ %{} 'CodeEntry (:doc "|rest args with no extras: 10+20 = 30")
           :code $ quote $ defn test-rest-empty () (sum-rest 10 20)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-rest-sum $ %{} 'CodeEntry
-          :doc "|rest args: 1+2+3+4+5 = 15"
+        'test-rest-sum $ %{} 'CodeEntry (:doc "|rest args: 1+2+3+4+5 = 15")
           :code $ quote $ defn test-rest-sum () (sum-rest 1 2 3 4 5)
           :examples $ []
           :schema $ :: 'Dynamic
@@ -995,8 +894,7 @@
           :code $ quote $ defn test-round (x) (round x)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-set-contains-method $ %{} 'CodeEntry
-          :doc "|.contains? dispatches on set"
+        'test-set-contains-method $ %{} 'CodeEntry (:doc "|.contains? dispatches on set")
           :code $ quote $ defn test-set-contains-method ()
             &+
               if
@@ -1012,14 +910,12 @@
             &set:count $ #{} 10 20 30
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-set-difference $ %{} 'CodeEntry
-          :doc "|difference removes elements in second set"
+        'test-set-difference $ %{} 'CodeEntry (:doc "|difference removes elements in second set")
           :code $ quote $ defn test-set-difference ()
             &set:count $ &difference (#{} 10 20 30 40) (#{} 20 40)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-set-difference-empty $ %{} 'CodeEntry
-          :doc "|difference with disjoint sets keeps all"
+        'test-set-difference-empty $ %{} 'CodeEntry (:doc "|difference with disjoint sets keeps all")
           :code $ quote $ defn test-set-difference-empty ()
             &set:count $ &difference (#{} 10 20) (#{} 30 40)
           :examples $ []
@@ -1035,26 +931,22 @@
                 , 10 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-set-empty-method $ %{} 'CodeEntry
-          :doc "|.empty returns an empty set"
+        'test-set-empty-method $ %{} 'CodeEntry (:doc "|.empty returns an empty set")
           :code $ quote $ defn test-set-empty-method ()
             count $ .empty $ #{} 10 20 30
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-set-exclude $ %{} 'CodeEntry
-          :doc "|exclude removes element"
+        'test-set-exclude $ %{} 'CodeEntry (:doc "|exclude removes element")
           :code $ quote $ defn test-set-exclude ()
             &set:count $ &exclude (#{} 10 20 30) 20
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-set-include $ %{} 'CodeEntry
-          :doc "|include adds element"
+        'test-set-include $ %{} 'CodeEntry (:doc "|include adds element")
           :code $ quote $ defn test-set-include ()
             &set:count $ &include (#{} 10 20) 30
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-set-includes $ %{} 'CodeEntry
-          :doc "|set includes value"
+        'test-set-includes $ %{} 'CodeEntry (:doc "|set includes value")
           :code $ quote $ defn test-set-includes ()
             &+
               if
@@ -1065,8 +957,7 @@
                 , 10 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-set-includes-method $ %{} 'CodeEntry
-          :doc "|.includes? dispatches on set"
+        'test-set-includes-method $ %{} 'CodeEntry (:doc "|.includes? dispatches on set")
           :code $ quote $ defn test-set-includes-method ()
             &+
               if
@@ -1077,36 +968,31 @@
                 , 10 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-set-max-method $ %{} 'CodeEntry
-          :doc "|.max dispatches on set"
+        'test-set-max-method $ %{} 'CodeEntry (:doc "|.max dispatches on set")
           :code $ quote $ defn test-set-max-method ()
             option:unwrap-or
               .max $ #{} 10 20 30 15
               , -1
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-set-min-method $ %{} 'CodeEntry
-          :doc "|.min dispatches on set"
+        'test-set-min-method $ %{} 'CodeEntry (:doc "|.min dispatches on set")
           :code $ quote $ defn test-set-min-method ()
             option:unwrap-or
               .min $ #{} 10 20 30 15
               , -1
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-set-union $ %{} 'CodeEntry
-          :doc "|union merges two sets"
+        'test-set-union $ %{} 'CodeEntry (:doc "|union merges two sets")
           :code $ quote $ defn test-set-union ()
             &set:count $ &union (#{} 10 20) (#{} 20 30 40)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-set-union-same $ %{} 'CodeEntry
-          :doc "|union of identical sets"
+        'test-set-union-same $ %{} 'CodeEntry (:doc "|union of identical sets")
           :code $ quote $ defn test-set-union-same ()
             &set:count $ &union (#{} 10 20 30) (#{} 10 20 30)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-sin $ %{} 'CodeEntry
-          :doc "|sin via host import"
+        'test-sin $ %{} 'CodeEntry (:doc "|sin via host import")
           :code $ quote $ defn test-sin (x) (sin x)
           :examples $ []
           :schema $ :: 'Dynamic
@@ -1150,8 +1036,7 @@
             :args $ []
           :tests $ [] $ %{} 'TestEntry
             :name |specializes-inline-callbacks-across-static-functions
-            :code $ quote $ assert= 35
-              test-static-option-result-inline-closures
+            :code $ quote $ assert= 35 (test-static-option-result-inline-closures)
             :tags $ #{} :core :unit :wasm
         'test-static-option-result-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-static-option-result-methods ()
@@ -1166,33 +1051,27 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-          :tests $ [] $ %{} 'TestEntry
-            :name |lowers-static-trait-methods
-            :code $ quote $ assert= 16
-              test-static-option-result-methods
+          :tests $ [] $ %{} 'TestEntry (:name |lowers-static-trait-methods)
+            :code $ quote $ assert= 16 (test-static-option-result-methods)
             :tags $ #{} :core :unit :wasm
         'test-str-character-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-str-character-count () (&str:count "|A😀")
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-str-compare-eq $ %{} 'CodeEntry
-          :doc "|compare equal strings = 0"
+        'test-str-compare-eq $ %{} 'CodeEntry (:doc "|compare equal strings = 0")
           :code $ quote $ defn test-str-compare-eq () (&str:compare |abc |abc)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-compare-gt $ %{} 'CodeEntry
-          :doc "|compare abd > abc = 1"
+        'test-str-compare-gt $ %{} 'CodeEntry (:doc "|compare abd > abc = 1")
           :code $ quote $ defn test-str-compare-gt () (&str:compare |abd |abc)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-compare-lt $ %{} 'CodeEntry
-          :doc "|compare abc < abd = -1"
+        'test-str-compare-lt $ %{} 'CodeEntry (:doc "|compare abc < abd = -1")
           :code $ quote $ defn test-str-compare-lt () (&str:compare |abc |abd)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-concat $ %{} 'CodeEntry
-          :doc "|concat two strings and return character count"
+        'test-str-concat $ %{} 'CodeEntry (:doc "|concat two strings and return character count")
           :code $ quote $ defn test-str-concat ()
             &str:count $ &str:concat |foo |bar
           :examples $ []
@@ -1205,27 +1084,23 @@
           :code $ quote $ defn test-str-contains-true () (&str:contains? |hello 1)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-count $ %{} 'CodeEntry
-          :doc "|string character count"
+        'test-str-count $ %{} 'CodeEntry (:doc "|string character count")
           :code $ quote $ defn test-str-count () (&str:count |hello)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-empty-false $ %{} 'CodeEntry
-          :doc "|non-empty string has non-zero count"
+        'test-str-empty-false $ %{} 'CodeEntry (:doc "|non-empty string has non-zero count")
           :code $ quote $ defn test-str-empty-false ()
             &= (&str:count |hi) 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-empty-true $ %{} 'CodeEntry
-          :doc "|rest of 1-char string has 0 characters"
+        'test-str-empty-true $ %{} 'CodeEntry (:doc "|rest of 1-char string has 0 characters")
           :code $ quote $ defn test-str-empty-true ()
             &=
               &str:count $ &str:rest |a
               , 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-escape $ %{} 'CodeEntry
-          :doc "|escape special chars"
+        'test-str-escape $ %{} 'CodeEntry (:doc "|escape special chars")
           :code $ quote $ defn test-str-escape ()
             &str:count $ &str:escape |hello
           :examples $ []
@@ -1240,8 +1115,7 @@
             option:unwrap-or (.find-index |hello |xyz) -1
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-first $ %{} 'CodeEntry
-          :doc "|first byte of hello = 104 (h)"
+        'test-str-first $ %{} 'CodeEntry (:doc "|first byte of hello = 104 (h)")
           :code $ quote $ defn test-str-first () (&str:first |hello)
           :examples $ []
           :schema $ :: 'Dynamic
@@ -1253,8 +1127,7 @@
           :code $ quote $ defn test-str-includes-true () (&str:includes? |hello |ell)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-nth $ %{} 'CodeEntry
-          :doc "|nth character at index 1 of hello is e"
+        'test-str-nth $ %{} 'CodeEntry (:doc "|nth character at index 1 of hello is e")
           :code $ quote $ defn test-str-nth ()
             if
               = (&str:nth |hello 1) |e
@@ -1271,21 +1144,18 @@
             &str:count $ &str:pad-right |hi 5 |-
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-rest $ %{} 'CodeEntry
-          :doc "|rest of hello has 4 characters"
+        'test-str-rest $ %{} 'CodeEntry (:doc "|rest of hello has 4 characters")
           :code $ quote $ defn test-str-rest ()
             &str:count $ &str:rest |hello
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-str-slice $ %{} 'CodeEntry
-          :doc "|slice 1..4 from abcde = 3 characters (bcd)"
+        'test-str-slice $ %{} 'CodeEntry (:doc "|slice 1..4 from abcde = 3 characters (bcd)")
           :code $ quote $ defn test-str-slice ()
             &str:count $ &str:slice |abcde 1 4
           :examples $ []
           :schema $ :: 'Dynamic
         'test-str-utf8-byte-count $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn test-str-utf8-byte-count ()
-            &str:utf8-byte-count "|A😀"
+          :code $ quote $ defn test-str-utf8-byte-count () (&str:utf8-byte-count "|A😀")
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -1293,32 +1163,25 @@
           :code $ quote $ defn test-string-compare-method () (.compare |abc |abd)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-struct-eq $ %{} 'CodeEntry
-          :doc "|struct definition equals source struct"
+        'test-struct-eq $ %{} 'CodeEntry (:doc "|struct definition equals source struct")
           :code $ quote $ defn test-struct-eq ()
             &let
               point $ %{} Point (:x 1) (:y 2)
               if
-                &=
-                  &struct:definition point
-                  , Point
+                &= (&struct:definition point) Point
                 , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-struct-field-tag $ %{} 'CodeEntry
-          :doc "|struct field-tag resolves by index"
+        'test-struct-field-tag $ %{} 'CodeEntry (:doc "|struct field-tag resolves by index")
           :code $ quote $ defn test-struct-field-tag ()
             &let
               point $ %{} Point (:x 1) (:y 2)
               if
-                &=
-                  &struct:field-tag point 0
-                  , :x
+                &= (&struct:field-tag point 0) :x
                 , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-struct-get-name $ %{} 'CodeEntry
-          :doc "|struct get-name returns struct tag"
+        'test-struct-get-name $ %{} 'CodeEntry (:doc "|struct get-name returns struct tag")
           :code $ quote $ defn test-struct-get-name ()
             &let
               point $ %{} Point (:x 1) (:y 2)
@@ -1327,8 +1190,7 @@
                 , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-struct-matches-true $ %{} 'CodeEntry
-          :doc "|struct:matches? returns true for same type"
+        'test-struct-matches-true $ %{} 'CodeEntry (:doc "|struct:matches? returns true for same type")
           :code $ quote $ defn test-struct-matches-true ()
             &let
               a $ %{} Point (:x 1) (:y 2)
@@ -1337,16 +1199,14 @@
                 if (&struct:matches? a b) 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-struct-sum $ %{} 'CodeEntry
-          :doc "|Struct create + field access"
+        'test-struct-sum $ %{} 'CodeEntry (:doc "|Struct create + field access")
           :code $ quote $ defn test-struct-sum (x y)
             &let
               p $ %{} Point (:x x) (:y y)
               &+ (&struct:nth p 0 :x) (&struct:nth p 1 :y)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-struct-to-map $ %{} 'CodeEntry
-          :doc "|struct to-map exposes field values by tag"
+        'test-struct-to-map $ %{} 'CodeEntry (:doc "|struct to-map exposes field values by tag")
           :code $ quote $ defn test-struct-to-map ()
             &let
               point $ %{} Point (:x 1) (:y 2)
@@ -1355,14 +1215,12 @@
                 &+ (&map:get m :x) (&map:get m :y)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-tag-eq $ %{} 'CodeEntry
-          :doc "|Tag equality — same tags"
+        'test-tag-eq $ %{} 'CodeEntry (:doc "|Tag equality — same tags")
           :code $ quote $ defn test-tag-eq ()
             if (&= :ok :ok) 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-tag-neq $ %{} 'CodeEntry
-          :doc "|Tag inequality — different tags"
+        'test-tag-neq $ %{} 'CodeEntry (:doc "|Tag inequality — different tags")
           :code $ quote $ defn test-tag-neq ()
             if (&= :ok :err) 1 0
           :examples $ []
@@ -1375,8 +1233,7 @@
                 &list:count $ &list:first ps
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-type-of-enum $ %{} 'CodeEntry
-          :doc "|type-of enum == :enum tag"
+        'test-type-of-enum $ %{} 'CodeEntry (:doc "|type-of enum == :enum tag")
           :code $ quote $ defn test-type-of-enum ()
             if
               &=
@@ -1385,8 +1242,7 @@
               , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-type-of-list $ %{} 'CodeEntry
-          :doc "|type-of list == :list tag"
+        'test-type-of-list $ %{} 'CodeEntry (:doc "|type-of list == :list tag")
           :code $ quote $ defn test-type-of-list ()
             if
               &=
@@ -1395,8 +1251,7 @@
               , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-type-of-map $ %{} 'CodeEntry
-          :doc "|type-of map == :map tag"
+        'test-type-of-map $ %{} 'CodeEntry (:doc "|type-of map == :map tag")
           :code $ quote $ defn test-type-of-map ()
             if
               &=
@@ -1405,16 +1260,14 @@
               , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-type-of-number $ %{} 'CodeEntry
-          :doc "|type-of number == :number tag"
+        'test-type-of-number $ %{} 'CodeEntry (:doc "|type-of number == :number tag")
           :code $ quote $ defn test-type-of-number ()
             if
               &= (type-of 42) :number
               , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-type-of-set $ %{} 'CodeEntry
-          :doc "|type-of set == :set tag"
+        'test-type-of-set $ %{} 'CodeEntry (:doc "|type-of set == :set tag")
           :code $ quote $ defn test-type-of-set ()
             if
               &=
@@ -1459,8 +1312,7 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
         'wasm-ffi-upcase $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-export wasm-ffi-upcase (text)
-            host-string-upcase text
+          :code $ quote $ defwasm-export wasm-ffi-upcase (text) (host-string-upcase text)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String

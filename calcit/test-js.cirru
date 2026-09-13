@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-js
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-js.main/main!
-      :mode :native
-      :reload-fn 'test-js.main/reload!
+    {} (:description |) (:init-fn 'test-js.main/main!) (:mode :native) (:reload-fn 'test-js.main/reload!)
       :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
@@ -59,9 +56,7 @@
                   hint-fn $ {} $ :async true
                   new js/Promise $ fn (resolve reject)
                     js/setTimeout
-                      fn ()
-                        println "|async code finished after 200ms"
-                        resolve true
+                      fn () (println "|async code finished after 200ms") (resolve true)
                       , 200
                 f2 $ fn ()
                   hint-fn $ {} $ :async true
@@ -115,8 +110,7 @@
             :args $ []
             :features $ #{} :js-ffi
         'test-collection $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing quick collection syntax"
+          :code $ quote $ fn () (log-title "|Testing quick collection syntax")
             &let
               a $ js-array 1 2 3 4
               assert= 4 $ .-length a
@@ -153,8 +147,7 @@
             :args $ []
             :features $ #{} :js-ffi
         'test-data-gen $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing code gen from Cirru Edn"
+          :code $ quote $ fn () (log-title "|Testing code gen from Cirru Edn")
             assert=
               :: :code $ &cirru-nth (parse-cirru "|+ 1 2") 0
               load-data-code "|:: :code $ quote $ + 1 2"
@@ -237,8 +230,7 @@
             :args $ []
             :features $ #{} :js-ffi
         'test-let-example $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing code emitting of using let"
+          :code $ quote $ fn () (log-title "|Testing code emitting of using let")
             let
                 a 1
                 b 2
@@ -257,8 +249,7 @@
               assert= b -1
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-property $ %{} 'CodeEntry
-          :doc "|try property ops"
+        'test-property $ %{} 'CodeEntry (:doc "|try property ops")
           :code $ quote $ fn ()
             let
                 a $ js-object
@@ -270,8 +261,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
             :features $ #{} :js-ffi
-        'test-regexp $ %{} 'CodeEntry
-          :doc "|try raw code and regexp"
+        'test-regexp $ %{} 'CodeEntry (:doc "|try raw code and regexp")
           :code $ quote $ fn ()
             let
                 pattern $ &raw-code |/^\d+$/
@@ -284,8 +274,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
             :features $ #{} :js-ffi
-        'test-return-raw-code $ %{} 'CodeEntry
-          :doc "|return with &raw-code"
+        'test-return-raw-code $ %{} 'CodeEntry (:doc "|return with &raw-code")
           :code $ quote $ fn ()
             let
                 a $ js-array 1 2

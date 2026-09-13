@@ -3,8 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |app
   :entries $ {} $ :default
-    {} (:description |) (:init-fn 'app.main/main!) (:mode :native)
-      :reload-fn 'app.main/reload!
+    {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
@@ -26,8 +25,7 @@
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-nested-scope $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn test-nested-scope ()
-            ; "测试：外层定义的变量可以被内层使用，并保留类型信息"
+          :code $ quote $ defn test-nested-scope () (; "测试：外层定义的变量可以被内层使用，并保留类型信息")
             let
                 a 100
               let

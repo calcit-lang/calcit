@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-wasm-suite
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-wasm-suite.main/main!
-      :mode :native
-      :reload-fn 'test-wasm-suite.main/reload!
+    {} (:description |) (:init-fn 'test-wasm-suite.main/main!) (:mode :native) (:reload-fn 'test-wasm-suite.main/reload!)
       :feature-policy $ {}
       :modules $ [] |./util.cirru |./test-cond.cirru |./test-math.cirru |./test-set.cirru |./test-anonymous-enum.cirru |./test-fn.cirru |./test-lens.cirru |./test-edn.cirru |./test-string.cirru |./test-nil.cirru
       :type-slots $ {}
@@ -14,13 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (test-cond/main!) (test-math/main!) (test-set/main!)
-            test-anonymous-enum/main!
-            test-fn/main!
-            test-lens/main!
-            test-edn/main!
-            test-string/main!
-            test-nil/main!
+          :code $ quote $ defn main! () (test-cond/main!) (test-math/main!) (test-set/main!) (test-anonymous-enum/main!) (test-fn/main!) (test-lens/main!) (test-edn/main!) (test-string/main!) (test-nil/main!)
           :examples $ []
           :schema $ :: 'Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
@@ -29,10 +20,4 @@
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-wasm-suite.main
-          :require ([] test-cond.main :as test-cond) ([] test-math.main :as test-math) ([] test-set.main :as test-set)
-            [] test-anonymous-enum.main :as test-anonymous-enum
-            [] test-fn.main :as test-fn
-            [] test-lens.main :as test-lens
-            [] test-edn.main :as test-edn
-            [] test-string.main :as test-string
-            test-nil.main :as test-nil
+          :require ([] test-cond.main :as test-cond) ([] test-math.main :as test-math) ([] test-set.main :as test-set) ([] test-anonymous-enum.main :as test-anonymous-enum) ([] test-fn.main :as test-fn) ([] test-lens.main :as test-lens) ([] test-edn.main :as test-edn) ([] test-string.main :as test-string) (test-nil.main :as test-nil)

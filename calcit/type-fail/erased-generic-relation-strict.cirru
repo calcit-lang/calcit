@@ -14,8 +14,7 @@
   :files $ {} $ 'type-fail-erased-generic-relation-strict.main
     %{} 'FileEntry
       :defs $ {}
-        'compare-open $ %{} 'CodeEntry
-          :doc "|验证开放 Dynamic 绑定不能被只接受 Number 的 callback 隐式收窄。"
+        'compare-open $ %{} 'CodeEntry (:doc "|验证开放 Dynamic 绑定不能被只接受 Number 的 callback 隐式收窄。")
           :code $ quote $ defn compare-open (value callback) (callback value)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'T)
@@ -40,6 +39,5 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-      :ns $ %{} 'NsEntry
-        :doc "|Strict erased-generic-relation fixture."
+      :ns $ %{} 'NsEntry (:doc "|Strict erased-generic-relation fixture.")
         :code $ quote $ ns type-fail-erased-generic-relation-strict.main

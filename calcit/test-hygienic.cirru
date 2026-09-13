@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-hygienic
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-hygienic.main/main!
-      :mode :native
-      :reload-fn 'test-hygienic.main/reload!
+    {} (:description |) (:init-fn 'test-hygienic.main/main!) (:mode :native) (:reload-fn 'test-hygienic.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
@@ -50,8 +47,7 @@
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
         'try-hygienic $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn try-hygienic ()
-            println "|Testing hygienic"
+          :code $ quote $ defn try-hygienic () (println "|Testing hygienic")
             let
                 c 4
               assert= (add-11 1 2) ([] 1 2 4 11 10)

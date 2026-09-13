@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-cond
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-cond.main/main!
-      :mode :native
-      :reload-fn 'test-cond.main/reload!
+    {} (:description |) (:init-fn 'test-cond.main/main!) (:mode :native) (:reload-fn 'test-cond.main/reload!)
       :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
@@ -46,8 +43,7 @@
               assert= (detect-x 1) |one
               assert= (detect-x 2) |two
               assert= (detect-x 3) |else
-            inside-eval:
-              &reset-gensym-index!
+            inside-eval: (&reset-gensym-index!)
               assert=
                 macroexpand $ quote $ case-default x |nothing (1 |one) (2 |two)
                 quote $ &let (v__1 x)

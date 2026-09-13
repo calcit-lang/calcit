@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-invalid-tag
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-invalid-tag.main/main!
-      :mode :native
-      :reload-fn 'test-invalid-tag.main/reload!
+    {} (:description |) (:init-fn 'test-invalid-tag.main/main!) (:mode :native) (:reload-fn 'test-invalid-tag.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
@@ -31,9 +28,7 @@
           :examples $ []
           :schema $ :: 'Trait
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! ()
-            println "|Testing %:: call"
-            println |Result: Result
+          :code $ quote $ defn main! () (println "|Testing %:: call") (println |Result: Result)
             println |ResultImpl: ResultImpl
               ; Direct call to %:: to see if function is invoked
               println "|Calling %:: ..."

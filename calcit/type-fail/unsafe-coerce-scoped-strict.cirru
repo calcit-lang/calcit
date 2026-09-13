@@ -32,6 +32,5 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-      :ns $ %{} 'NsEntry
-        :doc "|Strict scoped unsafe-coerce fixture."
+      :ns $ %{} 'NsEntry (:doc "|Strict scoped unsafe-coerce fixture.")
         :code $ quote $ ns type-fail-unsafe-coerce-scoped-strict.main

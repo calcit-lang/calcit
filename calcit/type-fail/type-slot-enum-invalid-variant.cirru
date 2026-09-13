@@ -13,8 +13,7 @@
   :files $ {} $ 'type-fail-type-slot-enum-invalid-variant.main
     %{} 'FileEntry
       :defs $ {}
-        'Action $ %{} 'CodeEntry
-          :doc "|Enum used for type-slot binding"
+        'Action $ %{} 'CodeEntry (:doc "|Enum used for type-slot binding")
           :code $ quote $ defenum Action (:add 'String) (:remove 'String) (:clear)
           :examples $ []
           :schema $ :: 'EnumDef
@@ -36,8 +35,7 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
-        'takes-action $ %{} 'CodeEntry
-          :doc "|Function expecting a type-slot-bound enum value"
+        'takes-action $ %{} 'CodeEntry (:doc "|Function expecting a type-slot-bound enum value")
           :code $ quote $ defn takes-action (x) x
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)

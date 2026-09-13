@@ -30,6 +30,5 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-      :ns $ %{} 'NsEntry
-        :doc "|Strict nullable JavaScript predicate fixture."
+      :ns $ %{} 'NsEntry (:doc "|Strict nullable JavaScript predicate fixture.")
         :code $ quote $ ns type-fail-js-nullish-predicate-strict.main

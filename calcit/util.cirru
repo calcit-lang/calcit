@@ -3,8 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |util
   :entries $ {} $ :default
-    {} (:description |) (:init-fn 'util.core/main!) (:mode :native)
-      :reload-fn 'util.core/reload!
+    {} (:description |) (:init-fn 'util.core/main!) (:mode :native) (:reload-fn 'util.core/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}

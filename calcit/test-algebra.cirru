@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-algebra
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-algebra.main/main!
-      :mode :native
-      :reload-fn 'test-algebra.main/reload!
+    {} (:description |) (:init-fn 'test-algebra.main/main!) (:mode :native) (:reload-fn 'test-algebra.main/reload!)
       :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
@@ -22,8 +19,7 @@
           :examples $ []
           :schema $ :: 'Trait
         'AlgebraBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def AlgebraBox
-            impl-traits AlgebraBox0 AlgebraBoxMapImpl AlgebraBoxBindImpl AlgebraBoxApplyImpl AlgebraBoxMappendImpl
+          :code $ quote $ def AlgebraBox (impl-traits AlgebraBox0 AlgebraBoxMapImpl AlgebraBoxBindImpl AlgebraBoxApplyImpl AlgebraBoxMappendImpl)
           :examples $ []
           :schema $ :: 'Dynamic
         'AlgebraBox0 $ %{} 'CodeEntry (:doc |)

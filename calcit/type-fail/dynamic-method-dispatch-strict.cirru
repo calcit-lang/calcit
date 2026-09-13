@@ -14,8 +14,7 @@
   :files $ {} $ 'type-fail-dynamic-method-dispatch-strict.main
     %{} 'FileEntry
       :defs $ {}
-        'main! $ %{} 'CodeEntry
-          :doc "|Entry that makes run-open reachable."
+        'main! $ %{} 'CodeEntry (:doc "|Entry that makes run-open reachable.")
           :code $ quote $ defn main! () (run-open 1)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
@@ -31,6 +30,5 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic
-      :ns $ %{} 'NsEntry
-        :doc "|Strict dynamic-method-dispatch fixture."
+      :ns $ %{} 'NsEntry (:doc "|Strict dynamic-method-dispatch fixture.")
         :code $ quote $ ns type-fail-dynamic-method-dispatch-strict.main
