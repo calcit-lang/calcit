@@ -2544,7 +2544,15 @@ fn preprocess_list_call(
         let checked_expected_types = checked_contract.as_ref().and_then(|contract| contract.expected_types.as_deref());
         // Core helpers such as `get` resolve to ordinary functions, so validate
         // their statically known struct fields in this branch as well.
-        check_struct_field_access(&head_form, &current_args, scope_types, file_ns, call_stack, check_warnings);
+        check_struct_field_access(
+          &head_form,
+          &current_args,
+          scope_types,
+          file_ns,
+          call_stack,
+          child_source_location(call_location.as_ref(), 1),
+          check_warnings,
+        );
         reject_strict_bare_enum_constructor_comparison(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
         reject_strict_nominal_enum_stringification(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
         warn_on_nominal_enum_legacy_absence_use(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
@@ -2929,7 +2937,15 @@ fn preprocess_list_call(
         let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
         reject_pending_async_arguments(&head_form, &processed_args, scope_types, call_stack)?;
         validate_method_call(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
-        check_struct_field_access(&head_form, &processed_args, scope_types, file_ns, call_stack, check_warnings);
+        check_struct_field_access(
+          &head_form,
+          &processed_args,
+          scope_types,
+          file_ns,
+          call_stack,
+          child_source_location(call_location.as_ref(), 1),
+          check_warnings,
+        );
         check_struct_update_fields(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         check_struct_method_args(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         check_typed_js_field_operation(
@@ -3970,6 +3986,13 @@ fn derive_call_expr_location(head: &Calcit) -> Option<NodeLocation> {
   ))
 }
 
+fn child_source_location(call_location: Option<&NodeLocation>, index: u16) -> Option<NodeLocation> {
+  let location = call_location?;
+  let mut child_coord = (*location.coord).clone();
+  child_coord.push(index);
+  Some(NodeLocation::new(location.ns.clone(), location.def.clone(), Arc::from(child_coord)))
+}
+
 /// Check recur arity in function body
 /// Recursively walks the expression tree to find recur calls and validates argument count
 /// Skips checking for macro-generated functions (containing %, $, etc.)
@@ -4116,6 +4139,7 @@ fn check_struct_field_access(
   scope_types: &ScopeTypes,
   file_ns: &str,
   call_stack: &CallStackList,
+  source_receiver_location: Option<NodeLocation>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   // `&struct:nth` embeds one concrete Struct layout in source. It is safe only
@@ -4165,7 +4189,7 @@ fn check_struct_field_access(
         message,
         "W_STRUCT_FIELD_OPTIONAL_LOOKUP",
         file_ns,
-        struct_arg.get_location(),
+        source_receiver_location.or_else(|| struct_arg.get_location()),
         check_warnings,
       );
     }
@@ -13985,6 +14009,7 @@ mod tests {
       &ScopeTypes::new(),
       "tests.struct",
       &CallStackList::default(),
+      None,
       &warnings,
     );
 
@@ -14016,6 +14041,7 @@ mod tests {
       &ScopeTypes::new(),
       "tests.consumer",
       &CallStackList::default(),
+      None,
       &warnings,
     );
 
@@ -14054,6 +14080,7 @@ mod tests {
       &ScopeTypes::new(),
       "tests.struct",
       &CallStackList::default(),
+      None,
       &warnings,
     );
 
@@ -14083,7 +14110,7 @@ mod tests {
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default().extend(calcit::CORE_NS, "defimpl", StackKind::Macro, &Calcit::Nil, &[]);
 
-    check_struct_field_access(&head, &args, &ScopeTypes::new(), "tests.struct", &stack, &warnings);
+    check_struct_field_access(&head, &args, &ScopeTypes::new(), "tests.struct", &stack, None, &warnings);
 
     assert!(warnings.borrow().is_empty());
   }
@@ -14120,7 +14147,15 @@ mod tests {
     );
     let warnings = RefCell::new(vec![]);
 
-    check_struct_field_access(&head, &args, &scope_types, "tests.struct", &CallStackList::default(), &warnings);
+    check_struct_field_access(
+      &head,
+      &args,
+      &scope_types,
+      "tests.struct",
+      &CallStackList::default(),
+      None,
+      &warnings,
+    );
 
     let warnings = warnings.borrow();
     assert_eq!(warnings.len(), 1);
