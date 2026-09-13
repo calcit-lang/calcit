@@ -1,6 +1,6 @@
 # RFC：Calcit 分层语义与 Agent 可执行修复契约
 
-状态：Draft — 0.14.13
+状态：Accepted — 0.14.13
 
 日期：2026-09-12
 
@@ -154,6 +154,22 @@ defn parse-device-message (raw)
 
 这些示例在相关能力落地前使用 `cirru.no-check`，不能把文档片段可解析冒充为实现已经通过。实现 PR 应把
 对应行为移入 definition `:tests` 或专用成功/失败 fixture，并精确记录实际执行的 backend。
+
+### 7.1 已落地的代表性证据
+
+下表把分层契约映射到仓库中已经执行的 Calcit 程序。这里记录的是可复用的语义证据，不引入覆盖率、数量目标
+或新的 analyzer。Snapshot 中的 definition 是契约主体；脚本只负责选择 backend、执行产物和防止零测试误报。
+
+| 语义切片 | 表层 Calcit 证据 | backend 证据 | 分层结论 |
+|---|---|---|---|
+| 普通 typed value 与泛型推导 | `calcit/test-types-inference.cirru` 的 `test-generics-identity`、`test-map-inference` 与 `test-struct-inference` | `yarn try-rs` 与 `yarn try-js` 都从 `calcit/test.cirru` 执行这些断言 | 类型关系属于 surface/typed core；JS lowering 不另定义泛型规则 |
+| 开放 Map/List 与 `Option<Dynamic>` | `calcit/test-traits.cirru` 的开放集合读取断言，以及 `calcit.core/get` 的 `reads-open-map-payload` definition test | native/JS 主测试执行前者；`yarn try-core-tests` 用 `--require-match` 执行后者 | 未知 payload 可被保存、读取和包装；具体使用仍需 narrow/decode |
+| macro 展开与求值语义 | `calcit/test-macro.cirru` 的 `test-destruct`、`test-lambda` 等 Calcit 断言 | native/JS 主测试执行同一表层 macro 调用；展开比较只作为 core 形状证据 | surface macro 拥有行为，展开后的 core 必须保持求值与词法作用域 |
+| JS FFI host boundary | `calcit/test-js.cirru` 的 `test-property`、`test-collection` 和显式 `unsafe-coerce` 用例 | `yarn try-js` 生成 JS 后由 Node.js 实际执行；native 不伪装支持 JS host value | `JsObject` 是显式 backend/host 能力，不以 Dynamic 推导替代 adapter 证据 |
+| 当前 WASM typed 子集 | `calcit/test-wasm.cirru` 的 `test-static-option-result-methods` 等带 `:wasm` tag 的 definition tests | `scripts/test-wasm.sh` 先以 `--require-match` 执行 Calcit tests，再加载生成模块并检查 fail-closed 边界 | WASM 复用 typed core 语义；支持项实际执行，未支持项拒绝产物而非返回占位值 |
+
+这组证据也明确了“不共同支持”的处理方式：JS FFI 不要求 native/WASM 模拟宿主对象，WASM 尚未覆盖的语法也
+不要求表层退化。backend 只实现已声明能力，差异在 capability boundary 或稳定 unsupported diagnostic 中显式出现。
 
 ## 8. Agent 语义协议
 
