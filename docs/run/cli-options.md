@@ -39,7 +39,9 @@ Quick note: `calcit edit format` rewrites the target snapshot using canonical se
 审阅建议后使用报告中的 revision 和相同 scope selectors 执行 `--apply`。不要把这类源码整理混入普通类型 warning，
 也不要通过正则批量删除仍在单表达式位置承担顺序语义的 `do`。完整流程见 [Compiler-guided Source Fixes](fix.md#检测并修复冗余-do)。
 
-老项目整体升级使用 `calcit calcit.cirru fix --preset surface-latest-v1 --format json`。该 preset 会在 JSON 的
+老项目先按[两阶段升级流程](upgrade.md)固定使用 Calcit 0.14.15 运行 `tag-match-to-match-v1` 与
+`required-struct-field-v1`；验证并提交后，再使用当前工具链运行
+`calcit calcit.cirru fix --preset surface-latest-v1 --format json`。该 preset 会在 JSON 的
 `filters.expanded_rule_ids` 中列出冻结的规则集合，包括冗余 `do`、旧数据 API，以及可静态证明安全的具名
 Enum/Struct `%::` / `%{}` 直接构造器迁移。`--preset` 与 `--rule` 互斥；apply 必须重复同一 selector。
 

@@ -76,6 +76,20 @@
             :name |migrates-to-direct-enum-constructor
             :code $ quote $ assert= (FixPersonChoice :none) (legacy-enum)
             :tags $ #{} :migration
+        'legacy-enum-overlap $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn legacy-enum-overlap ()
+            %:: FixPersonChoice :person $ let () $ do &unit
+              %{} FixPerson (:name |Ada) (:age 1)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :return 'fix-command.main/FixPersonChoice
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry
+            :name |composes-enum-let-do
+            :code $ quote $ assert=
+              FixPersonChoice :person $ FixPerson :name |Ada :age 1
+              legacy-enum-overlap
+            :tags $ #{} :migration
         'legacy-nested $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn legacy-nested ()
             do &unit $ %:: FixPersonChoice :person $ %{} FixPerson (:name |Ada) (:age 1)
@@ -99,6 +113,20 @@
           :tests $ [] $ %{} 'TestEntry
             :name |migrates-to-direct-struct-constructor
             :code $ quote $ assert= (FixPerson :name |Ada :age 1) (legacy-struct)
+            :tags $ #{} :migration
+        'legacy-struct-overlap $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn legacy-struct-overlap ()
+            %{} FixPerson
+              :name $ let () $ do |ignored |Ada
+              :age 1
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :return 'fix-command.main/FixPerson
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry
+            :name |composes-struct-let-do
+            :code $ quote $ assert= (FixPerson :name |Ada :age 1)
+              legacy-struct-overlap
             :tags $ #{} :migration
         'macro-origin-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn macro-origin-struct-field (person) (:name person)

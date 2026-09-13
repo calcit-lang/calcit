@@ -14,5 +14,8 @@ JSON 报告中同时返回 preset ID 和实际 rule IDs。`--preset` 与单条 `
 组合 planner 会在一个顶层 guarded replacement 内递归整理已选中的嵌套构造器，并在构造器替换后才执行
 `redundant-do-v1` splice，避免多个规则互相移动 Snapshot path。
 
+review 后进一步把构造器内部重叠的冗余 `do` 直接组合进 enclosing replacement，并从后续 splice 计划排除该
+source region；同时要求旧 Struct 构造字段与声明字段完整且唯一匹配。CLI 快速说明也补上 0.14.15 bridge 前置步骤。
+
 fixture 把行为断言放在定义的 `:tests` 中，Rust 集成测试只负责验证 CLI 事务、报告协议与调用这些 Calcit
 测试，延续 Calcit-first 的测试方向。

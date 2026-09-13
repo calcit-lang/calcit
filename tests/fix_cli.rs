@@ -347,12 +347,40 @@ fn surface_latest_preset_migrates_named_enum_and_struct_constructors() {
     "stderr:\n{}",
     String::from_utf8_lossy(&nested_applied.stderr)
   );
+  for definition in ["legacy-enum-overlap", "legacy-struct-overlap"] {
+    let applied = run_fix(
+      &snapshot,
+      &[
+        "--ns",
+        "fix-command.main",
+        "--def",
+        definition,
+        "--preset",
+        "surface-latest-v1",
+        "--apply",
+        "--allow-no-vcs",
+        "--format",
+        "json",
+      ],
+    );
+    assert!(
+      applied.status.success(),
+      "overlap migration failed for {definition}:\n{}",
+      String::from_utf8_lossy(&applied.stderr)
+    );
+  }
   let updated = fs::read_to_string(&snapshot).expect("updated fixture should read");
   assert!(updated.contains("defn legacy-enum () (FixPersonChoice :none)"));
   assert!(updated.contains("defn legacy-struct () (FixPerson :name |Ada :age 1)"));
   assert!(updated.contains("FixPersonChoice :person $ FixPerson :name |Ada :age 1"));
 
-  for definition in ["legacy-enum", "legacy-struct", "legacy-nested"] {
+  for definition in [
+    "legacy-enum",
+    "legacy-struct",
+    "legacy-nested",
+    "legacy-enum-overlap",
+    "legacy-struct-overlap",
+  ] {
     let target = format!("fix-command.main/{definition}");
     let calcit_test = run_calcit(&snapshot, &["test", target.as_str(), "--require-match"]);
     assert!(
@@ -363,7 +391,13 @@ fn surface_latest_preset_migrates_named_enum_and_struct_constructors() {
     );
   }
 
-  for definition in ["legacy-enum", "legacy-struct", "legacy-nested"] {
+  for definition in [
+    "legacy-enum",
+    "legacy-struct",
+    "legacy-nested",
+    "legacy-enum-overlap",
+    "legacy-struct-overlap",
+  ] {
     let repeated = run_fix(
       &snapshot,
       &[

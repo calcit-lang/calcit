@@ -142,16 +142,30 @@ pub(crate) fn handle_fix_command(
   if selected_rules.contains(&NAMED_STRUCT_CONSTRUCTOR_RULE) {
     constructor_kinds.push(NominalKind::Struct);
   }
+  let compose_redundant_do = selected_rules.contains(&REDUNDANT_DO_RULE);
+  let mut constructor_regions = Vec::new();
   if !constructor_kinds.is_empty() {
-    suggestions.extend(plan_named_constructor_fixes(
+    let constructor_suggestions = plan_named_constructor_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
       &constructor_kinds,
-    )?);
+      compose_redundant_do,
+    )?;
+    constructor_regions.extend(
+      constructor_suggestions
+        .iter()
+        .map(|suggestion| (suggestion.definition.clone(), suggestion.target_path.clone())),
+    );
+    suggestions.extend(constructor_suggestions);
   }
-  if selected_rules.contains(&REDUNDANT_DO_RULE) {
-    suggestions.extend(plan_redundant_do_fixes(&source_snapshot, snapshot_file, &selected_definitions)?);
+  if compose_redundant_do {
+    suggestions.extend(plan_redundant_do_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+      &constructor_regions,
+    )?);
   }
   let operations = suggestions.iter().flat_map(suggestion_operations).collect::<Vec<_>>();
 
@@ -434,6 +448,7 @@ fn plan_redundant_do_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
   selected_definitions: &[(String, String)],
+  excluded_regions: &[(String, Vec<usize>)],
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
@@ -444,6 +459,12 @@ fn plan_redundant_do_fixes(
       .ok_or_else(|| format!("Selected definition `{namespace}/{definition}` is missing from the source snapshot."))?;
     let mut paths = Vec::new();
     collect_redundant_do_paths(&entry.code, &mut Vec::new(), &mut paths);
+    let target_definition = format!("{namespace}/{definition}");
+    paths.retain(|path| {
+      !excluded_regions
+        .iter()
+        .any(|(region_definition, region_path)| region_definition == &target_definition && path.starts_with(region_path))
+    });
     paths.sort_by(|left, right| right.cmp(left));
     for target_path in paths {
       let original_node = navigate_to_path(&entry.code, &target_path)?;
@@ -456,7 +477,7 @@ fn plan_redundant_do_fixes(
         diagnostic_code: REDUNDANT_DO_DIAGNOSTIC,
         semantic_layer: "surface",
         source_file: snapshot_file.to_owned(),
-        definition: format!("{namespace}/{definition}"),
+        definition: target_definition.clone(),
         path: format!("code{}", format_path(&target_path)),
         fingerprint: node_fingerprint(&original_node),
         origin_chain: vec![],
@@ -560,6 +581,7 @@ fn plan_named_constructor_fixes(
   snapshot_file: &str,
   selected_definitions: &[(String, String)],
   kinds: &[NominalKind],
+  compose_redundant_do: bool,
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
@@ -584,7 +606,8 @@ fn plan_named_constructor_fixes(
       let Some(kind) = legacy_constructor_kind(items, snapshot, namespace, &shadowed, kinds) else {
         continue;
       };
-      let replacement_node = rewrite_named_constructor_tree(&original_node, snapshot, namespace, &shadowed, kinds);
+      let replacement_node =
+        rewrite_named_constructor_tree(&original_node, snapshot, namespace, &shadowed, kinds, compose_redundant_do);
       let original_code = original_node
         .format_one_liner()
         .map_err(|error| format!("Failed to format constructor source at {namespace}/{definition}: {error}"))?;
@@ -658,20 +681,25 @@ fn legacy_constructor_kind(
   let head = items.first().and_then(leaf_value)?;
   let prototype = items.get(1).and_then(leaf_value)?;
   kinds.iter().copied().find(|kind| {
+    let target = resolve_project_nominal_target(snapshot, namespace, prototype, *kind);
     head == kind.legacy_head()
       && !prototype.starts_with('_')
       && !prototype_is_shadowed(prototype, shadowed)
-      && resolves_to_project_nominal(snapshot, namespace, prototype, *kind)
+      && target.is_some()
+      && (*kind != NominalKind::Struct
+        || target.is_some_and(|(target_ns, target_def)| struct_fields_are_complete(snapshot, &target_ns, &target_def, items)))
       && legacy_constructor_replacement(items, *kind).is_some()
   })
 }
 
+/// Recursively compose selected constructor and redundant-body rewrites inside one guarded replacement.
 fn rewrite_named_constructor_tree(
   node: &Cirru,
   snapshot: &Snapshot,
   namespace: &str,
   shadowed: &HashSet<String>,
   kinds: &[NominalKind],
+  compose_redundant_do: bool,
 ) -> Cirru {
   let Cirru::List(items) = node else {
     return node.clone();
@@ -681,15 +709,21 @@ fn rewrite_named_constructor_tree(
   }
   let rewritten_items = items
     .iter()
-    .map(|item| rewrite_named_constructor_tree(item, snapshot, namespace, shadowed, kinds))
+    .map(|item| rewrite_named_constructor_tree(item, snapshot, namespace, shadowed, kinds, compose_redundant_do))
     .collect::<Vec<_>>();
-  if let Some(kind) = legacy_constructor_kind(items, snapshot, namespace, shadowed, kinds) {
+  let rewritten_node = if let Some(kind) = legacy_constructor_kind(items, snapshot, namespace, shadowed, kinds) {
     legacy_constructor_replacement(&rewritten_items, kind).unwrap_or(Cirru::List(rewritten_items))
   } else {
     Cirru::List(rewritten_items)
+  };
+  if compose_redundant_do {
+    splice_redundant_do_children(rewritten_node)
+  } else {
+    rewritten_node
   }
 }
 
+/// Convert one validated legacy constructor node to direct surface syntax.
 fn legacy_constructor_replacement(items: &[Cirru], kind: NominalKind) -> Option<Cirru> {
   let prototype = items.get(1)?.clone();
   match kind {
@@ -710,6 +744,36 @@ fn legacy_constructor_replacement(items: &[Cirru], kind: NominalKind) -> Option<
   }
 }
 
+/// Splice direct `do` children only where the enclosing form accepts a variadic body.
+fn splice_redundant_do_children(node: Cirru) -> Cirru {
+  let Cirru::List(items) = node else {
+    return node;
+  };
+  let body_start = match items.first().and_then(leaf_value) {
+    Some("defn") => Some(3),
+    Some("fn" | "let") => Some(2),
+    Some("do") => Some(1),
+    _ => None,
+  };
+  let Some(body_start) = body_start else {
+    return Cirru::List(items);
+  };
+  let mut output = Vec::with_capacity(items.len());
+  for (index, item) in items.into_iter().enumerate() {
+    if index >= body_start
+      && let Cirru::List(children) = &item
+      && children.len() > 1
+      && children.first().and_then(leaf_value) == Some("do")
+    {
+      output.extend(children.iter().skip(1).cloned());
+    } else {
+      output.push(item);
+    }
+  }
+  Cirru::List(output)
+}
+
+/// Read the leaf head of one source list.
 fn list_head(node: &Cirru) -> Option<&str> {
   match node {
     Cirru::List(items) => items.first().and_then(leaf_value),
@@ -717,6 +781,7 @@ fn list_head(node: &Cirru) -> Option<&str> {
   }
 }
 
+/// Borrow a source leaf value without accepting nested forms.
 fn leaf_value(node: &Cirru) -> Option<&str> {
   match node {
     Cirru::Leaf(value) => Some(value.as_ref()),
@@ -743,6 +808,7 @@ fn collect_potential_local_bindings(node: &Cirru, output: &mut HashSet<String>) 
   }
 }
 
+/// Collect binding names from the alternating name/value positions of one binding vector.
 fn collect_binding_positions(node: Option<&Cirru>, output: &mut HashSet<String>) {
   let Some(Cirru::List(items)) = node else {
     return;
@@ -752,6 +818,7 @@ fn collect_binding_positions(node: Option<&Cirru>, output: &mut HashSet<String>)
   }
 }
 
+/// Conservatively collect leaves from one supported binding pattern.
 fn collect_binding_tree(node: Option<&Cirru>, output: &mut HashSet<String>) {
   match node {
     Some(Cirru::Leaf(value)) if !value.starts_with('&') => {
@@ -766,6 +833,7 @@ fn collect_binding_tree(node: Option<&Cirru>, output: &mut HashSet<String>) {
   }
 }
 
+/// Reject bare nominal names that may resolve to a local binding instead of a definition.
 fn prototype_is_shadowed(prototype: &str, shadowed: &HashSet<String>) -> bool {
   if prototype.contains('/') {
     false
@@ -774,28 +842,26 @@ fn prototype_is_shadowed(prototype: &str, shadowed: &HashSet<String>) -> bool {
   }
 }
 
-fn resolves_to_project_nominal(snapshot: &Snapshot, at_ns: &str, prototype: &str, kind: NominalKind) -> bool {
+/// Resolve a nominal prototype to its exact editable project definition.
+fn resolve_project_nominal_target(snapshot: &Snapshot, at_ns: &str, prototype: &str, kind: NominalKind) -> Option<(String, String)> {
   let target = if let Some((prefix, definition)) = prototype.rsplit_once('/') {
     let namespace = if snapshot.files.contains_key(prefix) {
       prefix.to_owned()
-    } else if let Some(namespace) =
-      program::lookup_ns_target_in_import(at_ns, prefix).or_else(|| program::lookup_default_target_in_import(at_ns, prefix))
-    {
-      namespace.to_string()
     } else {
-      return false;
+      let namespace =
+        program::lookup_ns_target_in_import(at_ns, prefix).or_else(|| program::lookup_default_target_in_import(at_ns, prefix))?;
+      namespace.to_string()
     };
     (namespace, definition.to_owned())
   } else if nominal_definition_matches(snapshot, at_ns, prototype, kind) {
-    return true;
-  } else if let Some(target) = imported_definition_target(at_ns, prototype) {
-    target
+    return Some((at_ns.to_owned(), prototype.to_owned()));
   } else {
-    return false;
+    imported_definition_target(at_ns, prototype)?
   };
-  nominal_definition_matches(snapshot, &target.0, &target.1, kind)
+  nominal_definition_matches(snapshot, &target.0, &target.1, kind).then_some(target)
 }
 
+/// Resolve a referred local import name without losing a renamed target definition.
 fn imported_definition_target(at_ns: &str, local_name: &str) -> Option<(String, String)> {
   let program_data = program::PROGRAM_CODE_DATA.read().ok()?;
   let rule = program_data.get(at_ns)?.import_map.get(local_name)?;
@@ -805,12 +871,46 @@ fn imported_definition_target(at_ns: &str, local_name: &str) -> Option<(String, 
   }
 }
 
+/// Check that a project definition has the expected nominal declaration kind.
 fn nominal_definition_matches(snapshot: &Snapshot, namespace: &str, definition: &str, kind: NominalKind) -> bool {
   snapshot
     .files
     .get(namespace)
     .and_then(|file| file.defs.get(definition))
     .is_some_and(|entry| list_head(&entry.code) == Some(kind.definition_head()))
+}
+
+/// Require every declared Struct field exactly once before flattening legacy field pairs.
+fn struct_fields_are_complete(snapshot: &Snapshot, namespace: &str, definition: &str, constructor: &[Cirru]) -> bool {
+  let Some(Cirru::List(definition_items)) = snapshot
+    .files
+    .get(namespace)
+    .and_then(|file| file.defs.get(definition))
+    .map(|entry| &entry.code)
+  else {
+    return false;
+  };
+  let declared = definition_items
+    .iter()
+    .skip(2)
+    .filter_map(|field| match field {
+      Cirru::List(pair) if pair.len() >= 2 => pair.first().and_then(leaf_value).filter(|name| name.starts_with(':')),
+      _ => None,
+    })
+    .collect::<HashSet<_>>();
+  let mut provided = HashSet::new();
+  for field in constructor.iter().skip(2) {
+    let Some(name) = (match field {
+      Cirru::List(pair) if pair.len() == 2 => pair.first().and_then(leaf_value).filter(|name| name.starts_with(':')),
+      _ => None,
+    }) else {
+      return false;
+    };
+    if !provided.insert(name) {
+      return false;
+    }
+  }
+  provided == declared
 }
 
 /// Deduplicate identical compiler suggestions and fail closed on conflicting replacements.
@@ -998,7 +1098,8 @@ fn print_human_report(report: &FixReport<'_>) {
 mod tests {
   use super::{
     FixOperation, FixSuggestion, NominalKind, collect_potential_local_bindings, collect_redundant_do_paths, insert_fix_suggestion,
-    legacy_constructor_replacement, migration_for_source_leaf, prototype_is_shadowed, resolve_fix_target, suggestion_operations,
+    legacy_constructor_replacement, migration_for_source_leaf, prototype_is_shadowed, resolve_fix_target, struct_fields_are_complete,
+    suggestion_operations,
   };
   use cirru_parser::Cirru;
   use serde_json::Value;
@@ -1203,6 +1304,33 @@ mod tests {
       legacy_constructor_replacement(&[leaf("%{}"), leaf("Person"), leaf("dynamic-fields")], NominalKind::Struct),
       None
     );
+  }
+
+  #[test]
+  fn legacy_struct_requires_complete_unique_declared_fields() {
+    let snapshot = super::load_snapshot("tests/fixtures/fix-command.cirru").expect("fix fixture should load");
+    let complete = vec![
+      leaf("%{}"),
+      leaf("FixPerson"),
+      Cirru::List(vec![leaf(":name"), leaf("name")]),
+      Cirru::List(vec![leaf(":age"), leaf("age")]),
+    ];
+    assert!(struct_fields_are_complete(&snapshot, "fix-command.main", "FixPerson", &complete));
+    assert!(!struct_fields_are_complete(
+      &snapshot,
+      "fix-command.main",
+      "FixPerson",
+      &complete[..3]
+    ));
+
+    let duplicate = vec![
+      leaf("%{}"),
+      leaf("FixPerson"),
+      Cirru::List(vec![leaf(":name"), leaf("first")]),
+      Cirru::List(vec![leaf(":name"), leaf("second")]),
+      Cirru::List(vec![leaf(":age"), leaf("age")]),
+    ];
+    assert!(!struct_fields_are_complete(&snapshot, "fix-command.main", "FixPerson", &duplicate));
   }
 
   #[test]
