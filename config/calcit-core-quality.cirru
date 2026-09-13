@@ -1224,15 +1224,6 @@
       :typeNotFull 1
       :unresolved 0
       :unsafeCoerce 0
-    |calcit.core/tag-match $ {} (:codeDynamic 0)
-      :codeNil 0
-      :declaredOptional 0
-      :deprecatedCalls 0
-      :schemaDynamic 2
-      :typeNone 0
-      :typeNotFull 1
-      :unresolved 0
-      :unsafeCoerce 0
     |calcit.core/tagging-edn $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
@@ -1674,15 +1665,6 @@
       :typeNotFull 1
       :unresolved 1
       :unsafeCoerce 0
-    |calcit.internal/&tag-match-internal $ {} (:codeDynamic 0)
-      :codeNil 0
-      :declaredOptional 0
-      :deprecatedCalls 0
-      :schemaDynamic 2
-      :typeNone 0
-      :typeNotFull 1
-      :unresolved 0
-      :unsafeCoerce 0
     |calcit.internal/normalize-trait-type $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
@@ -1750,9 +1732,9 @@
     :codeNil 0
     :declaredOptional 0
     :deprecatedCalls 0
-    :schemaDynamic 281
+    :schemaDynamic 277
     :typeNone 45
-    :typeNotFull 134
+    :typeNotFull 132
     :unresolved 187
     :unsafeCoerce 0
   :scope $ {} (:includeDependencies false)

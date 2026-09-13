@@ -250,7 +250,7 @@ fn warn_required_struct_field_type(
     location,
     call_stack,
   } = context;
-  // Macros such as `defimpl`, `tag-match`, and typed `%{}` constructors may
+  // Macros such as `defimpl` and typed `%{}` constructors may
   // create tag-access forms without a source coordinate. Those probes are
   // implementation details, not source-level required Struct reads. Preserve
   // diagnostics whenever either side still carries an attributable location.
@@ -1510,6 +1510,22 @@ fn try_expand_typed_optional_access_call(
         .expect("guarded typed last receiver");
       Ok(Some(generated_let(receiver, receiver_expr.to_owned(), body, file_ns)))
     }
+    _ if fn_def == "get"
+      && args.len() == 2
+      && should_emit_project_source_lint(file_ns)
+      && (receiver_type.resolve_to_struct().is_some() || is_anonymous_struct_type(receiver_type.as_ref())) =>
+    {
+      Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!(
+          "`get` cannot use statically resolved Struct receiver `{}`; use `(:field value)` so the declared field is checked, or keep the receiver explicitly Dynamic for optional runtime lookup. For existing source, run Calcit 0.14.15 `calcit fix --rule required-struct-field-v1` before upgrading",
+          receiver_type.to_brief_string()
+        ),
+        "E_STRUCT_FIELD_OPTIONAL_LOOKUP",
+        call_stack,
+        receiver_expr.get_location(),
+      ))
+    }
     _ if strict_types_enabled()
       && should_emit_project_source_lint(file_ns)
       && matches!((fn_def, args.len()), ("first" | "last", 1) | ("get" | "nth", 2))
@@ -1577,7 +1593,9 @@ pub fn preprocess_expr(
     } => {
       match runner::parse_ns_def(def) {
         Some((ns_alias, def_part)) => {
-          if &*ns_alias == "js" {
+          if def_part.as_ref() == "tag-match" && ns_alias.as_ref() == calcit::CORE_NS {
+            Err(removed_tag_match_error(expr, call_stack))
+          } else if &*ns_alias == "js" {
             require_js_ffi_feature(
               &format!("raw JavaScript global `js/{def_part}`"),
               location
@@ -1594,6 +1612,9 @@ pub fn preprocess_expr(
             // must precede has_def_code: calcit.cli/* also exist in core as metadata stubs
             Ok(Calcit::Registered(def.to_owned()))
           } else if let Some(target_ns) = program::lookup_ns_target_in_import(&info.at_ns, &ns_alias) {
+            if target_ns.as_ref() == calcit::CORE_NS && def_part.as_ref() == "tag-match" {
+              return Err(removed_tag_match_error(expr, call_stack));
+            }
             // make sure the target is preprocessed
             ensure_ns_def_compiled(&target_ns, &def_part, check_warnings, call_stack)?;
 
@@ -1727,6 +1748,9 @@ pub fn preprocess_expr(
             match program::lookup_def_target_in_import(def_ns, def) {
               // referred to another namespace/def
               Some(target_ns) => {
+                if target_ns.as_ref() == calcit::CORE_NS && def.as_ref() == "tag-match" {
+                  return Err(removed_tag_match_error(expr, call_stack));
+                }
                 // effect
                 // TODO js syntax to handle in future
 
@@ -1776,7 +1800,9 @@ pub fn preprocess_expr(
                     names.push(def.to_owned());
                   }
                   let node_location = NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default());
-                  if let Some(migration) = removed_data_api_migration(def) {
+                  if def.as_ref() == "tag-match" {
+                    return Err(removed_tag_match_error(expr, call_stack));
+                  } else if let Some(migration) = removed_data_api_migration(def) {
                     gen_check_warning_with_location_code(
                       format!(
                         "[Warn] `{def}` was removed by the struct/enum data-model migration; use `{}`",
@@ -1835,6 +1861,16 @@ pub fn preprocess_expr(
       Ok(expr.to_owned())
     }
   }
+}
+
+fn removed_tag_match_error(expr: &Calcit, call_stack: &CallStackList) -> CalcitErr {
+  CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Syntax,
+    "`tag-match` was removed from the 0.15 surface; use native `match`. For existing source, run Calcit 0.14.15 `calcit fix --rule tag-match-to-match-v1` before upgrading",
+    "E_REMOVED_TAG_MATCH",
+    call_stack,
+    expr.get_location(),
+  )
 }
 
 fn reject_pending_async_arguments(
@@ -2544,15 +2580,7 @@ fn preprocess_list_call(
         let checked_expected_types = checked_contract.as_ref().and_then(|contract| contract.expected_types.as_deref());
         // Core helpers such as `get` resolve to ordinary functions, so validate
         // their statically known struct fields in this branch as well.
-        check_struct_field_access(
-          &head_form,
-          &current_args,
-          scope_types,
-          file_ns,
-          call_stack,
-          child_source_location(call_location.as_ref(), 1),
-          check_warnings,
-        );
+        check_struct_field_access(&head_form, &current_args, scope_types, file_ns, call_stack, check_warnings);
         reject_strict_bare_enum_constructor_comparison(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
         reject_strict_nominal_enum_stringification(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
         warn_on_nominal_enum_legacy_absence_use(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
@@ -2937,15 +2965,7 @@ fn preprocess_list_call(
         let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
         reject_pending_async_arguments(&head_form, &processed_args, scope_types, call_stack)?;
         validate_method_call(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
-        check_struct_field_access(
-          &head_form,
-          &processed_args,
-          scope_types,
-          file_ns,
-          call_stack,
-          child_source_location(call_location.as_ref(), 1),
-          check_warnings,
-        );
+        check_struct_field_access(&head_form, &processed_args, scope_types, file_ns, call_stack, check_warnings);
         check_struct_update_fields(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         check_struct_method_args(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         check_typed_js_field_operation(
@@ -3986,13 +4006,6 @@ fn derive_call_expr_location(head: &Calcit) -> Option<NodeLocation> {
   ))
 }
 
-fn child_source_location(call_location: Option<&NodeLocation>, index: u16) -> Option<NodeLocation> {
-  let location = call_location?;
-  let mut child_coord = (*location.coord).clone();
-  child_coord.push(index);
-  Some(NodeLocation::new(location.ns.clone(), location.def.clone(), Arc::from(child_coord)))
-}
-
 /// Check recur arity in function body
 /// Recursively walks the expression tree to find recur calls and validates argument count
 /// Skips checking for macro-generated functions (containing %, $, etc.)
@@ -4139,7 +4152,6 @@ fn check_struct_field_access(
   scope_types: &ScopeTypes,
   file_ns: &str,
   call_stack: &CallStackList,
-  source_receiver_location: Option<NodeLocation>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   // `&struct:nth` embeds one concrete Struct layout in source. It is safe only
@@ -4173,25 +4185,6 @@ fn check_struct_field_access(
     {
       check_field_in_struct(struct_arg, field_arg, scope_types, file_ns, check_warnings);
       warn_on_raw_struct_field_access(struct_arg, field_arg, scope_types, file_ns, call_stack, check_warnings);
-    }
-    if &**ns == calcit::CORE_NS
-      && &**def == "get"
-      && args.len() >= 2
-      && let Some(struct_arg) = args.first()
-      && let Some(type_info) = resolve_type_value(struct_arg, scope_types)
-      && (type_info.as_ref().resolve_to_struct().is_some() || is_anonymous_struct_type(type_info.as_ref()))
-    {
-      let field_text = args.get(1).map(Calcit::lisp_str).unwrap_or_else(|| "<field>".to_owned());
-      let message = format!(
-        "[Warn] `get` on a statically known Struct would discard required-field evidence at {file_ns}. Use `({field_text} value)` so the checker can return the field's declared type and reject unknown fields; reserve `get` for receivers explicitly typed as Dynamic when optional runtime lookup is intended"
-      );
-      gen_check_warning_code_at(
-        message,
-        "W_STRUCT_FIELD_OPTIONAL_LOOKUP",
-        file_ns,
-        source_receiver_location.or_else(|| struct_arg.get_location()),
-        check_warnings,
-      );
     }
     if &**ns == calcit::CORE_NS
       && matches!(&**def, "get-in" | "contains-in?" | "assoc-in" | "update-in" | "dissoc-in")
@@ -5673,7 +5666,7 @@ fn warn_on_nominal_enum_legacy_absence_use(
     "nil?" | "some?" if enum_name == "Option" => {
       "use `option:none?`/`option:some?` (or the corresponding methods) instead of nullable-value predicates".to_owned()
     }
-    "nil?" | "some?" => "use `tag-match` to inspect the nominal enum variant".to_owned(),
+    "nil?" | "some?" => "use native `match` to inspect the nominal enum variant".to_owned(),
     "=" | "&=" if enum_name == "Option" => {
       "compare Option values only with other Options, or unwrap/pattern-match before comparing a payload".to_owned()
     }
@@ -5686,7 +5679,7 @@ fn warn_on_nominal_enum_legacy_absence_use(
     _ if enum_name == "Option" => {
       "use `if-let`/`match` for branches or an Option method such as `.unwrap-or` to access the payload".to_owned()
     }
-    _ => "use `tag-match` instead of positional access on the nominal enum".to_owned(),
+    _ => "use native `match` instead of positional access on the nominal enum".to_owned(),
   };
   let message = format!(
     "[Warn] `{operation}` consumes nominal enum `{enum_name}` value `{value}` in {file_ns}/{def_name}; this often indicates a nullable-returning API migrated to a nominal type; {guidance}"
@@ -5715,9 +5708,9 @@ fn warn_on_nominal_enum_truthiness(
   };
 
   let guidance = if enum_name == "Option" {
-    "use `option:some?`, `option:none?`, or `tag-match`; `%none` is a truthy nominal value"
+    "use `option:some?`, `option:none?`, or native `match`; `%none` is a truthy nominal value"
   } else {
-    "use `tag-match` to select a nominal enum variant explicitly"
+    "use native `match` to select a nominal enum variant explicitly"
   };
   let message = format!(
     "[Warn] nominal enum `{enum_name}` is used directly as an `if` condition in {file_ns}; this can silently select the truthy branch; {guidance}"
@@ -10669,7 +10662,7 @@ mod tests {
       &stack,
     )
     .expect_err("strict mode should direct Struct lookup to declared field access");
-    assert_eq!(struct_error.code.as_deref(), Some("E_UNSUPPORTED_INDEXED_RECEIVER"));
+    assert_eq!(struct_error.code.as_deref(), Some("E_STRUCT_FIELD_OPTIONAL_LOOKUP"));
     assert!(struct_error.msg.contains("use `(:field value)`"));
 
     let dynamic_receiver = Calcit::Local(CalcitLocal {
@@ -14009,7 +14002,6 @@ mod tests {
       &ScopeTypes::new(),
       "tests.struct",
       &CallStackList::default(),
-      None,
       &warnings,
     );
 
@@ -14041,7 +14033,6 @@ mod tests {
       &ScopeTypes::new(),
       "tests.consumer",
       &CallStackList::default(),
-      None,
       &warnings,
     );
 
@@ -14080,7 +14071,6 @@ mod tests {
       &ScopeTypes::new(),
       "tests.struct",
       &CallStackList::default(),
-      None,
       &warnings,
     );
 
@@ -14110,13 +14100,13 @@ mod tests {
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default().extend(calcit::CORE_NS, "defimpl", StackKind::Macro, &Calcit::Nil, &[]);
 
-    check_struct_field_access(&head, &args, &ScopeTypes::new(), "tests.struct", &stack, None, &warnings);
+    check_struct_field_access(&head, &args, &ScopeTypes::new(), "tests.struct", &stack, &warnings);
 
     assert!(warnings.borrow().is_empty());
   }
 
   #[test]
-  fn common_get_rejects_known_struct_receivers() {
+  fn common_get_does_not_emit_a_migration_warning() {
     let struct_type = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(CalcitStructDef::from_fields(
       EdnTag::from("Person"),
       vec![EdnTag::from("name")],
@@ -14147,23 +14137,9 @@ mod tests {
     );
     let warnings = RefCell::new(vec![]);
 
-    check_struct_field_access(
-      &head,
-      &args,
-      &scope_types,
-      "tests.struct",
-      &CallStackList::default(),
-      None,
-      &warnings,
-    );
+    check_struct_field_access(&head, &args, &scope_types, "tests.struct", &CallStackList::default(), &warnings);
 
-    let warnings = warnings.borrow();
-    assert_eq!(warnings.len(), 1);
-    let message = warnings[0].message();
-    assert_eq!(warnings[0].code(), Some("W_STRUCT_FIELD_OPTIONAL_LOOKUP"));
-    assert!(message.contains("`get` on a statically known Struct would discard required-field evidence"));
-    assert!(message.contains("Use `(:missing value)`"));
-    assert!(message.contains("receivers explicitly typed as Dynamic"));
+    assert!(warnings.borrow().is_empty());
   }
 
   #[test]

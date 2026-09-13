@@ -1246,7 +1246,7 @@ fn option_returning_api_type_mismatches_include_unwrap_and_match_help() {
       );
       assert!(warning.message().contains(".unwrap-or"), "warning: {warning:?}");
       assert!(warning.message().contains("native `match`"), "warning: {warning:?}");
-      assert!(warning.message().contains("tag-match"), "warning: {warning:?}");
+      assert!(warning.message().contains("native `match`"), "warning: {warning:?}");
     }
   });
 }
@@ -1259,8 +1259,11 @@ fn required_struct_field_access_does_not_fall_back_to_option_lookup() {
     );
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
 
-    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
-      .expect("required-field examples should preprocess with actionable diagnostics");
+    let error = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect_err("a statically known Struct must reject optional `get` lookup");
+    assert_eq!(error.code.as_deref(), Some("E_STRUCT_FIELD_OPTIONAL_LOOKUP"));
+    assert!(error.msg.contains("use `(:field value)`"));
+    assert!(error.msg.contains("Calcit 0.14.15 `calcit fix --rule required-struct-field-v1`"));
 
     let warnings = warnings.borrow();
     let required_warnings = warnings
@@ -1278,17 +1281,6 @@ fn required_struct_field_access_does_not_fall_back_to_option_lookup() {
         .contains("use `(get value :name)` only when absence is intentional")
     );
 
-    let struct_get_warnings = warnings
-      .iter()
-      .filter(|warning| warning.code() == Some("W_STRUCT_FIELD_OPTIONAL_LOOKUP"))
-      .collect::<Vec<_>>();
-    assert_eq!(
-      struct_get_warnings.len(),
-      1,
-      "`get` on a typed Struct should point back to required field syntax, got: {warnings:?}"
-    );
-    assert!(struct_get_warnings[0].message().contains("Use `(:name value)`"));
-
     let unknown_field_warnings = warnings
       .iter()
       .filter(|warning| warning.code() == Some("W_UNKNOWN_STRUCT_FIELD"))
@@ -1303,6 +1295,30 @@ fn required_struct_field_access_does_not_fall_back_to_option_lookup() {
         .message()
         .contains("Field `:missing` does not exist in struct `Person`")
     );
+  });
+}
+
+#[test]
+fn removed_tag_match_reports_the_published_migration_path() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries("tag-match (%some 1)\n  (:some x) x\n  (:none) 0");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    let error = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect_err("removed tag-match must fail during preprocessing");
+    assert_eq!(error.code.as_deref(), Some("E_REMOVED_TAG_MATCH"));
+    assert!(error.msg.contains("use native `match`"));
+    assert!(error.msg.contains("Calcit 0.14.15 `calcit fix --rule tag-match-to-match-v1`"));
+
+    let shadow_entries = load_snippet_entries("let\n    tag-match $ fn (x) x\n  tag-match 1");
+    let shadow_warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(
+      &shadow_entries.init_ns,
+      &shadow_entries.init_def,
+      &shadow_warnings,
+      &CallStackList::default(),
+    )
+    .expect("a lexical binding named tag-match must remain ordinary user code");
   });
 }
 

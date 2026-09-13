@@ -566,7 +566,7 @@ hello / "hello"   => symbol hello, not a string
 
 ; ❌ 错误：用 vector 传事件
 send-to-component! $ [] :clipboard/read text
-; 报错：tag-match expected enum value
+; 报错：match expected an enum value
 
 ; ✅ 正确：用 anonymous enum
 send-to-component! $ %:: _ :clipboard/read text
@@ -855,7 +855,7 @@ calcit query error
 | `tree-replace: root path is not allowed` | 写操作传了空 path                             | 改用 `calcit edit def --overwrite` 覆盖整段定义            |
 | `add-import: import rule already exists` | 重复添加相同 import                           | 跳过或先手动移除旧规则                                 |
 | `Definition 'xxx' already exists`        | `calcit edit def` 未传 `--overwrite`              | 加 `--overwrite`                                       |
-| `tag-match expected enum value`          | 传入 list 而非 enum                           | 改用 `%:: _`，如 `%:: _ :event-name data`               |
+| `match expected an enum value`           | 传入 list 而非 enum                           | 改用 `%:: _`，如 `%:: _ :event-name data`               |
 | `unknown symbol: xxx`                    | 符号未定义或未 import                         | `calcit query find` 确认位置，`calcit edit add-import` 引入    |
 | `expects pairs in list for let`          | `let` 绑定语法错误                            | 改为 `let ((x val)) body`（双层括号）                  |
 | `cannot be used as operator`             | 末尾符号被当作函数调用                        | 改用 `, acc` 前缀传递值，或用函数包裹                  |

@@ -1,19 +1,19 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-cond)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-cond)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-cond.main/main!) (:mode :native) (:reload-fn 'test-cond.main/reload!)
       :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
-    |test-cond.main $ %{} 'FileEntry
+    'test-cond.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} 'CodeEntry (:doc |)
+        'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing cond") (test-when) (test-cond) (test-or) (test-and) (test-either) (test-case) (test-tag-match) true
+            defn main! () (log-title "|Testing cond") (test-when) (test-cond) (test-or) (test-and) (test-either) (test-case) (test-match) true
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-and $ %{} 'CodeEntry (:doc |)
+        'test-and $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing and")
               assert= (and 1) 1
@@ -35,7 +35,7 @@
                 , false
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-case $ %{} 'CodeEntry (:doc |)
+        'test-case $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-case ()
               let
@@ -58,7 +58,7 @@
                 assert= (detect-x 2) |two
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-cond $ %{} 'CodeEntry (:doc |)
+        'test-cond $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-cond () $ let
                 compare-x $ fn (x)
@@ -73,7 +73,7 @@
               assert= (compare-x 4) |<=5
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-either $ %{} 'CodeEntry (:doc |)
+        'test-either $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing either")
               assert= 1 $ either nil 1
@@ -83,41 +83,18 @@
               assert= 1 $ either (do nil) (do 1) (do nil)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-or $ %{} 'CodeEntry (:doc |)
+        'test-match $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            fn () (log-title "|Testing or")
-              assert= (or 1) 1
-              assert= (or nil) nil
-              assert= (or 1 nil) 1
-              assert= (or nil 1) 1
-              assert= (or nil nil 1) 1
-              assert= (or nil nil nil) nil
-              assert=
-                or (> 10 9) (> 10 8)
-                , true
-              assert=
-                or (> 10 11) (> 10 8)
-                , true
-              assert=
-                or (> 10 9) (> 10 11)
-                , true
-              assert=
-                or (> 10 12) (> 10 11)
-                , false
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-tag-match $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing tag-match")
+            fn () (log-title "|Testing match")
               ; println |EXPANDED $ format-to-cirru
                 macroexpand-all $ quote
-                  tag-match (:: :a 1)
+                  match (:: :a 1)
                     (:a x) 1
                     (:a x y) 2
                     _ :none
               &let
                 match-ab $ fn (data)
-                  tag-match data
+                  match data
                     (:a x) (' "|pattern a:" x)
                     (:b x y) (' "|pattern b:" x y)
                     _ $ ' "|no match"
@@ -141,7 +118,30 @@
                   [] "|no match"
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-when $ %{} 'CodeEntry (:doc |)
+        'test-or $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            fn () (log-title "|Testing or")
+              assert= (or 1) 1
+              assert= (or nil) nil
+              assert= (or 1 nil) 1
+              assert= (or nil 1) 1
+              assert= (or nil nil 1) 1
+              assert= (or nil nil nil) nil
+              assert=
+                or (> 10 9) (> 10 8)
+                , true
+              assert=
+                or (> 10 11) (> 10 8)
+                , true
+              assert=
+                or (> 10 9) (> 10 11)
+                , true
+              assert=
+                or (> 10 12) (> 10 11)
+                , false
+          :examples $ []
+          :schema $ :: 'Dynamic
+        'test-when $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing when")
               assert= 1 $ when true 1

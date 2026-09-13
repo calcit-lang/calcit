@@ -19,8 +19,7 @@ Calcit enums are tagged unions: each variant has a tag and zero or more typed pa
 
 - **Define**: `defenum Shape (:circle 'Number) (:rect 'Number 'Number)`
 - **Create**: `%:: Shape :circle 5`
-- **Match** (recommended): `match shape ((:circle r) ...) ((:rect w h) ...)`
-- **Deprecated legacy form**: `tag-match shape ((:circle r) ...) ((:rect w h) ...)`
+- **Match**: `match shape ((:circle r) ...) ((:rect w h) ...)`
 - **Type Check**: `assert-type shape 'Shape`
 
 ## Defining Enums
@@ -131,37 +130,6 @@ let
   println err
 ```
 
-## Pattern Matching with `tag-match` (deprecated)
-
-> **Deprecated**: migrate to `match` (see below). Calls to `tag-match` are reported by `calcit analyze deprecated` and count against `analyze quality`. `match` also preserves enum structure for compile-time exhaustiveness, arity, type, and optimization analysis.
-
-`tag-match` branches on the variant tag and binds payload values to names:
-
-```cirru
-let
-    Shape $ defenum Shape (:circle :number) (:rect :number :number)
-    c $ %:: Shape :circle 5
-    area $ tag-match c
-      (:circle radius) (* radius radius 3.14159)
-      (:rect w h) (* w h)
-  println area
-  ; => 78.53975
-```
-
-Multi-line branch bodies (required when the body is more than a single call):
-
-```cirru
-let
-    ApiResult $ defenum ApiResult (:ok :string) (:err :string)
-    ok $ %:: ApiResult :ok |success
-    describe $ fn (r)
-      tag-match r
-        (:ok msg) (str-spaced |OK: msg)
-        (:err msg) (str-spaced |Error: msg)
-  println $ describe ok
-  ; => OK: success
-```
-
 ## Pattern Matching with `match` (recommended)
 
 `match` is a **native syntax** (not a macro) that branches on enum variant tags. Because the compiler sees the full branch structure, it can perform:
@@ -231,40 +199,17 @@ If no branch matches at runtime (and no `_` wildcard is present), `match` throws
 match: no matching branch for tag :unknown-tag
 ```
 
-This is an explicit crash, not a silent `nil`. `tag-match` has the same behavior.
+这是明确的运行时错误，不会静默返回 `nil`。
 
-### `match` vs `tag-match`
+### 从旧语法迁移
 
-| Feature                | `match`              | `tag-match`                    |
-| ---------------------- | -------------------- | ------------------------------ |
-| Implementation         | Native syntax        | Macro (expands to nested `if`) |
-| Exhaustiveness check   | Compile-time warning | None                           |
-| Variant arity check    | Yes                  | No                             |
-| Binding type inference | Yes (from defenum)   | No                             |
-| JS output              | Direct if-else chain | Nested ternaries               |
-| Recommended            | Yes                  | Legacy use                     |
+0.15 已移除旧的 `tag-match` macro，具名与匿名 enum 都统一使用原生 `match`。分支 AST 保持一致，升级前请固定使用 Calcit 0.14.15 执行：
 
-Both syntaxes share the same branch format: each branch is `(pattern body)`.
-
-### Migrating from `tag-match` to `match`
-
-The branch syntax is identical — migration is a single keyword replacement:
-
-```cirru.no-check
-; Before $ tag-match
-
-tag-match r
-  (:ok v) (str-spaced |ok: v)
-  (:err e) (str-spaced |err: e)
-
-; After $ match
-
-match r
-  (:ok v) (str-spaced |ok: v)
-  (:err e) (str-spaced |err: e)
+```bash
+calcit calcit.cirru fix --rule tag-match-to-match-v1
 ```
 
-After replacing the keyword, the compiler will report any uncovered variants. Either add the missing branches or append `_ <default>` to keep the wildcard behaviour.
+review 并应用迁移后，运行受影响的 Calcit `:tests` 与 JS/WASM build；再切换到 0.15。编译器会继续报告未覆盖的 variant，可补充分支或显式添加 `_` 分支。
 
 ## Zero-payload Variants
 
@@ -402,8 +347,7 @@ If any condition is not met, the argument is left unchanged (no error is raised)
 ## Notes
 
 - Enum values are immutable and retain their enum definition.
-- `match` is the recommended pattern matching syntax with exhaustiveness checking.
-- `tag-match` is a legacy macro; keep it for legacy code paths or when you explicitly want the old syntax.
+- `match` 是唯一的 enum 模式匹配表层语法，并提供穷尽性检查。
 - Use `&enum:nth` to directly access payload values by index (0 = tag, 1+ = payloads).
 - `%:: _ :tag ...` constructs an anonymous enum; `%:: EnumDef :tag ...` constructs a named enum.
 

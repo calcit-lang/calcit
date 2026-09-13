@@ -62,7 +62,7 @@
           :schema $ :: 'Fn
             {}
               :args $ [] 'Dynamic
-              :return $ :: 'Option 'EnumDef
+              :return $ :: 'calcit.core/Option 'EnumDef
           :tests $ []
             %{} 'TestEntry (:name |returns-enum-definition)
               :code $ quote
@@ -102,7 +102,7 @@
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
-              :args $ [] (:: 'Option 'fix-command.main/FixPerson)
+              :args $ [] (:: 'calcit.core/Option 'fix-command.main/FixPerson)
           :tests $ []
             %{} 'TestEntry (:name |keeps-option-receiver)
               :code $ quote
@@ -118,7 +118,7 @@
               :args $ []
         'required-struct-complex $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn required-struct-complex () $ get (make-fix-person) :name
+            defn required-struct-complex () $ :name (make-fix-person)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'String)
@@ -132,7 +132,7 @@
               :tags $ #{} :migration
         'required-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn required-struct-field (person) (get person :name)
+            defn required-struct-field (person) (:name person)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'String)
@@ -181,63 +181,6 @@
                 assert= |shadow $ shadowed-struct-get
                   fn (person field) |shadow
                   FixPerson :name |Ada :age 1
-              :tags $ #{} :migration
-        'tag-match-case $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn tag-match-case (is-some?)
-              let
-                  value $ if is-some? (:: :some 1) (:: :none)
-                do $ tag-match value
-                  (:some x) (+ x 1)
-                  (:none) 0
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Bool
-          :tests $ []
-            %{} 'TestEntry (:name |preserves-some-payload)
-              :code $ quote
-                assert= 2 $ tag-match-case true
-              :tags $ #{} :migration
-            %{} 'TestEntry (:name |preserves-none-branch)
-              :code $ quote
-                assert= 0 $ tag-match-case false
-              :tags $ #{} :migration
-        'tag-match-quoted $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn tag-match-quoted () $ quote
-              tag-match (%some 1)
-                (:some x) x
-                (:none) 0
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'CirruQuote)
-              :args $ []
-          :tests $ []
-            %{} 'TestEntry (:name |keeps-quoted-data)
-              :code $ quote
-                assert=
-                  quote $ tag-match (%some 1)
-                    (:some x) x
-                    (:none) 0
-                  tag-match-quoted
-              :tags $ #{} :migration
-        'tag-match-shadowed $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn tag-match-shadowed (tag-match value) (tag-match value)
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ []
-                :: 'Fn $ {} (:return 'Number)
-                  :args $ [] 'Number
-                , 'Number
-          :tests $ []
-            %{} 'TestEntry (:name |keeps-local-shadow)
-              :code $ quote
-                assert= 11 $ tag-match-shadowed
-                  fn (value) (+ value 10)
-                  , 1
               :tags $ #{} :migration
         'union-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote

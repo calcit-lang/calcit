@@ -219,7 +219,7 @@ correctness for optional indexed access tracked separately by
 
 `analyze deprecated` scans calls to definitions tagged `:deprecated`. It reports every calling definition and a stable `code@...` path, and includes the target definition's documentation so migrations can be automated without maintaining a second hard-coded legacy API list. Use `--summary-only --format json` for migration gates that only need aggregate counts.
 
-`tag-match` is deprecated in favor of native `match`. Its calls are ordinary deprecated findings and therefore consume the `deprecatedCalls` quality budget. Native `match` keeps branch structure visible to exhaustiveness, payload-arity, type, and backend optimization passes.
+`tag-match` 已在 0.15 从表层语言移除，统一由原生 `match` 承担具名与匿名 enum 的模式匹配。旧项目应先用 Calcit 0.14.15 执行 `calcit fix --rule tag-match-to-match-v1`。原生 `match` 会把分支结构保留给穷尽性、payload arity、类型与 backend 优化 pass。
 
 ### TODO completion warnings
 

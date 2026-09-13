@@ -39,14 +39,9 @@ calcit calcit.cirru fix --ns app.main --def render! --format json
 - `redundant-do-v1` 整理 `defn`、`fn`、`let` 及嵌套 `do` 的 variadic body。父结构本来就按顺序执行多项、
   并以最后一项作为返回值时，这条规则会把直接子节点的单层 `do` splice 到父 body。`if` 分支、调用参数、binding value
   以及 `defmacro`、`quote`/`quasiquote` 数据不在自动修改范围内；macro 是否把多项 body 打包成一个表达式需要保留显式语义。
-- `tag-match-to-match-v1` 复用 `analyze deprecated` 的名称解析，只改写确定指向 `calcit.core/tag-match` 的
-  source call head，分支 AST 与求值顺序保持不变。本地参数或 `let` 绑定的同名调用、其他 namespace 的同名定义、
-  `quote`/`quasiquote` 数据和无法唯一回到 source 的 macro expansion 不产生 replacement。该规则让原生 `match`
-  保留 enum 分支结构，供穷尽性、payload arity、类型推断与 backend 优化继续使用。
-- `required-struct-field-v1` 消费 `W_STRUCT_FIELD_OPTIONAL_LOOKUP` 与已有静态类型证据，只把精确 core
-  `(get value :field)` 改为 `(:field value)`。receiver 必须唯一推断为具名 Struct，静态 tag 必须是已声明字段；suggestion 的
-  `origin_chain` 会同时给出 `calcit.core/get`、Struct identity 和字段声明类型。Dynamic/Option receiver、运行时 key、未知字段、
-  本地 shadow `get`、`.unwrap-or`/`.or-else` 等业务 fallback 以及不能唯一映射回 source 的 macro expansion 不自动改写。
+- `tag-match-to-match-v1` 与 `required-struct-field-v1` 属于已发布的 0.14.x migration bridge，不是 0.15 的 fix surface。
+  升级旧项目时请固定使用 Calcit 0.14.15 执行规则、review 输出并验证测试；迁移完成后再切换到 0.15。
+  0.15 若显式请求这两个 rule，会返回稳定错误和上述版本提示，不会继续携带旧 planner 与分析特例。
   replacement 原样保留 receiver 子树且只出现一次，因此不会复制或重排求值。
 
 JSON stdout 是一个完整 value，包含 `schema_version`、`command`、Snapshot `revision`、filters、validation、suggestions、diagnostics

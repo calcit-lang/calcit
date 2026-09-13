@@ -213,11 +213,10 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 `defn`/`fn`/`let` body 本身可以顺序包含多个表达式，返回类型来自最后一项；不要为了类型推断再包一层 `do`。
 只有 `if` 分支、调用参数、binding value 等单表达式位置需要用 `do` 把多个步骤组成一个表达式。清理由
 `calcit fix --rule redundant-do-v1` 完成，不要手工批量改缩进；它会跳过 `defmacro` 与 quote/quasiquote，并用 staged preprocess 验证 splice 后的 scope。
-旧代码中的 `tag-match` 使用 `calcit fix --rule tag-match-to-match-v1` 迁移；只有名称解析确定指向 core deprecated macro
-的 source call 才会改为原生 `match`，本地 shadow、quoted data 和不明确的 macro origin 会保持不变。
-静态 Struct 上旧式的 `(get value :field)` 使用 `calcit fix --rule required-struct-field-v1` 收敛为必填字段访问；只接受 suggestion
-中同时存在 `calcit.core/get`、具名 Struct identity 与已声明字段类型的证据。Dynamic/Option、运行时 key、未知字段、本地 shadow、
-业务 fallback 或不明确的 macro origin 必须保持人工处理，不得为了让迁移通过而插入默认值、unwrap、`unsafe-coerce` 或扩大 Dynamic。
+`tag-match-to-match-v1` 与 `required-struct-field-v1` 是已经随 Calcit 0.14.15 发布的升级桥，0.15 当前工具链不再携带其 planner。
+旧项目必须先固定使用 0.14.15 执行相应的 `calcit fix --rule ...`，review 并验证迁移结果，再升级到 0.15。
+0.15 中 enum 模式匹配统一使用原生 `match`；静态 Struct 字段统一使用 `(:field value)`，只有显式 `Dynamic` 接收者继续保留可缺失的运行时 `get`。
+不得为了让迁移通过而插入默认值、无条件 unwrap、`unsafe-coerce` 或扩大 Dynamic。
 
 同一个 Snapshot 的写命令必须串行执行，包括 `config`、`edit`、`tree` 和 cursor mutation；两个进程同时读取再保存会发生最后写入覆盖。需要并行时使用独立 Snapshot/worktree，需要同一文件内的原子多步修改时使用 transaction 和 `--expect-revision`。
 
@@ -488,7 +487,7 @@ let
 `option:let` 使用普通 `let` 的 binding pair 结构。每个右侧和最终 body 都必须保持
 Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。
 
-需要尝试备用来源时使用 `.or-else`；它只在 `none`/`err` 分支调用 fallback。`.unwrap` 只适合已经由 `tag-match`、`.some?` 或明确不变量证明为 `some` 的位置；默认值用 `.unwrap-or`，继续转换用 `.map` / `.and-then`。接收者已静态推断为 `Option`/`Result` 时，避免使用 `option:*` / `result:*` 的函数形式，以便接收者类型和类型流保持可见；未类型化 legacy 数据或 core 边界才保留直接 helper。
+需要尝试备用来源时使用 `.or-else`；它只在 `none`/`err` 分支调用 fallback。`.unwrap` 只适合已经由原生 `match`、`.some?` 或明确不变量证明为 `some` 的位置；默认值用 `.unwrap-or`，继续转换用 `.map` / `.and-then`。接收者已静态推断为 `Option`/`Result` 时，避免使用 `option:*` / `result:*` 的函数形式，以便接收者类型和类型流保持可见；未类型化 legacy 数据或 core 边界才保留直接 helper。
 
 `get-in` 返回 `Option<T>`，适合开放数据中可能缺失的路径。完整类型的嵌套 Map 配合非空字面量路径时，`get-in`、`assoc-in`、`update-in` 会编译为直接的类型化访问/重建链，并保证接收者、各路径段和 updater 按源码顺序各求值一次。动态路径、动态接收者和混合容器保留为显式兼容边界。路径进入 Struct 时应改用类型化的 `(:field value)` 或 `value.:field` 访问，字段需要可缺失时在 Struct 中声明 `Option<T>`。`update-in` 的 updater 接收 `Option<T>`，缺失分支应显式处理，不要无条件 unwrap：
 

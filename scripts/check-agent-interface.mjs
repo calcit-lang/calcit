@@ -404,79 +404,6 @@ const scenarios = [
     },
   },
   {
-    name: "resolved deprecated macro fix preview",
-    args: [
-      "tests/fixtures/fix-command.cirru",
-      "fix",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "tag-match-case",
-      "--rule",
-      "tag-match-to-match-v1",
-      "--format",
-      "json",
-    ],
-    check(result) {
-      const suggestion = result.data?.suggestions?.[0];
-      if (
-        result.schema_version !== 1 ||
-        result.command !== "fix" ||
-        result.data.changed !== true ||
-        suggestion?.rule_id !== "tag-match-to-match-v1" ||
-        suggestion?.diagnostic_code !== "W_DEPRECATED_API"
-      ) {
-        throw new Error("tag-match fix preview lost its deterministic compiler evidence");
-      }
-      if (
-        suggestion.origin_chain?.[0]?.target !== "calcit.core/tag-match" ||
-        suggestion.original?.value !== "tag-match" ||
-        suggestion.replacement?.value !== "match" ||
-        suggestion.applicability !== "machine-applicable"
-      ) {
-        throw new Error("tag-match fix preview lost resolved origin or quoted AST replacement");
-      }
-    },
-  },
-  {
-    name: "type-proven required struct field fix preview",
-    args: [
-      "tests/fixtures/fix-command.cirru",
-      "fix",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "required-struct-field",
-      "--rule",
-      "required-struct-field-v1",
-      "--format",
-      "json",
-    ],
-    check(result) {
-      const suggestion = result.data?.suggestions?.[0];
-      if (
-        result.schema_version !== 1 ||
-        result.command !== "fix" ||
-        result.data.changed !== true ||
-        suggestion?.rule_id !== "required-struct-field-v1" ||
-        suggestion?.diagnostic_code !== "W_STRUCT_FIELD_OPTIONAL_LOOKUP"
-      ) {
-        throw new Error("required Struct field fix preview lost its deterministic compiler evidence");
-      }
-      if (
-        suggestion.origin_chain?.[0]?.target !== "calcit.core/get" ||
-        suggestion.origin_chain?.[1]?.target !== "fix-command.main/FixPerson" ||
-        suggestion.origin_chain?.[2]?.target !== ":name" ||
-        suggestion.origin_chain?.[2]?.type !== ":string" ||
-        suggestion.original?.value?.[0] !== "get" ||
-        suggestion.replacement?.value?.[0] !== ":name" ||
-        suggestion.applicability !== "machine-applicable"
-      ) {
-        throw new Error("required Struct field fix preview lost nominal Struct or field evidence");
-      }
-    },
-  },
-  {
     name: "machine value schema",
     args: [
       "calcit/test.cirru",
@@ -838,5 +765,19 @@ try {
   rmSync(fixtureDir, { recursive: true, force: true });
 }
 
-console.log(`Agent interface smoke passed: ${rows.length}/${scenarios.length}, plus mutation contract and definition protocol round trips`);
+for (const rule of ["tag-match-to-match-v1", "required-struct-field-v1"]) {
+  const retired = spawnSync(
+    binary,
+    ["tests/fixtures/fix-command.cirru", "--compat-types", "fix", "--rule", rule, "--format", "json"],
+    { cwd: process.cwd(), encoding: "utf8", maxBuffer: 4 * 1024 * 1024 },
+  );
+  assert.ifError(retired.error);
+  assert.notEqual(retired.status, 0, `${rule} must stay outside the 0.15 fix surface`);
+  assert.match(retired.stderr, /Calcit 0\.14\.15/);
+  assert.match(retired.stderr, /before upgrading/);
+}
+
+console.log(
+  `Agent interface smoke passed: ${rows.length}/${scenarios.length}, plus retired migration, mutation contract, and definition protocol checks`,
+);
 console.table(rows);
