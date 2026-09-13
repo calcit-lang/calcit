@@ -833,6 +833,7 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
   let syntax_tree = parse_input_to_cirru(&raw)?;
+  let derived_macro_schema = snapshot::conservative_macro_schema(&syntax_tree, &format!("definition '{namespace}/{definition}'"))?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
@@ -895,9 +896,18 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   // For overwrite, preserve existing metadata (doc/examples/schema) and only replace code.
   let code_entry = if let Some(mut updated_entry) = previous_entry {
     updated_entry.code = syntax_tree;
+    if let Some(schema) = derived_macro_schema
+      && !matches!(updated_entry.schema.as_ref(), calcit::calcit::CalcitTypeAnnotation::Macro(_))
+    {
+      updated_entry.schema = schema;
+    }
     updated_entry
   } else {
-    CodeEntry::from_code(syntax_tree)
+    let mut entry = CodeEntry::from_code(syntax_tree);
+    if let Some(schema) = derived_macro_schema {
+      entry.schema = schema;
+    }
+    entry
   };
   file_data.defs.insert(resolved_definition.to_string(), code_entry);
 
