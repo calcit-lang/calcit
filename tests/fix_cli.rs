@@ -428,6 +428,9 @@ fn required_struct_field_fix_is_type_proven_guarded_and_idempotent() {
     ("required-struct-field", "migrates-declared-field"),
     ("required-struct-complex", "evaluates-complex-receiver-once"),
     ("dynamic-struct-field", "keeps-dynamic-lookup"),
+    ("option-struct-field", "keeps-option-receiver"),
+    ("union-struct-field", "keeps-enum-union-receiver"),
+    ("macro-origin-struct-field", "keeps-ambiguous-macro-origin"),
     ("runtime-struct-field", "keeps-runtime-key"),
     ("unknown-struct-field", "keeps-unknown-field-for-review"),
     ("defaulted-struct-field", "keeps-business-default-path"),
@@ -454,6 +457,9 @@ fn required_struct_field_fix_is_type_proven_guarded_and_idempotent() {
 
   for definition in [
     "dynamic-struct-field",
+    "option-struct-field",
+    "union-struct-field",
+    "macro-origin-struct-field",
     "runtime-struct-field",
     "unknown-struct-field",
     "defaulted-struct-field",

@@ -8,11 +8,20 @@
   :files $ {}
     'fix-command.main $ %{} 'FileEntry
       :defs $ {}
+        '*fix-person-calls $ %{} 'CodeEntry (:doc |)
+          :code $ quote (defatom *fix-person-calls 0)
+          :examples $ []
+          :schema $ :: 'Dynamic
         'FixPerson $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct FixPerson (:name 'String) (:age 'Number)
           :examples $ []
           :schema $ :: 'StructDef
+        'FixPersonChoice $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defenum FixPersonChoice (:person 'fix-command.main/FixPerson) (:none)
+          :examples $ []
+          :schema $ :: 'EnumDef
         'ambiguous $ %{} 'CodeEntry (:doc "|Removed predicate needs a semantic choice.")
           :code $ quote
             defn ambiguous (value) (tuple? value)
@@ -60,6 +69,19 @@
                 assert= (%some Option)
                   fixable $ %some 1
               :tags $ #{} :migration
+        'macro-origin-struct-field $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn macro-origin-struct-field (person)
+              -> person $ get :name
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'String)
+              :args $ [] 'fix-command.main/FixPerson
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-ambiguous-macro-origin)
+              :code $ quote
+                assert= |Ada $ macro-origin-struct-field (FixPerson :name |Ada :age 1)
+              :tags $ #{} :migration
         'main! $ %{} 'CodeEntry (:doc |Entry.)
           :code $ quote
             defn main! () &unit
@@ -69,11 +91,24 @@
               :args $ []
         'make-fix-person $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn make-fix-person () $ FixPerson :name |Ada :age 1
+            defn make-fix-person () (swap! *fix-person-calls inc) (FixPerson :name |Ada :age 1)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'fix-command.main/FixPerson)
               :args $ []
+        'option-struct-field $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn option-struct-field (person) (get person :name)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] (:: 'Option 'fix-command.main/FixPerson)
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-option-receiver)
+              :code $ quote
+                assert= (%none)
+                  option-struct-field $ %some (FixPerson :name |Ada :age 1)
+              :tags $ #{} :migration
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote
             defn reload! () &unit
@@ -91,7 +126,9 @@
           :tests $ []
             %{} 'TestEntry (:name |evaluates-complex-receiver-once)
               :code $ quote
-                assert= |Ada $ required-struct-complex
+                do (reset! *fix-person-calls 0)
+                  assert= |Ada $ required-struct-complex
+                  assert= 1 @*fix-person-calls
               :tags $ #{} :migration
         'required-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -201,6 +238,19 @@
                 assert= 11 $ tag-match-shadowed
                   fn (value) (+ value 10)
                   , 1
+              :tags $ #{} :migration
+        'union-struct-field $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn union-struct-field (person) (get person :name)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'fix-command.main/FixPersonChoice
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-enum-union-receiver)
+              :code $ quote
+                assert= (%none)
+                  union-struct-field $ FixPersonChoice :person (FixPerson :name |Ada :age 1)
               :tags $ #{} :migration
         'unknown-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote
