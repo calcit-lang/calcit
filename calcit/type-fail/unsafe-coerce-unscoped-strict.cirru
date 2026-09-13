@@ -20,8 +20,7 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'Dynamic
-        'main! $ %{} 'CodeEntry
-          :doc "|Entry that makes coerce-host reachable."
+        'main! $ %{} 'CodeEntry (:doc "|Entry that makes coerce-host reachable.")
           :code $ quote $ defn main! () (coerce-host 1)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
@@ -31,6 +30,5 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-      :ns $ %{} 'NsEntry
-        :doc "|Strict unscoped unsafe-coerce fixture."
+      :ns $ %{} 'NsEntry (:doc "|Strict unscoped unsafe-coerce fixture.")
         :code $ quote $ ns type-fail-unsafe-coerce-unscoped-strict.main

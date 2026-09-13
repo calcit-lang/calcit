@@ -3,18 +3,14 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-enum
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-enum.main/main!
-      :mode :native
-      :reload-fn 'test-enum.main/reload!
+    {} (:description |) (:init-fn 'test-enum.main/main!) (:mode :native) (:reload-fn 'test-enum.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
   :files $ {} $ 'test-enum.main
     %{} 'FileEntry
       :defs $ {}
-        'Duo $ %{} 'CodeEntry
-          :doc "|Generic enum with 2 type variables"
+        'Duo $ %{} 'CodeEntry (:doc "|Generic enum with 2 type variables")
           :code $ quote $ defenum Duo ('T 'U) (:pair 'T 'U) (:swapped 'U 'T)
           :examples $ []
           :schema $ :: 'EnumDef
@@ -23,13 +19,11 @@
             {} (:some 'String) (:none)
           :examples $ []
           :schema $ :: 'EnumDef
-          :tests $ [] $ %{} 'TestEntry
-            :name |map-literal-variants
+          :tests $ [] $ %{} 'TestEntry (:name |map-literal-variants)
             :code $ quote $ match (MapLiteralChoice :some |ok)
               (:some value) (assert= |ok value)
               (:none) (raise |expected-some)
-        'Maybe1 $ %{} 'CodeEntry
-          :doc "|Generic enum with 1 type variable"
+        'Maybe1 $ %{} 'CodeEntry (:doc "|Generic enum with 1 type variable")
           :code $ quote $ defenum Maybe1 ('T) (:some 'T) (:none)
           :examples $ []
           :schema $ :: 'EnumDef
@@ -50,23 +44,20 @@
               :return 'Unit
           :examples $ []
           :schema $ :: 'Trait
-        'ShownBox $ %{} 'CodeEntry
-          :doc "|Generic struct with where-bound on payload type"
+        'ShownBox $ %{} 'CodeEntry (:doc "|Generic struct with where-bound on payload type")
           :code $ quote $ defstruct ShownBox ('T)
             {} $ 'T Debug
             :value 'T
           :examples $ []
           :schema $ :: 'StructDef
-        'ShownMaybe $ %{} 'CodeEntry
-          :doc "|Generic enum with where-bound on payload type"
+        'ShownMaybe $ %{} 'CodeEntry (:doc "|Generic enum with where-bound on payload type")
           :code $ quote $ defenum ShownMaybe ('T)
             {} $ 'T Debug
             :some 'T
             :none
           :examples $ []
           :schema $ :: 'EnumDef
-        'check-result-type $ %{} 'CodeEntry
-          :doc "|Check if value has enum origin"
+        'check-result-type $ %{} 'CodeEntry (:doc "|Check if value has enum origin")
           :code $ quote $ defn check-result-type (r)
             option:some? $ enum-definition r
           :examples $ []
@@ -74,16 +65,7 @@
             :args $ [] 'test-enum.main/Result0
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
-            do
-              println "|Testing enum runtime validation..."
-              test-enum-creation
-              test-generic-enum-creation
-              test-generic-enum-where-bounds
-              test-where-bound-definitions
-              test-match-validation
-              test-anonymous-enum-to-named
-              test-match
-              println "|All tests passed!"
+            do (println "|Testing enum runtime validation...") (test-enum-creation) (test-generic-enum-creation) (test-generic-enum-where-bounds) (test-where-bound-definitions) (test-match-validation) (test-anonymous-enum-to-named) (test-match) (println "|All tests passed!")
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
@@ -92,8 +74,7 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-        'takes-result $ %{} 'CodeEntry
-          :doc "|Function accepting Result0 enum type"
+        'takes-result $ %{} 'CodeEntry (:doc "|Function accepting Result0 enum type")
           :code $ quote $ defn takes-result (r)
             match r
               (:ok) :ok
@@ -102,11 +83,9 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'test-enum.main/Result0
-        'test-anonymous-enum-to-named $ %{} 'CodeEntry
-          :doc "|Test automatic anonymous-enum-to-named rewrite"
+        'test-anonymous-enum-to-named $ %{} 'CodeEntry (:doc "|Test automatic anonymous-enum-to-named rewrite")
           :code $ quote $ defn test-anonymous-enum-to-named ()
-            do
-              println "|Testing anonymous-enum-to-named rewrite..."
+            do (println "|Testing anonymous-enum-to-named rewrite...")
               ; Untyped anonymous enum :: :ok gets rewritten to %:: Result0 :ok
               assert= :ok $ takes-result $ :: :ok
               ; Untyped tuple with payload
@@ -119,8 +98,7 @@
             :args $ []
         'test-enum-creation $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-enum-creation ()
-            do
-              println "|Testing enum tuple creation..."
+            do (println "|Testing enum tuple creation...")
               let
                   valid-ok $ %:: Result0 :ok
                   Result1 $ impl-traits Result0 ResultImpl
@@ -150,8 +128,7 @@
         'test-generic-enum-creation $ %{} 'CodeEntry
           :doc "|Exercise defenum generic variables in runtime creation and matching"
           :code $ quote $ defn test-generic-enum-creation ()
-            do
-              println "|Testing generic enum creation..."
+            do (println "|Testing generic enum creation...")
               let
                   some-num $ %:: Maybe1 :some 1
                   none-value $ %:: Maybe1 :none
@@ -233,8 +210,7 @@
           :schema $ :: 'Dynamic
         'test-match-validation $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-match-validation ()
-            do
-              println "|Testing match runtime validation..."
+            do (println "|Testing match runtime validation...")
               let
                   result $ %:: Result0 :ok
                   v $ match result
@@ -248,8 +224,7 @@
         'test-where-bound-definitions $ %{} 'CodeEntry
           :doc "|Exercise defstruct/defenum where-map syntax on generic data types"
           :code $ quote $ defn test-where-bound-definitions ()
-            do
-              println "|Testing data definition where-bounds..."
+            do (println "|Testing data definition where-bounds...")
               let
                   box $ %{} ShownBox $ :value 1
                 let
@@ -268,8 +243,7 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-        'unwrap-maybe $ %{} 'CodeEntry
-          :doc "|Convert Maybe1<T> into nominal Option<T>."
+        'unwrap-maybe $ %{} 'CodeEntry (:doc "|Convert Maybe1<T> into nominal Option<T>.")
           :code $ quote $ defn unwrap-maybe (v)
             match v
               (:none) (%none)

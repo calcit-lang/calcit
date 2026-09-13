@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-sum-types
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-sum-types.main/main!
-      :mode :native
-      :reload-fn 'test-sum-types.main/reload!
+    {} (:description |) (:init-fn 'test-sum-types.main/main!) (:mode :native) (:reload-fn 'test-sum-types.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
@@ -31,8 +28,7 @@
           :examples $ []
           :schema $ :: 'EnumDef
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! ()
-            println "|Testing sum types..."
+          :code $ quote $ defn main! () (println "|Testing sum types...")
             let
                 ok-action $ make-ok 42
                 err-action $ make-err |boom

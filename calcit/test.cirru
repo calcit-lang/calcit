@@ -3,8 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |app
   :entries $ {} $ :default
-    {} (:description |) (:init-fn 'app.main/main!) (:mode :native)
-      :reload-fn 'app.main/reload!
+    {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
       :feature-policy $ {}
       :modules $ [] |./test-cond.cirru |./test-hygienic.cirru |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru |./test-math.cirru |./test-recursion.cirru |./test-set.cirru |./test-string.cirru |./test-edn.cirru |./test-js.cirru |./test-struct.cirru |./test-fn.cirru |./test-anonymous-enum.cirru |./test-algebra.cirru |./test-types.cirru |./test-types-inference.cirru |./test-generics.cirru |./test-enum.cirru |./test-traits.cirru |./test-doc-smoke.cirru |./test-def-meta.cirru |./util.cirru
       :type-slots $ {}
@@ -89,8 +88,7 @@
           :examples $ []
           :schema $ :: 'EnumDef
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! ()
-            &init-builtin-impls!
+          :code $ quote $ defn main! () (&init-builtin-impls!)
             println $ &get-os
             println "|gen id:" $ generate-id!
             inside-js: $ load-console-formatter!
@@ -199,8 +197,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
         'test-arguments $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing arguments"
+          :code $ quote $ fn () (log-title "|Testing arguments")
             let
                 f1 $ fn (a ? b c)
                   hint-fn $ {}
@@ -242,22 +239,16 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
         'test-cirru-parser $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing Cirru parser"
-            assert=
-              parse-cirru-list "|def f (a b) $ + a b"
+          :code $ quote $ fn () (log-title "|Testing Cirru parser")
+            assert= (parse-cirru-list "|def f (a b) $ + a b")
               [] $ [] |def |f ([] |a |b) ([] |+ |a |b)
-            assert=
-              parse-cirru-list "|{,} :a 1 :b false"
+            assert= (parse-cirru-list "|{,} :a 1 :b false")
               [] $ [] |{,} |:a |1 |:b |false
-            assert=
-              parse-cirru-list "|&call-dylib-edn 1"
+            assert= (parse-cirru-list "|&call-dylib-edn 1")
               [] $ [] |&call-dylib-edn |1
-            assert=
-              parse-cirru-list "|&call-dylib-edn-fn x"
+            assert= (parse-cirru-list "|&call-dylib-edn-fn x")
               [] $ [] |&call-dylib-edn-fn |x
-            assert=
-              parse-cirru-edn "|{} (:a 1) (:b ([] 3 |4 nil))"
+            assert= (parse-cirru-edn "|{} (:a 1) (:b ([] 3 |4 nil))")
               {} (:a 1)
                 :b $ [] 3 |4 nil
             assert= "|[] |a |b $ [] |c |d" $ trim $ format-cirru-edn
@@ -323,9 +314,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
         'test-display-stack $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing display stack"
-            &display-stack "|show stack here"
+          :code $ quote $ fn () (log-title "|Testing display stack") (&display-stack "|show stack here")
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
@@ -345,9 +334,7 @@
                 assert-type missing-file.read-text $ :: 'Result 'String 'String
                 assert-type missing-dir.read-dir $ :: 'Result (:: 'List 'FsPath) 'String
                 assert-type missing-dir.walk-dir $ :: 'Result (:: 'List 'FsPath) 'String
-                assert-type
-                  missing-file.write-text |content
-                  :: 'Result 'Unit 'String
+                assert-type (missing-file.write-text |content) (:: 'Result 'Unit 'String)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
@@ -364,8 +351,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
         'test-fn-eq $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing equality of functions"
+          :code $ quote $ fn () (log-title "|Testing equality of functions")
             let
                 a $ fn (x) x
                 b $ fn (x) x
@@ -376,8 +362,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
         'test-if $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing if with nil"
+          :code $ quote $ fn () (log-title "|Testing if with nil")
             assert= (if false 1) (if nil 1)
             assert= (if false 1 2) (if nil 1 2)
             assert= (if false 1) (if &unit 1)
@@ -432,8 +417,7 @@
             :args $ []
         'test-refs $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)
-            assert= &unit $ add-watch *ref-demo :change $ fn (current prev)
-              println "|change happened:" prev current
+            assert= &unit $ add-watch *ref-demo :change $ fn (current prev) (println "|change happened:" prev current)
             assert= 2 $ reset! *ref-demo 2
             assert= &unit $ remove-watch *ref-demo :change
             assert= "|remove-watch failed: listener with key `missing` not found" $ try (remove-watch *ref-demo :missing)
@@ -478,8 +462,7 @@
         'test-try $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-try ()
             assert= false $ try
-              do
-                println "|inside false try"
+              do (println "|inside false try")
                 raise "|error intented" $ [] :demo
                 , :true
               fn (error)
@@ -493,28 +476,5 @@
             :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main
-          :require (test-cond.main :as test-cond)
-            test-hygienic.main :as test-hygienic
-            test-lens.main :as test-lens
-            test-list.main :as test-list
-            test-macro.main :as test-macro
-            test-map.main :as test-map
-            test-math.main :as test-math
-            test-recursion.main :as test-recursion
-            test-set.main :as test-set
-            test-string.main :as test-string
-            test-edn.main :as test-edn
-            test-js.main :as test-js
-            test-struct.main :as test-struct
-            test-nil.main :as test-nil
-            test-fn.main :as test-fn
-            test-anonymous-enum.main :as test-anonymous-enum
-            test-algebra.main :as test-algebra
-            test-types.main :as test-types
-            test-types-inference.main :as test-types-inference
-            test-enum.main :as test-enum
-            test-generics.main :as test-generics
-            test-traits.main :as test-traits
-            test-doc-smoke.main :as test-doc-smoke
-            test-def-meta.main :as test-def-meta
+          :require (test-cond.main :as test-cond) (test-hygienic.main :as test-hygienic) (test-lens.main :as test-lens) (test-list.main :as test-list) (test-macro.main :as test-macro) (test-map.main :as test-map) (test-math.main :as test-math) (test-recursion.main :as test-recursion) (test-set.main :as test-set) (test-string.main :as test-string) (test-edn.main :as test-edn) (test-js.main :as test-js) (test-struct.main :as test-struct) (test-nil.main :as test-nil) (test-fn.main :as test-fn) (test-anonymous-enum.main :as test-anonymous-enum) (test-algebra.main :as test-algebra) (test-types.main :as test-types) (test-types-inference.main :as test-types-inference) (test-enum.main :as test-enum) (test-generics.main :as test-generics) (test-traits.main :as test-traits) (test-doc-smoke.main :as test-doc-smoke) (test-def-meta.main :as test-def-meta)
             util.core :refer $ log-title inside-eval: inside-js:

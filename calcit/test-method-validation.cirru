@@ -3,8 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |app
   :entries $ {} $ :default
-    {} (:description |) (:init-fn 'app.main/main!) (:mode :native)
-      :reload-fn 'app.main/reload!
+    {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
@@ -12,12 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! ()
-            test-valid-list-methods
-            ; test-invalid-list-method ; "会导致" preprocess "错误"
-            ; test-invalid-string-method ; "会导致" preprocess "错误"
-            test-invalid-map-method ; "测试" map "方法验证"
-            println |All tests passed
+          :code $ quote $ defn main! () (test-valid-list-methods) (; test-invalid-list-method ; "会导致" preprocess "错误") (; test-invalid-string-method ; "会导致" preprocess "错误") (test-invalid-map-method ; "测试" map "方法验证") (println |All tests passed)
           :examples $ []
           :schema $ :: 'Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)

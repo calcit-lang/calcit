@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-recursion
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-recursion.main/main!
-      :mode :native
-      :reload-fn 'test-recursion.main/reload!
+    {} (:description |) (:init-fn 'test-recursion.main/main!) (:mode :native) (:reload-fn 'test-recursion.main/reload!)
       :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
@@ -19,8 +16,7 @@
           :schema $ :: 'Dynamic
         'hole-series $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn hole-series (x) (assert-type x 'Number)
-            if (&<= x 0)
-              raise "|unexpected small number"
+            if (&<= x 0) (raise "|unexpected small number")
               if (&= x 1) 0 $ if (&= x 2) 1 $ let
                   extra $ .rem x 3
                 if (&= extra 0)
@@ -42,10 +38,7 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! ()
-            log-title "|Testing hole series"
-            test-hole-series
-            ; set-trace-fn! |app.main |hole-series
+          :code $ quote $ defn main! () (log-title "|Testing hole series") (test-hole-series) (; set-trace-fn! |app.main |hole-series)
             ; println $ hole-series 100
             log-title "|Testing loop"
             test-loop

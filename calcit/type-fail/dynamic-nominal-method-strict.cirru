@@ -19,8 +19,7 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Dynamic
-        'main! $ %{} 'CodeEntry
-          :doc "|Entry that makes consume-dynamic reachable."
+        'main! $ %{} 'CodeEntry (:doc "|Entry that makes consume-dynamic reachable.")
           :code $ quote $ defn main! ()
             consume-dynamic $ %some 1
           :examples $ []
@@ -31,6 +30,5 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-      :ns $ %{} 'NsEntry
-        :doc "|Strict Dynamic nominal-method fixture."
+      :ns $ %{} 'NsEntry (:doc "|Strict Dynamic nominal-method fixture.")
         :code $ quote $ ns type-fail-dynamic-nominal-method-strict.main

@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-map
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-map.main/main!
-      :mode :native
-      :reload-fn 'test-map.main/reload!
+    {} (:description |) (:init-fn 'test-map.main/main!) (:mode :native) (:reload-fn 'test-map.main/reload!)
       :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
@@ -14,15 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (log-title "|Testing maps") (test-maps)
-            log-title "|Testing map syntax"
-            test-native-map-syntax
-            test-map-comma
-            test-get
-            test-shorthand
-            test-filter-map-kv
-            test-map-list-kv
-            do true
+          :code $ quote $ defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-get) (test-shorthand) (test-filter-map-kv) (test-map-list-kv) (do true)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
@@ -56,8 +45,7 @@
                 assert= true $ contains? result :same
               assert= ({})
                 filter-map-kv ({})
-                  fn (_k _v)
-                    raise |empty-map-callback-must-not-run
+                  fn (_k _v) (raise |empty-map-callback-must-not-run)
               assert= |callback-failed $ try
                 filter-map-kv
                   {} $ :a 1
@@ -183,8 +171,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
         'test-shorthand $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn ()
-            log-title "|Testing shorthand"
+          :code $ quote $ fn () (log-title "|Testing shorthand")
             let
                 dict $ {} $ :a 1
               assert= 1 dict.:a

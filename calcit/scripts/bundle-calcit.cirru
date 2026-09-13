@@ -3,8 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |bundle-calcit
   :entries $ {} $ :default
-    {} (:description |) (:init-fn 'app.main/main!) (:mode :native)
-      :reload-fn 'app.main/reload!
+    {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
@@ -37,13 +36,9 @@
                               form-data $ &cirru-quote:to-list form
                               op $ nth form-data 0
                               def-name $ nth form-data 1
-                            assert
-                              str-spaced "|invalid definition operator" op |in path
-                              starts-with? op |def
+                            assert (str-spaced "|invalid definition operator" op |in path) (starts-with? op |def)
                             assoc acc def-name $ make-code-entry form
-                    assert
-                      str-spaced "|first form must be ns in" path
-                      = ns-op |ns
+                    assert (str-spaced "|first form must be ns in" path) (= ns-op |ns)
                     [] ns-name $ %{} FileEntry
                       :ns $ make-code-entry ns-form
                       :defs defs

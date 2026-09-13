@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-recur-arity
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-recur-arity.main/main!
-      :mode :native
-      :reload-fn 'test-recur-arity.main/reload!
+    {} (:description |) (:init-fn 'test-recur-arity.main/main!) (:mode :native) (:reload-fn 'test-recur-arity.main/reload!)
       :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
@@ -50,8 +47,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic 'Dynamic
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! ()
-            log-title "|Testing recur arity"
+          :code $ quote $ defn main! () (log-title "|Testing recur arity")
             assert= 10 $ sum-to-n 4
             assert= 15 $ sum-to-n 5
             assert= 20 $ add-until 0 20 1

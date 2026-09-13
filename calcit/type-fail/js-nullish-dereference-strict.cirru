@@ -30,6 +30,5 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-      :ns $ %{} 'NsEntry
-        :doc "|Strict nullable JavaScript dereference fixture."
+      :ns $ %{} 'NsEntry (:doc "|Strict nullable JavaScript dereference fixture.")
         :code $ quote $ ns type-fail-js-nullish-dereference-strict.main

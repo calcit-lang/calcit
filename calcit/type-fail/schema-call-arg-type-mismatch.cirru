@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |type-fail-schema-call-arg-type
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'type-fail-schema-call-arg-type.main/main!
-      :mode :native
-      :reload-fn 'type-fail-schema-call-arg-type.main/reload!
+    {} (:description |) (:init-fn 'type-fail-schema-call-arg-type.main/main!) (:mode :native) (:reload-fn 'type-fail-schema-call-arg-type.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
@@ -36,6 +33,5 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
-      :ns $ %{} 'NsEntry
-        :doc "|Namespace for schema call-site mismatch"
+      :ns $ %{} 'NsEntry (:doc "|Namespace for schema call-site mismatch")
         :code $ quote $ ns type-fail-schema-call-arg-type.main

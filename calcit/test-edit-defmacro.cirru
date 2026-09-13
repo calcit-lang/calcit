@@ -3,8 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |app
   :entries $ {} $ :default
-    {} (:description |) (:init-fn 'app.main/main!) (:mode :native)
-      :reload-fn 'app.main/reload!
+    {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
@@ -17,12 +16,10 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
           :tests $ []
-            %{} 'TestEntry
-              :name |required-expands
+            %{} 'TestEntry (:name |required-expands)
               :code $ quote $ assert= 1 (required-id 1)
               :tags $ #{} :macro-edit
-            %{} 'TestEntry
-              :name |optional-expands
+            %{} 'TestEntry (:name |optional-expands)
               :code $ quote $ assert= 2 (optional-id 2 20)
               :tags $ #{} :macro-edit-compat
             %{} 'TestEntry (:name |rest-expands)

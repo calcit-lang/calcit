@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-types-inference
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-types-inference.main/main!
-      :mode :native
-      :reload-fn 'test-types-inference.main/reload!
+    {} (:description |) (:init-fn 'test-types-inference.main/main!) (:mode :native) (:reload-fn 'test-types-inference.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
@@ -47,19 +44,7 @@
             :args $ [] 'Dynamic
             :return $ :: 'Option 'Dynamic
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! ()
-            println "|Testing type inference..."
-            test-list-inference
-            test-optional-inference
-            test-count-inference
-            test-fn-inference
-            test-map-inference
-            test-filter-map-kv-inference
-            test-set-inference
-            test-ref-inference
-            test-struct-inference
-            test-type-ref-combos
-            test-generics-identity
+          :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity)
           :examples $ []
           :schema $ :: 'Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
@@ -119,8 +104,7 @@
                   assert= 42 $ + value 1
                 (:err error) (raise error)
               match (parse-float |bad)
-                (:ok _)
-                  raise |Expected-parse-error
+                (:ok _) (raise |Expected-parse-error)
                 (:err error)
                   assert= true $ starts-with? error |b
           :examples $ []

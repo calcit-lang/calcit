@@ -3,23 +3,18 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-generics
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-generics.main/main!
-      :mode :native
-      :reload-fn 'test-generics.main/reload!
+    {} (:description |) (:init-fn 'test-generics.main/main!) (:mode :native) (:reload-fn 'test-generics.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
   :files $ {} $ 'test-generics.main
     %{} 'FileEntry
       :defs $ {}
-        'Box $ %{} 'CodeEntry
-          :doc "|Generic box struct"
+        'Box $ %{} 'CodeEntry (:doc "|Generic box struct")
           :code $ quote $ defstruct Box ([] 'T) (:value 'T)
           :examples $ []
           :schema $ :: 'StructDef
-        'Holder $ %{} 'CodeEntry
-          :doc "|Generic holder wrapping Box"
+        'Holder $ %{} 'CodeEntry (:doc "|Generic holder wrapping Box")
           :code $ quote $ defstruct Holder ([] 'T)
             :box $ :: 'Box 'T
           :examples $ []
@@ -30,25 +25,16 @@
             :value 'Number
           :examples $ []
           :schema $ :: 'StructDef
-        'Pair $ %{} 'CodeEntry
-          :doc "|Generic pair struct"
+        'Pair $ %{} 'CodeEntry (:doc "|Generic pair struct")
           :code $ quote $ defstruct Pair ([] 'T 'U) (:left 'T) (:right 'U)
           :examples $ []
           :schema $ :: 'StructDef
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
-            do
-              println "|Testing generics..."
-              println "|  - generic structs"
-              test-struct-generics
-              println "|  - function generics and where-bounds"
-              test-recursive-struct
-              test-fn-generics
-              println "|Generics tests passed"
+            do (println "|Testing generics...") (println "|  - generic structs") (test-struct-generics) (println "|  - function generics and where-bounds") (test-recursive-struct) (test-fn-generics) (println "|Generics tests passed")
           :examples $ []
           :schema $ :: 'Dynamic
-        'pair-right $ %{} 'CodeEntry
-          :doc "|Return the right value from a generic pair"
+        'pair-right $ %{} 'CodeEntry (:doc "|Return the right value from a generic pair")
           :code $ quote $ defn pair-right (pair) (:right pair)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'U)
@@ -99,8 +85,7 @@
           :examples $ []
           :schema $ :: 'Dynamic
         'test-recursive-struct $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn test-recursive-struct ()
-            println "|Testing recursive struct support..."
+          :code $ quote $ defn test-recursive-struct () (println "|Testing recursive struct support...")
             let
                 leaf $ %{} Node (:next nil) (:value 1)
                 nested $ %{} Node (:next leaf) (:value 2)
@@ -111,8 +96,7 @@
           :schema $ :: 'Dynamic
         'test-struct-generics $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-struct-generics ()
-            do
-              println "|Testing generic struct support..."
+            do (println "|Testing generic struct support...")
               assert= 2 $ unbox $ &%{} Box :value 2
               assert= |hi $ pair-right $ &%{} Pair :left 1 :right |hi
               assert-type
@@ -127,8 +111,7 @@
               println "|Generic struct support passed"
           :examples $ []
           :schema $ :: 'Dynamic
-        'unbox $ %{} 'CodeEntry
-          :doc "|Return value from a generic box"
+        'unbox $ %{} 'CodeEntry (:doc "|Return value from a generic box")
           :code $ quote $ defn unbox (box) (:value box)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'T)

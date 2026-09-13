@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-anonymous-enum
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-anonymous-enum.main/main!
-      :mode :native
-      :reload-fn 'test-anonymous-enum.main/reload!
+    {} (:description |) (:init-fn 'test-anonymous-enum.main/main!) (:mode :native) (:reload-fn 'test-anonymous-enum.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
@@ -18,8 +15,7 @@
           :examples $ []
           :schema $ :: 'EnumDef
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! ()
-            log-title "|Testing anonymous enum"
+          :code $ quote $ defn main! () (log-title "|Testing anonymous enum")
             assert= 1 $ try-size $ :: :dyn
             assert= 2 $ try-size $ :: :dyn 1
             assert= 3 $ try-size $ :: :dyn 1 2

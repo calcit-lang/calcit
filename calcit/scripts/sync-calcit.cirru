@@ -3,8 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |sync-calcit
   :entries $ {} $ :default
-    {} (:description |) (:init-fn 'app.main/main!) (:mode :native)
-      :reload-fn 'app.main/reload!
+    {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
       :feature-policy $ {}
       :modules $ [] |bisection-key/
       :type-slots $ {}
@@ -39,9 +38,7 @@
                       map
                         range $ count data
                         fn (idx)
-                          recur-fn
-                            bisection-key.util/val-nth data idx
-                            , recur-fn
+                          recur-fn (bisection-key.util/val-nth data idx) recur-fn
                 examples->detail $ fn (examples now)
                   map
                     if (some? examples) examples $ []
@@ -54,8 +51,7 @@
                     if (some? old)
                       let
                           old-code $ get old :code
-                          code-changed? $ not= (detail->data old-code detail->data)
-                            &cirru-quote:to-list next-code
+                          code-changed? $ not= (detail->data old-code detail->data) (&cirru-quote:to-list next-code)
                           base $ assoc old :doc next-doc
                           base-with-examples $ if (contains? old :examples) (assoc base :examples next-examples) base
                         assoc base-with-examples :code $ if code-changed? (code->detail next-code now code->detail) old-code
@@ -70,8 +66,7 @@
                     if (some? old)
                       let
                           old-code $ get old :code
-                          code-changed? $ not= (detail->data old-code detail->data)
-                            &cirru-quote:to-list next-code
+                          code-changed? $ not= (detail->data old-code detail->data) (&cirru-quote:to-list next-code)
                         assoc (assoc old :doc next-doc) :code $ if code-changed? (code->detail next-code now code->detail) old-code
                       %{} NsEntry
                         :code $ code->detail next-code now code->detail

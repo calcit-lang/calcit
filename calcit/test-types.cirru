@@ -3,18 +3,14 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-types
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-types.main/main!
-      :mode :native
-      :reload-fn 'test-types.main/reload!
+    {} (:description |) (:init-fn 'test-types.main/main!) (:mode :native) (:reload-fn 'test-types.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
   :files $ {} $ 'test-types.main
     %{} 'FileEntry
       :defs $ {}
-        'EnumImpl $ %{} 'CodeEntry
-          :doc "|Trait impl for enum metadata"
+        'EnumImpl $ %{} 'CodeEntry (:doc "|Trait impl for enum metadata")
           :code $ quote $ defimpl EnumImpl EnumMetadata
             .dummy $ fn $ self
           :examples $ []
@@ -27,18 +23,15 @@
               :return 'Unit
           :examples $ []
           :schema $ :: 'Trait
-        'Person $ %{} 'CodeEntry
-          :doc "|Struct definition for type checks"
+        'Person $ %{} 'CodeEntry (:doc "|Struct definition for type checks")
           :code $ quote $ defstruct Person (:name 'String) (:age nil)
           :examples $ []
           :schema $ :: 'Struct
-        'Result $ %{} 'CodeEntry
-          :doc "|Enum prototype for type checks"
+        'Result $ %{} 'CodeEntry (:doc "|Enum prototype for type checks")
           :code $ quote $ defenum Result (:ok 'Number) (:err 'String)
           :examples $ []
           :schema $ :: 'Enum
-        'ResultImpl $ %{} 'CodeEntry
-          :doc "|Trait impl for enum tuple tests"
+        'ResultImpl $ %{} 'CodeEntry (:doc "|Trait impl for enum tuple tests")
           :code $ quote $ defimpl ResultImpl ResultTrait
             .describe $ fn (self)
               match self
@@ -46,13 +39,11 @@
                 (:err msg) (str "|err " msg)
           :examples $ []
           :schema $ :: 'Impl
-        'ResultTrait $ %{} 'CodeEntry
-          :doc "|Trait definition for enum tuple tests"
+        'ResultTrait $ %{} 'CodeEntry (:doc "|Trait definition for enum tuple tests")
           :code $ quote $ deftrait ResultTrait (.describe :fn)
           :examples $ []
           :schema $ :: 'Trait
-        'StructImpl $ %{} 'CodeEntry
-          :doc "|Trait impl for struct metadata"
+        'StructImpl $ %{} 'CodeEntry (:doc "|Trait impl for struct metadata")
           :code $ quote $ defimpl StructImpl StructMetadata
             .dummy $ fn $ self
           :examples $ []
@@ -70,8 +61,7 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
-        'chained-return-type $ %{} 'CodeEntry
-          :doc "|Uses return-type hinting more than once"
+        'chained-return-type $ %{} 'CodeEntry (:doc "|Uses return-type hinting more than once")
           :code $ quote $ defn chained-return-type (base extra)
             let
                 first-sum $ add-numbers base extra
@@ -81,15 +71,13 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
-        'describe-typed $ %{} 'CodeEntry
-          :doc "|Combines typed label and number"
+        'describe-typed $ %{} 'CodeEntry (:doc "|Combines typed label and number")
           :code $ quote $ defn describe-typed (label value) (str label "|: " value)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String 'Number
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! ()
-            println "|Testing types..."
+          :code $ quote $ defn main! () (println "|Testing types...")
             println $ add-numbers 1 2
             println $ process-string |hello
             println $ test-fn-type
@@ -133,23 +121,17 @@
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'show-type-info $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn show-type-info (x)
-            println "|Type info demo: value is" x
-            ; "后续引用" x "应该仍然保留类型信息"
-            &+ x 1
+          :code $ quote $ defn show-type-info (x) (println "|Type info demo: value is" x) (; "后续引用" x "应该仍然保留类型信息") (&+ x 1)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
-        'slice-as-string $ %{} 'CodeEntry
-          :doc "|Guarded dynamic .slice call"
+        'slice-as-string $ %{} 'CodeEntry (:doc "|Guarded dynamic .slice call")
           :code $ quote $ defn slice-as-string (text) (.slice text 1 4)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
-        'test-arg-type-hints $ %{} 'CodeEntry
-          :doc "|Checks arg hint path without emitting warning"
-          :code $ quote $ defn test-arg-type-hints () (typed-only 1)
-            println "|arg type hints check executed"
+        'test-arg-type-hints $ %{} 'CodeEntry (:doc "|Checks arg hint path without emitting warning")
+          :code $ quote $ defn test-arg-type-hints () (typed-only 1) (println "|arg type hints check executed")
           :examples $ []
           :schema $ :: 'Dynamic
         'test-builtin-proc-types $ %{} 'CodeEntry
@@ -182,8 +164,7 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
-        'test-defstruct-defenum $ %{} 'CodeEntry
-          :doc "|Smoke test for defstruct/defenum and %:: tuples"
+        'test-defstruct-defenum $ %{} 'CodeEntry (:doc "|Smoke test for defstruct/defenum and %:: tuples")
           :code $ quote $ defn test-defstruct-defenum ()
             assert= :struct-def $ type-of Person
             assert= :enum-def $ type-of Result
@@ -196,15 +177,12 @@
               assert= true $ any? (&enum:impls ok)
                 fn (impl)
                   = (impl-origin impl) (%some ResultTrait)
-              assert=
-                %some enum-with-result-impls
-                enum-definition ok
+              assert= (%some enum-with-result-impls) (enum-definition ok)
               assert= "|(%:: 'Result :ok 1)" $ str ok
             , "|defstruct/defenum checks passed"
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-dynamic-methods $ %{} 'CodeEntry
-          :doc "|Ensures .slice target type is validated"
+        'test-dynamic-methods $ %{} 'CodeEntry (:doc "|Ensures .slice target type is validated")
           :code $ quote $ defn test-dynamic-methods ()
             let
                 typed-text |calcit
@@ -227,8 +205,7 @@
                 :args $ [] 'Number
               , 'Number
             :generics $ [] 'T
-        'test-list-methods $ %{} 'CodeEntry
-          :doc "|Tests method calls on typed list objects"
+        'test-list-methods $ %{} 'CodeEntry (:doc "|Tests method calls on typed list objects")
           :code $ quote $ defn test-list-methods () (; Create a list and annotate its type)
             let
                 xs $ [] 1 2 3 4 5
@@ -251,10 +228,7 @@
           :schema $ :: 'Dynamic
         'test-method-type-errors $ %{} 'CodeEntry
           :doc "|Tests that invalid method calls are caught in preprocess"
-          :code $ quote $ defn test-method-type-errors () (; "⚠️" "这些代码故意包含错误，用于验证" preprocess "阶段的类型检查")
-            ; "当启用时，会在编译阶段就报错，而不是运行时"
-            ; "测试" 1: list "对象调用不存在的方法"
-            ; let
+          :code $ quote $ defn test-method-type-errors () (; "⚠️" "这些代码故意包含错误，用于验证" preprocess "阶段的类型检查") (; "当启用时，会在编译阶段就报错，而不是运行时") (; "测试" 1: list "对象调用不存在的方法") (; let)
             ; xs $ [] 1 2 3
             ; assert-type xs :list
             ; .invalid-method xs
@@ -275,8 +249,7 @@
           :schema $ :: 'Dynamic
         'test-preprocess-method-validation $ %{} 'CodeEntry
           :doc "|Demonstrates that valid method calls pass preprocess validation"
-          :code $ quote $ defn test-preprocess-method-validation ()
-            ; "所有这些方法调用都是合法的，应该通过" preprocess "检查"
+          :code $ quote $ defn test-preprocess-method-validation () (; "所有这些方法调用都是合法的，应该通过" preprocess "检查")
             let
                 xs $ [] 1 2 3 4 5
               assert-type xs 'List
@@ -304,8 +277,7 @@
             , "|All valid method calls passed preprocess validation"
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-proc-type $ %{} 'CodeEntry
-          :doc "|Tests Proc (builtin function) type annotation"
+        'test-proc-type $ %{} 'CodeEntry (:doc "|Tests Proc (builtin function) type annotation")
           :code $ quote $ defn test-proc-type (p x y) (p x y)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -321,8 +293,7 @@
             println "|Warning: This test contains intentional type errors"
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-string-methods $ %{} 'CodeEntry
-          :doc "|Tests method calls on typed string objects"
+        'test-string-methods $ %{} 'CodeEntry (:doc "|Tests method calls on typed string objects")
           :code $ quote $ defn test-string-methods ()
             let
                 text |hello-world
@@ -370,10 +341,8 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
-        'test-typed-method-access $ %{} 'CodeEntry
-          :doc "|Demonstrates type-safe method access patterns"
-          :code $ quote $ defn test-typed-method-access ()
-            ; "当对象有类型标注时，方法调用会检查该类型支持的方法"
+        'test-typed-method-access $ %{} 'CodeEntry (:doc "|Demonstrates type-safe method access patterns")
+          :code $ quote $ defn test-typed-method-access () (; "当对象有类型标注时，方法调用会检查该类型支持的方法")
             let
                 typed-list $ [] 1 2 3 4 5
               assert-type typed-list 'List
@@ -400,8 +369,7 @@
             , "|Typed method access checks passed"
           :examples $ []
           :schema $ :: 'Dynamic
-        'typed-only $ %{} 'CodeEntry
-          :doc "|Used to verify arg type hints are collected"
+        'typed-only $ %{} 'CodeEntry (:doc "|Used to verify arg type hints are collected")
           :code $ quote $ defn typed-only (a) (&+ 1 0)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)

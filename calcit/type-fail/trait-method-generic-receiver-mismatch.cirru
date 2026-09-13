@@ -38,6 +38,5 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
-      :ns $ %{} 'NsEntry
-        :doc "|Namespace for generic method receiver mismatch"
+      :ns $ %{} 'NsEntry (:doc "|Namespace for generic method receiver mismatch")
         :code $ quote $ ns type-fail-trait-method-generic-receiver.main

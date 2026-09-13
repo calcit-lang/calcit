@@ -13,8 +13,7 @@
   :files $ {} $ 'type-fail-whole-dynamic-schema-strict.main
     %{} 'FileEntry
       :defs $ {}
-        'main! $ %{} 'CodeEntry
-          :doc "|Entry that makes open-identity reachable."
+        'main! $ %{} 'CodeEntry (:doc "|Entry that makes open-identity reachable.")
           :code $ quote $ defn main! () (open-identity 1)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -29,6 +28,5 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-      :ns $ %{} 'NsEntry
-        :doc "|Strict whole-Dynamic schema fixture."
+      :ns $ %{} 'NsEntry (:doc "|Strict whole-Dynamic schema fixture.")
         :code $ quote $ ns type-fail-whole-dynamic-schema-strict.main

@@ -14,8 +14,7 @@
   :files $ {} $ 'type-fail-raw-primitive-strict.main
     %{} 'FileEntry
       :defs $ {}
-        'main! $ %{} 'CodeEntry
-          :doc "|Entry that makes read-raw reachable."
+        'main! $ %{} 'CodeEntry (:doc "|Entry that makes read-raw reachable.")
           :code $ quote $ defn main! ()
             read-raw $ {} $ :x 1
           :examples $ []
@@ -32,6 +31,5 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-      :ns $ %{} 'NsEntry
-        :doc "|Strict raw-primitive fixture."
+      :ns $ %{} 'NsEntry (:doc "|Strict raw-primitive fixture.")
         :code $ quote $ ns type-fail-raw-primitive-strict.main

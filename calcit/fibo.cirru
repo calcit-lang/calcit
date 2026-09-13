@@ -3,15 +3,11 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |app
   :entries $ {}
-    :default $ {} (:description |) (:init-fn 'app.main/main!) (:mode :native)
-      :reload-fn 'app.main/reload!
+    :default $ {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
-    :prime $ {} (:description |)
-      :init-fn 'app.main/try-prime
-      :mode :native
-      :reload-fn 'app.main/try-prime
+    :prime $ {} (:description |) (:init-fn 'app.main/try-prime) (:mode :native) (:reload-fn 'app.main/try-prime)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
@@ -72,9 +68,7 @@
             :args $ [] 'Number 'Number
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Loaded program!")
-            do
-              test-rem-methods!
-              try-fibo
+            do (test-rem-methods!) (try-fibo)
           :examples $ []
           :schema $ :: 'Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)

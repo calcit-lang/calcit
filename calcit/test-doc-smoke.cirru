@@ -3,10 +3,7 @@
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |test-doc-smoke
   :entries $ {} $ :default
-    {} (:description |)
-      :init-fn 'test-doc-smoke.main/main!
-      :mode :native
-      :reload-fn 'test-doc-smoke.main/reload!
+    {} (:description |) (:init-fn 'test-doc-smoke.main/main!) (:mode :native) (:reload-fn 'test-doc-smoke.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
@@ -17,8 +14,7 @@
           :code $ quote $ defenum DocEnum (:ok 'String)
           :examples $ []
           :schema $ :: 'EnumDef
-        'DocPerson0 $ %{} 'CodeEntry
-          :doc "|Doc smoke struct"
+        'DocPerson0 $ %{} 'CodeEntry (:doc "|Doc smoke struct")
           :code $ quote $ defstruct DocPerson (:name 'String)
           :examples $ []
           :schema $ :: 'StructDef
@@ -32,23 +28,15 @@
               str-spaced |doc $ &struct:get x :name
           :examples $ []
           :schema $ :: 'Impl
-        'main! $ %{} 'CodeEntry
-          :doc "|Run docs smoke cases"
-          :code $ quote $ defn main! ()
-            println "|Testing doc smoke cases..."
-            test-defimpl-order
-            test-native-impl-new-dot-method
-            test-assert-traits-local
-            test-impl-traits-struct-enum-only
-            println "|Doc smoke cases passed"
+        'main! $ %{} 'CodeEntry (:doc "|Run docs smoke cases")
+          :code $ quote $ defn main! () (println "|Testing doc smoke cases...") (test-defimpl-order) (test-native-impl-new-dot-method) (test-assert-traits-local) (test-impl-traits-struct-enum-only) (println "|Doc smoke cases passed")
           :examples $ []
           :schema $ :: 'Dynamic
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () (:: 'Unit)
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-assert-traits-local $ %{} 'CodeEntry
-          :doc "|assert-traits local first arg smoke"
+        'test-assert-traits-local $ %{} 'CodeEntry (:doc "|assert-traits local first arg smoke")
           :code $ quote $ defn test-assert-traits-local ()
             let
                 DocPerson $ impl-traits DocPerson0 DocTraitImpl
@@ -57,8 +45,7 @@
               assert= "|doc Alice" $ p .label
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-defimpl-order $ %{} 'CodeEntry
-          :doc "|defimpl arg order smoke"
+        'test-defimpl-order $ %{} 'CodeEntry (:doc "|defimpl arg order smoke")
           :code $ quote $ defn test-defimpl-order ()
             assert= (%some DocTrait) (impl-origin DocTraitImpl)
           :examples $ []
@@ -84,8 +71,7 @@
                 assert= true $ includes? msg |Fix:
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-native-impl-new-dot-method $ %{} 'CodeEntry
-          :doc "|&impl::new accepts .method field keys"
+        'test-native-impl-new-dot-method $ %{} 'CodeEntry (:doc "|&impl::new accepts .method field keys")
           :code $ quote $ defn test-native-impl-new-dot-method ()
             let
                 DotImpl $ &impl::new DocTrait $ :: .label
