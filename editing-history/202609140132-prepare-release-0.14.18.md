@@ -8,6 +8,7 @@
 - 修正 crates.io package metadata 中仍指向历史仓库名 `calcit.rs` 的 URL。
 - 为 `@calcit/procs` 增加发布文件 allowlist 与 MIT SPDX metadata，只携带编译后的 `lib/` 与 README，不再把 Rust 源码、RFC 和历史记录放入 npm tarball。
 - 保留 Calcit 0.14.15 的一次性 migration bridge 说明，以及内部 `cr-wasm` 兼容 wrapper；二者仍分别服务旧项目迁移和仓库发布验证，不属于本次可删除内容。
+- 根据 review 同步升级 Cargo、npm 与 lockfile 版本，并补全 fix envelope 中位于 `:data` 下的字段路径。
 
 ## English
 
@@ -17,3 +18,4 @@
 - Corrected the crates.io package metadata URL that still referenced the historical `calcit.rs` repository name.
 - Added an `@calcit/procs` publication allowlist and MIT SPDX metadata so the npm tarball contains only the compiled `lib/` tree and README instead of Rust sources, RFCs, and editing history.
 - Retained the one-way Calcit 0.14.15 migration bridge documentation and the internal `cr-wasm` compatibility wrapper because they still serve old-project migration and repository release verification respectively.
+- Following review, synchronized the Cargo, npm, and lockfile versions and corrected fix-envelope field paths nested beneath `:data`.

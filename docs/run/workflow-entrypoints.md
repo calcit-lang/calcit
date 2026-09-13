@@ -66,7 +66,7 @@ calcit calcit.cirru fix --preset surface-latest-v2 \
 - preview、revision/fingerprint guard、staged validation 和原子写回统一复用 `calcit fix`；
 - 不能唯一回溯到可写源码、涉及 Dynamic dispatch、macro 生成或业务默认值时，只报告诊断。
 
-`fix --format edn` 的 `:filters :expanded-rules` 会为实际展开的规则报告：
+`fix --format edn` 的 `:data :filters :expanded-rules` 会为实际展开的规则报告：
 
 - `:evidence-source`：来自 `current-diagnostic` 或 `resolved-source-ast`；
 - `:diagnostic-code`：稳定诊断或 fix code；
