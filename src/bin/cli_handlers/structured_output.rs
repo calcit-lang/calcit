@@ -26,7 +26,7 @@ fn json_key_to_edn(key: &str) -> Edn {
 fn json_number_to_edn(value: &serde_json::Number) -> Result<Edn, String> {
   if let Some(number) = value.as_i64() {
     let converted = number as f64;
-    return if converted as i64 == number {
+    return if converted >= i64::MIN as f64 && converted < i64::MAX as f64 && converted as i64 == number {
       Ok(Edn::Number(converted))
     } else {
       Err(format!("JSON integer cannot be represented exactly as Cirru EDN: {value}"))
@@ -34,7 +34,7 @@ fn json_number_to_edn(value: &serde_json::Number) -> Result<Edn, String> {
   }
   if let Some(number) = value.as_u64() {
     let converted = number as f64;
-    return if converted as u64 == number {
+    return if converted < u64::MAX as f64 && converted as u64 == number {
       Ok(Edn::Number(converted))
     } else {
       Err(format!("JSON integer cannot be represented exactly as Cirru EDN: {value}"))
@@ -104,6 +104,8 @@ mod tests {
   #[test]
   fn rejects_lossy_numbers_and_normalized_key_collisions() {
     assert!(json_value_to_edn(&serde_json::json!(9_007_199_254_740_993_u64)).is_err());
+    assert!(json_value_to_edn(&serde_json::json!(i64::MAX)).is_err());
+    assert!(json_value_to_edn(&serde_json::json!(u64::MAX)).is_err());
     assert!(json_value_to_edn(&serde_json::json!({ "same_key": 1, "same-key": 2 })).is_err());
   }
 

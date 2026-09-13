@@ -51,6 +51,21 @@ fn edn_map_field<'a>(value: &'a Edn, key: &str) -> &'a Edn {
   map.get(&Edn::tag(key)).unwrap_or_else(|| panic!("missing EDN field :{key}"))
 }
 
+fn json_envelope_as_edn(value: &serde_json::Value) -> Edn {
+  match value {
+    serde_json::Value::Null => Edn::Nil,
+    serde_json::Value::Bool(value) => Edn::Bool(*value),
+    serde_json::Value::Number(value) => Edn::Number(value.as_f64().expect("verification numbers should fit f64")),
+    serde_json::Value::String(value) => Edn::str(value.as_str()),
+    serde_json::Value::Array(values) => Edn::List(cirru_edn::EdnListView(values.iter().map(json_envelope_as_edn).collect())),
+    serde_json::Value::Object(values) => Edn::map_from_iter(
+      values
+        .iter()
+        .map(|(key, value)| (Edn::tag(key.replace('_', "-")), json_envelope_as_edn(value))),
+    ),
+  }
+}
+
 fn snapshot_source(entries: &str) -> String {
   format!(
     r#"
@@ -123,6 +138,7 @@ fn verification_profile_uses_one_contract_for_native_and_js_entries() {
   assert!(edn_output.status.success());
   let edn_text = String::from_utf8(edn_output.stdout).expect("EDN stdout should be UTF-8");
   let edn = cirru_edn::parse(&edn_text).expect("stdout should contain one Cirru EDN value");
+  assert_eq!(edn, json_envelope_as_edn(&value));
   assert_eq!(edn_map_field(&edn, "schema-version"), &Edn::Number(1.0));
   assert_eq!(edn_map_field(&edn, "command"), &Edn::str("analyze.verify"));
   assert_eq!(edn_map_field(edn_map_field(&edn, "data"), "profile"), &Edn::str("release"));
@@ -173,6 +189,7 @@ fn invalid_profile_configuration_fails_before_checks_with_json_diagnostic() {
   assert!(!edn_output.status.success());
   let edn_text = String::from_utf8(edn_output.stdout).expect("EDN failure stdout should be UTF-8");
   let edn = cirru_edn::parse(&edn_text).expect("failure stdout should remain one Cirru EDN value");
+  assert_eq!(edn, json_envelope_as_edn(&value));
   assert_eq!(edn_map_field(edn_map_field(&edn, "data"), "status"), &Edn::str("failed"));
   let Edn::List(diagnostics) = edn_map_field(&edn, "diagnostics") else {
     panic!("EDN diagnostics should be a list");
