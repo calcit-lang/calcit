@@ -6,7 +6,7 @@ use std::process::Command;
 
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
-use calcit::cli_args::FixCommand;
+use calcit::cli_args::{DeprecatedCommand, FixCommand};
 use calcit::runner;
 use calcit::snapshot::Snapshot;
 use cirru_parser::Cirru;
@@ -16,11 +16,14 @@ use serde_json::Value;
 
 use super::common::{cirru_to_json_value, format_path};
 use super::edit::{load_snapshot, navigate_to_path, run_staged_fix_transaction, snapshot_content_revision};
+use crate::deprecated_api;
 
 const REMOVED_DATA_API_RULE: &str = "removed-data-api-v1";
 const REMOVED_DATA_API_DIAGNOSTIC: &str = "W_REMOVED_DATA_API";
 const REDUNDANT_DO_RULE: &str = "redundant-do-v1";
 const REDUNDANT_DO_DIAGNOSTIC: &str = "FIX_REDUNDANT_DO";
+const TAG_MATCH_RULE: &str = "tag-match-to-match-v1";
+const TAG_MATCH_DIAGNOSTIC: &str = "W_DEPRECATED_API";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum FixOperation {
@@ -106,6 +109,15 @@ pub(crate) fn handle_fix_command(
   let mut suggestions = Vec::new();
   if options.rule.as_deref().is_none_or(|rule| rule == REMOVED_DATA_API_RULE) {
     suggestions.extend(plan_removed_data_api_fixes(options, &source_snapshot, snapshot_file, &warnings)?);
+  }
+  if options.rule.as_deref().is_none_or(|rule| rule == TAG_MATCH_RULE) {
+    suggestions.extend(plan_tag_match_fixes(
+      options,
+      compiled_snapshot,
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+    )?);
   }
   if options.rule.as_deref().is_none_or(|rule| rule == REDUNDANT_DO_RULE) {
     suggestions.extend(plan_redundant_do_fixes(&source_snapshot, snapshot_file, &selected_definitions)?);
@@ -206,10 +218,10 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     return Err("`calcit fix --def` requires an exact `--ns` scope.".to_owned());
   }
   if let Some(rule) = options.rule.as_deref()
-    && !matches!(rule, REMOVED_DATA_API_RULE | REDUNDANT_DO_RULE)
+    && !matches!(rule, REMOVED_DATA_API_RULE | REDUNDANT_DO_RULE | TAG_MATCH_RULE)
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{TAG_MATCH_RULE}`."
     ));
   }
   Ok(())
@@ -372,6 +384,209 @@ fn plan_redundant_do_fixes(
     }
   }
   Ok(suggestions)
+}
+
+/// Rewrite source call heads proven to resolve to the deprecated core `tag-match` macro.
+fn plan_tag_match_fixes(
+  options: &FixCommand,
+  compiled_snapshot: &Snapshot,
+  source_snapshot: &Snapshot,
+  snapshot_file: &str,
+  selected_definitions: &[(String, String)],
+) -> Result<Vec<FixSuggestion>, String> {
+  let deprecated_options = DeprecatedCommand {
+    ns: options.ns.clone(),
+    ns_prefix: None,
+    format: "json".to_owned(),
+    deps: false,
+    summary_only: false,
+  };
+  let selected = selected_definitions.iter().cloned().collect::<HashSet<_>>();
+  let rows = deprecated_api::collect_deprecated_api_rows(&deprecated_options, compiled_snapshot)?;
+  let mut suggestions = BTreeMap::new();
+
+  for row in rows {
+    if !selected.contains(&(row.namespace.clone(), row.definition.clone())) {
+      continue;
+    }
+    let Some(entry) = source_snapshot
+      .files
+      .get(&row.namespace)
+      .and_then(|file| file.defs.get(&row.definition))
+    else {
+      continue;
+    };
+    for usage in row.uses {
+      if usage.target_namespace != calcit::calcit::CORE_NS || usage.target_name != "tag-match" {
+        continue;
+      }
+      let Some(call_path) = parse_code_path(&usage.path) else {
+        continue;
+      };
+      if !source_path_is_runtime_expression(&entry.code, &call_path) {
+        continue;
+      }
+      let Ok(Cirru::List(call)) = navigate_to_path(&entry.code, &call_path) else {
+        continue;
+      };
+      if call.len() < 3 {
+        continue;
+      }
+      let Some(Cirru::Leaf(original)) = call.first() else {
+        continue;
+      };
+      if source_call_is_lexically_shadowed(&entry.code, &call_path, original.as_ref()) {
+        continue;
+      }
+      let mut target_path = call_path;
+      target_path.push(0);
+      let original_leaf = original.to_string();
+      let original_node = Cirru::leaf(original_leaf.as_str());
+      let replacement_node = Cirru::leaf("match");
+      let suggestion = FixSuggestion {
+        rule_id: TAG_MATCH_RULE,
+        diagnostic_code: TAG_MATCH_DIAGNOSTIC,
+        semantic_layer: "surface",
+        source_file: snapshot_file.to_owned(),
+        definition: format!("{}/{}", row.namespace, row.definition),
+        path: format!("code{}", format_path(&target_path)),
+        fingerprint: node_fingerprint(&original_node),
+        origin_chain: vec![serde_json::json!({
+          "kind": "resolved-definition",
+          "target": "calcit.core/tag-match",
+        })],
+        original: quoted_json(&original_node),
+        replacement: Some(quoted_json(&replacement_node)),
+        applicability: "machine-applicable",
+        message: "Replace the call resolved to deprecated `calcit.core/tag-match` with native `match`; the branch AST and evaluation order are unchanged. Run affected Calcit tests and a generated-JS build after applying."
+          .to_owned(),
+        target_path: target_path.clone(),
+        operation: Some(FixOperation::ReplaceLeaf {
+          original: original_leaf,
+          replacement: "match".to_owned(),
+        }),
+      };
+      insert_fix_suggestion(
+        &mut suggestions,
+        (row.namespace.clone(), row.definition.clone(), target_path),
+        suggestion,
+      )?;
+    }
+  }
+
+  Ok(suggestions.into_values().collect())
+}
+
+/// Parse the stable `code@0.1` path emitted by deprecated API analysis.
+fn parse_code_path(path: &str) -> Option<Vec<usize>> {
+  if path == "code" {
+    return Some(vec![]);
+  }
+  path
+    .strip_prefix("code@")?
+    .split('.')
+    .map(|segment| segment.parse::<usize>().ok())
+    .collect()
+}
+
+/// Keep fixes out of parameter patterns and quoted syntax while allowing evaluated binding values.
+fn source_path_is_runtime_expression(root: &Cirru, path: &[usize]) -> bool {
+  let mut node = root;
+  for (depth, child_index) in path.iter().copied().enumerate() {
+    let Cirru::List(items) = node else {
+      return false;
+    };
+    let head = items.first().and_then(|item| match item {
+      Cirru::Leaf(value) => Some(value.as_ref()),
+      Cirru::List(_) => None,
+    });
+    match head {
+      Some("quote" | "quasiquote") if child_index >= 1 => return false,
+      Some("defn" | "defmacro") if child_index <= 2 => return false,
+      Some("fn") if child_index <= 1 => return false,
+      Some("let" | "loop") if child_index == 1 => {
+        let remaining = &path[depth + 1..];
+        if remaining.len() < 2 || remaining[1] == 0 {
+          return false;
+        }
+      }
+      Some("&let") if child_index == 1 => {
+        let remaining = &path[depth + 1..];
+        if remaining.first() != Some(&1) {
+          return false;
+        }
+      }
+      _ => {}
+    }
+    let Some(child) = items.get(child_index) else {
+      return false;
+    };
+    node = child;
+  }
+  true
+}
+
+/// Reject analyzer hits whose unqualified source head is bound by an enclosing lexical form.
+fn source_call_is_lexically_shadowed(root: &Cirru, call_path: &[usize], symbol: &str) -> bool {
+  if symbol.contains('/') {
+    return false;
+  }
+  let mut node = root;
+  for (depth, child_index) in call_path.iter().copied().enumerate() {
+    let Cirru::List(items) = node else {
+      return false;
+    };
+    let remaining = &call_path[depth + 1..];
+    if lexical_form_binds(items, child_index, remaining, symbol) {
+      return true;
+    }
+    let Some(child) = items.get(child_index) else {
+      return false;
+    };
+    node = child;
+  }
+  false
+}
+
+fn lexical_form_binds(items: &[Cirru], child_index: usize, remaining: &[usize], symbol: &str) -> bool {
+  let Some(Cirru::Leaf(head)) = items.first() else {
+    return false;
+  };
+  match head.as_ref() {
+    "defn" | "defmacro" if child_index >= 3 => items.get(2).is_some_and(|params| pattern_binds(params, symbol)),
+    "fn" if child_index >= 2 => items.get(1).is_some_and(|params| pattern_binds(params, symbol)),
+    "let" | "loop" => {
+      let Some(Cirru::List(bindings)) = items.get(1) else {
+        return false;
+      };
+      if child_index >= 2 {
+        return bindings.iter().any(|binding| binding_name_matches(binding, symbol));
+      }
+      if child_index != 1 || remaining.len() < 2 || remaining[1] == 0 {
+        return false;
+      }
+      bindings
+        .iter()
+        .take(remaining[0])
+        .any(|binding| binding_name_matches(binding, symbol))
+    }
+    "&let" if child_index >= 2 => items.get(1).is_some_and(|binding| binding_name_matches(binding, symbol)),
+    _ => false,
+  }
+}
+
+fn binding_name_matches(binding: &Cirru, symbol: &str) -> bool {
+  let Cirru::List(pair) = binding else {
+    return false;
+  };
+  pair.first().is_some_and(|pattern| pattern_binds(pattern, symbol))
+}
+
+fn pattern_binds(pattern: &Cirru, symbol: &str) -> bool {
+  match pattern {
+    Cirru::Leaf(value) => value.as_ref() == symbol,
+    Cirru::List(items) => items.iter().any(|item| pattern_binds(item, symbol)),
+  }
 }
 
 /// Collect source paths in evaluation order while treating quoted trees as data.
@@ -579,7 +794,7 @@ fn print_human_report(report: &FixReport<'_>) {
 mod tests {
   use super::{
     FixOperation, FixSuggestion, collect_redundant_do_paths, insert_fix_suggestion, migration_for_source_leaf, resolve_fix_target,
-    suggestion_operations,
+    source_call_is_lexically_shadowed, source_path_is_runtime_expression, suggestion_operations,
   };
   use cirru_parser::Cirru;
   use serde_json::Value;
@@ -610,6 +825,46 @@ mod tests {
     let code = Cirru::List(vec![leaf("do"), Cirru::List(vec![leaf("tuple-enum"), leaf("value")])]);
     assert_eq!(resolve_fix_target(&code, &[1]), Some((vec![1, 0], "tuple-enum".to_owned())));
     assert_eq!(resolve_fix_target(&code, &[1, 0]), Some((vec![1, 0], "tuple-enum".to_owned())));
+  }
+
+  #[test]
+  fn source_guards_reject_parameters_quoted_data_and_lexical_shadows() {
+    let parameter_shadow = Cirru::List(vec![
+      leaf("defn"),
+      leaf("demo"),
+      Cirru::List(vec![leaf("tag-match"), leaf("value")]),
+      Cirru::List(vec![leaf("tag-match"), leaf("value"), leaf("branch")]),
+    ]);
+    assert!(!source_path_is_runtime_expression(&parameter_shadow, &[2]));
+    assert!(source_path_is_runtime_expression(&parameter_shadow, &[3]));
+    assert!(source_call_is_lexically_shadowed(&parameter_shadow, &[3], "tag-match"));
+
+    let quoted = Cirru::List(vec![
+      leaf("defn"),
+      leaf("demo"),
+      Cirru::List(vec![]),
+      Cirru::List(vec![
+        leaf("quote"),
+        Cirru::List(vec![leaf("tag-match"), leaf("value"), leaf("branch")]),
+      ]),
+    ]);
+    assert!(!source_path_is_runtime_expression(&quoted, &[3, 1]));
+
+    let let_shadow = Cirru::List(vec![
+      leaf("let"),
+      Cirru::List(vec![Cirru::List(vec![leaf("tag-match"), leaf("callback")])]),
+      Cirru::List(vec![leaf("tag-match"), leaf("value"), leaf("branch")]),
+    ]);
+    assert!(source_call_is_lexically_shadowed(&let_shadow, &[2], "tag-match"));
+
+    let internal_let_shadow = Cirru::List(vec![
+      leaf("&let"),
+      Cirru::List(vec![leaf("tag-match"), leaf("callback")]),
+      Cirru::List(vec![leaf("tag-match"), leaf("value"), leaf("branch")]),
+    ]);
+    assert!(!source_path_is_runtime_expression(&internal_let_shadow, &[1, 0]));
+    assert!(source_path_is_runtime_expression(&internal_let_shadow, &[1, 1]));
+    assert!(source_call_is_lexically_shadowed(&internal_let_shadow, &[2], "tag-match"));
   }
 
   #[test]

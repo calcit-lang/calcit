@@ -213,6 +213,8 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 `defn`/`fn`/`let` body 本身可以顺序包含多个表达式，返回类型来自最后一项；不要为了类型推断再包一层 `do`。
 只有 `if` 分支、调用参数、binding value 等单表达式位置需要用 `do` 把多个步骤组成一个表达式。清理由
 `calcit fix --rule redundant-do-v1` 完成，不要手工批量改缩进；它会跳过 `defmacro` 与 quote/quasiquote，并用 staged preprocess 验证 splice 后的 scope。
+旧代码中的 `tag-match` 使用 `calcit fix --rule tag-match-to-match-v1` 迁移；只有名称解析确定指向 core deprecated macro
+的 source call 才会改为原生 `match`，本地 shadow、quoted data 和不明确的 macro origin 会保持不变。
 
 同一个 Snapshot 的写命令必须串行执行，包括 `config`、`edit`、`tree` 和 cursor mutation；两个进程同时读取再保存会发生最后写入覆盖。需要并行时使用独立 Snapshot/worktree，需要同一文件内的原子多步修改时使用 transaction 和 `--expect-revision`。
 
