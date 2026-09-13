@@ -373,6 +373,7 @@ fn repository_sample_docs_form_a_navigable_learning_chain() {
     "docs/run.md",
     "docs/run/query.md",
     "docs/run/edit-tree.md",
+    "docs/run/workflow-entrypoints.md",
   ];
 
   let mut metadata = Vec::new();
@@ -399,6 +400,7 @@ fn repository_sample_docs_form_a_navigable_learning_chain() {
   assert!(find("core/run/query").unwrap().leads_to.contains(&"core/run/edit-tree".to_string()));
   assert_eq!(find("core/run/query").unwrap().parent.as_deref(), Some("core/run"));
   assert_eq!(find("core/run/edit-tree").unwrap().requires, vec!["core/run/query"]);
+  assert_eq!(find("core/run/workflow-entrypoints").unwrap().parent.as_deref(), Some("core/run"));
 
   let list_content = fs::read_to_string(root.join("docs/features/list.md")).expect("list doc should be readable");
   let (list_frontmatter, _) = parse_doc_frontmatter(&list_content);

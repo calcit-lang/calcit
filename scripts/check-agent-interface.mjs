@@ -386,10 +386,16 @@ const scenarios = [
         throw new Error("unexpected fix preview envelope");
       }
       const suggestion = result.data.suggestions[0];
+      const rule = result.data.filters.expanded_rules?.[0];
       if (
         result.data.changed !== true ||
         suggestion?.rule_id !== "removed-data-api-v1" ||
-        suggestion?.diagnostic_code !== "W_REMOVED_DATA_API"
+        suggestion?.diagnostic_code !== "W_REMOVED_DATA_API" ||
+        rule?.rule_id !== "removed-data-api-v1" ||
+        rule?.diagnostic_code !== "W_REMOVED_DATA_API" ||
+        rule?.evidence_source !== "current-diagnostic" ||
+        rule?.lifecycle !== "current-semantics" ||
+        rule?.source_version_required !== false
       ) {
         throw new Error("fix preview lost compiler evidence or deterministic rule identity");
       }

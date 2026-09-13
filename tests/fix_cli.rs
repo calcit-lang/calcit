@@ -261,6 +261,18 @@ fn surface_latest_preset_migrates_named_enum_and_struct_constructors() {
   let report = parse_stdout(&enum_preview);
   assert_eq!(report["data"]["filters"]["preset_id"], "surface-latest-v1");
   assert_eq!(report["data"]["filters"]["expanded_rule_ids"].as_array().map(Vec::len), Some(4));
+  assert_eq!(report["data"]["filters"]["expanded_rules"].as_array().map(Vec::len), Some(4));
+  assert!(
+    report["data"]["filters"]["expanded_rules"]
+      .as_array()
+      .expect("expanded rule metadata should be an array")
+      .iter()
+      .all(|rule| rule["lifecycle"] == "current-semantics" && rule["source_version_required"] == false)
+  );
+  assert_eq!(
+    report["data"]["filters"]["expanded_rules"][0]["evidence_source"],
+    "current-diagnostic"
+  );
   assert_eq!(report["data"]["suggestions"][0]["rule_id"], "named-enum-constructor-v1");
 
   let enum_applied = run_fix(
