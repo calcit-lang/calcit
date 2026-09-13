@@ -270,6 +270,67 @@ pub struct SnapshotEntry {
   pub target: Option<SnapshotTarget>,
 }
 
+pub const VERIFICATION_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum VerificationCheckKind {
+  Strict,
+  DynamicMethods,
+  Quality,
+}
+
+impl VerificationCheckKind {
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Strict => "strict",
+      Self::DynamicMethods => "dynamic-methods",
+      Self::Quality => "quality",
+    }
+  }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VerificationFailurePolicy {
+  #[default]
+  Stop,
+  Continue,
+}
+
+impl VerificationFailurePolicy {
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Stop => "stop",
+      Self::Continue => "continue",
+    }
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerificationProfile {
+  pub entries: Vec<String>,
+  pub checks: Vec<VerificationCheckKind>,
+  #[serde(default, rename = "on-failure")]
+  pub on_failure: VerificationFailurePolicy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerificationConfig {
+  #[serde(rename = "schema-version")]
+  pub schema_version: u32,
+  pub profiles: HashMap<String, VerificationProfile>,
+}
+
+impl Default for VerificationConfig {
+  fn default() -> Self {
+    Self {
+      schema_version: VERIFICATION_SCHEMA_VERSION,
+      profiles: HashMap::new(),
+    }
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NsEntry {
   pub doc: String,
@@ -320,6 +381,8 @@ struct RawSnapshot {
   pub version: String,
   pub entries: HashMap<String, SnapshotEntry>,
   pub files: HashMap<String, RawFileInSnapShot>,
+  #[serde(default)]
+  pub verification: VerificationConfig,
 }
 
 impl RawCodeEntry {
@@ -373,6 +436,7 @@ pub fn decode_binary_snapshot(bytes: &[u8]) -> Result<Snapshot, String> {
     about: raw.about,
     version: raw.version,
     entries: raw.entries,
+    verification: raw.verification,
     files,
     active_entry: default_active_entry(),
   })
@@ -1964,6 +2028,8 @@ pub struct Snapshot {
   pub version: String,
   pub entries: HashMap<String, SnapshotEntry>,
   pub files: HashMap<String, FileInSnapShot>,
+  #[serde(default)]
+  pub verification: VerificationConfig,
   #[serde(skip, default = "default_active_entry")]
   #[doc(hidden)]
   pub active_entry: String,
@@ -2245,6 +2311,153 @@ fn parse_entries_with_context(data: &Edn, require_mode: bool) -> Result<HashMap<
   Ok(entries)
 }
 
+fn parse_verification_name(value: &Edn, owner: &str) -> Result<String, String> {
+  let name = match value {
+    Edn::Tag(tag) => tag.ref_str().to_owned(),
+    Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':').to_owned(),
+    _ => {
+      return Err(format!(
+        "{owner}: expected a tag, string, or symbol; got {}",
+        format_edn_preview(value)
+      ));
+    }
+  };
+  if name.is_empty() {
+    Err(format!("{owner}: name cannot be empty"))
+  } else {
+    Ok(name)
+  }
+}
+
+fn reject_unknown_verification_fields(map: &EdnMapView, owner: &str, allowed: &[&str]) -> Result<(), String> {
+  for key in map.0.keys() {
+    let name = parse_verification_name(key, owner)?;
+    if !allowed.contains(&name.as_str()) {
+      return Err(format!("{owner}: unknown field `:{name}`"));
+    }
+  }
+  Ok(())
+}
+
+fn parse_verification(data: &Edn, entries: &HashMap<String, SnapshotEntry>) -> Result<VerificationConfig, String> {
+  if matches!(data, Edn::Nil) {
+    return Ok(VerificationConfig::default());
+  }
+  let map = data
+    .view_map()
+    .map_err(|e| format!("verification: expected a map: {e}; got {}", format_edn_preview(data)))?;
+  reject_unknown_verification_fields(&map, "verification", &["schema-version", "profiles"])?;
+  let raw_version = map
+    .get(&Edn::tag("schema-version"))
+    .ok_or_else(|| "verification: missing `:schema-version` field".to_owned())?;
+  let schema_version = match raw_version {
+    Edn::Number(value) if *value == VERIFICATION_SCHEMA_VERSION as f64 => VERIFICATION_SCHEMA_VERSION,
+    Edn::Number(value) => {
+      return Err(format!(
+        "verification.schema-version: unsupported version {value}; expected {VERIFICATION_SCHEMA_VERSION}"
+      ));
+    }
+    _ => {
+      return Err(format!(
+        "verification.schema-version: expected number {VERIFICATION_SCHEMA_VERSION}; got {}",
+        format_edn_preview(raw_version)
+      ));
+    }
+  };
+  let raw_profiles = map
+    .get(&Edn::tag("profiles"))
+    .ok_or_else(|| "verification: missing `:profiles` field".to_owned())?;
+  let profiles_map = raw_profiles.view_map().map_err(|e| {
+    format!(
+      "verification.profiles: expected a map: {e}; got {}",
+      format_edn_preview(raw_profiles)
+    )
+  })?;
+  let mut profiles = HashMap::with_capacity(profiles_map.0.len());
+  for (raw_name, raw_profile) in &profiles_map.0 {
+    let name = parse_verification_name(raw_name, "verification.profiles")?;
+    let owner = format!("verification.profiles.{name}");
+    let profile_map = raw_profile
+      .view_map()
+      .map_err(|e| format!("{owner}: expected a map: {e}; got {}", format_edn_preview(raw_profile)))?;
+    reject_unknown_verification_fields(&profile_map, &owner, &["entries", "checks", "on-failure"])?;
+    let raw_entries = profile_map
+      .get(&Edn::tag("entries"))
+      .ok_or_else(|| format!("{owner}: missing `:entries` field"))?;
+    let entry_list = raw_entries
+      .view_list()
+      .map_err(|e| format!("{owner}.entries: expected a list: {e}; got {}", format_edn_preview(raw_entries)))?;
+    let mut selected_entries = Vec::with_capacity(entry_list.0.len());
+    let mut seen_entries = HashSet::new();
+    for raw_entry in &entry_list.0 {
+      let entry = parse_verification_name(raw_entry, &format!("{owner}.entries"))?;
+      if !entries.contains_key(&entry) {
+        return Err(format!("{owner}.entries: unknown entry `{entry}`"));
+      }
+      if !seen_entries.insert(entry.clone()) {
+        return Err(format!("{owner}.entries: duplicate entry `{entry}`"));
+      }
+      selected_entries.push(entry);
+    }
+    if selected_entries.is_empty() {
+      return Err(format!("{owner}.entries: at least one entry is required"));
+    }
+
+    let raw_checks = profile_map
+      .get(&Edn::tag("checks"))
+      .ok_or_else(|| format!("{owner}: missing `:checks` field"))?;
+    let check_list = raw_checks
+      .view_list()
+      .map_err(|e| format!("{owner}.checks: expected a list: {e}; got {}", format_edn_preview(raw_checks)))?;
+    let mut checks = Vec::with_capacity(check_list.0.len());
+    let mut seen_checks = HashSet::new();
+    for raw_check in &check_list.0 {
+      let check_name = parse_verification_name(raw_check, &format!("{owner}.checks"))?;
+      let check = match check_name.as_str() {
+        "strict" => VerificationCheckKind::Strict,
+        "dynamic-methods" => VerificationCheckKind::DynamicMethods,
+        "quality" => VerificationCheckKind::Quality,
+        _ => {
+          return Err(format!(
+            "{owner}.checks: unknown check `{check_name}`; expected strict, dynamic-methods, or quality"
+          ));
+        }
+      };
+      if !seen_checks.insert(check) {
+        return Err(format!("{owner}.checks: duplicate check `{check_name}`"));
+      }
+      checks.push(check);
+    }
+    if checks.is_empty() {
+      return Err(format!("{owner}.checks: at least one check is required"));
+    }
+
+    let on_failure = match profile_map.get(&Edn::tag("on-failure")) {
+      None => VerificationFailurePolicy::Stop,
+      Some(raw_policy) => match parse_verification_name(raw_policy, &format!("{owner}.on-failure"))?.as_str() {
+        "stop" => VerificationFailurePolicy::Stop,
+        "continue" => VerificationFailurePolicy::Continue,
+        policy => return Err(format!("{owner}.on-failure: unknown policy `{policy}`; expected stop or continue")),
+      },
+    };
+    if profiles
+      .insert(
+        name.clone(),
+        VerificationProfile {
+          entries: selected_entries,
+          checks,
+          on_failure,
+        },
+      )
+      .is_some()
+    {
+      return Err(format!("verification.profiles: duplicate profile `{name}`"));
+    }
+  }
+
+  Ok(VerificationConfig { schema_version, profiles })
+}
+
 fn legacy_snapshot_recovery_hint(path: &str) -> Option<String> {
   let snapshot_path = Path::new(path);
   let compact_path = snapshot_path.parent()?.join("compact.cirru");
@@ -2354,6 +2567,7 @@ fn load_snapshot_data_for_format_inner(data: &Edn, path: &str) -> Result<(Snapsh
     Some(_) => parse_snapshot_config_string_field(&data, "version", "snapshot")?,
     None => legacy_version.unwrap_or_else(default_version),
   };
+  let verification = parse_verification(&data.get_or_nil("verification"), &entries)?;
 
   Ok((
     Snapshot {
@@ -2361,6 +2575,7 @@ fn load_snapshot_data_for_format_inner(data: &Edn, path: &str) -> Result<(Snapsh
       about,
       version,
       entries,
+      verification,
       files,
       active_entry: default_active_entry(),
     },
@@ -2415,6 +2630,7 @@ fn load_snapshot_data_inner(data: &Edn, path: &str) -> Result<Snapshot, String> 
   let meta_ns = format!("{pkg}.$meta");
   files.insert(meta_ns.to_owned(), gen_meta_ns(&meta_ns, path));
   let entries = parse_entries_with_context(&data.get_or_nil("entries"), true)?;
+  let verification = parse_verification(&data.get_or_nil("verification"), &entries)?;
   let version = match data.get(&Edn::tag("version")) {
     Some(_) => parse_snapshot_config_string_field(&data, "version", "snapshot")?,
     None => default_version(),
@@ -2429,6 +2645,7 @@ fn load_snapshot_data_inner(data: &Edn, path: &str) -> Result<Snapshot, String> 
     about,
     version,
     entries,
+    verification,
     files,
     active_entry: default_active_entry(),
   };
@@ -2673,6 +2890,7 @@ impl Default for Snapshot {
       about: Some(SNAPSHOT_ABOUT_MESSAGE.to_string()),
       version: default_version(),
       entries: HashMap::from([(DEFAULT_ENTRY_NAME.to_owned(), default_entry)]),
+      verification: VerificationConfig::default(),
       files: HashMap::new(),
       active_entry: default_active_entry(),
     }
@@ -3122,6 +3340,28 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
   }
   edn_map.insert_key("entries", entries_map.into());
 
+  if !snapshot.verification.profiles.is_empty() {
+    let mut profiles_map = EdnMapView::default();
+    for (name, profile) in &snapshot.verification.profiles {
+      let mut profile_map = EdnMapView::default();
+      profile_map.insert_key(
+        "entries",
+        Edn::from(profile.entries.iter().map(|entry| Edn::tag(entry.as_str())).collect::<Vec<_>>()),
+      );
+      profile_map.insert_key(
+        "checks",
+        Edn::from(profile.checks.iter().map(|check| Edn::tag(check.as_str())).collect::<Vec<_>>()),
+      );
+      profile_map.insert_key("on-failure", Edn::tag(profile.on_failure.as_str()));
+      profiles_map.insert_key(name.as_str(), profile_map.into());
+    }
+    let verification = Edn::map_from_iter([
+      (Edn::tag("schema-version"), Edn::from(snapshot.verification.schema_version)),
+      (Edn::tag("profiles"), profiles_map.into()),
+    ]);
+    edn_map.insert_key("verification", verification);
+  }
+
   // Build files
   let mut files_map = EdnMapView::default();
   for (k, v) in &snapshot.files {
@@ -3182,6 +3422,28 @@ mod tests {
       .into_iter()
       .next()
       .expect("test Cirru should contain one expression")
+  }
+
+  #[test]
+  fn verification_profiles_round_trip_with_declared_order() {
+    let content = fs::read_to_string("calcit/add.cirru").expect("fixture should load");
+    let data = cirru_edn::parse(&content).expect("fixture should parse");
+    let mut snapshot = load_snapshot_data(&data, "calcit/add.cirru").expect("fixture snapshot should load");
+    snapshot.verification.profiles.insert(
+      "release".to_owned(),
+      VerificationProfile {
+        entries: vec!["default".to_owned()],
+        checks: vec![VerificationCheckKind::Strict, VerificationCheckKind::DynamicMethods],
+        on_failure: VerificationFailurePolicy::Continue,
+      },
+    );
+
+    let rendered = render_snapshot_content(&snapshot).expect("verification profile should render");
+    assert!(rendered.contains(":verification"));
+    assert!(rendered.contains(":schema-version 1"));
+    let parsed = cirru_edn::parse(&rendered).expect("rendered snapshot should parse");
+    let restored = load_snapshot_data(&parsed, "calcit/add.cirru").expect("rendered snapshot should load");
+    assert_eq!(restored.verification, snapshot.verification);
   }
 
   #[test]

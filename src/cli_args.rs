@@ -314,7 +314,7 @@ pub struct ExecCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "analyze")]
-/// analyze code structure and helpers (call-graph, check-public, check-types, weak-types, dynamic-methods, deprecated, quality, js-escape)
+/// analyze code structure and helpers (call-graph, check-public, check-types, verify, weak-types, dynamic-methods, deprecated, quality, js-escape)
 pub struct AnalyzeCommand {
   #[argh(subcommand)]
   pub subcommand: AnalyzeSubcommand,
@@ -345,12 +345,26 @@ pub enum AnalyzeSubcommand {
   Deprecated(DeprecatedCommand),
   /// enforce type coverage, weak-type, and deprecated API quality budgets
   Quality(QualityCommand),
+  /// run a declarative project verification profile
+  Verify(VerifyCommand),
   /// decompose entry into State / Transform / Effect graph
   EffectsGraph(EffectsGraphCommand),
   /// escape a Calcit symbol into JavaScript-safe identifier form
   JsEscape(JsEscapeCommand),
   /// decode escaped JavaScript identifier back to Calcit symbol (best-effort)
   JsUnescape(JsUnescapeCommand),
+}
+
+/// run a declarative project verification profile
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "verify")]
+pub struct VerifyCommand {
+  /// profile name from snapshot :verification.profiles
+  #[argh(option)]
+  pub profile: String,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
 }
 
 /// preprocess every definition in selected public namespaces for the active entry target

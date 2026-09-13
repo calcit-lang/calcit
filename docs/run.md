@@ -48,6 +48,7 @@ calcit js
 - [Run in Eval mode](./run/eval.md)
 - [CLI Options](./run/cli-options.md)
 - [CLI 工作流入口收敛](./run/workflow-entrypoints.md)
+- [声明式验证 Profile](./run/verification-profiles.md)
 - [Development Debugging](./run/debugging.md)
 - [Querying definitions](./run/query.md)
 - [Documentation & Libraries](./run/docs-libs.md)

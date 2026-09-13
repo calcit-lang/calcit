@@ -55,6 +55,16 @@ struct ConfigShowJson {
   version: Option<String>,
   selected_entry: Option<String>,
   entries: Vec<EntryConfigJson>,
+  verification_schema_version: u32,
+  verification_profiles: Vec<VerificationProfileJson>,
+}
+
+#[derive(Debug, Serialize)]
+struct VerificationProfileJson {
+  name: String,
+  entries: Vec<String>,
+  checks: Vec<&'static str>,
+  on_failure: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -131,11 +141,27 @@ fn config_show_json(
       Ok(entry_config_json(name, entry))
     })
     .collect::<Result<Vec<_>, String>>()?;
+  let mut profile_names = snapshot.verification.profiles.keys().cloned().collect::<Vec<_>>();
+  profile_names.sort();
+  let verification_profiles = profile_names
+    .into_iter()
+    .map(|name| {
+      let profile = &snapshot.verification.profiles[&name];
+      VerificationProfileJson {
+        name,
+        entries: profile.entries.clone(),
+        checks: profile.checks.iter().map(|check| check.as_str()).collect(),
+        on_failure: profile.on_failure.as_str(),
+      }
+    })
+    .collect();
   Ok(ConfigShowJson {
     package: snapshot.package.clone(),
     version,
     selected_entry: selected_entry.map(str::to_owned),
     entries,
+    verification_schema_version: snapshot.verification.schema_version,
+    verification_profiles,
   })
 }
 
@@ -325,6 +351,22 @@ fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String>
     println!("    {}: {:?}", "modules".cyan(), entry.modules);
     println!("    {}: {}", "type_slots".cyan(), format_type_slots(&entry.type_slots));
     println!("    {}: {}", "feature_policy".cyan(), format_feature_policy(&entry.feature_policy));
+  }
+
+  println!("\n{}", "Verification Profiles:".bold());
+  if snapshot.verification.profiles.is_empty() {
+    println!("  {}", "(none)".dimmed());
+  } else {
+    let mut profile_names = snapshot.verification.profiles.keys().collect::<Vec<_>>();
+    profile_names.sort();
+    for name in profile_names {
+      let profile = &snapshot.verification.profiles[name];
+      let checks = profile.checks.iter().map(|check| check.as_str()).collect::<Vec<_>>().join(", ");
+      println!("  {}", name.cyan());
+      println!("    {}: {:?}", "entries".cyan(), profile.entries);
+      println!("    {}: [{}]", "checks".cyan(), checks);
+      println!("    {}: {}", "on_failure".cyan(), profile.on_failure.as_str());
+    }
   }
 
   Ok(())
@@ -911,6 +953,7 @@ mod tests {
         ("default".to_owned(), make_entry(Some(snapshot::SnapshotTarget::Native))),
         ("alpha".to_owned(), make_entry(Some(snapshot::SnapshotTarget::Browser))),
       ]),
+      verification: snapshot::VerificationConfig::default(),
       files: HashMap::new(),
       active_entry: snapshot::DEFAULT_ENTRY_NAME.to_owned(),
     };

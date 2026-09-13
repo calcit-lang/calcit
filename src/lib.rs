@@ -306,6 +306,7 @@ fn load_module_recursive(
         about: None,
         version: String::new(),
         entries: HashMap::new(),
+        verification: snapshot::VerificationConfig::default(),
         files: HashMap::new(),
         active_entry: snapshot::DEFAULT_ENTRY_NAME.to_owned(),
       });

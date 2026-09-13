@@ -1273,6 +1273,7 @@ mod tests {
       about: None,
       version: "0.1.0".to_owned(),
       entries: HashMap::new(),
+      verification: crate::snapshot::VerificationConfig::default(),
       files: HashMap::from([(
         "test.ffi".to_owned(),
         FileInSnapShot {
@@ -1634,6 +1635,7 @@ mod tests {
       about: None,
       version: "0.1.0".to_owned(),
       entries: HashMap::new(),
+      verification: crate::snapshot::VerificationConfig::default(),
       files: HashMap::from([
         (
           "alpha.ffi".to_owned(),

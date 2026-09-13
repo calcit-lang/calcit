@@ -12,6 +12,7 @@ use std::time::Instant;
 mod injection;
 
 mod cli_handlers;
+mod verification;
 
 #[path = "../deprecated_api.rs"]
 mod deprecated_api;
@@ -428,6 +429,9 @@ fn run_cli() -> Result<(), String> {
         let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
         return run_quality(options, &snapshot);
       }
+      AnalyzeSubcommand::Verify(options) => {
+        return verification::run(options, &cli_args.input, strict_type_policy.diagnostics);
+      }
       _ => {}
     },
     _ => {}
@@ -689,6 +693,7 @@ fn run_cli() -> Result<(), String> {
       AnalyzeSubcommand::DynamicMethods(options) => run_dynamic_methods(options, &entries, &snapshot, &project_namespaces),
       AnalyzeSubcommand::Deprecated(deprecated_options) => run_deprecated(deprecated_options, &snapshot),
       AnalyzeSubcommand::Quality(quality_options) => run_quality(quality_options, &snapshot),
+      AnalyzeSubcommand::Verify(options) => verification::run(options, &cli_args.input, strict_type_policy.diagnostics),
       AnalyzeSubcommand::EffectsGraph(effects_graph_options) => run_effects_graph(&entries, effects_graph_options),
       AnalyzeSubcommand::JsEscape(options) => run_js_escape(&options.symbol),
       AnalyzeSubcommand::JsUnescape(options) => run_js_unescape(&options.symbol),

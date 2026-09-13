@@ -105,6 +105,24 @@ pub struct Snapshot {
   pub version: String,
   pub entries: HashMap<String, SnapshotEntry>,
   pub files: HashMap<String, FileInSnapShot>,
+  #[serde(default)]
+  pub verification: VerificationConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerificationConfig {
+  #[serde(rename = "schema-version")]
+  pub schema_version: u32,
+  pub profiles: HashMap<String, Edn>,
+}
+
+impl Default for VerificationConfig {
+  fn default() -> Self {
+    Self {
+      schema_version: 1,
+      profiles: HashMap::new(),
+    }
+  }
 }
 
 fn parse_snapshot_identifier_key(value: &Edn, owner: &str) -> Result<String, String> {
@@ -621,6 +639,7 @@ fn main() {
     version,
     entries,
     files,
+    verification: VerificationConfig::default(),
   };
 
   let mut buf = Vec::new();
