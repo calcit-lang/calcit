@@ -51,6 +51,7 @@ use super::cursor::{
   resolve_cursor_path_argument, resolve_cursor_target_argument,
 };
 use super::handle_scaffold_command;
+use super::structured_output::{StructuredOutputFormat, format_json_value_as_edn};
 use super::tips::{Tips, command_guidance_enabled};
 use super::tree_mutation::{TreeCursorMutation, TreeOperation, adjusted_source_path_after_insertion, path_is_strict_descendant};
 
@@ -765,9 +766,7 @@ fn validate_staged_fix(stage_path: &Path, validation_args: &[String]) -> Result<
 }
 
 fn handle_transaction(opts: &EditTransactionCommand, snapshot_file: &str) -> Result<(), String> {
-  if !matches!(opts.format.as_str(), "human" | "json") {
-    return Err(format!("Unsupported transaction format '{}'. Expected human or json.", opts.format));
-  }
+  let output_format = StructuredOutputFormat::parse(&opts.format, "transaction")?;
   let raw = read_code_input(&opts.file, &opts.code)?.ok_or(
     "Transaction input required: use --file, --code, or pipe a Cirru EDN list of argument lists via stdin (JSON is also accepted)",
   )?;
@@ -780,18 +779,28 @@ fn handle_transaction(opts: &EditTransactionCommand, snapshot_file: &str) -> Res
     run_transaction_child,
   )?;
 
-  if opts.format == "json" {
-    println!(
+  match output_format {
+    StructuredOutputFormat::Json => println!(
       "{}",
       serde_json::to_string(&report).map_err(|error| format!("Failed to serialize transaction result: {error}"))?
-    );
-  } else {
-    let action = if opts.dry_run { "Validated" } else { "Applied" };
-    println!("{} {action} {} transaction operation(s)", "✓".green(), report.operations.len());
-    println!("  revision: {} -> {}", report.original_revision, report.new_revision);
-    println!("  changed: {}", report.changed);
-    for operation in &report.operations {
-      println!("  {}. {}", operation.index + 1, operation.args.join(" "));
+    ),
+    StructuredOutputFormat::Edn => {
+      let value = serde_json::to_value(&report).map_err(|error| format!("Failed to encode transaction result: {error}"))?;
+      println!("{}", format_json_value_as_edn(&value)?);
+    }
+    StructuredOutputFormat::Human => {
+      println!("# Edit transaction\n");
+      println!("- mode: `{}`", if opts.dry_run { "preview" } else { "apply" });
+      println!("- original revision: `{}`", report.original_revision);
+      println!("- new revision: `{}`", report.new_revision);
+      println!("- changed: `{}`", report.changed);
+      println!("- operations: `{}`", report.operations.len());
+      for operation in &report.operations {
+        println!("\n## Operation {}\n", operation.index + 1);
+        println!("```text");
+        println!("{}", operation.args.join(" "));
+        println!("```");
+      }
     }
   }
   Ok(())

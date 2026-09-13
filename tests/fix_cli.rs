@@ -33,6 +33,7 @@ impl Drop for TestDirectory {
 
 fn run_fix(snapshot: &Path, args: &[&str]) -> Output {
   Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
     .arg("--tips-level")
     .arg("none")
     .arg(snapshot)
@@ -44,6 +45,7 @@ fn run_fix(snapshot: &Path, args: &[&str]) -> Output {
 
 fn run_calcit(snapshot: &Path, args: &[&str]) -> Output {
   Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
     .arg("--tips-level")
     .arg("none")
     .arg(snapshot)
@@ -68,6 +70,24 @@ fn fix_preview_apply_and_repeat_are_revision_safe() {
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
   let original = fs::read(&snapshot).expect("fixture should read");
+
+  let human = run_fix(&snapshot, &["--ns", "fix-command.main", "--def", "fixable"]);
+  assert!(human.status.success(), "stderr:\n{}", String::from_utf8_lossy(&human.stderr));
+  let human_stdout = String::from_utf8_lossy(&human.stdout);
+  assert!(human_stdout.starts_with("# Compiler-guided source fixes\n"));
+  assert!(human_stdout.contains("## Suggestion 1\n"));
+  assert!(human_stdout.contains("### Before\n\n- node kind: `leaf`\n\n```cirru\n"));
+  assert!(human_stdout.contains("### After\n\n- node kind: `leaf`\n\n```cirru\n"));
+  assert_eq!(fs::read(&snapshot).expect("human preview should not write"), original);
+
+  let edn = run_fix(&snapshot, &["--ns", "fix-command.main", "--def", "fixable", "--format", "edn"]);
+  assert!(edn.status.success(), "stderr:\n{}", String::from_utf8_lossy(&edn.stderr));
+  let edn_value = cirru_edn::parse(&String::from_utf8_lossy(&edn.stdout)).expect("fix EDN should parse");
+  let cirru_edn::Edn::Map(edn_map) = edn_value else {
+    panic!("fix EDN should be a map");
+  };
+  assert_eq!(edn_map.get(&cirru_edn::Edn::tag("command")), Some(&cirru_edn::Edn::str("fix")));
+  assert_eq!(fs::read(&snapshot).expect("EDN preview should not write"), original);
 
   let preview = run_fix(&snapshot, &["--ns", "fix-command.main", "--def", "fixable", "--format", "json"]);
   assert!(preview.status.success(), "stderr:\n{}", String::from_utf8_lossy(&preview.stderr));

@@ -14,8 +14,9 @@ use md5::{Digest, Md5};
 use serde::Serialize;
 use serde_json::Value;
 
-use super::common::{cirru_to_json_value, format_path};
+use super::common::{cirru_to_json_value, format_path, json_value_to_cirru, markdown_cirru_section};
 use super::edit::{load_snapshot, navigate_to_path, run_staged_fix_transaction, snapshot_content_revision};
+use super::structured_output::{StructuredOutputFormat, format_json_value_as_edn};
 
 const REMOVED_DATA_API_RULE: &str = "removed-data-api-v1";
 const REMOVED_DATA_API_DIAGNOSTIC: &str = "W_REMOVED_DATA_API";
@@ -266,13 +267,16 @@ pub(crate) fn handle_fix_command(
     next: vec![],
   };
 
-  match options.format.as_str() {
-    "json" => println!(
+  match StructuredOutputFormat::parse(&options.format, "fix")? {
+    StructuredOutputFormat::Json => println!(
       "{}",
       serde_json::to_string(&report).map_err(|error| format!("Failed to serialize fix result: {error}"))?
     ),
-    "human" | "text" => print_human_report(&report),
-    _ => unreachable!("fix output format was validated"),
+    StructuredOutputFormat::Edn => {
+      let value = serde_json::to_value(&report).map_err(|error| format!("Failed to encode fix result: {error}"))?;
+      println!("{}", format_json_value_as_edn(&value)?);
+    }
+    StructuredOutputFormat::Human => print_human_report(&report),
   }
   Ok(())
 }
@@ -301,12 +305,7 @@ fn fix_scope_args(options: &FixCommand) -> Vec<String> {
 
 /// Reject ambiguous modes, incomplete scopes, and unknown stable rule IDs.
 fn validate_options(options: &FixCommand) -> Result<(), String> {
-  if !matches!(options.format.as_str(), "human" | "text" | "json") {
-    return Err(format!(
-      "Unknown fix output format `{}`. Expected `human` or `json`.",
-      options.format
-    ));
-  }
+  StructuredOutputFormat::parse(&options.format, "fix")?;
   if options.apply && options.dry_run {
     return Err("`calcit fix --apply` conflicts with `--dry-run`; omit both flags to preview.".to_owned());
   }
@@ -1222,6 +1221,20 @@ fn quoted_json(node: &Cirru) -> Value {
   })
 }
 
+/// Decode a public quote or splice envelope for a human source preview.
+fn fix_source_json_to_cirru(value: &Value) -> Result<Cirru, String> {
+  let Value::Object(fields) = value else {
+    return Err("expected a source AST object".to_owned());
+  };
+  if !matches!(fields.get("$type").and_then(Value::as_str), Some("quote" | "splice")) {
+    return Err("expected `$type: quote` or `$type: splice` in source preview".to_owned());
+  }
+  let node = fields
+    .get("value")
+    .ok_or_else(|| "quoted AST source preview is missing `value`".to_owned())?;
+  json_value_to_cirru(node)
+}
+
 /// Fingerprint the canonical JSON shape used in machine-readable fix plans.
 fn node_fingerprint(node: &Cirru) -> String {
   let mut hasher = Md5::new();
@@ -1272,23 +1285,35 @@ fn guard_git_worktree(snapshot_file: &str, allow_dirty: bool, allow_no_vcs: bool
 
 /// Render the compact human view without changing the JSON protocol.
 fn print_human_report(report: &FixReport<'_>) {
-  println!("Compiler-guided source fixes");
-  println!("- mode: {}", report.data.mode);
-  println!("- revision: {}", report.revision);
+  println!("# Compiler-guided source fixes\n");
+  println!("- mode: `{}`", report.data.mode);
+  println!("- revision: `{}`", report.revision);
   if let Some(preset) = report.data.filters.preset_id {
-    println!("- preset: {preset}");
+    println!("- preset: `{preset}`");
   }
-  println!("- rules: {}", report.data.filters.expanded_rule_ids.join(", "));
-  println!("- suggestions: {}", report.data.suggestions.len());
-  println!("- changed: {}", report.data.changed);
-  for suggestion in report.data.suggestions {
-    println!(
-      "- [{}] {} {}: {}",
-      suggestion.applicability, suggestion.definition, suggestion.path, suggestion.message
-    );
+  println!("- rules: `{}`", report.data.filters.expanded_rule_ids.join(", "));
+  println!("- suggestions: `{}`", report.data.suggestions.len());
+  println!("- changed: `{}`", report.data.changed);
+  for (index, suggestion) in report.data.suggestions.iter().enumerate() {
+    println!("\n## Suggestion {}\n", index + 1);
+    println!("- applicability: `{}`", suggestion.applicability);
+    println!("- rule: `{}`", suggestion.rule_id);
+    println!("- definition: `{}`", suggestion.definition);
+    println!("- path: `{}`", suggestion.path);
+    println!("- message: {}\n", suggestion.message);
+    match fix_source_json_to_cirru(&suggestion.original).and_then(|node| markdown_cirru_section(3, "Before", &node, 0)) {
+      Ok(section) => println!("{section}"),
+      Err(error) => println!("### Before\n\n_Unable to render source preview: {error}_"),
+    }
+    if let Some(replacement) = &suggestion.replacement {
+      match fix_source_json_to_cirru(replacement).and_then(|node| markdown_cirru_section(3, "After", &node, 0)) {
+        Ok(section) => println!("\n{section}"),
+        Err(error) => println!("\n### After\n\n_Unable to render source preview: {error}_"),
+      }
+    }
   }
   if report.data.mode == "preview" && report.data.changed {
-    println!("Run `calcit fix --apply` after reviewing this plan.");
+    println!("\n## Next step\n\nRun `calcit fix --apply` after reviewing this plan.");
   }
 }
 
@@ -1296,15 +1321,38 @@ fn print_human_report(report: &FixReport<'_>) {
 mod tests {
   use super::{
     FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_potential_local_bindings, collect_redundant_do_paths,
-    fix_rule_metadata, insert_fix_suggestion, legacy_constructor_replacement, migration_for_source_leaf, prototype_is_shadowed,
-    resolve_fix_target, rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
+    fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion, legacy_constructor_replacement, migration_for_source_leaf,
+    prototype_is_shadowed, resolve_fix_target, rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
   };
   use cirru_parser::Cirru;
   use serde_json::Value;
   use std::collections::BTreeMap;
 
+  use super::super::common::markdown_cirru_section;
+
   fn leaf(value: &str) -> Cirru {
     Cirru::leaf(value)
+  }
+
+  #[test]
+  fn splice_fix_source_decodes_the_replacement_sequence() {
+    let replacement = serde_json::json!({
+      "$type": "splice",
+      "value": [["println", "working"], ["finish", "value"]],
+    });
+    let node = fix_source_json_to_cirru(&replacement).expect("splice replacement should decode");
+    assert_eq!(
+      node,
+      Cirru::List(vec![
+        Cirru::List(vec![leaf("println"), leaf("working")]),
+        Cirru::List(vec![leaf("finish"), leaf("value")]),
+      ])
+    );
+    let section = markdown_cirru_section(3, "After", &node, 0).expect("splice replacement should render");
+    assert!(section.contains("### After\n"));
+    assert!(section.contains("```cirru\n"));
+    assert!(section.contains("println working"));
+    assert!(section.contains("finish value"));
   }
 
   #[test]

@@ -32,7 +32,7 @@ staged Snapshot 上尝试替换并重新编译选定 scope，成功后仍不写�
 
 ```bash
 calcit calcit.cirru fix
-calcit calcit.cirru fix --ns app.main --def render! --format json
+calcit calcit.cirru fix --ns app.main --def render! --format edn
 ```
 
 当前稳定规则包括：
@@ -60,14 +60,14 @@ calcit calcit.cirru fix --ns app.main --def render! --format json
 `removed-data-api-v1`、`named-enum-constructor-v1`、`named-struct-constructor-v1` 和
 `redundant-do-v1`，其含义保持不变。当前推荐的 `surface-latest-v2` 在这四条之后增加
 `single-expression-do-v1`。执行时会按 source path 从内向外应用结构改写，具名构造器区域内的规则合并为一次 guarded replacement，
-避免嵌套改写提前移动 source path。preview 的 JSON 会在 `filters.preset_id` 返回 preset 名称，并在
+避免嵌套改写提前移动 source path。结构化 preview 会在 `filters.preset_id` 返回 preset 名称，并在
 `filters.expanded_rule_ids` 返回实际执行的规则，Agent 无需依赖人类日志猜测范围：
 
 ```bash
-calcit calcit.cirru fix --preset surface-latest-v2 --format json
+calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 calcit calcit.cirru fix --preset surface-latest-v2 \
   --apply --expect-revision 'md5:<preview 返回的 revision>'
-calcit calcit.cirru fix --preset surface-latest-v2 --format json
+calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 ```
 
 `--preset` 与 `--rule` 互斥。apply 必须原样重复 preview 的 `--preset`、`--ns` 和 `--def`；第二次 preview
@@ -100,11 +100,11 @@ defn render! (state)
 先用 preview 检测，不要直接 apply：
 
 ```bash
-calcit calcit.cirru fix --rule redundant-do-v1 --format json
-calcit calcit.cirru fix --ns app.main --def render! --rule redundant-do-v1 --format json
+calcit calcit.cirru fix --rule redundant-do-v1 --format edn
+calcit calcit.cirru fix --ns app.main --def render! --rule redundant-do-v1 --format edn
 ```
 
-JSON 报告中的 `suggestions` 是检测结果。若列表非空，逐项核对 `definition`、`path`、`original`、`replacement`、
+Cirru EDN 报告中的 `:suggestions` 是检测结果。若列表非空，逐项核对 `:definition`、`:path`、`:original`、`:replacement`、
 `applicability` 和 `fingerprint`，确认 `validation.status` 为 `passed`，再原样重复 preview 的 scope selectors，
 使用同一份报告中的 Snapshot revision 应用。若列表为空，`validation.status` 应为 `not-needed`；跳过 apply，
 直接继续验证：
@@ -112,7 +112,7 @@ JSON 报告中的 `suggestions` 是检测结果。若列表非空，逐项核对
 ```bash
 calcit calcit.cirru fix --ns app.main --def render! --rule redundant-do-v1 \
   --apply --expect-revision 'md5:<preview 返回的 revision>'
-calcit calcit.cirru fix --ns app.main --def render! --rule redundant-do-v1 --format json
+calcit calcit.cirru fix --ns app.main --def render! --rule redundant-do-v1 --format edn
 ```
 
 第二次 preview 应返回空 `suggestions`，证明规则幂等。随后运行目标 entry 的 `--check-only` 和行为测试。

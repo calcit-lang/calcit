@@ -210,7 +210,7 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 - 一次局部节点修改：`calcit tree`，优先 `search-replace`，其次明确 path 的操作。
 - 在一个复杂表达式中连续移动和修改：`calcit cursor` 与 `@cursor`。
 - 多个 mutation 必须一起成功：`calcit edit transaction`，先 `--dry-run`；主格式是 Cirru EDN，先运行 `calcit docs read edit-tree.md 'Atomic Transactions'` 查看最小 operation 文件和 revision 提交流程。
-- 编译器已经证明等价的迁移：升级项目优先运行 `calcit fix --preset surface-latest-v2 --format json`，单项排查才使用 `--rule`；两者互斥。冻结的 `surface-latest-v1` 保持原有四条规则。核对 `filters.expanded_rule_ids`、suggestion 的 `source_file`、definition/path、fingerprint，只选择 `machine-applicable`。提交时必须原样重复 preview 的 `--ns`、`--def` 以及 `--rule` 或 `--preset` selectors，再加 `--apply --expect-revision <revision>`。非空建议要求 `validation.status=passed`；空建议接受 `not-needed` 并跳过 apply。revision 只保护 Snapshot 新鲜度，不能代替 scope 审阅。`requires-review` 或 `replacement: null` 需要人类决定，Agent 不得自行猜测。完整字段与 VCS guard 见 `calcit docs read fix.md --full`。
+- 编译器已经证明等价的迁移：升级项目优先运行 `calcit fix --preset surface-latest-v2 --format edn`，单项排查才使用 `--rule`；两者互斥。冻结的 `surface-latest-v1` 保持原有四条规则。核对 `:filters :expanded_rule_ids`、suggestion 的 `:source_file`、definition/path、fingerprint，只选择 `machine-applicable`。提交时必须原样重复 preview 的 `--ns`、`--def` 以及 `--rule` 或 `--preset` selectors，再加 `--apply --expect-revision <revision>`。非空建议要求 `validation.status=passed`；空建议接受 `not-needed` 并跳过 apply。revision 只保护 Snapshot 新鲜度，不能代替 scope 审阅。`requires-review` 或 `replacement: null` 需要人类决定，Agent 不得自行猜测。完整字段与 VCS guard 见 `calcit docs read fix.md --full`。
 
 CLI 入口按任务收敛：entry 语义验证使用 `--check-only`，只读事实使用 `query`/`analyze`，可证明的检测与改写统一使用
 `fix` preview/apply，用户指定的结构修改使用 `edit`/`tree`/`cursor`。不要为一条检测或 migration rule 猜测新的顶层命令；
@@ -224,7 +224,7 @@ CLI 入口按任务收敛：entry 语义验证使用 `--check-only`，只读事�
 `defn`/`fn`/`let` body 本身可以顺序包含多个表达式，返回类型来自最后一项；不要为了类型推断再包一层 `do`。
 只有 `if` 分支、调用参数、binding value 等单表达式位置需要用 `do` 把多个步骤组成一个表达式；仅含一个 payload 的
 `(do expr)` 在这些位置也可由 `single-expression-do-v1` 解包。多表达式 body 的整理先用
-`calcit calcit.cirru fix --rule redundant-do-v1 --format json` 检测并审阅 suggestions，再原样重复 scope selectors，附加
+`calcit calcit.cirru fix --rule redundant-do-v1 --format edn` 检测并审阅 suggestions，再原样重复 scope selectors，附加
 `--apply --expect-revision <revision>` 修复；第二次 preview 必须为空。不要手工批量改缩进；规则会跳过 `defmacro` 与
 quote/quasiquote，并用 staged preprocess 验证 splice 后的 scope。此检查属于显式 fix preview，不是普通 compiler warning。
 `tag-match-to-match-v1` 与 `required-struct-field-v1` 是已经随 Calcit 0.14.15 发布的升级桥，0.15 当前工具链不再携带其 planner。
@@ -586,7 +586,7 @@ calcit cirru show-guide
 | 输入解析失败           | `calcit cirru parse -e` 预检；复杂输入改用 heredoc/文件                      |
 | parse/preprocess/query/edit 失败 | 先以当前命令 stderr 为准；这些失败不保证刷新错误 sidecar                 |
 | runtime/watcher stack  | `calcit query error` 读取最近持久化栈；若提示 stale，不要追查其中的旧错误      |
-| 多步修改范围不确定     | transaction `--dry-run --format json`，再带 `--expect-revision` 提交     |
+| 多步修改范围不确定     | transaction `--dry-run --format edn`，再带 `--expect-revision` 提交      |
 
 优先用 `--set-cursor` 避免手工转换语义路径与 tree path。
 

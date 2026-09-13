@@ -100,11 +100,11 @@ fn explicit_syntax_input_formats_preserve_ambiguous_node_shapes() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);
 
-  for (input_format, code, expected_kind, expected_canonical) in [
-    ("json-ast", r#""[]""#, "leaf", r#""[]""#),
-    ("json-ast", "[]", "empty-list", "[]"),
-    ("json-ast", r#"["inc","1"]"#, "expression", r#"["inc","1"]"#),
-    ("cirru", "quote $ []", "expression", r#"["[]"]"#),
+  for (input_format, code, expected_kind) in [
+    ("json-ast", r#""[]""#, "leaf"),
+    ("json-ast", "[]", "empty-list"),
+    ("json-ast", r#"["inc","1"]"#, "expression"),
+    ("cirru", "quote $ []", "expression"),
   ] {
     let output = run_calcit(
       &snapshot,
@@ -120,12 +120,16 @@ fn explicit_syntax_input_formats_preserve_ambiguous_node_shapes() {
     );
     assert_success(&output, "add explicitly decoded example");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains(&format!("- input format: {input_format}")), "stdout:\n{stdout}");
-    assert!(stdout.contains(&format!("- node kind: {expected_kind}")), "stdout:\n{stdout}");
-    assert!(
-      stdout.contains(&format!("- canonical JSON AST: {expected_canonical}")),
-      "stdout:\n{stdout}"
-    );
+    assert!(stdout.contains(&format!("- input format: `{input_format}`")), "stdout:\n{stdout}");
+    assert!(stdout.contains(&format!("- node kind: `{expected_kind}`")), "stdout:\n{stdout}");
+    assert!(stdout.contains("## Canonical Cirru syntax\n"), "stdout:\n{stdout}");
+    assert!(stdout.contains("```cirru\n"), "stdout:\n{stdout}");
+    if input_format == "json-ast" {
+      assert!(stdout.contains("## Canonical JSON AST\n"), "stdout:\n{stdout}");
+      assert!(stdout.contains("```json\n"), "stdout:\n{stdout}");
+    } else {
+      assert!(!stdout.contains("## Canonical JSON AST\n"), "stdout:\n{stdout}");
+    }
   }
 
   let definition = query_definition(&snapshot, "app.main/main!");
@@ -251,6 +255,39 @@ fn edit_transaction_and_format_share_the_canonical_macro_schema() {
     "direct-shape",
     "quote $ defmacro direct-shape (required ? optional & rest) required",
   );
+  let preview_edn = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "transaction",
+      "--code",
+      r#"[["edit","def","app.main/preview-only","--code","quote $ defn preview-only () 1"]]"#,
+      "--dry-run",
+      "--format",
+      "edn",
+    ],
+  );
+  assert_success(&preview_edn, "Cirru EDN transaction preview");
+  let preview_value = cirru_edn::parse(&String::from_utf8_lossy(&preview_edn.stdout)).expect("transaction EDN should parse");
+  let cirru_edn::Edn::Map(preview_map) = preview_value else {
+    panic!("transaction EDN should be a map");
+  };
+  assert_eq!(preview_map.get(&cirru_edn::Edn::tag("changed")), Some(&cirru_edn::Edn::Bool(true)));
+
+  let preview_human = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "transaction",
+      "--code",
+      r#"[["edit","def","app.main/preview-only","--code","quote $ defn preview-only () 1"]]"#,
+      "--dry-run",
+    ],
+  );
+  assert_success(&preview_human, "human transaction preview");
+  let preview_stdout = String::from_utf8_lossy(&preview_human.stdout);
+  assert!(preview_stdout.starts_with("# Edit transaction\n"), "stdout:\n{preview_stdout}");
+  assert!(preview_stdout.contains("## Operation 1\n\n```text\n"), "stdout:\n{preview_stdout}");
   let transaction = run_calcit(
     &snapshot,
     &[

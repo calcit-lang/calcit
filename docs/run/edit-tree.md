@@ -231,12 +231,12 @@ The primary input format is a Cirru EDN list of CLI argument lists. Each inner l
 ```
 
 ```bash
-# Preview and obtain the current snapshot revision.
-calcit calcit.cirru edit transaction --file changes.cirru --dry-run --format json
+# 预览并读取当前 Snapshot revision。
+calcit calcit.cirru edit transaction --file changes.cirru --dry-run --format edn
 
-# Commit only if the snapshot still has that revision.
+# 仅在 Snapshot 仍是该 revision 时提交。
 calcit calcit.cirru edit transaction --file changes.cirru \
-  --expect-revision md5:... --format json
+  --expect-revision md5:... --format edn
 ```
 
 JSON argument lists remain accepted as a compatibility format for callers that already construct JSON, but JSON is not the recommended authoring format when operations contain Calcit code:
@@ -248,7 +248,30 @@ JSON argument lists remain accepted as a compatibility format for callers that a
 ]
 ```
 
-Nested transactions and non-mutating command groups are rejected. JSON output contains the old/new snapshot revision and captures each existing subcommand's stdout/stderr without mixing it into the transaction stdout.
+嵌套 transaction 与非 mutation 命令组会被拒绝。默认 human 输出使用 Markdown heading、metadata list 与 fenced operation output；`--format edn` 返回相同语义的稳定 Cirru EDN envelope，包含新旧 Snapshot revision，并分别捕获每条子命令的 stdout/stderr。只有对接 JSON-only consumer 时才使用 `--format json`。
+
+### Agent 的 read → preview → apply → verify 流程
+
+以下流程把源码边界与控制信息分开，也避免 Agent 在两次读取之间覆盖并发修改：
+
+```bash
+# read：先以 Markdown 查看目标代码，代码只出现在 fenced Cirru block 中。
+calcit calcit.cirru tree show app.main/main! --path @3
+
+# preview：dry-run 不写文件，从 EDN envelope 读取 :original-revision、:changed 与 :operations。
+calcit calcit.cirru edit transaction --file changes.cirru --dry-run --format edn
+
+# apply：原样使用 preview 的 operation 文件，并绑定返回的 revision。
+calcit calcit.cirru edit transaction --file changes.cirru \
+  --expect-revision 'md5:<original-revision>' --format edn
+
+# verify：重新读取目标，再运行项目的严格检查与相关测试。
+calcit calcit.cirru tree show app.main/main! --path @3
+calcit calcit.cirru --check-only
+calcit calcit.cirru test app.main/main! --require-match
+```
+
+`tree`、`cursor apply` 与 `fix` 的 human preview 都使用同一组 Markdown 边界：operation、path、revision、changed 等控制信息位于 fence 外，Before/After 源码位于 `cirru` fence 内。guard 失败也以 Expected/Actual 两个 fence 输出到 stderr。不要把 heading、列表项或截断提示复制回 Snapshot。
 
 ### Managing Namespaces
 
