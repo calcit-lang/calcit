@@ -1246,7 +1246,6 @@ fn option_returning_api_type_mismatches_include_unwrap_and_match_help() {
       );
       assert!(warning.message().contains(".unwrap-or"), "warning: {warning:?}");
       assert!(warning.message().contains("native `match`"), "warning: {warning:?}");
-      assert!(warning.message().contains("native `match`"), "warning: {warning:?}");
     }
   });
 }

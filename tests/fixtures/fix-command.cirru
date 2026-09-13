@@ -31,8 +31,7 @@
               :args $ [] 'Dynamic
         'defaulted-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn defaulted-struct-field (person)
-              (get person :name) .unwrap-or |fallback
+            defn defaulted-struct-field (person) (:name person)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'String)
@@ -71,8 +70,7 @@
               :tags $ #{} :migration
         'macro-origin-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn macro-origin-struct-field (person)
-              -> person $ get :name
+            defn macro-origin-struct-field (person) (:name person)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'String)
@@ -148,7 +146,7 @@
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
-              :args $ [] 'fix-command.main/FixPerson 'Tag
+              :args $ [] 'Dynamic 'Tag
           :tests $ []
             %{} 'TestEntry (:name |keeps-runtime-key)
               :code $ quote
@@ -201,7 +199,7 @@
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
-              :args $ [] 'fix-command.main/FixPerson
+              :args $ [] 'Dynamic
           :tests $ []
             %{} 'TestEntry (:name |keeps-unknown-field-for-review)
               :code $ quote
