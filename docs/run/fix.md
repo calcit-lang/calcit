@@ -44,6 +44,54 @@ calcit calcit.cirru fix --ns app.main --def render! --format json
   0.15 若显式请求这两个 rule，会返回稳定错误和上述版本提示，不会继续携带旧 planner 与分析特例。
   replacement 原样保留 receiver 子树且只出现一次，因此不会复制或重排求值。
 
+## 检测并修复冗余 `do`
+
+`defn`、`fn` 和 `let` 的 body 本身支持多个顺序表达式，并以最后一项作为结果。下面的外层 `do` 不补充
+类型推断或求值能力，只增加 AST 层级：
+
+```cirru.no-check
+defn render! (state)
+  do
+    println |rendering
+    view state
+```
+
+`redundant-do-v1` 会把它安全整理为：
+
+```cirru.no-check
+defn render! (state)
+  println |rendering
+  view state
+```
+
+先用 preview 检测，不要直接 apply：
+
+```bash
+calcit calcit.cirru fix --rule redundant-do-v1 --format json
+calcit calcit.cirru fix --ns app.main --def render! --rule redundant-do-v1 --format json
+```
+
+JSON 报告中的 `suggestions` 是检测结果。若列表非空，逐项核对 `definition`、`path`、`original`、`replacement`、
+`applicability` 和 `fingerprint`，确认 `validation.status` 为 `passed`，再原样重复 preview 的 scope selectors，
+使用同一份报告中的 Snapshot revision 应用。若列表为空，`validation.status` 应为 `not-needed`；跳过 apply，
+直接继续验证：
+
+```bash
+calcit calcit.cirru fix --ns app.main --def render! --rule redundant-do-v1 \
+  --apply --expect-revision 'md5:<preview 返回的 revision>'
+calcit calcit.cirru fix --ns app.main --def render! --rule redundant-do-v1 --format json
+```
+
+第二次 preview 应返回空 `suggestions`，证明规则幂等。随后运行目标 entry 的 `--check-only` 和行为测试。
+
+规则只 splice 已知 variadic body 的直接 `do` 子节点。以下位置会保留：
+
+- `if`/`case` 分支、函数调用参数和 binding value 等只接收单表达式的位置；
+- `defmacro` body，因为 macro 可能需要显式打包返回的语法树；
+- `quote`/`quasiquote` 内作为数据保存的代码。
+
+因此“检测冗余 `do`”应使用 fix preview，而不是正则搜索，也不会作为普通 compiler warning 混入类型诊断。
+
 JSON stdout 是一个完整 value，包含 `schema_version`、`command`、Snapshot `revision`、filters、validation、suggestions、diagnostics
 和 `next`。每条 suggestion 携带 Snapshot `source_file`、stable rule ID、diagnostic code、表层 definition/path、subtree fingerprint、
 quoted AST 的 original/replacement 与 applicability。结构化 splice 的 replacement 使用 `{"$type":"splice","value":[...]}`，
