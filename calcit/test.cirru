@@ -1,536 +1,520 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |app)
-  :entries $ {}
-    :default $ {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
+{}
+  :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
+  :package |app
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'app.main/main!) (:mode :native)
+      :reload-fn 'app.main/reload!
       :feature-policy $ {}
       :modules $ [] |./test-cond.cirru |./test-hygienic.cirru |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru |./test-math.cirru |./test-recursion.cirru |./test-set.cirru |./test-string.cirru |./test-edn.cirru |./test-js.cirru |./test-struct.cirru |./test-fn.cirru |./test-anonymous-enum.cirru |./test-algebra.cirru |./test-types.cirru |./test-types-inference.cirru |./test-generics.cirru |./test-enum.cirru |./test-traits.cirru |./test-doc-smoke.cirru |./test-def-meta.cirru |./util.cirru
       :type-slots $ {}
-  :files $ {}
-    'app.main $ %{} 'FileEntry
+  :files $ {} $ 'app.main
+    %{} 'FileEntry
       :defs $ {}
         '%A $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defimpl %A AtomDerefTrait $ .deref
-              fn (self)
-                match self $
-                  :atom x
-                  , x
+          :code $ quote $ defimpl %A AtomDerefTrait
+            .deref $ fn (self)
+              match self $
+                :atom x
+                , x
           :examples $ []
           :schema $ :: 'Impl
         '%r $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defimpl %r DemoGetTrait $ .get
-              fn (self) 1
+          :code $ quote $ defimpl %r DemoGetTrait
+            .get $ fn (self) 1
           :examples $ []
           :schema $ :: 'Impl
         '*ref-demo $ %{} 'CodeEntry (:doc |)
-          :code $ quote (defatom *ref-demo 0)
+          :code $ quote $ defatom *ref-demo 0
           :examples $ []
           :schema $ :: 'Ref 'Number
         'AtomBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def AtomBox $ impl-traits AtomBox0 %A
+          :code $ quote $ def AtomBox (impl-traits AtomBox0 %A)
           :examples $ []
           :schema $ :: 'Dynamic
         'AtomBox0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defenum AtomBox $ :atom 'Dynamic
+          :code $ quote $ defenum AtomBox (:atom 'Dynamic)
           :examples $ []
           :schema $ :: 'EnumDef
         'AtomDerefTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            deftrait AtomDerefTrait $ .deref :fn
+          :code $ quote $ deftrait AtomDerefTrait (.deref :fn)
           :examples $ []
           :schema $ :: 'Trait
         'Demo $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def Demo $ impl-traits Demo0 %r
+          :code $ quote $ def Demo (impl-traits Demo0 %r)
           :examples $ []
           :schema $ :: 'Dynamic
         'Demo0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defenum Demo $ :a 'Dynamic
+          :code $ quote $ defenum Demo (:a 'Dynamic)
           :examples $ []
           :schema $ :: 'EnumDef
         'DemoGetTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            deftrait DemoGetTrait $ .get :fn
+          :code $ quote $ deftrait DemoGetTrait (.get :fn)
           :examples $ []
           :schema $ :: 'Trait
         'Deref $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defimpl Deref DerefTrait $ .deref
-              fn (self) 2
+          :code $ quote $ defimpl Deref DerefTrait
+            .deref $ fn (self) 2
           :examples $ []
           :schema $ :: 'Impl
         'DerefTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            deftrait DerefTrait $ .deref :fn
+          :code $ quote $ deftrait DerefTrait (.deref :fn)
           :examples $ []
           :schema $ :: 'Trait
         'Num $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defimpl Num NumTrait
-              .inc $ fn (x) (update x 1 inc)
-              .show $ fn (x)
-                str $ &enum:nth x 1
+          :code $ quote $ defimpl Num NumTrait
+            .inc $ fn (x) (update x 1 inc)
+            .show $ fn (x)
+              str $ &enum:nth x 1
           :examples $ []
           :schema $ :: 'Impl
         'NumBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def NumBox $ impl-traits NumBox0 Num
+          :code $ quote $ def NumBox (impl-traits NumBox0 Num)
           :examples $ []
           :schema $ :: 'Dynamic
         'NumBox0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defenum NumBox $ :number 'Number
+          :code $ quote $ defenum NumBox (:number 'Number)
           :examples $ []
           :schema $ :: 'EnumDef
         'NumTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            deftrait NumTrait (.inc :fn) (.show :fn)
+          :code $ quote $ deftrait NumTrait (.inc :fn) (.show :fn)
           :examples $ []
           :schema $ :: 'Trait
         'ValueBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def ValueBox $ impl-traits ValueBox0 Deref
+          :code $ quote $ def ValueBox (impl-traits ValueBox0 Deref)
           :examples $ []
           :schema $ :: 'Dynamic
         'ValueBox0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defenum ValueBox $ :value 'Dynamic
+          :code $ quote $ defenum ValueBox (:value 'Dynamic)
           :examples $ []
           :schema $ :: 'EnumDef
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn main! () (&init-builtin-impls!)
-              println $ &get-os
-              println "|gen id:" $ generate-id!
-              inside-js: $ load-console-formatter!
-              log-title "|Testing tag function"
-              test-tag
-              util.core/log-title "|Testing detects"
-              test-detects
-              test-if
-              test-display-stack
-              test-cirru-parser
-              test-fn
-              test-macro/main!
-              test-arguments
-              test-try
-              test-fn-eq
-              test-refs
-              test-method
-              test-anonymous-enum
-              test-effect
-              inside-eval: $ test-hygienic/main!
-              test-cond/main!
-              test-lens/main!
-              test-list/main!
-              test-map/main!
-              test-math/main!
-              test-recursion/main!
-              test-set/main!
-              test-string/main!
-              test-edn/main!
-              test-json
-              test-struct/main!
-              test-fn/main!
-              test-anonymous-enum/main!
-              inside-eval: $ test-algebra/main!
-              test-types/main!
-              test-types-inference/main!
-              test-generics/main!
-              test-enum/main!
-              test-traits/main!
-              test-doc-smoke/main!
-              test-def-meta/main!
-              test-buffer
-              test-atom
-              inside-js: $ test-js/main!
-              do true
+          :code $ quote $ defn main! ()
+            &init-builtin-impls!
+            println $ &get-os
+            println "|gen id:" $ generate-id!
+            inside-js: $ load-console-formatter!
+            log-title "|Testing tag function"
+            test-tag
+            util.core/log-title "|Testing detects"
+            test-detects
+            test-if
+            test-display-stack
+            test-cirru-parser
+            test-fn
+            test-macro/main!
+            test-arguments
+            test-try
+            test-fn-eq
+            test-refs
+            test-method
+            test-anonymous-enum
+            test-effect
+            inside-eval: $ test-hygienic/main!
+            test-cond/main!
+            test-lens/main!
+            test-list/main!
+            test-map/main!
+            test-math/main!
+            test-recursion/main!
+            test-set/main!
+            test-string/main!
+            test-edn/main!
+            test-json
+            test-struct/main!
+            test-fn/main!
+            test-anonymous-enum/main!
+            inside-eval: $ test-algebra/main!
+            test-types/main!
+            test-types-inference/main!
+            test-generics/main!
+            test-enum/main!
+            test-traits/main!
+            test-doc-smoke/main!
+            test-def-meta/main!
+            test-buffer
+            test-atom
+            inside-js: $ test-js/main!
+            do true
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-              :features $ #{} :js-ffi
-        'query-search-node-kinds $ %{} 'CodeEntry (:doc "|Fixture for machine-readable leaf and call search results")
-          :code $ quote
-            def query-search-node-kinds $ [] %none (%none)
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
+            :features $ #{} :js-ffi
+        'query-search-node-kinds $ %{} 'CodeEntry
+          :doc "|Fixture for machine-readable leaf and call search results"
+          :code $ quote $ def query-search-node-kinds
+            [] %none $ %none
           :examples $ []
           :schema $ :: 'List 'Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn reload! () $ :: 'Unit
+          :code $ quote $ defn reload! () (:: 'Unit)
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-anonymous-enum $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing tuple")
-              assert= :enum $ type-of (:: :a :b)
-              assert= (%some :a)
-                nth (:: :a :b) 0
-              assert= (%some :b)
-                nth (:: :a :b) 1
-              assert= (%some :c)
-                nth (:: :a :b :c) 2
-              assert= 2 $ count (:: :a :b)
-              assert= 3 $ count (:: :a :b :c)
-              assert= 4 $ count (:: :a :b :c :d)
-              assert= (%some :a)
-                get (:: :a :b) 0
-              assert= (%some :b)
-                get (:: :a :b) 1
-              assert= (%some :c)
-                get (:: :a :b :c) 2
-              assert= true $ contains? (:: :a :b :c) 2
-              assert= (:: 1 0)
-                update (:: 0 0) 0 inc
-              assert= (:: 0 1)
-                update (:: 0 0) 1 inc
-              assert= (:: 1 0 0)
-                update (:: 0 0 0) 0 inc
-              assert= (:: 0 1 0)
-                update (:: 0 0 0) 1 inc
-              assert= (:: 0 0 1)
-                update (:: 0 0 0) 2 inc
-              assert= 1 $ count (:: :none)
-              assert-detect enum? $ parse-cirru-edn "|:: :none"
-              assert= false $ = (:: :t 1) (:: :t 2)
-              assert= false $ = (:: :t 1) (:: :t 1 2)
-              let
-                  a $ :: :a 1
-                  b $ %:: Demo :a 1
-                assert= true $ any? (&enum:impls b)
-                  fn (impl)
-                    includes? (str impl) |DemoGetTrait
-                assert=
-                  &enum:params $ :: :a 1 2 3
-                  [] 1 2 3
-                assert= "|(%:: 'Demo :a 1)" $ str b
-              assert= "|(%:: _ :a :b :c)" $ str (:: :a :b :c)
+          :code $ quote $ fn () (log-title "|Testing tuple")
+            assert= :enum $ type-of $ :: :a :b
+            assert= (%some :a)
+              nth (:: :a :b) 0
+            assert= (%some :b)
+              nth (:: :a :b) 1
+            assert= (%some :c)
+              nth (:: :a :b :c) 2
+            assert= 2 $ count $ :: :a :b
+            assert= 3 $ count $ :: :a :b :c
+            assert= 4 $ count $ :: :a :b :c :d
+            assert= (%some :a)
+              get (:: :a :b) 0
+            assert= (%some :b)
+              get (:: :a :b) 1
+            assert= (%some :c)
+              get (:: :a :b :c) 2
+            assert= true $ contains? (:: :a :b :c) 2
+            assert= (:: 1 0)
+              update (:: 0 0) 0 inc
+            assert= (:: 0 1)
+              update (:: 0 0) 1 inc
+            assert= (:: 1 0 0)
+              update (:: 0 0 0) 0 inc
+            assert= (:: 0 1 0)
+              update (:: 0 0 0) 1 inc
+            assert= (:: 0 0 1)
+              update (:: 0 0 0) 2 inc
+            assert= 1 $ count $ :: :none
+            assert-detect enum? $ parse-cirru-edn "|:: :none"
+            assert= false $ = (:: :t 1) (:: :t 2)
+            assert= false $ = (:: :t 1) (:: :t 1 2)
+            let
+                a $ :: :a 1
+                b $ %:: Demo :a 1
+              assert= true $ any? (&enum:impls b)
+                fn (impl)
+                  includes? (str impl) |DemoGetTrait
+              assert=
+                &enum:params $ :: :a 1 2 3
+                [] 1 2 3
+              assert= "|(%:: 'Demo :a 1)" $ str b
+            assert= "|(%:: _ :a :b :c)" $ str $ :: :a :b :c
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-arguments $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing arguments")
-              let
-                  f1 $ fn (a ? b c)
-                    hint-fn $ {}
-                      :args $ [] 'Tag (:: 'Optional 'Tag) (:: 'Optional 'Tag)
-                      :return $ :: 'List (:: 'Optional 'Tag)
-                    [] a b c
-                  f2 $ fn (a maybe-label maybe-count)
-                    hint-fn $ {}
-                      :args $ [] 'Number (:: 'Option 'String) (:: 'Option 'Number)
-                      :return $ :: 'List 'Dynamic
-                    [] a maybe-label maybe-count
-                assert= (f1 :a) ([] :a nil nil)
-                assert= (f1 :a :b) ([] :a :b nil)
-                assert= (f1 :a :b :c) ([] :a :b :c)
-                assert= (f2 1)
-                  [] 1 (%none) (%none)
-                assert=
-                  f2 2 $ %some |ready
-                  [] 2 (%some |ready) (%none)
+          :code $ quote $ fn ()
+            log-title "|Testing arguments"
+            let
+                f1 $ fn (a ? b c)
+                  hint-fn $ {}
+                    :args $ [] 'Tag (:: 'Optional 'Tag) (:: 'Optional 'Tag)
+                    :return $ :: 'List $ :: 'Optional 'Tag
+                  [] a b c
+                f2 $ fn (a maybe-label maybe-count)
+                  hint-fn $ {}
+                    :args $ [] 'Number (:: 'Option 'String) (:: 'Option 'Number)
+                    :return $ :: 'List 'Dynamic
+                  [] a maybe-label maybe-count
+              assert= (f1 :a) ([] :a nil nil)
+              assert= (f1 :a :b) ([] :a :b nil)
+              assert= (f1 :a :b :c) ([] :a :b :c)
+              assert= (f2 1)
+                [] 1 (%none) (%none)
+              assert=
+                f2 2 $ %some |ready
+                [] 2 (%some |ready) (%none)
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-atom $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn ()
-              let
-                  *a $ atom 1
-                assert= 1 $ .deref *a
-                assert= 1 $ &atom:deref *a
-              assert= 1 $ .deref (%:: AtomBox :atom 1)
-              assert= 1 $ .deref (%:: AtomBox :atom 1)
-              assert= 2 $ .deref (%:: AtomBox :atom 2)
+          :code $ quote $ fn ()
+            let
+                *a $ atom 1
+              assert= 1 $ .deref *a
+              assert= 1 $ &atom:deref *a
+            assert= 1 $ .deref $ %:: AtomBox :atom 1
+            assert= 1 $ .deref $ %:: AtomBox :atom 1
+            assert= 2 $ .deref $ %:: AtomBox :atom 2
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-buffer $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title |Buffer)
-              println "|buffer value:" $ &buffer 0x11 |11
+          :code $ quote $ fn () (log-title |Buffer)
+            println "|buffer value:" $ &buffer 0x11 |11
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-cirru-parser $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing Cirru parser")
-              assert= (parse-cirru-list "|def f (a b) $ + a b")
-                [] $ [] |def |f ([] |a |b) ([] |+ |a |b)
-              assert= (parse-cirru-list "|{,} :a 1 :b false")
-                [] $ [] |{,} |:a |1 |:b |false
-              assert= (parse-cirru-list "|&call-dylib-edn 1")
-                [] $ [] |&call-dylib-edn |1
-              assert= (parse-cirru-list "|&call-dylib-edn-fn x")
-                [] $ [] |&call-dylib-edn-fn |x
-              assert= (parse-cirru-edn "|{} (:a 1) (:b ([] 3 |4 nil))")
-                {} (:a 1)
-                  :b $ [] 3 |4 nil
-              assert= "|[] |a |b $ [] |c |d" $ trim
-                format-cirru-edn $ [] |a |b ([] |c |d)
-              assert= "|a b $ c d" $ trim
-                format-cirru $ []
-                  [] |a |b $ [] |c |d
-              assert=
-                {} (:a 1)
-                  :b $ []
-                    {} (:c 3) (4 5)
-                tagging-edn $ {} (|a 1)
-                  :b $ []
-                    {} (|c 3) (4 5)
+          :code $ quote $ fn ()
+            log-title "|Testing Cirru parser"
+            assert=
+              parse-cirru-list "|def f (a b) $ + a b"
+              [] $ [] |def |f ([] |a |b) ([] |+ |a |b)
+            assert=
+              parse-cirru-list "|{,} :a 1 :b false"
+              [] $ [] |{,} |:a |1 |:b |false
+            assert=
+              parse-cirru-list "|&call-dylib-edn 1"
+              [] $ [] |&call-dylib-edn |1
+            assert=
+              parse-cirru-list "|&call-dylib-edn-fn x"
+              [] $ [] |&call-dylib-edn-fn |x
+            assert=
+              parse-cirru-edn "|{} (:a 1) (:b ([] 3 |4 nil))"
+              {} (:a 1)
+                :b $ [] 3 |4 nil
+            assert= "|[] |a |b $ [] |c |d" $ trim $ format-cirru-edn
+              [] |a |b $ [] |c |d
+            assert= "|a b $ c d" $ trim $ format-cirru
+              [] $ [] |a |b $ [] |c |d
+            assert=
+              {} (:a 1)
+                :b $ [] $ {} (:c 3) (4 5)
+              tagging-edn $ {} (|a 1)
+                :b $ [] $ {} (|c 3) (4 5)
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-detects $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-detects ()
-              assert-detect fn? $ fn () 1
-              assert-detect not $ bool?
-                fn () 1
-              assert-detect fn? &=
-              inside-eval: $ assert-detect macro? cond
-              assert-detect set? $ #{} 1 2 3
-              assert= 1 $ either nil 1
-              assert= 2 $ either 2 1
-              assert= nil $ either nil nil
-              assert= false $ either false true
-              assert= false $ either nil false true
-              assert= true $ either nil true
-              assert= true $ either nil nil true
-              assert= 2 $ either 2 (raise "|should not be called")
-              assert= 2 $ def x 2
-              assert= false $ and true true false
-              assert= false $ and true false true
-              assert= true $ and true true true
-              assert= false $ or false false false
-              assert= true $ or false true false
-              assert= true $ or false false true
-              assert= true $ or false true
-              assert= true $ or nil true
-              assert=
-                or true $ raise "|raise in or"
-                , true
-              assert=
-                and false $ raise "|raise in and"
-                , false
-              assert= 2 $ when-not (> 1 2) 1 2
-              assert= 1 $ if-not (> 2 1) 2 1
-              assert= nil $ if-not (> 2 1) 2
-              assert-detect identity $ /= 1 2
-              assert-detect identity $ not= 1 2
-              assert= true $ some-in? ({,} :a 1) ([] :a)
-              assert= false $ some-in? ({,} :a 1) ([] :b)
-              assert= false $ some-in? nil ([] :b)
-              assert= false $ some-in? nil ([])
-              assert= true $ some-in?
-                {,} :a $ [] 1
-                [] :a 0
-              assert= false $ some-in?
-                {,} :a $ [] 1
-                [] :a 1
-              assert= false $ some-in? ([] 1 2 3) ([] :a)
-              assert= 1 $ non-nil! 1
+          :code $ quote $ defn test-detects ()
+            assert-detect fn? $ fn () 1
+            assert-detect not $ bool? $ fn () 1
+            assert-detect fn? &=
+            inside-eval: $ assert-detect macro? cond
+            assert-detect set? $ #{} 1 2 3
+            assert= 1 $ either nil 1
+            assert= 2 $ either 2 1
+            assert= nil $ either nil nil
+            assert= false $ either false true
+            assert= false $ either nil false true
+            assert= true $ either nil true
+            assert= true $ either nil nil true
+            assert= 2 $ either 2 $ raise "|should not be called"
+            assert= 2 $ def x 2
+            assert= false $ and true true false
+            assert= false $ and true false true
+            assert= true $ and true true true
+            assert= false $ or false false false
+            assert= true $ or false true false
+            assert= true $ or false false true
+            assert= true $ or false true
+            assert= true $ or nil true
+            assert=
+              or true $ raise "|raise in or"
+              , true
+            assert=
+              and false $ raise "|raise in and"
+              , false
+            assert= 2 $ when-not (> 1 2) 1 2
+            assert= 1 $ if-not (> 2 1) 2 1
+            assert= nil $ if-not (> 2 1) 2
+            assert-detect identity $ /= 1 2
+            assert-detect identity $ not= 1 2
+            assert= true $ some-in? ({,} :a 1) ([] :a)
+            assert= false $ some-in? ({,} :a 1) ([] :b)
+            assert= false $ some-in? nil $ [] :b
+            assert= false $ some-in? nil $ []
+            assert= true $ some-in?
+              {,} :a $ [] 1
+              [] :a 0
+            assert= false $ some-in?
+              {,} :a $ [] 1
+              [] :a 1
+            assert= false $ some-in? ([] 1 2 3) ([] :a)
+            assert= 1 $ non-nil! 1
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-display-stack $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing display stack") (&display-stack "|show stack here")
+          :code $ quote $ fn ()
+            log-title "|Testing display stack"
+            &display-stack "|show stack here"
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-effect $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing effect")
-              println "|Env mode:" $ get-env |mode
-              println "|Env mode:" $ option:unwrap-or (get-env |m0) "|default m0"
-              eprintln "|stdout message"
-              let
-                  missing-file $ fs:path |/calcit-result-contract-does-not-exist/file
-                  missing-dir $ fs:path |/calcit-result-contract-does-not-exist
-                do
-                  assert= true $ result:err? missing-file.read-text
-                  assert= true $ result:err? missing-dir.read-dir
-                  assert= true $ result:err? missing-dir.walk-dir
-                  assert= true $ result:err? (missing-file.write-text |content)
-                  assert-type missing-file.read-text $ :: 'Result 'String 'String
-                  assert-type missing-dir.read-dir $ :: 'Result (:: 'List 'FsPath) 'String
-                  assert-type missing-dir.walk-dir $ :: 'Result (:: 'List 'FsPath) 'String
-                  assert-type (missing-file.write-text |content) (:: 'Result 'Unit 'String)
+          :code $ quote $ fn () (log-title "|Testing effect")
+            println "|Env mode:" $ get-env |mode
+            println "|Env mode:" $ option:unwrap-or (get-env |m0) "|default m0"
+            eprintln "|stdout message"
+            let
+                missing-file $ fs:path |/calcit-result-contract-does-not-exist/file
+                missing-dir $ fs:path |/calcit-result-contract-does-not-exist
+              do
+                assert= true $ result:err? missing-file.read-text
+                assert= true $ result:err? missing-dir.read-dir
+                assert= true $ result:err? missing-dir.walk-dir
+                assert= true $ result:err? $ missing-file.write-text |content
+                assert-type missing-file.read-text $ :: 'Result 'String 'String
+                assert-type missing-dir.read-dir $ :: 'Result (:: 'List 'FsPath) 'String
+                assert-type missing-dir.walk-dir $ :: 'Result (:: 'List 'FsPath) 'String
+                assert-type
+                  missing-file.write-text |content
+                  :: 'Result 'Unit 'String
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-fn $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing fn")
-              &let
-                empty-f $ fn ()
-                assert= &unit $ empty-f
-              &let
-                coll-f $ fn (& xs) xs
-                assert= ([] 1 2 3 4 5)
-                  coll-f 1 & ([] 2 3 4) 5
+          :code $ quote $ fn () (log-title "|Testing fn")
+            &let
+              empty-f $ fn $
+              assert= &unit $ empty-f
+            &let
+              coll-f $ fn (& xs) xs
+              assert= ([] 1 2 3 4 5)
+                coll-f 1 & ([] 2 3 4) 5
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-fn-eq $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing equality of functions")
-              let
-                  a $ fn (x) x
-                  b $ fn (x) x
-                assert= a a
-                assert= b b
-                assert= false $ &= a b
+          :code $ quote $ fn ()
+            log-title "|Testing equality of functions"
+            let
+                a $ fn (x) x
+                b $ fn (x) x
+              assert= a a
+              assert= b b
+              assert= false $ &= a b
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-if $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing if with nil")
-              assert= (if false 1) (if nil 1)
-              assert= (if false 1 2) (if nil 1 2)
-              assert= (if false 1) (if &unit 1)
-              assert= (if false 1 2) (if &unit 1 2)
-              assert= true $ not &unit
+          :code $ quote $ fn ()
+            log-title "|Testing if with nil"
+            assert= (if false 1) (if nil 1)
+            assert= (if false 1 2) (if nil 1 2)
+            assert= (if false 1) (if &unit 1)
+            assert= (if false 1 2) (if &unit 1 2)
+            assert= true $ not &unit
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-json $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing JSON")
-              let
-                  parsed $ json-parse "|{\"name\":\"demo\",\"items\":[1,null,true],\"meta\":{\"flag\":false}}"
-                assert= (%some |demo) (get parsed :name)
-                assert=
-                  %some $ [] 1 nil true
-                  get parsed :items
-                assert= (%some false)
-                  get-in parsed $ [] :meta :flag
+          :code $ quote $ fn () (log-title "|Testing JSON")
+            let
+                parsed $ json-parse "|{\"name\":\"demo\",\"items\":[1,null,true],\"meta\":{\"flag\":false}}"
+              assert= (%some |demo) (get parsed :name)
               assert=
-                json-parse $ json-stringify
-                  {} (:status |ok)
-                    :items $ [] 1 true nil
-                {} (:status |ok)
-                  :items $ [] 1 true nil
-              assert= "|\"ok\"" $ json-stringify :ok
-              assert= "|{\n  \"a\": 1\n}" $ json-pretty
-                {} $ :a 1
+                %some $ [] 1 nil true
+                get parsed :items
+              assert= (%some false)
+                get-in parsed $ [] :meta :flag
+            assert=
+              json-parse $ json-stringify $ {} (:status |ok)
+                :items $ [] 1 true nil
+              {} (:status |ok)
+                :items $ [] 1 true nil
+            assert= "|\"ok\"" $ json-stringify :ok
+            assert= "|{\n  \"a\": 1\n}" $ json-pretty $ {} (:a 1)
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-method $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing method")
-              let
-                  a0 $ %:: NumBox :number 0
-                  _ $ do (assert-type a0 NumBox)
-                    let
-                        a0-tuple a0
-                      assert-type a0-tuple 'Tuple
-                      assert= true $ any? (&enum:impls a0-tuple)
-                        fn (impl)
-                          = (impl-origin impl) (%some NumTrait)
-                assert-traits a0 NumTrait calcit.core/Debug
-                let
-                    a1 $ .inc a0
-                  assert-type a1 NumBox
-                  assert-traits a1 NumTrait calcit.core/Debug
+          :code $ quote $ fn () (log-title "|Testing method")
+            let
+                a0 $ %:: NumBox :number 0
+                _ $ do (assert-type a0 NumBox)
                   let
-                      a2 $ .inc a1
-                    assert-traits a2 NumTrait calcit.core/Debug
-                    assert= (%:: NumBox :number 2) a2
-                    assert= |1 $ .show a1
+                      a0-tuple a0
+                    assert-type a0-tuple 'Tuple
+                    assert= true $ any? (&enum:impls a0-tuple)
+                      fn (impl)
+                        = (impl-origin impl) (%some NumTrait)
+              assert-traits a0 NumTrait calcit.core/Debug
+              let
+                  a1 $ .inc a0
+                assert-type a1 NumBox
+                assert-traits a1 NumTrait calcit.core/Debug
+                let
+                    a2 $ .inc a1
+                  assert-traits a2 NumTrait calcit.core/Debug
+                  assert= (%:: NumBox :number 2) a2
+                  assert= |1 $ .show a1
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-refs $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)
-              assert= &unit $ add-watch *ref-demo :change
-                fn (current prev) (println "|change happened:" prev current)
-              assert= 2 $ reset! *ref-demo 2
-              assert= &unit $ remove-watch *ref-demo :change
-              assert= "|remove-watch failed: listener with key `missing` not found" $ try (remove-watch *ref-demo :missing)
-                fn (error) error
-              assert= 2 @*ref-demo
-              assert= :ref $ type-of *ref-demo
-              let
-                  *l $ atom 1
-                reset! *l 2
-                assert= 2 @*l
-              let
-                  v $ %:: ValueBox :value 1
-                assert-type v ValueBox
-                assert= 2 $ .deref v
-                assert= (%some 1) (nth v 1)
-              let
-                  *b $ atom 0
-                  *c $ atom 0
-                add-watch *b :change $ fn (current prev)
-                  do (reset! *c current) &unit
-                reset! *b 1
-                assert= 1 @*b
-                assert= 1 @*c
+          :code $ quote $ fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)
+            assert= &unit $ add-watch *ref-demo :change $ fn (current prev)
+              println "|change happened:" prev current
+            assert= 2 $ reset! *ref-demo 2
+            assert= &unit $ remove-watch *ref-demo :change
+            assert= "|remove-watch failed: listener with key `missing` not found" $ try (remove-watch *ref-demo :missing)
+              fn (error) error
+            assert= 2 @*ref-demo
+            assert= :ref $ type-of *ref-demo
+            let
+                *l $ atom 1
+              reset! *l 2
+              assert= 2 @*l
+            let
+                v $ %:: ValueBox :value 1
+              assert-type v ValueBox
+              assert= 2 $ .deref v
+              assert= (%some 1) (nth v 1)
+            let
+                *b $ atom 0
+                *c $ atom 0
+              add-watch *b :change $ fn (current prev)
+                do (reset! *c current) &unit
+              reset! *b 1
+              assert= 1 @*b
+              assert= 1 @*c
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-tag $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-tag ()
-              ; assert "|tag function" $ =
-                :a $ {} (:a 1)
-                , 1
-              ; inside-eval: $ &let
-                base $ {} (:a 1)
-                assert= 1 $ base :a
-              inside-eval: $ assert= ([] 1)
-                .map
-                  [] $ &{} :a 1
-                  , :a
+          :code $ quote $ defn test-tag ()
+            ; assert "|tag function" $ =
+              :a $ {} $ :a 1
+              , 1
+            ; inside-eval: $ &let
+              base $ {} $ :a 1
+              assert= 1 $ base :a
+            inside-eval: $ assert= ([] 1)
+              .map
+                [] $ &{} :a 1
+                , :a
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-try $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-try ()
-              assert= false $ try
-                do (println "|inside false try")
-                  raise "|error intented" $ [] :demo
-                  , :true
-                fn (error)
-                  do (println "|Caught error:" error) false
-              assert= |:a $ apply-args ()
-                fn () $ try (raise |false)
-                  fn (error) (str :a)
-              println "|Finished testing try"
+          :code $ quote $ defn test-try ()
+            assert= false $ try
+              do
+                println "|inside false try"
+                raise "|error intented" $ [] :demo
+                , :true
+              fn (error)
+                do (println "|Caught error:" error) false
+            assert= |:a $ apply-args () $ fn ()
+              try (raise |false)
+                fn (error) (str :a)
+            println "|Finished testing try"
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
       :ns $ %{} 'NsEntry (:doc |)
-        :code $ quote
-          ns app.main $ :require (test-cond.main :as test-cond) (test-hygienic.main :as test-hygienic) (test-lens.main :as test-lens) (test-list.main :as test-list) (test-macro.main :as test-macro) (test-map.main :as test-map) (test-math.main :as test-math) (test-recursion.main :as test-recursion) (test-set.main :as test-set) (test-string.main :as test-string) (test-edn.main :as test-edn) (test-js.main :as test-js) (test-struct.main :as test-struct) (test-nil.main :as test-nil) (test-fn.main :as test-fn) (test-anonymous-enum.main :as test-anonymous-enum) (test-algebra.main :as test-algebra) (test-types.main :as test-types) (test-types-inference.main :as test-types-inference) (test-enum.main :as test-enum) (test-generics.main :as test-generics) (test-traits.main :as test-traits) (test-doc-smoke.main :as test-doc-smoke) (test-def-meta.main :as test-def-meta)
+        :code $ quote $ ns app.main
+          :require (test-cond.main :as test-cond)
+            test-hygienic.main :as test-hygienic
+            test-lens.main :as test-lens
+            test-list.main :as test-list
+            test-macro.main :as test-macro
+            test-map.main :as test-map
+            test-math.main :as test-math
+            test-recursion.main :as test-recursion
+            test-set.main :as test-set
+            test-string.main :as test-string
+            test-edn.main :as test-edn
+            test-js.main :as test-js
+            test-struct.main :as test-struct
+            test-nil.main :as test-nil
+            test-fn.main :as test-fn
+            test-anonymous-enum.main :as test-anonymous-enum
+            test-algebra.main :as test-algebra
+            test-types.main :as test-types
+            test-types-inference.main :as test-types-inference
+            test-enum.main :as test-enum
+            test-generics.main :as test-generics
+            test-traits.main :as test-traits
+            test-doc-smoke.main :as test-doc-smoke
+            test-def-meta.main :as test-def-meta
             util.core :refer $ log-title inside-eval: inside-js:

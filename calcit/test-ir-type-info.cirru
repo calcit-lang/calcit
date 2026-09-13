@@ -1,32 +1,32 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |app) (:version |0.0.0)
-  :entries $ {}
-    :default $ {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
+{}
+  :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
+  :package |app
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'app.main/main!) (:mode :native)
+      :reload-fn 'app.main/reload!
+      :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
-  :files $ {}
-    |app.main $ %{} 'FileEntry
+  :files $ {} $ 'app.main
+    %{} 'FileEntry
       :defs $ {}
-        |get-number $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn get-number () 'Number $ do 123
+        'get-number $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn get-number () 'Number (do 123)
           :examples $ []
           :schema $ :: 'Dynamic
-        |main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn main! () $ test-type-info
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () (test-type-info)
           :examples $ []
           :schema $ :: 'Dynamic
-        |reload! $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn reload! $
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! ()
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ []
-        |test-type-info $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-type-info () $ let
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'test-type-info $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-type-info ()
+            let
                 x 123
               ; "这里" assert-type "会把类型信息加到" scope_types
               assert-type x 'Number
@@ -52,4 +52,4 @@
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)
-        :code $ quote (ns app.main)
+        :code $ quote $ ns app.main

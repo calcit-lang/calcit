@@ -1,43 +1,44 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-optimize) (:version |0.0.0)
-  :entries $ {}
-    :default $ {} (:description |) (:init-fn 'test-optimize.main/main!) (:mode :native) (:reload-fn 'test-optimize.main/reload!)
+{}
+  :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
+  :package |test-optimize
+  :entries $ {} $ :default
+    {} (:description |)
+      :init-fn 'test-optimize.main/main!
+      :mode :native
+      :reload-fn 'test-optimize.main/reload!
+      :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
-  :files $ {}
-    |test-optimize.main $ %{} 'FileEntry
+  :files $ {} $ 'test-optimize.main
+    %{} 'FileEntry
       :defs $ {}
-        |LocalPerson0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defstruct LocalPerson0 $ :name 'String
+        'LocalPerson0 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct LocalPerson0 (:name 'String)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'Person $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def Person (impl-traits Person0 ShowImpl)
           :examples $ []
           :schema $ :: 'Dynamic
-        |Person $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def Person $ impl-traits Person0 ShowImpl
+        'Person0 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Person0 (:name 'String)
           :examples $ []
-          :schema $ :: 'Dynamic
-        |Person0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defstruct Person0 $ :name 'String
+          :schema $ :: 'StructDef
+        'ShowImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl ShowImpl ShowTrait
+            .show $ fn (self)
+              str "|Person: " $ &struct:get self :name
           :examples $ []
-          :schema $ :: 'Dynamic
-        |ShowImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defimpl ShowImpl ShowTrait $ .show
-              fn (self)
-                str "|Person: " $ &struct:get self :name
+          :schema $ :: 'Impl
+        'ShowTrait $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait ShowTrait (.show :fn)
           :examples $ []
-          :schema $ :: 'Dynamic
-        |ShowTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            deftrait ShowTrait $ .show :fn
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn main! () $ let
-                p $ %{} Person (:name |Jim)
+          :schema $ :: 'Trait
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            let
+                p $ %{} Person $ :name |Jim
               println "|--- direct call ---"
               println $ p .show
               let
@@ -57,13 +58,12 @@
                 println "|--- assert-type Person + assert-traits ShowTrait ---"
                 println $ p4 .show
               let
-                LocalPerson $ impl-traits LocalPerson0 ShowImpl
-                  lp $ %{} LocalPerson (:name |Local)
+                LocalPerson $ impl-traits LocalPerson0 ShowImpl $ lp
+                  %{} LocalPerson $ :name |Local
                 println "|--- local struct (runtime impl) ---"
                 assert-traits lp ShowTrait
                 println $ lp .show
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)
-        :code $ quote
-          ns test-optimize.main $ :require
+        :code $ quote $ ns test-optimize.main (:require)

@@ -1,290 +1,279 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-js)
-  :entries $ {}
-    :default $ {} (:description |) (:init-fn 'test-js.main/main!) (:mode :native) (:reload-fn 'test-js.main/reload!)
+{}
+  :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
+  :package |test-js
+  :entries $ {} $ :default
+    {} (:description |)
+      :init-fn 'test-js.main/main!
+      :mode :native
+      :reload-fn 'test-js.main/reload!
       :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
-  :files $ {}
-    'test-js.main $ %{} 'FileEntry
+  :files $ {} $ 'test-js.main
+    %{} 'FileEntry
       :defs $ {}
         'load-data-code $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro load-data-code (s)
-              &data-to-code $ parse-cirru-edn (unsafe-coerce s 'String)
+          :code $ quote $ defmacro load-data-code (s)
+            &data-to-code $ parse-cirru-edn $ unsafe-coerce s 'String
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'String)
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] $ :: 'Expr 'String
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn main! ()
-              hint-fn $ {} (:async true)
-              log-title "|Testing js"
-              test-js
-              test-let-example
-              test-collection
-              test-async
-              js-await $ test-async-in-data
-              test-data-gen
-              test-regexp
-              test-property
-              test-tag-keys
-              when (> 1 2)
-                raise $ str "|error of math" 2 1
-                raise "|base error"
-              =
-                {} $ :a 1
-                w-js-log $ {} (:a 1)
-              =
-                {} $ :a 1
-                wo-js-log $ {} (:a 1)
-              w-js-log "|log demo"
-              test-for-await
-              test-case-async
-              test-return-raw-code
-              do true
+          :code $ quote $ defn main! ()
+            hint-fn $ {} $ :async true
+            log-title "|Testing js"
+            test-js
+            test-let-example
+            test-collection
+            test-async
+            js-await $ test-async-in-data
+            test-data-gen
+            test-regexp
+            test-property
+            test-tag-keys
+            when (> 1 2)
+              raise $ str "|error of math" 2 1
+              raise "|base error"
+            =
+              {} $ :a 1
+              w-js-log $ {} $ :a 1
+            =
+              {} $ :a 1
+              wo-js-log $ {} $ :a 1
+            w-js-log "|log demo"
+            test-for-await
+            test-case-async
+            test-return-raw-code
+            do true
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-              :features $ #{} :js-ffi
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
+            :features $ #{} :js-ffi
         'test-async $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () $ let
+          :code $ quote $ fn ()
+            let
                 f1 $ fn ()
-                  hint-fn $ {} (:async true)
+                  hint-fn $ {} $ :async true
                   new js/Promise $ fn (resolve reject)
                     js/setTimeout
-                      fn () (println "|async code finished after 200ms") (resolve true)
+                      fn ()
+                        println "|async code finished after 200ms"
+                        resolve true
                       , 200
                 f2 $ fn ()
-                  hint-fn $ {} (:async true)
+                  hint-fn $ {} $ :async true
                   js-await $ f1
-                  assert= true $ if true
-                    js-await $ f1
+                  assert= true $ if true $ js-await (f1)
                   let
-                      a $ js-await (f1)
+                      a $ js-await $ f1
                     assert= true a
               f2
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-              :features $ #{} :js-ffi
-        'test-async-in-data $ %{} 'CodeEntry (:doc "|async fn inside data. if wrong, it will be a syntax error from await outside async")
-          :code $ quote
-            fn ()
-              hint-fn $ {} (:async true)
-              let
-                  timeout $ fn (ms)
-                    new js/Promise $ fn (resolve reject) (js/setTimeout resolve ms)
-                  f 0
-                  f $ let
-                      b $ fn ()
-                        hint-fn $ {} (:async true)
-                        let
-                            a 1
-                            a $ js-await (timeout 200)
-                          assert= &unit a
-                    b
-                js/console.log "|a promise from nested let" $ js-await f
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
+            :features $ #{} :js-ffi
+        'test-async-in-data $ %{} 'CodeEntry
+          :doc "|async fn inside data. if wrong, it will be a syntax error from await outside async"
+          :code $ quote $ fn ()
+            hint-fn $ {} $ :async true
+            let
+                timeout $ fn (ms)
+                  new js/Promise $ fn (resolve reject) (js/setTimeout resolve ms)
+                f 0
+                f $ let
+                    b $ fn ()
+                      hint-fn $ {} $ :async true
+                      let
+                          a 1
+                          a $ js-await $ timeout 200
+                        assert= &unit a
+                  b
+              js/console.log "|a promise from nested let" $ js-await f
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-              :features $ #{} :js-ffi
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
+            :features $ #{} :js-ffi
         'test-case-async $ %{} 'CodeEntry (:doc "|case async")
-          :code $ quote
-            fn ()
-              hint-fn $ {} (:async true)
-              let
-                  a $ {} (:a 1)
-                  b $ option:unwrap (get a :a)
-                  ret $ js-await
-                    case-default b
-                      new js/Promise $ fn (resolve _reject)
-                        js/setTimeout
-                          fn () $ resolve |one
-                          , 100
-                      1 $ new js/Promise
-                        fn (resolve reject) (resolve |one)
-                      2 $ new js/Promise
-                        fn (resolve reject) (resolve |two)
-                assert= ret |one
+          :code $ quote $ fn ()
+            hint-fn $ {} $ :async true
+            let
+                a $ {} $ :a 1
+                b $ option:unwrap $ get a :a
+                ret $ js-await $ case-default b
+                  new js/Promise $ fn (resolve _reject)
+                    js/setTimeout
+                      fn () $ resolve |one
+                      , 100
+                  1 $ new js/Promise $ fn (resolve reject) (resolve |one)
+                  2 $ new js/Promise $ fn (resolve reject) (resolve |two)
+              assert= ret |one
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-              :features $ #{} :js-ffi
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
+            :features $ #{} :js-ffi
         'test-collection $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing quick collection syntax")
-              &let
-                a $ js-array 1 2 3 4
-                assert= 4 $ .-length a
-                assert= 1 $ aget a 0
-                assert= 4 $ aget a 3
-                assert= js/undefined $ aget a 4
-                assert= 2 $ .-1 a
-              &let
-                b $ js-object (:a 1) (|b 2) (:c 3)
-                assert= 1 $ .-a b
-                assert= 2 $ .-b b
-                assert= 3 $ .-c b
-                assert= 2 $ aget b |b
-              let
-                  c nil
-                  d $ js-object (:a 2)
-                  e $ js-array 1 2 3
-                assert= nil $ .?-a c
-                assert= nil $ .?-1 c
-                assert= 2 $ .?-a d
-                assert= 2 $ .?-1 e
-              let
-                  caller $ fn () 2
-                  c $ js-object
-                  d $ js-object (:f caller)
-                  e $ js-array caller
-                  f $ js-array
-                assert= nil $ .?!f c
-                assert= 2 $ .?!f d
-                assert= nil $ .?!2 f
-                assert= 2 $ .?!0 e
+          :code $ quote $ fn ()
+            log-title "|Testing quick collection syntax"
+            &let
+              a $ js-array 1 2 3 4
+              assert= 4 $ .-length a
+              assert= 1 $ aget a 0
+              assert= 4 $ aget a 3
+              assert= js/undefined $ aget a 4
+              assert= 2 $ .-1 a
+            &let
+              b $ js-object (:a 1) (|b 2) (:c 3)
+              assert= 1 $ .-a b
+              assert= 2 $ .-b b
+              assert= 3 $ .-c b
+              assert= 2 $ aget b |b
+            let
+                c nil
+                d $ js-object $ :a 2
+                e $ js-array 1 2 3
+              assert= nil $ .?-a c
+              assert= nil $ .?-1 c
+              assert= 2 $ .?-a d
+              assert= 2 $ .?-1 e
+            let
+                caller $ fn () 2
+                c $ js-object
+                d $ js-object $ :f caller
+                e $ js-array caller
+                f $ js-array
+              assert= nil $ .?!f c
+              assert= 2 $ .?!f d
+              assert= nil $ .?!2 f
+              assert= 2 $ .?!0 e
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-              :features $ #{} :js-ffi
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
+            :features $ #{} :js-ffi
         'test-data-gen $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing code gen from Cirru Edn")
-              assert=
-                :: :code $ &cirru-nth (parse-cirru "|+ 1 2") 0
-                load-data-code "|:: :code $ quote $ + 1 2"
+          :code $ quote $ fn ()
+            log-title "|Testing code gen from Cirru Edn"
+            assert=
+              :: :code $ &cirru-nth (parse-cirru "|+ 1 2") 0
+              load-data-code "|:: :code $ quote $ + 1 2"
           :examples $ []
           :schema $ :: 'Dynamic
         'test-for-await $ %{} 'CodeEntry (:doc "|for await")
-          :code $ quote
-            fn ()
-              hint-fn $ {} (:async true)
-              let
-                  gen $ &raw-code "|async function* genDemo() { yield 1; yield 2; yield 3; } "
-                  ret $ js-await
-                    js-for-await (gen)
-                      fn (item)
-                        new js/Promise $ fn (resolve _reject)
-                          js/setTimeout $ fn () (resolve item)
-                assert= 3 ret
+          :code $ quote $ fn ()
+            hint-fn $ {} $ :async true
+            let
+                gen $ &raw-code "|async function* genDemo() { yield 1; yield 2; yield 3; } "
+                ret $ js-await $ js-for-await (gen)
+                  fn (item)
+                    new js/Promise $ fn (resolve _reject)
+                      js/setTimeout $ fn () $ resolve item
+              assert= 3 ret
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-              :features $ #{} :js-ffi
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
+            :features $ #{} :js-ffi
         'test-js $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn ()
-              js/console.log $ js/Math.pow 4 4
-              js/console.log $ * (unsafe-coerce js/Math.PI Number) 2
-              when
-                = |number $ assert-type (js/typeof 1) (quote String)
-                js/console.log "|is a Number"
-              .!log (unsafe-coerce js/console JsObject) |demo
-              js/console.log "|Dates in difference syntax" $ .!now (unsafe-coerce js/Date JsObject)
-              js/console.log $ .-PI (unsafe-coerce js/Math JsObject)
-              js/console.log $ aget (unsafe-coerce js/Math JsObject) |PI
-              let
-                  a js/{}
-                aset a |name |demo
-                js/console.log a
-              js/console.log $ os/arch
-              println $ {} (:n 1)
-                :js $ js-array 1 2 3
-              js/console.log $ {} (:n 1)
-                :js $ js-array 1 2 3
-              eprintln "|a simulated error for eprintln"
-              js/console.log $ :: 'quote (+ 1 2 3)
-              js/console.log $ parse-cirru "|+ 1 2 3"
-              js/console.log $ parse-cirru "|defn f (a b) (+ x y) (* x y)"
-              println $ parse-cirru "|+ 1 2 3"
-              assert= 0 $ .-length (new js/Array)
-              assert= 7 $ .-length
-                new js/Array $ + 3 4
-              let
-                  a $ new js/Object
-                set! (.-a a) 2
-                assert= (.-a a) 2
-                assert= a.-a 2
-                set! (.-a-b a) 3
-                assert= (.-a-b a) 3
-              ; js/console.log $ range 1000
-              ; js/console.log $ repeat
-                {} $ :a (range 10)
-                , 400
-              assert/deepEqual
-                to-js-data $ [] 1 2 3
-                js-array 1 2 3
-              assert/deepEqual
-                to-js-data ([] 1 2 3)
-                  {} $ :js-array true
-                js-array 1 2 3
-              assert/deepEqual
-                to-js-data $ :: :a 1 2
-                js-array |a 1 2
-              assert-detect identity $ instance? js/Number (new js/Number 1)
-              assert-detect not $ instance? js/String (new js/Number 1)
-              assert=
-                [] 1 ([] 2 3)
-                  :: :quote $ [] 'a 'b
-                to-calcit-data $ js-array 1 ([] 2 3)
-                  :: :quote $ [] 'a 'b
-              assert=
-                &{} |a 1 :b 2 |c $ [] 3 4
-                to-calcit-data $ &js-object |a 1 |:b 2 :c ([] 3 4)
+          :code $ quote $ fn ()
+            js/console.log $ js/Math.pow 4 4
+            js/console.log $ * (unsafe-coerce js/Math.PI Number) 2
+            when
+              = |number $ assert-type (js/typeof 1) (quote String)
+              js/console.log "|is a Number"
+            .!log (unsafe-coerce js/console JsObject) |demo
+            js/console.log "|Dates in difference syntax" $ .!now $ unsafe-coerce js/Date JsObject
+            js/console.log $ .-PI $ unsafe-coerce js/Math JsObject
+            js/console.log $ aget (unsafe-coerce js/Math JsObject) |PI
+            let
+                a js/{}
+              aset a |name |demo
+              js/console.log a
+            js/console.log $ os/arch
+            println $ {} (:n 1)
+              :js $ js-array 1 2 3
+            js/console.log $ {} (:n 1)
+              :js $ js-array 1 2 3
+            eprintln "|a simulated error for eprintln"
+            js/console.log $ :: 'quote $ + 1 2 3
+            js/console.log $ parse-cirru "|+ 1 2 3"
+            js/console.log $ parse-cirru "|defn f (a b) (+ x y) (* x y)"
+            println $ parse-cirru "|+ 1 2 3"
+            assert= 0 $ .-length $ new js/Array
+            assert= 7 $ .-length $ new js/Array (+ 3 4)
+            let
+                a $ new js/Object
+              set! (.-a a) 2
+              assert= (.-a a) 2
+              assert= a.-a 2
+              set! (.-a-b a) 3
+              assert= (.-a-b a) 3
+            ; js/console.log $ range 1000
+            ; js/console.log $ repeat
+              {} $ :a $ range 10
+              , 400
+            assert/deepEqual
+              to-js-data $ [] 1 2 3
+              js-array 1 2 3
+            assert/deepEqual
+              to-js-data ([] 1 2 3)
+                {} $ :js-array true
+              js-array 1 2 3
+            assert/deepEqual
+              to-js-data $ :: :a 1 2
+              js-array |a 1 2
+            assert-detect identity $ instance? js/Number $ new js/Number 1
+            assert-detect not $ instance? js/String $ new js/Number 1
+            assert=
+              [] 1 ([] 2 3)
+                :: :quote $ [] 'a 'b
+              to-calcit-data $ js-array 1 ([] 2 3)
+                :: :quote $ [] 'a 'b
+            assert=
+              &{} |a 1 :b 2 |c $ [] 3 4
+              to-calcit-data $ &js-object |a 1 |:b 2 :c $ [] 3 4
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-              :features $ #{} :js-ffi
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
+            :features $ #{} :js-ffi
         'test-let-example $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing code emitting of using let")
-              let
-                  a 1
-                  b 2
-                  c $ + a b
-                  b 4
-                  d 5
-                assert= 13 $ + a b c d
-              ; "a special case variable shadowing of `b`"
-              let
-                  b -1
-                  a $ loop
-                      xs $ []
-                      b 0
-                    if (>= b 5) xs $ recur (conj xs b) (inc b)
-                assert= a $ [] 0 1 2 3 4
-                assert= b -1
+          :code $ quote $ fn ()
+            log-title "|Testing code emitting of using let"
+            let
+                a 1
+                b 2
+                c $ + a b
+                b 4
+                d 5
+              assert= 13 $ + a b c d
+            ; "a special case variable shadowing of `b`"
+            let
+                b -1
+                a $ loop
+                    xs $ []
+                    b 0
+                  if (>= b 5) xs $ recur (conj xs b) (inc b)
+              assert= a $ [] 0 1 2 3 4
+              assert= b -1
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-property $ %{} 'CodeEntry (:doc "|try property ops")
-          :code $ quote
-            fn () $ let
+        'test-property $ %{} 'CodeEntry
+          :doc "|try property ops"
+          :code $ quote $ fn ()
+            let
                 a $ js-object
               js-set a |b 1
               assert= 1 $ js-get a |b
               js-delete a |b
               assert= nil $ js-get a |b
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-              :features $ #{} :js-ffi
-        'test-regexp $ %{} 'CodeEntry (:doc "|try raw code and regexp")
-          :code $ quote
-            fn () $ let
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
+            :features $ #{} :js-ffi
+        'test-regexp $ %{} 'CodeEntry
+          :doc "|try raw code and regexp"
+          :code $ quote $ fn ()
+            let
                 pattern $ &raw-code |/^\d+$/
               js/console.log pattern
               assert= true $ .!test pattern |12
@@ -292,33 +281,31 @@
               assert= true $ pattern.!test |12
               assert= false $ pattern.!test |xy
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-              :features $ #{} :js-ffi
-        'test-return-raw-code $ %{} 'CodeEntry (:doc "|return with &raw-code")
-          :code $ quote
-            fn () $ let
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
+            :features $ #{} :js-ffi
+        'test-return-raw-code $ %{} 'CodeEntry
+          :doc "|return with &raw-code"
+          :code $ quote $ fn ()
+            let
                 a $ js-array 1 2
                 f $ fn (t)
                   if t (.-0 a) (&raw-code |a[1])
               assert= (f true) 1
               assert= (f false) 2
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-              :features $ #{} :js-ffi
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
+            :features $ #{} :js-ffi
         'test-tag-keys $ %{} 'CodeEntry (:doc "|tag keys for js")
-          :code $ quote
-            fn ()
-              assert= |a_b $ turn-string :a_b
-              assert= |a-b $ turn-string :a-b
-              assert= |a?b $ turn-string :a?b
-              assert= |ab! $ turn-string :ab!
+          :code $ quote $ fn ()
+            assert= |a_b $ turn-string :a_b
+            assert= |a-b $ turn-string :a-b
+            assert= |a?b $ turn-string :a?b
+            assert= |ab! $ turn-string :ab!
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)
-        :code $ quote
-          ns test-js.main $ :require (|os :as os) (|assert :as assert)
+        :code $ quote $ ns test-js.main
+          :require (|os :as os) (|assert :as assert)
             util.core :refer $ log-title
