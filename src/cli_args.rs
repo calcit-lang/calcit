@@ -129,7 +129,7 @@ pub struct FixCommand {
   /// explicitly request preview mode; preview is also the default
   #[argh(switch, long = "dry-run")]
   pub dry_run: bool,
-  /// output format: human (default) or json
+  /// output format: human (default), edn (primary structured data), or json (interoperability)
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// restrict fixes to one exact project namespace
@@ -1577,7 +1577,7 @@ pub struct EditTransactionCommand {
   /// validate and preview the transaction without replacing the snapshot
   #[argh(switch, long = "dry-run")]
   pub dry_run: bool,
-  /// output format: human (default) or json
+  /// output format: human (default), edn (primary structured data), or json (interoperability)
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }

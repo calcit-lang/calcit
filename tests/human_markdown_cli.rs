@@ -1,11 +1,48 @@
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+struct TestDirectory(PathBuf);
+
+impl TestDirectory {
+  fn create() -> Self {
+    let nonce = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .expect("test clock should be valid")
+      .as_nanos();
+    let counter = TEST_DIRECTORY_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("calcit-mutation-markdown-{}-{nonce}-{counter}", std::process::id()));
+    fs::create_dir(&path).expect("temporary project should create");
+    Self(path)
+  }
+
+  fn snapshot(&self) -> PathBuf {
+    let snapshot = self.0.join("calcit.cirru");
+    fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+    snapshot
+  }
+}
+
+impl Drop for TestDirectory {
+  fn drop(&mut self) {
+    let _ = fs::remove_dir_all(&self.0);
+  }
+}
 
 fn run_calcit(args: &[&str]) -> Output {
+  run_snapshot(Path::new("calcit/test.cirru"), args)
+}
+
+fn run_snapshot(snapshot: &Path, args: &[&str]) -> Output {
   Command::new(env!("CARGO_BIN_EXE_calcit"))
     .env("NO_COLOR", "1")
     .arg("--tips-level")
     .arg("none")
-    .arg("calcit/test.cirru")
+    .arg(snapshot)
     .args(args)
     .output()
     .expect("calcit command should run")
@@ -72,4 +109,69 @@ fn code_bearing_tree_diagnostic_stays_on_stderr_with_a_fence() {
   let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
   assert!(stderr.contains("# Error: invalid path\n"));
   assert!(stderr.contains("## Node at longest valid path\n\n```cirru\n"));
+}
+
+#[test]
+fn mutation_and_cursor_apply_share_markdown_source_boundaries() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  let mutation = run_snapshot(
+    &snapshot,
+    &[
+      "tree",
+      "replace",
+      "fix-command.main/fixable",
+      "--path",
+      "3",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ enum-definition value",
+    ],
+  );
+  let mutation_stdout = stdout(&mutation);
+  assert!(mutation_stdout.contains("# Tree mutation\n"), "stdout:\n{mutation_stdout}");
+  assert!(mutation_stdout.contains("## Before\n\n- node kind: `expression`\n\n```cirru\n"));
+  assert!(mutation_stdout.contains("## After\n\n- node kind: `expression`\n\n```cirru\n"));
+
+  let guard = run_snapshot(
+    &snapshot,
+    &[
+      "tree",
+      "replace",
+      "fix-command.main/fixable",
+      "--path",
+      "3",
+      "--expect",
+      "quote $ tuple-enum wrong",
+      "--code",
+      "quote $ tuple-enum value",
+    ],
+  );
+  assert!(!guard.status.success());
+  let guard_stderr = String::from_utf8(guard.stderr).expect("guard stderr should be UTF-8");
+  assert!(guard_stderr.contains("# Error: node guard failed\n"));
+  assert!(guard_stderr.contains("## Expected\n\n- node kind: `expression`\n\n```cirru\n"));
+  assert!(guard_stderr.contains("## Actual\n\n- node kind: `expression`\n\n```cirru\n"));
+
+  let cursor_directory = TestDirectory::create();
+  let cursor_snapshot = cursor_directory.snapshot();
+  let set = run_snapshot(&cursor_snapshot, &["cursor", "set", "fix-command.main/fixable", "--path", "3"]);
+  assert!(set.status.success(), "stderr:\n{}", String::from_utf8_lossy(&set.stderr));
+  let applied = run_snapshot(
+    &cursor_snapshot,
+    &[
+      "cursor",
+      "apply",
+      "replace",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ enum-definition value",
+    ],
+  );
+  let applied_stdout = stdout(&applied);
+  assert!(applied_stdout.contains("# Tree mutation\n"));
+  assert!(applied_stdout.contains("## Before\n\n- node kind: `expression`\n\n```cirru\n"));
+  assert!(applied_stdout.contains("## After\n\n- node kind: `expression`\n\n```cirru\n"));
 }

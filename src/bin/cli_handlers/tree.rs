@@ -5,8 +5,8 @@ use std::fmt::Write as _;
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, fragment_nesting_level, maybe_chunk_node};
 use super::common::{
   ERR_CODE_INPUT_REQUIRED, cirru_to_json, decode_mutation_syntax_input, emit_cli_output, format_path,
-  guard_snapshot_mutation_toolchain, markdown_fenced_block, parse_input_to_cirru, parse_path, print_cli_warning_block, read_code_input,
-  resolve_definition_lookup, shell_quote,
+  guard_snapshot_mutation_toolchain, markdown_cirru_section, markdown_fenced_block, parse_input_to_cirru, parse_path,
+  print_cli_warning_block, read_code_input, resolve_definition_lookup, shell_quote,
 };
 use super::cursor::{
   maintain_cursor_after_tree_mutation, resolve_active_cursor_reference, resolve_cursor_path_argument, resolve_cursor_target_argument,
@@ -59,7 +59,13 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
     TreeSubcommand::BatchDelete(opts) => handle_batch_delete(opts, snapshot_file),
   };
 
-  result?;
+  if let Err(error) = result {
+    if error.starts_with("# Error:") {
+      eprintln!("{error}");
+      return Err("Tree mutation rejected; details were written to stderr.".to_owned());
+    }
+    return Err(error);
+  }
   if let Some((target, mutation)) = cursor_mutation {
     maintain_cursor_after_tree_mutation(snapshot_file, &target, &mutation)?;
   }
@@ -75,10 +81,10 @@ fn verify_expected_node(actual: &Cirru, expected_input: Option<&str>, path: &[us
     return Ok(());
   }
   Err(format!(
-    "Node guard failed at {}.\nExpected:\n{}\nActual:\n{}\nNo changes were written. Re-run `calcit tree show ... --path {}` and update --expect or the path.",
+    "# Error: node guard failed\n\n- path: `{}`\n- changed: `false`\n\n{}\n{}\nNo changes were written. Re-run `calcit tree show ... --path {}` and update `--expect` or the path.",
     format_path(path),
-    format_preview_with_type(&expected, 6),
-    format_preview_with_type(actual, 6),
+    markdown_cirru_section(2, "Expected", &expected, 6)?,
+    markdown_cirru_section(2, "Actual", actual, 6)?,
     format_path(path),
   ))
 }
@@ -299,39 +305,10 @@ fn format_preview(node: &Cirru, max_lines: usize) -> String {
   formatted.trim_end().to_string()
 }
 
-/// Format a Cirru node for preview display with type annotation for short content
-fn format_preview_with_type(node: &Cirru, max_lines: usize) -> String {
-  let base_preview = format_preview(node, max_lines);
-
-  // Add type annotation for short content (especially single-element expressions)
-  let type_label = match node {
-    Cirru::Leaf(_) => " (leaf)".dimmed().to_string(),
-    Cirru::List(items) => {
-      if items.len() == 1 {
-        " (expr)".dimmed().to_string()
-      } else {
-        String::new()
-      }
-    }
-  };
-
-  if type_label.is_empty() {
-    base_preview
-  } else {
-    format!("{base_preview}{type_label}")
-  }
-}
-
-fn print_preview_block(label: &str, node: &Cirru, max_lines: usize, color: &str) {
-  let label_text = match color {
-    "yellow" => label.yellow().bold(),
-    "green" => label.green().bold(),
-    "cyan" => label.cyan().bold(),
-    _ => label.bold(),
-  };
-  println!("{label_text}:");
-  for line in format_preview_with_type(node, max_lines).lines() {
-    println!("  {line}");
+fn print_preview_block(label: &str, node: &Cirru, max_lines: usize, _color: &str) {
+  match markdown_cirru_section(2, label, node, max_lines) {
+    Ok(section) => println!("{section}"),
+    Err(error) => println!("## {label}\n\n_Unable to render preview: {error}_"),
   }
 }
 
@@ -362,19 +339,18 @@ fn format_child_preview(node: &Cirru) -> String {
 fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str) -> String {
   let mut output = String::new();
 
-  output.push_str(&format!("\n{}: {}\n", "Preview".blue().bold(), operation));
+  let _ = writeln!(&mut output, "# Tree mutation preview\n");
+  let _ = writeln!(&mut output, "- operation: `{operation}`");
+  let _ = writeln!(&mut output, "- changed: `true`\n");
+  match markdown_cirru_section(2, "Before", old_node, 10) {
+    Ok(section) => output.push_str(&section),
+    Err(error) => output.push_str(&format!("## Before\n\n_Unable to render preview: {error}_\n")),
+  }
   output.push('\n');
-
-  // Show old and new side by side (simplified version)
-  let old_preview = format_preview_with_type(old_node, 10);
-  let new_preview = format_preview_with_type(new_node, 10);
-
-  output.push_str(&format!("{}:\n", "Before".yellow().bold()));
-  output.push_str(&old_preview);
-  output.push_str("\n\n");
-  output.push_str(&format!("{}:\n", "After".green().bold()));
-  output.push_str(&new_preview);
-  output.push('\n');
+  match markdown_cirru_section(2, "After", new_node, 10) {
+    Ok(section) => output.push_str(&section),
+    Err(error) => output.push_str(&format!("## After\n\n_Unable to render preview: {error}_\n")),
+  }
 
   output
 }
@@ -713,9 +689,11 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
 
   let replaced_node = navigate_to_path(&new_code, &path)?;
 
-  println!("{} Replaced node", "✓".green());
-  println!();
-  println!("{}", "Changed node".blue().bold());
+  println!("# Tree mutation\n");
+  println!("- operation: `replace`");
+  println!("- target: `{}`", opts.target);
+  println!("- path: `{}`", format_path(&path));
+  println!("- changed: `true`\n");
   print_preview_block("Before", &old_node, opts.depth, "yellow");
   println!();
   print_preview_block("After", &replaced_node, opts.depth, "green");
@@ -728,8 +706,7 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
       navigate_to_path(&new_code, parent_path)?.clone()
     };
     println!();
-    println!("{}", "Containing expression".blue().bold());
-    print_preview_block("After", &parent_after, opts.depth, "cyan");
+    print_preview_block("Containing expression after", &parent_after, opts.depth, "cyan");
   }
 
   Ok(())
@@ -783,15 +760,7 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Applied 'rewrite'", "✓".green());
-  println!();
-  println!("{}:", "From".yellow().bold());
-  println!("{}", format_preview_with_type(&old_node, 20));
-  println!();
-  println!("{}:", "To".green().bold());
-  let new_node = navigate_to_path(&new_code, &path)?;
-  println!("{}", format_preview_with_type(&new_node, 20));
-  println!();
+  println!("\n## Result\n\n- status: `applied`");
   Ok(())
 }
 
@@ -824,21 +793,20 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
     return Ok(());
   }
 
-  println!("{} {} match(es):", "Search:".bold(), matches.len());
-  println!();
+  println!("# Tree mutation\n");
+  println!("- operation: `replace-leaf`");
+  println!("- target: `{}`", opts.target);
+  println!("- matches: `{}`", matches.len());
+  println!("- changed: `true`\n");
+  println!("## Matched paths\n");
 
   // Show preview of matches
   for (i, (path, old_value)) in matches.iter().enumerate().take(20) {
-    println!(
-      "  {}. Path {}: {}",
-      i + 1,
-      format_path(path).dimmed(),
-      format!("{old_value:?}").yellow()
-    );
+    println!("{}. `{}`: `{old_value}`", i + 1, format_path(path));
   }
 
   if matches.len() > 20 {
-    println!("  ... and {} more", matches.len() - 20);
+    println!("\n_... and {} more._", matches.len() - 20);
   }
   println!();
 
@@ -866,15 +834,8 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
   code_entry.code = new_code;
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Replaced {} occurrence(s)", "✓".green(), replaced_count);
-  println!();
-  println!("{}:", "Replacement".green().bold());
-  println!(
-    "  {} → {}",
-    format!("{:?}", opts.pattern).yellow(),
-    format_preview_with_type(&replacement_node, 0)
-  );
-  println!();
+  println!("- replaced: `{replaced_count}`\n");
+  print_preview_block("Replacement", &replacement_node, 0, "green");
   Ok(())
 }
 
@@ -946,13 +907,11 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
     }
 
     // No --pick: show candidates with context
-    println!(
-      "{} Found {} matches for pattern {:?}:",
-      "Search:".bold(),
-      matches.len(),
-      opts.pattern
-    );
-    println!();
+    println!("# Search-replace candidates\n");
+    println!("- target: `{}`", opts.target);
+    println!("- pattern: `{}`", opts.pattern);
+    println!("- matches: `{}`", matches.len());
+    println!("- changed: `false`");
 
     let replacement_arg = if let Some(c) = &opts.code {
       format!("--code '{c}'")
@@ -965,29 +924,20 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
     for (i, (path, value)) in matches.iter().enumerate().take(20) {
       let full_path = compose_path(path);
       let path_str = format_path(&full_path);
-      println!("  [{}] Path {}: {:?}", i, path_str.dimmed(), value.to_string().yellow());
+      println!("\n## Candidate {i}\n");
+      println!("- path: `{path_str}`");
+      println!("- value: `{value}`");
       // Show context: get the parent node for a quick preview
       if !full_path.is_empty() {
         let parent_path = &full_path[..full_path.len() - 1];
         if let Ok(parent) = navigate_to_path(&code_entry.code, parent_path) {
-          let preview = parent.format_one_liner().unwrap_or_else(|_| "<expr>".to_string());
-          let truncated = if preview.len() > 80 {
-            format!("{}...", &preview[..80])
-          } else {
-            preview
-          };
-          println!("    Context: {}", truncated.dimmed());
+          print_preview_block("Context", &parent, 6, "");
         }
       }
       println!(
-        "    Command: {} {} --pattern '{}' {} --pick {}",
-        "calcit tree search-replace".cyan(),
-        opts.target,
-        opts.pattern,
-        replacement_arg,
-        i
+        "\n- command: `calcit tree search-replace {} --pattern '{}' {} --pick {}`",
+        opts.target, opts.pattern, replacement_arg, i
       );
-      println!();
     }
 
     if matches.len() > 20 {
@@ -1139,19 +1089,19 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Deleted node at {}", "✓".green(), format_path(&path));
+  println!("# Tree mutation\n");
+  println!("- operation: `delete`");
+  println!("- target: `{}`", opts.target);
+  println!("- path: `{}`", format_path(&path));
+  println!("- changed: `true`\n");
+  print_preview_block("Deleted node", &old_node, opts.depth, "yellow");
   println!();
-  println!("{}:", "Deleted node".yellow().bold());
-  println!("{}", format_preview_with_type(&old_node, opts.depth));
-  println!();
-  println!("{}:", "Parent after deletion".green().bold());
   let new_parent = if parent_path.is_empty() {
     new_code.clone()
   } else {
     navigate_to_path(&new_code, &parent_path)?
   };
-  println!("{}", format_preview_with_type(&new_parent, opts.depth));
-  println!();
+  print_preview_block("Parent after deletion", &new_parent, opts.depth, "green");
 
   // Warn about index changes
   if !path.is_empty() {
@@ -1411,19 +1361,19 @@ fn generic_insert_handler<T: InsertOperation>(
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Applied '{}'", "✓".green(), operation.as_str());
+  println!("# Tree mutation\n");
+  println!("- operation: `{}`", operation.as_str());
+  println!("- target: `{target}`");
+  println!("- path: `{}`", format_path(&path));
+  println!("- changed: `true`\n");
+  print_preview_block("Inserted node", &processed_node, depth, "cyan");
   println!();
-  println!("{}:", "Inserted node".cyan().bold());
-  println!("{}", format_preview_with_type(&processed_node, depth));
-  println!();
-  println!("{}:", "Containing node after".green().bold());
   let new_parent = if context_path.is_empty() {
     new_code.clone()
   } else {
     navigate_to_path(&new_code, context_path)?
   };
-  println!("{}", format_preview_with_type(&new_parent, depth));
-  println!();
+  print_preview_block("Containing node after", &new_parent, depth, "green");
 
   // Explain index impact based on operation
   match operation {
@@ -1518,8 +1468,11 @@ fn generic_swap_handler(
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Applied '{}'", "✓".green(), operation.as_str());
-  println!();
+  println!("# Tree mutation\n");
+  println!("- operation: `{}`", operation.as_str());
+  println!("- target: `{target}`");
+  println!("- path: `{}`", format_path(&path));
+  println!("- changed: `true`\n");
 
   // Explain what was swapped
   if !path.is_empty() {
@@ -1554,21 +1507,19 @@ fn generic_swap_handler(
     println!();
   }
 
-  println!("{}:", "Parent before swap".yellow().bold());
-  println!("{}", format_preview_with_type(&old_parent, 15));
+  print_preview_block("Parent before swap", &old_parent, 15, "yellow");
   println!();
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
     tips.add_with_priority(TipPriority::High, t);
     tips.print();
   }
-  println!("{}:", "Parent after swap".green().bold());
   let new_parent = if parent_path.is_empty() {
     new_code.clone()
   } else {
     navigate_to_path(&new_code, &parent_path)?
   };
-  println!("{}", format_preview_with_type(&new_parent, 15));
+  print_preview_block("Parent after swap", &new_parent, 15, "green");
 
   Ok(())
 }
@@ -1631,7 +1582,7 @@ fn handle_unwrap(opts: &TreeUnwrapCommand, snapshot_file: &str) -> Result<(), St
     .get_mut(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
-  let node = navigate_to_path(&code_entry.code, &path)?;
+  let node = navigate_to_path(&code_entry.code, &path)?.clone();
   let children = match &node {
     Cirru::List(children) => children.clone(),
     _ => return Err(format!("Node at path [{}] is a leaf; cannot unwrap", opts.path)),
@@ -1641,21 +1592,26 @@ fn handle_unwrap(opts: &TreeUnwrapCommand, snapshot_file: &str) -> Result<(), St
     return Err(format!("Node at path [{}] has no children to splice", opts.path));
   }
 
-  println!("\n{}: unwrap {} child(ren)", "Preview".blue().bold(), children.len());
-  println!("{}:", "Before".dimmed());
-  println!("{}", format_preview_with_type(&node, opts.depth));
-  println!("{} (spliced):", "After".cyan().bold());
-  for (i, child) in children.iter().enumerate() {
-    println!("  [{}] {}", i, format_preview_with_type(child, opts.depth));
-  }
-  println!();
-
   let new_code = splice_at_path(&code_entry.code, &path)?;
+  let parent_path = &path[..path.len() - 1];
+  let parent_after = if parent_path.is_empty() {
+    new_code.clone()
+  } else {
+    navigate_to_path(&new_code, parent_path)?.clone()
+  };
   code_entry.code = new_code;
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Unwrapped node", "✓".green());
+  println!("# Tree mutation\n");
+  println!("- operation: `unwrap`");
+  println!("- target: `{}`", opts.target);
+  println!("- path: `{}`", format_path(&path));
+  println!("- changed: `true`");
+  println!("- spliced children: `{}`\n", children.len());
+  print_preview_block("Before", &node, opts.depth, "yellow");
+  println!();
+  print_preview_block("Parent after", &parent_after, opts.depth, "green");
 
   Ok(())
 }
@@ -1684,21 +1640,21 @@ fn handle_raise(opts: &TreeRaiseCommand, snapshot_file: &str) -> Result<(), Stri
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
   let child_node = navigate_to_path(&code_entry.code, &path)?.clone();
-  let parent_node = navigate_to_path(&code_entry.code, parent_path)?;
-
-  println!("\n{}: raise", "Preview".blue().bold());
-  println!("{}:", "Before (parent)".dimmed());
-  println!("{}", format_preview_with_type(&parent_node, opts.depth));
-  println!("{}:", "After (raised child)".cyan().bold());
-  println!("{}", format_preview_with_type(&child_node, opts.depth));
-  println!();
+  let parent_node = navigate_to_path(&code_entry.code, parent_path)?.clone();
 
   let new_code = apply_operation_at_path(&code_entry.code, parent_path, TreeOperation::Replace, Some(&child_node))?;
   code_entry.code = new_code;
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Raised node", "✓".green());
+  println!("# Tree mutation\n");
+  println!("- operation: `raise`");
+  println!("- target: `{}`", opts.target);
+  println!("- path: `{}`", format_path(&path));
+  println!("- changed: `true`\n");
+  print_preview_block("Before (parent)", &parent_node, opts.depth, "yellow");
+  println!();
+  print_preview_block("After (raised child)", &child_node, opts.depth, "green");
 
   Ok(())
 }
@@ -1731,19 +1687,19 @@ fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String
 
   let new_node = process_node_with_references(&template, &references)?;
 
-  println!("\n{}: wrap", "Preview".blue().bold());
-  println!("{}:", "Before".dimmed());
-  println!("{}", format_preview_with_type(&original_node, opts.depth));
-  println!("{}:", "After".cyan().bold());
-  println!("{}", format_preview_with_type(&new_node, opts.depth));
-  println!();
-
   let new_code = apply_operation_at_path(&code_entry.code, &path, TreeOperation::Replace, Some(&new_node))?;
   code_entry.code = new_code;
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Wrapped node", "✓".green());
+  println!("# Tree mutation\n");
+  println!("- operation: `wrap`");
+  println!("- target: `{}`", opts.target);
+  println!("- path: `{}`", format_path(&path));
+  println!("- changed: `true`\n");
+  print_preview_block("Before", &original_node, opts.depth, "yellow");
+  println!();
+  print_preview_block("After", &new_node, opts.depth, "green");
 
   Ok(())
 }
@@ -1816,7 +1772,16 @@ mod tests {
   fn expected_node_guard_rejects_wrong_path_content() {
     let actual = list(vec![leaf("test-lisp-style")]);
     let error = verify_expected_node(&actual, Some("quote (test-methods)"), &[8]).expect_err("mismatched guard should fail");
-    assert!(error.contains("Node guard failed at @8"), "error: {error}");
+    assert!(error.contains("# Error: node guard failed"), "error: {error}");
+    assert!(error.contains("- path: `@8`"), "error: {error}");
+    assert!(
+      error.contains("## Expected\n\n- node kind: `expression`\n\n```cirru"),
+      "error: {error}"
+    );
+    assert!(
+      error.contains("## Actual\n\n- node kind: `expression`\n\n```cirru"),
+      "error: {error}"
+    );
     assert!(error.contains("No changes were written"), "error: {error}");
   }
 }

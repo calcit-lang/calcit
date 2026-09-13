@@ -57,6 +57,39 @@ pub fn markdown_fenced_block(language: &str, content: &str) -> String {
   out
 }
 
+pub fn format_cirru_source(node: &Cirru) -> Result<String, String> {
+  match node {
+    Cirru::Leaf(value) => Ok(cirru_parser::generate_leaf(value)),
+    Cirru::List(_) => cirru_parser::format(std::slice::from_ref(node), cirru_parser::CirruWriterOptions { use_inline: false })
+      .map(|content| content.trim().to_owned())
+      .map_err(|error| format!("Failed to format Cirru source preview: {error}")),
+  }
+}
+
+pub fn markdown_cirru_section(level: usize, title: &str, node: &Cirru, max_lines: usize) -> Result<String, String> {
+  let source = format_cirru_source(node)?;
+  let lines = source.lines().collect::<Vec<_>>();
+  let truncated = max_lines > 0 && lines.len() > max_lines;
+  let visible = if truncated { lines[..max_lines].join("\n") } else { source.clone() };
+  let mut out = String::new();
+  let _ = writeln!(&mut out, "{} {title}\n", "#".repeat(level.max(1)));
+  let _ = writeln!(&mut out, "- node kind: `{}`\n", syntax_node_kind(node));
+  out.push_str(&markdown_fenced_block("cirru", &visible));
+  if truncated {
+    let _ = writeln!(&mut out, "\n_Preview truncated: showing {max_lines} of {} lines._", lines.len());
+  }
+  Ok(out)
+}
+
+pub fn markdown_json_section(level: usize, title: &str, value: &serde_json::Value) -> Result<String, String> {
+  let content = serde_json::to_string_pretty(value).map_err(|error| format!("Failed to format JSON preview: {error}"))?;
+  Ok(format!(
+    "{} {title}\n\n{}",
+    "#".repeat(level.max(1)),
+    markdown_fenced_block("json", &content)
+  ))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyntaxNodeKind {
   Leaf,
@@ -86,6 +119,7 @@ impl DecodedSyntaxInput {
     cirru_to_json_value(&self.node)
   }
 
+  #[cfg(test)]
   pub fn structured_summary(&self) -> serde_json::Value {
     serde_json::json!({
       "input_format": self.selected_format.to_string(),
@@ -183,13 +217,19 @@ pub fn decode_syntax_input(raw: &str, requested_format: SyntaxInputFormat) -> Re
 }
 
 pub fn print_decoded_syntax_input(input: &DecodedSyntaxInput) {
-  let summary = input.structured_summary();
-  println!("Decoded syntax input:");
-  println!("- input format: {}", input.selected_format);
-  println!("- node kind: {}", input.node_kind);
-  println!("- canonical JSON AST: {}", input.canonical_json_ast());
-  println!("- structured: {summary}");
-  println!();
+  println!("# Decoded syntax input\n");
+  println!("- input format: `{}`", input.selected_format);
+  println!("- node kind: `{}`\n", input.node_kind);
+  match markdown_cirru_section(2, "Canonical Cirru syntax", &input.node, 0) {
+    Ok(section) => println!("{section}"),
+    Err(error) => println!("## Canonical Cirru syntax\n\n_Unable to render preview: {error}_"),
+  }
+  if input.selected_format == SyntaxInputFormat::JsonAst {
+    match markdown_json_section(2, "Canonical JSON AST", &input.canonical_json_ast()) {
+      Ok(section) => println!("\n{section}"),
+      Err(error) => println!("\n## Canonical JSON AST\n\n_Unable to render preview: {error}_"),
+    }
+  }
 }
 
 pub fn decode_mutation_syntax_input(raw: &str, requested_format: SyntaxInputFormat) -> Result<Cirru, String> {
