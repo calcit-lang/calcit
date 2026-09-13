@@ -41,9 +41,10 @@ Quick note: `calcit edit format` rewrites the target snapshot using canonical se
 
 老项目先按[两阶段升级流程](upgrade.md)固定使用 Calcit 0.14.15 运行 `tag-match-to-match-v1` 与
 `required-struct-field-v1`；验证并提交后，再使用当前工具链运行
-`calcit calcit.cirru fix --preset surface-latest-v1 --format json`。该 preset 会在 JSON 的
+`calcit calcit.cirru fix --preset surface-latest-v2 --format json`。该 preset 会在 JSON 的
 `filters.expanded_rule_ids` 中列出冻结的规则集合，包括冗余 `do`、旧数据 API，以及可静态证明安全的具名
-Enum/Struct `%::` / `%{}` 直接构造器迁移。`--preset` 与 `--rule` 互斥；apply 必须重复同一 selector。
+Enum/Struct `%::` / `%{}` 直接构造器迁移，并解包普通可执行源码中的单表达式 `do`。冻结的 v1 仍可复现原有四条规则。
+`--preset` 与 `--rule` 互斥；apply 必须重复同一 selector。
 
 For feature-level planning, use `calcit edit scaffold`. Its primary input is a
 Cirru EDN architecture plan, preferably stored under

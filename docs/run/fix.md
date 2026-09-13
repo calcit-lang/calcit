@@ -39,6 +39,8 @@ calcit calcit.cirru fix --ns app.main --def render! --format json
 - `redundant-do-v1` 整理 `defn`、`fn`、`let` 及嵌套 `do` 的 variadic body。父结构本来就按顺序执行多项、
   并以最后一项作为返回值时，这条规则会把直接子节点的单层 `do` splice 到父 body。`if` 分支、调用参数、binding value
   以及 `defmacro`、`quote`/`quasiquote` 数据不在自动修改范围内；macro 是否把多项 body 打包成一个表达式需要保留显式语义。
+- `single-expression-do-v1` 解包恰好只有一个 payload 的 `(do expr)`。这时 `do` 在分支、调用参数和 binding value
+  中也没有组合多个步骤，不会补充求值、失败或类型语义；`defmacro`、`quote`/`quasiquote` 仍作为宏/数据边界保留。
 - `named-enum-constructor-v1` 把能静态解析到项目 `defenum` 的 `%:: Result :ok value` 改为
   `Result :ok value`。
 - `named-struct-constructor-v1` 把能静态解析到项目 `defstruct` 的 `%{} Person (:name name)` 改为
@@ -50,16 +52,18 @@ calcit calcit.cirru fix --ns app.main --def render! --format json
 
 ## 运行版本化升级 preset
 
-`surface-latest-v1` 是面向 0.15 表层推荐写法的冻结规则集合，目前按确定顺序展开为
+`surface-latest-v1` 是第一版冻结集合，按确定顺序展开为
 `removed-data-api-v1`、`named-enum-constructor-v1`、`named-struct-constructor-v1` 和
-`redundant-do-v1`。构造器先于结构 splice，避免后者提前移动 source path。preview 的 JSON 会在 `filters.preset_id` 返回 preset 名称，并在
+`redundant-do-v1`，其含义保持不变。当前推荐的 `surface-latest-v2` 在这四条之后增加
+`single-expression-do-v1`。执行时会按 source path 从内向外应用结构改写，具名构造器区域内的规则合并为一次 guarded replacement，
+避免嵌套改写提前移动 source path。preview 的 JSON 会在 `filters.preset_id` 返回 preset 名称，并在
 `filters.expanded_rule_ids` 返回实际执行的规则，Agent 无需依赖人类日志猜测范围：
 
 ```bash
-calcit calcit.cirru fix --preset surface-latest-v1 --format json
-calcit calcit.cirru fix --preset surface-latest-v1 \
+calcit calcit.cirru fix --preset surface-latest-v2 --format json
+calcit calcit.cirru fix --preset surface-latest-v2 \
   --apply --expect-revision 'md5:<preview 返回的 revision>'
-calcit calcit.cirru fix --preset surface-latest-v1 --format json
+calcit calcit.cirru fix --preset surface-latest-v2 --format json
 ```
 
 `--preset` 与 `--rule` 互斥。apply 必须原样重复 preview 的 `--preset`、`--ns` 和 `--def`；第二次 preview
@@ -109,11 +113,25 @@ calcit calcit.cirru fix --ns app.main --def render! --rule redundant-do-v1 --for
 
 第二次 preview 应返回空 `suggestions`，证明规则幂等。随后运行目标 entry 的 `--check-only` 和行为测试。
 
-规则只 splice 已知 variadic body 的直接 `do` 子节点。以下位置会保留：
+`redundant-do-v1` 只 splice 已知 variadic body 的直接 `do` 子节点。多表达式 `do` 在以下位置会保留：
 
 - `if`/`case` 分支、函数调用参数和 binding value 等只接收单表达式的位置；
 - `defmacro` body，因为 macro 可能需要显式打包返回的语法树；
 - `quote`/`quasiquote` 内作为数据保存的代码。
+
+`single-expression-do-v1` 则处理这些普通可执行位置中的 `(do expr)`，因为它没有第二个步骤；同样跳过
+`defmacro` 与 `quote`/`quasiquote`。若一个项目同时需要两种整理，直接使用 `surface-latest-v2`，不要靠文本搜索判断层级。
+
+## 自动改写边界
+
+当前 preset 只收录能证明保持表层语义的一对一规则。以下项目继续由严格诊断定位，不能自动加入 preset：
+
+- 已知 Struct 字段访问后的 `.unwrap`：必须先证明 receiver 与调用链，不能全局删除；
+- `?` 参数、`Optional`、裸 `nil` 与 `%{}?`：需要选择 Option、Result、Unit 以及新的调用契约；
+- Dynamic 收窄、raw primitive 与 `unsafe-coerce`：需要设计 schema 和 capability 边界；
+- `get-or`、`first-or` 等到 `.unwrap-or`：需要 fallback 类型和缺失语义证据，后续按独立规则评估；
+- Snapshot schema 与 canonical serialization：继续由 `calcit edit format` 负责；
+- `tag-match-to-match-v1` 与 `required-struct-field-v1`：继续固定在已发布的 0.14.15 bridge。
 
 因此“检测冗余 `do`”应使用 fix preview，而不是正则搜索，也不会作为普通 compiler warning 混入类型诊断。
 
