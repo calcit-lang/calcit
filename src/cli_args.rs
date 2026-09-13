@@ -141,6 +141,9 @@ pub struct FixCommand {
   /// restrict fixes to one stable rule ID
   #[argh(option)]
   pub rule: Option<String>,
+  /// apply one versioned set of stable migration rules
+  #[argh(option)]
+  pub preset: Option<String>,
   /// require the snapshot content to match this revision before applying
   #[argh(option, long = "expect-revision")]
   pub expect_revision: Option<String>,

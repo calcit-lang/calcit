@@ -233,3 +233,197 @@ fn retired_surface_rules_point_to_the_published_migration_bridge() {
     assert!(stderr.contains("before upgrading"), "stderr: {stderr}");
   }
 }
+
+#[test]
+fn surface_latest_preset_migrates_named_enum_and_struct_constructors() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+
+  let enum_preview = run_fix(
+    &snapshot,
+    &[
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "legacy-enum",
+      "--preset",
+      "surface-latest-v1",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(
+    enum_preview.status.success(),
+    "stderr:\n{}",
+    String::from_utf8_lossy(&enum_preview.stderr)
+  );
+  let report = parse_stdout(&enum_preview);
+  assert_eq!(report["data"]["filters"]["preset_id"], "surface-latest-v1");
+  assert_eq!(report["data"]["filters"]["expanded_rule_ids"].as_array().map(Vec::len), Some(4));
+  assert_eq!(report["data"]["suggestions"][0]["rule_id"], "named-enum-constructor-v1");
+
+  let enum_applied = run_fix(
+    &snapshot,
+    &[
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "legacy-enum",
+      "--preset",
+      "surface-latest-v1",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(
+    enum_applied.status.success(),
+    "stderr:\n{}",
+    String::from_utf8_lossy(&enum_applied.stderr)
+  );
+
+  let struct_preview = run_fix(
+    &snapshot,
+    &[
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "legacy-struct",
+      "--preset",
+      "surface-latest-v1",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(
+    struct_preview.status.success(),
+    "stderr:\n{}",
+    String::from_utf8_lossy(&struct_preview.stderr)
+  );
+  assert_eq!(
+    parse_stdout(&struct_preview)["data"]["suggestions"][0]["rule_id"],
+    "named-struct-constructor-v1"
+  );
+  let struct_applied = run_fix(
+    &snapshot,
+    &[
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "legacy-struct",
+      "--preset",
+      "surface-latest-v1",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(
+    struct_applied.status.success(),
+    "stderr:\n{}",
+    String::from_utf8_lossy(&struct_applied.stderr)
+  );
+
+  let nested_applied = run_fix(
+    &snapshot,
+    &[
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "legacy-nested",
+      "--preset",
+      "surface-latest-v1",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(
+    nested_applied.status.success(),
+    "stderr:\n{}",
+    String::from_utf8_lossy(&nested_applied.stderr)
+  );
+  let updated = fs::read_to_string(&snapshot).expect("updated fixture should read");
+  assert!(updated.contains("defn legacy-enum () (FixPersonChoice :none)"));
+  assert!(updated.contains("defn legacy-struct () (FixPerson :name |Ada :age 1)"));
+  assert!(updated.contains("FixPersonChoice :person $ FixPerson :name |Ada :age 1"));
+
+  for definition in ["legacy-enum", "legacy-struct", "legacy-nested"] {
+    let target = format!("fix-command.main/{definition}");
+    let calcit_test = run_calcit(&snapshot, &["test", target.as_str(), "--require-match"]);
+    assert!(
+      calcit_test.status.success(),
+      "Calcit definition test failed for {definition}:\nstdout:\n{}\nstderr:\n{}",
+      String::from_utf8_lossy(&calcit_test.stdout),
+      String::from_utf8_lossy(&calcit_test.stderr)
+    );
+  }
+
+  for definition in ["legacy-enum", "legacy-struct", "legacy-nested"] {
+    let repeated = run_fix(
+      &snapshot,
+      &[
+        "--ns",
+        "fix-command.main",
+        "--def",
+        definition,
+        "--preset",
+        "surface-latest-v1",
+        "--format",
+        "json",
+      ],
+    );
+    assert!(repeated.status.success(), "stderr:\n{}", String::from_utf8_lossy(&repeated.stderr));
+    assert_eq!(parse_stdout(&repeated)["data"]["changed"], false);
+  }
+}
+
+#[test]
+fn preset_and_rule_selection_conflict() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let output = run_fix(
+    &snapshot,
+    &["--preset", "surface-latest-v1", "--rule", "redundant-do-v1", "--format", "json"],
+  );
+  assert!(!output.status.success());
+  assert!(String::from_utf8_lossy(&output.stderr).contains("conflicts with `--preset`"));
+}
+
+#[test]
+fn named_constructor_preset_preserves_quoted_data() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "quoted-legacy-constructor",
+      "--preset",
+      "surface-latest-v1",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(preview.status.success(), "stderr:\n{}", String::from_utf8_lossy(&preview.stderr));
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["changed"], false);
+  assert_eq!(report["data"]["suggestions"].as_array().map(Vec::len), Some(0));
+
+  let target = "fix-command.main/quoted-legacy-constructor";
+  let calcit_test = run_calcit(&snapshot, &["test", target, "--require-match"]);
+  assert!(
+    calcit_test.status.success(),
+    "Calcit definition test failed:\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&calcit_test.stdout),
+    String::from_utf8_lossy(&calcit_test.stderr)
+  );
+}

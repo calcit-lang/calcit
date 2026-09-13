@@ -140,6 +140,7 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
       push_optional(&mut tokens, "ns", opts.ns.as_deref(), "all project namespaces");
       push_optional(&mut tokens, "def", opts.definition.as_deref(), "all definitions");
       push_optional(&mut tokens, "rule", opts.rule.as_deref(), "all available rules");
+      push_optional(&mut tokens, "preset", opts.preset.as_deref(), "no migration preset");
       push_optional(
         &mut tokens,
         "expect-revision",

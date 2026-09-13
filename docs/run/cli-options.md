@@ -39,6 +39,10 @@ Quick note: `calcit edit format` rewrites the target snapshot using canonical se
 审阅建议后使用报告中的 revision 和相同 scope selectors 执行 `--apply`。不要把这类源码整理混入普通类型 warning，
 也不要通过正则批量删除仍在单表达式位置承担顺序语义的 `do`。完整流程见 [Compiler-guided Source Fixes](fix.md#检测并修复冗余-do)。
 
+老项目整体升级使用 `calcit calcit.cirru fix --preset surface-latest-v1 --format json`。该 preset 会在 JSON 的
+`filters.expanded_rule_ids` 中列出冻结的规则集合，包括冗余 `do`、旧数据 API，以及可静态证明安全的具名
+Enum/Struct `%::` / `%{}` 直接构造器迁移。`--preset` 与 `--rule` 互斥；apply 必须重复同一 selector。
+
 For feature-level planning, use `calcit edit scaffold`. Its primary input is a
 Cirru EDN architecture plan, preferably stored under
 `docs/architectures/<feature>.cirru`:

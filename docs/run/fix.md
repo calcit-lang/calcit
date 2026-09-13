@@ -39,10 +39,35 @@ calcit calcit.cirru fix --ns app.main --def render! --format json
 - `redundant-do-v1` 整理 `defn`、`fn`、`let` 及嵌套 `do` 的 variadic body。父结构本来就按顺序执行多项、
   并以最后一项作为返回值时，这条规则会把直接子节点的单层 `do` splice 到父 body。`if` 分支、调用参数、binding value
   以及 `defmacro`、`quote`/`quasiquote` 数据不在自动修改范围内；macro 是否把多项 body 打包成一个表达式需要保留显式语义。
+- `named-enum-constructor-v1` 把能静态解析到项目 `defenum` 的 `%:: Result :ok value` 改为
+  `Result :ok value`。
+- `named-struct-constructor-v1` 把能静态解析到项目 `defstruct` 的 `%{} Person (:name name)` 改为
+  `Person :name name`，并保持字段表达式的原始求值顺序。
 - `tag-match-to-match-v1` 与 `required-struct-field-v1` 属于已发布的 0.14.x migration bridge，不是 0.15 的 fix surface。
   升级旧项目时请固定使用 Calcit 0.14.15 执行规则、review 输出并验证测试；迁移完成后再切换到 0.15。
   0.15 若显式请求这两个 rule，会返回稳定错误和上述版本提示，不会继续携带旧 planner 与分析特例。
   replacement 原样保留 receiver 子树且只出现一次，因此不会复制或重排求值。
+
+## 运行版本化升级 preset
+
+`surface-latest-v1` 是面向 0.15 表层推荐写法的冻结规则集合，目前按确定顺序展开为
+`removed-data-api-v1`、`named-enum-constructor-v1`、`named-struct-constructor-v1` 和
+`redundant-do-v1`。构造器先于结构 splice，避免后者提前移动 source path。preview 的 JSON 会在 `filters.preset_id` 返回 preset 名称，并在
+`filters.expanded_rule_ids` 返回实际执行的规则，Agent 无需依赖人类日志猜测范围：
+
+```bash
+calcit calcit.cirru fix --preset surface-latest-v1 --format json
+calcit calcit.cirru fix --preset surface-latest-v1 \
+  --apply --expect-revision 'md5:<preview 返回的 revision>'
+calcit calcit.cirru fix --preset surface-latest-v1 --format json
+```
+
+`--preset` 与 `--rule` 互斥。apply 必须原样重复 preview 的 `--preset`、`--ns` 和 `--def`；第二次 preview
+应返回空建议。未来集合发生变化时应发布新的 preset ID，既有 ID 不应静默改变含义。
+
+具名构造器规则只处理原型能静态解析到当前项目 nominal definition 的直接源码。匿名 `%:: _` / `%{} _`、
+运行时 prototype、依赖中无法回溯的定义、局部同名遮蔽、`defmacro` 以及 `quote`/`quasiquote` 内的数据都会保留。
+Struct 规则还要求旧字段是完整的 `(:tag value)` pair；动态字段集合不做猜测。
 
 ## 检测并修复冗余 `do`
 
@@ -104,7 +129,7 @@ operation 数量；没有可应用 operation 时状态为 `not-needed`。日志�
 calcit calcit.cirru fix --ns app.main --def render! --apply --expect-revision 'md5:...'
 ```
 
-apply 必须原样重复 preview 使用的 `--ns`、`--def` 和 `--rule` selectors。revision 只证明 Snapshot 没有变化，不能证明
+apply 必须原样重复 preview 使用的 `--ns`、`--def` 以及 `--rule` 或 `--preset` selectors。revision 只证明 Snapshot 没有变化，不能证明
 更大 scope 中的其他建议也经过审阅；省略 selectors 会重新规划整个项目，而不是只应用上一次预览的子集。
 
 写入流程复用 `tree replace` 的 `--expect` guard 和现有 transaction：规划完成后即使调用方没有显式传
