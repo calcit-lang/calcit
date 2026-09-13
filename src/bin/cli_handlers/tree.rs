@@ -11,7 +11,7 @@ use super::common::{
 use super::cursor::{
   maintain_cursor_after_tree_mutation, resolve_active_cursor_reference, resolve_cursor_path_argument, resolve_cursor_target_argument,
 };
-use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json, tip_root_edit};
+use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json_markdown, tip_root_edit};
 use crate::cli_args::SyntaxInputFormat;
 use crate::cli_args::{
   TreeAppendChildCommand, TreeBatchDeleteCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand,
@@ -384,16 +384,12 @@ fn render_chunked_display(display: &ChunkedDisplay, chunk_expand_depth: usize) -
   let _ = writeln!(&mut out, "## Chunked preview\n");
   let _ = writeln!(
     &mut out,
-    "{}",
-    format!(
-      "nodes: {}, branches: {}, leaves: {}, max depth: {}, fragments: {}",
-      display.total.nodes,
-      display.total.branches,
-      display.total.leaves,
-      display.total.max_depth,
-      display.fragments.len()
-    )
-    .dimmed()
+    "nodes: {}, branches: {}, leaves: {}, max depth: {}, fragments: {}",
+    display.total.nodes,
+    display.total.branches,
+    display.total.leaves,
+    display.total.max_depth,
+    display.fragments.len()
   );
   let _ = writeln!(&mut out);
 
@@ -406,14 +402,10 @@ fn render_chunked_display(display: &ChunkedDisplay, chunk_expand_depth: usize) -
   if visible_fragments.len() < display.fragments.len() {
     let _ = writeln!(
       &mut out,
-      "{}",
-      format!(
-        "showing {}/{} fragments; nested chunks beyond level {} are hidden",
-        visible_fragments.len(),
-        display.fragments.len(),
-        chunk_expand_depth
-      )
-      .dimmed()
+      "showing {}/{} fragments; nested chunks beyond level {} are hidden",
+      visible_fragments.len(),
+      display.fragments.len(),
+      chunk_expand_depth
     );
     let _ = writeln!(&mut out);
   }
@@ -631,9 +623,8 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
         tips.add_with_priority(
           TipPriority::High,
           format!(
-            "This node has {} children. Use {} to annotate each nested list with its path index for easier editing.",
-            items.len(),
-            "--path-annotations".yellow()
+            "This node has {} children. Use `--path-annotations` to annotate each nested list with its path index for easier editing.",
+            items.len()
           ),
         );
       }
@@ -643,16 +634,15 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
         tips.add_with_priority(
           TipPriority::High,
           format!(
-            "Showing ROOT plus {} chunk layer(s). Use {} to reveal deeper nested fragments, or {} to disable chunking.",
+            "Showing ROOT plus {} chunk layer(s). Use `--chunk-expand-depth {}` to reveal deeper nested fragments, or `--raw` to disable chunking.",
             opts.chunk_expand_depth,
-            format!("--chunk-expand-depth {}", opts.chunk_expand_depth + 1).yellow(),
-            "--raw".yellow()
+            opts.chunk_expand_depth + 1
           ),
         );
       }
-      tips.append(tip_prefer_oneliner_json(show_json));
+      tips.append(tip_prefer_oneliner_json_markdown(show_json));
       emit_cli_output(&out, render_to_stderr);
-      tips.print();
+      tips.print_markdown(render_to_stderr);
 
       return Ok(());
     }

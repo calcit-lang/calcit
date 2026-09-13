@@ -11,7 +11,7 @@ use super::cursor::{
   CursorLastQuery, load_cursor_last_query, resolve_active_cursor_reference, resolve_cursor_path_argument,
   resolve_cursor_target_argument, set_cursor_from_query_match,
 };
-use super::tips::{TipPriority, Tips, command_guidance_enabled};
+use super::tips::command_guidance_enabled;
 use calcit::CalcitTypeAnnotation;
 use calcit::calcit::{Calcit, CalcitFnTypeAnnotation, DYNAMIC_TYPE, LocatedWarning};
 use calcit::call_stack::CallStackList;
@@ -461,10 +461,7 @@ fn detailed_window(detail_offset: usize, total: usize) -> (usize, usize) {
 fn print_detail_window_hint(total: usize, detail_offset: usize, subject: &str) {
   if total > DETAILED_RESULTS_WINDOW {
     let (start, end) = detailed_window(detail_offset, total);
-    println!(
-      "{}",
-      format!("Detail window for {subject}: [{start}, {end}) (detail-offset={detail_offset}), other entries are compressed.").dimmed()
-    );
+    println!("Detail window for {subject}: [{start}, {end}) (detail-offset={detail_offset}); other entries are compressed.");
   }
 }
 
@@ -3662,16 +3659,12 @@ fn render_chunked_display(display: &ChunkedDisplay) -> String {
   let _ = writeln!(&mut out, "## Chunked Cirru\n");
   let _ = writeln!(
     &mut out,
-    "{}\n",
-    format!(
-      "nodes: {}, branches: {}, leaves: {}, max depth: {}, fragments: {}",
-      display.total.nodes,
-      display.total.branches,
-      display.total.leaves,
-      display.total.max_depth,
-      display.fragments.len()
-    )
-    .dimmed()
+    "nodes: {}, branches: {}, leaves: {}, max depth: {}, fragments: {}\n",
+    display.total.nodes,
+    display.total.branches,
+    display.total.leaves,
+    display.total.max_depth,
+    display.fragments.len()
   );
   let _ = writeln!(&mut out);
 
@@ -4935,8 +4928,7 @@ where
 }
 
 #[derive(Clone, Copy)]
-struct SearchResultDisplay<'a> {
-  highlight_target: Option<&'a str>,
+struct SearchResultDisplay {
   bracket_path: bool,
   show_parent_path: bool,
 }
@@ -4945,7 +4937,7 @@ fn print_search_results_human(
   catalog: &SearchCatalog,
   all_results: &SearchResults,
   common_opts: &SearchCommonOpts,
-  display: SearchResultDisplay<'_>,
+  display: SearchResultDisplay,
 ) {
   let snapshot = &catalog.snapshot;
   if all_results.is_empty() {
@@ -4992,7 +4984,7 @@ fn print_search_results_human(
           let path_str = format_path(path);
           let path_label = if display.bracket_path { format!("[{path_str}]") } else { path_str };
           let ((expr_preview, expr_truncated), parent_previews) =
-            expression_and_parent_preview(&code_entry.code, path, node, display.highlight_target, common_opts.loose);
+            expression_and_parent_preview(&code_entry.code, path, node, None, common_opts.loose);
           let (display_preview, display_truncated) = parent_previews
             .first()
             .map(|(text, truncated)| (text.as_str(), *truncated))
@@ -5031,17 +5023,9 @@ fn print_search_results_human(
     println!();
   }
 
-  let mut tips = Tips::new();
   if total_matches > 10 && common_opts.loose {
-    tips.add_with_priority(
-      TipPriority::High,
-      format!(
-        "Many matches ({total_matches}); add {} to show exact matches only",
-        "--exact".yellow()
-      ),
-    );
+    println!("## Tip\n\nMany matches ({total_matches}); add `--exact` to show exact matches only.");
   }
-  tips.print();
 }
 
 struct SearchCommandInfo<'a> {
@@ -5050,7 +5034,7 @@ struct SearchCommandInfo<'a> {
   pattern: &'a str,
   pattern_is_json: bool,
   start_path: Option<&'a str>,
-  display: SearchResultDisplay<'a>,
+  display: SearchResultDisplay,
 }
 
 fn finish_search_results(
@@ -5127,7 +5111,6 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
       pattern_is_json: false,
       start_path,
       display: SearchResultDisplay {
-        highlight_target: Some(pattern),
         bracket_path: false,
         show_parent_path: true,
       },
@@ -5157,11 +5140,6 @@ fn handle_search_expr(
       .clone()
   };
 
-  let highlight_target: Option<&str> = match &pattern_node {
-    Cirru::Leaf(s) => Some(s.as_ref()),
-    _ => None,
-  };
-
   let all_results = collect_search_results(
     &catalog.snapshot,
     parsed_start_path.as_deref(),
@@ -5181,7 +5159,6 @@ fn handle_search_expr(
       pattern_is_json: json,
       start_path,
       display: SearchResultDisplay {
-        highlight_target,
         bracket_path: true,
         show_parent_path: false,
       },

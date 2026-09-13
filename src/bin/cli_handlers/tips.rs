@@ -115,18 +115,41 @@ impl Tips {
       println!("{}: {}", "Tips".blue().bold(), message);
     }
   }
+
+  /// Print tips without ANSI styling so they can extend a Markdown document.
+  pub fn print_markdown(&self, to_stderr: bool) {
+    if self.items.is_empty() || TIPS_SUPPRESSED.load(Ordering::Relaxed) {
+      return;
+    }
+
+    let messages = if TIPS_FULL.load(Ordering::Relaxed) {
+      self.items.iter().map(|(_, message)| message.as_str()).collect::<Vec<_>>()
+    } else {
+      self
+        .items
+        .iter()
+        .find(|(priority, _)| *priority == TipPriority::High)
+        .map(|(_, message)| vec![message.as_str()])
+        .unwrap_or_default()
+    };
+    if messages.is_empty() {
+      return;
+    }
+    let mut lines = vec!["## Tips".to_owned(), String::new()];
+    lines.extend(messages.into_iter().map(|message| format!("- {message}")));
+    let output = lines.join("\n");
+    if to_stderr {
+      eprintln!("{output}");
+    } else {
+      println!("{output}");
+    }
+  }
 }
 
-/// Default suggestion for Cirru editing in CLI: prefer one-liner and JSON when helpful
-pub fn tip_prefer_oneliner_json(show_json: bool) -> Vec<String> {
-  let mut tips = Vec::new();
-  tips.push(format!(
-    "Prefer {} to avoid indentation issues; for messy structures, use {} to inspect JSON format",
-    "--code 'one-liner'".yellow(),
-    "--json".yellow()
-  ));
+pub fn tip_prefer_oneliner_json_markdown(show_json: bool) -> Vec<String> {
+  let mut tips = vec!["Prefer `--code 'one-liner'` to avoid indentation issues; use `--json` to inspect a JSON AST.".to_owned()];
   if !show_json {
-    tips.push(format!("add {} flag to also output JSON format", "--json".yellow()));
+    tips.push("Add `--json` to append a fenced JSON AST.".to_owned());
   }
   tips
 }
