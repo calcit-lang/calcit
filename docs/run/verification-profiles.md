@@ -28,7 +28,6 @@ requires:
 ```bash
 calcit calcit.cirru analyze verify --profile release
 calcit calcit.cirru analyze verify --profile release --format edn
-calcit calcit.cirru analyze verify --profile release --format json
 ```
 
 它属于 `analyze`，不会增加顶层 `calcit verify`。Profile 只编排现有严格预处理与 analyzer 事实，不运行 shell、部署或外部构建，也不修改 Snapshot。需要改写源码时仍使用 `calcit fix` 的 preview/apply 闭环。

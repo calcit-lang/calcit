@@ -9,7 +9,7 @@ license = "MIT"
 description = "Interpreter and JavaScript/WebAssembly codegen for Calcit"
 homepage = "http://calcit-lang.org"
 documentation = "https://docs.rs/crate/calcit/"
-repository = "https://github.com/calcit-lang/calcit.rs"
+repository = "https://github.com/calcit-lang/calcit"
 readme = "README.md"
 exclude = ["lib/*", "calcit/*", "ts-src/*", "js-out/*", "scripts/*", "docs/*", "!docs/CalcitAgent.md", "editing-history/*", "rfc/*"]
 
