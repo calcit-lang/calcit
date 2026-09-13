@@ -46,7 +46,7 @@ Calcit 的 CLI 按用户任务收敛入口，而不是按每条诊断或迁移�
 当编译器能够给出唯一 source origin、替换内容和语义证明时，检测直接表现为 `calcit fix` 的只读 preview：
 
 ```bash
-calcit calcit.cirru fix --preset surface-latest-v2 --format json
+calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 calcit calcit.cirru fix --preset surface-latest-v2 \
   --apply --expect-revision 'md5:<preview 返回的 revision>'
 ```
@@ -66,12 +66,12 @@ calcit calcit.cirru fix --preset surface-latest-v2 \
 - preview、revision/fingerprint guard、staged validation 和原子写回统一复用 `calcit fix`；
 - 不能唯一回溯到可写源码、涉及 Dynamic dispatch、macro 生成或业务默认值时，只报告诊断。
 
-`fix --format json` 的 `filters.expanded_rules` 会为实际展开的规则报告：
+`fix --format edn` 的 `:data :filters :expanded-rules` 会为实际展开的规则报告：
 
-- `evidence_source`：来自 `current-diagnostic` 或 `resolved-source-ast`；
-- `diagnostic_code`：稳定诊断或 fix code；
-- `lifecycle`：当前规则使用 `current-semantics`；
-- `source_version_required`：当前规范化固定为 `false`。
+- `:evidence-source`：来自 `current-diagnostic` 或 `resolved-source-ast`；
+- `:diagnostic-code`：稳定诊断或 fix code；
+- `:lifecycle`：当前规则使用 `current-semantics`；
+- `:source-version-required`：当前规范化固定为 `false`。
 
 例如 `removed-data-api-v1` 虽保留稳定 rule ID，但其候选直接来自当前 strict checker 的
 `W_REMOVED_DATA_API`，不检查 source release。rule ID 中的 `v1` 版本化的是机器协议和行为，不是来源版本。
@@ -88,7 +88,7 @@ Preset 是固定规则集合的便利别名，不是历史语义数据库。已�
 
 - 声明式验证 profile 放在 `calcit analyze` 下，组合既有检查并共享一次项目加载；不增加 `calcit verify` 顶层入口。
 - Cirru、JSON AST 等 mutation 输入格式扩展现有 `edit/tree/cursor/fix` 的共享输入契约；不增加新的语法节点顶层工具。
-- 包含源码或结构化片段的 human 输出统一为 Markdown-compatible 文档，代码使用带语言标记的 fence；稳定自动化继续读取既有 JSON envelope，不增加 `--markdown` 或新的输出命令。
+- 包含源码或结构化片段的 human 输出统一为 Markdown-compatible 文档，代码使用带语言标记的 fence；Calcit 自有自动化优先读取 Cirru EDN envelope，仅在对接 JSON-only consumer 时显式选择 JSON，不增加 `--markdown` 或新的输出命令。
 - 跨 definition 与 usage 的语义重构继续通过 `calcit fix` 的 preview/apply 事务暴露；不建立第二套 mutation 协议。
 
 这套边界允许内部能力继续增强，但让人类和 Agent 的入口数量保持稳定。

@@ -60,8 +60,8 @@ calcit calcit.cirru fix --ns app.main --def render! --format edn
 `removed-data-api-v1`、`named-enum-constructor-v1`、`named-struct-constructor-v1` 和
 `redundant-do-v1`，其含义保持不变。当前推荐的 `surface-latest-v2` 在这四条之后增加
 `single-expression-do-v1`。执行时会按 source path 从内向外应用结构改写，具名构造器区域内的规则合并为一次 guarded replacement，
-避免嵌套改写提前移动 source path。结构化 preview 会在 `filters.preset_id` 返回 preset 名称，并在
-`filters.expanded_rule_ids` 返回实际执行的规则，Agent 无需依赖人类日志猜测范围：
+避免嵌套改写提前移动 source path。Cirru EDN preview 会在 `:data :filters :preset-id` 返回 preset 名称，并在
+`:data :filters :expanded-rule-ids` 返回实际执行的规则，Agent 无需依赖人类日志猜测范围：
 
 ```bash
 calcit calcit.cirru fix --preset surface-latest-v2 --format edn
@@ -104,9 +104,9 @@ calcit calcit.cirru fix --rule redundant-do-v1 --format edn
 calcit calcit.cirru fix --ns app.main --def render! --rule redundant-do-v1 --format edn
 ```
 
-Cirru EDN 报告中的 `:suggestions` 是检测结果。若列表非空，逐项核对 `:definition`、`:path`、`:original`、`:replacement`、
-`applicability` 和 `fingerprint`，确认 `validation.status` 为 `passed`，再原样重复 preview 的 scope selectors，
-使用同一份报告中的 Snapshot revision 应用。若列表为空，`validation.status` 应为 `not-needed`；跳过 apply，
+Cirru EDN 报告中的 `:data :suggestions` 是检测结果。若列表非空，逐项核对 `:definition`、`:path`、`:original`、`:replacement`、
+`:applicability` 和 `:fingerprint`，确认 `:data :validation :status` 为 `passed`，再原样重复 preview 的 scope selectors，
+使用同一份报告中的 Snapshot revision 应用。若列表为空，`:data :validation :status` 应为 `not-needed`；跳过 apply，
 直接继续验证：
 
 ```bash
@@ -139,14 +139,15 @@ calcit calcit.cirru fix --ns app.main --def render! --rule redundant-do-v1 --for
 
 因此“检测冗余 `do`”应使用 fix preview，而不是正则搜索，也不会作为普通 compiler warning 混入类型诊断。
 
-JSON stdout 是一个完整 value，包含 `schema_version`、`command`、Snapshot `revision`、filters、validation、suggestions、diagnostics
-和 `next`。每条 suggestion 携带 Snapshot `source_file`、stable rule ID、diagnostic code、表层 definition/path、subtree fingerprint、
-quoted AST 的 original/replacement 与 applicability。结构化 splice 的 replacement 使用 `{"$type":"splice","value":[...]}`，
+Cirru EDN stdout 是一个完整 value，顶层包含 `:schema-version`、`:command`、Snapshot `:revision`、`:data`、`:diagnostics`
+和 `:next`；`:data` 内包含 `:filters`、`:validation` 与 `:suggestions`。每条 suggestion 携带 Snapshot `:source-file`、stable rule ID、diagnostic code、表层 definition/path、subtree fingerprint、
+quoted AST 的 original/replacement 与 applicability。结构化 splice 的 replacement 使用 `{} (:$type |splice) (:value $ [])`，
 明确表示多个 sibling，而不是伪装成单个表达式。`validation` 说明 staged scope preprocess 是否执行并通过，以及实际检查的
 operation 数量；没有可应用 operation 时状态为 `not-needed`。日志和 command echo 只写 stderr，Agent 不需要解析人类文本或生成的 JS。
+只有对接 JSON-only consumer 时才显式使用 `--format json`；它与 Cirru EDN envelope 语义等价。
 
-`filters.expanded_rules` 进一步说明每条实际规则的 `evidence_source`、`diagnostic_code`、`lifecycle` 和
-`source_version_required`。当前规则只从当前诊断或 resolved source AST 派生，`source_version_required` 固定为 `false`；
+`:data :filters :expanded-rules` 进一步说明每条实际规则的 `:evidence-source`、`:diagnostic-code`、`:lifecycle` 和
+`:source-version-required`。当前规则只从当前诊断或 resolved source AST 派生，`:source-version-required` 固定为 `false`；
 稳定 rule ID 的版本号只表示协议行为，不表示待迁移项目的来源版本。
 
 确认预览后再应用：
@@ -167,7 +168,7 @@ apply 必须原样重复 preview 使用的 `--ns`、`--def` 以及 `--rule` 或 
 只产生候选计划。staged Snapshot 应用 replacement 后会重新启动严格 preprocess，严格错误或新增无关 warning 仍会拒绝 preview/apply，
 正常的 check、test、JS/WASM codegen 也不会继承规划模式。因此该机制不是降低类型门禁，而是让自动 migration 能先修复门禁指出的旧语义。
 
-为降低 Agent 误写成本，`--apply` 默认要求干净的 Git worktree。确实需要在已有修改上应用时，先审阅 JSON preview，
+为降低 Agent 误写成本，`--apply` 默认要求干净的 Git worktree。确实需要在已有修改上应用时，先审阅 Cirru EDN preview，
 再显式加 `--allow-dirty`；非 Git 环境需要显式加 `--allow-no-vcs`。这两个参数只放宽版本控制前置条件，不跳过 revision、
 fingerprint、staged preprocess 或原子写入检查。
 

@@ -35,14 +35,14 @@ calcit --help
 Quick note: `calcit edit format` rewrites the target snapshot using canonical serialization without guessing semantic changes. The retired `compact.cirru` filename must first be copied or renamed to `calcit.cirru`. Formatting alone has an isolated one-way loader for early direct-quote definitions/namespaces and top-level `:configs`; runtime loading and other commands remain strict. It reports migrated node counts and rejects ambiguous or unknown legacy config fields. Migrated ordinary definitions receive explicit `Dynamic` schemas. A migrated direct-quote `defmacro` instead receives a conservative strict contract recovered from its parameter shape: `Syntax` inputs, an `Expr<Dynamic>` expansion, and no capabilities. Existing structured Dynamic macro schemas are not rewritten. Current formatting also normalizes older namespace records and rewrites legacy schema type tags such as `:string` and `:ref` to quoted symbols such as `'String` and `'Ref` only in known type positions. Ordinary tag data stays unchanged. It emits recoverable stderr advisories for legacy `:any` and unresolved dynamic type debt. Use `calcit analyze weak-types` for exact paths and recommendations; format warnings do not turn the command into a type-quality gate.
 
 问题写法检测使用显式 fix preview。例如
-`calcit calcit.cirru fix --rule redundant-do-v1 --format json` 会报告多表达式 body 中不必要的 `do`，但不会写入文件；
+`calcit calcit.cirru fix --rule redundant-do-v1 --format edn` 会报告多表达式 body 中不必要的 `do`，但不会写入文件；
 审阅建议后使用报告中的 revision 和相同 scope selectors 执行 `--apply`。不要把这类源码整理混入普通类型 warning，
 也不要通过正则批量删除仍在单表达式位置承担顺序语义的 `do`。完整流程见 [Compiler-guided Source Fixes](fix.md#检测并修复冗余-do)。
 
 老项目先按[两阶段升级流程](upgrade.md)固定使用 Calcit 0.14.15 运行 `tag-match-to-match-v1` 与
 `required-struct-field-v1`；验证并提交后，再使用当前工具链运行
-`calcit calcit.cirru fix --preset surface-latest-v2 --format json`。该 preset 会在 JSON 的
-`filters.expanded_rule_ids` 中列出冻结的规则集合，包括冗余 `do`、旧数据 API，以及可静态证明安全的具名
+`calcit calcit.cirru fix --preset surface-latest-v2 --format edn`。该 preset 会在 Cirru EDN 的
+`:data :filters :expanded-rule-ids` 中列出冻结的规则集合，包括冗余 `do`、旧数据 API，以及可静态证明安全的具名
 Enum/Struct `%::` / `%{}` 直接构造器迁移，并解包普通可执行源码中的单表达式 `do`。冻结的 v1 仍可复现原有四条规则。
 `--preset` 与 `--rule` 互斥；apply 必须重复同一 selector。
 

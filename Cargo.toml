@@ -2,14 +2,14 @@
 [package]
 name = "calcit"
 autobins = false
-version = "0.14.17"
+version = "0.14.18"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2024"
 license = "MIT"
 description = "Interpreter and JavaScript/WebAssembly codegen for Calcit"
 homepage = "http://calcit-lang.org"
 documentation = "https://docs.rs/crate/calcit/"
-repository = "https://github.com/calcit-lang/calcit.rs"
+repository = "https://github.com/calcit-lang/calcit"
 readme = "README.md"
 exclude = ["lib/*", "calcit/*", "ts-src/*", "js-out/*", "scripts/*", "docs/*", "!docs/CalcitAgent.md", "editing-history/*", "rfc/*"]
 
