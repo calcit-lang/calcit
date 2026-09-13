@@ -197,10 +197,10 @@ fn render_command_explanation(cli_args: &ToplevelCalcit) -> Option<String> {
 fn describe_code_input(parts: &CodeInputParts<'_>) -> String {
   let mut desc = String::new();
   if parts.code.is_some() {
-    desc.push_str("--code is an inline expression (auto-detects JSON vs Cirru). ");
+    desc.push_str("--code supplies inline input. ");
   }
   if let Some(_file) = parts.file {
-    desc.push_str("--file reads input from a file (auto-detects JSON vs Cirru). ");
+    desc.push_str("--file reads input from a file. ");
   }
   desc
 }
@@ -987,20 +987,22 @@ fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
       );
     }
     EditSubcommand::Def(opts) => {
-      echo_items!(tokens, pos "target" => &opts.target, code_input opts, switch "overwrite" => opts.overwrite)
+      echo_items!(tokens, pos "target" => &opts.target, code_input opts, value "input-format" => &opts.input_format; default "auto", switch "overwrite" => opts.overwrite)
     }
     EditSubcommand::MvDef(opts) => echo_items!(tokens, pos "source" => &opts.source, pos "target" => &opts.target),
     EditSubcommand::RmDef(opts) => echo_items!(tokens, pos "target" => &opts.target),
     EditSubcommand::Doc(opts) => echo_items!(tokens, pos "target" => &opts.target, pos "doc" => &opts.doc),
-    EditSubcommand::Schema(opts) => echo_items!(tokens, pos "target" => &opts.target, code_input opts, switch "clear" => opts.clear),
+    EditSubcommand::Schema(opts) => {
+      echo_items!(tokens, pos "target" => &opts.target, code_input opts, value "input-format" => &opts.input_format; default "auto", switch "clear" => opts.clear)
+    }
     EditSubcommand::Ffi(opts) => echo_items!(tokens, pos "target" => &opts.target, code_input opts, switch "clear" => opts.clear),
     EditSubcommand::Examples(opts) => echo_items!(tokens, pos "target" => &opts.target, code_input opts, switch "clear" => opts.clear),
     EditSubcommand::AddExample(opts) => {
-      echo_items!(tokens, pos "target" => &opts.target, opt_owned "at" => opts.at.map(|v| v.to_string()); default "append", code_input opts)
+      echo_items!(tokens, pos "target" => &opts.target, opt_owned "at" => opts.at.map(|v| v.to_string()); default "append", code_input opts, value "input-format" => &opts.input_format; default "auto")
     }
     EditSubcommand::RmExample(opts) => echo_items!(tokens, pos "target" => &opts.target, pos "index" => &opts.index.to_string()),
     EditSubcommand::AddTest(opts) => {
-      echo_items!(tokens, pos "target" => &opts.target, pos "name" => &opts.name, opt "tags" => opts.tags.as_deref(); default "none", code_input opts, switch "overwrite" => opts.overwrite)
+      echo_items!(tokens, pos "target" => &opts.target, pos "name" => &opts.name, opt "tags" => opts.tags.as_deref(); default "none", code_input opts, value "input-format" => &opts.input_format; default "auto", switch "overwrite" => opts.overwrite)
     }
     EditSubcommand::RmTest(opts) => echo_items!(tokens, pos "target" => &opts.target, pos "name" => &opts.name),
     EditSubcommand::Tags(opts) => {
@@ -1010,11 +1012,13 @@ fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
         opt "tags" => opts.tags.as_deref(); default "none"
       )
     }
-    EditSubcommand::AddNs(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace, code_input opts),
+    EditSubcommand::AddNs(opts) => {
+      echo_items!(tokens, pos "namespace" => &opts.namespace, code_input opts, value "input-format" => &opts.input_format; default "auto")
+    }
     EditSubcommand::RmNs(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace),
     EditSubcommand::Imports(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace, code_input opts),
     EditSubcommand::AddImport(opts) => {
-      echo_items!(tokens, pos "namespace" => &opts.namespace, code_input opts, switch "overwrite" => opts.overwrite)
+      echo_items!(tokens, pos "namespace" => &opts.namespace, code_input opts, value "input-format" => &opts.input_format; default "auto", switch "overwrite" => opts.overwrite)
     }
     EditSubcommand::RmImport(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace, pos "source-ns" => &opts.source_ns),
     EditSubcommand::NsDoc(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace, pos "doc" => &opts.doc),
@@ -1049,10 +1053,10 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
       switch "raw" => opts.raw
     ),
     TreeSubcommand::Replace(opts) => {
-      echo_items!(tokens, pos "target" => &opts.target, value "path" => &opts.path, code_input opts, opt "expect" => opts.expect.as_deref(); default "none", value "depth" => opts.depth; default "2")
+      echo_items!(tokens, pos "target" => &opts.target, value "path" => &opts.path, code_input opts, value "input-format" => &opts.input_format; default "auto", opt "expect" => opts.expect.as_deref(); default "none", value "depth" => opts.depth; default "2")
     }
     TreeSubcommand::ReplaceLeaf(opts) => {
-      echo_items!(tokens, pos "target" => &opts.target, value "pattern" => &opts.pattern, switch "regex" => opts.regex, code_input opts, value "depth" => opts.depth; default "2")
+      echo_items!(tokens, pos "target" => &opts.target, value "pattern" => &opts.pattern, switch "regex" => opts.regex, code_input opts, value "input-format" => &opts.input_format; default "auto", value "depth" => opts.depth; default "2")
     }
     TreeSubcommand::Delete(opts) => {
       echo_items!(tokens, pos "target" => &opts.target, value "path" => &opts.path, opt "expect" => opts.expect.as_deref(); default "none", value "depth" => opts.depth; default "2")
@@ -1062,6 +1066,7 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
       &opts.target,
       &opts.path,
       CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()),
+      opts.input_format,
       opts.expect.as_deref(),
       opts.depth,
     ),
@@ -1070,6 +1075,7 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
       &opts.target,
       &opts.path,
       CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()),
+      opts.input_format,
       opts.expect.as_deref(),
       opts.depth,
     ),
@@ -1078,6 +1084,7 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
       &opts.target,
       &opts.path,
       CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()),
+      opts.input_format,
       opts.expect.as_deref(),
       opts.depth,
     ),
@@ -1086,6 +1093,7 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
       &opts.target,
       &opts.path,
       CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()),
+      opts.input_format,
       opts.expect.as_deref(),
       opts.depth,
     ),
@@ -1095,14 +1103,14 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
     TreeSubcommand::Raise(opts) => push_tree_path_depth(tokens, &opts.target, &opts.path, opts.depth),
     TreeSubcommand::Wrap(opts) => {
       push_tree_path_depth(tokens, &opts.target, &opts.path, opts.depth);
-      echo_items!(tokens, code_input opts);
+      echo_items!(tokens, code_input opts, value "input-format" => &opts.input_format; default "auto");
     }
     TreeSubcommand::SearchReplace(opts) => {
-      echo_items!(tokens, pos "target" => &opts.target, value "pattern" => &opts.pattern, switch "regex" => opts.regex, code_input opts, value "depth" => opts.depth; default "2")
+      echo_items!(tokens, pos "target" => &opts.target, value "pattern" => &opts.pattern, switch "regex" => opts.regex, code_input opts, value "input-format" => &opts.input_format; default "auto", value "depth" => opts.depth; default "2")
     }
     TreeSubcommand::Rewrite(opts) => {
       push_tree_path_depth(tokens, &opts.target, &opts.path, opts.depth);
-      echo_items!(tokens, code_input opts, list "with" => &opts.with);
+      echo_items!(tokens, code_input opts, value "input-format" => &opts.input_format; default "auto", list "with" => &opts.with);
     }
     TreeSubcommand::BatchDelete(opts) => {
       echo_items!(tokens, pos "target" => &opts.target, list "paths" => &opts.paths, value "depth" => opts.depth; default "2");
@@ -1158,7 +1166,7 @@ fn push_cursor(tokens: &mut Vec<String>, cmd: &CursorCommand) {
     CursorSubcommand::Paste(opts) => echo_items!(tokens, value "at" => &opts.at; default "after"),
     CursorSubcommand::Clipboard(opts) => echo_items!(tokens, value "format" => &opts.format; default "human"),
     CursorSubcommand::Apply(opts) => {
-      echo_items!(tokens, pos "operation" => &opts.operation, code_input opts, value "depth" => opts.depth; default "2")
+      echo_items!(tokens, pos "operation" => &opts.operation, code_input opts, value "input-format" => &opts.input_format; default "auto", value "depth" => opts.depth; default "2")
     }
     CursorSubcommand::Duplicate(opts) => echo_items!(tokens, value "at" => &opts.at; default "after"),
     CursorSubcommand::Forward(opts) => echo_items!(tokens, value "count" => opts.count; default "1"),
@@ -1182,11 +1190,13 @@ fn push_tree_insert(
   target: &str,
   path: &str,
   code_input: CodeInputParts<'_>,
+  input_format: SyntaxInputFormat,
   expect: Option<&str>,
   depth: usize,
 ) {
   push_tree_path_depth(tokens, target, path, depth);
   push_code_input(tokens, &code_input);
+  push_value(tokens, "input-format", &input_format.to_string(), Some("auto"));
   push_optional(tokens, "expect", expect, "none");
 }
 

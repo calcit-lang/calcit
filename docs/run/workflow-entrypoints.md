@@ -12,6 +12,8 @@ entry_for:
   - "calcit --check-only"
   - "calcit analyze"
   - "calcit fix"
+  - "calcit edit --input-format"
+  - "calcit tree --input-format"
 id: core/run/workflow-entrypoints
 parent: core/run
 related:
@@ -88,3 +90,25 @@ Preset 是固定规则集合的便利别名，不是历史语义数据库。已�
 - 跨 definition 与 usage 的语义重构继续通过 `calcit fix` 的 preview/apply 事务暴露；不建立第二套 mutation 协议。
 
 这套边界允许内部能力继续增强，但让人类和 Agent 的入口数量保持稳定。
+
+## Syntax-node 输入只扩展现有 mutation
+
+需要传入一个 syntax node 时，在现有 `edit`、`tree` 或 `cursor apply` 命令上使用同一个
+`--input-format` 选项，不增加新的转换命令：
+
+```bash
+calcit edit add-example app.main/render! \
+  --input-format cirru --code 'quote $ div ({} (:class-name |card))'
+
+calcit tree replace app.main/render! --path @2.1 \
+  --input-format json-ast --code '["span","|ready"]'
+```
+
+- `cirru`：输入必须是带 `quote` 的 Cirru EDN；`quote` 继续作为语言层 code/data 边界。
+- `json-ast`：输入是序列化 AST，字符串表示 leaf，数组表示 list；因此 JSON 字符串 `"[]"` 与 JSON 空数组
+  `[]` 分别表示名为 `[]` 的 leaf 和空 syntax list。
+- `auto`：仅为旧脚本保留的内容识别路径；新文档和新自动化不应依赖它。
+
+显式格式的 mutation 会在写入前报告选中的格式、解码后的 `leaf` / `empty-list` / `expression` 节点类型、
+canonical JSON AST 与结构化摘要。格式或形状错误同时包含选中格式、预期节点类型和实际节点类型，Agent 不需要
+通过试写来判断输入如何被解释。`--expect` 仍是单独的 quoted Cirru guard，不受 replacement 的传输格式影响。

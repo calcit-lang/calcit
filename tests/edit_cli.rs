@@ -96,6 +96,61 @@ fn create_macro(snapshot: &Path, name: &str, code: &str) {
 }
 
 #[test]
+fn explicit_syntax_input_formats_preserve_ambiguous_node_shapes() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+
+  for (input_format, code, expected_kind, expected_canonical) in [
+    ("json-ast", r#""[]""#, "leaf", r#""[]""#),
+    ("json-ast", "[]", "empty-list", "[]"),
+    ("json-ast", r#"["inc","1"]"#, "expression", r#"["inc","1"]"#),
+    ("cirru", "quote $ []", "expression", r#"["[]"]"#),
+  ] {
+    let output = run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-example",
+        "app.main/main!",
+        "--input-format",
+        input_format,
+        "--code",
+        code,
+      ],
+    );
+    assert_success(&output, "add explicitly decoded example");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(&format!("- input format: {input_format}")), "stdout:\n{stdout}");
+    assert!(stdout.contains(&format!("- node kind: {expected_kind}")), "stdout:\n{stdout}");
+    assert!(
+      stdout.contains(&format!("- canonical JSON AST: {expected_canonical}")),
+      "stdout:\n{stdout}"
+    );
+  }
+
+  let definition = query_definition(&snapshot, "app.main/main!");
+  assert_eq!(definition["data"]["examples"], serde_json::json!(["[]", [], ["inc", "1"], ["[]"]]));
+
+  let invalid = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "add-example",
+      "app.main/main!",
+      "--input-format",
+      "json-ast",
+      "--code",
+      r#"{"node":[]}"#,
+    ],
+  );
+  assert!(!invalid.status.success(), "object-shaped JSON AST must fail");
+  let stderr = String::from_utf8_lossy(&invalid.stderr);
+  assert!(stderr.contains("format `json-ast`"), "stderr:\n{stderr}");
+  assert!(stderr.contains("expected node kind `string leaf or array`"), "stderr:\n{stderr}");
+  assert!(stderr.contains("received node kind `object`"), "stderr:\n{stderr}");
+}
+
+#[test]
 fn edit_defmacro_keeps_required_optional_and_rest_macros_loadable() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);
