@@ -208,16 +208,17 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 - 一次局部节点修改：`calcit tree`，优先 `search-replace`，其次明确 path 的操作。
 - 在一个复杂表达式中连续移动和修改：`calcit cursor` 与 `@cursor`。
 - 多个 mutation 必须一起成功：`calcit edit transaction`，先 `--dry-run`；主格式是 Cirru EDN，先运行 `calcit docs read edit-tree.md 'Atomic Transactions'` 查看最小 operation 文件和 revision 提交流程。
-- 编译器已经证明等价的迁移：升级项目优先运行 `calcit fix --preset surface-latest-v1 --format json`，单项排查才使用 `--rule`；两者互斥。核对 `filters.expanded_rule_ids`、suggestion 的 `source_file`、definition/path、fingerprint，只选择 `machine-applicable`。提交时必须原样重复 preview 的 `--ns`、`--def` 以及 `--rule` 或 `--preset` selectors，再加 `--apply --expect-revision <revision>`。非空建议要求 `validation.status=passed`；空建议接受 `not-needed` 并跳过 apply。revision 只保护 Snapshot 新鲜度，不能代替 scope 审阅。`requires-review` 或 `replacement: null` 需要人类决定，Agent 不得自行猜测。完整字段与 VCS guard 见 `calcit docs read fix.md --full`。
+- 编译器已经证明等价的迁移：升级项目优先运行 `calcit fix --preset surface-latest-v2 --format json`，单项排查才使用 `--rule`；两者互斥。冻结的 `surface-latest-v1` 保持原有四条规则。核对 `filters.expanded_rule_ids`、suggestion 的 `source_file`、definition/path、fingerprint，只选择 `machine-applicable`。提交时必须原样重复 preview 的 `--ns`、`--def` 以及 `--rule` 或 `--preset` selectors，再加 `--apply --expect-revision <revision>`。非空建议要求 `validation.status=passed`；空建议接受 `not-needed` 并跳过 apply。revision 只保护 Snapshot 新鲜度，不能代替 scope 审阅。`requires-review` 或 `replacement: null` 需要人类决定，Agent 不得自行猜测。完整字段与 VCS guard 见 `calcit docs read fix.md --full`。
 
 `defn`/`fn`/`let` body 本身可以顺序包含多个表达式，返回类型来自最后一项；不要为了类型推断再包一层 `do`。
-只有 `if` 分支、调用参数、binding value 等单表达式位置需要用 `do` 把多个步骤组成一个表达式。先用
+只有 `if` 分支、调用参数、binding value 等单表达式位置需要用 `do` 把多个步骤组成一个表达式；仅含一个 payload 的
+`(do expr)` 在这些位置也可由 `single-expression-do-v1` 解包。多表达式 body 的整理先用
 `calcit calcit.cirru fix --rule redundant-do-v1 --format json` 检测并审阅 suggestions，再原样重复 scope selectors，附加
 `--apply --expect-revision <revision>` 修复；第二次 preview 必须为空。不要手工批量改缩进；规则会跳过 `defmacro` 与
 quote/quasiquote，并用 staged preprocess 验证 splice 后的 scope。此检查属于显式 fix preview，不是普通 compiler warning。
 `tag-match-to-match-v1` 与 `required-struct-field-v1` 是已经随 Calcit 0.14.15 发布的升级桥，0.15 当前工具链不再携带其 planner。
 旧项目必须先固定使用 0.14.15 执行相应的 `calcit fix --rule ...`，review 并验证迁移结果，再升级到 0.15。
-当前工具链随后运行 `surface-latest-v1`，其中具名 `%:: Enum ...` 与 `%{} Struct (:field value)` 会在静态解析安全时迁移为直接构造器；匿名、动态、quoted、macro 或遮蔽情形必须保留并交由用户 review。
+当前工具链随后运行 `surface-latest-v2`，其中具名 `%:: Enum ...` 与 `%{} Struct (:field value)` 会在静态解析安全时迁移为直接构造器，单表达式 `(do expr)` 也会在普通可执行源码中解包；匿名、动态、quoted、macro 或遮蔽情形必须保留并交由用户 review。
 0.15 中 enum 模式匹配统一使用原生 `match`；静态 Struct 字段统一使用 `(:field value)`，只有显式 `Dynamic` 接收者继续保留可缺失的运行时 `get`。
 不得为了让迁移通过而插入默认值、无条件 unwrap、`unsafe-coerce` 或扩大 Dynamic。
 

@@ -23,20 +23,20 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
-对于编译器能够证明等价的一对一迁移，先运行 `calcit calcit.cirru fix --preset surface-latest-v1 --format json`
+对于编译器能够证明等价的一对一迁移，先运行 `calcit calcit.cirru fix --preset surface-latest-v2 --format json`
 审阅结构化计划，再用
 `--apply --expect-revision <revision>` 原子应用；完整安全边界见 [Compiler-guided Source Fixes](fix.md)。
 
 从较早的 0.14 项目升级时分两阶段进行：先固定 Calcit 0.14.15，执行已经随该版本发布的
 `tag-match-to-match-v1` 与 `required-struct-field-v1` bridge；验证并提交后，再切到当前工具链运行
-`surface-latest-v1`。当前版本不会假装恢复已退休 planner，preset 也不会替代第一阶段。
+`surface-latest-v2`。冻结的 `surface-latest-v1` 仍保持原来的四条规则，不会静默扩展。当前版本不会假装恢复已退休 planner，preset 也不会替代第一阶段。
 
 升级或类型迁移后，应显式预览一次问题写法修复。`fix` 的默认 preview 本身就是检测入口，不写 Snapshot；其中
 `redundant-do-v1` 会定位 `defn`、`fn`、`let` 等多表达式 body 中不必要的 `do`，并返回可审阅的 source path、
-fingerprint 和 splice replacement：
+fingerprint 和 splice replacement；`single-expression-do-v1` 会解包普通可执行位置中只有一个 payload 的 `do`：
 
 ```bash
-calcit calcit.cirru fix --preset surface-latest-v1 --format json
+calcit calcit.cirru fix --preset surface-latest-v2 --format json
 ```
 
 不要用全文搜索后批量删除 `do`：`if` 分支、调用参数和 binding value 等单表达式位置仍需要它来组合多个步骤。
@@ -420,7 +420,7 @@ record / tuple 公开名称会产生 `W_REMOVED_DATA_API`，诊断中同时给�
 | `%{} Person (:name name)` | `Person :name name` |
 
 具名定义优先直接调用；`%::` / `%{}` 只保留给显式运行时 prototype、动态跨模块构造和兼容边界。
-`surface-latest-v1` 会自动处理能静态解析到项目定义的旧写法，并跳过匿名 `_`、动态或被局部遮蔽的原型。
+`surface-latest-v2` 会自动处理能静态解析到项目定义的旧写法，并跳过匿名 `_`、动态或被局部遮蔽的原型。
 
 Struct 字段是定义的一部分，因此已知 struct 上的 `:field` 和 `.field` 直接返回字段声明类型，
 不再自动包装 `Option<T>`。不存在的字段会在静态检查阶段报告，运行期也会抛出普通错误；
@@ -843,7 +843,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 3. `caps tree`（确认根开发依赖存在，同时传递模块的开发依赖未进入图）
 4. `yarn install --immutable`
 5. `calcit calcit.cirru edit format` 后审阅 Snapshot diff
-6. `calcit calcit.cirru fix --preset surface-latest-v1 --format json`；应用后再次 preview，确认 suggestions 为空
+6. `calcit calcit.cirru fix --preset surface-latest-v2 --format json`；应用后再次 preview，确认 suggestions 为空
 7. default 与每个 named entry 的 `--check-only`
 8. 每个 entry 的 `analyze dynamic-methods --max <reviewed-limit>`；清零后使用 `--max 0`
 9. 所有声明支持的 entry 行为测试（默认 once；watch 另行验收）
@@ -859,7 +859,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 | --- | --- | --- | --- |
 | 依赖图 | `caps tree/status/verify` | 递归版本、链接、store/native 收据 | 状态异常会阻断；普通图告警用 `--strict` 收紧 |
 | Snapshot 规范化 | `calcit edit format` + `git diff` | 旧 configs/schema 拼写和规范化建议 | format 告警不阻断，diff 需人工审阅 |
-| 问题写法 | `calcit fix --preset surface-latest-v1 --format json` | 冗余 `do`、旧数据 API、具名 `%::` / `%{}` 构造与可应用 replacement | preview 不写入；JSON 展开 rule IDs；apply 前后均需 staged validation |
+| 问题写法 | `calcit fix --preset surface-latest-v2 --format json` | 多表达式 body 与单表达式位置的冗余 `do`、旧数据 API、具名 `%::` / `%{}` 构造与可应用 replacement | preview 不写入；JSON 展开 rule IDs；apply 前后均需 staged validation |
 | entry 预处理 | `calcit --entry ... --check-only` | 配置、缺失定义、参数/返回值、数据与 trait 类型错误 | 错误或 warning 均阻断 |
 | 动态分派 | `calcit analyze dynamic-methods --max <reviewed-limit>` | 动态 receiver 与无法专门化的方法；默认排除依赖和无关 FFI warning | 超过上限时阻断；`--deps` 可审计依赖 |
 | 静态债务 | `analyze check-types/weak-types/deprecated --format json` | 覆盖率、dynamic、nil/Optional、废弃调用 | 报告本身不按命中数阻断；仅非零 legacy baseline 项目继续比较 |

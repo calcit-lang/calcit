@@ -173,6 +173,18 @@
               quote $ %:: FixPersonChoice :none
               quoted-legacy-constructor
             :tags $ #{} :migration
+        'quoted-single-do $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn quoted-single-do ()
+            quote $ do $ + 1 2
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry
+            :name |preserves-single-do-as-data
+            :code $ quote $ assert=
+              quote $ do $ + 1 2
+              quoted-single-do
+            :tags $ #{} :migration
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
@@ -234,6 +246,32 @@
               shadowed-struct-get
                 fn (person field) |shadow
                 FixPerson :name |Ada :age 1
+            :tags $ #{} :migration
+        'single-do-macro $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defmacro single-do-macro (value) (do value)
+          :examples $ []
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] 'Syntax
+          :tests $ [] $ %{} 'TestEntry
+            :name |preserves-macro-body-boundary
+            :code $ quote $ assert= 3 (single-do-macro 3)
+            :tags $ #{} :migration
+        'single-do-positions $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn single-do-positions (value)
+            let
+                chosen $ do value
+              if true
+                do $ + (do chosen) 1
+                do 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |unwraps-single-expression-wrappers
+            :code $ quote $ assert= 3
+              single-do-positions 2
             :tags $ #{} :migration
         'union-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn union-struct-field (person) (get person :name)

@@ -21,22 +21,33 @@ const REMOVED_DATA_API_RULE: &str = "removed-data-api-v1";
 const REMOVED_DATA_API_DIAGNOSTIC: &str = "W_REMOVED_DATA_API";
 const REDUNDANT_DO_RULE: &str = "redundant-do-v1";
 const REDUNDANT_DO_DIAGNOSTIC: &str = "FIX_REDUNDANT_DO";
+const SINGLE_EXPRESSION_DO_RULE: &str = "single-expression-do-v1";
+const SINGLE_EXPRESSION_DO_DIAGNOSTIC: &str = "FIX_SINGLE_EXPRESSION_DO";
 const NAMED_ENUM_CONSTRUCTOR_RULE: &str = "named-enum-constructor-v1";
 const NAMED_ENUM_CONSTRUCTOR_DIAGNOSTIC: &str = "FIX_NAMED_ENUM_CONSTRUCTOR";
 const NAMED_STRUCT_CONSTRUCTOR_RULE: &str = "named-struct-constructor-v1";
 const NAMED_STRUCT_CONSTRUCTOR_DIAGNOSTIC: &str = "FIX_NAMED_STRUCT_CONSTRUCTOR";
-const SURFACE_LATEST_PRESET: &str = "surface-latest-v1";
-const AVAILABLE_RULES: [&str; 4] = [
+const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
+const SURFACE_LATEST_V2_PRESET: &str = "surface-latest-v2";
+const AVAILABLE_RULES: [&str; 5] = [
+  REMOVED_DATA_API_RULE,
+  NAMED_ENUM_CONSTRUCTOR_RULE,
+  NAMED_STRUCT_CONSTRUCTOR_RULE,
+  REDUNDANT_DO_RULE,
+  SINGLE_EXPRESSION_DO_RULE,
+];
+const SURFACE_LATEST_V1_RULES: [&str; 4] = [
   REMOVED_DATA_API_RULE,
   NAMED_ENUM_CONSTRUCTOR_RULE,
   NAMED_STRUCT_CONSTRUCTOR_RULE,
   REDUNDANT_DO_RULE,
 ];
-const SURFACE_LATEST_RULES: [&str; 4] = [
+const SURFACE_LATEST_V2_RULES: [&str; 5] = [
   REMOVED_DATA_API_RULE,
   NAMED_ENUM_CONSTRUCTOR_RULE,
   NAMED_STRUCT_CONSTRUCTOR_RULE,
   REDUNDANT_DO_RULE,
+  SINGLE_EXPRESSION_DO_RULE,
 ];
 const TAG_MATCH_RULE: &str = "tag-match-to-match-v1";
 const REQUIRED_STRUCT_FIELD_RULE: &str = "required-struct-field-v1";
@@ -143,6 +154,7 @@ pub(crate) fn handle_fix_command(
     constructor_kinds.push(NominalKind::Struct);
   }
   let compose_redundant_do = selected_rules.contains(&REDUNDANT_DO_RULE);
+  let compose_single_expression_do = selected_rules.contains(&SINGLE_EXPRESSION_DO_RULE);
   let mut constructor_regions = Vec::new();
   if !constructor_kinds.is_empty() {
     let constructor_suggestions = plan_named_constructor_fixes(
@@ -151,6 +163,7 @@ pub(crate) fn handle_fix_command(
       &selected_definitions,
       &constructor_kinds,
       compose_redundant_do,
+      compose_single_expression_do,
     )?;
     constructor_regions.extend(
       constructor_suggestions
@@ -159,13 +172,33 @@ pub(crate) fn handle_fix_command(
     );
     suggestions.extend(constructor_suggestions);
   }
-  if compose_redundant_do {
-    suggestions.extend(plan_redundant_do_fixes(
+  let redundant_do_suggestions = if compose_redundant_do {
+    plan_redundant_do_fixes(&source_snapshot, snapshot_file, &selected_definitions, &constructor_regions)?
+  } else {
+    vec![]
+  };
+  let redundant_do_regions = redundant_do_suggestions
+    .iter()
+    .map(|suggestion| (suggestion.definition.clone(), suggestion.target_path.clone()))
+    .collect::<Vec<_>>();
+  if compose_single_expression_do {
+    suggestions.extend(plan_single_expression_do_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
       &constructor_regions,
+      &redundant_do_regions,
     )?);
+  }
+  suggestions.extend(redundant_do_suggestions);
+  if compose_single_expression_do {
+    suggestions.sort_by(|left, right| {
+      left
+        .definition
+        .cmp(&right.definition)
+        .then_with(|| right.target_path.cmp(&left.target_path))
+        .then_with(|| left.rule_id.cmp(right.rule_id))
+    });
   }
   let operations = suggestions.iter().flat_map(suggestion_operations).collect::<Vec<_>>();
 
@@ -272,10 +305,10 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     return Err("`calcit fix --rule` conflicts with `--preset`; choose one explicit migration selection.".to_owned());
   }
   if let Some(preset) = options.preset.as_deref()
-    && preset != SURFACE_LATEST_PRESET
+    && !matches!(preset, SURFACE_LATEST_V1_PRESET | SURFACE_LATEST_V2_PRESET)
   {
     return Err(format!(
-      "Unknown fix preset `{preset}`. Available presets: `{SURFACE_LATEST_PRESET}`."
+      "Unknown fix preset `{preset}`. Available presets: `{SURFACE_LATEST_V1_PRESET}`, `{SURFACE_LATEST_V2_PRESET}`."
     ));
   }
   if let Some(rule) = options.rule.as_deref()
@@ -283,6 +316,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
       rule,
       REMOVED_DATA_API_RULE
         | REDUNDANT_DO_RULE
+        | SINGLE_EXPRESSION_DO_RULE
         | NAMED_ENUM_CONSTRUCTOR_RULE
         | NAMED_STRUCT_CONSTRUCTOR_RULE
         | TAG_MATCH_RULE
@@ -290,7 +324,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -306,10 +340,10 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
   if let Some(rule) = options.rule.as_deref() {
     return AVAILABLE_RULES.iter().copied().filter(|candidate| *candidate == rule).collect();
   }
-  if options.preset.as_deref() == Some(SURFACE_LATEST_PRESET) {
-    SURFACE_LATEST_RULES.to_vec()
-  } else {
-    AVAILABLE_RULES.to_vec()
+  match options.preset.as_deref() {
+    Some(SURFACE_LATEST_V1_PRESET) => SURFACE_LATEST_V1_RULES.to_vec(),
+    Some(SURFACE_LATEST_V2_PRESET) => SURFACE_LATEST_V2_RULES.to_vec(),
+    _ => AVAILABLE_RULES.to_vec(),
   }
 }
 
@@ -532,6 +566,82 @@ fn collect_redundant_do_paths(node: &Cirru, path: &mut Vec<usize>, output: &mut 
   }
 }
 
+/// Build unwrap suggestions for `do` forms whose single payload already is one expression.
+fn plan_single_expression_do_fixes(
+  snapshot: &Snapshot,
+  snapshot_file: &str,
+  selected_definitions: &[(String, String)],
+  composed_regions: &[(String, Vec<usize>)],
+  redundant_do_regions: &[(String, Vec<usize>)],
+) -> Result<Vec<FixSuggestion>, String> {
+  let mut suggestions = Vec::new();
+  for (namespace, definition) in selected_definitions {
+    let entry = snapshot
+      .files
+      .get(namespace)
+      .and_then(|file| file.defs.get(definition))
+      .ok_or_else(|| format!("Selected definition `{namespace}/{definition}` is missing from the source snapshot."))?;
+    let mut paths = Vec::new();
+    collect_single_expression_do_paths(&entry.code, &mut Vec::new(), &mut paths);
+    let target_definition = format!("{namespace}/{definition}");
+    paths.retain(|path| {
+      !composed_regions
+        .iter()
+        .any(|(region_definition, region_path)| region_definition == &target_definition && path.starts_with(region_path))
+        && !redundant_do_regions
+          .iter()
+          .any(|(region_definition, region_path)| region_definition == &target_definition && path == region_path)
+    });
+    paths.sort_by(|left, right| right.cmp(left));
+    for target_path in paths {
+      let original_node = navigate_to_path(&entry.code, &target_path)?;
+      let Cirru::List(items) = &original_node else {
+        continue;
+      };
+      let Some(replacement_node) = items.get(1) else {
+        continue;
+      };
+      suggestions.push(FixSuggestion {
+        rule_id: SINGLE_EXPRESSION_DO_RULE,
+        diagnostic_code: SINGLE_EXPRESSION_DO_DIAGNOSTIC,
+        semantic_layer: "surface",
+        source_file: snapshot_file.to_owned(),
+        definition: target_definition.clone(),
+        path: format!("code{}", format_path(&target_path)),
+        fingerprint: node_fingerprint(&original_node),
+        origin_chain: vec![],
+        original: quoted_json(&original_node),
+        replacement: Some(quoted_json(replacement_node)),
+        applicability: "machine-applicable",
+        message: "Unwrap a single-expression `do`; evaluation count, order, failure behavior, and result type are unchanged."
+          .to_owned(),
+        target_path,
+        operation: Some(FixOperation::SpliceDo),
+      });
+    }
+  }
+  Ok(suggestions)
+}
+
+/// Collect executable `(do expression)` paths while preserving macro and quoted data boundaries.
+fn collect_single_expression_do_paths(node: &Cirru, path: &mut Vec<usize>, output: &mut Vec<Vec<usize>>) {
+  let Cirru::List(items) = node else {
+    return;
+  };
+  let head = items.first().and_then(leaf_value);
+  if matches!(head, Some("quote" | "quasiquote" | "defmacro")) {
+    return;
+  }
+  if head == Some("do") && items.len() == 2 {
+    output.push(path.clone());
+  }
+  for (index, child) in items.iter().enumerate() {
+    path.push(index);
+    collect_single_expression_do_paths(child, path, output);
+    path.pop();
+  }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NominalKind {
   Enum,
@@ -582,6 +692,7 @@ fn plan_named_constructor_fixes(
   selected_definitions: &[(String, String)],
   kinds: &[NominalKind],
   compose_redundant_do: bool,
+  compose_single_expression_do: bool,
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
@@ -606,8 +717,15 @@ fn plan_named_constructor_fixes(
       let Some(kind) = legacy_constructor_kind(items, snapshot, namespace, &shadowed, kinds) else {
         continue;
       };
-      let replacement_node =
-        rewrite_named_constructor_tree(&original_node, snapshot, namespace, &shadowed, kinds, compose_redundant_do);
+      let replacement_node = rewrite_named_constructor_tree(
+        &original_node,
+        snapshot,
+        namespace,
+        &shadowed,
+        kinds,
+        compose_redundant_do,
+        compose_single_expression_do,
+      );
       let original_code = original_node
         .format_one_liner()
         .map_err(|error| format!("Failed to format constructor source at {namespace}/{definition}: {error}"))?;
@@ -700,6 +818,7 @@ fn rewrite_named_constructor_tree(
   shadowed: &HashSet<String>,
   kinds: &[NominalKind],
   compose_redundant_do: bool,
+  compose_single_expression_do: bool,
 ) -> Cirru {
   let Cirru::List(items) = node else {
     return node.clone();
@@ -709,17 +828,42 @@ fn rewrite_named_constructor_tree(
   }
   let rewritten_items = items
     .iter()
-    .map(|item| rewrite_named_constructor_tree(item, snapshot, namespace, shadowed, kinds, compose_redundant_do))
+    .map(|item| {
+      rewrite_named_constructor_tree(
+        item,
+        snapshot,
+        namespace,
+        shadowed,
+        kinds,
+        compose_redundant_do,
+        compose_single_expression_do,
+      )
+    })
     .collect::<Vec<_>>();
   let rewritten_node = if let Some(kind) = legacy_constructor_kind(items, snapshot, namespace, shadowed, kinds) {
     legacy_constructor_replacement(&rewritten_items, kind).unwrap_or(Cirru::List(rewritten_items))
   } else {
     Cirru::List(rewritten_items)
   };
-  if compose_redundant_do {
+  let rewritten_node = if compose_redundant_do {
     splice_redundant_do_children(rewritten_node)
   } else {
     rewritten_node
+  };
+  if compose_single_expression_do {
+    unwrap_single_expression_do(rewritten_node)
+  } else {
+    rewritten_node
+  }
+}
+
+/// Remove one single-expression `do` after recursively rewriting its payload.
+fn unwrap_single_expression_do(node: Cirru) -> Cirru {
+  match node {
+    Cirru::List(items) if items.len() == 2 && items.first().and_then(leaf_value) == Some("do") => {
+      items.into_iter().nth(1).expect("single-expression do should contain one payload")
+    }
+    other => other,
   }
 }
 

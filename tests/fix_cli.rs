@@ -417,6 +417,173 @@ fn surface_latest_preset_migrates_named_enum_and_struct_constructors() {
 }
 
 #[test]
+fn surface_latest_v2_unwraps_single_expression_do_without_changing_v1() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+
+  let v1_preview = run_fix(
+    &snapshot,
+    &[
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "single-do-positions",
+      "--preset",
+      "surface-latest-v1",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(
+    v1_preview.status.success(),
+    "stderr:\n{}",
+    String::from_utf8_lossy(&v1_preview.stderr)
+  );
+  let v1_report = parse_stdout(&v1_preview);
+  assert_eq!(v1_report["data"]["changed"], false);
+  assert_eq!(
+    v1_report["data"]["filters"]["expanded_rule_ids"],
+    serde_json::json!([
+      "removed-data-api-v1",
+      "named-enum-constructor-v1",
+      "named-struct-constructor-v1",
+      "redundant-do-v1"
+    ])
+  );
+
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "single-do-positions",
+      "--preset",
+      "surface-latest-v2",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(preview.status.success(), "stderr:\n{}", String::from_utf8_lossy(&preview.stderr));
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["filters"]["preset_id"], "surface-latest-v2");
+  assert_eq!(
+    report["data"]["filters"]["expanded_rule_ids"],
+    serde_json::json!([
+      "removed-data-api-v1",
+      "named-enum-constructor-v1",
+      "named-struct-constructor-v1",
+      "redundant-do-v1",
+      "single-expression-do-v1"
+    ])
+  );
+  assert_eq!(report["data"]["suggestions"].as_array().map(Vec::len), Some(4));
+  assert!(
+    report["data"]["suggestions"]
+      .as_array()
+      .expect("suggestions should be an array")
+      .iter()
+      .all(|suggestion| suggestion["rule_id"] == "single-expression-do-v1")
+  );
+
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "single-do-positions",
+      "--preset",
+      "surface-latest-v2",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(applied.status.success(), "stderr:\n{}", String::from_utf8_lossy(&applied.stderr));
+  let updated = fs::read_to_string(&snapshot).expect("updated fixture should read");
+  assert!(updated.contains("'single-do-positions"));
+  assert!(updated.contains("chosen value"));
+  assert!(updated.contains("if true (+ chosen 1) 0"));
+
+  let calcit_test = run_calcit(&snapshot, &["test", "fix-command.main/single-do-positions", "--require-match"]);
+  assert!(
+    calcit_test.status.success(),
+    "Calcit definition test failed:\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&calcit_test.stdout),
+    String::from_utf8_lossy(&calcit_test.stderr)
+  );
+
+  let repeated = run_fix(
+    &snapshot,
+    &[
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "single-do-positions",
+      "--preset",
+      "surface-latest-v2",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(repeated.status.success(), "stderr:\n{}", String::from_utf8_lossy(&repeated.stderr));
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"].as_array().map(Vec::len), Some(0));
+
+  let overlap = run_fix(
+    &snapshot,
+    &[
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "legacy-enum-overlap",
+      "--preset",
+      "surface-latest-v2",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(overlap.status.success(), "stderr:\n{}", String::from_utf8_lossy(&overlap.stderr));
+  let overlap_test = run_calcit(&snapshot, &["test", "fix-command.main/legacy-enum-overlap", "--require-match"]);
+  assert!(
+    overlap_test.status.success(),
+    "Calcit overlap test failed:\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&overlap_test.stdout),
+    String::from_utf8_lossy(&overlap_test.stderr)
+  );
+
+  for definition in ["quoted-single-do", "single-do-macro"] {
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--ns",
+        "fix-command.main",
+        "--def",
+        definition,
+        "--preset",
+        "surface-latest-v2",
+        "--format",
+        "json",
+      ],
+    );
+    assert!(preview.status.success(), "stderr:\n{}", String::from_utf8_lossy(&preview.stderr));
+    assert_eq!(parse_stdout(&preview)["data"]["suggestions"].as_array().map(Vec::len), Some(0));
+    let target = format!("fix-command.main/{definition}");
+    let calcit_test = run_calcit(&snapshot, &["test", target.as_str(), "--require-match"]);
+    assert!(
+      calcit_test.status.success(),
+      "Calcit definition test failed for {definition}:\nstdout:\n{}\nstderr:\n{}",
+      String::from_utf8_lossy(&calcit_test.stdout),
+      String::from_utf8_lossy(&calcit_test.stderr)
+    );
+  }
+}
+
+#[test]
 fn preset_and_rule_selection_conflict() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
