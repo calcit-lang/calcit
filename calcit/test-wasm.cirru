@@ -1077,6 +1077,48 @@
             defn test-sqrt (x) (sqrt x)
           :examples $ []
           :schema $ :: 'Dynamic
+        'test-static-option-result-inline-closures $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defwasm-export test-static-option-result-inline-closures () $ let
+                offset 4
+                option-value $ .unwrap-or
+                  .map (%some 3)
+                    fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'Number
+                        :return 'Number
+                      + x offset
+                  , 0
+                result-value $ .unwrap-or
+                  .map (%ok 5)
+                    fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'Number
+                        :return 'Number
+                      + x offset
+                  , 0
+                alias-value $ wasm-apply-via-alias 2
+                  fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    + x offset
+                shadow-value $ wasm-apply-after-shadow 2
+                  fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    + x offset
+              + option-value result-value alias-value shadow-value
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ []
+          :tests $ []
+            %{} 'TestEntry (:name |specializes-inline-callbacks-across-static-functions)
+              :code $ quote
+                assert= 35 $ test-static-option-result-inline-closures
+              :tags $ #{} :core :unit :wasm
         'test-static-option-result-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defwasm-export test-static-option-result-methods () $ let
@@ -1344,6 +1386,31 @@
           :schema $ :: 'Fn
             {} (:return 'Number)
               :args $ [] 'Number
+        'wasm-apply-after-shadow $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn wasm-apply-after-shadow (value f)
+              let
+                  before $ f value
+                  f 7
+                + before f
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'Number
+                :: 'Fn $ {} (:return 'Number)
+                  :args $ [] 'Number
+        'wasm-apply-via-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn wasm-apply-via-alias (value f)
+              let
+                  g f
+                g value
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'Number
+                :: 'Fn $ {} (:return 'Number)
+                  :args $ [] 'Number
         'wasm-ffi-add $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defwasm-export wasm-ffi-add (a b) (&+ a b)
@@ -1361,3 +1428,93 @@
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-wasm.main $ :require (test-wasm.helper :as helper)
+    'test-wasm.specialization-fail $ %{} 'FileEntry
+      :defs $ {}
+        'apply-one $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn apply-one (f) (f 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ []
+                :: 'Fn $ {} (:return 'Number)
+                  :args $ [] 'Number
+        'escape-callback $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn escape-callback (f) f
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ []
+                :: 'Fn $ {} (:return 'Number)
+                  :args $ [] 'Number
+              :return $ :: 'Fn
+                {} (:return 'Number)
+                  :args $ [] 'Number
+        'recursive-callback $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn recursive-callback (n f)
+              if (> n 0)
+                recursive-callback (- n 1) f
+                f n
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'Number
+                :: 'Fn $ {} (:return 'Number)
+                  :args $ [] 'Number
+        'rest-callback $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn rest-callback (f & xs)
+              f $ count xs
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:rest 'Number) (:return 'Number)
+              :args $ []
+                :: 'Fn $ {} (:return 'Number)
+                  :args $ [] 'Number
+        'test-closure-escape $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-closure-escape () $ escape-callback
+              fn (x) (+ x 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ []
+        'test-dynamic-closure-callee $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-dynamic-closure-callee () $ let
+                callee $ if true apply-one apply-one
+              callee $ fn (x) (+ x 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ []
+        'test-recursive-closure-specialization $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-recursive-closure-specialization () $ recursive-callback 1
+              fn (x) (+ x 1)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ []
+        'test-rest-closure-specialization $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-rest-closure-specialization () $ rest-callback
+              fn (x) (+ x 1)
+              , 1 2
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ []
+        'test-spread-closure-specialization $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-spread-closure-specialization () $ rest-callback
+              fn (x) (+ x 1)
+              , & ([] 1 2)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ []
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote (ns test-wasm.specialization-fail)
