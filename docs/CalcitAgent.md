@@ -215,6 +215,9 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 `calcit fix --rule redundant-do-v1` 完成，不要手工批量改缩进；它会跳过 `defmacro` 与 quote/quasiquote，并用 staged preprocess 验证 splice 后的 scope。
 旧代码中的 `tag-match` 使用 `calcit fix --rule tag-match-to-match-v1` 迁移；只有名称解析确定指向 core deprecated macro
 的 source call 才会改为原生 `match`，本地 shadow、quoted data 和不明确的 macro origin 会保持不变。
+静态 Struct 上旧式的 `(get value :field)` 使用 `calcit fix --rule required-struct-field-v1` 收敛为必填字段访问；只接受 suggestion
+中同时存在 `calcit.core/get`、具名 Struct identity 与已声明字段类型的证据。Dynamic/Option、运行时 key、未知字段、本地 shadow、
+业务 fallback 或不明确的 macro origin 必须保持人工处理，不得为了让迁移通过而插入默认值、unwrap、`unsafe-coerce` 或扩大 Dynamic。
 
 同一个 Snapshot 的写命令必须串行执行，包括 `config`、`edit`、`tree` 和 cursor mutation；两个进程同时读取再保存会发生最后写入覆盖。需要并行时使用独立 Snapshot/worktree，需要同一文件内的原子多步修改时使用 transaction 和 `--expect-revision`。
 

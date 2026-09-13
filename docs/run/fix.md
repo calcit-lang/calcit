@@ -43,6 +43,11 @@ calcit calcit.cirru fix --ns app.main --def render! --format json
   source call head，分支 AST 与求值顺序保持不变。本地参数或 `let` 绑定的同名调用、其他 namespace 的同名定义、
   `quote`/`quasiquote` 数据和无法唯一回到 source 的 macro expansion 不产生 replacement。该规则让原生 `match`
   保留 enum 分支结构，供穷尽性、payload arity、类型推断与 backend 优化继续使用。
+- `required-struct-field-v1` 消费 `W_STRUCT_FIELD_OPTIONAL_LOOKUP` 与已有静态类型证据，只把精确 core
+  `(get value :field)` 改为 `(:field value)`。receiver 必须唯一推断为具名 Struct，静态 tag 必须是已声明字段；suggestion 的
+  `origin_chain` 会同时给出 `calcit.core/get`、Struct identity 和字段声明类型。Dynamic/Option receiver、运行时 key、未知字段、
+  本地 shadow `get`、`.unwrap-or`/`.or-else` 等业务 fallback 以及不能唯一映射回 source 的 macro expansion 不自动改写。
+  replacement 原样保留 receiver 子树且只出现一次，因此不会复制或重排求值。
 
 JSON stdout 是一个完整 value，包含 `schema_version`、`command`、Snapshot `revision`、filters、validation、suggestions、diagnostics
 和 `next`。每条 suggestion 携带 Snapshot `source_file`、stable rule ID、diagnostic code、表层 definition/path、subtree fingerprint、
@@ -63,6 +68,10 @@ apply 必须原样重复 preview 使用的 `--ns`、`--def` 和 `--rule` selecto
 `--expect-revision`，transaction 也必须绑定规划时捕获的 revision。全部 replacement 先在 staged Snapshot 上执行，重新加载并
 预处理选定 scope，最后才原子替换源文件。revision 过期、节点不匹配、替换重叠、parse/schema/preprocess 失败时均不写入。
 重复运行同一规则必须返回空 suggestions，不能再次改写。
+
+为了让旧兼容代码在已经启用严格错误的版本中仍可迁移，初次规划会在隔离的兼容 preprocess 中收集 warning 和类型证据；这一步
+只产生候选计划。staged Snapshot 应用 replacement 后会重新启动严格 preprocess，严格错误或新增无关 warning 仍会拒绝 preview/apply，
+正常的 check、test、JS/WASM codegen 也不会继承规划模式。因此该机制不是降低类型门禁，而是让自动 migration 能先修复门禁指出的旧语义。
 
 为降低 Agent 误写成本，`--apply` 默认要求干净的 Git worktree。确实需要在已有修改上应用时，先审阅 JSON preview，
 再显式加 `--allow-dirty`；非 Git 环境需要显式加 `--allow-no-vcs`。这两个参数只放宽版本控制前置条件，不跳过 revision、

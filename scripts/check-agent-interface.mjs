@@ -439,6 +439,44 @@ const scenarios = [
     },
   },
   {
+    name: "type-proven required struct field fix preview",
+    args: [
+      "tests/fixtures/fix-command.cirru",
+      "fix",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "required-struct-field",
+      "--rule",
+      "required-struct-field-v1",
+      "--format",
+      "json",
+    ],
+    check(result) {
+      const suggestion = result.data?.suggestions?.[0];
+      if (
+        result.schema_version !== 1 ||
+        result.command !== "fix" ||
+        result.data.changed !== true ||
+        suggestion?.rule_id !== "required-struct-field-v1" ||
+        suggestion?.diagnostic_code !== "W_STRUCT_FIELD_OPTIONAL_LOOKUP"
+      ) {
+        throw new Error("required Struct field fix preview lost its deterministic compiler evidence");
+      }
+      if (
+        suggestion.origin_chain?.[0]?.target !== "calcit.core/get" ||
+        suggestion.origin_chain?.[1]?.target !== "fix-command.main/FixPerson" ||
+        suggestion.origin_chain?.[2]?.target !== ":name" ||
+        suggestion.origin_chain?.[2]?.type !== ":string" ||
+        suggestion.original?.value?.[0] !== "get" ||
+        suggestion.replacement?.value?.[0] !== ":name" ||
+        suggestion.applicability !== "machine-applicable"
+      ) {
+        throw new Error("required Struct field fix preview lost nominal Struct or field evidence");
+      }
+    },
+  },
+  {
     name: "machine value schema",
     args: [
       "calcit/test.cirru",

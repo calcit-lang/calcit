@@ -1677,7 +1677,7 @@ fn calcit_expression_source_path(node: &Calcit, namespace: &str, definition: &st
   None
 }
 
-fn find_preprocessed_node_at_path<'a>(
+pub(super) fn find_preprocessed_node_at_path<'a>(
   node: &'a Calcit,
   namespace: &str,
   definition: &str,
@@ -1820,7 +1820,7 @@ fn expected_type_at_path(
 
 /// Prefer processed static evidence, then recover source and implicit-core
 /// definition schemas when preprocessing stopped before node correlation.
-fn infer_type_at_target(source: &Calcit, processed: Option<&Calcit>, namespace: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+pub(super) fn infer_type_at_target(source: &Calcit, processed: Option<&Calcit>, namespace: &str) -> Option<Arc<CalcitTypeAnnotation>> {
   processed
     .and_then(runner::preprocess::infer_static_type_from_expr)
     .or_else(|| runner::preprocess::infer_static_type_from_expr(source))

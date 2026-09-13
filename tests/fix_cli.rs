@@ -417,3 +417,165 @@ fn default_fix_applies_leaf_replacements_before_structural_splices() {
   assert_eq!(repeated_json["data"]["changed"], false);
   assert_eq!(repeated_json["data"]["suggestions"].as_array().map(Vec::len), Some(0));
 }
+
+#[test]
+fn required_struct_field_fix_is_type_proven_guarded_and_idempotent() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+
+  for (definition, test_name) in [
+    ("required-struct-field", "migrates-declared-field"),
+    ("required-struct-complex", "evaluates-complex-receiver-once"),
+    ("dynamic-struct-field", "keeps-dynamic-lookup"),
+    ("runtime-struct-field", "keeps-runtime-key"),
+    ("unknown-struct-field", "keeps-unknown-field-for-review"),
+    ("defaulted-struct-field", "keeps-business-default-path"),
+    ("shadowed-struct-get", "keeps-local-get-shadow"),
+  ] {
+    let tests = run_calcit(&snapshot, &["query", "tests", &format!("fix-command.main/{definition}")]);
+    assert!(
+      tests.status.success(),
+      "{definition} stderr:\n{}",
+      String::from_utf8_lossy(&tests.stderr)
+    );
+    assert!(String::from_utf8_lossy(&tests.stdout).contains(test_name));
+  }
+
+  let dynamic_before = run_calcit(
+    &snapshot,
+    &["test", "fix-command.main/dynamic-struct-field", "--summary-only", "--require-match"],
+  );
+  assert!(
+    dynamic_before.status.success(),
+    "dynamic must-not test stderr:\n{}",
+    String::from_utf8_lossy(&dynamic_before.stderr)
+  );
+
+  for definition in [
+    "dynamic-struct-field",
+    "runtime-struct-field",
+    "unknown-struct-field",
+    "defaulted-struct-field",
+    "shadowed-struct-get",
+  ] {
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--ns",
+        "fix-command.main",
+        "--def",
+        definition,
+        "--rule",
+        "required-struct-field-v1",
+        "--format",
+        "json",
+      ],
+    );
+    assert!(
+      preview.status.success(),
+      "{definition} stderr:\n{}",
+      String::from_utf8_lossy(&preview.stderr)
+    );
+    let report = parse_stdout(&preview);
+    assert_eq!(report["data"]["changed"], false, "definition: {definition}");
+    assert_eq!(report["data"]["suggestions"].as_array().map(Vec::len), Some(0));
+  }
+
+  for definition in ["required-struct-field", "required-struct-complex"] {
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--ns",
+        "fix-command.main",
+        "--def",
+        definition,
+        "--rule",
+        "required-struct-field-v1",
+        "--format",
+        "json",
+      ],
+    );
+    assert!(
+      preview.status.success(),
+      "{definition} stderr:\n{}",
+      String::from_utf8_lossy(&preview.stderr)
+    );
+    let preview_json = parse_stdout(&preview);
+    let suggestion = &preview_json["data"]["suggestions"][0];
+    assert_eq!(suggestion["rule_id"], "required-struct-field-v1");
+    assert_eq!(suggestion["diagnostic_code"], "W_STRUCT_FIELD_OPTIONAL_LOOKUP");
+    assert_eq!(suggestion["origin_chain"][0]["target"], "calcit.core/get");
+    assert_eq!(suggestion["origin_chain"][1]["target"], "fix-command.main/FixPerson");
+    assert_eq!(suggestion["origin_chain"][2]["target"], ":name");
+    assert_eq!(suggestion["origin_chain"][2]["type"], ":string");
+    assert_eq!(suggestion["replacement"]["value"][0], ":name");
+    assert!(
+      suggestion["message"]
+        .as_str()
+        .is_some_and(|message| message.contains("required") && message.contains("evaluated once"))
+    );
+
+    let revision = preview_json["revision"].as_str().expect("preview revision should be a string");
+    let applied = run_fix(
+      &snapshot,
+      &[
+        "--ns",
+        "fix-command.main",
+        "--def",
+        definition,
+        "--rule",
+        "required-struct-field-v1",
+        "--apply",
+        "--allow-no-vcs",
+        "--expect-revision",
+        revision,
+        "--format",
+        "json",
+      ],
+    );
+    assert!(
+      applied.status.success(),
+      "{definition} stderr:\n{}",
+      String::from_utf8_lossy(&applied.stderr)
+    );
+    assert_eq!(parse_stdout(&applied)["data"]["changed"], true);
+
+    let after = run_calcit(
+      &snapshot,
+      &[
+        "test",
+        &format!("fix-command.main/{definition}"),
+        "--summary-only",
+        "--require-match",
+      ],
+    );
+    assert!(
+      after.status.success(),
+      "{definition} stderr:\n{}",
+      String::from_utf8_lossy(&after.stderr)
+    );
+
+    let repeated = run_fix(
+      &snapshot,
+      &[
+        "--ns",
+        "fix-command.main",
+        "--def",
+        definition,
+        "--rule",
+        "required-struct-field-v1",
+        "--format",
+        "json",
+      ],
+    );
+    assert!(
+      repeated.status.success(),
+      "{definition} stderr:\n{}",
+      String::from_utf8_lossy(&repeated.stderr)
+    );
+    let repeated_json = parse_stdout(&repeated);
+    assert_eq!(repeated_json["data"]["changed"], false);
+    assert_eq!(repeated_json["data"]["suggestions"].as_array().map(Vec::len), Some(0));
+  }
+}
