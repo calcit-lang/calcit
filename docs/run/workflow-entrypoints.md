@@ -19,6 +19,7 @@ parent: core/run
 related:
   - core/run/fix
   - core/run/library-quality
+  - core/run/verification-profiles
   - core/run/edit-tree
 requires:
   - core/agent

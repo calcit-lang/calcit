@@ -1,4 +1,4 @@
-use crate::snapshot::{CodeEntry, FileInSnapShot, NsEntry, Snapshot, SnapshotEntry, load_snapshot_data};
+use crate::snapshot::{CodeEntry, FileInSnapShot, NsEntry, Snapshot, SnapshotEntry, VerificationConfig, load_snapshot_data};
 use crate::util::string::strip_shebang;
 use cirru_edn::Edn;
 use cirru_parser::Cirru;
@@ -362,6 +362,7 @@ fn diff_snapshot(old: &Snapshot, new: &Snapshot) -> DiffNode {
     about: old_about,
     version: old_version,
     entries: old_entries,
+    verification: old_verification,
     files: old_files,
     ..
   } = old;
@@ -370,6 +371,7 @@ fn diff_snapshot(old: &Snapshot, new: &Snapshot) -> DiffNode {
     about: new_about,
     version: new_version,
     entries: new_entries,
+    verification: new_verification,
     files: new_files,
     ..
   } = new;
@@ -379,10 +381,41 @@ fn diff_snapshot(old: &Snapshot, new: &Snapshot) -> DiffNode {
     diff_optional_string("about", old_about.as_deref(), new_about.as_deref()),
     diff_string("version", Some(old_version.as_str()), Some(new_version.as_str())),
     diff_entries("entries", old_entries, new_entries),
+    diff_verification("verification", old_verification, new_verification),
     diff_files("files", old_files, new_files),
   ];
 
   DiffNode::new("program", aggregate_status(&children)).with_children(children)
+}
+
+fn diff_verification(label: &str, old: &VerificationConfig, new: &VerificationConfig) -> DiffNode {
+  let profile_strings = |config: &VerificationConfig| {
+    config
+      .profiles
+      .iter()
+      .map(|(name, profile)| {
+        let checks = profile.checks.iter().map(|check| check.as_str()).collect::<Vec<_>>().join(",");
+        (
+          name.clone(),
+          format!(
+            "entries=[{}];checks=[{}];on-failure={}",
+            profile.entries.join(","),
+            checks,
+            profile.on_failure.as_str()
+          ),
+        )
+      })
+      .collect::<HashMap<_, _>>()
+  };
+  let old_profiles = profile_strings(old);
+  let new_profiles = profile_strings(new);
+  let old_schema_version = old.schema_version.to_string();
+  let new_schema_version = new.schema_version.to_string();
+  let children = vec![
+    diff_string("schema-version", Some(&old_schema_version), Some(&new_schema_version)),
+    diff_string_map("profiles", &old_profiles, &new_profiles),
+  ];
+  DiffNode::new(label, aggregate_status(&children)).with_children(children)
 }
 
 fn diff_entry(label: &str, old: Option<&SnapshotEntry>, new: Option<&SnapshotEntry>) -> DiffNode {

@@ -640,6 +640,7 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
         "enforces zero static type and deprecated API debt".to_string()
       }
     }
+    AnalyzeSubcommand::Verify(opts) => format!("runs declarative verification profile `{}`", opts.profile),
     AnalyzeSubcommand::EffectsGraph(opts) => {
       let mut desc = "builds effects dependency graph".to_string();
       if let Some(root) = &opts.root {
@@ -948,6 +949,11 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       switch "deps" => opts.deps,
       opt "baseline" => opts.baseline.as_deref(); default "strict-zero",
       opt "write-baseline" => opts.write_baseline.as_deref(); default "none",
+      value "format" => &opts.format; default "human"
+    ),
+    AnalyzeSubcommand::Verify(opts) => echo_items!(
+      tokens,
+      value "profile" => &opts.profile,
       value "format" => &opts.format; default "human"
     ),
     AnalyzeSubcommand::EffectsGraph(opts) => echo_items!(
@@ -1344,6 +1350,7 @@ fn analyze_name(subcommand: &AnalyzeSubcommand) -> &'static str {
     AnalyzeSubcommand::DynamicMethods(_) => "dynamic-methods",
     AnalyzeSubcommand::Deprecated(_) => "deprecated",
     AnalyzeSubcommand::Quality(_) => "quality",
+    AnalyzeSubcommand::Verify(_) => "verify",
     AnalyzeSubcommand::EffectsGraph(_) => "effects-graph",
     AnalyzeSubcommand::JsEscape(_) => "js-escape",
     AnalyzeSubcommand::JsUnescape(_) => "js-unescape",

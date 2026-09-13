@@ -214,6 +214,11 @@ CLI 入口按任务收敛：entry 语义验证使用 `--check-only`，只读事�
 `fix` preview/apply，用户指定的结构修改使用 `edit`/`tree`/`cursor`。不要为一条检测或 migration rule 猜测新的顶层命令；
 完整边界见 `calcit docs read workflow-entrypoints.md --full`。
 
+多个 named entry 需要重复执行严格静态门禁时，可在 Snapshot `:verification` 中声明 versioned profile，并运行
+`calcit calcit.cirru analyze verify --profile release --format json`。它共享项目/module 加载以及同一 entry 的预处理事实，
+不执行外部 shell、部署、用户测试或会写生成目录的 codegen；完整 schema 与发布边界见
+`calcit docs read verification-profiles.md --full`。
+
 `defn`/`fn`/`let` body 本身可以顺序包含多个表达式，返回类型来自最后一项；不要为了类型推断再包一层 `do`。
 只有 `if` 分支、调用参数、binding value 等单表达式位置需要用 `do` 把多个步骤组成一个表达式；仅含一个 payload 的
 `(do expr)` 在这些位置也可由 `single-expression-do-v1` 解包。多表达式 body 的整理先用
