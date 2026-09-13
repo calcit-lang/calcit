@@ -4,6 +4,8 @@ use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use cirru_edn::Edn;
+
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 struct TestDirectory(PathBuf);
@@ -40,6 +42,13 @@ fn run_calcit(snapshot: &Path, args: &[&str]) -> Output {
     .args(args)
     .output()
     .expect("calcit command should run")
+}
+
+fn edn_map_field<'a>(value: &'a Edn, key: &str) -> &'a Edn {
+  let Edn::Map(map) = value else {
+    panic!("expected an EDN map, got {value:?}");
+  };
+  map.get(&Edn::tag(key)).unwrap_or_else(|| panic!("missing EDN field :{key}"))
 }
 
 fn snapshot_source(entries: &str) -> String {
@@ -110,6 +119,19 @@ fn verification_profile_uses_one_contract_for_native_and_js_entries() {
   assert_eq!(checks[3]["target"], "node");
   assert!(checks.iter().all(|check| check["revision"] == value["revision"]));
 
+  let edn_output = run_calcit(&snapshot, &["analyze", "verify", "--profile", "release", "--format", "edn"]);
+  assert!(edn_output.status.success());
+  let edn_text = String::from_utf8(edn_output.stdout).expect("EDN stdout should be UTF-8");
+  let edn = cirru_edn::parse(&edn_text).expect("stdout should contain one Cirru EDN value");
+  assert_eq!(edn_map_field(&edn, "schema-version"), &Edn::Number(1.0));
+  assert_eq!(edn_map_field(&edn, "command"), &Edn::str("analyze.verify"));
+  assert_eq!(edn_map_field(edn_map_field(&edn, "data"), "profile"), &Edn::str("release"));
+  assert_eq!(edn_map_field(edn_map_field(&edn, "data"), "status"), &Edn::str("passed"));
+  let Edn::List(edn_checks) = edn_map_field(edn_map_field(&edn, "data"), "checks") else {
+    panic!("EDN checks should be a list");
+  };
+  assert_eq!(edn_checks.0.len(), checks.len());
+
   let config = run_calcit(&snapshot, &["config", "show", "--format", "json"]);
   assert!(config.status.success());
   let config_value: serde_json::Value = serde_json::from_slice(&config.stdout).expect("config stdout should contain one JSON value");
@@ -146,6 +168,16 @@ fn invalid_profile_configuration_fails_before_checks_with_json_diagnostic() {
       .unwrap()
       .contains("unknown entry `missing`")
   );
+
+  let edn_output = run_calcit(&snapshot, &["analyze", "verify", "--profile", "release", "--format", "edn"]);
+  assert!(!edn_output.status.success());
+  let edn_text = String::from_utf8(edn_output.stdout).expect("EDN failure stdout should be UTF-8");
+  let edn = cirru_edn::parse(&edn_text).expect("failure stdout should remain one Cirru EDN value");
+  assert_eq!(edn_map_field(edn_map_field(&edn, "data"), "status"), &Edn::str("failed"));
+  let Edn::List(diagnostics) = edn_map_field(&edn, "diagnostics") else {
+    panic!("EDN diagnostics should be a list");
+  };
+  assert_eq!(edn_map_field(&diagnostics.0[0], "code"), &Edn::str("E_VERIFY_CONFIG"));
 }
 
 #[test]

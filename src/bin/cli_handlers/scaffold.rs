@@ -19,6 +19,7 @@ use std::sync::Arc;
 use super::atomic_write::stage_atomic_file;
 use super::common::read_code_input;
 use super::edit::{check_ns_editable, load_snapshot, parse_target};
+use super::structured_output::StructuredOutputFormat;
 
 const ARCHITECTURE_SCHEMA_VERSION: f64 = 1.0;
 
@@ -132,12 +133,7 @@ struct ScaffoldApplyResult {
 }
 
 pub(crate) fn handle_scaffold_command(opts: &EditScaffoldCommand, snapshot_file: &str) -> Result<(), String> {
-  if !matches!(opts.format.as_str(), "human" | "edn" | "json") {
-    return Err(format!(
-      "Unsupported scaffold format '{}'. Expected human, edn, or json.",
-      opts.format
-    ));
-  }
+  let output_format = StructuredOutputFormat::parse(&opts.format, "scaffold")?;
 
   let raw = read_code_input(&opts.file, &opts.code)?
     .ok_or("Architecture input required: use --file, --code, or pipe one Cirru EDN architecture map via stdin.")?;
@@ -164,14 +160,14 @@ pub(crate) fn handle_scaffold_command(opts: &EditScaffoldCommand, snapshot_file:
     apply_scaffold(&report, &snapshot, snapshot_file, &snapshot_content)?
   };
 
-  match opts.format.as_str() {
-    "human" => print_human_report(&report, opts.dry_run, &apply_result),
-    "edn" => {
+  match output_format {
+    StructuredOutputFormat::Human => print_human_report(&report, opts.dry_run, &apply_result),
+    StructuredOutputFormat::Edn => {
       let rendered = cirru_edn::format(&report_to_edn(&report, opts.dry_run, &apply_result), true)
         .map_err(|error| format!("Failed to render scaffold EDN result: {error}"))?;
       println!("{rendered}");
     }
-    "json" => {
+    StructuredOutputFormat::Json => {
       let value = serde_json::to_value(report_to_edn(&report, opts.dry_run, &apply_result))
         .map_err(|error| format!("Failed to render scaffold JSON result: {error}"))?;
       println!(
@@ -179,7 +175,6 @@ pub(crate) fn handle_scaffold_command(opts: &EditScaffoldCommand, snapshot_file:
         serde_json::to_string(&value).map_err(|error| format!("Failed to serialize scaffold JSON result: {error}"))?
       );
     }
-    _ => unreachable!("format is validated above"),
   }
   Ok(())
 }

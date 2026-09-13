@@ -12,6 +12,7 @@ use calcit::{ProgramEntries, program, runner, util};
 use md5::{Digest, Md5};
 use serde::Serialize;
 
+use crate::cli_handlers::{StructuredOutputFormat, format_json_value_as_edn};
 use crate::{apply_strict_feature_policy_defaults, attach_missing_core_namespaces, collect_dynamic_method_findings, quality_gate};
 
 const VERIFY_OUTPUT_SCHEMA_VERSION: u32 = 1;
@@ -222,13 +223,13 @@ fn evaluate_check(
   }
 }
 
-fn print_json(
+fn output_value(
   profile: &str,
   revision: Option<&str>,
   policy: Option<VerificationFailurePolicy>,
   results: &[VerifyCheckResult],
   error: Option<&str>,
-) {
+) -> serde_json::Value {
   let passed = error.is_none() && results.iter().all(|result| result.status == "passed");
   let diagnostics = error
     .map(|message| {
@@ -240,21 +241,35 @@ fn print_json(
       })]
     })
     .unwrap_or_default();
-  println!(
-    "{}",
-    serde_json::json!({
-      "schema_version": VERIFY_OUTPUT_SCHEMA_VERSION,
-      "command": "analyze.verify",
-      "revision": revision,
-      "data": {
-        "profile": profile,
-        "on_failure": policy.map(VerificationFailurePolicy::as_str),
-        "status": if passed { "passed" } else { "failed" },
-        "checks": results,
-      },
-      "diagnostics": diagnostics,
-    })
-  );
+  serde_json::json!({
+    "schema_version": VERIFY_OUTPUT_SCHEMA_VERSION,
+    "command": "analyze.verify",
+    "revision": revision,
+    "data": {
+      "profile": profile,
+      "on_failure": policy.map(VerificationFailurePolicy::as_str),
+      "status": if passed { "passed" } else { "failed" },
+      "checks": results,
+    },
+    "diagnostics": diagnostics,
+  })
+}
+
+fn print_structured(
+  format: StructuredOutputFormat,
+  profile: &str,
+  revision: Option<&str>,
+  policy: Option<VerificationFailurePolicy>,
+  results: &[VerifyCheckResult],
+  error: Option<&str>,
+) -> Result<(), String> {
+  let value = output_value(profile, revision, policy, results, error);
+  match format {
+    StructuredOutputFormat::Edn => println!("{}", format_json_value_as_edn(&value)?),
+    StructuredOutputFormat::Json => println!("{value}"),
+    StructuredOutputFormat::Human => unreachable!("human verification output is rendered separately"),
+  }
+  Ok(())
 }
 
 fn print_human(profile: &str, revision: &str, policy: VerificationFailurePolicy, results: &[VerifyCheckResult]) {
@@ -279,7 +294,12 @@ fn print_human(profile: &str, revision: &str, policy: VerificationFailurePolicy,
   }
 }
 
-fn run_inner(options: &VerifyCommand, snapshot_file: &str, strict_diagnostics: bool) -> Result<(), String> {
+fn run_inner(
+  options: &VerifyCommand,
+  output_format: StructuredOutputFormat,
+  snapshot_file: &str,
+  strict_diagnostics: bool,
+) -> Result<(), String> {
   let input_path = PathBuf::from(snapshot_file);
   calcit::validate_snapshot_path(&input_path)?;
   let mut content =
@@ -348,10 +368,16 @@ fn run_inner(options: &VerifyCommand, snapshot_file: &str, strict_diagnostics: b
     }
   }
 
-  match options.format.as_str() {
-    "human" | "text" => print_human(&options.profile, &revision, profile.on_failure, &results),
-    "json" => print_json(&options.profile, Some(&revision), Some(profile.on_failure), &results, None),
-    _ => unreachable!("verification output format validated before execution"),
+  match output_format {
+    StructuredOutputFormat::Human => print_human(&options.profile, &revision, profile.on_failure, &results),
+    StructuredOutputFormat::Edn | StructuredOutputFormat::Json => print_structured(
+      output_format,
+      &options.profile,
+      Some(&revision),
+      Some(profile.on_failure),
+      &results,
+      None,
+    )?,
   }
   if results.iter().all(|result| result.status == "passed") {
     Ok(())
@@ -361,18 +387,15 @@ fn run_inner(options: &VerifyCommand, snapshot_file: &str, strict_diagnostics: b
 }
 
 pub fn run(options: &VerifyCommand, snapshot_file: &str, strict_diagnostics: bool) -> Result<(), String> {
-  if !matches!(options.format.as_str(), "human" | "text" | "json") {
-    return Err(format!(
-      "Unknown verify output format `{}`. Expected `human` or `json`.",
-      options.format
-    ));
-  }
-  match run_inner(options, snapshot_file, strict_diagnostics) {
+  let output_format = StructuredOutputFormat::parse(&options.format, "verify")?;
+  match run_inner(options, output_format, snapshot_file, strict_diagnostics) {
     Ok(()) => Ok(()),
     Err(message) => {
-      if options.format == "json" && !message.starts_with("Verification profile `") {
+      if matches!(output_format, StructuredOutputFormat::Edn | StructuredOutputFormat::Json)
+        && !message.starts_with("Verification profile `")
+      {
         let revision = fs::read_to_string(snapshot_file).ok().map(|content| content_revision(&content));
-        print_json(&options.profile, revision.as_deref(), None, &[], Some(&message));
+        print_structured(output_format, &options.profile, revision.as_deref(), None, &[], Some(&message))?;
       }
       Err(message)
     }

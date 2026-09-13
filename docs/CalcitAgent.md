@@ -29,6 +29,8 @@ Calcit 0.14 起，普通运行、检查和代码生成默认启用严格预处�
 `--compat-types` 暂时恢复旧 warning 行为；`--strict-types` 表示进一步执行零类型债务 quality gate，
 不能与 `--compat-types` 同时使用。Agent 不应把兼容开关写进新项目或长期 CI。
 
+CLI 不传格式参数时保持适合人类 review 的 Markdown-compatible 输出。需要稳定字段与自动分支时，Calcit 自有工作流优先选择 `--format edn`，因为 Cirru EDN 会保留 tag、symbol 等原生数据语义；只有对接 JSON-only 工具或既有 JSON consumer 时才显式选择 `--format json`。尚未提供 EDN 的旧命令可暂时使用 JSON，后续按共享 envelope 逐步迁移，不应为此增加新顶层入口。
+
 ## Mutation contract v1
 
 这是每次进入 Calcit 仓库、首次写入前必须读取的紧凑安全契约：
@@ -215,7 +217,7 @@ CLI 入口按任务收敛：entry 语义验证使用 `--check-only`，只读事�
 完整边界见 `calcit docs read workflow-entrypoints.md --full`。
 
 多个 named entry 需要重复执行严格静态门禁时，可在 Snapshot `:verification` 中声明 versioned profile，并运行
-`calcit calcit.cirru analyze verify --profile release --format json`。它共享项目/module 加载以及同一 entry 的预处理事实，
+`calcit calcit.cirru analyze verify --profile release --format edn`。它共享项目/module 加载以及同一 entry 的预处理事实，
 不执行外部 shell、部署、用户测试或会写生成目录的 codegen；完整 schema 与发布边界见
 `calcit docs read verification-profiles.md --full`。
 

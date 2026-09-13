@@ -21,6 +21,7 @@ mod markdown_read;
 mod program_diff;
 mod query;
 mod scaffold;
+mod structured_output;
 #[cfg(test)]
 mod test_support;
 mod tips;
@@ -43,6 +44,7 @@ pub use program_diff::handle_program_diff_command;
 pub use query::handle_query_command;
 pub(crate) use query::load_snapshot_for_static_analysis;
 pub(crate) use scaffold::handle_scaffold_command;
+pub(crate) use structured_output::{StructuredOutputFormat, format_json_value_as_edn};
 pub use tips::{set_tips_level, suppress_command_guidance};
 pub use tree::handle_tree_command;
 // Re-export when needed by other modules; keep internal for now to avoid unused-import warnings
