@@ -1297,7 +1297,7 @@ mod tests {
   use super::{
     FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_potential_local_bindings, collect_redundant_do_paths,
     fix_rule_metadata, insert_fix_suggestion, legacy_constructor_replacement, migration_for_source_leaf, prototype_is_shadowed,
-    resolve_fix_target, struct_fields_are_complete, suggestion_operations,
+    resolve_fix_target, rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
   };
   use cirru_parser::Cirru;
   use serde_json::Value;
@@ -1511,6 +1511,21 @@ mod tests {
       legacy_constructor_replacement(&[leaf("%{}"), leaf("Person"), leaf("dynamic-fields")], NominalKind::Struct),
       None
     );
+  }
+
+  #[test]
+  fn equivalent_readable_constructors_converge_to_the_same_current_tree() {
+    let snapshot = super::load_snapshot("tests/fixtures/fix-command.cirru").expect("fix fixture should load");
+    let legacy = Cirru::List(vec![leaf("%::"), leaf("FixPersonChoice"), leaf(":none")]);
+    let current = Cirru::List(vec![leaf("FixPersonChoice"), leaf(":none")]);
+    let shadowed = std::collections::HashSet::new();
+    let kinds = [NominalKind::Enum];
+
+    let normalized_legacy = rewrite_named_constructor_tree(&legacy, &snapshot, "fix-command.main", &shadowed, &kinds, false, false);
+    let normalized_current = rewrite_named_constructor_tree(&current, &snapshot, "fix-command.main", &shadowed, &kinds, false, false);
+
+    assert_eq!(normalized_legacy, current);
+    assert_eq!(normalized_current, current);
   }
 
   #[test]
