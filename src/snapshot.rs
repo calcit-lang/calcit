@@ -1890,13 +1890,12 @@ fn code_declares_macro(code: &Cirru) -> bool {
   matches!(code, Cirru::List(items) if matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defmacro"))
 }
 
-/// Build the narrowest safe contract that can be recovered from a legacy
-/// direct-quote macro. The old representation preserved parameter shape but
-/// carried no semantic schema or capability declaration, so migration keeps
-/// every input as syntax, emits an `Expr<Dynamic>` expansion, and grants no
-/// compile-time capabilities. Projects can refine that conservative contract
-/// after the Snapshot becomes readable by the current toolchain.
-fn legacy_direct_quote_macro_schema(code: &Cirru, owner: &str) -> Result<Option<Arc<CalcitTypeAnnotation>>, String> {
+/// Build the narrowest safe macro contract recoverable from source syntax.
+/// Parameter shape is structural evidence, while semantic input categories and
+/// expansion types are not, so callers get Syntax inputs, an `Expr<Dynamic>`
+/// expansion, and no compile-time capabilities. Projects can refine that
+/// conservative contract after the Snapshot becomes readable.
+pub fn conservative_macro_schema(code: &Cirru, owner: &str) -> Result<Option<Arc<CalcitTypeAnnotation>>, String> {
   if !code_declares_macro(code) {
     return Ok(None);
   }
@@ -1905,7 +1904,7 @@ fn legacy_direct_quote_macro_schema(code: &Cirru, owner: &str) -> Result<Option<
   };
   let Some(Cirru::List(params)) = items.get(2) else {
     return Err(format!(
-      "{owner}: cannot migrate legacy direct-quote `defmacro`: expected a parameter list"
+      "{owner}: cannot derive a strict `defmacro` schema: expected a parameter list"
     ));
   };
   let shape = ParamShape::from_tokens(params.iter().filter_map(|item| match item {
@@ -1916,7 +1915,7 @@ fn legacy_direct_quote_macro_schema(code: &Cirru, owner: &str) -> Result<Option<
   }));
   if !shape.errors.is_empty() {
     return Err(format!(
-      "{owner}: cannot migrate legacy direct-quote `defmacro`: malformed parameter list: {}",
+      "{owner}: cannot derive a strict `defmacro` schema: malformed parameter list: {}",
       shape.errors.join("; ")
     ));
   }
@@ -2604,7 +2603,7 @@ fn parse_file_for_format_with_context(
       Edn::Quote(code) => {
         migration.direct_quote_definitions += 1;
         let mut entry = CodeEntry::from_code(code.clone());
-        if let Some(schema) = legacy_direct_quote_macro_schema(code, &owner)? {
+        if let Some(schema) = conservative_macro_schema(code, &owner)? {
           entry.schema = schema;
         }
         entry
