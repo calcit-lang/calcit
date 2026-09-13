@@ -1440,6 +1440,43 @@ pub struct LibsScanMdCommand {
 // Edit subcommand - code editing operations
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/// Transport format used when a mutation command receives one syntax node.
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Default)]
+pub enum SyntaxInputFormat {
+  /// Preserve the historical JSON-array/Cirru-quote content detection path.
+  #[default]
+  Auto,
+  /// Cirru EDN whose payload crosses the code/data boundary through `quote`.
+  Cirru,
+  /// A serialized Cirru AST represented by JSON strings and arrays.
+  JsonAst,
+}
+
+impl std::fmt::Display for SyntaxInputFormat {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(match self {
+      Self::Auto => "auto",
+      Self::Cirru => "cirru",
+      Self::JsonAst => "json-ast",
+    })
+  }
+}
+
+impl std::str::FromStr for SyntaxInputFormat {
+  type Err = String;
+
+  fn from_str(raw: &str) -> Result<Self, Self::Err> {
+    match raw {
+      "auto" => Ok(Self::Auto),
+      "cirru" | "cirru-edn" => Ok(Self::Cirru),
+      "json-ast" | "json" => Ok(Self::JsonAst),
+      other => Err(format!(
+        "Unknown syntax input format `{other}`. Expected `cirru`, `json-ast`, or compatibility mode `auto`."
+      )),
+    }
+  }
+}
+
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "edit")]
 /// coarse-grained code editing (namespaces, definitions, metadata). For internal structural changes within definitions, use the `tree` command.
@@ -1561,12 +1598,15 @@ pub struct EditDefCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// read syntax_tree from file (auto-detects JSON vs Cirru)
+  /// read syntax_tree from file; select its transport with --input-format
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
+  /// syntax_tree as inline text; select its transport with --input-format
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
   /// overwrite existing definition if it already exists
   #[argh(switch, long = "overwrite")]
   pub overwrite: bool,
@@ -1618,6 +1658,9 @@ pub struct EditSchemaCommand {
   /// one quoted Cirru type node; core Option/Result may be short, project nominal types must be qualified
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
   /// clear schema field
   #[argh(switch, long = "clear")]
   pub clear: bool,
@@ -1669,12 +1712,15 @@ pub struct EditAddExampleCommand {
   /// position to insert at (default: append to end)
   #[argh(option, long = "at")]
   pub at: Option<usize>,
-  /// read example from file (auto-detects JSON vs Cirru)
+  /// read one example node from file; select its transport with --input-format
   #[argh(option)]
   pub file: Option<String>,
-  /// example as inline text (auto-detects JSON vs Cirru)
+  /// one example node as inline text; select its transport with --input-format
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -1708,6 +1754,9 @@ pub struct EditAddTestCommand {
   /// test expression as inline text
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
   /// replace an existing test with the same name
   #[argh(switch, long = "overwrite")]
   pub overwrite: bool,
@@ -1741,17 +1790,20 @@ pub struct EditTagsCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "add-ns")]
-/// add a new namespace (ns code via --file, --code, or pipe via stdin; auto-detects JSON vs Cirru)
+/// add a new namespace (optional ns syntax via --file, --code, or stdin)
 pub struct EditAddNsCommand {
   /// namespace name to create
   #[argh(positional)]
   pub namespace: String,
-  /// read ns syntax_tree from file (auto-detects JSON vs Cirru)
+  /// read ns syntax_tree from file; select its transport with --input-format
   #[argh(option)]
   pub file: Option<String>,
-  /// ns syntax_tree as inline text (auto-detects JSON vs Cirru)
+  /// ns syntax_tree as inline text; select its transport with --input-format
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -1785,12 +1837,15 @@ pub struct EditAddImportCommand {
   /// namespace to add import rule to
   #[argh(positional)]
   pub namespace: String,
-  /// read import rule from file (auto-detects JSON vs Cirru)
+  /// read one import-rule node from file; select its transport with --input-format
   #[argh(option)]
   pub file: Option<String>,
-  /// import rule as inline text (auto-detects JSON vs Cirru)
+  /// one import-rule node as inline text; select its transport with --input-format
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
   /// overwrite existing rule for the same source namespace
   #[argh(switch, long = "overwrite")]
   pub overwrite: bool,
@@ -1986,12 +2041,15 @@ pub struct TreeStructuralCommand {
   /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
-  /// read syntax_tree from file (auto-detects JSON vs Cirru)
+  /// read syntax_tree from file; select its transport with --input-format
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
+  /// syntax_tree as inline text; select its transport with --input-format
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
   /// bind placeholder to original-node path: `--with self=.` , `--with rhs=2`
   #[argh(option, long = "with")]
   pub with: Vec<String>,
@@ -2013,12 +2071,15 @@ pub struct TreeSearchReplaceCommand {
   /// treat pattern as a regular expression for matching leaf nodes
   #[argh(switch, long = "regex")]
   pub regex: bool,
-  /// read syntax_tree from file (auto-detects JSON vs Cirru)
+  /// read syntax_tree from file; select its transport with --input-format
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
+  /// syntax_tree as inline text; select its transport with --input-format
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -2056,12 +2117,15 @@ pub struct TreeReplaceCommand {
   /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
-  /// read syntax_tree from file (auto-detects JSON vs Cirru)
+  /// read syntax_tree from file; select its transport with --input-format
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
+  /// syntax_tree as inline text; select its transport with --input-format
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
   /// require the current node to equal this quoted Cirru node before replacing
   #[argh(option)]
   pub expect: Option<String>,
@@ -2083,12 +2147,15 @@ pub struct TreeReplaceLeafCommand {
   /// treat pattern as a regular expression for matching leaf nodes
   #[argh(switch, long = "regex")]
   pub regex: bool,
-  /// read syntax_tree from file (auto-detects JSON vs Cirru)
+  /// read syntax_tree from file; select its transport with --input-format
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
+  /// syntax_tree as inline text; select its transport with --input-format
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -2122,12 +2189,15 @@ pub struct TreeInsertBeforeCommand {
   /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
-  /// read syntax_tree from file (auto-detects JSON vs Cirru)
+  /// read syntax_tree from file; select its transport with --input-format
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
+  /// syntax_tree as inline text; select its transport with --input-format
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
   /// require the anchor node to equal this quoted Cirru node before inserting
   #[argh(option)]
   pub expect: Option<String>,
@@ -2146,12 +2216,15 @@ pub struct TreeInsertAfterCommand {
   /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
-  /// read syntax_tree from file (auto-detects JSON vs Cirru)
+  /// read syntax_tree from file; select its transport with --input-format
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
+  /// syntax_tree as inline text; select its transport with --input-format
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
   /// require the anchor node to equal this quoted Cirru node before inserting
   #[argh(option)]
   pub expect: Option<String>,
@@ -2170,12 +2243,15 @@ pub struct TreeInsertChildCommand {
   /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
-  /// read syntax_tree from file (auto-detects JSON vs Cirru)
+  /// read syntax_tree from file; select its transport with --input-format
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
+  /// syntax_tree as inline text; select its transport with --input-format
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
   /// require the parent node to equal this quoted Cirru node before inserting
   #[argh(option)]
   pub expect: Option<String>,
@@ -2194,12 +2270,15 @@ pub struct TreeAppendChildCommand {
   /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
-  /// read syntax_tree from file (auto-detects JSON vs Cirru)
+  /// read syntax_tree from file; select its transport with --input-format
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
+  /// syntax_tree as inline text; select its transport with --input-format
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
   /// require the parent node to equal this quoted Cirru node before appending
   #[argh(option)]
   pub expect: Option<String>,
@@ -2281,9 +2360,12 @@ pub struct TreeWrapCommand {
   /// wrapping expression with `self` as placeholder for the original node (e.g. 'println self')
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// read wrapping expression from file (auto-detects JSON vs Cirru)
+  /// read wrapping expression from file; select its transport with --input-format
   #[argh(option)]
   pub file: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -2517,9 +2599,12 @@ pub struct CursorApplyCommand {
   /// read the replacement, wrapper, or inserted expression from a file
   #[argh(option)]
   pub file: Option<String>,
-  /// replacement, wrapper, or inserted expression as inline Cirru/JSON
+  /// replacement, wrapper, or inserted syntax; select its transport with --input-format
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
   /// max depth for the underlying tree command result preview
   #[argh(option, default = "2")]
   pub depth: usize,

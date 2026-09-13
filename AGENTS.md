@@ -104,8 +104,8 @@ calcit docs agents --full
 
 - **优先使用 `search-replace`**：在 `calcit tree` 操作中，优先使用 `search-replace` 而非 `replace`。它基于内容定位，且在不唯一时会报错，比手动指定索引更安全。
 - **全量取消 `--stdin` 支持**：由于 Shell 重定向和多行输入的复杂性，所有的修改类子命令（`edit` 和 `tree` 系列）已移除该选项。
-  - ✅ 使用 `--code 'code'` 进行单行输入（自动检测 JSON vs Cirru）。
-  - ✅ 使用 `--file file` 进行多行或复杂结构输入（推荐在 `.calcit/snippets/` 下创建临时文件）。
+  - ✅ 新调用使用 `--input-format cirru --code 'quote ...'` 或 `--input-format json-ast --code '[...]'` 显式声明 syntax-node 传输格式；`auto` 仅保留旧脚本兼容。
+  - ✅ 使用 `--file file` 进行多行或复杂结构输入（推荐在 `.calcit/snippets/` 下创建临时文件），并同样显式传 `--input-format`。
   - ✅ 省略 `--code` `--file` 时自动从 stdin 读取（推荐用于多行代码和避免转义）。
 - **路径索引动态性**：在 `tree` 系列操作中（如 `delete`, `insert`），操作会引起同级后续节点索引变化。建议**从后往前**操作，或每次修改后使用 `query search` 重新定位。
 - **结构引用替换 (`tree rewrite`)**：`tree replace` 仅支持简单替换。涉及引用原始节点及其内容的复杂替换（使用 `--with name=path`）已统一移动至 `calcit tree rewrite` 命令。

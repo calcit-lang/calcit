@@ -6,6 +6,8 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::cli_args::SyntaxInputFormat;
+
 // Error message constants
 pub const ERR_MULTIPLE_INPUT_SOURCES: &str = "Multiple input sources provided. Use only one of: --file, --code, or stdin.";
 
@@ -29,12 +31,6 @@ pub fn json_value_to_cirru(json: &serde_json::Value) -> Result<Cirru, String> {
   }
 }
 
-/// Convert JSON string to Cirru syntax tree
-pub fn json_to_cirru(json_str: &str) -> Result<Cirru, String> {
-  let json_value: serde_json::Value = serde_json::from_str(json_str).map_err(|e| format!("Failed to parse JSON: {e}"))?;
-  json_value_to_cirru(&json_value)
-}
-
 /// Convert Cirru syntax tree to JSON value (internal)
 pub fn cirru_to_json_value(c: &Cirru) -> serde_json::Value {
   match c {
@@ -46,6 +42,149 @@ pub fn cirru_to_json_value(c: &Cirru) -> serde_json::Value {
 /// Convert Cirru syntax tree to JSON string
 pub fn cirru_to_json(node: &Cirru) -> String {
   serde_json::to_string_pretty(&cirru_to_json_value(node)).unwrap_or_else(|_| "[]".to_string())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyntaxNodeKind {
+  Leaf,
+  EmptyList,
+  Expression,
+}
+
+impl std::fmt::Display for SyntaxNodeKind {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(match self {
+      Self::Leaf => "leaf",
+      Self::EmptyList => "empty-list",
+      Self::Expression => "expression",
+    })
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedSyntaxInput {
+  pub node: Cirru,
+  pub selected_format: SyntaxInputFormat,
+  pub node_kind: SyntaxNodeKind,
+}
+
+impl DecodedSyntaxInput {
+  pub fn canonical_json_ast(&self) -> serde_json::Value {
+    cirru_to_json_value(&self.node)
+  }
+
+  pub fn structured_summary(&self) -> serde_json::Value {
+    serde_json::json!({
+      "input_format": self.selected_format.to_string(),
+      "node_kind": self.node_kind.to_string(),
+      "canonical": self.canonical_json_ast(),
+    })
+  }
+}
+
+fn syntax_node_kind(node: &Cirru) -> SyntaxNodeKind {
+  match node {
+    Cirru::Leaf(_) => SyntaxNodeKind::Leaf,
+    Cirru::List(items) if items.is_empty() => SyntaxNodeKind::EmptyList,
+    Cirru::List(_) => SyntaxNodeKind::Expression,
+  }
+}
+
+fn json_value_kind(value: &serde_json::Value) -> &'static str {
+  match value {
+    serde_json::Value::String(_) => "string leaf",
+    serde_json::Value::Array(items) if items.is_empty() => "empty array",
+    serde_json::Value::Array(_) => "array expression",
+    serde_json::Value::Object(_) => "object",
+    serde_json::Value::Number(_) => "number",
+    serde_json::Value::Bool(_) => "boolean",
+    serde_json::Value::Null => "null",
+  }
+}
+
+fn strict_json_ast_value_to_cirru(value: &serde_json::Value) -> Result<Cirru, String> {
+  match value {
+    serde_json::Value::String(value) => Ok(Cirru::Leaf(Arc::from(value.as_str()))),
+    serde_json::Value::Array(items) => items
+      .iter()
+      .map(strict_json_ast_value_to_cirru)
+      .collect::<Result<Vec<_>, _>>()
+      .map(Cirru::List),
+    other => Err(format!(
+      "Syntax input format `json-ast` expected node kind `string leaf or array`, received node kind `{}`.",
+      json_value_kind(other)
+    )),
+  }
+}
+
+fn decode_json_ast(raw: &str, compatibility_mode: bool) -> Result<Cirru, String> {
+  let value: serde_json::Value = serde_json::from_str(raw).map_err(|error| {
+    format!("Syntax input format `json-ast` expected a JSON string leaf or array node, received invalid JSON: {error}")
+  })?;
+  if !matches!(value, serde_json::Value::String(_) | serde_json::Value::Array(_)) {
+    return Err(format!(
+      "Syntax input format `json-ast` expected node kind `string leaf or array`, received node kind `{}`.",
+      json_value_kind(&value)
+    ));
+  }
+  if compatibility_mode {
+    json_value_to_cirru(&value)
+  } else {
+    strict_json_ast_value_to_cirru(&value)
+  }
+}
+
+pub fn decode_syntax_input(raw: &str, requested_format: SyntaxInputFormat) -> Result<DecodedSyntaxInput, String> {
+  let selected_format = match requested_format {
+    SyntaxInputFormat::Auto if raw.trim().starts_with('[') => SyntaxInputFormat::JsonAst,
+    SyntaxInputFormat::Auto => SyntaxInputFormat::Cirru,
+    explicit => explicit,
+  };
+  let node = match selected_format {
+    SyntaxInputFormat::Cirru => {
+      if raw.contains('\t') {
+        return Err(
+          "Syntax input format `cirru` expected node kind `quoted syntax`, received node kind `invalid Cirru EDN`: input contains tab characters; Cirru requires spaces for indentation."
+            .to_string(),
+        );
+      }
+      parse_edn_quote(raw).map_err(|error| {
+        format!("Syntax input format `cirru` expected node kind `quoted syntax`, received node kind `invalid Cirru EDN`: {error}")
+      })?
+    }
+    SyntaxInputFormat::JsonAst => {
+      if raw.trim().len() > 2000 {
+        eprintln!("\n⚠️  Note: JSON AST input is very large ({} chars).", raw.trim().len());
+        eprintln!("   For large definitions, consider using placeholders and submitting in segments.");
+        eprintln!();
+      }
+      decode_json_ast(raw, requested_format == SyntaxInputFormat::Auto)?
+    }
+    SyntaxInputFormat::Auto => unreachable!("auto syntax input is resolved before decoding"),
+  };
+  Ok(DecodedSyntaxInput {
+    node_kind: syntax_node_kind(&node),
+    node,
+    selected_format,
+  })
+}
+
+pub fn print_decoded_syntax_input(input: &DecodedSyntaxInput) {
+  let summary = input.structured_summary();
+  println!("Decoded syntax input:");
+  println!("- input format: {}", input.selected_format);
+  println!("- node kind: {}", input.node_kind);
+  println!("- canonical JSON AST: {}", input.canonical_json_ast());
+  println!("- structured: {summary}");
+  println!();
+}
+
+pub fn decode_mutation_syntax_input(raw: &str, requested_format: SyntaxInputFormat) -> Result<Cirru, String> {
+  let decoded = decode_syntax_input(raw, requested_format)?;
+  if requested_format != SyntaxInputFormat::Auto {
+    print_decoded_syntax_input(&decoded);
+  }
+  Ok(decoded.node)
 }
 
 pub fn format_path_with_separator(path: &[usize], separator: &str) -> String {
@@ -423,37 +562,17 @@ pub fn parse_quoted_cirru_nodes(raw: &str) -> Result<Vec<Cirru>, String> {
 /// Cirru text input MUST use `quote` prefix — the `cirru_edn` parser enforces this natively.
 /// Use `--code` for inline text, `--file` for file input, or pipe via stdin.
 pub fn parse_input_to_cirru(raw: &str) -> Result<Cirru, String> {
-  let trimmed = raw.trim();
-  // Auto-detect: JSON arrays start with `[`, Cirru EDN starts with `quote`
-  let is_json = trimmed.starts_with('[');
-  if is_json {
-    if trimmed.len() > 2000 {
-      eprintln!("\n⚠️  Note: JSON input is very large ({} chars).", trimmed.len());
-      eprintln!("   For large definitions, consider using placeholders and submitting in segments.");
-      eprintln!();
-    }
-    json_to_cirru(trimmed)
-  } else {
-    // Parse as Cirru EDN with `quote` prefix
-    if raw.contains('\t') {
-      return Err(
-        "Input contains tab characters. Cirru requires spaces for indentation.\n\
-         Please replace tabs with 2 spaces.\n\
-         Tip: Use `cat -A file` to check for tabs (shown as ^I)."
-          .to_string(),
-      );
-    }
-
-    parse_edn_quote(raw)
-  }
+  decode_syntax_input(raw, SyntaxInputFormat::Auto).map(|decoded| decoded.node)
 }
 
 #[cfg(test)]
 mod tests {
   use super::{
-    GlobalTempPathKind, format_path, format_path_with_separator, global_temp_path_guidance, guard_snapshot_mutation_toolchain,
-    package_version_for_snapshot, parse_input_to_cirru, parse_path, parse_quoted_cirru_nodes, resolve_definition_lookup, shell_quote,
+    GlobalTempPathKind, decode_syntax_input, format_path, format_path_with_separator, global_temp_path_guidance,
+    guard_snapshot_mutation_toolchain, package_version_for_snapshot, parse_input_to_cirru, parse_path, parse_quoted_cirru_nodes,
+    resolve_definition_lookup, shell_quote,
   };
+  use crate::cli_args::SyntaxInputFormat;
   use cirru_parser::Cirru;
   use std::fs;
   use std::sync::atomic::{AtomicU64, Ordering};
@@ -487,6 +606,40 @@ mod tests {
     assert_eq!(parse_input_to_cirru("quote value").unwrap(), leaf("value"));
     assert_eq!(parse_input_to_cirru("quote |value").unwrap(), leaf("|value"));
     assert_eq!(parse_input_to_cirru("quote $ inc 1").unwrap(), list(vec![leaf("inc"), leaf("1")]));
+  }
+
+  #[test]
+  fn explicit_syntax_formats_distinguish_ambiguous_node_shapes() {
+    let leaf = decode_syntax_input(r#""[]""#, SyntaxInputFormat::JsonAst).unwrap();
+    assert_eq!(leaf.structured_summary()["node_kind"], "leaf");
+    assert_eq!(leaf.structured_summary()["canonical"], serde_json::json!("[]"));
+
+    let call = decode_syntax_input(r#"["inc","1"]"#, SyntaxInputFormat::JsonAst).unwrap();
+    assert_eq!(call.structured_summary()["node_kind"], "expression");
+
+    let empty = decode_syntax_input("[]", SyntaxInputFormat::JsonAst).unwrap();
+    assert_eq!(empty.structured_summary()["node_kind"], "empty-list");
+
+    let quoted = decode_syntax_input("quote $ []", SyntaxInputFormat::Cirru).unwrap();
+    assert_eq!(quoted.structured_summary()["node_kind"], "expression");
+    assert_eq!(quoted.structured_summary()["canonical"], serde_json::json!(["[]"]));
+  }
+
+  #[test]
+  fn explicit_syntax_format_errors_report_expected_and_received_shapes() {
+    let error = decode_syntax_input(r#"{"node":[]}"#, SyntaxInputFormat::JsonAst).unwrap_err();
+    assert!(error.contains("format `json-ast`"), "error: {error}");
+    assert!(error.contains("expected node kind `string leaf or array`"), "error: {error}");
+    assert!(error.contains("received node kind `object`"), "error: {error}");
+
+    let nested_scalar = decode_syntax_input("[1]", SyntaxInputFormat::JsonAst).unwrap_err();
+    assert!(nested_scalar.contains("received node kind `number`"), "error: {nested_scalar}");
+
+    assert_eq!(
+      decode_syntax_input("[1]", SyntaxInputFormat::Auto).unwrap().node,
+      list(vec![leaf("1")]),
+      "compatibility auto mode must retain legacy JSON scalar conversion"
+    );
   }
 
   #[test]

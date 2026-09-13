@@ -361,25 +361,34 @@ calcit edit cp app.main/target-def --from '@1.0' --path '@2.0' --at append-child
 calcit edit mv app.main/target-def --from '@1.0' --path '@2.0' --at after
 ```
 
-## Input Formats
+## 输入格式
 
-Editing commands support several ways to provide new code:
+新增自动化必须显式指定 syntax-node 的传输格式；这只是现有 mutation 命令的共同选项，不是新的工具入口：
 
-- `--code 'code'`: Inline JSON or quoted Cirru EDN.
-- `--file file.cirru`: Multi-line JSON or quoted Cirru EDN (recommended for complex structures).
-- **stdin**: Pipe or redirect JSON or quoted Cirru EDN directly.
+- `--input-format cirru`：`--code`、`--file` 或 stdin 中必须提供带 `quote` 的 Cirru EDN。
+- `--input-format json-ast`：JSON 字符串表示 leaf，JSON 数组表示 list。
+- `--input-format auto`：兼容旧脚本的默认值，会按内容识别 JSON 数组或 quoted Cirru；新调用不要依赖它。
 
-For Cirru input, current CLI expects **Cirru EDN with `quote` prefix**:
+```bash
+# symbol leaf
+calcit tree replace app.main/main! --path @2 \
+  --input-format cirru --code 'quote leaf'
 
-- symbol leaf: `--code 'quote leaf'`
-- string leaf: `--code 'quote |text'`
-- expression: `--code 'quote $ expr ...'` or `--code 'quote (expr ...)'`
-- stdin / `--file` likewise use `quote ...`
-- only JSON array input can be passed without `quote`
+# expression
+calcit tree replace app.main/main! --path @2 \
+  --input-format json-ast --code '["expr","1"]'
+```
 
-`calcit edit schema` follows the same rule and accepts exactly one quoted type node. `calcit edit examples` is the batch form: each top-level item must independently be `quote |leaf` or `quote $ expr ...`. A quoted `[]` wrapper is not a batch marker because it would describe one AST node, not a collection of edit operations.
+`json-ast` 能无歧义地区分 JSON 字符串 `"[]"`、JSON 空数组 `[]` 与表达式数组 `["[]"]`。Cirru 输入仍保留
+`quote` 的语言语义：`quote $ []` 解码为包含 `[]` operator 的表达式，不等于空 syntax list。
 
-> Note: For multi-line text input, prefer `--file` or stdin heredoc. They avoid shell escaping, but Cirru content still needs the `quote` prefix.
+显式格式会在 mutation 前输出格式、节点类型、canonical JSON AST 与结构化摘要。`calcit edit schema`、
+`edit def`、`edit add-example`、`edit add-test`、`edit add-ns`、`edit add-import`，以及接受新节点的
+`tree` / `cursor apply` 操作共用这个契约。`edit examples` 等批量数据格式继续保留各自的集合协议，不把集合与单节点
+混为一谈。
+
+多行内容优先使用 `--file` 或 stdin，避免 shell 转义；选择 `cirru` 时内容依然必须包含 `quote`。`--expect` 始终使用
+quoted Cirru guard，独立于新节点的传输格式。
 
 ## Best Practices
 

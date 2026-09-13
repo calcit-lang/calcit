@@ -256,8 +256,11 @@ fn apply_at_cursor(snapshot_file: &str, opts: &CursorApplyCommand) -> Result<(),
     opts.operation.as_str(),
     "replace" | "wrap" | "insert-before" | "insert-after" | "insert-child" | "append-child"
   );
-  if !accepts_code && (opts.file.is_some() || opts.code.is_some()) {
-    return Err(format!("Cursor operation '{}' does not accept --file or --code.", opts.operation));
+  if !accepts_code && (opts.file.is_some() || opts.code.is_some() || opts.input_format != crate::cli_args::SyntaxInputFormat::Auto) {
+    return Err(format!(
+      "Cursor operation '{}' does not accept --file, --code, or --input-format.",
+      opts.operation
+    ));
   }
 
   let subcommand = match opts.operation.as_str() {
@@ -292,6 +295,7 @@ fn apply_at_cursor(snapshot_file: &str, opts: &CursorApplyCommand) -> Result<(),
       path,
       file: opts.file.clone(),
       code: opts.code.clone(),
+      input_format: opts.input_format,
       expect: None,
       depth: opts.depth,
     }),
@@ -300,6 +304,7 @@ fn apply_at_cursor(snapshot_file: &str, opts: &CursorApplyCommand) -> Result<(),
       path,
       code: opts.code.clone(),
       file: opts.file.clone(),
+      input_format: opts.input_format,
       depth: opts.depth,
     }),
     "insert-before" => TreeSubcommand::InsertBefore(TreeInsertBeforeCommand {
@@ -307,6 +312,7 @@ fn apply_at_cursor(snapshot_file: &str, opts: &CursorApplyCommand) -> Result<(),
       path,
       file: opts.file.clone(),
       code: opts.code.clone(),
+      input_format: opts.input_format,
       expect: None,
       depth: opts.depth,
     }),
@@ -315,6 +321,7 @@ fn apply_at_cursor(snapshot_file: &str, opts: &CursorApplyCommand) -> Result<(),
       path,
       file: opts.file.clone(),
       code: opts.code.clone(),
+      input_format: opts.input_format,
       expect: None,
       depth: opts.depth,
     }),
@@ -323,6 +330,7 @@ fn apply_at_cursor(snapshot_file: &str, opts: &CursorApplyCommand) -> Result<(),
       path,
       file: opts.file.clone(),
       code: opts.code.clone(),
+      input_format: opts.input_format,
       expect: None,
       depth: opts.depth,
     }),
@@ -331,6 +339,7 @@ fn apply_at_cursor(snapshot_file: &str, opts: &CursorApplyCommand) -> Result<(),
       path,
       file: opts.file.clone(),
       code: opts.code.clone(),
+      input_format: opts.input_format,
       expect: None,
       depth: opts.depth,
     }),
@@ -2675,6 +2684,7 @@ mod tests {
         operation: "swap-next".to_string(),
         file: None,
         code: None,
+        input_format: crate::cli_args::SyntaxInputFormat::Auto,
         depth: 2,
       },
     )
@@ -2830,11 +2840,15 @@ mod tests {
         operation: "swap-next".to_string(),
         file: None,
         code: Some("quote ignored".to_string()),
+        input_format: crate::cli_args::SyntaxInputFormat::Auto,
         depth: 2,
       },
     )
     .expect_err("code should be rejected for a code-free operation");
-    assert!(error.contains("does not accept --file or --code"), "error: {error}");
+    assert!(
+      error.contains("does not accept --file, --code, or --input-format"),
+      "error: {error}"
+    );
 
     set_cursor_selection(&snapshot_file, "app.main/main!", vec![1]).expect("cursor should select empty list");
     assert!(

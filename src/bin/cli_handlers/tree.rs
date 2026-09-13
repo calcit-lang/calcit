@@ -4,13 +4,15 @@ use std::fmt::Write as _;
 
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, fragment_nesting_level, maybe_chunk_node};
 use super::common::{
-  ERR_CODE_INPUT_REQUIRED, cirru_to_json, emit_cli_output, format_path, guard_snapshot_mutation_toolchain, parse_input_to_cirru,
-  parse_path, print_cli_warning_block, read_code_input, resolve_definition_lookup, shell_quote,
+  ERR_CODE_INPUT_REQUIRED, cirru_to_json, decode_mutation_syntax_input, emit_cli_output, format_path,
+  guard_snapshot_mutation_toolchain, parse_input_to_cirru, parse_path, print_cli_warning_block, read_code_input,
+  resolve_definition_lookup, shell_quote,
 };
 use super::cursor::{
   maintain_cursor_after_tree_mutation, resolve_active_cursor_reference, resolve_cursor_path_argument, resolve_cursor_target_argument,
 };
 use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json, tip_root_edit};
+use crate::cli_args::SyntaxInputFormat;
 use crate::cli_args::{
   TreeAppendChildCommand, TreeBatchDeleteCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand,
   TreeInsertChildCommand, TreeRaiseCommand, TreeReplaceCommand, TreeReplaceLeafCommand, TreeSearchReplaceCommand, TreeShowCommand,
@@ -704,7 +706,7 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(raw)?;
+  let new_node = decode_mutation_syntax_input(raw, opts.input_format)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -770,7 +772,7 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(raw)?;
+  let new_node = decode_mutation_syntax_input(raw, opts.input_format)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -824,7 +826,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
   let code_input = read_code_input(&opts.file, &opts.code)?;
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let replacement_node = parse_input_to_cirru(raw)?;
+  let replacement_node = decode_mutation_syntax_input(raw, opts.input_format)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -907,7 +909,7 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
   let code_input = read_code_input(&opts.file, &opts.code)?;
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let replacement_node = parse_input_to_cirru(raw)?;
+  let replacement_node = decode_mutation_syntax_input(raw, opts.input_format)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -1276,6 +1278,7 @@ fn handle_append_child(opts: &TreeAppendChildCommand, snapshot_file: &str) -> Re
 trait InsertOperation {
   fn file(&self) -> &Option<String>;
   fn code(&self) -> &Option<String>;
+  fn input_format(&self) -> SyntaxInputFormat;
   fn expect(&self) -> Option<&str>;
   fn with(&self) -> &[String] {
     &[]
@@ -1289,6 +1292,9 @@ impl InsertOperation for TreeInsertBeforeCommand {
   fn code(&self) -> &Option<String> {
     &self.code
   }
+  fn input_format(&self) -> SyntaxInputFormat {
+    self.input_format
+  }
   fn expect(&self) -> Option<&str> {
     self.expect.as_deref()
   }
@@ -1300,6 +1306,9 @@ impl InsertOperation for TreeInsertAfterCommand {
   }
   fn code(&self) -> &Option<String> {
     &self.code
+  }
+  fn input_format(&self) -> SyntaxInputFormat {
+    self.input_format
   }
   fn expect(&self) -> Option<&str> {
     self.expect.as_deref()
@@ -1313,6 +1322,9 @@ impl InsertOperation for TreeInsertChildCommand {
   fn code(&self) -> &Option<String> {
     &self.code
   }
+  fn input_format(&self) -> SyntaxInputFormat {
+    self.input_format
+  }
   fn expect(&self) -> Option<&str> {
     self.expect.as_deref()
   }
@@ -1324,6 +1336,9 @@ impl InsertOperation for TreeAppendChildCommand {
   }
   fn code(&self) -> &Option<String> {
     &self.code
+  }
+  fn input_format(&self) -> SyntaxInputFormat {
+    self.input_format
   }
   fn expect(&self) -> Option<&str> {
     self.expect.as_deref()
@@ -1337,6 +1352,9 @@ impl InsertOperation for TreeSearchReplaceCommand {
   fn code(&self) -> &Option<String> {
     &self.code
   }
+  fn input_format(&self) -> SyntaxInputFormat {
+    self.input_format
+  }
   fn expect(&self) -> Option<&str> {
     None
   }
@@ -1348,6 +1366,9 @@ impl InsertOperation for TreeStructuralCommand {
   }
   fn code(&self) -> &Option<String> {
     &self.code
+  }
+  fn input_format(&self) -> SyntaxInputFormat {
+    self.input_format
   }
   fn expect(&self) -> Option<&str> {
     None
@@ -1372,7 +1393,7 @@ fn generic_insert_handler<T: InsertOperation>(
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(raw)?;
+  let new_node = decode_mutation_syntax_input(raw, opts.input_format())?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -1712,7 +1733,7 @@ fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String
   let path = parse_path(&opts.path)?;
 
   let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
-  let template = parse_input_to_cirru(&raw)?;
+  let template = decode_mutation_syntax_input(&raw, opts.input_format)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -1755,7 +1776,7 @@ fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String
 #[cfg(test)]
 mod tests {
   use super::{find_all_leaf_matches, search_replace_no_match_error, verify_expected_node};
-  use crate::cli_args::TreeSearchReplaceCommand;
+  use crate::cli_args::{SyntaxInputFormat, TreeSearchReplaceCommand};
   use cirru_parser::Cirru;
 
   fn leaf(text: &str) -> Cirru {
@@ -1773,6 +1794,7 @@ mod tests {
       regex,
       file: None,
       code: Some("quote replacement".to_string()),
+      input_format: SyntaxInputFormat::Auto,
       depth: 2,
       pick: None,
       selector: None,

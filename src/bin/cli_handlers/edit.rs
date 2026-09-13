@@ -4,9 +4,11 @@
 //! Shared by: calcit tree - fine-grained tree operations (replace, insert, delete, swap, wrap)
 //!
 //! Supports code input via:
-//! - `--file <path>` - read from file (auto-detects JSON vs Cirru)
-//! - `--code <string>` - inline text (auto-detects JSON vs Cirru)
-//! - stdin - pipe or redirect input (auto-detects JSON vs Cirru)
+//! - `--file <path>` - read from file
+//! - `--code <string>` - inline text
+//! - stdin - pipe or redirect input
+//!
+//! Syntax-node commands select `cirru` or `json-ast` explicitly; `auto` remains for compatibility.
 
 use calcit::calcit::DYNAMIC_TYPE;
 use calcit::cli_args::{
@@ -14,6 +16,7 @@ use calcit::cli_args::{
   EditDocCommand, EditExamplesCommand, EditFfiCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand,
   EditMvNodeCommand, EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmNsCommand,
   EditRmTestCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand, EditTagsCommand, EditTransactionCommand,
+  SyntaxInputFormat,
 };
 use calcit::program::validate_import_rules;
 use calcit::program_diff::{CirruEditStrategy, analyze_cirru_edit_advice};
@@ -38,8 +41,8 @@ use calcit::util::string::strip_shebang;
 
 use super::atomic_write::stage_atomic_file;
 use super::common::{
-  ERR_CODE_INPUT_REQUIRED, format_path, guard_snapshot_mutation_toolchain, parse_input_to_cirru, parse_path, parse_quoted_cirru_nodes,
-  print_cli_warning_block, read_code_input, resolve_definition_lookup, shell_quote,
+  ERR_CODE_INPUT_REQUIRED, decode_mutation_syntax_input, format_path, guard_snapshot_mutation_toolchain, parse_input_to_cirru,
+  parse_path, parse_quoted_cirru_nodes, print_cli_warning_block, read_code_input, resolve_definition_lookup, shell_quote,
 };
 use super::cursor::{
   maintain_cursor_after_any_mutation, maintain_cursor_after_definition_delete, maintain_cursor_after_definition_move,
@@ -832,7 +835,7 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
 
   let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let syntax_tree = parse_input_to_cirru(&raw)?;
+  let syntax_tree = decode_mutation_syntax_input(&raw, opts.input_format)?;
   let derived_macro_schema = snapshot::conservative_macro_schema(&syntax_tree, &format!("definition '{namespace}/{definition}'"))?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
@@ -1441,8 +1444,8 @@ fn handle_doc(opts: &EditDocCommand, snapshot_file: &str) -> Result<(), String> 
   Ok(())
 }
 
-fn parse_schema_input(raw: &str) -> Result<Cirru, String> {
-  parse_input_to_cirru(raw).map_err(|error| {
+fn parse_schema_input(raw: &str, input_format: SyntaxInputFormat) -> Result<Cirru, String> {
+  decode_mutation_syntax_input(raw, input_format).map_err(|error| {
     format!("Failed to parse schema code input: {error}\nSchema examples: `quote :string` or `quote $ :: :ref :bool`.")
   })
 }
@@ -1560,7 +1563,7 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
     DYNAMIC_TYPE.clone()
   } else {
     let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
-    let schema_payload = strip_name_field_from_schema(parse_schema_input(&raw)?);
+    let schema_payload = strip_name_field_from_schema(parse_schema_input(&raw, opts.input_format)?);
 
     snapshot::parse_schema_annotation_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?
   };
@@ -1791,7 +1794,7 @@ fn handle_add_example(opts: &EditAddExampleCommand, snapshot_file: &str) -> Resu
     .ok_or("Example input required: use --file, --code, or pipe via stdin")?;
 
   // Parse example
-  let example: Cirru = parse_input_to_cirru(raw)?;
+  let example: Cirru = decode_mutation_syntax_input(raw, opts.input_format)?;
 
   // Insert at specified position or append
   let position = opts.at.unwrap_or(code_entry.examples.len());
@@ -1982,7 +1985,7 @@ fn handle_add_test(opts: &EditAddTestCommand, snapshot_file: &str) -> Result<(),
   let raw = code_input
     .as_deref()
     .ok_or("Test input required: use --file, --code, or pipe via stdin")?;
-  let code = parse_input_to_cirru(raw)?;
+  let code = decode_mutation_syntax_input(raw, opts.input_format)?;
   let tags = parse_tags_csv(opts.tags.as_deref().unwrap_or(""))?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
@@ -2209,7 +2212,7 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
 
   // Create ns code
   let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.code)? {
-    let code = parse_input_to_cirru(&raw)?;
+    let code = decode_mutation_syntax_input(&raw, opts.input_format)?;
     // Validate: if input looks like a `ns` expression, the name inside must match
     if let Cirru::List(ref items) = code
       && let Some(Cirru::Leaf(kw)) = items.first()
@@ -2487,7 +2490,7 @@ fn build_ns_code(ns_name: &str, rules: &[Cirru]) -> Cirru {
 fn handle_add_import(opts: &EditAddImportCommand, snapshot_file: &str) -> Result<(), String> {
   let raw = read_code_input(&opts.file, &opts.code)?.ok_or("Import rule input required: use --file, --code, or pipe via stdin")?;
 
-  let new_rule = parse_input_to_cirru(&raw)?;
+  let new_rule = decode_mutation_syntax_input(&raw, opts.input_format)?;
 
   let _ = validate_import_rules(std::slice::from_ref(&new_rule))?;
 
@@ -2927,6 +2930,7 @@ mod tests {
   };
   use crate::cli_args::{
     EditAddImportCommand, EditAddTestCommand, EditFormatCommand, EditImportsCommand, EditRmTestCommand, EditSchemaCommand,
+    SyntaxInputFormat,
   };
   use crate::cli_handlers::test_support::TestProject;
   use calcit::calcit::CalcitTypeAnnotation;
@@ -3064,6 +3068,7 @@ mod tests {
       namespace: "app.main".to_string(),
       file: None,
       code: Some("quote (audit.invalid :as)".to_string()),
+      input_format: SyntaxInputFormat::Auto,
       overwrite: false,
     };
 
@@ -3282,6 +3287,7 @@ mod tests {
       tags: Some("unit,fast".to_owned()),
       file: None,
       code: Some("quote $ assert= nil (fn)".to_owned()),
+      input_format: SyntaxInputFormat::Auto,
       overwrite: false,
     };
     handle_add_test(&add, &path).expect("named test should be added");
@@ -3317,14 +3323,14 @@ mod tests {
     let expected = list(vec![leaf("::"), leaf(":ref"), leaf(":bool")]);
 
     assert_eq!(
-      parse_schema_input("quote $ :: :ref :bool").expect("quoted schema should parse"),
+      parse_schema_input("quote $ :: :ref :bool", SyntaxInputFormat::Auto).expect("quoted schema should parse"),
       expected
     );
     assert_eq!(
-      parse_schema_input("quote :string").expect("primitive schema should parse"),
+      parse_schema_input("quote :string", SyntaxInputFormat::Auto).expect("primitive schema should parse"),
       leaf(":string")
     );
-    let error = parse_schema_input(":: :ref :bool").expect_err("bare schema should fail");
+    let error = parse_schema_input(":: :ref :bool", SyntaxInputFormat::Auto).expect_err("bare schema should fail");
     assert!(error.contains("Schema examples: `quote :string`"), "error: {error}");
   }
 
@@ -3336,6 +3342,7 @@ mod tests {
       target: "app.main/test-fn".to_owned(),
       file: None,
       code: Some("quote $ :: 'Fn $ {} (:args ([] (:: 'List 'Dynamic))) (:return (:: 'List 'Dynamic))".to_owned()),
+      input_format: SyntaxInputFormat::Auto,
       clear: false,
     };
 
@@ -3358,6 +3365,7 @@ mod tests {
       target: "app.main/test-fn".to_owned(),
       file: None,
       code: Some("quote 'Tag".to_owned()),
+      input_format: SyntaxInputFormat::Auto,
       clear: false,
     };
 

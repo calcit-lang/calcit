@@ -319,7 +319,7 @@ calcit --check-only
 
 ```bash
 calcit edit def 'app.util/identity-form' \
-  --code 'quote $ defmacro identity-form (value) value'
+  --input-format cirru --code 'quote $ defmacro identity-form (value) value'
 calcit query def 'app.util/identity-form' --format json
 calcit --check-only
 ```
@@ -348,7 +348,7 @@ CLI 去掉外层 `quote`，确认 `[]` marker 后，把数组内部每个表达�
 calcit query search render-item --filter 'app.main/render!' --exact
 calcit query search render-item --filter 'app.main/render!' --exact --set-cursor 0
 calcit cursor show
-calcit cursor apply wrap --code 'quote $ when visible? self'
+calcit cursor apply wrap --input-format cirru --code 'quote $ when visible? self'
 calcit cursor show
 ```
 
