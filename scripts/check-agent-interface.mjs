@@ -755,7 +755,9 @@ try {
   assert.deepEqual(JSON.parse(roundTrip.stdout), data.ffi);
   const legacy = query("--raw", "--json");
   assert.equal(legacy.status, 0, legacy.stderr);
-  assert.equal(JSON.parse(legacy.stdout.split("\nJSON:\n").at(-1)).ffi, data.ffi_edn);
+  const legacyJson = legacy.stdout.match(/\n## JSON\n\n(`{3,})json\n([\s\S]*?)\n\1\n?$/);
+  assert.ok(legacyJson, "legacy --json output must append a fenced JSON block");
+  assert.equal(JSON.parse(legacyJson[2]).ffi, data.ffi_edn);
   assert.ok(legacy.stdout.includes(data.ffi_edn), "raw human FFI must also be complete");
   assert.match(query().stdout, /FFI \(preview; use --raw/);
   for (const args of [

@@ -698,7 +698,7 @@ pub struct QuerySchemaCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// also output JSON format for programmatic consumption
+  /// emit one JSON envelope instead of Markdown-compatible human output
   #[argh(switch)]
   pub json: bool,
 }
@@ -710,7 +710,7 @@ pub struct QueryTypeCommand {
   /// builtin type annotation (e.g. 'Number or ":: 'List 'Number") or namespace/definition
   #[argh(positional)]
   pub target: String,
-  /// output format: human (default) or json
+  /// output format: Markdown-compatible human (default) or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }
@@ -725,7 +725,7 @@ pub struct QueryTypeAtCommand {
   /// snapshot path, e.g. "code@3.2", "@3.2", or "3.2"
   #[argh(option)]
   pub path: String,
-  /// output format: human (default) or json
+  /// output format: Markdown-compatible human (default) or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }
@@ -740,7 +740,7 @@ pub struct QueryContextCommand {
   /// approximate character budget for variable-size content
   #[argh(option, default = "6000")]
   pub budget: usize,
-  /// output format: human (default) or json
+  /// output format: Markdown-compatible human (default) or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// include references from dependency and core namespaces
@@ -822,10 +822,10 @@ pub struct QueryDefCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// append legacy JSON to human output; prefer --format json for automation
+  /// append fenced legacy JSON to Markdown-compatible human output; prefer --format json for automation
   #[argh(switch)]
   pub json: bool,
-  /// output format: human (default) or a single versioned json envelope
+  /// output format: Markdown-compatible human (default) or a single versioned json envelope
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// preferred nodes per display fragment when large expressions are chunked
@@ -939,7 +939,7 @@ pub struct QuerySearchCommand {
   /// also print parent path for each match (strip trailing index for editable node)
   #[argh(switch, long = "parent-path")]
   pub parent_path: bool,
-  /// output format: human (default) or json
+  /// output format: Markdown-compatible human (default) or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// set the persistent cursor to this zero-based global match index
@@ -975,7 +975,7 @@ pub struct QuerySearchExprCommand {
   /// start index for detailed display window (3 detailed items)
   #[argh(option, long = "detail-offset", default = "0")]
   pub detail_offset: usize,
-  /// output format: human (default) or json
+  /// output format: Markdown-compatible human (default) or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// set the persistent cursor to this zero-based global match index
@@ -1945,7 +1945,7 @@ pub struct TreeShowCommand {
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
-  /// also output JSON format for programmatic consumption
+  /// append a fenced JSON AST to Markdown-compatible human output
   #[argh(switch)]
   pub json: bool,
   /// preferred nodes per display fragment when large expressions are chunked

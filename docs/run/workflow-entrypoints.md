@@ -87,6 +87,7 @@ Preset 是固定规则集合的便利别名，不是历史语义数据库。已�
 
 - 声明式验证 profile 放在 `calcit analyze` 下，组合既有检查并共享一次项目加载；不增加 `calcit verify` 顶层入口。
 - Cirru、JSON AST 等 mutation 输入格式扩展现有 `edit/tree/cursor/fix` 的共享输入契约；不增加新的语法节点顶层工具。
+- 包含源码或结构化片段的 human 输出统一为 Markdown-compatible 文档，代码使用带语言标记的 fence；稳定自动化继续读取既有 JSON envelope，不增加 `--markdown` 或新的输出命令。
 - 跨 definition 与 usage 的语义重构继续通过 `calcit fix` 的 preview/apply 事务暴露；不建立第二套 mutation 协议。
 
 这套边界允许内部能力继续增强，但让人类和 Agent 的入口数量保持稳定。

@@ -163,7 +163,7 @@ Agent 和 CI 读取 entry 配置时使用 config 查询的 `--format json`，不
 都返回带 `schema_version`、`command`、`data`、`diagnostics` 与 Snapshot `revision` 的单一 envelope；
 entry 不存在或 Snapshot 配置无效时仍输出结构化诊断并以非零状态退出。
 
-读取源码优先使用 human/Cirru 输出；只有需要稳定字段、自动分支或静态证据时才使用 `--format json`。`--format json` 承诺 stdout 为单个 JSON envelope；某些命令的 `--json` 只是在人类输出后附加 JSON，具体以子命令 `--help` 为准。
+读取源码优先使用 human 输出；其中包含代码的查询与 `tree show` 按 Markdown 组织，Cirru、JSON AST 和普通说明使用明确的 fenced block 或段落边界，适合人类 review，也方便 LLM 保留代码边界。只有需要稳定字段、自动分支或静态证据时才使用 `--format json`。`--format json` 承诺 stdout 为单个 JSON envelope；某些命令的 `--json` 只是在人类输出中附加 fenced JSON，具体以子命令 `--help` 为准。不要把 Markdown heading、fence 或截断说明复制为 Calcit 源码。
 
 ## 2. 最小心智模型
 
