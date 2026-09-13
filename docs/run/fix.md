@@ -71,9 +71,10 @@ calcit calcit.cirru fix --rule redundant-do-v1 --format json
 calcit calcit.cirru fix --ns app.main --def render! --rule redundant-do-v1 --format json
 ```
 
-JSON 报告中的 `suggestions` 是检测结果。逐项核对 `definition`、`path`、`original`、`replacement`、
-`applicability` 和 `fingerprint`，并确认 `validation.status` 为 `passed`。然后原样重复 preview 的 scope selectors，
-使用同一份报告中的 Snapshot revision 应用：
+JSON 报告中的 `suggestions` 是检测结果。若列表非空，逐项核对 `definition`、`path`、`original`、`replacement`、
+`applicability` 和 `fingerprint`，确认 `validation.status` 为 `passed`，再原样重复 preview 的 scope selectors，
+使用同一份报告中的 Snapshot revision 应用。若列表为空，`validation.status` 应为 `not-needed`；跳过 apply，
+直接继续验证：
 
 ```bash
 calcit calcit.cirru fix --ns app.main --def render! --rule redundant-do-v1 \

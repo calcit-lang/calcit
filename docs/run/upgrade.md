@@ -35,7 +35,8 @@ calcit calcit.cirru fix --rule redundant-do-v1 --format json
 ```
 
 不要用全文搜索后批量删除 `do`：`if` 分支、调用参数和 binding value 等单表达式位置仍需要它来组合多个步骤。
-确认 preview 的 `validation.status` 为 `passed` 后，再复制报告中的 `revision` 执行带保护的 apply；完整示例见
+若 preview 返回建议，确认 `validation.status` 为 `passed` 后，再复制报告中的 `revision` 执行带保护的 apply；
+若建议为空，则接受 `not-needed` 并跳过 apply。完整示例见
 [检测并修复冗余 `do`](fix.md#检测并修复冗余-do)。这是一项显式源码整理，不会增加普通编译 warning。
 
 ## 0.14 默认严格诊断

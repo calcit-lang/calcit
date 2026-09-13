@@ -9,3 +9,6 @@ Snapshot revision 的 apply 和第二次幂等复查。
 文档现在明确区分两类位置：`defn`、`fn`、`let` 等 variadic body 可 splice 冗余 `do`；`if` 分支、
 调用参数、binding value、`defmacro` 和 quoted data 必须保留现有单表达式或语法树边界。升级手册同时
 更新当前稳定工具组合为 Calcit 0.14.16 与 calcit-caps 0.1.1。
+
+根据 review 补充空计划分支：空 `suggestions` 对应 `validation.status=not-needed`，应跳过 apply；只有
+非空建议才要求 `passed` 并使用同一份报告的 revision 保护写入。
