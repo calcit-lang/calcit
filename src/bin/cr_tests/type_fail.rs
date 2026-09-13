@@ -500,10 +500,6 @@ fn type_fail_schema_mismatch_fixtures_report_error_code() {
         "calcit/type-fail/schema-rest-unexpected.cirru",
         "schema has :rest but code has no & param",
       ),
-      (
-        "calcit/type-fail/schema-kind-mismatch.cirru",
-        "schema :kind is :macro but code uses defn",
-      ),
     ];
 
     for (path, expected_msg) in fixtures {
@@ -516,6 +512,14 @@ fn type_fail_schema_mismatch_fixtures_report_error_code() {
       );
       assert!(err.contains(expected_msg), "fixture {path} msg was: {err}");
     }
+  });
+}
+
+#[test]
+fn formatter_normalizes_legacy_schema_kind_fixture() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/type-fail/schema-kind-mismatch.cirru");
+    run_check_only(&entries).expect("formatter-normalized fixture should pass strict check-only");
   });
 }
 

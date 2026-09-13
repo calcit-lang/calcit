@@ -17,6 +17,120 @@ import { TypedEdnSetView } from "./typed-edn.mjs";
 
 type CirruEdnFormat = string | CirruEdnFormat[];
 
+type CirruEdnWriterKind = "nil" | "leaf" | "simple" | "boxed" | "expr";
+
+const cirruEdnMaxSimpleExprLeaves = 8;
+const cirruEdnMaxSimpleLeafChars = 16;
+const cirruEdnMaxTailFolds = 2;
+
+const isCirruEdnSimpleExpr = (xs: CirruEdnFormat[]): boolean =>
+  xs.length <= cirruEdnMaxSimpleExprLeaves && xs.every((x) => typeof x === "string" && x.length <= cirruEdnMaxSimpleLeafChars);
+
+const cirruEdnWriterKind = (node: CirruEdnFormat): CirruEdnWriterKind => {
+  if (typeof node === "string" || node.length === 0) return "leaf";
+  if (isCirruEdnSimpleExpr(node)) return "simple";
+  if (node.every((x) => Array.isArray(x))) return "boxed";
+  return "expr";
+};
+
+const writeCirruEdnLeaf = (text: string): string => {
+  if (/^[A-Za-z0-9$\-:<>\[\]{}*=+.,\\/!?~_@#&%^|;']*$/.test(text)) return text;
+  return JSON.stringify(text);
+};
+
+const writeCirruEdnInlineExpr = (xs: CirruEdnFormat[]): string =>
+  `(${xs.map((x) => (typeof x === "string" ? writeCirruEdnLeaf(x) : writeCirruEdnInlineExpr(x))).join(" ")})`;
+
+const writeCirruEdnIndent = (level: number): string => "  ".repeat(level);
+
+const writeCirruEdnTree = (
+  xs: CirruEdnFormat[],
+  insistHead: boolean,
+  useInline: boolean,
+  baseLevel: number,
+  tailFolds: number
+): string => {
+  let previousKind: CirruEdnWriterKind = "nil";
+  let level = baseLevel;
+  let result = "";
+
+  for (let index = 0; index < xs.length; index += 1) {
+    let cursor = xs[index];
+    let kind = cirruEdnWriterKind(cursor);
+    let nextLevel = level + 1;
+    let childInsistHead = previousKind === "boxed" || previousKind === "expr" || index > 1;
+    let atTail = index !== 0 && tailFolds < cirruEdnMaxTailFolds && previousKind === "leaf" && index === xs.length - 1;
+    let child: string;
+
+    if (typeof cursor === "string") {
+      child = writeCirruEdnLeaf(cursor);
+    } else if (atTail) {
+      if (cursor.length === 0) {
+        child = "$";
+      } else {
+        let content = writeCirruEdnTree(cursor, false, useInline, level, tailFolds + 1);
+        child = content.startsWith("\n") ? `$${content}` : `$ ${content}`;
+      }
+    } else if (index === 0 && insistHead) {
+      child = writeCirruEdnInlineExpr(cursor);
+    } else if (kind === "leaf") {
+      child = index === 0 ? `\n${writeCirruEdnIndent(level)}()` : "()";
+    } else if (kind === "simple") {
+      if (previousKind === "leaf") {
+        child = writeCirruEdnInlineExpr(cursor);
+      } else if (useInline && previousKind === "simple") {
+        child = ` ${writeCirruEdnInlineExpr(cursor)}`;
+      } else {
+        child = `\n${writeCirruEdnIndent(nextLevel)}${writeCirruEdnTree(cursor, childInsistHead, useInline, nextLevel, 0)}`;
+      }
+    } else if (kind === "expr") {
+      let content = writeCirruEdnTree(cursor, childInsistHead, useInline, nextLevel, 0);
+      child = content.startsWith("\n") ? content : `\n${writeCirruEdnIndent(nextLevel)}${content}`;
+    } else {
+      let content = writeCirruEdnTree(cursor, childInsistHead, useInline, nextLevel, 0);
+      if (childInsistHead) {
+        child = `\n${writeCirruEdnIndent(nextLevel)}${content}`;
+      } else if (previousKind === "nil" || previousKind === "leaf" || previousKind === "simple") {
+        child = content;
+      } else {
+        child = `\n${writeCirruEdnIndent(nextLevel)}${content}`;
+      }
+    }
+
+    let bended = kind === "leaf" && (previousKind === "boxed" || previousKind === "expr");
+    if (
+      atTail ||
+      (previousKind === "leaf" && (kind === "leaf" || kind === "simple")) ||
+      (previousKind === "simple" && kind === "leaf")
+    ) {
+      result += ` ${child}`;
+    } else if (bended) {
+      result += `\n${writeCirruEdnIndent(nextLevel)}, ${child}`;
+    } else {
+      result += child;
+    }
+
+    if (kind === "simple") {
+      if (index === 0 && insistHead) {
+        previousKind = "simple";
+      } else if (useInline && (previousKind === "leaf" || previousKind === "simple")) {
+        previousKind = "simple";
+      } else {
+        previousKind = "expr";
+      }
+    } else {
+      previousKind = kind;
+    }
+    if (bended) level += 1;
+  }
+  return result;
+};
+
+const writeCirruEdnCode = (node: CirruEdnFormat, useInline: boolean): string => {
+  if (typeof node === "string") throw new Error("Cirru EDN formatter expects a list");
+  return `\n${writeCirruEdnTree(node, true, useInline, 0, 0)}\n`;
+};
+
 export class CalcitCirruQuote {
   value: CirruWriterNode[];
   constructor(value: CirruWriterNode[]) {
@@ -472,7 +586,7 @@ export let format_cirru_edn = (data: CalcitValue, useInline: boolean = true): st
   if (data instanceof CalcitTag) {
     return "\ndo " + to_cirru_edn(data) + "\n";
   }
-  return writeCirruCode([to_cirru_edn(data)], { useInline: useInline });
+  return writeCirruEdnCode(to_cirru_edn(data), useInline);
 };
 
 export let to_calcit_data = (x: any, noKeyword: boolean = false): CalcitValue => {

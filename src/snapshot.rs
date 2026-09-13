@@ -3789,7 +3789,7 @@ mod tests {
     assert!(typed_text.contains("'String") && typed_text.contains(":: 'List 'String") && typed_text.contains(":: 'Ref 'Bool"));
     assert!(enum_text.contains("(:ok 'String)") && enum_text.contains("(:err 'Tag)"));
     assert!(
-      data_text.contains("(:kind :string)"),
+      data_text.contains(":kind :string"),
       "ordinary tag data must not be rewritten: {data_text}"
     );
   }

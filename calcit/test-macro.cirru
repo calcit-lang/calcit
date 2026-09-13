@@ -1,351 +1,343 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-macro)
-  :entries $ {}
-    :default $ {} (:description |) (:init-fn 'test-macro.main/main!) (:mode :native) (:reload-fn 'test-macro.main/reload!)
+{}
+  :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
+  :package |test-macro
+  :entries $ {} $ :default
+    {} (:description |)
+      :init-fn 'test-macro.main/main!
+      :mode :native
+      :reload-fn 'test-macro.main/reload!
       :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
-  :files $ {}
-    |test-macro.main $ %{} 'FileEntry
+  :files $ {} $ 'test-macro.main
+    %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn main! () (test-case) (log-title "|Testing expr in case") (test-expr-in-case) (test-thread-macros) (test-lambda) (test-gensym) (test-w-log) (test-with-cpu-time) (test-assert) (test-extract) (test-detector) (test-if-let) (test-flipped) (test-misc) (test-or-linear-expansion) (do true)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () (test-case)
+            log-title "|Testing expr in case"
+            test-expr-in-case
+            test-thread-macros
+            test-lambda
+            test-gensym
+            test-w-log
+            test-with-cpu-time
+            test-assert
+            test-extract
+            test-detector
+            test-if-let
+            test-flipped
+            test-misc
+            test-or-linear-expansion
+            do true
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-assert $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Assert in different order")
-              assert (= 1 1) |string
-              assert |string $ = 1 1
+        'test-assert $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ fn ()
+            log-title "|Assert in different order"
+            assert (= 1 1) |string
+            assert |string $ = 1 1
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-case $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-case () (log-title "|Testing case")
-              let
-                  detect-x $ fn (x)
-                    case x (1 |one) (2 |two) (x |else)
-                assert= (detect-x 1) |one
-                assert= (detect-x 2) |two
-                assert= (detect-x 3) |else
-              inside-eval: (&reset-gensym-index!)
-                assert=
-                  macroexpand-all $ quote
-                    case (+ 1 2) (1 |one) (2 |two) (3 |three)
-                  macroexpand-all $ quote
-                    &let
-                      v__1 $ calcit.core/+ 1 2
-                      if (&= v__1 1) |one $ if (&= v__1 2) |two
-                        if (&= v__1 3) |three $ raise (str-spaced |case |found |no |matching |pattern |for: v__1)
-                assert=
-                  macroexpand $ quote
-                    case (+ 1 2) (1 |one) (2 |two) (3 |three)
-                  quote $ &let
-                    v__2 $ + 1 2
-                    &case v__2
-                      raise $ str-spaced |case |found |no |matching |pattern |for: v__2
-                      1 |one
-                      2 |two
-                      3 |three
-                assert=
-                  macroexpand $ quote
-                    &case v__2 nil (1 |one) (2 |two) (3 |three)
-                  quote $ if (&= v__2 1) |one
-                    &case v__2 nil (2 |two) (3 |three)
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-detector $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Detector function")
-              inside-eval: (&reset-gensym-index!)
-                assert=
-                  macroexpand $ quote
-                    assert-detect fn? $ fn () 1
-                  quote $ &let
-                    v__1 $ fn () 1
-                    if (fn? v__1) &unit $ &let () (eprintln)
-                      eprintln
-                        format-to-lisp $ quote
-                          fn () 1
-                        , "|does not satisfy:"
-                          format-to-lisp $ quote fn?
-                          , "| <--------"
-                      eprintln "|  value is:" v__1
-                      raise "|Not satisfied in assertion!"
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-expr-in-case $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-expr-in-case () $ assert= |5
-              case (+ 1 4)
-                (+ 2 0) |2
-                (+ 2 1) |3
-                (+ 2 2) |4
-                (+ 2 3) |5
-                (+ 2 4) |6
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-extract $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Extract map via tags")
-              inside-eval: (&reset-gensym-index!)
-                assert=
-                  macroexpand $ quote
-                    let{} (a b) o $ + a b
-                  quote $ &let (result__1 o)
-                    assert (str "|expected map for destructing: " result__1) (map? result__1)
-                    let
-                        a $ &map:get result__1 :a
-                        b $ &map:get result__1 :b
-                      + a b
-              &let
-                base $ {} (:a 5) (:b 6)
-                assert= 11 $ let{} (a b) base (+ a b)
-              inside-eval:
-                assert=
-                  macroexpand $ quote
-                    let-destruct ([] a b) ([] 3 4) (+ a b)
-                  quote $ let[] (a b) ([] 3 4) (+ a b)
-                assert=
-                  macroexpand $ quote
-                    let-destruct ({} a b) ({,} :a 3 :b 4) (+ a b)
-                  quote $ let{} (a b) ({,} :a 3 :b 4) (+ a b)
-                &reset-gensym-index!
-                assert=
-                  macroexpand-all $ quote
-                    let[] (a b) ([] 1 2) (+ a b)
-                  macroexpand-all $ quote
-                    &let
-                      v__1 $ [] 1 2
-                      &let
-                        a $ &list:nth v__1 0
-                        &let
-                          b $ &list:nth v__1 1
-                          calcit.core/+ a b
-                assert=
-                  macroexpand-all $ quote
-                    let[] (a b) xs $ + a b
-                  macroexpand-all $ quote
-                    &let
-                      a $ &list:nth xs 0
-                      &let
-                        b $ &list:nth xs 1
-                        calcit.core/+ a b
-                assert=
-                  macroexpand-all $ quote
-                    cond
-                        = a 1
-                        , |one
-                      true |other
-                  macroexpand-all $ quote
-                    if (= a 1) |one |other
-              assert= ([] 3 4 5 6)
-                let-sugar
-                      [] a b
-                      [] 3 4
-                    ({} c d) ({,} :c 5 :d 6)
-                  [] a b c d
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-flipped $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title |flipped)
+        'test-case $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-case () (log-title "|Testing case")
+            let
+                detect-x $ fn (x)
+                  case x (1 |one) (2 |two) (x |else)
+              assert= (detect-x 1) |one
+              assert= (detect-x 2) |two
+              assert= (detect-x 3) |else
+            inside-eval:
+              &reset-gensym-index!
               assert=
-                flipped [] 1 2 $ + 3 4
-                [] 7 2 1
+                macroexpand-all $ quote $ case (+ 1 2) (1 |one) (2 |two) (3 |three)
+                macroexpand-all $ quote $ &let
+                  v__1 $ calcit.core/+ 1 2
+                  if (&= v__1 1) |one $ if (&= v__1 2) |two $ if (&= v__1 3) |three
+                    raise $ str-spaced |case |found |no |matching |pattern |for: v__1
+              assert=
+                macroexpand $ quote $ case (+ 1 2) (1 |one) (2 |two) (3 |three)
+                quote $ &let
+                  v__2 $ + 1 2
+                  &case v__2
+                    raise $ str-spaced |case |found |no |matching |pattern |for: v__2
+                    1 |one
+                    2 |two
+                    3 |three
+              assert=
+                macroexpand $ quote $ &case v__2 nil (1 |one) (2 |two) (3 |three)
+                quote $ if (&= v__2 1) |one $ &case v__2 nil (2 |two) (3 |three)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-gensym $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () $ inside-eval: (log-title "|Testing gensym") (&reset-gensym-index!)
+        'test-detector $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ fn ()
+            log-title "|Detector function"
+            inside-eval:
+              &reset-gensym-index!
+              assert=
+                macroexpand $ quote $ assert-detect fn?
+                  fn () 1
+                quote $ &let
+                  v__1 $ fn () 1
+                  if (fn? v__1) &unit $ &let () (eprintln)
+                    eprintln
+                      format-to-lisp $ quote $ fn () 1
+                      , "|does not satisfy:"
+                        format-to-lisp $ quote fn?
+                        , "| <--------"
+                    eprintln "|  value is:" v__1
+                    raise "|Not satisfied in assertion!"
+          :examples $ []
+          :schema $ :: 'Dynamic
+        'test-expr-in-case $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-expr-in-case ()
+            assert= |5 $ case (+ 1 4)
+              (+ 2 0) |2
+              (+ 2 1) |3
+              (+ 2 2) |4
+              (+ 2 3) |5
+              (+ 2 4) |6
+          :examples $ []
+          :schema $ :: 'Dynamic
+        'test-extract $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ fn ()
+            log-title "|Extract map via tags"
+            inside-eval:
+              &reset-gensym-index!
+              assert=
+                macroexpand $ quote $ let{} (a b) o (+ a b)
+                quote $ &let (result__1 o)
+                  assert
+                    str "|expected map for destructing: " result__1
+                    map? result__1
+                  let
+                      a $ &map:get result__1 :a
+                      b $ &map:get result__1 :b
+                    + a b
+            &let
+              base $ {} (:a 5) (:b 6)
+              assert= 11 $ let{} (a b) base $ + a b
+            inside-eval:
+              assert=
+                macroexpand $ quote $ let-destruct ([] a b) ([] 3 4) (+ a b)
+                quote $ let[] (a b) ([] 3 4) (+ a b)
+              assert=
+                macroexpand $ quote $ let-destruct ({} a b) ({,} :a 3 :b 4) (+ a b)
+                quote $ let{} (a b) ({,} :a 3 :b 4) (+ a b)
+              &reset-gensym-index!
+              assert=
+                macroexpand-all $ quote $ let[] (a b) ([] 1 2) (+ a b)
+                macroexpand-all $ quote $ &let
+                  v__1 $ [] 1 2
+                  &let
+                    a $ &list:nth v__1 0
+                    &let
+                      b $ &list:nth v__1 1
+                      calcit.core/+ a b
+              assert=
+                macroexpand-all $ quote $ let[] (a b) xs (+ a b)
+                macroexpand-all $ quote $ &let
+                  a $ &list:nth xs 0
+                  &let
+                    b $ &list:nth xs 1
+                    calcit.core/+ a b
+              assert=
+                macroexpand-all $ quote $ cond
+                    = a 1
+                    , |one
+                  true |other
+                macroexpand-all $ quote $ if (= a 1) |one |other
+            assert= ([] 3 4 5 6)
+              let-sugar
+                    [] a b
+                    [] 3 4
+                  ({} c d) ({,} :c 5 :d 6)
+                [] a b c d
+          :examples $ []
+          :schema $ :: 'Dynamic
+        'test-flipped $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ fn () (log-title |flipped)
+            assert=
+              flipped [] 1 2 $ + 3 4
+              [] 7 2 1
+          :examples $ []
+          :schema $ :: 'Dynamic
+        'test-gensym $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ fn ()
+            inside-eval: (log-title "|Testing gensym")
+              &reset-gensym-index!
               assert= (gensym) 'G__1
               assert= (gensym |a) 'a__2
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-if-let $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|if let")
-              assert= 6 $ if-let
-                a $ %some (+ 1 2 3)
-                , a
-              assert= nil $ if-let
-                a $ get (&{}) :a
-                + 1 2
-              assert= 2 $ if-let
+        'test-if-let $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ fn () (log-title "|if let")
+            assert= 6 $ if-let
+              a $ %some $ + 1 2 3
+              , a
+            assert= nil $ if-let
+              a $ get (&{}) :a
+              + 1 2
+            assert= 2 $ if-let
+              a $ %none
+              , 1 2
+            assert= (%none)
+              when-let
                 a $ %none
                 , 1 2
-              assert= (%none)
-                when-let
-                  a $ %none
-                  , 1 2
-              assert= (%some 2)
-                when-let
-                  a $ %some 10
-                  , 1 2
+            assert= (%some 2)
+              when-let
+                a $ %some 10
+                , 1 2
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-lambda $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing lambda macro")
-              inside-eval:
-                assert-detect identity $ contains-symbol?
-                  quote $ add (+ 1 %)
-                  , '%
-                assert-detect not $ contains-symbol?
-                  quote $ add (+ 1 2)
-                  , '%
+        'test-lambda $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ fn ()
+            log-title "|Testing lambda macro"
+            inside-eval:
+              assert-detect identity $ contains-symbol?
+                quote $ add $ + 1 %
+                , '%
+              assert-detect not $ contains-symbol?
+                quote $ add $ + 1 2
+                , '%
+            assert=
+              map (range 3) (\ + 1 %)
+              range 1 4
+            assert=
+              map-indexed (range 3)
+                \ [] % $ &str %2
+              [] ([] 0 |0) ([] 1 |1) ([] 2 |2)
+            inside-eval:
               assert=
-                map (range 3) (\ + 1 %)
-                range 1 4
+                macroexpand-all $ quote $ \ + 2 %
+                macroexpand-all $ quote $ defn %\ (? % %2) (calcit.core/+ 2 %)
+              ; assert=
+                macroexpand-all $ quote $ \ x
+                quasiquote $ ~defn %\ (? % %2) (x)
               assert=
-                map-indexed (range 3)
-                  \ [] % $ &str %2
-                [] ([] 0 |0) ([] 1 |1) ([] 2 |2)
-              inside-eval:
-                assert=
-                  macroexpand-all $ quote (\ + 2 %)
-                  macroexpand-all $ quote
-                    defn %\ (? % %2) (calcit.core/+ 2 %)
-                ; assert=
-                  macroexpand-all $ quote (\ x)
-                  quasiquote $ ~defn %\ (? % %2) (x)
-                assert=
-                  macroexpand-all $ quote (\ + x %)
-                  macroexpand-all $ quote
-                    defn %\ (? % %2) (calcit.core/+ x %)
-                assert=
-                  macroexpand-all $ quote (\ + x % %2)
-                  macroexpand-all $ quote
-                    defn %\ (? % %2) (calcit.core/+ x % %2)
+                macroexpand-all $ quote $ \ + x %
+                macroexpand-all $ quote $ defn %\ (? % %2) (calcit.core/+ x %)
+              assert=
+                macroexpand-all $ quote $ \ + x % %2
+                macroexpand-all $ quote $ defn %\ (? % %2) (calcit.core/+ x % %2)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-misc $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title |misc)
-              assert= (noted nothing 1) 1
-              inside-eval: $ println (&extract-code-into-edn 'code)
+        'test-misc $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ fn () (log-title |misc)
+            assert= (noted nothing 1) 1
+            inside-eval: $ println $ &extract-code-into-edn 'code
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-or-linear-expansion $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-or-linear-expansion () $ assert= |done (or false false false false false false false false false false false false false false false false false false false false |done)
+        'test-or-linear-expansion $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-or-linear-expansion ()
+            assert= |done $ or false false false false false false false false false false false false false false false false false false false false |done
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-thread-macros $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-thread-macros () (log-title "|Testing thread macros")
-              inside-eval:
-                assert=
-                  macroexpand $ quote (-> a b c)
-                  quote $ c (b a)
-                assert=
-                  macroexpand $ quote
-                    -> a (b) c
-                  quote $ c (b a)
-                assert=
-                  macroexpand $ quote
-                    -> a $ b c
-                  quote $ b a c
-                assert=
-                  macroexpand $ quote (-> event .-target .-checked)
-                  quote $ .-checked (.-target event)
-                assert=
-                  macroexpand $ quote (-> files &map:to-list)
-                  quote $ &map:to-list files
-                assert=
-                  macroexpand $ quote (-> files :defs)
-                  quote $ :defs files
-                assert=
-                  macroexpand $ quote
-                    -> a (b c) (d e f)
-                  quote $ d (b a c) e f
-                assert=
-                  macroexpand $ quote (->> a b c)
-                  quote $ c (b a)
-                assert=
-                  macroexpand $ quote
-                    ->> a (b) c
-                  quote $ c (b a)
-                assert=
-                  macroexpand $ quote
-                    ->> a $ b c
-                  quote $ b c a
-                assert=
-                  macroexpand $ quote (->> files &map:to-list)
-                  quote $ &map:to-list files
-                assert=
-                  macroexpand $ quote (->> files :defs)
-                  quote $ :defs files
-                assert=
-                  macroexpand $ quote
-                    ->> a (b c) (d e f)
-                  quote $ d e f (b c a)
-                assert=
-                  macroexpand $ quote (->% a)
-                  quote a
-                assert=
-                  macroexpand $ quote
-                    ->% a (+ % 1) (* % 2)
-                  quote $ let
-                      % a
-                      % $ + % 1
-                    * % 2
-              assert= 35 $ ->% 3 (+ % 4) (* % 5)
-              assert= 36 $ ->% 3 (+ % %) (* % %)
+        'test-thread-macros $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-thread-macros ()
+            log-title "|Testing thread macros"
+            inside-eval:
+              assert=
+                macroexpand $ quote $ -> a b c
+                quote $ c $ b a
+              assert=
+                macroexpand $ quote $ -> a (b) c
+                quote $ c $ b a
+              assert=
+                macroexpand $ quote $ -> a (b c)
+                quote $ b a c
+              assert=
+                macroexpand $ quote $ -> event .-target .-checked
+                quote $ .-checked $ .-target event
+              assert=
+                macroexpand $ quote $ -> files &map:to-list
+                quote $ &map:to-list files
+              assert=
+                macroexpand $ quote $ -> files :defs
+                quote $ :defs files
+              assert=
+                macroexpand $ quote $ -> a (b c) (d e f)
+                quote $ d (b a c) e f
+              assert=
+                macroexpand $ quote $ ->> a b c
+                quote $ c $ b a
+              assert=
+                macroexpand $ quote $ ->> a (b) c
+                quote $ c $ b a
+              assert=
+                macroexpand $ quote $ ->> a (b c)
+                quote $ b c a
+              assert=
+                macroexpand $ quote $ ->> files &map:to-list
+                quote $ &map:to-list files
+              assert=
+                macroexpand $ quote $ ->> files :defs
+                quote $ :defs files
+              assert=
+                macroexpand $ quote $ ->> a (b c) (d e f)
+                quote $ d e f $ b c a
+              assert=
+                macroexpand $ quote $ ->% a
+                quote a
+              assert=
+                macroexpand $ quote $ ->% a (+ % 1) (* % 2)
+                quote $ let
+                    % a
+                    % $ + % 1
+                  * % 2
+            assert= 35 $ ->% 3 (+ % 4) (* % 5)
+            assert= 36 $ ->% 3 (+ % %) (* % %)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-w-log $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing w-log") (&reset-gensym-index!)
-              inside-eval: $ assert=
-                macroexpand $ quote
-                  w-log $ + 1 2
-                quote $ &let
-                  v__1 $ + 1 2
-                  println
-                    format-to-lisp $ quote (+ 1 2)
-                    , |=> v__1
-                  , v__1
-              assert=
-                w-log $ + 1 2
-                , 3
-              assert=
-                wo-log $ + 1 2
-                , 3
-              assert=
-                w-log $ + 1
-                  w-log $ * 7 8
-                , 57
+        'test-w-log $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ fn () (log-title "|Testing w-log")
+            &reset-gensym-index!
+            inside-eval: $ assert=
+              macroexpand $ quote $ w-log (+ 1 2)
+              quote $ &let
+                v__1 $ + 1 2
+                println
+                  format-to-lisp $ quote $ + 1 2
+                  , |=> v__1
+                , v__1
+            assert=
+              w-log $ + 1 2
+              , 3
+            assert=
+              wo-log $ + 1 2
+              , 3
+            assert=
+              w-log $ + 1 $ w-log (* 7 8)
+              , 57
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-with-cpu-time $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing with-cpu-time")
-              inside-eval: (&reset-gensym-index!)
-                assert=
-                  macroexpand $ quote
-                    with-cpu-time $ + 1 2
-                  quote $ let
-                      started__1 $ cpu-time
-                      v__2 $ + 1 2
-                    println |[cpu-time]
-                      format-to-lisp $ quote (+ 1 2)
-                      , |=>
-                        .format
-                          &- (cpu-time) started__1
-                          , 3
-                        , |ms
-                    , v__2
+        'test-with-cpu-time $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ fn ()
+            log-title "|Testing with-cpu-time"
+            inside-eval:
+              &reset-gensym-index!
               assert=
-                with-cpu-time $ + 1 2
-                , 3
-              assert=
-                with-cpu-time $ &+ 1 2
-                , 3
+                macroexpand $ quote $ with-cpu-time (+ 1 2)
+                quote $ let
+                    started__1 $ cpu-time
+                    v__2 $ + 1 2
+                  println |[cpu-time]
+                    format-to-lisp $ quote $ + 1 2
+                    , |=>
+                      .format
+                        &- (cpu-time) started__1
+                        , 3
+                      , |ms
+                  , v__2
+            assert=
+              with-cpu-time $ + 1 2
+              , 3
+            assert=
+              with-cpu-time $ &+ 1 2
+              , 3
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)
-        :code $ quote
-          ns test-macro.main $ :require
-            [] util.core :refer $ [] log-title inside-eval:
+        :code $ quote $ ns test-macro.main
+          :require $ [] util.core :refer $ [] log-title inside-eval:

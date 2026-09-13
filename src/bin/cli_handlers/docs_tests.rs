@@ -768,7 +768,7 @@ fn format_markdown_cirru_blocks_formats_only_supported_fences() {
   assert!(
     formatted
       .content
-      .contains("```cirru.no-check\ndefimpl :Legacy :Marker $ .show\n  fn (x) x\n```"),
+      .contains("```cirru.no-check\ndefimpl :Legacy :Marker $ .show $ fn (x) x\n```"),
     "formatted markdown:\n{}",
     formatted.content
   );

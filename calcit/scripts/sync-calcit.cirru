@@ -1,15 +1,20 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |sync-calcit) (:version |0.0.1)
-  :entries $ {}
-    :default $ {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
+{}
+  :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
+  :package |sync-calcit
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'app.main/main!) (:mode :native)
+      :reload-fn 'app.main/reload!
+      :feature-policy $ {}
       :modules $ [] |bisection-key/
       :type-slots $ {}
-  :files $ {}
-    |app.main $ %{} 'FileEntry
+  :files $ {} $ 'app.main
+    %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} 'CodeEntry (:doc "|Synchronize a compact snapshot into a detailed calcit.cirru snapshot.")
-          :code $ quote
-            defn main! () $ let
+        'main! $ %{} 'CodeEntry
+          :doc "|Synchronize a compact snapshot into a detailed calcit.cirru snapshot."
+          :code $ quote $ defn main! ()
+            let
                 Leaf $ defstruct Leaf (:at 'Number) (:by 'String) (:text 'String)
                 Expr $ defstruct Expr (:at 'Number) (:by 'String) (:data 'Map)
                 CodeEntry $ defstruct CodeEntry (:code 'Dynamic) (:doc 'String) (:examples 'List)
@@ -34,7 +39,9 @@
                       map
                         range $ count data
                         fn (idx)
-                          recur-fn (bisection-key.util/val-nth data idx) recur-fn
+                          recur-fn
+                            bisection-key.util/val-nth data idx
+                            , recur-fn
                 examples->detail $ fn (examples now)
                   map
                     if (some? examples) examples $ []
@@ -47,7 +54,8 @@
                     if (some? old)
                       let
                           old-code $ get old :code
-                          code-changed? $ not= (detail->data old-code detail->data) (&cirru-quote:to-list next-code)
+                          code-changed? $ not= (detail->data old-code detail->data)
+                            &cirru-quote:to-list next-code
                           base $ assoc old :doc next-doc
                           base-with-examples $ if (contains? old :examples) (assoc base :examples next-examples) base
                         assoc base-with-examples :code $ if code-changed? (code->detail next-code now code->detail) old-code
@@ -62,7 +70,8 @@
                     if (some? old)
                       let
                           old-code $ get old :code
-                          code-changed? $ not= (detail->data old-code detail->data) (&cirru-quote:to-list next-code)
+                          code-changed? $ not= (detail->data old-code detail->data)
+                            &cirru-quote:to-list next-code
                         assoc (assoc old :doc next-doc) :code $ if code-changed? (code->detail next-code now code->detail) old-code
                       %{} NsEntry
                         :code $ code->detail next-code now code->detail
@@ -72,8 +81,7 @@
                       old-defs $ if (some? old) (get old :defs) ({})
                       next-defs $ foldl (get incoming :defs) ({})
                         fn (acc pair)
-                          let[] (name entry) pair $ assoc acc name
-                            sync-entry (get old-defs name) entry now
+                          let[] (name entry) pair $ assoc acc name $ sync-entry (get old-defs name) entry now
                       next-ns $ sync-ns
                         if (some? old) (get old :ns) nil
                         get incoming :ns
@@ -83,21 +91,20 @@
                       %{} FileEntry (:defs next-defs) (:ns next-ns)
                 compact-path $ option:unwrap-or (get-env |SYNC_COMPACT) |compact.cirru
                 calcit-path $ option:unwrap-or (get-env |SYNC_CALCIT) |calcit.cirru
-                compact $ parse-cirru-edn (read-file compact-path)
-                detailed $ parse-cirru-edn (read-file calcit-path)
+                compact $ parse-cirru-edn $ read-file compact-path
+                detailed $ parse-cirru-edn $ read-file calcit-path
                 now $ unix-time-ms
                 compact-files $ get compact :files
                 detailed-files $ get detailed :files
                 synced-files $ foldl compact-files ({})
                   fn (acc pair)
-                    let[] (name file) pair $ if (ends-with? name |.$meta) acc
-                      assoc acc name $ sync-file (get detailed-files name) file now
-                all-files $ foldl detailed-files synced-files
-                  fn (acc pair)
-                    let[] (name file) pair $ if
-                      or (ends-with? name |.$meta) (contains? compact-files name)
-                      , acc
-                        assoc acc name $ assoc file :defs ({})
+                    let[] (name file) pair $ if (ends-with? name |.$meta) acc $ assoc acc name
+                      sync-file (get detailed-files name) file now
+                all-files $ foldl detailed-files synced-files $ fn (acc pair)
+                  let[] (name file) pair $ if
+                    or (ends-with? name |.$meta) (contains? compact-files name)
+                    , acc $ assoc acc name
+                      assoc file :defs $ {}
                 result $ assoc
                   assoc
                     assoc
@@ -109,12 +116,10 @@
               println $ str-spaced |synced compact-path |to calcit-path
           :examples $ []
           :schema $ :: 'Dynamic
-        |reload! $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn reload! () nil
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () nil
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)
-        :code $ quote
-          ns app.main $ :require
-            bisection-key.util :refer $ assoc-append val-nth
+        :code $ quote $ ns app.main
+          :require $ bisection-key.util :refer $ assoc-append val-nth

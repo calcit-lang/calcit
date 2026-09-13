@@ -1,359 +1,359 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |calcit)
-  :entries $ {}
-    :default $ {} (:description |) (:init-fn 'calcit.core/println!) (:mode :native) (:reload-fn 'calcit.core/println!)
+{}
+  :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
+  :package |calcit
+  :entries $ {} $ :default
+    {} (:description |)
+      :init-fn 'calcit.core/println!
+      :mode :native
+      :reload-fn 'calcit.core/println!
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
   :files $ {}
     'calcit.core $ %{} 'FileEntry
       :defs $ {}
-        '#{} $ %{} 'CodeEntry (:doc "|internal function for creating sets\nSyntax: (#{} & elements)\nParams: elements (any, variadic)\nReturns: set\nCreates new set from provided elements")
+        '#{} $ %{} 'CodeEntry
+          :doc "|internal function for creating sets\nSyntax: (#{} & elements)\nParams: elements (any, variadic)\nReturns: set\nCreates new set from provided elements"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:rest 'T)
-              :args $ []
-              :generics $ [] 'T
-              :return $ :: 'Set 'T
+          :schema $ :: 'Fn $ {} (:rest 'T)
+            :args $ []
+            :generics $ [] 'T
+            :return $ :: 'Set 'T
           :tags $ #{} :builtin :internal
-        '%:: $ %{} 'CodeEntry (:doc "|Construct an enum value. Use an EnumDef for nominal values or `_` for an anonymous/open enum.")
+        '%:: $ %{} 'CodeEntry
+          :doc "|Construct an enum value. Use an EnumDef for nominal values or `_` for an anonymous/open enum."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Enum)
-              :args $ [] 'Dynamic 'Tag
+          :schema $ :: 'Fn $ {} (:return 'Enum)
+            :args $ [] 'Dynamic 'Tag
           :tags $ #{} :builtin :internal
-        '%err $ %{} 'CodeEntry (:doc "|Create Err variant of Result")
-          :code $ quote
-            defn %err (message) (%:: Result :err message)
+        '%err $ %{} 'CodeEntry
+          :doc "|Create Err variant of Result"
+          :code $ quote $ defn %err (message) (%:: Result :err message)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'E
-              :generics $ [] 'T 'E
-              :return $ :: 'Result 'T 'E
-        '%none $ %{} 'CodeEntry (:doc "|Create None variant of Option")
-          :code $ quote
-            defn %none () $ %:: Option :none
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'E
+            :generics $ [] 'T 'E
+            :return $ :: 'Result 'T 'E
+        '%none $ %{} 'CodeEntry
+          :doc "|Create None variant of Option"
+          :code $ quote $ defn %none () (%:: Option :none)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ []
-              :generics $ [] 'T
-              :return $ :: 'Option 'T
-        '%ok $ %{} 'CodeEntry (:doc "|Create Ok variant of Result")
-          :code $ quote
-            defn %ok (value) (%:: Result :ok value)
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :generics $ [] 'T
+            :return $ :: 'Option 'T
+        '%ok $ %{} 'CodeEntry
+          :doc "|Create Ok variant of Result"
+          :code $ quote $ defn %ok (value) (%:: Result :ok value)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'T
-              :generics $ [] 'T 'E
-              :return $ :: 'Result 'T 'E
-        '%some $ %{} 'CodeEntry (:doc "|Create Some variant of Option")
-          :code $ quote
-            defn %some (value) (%:: Option :some value)
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'T
+            :generics $ [] 'T 'E
+            :return $ :: 'Result 'T 'E
+        '%some $ %{} 'CodeEntry
+          :doc "|Create Some variant of Option"
+          :code $ quote $ defn %some (value) (%:: Option :some value)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'T
-              :generics $ [] 'T
-              :return $ :: 'Option 'T
-        '%{} $ %{} 'CodeEntry (:doc "|Construct a struct value. Use a StructDef for nominal values or `_` for an anonymous struct.")
-          :code $ quote
-            defmacro %{} (R & xs)
-              if
-                not $ and (list? xs) (every? xs list?)
-                raise $ str-spaced "|%{} expects field entries in list, got:" xs
-              &let
-                args $ &list:concat & xs
-                if (&= R '_)
-                  quasiquote $ ?{} ~@args
-                  quasiquote $ &%{} ~R ~@args
-          :examples $ []
-            quote $ let
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'T
+        '%{} $ %{} 'CodeEntry
+          :doc "|Construct a struct value. Use a StructDef for nominal values or `_` for an anonymous struct."
+          :code $ quote $ defmacro %{} (R & xs)
+            if
+              not $ and (list? xs) (every? xs list?)
+              raise $ str-spaced "|%{} expects field entries in list, got:" xs
+            &let
+              args $ &list:concat & xs
+              if (&= R '_)
+                quasiquote $ ?{} ~@args
+                quasiquote $ &%{} ~R ~@args
+          :examples $ [] $ quote
+            let
                 Point $ defstruct Point (:x 'Number) (:y 'Number)
                 rec $ %{} Point (:x 1) (:y 2)
               assert= 1 $ :x rec
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Struct
-              :required $ [] (:: 'Expr 'Dynamic)
+          :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Struct
+            :required $ [] $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-        '%{}? $ %{} 'CodeEntry (:doc "|Partial struct constructor. It allows declared Optional fields to be omitted and fills them with nil.")
-          :code $ quote
-            defmacro %{}? (R & xs)
-              if
-                not $ and (list? xs) (every? xs list?)
-                raise $ str-spaced "|%{}? expects field entries in list, got:" xs
-              &let
-                args $ &list:concat & xs
-                quasiquote $ &%{}? ~R ~@args
-          :examples $ []
-            quote $ let
+        '%{}? $ %{} 'CodeEntry
+          :doc "|Partial struct constructor. It allows declared Optional fields to be omitted and fills them with nil."
+          :code $ quote $ defmacro %{}? (R & xs)
+            if
+              not $ and (list? xs) (every? xs list?)
+              raise $ str-spaced "|%{}? expects field entries in list, got:" xs
+            &let
+              args $ &list:concat & xs
+              quasiquote $ &%{}? ~R ~@args
+          :examples $ [] $ quote
+            let
                 Point $ defstruct Point (:x 'Number) (:y 'Number)
-                p $ %{}? Point (:x 1)
+                p $ %{}? Point $ :x 1
               assert= nil $ :y p
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Struct
-              :required $ [] 'SyntaxSymbol
+          :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Struct
+            :required $ [] 'SyntaxSymbol
           :tags $ #{} :macro
-        '& $ %{} 'CodeEntry (:doc "|internal syntax for spreading in function definition and call\nSyntax: (& rest-args) in params or (f & args) in calls\nParams: varies based on context\nReturns: varies based on context\nMarks rest parameters or argument spreading")
+        '& $ %{} 'CodeEntry
+          :doc "|internal syntax for spreading in function definition and call\nSyntax: (& rest-args) in params or (f & args) in calls\nParams: varies based on context\nReturns: varies based on context\nMarks rest parameters or argument spreading"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        '&%{} $ %{} 'CodeEntry (:doc "|Internal native constructor for a struct value from a StructDef and field/value pairs.")
+        '&%{} $ %{} 'CodeEntry
+          :doc "|Internal native constructor for a struct value from a StructDef and field/value pairs."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Struct)
-              :args $ [] 'Struct
+          :schema $ :: 'Fn $ {} (:return 'Struct)
+            :args $ [] 'Struct
           :tags $ #{} :builtin :internal
-        '&%{}? $ %{} 'CodeEntry (:doc "|Internal partial struct constructor; omitted declared Optional fields default to nil.")
+        '&%{}? $ %{} 'CodeEntry
+          :doc "|Internal partial struct constructor; omitted declared Optional fields default to nil."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Struct)
-              :args $ [] 'Struct
+          :schema $ :: 'Fn $ {} (:return 'Struct)
+            :args $ [] 'Struct
           :tags $ #{} :builtin :internal
-        '&* $ %{} 'CodeEntry (:doc "|internal function for multiplication\nSyntax: (&* a b)\nParams: a (number), b (number)\nReturns: number\nMultiplies two numbers together, supports integers and floats")
+        '&* $ %{} 'CodeEntry
+          :doc "|internal function for multiplication\nSyntax: (&* a b)\nParams: a (number), b (number)\nReturns: number\nMultiplies two numbers together, supports integers and floats"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-        '&+ $ %{} 'CodeEntry (:doc "|internal function for addition\nSyntax: (&+ a b)\nParams: a (number), b (number)\nReturns: number\nAdds two numbers together, supports integers and floats")
+        '&+ $ %{} 'CodeEntry
+          :doc "|internal function for addition\nSyntax: (&+ a b)\nParams: a (number), b (number)\nReturns: number\nAdds two numbers together, supports integers and floats"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-        '&- $ %{} 'CodeEntry (:doc "|internal function for subtraction\nSyntax: (&- a b)\nParams: a (number), b (number)\nReturns: number\nSubtracts second number from first, supports integers and floats")
+        '&- $ %{} 'CodeEntry
+          :doc "|internal function for subtraction\nSyntax: (&- a b)\nParams: a (number), b (number)\nReturns: number\nSubtracts second number from first, supports integers and floats"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-        '&/ $ %{} 'CodeEntry (:doc "|internal function for division\nSyntax: (&/ a b)\nParams: a (number), b (number)\nReturns: number\nDivides first number by second, returns float result")
+        '&/ $ %{} 'CodeEntry
+          :doc "|internal function for division\nSyntax: (&/ a b)\nParams: a (number), b (number)\nReturns: number\nDivides first number by second, returns float result"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-        '&< $ %{} 'CodeEntry (:doc "|internal function for less than comparison\nSyntax: (&< a b & values)\nParams: a (number), b (number), values (number, variadic)\nReturns: boolean\nReturns true if values are in ascending order")
+        '&< $ %{} 'CodeEntry
+          :doc "|internal function for less than comparison\nSyntax: (&< a b & values)\nParams: a (number), b (number), values (number, variadic)\nReturns: boolean\nReturns true if values are in ascending order"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-        '&<= $ %{} 'CodeEntry (:doc "|Less than or equal comparison for two values")
-          :code $ quote
-            defn &<= (a b)
-              assert "|expects numbers for &<=" $ if (number? a) (number? b)
-              if (&< a b) true $ &= a b
+        '&<= $ %{} 'CodeEntry
+          :doc "|Less than or equal comparison for two values"
+          :code $ quote $ defn &<= (a b)
+            assert "|expects numbers for &<=" $ if (number? a) (number? b)
+            if (&< a b) true $ &= a b
           :examples $ []
-            quote $ assert= true (&<= 3 5)
-            quote $ assert= true (&<= 5 5)
-            quote $ assert= false (&<= 5 3)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Number 'Number
+            quote $ assert= true $ &<= 3 5
+            quote $ assert= true $ &<= 5 5
+            quote $ assert= false $ &<= 5 3
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number 'Number
           :tags $ #{} :internal
-        '&= $ %{} 'CodeEntry (:doc "|internal function for equality comparison\nSyntax: (&= a b & values)\nParams: a (any), b (any), values (any, variadic)\nReturns: boolean\nReturns true if all values are equal using deep comparison")
+        '&= $ %{} 'CodeEntry
+          :doc "|internal function for equality comparison\nSyntax: (&= a b & values)\nParams: a (any), b (any), values (any, variadic)\nReturns: boolean\nReturns true if all values are equal using deep comparison"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Dynamic 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Dynamic 'Dynamic
           :tags $ #{} :builtin :internal
-        '&> $ %{} 'CodeEntry (:doc "|internal function for greater than comparison\nSyntax: (&> a b & values)\nParams: a (number), b (number), values (number, variadic)\nReturns: boolean\nReturns true if values are in descending order")
+        '&> $ %{} 'CodeEntry
+          :doc "|internal function for greater than comparison\nSyntax: (&> a b & values)\nParams: a (number), b (number), values (number, variadic)\nReturns: boolean\nReturns true if values are in descending order"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-        '&>= $ %{} 'CodeEntry (:doc "|Greater than or equal comparison for two values")
-          :code $ quote
-            defn &>= (a b)
-              assert "|expects numbers for &>=" $ if (number? a) (number? b)
-              if (&> a b) true $ &= a b
+        '&>= $ %{} 'CodeEntry
+          :doc "|Greater than or equal comparison for two values"
+          :code $ quote $ defn &>= (a b)
+            assert "|expects numbers for &>=" $ if (number? a) (number? b)
+            if (&> a b) true $ &= a b
           :examples $ []
-            quote $ assert= true (&>= 5 3)
-            quote $ assert= true (&>= 5 5)
-            quote $ assert= false (&>= 3 5)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Number 'Number
+            quote $ assert= true $ &>= 5 3
+            quote $ assert= true $ &>= 5 5
+            quote $ assert= false $ &>= 3 5
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number 'Number
           :tags $ #{} :internal
-        '&atom:deref $ %{} 'CodeEntry (:doc "|internal function for dereferencing atoms\nSyntax: (&atom:deref atom)\nParams: atom (atom)\nReturns: any\nReturns current value of atom")
+        '&atom:deref $ %{} 'CodeEntry
+          :doc "|internal function for dereferencing atoms\nSyntax: (&atom:deref atom)\nParams: atom (atom)\nReturns: any\nReturns current value of atom"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'T)
-              :args $ [] (:: 'Ref 'T)
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] $ :: 'Ref 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal :state
-        '&buf-list:concat $ %{} 'CodeEntry (:doc "|internal function for appending all elements of a list onto a mutable buffer list\\nSyntax: (&buf-list:concat buf xs)\\nParams: buf (buf-list), xs (list)\\nReturns: buf-list\\nMutates buf by appending all elements from xs; returns the same buf")
+        '&buf-list:concat $ %{} 'CodeEntry
+          :doc "|internal function for appending all elements of a list onto a mutable buffer list\\nSyntax: (&buf-list:concat buf xs)\\nParams: buf (buf-list), xs (list)\\nReturns: buf-list\\nMutates buf by appending all elements from xs; returns the same buf"
           :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ let
+          :examples $ [] $ quote
+            let
                 buf $ &buf-list:new
               &buf-list:concat buf $ [] 1 2 3
               assert= 3 $ &buf-list:count buf
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ [] 'Tag (:: 'List 'T)
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ [] 'Tag $ :: 'List 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal :state
-        '&buf-list:count $ %{} 'CodeEntry (:doc "|internal function for getting the element count of a mutable buffer list\\nSyntax: (&buf-list:count buf)\\nParams: buf (buf-list)\\nReturns: number\\nReturns the number of elements currently in the buffer")
+        '&buf-list:count $ %{} 'CodeEntry
+          :doc "|internal function for getting the element count of a mutable buffer list\\nSyntax: (&buf-list:count buf)\\nParams: buf (buf-list)\\nReturns: number\\nReturns the number of elements currently in the buffer"
           :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ let
+          :examples $ [] $ quote
+            let
                 buf $ &buf-list:new
               &buf-list:push buf 42
               assert= 1 $ &buf-list:count buf
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Tag
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Tag
           :tags $ #{} :builtin :internal :state
-        '&buf-list:new $ %{} 'CodeEntry (:doc "|internal function for creating a new mutable buffer list\\nSyntax: (&buf-list:new)\\nParams: none\\nReturns: buf-list\\nCreates a new empty mutable append-only buffer list, used for efficient incremental accumulation before converting to an immutable list")
+        '&buf-list:new $ %{} 'CodeEntry
+          :doc "|internal function for creating a new mutable buffer list\\nSyntax: (&buf-list:new)\\nParams: none\\nReturns: buf-list\\nCreates a new empty mutable append-only buffer list, used for efficient incremental accumulation before converting to an immutable list"
           :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ assert= 0
-              &buf-list:count $ &buf-list:new
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ []
+          :examples $ [] $ quote
+            assert= 0 $ &buf-list:count $ &buf-list:new
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ []
           :tags $ #{} :builtin :internal :state
-        '&buf-list:push $ %{} 'CodeEntry (:doc "|internal function for pushing an item onto a mutable buffer list\\nSyntax: (&buf-list:push buf item)\\nParams: buf (buf-list), item (any)\\nReturns: buf-list\\nMutates buf by appending item to end; returns the same buf")
+        '&buf-list:push $ %{} 'CodeEntry
+          :doc "|internal function for pushing an item onto a mutable buffer list\\nSyntax: (&buf-list:push buf item)\\nParams: buf (buf-list), item (any)\\nReturns: buf-list\\nMutates buf by appending item to end; returns the same buf"
           :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ let
+          :examples $ [] $ quote
+            let
                 buf $ &buf-list:new
               &buf-list:push buf 10
               &buf-list:push buf 20
               assert= 2 $ &buf-list:count buf
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ [] 'Tag 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ [] 'Tag 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal :state
-        '&buf-list:to-list $ %{} 'CodeEntry (:doc "|internal function for converting a mutable buffer list to an immutable list\\nSyntax: (&buf-list:to-list buf)\\nParams: buf (buf-list)\\nReturns: list\\nFreezes the mutable buffer into a regular immutable list")
+        '&buf-list:to-list $ %{} 'CodeEntry
+          :doc "|internal function for converting a mutable buffer list to an immutable list\\nSyntax: (&buf-list:to-list buf)\\nParams: buf (buf-list)\\nReturns: list\\nFreezes the mutable buffer into a regular immutable list"
           :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ let
+          :examples $ [] $ quote
+            let
                 buf $ &buf-list:new
               &buf-list:push buf 1
               &buf-list:push buf 2
-              assert= ([] 1 2) (&buf-list:to-list buf)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Tag 'T
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+              assert= ([] 1 2)
+                &buf-list:to-list buf
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Tag 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal :state
-        '&buffer $ %{} 'CodeEntry (:doc "|internal function for buffer operations\nSyntax: (&buffer data)\nParams: data (list of numbers or bytes)\nReturns: buffer object\nCreates a binary buffer from list of byte values")
+        '&buffer $ %{} 'CodeEntry
+          :doc "|internal function for buffer operations\nSyntax: (&buffer data)\nParams: data (list of numbers or bytes)\nReturns: buffer object\nCreates a binary buffer from list of byte values"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Buffer)
-              :args $ [] 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Buffer)
+            :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal :state
-        '&call-spread $ %{} 'CodeEntry (:doc "|internal syntax for handling & spreading in function calls\nSyntax: (&call-spread fn args)\nParams: fn (function), args (list with spread)\nReturns: function call result\nHandles argument spreading in function calls")
+        '&call-spread $ %{} 'CodeEntry
+          :doc "|internal syntax for handling & spreading in function calls\nSyntax: (&call-spread fn args)\nParams: fn (function), args (list with spread)\nReturns: function call result\nHandles argument spreading in function calls"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
         '&case $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro &case (item default pattern & others)
-              if
-                not $ and (list? pattern)
-                  &= 2 $ &list:count pattern
-                raise $ str-spaced "|`case` expects pattern in a pair, got:" pattern
-              let
-                  x $ &list:first pattern
-                  branch $ &list:last pattern
-                quasiquote $ if (&= ~item ~x) ~branch
-                  ~ $ if (&list:empty? others) default
-                    quasiquote $ &case ~item ~default ~@others
+          :code $ quote $ defmacro &case (item default pattern & others)
+            if
+              not $ and (list? pattern)
+                &= 2 $ &list:count pattern
+              raise $ str-spaced "|`case` expects pattern in a pair, got:" pattern
+            let
+                x $ &list:first pattern
+                branch $ &list:last pattern
+              quasiquote $ if (&= ~item ~x) ~branch $ ~
+                if (&list:empty? others) default $ quasiquote $ &case ~item ~default ~@others
           :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic) 'SyntaxList
+          :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic) 'SyntaxList
           :tags $ #{} :internal :macro
-        '&cirru-nth $ %{} 'CodeEntry (:doc "|internal function for Cirru nth operation\nSyntax: (&cirru-nth cirru-list index)\nParams: cirru-list (cirru quote list), index (number)\nReturns: cirru node\nGets nth element from Cirru list node, errors if index is out of bounds")
+        '&cirru-nth $ %{} 'CodeEntry
+          :doc "|internal function for Cirru nth operation\nSyntax: (&cirru-nth cirru-list index)\nParams: cirru-list (cirru quote list), index (number)\nReturns: cirru node\nGets nth element from Cirru list node, errors if index is out of bounds"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'CirruQuote)
-              :args $ [] 'CirruQuote 'Number
+          :schema $ :: 'Fn $ {} (:return 'CirruQuote)
+            :args $ [] 'CirruQuote 'Number
           :tags $ #{} :builtin :internal
-        '&cirru-quote:to-list $ %{} 'CodeEntry (:doc "|internal function for converting Cirru quote to list\nSyntax: (&cirru-quote:to-list quote)\nParams: quote (cirru-quote)\nReturns: list\nConverts Cirru quote structure to regular list")
+        '&cirru-quote:to-list $ %{} 'CodeEntry
+          :doc "|internal function for converting Cirru quote to list\nSyntax: (&cirru-quote:to-list quote)\nParams: quote (cirru-quote)\nReturns: list\nConverts Cirru quote structure to regular list"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'List)
-              :args $ [] 'CirruQuote
+          :schema $ :: 'Fn $ {} (:return 'List)
+            :args $ [] 'CirruQuote
           :tags $ #{} :builtin :internal
-        '&cirru-type $ %{} 'CodeEntry (:doc "|internal function for getting Cirru type\nSyntax: (&cirru-type cirru-node)\nParams: cirru-node (cirru quote)\nReturns: keyword (:leaf or :list)\nReturns type of Cirru node, either :leaf for atoms or :list for expressions")
+        '&cirru-type $ %{} 'CodeEntry
+          :doc "|internal function for getting Cirru type\nSyntax: (&cirru-type cirru-node)\nParams: cirru-node (cirru quote)\nReturns: keyword (:leaf or :list)\nReturns type of Cirru node, either :leaf for atoms or :list for expressions"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ [] 'CirruQuote
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ [] 'CirruQuote
           :tags $ #{} :builtin :internal
-        '&compare $ %{} 'CodeEntry (:doc "|internal function for native comparison\nSyntax: (&compare a b)\nParams: a (any), b (any)\nReturns: number (-1, 0, or 1)\nPerforms three-way comparison returning -1 (less), 0 (equal), or 1 (greater)")
+        '&compare $ %{} 'CodeEntry
+          :doc "|internal function for native comparison\nSyntax: (&compare a b)\nParams: a (any), b (any)\nReturns: number (-1, 0, or 1)\nPerforms three-way comparison returning -1 (less), 0 (equal), or 1 (greater)"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Dynamic 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic 'Dynamic
           :tags $ #{} :builtin :internal
           :tests $ []
-            %{} 'TestEntry (:name |orders-cross-type-values)
-              :code $ quote
-                do
-                  assert= -1 $ &compare 1 |1
-                  assert= 1 $ &compare |1 1
-                  assert= 0 $ &compare 1 1
+            %{} 'TestEntry
+              :name |orders-cross-type-values
+              :code $ quote $ do
+                assert= -1 $ &compare 1 |1
+                assert= 1 $ &compare |1 1
+                assert= 0 $ &compare 1 1
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |orders-strings)
-              :code $ quote
-                do
-                  assert= -1 $ &compare |a |b
-                  assert= 1 $ &compare |b |a
-                  assert= 0 $ &compare |a |a
+              :code $ quote $ do
+                assert= -1 $ &compare |a |b
+                assert= 1 $ &compare |b |a
+                assert= 0 $ &compare |a |a
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |distinguishes-tag-from-string)
-              :code $ quote
-                do
-                  assert= -1 $ &compare :a |a
-                  assert= 1 $ &compare |a :a
-                  assert= 0 $ &compare :a :a
+            %{} 'TestEntry
+              :name |distinguishes-tag-from-string
+              :code $ quote $ do
+                assert= -1 $ &compare :a |a
+                assert= 1 $ &compare |a :a
+                assert= 0 $ &compare :a :a
               :tags $ #{} :core :unit
-        '&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
-          :code $ quote
-            def &core-enum-impls $ [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl)
+        '&core-enum-impls $ %{} 'CodeEntry
+          :doc "|Built-in implementation list for enum values."
+          :code $ quote $ def &core-enum-impls
+            [] &core-enum-methods
+              &impl::new Debug internal/&core-debug-impl
+              &impl::new Eq internal/&core-eq-impl
+              &impl::new Countable internal/&core-countable-enum-impl
+              &impl::new Contains internal/&core-contains-enum-impl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         '&core-enum-methods $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-enum-methods $ &impl::new :&core-enum-methods (:: :count &enum:count) (:: :nth nth) (:: :get get) (:: :assoc &enum:assoc) (:: :first first) (:: :last last)
+          :code $ quote $ def &core-enum-methods
+            &impl::new :&core-enum-methods (:: :count &enum:count) (:: :nth nth) (:: :get get) (:: :assoc &enum:assoc) (:: :first first) (:: :last last)
               :: :empty? $ defn &enum:empty?-impl (x)
                 &= 0 $ &enum:count x
               :: :contains? $ defn &enum:contains?-impl (x k)
@@ -363,15 +363,16 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
-        '&core-fn-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for fn")
-          :code $ quote
-            def &core-fn-impls $ [] &core-fn-methods (&impl::new Debug internal/&core-debug-impl)
+        '&core-fn-impls $ %{} 'CodeEntry
+          :doc "|Built-in implementation list for fn"
+          :code $ quote $ def &core-fn-impls
+            [] &core-fn-methods $ &impl::new Debug internal/&core-debug-impl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         '&core-fn-methods $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-fn-methods $ &impl::new :&core-fn-methods
+          :code $ quote $ def &core-fn-methods
+            &impl::new :&core-fn-methods
               :: :call $ defn &fn:call (f & args) (f & args)
               :: :call-args $ defn &fn:call-args (f args) (f & args)
               :: :map &fn:map
@@ -381,1244 +382,1328 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
-        '&core-list-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add.")
-          :code $ quote
-            def &core-list-impls $ [] &core-list-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-list-impl) (&impl::new Len internal/&core-len-list-impl) (&impl::new Mappable internal/&core-mappable-list-impl) (&impl::new Countable internal/&core-countable-list-impl) (&impl::new Contains internal/&core-contains-list-impl)
+        '&core-list-impls $ %{} 'CodeEntry
+          :doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add."
+          :code $ quote $ def &core-list-impls
+            [] &core-list-methods
+              &impl::new Debug internal/&core-debug-impl
+              &impl::new Eq internal/&core-eq-impl
+              &impl::new Add internal/&core-add-list-impl
+              &impl::new Len internal/&core-len-list-impl
+              &impl::new Mappable internal/&core-mappable-list-impl
+              &impl::new Countable internal/&core-countable-list-impl
+              &impl::new Contains internal/&core-contains-list-impl
               &impl::new Sliceable $ :: :slice &list:slice
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         '&core-list-methods $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-list-methods $ &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :join join) (:: :join-str join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth nth) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce reduce) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
+          :code $ quote $ def &core-list-methods
+            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc)
+              :: :assoc-after &list:assoc-after
+              :: :assoc-before &list:assoc-before
+              :: :bind mapcat
+              :: :butlast butlast
+              :: :concat &list:concat
+              :: :contains? &list:contains?
+              :: :includes? &list:includes?
+              :: :count &list:count
+              :: :drop drop
+              :: :each each
+              :: :empty &list:empty
+              :: :empty? &list:empty?
+              :: :filter &list:filter
+              :: :filter-not filter-not
+              :: :find find
+              :: :find-index find-index
+              :: :find-last &list:find-last
+              :: :find-last-index &list:find-last-index
+              :: :foldl foldl
+              :: :get get
+              :: :get-in get-in
+              :: :group-by group-by
+              :: :index-of index-of
+              :: :join join
+              :: :join-str join-str
+              :: :last-index-of &list:last-index-of
+              :: :map &list:map
+              :: :map-indexed map-indexed
+              :: :mappend &list:mappend
+              :: :max &list:max
+              :: :min &list:min
+              :: :nth nth
+              :: :pairs-map pairs-map
+              :: :prepend prepend
+              :: :reduce reduce
+              :: :reverse &list:reverse
+              :: :slice &list:slice
+              :: :sort sort
+              :: :sort-by &list:sort-by
+              :: :take take
+              :: :take-last take-last
+              :: :to-set &list:to-set
+              :: :first first
+              :: :last last
+              :: :rest &list:rest
+              :: :dissoc &list:dissoc
+              :: :to-list identity
+              :: :map-pair &list:map-pair
+              :: :filter-pair &list:filter-pair
+              :: :apply &list:apply
+              :: :flatten &list:flatten
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
-        '&core-map-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for map")
-          :code $ quote
-            def &core-map-impls $ [] &core-map-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-map-impl) (&impl::new Mappable internal/&core-mappable-map-impl) (&impl::new Countable internal/&core-countable-map-impl) (&impl::new Contains internal/&core-contains-map-impl)
+        '&core-map-impls $ %{} 'CodeEntry
+          :doc "|Built-in implementation list for map"
+          :code $ quote $ def &core-map-impls
+            [] &core-map-methods
+              &impl::new Debug internal/&core-debug-impl
+              &impl::new Eq internal/&core-eq-impl
+              &impl::new Len internal/&core-len-map-impl
+              &impl::new Mappable internal/&core-mappable-map-impl
+              &impl::new Countable internal/&core-countable-map-impl
+              &impl::new Contains internal/&core-contains-map-impl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         '&core-map-methods $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-map-methods $ &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :values vals)
+          :code $ quote $ def &core-map-methods
+            &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :values vals)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
-        '&core-number-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for number")
-          :code $ quote
-            def &core-number-impls $ [] &core-number-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-number-impl) (&impl::new Multiply internal/&core-multiply-number-impl) (&impl::new Compare internal/&core-compare-number-impl)
+        '&core-number-impls $ %{} 'CodeEntry
+          :doc "|Built-in implementation list for number"
+          :code $ quote $ def &core-number-impls
+            [] &core-number-methods
+              &impl::new Debug internal/&core-debug-impl
+              &impl::new Eq internal/&core-eq-impl
+              &impl::new Add internal/&core-add-number-impl
+              &impl::new Multiply internal/&core-multiply-number-impl
+              &impl::new Compare internal/&core-compare-number-impl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         '&core-number-methods $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-number-methods $ &impl::new :&core-number-methods (:: :ceil ceil) (:: :empty &number:empty) (:: :floor floor) (:: :format &number:format) (:: :display-by &number:display-by) (:: :inc inc) (:: :pow pow) (:: :round round) (:: :round? round?) (:: :fract &number:fract) (:: :sqrt sqrt) (:: :negate negate) (:: :rem &number:rem) (:: :compare &compare)
+          :code $ quote $ def &core-number-methods
+            &impl::new :&core-number-methods (:: :ceil ceil) (:: :empty &number:empty) (:: :floor floor) (:: :format &number:format)
+              :: :display-by &number:display-by
+              :: :inc inc
+              :: :pow pow
+              :: :round round
+              :: :round? round?
+              :: :fract &number:fract
+              :: :sqrt sqrt
+              :: :negate negate
+              :: :rem &number:rem
+              :: :compare &compare
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         '&core-ref-impls $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-ref-impls $ [] &core-ref-methods
+          :code $ quote $ def &core-ref-impls
+            [] &core-ref-methods
           :examples $ []
           :schema $ :: 'List 'Impl
           :tags $ #{} :internal
         '&core-ref-methods $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-ref-methods $ &impl::new :&core-ref-methods (:: :deref &atom:deref)
+          :code $ quote $ def &core-ref-methods
+            &impl::new :&core-ref-methods $ :: :deref &atom:deref
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :internal
-        '&core-scalar-impls $ %{} 'CodeEntry (:doc "|Built-in nominal Debug/Eq implementation list for scalar literals")
-          :code $ quote
-            def &core-scalar-impls $ [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl)
+        '&core-scalar-impls $ %{} 'CodeEntry
+          :doc "|Built-in nominal Debug/Eq implementation list for scalar literals"
+          :code $ quote $ def &core-scalar-impls
+            []
+              &impl::new Debug internal/&core-debug-impl
+              &impl::new Eq internal/&core-eq-impl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
-        '&core-set-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for set")
-          :code $ quote
-            def &core-set-impls $ [] &core-set-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-set-impl) (&impl::new Mappable internal/&core-mappable-set-impl) (&impl::new Countable internal/&core-countable-set-impl) (&impl::new Contains internal/&core-contains-set-impl)
+        '&core-set-impls $ %{} 'CodeEntry
+          :doc "|Built-in implementation list for set"
+          :code $ quote $ def &core-set-impls
+            [] &core-set-methods
+              &impl::new Debug internal/&core-debug-impl
+              &impl::new Eq internal/&core-eq-impl
+              &impl::new Len internal/&core-len-set-impl
+              &impl::new Mappable internal/&core-mappable-set-impl
+              &impl::new Countable internal/&core-countable-set-impl
+              &impl::new Contains internal/&core-contains-set-impl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         '&core-set-methods $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-set-methods $ &impl::new :&core-set-methods (:: :add include) (:: :contains? &set:includes?) (:: :count &set:count) (:: :destruct destruct-set) (:: :difference difference) (:: :empty &set:empty) (:: :empty? &set:empty?) (:: :exclude exclude) (:: :filter &set:filter) (:: :include include) (:: :includes? &set:includes?) (:: :intersection intersection) (:: :map &set:map) (:: :mappend union) (:: :max &set:max) (:: :min &set:min) (:: :to-list &set:to-list) (:: :to-set identity) (:: :union union)
+          :code $ quote $ def &core-set-methods
+            &impl::new :&core-set-methods (:: :add include) (:: :contains? &set:includes?) (:: :count &set:count) (:: :destruct destruct-set) (:: :difference difference) (:: :empty &set:empty) (:: :empty? &set:empty?) (:: :exclude exclude) (:: :filter &set:filter) (:: :include include) (:: :includes? &set:includes?) (:: :intersection intersection) (:: :map &set:map) (:: :mappend union) (:: :max &set:max) (:: :min &set:min) (:: :to-list &set:to-list) (:: :to-set identity) (:: :union union)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
-        '&core-string-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for string")
-          :code $ quote
-            def &core-string-impls $ [] &core-string-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Contains internal/&core-contains-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
+        '&core-string-impls $ %{} 'CodeEntry
+          :doc "|Built-in implementation list for string"
+          :code $ quote $ def &core-string-impls
+            [] &core-string-methods
+              &impl::new Debug internal/&core-debug-impl
+              &impl::new Eq internal/&core-eq-impl
+              &impl::new Add internal/&core-add-string-impl
+              &impl::new Len internal/&core-len-string-impl
+              &impl::new Countable internal/&core-countable-string-impl
+              &impl::new Contains internal/&core-contains-string-impl
+              &impl::new Compare internal/&core-compare-string-impl
               &impl::new Sliceable $ :: :slice &str:slice
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         '&core-string-methods $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :utf8-byte-count &str:utf8-byte-count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :last last) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
+          :code $ quote $ def &core-string-methods
+            &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count)
+              :: :utf8-byte-count &str:utf8-byte-count
+              :: :empty &str:empty
+              :: :ends-with? ends-with?
+              :: :get get
+              :: :parse-float parse-float
+              :: :replace &str:replace
+              :: :split split
+              :: :split-lines split-lines
+              :: :starts-with? starts-with?
+              :: :strip-prefix strip-prefix
+              :: :strip-suffix strip-suffix
+              :: :slice &str:slice
+              :: :trim trim
+              :: :empty? &str:empty?
+              :: :contains? &str:contains?
+              :: :includes? &str:includes?
+              :: :nth nth
+              :: :first first
+              :: :last last
+              :: :rest &str:rest
+              :: :pad-left &str:pad-left
+              :: :pad-right &str:pad-right
+              :: :find-index str-find-index
+              :: :get-char-code get-char-code
+              :: :escape &str:escape
+              :: :mappend &str:concat
+              :: :compare &str:compare
+              :: :parse-cirru try-parse-cirru
+              :: :parse-cirru-list try-parse-cirru-list
+              :: :parse-cirru-edn try-parse-cirru-edn
+              :: :parse-json try-parse-json
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |excludes-file-effects)
-              :code $ quote
-                let
-                    methods $ &methods-of |plain-text
-                  do
-                    assert= false $ includes? methods .read-file
-                    assert= false $ includes? methods .read-dir
-                    assert= false $ includes? methods .write-file
-        '&core-struct-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for struct values.")
-          :code $ quote
-            def &core-struct-impls $ [] &core-struct-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-struct-impl) (&impl::new Contains internal/&core-contains-struct-impl)
+          :tests $ [] $ %{} 'TestEntry
+            :name |excludes-file-effects
+            :code $ quote $ let
+                methods $ &methods-of |plain-text
+              do
+                assert= false $ includes? methods .read-file
+                assert= false $ includes? methods .read-dir
+                assert= false $ includes? methods .write-file
+        '&core-struct-impls $ %{} 'CodeEntry
+          :doc "|Built-in implementation list for struct values."
+          :code $ quote $ def &core-struct-impls
+            [] &core-struct-methods
+              &impl::new Debug internal/&core-debug-impl
+              &impl::new Eq internal/&core-eq-impl
+              &impl::new Countable internal/&core-countable-struct-impl
+              &impl::new Contains internal/&core-contains-struct-impl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         '&core-struct-methods $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-struct-methods $ &impl::new :&core-struct-methods (:: :count &struct:count) (:: :contains? &struct:contains?) (:: :assoc &struct:assoc) (:: :to-map &struct:to-map)
+          :code $ quote $ def &core-struct-methods
+            &impl::new :&core-struct-methods (:: :count &struct:count)
+              :: :contains? &struct:contains?
+              :: :assoc &struct:assoc
+              :: :to-map &struct:to-map
               :: :empty? $ defn &struct:empty?-impl (x)
                 &= 0 $ &struct:count x
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
-        '&data-to-code $ %{} 'CodeEntry (:doc "|internal function for converting data to code\nSyntax: (&data-to-code data)\nParams: data (EDN data)\nReturns: quoted code\nConverts EDN data structure back to executable code")
+        '&data-to-code $ %{} 'CodeEntry
+          :doc "|internal function for converting data to code\nSyntax: (&data-to-code data)\nParams: data (EDN data)\nReturns: quoted code\nConverts EDN data structure back to executable code"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :meta
-        '&difference $ %{} 'CodeEntry (:doc "|internal function for set difference\nSyntax: (&difference set1 set2)\nParams: set1 (set), set2 (set)\nReturns: set\nReturns elements in set1 but not in set2")
+        '&difference $ %{} 'CodeEntry
+          :doc "|internal function for set difference\nSyntax: (&difference set1 set2)\nParams: set1 (set), set2 (set)\nReturns: set\nReturns elements in set1 but not in set2"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'T) (:: 'Set 'T)
-              :generics $ [] 'T
-              :return $ :: 'Set 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Set 'T) (:: 'Set 'T)
+            :generics $ [] 'T
+            :return $ :: 'Set 'T
           :tags $ #{} :builtin :internal
-        '&display-stack $ %{} 'CodeEntry (:doc "|internal function for displaying call stack\nSyntax: (&display-stack)\nParams: none\nReturns: &unit\nPrints the current call stack for debugging")
+        '&display-stack $ %{} 'CodeEntry
+          :doc "|internal function for displaying call stack\nSyntax: (&display-stack)\nParams: none\nReturns: &unit\nPrints the current call stack for debugging"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
           :tags $ #{} :builtin :internal :io :log
-        '&doseq $ %{} 'CodeEntry (:doc "|Internal side-effect traversal macro. Iterates over a binding pair, executes the body for each element, and returns Unit.")
-          :code $ quote
-            defmacro &doseq (pair & body)
-              if
-                not $ and (list? pair)
-                  &= 2 $ &list:count pair
-                raise $ str-spaced "|doseq expects a pair, got:" pair
-              let
-                  name $ &list:first pair
-                  xs0 $ &list:last pair
-                quasiquote $ foldl ~xs0 &unit
-                  defn doseq-fn% (_acc ~name) ~@body &unit
-          :examples $ []
-            quote $ do
+        '&doseq $ %{} 'CodeEntry
+          :doc "|Internal side-effect traversal macro. Iterates over a binding pair, executes the body for each element, and returns Unit."
+          :code $ quote $ defmacro &doseq (pair & body)
+            if
+              not $ and (list? pair)
+                &= 2 $ &list:count pair
+              raise $ str-spaced "|doseq expects a pair, got:" pair
+            let
+                name $ &list:first pair
+                xs0 $ &list:last pair
+              quasiquote $ foldl ~xs0 &unit $ defn doseq-fn% (_acc ~name) ~@body &unit
+          :examples $ [] $ quote
+            do
               defatom *seen $ []
               &doseq
                 n $ [] 1 2
                 reset! *seen $ append (deref *seen) n
               assert= ([] 1 2) (deref *seen)
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Unit
-              :required $ [] 'SyntaxList
-              :rest $ :: 'Expr 'Dynamic
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Unit
+            :required $ [] 'SyntaxList
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :effect :internal :macro
-          :tests $ []
-            %{} 'TestEntry (:name |returns-unit-after-body)
-              :code $ quote
-                assert= &unit $ &doseq
-                  x $ [] 1 2
-                  &+ x 1
-              :tags $ #{} :core :unit
-        '&enum-def:has-variant? $ %{} 'CodeEntry (:doc "|Test whether an EnumDef declares a variant.")
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-unit-after-body
+            :code $ quote $ assert= &unit
+              &doseq
+                x $ [] 1 2
+                &+ x 1
+            :tags $ #{} :core :unit
+        '&enum-def:has-variant? $ %{} 'CodeEntry
+          :doc "|Test whether an EnumDef declares a variant."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Tag 'Tag
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Tag 'Tag
           :tags $ #{} :builtin :internal
-        '&enum-def:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an EnumDef.")
+        '&enum-def:impl-traits $ %{} 'CodeEntry
+          :doc "|Attach implementations to an EnumDef."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ [] 'Tag
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ [] 'Tag
           :tags $ #{} :builtin :internal
-        '&enum-def:new $ %{} 'CodeEntry (:doc "|Create an EnumDef from a name and declared variants.")
+        '&enum-def:new $ %{} 'CodeEntry
+          :doc "|Create an EnumDef from a name and declared variants."
+          :code $ quote &runtime-implementation
+          :examples $ [] $ quote
+            &enum-def:new :Result ([] :ok :number) ([] :err :string)
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ [] 'Tag
+          :tags $ #{} :builtin :internal
+        '&enum-def:variant-arity $ %{} 'CodeEntry
+          :doc "|Read the payload arity of an EnumDef variant."
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ &enum-def:new :Result ([] :ok :number) ([] :err :string)
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ [] 'Tag
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Tag 'Tag
           :tags $ #{} :builtin :internal
-        '&enum-def:variant-arity $ %{} 'CodeEntry (:doc "|Read the payload arity of an EnumDef variant.")
+        '&enum:assoc $ %{} 'CodeEntry
+          :doc "|Associate a payload position on an enum value."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Tag 'Tag
+          :schema $ :: 'Fn $ {} (:return 'Enum)
+            :args $ [] 'Enum 'Number 'Tag
           :tags $ #{} :builtin :internal
-        '&enum:assoc $ %{} 'CodeEntry (:doc "|Associate a payload position on an enum value.")
+        '&enum:count $ %{} 'CodeEntry
+          :doc "|Count tag and payload positions in an enum value."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Enum)
-              :args $ [] 'Enum 'Number 'Tag
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Enum
           :tags $ #{} :builtin :internal
-        '&enum:count $ %{} 'CodeEntry (:doc "|Count tag and payload positions in an enum value.")
+        '&enum:definition $ %{} 'CodeEntry
+          :doc "|Return the EnumDef of a nominal enum value, or nil for an anonymous enum."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Enum
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Enum
+            :return $ :: 'Optional 'Tag
           :tags $ #{} :builtin :internal
-        '&enum:definition $ %{} 'CodeEntry (:doc "|Return the EnumDef of a nominal enum value, or nil for an anonymous enum.")
+        '&enum:impl-traits $ %{} 'CodeEntry
+          :doc "|Attach implementations to an enum value."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Enum
-              :return $ :: 'Optional 'Tag
+          :schema $ :: 'Fn $ {} (:return 'Enum)
+            :args $ [] 'Enum
           :tags $ #{} :builtin :internal
-        '&enum:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an enum value.")
+        '&enum:impls $ %{} 'CodeEntry
+          :doc "|Return implementations attached to an enum value."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Enum)
-              :args $ [] 'Enum
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Enum
+            :return $ :: 'List 'Impl
           :tags $ #{} :builtin :internal
-        '&enum:impls $ %{} 'CodeEntry (:doc "|Return implementations attached to an enum value.")
+        '&enum:nth $ %{} 'CodeEntry
+          :doc "|Read a tag or payload position from an enum value."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Enum
-              :return $ :: 'List 'Impl
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ [] 'Enum 'Number
           :tags $ #{} :builtin :internal
-        '&enum:nth $ %{} 'CodeEntry (:doc "|Read a tag or payload position from an enum value.")
+        '&enum:params $ %{} 'CodeEntry
+          :doc "|Return enum payload parameters as a list."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ [] 'Enum 'Number
+          :schema $ :: 'Fn $ {} (:return 'List)
+            :args $ [] 'Enum
           :tags $ #{} :builtin :internal
-        '&enum:params $ %{} 'CodeEntry (:doc "|Return enum payload parameters as a list.")
+        '&enum:validate $ %{} 'CodeEntry
+          :doc "|Validate an enum value against its definition.\nReturns &unit when validation succeeds; raises an error otherwise."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'List)
-              :args $ [] 'Enum
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] 'Enum 'Tag
           :tags $ #{} :builtin :internal
-        '&enum:validate $ %{} 'CodeEntry (:doc "|Validate an enum value against its definition.\nReturns &unit when validation succeeds; raises an error otherwise.")
+        '&exclude $ %{} 'CodeEntry
+          :doc "|internal function for excluding from set\nSyntax: (&exclude set element)\nParams: set (set), element (any)\nReturns: set\nReturns new set with element excluded"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ [] 'Enum 'Tag
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Set 'T) 'T
+            :generics $ [] 'T
+            :return $ :: 'Set 'T
           :tags $ #{} :builtin :internal
-        '&exclude $ %{} 'CodeEntry (:doc "|internal function for excluding from set\nSyntax: (&exclude set element)\nParams: set (set), element (any)\nReturns: set\nReturns new set with element excluded")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'T) 'T
-              :generics $ [] 'T
-              :return $ :: 'Set 'T
-          :tags $ #{} :builtin :internal
-        '&extract-code-into-edn $ %{} 'CodeEntry (:doc "|internal function for extracting code into EDN\nSyntax: (&extract-code-into-edn code)\nParams: code (quoted code)\nReturns: EDN data structure\nExtracts code structure into EDN format for serialization")
+        '&extract-code-into-edn $ %{} 'CodeEntry
+          :doc "|internal function for extracting code into EDN\nSyntax: (&extract-code-into-edn code)\nParams: code (quoted code)\nReturns: EDN data structure\nExtracts code structure into EDN format for serialization"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :meta
-        '&fn:apply $ %{} 'CodeEntry (:doc "|internal helper for fn :apply method entry")
-          :code $ quote
-            defn &fn:apply (f g)
-              fn (x)
-                g x $ f x
+        '&fn:apply $ %{} 'CodeEntry
+          :doc "|internal helper for fn :apply method entry"
+          :code $ quote $ defn &fn:apply (f g)
+            fn (x)
+              g x $ f x
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Fn)
-              :args $ []
-                :: 'Fn $ {} (:return 'B)
-                  :args $ [] 'A
-                :: 'Fn $ {} (:return 'C)
-                  :args $ [] 'A 'B
-              :generics $ [] 'A 'B 'C
+          :schema $ :: 'Fn $ {} (:return 'Fn)
+            :args $ []
+              :: 'Fn $ {} (:return 'B)
+                :args $ [] 'A
+              :: 'Fn $ {} (:return 'C)
+                :args $ [] 'A 'B
+            :generics $ [] 'A 'B 'C
           :tags $ #{} :internal
-        '&fn:bind $ %{} 'CodeEntry (:doc "|internal helper for fn :bind method entry")
-          :code $ quote
-            defn &fn:bind (m f)
-              fn (x)
-                f (m x) x
+        '&fn:bind $ %{} 'CodeEntry
+          :doc "|internal helper for fn :bind method entry"
+          :code $ quote $ defn &fn:bind (m f)
+            fn (x)
+              f (m x) x
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Fn)
-              :args $ []
-                :: 'Fn $ {} (:return 'B)
-                  :args $ [] 'A
-                :: 'Fn $ {} (:return 'C)
-                  :args $ [] 'B 'A
-              :generics $ [] 'A 'B 'C
+          :schema $ :: 'Fn $ {} (:return 'Fn)
+            :args $ []
+              :: 'Fn $ {} (:return 'B)
+                :args $ [] 'A
+              :: 'Fn $ {} (:return 'C)
+                :args $ [] 'B 'A
+            :generics $ [] 'A 'B 'C
           :tags $ #{} :internal
-        '&fn:map $ %{} 'CodeEntry (:doc "|internal helper for fn :map method entry")
-          :code $ quote
-            defn &fn:map (f g)
-              fn (x)
-                f $ g x
+        '&fn:map $ %{} 'CodeEntry
+          :doc "|internal helper for fn :map method entry"
+          :code $ quote $ defn &fn:map (f g)
+            fn (x)
+              f $ g x
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Fn)
-              :args $ []
-                :: 'Fn $ {} (:return 'C)
-                  :args $ [] 'B
-                :: 'Fn $ {} (:return 'B)
-                  :args $ [] 'A
-              :generics $ [] 'A 'B 'C
+          :schema $ :: 'Fn $ {} (:return 'Fn)
+            :args $ []
+              :: 'Fn $ {} (:return 'C)
+                :args $ [] 'B
+              :: 'Fn $ {} (:return 'B)
+                :args $ [] 'A
+            :generics $ [] 'A 'B 'C
           :tags $ #{} :internal
-        '&fn:mappend $ %{} 'CodeEntry (:doc "|internal helper for fn :mappend method entry")
-          :code $ quote
-            defn &fn:mappend (f g)
-              fn (x)
+        '&fn:mappend $ %{} 'CodeEntry
+          :doc "|internal helper for fn :mappend method entry"
+          :code $ quote $ defn &fn:mappend (f g)
+            fn (x)
+              &let
+                v1 $ f x
                 &let
-                  v1 $ f x
-                  &let
-                    v2 $ g x
-                    if (list? v1) (&list:concat v1 v2)
-                      if (map? v1) (merge v1 v2)
-                        if (set? v1) (union v1 v2)
-                          if (string? v1) (&str:concat v1 v2) (.mappend v1 v2)
+                  v2 $ g x
+                  if (list? v1) (&list:concat v1 v2)
+                    if (map? v1) (merge v1 v2)
+                      if (set? v1) (union v1 v2)
+                        if (string? v1) (&str:concat v1 v2) (.mappend v1 v2)
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Fn)
-              :args $ []
-                :: 'Fn $ {} (:return 'B)
-                  :args $ [] 'A
-                :: 'Fn $ {} (:return 'B)
-                  :args $ [] 'A
-              :generics $ [] 'A 'B
+          :schema $ :: 'Fn $ {} (:return 'Fn)
+            :args $ []
+              :: 'Fn $ {} (:return 'B)
+                :args $ [] 'A
+              :: 'Fn $ {} (:return 'B)
+                :args $ [] 'A
+            :generics $ [] 'A 'B
           :tags $ #{} :internal
-        '&format-ternary-tree $ %{} 'CodeEntry (:doc "|internal function for formatting ternary tree\nSyntax: (&format-ternary-tree tree)\nParams: tree (ternary tree structure)\nReturns: formatted string\nFormats internal ternary tree data structure for debugging")
+        '&format-ternary-tree $ %{} 'CodeEntry
+          :doc "|internal function for formatting ternary tree\nSyntax: (&format-ternary-tree tree)\nParams: tree (ternary tree structure)\nReturns: formatted string\nFormats internal ternary tree data structure for debugging"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'List
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'List
           :tags $ #{} :builtin :internal
-        '&fs-read-dir $ %{} 'CodeEntry (:doc "|内部目录枚举边界；显式接收 Result 与 FsPath 定义、guest path 和宿主错误前缀。")
+        '&fs-read-dir $ %{} 'CodeEntry
+          :doc "|内部目录枚举边界；显式接收 Result 与 FsPath 定义、guest path 和宿主错误前缀。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'EnumDef 'StructDef 'String 'String
-              :return $ :: 'Result (:: 'List 'FsPath) 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'EnumDef 'StructDef 'String 'String
+            :return $ :: 'Result (:: 'List 'FsPath) 'String
           :tags $ #{} :builtin :file :internal :io
-        '&fs-read-text $ %{} 'CodeEntry (:doc "|内部 UTF-8 文件读取边界；显式接收 Result 原型和宿主错误前缀，供 FsPath wrapper 与 backend lowering 使用。")
+        '&fs-read-text $ %{} 'CodeEntry
+          :doc "|内部 UTF-8 文件读取边界；显式接收 Result 原型和宿主错误前缀，供 FsPath wrapper 与 backend lowering 使用。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'EnumDef 'String 'String
-              :return $ :: 'Result 'String 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'EnumDef 'String 'String
+            :return $ :: 'Result 'String 'String
           :tags $ #{} :builtin :file :internal :io
-        '&fs-write-text $ %{} 'CodeEntry (:doc "|内部 UTF-8 文件写入边界；显式接收 Result 原型和宿主错误前缀，供 FsPath wrapper 与 backend lowering 使用。")
+        '&fs-write-text $ %{} 'CodeEntry
+          :doc "|内部 UTF-8 文件写入边界；显式接收 Result 原型和宿主错误前缀，供 FsPath wrapper 与 backend lowering 使用。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'EnumDef 'String 'String 'String
-              :return $ :: 'Result 'Unit 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'EnumDef 'String 'String 'String
+            :return $ :: 'Result 'Unit 'String
           :tags $ #{} :builtin :file :internal :io
         '&get-args $ %{} 'CodeEntry (:doc "|读取宿主进程参数的内部实现。")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ []
-              :features $ #{} :env :io
-              :return $ :: 'List 'String
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :features $ #{} :env :io
+            :return $ :: 'List 'String
           :tags $ #{} :builtin :env :internal :io
-        '&get-calcit-backend $ %{} 'CodeEntry (:doc "|internal function for getting Calcit backend\nSyntax: (&get-calcit-backend)\nParams: none\nReturns: keyword indicating backend\nReturns current backend like :cr (Calcit Runner) or :js (JavaScript)")
+        '&get-calcit-backend $ %{} 'CodeEntry
+          :doc "|internal function for getting Calcit backend\nSyntax: (&get-calcit-backend)\nParams: none\nReturns: keyword indicating backend\nReturns current backend like :cr (Calcit Runner) or :js (JavaScript)"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ []
           :tags $ #{} :builtin :internal :io
-        '&get-calcit-running-mode $ %{} 'CodeEntry (:doc "|internal function for getting Calcit running mode\nSyntax: (&get-calcit-running-mode)\nParams: none\nReturns: keyword indicating mode\nReturns current running mode like :dev, :release, or :test")
+        '&get-calcit-running-mode $ %{} 'CodeEntry
+          :doc "|internal function for getting Calcit running mode\nSyntax: (&get-calcit-running-mode)\nParams: none\nReturns: keyword indicating mode\nReturns current running mode like :dev, :release, or :test"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ []
           :tags $ #{} :builtin :internal :io
-        '&get-def-doc $ %{} 'CodeEntry (:doc "|internal function for reading definition doc metadata (cr/eval runtime only)\nSyntax: (&get-def-doc ns/def)\nParams: target (string or symbol in `ns/def` form)\nReturns: string\nReturns the `:doc` text stored on a loaded definition, or empty string when missing. Not available in calcit-js.")
+        '&get-def-doc $ %{} 'CodeEntry
+          :doc "|internal function for reading definition doc metadata (cr/eval runtime only)\nSyntax: (&get-def-doc ns/def)\nParams: target (string or symbol in `ns/def` form)\nReturns: string\nReturns the `:doc` text stored on a loaded definition, or empty string when missing. Not available in calcit-js."
           :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ assert= true
-              includes? (&get-def-doc |calcit.core/map) |map
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'Dynamic
+          :examples $ [] $ quote
+            assert= true $ includes? (&get-def-doc |calcit.core/map) |map
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal :io :meta
-        '&get-def-schema $ %{} 'CodeEntry (:doc "|internal function for reading definition schema metadata (cr/eval runtime only)\nSyntax: (&get-def-schema ns/def)\nParams: target (string or symbol in `ns/def` form)\nReturns: EDN data\nReturns the `:schema` value stored on a loaded definition as EDN data. Not available in calcit-js.")
+        '&get-def-schema $ %{} 'CodeEntry
+          :doc "|internal function for reading definition schema metadata (cr/eval runtime only)\nSyntax: (&get-def-schema ns/def)\nParams: target (string or symbol in `ns/def` form)\nReturns: EDN data\nReturns the `:schema` value stored on a loaded definition as EDN data. Not available in calcit-js."
           :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ assert= :fn
-              &enum:nth (&get-def-schema |calcit.core/map) 0
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic
+          :examples $ [] $ quote
+            assert= :fn $ &enum:nth (&get-def-schema |calcit.core/map) 0
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal :io :meta
-        '&get-env $ %{} 'CodeEntry (:doc "|internal function for getting environment variables\nSyntax: (get-env var-name)\nParams: var-name (string)\nReturns: string value or nil\nGets environment variable value, returns nil if not found")
+        '&get-env $ %{} 'CodeEntry
+          :doc "|internal function for getting environment variables\nSyntax: (get-env var-name)\nParams: var-name (string)\nReturns: string value or nil\nGets environment variable value, returns nil if not found"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String
-              :return $ :: 'Optional 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Optional 'String
           :tags $ #{} :builtin :env :internal :io
-        '&get-in $ %{} 'CodeEntry (:doc "|Internal nullable traversal primitive used by the public Option-returning get-in API.")
-          :code $ quote
-            defn &get-in (base path)
-              if
-                not $ list? path
-                raise $ str-spaced "|expects path in a list, got:" path
-              if (nil? base) base $ list-match path
-                () base
-                (y0 ys)
-                  recur (get base y0) ys
+        '&get-in $ %{} 'CodeEntry
+          :doc "|Internal nullable traversal primitive used by the public Option-returning get-in API."
+          :code $ quote $ defn &get-in (base path)
+            if
+              not $ list? path
+              raise $ str-spaced "|expects path in a list, got:" path
+            if (nil? base) base $ list-match path
+              () base
+              (y0 ys)
+                recur (get base y0) ys
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Dynamic (:: 'List 'K)
-              :generics $ [] 'K
-              :return $ :: 'Optional 'Dynamic
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Dynamic $ :: 'List 'K
+            :generics $ [] 'K
+            :return $ :: 'Optional 'Dynamic
           :tags $ #{} :internal
-        '&get-os $ %{} 'CodeEntry (:doc "|internal function for getting OS information\nSyntax: (&get-os)\nParams: none\nReturns: keyword indicating OS\nReturns current operating system like :linux, :macos, :windows")
+        '&get-os $ %{} 'CodeEntry
+          :doc "|internal function for getting OS information\nSyntax: (&get-os)\nParams: none\nReturns: keyword indicating OS\nReturns current operating system like :linux, :macos, :windows"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ []
           :tags $ #{} :builtin :internal :io
-        '&get-raw $ %{} 'CodeEntry (:doc "|Internal raw lookup dispatcher for collection algorithms and typed Struct traversal. Public optional lookups use get/get-in; required Struct fields use (:field value).")
-          :code $ quote
-            defn &get-raw (base k)
-              cond
-                  list? base
-                  &list:nth base k
-                (map? base) (&map:get base k)
-                (string? base) (&str:nth base k)
-                (enum? base) (&enum:nth base k)
-                (struct? base) (&struct:get base k)
-                true $ raise (str-spaced |&get-raw |expected |a |collection |or |struct, |got: base)
+        '&get-raw $ %{} 'CodeEntry
+          :doc "|Internal raw lookup dispatcher for collection algorithms and typed Struct traversal. Public optional lookups use get/get-in; required Struct fields use (:field value)."
+          :code $ quote $ defn &get-raw (base k)
+            cond
+                list? base
+                &list:nth base k
+              (map? base) (&map:get base k)
+              (string? base) (&str:nth base k)
+              (enum? base) (&enum:nth base k)
+              (struct? base) (&struct:get base k)
+              true $ raise $ str-spaced |&get-raw |expected |a |collection |or |struct, |got: base
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic 'Dynamic
           :tags $ #{} :internal
-        '&hash $ %{} 'CodeEntry (:doc "|internal function for hashing\nSyntax: (&hash value)\nParams: value (any)\nReturns: number (hash code)\nComputes hash code for any Calcit value for use in hash tables")
+        '&hash $ %{} 'CodeEntry
+          :doc "|internal function for hashing\nSyntax: (&hash value)\nParams: value (any)\nReturns: number (hash code)\nComputes hash code for any Calcit value for use in hash tables"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal
-        '&impl::new $ %{} 'CodeEntry (:doc "|internal function for creating trait impl records\nSyntax: (&impl::new trait-or-name (method value) ...)\nParams: trait-or-name (trait/tag/symbol/string), method entries (pairs)\nReturns: impl\nAccepts method key as .method, :tag, symbol, or string")
+        '&impl::new $ %{} 'CodeEntry
+          :doc "|internal function for creating trait impl records\nSyntax: (&impl::new trait-or-name (method value) ...)\nParams: trait-or-name (trait/tag/symbol/string), method entries (pairs)\nReturns: impl\nAccepts method key as .method, :tag, symbol, or string"
           :code $ quote &runtime-implementation
           :examples $ []
             quote $ do
               deftrait DemoTrait $ .show :fn
-              &impl::new DemoTrait $ :: .show
-                fn (x) x
-            quote $ &impl::new :DemoImpl
-              [] :show $ fn (x) x
+              &impl::new DemoTrait $ :: .show $ fn (x) x
+            quote $ &impl::new :DemoImpl $ [] :show
+              fn (x) x
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
-        '&impl:get $ %{} 'CodeEntry (:doc "|internal function for getting impl entry by name\nSyntax: (&impl:get impl name)\nParams: impl (impl), name (tag/string/symbol/.method)\nReturns: any\nReturns impl entry value by method name")
+        '&impl:get $ %{} 'CodeEntry
+          :doc "|internal function for getting impl entry by name\nSyntax: (&impl:get impl name)\nParams: impl (impl), name (tag/string/symbol/.method)\nReturns: any\nReturns impl entry value by method name"
           :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ do
+          :examples $ [] $ quote
+            do
               deftrait DemoTrait $ .show :fn
-              def DemoImpl $ &impl::new DemoTrait
-                :: .show $ fn (x) x
+              def DemoImpl $ &impl::new DemoTrait $ :: .show
+                fn (x) x
               fn? $ &impl:get DemoImpl .show
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Impl 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Impl 'Dynamic
           :tags $ #{} :builtin :internal
-        '&impl:nth $ %{} 'CodeEntry (:doc "|internal function for getting impl entry by index\nSyntax: (&impl:nth impl index)\nParams: impl (impl), index (number)\nReturns: any\nReturns impl entry value by index")
+        '&impl:nth $ %{} 'CodeEntry
+          :doc "|internal function for getting impl entry by index\nSyntax: (&impl:nth impl index)\nParams: impl (impl), index (number)\nReturns: any\nReturns impl entry value by index"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Impl 'Number
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Impl 'Number
           :tags $ #{} :builtin :internal
-        '&impl:origin $ %{} 'CodeEntry (:doc "|Internal nullable primitive for reading the trait origin stored on an impl.")
+        '&impl:origin $ %{} 'CodeEntry
+          :doc "|Internal nullable primitive for reading the trait origin stored on an impl."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Impl
-              :return $ :: 'Optional 'Trait
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Impl
+            :return $ :: 'Optional 'Trait
           :tags $ #{} :builtin :internal
-        '&include $ %{} 'CodeEntry (:doc "|internal function for including in set\nSyntax: (&include set element)\nParams: set (set), element (any)\nReturns: set\nReturns new set with element included")
+        '&include $ %{} 'CodeEntry
+          :doc "|internal function for including in set\nSyntax: (&include set element)\nParams: set (set), element (any)\nReturns: set\nReturns new set with element included"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'T) 'T
-              :generics $ [] 'T
-              :return $ :: 'Set 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Set 'T) 'T
+            :generics $ [] 'T
+            :return $ :: 'Set 'T
           :tags $ #{} :builtin :internal
         '&init-builtin-impls! $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-enum-impls) (identity &core-struct-impls) (identity &core-scalar-impls) (identity &core-ref-impls) (identity Add) (identity Debug) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show) (identity Sliceable)
-              if
-                &= (&get-calcit-backend) :js
-                register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :ref &core-ref-impls
+          :code $ quote $ defn &init-builtin-impls! ()
+            ; "this function to make sure builtin impls are loaded"
+            identity &core-number-impls
+            identity &core-string-impls
+            identity &core-set-impls
+            identity &core-list-impls
+            identity &core-map-impls
+            identity &core-fn-impls
+            identity &core-enum-impls
+            identity &core-struct-impls
+            identity &core-scalar-impls
+            identity &core-ref-impls
+            identity Add
+            identity Debug
+            identity Eq
+            identity Len
+            identity Mappable
+            identity Multiply
+            identity Show
+            identity Sliceable
+            if
+              &=
+                &get-calcit-backend
+                , :js
+              register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :ref &core-ref-impls
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
           :tags $ #{} :internal
-        '&let $ %{} 'CodeEntry (:doc "|internal syntax for local binding (binds only 1 local)\nSyntax: (&let [binding value] body)\nParams: binding (symbol), value (any), body (expression)\nReturns: result of body with binding in scope\nCreates a local binding for a single variable")
+        '&let $ %{} 'CodeEntry
+          :doc "|internal syntax for local binding (binds only 1 local)\nSyntax: (&let [binding value] body)\nParams: binding (symbol), value (any), body (expression)\nReturns: result of body with binding in scope\nCreates a local binding for a single variable"
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ assert= 6
-              &let
-                x $ + 1 2
-                * x 2
-            quote $ assert= |done
-              &let (label |done) label
+            quote $ assert= 6 $ &let
+              x $ + 1 2
+              * x 2
+            quote $ assert= |done $ &let (label |done) label
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
         '&list-match-internal $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro &list-match-internal (v branch1 pair branch2)
-              quasiquote $ if (&list:empty? ~v)
-                &let () ~@branch1
+          :code $ quote $ defmacro &list-match-internal (v branch1 pair branch2)
+            quasiquote $ if (&list:empty? ~v)
+              &let () ~@branch1
+              &let
+                  ~ $ &list:first pair
+                  &list:nth ~v 0
                 &let
-                    ~ $ &list:first pair
-                    &list:nth ~v 0
-                  &let
-                      ~ $ &list:nth pair 1
-                      &list:slice ~v 1
-                    &let () ~@branch2
+                    ~ $ &list:nth pair 1
+                    &list:slice ~v 1
+                  &let () ~@branch2
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic) 'SyntaxList 'SyntaxList 'SyntaxList
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] (:: 'Expr 'Dynamic) 'SyntaxList 'SyntaxList 'SyntaxList
           :tags $ #{} :internal :macro
         '&list:append $ %{} 'CodeEntry (:doc |)
-          :code $ quote (&runtime-implementation)
+          :code $ quote $ &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'T
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-        '&list:apply $ %{} 'CodeEntry (:doc "|Internal List<T> apply helper. Every function must accept T and return one shared U; results are concatenated as List<U>. Mixed input/function types must be normalized or split before calling.")
-          :code $ quote
-            defn &list:apply (xs fs)
-              &list:concat & $ map fs
-                fn (f)
-                  map xs $ fn (x) (f x)
+        '&list:apply $ %{} 'CodeEntry
+          :doc "|Internal List<T> apply helper. Every function must accept T and return one shared U; results are concatenated as List<U>. Mixed input/function types must be normalized or split before calling."
+          :code $ quote $ defn &list:apply (xs fs)
+            &list:concat & $ map fs $ fn (f)
+              map xs $ fn (x) (f x)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-                :: 'List $ :: 'Fn
-                  {} (:return 'U)
-                    :args $ [] 'T
-              :generics $ [] 'T 'U
-              :return $ :: 'List 'U
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'List $ :: 'Fn $ {} (:return 'U)
+                :args $ [] 'T
+            :generics $ [] 'T 'U
+            :return $ :: 'List 'U
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |preserves-homogeneous-function-result-types)
-              :code $ quote
-                do
-                  assert-type
-                      [] 1 2
-                      , .apply $ [] str
-                        fn (x)
-                          str $ * x 2
-                    :: 'List 'String
-                  assert= ([] |1 |2 |2 |4)
-                    ([] 1 2) .apply $ [] str
-                      fn (x)
-                        str $ * x 2
-        '&list:assoc $ %{} 'CodeEntry (:doc "|internal function for list association\nSyntax: (&list:assoc list index element)\nParams: list (list), index (number), element (any)\nReturns: list\nReturns new list with element at specified index")
+          :tests $ [] $ %{} 'TestEntry
+            :name |preserves-homogeneous-function-result-types
+            :code $ quote $ do
+              assert-type
+                  [] 1 2
+                  , .apply $ [] str $ fn (x)
+                    str $ * x 2
+                :: 'List 'String
+              assert= ([] |1 |2 |2 |4)
+                ([] 1 2) .apply $ [] str $ fn (x)
+                  str $ * x 2
+        '&list:assoc $ %{} 'CodeEntry
+          :doc "|internal function for list association\nSyntax: (&list:assoc list index element)\nParams: list (list), index (number), element (any)\nReturns: list\nReturns new list with element at specified index"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'Number 'T
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'Number 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |updates-list-item-by-index)
-              :code $ quote
-                assert= ([] 1 3)
-                  &list:assoc ([] 1 2) 1 3
-              :tags $ #{} :core :unit
-        '&list:assoc-after $ %{} 'CodeEntry (:doc "|internal function for associating after element\nSyntax: (&list:assoc-after list target element)\nParams: list (list), target (any), element (any)\nReturns: list\nInserts element after first occurrence of target")
+          :tests $ [] $ %{} 'TestEntry
+            :name |updates-list-item-by-index
+            :code $ quote $ assert= ([] 1 3)
+              &list:assoc ([] 1 2) 1 3
+            :tags $ #{} :core :unit
+        '&list:assoc-after $ %{} 'CodeEntry
+          :doc "|internal function for associating after element\nSyntax: (&list:assoc-after list target element)\nParams: list (list), target (any), element (any)\nReturns: list\nInserts element after first occurrence of target"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'Number 'T
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'Number 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-        '&list:assoc-before $ %{} 'CodeEntry (:doc "|internal function for associating before element\nSyntax: (&list:assoc-before list target element)\nParams: list (list), target (any), element (any)\nReturns: list\nInserts element before first occurrence of target")
+        '&list:assoc-before $ %{} 'CodeEntry
+          :doc "|internal function for associating before element\nSyntax: (&list:assoc-before list target element)\nParams: list (list), target (any), element (any)\nReturns: list\nInserts element before first occurrence of target"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'Number 'T
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'Number 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
         '&list:butlast $ %{} 'CodeEntry (:doc |)
-          :code $ quote (&runtime-implementation)
+          :code $ quote $ &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |drops-list-tail)
+            :code $ quote $ assert= ([] 1 2)
+              &list:butlast $ [] 1 2 3
+            :tags $ #{} :core :unit
+        '&list:concat $ %{} 'CodeEntry
+          :doc "|internal function for concatenating lists\nSyntax: (&list:concat list1 list2)\nParams: list1 (list), list2 (list)\nReturns: list\nReturns new list with elements from both lists"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :generics $ [] 'T
+            :rest $ :: 'List 'T
+            :return $ :: 'List 'T
+          :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry
+            :name |concatenates-many-lists
+            :code $ quote $ assert= ([] 1 2 4 5 7 8)
+              &list:concat ([] 1 2) ([] 4 5) ([] 7 8)
+            :tags $ #{} :core :unit
+        '&list:contains? $ %{} 'CodeEntry
+          :doc "|internal function for checking if list contains element\nSyntax: (&list:contains? list element)\nParams: list (list), element (any)\nReturns: boolean\nReturns true if list contains element"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] (:: 'List 'T) 'Number
+            :generics $ [] 'T
+          :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry
+            :name |checks-list-index-bounds
+            :code $ quote $ do
+              assert= true $ &list:contains? ([] :a :b :c) 1
+              assert= false $ &list:contains? ([] :a :b :c) 3
+            :tags $ #{} :core :unit
+        '&list:count $ %{} 'CodeEntry
+          :doc "|internal function for counting list elements\nSyntax: (&list:count list)\nParams: list (list)\nReturns: number\nReturns number of elements in list"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+          :tags $ #{} :builtin :internal
+        '&list:dissoc $ %{} 'CodeEntry
+          :doc "|internal function for list dissociation\nSyntax: (&list:dissoc list index)\nParams: list (list), index (number)\nReturns: list\nReturns new list without element at specified index"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'Number
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
           :tests $ []
-            %{} 'TestEntry (:name |drops-list-tail)
-              :code $ quote
-                assert= ([] 1 2)
-                  &list:butlast $ [] 1 2 3
+            %{} 'TestEntry
+              :name |removes-list-item-by-index
+              :code $ quote $ assert= ([] :a :b)
+                &list:dissoc ([] :a :b :c) 2
               :tags $ #{} :core :unit
-        '&list:concat $ %{} 'CodeEntry (:doc "|internal function for concatenating lists\nSyntax: (&list:concat list1 list2)\nParams: list1 (list), list2 (list)\nReturns: list\nReturns new list with elements from both lists")
+            %{} 'TestEntry
+              :name |removes-index-directly
+              :code $ quote $ assert= ([] :a :c)
+                &list:dissoc ([] :a :b :c) 1
+              :tags $ #{} :core :unit
+        '&list:distinct $ %{} 'CodeEntry
+          :doc "|internal function for getting distinct list elements\nSyntax: (&list:distinct list)\nParams: list (list)\nReturns: list\nReturns new list with duplicate elements removed"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ []
-              :generics $ [] 'T
-              :rest $ :: 'List 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |concatenates-many-lists)
-              :code $ quote
-                assert= ([] 1 2 4 5 7 8)
-                  &list:concat ([] 1 2) ([] 4 5) ([] 7 8)
-              :tags $ #{} :core :unit
-        '&list:contains? $ %{} 'CodeEntry (:doc "|internal function for checking if list contains element\nSyntax: (&list:contains? list element)\nParams: list (list), element (any)\nReturns: boolean\nReturns true if list contains element")
-          :code $ quote &runtime-implementation
+        '&list:empty $ %{} 'CodeEntry
+          :doc "|internal helper for list :empty method entry"
+          :code $ quote $ defn &list:empty (_xs) ([])
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] (:: 'List 'T) 'Number
-              :generics $ [] 'T
-          :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |checks-list-index-bounds)
-              :code $ quote
-                do
-                  assert= true $ &list:contains? ([] :a :b :c) 1
-                  assert= false $ &list:contains? ([] :a :b :c) 3
-              :tags $ #{} :core :unit
-        '&list:count $ %{} 'CodeEntry (:doc "|internal function for counting list elements\nSyntax: (&list:count list)\nParams: list (list)\nReturns: number\nReturns number of elements in list")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] (:: 'List 'T)
-              :generics $ [] 'T
-          :tags $ #{} :builtin :internal
-        '&list:dissoc $ %{} 'CodeEntry (:doc "|internal function for list dissociation\nSyntax: (&list:dissoc list index)\nParams: list (list), index (number)\nReturns: list\nReturns new list without element at specified index")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'Number
-              :generics $ [] 'T
-              :return $ :: 'List 'T
-          :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |removes-list-item-by-index)
-              :code $ quote
-                assert= ([] :a :b)
-                  &list:dissoc ([] :a :b :c) 2
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |removes-index-directly)
-              :code $ quote
-                assert= ([] :a :c)
-                  &list:dissoc ([] :a :b :c) 1
-              :tags $ #{} :core :unit
-        '&list:distinct $ %{} 'CodeEntry (:doc "|internal function for getting distinct list elements\nSyntax: (&list:distinct list)\nParams: list (list)\nReturns: list\nReturns new list with duplicate elements removed")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'List 'T
-          :tags $ #{} :builtin :internal
-        '&list:empty $ %{} 'CodeEntry (:doc "|internal helper for list :empty method entry")
-          :code $ quote
-            defn &list:empty (_xs) ([])
-          :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :internal
-        '&list:empty? $ %{} 'CodeEntry (:doc "|internal function for checking if list is empty\nSyntax: (&list:empty? list)\nParams: list (list)\nReturns: boolean\nReturns true if list has no elements")
+        '&list:empty? $ %{} 'CodeEntry
+          :doc "|internal function for checking if list is empty\nSyntax: (&list:empty? list)\nParams: list (list)\nReturns: boolean\nReturns true if list has no elements"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] (:: 'List 'T)
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
         '&list:filter $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &list:filter (xs f)
-              reduce xs ([])
-                defn %&list:filter (acc x)
-                  if (f x) (append acc x) acc
+          :code $ quote $ defn &list:filter (xs f)
+            reduce xs ([])
+              defn %&list:filter (acc x)
+                if (f x) (append acc x) acc
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-                :: 'Fn $ {} (:return 'Bool)
-                  :args $ [] 'T
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'Bool)
+                :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |filters-list-items)
-              :code $ quote
-                assert= ([] 3 4)
-                  &list:filter ([] 1 2 3 4)
-                    fn (x) (> x 2)
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |filters-list-items
+            :code $ quote $ assert= ([] 3 4)
+              &list:filter ([] 1 2 3 4)
+                fn (x) (> x 2)
+            :tags $ #{} :core :unit
         '&list:filter-pair $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &list:filter-pair (xs f)
-              if (list? xs)
-                &list:filter xs $ defn %filter-pair (pair)
-                  assert "|expected a pair" $ and (list? pair)
-                    = 2 $ count pair
-                  f (&list:nth pair 0) (&list:nth pair 1)
-                raise $ str-spaced "|expected list or map from `filter-pair`, got:" xs
+          :code $ quote $ defn &list:filter-pair (xs f)
+            if (list? xs)
+              &list:filter xs $ defn %filter-pair (pair)
+                assert "|expected a pair" $ and (list? pair)
+                  = 2 $ count pair
+                f (&list:nth pair 0) (&list:nth pair 1)
+              raise $ str-spaced "|expected list or map from `filter-pair`, got:" xs
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'P) 'Fn
-              :generics $ [] 'P
-              :return $ :: 'List 'P
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'P) 'Fn
+            :generics $ [] 'P
+            :return $ :: 'List 'P
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |filters-key-value-pairs)
-              :code $ quote
-                assert=
-                  [] $ [] :b 12
-                  &list:filter-pair
-                    [] ([] :a 2) ([] :b 12)
-                    fn (k v) (> v 10)
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |filters-key-value-pairs
+            :code $ quote $ assert=
+              [] $ [] :b 12
+              &list:filter-pair
+                [] ([] :a 2) ([] :b 12)
+                fn (k v) (> v 10)
+            :tags $ #{} :core :unit
         '&list:find-last $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &list:find-last (xs f)
-              foldr-shortcut xs (%none) (%none)
-                fn (_acc x)
-                  if (f x)
-                    :: true $ %some x
-                    :: false $ %none
+          :code $ quote $ defn &list:find-last (xs f)
+            foldr-shortcut xs (%none) (%none)
+              fn (_acc x)
+                if (f x)
+                  :: true $ %some x
+                  :: false $ %none
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-                :: 'Fn $ {} (:return 'Bool)
-                  :args $ [] 'T
-              :generics $ [] 'T
-              :return $ :: 'Option 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'Bool)
+                :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'T
           :tags $ #{} :internal
           :tests $ []
-            %{} 'TestEntry (:name |finds-last-matching-item)
-              :code $ quote
-                assert= (%some 9)
-                  &list:find-last ([] 1 3 5 7 9)
-                    fn (x) (> x 5)
+            %{} 'TestEntry
+              :name |finds-last-matching-item
+              :code $ quote $ assert= (%some 9)
+                &list:find-last ([] 1 3 5 7 9)
+                  fn (x) (> x 5)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |finds-last-no-match)
-              :code $ quote
-                assert= (%none)
-                  &list:find-last ([] 1 3 5)
-                    fn (x) (> x 8)
+            %{} 'TestEntry
+              :name |finds-last-no-match
+              :code $ quote $ assert= (%none)
+                &list:find-last ([] 1 3 5)
+                  fn (x) (> x 8)
               :tags $ #{} :core :unit
         '&list:find-last-index $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &list:find-last-index (xs f)
-              foldr-shortcut xs
-                dec $ count xs
-                %none
-                fn (idx x)
-                  if (f x)
-                    :: true $ %some idx
-                    :: false $ &- 1 idx
+          :code $ quote $ defn &list:find-last-index (xs f)
+            foldr-shortcut xs
+              dec $ count xs
+              %none
+              fn (idx x)
+                if (f x)
+                  :: true $ %some idx
+                  :: false $ &- 1 idx
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-                :: 'Fn $ {} (:return 'Bool)
-                  :args $ [] 'T
-              :generics $ [] 'T
-              :return $ :: 'Option 'Number
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'Bool)
+                :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'Number
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |finds-last-index-boundaries)
-              :code $ quote
-                do
-                  assert= (%some 4)
-                    &list:find-last-index ([] 1 3 5 7 9)
-                      fn (x) (> x 5)
-                  assert= (%none)
-                    &list:find-last-index ([] 1 3)
-                      fn (x) (> x 8)
-              :tags $ #{} :core :unit
-        '&list:first $ %{} 'CodeEntry (:doc "|internal function for getting first list element\nSyntax: (&list:first list)\nParams: list (list)\nReturns: any or nil\nReturns first element of list, nil if empty")
+          :tests $ [] $ %{} 'TestEntry
+            :name |finds-last-index-boundaries
+            :code $ quote $ do
+              assert= (%some 4)
+                &list:find-last-index ([] 1 3 5 7 9)
+                  fn (x) (> x 5)
+              assert= (%none)
+                &list:find-last-index ([] 1 3)
+                  fn (x) (> x 8)
+            :tags $ #{} :core :unit
+        '&list:first $ %{} 'CodeEntry
+          :doc "|internal function for getting first list element\nSyntax: (&list:first list)\nParams: list (list)\nReturns: any or nil\nReturns first element of list, nil if empty"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'Optional 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'Optional 'T
           :tags $ #{} :builtin :internal
           :tests $ []
-            %{} 'TestEntry (:name |returns-first-directly)
-              :code $ quote
-                assert= 1 $ &list:first ([] 1 2)
+            %{} 'TestEntry
+              :name |returns-first-directly
+              :code $ quote $ assert= 1
+                &list:first $ [] 1 2
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |returns-nil-for-empty-list)
-              :code $ quote
-                assert= nil $ &list:first ([])
+            %{} 'TestEntry
+              :name |returns-nil-for-empty-list
+              :code $ quote $ assert= nil
+                &list:first $ []
               :tags $ #{} :core :unit
         '&list:flatten $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &list:flatten (xs)
-              if (list? xs)
-                &list:concat & $ map xs &list:flatten
-                [] xs
+          :code $ quote $ defn &list:flatten (xs)
+            if (list? xs)
+              &list:concat & $ map xs &list:flatten
+              [] xs
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'List)
-              :args $ [] 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'List)
+            :args $ [] 'Dynamic
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |flattens-nested-lists-and-sets)
-              :code $ quote
-                assert= ([] 1 2 3 4 5 6 7 8)
-                  &list:flatten $ [] 1 2
-                    [] 3 4 $ [] 5 6
-                    , 7 8
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |flattens-nested-lists-and-sets
+            :code $ quote $ assert=
+              [] 1 2 3 4 5 6 7 8
+              &list:flatten $ [] 1 2
+                [] 3 4 $ [] 5 6
+                , 7 8
+            :tags $ #{} :core :unit
         '&list:foldl $ %{} 'CodeEntry (:doc |)
-          :code $ quote (&runtime-implementation)
+          :code $ quote $ &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'U)
-              :args $ [] (:: 'List 'T) 'U
-                :: 'Fn $ {} (:return 'U)
-                  :args $ [] 'U 'T
-              :generics $ [] 'T 'U
+          :schema $ :: 'Fn $ {} (:return 'U)
+            :args $ [] (:: 'List 'T) 'U $ :: 'Fn
+              {} (:return 'U)
+                :args $ [] 'U 'T
+            :generics $ [] 'T 'U
           :tags $ #{} :builtin :internal
         '&list:foldl-shortcut $ %{} 'CodeEntry (:doc |)
-          :code $ quote (&runtime-implementation)
+          :code $ quote $ &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
-        '&list:includes? $ %{} 'CodeEntry (:doc "|internal function for checking if list includes element\nSyntax: (&list:includes? list element)\nParams: list (list), element (any)\nReturns: boolean\nReturns true if list includes element (alias for contains?)")
+        '&list:includes? $ %{} 'CodeEntry
+          :doc "|internal function for checking if list includes element\nSyntax: (&list:includes? list element)\nParams: list (list), element (any)\nReturns: boolean\nReturns true if list includes element (alias for contains?)"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] (:: 'List 'T) 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] (:: 'List 'T) 'T
+            :generics $ [] 'T
           :tags $ #{} :alias :builtin :internal
         '&list:last $ %{} 'CodeEntry (:doc |)
-          :code $ quote (&runtime-implementation)
+          :code $ quote $ &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'Optional 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'Optional 'T
           :tags $ #{} :builtin :internal
         '&list:last-index-of $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &list:last-index-of (xs item)
-              foldr-shortcut xs
-                dec $ count xs
-                %none
-                fn (idx x)
-                  if (&= item x)
-                    :: true $ %some idx
-                    :: false $ &- 1 idx
+          :code $ quote $ defn &list:last-index-of (xs item)
+            foldr-shortcut xs
+              dec $ count xs
+              %none
+              fn (idx x)
+                if (&= item x)
+                  :: true $ %some idx
+                  :: false $ &- 1 idx
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'T
-              :generics $ [] 'T
-              :return $ :: 'Option 'Number
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'Number
           :tags $ #{} :internal
         '&list:map $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &list:map (xs f)
-              foldl xs ([])
-                defn %&list:map (acc x)
-                  append acc $ f x
+          :code $ quote $ defn &list:map (xs f)
+            foldl xs ([])
+              defn %&list:map (acc x)
+                append acc $ f x
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-                :: 'Fn $ {} (:return 'U)
-                  :args $ [] 'T
-              :generics $ [] 'T 'U
-              :return $ :: 'List 'U
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'U)
+                :args $ [] 'T
+            :generics $ [] 'T 'U
+            :return $ :: 'List 'U
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |maps-items-with-function)
-              :code $ quote
-                assert= ([] 4 5 6)
-                  &list:map ([] 1 2 3)
-                    fn (x) (+ x 3)
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |maps-items-with-function
+            :code $ quote $ assert= ([] 4 5 6)
+              &list:map ([] 1 2 3)
+                fn (x) (+ x 3)
+            :tags $ #{} :core :unit
         '&list:map-pair $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &list:map-pair (xs f)
-              if (list? xs)
-                map xs $ defn %map-pair (pair)
-                  assert "|expected a pair" $ and (list? pair)
-                    = 2 $ count pair
-                  f (&list:nth pair 0) (&list:nth pair 1)
-                raise $ str-spaced "|expected list or map from `map-pair`, got:" xs
+          :code $ quote $ defn &list:map-pair (xs f)
+            if (list? xs)
+              map xs $ defn %map-pair (pair)
+                assert "|expected a pair" $ and (list? pair)
+                  = 2 $ count pair
+                f (&list:nth pair 0) (&list:nth pair 1)
+              raise $ str-spaced "|expected list or map from `map-pair`, got:" xs
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'P) 'Fn
-              :generics $ [] 'P 'U
-              :return $ :: 'List 'U
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'P) 'Fn
+            :generics $ [] 'P 'U
+            :return $ :: 'List 'U
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |maps-key-value-pairs)
-              :code $ quote
-                assert=
-                  [] ([] :a 11) ([] :b 12)
-                  &list:map-pair
-                    [] ([] :a 1) ([] :b 2)
-                    fn (k v)
-                      [] k $ + v 10
-              :tags $ #{} :core :unit
-        '&list:mappend $ %{} 'CodeEntry (:doc "|internal helper for list :mappend method entry")
-          :code $ quote
-            defn &list:mappend (x y) (&list:concat x y)
+          :tests $ [] $ %{} 'TestEntry
+            :name |maps-key-value-pairs
+            :code $ quote $ assert=
+              [] ([] :a 11) ([] :b 12)
+              &list:map-pair
+                [] ([] :a 1) ([] :b 2)
+                fn (k v)
+                  [] k $ + v 10
+            :tags $ #{} :core :unit
+        '&list:mappend $ %{} 'CodeEntry
+          :doc "|internal helper for list :mappend method entry"
+          :code $ quote $ defn &list:mappend (x y) (&list:concat x y)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) (:: 'List 'T)
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :internal
         '&list:max $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &list:max (xs)
-              if (&list:empty? xs) (%none)
-                %some $ &list:max-loop (&list:rest xs) (&list:nth xs 0)
+          :code $ quote $ defn &list:max (xs)
+            if (&list:empty? xs) (%none)
+              %some $ &list:max-loop (&list:rest xs) (&list:nth xs 0)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'Number)
-              :return $ :: 'Option 'Number
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Number
+            :return $ :: 'Option 'Number
           :tags $ #{} :internal
         '&list:max-loop $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &list:max-loop (xs acc)
-              if (&list:empty? xs) acc $ &let
-                x $ &list:nth xs 0
-                recur (&list:rest xs)
-                  if (&> x acc) x acc
+          :code $ quote $ defn &list:max-loop (xs acc)
+            if (&list:empty? xs) acc $ &let
+              x $ &list:nth xs 0
+              recur (&list:rest xs)
+                if (&> x acc) x acc
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] (:: 'List 'Number) 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] (:: 'List 'Number) 'Number
           :tags $ #{} :internal
         '&list:min $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &list:min (xs)
-              if (&list:empty? xs) (%none)
-                %some $ &list:min-loop (&list:rest xs) (&list:nth xs 0)
+          :code $ quote $ defn &list:min (xs)
+            if (&list:empty? xs) (%none)
+              %some $ &list:min-loop (&list:rest xs) (&list:nth xs 0)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'Number)
-              :return $ :: 'Option 'Number
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Number
+            :return $ :: 'Option 'Number
           :tags $ #{} :internal
         '&list:min-loop $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &list:min-loop (xs acc)
-              if (&list:empty? xs) acc $ &let
-                x $ &list:nth xs 0
-                recur (&list:rest xs)
-                  if (&< x acc) x acc
+          :code $ quote $ defn &list:min-loop (xs acc)
+            if (&list:empty? xs) acc $ &let
+              x $ &list:nth xs 0
+              recur (&list:rest xs)
+                if (&< x acc) x acc
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] (:: 'List 'Number) 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] (:: 'List 'Number) 'Number
           :tags $ #{} :internal
-        '&list:nth $ %{} 'CodeEntry (:doc "|Internal List<T> index primitive. A valid index returns T; invalid indexes fail instead of returning nil. User code should use nth for Option<T>.")
+        '&list:nth $ %{} 'CodeEntry
+          :doc "|Internal List<T> index primitive. A valid index returns T; invalid indexes fail instead of returning nil. User code should use nth for Option<T>."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'T)
-              :args $ [] (:: 'List 'T) 'Number
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] (:: 'List 'T) 'Number
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |returns-nth-directly)
-              :code $ quote
-                assert= :b $ &list:nth ([] :a :b :c) 1
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-nth-directly
+            :code $ quote $ assert= :b
+              &list:nth ([] :a :b :c) 1
+            :tags $ #{} :core :unit
         '&list:prepend $ %{} 'CodeEntry (:doc |)
-          :code $ quote (&runtime-implementation)
+          :code $ quote $ &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'T (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'T $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
         '&list:range $ %{} 'CodeEntry (:doc |)
-          :code $ quote (&runtime-implementation)
+          :code $ quote $ &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Number 'Number 'Number
-              :return $ :: 'List 'Number
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number 'Number 'Number
+            :return $ :: 'List 'Number
           :tags $ #{} :builtin :internal
-        '&list:rest $ %{} 'CodeEntry (:doc "|internal function for getting rest of list\nSyntax: (&list:rest list)\nParams: list (list)\nReturns: list\nReturns list without first element")
+        '&list:rest $ %{} 'CodeEntry
+          :doc "|internal function for getting rest of list\nSyntax: (&list:rest list)\nParams: list (list)\nReturns: list\nReturns list without first element"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |drops-list-head)
-              :code $ quote
-                assert= ([] 2 3 4)
-                  &list:rest $ [] 1 2 3 4
-              :tags $ #{} :core :unit
-        '&list:reverse $ %{} 'CodeEntry (:doc "|internal function for reversing lists\nSyntax: (&list:reverse list)\nParams: list (list)\nReturns: list\nReturns new list with elements in reverse order")
+          :tests $ [] $ %{} 'TestEntry (:name |drops-list-head)
+            :code $ quote $ assert= ([] 2 3 4)
+              &list:rest $ [] 1 2 3 4
+            :tags $ #{} :core :unit
+        '&list:reverse $ %{} 'CodeEntry
+          :doc "|internal function for reversing lists\nSyntax: (&list:reverse list)\nParams: list (list)\nReturns: list\nReturns new list with elements in reverse order"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |reverses-list-order)
-              :code $ quote
-                assert= ([] 4 3 2 1)
-                  &list:reverse $ [] 1 2 3 4
-              :tags $ #{} :core :unit
-        '&list:slice $ %{} 'CodeEntry (:doc "|internal function for slicing lists\nSyntax: (&list:slice list start end)\nParams: list (list), start (number), end (number)\nReturns: list\nReturns sublist from start to end index")
+          :tests $ [] $ %{} 'TestEntry
+            :name |reverses-list-order
+            :code $ quote $ assert= ([] 4 3 2 1)
+              &list:reverse $ [] 1 2 3 4
+            :tags $ #{} :core :unit
+        '&list:slice $ %{} 'CodeEntry
+          :doc "|internal function for slicing lists\nSyntax: (&list:slice list start end)\nParams: list (list), start (number), end (number)\nReturns: list\nReturns sublist from start to end index"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'Number 'Number
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'Number 'Number
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |slices-list-with-exclusive-end)
-              :code $ quote
-                assert= ([] :b :c :d)
-                  &list:slice ([] :a :b :c :d) 1 4
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |slices-list-with-exclusive-end
+            :code $ quote $ assert= ([] :b :c :d)
+              &list:slice ([] :a :b :c :d) 1 4
+            :tags $ #{} :core :unit
         '&list:sort $ %{} 'CodeEntry (:doc |)
-          :code $ quote (&runtime-implementation)
+          :code $ quote $ &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-                :: 'Fn $ {} (:return 'Number)
-                  :args $ [] 'T 'T
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'Number)
+                :args $ [] 'T 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |sorts-with-comparator)
-              :code $ quote
-                assert= ([] 1 2 3 4)
-                  &list:sort ([] 4 1 3 2)
-                    fn (a b) (- a b)
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |sorts-with-comparator
+            :code $ quote $ assert= ([] 1 2 3 4)
+              &list:sort ([] 4 1 3 2)
+                fn (a b) (- a b)
+            :tags $ #{} :core :unit
         '&list:sort-by $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &list:sort-by (xs f)
-              if (tag? f)
-                sort xs $ defn %&list:sort-by (a b)
-                  &compare (&get-raw a f) (&get-raw b f)
-                sort xs $ defn %&list:sort-by (a b)
-                  &compare (f a) (f b)
+          :code $ quote $ defn &list:sort-by (xs f)
+            if (tag? f)
+              sort xs $ defn %&list:sort-by (a b)
+                &compare (&get-raw a f) (&get-raw b f)
+              sort xs $ defn %&list:sort-by (a b)
+                &compare (f a) (f b)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'Dynamic
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'Dynamic
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |sorts-by-function-key)
-              :code $ quote
-                assert= ([] 1 2 3 4)
-                  &list:sort-by ([] 4 1 3 2) identity
-              :tags $ #{} :core :unit
-        '&list:to-set $ %{} 'CodeEntry (:doc "|internal function for converting list to set\nSyntax: (&list:to-set list)\nParams: list (list)\nReturns: set\nConverts list to set, removing duplicates")
+          :tests $ [] $ %{} 'TestEntry
+            :name |sorts-by-function-key
+            :code $ quote $ assert= ([] 1 2 3 4)
+              &list:sort-by ([] 4 1 3 2) identity
+            :tags $ #{} :core :unit
+        '&list:to-set $ %{} 'CodeEntry
+          :doc "|internal function for converting list to set\nSyntax: (&list:to-set list)\nParams: list (list)\nReturns: set\nConverts list to set, removing duplicates"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'Set 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'Set 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |deduplicates-list-members)
-              :code $ quote
-                assert= (#{} 1)
-                  &list:to-set $ [] 1 1 1 1
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |deduplicates-list-members
+            :code $ quote $ assert= (#{} 1)
+              &list:to-set $ [] 1 1 1 1
+            :tags $ #{} :core :unit
         '&map:add-entry $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &map:add-entry (xs pair)
-              assert "|&map:add-entry expected value in a pair" $ and (list? pair)
-                &= 2 $ count pair
-              &map:assoc xs (&list:nth pair 0) (&list:nth pair 1)
+          :code $ quote $ defn &map:add-entry (xs pair)
+            assert "|&map:add-entry expected value in a pair" $ and (list? pair)
+              &= 2 $ count pair
+            &map:assoc xs (&list:nth pair 0) (&list:nth pair 1)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V) (:: 'List 'P)
-              :generics $ [] 'K 'V 'P
-              :return $ :: 'Map 'K 'V
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V) (:: 'List 'P)
+            :generics $ [] 'K 'V 'P
+            :return $ :: 'Map 'K 'V
           :tags $ #{} :internal
-        '&map:assoc $ %{} 'CodeEntry (:doc "|internal function for map association\nSyntax: (&map:assoc map key value & key-values)\nParams: map (map), key (any), value (any), key-values (any, variadic)\nReturns: map\nReturns new map with key-value associations")
+        '&map:assoc $ %{} 'CodeEntry
+          :doc "|internal function for map association\nSyntax: (&map:assoc map key value & key-values)\nParams: map (map), key (any), value (any), key-values (any, variadic)\nReturns: map\nReturns new map with key-value associations"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V) 'K 'V
-              :generics $ [] 'K 'V
-              :return $ :: 'Map 'K 'V
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V) 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'Map 'K 'V
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |associates-map-entry-directly)
-              :code $ quote
-                assert= (&{} :a 1 :b 2)
-                  &map:assoc (&{} :a 1) :b 2
-              :tags $ #{} :core :unit
-        '&map:common-keys $ %{} 'CodeEntry (:doc "|internal function for map common keys\nSyntax: (&map:common-keys map1 map2)\nParams: map1 (map), map2 (map)\nReturns: set\nReturns keys common to both maps")
+          :tests $ [] $ %{} 'TestEntry
+            :name |associates-map-entry-directly
+            :code $ quote $ assert= (&{} :a 1 :b 2)
+              &map:assoc (&{} :a 1) :b 2
+            :tags $ #{} :core :unit
+        '&map:common-keys $ %{} 'CodeEntry
+          :doc "|internal function for map common keys\nSyntax: (&map:common-keys map1 map2)\nParams: map1 (map), map2 (map)\nReturns: set\nReturns keys common to both maps"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'W)
-              :generics $ [] 'K 'V 'W
-              :return $ :: 'Set 'K
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'W)
+            :generics $ [] 'K 'V 'W
+            :return $ :: 'Set 'K
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |reports-shared-map-keys)
-              :code $ quote
-                assert= (#{} :a)
-                  &map:common-keys (&{} :a 1 :b 2) (&{} :a 2 :c 3)
-              :tags $ #{} :core :unit
-        '&map:contains? $ %{} 'CodeEntry (:doc "|internal function for checking if map contains key\nSyntax: (&map:contains? map key)\nParams: map (map), key (any)\nReturns: boolean\nReturns true if map contains key")
+          :tests $ [] $ %{} 'TestEntry
+            :name |reports-shared-map-keys
+            :code $ quote $ assert= (#{} :a)
+              &map:common-keys (&{} :a 1 :b 2) (&{} :a 2 :c 3)
+            :tags $ #{} :core :unit
+        '&map:contains? $ %{} 'CodeEntry
+          :doc "|internal function for checking if map contains key\nSyntax: (&map:contains? map key)\nParams: map (map), key (any)\nReturns: boolean\nReturns true if map contains key"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] (:: 'Map 'K 'V) 'K
-              :generics $ [] 'K 'V
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] (:: 'Map 'K 'V) 'K
+            :generics $ [] 'K 'V
           :tags $ #{} :builtin :internal
-        '&map:count $ %{} 'CodeEntry (:doc "|internal function for counting map entries\nSyntax: (&map:count map)\nParams: map (map)\nReturns: number\nReturns number of key-value pairs in map")
+        '&map:count $ %{} 'CodeEntry
+          :doc "|internal function for counting map entries\nSyntax: (&map:count map)\nParams: map (map)\nReturns: number\nReturns number of key-value pairs in map"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
           :tags $ #{} :builtin :internal
-        '&map:destruct $ %{} 'CodeEntry (:doc "|internal function for map destructuring\nSyntax: (&map:destruct map pattern)\nParams: map (map), pattern (any)\nReturns: map\nDestructs map according to pattern")
+        '&map:destruct $ %{} 'CodeEntry
+          :doc "|internal function for map destructuring\nSyntax: (&map:destruct map pattern)\nParams: map (map), pattern (any)\nReturns: map\nDestructs map according to pattern"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
-              :return $ :: 'Optional 'Enum
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'Optional 'Enum
           :tags $ #{} :builtin :internal
-        '&map:diff-keys $ %{} 'CodeEntry (:doc "|internal function for map diff keys\nSyntax: (&map:diff-keys map1 map2)\nParams: map1 (map), map2 (map)\nReturns: set\nReturns keys that differ between maps")
+        '&map:diff-keys $ %{} 'CodeEntry
+          :doc "|internal function for map diff keys\nSyntax: (&map:diff-keys map1 map2)\nParams: map1 (map), map2 (map)\nReturns: set\nReturns keys that differ between maps"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'W)
-              :generics $ [] 'K 'V 'W
-              :return $ :: 'Set 'K
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'W)
+            :generics $ [] 'K 'V 'W
+            :return $ :: 'Set 'K
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |reports-left-only-map-keys)
-              :code $ quote
-                assert= (#{} :b)
-                  &map:diff-keys (&{} :a 1 :b 2) (&{} :a 2 :c 3)
-              :tags $ #{} :core :unit
-        '&map:diff-new $ %{} 'CodeEntry (:doc "|internal function for map diff new\nSyntax: (&map:diff-new map1 map2)\nParams: map1 (map), map2 (map)\nReturns: map\nReturns entries of map1 whose keys are absent from map2")
+          :tests $ [] $ %{} 'TestEntry
+            :name |reports-left-only-map-keys
+            :code $ quote $ assert= (#{} :b)
+              &map:diff-keys (&{} :a 1 :b 2) (&{} :a 2 :c 3)
+            :tags $ #{} :core :unit
+        '&map:diff-new $ %{} 'CodeEntry
+          :doc "|internal function for map diff new\nSyntax: (&map:diff-new map1 map2)\nParams: map1 (map), map2 (map)\nReturns: map\nReturns entries of map1 whose keys are absent from map2"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'W)
-              :generics $ [] 'K 'V 'W
-              :return $ :: 'Map 'K 'W
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'W)
+            :generics $ [] 'K 'V 'W
+            :return $ :: 'Map 'K 'W
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |keeps-keys-only-in-left-map)
-              :code $ quote
-                assert= (&{} :c 3)
-                  &map:diff-new (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
-              :tags $ #{} :core :unit
-        '&map:diff-triple $ %{} 'CodeEntry (:doc "|Single-pass map diff returning [drop-keys new-diff common-triples].\nSyntax: (&map:diff-triple a b)\nParams: a (map), b (map)\nReturns: list\nReturns a list of three elements:\n  - drop-keys: set of keys in `a` but not in `b`\n  - new-diff: map of entries in `b` but not in `a`\n  - common-triples: list of [k va vb] for every key present in both maps\n\nMore efficient than calling &map:diff-keys, &map:diff-new, and &map:common-keys separately,\nas it only traverses both maps twice instead of 3+ times.")
+          :tests $ [] $ %{} 'TestEntry
+            :name |keeps-keys-only-in-left-map
+            :code $ quote $ assert= (&{} :c 3)
+              &map:diff-new (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
+            :tags $ #{} :core :unit
+        '&map:diff-triple $ %{} 'CodeEntry
+          :doc "|Single-pass map diff returning [drop-keys new-diff common-triples].\nSyntax: (&map:diff-triple a b)\nParams: a (map), b (map)\nReturns: list\nReturns a list of three elements:\n  - drop-keys: set of keys in `a` but not in `b`\n  - new-diff: map of entries in `b` but not in `a`\n  - common-triples: list of [k va vb] for every key present in both maps\n\nMore efficient than calling &map:diff-keys, &map:diff-new, and &map:common-keys separately,\nas it only traverses both maps twice instead of 3+ times."
           :code $ quote &runtime-implementation
           :examples $ []
             quote $ let
@@ -1631,1913 +1716,1790 @@
                 new-diff $ nth triple 1
                 common-triples $ nth triple 2
               list drop-keys new-diff common-triples
-          :schema $ :: 'Fn
-            {} (:return 'Enum)
-              :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'W)
-              :generics $ [] 'K 'V 'W
+          :schema $ :: 'Fn $ {} (:return 'Enum)
+            :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'W)
+            :generics $ [] 'K 'V 'W
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |returns-diff-sets-and-common-triples)
-              :code $ quote
-                do
-                  let
-                      triple $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 2 :c 3)
-                    assert= (#{} :b) (&list:nth triple 0)
-                    assert= (&{} :c 3) (&list:nth triple 1)
-                    assert= 1 $ count (&list:nth triple 2)
-                  let
-                      same $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 1 :b 2)
-                    assert= (#{}) (&list:nth same 0)
-                    assert= (&{}) (&list:nth same 1)
-                    assert= 2 $ count (&list:nth same 2)
-              :tags $ #{} :core :unit
-        '&map:dissoc $ %{} 'CodeEntry (:doc "|internal function for map dissociation\nSyntax: (&map:dissoc map key & keys)\nParams: map (Map<K,V>), key (K), keys (K, variadic)\nReturns: Map<K,V>\nReturns new map without specified keys")
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-diff-sets-and-common-triples
+            :code $ quote $ do
+              let
+                  triple $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 2 :c 3)
+                assert= (#{} :b) (&list:nth triple 0)
+                assert= (&{} :c 3) (&list:nth triple 1)
+                assert= 1 $ count $ &list:nth triple 2
+              let
+                  same $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 1 :b 2)
+                assert= (#{}) (&list:nth same 0)
+                assert= (&{}) (&list:nth same 1)
+                assert= 2 $ count $ &list:nth same 2
+            :tags $ #{} :core :unit
+        '&map:dissoc $ %{} 'CodeEntry
+          :doc "|internal function for map dissociation\nSyntax: (&map:dissoc map key & keys)\nParams: map (Map<K,V>), key (K), keys (K, variadic)\nReturns: Map<K,V>\nReturns new map without specified keys"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:rest 'K)
-              :args $ [] (:: 'Map 'K 'V) 'K
-              :generics $ [] 'K 'V
-              :return $ :: 'Map 'K 'V
+          :schema $ :: 'Fn $ {} (:rest 'K)
+            :args $ [] (:: 'Map 'K 'V) 'K
+            :generics $ [] 'K 'V
+            :return $ :: 'Map 'K 'V
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |removes-map-keys-directly)
-              :code $ quote
-                assert= (&{} :a 1)
-                  &map:dissoc (&{} :a 1 :b 2) :b
-              :tags $ #{} :core :unit
-        '&map:empty $ %{} 'CodeEntry (:doc "|internal helper for producing an empty map value while preserving method signature shape")
-          :code $ quote
-            defn &map:empty (_xs) (&{})
+          :tests $ [] $ %{} 'TestEntry
+            :name |removes-map-keys-directly
+            :code $ quote $ assert= (&{} :a 1)
+              &map:dissoc (&{} :a 1 :b 2) :b
+            :tags $ #{} :core :unit
+        '&map:empty $ %{} 'CodeEntry
+          :doc "|internal helper for producing an empty map value while preserving method signature shape"
+          :code $ quote $ defn &map:empty (_xs) (&{})
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
-              :return $ :: 'Map 'K 'V
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'Map 'K 'V
           :tags $ #{} :internal
-        '&map:empty? $ %{} 'CodeEntry (:doc "|internal function for checking if map is empty\nSyntax: (&map:empty? map)\nParams: map (map)\nReturns: boolean\nReturns true if map has no entries")
+        '&map:empty? $ %{} 'CodeEntry
+          :doc "|internal function for checking if map is empty\nSyntax: (&map:empty? map)\nParams: map (map)\nReturns: boolean\nReturns true if map has no entries"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |checks-empty-map-directly)
-              :code $ quote
-                do
-                  assert= true $ &map:empty? (&{})
-                  assert= false $ &map:empty? (&{} :a 1)
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |checks-empty-map-directly
+            :code $ quote $ do
+              assert= true $ &map:empty? $ &{}
+              assert= false $ &map:empty? $ &{} :a 1
+            :tags $ #{} :core :unit
         '&map:filter $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &map:filter (xs f)
-              reduce xs (&{})
-                defn %&map:filter (acc x)
-                  hint-fn $ {}
-                    :args $ [] (:: 'Map 'K 'V) ('P)
-                    :return $ :: 'Map 'K 'V
-                  if (f x)
-                    &map:assoc acc (&list:nth x 0) (&list:nth x 1)
-                    , acc
+          :code $ quote $ defn &map:filter (xs f)
+            reduce xs (&{})
+              defn %&map:filter (acc x)
+                hint-fn $ {}
+                  :args $ [] (:: 'Map 'K 'V) ('P)
+                  :return $ :: 'Map 'K 'V
+                if (f x)
+                  &map:assoc acc (&list:nth x 0) (&list:nth x 1)
+                  , acc
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-                :: 'Fn $ {} (:return 'Bool)
-                  :args $ [] 'P
-              :generics $ [] 'K 'V 'P
-              :return $ :: 'Map 'K 'V
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V)
+              :: 'Fn $ {} (:return 'Bool)
+                :args $ [] 'P
+            :generics $ [] 'K 'V 'P
+            :return $ :: 'Map 'K 'V
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |filters-map-pairs-directly)
-              :code $ quote
-                assert= (&{} :b 2)
-                  &map:filter (&{} :a 1 :b 2)
-                    fn (pair)
-                      > (&list:last pair) 1
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |filters-map-pairs-directly
+            :code $ quote $ assert= (&{} :b 2)
+              &map:filter (&{} :a 1 :b 2)
+                fn (pair)
+                  > (&list:last pair) 1
+            :tags $ #{} :core :unit
         '&map:filter-kv $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &map:filter-kv (xs f)
-              reduce xs (&{})
-                defn %map:filter-kv (acc x)
-                  hint-fn $ {}
-                    :args $ [] (:: 'Map 'K 'V) ('P)
-                    :return $ :: 'Map 'K 'V
-                  if
-                    f (&list:nth x 0) (&list:nth x 1)
-                    &map:assoc acc (&list:nth x 0) (&list:nth x 1)
-                    , acc
+          :code $ quote $ defn &map:filter-kv (xs f)
+            reduce xs (&{})
+              defn %map:filter-kv (acc x)
+                hint-fn $ {}
+                  :args $ [] (:: 'Map 'K 'V) ('P)
+                  :return $ :: 'Map 'K 'V
+                if
+                  f (&list:nth x 0) (&list:nth x 1)
+                  &map:assoc acc (&list:nth x 0) (&list:nth x 1)
+                  , acc
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-                :: 'Fn $ {} (:return 'Bool)
-                  :args $ [] 'K 'V
-              :generics $ [] 'K 'V
-              :return $ :: 'Map 'K 'V
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V)
+              :: 'Fn $ {} (:return 'Bool)
+                :args $ [] 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'Map 'K 'V
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |filters-map-keys-and-values)
-              :code $ quote
-                assert= (&{} :b 2)
-                  &map:filter-kv (&{} :a 1 :b 2)
-                    fn (k v) (> v 1)
-              :tags $ #{} :core :unit
-        '&map:get $ %{} 'CodeEntry (:doc "|internal function for getting map value\nSyntax: (&map:get map key) or (&map:get map key default)\nParams: map (map), key (any), default (any, optional)\nReturns: any\nGets value for key, returns default if key not found")
+          :tests $ [] $ %{} 'TestEntry
+            :name |filters-map-keys-and-values
+            :code $ quote $ assert= (&{} :b 2)
+              &map:filter-kv (&{} :a 1 :b 2)
+                fn (k v) (> v 1)
+            :tags $ #{} :core :unit
+        '&map:get $ %{} 'CodeEntry
+          :doc "|internal function for getting map value\nSyntax: (&map:get map key) or (&map:get map key default)\nParams: map (map), key (any), default (any, optional)\nReturns: any\nGets value for key, returns default if key not found"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V) 'K
-              :generics $ [] 'K 'V
-              :return $ :: 'Optional 'V
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V) 'K
+            :generics $ [] 'K 'V
+            :return $ :: 'Optional 'V
           :tags $ #{} :builtin :internal
-        '&map:includes? $ %{} 'CodeEntry (:doc "|Internal function for checking whether a map includes a value. Syntax: (&map:includes? map value). Returns true when any map value equals the supplied value.")
+        '&map:includes? $ %{} 'CodeEntry
+          :doc "|Internal function for checking whether a map includes a value. Syntax: (&map:includes? map value). Returns true when any map value equals the supplied value."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] (:: 'Map 'K 'V) 'V
-              :generics $ [] 'K 'V
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] (:: 'Map 'K 'V) 'V
+            :generics $ [] 'K 'V
           :tags $ #{} :alias :builtin :internal
-        '&map:keys $ %{} 'CodeEntry (:doc "|Internal typed Map<K,V> key projection. Returns Set<K>; user code should call `.keys`.")
-          :code $ quote (&runtime-implementation)
+        '&map:keys $ %{} 'CodeEntry
+          :doc "|Internal typed Map<K,V> key projection. Returns Set<K>; user code should call `.keys`."
+          :code $ quote $ &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
-              :return $ :: 'Set 'K
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'Set 'K
           :tags $ #{} :builtin :internal
         '&map:map $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &map:map (xs f)
-              foldl xs ({})
-                defn &map:map (acc pair)
-                  hint-fn $ {}
-                    :args $ [] (:: 'Map 'R 'S) ('P)
-                    :return $ :: 'Map 'R 'S
-                  &let
-                    result $ f pair
-                    assert "|expected pair returned when mapping hashmap" $ and (list? result)
-                      &= 2 $ &list:count result
-                    &map:assoc acc (&list:nth result 0) (&list:nth result 1)
+          :code $ quote $ defn &map:map (xs f)
+            foldl xs ({})
+              defn &map:map (acc pair)
+                hint-fn $ {}
+                  :args $ [] (:: 'Map 'R 'S) ('P)
+                  :return $ :: 'Map 'R 'S
+                &let
+                  result $ f pair
+                  assert "|expected pair returned when mapping hashmap" $ and (list? result)
+                    &= 2 $ &list:count result
+                  &map:assoc acc (&list:nth result 0) (&list:nth result 1)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-                :: 'Fn $ {} (:return 'Q)
-                  :args $ [] 'P
-              :generics $ [] 'K 'V 'P 'Q 'R 'S
-              :return $ :: 'Map 'R 'S
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V)
+              :: 'Fn $ {} (:return 'Q)
+                :args $ [] 'P
+            :generics $ [] 'K 'V 'P 'Q 'R 'S
+            :return $ :: 'Map 'R 'S
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |maps-map-pairs-directly)
-              :code $ quote
-                assert= (&{} :a 11 :b 12)
-                  &map:map (&{} :a 1 :b 2)
-                    fn (pair)
-                      [] (&list:first pair)
-                        + 10 $ &list:last pair
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |maps-map-pairs-directly
+            :code $ quote $ assert= (&{} :a 11 :b 12)
+              &map:map (&{} :a 1 :b 2)
+                fn (pair)
+                  [] (&list:first pair)
+                    + 10 $ &list:last pair
+            :tags $ #{} :core :unit
         '&map:map-list $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &map:map-list (xs f)
-              if (map? xs)
-                foldl xs ([])
-                  defn %&map:map-list (acc pair)
-                    hint-fn $ {}
-                      :args $ [] (:: 'List 'U) ('P)
-                      :return $ :: 'List 'U
-                    append acc $ f pair
-                raise $ str-spaced "|&map:map-list expected a map, got:" xs
+          :code $ quote $ defn &map:map-list (xs f)
+            if (map? xs)
+              foldl xs ([])
+                defn %&map:map-list (acc pair)
+                  hint-fn $ {}
+                    :args $ [] (:: 'List 'U) ('P)
+                    :return $ :: 'List 'U
+                  append acc $ f pair
+              raise $ str-spaced "|&map:map-list expected a map, got:" xs
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-                :: 'Fn $ {} (:return 'U)
-                  :args $ [] 'P
-              :generics $ [] 'K 'V 'P 'U
-              :return $ :: 'List 'U
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V)
+              :: 'Fn $ {} (:return 'U)
+                :args $ [] 'P
+            :generics $ [] 'K 'V 'P 'U
+            :return $ :: 'List 'U
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |maps-map-pairs-to-list)
-              :code $ quote
-                assert=
-                  #{} ([] :a 11) ([] :b 12)
-                  &list:to-set $ &map:map-list (&{} :a 1 :b 2)
-                    fn (pair)
-                      [] (&list:first pair)
-                        + 10 $ &list:last pair
-              :tags $ #{} :core :unit
-        '&map:to-list $ %{} 'CodeEntry (:doc "|internal function for converting map to list\nSyntax: (&map:to-list map)\nParams: map (map)\nReturns: list\nConverts map to list of [key value] pairs")
+          :tests $ [] $ %{} 'TestEntry
+            :name |maps-map-pairs-to-list
+            :code $ quote $ assert=
+              #{} ([] :a 11) ([] :b 12)
+              &list:to-set $ &map:map-list (&{} :a 1 :b 2)
+                fn (pair)
+                  [] (&list:first pair)
+                    + 10 $ &list:last pair
+            :tags $ #{} :core :unit
+        '&map:to-list $ %{} 'CodeEntry
+          :doc "|internal function for converting map to list\nSyntax: (&map:to-list map)\nParams: map (map)\nReturns: list\nConverts map to list of [key value] pairs"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
-              :return $ :: 'List 'Enum
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'List 'Enum
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |returns-map-pairs-directly)
-              :code $ quote
-                assert=
-                  [] $ [] :a 1
-                  &map:to-list $ &{} :a 1
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-map-pairs-directly
+            :code $ quote $ assert=
+              [] $ [] :a 1
+              &map:to-list $ &{} :a 1
+            :tags $ #{} :core :unit
         '&map:vals $ %{} 'CodeEntry (:doc |)
-          :code $ quote (&runtime-implementation)
+          :code $ quote $ &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
-              :return $ :: 'Set 'V
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'Set 'V
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |returns-map-values-directly)
-              :code $ quote
-                assert= ([] 1)
-                  &map:vals $ &{} :a 1
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-map-values-directly
+            :code $ quote $ assert= ([] 1)
+              &map:vals $ &{} :a 1
+            :tags $ #{} :core :unit
         '&max $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &max (a b)
-              assert "|expects numbers for &max" $ if (number? a) (number? b)
-              if (&> a b) a b
+          :code $ quote $ defn &max (a b)
+            assert "|expects numbers for &max" $ if (number? a) (number? b)
+            if (&> a b) a b
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
           :tags $ #{} :internal
-        '&merge $ %{} 'CodeEntry (:doc "|internal function for merging maps\nSyntax: (&merge map1 map2 & maps)\nParams: map1 (map), map2 (map), maps (map, variadic)\nReturns: map\nMerges multiple maps, later values override earlier ones")
+        '&merge $ %{} 'CodeEntry
+          :doc "|internal function for merging maps\nSyntax: (&merge map1 map2 & maps)\nParams: map1 (map), map2 (map), maps (map, variadic)\nReturns: map\nMerges multiple maps, later values override earlier ones"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
-              :rest $ :: 'Map 'K 'V
-              :return $ :: 'Map 'K 'V
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'V)
+            :generics $ [] 'K 'V
+            :rest $ :: 'Map 'K 'V
+            :return $ :: 'Map 'K 'V
           :tags $ #{} :builtin :internal
-        '&merge-non-nil $ %{} 'CodeEntry (:doc "|internal function for merging non-nil values\nSyntax: (&merge-non-nil map1 map2 & maps)\nParams: map1 (map), map2 (map), maps (map, variadic)\nReturns: map\nMerges maps, skipping nil values")
+        '&merge-non-nil $ %{} 'CodeEntry
+          :doc "|internal function for merging non-nil values\nSyntax: (&merge-non-nil map1 map2 & maps)\nParams: map1 (map), map2 (map), maps (map, variadic)\nReturns: map\nMerges maps, skipping nil values"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
-              :return $ :: 'Map 'K 'V
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'V)
+            :generics $ [] 'K 'V
+            :return $ :: 'Map 'K 'V
           :tags $ #{} :builtin :internal
         '&min $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &min (a b)
-              assert "|expects numbers for &min" $ if (number? a) (number? b)
-              if (&< a b) a b
+          :code $ quote $ defn &min (a b)
+            assert "|expects numbers for &min" $ if (number? a) (number? b)
+            if (&< a b) a b
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
           :tags $ #{} :internal
-        '&number:display-by $ %{} 'CodeEntry (:doc "|internal function for number display by base\nSyntax: (&number:display-by n base)\nParams: n (number), base (integer)\nReturns: string\nDisplays number in specified base (2-36)")
+        '&number:display-by $ %{} 'CodeEntry
+          :doc "|internal function for number display by base\nSyntax: (&number:display-by n base)\nParams: n (number), base (integer)\nReturns: string\nDisplays number in specified base (2-36)"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |renders-number-bases)
-              :code $ quote
-                do
-                  assert= |0b10001 $ &number:display-by 17 2
-                  assert= |0o21 $ &number:display-by 17 8
-                  assert= |0x11 $ &number:display-by 17 16
-              :tags $ #{} :core :unit
-        '&number:empty $ %{} 'CodeEntry (:doc "|internal helper for number :empty method entry")
-          :code $ quote
-            defn &number:empty (_x) 0
+          :tests $ [] $ %{} 'TestEntry
+            :name |renders-number-bases
+            :code $ quote $ do
+              assert= |0b10001 $ &number:display-by 17 2
+              assert= |0o21 $ &number:display-by 17 8
+              assert= |0x11 $ &number:display-by 17 16
+            :tags $ #{} :core :unit
+        '&number:empty $ %{} 'CodeEntry
+          :doc "|internal helper for number :empty method entry"
+          :code $ quote $ defn &number:empty (_x) 0
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |returns-zero)
-              :code $ quote
-                assert= 0 $ &number:empty 1.1
-              :tags $ #{} :core :unit
-        '&number:format $ %{} 'CodeEntry (:doc "|internal function for number formatting\nSyntax: (&number:format n decimals)\nParams: n (number), decimals (number)\nReturns: string\nFormats number with the requested decimal places")
+          :tests $ [] $ %{} 'TestEntry (:name |returns-zero)
+            :code $ quote $ assert= 0 (&number:empty 1.1)
+            :tags $ #{} :core :unit
+        '&number:format $ %{} 'CodeEntry
+          :doc "|internal function for number formatting\nSyntax: (&number:format n decimals)\nParams: n (number), decimals (number)\nReturns: string\nFormats number with the requested decimal places"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |formats-decimal-places)
-              :code $ quote
-                assert= |1.235 $ &number:format 1.23456789 3
-              :tags $ #{} :core :unit
-        '&number:fract $ %{} 'CodeEntry (:doc "|internal function for number fractional part\nSyntax: (&number:fract n)\nParams: n (number)\nReturns: number\nReturns fractional part of number (n - floor(n))")
+          :tests $ [] $ %{} 'TestEntry
+            :name |formats-decimal-places
+            :code $ quote $ assert= |1.235 (&number:format 1.23456789 3)
+            :tags $ #{} :core :unit
+        '&number:fract $ %{} 'CodeEntry
+          :doc "|internal function for number fractional part\nSyntax: (&number:fract n)\nParams: n (number)\nReturns: number\nReturns fractional part of number (n - floor(n))"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |returns-fractional-part)
-              :code $ quote
-                assert= 0.8 $ &number:fract 1.8
-              :tags $ #{} :core :unit
-        '&number:rem $ %{} 'CodeEntry (:doc "|internal function for number remainder\nSyntax: (&number:rem a b)\nParams: a (number), b (number)\nReturns: number\nReturns remainder of a divided by b")
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-fractional-part
+            :code $ quote $ assert= 0.8 (&number:fract 1.8)
+            :tags $ #{} :core :unit
+        '&number:rem $ %{} 'CodeEntry
+          :doc "|internal function for number remainder\nSyntax: (&number:rem a b)\nParams: a (number), b (number)\nReturns: number\nReturns remainder of a divided by b"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |calculates-remainder)
-              :code $ quote
-                do
-                  assert= 1 $ &number:rem 33 4
-                  assert= 2 $ &number:rem 11 3
-              :tags $ #{} :core :unit
-        '&parse-float $ %{} 'CodeEntry (:doc "|internal function for parsing float\nSyntax: (parse-float s)\nParams: s (string)\nReturns: number or nil\nParses string as floating point number, returns nil if invalid")
+          :tests $ [] $ %{} 'TestEntry
+            :name |calculates-remainder
+            :code $ quote $ do
+              assert= 1 $ &number:rem 33 4
+              assert= 2 $ &number:rem 11 3
+            :tags $ #{} :core :unit
+        '&parse-float $ %{} 'CodeEntry
+          :doc "|internal function for parsing float\nSyntax: (parse-float s)\nParams: s (string)\nReturns: number or nil\nParses string as floating point number, returns nil if invalid"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String
-              :return $ :: 'Optional 'Number
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Optional 'Number
           :tags $ #{} :builtin :internal
-        '&reset-gensym-index! $ %{} 'CodeEntry (:doc "|internal function for resetting gensym index\nSyntax: (&reset-gensym-index!)\nParams: none\nReturns: nil\nResets the global gensym counter to 0 for deterministic symbol generation")
+        '&reset-gensym-index! $ %{} 'CodeEntry
+          :doc "|internal function for resetting gensym index\nSyntax: (&reset-gensym-index!)\nParams: none\nReturns: nil\nResets the global gensym counter to 0 for deterministic symbol generation"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
           :tags $ #{} :builtin :internal
-        '&secure-random-bytes $ %{} 'CodeEntry (:doc "|内部安全随机字节入口；显式接收 Result 类型原型，仅供 public wrapper 与 backend lowering 使用。")
+        '&secure-random-bytes $ %{} 'CodeEntry
+          :doc "|内部安全随机字节入口；显式接收 Result 类型原型，仅供 public wrapper 与 backend lowering 使用。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'EnumDef 'Number 'String
-              :return $ :: 'Result 'Buffer 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'EnumDef 'Number 'String
+            :return $ :: 'Result 'Buffer 'String
           :tags $ #{} :builtin :crypto :internal
-        '&set:count $ %{} 'CodeEntry (:doc "|internal function for counting set elements\nSyntax: (&set:count set)\nParams: set (set)\nReturns: number\nReturns number of elements in set")
+        '&set:count $ %{} 'CodeEntry
+          :doc "|internal function for counting set elements\nSyntax: (&set:count set)\nParams: set (set)\nReturns: number\nReturns number of elements in set"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] (:: 'Set 'T)
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'Set 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |counts-set-members)
-              :code $ quote
-                assert= 3 $ &set:count (#{} 1 2 3)
-              :tags $ #{} :core :unit
-        '&set:destruct $ %{} 'CodeEntry (:doc "|internal function for set destructuring\nSyntax: (&set:destruct set pattern)\nParams: set (set), pattern (any)\nReturns: set\nDestructs set according to pattern")
+          :tests $ [] $ %{} 'TestEntry
+            :name |counts-set-members
+            :code $ quote $ assert= 3
+              &set:count $ #{} 1 2 3
+            :tags $ #{} :core :unit
+        '&set:destruct $ %{} 'CodeEntry
+          :doc "|internal function for set destructuring\nSyntax: (&set:destruct set pattern)\nParams: set (set), pattern (any)\nReturns: set\nDestructs set according to pattern"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'T)
-              :generics $ [] 'T
-              :return $ :: 'Optional 'Enum
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Set 'T
+            :generics $ [] 'T
+            :return $ :: 'Optional 'Enum
           :tags $ #{} :builtin :internal
-        '&set:empty $ %{} 'CodeEntry (:doc "|internal helper for set :empty method entry")
-          :code $ quote
-            defn &set:empty (_xs) (#{})
+        '&set:empty $ %{} 'CodeEntry
+          :doc "|internal helper for set :empty method entry"
+          :code $ quote $ defn &set:empty (_xs) (#{})
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'T)
-              :generics $ [] 'T
-              :return $ :: 'Set 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Set 'T
+            :generics $ [] 'T
+            :return $ :: 'Set 'T
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |returns-empty-set)
-              :code $ quote
-                assert= (#{})
-                  &set:empty $ #{} 1 2 3
-              :tags $ #{} :core :unit
-        '&set:empty? $ %{} 'CodeEntry (:doc "|internal function for checking if set is empty\nSyntax: (&set:empty? set)\nParams: set (set)\nReturns: boolean\nReturns true if set has no elements")
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-empty-set
+            :code $ quote $ assert= (#{})
+              &set:empty $ #{} 1 2 3
+            :tags $ #{} :core :unit
+        '&set:empty? $ %{} 'CodeEntry
+          :doc "|internal function for checking if set is empty\nSyntax: (&set:empty? set)\nParams: set (set)\nReturns: boolean\nReturns true if set has no elements"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] (:: 'Set 'T)
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] $ :: 'Set 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |checks-empty-sets)
-              :code $ quote
-                do
-                  assert= true $ &set:empty? (#{})
-                  assert= false $ &set:empty? (#{} 1)
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |checks-empty-sets
+            :code $ quote $ do
+              assert= true $ &set:empty? $ #{}
+              assert= false $ &set:empty? $ #{} 1
+            :tags $ #{} :core :unit
         '&set:filter $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &set:filter (xs f)
-              reduce xs (#{})
-                defn %&set:filter (acc x)
-                  hint-fn $ {}
-                    :args $ [] (:: 'Set 'T) ('T)
-                    :return $ :: 'Set 'T
-                  if (f x) (&include acc x) acc
+          :code $ quote $ defn &set:filter (xs f)
+            reduce xs (#{})
+              defn %&set:filter (acc x)
+                hint-fn $ {}
+                  :args $ [] (:: 'Set 'T) ('T)
+                  :return $ :: 'Set 'T
+                if (f x) (&include acc x) acc
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'T)
-                :: 'Fn $ {} (:return 'Bool)
-                  :args $ [] 'T
-              :generics $ [] 'T
-              :return $ :: 'Set 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Set 'T)
+              :: 'Fn $ {} (:return 'Bool)
+                :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'Set 'T
           :tags $ #{} :internal
-        '&set:includes? $ %{} 'CodeEntry (:doc "|internal function for checking if set includes element\nSyntax: (&set:includes? set element)\nParams: set (set), element (any)\nReturns: boolean\nReturns true if set includes element")
+        '&set:includes? $ %{} 'CodeEntry
+          :doc "|internal function for checking if set includes element\nSyntax: (&set:includes? set element)\nParams: set (set), element (any)\nReturns: boolean\nReturns true if set includes element"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] (:: 'Set 'T) 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] (:: 'Set 'T) 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |checks-set-membership)
-              :code $ quote
-                do
-                  assert= true $ &set:includes? (#{} 1 2 3) 1
-                  assert= false $ &set:includes? (#{} 1 2 3) 4
-              :tags $ #{} :core :unit
-        '&set:intersection $ %{} 'CodeEntry (:doc "|internal function for set intersection\nSyntax: (&set:intersection set1 set2)\nParams: set1 (set), set2 (set)\nReturns: set\nReturns elements common to both sets")
+          :tests $ [] $ %{} 'TestEntry
+            :name |checks-set-membership
+            :code $ quote $ do
+              assert= true $ &set:includes? (#{} 1 2 3) 1
+              assert= false $ &set:includes? (#{} 1 2 3) 4
+            :tags $ #{} :core :unit
+        '&set:intersection $ %{} 'CodeEntry
+          :doc "|internal function for set intersection\nSyntax: (&set:intersection set1 set2)\nParams: set1 (set), set2 (set)\nReturns: set\nReturns elements common to both sets"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'T) (:: 'Set 'T)
-              :generics $ [] 'T
-              :return $ :: 'Set 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Set 'T) (:: 'Set 'T)
+            :generics $ [] 'T
+            :return $ :: 'Set 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |intersects-sets)
-              :code $ quote
-                assert= (#{} 2)
-                  &set:intersection (#{} 1 2) (#{} 2 3)
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry (:name |intersects-sets)
+            :code $ quote $ assert= (#{} 2)
+              &set:intersection (#{} 1 2) (#{} 2 3)
+            :tags $ #{} :core :unit
         '&set:map $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &set:map (xs f)
-              reduce xs (#{})
-                defn %&set:map (acc x)
-                  hint-fn $ {}
-                    :args $ [] (:: 'Set 'U) 'T
-                    :return $ :: 'Set 'U
-                  &include acc $ f x
+          :code $ quote $ defn &set:map (xs f)
+            reduce xs (#{})
+              defn %&set:map (acc x)
+                hint-fn $ {}
+                  :args $ [] (:: 'Set 'U) 'T
+                  :return $ :: 'Set 'U
+                &include acc $ f x
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'T)
-                :: 'Fn $ {} (:return 'U)
-                  :args $ [] 'T
-              :generics $ [] 'T 'U
-              :return $ :: 'Set 'U
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Set 'T)
+              :: 'Fn $ {} (:return 'U)
+                :args $ [] 'T
+            :generics $ [] 'T 'U
+            :return $ :: 'Set 'U
           :tags $ #{} :internal
         '&set:max $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &set:max (xs)
-              &list:max $ &set:to-list xs
+          :code $ quote $ defn &set:max (xs)
+            &list:max $ &set:to-list xs
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'Number)
-              :return $ :: 'Option 'Number
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Set 'Number
+            :return $ :: 'Option 'Number
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |finds-largest-set-member)
-              :code $ quote
-                do
-                  assert= (%some 4)
-                    &set:max $ #{} 1 2 3 4
-                  assert= (%none)
-                    &set:max $ #{}
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |finds-largest-set-member
+            :code $ quote $ do
+              assert= (%some 4)
+                &set:max $ #{} 1 2 3 4
+              assert= (%none)
+                &set:max $ #{}
+            :tags $ #{} :core :unit
         '&set:min $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn &set:min (xs)
-              &list:min $ &set:to-list xs
+          :code $ quote $ defn &set:min (xs)
+            &list:min $ &set:to-list xs
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'Number)
-              :return $ :: 'Option 'Number
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Set 'Number
+            :return $ :: 'Option 'Number
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |finds-smallest-set-member)
-              :code $ quote
-                do
-                  assert= (%some 1)
-                    &set:min $ #{} 1 2 3 4
-                  assert= (%none)
-                    &set:min $ #{}
-              :tags $ #{} :core :unit
-        '&set:to-list $ %{} 'CodeEntry (:doc "|internal function for converting set to list\nSyntax: (&set:to-list set)\nParams: set (set)\nReturns: list\nConverts set to list of elements")
+          :tests $ [] $ %{} 'TestEntry
+            :name |finds-smallest-set-member
+            :code $ quote $ do
+              assert= (%some 1)
+                &set:min $ #{} 1 2 3 4
+              assert= (%none)
+                &set:min $ #{}
+            :tags $ #{} :core :unit
+        '&set:to-list $ %{} 'CodeEntry
+          :doc "|internal function for converting set to list\nSyntax: (&set:to-list set)\nParams: set (set)\nReturns: list\nConverts set to list of elements"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'T)
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Set 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |converts-set-to-list)
-              :code $ quote
-                assert= 3 $ count
-                  &set:to-list $ #{} 1 2 3
-              :tags $ #{} :core :unit
-        '&str $ %{} 'CodeEntry (:doc "|internal function for string conversion\nSyntax: (&str value)\nParams: value (any)\nReturns: string\nConverts value to string representation")
+          :tests $ [] $ %{} 'TestEntry
+            :name |converts-set-to-list
+            :code $ quote $ assert= 3
+              count $ &set:to-list $ #{} 1 2 3
+            :tags $ #{} :core :unit
+        '&str $ %{} 'CodeEntry
+          :doc "|internal function for string conversion\nSyntax: (&str value)\nParams: value (any)\nReturns: string\nConverts value to string representation"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
-        '&str-spaced $ %{} 'CodeEntry (:doc "|Internal function for joining strings with spaces, used by str-spaced")
-          :code $ quote
-            defn &str-spaced (head? x0 & xs)
-              if (&list:empty? xs)
-                if head? (&str x0)
-                  if (nil? x0) | $ &str:concat "| " x0
-                if (some? x0)
-                  &str:concat
-                    if head? (&str x0) (&str:concat "| " x0)
-                    &str-spaced false & xs
-                  &str-spaced head? & xs
+        '&str-spaced $ %{} 'CodeEntry
+          :doc "|Internal function for joining strings with spaces, used by str-spaced"
+          :code $ quote $ defn &str-spaced (head? x0 & xs)
+            if (&list:empty? xs)
+              if head? (&str x0)
+                if (nil? x0) | $ &str:concat "| " x0
+              if (some? x0)
+                &str:concat
+                  if head? (&str x0) (&str:concat "| " x0)
+                  &str-spaced false & xs
+                &str-spaced head? & xs
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:rest 'T) (:return 'String)
-              :args $ [] 'Bool 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:rest 'T) (:return 'String)
+            :args $ [] 'Bool 'T
+            :generics $ [] 'T
           :tags $ #{} :internal
-        '&str:compare $ %{} 'CodeEntry (:doc "|internal function for string comparison\nSyntax: (&str:compare a b)\nParams: a (string), b (string)\nReturns: number\nCompares strings lexicographically, returns -1, 0, or 1")
+        '&str:compare $ %{} 'CodeEntry
+          :doc "|internal function for string comparison\nSyntax: (&str:compare a b)\nParams: a (string), b (string)\nReturns: number\nCompares strings lexicographically, returns -1, 0, or 1"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'String 'String
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'String 'String
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |orders-and-compares-equal-strings)
-              :code $ quote
-                do
-                  assert= -1 $ &str:compare |a |b
-                  assert= 1 $ &str:compare |b |a
-                  assert= 0 $ &str:compare |a |a
-              :tags $ #{} :core :unit
-        '&str:concat $ %{} 'CodeEntry (:doc "|internal function for string concatenation\nSyntax: (&str:concat a b)\nParams: a (string), b (string)\nReturns: string\nConcatenates two strings together")
+          :tests $ [] $ %{} 'TestEntry
+            :name |orders-and-compares-equal-strings
+            :code $ quote $ do
+              assert= -1 $ &str:compare |a |b
+              assert= 1 $ &str:compare |b |a
+              assert= 0 $ &str:compare |a |a
+            :tags $ #{} :core :unit
+        '&str:concat $ %{} 'CodeEntry
+          :doc "|internal function for string concatenation\nSyntax: (&str:concat a b)\nParams: a (string), b (string)\nReturns: string\nConcatenates two strings together"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'String 'String
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String 'String
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |concatenates-string-and-number-values)
-              :code $ quote
-                do
-                  assert= |ab $ &str:concat |a |b
-                  assert= |12 $ &str:concat 1 2
-              :tags $ #{} :core :unit
-        '&str:contains? $ %{} 'CodeEntry (:doc "|internal function for checking whether a string has a character at an index\nSyntax: (&str:contains? s index)\nParams: s (string), index (number)\nReturns: boolean\nReturns true when index is a valid character index in s")
+          :tests $ [] $ %{} 'TestEntry
+            :name |concatenates-string-and-number-values
+            :code $ quote $ do
+              assert= |ab $ &str:concat |a |b
+              assert= |12 $ &str:concat 1 2
+            :tags $ #{} :core :unit
+        '&str:contains? $ %{} 'CodeEntry
+          :doc "|internal function for checking whether a string has a character at an index\nSyntax: (&str:contains? s index)\nParams: s (string), index (number)\nReturns: boolean\nReturns true when index is a valid character index in s"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'String 'Number
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'String 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |checks-character-index)
-              :code $ quote
-                do
-                  assert= true $ &str:contains? |abcd 0
-                  assert= false $ &str:contains? |abcd 4
-              :tags $ #{} :core :unit
-        '&str:count $ %{} 'CodeEntry (:doc "|internal function for string character count\nSyntax: (&str:count s)\nParams: s (string)\nReturns: number\nReturns number of characters in string")
+          :tests $ [] $ %{} 'TestEntry
+            :name |checks-character-index
+            :code $ quote $ do
+              assert= true $ &str:contains? |abcd 0
+              assert= false $ &str:contains? |abcd 4
+            :tags $ #{} :core :unit
+        '&str:count $ %{} 'CodeEntry
+          :doc "|internal function for string character count\nSyntax: (&str:count s)\nParams: s (string)\nReturns: number\nReturns number of characters in string"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'String
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'String
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |counts-characters)
-              :code $ quote
-                do
-                  assert= 3 $ &str:count |abc
-                  assert= 2 $ &str:count "|中文"
-                  assert= 1 $ &str:count "|😀"
-              :tags $ #{} :core :unit
-        '&str:empty $ %{} 'CodeEntry (:doc "|internal helper for string :empty method entry")
-          :code $ quote
-            defn &str:empty (_) |
+          :tests $ [] $ %{} 'TestEntry
+            :name |counts-characters
+            :code $ quote $ do
+              assert= 3 $ &str:count |abc
+              assert= 2 $ &str:count "|中文"
+              assert= 1 $ &str:count "|😀"
+            :tags $ #{} :core :unit
+        '&str:empty $ %{} 'CodeEntry
+          :doc "|internal helper for string :empty method entry"
+          :code $ quote $ defn &str:empty (_) |
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'String
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |returns-empty-string)
-              :code $ quote
-                assert= | $ &str:empty |a
-              :tags $ #{} :core :unit
-        '&str:empty? $ %{} 'CodeEntry (:doc "|internal function for checking if string is empty\nSyntax: (&str:empty? s)\nParams: s (string)\nReturns: boolean\nReturns true if string has zero length")
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-empty-string
+            :code $ quote $ assert= | (&str:empty |a)
+            :tags $ #{} :core :unit
+        '&str:empty? $ %{} 'CodeEntry
+          :doc "|internal function for checking if string is empty\nSyntax: (&str:empty? s)\nParams: s (string)\nReturns: boolean\nReturns true if string has zero length"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'String
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'String
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |checks-empty-strings)
-              :code $ quote
-                do
-                  assert= true $ &str:empty? |
-                  assert= false $ &str:empty? |a
-              :tags $ #{} :core :unit
-        '&str:escape $ %{} 'CodeEntry (:doc "|internal function for string escaping\nSyntax: (&str:escape s)\nParams: s (string)\nReturns: string\nEscapes special characters in string for safe output")
+          :tests $ [] $ %{} 'TestEntry
+            :name |checks-empty-strings
+            :code $ quote $ do
+              assert= true $ &str:empty? |
+              assert= false $ &str:empty? |a
+            :tags $ #{} :core :unit
+        '&str:escape $ %{} 'CodeEntry
+          :doc "|internal function for string escaping\nSyntax: (&str:escape s)\nParams: s (string)\nReturns: string\nEscapes special characters in string for safe output"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'String
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |escapes-quoted-strings)
-              :code $ quote
-                assert= "|\"a \\\"\"" $ &str:escape "|a \""
-              :tags $ #{} :core :unit
-        '&str:find-index $ %{} 'CodeEntry (:doc "|Internal string search primitive. Returns a numeric index or -1 when absent; public callers should use str-find-index or .find-index.")
+          :tests $ [] $ %{} 'TestEntry
+            :name |escapes-quoted-strings
+            :code $ quote $ assert= "|\"a \\\"\"" (&str:escape "|a \"")
+            :tags $ #{} :core :unit
+        '&str:find-index $ %{} 'CodeEntry
+          :doc "|Internal string search primitive. Returns a numeric index or -1 when absent; public callers should use str-find-index or .find-index."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'String 'String
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'String 'String
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |finds-substring-index)
-              :code $ quote
-                do
-                  assert= 1 $ &str:find-index |abc |b
-                  assert= -1 $ &str:find-index |abc |z
-              :tags $ #{} :core :unit
-        '&str:first $ %{} 'CodeEntry (:doc "|internal function for getting first character\nSyntax: (&str:first s)\nParams: s (string)\nReturns: string or nil\nReturns first character of string, nil if empty")
+          :tests $ [] $ %{} 'TestEntry
+            :name |finds-substring-index
+            :code $ quote $ do
+              assert= 1 $ &str:find-index |abc |b
+              assert= -1 $ &str:find-index |abc |z
+            :tags $ #{} :core :unit
+        '&str:first $ %{} 'CodeEntry
+          :doc "|internal function for getting first character\nSyntax: (&str:first s)\nParams: s (string)\nReturns: string or nil\nReturns first character of string, nil if empty"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String
-              :return $ :: 'Optional 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Optional 'String
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |returns-first-character)
-              :code $ quote
-                assert= |a $ &str:first |abc
-              :tags $ #{} :core :unit
-        '&str:includes? $ %{} 'CodeEntry (:doc "|internal function for checking if string includes substring\nSyntax: (&str:includes? s substring)\nParams: s (string), substring (string)\nReturns: boolean\nReturns true if string includes substring (alias for contains?)")
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-first-character
+            :code $ quote $ assert= |a (&str:first |abc)
+            :tags $ #{} :core :unit
+        '&str:includes? $ %{} 'CodeEntry
+          :doc "|internal function for checking if string includes substring\nSyntax: (&str:includes? s substring)\nParams: s (string), substring (string)\nReturns: boolean\nReturns true if string includes substring (alias for contains?)"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'String 'String
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'String 'String
           :tags $ #{} :alias :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |checks-substring-membership)
-              :code $ quote
-                do
-                  assert= true $ &str:includes? |abcd |bc
-                  assert= false $ &str:includes? |abcd |z
-              :tags $ #{} :core :unit
-        '&str:nth $ %{} 'CodeEntry (:doc "|internal function for getting nth character\nSyntax: (&str:nth s index)\nParams: s (string), index (number)\nReturns: string or nil\nReturns character at index, nil if index out of bounds")
+          :tests $ [] $ %{} 'TestEntry
+            :name |checks-substring-membership
+            :code $ quote $ do
+              assert= true $ &str:includes? |abcd |bc
+              assert= false $ &str:includes? |abcd |z
+            :tags $ #{} :core :unit
+        '&str:nth $ %{} 'CodeEntry
+          :doc "|internal function for getting nth character\nSyntax: (&str:nth s index)\nParams: s (string), index (number)\nReturns: string or nil\nReturns character at index, nil if index out of bounds"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String 'Number
-              :return $ :: 'Optional 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String 'Number
+            :return $ :: 'Optional 'String
+          :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-unicode-character-by-index
+            :code $ quote $ do
+              assert= "|中" $ &str:nth "|中文" 0
+              assert= "|文" $ &str:nth "|中文" 1
+            :tags $ #{} :core :unit
+        '&str:pad-left $ %{} 'CodeEntry
+          :doc "|internal function for left padding string\nSyntax: (&str:pad-left s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on left to specified length with pad character"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String 'Number 'String
+          :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |pads-from-left)
+            :code $ quote $ do
+              assert= |00000a $ &str:pad-left |a 6 |0
+              assert= |12312a $ &str:pad-left |a 6 |123
+            :tags $ #{} :core :unit
+        '&str:pad-right $ %{} 'CodeEntry
+          :doc "|internal function for right padding string\nSyntax: (&str:pad-right s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on right to specified length with pad character"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String 'Number 'String
+          :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |pads-from-right)
+            :code $ quote $ do
+              assert= |a00000 $ &str:pad-right |a 6 |0
+              assert= |a12312 $ &str:pad-right |a 6 |123
+            :tags $ #{} :core :unit
+        '&str:replace $ %{} 'CodeEntry
+          :doc "|internal function for string replacement\nSyntax: (&str:replace s pattern replacement)\nParams: s (string), pattern (string), replacement (string)\nReturns: string\nReplaces all occurrences of pattern with replacement"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String 'String 'String
+          :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry
+            :name |replaces-all-matches
+            :code $ quote $ do
+              assert= |Abcd $ &str:replace |abcd |a |A
+              assert= |AbAd $ &str:replace |abad |a |A
+            :tags $ #{} :core :unit
+        '&str:rest $ %{} 'CodeEntry
+          :doc "|internal function for getting rest of string\nSyntax: (&str:rest s)\nParams: s (string)\nReturns: string\nReturns string without first character"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String
+          :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry
+            :name |drops-first-character
+            :code $ quote $ do
+              assert= |bc $ &str:rest |abc
+              assert= | $ &str:rest |
+            :tags $ #{} :core :unit
+        '&str:slice $ %{} 'CodeEntry
+          :doc "|internal function for string slicing\nSyntax: (&str:slice s start end)\nParams: s (string), start (number), end (number)\nReturns: string\nExtracts substring from start to end index"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String 'Number 'Number
+          :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry
+            :name |slices-unicode-character-ranges
+            :code $ quote $ do
+              assert= |bc $ &str:slice |abcd 1 3
+              assert= "|文字" $ &str:slice "|中文字符串" 1 3
+            :tags $ #{} :core :unit
+        '&str:utf8-byte-count $ %{} 'CodeEntry
+          :doc "|Return the UTF-8 wire byte length of a String in O(1) on native/WASM and one linear pass on JavaScript. Prefer receiver method .utf8-byte-count in application code."
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'String
           :tags $ #{} :builtin :internal
           :tests $ []
-            %{} 'TestEntry (:name |returns-unicode-character-by-index)
-              :code $ quote
-                do
-                  assert= "|中" $ &str:nth "|中文" 0
-                  assert= "|文" $ &str:nth "|中文" 1
+            %{} 'TestEntry
+              :name |counts-utf8-wire-bytes
+              :code $ quote $ do
+                assert= 3 $ &str:utf8-byte-count |abc
+                assert= 2 $ &str:utf8-byte-count "|é"
+                assert= 3 $ &str:utf8-byte-count "|中"
+                assert= 4 $ &str:utf8-byte-count "|😀"
               :tags $ #{} :core :unit
-        '&str:pad-left $ %{} 'CodeEntry (:doc "|internal function for left padding string\nSyntax: (&str:pad-left s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on left to specified length with pad character")
+            %{} 'TestEntry
+              :name |receiver-method-counts-wire-bytes
+              :code $ quote $ assert= 5 ("|A😀" .utf8-byte-count)
+              :tags $ #{} :core :unit
+        '&struct-def:impl-traits $ %{} 'CodeEntry
+          :doc "|Attach implementations to a StructDef."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'String 'Number 'String
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ [] 'Tag
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |pads-from-left)
-              :code $ quote
-                do
-                  assert= |00000a $ &str:pad-left |a 6 |0
-                  assert= |12312a $ &str:pad-left |a 6 |123
-              :tags $ #{} :core :unit
-        '&str:pad-right $ %{} 'CodeEntry (:doc "|internal function for right padding string\nSyntax: (&str:pad-right s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on right to specified length with pad character")
+        '&struct-def:new $ %{} 'CodeEntry
+          :doc "|Create a StructDef from a name and declared field types."
           :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'String 'Number 'String
-          :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |pads-from-right)
-              :code $ quote
-                do
-                  assert= |a00000 $ &str:pad-right |a 6 |0
-                  assert= |a12312 $ &str:pad-right |a 6 |123
-              :tags $ #{} :core :unit
-        '&str:replace $ %{} 'CodeEntry (:doc "|internal function for string replacement\nSyntax: (&str:replace s pattern replacement)\nParams: s (string), pattern (string), replacement (string)\nReturns: string\nReplaces all occurrences of pattern with replacement")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'String 'String 'String
-          :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |replaces-all-matches)
-              :code $ quote
-                do
-                  assert= |Abcd $ &str:replace |abcd |a |A
-                  assert= |AbAd $ &str:replace |abad |a |A
-              :tags $ #{} :core :unit
-        '&str:rest $ %{} 'CodeEntry (:doc "|internal function for getting rest of string\nSyntax: (&str:rest s)\nParams: s (string)\nReturns: string\nReturns string without first character")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'String
-          :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |drops-first-character)
-              :code $ quote
-                do
-                  assert= |bc $ &str:rest |abc
-                  assert= | $ &str:rest |
-              :tags $ #{} :core :unit
-        '&str:slice $ %{} 'CodeEntry (:doc "|internal function for string slicing\nSyntax: (&str:slice s start end)\nParams: s (string), start (number), end (number)\nReturns: string\nExtracts substring from start to end index")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'String 'Number 'Number
-          :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |slices-unicode-character-ranges)
-              :code $ quote
-                do
-                  assert= |bc $ &str:slice |abcd 1 3
-                  assert= "|文字" $ &str:slice "|中文字符串" 1 3
-              :tags $ #{} :core :unit
-        '&str:utf8-byte-count $ %{} 'CodeEntry (:doc "|Return the UTF-8 wire byte length of a String in O(1) on native/WASM and one linear pass on JavaScript. Prefer receiver method .utf8-byte-count in application code.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'String
-          :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |counts-utf8-wire-bytes)
-              :code $ quote
-                do
-                  assert= 3 $ &str:utf8-byte-count |abc
-                  assert= 2 $ &str:utf8-byte-count "|é"
-                  assert= 3 $ &str:utf8-byte-count "|中"
-                  assert= 4 $ &str:utf8-byte-count "|😀"
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |receiver-method-counts-wire-bytes)
-              :code $ quote
-                assert= 5 $ "|A😀" .utf8-byte-count
-              :tags $ #{} :core :unit
-        '&struct-def:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to a StructDef.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ [] 'Tag
-          :tags $ #{} :builtin :internal
-        '&struct-def:new $ %{} 'CodeEntry (:doc "|Create a StructDef from a name and declared field types.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ &struct-def:new :Person ([] :name :string) ([] :age :number)
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ [] 'Tag
+          :examples $ [] $ quote
+            &struct-def:new :Person ([] :name :string) ([] :age :number)
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ [] 'Tag
           :tags $ #{} :builtin :internal
         '&struct-match-internal $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro &struct-match-internal (value & body)
-              if (&list:empty? body)
-                quasiquote $ eprintln "|[Warn] struct-match found no matched case, missing `_` case?" ~value
-                &let
-                  pair $ &list:nth body 0
-                  if
-                    not $ list? pair
-                    raise $ str-spaced "|struct-match expected arm in list, got:" pair
-                  let
-                      pattern $ &list:nth pair 0
-                    assert "|expected struct or symbol as pattern" $ or (struct? pattern) (symbol? pattern)
-                    if (&= pattern '_)
-                      &let ()
-                        assert "|struct-match expected a branch after `_`" $ &<= 3 (&list:count pair)
-                        quasiquote $ &let
+          :code $ quote $ defmacro &struct-match-internal (value & body)
+            if (&list:empty? body)
+              quasiquote $ eprintln "|[Warn] struct-match found no matched case, missing `_` case?" ~value
+              &let
+                pair $ &list:nth body 0
+                if
+                  not $ list? pair
+                  raise $ str-spaced "|struct-match expected arm in list, got:" pair
+                let
+                    pattern $ &list:nth pair 0
+                  assert "|expected struct or symbol as pattern" $ or (struct? pattern) (symbol? pattern)
+                  if (&= pattern '_)
+                    &let ()
+                      assert "|struct-match expected a branch after `_`" $ &<= 3 $ &list:count pair
+                      quasiquote $ &let
+                          ~ $ &list:nth pair 1
+                          , ~value
+                        ~@ $ &list:slice pair 2
+                    &let ()
+                      assert "|struct-match expected (StructDef binding & body)" $ &<= 3 $ &list:count pair
+                      quasiquote $ if (&struct:matches? ~value ~pattern)
+                        &let
                             ~ $ &list:nth pair 1
                             , ~value
                           ~@ $ &list:slice pair 2
-                      &let ()
-                        assert "|struct-match expected (StructDef binding & body)" $ &<= 3 (&list:count pair)
-                        quasiquote $ if (&struct:matches? ~value ~pattern)
-                          &let
-                              ~ $ &list:nth pair 1
-                              , ~value
-                            ~@ $ &list:slice pair 2
-                          &struct-match-internal ~value $ ~@ (&list:rest body)
+                        &struct-match-internal ~value $ ~@ $ &list:rest body
           :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic)
+          :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] $ :: 'Expr 'Dynamic
           :tags $ #{} :internal :macro
-        '&struct:assoc $ %{} 'CodeEntry (:doc "|Associate a declared field on a struct value.")
+        '&struct:assoc $ %{} 'CodeEntry
+          :doc "|Associate a declared field on a struct value."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
-        '&struct:contains? $ %{} 'CodeEntry (:doc "|Test whether a struct value declares a field.")
+        '&struct:contains? $ %{} 'CodeEntry
+          :doc "|Test whether a struct value declares a field."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
-        '&struct:count $ %{} 'CodeEntry (:doc "|Count fields in a struct value.")
+        '&struct:count $ %{} 'CodeEntry
+          :doc "|Count fields in a struct value."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Struct
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Struct
           :tags $ #{} :builtin :internal
-        '&struct:definition $ %{} 'CodeEntry (:doc "|Return the StructDef of a nominal struct value, or nil for an anonymous struct.")
+        '&struct:definition $ %{} 'CodeEntry
+          :doc "|Return the StructDef of a nominal struct value, or nil for an anonymous struct."
           :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ let
-                User $ defstruct User (:name 'String)
-                user $ %{} User (:name |Alice)
+          :examples $ [] $ quote
+            let
+                User $ defstruct User $ :name 'String
+                user $ %{} User $ :name |Alice
               assert= User $ &struct:definition user
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Struct
-              :return $ :: 'Optional 'Tag
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Struct
+            :return $ :: 'Optional 'Tag
           :tags $ #{} :builtin :internal
-        '&struct:extend-as $ %{} 'CodeEntry (:doc "|Extend a struct value with a declared field.")
+        '&struct:extend-as $ %{} 'CodeEntry
+          :doc "|Extend a struct value with a declared field."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
-        '&struct:from-map $ %{} 'CodeEntry (:doc "|Construct a struct value from a StructDef and map.")
+        '&struct:from-map $ %{} 'CodeEntry
+          :doc "|Construct a struct value from a StructDef and map."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
-        '&struct:get $ %{} 'CodeEntry (:doc "|Read a required declared field from a struct value.")
+        '&struct:get $ %{} 'CodeEntry
+          :doc "|Read a required declared field from a struct value."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Struct 'Tag
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Struct 'Tag
           :tags $ #{} :builtin :internal
-        '&struct:get-name $ %{} 'CodeEntry (:doc "|Return the name tag of a struct value.")
+        '&struct:get-name $ %{} 'CodeEntry
+          :doc "|Return the name tag of a struct value."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ [] 'Tag
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ [] 'Tag
           :tags $ #{} :builtin :internal
-        '&struct:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to a struct value.")
+        '&struct:impl-traits $ %{} 'CodeEntry
+          :doc "|Attach implementations to a struct value."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Struct)
-              :args $ [] 'Struct
+          :schema $ :: 'Fn $ {} (:return 'Struct)
+            :args $ [] 'Struct
           :tags $ #{} :builtin :internal
-        '&struct:impls $ %{} 'CodeEntry (:doc "|Return implementations attached to a struct value.")
+        '&struct:impls $ %{} 'CodeEntry
+          :doc "|Return implementations attached to a struct value."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Struct
-              :return $ :: 'List 'Impl
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Struct
+            :return $ :: 'List 'Impl
           :tags $ #{} :builtin :internal
-        '&struct:matches? $ %{} 'CodeEntry (:doc "|Test whether a struct value matches a struct pattern.")
+        '&struct:matches? $ %{} 'CodeEntry
+          :doc "|Test whether a struct value matches a struct pattern."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
-        '&struct:to-map $ %{} 'CodeEntry (:doc "|Convert a struct value to a map.")
+        '&struct:to-map $ %{} 'CodeEntry
+          :doc "|Convert a struct value to a map."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Struct
-              :return $ :: 'Map 'Tag 'Dynamic
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Struct
+            :return $ :: 'Map 'Tag 'Dynamic
           :tags $ #{} :builtin :internal
-        '&struct:with $ %{} 'CodeEntry (:doc "|Return a struct value with updated fields.")
+        '&struct:with $ %{} 'CodeEntry
+          :doc "|Return a struct value with updated fields."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
-        '&trait::new $ %{} 'CodeEntry (:doc "|internal function for creating trait values\nSyntax: (&trait::new name methods)\nParams: name (tag/symbol), methods (list of tags)\nReturns: trait\nCreates a trait definition value")
+        '&trait::new $ %{} 'CodeEntry
+          :doc "|internal function for creating trait values\nSyntax: (&trait::new name methods)\nParams: name (tag/symbol), methods (list of tags)\nReturns: trait\nCreates a trait definition value"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
-        '&union $ %{} 'CodeEntry (:doc "|internal function for set union\nSyntax: (&union set1 set2 & sets)\nParams: set1 (set), set2 (set), sets (set, variadic)\nReturns: set\nReturns union of all sets")
+        '&union $ %{} 'CodeEntry
+          :doc "|internal function for set union\nSyntax: (&union set1 set2 & sets)\nParams: set1 (set), set2 (set), sets (set, variadic)\nReturns: set\nReturns union of all sets"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'T) (:: 'Set 'T)
-              :generics $ [] 'T
-              :return $ :: 'Set 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Set 'T) (:: 'Set 'T)
+            :generics $ [] 'T
+            :return $ :: 'Set 'T
           :tags $ #{} :builtin :internal
-        '&wait-ms $ %{} 'CodeEntry (:doc "|内部同步等待边界；显式接收 Result 原型和宿主错误前缀，供 public wrapper 与 backend lowering 使用。")
+        '&wait-ms $ %{} 'CodeEntry
+          :doc "|内部同步等待边界；显式接收 Result 原型和宿主错误前缀，供 public wrapper 与 backend lowering 使用。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'EnumDef 'Number 'String
-              :return $ :: 'Result 'Unit 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'EnumDef 'Number 'String
+            :return $ :: 'Result 'Unit 'String
           :tags $ #{} :builtin :internal :io :time
-        '&{} $ %{} 'CodeEntry (:doc "|internal function for creating maps\nSyntax: (&{} & key-value-pairs)\nParams: key-value-pairs (any, variadic)\nReturns: map\nCreates new map from key-value pairs")
+        '&{} $ %{} 'CodeEntry
+          :doc "|internal function for creating maps\nSyntax: (&{} & key-value-pairs)\nParams: key-value-pairs (any, variadic)\nReturns: map\nCreates new map from key-value pairs"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
         '' $ %{} 'CodeEntry (:doc "|alias for []")
-          :code $ quote (def ' [])
+          :code $ quote $ def ' []
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :alias :internal
-        '* $ %{} 'CodeEntry (:doc "|Multiply numbers together")
-          :code $ quote
-            defn * (x & ys) (reduce ys x &*)
+        '* $ %{} 'CodeEntry
+          :doc "|Multiply numbers together"
+          :code $ quote $ defn * (x & ys) (reduce ys x &*)
           :examples $ []
-            quote $ assert= 6 (* 2 3)
-            quote $ assert= 24 (* 2 3 4)
-            quote $ assert= 2 (* 2)
-            quote $ assert= 24 (* 2 3 4)
-            quote $ assert= 30 (* 5 6)
-            quote $ assert= 1 (* 1)
-          :schema $ :: 'Fn
-            {} (:rest 'Number) (:return 'Number)
-              :args $ [] 'Number
-          :tests $ []
-            %{} 'TestEntry (:name |multiplies-variadic-numbers)
-              :code $ quote
-                assert= 24 $ * 1 2 3 4
-              :tags $ #{} :core :unit
-        '+ $ %{} 'CodeEntry (:doc "|Mathematical addition operation\\nFunction: Calculates the sum of one or more numbers\\nParams: x (number), ys (variadic args, list of numbers)\\nReturns: number - sum of all arguments\\nNotes: Supports any number of arguments, requires at least one argument")
-          :code $ quote
-            defn + (x & ys) (reduce ys x &+)
+            quote $ assert= 6 $ * 2 3
+            quote $ assert= 24 $ * 2 3 4
+            quote $ assert= 2 $ * 2
+            quote $ assert= 24 $ * 2 3 4
+            quote $ assert= 30 $ * 5 6
+            quote $ assert= 1 $ * 1
+          :schema $ :: 'Fn $ {} (:rest 'Number) (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |multiplies-variadic-numbers
+            :code $ quote $ assert= 24 (* 1 2 3 4)
+            :tags $ #{} :core :unit
+        '+ $ %{} 'CodeEntry
+          :doc "|Mathematical addition operation\\nFunction: Calculates the sum of one or more numbers\\nParams: x (number), ys (variadic args, list of numbers)\\nReturns: number - sum of all arguments\\nNotes: Supports any number of arguments, requires at least one argument"
+          :code $ quote $ defn + (x & ys) (reduce ys x &+)
           :examples $ []
-            quote $ quote
-              assert= 6 $ + 1 2 3
-            quote $ quote
-              assert= 15 $ + 5 10
-          :schema $ :: 'Fn
-            {} (:rest 'Number) (:return 'Number)
-              :args $ [] 'Number
-          :tests $ []
-            %{} 'TestEntry (:name |adds-variadic-numbers)
-              :code $ quote
-                assert= 10 $ + 1 2 3 4
-              :tags $ #{} :core :unit
+            quote $ quote $ assert= 6 (+ 1 2 3)
+            quote $ quote $ assert= 15 (+ 5 10)
+          :schema $ :: 'Fn $ {} (:rest 'Number) (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |adds-variadic-numbers
+            :code $ quote $ assert= 10 (+ 1 2 3 4)
+            :tags $ #{} :core :unit
         '- $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn - (x & ys)
-              if (&list:empty? ys) (&- 0 x) (reduce ys x &-)
+          :code $ quote $ defn - (x & ys)
+            if (&list:empty? ys) (&- 0 x) (reduce ys x &-)
           :examples $ []
-            quote $ assert= 5 (- 10 3 2)
-            quote $ assert= -5 (- 5)
-          :schema $ :: 'Fn
-            {} (:rest 'Number) (:return 'Number)
-              :args $ [] 'Number
-          :tests $ []
-            %{} 'TestEntry (:name |subtracts-and-negates)
-              :code $ quote
-                do
-                  assert= 4 $ - 10 1 2 3
-                  assert= -2 $ - 2
-              :tags $ #{} :core :unit
-        '-> $ %{} 'CodeEntry (:doc "|Thread-first macro\nSyntax: (-> value step1 step2 ...)\nEvaluates the value through each step by inserting it as the first argument and returns the final result.")
-          :code $ quote
-            defmacro -> (base & xs)
-              if (&list:empty? xs) (quasiquote ~base)
-                &let
-                  x0 $ &list:first xs
-                  if
-                    and (list? x0) (&list:empty? x0)
-                    raise "|-> expects non-empty list step"
-                  if
-                    and
-                      not $ list? x0
-                      not $ thread-step? x0
-                    raise $ str-spaced "|-> expects symbol/tag/fn/method or list step, got:" x0
-                  if (list? x0)
-                    recur
-                      &list:concat
-                        [] (&list:first x0) base
-                        &list:rest x0
-                      , & $ &list:rest xs
-                    recur ([] x0 base) & $ &list:rest xs
+            quote $ assert= 5 $ - 10 3 2
+            quote $ assert= -5 $ - 5
+          :schema $ :: 'Fn $ {} (:rest 'Number) (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |subtracts-and-negates
+            :code $ quote $ do
+              assert= 4 $ - 10 1 2 3
+              assert= -2 $ - 2
+            :tags $ #{} :core :unit
+        '-> $ %{} 'CodeEntry
+          :doc "|Thread-first macro\nSyntax: (-> value step1 step2 ...)\nEvaluates the value through each step by inserting it as the first argument and returns the final result."
+          :code $ quote $ defmacro -> (base & xs)
+            if (&list:empty? xs) (quasiquote ~base)
+              &let
+                x0 $ &list:first xs
+                if
+                  and (list? x0) (&list:empty? x0)
+                  raise "|-> expects non-empty list step"
+                if
+                  and
+                    not $ list? x0
+                    not $ thread-step? x0
+                  raise $ str-spaced "|-> expects symbol/tag/fn/method or list step, got:" x0
+                if (list? x0)
+                  recur
+                    &list:concat
+                      [] (&list:first x0) base
+                      &list:rest x0
+                    , & $ &list:rest xs
+                  recur ([] x0 base) & $ &list:rest xs
           :examples $ []
-            quote $ assert= 3 (-> 1 inc inc)
-            quote $ assert= 9
-              -> 2 inc $ * 3
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic)
+            quote $ assert= 3 $ -> 1 inc inc
+            quote $ assert= 9 $ -> 2 inc (* 3)
+          :schema $ :: 'Macro $ {} (:rest 'Syntax)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-        '->% $ %{} 'CodeEntry (:doc "|pass value as `%` into several expressions")
-          :code $ quote
-            defmacro ->% (base & xs)
-              if (&list:empty? xs) base $ let
-                  tail $ &list:last xs
-                  pairs $ &list:concat
-                    [] $ [] '% base
-                    map (butlast xs)
-                      defn %->% (x) ([] '% x)
-                quasiquote $ let ~pairs ~tail
+        '->% $ %{} 'CodeEntry
+          :doc "|pass value as `%` into several expressions"
+          :code $ quote $ defmacro ->% (base & xs)
+            if (&list:empty? xs) base $ let
+                tail $ &list:last xs
+                pairs $ &list:concat
+                  [] $ [] '% base
+                  map (butlast xs)
+                    defn %->% (x) ([] '% x)
+              quasiquote $ let ~pairs ~tail
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic)
-              :rest $ :: 'Expr 'Dynamic
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] $ :: 'Expr 'Dynamic
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-        '->> $ %{} 'CodeEntry (:doc "|thread macro passing value at end of each expression")
-          :code $ quote
-            defmacro ->> (base & xs)
-              if (&list:empty? xs) (quasiquote ~base)
-                &let
-                  x0 $ &list:first xs
-                  if
-                    and (list? x0) (&list:empty? x0)
-                    raise "|->> expects non-empty list step"
-                  if
-                    and
-                      not $ list? x0
-                      not $ thread-step? x0
-                    raise $ str-spaced "|->> expects symbol/tag/fn/method or list step, got:" x0
-                  if (list? x0)
-                    &call-spread recur (append x0 base) & $ &list:rest xs
-                    &call-spread recur ([] x0 base) & $ &list:rest xs
+        '->> $ %{} 'CodeEntry
+          :doc "|thread macro passing value at end of each expression"
+          :code $ quote $ defmacro ->> (base & xs)
+            if (&list:empty? xs) (quasiquote ~base)
+              &let
+                x0 $ &list:first xs
+                if
+                  and (list? x0) (&list:empty? x0)
+                  raise "|->> expects non-empty list step"
+                if
+                  and
+                    not $ list? x0
+                    not $ thread-step? x0
+                  raise $ str-spaced "|->> expects symbol/tag/fn/method or list step, got:" x0
+                if (list? x0)
+                  &call-spread recur (append x0 base) & $ &list:rest xs
+                  &call-spread recur ([] x0 base) & $ &list:rest xs
           :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic)
+          :schema $ :: 'Macro $ {} (:rest 'Syntax)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         '/ $ %{} 'CodeEntry (:doc |dividing)
-          :code $ quote
-            defn / (x & ys)
-              if (&list:empty? ys) (&/ 1 x) (reduce ys x &/)
+          :code $ quote $ defn / (x & ys)
+            if (&list:empty? ys) (&/ 1 x) (reduce ys x &/)
           :examples $ []
             quote $ / 12 3 2
             quote $ / 8
-          :schema $ :: 'Fn
-            {} (:rest 'Number) (:return 'Number)
-              :args $ [] 'Number
-          :tests $ []
-            %{} 'TestEntry (:name |divides-and-inverts)
-              :code $ quote
-                do
-                  assert= 15 $ / 360 2 3 4
-                  assert= 0.5 $ / 2
-              :tags $ #{} :core :unit
-        '/= $ %{} 'CodeEntry (:doc "|Alias of not= for two values of the same static type. Mixed-type callers must normalize values or narrow them before comparing.")
-          :code $ quote
-            defn /= (a b) (not= a b)
+          :schema $ :: 'Fn $ {} (:rest 'Number) (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |divides-and-inverts
+            :code $ quote $ do
+              assert= 15 $ / 360 2 3 4
+              assert= 0.5 $ / 2
+            :tags $ #{} :core :unit
+        '/= $ %{} 'CodeEntry
+          :doc "|Alias of not= for two values of the same static type. Mixed-type callers must normalize values or narrow them before comparing."
+          :code $ quote $ defn /= (a b) (not= a b)
           :examples $ []
-            quote $ assert= true (/= 1 2)
-            quote $ assert= false (/= :same :same)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T 'T
-              :generics $ [] 'T
-          :tests $ []
-            %{} 'TestEntry (:name |homogeneous-inequality-alias)
-              :code $ quote
-                do
-                  assert= true $ /= 1 2
-                  assert= false $ /= :same :same
-              :tags $ #{} :core :unit
-        ': $ %{} 'CodeEntry (:doc "|Macro sugar for anonymous enums. Expands to `::` and normalizes the variant tag with `turn-tag`.")
-          :code $ quote
-            defmacro : (tag & args)
-              if
-                not $ or (tag? tag) (symbol? tag) (string? tag)
-                raise $ str-spaced "|: expects tag/symbol/string for tag, got:" tag
-              quasiquote $ ::
-                ~ $ turn-tag tag
-                ~@ args
+            quote $ assert= true $ /= 1 2
+            quote $ assert= false $ /= :same :same
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |homogeneous-inequality-alias
+            :code $ quote $ do
+              assert= true $ /= 1 2
+              assert= false $ /= :same :same
+            :tags $ #{} :core :unit
+        ': $ %{} 'CodeEntry
+          :doc "|Macro sugar for anonymous enums. Expands to `::` and normalizes the variant tag with `turn-tag`."
+          :code $ quote $ defmacro : (tag & args)
+            if
+              not $ or (tag? tag) (symbol? tag) (string? tag)
+              raise $ str-spaced "|: expects tag/symbol/string for tag, got:" tag
+            quasiquote $ ::
+              ~ $ turn-tag tag
+              ~@ args
           :examples $ []
             quote $ assert= (:: :point 1 2) (: :point 1 2)
             quote $ assert= (:: :name |calcit) (: |name |calcit)
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Enum
-              :required $ [] 'Syntax
-              :rest $ :: 'Expr 'Dynamic
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Enum
+            :required $ [] 'Syntax
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-        ':: $ %{} 'CodeEntry (:doc "|Construct an anonymous enum value. The implicit enum definition is `_`.")
+        ':: $ %{} 'CodeEntry
+          :doc "|Construct an anonymous enum value. The implicit enum definition is `_`."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
-        ';nil $ %{} 'CodeEntry (:doc "|Legacy macro that evaluates to nil while accepting ignored body forms.\nUse &unit (or a do expression ending in &unit) when an operation has no domain value; use Option for absence in new APIs.")
-          :code $ quote
-            defmacro ;nil $ & _body
-          :examples $ []
-            quote $ assert-type (;nil) (quote Nil)
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Nil
-              :required $ []
+        ';nil $ %{} 'CodeEntry
+          :doc "|Legacy macro that evaluates to nil while accepting ignored body forms.\nUse &unit (or a do expression ending in &unit) when an operation has no domain value; use Option for absence in new APIs."
+          :code $ quote $ defmacro ;nil (& _body)
+          :examples $ [] $ quote
+            assert-type (;nil) (quote Nil)
+          :schema $ :: 'Macro $ {} (:rest 'Syntax)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Nil
+            :required $ []
           :tags $ #{} :macro
         '< $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn < (x & ys)
-              if
-                &= 1 $ &list:count ys
-                &< x $ &list:nth ys 0
-                foldl-compare ys x &<
+          :code $ quote $ defn < (x & ys)
+            if
+              &= 1 $ &list:count ys
+              &< x $ &list:nth ys 0
+              foldl-compare ys x &<
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:rest 'Number) (:return 'Bool)
-              :args $ [] 'Number
+          :schema $ :: 'Fn $ {} (:rest 'Number) (:return 'Bool)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |compares-ascending-chain
+            :code $ quote $ do
+              assert= true $ < 1 2 3 4 5
+              assert= false $ < 3 2
+            :tags $ #{} :core :unit
+        '<= $ %{} 'CodeEntry
+          :doc "|Less than or equal comparison, supports multiple arguments"
+          :code $ quote $ defn <= (x & ys)
+            if
+              &= 1 $ &list:count ys
+              &<= x $ &list:nth ys 0
+              foldl-compare ys x &<=
+          :examples $ []
+            quote $ assert= true $ <= 3 5
+            quote $ assert= true $ <= 3 3
+            quote $ assert= true $ <= 1 2 3 4
+          :schema $ :: 'Fn $ {} (:rest 'Number) (:return 'Bool)
+            :args $ [] 'Number
+        '= $ %{} 'CodeEntry
+          :doc "|Equality predicate for one or more values of the same static type. Returns true only when every argument is equal, short-circuiting on the first mismatch. Mixed-type callers must normalize values, use a type predicate for category checks, or pattern-match nominal values before comparing."
+          :code $ quote $ defn = (x & ys)
+            if
+              &= 1 $ &list:count ys
+              &= x $ &list:first ys
+              foldl-compare ys x &=
+          :examples $ []
+            quote $ assert= true $ = 3 3 3
+            quote $ assert= false $ = 1 2
+            quote $ assert= true $ = ([] 1 2) ([] 1 2)
+          :schema $ :: 'Fn $ {} (:rest 'T) (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tests $ []
-            %{} 'TestEntry (:name |compares-ascending-chain)
-              :code $ quote
-                do
-                  assert= true $ < 1 2 3 4 5
-                  assert= false $ < 3 2
+            %{} 'TestEntry
+              :name |homogeneous-variadic-equality
+              :code $ quote $ do
+                assert= true $ = 3 3 3
+                assert= true $ = ([] 1 2) ([] 1 2)
+                assert= true $ = (%some 1) (%some 1)
               :tags $ #{} :core :unit
-        '<= $ %{} 'CodeEntry (:doc "|Less than or equal comparison, supports multiple arguments")
-          :code $ quote
-            defn <= (x & ys)
-              if
-                &= 1 $ &list:count ys
-                &<= x $ &list:nth ys 0
-                foldl-compare ys x &<=
-          :examples $ []
-            quote $ assert= true (<= 3 5)
-            quote $ assert= true (<= 3 3)
-            quote $ assert= true (<= 1 2 3 4)
-          :schema $ :: 'Fn
-            {} (:rest 'Number) (:return 'Bool)
-              :args $ [] 'Number
-        '= $ %{} 'CodeEntry (:doc "|Equality predicate for one or more values of the same static type. Returns true only when every argument is equal, short-circuiting on the first mismatch. Mixed-type callers must normalize values, use a type predicate for category checks, or pattern-match nominal values before comparing.")
-          :code $ quote
-            defn = (x & ys)
-              if
-                &= 1 $ &list:count ys
-                &= x $ &list:first ys
-                foldl-compare ys x &=
-          :examples $ []
-            quote $ assert= true (= 3 3 3)
-            quote $ assert= false (= 1 2)
-            quote $ assert= true
-              = ([] 1 2) ([] 1 2)
-          :schema $ :: 'Fn
-            {} (:rest 'T) (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
-          :tests $ []
-            %{} 'TestEntry (:name |homogeneous-variadic-equality)
-              :code $ quote
-                do
-                  assert= true $ = 3 3 3
-                  assert= true $ = ([] 1 2) ([] 1 2)
-                  assert= true $ = (%some 1) (%some 1)
+            %{} 'TestEntry
+              :name |compares-open-binding-symmetrically
+              :code $ quote $ let
+                  x $ assert-type 1 'Dynamic
+                assert= true $ = x 1
+                assert= true $ = 1 x
+                assert= false $ = 2 x
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |compares-open-binding-symmetrically)
-              :code $ quote
-                let
-                    x $ assert-type 1 'Dynamic
-                  assert= true $ = x 1
-                  assert= true $ = 1 x
-                  assert= false $ = 2 x
-              :tags $ #{} :core :unit
-        '> $ %{} 'CodeEntry (:doc "|Greater-than comparison for one or more numbers\nReturns true only when the value strictly decreases across every argument.")
-          :code $ quote
-            defn > (x & ys)
-              if
-                &= 1 $ &list:count ys
-                &> x $ &list:nth ys 0
-                foldl-compare ys x &>
+        '> $ %{} 'CodeEntry
+          :doc "|Greater-than comparison for one or more numbers\nReturns true only when the value strictly decreases across every argument."
+          :code $ quote $ defn > (x & ys)
+            if
+              &= 1 $ &list:count ys
+              &> x $ &list:nth ys 0
+              foldl-compare ys x &>
           :examples $ []
-            quote $ assert= true (> 5 3)
-            quote $ assert= false (> 3 5)
-            quote $ assert= true (> 8 4 2 1)
-            quote $ assert= false (> 2 2)
-          :schema $ :: 'Fn
-            {} (:rest 'Number) (:return 'Bool)
-              :args $ [] 'Number
-          :tests $ []
-            %{} 'TestEntry (:name |compares-descending-chain)
-              :code $ quote
-                assert= true $ > 10 8 6 4
-              :tags $ #{} :core :unit
-        '>= $ %{} 'CodeEntry (:doc "|Greater-than-or-equal comparison for one or more numbers")
-          :code $ quote
-            defn >= (x & ys)
-              if
-                &= 1 $ &list:count ys
-                &>= x $ &list:nth ys 0
-                foldl-compare ys x &>=
+            quote $ assert= true $ > 5 3
+            quote $ assert= false $ > 3 5
+            quote $ assert= true $ > 8 4 2 1
+            quote $ assert= false $ > 2 2
+          :schema $ :: 'Fn $ {} (:rest 'Number) (:return 'Bool)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |compares-descending-chain
+            :code $ quote $ assert= true (> 10 8 6 4)
+            :tags $ #{} :core :unit
+        '>= $ %{} 'CodeEntry
+          :doc "|Greater-than-or-equal comparison for one or more numbers"
+          :code $ quote $ defn >= (x & ys)
+            if
+              &= 1 $ &list:count ys
+              &>= x $ &list:nth ys 0
+              foldl-compare ys x &>=
           :examples $ []
-            quote $ assert= true (>= 5 3)
-            quote $ assert= true (>= 5 5)
-            quote $ assert= false (>= 3 5)
-          :schema $ :: 'Fn
-            {} (:rest 'Number) (:return 'Bool)
-              :args $ [] 'Number
-        '? $ %{} 'CodeEntry (:doc "|internal syntax for optional argument in function definition\nSyntax: (? optional-arg) in parameter list\nParams: optional-arg (symbol)\nReturns: parameter marker\nMarks optional parameters in function definitions")
+            quote $ assert= true $ >= 5 3
+            quote $ assert= true $ >= 5 5
+            quote $ assert= false $ >= 3 5
+          :schema $ :: 'Fn $ {} (:rest 'Number) (:return 'Bool)
+            :args $ [] 'Number
+        '? $ %{} 'CodeEntry
+          :doc "|internal syntax for optional argument in function definition\nSyntax: (? optional-arg) in parameter list\nParams: optional-arg (symbol)\nReturns: parameter marker\nMarks optional parameters in function definitions"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
         'Add $ %{} 'CodeEntry (:doc "|Core trait: Add")
-          :code $ quote
-            deftrait Add $ .add
-              :: :fn $ {} (:return 'T)
-                :generics $ [] 'T
-                :args $ [] 'T 'T
+          :code $ quote $ deftrait Add
+            .add $ :: :fn $ {} (:return 'T)
+              :generics $ [] 'T
+              :args $ [] 'T 'T
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'Compare $ %{} 'CodeEntry (:doc "|Core trait for three-way comparison. Number and String implement it and return -1, 0, or 1.")
-          :code $ quote
-            deftrait Compare $ .compare
-              :: :fn $ {}
-                :args $ [] 'T 'T
-                :generics $ [] 'T
-                :return 'Number
+        'Compare $ %{} 'CodeEntry
+          :doc "|Core trait for three-way comparison. Number and String implement it and return -1, 0, or 1."
+          :code $ quote $ deftrait Compare
+            .compare $ :: :fn $ {}
+              :args $ [] 'T 'T
+              :generics $ [] 'T
+              :return 'Number
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'Contains $ %{} 'CodeEntry (:doc "|Core trait: Contains")
-          :code $ quote
-            deftrait Contains $ .contains?
-              :: :fn $ {}
-                :args $ [] 'T 'K
-                :generics $ [] 'T 'K
-                :return 'Bool
+        'Contains $ %{} 'CodeEntry
+          :doc "|Core trait: Contains"
+          :code $ quote $ deftrait Contains
+            .contains? $ :: :fn $ {}
+              :args $ [] 'T 'K
+              :generics $ [] 'T 'K
+              :return 'Bool
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'Countable $ %{} 'CodeEntry (:doc "|Core trait: Countable")
-          :code $ quote
-            deftrait Countable $ .count
-              :: :fn $ {} (:return :number)
-                :generics $ [] 'T
-                :args $ [] 'T
+        'Countable $ %{} 'CodeEntry
+          :doc "|Core trait: Countable"
+          :code $ quote $ deftrait Countable
+            .count $ :: :fn $ {} (:return :number)
+              :generics $ [] 'T
+              :args $ [] 'T
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'Debug $ %{} 'CodeEntry (:doc "|Core trait: Debug. All built-in Calcit values implement this diagnostic representation.")
-          :code $ quote
-            deftrait Debug $ .debug
-              :: :fn $ {} (:return :string)
-                :generics $ [] 'T
-                :args $ [] 'T
+        'Debug $ %{} 'CodeEntry
+          :doc "|Core trait: Debug. All built-in Calcit values implement this diagnostic representation."
+          :code $ quote $ deftrait Debug
+            .debug $ :: :fn $ {} (:return :string)
+              :generics $ [] 'T
+              :args $ [] 'T
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'Deserialize $ %{} 'CodeEntry (:doc "|Core trait: Deserialize")
-          :code $ quote
-            deftrait Deserialize $ .deserialize
-              :: :fn $ {} (:return 'T)
-                :generics $ [] 'T
-                :args $ [] :string
+        'Deserialize $ %{} 'CodeEntry
+          :doc "|Core trait: Deserialize"
+          :code $ quote $ deftrait Deserialize
+            .deserialize $ :: :fn $ {} (:return 'T)
+              :generics $ [] 'T
+              :args $ [] :string
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
         'Eq $ %{} 'CodeEntry (:doc "|Core trait: Eq")
-          :code $ quote
-            deftrait Eq $ .eq?
-              :: :fn $ {} (:return :bool)
-                :generics $ [] 'T
-                :args $ [] 'T 'T
+          :code $ quote $ deftrait Eq
+            .eq? $ :: :fn $ {} (:return :bool)
+              :generics $ [] 'T
+              :args $ [] 'T 'T
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'FfiResponse $ %{} 'CodeEntry (:doc "|Nominal wrapper for an exactly-once native async response capability.")
-          :code $ quote
-            def FfiResponse $ impl-traits
+        'FfiResponse $ %{} 'CodeEntry
+          :doc "|Nominal wrapper for an exactly-once native async response capability."
+          :code $ quote $ def FfiResponse
+            impl-traits
               defstruct FfiResponse $ :raw 'Dynamic
               , FfiResponseOpsImpl
           :examples $ []
           :schema $ :: 'StructDef
           :tags $ #{} :core :data :ffi
-        'FfiResponseOps $ %{} 'CodeEntry (:doc "|Internal method contract for native async response capabilities.")
-          :code $ quote
-            deftrait FfiResponseOps
-              .resolve $ :: 'Fn
-                {}
-                  :generics $ [] 'T
-                  :args $ [] 'FfiResponse 'T
-                  :return 'Unit
-              .reject $ :: 'Fn
-                {}
-                  :generics $ [] 'T
-                  :args $ [] 'FfiResponse 'T
-                  :return 'Unit
+        'FfiResponseOps $ %{} 'CodeEntry
+          :doc "|Internal method contract for native async response capabilities."
+          :code $ quote $ deftrait FfiResponseOps
+            .resolve $ :: 'Fn $ {}
+              :generics $ [] 'T
+              :args $ [] 'FfiResponse 'T
+              :return 'Unit
+            .reject $ :: 'Fn $ {}
+              :generics $ [] 'T
+              :args $ [] 'FfiResponse 'T
+              :return 'Unit
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :internal :trait
-        'FfiResponseOpsImpl $ %{} 'CodeEntry (:doc "|Internal implementation of native async response methods.")
-          :code $ quote
-            defimpl FfiResponseOpsImpl FfiResponseOps (.resolve ffi-response:resolve) (.reject ffi-response:reject)
+        'FfiResponseOpsImpl $ %{} 'CodeEntry
+          :doc "|Internal implementation of native async response methods."
+          :code $ quote $ defimpl FfiResponseOpsImpl FfiResponseOps
+            .resolve ffi-response:resolve
+            .reject ffi-response:reject
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :internal :trait-impl
-        'FfiTask $ %{} 'CodeEntry (:doc "|Nominal wrapper for a cancellable native async task capability.")
-          :code $ quote
-            def FfiTask $ impl-traits
+        'FfiTask $ %{} 'CodeEntry
+          :doc "|Nominal wrapper for a cancellable native async task capability."
+          :code $ quote $ def FfiTask
+            impl-traits
               defstruct FfiTask $ :raw 'Dynamic
               , FfiTaskOpsImpl
           :examples $ []
           :schema $ :: 'StructDef
           :tags $ #{} :core :data :ffi
-        'FfiTaskOps $ %{} 'CodeEntry (:doc "|Internal method contract for native async task capabilities.")
-          :code $ quote
-            deftrait FfiTaskOps
-              .cancel $ :: 'Fn
-                {}
-                  :args $ [] 'FfiTask
-                  :return 'Unit
-              .cancel-with $ :: 'Fn
-                {}
-                  :generics $ [] 'T
-                  :args $ [] 'FfiTask 'T
-                  :return 'Unit
+        'FfiTaskOps $ %{} 'CodeEntry
+          :doc "|Internal method contract for native async task capabilities."
+          :code $ quote $ deftrait FfiTaskOps
+            .cancel $ :: 'Fn $ {}
+              :args $ [] 'FfiTask
+              :return 'Unit
+            .cancel-with $ :: 'Fn $ {}
+              :generics $ [] 'T
+              :args $ [] 'FfiTask 'T
+              :return 'Unit
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :internal :trait
-        'FfiTaskOpsImpl $ %{} 'CodeEntry (:doc "|Internal implementation of native async task methods.")
-          :code $ quote
-            defimpl FfiTaskOpsImpl FfiTaskOps (.cancel ffi-task:cancel) (.cancel-with ffi-task:cancel-with)
+        'FfiTaskOpsImpl $ %{} 'CodeEntry
+          :doc "|Internal implementation of native async task methods."
+          :code $ quote $ defimpl FfiTaskOpsImpl FfiTaskOps (.cancel ffi-task:cancel)
+            .cancel-with ffi-task:cancel-with
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :internal :trait-impl
-        'FsPath $ %{} 'CodeEntry (:doc "|Nominal UTF-8 host filesystem path. Construct with fs:path; file effects are exposed on FsPath rather than String.")
-          :code $ quote
-            def FsPath $ impl-traits
+        'FsPath $ %{} 'CodeEntry
+          :doc "|Nominal UTF-8 host filesystem path. Construct with fs:path; file effects are exposed on FsPath rather than String."
+          :code $ quote $ def FsPath
+            impl-traits
               defstruct FsPath $ :value 'String
               , FsPathOpsImpl
           :examples $ []
           :schema $ :: 'StructDef
           :tags $ #{} :core :data
-        'FsPathOps $ %{} 'CodeEntry (:doc "|Internal method contract for FsPath values.")
-          :code $ quote
-            deftrait FsPathOps
-              .read-text $ :: 'Fn
-                {}
-                  :args $ [] 'FsPath
-                  :return $ :: 'Result 'String 'String
-              .write-text $ :: 'Fn
-                {}
-                  :args $ [] 'FsPath 'String
-                  :return $ :: 'Result 'Unit 'String
-              .read-dir $ :: 'Fn
-                {}
-                  :args $ [] 'FsPath
-                  :return $ :: 'Result (:: 'List 'FsPath) 'String
-              .walk-dir $ :: 'Fn
-                {}
-                  :args $ [] 'FsPath
-                  :return $ :: 'Result (:: 'List 'FsPath) 'String
-              .to-string $ :: 'Fn
-                {}
-                  :args $ [] 'FsPath
-                  :return 'String
+        'FsPathOps $ %{} 'CodeEntry
+          :doc "|Internal method contract for FsPath values."
+          :code $ quote $ deftrait FsPathOps
+            .read-text $ :: 'Fn $ {}
+              :args $ [] 'FsPath
+              :return $ :: 'Result 'String 'String
+            .write-text $ :: 'Fn $ {}
+              :args $ [] 'FsPath 'String
+              :return $ :: 'Result 'Unit 'String
+            .read-dir $ :: 'Fn $ {}
+              :args $ [] 'FsPath
+              :return $ :: 'Result (:: 'List 'FsPath) 'String
+            .walk-dir $ :: 'Fn $ {}
+              :args $ [] 'FsPath
+              :return $ :: 'Result (:: 'List 'FsPath) 'String
+            .to-string $ :: 'Fn $ {}
+              :args $ [] 'FsPath
+              :return 'String
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :internal :trait
-        'FsPathOpsImpl $ %{} 'CodeEntry (:doc "|Internal FsPath method implementation.")
-          :code $ quote
-            defimpl FsPathOpsImpl FsPathOps (.read-text fs-path:read-text) (.write-text fs-path:write-text) (.read-dir fs-path:read-dir) (.walk-dir fs-path:walk-dir) (.to-string fs-path:to-string)
+        'FsPathOpsImpl $ %{} 'CodeEntry
+          :doc "|Internal FsPath method implementation."
+          :code $ quote $ defimpl FsPathOpsImpl FsPathOps
+            .read-text fs-path:read-text
+            .write-text fs-path:write-text
+            .read-dir fs-path:read-dir
+            .walk-dir fs-path:walk-dir
+            .to-string fs-path:to-string
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :internal :trait-impl
         'Len $ %{} 'CodeEntry (:doc "|Core trait: Len")
-          :code $ quote
-            deftrait Len $ .len
-              :: :fn $ {} (:return :number)
-                :generics $ [] 'T
-                :args $ [] 'T
+          :code $ quote $ deftrait Len
+            .len $ :: :fn $ {} (:return :number)
+              :generics $ [] 'T
+              :args $ [] 'T
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'ListDestruct $ %{} 'CodeEntry (:doc "|Nominal result of destruct-list: none, or a head element with the remaining list.")
-          :code $ quote
-            defenum ListDestruct ([] 'T)
-              :some 'T $ :: 'List 'T
-              :none
+        'ListDestruct $ %{} 'CodeEntry
+          :doc "|Nominal result of destruct-list: none, or a head element with the remaining list."
+          :code $ quote $ defenum ListDestruct ([] 'T)
+            :some 'T $ :: 'List 'T
+            :none
           :examples $ []
           :schema $ :: 'Enum
           :tags $ #{} :data
-        'MapDestruct $ %{} 'CodeEntry (:doc "|Nominal result of destruct-map: none, or a key, value, and remaining map.")
-          :code $ quote
-            defenum MapDestruct ([] 'K 'V)
-              :some 'K 'V $ :: 'Map 'K 'V
-              :none
+        'MapDestruct $ %{} 'CodeEntry
+          :doc "|Nominal result of destruct-map: none, or a key, value, and remaining map."
+          :code $ quote $ defenum MapDestruct ([] 'K 'V)
+            :some 'K 'V $ :: 'Map 'K 'V
+            :none
           :examples $ []
           :schema $ :: 'Enum
           :tags $ #{} :data
-        'MapEntryDecision $ %{} 'CodeEntry (:doc "|Typed decision returned by filter-map-kv: :keep supplies the output key/value and :drop omits the input entry.")
-          :code $ quote
-            def MapEntryDecision $ impl-traits
+        'MapEntryDecision $ %{} 'CodeEntry
+          :doc "|Typed decision returned by filter-map-kv: :keep supplies the output key/value and :drop omits the input entry."
+          :code $ quote $ def MapEntryDecision
+            impl-traits
               defenum MapEntryDecision ([] 'K 'V) (:keep 'K 'V) (:drop)
               , internal/&core-debug-impl internal/&core-eq-impl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data
-        'Mappable $ %{} 'CodeEntry (:doc "|Core trait: Mappable")
-          :code $ quote
-            deftrait Mappable $ .map
-              :: :fn $ {} (:return 'T)
-                :generics $ [] 'T
-                :args $ [] 'T :fn
+        'Mappable $ %{} 'CodeEntry
+          :doc "|Core trait: Mappable"
+          :code $ quote $ deftrait Mappable
+            .map $ :: :fn $ {} (:return 'T)
+              :generics $ [] 'T
+              :args $ [] 'T :fn
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'Multiply $ %{} 'CodeEntry (:doc "|Core trait: Multiply")
-          :code $ quote
-            deftrait Multiply $ .multiply
-              :: :fn $ {} (:return 'T)
-                :generics $ [] 'T
-                :args $ [] 'T 'T
+        'Multiply $ %{} 'CodeEntry
+          :doc "|Core trait: Multiply"
+          :code $ quote $ deftrait Multiply
+            .multiply $ :: :fn $ {} (:return 'T)
+              :generics $ [] 'T
+              :args $ [] 'T 'T
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'Option $ %{} 'CodeEntry (:doc "|Rust-style Option enum")
-          :code $ quote
-            def Option $ impl-traits
+        'Option $ %{} 'CodeEntry
+          :doc "|Rust-style Option enum"
+          :code $ quote $ def Option
+            impl-traits
               defenum Option ([] 'T) (:some 'T) (:none)
               , internal/&core-debug-impl internal/&core-eq-impl OptionMappableImpl OptionOpsImpl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data :internal
-        'OptionMappableImpl $ %{} 'CodeEntry (:doc "|Trait impl for Mappable on Option")
-          :code $ quote
-            defimpl OptionMappableImpl Mappable $ .map option:map
+        'OptionMappableImpl $ %{} 'CodeEntry
+          :doc "|Trait impl for Mappable on Option"
+          :code $ quote $ defimpl OptionMappableImpl Mappable (.map option:map)
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :trait-impl
-        'OptionOps $ %{} 'CodeEntry (:doc "|Internal method contract for Option values.")
-          :code $ quote
-            deftrait OptionOps
-              .some? $ :: 'Fn
-                {} (:return 'Bool)
-                  :generics $ [] 'T
-                  :args $ [] (:: 'Option 'T)
-              .none? $ :: 'Fn
-                {} (:return 'Bool)
-                  :generics $ [] 'T
-                  :args $ [] (:: 'Option 'T)
-              .unwrap $ :: 'Fn
-                {} (:return 'T)
-                  :generics $ [] 'T
-                  :args $ [] (:: 'Option 'T)
-              .unwrap-or $ :: 'Fn
-                {} (:return 'T)
-                  :generics $ [] 'T
-                  :args $ [] (:: 'Option 'T) 'T
-              .and-then $ :: 'Fn
-                {}
+        'OptionOps $ %{} 'CodeEntry
+          :doc "|Internal method contract for Option values."
+          :code $ quote $ deftrait OptionOps
+            .some? $ :: 'Fn $ {} (:return 'Bool)
+              :generics $ [] 'T
+              :args $ [] $ :: 'Option 'T
+            .none? $ :: 'Fn $ {} (:return 'Bool)
+              :generics $ [] 'T
+              :args $ [] $ :: 'Option 'T
+            .unwrap $ :: 'Fn $ {} (:return 'T)
+              :generics $ [] 'T
+              :args $ [] $ :: 'Option 'T
+            .unwrap-or $ :: 'Fn $ {} (:return 'T)
+              :generics $ [] 'T
+              :args $ [] (:: 'Option 'T) 'T
+            .and-then $ :: 'Fn $ {}
+              :return $ :: 'Option 'U
+              :generics $ [] 'T 'U
+              :args $ [] (:: 'Option 'T)
+                :: 'Fn $ {}
+                  :args $ [] 'T
                   :return $ :: 'Option 'U
-                  :generics $ [] 'T 'U
-                  :args $ [] (:: 'Option 'T)
-                    :: 'Fn $ {}
-                      :args $ [] 'T
-                      :return $ :: 'Option 'U
-              .or-else $ :: 'Fn
-                {}
+            .or-else $ :: 'Fn $ {}
+              :return $ :: 'Option 'T
+              :generics $ [] 'T
+              :args $ [] (:: 'Option 'T)
+                :: 'Fn $ {}
+                  :args $ []
                   :return $ :: 'Option 'T
-                  :generics $ [] 'T
-                  :args $ [] (:: 'Option 'T)
-                    :: 'Fn $ {}
-                      :args $ []
-                      :return $ :: 'Option 'T
-              .fold $ :: 'Fn
-                {} (:return 'U)
-                  :generics $ [] 'T 'U
-                  :args $ [] (:: 'Option 'T)
-                    :: 'Fn $ {}
-                      :args $ []
-                      :return 'U
-                    :: 'Fn $ {}
-                      :args $ [] 'T
-                      :return 'U
+            .fold $ :: 'Fn $ {} (:return 'U)
+              :generics $ [] 'T 'U
+              :args $ [] (:: 'Option 'T)
+                :: 'Fn $ {}
+                  :args $ []
+                  :return 'U
+                :: 'Fn $ {}
+                  :args $ [] 'T
+                  :return 'U
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :internal :trait
-        'OptionOpsImpl $ %{} 'CodeEntry (:doc "|Internal Option method implementation.")
-          :code $ quote
-            defimpl OptionOpsImpl OptionOps (.some? option:some?) (.none? option:none?) (.unwrap option:unwrap) (.unwrap-or option:unwrap-or) (.and-then option:and-then) (.or-else option:or-else) (.fold option:fold)
+        'OptionOpsImpl $ %{} 'CodeEntry
+          :doc "|Internal Option method implementation."
+          :code $ quote $ defimpl OptionOpsImpl OptionOps (.some? option:some?) (.none? option:none?) (.unwrap option:unwrap) (.unwrap-or option:unwrap-or) (.and-then option:and-then) (.or-else option:or-else) (.fold option:fold)
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :internal :trait-impl
-        'Result $ %{} 'CodeEntry (:doc "|Rust-style Result enum")
-          :code $ quote
-            def Result $ impl-traits
+        'Result $ %{} 'CodeEntry
+          :doc "|Rust-style Result enum"
+          :code $ quote $ def Result
+            impl-traits
               defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
               , internal/&core-debug-impl internal/&core-eq-impl ResultMappableImpl ResultOpsImpl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data :internal
-        'ResultMappableImpl $ %{} 'CodeEntry (:doc "|Trait impl for Mappable on Result")
-          :code $ quote
-            defimpl ResultMappableImpl Mappable $ .map result:map
+        'ResultMappableImpl $ %{} 'CodeEntry
+          :doc "|Trait impl for Mappable on Result"
+          :code $ quote $ defimpl ResultMappableImpl Mappable (.map result:map)
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :trait-impl
-        'ResultOps $ %{} 'CodeEntry (:doc "|Internal method contract for Result values.")
-          :code $ quote
-            deftrait ResultOps
-              .ok? $ :: 'Fn
-                {} (:return 'Bool)
-                  :generics $ [] 'T 'E
-                  :args $ [] (:: 'Result 'T 'E)
-              .err? $ :: 'Fn
-                {} (:return 'Bool)
-                  :generics $ [] 'T 'E
-                  :args $ [] (:: 'Result 'T 'E)
-              .unwrap-or $ :: 'Fn
-                {} (:return 'T)
-                  :generics $ [] 'T 'E
-                  :args $ [] (:: 'Result 'T 'E) 'T
-              .and-then $ :: 'Fn
-                {}
+        'ResultOps $ %{} 'CodeEntry
+          :doc "|Internal method contract for Result values."
+          :code $ quote $ deftrait ResultOps
+            .ok? $ :: 'Fn $ {} (:return 'Bool)
+              :generics $ [] 'T 'E
+              :args $ [] $ :: 'Result 'T 'E
+            .err? $ :: 'Fn $ {} (:return 'Bool)
+              :generics $ [] 'T 'E
+              :args $ [] $ :: 'Result 'T 'E
+            .unwrap-or $ :: 'Fn $ {} (:return 'T)
+              :generics $ [] 'T 'E
+              :args $ [] (:: 'Result 'T 'E) 'T
+            .and-then $ :: 'Fn $ {}
+              :return $ :: 'Result 'U 'E
+              :generics $ [] 'T 'U 'E
+              :args $ [] (:: 'Result 'T 'E)
+                :: 'Fn $ {}
+                  :args $ [] 'T
                   :return $ :: 'Result 'U 'E
-                  :generics $ [] 'T 'U 'E
-                  :args $ [] (:: 'Result 'T 'E)
-                    :: 'Fn $ {}
-                      :args $ [] 'T
-                      :return $ :: 'Result 'U 'E
-              .map-err $ :: 'Fn
-                {}
-                  :return $ :: 'Result 'T 'F
-                  :generics $ [] 'T 'E 'F
-                  :args $ [] (:: 'Result 'T 'E)
-                    :: 'Fn $ {}
-                      :args $ [] 'E
-                      :return 'F
-              .or-else $ :: 'Fn
-                {}
+            .map-err $ :: 'Fn $ {}
+              :return $ :: 'Result 'T 'F
+              :generics $ [] 'T 'E 'F
+              :args $ [] (:: 'Result 'T 'E)
+                :: 'Fn $ {}
+                  :args $ [] 'E
+                  :return 'F
+            .or-else $ :: 'Fn $ {}
+              :return $ :: 'Result 'T 'E
+              :generics $ [] 'T 'E
+              :args $ [] (:: 'Result 'T 'E)
+                :: 'Fn $ {}
+                  :args $ []
                   :return $ :: 'Result 'T 'E
-                  :generics $ [] 'T 'E
-                  :args $ [] (:: 'Result 'T 'E)
-                    :: 'Fn $ {}
-                      :args $ []
-                      :return $ :: 'Result 'T 'E
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :internal :trait
-        'ResultOpsImpl $ %{} 'CodeEntry (:doc "|Internal Result method implementation.")
-          :code $ quote
-            defimpl ResultOpsImpl ResultOps (.ok? result:ok?) (.err? result:err?) (.unwrap-or result:unwrap-or) (.and-then result:and-then) (.map-err result:map-err) (.or-else result:or-else)
+        'ResultOpsImpl $ %{} 'CodeEntry
+          :doc "|Internal Result method implementation."
+          :code $ quote $ defimpl ResultOpsImpl ResultOps (.ok? result:ok?) (.err? result:err?) (.unwrap-or result:unwrap-or) (.and-then result:and-then) (.map-err result:map-err) (.or-else result:or-else)
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :internal :trait-impl
         'RuntimeMapMeta $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defstruct RuntimeMapMeta $ :kind 'Tag
+          :code $ quote $ defstruct RuntimeMapMeta (:kind 'Tag)
           :examples $ []
           :schema $ :: 'Struct
         'RuntimeMapResponse $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defstruct RuntimeMapResponse (:code 'Number)
-              :message $ :: 'Option 'String
-              :body 'Dynamic
-              :meta $ :: 'Option RuntimeMapMeta
+          :code $ quote $ defstruct RuntimeMapResponse (:code 'Number)
+            :message $ :: 'Option 'String
+            :body 'Dynamic
+            :meta $ :: 'Option RuntimeMapMeta
           :examples $ []
           :schema $ :: 'Struct
           :tags $ #{} :data :internal
-        'Serialize $ %{} 'CodeEntry (:doc "|Core trait: Serialize")
-          :code $ quote
-            deftrait Serialize $ .serialize
-              :: :fn $ {} (:return :string)
-                :generics $ [] 'T
-                :args $ [] 'T
+        'Serialize $ %{} 'CodeEntry
+          :doc "|Core trait: Serialize"
+          :code $ quote $ deftrait Serialize
+            .serialize $ :: :fn $ {} (:return :string)
+              :generics $ [] 'T
+              :args $ [] 'T
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'SetDestruct $ %{} 'CodeEntry (:doc "|Nominal result of destruct-set: none, or an element with the remaining set.")
-          :code $ quote
-            defenum SetDestruct ([] 'T)
-              :some 'T $ :: 'Set 'T
-              :none
+        'SetDestruct $ %{} 'CodeEntry
+          :doc "|Nominal result of destruct-set: none, or an element with the remaining set."
+          :code $ quote $ defenum SetDestruct ([] 'T)
+            :some 'T $ :: 'Set 'T
+            :none
           :examples $ []
           :schema $ :: 'Enum
           :tags $ #{} :data
-        'Show $ %{} 'CodeEntry (:doc "|Core trait: Show. User-facing presentation is opt-in; implement it explicitly with defimpl.")
-          :code $ quote
-            deftrait Show $ .show
-              :: :fn $ {} (:return :string)
-                :generics $ [] 'T
-                :args $ [] 'T
+        'Show $ %{} 'CodeEntry
+          :doc "|Core trait: Show. User-facing presentation is opt-in; implement it explicitly with defimpl."
+          :code $ quote $ deftrait Show
+            .show $ :: :fn $ {} (:return :string)
+              :generics $ [] 'T
+              :args $ [] 'T
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'Sliceable $ %{} 'CodeEntry (:doc "|Core trait for values whose slice operation preserves the receiver type. List and String implement it.")
-          :code $ quote
-            deftrait Sliceable $ .slice
-              :: :fn $ {} (:return 'T)
-                :generics $ [] 'T
-                :args $ [] 'T 'Number 'Number
+        'Sliceable $ %{} 'CodeEntry
+          :doc "|Core trait for values whose slice operation preserves the receiver type. List and String implement it."
+          :code $ quote $ deftrait Sliceable
+            .slice $ :: :fn $ {} (:return 'T)
+              :generics $ [] 'T
+              :args $ [] 'T 'Number 'Number
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'StringDestruct $ %{} 'CodeEntry (:doc "|Nominal result of destruct-str: none, or the first character with the remaining string.")
-          :code $ quote
-            defenum StringDestruct (:some 'String 'String) (:none)
+        'StringDestruct $ %{} 'CodeEntry
+          :doc "|Nominal result of destruct-str: none, or the first character with the remaining string."
+          :code $ quote $ defenum StringDestruct (:some 'String 'String) (:none)
           :examples $ []
           :schema $ :: 'Enum
           :tags $ #{} :data
-        '[] $ %{} 'CodeEntry (:doc "|internal function for creating lists\nSyntax: ([] & elements)\nParams: elements (any, variadic)\nReturns: list\nCreates new list from provided elements")
+        '[] $ %{} 'CodeEntry
+          :doc "|internal function for creating lists\nSyntax: ([] & elements)\nParams: elements (any, variadic)\nReturns: list\nCreates new list from provided elements"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:rest 'T)
-              :args $ []
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {} (:rest 'T)
+            :args $ []
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
         '\ $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro \ (& xs)
-              if (&list:empty? xs) (raise "|\\ expects function body")
-              quasiquote $ defn %\ (? % %2) ~xs
+          :code $ quote $ defmacro \ (& xs)
+            if (&list:empty? xs)
+              raise "|\\ expects function body"
+            quasiquote $ defn %\ (? % %2) ~xs
           :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Fn
-              :required $ []
+          :schema $ :: 'Macro $ {} (:rest 'Syntax)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Fn
+            :required $ []
           :tags $ #{} :macro
         'abs $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn abs (x)
-              if (&< x 0) (&- 0 x) x
+          :code $ quote $ defn abs (x)
+            if (&< x 0) (&- 0 x) x
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number
-          :tests $ []
-            %{} 'TestEntry (:name |normalizes-negative-magnitude)
-              :code $ quote
-                assert= 4 $ abs -4
-              :tags $ #{} :core :unit
-        'add-watch $ %{} 'CodeEntry (:doc "|Register a watcher on a Ref<T>. Syntax: (add-watch ref tag-key callback). The key must be a Tag. The callback receives (new-value old-value), returns Unit, and add-watch itself returns Unit.")
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |normalizes-negative-magnitude
+            :code $ quote $ assert= 4 (abs -4)
+            :tags $ #{} :core :unit
+        'add-watch $ %{} 'CodeEntry
+          :doc "|Register a watcher on a Ref<T>. Syntax: (add-watch ref tag-key callback). The key must be a Tag. The callback receives (new-value old-value), returns Unit, and add-watch itself returns Unit."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ [] (:: 'Ref 'T) 'Tag
-                :: 'Fn $ {} (:return 'Unit)
-                  :args $ [] 'T 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] (:: 'Ref 'T) 'Tag $ :: 'Fn
+              {} (:return 'Unit)
+                :args $ [] 'T 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal :state :watch
-        'and $ %{} 'CodeEntry (:doc "|Logical conjunction macro with short-circuit semantics\nReturns the first falsy value or the last truthy value, evaluating expressions left to right.")
-          :code $ quote
-            defmacro and (& xs)
-              if (&list:empty? xs) (raise "|and expects at least 1 expression")
+        'and $ %{} 'CodeEntry
+          :doc "|Logical conjunction macro with short-circuit semantics\nReturns the first falsy value or the last truthy value, evaluating expressions left to right."
+          :code $ quote $ defmacro and (& xs)
+            if (&list:empty? xs)
+              raise "|and expects at least 1 expression"
+            &let
+              item $ &list:first xs
               &let
-                item $ &list:first xs
-                &let
-                  rest-xs $ &list:rest xs
-                  if (&list:empty? rest-xs)
-                    if (list? item)
-                      &let
-                        v1# $ gensym |v1
-                        quasiquote $ &let (~v1# ~item) (if ~v1# ~v1# false)
-                      quasiquote $ if ~item ~item false
-                    quasiquote $ if ~item
-                      and
-                        ~ $ &list:first rest-xs
-                        ~@ $ &list:rest rest-xs
-                      , false
+                rest-xs $ &list:rest xs
+                if (&list:empty? rest-xs)
+                  if (list? item)
+                    &let
+                      v1# $ gensym |v1
+                      quasiquote $ &let (~v1# ~item) (if ~v1# ~v1# false)
+                    quasiquote $ if ~item ~item false
+                  quasiquote $ if ~item
+                    and
+                      ~ $ &list:first rest-xs
+                      ~@ $ &list:rest rest-xs
+                    , false
           :examples $ []
-            quote $ assert= false (and true false true)
-            quote $ assert= |done (and true |done)
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ []
-              :rest $ :: 'Expr 'Dynamic
+            quote $ assert= false $ and true false true
+            quote $ assert= |done $ and true |done
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ []
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-        'any? $ %{} 'CodeEntry (:doc "|checks if any element in collection satisfies the predicate function, returns true on first match, short-circuits evaluation")
-          :code $ quote
-            defn any? (xs f)
-              foldl-shortcut xs false false $ defn %any? (acc x)
-                if (f x) (:: true true) (:: false acc)
+        'any? $ %{} 'CodeEntry
+          :doc "|checks if any element in collection satisfies the predicate function, returns true on first match, short-circuits evaluation"
+          :code $ quote $ defn any? (xs f)
+            foldl-shortcut xs false false $ defn %any? (acc x)
+              if (f x) (:: true true) (:: false acc)
           :examples $ []
-            quote $ assert= true
-              any? ([] 1 2 3 4) even?
-            quote $ assert= false
-              any? ([] 1 3 5 7) even?
-            quote $ assert= false
-              any? ([]) even?
-            quote $ assert= false
-              any? ([] 1 2 3)
-                fn (x) (> x 10)
-            quote $ assert= true
-              any? ([] 5 15 25)
-                fn (x) (> x 10)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Dynamic 'Fn
-          :tests $ []
-            %{} 'TestEntry (:name |shortlists-list-members)
-              :code $ quote
-                assert= true $ any? ([] 1 2 3 4)
-                  fn (x) (> x 3)
-              :tags $ #{} :core :unit
-        'append $ %{} 'CodeEntry (:doc "|internal function for appending to list\nSyntax: (append list element)\nParams: list (list), element (any)\nReturns: list\nReturns new list with element added at end")
+            quote $ assert= true $ any? ([] 1 2 3 4) even?
+            quote $ assert= false $ any? ([] 1 3 5 7) even?
+            quote $ assert= false $ any? ([]) even?
+            quote $ assert= false $ any? ([] 1 2 3)
+              fn (x) (> x 10)
+            quote $ assert= true $ any? ([] 5 15 25)
+              fn (x) (> x 10)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Dynamic 'Fn
+          :tests $ [] $ %{} 'TestEntry
+            :name |shortlists-list-members
+            :code $ quote $ assert= true
+              any? ([] 1 2 3 4)
+                fn (x) (> x 3)
+            :tags $ #{} :core :unit
+        'append $ %{} 'CodeEntry
+          :doc "|internal function for appending to list\nSyntax: (append list element)\nParams: list (list), element (any)\nReturns: list\nReturns new list with element added at end"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'T
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |adds-list-item-at-end)
-              :code $ quote
-                assert= ([] 1 2 3 4)
-                  append ([] 1 2 3) 4
-              :tags $ #{} :core :unit
-        'apply $ %{} 'CodeEntry (:doc "|Call a function with arguments spread from a list. Static analysis preserves the callable return type only when the list has a non-Dynamic homogeneous member satisfying every fixed/rest input and its known cardinality proves the callable arity; a rest-only callable does not require a known length. Otherwise the compatibility result remains Dynamic. Normalize heterogeneous arguments or call the function directly when positions differ.")
-          :code $ quote
-            defn apply (f args) (f & args)
+          :tests $ [] $ %{} 'TestEntry
+            :name |adds-list-item-at-end
+            :code $ quote $ assert= ([] 1 2 3 4)
+              append ([] 1 2 3) 4
+            :tags $ #{} :core :unit
+        'apply $ %{} 'CodeEntry
+          :doc "|Call a function with arguments spread from a list. Static analysis preserves the callable return type only when the list has a non-Dynamic homogeneous member satisfying every fixed/rest input and its known cardinality proves the callable arity; a rest-only callable does not require a known length. Otherwise the compatibility result remains Dynamic. Normalize heterogeneous arguments or call the function directly when positions differ."
+          :code $ quote $ defn apply (f args) (f & args)
           :examples $ []
-            quote $ assert= 6
-              apply + $ [] 1 2 3
-            quote $ assert= 10
-              apply * $ [] 2 5
-            quote $ assert= |abc
-              apply str $ [] |a |b |c
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Fn (:: 'List 'A)
-              :generics $ [] 'A
-          :tests $ []
-            %{} 'TestEntry (:name |spreads-list-arguments)
-              :code $ quote
-                assert= 10 $ apply + ([] 1 2 3 4)
-              :tags $ #{} :core :unit
-        'apply-args $ %{} 'CodeEntry (:doc "|macro that applies a function to arguments, handles empty argument list specially")
-          :code $ quote
-            defmacro apply-args (args f)
-              if
-                not $ list? args
-                raise $ str-spaced "|apply-args expects list args, got:" args
-              if
-                &= [] $ &list:first args
-                quasiquote $ ~f
-                  ~@ $ &list:rest args
-                quasiquote $ ~f ~@args
+            quote $ assert= 6 $ apply + ([] 1 2 3)
+            quote $ assert= 10 $ apply * ([] 2 5)
+            quote $ assert= |abc $ apply str ([] |a |b |c)
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Fn $ :: 'List 'A
+            :generics $ [] 'A
+          :tests $ [] $ %{} 'TestEntry
+            :name |spreads-list-arguments
+            :code $ quote $ assert= 10
+              apply + $ [] 1 2 3 4
+            :tags $ #{} :core :unit
+        'apply-args $ %{} 'CodeEntry
+          :doc "|macro that applies a function to arguments, handles empty argument list specially"
+          :code $ quote $ defmacro apply-args (args f)
+            if
+              not $ list? args
+              raise $ str-spaced "|apply-args expects list args, got:" args
+            if
+              &= [] $ &list:first args
+              quasiquote $ ~f $ ~@ (&list:rest args)
+              quasiquote $ ~f ~@args
           :examples $ []
-            quote $ assert= 6
-              apply-args ([] 1 2 3) +
-            quote $ assert= 15
-              apply-args ([] 5 10) +
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] 'SyntaxList (:: 'Expr 'Fn)
+            quote $ assert= 6 $ apply-args ([] 1 2 3) +
+            quote $ assert= 15 $ apply-args ([] 5 10) +
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] 'SyntaxList $ :: 'Expr 'Fn
           :tags $ #{} :macro
-        'assert $ %{} 'CodeEntry (:doc "|Assert that an expression is truthy, raise with a message when false, and return Unit on success.")
-          :code $ quote
-            defmacro assert (message xs)
-              if
-                if (string? xs)
-                  not $ string? message
-                  , false
-                quasiquote $ assert ~xs ~message
-                quasiquote $ &let ()
-                  if
-                    not $ string? ~message
-                    raise $ str-spaced "|expects 1st argument to be string, got:" ~message
-                  if ~xs &unit $ &let ()
-                    eprintln "|Failed assertion:" $ format-to-lisp (quote ~xs)
-                    raise $ ~
-                      &str:concat (&str:concat message "| ") (format-to-lisp xs)
+        'assert $ %{} 'CodeEntry
+          :doc "|Assert that an expression is truthy, raise with a message when false, and return Unit on success."
+          :code $ quote $ defmacro assert (message xs)
+            if
+              if (string? xs)
+                not $ string? message
+                , false
+              quasiquote $ assert ~xs ~message
+              quasiquote $ &let ()
+                if
+                  not $ string? ~message
+                  raise $ str-spaced "|expects 1st argument to be string, got:" ~message
+                if ~xs &unit $ &let ()
+                  eprintln "|Failed assertion:" $ format-to-lisp $ quote ~xs
+                  raise $ ~ $ &str:concat (&str:concat message "| ") (format-to-lisp xs)
           :examples $ []
-            quote $ assert "|x should be positive" (> 1 0)
-            quote $ assert "|list should not be empty"
-              not $ empty? ([] 1)
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Unit
-              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
+            quote $ assert "|x should be positive" $ > 1 0
+            quote $ assert "|list should not be empty" $ not
+              empty? $ [] 1
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Unit
+            :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :control :log :macro
-        'assert-detect $ %{} 'CodeEntry (:doc "|Assert that a value satisfies a predicate, raise with details when false, and return Unit on success.")
-          :code $ quote
-            defmacro assert-detect (f code)
-              &let
-                v $ gensym |v
-                quasiquote $ &let (~v ~code)
-                  if (~f ~v) &unit $ &let () (eprintln)
-                    eprintln
-                      format-to-lisp $ quote ~code
-                      , "|does not satisfy:"
-                        format-to-lisp $ quote ~f
-                        , "| <--------"
-                    eprintln "|  value is:" ~v
-                    raise "|Not satisfied in assertion!"
+        'assert-detect $ %{} 'CodeEntry
+          :doc "|Assert that a value satisfies a predicate, raise with details when false, and return Unit on success."
+          :code $ quote $ defmacro assert-detect (f code)
+            &let
+              v $ gensym |v
+              quasiquote $ &let (~v ~code)
+                if (~f ~v) &unit $ &let () (eprintln)
+                  eprintln
+                    format-to-lisp $ quote ~code
+                    , "|does not satisfy:"
+                      format-to-lisp $ quote ~f
+                      , "| <--------"
+                  eprintln "|  value is:" ~v
+                  raise "|Not satisfied in assertion!"
           :examples $ []
-            quote $ assert-detect number? (+ 1 2)
-            quote $ assert-detect list? ([] 1 2 3)
-            quote $ assert-detect even? (* 2 5)
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Unit
-              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
+            quote $ assert-detect number? $ + 1 2
+            quote $ assert-detect list? $ [] 1 2 3
+            quote $ assert-detect even? $ * 2 5
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Unit
+            :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :control :log :macro
-        'assert-type $ %{} 'CodeEntry (:doc "|internal syntax for type assertion at preprocessing stage\nSyntax: (assert-type expr type-expr)\nParams: expr (any), type-expr (type annotation)\nReturns: evaluated result of expr\nAsserts that expr matches the given type annotation during static analysis")
+        'assert-type $ %{} 'CodeEntry
+          :doc "|internal syntax for type assertion at preprocessing stage\nSyntax: (assert-type expr type-expr)\nParams: expr (any), type-expr (type annotation)\nReturns: evaluated result of expr\nAsserts that expr matches the given type annotation during static analysis"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :meta :syntax
-        'assert= $ %{} 'CodeEntry (:doc "|asserts that two values are equal, raises error showing both values if not")
-          :code $ quote
-            defmacro assert= (a b)
+        'assert= $ %{} 'CodeEntry
+          :doc "|asserts that two values are equal, raises error showing both values if not"
+          :code $ quote $ defmacro assert= (a b)
+            &let
+              va $ gensym |va
               &let
-                va $ gensym |va
-                &let
-                  vb $ gensym |vb
-                  quasiquote $ &let (~va ~a)
-                    &let (~vb ~b)
-                      if
-                        not $ &= (unsafe-coerce ~va 'Dynamic) (unsafe-coerce ~vb 'Dynamic)
-                        &let () (eprintln) (eprintln "|Left: " ~va)
-                          eprintln "|      " $ format-to-lisp (quote ~a)
-                          eprintln |Right: ~vb
-                          eprintln "|      " $ format-to-lisp (quote ~b)
-                          raise "|not equal in assertion!"
-                        , &unit
+                vb $ gensym |vb
+                quasiquote $ &let (~va ~a)
+                  &let (~vb ~b)
+                    if
+                      not $ &= (unsafe-coerce ~va 'Dynamic) (unsafe-coerce ~vb 'Dynamic)
+                      &let () (eprintln) (eprintln "|Left: " ~va)
+                        eprintln "|      " $ format-to-lisp $ quote ~a
+                        eprintln |Right: ~vb
+                        eprintln "|      " $ format-to-lisp $ quote ~b
+                        raise "|not equal in assertion!"
+                      , &unit
           :examples $ []
-            quote $ assert= 4 (+ 2 2)
-            quote $ assert= |hello (str |hel |lo)
+            quote $ assert= 4 $ + 2 2
+            quote $ assert= |hello $ str |hel |lo
             quote $ assert= ([] 1 2 3) (range 1 4)
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Unit
-              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Unit
+            :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :control :log :macro
-        'assoc $ %{} 'CodeEntry (:doc "|Associate a key or index in maps, lists, enums, and structs.")
-          :code $ quote
-            defn assoc (x k v)
-              if (nil? x)
-                raise $ str-spaced "|assoc does not work on nil for:" k v
-                if (list? x) (&list:assoc x k v) (.assoc x k v)
+        'assoc $ %{} 'CodeEntry
+          :doc "|Associate a key or index in maps, lists, enums, and structs."
+          :code $ quote $ defn assoc (x k v)
+            if (nil? x)
+              raise $ str-spaced "|assoc does not work on nil for:" k v
+              if (list? x) (&list:assoc x k v) (.assoc x k v)
           :examples $ []
             quote $ assert= (&{} :a 1 :b 2)
               assoc (&{} :a 1) :b 2
@@ -3545,43 +3507,42 @@
               assoc ([] 1 2 3) 0 10
             quote $ assert= (&{} :a 1 :b 3)
               assoc (&{} :a 1 :b 2) :b 3
-          :schema $ :: 'Fn
-            {} (:return 'T)
-              :args $ [] 'T 'K 'V
-              :generics $ [] 'T 'K 'V
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T 'K 'V
+            :generics $ [] 'T 'K 'V
           :tests $ []
-            %{} 'TestEntry (:name |replaces-map-value)
-              :code $ quote
-                assert= (&{} :a 3 :b 2)
-                  assoc (&{} :a 1 :b 2) :a 3
+            %{} 'TestEntry
+              :name |replaces-map-value
+              :code $ quote $ assert= (&{} :a 3 :b 2)
+                assoc (&{} :a 1 :b 2) :a 3
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |adds-map-key)
-              :code $ quote
-                assert= (&{} :a 1 :b 2 :c 3)
-                  assoc (&{} :a 1 :b 2) :c 3
+              :code $ quote $ assert= (&{} :a 1 :b 2 :c 3)
+                assoc (&{} :a 1 :b 2) :c 3
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |associates-concrete-value-into-open-map)
-              :code $ quote
-                let
-                    m $ assert-type
-                      {} (:a 1) (:b |x)
-                      :: 'Map 'Tag 'Dynamic
-                  assert=
-                    {} (:a 1) (:b |x) (:ready true)
-                    assoc m :ready true
+            %{} 'TestEntry
+              :name |associates-concrete-value-into-open-map
+              :code $ quote $ let
+                  m $ assert-type
+                    {} (:a 1) (:b |x)
+                    :: 'Map 'Tag 'Dynamic
+                assert=
+                  {} (:a 1) (:b |x) (:ready true)
+                  assoc m :ready true
               :tags $ #{} :core :unit
-        'assoc-in $ %{} 'CodeEntry (:doc "|associates a value at a nested path in a data structure, creates intermediate maps if needed")
-          :code $ quote
-            defn assoc-in (data path v)
-              list-match path
-                () v
-                (p0 ps)
-                  if (struct? data) (raise "|assoc-in does not traverse Struct fields; use assoc with a direct field key")
-                    &let
-                      d $ either data (&{})
-                      assoc d p0 $ assoc-in
-                        if (contains? d p0) (&get-raw d p0) (&{})
-                        , ps v
+        'assoc-in $ %{} 'CodeEntry
+          :doc "|associates a value at a nested path in a data structure, creates intermediate maps if needed"
+          :code $ quote $ defn assoc-in (data path v)
+            list-match path
+              () v
+              (p0 ps)
+                if (struct? data)
+                  raise "|assoc-in does not traverse Struct fields; use assoc with a direct field key"
+                  &let
+                    d $ either data $ &{}
+                    assoc d p0 $ assoc-in
+                      if (contains? d p0) (&get-raw d p0) (&{})
+                      , ps v
           :examples $ []
             quote $ assert=
               &{} :a $ &{} :b 1
@@ -3593,1518 +3554,1405 @@
                 [] :a :b
                 , 2
             quote $ assert=
-              &{} :x $ &{} :y (&{} :z 3)
+              &{} :x $ &{} :y $ &{} :z 3
               assoc-in (&{}) ([] :x :y :z) 3
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic (:: 'List 'K) 'Dynamic
-              :generics $ [] 'K
-        'atom $ %{} 'CodeEntry (:doc "|internal function for creating atoms\nSyntax: (atom value)\nParams: value (any)\nReturns: atom\nCreates new atom with initial value")
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic (:: 'List 'K) 'Dynamic
+            :generics $ [] 'K
+        'atom $ %{} 'CodeEntry
+          :doc "|internal function for creating atoms\nSyntax: (atom value)\nParams: value (any)\nReturns: atom\nCreates new atom with initial value"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'T
-              :generics $ [] 'T
-              :return $ :: 'Ref 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'Ref 'T
           :tags $ #{} :builtin :internal :state
-        'bit-and $ %{} 'CodeEntry (:doc "|internal function for bitwise AND\nSyntax: (bit-and a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise AND operation on two integers")
+        'bit-and $ %{} 'CodeEntry
+          :doc "|internal function for bitwise AND\nSyntax: (bit-and a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise AND operation on two integers"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |combines-bits)
-              :code $ quote
-                do
-                  assert= 7 $ bit-and 15 7
-                  assert= 0 $ bit-and 16 7
-              :tags $ #{} :core :unit
-        'bit-not $ %{} 'CodeEntry (:doc "|internal function for bitwise NOT\nSyntax: (bit-not n)\nParams: n (integer)\nReturns: integer\nPerforms bitwise NOT operation (complement) on integer")
+          :tests $ [] $ %{} 'TestEntry (:name |combines-bits)
+            :code $ quote $ do
+              assert= 7 $ bit-and 15 7
+              assert= 0 $ bit-and 16 7
+            :tags $ #{} :core :unit
+        'bit-not $ %{} 'CodeEntry
+          :doc "|internal function for bitwise NOT\nSyntax: (bit-not n)\nParams: n (integer)\nReturns: integer\nPerforms bitwise NOT operation (complement) on integer"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |complements-bits)
-              :code $ quote
-                do
-                  assert= -17 $ bit-not 16
-                  assert= -1 $ bit-not 0
-              :tags $ #{} :core :unit
-        'bit-or $ %{} 'CodeEntry (:doc "|internal function for bitwise OR\nSyntax: (bit-or a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise OR operation on two integers")
+          :tests $ [] $ %{} 'TestEntry
+            :name |complements-bits
+            :code $ quote $ do
+              assert= -17 $ bit-not 16
+              assert= -1 $ bit-not 0
+            :tags $ #{} :core :unit
+        'bit-or $ %{} 'CodeEntry
+          :doc "|internal function for bitwise OR\nSyntax: (bit-or a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise OR operation on two integers"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |merges-bits)
-              :code $ quote
-                do
-                  assert= 15 $ bit-or 15 7
-                  assert= 23 $ bit-or 16 7
-              :tags $ #{} :core :unit
-        'bit-shl $ %{} 'CodeEntry (:doc "|internal function for bit shift left\nSyntax: (bit-shl n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n left by shift positions")
+          :tests $ [] $ %{} 'TestEntry (:name |merges-bits)
+            :code $ quote $ do
+              assert= 15 $ bit-or 15 7
+              assert= 23 $ bit-or 16 7
+            :tags $ #{} :core :unit
+        'bit-shl $ %{} 'CodeEntry
+          :doc "|internal function for bit shift left\nSyntax: (bit-shl n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n left by shift positions"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |shifts-left)
-              :code $ quote
-                do
-                  assert= 4 $ bit-shl 2 1
-                  assert= 16 $ bit-shl 4 2
-              :tags $ #{} :core :unit
-        'bit-shr $ %{} 'CodeEntry (:doc "|internal function for bit shift right\nSyntax: (bit-shr n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n right by shift positions")
+          :tests $ [] $ %{} 'TestEntry (:name |shifts-left)
+            :code $ quote $ do
+              assert= 4 $ bit-shl 2 1
+              assert= 16 $ bit-shl 4 2
+            :tags $ #{} :core :unit
+        'bit-shr $ %{} 'CodeEntry
+          :doc "|internal function for bit shift right\nSyntax: (bit-shr n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n right by shift positions"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |shifts-right)
-              :code $ quote
-                do
-                  assert= 1 $ bit-shr 2 1
-                  assert= 1 $ bit-shr 4 2
-              :tags $ #{} :core :unit
-        'bit-xor $ %{} 'CodeEntry (:doc "|internal function for bitwise XOR\nSyntax: (bit-xor a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise XOR operation on two integers")
+          :tests $ [] $ %{} 'TestEntry (:name |shifts-right)
+            :code $ quote $ do
+              assert= 1 $ bit-shr 2 1
+              assert= 1 $ bit-shr 4 2
+            :tags $ #{} :core :unit
+        'bit-xor $ %{} 'CodeEntry
+          :doc "|internal function for bitwise XOR\nSyntax: (bit-xor a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise XOR operation on two integers"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |toggles-different-bits)
-              :code $ quote
-                do
-                  assert= 8 $ bit-xor 15 7
-                  assert= 23 $ bit-xor 16 7
-              :tags $ #{} :core :unit
-        'blank? $ %{} 'CodeEntry (:doc "|internal function for checking if string is blank\nSyntax: (blank? s)\nParams: s (string)\nReturns: boolean\nReturns true if string is empty or contains only whitespace")
+          :tests $ [] $ %{} 'TestEntry
+            :name |toggles-different-bits
+            :code $ quote $ do
+              assert= 8 $ bit-xor 15 7
+              assert= 23 $ bit-xor 16 7
+            :tags $ #{} :core :unit
+        'blank? $ %{} 'CodeEntry
+          :doc "|internal function for checking if string is blank\nSyntax: (blank? s)\nParams: s (string)\nReturns: boolean\nReturns true if string is empty or contains only whitespace"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'String
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'String
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |detects-empty-and-space)
-              :code $ quote
-                do
-                  assert= true $ blank? |
-                  assert= true $ blank? "| "
-                  assert= true $ blank? "|  "
-                  assert= true $ blank? "|\n"
-                  assert= true $ blank? "|\n "
-                  assert= false $ blank? |1
-                  assert= false $ blank? "| 1"
-                  assert= false $ blank? "|1 "
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |detects-empty-and-space
+            :code $ quote $ do
+              assert= true $ blank? |
+              assert= true $ blank? "| "
+              assert= true $ blank? "|  "
+              assert= true $ blank? "|\n"
+              assert= true $ blank? "|\n "
+              assert= false $ blank? |1
+              assert= false $ blank? "| 1"
+              assert= false $ blank? "|1 "
+            :tags $ #{} :core :unit
         'bool? $ %{} 'CodeEntry (:doc |)
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
         'buffer? $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn buffer? (x)
-              &= (type-of x) :buffer
+          :code $ quote $ defn buffer? (x)
+            &= (type-of x) :buffer
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
-        'butlast $ %{} 'CodeEntry (:doc "|internal function for getting all but last element\nSyntax: (butlast list)\nParams: list (list)\nReturns: list\nReturns new list without the last element")
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
+        'butlast $ %{} 'CodeEntry
+          :doc "|internal function for getting all but last element\nSyntax: (butlast list)\nParams: list (list)\nReturns: list\nReturns new list without the last element"
           :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= ([] 1 2)
               butlast $ [] 1 2 3
             quote $ assert= ([])
               butlast $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |drops-last-list-item)
-              :code $ quote
-                do
-                  assert= ([] 1 2)
-                    butlast $ [] 1 2 3
-                  assert= ([])
-                    butlast $ []
-              :tags $ #{} :core :unit
-        'case $ %{} 'CodeEntry (:doc "|Match a value against pattern/result pairs. Raises when no pattern matches instead of returning nil.")
-          :code $ quote
-            defmacro case (item & patterns)
-              if (&list:empty? patterns) (raise "|case expects at least 1 pattern")
-              if
-                not $ and (list? patterns) (every? patterns list?)
-                raise $ str-spaced "|case expects pattern pairs in list, got:" patterns
-              if
-                not $ every? patterns
-                  fn (pair)
-                    &= 2 $ &list:count pair
-                raise $ str-spaced "|case expects each pattern as pair, got:" patterns
-              &let
-                v $ gensym |v
-                quasiquote $ &let (~v ~item)
-                  &case ~v
-                    raise $ str-spaced |case |found |no |matching |pattern |for: ~v
-                    , ~@patterns
+          :tests $ [] $ %{} 'TestEntry
+            :name |drops-last-list-item
+            :code $ quote $ do
+              assert= ([] 1 2)
+                butlast $ [] 1 2 3
+              assert= ([])
+                butlast $ []
+            :tags $ #{} :core :unit
+        'case $ %{} 'CodeEntry
+          :doc "|Match a value against pattern/result pairs. Raises when no pattern matches instead of returning nil."
+          :code $ quote $ defmacro case (item & patterns)
+            if (&list:empty? patterns)
+              raise "|case expects at least 1 pattern"
+            if
+              not $ and (list? patterns) (every? patterns list?)
+              raise $ str-spaced "|case expects pattern pairs in list, got:" patterns
+            if
+              not $ every? patterns $ fn (pair)
+                &= 2 $ &list:count pair
+              raise $ str-spaced "|case expects each pattern as pair, got:" patterns
+            &let
+              v $ gensym |v
+              quasiquote $ &let (~v ~item)
+                &case ~v
+                  raise $ str-spaced |case |found |no |matching |pattern |for: ~v
+                  , ~@patterns
           :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic)
+          :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-        'case-default $ %{} 'CodeEntry (:doc "|Case macro variant with an explicit default branch\nEvaluates the target once, compares it against pattern/result pairs, and falls back to the provided default when no pattern matches.")
-          :code $ quote
-            defmacro case-default (item default & patterns)
-              if (&list:empty? patterns)
-                raise $ str-spaced "|Expected patterns for case-default, got empty after:" default
-              if
-                not $ and (list? patterns) (every? patterns list?)
-                raise $ str-spaced "|case-default expects pattern pairs in list, got:" patterns
-              if
-                not $ every? patterns
-                  fn (pair)
-                    hint-fn $ {}
-                      :args $ [] 'List
-                      :return 'Bool
-                    &= 2 $ &list:count pair
-                raise $ str-spaced "|case-default expects each pattern as pair, got:" patterns
-              &let
-                v $ gensym |v
-                quasiquote $ &let (~v ~item) (&case ~v ~default ~@patterns)
+        'case-default $ %{} 'CodeEntry
+          :doc "|Case macro variant with an explicit default branch\nEvaluates the target once, compares it against pattern/result pairs, and falls back to the provided default when no pattern matches."
+          :code $ quote $ defmacro case-default (item default & patterns)
+            if (&list:empty? patterns)
+              raise $ str-spaced "|Expected patterns for case-default, got empty after:" default
+            if
+              not $ and (list? patterns) (every? patterns list?)
+              raise $ str-spaced "|case-default expects pattern pairs in list, got:" patterns
+            if
+              not $ every? patterns $ fn (pair)
+                hint-fn $ {}
+                  :args $ [] 'List
+                  :return 'Bool
+                &= 2 $ &list:count pair
+              raise $ str-spaced "|case-default expects each pattern as pair, got:" patterns
+            &let
+              v $ gensym |v
+              quasiquote $ &let (~v ~item) (&case ~v ~default ~@patterns)
           :examples $ []
-            quote $ assert= |two
-              case-default 2 |none (1 |one) (2 |two)
-            quote $ assert= |none
-              case-default 3 |none $ 1 |one
-            quote $ assert= |fallback
-              case-default 5 |fallback (1 |one) (2 |two) (3 |three)
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
+            quote $ assert= |two $ case-default 2 |none (1 |one) (2 |two)
+            quote $ assert= |none $ case-default 3 |none (1 |one)
+            quote $ assert= |fallback $ case-default 5 |fallback (1 |one) (2 |two) (3 |three)
+          :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
-        'ceil $ %{} 'CodeEntry (:doc "|internal function for ceiling operation\nSyntax: (ceil n)\nParams: n (number)\nReturns: number\nReturns smallest integer greater than or equal to n")
+        'ceil $ %{} 'CodeEntry
+          :doc "|internal function for ceiling operation\nSyntax: (ceil n)\nParams: n (number)\nReturns: number\nReturns smallest integer greater than or equal to n"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |rounds-up)
-              :code $ quote
-                assert= 2 $ ceil 1.1
+              :code $ quote $ assert= 2 (ceil 1.1)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |ceils-positive-fraction)
-              :code $ quote
-                assert= 2 $ ceil 1.1
+            %{} 'TestEntry
+              :name |ceils-positive-fraction
+              :code $ quote $ assert= 2 (ceil 1.1)
               :tags $ #{} :core :unit
-        'char-from-code $ %{} 'CodeEntry (:doc "|internal function for creating character from code\nSyntax: (char-from-code code)\nParams: code (number)\nReturns: string\nCreates character from Unicode code point")
+        'char-from-code $ %{} 'CodeEntry
+          :doc "|internal function for creating character from code\nSyntax: (char-from-code code)\nParams: code (number)\nReturns: string\nCreates character from Unicode code point"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'Number
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |creates-unicode-character)
-              :code $ quote
-                do
-                  assert= |a $ char-from-code 97
-                  assert= "|汉" $ char-from-code 27721
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |creates-unicode-character
+            :code $ quote $ do
+              assert= |a $ char-from-code 97
+              assert= "|汉" $ char-from-code 27721
+            :tags $ #{} :core :unit
         'cirru-quote? $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn cirru-quote? (x)
-              &= (type-of x) :cirru-quote
+          :code $ quote $ defn cirru-quote? (x)
+            &= (type-of x) :cirru-quote
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
         'concat $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn concat (& args)
-              list-match args
-                () $ []
-                (a0 as) (&list:concat a0 & as)
-          :examples $ []
-            quote $ assert= ([] 1 2 3 4 5)
+          :code $ quote $ defn concat (& args)
+            list-match args
+              () $ []
+              (a0 as) (&list:concat a0 & as)
+          :examples $ [] $ quote
+            assert= ([] 1 2 3 4 5)
               concat ([] 1 2) ([] 3 4) ([] 5)
-          :schema $ :: 'Fn
-            {}
-              :args $ []
-              :generics $ [] 'T
-              :rest $ :: 'List 'T
-              :return $ :: 'List 'T
-          :tests $ []
-            %{} 'TestEntry (:name |joins-many-lists)
-              :code $ quote
-                assert= ([] 1 2 4 5 7 8)
-                  concat ([] 1 2) ([] 4 5) ([] 7 8)
-              :tags $ #{} :core :unit
-        'concat-dynamic $ %{} 'CodeEntry (:doc "|Concatenates open List<Dynamic> values without claiming a homogeneous member relation; keeps an explicit open-container boundary.")
-          :code $ quote
-            defn concat-dynamic (& args)
-              list-match args
-                () $ []
-                (a0 as) (&list:concat a0 & as)
-          :examples $ []
-            quote $ assert= 3
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :generics $ [] 'T
+            :rest $ :: 'List 'T
+            :return $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |joins-many-lists
+            :code $ quote $ assert= ([] 1 2 4 5 7 8)
+              concat ([] 1 2) ([] 4 5) ([] 7 8)
+            :tags $ #{} :core :unit
+        'concat-dynamic $ %{} 'CodeEntry
+          :doc "|Concatenates open List<Dynamic> values without claiming a homogeneous member relation; keeps an explicit open-container boundary."
+          :code $ quote $ defn concat-dynamic (& args)
+            list-match args
+              () $ []
+              (a0 as) (&list:concat a0 & as)
+          :examples $ [] $ quote
+            assert= 3 $ count $ concat-dynamic
+              assert-type ([] 1 2) (:: 'List 'Dynamic)
+              assert-type ([] 3) (:: 'List 'Dynamic)
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :rest $ :: 'List 'Dynamic
+            :return $ :: 'List 'Dynamic
+          :tests $ [] $ %{} 'TestEntry
+            :name |joins-open-lists
+            :code $ quote $ assert= 3
               count $ concat-dynamic
                 assert-type ([] 1 2) (:: 'List 'Dynamic)
                 assert-type ([] 3) (:: 'List 'Dynamic)
-          :schema $ :: 'Fn
-            {}
-              :args $ []
-              :rest $ :: 'List 'Dynamic
-              :return $ :: 'List 'Dynamic
-          :tests $ []
-            %{} 'TestEntry (:name |joins-open-lists)
-              :code $ quote
-                assert= 3 $ count
-                  concat-dynamic
-                    assert-type ([] 1 2) (:: 'List 'Dynamic)
-                    assert-type ([] 3) (:: 'List 'Dynamic)
-              :tags $ #{} :core :unit
-        'cond $ %{} 'CodeEntry (:doc "|Multi-branch conditional macro. Requires a final true branch so unmatched control flow cannot return nil.")
-          :code $ quote
-            defmacro cond (& pairs)
-              if (&list:empty? pairs) (raise "|cond expects at least 1 (condition branch) pair")
+            :tags $ #{} :core :unit
+        'cond $ %{} 'CodeEntry
+          :doc "|Multi-branch conditional macro. Requires a final true branch so unmatched control flow cannot return nil."
+          :code $ quote $ defmacro cond (& pairs)
+            if (&list:empty? pairs)
+              raise "|cond expects at least 1 (condition branch) pair"
+            &let
+              pair $ &list:first pairs
+              if
+                not $ and (list? pair)
+                  &= 2 $ &list:count pair
+                raise $ str-spaced "|cond expects a pair, got:" pair
               &let
-                pair $ &list:first pairs
-                if
-                  not $ and (list? pair)
-                    &= 2 $ &list:count pair
-                  raise $ str-spaced "|cond expects a pair, got:" pair
+                else $ &list:rest pairs
                 &let
-                  else $ &list:rest pairs
+                  expr $ &list:nth pair 0
                   &let
-                    expr $ &list:nth pair 0
-                    &let
-                      branch $ &list:nth pair 1
-                      if
-                        if (empty? else) (= true expr) false
-                        , branch $ quasiquote
-                          if ~expr ~branch $ ~
-                            if (&list:empty? else) (raise |cond-requires-a-final-true-branch)
-                              quasiquote $ cond ~@else
+                    branch $ &list:nth pair 1
+                    if
+                      if (empty? else) (= true expr) false
+                      , branch $ quasiquote $ if ~expr ~branch
+                        ~ $ if (&list:empty? else)
+                          raise |cond-requires-a-final-true-branch
+                          quasiquote $ cond ~@else
           :examples $ []
-            quote $ assert= :small
-              cond
-                  &< 2 1
-                  , :nope
-                (&< 2 5) :small
-                true :fallback
-            quote $ assert= :fallback
-              cond (false :branch) (true :fallback)
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ []
+            quote $ assert= :small $ cond
+                &< 2 1
+                , :nope
+              (&< 2 5) :small
+              true :fallback
+            quote $ assert= :fallback $ cond (false :branch) (true :fallback)
+          :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ []
           :tags $ #{} :macro
-        'conj $ %{} 'CodeEntry (:doc "|Appends values to the end of a list, returning a new list\nSupports adding multiple values by chaining additional arguments.")
-          :code $ quote
-            defn conj (xs y0 & ys)
-              if (empty? ys) (append xs y0)
-                recur (append xs y0) & ys
+        'conj $ %{} 'CodeEntry
+          :doc "|Appends values to the end of a list, returning a new list\nSupports adding multiple values by chaining additional arguments."
+          :code $ quote $ defn conj (xs y0 & ys)
+            if (empty? ys) (append xs y0)
+              recur (append xs y0) & ys
           :examples $ []
             quote $ assert= ([] 1 2 3)
               conj ([] 1 2) 3
             quote $ assert= ([] 1 2 3 4)
               conj ([] 1) 2 3 4
-          :schema $ :: 'Fn
-            {} (:rest 'T)
-              :args $ [] (:: 'List 'T) 'T
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {} (:rest 'T)
+            :args $ [] (:: 'List 'T) 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tests $ []
-            %{} 'TestEntry (:name |appends-all-list-items)
-              :code $ quote
-                assert= ([] 1 2 3 4 5)
-                  conj ([] 1 2 3) 4 5
+            %{} 'TestEntry
+              :name |appends-all-list-items
+              :code $ quote $ assert= ([] 1 2 3 4 5)
+                conj ([] 1 2 3) 4 5
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |appends-concrete-value-to-open-list)
-              :code $ quote
-                let
-                    xs $ assert-type ([] 1 |x) (:: 'List 'Dynamic)
-                  assert= ([] 1 |x :ready) (conj xs :ready)
+            %{} 'TestEntry
+              :name |appends-concrete-value-to-open-list
+              :code $ quote $ let
+                  xs $ assert-type ([] 1 |x) (:: 'List 'Dynamic)
+                assert= ([] 1 |x :ready) (conj xs :ready)
               :tags $ #{} :core :unit
-        'contains-in? $ %{} 'CodeEntry (:doc "||Check whether every hop in a nested path exists across maps, enums, or lists. Struct fields are intentionally excluded; use direct field access instead.")
-          :code $ quote
-            defn contains-in? (xs path)
-              list-match path
-                () true
-                (p0 ps)
-                  cond
-                      list? xs
-                      if
-                        and (number? p0) (&list:contains? xs p0)
-                        recur (&list:nth xs p0) ps
-                        , false
-                    (map? xs)
-                      if (&map:contains? xs p0)
-                        recur (&map:get xs p0) ps
-                        , false
-                    (struct? xs) (raise "|contains-in? does not traverse Struct fields; end the path before the Struct and use (:field value)")
-                    (enum? xs)
-                      if
-                        and (&>= p0 0)
-                          &< p0 $ &enum:count xs
-                        recur (&enum:nth xs p0) ps
-                        , false
-                    true false
+        'contains-in? $ %{} 'CodeEntry
+          :doc "||Check whether every hop in a nested path exists across maps, enums, or lists. Struct fields are intentionally excluded; use direct field access instead."
+          :code $ quote $ defn contains-in? (xs path)
+            list-match path
+              () true
+              (p0 ps)
+                cond
+                    list? xs
+                    if
+                      and (number? p0) (&list:contains? xs p0)
+                      recur (&list:nth xs p0) ps
+                      , false
+                  (map? xs)
+                    if (&map:contains? xs p0)
+                      recur (&map:get xs p0) ps
+                      , false
+                  (struct? xs)
+                    raise "|contains-in? does not traverse Struct fields; end the path before the Struct and use (:field value)"
+                  (enum? xs)
+                    if
+                      and (&>= p0 0)
+                        &< p0 $ &enum:count xs
+                      recur (&enum:nth xs p0) ps
+                      , false
+                  true false
           :examples $ []
-            quote $ assert= true
-              contains-in?
-                {} $ :profile
-                  {} $ :name |calcit
-                [] :profile :name
-            quote $ assert= false
-              contains-in?
-                {} $ :profile
-                  {} $ :name |calcit
-                [] :profile :missing
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T (:: 'List 'K)
-              :generics $ [] 'T 'K
+            quote $ assert= true $ contains-in?
+              {} $ :profile $ {} (:name |calcit)
+              [] :profile :name
+            quote $ assert= false $ contains-in?
+              {} $ :profile $ {} (:name |calcit)
+              [] :profile :missing
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T $ :: 'List 'K
+            :generics $ [] 'T 'K
         'contains-symbol? $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn contains-symbol? (xs y)
-              if (list? xs)
-                apply-args (xs)
-                  defn %contains-symbol? (body)
-                    list-match body
-                      () false
-                      (b0 bs)
-                        if (contains-symbol? b0 y) true $ recur bs
-                &= xs y
+          :code $ quote $ defn contains-symbol? (xs y)
+            if (list? xs)
+              apply-args (xs)
+                defn %contains-symbol? (body)
+                  list-match body
+                    () false
+                    (b0 bs)
+                      if (contains-symbol? b0 y) true $ recur bs
+              &= xs y
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T 'Symbol
-              :generics $ [] 'T
-        'contains? $ %{} 'CodeEntry (:doc "|Check whether a collection contains a key or index. Nil is not a collection.")
-          :code $ quote
-            defn contains? (x k)
-              if (list? x) (&list:contains? x k) (.contains? x k)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T 'Symbol
+            :generics $ [] 'T
+        'contains? $ %{} 'CodeEntry
+          :doc "|Check whether a collection contains a key or index. Nil is not a collection."
+          :code $ quote $ defn contains? (x k)
+            if (list? x) (&list:contains? x k) (.contains? x k)
           :examples $ []
-            quote $ assert= true
-              contains? ([] :a :b) 1
-            quote $ assert= true
-              contains?
-                {} $ :a 1
-                , :a
-            quote $ assert= true
-              contains? (#{} 1 2 3) 2
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T 'K
-              :generics $ [] 'T 'K
+            quote $ assert= true $ contains? ([] :a :b) 1
+            quote $ assert= true $ contains?
+              {} $ :a 1
+              , :a
+            quote $ assert= true $ contains? (#{} 1 2 3) 2
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T 'K
+            :generics $ [] 'T 'K
           :tests $ []
             %{} 'TestEntry (:name |finds-map-key)
-              :code $ quote
-                assert= true $ contains? (&{} :a 1 :b 2) :a
+              :code $ quote $ assert= true
+                contains? (&{} :a 1 :b 2) :a
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |checks-string-indices)
-              :code $ quote
-                do
-                  assert= true $ contains? |abcd 0
-                  assert= false $ contains? |abcd 4
+            %{} 'TestEntry
+              :name |checks-string-indices
+              :code $ quote $ do
+                assert= true $ contains? |abcd 0
+                assert= false $ contains? |abcd 4
               :tags $ #{} :core :unit
-        'cos $ %{} 'CodeEntry (:doc "|internal function for cosine\nSyntax: (cos n)\nParams: n (number, radians)\nReturns: number\nReturns cosine of angle in radians")
+        'cos $ %{} 'CodeEntry
+          :doc "|internal function for cosine\nSyntax: (cos n)\nParams: n (number, radians)\nReturns: number\nReturns cosine of angle in radians"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |evaluates-zero-and-half-turn)
-              :code $ quote
-                do
-                  assert= 1 $ cos 0
-                  assert= -1 $ round (cos 3.141592653589793)
-              :tags $ #{} :core :unit
-        'count $ %{} 'CodeEntry (:doc "|Count items in a collection or string. Nil is rejected instead of being treated as empty.")
-          :code $ quote
-            defn count (x)
-              if (list? x) (&list:count x) (.count x)
+          :tests $ [] $ %{} 'TestEntry
+            :name |evaluates-zero-and-half-turn
+            :code $ quote $ do
+              assert= 1 $ cos 0
+              assert= -1 $ round $ cos 3.141592653589793
+            :tags $ #{} :core :unit
+        'count $ %{} 'CodeEntry
+          :doc "|Count items in a collection or string. Nil is rejected instead of being treated as empty."
+          :code $ quote $ defn count (x)
+            if (list? x) (&list:count x) (.count x)
           :examples $ []
-            quote $ assert= 4
-              count $ [] 1 2 3 4
-            quote $ assert= 5 (count |hello)
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'T
-              :generics $ [] 'T
+            quote $ assert= 4 $ count ([] 1 2 3 4)
+            quote $ assert= 5 $ count |hello
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tests $ []
-            %{} 'TestEntry (:name |counts-set-members)
-              :code $ quote
-                assert= 4 $ count (#{} 1 2 3 4)
+            %{} 'TestEntry
+              :name |counts-set-members
+              :code $ quote $ assert= 4
+                count $ #{} 1 2 3 4
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |counts-string-characters)
-              :code $ quote
-                assert= 4 $ count |good
+            %{} 'TestEntry
+              :name |counts-string-characters
+              :code $ quote $ assert= 4 (count |good)
               :tags $ #{} :core :unit
-        'cpu-time $ %{} 'CodeEntry (:doc "|返回单调时钟的毫秒读数，用于测量经过时间。只比较同一进程内两次调用的差值，不依赖绝对起点。")
+        'cpu-time $ %{} 'CodeEntry
+          :doc "|返回单调时钟的毫秒读数，用于测量经过时间。只比较同一进程内两次调用的差值，不依赖绝对起点。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
           :tags $ #{} :builtin :internal :io
-        'data-definition-form $ %{} 'CodeEntry (:doc "|Normalize wrapped forms used by data-definition macros")
-          :code $ quote
-            defn data-definition-form (entry)
+        'data-definition-form $ %{} 'CodeEntry
+          :doc "|Normalize wrapped forms used by data-definition macros"
+          :code $ quote $ defn data-definition-form (entry)
+            if
+              and (list? entry)
+                not $ empty? entry
+                &= [] $ &list:first entry
+              &list:rest entry
               if
                 and (list? entry)
-                  not $ empty? entry
-                  &= [] $ &list:first entry
-                &list:rest entry
-                if
-                  and (list? entry)
-                    &= 1 $ count entry
-                    list? $ &list:first entry
-                  raise "|data definition forms already receive a list from indentation; remove the extra outer parentheses"
-                  , entry
+                  &= 1 $ count entry
+                  list? $ &list:first entry
+                raise "|data definition forms already receive a list from indentation; remove the extra outer parentheses"
+                , entry
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic
-        'data-definition-malformed-nesting? $ %{} 'CodeEntry (:doc "|Detect suspicious nested forms that usually come from wrong indentation in data-definition macros")
-          :code $ quote
-            defn data-definition-malformed-nesting? (form)
-              if
-                and (list? form)
-                  &= 1 $ count form
-                  list? $ &list:first form
-                &let
-                  child $ data-definition-form (&list:first form)
-                  and (list? child)
-                    not $ empty? child
-                    or
-                      tag? $ &list:first child
-                      and
-                        not $ tag? (&list:first child)
-                        every? (&list:rest child)
-                          fn (bound)
-                            &let
-                              items $ data-definition-form bound
-                              and (list? items)
-                                &= 2 $ count items
-                , false
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
+        'data-definition-malformed-nesting? $ %{} 'CodeEntry
+          :doc "|Detect suspicious nested forms that usually come from wrong indentation in data-definition macros"
+          :code $ quote $ defn data-definition-malformed-nesting? (form)
+            if
+              and (list? form)
+                &= 1 $ count form
+                list? $ &list:first form
+              &let
+                child $ data-definition-form $ &list:first form
+                and (list? child)
+                  not $ empty? child
+                  or
+                    tag? $ &list:first child
+                    and
+                      not $ tag? $ &list:first child
+                      every? (&list:rest child)
+                        fn (bound)
+                          &let
+                            items $ data-definition-form bound
+                            and (list? items)
+                              &= 2 $ count items
+              , false
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Dynamic
-        'data-definition-where-form? $ %{} 'CodeEntry (:doc "|Detect optional where-map form after generic parameters in data-definition macros")
-          :code $ quote
-            defn data-definition-where-form? (tail-forms)
-              if (empty? tail-forms) false $ &let
-                candidate $ data-definition-form (&list:first tail-forms)
-                and (list? candidate)
-                  not $ empty? candidate
-                  not $ tag? (&list:first candidate)
-                  every? (&list:rest candidate)
-                    fn (bound)
-                      &let
-                        items $ data-definition-form bound
-                        and (list? items)
-                          &= 2 $ count items
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Dynamic
+        'data-definition-where-form? $ %{} 'CodeEntry
+          :doc "|Detect optional where-map form after generic parameters in data-definition macros"
+          :code $ quote $ defn data-definition-where-form? (tail-forms)
+            if (empty? tail-forms) false $ &let
+              candidate $ data-definition-form $ &list:first tail-forms
+              and (list? candidate)
+                not $ empty? candidate
+                not $ tag? $ &list:first candidate
+                every? (&list:rest candidate)
+                  fn (bound)
+                    &let
+                      items $ data-definition-form bound
+                      and (list? items)
+                        &= 2 $ count items
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Dynamic
-        'dec $ %{} 'CodeEntry (:doc "|Decrements a number by 1")
-          :code $ quote
-            defn dec (x) (&- x 1)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Dynamic
+        'dec $ %{} 'CodeEntry
+          :doc "|Decrements a number by 1"
+          :code $ quote $ defn dec (x) (&- x 1)
           :examples $ []
-            quote $ assert= 4 (dec 5)
-            quote $ assert= -1 (dec 0)
-            quote $ assert= -4 (dec -3)
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number
-        'decode-map-as $ %{} 'CodeEntry (:doc "||Decode an evaluated Calcit value into a typed Struct or other closed data shape. Syntax: (decode-map-as value TypeExpr). Struct fields are checked recursively; unknown keys and missing required fields fail with a path. Missing Option fields become %none and present raw values become %some. Explicit Dynamic leaves are allowed only at this runtime boundary. Use this instead of ad-hoc read-field or Lilac validators for host/JSON maps. Native and JavaScript support this syntax; WASM does not currently support typed decoder syntaxes.")
-          :code $ quote (def decode-map-as &runtime-implementation)
+            quote $ assert= 4 $ dec 5
+            quote $ assert= -1 $ dec 0
+            quote $ assert= -4 $ dec -3
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+        'decode-map-as $ %{} 'CodeEntry
+          :doc "||Decode an evaluated Calcit value into a typed Struct or other closed data shape. Syntax: (decode-map-as value TypeExpr). Struct fields are checked recursively; unknown keys and missing required fields fail with a path. Missing Option fields become %none and present raw values become %some. Explicit Dynamic leaves are allowed only at this runtime boundary. Use this instead of ad-hoc read-field or Lilac validators for host/JSON maps. Native and JavaScript support this syntax; WASM does not currently support typed decoder syntaxes."
+          :code $ quote $ def decode-map-as &runtime-implementation
           :examples $ []
             quote $ let
                 response $ decode-map-as
                   {} (:code 200) (:message |ok)
-                    :body $ {} (:kind :json)
+                    :body $ {} $ :kind :json
                   , RuntimeMapResponse
               assert= 200 $ :code response
               assert= (%some |ok) (:message response)
             quote $ assert=
-              %some $ %{} RuntimeMapMeta (:kind :nested)
+              %some $ %{} RuntimeMapMeta $ :kind :nested
               :meta $ decode-map-as
                 {} (:code 202)
-                  :meta $ {} (:kind :nested)
-                  :body $ {} (:kind :json)
+                  :meta $ {} $ :kind :nested
+                  :body $ {} $ :kind :json
                 , RuntimeMapResponse
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic 'Dynamic
           :tags $ #{} :builtin :internal :meta :syntax
           :tests $ []
-            %{} 'TestEntry (:name |decodes-struct-and-option)
-              :code $ quote
-                do $ let
+            %{} 'TestEntry
+              :name |decodes-struct-and-option
+              :code $ quote $ do
+                let
                     response $ decode-map-as
                       {} (:code 200) (:message |ok)
-                        :body $ {} (:kind :json)
+                        :body $ {} $ :kind :json
                       , RuntimeMapResponse
                     missing $ decode-map-as
                       {} (:code 204)
-                        :body $ {} (:kind :json)
+                        :body $ {} $ :kind :json
                       , RuntimeMapResponse
                   assert= 200 $ :code response
                   assert= (%some |ok) (:message response)
                   assert= (%none) (:message missing)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |preserves-dynamic-and-prewrapped-option)
-              :code $ quote
-                do $ let
+            %{} 'TestEntry
+              :name |preserves-dynamic-and-prewrapped-option
+              :code $ quote $ do
+                let
                     response $ decode-map-as
                       {} (:code 201)
                         :message $ %some |already
-                        :body $ {} (:kind :json)
+                        :body $ {} $ :kind :json
                       , RuntimeMapResponse
                   assert= 201 $ :code response
                   assert= (%some |already) (:message response)
-                  assert= true $ map? (:body response)
+                  assert= true $ map? $ :body response
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |nested-struct-option)
-              :code $ quote
-                do
-                  assert= 202 $ :code
-                    decode-map-as
-                      {} (:code 202)
-                        :meta $ {} (:kind :nested)
-                        :body $ {} (:kind :json)
-                      , RuntimeMapResponse
-                  assert=
-                    %some $ %{} RuntimeMapMeta (:kind :nested)
-                    :meta $ decode-map-as
-                      {} (:code 202)
-                        :meta $ {} (:kind :nested)
-                        :body $ {} (:kind :json)
-                      , RuntimeMapResponse
+            %{} 'TestEntry
+              :name |nested-struct-option
+              :code $ quote $ do
+                assert= 202 $ :code $ decode-map-as
+                  {} (:code 202)
+                    :meta $ {} $ :kind :nested
+                    :body $ {} $ :kind :json
+                  , RuntimeMapResponse
+                assert=
+                  %some $ %{} RuntimeMapMeta $ :kind :nested
+                  :meta $ decode-map-as
+                    {} (:code 202)
+                      :meta $ {} $ :kind :nested
+                      :body $ {} $ :kind :json
+                    , RuntimeMapResponse
               :tags $ #{} :core :unit
-        'def $ %{} 'CodeEntry (:doc "|special macro to expose value to definition")
-          :code $ quote
-            defmacro def (_name x) x
+        'def $ %{} 'CodeEntry
+          :doc "|special macro to expose value to definition"
+          :code $ quote $ defmacro def (_name x) x
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] 'SyntaxSymbol (:: 'Expr 'Dynamic)
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] 'SyntaxSymbol $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-        'defatom $ %{} 'CodeEntry (:doc "|internal syntax for defining referenced state\nSyntax: (defatom name initial-value)\nParams: name (symbol), initial-value (any)\nReturns: atom definition\nDefines a mutable reference with initial value")
+        'defatom $ %{} 'CodeEntry
+          :doc "|internal syntax for defining referenced state\nSyntax: (defatom name initial-value)\nParams: name (symbol), initial-value (any)\nReturns: atom definition\nDefines a mutable reference with initial value"
           :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ ; defatom *my-atom
-              {} $ :a 1
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Symbol 'T
-              :generics $ [] 'T
-              :return $ :: 'Ref 'T
+          :examples $ [] $ quote
+            ; defatom *my-atom $ {} $ :a 1
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Symbol 'T
+            :generics $ [] 'T
+            :return $ :: 'Ref 'T
           :tags $ #{} :builtin :internal :state :syntax
-        'defenum $ %{} 'CodeEntry (:doc "|Define an EnumDef with a closed set of variants.")
-          :code $ quote
-            defmacro defenum (name & variants)
-              assert "|defenum expects name as tag/symbol" $ or (tag? name) (symbol? name)
-              assert "|defenum expects variants in list" $ and (list? variants) (every? variants list?)
+        'defenum $ %{} 'CodeEntry
+          :doc "|Define an EnumDef with a closed set of variants."
+          :code $ quote $ defmacro defenum (name & variants)
+            assert "|defenum expects name as tag/symbol" $ or (tag? name) (symbol? name)
+            assert "|defenum expects variants in list" $ and (list? variants) (every? variants list?)
+            &let
+              first-variant $ if (empty? variants) ([]) (&list:first variants)
               &let
-                first-variant $ if (empty? variants) ([]) (&list:first variants)
+                variants $ if
+                  and
+                    &= 1 $ count variants
+                    list? first-variant
+                    &= '{} $ &list:first first-variant
+                  &list:rest first-variant
+                  , variants
                 &let
-                  variants $ if
-                    and
-                      &= 1 $ count variants
-                      list? first-variant
-                      &= '{} $ &list:first first-variant
-                    &list:rest first-variant
-                    , variants
+                  first-variant $ if (empty? variants) ([]) (&list:first variants)
                   &let
-                    first-variant $ if (empty? variants) ([]) (&list:first variants)
+                    generics $ if
+                      and (list? first-variant)
+                        not $ empty? first-variant
+                        not $ tag? $ &list:first first-variant
+                      if
+                        &= [] $ &list:first first-variant
+                        &list:rest first-variant
+                        , first-variant
+                      []
                     &let
-                      generics $ if
-                        and (list? first-variant)
-                          not $ empty? first-variant
-                          not $ tag? (&list:first first-variant)
-                        if
-                          &= [] $ &list:first first-variant
-                          &list:rest first-variant
-                          , first-variant
-                        []
+                      tail-forms $ if (empty? generics) variants $ &list:rest variants
                       &let
-                        tail-forms $ if (empty? generics) variants (&list:rest variants)
+                        has-where-form? $ data-definition-where-form? tail-forms
                         &let
-                          has-where-form? $ data-definition-where-form? tail-forms
+                          where-form $ if has-where-form?
+                            data-definition-form $ &list:first tail-forms
+                            {}
                           &let
-                            where-form $ if has-where-form?
-                              data-definition-form $ &list:first tail-forms
-                              {}
-                            &let
-                              variant-forms $ if has-where-form? (&list:rest tail-forms) tail-forms
-                              assert "|defenum expects each variant as (:tag & payloads); check indentation if one variant was nested under another" $ every? variant-forms
-                                fn (variant)
-                                  &let
-                                    items $ data-definition-form variant
-                                    and
-                                      &>= (count items) 1
-                                      tag? $ &list:first items
-                              assert "|defenum found malformed nested payload syntax; check indentation around variants" $ every? variant-forms
-                                fn (variant)
-                                  &let
-                                    items $ data-definition-form variant
-                                    every? (&list:rest items)
-                                      fn (payload-form)
-                                        not $ data-definition-malformed-nesting? payload-form
+                            variant-forms $ if has-where-form? (&list:rest tail-forms) tail-forms
+                            assert "|defenum expects each variant as (:tag & payloads); check indentation if one variant was nested under another" $ every? variant-forms $ fn (variant)
                               &let
-                                normalized $ map variant-forms
-                                  fn (variant)
-                                    &let
-                                      items $ data-definition-form variant
-                                      &let
-                                        variant-tag $ &list:first items
-                                        &let
-                                          payload-forms $ map (&list:rest items)
-                                            fn (t)
-                                              if (list? t)
-                                                quasiquote $ quote (~ t)
-                                                , t
-                                          quasiquote $ [] (~ variant-tag) (~@ payload-forms)
-                                if (empty? generics)
-                                  if has-where-form?
-                                    quasiquote $ &enum-def:new
-                                      ~ $ turn-tag name
-                                      ~ where-form
-                                      ~@ normalized
-                                    quasiquote $ &enum-def:new
-                                      ~ $ turn-tag name
-                                      ~@ normalized
-                                  if has-where-form?
-                                    quasiquote $ &enum-def:new
-                                      ~ $ turn-tag name
-                                      [] ~@generics
-                                      ~ where-form
-                                      ~@ normalized
-                                    quasiquote $ &enum-def:new
-                                      ~ $ turn-tag name
-                                      [] ~@generics
-                                      ~@ normalized
-          :examples $ []
-            quote $ defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'EnumDef
-              :required $ [] 'Syntax
-          :tags $ #{} :macro
-        'defimpl $ %{} 'CodeEntry (:doc "|macro for defining trait implementation values\nSyntax: (defimpl ImplName Trait (.method value) ...)\nParams: ImplName (symbol), Trait (symbol), method pairs\nReturns: impl value\nNotes: new code passes raw symbols; tag arguments remain only as legacy compatibility for originless method bags. This macro does not attach an impl to a target type/value; use `impl-traits` separately.\nExpands to &impl::new")
-          :code $ quote
-            defmacro defimpl (name trait & pairs)
-              if
-                not $ or (tag? name) (symbol? name)
-                raise $ str-spaced "|defimpl misuse. Expected: first argument is impl name symbol (legacy tag accepted). Actual:" name "|Fix: rewrite as (defimpl ImplName Trait ...)."
-              if
-                not $ or (tag? trait) (symbol? trait)
-                raise $ str-spaced "|defimpl misuse. Expected: second argument is trait symbol (legacy tag accepted). Actual:" trait "|Fix: rewrite as (defimpl ImplName Trait ...)."
-              quasiquote $ def ~name
-                &impl::new
-                  ~ $ if (tag? trait) (turn-tag trait) trait
-                  ~@ $ if (every? pairs list?)
-                    do
-                      assert "|defimpl expects method pairs" $ and (list? pairs) (every? pairs list?)
-                      assert "|defimpl expects (:method value) pairs" $ every? pairs
-                        fn (pair)
-                          &let
-                            items $ if
-                              &= [] $ &list:first pair
-                              &list:rest pair
-                              if
-                                &= (quote ::) (&list:first pair)
-                                &list:rest pair
-                                , pair
-                            and
-                              &= 2 $ count items
-                              or
-                                tag? $ &list:first items
-                                &= :method $ type-of (&list:first items)
-                      map pairs $ fn (pair)
-                        &let
-                          items $ if
-                            &= [] $ &list:first pair
-                            &list:rest pair
-                            if
-                              &= (quote ::) (&list:first pair)
-                              &list:rest pair
-                              , pair
-                          do
-                            assert "|defimpl expects (:method value) pairs" $ &= 2 (count items)
-                            let
-                                k0 $ &list:first items
-                                v0 $ &list:nth items 1
-                                key $ if (tag? k0) k0
-                                  if
-                                    &= :method $ type-of k0
-                                    let
-                                        s $ format-to-lisp k0
-                                      turn-tag $ &str:slice s 1 (count s)
-                                    raise $ str-spaced "|defimpl expects method key as :tag or .method, got:" k0
-                              quasiquote $ [] ~key ~v0
-                    do
-                      assert "|defimpl expects even number of items" $ &= 0
-                        &number:rem (count pairs) 2
-                      map (section-by pairs 2)
-                        fn (pair)
-                          &let
-                            items $ if
-                              &= [] $ &list:first pair
-                              &list:rest pair
-                              if
-                                &= (quote ::) (&list:first pair)
-                                &list:rest pair
-                                , pair
-                            do
-                              assert "|defimpl expects (:method value) pairs" $ &= 2 (count items)
-                              let
-                                  k0 $ &list:first items
-                                  v0 $ &list:nth items 1
-                                  key $ if (tag? k0) k0
-                                    if
-                                      &= :method $ type-of k0
-                                      let
-                                          s $ format-to-lisp k0
-                                        turn-tag $ &str:slice s 1 (count s)
-                                      raise $ str-spaced "|defimpl expects method key as :tag or .method, got:" k0
-                                quasiquote $ [] ~key ~v0
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Impl
-              :required $ [] 'Syntax 'Syntax
-          :tags $ #{} :macro
-        'defmacro $ %{} 'CodeEntry (:doc "|internal syntax for defining macros\nSyntax: (defmacro name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: macro definition\nDefines a macro that transforms code at compile time")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ do
-              defmacro identity-macro (x) (quasiquote ~x)
-              assert= 4 $ identity-macro (+ 2 2)
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Dynamic 'Dynamic
-          :tags $ #{} :builtin :internal :syntax
-        'defn $ %{} 'CodeEntry (:doc "|internal syntax for defining functions\nSyntax: (defn name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: function definition\nDefines a named function with parameters and body expression")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ defn my-add (p1 p2) (+ p1 p2)
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Dynamic 'Dynamic
-          :tags $ #{} :builtin :internal :syntax
-        'defstruct $ %{} 'CodeEntry (:doc "|Define a StructDef with fixed fields and field types.")
-          :code $ quote
-            defmacro defstruct (name & pairs)
-              assert "|defstruct expects name as tag/symbol" $ or (tag? name) (symbol? name)
-              assert "|defstruct expects pairs in list" $ and (list? pairs) (every? pairs list?)
-              &let
-                first-pair $ if (empty? pairs) ([]) (&list:first pairs)
-                &let
-                  pairs $ if
-                    and
-                      &= 1 $ count pairs
-                      list? first-pair
-                      &= '{} $ &list:first first-pair
-                    &list:rest first-pair
-                    , pairs
-                  &let
-                    first-pair $ if (empty? pairs) ([]) (&list:first pairs)
-                    &let
-                      generics $ if
-                        and (list? first-pair)
-                          not $ empty? first-pair
-                          not $ tag? (&list:first first-pair)
-                        if
-                          &= [] $ &list:first first-pair
-                          &list:rest first-pair
-                          , first-pair
-                        []
-                      &let
-                        tail-forms $ if (empty? generics) pairs (&list:rest pairs)
-                        &let
-                          has-where-form? $ data-definition-where-form? tail-forms
-                          &let
-                            where-form $ if has-where-form?
-                              data-definition-form $ &list:first tail-forms
-                              {}
-                            &let
-                              field-pairs $ if has-where-form? (&list:rest tail-forms) tail-forms
-                              assert "|defstruct expects each field as (:field type); check indentation if one field was nested under another" $ every? field-pairs
-                                fn (pair)
-                                  &let
-                                    items $ data-definition-form pair
-                                    and
-                                      &= 2 $ count items
-                                      tag? $ &list:first items
-                              assert "|defstruct found malformed nested field syntax; check indentation around field pairs" $ every? field-pairs
-                                fn (pair)
-                                  &let
-                                    items $ data-definition-form pair
-                                    not $ data-definition-malformed-nesting? (&list:last items)
+                                items $ data-definition-form variant
+                                and
+                                  &>= (count items) 1
+                                  tag? $ &list:first items
+                            assert "|defenum found malformed nested payload syntax; check indentation around variants" $ every? variant-forms $ fn (variant)
                               &let
-                                normalized $ map field-pairs
-                                  fn (pair)
+                                items $ data-definition-form variant
+                                every? (&list:rest items)
+                                  fn (payload-form)
+                                    not $ data-definition-malformed-nesting? payload-form
+                            &let
+                              normalized $ map variant-forms $ fn (variant)
+                                &let
+                                  items $ data-definition-form variant
+                                  &let
+                                    variant-tag $ &list:first items
                                     &let
-                                      items $ data-definition-form pair
-                                      &let
-                                        field-name $ &list:first items
-                                        &let
-                                          type-form $ &list:last items
-                                          if (list? type-form)
-                                            if
-                                              and
-                                                &= 2 $ count type-form
-                                                syntax? $ &list:first type-form
-                                              if (includes? generics type-form)
-                                                quasiquote $ [] (~ field-name)
-                                                  quote $ ~ type-form
-                                                quasiquote $ [] (~ field-name) (~ type-form)
-                                              quasiquote $ [] (~ field-name)
-                                                quote $ ~ type-form
-                                            quasiquote $ [] (~ field-name) (~ type-form)
-                                if (empty? generics)
-                                  if has-where-form?
-                                    quasiquote $ &struct-def:new
-                                      ~ $ turn-tag name
-                                      ~ where-form
-                                      ~@ normalized
-                                    quasiquote $ &struct-def:new
-                                      ~ $ turn-tag name
-                                      ~@ normalized
-                                  if has-where-form?
-                                    quasiquote $ &struct-def:new
-                                      ~ $ turn-tag name
-                                      [] ~@generics
-                                      ~ where-form
-                                      ~@ normalized
-                                    quasiquote $ &struct-def:new
-                                      ~ $ turn-tag name
-                                      [] ~@generics
-                                      ~@ normalized
-          :examples $ []
-            quote $ defstruct Person (:name 'String) (:age 'Number)
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'StructDef
-              :required $ [] 'Syntax
+                                      payload-forms $ map (&list:rest items)
+                                        fn (t)
+                                          if (list? t)
+                                            quasiquote $ quote $ ~ t
+                                            , t
+                                      quasiquote $ [] (~ variant-tag) (~@ payload-forms)
+                              if (empty? generics)
+                                if has-where-form?
+                                  quasiquote $ &enum-def:new
+                                    ~ $ turn-tag name
+                                    ~ where-form
+                                    ~@ normalized
+                                  quasiquote $ &enum-def:new
+                                    ~ $ turn-tag name
+                                    ~@ normalized
+                                if has-where-form?
+                                  quasiquote $ &enum-def:new
+                                    ~ $ turn-tag name
+                                    [] ~@generics
+                                    ~ where-form
+                                    ~@ normalized
+                                  quasiquote $ &enum-def:new
+                                    ~ $ turn-tag name
+                                    [] ~@generics
+                                    ~@ normalized
+          :examples $ [] $ quote
+            defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
+          :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'EnumDef
+            :required $ [] 'Syntax
           :tags $ #{} :macro
-        'deftrait $ %{} 'CodeEntry (:doc "|macro for defining traits\nSyntax: (deftrait Name (.method (:: :fn $ {} (:args [...]) (:return t))) ...)\nParams: Name (symbol/tag), methods (list of (tag type))\nNotes: use :fn (tag) for DynFn when signature is intentionally omitted\nReturns: trait definition value\nExpands to &trait::new")
-          :code $ quote
-            defmacro deftrait (name & methods)
-              assert "|deftrait expects (method type) pairs" $ every? methods list?
-              &let
-                normalized $ map methods
-                  fn (entry)
+        'defimpl $ %{} 'CodeEntry
+          :doc "|macro for defining trait implementation values\nSyntax: (defimpl ImplName Trait (.method value) ...)\nParams: ImplName (symbol), Trait (symbol), method pairs\nReturns: impl value\nNotes: new code passes raw symbols; tag arguments remain only as legacy compatibility for originless method bags. This macro does not attach an impl to a target type/value; use `impl-traits` separately.\nExpands to &impl::new"
+          :code $ quote $ defmacro defimpl (name trait & pairs)
+            if
+              not $ or (tag? name) (symbol? name)
+              raise $ str-spaced "|defimpl misuse. Expected: first argument is impl name symbol (legacy tag accepted). Actual:" name "|Fix: rewrite as (defimpl ImplName Trait ...)."
+            if
+              not $ or (tag? trait) (symbol? trait)
+              raise $ str-spaced "|defimpl misuse. Expected: second argument is trait symbol (legacy tag accepted). Actual:" trait "|Fix: rewrite as (defimpl ImplName Trait ...)."
+            quasiquote $ def ~name $ &impl::new
+              ~ $ if (tag? trait) (turn-tag trait) trait
+              ~@ $ if (every? pairs list?)
+                do
+                  assert "|defimpl expects method pairs" $ and (list? pairs) (every? pairs list?)
+                  assert "|defimpl expects (:method value) pairs" $ every? pairs $ fn (pair)
                     &let
                       items $ if
-                        &= [] $ &list:first entry
-                        &list:rest entry
-                        , entry
+                        &= [] $ &list:first pair
+                        &list:rest pair
+                        if
+                          &= (quote ::) (&list:first pair)
+                          &list:rest pair
+                          , pair
+                      and
+                        &= 2 $ count items
+                        or
+                          tag? $ &list:first items
+                          &= :method $ type-of $ &list:first items
+                  map pairs $ fn (pair)
+                    &let
+                      items $ if
+                        &= [] $ &list:first pair
+                        &list:rest pair
+                        if
+                          &= (quote ::) (&list:first pair)
+                          &list:rest pair
+                          , pair
                       do
-                        assert "|deftrait expects (method type) pairs" $ &= 2 (count items)
+                        assert "|defimpl expects (:method value) pairs" $ &= 2 $ count items
                         let
-                            m0 $ &list:first items
-                            t0 $ &list:nth items 1
-                            k0 $ if (tag? m0) m0
-                              if
-                                &= :method $ type-of m0
+                            k0 $ &list:first items
+                            v0 $ &list:nth items 1
+                            key $ if (tag? k0) k0 $ if
+                              &= :method $ type-of k0
+                              let
+                                  s $ format-to-lisp k0
+                                turn-tag $ &str:slice s 1 $ count s
+                              raise $ str-spaced "|defimpl expects method key as :tag or .method, got:" k0
+                          quasiquote $ [] ~key ~v0
+                do
+                  assert "|defimpl expects even number of items" $ &= 0 $ &number:rem (count pairs) 2
+                  map (section-by pairs 2)
+                    fn (pair)
+                      &let
+                        items $ if
+                          &= [] $ &list:first pair
+                          &list:rest pair
+                          if
+                            &= (quote ::) (&list:first pair)
+                            &list:rest pair
+                            , pair
+                        do
+                          assert "|defimpl expects (:method value) pairs" $ &= 2 $ count items
+                          let
+                              k0 $ &list:first items
+                              v0 $ &list:nth items 1
+                              key $ if (tag? k0) k0 $ if
+                                &= :method $ type-of k0
                                 let
-                                    s $ format-to-lisp m0
-                                  turn-tag $ &str:slice s 1 (count s)
-                                raise $ str-spaced "|deftrait expects method key as :tag or .method, got:" m0
-                            t1 $ internal/normalize-trait-type t0
-                          quasiquote $ [] ~k0 (quote ~t1)
-                quasiquote $ def ~name
-                  &trait::new
-                    ~ $ turn-tag name
-                    [] ~@normalized
+                                    s $ format-to-lisp k0
+                                  turn-tag $ &str:slice s 1 $ count s
+                                raise $ str-spaced "|defimpl expects method key as :tag or .method, got:" k0
+                            quasiquote $ [] ~key ~v0
           :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Trait
-              :required $ [] 'Syntax
+          :schema $ :: 'Macro $ {} (:rest 'Syntax)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Impl
+            :required $ [] 'Syntax 'Syntax
           :tags $ #{} :macro
-        'deftype-slot $ %{} 'CodeEntry (:doc "|Declare a named compile-time type slot supplied by a library. Syntax: (deftype-slot :slot-name). Applications should bind the slot for each entry with calcit config set-type-slot; an unbound slot falls back to :dynamic.")
+        'defmacro $ %{} 'CodeEntry
+          :doc "|internal syntax for defining macros\nSyntax: (defmacro name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: macro definition\nDefines a macro that transforms code at compile time"
+          :code $ quote &runtime-implementation
+          :examples $ [] $ quote
+            do
+              defmacro identity-macro (x) (quasiquote ~x)
+              assert= 4 $ identity-macro $ + 2 2
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic 'Dynamic 'Dynamic
+          :tags $ #{} :builtin :internal :syntax
+        'defn $ %{} 'CodeEntry
+          :doc "|internal syntax for defining functions\nSyntax: (defn name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: function definition\nDefines a named function with parameters and body expression"
+          :code $ quote &runtime-implementation
+          :examples $ [] $ quote
+            defn my-add (p1 p2) (+ p1 p2)
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic 'Dynamic 'Dynamic
+          :tags $ #{} :builtin :internal :syntax
+        'defstruct $ %{} 'CodeEntry
+          :doc "|Define a StructDef with fixed fields and field types."
+          :code $ quote $ defmacro defstruct (name & pairs)
+            assert "|defstruct expects name as tag/symbol" $ or (tag? name) (symbol? name)
+            assert "|defstruct expects pairs in list" $ and (list? pairs) (every? pairs list?)
+            &let
+              first-pair $ if (empty? pairs) ([]) (&list:first pairs)
+              &let
+                pairs $ if
+                  and
+                    &= 1 $ count pairs
+                    list? first-pair
+                    &= '{} $ &list:first first-pair
+                  &list:rest first-pair
+                  , pairs
+                &let
+                  first-pair $ if (empty? pairs) ([]) (&list:first pairs)
+                  &let
+                    generics $ if
+                      and (list? first-pair)
+                        not $ empty? first-pair
+                        not $ tag? $ &list:first first-pair
+                      if
+                        &= [] $ &list:first first-pair
+                        &list:rest first-pair
+                        , first-pair
+                      []
+                    &let
+                      tail-forms $ if (empty? generics) pairs $ &list:rest pairs
+                      &let
+                        has-where-form? $ data-definition-where-form? tail-forms
+                        &let
+                          where-form $ if has-where-form?
+                            data-definition-form $ &list:first tail-forms
+                            {}
+                          &let
+                            field-pairs $ if has-where-form? (&list:rest tail-forms) tail-forms
+                            assert "|defstruct expects each field as (:field type); check indentation if one field was nested under another" $ every? field-pairs $ fn (pair)
+                              &let
+                                items $ data-definition-form pair
+                                and
+                                  &= 2 $ count items
+                                  tag? $ &list:first items
+                            assert "|defstruct found malformed nested field syntax; check indentation around field pairs" $ every? field-pairs $ fn (pair)
+                              &let
+                                items $ data-definition-form pair
+                                not $ data-definition-malformed-nesting? $ &list:last items
+                            &let
+                              normalized $ map field-pairs $ fn (pair)
+                                &let
+                                  items $ data-definition-form pair
+                                  &let
+                                    field-name $ &list:first items
+                                    &let
+                                      type-form $ &list:last items
+                                      if (list? type-form)
+                                        if
+                                          and
+                                            &= 2 $ count type-form
+                                            syntax? $ &list:first type-form
+                                          if (includes? generics type-form)
+                                            quasiquote $ [] (~ field-name)
+                                              quote $ ~ type-form
+                                            quasiquote $ [] (~ field-name) (~ type-form)
+                                          quasiquote $ [] (~ field-name)
+                                            quote $ ~ type-form
+                                        quasiquote $ [] (~ field-name) (~ type-form)
+                              if (empty? generics)
+                                if has-where-form?
+                                  quasiquote $ &struct-def:new
+                                    ~ $ turn-tag name
+                                    ~ where-form
+                                    ~@ normalized
+                                  quasiquote $ &struct-def:new
+                                    ~ $ turn-tag name
+                                    ~@ normalized
+                                if has-where-form?
+                                  quasiquote $ &struct-def:new
+                                    ~ $ turn-tag name
+                                    [] ~@generics
+                                    ~ where-form
+                                    ~@ normalized
+                                  quasiquote $ &struct-def:new
+                                    ~ $ turn-tag name
+                                    [] ~@generics
+                                    ~@ normalized
+          :examples $ [] $ quote
+            defstruct Person (:name 'String) (:age 'Number)
+          :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'StructDef
+            :required $ [] 'Syntax
+          :tags $ #{} :macro
+        'deftrait $ %{} 'CodeEntry
+          :doc "|macro for defining traits\nSyntax: (deftrait Name (.method (:: :fn $ {} (:args [...]) (:return t))) ...)\nParams: Name (symbol/tag), methods (list of (tag type))\nNotes: use :fn (tag) for DynFn when signature is intentionally omitted\nReturns: trait definition value\nExpands to &trait::new"
+          :code $ quote $ defmacro deftrait (name & methods)
+            assert "|deftrait expects (method type) pairs" $ every? methods list?
+            &let
+              normalized $ map methods $ fn (entry)
+                &let
+                  items $ if
+                    &= [] $ &list:first entry
+                    &list:rest entry
+                    , entry
+                  do
+                    assert "|deftrait expects (method type) pairs" $ &= 2 $ count items
+                    let
+                        m0 $ &list:first items
+                        t0 $ &list:nth items 1
+                        k0 $ if (tag? m0) m0 $ if
+                          &= :method $ type-of m0
+                          let
+                              s $ format-to-lisp m0
+                            turn-tag $ &str:slice s 1 $ count s
+                          raise $ str-spaced "|deftrait expects method key as :tag or .method, got:" m0
+                        t1 $ internal/normalize-trait-type t0
+                      quasiquote $ [] ~k0 $ quote ~t1
+              quasiquote $ def ~name $ &trait::new
+                ~ $ turn-tag name
+                [] ~@normalized
+          :examples $ []
+          :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Trait
+            :required $ [] 'Syntax
+          :tags $ #{} :macro
+        'deftype-slot $ %{} 'CodeEntry
+          :doc "|Declare a named compile-time type slot supplied by a library. Syntax: (deftype-slot :slot-name). Applications should bind the slot for each entry with calcit config set-type-slot; an unbound slot falls back to :dynamic."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ [] 'Tag
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] 'Tag
           :tags $ #{} :builtin :internal :meta :state :syntax
-        'deref $ %{} 'CodeEntry (:doc "|Reads Ref<T> without erasing its payload type. Prefer receiver syntax `.deref` in user code; custom host or nominal dereference behavior belongs to a typed method implementation.")
-          :code $ quote
-            defn deref (*a)
-              if (ref? *a) (&atom:deref *a) (.deref *a)
+        'deref $ %{} 'CodeEntry
+          :doc "|Reads Ref<T> without erasing its payload type. Prefer receiver syntax `.deref` in user code; custom host or nominal dereference behavior belongs to a typed method implementation."
+          :code $ quote $ defn deref (*a)
+            if (ref? *a) (&atom:deref *a) (.deref *a)
           :examples $ []
             quote $ do (defatom *state 1)
               assert= 1 $ deref *state
             quote $ do (defatom *counter 0) (reset! *counter 5)
               assert= 5 $ deref *counter
-          :schema $ :: 'Fn
-            {} (:return 'T)
-              :args $ [] (:: 'Ref 'T)
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] $ :: 'Ref 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal :state
-          :tests $ []
-            %{} 'TestEntry (:name |receiver-method-preserves-ref-payload)
-              :code $ quote
-                let
-                    *typed-counter $ atom 1
-                  assert= 1 $ .deref *typed-counter
-                  reset! *typed-counter 2
-                  assert= 2 $ .deref *typed-counter
-              :tags $ #{} :core :types :unit
-        'destruct-list $ %{} 'CodeEntry (:doc "|Split a list into the nominal ListDestruct<T> enum.")
-          :code $ quote
-            defn destruct-list (xs)
-              if (empty? xs) (%:: ListDestruct :none)
-                %:: ListDestruct :some (&list:nth xs 0) (&list:rest xs)
+          :tests $ [] $ %{} 'TestEntry
+            :name |receiver-method-preserves-ref-payload
+            :code $ quote $ let
+                *typed-counter $ atom 1
+              assert= 1 $ .deref *typed-counter
+              reset! *typed-counter 2
+              assert= 2 $ .deref *typed-counter
+            :tags $ #{} :core :types :unit
+        'destruct-list $ %{} 'CodeEntry
+          :doc "|Split a list into the nominal ListDestruct<T> enum."
+          :code $ quote $ defn destruct-list (xs)
+            if (empty? xs) (%:: ListDestruct :none)
+              %:: ListDestruct :some (&list:nth xs 0) (&list:rest xs)
           :examples $ []
             quote $ assert=
               %:: ListDestruct :some 1 $ [] 2
               destruct-list $ [] 1 2
             quote $ assert= (%:: ListDestruct :none)
               destruct-list $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'ListDestruct 'T
-          :tests $ []
-            %{} 'TestEntry (:name |splits-head-and-tail)
-              :code $ quote
-                do
-                  assert=
-                    :: :parts 1 $ [] 2 3
-                    match
-                      destruct-list $ [] 1 2 3
-                      (:none) (:: :empty)
-                      (:some item tail) (:: :parts item tail)
-                  assert= (:: :empty)
-                    match
-                      destruct-list $ []
-                      (:none) (:: :empty)
-                      (:some item tail) (:: :parts item tail)
-              :tags $ #{} :core :unit
-        'destruct-map $ %{} 'CodeEntry (:doc "|Split a map into the nominal MapDestruct<K,V> enum.")
-          :code $ quote
-            defn destruct-map (xs)
-              &let
-                pair $ &map:destruct xs
-                if (nil? pair) (%:: MapDestruct :none) (%:: MapDestruct :some & pair)
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'ListDestruct 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |splits-head-and-tail
+            :code $ quote $ do
+              assert=
+                :: :parts 1 $ [] 2 3
+                match
+                  destruct-list $ [] 1 2 3
+                  (:none) (:: :empty)
+                  (:some item tail) (:: :parts item tail)
+              assert= (:: :empty)
+                match
+                  destruct-list $ []
+                  (:none) (:: :empty)
+                  (:some item tail) (:: :parts item tail)
+            :tags $ #{} :core :unit
+        'destruct-map $ %{} 'CodeEntry
+          :doc "|Split a map into the nominal MapDestruct<K,V> enum."
+          :code $ quote $ defn destruct-map (xs)
+            &let
+              pair $ &map:destruct xs
+              if (nil? pair) (%:: MapDestruct :none) (%:: MapDestruct :some & pair)
           :examples $ []
             quote $ assert= (%:: MapDestruct :none)
               destruct-map $ &{}
-            quote $ assert= 1
-              match
-                destruct-map $ &{} :a 1
-                (:some _key value _rest) value
-                (:none) 0
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
-              :return $ :: 'MapDestruct 'K 'V
-          :tests $ []
-            %{} 'TestEntry (:name |splits-entry-and-remainder)
-              :code $ quote
-                do
-                  assert= (:: :parts true true 1)
-                    match
-                      destruct-map $ &{} :a 1 :b 2
-                      (:none) (:: :empty)
-                      (:some key value tail)
-                        :: :parts (tag? key) (number? value) (count tail)
-                  assert= (:: :empty)
-                    match
-                      destruct-map $ &{}
-                      (:none) (:: :empty)
-                      (:some key value tail)
-                        :: :parts $ count tail
-              :tags $ #{} :core :unit
-        'destruct-set $ %{} 'CodeEntry (:doc "|Split a set into the nominal SetDestruct<T> enum.")
-          :code $ quote
-            defn destruct-set (xs)
-              &let
-                pair $ &set:destruct xs
-                if (nil? pair) (%:: SetDestruct :none)
-                  %:: SetDestruct :some (&list:nth pair 0) (&list:nth pair 1)
+            quote $ assert= 1 $ match
+              destruct-map $ &{} :a 1
+              (:some _key value _rest) value
+              (:none) 0
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'MapDestruct 'K 'V
+          :tests $ [] $ %{} 'TestEntry
+            :name |splits-entry-and-remainder
+            :code $ quote $ do
+              assert= (:: :parts true true 1)
+                match
+                  destruct-map $ &{} :a 1 :b 2
+                  (:none) (:: :empty)
+                  (:some key value tail)
+                    :: :parts (tag? key) (number? value) (count tail)
+              assert= (:: :empty)
+                match
+                  destruct-map $ &{}
+                  (:none) (:: :empty)
+                  (:some key value tail)
+                    :: :parts $ count tail
+            :tags $ #{} :core :unit
+        'destruct-set $ %{} 'CodeEntry
+          :doc "|Split a set into the nominal SetDestruct<T> enum."
+          :code $ quote $ defn destruct-set (xs)
+            &let
+              pair $ &set:destruct xs
+              if (nil? pair) (%:: SetDestruct :none)
+                %:: SetDestruct :some (&list:nth pair 0) (&list:nth pair 1)
           :examples $ []
             quote $ assert= (%:: SetDestruct :none)
               destruct-set $ #{}
-            quote $ assert= 2
-              match
-                destruct-set $ #{} 2
-                (:some item _rest) item
-                (:none) 0
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'T)
-              :generics $ [] 'T
-              :return $ :: 'SetDestruct 'T
-          :tests $ []
-            %{} 'TestEntry (:name |splits-item-and-remainder)
-              :code $ quote
-                do
-                  assert= (:: :parts true 2)
-                    match
-                      destruct-set $ #{} 1 2 3
-                      (:none) (:: :empty)
-                      (:some item tail)
-                        :: :parts (number? item) (count tail)
-                  assert= (:: :empty)
-                    match
-                      destruct-set $ #{}
-                      (:none) (:: :empty)
-                      (:some item tail)
-                        :: :parts (number? item) (count tail)
-              :tags $ #{} :core :unit
-        'destruct-str $ %{} 'CodeEntry (:doc "|Split a string into the nominal StringDestruct enum.")
-          :code $ quote
-            defn destruct-str (s)
-              if (&= s |) (%:: StringDestruct :none)
-                %:: StringDestruct :some (&str:slice s 0 1) (&str:rest s)
+            quote $ assert= 2 $ match
+              destruct-set $ #{} 2
+              (:some item _rest) item
+              (:none) 0
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Set 'T
+            :generics $ [] 'T
+            :return $ :: 'SetDestruct 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |splits-item-and-remainder
+            :code $ quote $ do
+              assert= (:: :parts true 2)
+                match
+                  destruct-set $ #{} 1 2 3
+                  (:none) (:: :empty)
+                  (:some item tail)
+                    :: :parts (number? item) (count tail)
+              assert= (:: :empty)
+                match
+                  destruct-set $ #{}
+                  (:none) (:: :empty)
+                  (:some item tail)
+                    :: :parts (number? item) (count tail)
+            :tags $ #{} :core :unit
+        'destruct-str $ %{} 'CodeEntry
+          :doc "|Split a string into the nominal StringDestruct enum."
+          :code $ quote $ defn destruct-str (s)
+            if (&= s |) (%:: StringDestruct :none)
+              %:: StringDestruct :some (&str:slice s 0 1) (&str:rest s)
           :examples $ []
             quote $ assert= (%:: StringDestruct :some |1 |23) (destruct-str |123)
             quote $ assert= (%:: StringDestruct :none) (destruct-str |)
-          :schema $ :: 'Fn
-            {} (:return 'StringDestruct)
-              :args $ [] 'String
-          :tests $ []
-            %{} 'TestEntry (:name |splits-non-empty-and-empty)
-              :code $ quote
-                do
-                  assert= (:: :parts |1 |23)
-                    match (destruct-str |123)
-                      (:none) (:: :empty)
-                      (:some s0 ss) (:: :parts s0 ss)
-                  assert= (:: :empty)
-                    match (destruct-str |)
-                      (:none) (:: :empty)
-                      (:some s0 ss) (:: :parts s0 ss)
-              :tags $ #{} :core :unit
-        'difference $ %{} 'CodeEntry (:doc "|Returns the set difference of base and all other sets")
-          :code $ quote
-            defn difference (base & xs)
-              reduce xs base $ fn (acc item) (&difference acc item)
+          :schema $ :: 'Fn $ {} (:return 'StringDestruct)
+            :args $ [] 'String
+          :tests $ [] $ %{} 'TestEntry
+            :name |splits-non-empty-and-empty
+            :code $ quote $ do
+              assert= (:: :parts |1 |23)
+                match (destruct-str |123)
+                  (:none) (:: :empty)
+                  (:some s0 ss) (:: :parts s0 ss)
+              assert= (:: :empty)
+                match (destruct-str |)
+                  (:none) (:: :empty)
+                  (:some s0 ss) (:: :parts s0 ss)
+            :tags $ #{} :core :unit
+        'difference $ %{} 'CodeEntry
+          :doc "|Returns the set difference of base and all other sets"
+          :code $ quote $ defn difference (base & xs)
+            reduce xs base $ fn (acc item) (&difference acc item)
           :examples $ []
             quote $ assert= (#{} 1)
               difference (#{} 1 2 3) (#{} 2 3 4)
             quote $ assert= (#{} 1 2)
               difference (#{} 1 2 3 4) (#{} 3 4 5)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'T)
-              :generics $ [] 'T
-              :rest $ :: 'Set 'T
-              :return $ :: 'Set 'T
-          :tests $ []
-            %{} 'TestEntry (:name |subtracts-all-sets)
-              :code $ quote
-                assert= (#{} 3)
-                  difference (#{} 1 2 3) (#{} 1) (#{} 2)
-              :tags $ #{} :core :unit
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Set 'T
+            :generics $ [] 'T
+            :rest $ :: 'Set 'T
+            :return $ :: 'Set 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |subtracts-all-sets
+            :code $ quote $ assert= (#{} 3)
+              difference (#{} 1 2 3) (#{} 1) (#{} 2)
+            :tags $ #{} :core :unit
         'dissoc $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn dissoc (x & args)
-              if (list? x) (&list:dissoc x & args)
-                if (map? x) (&map:dissoc x & args) (.dissoc x & args)
+          :code $ quote $ defn dissoc (x & args)
+            if (list? x) (&list:dissoc x & args)
+              if (map? x) (&map:dissoc x & args) (.dissoc x & args)
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:rest 'K) (:return 'T)
-              :args $ [] 'T
-              :generics $ [] 'T 'K
+          :schema $ :: 'Fn $ {} (:rest 'K) (:return 'T)
+            :args $ [] 'T
+            :generics $ [] 'T 'K
           :tests $ []
-            %{} 'TestEntry (:name |removes-multiple-map-keys)
-              :code $ quote
-                assert= (&{} :d 5)
-                  dissoc (&{} :a 1 :b 2 :c 3 :d 5) :a :b :c
+            %{} 'TestEntry
+              :name |removes-multiple-map-keys
+              :code $ quote $ assert= (&{} :d 5)
+                dissoc
+                  &{} :a 1 :b 2 :c 3 :d 5
+                  , :a :b :c
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |ignores-missing-map-key)
-              :code $ quote
-                assert= (&{} :a 1)
-                  dissoc (&{} :a 1) :missing
+            %{} 'TestEntry
+              :name |ignores-missing-map-key
+              :code $ quote $ assert= (&{} :a 1)
+                dissoc (&{} :a 1) :missing
               :tags $ #{} :core :unit
-        'dissoc-in $ %{} 'CodeEntry (:doc "|Remove a nested key or index. An empty path leaves the input unchanged.")
-          :code $ quote
-            defn dissoc-in (data path)
-              list-match path
-                () data
-                (p0 ps)
-                  if (struct? data) (raise "|dissoc-in cannot remove declared Struct fields; use an optional field or convert the Struct to a map before removing keys")
-                    if
-                      &= 1 $ &list:count path
-                      dissoc data p0
-                      assoc data p0 $ dissoc-in (&get-raw data p0) ps
+        'dissoc-in $ %{} 'CodeEntry
+          :doc "|Remove a nested key or index. An empty path leaves the input unchanged."
+          :code $ quote $ defn dissoc-in (data path)
+            list-match path
+              () data
+              (p0 ps)
+                if (struct? data)
+                  raise "|dissoc-in cannot remove declared Struct fields; use an optional field or convert the Struct to a map before removing keys"
+                  if
+                    &= 1 $ &list:count path
+                    dissoc data p0
+                    assoc data p0 $ dissoc-in (&get-raw data p0) ps
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'D)
-              :args $ [] 'D (:: 'List 'K)
-              :generics $ [] 'D 'K
+          :schema $ :: 'Fn $ {} (:return 'D)
+            :args $ [] 'D $ :: 'List 'K
+            :generics $ [] 'D 'K
         'distinct $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn distinct (x) (&list:distinct x)
+          :code $ quote $ defn distinct (x) (&list:distinct x)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'List 'T
-          :tests $ []
-            %{} 'TestEntry (:name |keeps-first-occurrence-order)
-              :code $ quote
-                assert= ([] 1 2 3)
-                  distinct $ [] 1 2 3 1 2
-              :tags $ #{} :core :unit
-        'do $ %{} 'CodeEntry (:doc "|Evaluates expressions sequentially and returns the last result\nUseful for grouping side effects or multiple steps where only the final value matters.")
-          :code $ quote
-            defmacro do (& body)
-              ; println |body: $ format-to-lisp body
-              if (empty? body) (raise "|empty do is not okay")
-              quasiquote $ &let () (~@ body)
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |keeps-first-occurrence-order
+            :code $ quote $ assert= ([] 1 2 3)
+              distinct $ [] 1 2 3 1 2
+            :tags $ #{} :core :unit
+        'do $ %{} 'CodeEntry
+          :doc "|Evaluates expressions sequentially and returns the last result\nUseful for grouping side effects or multiple steps where only the final value matters."
+          :code $ quote $ defmacro do (& body)
+            ; println |body: $ format-to-lisp body
+            if (empty? body)
+              raise "|empty do is not okay"
+            quasiquote $ &let () $ ~@ body
           :examples $ []
-            quote $ assert= 3
-              do (inc 1) (+ 1 2)
-            quote $ assert= |world
-              do (str |hello) (str |world)
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ []
-              :rest $ :: 'Expr 'Dynamic
+            quote $ assert= 3 $ do (inc 1) (+ 1 2)
+            quote $ assert= |world $ do (str |hello) (str |world)
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ []
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
           :tests $ []
-            %{} 'TestEntry (:name |supports-multiple-fn-body-without-do)
-              :code $ quote
-                let
-                    state $ atom 0
-                    f $ fn () (reset! state 1) (deref state)
-                  assert= 1 $ assert-type (f) 'Number
+            %{} 'TestEntry
+              :name |supports-multiple-fn-body-without-do
+              :code $ quote $ let
+                  state $ atom 0
+                  f $ fn () (reset! state 1) (deref state)
+                assert= 1 $ assert-type (f) 'Number
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |supports-multiple-let-body-without-do)
-              :code $ quote
-                let
-                    state $ atom 0
-                  assert= 1 $ let
-                      x 1
-                    reset! state x
-                    assert-type (deref state) 'Number
+            %{} 'TestEntry
+              :name |supports-multiple-let-body-without-do
+              :code $ quote $ let
+                  state $ atom 0
+                assert= 1 $ let
+                    x 1
+                  reset! state x
+                  assert-type (deref state) 'Number
               :tags $ #{} :core :unit
         'drop $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn drop (xs n)
-              slice xs n $ &list:count xs
+          :code $ quote $ defn drop (xs n)
+            slice xs n $ &list:count xs
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'Number
-              :generics $ [] 'T
-              :return $ :: 'List 'T
-          :tests $ []
-            %{} 'TestEntry (:name |drops-list-prefix)
-              :code $ quote
-                assert= ([] 4 5 6 7 8 9)
-                  drop (range 10) 4
-              :tags $ #{} :core :unit
-        'each $ %{} 'CodeEntry (:doc "|Iterate over a collection, apply a function for side effects, and return Unit.")
-          :code $ quote
-            defn each (xs f)
-              foldl xs &unit $ defn %each (_acc x) (f x) &unit
-          :examples $ []
-            quote $ assert= &unit
-              each ([] 1 2 3)
-                fn (x) (&+ x 1)
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ [] 'Dynamic
-                :: 'Fn $ {} (:return 'R)
-                  :args $ [] 'T
-              :generics $ [] 'T 'R
-          :tests $ []
-            %{} 'TestEntry (:name |returns-unit-after-callbacks)
-              :code $ quote
-                assert= &unit $ each ([] 1 2)
-                  fn (x) x
-              :tags $ #{} :core :unit
-        'either $ %{} 'CodeEntry (:doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value.")
-          :code $ quote
-            defmacro either (& xs)
-              if (&list:empty? xs) (raise "|either expects at least 1 expression")
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'Number
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |drops-list-prefix
+            :code $ quote $ assert= ([] 4 5 6 7 8 9)
+              drop (range 10) 4
+            :tags $ #{} :core :unit
+        'each $ %{} 'CodeEntry
+          :doc "|Iterate over a collection, apply a function for side effects, and return Unit."
+          :code $ quote $ defn each (xs f)
+            foldl xs &unit $ defn %each (_acc x) (f x) &unit
+          :examples $ [] $ quote
+            assert= &unit $ each ([] 1 2 3)
+              fn (x) (&+ x 1)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] 'Dynamic $ :: 'Fn
+              {} (:return 'R)
+                :args $ [] 'T
+            :generics $ [] 'T 'R
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-unit-after-callbacks
+            :code $ quote $ assert= &unit
+              each ([] 1 2)
+                fn (x) x
+            :tags $ #{} :core :unit
+        'either $ %{} 'CodeEntry
+          :doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value."
+          :code $ quote $ defmacro either (& xs)
+            if (&list:empty? xs)
+              raise "|either expects at least 1 expression"
+            &let
+              item $ &list:first xs
               &let
-                item $ &list:first xs
-                &let
-                  rest-xs $ &list:rest xs
-                  if (&list:empty? rest-xs) item $ if (list? item)
-                    &let
-                      v1# $ gensym |v1
-                      quasiquote $ &let (~v1# ~item)
-                        if (nil? ~v1#)
-                          either
-                            ~ $ &list:first rest-xs
-                            ~@ $ &list:rest rest-xs
-                          ~ v1#
-                    quasiquote $ if (nil? ~item)
-                      either
-                        ~ $ &list:first rest-xs
-                        ~@ $ &list:rest rest-xs
-                      ~ item
+                rest-xs $ &list:rest xs
+                if (&list:empty? rest-xs) item $ if (list? item)
+                  &let
+                    v1# $ gensym |v1
+                    quasiquote $ &let (~v1# ~item)
+                      if (nil? ~v1#)
+                        either
+                          ~ $ &list:first rest-xs
+                          ~@ $ &list:rest rest-xs
+                        ~ v1#
+                  quasiquote $ if (nil? ~item)
+                    either
+                      ~ $ &list:first rest-xs
+                      ~@ $ &list:rest rest-xs
+                    ~ item
           :examples $ []
-            quote $ assert= 42 (either nil 42 nil)
-            quote $ assert= false (either false true)
-            quote $ assert= |backup (either nil nil |backup)
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ []
-              :rest $ :: 'Expr 'Dynamic
+            quote $ assert= 42 $ either nil 42 nil
+            quote $ assert= false $ either false true
+            quote $ assert= |backup $ either nil nil |backup
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ []
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         'empty $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn empty (x)
-              if (list? x) ([]) (.empty x)
+          :code $ quote $ defn empty (x)
+            if (list? x) ([]) (.empty x)
           :examples $ []
             quote $ assert= ([])
               empty $ [] 1 2 3
-            quote $ assert= | (empty |abc)
-          :schema $ :: 'Fn
-            {} (:return 'T)
-              :args $ [] 'T
-              :generics $ [] 'T
-          :tests $ []
-            %{} 'TestEntry (:name |empties-number)
-              :code $ quote
-                assert= 0 $ empty 1.1
-              :tags $ #{} :core :unit
-        'empty? $ %{} 'CodeEntry (:doc "|Check whether a collection or string is empty. Nil is rejected instead of being treated as empty.")
-          :code $ quote
-            defn empty? (x)
-              if (list? x) (&list:empty? x) (.empty? x)
+            quote $ assert= | $ empty |abc
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |empties-number)
+            :code $ quote $ assert= 0 (empty 1.1)
+            :tags $ #{} :core :unit
+        'empty? $ %{} 'CodeEntry
+          :doc "|Check whether a collection or string is empty. Nil is rejected instead of being treated as empty."
+          :code $ quote $ defn empty? (x)
+            if (list? x) (&list:empty? x) (.empty? x)
           :examples $ []
-            quote $ assert= true
-              empty? $ []
-            quote $ assert= false
-              empty? $ [] 1
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+            quote $ assert= true $ empty? ([])
+            quote $ assert= false $ empty? ([] 1)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tests $ []
-            %{} 'TestEntry (:name |recognizes-empty-map)
-              :code $ quote
-                assert= true $ empty? (&{})
+            %{} 'TestEntry
+              :name |recognizes-empty-map
+              :code $ quote $ assert= true
+                empty? $ &{}
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |recognizes-empty-string)
-              :code $ quote
-                do
-                  assert= true $ empty? |
-                  assert= false $ empty? |a
+            %{} 'TestEntry
+              :name |recognizes-empty-string
+              :code $ quote $ do
+                assert= true $ empty? |
+                assert= false $ empty? |a
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |recognizes-empty-set)
-              :code $ quote
-                do
-                  assert= true $ empty? (#{})
-                  assert= false $ empty? (#{} 1)
+            %{} 'TestEntry
+              :name |recognizes-empty-set
+              :code $ quote $ do
+                assert= true $ empty? $ #{}
+                assert= false $ empty? $ #{} 1
               :tags $ #{} :core :unit
-        'ends-with? $ %{} 'CodeEntry (:doc "|internal function for checking string suffix\nSyntax: (ends-with? s suffix)\nParams: s (string), suffix (string)\nReturns: boolean\nReturns true if string ends with suffix")
+        'ends-with? $ %{} 'CodeEntry
+          :doc "|internal function for checking string suffix\nSyntax: (ends-with? s suffix)\nParams: s (string), suffix (string)\nReturns: boolean\nReturns true if string ends with suffix"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'String 'String
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'String 'String
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |checks-suffix)
-              :code $ quote
-                do
-                  assert= true $ ends-with? |01234 |34
-                  assert= false $ ends-with? |01234 |23
-              :tags $ #{} :core :unit
-        'enum-def? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is an enum definition.")
-          :code $ quote
-            defn enum-def? (x)
-              &= (type-of x) :enum-def
+          :tests $ [] $ %{} 'TestEntry (:name |checks-suffix)
+            :code $ quote $ do
+              assert= true $ ends-with? |01234 |34
+              assert= false $ ends-with? |01234 |23
+            :tags $ #{} :core :unit
+        'enum-def? $ %{} 'CodeEntry
+          :doc "|Predicate that checks whether a value is an enum definition."
+          :code $ quote $ defn enum-def? (x)
+            &= (type-of x) :enum-def
           :examples $ []
-            quote $ assert= true
-              enum-def? $ defenum Result (:ok) (:err 'String)
-            quote $ assert= false
-              enum-def? $ %:: _ :ok 1
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
-        'enum-definition $ %{} 'CodeEntry (:doc "|Return Option<EnumDef> for an enum value.")
-          :code $ quote
-            defn enum-definition (tuple)
-              optionally $ &enum:definition tuple
+            quote $ assert= true $ enum-def?
+              defenum Result (:ok) (:err 'String)
+            quote $ assert= false $ enum-def? (%:: _ :ok 1)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
+        'enum-definition $ %{} 'CodeEntry
+          :doc "|Return Option<EnumDef> for an enum value."
+          :code $ quote $ defn enum-definition (tuple)
+            optionally $ &enum:definition tuple
           :examples $ []
             quote $ assert= (%some Option)
               enum-definition $ %some 1
             quote $ assert= (%none)
               enum-definition $ :: :plain 1
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Enum
-              :return $ :: 'Option 'EnumDef
-        'enum? $ %{} 'CodeEntry (:doc "|Predicate that checks nominal and anonymous enum values. Passing an EnumDef reports a migration error.")
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Enum
+            :return $ :: 'Option 'EnumDef
+        'enum? $ %{} 'CodeEntry
+          :doc "|Predicate that checks nominal and anonymous enum values. Passing an EnumDef reports a migration error."
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ assert= true
-              enum? $ %:: _ :ok 1
-            quote $ assert= false
-              enum? $ {} (:ok 1)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+            quote $ assert= true $ enum? (%:: _ :ok 1)
+            quote $ assert= false $ enum?
+              {} $ :ok 1
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'eval $ %{} 'CodeEntry (:doc "|internal syntax for evaluating code at runtime\nSyntax: (eval expr)\nParams: expr (quoted code)\nReturns: result of evaluation\nEvaluates quoted code in current environment")
+        'eval $ %{} 'CodeEntry
+          :doc "|internal syntax for evaluating code at runtime\nSyntax: (eval expr)\nParams: expr (quoted code)\nReturns: result of evaluation\nEvaluates quoted code in current environment"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :interop :syntax
-        'even? $ %{} 'CodeEntry (:doc "|check if number is even?")
-          :code $ quote
-            defn even? (n)
-              &= 0 $ &number:rem n 2
+        'even? $ %{} 'CodeEntry
+          :doc "|check if number is even?"
+          :code $ quote $ defn even? (n)
+            &= 0 $ &number:rem n 2
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Number
-        'every? $ %{} 'CodeEntry (:doc "|Checks whether every element of a collection satisfies a predicate, short-circuiting on the first failure.")
-          :code $ quote
-            defn every? (xs f)
-              foldl-shortcut xs true true $ defn %every? (acc x)
-                if (f x) (:: false acc) (:: true false)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number
+        'every? $ %{} 'CodeEntry
+          :doc "|Checks whether every element of a collection satisfies a predicate, short-circuiting on the first failure."
+          :code $ quote $ defn every? (xs f)
+            foldl-shortcut xs true true $ defn %every? (acc x)
+              if (f x) (:: false acc) (:: true false)
           :examples $ []
-            quote $ assert= true
-              every? ([] 2 4 6)
-                defn %even (x)
-                  &= 0 $ .rem x 2
-            quote $ assert= false
-              every? ([] 1 2 3)
-                defn %gt1 (x) (&> x 1)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Dynamic
-                :: 'Fn $ {} (:return 'Bool)
-                  :args $ [] 'T
-              :generics $ [] 'T
+            quote $ assert= true $ every? ([] 2 4 6)
+              defn %even (x)
+                &= 0 $ .rem x 2
+            quote $ assert= false $ every? ([] 1 2 3)
+              defn %gt1 (x) (&> x 1)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Dynamic $ :: 'Fn
+              {} (:return 'Bool)
+                :args $ [] 'T
+            :generics $ [] 'T
           :tests $ []
-            %{} 'TestEntry (:name |checks-every-set-member)
-              :code $ quote
-                assert= true $ every? (#{} 1 2 3) (\ > % 0)
+            %{} 'TestEntry
+              :name |checks-every-set-member
+              :code $ quote $ assert= true
+                every? (#{} 1 2 3) (\ > % 0)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |checks-every-list-member)
-              :code $ quote
-                assert= true $ every? ([] 1 2 3 4)
+            %{} 'TestEntry
+              :name |checks-every-list-member
+              :code $ quote $ assert= true
+                every? ([] 1 2 3 4)
                   fn (x) (> x 0)
               :tags $ #{} :core :unit
-        'exclude $ %{} 'CodeEntry (:doc "|Removes values from a collection by repeatedly calling `&exclude` for each provided item.")
-          :code $ quote
-            defn exclude (base & xs)
-              reduce xs base $ fn (acc item) (&exclude acc item)
+        'exclude $ %{} 'CodeEntry
+          :doc "|Removes values from a collection by repeatedly calling `&exclude` for each provided item."
+          :code $ quote $ defn exclude (base & xs)
+            reduce xs base $ fn (acc item) (&exclude acc item)
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:rest 'T)
-              :args $ [] (:: 'Set 'T)
-              :generics $ [] 'T
-              :return $ :: 'Set 'T
-          :tests $ []
-            %{} 'TestEntry (:name |removes-set-members)
-              :code $ quote
-                assert= (#{} 3)
-                  exclude (#{} 1 2 3) 1 2
-              :tags $ #{} :core :unit
-        'ffi-response:reject $ %{} 'CodeEntry (:doc "|Reject a wrapped native async response exactly once.")
-          :code $ quote
-            defn ffi-response:reject (self value)
-              &ffi-response-reject (:raw self) value
+          :schema $ :: 'Fn $ {} (:rest 'T)
+            :args $ [] $ :: 'Set 'T
+            :generics $ [] 'T
+            :return $ :: 'Set 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |removes-set-members
+            :code $ quote $ assert= (#{} 3)
+              exclude (#{} 1 2 3) 1 2
+            :tags $ #{} :core :unit
+        'ffi-response:reject $ %{} 'CodeEntry
+          :doc "|Reject a wrapped native async response exactly once."
+          :code $ quote $ defn ffi-response:reject (self value)
+            &ffi-response-reject (:raw self) value
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ [] 'FfiResponse 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] 'FfiResponse 'T
+            :generics $ [] 'T
           :tags $ #{} :ffi :internal
-        'ffi-response:resolve $ %{} 'CodeEntry (:doc "|Resolve a wrapped native async response exactly once.")
-          :code $ quote
-            defn ffi-response:resolve (self value)
-              &ffi-response-resolve (:raw self) value
+        'ffi-response:resolve $ %{} 'CodeEntry
+          :doc "|Resolve a wrapped native async response exactly once."
+          :code $ quote $ defn ffi-response:resolve (self value)
+            &ffi-response-resolve (:raw self) value
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ [] 'FfiResponse 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] 'FfiResponse 'T
+            :generics $ [] 'T
           :tags $ #{} :ffi :internal
-        'ffi-task:cancel $ %{} 'CodeEntry (:doc "|Cancel a wrapped native async task with the default reason.")
-          :code $ quote
-            defn ffi-task:cancel (self)
-              &ffi-task-cancel $ :raw self
+        'ffi-task:cancel $ %{} 'CodeEntry
+          :doc "|Cancel a wrapped native async task with the default reason."
+          :code $ quote $ defn ffi-task:cancel (self)
+            &ffi-task-cancel $ :raw self
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ [] 'FfiTask
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] 'FfiTask
           :tags $ #{} :ffi :internal
-        'ffi-task:cancel-with $ %{} 'CodeEntry (:doc "|Cancel a wrapped native async task with an explicit EDN-compatible reason.")
-          :code $ quote
-            defn ffi-task:cancel-with (self reason)
-              &ffi-task-cancel (:raw self) reason
+        'ffi-task:cancel-with $ %{} 'CodeEntry
+          :doc "|Cancel a wrapped native async task with an explicit EDN-compatible reason."
+          :code $ quote $ defn ffi-task:cancel-with (self reason)
+            &ffi-task-cancel (:raw self) reason
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ [] 'FfiTask 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] 'FfiTask 'T
+            :generics $ [] 'T
           :tags $ #{} :ffi :internal
-        'ffi:response $ %{} 'CodeEntry (:doc "|Wrap a raw native async response capability at a module adapter boundary.")
-          :code $ quote
-            defn ffi:response (raw)
-              %{} FfiResponse $ :raw raw
+        'ffi:response $ %{} 'CodeEntry
+          :doc "|Wrap a raw native async response capability at a module adapter boundary."
+          :code $ quote $ defn ffi:response (raw)
+            %{} FfiResponse $ :raw raw
           :examples $ []
             quote $ ffi:response raw-response-capability
             quote $ let
@@ -5113,22 +4961,20 @@
             quote $ let
                 response $ ffi:response raw-response-capability
               response.reject error
-          :schema $ :: 'Fn
-            {} (:return 'FfiResponse)
-              :args $ [] 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'FfiResponse)
+            :args $ [] 'Dynamic
           :tags $ #{} :core :ffi
-          :tests $ []
-            %{} 'TestEntry (:name |wraps-response-capability)
-              :code $ quote
-                let
-                    response $ ffi:response nil
-                  assert-type response 'FfiResponse
-                  , true
-              :tags $ #{} :unit
-        'ffi:task $ %{} 'CodeEntry (:doc "|Wrap a raw native async task capability at a module adapter boundary.")
-          :code $ quote
-            defn ffi:task (raw)
-              %{} FfiTask $ :raw raw
+          :tests $ [] $ %{} 'TestEntry
+            :name |wraps-response-capability
+            :code $ quote $ let
+                response $ ffi:response nil
+              assert-type response 'FfiResponse
+              , true
+            :tags $ #{} :unit
+        'ffi:task $ %{} 'CodeEntry
+          :doc "|Wrap a raw native async task capability at a module adapter boundary."
+          :code $ quote $ defn ffi:task (raw)
+            %{} FfiTask $ :raw raw
           :examples $ []
             quote $ ffi:task raw-task-capability
             quote $ let
@@ -5137,22 +4983,20 @@
             quote $ let
                 task $ ffi:task raw-task-capability
               task.cancel-with :shutdown
-          :schema $ :: 'Fn
-            {} (:return 'FfiTask)
-              :args $ [] 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'FfiTask)
+            :args $ [] 'Dynamic
           :tags $ #{} :core :ffi
-          :tests $ []
-            %{} 'TestEntry (:name |wraps-task-capability)
-              :code $ quote
-                let
-                    task $ ffi:task nil
-                  assert-type task 'FfiTask
-                  , true
-              :tags $ #{} :unit
-        'filter $ %{} 'CodeEntry (:doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible.")
-          :code $ quote
-            defn filter (xs f)
-              if (list? xs) (&list:filter xs f) (.filter xs f)
+          :tests $ [] $ %{} 'TestEntry
+            :name |wraps-task-capability
+            :code $ quote $ let
+                task $ ffi:task nil
+              assert-type task 'FfiTask
+              , true
+            :tags $ #{} :unit
+        'filter $ %{} 'CodeEntry
+          :doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible."
+          :code $ quote $ defn filter (xs f)
+            if (list? xs) (&list:filter xs f) (.filter xs f)
           :examples $ []
             quote $ assert= ([] 2 4)
               filter ([] 1 2 3 4 5)
@@ -5162,92 +5006,87 @@
               filter ([] |a |bb |ccc)
                 defn %long? (s)
                   &> (&str:count s) 1
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Fn
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic 'Fn
           :tests $ []
-            %{} 'TestEntry (:name |filters-map-pairs)
-              :code $ quote
-                assert= (&{} :c 3 :d 4)
-                  filter (&{} :a 1 :b 2 :c 3 :d 4)
-                    fn (pair)
-                      let[] (k v) pair $ > v 2
+            %{} 'TestEntry
+              :name |filters-map-pairs
+              :code $ quote $ assert= (&{} :c 3 :d 4)
+                filter
+                  &{} :a 1 :b 2 :c 3 :d 4
+                  fn (pair)
+                    let[] (k v) pair $ > v 2
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |filters-set-members)
-              :code $ quote
-                assert= (#{} 7 9)
-                  filter (#{} 1 3 5 7 9)
-                    fn (x) (> x 5)
+            %{} 'TestEntry
+              :name |filters-set-members
+              :code $ quote $ assert= (#{} 7 9)
+                filter (#{} 1 3 5 7 9)
+                  fn (x) (> x 5)
               :tags $ #{} :core :unit
-        'filter-map-kv $ %{} 'CodeEntry (:doc "|Transforms and filters map entries with a typed MapEntryDecision callback. Return :keep with the output key/value or :drop to omit an entry.")
-          :code $ quote
-            defn filter-map-kv (xs f)
-              foldl xs ({})
-                defn %filter-map-kv (acc pair)
-                  hint-fn $ {}
-                    :args $ [] 'Map 'List
-                    :return 'Map
-                  let
-                      key $ &list:nth pair 0
-                      value $ &list:nth pair 1
-                      decision $ f key value
-                    match decision
-                      (:keep next-key next-value) (&map:assoc acc next-key next-value)
-                      (:drop) acc
+        'filter-map-kv $ %{} 'CodeEntry
+          :doc "|Transforms and filters map entries with a typed MapEntryDecision callback. Return :keep with the output key/value or :drop to omit an entry."
+          :code $ quote $ defn filter-map-kv (xs f)
+            foldl xs ({})
+              defn %filter-map-kv (acc pair)
+                hint-fn $ {}
+                  :args $ [] 'Map 'List
+                  :return 'Map
+                let
+                    key $ &list:nth pair 0
+                    value $ &list:nth pair 1
+                    decision $ f key value
+                  match decision
+                    (:keep next-key next-value) (&map:assoc acc next-key next-value)
+                    (:drop) acc
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-                :: 'Fn $ {}
-                  :args $ [] 'K 'V
-                  :return $ :: 'MapEntryDecision 'R 'S
-              :generics $ [] 'K 'V 'R 'S
-              :return $ :: 'Map 'R 'S
-          :tests $ []
-            %{} 'TestEntry (:name |transforms-and-drops)
-              :code $ quote
-                do
-                  assert=
-                    {} (:b 20) (:c 30)
-                    filter-map-kv
-                      {} (:a 1) (:b 2) (:c 3)
-                      fn (k v)
-                        if (> v 1)
-                          %:: MapEntryDecision :keep k $ * v 10
-                          %:: MapEntryDecision :drop
-                  assert= ({})
-                    .filter-map-kv
-                      {} $ :a 1
-                      fn (k v) (%:: MapEntryDecision :drop)
-              :tags $ #{} :core :unit
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V)
+              :: 'Fn $ {}
+                :args $ [] 'K 'V
+                :return $ :: 'MapEntryDecision 'R 'S
+            :generics $ [] 'K 'V 'R 'S
+            :return $ :: 'Map 'R 'S
+          :tests $ [] $ %{} 'TestEntry
+            :name |transforms-and-drops
+            :code $ quote $ do
+              assert=
+                {} (:b 20) (:c 30)
+                filter-map-kv
+                  {} (:a 1) (:b 2) (:c 3)
+                  fn (k v)
+                    if (> v 1)
+                      %:: MapEntryDecision :keep k $ * v 10
+                      %:: MapEntryDecision :drop
+              assert= ({})
+                .filter-map-kv
+                  {} $ :a 1
+                  fn (k v) (%:: MapEntryDecision :drop)
+            :tags $ #{} :core :unit
         'filter-not $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn filter-not (xs f)
-              filter xs $ defn %filter-not (x)
-                not $ f x
+          :code $ quote $ defn filter-not (xs f)
+            filter xs $ defn %filter-not (x)
+              not $ f x
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-                :: 'Fn $ {} (:return 'Bool)
-                  :args $ [] 'T
-              :generics $ [] 'T
-              :return $ :: 'List 'T
-          :tests $ []
-            %{} 'TestEntry (:name |filters-matching-list-members)
-              :code $ quote
-                assert= ([] 0 1 2 3)
-                  filter-not (range 10)
-                    fn (x) (> x 3)
-              :tags $ #{} :core :unit
-        'find $ %{} 'CodeEntry (:doc "|Find the first matching list item as Option<T>.")
-          :code $ quote
-            defn find (xs f)
-              foldl-shortcut xs 0 (%none)
-                defn %find (_acc x)
-                  if (f x)
-                    :: true $ %some x
-                    :: false $ %none
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'Bool)
+                :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |filters-matching-list-members
+            :code $ quote $ assert= ([] 0 1 2 3)
+              filter-not (range 10)
+                fn (x) (> x 3)
+            :tags $ #{} :core :unit
+        'find $ %{} 'CodeEntry
+          :doc "|Find the first matching list item as Option<T>."
+          :code $ quote $ defn find (xs f)
+            foldl-shortcut xs 0 (%none)
+              defn %find (_acc x)
+                if (f x)
+                  :: true $ %some x
+                  :: false $ %none
           :examples $ []
             quote $ assert= (%some 2)
               find ([] 1 2 3)
@@ -5255,28 +5094,26 @@
             quote $ assert= (%none)
               find ([] 1 2 3)
                 fn (x) (> x 9)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-                :: 'Fn $ {} (:return 'Bool)
-                  :args $ [] 'T
-              :generics $ [] 'T
-              :return $ :: 'Option 'T
-          :tests $ []
-            %{} 'TestEntry (:name |returns-first-matching-list-member)
-              :code $ quote
-                assert= (%some 6)
-                  find (range 10)
-                    fn (x) (> x 5)
-              :tags $ #{} :core :unit
-        'find-index $ %{} 'CodeEntry (:doc "|Find the first matching list index as Option<Number>.")
-          :code $ quote
-            defn find-index (xs f)
-              foldl-shortcut xs 0 (%none)
-                defn %find-index (index x)
-                  if (f x)
-                    :: true $ %some index
-                    :: false $ &+ 1 index
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'Bool)
+                :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-first-matching-list-member
+            :code $ quote $ assert= (%some 6)
+              find (range 10)
+                fn (x) (> x 5)
+            :tags $ #{} :core :unit
+        'find-index $ %{} 'CodeEntry
+          :doc "|Find the first matching list index as Option<Number>."
+          :code $ quote $ defn find-index (xs f)
+            foldl-shortcut xs 0 (%none)
+              defn %find-index (index x)
+                if (f x)
+                  :: true $ %some index
+                  :: false $ &+ 1 index
           :examples $ []
             quote $ assert= (%some 1)
               find-index ([] 1 2 3)
@@ -5284,434 +5121,407 @@
             quote $ assert= (%none)
               find-index ([] 1 2 3)
                 fn (x) (> x 9)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-                :: 'Fn $ {} (:return 'Bool)
-                  :args $ [] 'T
-              :generics $ [] 'T
-              :return $ :: 'Option 'Number
-          :tests $ []
-            %{} 'TestEntry (:name |returns-first-matching-list-index)
-              :code $ quote
-                assert= (%some 6)
-                  find-index (range 10)
-                    fn (x) (> x 5)
-              :tags $ #{} :core :unit
-        'first $ %{} 'CodeEntry (:doc "|Return the first item as Option<T>; empty collections produce none.")
-          :code $ quote
-            defn first (x)
-              cond
-                  list? x
-                  if (&list:empty? x) (%none)
-                    %some $ &list:first x
-                (string? x)
-                  if (&str:empty? x) (%none)
-                    %some $ &str:first x
-                (enum? x)
-                  if
-                    &= 0 $ &enum:count x
-                    %none
-                    %some $ &enum:nth x 0
-                true $ raise (str-spaced |first |expected |a |list, |string, |or |enum, |got: x)
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'Bool)
+                :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-first-matching-list-index
+            :code $ quote $ assert= (%some 6)
+              find-index (range 10)
+                fn (x) (> x 5)
+            :tags $ #{} :core :unit
+        'first $ %{} 'CodeEntry
+          :doc "|Return the first item as Option<T>; empty collections produce none."
+          :code $ quote $ defn first (x)
+            cond
+                list? x
+                if (&list:empty? x) (%none)
+                  %some $ &list:first x
+              (string? x)
+                if (&str:empty? x) (%none)
+                  %some $ &str:first x
+              (enum? x)
+                if
+                  &= 0 $ &enum:count x
+                  %none
+                  %some $ &enum:nth x 0
+              true $ raise $ str-spaced |first |expected |a |list, |string, |or |enum, |got: x
           :examples $ []
             quote $ assert= (%some 1)
               first $ [] 1 2 3
             quote $ assert= (%some |h) (first |hello)
             quote $ assert= (%none)
               first $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Dynamic
-              :return $ :: 'Option 'Dynamic
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Dynamic
+            :return $ :: 'Option 'Dynamic
           :tests $ []
-            %{} 'TestEntry (:name |returns-first-or-none)
-              :code $ quote
-                do
-                  assert= (%some 1)
-                    first $ [] 1 2 3
-                  assert= (%none)
-                    first $ []
+            %{} 'TestEntry
+              :name |returns-first-or-none
+              :code $ quote $ do
+                assert= (%some 1)
+                  first $ [] 1 2 3
+                assert= (%none)
+                  first $ []
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |returns-first-string-character)
-              :code $ quote
-                assert= (%some |a) (first |abc)
+            %{} 'TestEntry
+              :name |returns-first-string-character
+              :code $ quote $ assert= (%some |a) (first |abc)
               :tags $ #{} :core :unit
         'flipped $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro flipped (f & args)
-              quasiquote $ ~f
-                ~@ $ reverse args
+          :code $ quote $ defmacro flipped (f & args)
+            quasiquote $ ~f $ ~@ (reverse args)
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic)
-              :rest $ :: 'Expr 'Dynamic
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] $ :: 'Expr 'Dynamic
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-        'floor $ %{} 'CodeEntry (:doc "|internal function for floor operation\nSyntax: (floor n)\nParams: n (number)\nReturns: number\nReturns largest integer less than or equal to n")
+        'floor $ %{} 'CodeEntry
+          :doc "|internal function for floor operation\nSyntax: (floor n)\nParams: n (number)\nReturns: number\nReturns largest integer less than or equal to n"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |rounds-down)
-              :code $ quote
-                assert= 1 $ floor 1.8
+              :code $ quote $ assert= 1 (floor 1.8)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |floors-positive-fraction)
-              :code $ quote
-                assert= 1 $ floor 1.1
+            %{} 'TestEntry
+              :name |floors-positive-fraction
+              :code $ quote $ assert= 1 (floor 1.1)
               :tags $ #{} :core :unit
-        'fn $ %{} 'CodeEntry (:doc "|macro for anonymous functions\nSyntax: (fn (args...) body...)\nParams: args (parameter list), body (expressions)\nReturns: anonymous function\nCreates an anonymous function, shorter than defn")
-          :code $ quote
-            defmacro fn (args & body)
-              if
-                not $ list? args
-                raise $ str-spaced "|fn expects args in list, got:" args
-              if (&list:empty? body)
-                quasiquote $ defn f% ~args &unit
-                quasiquote $ defn f% ~args ~@body
+        'fn $ %{} 'CodeEntry
+          :doc "|macro for anonymous functions\nSyntax: (fn (args...) body...)\nParams: args (parameter list), body (expressions)\nReturns: anonymous function\nCreates an anonymous function, shorter than defn"
+          :code $ quote $ defmacro fn (args & body)
+            if
+              not $ list? args
+              raise $ str-spaced "|fn expects args in list, got:" args
+            if (&list:empty? body)
+              quasiquote $ defn f% ~args &unit
+              quasiquote $ defn f% ~args ~@body
           :examples $ []
             quote $ map ([] 1 2 3)
               fn (x) (* x 2)
             quote $ filter ([] 1 2 3 4 5)
               fn (n) (> n 2)
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] 'SyntaxList
+          :schema $ :: 'Macro $ {} (:rest 'Syntax)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] 'SyntaxList
           :tags $ #{} :macro
-        'fn? $ %{} 'CodeEntry (:doc "|Check if a value is a function")
+        'fn? $ %{} 'CodeEntry
+          :doc "|Check if a value is a function"
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ assert= true (fn? inc)
-            quote $ assert= false (fn? 123)
-            quote $ assert= false (fn? |text)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+            quote $ assert= true $ fn? inc
+            quote $ assert= false $ fn? 123
+            quote $ assert= false $ fn? |text
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'foldl $ %{} 'CodeEntry (:doc "|internal function for left fold\nSyntax: (foldl list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from left with reducer function and initial value")
+        'foldl $ %{} 'CodeEntry
+          :doc "|internal function for left fold\nSyntax: (foldl list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from left with reducer function and initial value"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'U)
-              :args $ [] (:: 'List 'T) 'U
-                :: 'Fn $ {} (:return 'U)
-                  :args $ [] 'U 'T
-              :generics $ [] 'T 'U
+          :schema $ :: 'Fn $ {} (:return 'U)
+            :args $ [] (:: 'List 'T) 'U $ :: 'Fn
+              {} (:return 'U)
+                :args $ [] 'U 'T
+            :generics $ [] 'T 'U
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |reduces-list-from-left)
-              :code $ quote
-                assert= 6 $ foldl ([] 1 2 3) 0 &+
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |reduces-list-from-left
+            :code $ quote $ assert= 6
+              foldl ([] 1 2 3) 0 &+
+            :tags $ #{} :core :unit
         'foldl' $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn foldl' (xs acc f)
-              list-match xs
-                () acc
-                (x0 xss)
-                  recur xss (f acc x0) f
+          :code $ quote $ defn foldl' (xs acc f)
+            list-match xs
+              () acc
+              (x0 xss)
+                recur xss (f acc x0) f
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'U)
-              :args $ [] (:: 'List 'T) 'U
-                :: 'Fn $ {} (:return 'U)
-                  :args $ [] 'U 'T
-              :generics $ [] 'T 'U
-        'foldl-compare $ %{} 'CodeEntry (:doc "|Helper used by comparison operators to ensure a relation holds across an entire list, short-circuiting on the first failure.")
-          :code $ quote
-            defn foldl-compare (xs acc f)
-              if (&list:empty? xs) true $ if
-                f acc $ &list:nth xs 0
-                recur (&list:rest xs) (&list:nth xs 0) f
-                , false
+          :schema $ :: 'Fn $ {} (:return 'U)
+            :args $ [] (:: 'List 'T) 'U $ :: 'Fn
+              {} (:return 'U)
+                :args $ [] 'U 'T
+            :generics $ [] 'T 'U
+        'foldl-compare $ %{} 'CodeEntry
+          :doc "|Helper used by comparison operators to ensure a relation holds across an entire list, short-circuiting on the first failure."
+          :code $ quote $ defn foldl-compare (xs acc f)
+            if (&list:empty? xs) true $ if
+              f acc $ &list:nth xs 0
+              recur (&list:rest xs) (&list:nth xs 0) f
+              , false
           :examples $ []
-            quote $ assert= true
-              foldl-compare ([] 1 2 3 4) 0 &<
-            quote $ assert= false
-              foldl-compare ([] 1 3 2 4) 0 &<
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] (:: 'List 'T) 'T
-                :: 'Fn $ {} (:return 'Bool)
-                  :args $ [] 'T 'T
-              :generics $ [] 'T
-        'foldl-shortcut $ %{} 'CodeEntry (:doc "|Internal left fold with early termination. Syntax: (foldl-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default.")
+            quote $ assert= true $ foldl-compare ([] 1 2 3 4) 0 &<
+            quote $ assert= false $ foldl-compare ([] 1 3 2 4) 0 &<
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] (:: 'List 'T) 'T $ :: 'Fn
+              {} (:return 'Bool)
+                :args $ [] 'T 'T
+            :generics $ [] 'T
+        'foldl-shortcut $ %{} 'CodeEntry
+          :doc "|Internal left fold with early termination. Syntax: (foldl-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'U)
-              :args $ [] (:: 'List 'T) 'U 'U
-                :: 'Fn $ {} (:return 'Enum)
-                  :args $ [] 'U 'T
-              :generics $ [] 'T 'U
+          :schema $ :: 'Fn $ {} (:return 'U)
+            :args $ [] (:: 'List 'T) 'U 'U $ :: 'Fn
+              {} (:return 'Enum)
+                :args $ [] 'U 'T
+            :generics $ [] 'T 'U
           :tags $ #{} :builtin :internal
           :tests $ []
-            %{} 'TestEntry (:name |returns-shortcut-accumulator)
-              :code $ quote
-                assert= 3 $ foldl-shortcut ([] 1 2 3) 0 99
-                  fn (acc x)
-                    let
-                        next $ + acc x
-                      :: (&= x 2) next
+            %{} 'TestEntry
+              :name |returns-shortcut-accumulator
+              :code $ quote $ assert= 3
+                foldl-shortcut ([] 1 2 3) 0 99 $ fn (acc x)
+                  let
+                      next $ + acc x
+                    :: (&= x 2) next
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |returns-default-without-shortcut)
-              :code $ quote
-                assert= 99 $ foldl-shortcut ([] 1 2 3) 0 99
-                  fn (acc x)
-                    :: false $ + acc x
+            %{} 'TestEntry
+              :name |returns-default-without-shortcut
+              :code $ quote $ assert= 99
+                foldl-shortcut ([] 1 2 3) 0 99 $ fn (acc x)
+                  :: false $ + acc x
               :tags $ #{} :core :unit
-        'foldr-shortcut $ %{} 'CodeEntry (:doc "|Internal right fold with early termination. Syntax: (foldr-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default.")
+        'foldr-shortcut $ %{} 'CodeEntry
+          :doc "|Internal right fold with early termination. Syntax: (foldr-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'U)
-              :args $ [] (:: 'List 'T) 'U 'U
-                :: 'Fn $ {} (:return 'Enum)
-                  :args $ [] 'U 'T
-              :generics $ [] 'T 'U
+          :schema $ :: 'Fn $ {} (:return 'U)
+            :args $ [] (:: 'List 'T) 'U 'U $ :: 'Fn
+              {} (:return 'Enum)
+                :args $ [] 'U 'T
+            :generics $ [] 'T 'U
           :tags $ #{} :builtin :internal
           :tests $ []
-            %{} 'TestEntry (:name |returns-shortcut-accumulator)
-              :code $ quote
-                assert= 5 $ foldr-shortcut ([] 1 2 3) 0 99
-                  fn (acc x)
-                    let
-                        next $ + acc x
-                      :: (&= x 2) next
+            %{} 'TestEntry
+              :name |returns-shortcut-accumulator
+              :code $ quote $ assert= 5
+                foldr-shortcut ([] 1 2 3) 0 99 $ fn (acc x)
+                  let
+                      next $ + acc x
+                    :: (&= x 2) next
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |returns-default-without-shortcut)
-              :code $ quote
-                assert= 99 $ foldr-shortcut ([] 1 2 3) 0 99
-                  fn (acc x)
-                    :: false $ + acc x
+            %{} 'TestEntry
+              :name |returns-default-without-shortcut
+              :code $ quote $ assert= 99
+                foldr-shortcut ([] 1 2 3) 0 99 $ fn (acc x)
+                  :: false $ + acc x
               :tags $ #{} :core :unit
-        'format-cirru $ %{} 'CodeEntry (:doc "|internal function for formatting Cirru\nSyntax: (format-cirru data)\nParams: data (list)\nReturns: string\nFormats nested list structure into Cirru syntax text")
+        'format-cirru $ %{} 'CodeEntry
+          :doc "|internal function for formatting Cirru\nSyntax: (format-cirru data)\nParams: data (list)\nReturns: string\nFormats nested list structure into Cirru syntax text"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'List
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'List
           :tags $ #{} :builtin :internal
-        'format-cirru-edn $ %{} 'CodeEntry (:doc "|internal function for formatting Cirru EDN\nSyntax: (format-cirru-edn data)\nParams: data (any)\nReturns: string\nFormats Calcit data structures into Cirru EDN format text")
+        'format-cirru-edn $ %{} 'CodeEntry
+          :doc "|internal function for formatting Cirru EDN\nSyntax: (format-cirru-edn data)\nParams: data (any)\nReturns: string\nFormats Calcit data structures into Cirru EDN format text"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |formats-basic-edn-values)
-              :code $ quote
-                do
-                  assert= "|[] 'a" $ trim
-                    format-cirru-edn $ [] 'a
-                  assert= "|do nil" $ trim (format-cirru-edn nil)
-                  assert= "|do 's" $ trim (format-cirru-edn 's)
-              :tags $ #{} :core :unit
-        'format-cirru-one-liner $ %{} 'CodeEntry (:doc "|internal function for formatting Cirru as one-liner\nSyntax: (format-cirru-one-liner data)\nParams: data (list)\nReturns: string\nFormats nested list structure into Cirru one-liner syntax text")
+          :tests $ [] $ %{} 'TestEntry
+            :name |formats-basic-edn-values
+            :code $ quote $ do
+              assert= "|[] 'a" $ trim $ format-cirru-edn ([] 'a)
+              assert= "|do nil" $ trim $ format-cirru-edn nil
+              assert= "|do 's" $ trim $ format-cirru-edn 's
+            :tags $ #{} :core :unit
+        'format-cirru-one-liner $ %{} 'CodeEntry
+          :doc "|internal function for formatting Cirru as one-liner\nSyntax: (format-cirru-one-liner data)\nParams: data (list)\nReturns: string\nFormats nested list structure into Cirru one-liner syntax text"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'List
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'List
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |formats-simple-form-on-one-line)
-              :code $ quote
-                do
-                  assert=
-                    format-cirru-one-liner $ [] |defn
-                      [] |add $ [] |a |b
-                      [] |+ |a |b
-                    , "|defn (add (a b)) $ + a b"
-                  assert=
-                    format-cirru-one-liner $ [] |+ |1 |2
-                    , "|+ 1 2"
-              :tags $ #{} :core :unit
-        'format-to-cirru $ %{} 'CodeEntry (:doc "|internal function for formatting to Cirru syntax\nSyntax: (format-to-cirru value)\nParams: value (any)\nReturns: string in Cirru format\nConverts Calcit data structures to Cirru-style string representation")
+          :tests $ [] $ %{} 'TestEntry
+            :name |formats-simple-form-on-one-line
+            :code $ quote $ do
+              assert=
+                format-cirru-one-liner $ [] |defn
+                  [] |add $ [] |a |b
+                  [] |+ |a |b
+                , "|defn (add (a b)) $ + a b"
+              assert=
+                format-cirru-one-liner $ [] |+ |1 |2
+                , "|+ 1 2"
+            :tags $ #{} :core :unit
+        'format-to-cirru $ %{} 'CodeEntry
+          :doc "|internal function for formatting to Cirru syntax\nSyntax: (format-to-cirru value)\nParams: value (any)\nReturns: string in Cirru format\nConverts Calcit data structures to Cirru-style string representation"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'format-to-lisp $ %{} 'CodeEntry (:doc "|internal function for formatting to Lisp syntax\nSyntax: (format-to-lisp value)\nParams: value (any)\nReturns: string in Lisp format\nConverts Calcit data structures to Lisp-style string representation")
+        'format-to-lisp $ %{} 'CodeEntry
+          :doc "|internal function for formatting to Lisp syntax\nSyntax: (format-to-lisp value)\nParams: value (any)\nReturns: string in Lisp format\nConverts Calcit data structures to Lisp-style string representation"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |formats-quoted-code-as-lisp)
-              :code $ quote
-                do
-                  assert= "|(defn f1 (x) (+ x y))" $ format-to-lisp
-                    quote $ defn f1 (x) (+ x y)
-                  assert= "|(nil? nil)" $ format-to-lisp
-                    quote $ nil? nil
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |formats-quoted-code-as-lisp
+            :code $ quote $ do
+              assert= "|(defn f1 (x) (+ x y))" $ format-to-lisp $ quote
+                defn f1 (x) (+ x y)
+              assert= "|(nil? nil)" $ format-to-lisp $ quote (nil? nil)
+            :tags $ #{} :core :unit
         'frequencies $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn frequencies (xs0)
-              assert "|expects a list for frequencies" $ list? xs0
-              apply-args
-                  {}
-                  , xs0
-                fn (acc xs)
-                  list-match xs
-                    () acc
-                    (x0 xss)
-                      recur
-                        if (contains? acc x0)
-                          update acc x0 $ \ &+ % 1
-                          &map:assoc acc x0 1
-                        , xss
+          :code $ quote $ defn frequencies (xs0)
+            assert "|expects a list for frequencies" $ list? xs0
+            apply-args
+                {}
+                , xs0
+              fn (acc xs)
+                list-match xs
+                  () acc
+                  (x0 xss)
+                    recur
+                      if (contains? acc x0)
+                        update acc x0 $ \ &+ % 1
+                        &map:assoc acc x0 1
+                      , xss
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'Map 'T 'Number
-          :tests $ []
-            %{} 'TestEntry (:name |counts-repeated-list-members)
-              :code $ quote
-                assert= (&{} 1 1 2 2 3 3)
-                  frequencies $ [] 1 2 2 3 3 3
-              :tags $ #{} :core :unit
-        'fs-path:read-dir $ %{} 'CodeEntry (:doc "|枚举 FsPath 的即时子项，并以确定顺序返回 Result<List<FsPath>,String>。")
-          :code $ quote
-            defn fs-path:read-dir (self)
-              &fs-read-dir Result FsPath (:value self) "|fs-path:read-dir failed"
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'Map 'T 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |counts-repeated-list-members
+            :code $ quote $ assert= (&{} 1 1 2 2 3 3)
+              frequencies $ [] 1 2 2 3 3 3
+            :tags $ #{} :core :unit
+        'fs-path:read-dir $ %{} 'CodeEntry
+          :doc "|枚举 FsPath 的即时子项，并以确定顺序返回 Result<List<FsPath>,String>。"
+          :code $ quote $ defn fs-path:read-dir (self)
+            &fs-read-dir Result FsPath (:value self) "|fs-path:read-dir failed"
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'FsPath
-              :return $ :: 'Result (:: 'List 'FsPath) 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'FsPath
+            :return $ :: 'Result (:: 'List 'FsPath) 'String
           :tags $ #{} :file :internal :io
-        'fs-path:read-text $ %{} 'CodeEntry (:doc "|读取 FsPath 指向的 UTF-8 文本并返回 Result<String,String>；WASI 只访问 host 显式授予的 preopen。")
-          :code $ quote
-            defn fs-path:read-text (self)
-              &fs-read-text Result (:value self) "|fs-path:read-text failed"
+        'fs-path:read-text $ %{} 'CodeEntry
+          :doc "|读取 FsPath 指向的 UTF-8 文本并返回 Result<String,String>；WASI 只访问 host 显式授予的 preopen。"
+          :code $ quote $ defn fs-path:read-text (self)
+            &fs-read-text Result (:value self) "|fs-path:read-text failed"
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'FsPath
-              :return $ :: 'Result 'String 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'FsPath
+            :return $ :: 'Result 'String 'String
           :tags $ #{} :file :internal :io
-        'fs-path:to-string $ %{} 'CodeEntry (:doc "|Return the stored UTF-8 path string.")
-          :code $ quote
-            defn fs-path:to-string (self) (:value self)
+        'fs-path:to-string $ %{} 'CodeEntry
+          :doc "|Return the stored UTF-8 path string."
+          :code $ quote $ defn fs-path:to-string (self) (:value self)
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'FsPath
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'FsPath
           :tags $ #{} :internal
-        'fs-path:walk-dir $ %{} 'CodeEntry (:doc "|Recursively list descendants as Result<List<FsPath>,String>.")
-          :code $ quote
-            defn fs-path:walk-dir (self)
-              result:map
-                try-read-dir (:value self) (%some true)
-                fn (paths) (map paths fs:path)
+        'fs-path:walk-dir $ %{} 'CodeEntry
+          :doc "|Recursively list descendants as Result<List<FsPath>,String>."
+          :code $ quote $ defn fs-path:walk-dir (self)
+            result:map
+              try-read-dir (:value self) (%some true)
+              fn (paths) (map paths fs:path)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'FsPath
-              :return $ :: 'Result (:: 'List 'FsPath) 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'FsPath
+            :return $ :: 'Result (:: 'List 'FsPath) 'String
           :tags $ #{} :file :internal :io
-        'fs-path:write-text $ %{} 'CodeEntry (:doc "|把 UTF-8 文本写入 FsPath 并返回 Result<Unit,String>；WASI 只访问 host 显式授予的 preopen。")
-          :code $ quote
-            defn fs-path:write-text (self content)
-              &fs-write-text Result (:value self) content "|fs-path:write-text failed"
+        'fs-path:write-text $ %{} 'CodeEntry
+          :doc "|把 UTF-8 文本写入 FsPath 并返回 Result<Unit,String>；WASI 只访问 host 显式授予的 preopen。"
+          :code $ quote $ defn fs-path:write-text (self content)
+            &fs-write-text Result (:value self) content "|fs-path:write-text failed"
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'FsPath 'String
-              :return $ :: 'Result 'Unit 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'FsPath 'String
+            :return $ :: 'Result 'Unit 'String
           :tags $ #{} :file :internal :io
-        'fs:path $ %{} 'CodeEntry (:doc "|Construct an FsPath from a UTF-8 path string without normalization or filesystem access.")
-          :code $ quote
-            defn fs:path (value)
-              %{} FsPath $ :value value
+        'fs:path $ %{} 'CodeEntry
+          :doc "|Construct an FsPath from a UTF-8 path string without normalization or filesystem access."
+          :code $ quote $ defn fs:path (value)
+            %{} FsPath $ :value value
           :examples $ []
             quote $ fs:path |assets/data.cirru
-            quote $ .read-text (fs:path |assets/data.cirru)
-            quote $ .read-dir (fs:path |assets)
-          :schema $ :: 'Fn
-            {} (:return 'FsPath)
-              :args $ [] 'String
+            quote $ .read-text $ fs:path |assets/data.cirru
+            quote $ .read-dir $ fs:path |assets
+          :schema $ :: 'Fn $ {} (:return 'FsPath)
+            :args $ [] 'String
           :tags $ #{} :core
-          :tests $ []
-            %{} 'TestEntry (:name |fs-path-contract)
-              :code $ quote
-                do
-                  assert= |Cargo.toml $ .to-string (fs:path |Cargo.toml)
-                  assert= true $ result:ok?
-                    .read-text $ fs:path |Cargo.toml
-                  assert= true $ result:ok?
-                    .read-dir $ fs:path |src
-                  assert= true $ result:ok?
-                    .walk-dir $ fs:path |src
-                  assert= true $ result:err?
-                    .read-text $ fs:path |/calcit-result-contract-does-not-exist/file
-                  assert= true $ result:err?
-                    .read-dir $ fs:path |/calcit-result-contract-does-not-exist
-                  assert= true $ result:err?
-                    .write-text (fs:path |/calcit-result-contract-does-not-exist/file) |content
-                  assert-type
-                    .read-text $ fs:path |/calcit-result-contract-does-not-exist/file
-                    :: 'Result 'String 'String
-                  assert-type
-                    .read-dir $ fs:path |/calcit-result-contract-does-not-exist
-                    :: 'Result (:: 'List 'FsPath) 'String
-                  assert-type
-                    .walk-dir $ fs:path |/calcit-result-contract-does-not-exist
-                    :: 'Result (:: 'List 'FsPath) 'String
-                  assert-type
-                    .write-text (fs:path |/calcit-result-contract-does-not-exist/file) |content
-                    :: 'Result 'Unit 'String
-        'generate-id! $ %{} 'CodeEntry (:doc "|internal function for generating unique IDs\nSyntax: (generate-id!)\nParams: none\nReturns: unique string ID\nGenerates a unique identifier string for runtime use")
+          :tests $ [] $ %{} 'TestEntry
+            :name |fs-path-contract
+            :code $ quote $ do
+              assert= |Cargo.toml $ .to-string $ fs:path |Cargo.toml
+              assert= true $ result:ok? $ .read-text (fs:path |Cargo.toml)
+              assert= true $ result:ok? $ .read-dir (fs:path |src)
+              assert= true $ result:ok? $ .walk-dir (fs:path |src)
+              assert= true $ result:err? $ .read-text
+                fs:path |/calcit-result-contract-does-not-exist/file
+              assert= true $ result:err? $ .read-dir
+                fs:path |/calcit-result-contract-does-not-exist
+              assert= true $ result:err? $ .write-text
+                fs:path |/calcit-result-contract-does-not-exist/file
+                , |content
+              assert-type
+                .read-text $ fs:path |/calcit-result-contract-does-not-exist/file
+                :: 'Result 'String 'String
+              assert-type
+                .read-dir $ fs:path |/calcit-result-contract-does-not-exist
+                :: 'Result (:: 'List 'FsPath) 'String
+              assert-type
+                .walk-dir $ fs:path |/calcit-result-contract-does-not-exist
+                :: 'Result (:: 'List 'FsPath) 'String
+              assert-type
+                .write-text
+                  fs:path |/calcit-result-contract-does-not-exist/file
+                  , |content
+                :: 'Result 'Unit 'String
+        'generate-id! $ %{} 'CodeEntry
+          :doc "|internal function for generating unique IDs\nSyntax: (generate-id!)\nParams: none\nReturns: unique string ID\nGenerates a unique identifier string for runtime use"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
           :tags $ #{} :builtin :internal :io
-        'gensym $ %{} 'CodeEntry (:doc "|internal syntax for generating unique symbols\nSyntax: (gensym) or (gensym prefix)\nParams: prefix (string, optional)\nReturns: unique symbol\nGenerates a unique symbol for macro hygiene")
+        'gensym $ %{} 'CodeEntry
+          :doc "|internal syntax for generating unique symbols\nSyntax: (gensym) or (gensym prefix)\nParams: prefix (string, optional)\nReturns: unique symbol\nGenerates a unique symbol for macro hygiene"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        'get $ %{} 'CodeEntry (:doc "|Optional lookup by key or index for open values, maps, and indexed collections. Returns Option<T>. A runtime Struct behind Dynamic supports tag/string/symbol field lookup and returns Option<Dynamic>; a statically known Struct must use (:field value) so the checker proves the field and its declared return type.")
-          :code $ quote
-            defn get (base k)
-              cond
-                  map? base
-                  if (&map:contains? base k)
-                    %some $ &map:get base k
-                    %none
-                (struct? base)
-                  if
-                    and
-                      or (tag? k) (string? k) (symbol? k)
-                      &struct:contains? base k
-                    %some $ &struct:get base k
-                    %none
-                (or (list? base) (string? base) (enum? base))
-                  if (number? k) (nth base k) (%none)
-                true $ raise (str-spaced |get |expected |a |map |or |indexed |collection, |got: base)
+        'get $ %{} 'CodeEntry
+          :doc "|Optional lookup by key or index for open values, maps, and indexed collections. Returns Option<T>. A runtime Struct behind Dynamic supports tag/string/symbol field lookup and returns Option<Dynamic>; a statically known Struct must use (:field value) so the checker proves the field and its declared return type."
+          :code $ quote $ defn get (base k)
+            cond
+                map? base
+                if (&map:contains? base k)
+                  %some $ &map:get base k
+                  %none
+              (struct? base)
+                if
+                  and
+                    or (tag? k) (string? k) (symbol? k)
+                    &struct:contains? base k
+                  %some $ &struct:get base k
+                  %none
+              (or (list? base) (string? base) (enum? base))
+                if (number? k) (nth base k) (%none)
+              true $ raise $ str-spaced |get |expected |a |map |or |indexed |collection, |got: base
           :examples $ []
             quote $ assert= (%some 2)
               get ([] 0 2 4) 1
@@ -5727,98 +5537,94 @@
             quote $ let
                 open-path $ assert-type (FsPath :value |demo) 'Dynamic
               assert= (%some |demo) (get open-path :value)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Dynamic 'Dynamic
-              :return $ :: 'Option 'Dynamic
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Dynamic 'Dynamic
+            :return $ :: 'Option 'Dynamic
           :tests $ []
-            %{} 'TestEntry (:name |returns-some-or-none-for-map)
-              :code $ quote
-                assert= (%none)
-                  get (&{}) :missing
+            %{} 'TestEntry
+              :name |returns-some-or-none-for-map
+              :code $ quote $ assert= (%none)
+                get (&{}) :missing
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |returns-string-character-by-index)
-              :code $ quote
+            %{} 'TestEntry
+              :name |returns-string-character-by-index
+              :code $ quote $ do
+                assert= (%some |a) (get |abc 0)
+                assert= (%some |b) (get |abc 1)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry
+              :name |reads-open-map-payload
+              :code $ quote $ let
+                  m $ assert-type
+                    {} (:a 1) (:b |x)
+                    :: 'Map 'Tag 'Dynamic
                 do
-                  assert= (%some |a) (get |abc 0)
-                  assert= (%some |b) (get |abc 1)
+                  assert= (%some 1) (get m :a)
+                  assert= (%none) (get m :missing)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |reads-open-map-payload)
-              :code $ quote
-                let
-                    m $ assert-type
-                      {} (:a 1) (:b |x)
-                      :: 'Map 'Tag 'Dynamic
-                  do
-                    assert= (%some 1) (get m :a)
-                    assert= (%none) (get m :missing)
+            %{} 'TestEntry
+              :name |reads-runtime-struct-from-open-value
+              :code $ quote $ let
+                  open-path $ assert-type (FsPath :value |demo) 'Dynamic
+                assert= (%some |demo) (get open-path :value)
+                assert= (%some |demo) (get open-path |value)
+                assert= (%none) (get open-path :missing)
+                assert= (%none) (get open-path 0)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |reads-runtime-struct-from-open-value)
-              :code $ quote
-                let
-                    open-path $ assert-type (FsPath :value |demo) 'Dynamic
-                  assert= (%some |demo) (get open-path :value)
-                  assert= (%some |demo) (get open-path |value)
-                  assert= (%none) (get open-path :missing)
-                  assert= (%none) (get open-path 0)
-              :tags $ #{} :core :unit
-        'get-args $ %{} 'CodeEntry (:doc "|读取宿主进程传入的完整参数列表，包含第 0 项。")
-          :code $ quote
-            defn get-args () $ &get-args
+        'get-args $ %{} 'CodeEntry
+          :doc "|读取宿主进程传入的完整参数列表，包含第 0 项。"
+          :code $ quote $ defn get-args () (&get-args)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ []
-              :features $ #{} :env :io
-              :return $ :: 'List 'String
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :features $ #{} :env :io
+            :return $ :: 'List 'String
           :tags $ #{} :env :io
-          :tests $ []
-            %{} 'TestEntry (:name |returns-strings)
-              :code $ quote
-                assert= true $ every? (get-args) string?
-              :tags $ #{} :core :env :unit
-        'get-char-code $ %{} 'CodeEntry (:doc "|internal function for getting character code\nSyntax: (get-char-code char)\nParams: char (string, single character)\nReturns: number\nReturns Unicode code point of character")
+          :tests $ [] $ %{} 'TestEntry (:name |returns-strings)
+            :code $ quote $ assert= true
+              every? (get-args) string?
+            :tags $ #{} :core :env :unit
+        'get-char-code $ %{} 'CodeEntry
+          :doc "|internal function for getting character code\nSyntax: (get-char-code char)\nParams: char (string, single character)\nReturns: number\nReturns Unicode code point of character"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'String
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'String
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |reads-unicode-character-code)
-              :code $ quote
-                do
-                  assert= 97 $ get-char-code |a
-                  assert= 27721 $ get-char-code "|汉"
-              :tags $ #{} :core :unit
-        'get-env $ %{} 'CodeEntry (:doc "|Read an environment variable as Option<String>.")
-          :code $ quote
-            defn get-env (name)
-              optionally $ &get-env name
-          :examples $ []
-            quote $ assert= (%none) (get-env |__CALCIT_TEST_MISSING_ENV_83B125E9__)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String
-              :features $ #{} :env :io
-              :return $ :: 'Option 'String
+          :tests $ [] $ %{} 'TestEntry
+            :name |reads-unicode-character-code
+            :code $ quote $ do
+              assert= 97 $ get-char-code |a
+              assert= 27721 $ get-char-code "|汉"
+            :tags $ #{} :core :unit
+        'get-env $ %{} 'CodeEntry
+          :doc "|Read an environment variable as Option<String>."
+          :code $ quote $ defn get-env (name)
+            optionally $ &get-env name
+          :examples $ [] $ quote
+            assert= (%none)
+              get-env |__CALCIT_TEST_MISSING_ENV_83B125E9__
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :features $ #{} :env :io
+            :return $ :: 'Option 'String
           :tags $ #{} :env :io
-        'get-in $ %{} 'CodeEntry (:doc "|Get a nested value as Option<Dynamic>; none represents a missing path or nil encountered during traversal.")
-          :code $ quote
-            defn get-in (base path)
-              if (nil? base) (%none)
-                list-match path
-                  () $ %some base
-                  (y0 ys)
-                    if (struct? base) (raise "|get-in does not traverse Struct fields; use (:field value) so the checker can enforce the declared type")
-                      match (get base y0)
-                        (:some value) (recur value ys)
-                        (:none) (%none)
+        'get-in $ %{} 'CodeEntry
+          :doc "|Get a nested value as Option<Dynamic>; none represents a missing path or nil encountered during traversal."
+          :code $ quote $ defn get-in (base path)
+            if (nil? base) (%none)
+              list-match path
+                () $ %some base
+                (y0 ys)
+                  if (struct? base)
+                    raise "|get-in does not traverse Struct fields; use (:field value) so the checker can enforce the declared type"
+                    match (get base y0)
+                      (:some value) (recur value ys)
+                      (:none) (%none)
           :examples $ []
             quote $ assert= (%some 1)
               get-in
-                {} $ :a
-                  {} $ :b 1
+                {} $ :a $ {} (:b 1)
                 [] :a :b
             quote $ assert= (%some 2)
               get-in
@@ -5828,606 +5634,569 @@
               get-in
                 {} $ :x |value
                 [] :y
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Dynamic (:: 'List 'K)
-              :generics $ [] 'K
-              :return $ :: 'Option 'Dynamic
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Dynamic $ :: 'List 'K
+            :generics $ [] 'K
+            :return $ :: 'Option 'Dynamic
           :tests $ []
-            %{} 'TestEntry (:name |returns-nested-map-value)
-              :code $ quote
+            %{} 'TestEntry
+              :name |returns-nested-map-value
+              :code $ quote $ assert= (%some 2)
+                get-in
+                  &{} :a $ &{} :b 2
+                  [] :a :b
+              :tags $ #{} :core :unit
+            %{} 'TestEntry
+              :name |reads-nested-open-map-payload
+              :code $ quote $ let
+                  m $ assert-type
+                    {}
+                      :a $ {} $ :b 2
+                      :other |x
+                    :: 'Map 'Tag 'Dynamic
                 assert= (%some 2)
-                  get-in
-                    &{} :a $ &{} :b 2
-                    [] :a :b
+                  get-in m $ [] :a :b
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |reads-nested-open-map-payload)
-              :code $ quote
-                let
-                    m $ assert-type
-                      {}
-                        :a $ {} (:b 2)
-                        :other |x
-                      :: 'Map 'Tag 'Dynamic
-                  assert= (%some 2)
-                    get-in m $ [] :a :b
-              :tags $ #{} :core :unit
-        'group-by $ %{} 'CodeEntry (:doc "|Group elements by the result of applying function f to each element")
-          :code $ quote
-            defn group-by (xs0 f)
-              apply-args
-                  {}
-                  , xs0
-                defn %group-by (acc xs)
-                  hint-fn $ {}
-                    :args $ []
-                      :: 'Map 'K $ :: 'List 'T
-                      :: 'List 'T
-                    :return $ :: 'Map 'K (:: 'List 'T)
-                  list-match xs
-                    () acc
-                    (x0 xss)
-                      let
-                          key $ f x0
-                        recur
-                          if (contains? acc key)
-                            update acc key $ \ append % x0
-                            &map:assoc acc key $ [] x0
-                          , xss
+        'group-by $ %{} 'CodeEntry
+          :doc "|Group elements by the result of applying function f to each element"
+          :code $ quote $ defn group-by (xs0 f)
+            apply-args
+                {}
+                , xs0
+              defn %group-by (acc xs)
+                hint-fn $ {}
+                  :args $ []
+                    :: 'Map 'K $ :: 'List 'T
+                    :: 'List 'T
+                  :return $ :: 'Map 'K $ :: 'List 'T
+                list-match xs
+                  () acc
+                  (x0 xss)
+                    let
+                        key $ f x0
+                      recur
+                        if (contains? acc key)
+                          update acc key $ \ append % x0
+                          &map:assoc acc key $ [] x0
+                        , xss
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-                :: 'Fn $ {} (:return 'K)
-                  :args $ [] 'T
-              :generics $ [] 'T 'K
-              :return $ :: 'Map 'K (:: 'List 'T)
-          :tests $ []
-            %{} 'TestEntry (:name |groups-list-by-derived-key)
-              :code $ quote
-                assert=
-                  &{} 0 ([] 0 3 6 9) 1 ([] 1 4 7) 2 $ [] 2 5 8
-                  group-by (range 10)
-                    fn (x) (.rem x 3)
-              :tags $ #{} :core :unit
-        'hint-fn $ %{} 'CodeEntry (:doc "|internal syntax for function hints (used for async and function schema metadata)\nSyntax: (hint-fn hint-data fn-expr)\nParams: hint-data (schema map or keyword), fn-expr (function)\nReturns: hinted function\nAdds execution hints to functions, including async markers and schema metadata such as :args, :return, :generics, and :where")
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'K)
+                :args $ [] 'T
+            :generics $ [] 'T 'K
+            :return $ :: 'Map 'K $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |groups-list-by-derived-key
+            :code $ quote $ assert=
+              &{} 0 ([] 0 3 6 9) 1 ([] 1 4 7) 2 $ [] 2 5 8
+              group-by (range 10)
+                fn (x) (.rem x 3)
+            :tags $ #{} :core :unit
+        'hint-fn $ %{} 'CodeEntry
+          :doc "|internal syntax for function hints (used for async and function schema metadata)\nSyntax: (hint-fn hint-data fn-expr)\nParams: hint-data (schema map or keyword), fn-expr (function)\nReturns: hinted function\nAdds execution hints to functions, including async markers and schema metadata such as :args, :return, :generics, and :where"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :async :builtin :internal :syntax
-        'identical? $ %{} 'CodeEntry (:doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal")
+        'identical? $ %{} 'CodeEntry
+          :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T 'U
-              :generics $ [] 'T 'U
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T 'U
+            :generics $ [] 'T 'U
           :tags $ #{} :builtin :internal
         'identity $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn identity (x) x
+          :code $ quote $ defn identity (x) x
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'T)
-              :args $ [] 'T
-              :generics $ [] 'T
-        'if $ %{} 'CodeEntry (:doc "|internal syntax for conditional expressions\nSyntax: (if condition then-expr else-expr)\nParams: condition (any), then-expr (any), else-expr (any, optional)\nReturns: value of then-expr if condition is truthy, else-expr otherwise\nEvaluates condition and returns appropriate branch")
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T
+            :generics $ [] 'T
+        'if $ %{} 'CodeEntry
+          :doc "|internal syntax for conditional expressions\nSyntax: (if condition then-expr else-expr)\nParams: condition (any), then-expr (any), else-expr (any, optional)\nReturns: value of then-expr if condition is truthy, else-expr otherwise\nEvaluates condition and returns appropriate branch"
           :code $ quote &runtime-implementation
           :examples $ []
             quote $ if (> x 0) |positive |non-positive
-            quote $ if (empty? xs) 0 (count xs)
+            quote $ if (empty? xs) 0 $ count xs
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        'if-let $ %{} 'CodeEntry (:doc "|Consume Option<T>, bind its payload in the some branch, and evaluate the explicit none branch without calling unwrap.")
-          :code $ quote
-            defmacro if-let (pair then ? else)
+        'if-let $ %{} 'CodeEntry
+          :doc "|Consume Option<T>, bind its payload in the some branch, and evaluate the explicit none branch without calling unwrap."
+          :code $ quote $ defmacro if-let (pair then ? else)
+            if
+              not $ and (list? pair)
+                &= 2 $ count pair
+              raise $ str-spaced "|expected a pair, got:" pair
+            &let
+              x $ &list:nth pair 0
               if
-                not $ and (list? pair)
-                  &= 2 $ count pair
-                raise $ str-spaced "|expected a pair, got:" pair
-              &let
-                x $ &list:nth pair 0
-                if
-                  not $ symbol? x
-                  raise $ str-spaced "|expected a symbol for var name, got:" x
-                quasiquote $ option:fold
-                  ~ $ &list:nth pair 1
-                  fn () ~else
-                  fn (~x) ~then
+                not $ symbol? x
+                raise $ str-spaced "|expected a symbol for var name, got:" x
+              quasiquote $ option:fold
+                ~ $ &list:nth pair 1
+                fn () ~else
+                fn (~x) ~then
           :examples $ []
-            quote $ assert= |found
-              if-let
-                v $ %some |found
-                , v |missing
-            quote $ assert= |missing
-              if-let
-                v $ %none
-                , v |missing
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :optional $ [] (:: 'Expr 'Dynamic)
-              :required $ [] 'SyntaxList (:: 'Expr 'Dynamic)
+            quote $ assert= |found $ if-let
+              v $ %some |found
+              , v |missing
+            quote $ assert= |missing $ if-let
+              v $ %none
+              , v |missing
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :optional $ [] $ :: 'Expr 'Dynamic
+            :required $ [] 'SyntaxList $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-          :tests $ []
-            %{} 'TestEntry (:name |binds-open-option-payload)
-              :code $ quote
-                let
-                    present $ assert-type (%some 1) (:: 'Option 'Dynamic)
-                  assert= 1 $ if-let (value present) value 0
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |binds-open-option-payload
+            :code $ quote $ let
+                present $ assert-type (%some 1) (:: 'Option 'Dynamic)
+              assert= 1 $ if-let (value present) value 0
+            :tags $ #{} :core :unit
         'if-not $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro if-not (& xs)
-              if
-                not $ or
-                  &= 2 $ &list:count xs
-                  &= 3 $ &list:count xs
-                raise $ str-spaced "|if-not expects (condition then) or (condition then else), got:" xs
+          :code $ quote $ defmacro if-not (& xs)
+            if
+              not $ or
+                &= 2 $ &list:count xs
+                &= 3 $ &list:count xs
+              raise $ str-spaced "|if-not expects (condition then) or (condition then else), got:" xs
+            &let
+              condition $ &list:nth xs 0
               &let
-                condition $ &list:nth xs 0
+                true-branch $ &list:nth xs 1
                 &let
-                  true-branch $ &list:nth xs 1
-                  &let
-                    false-branch $ if
-                      &= 3 $ &list:count xs
-                      &list:nth xs 2
-                      quote nil
-                    quasiquote $ if ~condition ~false-branch ~true-branch
+                  false-branch $ if
+                    &= 3 $ &list:count xs
+                    &list:nth xs 2
+                    quote nil
+                  quasiquote $ if ~condition ~false-branch ~true-branch
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ []
-              :rest $ :: 'Expr 'Dynamic
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ []
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-        'impl-origin $ %{} 'CodeEntry (:doc "|Return the trait origin of an impl as Option<Trait>; inherent method bags produce none.")
-          :code $ quote
-            defn impl-origin (impl)
-              optionally $ &impl:origin impl
-          :examples $ []
-            quote $ assert= (%none)
+        'impl-origin $ %{} 'CodeEntry
+          :doc "|Return the trait origin of an impl as Option<Trait>; inherent method bags produce none."
+          :code $ quote $ defn impl-origin (impl)
+            optionally $ &impl:origin impl
+          :examples $ [] $ quote
+            assert= (%none)
               impl-origin $ &impl::new :PlainImpl
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Impl
-              :return $ :: 'Option 'Trait
-        'impl-traits $ %{} 'CodeEntry (:doc "|Append trait implementations\nSyntax: (impl-traits value & traits)\nParams: value (struct/enum), traits (impl, variadic)\nReturns: value with updated trait implementations\nDispatches to &struct:impl-traits, &enum:impl-traits")
-          :code $ quote
-            defn impl-traits (x & traits)
-              if
-                not $ every? traits
-                  fn (trait)
-                    = :impl $ type-of trait
-                raise "|impl-traits misuse. Expected: impl arguments are :impl values. Actual: found non-impl argument. Fix: pass values created by `defimpl`."
-              if (struct-def? x) (&struct-def:impl-traits x & traits)
-                if (enum-def? x) (&enum-def:impl-traits x & traits)
-                  raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Impl
+            :return $ :: 'Option 'Trait
+        'impl-traits $ %{} 'CodeEntry
+          :doc "|Append trait implementations\nSyntax: (impl-traits value & traits)\nParams: value (struct/enum), traits (impl, variadic)\nReturns: value with updated trait implementations\nDispatches to &struct:impl-traits, &enum:impl-traits"
+          :code $ quote $ defn impl-traits (x & traits)
+            if
+              not $ every? traits $ fn (trait)
+                = :impl $ type-of trait
+              raise "|impl-traits misuse. Expected: impl arguments are :impl values. Actual: found non-impl argument. Fix: pass values created by `defimpl`."
+            if (struct-def? x)
+              &struct-def:impl-traits x & traits
+              if (enum-def? x)
+                &enum-def:impl-traits x & traits
+                raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:rest 'Impl) (:return 'Dynamic)
-              :args $ [] 'Dynamic
-        'inc $ %{} 'CodeEntry (:doc "|Increments a number by 1")
-          :code $ quote
-            defn inc (x) (&+ x 1)
+          :schema $ :: 'Fn $ {} (:rest 'Impl) (:return 'Dynamic)
+            :args $ [] 'Dynamic
+        'inc $ %{} 'CodeEntry
+          :doc "|Increments a number by 1"
+          :code $ quote $ defn inc (x) (&+ x 1)
           :examples $ []
-            quote $ assert= 6 (inc 5)
-            quote $ assert= 1 (inc 0)
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number
-          :tests $ []
-            %{} 'TestEntry (:name |increments-number)
-              :code $ quote
-                assert= 2.1 $ inc 1.1
-              :tags $ #{} :core :unit
-        'include $ %{} 'CodeEntry (:doc "|Add elements to a set, returns a new set with the elements included")
-          :code $ quote
-            defn include (base & xs)
-              reduce xs base $ fn (acc item) (&include acc item)
+            quote $ assert= 6 $ inc 5
+            quote $ assert= 1 $ inc 0
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |increments-number
+            :code $ quote $ assert= 2.1 (inc 1.1)
+            :tags $ #{} :core :unit
+        'include $ %{} 'CodeEntry
+          :doc "|Add elements to a set, returns a new set with the elements included"
+          :code $ quote $ defn include (base & xs)
+            reduce xs base $ fn (acc item) (&include acc item)
           :examples $ []
             quote $ assert= (#{} 1 2 3 4)
               include (#{} 1 2) 3 4
             quote $ assert= (#{} 1 2 3)
               include (#{} 1 2) 2 3
-          :schema $ :: 'Fn
-            {} (:rest 'T)
-              :args $ [] (:: 'Set 'T)
-              :generics $ [] 'T
-              :return $ :: 'Set 'T
-          :tests $ []
-            %{} 'TestEntry (:name |adds-set-members)
-              :code $ quote
-                assert= (#{} 1 2 3 4)
-                  include (#{} 1 2) 3 4
-              :tags $ #{} :core :unit
+          :schema $ :: 'Fn $ {} (:rest 'T)
+            :args $ [] $ :: 'Set 'T
+            :generics $ [] 'T
+            :return $ :: 'Set 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |adds-set-members
+            :code $ quote $ assert= (#{} 1 2 3 4)
+              include (#{} 1 2) 3 4
+            :tags $ #{} :core :unit
         'includes? $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn includes? (x k)
-              if (list? x) (&list:includes? x k) (.includes? x k)
+          :code $ quote $ defn includes? (x k)
+            if (list? x) (&list:includes? x k) (.includes? x k)
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Dynamic 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Dynamic 'Dynamic
           :tests $ []
             %{} 'TestEntry (:name |finds-map-value)
-              :code $ quote
-                assert= false $ includes? (&{} :a 1 :b 2) 3
+              :code $ quote $ assert= false
+                includes? (&{} :a 1 :b 2) 3
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |matches-and-rejects-string-substrings)
-              :code $ quote
-                do
-                  assert= true $ includes? |abc |abc
-                  assert= false $ includes? |abd |abc
+            %{} 'TestEntry
+              :name |matches-and-rejects-string-substrings
+              :code $ quote $ do
+                assert= true $ includes? |abc |abc
+                assert= false $ includes? |abd |abc
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |matches-and-rejects-set-members)
-              :code $ quote
-                do
-                  assert= true $ includes? (#{} 1 2 3) 2
-                  assert= false $ includes? (#{} 1 2 3) 4
+            %{} 'TestEntry
+              :name |matches-and-rejects-set-members
+              :code $ quote $ do
+                assert= true $ includes? (#{} 1 2 3) 2
+                assert= false $ includes? (#{} 1 2 3) 4
               :tags $ #{} :core :unit
-        'index-of $ %{} 'CodeEntry (:doc "|Find the first list item index as Option<Number>.")
-          :code $ quote
-            defn index-of (xs item)
-              foldl-shortcut xs 0 (%none)
-                defn %index-of (index x)
-                  if (&= item x)
-                    :: true $ %some index
-                    :: false $ &+ 1 index
+        'index-of $ %{} 'CodeEntry
+          :doc "|Find the first list item index as Option<Number>."
+          :code $ quote $ defn index-of (xs item)
+            foldl-shortcut xs 0 (%none)
+              defn %index-of (index x)
+                if (&= item x)
+                  :: true $ %some index
+                  :: false $ &+ 1 index
           :examples $ []
             quote $ assert= (%some 1)
               index-of ([] |a |b) |b
             quote $ assert= (%none)
               index-of ([] |a |b) |z
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'T
-              :generics $ [] 'T
-              :return $ :: 'Option 'Number
-          :tests $ []
-            %{} 'TestEntry (:name |returns-first-index-or-none)
-              :code $ quote
-                do
-                  assert= (%some 0)
-                    index-of ([] :a :b :c :a) :a
-                  assert= (%none)
-                    index-of ([] :a :b :c) :missing
-              :tags $ #{} :core :unit
-        'interleave $ %{} 'CodeEntry (:doc "|Interleave two homogeneous lists, truncating to the shorter input. Both inputs and the result share one element type; explicitly use List<Dynamic> only at a reviewed heterogeneous boundary.")
-          :code $ quote
-            defn interleave (xs0 ys0)
-              apply-args
-                  []
-                  , xs0 ys0
-                defn %interleave (acc xs ys)
-                  hint-fn $ {}
-                    :args $ [] (:: 'List 'T) (:: 'List 'T) (:: 'List 'T)
-                    :generics $ [] 'T
-                    :return $ :: 'List 'T
-                  if
-                    if (&list:empty? xs) true $ &list:empty? ys
-                    , acc $ recur
-                      -> acc
-                        append $ &list:first xs
-                        append $ &list:first ys
-                      rest xs
-                      rest ys
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-first-index-or-none
+            :code $ quote $ do
+              assert= (%some 0)
+                index-of ([] :a :b :c :a) :a
+              assert= (%none)
+                index-of ([] :a :b :c) :missing
+            :tags $ #{} :core :unit
+        'interleave $ %{} 'CodeEntry
+          :doc "|Interleave two homogeneous lists, truncating to the shorter input. Both inputs and the result share one element type; explicitly use List<Dynamic> only at a reviewed heterogeneous boundary."
+          :code $ quote $ defn interleave (xs0 ys0)
+            apply-args
+                []
+                , xs0 ys0
+              defn %interleave (acc xs ys)
+                hint-fn $ {}
+                  :args $ [] (:: 'List 'T) (:: 'List 'T) (:: 'List 'T)
+                  :generics $ [] 'T
+                  :return $ :: 'List 'T
+                if
+                  if (&list:empty? xs) true $ &list:empty? ys
+                  , acc $ recur
+                    -> acc
+                      append $ &list:first xs
+                      append $ &list:first ys
+                    rest xs
+                    rest ys
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'List 'T
-          :tests $ []
-            %{} 'TestEntry (:name |truncates-to-shortest-list)
-              :code $ quote
-                assert= ([] :a :x :b :y)
-                  interleave ([] :a :b :c) ([] :x :y)
-              :tags $ #{} :core :unit
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) (:: 'List 'T)
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |truncates-to-shortest-list
+            :code $ quote $ assert= ([] :a :x :b :y)
+              interleave ([] :a :b :c) ([] :x :y)
+            :tags $ #{} :core :unit
         'intersection $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn intersection (base & xs)
-              reduce xs base $ fn (acc item) (&set:intersection acc item)
+          :code $ quote $ defn intersection (base & xs)
+            reduce xs base $ fn (acc item)
+              &set:intersection acc item
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'T)
-              :generics $ [] 'T
-              :rest $ :: 'Set 'T
-              :return $ :: 'Set 'T
-          :tests $ []
-            %{} 'TestEntry (:name |keeps-common-set-members)
-              :code $ quote
-                assert= (#{} 3)
-                  intersection (#{} 1 2 3) (#{} 2 3 4) (#{} 3 4 5)
-              :tags $ #{} :core :unit
-        'is-spreading-mark? $ %{} 'CodeEntry (:doc "|internal function for detecting syntax &\nSyntax: (is-spreading-mark? value)\nParams: value (any)\nReturns: boolean\nReturns true if value is the spreading mark symbol &")
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Set 'T
+            :generics $ [] 'T
+            :rest $ :: 'Set 'T
+            :return $ :: 'Set 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |keeps-common-set-members
+            :code $ quote $ assert= (#{} 3)
+              intersection (#{} 1 2 3) (#{} 2 3 4) (#{} 3 4 5)
+            :tags $ #{} :core :unit
+        'is-spreading-mark? $ %{} 'CodeEntry
+          :doc "|internal function for detecting syntax &\nSyntax: (is-spreading-mark? value)\nParams: value (any)\nReturns: boolean\nReturns true if value is the spreading mark symbol &"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
         'join $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn join (xs0 sep)
-              apply-args
-                  []
-                  , xs0 true
-                defn %join (acc xs beginning?)
-                  hint-fn $ {}
-                    :args $ [] (:: 'List 'T) (:: 'List 'T) 'Bool
-                    :return $ :: 'List 'T
-                  list-match xs
-                    () acc
-                    (x0 xss)
-                      recur
-                        append
-                          if beginning? acc $ append acc sep
-                          , x0
-                        , xss false
+          :code $ quote $ defn join (xs0 sep)
+            apply-args
+                []
+                , xs0 true
+              defn %join (acc xs beginning?)
+                hint-fn $ {}
+                  :args $ [] (:: 'List 'T) (:: 'List 'T) 'Bool
+                  :return $ :: 'List 'T
+                list-match xs
+                  () acc
+                  (x0 xss)
+                    recur
+                      append
+                        if beginning? acc $ append acc sep
+                        , x0
+                      , xss false
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'T
-              :generics $ [] 'T
-              :return $ :: 'List 'T
-          :tests $ []
-            %{} 'TestEntry (:name |inserts-separators-between-list-items)
-              :code $ quote
-                assert= ([] 1 10 2 10 3 10 4)
-                  join ([] 1 2 3 4) 10
-              :tags $ #{} :core :unit
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |inserts-separators-between-list-items
+            :code $ quote $ assert= ([] 1 10 2 10 3 10 4)
+              join ([] 1 2 3 4) 10
+            :tags $ #{} :core :unit
         'join-str $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn join-str (xs0 sep)
-              apply-args (| xs0 true)
-                defn %join-str (acc xs beginning?)
-                  hint-fn $ {}
-                    :args $ [] 'String (:: 'List 'T) 'Bool
-                    :return 'String
-                  list-match xs
-                    () acc
-                    (x0 xss)
-                      recur
-                        &str:concat
-                          if beginning? acc $ &str:concat acc sep
-                          , x0
-                        , xss false
+          :code $ quote $ defn join-str (xs0 sep)
+            apply-args (| xs0 true)
+              defn %join-str (acc xs beginning?)
+                hint-fn $ {}
+                  :args $ [] 'String (:: 'List 'T) 'Bool
+                  :return 'String
+                list-match xs
+                  () acc
+                  (x0 xss)
+                    recur
+                      &str:concat
+                        if beginning? acc $ &str:concat acc sep
+                        , x0
+                      , xss false
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] (:: 'List 'T) 'String
-              :generics $ [] 'T
-          :tests $ []
-            %{} 'TestEntry (:name |renders-items-and-empty-list)
-              :code $ quote
-                do
-                  assert= |1-2-3 $ join-str ([] 1 2 3) |-
-                  assert= | $ join-str ([]) |-
-              :tags $ #{} :core :unit
-        'js-nullish->option $ %{} 'CodeEntry (:doc "|Explicitly convert a JavaScript null/undefined boundary value into nominal Option<T>. This does not validate or coerce the opaque payload type.")
-          :code $ quote
-            defn js-nullish->option (x)
-              if (js-nullish? x) (%none) (%some x)
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] (:: 'List 'T) 'String
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |renders-items-and-empty-list
+            :code $ quote $ do
+              assert= |1-2-3 $ join-str ([] 1 2 3) |-
+              assert= | $ join-str ([]) |-
+            :tags $ #{} :core :unit
+        'js-nullish->option $ %{} 'CodeEntry
+          :doc "|Explicitly convert a JavaScript null/undefined boundary value into nominal Option<T>. This does not validate or coerce the opaque payload type."
+          :code $ quote $ defn js-nullish->option (x)
+            if (js-nullish? x) (%none) (%some x)
           :examples $ []
-            quote $ assert= (%none) (js-nullish->option nil)
-            quote $ assert= (%none) (js-nullish->option &unit)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'JsNullish 'T)
-              :features $ #{} :js-ffi
-              :generics $ [] 'T
-              :return $ :: 'Option 'T
+            quote $ assert= (%none)
+              js-nullish->option nil
+            quote $ assert= (%none)
+              js-nullish->option &unit
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'JsNullish 'T
+            :features $ #{} :js-ffi
+            :generics $ [] 'T
+            :return $ :: 'Option 'T
           :tags $ #{} :interop
-        'js-nullish? $ %{} 'CodeEntry (:doc "|Return true when a JsNullish<T> boundary value is JavaScript null or undefined.")
-          :code $ quote
-            defn js-nullish? (x)
-              or (nil? x)
-                = :unit $ type-of x
+        'js-nullish? $ %{} 'CodeEntry
+          :doc "|Return true when a JsNullish<T> boundary value is JavaScript null or undefined."
+          :code $ quote $ defn js-nullish? (x)
+            or (nil? x)
+              = :unit $ type-of x
           :examples $ []
-            quote $ assert= true (js-nullish? nil)
-            quote $ assert= true (js-nullish? &unit)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] (:: 'JsNullish 'T)
-              :features $ #{} :js-ffi
-              :generics $ [] 'T
+            quote $ assert= true $ js-nullish? nil
+            quote $ assert= true $ js-nullish? &unit
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] $ :: 'JsNullish 'T
+            :features $ #{} :js-ffi
+            :generics $ [] 'T
           :tags $ #{} :interop
         'js-object $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro js-object (& xs)
-              if
-                not $ and (list? xs) (every? xs list?)
-                raise $ str-spaced "|js-object expects entries in list, got:" xs
-              if
-                not $ every? xs
-                  fn (entry)
-                    &= 2 $ &list:count entry
-                raise $ str-spaced "|js-object expects each entry as pair, got:" xs
-              &let
-                ys $ &list:concat & xs
-                quasiquote $ &js-object ~@ys
+          :code $ quote $ defmacro js-object (& xs)
+            if
+              not $ and (list? xs) (every? xs list?)
+              raise $ str-spaced "|js-object expects entries in list, got:" xs
+            if
+              not $ every? xs $ fn (entry)
+                &= 2 $ &list:count entry
+              raise $ str-spaced "|js-object expects each entry as pair, got:" xs
+            &let
+              ys $ &list:concat & xs
+              quasiquote $ &js-object ~@ys
           :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'JsObject
-              :features $ #{} :js-ffi
-              :required $ []
+          :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'JsObject
+            :features $ #{} :js-ffi
+            :required $ []
           :tags $ #{} :interop :macro
-        'js-present? $ %{} 'CodeEntry (:doc "|Return true when a JsNullish<T> boundary contains a non-null JavaScript value.")
-          :code $ quote
-            defn js-present? (x)
-              not $ js-nullish? x
+        'js-present? $ %{} 'CodeEntry
+          :doc "|Return true when a JsNullish<T> boundary contains a non-null JavaScript value."
+          :code $ quote $ defn js-present? (x)
+            not $ js-nullish? x
           :examples $ []
-            quote $ assert= false (js-present? nil)
-            quote $ assert= false (js-present? &unit)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] (:: 'JsNullish 'T)
-              :features $ #{} :js-ffi
-              :generics $ [] 'T
+            quote $ assert= false $ js-present? nil
+            quote $ assert= false $ js-present? &unit
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] $ :: 'JsNullish 'T
+            :features $ #{} :js-ffi
+            :generics $ [] 'T
           :tags $ #{} :interop
-        'json-parse $ %{} 'CodeEntry (:doc "|internal function for parsing JSON text\nSyntax: (json-parse text)\nParams: text (string)\nReturns: Calcit data\nParses JSON text into Calcit values. JSON object keys become tags, arrays become lists, and null becomes nil")
+        'json-parse $ %{} 'CodeEntry
+          :doc "|internal function for parsing JSON text\nSyntax: (json-parse text)\nParams: text (string)\nReturns: Calcit data\nParses JSON text into Calcit values. JSON object keys become tags, arrays become lists, and null becomes nil"
           :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert=
               {} $ :a 1
               json-parse "|{\"a\":1}"
             quote $ assert= ([] true nil)
-              get (json-parse "|{\"items\":[true,null]}") :items
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'String
+              get
+                json-parse "|{\"items\":[true,null]}"
+                , :items
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'String
           :tags $ #{} :builtin :internal
-        'json-pretty $ %{} 'CodeEntry (:doc "|internal function for pretty-printing JSON\nSyntax: (json-pretty value)\nParams: value (any JSON-compatible Calcit data)\nReturns: string\nConverts Calcit data into formatted JSON text using 2-space indentation")
+        'json-pretty $ %{} 'CodeEntry
+          :doc "|internal function for pretty-printing JSON\nSyntax: (json-pretty value)\nParams: value (any JSON-compatible Calcit data)\nReturns: string\nConverts Calcit data into formatted JSON text using 2-space indentation"
+          :code $ quote &runtime-implementation
+          :examples $ [] $ quote
+            assert= "|{\n  \"a\": 1\n}" $ json-pretty $ {} (:a 1)
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'T
+            :generics $ [] 'T
+          :tags $ #{} :builtin :internal
+        'json-stringify $ %{} 'CodeEntry
+          :doc "|internal function for encoding JSON\nSyntax: (json-stringify value)\nParams: value (any JSON-compatible Calcit data)\nReturns: string\nConverts Calcit data into compact JSON text. Tags and symbols are encoded as plain JSON strings"
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ assert= "|{\n  \"a\": 1\n}"
-              json-pretty $ {} (:a 1)
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'T
-              :generics $ [] 'T
+            quote $ assert= "|\"ok\"" $ json-stringify :ok
+            quote $ assert= "|{\"a\":1}" $ json-stringify
+              {} $ :a 1
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'json-stringify $ %{} 'CodeEntry (:doc "|internal function for encoding JSON\nSyntax: (json-stringify value)\nParams: value (any JSON-compatible Calcit data)\nReturns: string\nConverts Calcit data into compact JSON text. Tags and symbols are encoded as plain JSON strings")
-          :code $ quote &runtime-implementation
+        'keys $ %{} 'CodeEntry
+          :doc "|Returns Set<K> for Map<K,V>. User code should prefer `.keys`; a statically known Map receiver lowers directly to internal `&map:keys`."
+          :code $ quote $ defn keys (x) (&map:keys x)
           :examples $ []
-            quote $ assert= "|\"ok\"" (json-stringify :ok)
-            quote $ assert= "|{\"a\":1}"
-              json-stringify $ {} (:a 1)
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'T
-              :generics $ [] 'T
-          :tags $ #{} :builtin :internal
-        'keys $ %{} 'CodeEntry (:doc "|Returns Set<K> for Map<K,V>. User code should prefer `.keys`; a statically known Map receiver lowers directly to internal `&map:keys`.")
-          :code $ quote
-            defn keys (x) (&map:keys x)
-          :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
-              :return $ :: 'Set 'K
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'Set 'K
           :tests $ []
-            %{} 'TestEntry (:name |returns-map-tags)
-              :code $ quote
-                assert= (#{} :a :b)
-                  keys $ &{} :a 1 :b 2
+            %{} 'TestEntry
+              :name |returns-map-tags
+              :code $ quote $ assert= (#{} :a :b)
+                keys $ &{} :a 1 :b 2
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |receiver-method-lowers-to-map-keys)
-              :code $ quote
-                assert= (#{} :a :b)
-                  .keys $ &{} :a 1 :b 2
+            %{} 'TestEntry
+              :name |receiver-method-lowers-to-map-keys
+              :code $ quote $ assert= (#{} :a :b)
+                .keys $ &{} :a 1 :b 2
               :tags $ #{} :core :types :unit
-        'keys-non-nil $ %{} 'CodeEntry (:doc "|Get keys from a map that have non-nil values")
-          :code $ quote
-            defn keys-non-nil (x)
-              apply-args
-                  #{}
-                  to-pairs x
-                fn (acc pairs)
-                  hint-fn $ {}
-                    :args $ [] (:: 'Set 'K) 'Set
-                    :return $ :: 'Set 'K
-                  match (destruct-set pairs)
-                    (:none) acc
-                    (:some pair remaining)
-                      if
-                        nil? $ &list:last pair
-                        recur acc remaining
-                        recur
-                          include acc $ &list:nth pair 0
-                          , remaining
+        'keys-non-nil $ %{} 'CodeEntry
+          :doc "|Get keys from a map that have non-nil values"
+          :code $ quote $ defn keys-non-nil (x)
+            apply-args
+                #{}
+                to-pairs x
+              fn (acc pairs)
+                hint-fn $ {}
+                  :args $ [] (:: 'Set 'K) 'Set
+                  :return $ :: 'Set 'K
+                match (destruct-set pairs)
+                  (:none) acc
+                  (:some pair remaining)
+                    if
+                      nil? $ &list:last pair
+                      recur acc remaining
+                      recur
+                        include acc $ &list:nth pair 0
+                        , remaining
           :examples $ []
             quote $ assert= (#{} :a :b)
               keys-non-nil $ {} (:a 1) (:b 2) (:c nil)
             quote $ assert= (#{})
               keys-non-nil $ {} (:a nil) (:b nil)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
-              :return $ :: 'Set 'K
-          :tests $ []
-            %{} 'TestEntry (:name |omits-nil-map-values)
-              :code $ quote
-                assert= (#{} :a :b)
-                  keys-non-nil $ {,} :a 1 :b 2 :c nil
-              :tags $ #{} :core :unit
-        'last $ %{} 'CodeEntry (:doc "|Return the last item as Option<T>; empty collections produce none.")
-          :code $ quote
-            defn last (xs)
-              cond
-                  list? xs
-                  if (&list:empty? xs) (%none)
-                    %some $ &list:last xs
-                (string? xs)
-                  if (&str:empty? xs) (%none)
-                    %some $ &str:nth xs
-                      &- (&str:count xs) 1
-                (enum? xs)
-                  if
-                    &= 0 $ &enum:count xs
-                    %none
-                    %some $ &enum:nth xs
-                      &- (&enum:count xs) 1
-                true $ raise (str-spaced |last |expected |a |list, |string, |or |enum, |got: xs)
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'Set 'K
+          :tests $ [] $ %{} 'TestEntry
+            :name |omits-nil-map-values
+            :code $ quote $ assert= (#{} :a :b)
+              keys-non-nil $ {,} :a 1 :b 2 :c nil
+            :tags $ #{} :core :unit
+        'last $ %{} 'CodeEntry
+          :doc "|Return the last item as Option<T>; empty collections produce none."
+          :code $ quote $ defn last (xs)
+            cond
+                list? xs
+                if (&list:empty? xs) (%none)
+                  %some $ &list:last xs
+              (string? xs)
+                if (&str:empty? xs) (%none)
+                  %some $ &str:nth xs $ &- (&str:count xs) 1
+              (enum? xs)
+                if
+                  &= 0 $ &enum:count xs
+                  %none
+                  %some $ &enum:nth xs $ &- (&enum:count xs) 1
+              true $ raise $ str-spaced |last |expected |a |list, |string, |or |enum, |got: xs
           :examples $ []
             quote $ assert= (%some 3)
               last $ [] 1 2 3
             quote $ assert= (%some |o) (last |hello)
             quote $ assert= (%none)
               last $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Dynamic
-              :return $ :: 'Option 'Dynamic
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Dynamic
+            :return $ :: 'Option 'Dynamic
           :tests $ []
-            %{} 'TestEntry (:name |returns-last-or-none)
-              :code $ quote
-                do
-                  assert= (%some 3)
-                    last $ [] 1 2 3
-                  assert= (%none)
-                    last $ []
+            %{} 'TestEntry
+              :name |returns-last-or-none
+              :code $ quote $ do
+                assert= (%some 3)
+                  last $ [] 1 2 3
+                assert= (%none)
+                  last $ []
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |returns-last-string-character)
-              :code $ quote
-                assert= (%some |c) (last |abc)
+            %{} 'TestEntry
+              :name |returns-last-string-character
+              :code $ quote $ assert= (%some |c) (last |abc)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |receiver-method-lowers-statically)
-              :code $ quote
-                do
-                  assert= (%some 3)
-                    .last $ [] 1 2 3
-                  assert= (%some |c) (.last |abc)
-                  assert= (%none)
-                    .last $ []
+            %{} 'TestEntry
+              :name |receiver-method-lowers-statically
+              :code $ quote $ do
+                assert= (%some 3)
+                  .last $ [] 1 2 3
+                assert= (%some |c) (.last |abc)
+                assert= (%none)
+                  .last $ []
               :tags $ #{} :core :types :unit
-        'let $ %{} 'CodeEntry (:doc "|macro for local bindings\nSyntax: (let ([name value] ...) body...)\nParams: pairs (list of binding pairs), body (expressions)\nReturns: result of body with bindings in scope\nCreates multiple local bindings sequentially")
-          :code $ quote
-            defmacro let (pairs & body)
-              if
-                not $ and (list? pairs) (every? pairs list?)
-                raise $ str-spaced "|expects pairs in list for let, got:" pairs
-              if
-                &= 1 $ &list:count pairs
+        'let $ %{} 'CodeEntry
+          :doc "|macro for local bindings\nSyntax: (let ([name value] ...) body...)\nParams: pairs (list of binding pairs), body (expressions)\nReturns: result of body with bindings in scope\nCreates multiple local bindings sequentially"
+          :code $ quote $ defmacro let (pairs & body)
+            if
+              not $ and (list? pairs) (every? pairs list?)
+              raise $ str-spaced "|expects pairs in list for let, got:" pairs
+            if
+              &= 1 $ &list:count pairs
+              quasiquote $ &let
+                ~ $ &list:nth pairs 0
+                ~@ body
+              if (&list:empty? pairs)
+                quasiquote $ &let () ~@body
                 quasiquote $ &let
                   ~ $ &list:nth pairs 0
-                  ~@ body
-                if (&list:empty? pairs)
-                  quasiquote $ &let () ~@body
-                  quasiquote $ &let
-                    ~ $ &list:nth pairs 0
-                    let
-                      ~ $ &list:rest pairs
-                      ~@ body
+                  let
+                    ~ $ &list:rest pairs
+                    ~@ body
           :examples $ []
             quote $ let
                 x 1
@@ -6436,332 +6205,316 @@
             quote $ let
                 a 10
               * a a
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] 'SyntaxList
+          :schema $ :: 'Macro $ {} (:rest 'Syntax)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] 'SyntaxList
           :tags $ #{} :macro
         'let-destruct $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro let-destruct (pattern v & body)
-              if (symbol? pattern)
-                quasiquote $ &let (~pattern ~v) ~@body
-                if (list? pattern)
+          :code $ quote $ defmacro let-destruct (pattern v & body)
+            if (symbol? pattern)
+              quasiquote $ &let (~pattern ~v) ~@body
+              if (list? pattern)
+                if
+                  &= [] $ &list:first pattern
+                  quasiquote $ let[]
+                    ~ $ &list:rest pattern
+                    , ~v ~@body
                   if
-                    &= [] $ &list:first pattern
-                    quasiquote $ let[]
+                    &= '{} $ &list:first pattern
+                    quasiquote $ let{}
                       ~ $ &list:rest pattern
                       , ~v ~@body
-                    if
-                      &= '{} $ &list:first pattern
-                      quasiquote $ let{}
-                        ~ $ &list:rest pattern
-                        , ~v ~@body
-                      raise $ str-spaced "|Unknown pattern to destruct:" pattern
-                  raise $ str-spaced "|Unknown structure to destruct:" pattern
+                    raise $ str-spaced "|Unknown pattern to destruct:" pattern
+                raise $ str-spaced "|Unknown structure to destruct:" pattern
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] 'Syntax (:: 'Expr 'Dynamic)
-              :rest $ :: 'Expr 'Dynamic
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] 'Syntax $ :: 'Expr 'Dynamic
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         'let-sugar $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro let-sugar (pairs & body)
-              if
-                not $ and (list? pairs) (every? pairs list?)
-                raise $ str-spaced "|expects pairs in list for let, got:" pairs
-              if (&list:empty? pairs)
-                quasiquote $ &let () ~@body
-                &let
-                  pair $ &list:nth pairs 0
-                  assert-type pair 'List
-                  if
-                    not $ &= 2 (&list:count pair)
-                    raise $ str-spaced "|expected pair length of 2, got:" pair
-                  if
-                    &= 1 $ &list:count pairs
-                    quasiquote $ let-destruct ~@pair (~@ body)
-                    quasiquote $ let-destruct ~@pair
-                      let-sugar
-                        ~ $ &list:rest pairs
-                        ~@ body
+          :code $ quote $ defmacro let-sugar (pairs & body)
+            if
+              not $ and (list? pairs) (every? pairs list?)
+              raise $ str-spaced "|expects pairs in list for let, got:" pairs
+            if (&list:empty? pairs)
+              quasiquote $ &let () ~@body
+              &let
+                pair $ &list:nth pairs 0
+                assert-type pair 'List
+                if
+                  not $ &= 2 $ &list:count pair
+                  raise $ str-spaced "|expected pair length of 2, got:" pair
+                if
+                  &= 1 $ &list:count pairs
+                  quasiquote $ let-destruct ~@pair $ ~@ body
+                  quasiquote $ let-destruct ~@pair $ let-sugar
+                    ~ $ &list:rest pairs
+                    ~@ body
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] 'SyntaxList
-              :rest $ :: 'Expr 'Dynamic
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] 'SyntaxList
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-        'let[] $ %{} 'CodeEntry (:doc "|Destructures a sequential value inside `let`, assigning each position to declared names and supporting `&` rest bindings.")
-          :code $ quote
-            defmacro let[] (vars data & body)
-              if
-                not $ and (list? vars)
-                  every? vars $ fn (x)
-                    or (symbol? x) (is-spreading-mark? x)
-                raise $ str-spaced "|expects a list of definitions, got:" vars
-              let
-                  variable? $ symbol? data
-                  v $ if variable? data (gensym |v)
-                  defs $ apply-args
-                    [] ([]) vars 0
-                    defn let[]% (acc xs idx)
-                      if (&list:empty? xs) acc $ &let ()
-                        if
-                          not $ or
-                            symbol? $ &list:first xs
-                            is-spreading-mark? $ &list:first xs
-                          raise $ &str:concat "|Expected symbol for vars: " (&list:first xs)
-                        if
+        'let[] $ %{} 'CodeEntry
+          :doc "|Destructures a sequential value inside `let`, assigning each position to declared names and supporting `&` rest bindings."
+          :code $ quote $ defmacro let[] (vars data & body)
+            if
+              not $ and (list? vars)
+                every? vars $ fn (x)
+                  or (symbol? x)
+                    is-spreading-mark? x
+              raise $ str-spaced "|expects a list of definitions, got:" vars
+            let
+                variable? $ symbol? data
+                v $ if variable? data $ gensym |v
+                defs $ apply-args
+                  [] ([]) vars 0
+                  defn let[]% (acc xs idx)
+                    if (&list:empty? xs) acc $ &let ()
+                      if
+                        not $ or
+                          symbol? $ &list:first xs
                           is-spreading-mark? $ &list:first xs
-                          &let ()
-                            assert "|expected list spreading" $ &= 2 (&list:count xs)
-                            append acc $ [] (&list:nth xs 1)
-                              quasiquote $ &list:slice ~v ~idx
-                          recur
-                            append acc $ [] (&list:first xs)
-                              quasiquote $ &list:nth ~v ~idx
-                            rest xs
-                            inc idx
-                if variable?
-                  quasiquote $ let (~ defs) (~@ body)
-                  quasiquote $ &let (~v ~data)
-                    let (~ defs) (~@ body)
+                        raise $ &str:concat "|Expected symbol for vars: " $ &list:first xs
+                      if
+                        is-spreading-mark? $ &list:first xs
+                        &let ()
+                          assert "|expected list spreading" $ &= 2 $ &list:count xs
+                          append acc $ [] (&list:nth xs 1)
+                            quasiquote $ &list:slice ~v ~idx
+                        recur
+                          append acc $ [] (&list:first xs)
+                            quasiquote $ &list:nth ~v ~idx
+                          rest xs
+                          inc idx
+              if variable?
+                quasiquote $ let (~ defs) (~@ body)
+                quasiquote $ &let (~v ~data)
+                  let (~ defs) (~@ body)
           :examples $ []
             quote $ let[] (x y) ([] 1 2) (+ x y)
             quote $ let[] (head & tail) ([] 9 8 7) (count tail)
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] 'SyntaxList (:: 'Expr 'Dynamic)
-              :rest $ :: 'Expr 'Dynamic
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] 'SyntaxList $ :: 'Expr 'Dynamic
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         'let{} $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro let{} (items base & body)
-              if
-                not $ and (list? items) (every? items symbol?)
-                raise $ str-spaced "|expects symbol names in binding names, got:" items
-              &let
-                var-result $ gensym |result
-                quasiquote $ &let (~var-result ~base)
-                  assert (str "|expected map for destructing: " ~var-result) (map? ~var-result)
-                  let
-                    ~ $ map items
-                      defn gen-items% (x)
-                        [] x $ [] (quote &map:get) var-result (turn-tag x)
-                    ~@ body
+          :code $ quote $ defmacro let{} (items base & body)
+            if
+              not $ and (list? items) (every? items symbol?)
+              raise $ str-spaced "|expects symbol names in binding names, got:" items
+            &let
+              var-result $ gensym |result
+              quasiquote $ &let (~var-result ~base)
+                assert
+                  str "|expected map for destructing: " ~var-result
+                  map? ~var-result
+                let
+                  ~ $ map items $ defn gen-items% (x)
+                    [] x $ [] (quote &map:get) var-result $ turn-tag x
+                  ~@ body
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] 'SyntaxList (:: 'Expr 'Dynamic)
-              :rest $ :: 'Expr 'Dynamic
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] 'SyntaxList $ :: 'Expr 'Dynamic
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-        'list-match $ %{} 'CodeEntry (:doc "|Two-branch list destructuring macro. Provides separate clauses for the empty list and a head/tail pattern, useful for simple recursion or guards.")
-          :code $ quote
-            defmacro list-match (& values)
-              if
-                not $ &= 3 (&list:count values)
-                raise $ str-spaced "|list-match expects exactly 3 arguments, got:" values
+        'list-match $ %{} 'CodeEntry
+          :doc "|Two-branch list destructuring macro. Provides separate clauses for the empty list and a head/tail pattern, useful for simple recursion or guards."
+          :code $ quote $ defmacro list-match (& values)
+            if
+              not $ &= 3 $ &list:count values
+              raise $ str-spaced "|list-match expects exactly 3 arguments, got:" values
+            &let
+              xs $ &list:nth values 0
               &let
-                xs $ &list:nth values 0
+                pattern1 $ &list:nth values 1
                 &let
-                  pattern1 $ &list:nth values 1
+                  pattern2 $ &list:nth values 2
+                  if
+                    not $ and (list? pattern1) (list? pattern2)
+                      &> (count pattern1) 1
+                      list? $ &list:nth pattern1 0
+                      list? $ &list:nth pattern2 0
+                      &> (count pattern2) 1
+                    raise $ str-spaced "|list-match expects 2 branches: (() body...) and ((head tail) body...), got:" pattern1 pattern2
                   &let
-                    pattern2 $ &list:nth values 2
-                    if
-                      not $ and (list? pattern1) (list? pattern2)
-                        &> (count pattern1) 1
-                        list? $ &list:nth pattern1 0
-                        list? $ &list:nth pattern2 0
-                        &> (count pattern2) 1
-                      raise $ str-spaced "|list-match expects 2 branches: (() body...) and ((head tail) body...), got:" pattern1 pattern2
-                    &let
-                      v# $ gensym |v
-                      quasiquote $ &let (~v# ~xs)
+                    v# $ gensym |v
+                    quasiquote $ &let (~v# ~xs)
+                      if
+                        not $ list? ~v#
+                        raise "|expected a list in list-match"
+                      ~ $ if
+                        and
+                          empty? $ &list:nth pattern1 0
+                          &= 2 $ count $ &list:nth pattern2 0
+                        quasiquote $ &list-match-internal ~v#
+                          ~ $ &list:slice pattern1 1
+                          ~ $ &list:nth pattern2 0
+                          ~ $ &list:slice pattern2 1
                         if
-                          not $ list? ~v#
-                          raise "|expected a list in list-match"
-                        ~ $ if
                           and
-                            empty? $ &list:nth pattern1 0
-                            &= 2 $ count (&list:nth pattern2 0)
+                            empty? $ &list:nth pattern2 0
+                            &= 2 $ count $ &list:nth pattern1 0
                           quasiquote $ &list-match-internal ~v#
-                            ~ $ &list:slice pattern1 1
-                            ~ $ &list:nth pattern2 0
                             ~ $ &list:slice pattern2 1
-                          if
-                            and
-                              empty? $ &list:nth pattern2 0
-                              &= 2 $ count (&list:nth pattern1 0)
-                            quasiquote $ &list-match-internal ~v#
-                              ~ $ &list:slice pattern2 1
-                              ~ $ &list:nth pattern1 0
-                              ~ $ &list:slice pattern1 1
-                            raise $ str-spaced "|list-match expects one empty branch and one destructuring branch, got:" pattern1 pattern2
+                            ~ $ &list:nth pattern1 0
+                            ~ $ &list:slice pattern1 1
+                          raise $ str-spaced "|list-match expects one empty branch and one destructuring branch, got:" pattern1 pattern2
           :examples $ []
-            quote $ assert= :something
-              list-match ([] 1)
-                () :empty
-                (a b) :something
-            quote $ assert= 1
-              list-match ([] 1 2 3)
-                () nil
-                (head tail) head
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ []
+            quote $ assert= :something $ list-match ([] 1)
+              () :empty
+              (a b) :something
+            quote $ assert= 1 $ list-match ([] 1 2 3)
+              () nil
+              (head tail) head
+          :schema $ :: 'Macro $ {} (:rest 'Syntax)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ []
           :tags $ #{} :macro
-        'list? $ %{} 'CodeEntry (:doc "|checks if value is a list\nSyntax: (list? x)\nParams: x (any)\nReturns: true if x is a list, false otherwise\nType predicate for list data structure")
+        'list? $ %{} 'CodeEntry
+          :doc "|checks if value is a list\nSyntax: (list? x)\nParams: x (any)\nReturns: true if x is a list, false otherwise\nType predicate for list data structure"
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ list? ([] 1 2 3)
-            quote $ list? ({})
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+            quote $ list? $ [] 1 2 3
+            quote $ list? $ {}
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'loop $ %{} 'CodeEntry (:doc "|Named-let style looping macro. Binds initial values once and uses `recur` to update bindings in a tail-recursive way without stack growth.")
-          :code $ quote
-            defmacro loop (pairs & body)
-              if
-                not $ list? pairs
-                raise $ str-spaced "|expects pairs in loop, got:" pairs
-              if
-                not $ every? pairs
-                  defn detect-pairs? (x)
-                    if (list? x)
-                      &= 2 $ &list:count x
-                      , false
-                raise $ str-spaced "|expects pairs in pairs in loop, got:" pairs
-              let
-                  args $ map pairs &list:first
-                  values $ map pairs &list:last
-                assert "|loop requires symbols in pairs" $ every? args symbol?
-                quasiquote $ apply (defn generated-loop ~args ~@body) ([] ~@values)
-          :examples $ []
-            quote $ assert= 6
-              loop
-                  total 0
-                (xs ([] 1 2 3))
-                if (empty? xs) total $ recur
-                  + total $ first xs
-                  rest xs
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] 'SyntaxList
-              :rest $ :: 'Expr 'Dynamic
+        'loop $ %{} 'CodeEntry
+          :doc "|Named-let style looping macro. Binds initial values once and uses `recur` to update bindings in a tail-recursive way without stack growth."
+          :code $ quote $ defmacro loop (pairs & body)
+            if
+              not $ list? pairs
+              raise $ str-spaced "|expects pairs in loop, got:" pairs
+            if
+              not $ every? pairs $ defn detect-pairs? (x)
+                if (list? x)
+                  &= 2 $ &list:count x
+                  , false
+              raise $ str-spaced "|expects pairs in pairs in loop, got:" pairs
+            let
+                args $ map pairs &list:first
+                values $ map pairs &list:last
+              assert "|loop requires symbols in pairs" $ every? args symbol?
+              quasiquote $ apply (defn generated-loop ~args ~@body) ([] ~@values)
+          :examples $ [] $ quote
+            assert= 6 $ loop
+                total 0
+              (xs ([] 1 2 3))
+              if (empty? xs) total $ recur
+                + total $ first xs
+                rest xs
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] 'SyntaxList
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         'macro? $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn macro? (x)
-              &= (type-of x) :macro
+          :code $ quote $ defn macro? (x)
+            &= (type-of x) :macro
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
-        'macroexpand $ %{} 'CodeEntry (:doc "|internal syntax for expanding macros until recursive calls are resolved\nSyntax: (macroexpand expr)\nParams: expr (macro call)\nReturns: fully expanded code\nExpands macros recursively until no more macro calls remain")
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
+        'macroexpand $ %{} 'CodeEntry
+          :doc "|internal syntax for expanding macros until recursive calls are resolved\nSyntax: (macroexpand expr)\nParams: expr (macro call)\nReturns: fully expanded code\nExpands macros recursively until no more macro calls remain"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :meta :syntax
-        'macroexpand-1 $ %{} 'CodeEntry (:doc "|internal syntax for expanding macro just once for debugging\nSyntax: (macroexpand-1 expr)\nParams: expr (macro call)\nReturns: one-level expanded code\nExpands macro only one level for debugging purposes")
+        'macroexpand-1 $ %{} 'CodeEntry
+          :doc "|internal syntax for expanding macro just once for debugging\nSyntax: (macroexpand-1 expr)\nParams: expr (macro call)\nReturns: one-level expanded code\nExpands macro only one level for debugging purposes"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :meta :syntax
-        'macroexpand-all $ %{} 'CodeEntry (:doc "|internal syntax for expanding macro until macros inside are resolved\nSyntax: (macroexpand-all expr)\nParams: expr (code with macros)\nReturns: fully expanded code\nExpands all macros including nested ones")
+        'macroexpand-all $ %{} 'CodeEntry
+          :doc "|internal syntax for expanding macro until macros inside are resolved\nSyntax: (macroexpand-all expr)\nParams: expr (code with macros)\nReturns: fully expanded code\nExpands all macros including nested ones"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :meta :syntax
-        'map $ %{} 'CodeEntry (:doc "|Collection mapping function. Applies a function to each element of a list, set, or map, returning a structure of the same shape.")
-          :code $ quote
-            defn map (xs f)
-              if (list? xs) (&list:map xs f)
-                if (set? xs)
-                  foldl xs (#{})
-                    defn %map (acc x)
-                      hint-fn $ {}
-                        :args $ [] 'Set 'Dynamic
-                        :return 'Set
-                      include acc $ f x
-                  .map xs f
+        'map $ %{} 'CodeEntry
+          :doc "|Collection mapping function. Applies a function to each element of a list, set, or map, returning a structure of the same shape."
+          :code $ quote $ defn map (xs f)
+            if (list? xs) (&list:map xs f)
+              if (set? xs)
+                foldl xs (#{})
+                  defn %map (acc x)
+                    hint-fn $ {}
+                      :args $ [] 'Set 'Dynamic
+                      :return 'Set
+                    include acc $ f x
+                .map xs f
           :examples $ []
             quote $ assert= ([] 2 3 4)
               map ([] 1 2 3) inc
             quote $ assert= ([] |1 |2 |3)
               map ([] 1 2 3) str
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'C
-                :: 'Fn $ {} (:return 'U)
-                  :args $ [] 'T
-              :generics $ [] 'C 'T 'U
-              :where $ {} ('C 'Mappable)
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'C $ :: 'Fn
+              {} (:return 'U)
+                :args $ [] 'T
+            :generics $ [] 'C 'T 'U
+            :where $ {} $ 'C 'Mappable
           :tests $ []
             %{} 'TestEntry (:name |maps-over-sets)
-              :code $ quote
-                assert= (#{} 2 3 4)
-                  map (#{} 1 2 3) inc
+              :code $ quote $ assert= (#{} 2 3 4)
+                map (#{} 1 2 3) inc
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |maps-map-pairs)
-              :code $ quote
-                assert= (&{} :a 11 :b 12)
-                  map (&{} :a 1 :b 2)
-                    fn (pair)
-                      [] (&list:first pair)
-                        + 10 $ &list:last pair
+              :code $ quote $ assert= (&{} :a 11 :b 12)
+                map (&{} :a 1 :b 2)
+                  fn (pair)
+                    [] (&list:first pair)
+                      + 10 $ &list:last pair
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |preserves-open-payload-callback)
-              :code $ quote
-                let
-                    consume $ fn (xs)
+            %{} 'TestEntry
+              :name |preserves-open-payload-callback
+              :code $ quote $ let
+                  consume $ fn (xs)
+                    hint-fn $ {}
+                      :args $ [] $ :: (quote List) (quote Dynamic)
+                      :return $ :: (quote List) (quote Dynamic)
+                    map xs $ fn (value)
                       hint-fn $ {}
-                        :args $ []
-                          :: (quote List) (quote Dynamic)
-                        :return $ :: (quote List) (quote Dynamic)
-                      map xs $ fn (value)
-                        hint-fn $ {}
-                          :args $ [] (quote Dynamic)
-                          :return $ quote Dynamic
-                        , value
-                  assert= ([] 1 :ready)
-                    consume $ [] 1 :ready
+                        :args $ [] $ quote Dynamic
+                        :return $ quote Dynamic
+                      , value
+                assert= ([] 1 :ready)
+                  consume $ [] 1 :ready
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |infers-struct-fields-in-callback)
-              :code $ quote
-                assert= ([] |a |b)
-                  map
-                    [] (FsPath :value |a) (FsPath :value |b)
-                    fn (path) (:value path)
+            %{} 'TestEntry
+              :name |infers-struct-fields-in-callback
+              :code $ quote $ assert= ([] |a |b)
+                map
+                  [] (FsPath :value |a) (FsPath :value |b)
+                  fn (path) (:value path)
               :tags $ #{} :core :unit
-        'map-indexed $ %{} 'CodeEntry (:doc "|Map over a List<T> with indices. The callback receives (index value), and the result is List<U>.")
-          :code $ quote
-            defn map-indexed (xs f)
-              foldl xs ([])
-                defn %map-indexed (acc x)
-                  hint-fn $ {}
-                    :generics $ [] 'U
-                    :args $ []
-                      :: 'acc $ :: 'List 'U
-                      :: 'x 'Dynamic
-                    :return $ :: 'List 'U
-                  append acc $ f (count acc) x
+        'map-indexed $ %{} 'CodeEntry
+          :doc "|Map over a List<T> with indices. The callback receives (index value), and the result is List<U>."
+          :code $ quote $ defn map-indexed (xs f)
+            foldl xs ([])
+              defn %map-indexed (acc x)
+                hint-fn $ {}
+                  :generics $ [] 'U
+                  :args $ []
+                    :: 'acc $ :: 'List 'U
+                    :: 'x 'Dynamic
+                  :return $ :: 'List 'U
+                append acc $ f (count acc) x
           :examples $ []
             quote $ assert= ([] 10 21 32)
               map-indexed ([] 10 20 30)
@@ -6770,153 +6523,142 @@
               [] ([] 0 |a) ([] 1 |b)
               map-indexed ([] |a |b)
                 fn (i x) ([] i x)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-                :: 'Fn $ {} (:return 'U)
-                  :args $ [] 'Number 'T
-              :generics $ [] 'T 'U
-              :return $ :: 'List 'U
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'U)
+                :args $ [] 'Number 'T
+            :generics $ [] 'T 'U
+            :return $ :: 'List 'U
           :tests $ []
-            %{} 'TestEntry (:name |passes-index-and-value)
-              :code $ quote
+            %{} 'TestEntry
+              :name |passes-index-and-value
+              :code $ quote $ assert=
+                [] ([] 0 |0) ([] 1 |1) ([] 2 |2)
+                map-indexed (range 3)
+                  fn (idx x)
+                    [] idx $ &str x
+              :tags $ #{} :core :unit
+            %{} 'TestEntry
+              :name |preserves-open-payload-with-index
+              :code $ quote $ let
+                  xs $ assert-type ([] 1 :ready) (:: 'List 'Dynamic)
                 assert=
-                  [] ([] 0 |0) ([] 1 |1) ([] 2 |2)
-                  map-indexed (range 3)
-                    fn (idx x)
-                      [] idx $ &str x
+                  [] ([] 0 1) ([] 1 :ready)
+                  map-indexed xs $ fn (idx value) ([] idx value)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |preserves-open-payload-with-index)
-              :code $ quote
-                let
-                    xs $ assert-type ([] 1 :ready) (:: 'List 'Dynamic)
-                  assert=
-                    [] ([] 0 1) ([] 1 :ready)
-                    map-indexed xs $ fn (idx value) ([] idx value)
-              :tags $ #{} :core :unit
-        'map-kv $ %{} 'CodeEntry (:doc "|Legacy compatibility boundary. Its callback may return a two-item list or a legacy nil/enum drop sentinel, so the result is intentionally Dynamic. Typed code must migrate to filter-map-kv and MapEntryDecision :keep/:drop.")
-          :code $ quote
-            defn map-kv (xs f)
-              foldl xs ({})
-                defn %map-kv (acc pair)
-                  hint-fn $ {}
-                    :args $ [] 'Map 'List
-                    :return 'Map
-                  &let
-                    result $ f (&list:nth pair 0) (&list:nth pair 1)
-                    if (list? result)
-                      do
-                        assert "|expected pair returned when mapping hashmap" $ &= 2 (&list:count result)
-                        &map:assoc acc (&list:nth result 0) (&list:nth result 1)
-                      if
-                        or (nil? result) (enum? result)
-                        , acc $ raise (str-spaced "|map-kv expected list or nil, got:" result)
+        'map-kv $ %{} 'CodeEntry
+          :doc "|Legacy compatibility boundary. Its callback may return a two-item list or a legacy nil/enum drop sentinel, so the result is intentionally Dynamic. Typed code must migrate to filter-map-kv and MapEntryDecision :keep/:drop."
+          :code $ quote $ defn map-kv (xs f)
+            foldl xs ({})
+              defn %map-kv (acc pair)
+                hint-fn $ {}
+                  :args $ [] 'Map 'List
+                  :return 'Map
+                &let
+                  result $ f (&list:nth pair 0) (&list:nth pair 1)
+                  if (list? result)
+                    do
+                      assert "|expected pair returned when mapping hashmap" $ &= 2 $ &list:count result
+                      &map:assoc acc (&list:nth result 0) (&list:nth result 1)
+                    if
+                      or (nil? result) (enum? result)
+                      , acc $ raise $ str-spaced "|map-kv expected list or nil, got:" result
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] (:: 'Map 'K 'V)
-                :: 'Fn $ {} (:return 'Q)
-                  :args $ [] 'K 'V
-              :generics $ [] 'K 'V 'Q
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] (:: 'Map 'K 'V)
+              :: 'Fn $ {} (:return 'Q)
+                :args $ [] 'K 'V
+            :generics $ [] 'K 'V 'Q
           :tests $ []
-            %{} 'TestEntry (:name |transforms-each-entry)
-              :code $ quote
-                assert= (&{} :a 11 :b 12)
-                  map-kv (&{} :a 1 :b 2)
-                    fn (k v)
+            %{} 'TestEntry
+              :name |transforms-each-entry
+              :code $ quote $ assert= (&{} :a 11 :b 12)
+                map-kv (&{} :a 1 :b 2)
+                  fn (k v)
+                    [] k $ + v 10
+              :tags $ #{} :core :unit
+            %{} 'TestEntry
+              :name |skips-nil-results
+              :code $ quote $ assert= (&{} :a 11 :b 12)
+                map-kv (&{} :a 1 :b 2 :c 13)
+                  fn (k v)
+                    if (< v 10)
                       [] k $ + v 10
+                      :: :none
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |skips-nil-results)
-              :code $ quote
-                assert= (&{} :a 11 :b 12)
-                  map-kv (&{} :a 1 :b 2 :c 13)
-                    fn (k v)
-                      if (< v 10)
-                        [] k $ + v 10
-                        :: :none
-              :tags $ #{} :core :unit
-        'map-list-kv $ %{} 'CodeEntry (:doc "|Collects one output value per map entry with a typed key/value callback. Returns List<U> from Map<K,V> and Fn(K,V)->U without erasing the key/value relation.")
-          :code $ quote
-            defn map-list-kv (xs f)
-              foldl xs ([])
-                defn %map-list-kv (acc pair)
-                  hint-fn $ {}
-                    :args $ [] (:: 'List 'U) (:: 'List 'Dynamic)
-                    :return $ :: 'List 'U
-                  append acc $ f (&list:nth pair 0) (&list:nth pair 1)
+        'map-list-kv $ %{} 'CodeEntry
+          :doc "|Collects one output value per map entry with a typed key/value callback. Returns List<U> from Map<K,V> and Fn(K,V)->U without erasing the key/value relation."
+          :code $ quote $ defn map-list-kv (xs f)
+            foldl xs ([])
+              defn %map-list-kv (acc pair)
+                hint-fn $ {}
+                  :args $ [] (:: 'List 'U) (:: 'List 'Dynamic)
+                  :return $ :: 'List 'U
+                append acc $ f (&list:nth pair 0) (&list:nth pair 1)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-                :: 'Fn $ {} (:return 'U)
-                  :args $ [] 'K 'V
-              :generics $ [] 'K 'V 'U
-              :return $ :: 'List 'U
-          :tests $ []
-            %{} 'TestEntry (:name |collects-typed-key-value-results)
-              :code $ quote
-                do
-                  assert= (#{} 10 20)
-                    &list:to-set $ map-list-kv (&{} :a 1 :b 2)
-                      fn (key value) (* value 10)
-                  assert= (#{} |a=1 |b=2)
-                    &list:to-set $ map-list-kv (&{} |a 1 |b 2)
-                      fn (key value) (str key |= value)
-              :tags $ #{} :core :unit
-        'map? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is a map")
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V)
+              :: 'Fn $ {} (:return 'U)
+                :args $ [] 'K 'V
+            :generics $ [] 'K 'V 'U
+            :return $ :: 'List 'U
+          :tests $ [] $ %{} 'TestEntry
+            :name |collects-typed-key-value-results
+            :code $ quote $ do
+              assert= (#{} 10 20)
+                &list:to-set $ map-list-kv (&{} :a 1 :b 2)
+                  fn (key value) (* value 10)
+              assert= (#{} |a=1 |b=2)
+                &list:to-set $ map-list-kv (&{} |a 1 |b 2)
+                  fn (key value) (str key |= value)
+            :tags $ #{} :core :unit
+        'map? $ %{} 'CodeEntry
+          :doc "|Predicate that checks whether a value is a map"
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ assert= true
-              map? $ {} (:a 1)
-            quote $ assert= false
-              map? $ [] 1 2
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+            quote $ assert= true $ map?
+              {} $ :a 1
+            quote $ assert= false $ map? ([] 1 2)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
         'mapcat $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn mapcat (xs f)
-              &list:concat & $ map xs f
+          :code $ quote $ defn mapcat (xs f)
+            &list:concat & $ map xs f
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-                :: 'Fn $ {}
-                  :args $ [] 'T
-                  :return $ :: 'List 'U
-              :generics $ [] 'T 'U
-              :return $ :: 'List 'U
-          :tests $ []
-            %{} 'TestEntry (:name |concatenates-mapped-lists)
-              :code $ quote
-                do
-                  assert= ([] 0 0 1 0 1 2)
-                    mapcat ([] 1 2 3)
-                      fn (x) (range x)
-                  assert= ([])
-                    mapcat ([])
-                      fn (x) (range x)
-              :tags $ #{} :core :unit
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {}
+                :args $ [] 'T
+                :return $ :: 'List 'U
+            :generics $ [] 'T 'U
+            :return $ :: 'List 'U
+          :tests $ [] $ %{} 'TestEntry
+            :name |concatenates-mapped-lists
+            :code $ quote $ do
+              assert= ([] 0 0 1 0 1 2)
+                mapcat ([] 1 2 3)
+                  fn (x) (range x)
+              assert= ([])
+                mapcat ([])
+                  fn (x) (range x)
+            :tags $ #{} :core :unit
         'max $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn max (xs) (.max xs)
+          :code $ quote $ defn max (xs) (.max xs)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'T
-              :generics $ [] 'T
-              :return $ :: 'Option 'Number
-          :tests $ []
-            %{} 'TestEntry (:name |returns-largest-option)
-              :code $ quote
-                assert= (%some 4)
-                  max $ [] 1 2 3 4
-              :tags $ #{} :core :unit
-        'merge $ %{} 'CodeEntry (:doc "|Combines homogeneous Map<K,V> values left-to-right, with later maps overwriting earlier keys. User code may use `.merge`; runtime implementation remains internal.")
-          :code $ quote
-            defn merge (x0 & xs) (reduce xs x0 &merge)
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-largest-option
+            :code $ quote $ assert= (%some 4)
+              max $ [] 1 2 3 4
+            :tags $ #{} :core :unit
+        'merge $ %{} 'CodeEntry
+          :doc "|Combines homogeneous Map<K,V> values left-to-right, with later maps overwriting earlier keys. User code may use `.merge`; runtime implementation remains internal."
+          :code $ quote $ defn merge (x0 & xs) (reduce xs x0 &merge)
           :examples $ []
             quote $ assert=
               {} (:a 2) (:b 1)
@@ -6929,1854 +6671,1732 @@
                 {} $ :a 1
                 {} $ :b 2
                 {} $ :c 3
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
-              :rest $ :: 'Map 'K 'V
-              :return $ :: 'Map 'K 'V
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+            :rest $ :: 'Map 'K 'V
+            :return $ :: 'Map 'K 'V
+          :tests $ [] $ %{} 'TestEntry
+            :name |combines-maps-left-to-right
+            :code $ quote $ assert=
+              {,} :a nil :b 12 :c nil :d 14
+              merge ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
+            :tags $ #{} :core :unit
+        'merge-dynamic $ %{} 'CodeEntry
+          :doc "|Combines open Map<K,Dynamic> values left-to-right with later maps overwriting earlier keys, without claiming a homogeneous value relation."
+          :code $ quote $ defn merge-dynamic (x0 & xs) (reduce xs x0 &merge)
+          :examples $ [] $ quote
+            assert= 2 $ count $ merge-dynamic
+              assert-type
+                {} $ :a 1
+                :: 'Map 'Tag 'Dynamic
+              assert-type
+                {} $ :b 2
+                :: 'Map 'Tag 'Dynamic
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'Dynamic
+            :generics $ [] 'K
+            :rest $ :: 'Map 'K 'Dynamic
+            :return $ :: 'Map 'K 'Dynamic
           :tests $ []
-            %{} 'TestEntry (:name |combines-maps-left-to-right)
-              :code $ quote
-                assert= ({,} :a nil :b 12 :c nil :d 14)
-                  merge ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
+            %{} 'TestEntry
+              :name |combines-open-maps
+              :code $ quote $ assert= 2
+                count $ merge-dynamic
+                  assert-type
+                    {} $ :a 1
+                    :: 'Map 'Tag 'Dynamic
+                  assert-type
+                    {} $ :b 2
+                    :: 'Map 'Tag 'Dynamic
               :tags $ #{} :core :unit
-        'merge-dynamic $ %{} 'CodeEntry (:doc "|Combines open Map<K,Dynamic> values left-to-right with later maps overwriting earlier keys, without claiming a homogeneous value relation.")
-          :code $ quote
-            defn merge-dynamic (x0 & xs) (reduce xs x0 &merge)
-          :examples $ []
-            quote $ assert= 2
-              count $ merge-dynamic
-                assert-type
+            %{} 'TestEntry
+              :name |accepts-empty-map-literal
+              :code $ quote $ assert= 1
+                count $ merge-dynamic
                   {} $ :a 1
-                  :: 'Map 'Tag 'Dynamic
-                assert-type
-                  {} $ :b 2
-                  :: 'Map 'Tag 'Dynamic
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'Dynamic)
-              :generics $ [] 'K
-              :rest $ :: 'Map 'K 'Dynamic
-              :return $ :: 'Map 'K 'Dynamic
-          :tests $ []
-            %{} 'TestEntry (:name |combines-open-maps)
-              :code $ quote
-                assert= 2 $ count
-                  merge-dynamic
-                    assert-type
-                      {} $ :a 1
-                      :: 'Map 'Tag 'Dynamic
-                    assert-type
-                      {} $ :b 2
-                      :: 'Map 'Tag 'Dynamic
+                  {}
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |accepts-empty-map-literal)
-              :code $ quote
-                assert= 1 $ count
-                  merge-dynamic
-                    {} $ :a 1
-                    {}
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |infers-key-after-empty-map-literal)
-              :code $ quote
-                assert= 1 $ count
-                  merge-dynamic ({})
-                    {} $ :a 1
+            %{} 'TestEntry
+              :name |infers-key-after-empty-map-literal
+              :code $ quote $ assert= 1
+                count $ merge-dynamic ({})
+                  {} $ :a 1
               :tags $ #{} :core :unit
         'merge-non-nil $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn merge-non-nil (x0 & xs) (reduce xs x0 &merge-non-nil)
+          :code $ quote $ defn merge-non-nil (x0 & xs) (reduce xs x0 &merge-non-nil)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
-              :rest $ :: 'Map 'K 'V
-              :return $ :: 'Map 'K 'V
-          :tests $ []
-            %{} 'TestEntry (:name |keeps-existing-values-for-nil)
-              :code $ quote
-                assert= ({,} :a 1 :b 12 :c 3 :d 14)
-                  merge-non-nil ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
-              :tags $ #{} :core :unit
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+            :rest $ :: 'Map 'K 'V
+            :return $ :: 'Map 'K 'V
+          :tests $ [] $ %{} 'TestEntry
+            :name |keeps-existing-values-for-nil
+            :code $ quote $ assert=
+              {,} :a 1 :b 12 :c 3 :d 14
+              merge-non-nil ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
+            :tags $ #{} :core :unit
         'min $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn min (xs) (.min xs)
+          :code $ quote $ defn min (xs) (.min xs)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'T
-              :generics $ [] 'T
-              :return $ :: 'Option 'Number
-          :tests $ []
-            %{} 'TestEntry (:name |returns-smallest-option)
-              :code $ quote
-                assert= (%some 1)
-                  min $ [] 1 2 3 4
-              :tags $ #{} :core :unit
-        'negate $ %{} 'CodeEntry (:doc "|Negate a number, returns its opposite")
-          :code $ quote
-            defn negate (x) (&- 0 x)
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-smallest-option
+            :code $ quote $ assert= (%some 1)
+              min $ [] 1 2 3 4
+            :tags $ #{} :core :unit
+        'negate $ %{} 'CodeEntry
+          :doc "|Negate a number, returns its opposite"
+          :code $ quote $ defn negate (x) (&- 0 x)
           :examples $ []
-            quote $ assert= -5 (negate 5)
-            quote $ assert= 3 (negate -3)
-            quote $ assert= 0 (negate 0)
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number
-          :tests $ []
-            %{} 'TestEntry (:name |flips-number-sign)
-              :code $ quote
-                assert= 4 $ negate -4
-              :tags $ #{} :core :unit
-        'nil? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is nil")
+            quote $ assert= -5 $ negate 5
+            quote $ assert= 3 $ negate -3
+            quote $ assert= 0 $ negate 0
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |flips-number-sign
+            :code $ quote $ assert= 4 (negate -4)
+            :tags $ #{} :core :unit
+        'nil? $ %{} 'CodeEntry
+          :doc "|Predicate that checks whether a value is nil"
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ assert= true (nil? nil)
-            quote $ assert= false (nil? 0)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+            quote $ assert= true $ nil? nil
+            quote $ assert= false $ nil? 0
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
         'non-nil! $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn non-nil! (x)
-              if (nil? x) (raise "|expected non nil value") x
+          :code $ quote $ defn non-nil! (x)
+            if (nil? x)
+              raise "|expected non nil value"
+              , x
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'T)
-              :args $ [] 'T
-              :generics $ [] 'T
-        'not $ %{} 'CodeEntry (:doc "|internal function for logical not\nSyntax: (not value)\nParams: value (boolean, nil, or Unit)\nReturns: boolean\nReturns true if value is falsy (nil, false, or Unit), false otherwise")
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T
+            :generics $ [] 'T
+        'not $ %{} 'CodeEntry
+          :doc "|internal function for logical not\nSyntax: (not value)\nParams: value (boolean, nil, or Unit)\nReturns: boolean\nReturns true if value is falsy (nil, false, or Unit), false otherwise"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'not= $ %{} 'CodeEntry (:doc "|Returns true when two values of the same static type are not equal. Mixed-type callers must normalize values or narrow them before comparing.")
-          :code $ quote
-            defn not= (x y)
-              not $ &= x y
+        'not= $ %{} 'CodeEntry
+          :doc "|Returns true when two values of the same static type are not equal. Mixed-type callers must normalize values or narrow them before comparing."
+          :code $ quote $ defn not= (x y)
+            not $ &= x y
           :examples $ []
-            quote $ assert= true (not= 1 2)
-            quote $ assert= false (not= :a :a)
-            quote $ assert= true (not= |a |b)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T 'T
-              :generics $ [] 'T
-          :tests $ []
-            %{} 'TestEntry (:name |homogeneous-inequality)
-              :code $ quote
-                do
-                  assert= true $ not= |a |b
-                  assert= false $ not= :same :same
-              :tags $ #{} :core :unit
+            quote $ assert= true $ not= 1 2
+            quote $ assert= false $ not= :a :a
+            quote $ assert= true $ not= |a |b
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |homogeneous-inequality
+            :code $ quote $ do
+              assert= true $ not= |a |b
+              assert= false $ not= :same :same
+            :tags $ #{} :core :unit
         'noted $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro noted (_doc v) v
+          :code $ quote $ defmacro noted (_doc v) v
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'T
-              :generics $ [] 'T
-              :required $ [] 'Syntax (:: 'Expr 'T)
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'T
+            :generics $ [] 'T
+            :required $ [] 'Syntax $ :: 'Expr 'T
           :tags $ #{} :macro
-        'nth $ %{} 'CodeEntry (:doc "|Return an indexed item from a list, string, or enum as Option<T>. Struct fields are accessed by their declared names.")
-          :code $ quote
-            defn nth (x i)
-              cond
-                  not $ number? i
+        'nth $ %{} 'CodeEntry
+          :doc "|Return an indexed item from a list, string, or enum as Option<T>. Struct fields are accessed by their declared names."
+          :code $ quote $ defn nth (x i)
+            cond
+                not $ number? i
+                %none
+              (list? x)
+                if
+                  and (&>= i 0)
+                    &< i $ &list:count x
+                  %some $ &list:nth x i
                   %none
-                (list? x)
-                  if
-                    and (&>= i 0)
-                      &< i $ &list:count x
-                    %some $ &list:nth x i
-                    %none
-                (string? x)
-                  if
-                    and (&>= i 0)
-                      &< i $ &str:count x
-                    %some $ &str:nth x i
-                    %none
-                (enum? x)
-                  if
-                    and (&>= i 0)
-                      &< i $ &enum:count x
-                    %some $ &enum:nth x i
-                    %none
-                true $ raise (str-spaced |nth |expected |a |list, |string, |or |enum, |got: x)
+              (string? x)
+                if
+                  and (&>= i 0)
+                    &< i $ &str:count x
+                  %some $ &str:nth x i
+                  %none
+              (enum? x)
+                if
+                  and (&>= i 0)
+                    &< i $ &enum:count x
+                  %some $ &enum:nth x i
+                  %none
+              true $ raise $ str-spaced |nth |expected |a |list, |string, |or |enum, |got: x
           :examples $ []
             quote $ assert= (%some 2)
               nth ([] 1 2 3) 1
             quote $ assert= (%some |b) (nth |abc 1)
             quote $ assert= (%none)
               nth ([] 1 2 3) 9
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Dynamic 'Number
-              :return $ :: 'Option 'Dynamic
-          :tests $ []
-            %{} 'TestEntry (:name |reads-open-list-payload)
-              :code $ quote
-                let
-                    xs $ assert-type
-                      [] 1 $ {} (:a 2)
-                      :: 'List 'Dynamic
-                  assert=
-                    %some $ {} (:a 2)
-                    nth xs 1
-              :tags $ #{} :core :unit
-        'number? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is a numeric scalar")
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Dynamic 'Number
+            :return $ :: 'Option 'Dynamic
+          :tests $ [] $ %{} 'TestEntry
+            :name |reads-open-list-payload
+            :code $ quote $ let
+                xs $ assert-type
+                  [] 1 $ {} $ :a 2
+                  :: 'List 'Dynamic
+              assert=
+                %some $ {} $ :a 2
+                nth xs 1
+            :tags $ #{} :core :unit
+        'number? $ %{} 'CodeEntry
+          :doc "|Predicate that checks whether a value is a numeric scalar"
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ assert= true (number? 123)
-            quote $ assert= true (number? 3.14)
-            quote $ assert= false (number? |text)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+            quote $ assert= true $ number? 123
+            quote $ assert= true $ number? 3.14
+            quote $ assert= false $ number? |text
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'option:and-then $ %{} 'CodeEntry (:doc "|Chains an Option-producing function over :some and preserves :none.")
-          :code $ quote
-            defn option:and-then (opt f)
-              match opt
-                (:some value) (f value)
-                (:none)
-                  %:: (&enum:definition opt) :none
-          :examples $ []
-            quote $ assert= (%some 4)
+        'option:and-then $ %{} 'CodeEntry
+          :doc "|Chains an Option-producing function over :some and preserves :none."
+          :code $ quote $ defn option:and-then (opt f)
+            match opt
+              (:some value) (f value)
+              (:none)
+                %:: (&enum:definition opt) :none
+          :examples $ [] $ quote
+            assert= (%some 4)
               option:and-then (%some 2)
                 fn (x)
                   %some $ * x 2
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Option 'T)
-                :: 'Fn $ {}
-                  :args $ [] 'T
-                  :return $ :: 'Option 'U
-              :generics $ [] 'T 'U
-              :return $ :: 'Option 'U
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Option 'T)
+              :: 'Fn $ {}
+                :args $ [] 'T
+                :return $ :: 'Option 'U
+            :generics $ [] 'T 'U
+            :return $ :: 'Option 'U
           :tags $ #{} :internal
-        'option:fold $ %{} 'CodeEntry (:doc "|Eliminate an Option by evaluating on-none for none or on-some with the payload.")
-          :code $ quote
-            defn option:fold (opt on-none on-some)
-              match opt
-                (:some value) (on-some value)
-                (:none) (on-none)
+        'option:fold $ %{} 'CodeEntry
+          :doc "|Eliminate an Option by evaluating on-none for none or on-some with the payload."
+          :code $ quote $ defn option:fold (opt on-none on-some)
+            match opt
+              (:some value) (on-some value)
+              (:none) (on-none)
           :examples $ []
-            quote $ assert= 4
-              option:fold (%some 3)
-                fn () 0
-                fn (value) (+ value 1)
-            quote $ assert= 0
-              option:fold (%none)
-                fn () 0
-                fn (value) (+ value 1)
-          :schema $ :: 'Fn
-            {} (:return 'U)
-              :args $ [] (:: 'Option 'T)
-                :: 'Fn $ {} (:return 'U)
-                  :args $ []
-                :: 'Fn $ {} (:return 'U)
-                  :args $ [] 'T
-              :generics $ [] 'T 'U
+            quote $ assert= 4 $ option:fold (%some 3)
+              fn () 0
+              fn (value) (+ value 1)
+            quote $ assert= 0 $ option:fold (%none)
+              fn () 0
+              fn (value) (+ value 1)
+          :schema $ :: 'Fn $ {} (:return 'U)
+            :args $ [] (:: 'Option 'T)
+              :: 'Fn $ {} (:return 'U)
+                :args $ []
+              :: 'Fn $ {} (:return 'U)
+                :args $ [] 'T
+            :generics $ [] 'T 'U
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |folds-open-option-payload)
-              :code $ quote
-                let
-                    present $ assert-type (%some 1) (:: 'Option 'Dynamic)
-                    absent $ assert-type (%none) (:: 'Option 'Dynamic)
-                  do
-                    assert= 1 $ option:fold present
-                      fn () 0
-                      fn (value) value
-                    assert= 0 $ option:fold absent
-                      fn () 0
-                      fn (value) value
-              :tags $ #{} :core :unit
-        'option:let $ %{} 'CodeEntry (:doc "|Sequentially bind Option payloads through the .and-then method; stops at the first none and requires the body to return Option.")
-          :code $ quote
-            defmacro option:let (pairs & body)
-              if
-                not $ and (list? pairs) (every? pairs list?)
-                raise $ str-spaced "|option:let expects pairs in list, got:" pairs
-              if (&list:empty? body) (raise "|option:let expects at least 1 body expression")
-              if (&list:empty? pairs)
-                quasiquote $ do (~@ body)
+          :tests $ [] $ %{} 'TestEntry
+            :name |folds-open-option-payload
+            :code $ quote $ let
+                present $ assert-type (%some 1) (:: 'Option 'Dynamic)
+                absent $ assert-type (%none) (:: 'Option 'Dynamic)
+              do
+                assert= 1 $ option:fold present
+                  fn () 0
+                  fn (value) value
+                assert= 0 $ option:fold absent
+                  fn () 0
+                  fn (value) value
+            :tags $ #{} :core :unit
+        'option:let $ %{} 'CodeEntry
+          :doc "|Sequentially bind Option payloads through the .and-then method; stops at the first none and requires the body to return Option."
+          :code $ quote $ defmacro option:let (pairs & body)
+            if
+              not $ and (list? pairs) (every? pairs list?)
+              raise $ str-spaced "|option:let expects pairs in list, got:" pairs
+            if (&list:empty? body)
+              raise "|option:let expects at least 1 body expression"
+            if (&list:empty? pairs)
+              quasiquote $ do $ ~@ body
+              &let
+                pair $ assert-type (&list:nth pairs 0) 'List
+                if
+                  not $ &= 2 $ &list:count pair
+                  raise $ str-spaced "|option:let expects binding pair, got:" pair
                 &let
-                  pair $ assert-type (&list:nth pairs 0) 'List
+                  x $ &list:nth pair 0
                   if
-                    not $ &= 2 (&list:count pair)
-                    raise $ str-spaced "|option:let expects binding pair, got:" pair
+                    not $ symbol? x
+                    raise $ str-spaced "|option:let expects a symbol for binding, got:" x
                   &let
-                    x $ &list:nth pair 0
-                    if
-                      not $ symbol? x
-                      raise $ str-spaced "|option:let expects a symbol for binding, got:" x
-                    &let
-                      value $ &list:nth pair 1
-                      quasiquote $ .and-then ~value
-                        fn (~x)
-                          option:let
-                            ~ $ &list:rest pairs
-                            ~@ body
-          :examples $ []
-            quote $ assert= (%some 5)
+                    value $ &list:nth pair 1
+                    quasiquote $ .and-then ~value $ fn (~x)
+                      option:let
+                        ~ $ &list:rest pairs
+                        ~@ body
+          :examples $ [] $ quote
+            assert= (%some 5)
               option:let
                   x $ %some 2
                   y $ %some 3
                 %some $ + x y
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr (:: 'Option 'Dynamic)
-              :required $ [] 'SyntaxList
+          :schema $ :: 'Macro $ {} (:rest 'Syntax)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr $ :: 'Option 'Dynamic
+            :required $ [] 'SyntaxList
           :tags $ #{} :experimental :macro
           :tests $ []
-            %{} 'TestEntry (:name |short-circuits-none)
-              :code $ quote
-                assert= (%none)
-                  option:let
-                      x $ %some 2
-                      y $ %none
-                      unreachable $ raise |option-let-should-short-circuit
-                    %some $ + x y unreachable
+            %{} 'TestEntry
+              :name |short-circuits-none
+              :code $ quote $ assert= (%none)
+                option:let
+                    x $ %some 2
+                    y $ %none
+                    unreachable $ raise |option-let-should-short-circuit
+                  %some $ + x y unreachable
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |expression-binding)
-              :code $ quote
-                assert= (%some 3)
-                  option:let
-                      x $ if true (%some 2) (%none)
-                    %some $ inc x
-        'option:map $ %{} 'CodeEntry (:doc "|Mappable map implementation for Option")
-          :code $ quote
-            defn option:map (opt f)
-              match opt
-                (:some value)
-                  %:: (&enum:definition opt) :some $ f value
-                (:none)
-                  %:: (&enum:definition opt) :none
+            %{} 'TestEntry
+              :name |expression-binding
+              :code $ quote $ assert= (%some 3)
+                option:let
+                    x $ if true (%some 2) (%none)
+                  %some $ inc x
+        'option:map $ %{} 'CodeEntry
+          :doc "|Mappable map implementation for Option"
+          :code $ quote $ defn option:map (opt f)
+            match opt
+              (:some value)
+                %:: (&enum:definition opt) :some $ f value
+              (:none)
+                %:: (&enum:definition opt) :none
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Option 'T)
-                :: 'Fn $ {} (:return 'U)
-                  :args $ [] 'T
-              :generics $ [] 'T 'U
-              :return $ :: 'Option 'U
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Option 'T)
+              :: 'Fn $ {} (:return 'U)
+                :args $ [] 'T
+            :generics $ [] 'T 'U
+            :return $ :: 'Option 'U
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |preserves-open-payload-callback)
-              :code $ quote
-                let
-                    consume $ fn (value)
-                      hint-fn $ {}
-                        :args $ []
-                          :: (quote Option) (quote Dynamic)
-                        :return $ :: (quote Option) (quote Dynamic)
-                      value .map $ fn (item)
-                        hint-fn $ {}
-                          :args $ [] (quote Dynamic)
-                          :return $ quote Dynamic
-                        , item
-                  assert= (%some :ready)
-                    consume $ %some :ready
-              :tags $ #{} :core :unit
-        'option:none? $ %{} 'CodeEntry (:doc "|Returns true when an Option is :none.")
-          :code $ quote
-            defn option:none? (opt)
-              match opt
-                (:some _) false
-                (:none) true
-          :examples $ []
-            quote $ assert= true
-              option:none? $ %none
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] (:: 'Option 'T)
-              :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |preserves-open-payload-callback
+            :code $ quote $ let
+                consume $ fn (value)
+                  hint-fn $ {}
+                    :args $ [] $ :: (quote Option) (quote Dynamic)
+                    :return $ :: (quote Option) (quote Dynamic)
+                  value .map $ fn (item)
+                    hint-fn $ {}
+                      :args $ [] $ quote Dynamic
+                      :return $ quote Dynamic
+                    , item
+              assert= (%some :ready)
+                consume $ %some :ready
+            :tags $ #{} :core :unit
+        'option:none? $ %{} 'CodeEntry
+          :doc "|Returns true when an Option is :none."
+          :code $ quote $ defn option:none? (opt)
+            match opt
+              (:some _) false
+              (:none) true
+          :examples $ [] $ quote
+            assert= true $ option:none? $ %none
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] $ :: 'Option 'T
+            :generics $ [] 'T
           :tags $ #{} :internal
-        'option:or-else $ %{} 'CodeEntry (:doc "|Return the current Option when it is :some, otherwise evaluate a fallback Option-producing function.")
-          :code $ quote
-            defn option:or-else (opt fallback)
-              match opt
-                (:some _) opt
-                (:none) (fallback)
-          :examples $ []
-            quote $ assert= (%some 2)
+        'option:or-else $ %{} 'CodeEntry
+          :doc "|Return the current Option when it is :some, otherwise evaluate a fallback Option-producing function."
+          :code $ quote $ defn option:or-else (opt fallback)
+            match opt
+              (:some _) opt
+              (:none) (fallback)
+          :examples $ [] $ quote
+            assert= (%some 2)
               option:or-else (%none)
                 fn () $ %some 2
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Option 'T)
-                :: 'Fn $ {}
-                  :args $ []
-                  :return $ :: 'Option 'T
-              :generics $ [] 'T
-              :return $ :: 'Option 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Option 'T)
+              :: 'Fn $ {}
+                :args $ []
+                :return $ :: 'Option 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'T
           :tags $ #{} :internal
-        'option:some? $ %{} 'CodeEntry (:doc "|Returns true when an Option is :some.")
-          :code $ quote
-            defn option:some? (opt)
-              match opt
-                (:some _) true
-                (:none) false
-          :examples $ []
-            quote $ assert= true
-              option:some? $ %some 1
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] (:: 'Option 'T)
-              :generics $ [] 'T
+        'option:some? $ %{} 'CodeEntry
+          :doc "|Returns true when an Option is :some."
+          :code $ quote $ defn option:some? (opt)
+            match opt
+              (:some _) true
+              (:none) false
+          :examples $ [] $ quote
+            assert= true $ option:some? $ %some 1
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] $ :: 'Option 'T
+            :generics $ [] 'T
           :tags $ #{} :internal
-        'option:unwrap $ %{} 'CodeEntry (:doc "|Return the payload of some; raise when the Option is none.")
-          :code $ quote
-            defn option:unwrap (opt)
-              match opt
-                (:some value) value
-                (:none) (raise |option:unwrap-received-none)
-          :examples $ []
-            quote $ assert= 3
-              option:unwrap $ %some 3
-          :schema $ :: 'Fn
-            {} (:return 'T)
-              :args $ [] (:: 'Option 'T)
-              :generics $ [] 'T
+        'option:unwrap $ %{} 'CodeEntry
+          :doc "|Return the payload of some; raise when the Option is none."
+          :code $ quote $ defn option:unwrap (opt)
+            match opt
+              (:some value) value
+              (:none)
+                raise |option:unwrap-received-none
+          :examples $ [] $ quote
+            assert= 3 $ option:unwrap $ %some 3
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] $ :: 'Option 'T
+            :generics $ [] 'T
           :tags $ #{} :internal
-        'option:unwrap-or $ %{} 'CodeEntry (:doc "|Returns the :some payload, or the fallback for :none.")
-          :code $ quote
-            defn option:unwrap-or (opt fallback)
-              match opt
-                (:some value) value
-                (:none) fallback
-          :examples $ []
-            quote $ assert= 0
-              (%none) .unwrap-or 0
-          :schema $ :: 'Fn
-            {} (:return 'T)
-              :args $ [] (:: 'Option 'T) 'T
-              :generics $ [] 'T
+        'option:unwrap-or $ %{} 'CodeEntry
+          :doc "|Returns the :some payload, or the fallback for :none."
+          :code $ quote $ defn option:unwrap-or (opt fallback)
+            match opt
+              (:some value) value
+              (:none) fallback
+          :examples $ [] $ quote
+            assert= 0 $
+              %none
+              , .unwrap-or 0
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] (:: 'Option 'T) 'T
+            :generics $ [] 'T
           :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |consumes-open-option-payload)
-              :code $ quote
-                let
-                    present $ assert-type (%some 1) (:: 'Option 'Dynamic)
-                    absent $ assert-type (%none) (:: 'Option 'Dynamic)
-                  do
-                    assert= 1 $ option:unwrap-or present 0
-                    assert= 0 $ option:unwrap-or absent 0
-              :tags $ #{} :core :unit
-        'optionally $ %{} 'CodeEntry (:doc "|Convert a nullable Optional<T> value into nominal Option<T>.")
-          :code $ quote
-            defn optionally (s)
-              if (nil? s) (%none) (%some s)
+          :tests $ [] $ %{} 'TestEntry
+            :name |consumes-open-option-payload
+            :code $ quote $ let
+                present $ assert-type (%some 1) (:: 'Option 'Dynamic)
+                absent $ assert-type (%none) (:: 'Option 'Dynamic)
+              do
+                assert= 1 $ option:unwrap-or present 0
+                assert= 0 $ option:unwrap-or absent 0
+            :tags $ #{} :core :unit
+        'optionally $ %{} 'CodeEntry
+          :doc "|Convert a nullable Optional<T> value into nominal Option<T>."
+          :code $ quote $ defn optionally (s)
+            if (nil? s) (%none) (%some s)
           :examples $ []
             quote $ assert= (%some 1) (optionally 1)
             quote $ assert= (%none) (optionally nil)
-            quote $ assert= Option
-              &enum:definition $ optionally 1
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Optional 'T)
-              :generics $ [] 'T
-              :return $ :: 'Option 'T
-        'or $ %{} 'CodeEntry (:doc "|Logical disjunction macro. Skips later forms once a truthy (non-nil, non-false, non-Unit) value is found and returns it; when every form is falsey, returns the final form.")
-          :code $ quote
-            defmacro or (item & xs)
-              if (&list:empty? xs) item $ if (list? item)
-                &let
-                  v1# $ gensym |v1
-                  quasiquote $ &let (~v1# ~item)
-                    if ~v1# (~ v1#)
-                      or
-                        ~ $ &list:first xs
-                        ~@ $ &list:rest xs
-                quasiquote $ if ~item (~ item)
-                  or
-                    ~ $ &list:first xs
-                    ~@ $ &list:rest xs
+            quote $ assert= Option $ &enum:definition (optionally 1)
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Optional 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'T
+        'or $ %{} 'CodeEntry
+          :doc "|Logical disjunction macro. Skips later forms once a truthy (non-nil, non-false, non-Unit) value is found and returns it; when every form is falsey, returns the final form."
+          :code $ quote $ defmacro or (item & xs)
+            if (&list:empty? xs) item $ if (list? item)
+              &let
+                v1# $ gensym |v1
+                quasiquote $ &let (~v1# ~item)
+                  if ~v1# (~ v1#)
+                    or
+                      ~ $ &list:first xs
+                      ~@ $ &list:rest xs
+              quasiquote $ if ~item (~ item)
+                or
+                  ~ $ &list:first xs
+                  ~@ $ &list:rest xs
           :examples $ []
-            quote $ assert= |done (or nil |done false)
-            quote $ assert= nil (or false nil)
-            quote $ assert= 2 (or nil 2 3)
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic)
-              :rest $ :: 'Expr 'Dynamic
+            quote $ assert= |done $ or nil |done false
+            quote $ assert= nil $ or false nil
+            quote $ assert= 2 $ or nil 2 3
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] $ :: 'Expr 'Dynamic
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-          :tests $ []
-            %{} 'TestEntry (:name |skips-unit-and-returns-next-truthy-value)
-              :code $ quote
-                assert= |next $ or &unit |next
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |skips-unit-and-returns-next-truthy-value
+            :code $ quote $ assert= |next (or &unit |next)
+            :tags $ #{} :core :unit
         'pairs-map $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn pairs-map (xs)
-              reduce xs ({})
-                defn %pairs-map (acc pair)
-                  hint-fn $ {}
-                    :args $ [] 'Map 'List
-                    :return 'Map
-                  assert "|expects pair for pairs-map" $ if (list? pair)
-                    &= 2 $ &list:count pair
-                    , false
-                  &map:assoc acc (&list:first pair) (&list:last pair)
+          :code $ quote $ defn pairs-map (xs)
+            reduce xs ({})
+              defn %pairs-map (acc pair)
+                hint-fn $ {}
+                  :args $ [] 'Map 'List
+                  :return 'Map
+                assert "|expects pair for pairs-map" $ if (list? pair)
+                  &= 2 $ &list:count pair
+                  , false
+                &map:assoc acc (&list:first pair) (&list:last pair)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'P)
-              :generics $ [] 'P 'K 'V
-              :return $ :: 'Map 'K 'V
-          :tests $ []
-            %{} 'TestEntry (:name |converts-list-pairs)
-              :code $ quote
-                assert= (&{} :a 1 :b 2)
-                  pairs-map $ [] ([] :a 1) ([] :b 2)
-              :tags $ #{} :core :unit
-        'parse-cirru $ %{} 'CodeEntry (:doc "|internal function for parsing Cirru\nSyntax: (parse-cirru text)\nParams: text (string)\nReturns: list\nParses Cirru syntax text into nested list structure")
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'P
+            :generics $ [] 'P 'K 'V
+            :return $ :: 'Map 'K 'V
+          :tests $ [] $ %{} 'TestEntry
+            :name |converts-list-pairs
+            :code $ quote $ assert= (&{} :a 1 :b 2)
+              pairs-map $ [] ([] :a 1) ([] :b 2)
+            :tags $ #{} :core :unit
+        'parse-cirru $ %{} 'CodeEntry
+          :doc "|internal function for parsing Cirru\nSyntax: (parse-cirru text)\nParams: text (string)\nReturns: list\nParses Cirru syntax text into nested list structure"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'CirruQuote)
-              :args $ [] 'String
+          :schema $ :: 'Fn $ {} (:return 'CirruQuote)
+            :args $ [] 'String
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |returns-cirru-quote-tree)
-              :code $ quote
-                do
-                  assert= :cirru-quote $ type-of (parse-cirru "|a b")
-                  assert= :list $ &cirru-type
-                    &cirru-nth (parse-cirru "|a b") 0
-              :tags $ #{} :core :unit
-        'parse-cirru-edn $ %{} 'CodeEntry (:doc "|internal function for parsing Cirru EDN\nSyntax: (parse-cirru-edn text)\nParams: text (string)\nReturns: any\nParses Cirru EDN format text into Calcit data structures")
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-cirru-quote-tree
+            :code $ quote $ do
+              assert= :cirru-quote $ type-of $ parse-cirru "|a b"
+              assert= :list $ &cirru-type $ &cirru-nth (parse-cirru "|a b") 0
+            :tags $ #{} :core :unit
+        'parse-cirru-edn $ %{} 'CodeEntry
+          :doc "|internal function for parsing Cirru EDN\nSyntax: (parse-cirru-edn text)\nParams: text (string)\nReturns: any\nParses Cirru EDN format text into Calcit data structures"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'String
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'String
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |parses-enums-comments-and-quoted-code)
-              :code $ quote
-                do
-                  assert= (:: :a 1) (parse-cirru-edn "|:: :a 1")
-                  assert= ([] 1 2 3) (parse-cirru-edn "|[] 1 2 (; comment) 3")
-                  assert=
-                    &{} :code $ cirru-quote (+ 1 2 3)
-                    parse-cirru-edn "|{} $ :code $ quote $ + 1 2 3"
-              :tags $ #{} :core :unit
-        'parse-cirru-list $ %{} 'CodeEntry (:doc "|internal function for parsing Cirru list\nSyntax: (parse-cirru-list text)\nParams: text (string)\nReturns: list\nParses Cirru text as a list of expressions")
+          :tests $ [] $ %{} 'TestEntry
+            :name |parses-enums-comments-and-quoted-code
+            :code $ quote $ do
+              assert= (:: :a 1) (parse-cirru-edn "|:: :a 1")
+              assert= ([] 1 2 3)
+                parse-cirru-edn "|[] 1 2 (; comment) 3"
+              assert=
+                &{} :code $ cirru-quote $ + 1 2 3
+                parse-cirru-edn "|{} $ :code $ quote $ + 1 2 3"
+            :tags $ #{} :core :unit
+        'parse-cirru-list $ %{} 'CodeEntry
+          :doc "|internal function for parsing Cirru list\nSyntax: (parse-cirru-list text)\nParams: text (string)\nReturns: list\nParses Cirru text as a list of expressions"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'List)
-              :args $ [] 'String
+          :schema $ :: 'Fn $ {} (:return 'List)
+            :args $ [] 'String
           :tags $ #{} :builtin :internal
-        'parse-float $ %{} 'CodeEntry (:doc "|Parse a number as Result<Number,String>; err contains the original invalid input.")
-          :code $ quote
-            defn parse-float (source)
-              let
-                  parsed $ &parse-float source
-                if (nil? parsed) (%err source) (%ok parsed)
+        'parse-float $ %{} 'CodeEntry
+          :doc "|Parse a number as Result<Number,String>; err contains the original invalid input."
+          :code $ quote $ defn parse-float (source)
+            let
+                parsed $ &parse-float source
+              if (nil? parsed) (%err source) (%ok parsed)
           :examples $ []
             quote $ assert= (%ok 1.5) (parse-float |1.5)
             quote $ assert= (%err |oops) (parse-float |oops)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String
-              :return $ :: 'Result 'Number 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result 'Number 'String
           :tests $ []
-            %{} 'TestEntry (:name |wraps-number-or-source-error)
-              :code $ quote
-                do
-                  assert= (%ok 1.5) (parse-float |1.5)
-                  assert= (%err |oops) (parse-float |oops)
+            %{} 'TestEntry
+              :name |wraps-number-or-source-error
+              :code $ quote $ do
+                assert= (%ok 1.5) (parse-float |1.5)
+                assert= (%err |oops) (parse-float |oops)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |reports-invalid-number-source)
-              :code $ quote
-                do
-                  assert= (%ok 0) (parse-float |0)
-                  assert= (%err |1oops) (parse-float |1oops)
-                  assert= (%err |1e) (parse-float |1e)
+            %{} 'TestEntry
+              :name |reports-invalid-number-source
+              :code $ quote $ do
+                assert= (%ok 0) (parse-float |0)
+                assert= (%err |1oops) (parse-float |1oops)
+                assert= (%err |1e) (parse-float |1e)
               :tags $ #{} :core :unit
-        'pow $ %{} 'CodeEntry (:doc "|internal function for power operation\nSyntax: (pow base exponent)\nParams: base (number), exponent (number)\nReturns: number\nRaises base to the power of exponent")
+        'pow $ %{} 'CodeEntry
+          :doc "|internal function for power operation\nSyntax: (pow base exponent)\nParams: base (number), exponent (number)\nReturns: number\nRaises base to the power of exponent"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |raises-to-power)
-              :code $ quote
-                assert= 81 $ pow 3 4
-              :tags $ #{} :core :unit
-        'prepend $ %{} 'CodeEntry (:doc "|internal function for prepending to list\nSyntax: (prepend list element)\nParams: list (list), element (any)\nReturns: list\nReturns new list with element added at beginning")
+          :tests $ [] $ %{} 'TestEntry (:name |raises-to-power)
+            :code $ quote $ assert= 81 (pow 3 4)
+            :tags $ #{} :core :unit
+        'prepend $ %{} 'CodeEntry
+          :doc "|internal function for prepending to list\nSyntax: (prepend list element)\nParams: list (list), element (any)\nReturns: list\nReturns new list with element added at beginning"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'T
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |adds-list-item-at-front)
-              :code $ quote
-                assert= ([] 4 1 2 3)
-                  prepend ([] 1 2 3) 4
-              :tags $ #{} :core :unit
-        'quasiquote $ %{} 'CodeEntry (:doc "|internal syntax for quasiquote (used inside macros)\nSyntax: (quasiquote expr)\nParams: expr (code with possible unquote)\nReturns: partially quoted structure\nLike quote but allows selective unquoting with ~ and ~@")
+          :tests $ [] $ %{} 'TestEntry
+            :name |adds-list-item-at-front
+            :code $ quote $ assert= ([] 4 1 2 3)
+              prepend ([] 1 2 3) 4
+            :tags $ #{} :core :unit
+        'quasiquote $ %{} 'CodeEntry
+          :doc "|internal syntax for quasiquote (used inside macros)\nSyntax: (quasiquote expr)\nParams: expr (code with possible unquote)\nReturns: partially quoted structure\nLike quote but allows selective unquoting with ~ and ~@"
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ quasiquote (&+ ~x 1)
-            quote $ quasiquote ([] ~x ~@xs)
+            quote $ quasiquote $ &+ ~x 1
+            quote $ quasiquote $ [] ~x ~@xs
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        'quit! $ %{} 'CodeEntry (:doc "|以指定状态码终止宿主进程。语法：(quit! exit-code)。exit-code 必须是 0..255 的整数；函数不会返回。")
+        'quit! $ %{} 'CodeEntry
+          :doc "|以指定状态码终止宿主进程。语法：(quit! exit-code)。exit-code 必须是 0..255 的整数；函数不会返回。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ [] 'Number
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] 'Number
           :tags $ #{} :builtin :control :internal
-        'quote $ %{} 'CodeEntry (:doc "|internal syntax for turning code into quoted data\nSyntax: (quote expr)\nParams: expr (any code)\nReturns: quoted data structure\nPrevents evaluation and returns code as data")
+        'quote $ %{} 'CodeEntry
+          :doc "|internal syntax for turning code into quoted data\nSyntax: (quote expr)\nParams: expr (any code)\nReturns: quoted data structure\nPrevents evaluation and returns code as data"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        'raise $ %{} 'CodeEntry (:doc "|internal function for raising exceptions\nSyntax: (raise message)\nParams: message (string)\nReturns: never returns (throws exception)\nThrows an exception with the given message")
+        'raise $ %{} 'CodeEntry
+          :doc "|internal function for raising exceptions\nSyntax: (raise message)\nParams: message (string)\nReturns: never returns (throws exception)\nThrows an exception with the given message"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'T)
-              :args $ [] 'String
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'String
+            :generics $ [] 'T
           :tags $ #{} :builtin :control :internal
-        'range $ %{} 'CodeEntry (:doc "|internal function for creating number ranges\nSyntax: (range start end) or (range end)\nParams: start (number, optional), end (number)\nReturns: list\nCreates list of numbers from start to end (exclusive)")
+        'range $ %{} 'CodeEntry
+          :doc "|internal function for creating number ranges\nSyntax: (range start end) or (range end)\nParams: start (number, optional), end (number)\nReturns: list\nCreates list of numbers from start to end (exclusive)"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Number 'Number 'Number
-              :return $ :: 'List 'Number
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number 'Number 'Number
+            :return $ :: 'List 'Number
           :tags $ #{} :builtin :internal
           :tests $ []
-            %{} 'TestEntry (:name |generates-half-open-ranges)
-              :code $ quote
-                do
-                  assert= ([]) (range 0)
-                  assert= ([] 0 1 2 3) (range 4)
-                  assert= ([] 4 5 6 7 8 9) (range 4 10)
-                  assert= ([] 2 4 6 8) (range 2 10 2)
+            %{} 'TestEntry
+              :name |generates-half-open-ranges
+              :code $ quote $ do
+                assert= ([]) (range 0)
+                assert= ([] 0 1 2 3) (range 4)
+                assert= ([] 4 5 6 7 8 9) (range 4 10)
+                assert= ([] 2 4 6 8) (range 2 10 2)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |generates-descending-ranges)
-              :code $ quote
-                assert= ([] 5 3 1) (range 5 0 -2)
+            %{} 'TestEntry
+              :name |generates-descending-ranges
+              :code $ quote $ assert= ([] 5 3 1) (range 5 0 -2)
               :tags $ #{} :core :unit
         'range-bothway $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn range-bothway (x ? y)
-              if (nil? y)
-                range
-                  inc $ negate x
-                  , x
-                range
-                  inc $ &- (&+ x x) y
-                  , y
+          :code $ quote $ defn range-bothway (x ? y)
+            if (nil? y)
+              range
+                inc $ negate x
+                , x
+              range
+                inc $ &- (&+ x x) y
+                , y
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Number 'Number
-              :return $ :: 'List 'Number
-          :tests $ []
-            %{} 'TestEntry (:name |creates-symmetric-and-offset-ranges)
-              :code $ quote
-                do
-                  assert= ([] -2 -1 0 1 2) (range-bothway 3)
-                  assert= ([] 0 1 2 3 4) (range-bothway 2 5)
-              :tags $ #{} :core :unit
-        'read-dir $ %{} 'CodeEntry (:doc "|List paths inside a directory.\nSyntax: (read-dir path recursive?)\nParams: path (string), recursive? (optional boolean, defaults to false)\nReturns: sorted list of path strings")
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number 'Number
+            :return $ :: 'List 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |creates-symmetric-and-offset-ranges
+            :code $ quote $ do
+              assert= ([] -2 -1 0 1 2) (range-bothway 3)
+              assert= ([] 0 1 2 3 4) (range-bothway 2 5)
+            :tags $ #{} :core :unit
+        'read-dir $ %{} 'CodeEntry
+          :doc "|List paths inside a directory.\nSyntax: (read-dir path recursive?)\nParams: path (string), recursive? (optional boolean, defaults to false)\nReturns: sorted list of path strings"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String 'Bool
-              :return $ :: 'List 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String 'Bool
+            :return $ :: 'List 'String
           :tags $ #{} :builtin :file :internal :io
-        'read-file $ %{} 'CodeEntry (:doc "|internal function for reading files\nSyntax: (read-file filepath)\nParams: filepath (string)\nReturns: string content or error\nReads file content as string, throws error if file not found")
+        'read-file $ %{} 'CodeEntry
+          :doc "|internal function for reading files\nSyntax: (read-file filepath)\nParams: filepath (string)\nReturns: string content or error\nReads file content as string, throws error if file not found"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'String
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String
           :tags $ #{} :builtin :file :internal :io
-        'recur $ %{} 'CodeEntry (:doc "|internal function for tail recursion\nSyntax: (recur args...)\nParams: args (any, variable number)\nReturns: recur structure for tail call optimization\nEnables tail call optimization by marking recursive calls")
+        'recur $ %{} 'CodeEntry
+          :doc "|internal function for tail recursion\nSyntax: (recur args...)\nParams: args (any, variable number)\nReturns: recur structure for tail call optimization\nEnables tail call optimization by marking recursive calls"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
-        'reduce $ %{} 'CodeEntry (:doc "|Collection reduction operation\nFunction: Reduces a collection using a specified function, accumulating elements onto an initial value\nParams: xs (collection), x0 (initial accumulator value), f (reduction function that takes accumulator and current element)\nReturns: any type - final accumulated result\nNotes: The reduction function f should accept two parameters (accumulator, current element) and return a new accumulator value")
-          :code $ quote
-            defn reduce (xs x0 f) (foldl xs x0 f)
-          :examples $ []
-            quote $ assert= 6
-              reduce ([] 1 2 3) 0 +
-          :schema $ :: 'Fn
-            {} (:return 'U)
-              :args $ [] (:: 'List 'T) 'U
-                :: 'Fn $ {} (:return 'U)
-                  :args $ [] 'U 'T
-              :generics $ [] 'T 'U
-          :tests $ []
-            %{} 'TestEntry (:name |reduces-list-from-initial-value)
-              :code $ quote
-                assert= 14 $ reduce ([] 3 4 5) 2 +
-              :tags $ #{} :core :unit
+        'reduce $ %{} 'CodeEntry
+          :doc "|Collection reduction operation\nFunction: Reduces a collection using a specified function, accumulating elements onto an initial value\nParams: xs (collection), x0 (initial accumulator value), f (reduction function that takes accumulator and current element)\nReturns: any type - final accumulated result\nNotes: The reduction function f should accept two parameters (accumulator, current element) and return a new accumulator value"
+          :code $ quote $ defn reduce (xs x0 f) (foldl xs x0 f)
+          :examples $ [] $ quote
+            assert= 6 $ reduce ([] 1 2 3) 0 +
+          :schema $ :: 'Fn $ {} (:return 'U)
+            :args $ [] (:: 'List 'T) 'U $ :: 'Fn
+              {} (:return 'U)
+                :args $ [] 'U 'T
+            :generics $ [] 'T 'U
+          :tests $ [] $ %{} 'TestEntry
+            :name |reduces-list-from-initial-value
+            :code $ quote $ assert= 14
+              reduce ([] 3 4 5) 2 +
+            :tags $ #{} :core :unit
         'ref? $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn ref? (x)
-              &= (type-of x) :ref
+          :code $ quote $ defn ref? (x)
+            &= (type-of x) :ref
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal :state
-        'remove-watch $ %{} 'CodeEntry (:doc "|Remove a watcher from a Ref<T>. Syntax: (remove-watch ref tag-key). The key must be a Tag. Returns Unit; reports an error when the key is absent.")
+        'remove-watch $ %{} 'CodeEntry
+          :doc "|Remove a watcher from a Ref<T>. Syntax: (remove-watch ref tag-key). The key must be a Tag. Returns Unit; reports an error when the key is absent."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ [] (:: 'Ref 'T) 'Tag
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] (:: 'Ref 'T) 'Tag
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal :state :watch
         'repeat $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn repeat (x n0)
-              apply-args
-                  []
-                  , n0
-                defn %repeat (acc n)
-                  hint-fn $ {}
-                    :generics $ [] 'T
-                    :args $ []
-                      :: 'acc $ :: 'List 'T
-                      :: 'n 'Number
-                    :return $ :: 'List 'T
-                  if (&<= n 0) acc $ recur (append acc x) (&- n 1)
+          :code $ quote $ defn repeat (x n0)
+            apply-args
+                []
+                , n0
+              defn %repeat (acc n)
+                hint-fn $ {}
+                  :generics $ [] 'T
+                  :args $ []
+                    :: 'acc $ :: 'List 'T
+                    :: 'n 'Number
+                  :return $ :: 'List 'T
+                if (&<= n 0) acc $ recur (append acc x) (&- n 1)
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'T 'Number
-              :generics $ [] 'T
-              :return $ :: 'List 'T
-          :tests $ []
-            %{} 'TestEntry (:name |repeats-value-fixed-times)
-              :code $ quote
-                assert= ([] :a :a :a :a :a) (repeat :a 5)
-              :tags $ #{} :core :unit
-        'reset! $ %{} 'CodeEntry (:doc "|internal syntax for resetting atom values\nSyntax: (reset! atom new-value)\nParams: atom (atom reference), new-value (any)\nReturns: new value\nSets atom to new value and returns it")
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'T 'Number
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |repeats-value-fixed-times
+            :code $ quote $ assert= ([] :a :a :a :a :a) (repeat :a 5)
+            :tags $ #{} :core :unit
+        'reset! $ %{} 'CodeEntry
+          :doc "|internal syntax for resetting atom values\nSyntax: (reset! atom new-value)\nParams: atom (atom reference), new-value (any)\nReturns: new value\nSets atom to new value and returns it"
           :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ ; reset! *my-atom
-              {} $ :a 2
-          :schema $ :: 'Fn
-            {} (:return 'T)
-              :args $ [] (:: 'Ref 'T) 'T
-              :generics $ [] 'T
+          :examples $ [] $ quote
+            ; reset! *my-atom $ {} $ :a 2
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] (:: 'Ref 'T) 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal :state :syntax
-        'rest $ %{} 'CodeEntry (:doc "|Return the same collection type without its first item; empty collections remain empty and nil is rejected.")
-          :code $ quote
-            defn rest (x)
-              if (list? x) (&list:rest x) (.rest x)
+        'rest $ %{} 'CodeEntry
+          :doc "|Return the same collection type without its first item; empty collections remain empty and nil is rejected."
+          :code $ quote $ defn rest (x)
+            if (list? x) (&list:rest x) (.rest x)
           :examples $ []
             quote $ assert= ([] 2 3)
               rest $ [] 1 2 3
             quote $ assert= ([])
               rest $ []
-            quote $ assert= | (rest |)
-          :schema $ :: 'Fn
-            {} (:return 'T)
-              :args $ [] 'T
-              :generics $ [] 'T
+            quote $ assert= | $ rest |
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tests $ []
-            %{} 'TestEntry (:name |drops-first-list-item)
-              :code $ quote
-                do
-                  assert= ([] 2 3)
-                    rest $ [] 1 2 3
-                  assert= ([])
-                    rest $ []
+            %{} 'TestEntry
+              :name |drops-first-list-item
+              :code $ quote $ do
+                assert= ([] 2 3)
+                  rest $ [] 1 2 3
+                assert= ([])
+                  rest $ []
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |drops-first-string-character)
-              :code $ quote
-                assert= |bc $ rest |abc
+            %{} 'TestEntry
+              :name |drops-first-string-character
+              :code $ quote $ assert= |bc (rest |abc)
               :tags $ #{} :core :unit
-        'result:and-then $ %{} 'CodeEntry (:doc "|Chains a Result-producing function over :ok and preserves :err.")
-          :code $ quote
-            defn result:and-then (res f)
-              match res
-                (:ok value) (f value)
-                (:err err)
-                  %:: (&enum:definition res) :err err
-          :examples $ []
-            quote $ assert= (%ok 4)
+        'result:and-then $ %{} 'CodeEntry
+          :doc "|Chains a Result-producing function over :ok and preserves :err."
+          :code $ quote $ defn result:and-then (res f)
+            match res
+              (:ok value) (f value)
+              (:err err)
+                %:: (&enum:definition res) :err err
+          :examples $ [] $ quote
+            assert= (%ok 4)
               result:and-then (%ok 2)
                 fn (x)
                   %ok $ * x 2
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Result 'T 'E)
-                :: 'Fn $ {}
-                  :args $ [] 'T
-                  :return $ :: 'Result 'U 'E
-              :generics $ [] 'T 'U 'E
-              :return $ :: 'Result 'U 'E
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Result 'T 'E)
+              :: 'Fn $ {}
+                :args $ [] 'T
+                :return $ :: 'Result 'U 'E
+            :generics $ [] 'T 'U 'E
+            :return $ :: 'Result 'U 'E
           :tags $ #{} :internal
-        'result:err? $ %{} 'CodeEntry (:doc "|Returns true when a Result is :err.")
-          :code $ quote
-            defn result:err? (res)
-              match res
-                (:ok _) false
-                (:err _) true
-          :examples $ []
-            quote $ assert= true
-              result:err? $ %err |failed
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] (:: 'Result 'T 'E)
-              :generics $ [] 'T 'E
+        'result:err? $ %{} 'CodeEntry
+          :doc "|Returns true when a Result is :err."
+          :code $ quote $ defn result:err? (res)
+            match res
+              (:ok _) false
+              (:err _) true
+          :examples $ [] $ quote
+            assert= true $ result:err? $ %err |failed
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] $ :: 'Result 'T 'E
+            :generics $ [] 'T 'E
           :tags $ #{} :internal
-        'result:map $ %{} 'CodeEntry (:doc "|Mappable map implementation for Result")
-          :code $ quote
-            defn result:map (res f)
-              match res
-                (:ok value)
-                  %:: (&enum:definition res) :ok $ f value
-                (:err err)
-                  %:: (&enum:definition res) :err err
+        'result:map $ %{} 'CodeEntry
+          :doc "|Mappable map implementation for Result"
+          :code $ quote $ defn result:map (res f)
+            match res
+              (:ok value)
+                %:: (&enum:definition res) :ok $ f value
+              (:err err)
+                %:: (&enum:definition res) :err err
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Result 'T 'E)
-                :: 'Fn $ {} (:return 'U)
-                  :args $ [] 'T
-              :generics $ [] 'T 'U 'E
-              :return $ :: 'Result 'U 'E
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Result 'T 'E)
+              :: 'Fn $ {} (:return 'U)
+                :args $ [] 'T
+            :generics $ [] 'T 'U 'E
+            :return $ :: 'Result 'U 'E
           :tags $ #{} :internal
-        'result:map-err $ %{} 'CodeEntry (:doc "|Maps the error payload of a Result while preserving :ok.")
-          :code $ quote
-            defn result:map-err (res f)
-              match res
-                (:ok value)
-                  %:: (&enum:definition res) :ok value
-                (:err err)
-                  %:: (&enum:definition res) :err $ f err
-          :examples $ []
-            quote $ assert= (%err |failed!)
+        'result:map-err $ %{} 'CodeEntry
+          :doc "|Maps the error payload of a Result while preserving :ok."
+          :code $ quote $ defn result:map-err (res f)
+            match res
+              (:ok value)
+                %:: (&enum:definition res) :ok value
+              (:err err)
+                %:: (&enum:definition res) :err $ f err
+          :examples $ [] $ quote
+            assert= (%err |failed!)
               result:map-err (%err |failed)
                 fn (e) (str e |!)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Result 'T 'E)
-                :: 'Fn $ {} (:return 'F)
-                  :args $ [] 'E
-              :generics $ [] 'T 'E 'F
-              :return $ :: 'Result 'T 'F
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Result 'T 'E)
+              :: 'Fn $ {} (:return 'F)
+                :args $ [] 'E
+            :generics $ [] 'T 'E 'F
+            :return $ :: 'Result 'T 'F
           :tags $ #{} :internal
-        'result:ok? $ %{} 'CodeEntry (:doc "|Returns true when a Result is :ok.")
-          :code $ quote
-            defn result:ok? (res)
-              match res
-                (:ok _) true
-                (:err _) false
-          :examples $ []
-            quote $ assert= true
-              result:ok? $ %ok 1
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] (:: 'Result 'T 'E)
-              :generics $ [] 'T 'E
+        'result:ok? $ %{} 'CodeEntry
+          :doc "|Returns true when a Result is :ok."
+          :code $ quote $ defn result:ok? (res)
+            match res
+              (:ok _) true
+              (:err _) false
+          :examples $ [] $ quote
+            assert= true $ result:ok? $ %ok 1
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] $ :: 'Result 'T 'E
+            :generics $ [] 'T 'E
           :tags $ #{} :internal
-        'result:or-else $ %{} 'CodeEntry (:doc "|Return the current Result when it is :ok, otherwise evaluate a fallback Result-producing function.")
-          :code $ quote
-            defn result:or-else (res fallback)
-              match res
-                (:ok _) res
-                (:err _) (fallback)
-          :examples $ []
-            quote $ assert= (%ok 2)
+        'result:or-else $ %{} 'CodeEntry
+          :doc "|Return the current Result when it is :ok, otherwise evaluate a fallback Result-producing function."
+          :code $ quote $ defn result:or-else (res fallback)
+            match res
+              (:ok _) res
+              (:err _) (fallback)
+          :examples $ [] $ quote
+            assert= (%ok 2)
               result:or-else (%err |missing)
                 fn () $ %ok 2
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Result 'T 'E)
-                :: 'Fn $ {}
-                  :args $ []
-                  :return $ :: 'Result 'T 'E
-              :generics $ [] 'T 'E
-              :return $ :: 'Result 'T 'E
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Result 'T 'E)
+              :: 'Fn $ {}
+                :args $ []
+                :return $ :: 'Result 'T 'E
+            :generics $ [] 'T 'E
+            :return $ :: 'Result 'T 'E
           :tags $ #{} :internal
-        'result:unwrap-or $ %{} 'CodeEntry (:doc "|Returns the :ok payload, or the fallback for :err.")
-          :code $ quote
-            defn result:unwrap-or (res fallback)
-              match res
-                (:ok value) value
-                (:err _) fallback
-          :examples $ []
-            quote $ assert= 0
-              (%err |failed) .unwrap-or 0
-          :schema $ :: 'Fn
-            {} (:return 'T)
-              :args $ [] (:: 'Result 'T 'E) 'T
-              :generics $ [] 'T 'E
+        'result:unwrap-or $ %{} 'CodeEntry
+          :doc "|Returns the :ok payload, or the fallback for :err."
+          :code $ quote $ defn result:unwrap-or (res fallback)
+            match res
+              (:ok value) value
+              (:err _) fallback
+          :examples $ [] $ quote
+            assert= 0 $
+              %err |failed
+              , .unwrap-or 0
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] (:: 'Result 'T 'E) 'T
+            :generics $ [] 'T 'E
           :tags $ #{} :internal
-        'reverse $ %{} 'CodeEntry (:doc "|Reverse the order of elements in a list")
-          :code $ quote
-            defn reverse (x) (&list:reverse x)
+        'reverse $ %{} 'CodeEntry
+          :doc "|Reverse the order of elements in a list"
+          :code $ quote $ defn reverse (x) (&list:reverse x)
           :examples $ []
             quote $ assert= ([] 3 2 1)
               reverse $ [] 1 2 3
             quote $ assert= ([])
               reverse $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-              :generics $ [] 'T
-              :return $ :: 'List 'T
-        'round $ %{} 'CodeEntry (:doc "|internal function for rounding numbers\nSyntax: (round n)\nParams: n (number)\nReturns: number\nRounds number to nearest integer")
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+        'round $ %{} 'CodeEntry
+          :doc "|internal function for rounding numbers\nSyntax: (round n)\nParams: n (number)\nReturns: number\nRounds number to nearest integer"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |rounds-fractional-values-both-directions)
-              :code $ quote
-                do
-                  assert= 1 $ round 1.1
-                  assert= 2 $ round 1.8
-              :tags $ #{} :core :unit
-        'round? $ %{} 'CodeEntry (:doc "|internal function for checking if number is round\nSyntax: (round? n)\nParams: n (number)\nReturns: boolean\nReturns true if number has no fractional part")
+          :tests $ [] $ %{} 'TestEntry
+            :name |rounds-fractional-values-both-directions
+            :code $ quote $ do
+              assert= 1 $ round 1.1
+              assert= 2 $ round 1.8
+            :tags $ #{} :core :unit
+        'round? $ %{} 'CodeEntry
+          :doc "|internal function for checking if number is round\nSyntax: (round? n)\nParams: n (number)\nReturns: boolean\nReturns true if number has no fractional part"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Number
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |distinguishes-integers)
-              :code $ quote
-                do
-                  assert= true $ round? 1
-                  assert= false $ round? 1.1
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry
+            :name |distinguishes-integers
+            :code $ quote $ do
+              assert= true $ round? 1
+              assert= false $ round? 1.1
+            :tags $ #{} :core :unit
         'section-by $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn section-by (xs0 n)
-              if (>= n 1)
-                apply-args
-                    []
-                    , xs0
-                  fn (acc xs)
-                    if
-                      &<= (&list:count xs) n
-                      if (&list:empty? xs) acc $ append acc xs
-                      recur
-                        append acc $ take xs n
-                        drop xs n
-                raise $ str-spaced "|expected positive number, got:" n
+          :code $ quote $ defn section-by (xs0 n)
+            if (>= n 1)
+              apply-args
+                  []
+                  , xs0
+                fn (acc xs)
+                  if
+                    &<= (&list:count xs) n
+                    if (&list:empty? xs) acc $ append acc xs
+                    recur
+                      append acc $ take xs n
+                      drop xs n
+              raise $ str-spaced "|expected positive number, got:" n
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'Number
-              :generics $ [] 'T
-              :return $ :: 'List (:: 'List 'T)
-          :tests $ []
-            %{} 'TestEntry (:name |splits-list-into-fixed-sections)
-              :code $ quote
-                assert=
-                  [] ([] 0 1 2) ([] 3 4 5) ([] 6 7 8) ([] 9)
-                  section-by (range 10) 3
-              :tags $ #{} :core :unit
-        'secure-random-bytes $ %{} 'CodeEntry (:doc "|生成指定长度的密码学安全随机字节。长度必须是 0..65536 的整数；失败以 Result<String> 返回，不提供非安全伪随机退化路径。")
-          :code $ quote
-            defn secure-random-bytes (size)
-              if
-                and (round? size) (>= size 0) (<= size 65536)
-                &secure-random-bytes Result size "|secure-random-bytes failed"
-                %err "|secure-random-bytes expected an integer byte count in 0..65536"
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'Number
+            :generics $ [] 'T
+            :return $ :: 'List $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |splits-list-into-fixed-sections
+            :code $ quote $ assert=
+              [] ([] 0 1 2) ([] 3 4 5) ([] 6 7 8) ([] 9)
+              section-by (range 10) 3
+            :tags $ #{} :core :unit
+        'secure-random-bytes $ %{} 'CodeEntry
+          :doc "|生成指定长度的密码学安全随机字节。长度必须是 0..65536 的整数；失败以 Result<String> 返回，不提供非安全伪随机退化路径。"
+          :code $ quote $ defn secure-random-bytes (size)
+            if
+              and (round? size) (>= size 0) (<= size 65536)
+              &secure-random-bytes Result size "|secure-random-bytes failed"
+              %err "|secure-random-bytes expected an integer byte count in 0..65536"
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Number
-              :return $ :: 'Result 'Buffer 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'Result 'Buffer 'String
           :tags $ #{} :crypto :io
           :tests $ []
             %{} 'TestEntry (:name |returns-buffer)
-              :code $ quote
-                assert= true $ match (secure-random-bytes 16)
+              :code $ quote $ assert= true
+                match
+                  secure-random-bytes 16
                   (:ok bytes) (buffer? bytes)
                   (:err _) false
               :tags $ #{} :core :crypto :unit :wasi :wasm
-            %{} 'TestEntry (:name |rejects-invalid-length)
-              :code $ quote
-                assert= true $ match (secure-random-bytes 65537)
+            %{} 'TestEntry
+              :name |rejects-invalid-length
+              :code $ quote $ assert= true
+                match
+                  secure-random-bytes 65537
                   (:ok _) false
                   (:err message) (string? message)
               :tags $ #{} :core :crypto :unit :wasi :wasm
         'select-keys $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn select-keys (m xs)
-              assert "|expected map for selecting" $ map? m
-              foldl xs (&{})
-                defn %select-keys (acc k)
-                  hint-fn $ {}
-                    :args $ [] 'Map 'Dynamic
-                    :return 'Map
-                  &map:assoc acc k $ &map:get m k
+          :code $ quote $ defn select-keys (m xs)
+            assert "|expected map for selecting" $ map? m
+            foldl xs (&{})
+              defn %select-keys (acc k)
+                hint-fn $ {}
+                  :args $ [] 'Map 'Dynamic
+                  :return 'Map
+                &map:assoc acc k $ &map:get m k
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V) (:: 'List 'K)
-              :generics $ [] 'K 'V
-              :return $ :: 'Map 'K 'V
-          :tests $ []
-            %{} 'TestEntry (:name |keeps-requested-and-missing-keys)
-              :code $ quote
-                assert= (&{} :a 1 :missing nil)
-                  select-keys (&{} :a 1 :b 2 :c 3) ([] :a :missing)
-              :tags $ #{} :core :unit
-        'set? $ %{} 'CodeEntry (:doc "|Check if a value is a set")
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V) (:: 'List 'K)
+            :generics $ [] 'K 'V
+            :return $ :: 'Map 'K 'V
+          :tests $ [] $ %{} 'TestEntry
+            :name |keeps-requested-and-missing-keys
+            :code $ quote $ assert= (&{} :a 1 :missing nil)
+              select-keys (&{} :a 1 :b 2 :c 3) ([] :a :missing)
+            :tags $ #{} :core :unit
+        'set? $ %{} 'CodeEntry
+          :doc "|Check if a value is a set"
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ assert= true
-              set? $ #{} 1 2 3
-            quote $ assert= false
-              set? $ [] 1 2 3
-            quote $ assert= false
-              set? $ {} (:a 1)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+            quote $ assert= true $ set? (#{} 1 2 3)
+            quote $ assert= false $ set? ([] 1 2 3)
+            quote $ assert= false $ set?
+              {} $ :a 1
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'sin $ %{} 'CodeEntry (:doc "|internal function for sine\nSyntax: (sin n)\nParams: n (number, radians)\nReturns: number\nReturns sine of angle in radians")
+        'sin $ %{} 'CodeEntry
+          :doc "|internal function for sine\nSyntax: (sin n)\nParams: n (number, radians)\nReturns: number\nReturns sine of angle in radians"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |evaluates-zero-and-quarter-turn)
-              :code $ quote
-                do
-                  assert= 0 $ sin 0
-                  assert= 1 $ round
-                    sin $ / 3.141592653589793 2
-              :tags $ #{} :core :unit
-        'slice $ %{} 'CodeEntry (:doc "|Extract a slice from a collection from index n to m")
-          :code $ quote
-            defn slice (xs n ? m)
-              if (nil? m)
-                if (list? xs) (&list:slice xs n)
-                  if (string? xs) (&str:slice xs n) (.slice xs n)
-                if (list? xs) (&list:slice xs n m)
-                  if (string? xs) (&str:slice xs n m) (.slice xs n m)
+          :tests $ [] $ %{} 'TestEntry
+            :name |evaluates-zero-and-quarter-turn
+            :code $ quote $ do
+              assert= 0 $ sin 0
+              assert= 1 $ round $ sin
+                / 3.141592653589793 2
+            :tags $ #{} :core :unit
+        'slice $ %{} 'CodeEntry
+          :doc "|Extract a slice from a collection from index n to m"
+          :code $ quote $ defn slice (xs n ? m)
+            if (nil? m)
+              if (list? xs) (&list:slice xs n)
+                if (string? xs) (&str:slice xs n) (.slice xs n)
+              if (list? xs) (&list:slice xs n m)
+                if (string? xs) (&str:slice xs n m) (.slice xs n m)
           :examples $ []
             quote $ assert= ([] 2 3)
               slice ([] 1 2 3 4) 1 3
             quote $ assert= ([] 3 4)
               slice ([] 1 2 3 4) 2
-          :schema $ :: 'Fn
-            {} (:return 'C)
-              :args $ [] 'C 'Number 'Number
-              :generics $ [] 'C
-              :where $ {} ('C 'Sliceable)
+          :schema $ :: 'Fn $ {} (:return 'C)
+            :args $ [] 'C 'Number 'Number
+            :generics $ [] 'C
+            :where $ {} $ 'C 'Sliceable
           :tests $ []
             %{} 'TestEntry (:name |slices-strings)
-              :code $ quote
-                do
-                  assert= |56789 $ slice |0123456789 5
-                  assert= |567 $ slice |0123456789 5 8
+              :code $ quote $ do
+                assert= |56789 $ slice |0123456789 5
+                assert= |567 $ slice |0123456789 5 8
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |slices-unicode-text-by-character)
-              :code $ quote
-                do
-                  assert= "|文字" $ slice "|中文字符串" 1 3
-                  assert= "|文字符串" $ slice "|中文字符串" 1
+            %{} 'TestEntry
+              :name |slices-unicode-text-by-character
+              :code $ quote $ do
+                assert= "|文字" $ slice "|中文字符串" 1 3
+                assert= "|文字符串" $ slice "|中文字符串" 1
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |preserves-slice-container-types)
-              :code $ quote
-                do
-                  assert-type
-                    slice ([] 1 2 3) 1
-                    :: 'List 'Number
-                  assert-type (slice |abc 1) 'String
+            %{} 'TestEntry
+              :name |preserves-slice-container-types
+              :code $ quote $ do
+                assert-type
+                  slice ([] 1 2 3) 1
+                  :: 'List 'Number
+                assert-type (slice |abc 1) 'String
               :tags $ #{} :core :unit
         'some-in? $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn some-in? (x path)
-              option:some? $ get-in x path
+          :code $ quote $ defn some-in? (x path)
+            option:some? $ get-in x path
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Dynamic (:: 'List 'K)
-              :generics $ [] 'K
-        'some? $ %{} 'CodeEntry (:doc "|Complement of nil?\nReturns true when the value is not nil.")
-          :code $ quote
-            defn some? (x)
-              not $ nil? x
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Dynamic $ :: 'List 'K
+            :generics $ [] 'K
+        'some? $ %{} 'CodeEntry
+          :doc "|Complement of nil?\nReturns true when the value is not nil."
+          :code $ quote $ defn some? (x)
+            not $ nil? x
           :examples $ []
-            quote $ assert= true (some? 0)
-            quote $ assert= false (some? nil)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
-        'sort $ %{} 'CodeEntry (:doc "|internal function for sorting lists\nSyntax: (sort list) or (sort list comparator)\nParams: list (list), comparator (function, optional)\nReturns: list\nReturns sorted list using natural order or custom comparator")
+            quote $ assert= true $ some? 0
+            quote $ assert= false $ some? nil
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
+        'sort $ %{} 'CodeEntry
+          :doc "|internal function for sorting lists\nSyntax: (sort list) or (sort list comparator)\nParams: list (list), comparator (function, optional)\nReturns: list\nReturns sorted list using natural order or custom comparator"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T)
-                :: 'Fn $ {} (:return 'Number)
-                  :args $ [] 'T 'T
-              :generics $ [] 'T
-              :return $ :: 'List 'T
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'Number)
+                :args $ [] 'T 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry
+            :name |orders-list-with-default-comparator
+            :code $ quote $ assert= ([] 1 2 3 4)
+              sort $ [] 4 3 2 1
+            :tags $ #{} :core :unit
+        'split $ %{} 'CodeEntry
+          :doc "|internal function for splitting strings\nSyntax: (split s delimiter)\nParams: s (string), delimiter (string)\nReturns: list of strings\nSplits string by delimiter into list of substrings"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String 'String
+            :return $ :: 'List 'String
           :tags $ #{} :builtin :internal
           :tests $ []
-            %{} 'TestEntry (:name |orders-list-with-default-comparator)
-              :code $ quote
-                assert= ([] 1 2 3 4)
-                  sort $ [] 4 3 2 1
+            %{} 'TestEntry
+              :name |splits-delimited-text
+              :code $ quote $ assert= ([] |a |b |c) (split |a,b,c |,)
               :tags $ #{} :core :unit
-        'split $ %{} 'CodeEntry (:doc "|internal function for splitting strings\nSyntax: (split s delimiter)\nParams: s (string), delimiter (string)\nReturns: list of strings\nSplits string by delimiter into list of substrings")
+            %{} 'TestEntry
+              :name |splits-unicode-characters-on-empty-delimiter
+              :code $ quote $ assert= ([] |a "|中" |b "|文" |c) (split "|a中b文c" |)
+              :tags $ #{} :core :unit
+        'split-lines $ %{} 'CodeEntry
+          :doc "|internal function for splitting lines\nSyntax: (split-lines s)\nParams: s (string)\nReturns: list of strings\nSplits string by newlines into list of lines"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String 'String
-              :return $ :: 'List 'String
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'List 'String
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |splits-delimited-text)
-              :code $ quote
-                assert= ([] |a |b |c) (split |a,b,c |,)
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |splits-unicode-characters-on-empty-delimiter)
-              :code $ quote
-                assert= ([] |a "|中" |b "|文" |c) (split "|a中b文c" |)
-              :tags $ #{} :core :unit
-        'split-lines $ %{} 'CodeEntry (:doc "|internal function for splitting lines\nSyntax: (split-lines s)\nParams: s (string)\nReturns: list of strings\nSplits string by newlines into list of lines")
+          :tests $ [] $ %{} 'TestEntry (:name |splits-newlines)
+            :code $ quote $ assert= ([] |a |b |c) (split-lines "|a\nb\nc")
+            :tags $ #{} :core :unit
+        'sqrt $ %{} 'CodeEntry
+          :doc "|internal function for square root\nSyntax: (sqrt n)\nParams: n (number)\nReturns: number\nReturns square root of n"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String
-              :return $ :: 'List 'String
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |splits-newlines)
-              :code $ quote
-                assert= ([] |a |b |c) (split-lines "|a\nb\nc")
-              :tags $ #{} :core :unit
-        'sqrt $ %{} 'CodeEntry (:doc "|internal function for square root\nSyntax: (sqrt n)\nParams: n (number)\nReturns: number\nReturns square root of n")
+          :tests $ [] $ %{} 'TestEntry
+            :name |finds-square-root
+            :code $ quote $ assert= 9 (sqrt 81)
+            :tags $ #{} :core :unit
+        'starts-with? $ %{} 'CodeEntry
+          :doc "|internal function for checking string prefix\nSyntax: (starts-with? s prefix)\nParams: s (string), prefix (string)\nReturns: boolean\nReturns true if string starts with prefix"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Number
-          :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |finds-square-root)
-              :code $ quote
-                assert= 9 $ sqrt 81
-              :tags $ #{} :core :unit
-        'starts-with? $ %{} 'CodeEntry (:doc "|internal function for checking string prefix\nSyntax: (starts-with? s prefix)\nParams: s (string), prefix (string)\nReturns: boolean\nReturns true if string starts with prefix")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'String 'String
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'String 'String
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |checks-prefix)
-              :code $ quote
-                do
-                  assert= true $ starts-with? |01234 |01
-                  assert= false $ starts-with? |01234 |12
+              :code $ quote $ do
+                assert= true $ starts-with? |01234 |01
+                assert= false $ starts-with? |01234 |12
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |supports-tag-and-string-prefixes)
-              :code $ quote
-                do
-                  assert= true $ starts-with? |01234 |01
-                  assert= true $ starts-with? (unsafe-coerce :a/b String) (unsafe-coerce :a/ String)
-                  assert= false $ starts-with? |01234 |12
+            %{} 'TestEntry
+              :name |supports-tag-and-string-prefixes
+              :code $ quote $ do
+                assert= true $ starts-with? |01234 |01
+                assert= true $ starts-with? (unsafe-coerce :a/b String) (unsafe-coerce :a/ String)
+                assert= false $ starts-with? |01234 |12
               :tags $ #{} :core :unit
-        'str $ %{} 'CodeEntry (:doc "|converts values to string and concatenates them")
-          :code $ quote
-            defn str (x0 & xs)
-              if (&list:empty? xs) (&str x0)
-                &str:concat x0 $ str & xs
+        'str $ %{} 'CodeEntry
+          :doc "|converts values to string and concatenates them"
+          :code $ quote $ defn str (x0 & xs)
+            if (&list:empty? xs) (&str x0)
+              &str:concat x0 $ str & xs
           :examples $ []
-            quote $ assert= |hello (str |hello)
-            quote $ assert= |abc (str |a |b |c)
-            quote $ assert= |123 (str 1 2 3)
-            quote $ assert= "|hello world" (str |hello "| " |world)
-          :schema $ :: 'Fn
-            {} (:rest 'Dynamic) (:return 'String)
-              :args $ [] 'Dynamic
+            quote $ assert= |hello $ str |hello
+            quote $ assert= |abc $ str |a |b |c
+            quote $ assert= |123 $ str 1 2 3
+            quote $ assert= "|hello world" $ str |hello "| " |world
+          :schema $ :: 'Fn $ {} (:rest 'Dynamic) (:return 'String)
+            :args $ [] 'Dynamic
           :tests $ []
-            %{} 'TestEntry (:name |concats-dynamic-values)
-              :code $ quote
-                do
-                  assert= |abc $ str |a |b |c
-                  assert= |123 $ str 1 2 3
+            %{} 'TestEntry
+              :name |concats-dynamic-values
+              :code $ quote $ do
+                assert= |abc $ str |a |b |c
+                assert= |123 $ str 1 2 3
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |omits-nil-and-renders-enums)
-              :code $ quote
-                do
-                  assert= |ac $ str |a nil |c
-                  assert= "|(%:: _ :a |世界 \"|海 洋\")" $ str (:: :a "|世界" "|海 洋")
+            %{} 'TestEntry
+              :name |omits-nil-and-renders-enums
+              :code $ quote $ do
+                assert= |ac $ str |a nil |c
+                assert= "|(%:: _ :a |世界 \"|海 洋\")" $ str $ :: :a "|世界" "|海 洋"
               :tags $ #{} :core :unit
-        'str-find-index $ %{} 'CodeEntry (:doc "|Find the first string index as Option<Number>, returning none when the pattern is absent.")
-          :code $ quote
-            defn str-find-index (text pattern)
-              let
-                  idx $ &str:find-index text pattern
-                if (&= idx -1) (%none) (%some idx)
+        'str-find-index $ %{} 'CodeEntry
+          :doc "|Find the first string index as Option<Number>, returning none when the pattern is absent."
+          :code $ quote $ defn str-find-index (text pattern)
+            let
+                idx $ &str:find-index text pattern
+              if (&= idx -1) (%none) (%some idx)
           :examples $ []
             quote $ assert= (%some 1) (str-find-index |abc |b)
             quote $ assert= (%none) (str-find-index |abc |z)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String 'String
-              :return $ :: 'Option 'Number
-        'str-spaced $ %{} 'CodeEntry (:doc "|converts values to string and joins them with spaces")
-          :code $ quote
-            defn str-spaced (& xs) (&str-spaced true & xs)
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String 'String
+            :return $ :: 'Option 'Number
+        'str-spaced $ %{} 'CodeEntry
+          :doc "|converts values to string and joins them with spaces"
+          :code $ quote $ defn str-spaced (& xs) (&str-spaced true & xs)
           :examples $ []
-            quote $ assert= "|a b c" (str-spaced |a |b |c)
-            quote $ assert= "|1 2 3" (str-spaced 1 2 3)
-          :schema $ :: 'Fn
-            {} (:rest 'Dynamic) (:return 'String)
-              :args $ []
-          :tests $ []
-            %{} 'TestEntry (:name |joins-non-nil-values)
-              :code $ quote
-                assert= "|a c 12" $ str-spaced |a nil |c 12
-              :tags $ #{} :core :unit
-        'string? $ %{} 'CodeEntry (:doc "|checks if value is a string")
+            quote $ assert= "|a b c" $ str-spaced |a |b |c
+            quote $ assert= "|1 2 3" $ str-spaced 1 2 3
+          :schema $ :: 'Fn $ {} (:rest 'Dynamic) (:return 'String)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry
+            :name |joins-non-nil-values
+            :code $ quote $ assert= "|a c 12" (str-spaced |a nil |c 12)
+            :tags $ #{} :core :unit
+        'string? $ %{} 'CodeEntry
+          :doc "|checks if value is a string"
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ assert= true (string? |hello)
-            quote $ assert= false (string? 123)
-            quote $ assert= false (string? :keyword)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+            quote $ assert= true $ string? |hello
+            quote $ assert= false $ string? 123
+            quote $ assert= false $ string? :keyword
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'strip-prefix $ %{} 'CodeEntry (:doc "|removes prefix from string if it starts with that prefix, returns original string otherwise")
-          :code $ quote
-            defn strip-prefix (s piece)
-              if (starts-with? s piece)
-                &str:slice s $ &str:count piece
-                , s
+        'strip-prefix $ %{} 'CodeEntry
+          :doc "|removes prefix from string if it starts with that prefix, returns original string otherwise"
+          :code $ quote $ defn strip-prefix (s piece)
+            if (starts-with? s piece)
+              &str:slice s $ &str:count piece
+              , s
           :examples $ []
-            quote $ assert= "| world" (strip-prefix "|hello world" |hello)
-            quote $ assert= |abc (strip-prefix |prefix-abc |prefix-)
-            quote $ assert= |hello (strip-prefix |hello |xyz)
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'String 'String
-          :tests $ []
-            %{} 'TestEntry (:name |removes-only-matching-prefix)
-              :code $ quote
-                do
-                  assert= |abc $ strip-prefix |ababc |ab
-                  assert= |0abc $ strip-prefix |0abc |ab
-              :tags $ #{} :core :unit
-        'strip-suffix $ %{} 'CodeEntry (:doc "|removes suffix from string if it ends with that suffix, returns original string otherwise")
-          :code $ quote
-            defn strip-suffix (s piece)
-              if (ends-with? s piece)
-                &str:slice s 0 $ &- (&str:count s) (&str:count piece)
-                , s
+            quote $ assert= "| world" $ strip-prefix "|hello world" |hello
+            quote $ assert= |abc $ strip-prefix |prefix-abc |prefix-
+            quote $ assert= |hello $ strip-prefix |hello |xyz
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String 'String
+          :tests $ [] $ %{} 'TestEntry
+            :name |removes-only-matching-prefix
+            :code $ quote $ do
+              assert= |abc $ strip-prefix |ababc |ab
+              assert= |0abc $ strip-prefix |0abc |ab
+            :tags $ #{} :core :unit
+        'strip-suffix $ %{} 'CodeEntry
+          :doc "|removes suffix from string if it ends with that suffix, returns original string otherwise"
+          :code $ quote $ defn strip-suffix (s piece)
+            if (ends-with? s piece)
+              &str:slice s 0 $ &- (&str:count s) (&str:count piece)
+              , s
           :examples $ []
-            quote $ assert= |hello (strip-suffix "|hello world" "| world")
-            quote $ assert= |abc (strip-suffix |abc-suffix |-suffix)
-            quote $ assert= |hello (strip-suffix |hello |xyz)
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'String 'String
-          :tests $ []
-            %{} 'TestEntry (:name |removes-only-matching-suffix)
-              :code $ quote
-                do
-                  assert= |aba $ strip-suffix |ababc |bc
-                  assert= |abc0 $ strip-suffix |abc0 |bc
-              :tags $ #{} :core :unit
-        'struct-def? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is a struct definition.")
-          :code $ quote
-            defn struct-def? (x)
-              &= (type-of x) :struct-def
+            quote $ assert= |hello $ strip-suffix "|hello world" "| world"
+            quote $ assert= |abc $ strip-suffix |abc-suffix |-suffix
+            quote $ assert= |hello $ strip-suffix |hello |xyz
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String 'String
+          :tests $ [] $ %{} 'TestEntry
+            :name |removes-only-matching-suffix
+            :code $ quote $ do
+              assert= |aba $ strip-suffix |ababc |bc
+              assert= |abc0 $ strip-suffix |abc0 |bc
+            :tags $ #{} :core :unit
+        'struct-def? $ %{} 'CodeEntry
+          :doc "|Predicate that checks whether a value is a struct definition."
+          :code $ quote $ defn struct-def? (x)
+            &= (type-of x) :struct-def
           :examples $ []
-            quote $ assert= true
-              struct-def? $ defstruct Person (:name 'String)
-            quote $ assert= false
-              struct-def? $ %{} _ (:x 1)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
-        'struct-definition $ %{} 'CodeEntry (:doc "|Return Option<StructDef> for a struct value.")
-          :code $ quote
-            defn struct-definition (value)
-              optionally $ &struct:definition value
+            quote $ assert= true $ struct-def?
+              defstruct Person $ :name 'String
+            quote $ assert= false $ struct-def?
+              %{} _ $ :x 1
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
+        'struct-definition $ %{} 'CodeEntry
+          :doc "|Return Option<StructDef> for a struct value."
+          :code $ quote $ defn struct-definition (value)
+            optionally $ &struct:definition value
+          :examples $ [] $ quote
+            let
+                User $ defstruct User $ :name 'String
+                user $ %{} User $ :name |Ada
+              assert= (%some User)
+                struct-definition user
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Struct
+            :return $ :: 'Option 'StructDef
+        'struct-match $ %{} 'CodeEntry
+          :doc "|Pattern-match a struct value by StructDef and fields."
+          :code $ quote $ defmacro struct-match (value & body)
+            if (&list:empty? body)
+              raise "|struct-match expected patterns for matching"
+              if (list? value)
+                &let
+                  v# $ gensym |v
+                  quasiquote $ &let (~v# ~value)
+                    assert "|expected struct value to match" $ struct? ~v#
+                    &struct-match-internal ~v# ~@body
+                quasiquote $ &let ()
+                  assert "|expected struct value to match" $ struct? ~value
+                  &struct-match-internal ~value ~@body
           :examples $ []
-            quote $ let
-                User $ defstruct User (:name 'String)
-                user $ %{} User (:name |Ada)
-              assert= (%some User) (struct-definition user)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Struct
-              :return $ :: 'Option 'StructDef
-        'struct-match $ %{} 'CodeEntry (:doc "|Pattern-match a struct value by StructDef and fields.")
-          :code $ quote
-            defmacro struct-match (value & body)
-              if (&list:empty? body) (raise "|struct-match expected patterns for matching")
-                if (list? value)
-                  &let
-                    v# $ gensym |v
-                    quasiquote $ &let (~v# ~value)
-                      assert "|expected struct value to match" $ struct? ~v#
-                      &struct-match-internal ~v# ~@body
-                  quasiquote $ &let ()
-                    assert "|expected struct value to match" $ struct? ~value
-                    &struct-match-internal ~value ~@body
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic)
+          :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-        'struct-with $ %{} 'CodeEntry (:doc "|Construct a new struct value by replacing declared fields.")
-          :code $ quote
-            defmacro struct-with (struct_value & pairs) (; "check if args are in pairs")
-              if
-                not $ and (list? pairs)
-                  every? pairs $ fn (xs)
-                    and (list? xs)
-                      &= 2 $ count xs
-                raise $ str-spaced "|struct-with expects a list of pairs (each with exactly two elements), got:" pairs
-              ; "|call &struct:with"
-              quasiquote $ &struct:with ~struct_value
-                ~@ $ &list:concat & pairs
+        'struct-with $ %{} 'CodeEntry
+          :doc "|Construct a new struct value by replacing declared fields."
+          :code $ quote $ defmacro struct-with (struct_value & pairs)
+            ; "check if args are in pairs"
+            if
+              not $ and (list? pairs)
+                every? pairs $ fn (xs)
+                  and (list? xs)
+                    &= 2 $ count xs
+              raise $ str-spaced "|struct-with expects a list of pairs (each with exactly two elements), got:" pairs
+            ; "|call &struct:with"
+            quasiquote $ &struct:with ~struct_value $ ~@ (&list:concat & pairs)
           :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Struct
-              :required $ [] (:: 'Expr 'Struct)
+          :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Struct
+            :required $ [] $ :: 'Expr 'Struct
           :tags $ #{} :macro
-        'struct? $ %{} 'CodeEntry (:doc "|Predicate that checks struct values, including nominal and anonymous structs. Passing a StructDef reports a migration error.")
+        'struct? $ %{} 'CodeEntry
+          :doc "|Predicate that checks struct values, including nominal and anonymous structs. Passing a StructDef reports a migration error."
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ assert= true
-              struct? $ %{} _ (:x 1)
-            quote $ assert= false
-              struct? $ {} (:x 1)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+            quote $ assert= true $ struct?
+              %{} _ $ :x 1
+            quote $ assert= false $ struct?
+              {} $ :x 1
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'swap! $ %{} 'CodeEntry (:doc "|Atomically updates a reference by applying a function to its current value and storing the result.")
-          :code $ quote
-            defmacro swap! (a f & args)
-              quasiquote $ reset! ~a
-                ~f (&atom:deref ~a) ~@args
+        'swap! $ %{} 'CodeEntry
+          :doc "|Atomically updates a reference by applying a function to its current value and storing the result."
+          :code $ quote $ defmacro swap! (a f & args)
+            quasiquote $ reset! ~a $ ~f (&atom:deref ~a) ~@args
           :examples $ []
             quote $ do (defatom *counter 0) (swap! *counter inc)
               assert= 1 $ deref *counter
             quote $ do (defatom *state 1) (swap! *state + 2)
               assert= 3 $ deref *state
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Unit
-              :required $ [] (:: 'Expr 'Ref) (:: 'Expr 'Fn)
-              :rest $ :: 'Expr 'Dynamic
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Unit
+            :required $ [] (:: 'Expr 'Ref) (:: 'Expr 'Fn)
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro :state
-        'symbol? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is a symbol literal (as opposed to strings, keywords, or other data).")
+        'symbol? $ %{} 'CodeEntry
+          :doc "|Predicate that checks whether a value is a symbol literal (as opposed to strings, keywords, or other data)."
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ assert= true
-              symbol? $ quote item
-            quote $ assert= false (symbol? |text)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+            quote $ assert= true $ symbol? (quote item)
+            quote $ assert= false $ symbol? |text
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'syntax? $ %{} 'CodeEntry (:doc "|detecting syntax element")
-          :code $ quote
-            defn syntax? (x)
-              &= (type-of x) :syntax
+        'syntax? $ %{} 'CodeEntry
+          :doc "|detecting syntax element"
+          :code $ quote $ defn syntax? (x)
+            &= (type-of x) :syntax
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
-        'tag? $ %{} 'CodeEntry (:doc "|Check if a value is a tag (keyword)")
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
+        'tag? $ %{} 'CodeEntry
+          :doc "|Check if a value is a tag (keyword)"
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ assert= true (tag? :keyword)
-            quote $ assert= false (tag? |string)
-            quote $ assert= false (tag? 123)
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
+            quote $ assert= true $ tag? :keyword
+            quote $ assert= false $ tag? |string
+            quote $ assert= false $ tag? 123
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
         'tagging-edn $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn tagging-edn (data)
-              if (list? data) (map data tagging-edn)
-                if (map? data)
-                  filter-map-kv data $ defn %tagging (k v)
-                    %:: MapEntryDecision :keep
-                      if (string? k) (turn-tag k) k
-                      tagging-edn v
-                  , data
+          :code $ quote $ defn tagging-edn (data)
+            if (list? data) (map data tagging-edn)
+              if (map? data)
+                filter-map-kv data $ defn %tagging (k v)
+                  %:: MapEntryDecision :keep
+                    if (string? k) (turn-tag k) k
+                    tagging-edn v
+                , data
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic
-        'take $ %{} 'CodeEntry (:doc "|Take the first n elements from a list")
-          :code $ quote
-            defn take (xs n)
-              if
-                >= n $ &list:count xs
-                , xs $ slice xs 0 n
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
+        'take $ %{} 'CodeEntry
+          :doc "|Take the first n elements from a list"
+          :code $ quote $ defn take (xs n)
+            if
+              >= n $ &list:count xs
+              , xs $ slice xs 0 n
           :examples $ []
             quote $ assert= ([] 1 2)
               take ([] 1 2 3 4) 2
             quote $ assert= ([] 1 2 3)
               take ([] 1 2 3) 5
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'Number
-              :generics $ [] 'T
-              :return $ :: 'List 'T
-          :tests $ []
-            %{} 'TestEntry (:name |takes-list-prefix)
-              :code $ quote
-                assert= ([] 0 1 2 3)
-                  take (range 10) 4
-              :tags $ #{} :core :unit
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'Number
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |takes-list-prefix
+            :code $ quote $ assert= ([] 0 1 2 3)
+              take (range 10) 4
+            :tags $ #{} :core :unit
         'take-last $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn take-last (xs n)
-              if
-                >= n $ &list:count xs
-                , xs $ slice xs
-                  - (&list:count xs) n
-                  &list:count xs
+          :code $ quote $ defn take-last (xs n)
+            if
+              >= n $ &list:count xs
+              , xs $ slice xs
+                - (&list:count xs) n
+                &list:count xs
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'T) 'Number
-              :generics $ [] 'T
-              :return $ :: 'List 'T
-          :tests $ []
-            %{} 'TestEntry (:name |takes-list-suffix)
-              :code $ quote
-                do
-                  assert= ([] 6 7 8 9)
-                    take-last (range 10) 4
-                  assert= ([] 0 1 2)
-                    take-last (range 3) 4
-              :tags $ #{} :core :unit
-        'thread-step? $ %{} 'CodeEntry (:doc "|Check whether a value is a valid thread-macro step form")
-          :code $ quote
-            defn thread-step? (x)
-              or (symbol? x) (tag? x)
-                = (type-of x) :method
-                = (type-of x) :fn
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'Number
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |takes-list-suffix
+            :code $ quote $ do
+              assert= ([] 6 7 8 9)
+                take-last (range 10) 4
+              assert= ([] 0 1 2)
+                take-last (range 3) 4
+            :tags $ #{} :core :unit
+        'thread-step? $ %{} 'CodeEntry
+          :doc "|Check whether a value is a valid thread-macro step form"
+          :code $ quote $ defn thread-step? (x)
+            or (symbol? x) (tag? x)
+              = (type-of x) :method
+              = (type-of x) :fn
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
-        'to-lispy-string $ %{} 'CodeEntry (:doc "|internal function for converting to Lisp string\nSyntax: (to-lispy-string value)\nParams: value (any)\nReturns: string\nConverts value to Lisp-style string representation")
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
+        'to-lispy-string $ %{} 'CodeEntry
+          :doc "|internal function for converting to Lisp string\nSyntax: (to-lispy-string value)\nParams: value (any)\nReturns: string\nConverts value to Lisp-style string representation"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'to-pairs $ %{} 'CodeEntry (:doc "|internal function for converting to pairs\nSyntax: (to-pairs map)\nParams: map (map)\nReturns: set\nConverts map to an unordered set of [key value] pairs")
+        'to-pairs $ %{} 'CodeEntry
+          :doc "|internal function for converting to pairs\nSyntax: (to-pairs map)\nParams: map (map)\nReturns: set\nConverts map to an unordered set of [key value] pairs"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
-              :return $ :: 'Set 'Enum
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'Set 'Enum
           :tags $ #{} :builtin :internal
-          :tests $ []
-            %{} 'TestEntry (:name |returns-unordered-entry-set)
-              :code $ quote
-                assert=
-                  #{} ([] :a 1) ([] :b 2)
-                  to-pairs $ &{} :a 1 :b 2
-              :tags $ #{} :core :unit
-        'trim $ %{} 'CodeEntry (:doc "|internal function for trimming strings\nSyntax: (trim s)\nParams: s (string)\nReturns: string\nRemoves whitespace from beginning and end of string")
+          :tests $ [] $ %{} 'TestEntry
+            :name |returns-unordered-entry-set
+            :code $ quote $ assert=
+              #{} ([] :a 1) ([] :b 2)
+              to-pairs $ &{} :a 1 :b 2
+            :tags $ #{} :core :unit
+        'trim $ %{} 'CodeEntry
+          :doc "|internal function for trimming strings\nSyntax: (trim s)\nParams: s (string)\nReturns: string\nRemoves whitespace from beginning and end of string"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'String
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String
           :tags $ #{} :builtin :internal
           :tests $ []
-            %{} 'TestEntry (:name |trims-whitespace-or-custom-chars)
-              :code $ quote
-                do
-                  assert= | $ trim "|    "
-                  assert= |1 $ trim "|  1  "
-                  assert= |1 $ trim "|\n1\n"
-                  assert= | $ trim |______ |_
-                  assert= |1 $ trim |__1__ |_
+            %{} 'TestEntry
+              :name |trims-whitespace-or-custom-chars
+              :code $ quote $ do
+                assert= | $ trim "|    "
+                assert= |1 $ trim "|  1  "
+                assert= |1 $ trim "|\n1\n"
+                assert= | $ trim |______ |_
+                assert= |1 $ trim |__1__ |_
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |trims-leading-space-from-string)
-              :code $ quote
-                assert= "|ab cd" $ trim "| ab cd"
+            %{} 'TestEntry
+              :name |trims-leading-space-from-string
+              :code $ quote $ assert= "|ab cd" (trim "| ab cd")
               :tags $ #{} :core :unit
-        'try $ %{} 'CodeEntry (:doc "|internal syntax for try-catch error handling\nSyntax: (try body (catch error handler))\nParams: body (expression), error (symbol), handler (expression)\nReturns: result of body or handler if error occurs\nProvides exception handling mechanism")
+        'try $ %{} 'CodeEntry
+          :doc "|internal syntax for try-catch error handling\nSyntax: (try body (catch error handler))\nParams: body (expression), error (symbol), handler (expression)\nReturns: result of body or handler if error occurs\nProvides exception handling mechanism"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :control :internal :syntax
-        'try-decode-map-as $ %{} 'CodeEntry (:doc "|Decode an evaluated Calcit value into a compile-time-derived type and return Result<T,String>. Runtime shape failures become :err with a structural path; invalid TypeExpr decoder derivation remains a compile-time error. Syntax: (try-decode-map-as value TypeExpr). Native and JavaScript are supported; WASM typed decoding is not yet supported.")
-          :code $ quote (def try-decode-map-as &runtime-implementation)
+        'try-decode-map-as $ %{} 'CodeEntry
+          :doc "|Decode an evaluated Calcit value into a compile-time-derived type and return Result<T,String>. Runtime shape failures become :err with a structural path; invalid TypeExpr decoder derivation remains a compile-time error. Syntax: (try-decode-map-as value TypeExpr). Native and JavaScript are supported; WASM typed decoding is not yet supported."
+          :code $ quote $ def try-decode-map-as &runtime-implementation
           :examples $ []
             quote $ try-decode-map-as 1 'Number
             quote $ try-decode-map-as |bad 'Number
-            quote $ match (try-decode-map-as |bad 'Number)
+            quote $ match
+              try-decode-map-as |bad 'Number
               (:err message)
                 assert= true $ string? message
               (:ok _) false
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic 'Dynamic
           :tags $ #{} :builtin :data :syntax
-          :tests $ []
-            %{} 'TestEntry (:name |result-contract)
-              :code $ quote
-                do
-                  assert= true $ result:ok? (try-decode-map-as 1 'Number)
-                  assert= true $ result:err? (try-decode-map-as |bad 'Number)
-                  assert-type (try-decode-map-as 1 'Number) (:: 'Result 'Number 'String)
-              :tags $ #{} :unit
-        'try-parse-cirru $ %{} 'CodeEntry (:doc "|Parse Cirru as Result<CirruQuote,String>; errors are returned instead of raised. Prefer the .parse-cirru String method in user code.")
-          :code $ quote
-            defn try-parse-cirru (source)
-              try
-                %ok $ parse-cirru source
-                fn (message) (%err message)
+          :tests $ [] $ %{} 'TestEntry (:name |result-contract)
+            :code $ quote $ do
+              assert= true $ result:ok? $ try-decode-map-as 1 'Number
+              assert= true $ result:err? $ try-decode-map-as |bad 'Number
+              assert-type
+                try-decode-map-as 1 'Number
+                :: 'Result 'Number 'String
+            :tags $ #{} :unit
+        'try-parse-cirru $ %{} 'CodeEntry
+          :doc "|Parse Cirru as Result<CirruQuote,String>; errors are returned instead of raised. Prefer the .parse-cirru String method in user code."
+          :code $ quote $ defn try-parse-cirru (source)
+            try
+              %ok $ parse-cirru source
+              fn (message) (%err message)
           :examples $ []
             quote $ |a .parse-cirru
             quote $
               char-from-code 41
               , .parse-cirru
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String
-              :return $ :: 'Result 'CirruQuote 'String
-          :tests $ []
-            %{} 'TestEntry (:name |result-method-contract)
-              :code $ quote
-                do
-                  assert= true $ result:ok? (|a .parse-cirru)
-                  assert= true $ result:err?
-                      char-from-code 41
-                      , .parse-cirru
-                  assert-type (|a .parse-cirru) (:: 'Result 'CirruQuote 'String)
-        'try-parse-cirru-edn $ %{} 'CodeEntry (:doc "|Parse Cirru EDN as Result<Dynamic,String>; the payload stays Dynamic because EDN is open data. Prefer the .parse-cirru-edn String method in user code.")
-          :code $ quote
-            defn try-parse-cirru-edn (source)
-              try
-                %ok $ parse-cirru-edn source
-                fn (message) (%err message)
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result 'CirruQuote 'String
+          :tests $ [] $ %{} 'TestEntry
+            :name |result-method-contract
+            :code $ quote $ do
+              assert= true $ result:ok? $ |a .parse-cirru
+              assert= true $ result:err? $
+                char-from-code 41
+                , .parse-cirru
+              assert-type (|a .parse-cirru) (:: 'Result 'CirruQuote 'String)
+        'try-parse-cirru-edn $ %{} 'CodeEntry
+          :doc "|Parse Cirru EDN as Result<Dynamic,String>; the payload stays Dynamic because EDN is open data. Prefer the .parse-cirru-edn String method in user code."
+          :code $ quote $ defn try-parse-cirru-edn (source)
+            try
+              %ok $ parse-cirru-edn source
+              fn (message) (%err message)
           :examples $ []
             quote $ |[] .parse-cirru-edn
             quote $
               char-from-code 41
               , .parse-cirru-edn
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String
-              :return $ :: 'Result 'Dynamic 'String
-          :tests $ []
-            %{} 'TestEntry (:name |result-method-contract)
-              :code $ quote
-                do
-                  assert= true $ result:ok? (|[] .parse-cirru-edn)
-                  assert= true $ result:err?
-                      char-from-code 41
-                      , .parse-cirru-edn
-                  assert-type (|[] .parse-cirru-edn) (:: 'Result 'Dynamic 'String)
-        'try-parse-cirru-edn-as $ %{} 'CodeEntry (:doc "|Parse Cirru EDN into a compile-time-derived closed type and return Result<T,String>. Runtime parse and shape failures become :err; invalid TypeExpr decoder derivation remains a compile-time error. Syntax: (try-parse-cirru-edn-as text TypeExpr). Native and JavaScript are supported; WASM typed decoding is not yet supported.")
-          :code $ quote (def try-parse-cirru-edn-as &runtime-implementation)
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result 'Dynamic 'String
+          :tests $ [] $ %{} 'TestEntry
+            :name |result-method-contract
+            :code $ quote $ do
+              assert= true $ result:ok? $ |[] .parse-cirru-edn
+              assert= true $ result:err? $
+                char-from-code 41
+                , .parse-cirru-edn
+              assert-type (|[] .parse-cirru-edn) (:: 'Result 'Dynamic 'String)
+        'try-parse-cirru-edn-as $ %{} 'CodeEntry
+          :doc "|Parse Cirru EDN into a compile-time-derived closed type and return Result<T,String>. Runtime parse and shape failures become :err; invalid TypeExpr decoder derivation remains a compile-time error. Syntax: (try-parse-cirru-edn-as text TypeExpr). Native and JavaScript are supported; WASM typed decoding is not yet supported."
+          :code $ quote $ def try-parse-cirru-edn-as &runtime-implementation
           :examples $ []
-            quote $ try-parse-cirru-edn-as "|[] 1 2" (:: 'List 'Number)
-            quote $ try-parse-cirru-edn-as "|[] 1 |bad" (:: 'List 'Number)
+            quote $ try-parse-cirru-edn-as "|[] 1 2" $ :: 'List 'Number
+            quote $ try-parse-cirru-edn-as "|[] 1 |bad" $ :: 'List 'Number
             quote $ match
               try-parse-cirru-edn-as "|[] 1 |bad" $ :: 'List 'Number
               (:err message)
                 assert= true $ string? message
               (:ok _) false
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'String 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'String 'Dynamic
           :tags $ #{} :builtin :data :syntax
-          :tests $ []
-            %{} 'TestEntry (:name |result-contract)
-              :code $ quote
-                do
-                  assert= true $ result:ok?
-                    try-parse-cirru-edn-as "|[] 1 2" $ :: 'List 'Number
-                  assert= true $ result:err?
-                    try-parse-cirru-edn-as "|[] 1 |bad" $ :: 'List 'Number
-                  assert-type
-                    try-parse-cirru-edn-as "|[] 1 2" $ :: 'List 'Number
-                    :: 'Result (:: 'List 'Number) 'String
-              :tags $ #{} :unit
-        'try-parse-cirru-list $ %{} 'CodeEntry (:doc "|Parse a Cirru expression list as Result<List,String>; errors are returned instead of raised. Prefer the .parse-cirru-list String method in user code.")
-          :code $ quote
-            defn try-parse-cirru-list (source)
-              try
-                %ok $ parse-cirru-list source
-                fn (message) (%err message)
+          :tests $ [] $ %{} 'TestEntry (:name |result-contract)
+            :code $ quote $ do
+              assert= true $ result:ok? $ try-parse-cirru-edn-as "|[] 1 2" (:: 'List 'Number)
+              assert= true $ result:err? $ try-parse-cirru-edn-as "|[] 1 |bad" (:: 'List 'Number)
+              assert-type
+                try-parse-cirru-edn-as "|[] 1 2" $ :: 'List 'Number
+                :: 'Result (:: 'List 'Number) 'String
+            :tags $ #{} :unit
+        'try-parse-cirru-list $ %{} 'CodeEntry
+          :doc "|Parse a Cirru expression list as Result<List,String>; errors are returned instead of raised. Prefer the .parse-cirru-list String method in user code."
+          :code $ quote $ defn try-parse-cirru-list (source)
+            try
+              %ok $ parse-cirru-list source
+              fn (message) (%err message)
           :examples $ []
             quote $ |a .parse-cirru-list
             quote $
               char-from-code 41
               , .parse-cirru-list
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String
-              :return $ :: 'Result 'List 'String
-          :tests $ []
-            %{} 'TestEntry (:name |result-method-contract)
-              :code $ quote
-                do
-                  assert= true $ result:ok? (|a .parse-cirru-list)
-                  assert= true $ result:err?
-                      char-from-code 41
-                      , .parse-cirru-list
-                  assert-type (|a .parse-cirru-list)
-                    :: 'Result (:: 'List 'Dynamic) 'String
-        'try-parse-json $ %{} 'CodeEntry (:doc "|Parse JSON as Result<Dynamic,String>; the payload stays Dynamic because JSON is open data. Prefer the .parse-json String method in user code.")
-          :code $ quote
-            defn try-parse-json (source)
-              try
-                %ok $ json-parse source
-                fn (message) (%err message)
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result 'List 'String
+          :tests $ [] $ %{} 'TestEntry
+            :name |result-method-contract
+            :code $ quote $ do
+              assert= true $ result:ok? $ |a .parse-cirru-list
+              assert= true $ result:err? $
+                char-from-code 41
+                , .parse-cirru-list
+              assert-type
+                |a .parse-cirru-list
+                :: 'Result (:: 'List 'Dynamic) 'String
+        'try-parse-json $ %{} 'CodeEntry
+          :doc "|Parse JSON as Result<Dynamic,String>; the payload stays Dynamic because JSON is open data. Prefer the .parse-json String method in user code."
+          :code $ quote $ defn try-parse-json (source)
+            try
+              %ok $ json-parse source
+              fn (message) (%err message)
           :examples $ []
             quote $ |1 .parse-json
             quote $ |{ .parse-json
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String
-              :return $ :: 'Result 'Dynamic 'String
-          :tests $ []
-            %{} 'TestEntry (:name |result-method-contract)
-              :code $ quote
-                do
-                  assert= true $ result:ok? (|1 .parse-json)
-                  assert= true $ result:err? (|{ .parse-json)
-                  assert-type (|1 .parse-json) (:: 'Result 'Dynamic 'String)
-        'try-read-dir $ %{} 'CodeEntry (:doc "|Compatibility function that lists a directory String as Result<List<String>,String>. Omit the trailing Option<Bool> for non-recursive listing, or pass %some true for recursion. New code should use FsPath .read-dir or .walk-dir. Native is supported; JavaScript requires a host read_dir injection, and WASM file effects are not yet supported.")
-          :code $ quote
-            defn try-read-dir (path recursive?)
-              try
-                %ok $ match recursive?
-                  (:some recursive?) (read-dir path recursive?)
-                  (:none) (read-dir path)
-                fn (message) (%err message)
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result 'Dynamic 'String
+          :tests $ [] $ %{} 'TestEntry
+            :name |result-method-contract
+            :code $ quote $ do
+              assert= true $ result:ok? $ |1 .parse-json
+              assert= true $ result:err? $ |{ .parse-json
+              assert-type (|1 .parse-json) (:: 'Result 'Dynamic 'String)
+        'try-read-dir $ %{} 'CodeEntry
+          :doc "|Compatibility function that lists a directory String as Result<List<String>,String>. Omit the trailing Option<Bool> for non-recursive listing, or pass %some true for recursion. New code should use FsPath .read-dir or .walk-dir. Native is supported; JavaScript requires a host read_dir injection, and WASM file effects are not yet supported."
+          :code $ quote $ defn try-read-dir (path recursive?)
+            try
+              %ok $ match recursive?
+                (:some recursive?) (read-dir path recursive?)
+                (:none) (read-dir path)
+              fn (message) (%err message)
           :examples $ []
             quote $ try-read-dir |src
-            quote $ try-read-dir |src (%some true)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String (:: 'Option 'Bool)
-              :return $ :: 'Result (:: 'List 'String) 'String
-        'try-read-file $ %{} 'CodeEntry (:doc "|兼容 String path 的 UTF-8 读取入口，复用 FsPath 的类型化 runtime boundary；新代码应使用 FsPath .read-text。")
-          :code $ quote
-            defn try-read-file (path) (&fs-read-text Result path "|try-read-file failed")
-          :examples $ []
-            quote $ try-read-file |/calcit-result-contract-does-not-exist/file
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String
-              :return $ :: 'Result 'String 'String
-        'try-write-file $ %{} 'CodeEntry (:doc "|兼容 String path 的 UTF-8 写入入口，复用 FsPath 的类型化 runtime boundary；新代码应使用 FsPath .write-text。")
-          :code $ quote
-            defn try-write-file (path content) (&fs-write-text Result path content "|try-write-file failed")
-          :examples $ []
-            quote $ try-write-file |/calcit-result-contract-does-not-exist/file |content
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'String 'String
-              :return $ :: 'Result 'Unit 'String
+            quote $ try-read-dir |src $ %some true
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String $ :: 'Option 'Bool
+            :return $ :: 'Result (:: 'List 'String) 'String
+        'try-read-file $ %{} 'CodeEntry
+          :doc "|兼容 String path 的 UTF-8 读取入口，复用 FsPath 的类型化 runtime boundary；新代码应使用 FsPath .read-text。"
+          :code $ quote $ defn try-read-file (path)
+            &fs-read-text Result path "|try-read-file failed"
+          :examples $ [] $ quote
+            try-read-file |/calcit-result-contract-does-not-exist/file
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result 'String 'String
+        'try-write-file $ %{} 'CodeEntry
+          :doc "|兼容 String path 的 UTF-8 写入入口，复用 FsPath 的类型化 runtime boundary；新代码应使用 FsPath .write-text。"
+          :code $ quote $ defn try-write-file (path content)
+            &fs-write-text Result path content "|try-write-file failed"
+          :examples $ [] $ quote
+            try-write-file |/calcit-result-contract-does-not-exist/file |content
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String 'String
+            :return $ :: 'Result 'Unit 'String
         'tuple-enum $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn tuple-enum (_value) (raise "|`tuple-enum` was removed; use `enum-definition`, which returns Option<EnumDef>")
+          :code $ quote $ defn tuple-enum (_value)
+            raise "|`tuple-enum` was removed; use `enum-definition`, which returns Option<EnumDef>"
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Dynamic
-              :return $ :: 'Option 'Tag
-        'tuple? $ %{} 'CodeEntry (:doc "|Removed legacy predicate. Use enum? for values or enum-def? for definitions.")
-          :code $ quote
-            defn tuple? (_value) (raise "|`tuple?` was removed; use `enum?` for enum values or `enum-def?` for definitions")
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Dynamic
+            :return $ :: 'Option 'Tag
+        'tuple? $ %{} 'CodeEntry
+          :doc "|Removed legacy predicate. Use enum? for values or enum-def? for definitions."
+          :code $ quote $ defn tuple? (_value)
+            raise "|`tuple?` was removed; use `enum?` for enum values or `enum-def?` for definitions"
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Dynamic
         'turn-str $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn turn-str (x) (turn-string x)
+          :code $ quote $ defn turn-str (x) (turn-string x)
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'T
-              :generics $ [] 'T
-        'turn-string $ %{} 'CodeEntry (:doc "|internal function for converting to string\nSyntax: (turn-string value)\nParams: value (any)\nReturns: string\nConverts value to string representation")
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'T
+            :generics $ [] 'T
+        'turn-string $ %{} 'CodeEntry
+          :doc "|internal function for converting to string\nSyntax: (turn-string value)\nParams: value (any)\nReturns: string\nConverts value to string representation"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'turn-symbol $ %{} 'CodeEntry (:doc "|internal function for converting to symbol\nSyntax: (turn-symbol value)\nParams: value (string, tag, or symbol)\nReturns: symbol\nConverts string, tag, or existing symbol to symbol type")
+        'turn-symbol $ %{} 'CodeEntry
+          :doc "|internal function for converting to symbol\nSyntax: (turn-symbol value)\nParams: value (string, tag, or symbol)\nReturns: symbol\nConverts string, tag, or existing symbol to symbol type"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal
-        'turn-tag $ %{} 'CodeEntry (:doc "|internal function for converting to tag\nSyntax: (turn-tag value)\nParams: value (string, symbol, or tag)\nReturns: tag\nConverts string, symbol, or existing tag to tag type")
+        'turn-tag $ %{} 'CodeEntry
+          :doc "|internal function for converting to tag\nSyntax: (turn-tag value)\nParams: value (string, symbol, or tag)\nReturns: tag\nConverts string, symbol, or existing tag to tag type"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ [] 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'type-of $ %{} 'CodeEntry (:doc "|internal function for getting type of value\nSyntax: (type-of value)\nParams: value (any)\nReturns: tag representing the type\nReturns type tag like :nil, :bool, :number, :string, :list, :map, :set, :fn, etc.")
+        'type-of $ %{} 'CodeEntry
+          :doc "|internal function for getting type of value\nSyntax: (type-of value)\nParams: value (any)\nReturns: tag representing the type\nReturns type tag like :nil, :bool, :number, :string, :list, :map, :set, :fn, etc."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ [] 'T
-              :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ [] 'T
+            :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'union $ %{} 'CodeEntry (:doc "|Returns the union of all sets")
-          :code $ quote
-            defn union (base & xs)
-              reduce xs base $ fn (acc item) (&union acc item)
+        'union $ %{} 'CodeEntry
+          :doc "|Returns the union of all sets"
+          :code $ quote $ defn union (base & xs)
+            reduce xs base $ fn (acc item) (&union acc item)
           :examples $ []
             quote $ assert= (#{} 1 2 3 4)
               union (#{} 1 2) (#{} 3 4)
             quote $ assert= (#{} 1 2 3)
               union (#{} 1) (#{} 2) (#{} 3)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Set 'T)
-              :generics $ [] 'T
-              :rest $ :: 'Set 'T
-              :return $ :: 'Set 'T
-          :tests $ []
-            %{} 'TestEntry (:name |combines-all-sets)
-              :code $ quote
-                assert= (#{} 1 2 3)
-                  union (#{} 1) (#{} 2) (#{} 3)
-              :tags $ #{} :core :unit
-        'unix-time-ms $ %{} 'CodeEntry (:doc "|返回 Unix epoch 以来的系统时间，单位为毫秒。系统时钟可能被宿主校准，不保证单调递增。")
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Set 'T
+            :generics $ [] 'T
+            :rest $ :: 'Set 'T
+            :return $ :: 'Set 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |combines-all-sets
+            :code $ quote $ assert= (#{} 1 2 3)
+              union (#{} 1) (#{} 2) (#{} 3)
+            :tags $ #{} :core :unit
+        'unix-time-ms $ %{} 'CodeEntry
+          :doc "|返回 Unix epoch 以来的系统时间，单位为毫秒。系统时钟可能被宿主校准，不保证单调递增。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
           :tags $ #{} :builtin :internal :io :time
-        'unsafe-coerce $ %{} 'CodeEntry (:doc "||Explicitly attach a type annotation without a runtime validation.\\nSyntax: (unsafe-coerce value type-expr)\\nParams: value (any), type-expr (type annotation)\\nReturns: value unchanged\\nUse only at trusted FFI boundaries so downstream code can be statically checked. The declared type is not validated at runtime.")
-          :code $ quote (def unsafe-coerce &runtime-implementation)
+        'unsafe-coerce $ %{} 'CodeEntry
+          :doc "||Explicitly attach a type annotation without a runtime validation.\\nSyntax: (unsafe-coerce value type-expr)\\nParams: value (any), type-expr (type annotation)\\nReturns: value unchanged\\nUse only at trusted FFI boundaries so downstream code can be statically checked. The declared type is not validated at runtime."
+          :code $ quote $ def unsafe-coerce &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :meta :syntax
         'unselect-keys $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn unselect-keys (m xs)
-              assert "|expected map for unselecting" $ map? m
-              foldl xs m $ defn %unselect-keys (acc k)
-                hint-fn $ {}
-                  :args $ [] (:: 'Map 'K 'V) 'K
-                  :return $ :: 'Map 'K 'V
-                &map:dissoc acc k
+          :code $ quote $ defn unselect-keys (m xs)
+            assert "|expected map for unselecting" $ map? m
+            foldl xs m $ defn %unselect-keys (acc k)
+              hint-fn $ {}
+                :args $ [] (:: 'Map 'K 'V) 'K
+                :return $ :: 'Map 'K 'V
+              &map:dissoc acc k
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V) (:: 'List 'K)
-              :generics $ [] 'K 'V
-              :return $ :: 'Map 'K 'V
-          :tests $ []
-            %{} 'TestEntry (:name |removes-existing-keys)
-              :code $ quote
-                assert= (&{} :c 3)
-                  unselect-keys (&{} :a 1 :b 2 :c 3) ([] :a :b)
-              :tags $ #{} :core :unit
-        'update $ %{} 'CodeEntry (:doc "|Applies a function to the value at a given key or index, returning a collection with the updated slot.")
-          :code $ quote
-            defn update (x k f)
-              if (map? x)
-                if (contains? x k)
-                  assoc x k $ f (&map:get x k)
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V) (:: 'List 'K)
+            :generics $ [] 'K 'V
+            :return $ :: 'Map 'K 'V
+          :tests $ [] $ %{} 'TestEntry
+            :name |removes-existing-keys
+            :code $ quote $ assert= (&{} :c 3)
+              unselect-keys (&{} :a 1 :b 2 :c 3) ([] :a :b)
+            :tags $ #{} :core :unit
+        'update $ %{} 'CodeEntry
+          :doc "|Applies a function to the value at a given key or index, returning a collection with the updated slot."
+          :code $ quote $ defn update (x k f)
+            if (map? x)
+              if (contains? x k)
+                assoc x k $ f $ &map:get x k
+                , x
+              if (list? x)
+                if (&list:contains? x k)
+                  assoc x k $ f $ &list:nth x k
                   , x
-                if (list? x)
-                  if (&list:contains? x k)
-                    assoc x k $ f (&list:nth x k)
-                    , x
-                  if (enum? x)
-                    assoc x k $ f (&enum:nth x k)
-                    if (struct? x)
-                      if (contains? x k)
-                        assoc x k $ f (&struct:get x k)
-                        , x
-                      raise $ &str:concat "|Cannot update key on item: " (to-lispy-string x)
+                if (enum? x)
+                  assoc x k $ f $ &enum:nth x k
+                  if (struct? x)
+                    if (contains? x k)
+                      assoc x k $ f $ &struct:get x k
+                      , x
+                    raise $ &str:concat "|Cannot update key on item: " $ to-lispy-string x
           :examples $ []
             quote $ assert=
               {} $ :count 2
@@ -8790,51 +8410,47 @@
               update
                 {} $ :count 1
                 , :missing inc
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Dynamic
-                :: 'Fn $ {} (:return 'T)
-                  :args $ [] 'T
-              :generics $ [] 'T
-          :tests $ []
-            %{} 'TestEntry (:name |updates-existing-map-and-list-slots)
-              :code $ quote
-                do
-                  assert= (&{} :a 11)
-                    update (&{} :a 1) :a $ fn (x) (+ x 10)
-                  assert= ([] 0 11 2)
-                    update ([] 0 1 2) 1 $ fn (x) (+ x 10)
-                  assert= ([] 0 1 2)
-                    update ([] 0 1 2) 4 $ fn (x) (+ x 10)
-              :tags $ #{} :core :unit
-        'update-in $ %{} 'CodeEntry (:doc "|Walk a nested path and update its leaf. The updater receives Option<T>: some for an existing leaf and none for a missing leaf. Missing intermediate containers are created as maps.")
-          :code $ quote
-            defn update-in (data path f)
-              list-match path
-                () $ f (%some data)
-                (p0 ps)
-                  if (struct? data) (raise "|update-in does not traverse Struct fields; use update with a direct field key")
-                    let
-                        current $ if (nil? data) (%none) (get data p0)
-                      assoc
-                        either data $ {}
-                        , p0 $ if (empty? ps) (f current)
-                          update-in
-                            option:unwrap-or current $ {}
-                            , ps f
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic 'Dynamic $ :: 'Fn
+              {} (:return 'T)
+                :args $ [] 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |updates-existing-map-and-list-slots
+            :code $ quote $ do
+              assert= (&{} :a 11)
+                update (&{} :a 1) :a $ fn (x) (+ x 10)
+              assert= ([] 0 11 2)
+                update ([] 0 1 2) 1 $ fn (x) (+ x 10)
+              assert= ([] 0 1 2)
+                update ([] 0 1 2) 4 $ fn (x) (+ x 10)
+            :tags $ #{} :core :unit
+        'update-in $ %{} 'CodeEntry
+          :doc "|Walk a nested path and update its leaf. The updater receives Option<T>: some for an existing leaf and none for a missing leaf. Missing intermediate containers are created as maps."
+          :code $ quote $ defn update-in (data path f)
+            list-match path
+              () $ f $ %some data
+              (p0 ps)
+                if (struct? data)
+                  raise "|update-in does not traverse Struct fields; use update with a direct field key"
+                  let
+                      current $ if (nil? data) (%none) (get data p0)
+                    assoc
+                      either data $ {}
+                      , p0 $ if (empty? ps) (f current)
+                        update-in
+                          option:unwrap-or current $ {}
+                          , ps f
           :examples $ []
             quote $ assert=
-              {} $ :a
-                {} $ :b 2
+              {} $ :a $ {} (:b 2)
               update-in
-                {} $ :a
-                  {} $ :b 1
+                {} $ :a $ {} (:b 1)
                 [] :a :b
                 fn (current)
                   inc $ option:unwrap current
             quote $ assert=
-              {} $ :profile
-                {} $ :visits 1
+              {} $ :profile $ {} (:visits 1)
               update-in {} ([] :profile :visits)
                 fn (current)
                   if (option:none? current) 1 $ raise |expected-missing-value
@@ -8845,132 +8461,125 @@
                 [] :x
                 fn (current)
                   &* (option:unwrap current) 2
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic (:: 'List 'K)
-                :: 'Fn $ {} (:return 'T)
-                  :args $ [] (:: 'Option 'T)
-              :generics $ [] 'K 'T
-          :tests $ []
-            %{} 'TestEntry (:name |updates-existing-nested-leaf)
-              :code $ quote
-                assert=
-                  &{} :a $ &{} :b 3
-                  update-in
-                    &{} :a $ &{} :b 1
-                    [] :a :b
-                    fn (value)
-                      + (option:unwrap value) 2
-              :tags $ #{} :core :unit
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic (:: 'List 'K)
+              :: 'Fn $ {} (:return 'T)
+                :args $ [] $ :: 'Option 'T
+            :generics $ [] 'K 'T
+          :tests $ [] $ %{} 'TestEntry
+            :name |updates-existing-nested-leaf
+            :code $ quote $ assert=
+              &{} :a $ &{} :b 3
+              update-in
+                &{} :a $ &{} :b 1
+                [] :a :b
+                fn (value)
+                  + (option:unwrap value) 2
+            :tags $ #{} :core :unit
         'vals $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn vals (x)
-              map (to-pairs x) &list:last
+          :code $ quote $ defn vals (x)
+            map (to-pairs x) &list:last
           :examples $ []
             quote $ assert= (#{} 1 2)
               vals $ {} (:a 1) (:b 2)
             quote $ assert= (#{})
               vals $ {}
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Map 'K 'V)
-              :generics $ [] 'K 'V
-              :return $ :: 'Set 'V
-          :tests $ []
-            %{} 'TestEntry (:name |deduplicates-map-values)
-              :code $ quote
-                assert= (#{} 1 2)
-                  vals $ &{} :a 1 :b 2 :c 2
-              :tags $ #{} :core :unit
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'Set 'V
+          :tests $ [] $ %{} 'TestEntry
+            :name |deduplicates-map-values
+            :code $ quote $ assert= (#{} 1 2)
+              vals $ &{} :a 1 :b 2 :c 2
+            :tags $ #{} :core :unit
         'w-js-log $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro w-js-log (x)
-              if (list? x)
-                &let
-                  v $ if
-                    = :eval $ &get-calcit-running-mode
-                    gensym |v
-                    , '_log_tmp
-                  quasiquote $ &let (~v ~x)
-                    js/console.log
-                      format-to-lisp $ quote ~x
-                      , |=> ~v
-                    ~ v
-                quasiquote $ &let ()
-                  js/console.log
-                    format-to-lisp $ quote ~x
-                    , |=> ~x
-                  ~ x
-          :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{} :platform-read
-              :expansion $ :: 'Expr 'T
-              :generics $ [] 'T
-              :required $ [] (:: 'Expr 'T)
-          :tags $ #{} :macro
-        'w-log $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro w-log (x)
+          :code $ quote $ defmacro w-js-log (x)
+            if (list? x)
               &let
                 v $ if
                   = :eval $ &get-calcit-running-mode
                   gensym |v
                   , '_log_tmp
-                if (list? x)
-                  quasiquote $ &let (~v ~x)
-                    println
-                      format-to-lisp $ quote ~x
-                      , |=> ~v
-                    ~ v
-                  quasiquote $ &let ()
-                    println
-                      format-to-lisp $ quote ~x
-                      , |=> ~x
-                    ~ x
+                quasiquote $ &let (~v ~x)
+                  js/console.log
+                    format-to-lisp $ quote ~x
+                    , |=> ~v
+                  ~ v
+              quasiquote $ &let ()
+                js/console.log
+                  format-to-lisp $ quote ~x
+                  , |=> ~x
+                ~ x
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{} :platform-read
-              :expansion $ :: 'Expr 'T
-              :generics $ [] 'T
-              :required $ [] (:: 'Expr 'T)
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{} :platform-read
+            :expansion $ :: 'Expr 'T
+            :generics $ [] 'T
+            :required $ [] $ :: 'Expr 'T
           :tags $ #{} :macro
-        'wait-ms $ %{} 'CodeEntry (:doc "|同步等待整数毫秒并返回 Result<Unit,String>；允许 0..4294967295，不做隐式舍入。")
-          :code $ quote
-            defn wait-ms (milliseconds)
-              if
-                and (round? milliseconds) (>= milliseconds 0) (<= milliseconds 4294967295)
-                &wait-ms Result milliseconds "|wait-ms failed"
-                %err "|wait-ms expected an integer millisecond duration in 0..4294967295"
+        'w-log $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defmacro w-log (x)
+            &let
+              v $ if
+                = :eval $ &get-calcit-running-mode
+                gensym |v
+                , '_log_tmp
+              if (list? x)
+                quasiquote $ &let (~v ~x)
+                  println
+                    format-to-lisp $ quote ~x
+                    , |=> ~v
+                  ~ v
+                quasiquote $ &let ()
+                  println
+                    format-to-lisp $ quote ~x
+                    , |=> ~x
+                  ~ x
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Number
-              :return $ :: 'Result 'Unit 'String
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{} :platform-read
+            :expansion $ :: 'Expr 'T
+            :generics $ [] 'T
+            :required $ [] $ :: 'Expr 'T
+          :tags $ #{} :macro
+        'wait-ms $ %{} 'CodeEntry
+          :doc "|同步等待整数毫秒并返回 Result<Unit,String>；允许 0..4294967295，不做隐式舍入。"
+          :code $ quote $ defn wait-ms (milliseconds)
+            if
+              and (round? milliseconds) (>= milliseconds 0) (<= milliseconds 4294967295)
+              &wait-ms Result milliseconds "|wait-ms failed"
+              %err "|wait-ms expected an integer millisecond duration in 0..4294967295"
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'Result 'Unit 'String
           :tags $ #{} :io :time
           :tests $ []
             %{} 'TestEntry (:name |zero-succeeds)
-              :code $ quote
-                assert= true $ match (wait-ms 0)
+              :code $ quote $ assert= true
+                match (wait-ms 0)
                   (:ok _) true
                   (:err _) false
               :tags $ #{} :core :time :unit :wasi
-            %{} 'TestEntry (:name |positive-succeeds)
-              :code $ quote
-                assert= true $ match (wait-ms 1)
+            %{} 'TestEntry
+              :name |positive-succeeds
+              :code $ quote $ assert= true
+                match (wait-ms 1)
                   (:ok _) true
                   (:err _) false
               :tags $ #{} :core :time :unit :wasi
-            %{} 'TestEntry (:name |rejects-fractional)
-              :code $ quote
-                assert= true $ match (wait-ms 1.5)
+            %{} 'TestEntry
+              :name |rejects-fractional
+              :code $ quote $ assert= true
+                match (wait-ms 1.5)
                   (:ok _) false
                   (:err message) (string? message)
               :tags $ #{} :core :time :unit :wasi
-            %{} 'TestEntry (:name |rejects-out-of-range)
-              :code $ quote
-                assert= true $ and
+            %{} 'TestEntry
+              :name |rejects-out-of-range
+              :code $ quote $ assert= true
+                and
                   match (wait-ms -1)
                     (:ok _) false
                     (:err message) (string? message)
@@ -8978,517 +8587,499 @@
                     (:ok _) false
                     (:err message) (string? message)
               :tags $ #{} :core :time :unit :wasi
-        'when $ %{} 'CodeEntry (:doc "|Conditional macro that evaluates its body only when the test expression is truthy, returning the last body value.")
-          :code $ quote
-            defmacro when (condition & body)
-              if (&list:empty? body) (raise "|when expects at least 1 body expression")
-              if
-                &= 1 $ &list:count body
-                quasiquote $ if ~condition
-                  ~ $ &list:nth body 0
-                quasiquote $ if ~condition
-                  &let () ~@body
+        'when $ %{} 'CodeEntry
+          :doc "|Conditional macro that evaluates its body only when the test expression is truthy, returning the last body value."
+          :code $ quote $ defmacro when (condition & body)
+            if (&list:empty? body)
+              raise "|when expects at least 1 body expression"
+            if
+              &= 1 $ &list:count body
+              quasiquote $ if ~condition $ ~ (&list:nth body 0)
+              quasiquote $ if ~condition $ &let () ~@body
           :examples $ []
-            quote $ assert= 4
-              when (&> 3 2) (inc 3)
-            quote $ assert= nil
-              when false $ inc 1
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic)
-              :rest $ :: 'Expr 'Dynamic
+            quote $ assert= 4 $ when (&> 3 2) (inc 3)
+            quote $ assert= nil $ when false (inc 1)
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] $ :: 'Expr 'Dynamic
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-        'when-let $ %{} 'CodeEntry (:doc "|Consume Option<T>, evaluate the body only for some, and return Option<R>.")
-          :code $ quote
-            defmacro when-let (pair & body)
+        'when-let $ %{} 'CodeEntry
+          :doc "|Consume Option<T>, evaluate the body only for some, and return Option<R>."
+          :code $ quote $ defmacro when-let (pair & body)
+            if
+              not $ and (list? pair)
+                &= 2 $ count pair
+              raise $ str-spaced "|expected a pair, got:" pair
+            &let
+              x $ &list:nth pair 0
               if
-                not $ and (list? pair)
-                  &= 2 $ count pair
-                raise $ str-spaced "|expected a pair, got:" pair
-              &let
-                x $ &list:nth pair 0
-                if
-                  not $ symbol? x
-                  raise $ str-spaced "|expected a symbol for var name, got:" x
-                quasiquote $ option:fold
-                  ~ $ &list:nth pair 1
-                  fn () $ %none
-                  fn (~x)
-                    %some $ do (~@ body)
+                not $ symbol? x
+                raise $ str-spaced "|expected a symbol for var name, got:" x
+              quasiquote $ option:fold
+                ~ $ &list:nth pair 1
+                fn () $ %none
+                fn (~x)
+                  %some $ do $ ~@ body
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr (:: 'Option 'Dynamic)
-              :required $ [] 'SyntaxList
-              :rest $ :: 'Expr 'Dynamic
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr $ :: 'Option 'Dynamic
+            :required $ [] 'SyntaxList
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         'when-not $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro when-not (condition & body)
-              if (&list:empty? body) (raise "|when-not expects at least 1 body expression")
-              if
-                &= 1 $ &list:count body
-                quasiquote $ if (not ~condition)
-                  ~ $ &list:nth body 0
-                quasiquote $ if (not ~condition)
-                  &let () ~@body
+          :code $ quote $ defmacro when-not (condition & body)
+            if (&list:empty? body)
+              raise "|when-not expects at least 1 body expression"
+            if
+              &= 1 $ &list:count body
+              quasiquote $ if (not ~condition)
+                ~ $ &list:nth body 0
+              quasiquote $ if (not ~condition)
+                &let () ~@body
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic)
-              :rest $ :: 'Expr 'Dynamic
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] $ :: 'Expr 'Dynamic
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         'with-cpu-time $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro with-cpu-time (x)
-              let
-                  started $ gensym |started
-                  v $ gensym |v
-                quasiquote $ let
-                    ~started $ cpu-time
-                    ~v ~x
-                  println |[cpu-time]
-                    format-to-lisp $ quote ~x
-                    , |=>
-                      .format
-                        &- (cpu-time) ~started
-                        , 3
-                      , |ms
-                  ~ v
+          :code $ quote $ defmacro with-cpu-time (x)
+            let
+                started $ gensym |started
+                v $ gensym |v
+              quasiquote $ let
+                  ~started $ cpu-time
+                  ~v ~x
+                println |[cpu-time]
+                  format-to-lisp $ quote ~x
+                  , |=>
+                    .format
+                      &- (cpu-time) ~started
+                      , 3
+                    , |ms
+                ~ v
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'T
-              :generics $ [] 'T
-              :required $ [] (:: 'Expr 'T)
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'T
+            :generics $ [] 'T
+            :required $ [] $ :: 'Expr 'T
           :tags $ #{} :io :log :macro
-        'with-gensyms $ %{} 'CodeEntry (:doc "|Macro helper for hygienic local names\nSyntax: (with-gensyms (a b ...) body...)\nBinds each symbol to a fresh gensym and evaluates body with those bindings.")
-          :code $ quote
-            defmacro with-gensyms (names & body)
-              assert "|with-gensyms expects a list of symbols" $ and (list? names) (every? names symbol?)
-              reduce (reverse names)
-                quasiquote $ do (~@ body)
-                fn (acc n)
-                  quasiquote $ let
-                      ~n $ gensym
-                    , ~acc
-          :examples $ []
-            quote $ with-gensyms (v)
+        'with-gensyms $ %{} 'CodeEntry
+          :doc "|Macro helper for hygienic local names\nSyntax: (with-gensyms (a b ...) body...)\nBinds each symbol to a fresh gensym and evaluates body with those bindings."
+          :code $ quote $ defmacro with-gensyms (names & body)
+            assert "|with-gensyms expects a list of symbols" $ and (list? names) (every? names symbol?)
+            reduce (reverse names)
+              quasiquote $ do $ ~@ body
+              fn (acc n)
+                quasiquote $ let
+                    ~n $ gensym
+                  , ~acc
+          :examples $ [] $ quote
+            with-gensyms (v)
               quasiquote $ &let (~v 1) ~v
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] 'SyntaxList
+          :schema $ :: 'Macro $ {} (:rest 'Syntax)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] 'SyntaxList
           :tags $ #{} :macro
-        'with-type-slot $ %{} 'CodeEntry (:doc "|Compatibility form for a local compile-time type-slot override. Syntax: (with-type-slot (:slot-name TypeExpr) body...). The form is always erased during preprocessing; it evaluates bodies in order and returns the last value. New entry points should prefer :type-slots configuration.")
+        'with-type-slot $ %{} 'CodeEntry
+          :doc "|Compatibility form for a local compile-time type-slot override. Syntax: (with-type-slot (:slot-name TypeExpr) body...). The form is always erased during preprocessing; it evaluates bodies in order and returns the last value. New entry points should prefer :type-slots configuration."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal :meta :state :syntax
         'wo-js-log $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro wo-js-log (x) x
+          :code $ quote $ defmacro wo-js-log (x) x
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'T
-              :generics $ [] 'T
-              :required $ [] (:: 'Expr 'T)
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'T
+            :generics $ [] 'T
+            :required $ [] $ :: 'Expr 'T
           :tags $ #{} :macro
         'wo-log $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro wo-log (x) x
+          :code $ quote $ defmacro wo-log (x) x
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'T
-              :generics $ [] 'T
-              :required $ [] (:: 'Expr 'T)
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'T
+            :generics $ [] 'T
+            :required $ [] $ :: 'Expr 'T
           :tags $ #{} :macro
-        'write-file $ %{} 'CodeEntry (:doc "|internal function for writing files\nSyntax: (write-file filepath content)\nParams: filepath (string), content (string)\nReturns: &unit or error\nWrites string content to file")
+        'write-file $ %{} 'CodeEntry
+          :doc "|internal function for writing files\nSyntax: (write-file filepath content)\nParams: filepath (string), content (string)\nReturns: &unit or error\nWrites string content to file"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ [] 'String 'String
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] 'String 'String
           :tags $ #{} :builtin :file :internal :io
         'zipmap $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn zipmap (xs0 ys0)
-              apply-args
-                  {}
-                  , xs0 ys0
-                fn (acc xs ys)
-                  if
-                    if (&list:empty? xs) true $ &list:empty? ys
-                    , acc $ recur
-                      &map:assoc acc (&list:first xs) (&list:first ys)
-                      rest xs
-                      rest ys
+          :code $ quote $ defn zipmap (xs0 ys0)
+            apply-args
+                {}
+                , xs0 ys0
+              fn (acc xs ys)
+                if
+                  if (&list:empty? xs) true $ &list:empty? ys
+                  , acc $ recur
+                    &map:assoc acc (&list:first xs) (&list:first ys)
+                    rest xs
+                    rest ys
           :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'List 'K) (:: 'List 'V)
-              :generics $ [] 'K 'V
-              :return $ :: 'Map 'K 'V
-          :tests $ []
-            %{} 'TestEntry (:name |pairs-equally-sized-lists)
-              :code $ quote
-                assert= (&{} :a 1 :b 2 :c 3)
-                  zipmap ([] :a :b :c) ([] 1 2 3)
-              :tags $ #{} :core :unit
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'K) (:: 'List 'V)
+            :generics $ [] 'K 'V
+            :return $ :: 'Map 'K 'V
+          :tests $ [] $ %{} 'TestEntry
+            :name |pairs-equally-sized-lists
+            :code $ quote $ assert= (&{} :a 1 :b 2 :c 3)
+              zipmap ([] :a :b :c) ([] 1 2 3)
+            :tags $ #{} :core :unit
         '{,} $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro {,} (& body)
-              &let
-                xs $ &list:filter body
-                  defn &{,} (x)
-                    hint-fn $ {} (:return 'Bool)
-                    not= x ',
-                quasiquote $ pairs-map
-                  section-by ([] ~@xs) 2
+          :code $ quote $ defmacro {,} (& body)
+            &let
+              xs $ &list:filter body $ defn &{,} (x)
+                hint-fn $ {} $ :return 'Bool
+                not= x ',
+              quasiquote $ pairs-map $ section-by ([] ~@xs) 2
           :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'Syntax)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Map
-              :required $ []
+          :schema $ :: 'Macro $ {} (:rest 'Syntax)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Map
+            :required $ []
           :tags $ #{} :macro
-        '{} $ %{} 'CodeEntry (:doc "|macro for creating hashmaps\nSyntax: ({} (:key value) ...)\nParams: pairs (key-value pairs)\nReturns: hashmap\nCreates a hashmap from key-value pairs")
-          :code $ quote
-            defmacro {} (& xs)
-              if
-                not $ every? xs
-                  fn (pair)
-                    and (list? pair)
-                      &= 2 $ &list:count pair
-                raise $ str "|{} expects pairs of lists with exactly two elements each, got: " xs
-              &let
-                ys $ &list:concat & xs
-                quasiquote $ &{} ~@ys
+        '{} $ %{} 'CodeEntry
+          :doc "|macro for creating hashmaps\nSyntax: ({} (:key value) ...)\nParams: pairs (key-value pairs)\nReturns: hashmap\nCreates a hashmap from key-value pairs"
+          :code $ quote $ defmacro {} (& xs)
+            if
+              not $ every? xs $ fn (pair)
+                and (list? pair)
+                  &= 2 $ &list:count pair
+              raise $ str "|{} expects pairs of lists with exactly two elements each, got: " xs
+            &let
+              ys $ &list:concat & xs
+              quasiquote $ &{} ~@ys
           :examples $ []
             quote $ {} (:a 1) (:b 2)
             quote $ {} (:name |Alice) (:age 30)
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Map
-              :required $ []
+          :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Map
+            :required $ []
           :tags $ #{} :macro
-        '~ $ %{} 'CodeEntry (:doc "|internal syntax for interpolating value in macro\nSyntax: (~ expr) inside quasiquote\nParams: expr (expression to evaluate)\nReturns: evaluated expression\nUnquotes expression inside quasiquote")
+        '~ $ %{} 'CodeEntry
+          :doc "|internal syntax for interpolating value in macro\nSyntax: (~ expr) inside quasiquote\nParams: expr (expression to evaluate)\nReturns: evaluated expression\nUnquotes expression inside quasiquote"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        '~@ $ %{} 'CodeEntry (:doc "|internal syntax for spreading interpolate value in macro\nSyntax: (~@ list-expr) inside quasiquote\nParams: list-expr (expression that evaluates to list)\nReturns: spliced list elements\nUnquotes and splices list elements inside quasiquote")
+        '~@ $ %{} 'CodeEntry
+          :doc "|internal syntax for spreading interpolate value in macro\nSyntax: (~@ list-expr) inside quasiquote\nParams: list-expr (expression that evaluates to list)\nReturns: spliced list elements\nUnquotes and splices list elements inside quasiquote"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-      :ns $ %{} 'NsEntry (:doc "|built-in function and macros in `calcit.core`")
-        :code $ quote
-          ns calcit.core $ :require (calcit.internal :as internal)
+      :ns $ %{} 'NsEntry
+        :doc "|built-in function and macros in `calcit.core`"
+        :code $ quote $ ns calcit.core
+          :require $ calcit.internal :as internal
     'calcit.internal $ %{} 'FileEntry
       :defs $ {}
-        '&core-add-list-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Add on list")
-          :code $ quote
-            def &core-add-list-impl $ &impl::new :&core-add-list-impl (:: :add &list:concat)
+        '&core-add-list-impl $ %{} 'CodeEntry
+          :doc "|Core trait impl for Add on list"
+          :code $ quote $ def &core-add-list-impl
+            &impl::new :&core-add-list-impl $ :: :add &list:concat
           :examples $ []
           :schema $ :: 'Dynamic
-        '&core-add-number-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Add on number")
-          :code $ quote
-            def &core-add-number-impl $ &impl::new :&core-add-number-impl (:: :add &+)
+        '&core-add-number-impl $ %{} 'CodeEntry
+          :doc "|Core trait impl for Add on number"
+          :code $ quote $ def &core-add-number-impl
+            &impl::new :&core-add-number-impl $ :: :add &+
           :examples $ []
           :schema $ :: 'Dynamic
-        '&core-add-string-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Add on string")
-          :code $ quote
-            def &core-add-string-impl $ &impl::new :&core-add-string-impl (:: :add &str:concat)
+        '&core-add-string-impl $ %{} 'CodeEntry
+          :doc "|Core trait impl for Add on string"
+          :code $ quote $ def &core-add-string-impl
+            &impl::new :&core-add-string-impl $ :: :add &str:concat
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-compare-number-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-compare-number-impl $ &impl::new :&core-compare-number-impl (:: :compare &compare)
+          :code $ quote $ def &core-compare-number-impl
+            &impl::new :&core-compare-number-impl $ :: :compare &compare
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-compare-string-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-compare-string-impl $ &impl::new :&core-compare-string-impl (:: :compare &str:compare)
+          :code $ quote $ def &core-compare-string-impl
+            &impl::new :&core-compare-string-impl $ :: :compare &str:compare
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-contains-enum-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-contains-enum-impl $ &impl::new :&core-contains-enum-impl
-              :: :contains? $ fn (x k)
-                if (&>= k 0)
-                  &< k $ &enum:count x
-                  , false
+          :code $ quote $ def &core-contains-enum-impl
+            &impl::new :&core-contains-enum-impl $ :: :contains? $ fn (x k)
+              if (&>= k 0)
+                &< k $ &enum:count x
+                , false
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-contains-list-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-contains-list-impl $ &impl::new :&core-contains-list-impl (:: :contains? &list:contains?)
+          :code $ quote $ def &core-contains-list-impl
+            &impl::new :&core-contains-list-impl $ :: :contains? &list:contains?
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-contains-map-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-contains-map-impl $ &impl::new :&core-contains-map-impl (:: :contains? &map:contains?)
+          :code $ quote $ def &core-contains-map-impl
+            &impl::new :&core-contains-map-impl $ :: :contains? &map:contains?
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-contains-set-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-contains-set-impl $ &impl::new :&core-contains-set-impl (:: :contains? &set:includes?)
+          :code $ quote $ def &core-contains-set-impl
+            &impl::new :&core-contains-set-impl $ :: :contains? &set:includes?
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-contains-string-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-contains-string-impl $ &impl::new :&core-contains-string-impl (:: :contains? &str:contains?)
+          :code $ quote $ def &core-contains-string-impl
+            &impl::new :&core-contains-string-impl $ :: :contains? &str:contains?
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-contains-struct-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-contains-struct-impl $ &impl::new :&core-contains-struct-impl (:: :contains? &struct:contains?)
+          :code $ quote $ def &core-contains-struct-impl
+            &impl::new :&core-contains-struct-impl $ :: :contains? &struct:contains?
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-countable-enum-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-countable-enum-impl $ &impl::new :&core-countable-enum-impl (:: :count &enum:count)
+          :code $ quote $ def &core-countable-enum-impl
+            &impl::new :&core-countable-enum-impl $ :: :count &enum:count
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-countable-list-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-countable-list-impl $ &impl::new :&core-countable-list-impl (:: :count &list:count)
+          :code $ quote $ def &core-countable-list-impl
+            &impl::new :&core-countable-list-impl $ :: :count &list:count
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-countable-map-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-countable-map-impl $ &impl::new :&core-countable-map-impl (:: :count &map:count)
+          :code $ quote $ def &core-countable-map-impl
+            &impl::new :&core-countable-map-impl $ :: :count &map:count
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-countable-set-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-countable-set-impl $ &impl::new :&core-countable-set-impl (:: :count &set:count)
+          :code $ quote $ def &core-countable-set-impl
+            &impl::new :&core-countable-set-impl $ :: :count &set:count
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-countable-string-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-countable-string-impl $ &impl::new :&core-countable-string-impl (:: :count &str:count)
+          :code $ quote $ def &core-countable-string-impl
+            &impl::new :&core-countable-string-impl $ :: :count &str:count
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-countable-struct-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-countable-struct-impl $ &impl::new :&core-countable-struct-impl (:: :count &struct:count)
+          :code $ quote $ def &core-countable-struct-impl
+            &impl::new :&core-countable-struct-impl $ :: :count &struct:count
           :examples $ []
           :schema $ :: 'Dynamic
-        '&core-debug-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Debug")
-          :code $ quote
-            def &core-debug-impl $ &impl::new :&core-debug-impl (:: :debug &str)
+        '&core-debug-impl $ %{} 'CodeEntry
+          :doc "|Core trait impl for Debug"
+          :code $ quote $ def &core-debug-impl
+            &impl::new :&core-debug-impl $ :: :debug &str
           :examples $ []
           :schema $ :: 'Dynamic
-        '&core-eq-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Eq")
-          :code $ quote
-            def &core-eq-impl $ &impl::new :&core-eq-impl (:: :eq? &=)
+        '&core-eq-impl $ %{} 'CodeEntry
+          :doc "|Core trait impl for Eq"
+          :code $ quote $ def &core-eq-impl
+            &impl::new :&core-eq-impl $ :: :eq? &=
           :examples $ []
           :schema $ :: 'Dynamic
-        '&core-len-list-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Len on list")
-          :code $ quote
-            def &core-len-list-impl $ &impl::new :&core-len-list-impl (:: :len &list:count)
+        '&core-len-list-impl $ %{} 'CodeEntry
+          :doc "|Core trait impl for Len on list"
+          :code $ quote $ def &core-len-list-impl
+            &impl::new :&core-len-list-impl $ :: :len &list:count
           :examples $ []
           :schema $ :: 'Dynamic
-        '&core-len-map-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Len on map")
-          :code $ quote
-            def &core-len-map-impl $ &impl::new :&core-len-map-impl (:: :len &map:count)
+        '&core-len-map-impl $ %{} 'CodeEntry
+          :doc "|Core trait impl for Len on map"
+          :code $ quote $ def &core-len-map-impl
+            &impl::new :&core-len-map-impl $ :: :len &map:count
           :examples $ []
           :schema $ :: 'Dynamic
-        '&core-len-set-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Len on set")
-          :code $ quote
-            def &core-len-set-impl $ &impl::new :&core-len-set-impl (:: :len &set:count)
+        '&core-len-set-impl $ %{} 'CodeEntry
+          :doc "|Core trait impl for Len on set"
+          :code $ quote $ def &core-len-set-impl
+            &impl::new :&core-len-set-impl $ :: :len &set:count
           :examples $ []
           :schema $ :: 'Dynamic
-        '&core-len-string-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Len on string")
-          :code $ quote
-            def &core-len-string-impl $ &impl::new :&core-len-string-impl (:: :len &str:count)
+        '&core-len-string-impl $ %{} 'CodeEntry
+          :doc "|Core trait impl for Len on string"
+          :code $ quote $ def &core-len-string-impl
+            &impl::new :&core-len-string-impl $ :: :len &str:count
           :examples $ []
           :schema $ :: 'Dynamic
-        '&core-mappable-list-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Mappable on list")
-          :code $ quote
-            def &core-mappable-list-impl $ &impl::new :&core-mappable-list-impl (:: :map &list:map)
+        '&core-mappable-list-impl $ %{} 'CodeEntry
+          :doc "|Core trait impl for Mappable on list"
+          :code $ quote $ def &core-mappable-list-impl
+            &impl::new :&core-mappable-list-impl $ :: :map &list:map
           :examples $ []
           :schema $ :: 'Dynamic
-        '&core-mappable-map-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Mappable on map")
-          :code $ quote
-            def &core-mappable-map-impl $ &impl::new :&core-mappable-map-impl (:: :map &map:map)
+        '&core-mappable-map-impl $ %{} 'CodeEntry
+          :doc "|Core trait impl for Mappable on map"
+          :code $ quote $ def &core-mappable-map-impl
+            &impl::new :&core-mappable-map-impl $ :: :map &map:map
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-mappable-set-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            def &core-mappable-set-impl $ &impl::new :&core-mappable-set-impl (:: :map &set:map)
+          :code $ quote $ def &core-mappable-set-impl
+            &impl::new :&core-mappable-set-impl $ :: :map &set:map
           :examples $ []
           :schema $ :: 'Dynamic
-        '&core-multiply-number-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Multiply on number")
-          :code $ quote
-            def &core-multiply-number-impl $ &impl::new :&core-multiply-number-impl (:: :multiply &*)
+        '&core-multiply-number-impl $ %{} 'CodeEntry
+          :doc "|Core trait impl for Multiply on number"
+          :code $ quote $ def &core-multiply-number-impl
+            &impl::new :&core-multiply-number-impl $ :: :multiply &*
           :examples $ []
           :schema $ :: 'Dynamic
         'normalize-trait-type $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn normalize-trait-type (t0)
-              if (list? t0)
+          :code $ quote $ defn normalize-trait-type (t0)
+            if (list? t0)
+              &let
+                size $ &list:count t0
                 &let
-                  size $ &list:count t0
+                  head $ &list:first t0
                   &let
-                    head $ &list:first t0
+                    second $ if (&>= size 2) (&list:nth t0 1) ([])
                     &let
-                      second $ if (&>= size 2) (&list:nth t0 1) ([])
+                      third $ if (&>= size 3) (&list:nth t0 2) ([])
                       &let
-                        third $ if (&>= size 3) (&list:nth t0 2) ([])
-                        &let
-                          wrap-list $ fn (x)
-                            if (list? x) x $ [] x
+                        wrap-list $ fn (x)
+                          if (list? x) x $ [] x
+                        if
+                          and (tag? head) (&= head :fn) (&= size 3)
+                          [] :fn ([]) (wrap-list second) (&list:nth t0 2)
                           if
-                            and (tag? head) (&= head :fn) (&= size 3)
-                            [] :fn ([]) (wrap-list second) (&list:nth t0 2)
+                            and (tag? head) (&= head :fn) (&= size 4)
+                            [] :fn (wrap-list second) (wrap-list third) (&list:nth t0 3)
                             if
-                              and (tag? head) (&= head :fn) (&= size 4)
-                              [] :fn (wrap-list second) (wrap-list third) (&list:nth t0 3)
+                              and (tag? second) (&= second :fn) (&= size 4)
+                              [] head second ([]) (wrap-list third) (&list:nth t0 3)
                               if
-                                and (tag? second) (&= second :fn) (&= size 4)
-                                [] head second ([]) (wrap-list third) (&list:nth t0 3)
-                                if
-                                  and (tag? second) (&= second :fn) (&= size 5)
-                                  [] head second (wrap-list third)
-                                    wrap-list $ &list:nth t0 3
-                                    &list:nth t0 4
-                                  , t0
-                , t0
+                                and (tag? second) (&= second :fn) (&= size 5)
+                                [] head second (wrap-list third)
+                                  wrap-list $ &list:nth t0 3
+                                  &list:nth t0 4
+                                , t0
+              , t0
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} 'NsEntry (:doc "|internal function and macros for `calcit.core`")
-        :code $ quote
-          ns calcit.internal $ :require
+      :ns $ %{} 'NsEntry
+        :doc "|internal function and macros for `calcit.core`"
+        :code $ quote $ ns calcit.internal (:require)
     'calcit.test $ %{} 'FileEntry
       :defs $ {}
-        'fail $ %{} 'CodeEntry (:doc "|Fail a test immediately with a message.")
-          :code $ quote
-            defn fail (message) (raise message)
+        'fail $ %{} 'CodeEntry
+          :doc "|Fail a test immediately with a message."
+          :code $ quote $ defn fail (message) (raise message)
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'String
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'String
           :tags $ #{} :control :test
-          :tests $ []
-            %{} 'TestEntry (:name |raises-errors)
-              :code $ quote
-                is $ throws? (fail |boom)
-              :tags $ #{} :unit
-        'is $ %{} 'CodeEntry (:doc "|Assert that a test expression is truthy.")
-          :code $ quote
-            defmacro is (expr)
-              quasiquote $ assert |Expected-truthy-expression: ~expr
+          :tests $ [] $ %{} 'TestEntry (:name |raises-errors)
+            :code $ quote $ is
+              throws? $ fail |boom
+            :tags $ #{} :unit
+        'is $ %{} 'CodeEntry
+          :doc "|Assert that a test expression is truthy."
+          :code $ quote $ defmacro is (expr)
+            quasiquote $ assert |Expected-truthy-expression: ~expr
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Unit
-              :required $ [] (:: 'Expr 'Dynamic)
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Unit
+            :required $ [] $ :: 'Expr 'Dynamic
           :tags $ #{} :control :macro :test
           :tests $ []
             %{} 'TestEntry (:name |accepts-truthy)
-              :code $ quote (is true)
+              :code $ quote $ is true
               :tags $ #{} :unit
             %{} 'TestEntry (:name |rejects-falsey)
-              :code $ quote
-                is-throws $ is false
+              :code $ quote $ is-throws (is false)
               :tags $ #{} :unit
-        'is-not= $ %{} 'CodeEntry (:doc "|Assert that two values differ.")
-          :code $ quote
-            defmacro is-not= (left right)
-              quasiquote $ assert |Expected-values-to-differ: (not= ~left ~right)
+        'is-not= $ %{} 'CodeEntry
+          :doc "|Assert that two values differ."
+          :code $ quote $ defmacro is-not= (left right)
+            quasiquote $ assert |Expected-values-to-differ: $ not= ~left ~right
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Unit
-              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Unit
+            :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :control :macro :test
           :tests $ []
-            %{} 'TestEntry (:name |accepts-different-values)
-              :code $ quote (is-not= 1 2)
+            %{} 'TestEntry
+              :name |accepts-different-values
+              :code $ quote $ is-not= 1 2
               :tags $ #{} :unit
-            %{} 'TestEntry (:name |rejects-equal-values)
-              :code $ quote
-                is-throws $ is-not= 1 1
+            %{} 'TestEntry
+              :name |rejects-equal-values
+              :code $ quote $ is-throws (is-not= 1 1)
               :tags $ #{} :unit
-        'is-throws $ %{} 'CodeEntry (:doc "|Assert that evaluating an expression raises an error.")
-          :code $ quote
-            defmacro is-throws (body)
-              quasiquote $ assert |Expected-expression-to-raise:
-                try
-                  &let () ~body false
-                  fn (error) true
+        'is-throws $ %{} 'CodeEntry
+          :doc "|Assert that evaluating an expression raises an error."
+          :code $ quote $ defmacro is-throws (body)
+            quasiquote $ assert |Expected-expression-to-raise: $ try
+              &let () ~body false
+              fn (error) true
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Unit
-              :required $ [] (:: 'Expr 'Dynamic)
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Unit
+            :required $ [] $ :: 'Expr 'Dynamic
           :tags $ #{} :control :macro :test
-          :tests $ []
-            %{} 'TestEntry (:name |accepts-raised-errors)
-              :code $ quote
-                is-throws $ raise |boom
-              :tags $ #{} :unit
-        'is= $ %{} 'CodeEntry (:doc "|Assert that expected and actual values are equal.")
-          :code $ quote
-            defmacro is= (expected actual)
-              quasiquote $ assert= ~expected ~actual
+          :tests $ [] $ %{} 'TestEntry
+            :name |accepts-raised-errors
+            :code $ quote $ is-throws (raise |boom)
+            :tags $ #{} :unit
+        'is= $ %{} 'CodeEntry
+          :doc "|Assert that expected and actual values are equal."
+          :code $ quote $ defmacro is= (expected actual)
+            quasiquote $ assert= ~expected ~actual
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Unit
-              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Unit
+            :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :control :macro :test
           :tests $ []
             %{} 'TestEntry (:name |compares-values)
-              :code $ quote
-                is= ([] 1 2) ([] 1 2)
+              :code $ quote $ is= ([] 1 2) ([] 1 2)
               :tags $ #{} :unit
-            %{} 'TestEntry (:name |rejects-different-values)
-              :code $ quote
-                is-throws $ is= 1 2
+            %{} 'TestEntry
+              :name |rejects-different-values
+              :code $ quote $ is-throws (is= 1 2)
               :tags $ #{} :unit
-        'throws? $ %{} 'CodeEntry (:doc "|Return true when evaluating an expression raises an error.")
-          :code $ quote
-            defmacro throws? (body)
-              quasiquote $ try
-                &let () ~body false
-                fn (error) true
+        'throws? $ %{} 'CodeEntry
+          :doc "|Return true when evaluating an expression raises an error."
+          :code $ quote $ defmacro throws? (body)
+            quasiquote $ try
+              &let () ~body false
+              fn (error) true
           :examples $ []
-          :schema $ :: 'Macro
-            {}
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Bool
-              :required $ [] (:: 'Expr 'Dynamic)
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Bool
+            :required $ [] $ :: 'Expr 'Dynamic
           :tags $ #{} :control :macro :test
           :tests $ []
-            %{} 'TestEntry (:name |detects-raised-errors)
-              :code $ quote
-                assert= true $ throws? (raise |boom)
+            %{} 'TestEntry
+              :name |detects-raised-errors
+              :code $ quote $ assert= true
+                throws? $ raise |boom
               :tags $ #{} :unit
             %{} 'TestEntry (:name |detects-success)
-              :code $ quote
-                is= false $ throws? true
+              :code $ quote $ is= false (throws? true)
               :tags $ #{} :unit
-      :ns $ %{} 'NsEntry (:doc "|Built-in assertions for definition-attached tests run by `calcit test`.")
-        :code $ quote (ns calcit.test)
+      :ns $ %{} 'NsEntry
+        :doc "|Built-in assertions for definition-attached tests run by `calcit test`."
+        :code $ quote $ ns calcit.test

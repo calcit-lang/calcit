@@ -1,122 +1,118 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-lens) (:version |0.0.0)
-  :entries $ {}
-    :default $ {} (:description |) (:init-fn 'test-lens.main/main!) (:mode :native) (:reload-fn 'test-lens.main/reload!)
+{}
+  :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
+  :package |test-lens
+  :entries $ {} $ :default
+    {} (:description |)
+      :init-fn 'test-lens.main/main!
+      :mode :native
+      :reload-fn 'test-lens.main/reload!
+      :feature-policy $ {}
       :modules $ [] |./util.cirru
       :type-slots $ {}
-  :files $ {}
-    |test-lens.main $ %{} 'FileEntry
+  :files $ {} $ 'test-lens.main
+    %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn main! () (log-title "|Testing lens") (test-lens) (do true)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () (log-title "|Testing lens") (test-lens) (do true)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-lens $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-lens ()
-              assert=
-                assoc-in
-                  {} $ :a
-                    {} $ :b ({})
-                  [] :a :b
-                  , 10
-                {} $ :a
-                  {} $ :b 10
-              assert=
-                assoc-in
-                  {} $ :a ([] 1 2 3)
-                  [] :a 1
-                  , 10
-                {} $ :a ([] 1 10 3)
-              assert=
-                update-in
-                  {} $ :a
-                    {} $ :b
-                      {} $ :c 2
-                  [] :a :b :c
-                  fn (value)
-                    inc $ value .unwrap
-                {} $ :a
-                  {} $ :b
-                    {} $ :c 3
-              assert=
-                update-in
-                  {} $ :a ([] 1 2 3)
-                  [] :a 1
-                  fn (value)
-                    inc $ value .unwrap
-                {} $ :a ([] 1 3 3)
-              assert=
-                update-in
-                  {} $ :a (:: 'quote 1)
-                  [] :a 1
-                  fn (value)
-                    inc $ value .unwrap
-                {} $ :a (:: 'quote 2)
-              assert=
-                update-in ({}) ([] :a :b)
-                  fn (value)
-                    if (value .none?) 1 $ raise |expected-missing-value
-                {} $ :a
-                  {} $ :b 1
-              assert=
-                dissoc-in
-                  {} $ :a
-                    {} $ :b
-                      {} $ :c 2
-                  [] :a :b :c
-                {} $ :a
-                  {} $ :b ({})
-              assert=
-                dissoc-in
-                  {} $ :a ([] 1 2 3)
-                  [] :a 1
-                {} $ :a ([] 1 3)
-              assert=
-                get-in
-                  {} $ :a
-                    {} $ :b
-                      {} $ :c 3
-                  [] :a :b :c
-                %some 3
-              assert=
-                get-in
-                  {} $ :a ([] 1 2 3)
-                  [] :a 1
-                %some 2
-              assert=
-                assoc-in nil ([] :a :b :c) 10
-                {} $ :a
-                  {} $ :b
-                    {} $ :c 10
-              assert= true $ contains-in?
-                &{} :a $ [] 1 2 3
+        'test-lens $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-lens ()
+            assert=
+              assoc-in
+                {} $ :a $ {}
+                  :b $ {}
+                [] :a :b
+                , 10
+              {} $ :a $ {} (:b 10)
+            assert=
+              assoc-in
+                {} $ :a $ [] 1 2 3
                 [] :a 1
-              assert= false $ contains-in?
-                &{} :a $ [] 1 2 3
-                [] :a 3
-              assert= false $ contains-in?
-                &{} :a $ [] 1 2 3
-                [] :b 1
-              assert= true $ contains-in?
-                [] 1 2 $ [] 3 4
-                [] 2 1
-              assert= false $ contains-in?
-                [] 1 2 $ [] 3 4
-                [] 2 2
-              assert= false $ contains-in?
-                [] 1 2 $ [] 3 4
-                [] 3 2
-              assert= true $ contains-in?
-                {} $ :a (:: 'quote 1)
+                , 10
+              {} $ :a $ [] 1 10 3
+            assert=
+              update-in
+                {} $ :a $ {}
+                  :b $ {} $ :c 2
+                [] :a :b :c
+                fn (value)
+                  inc $ value .unwrap
+              {} $ :a $ {}
+                :b $ {} $ :c 3
+            assert=
+              update-in
+                {} $ :a $ [] 1 2 3
                 [] :a 1
-              assert= true $ contains-in?
-                :: :a :b $ [] 1 2 3
-                [] 2 2
+                fn (value)
+                  inc $ value .unwrap
+              {} $ :a $ [] 1 3 3
+            assert=
+              update-in
+                {} $ :a $ :: 'quote 1
+                [] :a 1
+                fn (value)
+                  inc $ value .unwrap
+              {} $ :a $ :: 'quote 2
+            assert=
+              update-in ({}) ([] :a :b)
+                fn (value)
+                  if (value .none?) 1 $ raise |expected-missing-value
+              {} $ :a $ {} (:b 1)
+            assert=
+              dissoc-in
+                {} $ :a $ {}
+                  :b $ {} $ :c 2
+                [] :a :b :c
+              {} $ :a $ {}
+                :b $ {}
+            assert=
+              dissoc-in
+                {} $ :a $ [] 1 2 3
+                [] :a 1
+              {} $ :a $ [] 1 3
+            assert=
+              get-in
+                {} $ :a $ {}
+                  :b $ {} $ :c 3
+                [] :a :b :c
+              %some 3
+            assert=
+              get-in
+                {} $ :a $ [] 1 2 3
+                [] :a 1
+              %some 2
+            assert=
+              assoc-in nil ([] :a :b :c) 10
+              {} $ :a $ {}
+                :b $ {} $ :c 10
+            assert= true $ contains-in?
+              &{} :a $ [] 1 2 3
+              [] :a 1
+            assert= false $ contains-in?
+              &{} :a $ [] 1 2 3
+              [] :a 3
+            assert= false $ contains-in?
+              &{} :a $ [] 1 2 3
+              [] :b 1
+            assert= true $ contains-in?
+              [] 1 2 $ [] 3 4
+              [] 2 1
+            assert= false $ contains-in?
+              [] 1 2 $ [] 3 4
+              [] 2 2
+            assert= false $ contains-in?
+              [] 1 2 $ [] 3 4
+              [] 3 2
+            assert= true $ contains-in?
+              {} $ :a $ :: 'quote 1
+              [] :a 1
+            assert= true $ contains-in?
+              :: :a :b $ [] 1 2 3
+              [] 2 2
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)
-        :code $ quote
-          ns test-lens.main $ :require
-            util.core :refer $ log-title
+        :code $ quote $ ns test-lens.main
+          :require $ util.core :refer $ log-title
