@@ -26,6 +26,18 @@ related:
 对于编译器能够证明等价的一对一迁移，先运行 `calcit calcit.cirru fix --format json` 审阅结构化计划，再用
 `--apply --expect-revision <revision>` 原子应用；完整安全边界见 [Compiler-guided Source Fixes](fix.md)。
 
+升级或类型迁移后，应显式预览一次问题写法修复。`fix` 的默认 preview 本身就是检测入口，不写 Snapshot；其中
+`redundant-do-v1` 会定位 `defn`、`fn`、`let` 等多表达式 body 中不必要的 `do`，并返回可审阅的 source path、
+fingerprint 和 splice replacement：
+
+```bash
+calcit calcit.cirru fix --rule redundant-do-v1 --format json
+```
+
+不要用全文搜索后批量删除 `do`：`if` 分支、调用参数和 binding value 等单表达式位置仍需要它来组合多个步骤。
+确认 preview 的 `validation.status` 为 `passed` 后，再复制报告中的 `revision` 执行带保护的 apply；完整示例见
+[检测并修复冗余 `do`](fix.md#检测并修复冗余-do)。这是一项显式源码整理，不会增加普通编译 warning。
+
 ## 0.14 默认严格诊断
 
 Calcit 0.14 起，普通运行、`--check-only` 和代码生成默认启用严格预处理诊断；无需再通过
@@ -172,8 +184,8 @@ ns app.main $ :require
 
 ```bash
 # 安装当前经过组合验证的独立用户工具；分别固定并记录版本
-cargo install calcit --bin calcit --version 0.13.72 --force
-cargo install calcit-caps --version 0.1.0 --force
+cargo install calcit --bin calcit --version 0.14.16 --force
+cargo install calcit-caps --version 0.1.1 --force
 calcit --version
 caps --version
 caps upgrade --all
@@ -183,6 +195,7 @@ corepack prepare yarn@4.12.0 --activate
 yarn install
 yarn install --immutable
 calcit calcit.cirru edit format
+calcit calcit.cirru fix --rule redundant-do-v1 --format json
 calcit calcit.cirru --check-only
 calcit calcit.cirru analyze dynamic-methods --max 0
 calcit calcit.cirru analyze deprecated --summary-only --format json
@@ -196,8 +209,8 @@ yarn vite build --base=./
 ### Step A：确认 Calcit CLI 版本
 
 ```bash
-cargo install calcit --bin calcit --version 0.13.72 --force
-cargo install calcit-caps --version 0.1.0 --force
+cargo install calcit --bin calcit --version 0.14.16 --force
+cargo install calcit-caps --version 0.1.1 --force
 calcit --version
 caps --version
 caps --help
@@ -207,7 +220,7 @@ caps --help
 单独固定一个经过该 Calcit 版本和真实项目 smoke 验证的稳定版本。不要先用未经验证的旧 `caps` 改依赖，
 再用新 `calcit` 判断结果；也不要只更新本机而让 CI 继续安装另一版本。若团队通过其他受控方式分发二进制，
 使用该方式即可，但要分别记录实际版本，并确认 `caps --help` 已包含项目需要的新选项。
-上面的 `calcit 0.13.72` + `calcit-caps 0.1.0` 是当前验证组合；升级到后续版本时，从对应 release notes
+上面的 `calcit 0.14.16` + `calcit-caps 0.1.1` 是当前稳定组合；升级到后续版本时，从对应 release notes
 或 `setup-calcit` 已验证的版本矩阵选择一对明确版本，不要省略 `--version` 而隐式安装两个 latest。
 
 > ⚠️ CI 中 Calcit runtime/compiler 的项目版本来自 `deps.cirru :calcit-version`；caps 使用 setup-calcit 独立固定的稳定版本，必要时通过 `caps-version` 显式覆盖。普通 workflow 不重复传 `version`。Action 会对新 Calcit release 临时提供 `cr -> calcit` 兼容链接；对旧 release 则回退到 `cr` asset 并暴露 `calcit`。新命令统一写 `calcit`。已发布的 `calcit-lang/setup-cr` tag 继续支持旧项目；GitHub Actions 不会为 Action 仓库改名重定向，因此迁移必须显式替换 `uses:`。详见 [GitHub Actions](../installation/github-actions.md)。
@@ -436,10 +449,12 @@ FFI value 在 adapter 边界完成 validate/convert。显式声明的 `Dynamic` 
 ```cirru
 let
     xs $ [] 1 2 3
-    predicate $ fn (x) = x 2
-    idx $ find-index xs predicate
-    safe-idx $ idx .unwrap-or 0
-  &+ safe-idx 1
+    predicate $ fn (x) > x 1
+  hint-fn predicate $ {} (:args $ [] 'Number) (:return 'Bool)
+  let
+      idx $ find-index xs predicate
+      safe-idx $ idx .unwrap-or 0
+    &+ safe-idx 1
 
 match (get-env |APP_MODE)
   (:some mode) (println mode)
@@ -815,15 +830,16 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 2. `caps upgrade --all`（确认无遗漏项或已按预期处理）
 3. `caps tree`（确认根开发依赖存在，同时传递模块的开发依赖未进入图）
 4. `yarn install --immutable`
-5. `calcit calcit.cirru edit format` 后 `git diff --exit-code -- calcit.cirru`
-6. default 与每个 named entry 的 `--check-only`
-7. 每个 entry 的 `analyze dynamic-methods --max <reviewed-limit>`；清零后使用 `--max 0`
-8. 所有声明支持的 entry 行为测试（默认 once；watch 另行验收）
-9. 非零 legacy baseline 项目继续运行 `analyze quality --baseline ...`；清零后删除该项（`check-types`、dynamic/nil `weak-types`、`deprecated` 仍只作为定位报告）
-10. `calcit test --require-match`、公开 namespace 的 `check-examples` 与 `docs check-md`
-11. JS 项目的 codegen 加 Node/Vite 行为测试，而不只是生成成功
-12. `package.json` 中与编译/构建相关的脚本
-13. 类库项目在 Respo 等真实消费者中的回归证据
+5. `calcit calcit.cirru edit format` 后审阅 Snapshot diff
+6. `calcit calcit.cirru fix --rule redundant-do-v1 --format json`；应用后再次 preview，确认 suggestions 为空
+7. default 与每个 named entry 的 `--check-only`
+8. 每个 entry 的 `analyze dynamic-methods --max <reviewed-limit>`；清零后使用 `--max 0`
+9. 所有声明支持的 entry 行为测试（默认 once；watch 另行验收）
+10. 非零 legacy baseline 项目继续运行 `analyze quality --baseline ...`；清零后删除该项（`check-types`、dynamic/nil `weak-types`、`deprecated` 仍只作为定位报告）
+11. `calcit test --require-match`、公开 namespace 的 `check-examples` 与 `docs check-md`
+12. JS 项目的 codegen 加 Node/Vite 行为测试，而不只是生成成功
+13. `package.json` 中与编译/构建相关的脚本
+14. 类库项目在 Respo 等真实消费者中的回归证据
 
 ### 老项目失败时的定位顺序
 
@@ -831,6 +847,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 | --- | --- | --- | --- |
 | 依赖图 | `caps tree/status/verify` | 递归版本、链接、store/native 收据 | 状态异常会阻断；普通图告警用 `--strict` 收紧 |
 | Snapshot 规范化 | `calcit edit format` + `git diff` | 旧 configs/schema 拼写和规范化建议 | format 告警不阻断，diff 需人工审阅 |
+| 问题写法 | `calcit fix --rule redundant-do-v1 --format json` | 多表达式 body 中不必要的 `do` 与可应用 splice | preview 不写入；apply 前后均需 staged validation |
 | entry 预处理 | `calcit --entry ... --check-only` | 配置、缺失定义、参数/返回值、数据与 trait 类型错误 | 错误或 warning 均阻断 |
 | 动态分派 | `calcit analyze dynamic-methods --max <reviewed-limit>` | 动态 receiver 与无法专门化的方法；默认排除依赖和无关 FFI warning | 超过上限时阻断；`--deps` 可审计依赖 |
 | 静态债务 | `analyze check-types/weak-types/deprecated --format json` | 覆盖率、dynamic、nil/Optional、废弃调用 | 报告本身不按命中数阻断；仅非零 legacy baseline 项目继续比较 |
