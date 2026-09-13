@@ -5,13 +5,13 @@ use std::fmt::Write as _;
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, fragment_nesting_level, maybe_chunk_node};
 use super::common::{
   ERR_CODE_INPUT_REQUIRED, cirru_to_json, decode_mutation_syntax_input, emit_cli_output, format_path,
-  guard_snapshot_mutation_toolchain, parse_input_to_cirru, parse_path, print_cli_warning_block, read_code_input,
+  guard_snapshot_mutation_toolchain, markdown_fenced_block, parse_input_to_cirru, parse_path, print_cli_warning_block, read_code_input,
   resolve_definition_lookup, shell_quote,
 };
 use super::cursor::{
   maintain_cursor_after_tree_mutation, resolve_active_cursor_reference, resolve_cursor_path_argument, resolve_cursor_target_argument,
 };
-use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json, tip_root_edit};
+use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json_markdown, tip_root_edit};
 use crate::cli_args::SyntaxInputFormat;
 use crate::cli_args::{
   TreeAppendChildCommand, TreeBatchDeleteCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand,
@@ -381,19 +381,15 @@ fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str) -> Str
 
 fn render_chunked_display(display: &ChunkedDisplay, chunk_expand_depth: usize) -> (String, usize) {
   let mut out = String::new();
-  let _ = writeln!(&mut out, "{}", "Chunked preview".green().bold());
+  let _ = writeln!(&mut out, "## Chunked preview\n");
   let _ = writeln!(
     &mut out,
-    "{}",
-    format!(
-      "nodes: {}, branches: {}, leaves: {}, max depth: {}, fragments: {}",
-      display.total.nodes,
-      display.total.branches,
-      display.total.leaves,
-      display.total.max_depth,
-      display.fragments.len()
-    )
-    .dimmed()
+    "nodes: {}, branches: {}, leaves: {}, max depth: {}, fragments: {}",
+    display.total.nodes,
+    display.total.branches,
+    display.total.leaves,
+    display.total.max_depth,
+    display.fragments.len()
   );
   let _ = writeln!(&mut out);
 
@@ -406,33 +402,22 @@ fn render_chunked_display(display: &ChunkedDisplay, chunk_expand_depth: usize) -
   if visible_fragments.len() < display.fragments.len() {
     let _ = writeln!(
       &mut out,
-      "{}",
-      format!(
-        "showing {}/{} fragments; nested chunks beyond level {} are hidden",
-        visible_fragments.len(),
-        display.fragments.len(),
-        chunk_expand_depth
-      )
-      .dimmed()
+      "showing {}/{} fragments; nested chunks beyond level {} are hidden",
+      visible_fragments.len(),
+      display.fragments.len(),
+      chunk_expand_depth
     );
     let _ = writeln!(&mut out);
   }
 
   for fragment in &visible_fragments {
+    let _ = writeln!(&mut out, "### Fragment `{}`\n", fragment.id);
     let _ = writeln!(
       &mut out,
-      "{} {}",
-      fragment.id.cyan().bold(),
-      format!("at {}", fragment.coord).dimmed()
+      "- Coordinate: `{}`\n- Nodes: {}\n- Max depth: {}\n",
+      fragment.coord, fragment.nodes, fragment.depth
     );
-    let _ = writeln!(
-      &mut out,
-      "{}",
-      format!("nodes: {}, max depth: {}", fragment.nodes, fragment.depth).dimmed()
-    );
-    for line in fragment.cirru.lines() {
-      let _ = writeln!(&mut out, "  {line}");
-    }
+    out.push_str(&markdown_fenced_block("cirru", &fragment.cirru));
     let _ = writeln!(&mut out);
   }
 
@@ -530,55 +515,45 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
       // Format the valid path display
       let valid_path_display = format_path(valid_path);
 
-      // Get preview of the valid node
-      let node_preview = match &valid_node {
-        Cirru::Leaf(s) => format!("{:?} (leaf)", s.as_ref()),
-        Cirru::List(items) => {
-          let preview = valid_node.format_one_liner().unwrap_or_else(|_| "<complex>".to_string());
-          let truncated = if preview.len() > 60 {
-            format!("{}...", &preview[..60])
-          } else {
-            preview
-          };
-          format!("{} ({} items)", truncated, items.len())
-        }
+      let node_preview = format_preview(&valid_node, 6);
+      let node_kind = match &valid_node {
+        Cirru::Leaf(_) => "leaf".to_owned(),
+        Cirru::List(items) => format!("list, {} items", items.len()),
       };
 
       // Print enhanced error message
-      eprintln!("{}", "Error: Invalid path".red().bold());
-      eprintln!("{original_error}");
-      eprintln!();
-      eprintln!("{} Longest valid path: {}", "→".cyan(), valid_path_display.yellow());
-      eprintln!("{} Node at that path: {}", "→".cyan(), node_preview.dimmed());
-      eprintln!();
+      eprintln!("# Error: invalid path\n\n{original_error}\n");
+      eprintln!("- Longest valid path: `{valid_path_display}`");
+      eprintln!("- Node kind: `{node_kind}`\n");
+      eprintln!("## Node at longest valid path\n");
+      eprint!("{}", markdown_fenced_block("cirru", &node_preview));
 
       // Show next steps based on node type
       match &valid_node {
         Cirru::Leaf(_) => {
-          eprintln!("{} This is a leaf node (cannot navigate deeper)", "Note:".yellow().bold());
+          eprintln!("\nThis is a leaf node and cannot be navigated further.\n");
           eprintln!(
-            "{} View it with: {}",
-            "→".cyan(),
-            format!("calcit tree show '{}' --path '{}'", resolved_target, format_path(valid_path)).cyan()
+            "- View it with: `calcit tree show '{}' --path '{}'`",
+            resolved_target,
+            format_path(valid_path)
           );
         }
         Cirru::List(items) => {
           eprintln!(
-            "{} This node has {} children (indices 0-{})",
-            "Available:".green().bold(),
+            "\nThis node has {} children (indices 0–{}).\n",
             items.len(),
             items.len().saturating_sub(1)
           );
           eprintln!(
-            "{} View it with: {}",
-            "→".cyan(),
-            format!("calcit tree show '{}' --path '{}'", resolved_target, format_path(valid_path)).cyan()
+            "- View it with: `calcit tree show '{}' --path '{}'`",
+            resolved_target,
+            format_path(valid_path)
           );
 
           // Show first few children as hints
           if !items.is_empty() {
             eprintln!();
-            eprintln!("{} First few children:", "Hint:".blue().bold());
+            eprintln!("## First children\n");
             for (i, item) in items.iter().enumerate().take(3) {
               let child_preview = format_child_preview(item);
               let child_path = if valid_path.is_empty() {
@@ -586,10 +561,10 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
               } else {
                 format!("{}.{}", format_path(valid_path), i)
               };
-              eprintln!("  [{}] {} {} --path '{}'", i, child_preview.yellow(), "->".dimmed(), child_path);
+              eprintln!("- [{i}] `{child_preview}` → `--path '{child_path}'`");
             }
             if items.len() > 3 {
-              eprintln!("  {}", format!("... and {} more", items.len() - 3).dimmed());
+              eprintln!("- _... and {} more._", items.len() - 3);
             }
           }
         }
@@ -616,27 +591,26 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
       let chunked_display = if opts.raw { None } else { maybe_chunk_node(&node, &chunk_options)? };
 
       let mut out = String::new();
-      let _ = writeln!(&mut out, "{}: {} ({} items)", "Type".green().bold(), "list".yellow(), items.len());
-      let _ = writeln!(&mut out);
+      let _ = writeln!(&mut out, "# Tree node `{resolved_target}`\n");
+      let _ = writeln!(&mut out, "- Path: `{}`", format_path(&path));
+      let _ = writeln!(&mut out, "- Type: `list`");
+      let _ = writeln!(&mut out, "- Items: {}\n", items.len());
       let shown_fragments = if let Some(display) = chunked_display {
         let (chunked, shown) = render_chunked_display(&display, opts.chunk_expand_depth);
         out.push_str(&chunked);
         Some((shown, display.fragments.len()))
       } else {
-        let _ = writeln!(&mut out, "{}:", "Cirru preview".green().bold());
-        let _ = writeln!(&mut out, "  ");
+        let _ = writeln!(&mut out, "## Cirru preview\n");
         let cirru_str = cirru_parser::format(std::slice::from_ref(&node), cirru_parser::CirruWriterOptions { use_inline: true })
           .map_err(|e| format!("Failed to format Cirru: {e}"))?;
-        for line in cirru_str.lines() {
-          let _ = writeln!(&mut out, "  {line}");
-        }
+        out.push_str(&markdown_fenced_block("cirru", &cirru_str));
         let _ = writeln!(&mut out);
         None
       };
 
       if show_json {
-        let _ = writeln!(&mut out, "{}:", "JSON".green().bold());
-        let _ = writeln!(&mut out, "{}", cirru_to_json(&node));
+        let _ = writeln!(&mut out, "## JSON AST\n");
+        out.push_str(&markdown_fenced_block("json", &cirru_to_json(&node)));
         if opts.depth > 0 {
           let _ = writeln!(&mut out, "{}", format!("(depth limited to {})", opts.depth).dimmed());
         }
@@ -649,9 +623,8 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
         tips.add_with_priority(
           TipPriority::High,
           format!(
-            "This node has {} children. Use {} to annotate each nested list with its path index for easier editing.",
-            items.len(),
-            "--path-annotations".yellow()
+            "This node has {} children. Use `--path-annotations` to annotate each nested list with its path index for easier editing.",
+            items.len()
           ),
         );
       }
@@ -661,16 +634,15 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
         tips.add_with_priority(
           TipPriority::High,
           format!(
-            "Showing ROOT plus {} chunk layer(s). Use {} to reveal deeper nested fragments, or {} to disable chunking.",
+            "Showing ROOT plus {} chunk layer(s). Use `--chunk-expand-depth {}` to reveal deeper nested fragments, or `--raw` to disable chunking.",
             opts.chunk_expand_depth,
-            format!("--chunk-expand-depth {}", opts.chunk_expand_depth + 1).yellow(),
-            "--raw".yellow()
+            opts.chunk_expand_depth + 1
           ),
         );
       }
-      tips.append(tip_prefer_oneliner_json(show_json));
+      tips.append(tip_prefer_oneliner_json_markdown(show_json));
       emit_cli_output(&out, render_to_stderr);
-      tips.print();
+      tips.print_markdown(render_to_stderr);
 
       return Ok(());
     }
@@ -678,9 +650,12 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
 
   if matches!(node_type, "leaf") {
     let mut out = String::new();
-    let _ = writeln!(&mut out, "{}: {}", "Type".green().bold(), "leaf".yellow());
+    let _ = writeln!(&mut out, "# Tree node `{resolved_target}`\n");
+    let _ = writeln!(&mut out, "- Path: `{}`", format_path(&path));
+    let _ = writeln!(&mut out, "- Type: `leaf`\n");
     if let Cirru::Leaf(s) = &node {
-      let _ = writeln!(&mut out, "{}: {:?}", "Value".green().bold(), s.as_ref());
+      let _ = writeln!(&mut out, "## Value\n");
+      out.push_str(&markdown_fenced_block("cirru", s.as_ref()));
       let _ = writeln!(&mut out);
       if command_guidance_enabled() {
         let _ = writeln!(

@@ -4,14 +4,14 @@
 
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node};
 use super::common::{
-  cirru_to_json_value, deps_path_for_snapshot, emit_cli_output, format_path, parse_path, print_cli_warning_block,
-  resolve_definition_lookup,
+  cirru_to_json_value, deps_path_for_snapshot, emit_cli_output, format_path, markdown_fenced_block, parse_path,
+  print_cli_warning_block, resolve_definition_lookup,
 };
 use super::cursor::{
   CursorLastQuery, load_cursor_last_query, resolve_active_cursor_reference, resolve_cursor_path_argument,
   resolve_cursor_target_argument, set_cursor_from_query_match,
 };
-use super::tips::{TipPriority, Tips, command_guidance_enabled};
+use super::tips::command_guidance_enabled;
 use calcit::CalcitTypeAnnotation;
 use calcit::calcit::{Calcit, CalcitFnTypeAnnotation, DYNAMIC_TYPE, LocatedWarning};
 use calcit::call_stack::CallStackList;
@@ -461,10 +461,7 @@ fn detailed_window(detail_offset: usize, total: usize) -> (usize, usize) {
 fn print_detail_window_hint(total: usize, detail_offset: usize, subject: &str) {
   if total > DETAILED_RESULTS_WINDOW {
     let (start, end) = detailed_window(detail_offset, total);
-    println!(
-      "{}",
-      format!("Detail window for {subject}: [{start}, {end}) (detail-offset={detail_offset}), other entries are compressed.").dimmed()
-    );
+    println!("Detail window for {subject}: [{start}, {end}) (detail-offset={detail_offset}); other entries are compressed.");
   }
 }
 
@@ -1597,35 +1594,27 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
     return Ok(());
   }
 
-  if data.canonical_type.contains('\n') {
-    println!("{}\n{}", "Type:".bold(), data.canonical_type);
-  } else {
-    println!("{} {}", "Type:".bold(), data.canonical_type);
-  }
-  println!("{} {}", "Resolved from:".bold(), data.resolved_from);
-  println!("{} {revision}", "Revision:".bold());
+  println!("# Type\n\n- Resolved from: `{}`\n- Revision: `{revision}`\n", data.resolved_from);
+  print!("{}", markdown_fenced_block("cirru", &data.canonical_type));
   if uses_legacy_any {
     println!(
-      "{}",
-      "Warning [W_LEGACY_ANY_ALIAS]: `:any` is the legacy spelling of `:dynamic`; use `'Dynamic` only for genuinely dynamic boundaries, or use `:generics`/TypeVar or trait `:where` for polymorphism."
-        .yellow()
+      "\n## Diagnostics\n\n- **warning** `W_LEGACY_ANY_ALIAS`: `:any` is the legacy spelling of `:dynamic`; use `'Dynamic` only for genuinely dynamic boundaries, or use `:generics`/TypeVar or trait `:where` for polymorphism."
     );
   }
 
+  println!("\n## Methods\n");
   match data.methods {
     Some(methods) if methods.is_empty() => {
-      println!("{} 0", "Methods:".bold());
-      println!("  (no methods registered for this type)");
+      println!("_No methods registered for this type._");
     }
     Some(methods) => {
-      println!("{} {} (high → low precedence)", "Methods:".bold(), methods.len());
+      println!("Count: {} (high → low precedence).\n", methods.len());
       for method in methods {
-        println!("  {:<20} {}", method.name, format!("({})", method.origin).dimmed());
+        println!("- `{}` (`{}`)", method.name, method.origin);
       }
     }
     None => {
-      println!("{} unknown", "Methods:".bold());
-      println!("  This type has no statically resolvable method metadata.");
+      println!("_This type has no statically resolvable method metadata._");
     }
   }
 
@@ -2142,65 +2131,73 @@ fn type_at_expected_mismatch_diagnostic(
 fn render_type_at_human(envelope: &SemanticQueryEnvelope<TypeAtData>) -> String {
   let data = &envelope.data;
   let mut out = String::new();
-  let _ = writeln!(&mut out, "Definition: {}", data.id);
-  let _ = writeln!(&mut out, "Path: {}", data.path);
-  let _ = writeln!(&mut out, "Revision: {}", envelope.revision);
-  let _ = writeln!(&mut out, "Expression: {}", data.expression);
-  let _ = writeln!(&mut out, "Inferred type: {}", data.inferred_type.as_deref().unwrap_or("unknown"));
+  let _ = writeln!(&mut out, "# Type at `{}`\n", data.id);
+  let _ = writeln!(&mut out, "- Path: `{}`", data.path);
+  let _ = writeln!(&mut out, "- Revision: `{}`", envelope.revision);
+  let _ = writeln!(
+    &mut out,
+    "- Inferred type: `{}`",
+    data.inferred_type.as_deref().unwrap_or("unknown")
+  );
   if let Some(expected) = &data.expected_type {
     let _ = writeln!(
       &mut out,
-      "Expected type: {} ({})",
+      "- Expected type: `{}` ({})",
       expected,
       data.expected_from.as_deref().unwrap_or("static context")
     );
   }
-  let _ = writeln!(&mut out, "Confidence: {}", data.confidence);
+  let _ = writeln!(&mut out, "- Confidence: `{}`", data.confidence);
   if let Some(intent) = data.dynamic_intent {
-    let _ = writeln!(&mut out, "Dynamic intent: {intent}");
+    let _ = writeln!(&mut out, "- Dynamic intent: `{intent}`");
   }
-  let _ = writeln!(&mut out, "Lowering: {} ({})", data.lowering.status, data.lowering.kind);
+  let _ = writeln!(&mut out, "\n## Expression\n");
+  out.push_str(&markdown_fenced_block("cirru", &data.expression));
+  let _ = writeln!(
+    &mut out,
+    "\n## Lowering\n\n- Status: `{}`\n- Kind: `{}`",
+    data.lowering.status, data.lowering.kind
+  );
   let source_head = data.lowering.source_head.as_deref().unwrap_or("value");
   let lowered_head = data.lowering.lowered_head.as_deref().unwrap_or("value");
-  let _ = writeln!(&mut out, "  {source_head} -> {lowered_head}");
-  let _ = writeln!(&mut out, "  {}", data.lowering.detail);
-  let _ = writeln!(&mut out, "Evidence:");
+  let _ = writeln!(&mut out, "- Heads: `{source_head}` → `{lowered_head}`\n\n{}", data.lowering.detail);
+  let _ = writeln!(&mut out, "\n## Evidence\n");
   for evidence in &data.evidence {
-    let _ = writeln!(&mut out, "  - {}: {}", evidence.kind, evidence.detail);
+    let _ = writeln!(&mut out, "- `{}`: {}", evidence.kind, evidence.detail);
   }
   let _ = writeln!(
     &mut out,
-    "Bindings: {} (referenced/top-level; not a complete scope dump)",
+    "\n## Bindings\n\n{} referenced/top-level binding(s); not a complete scope dump.",
     data.bindings.len()
   );
   for binding in &data.bindings {
     let location = binding.path.as_deref().map(|path| format!(" @ {path}")).unwrap_or_default();
-    let _ = writeln!(&mut out, "  - {}: {}{}", binding.name, binding.r#type, location);
+    let _ = writeln!(&mut out, "- `{}`: `{}`{}", binding.name, binding.r#type, location);
   }
-  let _ = writeln!(&mut out, "Static methods:");
+  let _ = writeln!(&mut out, "\n## Static methods\n");
   match &data.static_methods {
     Some(methods) => {
       for method in methods {
-        let _ = writeln!(&mut out, "  - {} ({})", method.name, method.origin);
+        let _ = writeln!(&mut out, "- `{}` (`{}`)", method.name, method.origin);
       }
     }
     None => {
-      let _ = writeln!(&mut out, "  unknown");
+      let _ = writeln!(&mut out, "_Unknown._");
     }
   }
-  let _ = writeln!(&mut out, "Diagnostics: {}", envelope.diagnostics.len());
+  let _ = writeln!(&mut out, "\n## Diagnostics\n\nCount: {}.", envelope.diagnostics.len());
   for diagnostic in &envelope.diagnostics {
     let location = diagnostic.path.as_deref().map(|path| format!(" @ {path}")).unwrap_or_default();
     let _ = writeln!(
       &mut out,
-      "  - {} {}{}: {}",
+      "- **{}** `{}`{}: {}",
       diagnostic.severity, diagnostic.code, location, diagnostic.message
     );
   }
   if !envelope.next.is_empty() {
-    let _ = writeln!(&mut out, "Next:");
+    let _ = writeln!(&mut out, "\n## Next\n");
     for command in &envelope.next {
-      let _ = writeln!(&mut out, "  - {command}");
+      let _ = writeln!(&mut out, "- `{command}`");
     }
   }
   out
@@ -2908,15 +2905,15 @@ fn build_special_builtin_context(
 fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>) -> String {
   let data = &envelope.data;
   let mut out = String::new();
-  let _ = writeln!(&mut out, "Definition: {}", data.id);
-  let _ = writeln!(&mut out, "Resource: {}", data.uri);
-  let _ = writeln!(&mut out, "Revision: {}", envelope.revision);
-  let _ = writeln!(&mut out, "Source: {}", data.source);
-  let _ = writeln!(&mut out, "Kind: {}", data.kind);
-  let _ = writeln!(&mut out, "Type coverage: {}", data.coverage);
+  let _ = writeln!(&mut out, "# Definition context `{}`\n", data.id);
+  let _ = writeln!(&mut out, "- Resource: `{}`", data.uri);
+  let _ = writeln!(&mut out, "- Revision: `{}`", envelope.revision);
+  let _ = writeln!(&mut out, "- Source: `{}`", data.source);
+  let _ = writeln!(&mut out, "- Kind: `{}`", data.kind);
+  let _ = writeln!(&mut out, "- Type coverage: `{}`", data.coverage);
   let _ = writeln!(
     &mut out,
-    "Tags: {}",
+    "- Tags: {}",
     if data.tags.is_empty() {
       "-".to_owned()
     } else {
@@ -2925,7 +2922,7 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
   );
   let _ = writeln!(
     &mut out,
-    "Features: {}",
+    "- Features: {}",
     if data.features.is_empty() {
       "-".to_owned()
     } else {
@@ -2938,40 +2935,36 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
     }
   );
 
-  let _ = writeln!(&mut out, "\nDoc:");
+  let _ = writeln!(&mut out, "\n## Documentation\n");
   if let Some(doc) = &data.doc {
     for line in doc.lines() {
-      let _ = writeln!(&mut out, "  {line}");
+      let _ = writeln!(&mut out, "> {line}");
     }
     if data.doc_truncated {
-      let _ = writeln!(&mut out, "  (truncated)");
+      let _ = writeln!(&mut out, "\n_Truncated._");
     }
   } else {
-    let _ = writeln!(&mut out, "  -");
+    let _ = writeln!(&mut out, "_No documentation._");
   }
 
-  let _ = writeln!(&mut out, "\nSchema:");
+  let _ = writeln!(&mut out, "\n## Schema\n");
   if let Some(schema) = &data.schema {
-    for line in schema.lines() {
-      let _ = writeln!(&mut out, "  {line}");
-    }
+    out.push_str(&markdown_fenced_block("cirru", schema));
   } else {
-    let _ = writeln!(&mut out, "  :dynamic (no explicit schema)");
+    let _ = writeln!(&mut out, "_Dynamic; no explicit schema._");
   }
 
   let _ = writeln!(
     &mut out,
-    "\nCode preview: {} node(s){}",
+    "\n## Code preview\n\n- Nodes: {}{}\n",
     data.code.nodes,
     if data.code.truncated { " (truncated)" } else { "" }
   );
-  for line in data.code.cirru.lines() {
-    let _ = writeln!(&mut out, "  {line}");
-  }
+  out.push_str(&markdown_fenced_block("cirru", &data.code.cirru));
 
   let _ = writeln!(
     &mut out,
-    "\nExamples: {}/{}{}",
+    "\n## Examples\n\nReturned {}/{}{}.",
     data.examples.returned,
     data.examples.total,
     if data.examples.truncated { " (truncated)" } else { "" }
@@ -2979,18 +2972,16 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
   for example in &data.examples.items {
     let _ = writeln!(
       &mut out,
-      "  [{}]{}",
+      "\n### Example {}{}\n",
       example.index,
       if example.truncated { " (truncated)" } else { "" }
     );
-    for line in example.cirru.lines() {
-      let _ = writeln!(&mut out, "    {line}");
-    }
+    out.push_str(&markdown_fenced_block("cirru", &example.cirru));
   }
 
   let _ = writeln!(
     &mut out,
-    "\nTests: {}/{}{}",
+    "\n## Tests\n\nReturned {}/{}{}.",
     data.tests.returned,
     data.tests.total,
     if data.tests.truncated { " (truncated)" } else { "" }
@@ -3003,30 +2994,28 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
     };
     let _ = writeln!(
       &mut out,
-      "  # {}{}{}",
+      "\n### Test `{}`{}{}\n",
       test.name,
       tags,
       if test.truncated { " (truncated)" } else { "" }
     );
-    for line in test.cirru.lines() {
-      let _ = writeln!(&mut out, "    {line}");
-    }
+    out.push_str(&markdown_fenced_block("cirru", &test.cirru));
   }
 
   let _ = writeln!(
     &mut out,
-    "\nDirect dependencies: {}/{}{}",
+    "\n## Direct dependencies\n\nReturned {}/{}{}.",
     data.dependencies.returned,
     data.dependencies.total,
     if data.dependencies.truncated { " (truncated)" } else { "" }
   );
   for dependency in &data.dependencies.items {
-    let _ = writeln!(&mut out, "  - {} [{}]", dependency.id, dependency.source);
+    let _ = writeln!(&mut out, "- `{}` [{}]", dependency.id, dependency.source);
   }
 
   let _ = writeln!(
     &mut out,
-    "\nUsages: {}/{}{}",
+    "\n## Usages\n\nReturned {}/{}{}.",
     data.usages.returned,
     data.usages.total,
     if data.usages.truncated { " (truncated)" } else { "" }
@@ -3037,12 +3026,12 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
     } else {
       usage.paths.join(", ")
     };
-    let _ = writeln!(&mut out, "  - {} [{}:{}] @ {}", usage.id, usage.source, usage.area, paths);
+    let _ = writeln!(&mut out, "- `{}` [{}:{}] @ `{}`", usage.id, usage.source, usage.area, paths);
   }
 
   let _ = writeln!(
     &mut out,
-    "\nRelated docs: {}/{}{}",
+    "\n## Related docs\n\nReturned {}/{}{}.",
     data.docs.returned,
     data.docs.total,
     if data.docs.truncated { " (truncated)" } else { "" }
@@ -3050,29 +3039,29 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
   for doc in &data.docs.items {
     let title = doc.title.as_deref().unwrap_or("untitled");
     let summary = doc.summary.as_deref().map(|summary| format!(" — {summary}")).unwrap_or_default();
-    let _ = writeln!(&mut out, "  - {}: {} ({}){}", doc.id, title, doc.path, summary);
+    let _ = writeln!(&mut out, "- `{}`: {} (`{}`){}", doc.id, title, doc.path, summary);
   }
 
-  let _ = writeln!(&mut out, "\nStatic methods:");
+  let _ = writeln!(&mut out, "\n## Static methods\n");
   match &data.static_methods {
     Some(methods) => {
       let _ = writeln!(
         &mut out,
-        "  {}/{}{}",
+        "Returned {}/{}{}.",
         methods.returned,
         methods.total,
         if methods.truncated { " (truncated)" } else { "" }
       );
       for method in &methods.items {
-        let _ = writeln!(&mut out, "  - {} ({})", method.name, method.origin);
+        let _ = writeln!(&mut out, "- `{}` (`{}`)", method.name, method.origin);
       }
     }
     None => {
-      let _ = writeln!(&mut out, "  unknown");
+      let _ = writeln!(&mut out, "_Unknown._");
     }
   }
 
-  let _ = writeln!(&mut out, "\nDiagnostics: {}", envelope.diagnostics.len());
+  let _ = writeln!(&mut out, "\n## Diagnostics\n\nCount: {}.", envelope.diagnostics.len());
   for diagnostic in &envelope.diagnostics {
     let location = diagnostic.path.as_deref().map(|path| format!(" @ {path}")).unwrap_or_default();
     let intent = diagnostic
@@ -3082,15 +3071,15 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
       .unwrap_or_default();
     let _ = writeln!(
       &mut out,
-      "  - {} {}{}{}: {}",
+      "- **{}** `{}`{}{}: {}",
       diagnostic.severity, diagnostic.code, intent, location, diagnostic.message
     );
   }
 
   if !envelope.next.is_empty() {
-    let _ = writeln!(&mut out, "\nNext:");
+    let _ = writeln!(&mut out, "\n## Next\n");
     for command in &envelope.next {
-      let _ = writeln!(&mut out, "  - {command}");
+      let _ = writeln!(&mut out, "- `{command}`");
     }
   }
   out
@@ -3667,37 +3656,26 @@ fn handle_modules(input_path: &str) -> Result<(), String> {
 
 fn render_chunked_display(display: &ChunkedDisplay) -> String {
   let mut out = String::new();
-  let _ = writeln!(&mut out, "{}", "Chunked Cirru:".bold());
+  let _ = writeln!(&mut out, "## Chunked Cirru\n");
   let _ = writeln!(
     &mut out,
-    "{}",
-    format!(
-      "nodes: {}, branches: {}, leaves: {}, max depth: {}, fragments: {}",
-      display.total.nodes,
-      display.total.branches,
-      display.total.leaves,
-      display.total.max_depth,
-      display.fragments.len()
-    )
-    .dimmed()
+    "nodes: {}, branches: {}, leaves: {}, max depth: {}, fragments: {}\n",
+    display.total.nodes,
+    display.total.branches,
+    display.total.leaves,
+    display.total.max_depth,
+    display.fragments.len()
   );
   let _ = writeln!(&mut out);
 
   for fragment in &display.fragments {
+    let _ = writeln!(&mut out, "### Fragment `{}`\n", fragment.id);
     let _ = writeln!(
       &mut out,
-      "{} {}",
-      fragment.id.cyan().bold(),
-      format!("at {}", fragment.coord).dimmed()
+      "- Coordinate: `{}`\n- Nodes: {}\n- Max depth: {}\n",
+      fragment.coord, fragment.nodes, fragment.depth
     );
-    let _ = writeln!(
-      &mut out,
-      "{}",
-      format!("nodes: {}, max depth: {}", fragment.nodes, fragment.depth).dimmed()
-    );
-    for line in fragment.cirru.lines() {
-      let _ = writeln!(&mut out, "  {line}");
-    }
+    out.push_str(&markdown_fenced_block("cirru", &fragment.cirru));
     let _ = writeln!(&mut out);
   }
 
@@ -3739,20 +3717,20 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
       return Ok(());
     }
     let mut out = String::new();
-    let _ = writeln!(&mut out, "{} {}", "Type:".bold(), meta.expr_preview);
-    let _ = writeln!(&mut out, "{} {}", "Doc:".bold(), meta.doc);
-    let _ = writeln!(&mut out, "\n{} {}", "Examples:".bold(), meta.examples.len());
-    let _ = writeln!(&mut out, "\n{}", "Schema:".bold());
-    let _ = writeln!(&mut out, "{}", format_query_schema(meta.schema.as_ref(), true));
-    let _ = writeln!(&mut out, "\n{}", "Cirru:".bold());
-    let _ = writeln!(&mut out, "{}", meta.cirru_note.dimmed());
+    let _ = writeln!(&mut out, "# Definition `{namespace}/{definition}`\n");
+    let _ = writeln!(&mut out, "- Type: `{}`", meta.expr_preview);
+    let _ = writeln!(&mut out, "- Examples: {}", meta.examples.len());
+    let _ = writeln!(&mut out, "\n## Documentation\n\n> {}", meta.doc);
+    let _ = writeln!(&mut out, "\n## Schema\n");
+    out.push_str(&markdown_fenced_block("cirru", &format_query_schema(meta.schema.as_ref(), true)));
+    let _ = writeln!(&mut out, "\n## Cirru\n");
+    out.push_str(&markdown_fenced_block("text", meta.cirru_note));
 
     if opts.json {
-      let _ = writeln!(&mut out, "\n{}", "JSON:".bold());
-      let _ = writeln!(
-        &mut out,
-        "{}",
-        serde_json::json!({
+      let _ = writeln!(&mut out, "\n## JSON\n");
+      out.push_str(&markdown_fenced_block(
+        "json",
+        &serde_json::json!({
           "doc": meta.doc,
           "examples": meta.examples.iter().map(cirru_to_json).collect::<Vec<_>>(),
           "code": serde_json::Value::Null,
@@ -3766,7 +3744,8 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
           "builtin": true,
           "kind": "special-proc"
         })
-      );
+        .to_string(),
+      ));
     }
 
     emit_cli_output(&out, false);
@@ -3795,22 +3774,26 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
   }
 
   let mut out = String::new();
+  let _ = writeln!(&mut out, "# Definition `{namespace}/{resolved_definition}`\n");
 
   if let Ok(code_data) = calcit::data::cirru::code_to_calcit(&code_entry.code, namespace, &resolved_definition, vec![])
     && let Some(summary) = CalcitTypeAnnotation::summarize_code(&code_data)
   {
-    let _ = writeln!(&mut out, "{} {}", "Type:".bold(), summary);
-  }
-
-  if !code_entry.doc.is_empty() {
-    let _ = writeln!(&mut out, "{} {}", "Doc:".bold(), code_entry.doc);
+    let _ = writeln!(&mut out, "- Type: `{summary}`");
   }
 
   let tags_text = format_tags_display(&code_entry.tags);
   if tags_text.is_empty() {
-    let _ = writeln!(&mut out, "{} {}", "Tags:".bold(), "(none)".dimmed());
+    let _ = writeln!(&mut out, "- Tags: _(none)_");
   } else {
-    let _ = writeln!(&mut out, "{} {}", "Tags:".bold(), tags_text);
+    let _ = writeln!(&mut out, "- Tags: {tags_text}");
+  }
+
+  if !code_entry.doc.is_empty() {
+    let _ = writeln!(&mut out, "\n## Documentation\n");
+    for line in code_entry.doc.lines() {
+      let _ = writeln!(&mut out, "> {line}");
+    }
   }
 
   if let Some(ffi) = &code_entry.ffi {
@@ -3828,19 +3811,24 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
         preview,
       )
     };
-    let _ = writeln!(&mut out, "{} {}", label.bold(), text);
+    let _ = writeln!(&mut out, "\n## {}\n", label.trim_end_matches(':'));
+    out.push_str(&markdown_fenced_block("cirru", &text));
   }
 
   if !code_entry.examples.is_empty() {
-    let _ = writeln!(&mut out, "\n{} {}", "Examples:".bold(), code_entry.examples.len());
+    let _ = writeln!(&mut out, "- Examples: {}", code_entry.examples.len());
   }
   if !code_entry.tests.is_empty() {
-    let _ = writeln!(&mut out, "{} {}", "Tests:".bold(), code_entry.tests.len());
+    let _ = writeln!(&mut out, "- Tests: {}", code_entry.tests.len());
   }
 
-  let _ = writeln!(&mut out, "\n{}", "Schema:".bold());
+  let _ = writeln!(&mut out, "\n## Schema\n");
   let schema_str = format_query_schema(code_entry.schema.as_ref(), true);
-  let _ = writeln!(&mut out, "{schema_str}");
+  if schema_str == "(none)" {
+    let _ = writeln!(&mut out, "_No explicit schema._");
+  } else {
+    out.push_str(&markdown_fenced_block("cirru", &schema_str));
+  }
 
   if !opts.raw {
     let chunk_options = ChunkDisplayOptions {
@@ -3853,22 +3841,22 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
       let _ = writeln!(&mut out);
       out.push_str(&render_chunked_display(&display));
     } else {
-      let _ = writeln!(&mut out, "\n{}", "Cirru:".bold());
+      let _ = writeln!(&mut out, "\n## Cirru\n");
       let cirru_str =
         cirru_parser::format(std::slice::from_ref(&code_entry.code), true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
-      let _ = writeln!(&mut out, "{cirru_str}");
+      out.push_str(&markdown_fenced_block("cirru", &cirru_str));
     }
   } else {
-    let _ = writeln!(&mut out, "\n{}", "Cirru:".bold());
+    let _ = writeln!(&mut out, "\n## Cirru\n");
     let cirru_str =
       cirru_parser::format(std::slice::from_ref(&code_entry.code), true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
-    let _ = writeln!(&mut out, "{cirru_str}");
+    out.push_str(&markdown_fenced_block("cirru", &cirru_str));
   }
 
   if opts.json {
-    let _ = writeln!(&mut out, "\n{}", "JSON:".bold());
+    let _ = writeln!(&mut out, "\n## JSON\n");
     let json = code_entry_to_json(code_entry)?;
-    let _ = writeln!(&mut out, "{}", serde_json::to_string(&json).unwrap());
+    out.push_str(&markdown_fenced_block("json", &serde_json::to_string_pretty(&json).unwrap()));
   }
 
   emit_cli_output(&out, render_to_stderr);
@@ -3927,6 +3915,27 @@ fn format_example_node(example: &Cirru) -> String {
   }
 }
 
+fn render_examples_human(target: &str, examples: &[Cirru]) -> String {
+  let mut out = String::new();
+  let _ = writeln!(&mut out, "# Examples for `{target}`\n");
+  if examples.is_empty() {
+    let _ = writeln!(&mut out, "_No examples._");
+    return out;
+  }
+  let _ = writeln!(&mut out, "Count: {}.\n", examples.len());
+  for (index, example) in examples.iter().enumerate() {
+    let _ = writeln!(&mut out, "## Example {index}\n");
+    out.push_str(&markdown_fenced_block("cirru", &format_example_node(example)));
+    let _ = writeln!(&mut out, "\n### JSON AST\n");
+    out.push_str(&markdown_fenced_block(
+      "json",
+      &serde_json::to_string_pretty(&cirru_to_json(example)).unwrap(),
+    ));
+    let _ = writeln!(&mut out);
+  }
+  out
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Progressive disclosure commands
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3942,29 +3951,7 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
   if !file_data.defs.contains_key(definition)
     && let Some(meta) = lookup_special_builtin_query_meta(namespace, definition)?
   {
-    let mut out = String::new();
-
-    if meta.examples.is_empty() {
-      let _ = writeln!(&mut out, "\n{}", "(no examples)".dimmed());
-    } else {
-      let _ = writeln!(&mut out, "{} example(s)\n", meta.examples.len());
-
-      for (i, example) in meta.examples.iter().enumerate() {
-        let _ = writeln!(&mut out, "{}", format!("[{i}]:").bold());
-        let cirru_str = format_example_node(example);
-        for line in cirru_str.lines().filter(|line| !line.trim().is_empty()) {
-          let _ = writeln!(&mut out, "  {line}");
-        }
-        let _ = writeln!(
-          &mut out,
-          "  {} {}",
-          "JSON:".dimmed(),
-          serde_json::to_string(&cirru_to_json(example)).unwrap().dimmed()
-        );
-        let _ = writeln!(&mut out);
-      }
-    }
-
+    let out = render_examples_human(&format!("{namespace}/{definition}"), &meta.examples);
     emit_cli_output(&out, false);
     return Ok(());
   }
@@ -3981,32 +3968,7 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
     .get(resolved_definition.as_str())
     .expect("resolved definition exists");
 
-  let mut out = String::new();
-
-  if code_entry.examples.is_empty() {
-    let _ = writeln!(&mut out, "\n{}", "(no examples)".dimmed());
-  } else {
-    let _ = writeln!(&mut out, "{} example(s)\n", code_entry.examples.len());
-
-    for (i, example) in code_entry.examples.iter().enumerate() {
-      let _ = writeln!(&mut out, "{}", format!("[{i}]:").bold());
-
-      let cirru_str = format_example_node(example);
-      for line in cirru_str.lines().filter(|l| !l.trim().is_empty()) {
-        let _ = writeln!(&mut out, "  {line}");
-      }
-
-      let json = cirru_to_json(example);
-      let _ = writeln!(
-        &mut out,
-        "  {} {}",
-        "JSON:".dimmed(),
-        serde_json::to_string(&json).unwrap().dimmed()
-      );
-      let _ = writeln!(&mut out);
-    }
-  }
-
+  let out = render_examples_human(&format!("{namespace}/{resolved_definition}"), &code_entry.examples);
   emit_cli_output(&out, render_to_stderr);
   Ok(())
 }
@@ -4018,8 +3980,7 @@ fn handle_tests(input_path: &str, namespace: &str, definition: &str) -> Result<(
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
   if !file.defs.contains_key(definition) && lookup_special_builtin_query_meta(namespace, definition)?.is_some() {
-    let mut out = String::new();
-    let _ = writeln!(&mut out, "\n{}", "(no tests)".dimmed());
+    let out = format!("# Tests for `{namespace}/{definition}`\n\n_No tests._\n");
     emit_cli_output(&out, false);
     return Ok(());
   }
@@ -4030,20 +3991,19 @@ fn handle_tests(input_path: &str, namespace: &str, definition: &str) -> Result<(
   }
   let entry = file.defs.get(lookup.resolved.as_str()).expect("resolved definition exists");
   let mut out = String::new();
+  let _ = writeln!(&mut out, "# Tests for `{namespace}/{}`\n", lookup.resolved);
   if entry.tests.is_empty() {
-    let _ = writeln!(&mut out, "\n{}", "(no tests)".dimmed());
+    let _ = writeln!(&mut out, "_No tests._");
   } else {
-    let _ = writeln!(&mut out, "{} test(s)\n", entry.tests.len());
+    let _ = writeln!(&mut out, "Count: {}.\n", entry.tests.len());
     for test in &entry.tests {
       let mut tags = test.tags.iter().map(|tag| format!(":{}", tag.ref_str())).collect::<Vec<_>>();
       tags.sort();
-      let _ = writeln!(&mut out, "{}", format!("# {}", test.name).bold());
+      let _ = writeln!(&mut out, "## Test `{}`\n", test.name);
       if !tags.is_empty() {
-        let _ = writeln!(&mut out, "  Tags: {}", tags.join(" "));
+        let _ = writeln!(&mut out, "- Tags: {}\n", tags.join(" "));
       }
-      for line in format_example_node(&test.code).lines().filter(|line| !line.trim().is_empty()) {
-        let _ = writeln!(&mut out, "  {line}");
-      }
+      out.push_str(&markdown_fenced_block("cirru", &format_example_node(&test.code)));
       let _ = writeln!(&mut out);
     }
   }
@@ -4064,15 +4024,13 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
     && let Some(meta) = lookup_special_builtin_query_meta(namespace, definition)?
   {
     let mut out = String::new();
-    let _ = writeln!(&mut out, "{} {}", "Doc:".bold(), meta.doc);
-    let _ = writeln!(&mut out, "{} {}", "Expr:".bold(), meta.expr_preview.dimmed());
-    let _ = writeln!(&mut out, "{} {}", "Examples:".bold(), meta.examples.len());
-    let _ = writeln!(
-      &mut out,
-      "{} {}",
-      "Schema:".bold(),
-      format_query_schema(meta.schema.as_ref(), true).replace('\n', " ").dimmed()
-    );
+    let _ = writeln!(&mut out, "# Definition preview `{namespace}/{definition}`\n");
+    let _ = writeln!(&mut out, "- Examples: {}", meta.examples.len());
+    let _ = writeln!(&mut out, "\n## Documentation\n\n> {}", meta.doc);
+    let _ = writeln!(&mut out, "\n## Expression\n");
+    out.push_str(&markdown_fenced_block("cirru", meta.expr_preview));
+    let _ = writeln!(&mut out, "\n## Schema\n");
+    out.push_str(&markdown_fenced_block("cirru", &format_query_schema(meta.schema.as_ref(), true)));
     emit_cli_output(&out, false);
     return Ok(());
   }
@@ -4090,37 +4048,43 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
     .expect("resolved definition exists");
 
   let mut out = String::new();
+  let _ = writeln!(&mut out, "# Definition preview `{namespace}/{resolved_definition}`\n");
 
   if code_entry.doc.is_empty() {
-    let _ = writeln!(&mut out, "{} -", "Doc:".bold());
+    let _ = writeln!(&mut out, "_No documentation._");
   } else {
-    let _ = writeln!(&mut out, "{} {}", "Doc:".bold(), code_entry.doc);
+    let _ = writeln!(&mut out, "## Documentation\n");
+    for line in code_entry.doc.lines() {
+      let _ = writeln!(&mut out, "> {line}");
+    }
   }
 
+  let _ = writeln!(&mut out, "\n## Expression preview\n");
   match &code_entry.code {
     Cirru::List(items) if !items.is_empty() => {
       let preview = code_entry.code.format_one_liner()?;
       let display = truncate_chars_with_dots(&preview, 120);
-      let _ = writeln!(&mut out, "{} {}", "Expr:".bold(), display.dimmed());
+      out.push_str(&markdown_fenced_block("cirru", &display));
     }
     Cirru::Leaf(_) => {
       let preview = code_entry.code.format_one_liner()?;
-      let _ = writeln!(&mut out, "{} {}", "Leaf:".bold(), preview.dimmed());
+      out.push_str(&markdown_fenced_block("cirru", &preview));
     }
     _ => {
-      let _ = writeln!(&mut out, "{}", "(empty or invalid definition)".dimmed());
+      let _ = writeln!(&mut out, "_Empty or invalid definition._");
     }
   }
 
-  let _ = writeln!(&mut out, "{} {}", "Examples:".bold(), code_entry.examples.len());
-  let _ = writeln!(&mut out, "{} {}", "Tests:".bold(), code_entry.tests.len());
+  let _ = writeln!(&mut out, "\n- Examples: {}", code_entry.examples.len());
+  let _ = writeln!(&mut out, "- Tests: {}", code_entry.tests.len());
 
+  let _ = writeln!(&mut out, "\n## Schema\n");
   if let Some(cirru) = query_schema_cirru(code_entry.schema.as_ref(), true)? {
     let preview = format_query_schema_oneline(&cirru)?;
     let display = truncate_chars_with_dots(&preview, 120);
-    let _ = writeln!(&mut out, "{} {}", "Schema:".bold(), display.dimmed());
+    out.push_str(&markdown_fenced_block("cirru", &display));
   } else {
-    let _ = writeln!(&mut out, "{} -", "Schema:".bold());
+    let _ = writeln!(&mut out, "_No explicit schema._");
   }
 
   emit_cli_output(&out, render_to_stderr);
@@ -4154,12 +4118,8 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool
       );
       return Ok(());
     } else {
-      let _ = writeln!(
-        &mut out,
-        "{} {}",
-        "Schema:".bold(),
-        format_query_schema(meta.schema.as_ref(), true).replace('\n', " ").dimmed()
-      );
+      let _ = writeln!(&mut out, "# Schema for `{namespace}/{definition}`\n");
+      out.push_str(&markdown_fenced_block("cirru", &format_query_schema(meta.schema.as_ref(), true)));
     }
     emit_cli_output(&out, false);
     return Ok(());
@@ -4194,9 +4154,13 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool
   }
 
   if let Some(cirru) = query_schema_cirru(code_entry.schema.as_ref(), true)? {
-    let _ = writeln!(&mut out, "{} {}", "Schema:".bold(), format_query_schema_oneline(&cirru)?.dimmed());
+    let _ = writeln!(&mut out, "# Schema for `{namespace}/{resolved_definition}`\n");
+    out.push_str(&markdown_fenced_block("cirru", &format_query_schema_oneline(&cirru)?));
   } else {
-    let _ = writeln!(&mut out, "{} -", "Schema:".bold());
+    let _ = writeln!(
+      &mut out,
+      "# Schema for `{namespace}/{resolved_definition}`\n\n_No explicit schema._"
+    );
   }
 
   emit_cli_output(&out, render_to_stderr);
@@ -4964,8 +4928,7 @@ where
 }
 
 #[derive(Clone, Copy)]
-struct SearchResultDisplay<'a> {
-  highlight_target: Option<&'a str>,
+struct SearchResultDisplay {
   bracket_path: bool,
   show_parent_path: bool,
 }
@@ -4974,20 +4937,18 @@ fn print_search_results_human(
   catalog: &SearchCatalog,
   all_results: &SearchResults,
   common_opts: &SearchCommonOpts,
-  display: SearchResultDisplay<'_>,
+  display: SearchResultDisplay,
 ) {
   let snapshot = &catalog.snapshot;
   if all_results.is_empty() {
-    println!("{}", "No matches found.".yellow());
+    println!("# Search results\n\n_No matches found._");
     return;
   }
 
   let total_matches: usize = all_results.iter().map(|(_, _, results)| results.len()).sum();
   println!(
-    "{} {} match(es) found in {} definition(s):\n",
-    "Results:".bold().green(),
-    total_matches,
-    all_results.len()
+    "# Search results\n\n- Matches: {total_matches}\n- Definitions: {}\n",
+    all_results.len(),
   );
 
   let mut definition_offset = 0_usize;
@@ -5000,14 +4961,7 @@ fn print_search_results_human(
         format!("{}:{origin_label}", source.as_str())
       })
       .unwrap_or_else(|| "unknown".to_owned());
-    println!(
-      "{} {}/{} ({} matches) {}",
-      "●".cyan(),
-      ns.dimmed(),
-      def_name.green(),
-      results.len(),
-      format!("[{source_label}]").dimmed()
-    );
+    println!("## `{ns}/{def_name}`\n\n- Matches: {}\n- Source: `{source_label}`\n", results.len());
     print_detail_window_hint(results.len(), common_opts.detail_offset, "matches");
 
     if let Some(file_data) = snapshot.files.get(ns)
@@ -5021,73 +4975,46 @@ fn print_search_results_human(
         let cursor_index = definition_offset + local_index;
         if path.is_empty() {
           let (content, truncated) = preview_node_oneline(&code_entry.code, 110);
-          if truncated {
-            println!(
-              "    {} {} {} ⟪…⟫",
-              format!("[#{cursor_index}]").cyan(),
-              "(root)".cyan(),
-              content.dimmed()
-            );
-          } else {
-            println!(
-              "    {} {} {}",
-              format!("[#{cursor_index}]").cyan(),
-              "(root)".cyan(),
-              content.dimmed()
-            );
-          }
+          println!(
+            "### Match #{cursor_index}\n\n- Path: `root`{}\n\n{}",
+            if truncated { "\n- Preview: truncated" } else { "" },
+            markdown_fenced_block("cirru", &content)
+          );
         } else {
           let path_str = format_path(path);
           let path_label = if display.bracket_path { format!("[{path_str}]") } else { path_str };
           let ((expr_preview, expr_truncated), parent_previews) =
-            expression_and_parent_preview(&code_entry.code, path, node, display.highlight_target, common_opts.loose);
+            expression_and_parent_preview(&code_entry.code, path, node, None, common_opts.loose);
           let (display_preview, display_truncated) = parent_previews
             .first()
             .map(|(text, truncated)| (text.as_str(), *truncated))
             .unwrap_or((expr_preview.as_str(), expr_truncated));
-          if display_truncated {
-            println!(
-              "    {} {} {} ⟪…⟫",
-              format!("[#{cursor_index}]").cyan(),
-              path_label.cyan(),
-              display_preview
-            );
-          } else {
-            println!(
-              "    {} {} {}",
-              format!("[#{cursor_index}]").cyan(),
-              path_label.cyan(),
-              display_preview
-            );
-          }
+          println!(
+            "### Match #{cursor_index}\n\n- Path: `{path_label}`{}\n\n{}",
+            if display_truncated { "\n- Preview: truncated" } else { "" },
+            markdown_fenced_block("cirru", display_preview)
+          );
           if display.show_parent_path && common_opts.parent_path {
             let parent_path_str = snapshot_code_path(&path[..path.len() - 1]);
-            println!("       {} {}", "parent:".dimmed(), parent_path_str.dimmed());
+            println!("- Parent: `{parent_path_str}`\n");
           }
         }
       }
 
       if start > 0 {
         println!(
-          "    {}",
-          format!(
-            "[#{}..#{}] {start} matches compressed before window",
-            definition_offset,
-            definition_offset + start - 1
-          )
-          .dimmed()
+          "_Matches #{}–#{} compressed before this window ({})._",
+          definition_offset,
+          definition_offset + start - 1,
+          start,
         );
       }
       if end < total {
         println!(
-          "    {}",
-          format!(
-            "[#{}..#{}] {} matches compressed after window",
-            definition_offset + end,
-            definition_offset + total - 1,
-            total - end
-          )
-          .dimmed()
+          "_Matches #{}–#{} compressed after this window ({})._",
+          definition_offset + end,
+          definition_offset + total - 1,
+          total - end,
         );
       }
     }
@@ -5096,17 +5023,9 @@ fn print_search_results_human(
     println!();
   }
 
-  let mut tips = Tips::new();
   if total_matches > 10 && common_opts.loose {
-    tips.add_with_priority(
-      TipPriority::High,
-      format!(
-        "Many matches ({total_matches}); add {} to show exact matches only",
-        "--exact".yellow()
-      ),
-    );
+    println!("## Tip\n\nMany matches ({total_matches}); add `--exact` to show exact matches only.");
   }
-  tips.print();
 }
 
 struct SearchCommandInfo<'a> {
@@ -5115,7 +5034,7 @@ struct SearchCommandInfo<'a> {
   pattern: &'a str,
   pattern_is_json: bool,
   start_path: Option<&'a str>,
-  display: SearchResultDisplay<'a>,
+  display: SearchResultDisplay,
 }
 
 fn finish_search_results(
@@ -5192,7 +5111,6 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
       pattern_is_json: false,
       start_path,
       display: SearchResultDisplay {
-        highlight_target: Some(pattern),
         bracket_path: false,
         show_parent_path: true,
       },
@@ -5222,11 +5140,6 @@ fn handle_search_expr(
       .clone()
   };
 
-  let highlight_target: Option<&str> = match &pattern_node {
-    Cirru::Leaf(s) => Some(s.as_ref()),
-    _ => None,
-  };
-
   let all_results = collect_search_results(
     &catalog.snapshot,
     parsed_start_path.as_deref(),
@@ -5246,7 +5159,6 @@ fn handle_search_expr(
       pattern_is_json: json,
       start_path,
       display: SearchResultDisplay {
-        highlight_target,
         bracket_path: true,
         show_parent_path: false,
       },

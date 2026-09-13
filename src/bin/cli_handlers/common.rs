@@ -2,6 +2,7 @@
 
 use cirru_edn::Edn;
 use cirru_parser::Cirru;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -42,6 +43,18 @@ pub fn cirru_to_json_value(c: &Cirru) -> serde_json::Value {
 /// Convert Cirru syntax tree to JSON string
 pub fn cirru_to_json(node: &Cirru) -> String {
   serde_json::to_string_pretty(&cirru_to_json_value(node)).unwrap_or_else(|_| "[]".to_string())
+}
+
+/// Render an explicit Markdown boundary around code or structured text.
+pub fn markdown_fenced_block(language: &str, content: &str) -> String {
+  let longest_backtick_run = content.split(|character| character != '`').map(str::len).max().unwrap_or_default();
+  let fence = "`".repeat(longest_backtick_run.saturating_add(1).max(3));
+  let mut out = String::new();
+  let _ = writeln!(&mut out, "{fence}{language}");
+  out.push_str(content.trim_matches('\n'));
+  out.push('\n');
+  let _ = writeln!(&mut out, "{fence}");
+  out
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -569,8 +582,8 @@ pub fn parse_input_to_cirru(raw: &str) -> Result<Cirru, String> {
 mod tests {
   use super::{
     GlobalTempPathKind, decode_syntax_input, format_path, format_path_with_separator, global_temp_path_guidance,
-    guard_snapshot_mutation_toolchain, package_version_for_snapshot, parse_input_to_cirru, parse_path, parse_quoted_cirru_nodes,
-    resolve_definition_lookup, shell_quote,
+    guard_snapshot_mutation_toolchain, markdown_fenced_block, package_version_for_snapshot, parse_input_to_cirru, parse_path,
+    parse_quoted_cirru_nodes, resolve_definition_lookup, shell_quote,
   };
   use crate::cli_args::SyntaxInputFormat;
   use cirru_parser::Cirru;
@@ -599,6 +612,15 @@ mod tests {
 
   fn list(items: Vec<Cirru>) -> Cirru {
     Cirru::List(items)
+  }
+
+  #[test]
+  fn markdown_fence_is_longer_than_embedded_backticks() {
+    assert_eq!(
+      markdown_fenced_block("cirru", "def x ``` value\n"),
+      "````cirru\ndef x ``` value\n````\n"
+    );
+    assert_eq!(markdown_fenced_block("json", "[]"), "```json\n[]\n```\n");
   }
 
   #[test]
