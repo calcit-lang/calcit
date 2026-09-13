@@ -15,6 +15,7 @@ parent: core/run
 related:
   - core/run/edit-tree
   - core/run/upgrade
+  - core/run/workflow-entrypoints
 requires:
   - core/agent
 leads_to:
@@ -22,6 +23,9 @@ leads_to:
 ---
 
 # Compiler-guided Source Fixes
+
+`calcit fix` 是所有“检测并改写可证明问题”的统一入口，不再为单条规则增加 `analyze detect-*` 或新的顶层命令。
+入口分工与兼容读取边界见 [Calcit CLI 工作流入口收敛](workflow-entrypoints.md)。
 
 `calcit fix` 把编译器已经能够唯一判断的迁移建议映射回 Snapshot source AST。默认命令只做预览；它会在同目录的
 staged Snapshot 上尝试替换并重新编译选定 scope，成功后仍不写入原文件：
@@ -140,6 +144,10 @@ JSON stdout 是一个完整 value，包含 `schema_version`、`command`、Snapsh
 quoted AST 的 original/replacement 与 applicability。结构化 splice 的 replacement 使用 `{"$type":"splice","value":[...]}`，
 明确表示多个 sibling，而不是伪装成单个表达式。`validation` 说明 staged scope preprocess 是否执行并通过，以及实际检查的
 operation 数量；没有可应用 operation 时状态为 `not-needed`。日志和 command echo 只写 stderr，Agent 不需要解析人类文本或生成的 JS。
+
+`filters.expanded_rules` 进一步说明每条实际规则的 `evidence_source`、`diagnostic_code`、`lifecycle` 和
+`source_version_required`。当前规则只从当前诊断或 resolved source AST 派生，`source_version_required` 固定为 `false`；
+稳定 rule ID 的版本号只表示协议行为，不表示待迁移项目的来源版本。
 
 确认预览后再应用：
 

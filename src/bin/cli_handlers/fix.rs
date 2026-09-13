@@ -113,6 +113,16 @@ struct FixFilters<'a> {
   rule_id: &'a str,
   preset_id: Option<&'a str>,
   expanded_rule_ids: Vec<&'static str>,
+  expanded_rules: Vec<FixRuleMetadata>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+struct FixRuleMetadata {
+  rule_id: &'static str,
+  diagnostic_code: &'static str,
+  evidence_source: &'static str,
+  lifecycle: &'static str,
+  source_version_required: bool,
 }
 
 /// Plan deterministic source migrations, validate them on a staged Snapshot, and optionally commit them atomically.
@@ -228,6 +238,7 @@ pub(crate) fn handle_fix_command(
   let transaction = run_staged_fix_transaction(Path::new(snapshot_file), &operations, Some(&revision), dry_run, &validation_args)?;
 
   let mode = if options.apply { "apply" } else { "preview" };
+  let expanded_rules = selected_rules.iter().copied().map(fix_rule_metadata).collect();
   let report = FixReport {
     schema_version: 1,
     command: "fix",
@@ -240,6 +251,7 @@ pub(crate) fn handle_fix_command(
         rule_id: options.rule.as_deref().unwrap_or("all"),
         preset_id: options.preset.as_deref(),
         expanded_rule_ids: selected_rules,
+        expanded_rules,
       },
       changed: transaction.changed,
       new_revision: &transaction.new_revision,
@@ -344,6 +356,48 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
     Some(SURFACE_LATEST_V1_PRESET) => SURFACE_LATEST_V1_RULES.to_vec(),
     Some(SURFACE_LATEST_V2_PRESET) => SURFACE_LATEST_V2_RULES.to_vec(),
     _ => AVAILABLE_RULES.to_vec(),
+  }
+}
+
+/// Describe how a current normalization rule is derived without coupling it to a source release.
+fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
+  match rule_id {
+    REMOVED_DATA_API_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: REMOVED_DATA_API_DIAGNOSTIC,
+      evidence_source: "current-diagnostic",
+      lifecycle: "current-semantics",
+      source_version_required: false,
+    },
+    REDUNDANT_DO_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: REDUNDANT_DO_DIAGNOSTIC,
+      evidence_source: "resolved-source-ast",
+      lifecycle: "current-semantics",
+      source_version_required: false,
+    },
+    SINGLE_EXPRESSION_DO_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: SINGLE_EXPRESSION_DO_DIAGNOSTIC,
+      evidence_source: "resolved-source-ast",
+      lifecycle: "current-semantics",
+      source_version_required: false,
+    },
+    NAMED_ENUM_CONSTRUCTOR_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: NAMED_ENUM_CONSTRUCTOR_DIAGNOSTIC,
+      evidence_source: "resolved-source-ast",
+      lifecycle: "current-semantics",
+      source_version_required: false,
+    },
+    NAMED_STRUCT_CONSTRUCTOR_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: NAMED_STRUCT_CONSTRUCTOR_DIAGNOSTIC,
+      evidence_source: "resolved-source-ast",
+      lifecycle: "current-semantics",
+      source_version_required: false,
+    },
+    _ => unreachable!("selected fix rule must have current-semantics metadata"),
   }
 }
 
@@ -1241,9 +1295,9 @@ fn print_human_report(report: &FixReport<'_>) {
 #[cfg(test)]
 mod tests {
   use super::{
-    FixOperation, FixSuggestion, NominalKind, collect_potential_local_bindings, collect_redundant_do_paths, insert_fix_suggestion,
-    legacy_constructor_replacement, migration_for_source_leaf, prototype_is_shadowed, resolve_fix_target, struct_fields_are_complete,
-    suggestion_operations,
+    FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_potential_local_bindings, collect_redundant_do_paths,
+    fix_rule_metadata, insert_fix_suggestion, legacy_constructor_replacement, migration_for_source_leaf, prototype_is_shadowed,
+    resolve_fix_target, struct_fields_are_complete, suggestion_operations,
   };
   use cirru_parser::Cirru;
   use serde_json::Value;
@@ -1259,6 +1313,15 @@ mod tests {
       migration_for_source_leaf("core/tuple-enum"),
       Some((Some("core/enum-definition".to_owned()), "core/enum-definition".to_owned()))
     );
+  }
+
+  #[test]
+  fn removed_data_fix_is_derived_from_the_current_diagnostic() {
+    let metadata = fix_rule_metadata(REMOVED_DATA_API_RULE);
+    assert_eq!(metadata.diagnostic_code, "W_REMOVED_DATA_API");
+    assert_eq!(metadata.evidence_source, "current-diagnostic");
+    assert_eq!(metadata.lifecycle, "current-semantics");
+    assert!(!metadata.source_version_required);
   }
 
   #[test]
