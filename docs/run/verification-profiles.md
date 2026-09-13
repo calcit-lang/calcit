@@ -27,6 +27,7 @@ requires:
 
 ```bash
 calcit calcit.cirru analyze verify --profile release
+calcit calcit.cirru analyze verify --profile release --format edn
 calcit calcit.cirru analyze verify --profile release --format json
 ```
 
@@ -66,7 +67,22 @@ Profile 不把 `test`、JS/WASM/WASI codegen、Markdown 文档执行或外部消
 
 执行顺序固定为 `:entries` 外层、`:checks` 内层。`:stop` 在第一项失败后停止；`:continue` 运行全部组合。任一已运行检查失败时，命令以非零状态退出。
 
-Human 输出是简洁 Markdown，按 entry/check 使用 heading 和列表。自动化应使用 `--format json`；stdout 只包含一个 envelope：
+Human 输出是简洁 Markdown，按 entry/check 使用 heading 和列表。Calcit 自有自动化优先使用 `--format edn`；stdout 只包含一个 Cirru EDN envelope：
+
+```cirru-edn
+{}
+  :schema-version 1
+  :command |analyze.verify
+  :revision |md5:...
+  :data $ {}
+    :profile |release
+    :on-failure |stop
+    :status |passed
+    :checks $ []
+  :diagnostics $ []
+```
+
+对接 JSON-only 工具或既有 consumer 时，显式使用 `--format json`，字段语义与 EDN envelope 相同：
 
 ```json
 {
@@ -83,14 +99,14 @@ Human 输出是简洁 Markdown，按 entry/check 使用 heading 和列表。自�
 }
 ```
 
-每个已运行 check 都包含 `check`、`entry`、`target`、`revision`、`status` 和带稳定 `code` 的 diagnostics。Profile 不存在、schema 无效、entry 不存在或 check 未知时，在运行检查前返回 `E_VERIFY_CONFIG`；JSON stdout 仍是一个完整 envelope。
+每个已运行 check 都包含 `check`、`entry`、`target`、`revision`、`status` 和带稳定 `code` 的 diagnostics。Profile 不存在、schema 无效、entry 不存在或 check 未知时，在运行检查前返回 `E_VERIFY_CONFIG`；EDN 或显式选择的 JSON stdout 仍是一个完整 envelope。
 
 ## 发布工作流边界
 
 Profile 适合收敛重复的 Calcit-owned 静态门禁，但不能代替完整发布验收。推荐顺序是：
 
 1. `calcit edit format` 后用 Git 检查 Snapshot 是否干净；
-2. 运行 `calcit analyze verify --profile release --format json`；
+2. 运行 `calcit analyze verify --profile release --format edn`；
 3. 显式运行 definition `:tests`、Markdown 示例、目标 codegen/runtime 和真实消费者回归；
 4. 只在精确提交的全部 CI 成功后发布。
 

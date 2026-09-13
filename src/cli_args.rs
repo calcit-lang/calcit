@@ -362,7 +362,7 @@ pub struct VerifyCommand {
   /// profile name from snapshot :verification.profiles
   #[argh(option)]
   pub profile: String,
-  /// output format: human (default) or json
+  /// output format: human (default), edn (primary structured data), or json (interoperability)
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }

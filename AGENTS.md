@@ -6,7 +6,7 @@
 - **质量检查**：执行 `cargo clippy -- -D warnings` 消除潜在风险与性能问题。
 - **构建验证**：执行 `yarn compile` 确保前端 TS 与 Rust 核心构建正常。
 - **运行测试**：执行 `cargo test` 验证单元测试，`yarn check-all` 验证全量集成测试。
-- **Agent CLI 协议检查**：在本仓库执行 `yarn check-agent-interface`，验证查询命令 stdout 可解析为单个 JSON，并记录语义查询耗时与输出字节数。该命令属于 Calcit 仓库开发流程，不适用于普通业务项目。
+- **Agent CLI 协议检查**：在本仓库执行 `yarn check-agent-interface`，验证显式选择 `--format json` 的兼容路径 stdout 可解析为单个 JSON，并记录语义查询耗时与输出字节数。该命令属于 Calcit 仓库开发流程，不适用于普通业务项目；它不改变 Cirru EDN 的原生格式地位。
 - **外部项目回归**：CLI 查询、编辑或类型分析改动完成后，用已全局安装的新 `calcit` 在 Respo 等真实项目验证；有写入风险的编辑命令先作用于 Snapshot 临时副本。大项目只需要统计时使用 `--summary-only`，examples 回归优先使用 `check-examples --ns <ns> --def <definition>`。
 
 ### 功能准则
@@ -39,6 +39,7 @@
 - **双语协作记录**：关联 Issue 与 PR 的标题、正文和阶段性进度保持中英双语，便于跨项目追踪同一设计方向。
 - **PR 双语分段**：新建或更新 PR 时，正文必须分别提供完整的中文段落和英文段落，不把两种语言混写在同一段中；已有 PR 不要求追溯改写。
 - **文档与注释语言**：新增或修改面向用户的仓库文档使用中文；源代码中的注释和 doc comment 使用英文。已有内容不要求仅为统一语言而改写。
+- **输出格式层次**：不传格式参数时，面向人的 CLI 输出保持 Markdown-compatible human；显式请求结构化 Calcit 数据时优先提供并在自有文档中推荐 `--format edn`，使用 Cirru EDN 的 tag、kebab-case key 与原生值语义；`--format json` 作为对接 JSON-only 工具链的显式兼容选项保留，不得成为 Calcit 自有工作流的默认结构化格式。两种结构化 envelope 必须语义等价且 stdout 各自只包含一个可解析文档；不得为格式差异新增顶层命令。
 - **分层语义**：以 `RFCs/09-12-layered-semantics-and-agent-fixes-rfc.md` 为共同契约。Cirru/Snapshot 保存结构化 source；表层语言拥有用户语义；macro 展开和 typed core 只做保持语义的解析、证明与 lowering；native/JS/WASM backend 实现共同语义或明确报告 unsupported。不得让 backend 限制静默变成新的表层类型规则。
 - **开放值语义**：内部 Unknown/Unresolved、用户显式 Dynamic 与 JsObject/host value 是不同概念。Dynamic 可以被保存、传递和包装，只有具体使用其内容时才要求 decode/narrow/unsafe 证据；优先修正通用类型关系，不扩展普通/动态两套平行 API。
 - **Agent 可执行修复**：编译器内部 lowering 不直接写回 Snapshot。只有能唯一回到 source AST、证明保持求值与失败语义、并携带 revision/fingerprint 前置条件的建议才能成为自动 fix；不得自动插入 `unsafe-coerce`、扩大 Dynamic、选择业务默认值或修改测试预期。
