@@ -104,14 +104,51 @@ fn edit_defmacro_keeps_required_optional_and_rest_macros_loadable() {
   create_macro(&snapshot, "optional-id", "quote $ defmacro optional-id (value ? ignored) value");
   create_macro(&snapshot, "rest-id", "quote $ defmacro rest-id (value & ignored) value");
 
-  for (name, expected_fragment) in [("required-id", ":required"), ("optional-id", ":optional"), ("rest-id", ":rest")] {
+  for (name, expected_schema) in [
+    (
+      "required-id",
+      serde_json::json!([
+        "::",
+        "'Macro",
+        [
+          "{}",
+          [":capabilities", ["#{}"]],
+          [":expansion", ["::", "'Expr", "'Dynamic"]],
+          [":required", ["[]", "'Syntax"]]
+        ]
+      ]),
+    ),
+    (
+      "optional-id",
+      serde_json::json!([
+        "::",
+        "'Macro",
+        [
+          "{}",
+          [":capabilities", ["#{}"]],
+          [":expansion", ["::", "'Expr", "'Dynamic"]],
+          [":optional", ["[]", "'Syntax"]],
+          [":required", ["[]", "'Syntax"]]
+        ]
+      ]),
+    ),
+    (
+      "rest-id",
+      serde_json::json!([
+        "::",
+        "'Macro",
+        [
+          "{}",
+          [":rest", "'Syntax"],
+          [":capabilities", ["#{}"]],
+          [":expansion", ["::", "'Expr", "'Dynamic"]],
+          [":required", ["[]", "'Syntax"]]
+        ]
+      ]),
+    ),
+  ] {
     let definition = query_definition(&snapshot, &format!("app.main/{name}"));
-    let schema = definition["data"]["schema"].to_string();
-    assert!(schema.contains("'Macro"), "schema: {schema}");
-    assert!(schema.contains(expected_fragment), "schema: {schema}");
-    assert!(schema.contains("'Syntax"), "schema: {schema}");
-    assert!(schema.contains("'Expr") && schema.contains("'Dynamic"), "schema: {schema}");
-    assert!(schema.contains(":capabilities"), "schema: {schema}");
+    assert_eq!(definition["data"]["schema"], expected_schema, "schema for {name}");
   }
 
   let metadata = run_calcit(&snapshot, &["edit", "doc", "app.main/required-id", "|Created through edit def"]);
@@ -266,22 +303,24 @@ fn malformed_defmacro_is_rejected_without_changing_the_snapshot() {
   let snapshot = prepare_minimal_snapshot(&directory);
   let original = fs::read(&snapshot).expect("minimal snapshot should read");
 
-  let output = run_calcit(
-    &snapshot,
-    &[
-      "edit",
-      "def",
-      "app.main/broken",
-      "--code",
-      "quote $ defmacro broken not-a-list not-a-list",
-    ],
-  );
-  assert!(!output.status.success(), "malformed macro must fail");
-  assert!(
-    String::from_utf8_lossy(&output.stderr).contains("cannot derive a strict `defmacro` schema"),
-    "stderr:\n{}",
-    String::from_utf8_lossy(&output.stderr)
-  );
-  assert_eq!(fs::read(&snapshot).expect("snapshot should remain readable"), original);
+  for code in [
+    "quote $ defmacro broken not-a-list not-a-list",
+    "quote $ defmacro broken (value & rest extra) value",
+    "quote $ defmacro broken (value & ? optional) value",
+    "quote $ defmacro broken (value & rest ? optional) value",
+  ] {
+    let output = run_calcit(&snapshot, &["edit", "def", "app.main/broken", "--code", code]);
+    assert!(!output.status.success(), "malformed macro must fail: {code}");
+    assert!(
+      String::from_utf8_lossy(&output.stderr).contains("cannot derive a strict `defmacro` schema"),
+      "stderr:\n{}",
+      String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+      fs::read(&snapshot).expect("snapshot should remain readable"),
+      original,
+      "failed edit changed the Snapshot: {code}"
+    );
+  }
   assert_success(&run_calcit(&snapshot, &["--check-only"]), "strict check after rejected edit");
 }
