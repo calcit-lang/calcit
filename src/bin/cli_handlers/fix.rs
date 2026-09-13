@@ -1221,13 +1221,13 @@ fn quoted_json(node: &Cirru) -> Value {
   })
 }
 
-/// Decode the public quoted-AST envelope for a human source preview.
-fn quoted_json_to_cirru(value: &Value) -> Result<Cirru, String> {
+/// Decode a public quote or splice envelope for a human source preview.
+fn fix_source_json_to_cirru(value: &Value) -> Result<Cirru, String> {
   let Value::Object(fields) = value else {
-    return Err("expected a quoted AST object".to_owned());
+    return Err("expected a source AST object".to_owned());
   };
-  if fields.get("$type").and_then(Value::as_str) != Some("quote") {
-    return Err("expected `$type: quote` in source preview".to_owned());
+  if !matches!(fields.get("$type").and_then(Value::as_str), Some("quote" | "splice")) {
+    return Err("expected `$type: quote` or `$type: splice` in source preview".to_owned());
   }
   let node = fields
     .get("value")
@@ -1301,12 +1301,12 @@ fn print_human_report(report: &FixReport<'_>) {
     println!("- definition: `{}`", suggestion.definition);
     println!("- path: `{}`", suggestion.path);
     println!("- message: {}\n", suggestion.message);
-    match quoted_json_to_cirru(&suggestion.original).and_then(|node| markdown_cirru_section(3, "Before", &node, 0)) {
+    match fix_source_json_to_cirru(&suggestion.original).and_then(|node| markdown_cirru_section(3, "Before", &node, 0)) {
       Ok(section) => println!("{section}"),
       Err(error) => println!("### Before\n\n_Unable to render source preview: {error}_"),
     }
     if let Some(replacement) = &suggestion.replacement {
-      match quoted_json_to_cirru(replacement).and_then(|node| markdown_cirru_section(3, "After", &node, 0)) {
+      match fix_source_json_to_cirru(replacement).and_then(|node| markdown_cirru_section(3, "After", &node, 0)) {
         Ok(section) => println!("\n{section}"),
         Err(error) => println!("\n### After\n\n_Unable to render source preview: {error}_"),
       }
@@ -1321,15 +1321,38 @@ fn print_human_report(report: &FixReport<'_>) {
 mod tests {
   use super::{
     FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_potential_local_bindings, collect_redundant_do_paths,
-    fix_rule_metadata, insert_fix_suggestion, legacy_constructor_replacement, migration_for_source_leaf, prototype_is_shadowed,
-    resolve_fix_target, rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
+    fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion, legacy_constructor_replacement, migration_for_source_leaf,
+    prototype_is_shadowed, resolve_fix_target, rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
   };
   use cirru_parser::Cirru;
   use serde_json::Value;
   use std::collections::BTreeMap;
 
+  use super::super::common::markdown_cirru_section;
+
   fn leaf(value: &str) -> Cirru {
     Cirru::leaf(value)
+  }
+
+  #[test]
+  fn splice_fix_source_decodes_the_replacement_sequence() {
+    let replacement = serde_json::json!({
+      "$type": "splice",
+      "value": [["println", "working"], ["finish", "value"]],
+    });
+    let node = fix_source_json_to_cirru(&replacement).expect("splice replacement should decode");
+    assert_eq!(
+      node,
+      Cirru::List(vec![
+        Cirru::List(vec![leaf("println"), leaf("working")]),
+        Cirru::List(vec![leaf("finish"), leaf("value")]),
+      ])
+    );
+    let section = markdown_cirru_section(3, "After", &node, 0).expect("splice replacement should render");
+    assert!(section.contains("### After\n"));
+    assert!(section.contains("```cirru\n"));
+    assert!(section.contains("println working"));
+    assert!(section.contains("finish value"));
   }
 
   #[test]

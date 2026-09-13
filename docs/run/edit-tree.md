@@ -258,12 +258,12 @@ JSON argument lists remain accepted as a compatibility format for callers that a
 # read：先以 Markdown 查看目标代码，代码只出现在 fenced Cirru block 中。
 calcit calcit.cirru tree show app.main/main! --path @3
 
-# preview：dry-run 不写文件，从 EDN envelope 读取 :old_revision、:changed 与 :operations。
+# preview：dry-run 不写文件，从 EDN envelope 读取 :original-revision、:changed 与 :operations。
 calcit calcit.cirru edit transaction --file changes.cirru --dry-run --format edn
 
 # apply：原样使用 preview 的 operation 文件，并绑定返回的 revision。
 calcit calcit.cirru edit transaction --file changes.cirru \
-  --expect-revision 'md5:<old_revision>' --format edn
+  --expect-revision 'md5:<original-revision>' --format edn
 
 # verify：重新读取目标，再运行项目的严格检查与相关测试。
 calcit calcit.cirru tree show app.main/main! --path @3
