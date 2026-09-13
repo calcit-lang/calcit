@@ -72,7 +72,7 @@ For detailed information about specific features:
 Use this section as a keyword index for `calcit docs read`:
 
 - **Collections**: list, map, set, struct, enum
-- **Pattern Matching**: enum, match, anonymous enum, tag-match, result, exhaustiveness
+- **Pattern Matching**: enum, match, anonymous enum, result, exhaustiveness
 - **Types**: static-analysis, assert-type, optional, variadic
 - **Methods**: trait, impl-traits, method dispatch, trait-call
 - **Interop**: js interop, async, promise, js-await

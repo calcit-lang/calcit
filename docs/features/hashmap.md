@@ -88,7 +88,7 @@ let
 
 `get-in` returns `Option<Dynamic>` (`%some` for a resolved value and `%none`
 for a missing path or a `nil` encountered while traversing). Use
-`.unwrap-or` or `tag-match` before consuming the payload.
+`.unwrap-or` 或原生 `match` 后再消费 payload。
 
 ## Modifying Maps
 

@@ -612,8 +612,7 @@ pub(super) fn emit_enum_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
 ///
 /// Enum value layout: [count:f64][tag:f64][payload0:f64]...
 /// Stored count at offset 0 is the raw payload count; the interpreter returns `extra.len() + 1`.
-/// The +1 is required for `&tag-match-internal` which compares `(&list:count pattern)` (tag + bindings)
-/// against `(&enum:count value)`.
+/// The public contract counts the tag as the first enum element.
 pub(super) fn emit_enum_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&enum:count expects 1 arg")?;
   emit_expr(ctx, &args[0])?;

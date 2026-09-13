@@ -1,19 +1,19 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-anonymous-enum)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-anonymous-enum)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-anonymous-enum.main/main!) (:mode :native) (:reload-fn 'test-anonymous-enum.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |test-anonymous-enum.main $ %{} 'FileEntry
+    'test-anonymous-enum.main $ %{} 'FileEntry
       :defs $ {}
-        |Result $ %{} 'CodeEntry (:doc |)
+        'Result $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defenum Result (:ok 'Number) (:err 'String)
           :examples $ []
           :schema $ :: 'EnumDef
-        |main! $ %{} 'CodeEntry (:doc |)
+        'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing anonymous enum")
               assert= 1 $ try-size (:: :dyn)
@@ -34,10 +34,10 @@
                 assert= (%none) (enum-definition plain)
           :examples $ []
           :schema $ :: 'Dynamic
-        |try-size $ %{} 'CodeEntry (:doc |)
+        'try-size $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn try-size (x)
-              tag-match x
+              match x
                 (:dyn) 1
                 (:dyn x) 2
                 (:dyn x y) 3

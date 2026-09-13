@@ -310,8 +310,7 @@ let
 - `struct-def?`, `enum-def?` - definition predicates
 - `&enum-def:has-variant?` - check a declared variant
 - `&enum-def:variant-arity` - get declared variant arity
-- `match` - native pattern matching on named enums
-- `tag-match` - fallback matching for anonymous enums
+- `match` - 对具名和匿名 enum 使用原生模式匹配
 
 ## Traits & Methods
 
@@ -349,8 +348,7 @@ let
 - `cond` - multi-way conditional; requires a final `(true value)` branch
 - `case` - pattern matching on values; raises when no pattern matches
 - `&case` - internal case macro
-- `match` - preferred named-enum pattern matching
-- `tag-match` - fallback anonymous-enum pattern matching
+- `match` - 对具名和匿名 enum 使用首选的原生模式匹配
 - `struct-match` - struct pattern matching
 - `list-match` - list destructuring match
 - `if-let` - bind an `Option<T>` payload with explicit some/none branches

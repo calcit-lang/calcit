@@ -410,14 +410,14 @@ let
     result1 $ reduce items 0 $ fn (acc item)
       let
           value $ get item :value
-        tag-match value
+        match value
           (:some number) (+ acc number)
           (:none) , acc
     result2 $ apply +
       map items $ fn (item)
         let
             value $ get item :value
-          tag-match value
+          match value
             (:some number) , number
             (:none) 0
   println result1
@@ -447,7 +447,7 @@ let
 
 1. **Use type annotations** for function parameters and return values
 2. **Prefer immutable data** - use `swap!` instead of manual mutation
-3. **Use pattern matching** (`match`, `struct-match`) for control flow; `tag-match` also works on anonymous enums when no definition is available
+3. **Use pattern matching** (`match`, `struct-match`) for control flow；匿名 enum 也直接使用 `match`
 4. **Leverage threading macros** (`->`, `->>`) for data pipelines
 5. **Use enums for result types** instead of exceptions
 6. **Keep functions small** and focused on a single responsibility

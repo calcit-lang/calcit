@@ -73,7 +73,7 @@ fn append_option_migration_hint(
 ) -> String {
   if actual_type.is_option_type() && !expected_type.is_option_type() {
     message.push_str(&format!(
-      "; inferred type `{}` is an Option rather than its payload; use a matching typed `*-or` query helper when available or `.unwrap-or` for a safe default, or native `match` (legacy `tag-match`) to handle both variants before passing it here",
+      "; inferred type `{}` is an Option rather than its payload; use a matching typed `*-or` query helper when available or `.unwrap-or` for a safe default, or native `match` to handle both variants before passing it here",
       diagnostic_type_string(actual_type)
     ));
   }

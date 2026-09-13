@@ -1,34 +1,35 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-sum-types) (:version |0.0.0)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`.") (:package |test-sum-types)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-sum-types.main/main!) (:mode :native) (:reload-fn 'test-sum-types.main/reload!)
+      :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |test-sum-types.main $ %{} 'FileEntry
+    'test-sum-types.main $ %{} 'FileEntry
       :defs $ {}
-        |ActionImpl $ %{} 'CodeEntry (:doc |)
+        'ActionImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote
             let
                 ActionTrait $ deftrait ActionTrait (.describe :fn)
               defimpl ActionImpl ActionTrait $ .describe
                 fn (self)
-                  tag-match self
+                  match self
                     (:ok value) (str "|Action ok -> " value)
                     (:err message) (str "|Action err -> " message)
           :examples $ []
           :schema $ :: 'Dynamic
-        |ActionResult $ %{} 'CodeEntry (:doc |)
+        'ActionResult $ %{} 'CodeEntry (:doc |)
           :code $ quote
             def ActionResult $ impl-traits Result ActionImpl
           :examples $ []
           :schema $ :: 'Dynamic
-        |Result $ %{} 'CodeEntry (:doc |)
+        'Result $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defenum Result (:ok 'Number) (:err 'String)
           :examples $ []
-          :schema $ :: 'Dynamic
-        |main! $ %{} 'CodeEntry (:doc |)
+          :schema $ :: 'EnumDef
+        'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (println "|Testing sum types...")
               let
@@ -46,31 +47,31 @@
               println |Done!
           :examples $ []
           :schema $ :: 'Dynamic
-        |make-err $ %{} 'CodeEntry (:doc |)
+        'make-err $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn make-err (message) (%:: ActionResult :err message)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
-        |make-ok $ %{} 'CodeEntry (:doc |)
+        'make-ok $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn make-ok (value) (%:: ActionResult :ok value)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
-        |reload! $ %{} 'CodeEntry (:doc |)
+        'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! $
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
               :args $ []
-        |summarize $ %{} 'CodeEntry (:doc |)
+        'summarize $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn summarize (action)
-              tag-match action
+              match action
                 (:ok value) (str "|handled ok " value)
                 (:err message) (str "|handled err " message)
           :examples $ []

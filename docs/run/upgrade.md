@@ -446,8 +446,9 @@ match (get-env |APP_MODE)
   (:none) (println |development)
 ```
 
-上例使用推荐的原生 `match`；维护旧代码时也可以把同一组分支头替换为 `tag-match`，两者都能处理
-`Option` 的 `:some` / `:none`，但 `match` 额外提供穷举检查。
+上例使用原生 `match`，它统一处理 `Option` 的 `:some` / `:none` 并提供穷举检查。
+0.15 已移除旧 `tag-match` 表层入口；升级前请用 Calcit 0.14.15 执行
+`calcit fix --rule tag-match-to-match-v1`。
 
 只有业务语义确实有合理默认值时才用 `unwrap-or`；需要区分“缺失”和“存在”时保留两个分支。
 

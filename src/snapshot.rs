@@ -4341,23 +4341,9 @@ mod tests {
       "bundled macros must declare phase-aware contracts instead of legacy whole-Dynamic schemas: {legacy_macros:?}"
     );
     assert_eq!(
-      macro_count, 63,
+      macro_count, 61,
       "update the audited bundled macro inventory when core macros change"
     );
-  }
-
-  #[test]
-  fn bundled_tag_match_is_deprecated_in_favor_of_native_match() {
-    let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
-    let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
-    let snapshot = load_snapshot_data(&edn_data, "src/cirru/calcit-core.cirru").expect("Failed to parse snapshot");
-    let entry = snapshot.files["calcit.core"]
-      .defs
-      .get("tag-match")
-      .expect("calcit.core/tag-match should exist");
-
-    assert!(entry.tags.iter().any(|tag| tag.ref_str() == "deprecated"));
-    assert!(entry.doc.contains("use `match`"), "migration guidance: {}", entry.doc);
   }
 
   #[test]
@@ -4738,7 +4724,6 @@ mod tests {
     }
 
     for def_name in [
-      "tag-match",
       "list-match",
       "&list-match-internal",
       "struct-match",
@@ -4758,7 +4743,7 @@ mod tests {
           if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
       ));
       match def_name {
-        "tag-match" | "struct-match" | "&struct-match-internal" | "case" => {
+        "struct-match" | "&struct-match-internal" | "case" => {
           assert!(matches!(
             signature.required_inputs.as_slice(),
             [crate::calcit::MacroSyntaxType::Expr(inner)]
@@ -4814,28 +4799,6 @@ mod tests {
     assert!(matches!(case_default.rest_input, Some(crate::calcit::MacroSyntaxType::SyntaxList)));
     assert!(matches!(
       case_default.expansion,
-      crate::calcit::MacroExpansionType::Expr(ref inner)
-        if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
-    ));
-
-    let internal_file = snapshot.files.get("calcit.internal").expect("calcit.internal file should exist");
-    let CalcitTypeAnnotation::Macro(tag_internal) = internal_file.defs["&tag-match-internal"].schema.as_ref() else {
-      panic!("&tag-match-internal should load as MacroSignature");
-    };
-    assert!(tag_internal.is_strict());
-    assert!(tag_internal.capabilities.is_empty());
-    assert!(tag_internal.optional_inputs.is_empty());
-    assert!(matches!(
-      tag_internal.required_inputs.as_slice(),
-      [
-        crate::calcit::MacroSyntaxType::Expr(value),
-        crate::calcit::MacroSyntaxType::Expr(tag)
-      ] if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
-        && matches!(tag.as_ref(), CalcitTypeAnnotation::Tag)
-    ));
-    assert!(matches!(tag_internal.rest_input, Some(crate::calcit::MacroSyntaxType::SyntaxList)));
-    assert!(matches!(
-      tag_internal.expansion,
       crate::calcit::MacroExpansionType::Expr(ref inner)
         if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
     ));

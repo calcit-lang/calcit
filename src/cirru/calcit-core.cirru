@@ -8347,37 +8347,6 @@
             {} (:return 'Bool)
               :args $ [] 'T
               :generics $ [] 'T
-        'tag-match $ %{} 'CodeEntry (:doc "|Deprecated: use `match` for enum pattern matching. Kept temporarily for source compatibility.")
-          :code $ quote
-            defmacro tag-match (value & body)
-              if (&list:empty? body) (raise "|tag-match expected some patterns and matches")
-                &let
-                  t# $ gensym |tag
-                  &let
-                    v# $ gensym |v
-                    quasiquote $ &let (~v# ~value)
-                      if
-                        not $ enum? ~v#
-                        raise $ str "|tag-match expected enum value, got" ~v#
-                      &let
-                        ~t# $ &enum:nth ~v# 0
-                        &enum:validate ~v# ~t#
-                        internal/&tag-match-internal ~v# ~t# $ ~@ body
-          :examples $ []
-            quote $ assert= 11
-              tag-match (:: :ok 1)
-                (:ok v) (&+ v 10)
-                (:err e) (eprintln e)
-            quote $ assert= |hello:got
-              tag-match (:: :some |hello)
-                (:some x) (str x |:got)
-                (:none) |nothing
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic)
-          :tags $ #{} :deprecated :macro
         'tag? $ %{} 'CodeEntry (:doc "|Check if a value is a tag (keyword)")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -9371,47 +9340,6 @@
             def &core-multiply-number-impl $ &impl::new :&core-multiply-number-impl (:: :multiply &*)
           :examples $ []
           :schema $ :: 'Dynamic
-        '&tag-match-internal $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defmacro &tag-match-internal (value t & body)
-              if (&list:empty? body)
-                quasiquote $ raise (str-spaced "|tag-match found no matched case, missing `_` for" ~value)
-                &let
-                  pair $ &list:first body
-                  if
-                    not $ and (list? pair)
-                      &= 2 $ &list:count pair
-                    raise $ str-spaced "|tag-match expected pairs, got:" pair
-                  let
-                      pattern $ &list:nth
-                        assert-type pair $ :: 'List 'Dynamic
-                        , 0
-                      branch $ &list:nth
-                        assert-type pair $ :: 'List 'Dynamic
-                        , 1
-                    if (list? pattern)
-                      &let
-                        k $ &list:first pattern
-                        &let
-                          size $ &list:count pattern
-                          quasiquote $ if
-                            if (identical? ~t ~k)
-                              identical? ~size $ &enum:count ~value
-                              , false
-                            let
-                              ~ $ map-indexed (&list:rest pattern)
-                                defn %tag-match (idx x)
-                                  [] x $ quasiquote
-                                    &enum:nth ~value $ ~ (inc idx)
-                              , ~branch
-                            &tag-match-internal ~value ~t $ ~@ (&list:rest body)
-                      if (&= pattern '_) branch $ raise (str-spaced "|unknown supported pattern:" pair)
-          :examples $ []
-          :schema $ :: 'Macro
-            {} (:rest 'SyntaxList)
-              :capabilities $ #{}
-              :expansion $ :: 'Expr 'Dynamic
-              :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Tag)
         'normalize-trait-type $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn normalize-trait-type (t0)
