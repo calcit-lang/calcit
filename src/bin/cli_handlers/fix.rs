@@ -110,9 +110,6 @@ pub(crate) fn handle_fix_command(
   if options.rule.as_deref().is_none_or(|rule| rule == REMOVED_DATA_API_RULE) {
     suggestions.extend(plan_removed_data_api_fixes(options, &source_snapshot, snapshot_file, &warnings)?);
   }
-  if options.rule.as_deref().is_none_or(|rule| rule == REDUNDANT_DO_RULE) {
-    suggestions.extend(plan_redundant_do_fixes(&source_snapshot, snapshot_file, &selected_definitions)?);
-  }
   if options.rule.as_deref().is_none_or(|rule| rule == TAG_MATCH_RULE) {
     suggestions.extend(plan_tag_match_fixes(
       options,
@@ -121,6 +118,9 @@ pub(crate) fn handle_fix_command(
       snapshot_file,
       &selected_definitions,
     )?);
+  }
+  if options.rule.as_deref().is_none_or(|rule| rule == REDUNDANT_DO_RULE) {
+    suggestions.extend(plan_redundant_do_fixes(&source_snapshot, snapshot_file, &selected_definitions)?);
   }
   let operations = suggestions.iter().flat_map(suggestion_operations).collect::<Vec<_>>();
 

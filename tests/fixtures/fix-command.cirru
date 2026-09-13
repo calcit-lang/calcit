@@ -58,7 +58,7 @@
             defn tag-match-case (is-some?)
               let
                   value $ if is-some? (:: :some 1) (:: :none)
-                tag-match value
+                do $ tag-match value
                   (:some x) (+ x 1)
                   (:none) 0
           :examples $ []

@@ -358,3 +358,62 @@ fn tag_match_fix_uses_resolved_source_origin_and_preserves_semantics() {
   assert_eq!(repeated_json["data"]["changed"], false);
   assert_eq!(repeated_json["data"]["suggestions"].as_array().map(Vec::len), Some(0));
 }
+
+#[test]
+fn default_fix_applies_leaf_replacements_before_structural_splices() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+
+  let preview = run_fix(
+    &snapshot,
+    &["--ns", "fix-command.main", "--def", "tag-match-case", "--format", "json"],
+  );
+  assert!(preview.status.success(), "stderr:\n{}", String::from_utf8_lossy(&preview.stderr));
+  let preview_json = parse_stdout(&preview);
+  let rule_ids = preview_json["data"]["suggestions"]
+    .as_array()
+    .expect("suggestions should be an array")
+    .iter()
+    .map(|suggestion| suggestion["rule_id"].as_str().expect("rule id should be a string"))
+    .collect::<Vec<_>>();
+  assert_eq!(rule_ids, vec!["tag-match-to-match-v1", "redundant-do-v1"]);
+  assert_eq!(preview_json["data"]["validation"]["checked_operations"], 3);
+
+  let revision = preview_json["revision"].as_str().expect("preview revision should be a string");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "tag-match-case",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      revision,
+      "--format",
+      "json",
+    ],
+  );
+  assert!(applied.status.success(), "stderr:\n{}", String::from_utf8_lossy(&applied.stderr));
+  let applied_json = parse_stdout(&applied);
+  assert_eq!(applied_json["data"]["changed"], true);
+  let updated = fs::read_to_string(&snapshot).expect("updated fixture should read");
+  assert!(updated.contains("match value"));
+  assert!(!updated.contains("do $ match value"));
+
+  let after = run_calcit(
+    &snapshot,
+    &["test", "fix-command.main/tag-match-case", "--summary-only", "--require-match"],
+  );
+  assert!(after.status.success(), "stderr:\n{}", String::from_utf8_lossy(&after.stderr));
+  let repeated = run_fix(
+    &snapshot,
+    &["--ns", "fix-command.main", "--def", "tag-match-case", "--format", "json"],
+  );
+  assert!(repeated.status.success(), "stderr:\n{}", String::from_utf8_lossy(&repeated.stderr));
+  let repeated_json = parse_stdout(&repeated);
+  assert_eq!(repeated_json["data"]["changed"], false);
+  assert_eq!(repeated_json["data"]["suggestions"].as_array().map(Vec::len), Some(0));
+}
