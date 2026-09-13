@@ -28,6 +28,7 @@ for (const name of [
   "test-closure-escape",
   "test-recursive-closure-specialization",
   "test-rest-closure-specialization",
+  "test-spread-closure-specialization",
   "test-dynamic-closure-callee",
 ]) {
   const boundary = Object.entries(instance.exports).find(([exportName]) => exportName === name || exportName.endsWith(`/${name}`))?.[1];

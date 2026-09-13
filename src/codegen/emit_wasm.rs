@@ -1851,6 +1851,9 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
 
   let head = &args_list[0];
   let call_args = &args_list[1..];
+  if call_args.iter().any(|arg| resolve_inline_closure(ctx, arg).is_some()) {
+    return Err("E_WASM_CLOSURE_SPECIALIZATION: spread calls cannot receive inline closures".into());
+  }
 
   match head {
     Calcit::Import(import) => {
@@ -3618,11 +3621,12 @@ fn emit_let_pairs(ctx: &mut WasmGenCtx, pairs: &[Calcit], body: &[Calcit]) -> Re
     Calcit::Symbol { sym, .. } => sym.to_string(),
     other => return Err(format!("let binding expected symbol, got: {other}")),
   };
-  if let Some(closure) = capture_inline_closure(ctx, &xs[1]) {
+  if let Some(closure) = resolve_inline_closure(ctx, &xs[1]) {
     ctx.lambda_locals.insert(var_name.clone(), closure);
     ctx.declare_local(&var_name);
   } else {
     emit_expr(ctx, &xs[1])?;
+    ctx.lambda_locals.remove(&var_name);
     let idx = ctx.declare_local(&var_name);
     ctx.emit(Instruction::LocalSet(idx));
   }
@@ -3651,7 +3655,7 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
 
       // Check if the binding value is an inline lambda.
       // If so, store it for inlining at call sites instead of emitting as runtime value.
-      if let Some(closure) = capture_inline_closure(ctx, &xs[1]) {
+      if let Some(closure) = resolve_inline_closure(ctx, &xs[1]) {
         ctx.lambda_locals.insert(var_name.clone(), closure);
         // Allocate a local slot (unused at runtime) so shadowing cleanup works.
         ctx.declare_local(&var_name);
@@ -3667,6 +3671,7 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
       }
 
       emit_expr(ctx, &xs[1])?;
+      ctx.lambda_locals.remove(&var_name);
       let idx = ctx.declare_local(&var_name);
       ctx.emit(Instruction::LocalSet(idx));
 

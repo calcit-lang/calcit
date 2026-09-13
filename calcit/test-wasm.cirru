@@ -1097,7 +1097,19 @@
                         :return 'Number
                       + x offset
                   , 0
-              + option-value result-value
+                alias-value $ wasm-apply-via-alias 2
+                  fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    + x offset
+                shadow-value $ wasm-apply-after-shadow 2
+                  fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    + x offset
+              + option-value result-value alias-value shadow-value
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Number)
@@ -1105,7 +1117,7 @@
           :tests $ []
             %{} 'TestEntry (:name |specializes-inline-callbacks-across-static-functions)
               :code $ quote
-                assert= 16 $ test-static-option-result-inline-closures
+                assert= 35 $ test-static-option-result-inline-closures
               :tags $ #{} :core :unit :wasm
         'test-static-option-result-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
@@ -1374,6 +1386,31 @@
           :schema $ :: 'Fn
             {} (:return 'Number)
               :args $ [] 'Number
+        'wasm-apply-after-shadow $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn wasm-apply-after-shadow (value f)
+              let
+                  before $ f value
+                  f 7
+                + before f
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'Number
+                :: 'Fn $ {} (:return 'Number)
+                  :args $ [] 'Number
+        'wasm-apply-via-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn wasm-apply-via-alias (value f)
+              let
+                  g f
+                g value
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'Number
+                :: 'Fn $ {} (:return 'Number)
+                  :args $ [] 'Number
         'wasm-ffi-add $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defwasm-export wasm-ffi-add (a b) (&+ a b)
@@ -1466,6 +1503,15 @@
             defn test-rest-closure-specialization () $ rest-callback
               fn (x) (+ x 1)
               , 1 2
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ []
+        'test-spread-closure-specialization $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-spread-closure-specialization () $ rest-callback
+              fn (x) (+ x 1)
+              , & ([] 1 2)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Number)
