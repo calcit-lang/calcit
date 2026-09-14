@@ -18,7 +18,7 @@
 //! Struct/Enum pointers: i32 offsets into linear memory, converted to/from f64.
 //! Output is a `.wasm` binary that can be loaded by Node.js, Deno, or any WASM runtime.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
 use std::str::FromStr;
@@ -782,7 +782,26 @@ fn collect_component_export_adapters(
   if adapters.is_empty() {
     return Err("E_COMPONENT_ABI_EXPORTS: no `defwasm-export` definitions were found for the Component boundary".into());
   }
+  adapters.sort_unstable_by(|left, right| left.definition.cmp(&right.definition));
+  validate_component_export_symbols(&adapters)?;
   Ok(adapters)
+}
+
+fn validate_component_export_symbols(adapters: &[ComponentExportAdapter]) -> Result<(), String> {
+  let mut symbol_owners = BTreeMap::<&str, Vec<&str>>::new();
+  for adapter in adapters {
+    symbol_owners
+      .entry(adapter.symbol.as_str())
+      .or_default()
+      .push(adapter.definition.as_str());
+  }
+  if let Some((symbol, owners)) = symbol_owners.into_iter().find(|(_, owners)| owners.len() > 1) {
+    return Err(format!(
+      "E_COMPONENT_ABI_SYMBOL_CONFLICT: export symbol `{symbol}` is declared by {}",
+      owners.join(", ")
+    ));
+  }
+  Ok(())
 }
 
 fn build_cabi_realloc_fn() -> CompiledFn {
@@ -4413,6 +4432,7 @@ mod tests {
   use super::{
     ComponentAbiType, ComponentExportAdapter, HostImport, WasmBoundary, WasmTarget, build_cabi_realloc_fn,
     build_component_export_adapter, component_abi_type, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
+    validate_component_export_symbols,
   };
   use crate::calcit::{Calcit, CalcitList, CalcitSyntax, CalcitTypeAnnotation};
   use wasm_encoder::ValType;
@@ -4492,6 +4512,23 @@ mod tests {
       .expect_err("Bool is deferred to a later adapter slice");
     assert!(error.contains("E_COMPONENT_ABI_UNSUPPORTED_TYPE"));
     assert!(error.contains("logical_schema.result"));
+  }
+
+  #[test]
+  fn component_adapter_rejects_duplicate_export_symbols_deterministically() {
+    let adapter = |definition: &str| ComponentExportAdapter {
+      definition: definition.into(),
+      symbol: "run".into(),
+      target_index: 20,
+      parameters: vec![ComponentAbiType::Number],
+      result: ComponentAbiType::Number,
+    };
+    let error = validate_component_export_symbols(&[adapter("a.main/run"), adapter("b.main/run")])
+      .expect_err("duplicate export symbols must fail before WASM encoding");
+    assert_eq!(
+      error,
+      "E_COMPONENT_ABI_SYMBOL_CONFLICT: export symbol `run` is declared by a.main/run, b.main/run"
+    );
   }
 
   #[test]
