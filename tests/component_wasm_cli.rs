@@ -70,6 +70,15 @@ WebAssembly.instantiate(fs.readFileSync(process.argv[1]), {}).then(({ instance }
   if (moved % 8 !== 0) throw new Error("cabi_realloc ignored alignment");
   const preserved = Buffer.from(e.memory.buffer, moved, input.length).toString("utf8");
   if (preserved !== "你好 Calcit") throw new Error("cabi_realloc did not preserve bytes");
+  const pagesBefore = e.memory.buffer.byteLength / 65536;
+  const largeSize = e.memory.buffer.byteLength + 1;
+  const largePtr = e.cabi_realloc(0, 0, 1, largeSize);
+  const pagesAfter = e.memory.buffer.byteLength / 65536;
+  if (pagesAfter <= pagesBefore) throw new Error("cabi_realloc did not grow memory");
+  if (largePtr + largeSize > e.memory.buffer.byteLength) throw new Error("grown allocation is out of bounds");
+}).catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
 });
 "#;
   let runtime = Command::new("node")

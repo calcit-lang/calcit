@@ -44,9 +44,9 @@ core 不带 WIT generator、WIT golden、component packaging 或 stale-artifact 
 
 ## 类型闭包
 
-首个同步 Component contract 只接受在边界上完全可知的类型：Bool、明确数值、String、Buffer、List、Option、Result、Struct record 和 Enum variant。
+当前已生成 Canonical ABI adapter 的同步类型只有 `Number` 与 UTF-8 `String`。Bool、明确整数/浮点数、Buffer、List、Option、Result、Struct record 和 Enum variant 属于后续同步边界计划；在对应 adapter 实现以前，即使 contract 能表达这些类型，`calcit wasm --boundary component` 也会明确拒绝。
 
-以下形状在 contract 导出阶段拒绝：
+以下形状不进入同步 Component 边界，并在 contract 导出或 adapter 生成阶段拒绝：
 
 - `Dynamic`、Fn/closure 和 `Ref`；
 - JavaScript object 与 opaque host object；
