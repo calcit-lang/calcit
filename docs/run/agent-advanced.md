@@ -361,6 +361,31 @@ calcit calcit.cirru fix --rule value-to-zero-arg-fn-v1 \
 examples 和目标 schema 会进入同一事务；quoted data、macro、dependency source、schema type reference、自引用及无法定位的引用
 会使事务整体拒绝。
 
+### 从编译器证据补全 schema
+
+**场景：** runtime value 或函数的 schema 存在 `Dynamic` 洞，而正常预处理已经能够证明更精确的实现类型。
+
+```bash
+# 1. 预览 compiled inference 候选与 unresolved slot
+calcit calcit.cirru fix --rule synthesize-schema-v1 \
+  --ns app.model --def initial-count --format edn
+
+# 2. 只对 machine-applicable 候选绑定 revision 应用
+calcit calcit.cirru fix --rule synthesize-schema-v1 \
+  --ns app.model --def initial-count \
+  --apply --expect-revision 'md5:<preview 返回的 revision>'
+
+# 3. 重复预览为空，再做严格检查
+calcit calcit.cirru fix --rule synthesize-schema-v1 \
+  --ns app.model --def initial-count --format edn
+calcit calcit.cirru --check-only
+```
+
+规则会保留已经声明的 generics、`:where`、features 和已知 slot，只用现有 bottom-up inference 以及普通项目源码中
+resolver 确认、类型一致的完整调用集合填洞。若 suggestion 是 `needs-review`，检查 `:origin-chain` 中的
+`:unresolved-slots`，补充真正的类型约束后重新预览；tests/examples 的单个样本不作为公共参数证明，也不要手工把整个值退化为
+`Dynamic`。该规则不是升级 preset，macro、data/trait/impl contract 继续显式声明。
+
 ### 迁移定义到另一命名空间（`mv-def`）
 
 **场景：** 某函数放错了命名空间，需要迁移。
