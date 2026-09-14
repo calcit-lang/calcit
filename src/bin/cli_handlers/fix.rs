@@ -163,6 +163,14 @@ pub(crate) fn handle_fix_command(
   } else {
     compile_selected_definitions_for_migration(&selected_definitions)?
   };
+  let semantic_warning_identities = semantic_rename.then(|| {
+    semantic_rename_warning_identities(
+      &warnings,
+      options.ns.as_deref().expect("semantic rename requires namespace"),
+      options.definition.as_deref().expect("semantic rename requires definition"),
+      options.replacement_name.as_deref().expect("semantic rename requires replacement"),
+    )
+  });
   let mut suggestions = Vec::new();
   if semantic_rename {
     suggestions.extend(plan_definition_rename(
@@ -235,6 +243,11 @@ pub(crate) fn handle_fix_command(
       return Err("Staged fix validation found an applicable migration that was not removed.".to_owned());
     }
     let unexpected = if semantic_rename {
+      println!(
+        "{}",
+        serde_json::to_string(semantic_warning_identities.as_deref().unwrap_or_default())
+          .map_err(|error| format!("Failed to encode staged semantic-rename warnings: {error}"))?
+      );
       vec![]
     } else {
       warnings
@@ -257,7 +270,14 @@ pub(crate) fn handle_fix_command(
   }
   let dry_run = !options.apply;
   let validation_args = fix_scope_args(options);
-  let transaction = run_staged_fix_transaction(Path::new(snapshot_file), &operations, Some(&revision), dry_run, &validation_args)?;
+  let transaction = run_staged_fix_transaction(
+    Path::new(snapshot_file),
+    &operations,
+    Some(&revision),
+    dry_run,
+    &validation_args,
+    semantic_warning_identities.as_deref(),
+  )?;
 
   let mode = if options.apply { "apply" } else { "preview" };
   let expanded_rules = selected_rules.iter().copied().map(fix_rule_metadata).collect();
@@ -528,6 +548,38 @@ fn compile_selected_definitions_for_migration(definitions: &[(String, String)]) 
   let result = compile_selected_definitions(definitions);
   drop(guard);
   result
+}
+
+/// Build stable warning identities while treating the renamed declaration as the same source owner.
+fn semantic_rename_warning_identities(warnings: &[LocatedWarning], target_ns: &str, old_name: &str, new_name: &str) -> Vec<String> {
+  let old_target = format!("{target_ns}/{old_name}");
+  let new_target = format!("{target_ns}/{new_name}");
+  let normalize_text = |text: &str| text.replace(&old_target, "<rename-target>").replace(&new_target, "<rename-target>");
+  let mut identities = warnings
+    .iter()
+    .map(|warning| {
+      let mut value = warning.as_json();
+      if let Some(message) = value.get_mut("message")
+        && let Some(text) = message.as_str()
+      {
+        *message = Value::String(normalize_text(text));
+      }
+      if let Some(hint) = value.get_mut("hint")
+        && let Some(text) = hint.as_str()
+      {
+        *hint = Value::String(normalize_text(text));
+      }
+      if value.pointer("/location/ns").and_then(Value::as_str) == Some(target_ns)
+        && matches!(value.pointer("/location/def").and_then(Value::as_str), Some(name) if name == old_name || name == new_name)
+        && let Some(definition) = value.pointer_mut("/location/def")
+      {
+        *definition = Value::String("<rename-target>".to_owned());
+      }
+      serde_json::to_string(&value).expect("warning identity must serialize")
+    })
+    .collect::<Vec<_>>();
+  identities.sort();
+  identities
 }
 
 fn plan_definition_rename(

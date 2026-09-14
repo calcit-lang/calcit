@@ -31,7 +31,7 @@ use md5::{Digest, Md5};
 #[cfg(test)]
 use semver::Version;
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -708,6 +708,7 @@ pub(crate) fn run_staged_fix_transaction(
   expected_revision: Option<&str>,
   dry_run: bool,
   validation_args: &[String],
+  allowed_warning_identities: Option<&[String]>,
 ) -> Result<StagedFixReport, String> {
   if operations.is_empty() {
     let content =
@@ -732,7 +733,7 @@ pub(crate) fn run_staged_fix_transaction(
   let report = run_staged_transaction_with(snapshot_file, operations, expected_revision, dry_run, |stage_path, index, args| {
     let operation = run_transaction_child(stage_path, index, args)?;
     if index + 1 == operation_count {
-      validate_staged_fix(stage_path, validation_args)?;
+      validate_staged_fix(stage_path, validation_args, allowed_warning_identities)?;
     }
     Ok(operation)
   })?;
@@ -743,7 +744,11 @@ pub(crate) fn run_staged_fix_transaction(
   })
 }
 
-fn validate_staged_fix(stage_path: &Path, validation_args: &[String]) -> Result<(), String> {
+fn validate_staged_fix(
+  stage_path: &Path,
+  validation_args: &[String],
+  allowed_warning_identities: Option<&[String]>,
+) -> Result<(), String> {
   let executable = std::env::current_exe().map_err(|error| format!("Failed to locate current calcit executable: {error}"))?;
   let output = Command::new(&executable)
     .arg("--tips-level")
@@ -755,6 +760,22 @@ fn validate_staged_fix(stage_path: &Path, validation_args: &[String]) -> Result<
     .output()
     .map_err(|error| format!("Failed to validate staged fixes: {error}"))?;
   if output.status.success() {
+    if let Some(allowed) = allowed_warning_identities {
+      let current = serde_json::from_slice::<Vec<String>>(&output.stdout).map_err(|error| {
+        format!(
+          "Staged semantic-rename validation returned invalid warning evidence: {error}\nstdout:\n{}\nstderr:\n{}",
+          String::from_utf8_lossy(&output.stdout).trim_end(),
+          String::from_utf8_lossy(&output.stderr).trim_end()
+        )
+      })?;
+      let unexpected = staged_warning_difference(allowed, &current);
+      if !unexpected.is_empty() {
+        return Err(format!(
+          "Staged semantic rename introduced compiler warnings; no changes were written:\n{}",
+          unexpected.join("\n")
+        ));
+      }
+    }
     Ok(())
   } else {
     Err(format!(
@@ -763,6 +784,22 @@ fn validate_staged_fix(stage_path: &Path, validation_args: &[String]) -> Result<
       String::from_utf8_lossy(&output.stderr).trim_end()
     ))
   }
+}
+
+/// Return warning identities whose staged multiplicity exceeds the pre-edit baseline.
+fn staged_warning_difference(allowed: &[String], current: &[String]) -> Vec<String> {
+  let mut remaining = BTreeMap::<&str, usize>::new();
+  for warning in allowed {
+    *remaining.entry(warning).or_default() += 1;
+  }
+  let mut unexpected = Vec::new();
+  for warning in current {
+    match remaining.get_mut(warning.as_str()) {
+      Some(count) if *count > 0 => *count -= 1,
+      _ => unexpected.push(warning.clone()),
+    }
+  }
+  unexpected
 }
 
 fn handle_transaction(opts: &EditTransactionCommand, snapshot_file: &str) -> Result<(), String> {
@@ -2935,7 +2972,7 @@ mod tests {
     count_legacy_inherent_impls, handle_add_import, handle_add_test, handle_format, handle_imports, handle_rm_test, handle_schema,
     load_snapshot, parse_examples_input, parse_import_rules_input, parse_input_to_cirru, parse_schema_input,
     parse_transaction_operations, rename_definition_declaration, run_staged_fix_transaction, run_staged_transaction_with,
-    save_schema_preserving_snapshot, save_snapshot,
+    save_schema_preserving_snapshot, save_snapshot, staged_warning_difference,
   };
   use crate::cli_args::{
     EditAddImportCommand, EditAddTestCommand, EditFormatCommand, EditImportsCommand, EditRmTestCommand, EditSchemaCommand,
@@ -3190,10 +3227,24 @@ mod tests {
   fn empty_fix_plan_still_rejects_a_stale_planning_revision() {
     let fixture = TestSnapshot::from_fixture();
 
-    let error = run_staged_fix_transaction(&fixture.path, &[], Some("md5:stale"), true, &[])
+    let error = run_staged_fix_transaction(&fixture.path, &[], Some("md5:stale"), true, &[], None)
       .expect_err("an empty fix plan should still be bound to its planning revision");
 
     assert!(error.contains("revision mismatch"), "error: {error}");
+  }
+
+  #[test]
+  fn staged_warning_difference_allows_baseline_warnings_but_rejects_new_multiplicity() {
+    let baseline = vec!["warning-a".to_owned(), "warning-b".to_owned()];
+    assert!(staged_warning_difference(&baseline, &["warning-a".to_owned()]).is_empty());
+    assert_eq!(
+      staged_warning_difference(&baseline, &["warning-a".to_owned(), "warning-a".to_owned()]),
+      vec!["warning-a".to_owned()]
+    );
+    assert_eq!(
+      staged_warning_difference(&baseline, &["warning-c".to_owned()]),
+      vec!["warning-c".to_owned()]
+    );
   }
 
   #[test]
