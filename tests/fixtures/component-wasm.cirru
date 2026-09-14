@@ -18,16 +18,45 @@
           :tests $ [] $ %{} 'TestEntry (:name |adds-one)
             :code $ quote $ assert= 42 (add-one 41)
             :tags $ #{} :wasm
+        'bool-not $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export bool-not (flag) (not flag)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |negates-true)
+              :code $ quote $ assert= false (bool-not true)
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |negates-false)
+              :code $ quote $ assert= true (bool-not false)
+              :tags $ #{} :wasm
         'call-host-add-one $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export call-host-add-one (value) (host-add-one value)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
+        'call-host-bool-not $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export call-host-bool-not (flag) (host-bool-not flag)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Bool
         'call-host-echo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export call-host-echo (text) (host-echo text)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
+        'choose-number $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export choose-number (flag yes no) (if flag yes no)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Bool 'Number 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |chooses-yes)
+              :code $ quote $ assert= 3 (choose-number true 3 4)
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |chooses-no)
+              :code $ quote $ assert= 4 (choose-number false 3 4)
+              :tags $ #{} :wasm
         'echo-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-text (text) text
           :examples $ []
@@ -41,6 +70,11 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
+        'host-bool-not $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-import host-bool-not (flag) |host |bool-not
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Bool
         'host-echo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-import host-echo (text) |host |echo
           :examples $ []

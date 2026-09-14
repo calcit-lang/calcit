@@ -28,7 +28,7 @@ impl Drop for TestDirectory {
 }
 
 #[test]
-fn component_boundary_round_trips_number_string_and_realloc() {
+fn component_boundary_round_trips_bool_number_string_and_realloc() {
   let output = TestDirectory::create();
   let check = Command::new(env!("CARGO_BIN_EXE_calcit"))
     .env("NO_COLOR", "1")
@@ -77,12 +77,17 @@ const bytes = fs.readFileSync(process.argv[1]);
 const module = new WebAssembly.Module(bytes);
 const imports = WebAssembly.Module.imports(module);
 const importNames = imports.map(({ module, name }) => `${module}/${name}`).sort();
-if (importNames.join(",") !== "host/add-one,host/echo") {
+if (importNames.join(",") !== "host/add-one,host/bool-not,host/echo") {
   throw new Error(`unexpected imports: ${importNames.join(",")}`);
 }
 let instance;
+let hostBoolOverride = null;
 const host = {
   "add-one": value => value + 1,
+  "bool-not": value => {
+    if (value !== 0 && value !== 1) throw new Error(`host received invalid bool ${value}`);
+    return hostBoolOverride ?? (value === 0 ? 1 : 0);
+  },
   echo: (inputPtr, inputLen, retPtr) => {
     const e = instance.exports;
     const text = Buffer.from(e.memory.buffer, inputPtr, inputLen).toString("utf8");
@@ -98,6 +103,15 @@ WebAssembly.instantiate(module, { host }).then(result => {
   instance = result;
   const e = instance.exports;
   if (e["add-one"](41) !== 42) throw new Error("Number adapter did not round-trip");
+  if (e["bool-not"](1) !== 0 || e["bool-not"](0) !== 1) throw new Error("Bool adapter did not round-trip");
+  if (e["choose-number"](1, 3, 4) !== 3 || e["choose-number"](0, 3, 4) !== 4) {
+    throw new Error("mixed Bool and Number adapter did not round-trip");
+  }
+  for (const invoke of [() => e["bool-not"](2), () => e["choose-number"](2, 3, 4)]) {
+    let trapped = false;
+    try { invoke(); } catch (error) { trapped = error instanceof WebAssembly.RuntimeError; }
+    if (!trapped) throw new Error("invalid canonical Bool input did not trap");
+  }
   const input = Buffer.from("你好 Calcit", "utf8");
   const ptr = e.cabi_realloc(0, 0, 1, input.length);
   new Uint8Array(e.memory.buffer, ptr, input.length).set(input);
@@ -112,6 +126,11 @@ WebAssembly.instantiate(module, { host }).then(result => {
   const preserved = Buffer.from(e.memory.buffer, moved, input.length).toString("utf8");
   if (preserved !== "你好 Calcit") throw new Error("cabi_realloc did not preserve bytes");
   if (e["call-host-add-one"](9) !== 10) throw new Error("Number import adapter did not round-trip");
+  if (e["call-host-bool-not"](1) !== 0) throw new Error("Bool import adapter did not round-trip");
+  hostBoolOverride = 2;
+  let invalidHostBoolTrapped = false;
+  try { e["call-host-bool-not"](1); } catch (error) { invalidHostBoolTrapped = error instanceof WebAssembly.RuntimeError; }
+  if (!invalidHostBoolTrapped) throw new Error("invalid imported canonical Bool did not trap");
   const hostInput = Buffer.from("你好", "utf8");
   const hostInputPtr = e.cabi_realloc(0, 0, 1, hostInput.length);
   new Uint8Array(e.memory.buffer, hostInputPtr, hostInput.length).set(hostInput);

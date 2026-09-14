@@ -731,6 +731,7 @@ struct CompiledFn {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ComponentAbiType {
+  Bool,
   Number,
   String,
 }
@@ -757,10 +758,11 @@ struct ComponentImportAdapter {
 
 fn component_abi_type(annotation: &CalcitTypeAnnotation, definition: &str, path: &str) -> Result<ComponentAbiType, String> {
   match annotation {
+    CalcitTypeAnnotation::Bool => Ok(ComponentAbiType::Bool),
     CalcitTypeAnnotation::Number => Ok(ComponentAbiType::Number),
     CalcitTypeAnnotation::String => Ok(ComponentAbiType::String),
     other => Err(format!(
-      "E_COMPONENT_ABI_UNSUPPORTED_TYPE: `{definition}` at `{path}` uses `{other}`, but this adapter slice only supports Number and String"
+      "E_COMPONENT_ABI_UNSUPPORTED_TYPE: `{definition}` at `{path}` uses `{other}`, but this adapter slice only supports Bool, Number, and String"
     )),
   }
 }
@@ -907,17 +909,53 @@ fn component_import_signature(adapter: &ComponentImportAdapter) -> (Vec<ValType>
   let mut parameters = Vec::new();
   for parameter in &adapter.parameters {
     match parameter {
+      ComponentAbiType::Bool => parameters.push(ValType::I32),
       ComponentAbiType::Number => parameters.push(ValType::F64),
       ComponentAbiType::String => parameters.extend([ValType::I32, ValType::I32]),
     }
   }
   match adapter.result {
+    ComponentAbiType::Bool => (parameters, vec![ValType::I32]),
     ComponentAbiType::Number => (parameters, vec![ValType::F64]),
     ComponentAbiType::String => {
       parameters.push(ValType::I32);
       (parameters, vec![])
     }
   }
+}
+
+fn component_bool_i32_to_f64(value: u32) -> Vec<Instruction<'static>> {
+  vec![
+    Instruction::LocalGet(value),
+    Instruction::I32Const(1),
+    Instruction::I32GtU,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(value),
+    Instruction::F64ConvertI32U,
+  ]
+}
+
+fn component_bool_f64_to_i32(value: u32, canonical: u32) -> Vec<Instruction<'static>> {
+  vec![
+    Instruction::LocalGet(value),
+    Instruction::I32TruncF64U,
+    Instruction::LocalTee(canonical),
+    Instruction::F64ConvertI32U,
+    Instruction::LocalGet(value),
+    Instruction::F64Ne,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(canonical),
+    Instruction::I32Const(1),
+    Instruction::I32GtU,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(canonical),
+  ]
 }
 
 fn build_cabi_realloc_fn() -> CompiledFn {
@@ -1042,6 +1080,11 @@ fn build_component_import_adapter(adapter: &ComponentImportAdapter, str_new_inde
 
   for (index, parameter) in adapter.parameters.iter().enumerate() {
     match parameter {
+      ComponentAbiType::Bool => {
+        let canonical = params.len() as u32 + locals.len() as u32;
+        locals.push(ValType::I32);
+        instructions.extend(component_bool_f64_to_i32(index as u32, canonical));
+      }
       ComponentAbiType::Number => instructions.push(Instruction::LocalGet(index as u32)),
       ComponentAbiType::String => instructions.extend([
         Instruction::LocalGet(index as u32),
@@ -1057,6 +1100,13 @@ fn build_component_import_adapter(adapter: &ComponentImportAdapter, str_new_inde
   }
 
   match adapter.result {
+    ComponentAbiType::Bool => {
+      instructions.push(Instruction::Call(adapter.raw_index));
+      let canonical = params.len() as u32 + locals.len() as u32;
+      locals.push(ValType::I32);
+      instructions.push(Instruction::LocalSet(canonical));
+      instructions.extend(component_bool_i32_to_f64(canonical));
+    }
     ComponentAbiType::Number => instructions.push(Instruction::Call(adapter.raw_index)),
     ComponentAbiType::String => {
       let ret_ptr = params.len() as u32;
@@ -1091,6 +1141,7 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, str_new_inde
   let mut params = Vec::new();
   for parameter in &adapter.parameters {
     match parameter {
+      ComponentAbiType::Bool => params.push(ValType::I32),
       ComponentAbiType::Number => params.push(ValType::F64),
       ComponentAbiType::String => params.extend([ValType::I32, ValType::I32]),
     }
@@ -1102,6 +1153,14 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, str_new_inde
   let mut lowered = Vec::with_capacity(adapter.parameters.len());
   for parameter in &adapter.parameters {
     match parameter {
+      ComponentAbiType::Bool => {
+        let local = params.len() as u32 + locals.len() as u32;
+        locals.push(ValType::F64);
+        instructions.extend(component_bool_i32_to_f64(flat_index));
+        instructions.push(Instruction::LocalSet(local));
+        lowered.push(local);
+        flat_index += 1;
+      }
       ComponentAbiType::Number => {
         lowered.push(flat_index);
         flat_index += 1;
@@ -1126,6 +1185,15 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, str_new_inde
   instructions.push(Instruction::Call(adapter.target_index));
 
   let results = match adapter.result {
+    ComponentAbiType::Bool => {
+      let value = params.len() as u32 + locals.len() as u32;
+      locals.push(ValType::F64);
+      let canonical = params.len() as u32 + locals.len() as u32;
+      locals.push(ValType::I32);
+      instructions.push(Instruction::LocalSet(value));
+      instructions.extend(component_bool_f64_to_i32(value, canonical));
+      vec![ValType::I32]
+    }
     ComponentAbiType::Number => vec![ValType::F64],
     ComponentAbiType::String => {
       let value = params.len() as u32 + locals.len() as u32;
@@ -4734,9 +4802,56 @@ mod tests {
   }
 
   #[test]
-  fn component_adapter_rejects_types_outside_the_first_slice() {
-    let error = component_abi_type(&CalcitTypeAnnotation::Bool, "app.main/check", "logical_schema.result")
-      .expect_err("Bool is deferred to a later adapter slice");
+  fn component_bool_adapters_use_canonical_i32_and_strict_conversion() {
+    assert_eq!(
+      component_abi_type(&CalcitTypeAnnotation::Bool, "app.main/check", "logical_schema.result"),
+      Ok(ComponentAbiType::Bool)
+    );
+    let export = build_component_export_adapter(
+      &ComponentExportAdapter {
+        definition: "app.main/not".into(),
+        symbol: "not".into(),
+        target_index: 20,
+        parameters: vec![ComponentAbiType::Bool],
+        result: ComponentAbiType::Bool,
+      },
+      10,
+      30,
+    );
+    assert_eq!(export.params, vec![ValType::I32]);
+    assert_eq!(export.results, vec![ValType::I32]);
+    assert!(
+      export
+        .instructions
+        .iter()
+        .any(|instruction| matches!(instruction, wasm_encoder::Instruction::Unreachable))
+    );
+
+    let import = ComponentImportAdapter {
+      definition: "app.main/host-not".into(),
+      module: "host".into(),
+      symbol: "not".into(),
+      raw_index: 2,
+      source_arity: 1,
+      parameters: vec![ComponentAbiType::Bool],
+      result: ComponentAbiType::Bool,
+    };
+    assert_eq!(component_import_signature(&import), (vec![ValType::I32], vec![ValType::I32]));
+    let import_adapter = build_component_import_adapter(&import, 10, 11);
+    assert_eq!(import_adapter.params, vec![ValType::F64]);
+    assert_eq!(import_adapter.results, vec![ValType::F64]);
+    assert!(
+      import_adapter
+        .instructions
+        .iter()
+        .any(|instruction| matches!(instruction, wasm_encoder::Instruction::Unreachable))
+    );
+  }
+
+  #[test]
+  fn component_adapter_still_rejects_types_outside_the_scalar_string_slice() {
+    let error = component_abi_type(&CalcitTypeAnnotation::Buffer, "app.main/read", "logical_schema.result")
+      .expect_err("Buffer is deferred to a later adapter slice");
     assert!(error.contains("E_COMPONENT_ABI_UNSUPPORTED_TYPE"));
     assert!(error.contains("logical_schema.result"));
   }
