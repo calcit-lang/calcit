@@ -180,6 +180,12 @@ pub struct FfiExportCommand {
   /// output one machine-readable JSON document instead of the human inventory
   #[argh(switch)]
   pub json: bool,
+  /// select native raw bindings or the directional component surface
+  #[argh(option, default = "String::from(\"native\")")]
+  pub boundary: String,
+  /// output format: human, edn, or json; component defaults to edn
+  #[argh(option)]
+  pub format: Option<String>,
   /// restrict export to one exact local namespace
   #[argh(option)]
   pub ns: Option<String>,

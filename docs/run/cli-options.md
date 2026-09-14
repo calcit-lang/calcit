@@ -71,12 +71,19 @@ Export local raw bindings declared by non-empty `:ffi` lowering metadata:
 ```bash
 calcit calcit.cirru ffi export
 calcit calcit.cirru ffi export --json --ns app.ffi
+calcit calcit.cirru ffi export --boundary component
+calcit calcit.cirru ffi export --boundary component --format json
 ```
 
-The JSON mode keeps stdout to one machine-readable document and reports
-unsupported schemas as deterministic diagnostics rather than Dynamic
-fallbacks. See [FFI Interface IR](../installation/ffi-interface-ir.md) for the
-versioned schema and boundary rules.
+默认 `native` boundary 保持现有 human inventory 和 `--json` 兼容性。
+`--boundary component` 只选择 typed `defwasm-import` / `defwasm-export`，
+记录 direction 和 binding identity，并默认输出 Cirru EDN。使用
+`--format human|edn|json` 显式选择表达。
+
+结构化模式在 stdout 只输出一份可解析文档，unsupported schema
+以确定诊断返回，不退化为 Dynamic fallback。native raw-binding schema
+见 [FFI Interface IR](../installation/ffi-interface-ir.md)；Component contract 与职责边界见
+[WASM Component 边界](../installation/wasm-component-boundary.md)。
 
 ### Input File
 

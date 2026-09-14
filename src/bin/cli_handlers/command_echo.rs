@@ -1467,7 +1467,7 @@ fn ffi_name(subcommand: &FfiSubcommand) -> &'static str {
 fn push_ffi(tokens: &mut Vec<String>, cmd: &FfiCommand) {
   match &cmd.subcommand {
     FfiSubcommand::Export(opts) => {
-      echo_items!(tokens, switch "json" => opts.json, opt "ns" => opts.ns.as_deref(); default "none");
+      echo_items!(tokens, switch "json" => opts.json, value "boundary" => &opts.boundary; default "native", opt "format" => opts.format.as_deref(); default "boundary default", opt "ns" => opts.ns.as_deref(); default "none");
     }
   }
 }
