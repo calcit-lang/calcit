@@ -4,7 +4,7 @@
 
 Calcit 通过两个公开 preview 子命令暴露 WASM codegen：`calcit wasm` 生成 browser/embedded core module，`calcit wasi` 生成 WASI command module。两者共享同一套 Snapshot 加载、预处理、target validation 与 codegen 实现；当前支持范围仍以本文和明确的 unsupported 错误为准。
 
-仓库继续保留 `cr-wasm` 作为过渡期内部兼容 wrapper，供旧脚本和 WASI 自举回归使用。新的人类与 Agent 工作流应使用 `calcit wasm` / `calcit wasi`，不要依据内部 binary 名称猜测输出契约。
+`cr-wasm` 已退出默认安装和 release assets。新的人类与 Agent 工作流应使用 `calcit wasm` / `calcit wasi`，不要依据内部 binary 名称猜测输出契约。仓库内的 WASI 自举回归使用 feature-gated harness；它不是用户 CLI，也不会由默认 `cargo install calcit` 安装。
 
 ## 支持的子集
 
@@ -156,8 +156,8 @@ defn fibo (n)
 - `src/codegen/emit_wasm.rs` — WASM 二进制代码生成（via wasm-encoder）
 - `src/codegen.rs` — 模块注册
 - `src/cli_args.rs` — `EmitWasmCommand` CLI 定义
-- `src/wasm_cli.rs` — 两个公开命令与兼容 wrapper 共用的加载和编译流程
-- `src/bin/cr_wasm.rs` — 过渡期内部兼容 wrapper
+- `src/wasm_cli.rs` — 两个公开命令与内部回归 harness 共用的加载和编译流程
+- `src/bin/wasi_preprocess_harness.rs` — 仅在 `internal-wasi-preprocess-harness` feature 下构建的内部回归 harness
 - `calcit/test-wasm.cirru` — 测试用例
 - `scripts/test-wasm.sh` — WASM 验证脚本（生成 + Node.js 验证，集成在 `yarn check-all` 中）
 - `scripts/test-wasm.mjs` — Node.js 测试运行器

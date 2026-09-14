@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Reproduce the legacy snapshot preprocessing path in both native and WASI CLIs.
+# Reproduce snapshot preprocessing through the feature-gated internal harness.
 set -euo pipefail
 
 readonly TARGET="wasm32-wasip1"
 readonly FIXTURE="calcit/test-wasi-preprocess.cirru"
-readonly WASM_BIN="${CARGO_TARGET_DIR:-target}/${TARGET}/debug/cr-wasm.wasm"
+readonly HARNESS_BIN_NAME="calcit-wasi-preprocess-harness"
+readonly HARNESS_FEATURE="internal-wasi-preprocess-harness"
+readonly WASM_BIN="${CARGO_TARGET_DIR:-target}/${TARGET}/debug/${HARNESS_BIN_NAME}.wasm"
 readonly COMMAND_FIXTURE="calcit/test-wasi-command.cirru"
 readonly COMMAND_OUT="${CARGO_TARGET_DIR:-target}/wasi-command-smoke"
 readonly COMMAND_STDOUT="${COMMAND_OUT}/stdout.txt"
@@ -42,7 +44,7 @@ readonly READ_DIR_STDOUT="${READ_DIR_OUT}/stdout.txt"
 readonly READ_DIR_ERROR_OUT="${CARGO_TARGET_DIR:-target}/wasi-read-dir-error"
 readonly CORE_READ_DIR_OUT="${CARGO_TARGET_DIR:-target}/core-read-dir-reject"
 readonly CHECK_ONLY_OUT="${CARGO_TARGET_DIR:-target}/wasi-check-only-smoke"
-readonly NATIVE_WASM_BIN="${CARGO_TARGET_DIR:-target}/debug/cr-wasm"
+readonly NATIVE_HARNESS_BIN="${CARGO_TARGET_DIR:-target}/debug/${HARNESS_BIN_NAME}"
 readonly CALCIT_BIN="${CARGO_TARGET_DIR:-target}/debug/calcit"
 WASI_FS_HOST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/calcit-wasi-fs.XXXXXX")
 readonly WASI_FS_HOST_DIR
@@ -52,7 +54,7 @@ command -v wasmtime >/dev/null
 
 # The captured 0.13.77-era snapshot intentionally retains whole-Dynamic schemas.
 cargo run --bin calcit -- --compat-types --check-only "$FIXTURE"
-cargo build --bin cr-wasm --target "$TARGET"
+cargo build --features "$HARNESS_FEATURE" --bin "$HARNESS_BIN_NAME" --target "$TARGET"
 
 WASMTIME_NEW_CLI=0 wasmtime run \
   --dir "$PWD/calcit::/workspace" \
@@ -61,7 +63,7 @@ WASMTIME_NEW_CLI=0 wasmtime run \
 
 # The generated command module keeps the Preview 1 bridge internal and starts
 # through the conventional no-argument `_start` export.
-cargo build --bin cr-wasm --bin calcit
+cargo build --features "$HARNESS_FEATURE" --bin "$HARNESS_BIN_NAME" --bin calcit
 cargo run --bin calcit -- "$COMMAND_FIXTURE" test --tag wasi --require-match
 "$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --check-only --emit-path "$CHECK_ONLY_OUT"
 if [[ -e "$CHECK_ONLY_OUT/program.wasm" ]]; then
@@ -215,8 +217,8 @@ if read_dir_capability_error=$(
 fi
 grep -Fq "E_WASM_CAPABILITY" <<<"$read_dir_capability_error"
 
-if target_error=$("$NATIVE_WASM_BIN" "$COMMAND_FIXTURE" --target unknown 2>&1); then
-  echo "cr-wasm unexpectedly accepted an unknown target" >&2
+if target_error=$("$NATIVE_HARNESS_BIN" "$COMMAND_FIXTURE" --target unknown 2>&1); then
+  echo "internal WASI preprocess harness unexpectedly accepted an unknown target" >&2
   exit 1
 fi
 grep -Fq "E_WASM_TARGET" <<<"$target_error"

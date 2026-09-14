@@ -12,7 +12,7 @@ use calcit::runner;
 use calcit::wasm_cli::{self, WasmCliOptions};
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-/// Internal compatibility wrapper for WASM codegen.
+/// Feature-gated harness for WASI preprocessing regression tests.
 struct WasmArgs {
   /// emit path for generated artifacts, defaults to "js-out/"
   #[argh(option, default = "String::from(\"js-out/\")")]
