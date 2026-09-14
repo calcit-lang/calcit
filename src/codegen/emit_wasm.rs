@@ -305,24 +305,28 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     compiled_fns.push(build_wasi_write_all_fn(fd_write_idx));
   }
 
+  let component_cabi_realloc_index = if boundary == WasmBoundary::Component {
+    let index = num_imports + compiled_fns.len() as u32;
+    compiled_fns.push(build_cabi_realloc_fn());
+    Some(index)
+  } else {
+    None
+  };
+
   // Emit __str_new(src_ptr: i32, byte_len: i32) → f64 now that we know the string tag id.
   // This is a runtime helper exported for JS FFI: copies bytes into a tagged heap string.
   let str_tag_id = *tag_index.get("string").expect("string tag must exist") as i32;
   let str_new_idx = num_imports + compiled_fns.len() as u32;
   runtime_fn_index.insert("__str_new".to_string(), str_new_idx);
-  compiled_fns.push(build_str_new_fn(str_tag_id));
+  compiled_fns.push(build_str_new_fn(str_tag_id, component_cabi_realloc_index));
 
   let component_buffer_new_index = if boundary == WasmBoundary::Component {
     let buffer_tag_id = *tag_index.get("buffer").expect("buffer tag must exist") as i32;
     let index = num_imports + compiled_fns.len() as u32;
-    compiled_fns.push(build_component_buffer_new_fn(buffer_tag_id));
-    Some(index)
-  } else {
-    None
-  };
-  let component_cabi_realloc_index = if boundary == WasmBoundary::Component {
-    let index = num_imports + compiled_fns.len() as u32;
-    compiled_fns.push(build_cabi_realloc_fn());
+    compiled_fns.push(build_component_buffer_new_fn(
+      buffer_tag_id,
+      component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
+    ));
     Some(index)
   } else {
     None

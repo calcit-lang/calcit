@@ -129,11 +129,15 @@ WebAssembly.instantiate(module, { host }).then(result => {
     const memory = new DataView(e.memory.buffer);
     const ptr = memory.getUint32(ret, true);
     const len = memory.getUint32(ret + 4, true);
-    return Array.from(new Uint8Array(e.memory.buffer, ptr, len));
+    return Uint8Array.from(new Uint8Array(e.memory.buffer, ptr, len));
   };
   const expectBytes = (actual, expected, label) => {
-    if (actual.length !== expected.length || actual.some((byte, index) => byte !== expected[index])) {
-      throw new Error(`${label}: got [${actual}], expected [${expected}]`);
+    if (actual.length !== expected.length) {
+      throw new Error(`${label}: got length ${actual.length}, expected ${expected.length}`);
+    }
+    const mismatch = actual.findIndex((byte, index) => byte !== expected[index]);
+    if (mismatch !== -1) {
+      throw new Error(`${label}: byte ${mismatch} was ${actual[mismatch]}, expected ${expected[mismatch]}`);
     }
   };
   if (e["add-one"](41) !== 42) throw new Error("Number adapter did not round-trip");
@@ -162,6 +166,15 @@ WebAssembly.instantiate(module, { host }).then(result => {
   const [taggedBufferPtr, taggedBufferLen] = allocateBytes([0, 255, 17]);
   if (e["is-buffer"](taggedBufferPtr, taggedBufferLen) !== 1) {
     throw new Error("Buffer lift did not preserve the Calcit type tag");
+  }
+  const growingBytes = Uint8Array.from({ length: e.memory.buffer.byteLength + 257 }, (_, index) => index % 251);
+  const [growingPtr, growingLen] = allocateBytes(growingBytes);
+  for (let round = 0; round < 2; round += 1) {
+    expectBytes(
+      readBytesResult(e["echo-buffer"](growingPtr, growingLen)),
+      growingBytes,
+      `growing Buffer round ${round}`,
+    );
   }
   const [yesPtr, yesLen] = allocateBytes([0, 255]);
   const [noPtr, noLen] = allocateBytes([17, 0, 128]);

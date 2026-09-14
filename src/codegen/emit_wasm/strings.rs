@@ -780,23 +780,30 @@ pub(super) fn emit_str_spaced(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 
 /// Build the `__str_new(src_ptr: i32, byte_len: i32) → f64` runtime function.
 /// Copies `byte_len` bytes from `src_ptr` into a new heap-allocated tagged string.
-pub(super) fn build_str_new_fn(str_tag_id: i32) -> CompiledFn {
-  build_tagged_bytes_new_fn(str_tag_id, Some("__str_new"))
+pub(super) fn build_str_new_fn(str_tag_id: i32, component_cabi_realloc_index: Option<u32>) -> CompiledFn {
+  build_tagged_bytes_new_fn(str_tag_id, Some("__str_new"), component_cabi_realloc_index)
 }
 
 /// Build the internal constructor used to lift Canonical ABI `list<u8>` values.
-pub(super) fn build_component_buffer_new_fn(buffer_tag_id: i32) -> CompiledFn {
-  build_tagged_bytes_new_fn(buffer_tag_id, None)
+pub(super) fn build_component_buffer_new_fn(buffer_tag_id: i32, cabi_realloc_index: u32) -> CompiledFn {
+  build_tagged_bytes_new_fn(buffer_tag_id, None, Some(cabi_realloc_index))
 }
 
-fn build_tagged_bytes_new_fn(type_tag_id: i32, export_name: Option<&str>) -> CompiledFn {
+fn build_tagged_bytes_new_fn(type_tag_id: i32, export_name: Option<&str>, cabi_realloc_index: Option<u32>) -> CompiledFn {
   // params: 0 = src_ptr (i32), 1 = byte_len (i32)
-  // locals: 2 = padded (i32), 3 = payload (i32), 4 = ptr (i32)
-  let instructions = vec![
+  // locals: 2 = padded, 3 = payload, 4 = allocation_size, 5 = raw_base, 6 = ptr
+  let mut instructions = vec![
     // padded = (byte_len + 7) & -8
     Instruction::LocalGet(1),
     Instruction::I32Const(7),
     Instruction::I32Add,
+    Instruction::LocalTee(2),
+    Instruction::LocalGet(1),
+    Instruction::I32LtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(2),
     Instruction::I32Const(-8i32),
     Instruction::I32And,
     Instruction::LocalSet(2), // padded
@@ -804,45 +811,83 @@ fn build_tagged_bytes_new_fn(type_tag_id: i32, export_name: Option<&str>) -> Com
     Instruction::I32Const(8),
     Instruction::LocalGet(2),
     Instruction::I32Add,
-    Instruction::LocalSet(3), // payload
-    // Write HEAP_MAGIC at heap_ptr (raw_base + 0)
-    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
-    Instruction::I32Const(HEAP_MAGIC),
-    Instruction::I32Store(mem_arg_i32(0)),
-    // Write the type tag at heap_ptr + 4
-    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
-    Instruction::I32Const(type_tag_id),
-    Instruction::I32Store(mem_arg_i32(4)),
-    // ptr = heap_ptr + 8; advance heap_ptr += payload
-    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::LocalTee(3), // payload
+    Instruction::LocalGet(2),
+    Instruction::I32LtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    // allocation_size = 8-byte header + payload
+    Instruction::LocalGet(3),
     Instruction::I32Const(8),
     Instruction::I32Add,
-    Instruction::LocalTee(4), // ptr = logical_ptr
-    Instruction::LocalGet(3), // payload
+    Instruction::LocalTee(4),
+    Instruction::LocalGet(3),
+    Instruction::I32LtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+  ];
+  if let Some(cabi_realloc_index) = cabi_realloc_index {
+    instructions.extend([
+      Instruction::I32Const(0),
+      Instruction::I32Const(0),
+      Instruction::I32Const(8),
+      Instruction::LocalGet(4),
+      Instruction::Call(cabi_realloc_index),
+      Instruction::LocalSet(5),
+    ]);
+  } else {
+    instructions.extend([
+      Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+      Instruction::LocalTee(5),
+      Instruction::LocalGet(4),
+      Instruction::I32Add,
+      Instruction::LocalTee(6),
+      Instruction::LocalGet(5),
+      Instruction::I32LtU,
+      Instruction::If(BlockType::Empty),
+      Instruction::Unreachable,
+      Instruction::End,
+      Instruction::LocalGet(6),
+      Instruction::GlobalSet(HEAP_PTR_GLOBAL),
+    ]);
+  }
+  instructions.extend([
+    // Write HEAP_MAGIC and the type tag at raw_base.
+    Instruction::LocalGet(5),
+    Instruction::I32Const(HEAP_MAGIC),
+    Instruction::I32Store(mem_arg_i32(0)),
+    Instruction::LocalGet(5),
+    Instruction::I32Const(type_tag_id),
+    Instruction::I32Store(mem_arg_i32(4)),
+    // ptr = raw_base + 8
+    Instruction::LocalGet(5),
+    Instruction::I32Const(8),
     Instruction::I32Add,
-    Instruction::GlobalSet(HEAP_PTR_GLOBAL),
+    Instruction::LocalSet(6),
     // Store byte_len as f64 at ptr+0
-    Instruction::LocalGet(4),
+    Instruction::LocalGet(6),
     Instruction::LocalGet(1), // byte_len
     Instruction::F64ConvertI32U,
     Instruction::F64Store(mem_arg_f64(0)),
     // memory.copy(dst = ptr+8, src = src_ptr, n = byte_len)
-    Instruction::LocalGet(4),
+    Instruction::LocalGet(6),
     Instruction::I32Const(8),
     Instruction::I32Add,
     Instruction::LocalGet(0), // src_ptr
     Instruction::LocalGet(1), // byte_len
     Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
     // return logical_ptr as f64
-    Instruction::LocalGet(4),
+    Instruction::LocalGet(6),
     Instruction::F64ConvertI32U,
-  ];
+  ]);
 
   CompiledFn {
     export_name: export_name.map(str::to_owned),
     params: vec![ValType::I32, ValType::I32],
     results: vec![ValType::F64],
-    locals: vec![ValType::I32, ValType::I32, ValType::I32], // padded, payload, ptr
+    locals: vec![ValType::I32; 5],
     instructions,
   }
 }
