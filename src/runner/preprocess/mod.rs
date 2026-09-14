@@ -52,6 +52,71 @@ static STRICT_TYPES: AtomicBool = AtomicBool::new(false);
 static VERBOSE_PREPROCESS: AtomicBool = AtomicBool::new(false);
 static PROJECT_NAMESPACES: LazyLock<RwLock<HashSet<Arc<str>>>> = LazyLock::new(|| RwLock::new(HashSet::new()));
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedSourceUsage {
+  pub target_ns: Arc<str>,
+  pub target_def: Arc<str>,
+  pub location: Option<NodeLocation>,
+  pub macro_origin: Vec<String>,
+}
+
+thread_local! {
+  static RESOLVED_SOURCE_USAGE_TRACE: RefCell<Option<Vec<ResolvedSourceUsage>>> = const { RefCell::new(None) };
+}
+
+/// Re-preprocess one source definition and retain only compiler-resolved definition references.
+///
+/// The ordinary compiled form intentionally drops source coordinates. Semantic refactors use this
+/// opt-in trace instead of guessing from matching leaf text. References produced while expanding a
+/// macro remain visible with their macro origin so callers can reject unsafe source rewrites.
+pub fn trace_definition_source_usages(
+  ns: &str,
+  def: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<Vec<ResolvedSourceUsage>, CalcitErr> {
+  let code = program::lookup_def_code(ns, def).ok_or_else(|| {
+    CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Var,
+      format!("unknown ns/def in program: {ns}/{def}"),
+      call_stack,
+      Some(NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]))),
+    )
+  })?;
+  let previous = RESOLVED_SOURCE_USAGE_TRACE.with(|trace| trace.replace(Some(Vec::new())));
+  debug_assert!(previous.is_none(), "resolved source usage traces must not be nested");
+  let mut scope_types = ScopeTypes::new();
+  let result = builtins::meta::with_compiling_def(ns, def, || {
+    calcit::with_type_annotation_warning_context(format!("{ns}/{def}"), || {
+      preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, call_stack)
+    })
+  });
+  let usages = RESOLVED_SOURCE_USAGE_TRACE.with(|trace| trace.replace(previous).unwrap_or_default());
+  result.map(|_| usages)
+}
+
+fn retain_resolved_source_usage(value: Calcit, source: &Calcit, call_stack: &CallStackList) -> Calcit {
+  if let Calcit::Import(import) = &value {
+    let macro_origin = call_stack
+      .0
+      .iter()
+      .filter(|frame| matches!(frame.kind, StackKind::Macro))
+      .map(|frame| format!("{}/{}", frame.ns, frame.def))
+      .collect::<Vec<_>>();
+    RESOLVED_SOURCE_USAGE_TRACE.with(|trace| {
+      if let Some(usages) = trace.borrow_mut().as_mut() {
+        usages.push(ResolvedSourceUsage {
+          target_ns: import.ns.clone(),
+          target_def: import.def.clone(),
+          location: source.get_location(),
+          macro_origin,
+        });
+      }
+    });
+  }
+  value
+}
+
 pub fn set_project_namespaces(namespaces: &HashSet<String>) {
   let mut target = PROJECT_NAMESPACES.write().expect("write project namespaces");
   target.clear();
@@ -1628,7 +1693,7 @@ pub fn preprocess_expr(
               }),
               def_id: Some(program::ensure_def_id(&target_ns, &def_part).0),
             });
-            Ok(form)
+            Ok(retain_resolved_source_usage(form, expr, call_stack))
           } else if program::has_def_code(&ns_alias, &def_part) {
             // refer to namespace/def directly for some usages
 
@@ -1645,7 +1710,7 @@ pub fn preprocess_expr(
               def_id: Some(program::ensure_def_id(&ns_alias, &def_part).0),
             });
 
-            Ok(form)
+            Ok(retain_resolved_source_usage(form, expr, call_stack))
           } else {
             Err(CalcitErr::use_msg_stack_location(
               CalcitErrKind::Var,
@@ -1703,7 +1768,7 @@ pub fn preprocess_expr(
               }),
               def_id: Some(program::ensure_def_id(def_ns, def).0),
             });
-            Ok(form)
+            Ok(retain_resolved_source_usage(form, expr, call_stack))
           } else if let Ok(p) = def.parse::<CalcitProc>() {
             Ok(Calcit::Proc(p))
           } else if program::has_def_code(calcit::CORE_NS, def) {
@@ -1718,7 +1783,7 @@ pub fn preprocess_expr(
               info: Arc::new(ImportInfo::Core { at_ns: file_ns.into() }),
               def_id: Some(program::ensure_def_id(calcit::CORE_NS, def).0),
             });
-            Ok(form)
+            Ok(retain_resolved_source_usage(form, expr, call_stack))
           } else if program::has_def_code(def_ns, def) {
             // same file
             // println!("again same file: {}/{} at {}/{}", def_ns, def, file_ns, at_def);
@@ -1741,7 +1806,7 @@ pub fn preprocess_expr(
               }),
               def_id: Some(program::ensure_def_id(def_ns, def).0),
             });
-            Ok(form)
+            Ok(retain_resolved_source_usage(form, expr, call_stack))
           } else if is_registered_proc(def) {
             Ok(Calcit::Registered(def.to_owned()))
           } else {
@@ -1766,7 +1831,7 @@ pub fn preprocess_expr(
                   }),
                   def_id: Some(program::ensure_def_id(&target_ns, def).0),
                 });
-                Ok(form)
+                Ok(retain_resolved_source_usage(form, expr, call_stack))
               }
               None if codegen::codegen_mode() && is_js_syntax_procs(def) => {
                 require_js_ffi_feature(
@@ -1784,16 +1849,20 @@ pub fn preprocess_expr(
               None => {
                 let from_default = program::lookup_default_target_in_import(def_ns, def);
                 if let Some(target_ns) = from_default {
-                  Ok(Calcit::Import(CalcitImport {
-                    ns: target_ns.to_owned(),
-                    def: Arc::from("default"),
-                    info: Arc::new(ImportInfo::JsDefault {
-                      alias: def.to_owned(),
-                      at_ns: file_ns.into(),
-                      at_def: at_def.to_owned(),
+                  Ok(retain_resolved_source_usage(
+                    Calcit::Import(CalcitImport {
+                      ns: target_ns.to_owned(),
+                      def: Arc::from("default"),
+                      info: Arc::new(ImportInfo::JsDefault {
+                        alias: def.to_owned(),
+                        at_ns: file_ns.into(),
+                        at_def: at_def.to_owned(),
+                      }),
+                      def_id: None,
                     }),
-                    def_id: None,
-                  }))
+                    expr,
+                    call_stack,
+                  ))
                 } else {
                   let mut names: Vec<Arc<str>> = Vec::with_capacity(scope_defs.len());
                   for def in scope_defs {

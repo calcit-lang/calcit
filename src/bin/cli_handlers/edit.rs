@@ -1153,7 +1153,7 @@ fn handle_mv_node(opts: &EditMvNodeCommand, snapshot_file: &str) -> Result<(), S
   Ok(())
 }
 
-fn rename_definition_declaration(code: &Cirru, old_name: &str, new_name: &str) -> Result<(Cirru, bool), String> {
+pub(crate) fn rename_definition_declaration(code: &Cirru, old_name: &str, new_name: &str) -> Result<(Cirru, bool), String> {
   let Cirru::List(items) = code else {
     return Ok((code.clone(), false));
   };

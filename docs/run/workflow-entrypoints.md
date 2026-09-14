@@ -90,6 +90,8 @@ Preset 是固定规则集合的便利别名，不是历史语义数据库。已�
 - Cirru、JSON AST 等 mutation 输入格式扩展现有 `edit/tree/cursor/fix` 的共享输入契约；不增加新的语法节点顶层工具。
 - 包含源码或结构化片段的 human 输出统一为 Markdown-compatible 文档，代码使用带语言标记的 fence；Calcit 自有自动化优先读取 Cirru EDN envelope，仅在对接 JSON-only consumer 时显式选择 JSON，不增加 `--markdown` 或新的输出命令。
 - 跨 definition 与 usage 的语义重构继续通过 `calcit fix` 的 preview/apply 事务暴露；不建立第二套 mutation 协议。
+- definition 重命名使用 `fix --rule rename-definition-v1 --ns <ns> --def <old> --to <new>`；`edit rename` 只保留为
+  用户明确要求的 declaration-only 原语，文档默认路径不再引导 Agent 组合文本搜索与批量替换。
 
 这套边界允许内部能力继续增强，但让人类和 Agent 的入口数量保持稳定。
 
