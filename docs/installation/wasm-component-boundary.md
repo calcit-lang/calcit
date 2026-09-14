@@ -58,7 +58,9 @@ core 不带 WIT generator、WIT golden、component packaging 或 stale-artifact 
 
 ## CLI 收敛
 
-Component contract 沿用 `calcit ffi export`，通过 `--boundary component` 显式选择。不新增顶层 component/WIT 命令。
+计划中的 Component contract 沿用 `calcit ffi export`，实现后通过
+`--boundary component` 显式选择。当前发布版尚未提供该选项；实施不会新增顶层
+component/WIT 命令。
 
 - 新 Component contract 默认输出 Cirru EDN；
 - `--format json` 用于需要 JSON 的 consumer；
