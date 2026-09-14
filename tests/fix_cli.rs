@@ -54,6 +54,19 @@ fn run_calcit(snapshot: &Path, args: &[&str]) -> Output {
     .expect("calcit command should run")
 }
 
+fn run_calcit_with_emit_path(snapshot: &Path, emit_path: &Path, args: &[&str]) -> Output {
+  Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .arg("--tips-level")
+    .arg("none")
+    .arg("--emit-path")
+    .arg(emit_path)
+    .arg(snapshot)
+    .args(args)
+    .output()
+    .expect("calcit command should run with an isolated emit path")
+}
+
 fn parse_stdout(output: &Output) -> serde_json::Value {
   serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
     panic!(
@@ -588,6 +601,365 @@ fn semantic_rename_updates_schema_trait_bounds_atomically() {
   assert!(updated.contains("'T 'RenamedTrait"), "snapshot:\n{updated}");
   assert!(!updated.contains("'T 'RenameTrait"), "snapshot:\n{updated}");
   assert_success(&run_calcit(&snapshot, &["--check-only"]), "strict check after trait-bound rename");
+}
+
+#[test]
+fn value_to_zero_arg_fn_updates_resolved_reads_atomically() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (args, context) in [
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/deferred-number",
+        "--code",
+        "quote $ def deferred-number 41",
+      ],
+      "create value definition",
+    ),
+    (
+      vec!["edit", "schema", "fix-command.main/deferred-number", "--code", "quote 'Number"],
+      "type value definition",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/main!",
+        "--code",
+        "quote $ defn main! () deferred-number",
+        "--overwrite",
+      ],
+      "make the native and JavaScript entry read the value",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/main!",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+      ],
+      "type the value-reading entry",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/read-deferred-number",
+        "--code",
+        "quote $ defn read-deferred-number () + deferred-number 1",
+      ],
+      "create value reader",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/read-deferred-number",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+      ],
+      "type value reader",
+    ),
+    (
+      vec![
+        "edit",
+        "add-test",
+        "fix-command.main/read-deferred-number",
+        "reads-converted-value",
+        "--code",
+        "quote $ = deferred-number 41",
+        "--tags",
+        "semantic,fast",
+      ],
+      "attach direct value-read test",
+    ),
+    (
+      vec![
+        "edit",
+        "examples",
+        "fix-command.main/read-deferred-number",
+        "--code",
+        "quote $ + deferred-number 2",
+      ],
+      "attach direct value-read example",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "value-to-zero-arg-fn-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "deferred-number",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "value-to-function preview");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["changed"], true);
+  assert!(
+    report["data"]["suggestions"]
+      .as_array()
+      .is_some_and(|items| items.iter().any(|item| item["origin_chain"][0]["kind"] == "resolved-value-read"))
+  );
+
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "value-to-zero-arg-fn-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "deferred-number",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "value-to-function apply");
+  let updated = fs::read_to_string(&snapshot).expect("updated snapshot should read");
+  assert!(updated.contains("defn deferred-number () 41"), "snapshot:\n{updated}");
+  assert!(updated.contains("+ (deferred-number) 1"), "snapshot:\n{updated}");
+  assert!(updated.contains(":tags $ #{} :fast :semantic"), "snapshot:\n{updated}");
+  assert_success(
+    &run_calcit(&snapshot, &["test", "fix-command.main/read-deferred-number", "--require-match"]),
+    "converted attached test",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "analyze",
+        "check-examples",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        "read-deferred-number",
+      ],
+    ),
+    "converted attached example",
+  );
+  assert_success(&run_calcit(&snapshot, &[]), "converted native entry");
+  let js_output = directory.path().join("js-out");
+  assert_success(
+    &run_calcit_with_emit_path(&snapshot, &js_output, &["js"]),
+    "converted JavaScript entry codegen",
+  );
+  assert!(js_output.join("fix-command.main.mjs").is_file());
+
+  let repeated = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "value-to-zero-arg-fn-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "deferred-number",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&repeated, "idempotent value-to-function preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["changed"], false);
+}
+
+#[test]
+fn value_to_zero_arg_fn_rejects_quoted_references_without_writing() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (args, context) in [
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/deferred-data",
+        "--code",
+        "quote $ def deferred-data 1",
+      ],
+      "create quoted-boundary value",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/quoted-deferred-data",
+        "--code",
+        "quote $ def quoted-deferred-data $ quote deferred-data",
+      ],
+      "create quoted target name",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+  let before = fs::read(&snapshot).expect("snapshot should read before rejected refactor");
+  let rejected = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "value-to-zero-arg-fn-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "deferred-data",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!rejected.status.success());
+  assert!(String::from_utf8_lossy(&rejected.stderr).contains("quoted source contains"));
+  assert_eq!(fs::read(&snapshot).expect("rejected snapshot should read"), before);
+}
+
+#[test]
+fn value_to_zero_arg_fn_rejects_direct_macro_references_without_writing() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (args, context) in [
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/deferred-syntax-value",
+        "--code",
+        "quote $ def deferred-syntax-value 1",
+      ],
+      "create macro-referenced value",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/read-deferred-syntax",
+        "--code",
+        "quote $ defmacro read-deferred-syntax () deferred-syntax-value",
+      ],
+      "create direct macro reference",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+  let before = fs::read(&snapshot).expect("snapshot should read before rejected refactor");
+  let rejected = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "value-to-zero-arg-fn-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "deferred-syntax-value",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!rejected.status.success());
+  assert!(String::from_utf8_lossy(&rejected.stderr).contains("macro source may produce"));
+  assert_eq!(fs::read(&snapshot).expect("rejected snapshot should read"), before);
+}
+
+#[test]
+fn value_to_zero_arg_fn_wraps_reads_used_as_callees() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (args, context) in [
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/stored-adder",
+        "--code",
+        "quote $ def stored-adder $ fn (x) + x 1",
+      ],
+      "create function-valued definition",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/stored-adder",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+      ],
+      "type function-valued definition",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/call-stored-adder",
+        "--code",
+        "quote $ defn call-stored-adder () stored-adder 1",
+      ],
+      "create stored function caller",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/call-stored-adder",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+      ],
+      "type stored function caller",
+    ),
+    (
+      vec![
+        "edit",
+        "add-test",
+        "fix-command.main/call-stored-adder",
+        "calls-wrapped-callee",
+        "--code",
+        "quote $ = (call-stored-adder) 2",
+      ],
+      "attach caller behavior test",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "value-to-zero-arg-fn-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "stored-adder",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "callee-position value-to-function apply");
+  let updated = fs::read_to_string(&snapshot).expect("updated snapshot should read");
+  assert!(updated.contains("defn stored-adder ()"), "snapshot:\n{updated}");
+  assert!(updated.contains("(stored-adder) 1"), "snapshot:\n{updated}");
+  assert_success(
+    &run_calcit(&snapshot, &["test", "fix-command.main/call-stored-adder", "--require-match"]),
+    "wrapped callee behavior",
+  );
 }
 
 #[test]

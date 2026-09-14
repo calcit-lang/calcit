@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use calcit::calcit::{CalcitTypeAnnotation, LocatedWarning};
+use calcit::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, LocatedWarning, SchemaKind};
 use calcit::call_stack::CallStackList;
 use calcit::cli_args::FixCommand;
 use calcit::data::cirru::code_to_calcit;
@@ -31,6 +31,8 @@ const NAMED_STRUCT_CONSTRUCTOR_RULE: &str = "named-struct-constructor-v1";
 const NAMED_STRUCT_CONSTRUCTOR_DIAGNOSTIC: &str = "FIX_NAMED_STRUCT_CONSTRUCTOR";
 const RENAME_DEFINITION_RULE: &str = "rename-definition-v1";
 const RENAME_DEFINITION_DIAGNOSTIC: &str = "REFACTOR_RENAME_DEFINITION";
+const VALUE_TO_ZERO_ARG_FN_RULE: &str = "value-to-zero-arg-fn-v1";
+const VALUE_TO_ZERO_ARG_FN_DIAGNOSTIC: &str = "REFACTOR_VALUE_TO_ZERO_ARG_FN";
 const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
 const SURFACE_LATEST_V2_PRESET: &str = "surface-latest-v2";
 const AVAILABLE_RULES: [&str; 5] = [
@@ -59,12 +61,14 @@ const REQUIRED_STRUCT_FIELD_RULE: &str = "required-struct-field-v1";
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum FixOperation {
   ReplaceLeaf { original: String, replacement: String },
+  WrapLeafCall { original: String },
   ReplaceNode { original: String, replacement: String },
   SpliceDo,
   ReplaceImports { code: String },
   ReplaceExamples { code: String },
   ReplaceTest { name: String, tags: String, code: String },
   ReplaceSchema { code: String },
+  ReplaceDefinition { code: String },
   RenameDefinition { new_name: String },
 }
 
@@ -156,7 +160,9 @@ pub(crate) fn handle_fix_command(
   }
 
   let semantic_rename = selected_rules.contains(&RENAME_DEFINITION_RULE);
-  let selected_definitions = if semantic_rename {
+  let value_to_zero_arg_fn = selected_rules.contains(&VALUE_TO_ZERO_ARG_FN_RULE);
+  let semantic_refactor = semantic_rename || value_to_zero_arg_fn;
+  let selected_definitions = if semantic_refactor {
     select_project_definitions(compiled_snapshot, project_namespaces)?
   } else {
     select_definitions(options, compiled_snapshot, project_namespaces)?
@@ -167,17 +173,28 @@ pub(crate) fn handle_fix_command(
   } else {
     compile_selected_definitions_for_migration(&selected_definitions)?
   };
-  let semantic_warning_identities = semantic_rename.then(|| {
-    semantic_rename_warning_identities(
+  let semantic_warning_identities = if semantic_rename {
+    Some(semantic_rename_warning_identities(
       &warnings,
       options.ns.as_deref().expect("semantic rename requires namespace"),
       options.definition.as_deref().expect("semantic rename requires definition"),
       options.replacement_name.as_deref().expect("semantic rename requires replacement"),
-    )
-  });
+    ))
+  } else if value_to_zero_arg_fn {
+    Some(warning_identities(&warnings))
+  } else {
+    None
+  };
   let mut suggestions = Vec::new();
   if semantic_rename {
     suggestions.extend(plan_definition_rename(
+      options,
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+    )?);
+  } else if value_to_zero_arg_fn {
+    suggestions.extend(plan_value_to_zero_arg_fn(
       options,
       &source_snapshot,
       snapshot_file,
@@ -246,7 +263,7 @@ pub(crate) fn handle_fix_command(
     if suggestions.iter().any(|suggestion| suggestion.operation.is_some()) {
       return Err("Staged fix validation found an applicable migration that was not removed.".to_owned());
     }
-    let unexpected = if semantic_rename {
+    let unexpected = if semantic_refactor {
       println!(
         "{}",
         serde_json::to_string(semantic_warning_identities.as_deref().unwrap_or_default())
@@ -366,6 +383,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     return Err("`calcit fix --rule` conflicts with `--preset`; choose one explicit migration selection.".to_owned());
   }
   let semantic_rename = options.rule.as_deref() == Some(RENAME_DEFINITION_RULE);
+  let value_to_zero_arg_fn = options.rule.as_deref() == Some(VALUE_TO_ZERO_ARG_FN_RULE);
   if semantic_rename {
     if options.ns.is_none() || options.definition.is_none() || options.replacement_name.is_none() {
       return Err(format!(
@@ -375,6 +393,15 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     let replacement = options.replacement_name.as_deref().expect("checked replacement name");
     if replacement.is_empty() || replacement.contains('/') {
       return Err("`calcit fix --to` must be one non-empty unqualified definition name.".to_owned());
+    }
+  } else if value_to_zero_arg_fn {
+    if options.ns.is_none() || options.definition.is_none() {
+      return Err(format!(
+        "Fix rule `{VALUE_TO_ZERO_ARG_FN_RULE}` requires exact `--ns` and `--def` arguments."
+      ));
+    }
+    if options.replacement_name.is_some() {
+      return Err(format!("Fix rule `{VALUE_TO_ZERO_ARG_FN_RULE}` does not accept `--to`."));
     }
   } else if options.replacement_name.is_some() {
     return Err(format!("`calcit fix --to` is only valid with `--rule {RENAME_DEFINITION_RULE}`."));
@@ -395,12 +422,13 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | NAMED_ENUM_CONSTRUCTOR_RULE
         | NAMED_STRUCT_CONSTRUCTOR_RULE
         | RENAME_DEFINITION_RULE
+        | VALUE_TO_ZERO_ARG_FN_RULE
         | TAG_MATCH_RULE
         | REQUIRED_STRUCT_FIELD_RULE
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -414,8 +442,12 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
 /// Expand one explicit rule or versioned preset into a deterministic rule sequence.
 fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
   if let Some(rule) = options.rule.as_deref() {
-    if rule == RENAME_DEFINITION_RULE {
-      return vec![RENAME_DEFINITION_RULE];
+    if matches!(rule, RENAME_DEFINITION_RULE | VALUE_TO_ZERO_ARG_FN_RULE) {
+      return vec![if rule == RENAME_DEFINITION_RULE {
+        RENAME_DEFINITION_RULE
+      } else {
+        VALUE_TO_ZERO_ARG_FN_RULE
+      }];
     }
     return AVAILABLE_RULES.iter().copied().filter(|candidate| *candidate == rule).collect();
   }
@@ -467,6 +499,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
     RENAME_DEFINITION_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: RENAME_DEFINITION_DIAGNOSTIC,
+      evidence_source: "compiler-resolved-reference",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    VALUE_TO_ZERO_ARG_FN_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: VALUE_TO_ZERO_ARG_FN_DIAGNOSTIC,
       evidence_source: "compiler-resolved-reference",
       lifecycle: "semantic-refactor",
       source_version_required: false,
@@ -552,6 +591,16 @@ fn compile_selected_definitions_for_migration(definitions: &[(String, String)]) 
   let result = compile_selected_definitions(definitions);
   drop(guard);
   result
+}
+
+/// Serialize the pre-edit warning multiset for semantic-refactor validation.
+fn warning_identities(warnings: &[LocatedWarning]) -> Vec<String> {
+  let mut identities = warnings
+    .iter()
+    .map(|warning| serde_json::to_string(&warning.as_json()).expect("warning identity must serialize"))
+    .collect::<Vec<_>>();
+  identities.sort();
+  identities
 }
 
 /// Build stable warning identities while treating the renamed declaration as the same source owner.
@@ -882,6 +931,434 @@ fn plan_definition_rename(
   Ok(suggestions)
 }
 
+fn plan_value_to_zero_arg_fn(
+  options: &FixCommand,
+  snapshot: &Snapshot,
+  snapshot_file: &str,
+  project_definitions: &[(String, String)],
+) -> Result<Vec<FixSuggestion>, String> {
+  let target_ns = options.ns.as_deref().expect("value refactor requires namespace");
+  let target_def = options.definition.as_deref().expect("value refactor requires definition");
+  let target_entry = snapshot
+    .files
+    .get(target_ns)
+    .and_then(|file| file.defs.get(target_def))
+    .ok_or_else(|| format!("Semantic refactor source `{target_ns}/{target_def}` does not exist."))?;
+  let Cirru::List(target_items) = &target_entry.code else {
+    return Err(format!(
+      "Semantic refactor source `{target_ns}/{target_def}` is not a definition form."
+    ));
+  };
+  let target_head = target_items.first().and_then(leaf_value);
+  if target_head == Some("defn") && matches!(target_items.get(2), Some(Cirru::List(args)) if args.is_empty()) {
+    if std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1") {
+      validate_zero_arg_value_refactor(snapshot, project_definitions, target_ns, target_def)?;
+    }
+    return Ok(vec![]);
+  }
+  if target_head != Some("def") || target_items.len() != 3 || !target_items.get(1).is_some_and(|name| name.eq_leaf(target_def)) {
+    return Err(format!(
+      "Fix rule `{VALUE_TO_ZERO_ARG_FN_RULE}` requires `{target_ns}/{target_def}` to be an exact `(def {target_def} value)` form."
+    ));
+  }
+
+  let warnings = RefCell::new(Vec::new());
+  let mut suggestions = Vec::new();
+  let mut blockers = Vec::new();
+  for (owner_ns, owner_def) in project_definitions {
+    let entry = snapshot
+      .files
+      .get(owner_ns)
+      .and_then(|file| file.defs.get(owner_def))
+      .ok_or_else(|| format!("Project definition `{owner_ns}/{owner_def}` is missing from the source snapshot."))?;
+    let direct_macro_reference =
+      list_head(&entry.code) == Some("defmacro") && cirru_contains_target_reference(&entry.code, owner_ns, target_ns, target_def);
+    if direct_macro_reference {
+      blockers.push(format!(
+        "{owner_ns}/{owner_def}: macro source may produce `{target_ns}/{target_def}` and cannot be converted as a runtime value read"
+      ));
+    }
+    if quoted_region_contains_target_reference(&entry.code, owner_ns, target_ns, target_def) {
+      blockers.push(format!(
+        "{owner_ns}/{owner_def}: quoted source contains `{target_ns}/{target_def}` and may be consumed dynamically"
+      ));
+    }
+
+    for (index, test) in entry.tests.iter().enumerate() {
+      if !cirru_contains_target_reference(&test.code, owner_ns, target_ns, target_def) {
+        continue;
+      }
+      let source_label = format!("{owner_ns}/{owner_def}#{}", test.name);
+      match plan_attached_value_call_rewrite(
+        &test.code,
+        owner_ns,
+        &format!("&calcit:value-to-fn-test:{owner_def}:{index}"),
+        &source_label,
+        target_ns,
+        target_def,
+      ) {
+        Ok(Some(rewrite)) => {
+          let mut tag_names = test.tags.iter().map(|tag| tag.ref_str()).collect::<Vec<_>>();
+          tag_names.sort_unstable();
+          suggestions.push(FixSuggestion {
+            rule_id: VALUE_TO_ZERO_ARG_FN_RULE,
+            diagnostic_code: VALUE_TO_ZERO_ARG_FN_DIAGNOSTIC,
+            semantic_layer: "surface",
+            source_file: snapshot_file.to_owned(),
+            definition: format!("{owner_ns}/{owner_def}"),
+            path: format!("tests.{}", test.name),
+            fingerprint: node_fingerprint(&test.code),
+            origin_chain: rewrite.origin_chain,
+            original: quoted_json(&test.code),
+            replacement: Some(quoted_json(&rewrite.code)),
+            applicability: "machine-applicable",
+            message: format!("Call the converted zero-argument function from attached test `{}`.", test.name),
+            target_path: vec![],
+            operation: Some(FixOperation::ReplaceTest {
+              name: test.name.clone(),
+              tags: tag_names.join(","),
+              code: format_quoted_nodes(std::slice::from_ref(&rewrite.code))?,
+            }),
+          });
+        }
+        Ok(None) => {}
+        Err(error) => blockers.push(error),
+      }
+    }
+
+    let mut rewritten_examples = entry.examples.clone();
+    let mut example_origins = Vec::new();
+    let mut changed_examples = Vec::new();
+    for (index, example) in entry.examples.iter().enumerate() {
+      if !cirru_contains_target_reference(example, owner_ns, target_ns, target_def) {
+        continue;
+      }
+      let source_label = format!("{owner_ns}/{owner_def} example {index}");
+      match plan_attached_value_call_rewrite(
+        example,
+        owner_ns,
+        &format!("&calcit:value-to-fn-example:{owner_def}:{index}"),
+        &source_label,
+        target_ns,
+        target_def,
+      ) {
+        Ok(Some(rewrite)) => {
+          rewritten_examples[index] = rewrite.code;
+          example_origins.extend(rewrite.origin_chain);
+          changed_examples.push(index);
+        }
+        Ok(None) => {}
+        Err(error) => blockers.push(error),
+      }
+    }
+    if !changed_examples.is_empty() {
+      let original_examples = Cirru::List(entry.examples.clone());
+      let replacement_examples = Cirru::List(rewritten_examples.clone());
+      suggestions.push(FixSuggestion {
+        rule_id: VALUE_TO_ZERO_ARG_FN_RULE,
+        diagnostic_code: VALUE_TO_ZERO_ARG_FN_DIAGNOSTIC,
+        semantic_layer: "surface",
+        source_file: snapshot_file.to_owned(),
+        definition: format!("{owner_ns}/{owner_def}"),
+        path: "examples".to_owned(),
+        fingerprint: node_fingerprint(&original_examples),
+        origin_chain: example_origins,
+        original: quoted_json(&original_examples),
+        replacement: Some(quoted_json(&replacement_examples)),
+        applicability: "machine-applicable",
+        message: format!("Call the converted zero-argument function from examples at indices {changed_examples:?}."),
+        target_path: vec![],
+        operation: Some(FixOperation::ReplaceExamples {
+          code: format_quoted_nodes(&rewritten_examples)?,
+        }),
+      });
+    }
+
+    let (_, schema_reference_count) =
+      rewrite_loaded_schema_type_references(entry.schema.clone(), owner_ns, target_ns, target_def, target_def)?;
+    if schema_reference_count > 0 {
+      blockers.push(format!(
+        "{owner_ns}/{owner_def} schema: `{target_ns}/{target_def}` is used as a type reference and cannot be converted to a value call"
+      ));
+    }
+
+    if direct_macro_reference {
+      continue;
+    }
+
+    let usages = runner::preprocess::trace_definition_source_usages(owner_ns, owner_def, &warnings, &CallStackList::default())
+      .map_err(|failure| failure.msg)?;
+    for usage in usages {
+      if usage.target_ns.as_ref() != target_ns || usage.target_def.as_ref() != target_def {
+        continue;
+      }
+      if owner_ns == target_ns && owner_def == target_def {
+        blockers.push(format!(
+          "{target_ns}/{target_def}: self-referential value initialization cannot be converted without changing its recursive evaluation model"
+        ));
+        continue;
+      }
+      if !usage.macro_origin.is_empty() {
+        blockers.push(format!(
+          "{owner_ns}/{owner_def}: target reference is produced across macro boundary {}",
+          usage.macro_origin.join(" -> ")
+        ));
+        continue;
+      }
+      let Some(location) = usage.location else {
+        blockers.push(format!(
+          "{owner_ns}/{owner_def}: compiler resolved a target reference without a source coordinate"
+        ));
+        continue;
+      };
+      if location.ns.as_ref() != owner_ns || location.def.as_ref() != owner_def {
+        blockers.push(format!(
+          "{owner_ns}/{owner_def}: target reference points outside its editable source ({location})"
+        ));
+        continue;
+      }
+      let path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
+      let original_node = navigate_to_path(&entry.code, &path)?;
+      let Cirru::Leaf(original_leaf) = &original_node else {
+        blockers.push(format!(
+          "{owner_ns}/{owner_def}{}: resolved reference is not a source leaf",
+          format_path(&path)
+        ));
+        continue;
+      };
+      let replacement_node = Cirru::List(vec![original_node.clone()]);
+      let original_code = original_leaf.to_string();
+      suggestions.push(FixSuggestion {
+        rule_id: VALUE_TO_ZERO_ARG_FN_RULE,
+        diagnostic_code: VALUE_TO_ZERO_ARG_FN_DIAGNOSTIC,
+        semantic_layer: "surface",
+        source_file: snapshot_file.to_owned(),
+        definition: format!("{owner_ns}/{owner_def}"),
+        path: format!("code{}", format_path(&path)),
+        fingerprint: node_fingerprint(&original_node),
+        origin_chain: vec![serde_json::json!({
+          "kind": "resolved-value-read",
+          "target": format!("{target_ns}/{target_def}"),
+          "path": format_path(&path),
+          "macro_origin": [],
+        })],
+        original: quoted_json(&original_node),
+        replacement: Some(quoted_json(&replacement_node)),
+        applicability: "machine-applicable",
+        message: format!("Call the converted zero-argument function `{target_ns}/{target_def}`."),
+        target_path: path,
+        operation: Some(FixOperation::WrapLeafCall { original: original_code }),
+      });
+    }
+  }
+  if !blockers.is_empty() {
+    blockers.sort();
+    blockers.dedup();
+    return Err(format!(
+      "Semantic value-to-function refactor is not safe; no changes were written:\n{}",
+      blockers.into_iter().map(|item| format!("- {item}")).collect::<Vec<_>>().join("\n")
+    ));
+  }
+
+  let rewritten_schema = std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
+    generics: std::sync::Arc::new(vec![]),
+    where_bounds: std::sync::Arc::new(vec![]),
+    arg_types: vec![],
+    return_type: target_entry.schema.clone(),
+    fn_kind: SchemaKind::Fn,
+    rest_type: None,
+    features: std::sync::Arc::new(std::collections::HashSet::new()),
+  })));
+  let original_schema_node = schema_edn_to_source_node(&calcit::snapshot::schema_annotation_to_edn(target_entry.schema.as_ref()))?;
+  let rewritten_schema_node = schema_edn_to_source_node(&calcit::snapshot::schema_annotation_to_edn(rewritten_schema.as_ref()))?;
+  suggestions.push(FixSuggestion {
+    rule_id: VALUE_TO_ZERO_ARG_FN_RULE,
+    diagnostic_code: VALUE_TO_ZERO_ARG_FN_DIAGNOSTIC,
+    semantic_layer: "surface",
+    source_file: snapshot_file.to_owned(),
+    definition: format!("{target_ns}/{target_def}"),
+    path: "schema".to_owned(),
+    fingerprint: node_fingerprint(&original_schema_node),
+    origin_chain: vec![serde_json::json!({"kind": "derived-zero-arg-function-schema"})],
+    original: quoted_json(&original_schema_node),
+    replacement: Some(quoted_json(&rewritten_schema_node)),
+    applicability: "machine-applicable",
+    message: "Wrap the existing value schema as the return type of a zero-argument function.".to_owned(),
+    target_path: vec![],
+    operation: Some(FixOperation::ReplaceSchema {
+      code: format_quoted_nodes(std::slice::from_ref(&rewritten_schema_node))?,
+    }),
+  });
+
+  let rewritten_definition = Cirru::List(vec![
+    Cirru::leaf("defn"),
+    Cirru::leaf(target_def),
+    Cirru::List(vec![]),
+    target_items[2].clone(),
+  ]);
+  suggestions.push(FixSuggestion {
+    rule_id: VALUE_TO_ZERO_ARG_FN_RULE,
+    diagnostic_code: VALUE_TO_ZERO_ARG_FN_DIAGNOSTIC,
+    semantic_layer: "surface",
+    source_file: snapshot_file.to_owned(),
+    definition: format!("{target_ns}/{target_def}"),
+    path: "definition".to_owned(),
+    fingerprint: node_fingerprint(&target_entry.code),
+    origin_chain: vec![serde_json::json!({"kind": "definition", "target": format!("{target_ns}/{target_def}")})],
+    original: quoted_json(&target_entry.code),
+    replacement: Some(quoted_json(&rewritten_definition)),
+    applicability: "machine-applicable",
+    message: format!("Convert `{target_ns}/{target_def}` from `def` to a zero-argument `defn`."),
+    target_path: vec![],
+    operation: Some(FixOperation::ReplaceDefinition {
+      code: format_quoted_nodes(std::slice::from_ref(&rewritten_definition))?,
+    }),
+  });
+  Ok(suggestions)
+}
+
+fn validate_zero_arg_value_refactor(
+  snapshot: &Snapshot,
+  project_definitions: &[(String, String)],
+  target_ns: &str,
+  target_def: &str,
+) -> Result<(), String> {
+  let warnings = RefCell::new(Vec::new());
+  for (owner_ns, owner_def) in project_definitions {
+    let entry = snapshot
+      .files
+      .get(owner_ns)
+      .and_then(|file| file.defs.get(owner_def))
+      .ok_or_else(|| format!("Project definition `{owner_ns}/{owner_def}` is missing from the staged snapshot."))?;
+    if list_head(&entry.code) == Some("defmacro") && cirru_contains_target_reference(&entry.code, owner_ns, target_ns, target_def) {
+      return Err(format!(
+        "{owner_ns}/{owner_def}: staged macro source retains `{target_ns}/{target_def}`"
+      ));
+    }
+    if quoted_region_contains_target_reference(&entry.code, owner_ns, target_ns, target_def) {
+      return Err(format!(
+        "{owner_ns}/{owner_def}: staged source retains quoted `{target_ns}/{target_def}` data"
+      ));
+    }
+    let (_, schema_reference_count) =
+      rewrite_loaded_schema_type_references(entry.schema.clone(), owner_ns, target_ns, target_def, target_def)?;
+    if schema_reference_count > 0 {
+      return Err(format!(
+        "{owner_ns}/{owner_def} schema: staged source retains `{target_ns}/{target_def}` as a type reference"
+      ));
+    }
+    for usage in runner::preprocess::trace_definition_source_usages(owner_ns, owner_def, &warnings, &CallStackList::default())
+      .map_err(|failure| failure.msg)?
+    {
+      if usage.target_ns.as_ref() != target_ns || usage.target_def.as_ref() != target_def {
+        continue;
+      }
+      if !usage.macro_origin.is_empty() {
+        return Err(format!(
+          "{owner_ns}/{owner_def}: staged target reference crosses macro boundary {}",
+          usage.macro_origin.join(" -> ")
+        ));
+      }
+      let location = usage
+        .location
+        .ok_or_else(|| format!("{owner_ns}/{owner_def}: staged target reference has no source coordinate"))?;
+      let path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
+      if !source_path_is_zero_arg_call(&entry.code, &path)? {
+        return Err(format!(
+          "{owner_ns}/{owner_def}{}: staged value reference is not a zero-argument call",
+          format_path(&path)
+        ));
+      }
+    }
+    for (index, test) in entry.tests.iter().enumerate() {
+      validate_attached_zero_arg_calls(
+        &test.code,
+        owner_ns,
+        &format!("&calcit:validate-value-to-fn-test:{owner_def}:{index}"),
+        &format!("{owner_ns}/{owner_def}#{}", test.name),
+        target_ns,
+        target_def,
+      )?;
+    }
+    for (index, example) in entry.examples.iter().enumerate() {
+      validate_attached_zero_arg_calls(
+        example,
+        owner_ns,
+        &format!("&calcit:validate-value-to-fn-example:{owner_def}:{index}"),
+        &format!("{owner_ns}/{owner_def} example {index}"),
+        target_ns,
+        target_def,
+      )?;
+    }
+  }
+  Ok(())
+}
+
+fn validate_attached_zero_arg_calls(
+  source: &Cirru,
+  owner_ns: &str,
+  synthetic_def: &str,
+  source_label: &str,
+  target_ns: &str,
+  target_def: &str,
+) -> Result<(), String> {
+  if quoted_region_contains_target_reference(source, owner_ns, target_ns, target_def) {
+    return Err(format!(
+      "{source_label}: staged attached source retains quoted `{target_ns}/{target_def}` data"
+    ));
+  }
+  if !cirru_contains_target_reference(source, owner_ns, target_ns, target_def) {
+    return Ok(());
+  }
+  let wrapper = Cirru::List(vec![Cirru::leaf("fn"), Cirru::List(vec![]), source.clone()]);
+  let parsed = code_to_calcit(&wrapper, owner_ns, synthetic_def, vec![])
+    .map_err(|error| format!("{source_label}: failed to parse staged attached source: {error}"))?;
+  let warnings = RefCell::new(Vec::new());
+  for usage in runner::preprocess::trace_source_usages(&parsed, owner_ns, synthetic_def, &warnings, &CallStackList::default())
+    .map_err(|failure| format!("{source_label}: failed to preprocess staged attached source: {}", failure.msg))?
+  {
+    if usage.target_ns.as_ref() != target_ns || usage.target_def.as_ref() != target_def {
+      continue;
+    }
+    let macro_origin = usage
+      .macro_origin
+      .into_iter()
+      .filter(|origin| origin != "calcit.core/fn")
+      .collect::<Vec<_>>();
+    if !macro_origin.is_empty() {
+      return Err(format!(
+        "{source_label}: staged target reference crosses macro boundary {}",
+        macro_origin.join(" -> ")
+      ));
+    }
+    let location = usage
+      .location
+      .ok_or_else(|| format!("{source_label}: staged target reference has no source coordinate"))?;
+    let wrapper_path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
+    let path = wrapper_path.strip_prefix(&[2]).ok_or_else(|| {
+      format!(
+        "{source_label}{}: staged coordinate is outside attached source",
+        format_path(&wrapper_path)
+      )
+    })?;
+    if !source_path_is_zero_arg_call(source, path)? {
+      return Err(format!(
+        "{source_label}{}: staged value reference is not a zero-argument call",
+        format_path(path)
+      ));
+    }
+  }
+  Ok(())
+}
+
+fn source_path_is_zero_arg_call(source: &Cirru, path: &[usize]) -> Result<bool, String> {
+  let Some((&child_index, parent_path)) = path.split_last() else {
+    return Ok(false);
+  };
+  let parent = navigate_to_path(source, parent_path)?;
+  Ok(matches!(parent, Cirru::List(items) if child_index == 0 && items.len() == 1))
+}
+
 fn validate_no_stale_attached_references(
   snapshot: &Snapshot,
   project_definitions: &[(String, String)],
@@ -1003,25 +1480,61 @@ fn plan_attached_source_rewrite(
   old_name: &str,
   new_name: &str,
 ) -> Result<Option<AttachedSourceRewrite>, String> {
-  if quoted_region_contains_target_reference(source, owner_ns, target_ns, old_name) {
+  plan_attached_source_rewrite_with(source, owner_ns, synthetic_def, source_label, target_ns, old_name, &|source_leaf| {
+    semantic_rename_leaf_replacement(source_leaf, old_name, target_ns, new_name).map(Cirru::leaf)
+  })
+}
+
+fn plan_attached_value_call_rewrite(
+  source: &Cirru,
+  owner_ns: &str,
+  synthetic_def: &str,
+  source_label: &str,
+  target_ns: &str,
+  target_def: &str,
+) -> Result<Option<AttachedSourceRewrite>, String> {
+  plan_attached_source_rewrite_with(
+    source,
+    owner_ns,
+    synthetic_def,
+    source_label,
+    target_ns,
+    target_def,
+    &|source_leaf| Ok(Cirru::List(vec![Cirru::leaf(source_leaf)])),
+  )
+}
+
+fn plan_attached_source_rewrite_with<F>(
+  source: &Cirru,
+  owner_ns: &str,
+  synthetic_def: &str,
+  source_label: &str,
+  target_ns: &str,
+  target_def: &str,
+  rewrite_leaf: &F,
+) -> Result<Option<AttachedSourceRewrite>, String>
+where
+  F: Fn(&str) -> Result<Cirru, String>,
+{
+  if quoted_region_contains_target_reference(source, owner_ns, target_ns, target_def) {
     return Err(format!(
-      "{source_label}: quoted source contains `{target_ns}/{old_name}` and may be consumed dynamically"
+      "{source_label}: quoted source contains `{target_ns}/{target_def}` and may be consumed dynamically"
     ));
   }
   let wrapper = Cirru::List(vec![Cirru::leaf("fn"), Cirru::List(vec![]), source.clone()]);
   let parsed = code_to_calcit(&wrapper, owner_ns, synthetic_def, vec![])
-    .map_err(|error| format!("{source_label}: failed to parse attached source for semantic rename: {error}"))?;
+    .map_err(|error| format!("{source_label}: failed to parse attached source for semantic refactor: {error}"))?;
   let warnings = RefCell::new(Vec::new());
   let usages = runner::preprocess::trace_source_usages(&parsed, owner_ns, synthetic_def, &warnings, &CallStackList::default())
     .map_err(|failure| {
       format!(
-        "{source_label}: failed to preprocess attached source for semantic rename: {}",
+        "{source_label}: failed to preprocess attached source for semantic refactor: {}",
         failure.msg
       )
     })?;
-  let mut rewrites = BTreeMap::<Vec<usize>, (String, String, Vec<String>)>::new();
+  let mut rewrites = BTreeMap::<Vec<usize>, (String, Cirru, Vec<String>)>::new();
   for usage in usages {
-    if usage.target_ns.as_ref() != target_ns || usage.target_def.as_ref() != old_name {
+    if usage.target_ns.as_ref() != target_ns || usage.target_def.as_ref() != target_def {
       continue;
     }
     let macro_origin = usage
@@ -1059,8 +1572,7 @@ fn plan_attached_source_rewrite(
         format_path(path)
       ));
     };
-    let replacement = semantic_rename_leaf_replacement(&source_leaf, old_name, target_ns, new_name)
-      .map_err(|error| format!("{source_label}{}: {error}", format_path(path)))?;
+    let replacement = rewrite_leaf(&source_leaf).map_err(|error| format!("{source_label}{}: {error}", format_path(path)))?;
     rewrites.insert(path.to_vec(), (source_leaf.to_string(), replacement, macro_origin));
   }
   if rewrites.is_empty() {
@@ -1070,10 +1582,10 @@ fn plan_attached_source_rewrite(
   let mut rewritten = source.clone();
   let mut origin_chain = Vec::with_capacity(rewrites.len());
   for (path, (original, replacement, macro_origin)) in rewrites {
-    replace_attached_source_leaf(&mut rewritten, &path, &original, &replacement)?;
+    replace_attached_source_node(&mut rewritten, &path, &original, &replacement)?;
     origin_chain.push(serde_json::json!({
       "kind": "resolved-attached-source",
-      "target": format!("{target_ns}/{old_name}"),
+      "target": format!("{target_ns}/{target_def}"),
       "path": format_path(&path),
       "macro_origin": macro_origin,
     }));
@@ -1097,11 +1609,11 @@ fn semantic_rename_leaf_replacement(source_leaf: &str, old_name: &str, target_ns
   }
 }
 
-fn replace_attached_source_leaf(node: &mut Cirru, path: &[usize], expected: &str, replacement: &str) -> Result<(), String> {
+fn replace_attached_source_node(node: &mut Cirru, path: &[usize], expected: &str, replacement: &Cirru) -> Result<(), String> {
   if path.is_empty() {
     return match node {
       Cirru::Leaf(value) if value.as_ref() == expected => {
-        *value = replacement.into();
+        *node = replacement.clone();
         Ok(())
       }
       other => Err(format!(
@@ -1116,7 +1628,7 @@ fn replace_attached_source_leaf(node: &mut Cirru, path: &[usize], expected: &str
   let child = items
     .get_mut(index)
     .ok_or_else(|| format!("Attached source path {} is out of range", format_path(path)))?;
-  replace_attached_source_leaf(child, &path[1..], expected, replacement)
+  replace_attached_source_node(child, &path[1..], expected, replacement)
 }
 
 fn format_quoted_nodes(nodes: &[Cirru]) -> Result<String, String> {
@@ -1969,6 +2481,17 @@ fn suggestion_operations(suggestion: &FixSuggestion) -> Vec<Vec<String>> {
       "--code".to_owned(),
       format!("quote {replacement}"),
     ]],
+    Some(FixOperation::WrapLeafCall { original }) => vec![vec![
+      "tree".to_owned(),
+      "replace".to_owned(),
+      suggestion.definition.clone(),
+      "--path".to_owned(),
+      format_path(&suggestion.target_path),
+      "--expect".to_owned(),
+      format!("quote {original}"),
+      "--code".to_owned(),
+      format!("quote $ {original}"),
+    ]],
     Some(FixOperation::ReplaceNode { original, replacement }) => vec![vec![
       "tree".to_owned(),
       "replace".to_owned(),
@@ -2038,6 +2561,14 @@ fn suggestion_operations(suggestion: &FixSuggestion) -> Vec<Vec<String>> {
       suggestion.definition.clone(),
       "--code".to_owned(),
       code.clone(),
+    ]],
+    Some(FixOperation::ReplaceDefinition { code }) => vec![vec![
+      "edit".to_owned(),
+      "def".to_owned(),
+      suggestion.definition.clone(),
+      "--code".to_owned(),
+      code.clone(),
+      "--overwrite".to_owned(),
     ]],
     Some(FixOperation::RenameDefinition { new_name }) => vec![vec![
       "edit".to_owned(),
