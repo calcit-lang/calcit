@@ -86,7 +86,7 @@ Component contract 沿用 `calcit ffi export`，通过 `--boundary component`
 calcit wasm calcit.cirru --boundary component --emit-path target/component-core
 ```
 
-当前第一批 adapter 覆盖 `Number` 与 UTF-8 `String` 的同步 import/export。Number 直接使用 Canonical ABI `f64`。String 参数展开为 `(ptr,len)`；export 的 String 结果返回指向 `(ptr,len)` return area 的指针，import 的 String 结果则按 `canon lower` 使用由 caller 传入的 return area，再复制回 Calcit String。core module 只保留显式声明的 Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，不会携带 native core target 的隐式 `math/io` imports。Bool、复合类型、宽度明确的数值类型、post-return 与 async 仍是后续任务；不支持的 schema 在生成阶段明确失败。
+当前第一批 adapter 覆盖 `Number` 与 UTF-8 `String` 的同步 import/export。Number 直接使用 Canonical ABI `f64`。String 参数展开为 `(ptr,len)`；export 对应 `canon lift`，String 的两个 flat results 超过同步 Canonical ABI 的单结果上限，因此返回指向 `(ptr,len)` return area 的 `i32` 指针；import 对应 `canon lower`，String 结果使用 caller 传入的 return area，再复制回 Calcit String。两者是 Canonical ABI 针对不同方向规定的函数形状，不是可以互换的自定义约定。core module 只保留显式声明的 Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，不会携带 native core target 的隐式 `math/io` imports。Bool、复合类型、宽度明确的数值类型、post-return 与 async 仍是后续任务；不支持的 schema 在生成阶段明确失败。
 
 ## 实施顺序
 
