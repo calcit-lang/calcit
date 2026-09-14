@@ -2518,13 +2518,17 @@ mod tests {
 
   #[test]
   fn schema_reference_rewrite_changes_resolved_trait_bounds() {
+    let direct_trait = Arc::new(CalcitTrait::new_reference("app.schema/Show"));
     let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![CalcitGenericBound {
         name: Arc::from("T"),
         traits: Arc::new(vec![Arc::new(CalcitTrait::new_reference("app.schema/Show"))]),
       }]),
-      arg_types: vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))],
+      arg_types: vec![
+        Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))),
+        Arc::new(CalcitTypeAnnotation::Trait(direct_trait)),
+      ],
       return_type: Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))),
       fn_kind: SchemaKind::Fn,
       rest_type: None,
@@ -2537,9 +2541,14 @@ mod tests {
       panic!("rewritten schema should remain a function");
     };
     let trait_def = &signature.where_bounds[0].traits[0];
-    assert_eq!(count, 1);
+    assert_eq!(count, 2);
     assert_eq!(trait_def.name.ref_str(), "Display");
     assert_eq!(trait_def.definition_ref.as_deref(), Some("app.schema/Display"));
     assert!(matches!(signature.arg_types[0].as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T"));
+    assert!(matches!(
+      signature.arg_types[1].as_ref(),
+      CalcitTypeAnnotation::Trait(trait_def)
+        if trait_def.name.ref_str() == "Display" && trait_def.definition_ref.as_deref() == Some("app.schema/Display")
+    ));
   }
 }

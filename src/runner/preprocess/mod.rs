@@ -977,6 +977,10 @@ where
           .collect(),
       ),
     )),
+    CalcitTypeAnnotation::Trait(trait_def) => Arc::new(CalcitTypeAnnotation::Trait(resolve_trait_bound(trait_def.clone()))),
+    CalcitTypeAnnotation::TraitSet(traits) => Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(
+      traits.iter().cloned().map(resolve_trait_bound).collect(),
+    ))),
     _ => annotation,
   }
 }
