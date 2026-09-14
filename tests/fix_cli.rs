@@ -64,6 +64,310 @@ fn parse_stdout(output: &Output) -> serde_json::Value {
   })
 }
 
+fn assert_success(output: &Output, context: &str) {
+  assert!(
+    output.status.success(),
+    "{context} failed:\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&output.stdout),
+    String::from_utf8_lossy(&output.stderr)
+  );
+}
+
+#[test]
+fn semantic_rename_updates_only_compiler_resolved_usages_atomically() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+
+  for (args, context) in [
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/rename-old",
+        "--code",
+        "quote $ defn rename-old (x) + x 1",
+      ],
+      "create rename source",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/rename-old",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+      ],
+      "type rename source",
+    ),
+    (vec!["edit", "add-ns", "fix-command.other"], "create consumer namespace"),
+    (
+      vec![
+        "edit",
+        "imports",
+        "fix-command.other",
+        "--code",
+        "quote $ [] (fix-command.main :refer $ [] rename-old) (fix-command.main :as m)",
+      ],
+      "create consumer imports",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.other/caller",
+        "--code",
+        "quote $ defn caller () [] (rename-old 1) (m/rename-old 2)",
+      ],
+      "create consumer",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.other/caller",
+        "--code",
+        "quote $ :: 'Fn $ {} (:return $ :: 'List 'Number)",
+      ],
+      "type consumer",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/rename-shadow",
+        "--code",
+        "quote $ defn rename-shadow (rename-old) , rename-old",
+      ],
+      "create shadowed local",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/rename-shadow",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+      ],
+      "type shadowed local",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "rename-definition-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "rename-old",
+      "--to",
+      "rename-new",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "semantic rename preview");
+  let preview_report = parse_stdout(&preview);
+  assert_eq!(preview_report["data"]["changed"], true);
+  assert_eq!(preview_report["data"]["validation"]["checked_operations"], 4);
+  assert_eq!(preview_report["data"]["suggestions"].as_array().map(Vec::len), Some(4));
+
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "rename-definition-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "rename-old",
+      "--to",
+      "rename-new",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "semantic rename apply");
+  let updated = fs::read_to_string(&snapshot).expect("updated snapshot should read");
+  assert!(updated.contains("'rename-new $ %{} 'CodeEntry"));
+  assert!(updated.contains("defn rename-new (x) + x 1"));
+  assert!(updated.contains("fix-command.main/rename-new 1"));
+  assert!(updated.contains("m/rename-new 2"));
+  assert!(updated.contains("defn rename-shadow (rename-old) rename-old"));
+  assert!(!updated.contains("fix-command.main :refer"));
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "strict check after semantic rename");
+
+  let repeated = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "rename-definition-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "rename-old",
+      "--to",
+      "rename-new",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&repeated, "semantic rename repeat");
+  assert_eq!(parse_stdout(&repeated)["data"]["changed"], false);
+}
+
+#[test]
+fn semantic_rename_rejects_unhandled_test_sources_without_partial_writes() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (args, context) in [
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/rename-old",
+        "--code",
+        "quote $ defn rename-old (x) + x 1",
+      ],
+      "create rename source",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/rename-old",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+      ],
+      "type rename source",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/caller",
+        "--code",
+        "quote $ defn caller () rename-old 1",
+      ],
+      "create caller",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/caller",
+        "--code",
+        "quote $ :: 'Fn $ {} (:return 'Number)",
+      ],
+      "type caller",
+    ),
+    (
+      vec![
+        "edit",
+        "add-test",
+        "fix-command.main/caller",
+        "calls-old",
+        "--code",
+        "quote $ = (rename-old 1) 2",
+      ],
+      "attach target-using test",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+  let before = fs::read(&snapshot).expect("snapshot should read before rejected rename");
+  let rejected = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "rename-definition-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "rename-old",
+      "--to",
+      "rename-new",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!rejected.status.success());
+  let stderr = String::from_utf8_lossy(&rejected.stderr);
+  assert!(stderr.contains("caller#calls-old"), "stderr: {stderr}");
+  assert!(stderr.contains("test-source refactoring is not yet supported"), "stderr: {stderr}");
+  assert_eq!(fs::read(&snapshot).expect("rejected snapshot should read"), before);
+}
+
+#[test]
+fn semantic_rename_rejects_schema_type_refs_without_partial_writes() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (args, context) in [
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/RenameType",
+        "--code",
+        "quote $ defstruct RenameType",
+      ],
+      "create rename type",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/typed-value",
+        "--code",
+        "quote $ defn typed-value () todo! |pending",
+      ],
+      "create typed value",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/typed-value",
+        "--code",
+        "quote $ :: 'Fn $ {} (:return 'RenameType)",
+      ],
+      "reference rename type from schema",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+
+  let before = fs::read(&snapshot).expect("snapshot should read before rejected rename");
+  let rejected = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "rename-definition-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "RenameType",
+      "--to",
+      "RenamedType",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!rejected.status.success());
+  let stderr = String::from_utf8_lossy(&rejected.stderr);
+  assert!(stderr.contains("typed-value schema"), "stderr: {stderr}");
+  assert!(stderr.contains("schema refactoring is not yet supported"), "stderr: {stderr}");
+  assert_eq!(fs::read(&snapshot).expect("rejected snapshot should read"), before);
+}
+
 #[test]
 fn fix_preview_apply_and_repeat_are_revision_safe() {
   let directory = TestDirectory::create();

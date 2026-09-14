@@ -313,23 +313,28 @@ calcit query def 'app.core/extracted-calc'
 calcit query def 'app.core/process-data'
 ```
 
-### 重命名定义（`rename-def`）
+### 重命名定义与静态调用点
 
 **场景：** 定义名字需要在同一命名空间内改名。
 
 ```bash
-# 1. 确认有哪些地方引用到
-calcit query usages 'app.core/old-name'
+# 1. 预览 resolver 已证明的 definition 与 usage 事务
+calcit calcit.cirru fix --rule rename-definition-v1 \
+  --ns app.core --def old-name --to new-name --format edn
 
-# 2. 搜索所有引用位置
-calcit query search old-name --filter 'app.core/caller-fn'
+# 2. 核对 revision、origin-chain、path 与 quoted replacement 后原子应用
+calcit calcit.cirru fix --rule rename-definition-v1 \
+  --ns app.core --def old-name --to new-name \
+  --apply --expect-revision 'md5:<preview 返回的 revision>'
 
-# 3. 重命名定义
-calcit edit rename 'app.core/old-name' new-name
-
-# 4. 批量更新引用
-calcit tree replace-leaf 'app.core/caller-fn' --pattern old-name --code 'quote new-name'
+# 3. 重复预览必须为空，再执行项目检查与测试
+calcit calcit.cirru fix --rule rename-definition-v1 \
+  --ns app.core --def old-name --to new-name --format edn
 ```
+
+不要用 `query search` 加 `tree replace-leaf` 模拟语义重命名：同名局部 binding、quoted data 和其他 namespace 的 definition
+不是调用点。若 preview 报告 macro、tests、examples 或 schema blocker，保持原文件不动并拆分人工迁移；`edit rename`
+只适用于明确只修改 declaration、调用点由用户另行管理的场景。
 
 ### 迁移定义到另一命名空间（`mv-def`）
 

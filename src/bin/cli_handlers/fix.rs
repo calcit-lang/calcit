@@ -28,6 +28,8 @@ const NAMED_ENUM_CONSTRUCTOR_RULE: &str = "named-enum-constructor-v1";
 const NAMED_ENUM_CONSTRUCTOR_DIAGNOSTIC: &str = "FIX_NAMED_ENUM_CONSTRUCTOR";
 const NAMED_STRUCT_CONSTRUCTOR_RULE: &str = "named-struct-constructor-v1";
 const NAMED_STRUCT_CONSTRUCTOR_DIAGNOSTIC: &str = "FIX_NAMED_STRUCT_CONSTRUCTOR";
+const RENAME_DEFINITION_RULE: &str = "rename-definition-v1";
+const RENAME_DEFINITION_DIAGNOSTIC: &str = "REFACTOR_RENAME_DEFINITION";
 const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
 const SURFACE_LATEST_V2_PRESET: &str = "surface-latest-v2";
 const AVAILABLE_RULES: [&str; 5] = [
@@ -58,6 +60,8 @@ enum FixOperation {
   ReplaceLeaf { original: String, replacement: String },
   ReplaceNode { original: String, replacement: String },
   SpliceDo,
+  ReplaceImports { code: String },
+  RenameDefinition { new_name: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -111,6 +115,7 @@ struct FixValidation {
 struct FixFilters<'a> {
   namespace: Option<&'a str>,
   definition: Option<&'a str>,
+  replacement_name: Option<&'a str>,
   rule_id: &'a str,
   preset_id: Option<&'a str>,
   expanded_rule_ids: Vec<&'static str>,
@@ -146,15 +151,35 @@ pub(crate) fn handle_fix_command(
     ));
   }
 
-  let selected_definitions = select_definitions(options, compiled_snapshot, project_namespaces)?;
+  let semantic_rename = selected_rules.contains(&RENAME_DEFINITION_RULE);
+  let selected_definitions = if semantic_rename {
+    select_project_definitions(compiled_snapshot, project_namespaces)?
+  } else {
+    select_definitions(options, compiled_snapshot, project_namespaces)?
+  };
   let validation_only = std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1");
   let warnings = if validation_only {
     compile_selected_definitions(&selected_definitions)?
   } else {
     compile_selected_definitions_for_migration(&selected_definitions)?
   };
+  let semantic_warning_identities = semantic_rename.then(|| {
+    semantic_rename_warning_identities(
+      &warnings,
+      options.ns.as_deref().expect("semantic rename requires namespace"),
+      options.definition.as_deref().expect("semantic rename requires definition"),
+      options.replacement_name.as_deref().expect("semantic rename requires replacement"),
+    )
+  });
   let mut suggestions = Vec::new();
-  if selected_rules.contains(&REMOVED_DATA_API_RULE) {
+  if semantic_rename {
+    suggestions.extend(plan_definition_rename(
+      options,
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+    )?);
+  } else if selected_rules.contains(&REMOVED_DATA_API_RULE) {
     suggestions.extend(plan_removed_data_api_fixes(options, &source_snapshot, snapshot_file, &warnings)?);
   }
   let mut constructor_kinds = Vec::new();
@@ -217,11 +242,20 @@ pub(crate) fn handle_fix_command(
     if suggestions.iter().any(|suggestion| suggestion.operation.is_some()) {
       return Err("Staged fix validation found an applicable migration that was not removed.".to_owned());
     }
-    let unexpected = warnings
-      .iter()
-      .filter(|warning| warning.code() != Some(REMOVED_DATA_API_DIAGNOSTIC))
-      .map(ToString::to_string)
-      .collect::<Vec<_>>();
+    let unexpected = if semantic_rename {
+      println!(
+        "{}",
+        serde_json::to_string(semantic_warning_identities.as_deref().unwrap_or_default())
+          .map_err(|error| format!("Failed to encode staged semantic-rename warnings: {error}"))?
+      );
+      vec![]
+    } else {
+      warnings
+        .iter()
+        .filter(|warning| warning.code() != Some(REMOVED_DATA_API_DIAGNOSTIC))
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+    };
     if !unexpected.is_empty() {
       return Err(format!(
         "Staged fix validation produced unrelated compiler warnings:\n{}",
@@ -236,7 +270,14 @@ pub(crate) fn handle_fix_command(
   }
   let dry_run = !options.apply;
   let validation_args = fix_scope_args(options);
-  let transaction = run_staged_fix_transaction(Path::new(snapshot_file), &operations, Some(&revision), dry_run, &validation_args)?;
+  let transaction = run_staged_fix_transaction(
+    Path::new(snapshot_file),
+    &operations,
+    Some(&revision),
+    dry_run,
+    &validation_args,
+    semantic_warning_identities.as_deref(),
+  )?;
 
   let mode = if options.apply { "apply" } else { "preview" };
   let expanded_rules = selected_rules.iter().copied().map(fix_rule_metadata).collect();
@@ -249,6 +290,7 @@ pub(crate) fn handle_fix_command(
       filters: FixFilters {
         namespace: options.ns.as_deref(),
         definition: options.definition.as_deref(),
+        replacement_name: options.replacement_name.as_deref(),
         rule_id: options.rule.as_deref().unwrap_or("all"),
         preset_id: options.preset.as_deref(),
         expanded_rule_ids: selected_rules,
@@ -300,6 +342,10 @@ fn fix_scope_args(options: &FixCommand) -> Vec<String> {
     args.push("--preset".to_owned());
     args.push(preset.clone());
   }
+  if let Some(replacement) = &options.replacement_name {
+    args.push("--to".to_owned());
+    args.push(replacement.clone());
+  }
   args
 }
 
@@ -314,6 +360,20 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   }
   if options.rule.is_some() && options.preset.is_some() {
     return Err("`calcit fix --rule` conflicts with `--preset`; choose one explicit migration selection.".to_owned());
+  }
+  let semantic_rename = options.rule.as_deref() == Some(RENAME_DEFINITION_RULE);
+  if semantic_rename {
+    if options.ns.is_none() || options.definition.is_none() || options.replacement_name.is_none() {
+      return Err(format!(
+        "Fix rule `{RENAME_DEFINITION_RULE}` requires exact `--ns`, `--def`, and `--to` arguments."
+      ));
+    }
+    let replacement = options.replacement_name.as_deref().expect("checked replacement name");
+    if replacement.is_empty() || replacement.contains('/') {
+      return Err("`calcit fix --to` must be one non-empty unqualified definition name.".to_owned());
+    }
+  } else if options.replacement_name.is_some() {
+    return Err(format!("`calcit fix --to` is only valid with `--rule {RENAME_DEFINITION_RULE}`."));
   }
   if let Some(preset) = options.preset.as_deref()
     && !matches!(preset, SURFACE_LATEST_V1_PRESET | SURFACE_LATEST_V2_PRESET)
@@ -330,12 +390,13 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | SINGLE_EXPRESSION_DO_RULE
         | NAMED_ENUM_CONSTRUCTOR_RULE
         | NAMED_STRUCT_CONSTRUCTOR_RULE
+        | RENAME_DEFINITION_RULE
         | TAG_MATCH_RULE
         | REQUIRED_STRUCT_FIELD_RULE
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -349,6 +410,9 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
 /// Expand one explicit rule or versioned preset into a deterministic rule sequence.
 fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
   if let Some(rule) = options.rule.as_deref() {
+    if rule == RENAME_DEFINITION_RULE {
+      return vec![RENAME_DEFINITION_RULE];
+    }
     return AVAILABLE_RULES.iter().copied().filter(|candidate| *candidate == rule).collect();
   }
   match options.preset.as_deref() {
@@ -396,7 +460,31 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       lifecycle: "current-semantics",
       source_version_required: false,
     },
+    RENAME_DEFINITION_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: RENAME_DEFINITION_DIAGNOSTIC,
+      evidence_source: "compiler-resolved-reference",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
     _ => unreachable!("selected fix rule must have current-semantics metadata"),
+  }
+}
+
+fn select_project_definitions(snapshot: &Snapshot, project_namespaces: &HashSet<String>) -> Result<Vec<(String, String)>, String> {
+  let mut selected = Vec::new();
+  for namespace in project_namespaces {
+    let file = snapshot
+      .files
+      .get(namespace)
+      .ok_or_else(|| format!("Project namespace `{namespace}` is missing from the compiled snapshot."))?;
+    selected.extend(file.defs.keys().map(|definition| (namespace.clone(), definition.clone())));
+  }
+  selected.sort();
+  if selected.is_empty() {
+    Err("Fix scope selected no project definitions; refusing to report an empty plan as success.".to_owned())
+  } else {
+    Ok(selected)
   }
 }
 
@@ -460,6 +548,383 @@ fn compile_selected_definitions_for_migration(definitions: &[(String, String)]) 
   let result = compile_selected_definitions(definitions);
   drop(guard);
   result
+}
+
+/// Build stable warning identities while treating the renamed declaration as the same source owner.
+fn semantic_rename_warning_identities(warnings: &[LocatedWarning], target_ns: &str, old_name: &str, new_name: &str) -> Vec<String> {
+  let old_target = format!("{target_ns}/{old_name}");
+  let new_target = format!("{target_ns}/{new_name}");
+  let normalize_text = |text: &str| text.replace(&old_target, "<rename-target>").replace(&new_target, "<rename-target>");
+  let mut identities = warnings
+    .iter()
+    .map(|warning| {
+      let mut value = warning.as_json();
+      if let Some(message) = value.get_mut("message")
+        && let Some(text) = message.as_str()
+      {
+        *message = Value::String(normalize_text(text));
+      }
+      if let Some(hint) = value.get_mut("hint")
+        && let Some(text) = hint.as_str()
+      {
+        *hint = Value::String(normalize_text(text));
+      }
+      if value.pointer("/location/ns").and_then(Value::as_str) == Some(target_ns)
+        && matches!(value.pointer("/location/def").and_then(Value::as_str), Some(name) if name == old_name || name == new_name)
+        && let Some(definition) = value.pointer_mut("/location/def")
+      {
+        *definition = Value::String("<rename-target>".to_owned());
+      }
+      serde_json::to_string(&value).expect("warning identity must serialize")
+    })
+    .collect::<Vec<_>>();
+  identities.sort();
+  identities
+}
+
+fn plan_definition_rename(
+  options: &FixCommand,
+  snapshot: &Snapshot,
+  snapshot_file: &str,
+  project_definitions: &[(String, String)],
+) -> Result<Vec<FixSuggestion>, String> {
+  let target_ns = options.ns.as_deref().expect("semantic rename requires namespace");
+  let old_name = options.definition.as_deref().expect("semantic rename requires definition");
+  let new_name = options.replacement_name.as_deref().expect("semantic rename requires replacement");
+  let target_file = snapshot
+    .files
+    .get(target_ns)
+    .ok_or_else(|| format!("Semantic rename namespace `{target_ns}` is not an editable project namespace."))?;
+  if !target_file.defs.contains_key(old_name) {
+    if target_file.defs.contains_key(new_name) {
+      return Ok(vec![]);
+    }
+    return Err(format!("Semantic rename source `{target_ns}/{old_name}` does not exist."));
+  }
+  if target_file.defs.contains_key(new_name) {
+    return Err(format!("Semantic rename destination `{target_ns}/{new_name}` already exists."));
+  }
+
+  let warnings = RefCell::new(Vec::new());
+  let mut resolved = BTreeMap::<(String, String, Vec<usize>), (String, Vec<String>)>::new();
+  let mut blockers = Vec::new();
+  for (owner_ns, owner_def) in project_definitions {
+    let entry = snapshot
+      .files
+      .get(owner_ns)
+      .and_then(|file| file.defs.get(owner_def))
+      .ok_or_else(|| format!("Project definition `{owner_ns}/{owner_def}` is missing from the source snapshot."))?;
+    if list_head(&entry.code) == Some("defmacro") && cirru_contains_target_reference(&entry.code, owner_ns, target_ns, old_name) {
+      blockers.push(format!(
+        "{owner_ns}/{owner_def}: macro source may produce `{target_ns}/{old_name}` and cannot be rewritten from expanded output"
+      ));
+    }
+    if quoted_region_contains_target_reference(&entry.code, owner_ns, target_ns, old_name) {
+      blockers.push(format!(
+        "{owner_ns}/{owner_def}: quoted source contains `{target_ns}/{old_name}` and may be consumed dynamically"
+      ));
+    }
+    for test in &entry.tests {
+      if cirru_contains_target_reference(&test.code, owner_ns, target_ns, old_name) {
+        blockers.push(format!(
+          "{owner_ns}/{owner_def}#{}: definition-attached test references the target; test-source refactoring is not yet supported",
+          test.name
+        ));
+      }
+    }
+    for (index, example) in entry.examples.iter().enumerate() {
+      if cirru_contains_target_reference(example, owner_ns, target_ns, old_name) {
+        blockers.push(format!(
+          "{owner_ns}/{owner_def} example {index}: example source references the target; example refactoring is not yet supported"
+        ));
+      }
+    }
+    let schema_edn = calcit::snapshot::schema_annotation_to_edn(entry.schema.as_ref());
+    if edn_contains_target_type_reference(&schema_edn, owner_ns, target_ns, old_name) {
+      blockers.push(format!(
+        "{owner_ns}/{owner_def} schema: type reference targets `{target_ns}/{old_name}` and schema refactoring is not yet supported"
+      ));
+    }
+    let usages = runner::preprocess::trace_definition_source_usages(owner_ns, owner_def, &warnings, &CallStackList::default())
+      .map_err(|failure| failure.msg)?;
+    for usage in usages {
+      if usage.target_ns.as_ref() != target_ns || usage.target_def.as_ref() != old_name {
+        continue;
+      }
+      if !usage.macro_origin.is_empty() {
+        blockers.push(format!(
+          "{owner_ns}/{owner_def}: target reference is produced across macro boundary {}",
+          usage.macro_origin.join(" -> ")
+        ));
+        continue;
+      }
+      let Some(location) = usage.location else {
+        blockers.push(format!(
+          "{owner_ns}/{owner_def}: compiler resolved a target reference without a source coordinate"
+        ));
+        continue;
+      };
+      if location.ns.as_ref() != owner_ns || location.def.as_ref() != owner_def {
+        blockers.push(format!(
+          "{owner_ns}/{owner_def}: target reference points outside its editable source ({location})"
+        ));
+        continue;
+      }
+      let path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
+      let entry = snapshot
+        .files
+        .get(owner_ns)
+        .and_then(|file| file.defs.get(owner_def))
+        .ok_or_else(|| format!("Traced definition `{owner_ns}/{owner_def}` is missing from the source snapshot."))?;
+      let node = navigate_to_path(&entry.code, &path)?;
+      let Cirru::Leaf(source_leaf) = node else {
+        blockers.push(format!(
+          "{owner_ns}/{owner_def}{}: resolved reference is not a source leaf",
+          format_path(&path)
+        ));
+        continue;
+      };
+      let replacement = if let Some((prefix, source_name)) = source_leaf.rsplit_once('/') {
+        if source_name != old_name {
+          blockers.push(format!(
+            "{owner_ns}/{owner_def}{}: resolved leaf `{source_leaf}` does not name `{old_name}`",
+            format_path(&path)
+          ));
+          continue;
+        }
+        format!("{prefix}/{new_name}")
+      } else if source_leaf.as_ref() == old_name {
+        format!("{target_ns}/{new_name}")
+      } else {
+        blockers.push(format!(
+          "{owner_ns}/{owner_def}{}: resolved leaf `{source_leaf}` does not name `{old_name}`",
+          format_path(&path)
+        ));
+        continue;
+      };
+      resolved.insert(
+        (owner_ns.clone(), owner_def.clone(), path),
+        (source_leaf.to_string(), vec![replacement]),
+      );
+    }
+  }
+  if !blockers.is_empty() {
+    blockers.sort();
+    blockers.dedup();
+    return Err(format!(
+      "Semantic rename `{target_ns}/{old_name}` is not provably source-editable; no changes were written:\n- {}",
+      blockers.join("\n- ")
+    ));
+  }
+
+  let mut suggestions = Vec::new();
+  for ((owner_ns, owner_def, target_path), (original_leaf, replacements)) in resolved {
+    let replacement = replacements.into_iter().next().expect("one deterministic replacement");
+    let original_node = Cirru::leaf(original_leaf.as_str());
+    let replacement_node = Cirru::leaf(replacement.as_str());
+    suggestions.push(FixSuggestion {
+      rule_id: RENAME_DEFINITION_RULE,
+      diagnostic_code: RENAME_DEFINITION_DIAGNOSTIC,
+      semantic_layer: "surface",
+      source_file: snapshot_file.to_owned(),
+      definition: format!("{owner_ns}/{owner_def}"),
+      path: format!("code{}", format_path(&target_path)),
+      fingerprint: node_fingerprint(&original_node),
+      origin_chain: vec![serde_json::json!({"kind": "resolved-definition", "target": format!("{target_ns}/{old_name}")})],
+      original: quoted_json(&original_node),
+      replacement: Some(quoted_json(&replacement_node)),
+      applicability: "machine-applicable",
+      message: format!("Rewrite the compiler-resolved reference to `{target_ns}/{new_name}`."),
+      target_path,
+      operation: Some(FixOperation::ReplaceLeaf {
+        original: original_leaf,
+        replacement,
+      }),
+    });
+  }
+
+  suggestions.extend(plan_referred_import_removals(
+    snapshot,
+    snapshot_file,
+    target_ns,
+    old_name,
+    new_name,
+  )?);
+
+  let target_entry = target_file.defs.get(old_name).expect("checked semantic rename source");
+  let (renamed_code, _) = super::edit::rename_definition_declaration(&target_entry.code, old_name, new_name)?;
+  suggestions.push(FixSuggestion {
+    rule_id: RENAME_DEFINITION_RULE,
+    diagnostic_code: RENAME_DEFINITION_DIAGNOSTIC,
+    semantic_layer: "surface",
+    source_file: snapshot_file.to_owned(),
+    definition: format!("{target_ns}/{old_name}"),
+    path: "definition".to_owned(),
+    fingerprint: node_fingerprint(&target_entry.code),
+    origin_chain: vec![serde_json::json!({"kind": "definition", "target": format!("{target_ns}/{old_name}")})],
+    original: quoted_json(&target_entry.code),
+    replacement: Some(quoted_json(&renamed_code)),
+    applicability: "machine-applicable",
+    message: format!("Rename the definition and declaration to `{target_ns}/{new_name}`."),
+    target_path: vec![],
+    operation: Some(FixOperation::RenameDefinition {
+      new_name: new_name.to_owned(),
+    }),
+  });
+  Ok(suggestions)
+}
+
+fn source_name_resolves_to_target(owner_ns: &str, source: &str, target_ns: &str, target_def: &str) -> bool {
+  if let Some((prefix, definition)) = source.rsplit_once('/') {
+    if definition != target_def {
+      return false;
+    }
+    if prefix == target_ns {
+      return true;
+    }
+    return program::lookup_ns_target_in_import(owner_ns, prefix).is_some_and(|namespace| namespace.as_ref() == target_ns);
+  }
+  source == target_def
+    && (owner_ns == target_ns
+      || imported_definition_target(owner_ns, source)
+        .is_some_and(|(namespace, definition)| namespace == target_ns && definition == target_def))
+}
+
+fn cirru_contains_target_reference(node: &Cirru, owner_ns: &str, target_ns: &str, target_def: &str) -> bool {
+  match node {
+    Cirru::Leaf(value) => source_name_resolves_to_target(owner_ns, value, target_ns, target_def),
+    Cirru::List(items) => items
+      .iter()
+      .any(|item| cirru_contains_target_reference(item, owner_ns, target_ns, target_def)),
+  }
+}
+
+fn quoted_region_contains_target_reference(node: &Cirru, owner_ns: &str, target_ns: &str, target_def: &str) -> bool {
+  let Cirru::List(items) = node else { return false };
+  if items
+    .first()
+    .is_some_and(|head| head.eq_leaf("quote") || head.eq_leaf("quasiquote"))
+  {
+    return items
+      .iter()
+      .skip(1)
+      .any(|item| cirru_contains_target_reference(item, owner_ns, target_ns, target_def));
+  }
+  items
+    .iter()
+    .any(|item| quoted_region_contains_target_reference(item, owner_ns, target_ns, target_def))
+}
+
+fn edn_contains_target_type_reference(value: &cirru_edn::Edn, owner_ns: &str, target_ns: &str, target_def: &str) -> bool {
+  use cirru_edn::Edn;
+  match value {
+    Edn::Symbol(name) => source_name_resolves_to_target(owner_ns, name, target_ns, target_def),
+    Edn::List(items) => items
+      .0
+      .iter()
+      .any(|item| edn_contains_target_type_reference(item, owner_ns, target_ns, target_def)),
+    Edn::Map(items) => items.0.iter().any(|(key, item)| {
+      edn_contains_target_type_reference(key, owner_ns, target_ns, target_def)
+        || edn_contains_target_type_reference(item, owner_ns, target_ns, target_def)
+    }),
+    Edn::Set(items) => items
+      .0
+      .iter()
+      .any(|item| edn_contains_target_type_reference(item, owner_ns, target_ns, target_def)),
+    Edn::Struct(data) => data
+      .pairs
+      .iter()
+      .any(|(_, item)| edn_contains_target_type_reference(item, owner_ns, target_ns, target_def)),
+    Edn::Enum(data) => {
+      source_name_resolves_to_target(owner_ns, data.variant.as_ref(), target_ns, target_def)
+        || data
+          .extra
+          .iter()
+          .any(|item| edn_contains_target_type_reference(item, owner_ns, target_ns, target_def))
+    }
+    Edn::Atom(item) => edn_contains_target_type_reference(item, owner_ns, target_ns, target_def),
+    _ => false,
+  }
+}
+
+fn plan_referred_import_removals(
+  snapshot: &Snapshot,
+  snapshot_file: &str,
+  target_ns: &str,
+  old_name: &str,
+  new_name: &str,
+) -> Result<Vec<FixSuggestion>, String> {
+  let mut suggestions = Vec::new();
+  let mut namespaces = snapshot.files.keys().cloned().collect::<Vec<_>>();
+  namespaces.sort();
+  for namespace in namespaces {
+    if namespace != snapshot.package && !namespace.starts_with(&format!("{}.", snapshot.package)) {
+      continue;
+    }
+    let file = &snapshot.files[&namespace];
+    let Cirru::List(ns_items) = &file.ns.code else { continue };
+    let Some(Cirru::List(require_items)) = ns_items.get(2) else {
+      continue;
+    };
+    if !require_items.first().is_some_and(|head| head.eq_leaf(":require")) {
+      continue;
+    }
+    let original_rule_nodes = require_items.iter().skip(1).cloned().collect::<Vec<_>>();
+    let mut rules = Vec::with_capacity(original_rule_nodes.len());
+    let mut changed = false;
+    for rule in &original_rule_nodes {
+      let Cirru::List(items) = rule else {
+        rules.push(rule.clone());
+        continue;
+      };
+      if items.len() != 3 || !items[0].eq_leaf(target_ns) || !items[1].eq_leaf(":refer") {
+        rules.push(rule.clone());
+        continue;
+      }
+      let Cirru::List(referred) = &items[2] else {
+        rules.push(rule.clone());
+        continue;
+      };
+      let next_referred = referred.iter().filter(|item| !item.eq_leaf(old_name)).cloned().collect::<Vec<_>>();
+      if next_referred.len() != referred.len() {
+        changed = true;
+        if next_referred.iter().any(|item| !item.eq_leaf("[]")) {
+          let mut next_items = items.clone();
+          next_items[2] = Cirru::List(next_referred);
+          rules.push(Cirru::List(next_items));
+        }
+      } else {
+        rules.push(rule.clone());
+      }
+    }
+    if !changed {
+      continue;
+    }
+    let original_rules = Cirru::List(original_rule_nodes);
+    let replacement_rules = Cirru::List(rules.clone());
+    let rules_json = Value::Array(rules.iter().map(cirru_to_json_value).collect());
+    suggestions.push(FixSuggestion {
+      rule_id: RENAME_DEFINITION_RULE,
+      diagnostic_code: RENAME_DEFINITION_DIAGNOSTIC,
+      semantic_layer: "surface",
+      source_file: snapshot_file.to_owned(),
+      definition: namespace.clone(),
+      path: "ns.:require".to_owned(),
+      fingerprint: node_fingerprint(&original_rules),
+      origin_chain: vec![serde_json::json!({"kind": "refer-import", "target": format!("{target_ns}/{old_name}")})],
+      original: quoted_json(&original_rules),
+      replacement: Some(quoted_json(&replacement_rules)),
+      applicability: "machine-applicable",
+      message: format!(
+        "Remove the stale `:refer` binding for `{target_ns}/{old_name}`; rewritten usages name `{target_ns}/{new_name}` explicitly."
+      ),
+      target_path: vec![],
+      operation: Some(FixOperation::ReplaceImports {
+        code: serde_json::to_string(&rules_json).map_err(|error| format!("Failed to encode import rewrite: {error}"))?,
+      }),
+    });
+  }
+  Ok(suggestions)
 }
 
 /// Convert removed-data diagnostics back to guarded source-leaf replacements.
@@ -1209,6 +1674,19 @@ fn suggestion_operations(suggestion: &FixSuggestion) -> Vec<Vec<String>> {
         ],
       ]
     }
+    Some(FixOperation::ReplaceImports { code }) => vec![vec![
+      "edit".to_owned(),
+      "imports".to_owned(),
+      suggestion.definition.clone(),
+      "--code".to_owned(),
+      code.clone(),
+    ]],
+    Some(FixOperation::RenameDefinition { new_name }) => vec![vec![
+      "edit".to_owned(),
+      "rename".to_owned(),
+      suggestion.definition.clone(),
+      new_name.clone(),
+    ]],
     None => vec![],
   }
 }
@@ -1291,6 +1769,9 @@ fn print_human_report(report: &FixReport<'_>) {
   if let Some(preset) = report.data.filters.preset_id {
     println!("- preset: `{preset}`");
   }
+  if let Some(replacement) = report.data.filters.replacement_name {
+    println!("- replacement definition: `{replacement}`");
+  }
   println!("- rules: `{}`", report.data.filters.expanded_rule_ids.join(", "));
   println!("- suggestions: `{}`", report.data.suggestions.len());
   println!("- changed: `{}`", report.data.changed);
@@ -1321,8 +1802,9 @@ fn print_human_report(report: &FixReport<'_>) {
 mod tests {
   use super::{
     FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_potential_local_bindings, collect_redundant_do_paths,
-    fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion, legacy_constructor_replacement, migration_for_source_leaf,
-    prototype_is_shadowed, resolve_fix_target, rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
+    edn_contains_target_type_reference, fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion,
+    legacy_constructor_replacement, migration_for_source_leaf, prototype_is_shadowed, resolve_fix_target,
+    rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
   };
   use cirru_parser::Cirru;
   use serde_json::Value;
@@ -1654,5 +2136,12 @@ mod tests {
 
     assert!(error.contains("overlap at app.main/main! @3.0"), "error: {error}");
     assert_eq!(suggestions.len(), 1);
+  }
+
+  #[test]
+  fn schema_reference_scanner_checks_zero_argument_enum_variants() {
+    let schema = cirru_edn::Edn::enum_value("app.schema/Order", vec![]);
+    assert!(edn_contains_target_type_reference(&schema, "app.main", "app.schema", "Order"));
+    assert!(!edn_contains_target_type_reference(&schema, "app.main", "app.schema", "Other"));
   }
 }

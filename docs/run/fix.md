@@ -49,6 +49,10 @@ calcit calcit.cirru fix --ns app.main --def render! --format edn
   `Result :ok value`。
 - `named-struct-constructor-v1` 把能静态解析到项目 `defstruct` 的 `%{} Person (:name name)` 改为
   `Person :name name`，并保持字段表达式的原始求值顺序。
+- `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
+  同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
+  避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。macro 生成引用、dependency source、
+  definition-attached tests、examples 或 schema 中尚不能安全写回的引用会拒绝整个事务，不产生部分修改。
 - `tag-match-to-match-v1` 与 `required-struct-field-v1` 属于已发布的 0.14.x migration bridge，不是 0.15 的 fix surface。
   升级旧项目时请固定使用 Calcit 0.14.15 执行规则、review 输出并验证测试；迁移完成后再切换到 0.15。
   0.15 若显式请求这两个 rule，会返回稳定错误和上述版本提示，不会继续携带旧 planner 与分析特例。
@@ -72,6 +76,30 @@ calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 
 `--preset` 与 `--rule` 互斥。apply 必须原样重复 preview 的 `--preset`、`--ns` 和 `--def`；第二次 preview
 应返回空建议。未来集合发生变化时应发布新的 preset ID，既有 ID 不应静默改变含义。
+
+## 原子重命名 definition 与静态引用
+
+声明和调用点需要一起变化时，不要先执行 `edit rename` 再文本搜索。使用同一个 `fix` preview/apply 闭环：
+
+```bash
+calcit calcit.cirru fix --rule rename-definition-v1 \
+  --ns app.core --def old-name --to new-name --format edn
+calcit calcit.cirru fix --rule rename-definition-v1 \
+  --ns app.core --def old-name --to new-name \
+  --apply --expect-revision 'md5:<preview 返回的 revision>'
+calcit calcit.cirru fix --rule rename-definition-v1 \
+  --ns app.core --def old-name --to new-name --format edn
+```
+
+preview 的每个 usage suggestion 都包含 resolved target 的 `:origin-chain`、source path、fingerprint 和 quoted AST。
+规划阶段会遍历项目 definitions，但不会把局部同名 binding 或同名依赖定义当成 usage；包含目标名称的 quoted data
+不作为可改写 usage，而是按潜在动态消费边界拒绝事务。staged Snapshot
+会重新严格预处理整个项目；解析失败、旧引用残留或目标冲突时，原文件保持不变。重复执行原命令时，如果旧 definition
+已不存在且新 definition 存在，会返回空 suggestions，作为幂等完成状态。
+
+当前第一阶段只自动写回普通 definition code 与 namespace import。发现 tests、examples、schema 或 macro expansion 边界中的
+目标引用时会 fail closed，并列出 blocker；这些 source kinds 在具备同等 provenance 与 fingerprint guard 后再纳入规则。
+只想改声明、并明确自行负责调用点时，仍可直接使用 `calcit edit rename`。
 
 具名构造器规则只处理原型能静态解析到当前项目 nominal definition 的直接源码。匿名 `%:: _` / `%{} _`、
 运行时 prototype、依赖中无法回溯的定义、局部同名遮蔽、`defmacro` 以及 `quote`/`quasiquote` 内的数据都会保留。

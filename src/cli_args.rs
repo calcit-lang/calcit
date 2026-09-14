@@ -144,6 +144,9 @@ pub struct FixCommand {
   /// apply one versioned set of stable migration rules
   #[argh(option)]
   pub preset: Option<String>,
+  /// replacement definition name required by semantic rename rules
+  #[argh(option, long = "to")]
+  pub replacement_name: Option<String>,
   /// require the snapshot content to match this revision before applying
   #[argh(option, long = "expect-revision")]
   pub expect_revision: Option<String>,
