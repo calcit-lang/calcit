@@ -45,4 +45,5 @@ Another important command is `ct`, which is the "Calcit Editor" and is available
 - [Core, library, and host capability boundary](installation/host-capability-boundary.md)
 - [Rust bindings](installation/ffi-bindings.md)
 - [FFI Interface IR](installation/ffi-interface-ir.md)
+- [WASM Component 边界](installation/wasm-component-boundary.md)
 - [FFI upgrade guide](installation/ffi-upgrade-guide.md)
