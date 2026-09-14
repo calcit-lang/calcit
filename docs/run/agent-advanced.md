@@ -333,7 +333,8 @@ calcit calcit.cirru fix --rule rename-definition-v1 \
 ```
 
 不要用 `query search` 加 `tree replace-leaf` 模拟语义重命名：同名局部 binding、quoted data 和其他 namespace 的 definition
-不是调用点。若 preview 报告 macro、tests、examples 或 schema blocker，保持原文件不动并拆分人工迁移；`edit rename`
+不是调用点。普通 code、definition-attached tests、examples、schema 与 imports 会在同一事务中更新；若 preview 报告
+macro、quoted data、dependency source 或缺失 source coordinate blocker，保持原文件不动并拆分人工迁移；`edit rename`
 只适用于明确只修改 declaration、调用点由用户另行管理的场景。
 
 ### 迁移定义到另一命名空间（`mv-def`）

@@ -1,12 +1,13 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use calcit::calcit::LocatedWarning;
+use calcit::calcit::{CalcitTypeAnnotation, LocatedWarning};
 use calcit::call_stack::CallStackList;
 use calcit::cli_args::FixCommand;
+use calcit::data::cirru::code_to_calcit;
 use calcit::snapshot::Snapshot;
 use calcit::{program, runner};
 use cirru_parser::Cirru;
@@ -61,6 +62,9 @@ enum FixOperation {
   ReplaceNode { original: String, replacement: String },
   SpliceDo,
   ReplaceImports { code: String },
+  ReplaceExamples { code: String },
+  ReplaceTest { name: String, tags: String, code: String },
+  ReplaceSchema { code: String },
   RenameDefinition { new_name: String },
 }
 
@@ -597,6 +601,9 @@ fn plan_definition_rename(
     .ok_or_else(|| format!("Semantic rename namespace `{target_ns}` is not an editable project namespace."))?;
   if !target_file.defs.contains_key(old_name) {
     if target_file.defs.contains_key(new_name) {
+      if std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1") {
+        validate_no_stale_attached_references(snapshot, project_definitions, target_ns, old_name, new_name)?;
+      }
       return Ok(vec![]);
     }
     return Err(format!("Semantic rename source `{target_ns}/{old_name}` does not exist."));
@@ -607,6 +614,7 @@ fn plan_definition_rename(
 
   let warnings = RefCell::new(Vec::new());
   let mut resolved = BTreeMap::<(String, String, Vec<usize>), (String, Vec<String>)>::new();
+  let mut attached_suggestions = Vec::new();
   let mut blockers = Vec::new();
   for (owner_ns, owner_def) in project_definitions {
     let entry = snapshot
@@ -624,26 +632,125 @@ fn plan_definition_rename(
         "{owner_ns}/{owner_def}: quoted source contains `{target_ns}/{old_name}` and may be consumed dynamically"
       ));
     }
-    for test in &entry.tests {
-      if cirru_contains_target_reference(&test.code, owner_ns, target_ns, old_name) {
-        blockers.push(format!(
-          "{owner_ns}/{owner_def}#{}: definition-attached test references the target; test-source refactoring is not yet supported",
-          test.name
-        ));
+    for (index, test) in entry.tests.iter().enumerate() {
+      if !cirru_contains_target_reference(&test.code, owner_ns, target_ns, old_name) {
+        continue;
+      }
+      let source_label = format!("{owner_ns}/{owner_def}#{}", test.name);
+      match plan_attached_source_rewrite(
+        &test.code,
+        owner_ns,
+        &format!("&calcit:rename-test:{owner_def}:{index}"),
+        &source_label,
+        target_ns,
+        old_name,
+        new_name,
+      ) {
+        Ok(Some(rewrite)) => {
+          let mut tag_names = test.tags.iter().map(|tag| tag.ref_str()).collect::<Vec<_>>();
+          tag_names.sort_unstable();
+          attached_suggestions.push(FixSuggestion {
+            rule_id: RENAME_DEFINITION_RULE,
+            diagnostic_code: RENAME_DEFINITION_DIAGNOSTIC,
+            semantic_layer: "surface",
+            source_file: snapshot_file.to_owned(),
+            definition: format!("{owner_ns}/{owner_def}"),
+            path: format!("tests.{}", test.name),
+            fingerprint: node_fingerprint(&test.code),
+            origin_chain: rewrite.origin_chain,
+            original: quoted_json(&test.code),
+            replacement: Some(quoted_json(&rewrite.code)),
+            applicability: "machine-applicable",
+            message: format!("Rewrite compiler-resolved references in definition-attached test `{}`.", test.name),
+            target_path: vec![],
+            operation: Some(FixOperation::ReplaceTest {
+              name: test.name.clone(),
+              tags: tag_names.join(","),
+              code: format_quoted_nodes(std::slice::from_ref(&rewrite.code))?,
+            }),
+          });
+        }
+        Ok(None) => {}
+        Err(error) => blockers.push(error),
       }
     }
+    let mut rewritten_examples = entry.examples.clone();
+    let mut example_origins = Vec::new();
+    let mut changed_examples = Vec::new();
     for (index, example) in entry.examples.iter().enumerate() {
-      if cirru_contains_target_reference(example, owner_ns, target_ns, old_name) {
-        blockers.push(format!(
-          "{owner_ns}/{owner_def} example {index}: example source references the target; example refactoring is not yet supported"
-        ));
+      if !cirru_contains_target_reference(example, owner_ns, target_ns, old_name) {
+        continue;
+      }
+      let source_label = format!("{owner_ns}/{owner_def} example {index}");
+      match plan_attached_source_rewrite(
+        example,
+        owner_ns,
+        &format!("&calcit:rename-example:{owner_def}:{index}"),
+        &source_label,
+        target_ns,
+        old_name,
+        new_name,
+      ) {
+        Ok(Some(rewrite)) => {
+          rewritten_examples[index] = rewrite.code;
+          example_origins.extend(rewrite.origin_chain);
+          changed_examples.push(index);
+        }
+        Ok(None) => {}
+        Err(error) => blockers.push(error),
       }
     }
-    let schema_edn = calcit::snapshot::schema_annotation_to_edn(entry.schema.as_ref());
-    if edn_contains_target_type_reference(&schema_edn, owner_ns, target_ns, old_name) {
-      blockers.push(format!(
-        "{owner_ns}/{owner_def} schema: type reference targets `{target_ns}/{old_name}` and schema refactoring is not yet supported"
-      ));
+    if !changed_examples.is_empty() {
+      let original_examples = Cirru::List(entry.examples.clone());
+      let replacement_examples = Cirru::List(rewritten_examples.clone());
+      attached_suggestions.push(FixSuggestion {
+        rule_id: RENAME_DEFINITION_RULE,
+        diagnostic_code: RENAME_DEFINITION_DIAGNOSTIC,
+        semantic_layer: "surface",
+        source_file: snapshot_file.to_owned(),
+        definition: format!("{owner_ns}/{owner_def}"),
+        path: "examples".to_owned(),
+        fingerprint: node_fingerprint(&original_examples),
+        origin_chain: example_origins,
+        original: quoted_json(&original_examples),
+        replacement: Some(quoted_json(&replacement_examples)),
+        applicability: "machine-applicable",
+        message: format!("Rewrite compiler-resolved references in examples at indices {changed_examples:?}."),
+        target_path: vec![],
+        operation: Some(FixOperation::ReplaceExamples {
+          code: format_quoted_nodes(&rewritten_examples)?,
+        }),
+      });
+    }
+    let (rewritten_annotation, replacement_count) =
+      rewrite_loaded_schema_type_references(entry.schema.clone(), owner_ns, target_ns, old_name, new_name)?;
+    if replacement_count > 0 {
+      let schema_edn = calcit::snapshot::schema_annotation_to_edn(entry.schema.as_ref());
+      let rewritten_schema = calcit::snapshot::schema_annotation_to_edn(rewritten_annotation.as_ref());
+      let original_node = schema_edn_to_source_node(&schema_edn)?;
+      let replacement_node = schema_edn_to_source_node(&rewritten_schema)?;
+      attached_suggestions.push(FixSuggestion {
+        rule_id: RENAME_DEFINITION_RULE,
+        diagnostic_code: RENAME_DEFINITION_DIAGNOSTIC,
+        semantic_layer: "surface",
+        source_file: snapshot_file.to_owned(),
+        definition: format!("{owner_ns}/{owner_def}"),
+        path: "schema".to_owned(),
+        fingerprint: node_fingerprint(&original_node),
+        origin_chain: vec![serde_json::json!({
+          "kind": "resolved-schema-type",
+          "target": format!("{target_ns}/{old_name}"),
+          "occurrences": replacement_count,
+        })],
+        original: quoted_json(&original_node),
+        replacement: Some(quoted_json(&replacement_node)),
+        applicability: "machine-applicable",
+        message: format!("Rewrite {replacement_count} compiler-loaded schema type reference(s) to `{target_ns}/{new_name}`."),
+        target_path: vec![],
+        operation: Some(FixOperation::ReplaceSchema {
+          code: format_quoted_nodes(std::slice::from_ref(&replacement_node))?,
+        }),
+      });
     }
     let usages = runner::preprocess::trace_definition_source_usages(owner_ns, owner_def, &warnings, &CallStackList::default())
       .map_err(|failure| failure.msg)?;
@@ -718,6 +825,7 @@ fn plan_definition_rename(
   }
 
   let mut suggestions = Vec::new();
+  suggestions.extend(attached_suggestions);
   for ((owner_ns, owner_def, target_path), (original_leaf, replacements)) in resolved {
     let replacement = replacements.into_iter().next().expect("one deterministic replacement");
     let original_node = Cirru::leaf(original_leaf.as_str());
@@ -774,6 +882,71 @@ fn plan_definition_rename(
   Ok(suggestions)
 }
 
+fn validate_no_stale_attached_references(
+  snapshot: &Snapshot,
+  project_definitions: &[(String, String)],
+  target_ns: &str,
+  old_name: &str,
+  new_name: &str,
+) -> Result<(), String> {
+  for (owner_ns, owner_def) in project_definitions {
+    let entry = snapshot
+      .files
+      .get(owner_ns)
+      .and_then(|file| file.defs.get(owner_def))
+      .ok_or_else(|| format!("Project definition `{owner_ns}/{owner_def}` is missing from the staged snapshot."))?;
+    for (index, test) in entry.tests.iter().enumerate() {
+      if !cirru_contains_target_reference(&test.code, owner_ns, target_ns, old_name) {
+        continue;
+      }
+      let source_label = format!("{owner_ns}/{owner_def}#{}", test.name);
+      if plan_attached_source_rewrite(
+        &test.code,
+        owner_ns,
+        &format!("&calcit:validate-rename-test:{owner_def}:{index}"),
+        &source_label,
+        target_ns,
+        old_name,
+        new_name,
+      )?
+      .is_some()
+      {
+        return Err(format!(
+          "{source_label}: staged semantic rename left a resolved reference to `{target_ns}/{old_name}`"
+        ));
+      }
+    }
+    for (index, example) in entry.examples.iter().enumerate() {
+      if !cirru_contains_target_reference(example, owner_ns, target_ns, old_name) {
+        continue;
+      }
+      let source_label = format!("{owner_ns}/{owner_def} example {index}");
+      if plan_attached_source_rewrite(
+        example,
+        owner_ns,
+        &format!("&calcit:validate-rename-example:{owner_def}:{index}"),
+        &source_label,
+        target_ns,
+        old_name,
+        new_name,
+      )?
+      .is_some()
+      {
+        return Err(format!(
+          "{source_label}: staged semantic rename left a resolved reference to `{target_ns}/{old_name}`"
+        ));
+      }
+    }
+    let (_, stale_count) = rewrite_loaded_schema_type_references(entry.schema.clone(), owner_ns, target_ns, old_name, new_name)?;
+    if stale_count > 0 {
+      return Err(format!(
+        "{owner_ns}/{owner_def} schema: staged semantic rename left a type reference to `{target_ns}/{old_name}`"
+      ));
+    }
+  }
+  Ok(())
+}
+
 fn source_name_resolves_to_target(owner_ns: &str, source: &str, target_ns: &str, target_def: &str) -> bool {
   if let Some((prefix, definition)) = source.rsplit_once('/') {
     if definition != target_def {
@@ -815,35 +988,190 @@ fn quoted_region_contains_target_reference(node: &Cirru, owner_ns: &str, target_
     .any(|item| quoted_region_contains_target_reference(item, owner_ns, target_ns, target_def))
 }
 
-fn edn_contains_target_type_reference(value: &cirru_edn::Edn, owner_ns: &str, target_ns: &str, target_def: &str) -> bool {
-  use cirru_edn::Edn;
-  match value {
-    Edn::Symbol(name) => source_name_resolves_to_target(owner_ns, name, target_ns, target_def),
-    Edn::List(items) => items
-      .0
-      .iter()
-      .any(|item| edn_contains_target_type_reference(item, owner_ns, target_ns, target_def)),
-    Edn::Map(items) => items.0.iter().any(|(key, item)| {
-      edn_contains_target_type_reference(key, owner_ns, target_ns, target_def)
-        || edn_contains_target_type_reference(item, owner_ns, target_ns, target_def)
-    }),
-    Edn::Set(items) => items
-      .0
-      .iter()
-      .any(|item| edn_contains_target_type_reference(item, owner_ns, target_ns, target_def)),
-    Edn::Struct(data) => data
-      .pairs
-      .iter()
-      .any(|(_, item)| edn_contains_target_type_reference(item, owner_ns, target_ns, target_def)),
-    Edn::Enum(data) => {
-      source_name_resolves_to_target(owner_ns, data.variant.as_ref(), target_ns, target_def)
-        || data
-          .extra
-          .iter()
-          .any(|item| edn_contains_target_type_reference(item, owner_ns, target_ns, target_def))
+struct AttachedSourceRewrite {
+  code: Cirru,
+  origin_chain: Vec<Value>,
+}
+
+/// Resolve references inside one definition-attached executable source without guessing from leaf text.
+fn plan_attached_source_rewrite(
+  source: &Cirru,
+  owner_ns: &str,
+  synthetic_def: &str,
+  source_label: &str,
+  target_ns: &str,
+  old_name: &str,
+  new_name: &str,
+) -> Result<Option<AttachedSourceRewrite>, String> {
+  if quoted_region_contains_target_reference(source, owner_ns, target_ns, old_name) {
+    return Err(format!(
+      "{source_label}: quoted source contains `{target_ns}/{old_name}` and may be consumed dynamically"
+    ));
+  }
+  let wrapper = Cirru::List(vec![Cirru::leaf("fn"), Cirru::List(vec![]), source.clone()]);
+  let parsed = code_to_calcit(&wrapper, owner_ns, synthetic_def, vec![])
+    .map_err(|error| format!("{source_label}: failed to parse attached source for semantic rename: {error}"))?;
+  let warnings = RefCell::new(Vec::new());
+  let usages = runner::preprocess::trace_source_usages(&parsed, owner_ns, synthetic_def, &warnings, &CallStackList::default())
+    .map_err(|failure| {
+      format!(
+        "{source_label}: failed to preprocess attached source for semantic rename: {}",
+        failure.msg
+      )
+    })?;
+  let mut rewrites = BTreeMap::<Vec<usize>, (String, String, Vec<String>)>::new();
+  for usage in usages {
+    if usage.target_ns.as_ref() != target_ns || usage.target_def.as_ref() != old_name {
+      continue;
     }
-    Edn::Atom(item) => edn_contains_target_type_reference(item, owner_ns, target_ns, target_def),
-    _ => false,
+    let macro_origin = usage
+      .macro_origin
+      .into_iter()
+      .filter(|origin| origin != "calcit.core/fn")
+      .collect::<Vec<_>>();
+    if !macro_origin.is_empty() {
+      return Err(format!(
+        "{source_label}: target reference is produced across macro boundary {}",
+        macro_origin.join(" -> ")
+      ));
+    }
+    let Some(location) = usage.location else {
+      return Err(format!(
+        "{source_label}: compiler resolved a target reference without a source coordinate"
+      ));
+    };
+    if location.ns.as_ref() != owner_ns || location.def.as_ref() != synthetic_def {
+      return Err(format!(
+        "{source_label}: target reference points outside its editable attached source ({location})"
+      ));
+    }
+    let wrapper_path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
+    let Some(path) = wrapper_path.strip_prefix(&[2]) else {
+      return Err(format!(
+        "{source_label}{}: compiler coordinate does not point into the attached expression",
+        format_path(&wrapper_path)
+      ));
+    };
+    let node = navigate_to_path(source, path)?;
+    let Cirru::Leaf(source_leaf) = node else {
+      return Err(format!(
+        "{source_label}{}: resolved reference is not a source leaf",
+        format_path(path)
+      ));
+    };
+    let replacement = semantic_rename_leaf_replacement(&source_leaf, old_name, target_ns, new_name)
+      .map_err(|error| format!("{source_label}{}: {error}", format_path(path)))?;
+    rewrites.insert(path.to_vec(), (source_leaf.to_string(), replacement, macro_origin));
+  }
+  if rewrites.is_empty() {
+    return Ok(None);
+  }
+
+  let mut rewritten = source.clone();
+  let mut origin_chain = Vec::with_capacity(rewrites.len());
+  for (path, (original, replacement, macro_origin)) in rewrites {
+    replace_attached_source_leaf(&mut rewritten, &path, &original, &replacement)?;
+    origin_chain.push(serde_json::json!({
+      "kind": "resolved-attached-source",
+      "target": format!("{target_ns}/{old_name}"),
+      "path": format_path(&path),
+      "macro_origin": macro_origin,
+    }));
+  }
+  Ok(Some(AttachedSourceRewrite {
+    code: rewritten,
+    origin_chain,
+  }))
+}
+
+fn semantic_rename_leaf_replacement(source_leaf: &str, old_name: &str, target_ns: &str, new_name: &str) -> Result<String, String> {
+  if let Some((prefix, source_name)) = source_leaf.rsplit_once('/') {
+    if source_name != old_name {
+      return Err(format!("resolved leaf `{source_leaf}` does not name `{old_name}`"));
+    }
+    Ok(format!("{prefix}/{new_name}"))
+  } else if source_leaf == old_name {
+    Ok(format!("{target_ns}/{new_name}"))
+  } else {
+    Err(format!("resolved leaf `{source_leaf}` does not name `{old_name}`"))
+  }
+}
+
+fn replace_attached_source_leaf(node: &mut Cirru, path: &[usize], expected: &str, replacement: &str) -> Result<(), String> {
+  if path.is_empty() {
+    return match node {
+      Cirru::Leaf(value) if value.as_ref() == expected => {
+        *value = replacement.into();
+        Ok(())
+      }
+      other => Err(format!(
+        "Attached source changed while planning semantic rename: expected leaf `{expected}`, got `{other}`"
+      )),
+    };
+  }
+  let Cirru::List(items) = node else {
+    return Err(format!("Attached source path {} traverses a leaf", format_path(path)));
+  };
+  let index = path[0];
+  let child = items
+    .get_mut(index)
+    .ok_or_else(|| format!("Attached source path {} is out of range", format_path(path)))?;
+  replace_attached_source_leaf(child, &path[1..], expected, replacement)
+}
+
+fn format_quoted_nodes(nodes: &[Cirru]) -> Result<String, String> {
+  let quoted = nodes
+    .iter()
+    .map(|node| Cirru::List(vec![Cirru::leaf("quote"), node.clone()]))
+    .collect::<Vec<_>>();
+  cirru_parser::format(&quoted, true.into()).map_err(|error| format!("Failed to encode attached source rewrite: {error}"))
+}
+
+fn rewrite_loaded_schema_type_references(
+  schema: std::sync::Arc<CalcitTypeAnnotation>,
+  owner_ns: &str,
+  target_ns: &str,
+  old_name: &str,
+  new_name: &str,
+) -> Result<(std::sync::Arc<CalcitTypeAnnotation>, usize), String> {
+  let replacements = Cell::new(0);
+  let rewritten = runner::preprocess::map_schema_references(
+    schema,
+    &|name, args| {
+      if source_name_resolves_to_target(owner_ns, name, target_ns, old_name) {
+        let replacement = semantic_rename_leaf_replacement(name, old_name, target_ns, new_name)
+          .expect("a compiler-loaded matching TypeRef must preserve the selected definition name");
+        replacements.set(replacements.get() + 1);
+        std::sync::Arc::new(CalcitTypeAnnotation::TypeRef(replacement.into(), args))
+      } else {
+        std::sync::Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), args))
+      }
+    },
+    &|trait_def| {
+      let source_name = trait_def.definition_ref.as_deref().unwrap_or_else(|| trait_def.name.ref_str());
+      if !source_name_resolves_to_target(owner_ns, source_name, target_ns, old_name) {
+        return trait_def;
+      }
+      let replacement = semantic_rename_leaf_replacement(source_name, old_name, target_ns, new_name)
+        .expect("a compiler-loaded matching trait bound must preserve the selected definition name");
+      let mut rewritten = trait_def.as_ref().clone();
+      rewritten.name = cirru_edn::EdnTag::new(new_name);
+      if rewritten.definition_ref.is_some() {
+        rewritten.definition_ref = Some(replacement.trim_start_matches('\'').into());
+      }
+      replacements.set(replacements.get() + 1);
+      std::sync::Arc::new(rewritten)
+    },
+  );
+  Ok((rewritten, replacements.get()))
+}
+
+fn schema_edn_to_source_node(schema: &cirru_edn::Edn) -> Result<Cirru, String> {
+  let rendered = cirru_edn::format(schema, true).map_err(|error| format!("Failed to format rewritten schema: {error}"))?;
+  let nodes = cirru_parser::parse(&rendered).map_err(|error| format!("Failed to parse rewritten schema source: {error}"))?;
+  match nodes.as_slice() {
+    [node] => Ok(node.clone()),
+    _ => Err(format!("Rewritten schema must render as one source node, got {}.", nodes.len())),
   }
 }
 
@@ -1681,6 +2009,36 @@ fn suggestion_operations(suggestion: &FixSuggestion) -> Vec<Vec<String>> {
       "--code".to_owned(),
       code.clone(),
     ]],
+    Some(FixOperation::ReplaceExamples { code }) => vec![vec![
+      "edit".to_owned(),
+      "examples".to_owned(),
+      suggestion.definition.clone(),
+      "--code".to_owned(),
+      code.clone(),
+    ]],
+    Some(FixOperation::ReplaceTest { name, tags, code }) => {
+      let mut args = vec![
+        "edit".to_owned(),
+        "add-test".to_owned(),
+        suggestion.definition.clone(),
+        name.clone(),
+        "--code".to_owned(),
+        code.clone(),
+        "--overwrite".to_owned(),
+      ];
+      if !tags.is_empty() {
+        args.push("--tags".to_owned());
+        args.push(tags.clone());
+      }
+      vec![args]
+    }
+    Some(FixOperation::ReplaceSchema { code }) => vec![vec![
+      "edit".to_owned(),
+      "schema".to_owned(),
+      suggestion.definition.clone(),
+      "--code".to_owned(),
+      code.clone(),
+    ]],
     Some(FixOperation::RenameDefinition { new_name }) => vec![vec![
       "edit".to_owned(),
       "rename".to_owned(),
@@ -1802,13 +2160,15 @@ fn print_human_report(report: &FixReport<'_>) {
 mod tests {
   use super::{
     FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_potential_local_bindings, collect_redundant_do_paths,
-    edn_contains_target_type_reference, fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion,
-    legacy_constructor_replacement, migration_for_source_leaf, prototype_is_shadowed, resolve_fix_target,
-    rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
+    fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion, legacy_constructor_replacement, migration_for_source_leaf,
+    prototype_is_shadowed, resolve_fix_target, rewrite_loaded_schema_type_references, rewrite_named_constructor_tree,
+    struct_fields_are_complete, suggestion_operations,
   };
+  use calcit::calcit::{CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTrait, CalcitTypeAnnotation, SchemaKind};
   use cirru_parser::Cirru;
   use serde_json::Value;
   use std::collections::BTreeMap;
+  use std::sync::Arc;
 
   use super::super::common::markdown_cirru_section;
 
@@ -2139,9 +2499,47 @@ mod tests {
   }
 
   #[test]
-  fn schema_reference_scanner_checks_zero_argument_enum_variants() {
-    let schema = cirru_edn::Edn::enum_value("app.schema/Order", vec![]);
-    assert!(edn_contains_target_type_reference(&schema, "app.main", "app.schema", "Order"));
-    assert!(!edn_contains_target_type_reference(&schema, "app.main", "app.schema", "Other"));
+  fn schema_reference_rewrite_only_changes_loaded_type_refs() {
+    let schema = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("app.schema/Order"), Arc::new(vec![])));
+    let (rewritten, count) =
+      rewrite_loaded_schema_type_references(schema, "app.main", "app.schema", "Order", "Purchase").expect("rewrite TypeRef");
+    assert_eq!(count, 1);
+    assert!(matches!(
+      rewritten.as_ref(),
+      CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "app.schema/Purchase" && args.is_empty()
+    ));
+
+    let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("Order")));
+    let (unchanged, count) = rewrite_loaded_schema_type_references(generic.clone(), "app.schema", "app.schema", "Order", "Purchase")
+      .expect("preserve TypeVar");
+    assert_eq!(count, 0);
+    assert_eq!(unchanged, generic);
+  }
+
+  #[test]
+  fn schema_reference_rewrite_changes_resolved_trait_bounds() {
+    let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![CalcitGenericBound {
+        name: Arc::from("T"),
+        traits: Arc::new(vec![Arc::new(CalcitTrait::new_reference("app.schema/Show"))]),
+      }]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))],
+      return_type: Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(std::collections::HashSet::new()),
+    })));
+
+    let (rewritten, count) =
+      rewrite_loaded_schema_type_references(schema, "app.main", "app.schema", "Show", "Display").expect("rewrite trait bound");
+    let CalcitTypeAnnotation::Fn(signature) = rewritten.as_ref() else {
+      panic!("rewritten schema should remain a function");
+    };
+    let trait_def = &signature.where_bounds[0].traits[0];
+    assert_eq!(count, 1);
+    assert_eq!(trait_def.name.ref_str(), "Display");
+    assert_eq!(trait_def.definition_ref.as_deref(), Some("app.schema/Display"));
+    assert!(matches!(signature.arg_types[0].as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T"));
   }
 }
