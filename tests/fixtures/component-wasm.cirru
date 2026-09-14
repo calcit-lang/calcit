@@ -50,6 +50,12 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
+        'call-host-numbers $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export call-host-numbers (value) (host-numbers value)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Number
+            :return $ :: 'List 'Number
         'choose-buffer $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export choose-buffer (flag yes no) (if flag yes no)
           :examples $ []
@@ -71,6 +77,16 @@
             %{} 'TestEntry (:name |chooses-no)
               :code $ quote $ assert= 4 (choose-number false 3 4)
               :tags $ #{} :wasm
+        'echo-bools $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-bools (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Bool
+            :return $ :: 'List 'Bool
+          :tests $ [] $ %{} 'TestEntry (:name |round-trips-list)
+            :code $ quote $ assert= ([] true false true)
+              echo-bools $ [] true false true
+            :tags $ #{} :wasm
         'echo-buffer $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-buffer (value) value
           :examples $ []
@@ -80,6 +96,43 @@
             :code $ quote $ assert= (&buffer 0 255 17)
               echo-buffer $ &buffer 0 255 17
             :tags $ #{} :wasm
+        'echo-buffers $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-buffers (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Buffer
+            :return $ :: 'List 'Buffer
+          :tests $ [] $ %{} 'TestEntry (:name |round-trips-list)
+            :code $ quote $ assert=
+              [] (&buffer 0 255) (&buffer 17 128)
+              echo-buffers $ [] (&buffer 0 255) (&buffer 17 128)
+            :tags $ #{} :wasm
+        'echo-number-lists $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-number-lists (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'List 'Number)
+            :return $ :: 'List $ :: 'List 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |round-trips-list)
+            :code $ quote $ assert=
+              [] ([] 1 2) ([]) ([] 3 4 5)
+              echo-number-lists $ [] ([] 1 2) ([]) ([] 3 4 5)
+            :tags $ #{} :wasm
+        'echo-numbers $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-numbers (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Number
+            :return $ :: 'List 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |round-trips-list)
+              :code $ quote $ assert= ([] 1 2 2 7)
+                echo-numbers $ [] 1 2 2 7
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |round-trips-empty-list)
+              :code $ quote $ assert= ([])
+                echo-numbers $ []
+              :tags $ #{} :wasm
         'echo-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-text (text) text
           :examples $ []
@@ -87,6 +140,16 @@
             :args $ [] 'String
           :tests $ [] $ %{} 'TestEntry (:name |keeps-text)
             :code $ quote $ assert= |hello (echo-text |hello)
+            :tags $ #{} :wasm
+        'echo-texts $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-texts (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'String
+            :return $ :: 'List 'String
+          :tests $ [] $ %{} 'TestEntry (:name |round-trips-list)
+            :code $ quote $ assert= ([] |alpha || "|世界")
+              echo-texts $ [] |alpha || "|世界"
             :tags $ #{} :wasm
         'host-add-one $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-import host-add-one (value) |host |add-one
@@ -108,6 +171,12 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
+        'host-numbers $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-import host-numbers (value) |host |numbers
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Number
+            :return $ :: 'List 'Number
         'is-buffer $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export is-buffer (value) (buffer? value)
           :examples $ []
