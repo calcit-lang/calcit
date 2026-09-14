@@ -223,7 +223,7 @@ fn semantic_rename_updates_only_compiler_resolved_usages_atomically() {
 }
 
 #[test]
-fn semantic_rename_rejects_unhandled_test_sources_without_partial_writes() {
+fn semantic_rename_updates_attached_tests_and_examples_atomically() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
@@ -274,10 +274,136 @@ fn semantic_rename_rejects_unhandled_test_sources_without_partial_writes() {
         "add-test",
         "fix-command.main/caller",
         "calls-old",
+        "--tags",
+        "fast,semantic",
         "--code",
         "quote $ = (rename-old 1) 2",
       ],
       "attach target-using test",
+    ),
+    (
+      vec![
+        "edit",
+        "add-example",
+        "fix-command.main/caller",
+        "--code",
+        "quote $ = (rename-old 2) 3",
+      ],
+      "attach target-using example",
+    ),
+    (
+      vec![
+        "edit",
+        "add-test",
+        "fix-command.main/caller",
+        "shadows-old",
+        "--code",
+        "quote $ let\n    rename-old 1\n  = rename-old 1",
+      ],
+      "attach locally shadowed test",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "rename-definition-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "rename-old",
+      "--to",
+      "rename-new",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "attached-source semantic rename preview");
+  let preview_report = parse_stdout(&preview);
+  assert_eq!(preview_report["data"]["validation"]["checked_operations"], 4);
+  let paths = preview_report["data"]["suggestions"]
+    .as_array()
+    .expect("suggestions should be an array")
+    .iter()
+    .filter_map(|suggestion| suggestion["path"].as_str())
+    .collect::<Vec<_>>();
+  assert!(paths.contains(&"tests.calls-old"), "paths: {paths:?}");
+  assert!(paths.contains(&"examples"), "paths: {paths:?}");
+
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "rename-definition-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "rename-old",
+      "--to",
+      "rename-new",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "attached-source semantic rename apply");
+  let updated = fs::read_to_string(&snapshot).expect("updated snapshot should read");
+  assert!(updated.contains("fix-command.main/rename-new 1"), "snapshot:\n{updated}");
+  assert!(updated.contains("fix-command.main/rename-new 2"), "snapshot:\n{updated}");
+  assert!(updated.contains("= rename-old 1"), "snapshot:\n{updated}");
+  assert!(updated.contains(":tags $ #{} :fast :semantic"), "snapshot:\n{updated}");
+  assert_success(
+    &run_calcit(&snapshot, &["test", "fix-command.main/caller", "--require-match"]),
+    "renamed attached test",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["analyze", "check-examples", "--ns", "fix-command.main", "--def", "caller"],
+    ),
+    "renamed attached example",
+  );
+}
+
+#[test]
+fn semantic_rename_rejects_quoted_attached_source_without_partial_writes() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (args, context) in [
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/rename-old",
+        "--code",
+        "quote $ defn rename-old (x) + x 1",
+      ],
+      "create quoted-boundary rename source",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/rename-old",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+      ],
+      "type quoted-boundary rename source",
+    ),
+    (
+      vec![
+        "edit",
+        "add-test",
+        "fix-command.main/rename-old",
+        "quoted-old-name",
+        "--code",
+        "quote $ quote rename-old",
+      ],
+      "attach quoted target name",
     ),
   ] {
     assert_success(&run_calcit(&snapshot, &args), context);
@@ -294,19 +420,21 @@ fn semantic_rename_rejects_unhandled_test_sources_without_partial_writes() {
       "rename-old",
       "--to",
       "rename-new",
+      "--apply",
+      "--allow-no-vcs",
       "--format",
       "json",
     ],
   );
   assert!(!rejected.status.success());
   let stderr = String::from_utf8_lossy(&rejected.stderr);
-  assert!(stderr.contains("caller#calls-old"), "stderr: {stderr}");
-  assert!(stderr.contains("test-source refactoring is not yet supported"), "stderr: {stderr}");
+  assert!(stderr.contains("quoted-old-name"), "stderr: {stderr}");
+  assert!(stderr.contains("quoted source contains"), "stderr: {stderr}");
   assert_eq!(fs::read(&snapshot).expect("rejected snapshot should read"), before);
 }
 
 #[test]
-fn semantic_rename_rejects_schema_type_refs_without_partial_writes() {
+fn semantic_rename_updates_schema_type_refs_atomically() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
@@ -327,7 +455,7 @@ fn semantic_rename_rejects_schema_type_refs_without_partial_writes() {
         "def",
         "fix-command.main/typed-value",
         "--code",
-        "quote $ defn typed-value () todo! |pending",
+        "quote $ defn typed-value (value) , 1",
       ],
       "create typed value",
     ),
@@ -337,7 +465,7 @@ fn semantic_rename_rejects_schema_type_refs_without_partial_writes() {
         "schema",
         "fix-command.main/typed-value",
         "--code",
-        "quote $ :: 'Fn $ {} (:return 'RenameType)",
+        "quote $ :: 'Fn $ {} (:args $ [] 'RenameType) (:return 'Number)",
       ],
       "reference rename type from schema",
     ),
@@ -345,8 +473,7 @@ fn semantic_rename_rejects_schema_type_refs_without_partial_writes() {
     assert_success(&run_calcit(&snapshot, &args), context);
   }
 
-  let before = fs::read(&snapshot).expect("snapshot should read before rejected rename");
-  let rejected = run_fix(
+  let preview = run_fix(
     &snapshot,
     &[
       "--rule",
@@ -361,11 +488,106 @@ fn semantic_rename_rejects_schema_type_refs_without_partial_writes() {
       "json",
     ],
   );
-  assert!(!rejected.status.success());
-  let stderr = String::from_utf8_lossy(&rejected.stderr);
-  assert!(stderr.contains("typed-value schema"), "stderr: {stderr}");
-  assert!(stderr.contains("schema refactoring is not yet supported"), "stderr: {stderr}");
-  assert_eq!(fs::read(&snapshot).expect("rejected snapshot should read"), before);
+  assert_success(&preview, "schema semantic rename preview");
+  let preview_report = parse_stdout(&preview);
+  assert_eq!(preview_report["data"]["validation"]["checked_operations"], 2);
+  let schema_suggestion = preview_report["data"]["suggestions"]
+    .as_array()
+    .and_then(|suggestions| suggestions.iter().find(|suggestion| suggestion["path"] == "schema"))
+    .expect("schema rewrite should be included");
+  assert_eq!(schema_suggestion["origin_chain"][0]["kind"], "resolved-schema-type");
+  assert_eq!(schema_suggestion["origin_chain"][0]["occurrences"], 1);
+
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "rename-definition-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "RenameType",
+      "--to",
+      "RenamedType",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "schema semantic rename apply");
+  let updated = fs::read_to_string(&snapshot).expect("updated snapshot should read");
+  assert!(updated.contains("defstruct RenamedType"), "snapshot:\n{updated}");
+  assert!(updated.contains("fix-command.main/RenamedType"), "snapshot:\n{updated}");
+  assert!(!updated.contains("'RenameType"), "snapshot:\n{updated}");
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "strict check after schema rename");
+}
+
+#[test]
+fn semantic_rename_updates_schema_trait_bounds_atomically() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (args, context) in [
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/RenameTrait",
+        "--code",
+        "quote $ deftrait RenameTrait (.show :fn)",
+      ],
+      "create rename trait",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/trait-bound-value",
+        "--code",
+        "quote $ defn trait-bound-value (value) value",
+      ],
+      "create trait-bound value",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/trait-bound-value",
+        "--code",
+        "quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] 'T) (:where $ {} ('T 'RenameTrait)) (:return 'T)",
+      ],
+      "reference rename trait from schema bound",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "rename-definition-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "RenameTrait",
+      "--to",
+      "RenamedTrait",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "trait-bound semantic rename apply");
+  let applied_report = parse_stdout(&applied);
+  assert_eq!(applied_report["data"]["validation"]["checked_operations"], 2);
+  let updated = fs::read_to_string(&snapshot).expect("updated snapshot should read");
+  assert!(updated.contains("deftrait RenamedTrait"), "snapshot:\n{updated}");
+  assert!(updated.contains("'T 'RenamedTrait"), "snapshot:\n{updated}");
+  assert!(!updated.contains("'T 'RenameTrait"), "snapshot:\n{updated}");
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "strict check after trait-bound rename");
 }
 
 #[test]

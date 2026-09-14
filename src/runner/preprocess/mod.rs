@@ -83,12 +83,27 @@ pub fn trace_definition_source_usages(
       Some(NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]))),
     )
   })?;
+  trace_source_usages(&code, ns, def, check_warnings, call_stack)
+}
+
+/// Preprocess one caller-provided source form while retaining compiler-resolved references.
+///
+/// Definition-attached tests and examples are stored outside the ordinary definition code map.
+/// Semantic refactors wrap those expressions in a synthetic definition and use this entry point
+/// so they share the resolver, lexical-shadowing, and macro-origin rules with normal source.
+pub fn trace_source_usages(
+  code: &Calcit,
+  ns: &str,
+  def: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<Vec<ResolvedSourceUsage>, CalcitErr> {
   let previous = RESOLVED_SOURCE_USAGE_TRACE.with(|trace| trace.replace(Some(Vec::new())));
   debug_assert!(previous.is_none(), "resolved source usage traces must not be nested");
   let mut scope_types = ScopeTypes::new();
   let result = builtins::meta::with_compiling_def(ns, def, || {
     calcit::with_type_annotation_warning_context(format!("{ns}/{def}"), || {
-      preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, call_stack)
+      preprocess_expr(code, &HashSet::new(), &mut scope_types, ns, check_warnings, call_stack)
     })
   });
   let usages = RESOLVED_SOURCE_USAGE_TRACE.with(|trace| trace.replace(previous).unwrap_or_default());
@@ -802,61 +817,154 @@ fn resolve_where_bound_type_for_body(bound: &crate::calcit::CalcitGenericBound, 
   }
 }
 
-fn map_type_refs_for_body<F>(annotation: Arc<CalcitTypeAnnotation>, resolve_type_ref: &F) -> Arc<CalcitTypeAnnotation>
+/// Transform symbolic type references while preserving type variables and concrete annotation kinds.
+pub fn map_type_references<F>(annotation: Arc<CalcitTypeAnnotation>, resolve_type_ref: &F) -> Arc<CalcitTypeAnnotation>
 where
   F: Fn(&Arc<str>, Arc<Vec<Arc<CalcitTypeAnnotation>>>) -> Arc<CalcitTypeAnnotation>,
 {
+  map_type_and_trait_references(annotation, resolve_type_ref, &|trait_def| trait_def)
+}
+
+/// Transform symbolic type references and resolved trait bounds without falling back to source text matching.
+pub fn map_schema_references<F, G>(
+  annotation: Arc<CalcitTypeAnnotation>,
+  resolve_type_ref: &F,
+  resolve_trait_bound: &G,
+) -> Arc<CalcitTypeAnnotation>
+where
+  F: Fn(&Arc<str>, Arc<Vec<Arc<CalcitTypeAnnotation>>>) -> Arc<CalcitTypeAnnotation>,
+  G: Fn(Arc<CalcitTrait>) -> Arc<CalcitTrait>,
+{
+  map_type_and_trait_references(annotation, resolve_type_ref, resolve_trait_bound)
+}
+
+fn map_type_and_trait_references<F, G>(
+  annotation: Arc<CalcitTypeAnnotation>,
+  resolve_type_ref: &F,
+  resolve_trait_bound: &G,
+) -> Arc<CalcitTypeAnnotation>
+where
+  F: Fn(&Arc<str>, Arc<Vec<Arc<CalcitTypeAnnotation>>>) -> Arc<CalcitTypeAnnotation>,
+  G: Fn(Arc<CalcitTrait>) -> Arc<CalcitTrait>,
+{
+  let map_bounds = |bounds: &Arc<Vec<crate::calcit::CalcitGenericBound>>| {
+    Arc::new(
+      bounds
+        .iter()
+        .map(|bound| crate::calcit::CalcitGenericBound {
+          name: bound.name.clone(),
+          traits: Arc::new(bound.traits.iter().cloned().map(resolve_trait_bound).collect()),
+        })
+        .collect(),
+    )
+  };
   match annotation.as_ref() {
     CalcitTypeAnnotation::TypeRef(name, args) => {
       let resolved_args = Arc::new(
         args
           .iter()
-          .map(|arg| map_type_refs_for_body(arg.clone(), resolve_type_ref))
+          .map(|arg| map_type_and_trait_references(arg.clone(), resolve_type_ref, resolve_trait_bound))
           .collect::<Vec<_>>(),
       );
       resolve_type_ref(name, resolved_args)
     }
-    CalcitTypeAnnotation::List(inner) => Arc::new(CalcitTypeAnnotation::List(map_type_refs_for_body(inner.clone(), resolve_type_ref))),
+    CalcitTypeAnnotation::List(inner) => Arc::new(CalcitTypeAnnotation::List(map_type_and_trait_references(
+      inner.clone(),
+      resolve_type_ref,
+      resolve_trait_bound,
+    ))),
     CalcitTypeAnnotation::Map(key, value) => Arc::new(CalcitTypeAnnotation::Map(
-      map_type_refs_for_body(key.clone(), resolve_type_ref),
-      map_type_refs_for_body(value.clone(), resolve_type_ref),
+      map_type_and_trait_references(key.clone(), resolve_type_ref, resolve_trait_bound),
+      map_type_and_trait_references(value.clone(), resolve_type_ref, resolve_trait_bound),
     )),
-    CalcitTypeAnnotation::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(map_type_refs_for_body(inner.clone(), resolve_type_ref))),
-    CalcitTypeAnnotation::Ref(inner) => Arc::new(CalcitTypeAnnotation::Ref(map_type_refs_for_body(inner.clone(), resolve_type_ref))),
-    CalcitTypeAnnotation::Optional(inner) => Arc::new(CalcitTypeAnnotation::Optional(map_type_refs_for_body(
+    CalcitTypeAnnotation::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(map_type_and_trait_references(
       inner.clone(),
       resolve_type_ref,
+      resolve_trait_bound,
     ))),
-    CalcitTypeAnnotation::JsNullish(inner) => Arc::new(CalcitTypeAnnotation::JsNullish(map_type_refs_for_body(
+    CalcitTypeAnnotation::Ref(inner) => Arc::new(CalcitTypeAnnotation::Ref(map_type_and_trait_references(
       inner.clone(),
       resolve_type_ref,
+      resolve_trait_bound,
     ))),
-    CalcitTypeAnnotation::Variadic(inner) => Arc::new(CalcitTypeAnnotation::Variadic(map_type_refs_for_body(
+    CalcitTypeAnnotation::Optional(inner) => Arc::new(CalcitTypeAnnotation::Optional(map_type_and_trait_references(
       inner.clone(),
       resolve_type_ref,
+      resolve_trait_bound,
+    ))),
+    CalcitTypeAnnotation::JsNullish(inner) => Arc::new(CalcitTypeAnnotation::JsNullish(map_type_and_trait_references(
+      inner.clone(),
+      resolve_type_ref,
+      resolve_trait_bound,
+    ))),
+    CalcitTypeAnnotation::Variadic(inner) => Arc::new(CalcitTypeAnnotation::Variadic(map_type_and_trait_references(
+      inner.clone(),
+      resolve_type_ref,
+      resolve_trait_bound,
     ))),
     CalcitTypeAnnotation::Fn(signature) => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       generics: signature.generics.clone(),
-      where_bounds: signature.where_bounds.clone(),
+      where_bounds: map_bounds(&signature.where_bounds),
       arg_types: signature
         .arg_types
         .iter()
-        .map(|arg| map_type_refs_for_body(arg.clone(), resolve_type_ref))
+        .map(|arg| map_type_and_trait_references(arg.clone(), resolve_type_ref, resolve_trait_bound))
         .collect(),
-      return_type: map_type_refs_for_body(signature.return_type.clone(), resolve_type_ref),
+      return_type: map_type_and_trait_references(signature.return_type.clone(), resolve_type_ref, resolve_trait_bound),
       fn_kind: signature.fn_kind,
       rest_type: signature
         .rest_type
         .as_ref()
-        .map(|rest| map_type_refs_for_body(rest.clone(), resolve_type_ref)),
+        .map(|rest| map_type_and_trait_references(rest.clone(), resolve_type_ref, resolve_trait_bound)),
       features: signature.features.clone(),
+    }))),
+    CalcitTypeAnnotation::Macro(signature) => {
+      let map_contract = |contract: &MacroSyntaxType| match contract {
+        MacroSyntaxType::Expr(semantic) => MacroSyntaxType::Expr(map_type_and_trait_references(
+          semantic.clone(),
+          resolve_type_ref,
+          resolve_trait_bound,
+        )),
+        other => other.clone(),
+      };
+      let expansion = match &signature.expansion {
+        MacroExpansionType::Expr(semantic) => MacroExpansionType::Expr(map_type_and_trait_references(
+          semantic.clone(),
+          resolve_type_ref,
+          resolve_trait_bound,
+        )),
+        MacroExpansionType::Definition(semantic) => MacroExpansionType::Definition(map_type_and_trait_references(
+          semantic.clone(),
+          resolve_type_ref,
+          resolve_trait_bound,
+        )),
+        other => other.clone(),
+      };
+      Arc::new(CalcitTypeAnnotation::Macro(Arc::new(MacroSignature {
+        generics: signature.generics.clone(),
+        where_bounds: map_bounds(&signature.where_bounds),
+        required_inputs: Arc::new(signature.required_inputs.iter().map(map_contract).collect()),
+        optional_inputs: Arc::new(signature.optional_inputs.iter().map(map_contract).collect()),
+        rest_input: signature.rest_input.as_ref().map(map_contract),
+        expansion,
+        capabilities: signature.capabilities.clone(),
+        features: signature.features.clone(),
+      })))
+    }
+    CalcitTypeAnnotation::Syntax(contract) => Arc::new(CalcitTypeAnnotation::Syntax(Arc::new(match contract.as_ref() {
+      MacroSyntaxType::Expr(semantic) => MacroSyntaxType::Expr(map_type_and_trait_references(
+        semantic.clone(),
+        resolve_type_ref,
+        resolve_trait_bound,
+      )),
+      other => other.clone(),
     }))),
     CalcitTypeAnnotation::Struct(struct_def, args) => Arc::new(CalcitTypeAnnotation::Struct(
       struct_def.clone(),
       Arc::new(
         args
           .iter()
-          .map(|arg| map_type_refs_for_body(arg.clone(), resolve_type_ref))
+          .map(|arg| map_type_and_trait_references(arg.clone(), resolve_type_ref, resolve_trait_bound))
           .collect(),
       ),
     )),
@@ -865,7 +973,7 @@ where
       Arc::new(
         args
           .iter()
-          .map(|arg| map_type_refs_for_body(arg.clone(), resolve_type_ref))
+          .map(|arg| map_type_and_trait_references(arg.clone(), resolve_type_ref, resolve_trait_bound))
           .collect(),
       ),
     )),
@@ -878,7 +986,7 @@ where
 /// those definitions, so retaining the symbolic reference would make otherwise
 /// precise function parameters fall back to `Dynamic` inside the body.
 fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope_types: &ScopeTypes) -> Arc<CalcitTypeAnnotation> {
-  map_type_refs_for_body(annotation, &|name, resolved_args| {
+  map_type_references(annotation, &|name, resolved_args| {
     let lookup_name = name.trim_start_matches('\'').trim_start_matches(':');
     let short_name = lookup_name.rsplit('/').next().unwrap_or(lookup_name);
     let local_type = scope_types.get(lookup_name).or_else(|| scope_types.get(short_name));
@@ -904,7 +1012,7 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
 /// `'Router`; once that field type flows into a caller in another namespace,
 /// retaining only `Router` is ambiguous and prevents required-field lowering.
 fn resolve_namespace_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, declaring_ns: &str) -> Arc<CalcitTypeAnnotation> {
-  map_type_refs_for_body(annotation, &|name, resolved_args| {
+  map_type_references(annotation, &|name, resolved_args| {
     let stripped = name.trim_start_matches('\'').trim_start_matches(':');
     let qualified_name = if let Some((prefix, def)) = stripped.rsplit_once('/') {
       if program::has_def_code(prefix, def) {
@@ -932,7 +1040,7 @@ fn resolve_namespace_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, d
 /// global `TypeRef` resolvers; traits need the same source lookup so JS
 /// external-object lowering does not fall back to dynamic method dispatch.
 fn resolve_program_trait_refs_for_body(annotation: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  map_type_refs_for_body(annotation, &|name, resolved_args| {
+  map_type_references(annotation, &|name, resolved_args| {
     let normalized = name.trim_start_matches('\'').trim_start_matches(':');
     let Some((ns, def)) = normalized.rsplit_once('/') else {
       return Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args));
