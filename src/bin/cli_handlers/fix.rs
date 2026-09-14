@@ -33,6 +33,8 @@ const RENAME_DEFINITION_RULE: &str = "rename-definition-v1";
 const RENAME_DEFINITION_DIAGNOSTIC: &str = "REFACTOR_RENAME_DEFINITION";
 const VALUE_TO_ZERO_ARG_FN_RULE: &str = "value-to-zero-arg-fn-v1";
 const VALUE_TO_ZERO_ARG_FN_DIAGNOSTIC: &str = "REFACTOR_VALUE_TO_ZERO_ARG_FN";
+const SYNTHESIZE_SCHEMA_RULE: &str = "synthesize-schema-v1";
+const SYNTHESIZE_SCHEMA_DIAGNOSTIC: &str = "REFACTOR_SYNTHESIZE_SCHEMA";
 const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
 const SURFACE_LATEST_V2_PRESET: &str = "surface-latest-v2";
 const AVAILABLE_RULES: [&str; 5] = [
@@ -161,17 +163,26 @@ pub(crate) fn handle_fix_command(
 
   let semantic_rename = selected_rules.contains(&RENAME_DEFINITION_RULE);
   let value_to_zero_arg_fn = selected_rules.contains(&VALUE_TO_ZERO_ARG_FN_RULE);
+  let schema_synthesis = selected_rules.contains(&SYNTHESIZE_SCHEMA_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn;
-  let selected_definitions = if semantic_refactor {
+  let migration_rule = semantic_refactor || schema_synthesis;
+  let validation_only = std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1");
+  let project_definitions = if semantic_refactor || schema_synthesis {
     select_project_definitions(compiled_snapshot, project_namespaces)?
   } else {
     select_definitions(options, compiled_snapshot, project_namespaces)?
   };
-  let validation_only = std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1");
+  let selected_definitions = if schema_synthesis && validation_only {
+    select_definitions(options, compiled_snapshot, project_namespaces)?
+  } else {
+    project_definitions.clone()
+  };
   let warnings = if validation_only {
     compile_selected_definitions(&selected_definitions)?
-  } else {
+  } else if migration_rule {
     compile_selected_definitions_for_migration(&selected_definitions)?
+  } else {
+    compile_selected_definitions(&selected_definitions)?
   };
   let semantic_warning_identities = if semantic_rename {
     Some(semantic_rename_warning_identities(
@@ -180,7 +191,7 @@ pub(crate) fn handle_fix_command(
       options.definition.as_deref().expect("semantic rename requires definition"),
       options.replacement_name.as_deref().expect("semantic rename requires replacement"),
     ))
-  } else if value_to_zero_arg_fn {
+  } else if value_to_zero_arg_fn || schema_synthesis {
     Some(warning_identities(&warnings))
   } else {
     None
@@ -191,7 +202,7 @@ pub(crate) fn handle_fix_command(
       options,
       &source_snapshot,
       snapshot_file,
-      &selected_definitions,
+      &project_definitions,
     )?);
   } else if value_to_zero_arg_fn {
     suggestions.extend(plan_value_to_zero_arg_fn(
@@ -199,6 +210,13 @@ pub(crate) fn handle_fix_command(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
+    )?);
+  } else if schema_synthesis {
+    suggestions.extend(plan_schema_synthesis(
+      options,
+      &source_snapshot,
+      snapshot_file,
+      &project_definitions,
     )?);
   } else if selected_rules.contains(&REMOVED_DATA_API_RULE) {
     suggestions.extend(plan_removed_data_api_fixes(options, &source_snapshot, snapshot_file, &warnings)?);
@@ -263,7 +281,7 @@ pub(crate) fn handle_fix_command(
     if suggestions.iter().any(|suggestion| suggestion.operation.is_some()) {
       return Err("Staged fix validation found an applicable migration that was not removed.".to_owned());
     }
-    let unexpected = if semantic_refactor {
+    let unexpected = if semantic_refactor || schema_synthesis {
       println!(
         "{}",
         serde_json::to_string(semantic_warning_identities.as_deref().unwrap_or_default())
@@ -384,6 +402,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   }
   let semantic_rename = options.rule.as_deref() == Some(RENAME_DEFINITION_RULE);
   let value_to_zero_arg_fn = options.rule.as_deref() == Some(VALUE_TO_ZERO_ARG_FN_RULE);
+  let schema_synthesis = options.rule.as_deref() == Some(SYNTHESIZE_SCHEMA_RULE);
   if semantic_rename {
     if options.ns.is_none() || options.definition.is_none() || options.replacement_name.is_none() {
       return Err(format!(
@@ -394,14 +413,18 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     if replacement.is_empty() || replacement.contains('/') {
       return Err("`calcit fix --to` must be one non-empty unqualified definition name.".to_owned());
     }
-  } else if value_to_zero_arg_fn {
+  } else if value_to_zero_arg_fn || schema_synthesis {
     if options.ns.is_none() || options.definition.is_none() {
       return Err(format!(
-        "Fix rule `{VALUE_TO_ZERO_ARG_FN_RULE}` requires exact `--ns` and `--def` arguments."
+        "Fix rule `{}` requires exact `--ns` and `--def` arguments.",
+        options.rule.as_deref().expect("checked exact schema/refactor rule")
       ));
     }
     if options.replacement_name.is_some() {
-      return Err(format!("Fix rule `{VALUE_TO_ZERO_ARG_FN_RULE}` does not accept `--to`."));
+      return Err(format!(
+        "Fix rule `{}` does not accept `--to`.",
+        options.rule.as_deref().expect("checked exact schema/refactor rule")
+      ));
     }
   } else if options.replacement_name.is_some() {
     return Err(format!("`calcit fix --to` is only valid with `--rule {RENAME_DEFINITION_RULE}`."));
@@ -423,12 +446,13 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | NAMED_STRUCT_CONSTRUCTOR_RULE
         | RENAME_DEFINITION_RULE
         | VALUE_TO_ZERO_ARG_FN_RULE
+        | SYNTHESIZE_SCHEMA_RULE
         | TAG_MATCH_RULE
         | REQUIRED_STRUCT_FIELD_RULE
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -442,11 +466,11 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
 /// Expand one explicit rule or versioned preset into a deterministic rule sequence.
 fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
   if let Some(rule) = options.rule.as_deref() {
-    if matches!(rule, RENAME_DEFINITION_RULE | VALUE_TO_ZERO_ARG_FN_RULE) {
-      return vec![if rule == RENAME_DEFINITION_RULE {
-        RENAME_DEFINITION_RULE
-      } else {
-        VALUE_TO_ZERO_ARG_FN_RULE
+    if matches!(rule, RENAME_DEFINITION_RULE | VALUE_TO_ZERO_ARG_FN_RULE | SYNTHESIZE_SCHEMA_RULE) {
+      return vec![match rule {
+        RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
+        VALUE_TO_ZERO_ARG_FN_RULE => VALUE_TO_ZERO_ARG_FN_RULE,
+        _ => SYNTHESIZE_SCHEMA_RULE,
       }];
     }
     return AVAILABLE_RULES.iter().copied().filter(|candidate| *candidate == rule).collect();
@@ -507,6 +531,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: VALUE_TO_ZERO_ARG_FN_DIAGNOSTIC,
       evidence_source: "compiler-resolved-reference",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    SYNTHESIZE_SCHEMA_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: SYNTHESIZE_SCHEMA_DIAGNOSTIC,
+      evidence_source: "compiled-type-inference",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -930,6 +961,9 @@ fn plan_definition_rename(
   });
   Ok(suggestions)
 }
+
+mod schema_synthesis;
+use schema_synthesis::plan_schema_synthesis;
 
 fn plan_value_to_zero_arg_fn(
   options: &FixCommand,

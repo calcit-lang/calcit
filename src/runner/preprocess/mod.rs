@@ -24,12 +24,12 @@ use type_checking::{
   CallTypeCheckInfo, check_core_fn_arg_types, check_function_return_type, check_local_fn_call_arg_types, check_proc_arg_types,
   check_reset_arg_types, check_user_fn_arg_types, detect_return_type_hint_from_processed_body,
 };
-pub use type_inference::infer_static_type_from_expr;
 use type_inference::{
   extract_literal_list_items, find_struct_lookup_in_literal_path, fully_typed_literal_assoc_path, fully_typed_literal_lookup_path,
   infer_struct_field_type, infer_struct_value_annotation, infer_type_from_expr, is_pending_async_value, resolve_enum_value,
   resolve_program_value_for_preprocess, resolve_type_value,
 };
+pub use type_inference::{infer_compiled_definition_implementation_type, infer_static_type_from_expr};
 use type_rewriting::{
   build_enum_ref_node, build_struct_ref_node, try_rewrite_enum_args_to_named_enums, try_rewrite_local_fn_enum_args_to_named_enums,
   try_rewrite_loose_struct_args_to_structs, try_rewrite_map_args_to_structs,

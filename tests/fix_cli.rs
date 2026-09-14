@@ -963,6 +963,348 @@ fn value_to_zero_arg_fn_wraps_reads_used_as_callees() {
 }
 
 #[test]
+fn schema_synthesis_applies_exact_compiler_evidence_and_is_target_stable() {
+  let directory = TestDirectory::create();
+  let native_snapshot = directory.path().join("native.cirru");
+  let js_snapshot = directory.path().join("js.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &native_snapshot).expect("fixture should copy");
+  let native_source = fs::read_to_string(&native_snapshot).expect("native fixture should read");
+  fs::write(&js_snapshot, native_source.replace("(:mode :native)", "(:mode :js)")).expect("JS fixture should write");
+
+  for snapshot in [&native_snapshot, &js_snapshot] {
+    assert_success(
+      &run_calcit(
+        snapshot,
+        &[
+          "edit",
+          "def",
+          "fix-command.main/inferred-number",
+          "--code",
+          "quote $ defn inferred-number () + 1 2",
+        ],
+      ),
+      "create untyped zero-argument function",
+    );
+    assert_success(
+      &run_calcit(
+        snapshot,
+        &[
+          "edit",
+          "def",
+          "fix-command.main/inferred-add-one",
+          "--code",
+          "quote $ defn inferred-add-one (x) + x 1",
+        ],
+      ),
+      "create untyped one-argument function",
+    );
+    assert_success(
+      &run_calcit(
+        snapshot,
+        &[
+          "edit",
+          "def",
+          "fix-command.main/use-inferred-add-one",
+          "--code",
+          "quote $ defn use-inferred-add-one () (inferred-add-one 2)",
+        ],
+      ),
+      "create typed callsite",
+    );
+    assert_success(
+      &run_calcit(
+        snapshot,
+        &[
+          "edit",
+          "schema",
+          "fix-command.main/use-inferred-add-one",
+          "--code",
+          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+        ],
+      ),
+      "type callsite owner",
+    );
+  }
+
+  let args = [
+    "--rule",
+    "synthesize-schema-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "inferred-number",
+    "--format",
+    "json",
+  ];
+  let native_preview = run_fix(&native_snapshot, &args);
+  let js_preview = run_fix(&js_snapshot, &args);
+  assert_success(&native_preview, "native schema preview");
+  assert_success(&js_preview, "JS schema preview");
+  let native_report = parse_stdout(&native_preview);
+  let js_report = parse_stdout(&js_preview);
+  assert_eq!(
+    native_report["data"]["suggestions"][0]["replacement"],
+    js_report["data"]["suggestions"][0]["replacement"]
+  );
+  assert_eq!(native_report["data"]["suggestions"][0]["applicability"], "machine-applicable");
+
+  let argument_args = [
+    "--rule",
+    "synthesize-schema-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "inferred-add-one",
+    "--format",
+    "json",
+  ];
+  let native_argument_preview = run_fix(&native_snapshot, &argument_args);
+  let js_argument_preview = run_fix(&js_snapshot, &argument_args);
+  assert_success(&native_argument_preview, "native argument schema preview");
+  assert_success(&js_argument_preview, "JS argument schema preview");
+  let native_argument_report = parse_stdout(&native_argument_preview);
+  let js_argument_report = parse_stdout(&js_argument_preview);
+  assert_eq!(
+    native_argument_report["data"]["suggestions"][0]["replacement"],
+    js_argument_report["data"]["suggestions"][0]["replacement"]
+  );
+  assert!(
+    native_argument_report["data"]["suggestions"][0]["origin_chain"]
+      .as_array()
+      .expect("origin chain should be an array")
+      .iter()
+      .any(|evidence| evidence["kind"] == "resolved-callsite-arguments" && evidence["slot"] == "schema.args.0")
+  );
+  assert_eq!(
+    native_argument_report["data"]["suggestions"][0]["replacement"]["value"],
+    serde_json::json!(["::", "'Fn", ["{}", [":return", "'Number"], [":args", ["[]", "'Number"]]]])
+  );
+
+  let applied = run_fix(
+    &native_snapshot,
+    &[
+      "--rule",
+      "synthesize-schema-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "inferred-number",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "apply inferred schema");
+  let argument_applied = run_fix(
+    &native_snapshot,
+    &[
+      "--rule",
+      "synthesize-schema-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "inferred-add-one",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&argument_applied, "apply callsite-backed schema");
+  let updated = fs::read_to_string(&native_snapshot).expect("updated snapshot should read");
+  assert!(updated.contains("(:return 'Number)"));
+  assert!(updated.contains("defn inferred-add-one (x) + x 1"));
+  assert_success(
+    &run_calcit(&native_snapshot, &["--check-only"]),
+    "strict check after schema synthesis",
+  );
+
+  let repeated = run_fix(&native_snapshot, &args);
+  assert_success(&repeated, "repeat schema synthesis");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"].as_array().map(Vec::len), Some(0));
+}
+
+#[test]
+fn schema_synthesis_preserves_precise_ref_shape_and_partial_holes() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+
+  let atom_preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "synthesize-schema-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "*fix-person-calls",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&atom_preview, "atom schema preview");
+  let atom_report = parse_stdout(&atom_preview);
+  assert_eq!(
+    atom_report["data"]["suggestions"][0]["replacement"]["value"],
+    serde_json::json!(["::", "'Ref", "'Number"])
+  );
+
+  let before = fs::read(&snapshot).expect("fixture bytes should read");
+  let partial = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "synthesize-schema-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "option-struct-field",
+      "--apply",
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&partial, "partial schema preview");
+  let partial_report = parse_stdout(&partial);
+  assert_eq!(partial_report["data"]["changed"], false);
+  assert_eq!(partial_report["data"]["suggestions"][0]["applicability"], "needs-review");
+  assert_eq!(
+    partial_report["data"]["suggestions"][0]["origin_chain"][0]["unresolved_slots"],
+    serde_json::json!(["schema.return.type-args.0"])
+  );
+  assert_eq!(fs::read(&snapshot).expect("fixture bytes should reread"), before);
+
+  for (target, code) in [
+    ("fix-command.main/inferred-identity", "quote $ defn inferred-identity (x) 1"),
+    (
+      "fix-command.main/use-identity-number",
+      "quote $ defn use-identity-number () (inferred-identity 1)",
+    ),
+    (
+      "fix-command.main/use-identity-string",
+      "quote $ defn use-identity-string () (inferred-identity |x)",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", target, "--code", code]),
+      "create conflicting callsite fixture",
+    );
+  }
+  let conflicting = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "synthesize-schema-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "inferred-identity",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&conflicting, "conflicting callsite schema preview");
+  let conflicting_report = parse_stdout(&conflicting);
+  assert_eq!(conflicting_report["data"]["changed"], false);
+  assert_eq!(conflicting_report["data"]["suggestions"][0]["applicability"], "needs-review");
+  assert_eq!(
+    conflicting_report["data"]["suggestions"][0]["origin_chain"][0]["unresolved_slots"],
+    serde_json::json!(["schema.args.0"])
+  );
+
+  for (target, code) in [
+    ("fix-command.main/macro-observed", "quote $ defn macro-observed (x) 1"),
+    (
+      "fix-command.main/use-macro-observed",
+      "quote $ defn use-macro-observed () (macro-observed 2)",
+    ),
+    (
+      "fix-command.main/expand-macro-observed",
+      "quote $ defmacro expand-macro-observed () macro-observed 3",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", target, "--code", code]),
+      "create macro-boundary schema fixture",
+    );
+  }
+  let macro_boundary = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "synthesize-schema-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "macro-observed",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&macro_boundary, "macro-boundary schema preview");
+  let macro_report = parse_stdout(&macro_boundary);
+  assert_eq!(macro_report["data"]["suggestions"][0]["applicability"], "needs-review");
+  assert_eq!(
+    macro_report["data"]["suggestions"][0]["origin_chain"][0]["unresolved_slots"],
+    serde_json::json!(["schema.args.0"])
+  );
+
+  for (args, context) in [
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/attached-observed",
+        "--code",
+        "quote $ defn attached-observed (x) 1",
+      ],
+      "create attached-source schema target",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/use-attached-observed",
+        "--code",
+        "quote $ defn use-attached-observed () (attached-observed 2)",
+      ],
+      "create ordinary attached-source callsite",
+    ),
+    (
+      vec![
+        "edit",
+        "add-test",
+        "fix-command.main/use-attached-observed",
+        "rejects-string",
+        "--code",
+        "quote $ = (attached-observed |x) 1",
+      ],
+      "create conflicting attached test",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+  let attached_conflict = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "synthesize-schema-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "attached-observed",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!attached_conflict.status.success());
+  assert!(String::from_utf8_lossy(&attached_conflict.stderr).contains("test `rejects-string`"));
+}
+
+#[test]
 fn fix_preview_apply_and_repeat_are_revision_safe() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

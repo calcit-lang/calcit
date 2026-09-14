@@ -1856,6 +1856,71 @@ pub fn infer_static_type_from_expr(expr: &Calcit) -> Option<Arc<CalcitTypeAnnota
   infer_type_from_expr(expr, &ScopeTypes::new())
 }
 
+/// Recover the implementation type already present in a compiled definition.
+///
+/// This deliberately reuses the normal preprocessor output and bottom-up
+/// inference. It does not use the source schema as a fallback, so callers can
+/// compare the implementation evidence with an incomplete declaration without
+/// accidentally treating that declaration as inferred proof.
+pub fn infer_compiled_definition_implementation_type(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  let compiled = program::lookup_compiled_def(ns, def)?;
+  let Calcit::List(items) = &compiled.preprocessed_code else {
+    return infer_type_from_expr(&compiled.preprocessed_code, &ScopeTypes::new());
+  };
+
+  match items.first() {
+    Some(Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _)) => {
+      let Calcit::List(params) = items.get(2)? else {
+        return None;
+      };
+      let mut arg_types = Vec::new();
+      let mut rest_type = None;
+      let mut spread = false;
+      for param in params.iter() {
+        match param {
+          Calcit::Syntax(CalcitSyntax::ArgSpread, _) => spread = true,
+          Calcit::Local(local) if spread => {
+            rest_type = Some(local.type_info.clone());
+            spread = false;
+          }
+          Calcit::Local(local) => arg_types.push(local.type_info.clone()),
+          _ => return None,
+        }
+      }
+      if spread {
+        return None;
+      }
+      let mut returned = None;
+      for form in items.iter().skip(3) {
+        if CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(form).is_none() {
+          returned = Some(form);
+        }
+      }
+      let return_type = returned.and_then(|body| resolve_type_value(body, &ScopeTypes::new()))?;
+      let mut signature = CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types,
+        return_type,
+        fn_kind: SchemaKind::Fn,
+        rest_type,
+        features: Arc::new(HashSet::new()),
+      };
+      if definition_marks_async(ns, def) {
+        signature = signature.with_async_invocation();
+      }
+      Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature))))
+    }
+    Some(Calcit::Syntax(CalcitSyntax::Defatom, _)) => items
+      .get(2)
+      .and_then(|initializer| resolve_type_value(initializer, &ScopeTypes::new()))
+      .map(|inner| Arc::new(CalcitTypeAnnotation::Ref(inner))),
+    _ => items
+      .get(items.len().checked_sub(1)?)
+      .and_then(|value| resolve_type_value(value, &ScopeTypes::new())),
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Specialised inference helpers
 // ---------------------------------------------------------------------------

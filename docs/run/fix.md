@@ -59,6 +59,10 @@ calcit calcit.cirru fix --ns app.main --def render! --format edn
   中的读取改成调用。它会改变求值时机：原值在 definition 初始化时求值一次，新函数则在每次调用时重新求值；因此只允许显式
   选择，不进入任何升级 preset。quoted data、macro 生成引用、dependency source、schema type reference、自引用或缺少 source
   coordinate 的引用会拒绝整个事务。
+- `synthesize-schema-v1` 是参数化类型改写规则。它要求 `--ns` 与 `--def`，直接读取正常预处理及自底向上的类型推导结果，
+  只填补源码 schema 中已有的 `Dynamic` 洞。零参数函数、可推导返回值和 `Ref<T>` 等候选没有剩余洞时标记为
+  `machine-applicable`；局部参数、嵌套泛型等位置仍缺少约束时保留精确路径并标记为 `needs-review`，即使传入 `--apply`
+  也不写回。该规则不进入升级 preset，不处理 macro、data/trait/impl 声明，也不通过执行程序猜运行时类型。
 - `tag-match-to-match-v1` 与 `required-struct-field-v1` 属于只随 Calcit 0.14.15 发布的 migration bridge，不是当前 fix surface。
   升级旧项目时请固定使用 0.14.15 执行规则、review 输出并验证测试；迁移完成后再切换到 0.14.16 或更新版本。
   当前版本若显式请求这两个 rule，会返回稳定错误和上述版本提示，不会继续携带旧 planner 与分析特例。
@@ -135,6 +139,36 @@ value expression 和全部 suggestions；如果目标应继续只计算一次，
 该规则不会改写 quoted data，也不会猜测 macro 展开、动态名称查找、dependency source、把目标当成类型使用的 schema 或
 自引用初始化。命中任一边界时整个事务 fail closed，原文件不写入。由于它是用户选择的语义重构而非版本迁移，当前及未来 preset
 都不应隐式包含它。
+
+## 从现有推导事实合成 schema
+
+缺失 schema 时先查询单个 definition，不要直接把整个签名填成 `Dynamic`：
+
+```bash
+calcit calcit.cirru fix --rule synthesize-schema-v1 \
+  --ns app.model --def initial-count --format edn
+calcit calcit.cirru fix --rule synthesize-schema-v1 \
+  --ns app.model --def initial-count \
+  --apply --expect-revision 'md5:<preview 返回的 revision>'
+calcit calcit.cirru fix --rule synthesize-schema-v1 \
+  --ns app.model --def initial-count --format edn
+```
+
+规则复用编译器已经产生的 compiled form、局部类型元数据与 bottom-up inference，不维护另一套递归类型模型。
+例如 `defatom *count 0` 可以产生 `Ref<Number>`，无参数且返回数值表达式的函数可以产生 `Fn() -> Number`；已有
+`Fn(...)->Dynamic`、`Ref<Dynamic>` 或嵌套容器只替换能够由同形状推导结果证明的洞，声明中已有的 generics、`:where`、
+features、参数与函数类别保持不变。
+
+结构化 suggestion 的 `:origin-chain` 会给出 compiled inference 候选以及仍未解决的 slot path。只有
+`:applicability :machine-applicable` 且未留下 `Dynamic`/未知 callable 的候选会生成事务 operation。`needs-review`
+候选只展示更精确的外层结构，例如 `Option<Dynamic>`，不会把未知 payload 扩大成整个 `Dynamic`，也不会在 `--apply`
+时部分写回。无法从静态实现恢复类型时命令明确失败；macro、nominal data、trait 和 impl contract 必须继续显式声明。
+
+实现侧证据可补全 value、zero-argument function、`Ref<T>` 与函数返回洞。带参数函数还会遍历普通项目源码中 resolver
+确认的调用点；只有调用形态完整、没有 macro/函数值等动态边界，并且同一参数的所有可推导实参类型完全一致时，才把该类型作为
+当前 definition graph 的参数约束。缺失、冲突或无法定位的调用证据会保留 `schema.args.<index>`，tests/examples 的单个样本不作为
+公共签名证明；但候选进入 staged transaction 后，引用目标的 attached tests/examples 仍必须在新 schema 下通过严格预处理，
+否则整项拒绝且不写回。native 与 JS entry 使用同一预处理事实并应得到相同候选。
 
 具名构造器规则只处理原型能静态解析到当前项目 nominal definition 的直接源码。匿名 `%:: _` / `%{} _`、
 运行时 prototype、依赖中无法回溯的定义、局部同名遮蔽、`defmacro` 以及 `quote`/`quasiquote` 内的数据都会保留。
