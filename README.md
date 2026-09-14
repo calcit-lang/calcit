@@ -34,7 +34,7 @@ cadence are maintained separately or tracked for extraction:
 
 | Module | Status and ownership |
 | --- | --- |
-| [`calcit-bindgen`](https://github.com/calcit-lang/calcit-bindgen) | Independent experimental production generator owning deterministic Rust/Calcit/TypeScript/WIT generation, manifests, compatibility diff, and stale checks. Core retains only Interface IR export/schema/conformance; the completed cutover is tracked in [#544](https://github.com/calcit-lang/calcit/issues/544). |
+| [`calcit-bindgen`](https://github.com/calcit-lang/calcit-bindgen) | 独立的实验性生成器；已经负责确定性的 Rust/Calcit/TypeScript/WIT generation、manifest、compatibility diff 与 stale check，但同步 runnable Component packaging 仍在推进。core 只保留 Interface IR export/schema/conformance；已完成的 generator 拆分由 [#544](https://github.com/calcit-lang/calcit/issues/544) 追踪。 |
 | [`calcit-native-ffi`](https://github.com/calcit-lang/calcit-native-ffi) | Independent production shared ABI/helper crate for native modules; canonical ABI ownership is tracked in [calcit-native-ffi#7](https://github.com/calcit-lang/calcit-native-ffi/issues/7). |
 | [`caps`](https://github.com/calcit-lang/caps) | Independent production package manager released as the `calcit-caps` crate; the completed core cutover is tracked in [#555](https://github.com/calcit-lang/calcit/issues/555). |
 
