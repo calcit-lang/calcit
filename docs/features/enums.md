@@ -203,13 +203,13 @@ match: no matching branch for tag :unknown-tag
 
 ### 从旧语法迁移
 
-0.15 已移除旧的 `tag-match` macro，具名与匿名 enum 都统一使用原生 `match`。分支 AST 保持一致，升级前请固定使用 Calcit 0.14.15 执行：
+Calcit 0.14.16 已移除旧的 `tag-match` macro，具名与匿名 enum 都统一使用原生 `match`。分支 AST 保持一致，升级前请固定使用 Calcit 0.14.15 执行：
 
 ```bash
 calcit calcit.cirru fix --rule tag-match-to-match-v1
 ```
 
-review 并应用迁移后，运行受影响的 Calcit `:tests` 与 JS/WASM build；再切换到 0.15。编译器会继续报告未覆盖的 variant，可补充分支或显式添加 `_` 分支。
+review 并应用迁移后，运行受影响的 Calcit `:tests` 与 JS/WASM build；再切换到 0.14.16 或更新版本。编译器会继续报告未覆盖的 variant，可补充分支或显式添加 `_` 分支。
 
 ## Zero-payload Variants
 

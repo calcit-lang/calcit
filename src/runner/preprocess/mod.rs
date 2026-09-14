@@ -1935,7 +1935,7 @@ pub fn preprocess_expr(
 fn removed_tag_match_error(expr: &Calcit, call_stack: &CallStackList) -> CalcitErr {
   CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Syntax,
-    "`tag-match` was removed from the 0.15 surface; use native `match`. For existing source, run Calcit 0.14.15 `calcit fix --rule tag-match-to-match-v1` before upgrading",
+    "`tag-match` was removed from the Calcit 0.14.16 surface; use native `match`. For existing source, run Calcit 0.14.15 `calcit fix --rule tag-match-to-match-v1` before upgrading to 0.14.16 or later",
     "E_REMOVED_TAG_MATCH",
     call_stack,
     expr.get_location(),

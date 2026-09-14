@@ -53,9 +53,9 @@ calcit calcit.cirru fix --ns app.main --def render! --format edn
   同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。macro 生成引用、dependency source、
   definition-attached tests、examples 或 schema 中尚不能安全写回的引用会拒绝整个事务，不产生部分修改。
-- `tag-match-to-match-v1` 与 `required-struct-field-v1` 属于已发布的 0.14.x migration bridge，不是 0.15 的 fix surface。
-  升级旧项目时请固定使用 Calcit 0.14.15 执行规则、review 输出并验证测试；迁移完成后再切换到 0.15。
-  0.15 若显式请求这两个 rule，会返回稳定错误和上述版本提示，不会继续携带旧 planner 与分析特例。
+- `tag-match-to-match-v1` 与 `required-struct-field-v1` 属于只随 Calcit 0.14.15 发布的 migration bridge，不是当前 fix surface。
+  升级旧项目时请固定使用 0.14.15 执行规则、review 输出并验证测试；迁移完成后再切换到 0.14.16 或更新版本。
+  当前版本若显式请求这两个 rule，会返回稳定错误和上述版本提示，不会继续携带旧 planner 与分析特例。
   replacement 原样保留 receiver 子树且只出现一次，因此不会复制或重排求值。
 
 ## 运行版本化升级 preset

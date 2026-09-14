@@ -1312,6 +1312,11 @@ fn removed_tag_match_reports_the_published_migration_path() {
     assert_eq!(error.code.as_deref(), Some("E_REMOVED_TAG_MATCH"));
     assert!(error.msg.contains("use native `match`"));
     assert!(error.msg.contains("Calcit 0.14.15 `calcit fix --rule tag-match-to-match-v1`"));
+    assert!(
+      error.msg.contains("before upgrading to 0.14.16 or later"),
+      "unexpected migration message: {}",
+      error.msg
+    );
 
     let shadow_entries = load_snippet_entries("let\n    tag-match $ fn (x) x\n  tag-match 1");
     let shadow_warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);

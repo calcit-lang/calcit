@@ -228,10 +228,10 @@ CLI 入口按任务收敛：entry 语义验证使用 `--check-only`，只读事�
 `calcit calcit.cirru fix --rule redundant-do-v1 --format edn` 检测并审阅 suggestions，再原样重复 scope selectors，附加
 `--apply --expect-revision <revision>` 修复；第二次 preview 必须为空。不要手工批量改缩进；规则会跳过 `defmacro` 与
 quote/quasiquote，并用 staged preprocess 验证 splice 后的 scope。此检查属于显式 fix preview，不是普通 compiler warning。
-`tag-match-to-match-v1` 与 `required-struct-field-v1` 是已经随 Calcit 0.14.15 发布的升级桥，0.15 当前工具链不再携带其 planner。
-旧项目必须先固定使用 0.14.15 执行相应的 `calcit fix --rule ...`，review 并验证迁移结果，再升级到 0.15。
+`tag-match-to-match-v1` 与 `required-struct-field-v1` 是只随 Calcit 0.14.15 发布的升级桥；从 0.14.16 起，当前工具链不再携带其 planner。
+旧项目必须先固定使用 0.14.15 执行相应的 `calcit fix --rule ...`，review 并验证迁移结果，再升级到 0.14.16 或更新版本。
 当前工具链随后运行 `surface-latest-v2`，其中具名 `%:: Enum ...` 与 `%{} Struct (:field value)` 会在静态解析安全时迁移为直接构造器，单表达式 `(do expr)` 也会在普通可执行源码中解包；匿名、动态、quoted、macro 或遮蔽情形必须保留并交由用户 review。
-0.15 中 enum 模式匹配统一使用原生 `match`；静态 Struct 字段统一使用 `(:field value)`，只有显式 `Dynamic` 接收者继续保留可缺失的运行时 `get`。
+从 0.14.16 起，enum 模式匹配统一使用原生 `match`；静态 Struct 字段统一使用 `(:field value)`，只有显式 `Dynamic` 接收者继续保留可缺失的运行时 `get`。
 不得为了让迁移通过而插入默认值、无条件 unwrap、`unsafe-coerce` 或扩大 Dynamic。
 
 同一个 Snapshot 的写命令必须串行执行，包括 `config`、`edit`、`tree` 和 cursor mutation；两个进程同时读取再保存会发生最后写入覆盖。需要并行时使用独立 Snapshot/worktree，需要同一文件内的原子多步修改时使用 transaction 和 `--expect-revision`。
