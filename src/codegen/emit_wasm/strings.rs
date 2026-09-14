@@ -781,6 +781,15 @@ pub(super) fn emit_str_spaced(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 /// Build the `__str_new(src_ptr: i32, byte_len: i32) → f64` runtime function.
 /// Copies `byte_len` bytes from `src_ptr` into a new heap-allocated tagged string.
 pub(super) fn build_str_new_fn(str_tag_id: i32) -> CompiledFn {
+  build_tagged_bytes_new_fn(str_tag_id, Some("__str_new"))
+}
+
+/// Build the internal constructor used to lift Canonical ABI `list<u8>` values.
+pub(super) fn build_component_buffer_new_fn(buffer_tag_id: i32) -> CompiledFn {
+  build_tagged_bytes_new_fn(buffer_tag_id, None)
+}
+
+fn build_tagged_bytes_new_fn(type_tag_id: i32, export_name: Option<&str>) -> CompiledFn {
   // params: 0 = src_ptr (i32), 1 = byte_len (i32)
   // locals: 2 = padded (i32), 3 = payload (i32), 4 = ptr (i32)
   let instructions = vec![
@@ -800,9 +809,9 @@ pub(super) fn build_str_new_fn(str_tag_id: i32) -> CompiledFn {
     Instruction::GlobalGet(HEAP_PTR_GLOBAL),
     Instruction::I32Const(HEAP_MAGIC),
     Instruction::I32Store(mem_arg_i32(0)),
-    // Write str_tag_id at heap_ptr + 4
+    // Write the type tag at heap_ptr + 4
     Instruction::GlobalGet(HEAP_PTR_GLOBAL),
-    Instruction::I32Const(str_tag_id),
+    Instruction::I32Const(type_tag_id),
     Instruction::I32Store(mem_arg_i32(4)),
     // ptr = heap_ptr + 8; advance heap_ptr += payload
     Instruction::GlobalGet(HEAP_PTR_GLOBAL),
@@ -830,7 +839,7 @@ pub(super) fn build_str_new_fn(str_tag_id: i32) -> CompiledFn {
   ];
 
   CompiledFn {
-    export_name: Some("__str_new".to_string()),
+    export_name: export_name.map(str::to_owned),
     params: vec![ValType::I32, ValType::I32],
     results: vec![ValType::F64],
     locals: vec![ValType::I32, ValType::I32, ValType::I32], // padded, payload, ptr

@@ -28,7 +28,7 @@ impl Drop for TestDirectory {
 }
 
 #[test]
-fn component_boundary_round_trips_bool_number_string_and_realloc() {
+fn component_boundary_round_trips_bool_buffer_number_string_and_realloc() {
   let output = TestDirectory::create();
   let check = Command::new(env!("CARGO_BIN_EXE_calcit"))
     .env("NO_COLOR", "1")
@@ -77,16 +77,33 @@ const bytes = fs.readFileSync(process.argv[1]);
 const module = new WebAssembly.Module(bytes);
 const imports = WebAssembly.Module.imports(module);
 const importNames = imports.map(({ module, name }) => `${module}/${name}`).sort();
-if (importNames.join(",") !== "host/add-one,host/bool-not,host/echo") {
+if (importNames.join(",") !== "host/add-one,host/bool-not,host/buffer,host/echo") {
   throw new Error(`unexpected imports: ${importNames.join(",")}`);
 }
 let instance;
 let hostBoolOverride = null;
+let hostBufferReturnsInvalidRange = false;
 const host = {
   "add-one": value => value + 1,
   "bool-not": value => {
     if (value !== 0 && value !== 1) throw new Error(`host received invalid bool ${value}`);
     return hostBoolOverride ?? (value === 0 ? 1 : 0);
+  },
+  buffer: (inputPtr, inputLen, retPtr) => {
+    const e = instance.exports;
+    if (hostBufferReturnsInvalidRange) {
+      const memory = new DataView(e.memory.buffer);
+      memory.setUint32(retPtr, e.memory.buffer.byteLength - 1, true);
+      memory.setUint32(retPtr + 4, 2, true);
+      return;
+    }
+    const input = Uint8Array.from(new Uint8Array(e.memory.buffer, inputPtr, inputLen));
+    input.reverse();
+    const outputPtr = e.cabi_realloc(0, 0, 1, input.length);
+    new Uint8Array(e.memory.buffer, outputPtr, input.length).set(input);
+    const memory = new DataView(e.memory.buffer);
+    memory.setUint32(retPtr, outputPtr, true);
+    memory.setUint32(retPtr + 4, input.length, true);
   },
   echo: (inputPtr, inputLen, retPtr) => {
     const e = instance.exports;
@@ -102,6 +119,23 @@ const host = {
 WebAssembly.instantiate(module, { host }).then(result => {
   instance = result;
   const e = instance.exports;
+  const allocateBytes = bytes => {
+    const input = Uint8Array.from(bytes);
+    const ptr = e.cabi_realloc(0, 0, 1, input.length);
+    new Uint8Array(e.memory.buffer, ptr, input.length).set(input);
+    return [ptr, input.length];
+  };
+  const readBytesResult = ret => {
+    const memory = new DataView(e.memory.buffer);
+    const ptr = memory.getUint32(ret, true);
+    const len = memory.getUint32(ret + 4, true);
+    return Array.from(new Uint8Array(e.memory.buffer, ptr, len));
+  };
+  const expectBytes = (actual, expected, label) => {
+    if (actual.length !== expected.length || actual.some((byte, index) => byte !== expected[index])) {
+      throw new Error(`${label}: got [${actual}], expected [${expected}]`);
+    }
+  };
   if (e["add-one"](41) !== 42) throw new Error("Number adapter did not round-trip");
   if (e["bool-not"](1) !== 0 || e["bool-not"](0) !== 1) throw new Error("Bool adapter did not round-trip");
   if (e["choose-number"](1, 3, 4) !== 3 || e["choose-number"](0, 3, 4) !== 4) {
@@ -121,6 +155,23 @@ WebAssembly.instantiate(module, { host }).then(result => {
   const outputLen = memory.getUint32(ret + 4, true);
   const text = Buffer.from(e.memory.buffer, outputPtr, outputLen).toString("utf8");
   if (text !== "你好 Calcit") throw new Error(`String adapter returned ${text}`);
+  for (const bytes of [[], [0, 255, 17], [128, 0, 254, 1]]) {
+    const [bufferPtr, bufferLen] = allocateBytes(bytes);
+    expectBytes(readBytesResult(e["echo-buffer"](bufferPtr, bufferLen)), bytes, "Buffer adapter did not round-trip");
+  }
+  const [taggedBufferPtr, taggedBufferLen] = allocateBytes([0, 255, 17]);
+  if (e["is-buffer"](taggedBufferPtr, taggedBufferLen) !== 1) {
+    throw new Error("Buffer lift did not preserve the Calcit type tag");
+  }
+  const [yesPtr, yesLen] = allocateBytes([0, 255]);
+  const [noPtr, noLen] = allocateBytes([17, 0, 128]);
+  expectBytes(readBytesResult(e["choose-buffer"](1, yesPtr, yesLen, noPtr, noLen)), [0, 255], "Bool+Buffer true branch");
+  expectBytes(readBytesResult(e["choose-buffer"](0, yesPtr, yesLen, noPtr, noLen)), [17, 0, 128], "Bool+Buffer false branch");
+  let invalidBufferInputTrapped = false;
+  try { e["echo-buffer"](e.memory.buffer.byteLength - 1, 2); } catch (error) {
+    invalidBufferInputTrapped = error instanceof WebAssembly.RuntimeError;
+  }
+  if (!invalidBufferInputTrapped) throw new Error("out-of-bounds Buffer input did not trap");
   const moved = e.cabi_realloc(ptr, input.length, 8, input.length + 4);
   if (moved % 8 !== 0) throw new Error("cabi_realloc ignored alignment");
   const preserved = Buffer.from(e.memory.buffer, moved, input.length).toString("utf8");
@@ -140,6 +191,18 @@ WebAssembly.instantiate(module, { host }).then(result => {
   const hostOutputLen = hostMemory.getUint32(hostRet + 4, true);
   const hostText = Buffer.from(e.memory.buffer, hostOutputPtr, hostOutputLen).toString("utf8");
   if (hostText !== "你好 from host") throw new Error(`String import adapter returned ${hostText}`);
+  const [hostBufferPtr, hostBufferLen] = allocateBytes([0, 255, 17]);
+  expectBytes(
+    readBytesResult(e["call-host-buffer"](hostBufferPtr, hostBufferLen)),
+    [17, 255, 0],
+    "Buffer import adapter did not round-trip",
+  );
+  hostBufferReturnsInvalidRange = true;
+  let invalidHostBufferTrapped = false;
+  try { e["call-host-buffer"](hostBufferPtr, hostBufferLen); } catch (error) {
+    invalidHostBufferTrapped = error instanceof WebAssembly.RuntimeError;
+  }
+  if (!invalidHostBufferTrapped) throw new Error("out-of-bounds imported Buffer result did not trap");
   const pagesBefore = e.memory.buffer.byteLength / 65536;
   const largeSize = e.memory.buffer.byteLength + 1;
   const largePtr = e.cabi_realloc(0, 0, 1, largeSize);

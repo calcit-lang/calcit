@@ -312,6 +312,14 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   runtime_fn_index.insert("__str_new".to_string(), str_new_idx);
   compiled_fns.push(build_str_new_fn(str_tag_id));
 
+  let component_buffer_new_index = if boundary == WasmBoundary::Component {
+    let buffer_tag_id = *tag_index.get("buffer").expect("buffer tag must exist") as i32;
+    let index = num_imports + compiled_fns.len() as u32;
+    compiled_fns.push(build_component_buffer_new_fn(buffer_tag_id));
+    Some(index)
+  } else {
+    None
+  };
   let component_cabi_realloc_index = if boundary == WasmBoundary::Component {
     let index = num_imports + compiled_fns.len() as u32;
     compiled_fns.push(build_cabi_realloc_fn());
@@ -320,6 +328,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     None
   };
   if let Some(cabi_realloc_index) = component_cabi_realloc_index {
+    let buffer_new_index = component_buffer_new_index.expect("Component boundary must install the Buffer constructor");
     for adapter in &component_import_adapters {
       let index = num_imports + compiled_fns.len() as u32;
       let local_name = adapter
@@ -330,7 +339,12 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
       wasm_import_names.insert(local_name.to_string(), index);
       wasm_import_arities.insert(adapter.definition.clone(), adapter.source_arity);
       wasm_import_arities.insert(local_name.to_string(), adapter.source_arity);
-      compiled_fns.push(build_component_import_adapter(adapter, str_new_idx, cabi_realloc_index));
+      compiled_fns.push(build_component_import_adapter(
+        adapter,
+        str_new_idx,
+        buffer_new_index,
+        cabi_realloc_index,
+      ));
     }
   }
 
@@ -579,8 +593,14 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
 
   if boundary == WasmBoundary::Component {
     let cabi_realloc_index = component_cabi_realloc_index.expect("Component boundary must install cabi_realloc");
+    let buffer_new_index = component_buffer_new_index.expect("Component boundary must install the Buffer constructor");
     for adapter in &component_adapters {
-      compiled_fns.push(build_component_export_adapter(adapter, str_new_idx, cabi_realloc_index));
+      compiled_fns.push(build_component_export_adapter(
+        adapter,
+        str_new_idx,
+        buffer_new_index,
+        cabi_realloc_index,
+      ));
     }
   }
 
@@ -732,6 +752,7 @@ struct CompiledFn {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ComponentAbiType {
   Bool,
+  Buffer,
   Number,
   String,
 }
@@ -759,10 +780,11 @@ struct ComponentImportAdapter {
 fn component_abi_type(annotation: &CalcitTypeAnnotation, definition: &str, path: &str) -> Result<ComponentAbiType, String> {
   match annotation {
     CalcitTypeAnnotation::Bool => Ok(ComponentAbiType::Bool),
+    CalcitTypeAnnotation::Buffer => Ok(ComponentAbiType::Buffer),
     CalcitTypeAnnotation::Number => Ok(ComponentAbiType::Number),
     CalcitTypeAnnotation::String => Ok(ComponentAbiType::String),
     other => Err(format!(
-      "E_COMPONENT_ABI_UNSUPPORTED_TYPE: `{definition}` at `{path}` uses `{other}`, but this adapter slice only supports Bool, Number, and String"
+      "E_COMPONENT_ABI_UNSUPPORTED_TYPE: `{definition}` at `{path}` uses `{other}`, but this adapter slice only supports Bool, Buffer, Number, and String"
     )),
   }
 }
@@ -910,6 +932,7 @@ fn component_import_signature(adapter: &ComponentImportAdapter) -> (Vec<ValType>
   for parameter in &adapter.parameters {
     match parameter {
       ComponentAbiType::Bool => parameters.push(ValType::I32),
+      ComponentAbiType::Buffer => parameters.extend([ValType::I32, ValType::I32]),
       ComponentAbiType::Number => parameters.push(ValType::F64),
       ComponentAbiType::String => parameters.extend([ValType::I32, ValType::I32]),
     }
@@ -917,7 +940,7 @@ fn component_import_signature(adapter: &ComponentImportAdapter) -> (Vec<ValType>
   match adapter.result {
     ComponentAbiType::Bool => (parameters, vec![ValType::I32]),
     ComponentAbiType::Number => (parameters, vec![ValType::F64]),
-    ComponentAbiType::String => {
+    ComponentAbiType::Buffer | ComponentAbiType::String => {
       parameters.push(ValType::I32);
       (parameters, vec![])
     }
@@ -1073,7 +1096,12 @@ fn build_cabi_realloc_fn() -> CompiledFn {
   }
 }
 
-fn build_component_import_adapter(adapter: &ComponentImportAdapter, str_new_index: u32, cabi_realloc_index: u32) -> CompiledFn {
+fn build_component_import_adapter(
+  adapter: &ComponentImportAdapter,
+  str_new_index: u32,
+  buffer_new_index: u32,
+  cabi_realloc_index: u32,
+) -> CompiledFn {
   let params = vec![ValType::F64; adapter.parameters.len()];
   let mut locals = Vec::new();
   let mut instructions = Vec::new();
@@ -1086,7 +1114,7 @@ fn build_component_import_adapter(adapter: &ComponentImportAdapter, str_new_inde
         instructions.extend(component_bool_f64_to_i32(index as u32, canonical));
       }
       ComponentAbiType::Number => instructions.push(Instruction::LocalGet(index as u32)),
-      ComponentAbiType::String => instructions.extend([
+      ComponentAbiType::Buffer | ComponentAbiType::String => instructions.extend([
         Instruction::LocalGet(index as u32),
         Instruction::I32TruncF64U,
         Instruction::I32Const(8),
@@ -1108,9 +1136,14 @@ fn build_component_import_adapter(adapter: &ComponentImportAdapter, str_new_inde
       instructions.extend(component_bool_i32_to_f64(canonical));
     }
     ComponentAbiType::Number => instructions.push(Instruction::Call(adapter.raw_index)),
-    ComponentAbiType::String => {
+    ComponentAbiType::Buffer | ComponentAbiType::String => {
       let ret_ptr = params.len() as u32;
       locals.push(ValType::I32);
+      let bytes_new_index = match adapter.result {
+        ComponentAbiType::Buffer => buffer_new_index,
+        ComponentAbiType::String => str_new_index,
+        _ => unreachable!("byte result branch must use a byte-backed Component type"),
+      };
       instructions.extend([
         Instruction::I32Const(0),
         Instruction::I32Const(0),
@@ -1123,7 +1156,7 @@ fn build_component_import_adapter(adapter: &ComponentImportAdapter, str_new_inde
         Instruction::I32Load(mem_arg_i32(0)),
         Instruction::LocalGet(ret_ptr),
         Instruction::I32Load(mem_arg_i32(4)),
-        Instruction::Call(str_new_index),
+        Instruction::Call(bytes_new_index),
       ]);
     }
   }
@@ -1137,13 +1170,18 @@ fn build_component_import_adapter(adapter: &ComponentImportAdapter, str_new_inde
   }
 }
 
-fn build_component_export_adapter(adapter: &ComponentExportAdapter, str_new_index: u32, cabi_realloc_index: u32) -> CompiledFn {
+fn build_component_export_adapter(
+  adapter: &ComponentExportAdapter,
+  str_new_index: u32,
+  buffer_new_index: u32,
+  cabi_realloc_index: u32,
+) -> CompiledFn {
   let mut params = Vec::new();
   for parameter in &adapter.parameters {
     match parameter {
       ComponentAbiType::Bool => params.push(ValType::I32),
       ComponentAbiType::Number => params.push(ValType::F64),
-      ComponentAbiType::String => params.extend([ValType::I32, ValType::I32]),
+      ComponentAbiType::Buffer | ComponentAbiType::String => params.extend([ValType::I32, ValType::I32]),
     }
   }
 
@@ -1165,13 +1203,18 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, str_new_inde
         lowered.push(flat_index);
         flat_index += 1;
       }
-      ComponentAbiType::String => {
+      ComponentAbiType::Buffer | ComponentAbiType::String => {
         let local = params.len() as u32 + locals.len() as u32;
         locals.push(ValType::F64);
+        let bytes_new_index = match parameter {
+          ComponentAbiType::Buffer => buffer_new_index,
+          ComponentAbiType::String => str_new_index,
+          _ => unreachable!("byte parameter branch must use a byte-backed Component type"),
+        };
         instructions.extend([
           Instruction::LocalGet(flat_index),
           Instruction::LocalGet(flat_index + 1),
-          Instruction::Call(str_new_index),
+          Instruction::Call(bytes_new_index),
           Instruction::LocalSet(local),
         ]);
         lowered.push(local);
@@ -1195,7 +1238,7 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, str_new_inde
       vec![ValType::I32]
     }
     ComponentAbiType::Number => vec![ValType::F64],
-    ComponentAbiType::String => {
+    ComponentAbiType::Buffer | ComponentAbiType::String => {
       let value = params.len() as u32 + locals.len() as u32;
       locals.push(ValType::F64);
       let value_ptr = params.len() as u32 + locals.len() as u32;
@@ -4732,7 +4775,7 @@ mod tests {
   }
 
   #[test]
-  fn component_export_adapters_use_canonical_scalar_and_string_shapes() {
+  fn component_export_adapters_use_canonical_value_and_byte_shapes() {
     let allocator = build_cabi_realloc_fn();
     assert_eq!(allocator.export_name.as_deref(), Some("cabi_realloc"));
     assert_eq!(allocator.params, vec![ValType::I32; 4]);
@@ -4747,6 +4790,7 @@ mod tests {
         result: ComponentAbiType::Number,
       },
       10,
+      11,
       30,
     );
     assert_eq!(number.params, vec![ValType::F64]);
@@ -4761,14 +4805,30 @@ mod tests {
         result: ComponentAbiType::String,
       },
       10,
+      11,
       30,
     );
     assert_eq!(string.params, vec![ValType::I32, ValType::I32]);
     assert_eq!(string.results, vec![ValType::I32]);
+
+    let buffer = build_component_export_adapter(
+      &ComponentExportAdapter {
+        definition: "app.main/echo-buffer".into(),
+        symbol: "echo-buffer".into(),
+        target_index: 22,
+        parameters: vec![ComponentAbiType::Buffer],
+        result: ComponentAbiType::Buffer,
+      },
+      10,
+      11,
+      30,
+    );
+    assert_eq!(buffer.params, vec![ValType::I32, ValType::I32]);
+    assert_eq!(buffer.results, vec![ValType::I32]);
   }
 
   #[test]
-  fn component_import_adapters_use_canonical_scalar_and_string_shapes() {
+  fn component_import_adapters_use_canonical_value_and_byte_shapes() {
     let number = ComponentImportAdapter {
       definition: "app.main/host-add-one".into(),
       module: "host".into(),
@@ -4779,7 +4839,7 @@ mod tests {
       result: ComponentAbiType::Number,
     };
     assert_eq!(component_import_signature(&number), (vec![ValType::F64], vec![ValType::F64]));
-    let number_adapter = build_component_import_adapter(&number, 10, 11);
+    let number_adapter = build_component_import_adapter(&number, 10, 11, 12);
     assert_eq!(number_adapter.params, vec![ValType::F64]);
     assert_eq!(number_adapter.results, vec![ValType::F64]);
 
@@ -4796,9 +4856,26 @@ mod tests {
       component_import_signature(&string),
       (vec![ValType::I32, ValType::I32, ValType::I32], vec![])
     );
-    let string_adapter = build_component_import_adapter(&string, 10, 11);
+    let string_adapter = build_component_import_adapter(&string, 10, 11, 12);
     assert_eq!(string_adapter.params, vec![ValType::F64]);
     assert_eq!(string_adapter.results, vec![ValType::F64]);
+
+    let buffer = ComponentImportAdapter {
+      definition: "app.main/host-buffer".into(),
+      module: "host".into(),
+      symbol: "buffer".into(),
+      raw_index: 4,
+      source_arity: 1,
+      parameters: vec![ComponentAbiType::Buffer],
+      result: ComponentAbiType::Buffer,
+    };
+    assert_eq!(
+      component_import_signature(&buffer),
+      (vec![ValType::I32, ValType::I32, ValType::I32], vec![])
+    );
+    let buffer_adapter = build_component_import_adapter(&buffer, 10, 11, 12);
+    assert_eq!(buffer_adapter.params, vec![ValType::F64]);
+    assert_eq!(buffer_adapter.results, vec![ValType::F64]);
   }
 
   #[test]
@@ -4816,6 +4893,7 @@ mod tests {
         result: ComponentAbiType::Bool,
       },
       10,
+      11,
       30,
     );
     assert_eq!(export.params, vec![ValType::I32]);
@@ -4837,7 +4915,7 @@ mod tests {
       result: ComponentAbiType::Bool,
     };
     assert_eq!(component_import_signature(&import), (vec![ValType::I32], vec![ValType::I32]));
-    let import_adapter = build_component_import_adapter(&import, 10, 11);
+    let import_adapter = build_component_import_adapter(&import, 10, 11, 12);
     assert_eq!(import_adapter.params, vec![ValType::F64]);
     assert_eq!(import_adapter.results, vec![ValType::F64]);
     assert!(
@@ -4849,9 +4927,13 @@ mod tests {
   }
 
   #[test]
-  fn component_adapter_still_rejects_types_outside_the_scalar_string_slice() {
-    let error = component_abi_type(&CalcitTypeAnnotation::Buffer, "app.main/read", "logical_schema.result")
-      .expect_err("Buffer is deferred to a later adapter slice");
+  fn component_adapter_accepts_buffer_and_rejects_types_outside_the_current_slice() {
+    assert_eq!(
+      component_abi_type(&CalcitTypeAnnotation::Buffer, "app.main/read", "logical_schema.result"),
+      Ok(ComponentAbiType::Buffer)
+    );
+    let error = component_abi_type(&CalcitTypeAnnotation::Unit, "app.main/read", "logical_schema.result")
+      .expect_err("Unit is deferred to a later adapter slice");
     assert!(error.contains("E_COMPONENT_ABI_UNSUPPORTED_TYPE"));
     assert!(error.contains("logical_schema.result"));
   }
