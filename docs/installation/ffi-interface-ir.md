@@ -19,15 +19,17 @@ related:
 
 # FFI Interface IR
 
-`calcit ffi export` reads a project snapshot without evaluating application
-code and emits the typed raw-binding boundary as deterministic Interface IR.
-It is the stable input planned for Rust, Calcit, TypeScript, and WIT-preview
-generators; it does not generate business-level normalization APIs.
+`calcit ffi export` 在不执行应用代码的前提下读取项目 Snapshot，并把 typed
+raw-binding boundary 导出为确定性的 Interface IR。native Interface IR v2 已是
+`calcit-bindgen` 生成 Rust、Calcit、TypeScript 与严格 WIT 子集的稳定输入；Component
+Interface IR v1 则是同步 Component 工作流的 preview contract。core 不生成业务层
+normalization API，也不把尚未完成的 component packaging 描述为可运行产物。
 
 ```bash
 calcit calcit.cirru ffi export
 calcit calcit.cirru ffi export --json
 calcit calcit.cirru ffi export --json --ns app.ffi
+calcit calcit.cirru ffi export --boundary component
 ```
 
 默认 `--boundary native` 保持本文所述的 raw-binding Interface IR v2。

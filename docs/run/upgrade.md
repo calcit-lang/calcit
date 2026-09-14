@@ -44,6 +44,15 @@ calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 若建议为空，则接受 `not-needed` 并跳过 apply。完整示例见
 [检测并修复冗余 `do`](fix.md#检测并修复冗余-do)。这是一项显式源码整理，不会增加普通编译 warning。
 
+## 0.14.20 Component core preview
+
+0.14.20 新增 opt-in 的同步 Component core boundary，不改变普通 native、JavaScript、
+`calcit wasm` 或 `calcit wasi` 项目的默认行为。只有显式使用
+`calcit ffi export --boundary component` 或 `calcit wasm --boundary component` 的项目
+需要关注：当前支持 `Number` 与 UTF-8 `String` 的 import/export adapter，默认 contract
+格式为 Cirru EDN。WIT generation、runnable component packaging、复合类型与 async 尚未完成；
+它们不会在该版本中静默退化为 Dynamic 或 core 私有 value ABI。
+
 ## 0.14 默认严格诊断
 
 Calcit 0.14 起，普通运行、`--check-only` 和代码生成默认启用严格预处理诊断；无需再通过
@@ -190,7 +199,7 @@ ns app.main $ :require
 
 ```bash
 # 安装当前经过组合验证的独立用户工具；分别固定并记录版本
-cargo install calcit --bin calcit --version 0.14.19 --force
+cargo install calcit --bin calcit --version 0.14.20 --force
 cargo install calcit-caps --version 0.1.1 --force
 calcit --version
 caps --version
@@ -215,7 +224,7 @@ yarn vite build --base=./
 ### Step A：确认 Calcit CLI 版本
 
 ```bash
-cargo install calcit --bin calcit --version 0.14.19 --force
+cargo install calcit --bin calcit --version 0.14.20 --force
 cargo install calcit-caps --version 0.1.1 --force
 calcit --version
 caps --version
@@ -226,7 +235,7 @@ caps --help
 单独固定一个经过该 Calcit 版本和真实项目 smoke 验证的稳定版本。不要先用未经验证的旧 `caps` 改依赖，
 再用新 `calcit` 判断结果；也不要只更新本机而让 CI 继续安装另一版本。若团队通过其他受控方式分发二进制，
 使用该方式即可，但要分别记录实际版本，并确认 `caps --help` 已包含项目需要的新选项。
-上面的 `calcit 0.14.19` + `calcit-caps 0.1.1` 是当前发布组合；升级到后续版本时，从对应 release notes
+上面的 `calcit 0.14.20` + `calcit-caps 0.1.1` 是当前发布组合；升级到后续版本时，从对应 release notes
 或 `setup-calcit` 已验证的版本矩阵选择一对明确版本，不要省略 `--version` 而隐式安装两个 latest。
 
 > ⚠️ CI 中 Calcit runtime/compiler 的项目版本来自 `deps.cirru :calcit-version`；caps 使用 setup-calcit 独立固定的稳定版本，必要时通过 `caps-version` 显式覆盖。普通 workflow 不重复传 `version`。Action 会对新 Calcit release 临时提供 `cr -> calcit` 兼容链接；对旧 release 则回退到 `cr` asset 并暴露 `calcit`。新命令统一写 `calcit`。已发布的 `calcit-lang/setup-cr` tag 继续支持旧项目；GitHub Actions 不会为 Action 仓库改名重定向，因此迁移必须显式替换 `uses:`。详见 [GitHub Actions](../installation/github-actions.md)。
