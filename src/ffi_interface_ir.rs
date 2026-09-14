@@ -12,6 +12,9 @@ use cirru_parser::Cirru;
 pub const FFI_INTERFACE_IR_VERSION: u32 = 2;
 pub const FFI_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/ffi-interface-ir-v2.schema.json";
 pub const FFI_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/ffi-interface-ir-v2.schema.json");
+pub const COMPONENT_INTERFACE_IR_VERSION: u32 = 1;
+pub const COMPONENT_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/component-interface-ir-v1.schema.json";
+pub const COMPONENT_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/component-interface-ir-v1.schema.json");
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FfiInterfaceDocument {
@@ -149,6 +152,52 @@ pub struct FfiExportReport {
   pub diagnostics: Vec<FfiInterfaceDiagnostic>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ComponentDirection {
+  Import,
+  Export,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ComponentDefinitionIr {
+  pub id: String,
+  pub namespace: String,
+  pub name: String,
+  pub doc: String,
+  pub logical_schema: String,
+  pub direction: ComponentDirection,
+  pub module: Option<String>,
+  pub symbol: String,
+  pub signature: Option<FfiFunctionSignatureIr>,
+  pub status: FfiDefinitionStatus,
+  pub diagnostic_codes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ComponentInterfaceDocument {
+  pub version: u32,
+  pub package: String,
+  pub package_version: String,
+  pub declarations: Vec<FfiTypeDeclarationIr>,
+  pub definitions: Vec<ComponentDefinitionIr>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ComponentExportReport {
+  pub revision: String,
+  pub interface: ComponentInterfaceDocument,
+  pub summary: FfiExportSummary,
+  pub diagnostics: Vec<FfiInterfaceDiagnostic>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ComponentBinding {
+  direction: ComponentDirection,
+  module: Option<String>,
+  symbol: String,
+}
+
 fn diagnostic(
   definition: &str,
   path: impl Into<String>,
@@ -165,6 +214,27 @@ fn diagnostic(
     message: message.into(),
     suggestion: suggestion.to_owned(),
   }
+}
+
+fn component_diagnostic(
+  definition: &str,
+  path: impl Into<String>,
+  code: &str,
+  message: impl Into<String>,
+  suggestion: &str,
+) -> FfiInterfaceDiagnostic {
+  let mut item = diagnostic(definition, path, code, message, suggestion);
+  item.phase = "component-interface-ir".to_owned();
+  item
+}
+
+fn componentize_diagnostic(mut item: FfiInterfaceDiagnostic) -> FfiInterfaceDiagnostic {
+  item.phase = "component-interface-ir".to_owned();
+  item.message = item
+    .message
+    .replace("FFI Interface IR v2", "Component Interface IR v1")
+    .replace("Interface IR v2", "Component Interface IR v1");
+  item
 }
 
 #[derive(Debug, Clone)]
@@ -1189,6 +1259,262 @@ pub fn export_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -> Result<F
   })
 }
 
+fn component_binding(code: &Cirru, namespace: &str, name: &str) -> Option<Result<ComponentBinding, FfiInterfaceDiagnostic>> {
+  let definition = format!("{namespace}/{name}");
+  let Cirru::List(items) = code else {
+    return None;
+  };
+  let Some(Cirru::Leaf(head)) = items.first() else {
+    return None;
+  };
+  match head.rsplit('/').next().unwrap_or(head) {
+    "defwasm-export" => Some(Ok(ComponentBinding {
+      direction: ComponentDirection::Export,
+      module: None,
+      symbol: items
+        .get(1)
+        .and_then(|item| match item {
+          Cirru::Leaf(name) => Some(name.to_string()),
+          Cirru::List(_) => None,
+        })
+        .unwrap_or_else(|| name.to_owned()),
+    })),
+    "defwasm-import" => {
+      let binding = match code_to_calcit(code, namespace, name, vec![]) {
+        Ok(Calcit::List(items)) => match items.iter().skip(3).collect::<Vec<_>>().as_slice() {
+          [Calcit::Str(module), Calcit::Str(symbol)] => Some((module.to_string(), symbol.to_string())),
+          _ => None,
+        },
+        _ => None,
+      };
+      Some(match binding {
+        Some((module, symbol)) if !module.is_empty() && !symbol.is_empty() => Ok(ComponentBinding {
+          direction: ComponentDirection::Import,
+          module: Some(module),
+          symbol,
+        }),
+        _ => Err(component_diagnostic(
+          &definition,
+          "binding",
+          "E_COMPONENT_IR_INVALID_IMPORT",
+          "Component imports require exactly two non-empty literal strings for the WASM module and symbol.",
+          "Use `defwasm-import name (args) |module |symbol`.",
+        )),
+      })
+    }
+    _ => None,
+  }
+}
+
+fn declaration_has_type_parameters(declaration: &FfiTypeDeclarationIr) -> bool {
+  match declaration {
+    FfiTypeDeclarationIr::Struct { type_parameters, .. } | FfiTypeDeclarationIr::Enum { type_parameters, .. } => {
+      !type_parameters.is_empty()
+    }
+  }
+}
+
+fn component_has_non_fixed_arity(code: &Cirru) -> bool {
+  matches!(
+    code,
+    Cirru::List(items)
+      if matches!(items.get(2), Some(Cirru::List(parameters)) if parameters.iter().any(|parameter| matches!(parameter, Cirru::Leaf(value) if matches!(value.as_ref(), "?" | "&"))))
+  )
+}
+
+pub fn export_component_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -> Result<ComponentExportReport, String> {
+  let local_declarations = collect_local_type_declarations(snapshot);
+  let mut candidates = snapshot
+    .files
+    .iter()
+    .filter(|(ns, _)| namespace.is_none_or(|filter| ns.as_str() == filter))
+    .flat_map(|(ns, file)| {
+      file
+        .defs
+        .iter()
+        .filter_map(move |(name, entry)| component_binding(&entry.code, ns, name).map(|binding| (ns, name, entry, binding)))
+    })
+    .collect::<Vec<_>>();
+  candidates.sort_unstable_by(|left, right| (left.0, left.1).cmp(&(right.0, right.1)));
+
+  let mut definitions = Vec::with_capacity(candidates.len());
+  let mut interface_declarations = BTreeMap::new();
+  let mut diagnostics = Vec::new();
+  for (namespace, name, entry, binding) in candidates {
+    let id = format!("{namespace}/{name}");
+    let definition_diagnostic_start = diagnostics.len();
+    let binding = match binding {
+      Ok(binding) => binding,
+      Err(error) => {
+        diagnostics.push(error);
+        ComponentBinding {
+          direction: ComponentDirection::Import,
+          module: None,
+          symbol: name.to_owned(),
+        }
+      }
+    };
+    let mut required = BTreeSet::new();
+    if component_has_non_fixed_arity(&entry.code) {
+      diagnostics.push(component_diagnostic(
+        &id,
+        "logical_schema.parameters",
+        "E_COMPONENT_IR_UNSUPPORTED_ARITY",
+        "Optional and rest parameters cannot cross a Component boundary.",
+        "Expose a fixed-arity function and use an explicit Option or List parameter.",
+      ));
+    }
+    let mut signature = match convert_signature(entry, &id, namespace, &local_declarations, &mut required) {
+      Ok(signature) => Some(signature),
+      Err(errors) => {
+        diagnostics.extend(errors.into_iter().map(componentize_diagnostic));
+        None
+      }
+    };
+    if signature.is_some() {
+      let (declarations, declaration_diagnostics) = convert_reachable_declarations(&id, &local_declarations, &mut required);
+      if !declaration_diagnostics.is_empty() {
+        diagnostics.extend(declaration_diagnostics.into_iter().map(componentize_diagnostic));
+        signature = None;
+      } else if declarations.iter().any(declaration_has_type_parameters) {
+        diagnostics.push(component_diagnostic(
+          &id,
+          "declarations",
+          "E_COMPONENT_IR_UNSUPPORTED_GENERIC",
+          "Generic nominal declarations must be monomorphized before crossing a Component boundary.",
+          "Expose a non-generic transport Struct or Enum with concrete field and payload types.",
+        ));
+        signature = None;
+      } else {
+        for declaration in declarations {
+          interface_declarations.insert(declaration.id().to_owned(), declaration);
+        }
+      }
+    }
+    let definition_diagnostics = &diagnostics[definition_diagnostic_start..];
+    let mut diagnostic_codes = definition_diagnostics.iter().map(|item| item.code.clone()).collect::<Vec<_>>();
+    diagnostic_codes.sort_unstable();
+    diagnostic_codes.dedup();
+    definitions.push(ComponentDefinitionIr {
+      id,
+      namespace: namespace.to_owned(),
+      name: name.to_owned(),
+      doc: entry.doc.clone(),
+      logical_schema: canonical_edn_display(&entry.schema.to_type_edn()),
+      direction: binding.direction,
+      module: binding.module,
+      symbol: binding.symbol,
+      signature,
+      status: if diagnostic_codes.is_empty() {
+        FfiDefinitionStatus::Supported
+      } else {
+        FfiDefinitionStatus::Unsupported
+      },
+      diagnostic_codes,
+    });
+  }
+
+  let mut bindings: BTreeMap<(ComponentDirection, Option<String>, String), Vec<usize>> = BTreeMap::new();
+  for (index, definition) in definitions.iter().enumerate() {
+    bindings
+      .entry((definition.direction, definition.module.clone(), definition.symbol.clone()))
+      .or_default()
+      .push(index);
+  }
+  for ((direction, module, symbol), indices) in bindings {
+    if indices.len() < 2 {
+      continue;
+    }
+    let ids = indices
+      .iter()
+      .map(|index| definitions[*index].id.as_str())
+      .collect::<Vec<_>>()
+      .join(", ");
+    for index in indices {
+      let definition = &mut definitions[index];
+      let code = "E_COMPONENT_IR_SYMBOL_CONFLICT";
+      definition.status = FfiDefinitionStatus::Unsupported;
+      if !definition.diagnostic_codes.iter().any(|item| item == code) {
+        definition.diagnostic_codes.push(code.to_owned());
+        definition.diagnostic_codes.sort_unstable();
+      }
+      diagnostics.push(component_diagnostic(
+        &definition.id,
+        "binding.symbol",
+        code,
+        format!(
+          "Duplicate {:?} binding `{}/{symbol}` is declared by: {ids}.",
+          direction,
+          module.as_deref().unwrap_or("<world>")
+        ),
+        "Give every Component import/export binding a unique module and symbol identity.",
+      ));
+    }
+  }
+
+  let supported = definitions
+    .iter()
+    .filter(|definition| definition.status == FfiDefinitionStatus::Supported)
+    .count();
+  let interface = ComponentInterfaceDocument {
+    version: COMPONENT_INTERFACE_IR_VERSION,
+    package: snapshot.package.clone(),
+    package_version: snapshot.version.clone(),
+    declarations: interface_declarations.into_values().collect(),
+    definitions,
+  };
+  let summary = FfiExportSummary {
+    definitions: interface.definitions.len(),
+    supported,
+    unsupported: interface.definitions.len() - supported,
+    diagnostics: diagnostics.len(),
+  };
+  let revision_payload = serde_json::to_vec(&(&interface, &diagnostics))
+    .map_err(|error| format!("Failed to encode Component Interface IR revision input: {error}"))?;
+  let mut hasher = Md5::new();
+  hasher.update(revision_payload);
+  Ok(ComponentExportReport {
+    revision: format!("md5:{}", hex::encode(hasher.finalize())),
+    interface,
+    summary,
+    diagnostics,
+  })
+}
+
+pub fn format_component_human_report(report: &ComponentExportReport) -> String {
+  let mut output = format!(
+    "Calcit Component Interface IR v{}\n- package: {} {}\n- revision: {}\n- declarations: {}\n- definitions: {} ({} supported, {} unsupported)\n",
+    report.interface.version,
+    report.interface.package,
+    report.interface.package_version,
+    report.revision,
+    report.interface.declarations.len(),
+    report.summary.definitions,
+    report.summary.supported,
+    report.summary.unsupported,
+  );
+  for definition in &report.interface.definitions {
+    output.push_str(&format!(
+      "- {} [{}] direction={:?} module={} symbol={}\n",
+      definition.id,
+      match definition.status {
+        FfiDefinitionStatus::Supported => "supported",
+        FfiDefinitionStatus::Unsupported => "unsupported",
+      },
+      definition.direction,
+      definition.module.as_deref().unwrap_or("<world>"),
+      definition.symbol,
+    ));
+  }
+  if !report.diagnostics.is_empty() {
+    output.push_str("Diagnostics:\n");
+    for item in &report.diagnostics {
+      output.push_str(&format!("- {} {} {}: {}\n", item.code, item.definition, item.path, item.message));
+    }
+  }
+  output
+}
+
 pub fn format_human_report(report: &FfiExportReport) -> String {
   let mut output = format!(
     "Calcit FFI Interface IR v{}\n- package: {} {}\n- revision: {}\n- declarations: {}\n- definitions: {} ({} supported, {} unsupported)\n",
@@ -1254,6 +1580,17 @@ mod tests {
     }
   }
 
+  fn component_function_entry(source: &str, args: Vec<Arc<CalcitTypeAnnotation>>, result: Arc<CalcitTypeAnnotation>) -> CodeEntry {
+    let mut entry = function_entry(args, result, Edn::Nil);
+    entry.ffi = None;
+    entry.code = cirru_parser::parse(source)
+      .expect("parse component boundary fixture")
+      .into_iter()
+      .next()
+      .expect("one component boundary fixture");
+    entry
+  }
+
   fn data_entry(code: &str) -> CodeEntry {
     let parsed = cirru_parser::parse(code).expect("parse data declaration fixture");
     CodeEntry {
@@ -1296,6 +1633,151 @@ mod tests {
       (Edn::tag("symbol"), Edn::str(symbol)),
       (Edn::tag("transport"), Edn::tag("edn-buffer-v1")),
     ])
+  }
+
+  #[test]
+  fn exports_directional_component_contract_deterministically() {
+    let build = || {
+      export_component_snapshot(
+        &snapshot(vec![
+          (
+            "host-upcase",
+            component_function_entry(
+              "defwasm-import host-upcase (text) |host |string-upcase",
+              vec![Arc::new(CalcitTypeAnnotation::String)],
+              Arc::new(CalcitTypeAnnotation::String),
+            ),
+          ),
+          (
+            "add",
+            component_function_entry(
+              "defwasm-export add (a b) (&+ a b)",
+              vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::Number)],
+              Arc::new(CalcitTypeAnnotation::Number),
+            ),
+          ),
+        ]),
+        None,
+      )
+      .expect("export component contract")
+    };
+    let report = build();
+
+    assert_eq!(report.interface.version, COMPONENT_INTERFACE_IR_VERSION);
+    assert_eq!(report.summary.supported, 2, "component diagnostics: {:?}", report.diagnostics);
+    assert!(report.diagnostics.is_empty());
+    assert_eq!(report.interface.definitions[0].id, "test.ffi/add");
+    assert_eq!(report.interface.definitions[0].direction, ComponentDirection::Export);
+    assert_eq!(report.interface.definitions[0].module, None);
+    assert_eq!(report.interface.definitions[0].symbol, "add");
+    assert_eq!(report.interface.definitions[1].direction, ComponentDirection::Import);
+    assert_eq!(report.interface.definitions[1].module.as_deref(), Some("host"));
+    assert_eq!(report.interface.definitions[1].symbol, "string-upcase");
+    assert_eq!(report, build());
+  }
+
+  #[test]
+  fn component_contract_reuses_reachable_types_and_rejects_generic_nominals() {
+    let person = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Person"), Arc::new(vec![])));
+    let generic_box = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("test.ffi/Box"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]),
+    ));
+    let report = export_component_snapshot(
+      &snapshot(vec![
+        ("Person", data_entry("defstruct Person (:name 'String)")),
+        ("Box", data_entry("defstruct Box (T) (:value T)")),
+        (
+          "person-name",
+          component_function_entry(
+            "defwasm-export person-name (person) (.name person)",
+            vec![person],
+            Arc::new(CalcitTypeAnnotation::String),
+          ),
+        ),
+        (
+          "boxed-name",
+          component_function_entry(
+            "defwasm-export boxed-name (box) (.value box)",
+            vec![generic_box],
+            Arc::new(CalcitTypeAnnotation::String),
+          ),
+        ),
+      ]),
+      None,
+    )
+    .expect("export composite component contract");
+
+    assert_eq!(report.summary.supported, 1);
+    assert_eq!(report.summary.unsupported, 1);
+    assert!(matches!(
+      report.interface.declarations.as_slice(),
+      [FfiTypeDeclarationIr::Struct { id, .. }] if id == "test.ffi/Person"
+    ));
+    assert!(
+      report
+        .diagnostics
+        .iter()
+        .any(|item| item.code == "E_COMPONENT_IR_UNSUPPORTED_GENERIC" && item.phase == "component-interface-ir")
+    );
+  }
+
+  #[test]
+  fn bundled_component_schema_matches_interface_version() {
+    let schema: serde_json::Value = serde_json::from_str(COMPONENT_INTERFACE_IR_SCHEMA).expect("parse component schema");
+    assert_eq!(schema["$id"], COMPONENT_INTERFACE_IR_SCHEMA_ID);
+    assert_eq!(schema["properties"]["version"]["const"], COMPONENT_INTERFACE_IR_VERSION);
+  }
+
+  #[test]
+  fn component_contract_rejects_duplicate_symbols_and_non_fixed_arity() {
+    let report = export_component_snapshot(
+      &snapshot(vec![
+        (
+          "host-one",
+          component_function_entry(
+            "defwasm-import host-one (value) |host |same",
+            vec![Arc::new(CalcitTypeAnnotation::Number)],
+            Arc::new(CalcitTypeAnnotation::Number),
+          ),
+        ),
+        (
+          "host-two",
+          component_function_entry(
+            "defwasm-import host-two (value) |host |same",
+            vec![Arc::new(CalcitTypeAnnotation::Number)],
+            Arc::new(CalcitTypeAnnotation::Number),
+          ),
+        ),
+        (
+          "optional",
+          component_function_entry(
+            "defwasm-export optional (value ? fallback) value",
+            vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::Number)],
+            Arc::new(CalcitTypeAnnotation::Number),
+          ),
+        ),
+      ]),
+      None,
+    )
+    .expect("export rejected component boundaries");
+
+    assert_eq!(report.summary.supported, 0);
+    assert_eq!(report.summary.unsupported, 3);
+    assert_eq!(
+      report
+        .diagnostics
+        .iter()
+        .filter(|item| item.code == "E_COMPONENT_IR_SYMBOL_CONFLICT")
+        .count(),
+      2
+    );
+    assert!(
+      report
+        .diagnostics
+        .iter()
+        .any(|item| item.code == "E_COMPONENT_IR_UNSUPPORTED_ARITY")
+    );
   }
 
   fn diagnostic_codes(report: &FfiExportReport) -> HashSet<&str> {

@@ -30,6 +30,13 @@ calcit calcit.cirru ffi export --json
 calcit calcit.cirru ffi export --json --ns app.ffi
 ```
 
+默认 `--boundary native` 保持本文所述的 raw-binding Interface IR v2。
+`--boundary component` 是独立的 Component Interface IR v1，只提取
+`defwasm-import` / `defwasm-export` 并默认输出 Cirru EDN；其方向语义、
+strict type closure 与 core/bindgen 职责见
+[WASM Component 边界](wasm-component-boundary.md)。两种 boundary 使用不同的
+versioned schema，consumer 不应根据字段形状猜测类型。
+
 The JSON command writes one parseable envelope to stdout. Its
 `data.interface` value follows
 [`schemas/ffi-interface-ir-v2.schema.json`](../../schemas/ffi-interface-ir-v2.schema.json).
