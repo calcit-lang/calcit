@@ -337,6 +337,30 @@ calcit calcit.cirru fix --rule rename-definition-v1 \
 macro、quoted data、dependency source 或缺失 source coordinate blocker，保持原文件不动并拆分人工迁移；`edit rename`
 只适用于明确只修改 declaration、调用点由用户另行管理的场景。
 
+### 把 value definition 改为零参数函数
+
+**场景：** 原本在加载时求值一次的 value 需要改成调用时求值，并同步所有静态读取点。
+
+```bash
+# 1. 预览 definition、schema 与 resolver 已证明的读取点
+calcit calcit.cirru fix --rule value-to-zero-arg-fn-v1 \
+  --ns app.config --def current-config --format edn
+
+# 2. 明确接受求值时机变化后，绑定 preview revision 原子应用
+calcit calcit.cirru fix --rule value-to-zero-arg-fn-v1 \
+  --ns app.config --def current-config \
+  --apply --expect-revision 'md5:<preview 返回的 revision>'
+
+# 3. 重复预览必须为空，再运行严格检查与 attached tests
+calcit calcit.cirru fix --rule value-to-zero-arg-fn-v1 \
+  --ns app.config --def current-config --format edn
+```
+
+这不是等价的表层整理：`def` 的 value 原先初始化一次，转换后会在每次调用时重新计算。Agent 必须审阅副作用、环境读取、
+对象身份、分配成本和缓存需求；不应为消除 warning 自动运行，也不应把该规则加入升级 preset。普通 code、attached tests、
+examples 和目标 schema 会进入同一事务；quoted data、macro、dependency source、schema type reference、自引用及无法定位的引用
+会使事务整体拒绝。
+
 ### 迁移定义到另一命名空间（`mv-def`）
 
 **场景：** 某函数放错了命名空间，需要迁移。

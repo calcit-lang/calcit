@@ -54,6 +54,11 @@ calcit calcit.cirru fix --ns app.main --def render! --format edn
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples
   使用同一个 resolver trace，schema 则按 compiler-loaded nominal type reference 与 `:where` trait bound 改写；三者与普通 code、imports、声明在
   同一事务中提交。macro 生成引用、dependency source、quoted data 或缺少 source coordinate 的引用会拒绝整个事务。
+- `value-to-zero-arg-fn-v1` 是参数化语义重构规则。它要求 `--ns` 与 `--def`，把精确的 `(def name value)` 改成
+  `(defn name () value)`，把原 schema 包成零参数函数返回类型，并把 resolver 已证明的项目源码、attached tests 与 examples
+  中的读取改成调用。它会改变求值时机：原值在 definition 初始化时求值一次，新函数则在每次调用时重新求值；因此只允许显式
+  选择，不进入任何升级 preset。quoted data、macro 生成引用、dependency source、schema type reference、自引用或缺少 source
+  coordinate 的引用会拒绝整个事务。
 - `tag-match-to-match-v1` 与 `required-struct-field-v1` 属于只随 Calcit 0.14.15 发布的 migration bridge，不是当前 fix surface。
   升级旧项目时请固定使用 0.14.15 执行规则、review 输出并验证测试；迁移完成后再切换到 0.14.16 或更新版本。
   当前版本若显式请求这两个 rule，会返回稳定错误和上述版本提示，不会继续携带旧 planner 与分析特例。
@@ -103,6 +108,33 @@ preview 的每个 usage suggestion 都包含 resolved target 的 `:origin-chain`
 macro source、macro expansion、quote/quasiquote、dependency-owned source 以及无法映射回 Snapshot 的引用仍然 fail closed，
 并列出 blocker；不得把这些边界降级为文本替换。
 只想改声明、并明确自行负责调用点时，仍可直接使用 `calcit edit rename`。
+
+## 把 value definition 重构为零参数函数
+
+需要把延迟计算、环境读取或工厂值从普通 definition 改成显式调用时，使用 resolver 驱动的原子重构，不要先改 `defn` 再文本搜索：
+
+```bash
+calcit calcit.cirru fix --rule value-to-zero-arg-fn-v1 \
+  --ns app.config --def current-config --format edn
+calcit calcit.cirru fix --rule value-to-zero-arg-fn-v1 \
+  --ns app.config --def current-config \
+  --apply --expect-revision 'md5:<preview 返回的 revision>'
+calcit calcit.cirru fix --rule value-to-zero-arg-fn-v1 \
+  --ns app.config --def current-config --format edn
+```
+
+例如普通读取 `current-config` 会变成 `(current-config)`；函数值原来作为 callee 的
+`stored-handler event` 会变成 `(stored-handler) event`。目标 definition 的原 schema 会成为新零参数函数的返回类型。
+普通 code、attached tests、examples、schema 与 definition replacement 在一个 staged transaction 中验证并提交；重复 preview
+应为空。
+
+这条规则有意改变生命周期，不承诺语义等价：副作用、时间、随机数、环境变量、对象身份、分配成本以及原先隐含的缓存都会从
+“初始化一次”变成“每次调用”。preview 虽能证明引用归属和改写完整性，不能替用户决定这种变化是否正确。应用前必须审阅目标
+value expression 和全部 suggestions；如果目标应继续只计算一次，就保留 `def`，不要运行这条规则。
+
+该规则不会改写 quoted data，也不会猜测 macro 展开、动态名称查找、dependency source、把目标当成类型使用的 schema 或
+自引用初始化。命中任一边界时整个事务 fail closed，原文件不写入。由于它是用户选择的语义重构而非版本迁移，当前及未来 preset
+都不应隐式包含它。
 
 具名构造器规则只处理原型能静态解析到当前项目 nominal definition 的直接源码。匿名 `%:: _` / `%{} _`、
 运行时 prototype、依赖中无法回溯的定义、局部同名遮蔽、`defmacro` 以及 `quote`/`quasiquote` 内的数据都会保留。
