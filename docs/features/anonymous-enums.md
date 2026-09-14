@@ -55,7 +55,7 @@ let
     _ 0
 ```
 
-从 0.15 起，`tag-match` 已从表层语言移除；具名与匿名 enum 都直接使用原生
+从 Calcit 0.14.16 起，`tag-match` 已从表层语言移除；具名与匿名 enum 都直接使用原生
 `match`。旧代码应先使用 Calcit 0.14.15 执行
 `calcit fix --rule tag-match-to-match-v1` 再升级。对于领域数据，仍建议优先使用具名
 enum，让编译器检查 variant、payload arity 与穷尽性：

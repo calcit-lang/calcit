@@ -8,24 +8,6 @@ pub fn is_letter(c: char) -> bool {
   c.is_ascii_alphabetic()
 }
 
-// TODO, not ready to use
-#[allow(dead_code)]
-pub fn matches_float(xs: &str) -> bool {
-  if xs.is_empty() {
-    return false;
-  }
-  xs.parse::<f64>().is_ok()
-}
-
-#[allow(dead_code)]
-pub fn matches_simple_var(xs: &str) -> bool {
-  if xs.is_empty() {
-    return false;
-  }
-  xs.chars()
-    .all(|x| is_letter(x) || is_digit(x) || matches!(x, '-' | '!' | '*' | '?'))
-}
-
 pub fn matches_digits(xs: &str) -> bool {
   if xs.is_empty() {
     return false;
