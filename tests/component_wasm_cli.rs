@@ -30,6 +30,25 @@ impl Drop for TestDirectory {
 #[test]
 fn component_boundary_round_trips_number_string_and_realloc() {
   let output = TestDirectory::create();
+  let check = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "tests/fixtures/component-wasm.cirru",
+      "wasm",
+      "--boundary",
+      "component",
+      "--check-only",
+    ])
+    .output()
+    .expect("component fixture check should run");
+  assert!(
+    check.status.success(),
+    "component check failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&check.stdout),
+    String::from_utf8_lossy(&check.stderr)
+  );
   let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
     .env("NO_COLOR", "1")
     .args([
@@ -54,7 +73,29 @@ fn component_boundary_round_trips_number_string_and_realloc() {
   let wasm = output.0.join("program.wasm");
   let script = r#"
 const fs = require("fs");
-WebAssembly.instantiate(fs.readFileSync(process.argv[1]), {}).then(({ instance }) => {
+const bytes = fs.readFileSync(process.argv[1]);
+const module = new WebAssembly.Module(bytes);
+const imports = WebAssembly.Module.imports(module);
+const importNames = imports.map(({ module, name }) => `${module}/${name}`).sort();
+if (importNames.join(",") !== "host/add-one,host/echo") {
+  throw new Error(`unexpected imports: ${importNames.join(",")}`);
+}
+let instance;
+const host = {
+  "add-one": value => value + 1,
+  echo: (inputPtr, inputLen, retPtr) => {
+    const e = instance.exports;
+    const text = Buffer.from(e.memory.buffer, inputPtr, inputLen).toString("utf8");
+    const output = Buffer.from(`${text} from host`, "utf8");
+    const outputPtr = e.cabi_realloc(0, 0, 1, output.length);
+    new Uint8Array(e.memory.buffer, outputPtr, output.length).set(output);
+    const memory = new DataView(e.memory.buffer);
+    memory.setUint32(retPtr, outputPtr, true);
+    memory.setUint32(retPtr + 4, output.length, true);
+  },
+};
+WebAssembly.instantiate(module, { host }).then(result => {
+  instance = result;
   const e = instance.exports;
   if (e["add-one"](41) !== 42) throw new Error("Number adapter did not round-trip");
   const input = Buffer.from("你好 Calcit", "utf8");
@@ -70,6 +111,16 @@ WebAssembly.instantiate(fs.readFileSync(process.argv[1]), {}).then(({ instance }
   if (moved % 8 !== 0) throw new Error("cabi_realloc ignored alignment");
   const preserved = Buffer.from(e.memory.buffer, moved, input.length).toString("utf8");
   if (preserved !== "你好 Calcit") throw new Error("cabi_realloc did not preserve bytes");
+  if (e["call-host-add-one"](9) !== 10) throw new Error("Number import adapter did not round-trip");
+  const hostInput = Buffer.from("你好", "utf8");
+  const hostInputPtr = e.cabi_realloc(0, 0, 1, hostInput.length);
+  new Uint8Array(e.memory.buffer, hostInputPtr, hostInput.length).set(hostInput);
+  const hostRet = e["call-host-echo"](hostInputPtr, hostInput.length);
+  const hostMemory = new DataView(e.memory.buffer);
+  const hostOutputPtr = hostMemory.getUint32(hostRet, true);
+  const hostOutputLen = hostMemory.getUint32(hostRet + 4, true);
+  const hostText = Buffer.from(e.memory.buffer, hostOutputPtr, hostOutputLen).toString("utf8");
+  if (hostText !== "你好 from host") throw new Error(`String import adapter returned ${hostText}`);
   const pagesBefore = e.memory.buffer.byteLength / 65536;
   const largeSize = e.memory.buffer.byteLength + 1;
   const largePtr = e.cabi_realloc(0, 0, 1, largeSize);

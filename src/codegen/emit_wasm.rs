@@ -229,39 +229,59 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   // stay first so internal lowering keeps its stable indices; user declarations
   // append after them.
   // A Component contract must account for every host dependency. The legacy
-  // core target keeps its broad host table, while Component exports start
-  // self-contained and reject explicit imports in this export-only slice.
+  // core target keeps its broad host table, while the Component boundary only
+  // imports explicitly declared functions through typed Canonical ABI shapes.
   let mut host_imports = if boundary == WasmBoundary::Component {
     Vec::new()
   } else {
     host_imports_for_target(target)
   };
+  let mut component_import_adapters = if boundary == WasmBoundary::Component {
+    collect_component_import_adapters(&program_data)?
+  } else {
+    Vec::new()
+  };
   let mut wasm_import_names: HashMap<String, u32> = HashMap::new();
   let mut wasm_import_arities: HashMap<String, u32> = HashMap::new();
-  for &ns in &ns_order {
-    let Some(file_info) = program_data.get(ns) else {
-      continue;
-    };
-    for (def_name, compiled) in &file_info.defs {
-      if !is_wasm_import_def(&compiled.preprocessed_code) {
-        continue;
-      }
-      let (module, name, args) = parse_wasm_import_def(&compiled.preprocessed_code).ok_or_else(|| {
-        format!("[wasm] invalid import declaration {ns}/{def_name}: expected `defwasm-import name (args) |module |field`")
-      })?;
-      let arity = wasm_import_arity(&args).map_err(|reason| format!("[wasm] invalid import declaration {ns}/{def_name}: {reason}"))?;
+  if boundary == WasmBoundary::Component {
+    for adapter in &mut component_import_adapters {
       let index = host_imports.len() as u32;
+      adapter.raw_index = index;
+      let (params, results) = component_import_signature(adapter);
       host_imports.push(HostImport {
-        module,
-        name,
-        params: vec![ValType::F64; arity as usize],
-        results: vec![ValType::F64],
+        module: adapter.module.clone(),
+        name: adapter.symbol.clone(),
+        params,
+        results,
       });
-      let qualified = format!("{ns}/{def_name}");
-      wasm_import_names.insert(qualified.clone(), index);
-      wasm_import_names.insert(def_name.to_string(), index);
-      wasm_import_arities.insert(qualified, arity);
-      wasm_import_arities.insert(def_name.to_string(), arity);
+    }
+  } else {
+    for &ns in &ns_order {
+      let Some(file_info) = program_data.get(ns) else {
+        continue;
+      };
+      for (def_name, compiled) in &file_info.defs {
+        if !is_wasm_import_def(&compiled.preprocessed_code) {
+          continue;
+        }
+        let (module, name, args) = parse_wasm_import_def(&compiled.preprocessed_code).ok_or_else(|| {
+          format!("[wasm] invalid import declaration {ns}/{def_name}: expected `defwasm-import name (args) |module |field`")
+        })?;
+        let arity =
+          wasm_import_arity(&args).map_err(|reason| format!("[wasm] invalid import declaration {ns}/{def_name}: {reason}"))?;
+        let index = host_imports.len() as u32;
+        host_imports.push(HostImport {
+          module,
+          name,
+          params: vec![ValType::F64; arity as usize],
+          results: vec![ValType::F64],
+        });
+        let qualified = format!("{ns}/{def_name}");
+        wasm_import_names.insert(qualified.clone(), index);
+        wasm_import_names.insert(def_name.to_string(), index);
+        wasm_import_arities.insert(qualified, arity);
+        wasm_import_arities.insert(def_name.to_string(), arity);
+      }
     }
   }
   let num_imports = host_imports.len() as u32;
@@ -291,6 +311,28 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   let str_new_idx = num_imports + compiled_fns.len() as u32;
   runtime_fn_index.insert("__str_new".to_string(), str_new_idx);
   compiled_fns.push(build_str_new_fn(str_tag_id));
+
+  let component_cabi_realloc_index = if boundary == WasmBoundary::Component {
+    let index = num_imports + compiled_fns.len() as u32;
+    compiled_fns.push(build_cabi_realloc_fn());
+    Some(index)
+  } else {
+    None
+  };
+  if let Some(cabi_realloc_index) = component_cabi_realloc_index {
+    for adapter in &component_import_adapters {
+      let index = num_imports + compiled_fns.len() as u32;
+      let local_name = adapter
+        .definition
+        .rsplit_once('/')
+        .map_or(adapter.definition.as_str(), |(_, name)| name);
+      wasm_import_names.insert(adapter.definition.clone(), index);
+      wasm_import_names.insert(local_name.to_string(), index);
+      wasm_import_arities.insert(adapter.definition.clone(), adapter.source_arity);
+      wasm_import_arities.insert(local_name.to_string(), adapter.source_arity);
+      compiled_fns.push(build_component_import_adapter(adapter, str_new_idx, cabi_realloc_index));
+    }
+  }
 
   if target == WasmTarget::Wasi {
     let import_indices = index_host_imports(&host_imports);
@@ -536,8 +578,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   }
 
   if boundary == WasmBoundary::Component {
-    let cabi_realloc_index = num_imports + compiled_fns.len() as u32;
-    compiled_fns.push(build_cabi_realloc_fn());
+    let cabi_realloc_index = component_cabi_realloc_index.expect("Component boundary must install cabi_realloc");
     for adapter in &component_adapters {
       compiled_fns.push(build_component_export_adapter(adapter, str_new_idx, cabi_realloc_index));
     }
@@ -630,6 +671,7 @@ pub fn validate_wasm_boundary(target: WasmTarget, boundary: WasmBoundary) -> Res
     .enumerate()
     .map(|(index, (namespace, name, _, _))| (format!("{namespace}/{name}"), index as u32))
     .collect::<HashMap<_, _>>();
+  collect_component_import_adapters(&program_data)?;
   collect_component_export_adapters(&program_data, &fn_defs, &fn_index)?;
   Ok(())
 }
@@ -702,6 +744,17 @@ struct ComponentExportAdapter {
   result: ComponentAbiType,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ComponentImportAdapter {
+  definition: String,
+  module: String,
+  symbol: String,
+  raw_index: u32,
+  source_arity: u32,
+  parameters: Vec<ComponentAbiType>,
+  result: ComponentAbiType,
+}
+
 fn component_abi_type(annotation: &CalcitTypeAnnotation, definition: &str, path: &str) -> Result<ComponentAbiType, String> {
   match annotation {
     CalcitTypeAnnotation::Number => Ok(ComponentAbiType::Number),
@@ -712,21 +765,75 @@ fn component_abi_type(annotation: &CalcitTypeAnnotation, definition: &str, path:
   }
 }
 
+fn component_function_schema(
+  compiled: &program::CompiledDef,
+  definition: &str,
+  source_arity: usize,
+) -> Result<(Vec<ComponentAbiType>, ComponentAbiType), String> {
+  let signature = compiled
+    .schema
+    .resolve_to_fn()
+    .ok_or_else(|| format!("E_COMPONENT_ABI_MISSING_SCHEMA: `{definition}` at `logical_schema` requires a resolved function schema"))?;
+  if !signature.generics.is_empty() {
+    return Err(format!(
+      "E_COMPONENT_ABI_UNSUPPORTED_GENERIC: `{definition}` at `logical_schema.generics` must be monomorphized"
+    ));
+  }
+  if signature.rest_type.is_some() {
+    return Err(format!(
+      "E_COMPONENT_ABI_UNSUPPORTED_ARITY: `{definition}` at `logical_schema.rest` must use fixed arity"
+    ));
+  }
+  let parameters = signature
+    .arg_types
+    .iter()
+    .enumerate()
+    .map(|(index, annotation)| component_abi_type(annotation, definition, &format!("logical_schema.parameters[{index}]")))
+    .collect::<Result<Vec<_>, _>>()?;
+  if parameters.len() != source_arity {
+    return Err(format!(
+      "E_COMPONENT_ABI_SCHEMA_ARITY: `{definition}` declares {source_arity} source parameters but its schema declares {}",
+      parameters.len()
+    ));
+  }
+  let result = component_abi_type(&signature.return_type, definition, "logical_schema.result")?;
+  Ok((parameters, result))
+}
+
+fn collect_component_import_adapters(program_data: &program::CompiledProgram) -> Result<Vec<ComponentImportAdapter>, String> {
+  let mut adapters = Vec::new();
+  for (namespace, file) in program_data {
+    for (name, compiled) in &file.defs {
+      if !is_wasm_import_def(&compiled.preprocessed_code) {
+        continue;
+      }
+      let definition = format!("{namespace}/{name}");
+      let (module, symbol, args) = parse_wasm_import_def(&compiled.preprocessed_code)
+        .ok_or_else(|| format!("E_COMPONENT_ABI_IMPORT: `{definition}` must use `defwasm-import name (args) |module |field`"))?;
+      let source_arity = wasm_import_arity(&args)
+        .map_err(|reason| format!("E_COMPONENT_ABI_UNSUPPORTED_ARITY: `{definition}` at `logical_schema.parameters` {reason}"))?;
+      let (parameters, result) = component_function_schema(compiled, &definition, source_arity as usize)?;
+      adapters.push(ComponentImportAdapter {
+        definition,
+        module,
+        symbol,
+        raw_index: 0,
+        source_arity,
+        parameters,
+        result,
+      });
+    }
+  }
+  adapters.sort_unstable_by(|left, right| left.definition.cmp(&right.definition));
+  validate_component_import_symbols(&adapters)?;
+  Ok(adapters)
+}
+
 fn collect_component_export_adapters(
   program_data: &program::CompiledProgram,
   fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
   fn_index: &HashMap<String, u32>,
 ) -> Result<Vec<ComponentExportAdapter>, String> {
-  for (namespace, file) in program_data {
-    for (name, compiled) in &file.defs {
-      if is_wasm_import_def(&compiled.preprocessed_code) {
-        return Err(format!(
-          "E_COMPONENT_ABI_UNSUPPORTED_IMPORT: `{namespace}/{name}` is a Component import; import adapters are not supported by this export-only slice"
-        ));
-      }
-    }
-  }
-
   let mut adapters = Vec::new();
   for (namespace, name, args, _) in fn_defs {
     let definition = format!("{namespace}/{name}");
@@ -741,33 +848,8 @@ fn collect_component_export_adapters(
         "E_COMPONENT_ABI_UNSUPPORTED_ARITY: `{definition}` at `logical_schema.parameters` must use fixed arity"
       ));
     }
-    let signature = compiled.schema.resolve_to_fn().ok_or_else(|| {
-      format!("E_COMPONENT_ABI_MISSING_SCHEMA: `{definition}` at `logical_schema` requires a resolved function schema")
-    })?;
-    if !signature.generics.is_empty() {
-      return Err(format!(
-        "E_COMPONENT_ABI_UNSUPPORTED_GENERIC: `{definition}` at `logical_schema.generics` must be monomorphized"
-      ));
-    }
-    if signature.rest_type.is_some() {
-      return Err(format!(
-        "E_COMPONENT_ABI_UNSUPPORTED_ARITY: `{definition}` at `logical_schema.rest` must use fixed arity"
-      ));
-    }
-    let parameters = signature
-      .arg_types
-      .iter()
-      .enumerate()
-      .map(|(index, annotation)| component_abi_type(annotation, &definition, &format!("logical_schema.parameters[{index}]")))
-      .collect::<Result<Vec<_>, _>>()?;
     let source_arity = fn_param_names(args).len();
-    if parameters.len() != source_arity {
-      return Err(format!(
-        "E_COMPONENT_ABI_SCHEMA_ARITY: `{definition}` declares {source_arity} source parameters but its schema declares {}",
-        parameters.len()
-      ));
-    }
-    let result = component_abi_type(&signature.return_type, &definition, "logical_schema.result")?;
+    let (parameters, result) = component_function_schema(compiled, &definition, source_arity)?;
     let target_index = *fn_index
       .get(&definition)
       .ok_or_else(|| format!("E_COMPONENT_ABI_TARGET: compiled target `{definition}` is missing"))?;
@@ -802,6 +884,40 @@ fn validate_component_export_symbols(adapters: &[ComponentExportAdapter]) -> Res
     ));
   }
   Ok(())
+}
+
+fn validate_component_import_symbols(adapters: &[ComponentImportAdapter]) -> Result<(), String> {
+  let mut symbol_owners = BTreeMap::<(&str, &str), Vec<&str>>::new();
+  for adapter in adapters {
+    symbol_owners
+      .entry((adapter.module.as_str(), adapter.symbol.as_str()))
+      .or_default()
+      .push(adapter.definition.as_str());
+  }
+  if let Some(((module, symbol), owners)) = symbol_owners.into_iter().find(|(_, owners)| owners.len() > 1) {
+    return Err(format!(
+      "E_COMPONENT_ABI_SYMBOL_CONFLICT: import symbol `{module}/{symbol}` is declared by {}",
+      owners.join(", ")
+    ));
+  }
+  Ok(())
+}
+
+fn component_import_signature(adapter: &ComponentImportAdapter) -> (Vec<ValType>, Vec<ValType>) {
+  let mut parameters = Vec::new();
+  for parameter in &adapter.parameters {
+    match parameter {
+      ComponentAbiType::Number => parameters.push(ValType::F64),
+      ComponentAbiType::String => parameters.extend([ValType::I32, ValType::I32]),
+    }
+  }
+  match adapter.result {
+    ComponentAbiType::Number => (parameters, vec![ValType::F64]),
+    ComponentAbiType::String => {
+      parameters.push(ValType::I32);
+      (parameters, vec![])
+    }
+  }
 }
 
 fn build_cabi_realloc_fn() -> CompiledFn {
@@ -915,6 +1031,58 @@ fn build_cabi_realloc_fn() -> CompiledFn {
     params: vec![ValType::I32; 4],
     results: vec![ValType::I32],
     locals: vec![ValType::I32; 4],
+    instructions,
+  }
+}
+
+fn build_component_import_adapter(adapter: &ComponentImportAdapter, str_new_index: u32, cabi_realloc_index: u32) -> CompiledFn {
+  let params = vec![ValType::F64; adapter.parameters.len()];
+  let mut locals = Vec::new();
+  let mut instructions = Vec::new();
+
+  for (index, parameter) in adapter.parameters.iter().enumerate() {
+    match parameter {
+      ComponentAbiType::Number => instructions.push(Instruction::LocalGet(index as u32)),
+      ComponentAbiType::String => instructions.extend([
+        Instruction::LocalGet(index as u32),
+        Instruction::I32TruncF64U,
+        Instruction::I32Const(8),
+        Instruction::I32Add,
+        Instruction::LocalGet(index as u32),
+        Instruction::I32TruncF64U,
+        Instruction::F64Load(mem_arg_f64(0)),
+        Instruction::I32TruncF64U,
+      ]),
+    }
+  }
+
+  match adapter.result {
+    ComponentAbiType::Number => instructions.push(Instruction::Call(adapter.raw_index)),
+    ComponentAbiType::String => {
+      let ret_ptr = params.len() as u32;
+      locals.push(ValType::I32);
+      instructions.extend([
+        Instruction::I32Const(0),
+        Instruction::I32Const(0),
+        Instruction::I32Const(4),
+        Instruction::I32Const(8),
+        Instruction::Call(cabi_realloc_index),
+        Instruction::LocalTee(ret_ptr),
+        Instruction::Call(adapter.raw_index),
+        Instruction::LocalGet(ret_ptr),
+        Instruction::I32Load(mem_arg_i32(0)),
+        Instruction::LocalGet(ret_ptr),
+        Instruction::I32Load(mem_arg_i32(4)),
+        Instruction::Call(str_new_index),
+      ]);
+    }
+  }
+
+  CompiledFn {
+    export_name: None,
+    params,
+    results: vec![ValType::F64],
+    locals,
     instructions,
   }
 }
@@ -4454,9 +4622,10 @@ mod tests {
   use std::sync::Arc;
 
   use super::{
-    ComponentAbiType, ComponentExportAdapter, HostImport, WasmBoundary, WasmTarget, build_cabi_realloc_fn,
-    build_component_export_adapter, component_abi_type, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
-    validate_component_export_symbols,
+    ComponentAbiType, ComponentExportAdapter, ComponentImportAdapter, HostImport, WasmBoundary, WasmTarget, build_cabi_realloc_fn,
+    build_component_export_adapter, build_component_import_adapter, component_abi_type, component_import_signature,
+    host_imports_for_target, index_host_imports, must_reject_extraction_failure, validate_component_export_symbols,
+    validate_component_import_symbols,
   };
   use crate::calcit::{Calcit, CalcitList, CalcitSyntax, CalcitTypeAnnotation};
   use wasm_encoder::ValType;
@@ -4531,6 +4700,40 @@ mod tests {
   }
 
   #[test]
+  fn component_import_adapters_use_canonical_scalar_and_string_shapes() {
+    let number = ComponentImportAdapter {
+      definition: "app.main/host-add-one".into(),
+      module: "host".into(),
+      symbol: "add-one".into(),
+      raw_index: 2,
+      source_arity: 1,
+      parameters: vec![ComponentAbiType::Number],
+      result: ComponentAbiType::Number,
+    };
+    assert_eq!(component_import_signature(&number), (vec![ValType::F64], vec![ValType::F64]));
+    let number_adapter = build_component_import_adapter(&number, 10, 11);
+    assert_eq!(number_adapter.params, vec![ValType::F64]);
+    assert_eq!(number_adapter.results, vec![ValType::F64]);
+
+    let string = ComponentImportAdapter {
+      definition: "app.main/host-echo".into(),
+      module: "host".into(),
+      symbol: "echo".into(),
+      raw_index: 3,
+      source_arity: 1,
+      parameters: vec![ComponentAbiType::String],
+      result: ComponentAbiType::String,
+    };
+    assert_eq!(
+      component_import_signature(&string),
+      (vec![ValType::I32, ValType::I32, ValType::I32], vec![])
+    );
+    let string_adapter = build_component_import_adapter(&string, 10, 11);
+    assert_eq!(string_adapter.params, vec![ValType::F64]);
+    assert_eq!(string_adapter.results, vec![ValType::F64]);
+  }
+
+  #[test]
   fn component_adapter_rejects_types_outside_the_first_slice() {
     let error = component_abi_type(&CalcitTypeAnnotation::Bool, "app.main/check", "logical_schema.result")
       .expect_err("Bool is deferred to a later adapter slice");
@@ -4552,6 +4755,25 @@ mod tests {
     assert_eq!(
       error,
       "E_COMPONENT_ABI_SYMBOL_CONFLICT: export symbol `run` is declared by a.main/run, b.main/run"
+    );
+  }
+
+  #[test]
+  fn component_adapter_rejects_duplicate_import_symbols_deterministically() {
+    let adapter = |definition: &str| ComponentImportAdapter {
+      definition: definition.into(),
+      module: "host".into(),
+      symbol: "run".into(),
+      raw_index: 0,
+      source_arity: 1,
+      parameters: vec![ComponentAbiType::Number],
+      result: ComponentAbiType::Number,
+    };
+    let error = validate_component_import_symbols(&[adapter("a.main/run"), adapter("b.main/run")])
+      .expect_err("duplicate import symbols must fail before WASM encoding");
+    assert_eq!(
+      error,
+      "E_COMPONENT_ABI_SYMBOL_CONFLICT: import symbol `host/run` is declared by a.main/run, b.main/run"
     );
   }
 

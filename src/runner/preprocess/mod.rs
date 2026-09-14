@@ -8625,9 +8625,20 @@ pub fn preprocess_defn(
       } else {
         detected_return_type
       };
-      if let Some(returned_expr) = processed_body.last() {
-        reject_strict_bare_enum_constructor_value(
-          returned_expr,
+      if !matches!(head, CalcitSyntax::DefWasmImport) {
+        if let Some(returned_expr) = processed_body.last() {
+          reject_strict_bare_enum_constructor_value(
+            returned_expr,
+            &return_type_hint,
+            &body_types,
+            ctx.file_ns,
+            def_name.as_ref(),
+            ctx.call_stack,
+            ctx.call_location.clone().or(Some(definition_location.clone())),
+          )?;
+        }
+        reject_strict_nil_for_unit_return(
+          &processed_body,
           &return_type_hint,
           &body_types,
           ctx.file_ns,
@@ -8635,39 +8646,30 @@ pub fn preprocess_defn(
           ctx.call_stack,
           ctx.call_location.clone().or(Some(definition_location.clone())),
         )?;
-      }
-      reject_strict_nil_for_unit_return(
-        &processed_body,
-        &return_type_hint,
-        &body_types,
-        ctx.file_ns,
-        def_name.as_ref(),
-        ctx.call_stack,
-        ctx.call_location.clone().or(Some(definition_location.clone())),
-      )?;
-      check_function_return_type(
-        &processed_body,
-        &return_type_hint,
-        &body_types,
-        ctx.file_ns,
-        def_name.as_ref(),
-        ctx.check_warnings,
-      );
+        check_function_return_type(
+          &processed_body,
+          &return_type_hint,
+          &body_types,
+          ctx.file_ns,
+          def_name.as_ref(),
+          ctx.check_warnings,
+        );
 
-      // Check recur arity in function body
-      // Skip checking for:
-      // 1. Functions with marked args (& or ?) - complex arity rules
-      // 2. calcit.core functions - external library, should be fixed separately
-      let is_core_ns = ctx.file_ns == calcit::CORE_NS;
-      if !has_marked_args && !is_core_ns {
-        let expected_arity = param_symbols.len();
-        for body_expr in &processed_body {
-          check_recur_arity_in_expr(body_expr, expected_arity, ctx.file_ns, def_name.as_ref(), ctx.check_warnings);
+        // Check recur arity in function body
+        // Skip checking for:
+        // 1. Functions with marked args (& or ?) - complex arity rules
+        // 2. calcit.core functions - external library, should be fixed separately
+        let is_core_ns = ctx.file_ns == calcit::CORE_NS;
+        if !has_marked_args && !is_core_ns {
+          let expected_arity = param_symbols.len();
+          for body_expr in &processed_body {
+            check_recur_arity_in_expr(body_expr, expected_arity, ctx.file_ns, def_name.as_ref(), ctx.check_warnings);
+          }
         }
-      }
 
-      for body_expr in &processed_body {
-        check_impl_traits_top_level_in_expr(body_expr, ctx.file_ns, def_name.as_ref(), ctx.check_warnings);
+        for body_expr in &processed_body {
+          check_impl_traits_top_level_in_expr(body_expr, ctx.file_ns, def_name.as_ref(), ctx.check_warnings);
+        }
       }
 
       // Restore previous function features

@@ -18,6 +18,16 @@
           :tests $ [] $ %{} 'TestEntry (:name |adds-one)
             :code $ quote $ assert= 42 (add-one 41)
             :tags $ #{} :wasm
+        'call-host-add-one $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export call-host-add-one (value) (host-add-one value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+        'call-host-echo $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export call-host-echo (text) (host-echo text)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String
         'echo-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-text (text) text
           :examples $ []
@@ -26,6 +36,16 @@
           :tests $ [] $ %{} 'TestEntry (:name |keeps-text)
             :code $ quote $ assert= |hello (echo-text |hello)
             :tags $ #{} :wasm
+        'host-add-one $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-import host-add-one (value) |host |add-one
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+        'host-echo $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-import host-echo (text) |host |echo
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () 0
           :examples $ []
