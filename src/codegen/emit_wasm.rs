@@ -138,6 +138,27 @@ pub enum WasmTarget {
   Wasi,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum WasmBoundary {
+  #[default]
+  Native,
+  Component,
+}
+
+impl FromStr for WasmBoundary {
+  type Err = String;
+
+  fn from_str(value: &str) -> Result<Self, Self::Err> {
+    match value {
+      "native" => Ok(Self::Native),
+      "component" => Ok(Self::Component),
+      _ => Err(format!(
+        "E_WASM_BOUNDARY: unknown WASM boundary `{value}`; expected `native` or `component`"
+      )),
+    }
+  }
+}
+
 impl FromStr for WasmTarget {
   type Err = String;
 
@@ -150,7 +171,12 @@ impl FromStr for WasmTarget {
   }
 }
 
-pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTarget) -> Result<(), String> {
+pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTarget, boundary: WasmBoundary) -> Result<(), String> {
+  if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
+    return Err(
+      "E_WASM_BOUNDARY: `calcit wasi` does not support the Component boundary; use `calcit wasm --boundary component`".into(),
+    );
+  }
   let program_data = program::clone_compiled_program_snapshot()?;
   validate_wasm_target_in_program(&program_data, init_ns, init_def, target)?;
 
@@ -202,7 +228,14 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   // Build the import table before assigning user function indices. Built-in imports
   // stay first so internal lowering keeps its stable indices; user declarations
   // append after them.
-  let mut host_imports = host_imports_for_target(target);
+  // A Component contract must account for every host dependency. The legacy
+  // core target keeps its broad host table, while Component exports start
+  // self-contained and reject explicit imports in this export-only slice.
+  let mut host_imports = if boundary == WasmBoundary::Component {
+    Vec::new()
+  } else {
+    host_imports_for_target(target)
+  };
   let mut wasm_import_names: HashMap<String, u32> = HashMap::new();
   let mut wasm_import_arities: HashMap<String, u32> = HashMap::new();
   for &ns in &ns_order {
@@ -457,6 +490,11 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     host_imports: index_host_imports(&host_imports),
     target,
   };
+  let component_adapters = if boundary == WasmBoundary::Component {
+    collect_component_export_adapters(&program_data, &fn_defs, &env.fn_index)?
+  } else {
+    Vec::new()
+  };
 
   // Second pass: target failures reject the artifact. Dependency failures keep
   // a trapping slot so preassigned call and table indices remain stable.
@@ -474,7 +512,12 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     let result = try_custom_def_impl(ns, def_name, &export_name, args, &env)
       .unwrap_or_else(|| compile_fn(def_name, &export_name, args, body, &env));
     match result {
-      Ok(func) => compiled_fns.push(func),
+      Ok(mut func) => {
+        if boundary == WasmBoundary::Component && explicit_export {
+          func.export_name = None;
+        }
+        compiled_fns.push(func);
+      }
       Err(e) => {
         if ns == init_ns || explicit_export {
           return Err(format!("[wasm] target function {ns}/{def_name} is not compilable: {e}"));
@@ -489,6 +532,14 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
           instructions: vec![Instruction::Unreachable],
         });
       }
+    }
+  }
+
+  if boundary == WasmBoundary::Component {
+    let cabi_realloc_index = num_imports + compiled_fns.len() as u32;
+    compiled_fns.push(build_cabi_realloc_fn());
+    for adapter in &component_adapters {
+      compiled_fns.push(build_component_export_adapter(adapter, str_new_idx, cabi_realloc_index));
     }
   }
 
@@ -549,6 +600,40 @@ pub fn validate_wasm_target(init_ns: &str, init_def: &str, target: WasmTarget) -
   validate_wasm_target_in_program(&program_data, init_ns, init_def, target)
 }
 
+pub fn validate_wasm_boundary(target: WasmTarget, boundary: WasmBoundary) -> Result<(), String> {
+  if boundary == WasmBoundary::Native {
+    return Ok(());
+  }
+  if target == WasmTarget::Wasi {
+    return Err(
+      "E_WASM_BOUNDARY: `calcit wasi` does not support the Component boundary; use `calcit wasm --boundary component`".into(),
+    );
+  }
+  let program_data = program::clone_compiled_program_snapshot()?;
+  let mut fn_defs = Vec::new();
+  for (namespace, file) in &program_data {
+    for (name, compiled) in &file.defs {
+      if compiled.kind != program::CompiledDefKind::Fn || is_wasm_import_def(&compiled.preprocessed_code) {
+        continue;
+      }
+      match extract_fn_parts(&compiled.preprocessed_code) {
+        Ok((args, body)) => fn_defs.push((namespace.to_string(), name.to_string(), args, body)),
+        Err(reason) if is_wasm_export_def(&compiled.preprocessed_code) => {
+          return Err(format!("E_COMPONENT_ABI_TARGET: `{namespace}/{name}` is not compilable: {reason}"));
+        }
+        Err(_) => {}
+      }
+    }
+  }
+  let fn_index = fn_defs
+    .iter()
+    .enumerate()
+    .map(|(index, (namespace, name, _, _))| (format!("{namespace}/{name}"), index as u32))
+    .collect::<HashMap<_, _>>();
+  collect_component_export_adapters(&program_data, &fn_defs, &fn_index)?;
+  Ok(())
+}
+
 fn validate_wasm_target_in_program(
   program_data: &program::CompiledProgram,
   init_ns: &str,
@@ -600,6 +685,276 @@ struct CompiledFn {
   locals: Vec<ValType>,
   /// Instruction sequence for the function body
   instructions: Vec<Instruction<'static>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ComponentAbiType {
+  Number,
+  String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ComponentExportAdapter {
+  definition: String,
+  symbol: String,
+  target_index: u32,
+  parameters: Vec<ComponentAbiType>,
+  result: ComponentAbiType,
+}
+
+fn component_abi_type(annotation: &CalcitTypeAnnotation, definition: &str, path: &str) -> Result<ComponentAbiType, String> {
+  match annotation {
+    CalcitTypeAnnotation::Number => Ok(ComponentAbiType::Number),
+    CalcitTypeAnnotation::String => Ok(ComponentAbiType::String),
+    other => Err(format!(
+      "E_COMPONENT_ABI_UNSUPPORTED_TYPE: `{definition}` at `{path}` uses `{other}`, but this adapter slice only supports Number and String"
+    )),
+  }
+}
+
+fn collect_component_export_adapters(
+  program_data: &program::CompiledProgram,
+  fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
+  fn_index: &HashMap<String, u32>,
+) -> Result<Vec<ComponentExportAdapter>, String> {
+  for (namespace, file) in program_data {
+    for (name, compiled) in &file.defs {
+      if is_wasm_import_def(&compiled.preprocessed_code) {
+        return Err(format!(
+          "E_COMPONENT_ABI_UNSUPPORTED_IMPORT: `{namespace}/{name}` is a Component import; import adapters are not supported by this export-only slice"
+        ));
+      }
+    }
+  }
+
+  let mut adapters = Vec::new();
+  for (namespace, name, args, _) in fn_defs {
+    let definition = format!("{namespace}/{name}");
+    let Some(compiled) = program_data.get(namespace.as_str()).and_then(|file| file.defs.get(name.as_str())) else {
+      continue;
+    };
+    if !is_wasm_export_def(&compiled.preprocessed_code) {
+      continue;
+    }
+    if !matches!(args, CalcitFnArgs::Args(_)) {
+      return Err(format!(
+        "E_COMPONENT_ABI_UNSUPPORTED_ARITY: `{definition}` at `logical_schema.parameters` must use fixed arity"
+      ));
+    }
+    let signature = compiled.schema.resolve_to_fn().ok_or_else(|| {
+      format!("E_COMPONENT_ABI_MISSING_SCHEMA: `{definition}` at `logical_schema` requires a resolved function schema")
+    })?;
+    if !signature.generics.is_empty() {
+      return Err(format!(
+        "E_COMPONENT_ABI_UNSUPPORTED_GENERIC: `{definition}` at `logical_schema.generics` must be monomorphized"
+      ));
+    }
+    if signature.rest_type.is_some() {
+      return Err(format!(
+        "E_COMPONENT_ABI_UNSUPPORTED_ARITY: `{definition}` at `logical_schema.rest` must use fixed arity"
+      ));
+    }
+    let parameters = signature
+      .arg_types
+      .iter()
+      .enumerate()
+      .map(|(index, annotation)| component_abi_type(annotation, &definition, &format!("logical_schema.parameters[{index}]")))
+      .collect::<Result<Vec<_>, _>>()?;
+    let source_arity = fn_param_names(args).len();
+    if parameters.len() != source_arity {
+      return Err(format!(
+        "E_COMPONENT_ABI_SCHEMA_ARITY: `{definition}` declares {source_arity} source parameters but its schema declares {}",
+        parameters.len()
+      ));
+    }
+    let result = component_abi_type(&signature.return_type, &definition, "logical_schema.result")?;
+    let target_index = *fn_index
+      .get(&definition)
+      .ok_or_else(|| format!("E_COMPONENT_ABI_TARGET: compiled target `{definition}` is missing"))?;
+    adapters.push(ComponentExportAdapter {
+      definition,
+      symbol: name.clone(),
+      target_index,
+      parameters,
+      result,
+    });
+  }
+  if adapters.is_empty() {
+    return Err("E_COMPONENT_ABI_EXPORTS: no `defwasm-export` definitions were found for the Component boundary".into());
+  }
+  Ok(adapters)
+}
+
+fn build_cabi_realloc_fn() -> CompiledFn {
+  let new_ptr = 4;
+  let new_end = 5;
+  let copy_len = 6;
+  let instructions = vec![
+    Instruction::LocalGet(3),
+    Instruction::I32Eqz,
+    Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)),
+    Instruction::I32Const(0),
+    Instruction::Else,
+    Instruction::LocalGet(2),
+    Instruction::I32Eqz,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(2),
+    Instruction::LocalGet(2),
+    Instruction::I32Const(1),
+    Instruction::I32Sub,
+    Instruction::I32And,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::LocalGet(2),
+    Instruction::I32Const(1),
+    Instruction::I32Sub,
+    Instruction::I32Add,
+    Instruction::I32Const(0),
+    Instruction::LocalGet(2),
+    Instruction::I32Sub,
+    Instruction::I32And,
+    Instruction::LocalTee(new_ptr),
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::I32LtU,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(new_ptr),
+    Instruction::LocalGet(3),
+    Instruction::I32Add,
+    Instruction::LocalTee(new_end),
+    Instruction::LocalGet(new_ptr),
+    Instruction::I32LtU,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(new_end),
+    Instruction::MemorySize(0),
+    Instruction::I32Const(16),
+    Instruction::I32Shl,
+    Instruction::I32GtU,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(new_end),
+    Instruction::GlobalSet(HEAP_PTR_GLOBAL),
+    Instruction::LocalGet(0),
+    Instruction::I32Eqz,
+    Instruction::I32Eqz,
+    Instruction::LocalGet(1),
+    Instruction::I32Eqz,
+    Instruction::I32Eqz,
+    Instruction::I32And,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::LocalGet(1),
+    Instruction::LocalGet(3),
+    Instruction::I32LtU,
+    Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)),
+    Instruction::LocalGet(1),
+    Instruction::Else,
+    Instruction::LocalGet(3),
+    Instruction::End,
+    Instruction::LocalSet(copy_len),
+    Instruction::LocalGet(new_ptr),
+    Instruction::LocalGet(0),
+    Instruction::LocalGet(copy_len),
+    Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+    Instruction::End,
+    Instruction::LocalGet(new_ptr),
+    Instruction::End,
+  ];
+  CompiledFn {
+    export_name: Some("cabi_realloc".into()),
+    params: vec![ValType::I32; 4],
+    results: vec![ValType::I32],
+    locals: vec![ValType::I32; 3],
+    instructions,
+  }
+}
+
+fn build_component_export_adapter(adapter: &ComponentExportAdapter, str_new_index: u32, cabi_realloc_index: u32) -> CompiledFn {
+  let mut params = Vec::new();
+  for parameter in &adapter.parameters {
+    match parameter {
+      ComponentAbiType::Number => params.push(ValType::F64),
+      ComponentAbiType::String => params.extend([ValType::I32, ValType::I32]),
+    }
+  }
+
+  let mut locals = Vec::new();
+  let mut instructions = Vec::new();
+  let mut flat_index = 0u32;
+  let mut lowered = Vec::with_capacity(adapter.parameters.len());
+  for parameter in &adapter.parameters {
+    match parameter {
+      ComponentAbiType::Number => {
+        lowered.push(flat_index);
+        flat_index += 1;
+      }
+      ComponentAbiType::String => {
+        let local = params.len() as u32 + locals.len() as u32;
+        locals.push(ValType::F64);
+        instructions.extend([
+          Instruction::LocalGet(flat_index),
+          Instruction::LocalGet(flat_index + 1),
+          Instruction::Call(str_new_index),
+          Instruction::LocalSet(local),
+        ]);
+        lowered.push(local);
+        flat_index += 2;
+      }
+    }
+  }
+  for local in lowered {
+    instructions.push(Instruction::LocalGet(local));
+  }
+  instructions.push(Instruction::Call(adapter.target_index));
+
+  let results = match adapter.result {
+    ComponentAbiType::Number => vec![ValType::F64],
+    ComponentAbiType::String => {
+      let value = params.len() as u32 + locals.len() as u32;
+      locals.push(ValType::F64);
+      let value_ptr = params.len() as u32 + locals.len() as u32;
+      locals.push(ValType::I32);
+      let ret_ptr = params.len() as u32 + locals.len() as u32;
+      locals.push(ValType::I32);
+      instructions.extend([
+        Instruction::LocalTee(value),
+        Instruction::I32TruncF64U,
+        Instruction::LocalSet(value_ptr),
+        Instruction::I32Const(0),
+        Instruction::I32Const(0),
+        Instruction::I32Const(4),
+        Instruction::I32Const(8),
+        Instruction::Call(cabi_realloc_index),
+        Instruction::LocalTee(ret_ptr),
+        Instruction::LocalGet(value_ptr),
+        Instruction::I32Const(8),
+        Instruction::I32Add,
+        Instruction::I32Store(mem_arg_i32(0)),
+        Instruction::LocalGet(ret_ptr),
+        Instruction::LocalGet(value_ptr),
+        Instruction::F64Load(mem_arg_f64(0)),
+        Instruction::I32TruncF64U,
+        Instruction::I32Store(mem_arg_i32(4)),
+        Instruction::LocalGet(ret_ptr),
+      ]);
+      vec![ValType::I32]
+    }
+  };
+
+  CompiledFn {
+    export_name: Some(adapter.symbol.clone()),
+    params,
+    results,
+    locals,
+    instructions,
+  }
 }
 
 #[derive(Clone)]
@@ -4055,8 +4410,11 @@ mod tests {
   use std::str::FromStr;
   use std::sync::Arc;
 
-  use super::{HostImport, WasmTarget, host_imports_for_target, index_host_imports, must_reject_extraction_failure};
-  use crate::calcit::{Calcit, CalcitList, CalcitSyntax};
+  use super::{
+    ComponentAbiType, ComponentExportAdapter, HostImport, WasmBoundary, WasmTarget, build_cabi_realloc_fn,
+    build_component_export_adapter, component_abi_type, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
+  };
+  use crate::calcit::{Calcit, CalcitList, CalcitSyntax, CalcitTypeAnnotation};
   use wasm_encoder::ValType;
 
   fn declaration(head: CalcitSyntax) -> Calcit {
@@ -4083,6 +4441,57 @@ mod tests {
     assert_eq!(WasmTarget::from_str("core"), Ok(WasmTarget::Core));
     assert_eq!(WasmTarget::from_str("wasi"), Ok(WasmTarget::Wasi));
     assert!(WasmTarget::from_str("browser").unwrap_err().starts_with("E_WASM_TARGET:"));
+  }
+
+  #[test]
+  fn wasm_boundary_parser_is_explicit_and_stable() {
+    assert_eq!(WasmBoundary::from_str("native"), Ok(WasmBoundary::Native));
+    assert_eq!(WasmBoundary::from_str("component"), Ok(WasmBoundary::Component));
+    assert!(WasmBoundary::from_str("wit").unwrap_err().starts_with("E_WASM_BOUNDARY:"));
+  }
+
+  #[test]
+  fn component_export_adapters_use_canonical_scalar_and_string_shapes() {
+    let allocator = build_cabi_realloc_fn();
+    assert_eq!(allocator.export_name.as_deref(), Some("cabi_realloc"));
+    assert_eq!(allocator.params, vec![ValType::I32; 4]);
+    assert_eq!(allocator.results, vec![ValType::I32]);
+
+    let number = build_component_export_adapter(
+      &ComponentExportAdapter {
+        definition: "app.main/add-one".into(),
+        symbol: "add-one".into(),
+        target_index: 20,
+        parameters: vec![ComponentAbiType::Number],
+        result: ComponentAbiType::Number,
+      },
+      10,
+      30,
+    );
+    assert_eq!(number.params, vec![ValType::F64]);
+    assert_eq!(number.results, vec![ValType::F64]);
+
+    let string = build_component_export_adapter(
+      &ComponentExportAdapter {
+        definition: "app.main/echo".into(),
+        symbol: "echo".into(),
+        target_index: 21,
+        parameters: vec![ComponentAbiType::String],
+        result: ComponentAbiType::String,
+      },
+      10,
+      30,
+    );
+    assert_eq!(string.params, vec![ValType::I32, ValType::I32]);
+    assert_eq!(string.results, vec![ValType::I32]);
+  }
+
+  #[test]
+  fn component_adapter_rejects_types_outside_the_first_slice() {
+    let error = component_abi_type(&CalcitTypeAnnotation::Bool, "app.main/check", "logical_schema.result")
+      .expect_err("Bool is deferred to a later adapter slice");
+    assert!(error.contains("E_COMPONENT_ABI_UNSUPPORTED_TYPE"));
+    assert!(error.contains("logical_schema.result"));
   }
 
   #[test]

@@ -9,7 +9,7 @@ use colored::Colorize;
 
 use crate::calcit::LocatedWarning;
 use crate::call_stack::CallStackList;
-use crate::codegen::emit_wasm::WasmTarget;
+use crate::codegen::emit_wasm::{WasmBoundary, WasmTarget};
 use crate::util::string::strip_shebang;
 use crate::{ProgramEntries, call_stack, codegen, program, runner, snapshot, util};
 
@@ -21,6 +21,7 @@ pub struct WasmCliOptions {
   pub reload_fn: Option<String>,
   pub entry: Option<String>,
   pub check_only: bool,
+  pub boundary: WasmBoundary,
 }
 
 pub fn run(options: &WasmCliOptions, target: WasmTarget) -> Result<(), String> {
@@ -93,13 +94,13 @@ pub fn run(options: &WasmCliOptions, target: WasmTarget) -> Result<(), String> {
   .map_err(|e| e.msg)?;
 
   if options.check_only {
-    run_check_only(&entries, target)
+    run_check_only(&entries, target, options.boundary)
   } else {
-    run_wasm_codegen(&entries, &options.emit_path, target)
+    run_wasm_codegen(&entries, &options.emit_path, target, options.boundary)
   }
 }
 
-fn run_check_only(entries: &ProgramEntries, target: WasmTarget) -> Result<(), String> {
+fn run_check_only(entries: &ProgramEntries, target: WasmTarget, boundary: WasmBoundary) -> Result<(), String> {
   let started_time = Instant::now();
   let check_warnings = RefCell::new(vec![]);
 
@@ -117,6 +118,10 @@ fn run_check_only(entries: &ProgramEntries, target: WasmTarget) -> Result<(), St
   if target == WasmTarget::Wasi {
     preprocess_wasm_namespace(entries, &check_warnings)?;
     codegen::emit_wasm::validate_wasm_target(&entries.init_ns, &entries.init_def, target)?;
+  }
+  if boundary == WasmBoundary::Component {
+    preprocess_wasm_namespace(entries, &check_warnings)?;
+    codegen::emit_wasm::validate_wasm_boundary(target, boundary)?;
   }
 
   let warnings = check_warnings.borrow();
@@ -157,13 +162,13 @@ fn preprocess_entry(
   }
 }
 
-fn run_wasm_codegen(entries: &ProgramEntries, emit_path: &str, target: WasmTarget) -> Result<(), String> {
+fn run_wasm_codegen(entries: &ProgramEntries, emit_path: &str, target: WasmTarget, boundary: WasmBoundary) -> Result<(), String> {
   let started_time = Instant::now();
   codegen::set_codegen_mode(true);
 
   let check_warnings = RefCell::new(vec![]);
   preprocess_wasm_namespace(entries, &check_warnings)?;
-  codegen::emit_wasm::emit_wasm(&entries.init_ns, &entries.init_def, emit_path, target)?;
+  codegen::emit_wasm::emit_wasm(&entries.init_ns, &entries.init_def, emit_path, target, boundary)?;
 
   let duration = Instant::now().duration_since(started_time);
   println!("{}", format!("took {}ms", duration.as_micros() as f64 / 1000.0).dimmed());

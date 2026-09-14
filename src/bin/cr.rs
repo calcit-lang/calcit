@@ -289,6 +289,7 @@ fn resolve_public_wasm_options(
     reload_fn: reload_fn.or(cli_args.reload_fn.as_deref()).map(str::to_owned),
     entry: entry.or(cli_args.entry.as_deref()).map(str::to_owned),
     check_only: check_only || cli_args.check_only,
+    boundary: codegen::emit_wasm::WasmBoundary::Native,
   }
 }
 
@@ -351,18 +352,17 @@ fn run_cli() -> Result<(), String> {
   // Handle standalone commands that don't need full program loading
   match &cli_args.subcommand {
     Some(CalcitCommand::EmitWasm(command)) => {
-      return calcit::wasm_cli::run(
-        &resolve_public_wasm_options(
-          &cli_args,
-          command.input.as_deref(),
-          command.emit_path.as_deref(),
-          command.init_fn.as_deref(),
-          command.reload_fn.as_deref(),
-          command.entry.as_deref(),
-          command.check_only,
-        ),
-        codegen::emit_wasm::WasmTarget::Core,
+      let mut options = resolve_public_wasm_options(
+        &cli_args,
+        command.input.as_deref(),
+        command.emit_path.as_deref(),
+        command.init_fn.as_deref(),
+        command.reload_fn.as_deref(),
+        command.entry.as_deref(),
+        command.check_only,
       );
+      options.boundary = command.boundary.parse()?;
+      return calcit::wasm_cli::run(&options, codegen::emit_wasm::WasmTarget::Core);
     }
     Some(CalcitCommand::EmitWasi(command)) => {
       return calcit::wasm_cli::run(

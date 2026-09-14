@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 use argh::FromArgs;
 use calcit::builtins;
-use calcit::codegen::emit_wasm::WasmTarget;
+use calcit::codegen::emit_wasm::{WasmBoundary, WasmTarget};
 #[cfg(not(target_arch = "wasm32"))]
 use calcit::runner;
 use calcit::wasm_cli::{self, WasmCliOptions};
@@ -62,6 +62,7 @@ fn main() -> Result<(), String> {
       reload_fn: cli_args.reload_fn,
       entry: cli_args.entry,
       check_only: cli_args.check_only,
+      boundary: WasmBoundary::Native,
     },
     target,
   )

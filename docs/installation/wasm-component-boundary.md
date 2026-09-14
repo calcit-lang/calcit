@@ -66,10 +66,18 @@ Component contract 沿用 `calcit ffi export`，通过 `--boundary component`
 - 现有 native raw-binding inventory 的 human 输出和 `--json` 保持兼容；
 - Cirru EDN 和 JSON 必须表达同一个 versioned contract 与 revision。
 
+生成 adapter 时继续沿用 `calcit wasm`：
+
+```bash
+calcit wasm calcit.cirru --boundary component --emit-path target/component-core
+```
+
+当前第一批 adapter 覆盖 `Number` 与 UTF-8 `String` 的同步 export。Number 直接使用 Canonical ABI `f64`；String 参数展开为 `(ptr,len)`，String 结果返回指向 `(ptr,len)` return area 的指针。core module 导出 `memory` 与 `cabi_realloc`，但不会携带 native core target 的隐式 `math/io` imports。Component import、Bool/整数、复合类型、post-return 与 async 仍是后续任务；不支持的 schema 在生成阶段明确失败。
+
 ## 实施顺序
 
 1. 导出 directional typed contract，先完成确定性、诊断和 Cirru EDN/JSON 等价。
-2. 为 scalar 和 String 生成 Canonical ABI adapter，再扩展 record、variant、Option 与 Result。
+2. 为 Number 和 String 生成 Canonical ABI export adapter，再补 import，并扩展 Bool/整数、record、variant、Option 与 Result。
 3. 由 `calcit-bindgen` 生成 WIT 并打包 runnable component，在 Wasmtime 和 jco 做端到端往返。
 4. 同步边界稳定后，再引入 WASI 0.3 async、HTTP 和 socket。
 
