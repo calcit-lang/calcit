@@ -306,6 +306,69 @@ fn semantic_rename_rejects_unhandled_test_sources_without_partial_writes() {
 }
 
 #[test]
+fn semantic_rename_rejects_schema_type_refs_without_partial_writes() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (args, context) in [
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/RenameType",
+        "--code",
+        "quote $ defstruct RenameType",
+      ],
+      "create rename type",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/typed-value",
+        "--code",
+        "quote $ defn typed-value () todo! |pending",
+      ],
+      "create typed value",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/typed-value",
+        "--code",
+        "quote $ :: 'Fn $ {} (:return 'RenameType)",
+      ],
+      "reference rename type from schema",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+
+  let before = fs::read(&snapshot).expect("snapshot should read before rejected rename");
+  let rejected = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "rename-definition-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "RenameType",
+      "--to",
+      "RenamedType",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!rejected.status.success());
+  let stderr = String::from_utf8_lossy(&rejected.stderr);
+  assert!(stderr.contains("typed-value schema"), "stderr: {stderr}");
+  assert!(stderr.contains("schema refactoring is not yet supported"), "stderr: {stderr}");
+  assert_eq!(fs::read(&snapshot).expect("rejected snapshot should read"), before);
+}
+
+#[test]
 fn fix_preview_apply_and_repeat_are_revision_safe() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

@@ -97,14 +97,14 @@ pub fn trace_definition_source_usages(
 
 fn retain_resolved_source_usage(value: Calcit, source: &Calcit, call_stack: &CallStackList) -> Calcit {
   if let Calcit::Import(import) = &value {
-    let macro_origin = call_stack
-      .0
-      .iter()
-      .filter(|frame| matches!(frame.kind, StackKind::Macro))
-      .map(|frame| format!("{}/{}", frame.ns, frame.def))
-      .collect::<Vec<_>>();
     RESOLVED_SOURCE_USAGE_TRACE.with(|trace| {
       if let Some(usages) = trace.borrow_mut().as_mut() {
+        let macro_origin = call_stack
+          .0
+          .iter()
+          .filter(|frame| matches!(frame.kind, StackKind::Macro))
+          .map(|frame| format!("{}/{}", frame.ns, frame.def))
+          .collect::<Vec<_>>();
         usages.push(ResolvedSourceUsage {
           target_ns: import.ns.clone(),
           target_def: import.def.clone(),

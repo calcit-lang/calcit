@@ -783,10 +783,13 @@ fn edn_contains_target_type_reference(value: &cirru_edn::Edn, owner_ns: &str, ta
       .pairs
       .iter()
       .any(|(_, item)| edn_contains_target_type_reference(item, owner_ns, target_ns, target_def)),
-    Edn::Enum(data) => data
-      .extra
-      .iter()
-      .any(|item| edn_contains_target_type_reference(item, owner_ns, target_ns, target_def)),
+    Edn::Enum(data) => {
+      source_name_resolves_to_target(owner_ns, data.variant.as_ref(), target_ns, target_def)
+        || data
+          .extra
+          .iter()
+          .any(|item| edn_contains_target_type_reference(item, owner_ns, target_ns, target_def))
+    }
     Edn::Atom(item) => edn_contains_target_type_reference(item, owner_ns, target_ns, target_def),
     _ => false,
   }
@@ -1747,8 +1750,9 @@ fn print_human_report(report: &FixReport<'_>) {
 mod tests {
   use super::{
     FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_potential_local_bindings, collect_redundant_do_paths,
-    fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion, legacy_constructor_replacement, migration_for_source_leaf,
-    prototype_is_shadowed, resolve_fix_target, rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
+    edn_contains_target_type_reference, fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion,
+    legacy_constructor_replacement, migration_for_source_leaf, prototype_is_shadowed, resolve_fix_target,
+    rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
   };
   use cirru_parser::Cirru;
   use serde_json::Value;
@@ -2080,5 +2084,12 @@ mod tests {
 
     assert!(error.contains("overlap at app.main/main! @3.0"), "error: {error}");
     assert_eq!(suggestions.len(), 1);
+  }
+
+  #[test]
+  fn schema_reference_scanner_checks_zero_argument_enum_variants() {
+    let schema = cirru_edn::Edn::enum_value("app.schema/Order", vec![]);
+    assert!(edn_contains_target_type_reference(&schema, "app.main", "app.schema", "Order"));
+    assert!(!edn_contains_target_type_reference(&schema, "app.main", "app.schema", "Other"));
   }
 }
