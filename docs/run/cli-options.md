@@ -493,7 +493,7 @@ calcit wasi calcit.cirru --emit-path target/wasi-command
 
 两个命令都支持 `--entry`、`--init-fn`、`--reload-fn` 和 `--check-only`。`--check-only` 会执行与实际生成相同的 target validation，但不会写出 `program.wasm`。WASI command 的 init definition 必须为零参数；不支持的宿主能力以稳定的 `E_WASM_CAPABILITY` 失败，不会退回 core module 的 JavaScript imports。
 
-`calcit wasm --boundary component` 复用同一 WASM 入口，输出供 Component tooling 包装的 core module，不增加 component/WIT 顶层命令。当前首个 adapter slice 只接受 `defwasm-export` 的 `Number` 与 UTF-8 `String` 参数和结果：Number 使用 `f64`，String 参数使用 `(i32 ptr, i32 len)`，String 结果返回指向 `(ptr,len)` return area 的 `i32`。模块同时导出 `memory` 与 `cabi_realloc`，且不继承 native core target 的隐式 `math/io` imports。WIT 生成与 runnable component packaging 仍由 `calcit-bindgen` 负责。
+`calcit wasm --boundary component` 复用同一 WASM 入口，输出供 Component tooling 包装的 core module，不增加 component/WIT 顶层命令。当前首个 adapter slice 接受 `defwasm-import` / `defwasm-export` 的 `Number` 与 UTF-8 `String` 参数和结果：Number 使用 `f64`，String 参数使用 `(i32 ptr, i32 len)`；String export 结果返回指向 `(ptr,len)` return area 的 `i32`，String import 结果使用 caller-provided return area。模块只保留显式声明的 Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，且不继承 native core target 的隐式 `math/io` imports。WIT 生成与 runnable component packaging 仍由 `calcit-bindgen` 负责。
 
 WASM 可根据已解析的静态 callee 与函数参数 schema，特化携带非逃逸 inline closure 的普通函数调用；闭包在创建位置捕获词法局部值，因此 `Option.map`、`Result.map` 等静态方法不需要各自的 backend 拦截规则。动态 callee、可变参数函数、闭包逃逸与递归特化仍以 `E_WASM_CLOSURE_SPECIALIZATION` 明确失败，不会生成 `nil`、`0` 或失去捕获环境的替代实现。
 

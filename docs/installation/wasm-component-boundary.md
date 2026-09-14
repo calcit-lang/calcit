@@ -23,7 +23,7 @@ Calcit 将 WebAssembly core module 的内部 value ABI 与 Component Model 的�
 
 ## 当前 core-module ABI
 
-`defwasm-import` 和 `defwasm-export` 当前使用 Calcit value ABI：
+默认 native boundary 下，`defwasm-import` 和 `defwasm-export` 使用 Calcit value ABI：
 
 - 参数和返回值统一用 WASM `f64` 承载；
 - `Number` 直接传递，`String`、`List`、Struct 和 Enum 传递 Calcit heap 中的逻辑指针；
@@ -72,12 +72,12 @@ Component contract 沿用 `calcit ffi export`，通过 `--boundary component`
 calcit wasm calcit.cirru --boundary component --emit-path target/component-core
 ```
 
-当前第一批 adapter 覆盖 `Number` 与 UTF-8 `String` 的同步 export。Number 直接使用 Canonical ABI `f64`；String 参数展开为 `(ptr,len)`，String 结果返回指向 `(ptr,len)` return area 的指针。core module 导出 `memory` 与 `cabi_realloc`，但不会携带 native core target 的隐式 `math/io` imports。Component import、Bool/整数、复合类型、post-return 与 async 仍是后续任务；不支持的 schema 在生成阶段明确失败。
+当前第一批 adapter 覆盖 `Number` 与 UTF-8 `String` 的同步 import/export。Number 直接使用 Canonical ABI `f64`。String 参数展开为 `(ptr,len)`；export 的 String 结果返回指向 `(ptr,len)` return area 的指针，import 的 String 结果则按 `canon lower` 使用由 caller 传入的 return area，再复制回 Calcit String。core module 只保留显式声明的 Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，不会携带 native core target 的隐式 `math/io` imports。Bool/整数、复合类型、post-return 与 async 仍是后续任务；不支持的 schema 在生成阶段明确失败。
 
 ## 实施顺序
 
 1. 导出 directional typed contract，先完成确定性、诊断和 Cirru EDN/JSON 等价。
-2. 为 Number 和 String 生成 Canonical ABI export adapter，再补 import，并扩展 Bool/整数、record、variant、Option 与 Result。
+2. 为 Number 和 String 生成 Canonical ABI import/export adapter，再扩展 Bool/整数、record、variant、Option 与 Result。
 3. 由 `calcit-bindgen` 生成 WIT 并打包 runnable component，在 Wasmtime 和 jco 做端到端往返。
 4. 同步边界稳定后，再引入 WASI 0.3 async、HTTP 和 socket。
 
