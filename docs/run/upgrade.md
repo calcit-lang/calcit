@@ -44,9 +44,9 @@ calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 若建议为空，则接受 `not-needed` 并跳过 apply。完整示例见
 [检测并修复冗余 `do`](fix.md#检测并修复冗余-do)。这是一项显式源码整理，不会增加普通编译 warning。
 
-## 0.15.1 WASM 命令入口收敛
+## 0.14.20 WASM 命令入口收敛
 
-0.15.1 不再通过 `cargo install calcit` 或 GitHub Release 发布 `cr-wasm`。项目与 Agent 应直接选择宿主契约：
+0.14.20 不再通过 `cargo install calcit` 或 GitHub Release 发布 `cr-wasm`。项目与 Agent 应直接选择宿主契约：
 
 - 原来的 `cr-wasm <snapshot> --target core` 改为 `calcit wasm <snapshot>`；
 - 原来的 `cr-wasm <snapshot> --target wasi` 改为 `calcit wasi <snapshot>`；
@@ -56,14 +56,16 @@ calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 feature-gated 的内部回归 harness，但它不是兼容 CLI，也不应被用户脚本调用。遇到旧 workflow 时应显式改写命令，
 不要尝试复制或重新发布该内部 binary。
 
-## 0.14.20 Component core preview
+## 0.14.20 Component preview
 
 0.14.20 新增 opt-in 的同步 Component core boundary，不改变普通 native、JavaScript、
 `calcit wasm` 或 `calcit wasi` 项目的默认行为。只有显式使用
 `calcit ffi export --boundary component` 或 `calcit wasm --boundary component` 的项目
-需要关注：当前支持 `Number` 与 UTF-8 `String` 的 import/export adapter，默认 contract
-格式为 Cirru EDN。WIT generation、runnable component packaging、复合类型与 async 尚未完成；
-它们不会在该版本中静默退化为 Dynamic 或 core 私有 value ABI。
+需要关注：当前支持 `Unit` 结果、`Bool`、`Buffer`、`Number`、UTF-8 `String`、递归同质
+`List<T>`，以及闭合单态 `Option<T>` / `Result<T,E>` 的 import/export adapter，默认 contract
+格式为 Cirru EDN。独立的 `calcit-bindgen` 可为这些类型生成 WIT 并包装 runnable Component；
+Struct record、普通 Enum variant、明确宽度数值与 async 尚未完成，不会静默退化为 Dynamic
+或 core 私有 value ABI。
 
 ## 0.14 默认严格诊断
 
