@@ -146,15 +146,21 @@ const host = {
       memory.setUint32(retPtr + 12, payload1, true);
     }
   },
-  profile: (active, namePtr, nameLen, scoresPtr, scoresLen, score, retPtr) => {
+  profile: (active, maybeDiscriminant, maybePtr, maybeLen, namePtr, nameLen, outcomeDiscriminant, outcomePtr, outcomeLen, scoresPtr, scoresLen, score, retPtr) => {
     if (active !== 0 && active !== 1) throw new Error(`host received invalid profile bool ${active}`);
     const memory = new DataView(instance.exports.memory.buffer);
     memory.setUint8(retPtr, active === 0 ? 1 : 0);
-    memory.setUint32(retPtr + 4, namePtr, true);
-    memory.setUint32(retPtr + 8, nameLen, true);
-    memory.setUint32(retPtr + 12, scoresPtr, true);
-    memory.setUint32(retPtr + 16, scoresLen, true);
-    memory.setFloat64(retPtr + 24, score + 1, true);
+    memory.setUint8(retPtr + 4, maybeDiscriminant);
+    memory.setUint32(retPtr + 8, maybePtr, true);
+    memory.setUint32(retPtr + 12, maybeLen, true);
+    memory.setUint32(retPtr + 16, namePtr, true);
+    memory.setUint32(retPtr + 20, nameLen, true);
+    memory.setUint8(retPtr + 24, outcomeDiscriminant);
+    memory.setUint32(retPtr + 28, outcomePtr, true);
+    memory.setUint32(retPtr + 32, outcomeLen, true);
+    memory.setUint32(retPtr + 36, scoresPtr, true);
+    memory.setUint32(retPtr + 40, scoresLen, true);
+    memory.setFloat64(retPtr + 48, score + 1, true);
   },
   ping: () => undefined,
 };
@@ -217,15 +223,28 @@ WebAssembly.instantiate(module, { host }).then(result => {
   };
   const readProfile = ret => {
     const memory = new DataView(e.memory.buffer);
-    const namePtr = memory.getUint32(ret + 4, true);
-    const nameLen = memory.getUint32(ret + 8, true);
+    const namePtr = memory.getUint32(ret + 16, true);
+    const nameLen = memory.getUint32(ret + 20, true);
     return {
       name: Buffer.from(e.memory.buffer, namePtr, nameLen).toString("utf8"),
-      stats: { score: memory.getFloat64(ret + 24, true) },
+      stats: { score: memory.getFloat64(ret + 48, true) },
+      maybeName: memory.getUint8(ret + 4) === 0
+        ? null
+        : Buffer.from(e.memory.buffer, memory.getUint32(ret + 8, true), memory.getUint32(ret + 12, true)).toString("utf8"),
+      outcome: memory.getUint8(ret + 24) === 0
+        ? { ok: Array.from(
+            { length: memory.getUint32(ret + 32, true) },
+            (_, index) => memory.getFloat64(memory.getUint32(ret + 28, true) + index * 8, true),
+          ) }
+        : { err: Buffer.from(
+            e.memory.buffer,
+            memory.getUint32(ret + 28, true),
+            memory.getUint32(ret + 32, true),
+          ).toString("utf8") },
       active: memory.getUint8(ret),
       scores: (() => {
-        const ptr = memory.getUint32(ret + 12, true);
-        const len = memory.getUint32(ret + 16, true);
+        const ptr = memory.getUint32(ret + 36, true);
+        const len = memory.getUint32(ret + 40, true);
         return Array.from({ length: len }, (_, index) => memory.getFloat64(ptr + index * 8, true));
       })(),
     };
@@ -315,12 +334,13 @@ WebAssembly.instantiate(module, { host }).then(result => {
   if (e["call-host-ping"]() !== undefined) throw new Error("imported Unit result should remain zero-result");
   const [profileNamePtr, profileNameLen] = allocateBytes(Buffer.from("Ada", "utf8"));
   const [profileScoresPtr, profileScoresLen] = allocateNumberList([1, 2, 3]);
-  const directProfile = readProfile(e["echo-profile"](1, profileNamePtr, profileNameLen, profileScoresPtr, profileScoresLen, 7.5));
-  if (JSON.stringify(directProfile) !== JSON.stringify({ name: "Ada", stats: { score: 7.5 }, active: 1, scores: [1, 2, 3] })) {
+  const [profileOutcomePtr, profileOutcomeLen] = allocateNumberList([4, 5]);
+  const directProfile = readProfile(e["echo-profile"](1, 1, profileNamePtr, profileNameLen, profileNamePtr, profileNameLen, 0, profileOutcomePtr, profileOutcomeLen, profileScoresPtr, profileScoresLen, 7.5));
+  if (JSON.stringify(directProfile) !== JSON.stringify({ name: "Ada", stats: { score: 7.5 }, maybeName: "Ada", outcome: { ok: [4, 5] }, active: 1, scores: [1, 2, 3] })) {
     throw new Error(`Struct record did not round-trip: ${JSON.stringify(directProfile)}`);
   }
-  const hostProfile = readProfile(e["call-host-profile"](1, profileNamePtr, profileNameLen, profileScoresPtr, profileScoresLen, 7.5));
-  if (JSON.stringify(hostProfile) !== JSON.stringify({ name: "Ada", stats: { score: 8.5 }, active: 0, scores: [1, 2, 3] })) {
+  const hostProfile = readProfile(e["call-host-profile"](1, 1, profileNamePtr, profileNameLen, profileNamePtr, profileNameLen, 0, profileOutcomePtr, profileOutcomeLen, profileScoresPtr, profileScoresLen, 7.5));
+  if (JSON.stringify(hostProfile) !== JSON.stringify({ name: "Ada", stats: { score: 8.5 }, maybeName: "Ada", outcome: { ok: [4, 5] }, active: 0, scores: [1, 2, 3] })) {
     throw new Error(`imported Struct record did not round-trip: ${JSON.stringify(hostProfile)}`);
   }
   for (const discriminant of [2, 256]) {
@@ -333,7 +353,7 @@ WebAssembly.instantiate(module, { host }).then(result => {
   for (const invoke of [
     () => e["bool-not"](2),
     () => e["choose-number"](2, 3, 4),
-    () => e["echo-profile"](2, profileNamePtr, profileNameLen, profileScoresPtr, profileScoresLen, 7.5),
+    () => e["echo-profile"](2, 1, profileNamePtr, profileNameLen, profileNamePtr, profileNameLen, 0, profileOutcomePtr, profileOutcomeLen, profileScoresPtr, profileScoresLen, 7.5),
   ]) {
     let trapped = false;
     try { invoke(); } catch (error) { trapped = error instanceof WebAssembly.RuntimeError; }
