@@ -15,10 +15,17 @@ pub(super) struct ComponentVariantCodec {
   pub lower_index: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct ComponentStructCodec {
+  pub lift_index: u32,
+  pub lower_index: u32,
+}
+
 pub(super) struct ComponentValueCodecs<'a> {
   pub str_new_index: u32,
   pub buffer_new_index: u32,
   pub list_codecs: &'a BTreeMap<ComponentAbiType, ComponentListCodec>,
+  pub struct_codecs: &'a BTreeMap<ComponentAbiType, ComponentStructCodec>,
   pub variant_codecs: &'a BTreeMap<ComponentAbiType, ComponentVariantCodec>,
 }
 
@@ -36,7 +43,28 @@ pub(super) fn component_memory_layout(value_type: &ComponentAbiType) -> Componen
     ComponentAbiType::Buffer | ComponentAbiType::String | ComponentAbiType::List(_) => ComponentMemoryLayout { size: 8, alignment: 4 },
     ComponentAbiType::Option(item) => component_variant_layout(&ComponentAbiType::Unit, item),
     ComponentAbiType::Result(ok, error) => component_variant_layout(ok, error),
+    ComponentAbiType::Struct(record) => component_struct_layout(record).0,
   }
+}
+
+fn component_struct_layout(record: &ComponentStructType) -> (ComponentMemoryLayout, Vec<i32>) {
+  let mut size = 0;
+  let mut alignment = 1;
+  let mut offsets = Vec::with_capacity(record.fields.len());
+  for (_, field_type) in &record.fields {
+    let field = component_memory_layout(field_type);
+    size = align_to(size, field.alignment);
+    offsets.push(size);
+    size += field.size;
+    alignment = alignment.max(field.alignment);
+  }
+  (
+    ComponentMemoryLayout {
+      size: align_to(size, alignment),
+      alignment,
+    },
+    offsets,
+  )
 }
 
 fn push_zero(instructions: &mut Vec<Instruction<'static>>, value_type: ValType) {
@@ -94,6 +122,24 @@ fn push_store_flat_payload(
     ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
       push_store_variant_flat_from(instructions, payload_type, source_types, flat_start, dst_local, dst_offset);
     }
+    ComponentAbiType::Struct(record) => {
+      let (_, offsets) = component_struct_layout(record);
+      let mut field_start = flat_start;
+      let mut source_offset = 0;
+      for ((_, field_type), field_offset) in record.fields.iter().zip(offsets) {
+        let field_width = component_flat_types(field_type).len();
+        push_store_flat_payload(
+          instructions,
+          field_type,
+          &source_types[source_offset..source_offset + field_width],
+          field_start,
+          dst_local,
+          dst_offset + field_offset,
+        );
+        field_start += field_width as u32;
+        source_offset += field_width;
+      }
+    }
   }
 }
 
@@ -148,17 +194,17 @@ fn push_store_variant_flat_from(
   instructions.push(Instruction::End);
 }
 
-pub(super) fn push_store_variant_flat(
+pub(super) fn push_store_value_flat(
   instructions: &mut Vec<Instruction<'static>>,
-  variant_type: &ComponentAbiType,
+  value_type: &ComponentAbiType,
   flat_start: u32,
   dst_local: u32,
   base_offset: i32,
 ) {
-  push_store_variant_flat_from(
+  push_store_flat_payload(
     instructions,
-    variant_type,
-    &component_flat_types(variant_type),
+    value_type,
+    &component_flat_types(value_type),
     flat_start,
     dst_local,
     base_offset,
@@ -194,6 +240,25 @@ fn push_load_value_flat_slot(
     ComponentAbiType::Unit => unreachable!(),
     ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
       push_load_variant_flat_slot(instructions, value_type, slot, actual_type, src_local, src_offset)
+    }
+    ComponentAbiType::Struct(record) => {
+      let (_, offsets) = component_struct_layout(record);
+      let mut remaining = slot;
+      for ((_, field_type), field_offset) in record.fields.iter().zip(offsets) {
+        let width = component_flat_types(field_type).len();
+        if remaining < width {
+          push_load_value_flat_slot(
+            instructions,
+            field_type,
+            remaining,
+            actual_type,
+            src_local,
+            src_offset + field_offset,
+          );
+          break;
+        }
+        remaining -= width;
+      }
     }
   }
   push_flat_conversion(instructions, actual_type, desired_type);
@@ -238,9 +303,9 @@ fn push_load_variant_flat_slot(
   push_flat_conversion(instructions, joined_type, desired_type);
 }
 
-pub(super) fn push_load_variant_flat(instructions: &mut Vec<Instruction<'static>>, variant_type: &ComponentAbiType, src_local: u32) {
-  for (slot, flat_type) in component_flat_types(variant_type).into_iter().enumerate() {
-    push_load_variant_flat_slot(instructions, variant_type, slot, flat_type, src_local, 0);
+pub(super) fn push_load_value_flat(instructions: &mut Vec<Instruction<'static>>, value_type: &ComponentAbiType, src_local: u32) {
+  for (slot, flat_type) in component_flat_types(value_type).into_iter().enumerate() {
+    push_load_value_flat_slot(instructions, value_type, slot, flat_type, src_local, 0);
   }
 }
 
@@ -274,6 +339,11 @@ fn collect_compound_type(value_type: &ComponentAbiType, seen: &mut BTreeSet<Comp
       collect_compound_type(ok, seen, ordered);
       collect_compound_type(error, seen, ordered);
     }
+    ComponentAbiType::Struct(record) => {
+      for (_, field_type) in &record.fields {
+        collect_compound_type(field_type, seen, ordered);
+      }
+    }
     _ => return,
   }
   if seen.insert(value_type.clone()) {
@@ -302,7 +372,7 @@ pub(super) fn collect_component_compound_types(
       continue;
     }
     let definition = format!("{namespace}/{name}");
-    let (parameters, result) = component_function_schema(compiled, &definition, fn_param_names(args).len())?;
+    let (parameters, result) = component_function_schema(compiled, &definition, fn_param_names(args).len(), program_data)?;
     for parameter in &parameters {
       collect_compound_type(parameter, &mut seen, &mut ordered);
     }
@@ -428,6 +498,13 @@ fn push_lift_element(
         .variant_codecs
         .get(item_type)
         .expect("nested Component variant lift codec must be registered");
+      instructions.extend([Instruction::LocalGet(src_addr), Instruction::Call(codec.lift_index)]);
+    }
+    ComponentAbiType::Struct(_) => {
+      let codec = codecs
+        .struct_codecs
+        .get(item_type)
+        .expect("nested Component Struct lift codec must be registered");
       instructions.extend([Instruction::LocalGet(src_addr), Instruction::Call(codec.lift_index)]);
     }
   }
@@ -614,6 +691,156 @@ fn push_lower_element(
         Instruction::Call(codec.lower_index),
       ]);
     }
+    ComponentAbiType::Struct(_) => {
+      let codec = codecs
+        .struct_codecs
+        .get(item_type)
+        .expect("nested Component Struct lower codec must be registered");
+      instructions.extend([
+        Instruction::LocalGet(src_addr),
+        Instruction::F64Load(mem_arg_f64(0)),
+        Instruction::LocalGet(dst_addr),
+        Instruction::Call(codec.lower_index),
+      ]);
+    }
+  }
+}
+
+pub(super) fn build_component_struct_lift_fn(
+  struct_type: &ComponentAbiType,
+  nominal_tag_id: i32,
+  struct_tag_id: i32,
+  cabi_realloc_index: u32,
+  codecs: &ComponentValueCodecs<'_>,
+) -> CompiledFn {
+  let ComponentAbiType::Struct(record) = struct_type else {
+    unreachable!("Component Struct lift helper requires a Struct type")
+  };
+  let (layout, offsets) = component_struct_layout(record);
+  let logical_size = ((record.fields.len() + 2) * 8) as i32;
+  let raw_base = 1;
+  let struct_ptr = 2;
+  let source_addr = 3;
+  let bool_value = 4;
+  let mut instructions = Vec::new();
+  push_checked_alignment(&mut instructions, 0, layout.alignment);
+  push_checked_memory_region_const(&mut instructions, 0, i64::from(layout.size));
+  instructions.extend([
+    Instruction::I32Const(0),
+    Instruction::I32Const(0),
+    Instruction::I32Const(8),
+    Instruction::I32Const(logical_size + 8),
+    Instruction::Call(cabi_realloc_index),
+    Instruction::LocalTee(raw_base),
+    Instruction::I32Const(HEAP_MAGIC),
+    Instruction::I32Store(mem_arg_i32(0)),
+    Instruction::LocalGet(raw_base),
+    Instruction::I32Const(struct_tag_id),
+    Instruction::I32Store(mem_arg_i32(4)),
+    Instruction::LocalGet(raw_base),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalTee(struct_ptr),
+    f64_const(record.fields.len() as f64),
+    Instruction::F64Store(mem_arg_f64(0)),
+    Instruction::LocalGet(struct_ptr),
+    f64_const(f64::from(nominal_tag_id)),
+    Instruction::F64Store(mem_arg_f64(8)),
+  ]);
+  for (index, ((_, field_type), field_offset)) in record.fields.iter().zip(offsets).enumerate() {
+    instructions.extend([
+      Instruction::LocalGet(0),
+      Instruction::I32Const(field_offset),
+      Instruction::I32Add,
+      Instruction::LocalSet(source_addr),
+      Instruction::LocalGet(struct_ptr),
+    ]);
+    push_lift_element(&mut instructions, field_type, source_addr, bool_value, codecs);
+    instructions.push(Instruction::F64Store(mem_arg_f64(((index + 2) * 8) as u64)));
+  }
+  instructions.extend([Instruction::LocalGet(struct_ptr), Instruction::F64ConvertI32U]);
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::I32],
+    results: vec![ValType::F64],
+    locals: vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+    instructions,
+  }
+}
+
+pub(super) fn build_component_struct_lower_fn(
+  struct_type: &ComponentAbiType,
+  nominal_tag_id: i32,
+  codecs: &ComponentValueCodecs<'_>,
+) -> CompiledFn {
+  let ComponentAbiType::Struct(record) = struct_type else {
+    unreachable!("Component Struct lower helper requires a Struct type")
+  };
+  let (layout, offsets) = component_struct_layout(record);
+  let logical_size = ((record.fields.len() + 2) * 8) as i64;
+  let struct_ptr = 2;
+  let source_addr = 3;
+  let destination_addr = 4;
+  let value = 5;
+  let canonical_bool = 6;
+  let mut instructions = vec![
+    Instruction::LocalGet(0),
+    Instruction::I32TruncF64U,
+    Instruction::LocalTee(struct_ptr),
+    Instruction::F64ConvertI32U,
+    Instruction::LocalGet(0),
+    Instruction::F64Ne,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+  ];
+  push_checked_alignment(&mut instructions, struct_ptr, 8);
+  push_checked_memory_region_const(&mut instructions, struct_ptr, logical_size);
+  push_checked_alignment(&mut instructions, 1, layout.alignment);
+  push_checked_memory_region_const(&mut instructions, 1, i64::from(layout.size));
+  instructions.extend([
+    Instruction::LocalGet(struct_ptr),
+    Instruction::F64Load(mem_arg_f64(0)),
+    f64_const(record.fields.len() as f64),
+    Instruction::F64Ne,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(struct_ptr),
+    Instruction::F64Load(mem_arg_f64(8)),
+    f64_const(f64::from(nominal_tag_id)),
+    Instruction::F64Ne,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+  ]);
+  for (index, ((_, field_type), field_offset)) in record.fields.iter().zip(offsets).enumerate() {
+    instructions.extend([
+      Instruction::LocalGet(struct_ptr),
+      Instruction::I32Const(((index + 2) * 8) as i32),
+      Instruction::I32Add,
+      Instruction::LocalSet(source_addr),
+      Instruction::LocalGet(1),
+      Instruction::I32Const(field_offset),
+      Instruction::I32Add,
+      Instruction::LocalSet(destination_addr),
+    ]);
+    push_lower_element(
+      &mut instructions,
+      field_type,
+      source_addr,
+      destination_addr,
+      value,
+      canonical_bool,
+      codecs,
+    );
+  }
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::F64, ValType::I32],
+    results: vec![],
+    locals: vec![ValType::I32, ValType::I32, ValType::I32, ValType::F64, ValType::I32],
+    instructions,
   }
 }
 
