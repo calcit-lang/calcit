@@ -105,7 +105,7 @@ calcit .calcit/snippets/demo.cirru query config
 
 `calcit [snapshot-file]` 默认选择 `entries.default` 并按它的 `:mode`（`:native` / `:js`）单次运行；`--entry <name>` 选择其他入口。显式 `js` 保留为覆盖方式。只有明确需要监听时才加 `-w` / `--watch`。`calcit ir` 只用于编译器/生成结果调试，不作为日常构建或完成证明。这里的 snapshot 文件不要与 `--entry <named-entry>` 混淆。
 
-WASM 使用目标明确的公开 preview 子命令：`calcit wasm <snapshot>` 生成 browser/embedded core module，`calcit wasm <snapshot> --boundary component` 生成供 Component tooling 包装的 Canonical ABI core module，`calcit wasi <snapshot>` 生成 WASI command module。Component boundary 当前为 `Number` 与 UTF-8 `String` 的同步 `defwasm-import` / `defwasm-export` 生成 adapter；其他类型在实现对应 adapter 以前明确拒绝。Component contract 仍由 `calcit ffi export --boundary component` 导出，WIT 与 packaging 属于 `calcit-bindgen`。Agent 应先读取对应 `--help`，再用 `--check-only` 获取稳定的 target/capability 错误；0.15.1 起不再发布 `cr-wasm`，不要调用仓库内部回归 harness 或从 binary 名称猜测宿主契约。
+WASM 使用目标明确的公开 preview 子命令：`calcit wasm <snapshot>` 生成 browser/embedded core module，`calcit wasm <snapshot> --boundary component` 生成供 Component tooling 包装的 Canonical ABI core module，`calcit wasi <snapshot>` 生成 WASI command module。Component boundary 当前为 `Bool`、`Number` 与 UTF-8 `String` 的同步 `defwasm-import` / `defwasm-export` 生成 adapter；Bool 的 Canonical ABI 只接受 `i32` 的 `0`/`1`，其他类型在实现对应 adapter 以前明确拒绝。Component contract 仍由 `calcit ffi export --boundary component` 导出，WIT 与 packaging 属于 `calcit-bindgen`。Agent 应先读取对应 `--help`，再用 `--check-only` 获取稳定的 target/capability 错误；0.15.1 起不再发布 `cr-wasm`，不要调用仓库内部回归 harness 或从 binary 名称猜测宿主契约。
 
 ## 1. 30 秒项目盘点
 
