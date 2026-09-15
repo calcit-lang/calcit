@@ -31,8 +31,8 @@ use wasm_encoder::{
 
 use crate::builtins::syntax::get_raw_args_fn;
 use crate::calcit::{
-  Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitProc, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation,
-  MethodKind,
+  Calcit, CalcitArgLabel, CalcitEnumDef, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitProc, CalcitStructDef, CalcitSyntax,
+  CalcitTypeAnnotation, MethodKind,
 };
 use crate::program;
 
@@ -46,10 +46,10 @@ mod runtime;
 mod structs;
 
 use component::{
-  ComponentListCodec, ComponentStructCodec, ComponentValueCodecs, ComponentVariantCodec, build_component_list_lift_fn,
-  build_component_list_lower_fn, build_component_struct_lift_fn, build_component_struct_lower_fn, build_component_variant_lift_fn,
-  build_component_variant_lower_fn, collect_component_compound_types, component_memory_layout, push_load_value_flat,
-  push_store_value_flat,
+  ComponentListCodec, ComponentStructCodec, ComponentValueCodecs, ComponentVariantCodec, build_component_enum_lift_fn,
+  build_component_enum_lower_fn, build_component_list_lift_fn, build_component_list_lower_fn, build_component_struct_lift_fn,
+  build_component_struct_lower_fn, build_component_variant_lift_fn, build_component_variant_lower_fn, collect_component_compound_types,
+  component_memory_layout, push_load_value_flat, push_store_value_flat,
 };
 use methods::{emit_call_args, emit_method_invoke};
 use runtime::{
@@ -419,6 +419,36 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
             &codecs,
           ));
           compiled_fns.push(build_component_variant_lower_fn(&compound_type, tag_ids, &codecs));
+        }
+        ComponentAbiType::Enum(enum_type) => {
+          let tag_ids = enum_type
+            .variants
+            .iter()
+            .map(|variant| {
+              tag_index.get(&variant.tag).copied().map(|value| value as i32).ok_or_else(|| {
+                format!(
+                  "E_COMPONENT_ABI_ENUM_TAG: `{}` variant `{}` is missing from the WASM tag index",
+                  enum_type.id, variant.tag
+                )
+              })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+          component_variant_codecs.insert(compound_type.clone(), ComponentVariantCodec { lift_index, lower_index });
+          let codecs = ComponentValueCodecs {
+            str_new_index: str_new_idx,
+            buffer_new_index,
+            list_codecs: &component_list_codecs,
+            struct_codecs: &component_struct_codecs,
+            variant_codecs: &component_variant_codecs,
+          };
+          compiled_fns.push(build_component_enum_lift_fn(
+            &compound_type,
+            &tag_ids,
+            enum_tag_id,
+            cabi_realloc_index,
+            &codecs,
+          ));
+          compiled_fns.push(build_component_enum_lower_fn(&compound_type, &tag_ids, &codecs));
         }
         _ => unreachable!("compound type collector returned a scalar type"),
       }
@@ -863,6 +893,7 @@ enum ComponentAbiType {
   Result(Box<ComponentAbiType>, Box<ComponentAbiType>),
   String,
   Struct(ComponentStructType),
+  Enum(ComponentEnumType),
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -870,6 +901,18 @@ struct ComponentStructType {
   id: String,
   tag: String,
   fields: Vec<(String, ComponentAbiType)>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct ComponentEnumType {
+  id: String,
+  variants: Vec<ComponentEnumVariant>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct ComponentEnumVariant {
+  tag: String,
+  payload: Vec<ComponentAbiType>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -958,9 +1001,17 @@ fn component_abi_type_inner(
               nominal_stack,
               program_data,
             )
+          } else if let Some(enum_def) = resolve_component_enum_ref(name, definition, program_data) {
+            component_abi_type_inner(
+              &CalcitTypeAnnotation::Enum(enum_def, arguments.clone()),
+              definition,
+              path,
+              nominal_stack,
+              program_data,
+            )
           } else {
             Err(format!(
-              "E_COMPONENT_ABI_UNSUPPORTED_TYPE: `{definition}` at `{path}` uses `{annotation}`, but this adapter slice only supports Unit results, Bool, Buffer, List<T>, Number, Option<T>, Result<T, E>, String, and monomorphic Struct records"
+              "E_COMPONENT_ABI_UNSUPPORTED_TYPE: `{definition}` at `{path}` uses `{annotation}`, but this adapter slice only supports Unit results, Bool, Buffer, List<T>, Number, Option<T>, Result<T, E>, String, monomorphic Struct records, and monomorphic Enum variants"
             ))
           }
         }
@@ -1038,9 +1089,101 @@ fn component_abi_type_inner(
       nominal_stack,
       program_data,
     ),
+    CalcitTypeAnnotation::Enum(enum_def, arguments) => {
+      if !enum_def.generics().is_empty() || !arguments.is_empty() {
+        return Err(format!(
+          "E_COMPONENT_ABI_UNSUPPORTED_GENERIC: `{definition}` at `{path}` requires a non-generic Enum declaration"
+        ));
+      }
+      let id = enum_def
+        .definition_ref()
+        .map_or_else(|| enum_def.name().ref_str(), AsRef::as_ref)
+        .to_owned();
+      if nominal_stack.contains(&id) {
+        return Err(format!(
+          "E_COMPONENT_ABI_RECURSIVE_ENUM: `{definition}` at `{path}` recursively reaches `{id}`, which is not supported by the synchronous variant adapter"
+        ));
+      }
+      nominal_stack.push(id.clone());
+      let variants = enum_def
+        .variants()
+        .iter()
+        .enumerate()
+        .map(|(variant_index, variant)| {
+          let payload = variant
+            .payload_types()
+            .iter()
+            .enumerate()
+            .map(|(payload_index, payload_type)| {
+              let converted = component_abi_type_inner(
+                payload_type,
+                definition,
+                &format!("{path}.variants[{variant_index}].payload[{payload_index}]"),
+                nominal_stack,
+                program_data,
+              )?;
+              if matches!(converted, ComponentAbiType::Unit) {
+                return Err(format!(
+                  "E_COMPONENT_ABI_UNIT_ENUM_PAYLOAD: `{definition}` at `{path}.variants[{variant_index}].payload[{payload_index}]` cannot use Unit as an explicit payload; omit the payload instead"
+                ));
+              }
+              Ok(converted)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+          Ok(ComponentEnumVariant {
+            tag: variant.tag.ref_str().to_owned(),
+            payload,
+          })
+        })
+        .collect::<Result<Vec<_>, String>>();
+      nominal_stack.pop();
+      let variants = variants?;
+      if variants.is_empty() {
+        return Err(format!(
+          "E_COMPONENT_ABI_EMPTY_ENUM: `{definition}` at `{path}` uses `{id}` without variants"
+        ));
+      }
+      Ok(ComponentAbiType::Enum(ComponentEnumType { id, variants }))
+    }
+    CalcitTypeAnnotation::EnumValue(enum_def) => component_abi_type_inner(
+      &CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(vec![])),
+      definition,
+      path,
+      nominal_stack,
+      program_data,
+    ),
     other => Err(format!(
-      "E_COMPONENT_ABI_UNSUPPORTED_TYPE: `{definition}` at `{path}` uses `{other}`, but this adapter slice only supports Unit results, Bool, Buffer, List<T>, Number, Option<T>, Result<T, E>, String, and monomorphic Struct records"
+      "E_COMPONENT_ABI_UNSUPPORTED_TYPE: `{definition}` at `{path}` uses `{other}`, but this adapter slice only supports Unit results, Bool, Buffer, List<T>, Number, Option<T>, Result<T, E>, String, monomorphic Struct records, and monomorphic Enum variants"
     )),
+  }
+}
+
+fn resolve_component_enum_ref(
+  name: &str,
+  owner_definition: &str,
+  program_data: Option<&program::CompiledProgram>,
+) -> Option<Arc<CalcitEnumDef>> {
+  let name = name.trim_start_matches('\'').trim_start_matches(':');
+  let (namespace, definition) = name
+    .rsplit_once('/')
+    .or_else(|| owner_definition.rsplit_once('/').map(|(namespace, _)| (namespace, name)))?;
+  let compiled = program_data
+    .and_then(|program_data| program_data.get(namespace).and_then(|file| file.defs.get(definition)).cloned())
+    .or_else(|| program::lookup_compiled_def(namespace, definition))?;
+  match compiled.schema.as_ref() {
+    CalcitTypeAnnotation::EnumDef(enum_def) => Some(enum_def.clone()),
+    CalcitTypeAnnotation::Enum(enum_def, _) | CalcitTypeAnnotation::EnumValue(enum_def) => Some(enum_def.clone()),
+    _ => compiled
+      .source_code
+      .iter()
+      .chain([&compiled.preprocessed_code, &compiled.codegen_form])
+      .find_map(|code| match code {
+        Calcit::EnumDef(enum_def) => Some(Arc::new(enum_def.clone())),
+        code => match crate::calcit::type_annotation::resolve_type_def_from_code(code) {
+          Some(Calcit::EnumDef(enum_def)) => Some(Arc::new(enum_def)),
+          _ => None,
+        },
+      }),
   }
 }
 
@@ -1165,6 +1308,15 @@ fn component_flat_types(value_type: &ComponentAbiType) -> Vec<ValType> {
       .iter()
       .flat_map(|(_, field_type)| component_flat_types(field_type))
       .collect(),
+    ComponentAbiType::Enum(enum_type) => {
+      let joined = enum_type.variants.iter().fold(Vec::new(), |joined, variant| {
+        let flattened = variant.payload.iter().flat_map(component_flat_types).collect::<Vec<_>>();
+        component_join_flat_types(&joined, &flattened)
+      });
+      let mut flattened = vec![ValType::I32];
+      flattened.extend(joined);
+      flattened
+    }
   }
 }
 
@@ -1502,7 +1654,7 @@ fn build_component_import_adapter(
           Instruction::I32Load(mem_arg_i32(4)),
         ]);
       }
-      ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
+      ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) => {
         let canonical_ptr = params.len() as u32 + locals.len() as u32;
         locals.push(ValType::I32);
         let layout = component_memory_layout(parameter);
@@ -1602,7 +1754,7 @@ fn build_component_import_adapter(
         Instruction::Call(codec.lift_index),
       ]);
     }
-    ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
+    ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) => {
       let ret_ptr = params.len() as u32 + locals.len() as u32;
       locals.push(ValType::I32);
       let layout = component_memory_layout(&adapter.result);
@@ -1623,13 +1775,8 @@ fn build_component_import_adapter(
       } else {
         let discriminant = params.len() as u32 + locals.len() as u32;
         locals.push(ValType::I32);
-        instructions.extend([
-          Instruction::Call(adapter.raw_index),
-          Instruction::LocalSet(discriminant),
-          Instruction::LocalGet(ret_ptr),
-          Instruction::LocalGet(discriminant),
-          Instruction::I32Store8(mem_arg_byte(0)),
-        ]);
+        instructions.extend([Instruction::Call(adapter.raw_index), Instruction::LocalSet(discriminant)]);
+        push_store_value_flat(&mut instructions, &adapter.result, discriminant, ret_ptr, 0);
       }
       instructions.extend([Instruction::LocalGet(ret_ptr), Instruction::Call(codec.lift_index)]);
     }
@@ -1737,7 +1884,7 @@ fn build_component_export_adapter(
         lowered.push(local);
         flat_index += 2;
       }
-      ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
+      ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) => {
         let canonical_ptr = params.len() as u32 + locals.len() as u32;
         locals.push(ValType::I32);
         let local = params.len() as u32 + locals.len() as u32;
@@ -1864,7 +2011,7 @@ fn build_component_export_adapter(
       ]);
       vec![ValType::I32]
     }
-    ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
+    ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) => {
       let value = params.len() as u32 + locals.len() as u32;
       locals.push(ValType::F64);
       let ret_ptr = params.len() as u32 + locals.len() as u32;
@@ -5211,6 +5358,16 @@ fn collect_all_tags_from(
             tags.push(struct_def.name.ref_str().to_owned());
             tags.extend(struct_def.fields.iter().map(|field| field.ref_str().to_owned()));
           }
+          let enum_def = match code {
+            Calcit::EnumDef(enum_def) => Some(enum_def.clone()),
+            _ => match crate::calcit::type_annotation::resolve_type_def_from_code(code) {
+              Some(Calcit::EnumDef(enum_def)) => Some(enum_def),
+              _ => None,
+            },
+          };
+          if let Some(enum_def) = enum_def {
+            tags.extend(enum_def.variants().iter().map(|variant| variant.tag.ref_str().to_owned()));
+          }
         }
       }
     }
@@ -5425,17 +5582,44 @@ mod tests {
   use std::sync::Arc;
 
   use super::{
-    ComponentAbiType, ComponentExportAdapter, ComponentImportAdapter, ComponentStructType, HostImport, WasmBoundary, WasmTarget,
-    build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, component_abi_type, component_flat_types,
-    component_import_signature, component_memory_layout, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
-    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols,
+    ComponentAbiType, ComponentEnumType, ComponentEnumVariant, ComponentExportAdapter, ComponentImportAdapter, ComponentStructType,
+    HostImport, WasmBoundary, WasmTarget, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter,
+    component_abi_type, component_flat_types, component_import_signature, component_memory_layout, host_imports_for_target,
+    index_host_imports, must_reject_extraction_failure, validate_component_export_symbols, validate_component_flat_parameters,
+    validate_component_import_symbols,
   };
-  use crate::calcit::{Calcit, CalcitList, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation};
+  use crate::calcit::{Calcit, CalcitEnumDef, CalcitList, CalcitStructDef, CalcitStructValue, CalcitSyntax, CalcitTypeAnnotation};
+  use cirru_edn::EdnTag;
   use wasm_encoder::ValType;
 
   fn declaration(head: CalcitSyntax) -> Calcit {
     let items = [Calcit::Syntax(head, Arc::from("dependency.ns"))];
     Calcit::List(Arc::new(CalcitList::from(&items[..])))
+  }
+
+  fn enum_definition(name: &str, generics: Vec<Arc<str>>, variants: Vec<(&str, Vec<CalcitTypeAnnotation>)>) -> Arc<CalcitEnumDef> {
+    let fields = variants.iter().map(|(tag, _)| EdnTag::new(*tag)).collect::<Vec<_>>();
+    let values = variants
+      .iter()
+      .map(|(_, payload)| {
+        Calcit::List(Arc::new(CalcitList::Vector(
+          payload.iter().map(CalcitTypeAnnotation::to_calcit).collect(),
+        )))
+      })
+      .collect::<Vec<_>>();
+    let prototype = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef {
+        definition_ref: Some(Arc::from(format!("app.main/{name}"))),
+        name: EdnTag::new(name),
+        fields: Arc::new(fields),
+        field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); values.len()]),
+        generics: Arc::new(generics),
+        where_bounds: Arc::new(vec![]),
+        impls: vec![],
+      }),
+      values: Arc::new(values),
+    };
+    Arc::new(CalcitEnumDef::from_struct(prototype).expect("valid test Enum declaration"))
   }
 
   #[test]
@@ -5660,6 +5844,72 @@ mod tests {
       .expect_err("wide Struct parameters must not bypass the Canonical ABI flat-parameter limit");
     assert!(error.contains("E_COMPONENT_ABI_FLAT_PARAMETER_LIMIT"));
     assert!(error.contains("flattens to 17 values"));
+  }
+
+  #[test]
+  fn component_enum_shape_joins_payloads_and_rejects_open_shapes() {
+    let event = enum_definition(
+      "Event",
+      vec![],
+      vec![
+        ("idle", vec![]),
+        ("moved", vec![CalcitTypeAnnotation::Number, CalcitTypeAnnotation::Number]),
+        ("named", vec![CalcitTypeAnnotation::String]),
+      ],
+    );
+    let event_type = component_abi_type(
+      &CalcitTypeAnnotation::Enum(event, Arc::new(vec![])),
+      "app.main/echo-event",
+      "logical_schema.result",
+    )
+    .expect("derive Enum Component shape");
+    assert_eq!(component_flat_types(&event_type), vec![ValType::I32, ValType::I64, ValType::I64]);
+    assert_eq!(component_memory_layout(&event_type).size, 24);
+    assert_eq!(component_memory_layout(&event_type).alignment, 8);
+
+    let generic = enum_definition(
+      "Boxed",
+      vec![Arc::from("T")],
+      vec![("value", vec![CalcitTypeAnnotation::TypeVar(Arc::from("T"))])],
+    );
+    let generic_error = component_abi_type(
+      &CalcitTypeAnnotation::Enum(generic, Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)])),
+      "app.main/echo-boxed",
+      "logical_schema.result",
+    )
+    .expect_err("generic Enum must remain outside the Component boundary");
+    assert!(generic_error.contains("E_COMPONENT_ABI_UNSUPPORTED_GENERIC"));
+
+    let explicit_unit = enum_definition("Bad", vec![], vec![("unit", vec![CalcitTypeAnnotation::Unit])]);
+    let unit_error = component_abi_type(
+      &CalcitTypeAnnotation::Enum(explicit_unit, Arc::new(vec![])),
+      "app.main/echo-bad",
+      "logical_schema.result",
+    )
+    .expect_err("explicit Unit payload must be omitted");
+    assert!(unit_error.contains("E_COMPONENT_ABI_UNIT_ENUM_PAYLOAD"));
+    assert!(unit_error.contains("variants[0].payload[0]"));
+
+    let open_error = component_abi_type(&CalcitTypeAnnotation::AnonymousEnum, "app.main/echo-open", "logical_schema.result")
+      .expect_err("anonymous Enum must remain outside the Component boundary");
+    assert!(open_error.contains("E_COMPONENT_ABI_UNSUPPORTED_TYPE"));
+    assert!(open_error.contains("logical_schema.result"));
+
+    let enum_with_cases = |count| {
+      ComponentAbiType::Enum(ComponentEnumType {
+        id: format!("app.main/Wide{count}"),
+        variants: (0..count)
+          .map(|index| ComponentEnumVariant {
+            tag: format!("case-{index}"),
+            payload: vec![],
+          })
+          .collect(),
+      })
+    };
+    let u16_layout = component_memory_layout(&enum_with_cases(257));
+    assert_eq!((u16_layout.size, u16_layout.alignment), (2, 2));
+    let u32_layout = component_memory_layout(&enum_with_cases(65_537));
+    assert_eq!((u32_layout.size, u32_layout.alignment), (4, 4));
   }
 
   #[test]

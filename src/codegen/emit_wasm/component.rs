@@ -44,14 +44,19 @@ pub(super) fn component_memory_layout(value_type: &ComponentAbiType) -> Componen
     ComponentAbiType::Option(item) => component_variant_layout(&ComponentAbiType::Unit, item),
     ComponentAbiType::Result(ok, error) => component_variant_layout(ok, error),
     ComponentAbiType::Struct(record) => component_struct_layout(record).0,
+    ComponentAbiType::Enum(enum_type) => component_enum_layout(enum_type).0,
   }
 }
 
 fn component_struct_layout(record: &ComponentStructType) -> (ComponentMemoryLayout, Vec<i32>) {
+  component_fields_layout(record.fields.iter().map(|(_, field_type)| field_type))
+}
+
+fn component_fields_layout<'a>(fields: impl Iterator<Item = &'a ComponentAbiType>) -> (ComponentMemoryLayout, Vec<i32>) {
   let mut size = 0;
   let mut alignment = 1;
-  let mut offsets = Vec::with_capacity(record.fields.len());
-  for (_, field_type) in &record.fields {
+  let mut offsets = Vec::new();
+  for field_type in fields {
     let field = component_memory_layout(field_type);
     size = align_to(size, field.alignment);
     offsets.push(size);
@@ -64,6 +69,37 @@ fn component_struct_layout(record: &ComponentStructType) -> (ComponentMemoryLayo
       alignment,
     },
     offsets,
+  )
+}
+
+fn component_enum_discriminant_size(variant_count: usize) -> i32 {
+  if variant_count <= 256 {
+    1
+  } else if variant_count <= 65_536 {
+    2
+  } else {
+    4
+  }
+}
+
+fn component_enum_layout(enum_type: &ComponentEnumType) -> (ComponentMemoryLayout, i32, Vec<(ComponentMemoryLayout, Vec<i32>)>) {
+  let payloads = enum_type
+    .variants
+    .iter()
+    .map(|variant| component_fields_layout(variant.payload.iter()))
+    .collect::<Vec<_>>();
+  let discriminant_size = component_enum_discriminant_size(enum_type.variants.len());
+  let payload_alignment = payloads.iter().map(|(layout, _)| layout.alignment).max().unwrap_or(1);
+  let alignment = discriminant_size.max(payload_alignment);
+  let payload_offset = align_to(discriminant_size, payload_alignment);
+  let payload_size = payloads.iter().map(|(layout, _)| layout.size).max().unwrap_or(0);
+  (
+    ComponentMemoryLayout {
+      size: align_to(payload_offset + payload_size, alignment),
+      alignment,
+    },
+    payload_offset,
+    payloads,
   )
 }
 
@@ -121,6 +157,9 @@ fn push_store_flat_payload(
     }
     ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
       push_store_variant_flat_from(instructions, payload_type, source_types, flat_start, dst_local, dst_offset);
+    }
+    ComponentAbiType::Enum(enum_type) => {
+      push_store_enum_flat_from(instructions, enum_type, source_types, flat_start, dst_local, dst_offset);
     }
     ComponentAbiType::Struct(record) => {
       let (_, offsets) = component_struct_layout(record);
@@ -194,6 +233,79 @@ fn push_store_variant_flat_from(
   instructions.push(Instruction::End);
 }
 
+fn push_store_enum_discriminant(
+  instructions: &mut Vec<Instruction<'static>>,
+  discriminant_size: i32,
+  dst_local: u32,
+  base_offset: i32,
+  discriminant_local: u32,
+  discriminant_type: ValType,
+) {
+  instructions.extend([Instruction::LocalGet(dst_local), Instruction::LocalGet(discriminant_local)]);
+  push_flat_conversion(instructions, discriminant_type, ValType::I32);
+  instructions.push(match discriminant_size {
+    1 => Instruction::I32Store8(mem_arg_byte(base_offset as u64)),
+    2 => Instruction::I32Store16(mem_arg_byte(base_offset as u64)),
+    4 => Instruction::I32Store(mem_arg_i32(base_offset as u64)),
+    _ => unreachable!("Component Enum discriminant size must be 1, 2, or 4"),
+  });
+}
+
+fn push_load_enum_discriminant(instructions: &mut Vec<Instruction<'static>>, discriminant_size: i32, src_local: u32, base_offset: i32) {
+  instructions.push(Instruction::LocalGet(src_local));
+  instructions.push(match discriminant_size {
+    1 => Instruction::I32Load8U(mem_arg_byte(base_offset as u64)),
+    2 => Instruction::I32Load16U(mem_arg_byte(base_offset as u64)),
+    4 => Instruction::I32Load(mem_arg_i32(base_offset as u64)),
+    _ => unreachable!("Component Enum discriminant size must be 1, 2, or 4"),
+  });
+}
+
+fn push_store_enum_flat_from(
+  instructions: &mut Vec<Instruction<'static>>,
+  enum_type: &ComponentEnumType,
+  source_types: &[ValType],
+  flat_start: u32,
+  dst_local: u32,
+  base_offset: i32,
+) {
+  let (_, payload_offset, payload_layouts) = component_enum_layout(enum_type);
+  let discriminant_size = component_enum_discriminant_size(enum_type.variants.len());
+  instructions.push(Instruction::LocalGet(flat_start));
+  push_flat_conversion(instructions, source_types[0], ValType::I32);
+  instructions.extend([
+    Instruction::I32Const(enum_type.variants.len() as i32),
+    Instruction::I32GeU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+  ]);
+  push_store_enum_discriminant(instructions, discriminant_size, dst_local, base_offset, flat_start, source_types[0]);
+  for (variant_index, (variant, (_, offsets))) in enum_type.variants.iter().zip(payload_layouts).enumerate() {
+    instructions.push(Instruction::LocalGet(flat_start));
+    push_flat_conversion(instructions, source_types[0], ValType::I32);
+    instructions.extend([
+      Instruction::I32Const(variant_index as i32),
+      Instruction::I32Eq,
+      Instruction::If(BlockType::Empty),
+    ]);
+    let mut slot = 0;
+    for (payload_type, field_offset) in variant.payload.iter().zip(offsets) {
+      let width = component_flat_types(payload_type).len();
+      push_store_flat_payload(
+        instructions,
+        payload_type,
+        &source_types[1 + slot..1 + slot + width],
+        flat_start + 1 + slot as u32,
+        dst_local,
+        base_offset + payload_offset + field_offset,
+      );
+      slot += width;
+    }
+    instructions.push(Instruction::End);
+  }
+}
+
 pub(super) fn push_store_value_flat(
   instructions: &mut Vec<Instruction<'static>>,
   value_type: &ComponentAbiType,
@@ -241,6 +353,7 @@ fn push_load_value_flat_slot(
     ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
       push_load_variant_flat_slot(instructions, value_type, slot, actual_type, src_local, src_offset)
     }
+    ComponentAbiType::Enum(enum_type) => push_load_enum_flat_slot(instructions, enum_type, slot, actual_type, src_local, src_offset),
     ComponentAbiType::Struct(record) => {
       let (_, offsets) = component_struct_layout(record);
       let mut remaining = slot;
@@ -303,6 +416,110 @@ fn push_load_variant_flat_slot(
   push_flat_conversion(instructions, joined_type, desired_type);
 }
 
+fn push_load_enum_case_payload(
+  instructions: &mut Vec<Instruction<'static>>,
+  variant: &ComponentEnumVariant,
+  offsets: &[i32],
+  slot: usize,
+  desired_type: ValType,
+  src_local: u32,
+  payload_offset: i32,
+) {
+  let mut remaining = slot;
+  for (payload_type, field_offset) in variant.payload.iter().zip(offsets) {
+    let width = component_flat_types(payload_type).len();
+    if remaining < width {
+      push_load_value_flat_slot(
+        instructions,
+        payload_type,
+        remaining,
+        desired_type,
+        src_local,
+        payload_offset + field_offset,
+      );
+      return;
+    }
+    remaining -= width;
+  }
+  push_zero(instructions, desired_type);
+}
+
+struct EnumFlatLoadContext<'a> {
+  enum_type: &'a ComponentEnumType,
+  payload_layouts: &'a [(ComponentMemoryLayout, Vec<i32>)],
+  src_local: u32,
+  base_offset: i32,
+  payload_offset: i32,
+}
+
+fn push_load_enum_case(
+  instructions: &mut Vec<Instruction<'static>>,
+  context: &EnumFlatLoadContext<'_>,
+  case_index: usize,
+  slot: usize,
+  desired_type: ValType,
+) {
+  let discriminant_size = component_enum_discriminant_size(context.enum_type.variants.len());
+  push_load_enum_discriminant(instructions, discriminant_size, context.src_local, context.base_offset);
+  instructions.extend([Instruction::I32Const(case_index as i32), Instruction::I32Eq]);
+  if case_index + 1 == context.enum_type.variants.len() {
+    instructions.extend([
+      Instruction::If(BlockType::Empty),
+      Instruction::Else,
+      Instruction::Unreachable,
+      Instruction::End,
+    ]);
+    push_load_enum_case_payload(
+      instructions,
+      &context.enum_type.variants[case_index],
+      &context.payload_layouts[case_index].1,
+      slot,
+      desired_type,
+      context.src_local,
+      context.base_offset + context.payload_offset,
+    );
+    return;
+  }
+  instructions.push(Instruction::If(BlockType::Result(desired_type)));
+  push_load_enum_case_payload(
+    instructions,
+    &context.enum_type.variants[case_index],
+    &context.payload_layouts[case_index].1,
+    slot,
+    desired_type,
+    context.src_local,
+    context.base_offset + context.payload_offset,
+  );
+  instructions.push(Instruction::Else);
+  push_load_enum_case(instructions, context, case_index + 1, slot, desired_type);
+  instructions.push(Instruction::End);
+}
+
+fn push_load_enum_flat_slot(
+  instructions: &mut Vec<Instruction<'static>>,
+  enum_type: &ComponentEnumType,
+  slot: usize,
+  desired_type: ValType,
+  src_local: u32,
+  base_offset: i32,
+) {
+  let (_, payload_offset, payload_layouts) = component_enum_layout(enum_type);
+  let discriminant_size = component_enum_discriminant_size(enum_type.variants.len());
+  if slot == 0 {
+    push_load_enum_discriminant(instructions, discriminant_size, src_local, base_offset);
+    push_flat_conversion(instructions, ValType::I32, desired_type);
+    return;
+  }
+  let context = EnumFlatLoadContext {
+    enum_type,
+    src_local,
+    base_offset,
+    payload_offset,
+    payload_layouts: &payload_layouts,
+  };
+  push_load_enum_case(instructions, &context, 0, slot - 1, desired_type);
+}
+
 pub(super) fn push_load_value_flat(instructions: &mut Vec<Instruction<'static>>, value_type: &ComponentAbiType, src_local: u32) {
   for (slot, flat_type) in component_flat_types(value_type).into_iter().enumerate() {
     push_load_value_flat_slot(instructions, value_type, slot, flat_type, src_local, 0);
@@ -342,6 +559,13 @@ fn collect_compound_type(value_type: &ComponentAbiType, seen: &mut BTreeSet<Comp
     ComponentAbiType::Struct(record) => {
       for (_, field_type) in &record.fields {
         collect_compound_type(field_type, seen, ordered);
+      }
+    }
+    ComponentAbiType::Enum(enum_type) => {
+      for variant in &enum_type.variants {
+        for payload_type in &variant.payload {
+          collect_compound_type(payload_type, seen, ordered);
+        }
       }
     }
     _ => return,
@@ -493,7 +717,7 @@ fn push_lift_element(
         Instruction::Call(codec.lift_index),
       ]);
     }
-    ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
+    ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) => {
       let codec = codecs
         .variant_codecs
         .get(item_type)
@@ -679,7 +903,7 @@ fn push_lower_element(
         Instruction::Call(codec.lower_index),
       ]);
     }
-    ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
+    ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) => {
       let codec = codecs
         .variant_codecs
         .get(item_type)
@@ -1196,6 +1420,170 @@ pub(super) fn build_component_variant_lower_fn(
     params: vec![ValType::F64, ValType::I32],
     results: vec![],
     locals: vec![ValType::I32, ValType::I32, ValType::I32, ValType::F64, ValType::I32],
+    instructions,
+  }
+}
+
+pub(super) fn build_component_enum_lift_fn(
+  enum_type: &ComponentAbiType,
+  tag_ids: &[i32],
+  enum_tag_id: i32,
+  cabi_realloc_index: u32,
+  codecs: &ComponentValueCodecs<'_>,
+) -> CompiledFn {
+  let ComponentAbiType::Enum(enum_type) = enum_type else {
+    unreachable!("Component Enum lift helper requires an Enum type")
+  };
+  let (layout, payload_offset, payload_layouts) = component_enum_layout(enum_type);
+  let discriminant_size = component_enum_discriminant_size(enum_type.variants.len());
+  let max_payload = enum_type.variants.iter().map(|variant| variant.payload.len()).max().unwrap_or(0);
+  let logical_allocation_size = ((max_payload + 3) * 8) as i32;
+  let discriminant = 1;
+  let raw_base = 2;
+  let enum_ptr = 3;
+  let src_addr = 4;
+  let bool_value = 5;
+  let mut instructions = Vec::new();
+  push_checked_alignment(&mut instructions, 0, layout.alignment);
+  push_checked_memory_region_const(&mut instructions, 0, i64::from(layout.size));
+  push_load_enum_discriminant(&mut instructions, discriminant_size, 0, 0);
+  instructions.extend([
+    Instruction::LocalTee(discriminant),
+    Instruction::I32Const(enum_type.variants.len() as i32),
+    Instruction::I32GeU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::I32Const(0),
+    Instruction::I32Const(0),
+    Instruction::I32Const(8),
+    Instruction::I32Const(logical_allocation_size),
+    Instruction::Call(cabi_realloc_index),
+    Instruction::LocalTee(raw_base),
+    Instruction::I32Const(HEAP_MAGIC),
+    Instruction::I32Store(mem_arg_i32(0)),
+    Instruction::LocalGet(raw_base),
+    Instruction::I32Const(enum_tag_id),
+    Instruction::I32Store(mem_arg_i32(4)),
+    Instruction::LocalGet(raw_base),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalSet(enum_ptr),
+  ]);
+  for (variant_index, (variant, (_, offsets))) in enum_type.variants.iter().zip(payload_layouts).enumerate() {
+    instructions.extend([
+      Instruction::LocalGet(discriminant),
+      Instruction::I32Const(variant_index as i32),
+      Instruction::I32Eq,
+      Instruction::If(BlockType::Empty),
+      Instruction::LocalGet(enum_ptr),
+      f64_const(variant.payload.len() as f64),
+      Instruction::F64Store(mem_arg_f64(0)),
+      Instruction::LocalGet(enum_ptr),
+      f64_const(f64::from(tag_ids[variant_index])),
+      Instruction::F64Store(mem_arg_f64(8)),
+    ]);
+    for (payload_index, (payload_type, field_offset)) in variant.payload.iter().zip(offsets).enumerate() {
+      instructions.extend([
+        Instruction::LocalGet(0),
+        Instruction::I32Const(payload_offset + field_offset),
+        Instruction::I32Add,
+        Instruction::LocalSet(src_addr),
+        Instruction::LocalGet(enum_ptr),
+        Instruction::I32Const(((payload_index + 2) * 8) as i32),
+        Instruction::I32Add,
+      ]);
+      push_lift_element(&mut instructions, payload_type, src_addr, bool_value, codecs);
+      instructions.push(Instruction::F64Store(mem_arg_f64(0)));
+    }
+    instructions.push(Instruction::End);
+  }
+  instructions.extend([Instruction::LocalGet(enum_ptr), Instruction::F64ConvertI32U]);
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::I32],
+    results: vec![ValType::F64],
+    locals: vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+    instructions,
+  }
+}
+
+pub(super) fn build_component_enum_lower_fn(
+  enum_type: &ComponentAbiType,
+  tag_ids: &[i32],
+  codecs: &ComponentValueCodecs<'_>,
+) -> CompiledFn {
+  let ComponentAbiType::Enum(enum_type) = enum_type else {
+    unreachable!("Component Enum lower helper requires an Enum type")
+  };
+  let (layout, payload_offset, payload_layouts) = component_enum_layout(enum_type);
+  let discriminant_size = component_enum_discriminant_size(enum_type.variants.len());
+  let enum_ptr = 2;
+  let dst_addr = 3;
+  let src_addr = 4;
+  let value = 5;
+  let canonical_bool = 6;
+  let matched = 7;
+  let mut instructions = vec![
+    Instruction::LocalGet(0),
+    Instruction::I32TruncF64U,
+    Instruction::LocalTee(enum_ptr),
+    Instruction::F64ConvertI32U,
+    Instruction::LocalGet(0),
+    Instruction::F64Ne,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+  ];
+  push_checked_alignment(&mut instructions, enum_ptr, 8);
+  push_checked_memory_region_const(&mut instructions, enum_ptr, 16);
+  push_checked_alignment(&mut instructions, 1, layout.alignment);
+  push_checked_memory_region_const(&mut instructions, 1, i64::from(layout.size));
+  for (variant_index, (variant, (_, offsets))) in enum_type.variants.iter().zip(payload_layouts).enumerate() {
+    instructions.extend([
+      Instruction::LocalGet(enum_ptr),
+      Instruction::F64Load(mem_arg_f64(8)),
+      f64_const(f64::from(tag_ids[variant_index])),
+      Instruction::F64Eq,
+      Instruction::If(BlockType::Empty),
+    ]);
+    push_validate_internal_variant_count(&mut instructions, enum_ptr, variant.payload.len() as f64);
+    push_checked_memory_region_const(&mut instructions, enum_ptr, ((variant.payload.len() + 2) * 8) as i64);
+    instructions.extend([Instruction::I32Const(1), Instruction::LocalSet(matched), Instruction::LocalGet(1)]);
+    instructions.push(Instruction::I32Const(variant_index as i32));
+    instructions.push(match discriminant_size {
+      1 => Instruction::I32Store8(mem_arg_byte(0)),
+      2 => Instruction::I32Store16(mem_arg_byte(0)),
+      4 => Instruction::I32Store(mem_arg_i32(0)),
+      _ => unreachable!("Component Enum discriminant size must be 1, 2, or 4"),
+    });
+    for (payload_index, (payload_type, field_offset)) in variant.payload.iter().zip(offsets).enumerate() {
+      instructions.extend([
+        Instruction::LocalGet(enum_ptr),
+        Instruction::I32Const(((payload_index + 2) * 8) as i32),
+        Instruction::I32Add,
+        Instruction::LocalSet(src_addr),
+        Instruction::LocalGet(1),
+        Instruction::I32Const(payload_offset + field_offset),
+        Instruction::I32Add,
+        Instruction::LocalSet(dst_addr),
+      ]);
+      push_lower_element(&mut instructions, payload_type, src_addr, dst_addr, value, canonical_bool, codecs);
+    }
+    instructions.push(Instruction::End);
+  }
+  instructions.extend([
+    Instruction::LocalGet(matched),
+    Instruction::I32Eqz,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+  ]);
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::F64, ValType::I32],
+    results: vec![],
+    locals: vec![ValType::I32, ValType::I32, ValType::I32, ValType::F64, ValType::I32, ValType::I32],
     instructions,
   }
 }

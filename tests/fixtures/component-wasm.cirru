@@ -10,6 +10,10 @@
   :files $ {} $ 'component-wasm.main
     %{} 'FileEntry
       :defs $ {}
+        'Event $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Event (:idle) (:named 'String) (:moved 'Number 'Number) (:profile 'component-wasm.main/Profile)
+          :examples $ []
+          :schema $ :: 'EnumDef
         'Profile $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Profile (:active 'Bool) (:name 'String)
             :scores $ :: 'List 'Number
@@ -62,6 +66,11 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
+        'call-host-event $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export call-host-event (value) (host-event value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'component-wasm.main/Event)
+            :args $ [] 'component-wasm.main/Event
         'call-host-numbers $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export call-host-numbers (value) (host-numbers value)
           :examples $ []
@@ -141,6 +150,32 @@
               [] (&buffer 0 255) (&buffer 17 128)
               echo-buffers $ [] (&buffer 0 255) (&buffer 17 128)
             :tags $ #{} :wasm
+        'echo-event $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-event (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'component-wasm.main/Event)
+            :args $ [] 'component-wasm.main/Event
+          :tests $ []
+            %{} 'TestEntry (:name |round-trips-empty-case)
+              :code $ quote $ let
+                  value $ Event :idle
+                assert= value $ echo-event value
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |round-trips-single-payload)
+              :code $ quote $ let
+                  value $ Event :named |Ada
+                assert= value $ echo-event value
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |round-trips-multiple-payloads)
+              :code $ quote $ let
+                  value $ Event :moved 3 4
+                assert= value $ echo-event value
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |round-trips-struct-payload)
+              :code $ quote $ let
+                  value $ Event :profile $ sample-profile
+                assert= value $ echo-event value
+              :tags $ #{} :wasm
         'echo-number-lists $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-number-lists (value) value
           :examples $ []
@@ -201,6 +236,17 @@
             :code $ quote $ let
                 value $ sample-profile
               assert= value $ echo-profile value
+            :tags $ #{} :wasm
+        'echo-result-event $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-result-event (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Result 'component-wasm.main/Event 'String
+            :return $ :: 'Result 'component-wasm.main/Event 'String
+          :tests $ [] $ %{} 'TestEntry (:name |nested-enum-inside-result)
+            :code $ quote $ assert=
+              %ok $ Event :named |Ada
+              echo-result-event $ %ok $ Event :named |Ada
             :tags $ #{} :wasm
         'echo-result-number $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-result-number (value) value
@@ -286,6 +332,11 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
+        'host-event $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-import host-event (value) |host |event
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'component-wasm.main/Event)
+            :args $ [] 'component-wasm.main/Event
         'host-numbers $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-import host-numbers (value) |host |numbers
           :examples $ []
