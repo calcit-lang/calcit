@@ -237,6 +237,17 @@
                 value $ sample-profile
               assert= value $ echo-profile value
             :tags $ #{} :wasm
+        'echo-result-event $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-result-event (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Result 'component-wasm.main/Event 'String
+            :return $ :: 'Result 'component-wasm.main/Event 'String
+          :tests $ [] $ %{} 'TestEntry (:name |nested-enum-inside-result)
+            :code $ quote $ assert=
+              %ok $ Event :named |Ada
+              echo-result-event $ %ok $ Event :named |Ada
+            :tags $ #{} :wasm
         'echo-result-number $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-result-number (value) value
           :examples $ []

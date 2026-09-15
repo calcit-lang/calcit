@@ -239,8 +239,10 @@ fn push_store_enum_discriminant(
   dst_local: u32,
   base_offset: i32,
   discriminant_local: u32,
+  discriminant_type: ValType,
 ) {
   instructions.extend([Instruction::LocalGet(dst_local), Instruction::LocalGet(discriminant_local)]);
+  push_flat_conversion(instructions, discriminant_type, ValType::I32);
   instructions.push(match discriminant_size {
     1 => Instruction::I32Store8(mem_arg_byte(base_offset as u64)),
     2 => Instruction::I32Store16(mem_arg_byte(base_offset as u64)),
@@ -269,18 +271,20 @@ fn push_store_enum_flat_from(
 ) {
   let (_, payload_offset, payload_layouts) = component_enum_layout(enum_type);
   let discriminant_size = component_enum_discriminant_size(enum_type.variants.len());
+  instructions.push(Instruction::LocalGet(flat_start));
+  push_flat_conversion(instructions, source_types[0], ValType::I32);
   instructions.extend([
-    Instruction::LocalGet(flat_start),
     Instruction::I32Const(enum_type.variants.len() as i32),
     Instruction::I32GeU,
     Instruction::If(BlockType::Empty),
     Instruction::Unreachable,
     Instruction::End,
   ]);
-  push_store_enum_discriminant(instructions, discriminant_size, dst_local, base_offset, flat_start);
+  push_store_enum_discriminant(instructions, discriminant_size, dst_local, base_offset, flat_start, source_types[0]);
   for (variant_index, (variant, (_, offsets))) in enum_type.variants.iter().zip(payload_layouts).enumerate() {
+    instructions.push(Instruction::LocalGet(flat_start));
+    push_flat_conversion(instructions, source_types[0], ValType::I32);
     instructions.extend([
-      Instruction::LocalGet(flat_start),
       Instruction::I32Const(variant_index as i32),
       Instruction::I32Eq,
       Instruction::If(BlockType::Empty),
