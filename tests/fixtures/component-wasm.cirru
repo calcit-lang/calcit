@@ -14,6 +14,8 @@
           :code $ quote $ defstruct Profile (:active 'Bool) (:name 'String)
             :scores $ :: 'List 'Number
             :stats 'component-wasm.main/ProfileStats
+            :maybe-name $ :: 'Option 'String
+            :outcome $ :: 'Result (:: 'List 'Number) 'String
           :examples $ []
           :schema $ :: 'StructDef
         'ProfileStats $ %{} 'CodeEntry (:doc |)
@@ -341,7 +343,7 @@
             :args $ []
         'sample-profile $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sample-profile ()
-            Profile :name |Ada :active true :scores ([] 1 2 3) :stats $ ProfileStats :score 7
+            Profile :name |Ada :active true :scores ([] 1 2 3) :stats (ProfileStats :score 7) :maybe-name (%some |Ada) :outcome $ %ok $ [] 4 5
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'component-wasm.main/Profile)
             :args $ []
