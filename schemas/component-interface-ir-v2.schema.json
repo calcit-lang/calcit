@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://calcit-lang.org/schemas/component-interface-ir-v2.schema.json",
+  "title": "Calcit Component Interface IR v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "package", "package_version", "declarations", "definitions"],
+  "properties": {
+    "version": { "const": 2 },
+    "package": { "type": "string" },
+    "package_version": { "type": "string" },
+    "declarations": {
+      "type": "array",
+      "items": { "$ref": "ffi-interface-ir-v3.schema.json#/$defs/declaration" }
+    },
+    "definitions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/definition" }
+    }
+  },
+  "$defs": {
+    "definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "namespace", "name", "doc", "logical_schema", "direction", "module", "symbol", "signature", "status", "diagnostic_codes"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "namespace": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "doc": { "type": "string" },
+        "logical_schema": { "type": "string" },
+        "direction": { "enum": ["import", "export"] },
+        "module": { "type": ["string", "null"] },
+        "symbol": { "type": "string", "minLength": 1 },
+        "signature": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "ffi-interface-ir-v3.schema.json#/$defs/functionSignature" }
+          ]
+        },
+        "status": { "enum": ["supported", "unsupported"] },
+        "diagnostic_codes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

@@ -79,7 +79,7 @@ The schema field remains a Cirru syntax tree, not raw persisted schema data.
 兼容性：`--json` 仍在 human 输出末尾附加 `JSON:` 与旧字段对象，其中 `ffi` 保持
 字符串类型，但不再截断。`--format json` 优先于 `--json`，不需要 `--raw` 就会返回
 完整元数据。human 模式默认标明 FFI preview；`--raw` 同时输出完整代码与 FFI。
-本接口只查询声明，不改变 Interface IR v2、目标可用性检查或 async 调用语义。
+本接口只查询声明，不改变 Interface IR v3、目标可用性检查或 async 调用语义。
 
 Local metadata queries (`ns <name>`, `defs`, `def`, `peek`, `examples`, `schema`, `pkg`, and `config`) first read only the main Snapshot. Modules/core are loaded only when the requested namespace is not local. This keeps repeated Agent navigation fast and avoids unrelated dependency warnings; semantic queries such as `type`, `type-at`, and `context` still load the metadata needed for static resolution.
 
