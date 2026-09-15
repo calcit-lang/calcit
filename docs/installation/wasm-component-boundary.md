@@ -42,15 +42,16 @@ Component 路径分为三层：
 
 core 不带 WIT generator、WIT golden、component packaging 或 stale-artifact policy；`calcit-bindgen` 不猜测 Calcit heap layout，也不重做类型推导。
 
-## 0.14.20 preview 基线
+## 0.14.20 Component preview
 
-当前已生成 Canonical ABI adapter 的同步类型只有 `Number` 与 UTF-8 `String`。
+0.14.20 已为 `Unit` 结果、`Bool`、`Buffer`、`Number`、UTF-8 `String`、递归同质
+`List<T>`，以及闭合单态的 `Option<T>` / `Result<T,E>` 生成同步 Canonical ABI adapter。
 
-这一版本只发布可供后续 packaging 消费的 core module，并不产生 runnable WebAssembly
-Component。缺少 `calcit-bindgen` 生成的 WIT、component wrapping 与 Wasmtime/jco 验证时，
-不得把 core module 当作已完成的 Component Model 产物。完整端到端边界仍由 0.15.1 追踪。
+Calcit 包本身只生成供 packaging 消费的 core module，不在主仓库内生成 WIT 或包装 Component。
+独立的 `calcit-bindgen` 已能为上述类型生成 WIT、包装 runnable Component，并通过 Wasmtime 与
+jco/Node 验证；项目仍需显式安装和调用该工具，不能把裸 core module 当作 Component 产物。
 
-0.15.1 开发线在这条基线上增加 `Bool`、`Buffer`、递归的同质 `List<T>`，以及闭合单态的 `Option<T>` / `Result<T,E>`。Bool 的 Canonical ABI 使用 `i32`
+Bool 的 Canonical ABI 使用 `i32`
 的 `0`/`1`；import 与 export 两个方向都会验证输入和返回值，遇到其他整数、小数、负数、
 NaN 或越界数值时直接 trap，不把非规范值静默解释为真假。Buffer 映射为 WIT
 `list<u8>`，按原始字节的 `(ptr,len)` 传输；空 Buffer、内嵌零和非 UTF-8 字节都必须原样保留，
@@ -72,7 +73,7 @@ Calcit 当前只有统一的 `Number`，没有可直接推导为 WIT `s32`、`u3
 
 ## 类型闭包
 
-后续同步 adapter 计划覆盖 Struct record、普通 Enum variant，并继续扩大已验证的 Option/Result payload 闭包；宽度明确的整数/浮点数
+0.15.1 的同步 adapter 计划覆盖 Struct record、普通 Enum variant，并继续扩大已验证的 Option/Result payload 闭包；宽度明确的整数/浮点数
 需要先完成上述 source-level 设计。在对应 adapter 实现以前，
 即使 contract 能表达部分形状，`calcit wasm --boundary component` 也会明确拒绝。
 
