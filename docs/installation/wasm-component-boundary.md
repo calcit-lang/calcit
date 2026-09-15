@@ -50,9 +50,11 @@ core 不带 WIT generator、WIT golden、component packaging 或 stale-artifact 
 Component。缺少 `calcit-bindgen` 生成的 WIT、component wrapping 与 Wasmtime/jco 验证时，
 不得把 core module 当作已完成的 Component Model 产物。完整端到端边界仍由 0.15.1 追踪。
 
-0.15.1 开发线在这条基线上增加 `Bool`：Canonical ABI 使用 `i32` 的 `0`/`1`，Calcit
-内部值 ABI 仍由 adapter 隔离。import 与 export 两个方向都会验证输入和返回值，遇到其他整数、
-小数、负数、NaN 或越界数值时直接 trap，不把非规范值静默解释为真假。
+0.15.1 开发线在这条基线上增加 `Bool` 与 `Buffer`。Bool 的 Canonical ABI 使用 `i32`
+的 `0`/`1`；import 与 export 两个方向都会验证输入和返回值，遇到其他整数、小数、负数、
+NaN 或越界数值时直接 trap，不把非规范值静默解释为真假。Buffer 映射为 WIT
+`list<u8>`，按原始字节的 `(ptr,len)` 传输；空 Buffer、内嵌零和非 UTF-8 字节都必须原样保留，
+越界范围直接 trap。两种类型的 Calcit 内部值 ABI 均由 adapter 隔离。
 
 Calcit 当前只有统一的 `Number`，没有可直接推导为 WIT `s32`、`u32`、`float32` 等宽度的
 表层数值类型。后续不能在 adapter 中依据值范围或调用位置猜测宽度；应先确定可推导、可显式
@@ -60,7 +62,7 @@ Calcit 当前只有统一的 `Number`，没有可直接推导为 WIT `s32`、`u3
 
 ## 类型闭包
 
-后续同步 adapter 计划覆盖 Buffer、List、Option、Result、Struct record 和 Enum
+后续同步 adapter 计划覆盖 List、Option、Result、Struct record 和 Enum
 variant；宽度明确的整数/浮点数需要先完成上述 source-level 设计。在对应 adapter 实现以前，
 即使 contract 能表达部分形状，`calcit wasm --boundary component` 也会明确拒绝。
 
@@ -90,12 +92,12 @@ Component contract 沿用 `calcit ffi export`，通过 `--boundary component`
 calcit wasm calcit.cirru --boundary component --emit-path target/component-core
 ```
 
-当前 adapter 覆盖 `Bool`、`Number` 与 UTF-8 `String` 的同步 import/export。Bool 使用 Canonical ABI `i32` 并严格限制为 `0`/`1`；Number 直接使用 `f64`。String 参数展开为 `(ptr,len)`；export 对应 `canon lift`，String 的两个 flat results 超过同步 Canonical ABI 的单结果上限，因此返回指向 `(ptr,len)` return area 的 `i32` 指针；import 对应 `canon lower`，String 结果使用 caller 传入的 return area，再复制回 Calcit String。两者是 Canonical ABI 针对不同方向规定的函数形状，不是可以互换的自定义约定。core module 只保留显式声明的 Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，不会携带 native core target 的隐式 `math/io` imports。复合类型、宽度明确的数值类型、post-return 与 async 仍是后续任务；不支持的 schema 在生成阶段明确失败。
+当前 adapter 覆盖 `Bool`、`Buffer`、`Number` 与 UTF-8 `String` 的同步 import/export。Bool 使用 Canonical ABI `i32` 并严格限制为 `0`/`1`；Number 直接使用 `f64`。Buffer 映射到 WIT `list<u8>`，String 映射到 WIT `string`，两者的 core 参数都展开为 `(ptr,len)`，但 lift 后分别构造 Calcit Buffer 与 String，不能互换。export 对应 `canon lift`，两个 flat results 超过同步 Canonical ABI 的单结果上限，因此返回指向 `(ptr,len)` return area 的 `i32` 指针；import 对应 `canon lower`，结果使用 caller 传入的 return area，再复制回对应的 Calcit 值。两者是 Canonical ABI 针对不同方向规定的函数形状，不是可以互换的自定义约定。core module 只保留显式声明的 Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，不会携带 native core target 的隐式 `math/io` imports。复合类型、宽度明确的数值类型、post-return 与 async 仍是后续任务；不支持的 schema 在生成阶段明确失败。
 
 ## 实施顺序
 
 1. 导出 directional typed contract，先完成确定性、诊断和 Cirru EDN/JSON 等价。
-2. 为 Bool、Number 和 String 生成 Canonical ABI import/export adapter，再扩展 record、variant、Option 与 Result；宽度明确的数值类型先完成 source-level 设计。
+2. 为 Bool、Buffer、Number 和 String 生成 Canonical ABI import/export adapter，再扩展 record、variant、Option 与 Result；宽度明确的数值类型先完成 source-level 设计。
 3. 由 `calcit-bindgen` 生成 WIT 并打包 runnable component，在 Wasmtime 和 jco 做端到端往返。
 4. 同步边界稳定后，再引入 WASI 0.3 async、HTTP 和 socket。
 
