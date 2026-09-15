@@ -4849,7 +4849,8 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
 /// Builtin type tags always registered in tag_index, so `type-of` can return them
 /// and heap objects can carry them in their header slot.
 const BUILTIN_TYPE_TAGS: &[&str] = &[
-  "buf-list", "list", "map", "set", "enum", "struct", "number", "bool", "nil", "tag", "fn", "string", "symbol", "buffer",
+  "buf-list", "list", "map", "set", "enum", "struct", "number", "bool", "nil", "tag", "fn", "string", "symbol", "buffer", "none",
+  "some", "ok", "err",
 ];
 
 fn collect_all_tags_from(fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)]) -> HashMap<String, u32> {
@@ -5076,6 +5077,14 @@ mod tests {
   fn declaration(head: CalcitSyntax) -> Calcit {
     let items = [Calcit::Syntax(head, Arc::from("dependency.ns"))];
     Calcit::List(Arc::new(CalcitList::from(&items[..])))
+  }
+
+  #[test]
+  fn component_variant_tags_are_available_without_constructor_literals() {
+    let tags = super::collect_all_tags_from(&[]);
+    for tag in ["none", "some", "ok", "err"] {
+      assert!(tags.contains_key(tag), "missing built-in Component variant tag {tag}");
+    }
   }
 
   #[test]

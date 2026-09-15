@@ -288,9 +288,13 @@ WebAssembly.instantiate(module, { host }).then(result => {
     throw new Error("imported Result<Number,String> err did not round-trip");
   }
   if (e["call-host-ping"]() !== undefined) throw new Error("imported Unit result should remain zero-result");
-  let invalidVariantTrapped = false;
-  try { e["echo-option-number"](2, 0); } catch (error) { invalidVariantTrapped = error instanceof WebAssembly.RuntimeError; }
-  if (!invalidVariantTrapped) throw new Error("invalid Option discriminant did not trap");
+  for (const discriminant of [2, 256]) {
+    let invalidVariantTrapped = false;
+    try { e["echo-option-number"](discriminant, 0); } catch (error) {
+      invalidVariantTrapped = error instanceof WebAssembly.RuntimeError;
+    }
+    if (!invalidVariantTrapped) throw new Error(`invalid Option discriminant ${discriminant} did not trap`);
+  }
   for (const invoke of [() => e["bool-not"](2), () => e["choose-number"](2, 3, 4)]) {
     let trapped = false;
     try { invoke(); } catch (error) { trapped = error instanceof WebAssembly.RuntimeError; }

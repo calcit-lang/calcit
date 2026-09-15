@@ -111,6 +111,15 @@ fn push_store_variant_flat_from(
     _ => unreachable!("flat variant store requires Option or Result"),
   };
   let payload_offset = component_variant_payload_offset(variant_type);
+  instructions.push(Instruction::LocalGet(flat_start));
+  push_flat_conversion(instructions, source_types[0], ValType::I32);
+  instructions.extend([
+    Instruction::I32Const(1),
+    Instruction::I32GtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+  ]);
   instructions.extend([Instruction::LocalGet(dst_local), Instruction::LocalGet(flat_start)]);
   push_flat_conversion(instructions, source_types[0], ValType::I32);
   instructions.extend([
