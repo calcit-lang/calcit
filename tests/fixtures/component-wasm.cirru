@@ -56,6 +56,23 @@
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'Number
             :return $ :: 'List 'Number
+        'call-host-option-number $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export call-host-option-number (value) (host-option-number value)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Option 'Number
+            :return $ :: 'Option 'Number
+        'call-host-ping $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export call-host-ping () (host-ping)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'call-host-result-number $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export call-host-result-number (value) (host-result-number value)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Result 'Number 'String
+            :return $ :: 'Result 'Number 'String
         'choose-buffer $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export choose-buffer (flag yes no) (if flag yes no)
           :examples $ []
@@ -133,6 +150,77 @@
               :code $ quote $ assert= ([])
                 echo-numbers $ []
               :tags $ #{} :wasm
+        'echo-option-number $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-option-number (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Option 'Number
+            :return $ :: 'Option 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |round-trips-some)
+              :code $ quote $ assert= (%some 7)
+                echo-option-number $ %some 7
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |round-trips-none)
+              :code $ quote $ assert= (%none)
+                echo-option-number $ %none
+              :tags $ #{} :wasm
+        'echo-option-text $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-option-text (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Option 'String
+            :return $ :: 'Option 'String
+          :tests $ [] $ %{} 'TestEntry (:name |round-trips-text)
+            :code $ quote $ assert= (%some "|你好")
+              echo-option-text $ %some "|你好"
+            :tags $ #{} :wasm
+        'echo-result-number $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-result-number (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Result 'Number 'String
+            :return $ :: 'Result 'Number 'String
+          :tests $ []
+            %{} 'TestEntry (:name |round-trips-ok)
+              :code $ quote $ assert= (%ok 7)
+                echo-result-number $ %ok 7
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |round-trips-err)
+              :code $ quote $ assert= (%err |bad)
+                echo-result-number $ %err |bad
+              :tags $ #{} :wasm
+        'echo-result-numbers $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-result-numbers (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Result (:: 'List 'Number) 'String
+            :return $ :: 'Result (:: 'List 'Number) 'String
+          :tests $ []
+            %{} 'TestEntry (:name |round-trips-list)
+              :code $ quote $ assert=
+                %ok $ [] 1 2 3
+                echo-result-numbers $ %ok $ [] 1 2 3
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |round-trips-list-error)
+              :code $ quote $ assert= (%err |bad)
+                echo-result-numbers $ %err |bad
+              :tags $ #{} :wasm
+        'echo-result-unit $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-result-unit (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Result 'Unit 'String
+            :return $ :: 'Result 'Unit 'String
+          :tests $ []
+            %{} 'TestEntry (:name |round-trips-unit)
+              :code $ quote $ assert= (%ok &unit)
+                echo-result-unit $ %ok &unit
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |round-trips-unit-error)
+              :code $ quote $ assert= (%err |bad)
+                echo-result-unit $ %err |bad
+              :tags $ #{} :wasm
         'echo-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-text (text) text
           :examples $ []
@@ -177,6 +265,23 @@
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'Number
             :return $ :: 'List 'Number
+        'host-option-number $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-import host-option-number (value) |host |option-number
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Option 'Number
+            :return $ :: 'Option 'Number
+        'host-ping $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-import host-ping () |host |ping
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'host-result-number $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-import host-result-number (value) |host |result-number
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Result 'Number 'String
+            :return $ :: 'Result 'Number 'String
         'is-buffer $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export is-buffer (value) (buffer? value)
           :examples $ []
@@ -191,6 +296,14 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'ping $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export ping () &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |returns-unit)
+            :code $ quote $ assert= &unit (ping)
+            :tags $ #{} :wasm
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () 0
           :examples $ []

@@ -45,7 +45,11 @@ mod runtime;
 #[path = "emit_wasm/structs.rs"]
 mod structs;
 
-use component::{ComponentListCodec, build_component_list_lift_fn, build_component_list_lower_fn, collect_component_list_types};
+use component::{
+  ComponentListCodec, ComponentValueCodecs, ComponentVariantCodec, build_component_list_lift_fn, build_component_list_lower_fn,
+  build_component_variant_lift_fn, build_component_variant_lower_fn, collect_component_compound_types, component_memory_layout,
+  push_load_variant_flat, push_store_variant_flat,
+};
 use methods::{emit_call_args, emit_method_invoke};
 use runtime::{
   HostImport, ModuleFunctionLayout, build_runtime_fns, build_utf8_valid_fn, build_wasi_get_args_fn, build_wasi_get_env_fn,
@@ -335,26 +339,56 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     None
   };
   let mut component_list_codecs = BTreeMap::new();
+  let mut component_variant_codecs = BTreeMap::new();
   if let Some(cabi_realloc_index) = component_cabi_realloc_index {
     let buffer_new_index = component_buffer_new_index.expect("Component boundary must install the Buffer constructor");
     let list_tag_id = *tag_index.get("list").expect("list tag must exist") as i32;
-    for list_type in collect_component_list_types(&program_data, &fn_defs, &component_import_adapters)? {
+    let enum_tag_id = *tag_index.get("enum").expect("enum tag must exist") as i32;
+    for compound_type in collect_component_compound_types(&program_data, &fn_defs, &component_import_adapters)? {
       let lift_index = num_imports + compiled_fns.len() as u32;
       let lower_index = lift_index + 1;
-      component_list_codecs.insert(list_type.clone(), ComponentListCodec { lift_index, lower_index });
-      compiled_fns.push(build_component_list_lift_fn(
-        &list_type,
-        list_tag_id,
-        str_new_idx,
-        buffer_new_index,
-        cabi_realloc_index,
-        &component_list_codecs,
-      ));
-      compiled_fns.push(build_component_list_lower_fn(
-        &list_type,
-        cabi_realloc_index,
-        &component_list_codecs,
-      ));
+      match &compound_type {
+        ComponentAbiType::List(_) => {
+          component_list_codecs.insert(compound_type.clone(), ComponentListCodec { lift_index, lower_index });
+          let codecs = ComponentValueCodecs {
+            str_new_index: str_new_idx,
+            buffer_new_index,
+            list_codecs: &component_list_codecs,
+            variant_codecs: &component_variant_codecs,
+          };
+          compiled_fns.push(build_component_list_lift_fn(
+            &compound_type,
+            list_tag_id,
+            cabi_realloc_index,
+            &codecs,
+          ));
+          compiled_fns.push(build_component_list_lower_fn(&compound_type, cabi_realloc_index, &codecs));
+        }
+        ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
+          let tag_ids = match &compound_type {
+            ComponentAbiType::Option(_) => ["none", "some"],
+            ComponentAbiType::Result(_, _) => ["ok", "err"],
+            _ => unreachable!(),
+          }
+          .map(|tag| *tag_index.get(tag).unwrap_or_else(|| panic!("{tag} tag must exist")) as i32);
+          component_variant_codecs.insert(compound_type.clone(), ComponentVariantCodec { lift_index, lower_index });
+          let codecs = ComponentValueCodecs {
+            str_new_index: str_new_idx,
+            buffer_new_index,
+            list_codecs: &component_list_codecs,
+            variant_codecs: &component_variant_codecs,
+          };
+          compiled_fns.push(build_component_variant_lift_fn(
+            &compound_type,
+            tag_ids,
+            enum_tag_id,
+            cabi_realloc_index,
+            &codecs,
+          ));
+          compiled_fns.push(build_component_variant_lower_fn(&compound_type, tag_ids, &codecs));
+        }
+        _ => unreachable!("compound type collector returned a scalar type"),
+      }
     }
   }
   if let Some(cabi_realloc_index) = component_cabi_realloc_index {
@@ -375,6 +409,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
         buffer_new_index,
         cabi_realloc_index,
         &component_list_codecs,
+        &component_variant_codecs,
       ));
     }
   }
@@ -632,6 +667,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
         buffer_new_index,
         cabi_realloc_index,
         &component_list_codecs,
+        &component_variant_codecs,
       ));
     }
   }
@@ -783,10 +819,13 @@ struct CompiledFn {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum ComponentAbiType {
+  Unit,
   Bool,
   Buffer,
   List(Box<ComponentAbiType>),
   Number,
+  Option(Box<ComponentAbiType>),
+  Result(Box<ComponentAbiType>, Box<ComponentAbiType>),
   String,
 }
 
@@ -812,6 +851,7 @@ struct ComponentImportAdapter {
 
 fn component_abi_type(annotation: &CalcitTypeAnnotation, definition: &str, path: &str) -> Result<ComponentAbiType, String> {
   match annotation {
+    CalcitTypeAnnotation::Unit => Ok(ComponentAbiType::Unit),
     CalcitTypeAnnotation::Bool => Ok(ComponentAbiType::Bool),
     CalcitTypeAnnotation::Buffer => Ok(ComponentAbiType::Buffer),
     CalcitTypeAnnotation::List(item) => Ok(ComponentAbiType::List(Box::new(component_abi_type(
@@ -821,8 +861,31 @@ fn component_abi_type(annotation: &CalcitTypeAnnotation, definition: &str, path:
     )?))),
     CalcitTypeAnnotation::Number => Ok(ComponentAbiType::Number),
     CalcitTypeAnnotation::String => Ok(ComponentAbiType::String),
+    CalcitTypeAnnotation::TypeRef(name, arguments) => {
+      let name = name.trim_start_matches('\'').trim_start_matches(':');
+      match (name, arguments.as_slice()) {
+        ("Option" | "calcit.core/Option", [item]) => Ok(ComponentAbiType::Option(Box::new(component_abi_type(
+          item,
+          definition,
+          &format!("{path}.item"),
+        )?))),
+        ("Result" | "calcit.core/Result", [ok, error]) => Ok(ComponentAbiType::Result(
+          Box::new(component_abi_type(ok, definition, &format!("{path}.ok"))?),
+          Box::new(component_abi_type(error, definition, &format!("{path}.error"))?),
+        )),
+        ("Option" | "calcit.core/Option", _) => Err(format!(
+          "E_COMPONENT_ABI_TYPE_ARGUMENT_ARITY: `{definition}` at `{path}` requires Option<T> with exactly one type argument"
+        )),
+        ("Result" | "calcit.core/Result", _) => Err(format!(
+          "E_COMPONENT_ABI_TYPE_ARGUMENT_ARITY: `{definition}` at `{path}` requires Result<T, E> with exactly two type arguments"
+        )),
+        _ => Err(format!(
+          "E_COMPONENT_ABI_UNSUPPORTED_TYPE: `{definition}` at `{path}` uses `{annotation}`, but this adapter slice only supports Unit results, Bool, Buffer, List<T>, Number, Option<T>, Result<T, E>, and String"
+        )),
+      }
+    }
     other => Err(format!(
-      "E_COMPONENT_ABI_UNSUPPORTED_TYPE: `{definition}` at `{path}` uses `{other}`, but this adapter slice only supports Bool, Buffer, List<T>, Number, and String"
+      "E_COMPONENT_ABI_UNSUPPORTED_TYPE: `{definition}` at `{path}` uses `{other}`, but this adapter slice only supports Unit results, Bool, Buffer, List<T>, Number, Option<T>, Result<T, E>, and String"
     )),
   }
 }
@@ -852,6 +915,11 @@ fn component_function_schema(
     .enumerate()
     .map(|(index, annotation)| component_abi_type(annotation, definition, &format!("logical_schema.parameters[{index}]")))
     .collect::<Result<Vec<_>, _>>()?;
+  if let Some(index) = parameters.iter().position(|parameter| matches!(parameter, ComponentAbiType::Unit)) {
+    return Err(format!(
+      "E_COMPONENT_ABI_UNIT_PARAMETER: `{definition}` at `logical_schema.parameters[{index}]` cannot use Unit as a parameter; omit that parameter instead"
+    ));
+  }
   if parameters.len() != source_arity {
     return Err(format!(
       "E_COMPONENT_ABI_SCHEMA_ARITY: `{definition}` declares {source_arity} source parameters but its schema declares {}",
@@ -860,6 +928,39 @@ fn component_function_schema(
   }
   let result = component_abi_type(&signature.return_type, definition, "logical_schema.result")?;
   Ok((parameters, result))
+}
+
+fn component_flat_types(value_type: &ComponentAbiType) -> Vec<ValType> {
+  match value_type {
+    ComponentAbiType::Unit => vec![],
+    ComponentAbiType::Bool => vec![ValType::I32],
+    ComponentAbiType::Number => vec![ValType::F64],
+    ComponentAbiType::Buffer | ComponentAbiType::List(_) | ComponentAbiType::String => vec![ValType::I32, ValType::I32],
+    ComponentAbiType::Option(item) => {
+      let mut flattened = vec![ValType::I32];
+      flattened.extend(component_join_flat_types(&[], &component_flat_types(item)));
+      flattened
+    }
+    ComponentAbiType::Result(ok, error) => {
+      let mut flattened = vec![ValType::I32];
+      flattened.extend(component_join_flat_types(&component_flat_types(ok), &component_flat_types(error)));
+      flattened
+    }
+  }
+}
+
+fn component_join_flat_types(left: &[ValType], right: &[ValType]) -> Vec<ValType> {
+  let width = left.len().max(right.len());
+  (0..width)
+    .map(|index| match (left.get(index), right.get(index)) {
+      (Some(ValType::I64), Some(ValType::I32 | ValType::F64)) | (Some(ValType::I32 | ValType::F64), Some(ValType::I64)) => ValType::I64,
+      (Some(ValType::F64), Some(ValType::I32)) | (Some(ValType::I32), Some(ValType::F64)) => ValType::I64,
+      (Some(left), Some(right)) if left == right => *left,
+      (Some(value), None) | (None, Some(value)) => *value,
+      (None, None) => unreachable!("join width is derived from the longer shape"),
+      (Some(left), Some(right)) => panic!("unsupported Component flat join: {left:?} with {right:?}"),
+    })
+    .collect()
 }
 
 fn collect_component_import_adapters(program_data: &program::CompiledProgram) -> Result<Vec<ComponentImportAdapter>, String> {
@@ -968,20 +1069,14 @@ fn validate_component_import_symbols(adapters: &[ComponentImportAdapter]) -> Res
 fn component_import_signature(adapter: &ComponentImportAdapter) -> (Vec<ValType>, Vec<ValType>) {
   let mut parameters = Vec::new();
   for parameter in &adapter.parameters {
-    match parameter {
-      ComponentAbiType::Bool => parameters.push(ValType::I32),
-      ComponentAbiType::Buffer | ComponentAbiType::List(_) => parameters.extend([ValType::I32, ValType::I32]),
-      ComponentAbiType::Number => parameters.push(ValType::F64),
-      ComponentAbiType::String => parameters.extend([ValType::I32, ValType::I32]),
-    }
+    parameters.extend(component_flat_types(parameter));
   }
-  match adapter.result {
-    ComponentAbiType::Bool => (parameters, vec![ValType::I32]),
-    ComponentAbiType::Number => (parameters, vec![ValType::F64]),
-    ComponentAbiType::Buffer | ComponentAbiType::List(_) | ComponentAbiType::String => {
-      parameters.push(ValType::I32);
-      (parameters, vec![])
-    }
+  let results = component_flat_types(&adapter.result);
+  if results.len() > 1 {
+    parameters.push(ValType::I32);
+    (parameters, vec![])
+  } else {
+    (parameters, results)
   }
 }
 
@@ -1140,6 +1235,7 @@ fn build_component_import_adapter(
   buffer_new_index: u32,
   cabi_realloc_index: u32,
   list_codecs: &BTreeMap<ComponentAbiType, ComponentListCodec>,
+  variant_codecs: &BTreeMap<ComponentAbiType, ComponentVariantCodec>,
 ) -> CompiledFn {
   let params = vec![ValType::F64; adapter.parameters.len()];
   let mut locals = Vec::new();
@@ -1147,6 +1243,7 @@ fn build_component_import_adapter(
 
   for (index, parameter) in adapter.parameters.iter().enumerate() {
     match parameter {
+      ComponentAbiType::Unit => unreachable!("Unit Component parameters are rejected before adapter construction"),
       ComponentAbiType::Bool => {
         let canonical = params.len() as u32 + locals.len() as u32;
         locals.push(ValType::I32);
@@ -1185,10 +1282,34 @@ fn build_component_import_adapter(
           Instruction::I32Load(mem_arg_i32(4)),
         ]);
       }
+      ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
+        let canonical_ptr = params.len() as u32 + locals.len() as u32;
+        locals.push(ValType::I32);
+        let layout = component_memory_layout(parameter);
+        let codec = variant_codecs
+          .get(parameter)
+          .expect("Component variant import parameter codec must be registered");
+        instructions.extend([
+          Instruction::I32Const(0),
+          Instruction::I32Const(0),
+          Instruction::I32Const(layout.alignment),
+          Instruction::I32Const(layout.size),
+          Instruction::Call(cabi_realloc_index),
+          Instruction::LocalSet(canonical_ptr),
+          Instruction::LocalGet(index as u32),
+          Instruction::LocalGet(canonical_ptr),
+          Instruction::Call(codec.lower_index),
+        ]);
+        push_load_variant_flat(&mut instructions, parameter, canonical_ptr);
+      }
     }
   }
 
   match &adapter.result {
+    ComponentAbiType::Unit => {
+      instructions.push(Instruction::Call(adapter.raw_index));
+      instructions.push(f64_const(0.0));
+    }
     ComponentAbiType::Bool => {
       instructions.push(Instruction::Call(adapter.raw_index));
       let canonical = params.len() as u32 + locals.len() as u32;
@@ -1241,6 +1362,37 @@ fn build_component_import_adapter(
         Instruction::Call(codec.lift_index),
       ]);
     }
+    ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
+      let ret_ptr = params.len() as u32 + locals.len() as u32;
+      locals.push(ValType::I32);
+      let layout = component_memory_layout(&adapter.result);
+      let codec = variant_codecs
+        .get(&adapter.result)
+        .expect("Component variant import result codec must be registered");
+      instructions.extend([
+        Instruction::I32Const(0),
+        Instruction::I32Const(0),
+        Instruction::I32Const(layout.alignment),
+        Instruction::I32Const(layout.size),
+        Instruction::Call(cabi_realloc_index),
+        Instruction::LocalSet(ret_ptr),
+      ]);
+      if component_flat_types(&adapter.result).len() > 1 {
+        instructions.push(Instruction::LocalGet(ret_ptr));
+        instructions.push(Instruction::Call(adapter.raw_index));
+      } else {
+        let discriminant = params.len() as u32 + locals.len() as u32;
+        locals.push(ValType::I32);
+        instructions.extend([
+          Instruction::Call(adapter.raw_index),
+          Instruction::LocalSet(discriminant),
+          Instruction::LocalGet(ret_ptr),
+          Instruction::LocalGet(discriminant),
+          Instruction::I32Store8(mem_arg_byte(0)),
+        ]);
+      }
+      instructions.extend([Instruction::LocalGet(ret_ptr), Instruction::Call(codec.lift_index)]);
+    }
   }
 
   CompiledFn {
@@ -1258,14 +1410,11 @@ fn build_component_export_adapter(
   buffer_new_index: u32,
   cabi_realloc_index: u32,
   list_codecs: &BTreeMap<ComponentAbiType, ComponentListCodec>,
+  variant_codecs: &BTreeMap<ComponentAbiType, ComponentVariantCodec>,
 ) -> CompiledFn {
   let mut params = Vec::new();
   for parameter in &adapter.parameters {
-    match parameter {
-      ComponentAbiType::Bool => params.push(ValType::I32),
-      ComponentAbiType::Number => params.push(ValType::F64),
-      ComponentAbiType::Buffer | ComponentAbiType::List(_) | ComponentAbiType::String => params.extend([ValType::I32, ValType::I32]),
-    }
+    params.extend(component_flat_types(parameter));
   }
 
   let mut locals = Vec::new();
@@ -1274,6 +1423,7 @@ fn build_component_export_adapter(
   let mut lowered = Vec::with_capacity(adapter.parameters.len());
   for parameter in &adapter.parameters {
     match parameter {
+      ComponentAbiType::Unit => unreachable!("Unit Component parameters are rejected before adapter construction"),
       ComponentAbiType::Bool => {
         let local = params.len() as u32 + locals.len() as u32;
         locals.push(ValType::F64);
@@ -1318,6 +1468,32 @@ fn build_component_export_adapter(
         lowered.push(local);
         flat_index += 2;
       }
+      ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
+        let canonical_ptr = params.len() as u32 + locals.len() as u32;
+        locals.push(ValType::I32);
+        let local = params.len() as u32 + locals.len() as u32;
+        locals.push(ValType::F64);
+        let layout = component_memory_layout(parameter);
+        let codec = variant_codecs
+          .get(parameter)
+          .expect("Component variant export parameter codec must be registered");
+        instructions.extend([
+          Instruction::I32Const(0),
+          Instruction::I32Const(0),
+          Instruction::I32Const(layout.alignment),
+          Instruction::I32Const(layout.size),
+          Instruction::Call(cabi_realloc_index),
+          Instruction::LocalSet(canonical_ptr),
+        ]);
+        push_store_variant_flat(&mut instructions, parameter, flat_index, canonical_ptr, 0);
+        instructions.extend([
+          Instruction::LocalGet(canonical_ptr),
+          Instruction::Call(codec.lift_index),
+          Instruction::LocalSet(local),
+        ]);
+        lowered.push(local);
+        flat_index += component_flat_types(parameter).len() as u32;
+      }
     }
   }
   for local in lowered {
@@ -1326,6 +1502,10 @@ fn build_component_export_adapter(
   instructions.push(Instruction::Call(adapter.target_index));
 
   let results = match &adapter.result {
+    ComponentAbiType::Unit => {
+      instructions.push(Instruction::Drop);
+      vec![]
+    }
     ComponentAbiType::Bool => {
       let value = params.len() as u32 + locals.len() as u32;
       locals.push(ValType::F64);
@@ -1388,6 +1568,36 @@ fn build_component_export_adapter(
         Instruction::LocalGet(ret_ptr),
       ]);
       vec![ValType::I32]
+    }
+    ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
+      let value = params.len() as u32 + locals.len() as u32;
+      locals.push(ValType::F64);
+      let ret_ptr = params.len() as u32 + locals.len() as u32;
+      locals.push(ValType::I32);
+      let layout = component_memory_layout(&adapter.result);
+      let codec = variant_codecs
+        .get(&adapter.result)
+        .expect("Component variant export result codec must be registered");
+      instructions.extend([
+        Instruction::LocalSet(value),
+        Instruction::I32Const(0),
+        Instruction::I32Const(0),
+        Instruction::I32Const(layout.alignment),
+        Instruction::I32Const(layout.size),
+        Instruction::Call(cabi_realloc_index),
+        Instruction::LocalSet(ret_ptr),
+        Instruction::LocalGet(value),
+        Instruction::LocalGet(ret_ptr),
+        Instruction::Call(codec.lower_index),
+      ]);
+      let flat_types = component_flat_types(&adapter.result);
+      if flat_types.len() > 1 {
+        instructions.push(Instruction::LocalGet(ret_ptr));
+        vec![ValType::I32]
+      } else {
+        push_load_variant_flat(&mut instructions, &adapter.result, ret_ptr);
+        flat_types
+      }
     }
   };
 
@@ -4856,9 +5066,9 @@ mod tests {
 
   use super::{
     ComponentAbiType, ComponentExportAdapter, ComponentImportAdapter, HostImport, WasmBoundary, WasmTarget, build_cabi_realloc_fn,
-    build_component_export_adapter, build_component_import_adapter, component_abi_type, component_import_signature,
-    host_imports_for_target, index_host_imports, must_reject_extraction_failure, validate_component_export_symbols,
-    validate_component_import_symbols,
+    build_component_export_adapter, build_component_import_adapter, component_abi_type, component_flat_types,
+    component_import_signature, component_memory_layout, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
+    validate_component_export_symbols, validate_component_import_symbols,
   };
   use crate::calcit::{Calcit, CalcitList, CalcitSyntax, CalcitTypeAnnotation};
   use wasm_encoder::ValType;
@@ -4899,6 +5109,7 @@ mod tests {
   #[test]
   fn component_export_adapters_use_canonical_value_and_byte_shapes() {
     let list_codecs = BTreeMap::new();
+    let variant_codecs = BTreeMap::new();
     let allocator = build_cabi_realloc_fn();
     assert_eq!(allocator.export_name.as_deref(), Some("cabi_realloc"));
     assert_eq!(allocator.params, vec![ValType::I32; 4]);
@@ -4916,6 +5127,7 @@ mod tests {
       11,
       30,
       &list_codecs,
+      &variant_codecs,
     );
     assert_eq!(number.params, vec![ValType::F64]);
     assert_eq!(number.results, vec![ValType::F64]);
@@ -4932,6 +5144,7 @@ mod tests {
       11,
       30,
       &list_codecs,
+      &variant_codecs,
     );
     assert_eq!(string.params, vec![ValType::I32, ValType::I32]);
     assert_eq!(string.results, vec![ValType::I32]);
@@ -4948,6 +5161,7 @@ mod tests {
       11,
       30,
       &list_codecs,
+      &variant_codecs,
     );
     assert_eq!(buffer.params, vec![ValType::I32, ValType::I32]);
     assert_eq!(buffer.results, vec![ValType::I32]);
@@ -4956,6 +5170,7 @@ mod tests {
   #[test]
   fn component_import_adapters_use_canonical_value_and_byte_shapes() {
     let list_codecs = BTreeMap::new();
+    let variant_codecs = BTreeMap::new();
     let number = ComponentImportAdapter {
       definition: "app.main/host-add-one".into(),
       module: "host".into(),
@@ -4966,7 +5181,7 @@ mod tests {
       result: ComponentAbiType::Number,
     };
     assert_eq!(component_import_signature(&number), (vec![ValType::F64], vec![ValType::F64]));
-    let number_adapter = build_component_import_adapter(&number, 10, 11, 12, &list_codecs);
+    let number_adapter = build_component_import_adapter(&number, 10, 11, 12, &list_codecs, &variant_codecs);
     assert_eq!(number_adapter.params, vec![ValType::F64]);
     assert_eq!(number_adapter.results, vec![ValType::F64]);
 
@@ -4983,7 +5198,7 @@ mod tests {
       component_import_signature(&string),
       (vec![ValType::I32, ValType::I32, ValType::I32], vec![])
     );
-    let string_adapter = build_component_import_adapter(&string, 10, 11, 12, &list_codecs);
+    let string_adapter = build_component_import_adapter(&string, 10, 11, 12, &list_codecs, &variant_codecs);
     assert_eq!(string_adapter.params, vec![ValType::F64]);
     assert_eq!(string_adapter.results, vec![ValType::F64]);
 
@@ -5000,7 +5215,7 @@ mod tests {
       component_import_signature(&buffer),
       (vec![ValType::I32, ValType::I32, ValType::I32], vec![])
     );
-    let buffer_adapter = build_component_import_adapter(&buffer, 10, 11, 12, &list_codecs);
+    let buffer_adapter = build_component_import_adapter(&buffer, 10, 11, 12, &list_codecs, &variant_codecs);
     assert_eq!(buffer_adapter.params, vec![ValType::F64]);
     assert_eq!(buffer_adapter.results, vec![ValType::F64]);
   }
@@ -5008,6 +5223,7 @@ mod tests {
   #[test]
   fn component_bool_adapters_use_canonical_i32_and_strict_conversion() {
     let list_codecs = BTreeMap::new();
+    let variant_codecs = BTreeMap::new();
     assert_eq!(
       component_abi_type(&CalcitTypeAnnotation::Bool, "app.main/check", "logical_schema.result"),
       Ok(ComponentAbiType::Bool)
@@ -5024,6 +5240,7 @@ mod tests {
       11,
       30,
       &list_codecs,
+      &variant_codecs,
     );
     assert_eq!(export.params, vec![ValType::I32]);
     assert_eq!(export.results, vec![ValType::I32]);
@@ -5044,7 +5261,7 @@ mod tests {
       result: ComponentAbiType::Bool,
     };
     assert_eq!(component_import_signature(&import), (vec![ValType::I32], vec![ValType::I32]));
-    let import_adapter = build_component_import_adapter(&import, 10, 11, 12, &list_codecs);
+    let import_adapter = build_component_import_adapter(&import, 10, 11, 12, &list_codecs, &variant_codecs);
     assert_eq!(import_adapter.params, vec![ValType::F64]);
     assert_eq!(import_adapter.results, vec![ValType::F64]);
     assert!(
@@ -5056,15 +5273,15 @@ mod tests {
   }
 
   #[test]
-  fn component_adapter_accepts_buffer_and_rejects_types_outside_the_current_slice() {
+  fn component_adapter_accepts_buffer_and_unit() {
     assert_eq!(
       component_abi_type(&CalcitTypeAnnotation::Buffer, "app.main/read", "logical_schema.result"),
       Ok(ComponentAbiType::Buffer)
     );
-    let error = component_abi_type(&CalcitTypeAnnotation::Unit, "app.main/read", "logical_schema.result")
-      .expect_err("Unit is deferred to a later adapter slice");
-    assert!(error.contains("E_COMPONENT_ABI_UNSUPPORTED_TYPE"));
-    assert!(error.contains("logical_schema.result"));
+    assert_eq!(
+      component_abi_type(&CalcitTypeAnnotation::Unit, "app.main/read", "logical_schema.result"),
+      Ok(ComponentAbiType::Unit)
+    );
   }
 
   #[test]
@@ -5077,10 +5294,43 @@ mod tests {
       )))))
     );
 
-    let unsupported = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Unit))));
+    let unsupported = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::String),
+      Arc::new(CalcitTypeAnnotation::Number),
+    )))));
     let error = component_abi_type(&unsupported, "app.main/echo", "logical_schema.parameters[0]")
       .expect_err("unsupported nested item types must not degrade to Dynamic");
     assert!(error.contains("logical_schema.parameters[0].item.item"));
+  }
+
+  #[test]
+  fn component_adapter_derives_nominal_option_result_and_shared_variant_shapes() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let string = Arc::new(CalcitTypeAnnotation::String);
+    let option = CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/Option"), Arc::new(vec![number.clone()]));
+    let result = CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/Result"), Arc::new(vec![number, string]));
+    assert_eq!(
+      component_abi_type(&option, "app.main/option", "logical_schema.result"),
+      Ok(ComponentAbiType::Option(Box::new(ComponentAbiType::Number)))
+    );
+    let result_type = component_abi_type(&result, "app.main/result", "logical_schema.result").expect("core Result must resolve");
+    assert_eq!(
+      result_type,
+      ComponentAbiType::Result(Box::new(ComponentAbiType::Number), Box::new(ComponentAbiType::String))
+    );
+    assert_eq!(component_flat_types(&result_type), vec![ValType::I32, ValType::I64, ValType::I32]);
+    let layout = component_memory_layout(&result_type);
+    assert_eq!((layout.size, layout.alignment), (16, 8));
+    let nested = ComponentAbiType::Result(Box::new(result_type), Box::new(ComponentAbiType::String));
+    assert_eq!(
+      component_flat_types(&nested),
+      vec![ValType::I32, ValType::I32, ValType::I64, ValType::I32]
+    );
+
+    let legacy = CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Number));
+    let error = component_abi_type(&legacy, "app.main/legacy", "logical_schema.result")
+      .expect_err("legacy Optional must not degrade into nominal Option");
+    assert!(error.contains("E_COMPONENT_ABI_UNSUPPORTED_TYPE"));
   }
 
   #[test]

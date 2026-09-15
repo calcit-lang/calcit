@@ -28,7 +28,7 @@ impl Drop for TestDirectory {
 }
 
 #[test]
-fn component_boundary_round_trips_lists_and_scalar_values() {
+fn component_boundary_round_trips_variants_lists_and_scalar_values() {
   let output = TestDirectory::create();
   let check = Command::new(env!("CARGO_BIN_EXE_calcit"))
     .env("NO_COLOR", "1")
@@ -77,7 +77,7 @@ const bytes = fs.readFileSync(process.argv[1]);
 const module = new WebAssembly.Module(bytes);
 const imports = WebAssembly.Module.imports(module);
 const importNames = imports.map(({ module, name }) => `${module}/${name}`).sort();
-if (importNames.join(",") !== "host/add-one,host/bool-not,host/buffer,host/echo,host/numbers") {
+if (importNames.join(",") !== "host/add-one,host/bool-not,host/buffer,host/echo,host/numbers,host/option-number,host/ping,host/result-number") {
   throw new Error(`unexpected imports: ${importNames.join(",")}`);
 }
 let instance;
@@ -131,6 +131,22 @@ const host = {
     outputMemory.setUint32(retPtr, outputPtr, true);
     outputMemory.setUint32(retPtr + 4, values.length, true);
   },
+  "option-number": (discriminant, payload, retPtr) => {
+    const memory = new DataView(instance.exports.memory.buffer);
+    memory.setUint8(retPtr, discriminant);
+    if (discriminant === 1) memory.setFloat64(retPtr + 8, payload, true);
+  },
+  "result-number": (discriminant, payload0, payload1, retPtr) => {
+    const memory = new DataView(instance.exports.memory.buffer);
+    memory.setUint8(retPtr, discriminant);
+    if (discriminant === 0) {
+      memory.setBigUint64(retPtr + 8, payload0, true);
+    } else {
+      memory.setUint32(retPtr + 8, Number(payload0), true);
+      memory.setUint32(retPtr + 12, payload1, true);
+    }
+  },
+  ping: () => undefined,
 };
 WebAssembly.instantiate(module, { host }).then(result => {
   instance = result;
@@ -198,11 +214,83 @@ WebAssembly.instantiate(module, { host }).then(result => {
       throw new Error(`${label}: byte ${mismatch} was ${actual[mismatch]}, expected ${expected[mismatch]}`);
     }
   };
+  const floatBits = value => {
+    const bytes = new ArrayBuffer(8);
+    const view = new DataView(bytes);
+    view.setFloat64(0, value, true);
+    return view.getBigUint64(0, true);
+  };
+  const readOptionNumber = ret => {
+    const view = new DataView(e.memory.buffer);
+    const discriminant = view.getUint8(ret);
+    return discriminant === 0 ? null : view.getFloat64(ret + 8, true);
+  };
+  const readTextVariant = (ret, payloadOffset) => {
+    const view = new DataView(e.memory.buffer);
+    const discriminant = view.getUint8(ret);
+    const itemPtr = view.getUint32(ret + payloadOffset, true);
+    const itemLen = view.getUint32(ret + payloadOffset + 4, true);
+    return [discriminant, Buffer.from(e.memory.buffer, itemPtr, itemLen).toString("utf8")];
+  };
   if (e["add-one"](41) !== 42) throw new Error("Number adapter did not round-trip");
   if (e["bool-not"](1) !== 0 || e["bool-not"](0) !== 1) throw new Error("Bool adapter did not round-trip");
   if (e["choose-number"](1, 3, 4) !== 3 || e["choose-number"](0, 3, 4) !== 4) {
     throw new Error("mixed Bool and Number adapter did not round-trip");
   }
+  if (readOptionNumber(e["echo-option-number"](0, 0)) !== null) {
+    throw new Error("Option<Number> none did not round-trip");
+  }
+  if (readOptionNumber(e["echo-option-number"](1, 7.5)) !== 7.5) {
+    throw new Error("Option<Number> some did not round-trip");
+  }
+  const optionText = Buffer.from("可选", "utf8");
+  const [optionTextPtr, optionTextLen] = allocateBytes(optionText);
+  const [optionTextTag, optionTextValue] = readTextVariant(e["echo-option-text"](1, optionTextPtr, optionTextLen), 4);
+  if (optionTextTag !== 1 || optionTextValue !== "可选") throw new Error("Option<String> did not round-trip");
+  const resultNumberOk = e["echo-result-number"](0, floatBits(9.25), 0);
+  const resultNumberView = new DataView(e.memory.buffer);
+  if (resultNumberView.getUint8(resultNumberOk) !== 0 || resultNumberView.getFloat64(resultNumberOk + 8, true) !== 9.25) {
+    throw new Error("Result<Number,String> ok did not round-trip");
+  }
+  const resultError = Buffer.from("bad", "utf8");
+  const [resultErrorPtr, resultErrorLen] = allocateBytes(resultError);
+  const [resultErrorTag, resultErrorValue] = readTextVariant(
+    e["echo-result-number"](1, BigInt(resultErrorPtr), resultErrorLen),
+    8,
+  );
+  if (resultErrorTag !== 1 || resultErrorValue !== "bad") throw new Error("Result<Number,String> err did not round-trip");
+  const unitOk = e["echo-result-unit"](0, 0, 0);
+  if (new DataView(e.memory.buffer).getUint8(unitOk) !== 0) throw new Error("Result<Unit,String> ok did not round-trip");
+  const [unitErrorTag, unitErrorValue] = readTextVariant(e["echo-result-unit"](1, resultErrorPtr, resultErrorLen), 4);
+  if (unitErrorTag !== 1 || unitErrorValue !== "bad") throw new Error("Result<Unit,String> err did not round-trip");
+  const [resultListPtr, resultListLen] = allocateNumberList([2, 4, 8]);
+  const resultListRet = e["echo-result-numbers"](0, resultListPtr, resultListLen);
+  const resultListView = new DataView(e.memory.buffer);
+  const loweredListPtr = resultListView.getUint32(resultListRet + 4, true);
+  const loweredListLen = resultListView.getUint32(resultListRet + 8, true);
+  const loweredList = Array.from({ length: loweredListLen }, (_, index) => resultListView.getFloat64(loweredListPtr + index * 8, true));
+  if (resultListView.getUint8(resultListRet) !== 0 || loweredList.join(",") !== "2,4,8") {
+    throw new Error("Result<List<Number>,String> ok did not round-trip");
+  }
+  if (e.ping() !== undefined) throw new Error("Unit result should use the zero-result canonical shape");
+  if (readOptionNumber(e["call-host-option-number"](1, 12.5)) !== 12.5) {
+    throw new Error("imported Option<Number> did not round-trip");
+  }
+  const importedResultOk = e["call-host-result-number"](0, floatBits(6.5), 0);
+  if (new DataView(e.memory.buffer).getFloat64(importedResultOk + 8, true) !== 6.5) {
+    throw new Error("imported Result<Number,String> ok did not round-trip");
+  }
+  const [importedResultTag, importedResultError] = readTextVariant(
+    e["call-host-result-number"](1, BigInt(resultErrorPtr), resultErrorLen),
+    8,
+  );
+  if (importedResultTag !== 1 || importedResultError !== "bad") {
+    throw new Error("imported Result<Number,String> err did not round-trip");
+  }
+  if (e["call-host-ping"]() !== undefined) throw new Error("imported Unit result should remain zero-result");
+  let invalidVariantTrapped = false;
+  try { e["echo-option-number"](2, 0); } catch (error) { invalidVariantTrapped = error instanceof WebAssembly.RuntimeError; }
+  if (!invalidVariantTrapped) throw new Error("invalid Option discriminant did not trap");
   for (const invoke of [() => e["bool-not"](2), () => e["choose-number"](2, 3, 4)]) {
     let trapped = false;
     try { invoke(); } catch (error) { trapped = error instanceof WebAssembly.RuntimeError; }
