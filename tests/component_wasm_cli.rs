@@ -343,6 +343,15 @@ WebAssembly.instantiate(module, { host }).then(result => {
   if (JSON.stringify(hostProfile) !== JSON.stringify({ name: "Ada", stats: { score: 8.5 }, maybeName: "Ada", outcome: { ok: [4, 5] }, active: 0, scores: [1, 2, 3] })) {
     throw new Error(`imported Struct record did not round-trip: ${JSON.stringify(hostProfile)}`);
   }
+  const [profileErrorPtr, profileErrorLen] = allocateBytes(Buffer.from("bad", "utf8"));
+  const directAlternateProfile = readProfile(e["echo-profile"](1, 0, 0, 0, profileNamePtr, profileNameLen, 1, profileErrorPtr, profileErrorLen, profileScoresPtr, profileScoresLen, 7.5));
+  if (JSON.stringify(directAlternateProfile) !== JSON.stringify({ name: "Ada", stats: { score: 7.5 }, maybeName: null, outcome: { err: "bad" }, active: 1, scores: [1, 2, 3] })) {
+    throw new Error(`Struct None/Err record did not round-trip: ${JSON.stringify(directAlternateProfile)}`);
+  }
+  const hostAlternateProfile = readProfile(e["call-host-profile"](1, 0, 0, 0, profileNamePtr, profileNameLen, 1, profileErrorPtr, profileErrorLen, profileScoresPtr, profileScoresLen, 7.5));
+  if (JSON.stringify(hostAlternateProfile) !== JSON.stringify({ name: "Ada", stats: { score: 8.5 }, maybeName: null, outcome: { err: "bad" }, active: 0, scores: [1, 2, 3] })) {
+    throw new Error(`imported Struct None/Err record did not round-trip: ${JSON.stringify(hostAlternateProfile)}`);
+  }
   for (const discriminant of [2, 256]) {
     let invalidVariantTrapped = false;
     try { e["echo-option-number"](discriminant, 0); } catch (error) {
