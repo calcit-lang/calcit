@@ -1126,6 +1126,118 @@ fn schema_synthesis_applies_exact_compiler_evidence_and_is_target_stable() {
 }
 
 #[test]
+fn schema_synthesis_does_not_treat_sample_namespaces_as_argument_proof() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+
+  for (args, context) in [
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/sample-observed",
+        "--code",
+        "quote $ defn sample-observed (x) 1",
+      ],
+      "create schema target",
+    ),
+    (vec!["edit", "add-ns", "fix-command.test"], "create test namespace"),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.test/use-sample-observed",
+        "--code",
+        "quote $ defn use-sample-observed () (fix-command.main/sample-observed 2)",
+      ],
+      "create test-only callsite",
+    ),
+    (vec!["edit", "add-ns", "fix-command.examples"], "create example namespace"),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.examples/show-sample-observed",
+        "--code",
+        "quote $ defn show-sample-observed () (fix-command.main/sample-observed 3)",
+      ],
+      "create example-only callsite",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "synthesize-schema-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "sample-observed",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "sample-only schema preview");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["suggestions"][0]["applicability"], "needs-review");
+  assert_eq!(
+    report["data"]["suggestions"][0]["origin_chain"][0]["unresolved_slots"],
+    serde_json::json!(["schema.args.0"])
+  );
+  assert!(
+    report["data"]["suggestions"][0]["origin_chain"]
+      .as_array()
+      .expect("origin chain should be an array")
+      .iter()
+      .all(|evidence| evidence["kind"] != "resolved-callsite-arguments")
+  );
+}
+
+#[test]
+fn schema_synthesis_does_not_invent_a_wasm_import_return_type() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/imported-value",
+        "--code",
+        "quote $ defwasm-import imported-value (x) |host |read-value",
+      ],
+    ),
+    "create untyped WASM import",
+  );
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "synthesize-schema-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "imported-value",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!preview.status.success());
+  assert!(
+    String::from_utf8_lossy(&preview.stderr).contains("could not recover static implementation evidence"),
+    "stderr:\n{}",
+    String::from_utf8_lossy(&preview.stderr)
+  );
+}
+
+#[test]
 fn schema_synthesis_preserves_precise_ref_shape_and_partial_holes() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

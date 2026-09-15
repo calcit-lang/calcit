@@ -268,6 +268,9 @@ fn merge_callsite_argument_evidence(
   let mut paths: Vec<Vec<String>> = vec![vec![]; signature.arg_types.len()];
   let mut blocked = vec![false; signature.arg_types.len()];
   for (owner_ns, owner_def) in project_definitions {
+    if is_sample_namespace(owner_ns) {
+      continue;
+    }
     let source_entry = snapshot
       .files
       .get(owner_ns)
@@ -373,6 +376,14 @@ fn merge_callsite_argument_evidence(
     std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(updated))),
     evidence,
   ))
+}
+
+/// Test and example namespaces contain executable samples, not production-wide
+/// constraints. Attached tests/examples are validated separately after staging.
+fn is_sample_namespace(namespace: &str) -> bool {
+  namespace
+    .split('.')
+    .any(|segment| matches!(segment, "test" | "tests" | "example" | "examples"))
 }
 
 fn validate_attached_sources_against_synthesized_schema(

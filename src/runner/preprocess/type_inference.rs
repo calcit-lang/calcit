@@ -1869,7 +1869,8 @@ pub fn infer_compiled_definition_implementation_type(ns: &str, def: &str) -> Opt
   };
 
   match items.first() {
-    Some(Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _)) => {
+    Some(Calcit::Syntax(CalcitSyntax::DefWasmImport, _)) => None,
+    Some(Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::DefWasmExport, _)) => {
       let Calcit::List(params) = items.get(2)? else {
         return None;
       };

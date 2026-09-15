@@ -166,8 +166,9 @@ features、参数与函数类别保持不变。
 
 实现侧证据可补全 value、zero-argument function、`Ref<T>` 与函数返回洞。带参数函数还会遍历普通项目源码中 resolver
 确认的调用点；只有调用形态完整、没有 macro/函数值等动态边界，并且同一参数的所有可推导实参类型完全一致时，才把该类型作为
-当前 definition graph 的参数约束。缺失、冲突或无法定位的调用证据会保留 `schema.args.<index>`，tests/examples 的单个样本不作为
-公共签名证明；但候选进入 staged transaction 后，引用目标的 attached tests/examples 仍必须在新 schema 下通过严格预处理，
+当前 definition graph 的参数约束。缺失、冲突或无法定位的调用证据会保留 `schema.args.<index>`。namespace 名称中以独立点分段出现
+`test`、`tests`、`example` 或 `examples` 的普通源码，以及 definition-attached tests/examples，都只作为样本，不作为公共签名证明；
+但候选进入 staged transaction 后，引用目标的 attached tests/examples 仍必须在新 schema 下通过严格预处理，
 否则整项拒绝且不写回。native 与 JS entry 使用同一预处理事实并应得到相同候选。
 
 具名构造器规则只处理原型能静态解析到当前项目 nominal definition 的直接源码。匿名 `%:: _` / `%{} _`、
