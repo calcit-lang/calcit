@@ -3,18 +3,18 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use md5::{Digest, Md5};
 use serde::Serialize;
 
-use crate::calcit::{Calcit, CalcitEnumDef, CalcitStructDef, CalcitTypeAnnotation, SchemaKind};
+use crate::calcit::{Calcit, CalcitEnumDef, CalcitNumericRefinement, CalcitStructDef, CalcitTypeAnnotation, SchemaKind};
 use crate::data::cirru::code_to_calcit;
 use crate::snapshot::{CodeEntry, Snapshot};
 use cirru_edn::Edn;
 use cirru_parser::Cirru;
 
-pub const FFI_INTERFACE_IR_VERSION: u32 = 2;
-pub const FFI_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/ffi-interface-ir-v2.schema.json";
-pub const FFI_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/ffi-interface-ir-v2.schema.json");
-pub const COMPONENT_INTERFACE_IR_VERSION: u32 = 1;
-pub const COMPONENT_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/component-interface-ir-v1.schema.json";
-pub const COMPONENT_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/component-interface-ir-v1.schema.json");
+pub const FFI_INTERFACE_IR_VERSION: u32 = 3;
+pub const FFI_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/ffi-interface-ir-v3.schema.json";
+pub const FFI_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/ffi-interface-ir-v3.schema.json");
+pub const COMPONENT_INTERFACE_IR_VERSION: u32 = 2;
+pub const COMPONENT_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/component-interface-ir-v2.schema.json";
+pub const COMPONENT_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/component-interface-ir-v2.schema.json");
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FfiInterfaceDocument {
@@ -104,14 +104,49 @@ pub enum FfiTypeIr {
   Unit,
   Bool,
   Number,
+  #[serde(rename = "int8")]
+  Int8,
+  #[serde(rename = "uint8")]
+  UInt8,
+  #[serde(rename = "int16")]
+  Int16,
+  #[serde(rename = "uint16")]
+  UInt16,
+  #[serde(rename = "int32")]
+  Int32,
+  #[serde(rename = "uint32")]
+  UInt32,
+  #[serde(rename = "int64")]
+  Int64,
+  #[serde(rename = "uint64")]
+  UInt64,
+  #[serde(rename = "float32")]
+  Float32,
+  #[serde(rename = "float64")]
+  Float64,
   String,
   Buffer,
-  List { item: Box<FfiTypeIr> },
-  Option { item: Box<FfiTypeIr> },
-  Result { ok: Box<FfiTypeIr>, error: Box<FfiTypeIr> },
-  Struct { id: String, arguments: Vec<FfiTypeIr> },
-  Enum { id: String, arguments: Vec<FfiTypeIr> },
-  TypeParameter { name: String },
+  List {
+    item: Box<FfiTypeIr>,
+  },
+  Option {
+    item: Box<FfiTypeIr>,
+  },
+  Result {
+    ok: Box<FfiTypeIr>,
+    error: Box<FfiTypeIr>,
+  },
+  Struct {
+    id: String,
+    arguments: Vec<FfiTypeIr>,
+  },
+  Enum {
+    id: String,
+    arguments: Vec<FfiTypeIr>,
+  },
+  TypeParameter {
+    name: String,
+  },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -229,11 +264,20 @@ fn component_diagnostic(
 }
 
 fn componentize_diagnostic(mut item: FfiInterfaceDiagnostic) -> FfiInterfaceDiagnostic {
+  let componentize_text = |text: String| {
+    text
+      .replace(
+        &format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION}"),
+        &format!("Component Interface IR v{COMPONENT_INTERFACE_IR_VERSION}"),
+      )
+      .replace(
+        &format!("Interface IR v{FFI_INTERFACE_IR_VERSION}"),
+        &format!("Component Interface IR v{COMPONENT_INTERFACE_IR_VERSION}"),
+      )
+  };
   item.phase = "component-interface-ir".to_owned();
-  item.message = item
-    .message
-    .replace("FFI Interface IR v2", "Component Interface IR v1")
-    .replace("Interface IR v2", "Component Interface IR v1");
+  item.message = componentize_text(item.message);
+  item.suggestion = componentize_text(item.suggestion);
   item
 }
 
@@ -448,7 +492,9 @@ fn nominal_type(
         declaration.id(),
         arguments.len()
       ),
-      "Apply every declared type parameter exactly once; callable signatures remain monomorphic in Interface IR v2.",
+      &format!(
+        "Apply every declared type parameter exactly once; callable signatures remain monomorphic in Interface IR v{FFI_INTERFACE_IR_VERSION}."
+      ),
     )));
   }
   let id = declaration.id().to_owned();
@@ -471,6 +517,18 @@ fn convert_type(
     CalcitTypeAnnotation::Unit => Ok(FfiTypeIr::Unit),
     CalcitTypeAnnotation::Bool => Ok(FfiTypeIr::Bool),
     CalcitTypeAnnotation::Number => Ok(FfiTypeIr::Number),
+    CalcitTypeAnnotation::Numeric(kind) => Ok(match kind {
+      CalcitNumericRefinement::Int8 => FfiTypeIr::Int8,
+      CalcitNumericRefinement::UInt8 => FfiTypeIr::UInt8,
+      CalcitNumericRefinement::Int16 => FfiTypeIr::Int16,
+      CalcitNumericRefinement::UInt16 => FfiTypeIr::UInt16,
+      CalcitNumericRefinement::Int32 => FfiTypeIr::Int32,
+      CalcitNumericRefinement::UInt32 => FfiTypeIr::UInt32,
+      CalcitNumericRefinement::Int64 => FfiTypeIr::Int64,
+      CalcitNumericRefinement::UInt64 => FfiTypeIr::UInt64,
+      CalcitNumericRefinement::Float32 => FfiTypeIr::Float32,
+      CalcitNumericRefinement::Float64 => FfiTypeIr::Float64,
+    }),
     CalcitTypeAnnotation::String => Ok(FfiTypeIr::String),
     CalcitTypeAnnotation::Buffer => Ok(FfiTypeIr::Buffer),
     CalcitTypeAnnotation::List(item) => Ok(FfiTypeIr::List {
@@ -584,7 +642,7 @@ fn convert_signature(
       definition,
       "logical_schema.generics",
       "E_FFI_IR_UNSUPPORTED_GENERIC",
-      "Generic and trait-bounded FFI call signatures are not part of Interface IR v2.",
+      format!("Generic and trait-bounded FFI call signatures are not part of Interface IR v{FFI_INTERFACE_IR_VERSION}."),
       "Expose a monomorphic raw binding and keep generic normalization in handwritten Calcit code.",
     ));
   }
@@ -593,7 +651,7 @@ fn convert_signature(
       definition,
       "logical_schema.rest",
       "E_FFI_IR_UNSUPPORTED_REST",
-      "Variadic FFI call signatures are not part of Interface IR v2.",
+      format!("Variadic FFI call signatures are not part of Interface IR v{FFI_INTERFACE_IR_VERSION}."),
       "Expose a fixed-arity raw binding, using a typed List or Tuple when the host needs multiple values.",
     ));
   }
@@ -737,7 +795,9 @@ fn convert_declaration(
           owner_definition,
           format!("declarations.{id}.type_parameters"),
           "E_FFI_IR_DECLARATION_BOUNDS",
-          format!("Struct declaration `{id}` has trait-bounded type parameters, which Interface IR v2 cannot lower portably."),
+          format!(
+            "Struct declaration `{id}` has trait-bounded type parameters, which Interface IR v{FFI_INTERFACE_IR_VERSION} cannot lower portably."
+          ),
           "Expose an unbounded transport struct or keep trait-constrained normalization in handwritten Calcit code.",
         ));
       }
@@ -776,7 +836,9 @@ fn convert_declaration(
           owner_definition,
           format!("declarations.{id}.type_parameters"),
           "E_FFI_IR_DECLARATION_BOUNDS",
-          format!("Enum declaration `{id}` has trait-bounded type parameters, which Interface IR v2 cannot lower portably."),
+          format!(
+            "Enum declaration `{id}` has trait-bounded type parameters, which Interface IR v{FFI_INTERFACE_IR_VERSION} cannot lower portably."
+          ),
           "Expose an unbounded transport enum or keep trait-constrained normalization in handwritten Calcit code.",
         ));
       }
@@ -1677,6 +1739,168 @@ mod tests {
   }
 
   #[test]
+  fn exports_every_numeric_refinement_without_guessing_from_number() {
+    let refinements = [
+      CalcitNumericRefinement::Int8,
+      CalcitNumericRefinement::UInt8,
+      CalcitNumericRefinement::Int16,
+      CalcitNumericRefinement::UInt16,
+      CalcitNumericRefinement::Int32,
+      CalcitNumericRefinement::UInt32,
+      CalcitNumericRefinement::Int64,
+      CalcitNumericRefinement::UInt64,
+      CalcitNumericRefinement::Float32,
+      CalcitNumericRefinement::Float64,
+    ];
+    let report = export_component_snapshot(
+      &snapshot(vec![(
+        "numeric-widths",
+        component_function_entry(
+          "defwasm-export numeric-widths (i8 u8 i16 u16 i32 u32 i64 u64 f32 f64 number) number",
+          refinements
+            .into_iter()
+            .map(|kind| Arc::new(CalcitTypeAnnotation::Numeric(kind)))
+            .chain(std::iter::once(Arc::new(CalcitTypeAnnotation::Number)))
+            .collect(),
+          Arc::new(CalcitTypeAnnotation::Number),
+        ),
+      )]),
+      None,
+    )
+    .expect("export numeric Component contract");
+
+    let signature = report.interface.definitions[0]
+      .signature
+      .as_ref()
+      .expect("supported numeric signature");
+    assert_eq!(
+      signature.parameters.iter().map(|parameter| &parameter.type_ir).collect::<Vec<_>>(),
+      [
+        &FfiTypeIr::Int8,
+        &FfiTypeIr::UInt8,
+        &FfiTypeIr::Int16,
+        &FfiTypeIr::UInt16,
+        &FfiTypeIr::Int32,
+        &FfiTypeIr::UInt32,
+        &FfiTypeIr::Int64,
+        &FfiTypeIr::UInt64,
+        &FfiTypeIr::Float32,
+        &FfiTypeIr::Float64,
+        &FfiTypeIr::Number,
+      ]
+    );
+    let encoded = serde_json::to_value(&report.interface).expect("serialize numeric Component contract");
+    let kinds = encoded["definitions"][0]["signature"]["parameters"]
+      .as_array()
+      .expect("serialized parameters")
+      .iter()
+      .map(|parameter| parameter["type"]["kind"].as_str().expect("scalar kind"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      kinds,
+      [
+        "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64", "float32", "float64", "number"
+      ]
+    );
+    assert_eq!(encoded["definitions"][0]["signature"]["parameters"][10]["type"]["kind"], "number");
+  }
+
+  #[test]
+  fn exports_numeric_refinements_recursively_and_fingerprints_width_changes() {
+    let packet = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Packet"), Arc::new(vec![])));
+    let numeric_report = export_component_snapshot(
+      &snapshot(vec![
+        (
+          "Metrics",
+          data_entry("defstruct Metrics (:small 'Int8) (:samples (:: 'List 'Float32))"),
+        ),
+        ("Packet", data_entry("defenum Packet (:data Metrics 'UInt64) (:error 'String)")),
+        (
+          "roundtrip",
+          component_function_entry(
+            "defwasm-export roundtrip (packet) packet",
+            vec![packet],
+            Arc::new(CalcitTypeAnnotation::TypeRef(
+              Arc::from("Result"),
+              Arc::new(vec![
+                Arc::new(CalcitTypeAnnotation::Numeric(CalcitNumericRefinement::UInt16)),
+                Arc::new(CalcitTypeAnnotation::Numeric(CalcitNumericRefinement::Float64)),
+              ]),
+            )),
+          ),
+        ),
+      ]),
+      None,
+    )
+    .expect("export recursively nested numeric refinements");
+
+    assert!(
+      numeric_report.diagnostics.is_empty(),
+      "numeric diagnostics: {:?}",
+      numeric_report.diagnostics
+    );
+    let metrics = numeric_report
+      .interface
+      .declarations
+      .iter()
+      .find(|declaration| declaration.id() == "test.ffi/Metrics")
+      .expect("reachable Metrics declaration");
+    let FfiTypeDeclarationIr::Struct { fields, .. } = metrics else {
+      panic!("Metrics must remain a Struct declaration")
+    };
+    assert!(matches!(
+      fields.iter().find(|field| field.name == "small").map(|field| &field.type_ir),
+      Some(FfiTypeIr::Int8)
+    ));
+    assert!(matches!(
+      fields.iter().find(|field| field.name == "samples").map(|field| &field.type_ir),
+      Some(FfiTypeIr::List { item }) if matches!(item.as_ref(), FfiTypeIr::Float32)
+    ));
+    let packet = numeric_report
+      .interface
+      .declarations
+      .iter()
+      .find(|declaration| declaration.id() == "test.ffi/Packet")
+      .expect("reachable Packet declaration");
+    assert!(matches!(
+      packet,
+      FfiTypeDeclarationIr::Enum { variants, .. }
+        if matches!(variants[0].payload.as_slice(), [FfiTypeIr::Struct { .. }, FfiTypeIr::UInt64])
+    ));
+    assert!(matches!(
+      numeric_report.interface.definitions[0].signature.as_ref().expect("supported signature").result,
+      FfiTypeIr::Result { ref ok, ref error }
+        if matches!(ok.as_ref(), FfiTypeIr::UInt16) && matches!(error.as_ref(), FfiTypeIr::Float64)
+    ));
+
+    let number_report = export_component_snapshot(
+      &snapshot(vec![(
+        "roundtrip",
+        component_function_entry(
+          "defwasm-export roundtrip (number) number",
+          vec![Arc::new(CalcitTypeAnnotation::Number)],
+          Arc::new(CalcitTypeAnnotation::Number),
+        ),
+      )]),
+      None,
+    )
+    .expect("export Number contract");
+    let float64_report = export_component_snapshot(
+      &snapshot(vec![(
+        "roundtrip",
+        component_function_entry(
+          "defwasm-export roundtrip (number) number",
+          vec![Arc::new(CalcitTypeAnnotation::Numeric(CalcitNumericRefinement::Float64))],
+          Arc::new(CalcitTypeAnnotation::Numeric(CalcitNumericRefinement::Float64)),
+        ),
+      )]),
+      None,
+    )
+    .expect("export Float64 contract");
+    assert_ne!(number_report.revision, float64_report.revision);
+  }
+
+  #[test]
   fn component_contract_reuses_reachable_types_and_rejects_generic_nominals() {
     let person = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Person"), Arc::new(vec![])));
     let generic_box = Arc::new(CalcitTypeAnnotation::TypeRef(
@@ -1720,6 +1944,35 @@ mod tests {
         .iter()
         .any(|item| item.code == "E_COMPONENT_IR_UNSUPPORTED_GENERIC" && item.phase == "component-interface-ir")
     );
+  }
+
+  #[test]
+  fn component_contract_rewrites_diagnostic_versions_in_messages_and_suggestions() {
+    let missing_argument = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Box"), Arc::new(vec![])));
+    let report = export_component_snapshot(
+      &snapshot(vec![
+        ("Box", data_entry("defstruct Box (T) (:value T)")),
+        (
+          "read-box",
+          component_function_entry(
+            "defwasm-export read-box (box) box",
+            vec![missing_argument],
+            Arc::new(CalcitTypeAnnotation::String),
+          ),
+        ),
+      ]),
+      None,
+    )
+    .expect("export rejected Component contract");
+
+    let diagnostic = report
+      .diagnostics
+      .iter()
+      .find(|item| item.code == "E_FFI_IR_TYPE_ARGUMENT_ARITY")
+      .expect("type argument arity diagnostic");
+    assert_eq!(diagnostic.phase, "component-interface-ir");
+    assert!(diagnostic.suggestion.contains("Component Interface IR v2"));
+    assert!(!diagnostic.suggestion.contains("Interface IR v3"));
   }
 
   #[test]

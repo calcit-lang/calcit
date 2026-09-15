@@ -48,17 +48,27 @@ fn component_contract_defaults_to_edn_and_matches_explicit_json() {
     serde_json::from_str(&stdout(&json_output)).expect("explicit component JSON stdout should be one JSON value");
 
   assert_eq!(edn, json_as_edn(&json));
+  assert!(
+    json["interface_schema"]
+      .as_str()
+      .is_some_and(|schema| schema.ends_with("component-interface-ir-v2.schema.json"))
+  );
   assert_eq!(json["data"]["filters"]["boundary"], "component");
-  assert_eq!(json["data"]["interface"]["version"], 1);
+  assert_eq!(json["data"]["interface"]["version"], 2);
   assert_eq!(json["data"]["summary"]["unsupported"], 0);
   assert_eq!(json["data"]["interface"]["definitions"][0]["direction"], "import");
 }
 
 #[test]
-fn native_json_keeps_the_v2_envelope_without_a_boundary_field() {
+fn native_json_keeps_the_v3_envelope_without_a_boundary_field() {
   let output = run_calcit(&["ffi", "export", "--json", "--ns", "test-wasm.main"]);
-  let json: serde_json::Value = serde_json::from_str(&stdout(&output)).expect("legacy native JSON stdout should stay parseable");
+  let json: serde_json::Value = serde_json::from_str(&stdout(&output)).expect("native JSON stdout should stay parseable");
 
-  assert_eq!(json["data"]["interface"]["version"], 2);
+  assert!(
+    json["interface_schema"]
+      .as_str()
+      .is_some_and(|schema| schema.ends_with("ffi-interface-ir-v3.schema.json"))
+  );
+  assert_eq!(json["data"]["interface"]["version"], 3);
   assert!(json["data"]["filters"].get("boundary").is_none());
 }

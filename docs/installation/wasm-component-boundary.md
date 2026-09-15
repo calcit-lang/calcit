@@ -71,8 +71,9 @@ Canonical ABI result，Unit 参数应直接省略而不是占据一个伪值位�
 
 Calcit 已提供 `'Int8`、`'UInt8`、`'Int16`、`'UInt16`、`'Int32`、`'UInt32`、`'Int64`、`'UInt64`、
 `'Float32` 与 `'Float64` 作为 source-level 数值 refinement，并通过 `number->int8` 等函数显式建立
-受检边界证明。它们的运行时表示仍是统一的 `Number`。当前 Component contract 尚未消费这些类型；
-adapter 不能依据值范围或调用位置猜测宽度，也不能静默退化为 `Number`，须等待明确的 contract 与 lowering 支持。
+受检边界证明。它们的运行时表示仍是统一的 `Number`。Component Interface IR v2 已将这些类型
+分别导出为独立 `kind`；adapter 不能依据值范围或调用位置猜测宽度，也不能静默退化为 `Number`。
+对应 Canonical ABI lowering 仍需后续实现。
 
 ## 类型闭包
 
@@ -88,8 +89,9 @@ generic 必须在边界处已经具体化。同步 direct adapter 会在 schema 
 已支持的闭合类型与 Struct。边界不会根据运行时 tag 猜测 declaration，也不会接受 anonymous/open Enum、generic Enum、
 递归 Enum 或无法解析的声明；无 payload case 应直接省略 payload，显式 `Unit` payload 会给出带 schema path 的错误。
 
-明确宽度的整数/浮点数已在 0.15.2 具备 source-level refinement；Component contract 消费与
-Canonical ABI lowering 仍待完成。在对应 adapter 实现以前，`calcit wasm --boundary component` 会明确拒绝。
+明确宽度的整数/浮点数已在 0.15.2 具备 source-level refinement，Component Interface IR v2
+也已确定性导出对应宽度；Canonical ABI lowering 仍待完成。在对应 adapter 实现以前，
+`calcit wasm --boundary component` 会明确拒绝。
 
 以下形状不进入同步 Component 边界，并在 contract 导出或 adapter 生成阶段拒绝：
 
@@ -106,9 +108,9 @@ Canonical ABI lowering 仍待完成。在对应 adapter 实现以前，`calcit w
 Component contract 沿用 `calcit ffi export`，通过 `--boundary component`
 显式选择。该边界不新增顶层 component/WIT 命令。
 
-- 新 Component contract 默认输出 Cirru EDN；
+- Component Interface IR v2 默认输出 Cirru EDN；
 - `--format json` 用于需要 JSON 的 consumer；
-- 现有 native raw-binding inventory 的 human 输出和 `--json` 保持兼容；
+- native raw-binding inventory 保留 human 输出和显式 `--json` 入口，但 consumer 必须检查新的 schema version；
 - Cirru EDN 和 JSON 必须表达同一个 versioned contract 与 revision。
 
 生成 adapter 时继续沿用 `calcit wasm`：
@@ -128,12 +130,12 @@ export 对应 `canon lift`，超过同步 Canonical ABI 单结果上限的 flat 
 指针；import 对应 `canon lower`，结果使用 caller 传入的 return area，再复制回对应的 Calcit 值。两者是
 Canonical ABI 针对不同方向规定的函数形状，不是可以互换的自定义约定。core module 只保留显式声明的
 Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，不会携带 native core target
-的隐式 `math/io` imports。宽度明确数值类型的 Component contract/Canonical ABI lowering、post-return 与 async
-仍是后续任务；不支持的 schema 在生成阶段明确失败。
+的隐式 `math/io` imports。宽度明确数值类型已进入 Component contract，Canonical ABI lowering、post-return 与 async
+仍是后续任务；尚未 lowering 的 schema 在生成阶段明确失败。
 
 ## 实施顺序
 
-1. 导出 directional typed contract，先完成确定性、诊断和 Cirru EDN/JSON 等价。
+1. 导出 directional typed contract，完成确定性、数值宽度、诊断和 Cirru EDN/JSON 等价。
 2. 为 Bool、Buffer、Number、String、递归同质 List、Unit 结果、闭合单态 Option/Result、Struct record 与普通 Enum variant 生成 Canonical ABI import/export adapter；宽度明确的数值类型继续接入 Component contract 与 lowering。
 3. 由 `calcit-bindgen` 生成 WIT 并打包 runnable component，在 Wasmtime 和 jco 做端到端往返。
 4. 同步边界稳定后，再引入 WASI 0.3 async、HTTP 和 socket。
