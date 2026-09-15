@@ -28,7 +28,7 @@ impl Drop for TestDirectory {
 }
 
 #[test]
-fn component_boundary_round_trips_bool_buffer_number_string_and_realloc() {
+fn component_boundary_round_trips_lists_and_scalar_values() {
   let output = TestDirectory::create();
   let check = Command::new(env!("CARGO_BIN_EXE_calcit"))
     .env("NO_COLOR", "1")
@@ -77,12 +77,13 @@ const bytes = fs.readFileSync(process.argv[1]);
 const module = new WebAssembly.Module(bytes);
 const imports = WebAssembly.Module.imports(module);
 const importNames = imports.map(({ module, name }) => `${module}/${name}`).sort();
-if (importNames.join(",") !== "host/add-one,host/bool-not,host/buffer,host/echo") {
+if (importNames.join(",") !== "host/add-one,host/bool-not,host/buffer,host/echo,host/numbers") {
   throw new Error(`unexpected imports: ${importNames.join(",")}`);
 }
 let instance;
 let hostBoolOverride = null;
 let hostBufferReturnsInvalidRange = false;
+let hostNumbersReturnsInvalidRange = false;
 const host = {
   "add-one": value => value + 1,
   "bool-not": value => {
@@ -115,6 +116,21 @@ const host = {
     memory.setUint32(retPtr, outputPtr, true);
     memory.setUint32(retPtr + 4, output.length, true);
   },
+  numbers: (inputPtr, inputLen, retPtr) => {
+    const e = instance.exports;
+    const memory = new DataView(e.memory.buffer);
+    if (hostNumbersReturnsInvalidRange) {
+      memory.setUint32(retPtr, e.memory.buffer.byteLength - 4, true);
+      memory.setUint32(retPtr + 4, 1, true);
+      return;
+    }
+    const values = Array.from({ length: inputLen }, (_, index) => memory.getFloat64(inputPtr + index * 8, true)).reverse();
+    const outputPtr = e.cabi_realloc(0, 0, 8, values.length * 8);
+    const outputMemory = new DataView(e.memory.buffer);
+    values.forEach((value, index) => outputMemory.setFloat64(outputPtr + index * 8, value, true));
+    outputMemory.setUint32(retPtr, outputPtr, true);
+    outputMemory.setUint32(retPtr + 4, values.length, true);
+  },
 };
 WebAssembly.instantiate(module, { host }).then(result => {
   instance = result;
@@ -130,6 +146,48 @@ WebAssembly.instantiate(module, { host }).then(result => {
     const ptr = memory.getUint32(ret, true);
     const len = memory.getUint32(ret + 4, true);
     return Uint8Array.from(new Uint8Array(e.memory.buffer, ptr, len));
+  };
+  const allocateNumberList = values => {
+    const ptr = e.cabi_realloc(0, 0, 8, values.length * 8);
+    const memory = new DataView(e.memory.buffer);
+    values.forEach((value, index) => memory.setFloat64(ptr + index * 8, value, true));
+    return [ptr, values.length];
+  };
+  const readNumberListResult = ret => {
+    const memory = new DataView(e.memory.buffer);
+    const ptr = memory.getUint32(ret, true);
+    const len = memory.getUint32(ret + 4, true);
+    return Array.from({ length: len }, (_, index) => memory.getFloat64(ptr + index * 8, true));
+  };
+  const allocateBoolList = values => {
+    const ptr = e.cabi_realloc(0, 0, 1, values.length);
+    new Uint8Array(e.memory.buffer, ptr, values.length).set(values);
+    return [ptr, values.length];
+  };
+  const readBoolListResult = ret => {
+    const memory = new DataView(e.memory.buffer);
+    const ptr = memory.getUint32(ret, true);
+    const len = memory.getUint32(ret + 4, true);
+    return Array.from(new Uint8Array(e.memory.buffer, ptr, len));
+  };
+  const allocatePairList = pairs => {
+    const ptr = e.cabi_realloc(0, 0, 4, pairs.length * 8);
+    const memory = new DataView(e.memory.buffer);
+    pairs.forEach(([itemPtr, itemLen], index) => {
+      memory.setUint32(ptr + index * 8, itemPtr, true);
+      memory.setUint32(ptr + index * 8 + 4, itemLen, true);
+    });
+    return [ptr, pairs.length];
+  };
+  const readPairListResult = (ret, readItem) => {
+    const memory = new DataView(e.memory.buffer);
+    const ptr = memory.getUint32(ret, true);
+    const len = memory.getUint32(ret + 4, true);
+    return Array.from({ length: len }, (_, index) => {
+      const itemPtr = memory.getUint32(ptr + index * 8, true);
+      const itemLen = memory.getUint32(ptr + index * 8 + 4, true);
+      return readItem(itemPtr, itemLen);
+    });
   };
   const expectBytes = (actual, expected, label) => {
     if (actual.length !== expected.length) {
@@ -166,6 +224,93 @@ WebAssembly.instantiate(module, { host }).then(result => {
   const [taggedBufferPtr, taggedBufferLen] = allocateBytes([0, 255, 17]);
   if (e["is-buffer"](taggedBufferPtr, taggedBufferLen) !== 1) {
     throw new Error("Buffer lift did not preserve the Calcit type tag");
+  }
+  for (const numbers of [[], [1, -2.5, 3, 3]]) {
+    const [listPtr, listLen] = allocateNumberList(numbers);
+    const actual = readNumberListResult(e["echo-numbers"](listPtr, listLen));
+    if (actual.length !== numbers.length || actual.some((value, index) => !Object.is(value, numbers[index]))) {
+      throw new Error(`Number List adapter returned ${actual}`);
+    }
+  }
+  const [boolListPtr, boolListLen] = allocateBoolList([1, 0, 1]);
+  if (readBoolListResult(e["echo-bools"](boolListPtr, boolListLen)).join(",") !== "1,0,1") {
+    throw new Error("Bool List adapter did not round-trip");
+  }
+  const textValues = ["alpha", "", "世界"];
+  const textPairs = textValues.map(value => allocateBytes(Buffer.from(value, "utf8")));
+  const [textListPtr, textListLen] = allocatePairList(textPairs);
+  const textResult = readPairListResult(
+    e["echo-texts"](textListPtr, textListLen),
+    (itemPtr, itemLen) => Buffer.from(e.memory.buffer, itemPtr, itemLen).toString("utf8"),
+  );
+  if (JSON.stringify(textResult) !== JSON.stringify(textValues)) throw new Error(`String List adapter returned ${textResult}`);
+  const bufferValues = [[0, 255], [], [17, 0, 128]];
+  const bufferPairs = bufferValues.map(allocateBytes);
+  const [bufferListPtr, bufferListLen] = allocatePairList(bufferPairs);
+  const bufferResult = readPairListResult(
+    e["echo-buffers"](bufferListPtr, bufferListLen),
+    (itemPtr, itemLen) => Array.from(new Uint8Array(e.memory.buffer, itemPtr, itemLen)),
+  );
+  if (JSON.stringify(bufferResult) !== JSON.stringify(bufferValues)) throw new Error(`Buffer List adapter returned ${bufferResult}`);
+  const nestedValues = [[1, 2], [], [-3, 4.5, 7]];
+  const nestedPairs = nestedValues.map(allocateNumberList);
+  const [nestedPtr, nestedLen] = allocatePairList(nestedPairs);
+  const nestedResult = readPairListResult(
+    e["echo-number-lists"](nestedPtr, nestedLen),
+    (itemPtr, itemLen) => Array.from(
+      { length: itemLen },
+      (_, index) => new DataView(e.memory.buffer).getFloat64(itemPtr + index * 8, true),
+    ),
+  );
+  if (JSON.stringify(nestedResult) !== JSON.stringify(nestedValues)) throw new Error(`nested List adapter returned ${nestedResult}`);
+  const [invalidBoolListPtr, invalidBoolListLen] = allocateBoolList([0, 2]);
+  let invalidBoolListTrapped = false;
+  try { e["echo-bools"](invalidBoolListPtr, invalidBoolListLen); } catch (error) {
+    invalidBoolListTrapped = error instanceof WebAssembly.RuntimeError;
+  }
+  if (!invalidBoolListTrapped) throw new Error("invalid Bool List element did not trap");
+  let invalidNumberListTrapped = false;
+  try { e["echo-numbers"](e.memory.buffer.byteLength - 4, 1); } catch (error) {
+    invalidNumberListTrapped = error instanceof WebAssembly.RuntimeError;
+  }
+  if (!invalidNumberListTrapped) throw new Error("out-of-bounds Number List input did not trap");
+  const misalignedNumberPtr = e.cabi_realloc(0, 0, 8, 16) + 4;
+  let misalignedNumberListTrapped = false;
+  try { e["echo-numbers"](misalignedNumberPtr, 1); } catch (error) {
+    misalignedNumberListTrapped = error instanceof WebAssembly.RuntimeError;
+  }
+  if (!misalignedNumberListTrapped) throw new Error("misaligned Number List input did not trap");
+  let overflowingNumberListTrapped = false;
+  try { e["echo-numbers"](0, 0x20000000); } catch (error) {
+    overflowingNumberListTrapped = error instanceof WebAssembly.RuntimeError;
+  }
+  if (!overflowingNumberListTrapped) throw new Error("overflowing Number List length did not trap");
+  const [misalignedNestedPtr, misalignedNestedLen] = allocatePairList([[nestedPairs[0][0] + 4, 1]]);
+  let misalignedNestedListTrapped = false;
+  try { e["echo-number-lists"](misalignedNestedPtr, misalignedNestedLen); } catch (error) {
+    misalignedNestedListTrapped = error instanceof WebAssembly.RuntimeError;
+  }
+  if (!misalignedNestedListTrapped) throw new Error("misaligned nested Number List input did not trap");
+  const [pairListPtr] = allocatePairList([nestedPairs[0]]);
+  let misalignedPairListTrapped = false;
+  try { e["echo-number-lists"](pairListPtr + 2, 1); } catch (error) {
+    misalignedPairListTrapped = error instanceof WebAssembly.RuntimeError;
+  }
+  if (!misalignedPairListTrapped) throw new Error("misaligned nested List pair input did not trap");
+  const [invalidNestedPtr, invalidNestedLen] = allocatePairList([[e.memory.buffer.byteLength - 4, 1]]);
+  let invalidNestedListTrapped = false;
+  try { e["echo-number-lists"](invalidNestedPtr, invalidNestedLen); } catch (error) {
+    invalidNestedListTrapped = error instanceof WebAssembly.RuntimeError;
+  }
+  if (!invalidNestedListTrapped) throw new Error("out-of-bounds nested Number List input did not trap");
+  const growingNumberCount = e.memory.buffer.byteLength / 8 + 257;
+  const growingNumbers = Array.from({ length: growingNumberCount }, (_, index) => index % 251);
+  const [growingNumberPtr, growingNumberLen] = allocateNumberList(growingNumbers);
+  for (let round = 0; round < 2; round += 1) {
+    const actual = readNumberListResult(e["echo-numbers"](growingNumberPtr, growingNumberLen));
+    if (actual.length !== growingNumbers.length || actual.some((value, index) => value !== growingNumbers[index])) {
+      throw new Error(`growing Number List round ${round} did not preserve values`);
+    }
   }
   const growingBytes = Uint8Array.from({ length: e.memory.buffer.byteLength + 257 }, (_, index) => index % 251);
   const [growingPtr, growingLen] = allocateBytes(growingBytes);
@@ -216,6 +361,17 @@ WebAssembly.instantiate(module, { host }).then(result => {
     invalidHostBufferTrapped = error instanceof WebAssembly.RuntimeError;
   }
   if (!invalidHostBufferTrapped) throw new Error("out-of-bounds imported Buffer result did not trap");
+  const [hostNumbersPtr, hostNumbersLen] = allocateNumberList([1, -2.5, 7]);
+  const hostNumbersResult = readNumberListResult(e["call-host-numbers"](hostNumbersPtr, hostNumbersLen));
+  if (JSON.stringify(hostNumbersResult) !== JSON.stringify([7, -2.5, 1])) {
+    throw new Error(`Number List import adapter returned ${hostNumbersResult}`);
+  }
+  hostNumbersReturnsInvalidRange = true;
+  let invalidHostNumbersTrapped = false;
+  try { e["call-host-numbers"](hostNumbersPtr, hostNumbersLen); } catch (error) {
+    invalidHostNumbersTrapped = error instanceof WebAssembly.RuntimeError;
+  }
+  if (!invalidHostNumbersTrapped) throw new Error("out-of-bounds imported Number List result did not trap");
   const pagesBefore = e.memory.buffer.byteLength / 65536;
   const largeSize = e.memory.buffer.byteLength + 1;
   const largePtr = e.cabi_realloc(0, 0, 1, largeSize);

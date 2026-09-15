@@ -36,6 +36,8 @@ use crate::calcit::{
 };
 use crate::program;
 
+#[path = "emit_wasm/component.rs"]
+mod component;
 #[path = "emit_wasm/methods.rs"]
 mod methods;
 #[path = "emit_wasm/runtime.rs"]
@@ -43,6 +45,7 @@ mod runtime;
 #[path = "emit_wasm/structs.rs"]
 mod structs;
 
+use component::{ComponentListCodec, build_component_list_lift_fn, build_component_list_lower_fn, collect_component_list_types};
 use methods::{emit_call_args, emit_method_invoke};
 use runtime::{
   HostImport, ModuleFunctionLayout, build_runtime_fns, build_utf8_valid_fn, build_wasi_get_args_fn, build_wasi_get_env_fn,
@@ -331,6 +334,29 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   } else {
     None
   };
+  let mut component_list_codecs = BTreeMap::new();
+  if let Some(cabi_realloc_index) = component_cabi_realloc_index {
+    let buffer_new_index = component_buffer_new_index.expect("Component boundary must install the Buffer constructor");
+    let list_tag_id = *tag_index.get("list").expect("list tag must exist") as i32;
+    for list_type in collect_component_list_types(&program_data, &fn_defs, &component_import_adapters)? {
+      let lift_index = num_imports + compiled_fns.len() as u32;
+      let lower_index = lift_index + 1;
+      component_list_codecs.insert(list_type.clone(), ComponentListCodec { lift_index, lower_index });
+      compiled_fns.push(build_component_list_lift_fn(
+        &list_type,
+        list_tag_id,
+        str_new_idx,
+        buffer_new_index,
+        cabi_realloc_index,
+        &component_list_codecs,
+      ));
+      compiled_fns.push(build_component_list_lower_fn(
+        &list_type,
+        cabi_realloc_index,
+        &component_list_codecs,
+      ));
+    }
+  }
   if let Some(cabi_realloc_index) = component_cabi_realloc_index {
     let buffer_new_index = component_buffer_new_index.expect("Component boundary must install the Buffer constructor");
     for adapter in &component_import_adapters {
@@ -348,6 +374,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
         str_new_idx,
         buffer_new_index,
         cabi_realloc_index,
+        &component_list_codecs,
       ));
     }
   }
@@ -604,6 +631,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
         str_new_idx,
         buffer_new_index,
         cabi_realloc_index,
+        &component_list_codecs,
       ));
     }
   }
@@ -753,10 +781,11 @@ struct CompiledFn {
   instructions: Vec<Instruction<'static>>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum ComponentAbiType {
   Bool,
   Buffer,
+  List(Box<ComponentAbiType>),
   Number,
   String,
 }
@@ -785,10 +814,15 @@ fn component_abi_type(annotation: &CalcitTypeAnnotation, definition: &str, path:
   match annotation {
     CalcitTypeAnnotation::Bool => Ok(ComponentAbiType::Bool),
     CalcitTypeAnnotation::Buffer => Ok(ComponentAbiType::Buffer),
+    CalcitTypeAnnotation::List(item) => Ok(ComponentAbiType::List(Box::new(component_abi_type(
+      item,
+      definition,
+      &format!("{path}.item"),
+    )?))),
     CalcitTypeAnnotation::Number => Ok(ComponentAbiType::Number),
     CalcitTypeAnnotation::String => Ok(ComponentAbiType::String),
     other => Err(format!(
-      "E_COMPONENT_ABI_UNSUPPORTED_TYPE: `{definition}` at `{path}` uses `{other}`, but this adapter slice only supports Bool, Buffer, Number, and String"
+      "E_COMPONENT_ABI_UNSUPPORTED_TYPE: `{definition}` at `{path}` uses `{other}`, but this adapter slice only supports Bool, Buffer, List<T>, Number, and String"
     )),
   }
 }
@@ -936,7 +970,7 @@ fn component_import_signature(adapter: &ComponentImportAdapter) -> (Vec<ValType>
   for parameter in &adapter.parameters {
     match parameter {
       ComponentAbiType::Bool => parameters.push(ValType::I32),
-      ComponentAbiType::Buffer => parameters.extend([ValType::I32, ValType::I32]),
+      ComponentAbiType::Buffer | ComponentAbiType::List(_) => parameters.extend([ValType::I32, ValType::I32]),
       ComponentAbiType::Number => parameters.push(ValType::F64),
       ComponentAbiType::String => parameters.extend([ValType::I32, ValType::I32]),
     }
@@ -944,7 +978,7 @@ fn component_import_signature(adapter: &ComponentImportAdapter) -> (Vec<ValType>
   match adapter.result {
     ComponentAbiType::Bool => (parameters, vec![ValType::I32]),
     ComponentAbiType::Number => (parameters, vec![ValType::F64]),
-    ComponentAbiType::Buffer | ComponentAbiType::String => {
+    ComponentAbiType::Buffer | ComponentAbiType::List(_) | ComponentAbiType::String => {
       parameters.push(ValType::I32);
       (parameters, vec![])
     }
@@ -1105,6 +1139,7 @@ fn build_component_import_adapter(
   str_new_index: u32,
   buffer_new_index: u32,
   cabi_realloc_index: u32,
+  list_codecs: &BTreeMap<ComponentAbiType, ComponentListCodec>,
 ) -> CompiledFn {
   let params = vec![ValType::F64; adapter.parameters.len()];
   let mut locals = Vec::new();
@@ -1128,10 +1163,32 @@ fn build_component_import_adapter(
         Instruction::F64Load(mem_arg_f64(0)),
         Instruction::I32TruncF64U,
       ]),
+      ComponentAbiType::List(_) => {
+        let pair_ptr = params.len() as u32 + locals.len() as u32;
+        locals.push(ValType::I32);
+        let codec = list_codecs
+          .get(parameter)
+          .expect("Component List import parameter codec must be registered");
+        instructions.extend([
+          Instruction::I32Const(0),
+          Instruction::I32Const(0),
+          Instruction::I32Const(4),
+          Instruction::I32Const(8),
+          Instruction::Call(cabi_realloc_index),
+          Instruction::LocalSet(pair_ptr),
+          Instruction::LocalGet(index as u32),
+          Instruction::LocalGet(pair_ptr),
+          Instruction::Call(codec.lower_index),
+          Instruction::LocalGet(pair_ptr),
+          Instruction::I32Load(mem_arg_i32(0)),
+          Instruction::LocalGet(pair_ptr),
+          Instruction::I32Load(mem_arg_i32(4)),
+        ]);
+      }
     }
   }
 
-  match adapter.result {
+  match &adapter.result {
     ComponentAbiType::Bool => {
       instructions.push(Instruction::Call(adapter.raw_index));
       let canonical = params.len() as u32 + locals.len() as u32;
@@ -1143,7 +1200,7 @@ fn build_component_import_adapter(
     ComponentAbiType::Buffer | ComponentAbiType::String => {
       let ret_ptr = params.len() as u32;
       locals.push(ValType::I32);
-      let bytes_new_index = match adapter.result {
+      let bytes_new_index = match &adapter.result {
         ComponentAbiType::Buffer => buffer_new_index,
         ComponentAbiType::String => str_new_index,
         _ => unreachable!("byte result branch must use a byte-backed Component type"),
@@ -1163,6 +1220,27 @@ fn build_component_import_adapter(
         Instruction::Call(bytes_new_index),
       ]);
     }
+    ComponentAbiType::List(_) => {
+      let ret_ptr = params.len() as u32;
+      locals.push(ValType::I32);
+      let codec = list_codecs
+        .get(&adapter.result)
+        .expect("Component List import result codec must be registered");
+      instructions.extend([
+        Instruction::I32Const(0),
+        Instruction::I32Const(0),
+        Instruction::I32Const(4),
+        Instruction::I32Const(8),
+        Instruction::Call(cabi_realloc_index),
+        Instruction::LocalTee(ret_ptr),
+        Instruction::Call(adapter.raw_index),
+        Instruction::LocalGet(ret_ptr),
+        Instruction::I32Load(mem_arg_i32(0)),
+        Instruction::LocalGet(ret_ptr),
+        Instruction::I32Load(mem_arg_i32(4)),
+        Instruction::Call(codec.lift_index),
+      ]);
+    }
   }
 
   CompiledFn {
@@ -1179,13 +1257,14 @@ fn build_component_export_adapter(
   str_new_index: u32,
   buffer_new_index: u32,
   cabi_realloc_index: u32,
+  list_codecs: &BTreeMap<ComponentAbiType, ComponentListCodec>,
 ) -> CompiledFn {
   let mut params = Vec::new();
   for parameter in &adapter.parameters {
     match parameter {
       ComponentAbiType::Bool => params.push(ValType::I32),
       ComponentAbiType::Number => params.push(ValType::F64),
-      ComponentAbiType::Buffer | ComponentAbiType::String => params.extend([ValType::I32, ValType::I32]),
+      ComponentAbiType::Buffer | ComponentAbiType::List(_) | ComponentAbiType::String => params.extend([ValType::I32, ValType::I32]),
     }
   }
 
@@ -1224,6 +1303,21 @@ fn build_component_export_adapter(
         lowered.push(local);
         flat_index += 2;
       }
+      ComponentAbiType::List(_) => {
+        let local = params.len() as u32 + locals.len() as u32;
+        locals.push(ValType::F64);
+        let codec = list_codecs
+          .get(parameter)
+          .expect("Component List export parameter codec must be registered");
+        instructions.extend([
+          Instruction::LocalGet(flat_index),
+          Instruction::LocalGet(flat_index + 1),
+          Instruction::Call(codec.lift_index),
+          Instruction::LocalSet(local),
+        ]);
+        lowered.push(local);
+        flat_index += 2;
+      }
     }
   }
   for local in lowered {
@@ -1231,7 +1325,7 @@ fn build_component_export_adapter(
   }
   instructions.push(Instruction::Call(adapter.target_index));
 
-  let results = match adapter.result {
+  let results = match &adapter.result {
     ComponentAbiType::Bool => {
       let value = params.len() as u32 + locals.len() as u32;
       locals.push(ValType::F64);
@@ -1268,6 +1362,29 @@ fn build_component_export_adapter(
         Instruction::F64Load(mem_arg_f64(0)),
         Instruction::I32TruncF64U,
         Instruction::I32Store(mem_arg_i32(4)),
+        Instruction::LocalGet(ret_ptr),
+      ]);
+      vec![ValType::I32]
+    }
+    ComponentAbiType::List(_) => {
+      let value = params.len() as u32 + locals.len() as u32;
+      locals.push(ValType::F64);
+      let ret_ptr = params.len() as u32 + locals.len() as u32;
+      locals.push(ValType::I32);
+      let codec = list_codecs
+        .get(&adapter.result)
+        .expect("Component List export result codec must be registered");
+      instructions.extend([
+        Instruction::LocalSet(value),
+        Instruction::I32Const(0),
+        Instruction::I32Const(0),
+        Instruction::I32Const(4),
+        Instruction::I32Const(8),
+        Instruction::Call(cabi_realloc_index),
+        Instruction::LocalSet(ret_ptr),
+        Instruction::LocalGet(value),
+        Instruction::LocalGet(ret_ptr),
+        Instruction::Call(codec.lower_index),
         Instruction::LocalGet(ret_ptr),
       ]);
       vec![ValType::I32]
@@ -4733,6 +4850,7 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
 
 #[cfg(test)]
 mod tests {
+  use std::collections::BTreeMap;
   use std::str::FromStr;
   use std::sync::Arc;
 
@@ -4780,6 +4898,7 @@ mod tests {
 
   #[test]
   fn component_export_adapters_use_canonical_value_and_byte_shapes() {
+    let list_codecs = BTreeMap::new();
     let allocator = build_cabi_realloc_fn();
     assert_eq!(allocator.export_name.as_deref(), Some("cabi_realloc"));
     assert_eq!(allocator.params, vec![ValType::I32; 4]);
@@ -4796,6 +4915,7 @@ mod tests {
       10,
       11,
       30,
+      &list_codecs,
     );
     assert_eq!(number.params, vec![ValType::F64]);
     assert_eq!(number.results, vec![ValType::F64]);
@@ -4811,6 +4931,7 @@ mod tests {
       10,
       11,
       30,
+      &list_codecs,
     );
     assert_eq!(string.params, vec![ValType::I32, ValType::I32]);
     assert_eq!(string.results, vec![ValType::I32]);
@@ -4826,6 +4947,7 @@ mod tests {
       10,
       11,
       30,
+      &list_codecs,
     );
     assert_eq!(buffer.params, vec![ValType::I32, ValType::I32]);
     assert_eq!(buffer.results, vec![ValType::I32]);
@@ -4833,6 +4955,7 @@ mod tests {
 
   #[test]
   fn component_import_adapters_use_canonical_value_and_byte_shapes() {
+    let list_codecs = BTreeMap::new();
     let number = ComponentImportAdapter {
       definition: "app.main/host-add-one".into(),
       module: "host".into(),
@@ -4843,7 +4966,7 @@ mod tests {
       result: ComponentAbiType::Number,
     };
     assert_eq!(component_import_signature(&number), (vec![ValType::F64], vec![ValType::F64]));
-    let number_adapter = build_component_import_adapter(&number, 10, 11, 12);
+    let number_adapter = build_component_import_adapter(&number, 10, 11, 12, &list_codecs);
     assert_eq!(number_adapter.params, vec![ValType::F64]);
     assert_eq!(number_adapter.results, vec![ValType::F64]);
 
@@ -4860,7 +4983,7 @@ mod tests {
       component_import_signature(&string),
       (vec![ValType::I32, ValType::I32, ValType::I32], vec![])
     );
-    let string_adapter = build_component_import_adapter(&string, 10, 11, 12);
+    let string_adapter = build_component_import_adapter(&string, 10, 11, 12, &list_codecs);
     assert_eq!(string_adapter.params, vec![ValType::F64]);
     assert_eq!(string_adapter.results, vec![ValType::F64]);
 
@@ -4877,13 +5000,14 @@ mod tests {
       component_import_signature(&buffer),
       (vec![ValType::I32, ValType::I32, ValType::I32], vec![])
     );
-    let buffer_adapter = build_component_import_adapter(&buffer, 10, 11, 12);
+    let buffer_adapter = build_component_import_adapter(&buffer, 10, 11, 12, &list_codecs);
     assert_eq!(buffer_adapter.params, vec![ValType::F64]);
     assert_eq!(buffer_adapter.results, vec![ValType::F64]);
   }
 
   #[test]
   fn component_bool_adapters_use_canonical_i32_and_strict_conversion() {
+    let list_codecs = BTreeMap::new();
     assert_eq!(
       component_abi_type(&CalcitTypeAnnotation::Bool, "app.main/check", "logical_schema.result"),
       Ok(ComponentAbiType::Bool)
@@ -4899,6 +5023,7 @@ mod tests {
       10,
       11,
       30,
+      &list_codecs,
     );
     assert_eq!(export.params, vec![ValType::I32]);
     assert_eq!(export.results, vec![ValType::I32]);
@@ -4919,7 +5044,7 @@ mod tests {
       result: ComponentAbiType::Bool,
     };
     assert_eq!(component_import_signature(&import), (vec![ValType::I32], vec![ValType::I32]));
-    let import_adapter = build_component_import_adapter(&import, 10, 11, 12);
+    let import_adapter = build_component_import_adapter(&import, 10, 11, 12, &list_codecs);
     assert_eq!(import_adapter.params, vec![ValType::F64]);
     assert_eq!(import_adapter.results, vec![ValType::F64]);
     assert!(
@@ -4940,6 +5065,22 @@ mod tests {
       .expect_err("Unit is deferred to a later adapter slice");
     assert!(error.contains("E_COMPONENT_ABI_UNSUPPORTED_TYPE"));
     assert!(error.contains("logical_schema.result"));
+  }
+
+  #[test]
+  fn component_adapter_derives_recursive_list_types_and_precise_item_paths() {
+    let nested = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number))));
+    assert_eq!(
+      component_abi_type(&nested, "app.main/echo", "logical_schema.parameters[0]"),
+      Ok(ComponentAbiType::List(Box::new(ComponentAbiType::List(Box::new(
+        ComponentAbiType::Number
+      )))))
+    );
+
+    let unsupported = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Unit))));
+    let error = component_abi_type(&unsupported, "app.main/echo", "logical_schema.parameters[0]")
+      .expect_err("unsupported nested item types must not degrade to Dynamic");
+    assert!(error.contains("logical_schema.parameters[0].item.item"));
   }
 
   #[test]
