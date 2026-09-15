@@ -45,6 +45,28 @@ calcit edit schema app.schema/Items --code "quote \$ :: 'List 'Number"
 
 此后 `'app.schema/Items` 可用于 Struct 字段、Enum payload、callback 或 trait 边界。静态检查、Native 构造验证和 JavaScript codegen 都按同一底层 schema 判断值；不要为 Native 单独增加 coercion。类型别名不能接收泛型实参，循环别名也不会退化成 Dynamic，而是作为无法证明的类型关系拒绝。
 
+## 数值 refinement 只携带边界证明
+
+需要与外部 ABI 的明确宽度对齐时，可使用 `'Int8`、`'UInt8`、`'Int16`、`'UInt16`、`'Int32`、
+`'UInt32`、`'Int64`、`'UInt64`、`'Float32` 和 `'Float64`。它们不是新的运行时数值族：native 仍使用
+`f64`，JavaScript 仍使用 `Number`。refinement 可以安全地作为 `'Number` 使用；普通 `'Number` 不会隐式收窄，
+普通算术结果也回到 `'Number`，避免在数值变化后继续保留失效的范围证明。
+
+从普通数值进入明确边界时，使用 `number->int8`、`number->uint8`、`number->int16`、
+`number->uint16`、`number->int32`、`number->uint32`、`number->int64`、`number->uint64`、
+`number->float32` 或 `number->float64`。这些函数返回 `Result<目标类型,String>`，不会截断、环绕或静默舍入：
+整数目标拒绝非整数、NaN、Infinity、符号错误和越界值，`Int64`/`UInt64` 只接受 JavaScript 与 `f64`
+都能连续精确表示的安全整数范围；`Float32` 只接受能原样往返的值。
+
+```cirru
+let
+    port-result $ number->uint16 8080
+  result:ok? port-result
+```
+
+当前 source-level refinement 与受检转换在 native、JavaScript 后端一致。Component contract 与 Canonical ABI
+lowering 由后续阶段接入；在此之前，不能把 refinement 偷偷降级成普通 `Number` 通过 Component 边界。
+
 兼容性的多态 collection facade 可能仍在 core schema 中保留局部 `Dynamic`，或者使用彼此独立、无法表达容器成员关系的泛型，但已知 receiver 会在预处理阶段专门化。例如 `update` 对 `List<T>` 要求 `Number` 索引和 `T -> T` updater，对 `Map<K,V>` 要求 `K` 键和 `V -> V` updater；Struct 则按静态字段类型检查。`filter`、`any?` 与 `every?` 对 List/Set 要求 `T -> Bool` predicate，`each` 则约束 callback 输入为 `T`、允许任意返回类型；`map` 对 List/Set 要求 `T -> U` mapper，并把 Set receiver lowering 到 `&set:map`。`foldl` 与 `reduce` 从初始值恢复 accumulator `U`，并要求 reducer 为 `U, T -> U`；原生 `foldl` 只有在 reducer 具有具体且兼容的 `Fn` 签名时才把初始 accumulator 类型保留为返回类型，`DynFn` 仍推断为 `Dynamic`。普通 `apply f args` 只会在 `args` 是非 Dynamic 的同质 `List<T>`、`T` 能满足 `f` 的全部 fixed/rest 输入、且展开长度能证明 callable arity 时恢复 `f` 的具体或泛型返回类型；若参数位置异构、固定参数调用的 list 长度未知、callable 未知，或存在 trait-bounded 泛型，则兼容返回仍为 `Dynamic`，应改为直接调用、先归一化参数，或在审核过的开放边界显式保留 Dynamic。双参数 `sort` 与 `&list:sort` 保留 `List<T>`，并要求 comparator 为 `T, T -> Number`；函数形式的 `&list:sort-by` 要求 selector 为 `T -> K`，同时保留 Tag 字段选择器兼容路径。List 的 `.apply` 要求函数列表中的每一项共享 `T -> U` 契约，并返回 `List<U>`；它的 direct/method 诊断会用 receiver/input 已绑定的 `T` 显示具体 callback 类型，异构输入或函数列表必须先归一化或拆成多次调用。`interleave` 同样只接受两份 `List<T>` 并返回 `List<T>`；异构数据必须先归一化，或在经过审核的开放边界显式声明 `List<Dynamic>`。单参数自然排序不受影响，Syntax collection 继续使用 phase-aware 开放契约。Map callback 接收运行时的异构 `[key value]` pair；迭代、predicate 与 fold 输入只承诺 `List<Dynamic>`，而 `map` 同时要求 callback 返回另一个 `List<Dynamic>` pair，不会把不同的 `K` / `V` 伪装成同一种成员类型。旧 `map-kv` 还允许 nil/任意 Enum 作为 drop sentinel，因此返回只能是显式兼容边界：兼容模式警告，strict 模式拒绝。typed code 应统一改用 `filter-map-kv`，以 `MapEntryDecision :keep key value` 或 `:drop` 让输出 key/value 与 callback payload 保持可证明关联。`get` 同样要求 List/String/Enum 的 `Number` 索引或 Map 的 `K` 键，`includes?` 要求 List/Set 的成员 `T`、Map 的值 `V` 或 String substring；`contains?` 要求 List/String/Enum 的 `Number` 索引、Map 的键 `K` 或 Set 的成员 `T`。`assoc` 会同时约束 List 的索引/成员、Map 的键/值、静态 Struct 字段的值类型，以及 Enum 的 `Number` payload index；Enum payload 可以异构，因此新值在没有精确 variant/slot evidence 时仍保持开放。`dissoc` 会检查全部 rest 参数：List 只能接收 `Number` 索引，Map 的每个键都必须是 `K`。用户函数 schema 的 `:rest` 会逐项检查。原生 proc 按运行时契约区分两类 typed variadic：`&map:dissoc`、`&list:concat` 与 `&merge` 会检查每一个 rest 参数，并在容器不匹配时显示完整成员类型；`[]` 与 `#{}` 的 `Variadic<T>` 只用于推断公共成员类型，异构字面量仍有意回退为 `Dynamic`。未标注的 inline callback 若能从函数体恢复返回类型，也会参与这项检查。不要把 receiver 擦除为 `Dynamic` 来绕过这些关系：在 FFI/open-data adapter 中先校验或转换，再进入集合操作。
 
 对已知 receiver 的集合调用，成员类型会先进入 inline callback 的参数与函数体，再由同一份 contract 检查调用参数和推断返回值。`any?`、`every?` 与 `each` 因而不需要让 callback 暂存未实例化的泛型，也不需要为使用它们的宏增加例外。

@@ -101,6 +101,14 @@ impl MapDecoder<'_> {
           Err(map_kind_mismatch(path, "number", input))
         }
       }
+      DataShapeNode::Numeric(kind) => match input {
+        Calcit::Number(value) if kind.accepts(*value) => Ok(input.to_owned()),
+        Calcit::Number(value) => Err(EdnDecodeError::at(
+          path,
+          format!("number {value} does not fit {}", kind.canonical_name()),
+        )),
+        _ => Err(map_kind_mismatch(path, kind.canonical_name(), input)),
+      },
       DataShapeNode::String => {
         if matches!(input, Calcit::Str(_)) {
           Ok(input.to_owned())
@@ -355,6 +363,14 @@ impl Decoder<'_> {
       DataShapeNode::Number => match input {
         Edn::Number(value) => Ok(Calcit::Number(*value)),
         _ => Err(kind_mismatch(path, "number", input)),
+      },
+      DataShapeNode::Numeric(kind) => match input {
+        Edn::Number(value) if kind.accepts(*value) => Ok(Calcit::Number(*value)),
+        Edn::Number(value) => Err(EdnDecodeError::at(
+          path,
+          format!("number {value} does not fit {}", kind.canonical_name()),
+        )),
+        _ => Err(kind_mismatch(path, kind.canonical_name(), input)),
       },
       DataShapeNode::String => match input {
         Edn::Str(value) => Ok(Calcit::Str(value.clone())),

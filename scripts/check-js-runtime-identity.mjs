@@ -161,7 +161,7 @@ try {
   assert.equal(runtimeA.toString(undefined, true), "&unit");
   assert.throws(() => runtimeA.json_stringify(undefined), /cannot encode value: &unit/);
   assert.throws(() => runtimeA.to_cirru_edn(undefined), /cannot encode &unit/);
-  const nilShape = { version: 2, root: 0, fingerprint: "runtime-nil-shape", nodes: [{ kind: "nil" }] };
+  const nilShape = { version: 3, root: 0, fingerprint: "runtime-nil-shape", nodes: [{ kind: "nil" }] };
   assert.equal(runtimeA.parse_cirru_edn_as("do nil", nilShape), null, "typed EDN decoding must preserve the Nil node");
   assert.throws(
     () => runtimeA.parse_cirru_edn_as("do |value", nilShape),

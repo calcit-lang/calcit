@@ -1,4 +1,5 @@
 use crate::builtins::meta::type_of;
+use crate::calcit::type_annotation::CalcitNumericRefinement;
 use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitProc, format_proc_examples_hint};
 
 use crate::util::number::{f64_to_i32, is_integer};
@@ -103,6 +104,25 @@ pub fn fractional(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     a => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:fract expected 1 number, but received: {a:?}")),
+  }
+}
+
+pub fn number_fits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
+    (Some(Calcit::Number(value)), Some(Calcit::Tag(target))) => {
+      let Some(refinement) = CalcitNumericRefinement::from_name(target.ref_str()) else {
+        return CalcitErr::err_str(
+          CalcitErrKind::Type,
+          format!("&number:fits? expected a numeric refinement tag, got :{target}"),
+        );
+      };
+      Ok(Calcit::Bool(refinement.accepts(*value)))
+    }
+    (Some(value), Some(target)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&number:fits? expected a number and a tag, got {value} {target}"),
+    ),
+    _ => crate::builtins::err_arity("&number:fits? requires 2 arguments, but received:", xs),
   }
 }
 

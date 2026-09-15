@@ -1016,6 +1016,7 @@ fn data_shape_graph_to_js(graph: &DataShapeGraph, current_ns: &str, file_imports
       DataShapeNode::Unit => String::from("{kind:\"unit\"}"),
       DataShapeNode::Bool => String::from("{kind:\"bool\"}"),
       DataShapeNode::Number => String::from("{kind:\"number\"}"),
+      DataShapeNode::Numeric(kind) => format!("{{kind:\"numeric\",target:{}}}", escape_cirru_str(kind.tag_name())),
       DataShapeNode::String => String::from("{kind:\"string\"}"),
       DataShapeNode::Symbol => String::from("{kind:\"symbol\"}"),
       DataShapeNode::Tag => String::from("{kind:\"tag\"}"),

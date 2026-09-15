@@ -1780,6 +1780,12 @@
           :tests $ [] $ %{} 'TestEntry (:name |returns-zero)
             :code $ quote $ assert= 0 (&number:empty 1.1)
             :tags $ #{} :core :unit
+        '&number:fits? $ %{} 'CodeEntry (:doc "|内部数值 refinement 边界检查；仅供公开受检转换函数使用。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number 'Tag
+          :tags $ #{} :builtin :internal :numeric
         '&number:format $ %{} 'CodeEntry
           :doc "|internal function for number formatting\nSyntax: (&number:format n decimals)\nParams: n (number), decimals (number)\nReturns: string\nFormats number with the requested decimal places"
           :code $ quote &runtime-implementation
@@ -6431,6 +6437,180 @@
               assert=
                 %some $ {} $ :a 2
                 nth xs 1
+            :tags $ #{} :core :unit
+        'number->float32 $ %{} 'CodeEntry
+          :doc "|把 Number 显式检查并转换为 Float32 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
+          :code $ quote $ defn number->float32 (value)
+            if (&number:fits? value :float32)
+              %ok $ assert-type value 'Float32
+              %err $ str "|number->float32 cannot represent " value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'calcit.core/Result 'Float32 'String
+          :tags $ #{} :conversion :numeric
+          :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
+            :code $ quote $ do
+              assert= (%ok 0.5) (number->float32 0.5)
+              assert-type (number->float32 0.5) (:: 'Result 'Float32 'String)
+              assert= true $ result:err? $ number->float32 0.1
+            :tags $ #{} :core :unit
+        'number->float64 $ %{} 'CodeEntry
+          :doc "|把 Number 显式检查并转换为 Float64 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
+          :code $ quote $ defn number->float64 (value)
+            if (&number:fits? value :float64)
+              %ok $ assert-type value 'Float64
+              %err $ str "|number->float64 cannot represent " value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'calcit.core/Result 'Float64 'String
+          :tags $ #{} :conversion :numeric
+          :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
+            :code $ quote $ do
+              assert= (%ok 0.1) (number->float64 0.1)
+              assert-type (number->float64 0.1) (:: 'Result 'Float64 'String)
+            :tags $ #{} :core :unit
+        'number->int16 $ %{} 'CodeEntry
+          :doc "|把 Number 显式检查并转换为 Int16 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
+          :code $ quote $ defn number->int16 (value)
+            if (&number:fits? value :int16)
+              %ok $ assert-type value 'Int16
+              %err $ str "|number->int16 cannot represent " value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'calcit.core/Result 'Int16 'String
+          :tags $ #{} :conversion :numeric
+          :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
+            :code $ quote $ do
+              assert= (%ok 32767) (number->int16 32767)
+              assert-type (number->int16 32767) (:: 'Result 'Int16 'String)
+              assert= true $ result:err? $ number->int16 32768
+            :tags $ #{} :core :unit
+        'number->int32 $ %{} 'CodeEntry
+          :doc "|把 Number 显式检查并转换为 Int32 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
+          :code $ quote $ defn number->int32 (value)
+            if (&number:fits? value :int32)
+              %ok $ assert-type value 'Int32
+              %err $ str "|number->int32 cannot represent " value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'calcit.core/Result 'Int32 'String
+          :tags $ #{} :conversion :numeric
+          :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
+            :code $ quote $ do
+              assert= (%ok 2147483647) (number->int32 2147483647)
+              assert-type (number->int32 2147483647) (:: 'Result 'Int32 'String)
+              assert= true $ result:err? $ number->int32 2147483648
+            :tags $ #{} :core :unit
+        'number->int64 $ %{} 'CodeEntry
+          :doc "|把 Number 显式检查并转换为 Int64 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
+          :code $ quote $ defn number->int64 (value)
+            if (&number:fits? value :int64)
+              %ok $ assert-type value 'Int64
+              %err $ str "|number->int64 cannot represent " value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'calcit.core/Result 'Int64 'String
+          :tags $ #{} :conversion :numeric
+          :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
+            :code $ quote $ do
+              assert= (%ok 9007199254740991) (number->int64 9007199254740991)
+              assert-type (number->int64 9007199254740991) (:: 'Result 'Int64 'String)
+              assert= true $ result:err? $ number->int64 9007199254740992
+            :tags $ #{} :core :unit
+        'number->int8 $ %{} 'CodeEntry
+          :doc "|把 Number 显式检查并转换为 Int8 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
+          :code $ quote $ defn number->int8 (value)
+            if (&number:fits? value :int8)
+              %ok $ assert-type value 'Int8
+              %err $ str "|number->int8 cannot represent " value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'calcit.core/Result 'Int8 'String
+          :tags $ #{} :conversion :numeric
+          :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
+            :code $ quote $ do
+              assert= (%ok 127) (number->int8 127)
+              assert-type (number->int8 127) (:: 'Result 'Int8 'String)
+              assert= true $ result:err? $ number->int8 128
+              assert= true $ result:err? $ number->int8 (/ 1 0)
+              assert= true $ result:err? $ number->int8 1.5
+              assert= ([] 127)
+                parse-cirru-edn-as "|[] 127" $ :: 'List 'Int8
+              assert= true $ result:err? $ try-parse-cirru-edn-as "|[] 128" (:: 'List 'Int8)
+            :tags $ #{} :core :unit
+        'number->uint16 $ %{} 'CodeEntry
+          :doc "|把 Number 显式检查并转换为 UInt16 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
+          :code $ quote $ defn number->uint16 (value)
+            if (&number:fits? value :uint16)
+              %ok $ assert-type value 'UInt16
+              %err $ str "|number->uint16 cannot represent " value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'calcit.core/Result 'UInt16 'String
+          :tags $ #{} :conversion :numeric
+          :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
+            :code $ quote $ do
+              assert= (%ok 65535) (number->uint16 65535)
+              assert-type (number->uint16 65535) (:: 'Result 'UInt16 'String)
+              assert= true $ result:err? $ number->uint16 -1
+            :tags $ #{} :core :unit
+        'number->uint32 $ %{} 'CodeEntry
+          :doc "|把 Number 显式检查并转换为 UInt32 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
+          :code $ quote $ defn number->uint32 (value)
+            if (&number:fits? value :uint32)
+              %ok $ assert-type value 'UInt32
+              %err $ str "|number->uint32 cannot represent " value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'calcit.core/Result 'UInt32 'String
+          :tags $ #{} :conversion :numeric
+          :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
+            :code $ quote $ do
+              assert= (%ok 4294967295) (number->uint32 4294967295)
+              assert-type (number->uint32 4294967295) (:: 'Result 'UInt32 'String)
+              assert= true $ result:err? $ number->uint32 -1
+            :tags $ #{} :core :unit
+        'number->uint64 $ %{} 'CodeEntry
+          :doc "|把 Number 显式检查并转换为 UInt64 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
+          :code $ quote $ defn number->uint64 (value)
+            if (&number:fits? value :uint64)
+              %ok $ assert-type value 'UInt64
+              %err $ str "|number->uint64 cannot represent " value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'calcit.core/Result 'UInt64 'String
+          :tags $ #{} :conversion :numeric
+          :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
+            :code $ quote $ do
+              assert= (%ok 9007199254740991) (number->uint64 9007199254740991)
+              assert-type (number->uint64 9007199254740991) (:: 'Result 'UInt64 'String)
+              assert= true $ result:err? $ number->uint64 -1
+            :tags $ #{} :core :unit
+        'number->uint8 $ %{} 'CodeEntry
+          :doc "|把 Number 显式检查并转换为 UInt8 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
+          :code $ quote $ defn number->uint8 (value)
+            if (&number:fits? value :uint8)
+              %ok $ assert-type value 'UInt8
+              %err $ str "|number->uint8 cannot represent " value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'calcit.core/Result 'UInt8 'String
+          :tags $ #{} :conversion :numeric
+          :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
+            :code $ quote $ do
+              assert= (%ok 255) (number->uint8 255)
+              assert-type (number->uint8 255) (:: 'Result 'UInt8 'String)
+              assert= true $ result:err? $ number->uint8 -1
             :tags $ #{} :core :unit
         'number? $ %{} 'CodeEntry
           :doc "|Predicate that checks whether a value is a numeric scalar"
