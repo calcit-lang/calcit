@@ -64,7 +64,7 @@ feature-gated 的内部回归 harness，但它不是兼容 CLI，也不应被用
 需要关注：当前支持 `Unit` 结果、`Bool`、`Buffer`、`Number`、UTF-8 `String`、递归同质
 `List<T>`，以及闭合单态 `Option<T>` / `Result<T,E>` 的 import/export adapter，默认 contract
 格式为 Cirru EDN。独立的 `calcit-bindgen` 可为这些类型生成 WIT 并包装 runnable Component；
-Struct record、普通 Enum variant、明确宽度数值与 async 尚未完成，不会静默退化为 Dynamic
+Struct record、普通 Enum variant、明确宽度数值与 async 在该 preview 中尚未完成，不会静默退化为 Dynamic
 或 core 私有 value ABI。
 
 ## 0.15.1 Struct/Enum Component boundary
@@ -79,7 +79,8 @@ Enum 的 case 名称与顺序来自规范化后的 `defenum` schema，并决定�
 
 该阶段没有新增命令：core 继续使用 `calcit ffi export --boundary component` 与
 `calcit wasm --boundary component`，WIT 与 runnable Component packaging 继续由 calcit-bindgen 的
-`generate` / `check` 负责。Struct/Enum/Result 已在 Wasmtime 与 jco/Node 完成实际往返；明确宽度数值类型属于 0.15.2。
+`generate` / `check` 负责。Struct/Enum/Result 已在 Wasmtime 与 jco/Node 完成实际往返；0.15.2 进一步为
+明确宽度数值生成 Canonical ABI lowering，升级后需重新生成 contract 和 Component 产物，不保留旧数值 ABI 兼容层。
 
 从 0.14.20 preview 升级时不需要改写命令，也不要新增 WIT/component wrapper。应重新执行
 `calcit ffi export --boundary component` 导出 contract，用 calcit-bindgen `check` 查看 ABI fingerprint 与兼容性变化，

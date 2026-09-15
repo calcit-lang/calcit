@@ -77,7 +77,7 @@ const bytes = fs.readFileSync(process.argv[1]);
 const module = new WebAssembly.Module(bytes);
 const imports = WebAssembly.Module.imports(module);
 const importNames = imports.map(({ module, name }) => `${module}/${name}`).sort();
-if (importNames.join(",") !== "host/add-one,host/bool-not,host/buffer,host/echo,host/event,host/numbers,host/option-number,host/ping,host/profile,host/result-number") {
+if (importNames.join(",") !== "host/add-one,host/bool-not,host/buffer,host/echo,host/event,host/numbers,host/numeric-scalars,host/option-number,host/ping,host/profile,host/result-number") {
   throw new Error(`unexpected imports: ${importNames.join(",")}`);
 }
 let instance;
@@ -130,6 +130,19 @@ const host = {
     values.forEach((value, index) => outputMemory.setFloat64(outputPtr + index * 8, value, true));
     outputMemory.setUint32(retPtr, outputPtr, true);
     outputMemory.setUint32(retPtr + 4, values.length, true);
+  },
+  "numeric-scalars": (f32, f64, i16, i32, i64, i8, u16, u32, u64, u8, retPtr) => {
+    const memory = new DataView(instance.exports.memory.buffer);
+    memory.setFloat32(retPtr, f32, true);
+    memory.setFloat64(retPtr + 8, f64, true);
+    memory.setInt16(retPtr + 16, i16, true);
+    memory.setInt32(retPtr + 20, i32, true);
+    memory.setBigInt64(retPtr + 24, i64, true);
+    memory.setInt8(retPtr + 32, i8);
+    memory.setUint16(retPtr + 34, u16, true);
+    memory.setUint32(retPtr + 36, u32, true);
+    memory.setBigUint64(retPtr + 40, u64, true);
+    memory.setUint8(retPtr + 48, u8);
   },
   "option-number": (discriminant, payload, retPtr) => {
     const memory = new DataView(instance.exports.memory.buffer);
@@ -289,6 +302,21 @@ WebAssembly.instantiate(module, { host }).then(result => {
     if (discriminant === 3) return { tag: "profile", value: readProfile(ret + 8) };
     throw new Error(`unexpected Event discriminant ${discriminant}`);
   };
+  const readNumericScalars = ret => {
+    const memory = new DataView(e.memory.buffer);
+    return [
+      memory.getFloat32(ret, true),
+      memory.getFloat64(ret + 8, true),
+      memory.getInt16(ret + 16, true),
+      memory.getInt32(ret + 20, true),
+      memory.getBigInt64(ret + 24, true),
+      memory.getInt8(ret + 32),
+      memory.getUint16(ret + 34, true),
+      memory.getUint32(ret + 36, true),
+      memory.getBigUint64(ret + 40, true),
+      memory.getUint8(ret + 48),
+    ];
+  };
   const expectBytes = (actual, expected, label) => {
     if (actual.length !== expected.length) {
       throw new Error(`${label}: got length ${actual.length}, expected ${expected.length}`);
@@ -317,6 +345,23 @@ WebAssembly.instantiate(module, { host }).then(result => {
     return [discriminant, Buffer.from(e.memory.buffer, itemPtr, itemLen).toString("utf8")];
   };
   if (e["add-one"](41) !== 42) throw new Error("Number adapter did not round-trip");
+  const numericScalars = [1.5, 1.25, -32768, -2147483648, -9007199254740991n, -128, 65535, 4294967295, 9007199254740991n, 255];
+  for (const name of ["echo-numeric-scalars", "call-host-numeric-scalars"]) {
+    const actual = readNumericScalars(e[name](...numericScalars));
+    if (actual.length !== numericScalars.length || actual.some((value, index) => value !== numericScalars[index])) {
+      throw new Error(`${name} did not preserve canonical numeric scalars: ${actual}`);
+    }
+  }
+  for (const invalid of [
+    [...numericScalars.slice(0, 5), 128, ...numericScalars.slice(6)],
+    [...numericScalars.slice(0, 9), -1],
+    [...numericScalars.slice(0, 4), -9007199254740992n, ...numericScalars.slice(5)],
+    [...numericScalars.slice(0, 8), 9007199254740992n, numericScalars[9]],
+  ]) {
+    let trapped = false;
+    try { e["echo-numeric-scalars"](...invalid); } catch (error) { trapped = error instanceof WebAssembly.RuntimeError; }
+    if (!trapped) throw new Error(`invalid canonical numeric input did not trap: ${invalid}`);
+  }
   if (e["bool-not"](1) !== 0 || e["bool-not"](0) !== 1) throw new Error("Bool adapter did not round-trip");
   if (e["choose-number"](1, 3, 4) !== 3 || e["choose-number"](0, 3, 4) !== 4) {
     throw new Error("mixed Bool and Number adapter did not round-trip");

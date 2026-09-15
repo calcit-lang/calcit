@@ -40,6 +40,16 @@ pub(super) fn component_memory_layout(value_type: &ComponentAbiType) -> Componen
     ComponentAbiType::Unit => ComponentMemoryLayout { size: 0, alignment: 1 },
     ComponentAbiType::Bool => ComponentMemoryLayout { size: 1, alignment: 1 },
     ComponentAbiType::Number => ComponentMemoryLayout { size: 8, alignment: 8 },
+    ComponentAbiType::Numeric(kind) => match kind {
+      CalcitNumericRefinement::Int8 | CalcitNumericRefinement::UInt8 => ComponentMemoryLayout { size: 1, alignment: 1 },
+      CalcitNumericRefinement::Int16 | CalcitNumericRefinement::UInt16 => ComponentMemoryLayout { size: 2, alignment: 2 },
+      CalcitNumericRefinement::Int32 | CalcitNumericRefinement::UInt32 | CalcitNumericRefinement::Float32 => {
+        ComponentMemoryLayout { size: 4, alignment: 4 }
+      }
+      CalcitNumericRefinement::Int64 | CalcitNumericRefinement::UInt64 | CalcitNumericRefinement::Float64 => {
+        ComponentMemoryLayout { size: 8, alignment: 8 }
+      }
+    },
     ComponentAbiType::Buffer | ComponentAbiType::String | ComponentAbiType::List(_) => ComponentMemoryLayout { size: 8, alignment: 4 },
     ComponentAbiType::Option(item) => component_variant_layout(&ComponentAbiType::Unit, item),
     ComponentAbiType::Result(ok, error) => component_variant_layout(ok, error),
@@ -107,6 +117,7 @@ fn push_zero(instructions: &mut Vec<Instruction<'static>>, value_type: ValType) 
   instructions.push(match value_type {
     ValType::I32 => Instruction::I32Const(0),
     ValType::I64 => Instruction::I64Const(0),
+    ValType::F32 => Instruction::F32Const(wasm_encoder::Ieee32::from(0.0)),
     ValType::F64 => f64_const(0.0),
     other => panic!("unsupported Component flat zero: {other:?}"),
   });
@@ -116,8 +127,12 @@ fn push_flat_conversion(instructions: &mut Vec<Instruction<'static>>, from: ValT
   match (from, to) {
     (from, to) if from == to => {}
     (ValType::I32, ValType::I64) => instructions.push(Instruction::I64ExtendI32U),
+    (ValType::I32, ValType::F32) => instructions.push(Instruction::F32ReinterpretI32),
+    (ValType::F32, ValType::I32) => instructions.push(Instruction::I32ReinterpretF32),
+    (ValType::F32, ValType::I64) => instructions.extend([Instruction::I32ReinterpretF32, Instruction::I64ExtendI32U]),
     (ValType::F64, ValType::I64) => instructions.push(Instruction::I64ReinterpretF64),
     (ValType::I64, ValType::I32) => instructions.push(Instruction::I32WrapI64),
+    (ValType::I64, ValType::F32) => instructions.extend([Instruction::I32WrapI64, Instruction::F32ReinterpretI32]),
     (ValType::I64, ValType::F64) => instructions.push(Instruction::F64ReinterpretI64),
     (from, to) => panic!("unsupported Component flat conversion: {from:?} to {to:?}"),
   }
@@ -125,6 +140,57 @@ fn push_flat_conversion(instructions: &mut Vec<Instruction<'static>>, from: ValT
 
 fn component_payload_flat_types(value_type: &ComponentAbiType) -> Vec<ValType> {
   component_flat_types(value_type)
+}
+
+fn push_validate_numeric_flat(
+  instructions: &mut Vec<Instruction<'static>>,
+  kind: CalcitNumericRefinement,
+  source_local: u32,
+  source_type: ValType,
+) {
+  let actual_type = component_numeric_flat_type(kind);
+  let push_value = |instructions: &mut Vec<Instruction<'static>>| {
+    instructions.push(Instruction::LocalGet(source_local));
+    push_flat_conversion(instructions, source_type, actual_type);
+  };
+  match kind {
+    CalcitNumericRefinement::Int8 | CalcitNumericRefinement::Int16 => {
+      let (min, max) = if kind == CalcitNumericRefinement::Int8 {
+        (-128, 127)
+      } else {
+        (-32_768, 32_767)
+      };
+      push_value(instructions);
+      instructions.extend([Instruction::I32Const(min), Instruction::I32LtS]);
+      component_trap_if(instructions);
+      push_value(instructions);
+      instructions.extend([Instruction::I32Const(max), Instruction::I32GtS]);
+      component_trap_if(instructions);
+    }
+    CalcitNumericRefinement::UInt8 | CalcitNumericRefinement::UInt16 => {
+      let max = if kind == CalcitNumericRefinement::UInt8 { 255 } else { 65_535 };
+      push_value(instructions);
+      instructions.extend([Instruction::I32Const(max), Instruction::I32GtU]);
+      component_trap_if(instructions);
+    }
+    CalcitNumericRefinement::Int64 => {
+      push_value(instructions);
+      instructions.extend([Instruction::I64Const(-9_007_199_254_740_991), Instruction::I64LtS]);
+      component_trap_if(instructions);
+      push_value(instructions);
+      instructions.extend([Instruction::I64Const(9_007_199_254_740_991), Instruction::I64GtS]);
+      component_trap_if(instructions);
+    }
+    CalcitNumericRefinement::UInt64 => {
+      push_value(instructions);
+      instructions.extend([Instruction::I64Const(9_007_199_254_740_991), Instruction::I64GtU]);
+      component_trap_if(instructions);
+    }
+    CalcitNumericRefinement::Int32
+    | CalcitNumericRefinement::UInt32
+    | CalcitNumericRefinement::Float32
+    | CalcitNumericRefinement::Float64 => {}
+  }
 }
 
 fn push_store_flat_payload(
@@ -147,6 +213,19 @@ fn push_store_flat_payload(
       instructions.extend([Instruction::LocalGet(dst_local), Instruction::LocalGet(flat_start)]);
       push_flat_conversion(instructions, source_types[0], actual_types[0]);
       instructions.push(Instruction::F64Store(mem_arg_f64(dst_offset as u64)));
+    }
+    ComponentAbiType::Numeric(kind) => {
+      push_validate_numeric_flat(instructions, *kind, flat_start, source_types[0]);
+      instructions.extend([Instruction::LocalGet(dst_local), Instruction::LocalGet(flat_start)]);
+      push_flat_conversion(instructions, source_types[0], actual_types[0]);
+      instructions.push(match kind {
+        CalcitNumericRefinement::Int8 | CalcitNumericRefinement::UInt8 => Instruction::I32Store8(mem_arg_byte(dst_offset as u64)),
+        CalcitNumericRefinement::Int16 | CalcitNumericRefinement::UInt16 => Instruction::I32Store16(mem_arg_i16(dst_offset as u64)),
+        CalcitNumericRefinement::Int32 | CalcitNumericRefinement::UInt32 => Instruction::I32Store(mem_arg_i32(dst_offset as u64)),
+        CalcitNumericRefinement::Int64 | CalcitNumericRefinement::UInt64 => Instruction::I64Store(mem_arg_i64(dst_offset as u64)),
+        CalcitNumericRefinement::Float32 => Instruction::F32Store(mem_arg_f32(dst_offset as u64)),
+        CalcitNumericRefinement::Float64 => Instruction::F64Store(mem_arg_f64(dst_offset as u64)),
+      });
     }
     ComponentAbiType::Buffer | ComponentAbiType::List(_) | ComponentAbiType::String => {
       for index in 0..2 {
@@ -345,6 +424,19 @@ fn push_load_value_flat_slot(
       Instruction::LocalGet(src_local),
       Instruction::F64Load(mem_arg_f64(src_offset as u64)),
     ]),
+    ComponentAbiType::Numeric(kind) => {
+      instructions.push(Instruction::LocalGet(src_local));
+      instructions.push(match kind {
+        CalcitNumericRefinement::Int8 => Instruction::I32Load8S(mem_arg_byte(src_offset as u64)),
+        CalcitNumericRefinement::UInt8 => Instruction::I32Load8U(mem_arg_byte(src_offset as u64)),
+        CalcitNumericRefinement::Int16 => Instruction::I32Load16S(mem_arg_i16(src_offset as u64)),
+        CalcitNumericRefinement::UInt16 => Instruction::I32Load16U(mem_arg_i16(src_offset as u64)),
+        CalcitNumericRefinement::Int32 | CalcitNumericRefinement::UInt32 => Instruction::I32Load(mem_arg_i32(src_offset as u64)),
+        CalcitNumericRefinement::Int64 | CalcitNumericRefinement::UInt64 => Instruction::I64Load(mem_arg_i64(src_offset as u64)),
+        CalcitNumericRefinement::Float32 => Instruction::F32Load(mem_arg_f32(src_offset as u64)),
+        CalcitNumericRefinement::Float64 => Instruction::F64Load(mem_arg_f64(src_offset as u64)),
+      });
+    }
     ComponentAbiType::Buffer | ComponentAbiType::List(_) | ComponentAbiType::String => instructions.extend([
       Instruction::LocalGet(src_local),
       Instruction::I32Load(mem_arg_i32((src_offset + slot as i32 * 4) as u64)),
@@ -690,6 +782,79 @@ fn push_lift_element(
       Instruction::F64ConvertI32U,
     ]),
     ComponentAbiType::Number => instructions.extend([Instruction::LocalGet(src_addr), Instruction::F64Load(mem_arg_f64(0))]),
+    ComponentAbiType::Numeric(kind) => match kind {
+      CalcitNumericRefinement::Int8 => instructions.extend([
+        Instruction::LocalGet(src_addr),
+        Instruction::I32Load8S(mem_arg_byte(0)),
+        Instruction::F64ConvertI32S,
+      ]),
+      CalcitNumericRefinement::UInt8 => instructions.extend([
+        Instruction::LocalGet(src_addr),
+        Instruction::I32Load8U(mem_arg_byte(0)),
+        Instruction::F64ConvertI32U,
+      ]),
+      CalcitNumericRefinement::Int16 => instructions.extend([
+        Instruction::LocalGet(src_addr),
+        Instruction::I32Load16S(mem_arg_i16(0)),
+        Instruction::F64ConvertI32S,
+      ]),
+      CalcitNumericRefinement::UInt16 => instructions.extend([
+        Instruction::LocalGet(src_addr),
+        Instruction::I32Load16U(mem_arg_i16(0)),
+        Instruction::F64ConvertI32U,
+      ]),
+      CalcitNumericRefinement::Int32 => instructions.extend([
+        Instruction::LocalGet(src_addr),
+        Instruction::I32Load(mem_arg_i32(0)),
+        Instruction::F64ConvertI32S,
+      ]),
+      CalcitNumericRefinement::UInt32 => instructions.extend([
+        Instruction::LocalGet(src_addr),
+        Instruction::I32Load(mem_arg_i32(0)),
+        Instruction::F64ConvertI32U,
+      ]),
+      CalcitNumericRefinement::Int64 => {
+        instructions.extend([
+          Instruction::LocalGet(src_addr),
+          Instruction::I64Load(mem_arg_i64(0)),
+          Instruction::I64Const(-9_007_199_254_740_991),
+          Instruction::I64LtS,
+        ]);
+        component_trap_if(instructions);
+        instructions.extend([
+          Instruction::LocalGet(src_addr),
+          Instruction::I64Load(mem_arg_i64(0)),
+          Instruction::I64Const(9_007_199_254_740_991),
+          Instruction::I64GtS,
+        ]);
+        component_trap_if(instructions);
+        instructions.extend([
+          Instruction::LocalGet(src_addr),
+          Instruction::I64Load(mem_arg_i64(0)),
+          Instruction::F64ConvertI64S,
+        ]);
+      }
+      CalcitNumericRefinement::UInt64 => {
+        instructions.extend([
+          Instruction::LocalGet(src_addr),
+          Instruction::I64Load(mem_arg_i64(0)),
+          Instruction::I64Const(9_007_199_254_740_991),
+          Instruction::I64GtU,
+        ]);
+        component_trap_if(instructions);
+        instructions.extend([
+          Instruction::LocalGet(src_addr),
+          Instruction::I64Load(mem_arg_i64(0)),
+          Instruction::F64ConvertI64U,
+        ]);
+      }
+      CalcitNumericRefinement::Float32 => instructions.extend([
+        Instruction::LocalGet(src_addr),
+        Instruction::F32Load(mem_arg_f32(0)),
+        Instruction::F64PromoteF32,
+      ]),
+      CalcitNumericRefinement::Float64 => instructions.extend([Instruction::LocalGet(src_addr), Instruction::F64Load(mem_arg_f64(0))]),
+    },
     ComponentAbiType::Buffer | ComponentAbiType::String => {
       let constructor = if matches!(item_type, ComponentAbiType::Buffer) {
         codecs.buffer_new_index
@@ -874,6 +1039,23 @@ fn push_lower_element(
       Instruction::F64Load(mem_arg_f64(0)),
       Instruction::F64Store(mem_arg_f64(0)),
     ]),
+    ComponentAbiType::Numeric(kind) => {
+      instructions.extend([
+        Instruction::LocalGet(src_addr),
+        Instruction::F64Load(mem_arg_f64(0)),
+        Instruction::LocalSet(value),
+        Instruction::LocalGet(dst_addr),
+      ]);
+      instructions.extend(component_numeric_from_f64(*kind, value));
+      instructions.push(match kind {
+        CalcitNumericRefinement::Int8 | CalcitNumericRefinement::UInt8 => Instruction::I32Store8(mem_arg_byte(0)),
+        CalcitNumericRefinement::Int16 | CalcitNumericRefinement::UInt16 => Instruction::I32Store16(mem_arg_i16(0)),
+        CalcitNumericRefinement::Int32 | CalcitNumericRefinement::UInt32 => Instruction::I32Store(mem_arg_i32(0)),
+        CalcitNumericRefinement::Int64 | CalcitNumericRefinement::UInt64 => Instruction::I64Store(mem_arg_i64(0)),
+        CalcitNumericRefinement::Float32 => Instruction::F32Store(mem_arg_f32(0)),
+        CalcitNumericRefinement::Float64 => Instruction::F64Store(mem_arg_f64(0)),
+      });
+    }
     ComponentAbiType::Buffer | ComponentAbiType::String => instructions.extend([
       Instruction::LocalGet(src_addr),
       Instruction::F64Load(mem_arg_f64(0)),

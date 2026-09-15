@@ -31,8 +31,8 @@ use wasm_encoder::{
 
 use crate::builtins::syntax::get_raw_args_fn;
 use crate::calcit::{
-  Calcit, CalcitArgLabel, CalcitEnumDef, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitProc, CalcitStructDef, CalcitSyntax,
-  CalcitTypeAnnotation, MethodKind,
+  Calcit, CalcitArgLabel, CalcitEnumDef, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitNumericRefinement, CalcitProc, CalcitStructDef,
+  CalcitSyntax, CalcitTypeAnnotation, MethodKind,
 };
 use crate::program;
 
@@ -94,6 +94,22 @@ fn mem_arg_i64(offset: u64) -> wasm_encoder::MemArg {
   wasm_encoder::MemArg {
     offset,
     align: 3,
+    memory_index: 0,
+  }
+}
+
+fn mem_arg_f32(offset: u64) -> wasm_encoder::MemArg {
+  wasm_encoder::MemArg {
+    offset,
+    align: 2,
+    memory_index: 0,
+  }
+}
+
+fn mem_arg_i16(offset: u64) -> wasm_encoder::MemArg {
+  wasm_encoder::MemArg {
+    offset,
+    align: 1,
     memory_index: 0,
   }
 }
@@ -889,6 +905,7 @@ enum ComponentAbiType {
   Buffer,
   List(Box<ComponentAbiType>),
   Number,
+  Numeric(CalcitNumericRefinement),
   Option(Box<ComponentAbiType>),
   Result(Box<ComponentAbiType>, Box<ComponentAbiType>),
   String,
@@ -959,6 +976,7 @@ fn component_abi_type_inner(
       program_data,
     )?))),
     CalcitTypeAnnotation::Number => Ok(ComponentAbiType::Number),
+    CalcitTypeAnnotation::Numeric(kind) => Ok(ComponentAbiType::Numeric(*kind)),
     CalcitTypeAnnotation::String => Ok(ComponentAbiType::String),
     CalcitTypeAnnotation::TypeRef(name, arguments) => {
       let name = name.trim_start_matches('\'').trim_start_matches(':');
@@ -1292,6 +1310,7 @@ fn component_flat_types(value_type: &ComponentAbiType) -> Vec<ValType> {
     ComponentAbiType::Unit => vec![],
     ComponentAbiType::Bool => vec![ValType::I32],
     ComponentAbiType::Number => vec![ValType::F64],
+    ComponentAbiType::Numeric(kind) => vec![component_numeric_flat_type(*kind)],
     ComponentAbiType::Buffer | ComponentAbiType::List(_) | ComponentAbiType::String => vec![ValType::I32, ValType::I32],
     ComponentAbiType::Option(item) => {
       let mut flattened = vec![ValType::I32];
@@ -1324,14 +1343,27 @@ fn component_join_flat_types(left: &[ValType], right: &[ValType]) -> Vec<ValType
   let width = left.len().max(right.len());
   (0..width)
     .map(|index| match (left.get(index), right.get(index)) {
-      (Some(ValType::I64), Some(ValType::I32 | ValType::F64)) | (Some(ValType::I32 | ValType::F64), Some(ValType::I64)) => ValType::I64,
-      (Some(ValType::F64), Some(ValType::I32)) | (Some(ValType::I32), Some(ValType::F64)) => ValType::I64,
       (Some(left), Some(right)) if left == right => *left,
+      (Some(ValType::I32), Some(ValType::F32)) | (Some(ValType::F32), Some(ValType::I32)) => ValType::I32,
+      (Some(_), Some(_)) => ValType::I64,
       (Some(value), None) | (None, Some(value)) => *value,
       (None, None) => unreachable!("join width is derived from the longer shape"),
-      (Some(left), Some(right)) => panic!("unsupported Component flat join: {left:?} with {right:?}"),
     })
     .collect()
+}
+
+fn component_numeric_flat_type(kind: CalcitNumericRefinement) -> ValType {
+  match kind {
+    CalcitNumericRefinement::Int8
+    | CalcitNumericRefinement::UInt8
+    | CalcitNumericRefinement::Int16
+    | CalcitNumericRefinement::UInt16
+    | CalcitNumericRefinement::Int32
+    | CalcitNumericRefinement::UInt32 => ValType::I32,
+    CalcitNumericRefinement::Int64 | CalcitNumericRefinement::UInt64 => ValType::I64,
+    CalcitNumericRefinement::Float32 => ValType::F32,
+    CalcitNumericRefinement::Float64 => ValType::F64,
+  }
 }
 
 fn collect_component_import_adapters(program_data: &program::CompiledProgram) -> Result<Vec<ComponentImportAdapter>, String> {
@@ -1485,6 +1517,118 @@ fn component_bool_f64_to_i32(value: u32, canonical: u32) -> Vec<Instruction<'sta
   ]
 }
 
+fn component_trap_if(instructions: &mut Vec<Instruction<'static>>) {
+  instructions.extend([
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+  ]);
+}
+
+fn component_numeric_to_f64(kind: CalcitNumericRefinement, value: u32) -> Vec<Instruction<'static>> {
+  let mut instructions = Vec::new();
+  match kind {
+    CalcitNumericRefinement::Int8 | CalcitNumericRefinement::Int16 => {
+      let (min, max) = match kind {
+        CalcitNumericRefinement::Int8 => (-128, 127),
+        CalcitNumericRefinement::Int16 => (-32_768, 32_767),
+        _ => unreachable!(),
+      };
+      instructions.extend([Instruction::LocalGet(value), Instruction::I32Const(min), Instruction::I32LtS]);
+      component_trap_if(&mut instructions);
+      instructions.extend([Instruction::LocalGet(value), Instruction::I32Const(max), Instruction::I32GtS]);
+      component_trap_if(&mut instructions);
+      instructions.extend([Instruction::LocalGet(value), Instruction::F64ConvertI32S]);
+    }
+    CalcitNumericRefinement::UInt8 | CalcitNumericRefinement::UInt16 => {
+      let max = if kind == CalcitNumericRefinement::UInt8 { 255 } else { 65_535 };
+      instructions.extend([Instruction::LocalGet(value), Instruction::I32Const(max), Instruction::I32GtU]);
+      component_trap_if(&mut instructions);
+      instructions.extend([Instruction::LocalGet(value), Instruction::F64ConvertI32U]);
+    }
+    CalcitNumericRefinement::Int32 => instructions.extend([Instruction::LocalGet(value), Instruction::F64ConvertI32S]),
+    CalcitNumericRefinement::UInt32 => instructions.extend([Instruction::LocalGet(value), Instruction::F64ConvertI32U]),
+    CalcitNumericRefinement::Int64 => {
+      instructions.extend([
+        Instruction::LocalGet(value),
+        Instruction::I64Const(-9_007_199_254_740_991),
+        Instruction::I64LtS,
+      ]);
+      component_trap_if(&mut instructions);
+      instructions.extend([
+        Instruction::LocalGet(value),
+        Instruction::I64Const(9_007_199_254_740_991),
+        Instruction::I64GtS,
+      ]);
+      component_trap_if(&mut instructions);
+      instructions.extend([Instruction::LocalGet(value), Instruction::F64ConvertI64S]);
+    }
+    CalcitNumericRefinement::UInt64 => {
+      instructions.extend([
+        Instruction::LocalGet(value),
+        Instruction::I64Const(9_007_199_254_740_991),
+        Instruction::I64GtU,
+      ]);
+      component_trap_if(&mut instructions);
+      instructions.extend([Instruction::LocalGet(value), Instruction::F64ConvertI64U]);
+    }
+    CalcitNumericRefinement::Float32 => instructions.extend([Instruction::LocalGet(value), Instruction::F64PromoteF32]),
+    CalcitNumericRefinement::Float64 => instructions.push(Instruction::LocalGet(value)),
+  }
+  instructions
+}
+
+fn component_numeric_from_f64(kind: CalcitNumericRefinement, value: u32) -> Vec<Instruction<'static>> {
+  let mut instructions = Vec::new();
+  match kind {
+    CalcitNumericRefinement::Float64 => instructions.push(Instruction::LocalGet(value)),
+    CalcitNumericRefinement::Float32 => {
+      instructions.extend([
+        Instruction::LocalGet(value),
+        Instruction::F32DemoteF64,
+        Instruction::F64PromoteF32,
+        Instruction::LocalGet(value),
+        Instruction::F64Ne,
+      ]);
+      component_trap_if(&mut instructions);
+      instructions.extend([Instruction::LocalGet(value), Instruction::F32DemoteF64]);
+    }
+    kind => {
+      let (min, max) = match kind {
+        CalcitNumericRefinement::Int8 => (-128.0, 127.0),
+        CalcitNumericRefinement::UInt8 => (0.0, 255.0),
+        CalcitNumericRefinement::Int16 => (-32_768.0, 32_767.0),
+        CalcitNumericRefinement::UInt16 => (0.0, 65_535.0),
+        CalcitNumericRefinement::Int32 => (i32::MIN as f64, i32::MAX as f64),
+        CalcitNumericRefinement::UInt32 => (0.0, u32::MAX as f64),
+        CalcitNumericRefinement::Int64 => (-9_007_199_254_740_991.0, 9_007_199_254_740_991.0),
+        CalcitNumericRefinement::UInt64 => (0.0, 9_007_199_254_740_991.0),
+        _ => unreachable!(),
+      };
+      instructions.extend([Instruction::LocalGet(value), f64_const(min), Instruction::F64Lt]);
+      component_trap_if(&mut instructions);
+      instructions.extend([Instruction::LocalGet(value), f64_const(max), Instruction::F64Gt]);
+      component_trap_if(&mut instructions);
+      instructions.extend([
+        Instruction::LocalGet(value),
+        Instruction::F64Trunc,
+        Instruction::LocalGet(value),
+        Instruction::F64Ne,
+      ]);
+      component_trap_if(&mut instructions);
+      instructions.push(Instruction::LocalGet(value));
+      instructions.push(match kind {
+        CalcitNumericRefinement::Int8 | CalcitNumericRefinement::Int16 | CalcitNumericRefinement::Int32 => Instruction::I32TruncF64S,
+        CalcitNumericRefinement::UInt8 | CalcitNumericRefinement::UInt16 | CalcitNumericRefinement::UInt32 => Instruction::I32TruncF64U,
+        CalcitNumericRefinement::Int64 => Instruction::I64TruncF64S,
+        CalcitNumericRefinement::UInt64 => Instruction::I64TruncF64U,
+        _ => unreachable!(),
+      });
+    }
+  }
+  instructions
+}
+
 fn build_cabi_realloc_fn() -> CompiledFn {
   let new_ptr = 4;
   let new_end = 5;
@@ -1622,6 +1766,7 @@ fn build_component_import_adapter(
         instructions.extend(component_bool_f64_to_i32(index as u32, canonical));
       }
       ComponentAbiType::Number => instructions.push(Instruction::LocalGet(index as u32)),
+      ComponentAbiType::Numeric(kind) => instructions.extend(component_numeric_from_f64(*kind, index as u32)),
       ComponentAbiType::Buffer | ComponentAbiType::String => instructions.extend([
         Instruction::LocalGet(index as u32),
         Instruction::I32TruncF64U,
@@ -1710,6 +1855,13 @@ fn build_component_import_adapter(
       instructions.extend(component_bool_i32_to_f64(canonical));
     }
     ComponentAbiType::Number => instructions.push(Instruction::Call(adapter.raw_index)),
+    ComponentAbiType::Numeric(kind) => {
+      instructions.push(Instruction::Call(adapter.raw_index));
+      let canonical = params.len() as u32 + locals.len() as u32;
+      locals.push(component_numeric_flat_type(*kind));
+      instructions.push(Instruction::LocalSet(canonical));
+      instructions.extend(component_numeric_to_f64(*kind, canonical));
+    }
     ComponentAbiType::Buffer | ComponentAbiType::String => {
       let ret_ptr = params.len() as u32;
       locals.push(ValType::I32);
@@ -1852,6 +2004,14 @@ fn build_component_export_adapter(
         lowered.push(flat_index);
         flat_index += 1;
       }
+      ComponentAbiType::Numeric(kind) => {
+        let local = params.len() as u32 + locals.len() as u32;
+        locals.push(ValType::F64);
+        instructions.extend(component_numeric_to_f64(*kind, flat_index));
+        instructions.push(Instruction::LocalSet(local));
+        lowered.push(local);
+        flat_index += 1;
+      }
       ComponentAbiType::Buffer | ComponentAbiType::String => {
         let local = params.len() as u32 + locals.len() as u32;
         locals.push(ValType::F64);
@@ -1958,6 +2118,13 @@ fn build_component_export_adapter(
       vec![ValType::I32]
     }
     ComponentAbiType::Number => vec![ValType::F64],
+    ComponentAbiType::Numeric(kind) => {
+      let value = params.len() as u32 + locals.len() as u32;
+      locals.push(ValType::F64);
+      instructions.push(Instruction::LocalSet(value));
+      instructions.extend(component_numeric_from_f64(*kind, value));
+      vec![component_numeric_flat_type(*kind)]
+    }
     ComponentAbiType::Buffer | ComponentAbiType::String => {
       let value = params.len() as u32 + locals.len() as u32;
       locals.push(ValType::F64);
@@ -5588,7 +5755,9 @@ mod tests {
     index_host_imports, must_reject_extraction_failure, validate_component_export_symbols, validate_component_flat_parameters,
     validate_component_import_symbols,
   };
-  use crate::calcit::{Calcit, CalcitEnumDef, CalcitList, CalcitStructDef, CalcitStructValue, CalcitSyntax, CalcitTypeAnnotation};
+  use crate::calcit::{
+    Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitStructDef, CalcitStructValue, CalcitSyntax, CalcitTypeAnnotation,
+  };
   use cirru_edn::EdnTag;
   use wasm_encoder::ValType;
 
@@ -5775,6 +5944,55 @@ mod tests {
     let buffer_adapter = build_component_import_adapter(&buffer, 10, 11, 12, &list_codecs, &struct_codecs, &variant_codecs);
     assert_eq!(buffer_adapter.params, vec![ValType::F64]);
     assert_eq!(buffer_adapter.results, vec![ValType::F64]);
+  }
+
+  #[test]
+  fn component_numeric_refinements_use_canonical_flat_shapes_and_memory_layouts() {
+    let cases = [
+      (CalcitNumericRefinement::Int8, ValType::I32, 1, 1),
+      (CalcitNumericRefinement::UInt8, ValType::I32, 1, 1),
+      (CalcitNumericRefinement::Int16, ValType::I32, 2, 2),
+      (CalcitNumericRefinement::UInt16, ValType::I32, 2, 2),
+      (CalcitNumericRefinement::Int32, ValType::I32, 4, 4),
+      (CalcitNumericRefinement::UInt32, ValType::I32, 4, 4),
+      (CalcitNumericRefinement::Int64, ValType::I64, 8, 8),
+      (CalcitNumericRefinement::UInt64, ValType::I64, 8, 8),
+      (CalcitNumericRefinement::Float32, ValType::F32, 4, 4),
+      (CalcitNumericRefinement::Float64, ValType::F64, 8, 8),
+    ];
+    for (kind, flat, size, alignment) in cases {
+      let annotation = CalcitTypeAnnotation::Numeric(kind);
+      let value_type = component_abi_type(&annotation, "app.main/numeric", "logical_schema.result")
+        .expect("numeric refinement should cross the Component boundary");
+      assert_eq!(value_type, ComponentAbiType::Numeric(kind));
+      assert_eq!(component_flat_types(&value_type), vec![flat]);
+      let layout = component_memory_layout(&value_type);
+      assert_eq!((layout.size, layout.alignment), (size, alignment));
+    }
+
+    let joined = ComponentAbiType::Result(
+      Box::new(ComponentAbiType::Numeric(CalcitNumericRefinement::Float32)),
+      Box::new(ComponentAbiType::Numeric(CalcitNumericRefinement::Int32)),
+    );
+    assert_eq!(component_flat_types(&joined), vec![ValType::I32, ValType::I32]);
+
+    let nested = ComponentAbiType::Result(
+      Box::new(ComponentAbiType::Numeric(CalcitNumericRefinement::UInt64)),
+      Box::new(ComponentAbiType::Numeric(CalcitNumericRefinement::Float32)),
+    );
+    assert_eq!(component_flat_types(&nested), vec![ValType::I32, ValType::I64]);
+    let nested_layout = component_memory_layout(&nested);
+    assert_eq!((nested_layout.size, nested_layout.alignment), (16, 8));
+
+    let option = ComponentAbiType::Option(Box::new(ComponentAbiType::Numeric(CalcitNumericRefinement::Int16)));
+    assert_eq!(component_flat_types(&option), vec![ValType::I32, ValType::I32]);
+    let option_layout = component_memory_layout(&option);
+    assert_eq!((option_layout.size, option_layout.alignment), (4, 2));
+
+    let list = ComponentAbiType::List(Box::new(ComponentAbiType::Numeric(CalcitNumericRefinement::UInt64)));
+    assert_eq!(component_flat_types(&list), vec![ValType::I32, ValType::I32]);
+    let list_layout = component_memory_layout(&list);
+    assert_eq!((list_layout.size, list_layout.alignment), (8, 4));
   }
 
   #[test]

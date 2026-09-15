@@ -14,6 +14,10 @@
           :code $ quote $ defenum Event (:idle) (:named 'String) (:moved 'Number 'Number) (:profile 'component-wasm.main/Profile)
           :examples $ []
           :schema $ :: 'EnumDef
+        'NumericScalars $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NumericScalars (:i8 'Int8) (:u8 'UInt8) (:i16 'Int16) (:u16 'UInt16) (:i32 'Int32) (:u32 'UInt32) (:i64 'Int64) (:u64 'UInt64) (:f32 'Float32) (:f64 'Float64)
+          :examples $ []
+          :schema $ :: 'StructDef
         'Profile $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Profile (:active 'Bool) (:name 'String)
             :scores $ :: 'List 'Number
@@ -77,6 +81,11 @@
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'Number
             :return $ :: 'List 'Number
+        'call-host-numeric-scalars $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export call-host-numeric-scalars (value) (host-numeric-scalars value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'component-wasm.main/NumericScalars)
+            :args $ [] 'component-wasm.main/NumericScalars
         'call-host-option-number $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export call-host-option-number (value) (host-option-number value)
           :examples $ []
@@ -202,6 +211,15 @@
               :code $ quote $ assert= ([])
                 echo-numbers $ []
               :tags $ #{} :wasm
+        'echo-numeric-scalars $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-numeric-scalars (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'component-wasm.main/NumericScalars)
+            :args $ [] 'component-wasm.main/NumericScalars
+          :tests $ [] $ %{} 'TestEntry (:name |round-trips-numeric-refinements)
+            :code $ quote $ let
+                value $ NumericScalars :i8 -128 :u8 255 :i16 -32768 :u16 65535 :i32 -2147483648 :u32 4294967295 :i64 -9007199254740991 :u64 9007199254740991 :f32 1.5 :f64 1.25
+              assert= value $ echo-numeric-scalars value
         'echo-option-number $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-option-number (value) value
           :examples $ []
@@ -343,6 +361,11 @@
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'Number
             :return $ :: 'List 'Number
+        'host-numeric-scalars $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-import host-numeric-scalars (value) |host |numeric-scalars
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'component-wasm.main/NumericScalars)
+            :args $ [] 'component-wasm.main/NumericScalars
         'host-option-number $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-import host-option-number (value) |host |option-number
           :examples $ []
