@@ -585,6 +585,7 @@ fn bounded_plain_type_relation<'a>(
       value,
       CalcitTypeAnnotation::Bool
         | CalcitTypeAnnotation::Number
+        | CalcitTypeAnnotation::Numeric(_)
         | CalcitTypeAnnotation::String
         | CalcitTypeAnnotation::Symbol
         | CalcitTypeAnnotation::Buffer
@@ -737,6 +738,8 @@ fn bounded_plain_type_relation<'a>(
       | (Type::AnonymousEnum, Type::AnonymousEnum)
       | (Type::Nil, Type::Nil)
       | (Type::Unit, Type::Unit) => {}
+      (Type::Numeric(actual), Type::Numeric(expected)) if actual == expected => {}
+      (Type::Numeric(_), Type::Number) => {}
       (Type::Nil, Type::Optional(_)) | (Type::Nil, Type::JsNullish(_)) => {
         if matches!(mode, PlainRelationMode::Proof) {
           result = result.and(NeedsBoundary(Boundary::LegacyNullish));
@@ -6202,6 +6205,12 @@ mod tests {
 
     assert!(int8.is_compatible_with(&number));
     assert!(!number.is_compatible_with(&int8));
+    assert!(
+      bounded_plain_type_relation(&int8, &number, PlainRelationMode::Compatibility)
+        .expect("numeric widening stays inside the relation budget")
+        .is_some(),
+      "numeric widening must use the bounded fast path"
+    );
   }
 
   #[test]

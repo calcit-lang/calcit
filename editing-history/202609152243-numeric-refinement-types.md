@@ -7,6 +7,7 @@
 - native 与 JavaScript 复用同一范围和精度语义；类型化 Cirru EDN 解码同步验证 refinement，并将 data-shape ABI 更新到 v3。
 - 用户行为主要由 core definition `:tests` 覆盖，现有 `test-types` 入口补充 native/JavaScript 一致性；Component contract 与 Canonical ABI lowering 留给后续任务。
 - 数值转换文档示例保持自包含，确保仓库的 Markdown 严格检查可以直接执行。
+- 将 refinement 纳入有界类型关系快路径，避免深层结构重复消耗兼容性预算；同步清理 WASM 文档中已经过期的 source-level 路线表述。
 
 English:
 
@@ -15,5 +16,6 @@ English:
 - Share range and precision semantics between native and JavaScript; validate refinements during typed Cirru EDN decoding and advance the data-shape ABI to v3.
 - Keep observable coverage in core definition `:tests`, with the existing `test-types` entry checking native/JavaScript parity; defer Component contracts and Canonical ABI lowering to later tasks.
 - Keep the numeric conversion documentation snippet self-contained so repository Markdown validation executes it under strict checking.
+- Include refinements in the bounded type-relation fast path to avoid double-spending the compatibility budget in deep shapes, and remove stale source-level roadmap wording from the WASM documentation.
 
 Verification: `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked -q`, `yarn check-all`.
