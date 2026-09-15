@@ -264,17 +264,20 @@ fn component_diagnostic(
 }
 
 fn componentize_diagnostic(mut item: FfiInterfaceDiagnostic) -> FfiInterfaceDiagnostic {
+  let componentize_text = |text: String| {
+    text
+      .replace(
+        &format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION}"),
+        &format!("Component Interface IR v{COMPONENT_INTERFACE_IR_VERSION}"),
+      )
+      .replace(
+        &format!("Interface IR v{FFI_INTERFACE_IR_VERSION}"),
+        &format!("Component Interface IR v{COMPONENT_INTERFACE_IR_VERSION}"),
+      )
+  };
   item.phase = "component-interface-ir".to_owned();
-  item.message = item
-    .message
-    .replace(
-      &format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION}"),
-      &format!("Component Interface IR v{COMPONENT_INTERFACE_IR_VERSION}"),
-    )
-    .replace(
-      &format!("Interface IR v{FFI_INTERFACE_IR_VERSION}"),
-      &format!("Component Interface IR v{COMPONENT_INTERFACE_IR_VERSION}"),
-    );
+  item.message = componentize_text(item.message);
+  item.suggestion = componentize_text(item.suggestion);
   item
 }
 
@@ -1941,6 +1944,35 @@ mod tests {
         .iter()
         .any(|item| item.code == "E_COMPONENT_IR_UNSUPPORTED_GENERIC" && item.phase == "component-interface-ir")
     );
+  }
+
+  #[test]
+  fn component_contract_rewrites_diagnostic_versions_in_messages_and_suggestions() {
+    let missing_argument = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Box"), Arc::new(vec![])));
+    let report = export_component_snapshot(
+      &snapshot(vec![
+        ("Box", data_entry("defstruct Box (T) (:value T)")),
+        (
+          "read-box",
+          component_function_entry(
+            "defwasm-export read-box (box) box",
+            vec![missing_argument],
+            Arc::new(CalcitTypeAnnotation::String),
+          ),
+        ),
+      ]),
+      None,
+    )
+    .expect("export rejected Component contract");
+
+    let diagnostic = report
+      .diagnostics
+      .iter()
+      .find(|item| item.code == "E_FFI_IR_TYPE_ARGUMENT_ARITY")
+      .expect("type argument arity diagnostic");
+    assert_eq!(diagnostic.phase, "component-interface-ir");
+    assert!(diagnostic.suggestion.contains("Component Interface IR v2"));
+    assert!(!diagnostic.suggestion.contains("Interface IR v3"));
   }
 
   #[test]
