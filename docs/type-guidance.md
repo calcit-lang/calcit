@@ -60,9 +60,8 @@ calcit edit schema app.schema/Items --code "quote \$ :: 'List 'Number"
 
 ```cirru
 let
-    port-result $ number->uint16 input
-  port-result.and-then $ fn (port)
-    send-to-host port
+    port-result $ number->uint16 8080
+  result:ok? port-result
 ```
 
 当前 source-level refinement 与受检转换在 native、JavaScript 后端一致。Component contract 与 Canonical ABI
