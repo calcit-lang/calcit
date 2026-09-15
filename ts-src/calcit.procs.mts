@@ -1226,6 +1226,36 @@ export let _$n__SLSH_ = (a: number, b: number): number => {
 export let _$n_number_$o_rem = (a: number, b: number): number => {
   return a % b;
 };
+export let _$n_number_$o_fits_$q_ = (value: number, target: CalcitTag): boolean => {
+  if (!(target instanceof CalcitTag)) {
+    throw new TypeError(`&number:fits? expected a numeric refinement tag, got ${toString(target, true)}`);
+  }
+  const safeInteger = Number.isSafeInteger(value);
+  switch (target.value) {
+    case "int8":
+      return safeInteger && value >= -128 && value <= 127;
+    case "uint8":
+      return safeInteger && value >= 0 && value <= 255;
+    case "int16":
+      return safeInteger && value >= -32768 && value <= 32767;
+    case "uint16":
+      return safeInteger && value >= 0 && value <= 65535;
+    case "int32":
+      return safeInteger && value >= -2147483648 && value <= 2147483647;
+    case "uint32":
+      return safeInteger && value >= 0 && value <= 4294967295;
+    case "int64":
+      return safeInteger;
+    case "uint64":
+      return safeInteger && value >= 0;
+    case "float32":
+      return !Number.isNaN(value) && Math.fround(value) === value;
+    case "float64":
+      return true;
+    default:
+      throw new Error(`&number:fits? expected a numeric refinement tag, got :${target.value}`);
+  }
+};
 export let round_$q_ = (a: number) => {
   return a === Math.round(a);
 };
@@ -1898,6 +1928,7 @@ export let parse_cirru_edn = (code: string, options: CalcitValue) => {
 
 type DataShapeNode =
   | { kind: "nil" | "unit" | "bool" | "number" | "string" | "symbol" | "tag" | "buffer" | "cirru-quote" | "dynamic" }
+  | { kind: "numeric"; target: string }
   | { kind: "optional" | "list" | "set" | "ref"; inner: number }
   | { kind: "map"; key: number; value: number }
   | { kind: "map-option"; nominal: CalcitEnumDef; inner: number }
@@ -1956,6 +1987,10 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
     case "number":
       if (typeof input === "number") return input;
       return typed_edn_error(path, `expected number, got ${typed_edn_kind(input)}`);
+    case "numeric":
+      if (typeof input !== "number") return typed_edn_error(path, `expected ${node.target}, got ${typed_edn_kind(input)}`);
+      if (_$n_number_$o_fits_$q_(input, newTag(node.target))) return input;
+      return typed_edn_error(path, `number ${input} does not fit ${node.target}`);
     case "string":
       if (typeof input === "string") return input;
       return typed_edn_error(path, `expected string, got ${typed_edn_kind(input)}`);
@@ -2088,7 +2123,7 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
 
 export let parse_cirru_edn_as = (code: string, graph: DataShapeGraph): CalcitValue => {
   if (typeof code !== "string") throw new Error(`parse-cirru-edn-as expected a string, got ${typed_edn_kind(code)}`);
-  if (graph.version !== 2) throw new Error(`parse-cirru-edn-as expected data shape ABI version 2, got ${graph.version}`);
+  if (graph.version !== 3) throw new Error(`parse-cirru-edn-as expected data shape ABI version 3, got ${graph.version}`);
   if (typeof graph.fingerprint !== "string" || graph.fingerprint.length === 0) {
     throw new Error("parse-cirru-edn-as expected a non-empty data shape fingerprint");
   }
@@ -2232,7 +2267,7 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
 };
 
 export let decode_map_as = (value: CalcitValue, graph: DataShapeGraph): CalcitValue => {
-  if (graph.version !== 2) throw new Error(`decode-map-as expected data shape ABI version 2, got ${graph.version}`);
+  if (graph.version !== 3) throw new Error(`decode-map-as expected data shape ABI version 3, got ${graph.version}`);
   if (typeof graph.fingerprint !== "string" || graph.fingerprint.length === 0) {
     throw new Error("decode-map-as expected a non-empty data shape fingerprint");
   }

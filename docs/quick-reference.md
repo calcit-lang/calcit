@@ -162,6 +162,8 @@ defn add (a b) (+ a b)
 ### Built-in Types
 
 - `'Number`, `'String`, `'Bool`, `'Nil`, `'Dynamic`
+- 数值边界 refinement：`'Int8`, `'UInt8`, `'Int16`, `'UInt16`, `'Int32`, `'UInt32`, `'Int64`, `'UInt64`, `'Float32`, `'Float64`
+- `number->int8` 等同系列函数把 `'Number` 受检转换为 `Result<refinement,String>`；不会隐式截断或舍入
 - `'List`, `'Map`, `'Set`, `'Struct`, `'Enum`, `'StructDef`, `'EnumDef`, `'Fn`
 - `'Dynamic` - wildcard type (default when no annotation)
 - Generic types (Cirru style):

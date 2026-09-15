@@ -5,11 +5,11 @@ use std::sync::Arc;
 use cirru_edn::EdnTag;
 use md5::{Digest, Md5};
 
-use super::type_annotation::{TypeBindings, validate_runtime_generic_where_bounds};
+use super::type_annotation::{CalcitNumericRefinement, TypeBindings, validate_runtime_generic_where_bounds};
 use super::{Calcit, CalcitEnumDef, CalcitStructDef, CalcitTypeAnnotation};
 use crate::program;
 
-const DATA_SHAPE_ABI_VERSION: u16 = 2;
+const DATA_SHAPE_ABI_VERSION: u16 = 3;
 const MAX_SHAPE_VALUE_DEPTH: usize = 1024;
 
 /// A closed, backend-neutral description of statically typed Calcit data.
@@ -33,6 +33,7 @@ pub(crate) enum DataShapeNode {
   Unit,
   Bool,
   Number,
+  Numeric(CalcitNumericRefinement),
   String,
   Symbol,
   Tag,
@@ -224,6 +225,7 @@ impl DataShapeGraph {
       DataShapeNode::Unit if matches!(value, Calcit::Unit) => Ok(()),
       DataShapeNode::Bool if matches!(value, Calcit::Bool(_)) => Ok(()),
       DataShapeNode::Number if matches!(value, Calcit::Number(_)) => Ok(()),
+      DataShapeNode::Numeric(kind) if matches!(value, Calcit::Number(number) if kind.accepts(*number)) => Ok(()),
       DataShapeNode::String if matches!(value, Calcit::Str(_)) => Ok(()),
       DataShapeNode::Symbol if matches!(value, Calcit::Symbol { .. }) => Ok(()),
       DataShapeNode::Tag if matches!(value, Calcit::Tag(_)) => Ok(()),
@@ -389,6 +391,7 @@ impl DataShapeNode {
       Self::Unit => "&unit",
       Self::Bool => "bool",
       Self::Number => "number",
+      Self::Numeric(kind) => kind.tag_name(),
       Self::String => "string",
       Self::Symbol => "symbol",
       Self::Tag => "tag",
@@ -426,6 +429,7 @@ impl GraphBuilder {
       CalcitTypeAnnotation::Unit => Ok(self.push(DataShapeNode::Unit)),
       CalcitTypeAnnotation::Bool => Ok(self.push(DataShapeNode::Bool)),
       CalcitTypeAnnotation::Number => Ok(self.push(DataShapeNode::Number)),
+      CalcitTypeAnnotation::Numeric(kind) => Ok(self.push(DataShapeNode::Numeric(*kind))),
       CalcitTypeAnnotation::String => Ok(self.push(DataShapeNode::String)),
       CalcitTypeAnnotation::Symbol => Ok(self.push(DataShapeNode::Symbol)),
       CalcitTypeAnnotation::Tag => Ok(self.push(DataShapeNode::Tag)),
@@ -734,6 +738,7 @@ fn shape_fingerprint(root: usize, nodes: &[DataShapeNode]) -> String {
       DataShapeNode::Unit => hasher.update(b"unit;"),
       DataShapeNode::Bool => hasher.update(b"bool;"),
       DataShapeNode::Number => hasher.update(b"number;"),
+      DataShapeNode::Numeric(kind) => hasher.update(format!("numeric:{};", kind.tag_name()).as_bytes()),
       DataShapeNode::String => hasher.update(b"string;"),
       DataShapeNode::Symbol => hasher.update(b"symbol;"),
       DataShapeNode::Tag => hasher.update(b"tag;"),

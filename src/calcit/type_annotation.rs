@@ -873,11 +873,91 @@ impl CalcitGenericBound {
   }
 }
 
+/// Width-specific numeric evidence carried by the type system while runtime values remain numbers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CalcitNumericRefinement {
+  Int8,
+  UInt8,
+  Int16,
+  UInt16,
+  Int32,
+  UInt32,
+  Int64,
+  UInt64,
+  Float32,
+  Float64,
+}
+
+impl CalcitNumericRefinement {
+  pub fn canonical_name(self) -> &'static str {
+    match self {
+      Self::Int8 => "Int8",
+      Self::UInt8 => "UInt8",
+      Self::Int16 => "Int16",
+      Self::UInt16 => "UInt16",
+      Self::Int32 => "Int32",
+      Self::UInt32 => "UInt32",
+      Self::Int64 => "Int64",
+      Self::UInt64 => "UInt64",
+      Self::Float32 => "Float32",
+      Self::Float64 => "Float64",
+    }
+  }
+
+  pub fn tag_name(self) -> &'static str {
+    match self {
+      Self::Int8 => "int8",
+      Self::UInt8 => "uint8",
+      Self::Int16 => "int16",
+      Self::UInt16 => "uint16",
+      Self::Int32 => "int32",
+      Self::UInt32 => "uint32",
+      Self::Int64 => "int64",
+      Self::UInt64 => "uint64",
+      Self::Float32 => "float32",
+      Self::Float64 => "float64",
+    }
+  }
+
+  pub fn from_name(name: &str) -> Option<Self> {
+    match name.trim_start_matches(':') {
+      "int8" | "Int8" => Some(Self::Int8),
+      "uint8" | "UInt8" => Some(Self::UInt8),
+      "int16" | "Int16" => Some(Self::Int16),
+      "uint16" | "UInt16" => Some(Self::UInt16),
+      "int32" | "Int32" => Some(Self::Int32),
+      "uint32" | "UInt32" => Some(Self::UInt32),
+      "int64" | "Int64" => Some(Self::Int64),
+      "uint64" | "UInt64" => Some(Self::UInt64),
+      "float32" | "Float32" => Some(Self::Float32),
+      "float64" | "Float64" => Some(Self::Float64),
+      _ => None,
+    }
+  }
+
+  pub fn accepts(self, value: f64) -> bool {
+    match self {
+      Self::Int8 => value.is_finite() && value.fract() == 0.0 && (-128.0..=127.0).contains(&value),
+      Self::UInt8 => value.is_finite() && value.fract() == 0.0 && (0.0..=255.0).contains(&value),
+      Self::Int16 => value.is_finite() && value.fract() == 0.0 && (-32768.0..=32767.0).contains(&value),
+      Self::UInt16 => value.is_finite() && value.fract() == 0.0 && (0.0..=65535.0).contains(&value),
+      Self::Int32 => value.is_finite() && value.fract() == 0.0 && (-2147483648.0..=2147483647.0).contains(&value),
+      Self::UInt32 => value.is_finite() && value.fract() == 0.0 && (0.0..=4294967295.0).contains(&value),
+      Self::Int64 => value.is_finite() && value.fract() == 0.0 && (-9007199254740991.0..=9007199254740991.0).contains(&value),
+      Self::UInt64 => value.is_finite() && value.fract() == 0.0 && (0.0..=9007199254740991.0).contains(&value),
+      Self::Float32 => !value.is_nan() && (value as f32) as f64 == value,
+      Self::Float64 => true,
+    }
+  }
+}
+
 /// Unified representation of type annotations propagated through preprocessing
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CalcitTypeAnnotation {
   Bool,
   Number,
+  /// A statically checked width/range refinement whose runtime value remains `Calcit::Number`.
+  Numeric(CalcitNumericRefinement),
   String,
   Symbol,
   Tag,
@@ -1369,6 +1449,7 @@ impl CalcitTypeAnnotation {
       | Self::Custom(_) => Ok(()),
       Self::Bool
       | Self::Number
+      | Self::Numeric(_)
       | Self::String
       | Self::Symbol
       | Self::Tag
@@ -1414,7 +1495,7 @@ impl CalcitTypeAnnotation {
       "nil" => Some(Self::Nil),
       "unit" => Some(Self::Unit),
       "js-object" => Some(Self::JsObject),
-      _ => None,
+      other => CalcitNumericRefinement::from_name(other).map(Self::Numeric),
     }
   }
 
@@ -1423,6 +1504,7 @@ impl CalcitTypeAnnotation {
       Self::Custom(value) if Self::custom_keyword_matches(value, "any") => Some("dynamic"),
       Self::Bool => Some("bool"),
       Self::Number => Some("number"),
+      Self::Numeric(kind) => Some(kind.tag_name()),
       Self::String => Some("string"),
       Self::Symbol => Some("symbol"),
       Self::Tag => Some("tag"),
@@ -1454,6 +1536,11 @@ impl CalcitTypeAnnotation {
       "unit" | "Unit" => Some("Unit"),
       "bool" | "Bool" => Some("Bool"),
       "number" | "Number" => Some("Number"),
+      other if CalcitNumericRefinement::from_name(other).is_some() => Some(
+        CalcitNumericRefinement::from_name(other)
+          .expect("guarded numeric refinement")
+          .canonical_name(),
+      ),
       "string" | "String" => Some("String"),
       "symbol" | "Symbol" => Some("Symbol"),
       "tag" | "Tag" => Some("Tag"),
@@ -1488,6 +1575,9 @@ impl CalcitTypeAnnotation {
       "Unit" => Some(Self::Unit),
       "Bool" => Some(Self::Bool),
       "Number" => Some(Self::Number),
+      name if CalcitNumericRefinement::from_name(name).is_some() => Some(Self::Numeric(
+        CalcitNumericRefinement::from_name(name).expect("guarded numeric refinement"),
+      )),
       "String" => Some(Self::String),
       "Symbol" => Some(Self::Symbol),
       "Tag" => Some(Self::Tag),
@@ -3783,6 +3873,7 @@ impl CalcitTypeAnnotation {
       Self::Set(_) => Some("&core-set-impls"),
       Self::Ref(_) => Some("&core-ref-impls"),
       Self::Number => Some("&core-number-impls"),
+      Self::Numeric(_) => Some("&core-number-impls"),
       Self::DynFn | Self::Fn(_) => Some("&core-fn-impls"),
       Self::Nil | Self::Unit | Self::Bool | Self::Tag | Self::Symbol | Self::CirruQuote => Some("&core-scalar-impls"),
       Self::Optional(inner) => inner.core_impl_list_symbol(),
@@ -4128,6 +4219,8 @@ impl CalcitTypeAnnotation {
       | (Self::JsObject, Self::JsObject)
       | (Self::Nil, Self::Nil)
       | (Self::Unit, Self::Unit) => true,
+      (Self::Numeric(actual), Self::Numeric(expected)) => actual == expected,
+      (Self::Numeric(_), Self::Number) => true,
       (Self::TypeVar(var), expected_type) => match bindings.get(var) {
         Some(bound) if bound.as_ref() == expected_type => true,
         Some(bound) if matches!(bound.as_ref(), Self::Nil) => {
@@ -4903,6 +4996,7 @@ impl CalcitTypeAnnotation {
       Self::Unit => Edn::Symbol(Arc::from("Unit")),
       Self::Bool => Edn::Symbol(Arc::from("Bool")),
       Self::Number => Edn::Symbol(Arc::from("Number")),
+      Self::Numeric(kind) => Edn::Symbol(Arc::from(kind.canonical_name())),
       Self::String => Edn::Symbol(Arc::from("String")),
       Self::Symbol => Edn::Symbol(Arc::from("Symbol")),
       Self::Tag => Edn::Symbol(Arc::from("Tag")),
@@ -5125,39 +5219,40 @@ impl CalcitTypeAnnotation {
     match self {
       Self::Bool => 1,
       Self::Number => 2,
-      Self::String => 3,
-      Self::Symbol => 4,
-      Self::Tag => 5,
-      Self::List(_) => 6,
-      Self::Map(_, _) => 7,
-      Self::DynFn => 8,
-      Self::Ref(_) => 9,
-      Self::Buffer => 10,
-      Self::CirruQuote => 11,
-      Self::StructValue(_) => 12,
-      Self::EnumValue(_) => 13,
-      Self::AnonymousEnum => 14,
-      Self::Fn(_) => 15,
-      Self::Set(_) => 16,
-      Self::Variadic(_) => 17,
-      Self::Custom(_) => 18,
-      Self::Optional(_) => 19,
-      Self::JsNullish(_) => 20,
-      Self::Dynamic => 21,
-      Self::TypeVar(_) => 22,
-      Self::TypeRef(_, _) => 23,
-      Self::Struct(_, _) => 24,
-      Self::Enum(_, _) => 25,
-      Self::Trait(_) => 26,
-      Self::TraitSet(_) => 27,
-      Self::Nil => 28,
-      Self::Unit => 29,
-      Self::JsObject => 30,
-      Self::TypeSlot(_) => 31,
-      Self::StructDef(_) => 32,
-      Self::EnumDef(_) => 33,
-      Self::Macro(_) => 34,
-      Self::Syntax(_) => 35,
+      Self::Numeric(_) => 3,
+      Self::String => 4,
+      Self::Symbol => 5,
+      Self::Tag => 6,
+      Self::List(_) => 7,
+      Self::Map(_, _) => 8,
+      Self::DynFn => 9,
+      Self::Ref(_) => 10,
+      Self::Buffer => 11,
+      Self::CirruQuote => 12,
+      Self::StructValue(_) => 13,
+      Self::EnumValue(_) => 14,
+      Self::AnonymousEnum => 15,
+      Self::Fn(_) => 16,
+      Self::Set(_) => 17,
+      Self::Variadic(_) => 18,
+      Self::Custom(_) => 19,
+      Self::Optional(_) => 20,
+      Self::JsNullish(_) => 21,
+      Self::Dynamic => 22,
+      Self::TypeVar(_) => 23,
+      Self::TypeRef(_, _) => 24,
+      Self::Struct(_, _) => 25,
+      Self::Enum(_, _) => 26,
+      Self::Trait(_) => 27,
+      Self::TraitSet(_) => 28,
+      Self::Nil => 29,
+      Self::Unit => 30,
+      Self::JsObject => 31,
+      Self::TypeSlot(_) => 32,
+      Self::StructDef(_) => 33,
+      Self::EnumDef(_) => 34,
+      Self::Macro(_) => 35,
+      Self::Syntax(_) => 36,
     }
   }
 }
@@ -6098,6 +6193,15 @@ mod tests {
     assert!(!number.is_compatible_with(&CalcitTypeAnnotation::Trait(core_show)));
     assert!(!number.is_compatible_with(&CalcitTypeAnnotation::Trait(user_debug)));
     assert!(!number.is_compatible_with(&CalcitTypeAnnotation::Trait(runtime_user_debug)));
+  }
+
+  #[test]
+  fn numeric_refinement_widens_but_number_does_not_narrow() {
+    let number = CalcitTypeAnnotation::Number;
+    let int8 = CalcitTypeAnnotation::Numeric(CalcitNumericRefinement::Int8);
+
+    assert!(int8.is_compatible_with(&number));
+    assert!(!number.is_compatible_with(&int8));
   }
 
   #[test]
@@ -7857,6 +7961,10 @@ impl Hash for CalcitTypeAnnotation {
     match self {
       Self::Bool => "bool".hash(state),
       Self::Number => "number".hash(state),
+      Self::Numeric(kind) => {
+        "numeric".hash(state);
+        kind.hash(state);
+      }
       Self::String => "string".hash(state),
       Self::Symbol => "symbol".hash(state),
       Self::Tag => "tag".hash(state),
@@ -7997,6 +8105,7 @@ impl Ord for CalcitTypeAnnotation {
       | (Self::DynFn, Self::DynFn)
       | (Self::Buffer, Self::Buffer)
       | (Self::CirruQuote, Self::CirruQuote) => Ordering::Equal,
+      (Self::Numeric(a), Self::Numeric(b)) => a.cmp(b),
       (Self::List(a), Self::List(b)) => a.cmp(b),
       (Self::Map(ak, av), Self::Map(bk, bv)) => ak.cmp(bk).then_with(|| av.cmp(bv)),
       (Self::StructValue(a), Self::StructValue(b)) => super::compare::compare_calcit_struct_values(a, b),
@@ -8460,6 +8569,7 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     CalcitTypeAnnotation::JsNullish(inner) => matches!(value, Calcit::Nil) || value_matches_type_annotation(value, inner),
     CalcitTypeAnnotation::Bool => matches!(value, Calcit::Bool(_)),
     CalcitTypeAnnotation::Number => matches!(value, Calcit::Number(_)),
+    CalcitTypeAnnotation::Numeric(kind) => matches!(value, Calcit::Number(number) if kind.accepts(*number)),
     CalcitTypeAnnotation::String => matches!(value, Calcit::Str(_)),
     CalcitTypeAnnotation::Symbol => matches!(value, Calcit::Symbol { .. }),
     CalcitTypeAnnotation::Tag => matches!(value, Calcit::Tag(_)),

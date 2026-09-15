@@ -107,6 +107,7 @@
             println |Done!
             ; Note: Struct field validation requires explicit type annotations
             ; in unit tests via assert-type with Struct instances.
+            test-numeric-refinements
             ; Currently not supported for runtime Struct literals.
           :examples $ []
           :schema $ :: 'Dynamic
@@ -247,6 +248,24 @@
             , "|Tests disabled to allow compilation"
           :examples $ []
           :schema $ :: 'Dynamic
+        'test-numeric-refinements $ %{} 'CodeEntry
+          :doc "|验证数值 refinement 受检转换在 native 与 JavaScript 后端保持一致。"
+          :code $ quote $ defn test-numeric-refinements ()
+            assert= (%ok 127) (number->int8 127)
+            assert= true $ result:err? $ number->int8 128
+            assert= (%ok 4294967295) (number->uint32 4294967295)
+            assert= true $ result:err? $ number->uint64 -1
+            assert= (%ok 0.5) (number->float32 0.5)
+            assert= true $ result:err? $ number->float32 0.1
+            assert= (%ok 0.1) (number->float64 0.1)
+            assert= ([] 127)
+              parse-cirru-edn-as "|[] 127" $ :: 'List 'Int8
+            assert= true $ result:err? $ try-parse-cirru-edn-as "|[] 128" (:: 'List 'Int8)
+            do true
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tags $ #{} :numeric :test
         'test-preprocess-method-validation $ %{} 'CodeEntry
           :doc "|Demonstrates that valid method calls pass preprocess validation"
           :code $ quote $ defn test-preprocess-method-validation () (; "所有这些方法调用都是合法的，应该通过" preprocess "检查")

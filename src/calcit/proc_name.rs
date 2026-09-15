@@ -231,6 +231,8 @@ pub enum CalcitProc {
   NativeNumberFormat,
   #[strum(serialize = "&number:display-by")]
   NativeNumberDisplayBy,
+  #[strum(serialize = "&number:fits?")]
+  NativeNumberFits,
   #[strum(serialize = "bit-shl")]
   BitShl,
   #[strum(serialize = "bit-shr")]
@@ -804,6 +806,10 @@ impl CalcitProc {
       NativeNumberDisplayBy => Some(ProcTypeSignature {
         return_type: some_tag("string"),
         arg_types: vec![some_tag("number"), some_tag("number")],
+      }),
+      NativeNumberFits => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("number"), some_tag("tag")],
       }),
 
       // === Comparison & Logic ===

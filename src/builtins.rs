@@ -461,6 +461,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeNumberFract => math::fractional(args),
     NativeNumberFormat => strings::format_number(args),
     NativeNumberDisplayBy => strings::display_number_by(args),
+    NativeNumberFits => math::number_fits(args),
     BitShr => math::bit_shr(args),
     BitShl => math::bit_shl(args),
     BitAnd => math::bit_and(args),

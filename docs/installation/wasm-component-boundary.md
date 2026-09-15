@@ -69,9 +69,10 @@ Canonical ABI 使用元素区间 `(ptr,len)`，并按元素类型递归 lift/low
 discriminant、Calcit 内部 enum tag/count、Bool 值和递归 memory range；非法输入直接 trap。`Unit` 结果对应零个
 Canonical ABI result，Unit 参数应直接省略而不是占据一个伪值位置。Calcit 内部 value ABI 均由 adapter 隔离。
 
-Calcit 当前只有统一的 `Number`，没有可直接推导为 WIT `s32`、`u32`、`float32` 等宽度的
-表层数值类型。后续不能在 adapter 中依据值范围或调用位置猜测宽度；应先确定可推导、可显式
-标注且不建立平行类型规则的 source-level 表示，再扩展 contract 与 adapter。
+Calcit 已提供 `'Int8`、`'UInt8`、`'Int16`、`'UInt16`、`'Int32`、`'UInt32`、`'Int64`、`'UInt64`、
+`'Float32` 与 `'Float64` 作为 source-level 数值 refinement，并通过 `number->int8` 等函数显式建立
+受检边界证明。它们的运行时表示仍是统一的 `Number`。当前 Component contract 尚未消费这些类型；
+adapter 不能依据值范围或调用位置猜测宽度，也不能静默退化为 `Number`，须等待明确的 contract 与 lowering 支持。
 
 ## 类型闭包
 
