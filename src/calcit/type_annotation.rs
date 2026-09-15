@@ -3106,6 +3106,9 @@ impl CalcitTypeAnnotation {
       let base_name = Self::canonical_type_form_name(enum_value.tag.as_ref());
       let base = Self::parse_type_annotation_form_inner(enum_value.tag.as_ref(), generics, strict_named_refs);
       let args = enum_value.extra.iter().map(parse_nested).collect::<Vec<_>>();
+      if args.is_empty() && matches!(base.as_ref(), CalcitTypeAnnotation::Numeric(_)) {
+        return base;
+      }
       if let Some(name) = base_name {
         if args.is_empty()
           && matches!(
@@ -3333,6 +3336,9 @@ impl CalcitTypeAnnotation {
             .skip(2)
             .map(|item| Self::parse_type_annotation_form_inner(item, generics, strict_named_refs))
             .collect::<Vec<_>>();
+          if args.is_empty() && matches!(base.as_ref(), CalcitTypeAnnotation::Numeric(_)) {
+            return base;
+          }
           if let Some(name) = base_name {
             if args.is_empty()
               && matches!(
@@ -6941,6 +6947,25 @@ mod tests {
       CalcitTypeAnnotation::parse_type_annotation_form(&enum_form).as_ref(),
       CalcitTypeAnnotation::Nil
     ));
+  }
+
+  #[test]
+  fn zero_argument_numeric_applications_keep_refinement_type() {
+    let list_form = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("::"),
+      Calcit::List(Arc::new(CalcitList::from(&[
+        Calcit::Syntax(CalcitSyntax::Quote, Arc::from(CORE_NS)),
+        symbol("Int8"),
+      ]))),
+    ])));
+    let enum_form = CalcitTypeAnnotation::edn_type_to_calcit(&Edn::enum_value("Int8", vec![]));
+
+    for form in [&list_form, &enum_form] {
+      assert!(matches!(
+        CalcitTypeAnnotation::parse_type_annotation_form(form).as_ref(),
+        CalcitTypeAnnotation::Numeric(CalcitNumericRefinement::Int8)
+      ));
+    }
   }
 
   #[test]

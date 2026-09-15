@@ -8,6 +8,7 @@
 - 用户行为主要由 core definition `:tests` 覆盖，现有 `test-types` 入口补充 native/JavaScript 一致性；Component contract 与 Canonical ABI lowering 留给后续任务。
 - 数值转换文档示例保持自包含，确保仓库的 Markdown 严格检查可以直接执行。
 - 将 refinement 纳入有界类型关系快路径，避免深层结构重复消耗兼容性预算；同步清理 WASM 文档中已经过期的 source-level 路线表述。
+- 两条类型解析路径都保留零参数 `::` 形式中的数值 refinement，不再误退化成动态 List 或匿名 Enum。
 
 English:
 
@@ -17,5 +18,6 @@ English:
 - Keep observable coverage in core definition `:tests`, with the existing `test-types` entry checking native/JavaScript parity; defer Component contracts and Canonical ABI lowering to later tasks.
 - Keep the numeric conversion documentation snippet self-contained so repository Markdown validation executes it under strict checking.
 - Include refinements in the bounded type-relation fast path to avoid double-spending the compatibility budget in deep shapes, and remove stale source-level roadmap wording from the WASM documentation.
+- Preserve numeric refinements in zero-argument `::` forms across both type parsing paths instead of falling back to a dynamic list or anonymous enum.
 
 Verification: `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked -q`, `yarn check-all`.
