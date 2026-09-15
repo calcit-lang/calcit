@@ -44,6 +44,18 @@ calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 若建议为空，则接受 `not-needed` 并跳过 apply。完整示例见
 [检测并修复冗余 `do`](fix.md#检测并修复冗余-do)。这是一项显式源码整理，不会增加普通编译 warning。
 
+## 0.15.1 WASM 命令入口收敛
+
+0.15.1 不再通过 `cargo install calcit` 或 GitHub Release 发布 `cr-wasm`。项目与 Agent 应直接选择宿主契约：
+
+- 原来的 `cr-wasm <snapshot> --target core` 改为 `calcit wasm <snapshot>`；
+- 原来的 `cr-wasm <snapshot> --target wasi` 改为 `calcit wasi <snapshot>`；
+- 两者的 `--check-only`、`--emit-path`、`--init-fn`、`--reload-fn` 与 `--entry` 继续由公开子命令提供。
+
+这不是能力删除：Snapshot 加载、预处理、target validation 与 codegen 仍共用同一实现。仓库为 WASI 自举保留
+feature-gated 的内部回归 harness，但它不是兼容 CLI，也不应被用户脚本调用。遇到旧 workflow 时应显式改写命令，
+不要尝试复制或重新发布该内部 binary。
+
 ## 0.14.20 Component core preview
 
 0.14.20 新增 opt-in 的同步 Component core boundary，不改变普通 native、JavaScript、
