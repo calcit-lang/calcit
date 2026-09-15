@@ -10,6 +10,16 @@
   :files $ {} $ 'component-wasm.main
     %{} 'FileEntry
       :defs $ {}
+        'Profile $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Profile (:active 'Bool) (:name 'String)
+            :scores $ :: 'List 'Number
+            :stats 'component-wasm.main/ProfileStats
+          :examples $ []
+          :schema $ :: 'StructDef
+        'ProfileStats $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct ProfileStats (:score 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
         'add-one $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export add-one (value) (&+ value 1)
           :examples $ []
@@ -67,6 +77,11 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'call-host-profile $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export call-host-profile (value) (host-profile value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'component-wasm.main/Profile)
+            :args $ [] 'component-wasm.main/Profile
         'call-host-result-number $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export call-host-result-number (value) (host-result-number value)
           :examples $ []
@@ -175,6 +190,16 @@
             :code $ quote $ assert= (%some "|你好")
               echo-option-text $ %some "|你好"
             :tags $ #{} :wasm
+        'echo-profile $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-profile (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'component-wasm.main/Profile)
+            :args $ [] 'component-wasm.main/Profile
+          :tests $ [] $ %{} 'TestEntry (:name |round-trips-struct-record)
+            :code $ quote $ let
+                value $ sample-profile
+              assert= value $ echo-profile value
+            :tags $ #{} :wasm
         'echo-result-number $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-result-number (value) value
           :examples $ []
@@ -276,6 +301,11 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'host-profile $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-import host-profile (value) |host |profile
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'component-wasm.main/Profile)
+            :args $ [] 'component-wasm.main/Profile
         'host-result-number $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-import host-result-number (value) |host |result-number
           :examples $ []
@@ -308,6 +338,12 @@
           :code $ quote $ defn reload! () 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'sample-profile $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn sample-profile ()
+            Profile :name |Ada :active true :scores ([] 1 2 3) :stats $ ProfileStats :score 7
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'component-wasm.main/Profile)
             :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns component-wasm.main

@@ -77,7 +77,7 @@ const bytes = fs.readFileSync(process.argv[1]);
 const module = new WebAssembly.Module(bytes);
 const imports = WebAssembly.Module.imports(module);
 const importNames = imports.map(({ module, name }) => `${module}/${name}`).sort();
-if (importNames.join(",") !== "host/add-one,host/bool-not,host/buffer,host/echo,host/numbers,host/option-number,host/ping,host/result-number") {
+if (importNames.join(",") !== "host/add-one,host/bool-not,host/buffer,host/echo,host/numbers,host/option-number,host/ping,host/profile,host/result-number") {
   throw new Error(`unexpected imports: ${importNames.join(",")}`);
 }
 let instance;
@@ -146,6 +146,16 @@ const host = {
       memory.setUint32(retPtr + 12, payload1, true);
     }
   },
+  profile: (active, namePtr, nameLen, scoresPtr, scoresLen, score, retPtr) => {
+    if (active !== 0 && active !== 1) throw new Error(`host received invalid profile bool ${active}`);
+    const memory = new DataView(instance.exports.memory.buffer);
+    memory.setUint8(retPtr, active === 0 ? 1 : 0);
+    memory.setUint32(retPtr + 4, namePtr, true);
+    memory.setUint32(retPtr + 8, nameLen, true);
+    memory.setUint32(retPtr + 12, scoresPtr, true);
+    memory.setUint32(retPtr + 16, scoresLen, true);
+    memory.setFloat64(retPtr + 24, score + 1, true);
+  },
   ping: () => undefined,
 };
 WebAssembly.instantiate(module, { host }).then(result => {
@@ -204,6 +214,21 @@ WebAssembly.instantiate(module, { host }).then(result => {
       const itemLen = memory.getUint32(ptr + index * 8 + 4, true);
       return readItem(itemPtr, itemLen);
     });
+  };
+  const readProfile = ret => {
+    const memory = new DataView(e.memory.buffer);
+    const namePtr = memory.getUint32(ret + 4, true);
+    const nameLen = memory.getUint32(ret + 8, true);
+    return {
+      name: Buffer.from(e.memory.buffer, namePtr, nameLen).toString("utf8"),
+      stats: { score: memory.getFloat64(ret + 24, true) },
+      active: memory.getUint8(ret),
+      scores: (() => {
+        const ptr = memory.getUint32(ret + 12, true);
+        const len = memory.getUint32(ret + 16, true);
+        return Array.from({ length: len }, (_, index) => memory.getFloat64(ptr + index * 8, true));
+      })(),
+    };
   };
   const expectBytes = (actual, expected, label) => {
     if (actual.length !== expected.length) {
@@ -288,6 +313,16 @@ WebAssembly.instantiate(module, { host }).then(result => {
     throw new Error("imported Result<Number,String> err did not round-trip");
   }
   if (e["call-host-ping"]() !== undefined) throw new Error("imported Unit result should remain zero-result");
+  const [profileNamePtr, profileNameLen] = allocateBytes(Buffer.from("Ada", "utf8"));
+  const [profileScoresPtr, profileScoresLen] = allocateNumberList([1, 2, 3]);
+  const directProfile = readProfile(e["echo-profile"](1, profileNamePtr, profileNameLen, profileScoresPtr, profileScoresLen, 7.5));
+  if (JSON.stringify(directProfile) !== JSON.stringify({ name: "Ada", stats: { score: 7.5 }, active: 1, scores: [1, 2, 3] })) {
+    throw new Error(`Struct record did not round-trip: ${JSON.stringify(directProfile)}`);
+  }
+  const hostProfile = readProfile(e["call-host-profile"](1, profileNamePtr, profileNameLen, profileScoresPtr, profileScoresLen, 7.5));
+  if (JSON.stringify(hostProfile) !== JSON.stringify({ name: "Ada", stats: { score: 8.5 }, active: 0, scores: [1, 2, 3] })) {
+    throw new Error(`imported Struct record did not round-trip: ${JSON.stringify(hostProfile)}`);
+  }
   for (const discriminant of [2, 256]) {
     let invalidVariantTrapped = false;
     try { e["echo-option-number"](discriminant, 0); } catch (error) {
@@ -295,7 +330,11 @@ WebAssembly.instantiate(module, { host }).then(result => {
     }
     if (!invalidVariantTrapped) throw new Error(`invalid Option discriminant ${discriminant} did not trap`);
   }
-  for (const invoke of [() => e["bool-not"](2), () => e["choose-number"](2, 3, 4)]) {
+  for (const invoke of [
+    () => e["bool-not"](2),
+    () => e["choose-number"](2, 3, 4),
+    () => e["echo-profile"](2, profileNamePtr, profileNameLen, profileScoresPtr, profileScoresLen, 7.5),
+  ]) {
     let trapped = false;
     try { invoke(); } catch (error) { trapped = error instanceof WebAssembly.RuntimeError; }
     if (!trapped) throw new Error("invalid canonical Bool input did not trap");
