@@ -78,11 +78,42 @@ fn push_checked_u32_product(instructions: &mut Vec<Instruction<'static>>, value_
   ]);
 }
 
+fn push_checked_alignment(instructions: &mut Vec<Instruction<'static>>, ptr_local: u32, alignment: i32) {
+  if alignment <= 1 {
+    return;
+  }
+  instructions.extend([
+    Instruction::LocalGet(ptr_local),
+    Instruction::I32Const(alignment - 1),
+    Instruction::I32And,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+  ]);
+}
+
 fn push_checked_memory_region(instructions: &mut Vec<Instruction<'static>>, ptr_local: u32, byte_len_local: u32) {
   instructions.extend([
     Instruction::LocalGet(ptr_local),
     Instruction::I64ExtendI32U,
     Instruction::LocalGet(byte_len_local),
+    Instruction::I64Add,
+    Instruction::MemorySize(0),
+    Instruction::I64ExtendI32U,
+    Instruction::I64Const(16),
+    Instruction::I64Shl,
+    Instruction::I64GtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+  ]);
+}
+
+fn push_checked_memory_region_const(instructions: &mut Vec<Instruction<'static>>, ptr_local: u32, byte_len: i64) {
+  instructions.extend([
+    Instruction::LocalGet(ptr_local),
+    Instruction::I64ExtendI32U,
+    Instruction::I64Const(byte_len),
     Instruction::I64Add,
     Instruction::MemorySize(0),
     Instruction::I64ExtendI32U,
@@ -173,6 +204,7 @@ pub(super) fn build_component_list_lift_fn(
   let bool_value = 9;
   let mut instructions = Vec::new();
   push_checked_u32_product(&mut instructions, 1, layout.size, canonical_bytes);
+  push_checked_alignment(&mut instructions, 0, layout.alignment);
   push_checked_memory_region(&mut instructions, 0, canonical_bytes);
   instructions.extend([
     // Complete internal allocation: type header + count slot + f64 elements.
@@ -336,27 +368,62 @@ pub(super) fn build_component_list_lower_fn(
   };
   let layout = component_memory_layout(item_type);
   // params: 0 = internal List value (f64), 1 = canonical (ptr,len) return area.
-  // locals: 2 = list ptr, 3 = count, 4 = canonical bytes (i64), 5 = canonical ptr,
-  // 6 = index, 7 = source address, 8 = destination address, 9 = value (f64),
-  // 10 = canonical Bool value.
+  // locals: 2 = list ptr, 3 = count, 4 = canonical bytes (i64),
+  // 5 = internal bytes (i64), 6 = canonical ptr, 7 = index,
+  // 8 = source address, 9 = destination address, 10 = value (f64),
+  // 11 = canonical Bool value.
   let list_ptr = 2;
   let count = 3;
   let canonical_bytes = 4;
-  let canonical_ptr = 5;
-  let index = 6;
-  let src_addr = 7;
-  let dst_addr = 8;
-  let value = 9;
-  let canonical_bool = 10;
+  let internal_bytes = 5;
+  let canonical_ptr = 6;
+  let index = 7;
+  let src_addr = 8;
+  let dst_addr = 9;
+  let value = 10;
+  let canonical_bool = 11;
   let mut instructions = vec![
     Instruction::LocalGet(0),
     Instruction::I32TruncF64U,
     Instruction::LocalTee(list_ptr),
-    Instruction::F64Load(mem_arg_f64(0)),
-    Instruction::I32TruncF64U,
-    Instruction::LocalSet(count),
+    Instruction::F64ConvertI32U,
+    Instruction::LocalGet(0),
+    Instruction::F64Ne,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
   ];
+  push_checked_alignment(&mut instructions, list_ptr, 8);
+  push_checked_memory_region_const(&mut instructions, list_ptr, 8);
+  instructions.extend([
+    Instruction::LocalGet(list_ptr),
+    Instruction::F64Load(mem_arg_f64(0)),
+    Instruction::LocalTee(value),
+    Instruction::I32TruncF64U,
+    Instruction::LocalTee(count),
+    Instruction::F64ConvertI32U,
+    Instruction::LocalGet(value),
+    Instruction::F64Ne,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(count),
+    Instruction::I64ExtendI32U,
+    Instruction::I64Const(8),
+    Instruction::I64Mul,
+    Instruction::I64Const(8),
+    Instruction::I64Add,
+    Instruction::LocalTee(internal_bytes),
+    Instruction::I64Const(i64::from(u32::MAX)),
+    Instruction::I64GtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+  ]);
+  push_checked_memory_region(&mut instructions, list_ptr, internal_bytes);
   push_checked_u32_product(&mut instructions, count, layout.size, canonical_bytes);
+  push_checked_alignment(&mut instructions, 1, 4);
+  push_checked_memory_region_const(&mut instructions, 1, 8);
   instructions.extend([
     Instruction::I32Const(0),
     Instruction::I32Const(0),
@@ -411,6 +478,7 @@ pub(super) fn build_component_list_lower_fn(
     locals: vec![
       ValType::I32,
       ValType::I32,
+      ValType::I64,
       ValType::I64,
       ValType::I32,
       ValType::I32,

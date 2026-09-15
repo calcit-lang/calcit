@@ -274,6 +274,35 @@ WebAssembly.instantiate(module, { host }).then(result => {
     invalidNumberListTrapped = error instanceof WebAssembly.RuntimeError;
   }
   if (!invalidNumberListTrapped) throw new Error("out-of-bounds Number List input did not trap");
+  const misalignedNumberPtr = e.cabi_realloc(0, 0, 8, 16) + 4;
+  let misalignedNumberListTrapped = false;
+  try { e["echo-numbers"](misalignedNumberPtr, 1); } catch (error) {
+    misalignedNumberListTrapped = error instanceof WebAssembly.RuntimeError;
+  }
+  if (!misalignedNumberListTrapped) throw new Error("misaligned Number List input did not trap");
+  let overflowingNumberListTrapped = false;
+  try { e["echo-numbers"](0, 0x20000000); } catch (error) {
+    overflowingNumberListTrapped = error instanceof WebAssembly.RuntimeError;
+  }
+  if (!overflowingNumberListTrapped) throw new Error("overflowing Number List length did not trap");
+  const [misalignedNestedPtr, misalignedNestedLen] = allocatePairList([[nestedPairs[0][0] + 4, 1]]);
+  let misalignedNestedListTrapped = false;
+  try { e["echo-number-lists"](misalignedNestedPtr, misalignedNestedLen); } catch (error) {
+    misalignedNestedListTrapped = error instanceof WebAssembly.RuntimeError;
+  }
+  if (!misalignedNestedListTrapped) throw new Error("misaligned nested Number List input did not trap");
+  const [pairListPtr] = allocatePairList([nestedPairs[0]]);
+  let misalignedPairListTrapped = false;
+  try { e["echo-number-lists"](pairListPtr + 2, 1); } catch (error) {
+    misalignedPairListTrapped = error instanceof WebAssembly.RuntimeError;
+  }
+  if (!misalignedPairListTrapped) throw new Error("misaligned nested List pair input did not trap");
+  const [invalidNestedPtr, invalidNestedLen] = allocatePairList([[e.memory.buffer.byteLength - 4, 1]]);
+  let invalidNestedListTrapped = false;
+  try { e["echo-number-lists"](invalidNestedPtr, invalidNestedLen); } catch (error) {
+    invalidNestedListTrapped = error instanceof WebAssembly.RuntimeError;
+  }
+  if (!invalidNestedListTrapped) throw new Error("out-of-bounds nested Number List input did not trap");
   const growingNumberCount = e.memory.buffer.byteLength / 8 + 257;
   const growingNumbers = Array.from({ length: growingNumberCount }, (_, index) => index % 251);
   const [growingNumberPtr, growingNumberLen] = allocateNumberList(growingNumbers);
