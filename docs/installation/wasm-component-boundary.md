@@ -77,7 +77,8 @@ Calcit 当前只有统一的 `Number`，没有可直接推导为 WIT `s32`、`u3
 `defstruct` schema，record field layout 复用与 List/Option/Result 相同的递归 value walker；不会从运行时值猜测字段。
 Struct 参数按字段 flat shape 展开，多结果返回仍使用 Canonical ABI return area；lift/lower 都验证 canonical memory、
 Calcit 内部 field count 与 nominal struct tag。嵌套 Struct 以及字段中已经受支持的闭合类型共用同一套递归规则，
-generic 必须在边界处已经具体化。
+generic 必须在边界处已经具体化。同步 direct adapter 会在 schema 阶段拒绝总计超过 16 个 flat values 的参数签名，
+在 indirect parameter lowering 完成前不会生成不符合 Canonical ABI 的 core 函数。
 
 普通 Enum variant 仍是 0.15.1 的后续任务；明确宽度的整数/浮点数已单列为 0.15.2，需要先完成上述
 source-level 设计。在对应 adapter 实现以前，

@@ -1118,6 +1118,7 @@ fn component_function_schema(
       parameters.len()
     ));
   }
+  validate_component_flat_parameters(&parameters, definition)?;
   let result = component_abi_type_inner(
     &signature.return_type,
     definition,
@@ -1126,6 +1127,21 @@ fn component_function_schema(
     Some(program_data),
   )?;
   Ok((parameters, result))
+}
+
+const COMPONENT_MAX_FLAT_PARAMETERS: usize = 16;
+
+fn validate_component_flat_parameters(parameters: &[ComponentAbiType], definition: &str) -> Result<(), String> {
+  let flat_count = parameters
+    .iter()
+    .map(|parameter| component_flat_types(parameter).len())
+    .sum::<usize>();
+  if flat_count > COMPONENT_MAX_FLAT_PARAMETERS {
+    return Err(format!(
+      "E_COMPONENT_ABI_FLAT_PARAMETER_LIMIT: `{definition}` at `logical_schema.parameters` flattens to {flat_count} values, but the synchronous direct adapter supports at most {COMPONENT_MAX_FLAT_PARAMETERS}; split the record or parameters until indirect parameter lowering is available"
+    ));
+  }
+  Ok(())
 }
 
 fn component_flat_types(value_type: &ComponentAbiType) -> Vec<ValType> {
@@ -5409,10 +5425,10 @@ mod tests {
   use std::sync::Arc;
 
   use super::{
-    ComponentAbiType, ComponentExportAdapter, ComponentImportAdapter, HostImport, WasmBoundary, WasmTarget, build_cabi_realloc_fn,
-    build_component_export_adapter, build_component_import_adapter, component_abi_type, component_flat_types,
+    ComponentAbiType, ComponentExportAdapter, ComponentImportAdapter, ComponentStructType, HostImport, WasmBoundary, WasmTarget,
+    build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, component_abi_type, component_flat_types,
     component_import_signature, component_memory_layout, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
-    validate_component_export_symbols, validate_component_import_symbols,
+    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols,
   };
   use crate::calcit::{Calcit, CalcitList, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation};
   use wasm_encoder::ValType;
@@ -5634,6 +5650,16 @@ mod tests {
     )
     .expect("monomorphize Struct Component shape");
     assert_eq!(component_flat_types(&concrete_box), vec![ValType::F64]);
+
+    let wide_record = ComponentAbiType::Struct(ComponentStructType {
+      id: "app.main/Wide".into(),
+      tag: "Wide".into(),
+      fields: (0..17).map(|index| (format!("field-{index}"), ComponentAbiType::Number)).collect(),
+    });
+    let error = validate_component_flat_parameters(&[wide_record], "app.main/echo-wide")
+      .expect_err("wide Struct parameters must not bypass the Canonical ABI flat-parameter limit");
+    assert!(error.contains("E_COMPONENT_ABI_FLAT_PARAMETER_LIMIT"));
+    assert!(error.contains("flattens to 17 values"));
   }
 
   #[test]
