@@ -353,6 +353,7 @@ WebAssembly.instantiate(module, { host }).then(result => {
     }
   }
   for (const invalid of [
+    [Number.NaN, ...numericScalars.slice(1)],
     [...numericScalars.slice(0, 5), 128, ...numericScalars.slice(6)],
     [...numericScalars.slice(0, 9), -1],
     [...numericScalars.slice(0, 4), -9007199254740992n, ...numericScalars.slice(5)],

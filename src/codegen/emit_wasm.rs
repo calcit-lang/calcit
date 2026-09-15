@@ -1572,7 +1572,11 @@ fn component_numeric_to_f64(kind: CalcitNumericRefinement, value: u32) -> Vec<In
       component_trap_if(&mut instructions);
       instructions.extend([Instruction::LocalGet(value), Instruction::F64ConvertI64U]);
     }
-    CalcitNumericRefinement::Float32 => instructions.extend([Instruction::LocalGet(value), Instruction::F64PromoteF32]),
+    CalcitNumericRefinement::Float32 => {
+      instructions.extend([Instruction::LocalGet(value), Instruction::LocalGet(value), Instruction::F32Ne]);
+      component_trap_if(&mut instructions);
+      instructions.extend([Instruction::LocalGet(value), Instruction::F64PromoteF32]);
+    }
     CalcitNumericRefinement::Float64 => instructions.push(Instruction::LocalGet(value)),
   }
   instructions

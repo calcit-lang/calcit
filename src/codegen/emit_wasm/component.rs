@@ -848,11 +848,21 @@ fn push_lift_element(
           Instruction::F64ConvertI64U,
         ]);
       }
-      CalcitNumericRefinement::Float32 => instructions.extend([
-        Instruction::LocalGet(src_addr),
-        Instruction::F32Load(mem_arg_f32(0)),
-        Instruction::F64PromoteF32,
-      ]),
+      CalcitNumericRefinement::Float32 => {
+        instructions.extend([
+          Instruction::LocalGet(src_addr),
+          Instruction::F32Load(mem_arg_f32(0)),
+          Instruction::LocalGet(src_addr),
+          Instruction::F32Load(mem_arg_f32(0)),
+          Instruction::F32Ne,
+        ]);
+        component_trap_if(instructions);
+        instructions.extend([
+          Instruction::LocalGet(src_addr),
+          Instruction::F32Load(mem_arg_f32(0)),
+          Instruction::F64PromoteF32,
+        ]);
+      }
       CalcitNumericRefinement::Float64 => instructions.extend([Instruction::LocalGet(src_addr), Instruction::F64Load(mem_arg_f64(0))]),
     },
     ComponentAbiType::Buffer | ComponentAbiType::String => {
