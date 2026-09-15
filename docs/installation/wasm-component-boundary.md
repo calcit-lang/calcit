@@ -42,14 +42,16 @@ Component 路径分为三层：
 
 core 不带 WIT generator、WIT golden、component packaging 或 stale-artifact policy；`calcit-bindgen` 不猜测 Calcit heap layout，也不重做类型推导。
 
-## 0.14.20 Component preview
+## 同步 Component 边界
 
 0.14.20 已为 `Unit` 结果、`Bool`、`Buffer`、`Number`、UTF-8 `String`、递归同质
 `List<T>`，以及闭合单态的 `Option<T>` / `Result<T,E>` 生成同步 Canonical ABI adapter。
+0.15.1 进一步覆盖 monomorphic Struct record 与闭合单态 Enum。
 
 Calcit 包本身只生成供 packaging 消费的 core module，不在主仓库内生成 WIT 或包装 Component。
-独立的 `calcit-bindgen` 已能为上述类型生成 WIT、包装 runnable Component，并通过 Wasmtime 与
-jco/Node 验证；项目仍需显式安装和调用该工具，不能把裸 core module 当作 Component 产物。
+独立的 `calcit-bindgen` 已能为基础类型、Option/Result 与 Struct 生成 WIT、包装 runnable Component，
+并通过 Wasmtime 与 jco/Node 验证；普通 Enum 的 WIT consumer 支持随本 core contract 接续实现。
+项目仍需显式安装和调用该工具，不能把裸 core module 当作 Component 产物。
 
 Bool 的 Canonical ABI 使用 `i32`
 的 `0`/`1`；import 与 export 两个方向都会验证输入和返回值，遇到其他整数、小数、负数、
@@ -61,7 +63,7 @@ Canonical ABI 使用元素区间 `(ptr,len)`，并按元素类型递归 lift/low
 元素、长度乘法溢出和越界区间都按同一套规则处理。
 
 `Option` 与 `Result` 直接使用类型推导保留的 `calcit.core` 名义类型，不会把旧 `Optional<T>`、用户自定义同名 Enum
-或 Dynamic 值猜成 variant。两者共用同一套 Canonical ABI variant layout：一字节 discriminant 后按 payload 的最大对齐
+或 Dynamic 值猜成这两个专用类型。它们与普通 Enum 共用 Canonical ABI variant layout：discriminant 后按 payload 的最大对齐
 放置 payload，flat shape 则按 Canonical ABI join 规则合并各分支。当前覆盖 `Option<Number>`、`Option<String>`、
 `Result<Number,String>`、`Result<Unit,String>` 与 `Result<List<Number>,String>`，import/export 两个方向都会验证
 discriminant、Calcit 内部 enum tag/count、Bool 值和递归 memory range；非法输入直接 trap。`Unit` 结果对应零个
@@ -80,8 +82,12 @@ Calcit 内部 field count 与 nominal struct tag。嵌套 Struct 以及字段中
 generic 必须在边界处已经具体化。同步 direct adapter 会在 schema 阶段拒绝总计超过 16 个 flat values 的参数签名，
 在 indirect parameter lowering 完成前不会生成不符合 Canonical ABI 的 core 函数。
 
-普通 Enum variant 仍是 0.15.1 的后续任务；明确宽度的整数/浮点数已单列为 0.15.2，需要先完成上述
-source-level 设计。在对应 adapter 实现以前，
+闭合单态 Enum 的 case 顺序来自规范化后的 `defenum` schema，并直接决定从零开始的 discriminant；无 payload、
+单 payload 和多 payload case 都使用同一套递归布局，多 payload 在 WIT 中由 consumer 表达为 tuple。payload 可以继续包含
+已支持的闭合类型与 Struct。边界不会根据运行时 tag 猜测 declaration，也不会接受 anonymous/open Enum、generic Enum、
+递归 Enum 或无法解析的声明；无 payload case 应直接省略 payload，显式 `Unit` payload 会给出带 schema path 的错误。
+
+明确宽度的整数/浮点数已单列为 0.15.2，需要先完成 source-level 设计。在对应 adapter 实现以前，
 即使 contract 能表达部分形状，`calcit wasm --boundary component` 也会明确拒绝。
 
 以下形状不进入同步 Component 边界，并在 contract 导出或 adapter 生成阶段拒绝：
@@ -110,12 +116,23 @@ Component contract 沿用 `calcit ffi export`，通过 `--boundary component`
 calcit wasm calcit.cirru --boundary component --emit-path target/component-core
 ```
 
-当前 adapter 覆盖 `Unit` 结果、`Bool`、`Buffer`、`Number`、UTF-8 `String`、递归同质 `List<T>`、闭合单态 Option/Result，以及 monomorphic Struct record 的同步 import/export。Bool 使用 Canonical ABI `i32` 并严格限制为 `0`/`1`；Number 直接使用 `f64`。Buffer 映射到 WIT `list<u8>`，String 映射到 WIT `string`；`List<T>` 只接受闭合、单态且 item type 已受支持的 schema，并递归使用对应元素 layout，不把异构值或 `Dynamic` 猜成列表元素。Buffer、String 和 List 的 core 参数都展开为 `(ptr,len)`，但 lift 后保持不同的 Calcit 类型。Option/Result 使用统一 variant layout 与 flat join；Struct 按规范化 schema field layout 递归组合相同 value shape，不为每个类型组合增加独立规则。export 对应 `canon lift`，超过同步 Canonical ABI 单结果上限的 flat results 返回指向 return area 的 `i32` 指针；import 对应 `canon lower`，结果使用 caller 传入的 return area，再复制回对应的 Calcit 值。两者是 Canonical ABI 针对不同方向规定的函数形状，不是可以互换的自定义约定。core module 只保留显式声明的 Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，不会携带 native core target 的隐式 `math/io` imports。普通 Enum variant、宽度明确的数值类型、post-return 与 async 仍是后续任务；不支持的 schema 在生成阶段明确失败。
+当前 adapter 覆盖 `Unit` 结果、`Bool`、`Buffer`、`Number`、UTF-8 `String`、递归同质
+`List<T>`、闭合单态 Option/Result、monomorphic Struct record 与闭合单态 Enum 的同步 import/export。
+Bool 使用 Canonical ABI `i32` 并严格限制为 `0`/`1`；Number 直接使用 `f64`。Buffer 映射到 WIT
+`list<u8>`，String 映射到 WIT `string`；`List<T>` 只接受闭合、单态且 item type 已受支持的 schema，
+并递归使用对应元素 layout，不把异构值或 `Dynamic` 猜成列表元素。Buffer、String 和 List 的 core 参数
+都展开为 `(ptr,len)`，但 lift 后保持不同的 Calcit 类型。Option/Result 与普通 Enum 使用统一 variant layout
+与 flat join；Struct 按规范化 schema field layout 递归组合相同 value shape，不为每个类型组合增加独立规则。
+export 对应 `canon lift`，超过同步 Canonical ABI 单结果上限的 flat results 返回指向 return area 的 `i32`
+指针；import 对应 `canon lower`，结果使用 caller 传入的 return area，再复制回对应的 Calcit 值。两者是
+Canonical ABI 针对不同方向规定的函数形状，不是可以互换的自定义约定。core module 只保留显式声明的
+Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，不会携带 native core target
+的隐式 `math/io` imports。宽度明确的数值类型、post-return 与 async 仍是后续任务；不支持的 schema 在生成阶段明确失败。
 
 ## 实施顺序
 
 1. 导出 directional typed contract，先完成确定性、诊断和 Cirru EDN/JSON 等价。
-2. 为 Bool、Buffer、Number、String、递归同质 List、Unit 结果、闭合单态 Option/Result 与 Struct record 生成 Canonical ABI import/export adapter，再扩展普通 variant；宽度明确的数值类型在 0.15.2 完成 source-level 设计。
+2. 为 Bool、Buffer、Number、String、递归同质 List、Unit 结果、闭合单态 Option/Result、Struct record 与普通 Enum variant 生成 Canonical ABI import/export adapter；宽度明确的数值类型在 0.15.2 完成 source-level 设计。
 3. 由 `calcit-bindgen` 生成 WIT 并打包 runnable component，在 Wasmtime 和 jco 做端到端往返。
 4. 同步边界稳定后，再引入 WASI 0.3 async、HTTP 和 socket。
 

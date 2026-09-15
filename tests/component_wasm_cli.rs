@@ -77,7 +77,7 @@ const bytes = fs.readFileSync(process.argv[1]);
 const module = new WebAssembly.Module(bytes);
 const imports = WebAssembly.Module.imports(module);
 const importNames = imports.map(({ module, name }) => `${module}/${name}`).sort();
-if (importNames.join(",") !== "host/add-one,host/bool-not,host/buffer,host/echo,host/numbers,host/option-number,host/ping,host/profile,host/result-number") {
+if (importNames.join(",") !== "host/add-one,host/bool-not,host/buffer,host/echo,host/event,host/numbers,host/option-number,host/ping,host/profile,host/result-number") {
   throw new Error(`unexpected imports: ${importNames.join(",")}`);
 }
 let instance;
@@ -161,6 +161,30 @@ const host = {
     memory.setUint32(retPtr + 36, scoresPtr, true);
     memory.setUint32(retPtr + 40, scoresLen, true);
     memory.setFloat64(retPtr + 48, score + 1, true);
+  },
+  event: (discriminant, payload0, payload1, payload2, payload3, payload4, payload5, payload6, payload7, payload8, payload9, payload10, payload11, retPtr) => {
+    const memory = new DataView(instance.exports.memory.buffer);
+    memory.setUint8(retPtr, discriminant);
+    if (discriminant === 1) {
+      memory.setBigUint64(retPtr + 8, payload0, true);
+      memory.setBigUint64(retPtr + 16, payload1, true);
+    } else if (discriminant === 2) {
+      memory.setUint32(retPtr + 8, Number(payload0), true);
+      memory.setUint32(retPtr + 12, Number(payload1), true);
+    } else if (discriminant === 3) {
+      memory.setUint8(retPtr + 8, Number(payload0));
+      memory.setUint8(retPtr + 12, Number(payload1));
+      memory.setUint32(retPtr + 16, payload2, true);
+      memory.setUint32(retPtr + 20, payload3, true);
+      memory.setUint32(retPtr + 24, payload4, true);
+      memory.setUint32(retPtr + 28, payload5, true);
+      memory.setUint8(retPtr + 32, payload6);
+      memory.setUint32(retPtr + 36, payload7, true);
+      memory.setUint32(retPtr + 40, payload8, true);
+      memory.setUint32(retPtr + 44, payload9, true);
+      memory.setUint32(retPtr + 48, payload10, true);
+      memory.setFloat64(retPtr + 56, payload11, true);
+    }
   },
   ping: () => undefined,
 };
@@ -248,6 +272,22 @@ WebAssembly.instantiate(module, { host }).then(result => {
         return Array.from({ length: len }, (_, index) => memory.getFloat64(ptr + index * 8, true));
       })(),
     };
+  };
+  const readEvent = ret => {
+    const memory = new DataView(e.memory.buffer);
+    const discriminant = memory.getUint8(ret);
+    if (discriminant === 0) return { tag: "idle" };
+    if (discriminant === 1) {
+      return { tag: "moved", values: [memory.getFloat64(ret + 8, true), memory.getFloat64(ret + 16, true)] };
+    }
+    if (discriminant === 2) {
+      return {
+        tag: "named",
+        value: Buffer.from(e.memory.buffer, memory.getUint32(ret + 8, true), memory.getUint32(ret + 12, true)).toString("utf8"),
+      };
+    }
+    if (discriminant === 3) return { tag: "profile", value: readProfile(ret + 8) };
+    throw new Error(`unexpected Event discriminant ${discriminant}`);
   };
   const expectBytes = (actual, expected, label) => {
     if (actual.length !== expected.length) {
@@ -352,6 +392,25 @@ WebAssembly.instantiate(module, { host }).then(result => {
   if (JSON.stringify(hostAlternateProfile) !== JSON.stringify({ name: "Ada", stats: { score: 8.5 }, maybeName: null, outcome: { err: "bad" }, active: 0, scores: [1, 2, 3] })) {
     throw new Error(`imported Struct None/Err record did not round-trip: ${JSON.stringify(hostAlternateProfile)}`);
   }
+  const eventIdle = [0, 0n, 0n, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const eventNamed = [2, BigInt(profileNamePtr), BigInt(profileNameLen), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const eventMoved = [1, floatBits(3), floatBits(4), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const eventProfile = [3, 1n, 1n, profileNamePtr, profileNameLen, profileNamePtr, profileNameLen, 0, profileOutcomePtr, profileOutcomeLen, profileScoresPtr, profileScoresLen, 7.5];
+  for (const [args, expected] of [
+    [eventIdle, { tag: "idle" }],
+    [eventNamed, { tag: "named", value: "Ada" }],
+    [eventMoved, { tag: "moved", values: [3, 4] }],
+    [eventProfile, { tag: "profile", value: { name: "Ada", stats: { score: 7.5 }, maybeName: "Ada", outcome: { ok: [4, 5] }, active: 1, scores: [1, 2, 3] } }],
+  ]) {
+    const directEvent = readEvent(e["echo-event"](...args));
+    if (JSON.stringify(directEvent) !== JSON.stringify(expected)) {
+      throw new Error(`Enum variant did not round-trip: ${JSON.stringify(directEvent)}`);
+    }
+    const hostEvent = readEvent(e["call-host-event"](...args));
+    if (JSON.stringify(hostEvent) !== JSON.stringify(expected)) {
+      throw new Error(`imported Enum variant did not round-trip: ${JSON.stringify(hostEvent)}`);
+    }
+  }
   for (const discriminant of [2, 256]) {
     let invalidVariantTrapped = false;
     try { e["echo-option-number"](discriminant, 0); } catch (error) {
@@ -363,6 +422,7 @@ WebAssembly.instantiate(module, { host }).then(result => {
     () => e["bool-not"](2),
     () => e["choose-number"](2, 3, 4),
     () => e["echo-profile"](2, 1, profileNamePtr, profileNameLen, profileNamePtr, profileNameLen, 0, profileOutcomePtr, profileOutcomeLen, profileScoresPtr, profileScoresLen, 7.5),
+    () => e["echo-event"](4, 0n, 0n, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
   ]) {
     let trapped = false;
     try { invoke(); } catch (error) { trapped = error instanceof WebAssembly.RuntimeError; }
