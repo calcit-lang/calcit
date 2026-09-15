@@ -49,8 +49,8 @@ core 不带 WIT generator、WIT golden、component packaging 或 stale-artifact 
 0.15.1 进一步覆盖 monomorphic Struct record 与闭合单态 Enum。
 
 Calcit 包本身只生成供 packaging 消费的 core module，不在主仓库内生成 WIT 或包装 Component。
-独立的 `calcit-bindgen` 已能为基础类型、Option/Result 与 Struct 生成 WIT、包装 runnable Component，
-并通过 Wasmtime 与 jco/Node 验证；普通 Enum 的 WIT consumer 支持随本 core contract 接续实现。
+独立的 `calcit-bindgen` 已能为基础类型、Option/Result、Struct 与 Enum 生成 WIT、包装 runnable Component，
+并通过 Wasmtime 与 jco/Node 验证。
 项目仍需显式安装和调用该工具，不能把裸 core module 当作 Component 产物。
 
 Bool 的 Canonical ABI 使用 `i32`
@@ -75,7 +75,7 @@ Calcit 当前只有统一的 `Number`，没有可直接推导为 WIT `s32`、`u3
 
 ## 类型闭包
 
-0.15.1 main 已加入 monomorphic Struct record 的同步 core adapter：字段名称、顺序与嵌套类型来自规范化后的
+0.15.1 已加入 monomorphic Struct record 的同步 core adapter：字段名称、顺序与嵌套类型来自规范化后的
 `defstruct` schema，record field layout 复用与 List/Option/Result 相同的递归 value walker；不会从运行时值猜测字段。
 Struct 参数按字段 flat shape 展开，多结果返回仍使用 Canonical ABI return area；lift/lower 都验证 canonical memory、
 Calcit 内部 field count 与 nominal struct tag。嵌套 Struct 以及字段中已经受支持的闭合类型共用同一套递归规则，

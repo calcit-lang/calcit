@@ -67,15 +67,24 @@ feature-gated 的内部回归 harness，但它不是兼容 CLI，也不应被用
 Struct record、普通 Enum variant、明确宽度数值与 async 尚未完成，不会静默退化为 Dynamic
 或 core 私有 value ABI。
 
-## 0.15.1 Struct Component boundary（开发中）
+## 0.15.1 Struct/Enum Component boundary
 
-0.15.1 main 已开始支持 monomorphic Struct record 的 Component core adapter。字段名称、顺序和类型完全来自
+0.15.1 完成 monomorphic Struct record 与闭合单态 Enum variant 的同步 Component boundary。Struct 字段名称、顺序和类型完全来自
 规范化的 `defstruct` schema；嵌套 Struct 与已经支持的闭合字段类型复用统一递归 walker。边界不会根据运行时值
 补字段或猜测 layout，未具体化 generic、Dynamic 字段和其他未支持类型会带 schema path 在生成阶段失败。
 
+Enum 的 case 名称与顺序来自规范化后的 `defenum` schema，并决定从零开始的 Canonical ABI discriminant。无 payload、
+单 payload 与多 payload case 分别映射为 WIT bare case、直接 payload 与 tuple payload；payload 可递归包含已支持的
+闭合类型和 Struct。anonymous/open Enum、递归 Enum、未具体化 generic 与显式 `Unit` payload 会明确拒绝，不会退化为 Dynamic。
+
 该阶段没有新增命令：core 继续使用 `calcit ffi export --boundary component` 与
 `calcit wasm --boundary component`，WIT 与 runnable Component packaging 继续由 calcit-bindgen 的
-`generate` / `check` 负责。普通 Enum variant 属于后续 0.15.1 子任务；明确宽度数值类型属于 0.15.2。
+`generate` / `check` 负责。Struct/Enum/Result 已在 Wasmtime 与 jco/Node 完成实际往返；明确宽度数值类型属于 0.15.2。
+
+从 0.14.20 preview 升级时不需要改写命令，也不要新增 WIT/component wrapper。应重新执行
+`calcit ffi export --boundary component` 导出 contract，用 calcit-bindgen `check` 查看 ABI fingerprint 与兼容性变化，
+确认后再用 `generate` 刷新 WIT、manifest 和 Component 产物。依赖 declaration 顺序的 Struct field 与 Enum case 会进入
+公开 ABI；若顺序发生变化，应把它作为显式接口变更审阅，并重新运行宿主侧 Wasmtime 或 jco 往返测试。
 
 ## 0.14 默认严格诊断
 
