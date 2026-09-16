@@ -4983,11 +4983,10 @@ fn emit_number_fits(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String>
   ctx.emit(Instruction::LocalSet(target));
 
   let result = ctx.alloc_local_typed(ValType::I32);
-  let matched = ctx.alloc_local_typed(ValType::I32);
+  // Unknown runtime tags produce false. The Bool ABI has no recoverable error
+  // payload, and a predicate must not turn dynamic input into a WASM trap.
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(result));
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(matched));
 
   for refinement in [
     CalcitNumericRefinement::Int8,
@@ -5011,23 +5010,17 @@ fn emit_number_fits(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String>
     ctx.emit(f64_const(tag_id as f64));
     ctx.emit(Instruction::F64Eq);
     ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
-    ctx.emit(Instruction::I32Const(1));
-    ctx.emit(Instruction::LocalSet(matched));
     emit_number_refinement_test(ctx, value, refinement);
     ctx.emit(Instruction::LocalSet(result));
     ctx.emit(Instruction::End);
   }
 
-  ctx.emit(Instruction::LocalGet(matched));
-  ctx.emit(Instruction::I32Eqz);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::Unreachable);
-  ctx.emit(Instruction::End);
   ctx.emit(Instruction::LocalGet(result));
   ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
 }
 
+/// Leave an i32 predicate result on the WASM stack for one numeric refinement.
 fn emit_number_refinement_test(ctx: &mut WasmGenCtx, value: u32, refinement: CalcitNumericRefinement) {
   match refinement {
     CalcitNumericRefinement::Float64 => ctx.emit(Instruction::I32Const(1)),

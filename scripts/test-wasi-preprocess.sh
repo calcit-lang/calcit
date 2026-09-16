@@ -32,6 +32,8 @@ readonly EDN_PARSE_MAP_LIMIT_STDOUT="${EDN_PARSE_MAP_LIMIT_OUT}/stdout.txt"
 readonly EDN_FILE_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-file-roundtrip"
 readonly EDN_FILE_STDOUT="${EDN_FILE_OUT}/stdout.txt"
 readonly EDN_FILE_INVALID_STDOUT="${EDN_FILE_OUT}/invalid-stdout.txt"
+readonly NUMBER_FITS_UNKNOWN_OUT="${CARGO_TARGET_DIR:-target}/wasi-number-fits-unknown"
+readonly NUMBER_FITS_UNKNOWN_STDOUT="${NUMBER_FITS_UNKNOWN_OUT}/stdout.txt"
 readonly EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-exit-smoke"
 readonly INVALID_EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-invalid-exit-smoke"
 readonly INVALID_EXIT_STDERR="${INVALID_EXIT_OUT}/stderr.txt"
@@ -352,6 +354,10 @@ if [[ -e "$WASI_FS_HOST_DIR/output.cirru" ]]; then
   echo "WASI typed EDN file command wrote output after Int32 overflow" >&2
   exit 1
 fi
+
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/number-fits-unknown-main! --emit-path "$NUMBER_FITS_UNKNOWN_OUT"
+wasmtime run "$NUMBER_FITS_UNKNOWN_OUT/program.wasm" >"$NUMBER_FITS_UNKNOWN_STDOUT"
+grep -Fxq 'WASI-number-fits-unknown:-ok' "$NUMBER_FITS_UNKNOWN_STDOUT"
 
 # Keep one user-facing starter runnable as a real file-processing command, not
 # only as isolated capability fixtures.
