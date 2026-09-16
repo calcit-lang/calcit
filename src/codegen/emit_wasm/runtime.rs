@@ -2565,6 +2565,11 @@ pub(super) fn build_runtime_fns(
   fn_index.insert(String::from("__rt_str_escape"), str_escape_idx);
   fns.push(build_rt_str_escape(string_tag));
 
+  // Cirru EDN string token: __rt_edn_string(s:f64) → f64.
+  let edn_string_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_edn_string"), edn_string_idx);
+  fns.push(build_rt_edn_string(string_tag));
+
   // map-equal: __rt_map_equal(a: i32, b: i32) → i32 (1 if equal, 0 otherwise)
   let map_equal_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_equal"), map_equal_idx);
@@ -6050,6 +6055,256 @@ fn build_rt_str_escape(_str_tag: i32) -> CompiledFn {
     locals: vec![],
     instructions: b,
   }
+}
+
+/// `__rt_edn_string(s: f64) → f64`
+///
+/// Formats a heap string as a Cirru EDN string leaf. Simple ASCII tokens use
+/// the `|text` form; other values use a quoted `"|text"` leaf and escape the
+/// four characters handled specially by the Cirru writer.
+fn build_rt_edn_string(string_tag: i32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(1);
+  let src = b.alloc_i32();
+  let len = b.alloc_i32();
+  let index = b.alloc_i32();
+  let byte = b.alloc_i32();
+  let simple = b.alloc_i32();
+  let extra = b.alloc_i32();
+  let out_len = b.alloc_i32();
+  let padded = b.alloc_i32();
+  let payload = b.alloc_i32();
+  let out = b.alloc_i32();
+  let dst = b.alloc_i32();
+  let out_index = b.alloc_i32();
+
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(src));
+  b.emit(Instruction::LocalGet(src));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(len));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(simple));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(extra));
+
+  // First pass: decide whether the leaf can stay bare and count escapes.
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalGet(len));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(src));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::LocalSet(byte));
+
+  // Cirru bare-leaf characters: ASCII alphanumeric plus writer punctuation.
+  b.emit(Instruction::LocalGet(byte));
+  b.emit(Instruction::I32Const(b'0' as i32));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::LocalGet(byte));
+  b.emit(Instruction::I32Const(b'9' as i32));
+  b.emit(Instruction::I32LeU);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalGet(byte));
+  b.emit(Instruction::I32Const(b'A' as i32));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::LocalGet(byte));
+  b.emit(Instruction::I32Const(b'Z' as i32));
+  b.emit(Instruction::I32LeU);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::LocalGet(byte));
+  b.emit(Instruction::I32Const(b'a' as i32));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::LocalGet(byte));
+  b.emit(Instruction::I32Const(b'z' as i32));
+  b.emit(Instruction::I32LeU);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::I32Or);
+  for allowed in b"$-:<>[]{}*=+.,\\/!?~_@#&%^|;'" {
+    b.emit(Instruction::LocalGet(byte));
+    b.emit(Instruction::I32Const(*allowed as i32));
+    b.emit(Instruction::I32Eq);
+    b.emit(Instruction::I32Or);
+  }
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(simple));
+  b.emit(Instruction::End);
+
+  for escaped in b"\n\t\"\\" {
+    b.emit(Instruction::LocalGet(byte));
+    b.emit(Instruction::I32Const(*escaped as i32));
+    b.emit(Instruction::I32Eq);
+    b.emit(Instruction::If(BlockType::Empty));
+    b.emit(Instruction::LocalGet(extra));
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalSet(extra));
+    b.emit(Instruction::End);
+  }
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  // bare: `|` + bytes; quoted: `"|` + escaped bytes + `"`.
+  b.emit(Instruction::LocalGet(len));
+  b.emit(Instruction::LocalGet(simple));
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(3));
+  b.emit(Instruction::LocalGet(extra));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(out_len));
+  b.emit(Instruction::LocalGet(out_len));
+  b.emit(Instruction::I32Const(7));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(-8));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalSet(padded));
+  b.emit(Instruction::LocalGet(padded));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(payload));
+  rt_emit_alloc_dynamic(&mut b, payload, out, string_tag);
+  b.emit(Instruction::LocalGet(out));
+  b.emit(Instruction::LocalGet(out_len));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(out));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(dst));
+
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(out_index));
+  b.emit(Instruction::LocalGet(simple));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(dst));
+  b.emit(Instruction::I32Const(b'"' as i32));
+  b.emit(Instruction::I32Store8(mem_arg_byte(0)));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(out_index));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(dst));
+  b.emit(Instruction::LocalGet(out_index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(b'|' as i32));
+  b.emit(Instruction::I32Store8(mem_arg_byte(0)));
+  b.emit(Instruction::LocalGet(out_index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(out_index));
+
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalGet(len));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(src));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::LocalSet(byte));
+
+  b.emit(Instruction::LocalGet(simple));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::LocalGet(byte));
+  b.emit(Instruction::I32Const(b'\n' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(byte));
+  b.emit(Instruction::I32Const(b'\t' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::LocalGet(byte));
+  b.emit(Instruction::I32Const(b'"' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::LocalGet(byte));
+  b.emit(Instruction::I32Const(b'\\' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(dst));
+  b.emit(Instruction::LocalGet(out_index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(b'\\' as i32));
+  b.emit(Instruction::I32Store8(mem_arg_byte(0)));
+  b.emit(Instruction::LocalGet(out_index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(out_index));
+  b.emit(Instruction::LocalGet(byte));
+  b.emit(Instruction::I32Const(b'\n' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(b'n' as i32));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(byte));
+  b.emit(Instruction::I32Const(b'\t' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(b't' as i32));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(byte));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalSet(byte));
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(dst));
+  b.emit(Instruction::LocalGet(out_index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(byte));
+  b.emit(Instruction::I32Store8(mem_arg_byte(0)));
+  b.emit(Instruction::LocalGet(out_index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(out_index));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(simple));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(dst));
+  b.emit(Instruction::LocalGet(out_index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(b'"' as i32));
+  b.emit(Instruction::I32Store8(mem_arg_byte(0)));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(out));
+  b.emit(Instruction::F64ConvertI32U);
+  b.finish(vec![ValType::F64], vec![ValType::F64])
 }
 
 /// `__rt_map_equal(a: i32, b: i32) → i32`

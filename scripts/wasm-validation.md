@@ -36,6 +36,7 @@ Calcit 通过两个公开 preview 子命令暴露 WASM codegen：`calcit wasm` �
 | `&str:find-index`                      | ✅   | 朴素字节子串搜索，返回偏移或 -1 |
 | `&str:includes?`                       | ✅   | `find-index >= 0`          |
 | `&str:pad-left` / `&str:pad-right`     | ✅   | 循环填充 pattern 字节    |
+| `format-cirru-edn`                     | 部分 | 由闭合静态类型导向；首批支持 nil、Bool、String、tag 与递归同质 List |
 | `__str_new` (FFI)                      | ✅   | JS → WASM 字符串传递     |
 | `defwasm-import` / `defwasm-export`    | ✅   | 显式声明 host ABI，支持 Number / String |
 
@@ -46,6 +47,14 @@ Calcit 通过两个公开 preview 子命令暴露 WASM codegen：`calcit wasm` �
 - Method dispatch
 - Atom / Ref
 - 可变参数 (`&`) 和可选参数 (`?`)
+
+### Cirru EDN 格式化边界
+
+WASM 的 Number、Bool、nil 和 tag id 当前共用 f64 value ABI，运行时反射无法可靠区分这些标量。因此 `format-cirru-edn` 不增加动态类型探测规则，而是读取预处理后保留的闭合类型并生成对应 formatter。
+
+首批支持 nil、Bool、String、tag、整数 numeric refinement，以及递归的同质 `List<T>`；输出与 native compact formatter 一样带首尾换行，字符串遵循 Cirru leaf 的 `|text` / `"|quoted text"` 规则。`Dynamic`、未解析类型变量、普通 `Number`、Map、Struct 与 Enum 暂时以 `E_WASM_EDN_TYPE` 明确拒绝，不能静默猜测或输出占位数据。后续先补精确 f64、Map 与 nominal value，再接入有界 parser 和 typed decode。
+
+这项能力复用现有 core API，不增加新的 CLI 或 Calcit 表层入口。WASI 文件工作流仍通过 `fs:path` 的 typed read/write API 组合。
 
 ## 编译与验证方式
 

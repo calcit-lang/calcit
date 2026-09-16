@@ -132,6 +132,8 @@ fn mem_arg_byte(offset: u64) -> wasm_encoder::MemArg {
   }
 }
 
+#[path = "emit_wasm/edn.rs"]
+mod edn;
 /// Emit a WASM binary module from the compiled program.
 /// Processes functions from all namespaces in the program.
 #[path = "emit_wasm/heap.rs"]
@@ -147,6 +149,7 @@ mod sets;
 #[path = "emit_wasm/strings.rs"]
 mod strings;
 
+use edn::*;
 #[allow(unused_imports)]
 pub(super) use heap::*; // makes heap fns available to sibling submodules via `use super::*`
 use hof::*;
@@ -4779,6 +4782,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::CharFromCode => emit_char_from_code(ctx, args),
     CalcitProc::NativeStrReplace => emit_str_replace(ctx, args),
     CalcitProc::NativeStrEscape => emit_str_escape(ctx, args),
+    CalcitProc::FormatCirruEdn => emit_format_cirru_edn(ctx, args),
     CalcitProc::Split => emit_split(ctx, args),
     CalcitProc::SplitLines => emit_split_lines(ctx, args),
 
@@ -6258,14 +6262,24 @@ fn build_string_pool(
   target: WasmTarget,
 ) -> (HashMap<String, u32>, Vec<u8>, i32) {
   let mut strings: Vec<String> = Vec::new();
+  let mut needs_edn_format = false;
   for (_, _, _, body) in fn_defs {
     for expr in body {
       collect_strings_from_expr(expr, &mut strings);
+      needs_edn_format |= expr_uses_cirru_edn_format(expr);
     }
   }
   if target == WasmTarget::Wasi {
     strings.push(" ".into());
     strings.push("\n".into());
+  }
+  if needs_edn_format {
+    strings.extend(
+      ["do ", "\n", "nil", "true", "false", "[]", "([]", ")", " "]
+        .into_iter()
+        .map(String::from),
+    );
+    strings.extend(tag_index.keys().map(|tag| format!(":{tag}")));
   }
   strings.sort();
   strings.dedup();
@@ -6400,6 +6414,15 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
       }
     }
     _ => {}
+  }
+}
+
+fn expr_uses_cirru_edn_format(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::List(xs) => {
+      matches!(xs.first(), Some(Calcit::Proc(CalcitProc::FormatCirruEdn))) || xs.iter().any(expr_uses_cirru_edn_format)
+    }
+    _ => false,
   }
 }
 
