@@ -1217,7 +1217,12 @@ pub fn schema_cirru_to_edn(schema: Cirru) -> Edn {
         } else if let Some(stripped) = value.strip_prefix('|') {
           Some(Edn::str(stripped))
         } else {
-          Some(Edn::Symbol(text.clone()))
+          match value {
+            "true" => Some(Edn::Bool(true)),
+            "false" => Some(Edn::Bool(false)),
+            "nil" => Some(Edn::Nil),
+            _ => Some(Edn::Symbol(text.clone())),
+          }
         }
       }
       Cirru::List(items) => match items.first() {
@@ -3832,6 +3837,12 @@ mod tests {
     assert_eq!(
       validate_schema_for_write(&invalid_async).expect_err("invalid async marker should fail"),
       "`:async` must be `true` or `false`"
+    );
+
+    let parsed_async = parse_schema_annotation_for_write(&valid_async).expect("async schema should parse");
+    assert!(
+      matches!(parsed_async.as_ref(), CalcitTypeAnnotation::Fn(signature) if signature.is_async_invocation()),
+      "schema writer must preserve explicit async invocation"
     );
 
     let valid_with_where = parse_one(":: :fn $ {} (:generics ([] 'T)) (:args ([] 'T)) (:where {} ('T Show)) (:return :string)");

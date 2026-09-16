@@ -1244,6 +1244,11 @@ fn component_function_schema(
     .schema
     .resolve_to_fn()
     .ok_or_else(|| format!("E_COMPONENT_ABI_MISSING_SCHEMA: `{definition}` at `logical_schema` requires a resolved function schema"))?;
+  if signature.is_async_invocation() {
+    return Err(format!(
+      "E_COMPONENT_ABI_ASYNC_UNSUPPORTED: `{definition}` at `logical_schema.async` requires the WASI 0.3 native-async adapter"
+    ));
+  }
   if !signature.generics.is_empty() {
     return Err(format!(
       "E_COMPONENT_ABI_UNSUPPORTED_GENERIC: `{definition}` at `logical_schema.generics` must be monomorphized"

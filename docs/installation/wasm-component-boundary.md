@@ -71,7 +71,7 @@ Canonical ABI result，Unit 参数应直接省略而不是占据一个伪值位�
 
 Calcit 已提供 `'Int8`、`'UInt8`、`'Int16`、`'UInt16`、`'Int32`、`'UInt32`、`'Int64`、`'UInt64`、
 `'Float32` 与 `'Float64` 作为 source-level 数值 refinement，并通过 `number->int8` 等函数显式建立
-受检边界证明。它们的运行时表示仍是统一的 `Number`。Component Interface IR v2 已将这些类型
+受检边界证明。它们的运行时表示仍是统一的 `Number`。Component Interface IR v3 已将这些类型
 分别导出为独立 `kind`；adapter 不能依据值范围或调用位置猜测宽度，也不能静默退化为 `Number`。
 adapter 直接按 Canonical ABI 使用 `i32`、`i64`、`f32` 和 `f64` flat shape 及对应 memory layout。
 两个方向都会拒绝越界、非整数、符号错误、无法精确进入 `f64` 的 64 位整数，以及不能原样往返的 `Float32`，
@@ -91,7 +91,7 @@ generic 必须在边界处已经具体化。同步 direct adapter 会在 schema 
 已支持的闭合类型与 Struct。边界不会根据运行时 tag 猜测 declaration，也不会接受 anonymous/open Enum、generic Enum、
 递归 Enum 或无法解析的声明；无 payload case 应直接省略 payload，显式 `Unit` payload 会给出带 schema path 的错误。
 
-明确宽度的整数/浮点数已在 0.15.2 具备 source-level refinement，Component Interface IR v2
+明确宽度的整数/浮点数已在 0.15.2 具备 source-level refinement，Component Interface IR v3
 会确定性导出对应宽度，Canonical ABI adapter 复用相同递归 walker 处理 Struct、Enum、List、Option 与 Result 中的嵌套值。
 
 以下形状不进入同步 Component 边界，并在 contract 导出或 adapter 生成阶段拒绝：
@@ -109,7 +109,7 @@ generic 必须在边界处已经具体化。同步 direct adapter 会在 schema 
 Component contract 沿用 `calcit ffi export`，通过 `--boundary component`
 显式选择。该边界不新增顶层 component/WIT 命令。
 
-- Component Interface IR v2 默认输出 Cirru EDN；
+- Component Interface IR v3 默认输出 Cirru EDN；
 - `--format json` 用于需要 JSON 的 consumer；
 - native raw-binding inventory 保留 human 输出和显式 `--json` 入口，但 consumer 必须检查新的 schema version；
 - Cirru EDN 和 JSON 必须表达同一个 versioned contract 与 revision。
@@ -132,13 +132,27 @@ export 对应 `canon lift`，超过同步 Canonical ABI 单结果上限的 flat 
 指针；import 对应 `canon lower`，结果使用 caller 传入的 return area，再复制回对应的 Calcit 值。两者是
 Canonical ABI 针对不同方向规定的函数形状，不是可以互换的自定义约定。core module 只保留显式声明的
 Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，不会携带 native core target
-的隐式 `math/io` imports。post-return 与 async 仍是后续任务；尚未 lowering 的 schema 在生成阶段明确失败。
+的隐式 `math/io` imports。post-return 与 async adapter 仍是后续任务；尚未 lowering 的 schema 在生成阶段明确失败。
+
+## 异步 Component 合约
+
+0.15.3 从函数 schema 已有的 `:async true` 推导 Component definition 的必填
+`invocation: async`；没有该标记的边界确定性导出为 `invocation: sync`。该字段只声明调用语义，
+不会把 native `async-task-v1` 的句柄、事件队列或 scheduler 规则搬进 Component contract。
+
+异步函数的参数与返回 schema 和同步函数使用同一套闭合类型规则，typed `Result<T,E>` 仍作为
+普通返回类型保留。WASI 0.3 adapter 负责 async function/future 的 Canonical ABI、取消与 drop；
+Calcit 表层不重复引入 `Task<T>`。`stream<T>` 需要先明确单一 readable ownership、背压、取消和
+drop，暂不由 v3 contract 猜测或生成。当前 core adapter 仍只生成同步边界；`async` contract 的
+core module 生成会以 `E_COMPONENT_ABI_ASYNC_UNSUPPORTED` 明确拒绝，不能静默套用同步 ABI。
+实际 lowering 与运行验证由后续 Calcit core adapter 与 calcit-bindgen 阶段完成。
 
 ## 实施顺序
 
 1. 导出 directional typed contract，完成确定性、数值宽度、诊断和 Cirru EDN/JSON 等价。
 2. 为 Bool、Buffer、Number、明确宽度数值、String、递归同质 List、Unit 结果、闭合单态 Option/Result、Struct record 与普通 Enum variant 生成 Canonical ABI import/export adapter。
 3. 由 `calcit-bindgen` 生成 WIT 并打包 runnable component，在 Wasmtime 和 jco 做端到端往返。
-4. 同步边界稳定后，再引入 WASI 0.3 async、HTTP 和 socket。
+4. 由 Component Interface IR v3 的显式 invocation 驱动 WASI 0.3 async function/future adapter；request 路径稳定后再设计 stream。
+5. 在异步基础稳定后引入 WASI HTTP 和 socket。
 
 用户可观察的类型与语义优先由 Calcit definition `:tests` 覆盖；Rust 测试只覆盖 contract serialization、WASM encoding、Canonical ABI/memory layout 和 unsupported boundary。

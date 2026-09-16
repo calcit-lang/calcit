@@ -12,9 +12,9 @@ use cirru_parser::Cirru;
 pub const FFI_INTERFACE_IR_VERSION: u32 = 3;
 pub const FFI_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/ffi-interface-ir-v3.schema.json";
 pub const FFI_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/ffi-interface-ir-v3.schema.json");
-pub const COMPONENT_INTERFACE_IR_VERSION: u32 = 2;
-pub const COMPONENT_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/component-interface-ir-v2.schema.json";
-pub const COMPONENT_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/component-interface-ir-v2.schema.json");
+pub const COMPONENT_INTERFACE_IR_VERSION: u32 = 3;
+pub const COMPONENT_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/component-interface-ir-v3.schema.json";
+pub const COMPONENT_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/component-interface-ir-v3.schema.json");
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FfiInterfaceDocument {
@@ -194,6 +194,13 @@ pub enum ComponentDirection {
   Export,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ComponentInvocation {
+  Sync,
+  Async,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ComponentDefinitionIr {
   pub id: String,
@@ -202,6 +209,7 @@ pub struct ComponentDefinitionIr {
   pub doc: String,
   pub logical_schema: String,
   pub direction: ComponentDirection,
+  pub invocation: ComponentInvocation,
   pub module: Option<String>,
   pub symbol: String,
   pub signature: Option<FfiFunctionSignatureIr>,
@@ -265,15 +273,13 @@ fn component_diagnostic(
 
 fn componentize_diagnostic(mut item: FfiInterfaceDiagnostic) -> FfiInterfaceDiagnostic {
   let componentize_text = |text: String| {
-    text
-      .replace(
-        &format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION}"),
-        &format!("Component Interface IR v{COMPONENT_INTERFACE_IR_VERSION}"),
-      )
-      .replace(
-        &format!("Interface IR v{FFI_INTERFACE_IR_VERSION}"),
-        &format!("Component Interface IR v{COMPONENT_INTERFACE_IR_VERSION}"),
-      )
+    let native_name = format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION}");
+    let component_name = format!("Component Interface IR v{COMPONENT_INTERFACE_IR_VERSION}");
+    if text.contains(&native_name) {
+      text.replace(&native_name, &component_name)
+    } else {
+      text.replace(&format!("Interface IR v{FFI_INTERFACE_IR_VERSION}"), &component_name)
+    }
   };
   item.phase = "component-interface-ir".to_owned();
   item.message = componentize_text(item.message);
@@ -1464,6 +1470,10 @@ pub fn export_component_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -
       doc: entry.doc.clone(),
       logical_schema: canonical_edn_display(&entry.schema.to_type_edn()),
       direction: binding.direction,
+      invocation: match entry.schema.as_ref() {
+        CalcitTypeAnnotation::Fn(signature) if signature.is_async_invocation() => ComponentInvocation::Async,
+        _ => ComponentInvocation::Sync,
+      },
       module: binding.module,
       symbol: binding.symbol,
       signature,
@@ -1557,13 +1567,17 @@ pub fn format_component_human_report(report: &ComponentExportReport) -> String {
   );
   for definition in &report.interface.definitions {
     output.push_str(&format!(
-      "- {} [{}] direction={:?} module={} symbol={}\n",
+      "- {} [{}] direction={:?} invocation={} module={} symbol={}\n",
       definition.id,
       match definition.status {
         FfiDefinitionStatus::Supported => "supported",
         FfiDefinitionStatus::Unsupported => "unsupported",
       },
       definition.direction,
+      match definition.invocation {
+        ComponentInvocation::Sync => "sync",
+        ComponentInvocation::Async => "async",
+      },
       definition.module.as_deref().unwrap_or("<world>"),
       definition.symbol,
     ));
@@ -1653,6 +1667,19 @@ mod tests {
     entry
   }
 
+  fn async_component_function_entry(
+    source: &str,
+    args: Vec<Arc<CalcitTypeAnnotation>>,
+    result: Arc<CalcitTypeAnnotation>,
+  ) -> CodeEntry {
+    let mut entry = component_function_entry(source, args, result);
+    let CalcitTypeAnnotation::Fn(signature) = entry.schema.as_ref() else {
+      unreachable!("component function fixture must carry a function schema")
+    };
+    entry.schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature.with_async_invocation())));
+    entry
+  }
+
   fn data_entry(code: &str) -> CodeEntry {
     let parsed = cirru_parser::parse(code).expect("parse data declaration fixture");
     CodeEntry {
@@ -1730,12 +1757,48 @@ mod tests {
     assert!(report.diagnostics.is_empty());
     assert_eq!(report.interface.definitions[0].id, "test.ffi/add");
     assert_eq!(report.interface.definitions[0].direction, ComponentDirection::Export);
+    assert_eq!(report.interface.definitions[0].invocation, ComponentInvocation::Sync);
     assert_eq!(report.interface.definitions[0].module, None);
     assert_eq!(report.interface.definitions[0].symbol, "add");
     assert_eq!(report.interface.definitions[1].direction, ComponentDirection::Import);
+    assert_eq!(report.interface.definitions[1].invocation, ComponentInvocation::Sync);
     assert_eq!(report.interface.definitions[1].module.as_deref(), Some("host"));
     assert_eq!(report.interface.definitions[1].symbol, "string-upcase");
     assert_eq!(report, build());
+  }
+
+  #[test]
+  fn preserves_explicit_async_invocation_without_changing_the_signature() {
+    let args = vec![Arc::new(CalcitTypeAnnotation::String)];
+    let result = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Result"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::String), Arc::new(CalcitTypeAnnotation::String)]),
+    ));
+    let sync = export_component_snapshot(
+      &snapshot(vec![(
+        "fetch",
+        component_function_entry("defwasm-export fetch (url) url", args.clone(), result.clone()),
+      )]),
+      None,
+    )
+    .expect("export sync Component contract");
+    let asynchronous = export_component_snapshot(
+      &snapshot(vec![(
+        "fetch",
+        async_component_function_entry("defwasm-export fetch (url) url", args, result),
+      )]),
+      None,
+    )
+    .expect("export async Component contract");
+
+    let sync_definition = &sync.interface.definitions[0];
+    let async_definition = &asynchronous.interface.definitions[0];
+    assert_eq!(sync_definition.invocation, ComponentInvocation::Sync);
+    assert_eq!(async_definition.invocation, ComponentInvocation::Async);
+    assert_eq!(sync_definition.signature, async_definition.signature);
+    assert_ne!(sync_definition.logical_schema, async_definition.logical_schema);
+    assert_ne!(sync.revision, asynchronous.revision);
+    assert!(format_component_human_report(&asynchronous).contains("invocation=async"));
   }
 
   #[test]
@@ -1971,8 +2034,9 @@ mod tests {
       .find(|item| item.code == "E_FFI_IR_TYPE_ARGUMENT_ARITY")
       .expect("type argument arity diagnostic");
     assert_eq!(diagnostic.phase, "component-interface-ir");
-    assert!(diagnostic.suggestion.contains("Component Interface IR v2"));
-    assert!(!diagnostic.suggestion.contains("Interface IR v3"));
+    assert!(diagnostic.suggestion.contains("Component Interface IR v3"));
+    assert!(!diagnostic.suggestion.contains("FFI Interface IR v3"));
+    assert!(!diagnostic.suggestion.contains("Component Component"));
   }
 
   #[test]
