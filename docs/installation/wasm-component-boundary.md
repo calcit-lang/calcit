@@ -132,8 +132,8 @@ export 对应 `canon lift`，超过同步 Canonical ABI 单结果上限的 flat 
 指针；import 对应 `canon lower`，结果使用 caller 传入的 return area，再复制回对应的 Calcit 值。两者是
 Canonical ABI 针对不同方向规定的函数形状，不是可以互换的自定义约定。core module 只保留显式声明的
 Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，不会携带 native core target
-的隐式 `math/io` imports。post-return 与尚未实现的 indirect async parameters 仍是后续任务；尚未 lowering 的 schema
-在生成阶段明确失败。
+的隐式 `math/io` imports。post-return、stackless callback cancellation 与 stream 仍是后续任务；尚未 lowering 的 schema
+继续在生成阶段明确失败。
 
 `cabi_realloc` 与 Calcit 内部对象当前共享同一个 bump pointer，但两类 allocation 的对齐语义不同：canonical byte range
 只保证调用方请求的 alignment，Calcit 内部 Struct、Enum、List 等 f64-backed object 则在写入 header 前恢复 8 字节对齐。
