@@ -2511,6 +2511,7 @@ pub(super) fn build_runtime_fns(
     *fn_index.get("__rt_copy_f64_slots").expect("copy helper"),
     map_linearize_idx,
     map_from_flat_idx,
+    map_key_equal_idx,
   ));
 
   // Substring search helper: __rt_str_find_index(h_ptr: i32, n_ptr: i32) → f64
@@ -3869,7 +3870,7 @@ fn build_rt_map_contains_value(root_contains_value_idx: u32) -> CompiledFn {
   b.finish(vec![ValType::I32, ValType::F64], vec![ValType::I32])
 }
 
-fn build_rt_map_dissoc(copy_fn_idx: u32, map_linearize_idx: u32, map_from_flat_idx: u32) -> CompiledFn {
+fn build_rt_map_dissoc(copy_fn_idx: u32, map_linearize_idx: u32, map_from_flat_idx: u32, key_equal_idx: u32) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(2);
   let count = b.alloc_i32();
   let flat = b.alloc_i32();
@@ -3918,7 +3919,7 @@ fn build_rt_map_dissoc(copy_fn_idx: u32, map_linearize_idx: u32, map_from_flat_i
   b.emit(Instruction::I32Add);
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::Call(key_equal_idx));
   b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::LocalSet(found));

@@ -680,23 +680,32 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     }
   }
 
-  // Build string literal pool: assigns each unique string a memory offset.
-  let (string_pool, string_data_segment, heap_start) = build_string_pool(&fn_defs, &tag_index, target);
-
-  // Scan for defatom definitions — each gets a mutable WASM global (f64).
-  let mut atom_initial_values: Vec<f64> = Vec::new();
-  let mut atom_globals: HashMap<String, u32> = HashMap::new();
-  // Collect top-level value defs so imported constants can be emitted as expressions.
+  // Collect top-level value defs before building the string pool because
+  // imported constants may be inlined later by emit_expr.
   let mut value_imports: HashMap<String, Calcit> = HashMap::new();
   for &ns in &ns_order {
     let Some(file_info) = program_data.get(ns) else {
       continue;
     };
     for (def_name, compiled) in &file_info.defs {
-      let qualified = format!("{ns}/{def_name}");
       if matches!(compiled.kind, program::CompiledDefKind::Value | program::CompiledDefKind::LazyValue) {
-        value_imports.insert(qualified.clone(), compiled.preprocessed_code.to_owned());
+        value_imports.insert(format!("{ns}/{def_name}"), compiled.preprocessed_code.to_owned());
       }
+    }
+  }
+
+  // Build string literal pool: assigns each unique string a memory offset.
+  let (string_pool, string_data_segment, heap_start) = build_string_pool(&fn_defs, &value_imports, &tag_index, target);
+
+  // Scan for defatom definitions — each gets a mutable WASM global (f64).
+  let mut atom_initial_values: Vec<f64> = Vec::new();
+  let mut atom_globals: HashMap<String, u32> = HashMap::new();
+  for &ns in &ns_order {
+    let Some(file_info) = program_data.get(ns) else {
+      continue;
+    };
+    for (def_name, compiled) in &file_info.defs {
+      let qualified = format!("{ns}/{def_name}");
       if let crate::calcit::Calcit::List(xs) = &compiled.preprocessed_code
         && matches!(
           xs.first(),
@@ -6262,6 +6271,7 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
 ///   - `heap_start`: the new heap start offset (after all string data)
 fn build_string_pool(
   fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
+  value_imports: &HashMap<String, Calcit>,
   tag_index: &HashMap<String, u32>,
   target: WasmTarget,
 ) -> (HashMap<String, u32>, Vec<u8>, i32) {
@@ -6274,6 +6284,11 @@ fn build_string_pool(
       needs_edn_format |= expr_uses_cirru_edn_format(expr);
       needs_edn_parse |= expr_uses_typed_cirru_edn_parse(expr);
     }
+  }
+  for expr in value_imports.values() {
+    collect_strings_from_expr(expr, &mut strings);
+    needs_edn_format |= expr_uses_cirru_edn_format(expr);
+    needs_edn_parse |= expr_uses_typed_cirru_edn_parse(expr);
   }
   if target == WasmTarget::Wasi {
     strings.push(" ".into());
@@ -6291,6 +6306,9 @@ fn build_string_pool(
     strings.extend(
       [
         "do ",
+        "nil",
+        "true",
+        "false",
         "E_WASM_EDN_INPUT_LIMIT: Cirru EDN input exceeds 65536 bytes",
         "E_WASM_EDN_SYNTAX: invalid Cirru EDN scalar",
         "E_WASM_EDN_RANGE: numeric value is outside the requested type",
@@ -6465,17 +6483,17 @@ fn expr_uses_typed_cirru_edn_parse(expr: &Calcit) -> bool {
 
 #[cfg(test)]
 mod tests {
-  use std::collections::BTreeMap;
+  use std::collections::{BTreeMap, HashMap};
   use std::str::FromStr;
   use std::sync::Arc;
 
   use super::{
     ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport, WasmBoundary, WasmTarget,
-    build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, component_abi_type, component_flat_types,
-    component_import_signature, component_memory_layout, component_task_return_signature, host_imports_for_target, index_host_imports,
-    must_reject_extraction_failure, validate_component_export_symbols, validate_component_flat_parameters,
-    validate_component_import_symbols,
+    build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, build_string_pool, component_abi_type,
+    component_flat_types, component_import_signature, component_memory_layout, component_task_return_signature,
+    host_imports_for_target, index_host_imports, must_reject_extraction_failure, validate_component_export_symbols,
+    validate_component_flat_parameters, validate_component_import_symbols,
   };
   use crate::calcit::{
     Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitStructDef, CalcitStructValue, CalcitSyntax, CalcitTypeAnnotation,
@@ -6518,6 +6536,16 @@ mod tests {
     let tags = super::collect_all_tags_from(&[], None);
     for tag in ["none", "some", "ok", "err"] {
       assert!(tags.contains_key(tag), "missing built-in Component variant tag {tag}");
+    }
+  }
+
+  #[test]
+  fn typed_edn_parser_literals_include_inlined_top_level_values() {
+    let value_imports = HashMap::from([(String::from("app.main/parsed"), declaration(CalcitSyntax::TryParseCirruEdnAs))]);
+    let tag_index = HashMap::from([(String::from("string"), 1)]);
+    let (pool, _, _) = build_string_pool(&[], &value_imports, &tag_index, WasmTarget::Wasi);
+    for literal in ["nil", "true", "false", "E_WASM_EDN_SYNTAX: invalid Cirru EDN scalar"] {
+      assert!(pool.contains_key(literal), "missing typed parser literal {literal}");
     }
   }
 

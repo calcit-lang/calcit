@@ -158,6 +158,16 @@
               assert= true $ result:err? $ edn-parse-int-list "|[] 1 2147483648"
               assert= true $ result:err? $ edn-parse-int-list "|[] 1 |bad"
             :tags $ #{} :core :unit
+        'edn-parse-large-fraction $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-large-fraction (text) (try-parse-cirru-edn-as text 'Int64)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result 'Int64 'String
+          :tests $ [] $ %{} 'TestEntry (:name |rejects-rounded-fraction)
+            :code $ quote $ assert= true
+              result:err? $ edn-parse-large-fraction |9007199254740990.5
+            :tags $ #{} :core :unit
         'edn-parse-list-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-list-main! ()
             let
@@ -239,6 +249,7 @@
                 strings-result $ edn-parse-string-int-map "|{} (\"|two words\" 2) (|tail -3)"
                 tags $ result:unwrap-or tags-result $ {}
                 strings $ result:unwrap-or strings-result $ {}
+                without-two $ &map:dissoc strings "|two words"
               assert= true $ result:ok? tags-result
               assert= 2 $ count tags
               assert= |one $ &map:get tags :a
@@ -247,7 +258,10 @@
               assert= 2 $ count strings
               assert= 2 $ &map:get strings "|two words"
               assert= -3 $ &map:get strings |tail
+              assert= 1 $ count without-two
+              assert= false $ &map:contains? without-two "|two words"
               assert= true $ result:err? $ edn-parse-tag-string-map "|{} (:a"
+              assert= true $ result:err? $ edn-parse-large-fraction |9007199254740990.5
               println |WASI-typed-EDN-maps:-ok
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
