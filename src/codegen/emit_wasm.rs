@@ -2262,7 +2262,7 @@ fn finish_component_async_import_adapter(
       locals.push(ValType::I32);
       instructions.extend([
         Instruction::LocalGet(ret_ptr.expect("non-Unit async result must have a return area")),
-        Instruction::I32Load(mem_arg_i32(0)),
+        Instruction::I32Load8U(mem_arg_byte(0)),
         Instruction::LocalSet(value),
       ]);
       instructions.extend(component_bool_i32_to_f64(value));
