@@ -157,6 +157,7 @@
               assert= true $ result:err? $ &list:nth results 6
               assert= true $ result:err? $ &list:nth results 7
               assert= true $ result:err? $ &list:nth results 8
+              assert= true $ result:err? $ &list:nth results 9
               println |WASI-typed-EDN-scalars:-ok
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -186,13 +187,13 @@
             :args $ []
         'edn-parse-scalars $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-scalars ()
-            [] (try-parse-cirru-edn-as "|do 42" 'Int32) (try-parse-cirru-edn-as "|do |hello" 'String) (try-parse-cirru-edn-as "|do :ready" 'Tag) (try-parse-cirru-edn-as "|do true" 'Bool) (try-parse-cirru-edn-as "|do nil" 'Nil) (try-parse-cirru-edn-as "|do 128" 'Int8) (try-parse-cirru-edn-as "|do 1.5" 'Int8) (try-parse-cirru-edn-as "|do |bad" 'Int32) (try-parse-cirru-edn-as "|do :wasi-typed-edn-unknown" 'Tag)
+            [] (try-parse-cirru-edn-as "|do 42" 'Int32) (try-parse-cirru-edn-as "|do |hello" 'String) (try-parse-cirru-edn-as "|do :ready" 'Tag) (try-parse-cirru-edn-as "|do true" 'Bool) (try-parse-cirru-edn-as "|do nil" 'Nil) (try-parse-cirru-edn-as "|do 128" 'Int8) (try-parse-cirru-edn-as "|do 1.5" 'Int8) (try-parse-cirru-edn-as "|do |bad" 'Int32) (try-parse-cirru-edn-as "|do :wasi-typed-edn-unknown" 'Tag) (try-parse-cirru-edn-as "|do nil" 'Unit)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
           :tests $ [] $ %{} 'TestEntry (:name |parses-bounded-scalars)
             :code $ quote $ assert=
-              [] (%ok 42) (%ok |hello) (%ok :ready) (%ok true) (%ok nil) true true true true
+              [] (%ok 42) (%ok |hello) (%ok :ready) (%ok true) (%ok nil) true true true true true
               let
                   results $ edn-parse-scalars
                 [] (&list:nth results 0) (&list:nth results 1) (&list:nth results 2) (&list:nth results 3) (&list:nth results 4)
@@ -200,6 +201,7 @@
                   result:err? $ &list:nth results 6
                   result:err? $ &list:nth results 7
                   result:ok? $ &list:nth results 8
+                  result:err? $ &list:nth results 9
         'exit-7! $ %{} 'CodeEntry (:doc "|以状态码 7 终止进程，用于验证 command 退出边界。")
           :code $ quote $ defn exit-7! () (quit! 7)
           :examples $ []
