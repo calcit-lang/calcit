@@ -79,13 +79,33 @@ Enum 的 case 名称与顺序来自规范化后的 `defenum` schema，并决定�
 
 该阶段没有新增命令：core 继续使用 `calcit ffi export --boundary component` 与
 `calcit wasm --boundary component`，WIT 与 runnable Component packaging 继续由 calcit-bindgen 的
-`generate` / `check` 负责。Struct/Enum/Result 已在 Wasmtime 与 jco/Node 完成实际往返；0.15.2 进一步为
-明确宽度数值生成 Canonical ABI lowering，升级后需重新生成 contract 和 Component 产物，不保留旧数值 ABI 兼容层。
+`generate` / `check` 负责。Struct/Enum/Result 已在 Wasmtime 与 jco/Node 完成实际往返；明确宽度数值的
+Component lowering 见下一节。
 
 从 0.14.20 preview 升级时不需要改写命令，也不要新增 WIT/component wrapper。应重新执行
 `calcit ffi export --boundary component` 导出 contract，用 calcit-bindgen `check` 查看 ABI fingerprint 与兼容性变化，
 确认后再用 `generate` 刷新 WIT、manifest 和 Component 产物。依赖 declaration 顺序的 Struct field 与 Enum case 会进入
 公开 ABI；若顺序发生变化，应把它作为显式接口变更审阅，并重新运行宿主侧 Wasmtime 或 jco 往返测试。
+
+## 0.15.2 明确宽度数值边界
+
+0.15.2 让十种明确宽度数值 refinement 直接进入 Component Canonical ABI，同时保持单一运行时数值表示。
+
+运行时值形状不变：signed/unsigned 8/16/32/64 位整数与 32/64 位浮点数是 `Number` 的静态边界 refinement，
+native 仍是 `f64`，JavaScript 仍是 `Number`。refinement 可安全地作为 `Number` 使用，普通 `Number` 不会隐式收窄；
+普通算术返回 `Number`，不会保留已经失效的范围证明。
+
+进入明确边界必须显式转换：`number->int8`、`number->uint8`、`number->int16`、`number->uint16`、`number->int32`、
+`number->uint32`、`number->int64`、`number->uint64`、`number->float32`、`number->float64` 返回
+`Result<目标类型,String>`，拒绝非整数、符号错误、溢出、NaN/Infinity 与不可接受的精度损失——不截断、不环绕、
+不静默舍入。Calcit 的 `f64` 表示无法无损覆盖全部 64 位整数，因此只承诺可精确表示的安全整数范围，host 超范围
+值明确拒绝。
+
+Component boundary 按推导并规范化后的 schema 宽度确定性导出 `Int8`、`UInt8`、`Int16`、`UInt16`、`Int32`、
+`UInt32`、`Int64`、`UInt64`、`Float32`、`Float64` 独立 kind；普通 `Number` 仍导出为 `number`，bindgen 不根据值、
+名称或调用位置猜测宽度。从 0.15.1 升级时不需要新增顶层命令、语法或 analyzer；但必须重新执行
+`calcit ffi export --boundary component`，并用 calcit-bindgen `generate` / `check` 刷新 WIT、manifest 与 Component
+产物，不保留旧数值 ABI 兼容层。旧边界写法只有在能证明等价时才由 `calcit fix` 给出迁移建议，其他仍需人工决定。
 
 ## 0.14 默认严格诊断
 
