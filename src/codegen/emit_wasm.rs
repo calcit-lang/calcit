@@ -4495,6 +4495,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.emit(Instruction::F64Sub);
       Ok(())
     }
+    CalcitProc::NativeNumberFits => emit_number_fits(ctx, args),
     CalcitProc::Sin => emit_host_call(ctx, "sin", args),
     CalcitProc::Cos => emit_host_call(ctx, "cos", args),
     CalcitProc::Pow => emit_host_call(ctx, "pow", args),
@@ -4967,6 +4968,102 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
 
     // Not yet supported
     _ => Err(format!("unsupported proc in WASM: {proc}")),
+  }
+}
+
+/// Emit the runtime refinement predicate used by the checked numeric conversion helpers.
+fn emit_number_fits(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(2, args, "&number:fits?")?;
+  let value = ctx.alloc_local();
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::LocalSet(value));
+
+  let target = ctx.alloc_local();
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalSet(target));
+
+  let result = ctx.alloc_local_typed(ValType::I32);
+  let matched = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(matched));
+
+  for refinement in [
+    CalcitNumericRefinement::Int8,
+    CalcitNumericRefinement::UInt8,
+    CalcitNumericRefinement::Int16,
+    CalcitNumericRefinement::UInt16,
+    CalcitNumericRefinement::Int32,
+    CalcitNumericRefinement::UInt32,
+    CalcitNumericRefinement::Int64,
+    CalcitNumericRefinement::UInt64,
+    CalcitNumericRefinement::Float32,
+    CalcitNumericRefinement::Float64,
+  ] {
+    let tag_id = *ctx.tag_index.get(refinement.tag_name()).ok_or_else(|| {
+      format!(
+        "numeric refinement tag :{} is missing from the WASM tag index",
+        refinement.tag_name()
+      )
+    })?;
+    ctx.emit(Instruction::LocalGet(target));
+    ctx.emit(f64_const(tag_id as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::LocalSet(matched));
+    emit_number_refinement_test(ctx, value, refinement);
+    ctx.emit(Instruction::LocalSet(result));
+    ctx.emit(Instruction::End);
+  }
+
+  ctx.emit(Instruction::LocalGet(matched));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(result));
+  ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
+}
+
+fn emit_number_refinement_test(ctx: &mut WasmGenCtx, value: u32, refinement: CalcitNumericRefinement) {
+  match refinement {
+    CalcitNumericRefinement::Float64 => ctx.emit(Instruction::I32Const(1)),
+    CalcitNumericRefinement::Float32 => {
+      // Equality after an f32 roundtrip rejects NaN and values that lose precision.
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(Instruction::F32DemoteF64);
+      ctx.emit(Instruction::F64PromoteF32);
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(Instruction::F64Eq);
+    }
+    refinement => {
+      let (min, max) = match refinement {
+        CalcitNumericRefinement::Int8 => (-128.0, 127.0),
+        CalcitNumericRefinement::UInt8 => (0.0, 255.0),
+        CalcitNumericRefinement::Int16 => (-32_768.0, 32_767.0),
+        CalcitNumericRefinement::UInt16 => (0.0, 65_535.0),
+        CalcitNumericRefinement::Int32 => (i32::MIN as f64, i32::MAX as f64),
+        CalcitNumericRefinement::UInt32 => (0.0, u32::MAX as f64),
+        CalcitNumericRefinement::Int64 => (-9_007_199_254_740_991.0, 9_007_199_254_740_991.0),
+        CalcitNumericRefinement::UInt64 => (0.0, 9_007_199_254_740_991.0),
+        CalcitNumericRefinement::Float32 | CalcitNumericRefinement::Float64 => unreachable!(),
+      };
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(f64_const(min));
+      ctx.emit(Instruction::F64Ge);
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(f64_const(max));
+      ctx.emit(Instruction::F64Le);
+      ctx.emit(Instruction::I32And);
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(Instruction::F64Trunc);
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(Instruction::F64Eq);
+      ctx.emit(Instruction::I32And);
+    }
   }
 }
 
