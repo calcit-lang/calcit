@@ -129,6 +129,169 @@ WebAssembly.instantiate(module, { "calcit:component/canonical": canonical }).the
 }
 
 #[test]
+fn async_component_import_waits_for_subtask_and_drops_lifecycle_handles() {
+  let output = TestDirectory::create();
+  let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "tests/fixtures/component-wasm-async-import.cirru",
+      "wasm",
+      "--boundary",
+      "component",
+      "--emit-path",
+    ])
+    .arg(&output.0)
+    .output()
+    .expect("async Component import fixture should compile");
+  assert!(
+    compile.status.success(),
+    "async Component import compile failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&compile.stdout),
+    String::from_utf8_lossy(&compile.stderr)
+  );
+
+  let wasm = output.0.join("program.wasm");
+  let script = r#"
+const fs = require("fs");
+const bytes = fs.readFileSync(process.argv[1]);
+const module = new WebAssembly.Module(bytes);
+const imports = WebAssembly.Module.imports(module).map(({ module, name }) => `${module}/${name}`).sort();
+const expectedImports = [
+  "host/load",
+  "calcit:component/canonical/subtask.drop",
+  "calcit:component/canonical/task-return/call-host-load",
+  "calcit:component/canonical/waitable-set.drop",
+  "calcit:component/canonical/waitable-set.new",
+  "calcit:component/canonical/waitable-set.wait",
+  "calcit:component/canonical/waitable.join",
+].sort();
+if (JSON.stringify(imports) !== JSON.stringify(expectedImports)) {
+  throw new Error(`unexpected imports: ${JSON.stringify(imports)}`);
+}
+
+let instance;
+let nextWaitableSet = 40;
+let completions = [];
+let lifecycle = { new: 0, join: 0, wait: 0, subtaskDrop: 0, setDrop: 0 };
+const pending = new Map();
+const joined = new Map();
+
+const allocateText = text => {
+  const bytes = Buffer.from(text, "utf8");
+  const ptr = instance.exports.cabi_realloc(0, 0, 1, bytes.length);
+  new Uint8Array(instance.exports.memory.buffer, ptr, bytes.length).set(bytes);
+  return [ptr, bytes.length];
+};
+const readText = (ptr, len) => Buffer.from(instance.exports.memory.buffer, ptr, len).toString("utf8");
+const writeResult = (outPtr, discriminant, text) => {
+  const [ptr, len] = allocateText(text);
+  const memory = new DataView(instance.exports.memory.buffer);
+  memory.setUint8(outPtr, discriminant);
+  memory.setUint32(outPtr + 4, ptr, true);
+  memory.setUint32(outPtr + 8, len, true);
+};
+
+const host = {
+  load: (inputPtr, inputLen, outPtr) => {
+    const marker = readText(inputPtr, inputLen);
+    if (marker === "immediate-ok") {
+      writeResult(outPtr, 0, "ready-now");
+      return 2;
+    }
+    if (marker === "delayed-ok") {
+      pending.set(7, { inputPtr, inputLen, outPtr, steps: [0, 1, 2], discriminant: 0, text: "ready-later" });
+      return (7 << 4) | 0;
+    }
+    if (marker === "delayed-error") {
+      pending.set(8, { inputPtr, inputLen, outPtr, steps: [2], discriminant: 1, text: "typed-error" });
+      return (8 << 4) | 1;
+    }
+    if (marker === "cancelled") {
+      pending.set(9, { inputPtr, inputLen, outPtr, steps: [4], discriminant: 1, text: "unused" });
+      return (9 << 4) | 1;
+    }
+    throw new Error(`unexpected host input ${marker}`);
+  },
+};
+const canonical = {
+  "task-return/call-host-load": (discriminant, ptr, len) => {
+    completions.push([discriminant, readText(ptr, len)]);
+  },
+  "waitable-set.new": () => {
+    lifecycle.new += 1;
+    return nextWaitableSet++;
+  },
+  "waitable.join": (subtask, set) => {
+    lifecycle.join += 1;
+    for (const [currentSet, currentSubtask] of joined) {
+      if (currentSubtask === subtask) joined.delete(currentSet);
+    }
+    if (set !== 0) joined.set(set, subtask);
+  },
+  "waitable-set.wait": (set, eventPtr) => {
+    lifecycle.wait += 1;
+    const subtask = joined.get(set);
+    const task = pending.get(subtask);
+    if (!task) throw new Error(`missing subtask ${subtask}`);
+    const state = task.steps.shift();
+    if (state === 1) readText(task.inputPtr, task.inputLen);
+    if (state === 2) writeResult(task.outPtr, task.discriminant, task.text);
+    const memory = new DataView(instance.exports.memory.buffer);
+    memory.setUint32(eventPtr, subtask, true);
+    memory.setUint32(eventPtr + 4, state, true);
+    return 1;
+  },
+  "subtask.drop": subtask => {
+    lifecycle.subtaskDrop += 1;
+    pending.delete(subtask);
+  },
+  "waitable-set.drop": set => {
+    lifecycle.setDrop += 1;
+    joined.delete(set);
+  },
+};
+
+WebAssembly.instantiate(module, { host, "calcit:component/canonical": canonical }).then(result => {
+  instance = result;
+  const invoke = marker => {
+    const [ptr, len] = allocateText(marker);
+    const returned = instance.exports["call-host-load"](ptr, len);
+    if (returned !== undefined) throw new Error(`async core export returned ${returned}`);
+  };
+  invoke("immediate-ok");
+  invoke("delayed-ok");
+  invoke("delayed-error");
+  if (JSON.stringify(completions) !== JSON.stringify([[0, "ready-now"], [0, "ready-later"], [1, "typed-error"]])) {
+    throw new Error(`unexpected completions: ${JSON.stringify(completions)}`);
+  }
+  let cancelledTrapped = false;
+  try { invoke("cancelled"); } catch (error) { cancelledTrapped = error instanceof WebAssembly.RuntimeError; }
+  if (!cancelledTrapped) throw new Error("cancelled async import did not trap after cleanup");
+  const expectedLifecycle = { new: 3, join: 6, wait: 5, subtaskDrop: 3, setDrop: 3 };
+  if (JSON.stringify(lifecycle) !== JSON.stringify(expectedLifecycle)) {
+    throw new Error(`unexpected lifecycle: ${JSON.stringify(lifecycle)}`);
+  }
+}).catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
+"#;
+  let runtime = Command::new("node")
+    .args(["-e", script])
+    .arg(&wasm)
+    .output()
+    .expect("Node.js should validate and instantiate the async Component import core module");
+  assert!(
+    runtime.status.success(),
+    "async Component import runtime failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&runtime.stdout),
+    String::from_utf8_lossy(&runtime.stderr)
+  );
+}
+
+#[test]
 fn component_boundary_round_trips_variants_lists_and_scalar_values() {
   let output = TestDirectory::create();
   let check = Command::new(env!("CARGO_BIN_EXE_calcit"))
