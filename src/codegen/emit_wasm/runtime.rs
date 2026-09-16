@@ -6084,6 +6084,12 @@ fn build_rt_edn_string(string_tag: i32) -> CompiledFn {
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::I32TruncF64U);
   b.emit(Instruction::LocalSet(len));
+  b.emit(Instruction::LocalGet(len));
+  b.emit(Instruction::I32Const(edn::MAX_EDN_OUTPUT_BYTES));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Unreachable);
+  b.emit(Instruction::End);
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::LocalSet(simple));
   b.emit(Instruction::I32Const(0));
@@ -6173,6 +6179,12 @@ fn build_rt_edn_string(string_tag: i32) -> CompiledFn {
   b.emit(Instruction::End);
   b.emit(Instruction::I32Add);
   b.emit(Instruction::LocalSet(out_len));
+  b.emit(Instruction::LocalGet(out_len));
+  b.emit(Instruction::I32Const(edn::MAX_EDN_OUTPUT_BYTES));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Unreachable);
+  b.emit(Instruction::End);
   b.emit(Instruction::LocalGet(out_len));
   b.emit(Instruction::I32Const(7));
   b.emit(Instruction::I32Add);

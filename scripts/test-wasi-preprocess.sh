@@ -16,6 +16,8 @@ readonly EDN_FORMAT_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-format-smoke"
 readonly EDN_FORMAT_STDOUT="${EDN_FORMAT_OUT}/stdout.txt"
 readonly EDN_FORMAT_NATIVE_RAW_STDOUT="${EDN_FORMAT_OUT}/native-raw-stdout.txt"
 readonly EDN_FORMAT_NATIVE_STDOUT="${EDN_FORMAT_OUT}/native-stdout.txt"
+readonly EDN_FORMAT_LIMIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-format-limit"
+readonly EDN_FORMAT_LIMIT_STDERR="${EDN_FORMAT_LIMIT_OUT}/stderr.txt"
 readonly EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-exit-smoke"
 readonly INVALID_EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-invalid-exit-smoke"
 readonly INVALID_EXIT_STDERR="${INVALID_EXIT_OUT}/stderr.txt"
@@ -244,6 +246,18 @@ grep -Fxq 'do 1.25' "$EDN_FORMAT_STDOUT"
 grep -Fxq 'do -0.5' "$EDN_FORMAT_STDOUT"
 grep -Fxq '{} (:a |one) (:b |two)' "$EDN_FORMAT_STDOUT"
 grep -Fxq '{} (|a |one) ("|b key" |two)' "$EDN_FORMAT_STDOUT"
+while IFS= read -r edn_line; do
+  if [[ -n "$edn_line" ]]; then
+    "$CALCIT_BIN" cirru parse-edn "$edn_line" >/dev/null
+  fi
+done <"$EDN_FORMAT_STDOUT"
+
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-format-over-limit-main! --emit-path "$EDN_FORMAT_LIMIT_OUT"
+if wasmtime run "$EDN_FORMAT_LIMIT_OUT/program.wasm" >/dev/null 2>"$EDN_FORMAT_LIMIT_STDERR"; then
+  echo "WASI Cirru EDN formatter unexpectedly exceeded its output allocation limit" >&2
+  exit 1
+fi
+grep -Fq 'wasm trap' "$EDN_FORMAT_LIMIT_STDERR"
 
 # Keep one user-facing starter runnable as a real file-processing command, not
 # only as isolated capability fixtures.
