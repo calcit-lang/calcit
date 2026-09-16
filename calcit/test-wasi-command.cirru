@@ -140,6 +140,68 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'edn-parse-int-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-int-list (text)
+            try-parse-cirru-edn-as text $ :: 'List 'Int32
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result (:: 'List 'Int32) 'String
+          :tests $ [] $ %{} 'TestEntry (:name |parses-bounded-int-lists)
+            :code $ quote $ do
+              assert=
+                %ok $ [] 1 -2 3
+                edn-parse-int-list "|[] 1 -2 3"
+              assert=
+                %ok $ []
+                edn-parse-int-list |[]
+              assert= true $ result:err? $ edn-parse-int-list "|[] 1 2147483648"
+              assert= true $ result:err? $ edn-parse-int-list "|[] 1 |bad"
+            :tags $ #{} :core :unit
+        'edn-parse-list-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-list-main! ()
+            let
+                ints-result $ edn-parse-int-list "|[] 1 -2 3"
+                words-result $ edn-parse-string-list "|[] |hello \"|two words\" |tail"
+                ints $ result:unwrap-or ints-result $ []
+                words $ result:unwrap-or words-result $ []
+              assert= true $ result:ok? ints-result
+              assert= 3 $ count ints
+              assert= 1 $ &list:nth ints 0
+              assert= -2 $ &list:nth ints 1
+              assert= 3 $ &list:nth ints 2
+              assert= true $ result:ok? words-result
+              assert= 3 $ count words
+              assert= |hello $ &list:nth words 0
+              assert= "|two words" $ &list:nth words 1
+              assert= |tail $ &list:nth words 2
+              assert= true $ result:err? $ edn-parse-int-list "|[] 1 |bad"
+              println |WASI-typed-EDN-lists:-ok
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'edn-parse-list-over-limit-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-list-over-limit-main! ()
+            let
+                x0 "| 1"
+                x1 $ &str:concat x0 x0
+                x2 $ &str:concat x1 x1
+                x3 $ &str:concat x2 x2
+                x4 $ &str:concat x3 x3
+                x5 $ &str:concat x4 x4
+                x6 $ &str:concat x5 x5
+                x7 $ &str:concat x6 x6
+                x8 $ &str:concat x7 x7
+                x9 $ &str:concat x8 x8
+                x10 $ &str:concat x9 x9
+                x11 $ &str:concat x10 x10
+                x12 $ &str:concat x11 x11
+                input $ &str:concat (&str:concat |[] x12) x0
+              assert= true $ result:err? $ edn-parse-int-list input
+              println |WASI-typed-EDN-list-limit:-ok
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'edn-parse-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-main! ()
             let
@@ -233,6 +295,18 @@
             %{} 'TestEntry (:name |rejects-invalid-quoted-escape)
               :code $ quote $ assert= true
                 result:err? $ &list:nth (edn-parse-scalars) 13
+        'edn-parse-string-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-string-list (text)
+            try-parse-cirru-edn-as text $ :: 'List 'String
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result (:: 'List 'String) 'String
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-quoted-string-items)
+            :code $ quote $ assert=
+              %ok $ [] |hello "|two words" |tail
+              edn-parse-string-list "|[] |hello \"|two words\" |tail"
+            :tags $ #{} :core :unit
         'exit-7! $ %{} 'CodeEntry (:doc "|以状态码 7 终止进程，用于验证 command 退出边界。")
           :code $ quote $ defn exit-7! () (quit! 7)
           :examples $ []
