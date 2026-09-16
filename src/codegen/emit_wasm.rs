@@ -30,6 +30,7 @@ use wasm_encoder::{
 };
 
 use crate::builtins::syntax::get_raw_args_fn;
+use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
 use crate::calcit::{
   Calcit, CalcitArgLabel, CalcitEnumDef, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitNumericRefinement, CalcitProc, CalcitStructDef,
   CalcitSyntax, CalcitTypeAnnotation, MethodKind,
@@ -38,6 +39,8 @@ use crate::program;
 
 #[path = "emit_wasm/component.rs"]
 mod component;
+#[path = "emit_wasm/edn_parse.rs"]
+mod edn_parse;
 #[path = "emit_wasm/methods.rs"]
 mod methods;
 #[path = "emit_wasm/runtime.rs"]
@@ -3836,7 +3839,8 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         }
         emit_expr(ctx, &args_list[0])
       }
-      CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::TryParseCirruEdnAs | CalcitSyntax::DecodeMapAs | CalcitSyntax::TryDecodeMapAs => {
+      CalcitSyntax::TryParseCirruEdnAs => edn_parse::emit_try_parse_cirru_edn_as(ctx, &args_list),
+      CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::DecodeMapAs | CalcitSyntax::TryDecodeMapAs => {
         Err(format!("{syn} is not yet supported in WASM codegen"))
       }
       CalcitSyntax::Defn => Err("nested fn/defn closure values are not yet supported in WASM codegen".into()),
@@ -6263,10 +6267,12 @@ fn build_string_pool(
 ) -> (HashMap<String, u32>, Vec<u8>, i32) {
   let mut strings: Vec<String> = Vec::new();
   let mut needs_edn_format = false;
+  let mut needs_edn_parse = false;
   for (_, _, _, body) in fn_defs {
     for expr in body {
       collect_strings_from_expr(expr, &mut strings);
       needs_edn_format |= expr_uses_cirru_edn_format(expr);
+      needs_edn_parse |= expr_uses_typed_cirru_edn_parse(expr);
     }
   }
   if target == WasmTarget::Wasi {
@@ -6278,6 +6284,20 @@ fn build_string_pool(
       ["do ", "\n", "nil", "true", "false", "[]", "([]", "{}", ")", " ", " ("]
         .into_iter()
         .map(String::from),
+    );
+    strings.extend(tag_index.keys().map(|tag| format!(":{tag}")));
+  }
+  if needs_edn_parse {
+    strings.extend(
+      [
+        "do ",
+        "E_WASM_EDN_INPUT_LIMIT: Cirru EDN input exceeds 65536 bytes",
+        "E_WASM_EDN_SYNTAX: invalid Cirru EDN scalar",
+        "E_WASM_EDN_RANGE: numeric value is outside the requested type",
+        "E_WASM_EDN_TAG: tag is not present in the compiled program",
+      ]
+      .into_iter()
+      .map(String::from),
     );
     strings.extend(tag_index.keys().map(|tag| format!(":{tag}")));
   }
@@ -6427,6 +6447,15 @@ fn expr_uses_cirru_edn_format(expr: &Calcit) -> bool {
   match expr {
     Calcit::List(xs) => {
       matches!(xs.first(), Some(Calcit::Proc(CalcitProc::FormatCirruEdn))) || xs.iter().any(expr_uses_cirru_edn_format)
+    }
+    _ => false,
+  }
+}
+
+fn expr_uses_typed_cirru_edn_parse(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::List(xs) => {
+      matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::TryParseCirruEdnAs, _))) || xs.iter().any(expr_uses_typed_cirru_edn_parse)
     }
     _ => false,
   }

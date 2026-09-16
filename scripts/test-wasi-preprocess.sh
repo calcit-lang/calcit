@@ -17,6 +17,10 @@ readonly EDN_FORMAT_STDOUT="${EDN_FORMAT_OUT}/stdout.txt"
 readonly EDN_FORMAT_NATIVE_RAW_STDOUT="${EDN_FORMAT_OUT}/native-raw-stdout.txt"
 readonly EDN_FORMAT_NATIVE_STDOUT="${EDN_FORMAT_OUT}/native-stdout.txt"
 readonly EDN_FORMAT_LIMIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-format-limit"
+readonly EDN_PARSE_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-parse-smoke"
+readonly EDN_PARSE_STDOUT="${EDN_PARSE_OUT}/stdout.txt"
+readonly EDN_PARSE_LIMIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-parse-limit"
+readonly EDN_PARSE_LIMIT_STDOUT="${EDN_PARSE_LIMIT_OUT}/stdout.txt"
 readonly EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-exit-smoke"
 readonly INVALID_EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-invalid-exit-smoke"
 readonly INVALID_EXIT_STDERR="${INVALID_EXIT_OUT}/stderr.txt"
@@ -267,6 +271,17 @@ assert_wasi_edn_limit() {
 assert_wasi_edn_limit app.main/edn-format-over-limit-main! concat-output
 assert_wasi_edn_limit app.main/edn-format-source-over-limit-main! source-string
 assert_wasi_edn_limit app.main/edn-format-escaped-over-limit-main! escaped-output
+
+# Typed parsing consumes the compiler-owned DataShapeGraph directly. The first
+# slice covers closed scalars and turns syntax, range, tag-universe, and input
+# resource failures into Result :err values rather than Wasmtime traps.
+"$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-scalars --require-match
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-main! --emit-path "$EDN_PARSE_OUT"
+wasmtime run "$EDN_PARSE_OUT/program.wasm" >"$EDN_PARSE_STDOUT"
+grep -Fxq 'WASI-typed-EDN-scalars:-ok' "$EDN_PARSE_STDOUT"
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-over-limit-main! --emit-path "$EDN_PARSE_LIMIT_OUT"
+wasmtime run "$EDN_PARSE_LIMIT_OUT/program.wasm" >"$EDN_PARSE_LIMIT_STDOUT"
+grep -Fxq 'WASI-typed-EDN-limit:-ok' "$EDN_PARSE_LIMIT_STDOUT"
 
 # Keep one user-facing starter runnable as a real file-processing command, not
 # only as isolated capability fixtures.

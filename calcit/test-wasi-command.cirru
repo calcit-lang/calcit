@@ -140,6 +140,66 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'edn-parse-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-main! ()
+            let
+                results $ edn-parse-scalars
+              assert= true $ result:ok? $ &list:nth results 0
+              assert= true $ result:ok? $ &list:nth results 1
+              assert= true $ result:ok? $ &list:nth results 2
+              assert= true $ result:ok? $ &list:nth results 3
+              assert= true $ result:ok? $ &list:nth results 4
+              assert= 42 $ result:unwrap-or (&list:nth results 0) 0
+              assert= |hello $ result:unwrap-or (&list:nth results 1) |fallback
+              assert= :ready $ result:unwrap-or (&list:nth results 2) :paused
+              assert= true $ result:unwrap-or (&list:nth results 3) false
+              assert= true $ result:err? $ &list:nth results 5
+              assert= true $ result:err? $ &list:nth results 6
+              assert= true $ result:err? $ &list:nth results 7
+              assert= true $ result:err? $ &list:nth results 8
+              println |WASI-typed-EDN-scalars:-ok
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'edn-parse-over-limit-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-over-limit-main! ()
+            let
+                x0 |12345678
+                x1 $ &str:concat x0 x0
+                x2 $ &str:concat x1 x1
+                x3 $ &str:concat x2 x2
+                x4 $ &str:concat x3 x3
+                x5 $ &str:concat x4 x4
+                x6 $ &str:concat x5 x5
+                x7 $ &str:concat x6 x6
+                x8 $ &str:concat x7 x7
+                x9 $ &str:concat x8 x8
+                x10 $ &str:concat x9 x9
+                x11 $ &str:concat x10 x10
+                x12 $ &str:concat x11 x11
+                x13 $ &str:concat x12 x12
+                x14 $ &str:concat x13 x13
+              assert= true $ result:err? $ try-parse-cirru-edn-as x14 'String
+              println |WASI-typed-EDN-limit:-ok
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'edn-parse-scalars $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-scalars ()
+            [] (try-parse-cirru-edn-as "|do 42" 'Int32) (try-parse-cirru-edn-as "|do |hello" 'String) (try-parse-cirru-edn-as "|do :ready" 'Tag) (try-parse-cirru-edn-as "|do true" 'Bool) (try-parse-cirru-edn-as "|do nil" 'Nil) (try-parse-cirru-edn-as "|do 128" 'Int8) (try-parse-cirru-edn-as "|do 1.5" 'Int8) (try-parse-cirru-edn-as "|do |bad" 'Int32) (try-parse-cirru-edn-as "|do :wasi-typed-edn-unknown" 'Tag)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |parses-bounded-scalars)
+            :code $ quote $ assert=
+              [] (%ok 42) (%ok |hello) (%ok :ready) (%ok true) (%ok nil) true true true true
+              let
+                  results $ edn-parse-scalars
+                [] (&list:nth results 0) (&list:nth results 1) (&list:nth results 2) (&list:nth results 3) (&list:nth results 4)
+                  result:err? $ &list:nth results 5
+                  result:err? $ &list:nth results 6
+                  result:err? $ &list:nth results 7
+                  result:ok? $ &list:nth results 8
         'exit-7! $ %{} 'CodeEntry (:doc "|以状态码 7 终止进程，用于验证 command 退出边界。")
           :code $ quote $ defn exit-7! () (quit! 7)
           :examples $ []
