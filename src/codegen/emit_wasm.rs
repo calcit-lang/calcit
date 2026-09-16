@@ -276,6 +276,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   };
   let mut wasm_import_names: HashMap<String, u32> = HashMap::new();
   let mut wasm_import_arities: HashMap<String, u32> = HashMap::new();
+  let mut component_async_canonical_imports = None;
   if boundary == WasmBoundary::Component {
     for adapter in &mut component_import_adapters {
       let index = host_imports.len() as u32;
@@ -287,6 +288,12 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
         params,
         results,
       });
+    }
+    if component_import_adapters
+      .iter()
+      .any(|adapter| adapter.invocation == ComponentAbiInvocation::Async)
+    {
+      component_async_canonical_imports = Some(register_component_async_canonical_imports(&mut host_imports));
     }
     for adapter in &mut component_adapters {
       if adapter.invocation != ComponentAbiInvocation::Async {
@@ -494,6 +501,13 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   }
   if let Some(cabi_realloc_index) = component_cabi_realloc_index {
     let buffer_new_index = component_buffer_new_index.expect("Component boundary must install the Buffer constructor");
+    let codecs = ComponentValueCodecs {
+      str_new_index: str_new_idx,
+      buffer_new_index,
+      list_codecs: &component_list_codecs,
+      struct_codecs: &component_struct_codecs,
+      variant_codecs: &component_variant_codecs,
+    };
     for adapter in &component_import_adapters {
       let index = num_imports + compiled_fns.len() as u32;
       let local_name = adapter
@@ -506,12 +520,9 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
       wasm_import_arities.insert(local_name.to_string(), adapter.source_arity);
       compiled_fns.push(build_component_import_adapter(
         adapter,
-        str_new_idx,
-        buffer_new_index,
+        component_async_canonical_imports.as_ref(),
         cabi_realloc_index,
-        &component_list_codecs,
-        &component_struct_codecs,
-        &component_variant_codecs,
+        &codecs,
       ));
     }
   }
@@ -973,8 +984,18 @@ struct ComponentImportAdapter {
   symbol: String,
   raw_index: u32,
   source_arity: u32,
+  invocation: ComponentAbiInvocation,
   parameters: Vec<ComponentAbiType>,
   result: ComponentAbiType,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ComponentAsyncCanonicalImports {
+  waitable_set_new: u32,
+  waitable_set_wait: u32,
+  waitable_set_drop: u32,
+  waitable_join: u32,
+  subtask_drop: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -984,6 +1005,27 @@ enum ComponentAbiInvocation {
 }
 
 const COMPONENT_CANONICAL_IMPORT_MODULE: &str = "calcit:component/canonical";
+const COMPONENT_ASYNC_MAX_FLAT_PARAMETERS: usize = 4;
+
+fn register_component_async_canonical_imports(host_imports: &mut Vec<HostImport>) -> ComponentAsyncCanonicalImports {
+  let mut register = |name: &str, params: Vec<ValType>, results: Vec<ValType>| {
+    let index = host_imports.len() as u32;
+    host_imports.push(HostImport {
+      module: COMPONENT_CANONICAL_IMPORT_MODULE.into(),
+      name: name.into(),
+      params,
+      results,
+    });
+    index
+  };
+  ComponentAsyncCanonicalImports {
+    waitable_set_new: register("waitable-set.new", vec![], vec![ValType::I32]),
+    waitable_set_wait: register("waitable-set.wait", vec![ValType::I32, ValType::I32], vec![ValType::I32]),
+    waitable_set_drop: register("waitable-set.drop", vec![ValType::I32], vec![]),
+    waitable_join: register("waitable.join", vec![ValType::I32, ValType::I32], vec![]),
+    subtask_drop: register("subtask.drop", vec![ValType::I32], vec![]),
+  }
+}
 
 fn component_task_return_symbol(symbol: &str) -> String {
   format!("task-return/{symbol}")
@@ -1347,6 +1389,19 @@ fn validate_component_flat_parameters(parameters: &[ComponentAbiType], definitio
   Ok(())
 }
 
+fn validate_component_async_import_flat_parameters(parameters: &[ComponentAbiType], definition: &str) -> Result<(), String> {
+  let flat_count = parameters
+    .iter()
+    .map(|parameter| component_flat_types(parameter).len())
+    .sum::<usize>();
+  if flat_count > COMPONENT_ASYNC_MAX_FLAT_PARAMETERS {
+    return Err(format!(
+      "E_COMPONENT_ABI_ASYNC_IMPORT_INDIRECT_PARAMETERS_UNSUPPORTED: `{definition}` at `logical_schema.parameters` flattens to {flat_count} values, but the async direct adapter supports at most {COMPONENT_ASYNC_MAX_FLAT_PARAMETERS}; indirect parameter lowering is not implemented yet"
+    ));
+  }
+  Ok(())
+}
+
 fn component_flat_types(value_type: &ComponentAbiType) -> Vec<ValType> {
   match value_type {
     ComponentAbiType::Unit => vec![],
@@ -1427,9 +1482,7 @@ fn collect_component_import_adapters(program_data: &program::CompiledProgram) ->
         .map_err(|reason| format!("E_COMPONENT_ABI_UNSUPPORTED_ARITY: `{definition}` at `logical_schema.parameters` {reason}"))?;
       let (parameters, result, invocation) = component_function_schema(compiled, &definition, source_arity as usize, program_data)?;
       if invocation == ComponentAbiInvocation::Async {
-        return Err(format!(
-          "E_COMPONENT_ABI_ASYNC_IMPORT_UNSUPPORTED: `{definition}` at `logical_schema.async` requires async-import waitable lifecycle support"
-        ));
+        validate_component_async_import_flat_parameters(&parameters, &definition)?;
       }
       adapters.push(ComponentImportAdapter {
         definition,
@@ -1437,6 +1490,7 @@ fn collect_component_import_adapters(program_data: &program::CompiledProgram) ->
         symbol,
         raw_index: 0,
         source_arity,
+        invocation,
         parameters,
         result,
       });
@@ -1527,6 +1581,12 @@ fn component_import_signature(adapter: &ComponentImportAdapter) -> (Vec<ValType>
   let mut parameters = Vec::new();
   for parameter in &adapter.parameters {
     parameters.extend(component_flat_types(parameter));
+  }
+  if adapter.invocation == ComponentAbiInvocation::Async {
+    if !matches!(adapter.result, ComponentAbiType::Unit) {
+      parameters.push(ValType::I32);
+    }
+    return (parameters, vec![ValType::I32]);
   }
   let results = component_flat_types(&adapter.result);
   if results.len() > 1 {
@@ -1813,12 +1873,9 @@ fn build_cabi_realloc_fn() -> CompiledFn {
 
 fn build_component_import_adapter(
   adapter: &ComponentImportAdapter,
-  str_new_index: u32,
-  buffer_new_index: u32,
+  async_imports: Option<&ComponentAsyncCanonicalImports>,
   cabi_realloc_index: u32,
-  list_codecs: &BTreeMap<ComponentAbiType, ComponentListCodec>,
-  struct_codecs: &BTreeMap<ComponentAbiType, ComponentStructCodec>,
-  variant_codecs: &BTreeMap<ComponentAbiType, ComponentVariantCodec>,
+  codecs: &ComponentValueCodecs<'_>,
 ) -> CompiledFn {
   let params = vec![ValType::F64; adapter.parameters.len()];
   let mut locals = Vec::new();
@@ -1847,7 +1904,8 @@ fn build_component_import_adapter(
       ComponentAbiType::List(_) => {
         let pair_ptr = params.len() as u32 + locals.len() as u32;
         locals.push(ValType::I32);
-        let codec = list_codecs
+        let codec = codecs
+          .list_codecs
           .get(parameter)
           .expect("Component List import parameter codec must be registered");
         instructions.extend([
@@ -1870,7 +1928,8 @@ fn build_component_import_adapter(
         let canonical_ptr = params.len() as u32 + locals.len() as u32;
         locals.push(ValType::I32);
         let layout = component_memory_layout(parameter);
-        let codec = variant_codecs
+        let codec = codecs
+          .variant_codecs
           .get(parameter)
           .expect("Component variant import parameter codec must be registered");
         instructions.extend([
@@ -1890,7 +1949,8 @@ fn build_component_import_adapter(
         let canonical_ptr = params.len() as u32 + locals.len() as u32;
         locals.push(ValType::I32);
         let layout = component_memory_layout(parameter);
-        let codec = struct_codecs
+        let codec = codecs
+          .struct_codecs
           .get(parameter)
           .expect("Component Struct import parameter codec must be registered");
         instructions.extend([
@@ -1907,6 +1967,18 @@ fn build_component_import_adapter(
         push_load_value_flat(&mut instructions, parameter, canonical_ptr);
       }
     }
+  }
+
+  if adapter.invocation == ComponentAbiInvocation::Async {
+    return finish_component_async_import_adapter(
+      adapter,
+      async_imports.expect("async Component imports must register canonical lifecycle builtins"),
+      params,
+      locals,
+      instructions,
+      cabi_realloc_index,
+      codecs,
+    );
   }
 
   match &adapter.result {
@@ -1933,8 +2005,8 @@ fn build_component_import_adapter(
       let ret_ptr = params.len() as u32;
       locals.push(ValType::I32);
       let bytes_new_index = match &adapter.result {
-        ComponentAbiType::Buffer => buffer_new_index,
-        ComponentAbiType::String => str_new_index,
+        ComponentAbiType::Buffer => codecs.buffer_new_index,
+        ComponentAbiType::String => codecs.str_new_index,
         _ => unreachable!("byte result branch must use a byte-backed Component type"),
       };
       instructions.extend([
@@ -1955,7 +2027,8 @@ fn build_component_import_adapter(
     ComponentAbiType::List(_) => {
       let ret_ptr = params.len() as u32;
       locals.push(ValType::I32);
-      let codec = list_codecs
+      let codec = codecs
+        .list_codecs
         .get(&adapter.result)
         .expect("Component List import result codec must be registered");
       instructions.extend([
@@ -1977,7 +2050,8 @@ fn build_component_import_adapter(
       let ret_ptr = params.len() as u32 + locals.len() as u32;
       locals.push(ValType::I32);
       let layout = component_memory_layout(&adapter.result);
-      let codec = variant_codecs
+      let codec = codecs
+        .variant_codecs
         .get(&adapter.result)
         .expect("Component variant import result codec must be registered");
       instructions.extend([
@@ -2003,7 +2077,8 @@ fn build_component_import_adapter(
       let ret_ptr = params.len() as u32 + locals.len() as u32;
       locals.push(ValType::I32);
       let layout = component_memory_layout(&adapter.result);
-      let codec = struct_codecs
+      let codec = codecs
+        .struct_codecs
         .get(&adapter.result)
         .expect("Component Struct import result codec must be registered");
       instructions.extend([
@@ -2026,6 +2101,229 @@ fn build_component_import_adapter(
         instructions.push(Instruction::Call(adapter.raw_index));
       }
       instructions.extend([Instruction::LocalGet(ret_ptr), Instruction::Call(codec.lift_index)]);
+    }
+  }
+
+  CompiledFn {
+    export_name: None,
+    params,
+    results: vec![ValType::F64],
+    locals,
+    instructions,
+  }
+}
+
+fn finish_component_async_import_adapter(
+  adapter: &ComponentImportAdapter,
+  canonical: &ComponentAsyncCanonicalImports,
+  params: Vec<ValType>,
+  mut locals: Vec<ValType>,
+  mut instructions: Vec<Instruction<'static>>,
+  cabi_realloc_index: u32,
+  codecs: &ComponentValueCodecs<'_>,
+) -> CompiledFn {
+  let ret_ptr = if matches!(adapter.result, ComponentAbiType::Unit) {
+    None
+  } else {
+    let local = params.len() as u32 + locals.len() as u32;
+    locals.push(ValType::I32);
+    let layout = component_memory_layout(&adapter.result);
+    instructions.extend([
+      Instruction::I32Const(0),
+      Instruction::I32Const(0),
+      Instruction::I32Const(layout.alignment),
+      Instruction::I32Const(layout.size),
+      Instruction::Call(cabi_realloc_index),
+      Instruction::LocalTee(local),
+    ]);
+    Some(local)
+  };
+
+  let status = params.len() as u32 + locals.len() as u32;
+  locals.push(ValType::I32);
+  let status_kind = params.len() as u32 + locals.len() as u32;
+  locals.push(ValType::I32);
+  instructions.extend([
+    Instruction::Call(adapter.raw_index),
+    Instruction::LocalTee(status),
+    Instruction::I32Const(0x0f),
+    Instruction::I32And,
+    Instruction::LocalSet(status_kind),
+    Instruction::LocalGet(status_kind),
+    Instruction::I32Const(2),
+    Instruction::I32Eq,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    // Immediate completion has no subtask in the high status bits.
+    Instruction::LocalGet(status),
+    Instruction::I32Const(2),
+    Instruction::I32Ne,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::Else,
+    // Only the starting and started states may carry a subtask.
+    Instruction::LocalGet(status_kind),
+    Instruction::I32Const(1),
+    Instruction::I32GtU,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+  ]);
+
+  let subtask = params.len() as u32 + locals.len() as u32;
+  locals.push(ValType::I32);
+  let waitable_set = params.len() as u32 + locals.len() as u32;
+  locals.push(ValType::I32);
+  let event_ptr = params.len() as u32 + locals.len() as u32;
+  locals.push(ValType::I32);
+  let subtask_state = params.len() as u32 + locals.len() as u32;
+  locals.push(ValType::I32);
+  instructions.extend([
+    Instruction::LocalGet(status),
+    Instruction::I32Const(4),
+    Instruction::I32ShrU,
+    Instruction::LocalTee(subtask),
+    Instruction::I32Eqz,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::Call(canonical.waitable_set_new),
+    Instruction::LocalSet(waitable_set),
+    Instruction::LocalGet(subtask),
+    Instruction::LocalGet(waitable_set),
+    Instruction::Call(canonical.waitable_join),
+    Instruction::I32Const(0),
+    Instruction::I32Const(0),
+    Instruction::I32Const(8),
+    Instruction::I32Const(8),
+    Instruction::Call(cabi_realloc_index),
+    Instruction::LocalSet(event_ptr),
+    Instruction::Block(wasm_encoder::BlockType::Empty),
+    Instruction::Loop(wasm_encoder::BlockType::Empty),
+    Instruction::LocalGet(waitable_set),
+    Instruction::LocalGet(event_ptr),
+    Instruction::Call(canonical.waitable_set_wait),
+    Instruction::I32Const(1),
+    Instruction::I32Ne,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(event_ptr),
+    Instruction::I32Load(mem_arg_i32(0)),
+    Instruction::LocalGet(subtask),
+    Instruction::I32Ne,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(event_ptr),
+    Instruction::I32Load(mem_arg_i32(4)),
+    Instruction::LocalTee(subtask_state),
+    Instruction::I32Const(2),
+    Instruction::I32Eq,
+    Instruction::BrIf(1),
+    Instruction::LocalGet(subtask_state),
+    Instruction::I32Const(1),
+    Instruction::I32GtU,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    // Cancellation is terminal. Drop the resolved handles before trapping,
+    // since Calcit does not expose a cancellation value at this boundary.
+    Instruction::LocalGet(subtask),
+    Instruction::I32Const(0),
+    Instruction::Call(canonical.waitable_join),
+    Instruction::LocalGet(subtask),
+    Instruction::Call(canonical.subtask_drop),
+    Instruction::LocalGet(waitable_set),
+    Instruction::Call(canonical.waitable_set_drop),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::Br(0),
+    Instruction::End,
+    Instruction::End,
+    Instruction::LocalGet(subtask),
+    Instruction::I32Const(0),
+    Instruction::Call(canonical.waitable_join),
+    Instruction::LocalGet(subtask),
+    Instruction::Call(canonical.subtask_drop),
+    Instruction::LocalGet(waitable_set),
+    Instruction::Call(canonical.waitable_set_drop),
+    Instruction::End,
+  ]);
+
+  match &adapter.result {
+    ComponentAbiType::Unit => instructions.push(f64_const(0.0)),
+    ComponentAbiType::Bool => {
+      let value = params.len() as u32 + locals.len() as u32;
+      locals.push(ValType::I32);
+      instructions.extend([
+        Instruction::LocalGet(ret_ptr.expect("non-Unit async result must have a return area")),
+        Instruction::I32Load(mem_arg_i32(0)),
+        Instruction::LocalSet(value),
+      ]);
+      instructions.extend(component_bool_i32_to_f64(value));
+    }
+    ComponentAbiType::Number => instructions.extend([
+      Instruction::LocalGet(ret_ptr.expect("Number async result must have a return area")),
+      Instruction::F64Load(mem_arg_f64(0)),
+    ]),
+    ComponentAbiType::Numeric(kind) => {
+      let value = params.len() as u32 + locals.len() as u32;
+      locals.push(component_numeric_flat_type(*kind));
+      push_load_value_flat(
+        &mut instructions,
+        &adapter.result,
+        ret_ptr.expect("numeric async result must have a return area"),
+      );
+      instructions.push(Instruction::LocalSet(value));
+      instructions.extend(component_numeric_to_f64(*kind, value));
+    }
+    ComponentAbiType::Buffer | ComponentAbiType::String => {
+      let bytes_new_index = if matches!(adapter.result, ComponentAbiType::Buffer) {
+        codecs.buffer_new_index
+      } else {
+        codecs.str_new_index
+      };
+      let ptr = ret_ptr.expect("byte-backed async result must have a return area");
+      instructions.extend([
+        Instruction::LocalGet(ptr),
+        Instruction::I32Load(mem_arg_i32(0)),
+        Instruction::LocalGet(ptr),
+        Instruction::I32Load(mem_arg_i32(4)),
+        Instruction::Call(bytes_new_index),
+      ]);
+    }
+    ComponentAbiType::List(_) => {
+      let ptr = ret_ptr.expect("List async result must have a return area");
+      let codec = codecs
+        .list_codecs
+        .get(&adapter.result)
+        .expect("Component List async import result codec must be registered");
+      instructions.extend([
+        Instruction::LocalGet(ptr),
+        Instruction::I32Load(mem_arg_i32(0)),
+        Instruction::LocalGet(ptr),
+        Instruction::I32Load(mem_arg_i32(4)),
+        Instruction::Call(codec.lift_index),
+      ]);
+    }
+    ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) => {
+      let codec = codecs
+        .variant_codecs
+        .get(&adapter.result)
+        .expect("Component variant async import result codec must be registered");
+      instructions.extend([
+        Instruction::LocalGet(ret_ptr.expect("variant async result must have a return area")),
+        Instruction::Call(codec.lift_index),
+      ]);
+    }
+    ComponentAbiType::Struct(_) => {
+      let codec = codecs
+        .struct_codecs
+        .get(&adapter.result)
+        .expect("Component Struct async import result codec must be registered");
+      instructions.extend([
+        Instruction::LocalGet(ret_ptr.expect("Struct async result must have a return area")),
+        Instruction::Call(codec.lift_index),
+      ]);
     }
   }
 
@@ -5949,11 +6247,12 @@ mod tests {
   use std::sync::Arc;
 
   use super::{
-    ComponentAbiInvocation, ComponentAbiType, ComponentEnumType, ComponentEnumVariant, ComponentExportAdapter, ComponentImportAdapter,
-    ComponentStructType, HostImport, WasmBoundary, WasmTarget, build_cabi_realloc_fn, build_component_export_adapter,
-    build_component_import_adapter, component_abi_type, component_flat_types, component_import_signature, component_memory_layout,
-    component_task_return_signature, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
-    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols,
+    ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
+    ComponentExportAdapter, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport, WasmBoundary, WasmTarget,
+    build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, component_abi_type, component_flat_types,
+    component_import_signature, component_memory_layout, component_task_return_signature, host_imports_for_target, index_host_imports,
+    must_reject_extraction_failure, validate_component_async_import_flat_parameters, validate_component_export_symbols,
+    validate_component_flat_parameters, validate_component_import_symbols,
   };
   use crate::calcit::{
     Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitStructDef, CalcitStructValue, CalcitSyntax, CalcitTypeAnnotation,
@@ -6132,17 +6431,25 @@ mod tests {
     let list_codecs = BTreeMap::new();
     let struct_codecs = BTreeMap::new();
     let variant_codecs = BTreeMap::new();
+    let codecs = ComponentValueCodecs {
+      str_new_index: 10,
+      buffer_new_index: 11,
+      list_codecs: &list_codecs,
+      struct_codecs: &struct_codecs,
+      variant_codecs: &variant_codecs,
+    };
     let number = ComponentImportAdapter {
       definition: "app.main/host-add-one".into(),
       module: "host".into(),
       symbol: "add-one".into(),
       raw_index: 2,
       source_arity: 1,
+      invocation: ComponentAbiInvocation::Sync,
       parameters: vec![ComponentAbiType::Number],
       result: ComponentAbiType::Number,
     };
     assert_eq!(component_import_signature(&number), (vec![ValType::F64], vec![ValType::F64]));
-    let number_adapter = build_component_import_adapter(&number, 10, 11, 12, &list_codecs, &struct_codecs, &variant_codecs);
+    let number_adapter = build_component_import_adapter(&number, None, 12, &codecs);
     assert_eq!(number_adapter.params, vec![ValType::F64]);
     assert_eq!(number_adapter.results, vec![ValType::F64]);
 
@@ -6152,6 +6459,7 @@ mod tests {
       symbol: "echo".into(),
       raw_index: 3,
       source_arity: 1,
+      invocation: ComponentAbiInvocation::Sync,
       parameters: vec![ComponentAbiType::String],
       result: ComponentAbiType::String,
     };
@@ -6159,7 +6467,7 @@ mod tests {
       component_import_signature(&string),
       (vec![ValType::I32, ValType::I32, ValType::I32], vec![])
     );
-    let string_adapter = build_component_import_adapter(&string, 10, 11, 12, &list_codecs, &struct_codecs, &variant_codecs);
+    let string_adapter = build_component_import_adapter(&string, None, 12, &codecs);
     assert_eq!(string_adapter.params, vec![ValType::F64]);
     assert_eq!(string_adapter.results, vec![ValType::F64]);
 
@@ -6169,6 +6477,7 @@ mod tests {
       symbol: "buffer".into(),
       raw_index: 4,
       source_arity: 1,
+      invocation: ComponentAbiInvocation::Sync,
       parameters: vec![ComponentAbiType::Buffer],
       result: ComponentAbiType::Buffer,
     };
@@ -6176,9 +6485,74 @@ mod tests {
       component_import_signature(&buffer),
       (vec![ValType::I32, ValType::I32, ValType::I32], vec![])
     );
-    let buffer_adapter = build_component_import_adapter(&buffer, 10, 11, 12, &list_codecs, &struct_codecs, &variant_codecs);
+    let buffer_adapter = build_component_import_adapter(&buffer, None, 12, &codecs);
     assert_eq!(buffer_adapter.params, vec![ValType::F64]);
     assert_eq!(buffer_adapter.results, vec![ValType::F64]);
+  }
+
+  #[test]
+  fn component_async_import_uses_status_waitable_and_drop_shape() {
+    let list_codecs = BTreeMap::new();
+    let struct_codecs = BTreeMap::new();
+    let variant_codecs = BTreeMap::new();
+    let codecs = ComponentValueCodecs {
+      str_new_index: 10,
+      buffer_new_index: 11,
+      list_codecs: &list_codecs,
+      struct_codecs: &struct_codecs,
+      variant_codecs: &variant_codecs,
+    };
+    let canonical = ComponentAsyncCanonicalImports {
+      waitable_set_new: 30,
+      waitable_set_wait: 31,
+      waitable_set_drop: 32,
+      waitable_join: 33,
+      subtask_drop: 34,
+    };
+    let adapter = ComponentImportAdapter {
+      definition: "app.main/host-load".into(),
+      module: "host".into(),
+      symbol: "load".into(),
+      raw_index: 2,
+      source_arity: 1,
+      invocation: ComponentAbiInvocation::Async,
+      parameters: vec![ComponentAbiType::Number],
+      result: ComponentAbiType::Number,
+    };
+    assert_eq!(
+      component_import_signature(&adapter),
+      (vec![ValType::F64, ValType::I32], vec![ValType::I32])
+    );
+    let compiled = build_component_import_adapter(&adapter, Some(&canonical), 12, &codecs);
+    assert_eq!(compiled.params, vec![ValType::F64]);
+    assert_eq!(compiled.results, vec![ValType::F64]);
+    for index in [
+      adapter.raw_index,
+      canonical.waitable_set_wait,
+      canonical.subtask_drop,
+      canonical.waitable_set_drop,
+    ] {
+      assert!(
+        compiled
+          .instructions
+          .iter()
+          .any(|instruction| matches!(instruction, Instruction::Call(actual) if *actual == index)),
+        "missing async import lifecycle call {index}"
+      );
+    }
+  }
+
+  #[test]
+  fn component_async_import_rejects_indirect_parameters_until_lowering_exists() {
+    let error = validate_component_async_import_flat_parameters(
+      &[ComponentAbiType::String, ComponentAbiType::String, ComponentAbiType::Number],
+      "app.main/host-load",
+    )
+    .expect_err("five async flat parameters must stay fail closed");
+    assert_eq!(
+      error,
+      "E_COMPONENT_ABI_ASYNC_IMPORT_INDIRECT_PARAMETERS_UNSUPPORTED: `app.main/host-load` at `logical_schema.parameters` flattens to 5 values, but the async direct adapter supports at most 4; indirect parameter lowering is not implemented yet"
+    );
   }
 
   #[test]
@@ -6406,11 +6780,19 @@ mod tests {
       symbol: "not".into(),
       raw_index: 2,
       source_arity: 1,
+      invocation: ComponentAbiInvocation::Sync,
       parameters: vec![ComponentAbiType::Bool],
       result: ComponentAbiType::Bool,
     };
     assert_eq!(component_import_signature(&import), (vec![ValType::I32], vec![ValType::I32]));
-    let import_adapter = build_component_import_adapter(&import, 10, 11, 12, &list_codecs, &struct_codecs, &variant_codecs);
+    let codecs = ComponentValueCodecs {
+      str_new_index: 10,
+      buffer_new_index: 11,
+      list_codecs: &list_codecs,
+      struct_codecs: &struct_codecs,
+      variant_codecs: &variant_codecs,
+    };
+    let import_adapter = build_component_import_adapter(&import, None, 12, &codecs);
     assert_eq!(import_adapter.params, vec![ValType::F64]);
     assert_eq!(import_adapter.results, vec![ValType::F64]);
     assert!(
@@ -6509,6 +6891,7 @@ mod tests {
       symbol: "run".into(),
       raw_index: 0,
       source_arity: 1,
+      invocation: ComponentAbiInvocation::Sync,
       parameters: vec![ComponentAbiType::Number],
       result: ComponentAbiType::Number,
     };
