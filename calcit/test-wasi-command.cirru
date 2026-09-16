@@ -232,6 +232,47 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'edn-parse-map-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-map-main! ()
+            let
+                tags-result $ edn-parse-tag-string-map "|{} (:a |one) (:b \"|two words\")"
+                strings-result $ edn-parse-string-int-map "|{} (\"|two words\" 2) (|tail -3)"
+                tags $ result:unwrap-or tags-result $ {}
+                strings $ result:unwrap-or strings-result $ {}
+              assert= true $ result:ok? tags-result
+              assert= 2 $ count tags
+              assert= |one $ &map:get tags :a
+              assert= "|two words" $ &map:get tags :b
+              assert= true $ result:ok? strings-result
+              assert= 2 $ count strings
+              assert= 2 $ &map:get strings "|two words"
+              assert= -3 $ &map:get strings |tail
+              assert= true $ result:err? $ edn-parse-tag-string-map "|{} (:a"
+              println |WASI-typed-EDN-maps:-ok
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'edn-parse-map-over-limit-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-map-over-limit-main! ()
+            let
+                x0 "| (:a |one)"
+                x1 $ &str:concat x0 x0
+                x2 $ &str:concat x1 x1
+                x3 $ &str:concat x2 x2
+                x4 $ &str:concat x3 x3
+                x5 $ &str:concat x4 x4
+                x6 $ &str:concat x5 x5
+                x7 $ &str:concat x6 x6
+                x8 $ &str:concat x7 x7
+                x9 $ &str:concat x8 x8
+                x10 $ &str:concat x9 x9
+                x11 $ &str:concat x10 x10
+                input $ &str:concat (&str:concat |{} x11) x0
+              assert= true $ result:err? $ edn-parse-tag-string-map input
+              println |WASI-typed-EDN-map-limit:-ok
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'edn-parse-over-limit-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-over-limit-main! ()
             let
@@ -295,6 +336,18 @@
             %{} 'TestEntry (:name |rejects-invalid-quoted-escape)
               :code $ quote $ assert= true
                 result:err? $ &list:nth (edn-parse-scalars) 13
+        'edn-parse-string-int-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-string-int-map (text)
+            try-parse-cirru-edn-as text $ :: 'Map 'String 'Int32
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result (:: 'Map 'String 'Int32) 'String
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-quoted-map-key)
+            :code $ quote $ assert=
+              %ok $ {,} "|two words" 2 |tail -3
+              edn-parse-string-int-map "|{} (\"|two words\" 2) (|tail -3)"
+            :tags $ #{} :core :unit
         'edn-parse-string-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-string-list (text)
             try-parse-cirru-edn-as text $ :: 'List 'String
@@ -306,6 +359,24 @@
             :code $ quote $ assert=
               %ok $ [] |hello "|two words" |tail
               edn-parse-string-list "|[] |hello \"|two words\" |tail"
+            :tags $ #{} :core :unit
+        'edn-parse-tag-string-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-tag-string-map (text)
+            try-parse-cirru-edn-as text $ :: 'Map 'Tag 'String
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result (:: 'Map 'Tag 'String) 'String
+          :tests $ [] $ %{} 'TestEntry (:name |parses-bounded-tag-string-map)
+            :code $ quote $ do
+              assert=
+                %ok $ {,} :a |one :b "|two words"
+                edn-parse-tag-string-map "|{} (:a |one) (:b \"|two words\")"
+              assert=
+                %ok $ {}
+                edn-parse-tag-string-map |{}
+              assert= true $ result:err? $ edn-parse-tag-string-map "|{} (:a |one) (:bad 2)"
+              assert= true $ result:err? $ edn-parse-tag-string-map "|{} (:a"
             :tags $ #{} :core :unit
         'exit-7! $ %{} 'CodeEntry (:doc "|以状态码 7 终止进程，用于验证 command 退出边界。")
           :code $ quote $ defn exit-7! () (quit! 7)
