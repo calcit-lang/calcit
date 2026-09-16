@@ -17,7 +17,6 @@ readonly EDN_FORMAT_STDOUT="${EDN_FORMAT_OUT}/stdout.txt"
 readonly EDN_FORMAT_NATIVE_RAW_STDOUT="${EDN_FORMAT_OUT}/native-raw-stdout.txt"
 readonly EDN_FORMAT_NATIVE_STDOUT="${EDN_FORMAT_OUT}/native-stdout.txt"
 readonly EDN_FORMAT_LIMIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-format-limit"
-readonly EDN_FORMAT_LIMIT_STDERR="${EDN_FORMAT_LIMIT_OUT}/stderr.txt"
 readonly EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-exit-smoke"
 readonly INVALID_EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-invalid-exit-smoke"
 readonly INVALID_EXIT_STDERR="${INVALID_EXIT_OUT}/stderr.txt"
@@ -252,12 +251,22 @@ while IFS= read -r edn_line; do
   fi
 done <"$EDN_FORMAT_STDOUT"
 
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-format-over-limit-main! --emit-path "$EDN_FORMAT_LIMIT_OUT"
-if wasmtime run "$EDN_FORMAT_LIMIT_OUT/program.wasm" >/dev/null 2>"$EDN_FORMAT_LIMIT_STDERR"; then
-  echo "WASI Cirru EDN formatter unexpectedly exceeded its output allocation limit" >&2
-  exit 1
-fi
-grep -Fq 'wasm trap' "$EDN_FORMAT_LIMIT_STDERR"
+assert_wasi_edn_limit() {
+  local init_fn="$1"
+  local case_name="$2"
+  local case_out="${EDN_FORMAT_LIMIT_OUT}/${case_name}"
+  local case_stderr="${case_out}/stderr.txt"
+  "$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn "$init_fn" --emit-path "$case_out"
+  if wasmtime run "$case_out/program.wasm" >/dev/null 2>"$case_stderr"; then
+    echo "WASI Cirru EDN formatter unexpectedly accepted the ${case_name} over-limit case" >&2
+    exit 1
+  fi
+  grep -Fq 'wasm trap' "$case_stderr"
+}
+
+assert_wasi_edn_limit app.main/edn-format-over-limit-main! concat-output
+assert_wasi_edn_limit app.main/edn-format-source-over-limit-main! source-string
+assert_wasi_edn_limit app.main/edn-format-escaped-over-limit-main! escaped-output
 
 # Keep one user-facing starter runnable as a real file-processing command, not
 # only as isolated capability fixtures.
