@@ -300,6 +300,7 @@ wasmtime run "$EDN_PARSE_LIST_LIMIT_OUT/program.wasm" >"$EDN_PARSE_LIST_LIMIT_ST
 grep -Fxq 'WASI-typed-EDN-list-limit:-ok' "$EDN_PARSE_LIST_LIMIT_STDOUT"
 "$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-tag-string-map --require-match
 "$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-string-int-map --require-match
+"$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-large-fraction --require-match
 "$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-map-main! --emit-path "$EDN_PARSE_MAP_OUT"
 wasmtime run "$EDN_PARSE_MAP_OUT/program.wasm" >"$EDN_PARSE_MAP_STDOUT"
 grep -Fxq 'WASI-typed-EDN-maps:-ok' "$EDN_PARSE_MAP_STDOUT"

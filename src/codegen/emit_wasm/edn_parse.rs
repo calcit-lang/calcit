@@ -982,6 +982,7 @@ fn emit_parse_number(
   let index = ctx.alloc_local_typed(ValType::I32);
   let digits = ctx.alloc_local_typed(ValType::I32);
   let dot_seen = ctx.alloc_local_typed(ValType::I32);
+  let fractional_nonzero = ctx.alloc_local_typed(ValType::I32);
   let valid = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(valid));
@@ -991,6 +992,8 @@ fn emit_parse_number(
   ctx.emit(Instruction::LocalSet(digits));
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(dot_seen));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(fractional_nonzero));
 
   // Optional leading sign.
   ctx.emit(Instruction::LocalGet(len));
@@ -1027,6 +1030,15 @@ fn emit_parse_number(
   ctx.emit(Instruction::I32And);
   ctx.begin_block_if();
   ctx.i32_inc(digits);
+  ctx.emit(Instruction::LocalGet(dot_seen));
+  ctx.emit(Instruction::LocalGet(byte));
+  ctx.emit(Instruction::I32Const(b'0' as i32));
+  ctx.emit(Instruction::I32Ne);
+  ctx.emit(Instruction::I32And);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(fractional_nonzero));
+  ctx.emit(Instruction::End);
   ctx.emit(Instruction::Else);
   ctx.emit(Instruction::LocalGet(byte));
   ctx.emit(Instruction::I32Const(b'.' as i32));
@@ -1062,6 +1074,23 @@ fn emit_parse_number(
   if let Some(kind) = refinement {
     let in_range = ctx.alloc_local_typed(ValType::I32);
     emit_numeric_refinement_check(ctx, parsed, kind, in_range);
+    if matches!(
+      kind,
+      CalcitNumericRefinement::Int8
+        | CalcitNumericRefinement::UInt8
+        | CalcitNumericRefinement::Int16
+        | CalcitNumericRefinement::UInt16
+        | CalcitNumericRefinement::Int32
+        | CalcitNumericRefinement::UInt32
+        | CalcitNumericRefinement::Int64
+        | CalcitNumericRefinement::UInt64
+    ) {
+      ctx.emit(Instruction::LocalGet(in_range));
+      ctx.emit(Instruction::LocalGet(fractional_nonzero));
+      ctx.emit(Instruction::I32Eqz);
+      ctx.emit(Instruction::I32And);
+      ctx.emit(Instruction::LocalSet(in_range));
+    }
     ctx.emit(Instruction::LocalGet(in_range));
     ctx.begin_block_if();
     ctx.emit(Instruction::I32Const(1));
