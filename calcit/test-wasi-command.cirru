@@ -43,6 +43,29 @@
           :tests $ [] $ %{} 'TestEntry (:name |valid-readings)
             :code $ quote $ assert= true (clocks-valid?)
             :tags $ #{} :core :time :unit :wasi :wasm
+        'edn-format-escaped-over-limit-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-format-escaped-over-limit-main! ()
+            let
+                x0 "|\n"
+                x1 $ &str:concat x0 x0
+                x2 $ &str:concat x1 x1
+                x3 $ &str:concat x2 x2
+                x4 $ &str:concat x3 x3
+                x5 $ &str:concat x4 x4
+                x6 $ &str:concat x5 x5
+                x7 $ &str:concat x6 x6
+                x8 $ &str:concat x7 x7
+                x9 $ &str:concat x8 x8
+                x10 $ &str:concat x9 x9
+                x11 $ &str:concat x10 x10
+                x12 $ &str:concat x11 x11
+                x13 $ &str:concat x12 x12
+                x14 $ &str:concat x13 x13
+                x15 $ &str:concat x14 x14
+              println $ format-cirru-edn x15
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'edn-format-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-format-main! ()
             println $ format-cirru-edn $ [] :ready :paused
@@ -95,6 +118,28 @@
                 str (char-from-code 10) "|{} (:a |one) (:b |two)" $ char-from-code 10
                 str (char-from-code 10) "|{} (|a |one) (\"|b key\" |two)" $ char-from-code 10
               edn-format-samples
+        'edn-format-source-over-limit-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-format-source-over-limit-main! ()
+            let
+                x0 |12345678
+                x1 $ &str:concat x0 x0
+                x2 $ &str:concat x1 x1
+                x3 $ &str:concat x2 x2
+                x4 $ &str:concat x3 x3
+                x5 $ &str:concat x4 x4
+                x6 $ &str:concat x5 x5
+                x7 $ &str:concat x6 x6
+                x8 $ &str:concat x7 x7
+                x9 $ &str:concat x8 x8
+                x10 $ &str:concat x9 x9
+                x11 $ &str:concat x10 x10
+                x12 $ &str:concat x11 x11
+                x13 $ &str:concat x12 x12
+                x14 $ &str:concat x13 x13
+              println $ format-cirru-edn x14
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'exit-7! $ %{} 'CodeEntry (:doc "|以状态码 7 终止进程，用于验证 command 退出边界。")
           :code $ quote $ defn exit-7! () (quit! 7)
           :examples $ []
