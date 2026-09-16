@@ -78,7 +78,6 @@ fn emit_edn_value(
       let result = ctx.alloc_local();
       ctx.emit(Instruction::LocalGet(value));
       ctx.call_rt("__rt_f64_to_str");
-      ctx.emit(Instruction::F64ConvertI32U);
       ctx.emit(Instruction::LocalSet(result));
       Ok(result)
     }

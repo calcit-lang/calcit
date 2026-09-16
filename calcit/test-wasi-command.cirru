@@ -50,6 +50,7 @@
             println $ format-cirru-edn $ [] ([] |a |b) ([] "|c d")
             println $ format-cirru-edn true
             println $ format-cirru-edn nil
+            println $ format-cirru-edn $ assert-type 42 'Int32
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
@@ -61,6 +62,7 @@
               format-cirru-edn $ [] ([] |a |b) ([] "|c d")
               format-cirru-edn true
               format-cirru-edn nil
+              format-cirru-edn $ assert-type 42 'Int32
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ []
@@ -73,6 +75,7 @@
                 str (char-from-code 10) "|[] ([] |a |b) ([] \"|c d\")" $ char-from-code 10
                 str (char-from-code 10) "|do true" $ char-from-code 10
                 str (char-from-code 10) "|do nil" $ char-from-code 10
+                str (char-from-code 10) "|do 42" $ char-from-code 10
               edn-format-samples
         'exit-7! $ %{} 'CodeEntry (:doc "|以状态码 7 终止进程，用于验证 command 退出边界。")
           :code $ quote $ defn exit-7! () (quit! 7)

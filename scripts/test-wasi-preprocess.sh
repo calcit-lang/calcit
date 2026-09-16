@@ -233,6 +233,7 @@ grep -Fxq '[] |hello "|hello world"' "$EDN_FORMAT_STDOUT"
 grep -Fxq '[] ([] |a |b) ([] "|c d")' "$EDN_FORMAT_STDOUT"
 grep -Fxq 'do true' "$EDN_FORMAT_STDOUT"
 grep -Fxq 'do nil' "$EDN_FORMAT_STDOUT"
+grep -Fxq 'do 42' "$EDN_FORMAT_STDOUT"
 
 # Keep one user-facing starter runnable as a real file-processing command, not
 # only as isolated capability fixtures.
