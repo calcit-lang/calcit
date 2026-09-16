@@ -287,6 +287,14 @@ fn raw_syntax_codegen_error(syntax: &CalcitSyntax) -> String {
   )
 }
 
+fn is_native_map_reference(value: &Calcit) -> bool {
+  match value {
+    Calcit::Proc(CalcitProc::NativeMap) => true,
+    Calcit::Import(CalcitImport { def, info, .. }) => def.as_ref() == "{}" && matches!(&**info, ImportInfo::Core { .. }),
+    _ => false,
+  }
+}
+
 fn to_js_code(
   xs: &Calcit,
   ns: &str,
@@ -310,33 +318,38 @@ fn to_js_code(
         gen_symbol_code(sym, &info.at_ns, &info.at_def, xs, &passed_defs)
       }
       Calcit::Import(item @ CalcitImport { def, info, .. }) => {
-        match &**info {
-          ImportInfo::Core { at_ns } => {
-            if &**at_ns == calcit::CORE_NS {
-              // functions under core uses built $clt module entry
-              Ok(escape_var(def))
-            } else {
-              Ok(format!("$clt.{}", escape_var(def)))
+        if is_native_map_reference(xs) {
+          let proc_prefix = get_proc_prefix(ns);
+          Ok(format!("{proc_prefix}{}()", escape_var(CalcitProc::NativeMap.as_ref())))
+        } else {
+          match &**info {
+            ImportInfo::Core { at_ns } => {
+              if &**at_ns == calcit::CORE_NS {
+                // functions under core uses built $clt module entry
+                Ok(escape_var(def))
+              } else {
+                Ok(format!("$clt.{}", escape_var(def)))
+              }
             }
-          }
-          ImportInfo::NsAs { .. } => {
-            file_imports.borrow_mut().insert(item.to_owned());
-            Ok(format!("{}.{}", escape_ns(&item.ns), escape_var(def)))
-          }
-          ImportInfo::JsDefault { alias, .. } => {
-            // println!("Js Default: {:?}", info);
-            file_imports.borrow_mut().insert(item.to_owned());
-            Ok(escape_var(alias))
-          }
-          _ => {
-            // Type-directed rewrites may conservatively preserve a referred-import
-            // marker even when the resolved definition lives in this module.  A
-            // named self-import is invalid ESM once the same definition is exported
-            // below, so keep same-namespace references local at the emitter boundary.
-            if item.ns.as_ref() != ns {
+            ImportInfo::NsAs { .. } => {
               file_imports.borrow_mut().insert(item.to_owned());
+              Ok(format!("{}.{}", escape_ns(&item.ns), escape_var(def)))
             }
-            Ok(escape_var(def))
+            ImportInfo::JsDefault { alias, .. } => {
+              // println!("Js Default: {:?}", info);
+              file_imports.borrow_mut().insert(item.to_owned());
+              Ok(escape_var(alias))
+            }
+            _ => {
+              // Type-directed rewrites may conservatively preserve a referred-import
+              // marker even when the resolved definition lives in this module.  A
+              // named self-import is invalid ESM once the same definition is exported
+              // below, so keep same-namespace references local at the emitter boundary.
+              if item.ns.as_ref() != ns {
+                file_imports.borrow_mut().insert(item.to_owned());
+              }
+              Ok(escape_var(def))
+            }
           }
         }
       }
@@ -763,7 +776,7 @@ fn gen_call_code(
       // `to_js_code(NativeMap)` evaluates a bare map. In call position we need
       // the constructor itself, otherwise map literals with entries become a
       // call of an already-created empty map.
-      let callee = if matches!(head, Calcit::Proc(CalcitProc::NativeMap)) {
+      let callee = if is_native_map_reference(&head) {
         format!("{proc_prefix}{}", escape_var(CalcitProc::NativeMap.as_ref()))
       } else {
         to_js_code(&head, ns, local_defs, file_imports, tags, None)?
@@ -1001,7 +1014,12 @@ fn gen_call_code(
     _ => {
       let (prelude, args_code) =
         gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
-      let call_code = format!("{}({})", to_js_code(&head, ns, local_defs, file_imports, tags, None)?, args_code);
+      let callee = if is_native_map_reference(&head) {
+        format!("{proc_prefix}{}", escape_var(CalcitProc::NativeMap.as_ref()))
+      } else {
+        to_js_code(&head, ns, local_defs, file_imports, tags, None)?
+      };
+      let call_code = format!("{callee}({args_code})");
       Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
     }
   }
@@ -2244,6 +2262,17 @@ mod tests {
   use crate::calcit::CalcitSymbolInfo;
   use std::collections::HashMap;
 
+  fn imported_native_map() -> Calcit {
+    Calcit::Import(CalcitImport {
+      ns: Arc::from(calcit::CORE_NS),
+      def: Arc::from("{}"),
+      info: Arc::new(ImportInfo::Core {
+        at_ns: Arc::from("tests.emit-js"),
+      }),
+      def_id: None,
+    })
+  }
+
   fn external_trait_with_names() -> Arc<calcit::CalcitTrait> {
     let ns = "tests.emit-js-external";
     let def = "HostElement";
@@ -2755,6 +2784,11 @@ mod tests {
     .expect("bare empty map should compile");
 
     assert_eq!(code, "$clt._$n__$M_()");
+
+    let imported_code = to_js_code(&imported_native_map(), "tests.emit-js", &local_defs, &file_imports, &tags, None)
+      .expect("import-lowered empty map should compile");
+
+    assert_eq!(imported_code, "$clt._$n__$M_()");
   }
 
   #[test]
@@ -2831,6 +2865,16 @@ mod tests {
     let code = to_js_code(&form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("map literal should compile");
 
     assert_eq!(code, "$clt._$n__$M_(_t_.value, 1)");
+
+    let imported_form = Calcit::List(Arc::new(CalcitList::from(&[
+      imported_native_map(),
+      Calcit::Tag(EdnTag::from("value")),
+      Calcit::Number(1.0),
+    ])));
+    let imported_code =
+      to_js_code(&imported_form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("import-lowered map should compile");
+
+    assert_eq!(imported_code, "$clt._$n__$M_(_t_.value, 1)");
   }
 
   #[test]
