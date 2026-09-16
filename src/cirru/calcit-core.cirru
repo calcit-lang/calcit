@@ -7866,7 +7866,7 @@
                 , .parse-cirru-edn
               assert-type (|[] .parse-cirru-edn) (:: 'Result 'Dynamic 'String)
         'try-parse-cirru-edn-as $ %{} 'CodeEntry
-          :doc "|Parse Cirru EDN into a compile-time-derived closed type and return Result<T,String>. Runtime parse and shape failures become :err; invalid TypeExpr decoder derivation remains a compile-time error. Syntax: (try-parse-cirru-edn-as text TypeExpr). Native and JavaScript are supported; WASM typed decoding is not yet supported."
+          :doc "|把 Cirru EDN 解析为编译期推导的闭合类型，并返回 Result<T,String>。运行时解析或 shape 错误返回 :err；无效 TypeExpr 的 decoder 推导仍为编译期错误。Native 与 JavaScript 支持完整闭合 shape；WASM 当前支持有 64 KiB 输入上限的标量 MVP（nil、Bool、Number、numeric refinement、|text String 和编译产物已知 tag）。语法：(try-parse-cirru-edn-as text TypeExpr)。"
           :code $ quote $ def try-parse-cirru-edn-as &runtime-implementation
           :examples $ []
             quote $ try-parse-cirru-edn-as "|[] 1 2" $ :: 'List 'Number
