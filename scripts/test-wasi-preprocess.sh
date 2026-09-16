@@ -14,6 +14,8 @@ readonly COMMAND_STDERR="${COMMAND_OUT}/stderr.txt"
 readonly COMMAND_MISSING_STDOUT="${COMMAND_OUT}/missing-env-stdout.txt"
 readonly EDN_FORMAT_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-format-smoke"
 readonly EDN_FORMAT_STDOUT="${EDN_FORMAT_OUT}/stdout.txt"
+readonly EDN_FORMAT_NATIVE_RAW_STDOUT="${EDN_FORMAT_OUT}/native-raw-stdout.txt"
+readonly EDN_FORMAT_NATIVE_STDOUT="${EDN_FORMAT_OUT}/native-stdout.txt"
 readonly EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-exit-smoke"
 readonly INVALID_EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-invalid-exit-smoke"
 readonly INVALID_EXIT_STDERR="${INVALID_EXIT_OUT}/stderr.txt"
@@ -226,14 +228,20 @@ grep -Fq "E_WASM_CAPABILITY" <<<"$read_dir_capability_error"
 # Cirru EDN formatting stays type-directed in WASM because scalar values share
 # the f64 ABI. Exercise closed tags, strings, Bool, nil, and homogeneous lists.
 "$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-format-samples --require-match
+mkdir -p "$EDN_FORMAT_OUT"
+"$CALCIT_BIN" "$COMMAND_FIXTURE" --init-fn app.main/edn-format-main! >"$EDN_FORMAT_NATIVE_RAW_STDOUT"
+grep -Ev '^took [0-9.]+ms: nil$' "$EDN_FORMAT_NATIVE_RAW_STDOUT" >"$EDN_FORMAT_NATIVE_STDOUT"
 "$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-format-main! --emit-path "$EDN_FORMAT_OUT"
 wasmtime run "$EDN_FORMAT_OUT/program.wasm" >"$EDN_FORMAT_STDOUT"
+cmp "$EDN_FORMAT_NATIVE_STDOUT" "$EDN_FORMAT_STDOUT"
 grep -Fxq '[] :ready :paused' "$EDN_FORMAT_STDOUT"
 grep -Fxq '[] |hello "|hello world"' "$EDN_FORMAT_STDOUT"
 grep -Fxq '[] ([] |a |b) ([] "|c d")' "$EDN_FORMAT_STDOUT"
 grep -Fxq 'do true' "$EDN_FORMAT_STDOUT"
 grep -Fxq 'do nil' "$EDN_FORMAT_STDOUT"
 grep -Fxq 'do 42' "$EDN_FORMAT_STDOUT"
+grep -Fxq 'do 1.25' "$EDN_FORMAT_STDOUT"
+grep -Fxq 'do -0.5' "$EDN_FORMAT_STDOUT"
 
 # Keep one user-facing starter runnable as a real file-processing command, not
 # only as isolated capability fixtures.

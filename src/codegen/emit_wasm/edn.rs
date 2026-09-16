@@ -8,6 +8,17 @@ pub(super) fn emit_format_cirru_edn(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
     return Err(format!("format-cirru-edn expects 1~2 args, got {}", args.len()));
   }
 
+  if let Some(formatted) = try_format_cirru_edn_literal(&args[0]) {
+    // The literal itself has no effects. Keep eager evaluation of the optional
+    // compatibility flag before returning the preformatted native-parity text.
+    if let Some(flag) = args.get(1) {
+      emit_expr(ctx, flag)?;
+      ctx.emit(Instruction::Drop);
+    }
+    emit_literal(ctx, &formatted)?;
+    return Ok(());
+  }
+
   let value_type = infer_static_type_from_expr(&args[0])
     .ok_or_else(|| "E_WASM_EDN_TYPE: format-cirru-edn requires a closed inferred input type for WASM".to_string())?;
 
@@ -32,6 +43,13 @@ pub(super) fn emit_format_cirru_edn(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   let output = concat_with_literal_after(ctx, with_leading_line, "\n")?;
   ctx.emit(Instruction::LocalGet(output));
   Ok(())
+}
+
+pub(super) fn try_format_cirru_edn_literal(value: &Calcit) -> Option<String> {
+  match value {
+    Calcit::Number(number) => cirru_edn::format(&cirru_edn::Edn::Number(*number), true).ok(),
+    _ => None,
+  }
 }
 
 fn is_edn_scalar(value_type: &CalcitTypeAnnotation) -> bool {
@@ -257,6 +275,14 @@ fn concat_string_locals(ctx: &mut WasmGenCtx, left: u32, right: u32) -> u32 {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn formats_number_literals_with_native_cirru_edn_bytes() {
+    for number in [1.25, -0.5, 1e-7, 1e20] {
+      let expected = cirru_edn::format(&cirru_edn::Edn::Number(number), true).expect("native formatter should accept f64");
+      assert_eq!(try_format_cirru_edn_literal(&Calcit::Number(number)), Some(expected));
+    }
+  }
 
   #[test]
   fn rejects_open_or_inexact_wasm_edn_schemas() {

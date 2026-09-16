@@ -6409,6 +6409,12 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
       if let Some(enum_str) = try_format_enum_literal(expr) {
         strings.push(enum_str);
       }
+      if matches!(xs.first(), Some(Calcit::Proc(CalcitProc::FormatCirruEdn)))
+        && let Some(value) = xs.get(1)
+        && let Some(formatted) = edn::try_format_cirru_edn_literal(value)
+      {
+        strings.push(formatted);
+      }
       for x in xs.iter() {
         collect_strings_from_expr(x, strings);
       }
