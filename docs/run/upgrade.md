@@ -107,6 +107,19 @@ Component boundary 按推导并规范化后的 schema 宽度确定性导出 `Int
 `calcit ffi export --boundary component`，并用 calcit-bindgen `generate` / `check` 刷新 WIT、manifest 与 Component
 产物，不保留旧数值 ABI 兼容层。旧边界写法只有在能证明等价时才由 `calcit fix` 给出迁移建议，其他仍需人工决定。
 
+## 0.15.3 异步 Component export 基础
+
+0.15.3 开始消费函数 schema 已有的 `:async true`，不增加新的表层 Task/Future 类型或 CLI。Component Interface IR v3
+将该标记导出为 `invocation: async`；`calcit wasm --boundary component` 为对应 export 生成 WASI 0.3 async core shape：
+参数继续使用现有 Canonical ABI 类型 walker，core 函数没有返回值，逻辑返回值通过 packaging 注入的强类型
+`task.return` 恰好完成一次。
+
+这是分阶段开放的能力。当前 export 必须在一次 core 调用中直接运行到完成；async import 的 subtask status、waitable、
+取消与 drop 尚未实现，会以 `E_COMPONENT_ABI_ASYNC_IMPORT_UNSUPPORTED` 拒绝。不要把 native `async-task-v1` 队列、
+句柄或 polling API 搬到 Component 接口，也不要把 async import 临时改成同步 ABI。升级包含 async export 的项目时，
+先重新导出 IR v3 contract，再升级 calcit-bindgen 以连接 `calcit:component/canonical` 模块下的
+`task-return/<export-symbol>` canonical imports；旧 bindgen 不能把裸 core module 当作 runnable Component。
+
 ## 0.14 默认严格诊断
 
 Calcit 0.14 起，普通运行、`--check-only` 和代码生成默认启用严格预处理诊断；无需再通过

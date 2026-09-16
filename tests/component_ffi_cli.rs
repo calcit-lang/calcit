@@ -87,16 +87,24 @@ fn native_json_keeps_the_v3_envelope_without_a_boundary_field() {
 }
 
 #[test]
-fn component_core_adapter_rejects_async_contracts_until_native_async_lowering_exists() {
-  let output = run_calcit(&["--compat-types", "wasm", "--boundary", "component", "--check-only"]);
+fn component_core_adapter_accepts_explicit_async_exports() {
+  let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "tests/fixtures/component-wasm-async-export.cirru",
+      "wasm",
+      "--boundary",
+      "component",
+      "--check-only",
+    ])
+    .output()
+    .expect("async Component fixture check should run");
   assert!(
-    !output.status.success(),
-    "async Component boundary must not silently use the sync adapter"
-  );
-  let stderr = String::from_utf8_lossy(&output.stderr);
-  assert!(stderr.contains("E_COMPONENT_ABI_ASYNC_UNSUPPORTED"), "unexpected stderr:\n{stderr}");
-  assert!(
-    stderr.contains("test-wasm.main/wasm-ffi-async-echo"),
-    "unexpected stderr:\n{stderr}"
+    output.status.success(),
+    "async Component check failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&output.stdout),
+    String::from_utf8_lossy(&output.stderr)
   );
 }

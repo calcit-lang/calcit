@@ -688,7 +688,7 @@ pub(super) fn collect_component_compound_types(
       continue;
     }
     let definition = format!("{namespace}/{name}");
-    let (parameters, result) = component_function_schema(compiled, &definition, fn_param_names(args).len(), program_data)?;
+    let (parameters, result, _) = component_function_schema(compiled, &definition, fn_param_names(args).len(), program_data)?;
     for parameter in &parameters {
       collect_compound_type(parameter, &mut seen, &mut ordered);
     }

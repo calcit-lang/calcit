@@ -28,6 +28,91 @@ impl Drop for TestDirectory {
 }
 
 #[test]
+fn async_component_export_returns_once_through_canonical_task_return() {
+  let output = TestDirectory::create();
+  let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "tests/fixtures/component-wasm-async-export.cirru",
+      "wasm",
+      "--boundary",
+      "component",
+      "--emit-path",
+    ])
+    .arg(&output.0)
+    .output()
+    .expect("async Component fixture should compile");
+  assert!(
+    compile.status.success(),
+    "async Component compile failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&compile.stdout),
+    String::from_utf8_lossy(&compile.stderr)
+  );
+
+  let wasm = output.0.join("program.wasm");
+  let script = r#"
+const fs = require("fs");
+const bytes = fs.readFileSync(process.argv[1]);
+const module = new WebAssembly.Module(bytes);
+const imports = WebAssembly.Module.imports(module);
+const importNames = imports.map(({ module, name }) => `${module}/${name}`).sort();
+if (importNames.join(",") !== "calcit:component/canonical/task-return/echo-result,calcit:component/canonical/task-return/load-text") {
+  throw new Error(`unexpected imports: ${JSON.stringify(imports)}`);
+}
+let instance;
+let completions = 0;
+let returnedText = null;
+const resultCompletions = [];
+const canonical = {
+  "task-return/load-text": (ptr, len) => {
+    completions += 1;
+    returnedText = Buffer.from(instance.exports.memory.buffer, ptr, len).toString("utf8");
+  },
+  "task-return/echo-result": (discriminant, ptr, len) => {
+    resultCompletions.push([discriminant, Buffer.from(instance.exports.memory.buffer, ptr, len).toString("utf8")]);
+  },
+};
+WebAssembly.instantiate(module, { "calcit:component/canonical": canonical }).then(result => {
+  instance = result;
+  const allocateText = text => {
+    const input = Buffer.from(text, "utf8");
+    const ptr = instance.exports.cabi_realloc(0, 0, 1, input.length);
+    new Uint8Array(instance.exports.memory.buffer, ptr, input.length).set(input);
+    return [ptr, input.length];
+  };
+  const [ptr, len] = allocateText("你好 async");
+  const returned = instance.exports["load-text"](ptr, len);
+  if (returned !== undefined) throw new Error(`async core export returned ${returned}`);
+  if (completions !== 1) throw new Error(`expected one completion, got ${completions}`);
+  if (returnedText !== "你好 async") throw new Error(`unexpected result: ${returnedText}`);
+  const [okPtr, okLen] = allocateText("ok-value");
+  const [errorPtr, errorLen] = allocateText("error-value");
+  instance.exports["echo-result"](0, okPtr, okLen);
+  instance.exports["echo-result"](1, errorPtr, errorLen);
+  if (JSON.stringify(resultCompletions) !== JSON.stringify([[0, "ok-value"], [1, "error-value"]])) {
+    throw new Error(`typed Result did not round-trip: ${JSON.stringify(resultCompletions)}`);
+  }
+}).catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
+"#;
+  let runtime = Command::new("node")
+    .args(["-e", script])
+    .arg(&wasm)
+    .output()
+    .expect("Node.js should validate and instantiate the async Component core module");
+  assert!(
+    runtime.status.success(),
+    "async Component runtime failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&runtime.stdout),
+    String::from_utf8_lossy(&runtime.stderr)
+  );
+}
+
+#[test]
 fn component_boundary_round_trips_variants_lists_and_scalar_values() {
   let output = TestDirectory::create();
   let check = Command::new(env!("CARGO_BIN_EXE_calcit"))

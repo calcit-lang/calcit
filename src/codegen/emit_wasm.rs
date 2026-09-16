@@ -265,6 +265,15 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   } else {
     Vec::new()
   };
+  let mut component_adapters = if boundary == WasmBoundary::Component {
+    let provisional_fn_index = fn_defs
+      .iter()
+      .map(|(namespace, name, _, _)| (format!("{namespace}/{name}"), 0))
+      .collect::<HashMap<_, _>>();
+    collect_component_export_adapters(&program_data, &fn_defs, &provisional_fn_index)?
+  } else {
+    Vec::new()
+  };
   let mut wasm_import_names: HashMap<String, u32> = HashMap::new();
   let mut wasm_import_arities: HashMap<String, u32> = HashMap::new();
   if boundary == WasmBoundary::Component {
@@ -277,6 +286,19 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
         name: adapter.symbol.clone(),
         params,
         results,
+      });
+    }
+    for adapter in &mut component_adapters {
+      if adapter.invocation != ComponentAbiInvocation::Async {
+        continue;
+      }
+      let index = host_imports.len() as u32;
+      adapter.task_return_index = Some(index);
+      host_imports.push(HostImport {
+        module: COMPONENT_CANONICAL_IMPORT_MODULE.into(),
+        name: component_task_return_symbol(&adapter.symbol),
+        params: component_task_return_signature(&adapter.result),
+        results: vec![],
       });
     }
   } else {
@@ -692,11 +714,12 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     host_imports: index_host_imports(&host_imports),
     target,
   };
-  let component_adapters = if boundary == WasmBoundary::Component {
-    collect_component_export_adapters(&program_data, &fn_defs, &env.fn_index)?
-  } else {
-    Vec::new()
-  };
+  for adapter in &mut component_adapters {
+    adapter.target_index = *env
+      .fn_index
+      .get(&adapter.definition)
+      .ok_or_else(|| format!("E_COMPONENT_ABI_TARGET: compiled target `{}` is missing", adapter.definition))?;
+  }
 
   // Second pass: target failures reject the artifact. Dependency failures keep
   // a trapping slot so preassigned call and table indices remain stable.
@@ -937,6 +960,8 @@ struct ComponentExportAdapter {
   definition: String,
   symbol: String,
   target_index: u32,
+  invocation: ComponentAbiInvocation,
+  task_return_index: Option<u32>,
   parameters: Vec<ComponentAbiType>,
   result: ComponentAbiType,
 }
@@ -950,6 +975,18 @@ struct ComponentImportAdapter {
   source_arity: u32,
   parameters: Vec<ComponentAbiType>,
   result: ComponentAbiType,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ComponentAbiInvocation {
+  Sync,
+  Async,
+}
+
+const COMPONENT_CANONICAL_IMPORT_MODULE: &str = "calcit:component/canonical";
+
+fn component_task_return_symbol(symbol: &str) -> String {
+  format!("task-return/{symbol}")
 }
 
 #[cfg(test)]
@@ -1239,16 +1276,16 @@ fn component_function_schema(
   definition: &str,
   source_arity: usize,
   program_data: &program::CompiledProgram,
-) -> Result<(Vec<ComponentAbiType>, ComponentAbiType), String> {
+) -> Result<(Vec<ComponentAbiType>, ComponentAbiType, ComponentAbiInvocation), String> {
   let signature = compiled
     .schema
     .resolve_to_fn()
     .ok_or_else(|| format!("E_COMPONENT_ABI_MISSING_SCHEMA: `{definition}` at `logical_schema` requires a resolved function schema"))?;
-  if signature.is_async_invocation() {
-    return Err(format!(
-      "E_COMPONENT_ABI_ASYNC_UNSUPPORTED: `{definition}` at `logical_schema.async` requires the WASI 0.3 native-async adapter"
-    ));
-  }
+  let invocation = if signature.is_async_invocation() {
+    ComponentAbiInvocation::Async
+  } else {
+    ComponentAbiInvocation::Sync
+  };
   if !signature.generics.is_empty() {
     return Err(format!(
       "E_COMPONENT_ABI_UNSUPPORTED_GENERIC: `{definition}` at `logical_schema.generics` must be monomorphized"
@@ -1292,7 +1329,7 @@ fn component_function_schema(
     &mut Vec::new(),
     Some(program_data),
   )?;
-  Ok((parameters, result))
+  Ok((parameters, result, invocation))
 }
 
 const COMPONENT_MAX_FLAT_PARAMETERS: usize = 16;
@@ -1381,9 +1418,19 @@ fn collect_component_import_adapters(program_data: &program::CompiledProgram) ->
       let definition = format!("{namespace}/{name}");
       let (module, symbol, args) = parse_wasm_import_def(&compiled.preprocessed_code)
         .ok_or_else(|| format!("E_COMPONENT_ABI_IMPORT: `{definition}` must use `defwasm-import name (args) |module |field`"))?;
+      if module == COMPONENT_CANONICAL_IMPORT_MODULE {
+        return Err(format!(
+          "E_COMPONENT_ABI_RESERVED_IMPORT: `{definition}` cannot declare the compiler-reserved module `{COMPONENT_CANONICAL_IMPORT_MODULE}`"
+        ));
+      }
       let source_arity = wasm_import_arity(&args)
         .map_err(|reason| format!("E_COMPONENT_ABI_UNSUPPORTED_ARITY: `{definition}` at `logical_schema.parameters` {reason}"))?;
-      let (parameters, result) = component_function_schema(compiled, &definition, source_arity as usize, program_data)?;
+      let (parameters, result, invocation) = component_function_schema(compiled, &definition, source_arity as usize, program_data)?;
+      if invocation == ComponentAbiInvocation::Async {
+        return Err(format!(
+          "E_COMPONENT_ABI_ASYNC_IMPORT_UNSUPPORTED: `{definition}` at `logical_schema.async` requires async-import waitable lifecycle support"
+        ));
+      }
       adapters.push(ComponentImportAdapter {
         definition,
         module,
@@ -1420,7 +1467,7 @@ fn collect_component_export_adapters(
       ));
     }
     let source_arity = fn_param_names(args).len();
-    let (parameters, result) = component_function_schema(compiled, &definition, source_arity, program_data)?;
+    let (parameters, result, invocation) = component_function_schema(compiled, &definition, source_arity, program_data)?;
     let target_index = *fn_index
       .get(&definition)
       .ok_or_else(|| format!("E_COMPONENT_ABI_TARGET: compiled target `{definition}` is missing"))?;
@@ -1428,6 +1475,8 @@ fn collect_component_export_adapters(
       definition,
       symbol: name.clone(),
       target_index,
+      invocation,
+      task_return_index: None,
       parameters,
       result,
     });
@@ -1485,6 +1534,15 @@ fn component_import_signature(adapter: &ComponentImportAdapter) -> (Vec<ValType>
     (parameters, vec![])
   } else {
     (parameters, results)
+  }
+}
+
+fn component_task_return_signature(result: &ComponentAbiType) -> Vec<ValType> {
+  let flattened = component_flat_types(result);
+  if flattened.len() > COMPONENT_MAX_FLAT_PARAMETERS {
+    vec![ValType::I32]
+  } else {
+    flattened
   }
 }
 
@@ -1980,6 +2038,121 @@ fn build_component_import_adapter(
   }
 }
 
+fn finish_component_async_export(
+  adapter: &ComponentExportAdapter,
+  params_len: usize,
+  locals: &mut Vec<ValType>,
+  instructions: &mut Vec<Instruction<'static>>,
+  cabi_realloc_index: u32,
+  codecs: &ComponentValueCodecs<'_>,
+) {
+  let task_return_index = adapter
+    .task_return_index
+    .expect("async Component export must have a task.return import");
+  match &adapter.result {
+    ComponentAbiType::Unit => instructions.push(Instruction::Drop),
+    ComponentAbiType::Bool => {
+      let value = params_len as u32 + locals.len() as u32;
+      locals.push(ValType::F64);
+      let canonical = params_len as u32 + locals.len() as u32;
+      locals.push(ValType::I32);
+      instructions.push(Instruction::LocalSet(value));
+      instructions.extend(component_bool_f64_to_i32(value, canonical));
+    }
+    ComponentAbiType::Number => {}
+    ComponentAbiType::Numeric(kind) => {
+      let value = params_len as u32 + locals.len() as u32;
+      locals.push(ValType::F64);
+      instructions.push(Instruction::LocalSet(value));
+      instructions.extend(component_numeric_from_f64(*kind, value));
+    }
+    ComponentAbiType::Buffer | ComponentAbiType::String => {
+      let value = params_len as u32 + locals.len() as u32;
+      locals.push(ValType::F64);
+      let value_ptr = params_len as u32 + locals.len() as u32;
+      locals.push(ValType::I32);
+      instructions.extend([
+        Instruction::LocalTee(value),
+        Instruction::I32TruncF64U,
+        Instruction::LocalTee(value_ptr),
+        Instruction::I32Const(8),
+        Instruction::I32Add,
+        Instruction::LocalGet(value_ptr),
+        Instruction::F64Load(mem_arg_f64(0)),
+        Instruction::I32TruncF64U,
+      ]);
+    }
+    ComponentAbiType::List(_) => {
+      let value = params_len as u32 + locals.len() as u32;
+      locals.push(ValType::F64);
+      let pair_ptr = params_len as u32 + locals.len() as u32;
+      locals.push(ValType::I32);
+      let codec = codecs
+        .list_codecs
+        .get(&adapter.result)
+        .expect("Component List async export result codec must be registered");
+      instructions.extend([
+        Instruction::LocalSet(value),
+        Instruction::I32Const(0),
+        Instruction::I32Const(0),
+        Instruction::I32Const(4),
+        Instruction::I32Const(8),
+        Instruction::Call(cabi_realloc_index),
+        Instruction::LocalSet(pair_ptr),
+        Instruction::LocalGet(value),
+        Instruction::LocalGet(pair_ptr),
+        Instruction::Call(codec.lower_index),
+        Instruction::LocalGet(pair_ptr),
+        Instruction::I32Load(mem_arg_i32(0)),
+        Instruction::LocalGet(pair_ptr),
+        Instruction::I32Load(mem_arg_i32(4)),
+      ]);
+    }
+    ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) | ComponentAbiType::Struct(_) => {
+      let value = params_len as u32 + locals.len() as u32;
+      locals.push(ValType::F64);
+      let result_ptr = params_len as u32 + locals.len() as u32;
+      locals.push(ValType::I32);
+      let layout = component_memory_layout(&adapter.result);
+      instructions.extend([
+        Instruction::LocalSet(value),
+        Instruction::I32Const(0),
+        Instruction::I32Const(0),
+        Instruction::I32Const(layout.alignment),
+        Instruction::I32Const(layout.size),
+        Instruction::Call(cabi_realloc_index),
+        Instruction::LocalSet(result_ptr),
+        Instruction::LocalGet(value),
+        Instruction::LocalGet(result_ptr),
+      ]);
+      let lower_index = match &adapter.result {
+        ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) => {
+          codecs
+            .variant_codecs
+            .get(&adapter.result)
+            .expect("Component variant async export result codec must be registered")
+            .lower_index
+        }
+        ComponentAbiType::Struct(_) => {
+          codecs
+            .struct_codecs
+            .get(&adapter.result)
+            .expect("Component Struct async export result codec must be registered")
+            .lower_index
+        }
+        _ => unreachable!(),
+      };
+      instructions.push(Instruction::Call(lower_index));
+      if component_flat_types(&adapter.result).len() > COMPONENT_MAX_FLAT_PARAMETERS {
+        instructions.push(Instruction::LocalGet(result_ptr));
+      } else {
+        push_load_value_flat(instructions, &adapter.result, result_ptr);
+      }
+    }
+  }
+  instructions.push(Instruction::Call(task_return_index));
+}
+
 fn build_component_export_adapter(
   adapter: &ComponentExportAdapter,
   str_new_index: u32,
@@ -2111,6 +2284,24 @@ fn build_component_export_adapter(
     instructions.push(Instruction::LocalGet(local));
   }
   instructions.push(Instruction::Call(adapter.target_index));
+
+  if adapter.invocation == ComponentAbiInvocation::Async {
+    let codecs = ComponentValueCodecs {
+      str_new_index,
+      buffer_new_index,
+      list_codecs,
+      struct_codecs,
+      variant_codecs,
+    };
+    finish_component_async_export(adapter, params.len(), &mut locals, &mut instructions, cabi_realloc_index, &codecs);
+    return CompiledFn {
+      export_name: Some(adapter.symbol.clone()),
+      params,
+      results: vec![],
+      locals,
+      instructions,
+    };
+  }
 
   let results = match &adapter.result {
     ComponentAbiType::Unit => {
@@ -5758,17 +5949,17 @@ mod tests {
   use std::sync::Arc;
 
   use super::{
-    ComponentAbiType, ComponentEnumType, ComponentEnumVariant, ComponentExportAdapter, ComponentImportAdapter, ComponentStructType,
-    HostImport, WasmBoundary, WasmTarget, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter,
-    component_abi_type, component_flat_types, component_import_signature, component_memory_layout, host_imports_for_target,
-    index_host_imports, must_reject_extraction_failure, validate_component_export_symbols, validate_component_flat_parameters,
-    validate_component_import_symbols,
+    ComponentAbiInvocation, ComponentAbiType, ComponentEnumType, ComponentEnumVariant, ComponentExportAdapter, ComponentImportAdapter,
+    ComponentStructType, HostImport, WasmBoundary, WasmTarget, build_cabi_realloc_fn, build_component_export_adapter,
+    build_component_import_adapter, component_abi_type, component_flat_types, component_import_signature, component_memory_layout,
+    component_task_return_signature, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
+    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols,
   };
   use crate::calcit::{
     Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitStructDef, CalcitStructValue, CalcitSyntax, CalcitTypeAnnotation,
   };
   use cirru_edn::EdnTag;
-  use wasm_encoder::ValType;
+  use wasm_encoder::{Instruction, ValType};
 
   fn declaration(head: CalcitSyntax) -> Calcit {
     let items = [Calcit::Syntax(head, Arc::from("dependency.ns"))];
@@ -5851,6 +6042,8 @@ mod tests {
         definition: "app.main/add-one".into(),
         symbol: "add-one".into(),
         target_index: 20,
+        invocation: ComponentAbiInvocation::Sync,
+        task_return_index: None,
         parameters: vec![ComponentAbiType::Number],
         result: ComponentAbiType::Number,
       },
@@ -5869,6 +6062,8 @@ mod tests {
         definition: "app.main/echo".into(),
         symbol: "echo".into(),
         target_index: 21,
+        invocation: ComponentAbiInvocation::Sync,
+        task_return_index: None,
         parameters: vec![ComponentAbiType::String],
         result: ComponentAbiType::String,
       },
@@ -5887,6 +6082,8 @@ mod tests {
         definition: "app.main/echo-buffer".into(),
         symbol: "echo-buffer".into(),
         target_index: 22,
+        invocation: ComponentAbiInvocation::Sync,
+        task_return_index: None,
         parameters: vec![ComponentAbiType::Buffer],
         result: ComponentAbiType::Buffer,
       },
@@ -5899,6 +6096,35 @@ mod tests {
     );
     assert_eq!(buffer.params, vec![ValType::I32, ValType::I32]);
     assert_eq!(buffer.results, vec![ValType::I32]);
+  }
+
+  #[test]
+  fn component_async_export_uses_task_return_and_has_no_core_result() {
+    let list_codecs = BTreeMap::new();
+    let struct_codecs = BTreeMap::new();
+    let variant_codecs = BTreeMap::new();
+    let adapter = ComponentExportAdapter {
+      definition: "app.main/load-text".into(),
+      symbol: "load-text".into(),
+      target_index: 20,
+      invocation: ComponentAbiInvocation::Async,
+      task_return_index: Some(31),
+      parameters: vec![ComponentAbiType::String],
+      result: ComponentAbiType::String,
+    };
+    let compiled = build_component_export_adapter(&adapter, 10, 11, 30, &list_codecs, &struct_codecs, &variant_codecs);
+
+    assert_eq!(compiled.params, vec![ValType::I32, ValType::I32]);
+    assert!(compiled.results.is_empty());
+    assert_eq!(component_task_return_signature(&adapter.result), vec![ValType::I32, ValType::I32]);
+    assert_eq!(
+      compiled
+        .instructions
+        .iter()
+        .filter(|instruction| matches!(instruction, Instruction::Call(31)))
+        .count(),
+      1
+    );
   }
 
   #[test]
@@ -6153,6 +6379,8 @@ mod tests {
         definition: "app.main/not".into(),
         symbol: "not".into(),
         target_index: 20,
+        invocation: ComponentAbiInvocation::Sync,
+        task_return_index: None,
         parameters: vec![ComponentAbiType::Bool],
         result: ComponentAbiType::Bool,
       },
@@ -6260,6 +6488,8 @@ mod tests {
       definition: definition.into(),
       symbol: "run".into(),
       target_index: 20,
+      invocation: ComponentAbiInvocation::Sync,
+      task_return_index: None,
       parameters: vec![ComponentAbiType::Number],
       result: ComponentAbiType::Number,
     };
