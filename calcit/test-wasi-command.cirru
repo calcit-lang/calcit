@@ -571,6 +571,15 @@
           :tests $ [] $ %{} 'TestEntry (:name |returns-input)
             :code $ quote $ assert= 3 (needs-arg 3)
             :tags $ #{} :core :unit :wasi :wasm
+        'number-fits-unknown-main! $ %{} 'CodeEntry (:doc "|验证 WASM 中未知 refinement tag 返回 false 而不是 trap。")
+          :code $ quote $ defn number-fits-unknown-main! ()
+            let
+                refinement :not-a-refinement
+              if (&number:fits? 3 refinement) (quit! 1) (println |WASI-number-fits-unknown:-ok)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+          :tags $ #{} :wasi :wasm
         'random-error? $ %{} 'CodeEntry (:doc "|验证越界的安全随机请求返回 String 错误。")
           :code $ quote $ defn random-error? (size)
             match (secure-random-bytes size)
