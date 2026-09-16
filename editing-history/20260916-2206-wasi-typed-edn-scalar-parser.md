@@ -7,7 +7,7 @@
 ## 实现
 
 - WASM codegen 直接读取预处理表达式携带的 `DataShapeGraph` root。
-- 首批支持 nil、Unit、Bool、Number、numeric refinement、`|text` String 和编译产物已知 tag。
+- 首批支持 nil、Bool、Number、numeric refinement、`|text` String 和编译产物已知 tag；Unit 与 native 一样返回 `:err`，因为 Cirru EDN 没有 Unit 表示。
 - 同时接受 bare scalar token 与 native formatter 的顶层 `do token` 形式。
 - 输入最多 64 KiB；超限、语法错误、数值越界和未知 tag 都返回稳定的 `Result :err`，不使用 trap。
 - Numeric refinement 在解析后按统一的 f64 runtime 语义检查整数性、范围或 Float32 精确表示能力。

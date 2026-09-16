@@ -126,9 +126,12 @@ fn emit_parse_scalar(
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(error_kind));
   match node {
-    DataShapeNode::Nil | DataShapeNode::Unit => {
+    DataShapeNode::Nil => {
       set_if_literal(ctx, token_ptr, "nil", parsed, ok, 0.0)?;
     }
+    // Cirru EDN has nil but no representation for Calcit's distinct Unit.
+    // Keep the shape compilable for the safe API and return a stable error.
+    DataShapeNode::Unit => {}
     DataShapeNode::Bool => {
       set_if_literal(ctx, token_ptr, "true", parsed, ok, 1.0)?;
       set_if_literal(ctx, token_ptr, "false", parsed, ok, 0.0)?;
