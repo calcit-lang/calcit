@@ -1318,6 +1318,7 @@ fn component_function_schema(
   definition: &str,
   source_arity: usize,
   program_data: &program::CompiledProgram,
+  validate_direct_parameter_limit: bool,
 ) -> Result<(Vec<ComponentAbiType>, ComponentAbiType, ComponentAbiInvocation), String> {
   let signature = compiled
     .schema
@@ -1363,7 +1364,9 @@ fn component_function_schema(
       parameters.len()
     ));
   }
-  validate_component_flat_parameters(&parameters, definition)?;
+  if validate_direct_parameter_limit {
+    validate_component_flat_parameters(&parameters, definition)?;
+  }
   let result = component_abi_type_inner(
     &signature.return_type,
     definition,
@@ -1480,9 +1483,12 @@ fn collect_component_import_adapters(program_data: &program::CompiledProgram) ->
       }
       let source_arity = wasm_import_arity(&args)
         .map_err(|reason| format!("E_COMPONENT_ABI_UNSUPPORTED_ARITY: `{definition}` at `logical_schema.parameters` {reason}"))?;
-      let (parameters, result, invocation) = component_function_schema(compiled, &definition, source_arity as usize, program_data)?;
+      let (parameters, result, invocation) =
+        component_function_schema(compiled, &definition, source_arity as usize, program_data, false)?;
       if invocation == ComponentAbiInvocation::Async {
         validate_component_async_import_flat_parameters(&parameters, &definition)?;
+      } else {
+        validate_component_flat_parameters(&parameters, &definition)?;
       }
       adapters.push(ComponentImportAdapter {
         definition,
@@ -1521,7 +1527,7 @@ fn collect_component_export_adapters(
       ));
     }
     let source_arity = fn_param_names(args).len();
-    let (parameters, result, invocation) = component_function_schema(compiled, &definition, source_arity, program_data)?;
+    let (parameters, result, invocation) = component_function_schema(compiled, &definition, source_arity, program_data, true)?;
     let target_index = *fn_index
       .get(&definition)
       .ok_or_else(|| format!("E_COMPONENT_ABI_TARGET: compiled target `{definition}` is missing"))?;
