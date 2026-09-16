@@ -158,6 +158,14 @@
               assert= true $ result:err? $ &list:nth results 7
               assert= true $ result:err? $ &list:nth results 8
               assert= true $ result:err? $ &list:nth results 9
+              assert= "|hello world" $ result:unwrap-or (&list:nth results 10) |fallback
+              assert=
+                str |line (char-from-code 10) |next
+                result:unwrap-or (&list:nth results 11) |fallback
+              assert=
+                str |a (char-from-code 9) (char-from-code 34) (char-from-code 92) |z
+                result:unwrap-or (&list:nth results 12) |fallback
+              assert= true $ result:err? $ &list:nth results 13
               println |WASI-typed-EDN-scalars:-ok
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -188,20 +196,43 @@
         'edn-parse-scalars $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-scalars ()
             [] (try-parse-cirru-edn-as "|do 42" 'Int32) (try-parse-cirru-edn-as "|do |hello" 'String) (try-parse-cirru-edn-as "|do :ready" 'Tag) (try-parse-cirru-edn-as "|do true" 'Bool) (try-parse-cirru-edn-as "|do nil" 'Nil) (try-parse-cirru-edn-as "|do 128" 'Int8) (try-parse-cirru-edn-as "|do 1.5" 'Int8) (try-parse-cirru-edn-as "|do |bad" 'Int32) (try-parse-cirru-edn-as "|do :wasi-typed-edn-unknown" 'Tag) (try-parse-cirru-edn-as "|do nil" 'Unit)
+              try-parse-cirru-edn-as (format-cirru-edn "|hello world") 'String
+              try-parse-cirru-edn-as
+                format-cirru-edn $ str |line (char-from-code 10) |next
+                , 'String
+              try-parse-cirru-edn-as
+                format-cirru-edn $ str |a (char-from-code 9) (char-from-code 34) (char-from-code 92) |z
+                , 'String
+              try-parse-cirru-edn-as
+                str "|do " (char-from-code 34) ||bad (char-from-code 92) |q $ char-from-code 34
+                , 'String
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
-          :tests $ [] $ %{} 'TestEntry (:name |parses-bounded-scalars)
-            :code $ quote $ assert=
-              [] (%ok 42) (%ok |hello) (%ok :ready) (%ok true) (%ok nil) true true true true true
-              let
+          :tests $ []
+            %{} 'TestEntry (:name |parses-bounded-scalars)
+              :code $ quote $ assert=
+                [] (%ok 42) (%ok |hello) (%ok :ready) (%ok true) (%ok nil) true true true true true
+                let
+                    results $ edn-parse-scalars
+                  [] (&list:nth results 0) (&list:nth results 1) (&list:nth results 2) (&list:nth results 3) (&list:nth results 4)
+                    result:err? $ &list:nth results 5
+                    result:err? $ &list:nth results 6
+                    result:err? $ &list:nth results 7
+                    result:ok? $ &list:nth results 8
+                    result:err? $ &list:nth results 9
+            %{} 'TestEntry (:name |parses-quoted-escaped-strings)
+              :code $ quote $ let
                   results $ edn-parse-scalars
-                [] (&list:nth results 0) (&list:nth results 1) (&list:nth results 2) (&list:nth results 3) (&list:nth results 4)
-                  result:err? $ &list:nth results 5
-                  result:err? $ &list:nth results 6
-                  result:err? $ &list:nth results 7
-                  result:ok? $ &list:nth results 8
-                  result:err? $ &list:nth results 9
+                  escaped $ str |a (char-from-code 9) (char-from-code 34) (char-from-code 92) |z
+                assert= (%ok "|hello world") (&list:nth results 10)
+                assert=
+                  %ok $ str |line (char-from-code 10) |next
+                  &list:nth results 11
+                assert= (%ok escaped) (&list:nth results 12)
+            %{} 'TestEntry (:name |rejects-invalid-quoted-escape)
+              :code $ quote $ assert= true
+                result:err? $ &list:nth (edn-parse-scalars) 13
         'exit-7! $ %{} 'CodeEntry (:doc "|以状态码 7 终止进程，用于验证 command 退出边界。")
           :code $ quote $ defn exit-7! () (quit! 7)
           :examples $ []

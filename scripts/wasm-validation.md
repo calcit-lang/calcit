@@ -55,7 +55,7 @@ WASM 的 Number、Bool、nil 和 tag id 当前共用 f64 value ABI，运行时�
 
 首批支持 nil、Bool、String、tag、整数 numeric refinement、直接 Number 字面量、递归的同质 `List<T>`，以及顶层闭合标量 `Map<K,V>`；直接 Number 字面量在 codegen 时复用 native formatter，保留精确字节语义。Map 首批允许 nil、Bool、String、tag 与整数 refinement 作为 key/value，并在 WASM 中按 native 规则排序；嵌套 Map 或容器 value 会以 `E_WASM_EDN_MAP_SHAPE` / `E_WASM_EDN_MAP_VALUE` 明确拒绝，直到 Cirru `$` 折叠布局也能保持字节一致。输出与 native compact formatter 一样带首尾换行，字符串遵循 Cirru leaf 的 `|text` / `"|quoted text"` 规则。WASM formatter 的单次输出分配上限为 64 KiB，超过上限会在分配前 trap；回归脚本还会把真实 Wasmtime 输出逐值交给 `cirru_edn` 重新解析。`Dynamic`、未解析类型变量、运行时普通 `Number`、Struct 与 Enum 暂时以稳定诊断明确拒绝，不能静默猜测或输出占位数据。
 
-`try-parse-cirru-edn-as` 的 WASM 实现直接消费预处理阶段生成的同一份闭合 `DataShapeGraph`，不先解析成 `Dynamic`，也不引入第二套 decoder API。当前标量 MVP 支持 nil、Bool、Number、整数/浮点 refinement、`|text` String 与编译产物已知 tag；接受 bare token 和 formatter 产生的顶层 `do token`。输入上限为 64 KiB，超限、语法错误、numeric refinement 越界和未知 tag 都返回稳定的 `Result :err`，不触发 trap。带引号/转义的 String、List、Map、Struct 与 Enum 留给后续同一 parser 的递归节点实现。
+`try-parse-cirru-edn-as` 的 WASM 实现直接消费预处理阶段生成的同一份闭合 `DataShapeGraph`，不先解析成 `Dynamic`，也不引入第二套 decoder API。当前标量 MVP 支持 nil、Bool、Number、整数/浮点 refinement、bare 或 quoted/escaped String 与编译产物已知 tag；接受 bare token 和 formatter 产生的顶层 `do token`。quoted String 只接受 formatter 使用的 `\n`、`\t`、`\"`、`\\` 四种 escape，未知或截断 escape 返回语法错误。输入上限为 64 KiB，超限、语法错误、numeric refinement 越界和未知 tag 都返回稳定的 `Result :err`，不触发 trap。List、Map、Struct 与 Enum 留给后续同一 parser 的递归节点实现。
 
 这项能力复用现有 core API，不增加新的 CLI 或 Calcit 表层入口。WASI 文件工作流仍通过 `fs:path` 的 typed read/write API 组合。
 
