@@ -51,12 +51,25 @@ fn component_contract_defaults_to_edn_and_matches_explicit_json() {
   assert!(
     json["interface_schema"]
       .as_str()
-      .is_some_and(|schema| schema.ends_with("component-interface-ir-v2.schema.json"))
+      .is_some_and(|schema| schema.ends_with("component-interface-ir-v3.schema.json"))
   );
   assert_eq!(json["data"]["filters"]["boundary"], "component");
-  assert_eq!(json["data"]["interface"]["version"], 2);
+  assert_eq!(json["data"]["interface"]["version"], 3);
   assert_eq!(json["data"]["summary"]["unsupported"], 0);
   assert_eq!(json["data"]["interface"]["definitions"][0]["direction"], "import");
+  assert_eq!(json["data"]["interface"]["definitions"][0]["invocation"], "sync");
+  let async_definition = json["data"]["interface"]["definitions"]
+    .as_array()
+    .expect("component definitions should be an array")
+    .iter()
+    .find(|definition| definition["id"] == "test-wasm.main/wasm-ffi-async-echo")
+    .expect("Calcit async boundary fixture should be exported");
+  assert_eq!(async_definition["invocation"], "async");
+  assert!(
+    async_definition["logical_schema"]
+      .as_str()
+      .is_some_and(|schema| schema.contains("(:async true)"))
+  );
 }
 
 #[test]
@@ -71,4 +84,19 @@ fn native_json_keeps_the_v3_envelope_without_a_boundary_field() {
   );
   assert_eq!(json["data"]["interface"]["version"], 3);
   assert!(json["data"]["filters"].get("boundary").is_none());
+}
+
+#[test]
+fn component_core_adapter_rejects_async_contracts_until_native_async_lowering_exists() {
+  let output = run_calcit(&["--compat-types", "wasm", "--boundary", "component", "--check-only"]);
+  assert!(
+    !output.status.success(),
+    "async Component boundary must not silently use the sync adapter"
+  );
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(stderr.contains("E_COMPONENT_ABI_ASYNC_UNSUPPORTED"), "unexpected stderr:\n{stderr}");
+  assert!(
+    stderr.contains("test-wasm.main/wasm-ffi-async-echo"),
+    "unexpected stderr:\n{stderr}"
+  );
 }

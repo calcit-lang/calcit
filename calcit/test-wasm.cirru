@@ -1311,6 +1311,11 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
+        'wasm-ffi-async-echo $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export wasm-ffi-async-echo (text) text
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:async true) (:return 'String)
+            :args $ [] 'String
         'wasm-ffi-upcase $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export wasm-ffi-upcase (text) (host-string-upcase text)
           :examples $ []

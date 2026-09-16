@@ -21,7 +21,7 @@ related:
 
 `calcit ffi export` 在不执行应用代码的前提下读取项目 Snapshot，并把 typed
 raw-binding boundary 导出为确定性的 Interface IR。native Interface IR v3 与 Component
-Interface IR v2 是当前 versioned contract；`calcit-bindgen` 必须先识别对应版本，才能生成
+Interface IR v3 是当前 versioned contract；`calcit-bindgen` 必须先识别对应版本，才能生成
 Rust、Calcit、TypeScript 或 WIT。core 不生成业务层
 normalization API，也不把尚未完成的 component packaging 描述为可运行产物。
 
@@ -33,11 +33,17 @@ calcit calcit.cirru ffi export --boundary component
 ```
 
 默认 `--boundary native` 使用本文所述的 raw-binding Interface IR v3。
-`--boundary component` 是独立的 Component Interface IR v2，只提取
+`--boundary component` 是独立的 Component Interface IR v3，只提取
 `defwasm-import` / `defwasm-export` 并默认输出 Cirru EDN；其方向语义、
 strict type closure 与 core/bindgen 职责见
 [WASM Component 边界](wasm-component-boundary.md)。两种 boundary 使用不同的
 versioned schema，consumer 不应根据字段形状猜测类型。
+
+Component definition 的必填 `invocation` 字段只有 `sync` 与 `async`。未标记的函数导出为
+`sync`；函数 schema 中显式的 `:async true` 导出为 `async`。这是 WASI 0.3 native async
+lowering 的唯一表层信号，不引入额外的 `Task<T>` 类型，也不把 scheduler、poll、future handle
+或 native `async-task-v1` 队列协议暴露到 Calcit 语法。typed `Result<T,E>` 仍是普通返回类型；
+取消、future 生命周期和调度由 Canonical ABI adapter 与 runtime consumer 实现。
 
 The JSON command writes one parseable envelope to stdout. Its
 `data.interface` value follows
@@ -183,7 +189,7 @@ definition 的 Snapshot binding 名称，因此支持顶层 `Foo0 = defstruct Fo
 
 ## V3 版本策略
 
-当前导出直接使用 native Interface IR v3 与 Component Interface IR v2，不提供并行的
+当前导出直接使用 native Interface IR v3 与 Component Interface IR v3，不提供并行的
 v2/v1 降级输出。consumer 必须先检查 `version` 再生成；遇到未知版本时应明确拒绝并升级，
 不能忽略新的数值 `kind` 或将其退化为 `number`。仓库保留早期 schema 仅供审计已经生成的
 contract，不为尚未形成实际生态的 preview Component contract 维护读取或写入兼容层。
