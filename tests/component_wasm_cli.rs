@@ -58,13 +58,14 @@ const bytes = fs.readFileSync(process.argv[1]);
 const module = new WebAssembly.Module(bytes);
 const imports = WebAssembly.Module.imports(module);
 const importNames = imports.map(({ module, name }) => `${module}/${name}`).sort();
-if (importNames.join(",") !== "calcit:component/canonical/task-return/echo-result,calcit:component/canonical/task-return/load-text") {
+if (importNames.join(",") !== "calcit:component/canonical/task-return/echo-result,calcit:component/canonical/task-return/load-text,calcit:component/canonical/task-return/load-wide") {
   throw new Error(`unexpected imports: ${JSON.stringify(imports)}`);
 }
 let instance;
 let completions = 0;
 let returnedText = null;
 const resultCompletions = [];
+let wideCompletion = null;
 const canonical = {
   "task-return/load-text": (ptr, len) => {
     completions += 1;
@@ -73,9 +74,18 @@ const canonical = {
   "task-return/echo-result": (discriminant, ptr, len) => {
     resultCompletions.push([discriminant, Buffer.from(instance.exports.memory.buffer, ptr, len).toString("utf8")]);
   },
+  "task-return/load-wide": ptr => {
+    const memory = new DataView(instance.exports.memory.buffer);
+    wideCompletion = Array.from({ length: 17 }, (_, index) => memory.getFloat64(ptr + index * 8, true));
+  },
 };
 WebAssembly.instantiate(module, { "calcit:component/canonical": canonical }).then(result => {
   instance = result;
+  instance.exports["load-wide"]();
+  const expectedWide = Array.from({ length: 17 }, (_, index) => index);
+  if (JSON.stringify(wideCompletion) !== JSON.stringify(expectedWide)) {
+    throw new Error(`indirect typed Struct did not round-trip: ${JSON.stringify(wideCompletion)}`);
+  }
   const allocateText = text => {
     const input = Buffer.from(text, "utf8");
     const ptr = instance.exports.cabi_realloc(0, 0, 1, input.length);
