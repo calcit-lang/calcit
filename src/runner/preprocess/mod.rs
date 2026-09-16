@@ -7139,9 +7139,8 @@ fn trait_list_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<Cal
 
 /// Checks whether a type exposes a declared field through an external-object trait.
 fn is_external_trait_field(type_value: &CalcitTypeAnnotation, field_name: &str) -> bool {
-  trait_list_from_type(type_value).is_some_and(|traits| {
-    traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())) && find_trait_field_type(&traits, field_name).is_some()
-  })
+  trait_list_from_type(type_value)
+    .is_some_and(|traits| find_trait_field_type(&traits, field_name).is_some_and(|(trait_def, _)| trait_is_external_object(trait_def)))
 }
 
 pub(crate) fn trait_is_external_object(trait_def: &CalcitTrait) -> bool {
@@ -13015,6 +13014,17 @@ mod tests {
       },
     );
     Arc::new(trait_def)
+  }
+
+  #[test]
+  fn external_field_predicate_checks_the_declaring_trait() {
+    let _guard = lock_preprocess_test_state();
+    let external = seed_external_field_trait(true);
+    let local = source_trait("tests.local-field", "LocalField", "local");
+    let trait_set = CalcitTypeAnnotation::TraitSet(Arc::new(vec![external, local]));
+
+    assert!(!is_external_trait_field(&trait_set, "local"));
+    assert!(is_external_trait_field(&trait_set, "value"));
   }
 
   #[test]
