@@ -1,5 +1,6 @@
 use super::*;
 use crate::runner::preprocess::infer_static_type_from_expr;
+use cirru_edn::EdnTag;
 
 const MAX_EDN_TYPE_DEPTH: usize = 32;
 pub(super) const MAX_EDN_OUTPUT_BYTES: i32 = 64 * 1024;
@@ -20,8 +21,15 @@ pub(super) fn emit_format_cirru_edn(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
     return Ok(());
   }
 
-  let value_type = infer_static_type_from_expr(&args[0])
+  let inferred_type = infer_static_type_from_expr(&args[0])
     .ok_or_else(|| "E_WASM_EDN_TYPE: format-cirru-edn requires a closed inferred input type for WASM".to_string())?;
+  let value_type = match inferred_type.as_ref() {
+    CalcitTypeAnnotation::TypeRef(_, args) => inferred_type
+      .resolve_to_struct()
+      .map(|nominal| Arc::new(CalcitTypeAnnotation::Struct(Arc::new(nominal), args.clone())))
+      .unwrap_or(inferred_type),
+    _ => inferred_type,
+  };
 
   emit_expr(ctx, &args[0])?;
   let value = ctx.alloc_local();
@@ -54,7 +62,10 @@ pub(super) fn try_format_cirru_edn_literal(value: &Calcit) -> Option<String> {
 }
 
 fn is_edn_scalar(value_type: &CalcitTypeAnnotation) -> bool {
-  !matches!(value_type, CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Map(_, _))
+  !matches!(
+    value_type,
+    CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::Struct(_, _)
+  )
 }
 
 fn emit_edn_value(
@@ -102,6 +113,7 @@ fn emit_edn_value(
     }
     CalcitTypeAnnotation::List(item_type) => emit_edn_list(ctx, value, item_type.as_ref(), depth, nested),
     CalcitTypeAnnotation::Map(key_type, value_type) => emit_edn_map(ctx, value, key_type.as_ref(), value_type.as_ref(), depth, nested),
+    CalcitTypeAnnotation::Struct(nominal, args) => emit_edn_struct(ctx, value, nominal, args, depth, nested),
     CalcitTypeAnnotation::Number => Err(
       "E_WASM_EDN_TYPE: generic Number formatting is not yet exact in WASM; use an integer numeric refinement or defer this path"
         .into(),
@@ -118,7 +130,109 @@ fn emit_edn_value(
   }
 }
 
-fn is_supported_map_scalar(value_type: &CalcitTypeAnnotation) -> bool {
+fn resolved_struct_fields(
+  nominal: &CalcitStructDef,
+  args: &Arc<Vec<Arc<CalcitTypeAnnotation>>>,
+) -> Result<Vec<(EdnTag, Arc<CalcitTypeAnnotation>)>, String> {
+  if nominal.generics.len() != args.len() {
+    return Err(format!(
+      "E_WASM_EDN_STRUCT_SHAPE: struct :{} expects {} type arguments, got {}",
+      nominal.name,
+      nominal.generics.len(),
+      args.len()
+    ));
+  }
+  if nominal.fields.len() != nominal.field_types.len() {
+    return Err(format!(
+      "E_WASM_EDN_STRUCT_SHAPE: struct :{} has {} fields but {} field types",
+      nominal.name,
+      nominal.fields.len(),
+      nominal.field_types.len()
+    ));
+  }
+  let bindings = nominal
+    .generics
+    .iter()
+    .cloned()
+    .zip(args.iter().cloned())
+    .collect::<HashMap<_, _>>();
+  Ok(
+    nominal
+      .fields
+      .iter()
+      .cloned()
+      .zip(
+        nominal
+          .field_types
+          .iter()
+          .map(|field_type| field_type.substitute_type_vars(&bindings)),
+      )
+      .collect(),
+  )
+}
+
+fn emit_edn_struct(
+  ctx: &mut WasmGenCtx,
+  value: u32,
+  nominal: &CalcitStructDef,
+  args: &Arc<Vec<Arc<CalcitTypeAnnotation>>>,
+  depth: usize,
+  nested: bool,
+) -> Result<u32, String> {
+  if nested || depth > 0 {
+    return Err("E_WASM_EDN_STRUCT_SHAPE: nested Struct formatting is not yet supported".into());
+  }
+  let fields = resolved_struct_fields(nominal, args)?;
+  for (_, field_type) in &fields {
+    if !is_supported_edn_scalar(field_type) {
+      return Err(format!(
+        "E_WASM_EDN_STRUCT_FIELD: {field_type} is not yet supported by the byte-identical scalar Struct formatter"
+      ));
+    }
+    validate_edn_type(field_type, depth + 1)?;
+  }
+
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr));
+  let result = literal_local(ctx, "%{}")?;
+  let with_name_space = concat_with_literal_after(ctx, result, " ")?;
+  ctx.emit(Instruction::LocalGet(with_name_space));
+  ctx.emit(Instruction::LocalSet(result));
+  let name = literal_local(ctx, &format!("'{}", nominal.name))?;
+  let with_name = concat_string_locals(ctx, result, name);
+  ctx.emit(Instruction::LocalGet(with_name));
+  ctx.emit(Instruction::LocalSet(result));
+
+  for (index, (field, field_type)) in fields.iter().enumerate() {
+    let opened = concat_with_literal_after(ctx, result, " (")?;
+    ctx.emit(Instruction::LocalGet(opened));
+    ctx.emit(Instruction::LocalSet(result));
+    let field_name = literal_local(ctx, &format!(":{field}"))?;
+    let with_field = concat_string_locals(ctx, result, field_name);
+    ctx.emit(Instruction::LocalGet(with_field));
+    ctx.emit(Instruction::LocalSet(result));
+    let with_space = concat_with_literal_after(ctx, result, " ")?;
+    ctx.emit(Instruction::LocalGet(with_space));
+    ctx.emit(Instruction::LocalSet(result));
+
+    let field_value = ctx.alloc_local();
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + index) * 8) as u64)));
+    ctx.emit(Instruction::LocalSet(field_value));
+    let formatted = emit_edn_value(ctx, field_value, field_type, depth + 1, true)?;
+    let with_value = concat_string_locals(ctx, result, formatted);
+    ctx.emit(Instruction::LocalGet(with_value));
+    ctx.emit(Instruction::LocalSet(result));
+    let closed = concat_with_literal_after(ctx, result, ")")?;
+    ctx.emit(Instruction::LocalGet(closed));
+    ctx.emit(Instruction::LocalSet(result));
+  }
+  Ok(result)
+}
+
+fn is_supported_edn_scalar(value_type: &CalcitTypeAnnotation) -> bool {
   matches!(
     value_type,
     CalcitTypeAnnotation::Nil
@@ -150,7 +264,7 @@ fn emit_map_key_less_than(ctx: &mut WasmGenCtx, left: u32, right: u32, key_type:
       ctx.emit(Instruction::F64Lt);
       Ok(())
     }
-    other if is_supported_map_scalar(other) => {
+    other if is_supported_edn_scalar(other) => {
       ctx.emit(Instruction::LocalGet(left));
       ctx.emit(Instruction::LocalGet(right));
       ctx.emit(Instruction::F64Lt);
@@ -173,12 +287,12 @@ fn emit_edn_map(
   if nested || depth > 0 {
     return Err("E_WASM_EDN_MAP_SHAPE: nested Map formatting is not yet byte-identical to native Cirru layout".into());
   }
-  if !is_supported_map_scalar(key_type) {
+  if !is_supported_edn_scalar(key_type) {
     return Err(format!(
       "E_WASM_EDN_MAP_KEY: {key_type} cannot preserve native Cirru EDN map ordering in WASM"
     ));
   }
-  if !is_supported_map_scalar(value_type) {
+  if !is_supported_edn_scalar(value_type) {
     return Err(format!(
       "E_WASM_EDN_MAP_VALUE: {value_type} is not yet supported by the byte-identical scalar Map formatter"
     ));
@@ -420,13 +534,25 @@ fn validate_edn_type(value_type: &CalcitTypeAnnotation, depth: usize) -> Result<
       Ok(())
     }
     CalcitTypeAnnotation::List(item) => validate_edn_type(item, depth + 1),
+    CalcitTypeAnnotation::Struct(nominal, args) if depth == 0 => {
+      for (_, field_type) in resolved_struct_fields(nominal, args)? {
+        if !is_supported_edn_scalar(&field_type) {
+          return Err(format!(
+            "E_WASM_EDN_STRUCT_FIELD: {field_type} is not yet supported by the byte-identical scalar Struct formatter"
+          ));
+        }
+        validate_edn_type(&field_type, depth + 1)?;
+      }
+      Ok(())
+    }
+    CalcitTypeAnnotation::Struct(_, _) => Err("E_WASM_EDN_STRUCT_SHAPE: nested Struct formatting is not yet supported".into()),
     CalcitTypeAnnotation::Map(key, value) if depth == 0 => {
-      if !is_supported_map_scalar(key) {
+      if !is_supported_edn_scalar(key) {
         return Err(format!(
           "E_WASM_EDN_MAP_KEY: {key} cannot preserve native Cirru EDN map ordering in WASM"
         ));
       }
-      if !is_supported_map_scalar(value) {
+      if !is_supported_edn_scalar(value) {
         return Err(format!(
           "E_WASM_EDN_MAP_VALUE: {value} is not yet supported by the byte-identical scalar Map formatter"
         ));

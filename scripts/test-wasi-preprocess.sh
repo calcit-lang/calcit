@@ -29,6 +29,8 @@ readonly EDN_PARSE_MAP_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-parse-map"
 readonly EDN_PARSE_MAP_STDOUT="${EDN_PARSE_MAP_OUT}/stdout.txt"
 readonly EDN_PARSE_MAP_LIMIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-parse-map-limit"
 readonly EDN_PARSE_MAP_LIMIT_STDOUT="${EDN_PARSE_MAP_LIMIT_OUT}/stdout.txt"
+readonly EDN_STRUCT_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-struct-roundtrip"
+readonly EDN_STRUCT_STDOUT="${EDN_STRUCT_OUT}/stdout.txt"
 readonly EDN_FILE_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-file-roundtrip"
 readonly EDN_FILE_STDOUT="${EDN_FILE_OUT}/stdout.txt"
 readonly EDN_FILE_INVALID_STDOUT="${EDN_FILE_OUT}/invalid-stdout.txt"
@@ -312,6 +314,13 @@ grep -Fxq 'WASI-typed-EDN-maps:-ok' "$EDN_PARSE_MAP_STDOUT"
 "$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-map-over-limit-main! --emit-path "$EDN_PARSE_MAP_LIMIT_OUT"
 wasmtime run "$EDN_PARSE_MAP_LIMIT_OUT/program.wasm" >"$EDN_PARSE_MAP_LIMIT_STDOUT"
 grep -Fxq 'WASI-typed-EDN-map-limit:-ok' "$EDN_PARSE_MAP_LIMIT_STDOUT"
+
+# Nominal Struct decoding validates the declared name and exact field set,
+# then formatting preserves native declaration-order bytes.
+"$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-job --require-match
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-struct-roundtrip-main! --emit-path "$EDN_STRUCT_OUT"
+wasmtime run "$EDN_STRUCT_OUT/program.wasm" >"$EDN_STRUCT_STDOUT"
+grep -Fxq "%{} 'EdnJob (:count 3) (:name |Ada) (:ready true)" "$EDN_STRUCT_STDOUT"
 
 # Compose the typed parser and formatter with the existing preopened-file API.
 # This is the first end-to-end data workflow rather than another isolated
