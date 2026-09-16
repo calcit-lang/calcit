@@ -6313,6 +6313,20 @@ fn collect_all_tags_from(
 }
 
 fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
+  if let Some(graph) = DataShapeGraph::from_calcit_handle(expr) {
+    for node in &graph.nodes {
+      match node {
+        DataShapeNode::Struct { nominal, fields, .. } => {
+          tags.push(nominal.name.ref_str().to_owned());
+          tags.extend(fields.iter().map(|(field, _)| field.ref_str().to_owned()));
+        }
+        DataShapeNode::Enum { variants, .. } => {
+          tags.extend(variants.iter().map(|(variant, _)| variant.ref_str().to_owned()));
+        }
+        _ => {}
+      }
+    }
+  }
   match expr {
     Calcit::Tag(t) => {
       tags.push(t.to_string());
@@ -6386,11 +6400,12 @@ fn build_string_pool(
   }
   if needs_edn_format {
     strings.extend(
-      ["do ", "\n", "nil", "true", "false", "[]", "([]", "{}", ")", " ", " ("]
+      ["do ", "\n", "nil", "true", "false", "[]", "([]", "{}", "%{}", ")", " ", " ("]
         .into_iter()
         .map(String::from),
     );
     strings.extend(tag_index.keys().map(|tag| format!(":{tag}")));
+    strings.extend(tag_index.keys().map(|tag| format!("'{tag}")));
   }
   if needs_edn_parse {
     strings.extend(
@@ -6410,6 +6425,7 @@ fn build_string_pool(
       .map(String::from),
     );
     strings.extend(tag_index.keys().map(|tag| format!(":{tag}")));
+    strings.extend(tag_index.keys().map(|tag| format!("'{tag}")));
   }
   strings.sort();
   strings.dedup();
@@ -6627,6 +6643,26 @@ mod tests {
     for tag in ["none", "some", "ok", "err"] {
       assert!(tags.contains_key(tag), "missing built-in Component variant tag {tag}");
     }
+  }
+
+  #[test]
+  fn typed_edn_shape_registers_nominal_struct_tags() {
+    let nominal = Arc::new(CalcitStructDef {
+      definition_ref: Some(Arc::from("app.main/Job")),
+      name: EdnTag::new("Job"),
+      fields: Arc::new(vec![EdnTag::new("count")]),
+      field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::Numeric(CalcitNumericRefinement::Int32))]),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    });
+    let shape = crate::calcit::data_shape::DataShapeGraph::build(&CalcitTypeAnnotation::Struct(nominal, Arc::new(vec![])), "app.main")
+      .expect("derive Struct shape")
+      .into_calcit_handle();
+    let mut tags = vec![];
+    super::collect_tags_from_expr(&shape, &mut tags);
+    assert!(tags.iter().any(|tag| tag == "Job"));
+    assert!(tags.iter().any(|tag| tag == "count"));
   }
 
   #[test]

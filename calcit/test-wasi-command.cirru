@@ -10,6 +10,10 @@
   :files $ {} $ 'app.main
     %{} 'FileEntry
       :defs $ {}
+        'EdnJob $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct EdnJob (:name 'String) (:count 'Int32) (:ready 'Bool)
+          :examples $ []
+          :schema $ :: 'StructDef
         'clock-fixed-main! $ %{} 'CodeEntry (:doc "|用确定性的 WASI 假宿主验证时钟编号与纳秒到毫秒的换算。")
           :code $ quote $ defn clock-fixed-main! ()
             if
@@ -184,6 +188,36 @@
               assert= true $ result:err? $ edn-parse-int-list "|[] 1 2147483648"
               assert= true $ result:err? $ edn-parse-int-list "|[] 1 |bad"
             :tags $ #{} :core :unit
+        'edn-parse-job $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-job (text) (try-parse-cirru-edn-as text 'EdnJob)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result 'app.main/EdnJob 'String
+          :tests $ []
+            %{} 'TestEntry (:name |round-trips-scalar-struct)
+              :code $ quote $ do
+                assert=
+                  %ok $ EdnJob :name |Ada :count (assert-type 3 'Int32) :ready true
+                  edn-parse-job "|%{} 'EdnJob (:ready true) (:count 3) (:name |Ada)"
+                let
+                    parsed $ edn-parse-job "|%{} 'EdnJob (:name |Ada) (:count 3) (:ready true)"
+                  match parsed
+                    (:err message) (raise message)
+                    (:ok value)
+                      assert=
+                        str (char-from-code 10) "|%{} 'EdnJob (:count 3) (:name |Ada) (:ready true)" $ char-from-code 10
+                        format-cirru-edn value
+              :tags $ #{} :core :edn :unit :wasi :wasm
+            %{} 'TestEntry (:name |rejects-invalid-struct-shapes)
+              :code $ quote $ do
+                assert= true $ result:err? $ edn-parse-job "|%{} 'Other (:count 3) (:name |Ada) (:ready true)"
+                assert= true $ result:err? $ edn-parse-job "|%{} 'EdnJob (:count 3) (:name |Ada)"
+                assert= true $ result:err? $ edn-parse-job "|%{} 'EdnJob (:count 3) (:name |Ada) (:ready true) (:extra |x)"
+                assert= true $ result:err? $ edn-parse-job "|%{} 'EdnJob (:count 3) (:count 4) (:name |Ada) (:ready true)"
+                assert= true $ result:err? $ edn-parse-job "|%{} 'EdnJob (:count 2147483648) (:name |Ada) (:ready true)"
+                assert= true $ result:err? $ edn-parse-job "|%{}'EdnJob (:count 3) (:name |Ada) (:ready true)"
+              :tags $ #{} :core :edn :unit :wasi :wasm
         'edn-parse-large-fraction $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-large-fraction (text) (try-parse-cirru-edn-as text 'Int64)
           :examples $ []
@@ -418,6 +452,24 @@
               assert= true $ result:err? $ edn-parse-tag-string-map "|{} (:a |one) (:bad 2)"
               assert= true $ result:err? $ edn-parse-tag-string-map "|{} (:a"
             :tags $ #{} :core :unit
+        'edn-struct-roundtrip-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-struct-roundtrip-main! ()
+            let
+                parsed $ edn-parse-job "|%{} 'EdnJob (:ready true) (:count 3) (:name |Ada)"
+              if
+                and
+                  result:err? $ edn-parse-job "|%{} 'Other (:count 3) (:name |Ada) (:ready true)"
+                  result:err? $ edn-parse-job "|%{} 'EdnJob (:count 3) (:name |Ada)"
+                  result:err? $ edn-parse-job "|%{} 'EdnJob (:count 3) (:name |Ada) (:ready true) (:extra |x)"
+                  result:err? $ edn-parse-job "|%{}'EdnJob (:count 3) (:name |Ada) (:ready true)"
+                match parsed
+                  (:err _) (quit! 1)
+                  (:ok value)
+                    println $ format-cirru-edn value
+                quit! 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'edn-transform-count-map $ %{} 'CodeEntry (:doc "|递增有类型计数并显式保留 Int32 越界错误。")
           :code $ quote $ defn edn-transform-count-map (data)
             let

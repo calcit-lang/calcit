@@ -1,4 +1,5 @@
 use super::*;
+use cirru_edn::EdnTag;
 
 const MAX_EDN_INPUT_BYTES: i32 = 64 * 1024;
 const MAX_EDN_LIST_ITEMS: i32 = 4096;
@@ -73,6 +74,9 @@ pub(super) fn emit_try_parse_cirru_edn_as(ctx: &mut WasmGenCtx, args: &[Calcit])
   match root {
     DataShapeNode::List(item) => emit_parse_scalar_list(ctx, &graph, *item, token_ptr, parsed, ok, error_kind)?,
     DataShapeNode::Map { key, value } => emit_parse_scalar_map(ctx, &graph, (*key, *value), token_ptr, (parsed, ok, error_kind))?,
+    DataShapeNode::Struct { nominal, fields, .. } => {
+      emit_parse_scalar_struct(ctx, &graph, nominal, fields, token_ptr, (parsed, ok, error_kind))?
+    }
     _ => emit_parse_scalar(ctx, root, token, token_ptr, parsed, ok, error_kind)?,
   }
 
@@ -145,10 +149,161 @@ fn validate_decode_shape(graph: &DataShapeGraph, node_id: usize, depth: usize) -
       validate_scalar_child_shape(graph, *key)?;
       validate_scalar_child_shape(graph, *value)
     }
+    DataShapeNode::Struct { fields, .. } => {
+      if depth > 0 {
+        return Err("E_WASM_EDN_SHAPE: nested Struct parsing is not yet supported".into());
+      }
+      for (_, field) in fields {
+        validate_scalar_child_shape(graph, *field)?;
+      }
+      Ok(())
+    }
     other => Err(format!(
       "E_WASM_EDN_SHAPE: {other:?} is not yet supported by the typed Cirru EDN parser"
     )),
   }
+}
+
+fn emit_parse_scalar_struct(
+  ctx: &mut WasmGenCtx,
+  graph: &DataShapeGraph,
+  nominal: &Arc<CalcitStructDef>,
+  fields: &[(EdnTag, usize)],
+  token_ptr: u32,
+  outputs: (u32, u32, u32),
+) -> Result<(), String> {
+  let (parsed, ok, error_kind) = outputs;
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(ok));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(error_kind));
+  let valid = ctx.alloc_i32(1);
+  let len = load_string_len(ctx, token_ptr);
+
+  ctx.emit(Instruction::LocalGet(len));
+  ctx.emit(Instruction::I32Const(3));
+  ctx.emit(Instruction::I32GtU);
+  ctx.emit(Instruction::LocalSet(valid));
+  for (offset, expected) in b"%{}".iter().copied().enumerate() {
+    ctx.emit(Instruction::LocalGet(valid));
+    ctx.begin_block_if();
+    let byte = load_byte(ctx, token_ptr, offset as i32);
+    ctx.emit(Instruction::LocalGet(byte));
+    ctx.emit(Instruction::I32Const(expected as i32));
+    ctx.emit(Instruction::I32Eq);
+    ctx.emit(Instruction::LocalSet(valid));
+    ctx.emit(Instruction::End);
+  }
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.begin_block_if();
+  let delimiter = load_byte(ctx, token_ptr, 3);
+  emit_ascii_whitespace(ctx, delimiter);
+  ctx.emit(Instruction::LocalSet(valid));
+  ctx.emit(Instruction::End);
+
+  let cursor = ctx.alloc_i32(3);
+  emit_skip_ascii_whitespace(ctx, token_ptr, len, cursor);
+  let (name_start, name_end) = emit_scan_map_scalar_token(ctx, token_ptr, len, cursor, valid);
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.begin_block_if();
+  let name_ptr = slice_string_range(ctx, token_ptr, name_start, name_end);
+  emit_string_equals_literal(ctx, name_ptr, &format!("'{}", nominal.name))?;
+  emit_string_equals_literal(ctx, name_ptr, &format!(":{}", nominal.name))?;
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::LocalSet(valid));
+  ctx.emit(Instruction::End);
+
+  let values = fields.iter().map(|_| ctx.alloc_local()).collect::<Vec<_>>();
+  let seen = fields.iter().map(|_| ctx.alloc_i32(0)).collect::<Vec<_>>();
+  let count = ctx.alloc_i32(0);
+  emit_scan_scalar_map_entries(
+    ctx,
+    token_ptr,
+    len,
+    cursor,
+    (valid, count, error_kind),
+    |ctx, key_start, key_end, value_start, value_end, _index| {
+      let key_ptr = slice_string_range(ctx, token_ptr, key_start, key_end);
+      let value_ptr = slice_string_range(ctx, token_ptr, value_start, value_end);
+      let value_token = ctx.alloc_local();
+      ctx.emit(Instruction::LocalGet(value_ptr));
+      ctx.emit(Instruction::F64ConvertI32U);
+      ctx.emit(Instruction::LocalSet(value_token));
+      let matched = ctx.alloc_i32(0);
+
+      for (index, (field, node_id)) in fields.iter().enumerate() {
+        let node = graph
+          .nodes
+          .get(*node_id)
+          .ok_or_else(|| format!("E_WASM_EDN_SHAPE: typed Cirru EDN parser references missing node #{node_id}"))?;
+        emit_string_equals_literal(ctx, key_ptr, &format!(":{field}"))?;
+        ctx.begin_block_if();
+        ctx.emit(Instruction::I32Const(1));
+        ctx.emit(Instruction::LocalSet(matched));
+        ctx.emit(Instruction::LocalGet(seen[index]));
+        ctx.begin_block_if();
+        ctx.emit(Instruction::I32Const(0));
+        ctx.emit(Instruction::LocalSet(valid));
+        ctx.emit(Instruction::Else);
+        let field_ok = ctx.alloc_local_typed(ValType::I32);
+        let field_error = ctx.alloc_local_typed(ValType::I32);
+        emit_parse_scalar(ctx, node, value_token, value_ptr, values[index], field_ok, field_error)?;
+        ctx.emit(Instruction::LocalGet(field_ok));
+        ctx.begin_block_if();
+        ctx.emit(Instruction::I32Const(1));
+        ctx.emit(Instruction::LocalSet(seen[index]));
+        ctx.emit(Instruction::Else);
+        ctx.emit(Instruction::I32Const(0));
+        ctx.emit(Instruction::LocalSet(valid));
+        ctx.emit(Instruction::LocalGet(field_error));
+        ctx.emit(Instruction::LocalSet(error_kind));
+        ctx.emit(Instruction::End);
+        ctx.emit(Instruction::End);
+        ctx.emit(Instruction::End);
+      }
+
+      ctx.emit(Instruction::LocalGet(matched));
+      ctx.emit(Instruction::I32Eqz);
+      ctx.begin_block_if();
+      ctx.emit(Instruction::I32Const(0));
+      ctx.emit(Instruction::LocalSet(valid));
+      ctx.emit(Instruction::End);
+      Ok(())
+    },
+  )?;
+
+  ctx.emit(Instruction::LocalGet(valid));
+  for field_seen in &seen {
+    ctx.emit(Instruction::LocalGet(*field_seen));
+    ctx.emit(Instruction::I32And);
+  }
+  ctx.begin_block_if();
+  let struct_tag_id = *ctx.tag_index.get(nominal.name.ref_str()).ok_or_else(|| {
+    format!(
+      "E_WASM_EDN_SHAPE: struct tag :{} is not present in the compiled program",
+      nominal.name
+    )
+  })?;
+  let struct_ptr = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc(ctx, ((2 + fields.len()) * 8) as i32, struct_ptr, "struct");
+  ctx.emit(Instruction::LocalGet(struct_ptr));
+  ctx.emit(f64_const(fields.len() as f64));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(struct_ptr));
+  ctx.emit(f64_const(struct_tag_id as f64));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+  for (index, value) in values.iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(struct_ptr));
+    ctx.emit(Instruction::LocalGet(*value));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(((2 + index) * 8) as u64)));
+  }
+  ctx.emit(Instruction::LocalGet(struct_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(parsed));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(ok));
+  ctx.emit(Instruction::End);
+  Ok(())
 }
 
 fn validate_scalar_child_shape(graph: &DataShapeGraph, node_id: usize) -> Result<(), String> {
@@ -464,13 +619,13 @@ fn emit_parse_scalar_map(
   ctx.emit(Instruction::End);
 
   let count = ctx.alloc_i32(0);
+  let entries_start = ctx.alloc_i32(2);
   emit_scan_scalar_map_entries(
     ctx,
     token_ptr,
     len,
-    valid,
-    count,
-    error_kind,
+    entries_start,
+    (valid, count, error_kind),
     |_ctx, _key_start, _key_end, _value_start, _value_end, _index| Ok(()),
   )?;
 
@@ -490,9 +645,8 @@ fn emit_parse_scalar_map(
     ctx,
     token_ptr,
     len,
-    valid,
-    count,
-    error_kind,
+    entries_start,
+    (valid, count, error_kind),
     |ctx, key_start, key_end, value_start, value_end, _index| {
       let key_ptr = slice_string_range(ctx, token_ptr, key_start, key_end);
       let key_token = ctx.alloc_local();
@@ -553,15 +707,17 @@ fn emit_scan_scalar_map_entries<F>(
   ctx: &mut WasmGenCtx,
   token_ptr: u32,
   len: u32,
-  valid: u32,
-  count: u32,
-  error_kind: u32,
+  entries_start: u32,
+  state: (u32, u32, u32),
   mut on_entry: F,
 ) -> Result<(), String>
 where
   F: FnMut(&mut WasmGenCtx, u32, u32, u32, u32, u32) -> Result<(), String>,
 {
-  let cursor = ctx.alloc_i32(2);
+  let (valid, count, error_kind) = state;
+  let cursor = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(entries_start));
+  ctx.emit(Instruction::LocalSet(cursor));
   ctx.begin_block();
   ctx.begin_loop();
   ctx.emit(Instruction::LocalGet(valid));
