@@ -58,6 +58,12 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'edn-format-over-limit-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-format-over-limit-main! ()
+            println $ format-cirru-edn $ repeat :item 22000
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'edn-format-samples $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-format-samples ()
             []

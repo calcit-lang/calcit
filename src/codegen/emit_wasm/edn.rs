@@ -2,6 +2,7 @@ use super::*;
 use crate::runner::preprocess::infer_static_type_from_expr;
 
 const MAX_EDN_TYPE_DEPTH: usize = 32;
+pub(super) const MAX_EDN_OUTPUT_BYTES: i32 = 64 * 1024;
 
 pub(super) fn emit_format_cirru_edn(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if !(1..=2).contains(&args.len()) {
@@ -484,10 +485,42 @@ fn concat_string_locals(ctx: &mut WasmGenCtx, left: u32, right: u32) -> u32 {
   ctx.emit(Instruction::LocalGet(right));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(right_ptr));
+  emit_edn_concat_limit_check(ctx, left_ptr, right_ptr);
   emit_str_concat_from_ptrs(ctx, left_ptr, right_ptr);
   let output = ctx.alloc_local();
   ctx.emit(Instruction::LocalSet(output));
   output
+}
+
+fn emit_edn_concat_limit_check(ctx: &mut WasmGenCtx, left_ptr: u32, right_ptr: u32) {
+  let left_len = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(left_ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(left_len));
+  let right_len = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(right_ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(right_len));
+
+  // Check before adding lengths so an i32 wrap cannot turn oversized output
+  // into a small allocation. This bound is local to Cirru EDN formatting and
+  // does not constrain ordinary Calcit string operations.
+  ctx.emit(Instruction::LocalGet(right_len));
+  ctx.emit(Instruction::I32Const(MAX_EDN_OUTPUT_BYTES));
+  ctx.emit(Instruction::I32GtU);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(left_len));
+  ctx.emit(Instruction::I32Const(MAX_EDN_OUTPUT_BYTES));
+  ctx.emit(Instruction::LocalGet(right_len));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::I32GtU);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
 }
 
 #[cfg(test)]
