@@ -9,6 +9,15 @@
   :files $ {} $ 'component-wasm-async-import.main
     %{} 'FileEntry
       :defs $ {}
+        'call-host-flag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export call-host-flag (flag)
+            host-flag flag
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:async true) (:return 'Bool)
+            :args $ [] 'Bool
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-async-bool-contract)
+            :code $ quote $ assert= true true
+            :tags $ #{} :wasm
         'call-host-load $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export call-host-load (text)
             host-load text
@@ -19,6 +28,11 @@
           :tests $ [] $ %{} 'TestEntry (:name |keeps-async-result-contract)
             :code $ quote $ assert= (%ok |ready) (%ok |ready)
             :tags $ #{} :wasm
+        'host-flag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-import host-flag (flag) |host |flag
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:async true) (:return 'Bool)
+            :args $ [] 'Bool
         'host-load $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-import host-load (text) |host |load
           :examples $ []

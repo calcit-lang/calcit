@@ -159,8 +159,10 @@ const bytes = fs.readFileSync(process.argv[1]);
 const module = new WebAssembly.Module(bytes);
 const imports = WebAssembly.Module.imports(module).map(({ module, name }) => `${module}/${name}`).sort();
 const expectedImports = [
+  "host/flag",
   "host/load",
   "calcit:component/canonical/subtask.drop",
+  "calcit:component/canonical/task-return/call-host-flag",
   "calcit:component/canonical/task-return/call-host-load",
   "calcit:component/canonical/waitable-set.drop",
   "calcit:component/canonical/waitable-set.new",
@@ -174,6 +176,7 @@ if (JSON.stringify(imports) !== JSON.stringify(expectedImports)) {
 let instance;
 let nextWaitableSet = 40;
 let completions = [];
+let boolCompletions = [];
 let lifecycle = { new: 0, join: 0, wait: 0, subtaskDrop: 0, setDrop: 0 };
 const pending = new Map();
 const joined = new Map();
@@ -194,6 +197,14 @@ const writeResult = (outPtr, discriminant, text) => {
 };
 
 const host = {
+  flag: (flag, outPtr) => {
+    const memory = new DataView(instance.exports.memory.buffer);
+    memory.setUint8(outPtr, flag === 0 ? 1 : 0);
+    memory.setUint8(outPtr + 1, 0xff);
+    memory.setUint8(outPtr + 2, 0xff);
+    memory.setUint8(outPtr + 3, 0xff);
+    return 2;
+  },
   load: (inputPtr, inputLen, outPtr) => {
     const marker = readText(inputPtr, inputLen);
     if (marker === "immediate-ok") {
@@ -216,6 +227,9 @@ const host = {
   },
 };
 const canonical = {
+  "task-return/call-host-flag": flag => {
+    boolCompletions.push(flag);
+  },
   "task-return/call-host-load": (discriminant, ptr, len) => {
     completions.push([discriminant, readText(ptr, len)]);
   },
@@ -265,6 +279,11 @@ WebAssembly.instantiate(module, { host, "calcit:component/canonical": canonical 
   invoke("delayed-error");
   if (JSON.stringify(completions) !== JSON.stringify([[0, "ready-now"], [0, "ready-later"], [1, "typed-error"]])) {
     throw new Error(`unexpected completions: ${JSON.stringify(completions)}`);
+  }
+  instance.exports["call-host-flag"](1);
+  instance.exports["call-host-flag"](0);
+  if (JSON.stringify(boolCompletions) !== JSON.stringify([0, 1])) {
+    throw new Error(`async Bool result read beyond one byte: ${JSON.stringify(boolCompletions)}`);
   }
   let cancelledTrapped = false;
   try { invoke("cancelled"); } catch (error) { cancelledTrapped = error instanceof WebAssembly.RuntimeError; }
