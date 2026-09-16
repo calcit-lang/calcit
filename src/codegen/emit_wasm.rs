@@ -6295,6 +6295,7 @@ fn build_string_pool(
         "E_WASM_EDN_SYNTAX: invalid Cirru EDN scalar",
         "E_WASM_EDN_RANGE: numeric value is outside the requested type",
         "E_WASM_EDN_TAG: tag is not present in the compiled program",
+        "E_WASM_EDN_TOKEN_LIMIT: Cirru EDN list exceeds 4096 items",
       ]
       .into_iter()
       .map(String::from),

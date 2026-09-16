@@ -21,6 +21,10 @@ readonly EDN_PARSE_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-parse-smoke"
 readonly EDN_PARSE_STDOUT="${EDN_PARSE_OUT}/stdout.txt"
 readonly EDN_PARSE_LIMIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-parse-limit"
 readonly EDN_PARSE_LIMIT_STDOUT="${EDN_PARSE_LIMIT_OUT}/stdout.txt"
+readonly EDN_PARSE_LIST_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-parse-list"
+readonly EDN_PARSE_LIST_STDOUT="${EDN_PARSE_LIST_OUT}/stdout.txt"
+readonly EDN_PARSE_LIST_LIMIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-parse-list-limit"
+readonly EDN_PARSE_LIST_LIMIT_STDOUT="${EDN_PARSE_LIST_LIMIT_OUT}/stdout.txt"
 readonly EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-exit-smoke"
 readonly INVALID_EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-invalid-exit-smoke"
 readonly INVALID_EXIT_STDERR="${INVALID_EXIT_OUT}/stderr.txt"
@@ -282,6 +286,14 @@ grep -Fxq 'WASI-typed-EDN-scalars:-ok' "$EDN_PARSE_STDOUT"
 "$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-over-limit-main! --emit-path "$EDN_PARSE_LIMIT_OUT"
 wasmtime run "$EDN_PARSE_LIMIT_OUT/program.wasm" >"$EDN_PARSE_LIMIT_STDOUT"
 grep -Fxq 'WASI-typed-EDN-limit:-ok' "$EDN_PARSE_LIMIT_STDOUT"
+"$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-int-list --require-match
+"$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-string-list --require-match
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-list-main! --emit-path "$EDN_PARSE_LIST_OUT"
+wasmtime run "$EDN_PARSE_LIST_OUT/program.wasm" >"$EDN_PARSE_LIST_STDOUT"
+grep -Fxq 'WASI-typed-EDN-lists:-ok' "$EDN_PARSE_LIST_STDOUT"
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-list-over-limit-main! --emit-path "$EDN_PARSE_LIST_LIMIT_OUT"
+wasmtime run "$EDN_PARSE_LIST_LIMIT_OUT/program.wasm" >"$EDN_PARSE_LIST_LIMIT_STDOUT"
+grep -Fxq 'WASI-typed-EDN-list-limit:-ok' "$EDN_PARSE_LIST_LIMIT_STDOUT"
 
 # Keep one user-facing starter runnable as a real file-processing command, not
 # only as isolated capability fixtures.
