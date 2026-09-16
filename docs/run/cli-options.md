@@ -514,6 +514,8 @@ calcit wasi calcit.cirru --emit-path target/wasi-command
 wasmtime run --dir ./data::/workspace target/wasi-command/program.wasm
 ```
 
+仓库中的 [`examples/wasi-command/`](../../examples/wasi-command/) 提供了一个可直接运行的文本处理项目：它从命令行接收 guest 输入/输出路径，通过环境变量选择前缀，处理 Result 错误分支，并以稳定的非零状态码报告参数、读取或写入失败。新项目应先复用这个单一 `calcit wasi` 工作流，不需要增加包装命令。
+
 未提供 preopen、以 `/` 开头的绝对路径、包含完整 `..` 分段的越界路径、非法 UTF-8、I/O 错误和无法继续推进的 partial I/O 都返回 `Result :err`。当前 WASI 文本读取单文件上限为 4 MiB。`.read-dir` 枚举即时子项，沿 Preview 1 cookie 处理分页和截断记录，过滤 `.`、`..` 后按完整 guest path 排序；单次最多返回 4096 项，累计路径字节最多 4 MiB，单个 UTF-8 名称最多 4096 字节。超过限制同样返回错误，避免模块为不受控输入分配过量线性内存。Calcit 不接触 raw descriptor；`calcit wasm` 的 core module 也不会继承文件权限，而是在 codegen 阶段以 `E_WASM_CAPABILITY` 拒绝。递归 `.walk-dir` 尚未接入 WASI。
 
 ## Markdown code checking
