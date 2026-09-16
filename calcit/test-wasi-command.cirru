@@ -422,7 +422,8 @@
           :code $ quote $ defn edn-transform-count-map (data)
             let
                 next-count $ &+ (&map:get data |count) 1
-              if (&number:fits? next-count :int32)
+                refinement :int32
+              if (&number:fits? next-count refinement)
                 %ok $ &map:assoc data |processed $ assert-type next-count 'Int32
                 %err |Int32-overflow
           :examples $ []
@@ -441,6 +442,11 @@
             %{} 'TestEntry (:name |rejects-overflow)
               :code $ quote $ assert= (%err |Int32-overflow)
                 edn-transform-count-map $ {} $ |count (assert-type 2147483647 'Int32)
+              :tags $ #{} :wasi
+            %{} 'TestEntry (:name |accepts-bound-refinement-tag)
+              :code $ quote $ let
+                  refinement :int32
+                assert= true $ &number:fits? 3 refinement
               :tags $ #{} :wasi
         'exit-7! $ %{} 'CodeEntry (:doc "|以状态码 7 终止进程，用于验证 command 退出边界。")
           :code $ quote $ defn exit-7! () (quit! 7)
