@@ -135,6 +135,11 @@ Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_re
 的隐式 `math/io` imports。post-return 与尚未实现的 async import 生命周期仍是后续任务；尚未 lowering 的 schema
 在生成阶段明确失败。
 
+`cabi_realloc` 与 Calcit 内部对象当前共享同一个 bump pointer，但两类 allocation 的对齐语义不同：canonical byte range
+只保证调用方请求的 alignment，Calcit 内部 Struct、Enum、List 等 f64-backed object 则在写入 header 前恢复 8 字节对齐。
+因此 String/Buffer 的奇数长度 allocation 不得让后续 nominal object 的 pointer 依赖调用顺序；adapter 仍会把未对齐的
+外部 canonical pointer 当作非法输入 trap。
+
 ## 异步 Component 合约
 
 0.15.3 从函数 schema 已有的 `:async true` 推导 Component definition 的必填

@@ -81,11 +81,6 @@ const canonical = {
 };
 WebAssembly.instantiate(module, { "calcit:component/canonical": canonical }).then(result => {
   instance = result;
-  instance.exports["load-wide"]();
-  const expectedWide = Array.from({ length: 17 }, (_, index) => index);
-  if (JSON.stringify(wideCompletion) !== JSON.stringify(expectedWide)) {
-    throw new Error(`indirect typed Struct did not round-trip: ${JSON.stringify(wideCompletion)}`);
-  }
   const allocateText = text => {
     const input = Buffer.from(text, "utf8");
     const ptr = instance.exports.cabi_realloc(0, 0, 1, input.length);
@@ -103,6 +98,17 @@ WebAssembly.instantiate(module, { "calcit:component/canonical": canonical }).the
   instance.exports["echo-result"](1, errorPtr, errorLen);
   if (JSON.stringify(resultCompletions) !== JSON.stringify([[0, "ok-value"], [1, "error-value"]])) {
     throw new Error(`typed Result did not round-trip: ${JSON.stringify(resultCompletions)}`);
+  }
+  const expectedWide = Array.from({ length: 17 }, (_, index) => index);
+  instance.exports["load-wide"]();
+  if (JSON.stringify(wideCompletion) !== JSON.stringify(expectedWide)) {
+    throw new Error(`indirect async typed Struct did not round-trip: ${JSON.stringify(wideCompletion)}`);
+  }
+  const syncWidePtr = instance.exports["load-wide-sync"]();
+  const syncWideMemory = new DataView(instance.exports.memory.buffer);
+  const syncWide = Array.from({ length: 17 }, (_, index) => syncWideMemory.getFloat64(syncWidePtr + index * 8, true));
+  if (JSON.stringify(syncWide) !== JSON.stringify(expectedWide)) {
+    throw new Error(`indirect sync typed Struct did not round-trip: ${JSON.stringify(syncWide)}`);
   }
 }).catch(error => {
   console.error(error);

@@ -4,9 +4,6 @@ use super::*;
 // Memory helpers
 // ---------------------------------------------------------------------------
 
-/// Emit inline bump-allocator: allocate `byte_size` bytes and store the i32
-/// base pointer into `ptr_local`.
-///
 /// Look up the tag ID for a builtin type tag (e.g. "list", "map").
 /// Panics if the tag is missing — builtin type tags are always pre-registered.
 pub(super) fn get_type_tag(ctx: &WasmGenCtx, name: &str) -> f64 {
@@ -106,6 +103,7 @@ pub(super) fn emit_hash_proc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 /// ```
 pub(super) fn emit_bump_alloc(ctx: &mut WasmGenCtx, byte_size: i32, ptr_local: u32, type_tag: &str) {
   let tag_val = get_type_tag(ctx, type_tag) as i32;
+  emit_align_heap_ptr(ctx);
   // Write magic at raw_base+0.
   ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
   ctx.emit(Instruction::I32Const(HEAP_MAGIC));
@@ -128,6 +126,7 @@ pub(super) fn emit_bump_alloc(ctx: &mut WasmGenCtx, byte_size: i32, ptr_local: u
 /// Bump-allocator with dynamic size (i32 local) and heap type header.
 pub(super) fn emit_bump_alloc_dynamic(ctx: &mut WasmGenCtx, size_local: u32, ptr_local: u32, type_tag: &str) {
   let tag_val = get_type_tag(ctx, type_tag) as i32;
+  emit_align_heap_ptr(ctx);
   ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
   ctx.emit(Instruction::I32Const(HEAP_MAGIC));
   ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
@@ -140,6 +139,17 @@ pub(super) fn emit_bump_alloc_dynamic(ctx: &mut WasmGenCtx, size_local: u32, ptr
   ctx.emit(Instruction::LocalTee(ptr_local));
   ctx.emit(Instruction::LocalGet(size_local));
   ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
+}
+
+/// Restore the eight-byte alignment required by internal f64-backed objects.
+/// Canonical ABI byte allocations may leave the shared bump pointer unaligned.
+fn emit_align_heap_ptr(ctx: &mut WasmGenCtx) {
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::I32Const(7));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Const(-8));
+  ctx.emit(Instruction::I32And);
   ctx.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
 }
 
