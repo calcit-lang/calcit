@@ -6275,7 +6275,7 @@ fn build_string_pool(
   }
   if needs_edn_format {
     strings.extend(
-      ["do ", "\n", "nil", "true", "false", "[]", "([]", ")", " "]
+      ["do ", "\n", "nil", "true", "false", "[]", "([]", "{}", ")", " ", " ("]
         .into_iter()
         .map(String::from),
     );

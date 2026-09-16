@@ -242,6 +242,8 @@ grep -Fxq 'do nil' "$EDN_FORMAT_STDOUT"
 grep -Fxq 'do 42' "$EDN_FORMAT_STDOUT"
 grep -Fxq 'do 1.25' "$EDN_FORMAT_STDOUT"
 grep -Fxq 'do -0.5' "$EDN_FORMAT_STDOUT"
+grep -Fxq '{} (:a |one) (:b |two)' "$EDN_FORMAT_STDOUT"
+grep -Fxq '{} (|a |one) ("|b key" |two)' "$EDN_FORMAT_STDOUT"
 
 # Keep one user-facing starter runnable as a real file-processing command, not
 # only as isolated capability fixtures.

@@ -53,7 +53,7 @@ pub(super) fn try_format_cirru_edn_literal(value: &Calcit) -> Option<String> {
 }
 
 fn is_edn_scalar(value_type: &CalcitTypeAnnotation) -> bool {
-  !matches!(value_type, CalcitTypeAnnotation::List(_))
+  !matches!(value_type, CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Map(_, _))
 }
 
 fn emit_edn_value(
@@ -100,6 +100,7 @@ fn emit_edn_value(
       Ok(result)
     }
     CalcitTypeAnnotation::List(item_type) => emit_edn_list(ctx, value, item_type.as_ref(), depth, nested),
+    CalcitTypeAnnotation::Map(key_type, value_type) => emit_edn_map(ctx, value, key_type.as_ref(), value_type.as_ref(), depth, nested),
     CalcitTypeAnnotation::Number => Err(
       "E_WASM_EDN_TYPE: generic Number formatting is not yet exact in WASM; use an integer numeric refinement or defer this path"
         .into(),
@@ -114,6 +115,206 @@ fn emit_edn_value(
       "E_WASM_EDN_TYPE: {other} is not yet supported by the WASM Cirru EDN formatter"
     )),
   }
+}
+
+fn is_supported_map_scalar(value_type: &CalcitTypeAnnotation) -> bool {
+  matches!(
+    value_type,
+    CalcitTypeAnnotation::Nil
+      | CalcitTypeAnnotation::Bool
+      | CalcitTypeAnnotation::String
+      | CalcitTypeAnnotation::Tag
+      | CalcitTypeAnnotation::Numeric(
+        CalcitNumericRefinement::Int8
+          | CalcitNumericRefinement::UInt8
+          | CalcitNumericRefinement::Int16
+          | CalcitNumericRefinement::UInt16
+          | CalcitNumericRefinement::Int32
+          | CalcitNumericRefinement::UInt32
+          | CalcitNumericRefinement::Int64
+          | CalcitNumericRefinement::UInt64
+      )
+  )
+}
+
+fn emit_map_key_less_than(ctx: &mut WasmGenCtx, left: u32, right: u32, key_type: &CalcitTypeAnnotation) -> Result<(), String> {
+  match key_type {
+    CalcitTypeAnnotation::String => {
+      ctx.emit(Instruction::LocalGet(left));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::LocalGet(right));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.call_rt("__rt_str_compare");
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Lt);
+      Ok(())
+    }
+    other if is_supported_map_scalar(other) => {
+      ctx.emit(Instruction::LocalGet(left));
+      ctx.emit(Instruction::LocalGet(right));
+      ctx.emit(Instruction::F64Lt);
+      Ok(())
+    }
+    other => Err(format!(
+      "E_WASM_EDN_MAP_KEY: {other} cannot preserve native Cirru EDN map ordering in WASM"
+    )),
+  }
+}
+
+fn emit_edn_map(
+  ctx: &mut WasmGenCtx,
+  value: u32,
+  key_type: &CalcitTypeAnnotation,
+  value_type: &CalcitTypeAnnotation,
+  depth: usize,
+  nested: bool,
+) -> Result<u32, String> {
+  if nested || depth > 0 {
+    return Err("E_WASM_EDN_MAP_SHAPE: nested Map formatting is not yet byte-identical to native Cirru layout".into());
+  }
+  if !is_supported_map_scalar(key_type) {
+    return Err(format!(
+      "E_WASM_EDN_MAP_KEY: {key_type} cannot preserve native Cirru EDN map ordering in WASM"
+    ));
+  }
+  if !is_supported_map_scalar(value_type) {
+    return Err(format!(
+      "E_WASM_EDN_MAP_VALUE: {value_type} is not yet supported by the byte-identical scalar Map formatter"
+    ));
+  }
+  validate_edn_type(key_type, depth + 1)?;
+  validate_edn_type(value_type, depth + 1)?;
+
+  let map_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(map_ptr));
+  let flat_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(map_ptr));
+  ctx.call_rt("__rt_map_linearize");
+  ctx.emit(Instruction::LocalSet(flat_ptr));
+  let count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(flat_ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(count));
+
+  // Sort the fresh flat buffer in place. Closed homogeneous key types make the
+  // native EDN ordering reducible to numeric/tag order or UTF-8 string order.
+  let index = ctx.alloc_i32(1);
+  let cursor = ctx.alloc_local_typed(ValType::I32);
+  let key = ctx.alloc_local();
+  let item_value = ctx.alloc_local();
+  let previous_key = ctx.alloc_local();
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
+  emit_load_map_pair_slot(ctx, flat_ptr, index, 8, key);
+  emit_load_map_pair_slot(ctx, flat_ptr, index, 16, item_value);
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::LocalSet(cursor));
+
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(cursor));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::BrIf(1));
+  let previous_index = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(cursor));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::LocalSet(previous_index));
+  emit_load_map_pair_slot(ctx, flat_ptr, previous_index, 8, previous_key);
+  emit_map_key_less_than(ctx, key, previous_key, key_type)?;
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::BrIf(1));
+  emit_copy_map_pair(ctx, flat_ptr, previous_index, cursor);
+  ctx.emit(Instruction::LocalGet(previous_index));
+  ctx.emit(Instruction::LocalSet(cursor));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  emit_store_map_pair_slot(ctx, flat_ptr, cursor, 8, key);
+  emit_store_map_pair_slot(ctx, flat_ptr, cursor, 16, item_value);
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(index));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  let result = literal_local(ctx, "{}")?;
+  let format_index = ctx.alloc_i32(0);
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(format_index));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
+  emit_load_map_pair_slot(ctx, flat_ptr, format_index, 8, key);
+  emit_load_map_pair_slot(ctx, flat_ptr, format_index, 16, item_value);
+
+  let opened = concat_with_literal_after(ctx, result, " (")?;
+  ctx.emit(Instruction::LocalGet(opened));
+  ctx.emit(Instruction::LocalSet(result));
+  let formatted_key = emit_edn_value(ctx, key, key_type, depth + 1, true)?;
+  let with_key = concat_string_locals(ctx, result, formatted_key);
+  ctx.emit(Instruction::LocalGet(with_key));
+  ctx.emit(Instruction::LocalSet(result));
+  let with_space = concat_with_literal_after(ctx, result, " ")?;
+  ctx.emit(Instruction::LocalGet(with_space));
+  ctx.emit(Instruction::LocalSet(result));
+  let formatted_value = emit_edn_value(ctx, item_value, value_type, depth + 1, true)?;
+  let with_value = concat_string_locals(ctx, result, formatted_value);
+  ctx.emit(Instruction::LocalGet(with_value));
+  ctx.emit(Instruction::LocalSet(result));
+  let closed = concat_with_literal_after(ctx, result, ")")?;
+  ctx.emit(Instruction::LocalGet(closed));
+  ctx.emit(Instruction::LocalSet(result));
+
+  ctx.emit(Instruction::LocalGet(format_index));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(format_index));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  Ok(result)
+}
+
+fn emit_map_pair_address(ctx: &mut WasmGenCtx, flat_ptr: u32, index: u32, offset: i32) {
+  ctx.emit(Instruction::LocalGet(flat_ptr));
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Const(offset));
+  ctx.emit(Instruction::I32Add);
+}
+
+fn emit_load_map_pair_slot(ctx: &mut WasmGenCtx, flat_ptr: u32, index: u32, offset: i32, target: u32) {
+  emit_map_pair_address(ctx, flat_ptr, index, offset);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(target));
+}
+
+fn emit_store_map_pair_slot(ctx: &mut WasmGenCtx, flat_ptr: u32, index: u32, offset: i32, value: u32) {
+  emit_map_pair_address(ctx, flat_ptr, index, offset);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+}
+
+fn emit_copy_map_pair(ctx: &mut WasmGenCtx, flat_ptr: u32, source: u32, target: u32) {
+  let source_key = ctx.alloc_local();
+  let source_value = ctx.alloc_local();
+  emit_load_map_pair_slot(ctx, flat_ptr, source, 8, source_key);
+  emit_load_map_pair_slot(ctx, flat_ptr, source, 16, source_value);
+  emit_store_map_pair_slot(ctx, flat_ptr, target, 8, source_key);
+  emit_store_map_pair_slot(ctx, flat_ptr, target, 16, source_value);
 }
 
 fn emit_edn_tag(ctx: &mut WasmGenCtx, value: u32) -> Result<u32, String> {
@@ -218,6 +419,23 @@ fn validate_edn_type(value_type: &CalcitTypeAnnotation, depth: usize) -> Result<
       Ok(())
     }
     CalcitTypeAnnotation::List(item) => validate_edn_type(item, depth + 1),
+    CalcitTypeAnnotation::Map(key, value) if depth == 0 => {
+      if !is_supported_map_scalar(key) {
+        return Err(format!(
+          "E_WASM_EDN_MAP_KEY: {key} cannot preserve native Cirru EDN map ordering in WASM"
+        ));
+      }
+      if !is_supported_map_scalar(value) {
+        return Err(format!(
+          "E_WASM_EDN_MAP_VALUE: {value} is not yet supported by the byte-identical scalar Map formatter"
+        ));
+      }
+      validate_edn_type(key, depth + 1)?;
+      validate_edn_type(value, depth + 1)
+    }
+    CalcitTypeAnnotation::Map(_, _) => {
+      Err("E_WASM_EDN_MAP_SHAPE: nested Map formatting is not yet byte-identical to native Cirru layout".into())
+    }
     CalcitTypeAnnotation::Dynamic => {
       Err("E_WASM_EDN_TYPE: Dynamic cannot be formatted safely in WASM; decode or narrow it to a closed type first".into())
     }
@@ -292,6 +510,23 @@ mod tests {
     let number_error =
       validate_edn_type(&CalcitTypeAnnotation::Number, 0).expect_err("generic Number must not serialize as a placeholder");
     assert!(number_error.contains("not yet exact"));
+  }
+
+  #[test]
+  fn accepts_only_byte_identical_scalar_root_maps() {
+    let scalar_map = CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Tag), Arc::new(CalcitTypeAnnotation::String));
+    validate_edn_type(&scalar_map, 0).expect("closed scalar root Map should be supported");
+
+    let nested_map = CalcitTypeAnnotation::List(Arc::new(scalar_map));
+    let nested_error = validate_edn_type(&nested_map, 0).expect_err("nested Map layout must fail closed");
+    assert!(nested_error.starts_with("E_WASM_EDN_MAP_SHAPE:"));
+
+    let container_value = CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::Tag),
+      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String))),
+    );
+    let value_error = validate_edn_type(&container_value, 0).expect_err("container Map values must fail closed");
+    assert!(value_error.starts_with("E_WASM_EDN_MAP_VALUE:"));
   }
 
   #[test]
