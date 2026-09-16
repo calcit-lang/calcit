@@ -133,6 +133,13 @@ pub(super) fn emit_str_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   ctx.emit(Instruction::LocalSet(f_b));
   let ptr_b = emit_turn_string_from_local(ctx, f_b);
 
+  emit_str_concat_from_ptrs(ctx, ptr_a, ptr_b);
+  Ok(())
+}
+
+/// Concatenate two known heap-string pointers and leave the resulting f64
+/// pointer on the stack.
+pub(super) fn emit_str_concat_from_ptrs(ctx: &mut WasmGenCtx, ptr_a: u32, ptr_b: u32) {
   let len_a = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(ptr_a));
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
@@ -176,7 +183,6 @@ pub(super) fn emit_str_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   ctx.emit(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
 
   ctx.ptr_to_f64(ptr_c);
-  Ok(())
 }
 
 /// `&str:nth str idx` — one-byte string at index `idx`, or nil when out of range.

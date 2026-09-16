@@ -43,6 +43,37 @@
           :tests $ [] $ %{} 'TestEntry (:name |valid-readings)
             :code $ quote $ assert= true (clocks-valid?)
             :tags $ #{} :core :time :unit :wasi :wasm
+        'edn-format-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-format-main! ()
+            println $ format-cirru-edn $ [] :ready :paused
+            println $ format-cirru-edn $ [] |hello "|hello world"
+            println $ format-cirru-edn $ [] ([] |a |b) ([] "|c d")
+            println $ format-cirru-edn true
+            println $ format-cirru-edn nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'edn-format-samples $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-format-samples ()
+            []
+              format-cirru-edn $ [] :ready :paused
+              format-cirru-edn $ [] |hello "|hello world"
+              format-cirru-edn $ [] ([] |a |b) ([] "|c d")
+              format-cirru-edn true
+              format-cirru-edn nil
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'List 'String
+          :tests $ [] $ %{} 'TestEntry (:name |formats-closed-scalars-and-lists)
+            :code $ quote $ assert=
+              []
+                str (char-from-code 10) "|[] :ready :paused" $ char-from-code 10
+                str (char-from-code 10) "|[] |hello \"|hello world\"" $ char-from-code 10
+                str (char-from-code 10) "|[] ([] |a |b) ([] \"|c d\")" $ char-from-code 10
+                str (char-from-code 10) "|do true" $ char-from-code 10
+                str (char-from-code 10) "|do nil" $ char-from-code 10
+              edn-format-samples
         'exit-7! $ %{} 'CodeEntry (:doc "|以状态码 7 终止进程，用于验证 command 退出边界。")
           :code $ quote $ defn exit-7! () (quit! 7)
           :examples $ []
