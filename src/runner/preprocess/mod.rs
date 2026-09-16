@@ -2247,9 +2247,7 @@ fn preprocess_list_call(
   if let Calcit::Method(field_name, calcit::MethodKind::TagAccess) = &head_form
     && args.len() == 1
     && let Some(receiver_type) = resolve_type_value(&args[0], scope_types)
-    && let Some(traits) = trait_list_from_type(receiver_type.as_ref())
-    && traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref()))
-    && find_trait_field_type(&traits, field_name.as_ref()).is_some()
+    && is_external_trait_field(receiver_type.as_ref(), field_name.as_ref())
   {
     let typed_access = Calcit::Method(field_name.clone(), calcit::MethodKind::ExternalAccess(receiver_type));
     require_js_ffi_feature_for_operation(&typed_access, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
@@ -2272,10 +2270,7 @@ fn preprocess_list_call(
     match first_arg {
       Calcit::Tag(field_tag) if args.len() == 1 => {
         if let Some(type_info) = resolve_type_value(&head_form, scope_types) {
-          if let Some(traits) = trait_list_from_type(type_info.as_ref())
-            && traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref()))
-            && find_trait_field_type(&traits, field_tag.ref_str()).is_some()
-          {
+          if is_external_trait_field(type_info.as_ref(), field_tag.ref_str()) {
             let typed_access = Calcit::Method(
               Arc::from(field_tag.ref_str()),
               calcit::MethodKind::ExternalAccess(type_info.clone()),
@@ -3273,9 +3268,7 @@ fn preprocess_list_call(
           && processed_args.len() == 1
           && let Some(receiver) = processed_args.first()
           && let Some(type_value) = resolve_type_value(receiver, scope_types)
-          && let Some(traits) = trait_list_from_type(type_value.as_ref())
-          && traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref()))
-          && find_trait_field_type(&traits, field_name.as_ref()).is_some()
+          && is_external_trait_field(type_value.as_ref(), field_name.as_ref())
         {
           ys = CalcitList::new_inner_from(&[Calcit::Method(field_name.clone(), calcit::MethodKind::ExternalAccess(type_value))]);
           for item in processed_args.iter() {
@@ -7142,6 +7135,13 @@ fn trait_list_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<Cal
     CalcitTypeAnnotation::Optional(inner) => trait_list_from_type(inner.as_ref()),
     _ => None,
   }
+}
+
+/// Checks whether a type exposes a declared field through an external-object trait.
+fn is_external_trait_field(type_value: &CalcitTypeAnnotation, field_name: &str) -> bool {
+  trait_list_from_type(type_value).is_some_and(|traits| {
+    traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())) && find_trait_field_type(&traits, field_name).is_some()
+  })
 }
 
 pub(crate) fn trait_is_external_object(trait_def: &CalcitTrait) -> bool {
