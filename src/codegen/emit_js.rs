@@ -2263,7 +2263,10 @@ mod tests {
               (cirru_edn::Edn::tag("kind"), cirru_edn::Edn::tag("external-object")),
               (
                 cirru_edn::Edn::tag("names"),
-                cirru_edn::Edn::map_from_iter([(cirru_edn::Edn::tag("inner-text"), cirru_edn::Edn::str("textContent"))]),
+                cirru_edn::Edn::map_from_iter([
+                  (cirru_edn::Edn::tag("inner-text"), cirru_edn::Edn::str("textContent")),
+                  (cirru_edn::Edn::tag("focus"), cirru_edn::Edn::str("focusNow")),
+                ]),
               ),
             ])),
           },
@@ -2486,6 +2489,11 @@ mod tests {
       symbol("element"),
       Calcit::Str(Arc::from("ready")),
     ])));
+    let invoke_type_hint = Arc::new(calcit::CalcitTypeAnnotation::Trait(external_trait_with_names()));
+    let invoke_form = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Method(Arc::from("focus"), MethodKind::ExternalInvoke(invoke_type_hint)),
+      symbol("element"),
+    ])));
 
     assert_eq!(
       to_js_code(&get_form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("external get should compile"),
@@ -2494,6 +2502,10 @@ mod tests {
     assert_eq!(
       to_js_code(&set_form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("external set should compile"),
       "(element[\"textContent\"] = \"ready\")"
+    );
+    assert_eq!(
+      to_js_code(&invoke_form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("external invoke should compile"),
+      "element[\"focusNow\"]()"
     );
   }
 
