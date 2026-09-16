@@ -43,6 +43,10 @@ readonly READ_DIR_OUT="${CARGO_TARGET_DIR:-target}/wasi-read-dir-smoke"
 readonly READ_DIR_STDOUT="${READ_DIR_OUT}/stdout.txt"
 readonly READ_DIR_ERROR_OUT="${CARGO_TARGET_DIR:-target}/wasi-read-dir-error"
 readonly CORE_READ_DIR_OUT="${CARGO_TARGET_DIR:-target}/core-read-dir-reject"
+readonly STARTER_FIXTURE="examples/wasi-command/calcit.cirru"
+readonly STARTER_OUT="${CARGO_TARGET_DIR:-target}/wasi-command-starter"
+readonly STARTER_STDOUT="${STARTER_OUT}/stdout.txt"
+readonly STARTER_STDERR="${STARTER_OUT}/stderr.txt"
 readonly CHECK_ONLY_OUT="${CARGO_TARGET_DIR:-target}/wasi-check-only-smoke"
 readonly NATIVE_HARNESS_BIN="${CARGO_TARGET_DIR:-target}/debug/${HARNESS_BIN_NAME}"
 readonly CALCIT_BIN="${CARGO_TARGET_DIR:-target}/debug/calcit"
@@ -216,6 +220,35 @@ if read_dir_capability_error=$(
   exit 1
 fi
 grep -Fq "E_WASM_CAPABILITY" <<<"$read_dir_capability_error"
+
+# Keep one user-facing starter runnable as a real file-processing command, not
+# only as isolated capability fixtures.
+mkdir -p "$WASI_FS_HOST_DIR/starter"
+printf '%s' 'payload' >"$WASI_FS_HOST_DIR/starter/input.txt"
+"$CALCIT_BIN" "$STARTER_FIXTURE" test --tag wasi --require-match
+"$CALCIT_BIN" wasi "$STARTER_FIXTURE" --emit-path "$STARTER_OUT"
+wasmtime run \
+  --dir "$WASI_FS_HOST_DIR/starter::/workspace" \
+  --env 'WASI_PREFIX=prefix: ' \
+  "$STARTER_OUT/program.wasm" \
+  workspace/input.txt workspace/output.txt >"$STARTER_STDOUT"
+grep -Fq 'workspace/output.txt' "$STARTER_STDOUT"
+grep -Fxq 'prefix: payload' "$WASI_FS_HOST_DIR/starter/output.txt"
+
+if wasmtime run \
+  --dir "$WASI_FS_HOST_DIR/starter::/workspace" \
+  "$STARTER_OUT/program.wasm" \
+  workspace/missing.txt workspace/output.txt >"$STARTER_STDOUT" 2>"$STARTER_STDERR"; then
+  echo "WASI command starter unexpectedly accepted a missing input" >&2
+  exit 1
+else
+  starter_missing_status=$?
+fi
+if [[ "$starter_missing_status" -ne 66 ]]; then
+  echo "WASI command starter returned $starter_missing_status instead of 66 for a missing input" >&2
+  exit 1
+fi
+grep -Fq 'Failed to read workspace/missing.txt' "$STARTER_STDERR"
 
 if target_error=$("$NATIVE_HARNESS_BIN" "$COMMAND_FIXTURE" --target unknown 2>&1); then
   echo "internal WASI preprocess harness unexpectedly accepted an unknown target" >&2
