@@ -18,7 +18,7 @@ Calcit 通过两个公开 preview 子命令暴露 WASM codegen：`calcit wasm` �
 | `let` 绑定                             | ✅   | 转为 WASM local          |
 | 算术: `&+`, `&-`, `&*`, `&/`           | ✅   | 映射到 f64 指令          |
 | `&number:rem`                          | ✅   | 通过 trunc/mul/sub 模拟  |
-| `&number:fits?`                        | ✅   | 支持字面量或局部绑定 tag，支撑受检 numeric refinement 转换 |
+| `&number:fits?`                        | ✅   | 支持字面量或局部绑定 tag；未知 refinement tag 返回 false，不 trap |
 | 比较: `&<`, `&>`, `&=`                 | ✅   | 返回 f64 (1.0/0.0)       |
 | `not`                                  | ✅   | 逻辑非                   |
 | `identical?`                           | ✅   | 数值相等 (f64.eq)        |
