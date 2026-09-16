@@ -2433,6 +2433,20 @@ pub(super) fn build_runtime_fns(
   fn_index.insert(String::from("__rt_hash_f64"), hash_idx);
   fns.push(build_rt_hash_f64());
 
+  // Register string comparison before map helpers so HAMT buckets can compare
+  // runtime-created string keys by content instead of allocation identity.
+  let str_compare_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_str_compare"), str_compare_idx);
+  fns.push(build_rt_str_compare());
+
+  let map_key_hash_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_map_key_hash"), map_key_hash_idx);
+  fns.push(build_rt_map_key_hash(string_tag, hash_idx));
+
+  let map_key_equal_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_map_key_equal"), map_key_equal_idx);
+  fns.push(build_rt_map_key_equal(string_tag, str_compare_idx));
+
   // __rt_hash_list_or_set(ptr: i32) -> i32
   // XOR-based content hash over all elements (order-independent for sets, order-dependent for lists).
   // Both sets and lists have identical memory layout, so one function suffices.
@@ -2442,11 +2456,14 @@ pub(super) fn build_runtime_fns(
 
   let map_root_assoc_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_root_assoc"), map_root_assoc_idx);
-  fns.push(build_rt_map_root_assoc(*fn_index.get("__rt_copy_f64_slots").expect("copy helper")));
+  fns.push(build_rt_map_root_assoc(
+    *fn_index.get("__rt_copy_f64_slots").expect("copy helper"),
+    map_key_equal_idx,
+  ));
 
   let map_root_lookup_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_root_lookup"), map_root_lookup_idx);
-  fns.push(build_rt_map_root_lookup());
+  fns.push(build_rt_map_root_lookup(map_key_equal_idx));
 
   let map_root_contains_value_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_root_contains_value"), map_root_contains_value_idx);
@@ -2462,11 +2479,11 @@ pub(super) fn build_runtime_fns(
 
   let map_from_flat_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_from_flat"), map_from_flat_idx);
-  fns.push(build_rt_map_from_flat(hash_idx, map_root_assoc_idx, map_make_idx));
+  fns.push(build_rt_map_from_flat(map_key_hash_idx, map_root_assoc_idx, map_make_idx));
 
   let map_root_from_flat_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_root_from_flat"), map_root_from_flat_idx);
-  fns.push(build_rt_map_root_from_flat(hash_idx, map_root_assoc_idx));
+  fns.push(build_rt_map_root_from_flat(map_key_hash_idx, map_root_assoc_idx));
 
   let map_linearize_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_linearize"), map_linearize_idx);
@@ -2474,15 +2491,15 @@ pub(super) fn build_runtime_fns(
 
   let map_assoc_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_assoc"), map_assoc_idx);
-  fns.push(build_rt_map_assoc(hash_idx, map_root_assoc_idx, map_make_idx));
+  fns.push(build_rt_map_assoc(map_key_hash_idx, map_root_assoc_idx, map_make_idx));
 
   let map_get_value_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_get_value"), map_get_value_idx);
-  fns.push(build_rt_map_get_value(hash_idx, map_root_lookup_idx));
+  fns.push(build_rt_map_get_value(map_key_hash_idx, map_root_lookup_idx));
 
   let map_contains_key_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_contains_key"), map_contains_key_idx);
-  fns.push(build_rt_map_contains_key(hash_idx, map_root_lookup_idx));
+  fns.push(build_rt_map_contains_key(map_key_hash_idx, map_root_lookup_idx));
 
   let map_contains_value_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_contains_value"), map_contains_value_idx);
@@ -2495,12 +2512,6 @@ pub(super) fn build_runtime_fns(
     map_linearize_idx,
     map_from_flat_idx,
   ));
-
-  // String comparison helper: __rt_str_compare(ptr_a: i32, ptr_b: i32) → f64
-  // Returns -1.0 / 0.0 / 1.0 for lexicographic byte order.
-  let str_compare_idx = base_index + fns.len() as u32;
-  fn_index.insert(String::from("__rt_str_compare"), str_compare_idx);
-  fns.push(build_rt_str_compare());
 
   // Substring search helper: __rt_str_find_index(h_ptr: i32, n_ptr: i32) → f64
   // Returns byte offset of first occurrence, or -1.0 if not found.
@@ -2855,6 +2866,158 @@ fn build_rt_hash_f64() -> CompiledFn {
   b.finish(vec![ValType::F64], vec![ValType::I32])
 }
 
+fn build_rt_map_key_hash(string_tag: i32, hash_f64_idx: u32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(1);
+  let ptr = b.alloc_i32();
+  let len = b.alloc_i32();
+  let i = b.alloc_i32();
+  let hash = b.alloc_i32();
+
+  // Heap values use integral logical pointers below the current bump pointer.
+  // Only strings need content hashing here; other scalar keys keep the stable
+  // f64 hash used by the existing runtime.
+  b.emit(Instruction::LocalGet(0));
+  b.emit(f64_const((HEAP_BASE + 8) as f64));
+  b.emit(Instruction::F64Ge);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Lt);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalTee(ptr));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::I32Const(string_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(len));
+  b.emit(Instruction::I32Const(0x811c_9dc5u32 as i32));
+  b.emit(Instruction::LocalSet(hash));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::LocalGet(len));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(hash));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Xor);
+  b.emit(Instruction::I32Const(0x0100_0193));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::LocalSet(hash));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(hash));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::Call(hash_f64_idx));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::Call(hash_f64_idx));
+  b.emit(Instruction::End);
+  b.finish(vec![ValType::F64], vec![ValType::I32])
+}
+
+fn build_rt_map_key_equal(string_tag: i32, str_compare_idx: u32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(2);
+  let ptr_a = b.alloc_i32();
+  let ptr_b = b.alloc_i32();
+
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(f64_const((HEAP_BASE + 8) as f64));
+  b.emit(Instruction::F64Ge);
+  b.emit(Instruction::LocalGet(1));
+  b.emit(f64_const((HEAP_BASE + 8) as f64));
+  b.emit(Instruction::F64Ge);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Lt);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Lt);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalTee(ptr_a));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::I32Const(string_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalTee(ptr_b));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::I32Const(string_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(ptr_a));
+  b.emit(Instruction::LocalGet(ptr_b));
+  b.emit(Instruction::Call(str_compare_idx));
+  b.emit(f64_const(0.0));
+  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.finish(vec![ValType::F64, ValType::F64], vec![ValType::I32])
+}
+
 fn build_rt_map_make(map_tag: i32) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(2);
   let dst = b.alloc_i32();
@@ -2871,7 +3034,7 @@ fn build_rt_map_make(map_tag: i32) -> CompiledFn {
   b.finish(vec![ValType::I32, ValType::I32], vec![ValType::I32])
 }
 
-fn build_rt_map_root_assoc(copy_fn_idx: u32) -> CompiledFn {
+fn build_rt_map_root_assoc(copy_fn_idx: u32, key_equal_idx: u32) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(4); // root, key, value, hash
   let idx0 = b.alloc_i32();
   let idx1 = b.alloc_i32();
@@ -3018,7 +3181,7 @@ fn build_rt_map_root_assoc(copy_fn_idx: u32) -> CompiledFn {
   b.emit(Instruction::LocalTee(key_addr));
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::Call(key_equal_idx));
   b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
   b.emit(Instruction::LocalGet(i));
   b.emit(Instruction::LocalSet(found_idx));
@@ -3122,7 +3285,7 @@ fn build_rt_map_root_assoc(copy_fn_idx: u32) -> CompiledFn {
   )
 }
 
-fn build_rt_map_root_lookup() -> CompiledFn {
+fn build_rt_map_root_lookup(key_equal_idx: u32) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(3); // root, key, hash
   let idx0 = b.alloc_i32();
   let idx1 = b.alloc_i32();
@@ -3182,7 +3345,7 @@ fn build_rt_map_root_lookup() -> CompiledFn {
   b.emit(Instruction::I32Add);
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::Call(key_equal_idx));
   b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::LocalSet(found));
