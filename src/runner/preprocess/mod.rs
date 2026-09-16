@@ -3265,6 +3265,24 @@ fn preprocess_list_call(
           }
         }
 
+        // A raw field read on a statically asserted external-object receiver
+        // carries the same trait evidence as `.:field`. Preserve that evidence
+        // so JS codegen applies the trait's `:names` mapping instead of reading
+        // the Calcit spelling as a literal JavaScript property.
+        if let Calcit::Method(field_name, calcit::MethodKind::Access) = &head_form
+          && processed_args.len() == 1
+          && let Some(receiver) = processed_args.first()
+          && let Some(type_value) = resolve_type_value(receiver, scope_types)
+          && let Some(traits) = trait_list_from_type(type_value.as_ref())
+          && traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref()))
+          && find_trait_field_type(&traits, field_name.as_ref()).is_some()
+        {
+          ys = CalcitList::new_inner_from(&[Calcit::Method(field_name.clone(), calcit::MethodKind::ExternalAccess(type_value))]);
+          for item in processed_args.iter() {
+            ys = ys.push(item.to_owned());
+          }
+        }
+
         if let Some(call_head) = ys.first() {
           // Recompute processed_args from ys after optimization rewrites (e.g. struct:get→nth, assoc→assoc-at)
           let processed_args = CalcitList::from(ys.drop_left());
@@ -12951,6 +12969,7 @@ mod tests {
         Cirru::leaf("deftrait"),
         Cirru::leaf(def),
         Cirru::List(vec![Cirru::leaf(":value"), Cirru::leaf("'String")]),
+        Cirru::List(vec![Cirru::leaf(".focus"), Cirru::leaf(":fn")]),
       ]),
       ns,
       def,
@@ -12975,6 +12994,13 @@ mod tests {
               [
                 (cirru_edn::Edn::tag("backend"), cirru_edn::Edn::tag("js")),
                 (cirru_edn::Edn::tag("kind"), cirru_edn::Edn::tag("external-object")),
+                (
+                  cirru_edn::Edn::tag("names"),
+                  cirru_edn::Edn::map_from_iter([
+                    (cirru_edn::Edn::tag("value"), cirru_edn::Edn::str("valueText")),
+                    (cirru_edn::Edn::tag("focus"), cirru_edn::Edn::str("focusNow")),
+                  ]),
+                ),
               ]
               .into_iter()
               .chain(writable.then(|| {
@@ -13011,6 +13037,61 @@ mod tests {
     };
     assert_eq!(trait_def.definition_ref.as_deref(), Some("tests.external-field/HostElement"));
     assert!(trait_is_external_object(trait_def.as_ref()));
+  }
+
+  #[test]
+  fn inline_unsafe_coerce_external_members_keep_trait_lowering() {
+    let _guard = lock_preprocess_test_state();
+    seed_external_field_trait(true);
+    let host = external_field_test_symbol("host");
+    let type_form = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::Quote, Arc::from("tests.external-field")),
+      external_field_test_symbol("tests.external-field/HostElement"),
+    ]);
+    let coerced = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::UnsafeCoerce, Arc::from("tests.external-field")),
+      host,
+      type_form,
+    ]);
+    let scope_defs = HashSet::from([Arc::from("host")]);
+    let mut scope_types = ScopeTypes::from([(Arc::from("host"), Arc::new(CalcitTypeAnnotation::JsObject))]);
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let method_call = Calcit::from(vec![
+      Calcit::Method(Arc::from("focus"), calcit::MethodKind::Invoke(calcit::DYNAMIC_TYPE.clone())),
+      coerced.clone(),
+    ]);
+    let lowered_method = preprocess_expr(
+      &method_call,
+      &scope_defs,
+      &mut scope_types,
+      "tests.external-field",
+      &warnings,
+      &stack,
+    )
+    .expect("typed inline coercion method should preprocess");
+    assert!(matches!(
+      lowered_method,
+      Calcit::List(items)
+        if matches!(items.first(), Some(Calcit::Method(name, calcit::MethodKind::ExternalInvoke(_))) if name.as_ref() == "focus")
+    ));
+
+    let field_read = Calcit::from(vec![Calcit::Method(Arc::from("value"), calcit::MethodKind::Access), coerced]);
+    let lowered_field = preprocess_expr(
+      &field_read,
+      &scope_defs,
+      &mut scope_types,
+      "tests.external-field",
+      &warnings,
+      &stack,
+    )
+    .expect("typed inline coercion field should preprocess");
+    assert!(matches!(
+      lowered_field,
+      Calcit::List(items)
+        if matches!(items.first(), Some(Calcit::Method(name, calcit::MethodKind::ExternalAccess(_))) if name.as_ref() == "value")
+    ));
   }
 
   #[test]
