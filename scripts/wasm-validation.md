@@ -52,7 +52,7 @@ Calcit 通过两个公开 preview 子命令暴露 WASM codegen：`calcit wasm` �
 
 WASM 的 Number、Bool、nil 和 tag id 当前共用 f64 value ABI，运行时反射无法可靠区分这些标量。因此 `format-cirru-edn` 不增加动态类型探测规则，而是读取预处理后保留的闭合类型并生成对应 formatter。
 
-首批支持 nil、Bool、String、tag、整数 numeric refinement，以及递归的同质 `List<T>`；输出与 native compact formatter 一样带首尾换行，字符串遵循 Cirru leaf 的 `|text` / `"|quoted text"` 规则。`Dynamic`、未解析类型变量、普通 `Number`、Map、Struct 与 Enum 暂时以 `E_WASM_EDN_TYPE` 明确拒绝，不能静默猜测或输出占位数据。后续先补精确 f64、Map 与 nominal value，再接入有界 parser 和 typed decode。
+首批支持 nil、Bool、String、tag、整数 numeric refinement、直接 Number 字面量，以及递归的同质 `List<T>`；直接 Number 字面量在 codegen 时复用 native formatter，保留精确字节语义。输出与 native compact formatter 一样带首尾换行，字符串遵循 Cirru leaf 的 `|text` / `"|quoted text"` 规则。`Dynamic`、未解析类型变量、运行时普通 `Number`、Map、Struct 与 Enum 暂时以 `E_WASM_EDN_TYPE` 明确拒绝，不能静默猜测或输出占位数据。后续补运行时精确 f64、Map 与 nominal value，再接入有界 parser 和 typed decode。
 
 这项能力复用现有 core API，不增加新的 CLI 或 Calcit 表层入口。WASI 文件工作流仍通过 `fs:path` 的 typed read/write API 组合。
 
