@@ -158,6 +158,16 @@
               assert= true $ result:err? $ edn-parse-int-list "|[] 1 2147483648"
               assert= true $ result:err? $ edn-parse-int-list "|[] 1 |bad"
             :tags $ #{} :core :unit
+        'edn-parse-large-fraction $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-large-fraction (text) (try-parse-cirru-edn-as text 'Int64)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result 'Int64 'String
+          :tests $ [] $ %{} 'TestEntry (:name |rejects-rounded-fraction)
+            :code $ quote $ assert= true
+              result:err? $ edn-parse-large-fraction |9007199254740990.5
+            :tags $ #{} :core :unit
         'edn-parse-list-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-list-main! ()
             let
@@ -248,6 +258,7 @@
               assert= 2 $ &map:get strings "|two words"
               assert= -3 $ &map:get strings |tail
               assert= true $ result:err? $ edn-parse-tag-string-map "|{} (:a"
+              assert= true $ result:err? $ edn-parse-large-fraction |9007199254740990.5
               println |WASI-typed-EDN-maps:-ok
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
