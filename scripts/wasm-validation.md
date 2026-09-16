@@ -18,6 +18,7 @@ Calcit 通过两个公开 preview 子命令暴露 WASM codegen：`calcit wasm` �
 | `let` 绑定                             | ✅   | 转为 WASM local          |
 | 算术: `&+`, `&-`, `&*`, `&/`           | ✅   | 映射到 f64 指令          |
 | `&number:rem`                          | ✅   | 通过 trunc/mul/sub 模拟  |
+| `&number:fits?`                        | ✅   | 支撑受检 numeric refinement 转换 |
 | 比较: `&<`, `&>`, `&=`                 | ✅   | 返回 f64 (1.0/0.0)       |
 | `not`                                  | ✅   | 逻辑非                   |
 | `identical?`                           | ✅   | 数值相等 (f64.eq)        |
@@ -58,6 +59,12 @@ WASM 的 Number、Bool、nil 和 tag id 当前共用 f64 value ABI，运行时�
 `try-parse-cirru-edn-as` 的 WASM 实现直接消费预处理阶段生成的同一份闭合 `DataShapeGraph`，不先解析成 `Dynamic`，也不引入第二套 decoder API。当前支持 nil、Bool、Number、整数/浮点 refinement、bare 或 quoted/escaped String、编译产物已知 tag，以及顶层同质标量 `List<T>` 和 `Map<K,V>`；标量接受 bare token 和 formatter 产生的顶层 `do token`。quoted String 只接受 formatter 使用的 `\n`、`\t`、`\"`、`\\` 四种 escape，未知或截断 escape 返回语法错误。输入上限为 64 KiB，List 另设 4096 item 上限，Map 另设 2048 entry 上限；超限、语法错误、numeric refinement 越界和未知 tag 都返回稳定的 `Result :err`，不触发 trap。Map 的运行时 String key 按 UTF-8 内容 hash 和比较，因此 parser 新建的 key 可由等值字符串稳定查询。嵌套集合、Struct 与 Enum 留给后续同一 parser 的递归节点实现。
 
 这项能力复用现有 core API，不增加新的 CLI 或 Calcit 表层入口。WASI 文件工作流仍通过 `fs:path` 的 typed read/write API 组合。
+
+仓库回归还把这两项能力组合成一条真实的预开放文件流程：从 `/workspace/input.cirru` 读取
+`Map<String, Int32>`，在 Calcit 代码中更新数据，再把规范化的 Cirru EDN 写入
+`/workspace/output.cirru`。输入类型错误或数值 refinement 越界会沿 `Result` 分支以状态码 `1`
+退出，不产生输出文件，也不触发 WASM trap。当前闭环有意限定为顶层标量 Map；递归容器、Struct
+与 Enum 会继续扩展同一套 parser/formatter 和文件 API，而不会增加新的命令入口。
 
 ## 编译与验证方式
 

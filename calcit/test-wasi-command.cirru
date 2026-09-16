@@ -43,6 +43,32 @@
           :tests $ [] $ %{} 'TestEntry (:name |valid-readings)
             :code $ quote $ assert= true (clocks-valid?)
             :tags $ #{} :core :time :unit :wasi :wasm
+        'edn-file-roundtrip-main! $ %{} 'CodeEntry (:doc "|从预开放目录读取有类型 Cirru EDN，更新计数并写回规范化数据。")
+          :code $ quote $ defn edn-file-roundtrip-main! ()
+            let
+                input $ .read-text $ fs:path |workspace/input.cirru
+              match input
+                (:err _) (quit! 1)
+                (:ok content)
+                  let
+                      parsed $ edn-parse-string-int-map content
+                    match parsed
+                      (:err _) (quit! 1)
+                      (:ok data)
+                        let
+                            transformed $ edn-transform-count-map data
+                          match transformed
+                            (:err _) (quit! 1)
+                            (:ok updated)
+                              let
+                                  output $ .write-text (fs:path |workspace/output.cirru) (format-cirru-edn updated)
+                                match output
+                                  (:ok _) (println |WASI-typed-EDN-file:-ok)
+                                  (:err _) (quit! 1)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+          :tags $ #{} :edn :file :wasi
         'edn-format-escaped-over-limit-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-format-escaped-over-limit-main! ()
             let
@@ -392,6 +418,30 @@
               assert= true $ result:err? $ edn-parse-tag-string-map "|{} (:a |one) (:bad 2)"
               assert= true $ result:err? $ edn-parse-tag-string-map "|{} (:a"
             :tags $ #{} :core :unit
+        'edn-transform-count-map $ %{} 'CodeEntry (:doc "|递增有类型计数并显式保留 Int32 越界错误。")
+          :code $ quote $ defn edn-transform-count-map (data)
+            let
+                next-count $ &+ (&map:get data |count) 1
+              if (&number:fits? next-count :int32)
+                %ok $ &map:assoc data |processed $ assert-type next-count 'Int32
+                %err |Int32-overflow
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'String 'Int32
+            :return $ :: 'Result (:: 'Map 'String 'Int32) 'String
+          :tags $ #{} :edn :wasi
+          :tests $ []
+            %{} 'TestEntry (:name |increments-count)
+              :code $ quote $ assert=
+                %ok $ {}
+                  |count $ assert-type 2 'Int32
+                  |processed $ assert-type 3 'Int32
+                edn-transform-count-map $ {} $ |count (assert-type 2 'Int32)
+              :tags $ #{} :wasi
+            %{} 'TestEntry (:name |rejects-overflow)
+              :code $ quote $ assert= (%err |Int32-overflow)
+                edn-transform-count-map $ {} $ |count (assert-type 2147483647 'Int32)
+              :tags $ #{} :wasi
         'exit-7! $ %{} 'CodeEntry (:doc "|以状态码 7 终止进程，用于验证 command 退出边界。")
           :code $ quote $ defn exit-7! () (quit! 7)
           :examples $ []

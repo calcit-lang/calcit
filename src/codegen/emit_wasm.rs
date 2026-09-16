@@ -4495,6 +4495,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.emit(Instruction::F64Sub);
       Ok(())
     }
+    CalcitProc::NativeNumberFits => emit_number_fits(ctx, args),
     CalcitProc::Sin => emit_host_call(ctx, "sin", args),
     CalcitProc::Cos => emit_host_call(ctx, "cos", args),
     CalcitProc::Pow => emit_host_call(ctx, "pow", args),
@@ -4968,6 +4969,60 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     // Not yet supported
     _ => Err(format!("unsupported proc in WASM: {proc}")),
   }
+}
+
+fn emit_number_fits(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(2, args, "&number:fits?")?;
+  let Calcit::Tag(target) = &args[1] else {
+    return Err("&number:fits? expects a static numeric refinement tag in WASM".into());
+  };
+  let Some(refinement) = CalcitNumericRefinement::from_name(target.ref_str()) else {
+    return Err(format!("&number:fits? received unsupported refinement tag :{target}"));
+  };
+
+  let value = ctx.alloc_local();
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::LocalSet(value));
+
+  match refinement {
+    CalcitNumericRefinement::Float64 => ctx.emit(f64_const(1.0)),
+    CalcitNumericRefinement::Float32 => {
+      // Equality after an f32 roundtrip rejects NaN and values that lose precision.
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(Instruction::F32DemoteF64);
+      ctx.emit(Instruction::F64PromoteF32);
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(Instruction::F64Eq);
+      ctx.emit(Instruction::F64ConvertI32U);
+    }
+    refinement => {
+      let (min, max) = match refinement {
+        CalcitNumericRefinement::Int8 => (-128.0, 127.0),
+        CalcitNumericRefinement::UInt8 => (0.0, 255.0),
+        CalcitNumericRefinement::Int16 => (-32_768.0, 32_767.0),
+        CalcitNumericRefinement::UInt16 => (0.0, 65_535.0),
+        CalcitNumericRefinement::Int32 => (i32::MIN as f64, i32::MAX as f64),
+        CalcitNumericRefinement::UInt32 => (0.0, u32::MAX as f64),
+        CalcitNumericRefinement::Int64 => (-9_007_199_254_740_991.0, 9_007_199_254_740_991.0),
+        CalcitNumericRefinement::UInt64 => (0.0, 9_007_199_254_740_991.0),
+        CalcitNumericRefinement::Float32 | CalcitNumericRefinement::Float64 => unreachable!(),
+      };
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(f64_const(min));
+      ctx.emit(Instruction::F64Ge);
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(f64_const(max));
+      ctx.emit(Instruction::F64Le);
+      ctx.emit(Instruction::I32And);
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(Instruction::F64Trunc);
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(Instruction::F64Eq);
+      ctx.emit(Instruction::I32And);
+      ctx.emit(Instruction::F64ConvertI32U);
+    }
+  }
+  Ok(())
 }
 
 fn emit_unary(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) -> Result<(), String> {

@@ -29,6 +29,9 @@ readonly EDN_PARSE_MAP_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-parse-map"
 readonly EDN_PARSE_MAP_STDOUT="${EDN_PARSE_MAP_OUT}/stdout.txt"
 readonly EDN_PARSE_MAP_LIMIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-parse-map-limit"
 readonly EDN_PARSE_MAP_LIMIT_STDOUT="${EDN_PARSE_MAP_LIMIT_OUT}/stdout.txt"
+readonly EDN_FILE_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-file-roundtrip"
+readonly EDN_FILE_STDOUT="${EDN_FILE_OUT}/stdout.txt"
+readonly EDN_FILE_INVALID_STDOUT="${EDN_FILE_OUT}/invalid-stdout.txt"
 readonly EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-exit-smoke"
 readonly INVALID_EXIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-invalid-exit-smoke"
 readonly INVALID_EXIT_STDERR="${INVALID_EXIT_OUT}/stderr.txt"
@@ -307,6 +310,48 @@ grep -Fxq 'WASI-typed-EDN-maps:-ok' "$EDN_PARSE_MAP_STDOUT"
 "$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-map-over-limit-main! --emit-path "$EDN_PARSE_MAP_LIMIT_OUT"
 wasmtime run "$EDN_PARSE_MAP_LIMIT_OUT/program.wasm" >"$EDN_PARSE_MAP_LIMIT_STDOUT"
 grep -Fxq 'WASI-typed-EDN-map-limit:-ok' "$EDN_PARSE_MAP_LIMIT_STDOUT"
+
+# Compose the typed parser and formatter with the existing preopened-file API.
+# This is the first end-to-end data workflow rather than another isolated
+# parser/formatter fixture.
+printf '%s\n' '{} (|count 2)' >"$WASI_FS_HOST_DIR/input.cirru"
+"$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-transform-count-map --require-match
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-file-roundtrip-main! --emit-path "$EDN_FILE_OUT"
+wasmtime run \
+  --dir "$WASI_FS_HOST_DIR::/workspace" \
+  "$EDN_FILE_OUT/program.wasm" >"$EDN_FILE_STDOUT"
+grep -Fxq 'WASI-typed-EDN-file:-ok' "$EDN_FILE_STDOUT"
+grep -Fxq '{} (|count 2) (|processed 3)' "$WASI_FS_HOST_DIR/output.cirru"
+"$CALCIT_BIN" cirru parse-edn "$(tr -d '\n' <"$WASI_FS_HOST_DIR/output.cirru")" >/dev/null
+
+printf '%s\n' '{} (|count |bad)' >"$WASI_FS_HOST_DIR/input.cirru"
+rm -f "$WASI_FS_HOST_DIR/output.cirru"
+edn_file_invalid_status=0
+wasmtime run \
+  --dir "$WASI_FS_HOST_DIR::/workspace" \
+  "$EDN_FILE_OUT/program.wasm" >"$EDN_FILE_INVALID_STDOUT" 2>/dev/null || edn_file_invalid_status=$?
+if [[ "$edn_file_invalid_status" -ne 1 ]]; then
+  echo "WASI typed EDN file command returned $edn_file_invalid_status instead of 1 for invalid input" >&2
+  exit 1
+fi
+if [[ -e "$WASI_FS_HOST_DIR/output.cirru" ]]; then
+  echo "WASI typed EDN file command wrote output for invalid input" >&2
+  exit 1
+fi
+
+printf '%s\n' '{} (|count 2147483647)' >"$WASI_FS_HOST_DIR/input.cirru"
+edn_file_overflow_status=0
+wasmtime run \
+  --dir "$WASI_FS_HOST_DIR::/workspace" \
+  "$EDN_FILE_OUT/program.wasm" >/dev/null 2>&1 || edn_file_overflow_status=$?
+if [[ "$edn_file_overflow_status" -ne 1 ]]; then
+  echo "WASI typed EDN file command returned $edn_file_overflow_status instead of 1 for Int32 overflow" >&2
+  exit 1
+fi
+if [[ -e "$WASI_FS_HOST_DIR/output.cirru" ]]; then
+  echo "WASI typed EDN file command wrote output after Int32 overflow" >&2
+  exit 1
+fi
 
 # Keep one user-facing starter runnable as a real file-processing command, not
 # only as isolated capability fixtures.
