@@ -114,9 +114,9 @@ Component boundary 按推导并规范化后的 schema 宽度确定性导出 `Int
 参数继续使用现有 Canonical ABI 类型 walker，core 函数没有返回值，逻辑返回值通过 packaging 注入的强类型
 `task.return` 恰好完成一次。
 
-这是分阶段开放的能力。async import 当前接受最多 4 个 flat 参数，处理立即完成以及 subtask 的
-`starting` / `started` / `returned`、终态清理和 drop；更多参数以
-`E_COMPONENT_ABI_ASYNC_IMPORT_INDIRECT_PARAMETERS_UNSUPPORTED` 拒绝，等待 indirect parameter record lowering。
+这是分阶段开放的能力。async import 对最多 4 个 flat 参数使用 direct shape；更多参数会写入按 Canonical ABI
+布局的 parameter record，并传递单个 pointer。两种形状都处理立即完成以及 subtask 的
+`starting` / `started` / `returned`、终态清理和 drop。
 不要把 native `async-task-v1` 队列、句柄或 polling API 搬到 Component 接口，也不要把 async import 临时改成同步 ABI。
 升级相关项目时，先重新导出 IR v3 contract，再升级 calcit-bindgen：除连接
 `task-return/<export-symbol>` 外，还需连接 `calcit:component/canonical` 下的 waitable-set、waitable.join 与 subtask.drop

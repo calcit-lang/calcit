@@ -62,7 +62,7 @@ fn component_struct_layout(record: &ComponentStructType) -> (ComponentMemoryLayo
   component_fields_layout(record.fields.iter().map(|(_, field_type)| field_type))
 }
 
-fn component_fields_layout<'a>(fields: impl Iterator<Item = &'a ComponentAbiType>) -> (ComponentMemoryLayout, Vec<i32>) {
+pub(super) fn component_fields_layout<'a>(fields: impl Iterator<Item = &'a ComponentAbiType>) -> (ComponentMemoryLayout, Vec<i32>) {
   let mut size = 0;
   let mut alignment = 1;
   let mut offsets = Vec::new();

@@ -1,17 +1,25 @@
+
 {}
-  :about |Async Component import integration fixture.
+  :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |component-wasm-async-import
   :entries $ {} $ :default
-    {} (:description |Async Component import integration fixture.) (:init-fn 'component-wasm-async-import.main/main!) (:mode :native) (:reload-fn 'component-wasm-async-import.main/reload!)
+    {} (:description |) (:init-fn 'component-wasm-async-import.main/main!) (:mode :native) (:reload-fn 'component-wasm-async-import.main/reload!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
   :files $ {} $ 'component-wasm-async-import.main
     %{} 'FileEntry
       :defs $ {}
+        'call-host-combine $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export call-host-combine (left right count enabled?) (host-combine left right count enabled?)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:async true) (:return 'String)
+            :args $ [] 'String 'String 'Number 'Bool
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-indirect-parameter-contract)
+            :code $ quote $ assert= |left:right:3:true |left:right:3:true
+            :tags $ #{} :wasm
         'call-host-flag $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-export call-host-flag (flag)
-            host-flag flag
+          :code $ quote $ defwasm-export call-host-flag (flag) (host-flag flag)
           :examples $ []
           :schema $ :: 'Fn $ {} (:async true) (:return 'Bool)
             :args $ [] 'Bool
@@ -19,8 +27,7 @@
             :code $ quote $ assert= true true
             :tags $ #{} :wasm
         'call-host-load $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-export call-host-load (text)
-            host-load text
+          :code $ quote $ defwasm-export call-host-load (text) (host-load text)
           :examples $ []
           :schema $ :: 'Fn $ {} (:async true)
             :args $ [] 'String
@@ -28,6 +35,11 @@
           :tests $ [] $ %{} 'TestEntry (:name |keeps-async-result-contract)
             :code $ quote $ assert= (%ok |ready) (%ok |ready)
             :tags $ #{} :wasm
+        'host-combine $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-import host-combine (left right count enabled?) |host |combine
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:async true) (:return 'String)
+            :args $ [] 'String 'String 'Number 'Bool
         'host-flag $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-import host-flag (flag) |host |flag
           :examples $ []

@@ -49,7 +49,7 @@ use component::{
   ComponentListCodec, ComponentStructCodec, ComponentValueCodecs, ComponentVariantCodec, build_component_enum_lift_fn,
   build_component_enum_lower_fn, build_component_list_lift_fn, build_component_list_lower_fn, build_component_struct_lift_fn,
   build_component_struct_lower_fn, build_component_variant_lift_fn, build_component_variant_lower_fn, collect_component_compound_types,
-  component_memory_layout, push_load_value_flat, push_store_value_flat,
+  component_fields_layout, component_memory_layout, push_load_value_flat, push_store_value_flat,
 };
 use methods::{emit_call_args, emit_method_invoke};
 use runtime::{
@@ -1392,17 +1392,14 @@ fn validate_component_flat_parameters(parameters: &[ComponentAbiType], definitio
   Ok(())
 }
 
-fn validate_component_async_import_flat_parameters(parameters: &[ComponentAbiType], definition: &str) -> Result<(), String> {
-  let flat_count = parameters
-    .iter()
-    .map(|parameter| component_flat_types(parameter).len())
-    .sum::<usize>();
-  if flat_count > COMPONENT_ASYNC_MAX_FLAT_PARAMETERS {
-    return Err(format!(
-      "E_COMPONENT_ABI_ASYNC_IMPORT_INDIRECT_PARAMETERS_UNSUPPORTED: `{definition}` at `logical_schema.parameters` flattens to {flat_count} values, but the async direct adapter supports at most {COMPONENT_ASYNC_MAX_FLAT_PARAMETERS}; indirect parameter lowering is not implemented yet"
-    ));
-  }
-  Ok(())
+fn component_async_import_uses_indirect_parameters(adapter: &ComponentImportAdapter) -> bool {
+  adapter.invocation == ComponentAbiInvocation::Async
+    && adapter
+      .parameters
+      .iter()
+      .map(|parameter| component_flat_types(parameter).len())
+      .sum::<usize>()
+      > COMPONENT_ASYNC_MAX_FLAT_PARAMETERS
 }
 
 fn component_flat_types(value_type: &ComponentAbiType) -> Vec<ValType> {
@@ -1485,9 +1482,7 @@ fn collect_component_import_adapters(program_data: &program::CompiledProgram) ->
         .map_err(|reason| format!("E_COMPONENT_ABI_UNSUPPORTED_ARITY: `{definition}` at `logical_schema.parameters` {reason}"))?;
       let (parameters, result, invocation) =
         component_function_schema(compiled, &definition, source_arity as usize, program_data, false)?;
-      if invocation == ComponentAbiInvocation::Async {
-        validate_component_async_import_flat_parameters(&parameters, &definition)?;
-      } else {
+      if invocation == ComponentAbiInvocation::Sync {
         validate_component_flat_parameters(&parameters, &definition)?;
       }
       adapters.push(ComponentImportAdapter {
@@ -1585,8 +1580,12 @@ fn validate_component_import_symbols(adapters: &[ComponentImportAdapter]) -> Res
 
 fn component_import_signature(adapter: &ComponentImportAdapter) -> (Vec<ValType>, Vec<ValType>) {
   let mut parameters = Vec::new();
-  for parameter in &adapter.parameters {
-    parameters.extend(component_flat_types(parameter));
+  if component_async_import_uses_indirect_parameters(adapter) {
+    parameters.push(ValType::I32);
+  } else {
+    for parameter in &adapter.parameters {
+      parameters.extend(component_flat_types(parameter));
+    }
   }
   if adapter.invocation == ComponentAbiInvocation::Async {
     if !matches!(adapter.result, ComponentAbiType::Unit) {
@@ -1877,6 +1876,160 @@ fn build_cabi_realloc_fn() -> CompiledFn {
   }
 }
 
+fn allocate_component_flat_locals(parameter_count: usize, locals: &mut Vec<ValType>, flat_types: &[ValType]) -> u32 {
+  let start = parameter_count as u32 + locals.len() as u32;
+  locals.extend(flat_types.iter().copied());
+  start
+}
+
+fn lower_component_import_parameter_to_flat_locals(
+  parameter: &ComponentAbiType,
+  parameter_index: u32,
+  parameter_count: usize,
+  locals: &mut Vec<ValType>,
+  instructions: &mut Vec<Instruction<'static>>,
+  cabi_realloc_index: u32,
+  codecs: &ComponentValueCodecs<'_>,
+) -> u32 {
+  match parameter {
+    ComponentAbiType::Unit => unreachable!("Unit Component parameters are rejected before adapter construction"),
+    ComponentAbiType::Bool => {
+      let flat_start = allocate_component_flat_locals(parameter_count, locals, &[ValType::I32]);
+      instructions.extend(component_bool_f64_to_i32(parameter_index, flat_start));
+      instructions.push(Instruction::Drop);
+      flat_start
+    }
+    ComponentAbiType::Number => {
+      let flat_start = allocate_component_flat_locals(parameter_count, locals, &[ValType::F64]);
+      instructions.extend([Instruction::LocalGet(parameter_index), Instruction::LocalSet(flat_start)]);
+      flat_start
+    }
+    ComponentAbiType::Numeric(kind) => {
+      let flat_start = allocate_component_flat_locals(parameter_count, locals, &[component_numeric_flat_type(*kind)]);
+      instructions.extend(component_numeric_from_f64(*kind, parameter_index));
+      instructions.push(Instruction::LocalSet(flat_start));
+      flat_start
+    }
+    ComponentAbiType::Buffer | ComponentAbiType::String => {
+      let flat_start = allocate_component_flat_locals(parameter_count, locals, &[ValType::I32, ValType::I32]);
+      instructions.extend([
+        Instruction::LocalGet(parameter_index),
+        Instruction::I32TruncF64U,
+        Instruction::I32Const(8),
+        Instruction::I32Add,
+        Instruction::LocalSet(flat_start),
+        Instruction::LocalGet(parameter_index),
+        Instruction::I32TruncF64U,
+        Instruction::F64Load(mem_arg_f64(0)),
+        Instruction::I32TruncF64U,
+        Instruction::LocalSet(flat_start + 1),
+      ]);
+      flat_start
+    }
+    ComponentAbiType::List(_) => {
+      let pair_ptr = parameter_count as u32 + locals.len() as u32;
+      locals.push(ValType::I32);
+      let flat_start = allocate_component_flat_locals(parameter_count, locals, &[ValType::I32, ValType::I32]);
+      let codec = codecs
+        .list_codecs
+        .get(parameter)
+        .expect("Component List import parameter codec must be registered");
+      instructions.extend([
+        Instruction::I32Const(0),
+        Instruction::I32Const(0),
+        Instruction::I32Const(4),
+        Instruction::I32Const(8),
+        Instruction::Call(cabi_realloc_index),
+        Instruction::LocalSet(pair_ptr),
+        Instruction::LocalGet(parameter_index),
+        Instruction::LocalGet(pair_ptr),
+        Instruction::Call(codec.lower_index),
+        Instruction::LocalGet(pair_ptr),
+        Instruction::I32Load(mem_arg_i32(0)),
+        Instruction::LocalSet(flat_start),
+        Instruction::LocalGet(pair_ptr),
+        Instruction::I32Load(mem_arg_i32(4)),
+        Instruction::LocalSet(flat_start + 1),
+      ]);
+      flat_start
+    }
+    ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) | ComponentAbiType::Struct(_) => {
+      let canonical_ptr = parameter_count as u32 + locals.len() as u32;
+      locals.push(ValType::I32);
+      let flat_types = component_flat_types(parameter);
+      let flat_start = allocate_component_flat_locals(parameter_count, locals, &flat_types);
+      let layout = component_memory_layout(parameter);
+      let lower_index = match parameter {
+        ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) => {
+          codecs
+            .variant_codecs
+            .get(parameter)
+            .expect("Component variant import parameter codec must be registered")
+            .lower_index
+        }
+        ComponentAbiType::Struct(_) => {
+          codecs
+            .struct_codecs
+            .get(parameter)
+            .expect("Component Struct import parameter codec must be registered")
+            .lower_index
+        }
+        _ => unreachable!("compound parameter branch must use a registered codec"),
+      };
+      instructions.extend([
+        Instruction::I32Const(0),
+        Instruction::I32Const(0),
+        Instruction::I32Const(layout.alignment),
+        Instruction::I32Const(layout.size),
+        Instruction::Call(cabi_realloc_index),
+        Instruction::LocalSet(canonical_ptr),
+        Instruction::LocalGet(parameter_index),
+        Instruction::LocalGet(canonical_ptr),
+        Instruction::Call(lower_index),
+      ]);
+      push_load_value_flat(instructions, parameter, canonical_ptr);
+      for offset in (0..flat_types.len()).rev() {
+        instructions.push(Instruction::LocalSet(flat_start + offset as u32));
+      }
+      flat_start
+    }
+  }
+}
+
+fn push_component_async_indirect_parameters(
+  adapter: &ComponentImportAdapter,
+  parameter_count: usize,
+  locals: &mut Vec<ValType>,
+  instructions: &mut Vec<Instruction<'static>>,
+  cabi_realloc_index: u32,
+  codecs: &ComponentValueCodecs<'_>,
+) {
+  let (layout, offsets) = component_fields_layout(adapter.parameters.iter());
+  let record_ptr = parameter_count as u32 + locals.len() as u32;
+  locals.push(ValType::I32);
+  instructions.extend([
+    Instruction::I32Const(0),
+    Instruction::I32Const(0),
+    Instruction::I32Const(layout.alignment),
+    Instruction::I32Const(layout.size),
+    Instruction::Call(cabi_realloc_index),
+    Instruction::LocalSet(record_ptr),
+  ]);
+  for (index, (parameter, offset)) in adapter.parameters.iter().zip(offsets).enumerate() {
+    let flat_start = lower_component_import_parameter_to_flat_locals(
+      parameter,
+      index as u32,
+      parameter_count,
+      locals,
+      instructions,
+      cabi_realloc_index,
+      codecs,
+    );
+    push_store_value_flat(instructions, parameter, flat_start, record_ptr, offset);
+  }
+  instructions.push(Instruction::LocalGet(record_ptr));
+}
+
 fn build_component_import_adapter(
   adapter: &ComponentImportAdapter,
   async_imports: Option<&ComponentAsyncCanonicalImports>,
@@ -1887,90 +2040,94 @@ fn build_component_import_adapter(
   let mut locals = Vec::new();
   let mut instructions = Vec::new();
 
-  for (index, parameter) in adapter.parameters.iter().enumerate() {
-    match parameter {
-      ComponentAbiType::Unit => unreachable!("Unit Component parameters are rejected before adapter construction"),
-      ComponentAbiType::Bool => {
-        let canonical = params.len() as u32 + locals.len() as u32;
-        locals.push(ValType::I32);
-        instructions.extend(component_bool_f64_to_i32(index as u32, canonical));
-      }
-      ComponentAbiType::Number => instructions.push(Instruction::LocalGet(index as u32)),
-      ComponentAbiType::Numeric(kind) => instructions.extend(component_numeric_from_f64(*kind, index as u32)),
-      ComponentAbiType::Buffer | ComponentAbiType::String => instructions.extend([
-        Instruction::LocalGet(index as u32),
-        Instruction::I32TruncF64U,
-        Instruction::I32Const(8),
-        Instruction::I32Add,
-        Instruction::LocalGet(index as u32),
-        Instruction::I32TruncF64U,
-        Instruction::F64Load(mem_arg_f64(0)),
-        Instruction::I32TruncF64U,
-      ]),
-      ComponentAbiType::List(_) => {
-        let pair_ptr = params.len() as u32 + locals.len() as u32;
-        locals.push(ValType::I32);
-        let codec = codecs
-          .list_codecs
-          .get(parameter)
-          .expect("Component List import parameter codec must be registered");
-        instructions.extend([
-          Instruction::I32Const(0),
-          Instruction::I32Const(0),
-          Instruction::I32Const(4),
+  if component_async_import_uses_indirect_parameters(adapter) {
+    push_component_async_indirect_parameters(adapter, params.len(), &mut locals, &mut instructions, cabi_realloc_index, codecs);
+  } else {
+    for (index, parameter) in adapter.parameters.iter().enumerate() {
+      match parameter {
+        ComponentAbiType::Unit => unreachable!("Unit Component parameters are rejected before adapter construction"),
+        ComponentAbiType::Bool => {
+          let canonical = params.len() as u32 + locals.len() as u32;
+          locals.push(ValType::I32);
+          instructions.extend(component_bool_f64_to_i32(index as u32, canonical));
+        }
+        ComponentAbiType::Number => instructions.push(Instruction::LocalGet(index as u32)),
+        ComponentAbiType::Numeric(kind) => instructions.extend(component_numeric_from_f64(*kind, index as u32)),
+        ComponentAbiType::Buffer | ComponentAbiType::String => instructions.extend([
+          Instruction::LocalGet(index as u32),
+          Instruction::I32TruncF64U,
           Instruction::I32Const(8),
-          Instruction::Call(cabi_realloc_index),
-          Instruction::LocalSet(pair_ptr),
+          Instruction::I32Add,
           Instruction::LocalGet(index as u32),
-          Instruction::LocalGet(pair_ptr),
-          Instruction::Call(codec.lower_index),
-          Instruction::LocalGet(pair_ptr),
-          Instruction::I32Load(mem_arg_i32(0)),
-          Instruction::LocalGet(pair_ptr),
-          Instruction::I32Load(mem_arg_i32(4)),
-        ]);
-      }
-      ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) => {
-        let canonical_ptr = params.len() as u32 + locals.len() as u32;
-        locals.push(ValType::I32);
-        let layout = component_memory_layout(parameter);
-        let codec = codecs
-          .variant_codecs
-          .get(parameter)
-          .expect("Component variant import parameter codec must be registered");
-        instructions.extend([
-          Instruction::I32Const(0),
-          Instruction::I32Const(0),
-          Instruction::I32Const(layout.alignment),
-          Instruction::I32Const(layout.size),
-          Instruction::Call(cabi_realloc_index),
-          Instruction::LocalSet(canonical_ptr),
-          Instruction::LocalGet(index as u32),
-          Instruction::LocalGet(canonical_ptr),
-          Instruction::Call(codec.lower_index),
-        ]);
-        push_load_value_flat(&mut instructions, parameter, canonical_ptr);
-      }
-      ComponentAbiType::Struct(_) => {
-        let canonical_ptr = params.len() as u32 + locals.len() as u32;
-        locals.push(ValType::I32);
-        let layout = component_memory_layout(parameter);
-        let codec = codecs
-          .struct_codecs
-          .get(parameter)
-          .expect("Component Struct import parameter codec must be registered");
-        instructions.extend([
-          Instruction::I32Const(0),
-          Instruction::I32Const(0),
-          Instruction::I32Const(layout.alignment),
-          Instruction::I32Const(layout.size),
-          Instruction::Call(cabi_realloc_index),
-          Instruction::LocalSet(canonical_ptr),
-          Instruction::LocalGet(index as u32),
-          Instruction::LocalGet(canonical_ptr),
-          Instruction::Call(codec.lower_index),
-        ]);
-        push_load_value_flat(&mut instructions, parameter, canonical_ptr);
+          Instruction::I32TruncF64U,
+          Instruction::F64Load(mem_arg_f64(0)),
+          Instruction::I32TruncF64U,
+        ]),
+        ComponentAbiType::List(_) => {
+          let pair_ptr = params.len() as u32 + locals.len() as u32;
+          locals.push(ValType::I32);
+          let codec = codecs
+            .list_codecs
+            .get(parameter)
+            .expect("Component List import parameter codec must be registered");
+          instructions.extend([
+            Instruction::I32Const(0),
+            Instruction::I32Const(0),
+            Instruction::I32Const(4),
+            Instruction::I32Const(8),
+            Instruction::Call(cabi_realloc_index),
+            Instruction::LocalSet(pair_ptr),
+            Instruction::LocalGet(index as u32),
+            Instruction::LocalGet(pair_ptr),
+            Instruction::Call(codec.lower_index),
+            Instruction::LocalGet(pair_ptr),
+            Instruction::I32Load(mem_arg_i32(0)),
+            Instruction::LocalGet(pair_ptr),
+            Instruction::I32Load(mem_arg_i32(4)),
+          ]);
+        }
+        ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) => {
+          let canonical_ptr = params.len() as u32 + locals.len() as u32;
+          locals.push(ValType::I32);
+          let layout = component_memory_layout(parameter);
+          let codec = codecs
+            .variant_codecs
+            .get(parameter)
+            .expect("Component variant import parameter codec must be registered");
+          instructions.extend([
+            Instruction::I32Const(0),
+            Instruction::I32Const(0),
+            Instruction::I32Const(layout.alignment),
+            Instruction::I32Const(layout.size),
+            Instruction::Call(cabi_realloc_index),
+            Instruction::LocalSet(canonical_ptr),
+            Instruction::LocalGet(index as u32),
+            Instruction::LocalGet(canonical_ptr),
+            Instruction::Call(codec.lower_index),
+          ]);
+          push_load_value_flat(&mut instructions, parameter, canonical_ptr);
+        }
+        ComponentAbiType::Struct(_) => {
+          let canonical_ptr = params.len() as u32 + locals.len() as u32;
+          locals.push(ValType::I32);
+          let layout = component_memory_layout(parameter);
+          let codec = codecs
+            .struct_codecs
+            .get(parameter)
+            .expect("Component Struct import parameter codec must be registered");
+          instructions.extend([
+            Instruction::I32Const(0),
+            Instruction::I32Const(0),
+            Instruction::I32Const(layout.alignment),
+            Instruction::I32Const(layout.size),
+            Instruction::Call(cabi_realloc_index),
+            Instruction::LocalSet(canonical_ptr),
+            Instruction::LocalGet(index as u32),
+            Instruction::LocalGet(canonical_ptr),
+            Instruction::Call(codec.lower_index),
+          ]);
+          push_load_value_flat(&mut instructions, parameter, canonical_ptr);
+        }
       }
     }
   }
@@ -6257,8 +6414,8 @@ mod tests {
     ComponentExportAdapter, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport, WasmBoundary, WasmTarget,
     build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, component_abi_type, component_flat_types,
     component_import_signature, component_memory_layout, component_task_return_signature, host_imports_for_target, index_host_imports,
-    must_reject_extraction_failure, validate_component_async_import_flat_parameters, validate_component_export_symbols,
-    validate_component_flat_parameters, validate_component_import_symbols,
+    must_reject_extraction_failure, validate_component_export_symbols, validate_component_flat_parameters,
+    validate_component_import_symbols,
   };
   use crate::calcit::{
     Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitStructDef, CalcitStructValue, CalcitSyntax, CalcitTypeAnnotation,
@@ -6549,15 +6706,20 @@ mod tests {
   }
 
   #[test]
-  fn component_async_import_rejects_indirect_parameters_until_lowering_exists() {
-    let error = validate_component_async_import_flat_parameters(
-      &[ComponentAbiType::String, ComponentAbiType::String, ComponentAbiType::Number],
-      "app.main/host-load",
-    )
-    .expect_err("five async flat parameters must stay fail closed");
+  fn component_async_import_uses_a_record_pointer_for_wide_parameters() {
+    let adapter = ComponentImportAdapter {
+      definition: "app.main/host-load".into(),
+      module: "host".into(),
+      symbol: "load".into(),
+      raw_index: 1,
+      source_arity: 3,
+      invocation: ComponentAbiInvocation::Async,
+      parameters: vec![ComponentAbiType::String, ComponentAbiType::String, ComponentAbiType::Number],
+      result: ComponentAbiType::Number,
+    };
     assert_eq!(
-      error,
-      "E_COMPONENT_ABI_ASYNC_IMPORT_INDIRECT_PARAMETERS_UNSUPPORTED: `app.main/host-load` at `logical_schema.parameters` flattens to 5 values, but the async direct adapter supports at most 4; indirect parameter lowering is not implemented yet"
+      component_import_signature(&adapter),
+      (vec![ValType::I32, ValType::I32], vec![ValType::I32])
     );
   }
 

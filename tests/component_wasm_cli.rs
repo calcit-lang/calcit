@@ -160,8 +160,10 @@ const module = new WebAssembly.Module(bytes);
 const imports = WebAssembly.Module.imports(module).map(({ module, name }) => `${module}/${name}`).sort();
 const expectedImports = [
   "host/flag",
+  "host/combine",
   "host/load",
   "calcit:component/canonical/subtask.drop",
+  "calcit:component/canonical/task-return/call-host-combine",
   "calcit:component/canonical/task-return/call-host-flag",
   "calcit:component/canonical/task-return/call-host-load",
   "calcit:component/canonical/waitable-set.drop",
@@ -177,6 +179,7 @@ let instance;
 let nextWaitableSet = 40;
 let completions = [];
 let boolCompletions = [];
+let combineCompletions = [];
 let lifecycle = { new: 0, join: 0, wait: 0, subtaskDrop: 0, setDrop: 0 };
 const pending = new Map();
 const joined = new Map();
@@ -197,6 +200,17 @@ const writeResult = (outPtr, discriminant, text) => {
 };
 
 const host = {
+  combine: (argsPtr, outPtr) => {
+    const memory = new DataView(instance.exports.memory.buffer);
+    const left = readText(memory.getUint32(argsPtr, true), memory.getUint32(argsPtr + 4, true));
+    const right = readText(memory.getUint32(argsPtr + 8, true), memory.getUint32(argsPtr + 12, true));
+    const count = memory.getFloat64(argsPtr + 16, true);
+    const enabled = memory.getUint8(argsPtr + 24) === 1;
+    const [ptr, len] = allocateText(`${left}:${right}:${count}:${enabled}`);
+    memory.setUint32(outPtr, ptr, true);
+    memory.setUint32(outPtr + 4, len, true);
+    return 2;
+  },
   flag: (flag, outPtr) => {
     const memory = new DataView(instance.exports.memory.buffer);
     memory.setUint8(outPtr, flag === 0 ? 1 : 0);
@@ -227,6 +241,9 @@ const host = {
   },
 };
 const canonical = {
+  "task-return/call-host-combine": (ptr, len) => {
+    combineCompletions.push(readText(ptr, len));
+  },
   "task-return/call-host-flag": flag => {
     boolCompletions.push(flag);
   },
@@ -284,6 +301,12 @@ WebAssembly.instantiate(module, { host, "calcit:component/canonical": canonical 
   instance.exports["call-host-flag"](0);
   if (JSON.stringify(boolCompletions) !== JSON.stringify([0, 1])) {
     throw new Error(`async Bool result read beyond one byte: ${JSON.stringify(boolCompletions)}`);
+  }
+  const [leftPtr, leftLen] = allocateText("left");
+  const [rightPtr, rightLen] = allocateText("right");
+  instance.exports["call-host-combine"](leftPtr, leftLen, rightPtr, rightLen, 3, 1);
+  if (JSON.stringify(combineCompletions) !== JSON.stringify(["left:right:3:true"])) {
+    throw new Error(`indirect async parameters did not round-trip: ${JSON.stringify(combineCompletions)}`);
   }
   let cancelledTrapped = false;
   try { invoke("cancelled"); } catch (error) { cancelledTrapped = error instanceof WebAssembly.RuntimeError; }
