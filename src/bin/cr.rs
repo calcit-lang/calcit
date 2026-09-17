@@ -531,32 +531,42 @@ fn run_cli() -> Result<(), String> {
         return cli_handlers::handle_call_graph_diff_command(diff_cmd, &cli_args.input);
       }
       AnalyzeSubcommand::CheckTypes(options) => {
-        let (snapshot, input_cache) = if options.incremental {
-          let (snapshot, stats) = analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input)?;
+        let (mut snapshot, input_cache) = if options.incremental {
+          let (snapshot, stats) = analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
           (snapshot, Some(stats))
         } else {
-          (cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?, None)
+          (
+            cli_handlers::load_snapshot_for_static_analysis(&cli_args.input, cli_args.entry.as_deref())?,
+            None,
+          )
         };
+        apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
         return run_check_types(options, &snapshot, &cli_args.input, input_cache);
       }
       AnalyzeSubcommand::CheckPublic(_) => {}
       AnalyzeSubcommand::WeakTypes(options) => {
         if !options.schema_evidence {
-          let (snapshot, input_cache) = if options.incremental {
-            let (snapshot, stats) = analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input)?;
+          let (mut snapshot, input_cache) = if options.incremental {
+            let (snapshot, stats) = analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
             (snapshot, Some(stats))
           } else {
-            (cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?, None)
+            (
+              cli_handlers::load_snapshot_for_static_analysis(&cli_args.input, cli_args.entry.as_deref())?,
+              None,
+            )
           };
+          apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
           return run_weak_types(options, &snapshot, &cli_args.input, input_cache);
         }
       }
       AnalyzeSubcommand::Deprecated(options) => {
-        let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
+        let mut snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input, cli_args.entry.as_deref())?;
+        apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
         return run_deprecated(options, &snapshot);
       }
       AnalyzeSubcommand::Quality(options) => {
-        let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
+        let mut snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input, cli_args.entry.as_deref())?;
+        apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
         return run_quality(options, &snapshot);
       }
       AnalyzeSubcommand::Verify(options) => {

@@ -25,6 +25,8 @@ const INPUT_CACHE_FILE: &str = "analysis-input-cache-v2.cirru";
 pub(crate) struct InputCacheStats {
   pub status: String,
   pub reason: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub entry: Option<String>,
   pub sources: usize,
   pub main_reused: bool,
   pub module_hits: usize,
@@ -37,6 +39,7 @@ impl InputCacheStats {
     Self {
       status: "warm".to_owned(),
       reason: None,
+      entry: None,
       sources,
       main_reused: true,
       module_hits,
@@ -49,6 +52,7 @@ impl InputCacheStats {
     Self {
       status: "cold".to_owned(),
       reason: Some(reason.into()),
+      entry: None,
       sources,
       main_reused: false,
       module_hits: 0,
@@ -68,6 +72,7 @@ impl InputCacheStats {
     Self {
       status: "partial".to_owned(),
       reason: Some(reason.into()),
+      entry: None,
       sources,
       main_reused,
       module_hits,
@@ -80,6 +85,7 @@ impl InputCacheStats {
     Self {
       status: "bypassed".to_owned(),
       reason: Some(reason.into()),
+      entry: None,
       sources: 0,
       main_reused: false,
       module_hits: 0,
@@ -161,8 +167,12 @@ impl CacheStats {
         .map(|input| {
           let reason = input.reason.as_deref().unwrap_or("none");
           format!(
-            "{}(reason={reason},main-reused={},module-hits={},module-misses={})",
-            input.status, input.main_reused, input.module_hits, input.module_misses
+            "{}(reason={reason},entry={},main-reused={},module-hits={},module-misses={})",
+            input.status,
+            input.entry.as_deref().unwrap_or("not-recorded"),
+            input.main_reused,
+            input.module_hits,
+            input.module_misses
           )
         })
         .unwrap_or_else(|| "not-recorded".to_owned()),
@@ -392,7 +402,10 @@ fn restore_cached_ffi(snapshot: &mut snapshot::Snapshot, cached: &BTreeMap<Strin
   Ok(())
 }
 
-pub(crate) fn load_snapshot_for_incremental_analysis(snapshot_file: &str) -> Result<(snapshot::Snapshot, InputCacheStats), String> {
+pub(crate) fn load_snapshot_for_incremental_analysis(
+  snapshot_file: &str,
+  selected_entry: Option<&str>,
+) -> Result<(snapshot::Snapshot, InputCacheStats), String> {
   let expected_input = canonical_path(Path::new(snapshot_file))?;
   let path = input_cache_path(snapshot_file);
   let (cached, global_reason) = match fs::read_to_string(&path) {
@@ -436,6 +449,8 @@ pub(crate) fn load_snapshot_for_incremental_analysis(snapshot_file: &str) -> Res
     }
   };
 
+  snapshot.select_entry(selected_entry)?;
+  let active_entry = snapshot.active_entry_name().to_owned();
   let project_namespaces = snapshot.files.keys().cloned().collect::<HashSet<_>>();
   let mut modules_to_load = snapshot.active_entry()?.modules.clone();
   let mut seen_modules = HashSet::new();
@@ -514,13 +529,14 @@ pub(crate) fn load_snapshot_for_incremental_analysis(snapshot_file: &str) -> Res
   }
 
   let reason = first_reason.unwrap_or_else(|| "not-cached".to_owned());
-  let stats = if main_reused && module_misses == 0 {
+  let mut stats = if main_reused && module_misses == 0 {
     InputCacheStats::warm(source_count, module_hits)
   } else if main_reused || module_hits > 0 {
     InputCacheStats::partial(reason, source_count, main_reused, module_hits, module_misses, module_miss_reasons)
   } else {
     InputCacheStats::cold(reason, source_count, module_misses, module_miss_reasons)
   };
+  stats.entry = Some(active_entry);
   Ok((snapshot, stats))
 }
 

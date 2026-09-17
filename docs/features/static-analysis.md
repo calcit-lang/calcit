@@ -128,12 +128,13 @@ module 保存为独立单元，以完整传递源文件的内容 digest、module
 单个模块变化时只重载失效单元，其他模块跳过 Cirru 文件的重复解析与 Snapshot 转换；
 `.calcit/analysis-cache-v1.cirru` 再保存按 definition revision 索引的只读结果。两份缓存默认都是 Cirru EDN；JSON 只用于显式
 互操作输出。结构化报告的 `data.cache.input` 单独给出输入
-缓存的 `status`、`reason`、`sources`、`main_reused`、`module_hits`、`module_misses` 与 module 失效原因，同层 `hits`、`misses`
+缓存的 `status`、`reason`、`entry`、`sources`、`main_reused`、`module_hits`、`module_misses` 与 module 失效原因，同层 `hits`、`misses`
 与 `miss_reasons` 描述 definition 结果；
 `data.cache.dependency_index` 另行报告编译器解析的 direct dependency index 命中、边数、未解析项，以及本次 changed/affected 数量；
 普通文本报告也会输出同一摘要。definition 缓存键包含 Calcit 版本、活动 entry、type slots、feature policy、target 与 definition 的完整持久化
 内容。新增或修改 definition 只重算对应条目；失效输入单元会按既有顺序重新合并，但不强制丢弃其他 module 或未变化 definition 的
-结果。entry policy、编译器版本或 definition cache schema 变化会让 definition-local inventory 明确冷启动。input cache 头损坏或
+结果。顶层 `--entry` 会在校验与加载 module 前完成选择，严格模式补入的默认 feature policy 也参与 context revision；切换 entry
+不会错误复用另一 entry 的 module 或 definition 结果。entry policy、编译器版本或 definition cache schema 变化会让 definition-local inventory 明确冷启动。input cache 头损坏或
 版本不一致时会从源码重载主 Snapshot 和 modules；单个输入单元失效时只重载该单元，有效 definition 结果仍可命中。任何缓存写入
 失败都不会改变本次分析结果，只会报告到 stderr 并跳过对应缓存更新。
 

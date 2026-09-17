@@ -3303,8 +3303,8 @@ fn load_snapshot_for_search(input_path: &str, options: &SearchCommonOpts) -> Res
   Ok(SearchCatalog { snapshot, sources })
 }
 
-pub(crate) fn load_snapshot_for_static_analysis(input_path: &str) -> Result<snapshot::Snapshot, String> {
-  load_snapshot(input_path)
+pub(crate) fn load_snapshot_for_static_analysis(input_path: &str, entry: Option<&str>) -> Result<snapshot::Snapshot, String> {
+  load_snapshot_with_entry(input_path, entry)
 }
 
 fn load_snapshot_with_entry(input_path: &str, entry: Option<&str>) -> Result<snapshot::Snapshot, String> {
