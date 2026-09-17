@@ -14,6 +14,8 @@ use calcit::snapshot;
 use cirru_parser::Cirru;
 use md5::{Digest, Md5};
 
+use crate::cli_handlers::fix::schema_synthesis::{SchemaEvidenceCandidate, collect_schema_evidence_candidates};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DefKind {
   Data,
@@ -219,6 +221,38 @@ pub struct WeakTypeRow {
   pub ns: String,
   pub def: String,
   pub occurrences: Vec<WeakTypeOccurrence>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct MapShapeFieldCandidate {
+  name: String,
+  observed_types: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct MapShapeCandidate {
+  diagnostic_code: &'static str,
+  suggested_name: String,
+  confidence: &'static str,
+  fields: Vec<MapShapeFieldCandidate>,
+  evidence_paths: Vec<String>,
+  contract_status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct DispatchCandidate {
+  diagnostic_code: &'static str,
+  suggested_name: String,
+  confidence: &'static str,
+  variants: Vec<String>,
+  evidence_paths: Vec<String>,
+  contract_status: &'static str,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct StructuralCandidates {
+  pub map_shapes: Vec<MapShapeCandidate>,
+  pub dispatch: Vec<DispatchCandidate>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -1361,6 +1395,218 @@ pub fn collect_weak_type_rows(options: &WeakTypesCommand, snapshot: &snapshot::S
   Ok(rows)
 }
 
+pub(crate) fn collect_schema_candidates(
+  options: &WeakTypesCommand,
+  snapshot: &snapshot::Snapshot,
+) -> Result<Vec<SchemaEvidenceCandidate>, String> {
+  if !options.schema_evidence {
+    return Ok(Vec::new());
+  }
+  let rows = collect_weak_type_rows(options, snapshot)?;
+  let package_prefix = format!("{}.", snapshot.package);
+  let mut targets = rows
+    .iter()
+    .filter(|row| options.deps || row.ns == snapshot.package || row.ns.starts_with(&package_prefix))
+    .filter(|row| {
+      row
+        .occurrences
+        .iter()
+        .any(|occurrence| occurrence.kind == WeakTypeKind::SchemaDynamic)
+    })
+    .map(|row| (row.ns.clone(), row.def.clone()))
+    .collect::<Vec<_>>();
+  targets.sort();
+  targets.dedup();
+
+  let mut project_definitions = snapshot
+    .files
+    .iter()
+    .filter(|(namespace, _)| options.deps || namespace.as_str() == snapshot.package || namespace.starts_with(&package_prefix))
+    .filter(|(namespace, _)| !namespace.ends_with(".$meta"))
+    .flat_map(|(namespace, file)| file.defs.keys().map(|definition| (namespace.clone(), definition.clone())))
+    .collect::<Vec<_>>();
+  project_definitions.sort();
+  collect_schema_evidence_candidates(snapshot, &project_definitions, &targets)
+}
+
+fn syntactic_value_type(node: &Cirru) -> String {
+  match node {
+    Cirru::Leaf(value) if value.as_ref() == "true" || value.as_ref() == "false" => "Bool".to_owned(),
+    Cirru::Leaf(value) if value.starts_with('|') => "String".to_owned(),
+    Cirru::Leaf(value) if value.starts_with(':') => "Tag".to_owned(),
+    Cirru::Leaf(value) if value.parse::<f64>().is_ok() => "Number".to_owned(),
+    Cirru::List(items) => match items.first() {
+      Some(Cirru::Leaf(head)) if head.as_ref() == "[]" => "List".to_owned(),
+      Some(Cirru::Leaf(head)) if head.as_ref() == "{}" || head.as_ref() == "&{}" => "Map".to_owned(),
+      Some(Cirru::Leaf(head)) if head.as_ref() == "#{}" => "Set".to_owned(),
+      Some(Cirru::Leaf(head)) if head.as_ref() == "::" => "TupleOrEnum".to_owned(),
+      Some(Cirru::Leaf(head)) if head.as_ref() == "fn" => "Fn".to_owned(),
+      _ => "Unknown".to_owned(),
+    },
+    Cirru::Leaf(_) => "Unknown".to_owned(),
+  }
+}
+
+#[derive(Default)]
+struct MapShapeAggregate {
+  fields: BTreeMap<String, BTreeSet<String>>,
+  paths: Vec<String>,
+}
+
+fn scan_structural_candidates(
+  node: &Cirru,
+  definition: &str,
+  path: &mut Vec<usize>,
+  map_shapes: &mut BTreeMap<Vec<String>, MapShapeAggregate>,
+  dispatch: &mut Vec<DispatchCandidate>,
+) {
+  let Cirru::List(items) = node else {
+    return;
+  };
+  let head = items.first().and_then(|item| match item {
+    Cirru::Leaf(value) => Some(value.as_ref()),
+    Cirru::List(_) => None,
+  });
+  if matches!(head, Some("quote" | "quasiquote")) {
+    return;
+  }
+  if head == Some("{}") {
+    let mut fields = BTreeMap::<String, String>::new();
+    let mut valid = true;
+    for pair in items.iter().skip(1) {
+      let Cirru::List(pair_items) = pair else {
+        valid = false;
+        break;
+      };
+      let (Some(Cirru::Leaf(key)), Some(value)) = (pair_items.first(), pair_items.get(1)) else {
+        valid = false;
+        break;
+      };
+      if pair_items.len() != 2 || !key.starts_with(':') {
+        valid = false;
+        break;
+      }
+      fields.insert(key.to_string(), syntactic_value_type(value));
+    }
+    if valid && fields.len() >= 2 {
+      let key = fields.keys().cloned().collect::<Vec<_>>();
+      let aggregate = map_shapes.entry(key).or_default();
+      for (field, observed) in fields {
+        aggregate.fields.entry(field).or_default().insert(observed);
+      }
+      aggregate.paths.push(format!("{definition}:{}", format_cirru_path("code", path)));
+    }
+  }
+  if head == Some("match") && items.len() >= 4 {
+    let mut variants = Vec::new();
+    for branch in items.iter().skip(2) {
+      let Cirru::List(branch_items) = branch else {
+        continue;
+      };
+      let pattern = match branch_items.first() {
+        Some(Cirru::List(pattern)) => pattern,
+        Some(Cirru::Leaf(tag)) if tag.starts_with(':') => branch_items,
+        _ => continue,
+      };
+      if let Some(Cirru::Leaf(tag)) = pattern.first()
+        && tag.starts_with(':')
+      {
+        variants.push(tag.to_string());
+      }
+    }
+    variants.sort();
+    variants.dedup();
+    if variants.len() >= 2 {
+      dispatch.push(DispatchCandidate {
+        diagnostic_code: "I_DISPATCH_CANDIDATE_EVIDENCE",
+        suggested_name: format!("{}-dispatch", definition.rsplit('/').next().unwrap_or(definition)),
+        confidence: "usage-derived",
+        variants,
+        evidence_paths: vec![format!("{definition}:{}", format_cirru_path("code", path))],
+        contract_status: "review-required",
+      });
+    }
+  }
+  for (index, child) in items.iter().enumerate() {
+    path.push(index);
+    scan_structural_candidates(child, definition, path, map_shapes, dispatch);
+    path.pop();
+  }
+}
+
+pub(crate) fn collect_structural_candidates(
+  options: &WeakTypesCommand,
+  snapshot: &snapshot::Snapshot,
+) -> Result<StructuralCandidates, String> {
+  if !options.schema_evidence {
+    return Ok(StructuralCandidates::default());
+  }
+  let mut shapes = BTreeMap::<Vec<String>, MapShapeAggregate>::new();
+  let mut dispatch = Vec::new();
+  visit_scoped_definitions(
+    snapshot,
+    AnalysisScope {
+      namespace: options.ns.as_deref(),
+      namespace_prefix: options.ns_prefix.as_deref(),
+      include_dependencies: options.deps,
+    },
+    |namespace, definition, entry| {
+      let id = format!("{namespace}/{definition}");
+      if let Cirru::List(items) = &entry.code
+        && matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "quote")
+        && let Some(body) = items.get(1)
+      {
+        scan_structural_candidates(body, &id, &mut vec![1], &mut shapes, &mut dispatch);
+      } else {
+        scan_structural_candidates(&entry.code, &id, &mut Vec::new(), &mut shapes, &mut dispatch);
+      }
+    },
+  )?;
+  let mut map_shapes = shapes
+    .into_iter()
+    .filter(|(_, aggregate)| aggregate.paths.len() >= 2)
+    .map(|(field_names, mut aggregate)| {
+      aggregate.paths.sort();
+      aggregate.paths.dedup();
+      let fields = field_names
+        .into_iter()
+        .map(|name| MapShapeFieldCandidate {
+          observed_types: aggregate.fields.remove(&name).unwrap_or_default().into_iter().collect(),
+          name,
+        })
+        .collect::<Vec<_>>();
+      let has_conflict = fields.iter().any(|field| field.observed_types.len() > 1);
+      let has_unknown = fields
+        .iter()
+        .any(|field| field.observed_types.iter().any(|observed| observed == "Unknown"));
+      MapShapeCandidate {
+        diagnostic_code: "I_MAP_SHAPE_CANDIDATE_EVIDENCE",
+        suggested_name: format!(
+          "record-{}",
+          fields
+            .iter()
+            .map(|field| field.name.trim_start_matches(':'))
+            .collect::<Vec<_>>()
+            .join("-")
+        ),
+        confidence: if has_conflict {
+          "conflict"
+        } else if has_unknown {
+          "boundary-unknown"
+        } else {
+          "usage-derived"
+        },
+        fields,
+        evidence_paths: aggregate.paths,
+        contract_status: "review-required",
+      }
+    })
+    .collect::<Vec<_>>();
+  map_shapes.sort_by(|left, right| left.suggested_name.cmp(&right.suggested_name));
+  dispatch.sort_by(|left, right| left.evidence_paths.cmp(&right.evidence_paths));
+  Ok(StructuralCandidates { map_shapes, dispatch })
+}
+
 pub fn collect_ffi_boundary_evidence(
   options: &WeakTypesCommand,
   snapshot: &snapshot::Snapshot,
@@ -1572,8 +1818,15 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
   } else {
     Vec::new()
   };
+  let schema_candidates = collect_schema_candidates(options, snapshot)?;
+  let structural_candidates = collect_structural_candidates(options, snapshot)?;
 
-  if rows.is_empty() && ffi_boundaries.is_empty() {
+  if rows.is_empty()
+    && ffi_boundaries.is_empty()
+    && schema_candidates.is_empty()
+    && structural_candidates.map_shapes.is_empty()
+    && structural_candidates.dispatch.is_empty()
+  {
     let _ = writeln!(out, "No weak type usage found in selected namespace scope.");
     return Ok(());
   }
@@ -1646,6 +1899,11 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
         .join(" ")
     );
   }
+  if options.schema_evidence {
+    let _ = writeln!(out, "- schema candidates: {}", schema_candidates.len());
+    let _ = writeln!(out, "- repeated map-shape candidates: {}", structural_candidates.map_shapes.len());
+    let _ = writeln!(out, "- dispatch candidates: {}", structural_candidates.dispatch.len());
+  }
   let unresolved_dynamic = rows
     .iter()
     .flat_map(|row| row.occurrences.iter())
@@ -1717,6 +1975,49 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
   }
   if options.summary_only {
     return Ok(());
+  }
+  if options.schema_evidence && !schema_candidates.is_empty() {
+    let _ = writeln!(out, "\n## Schema candidate evidence");
+    let _ = writeln!(
+      out,
+      "\nCompiler and usage evidence only: every candidate remains review-required until explicitly selected."
+    );
+    for candidate in &schema_candidates {
+      let _ = writeln!(out, "\n### `{}`", candidate.definition);
+      let _ = writeln!(out, "\n- diagnostic code: `{}`", candidate.diagnostic_code);
+      let _ = writeln!(out, "- confidence: `{}`", candidate.confidence);
+      let _ = writeln!(out, "- unresolved slots: `{}`", candidate.unresolved_slots.join(", "));
+      let _ = writeln!(out, "- affected usages: `{}`", candidate.affected_usages.join(", "));
+      let _ = writeln!(out, "- contract status: `{}`", candidate.contract_status);
+    }
+  }
+  if options.schema_evidence && (!structural_candidates.map_shapes.is_empty() || !structural_candidates.dispatch.is_empty()) {
+    let _ = writeln!(out, "\n## Structural candidate evidence");
+    for candidate in &structural_candidates.map_shapes {
+      let _ = writeln!(
+        out,
+        "\n- map shape `{}` confidence=`{}` fields=`{}` evidence=`{}`",
+        candidate.suggested_name,
+        candidate.confidence,
+        candidate
+          .fields
+          .iter()
+          .map(|field| field.name.as_str())
+          .collect::<Vec<_>>()
+          .join(","),
+        candidate.evidence_paths.join(", ")
+      );
+    }
+    for candidate in &structural_candidates.dispatch {
+      let _ = writeln!(
+        out,
+        "\n- dispatch `{}` confidence=`{}` variants=`{}` evidence=`{}`",
+        candidate.suggested_name,
+        candidate.confidence,
+        candidate.variants.join(","),
+        candidate.evidence_paths.join(", ")
+      );
+    }
   }
   if options.ffi_evidence && !ffi_boundaries.is_empty() {
     let _ = writeln!(out, "\n## FFI boundary evidence");
@@ -3020,6 +3321,8 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
   } else {
     Vec::new()
   };
+  let schema_candidates = collect_schema_candidates(options, snapshot)?;
+  let structural_candidates = collect_structural_candidates(options, snapshot)?;
   let mut kinds = BTreeMap::<&str, usize>::new();
   let mut intents = BTreeMap::<&str, usize>::new();
   let mut namespaces = BTreeSet::<&str>::new();
@@ -3154,9 +3457,18 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
     }));
   }
   let ffi_boundary_count = ffi_boundaries.len();
+  let schema_candidate_count = schema_candidates.len();
+  let map_shape_candidate_count = structural_candidates.map_shapes.len();
+  let dispatch_candidate_count = structural_candidates.dispatch.len();
   let ffi_boundary_rows = if options.summary_only { Vec::new() } else { ffi_boundaries };
+  let schema_candidate_rows = if options.summary_only { Vec::new() } else { schema_candidates };
+  let structural_candidate_rows = if options.summary_only {
+    StructuralCandidates::default()
+  } else {
+    structural_candidates
+  };
   let envelope = serde_json::json!({
-    "schema_version": 7,
+    "schema_version": 8,
     "command": "analyze.weak-types",
     "revision": analysis_revision(snapshot, &ids)?,
     "data": {
@@ -3167,6 +3479,7 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
         "intent": options.intent,
         "include_dependencies": options.deps,
         "ffi_evidence": options.ffi_evidence,
+        "schema_evidence": options.schema_evidence,
         "summary_only": options.summary_only,
       },
       "summary": {
@@ -3174,12 +3487,18 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
         "definitions": rows.len(),
         "hits": hit_count,
         "ffi_boundaries": ffi_boundary_count,
+        "schema_candidates": schema_candidate_count,
+        "map_shape_candidates": map_shape_candidate_count,
+        "dispatch_candidates": dispatch_candidate_count,
         "kinds": kinds,
         "intents": intents,
       },
       "definitions": definitions,
       "evidence": {
         "ffi_boundaries": ffi_boundary_rows,
+        "schema_candidates": schema_candidate_rows,
+        "map_shapes": structural_candidate_rows.map_shapes,
+        "dispatch": structural_candidate_rows.dispatch,
         "contract_status": "review-required",
         "runtime_trust_inferred": false,
       },

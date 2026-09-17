@@ -92,6 +92,9 @@ calcit analyze weak-types --ns app.main --only unsafe-coerce
 # Inspect review-only JS FFI boundary evidence and migration candidates
 calcit analyze weak-types --ns app.main --ffi-evidence --format edn
 
+# Review compiler-guided schema, repeated Map-shape, and dispatch candidates
+calcit analyze weak-types --ns app.main --schema-evidence --format edn
+
 # Machine-readable definition rows and Snapshot paths
 calcit analyze check-types --ns app.main --format json
 # Include installed modules when inventorying legacy macro contracts
@@ -173,7 +176,7 @@ For one definition, `calcit query context '<ns/def>' --format json` embeds the s
 
 For one expression, `calcit query type-at '<ns/def>' --path code@... --format json` preprocesses only static program metadata and returns inferred type, expected type, typed bindings, confidence, method candidates, preprocess lowering evidence, and diagnostics. Its v2 `data.lowering` object distinguishes type-selected primitives from ordinary static call resolution and remaining dynamic dispatch. It does not run the application entry. Paths use the same stable Snapshot coordinates returned by structural query commands.
 
-`check-types`, `weak-types`, `deprecated`, and `quality` run as static Snapshot readers: they load configured modules and core metadata but do not preprocess or execute the application entry. `dynamic-methods` preprocesses the selected entry's reachable definitions without executing them, because receiver inference and method specialization are preprocessing results. With `--format json`, stdout is one versioned JSON envelope containing a stable scope revision, filters, summary, and finding or definition rows; startup/command messages stay on stderr.
+`check-types`、默认 `weak-types`、`deprecated` 和 `quality` 只读取静态 Snapshot：它们加载配置模块与 core metadata，但不预处理或执行 application entry。显式 `weak-types --schema-evidence` 会以兼容诊断模式预处理项目 definition，以复用编译器推断；它仍不执行 entry 或 host effect。`dynamic-methods` 同样会预处理所选 entry 的 reachable definitions，因为 receiver inference 与 method specialization 属于预处理结果。使用 `--format json` 时，stdout 只包含一个带版本的 JSON envelope，其中包括稳定 scope revision、filters、summary 与 finding/definition rows；启动及命令说明留在 stderr。
 
 `analyze dynamic-methods` reports only `P_DYNAMIC_METHOD_DISPATCH` and `P_DYNAMIC_POSTFIX_METHOD`; ordinary type warnings and JS FFI diagnostics do not contaminate its count. Project namespaces are the default scope, while `--deps` includes reachable modules. `--summary-only` omits individual findings. `--max <count>` turns the report into a focused CI policy and emits `E_DYNAMIC_METHOD_POLICY` with a non-zero status when the count grows beyond the reviewed budget. A receiver made concrete by normal inference, a trait constraint, or an explicit reviewed `unsafe-coerce` boundary is not unresolved dispatch.
 
@@ -244,9 +247,13 @@ warning remains a completion-gate failure until the body is implemented.
 `raise "|TODO..."` does not emit `W_TODO`, because ordinary exception behavior
 and implementation-completion status are separate concerns.
 
-`analyze.weak-types` 的 `schema_version: 7` 保留单次共享扫描得到的 kind、intent、definition、path、detail、evidence 与 suggestion，并增加显式 opt-in 的 `--ffi-evidence`。该开关在同一 envelope 的 `data.evidence.ffi_boundaries` 中报告 browser、Node、npm import、WebGPU 与 unknown host 分类、结构路径、nullable/unsafe 证据、静态 caller、精确 schema helper 候选，以及 review-only trait/adapter manifest；每个 boundary 都携带稳定的信息代码 `I_FFI_BOUNDARY_EVIDENCE`。它不执行代码、不写 Snapshot，也不声称第三方契约可信。Cirru EDN 是首选结构化格式，JSON 继续用于互操作。
+`analyze.weak-types` 的 `schema_version: 8` 保留单次共享扫描得到的 kind、intent、definition、path、detail、evidence 与 suggestion，并提供两个显式 opt-in 的证据视图。`--ffi-evidence` 在同一 envelope 的 `data.evidence.ffi_boundaries` 中报告 browser、Node、npm import、WebGPU 与 unknown host 分类、结构路径、nullable/unsafe 证据、静态 caller、精确 schema helper 候选，以及 review-only trait/adapter manifest；每个 boundary 都携带稳定的信息代码 `I_FFI_BOUNDARY_EVIDENCE`。它不执行代码、不写 Snapshot，也不声称第三方契约可信。Cirru EDN 是首选结构化格式，JSON 继续用于互操作。
 
-FFI evidence 不增加 warning 数量或质量预算。未传 `--ffi-evidence` 时不会执行额外边界扫描；`--summary-only` 只保留 `data.summary.ffi_boundaries` 的 boundary 总数，不保留 classification 聚合或候选详情。候选 helper 仅在 schema 精确相同时给出，并优先排列依赖模块；trait/adapter manifest 始终标记 `review-required`，不得自动插入 `unsafe-coerce`、选择 nullable 业务语义或扩展 Interface IR 生命周期字段。
+`--schema-evidence` 复用 `synthesize-schema-v1` 已有的编译器推断和 resolver call-site 证据，在 `data.evidence.schema_candidates` 中给出源码 schema 候选、unresolved slot、受影响调用点以及 `exact`、`usage-derived`、`boundary-unknown`、`conflict` 置信度。重复出现且字段稳定的匿名 Map shape 会进入 `map_shapes`，`match` 中可直接读出的 tag 集合进入 `dispatch`；二者只给出建议名称、字段/variant 和源码路径，不生成声明或改写业务模型。三个信息代码分别为 `I_SCHEMA_CANDIDATE_EVIDENCE`、`I_MAP_SHAPE_CANDIDATE_EVIDENCE` 和 `I_DISPATCH_CANDIDATE_EVIDENCE`。
+
+该开关会以兼容诊断模式预处理项目 definition 来取得现有编译器证据，但不会执行程序。无法预处理的潜在 call-site owner 会记录为 `unavailable-callsite-owners` 并把候选降为 `boundary-unknown`，不会让整个只读 inventory 失败或把残缺证据标成 exact。所有输出均为 `review-required`；只有用户随后显式选择既有 `fix --rule synthesize-schema-v1` 时，完全消除洞的单 definition schema 才可能按原有 revision guard 写回。Map/dispatch 候选不会自动写入，工具也不会替用户决定 Option/Result、默认值、FFI trust 或业务命名。
+
+这些 evidence 不增加 warning 数量或质量预算。未传对应开关时不会执行额外扫描；`--summary-only` 只保留 `data.summary` 中的候选总数，不保留候选详情。候选 helper 仅在 schema 精确相同时给出，并优先排列依赖模块；trait/adapter manifest 始终标记 `review-required`，不得自动插入 `unsafe-coerce`、选择 nullable 业务语义或扩展 Interface IR 生命周期字段。
 
 普通执行、编译和严格检查只依据类型推导产生确定的 warning/error。需要迁移存量代码时，显式运行 `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json`，按 definition/path 返回源码处理；不要把命中数量解释成类型正确性，也不要围绕数量增加阈值或分类规则。
 

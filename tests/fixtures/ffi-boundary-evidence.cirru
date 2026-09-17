@@ -57,6 +57,12 @@
           :require $ |nanoid :default nanoid
     'ffi.helpers $ %{} 'FileEntry
       :defs $ {}
+        'dependency-number $ %{} 'CodeEntry (:doc "|Dependency schema-evidence target.")
+          :code $ quote $ defn dependency-number ()
+            + 1 2
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'typed-query $ %{} 'CodeEntry (:doc "|Exact-schema helper candidate.")
           :code $ quote $ defn typed-query (host)
             unsafe-coerce host 'String

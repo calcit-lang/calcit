@@ -1276,6 +1276,288 @@ fn schema_synthesis_applies_exact_compiler_evidence_and_is_target_stable() {
 }
 
 #[test]
+fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+
+  for (args, context) in [
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/evidence-number",
+        "--code",
+        "quote $ defn evidence-number () + 1 2",
+      ],
+      "create exact evidence target",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/evidence-number",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)",
+      ],
+      "structure exact evidence schema",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/evidence-add-one",
+        "--code",
+        "quote $ defn evidence-add-one (x) + x 1",
+      ],
+      "create usage-derived evidence target",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/evidence-add-one",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+      ],
+      "structure usage-derived evidence schema",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/use-evidence-add-one",
+        "--code",
+        "quote $ defn use-evidence-add-one () (evidence-add-one 2)",
+      ],
+      "create schema evidence callsite",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/use-evidence-add-one",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+      ],
+      "type schema evidence callsite",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/conflicting-evidence",
+        "--code",
+        "quote $ defn conflicting-evidence (x) 1",
+      ],
+      "create conflicting evidence target",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/conflicting-evidence",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+      ],
+      "structure conflicting evidence schema",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/use-conflicting-number",
+        "--code",
+        "quote $ defn use-conflicting-number () (conflicting-evidence 1)",
+      ],
+      "create numeric conflicting callsite",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/use-conflicting-number",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+      ],
+      "type numeric conflicting callsite",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/use-conflicting-string",
+        "--code",
+        "quote $ defn use-conflicting-string () (conflicting-evidence |x)",
+      ],
+      "create string conflicting callsite",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/use-conflicting-string",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+      ],
+      "type string conflicting callsite",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/person-a",
+        "--code",
+        "quote $ defn person-a () ({} (:name |Ada) (:age 1))",
+      ],
+      "create first repeated map shape",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/person-a",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Map 'Tag 'Dynamic)",
+      ],
+      "type first repeated map shape",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/person-b",
+        "--code",
+        "quote $ defn person-b () ({} (:name |Bob) (:age 2))",
+      ],
+      "create second repeated map shape",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/person-b",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Map 'Tag 'Dynamic)",
+      ],
+      "type second repeated map shape",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "fix-command.main/summarize-evidence",
+        "--code",
+        "quote $ defn summarize-evidence (x)\n  match x\n    (:ok value) value\n    (:err message) message",
+      ],
+      "create dispatch evidence",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "fix-command.main/summarize-evidence",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+      ],
+      "structure dispatch evidence schema",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+
+  let output = run_calcit(&snapshot, &["analyze", "weak-types", "--schema-evidence", "--format", "json"]);
+  assert_success(&output, "schema evidence report");
+  let report = parse_stdout(&output);
+  assert_eq!(report["schema_version"], 8);
+  assert_eq!(report["data"]["filters"]["schema_evidence"], true);
+  let schemas = report["data"]["evidence"]["schema_candidates"]
+    .as_array()
+    .expect("schema candidates should be an array");
+  assert!(
+    schemas
+      .iter()
+      .any(|candidate| { candidate["definition"] == "fix-command.main/evidence-number" && candidate["confidence"] == "exact" })
+  );
+  assert!(schemas.iter().any(|candidate| {
+    candidate["definition"] == "fix-command.main/conflicting-evidence"
+      && candidate["confidence"] == "conflict"
+      && candidate["evidence"]
+        .as_array()
+        .is_some_and(|evidence| evidence.iter().any(|item| item["kind"] == "conflicting-callsite-arguments"))
+  }));
+  assert!(schemas.iter().any(|candidate| {
+    candidate["definition"] == "fix-command.main/evidence-add-one"
+      && candidate["confidence"] == "usage-derived"
+      && candidate["affected_usages"].as_array().is_some_and(|usages| {
+        usages
+          .iter()
+          .any(|usage| usage.as_str().is_some_and(|path| path.contains("use-evidence-add-one")))
+      })
+  }));
+  assert!(
+    report["data"]["evidence"]["map_shapes"].as_array().is_some_and(|candidates| {
+      candidates.iter().any(|candidate| {
+        candidate["fields"]
+          .as_array()
+          .is_some_and(|fields| fields.iter().any(|field| field["name"] == ":name"))
+          && candidate["evidence_paths"].as_array().is_some_and(|paths| paths.len() >= 2)
+      })
+    }),
+    "map shape evidence: {}",
+    report["data"]["evidence"]["map_shapes"]
+  );
+  assert!(
+    report["data"]["evidence"]["dispatch"].as_array().is_some_and(|candidates| {
+      candidates
+        .iter()
+        .any(|candidate| candidate["variants"] == serde_json::json!([":err", ":ok"]))
+    }),
+    "dispatch evidence: {}",
+    report["data"]["evidence"]["dispatch"]
+  );
+
+  let summary = run_calcit(
+    &snapshot,
+    &["analyze", "weak-types", "--schema-evidence", "--summary-only", "--format", "json"],
+  );
+  assert_success(&summary, "schema evidence summary");
+  let summary = parse_stdout(&summary);
+  assert!(
+    summary["data"]["summary"]["schema_candidates"]
+      .as_u64()
+      .is_some_and(|count| count > 0)
+  );
+  assert_eq!(summary["data"]["evidence"]["schema_candidates"], serde_json::json!([]));
+  assert_eq!(summary["data"]["evidence"]["map_shapes"], serde_json::json!([]));
+  assert_eq!(summary["data"]["evidence"]["dispatch"], serde_json::json!([]));
+
+  let edn = run_calcit(
+    &snapshot,
+    &["analyze", "weak-types", "--schema-evidence", "--summary-only", "--format", "edn"],
+  );
+  assert_success(&edn, "schema evidence Cirru EDN summary");
+  assert!(matches!(
+    cirru_edn::parse(String::from_utf8_lossy(&edn.stdout).as_ref()),
+    Ok(cirru_edn::Edn::Map(_))
+  ));
+
+  let workflow = run_fix(&snapshot, &["--workflow", "strict", "--format", "json"]);
+  assert_success(&workflow, "strict workflow schema evidence");
+  let workflow = parse_stdout(&workflow);
+  assert!(
+    workflow["data"]["workflow"]["review_required"]["schema_candidates"]
+      .as_array()
+      .is_some_and(|candidates| !candidates.is_empty())
+  );
+  assert!(
+    workflow["data"]["workflow"]["review_required"]["structural_candidates"]["map_shapes"]
+      .as_array()
+      .is_some_and(|candidates| !candidates.is_empty())
+  );
+}
+
+#[test]
 fn schema_synthesis_does_not_treat_sample_namespaces_as_argument_proof() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

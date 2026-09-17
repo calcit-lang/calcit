@@ -15,7 +15,7 @@ mod docs;
 mod docs_cache;
 pub(crate) mod edit;
 mod ffi;
-mod fix;
+pub(crate) mod fix;
 mod libs;
 mod markdown_read;
 mod program_diff;

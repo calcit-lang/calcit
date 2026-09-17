@@ -42,7 +42,7 @@ fn ffi_evidence_classifies_operations_and_emits_review_only_candidates() {
   let output = run(&["--ffi-evidence", "--format", "json"]);
   assert_success(&output);
   let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("stdout should contain one JSON report");
-  assert_eq!(report["schema_version"], 7);
+  assert_eq!(report["schema_version"], 8);
   assert_eq!(report["data"]["filters"]["ffi_evidence"], true);
   assert_eq!(report["data"]["evidence"]["contract_status"], "review-required");
   assert_eq!(report["data"]["evidence"]["runtime_trust_inferred"], false);
@@ -123,4 +123,31 @@ fn strict_workflow_reuses_ffi_boundary_evidence() {
   assert_eq!(boundary["classification"], "browser");
   assert_eq!(boundary["provenance"][3], "no-runtime-trust-inference");
   assert!(boundary["unsafe_paths"].as_array().is_some_and(|items| !items.is_empty()));
+}
+
+#[test]
+fn schema_evidence_honors_dependency_scope_for_targets_and_owners() {
+  let project_only = run(&["--schema-evidence", "--format", "json"]);
+  assert_success(&project_only);
+  let project_report: serde_json::Value =
+    serde_json::from_slice(&project_only.stdout).expect("project-only schema evidence should parse");
+  assert!(
+    project_report["data"]["evidence"]["schema_candidates"]
+      .as_array()
+      .is_some_and(|candidates| candidates
+        .iter()
+        .all(|candidate| candidate["definition"] != "ffi.helpers/dependency-number"))
+  );
+
+  let with_dependencies = run(&["--schema-evidence", "--deps", "--format", "json"]);
+  assert_success(&with_dependencies);
+  let dependency_report: serde_json::Value =
+    serde_json::from_slice(&with_dependencies.stdout).expect("dependency schema evidence should parse");
+  assert!(
+    dependency_report["data"]["evidence"]["schema_candidates"]
+      .as_array()
+      .is_some_and(|candidates| candidates
+        .iter()
+        .any(|candidate| { candidate["definition"] == "ffi.helpers/dependency-number" && candidate["confidence"] == "exact" }))
+  );
 }

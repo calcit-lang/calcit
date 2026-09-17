@@ -608,6 +608,9 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       if opts.ffi_evidence {
         desc.push_str(", including review-only FFI boundary evidence");
       }
+      if opts.schema_evidence {
+        desc.push_str(", including review-only schema and structural candidates");
+      }
       if opts.summary_only {
         desc.push_str(", returning aggregate counts only");
       }
@@ -931,6 +934,7 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       value "format" => &opts.format; default "human",
       switch "deps" => opts.deps,
       switch "ffi-evidence" => opts.ffi_evidence,
+      switch "schema-evidence" => opts.schema_evidence,
       switch "summary-only" => opts.summary_only
     ),
     AnalyzeSubcommand::DynamicMethods(opts) => echo_items!(
