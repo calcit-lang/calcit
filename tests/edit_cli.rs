@@ -155,6 +155,90 @@ fn explicit_syntax_input_formats_preserve_ambiguous_node_shapes() {
 }
 
 #[test]
+fn bulk_imports_use_explicit_syntax_transport_and_keep_legacy_auto_compatibility() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+
+  let explicit = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "imports",
+      "app.main",
+      "--input-format",
+      "json-ast",
+      "--code",
+      r#"["[]",["calcit.core",":refer",["inc"]]]"#,
+    ],
+  );
+  assert_success(&explicit, "explicit JSON AST imports");
+  let stdout = String::from_utf8_lossy(&explicit.stdout);
+  assert!(stdout.contains("- input format: `json-ast`"), "stdout:\n{stdout}");
+  assert!(stdout.contains("Updated imports for namespace 'app.main'"), "stdout:\n{stdout}");
+
+  let legacy = run_calcit(
+    &snapshot,
+    &["edit", "imports", "app.main", "--code", r#"[["calcit.core",":refer",["dec"]]]"#],
+  );
+  assert_success(&legacy, "legacy auto imports");
+
+  let invalid_explicit = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "imports",
+      "app.main",
+      "--input-format",
+      "json-ast",
+      "--code",
+      r#"[["calcit.core",":refer",["inc"]]]"#,
+    ],
+  );
+  assert!(!invalid_explicit.status.success(), "legacy shape should fail in explicit mode");
+  let stderr = String::from_utf8_lossy(&invalid_explicit.stderr);
+  assert!(
+    stderr.contains("expected an imports vector node headed by `[]`"),
+    "stderr:\n{stderr}"
+  );
+}
+
+#[test]
+fn structural_code_and_ffi_metadata_report_distinct_expected_inputs() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+
+  let ffi_with_code = run_calcit(&snapshot, &["edit", "ffi", "app.main/main!", "--code", "quote $ []"]);
+  assert!(
+    !ffi_with_code.status.success(),
+    "quoted code should not be accepted as FFI metadata"
+  );
+  let ffi_error = String::from_utf8_lossy(&ffi_with_code.stderr);
+  assert!(ffi_error.contains("FFI metadata must be an EDN map"), "stderr:\n{ffi_error}");
+
+  let syntax_with_metadata = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "add-example",
+      "app.main/main!",
+      "--input-format",
+      "cirru",
+      "--code",
+      "{} (:backend :js)",
+    ],
+  );
+  assert!(
+    !syntax_with_metadata.status.success(),
+    "FFI metadata should not be accepted as syntax"
+  );
+  let syntax_error = String::from_utf8_lossy(&syntax_with_metadata.stderr);
+  assert!(
+    syntax_error.contains("expected node kind `quoted syntax`"),
+    "stderr:\n{syntax_error}"
+  );
+}
+
+#[test]
 fn edit_defmacro_keeps_required_optional_and_rest_macros_loadable() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);

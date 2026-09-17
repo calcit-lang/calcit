@@ -1022,7 +1022,9 @@ fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
       echo_items!(tokens, pos "namespace" => &opts.namespace, code_input opts, value "input-format" => &opts.input_format; default "auto")
     }
     EditSubcommand::RmNs(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace),
-    EditSubcommand::Imports(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace, code_input opts),
+    EditSubcommand::Imports(opts) => {
+      echo_items!(tokens, pos "namespace" => &opts.namespace, code_input opts, value "input-format" => &opts.input_format; default "auto")
+    }
     EditSubcommand::AddImport(opts) => {
       echo_items!(tokens, pos "namespace" => &opts.namespace, code_input opts, value "input-format" => &opts.input_format; default "auto", switch "overwrite" => opts.overwrite)
     }
