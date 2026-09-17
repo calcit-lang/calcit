@@ -19,6 +19,8 @@
 ## 边界
 
 - schema evidence 只在显式开启时以兼容诊断模式预处理项目 definition，不执行 entry 或 host effect。
+- 无法预处理的 call-site owner 会显式进入 evidence 并把置信度降为 `boundary-unknown`，不阻断 inventory，
+  也不允许残缺证据冒充 exact。
 - `--deps` 可以为证据提供依赖信息，但 schema 写回候选只针对当前项目 definition。
 - 自动写回能力没有扩大：仍需显式选择 `synthesize-schema-v1`，且只有无剩余洞的候选可应用。
 - 工具不决定 Option/Result、业务默认值、FFI trust、Struct/Enum 命名或领域边界。

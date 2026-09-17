@@ -251,7 +251,7 @@ and implementation-completion status are separate concerns.
 
 `--schema-evidence` 复用 `synthesize-schema-v1` 已有的编译器推断和 resolver call-site 证据，在 `data.evidence.schema_candidates` 中给出源码 schema 候选、unresolved slot、受影响调用点以及 `exact`、`usage-derived`、`boundary-unknown`、`conflict` 置信度。重复出现且字段稳定的匿名 Map shape 会进入 `map_shapes`，`match` 中可直接读出的 tag 集合进入 `dispatch`；二者只给出建议名称、字段/variant 和源码路径，不生成声明或改写业务模型。三个信息代码分别为 `I_SCHEMA_CANDIDATE_EVIDENCE`、`I_MAP_SHAPE_CANDIDATE_EVIDENCE` 和 `I_DISPATCH_CANDIDATE_EVIDENCE`。
 
-该开关会以兼容诊断模式预处理项目 definition 来取得现有编译器证据，但不会执行程序。所有输出均为 `review-required`；只有用户随后显式选择既有 `fix --rule synthesize-schema-v1` 时，完全消除洞的单 definition schema 才可能按原有 revision guard 写回。Map/dispatch 候选不会自动写入，工具也不会替用户决定 Option/Result、默认值、FFI trust 或业务命名。
+该开关会以兼容诊断模式预处理项目 definition 来取得现有编译器证据，但不会执行程序。无法预处理的潜在 call-site owner 会记录为 `unavailable-callsite-owners` 并把候选降为 `boundary-unknown`，不会让整个只读 inventory 失败或把残缺证据标成 exact。所有输出均为 `review-required`；只有用户随后显式选择既有 `fix --rule synthesize-schema-v1` 时，完全消除洞的单 definition schema 才可能按原有 revision guard 写回。Map/dispatch 候选不会自动写入，工具也不会替用户决定 Option/Result、默认值、FFI trust 或业务命名。
 
 这些 evidence 不增加 warning 数量或质量预算。未传对应开关时不会执行额外扫描；`--summary-only` 只保留 `data.summary` 中的候选总数，不保留候选详情。候选 helper 仅在 schema 精确相同时给出，并优先排列依赖模块；trait/adapter manifest 始终标记 `review-required`，不得自动插入 `unsafe-coerce`、选择 nullable 业务语义或扩展 Interface IR 生命周期字段。
 

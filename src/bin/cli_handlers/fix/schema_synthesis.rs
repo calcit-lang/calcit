@@ -282,6 +282,7 @@ fn merge_callsite_argument_evidence(
   let mut paths: Vec<Vec<String>> = vec![vec![]; signature.arg_types.len()];
   let mut blocked = vec![false; signature.arg_types.len()];
   let mut observed: Vec<HashSet<String>> = vec![HashSet::new(); signature.arg_types.len()];
+  let mut unavailable_owners = Vec::new();
   for (owner_ns, owner_def) in project_definitions {
     if is_sample_namespace(owner_ns) {
       continue;
@@ -295,6 +296,7 @@ fn merge_callsite_argument_evidence(
     if let Err(failure) = runner::preprocess::compile_source_def_for_snapshot(owner_ns, owner_def, &warnings, &CallStackList::default())
     {
       if tolerate_unavailable_owners {
+        unavailable_owners.push(format!("{owner_ns}/{owner_def}"));
         continue;
       }
       return Err(failure.msg);
@@ -304,7 +306,10 @@ fn merge_callsite_argument_evidence(
     };
     let usages = match runner::preprocess::trace_definition_source_usages(owner_ns, owner_def, &warnings, &CallStackList::default()) {
       Ok(usages) => usages,
-      Err(_) if tolerate_unavailable_owners => continue,
+      Err(_) if tolerate_unavailable_owners => {
+        unavailable_owners.push(format!("{owner_ns}/{owner_def}"));
+        continue;
+      }
       Err(failure) => return Err(failure.msg),
     };
     for usage in usages {
@@ -407,6 +412,14 @@ fn merge_callsite_argument_evidence(
       "calls": paths[index],
     }));
   }
+  unavailable_owners.sort();
+  unavailable_owners.dedup();
+  if !unavailable_owners.is_empty() {
+    evidence.push(serde_json::json!({
+      "kind": "unavailable-callsite-owners",
+      "definitions": unavailable_owners,
+    }));
+  }
   Ok((
     std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(updated))),
     evidence,
@@ -485,9 +498,10 @@ fn schema_candidate_for_definition(
     .iter()
     .any(|item| item["kind"] == "conflicting-callsite-arguments");
   let usage_derived = callsite_evidence.iter().any(|item| item["kind"] == "resolved-callsite-arguments");
+  let has_unavailable = callsite_evidence.iter().any(|item| item["kind"] == "unavailable-callsite-owners");
   let confidence = if has_conflict {
     "conflict"
-  } else if !unresolved_slots.is_empty() {
+  } else if !unresolved_slots.is_empty() || has_unavailable {
     "boundary-unknown"
   } else if usage_derived {
     "usage-derived"
