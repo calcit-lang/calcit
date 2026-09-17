@@ -153,6 +153,7 @@ struct StrictWorkflowManifest {
   safe_fixes: StrictWorkflowSafeFixes,
   review_required: StrictWorkflowReviewRequired,
   retained_type_boundaries: Vec<StrictWorkflowTypeFinding>,
+  preflight: crate::verification::PreflightReport,
   verification: StrictWorkflowVerification,
   resume: StrictWorkflowResume,
 }
@@ -565,12 +566,16 @@ pub(crate) fn handle_fix_command(
   let workflow = if options.workflow.as_deref() == Some("strict") {
     let commands = strict_workflow_commands(snapshot_file, &source_snapshot);
     let type_evidence = strict_workflow_type_findings(&source_snapshot)?;
+    let mut active_entries = source_snapshot.entries.keys().cloned().collect::<Vec<_>>();
+    active_entries.sort();
+    let preflight = crate::verification::collect_preflight(&source_snapshot, snapshot_file, &revision, &active_entries)?;
     let results = if options.verify {
       run_strict_workflow_verification(&commands)?
     } else {
       Vec::new()
     };
-    workflow_failed = options.verify && (!operations.is_empty() || results.iter().any(|result| result.status != "passed"));
+    workflow_failed =
+      options.verify && (!operations.is_empty() || preflight.is_failed() || results.iter().any(|result| result.status != "passed"));
     let resume_revision = if options.apply {
       transaction.new_revision.clone()
     } else {
@@ -617,6 +622,7 @@ pub(crate) fn handle_fix_command(
         structural_candidates: type_evidence.structural_candidates,
       },
       retained_type_boundaries: type_evidence.retained_boundaries,
+      preflight,
       verification: StrictWorkflowVerification {
         commands: commands
           .iter()

@@ -102,6 +102,8 @@ calcit calcit.cirru fix --workflow strict --verify --format edn
 `surface-latest-v2` 的安全建议、需要 review 的弱类型位置、已声明保留的动态边界、显式 FFI 边界、已有 verification profile，以及逐 entry
 的严格检查命令。命令用 token list 表示，Agent 不需要重新解析 shell 字符串；`:resume :revision` 与
 `:resume :apply-command` 给出恢复下一步所需的精确 revision guard。
+`:preflight` 与 `analyze verify` 共享只读证据：Snapshot path/revision、Calcit/`@calcit/procs` 版本链、显式声明的 host
+requirements，以及只由调用方执行的 external gates。它不会运行 shell gate，也不会从项目文件猜测包管理器。
 无法自动应用的 source suggestion 单独保留在 `:review-required :source-fixes`，不会计入
 `:safe-fixes :suggestions`。只有 unresolved、declared-optional 与 explicit-unsafe 类型位置进入
 `:review-required :type-findings`；已显式声明的 JS FFI/type-slot Dynamic 单独进入 `:retained-type-boundaries`，
@@ -122,8 +124,8 @@ Map/dispatch 仍只用于人工建模。
 默认模式只规划。`--apply` 仍走既有 fingerprint、staged Snapshot、严格预处理和原子替换，不会应用 schema 设计、
 Dynamic 收窄、FFI trust 或业务默认值。`--verify` 是只读模式：它要求安全建议已经清空，逐 entry 运行
 `--check-only --keep-going`，并执行 Snapshot 已声明的 verification profiles；任一结果失败时保持结构化 stdout，
-同时返回非零退出码。`:external-commands` 默认为空，因为 Calcit 不猜测项目使用 yarn、npm、cargo 或其他构建器；
-调用方应把外部构建作为显式步骤维护。
+同时返回非零退出码。`:external-commands` 保持为空，因为 Calcit 不猜测项目使用 yarn、npm、cargo 或其他构建器；
+调用方应把外部构建作为显式步骤维护，并可用 Snapshot `:verification :external-gates` 把步骤名称带入 preflight。
 
 `--workflow strict` 是项目级组合视图，因此与 `--ns`、`--def`、`--rule`、`--preset` 和 `--to` 互斥；
 `--verify` 与写入选项互斥。Cirru EDN 是 manifest 的首选格式，只有 JSON-only consumer 才显式选择 JSON。

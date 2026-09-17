@@ -44,6 +44,18 @@ fn run_calcit(snapshot: &Path, args: &[&str]) -> Output {
     .expect("calcit command should run")
 }
 
+fn run_calcit_with_path(snapshot: &Path, args: &[&str], path: &Path) -> Output {
+  Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .env("PATH", path)
+    .arg("--tips-level")
+    .arg("none")
+    .arg(snapshot)
+    .args(args)
+    .output()
+    .expect("calcit command should run with an isolated PATH")
+}
+
 fn edn_map_field<'a>(value: &'a Edn, key: &str) -> &'a Edn {
   let Edn::Map(map) = value else {
     panic!("expected an EDN map, got {value:?}");
@@ -126,6 +138,9 @@ fn verification_profile_uses_one_contract_for_native_and_js_entries() {
   assert_eq!(value["command"], "analyze.verify");
   assert_eq!(value["data"]["profile"], "release");
   assert_eq!(value["data"]["status"], "passed");
+  assert_eq!(value["data"]["preflight"]["status"], "passed");
+  assert_eq!(value["data"]["preflight"]["snapshot"]["format"], "cirru-edn");
+  assert_eq!(value["data"]["preflight"]["snapshot"]["active_entries"][0], "default");
   let checks = value["data"]["checks"].as_array().expect("checks should be an array");
   assert_eq!(checks.len(), 6);
   assert_eq!(checks[0]["entry"], "default");
@@ -160,6 +175,110 @@ fn verification_profile_uses_one_contract_for_native_and_js_entries() {
   assert!(stdout.starts_with("# Verification `release`\n"));
   assert!(stdout.contains("## `default` · `strict`\n"));
   assert!(stdout.contains("## `js` · `strict`\n"));
+}
+
+#[test]
+fn declared_host_requirement_fails_before_external_gate_without_guessing_other_tools() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  let source = snapshot_source(VALID_ENTRIES).replace(
+    ":profiles $ {}",
+    ":host-requirements $ {} (:node |>=999.0.0)\n    :external-gates $ [] |yarn-build\n    :profiles $ {}",
+  );
+  fs::write(&snapshot, source).expect("fixture should write");
+  let fixture_bin = directory.0.join("bin");
+  fs::create_dir(&fixture_bin).expect("fixture bin directory should create");
+  fs::copy(
+    env!("CARGO_BIN_EXE_calcit"),
+    fixture_bin.join(format!("node{}", std::env::consts::EXE_SUFFIX)),
+  )
+  .expect("fixture node executable should copy");
+
+  let output = run_calcit_with_path(
+    &snapshot,
+    &["analyze", "verify", "--profile", "release", "--format", "json"],
+    &fixture_bin,
+  );
+  assert!(!output.status.success());
+  let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("stdout should contain one JSON value");
+  let preflight = &value["data"]["preflight"];
+  assert_eq!(value["data"]["status"], "failed");
+  assert_eq!(preflight["status"], "failed");
+  assert!(
+    preflight["diagnostics"]
+      .as_array()
+      .expect("preflight diagnostics should be an array")
+      .iter()
+      .any(|diagnostic| diagnostic["code"] == "E_PREFLIGHT_HOST_VERSION")
+  );
+  let tools = preflight["tools"].as_array().expect("preflight tools should be an array");
+  assert!(tools.iter().any(|tool| tool["tool"] == "node" && tool["status"] == "mismatch"));
+  assert!(
+    !tools
+      .iter()
+      .any(|tool| matches!(tool["tool"].as_str(), Some("yarn" | "rustc" | "caps")))
+  );
+  assert_eq!(preflight["external_gates"][0]["name"], "yarn-build");
+  assert_eq!(preflight["external_gates"][0]["executed"], false);
+  assert!(value["data"]["checks"].as_array().is_some_and(|checks| !checks.is_empty()));
+}
+
+#[test]
+fn preflight_reads_procs_resolution_from_yarn_lock_without_installing_dependencies() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::write(&snapshot, snapshot_source(VALID_ENTRIES)).expect("fixture should write");
+  let version = env!("CARGO_PKG_VERSION");
+  fs::write(
+    directory.0.join("package.json"),
+    format!(r#"{{"dependencies":{{"@calcit/procs":"{version}"}}}}"#),
+  )
+  .expect("package manifest should write");
+  fs::write(
+    directory.0.join("yarn.lock"),
+    format!("\"@calcit/procs@npm:{version}\":\n  resolution: \"@calcit/procs@npm:{version}\"\n"),
+  )
+  .expect("lockfile should write");
+
+  let output = run_calcit(&snapshot, &["analyze", "verify", "--profile", "release", "--format", "json"]);
+  assert!(
+    output.status.success(),
+    "verification failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&output.stdout),
+    String::from_utf8_lossy(&output.stderr)
+  );
+  let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("stdout should contain one JSON value");
+  let tools = value["data"]["preflight"]["tools"]
+    .as_array()
+    .expect("preflight tools should be an array");
+  let procs = tools
+    .iter()
+    .find(|tool| tool["tool"] == "@calcit/procs")
+    .expect("preflight should report @calcit/procs");
+  assert_eq!(procs["declared"], version);
+  assert_eq!(procs["observed"], version);
+  assert_eq!(procs["status"], "matched");
+}
+
+#[test]
+fn verification_rejects_duplicate_normalized_host_requirement_keys() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  let source = snapshot_source(VALID_ENTRIES).replace(
+    ":profiles $ {}",
+    ":host-requirements $ {} (:node |>=20.0.0) (|node |>=24.0.0)\n    :profiles $ {}",
+  );
+  fs::write(&snapshot, source).expect("fixture should write");
+
+  let output = run_calcit(&snapshot, &["analyze", "verify", "--profile", "release", "--format", "json"]);
+  assert!(!output.status.success());
+  let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("stdout should contain one JSON value");
+  assert_eq!(value["diagnostics"][0]["code"], "E_VERIFY_CONFIG");
+  assert!(
+    value["diagnostics"][0]["message"]
+      .as_str()
+      .is_some_and(|message| message.contains("duplicate tool `node`"))
+  );
 }
 
 #[test]

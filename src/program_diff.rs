@@ -608,6 +608,8 @@ fn diff_verification(label: &str, old: &VerificationConfig, new: &VerificationCo
   let new_schema_version = new.schema_version.to_string();
   let children = vec![
     diff_string("schema-version", Some(&old_schema_version), Some(&new_schema_version)),
+    diff_string_map("host-requirements", &old.host_requirements, &new.host_requirements),
+    diff_string_list("external-gates", &old.external_gates, &new.external_gates),
     diff_string_map("profiles", &old_profiles, &new_profiles),
   ];
   DiffNode::new(label, aggregate_status(&children)).with_children(children)

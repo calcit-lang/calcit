@@ -38,6 +38,10 @@ calcit calcit.cirru analyze verify --profile release --format edn
 
 ```cirru-edn
 :verification $ {} (:schema-version 1)
+  :host-requirements $ {}
+    :node |>=24.0.0
+    :yarn |>=4.12.0
+  :external-gates $ [] |yarn-build |consumer-regression
   :profiles $ {} $ :release
     {} (:on-failure :stop)
       :entries $ [] :default :browser
@@ -45,6 +49,10 @@ calcit calcit.cirru analyze verify --profile release --format edn
 ```
 
 - `:schema-version`：目前必须为 `1`；缺失或未知版本会在任何检查运行前失败。
+- `:host-requirements`：可选，只声明项目确实依赖的 `:node`、`:yarn`、`:rustc` 或 `:caps` 版本范围。Calcit
+  只对已声明项执行 `<tool> --version`，不会因为发现 `package.json` 或 Rust 文件就猜测额外工具。
+- `:external-gates`：可选的 gate 名称列表，只记录调用方必须完成的构建、测试或消费者回归。名称不是 shell
+  命令，Calcit 永远不执行它们。
 - `:profiles`：profile 名称到配置的 map。
 - `:entries`：按声明顺序执行的 named entry；每项必须存在于顶层 `:entries`，不能为空或重复。
 - `:checks`：按声明顺序执行的检查；不能为空或重复。
@@ -60,7 +68,7 @@ v1 支持三个 check：
 
 同一 entry 同时选择 `:strict` 与 `:dynamic-methods` 时，两项共享一轮预处理及类型推导结果；不会为了生成第二份报告重新解析或重新推导。不同 entry 的 module 顶层加载结果也会按 module path 在本次命令内缓存。Entry 的 target 来自其 `:target`；未声明 target 时使用 `:mode` 作为结果中的目标标签。
 
-Profile 不把 `test`、JS/WASM/WASI codegen、Markdown 文档执行或外部消费者回归伪装成静态检查。它们可能运行用户代码、写生成目录或需要外部 host，继续作为发布流水线中的显式步骤。后续若能复用只读 compiler phase，可扩展新的 schema 版本，不向 v1 静默加入语义。
+Profile 不把 `test`、JS/WASM/WASI codegen、Markdown 文档执行或外部消费者回归伪装成静态检查。它们可能运行用户代码、写生成目录或需要外部 host，继续作为发布流水线中的显式步骤；需要机器可读提醒时，把稳定名称写进 `:external-gates`。后续若能复用只读 compiler phase，可扩展新的 schema 版本，不向 v1 静默加入语义。
 
 ## 确定性与失败行为
 
@@ -77,6 +85,8 @@ Human 输出是简洁 Markdown，按 entry/check 使用 heading 和列表。Calc
     :profile |release
     :on-failure |stop
     :status |passed
+    :preflight $ {}
+      :status |passed
     :checks $ []
   :diagnostics $ []
 ```
@@ -92,6 +102,7 @@ Human 输出是简洁 Markdown，按 entry/check 使用 heading 和列表。Calc
     "profile": "release",
     "on_failure": "stop",
     "status": "passed",
+    "preflight": { "status": "passed" },
     "checks": []
   },
   "diagnostics": []
@@ -100,13 +111,19 @@ Human 输出是简洁 Markdown，按 entry/check 使用 heading 和列表。Calc
 
 每个已运行 check 都包含 `check`、`entry`、`target`、`revision`、`status` 和带稳定 `code` 的 diagnostics。Profile 不存在、schema 无效、entry 不存在或 check 未知时，在运行检查前返回 `E_VERIFY_CONFIG`；EDN 或显式选择的 JSON stdout 仍是一个完整 envelope。
 
+`preflight` 在检查前汇总 Snapshot path/revision、entry/target、运行中的 Calcit、`deps.cirru :calcit-version`，以及项目已声明时的
+`@calcit/procs` 版本链（`package.json`、已安装 package 与 `yarn.lock`）。Calcit 与 `@calcit/procs` 要求精确同步；显式 host
+requirement 使用 SemVer range。包括 `caps` 在内的 host 工具都只在显式声明 requirement 后探测；缺失或版本不符会阻断。
+版本矛盾产生 `E_PREFLIGHT_CALCIT_VERSION`、`E_PREFLIGHT_PROCS_VERSION`、`E_PREFLIGHT_HOST_VERSION` 或
+`E_PREFLIGHT_HOST_MISSING`，并给出 evidence source 与下一步；外部 gate 始终报告 `caller-required`、`executed: false`。
+
 ## 发布工作流边界
 
 Profile 适合收敛重复的 Calcit-owned 静态门禁，但不能代替完整发布验收。推荐顺序是：
 
 1. `calcit edit format` 后用 Git 检查 Snapshot 是否干净；
 2. 运行 `calcit analyze verify --profile release --format edn`；
-3. 显式运行 definition `:tests`、Markdown 示例、目标 codegen/runtime 和真实消费者回归；
+3. 调用方逐项运行 preflight 中的 `external-gates`，以及 definition `:tests`、Markdown 示例、目标 codegen/runtime 和真实消费者回归；
 4. 只在精确提交的全部 CI 成功后发布。
 
 这样 Agent 可用一个稳定 envelope 读取静态结果，同时人类仍能看清哪些步骤会执行代码、写生成产物或依赖外部环境。
