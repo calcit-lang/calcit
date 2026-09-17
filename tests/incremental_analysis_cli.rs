@@ -193,6 +193,42 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(changed["data"]["cache"]["misses"], 1);
   assert_eq!(changed["data"]["cache"]["miss_reasons"]["definition-changed"], 1);
 
+  let edit = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "def",
+      "ffi-evidence.main/query-host",
+      "--code",
+      "quote $ defn query-host (host) unsafe-coerce host 'String",
+      "--overwrite",
+    ],
+  );
+  assert_success(&edit, "change dependency target definition");
+
+  let propagated = report(&snapshot, "check-types");
+  let propagated_dependencies = &propagated["data"]["cache"]["dependency_index"];
+  assert_eq!(propagated_dependencies["changed"], 1);
+  assert!(
+    propagated_dependencies["affected"]
+      .as_u64()
+      .expect("affected dependency count should be numeric")
+      > 1,
+    "changing a referenced definition should affect at least one caller"
+  );
+  assert!(
+    propagated_dependencies["miss_reasons"]["dependency-affected"]
+      .as_u64()
+      .expect("dependency-affected count should be numeric")
+      > 0,
+    "affected callers should be retraced before persisting the graph"
+  );
+
+  let settled = report(&snapshot, "check-types");
+  assert_eq!(settled["data"]["cache"]["dependency_index"]["status"], "warm");
+  assert_eq!(settled["data"]["cache"]["dependency_index"]["changed"], 0);
+  assert_eq!(settled["data"]["cache"]["dependency_index"]["affected"], 0);
+
   let weak_full = full_report(&snapshot, "weak-types");
   let weak_cold = report(&snapshot, "weak-types");
   assert_eq!(weak_cold["data"]["cache"]["status"], "cold");

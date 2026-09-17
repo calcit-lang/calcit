@@ -182,6 +182,15 @@ struct CachedDependency {
   dependencies: BTreeSet<String>,
 }
 
+#[derive(Debug, Clone)]
+struct DependencySource {
+  ns: String,
+  definition: String,
+  definition_revision: String,
+  namespace_revision: String,
+  schema: std::sync::Arc<CalcitTypeAnnotation>,
+}
+
 impl AnalysisCache {
   fn empty(context_revision: String) -> Self {
     Self {
@@ -513,6 +522,35 @@ fn reverse_affected_definitions(
   affected
 }
 
+fn unresolved_dependency_record(source: &DependencySource, previous: Option<&CachedDependency>) -> CachedDependency {
+  CachedDependency {
+    definition_revision: source.definition_revision.clone(),
+    namespace_revision: source.namespace_revision.clone(),
+    ready: false,
+    dependencies: previous.map(|record| record.dependencies.clone()).unwrap_or_default(),
+  }
+}
+
+fn trace_dependency_record(source: &DependencySource, previous: Option<&CachedDependency>) -> CachedDependency {
+  let warnings = RefCell::<Vec<LocatedWarning>>::new(Vec::new());
+  match runner::preprocess::trace_definition_source_usages(&source.ns, &source.definition, &warnings, &CallStackList::default()) {
+    Ok(usages) => {
+      let mut dependencies = usages
+        .into_iter()
+        .map(|usage| format!("{}/{}", usage.target_ns, usage.target_def))
+        .collect::<BTreeSet<_>>();
+      dependencies.extend(collect_schema_dependencies(&source.schema));
+      CachedDependency {
+        definition_revision: source.definition_revision.clone(),
+        namespace_revision: source.namespace_revision.clone(),
+        ready: true,
+        dependencies,
+      }
+    }
+    Err(_) => unresolved_dependency_record(source, previous),
+  }
+}
+
 fn collect_dependency_index(
   cache: &mut AnalysisCache,
   snapshot: &snapshot::Snapshot,
@@ -528,13 +566,24 @@ fn collect_dependency_index(
     .flat_map(|(ns, file)| file.defs.keys().map(move |definition| format!("{ns}/{definition}")))
     .collect::<BTreeSet<_>>();
   let mut changed = BTreeSet::new();
-  let mut pending = Vec::new();
+  let mut pending = BTreeSet::new();
+  let mut sources = BTreeMap::new();
   let mut stats = DependencyIndexStats::default();
 
   for (ns, definition, entry) in entries {
     let id = format!("{ns}/{definition}");
     let definition_revision = snapshot::definition_revision(entry)?;
     let namespace_revision = namespace_revision(snapshot.files.get(ns).expect("scoped namespace must exist"))?;
+    sources.insert(
+      id.clone(),
+      DependencySource {
+        ns: ns.to_owned(),
+        definition: definition.to_owned(),
+        definition_revision: definition_revision.clone(),
+        namespace_revision: namespace_revision.clone(),
+        schema: entry.schema.clone(),
+      },
+    );
     match previous.get(&id) {
       Some(record) if record.definition_revision == definition_revision && record.namespace_revision == namespace_revision => {
         stats.hits += 1;
@@ -552,14 +601,7 @@ fn collect_dependency_index(
         };
         *stats.miss_reasons.entry(reason.to_owned()).or_insert(0) += 1;
         changed.insert(id.clone());
-        pending.push((
-          id,
-          ns.to_owned(),
-          definition.to_owned(),
-          definition_revision,
-          namespace_revision,
-          entry.schema.clone(),
-        ));
+        pending.insert(id);
       }
     }
   }
@@ -568,52 +610,46 @@ fn collect_dependency_index(
     changed.insert(removed.clone());
   }
 
-  if !pending.is_empty() {
-    let extracted = program::extract_program_data(snapshot);
-    if let Ok(program_data) = extracted {
+  let affected = reverse_affected_definitions(&previous, &cache.dependency_index, &changed);
+  let refresh = affected
+    .iter()
+    .filter(|id| sources.contains_key(*id))
+    .cloned()
+    .collect::<BTreeSet<_>>();
+  for id in refresh.iter().filter(|id| !pending.contains(*id)) {
+    debug_assert!(previous.contains_key(id));
+    stats.hits = stats.hits.saturating_sub(1);
+    if previous.get(id).is_some_and(|record| !record.ready) {
+      stats.unresolved = stats.unresolved.saturating_sub(1);
+    }
+    stats.misses += 1;
+    *stats.miss_reasons.entry("dependency-affected".to_owned()).or_insert(0) += 1;
+  }
+
+  if !refresh.is_empty() {
+    if let Ok(program_data) = program::extract_program_data(snapshot) {
       *program::PROGRAM_CODE_DATA.write().expect("open program data for dependency index") = program_data;
-      for (id, ns, definition, definition_revision, namespace_revision, schema) in pending {
-        let warnings = RefCell::<Vec<LocatedWarning>>::new(Vec::new());
-        match runner::preprocess::trace_definition_source_usages(&ns, &definition, &warnings, &CallStackList::default()) {
-          Ok(usages) => {
-            let mut dependencies = usages
-              .into_iter()
-              .map(|usage| format!("{}/{}", usage.target_ns, usage.target_def))
-              .collect::<BTreeSet<_>>();
-            dependencies.extend(collect_schema_dependencies(&schema));
-            cache.dependency_index.insert(
-              id,
-              CachedDependency {
-                definition_revision,
-                namespace_revision,
-                ready: true,
-                dependencies,
-              },
-            );
-          }
-          Err(_) => {
-            stats.unresolved += 1;
-            let dependencies = previous.get(&id).map(|record| record.dependencies.clone()).unwrap_or_default();
-            cache.dependency_index.insert(
-              id,
-              CachedDependency {
-                definition_revision,
-                namespace_revision,
-                ready: false,
-                dependencies,
-              },
-            );
-          }
+      for id in &refresh {
+        let source = sources.get(id).expect("refresh source must exist");
+        let record = trace_dependency_record(source, previous.get(id));
+        if !record.ready {
+          stats.unresolved += 1;
         }
+        cache.dependency_index.insert(id.clone(), record);
       }
     } else {
-      stats.unresolved += pending.len();
-      *stats.miss_reasons.entry("program-index-failed".to_owned()).or_insert(0) += pending.len();
+      stats.unresolved += refresh.len();
+      *stats.miss_reasons.entry("program-index-failed".to_owned()).or_insert(0) += refresh.len();
+      for id in &refresh {
+        let source = sources.get(id).expect("refresh source must exist");
+        cache
+          .dependency_index
+          .insert(id.clone(), unresolved_dependency_record(source, previous.get(id)));
+      }
     }
   }
 
   cache.dependency_index.retain(|id, _| all_ids.contains(id));
-  let affected = reverse_affected_definitions(&previous, &cache.dependency_index, &changed);
   stats.changed = changed.len();
   stats.affected = affected.len();
   stats.edges = cache
@@ -764,7 +800,8 @@ pub(crate) fn collect_weak_types(
 
 #[cfg(test)]
 mod tests {
-  use super::{CachedDependency, reverse_affected_definitions};
+  use super::{CachedDependency, DependencySource, reverse_affected_definitions, unresolved_dependency_record};
+  use calcit::calcit::DYNAMIC_TYPE;
   use std::collections::{BTreeMap, BTreeSet};
 
   fn dependency(dependencies: &[&str]) -> CachedDependency {
@@ -811,5 +848,23 @@ mod tests {
       reverse_affected_definitions(&previous, &current, &changed),
       BTreeSet::from(["app/main".to_owned(), "app/removed".to_owned()])
     );
+  }
+
+  #[test]
+  fn unresolved_dependency_records_advance_revisions_but_keep_prior_edges() {
+    let previous = dependency(&["app/old-target"]);
+    let source = DependencySource {
+      ns: "app".to_owned(),
+      definition: "caller".to_owned(),
+      definition_revision: "next-definition".to_owned(),
+      namespace_revision: "next-namespace".to_owned(),
+      schema: DYNAMIC_TYPE.clone(),
+    };
+
+    let record = unresolved_dependency_record(&source, Some(&previous));
+    assert!(!record.ready);
+    assert_eq!(record.definition_revision, "next-definition");
+    assert_eq!(record.namespace_revision, "next-namespace");
+    assert_eq!(record.dependencies, BTreeSet::from(["app/old-target".to_owned()]));
   }
 }

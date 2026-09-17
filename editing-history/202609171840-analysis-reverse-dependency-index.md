@@ -6,3 +6,4 @@
 - 每次变化同时基于旧图和新图计算反向传递 affected 集合，删除或改写依赖边时仍能找到原调用者。
 - 当前索引只输出失效证据，不缓存或跳过严格预处理；后续必须先验证 schema/import/type-slot 的失效集合，再接入 compiled-definition cache。
 - 无法完整解析的定义会以 unresolved 状态按 revision 稳定缓存；后续报告仍明确计数，但不会在每次 warm 分析中重复执行同一个失败解析。
+- changed/removed 定义的反向 affected callers 会在写入缓存前重新 trace；即使 program extraction 整体失败，也会推进当前 revision 并保守保留旧依赖边，避免下一次 warm run 把旧图误报为最新证据。
