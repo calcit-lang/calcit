@@ -178,7 +178,7 @@ struct StrictWorkflowSafeFixes {
 struct StrictWorkflowReviewRequired {
   source_fixes: Vec<StrictWorkflowSourceReview>,
   type_findings: Vec<StrictWorkflowTypeFinding>,
-  ffi_boundaries: Vec<StrictWorkflowFfiBoundary>,
+  ffi_boundaries: Vec<type_coverage::FfiBoundaryEvidence>,
 }
 
 #[derive(Debug, Serialize)]
@@ -198,10 +198,10 @@ struct StrictWorkflowTypeFinding {
   detail: String,
 }
 
-#[derive(Debug, Serialize)]
-struct StrictWorkflowFfiBoundary {
-  definition: String,
-  target: String,
+struct StrictWorkflowTypeEvidence {
+  review_required: Vec<StrictWorkflowTypeFinding>,
+  retained_boundaries: Vec<StrictWorkflowTypeFinding>,
+  ffi_boundaries: Vec<type_coverage::FfiBoundaryEvidence>,
 }
 
 #[derive(Debug, Serialize)]
@@ -240,9 +240,7 @@ fn strict_workflow_entries(snapshot: &Snapshot) -> Vec<StrictWorkflowEntry> {
     .collect()
 }
 
-fn strict_workflow_type_findings(
-  snapshot: &Snapshot,
-) -> Result<(Vec<StrictWorkflowTypeFinding>, Vec<StrictWorkflowTypeFinding>), String> {
+fn strict_workflow_type_findings(snapshot: &Snapshot) -> Result<StrictWorkflowTypeEvidence, String> {
   let options = WeakTypesCommand {
     ns: None,
     ns_prefix: None,
@@ -251,6 +249,7 @@ fn strict_workflow_type_findings(
     intent: None,
     summary_only: false,
     format: "json".to_owned(),
+    ffi_evidence: true,
   };
   let mut review_required = Vec::new();
   let mut retained_boundaries = Vec::new();
@@ -285,30 +284,12 @@ fn strict_workflow_type_findings(
         .then(left.intent.cmp(&right.intent))
     });
   }
-  Ok((review_required, retained_boundaries))
-}
-
-fn strict_workflow_ffi_boundaries(snapshot: &Snapshot) -> Result<Vec<StrictWorkflowFfiBoundary>, String> {
-  let mut boundaries = Vec::new();
-  let mut namespaces = snapshot.files.iter().collect::<Vec<_>>();
-  namespaces.sort_by_key(|(name, _)| *name);
-  for (namespace, file) in namespaces {
-    let mut definitions = file.defs.iter().collect::<Vec<_>>();
-    definitions.sort_by_key(|(name, _)| *name);
-    for (definition, entry) in definitions {
-      let Some(ffi) = &entry.ffi else {
-        continue;
-      };
-      let target = calcit::snapshot::parse_ffi_target(ffi)?
-        .map(|target| target.as_str().to_owned())
-        .unwrap_or_else(|| "shared".to_owned());
-      boundaries.push(StrictWorkflowFfiBoundary {
-        definition: format!("{namespace}/{definition}"),
-        target,
-      });
-    }
-  }
-  Ok(boundaries)
+  let ffi_boundaries = type_coverage::collect_ffi_boundary_evidence(&options, snapshot)?;
+  Ok(StrictWorkflowTypeEvidence {
+    review_required,
+    retained_boundaries,
+    ffi_boundaries,
+  })
 }
 
 fn strict_workflow_commands(snapshot_file: &str, snapshot: &Snapshot) -> Vec<(String, Vec<String>)> {
@@ -573,7 +554,7 @@ pub(crate) fn handle_fix_command(
   let mut workflow_failed = false;
   let workflow = if options.workflow.as_deref() == Some("strict") {
     let commands = strict_workflow_commands(snapshot_file, &source_snapshot);
-    let (review_required_types, retained_type_boundaries) = strict_workflow_type_findings(&source_snapshot)?;
+    let type_evidence = strict_workflow_type_findings(&source_snapshot)?;
     let results = if options.verify {
       run_strict_workflow_verification(&commands)?
     } else {
@@ -620,10 +601,10 @@ pub(crate) fn handle_fix_command(
             message: suggestion.message.clone(),
           })
           .collect(),
-        type_findings: review_required_types,
-        ffi_boundaries: strict_workflow_ffi_boundaries(&source_snapshot)?,
+        type_findings: type_evidence.review_required,
+        ffi_boundaries: type_evidence.ffi_boundaries,
       },
-      retained_type_boundaries,
+      retained_type_boundaries: type_evidence.retained_boundaries,
       verification: StrictWorkflowVerification {
         commands: commands
           .iter()

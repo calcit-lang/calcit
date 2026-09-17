@@ -147,6 +147,7 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
     intent: Some("unresolved,intentional-macro-syntax,declared-unit,declared-optional,explicit-unsafe".to_owned()),
     format: "json".to_owned(),
     deps: options.deps,
+    ffi_evidence: false,
     summary_only: false,
   };
   let deprecated_options = DeprecatedCommand {

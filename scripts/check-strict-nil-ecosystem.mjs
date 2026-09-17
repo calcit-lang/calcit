@@ -63,7 +63,7 @@ const parseCalcitJson = (result, label) => {
     throw new Error(`${label} did not end with a JSON object:\n${output.trim()}`);
   }
   const parsed = JSON.parse(match[1]);
-  if (parsed.command !== "analyze.weak-types" || parsed.schema_version !== 6) {
+  if (parsed.command !== "analyze.weak-types" || parsed.schema_version !== 7) {
     throw new Error(`${label} returned an unexpected analyzer envelope`);
   }
   return parsed.data.summary;

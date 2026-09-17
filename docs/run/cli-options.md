@@ -54,6 +54,13 @@ Enum/Struct `%::` / `%{}` 直接构造器迁移，并解包普通可执行源码
 `--workflow strict --verify`。该 workflow 不会自动决定 schema、Dynamic 收窄、FFI trust 或业务默认值，也不会猜测
 外部包管理器。
 
+需要集中审阅 JavaScript 边界时，使用已有分析入口：
+`calcit calcit.cirru analyze weak-types --ffi-evidence --format edn`。该选项按 operation 标记 browser、node、
+npm-import、webgpu 或 unknown-host，列出静态 caller、nullable/unsafe 路径，并给出 exact-schema helper、trait 与
+adapter 候选。它只整理 Snapshot、schema 和 namespace import 中可证明的证据；候选均为 `review-required`，不会推断
+运行时 trust，也不会自动收窄 Dynamic、选择 Option/Result 或写入源码。默认不启用该扫描，避免把迁移证据变成新的
+类型门禁；JSON 仅作为互操作格式。
+
 For feature-level planning, use `calcit edit scaffold`. Its primary input is a
 Cirru EDN architecture plan, preferably stored under
 `docs/architectures/<feature>.cirru`:

@@ -498,7 +498,7 @@ const scenarios = [
       "json",
     ],
     check(result) {
-      if (result.schema_version !== 6 || result.command !== "analyze.weak-types" || result.data.summary.hits === 0) {
+      if (result.schema_version !== 7 || result.command !== "analyze.weak-types" || result.data.summary.hits === 0) {
         throw new Error("weak type result is incomplete");
       }
       const occurrences = result.data.definitions.flatMap((definition) => definition.occurrences);
@@ -507,6 +507,39 @@ const scenarios = [
       }
       if (!occurrences.every((occurrence) => typeof occurrence.path === "string" && typeof occurrence.detail === "string")) {
         throw new Error("weak-type occurrences lost source evidence");
+      }
+    },
+  },
+  {
+    name: "FFI boundary evidence",
+    args: [
+      "tests/fixtures/ffi-boundary-evidence.cirru",
+      "analyze",
+      "weak-types",
+      "--ffi-evidence",
+      "--format",
+      "json",
+    ],
+    check(result) {
+      const boundaries = result.data?.evidence?.ffi_boundaries;
+      if (result.schema_version !== 7 || !Array.isArray(boundaries) || boundaries.length === 0) {
+        throw new Error("FFI evidence envelope is incomplete");
+      }
+      const boundary = boundaries.find((item) => item.definition === "ffi-evidence.main/query-host");
+      if (boundary?.classification !== "mixed" || boundary?.target !== "browser") {
+        throw new Error("FFI evidence lost boundary classification or target");
+      }
+      if (boundary.diagnostic_code !== "I_FFI_BOUNDARY_EVIDENCE") {
+        throw new Error("FFI evidence lost its stable informational code");
+      }
+      if (!boundary.operations.some((item) => item.classification === "npm-import")) {
+        throw new Error("FFI evidence lost npm import provenance");
+      }
+      if (boundary.helper_candidates?.[0]?.origin !== "dependency") {
+        throw new Error("FFI evidence did not prefer an exact-schema dependency helper");
+      }
+      if (result.data.evidence.runtime_trust_inferred !== false) {
+        throw new Error("FFI evidence must remain review-only");
       }
     },
   },
