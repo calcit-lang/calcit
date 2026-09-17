@@ -12,6 +12,7 @@ use std::time::Instant;
 mod injection;
 
 mod cli_handlers;
+mod strict_check;
 mod verification;
 
 #[path = "../deprecated_api.rs"]
@@ -320,6 +321,19 @@ fn run_cli() -> Result<(), String> {
 
   let strict_type_policy = resolve_strict_type_policy(cli_args.strict_types, cli_args.compat_types)?;
 
+  if cli_args.keep_going && !cli_args.check_only {
+    return Err("`--keep-going` requires `--check-only`.".to_owned());
+  }
+  if cli_args.keep_going && strict_type_policy.zero_debt {
+    return Err(
+      "`--keep-going` collects strict preprocessing diagnostics; run the separate `--check-only --strict-types` zero-debt gate after it passes."
+        .to_owned(),
+    );
+  }
+  if cli_args.format != "human" && !(cli_args.check_only && cli_args.keep_going) {
+    return Err("Top-level `--format` is only available with `--check-only --keep-going`.".to_owned());
+  }
+
   // Query/analyze commands may run preprocessing before the normal program-loading path.
   // Starting with 0.14, strict diagnostics are the default. `--strict-types`
   // additionally requests the zero-debt quality preflight, while the explicit
@@ -339,6 +353,10 @@ fn run_cli() -> Result<(), String> {
     cli_handlers::suppress_command_guidance();
     calcit::set_quiet_tool_output(true);
     cli_handlers::print_command_echo(&cli_args);
+  }
+  if cli_args.check_only && cli_args.keep_going {
+    cli_handlers::suppress_command_guidance();
+    calcit::set_quiet_tool_output(true);
   }
 
   builtins::effects::init_effects_states();
@@ -616,7 +634,12 @@ fn run_cli() -> Result<(), String> {
   let use_configured_js_mode = should_emit_js(&cli_args.subcommand, configured_run_mode);
 
   let task = if check_only {
-    run_check_only(&entries).and_then(|_| {
+    let check_result = if cli_args.keep_going {
+      strict_check::run(&entries, &cli_args.format)
+    } else {
+      run_check_only(&entries)
+    };
+    check_result.and_then(|_| {
       if strict_type_policy.zero_debt {
         run_strict_type_gate()
       } else {

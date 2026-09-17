@@ -10,6 +10,7 @@ aliases:
   - "normalization workflow"
 entry_for:
   - "calcit --check-only"
+  - "calcit --check-only --keep-going"
   - "calcit analyze"
   - "calcit fix"
   - "calcit edit --input-format"
@@ -33,13 +34,19 @@ Calcit 的 CLI 按用户任务收敛入口，而不是按每条诊断或迁移�
 
 | 用户意图 | 统一入口 | 边界 |
 | --- | --- | --- |
-| 验证当前 entry 是否符合语言语义 | `calcit calcit.cirru --check-only` | 复用正常加载、严格预处理和目标检查，不写文件 |
+| 验证当前 entry 是否符合语言语义 | `calcit calcit.cirru --check-only` | 复用正常加载、严格预处理和目标检查，不写文件；迁移批量诊断使用同一入口的 `--keep-going` |
 | 查询与分析只读事实 | `calcit query ...`、`calcit analyze ...` | query 返回源码与配置事实；analyze 组合已有编译器事实，不建立第二套类型系统 |
 | 检测并应用可证明的源码规范化 | `calcit calcit.cirru fix ...` | 默认 preview 即检测；只有 machine-applicable 建议才能原子 apply |
 | 执行用户明确指定的结构编辑 | `calcit edit ...`、`calcit tree ...`、`calcit cursor ...` | 修改意图来自用户，不冒充编译器自动修复 |
 
 `calcit test`、`calcit js`、`calcit wasm` 与 `calcit wasi` 是执行或目标生成入口，不再复制一套类型检查策略。它们与
 `--check-only` 共享 parser、resolver、严格预处理和 target validation。
+
+普通检查保持遇错即停。需要一次取得多个互不依赖的严格诊断时，使用
+`calcit calcit.cirru --check-only --keep-going --format edn`。该模式只跨 definition 继续：失败依赖的
+调用者报告为 `blocked`，不会通过 expression 级恢复制造级联类型猜测。human、Cirru EDN 与 JSON
+共享相同状态模型和非零失败退出码；EDN 是 Calcit 自动化的首选结构化格式。不要为批量诊断另建 lint
+命令或按错误码增加入口。
 
 ## 检测与改写只保留一个闭环
 

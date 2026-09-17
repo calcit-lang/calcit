@@ -26,8 +26,8 @@ use crate::calcit::{
 use crate::program;
 
 use super::{
-  ScopeTypes, check_enum_construction, check_enum_nth_bounds, gen_check_warning, gen_check_warning_code, gen_check_warning_code_at,
-  resolve_type_value, tag_annotation,
+  ScopeTypes, check_enum_construction, check_enum_nth_bounds, gen_check_warning, gen_check_warning_code_at,
+  gen_check_warning_code_at_with_types, resolve_type_value, tag_annotation,
 };
 
 // ---------------------------------------------------------------------------
@@ -411,7 +411,7 @@ impl<'a> CheckContext<'a> {
       .get(arg_idx - 1)
       .and_then(Calcit::get_location)
       .or_else(|| self.call_location.clone());
-    gen_check_warning_code_at(
+    gen_check_warning_code_at_with_types(
       append_js_ffi_type_hint(
         append_option_migration_hint(
           make_warning(arg_idx, &expected_str, &actual_str, expr_str),
@@ -423,6 +423,8 @@ impl<'a> CheckContext<'a> {
       self.warning_code,
       self.file_ns,
       warning_location,
+      expected_str,
+      actual_str,
       self.check_warnings,
     );
   }
@@ -1035,13 +1037,16 @@ pub(crate) fn check_function_return_type(
   {
     let expected_str = diagnostic_type_string(declared_return_type.as_ref());
     let actual_str = diagnostic_type_string(actual_type.as_ref());
-    gen_check_warning_code(
+    gen_check_warning_code_at_with_types(
       append_js_ffi_type_hint(
         format!("[Warn] Function `{file_ns}/{def_name}` declares return type `{expected_str}`, but body returns `{actual_str}`"),
         &actual_str,
       ),
       "W_FN_RETURN_TYPE_MISMATCH",
       file_ns,
+      last_expr.get_location(),
+      expected_str,
+      actual_str,
       check_warnings,
     );
   }

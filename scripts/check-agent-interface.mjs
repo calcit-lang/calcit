@@ -555,6 +555,30 @@ const scenarios = [
     },
   },
   {
+    name: "keep-going strict check failure stays structured",
+    defaultStrict: true,
+    args: [
+      "calcit/type-fail/js-nullish-dereference-strict.cirru",
+      "--check-only",
+      "--keep-going",
+      "--format",
+      "json",
+    ],
+    expectedStatus: 1,
+    check(result) {
+      if (result.schema_version !== 1 || result.command !== "check-only") {
+        throw new Error("keep-going check lost its structured envelope");
+      }
+      if (result.data.summary.failed !== 1 || result.data.summary.blocked !== 0 || result.data.status !== "failed") {
+        throw new Error("keep-going check lost confirmed and blocked status counts");
+      }
+      const failed = result.data.definitions.find((definition) => definition.status === "failed");
+      if (failed?.diagnostics[0]?.code !== "E_JS_FFI_NULLABLE_DEREF" || !Array.isArray(failed.diagnostics[0].path)) {
+        throw new Error("keep-going check lost stable code or source path");
+      }
+    },
+  },
+  {
     name: "dynamic method summary",
     args: [
       "calcit/test-method-errors.cirru",
@@ -670,9 +694,11 @@ for (const scenario of scenarios) {
   const started = process.hrtime.bigint();
   // These scenarios exercise the historical all-features fixture and its
   // machine envelopes, not the 0.14 strict-default acceptance path.
-  const fixtureArgs = scenario.strictTypes
-    ? [scenario.args[0], "--strict-types", ...scenario.args.slice(1)]
-    : [scenario.args[0], "--compat-types", ...scenario.args.slice(1)];
+  const fixtureArgs = scenario.defaultStrict
+    ? scenario.args
+    : scenario.strictTypes
+      ? [scenario.args[0], "--strict-types", ...scenario.args.slice(1)]
+      : [scenario.args[0], "--compat-types", ...scenario.args.slice(1)];
   const child = spawnSync(binary, fixtureArgs, {
     cwd: process.cwd(),
     encoding: "utf8",

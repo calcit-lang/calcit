@@ -4172,6 +4172,25 @@ pub(crate) fn gen_check_warning_code_at(
   }
 }
 
+pub(crate) fn gen_check_warning_code_at_with_types(
+  message: String,
+  code: &'static str,
+  file_ns: &str,
+  location: Option<NodeLocation>,
+  expected: String,
+  actual: String,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  let location = location.unwrap_or_else(|| NodeLocation::new(Arc::from(file_ns), Arc::from(GENERATED_DEF), Arc::from(vec![])));
+  check_warnings.borrow_mut().push(LocatedWarning::new_with_types(
+    message,
+    location,
+    Some(code.to_owned()),
+    expected,
+    actual,
+  ));
+}
+
 fn gen_check_warning_with_location(message: String, location: NodeLocation, check_warnings: &RefCell<Vec<LocatedWarning>>) {
   let mut warnings = check_warnings.borrow_mut();
   warnings.push(LocatedWarning::new(message, location));
@@ -16307,13 +16326,13 @@ mod tests {
     );
 
     // Check first warning (arg 1: expected number, got string)
-    let warning1 = warnings_vec.iter().find(|w| w.to_string().contains("arg 1"));
-    assert!(
-      warning1.is_some(),
-      "should have warning for arg 1, warnings: {:?}",
-      warnings_vec.iter().map(|w| w.to_string()).collect::<Vec<_>>()
-    );
-    let msg1 = warning1.unwrap().to_string();
+    let warning1 = warnings_vec
+      .iter()
+      .find(|w| w.to_string().contains("arg 1"))
+      .unwrap_or_else(|| panic!("should have warning for arg 1, warnings: {warnings_vec:?}"));
+    assert_eq!(warning1.expected(), Some(":number"));
+    assert_eq!(warning1.actual(), Some(":string"));
+    let msg1 = warning1.to_string();
     assert!(
       msg1.contains("number") || msg1.contains(":number"),
       "warning should mention expected type: {msg1}"
@@ -16324,13 +16343,13 @@ mod tests {
     );
 
     // Check second warning (arg 2: expected string, got number)
-    let warning2 = warnings_vec.iter().find(|w| w.to_string().contains("arg 2"));
-    assert!(
-      warning2.is_some(),
-      "should have warning for arg 2, warnings: {:?}",
-      warnings_vec.iter().map(|w| w.to_string()).collect::<Vec<_>>()
-    );
-    let msg2 = warning2.unwrap().to_string();
+    let warning2 = warnings_vec
+      .iter()
+      .find(|w| w.to_string().contains("arg 2"))
+      .unwrap_or_else(|| panic!("should have warning for arg 2, warnings: {warnings_vec:?}"));
+    assert_eq!(warning2.expected(), Some(":string"));
+    assert_eq!(warning2.actual(), Some(":number"));
+    let msg2 = warning2.to_string();
     assert!(
       msg2.contains("string") || msg2.contains(":string"),
       "warning should mention expected type: {msg2}"
