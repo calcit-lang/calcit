@@ -11,6 +11,7 @@ use std::time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 mod injection;
 
+mod analysis_cache;
 mod cli_handlers;
 mod strict_check;
 mod verification;
@@ -54,16 +55,41 @@ use calcit::{
 use cirru_edn::EdnTag;
 use cirru_parser::Cirru;
 
-fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
+fn add_cache_metadata(report: String, stats: &analysis_cache::CacheStats) -> Result<String, String> {
+  let mut value: serde_json::Value =
+    serde_json::from_str(&report).map_err(|error| format!("Failed to parse analysis envelope for cache metadata: {error}"))?;
+  value["data"]["cache"] = stats.as_json();
+  serde_json::to_string_pretty(&value).map_err(|error| format!("Failed to encode analysis envelope with cache metadata: {error}"))
+}
+
+fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot, snapshot_file: &str) -> Result<(), String> {
+  let cached = options
+    .incremental
+    .then(|| analysis_cache::collect_check_types(options, snapshot, snapshot_file))
+    .transpose()?;
   match options.format.as_str() {
-    "human" | "text" => print!("{}", type_coverage::format_check_types(options, snapshot)?),
-    "json" => println!("{}", type_coverage::format_check_types_json(options, snapshot)?),
+    "human" | "text" => {
+      if let Some((rows, stats)) = cached.as_ref() {
+        print!("{}", type_coverage::format_check_types_with_rows(options, rows)?);
+        print!("{}", stats.human_line());
+      } else {
+        print!("{}", type_coverage::format_check_types(options, snapshot)?);
+      }
+    }
+    "json" => {
+      if let Some((rows, stats)) = cached.as_ref() {
+        let report = type_coverage::format_check_types_json_with_rows(options, snapshot, rows)?;
+        println!("{}", add_cache_metadata(report, stats)?);
+      } else {
+        println!("{}", type_coverage::format_check_types_json(options, snapshot)?);
+      }
+    }
     other => return Err(format!("Unknown check-types output format `{other}`. Expected `human` or `json`.")),
   }
   Ok(())
 }
 
-fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
+fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot, snapshot_file: &str) -> Result<(), String> {
   if options.schema_evidence {
     struct StrictTypesGuard(bool);
     impl Drop for StrictTypesGuard {
@@ -88,14 +114,37 @@ fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
     }
     drop(guard);
   }
+  let cached = options
+    .incremental
+    .then(|| analysis_cache::collect_weak_types(options, snapshot, snapshot_file))
+    .transpose()?;
   match options.format.as_str() {
-    "human" | "text" => print!("{}", type_coverage::format_weak_types(options, snapshot)?),
+    "human" | "text" => {
+      if let Some((rows, stats)) = cached.as_ref() {
+        print!("{}", type_coverage::format_weak_types_with_rows(options, snapshot, rows)?);
+        print!("{}", stats.human_line());
+      } else {
+        print!("{}", type_coverage::format_weak_types(options, snapshot)?);
+      }
+    }
     "edn" => {
-      let value = serde_json::from_str(&type_coverage::format_weak_types_json(options, snapshot)?)
-        .map_err(|error| format!("Failed to parse weak-types envelope for Cirru EDN output: {error}"))?;
+      let report = if let Some((rows, stats)) = cached.as_ref() {
+        add_cache_metadata(type_coverage::format_weak_types_json_with_rows(options, snapshot, rows)?, stats)?
+      } else {
+        type_coverage::format_weak_types_json(options, snapshot)?
+      };
+      let value =
+        serde_json::from_str(&report).map_err(|error| format!("Failed to parse weak-types envelope for Cirru EDN output: {error}"))?;
       println!("{}", cli_handlers::format_json_value_as_edn(&value)?);
     }
-    "json" => println!("{}", type_coverage::format_weak_types_json(options, snapshot)?),
+    "json" => {
+      if let Some((rows, stats)) = cached.as_ref() {
+        let report = type_coverage::format_weak_types_json_with_rows(options, snapshot, rows)?;
+        println!("{}", add_cache_metadata(report, stats)?);
+      } else {
+        println!("{}", type_coverage::format_weak_types_json(options, snapshot)?);
+      }
+    }
     other => {
       return Err(format!(
         "Unknown weak-types output format `{other}`. Expected `human`, `edn`, or `json`."
@@ -465,13 +514,13 @@ fn run_cli() -> Result<(), String> {
       }
       AnalyzeSubcommand::CheckTypes(options) => {
         let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
-        return run_check_types(options, &snapshot);
+        return run_check_types(options, &snapshot, &cli_args.input);
       }
       AnalyzeSubcommand::CheckPublic(_) => {}
       AnalyzeSubcommand::WeakTypes(options) => {
         if !options.schema_evidence {
           let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
-          return run_weak_types(options, &snapshot);
+          return run_weak_types(options, &snapshot, &cli_args.input);
         }
       }
       AnalyzeSubcommand::Deprecated(options) => {
@@ -746,8 +795,8 @@ fn run_cli() -> Result<(), String> {
             .then_some(&strict_preflight as &dyn Fn() -> Result<(), String>),
         )
       }
-      AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot),
-      AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(weak_type_options, &snapshot),
+      AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot, &cli_args.input),
+      AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(weak_type_options, &snapshot, &cli_args.input),
       AnalyzeSubcommand::DynamicMethods(options) => run_dynamic_methods(options, &entries, &snapshot, &project_namespaces),
       AnalyzeSubcommand::Deprecated(deprecated_options) => run_deprecated(deprecated_options, &snapshot),
       AnalyzeSubcommand::Quality(quality_options) => run_quality(quality_options, &snapshot),
@@ -2829,7 +2878,7 @@ mod tests {
     assert_eq!(
       occurrence.unsafe_evidence,
       Some(type_coverage::UnsafeCoerceEvidence {
-        source_form: "raw-js-value",
+        source_form: "raw-js-value".to_owned(),
         target_schema: "'String".to_owned(),
         js_ffi_feature: true,
         raw_adapter_namespace: true,
@@ -2860,6 +2909,7 @@ mod tests {
       ffi_evidence: false,
       schema_evidence: false,
       summary_only: false,
+      incremental: false,
     };
     let json = type_coverage::format_weak_types_json(&options, &snapshot).expect("unsafe evidence JSON should format");
     let value: serde_json::Value = serde_json::from_str(&json).expect("unsafe evidence JSON should parse");
@@ -2907,7 +2957,10 @@ mod tests {
     assert_eq!(row.occurrences.len(), 1, "occurrences: {:?}", row.occurrences);
     assert_eq!(row.occurrences[0].path, "code@5.1.1.1");
     assert_eq!(
-      row.occurrences[0].unsafe_evidence.as_ref().map(|evidence| evidence.source_form),
+      row.occurrences[0]
+        .unsafe_evidence
+        .as_ref()
+        .map(|evidence| evidence.source_form.as_str()),
       Some("value")
     );
   }
@@ -3007,6 +3060,7 @@ mod tests {
       format: "json".to_owned(),
       deps: false,
       summary_only: false,
+      incremental: false,
     };
     let check_json = type_coverage::format_check_types_json(&check_options, &snapshot).expect("coverage JSON should format");
     let check_value: serde_json::Value = serde_json::from_str(&check_json).expect("coverage JSON should parse");
@@ -3023,6 +3077,7 @@ mod tests {
       ffi_evidence: false,
       schema_evidence: false,
       summary_only: false,
+      incremental: false,
     };
     let weak_json = type_coverage::format_weak_types_json(&weak_options, &snapshot).expect("weak type JSON should format");
     let weak_value: serde_json::Value = serde_json::from_str(&weak_json).expect("weak type JSON should parse");

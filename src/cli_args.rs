@@ -449,6 +449,9 @@ pub struct CheckTypesCommand {
   /// emit aggregate counts without per-definition details
   #[argh(switch, long = "summary-only")]
   pub summary_only: bool,
+  /// reuse revision-keyed per-definition analysis from .calcit local state
+  #[argh(switch)]
+  pub incremental: bool,
 }
 
 /// locate weakly-typed hotspots in schema and code
@@ -482,6 +485,9 @@ pub struct WeakTypesCommand {
   /// emit aggregate counts without per-definition details
   #[argh(switch, long = "summary-only")]
   pub summary_only: bool,
+  /// reuse revision-keyed per-definition analysis from .calcit local state
+  #[argh(switch)]
+  pub incremental: bool,
 }
 
 /// locate unresolved dynamic method dispatch in reachable definitions
