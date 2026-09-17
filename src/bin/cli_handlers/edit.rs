@@ -2443,6 +2443,7 @@ fn import_rules_from_json(value: &serde_json::Value) -> Result<Vec<Cirru>, Strin
   Ok(vec![json_value_to_cirru(value)?])
 }
 
+/// Validate one decoded imports-vector syntax node and return its rule expressions.
 fn import_rules_from_syntax_node(node: &Cirru, selected_format: SyntaxInputFormat) -> Result<Vec<Cirru>, String> {
   let Cirru::List(items) = node else {
     return Err(format!(
@@ -2468,6 +2469,7 @@ fn import_rules_from_syntax_node(node: &Cirru, selected_format: SyntaxInputForma
     .collect()
 }
 
+/// Decode bulk imports through the explicit syntax contract or the legacy auto-compatible path.
 fn parse_import_rules_input(raw: &str, requested_format: SyntaxInputFormat) -> Result<Vec<Cirru>, String> {
   let trimmed = raw.trim();
   if trimmed.is_empty() {
