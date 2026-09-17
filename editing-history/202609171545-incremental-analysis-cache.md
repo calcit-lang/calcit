@@ -25,4 +25,4 @@ Agent 驱动的类型迁移会反复执行 edit/analyze。`check-types` 与普�
 ## 验证
 
 - CLI 集成测试覆盖 cold、warm、单 definition 新增后的 partial hit、跨 analyzer payload miss、损坏缓存回退。
-- 测试移除 cache metadata 后比较 cold/warm envelope，确保缓存不改变分析语义。
+- 测试移除 cache/incremental metadata 后比较完整扫描、cold 与 warm envelope，确保缓存不改变分析语义。

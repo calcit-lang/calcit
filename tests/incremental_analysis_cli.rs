@@ -57,11 +57,21 @@ fn report(snapshot: &Path, analyzer: &str) -> serde_json::Value {
   serde_json::from_slice(&output.stdout).expect("analysis stdout should contain one JSON envelope")
 }
 
+fn full_report(snapshot: &Path, analyzer: &str) -> serde_json::Value {
+  let output = run_calcit(snapshot, &["analyze", analyzer, "--format", "json"]);
+  assert_success(&output, analyzer);
+  serde_json::from_slice(&output.stdout).expect("analysis stdout should contain one JSON envelope")
+}
+
 fn without_cache(mut report: serde_json::Value) -> serde_json::Value {
   report["data"]
     .as_object_mut()
     .expect("analysis data should be an object")
     .remove("cache");
+  report["data"]["filters"]
+    .as_object_mut()
+    .expect("analysis filters should be an object")
+    .remove("incremental");
   report
 }
 
@@ -124,9 +134,11 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(changed["data"]["cache"]["misses"], 1);
   assert_eq!(changed["data"]["cache"]["miss_reasons"]["definition-changed"], 1);
 
+  let weak_full = full_report(&snapshot, "weak-types");
   let weak_cold = report(&snapshot, "weak-types");
   assert_eq!(weak_cold["data"]["cache"]["status"], "cold");
   assert_eq!(weak_cold["data"]["cache"]["miss_reasons"]["analysis-missing"], definition_count + 1);
+  assert_eq!(without_cache(weak_cold.clone()), without_cache(weak_full));
 
   let weak_warm = report(&snapshot, "weak-types");
   assert_eq!(weak_warm["data"]["cache"]["status"], "warm");
