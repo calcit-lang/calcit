@@ -8,7 +8,7 @@ Agent 驱动的类型迁移会反复执行 edit/analyze。`check-types` 与普�
 ## 修改
 
 - 在既有 `analyze check-types` 与 `analyze weak-types` 增加 opt-in `--incremental`，不新增顶层工具入口。
-- 在项目 `.calcit/analysis-cache-v1.json` 保存按 definition revision 分离的 coverage 与 weak-type rows。
+- 在项目 `.calcit/analysis-cache-v1.cirru` 保存按 definition revision 分离的 coverage 与 weak-type rows。
 - 缓存上下文包含 Calcit 版本、活动 entry、type slots、feature policy 与 target；definition revision 覆盖持久化
   schema、code、tests、examples、tags、doc 与 FFI metadata。
 - JSON/Cirru EDN 的 `data.cache` 和 human 摘要报告 hit、miss、状态与失效原因；损坏或不可写缓存安全回退。

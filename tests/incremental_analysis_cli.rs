@@ -228,14 +228,14 @@ fn corrupt_incremental_cache_falls_back_to_a_cold_analysis() {
   let definition_count = first["data"]["cache"]["misses"]
     .as_u64()
     .expect("cold miss count should be numeric");
-  fs::write(directory.0.join(".calcit/analysis-input-cache-v1.json"), "not-json").expect("input cache corruption should write");
+  fs::write(directory.0.join(".calcit/analysis-input-cache-v1.cirru"), "not-cirru-edn").expect("input cache corruption should write");
 
   let recovered_input = report(&snapshot, "check-types");
   assert_eq!(recovered_input["data"]["cache"]["status"], "warm");
   assert_eq!(recovered_input["data"]["cache"]["input"]["status"], "cold");
   assert_eq!(recovered_input["data"]["cache"]["input"]["reason"], "cache-corrupt");
 
-  fs::write(directory.0.join(".calcit/analysis-cache-v1.json"), "not-json").expect("definition cache corruption should write");
+  fs::write(directory.0.join(".calcit/analysis-cache-v1.cirru"), "not-cirru-edn").expect("definition cache corruption should write");
 
   let recovered = report(&snapshot, "check-types");
   assert_eq!(recovered["data"]["cache"]["status"], "cold");

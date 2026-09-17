@@ -8,11 +8,12 @@
 ## 修改
 
 - 模块加载器可返回递归访问过的 Snapshot 文件路径，普通调用继续保持原有返回类型和行为。
-- `--incremental` 为普通 `check-types` / `weak-types` 保存 `.calcit/analysis-input-cache-v1.json`。
+- `--incremental` 为普通 `check-types` / `weak-types` 保存 `.calcit/analysis-input-cache-v1.cirru`。
+- 输入缓存与 definition cache 都以 Cirru EDN 为默认持久化格式；JSON 只保留给显式互操作接口。
 - 输入缓存记录编译器版本、内置 core revision、主文件路径、全部源文件内容 digest、module 请求解析路径、项目 namespace
   集合和合并后的 Snapshot；符号链接或模块解析目标变化也会失效。
-- Snapshot schema 在 JSON 往返时兼容 map 字段恢复为字符串键；无法由通用 JSON 无损表达的 `:ffi` Cirru EDN map
-  另外以 Cirru EDN 文本保真保存，并在命中时严格恢复，避免 Tag/Symbol 键退化。
+- Snapshot schema 在 Serde 往返时兼容 map 字段恢复为字符串键；`:ffi` 中带 Tag/Symbol key 的 Cirru EDN map
+  另外以 Cirru EDN 文本保真保存，并在命中时严格恢复，避免键类型退化。
 - 所有源文件未变化时直接恢复合并 Snapshot；任一源变化时全量重建输入，但 definition 缓存仍按各自 revision 判断命中。
 - 模块加载失败、缓存损坏、版本/schema 不一致或写入失败都安全回退；模块缺失时不持久化输入缓存，避免后来出现的模块被遗漏。
 - 现有 `data.cache` 增加独立 `input` 状态，不新增命令或并行报告入口；`preprocessing_cached` 继续明确为 `false`。

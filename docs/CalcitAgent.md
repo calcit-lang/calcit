@@ -602,7 +602,7 @@ resolver call-site 证据，并补充重复 Map shape、`match` tag dispatch 的
 Option/Result、默认值或 FFI trust。`--summary-only` 仅用于看候选数量，真正修改前必须读取完整候选并显式选择 fix。
 
 需要连续定位类型迁移项时，可在 `analyze check-types` 或 `analyze weak-types` 增加 `--incremental`。只信报告中
-`:data :cache` 的 hit/miss 与失效原因；缓存位于项目 `.calcit/`，损坏时会自动冷启动。`cache.input` 单独说明主 Snapshot
+`:data :cache` 的 hit/miss 与失效原因；缓存以 Cirru EDN 保存于项目 `.calcit/`，损坏时会自动冷启动。`cache.input` 单独说明主 Snapshot
 与依赖模块的合并输入是否复用，源文件内容 digest 变化会重新加载全部输入；definition-local inventory 则继续逐项失效。
 该缓存仍不覆盖 schema evidence、deprecated、quality、dynamic-methods 或严格预处理，因此不能替代最终无缓存门禁。
 

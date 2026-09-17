@@ -7,15 +7,16 @@ use std::path::{Path, PathBuf};
 use calcit::cli_args::{CheckTypesCommand, WeakTypesCommand};
 use calcit::{cli_args, project_state, runner, snapshot};
 use md5::{Digest, Md5};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::cli_handlers;
 use crate::type_coverage::{self, TypeCoverageRow, WeakTypeKind, WeakTypeRow};
 
 const CACHE_SCHEMA_VERSION: u32 = 1;
-const CACHE_FILE: &str = "analysis-cache-v1.json";
+const CACHE_FILE: &str = "analysis-cache-v1.cirru";
 const INPUT_CACHE_SCHEMA_VERSION: u32 = 1;
-const INPUT_CACHE_FILE: &str = "analysis-input-cache-v1.json";
+const INPUT_CACHE_FILE: &str = "analysis-input-cache-v1.cirru";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct InputCacheStats {
@@ -83,7 +84,7 @@ impl CacheStats {
       "hits": self.hits,
       "misses": self.misses,
       "miss_reasons": self.miss_reasons,
-      "cache_file": ".calcit/analysis-cache-v1.json",
+      "cache_file": ".calcit/analysis-cache-v1.cirru",
       "input": self.input,
     })
   }
@@ -208,13 +209,23 @@ fn validate_input_cache(cache: &CachedAnalysisInput, expected_input: &str) -> Re
   Ok(())
 }
 
+fn encode_cache<T: Serialize>(value: &T, label: &str) -> Result<String, String> {
+  let data = cirru_edn::to_edn(value).map_err(|error| format!("Failed to encode {label} as Cirru EDN: {error}"))?;
+  cirru_edn::format(&data, true).map_err(|error| format!("Failed to format {label} as Cirru EDN: {error}"))
+}
+
+fn decode_cache<T: DeserializeOwned>(content: &str) -> Result<T, String> {
+  let data = cirru_edn::parse(content).map_err(|error| error.to_string())?;
+  cirru_edn::from_edn(data)
+}
+
 fn write_input_cache(snapshot_file: &str, cache: &CachedAnalysisInput) -> Result<(), String> {
   let project_directory = project_state::project_directory_for_snapshot(snapshot_file);
   let directory = project_state::ensure_state_directory(project_directory)
     .map_err(|error| format!("Failed to create analysis input cache directory: {error}"))?;
   let path = directory.join(INPUT_CACHE_FILE);
   let temporary = directory.join(format!(".{INPUT_CACHE_FILE}.{}.tmp", std::process::id()));
-  let content = serde_json::to_string(cache).map_err(|error| format!("Failed to encode analysis input cache: {error}"))?;
+  let content = encode_cache(cache, "analysis input cache")?;
   fs::write(&temporary, content).map_err(|error| format!("Failed to write analysis input cache staging file: {error}"))?;
   fs::rename(&temporary, &path).map_err(|error| format!("Failed to install analysis input cache: {error}"))?;
   Ok(())
@@ -256,7 +267,7 @@ pub(crate) fn load_snapshot_for_incremental_analysis(snapshot_file: &str) -> Res
   let expected_input = canonical_path(Path::new(snapshot_file))?;
   let path = input_cache_path(snapshot_file);
   let mut reason = match fs::read_to_string(&path) {
-    Ok(content) => match serde_json::from_str::<CachedAnalysisInput>(&content) {
+    Ok(content) => match decode_cache::<CachedAnalysisInput>(&content) {
       Ok(cache) => match validate_input_cache(&cache, &expected_input) {
         Ok(()) => {
           let mut snapshot = cache.snapshot;
@@ -352,7 +363,7 @@ fn load_cache(path: &Path, expected_context: &str) -> (AnalysisCache, Option<Str
   let Ok(content) = fs::read_to_string(path) else {
     return (AnalysisCache::empty(expected_context.to_owned()), Some("cache-missing".to_owned()));
   };
-  let Ok(cache) = serde_json::from_str::<AnalysisCache>(&content) else {
+  let Ok(cache) = decode_cache::<AnalysisCache>(&content) else {
     return (AnalysisCache::empty(expected_context.to_owned()), Some("cache-corrupt".to_owned()));
   };
   if cache.schema_version != CACHE_SCHEMA_VERSION {
@@ -382,7 +393,7 @@ fn write_cache(snapshot_file: &str, cache: &AnalysisCache) -> Result<(), String>
     .map_err(|error| format!("Failed to create analysis cache directory: {error}"))?;
   let path = directory.join(CACHE_FILE);
   let temporary = directory.join(format!(".{CACHE_FILE}.{}.tmp", std::process::id()));
-  let content = serde_json::to_string(cache).map_err(|error| format!("Failed to encode analysis cache: {error}"))?;
+  let content = encode_cache(cache, "analysis cache")?;
   fs::write(&temporary, content).map_err(|error| format!("Failed to write analysis cache staging file: {error}"))?;
   fs::rename(&temporary, &path).map_err(|error| format!("Failed to install analysis cache: {error}"))?;
   Ok(())
