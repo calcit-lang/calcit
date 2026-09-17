@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use calcit::calcit::{CalcitTrait, CalcitTypeAnnotation, LocatedWarning};
+use calcit::ProgramEntries;
+use calcit::calcit::{CalcitTrait, CalcitTypeAnnotation, LocatedWarning, NodeLocation};
 use calcit::call_stack::CallStackList;
 use calcit::cli_args::{CheckTypesCommand, WeakTypesCommand};
 use calcit::{cli_args, program, project_state, runner, snapshot};
@@ -93,6 +94,17 @@ impl InputCacheStats {
       module_miss_reasons: BTreeMap::new(),
     }
   }
+
+  pub(crate) fn ensure_complete(&self) -> Result<(), String> {
+    let failures = self.module_miss_reasons.get("module-load-failed").copied().unwrap_or_default();
+    if failures == 0 {
+      Ok(())
+    } else {
+      Err(format!(
+        "Incremental analysis requires a complete Snapshot, but {failures} active-entry module(s) failed to load."
+      ))
+    }
+  }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -116,6 +128,41 @@ pub(crate) struct DependencyIndexStats {
   pub changed: usize,
   pub affected: usize,
   pub miss_reasons: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct PreprocessingCacheStats {
+  pub status: String,
+  pub preprocessing_cached: bool,
+  pub reason: Option<String>,
+  pub input: InputCacheStats,
+  pub dependency_index: DependencyIndexStats,
+}
+
+impl PreprocessingCacheStats {
+  pub(crate) fn as_json(&self) -> serde_json::Value {
+    serde_json::json!({
+      "enabled": true,
+      "scope": "entry-dependency-closure",
+      "preprocessing_cached": self.preprocessing_cached,
+      "status": self.status,
+      "reason": self.reason,
+      "cache_file": ".calcit/analysis-cache-v1.cirru",
+      "input": self.input,
+      "dependency_index": self.dependency_index,
+    })
+  }
+
+  pub(crate) fn human_line(&self) -> String {
+    format!(
+      "- incremental-cache: scope=entry-dependency-closure preprocessing-cached={} status={} reason={} input={} dependencies={}\n",
+      self.preprocessing_cached,
+      self.status,
+      self.reason.as_deref().unwrap_or("none"),
+      self.input.status,
+      self.dependency_index.status,
+    )
+  }
 }
 
 impl CacheStats {
@@ -225,6 +272,52 @@ struct AnalysisCache {
   definitions: BTreeMap<String, CachedDefinition>,
   #[serde(default)]
   dependency_index: BTreeMap<String, CachedDependency>,
+  #[serde(default)]
+  dynamic_methods: Option<CachedDynamicMethods>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CachedDynamicMethods {
+  closure_revision: String,
+  findings: Vec<CachedWarning>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CachedWarning {
+  message: String,
+  namespace: String,
+  definition: String,
+  coordinate: Vec<u16>,
+  code: Option<String>,
+  hint: Option<String>,
+}
+
+impl From<&LocatedWarning> for CachedWarning {
+  fn from(warning: &LocatedWarning) -> Self {
+    Self {
+      message: warning.message().to_owned(),
+      namespace: warning.location().ns.to_string(),
+      definition: warning.location().def.to_string(),
+      coordinate: warning.location().coord.to_vec(),
+      code: warning.code().map(str::to_owned),
+      hint: warning.hint().map(str::to_owned),
+    }
+  }
+}
+
+impl From<CachedWarning> for LocatedWarning {
+  fn from(warning: CachedWarning) -> Self {
+    LocatedWarning::new_with_detail(
+      warning.message,
+      NodeLocation::new(
+        warning.namespace.into(),
+        warning.definition.into(),
+        std::sync::Arc::new(warning.coordinate),
+      ),
+      warning.code,
+      warning.hint,
+    )
+  }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -252,6 +345,7 @@ impl AnalysisCache {
       context_revision,
       definitions: BTreeMap::new(),
       dependency_index: BTreeMap::new(),
+      dynamic_methods: None,
     }
   }
 }
@@ -405,7 +499,7 @@ fn restore_cached_ffi(snapshot: &mut snapshot::Snapshot, cached: &BTreeMap<Strin
 pub(crate) fn load_snapshot_for_incremental_analysis(
   snapshot_file: &str,
   selected_entry: Option<&str>,
-) -> Result<(snapshot::Snapshot, InputCacheStats), String> {
+) -> Result<(snapshot::Snapshot, InputCacheStats, HashSet<String>), String> {
   let expected_input = canonical_path(Path::new(snapshot_file))?;
   let path = input_cache_path(snapshot_file);
   let (cached, global_reason) = match fs::read_to_string(&path) {
@@ -537,7 +631,7 @@ pub(crate) fn load_snapshot_for_incremental_analysis(
     InputCacheStats::cold(reason, source_count, module_misses, module_miss_reasons)
   };
   stats.entry = Some(active_entry);
-  Ok((snapshot, stats))
+  Ok((snapshot, stats, project_namespaces))
 }
 
 fn context_revision(snapshot: &snapshot::Snapshot) -> Result<String, String> {
@@ -813,6 +907,139 @@ fn collect_dependency_index(
   Ok(stats)
 }
 
+fn dependency_closure_revision(cache: &AnalysisCache, entries: &ProgramEntries) -> Result<String, String> {
+  let roots = [
+    format!("{}/{}", entries.init_ns, entries.init_def),
+    format!("{}/{}", entries.reload_ns, entries.reload_def),
+  ];
+  let root_ids = roots.iter().cloned().collect::<BTreeSet<_>>();
+  let mut pending = roots.iter().cloned().collect::<VecDeque<_>>();
+  let mut visited = BTreeSet::new();
+  let mut closure = Vec::new();
+
+  while let Some(id) = pending.pop_front() {
+    if !visited.insert(id.clone()) {
+      continue;
+    }
+    let Some(record) = cache.dependency_index.get(&id) else {
+      if root_ids.contains(&id) {
+        return Err(format!("dependency-root-missing:{id}"));
+      }
+      // Builtins and host-provided definitions are outside the Snapshot index.
+      // Their stable identifier and compiler version still participate in the key.
+      closure.push((id, "external".to_owned(), String::new(), BTreeSet::new()));
+      continue;
+    };
+    if !record.ready {
+      return Err(format!("dependency-unresolved:{id}"));
+    }
+    for dependency in &record.dependencies {
+      pending.push_back(dependency.clone());
+    }
+    closure.push((
+      id,
+      record.definition_revision.clone(),
+      record.namespace_revision.clone(),
+      record.dependencies.clone(),
+    ));
+  }
+
+  closure.sort_by(|a, b| a.0.cmp(&b.0));
+  let bytes = serde_json::to_vec(&(roots, closure)).map_err(|error| format!("Failed to encode dependency closure: {error}"))?;
+  let mut hasher = Md5::new();
+  hasher.update(bytes);
+  Ok(format!("md5:{}", hex::encode(hasher.finalize())))
+}
+
+fn preprocess_dynamic_methods(snapshot: &snapshot::Snapshot, entries: &ProgramEntries) -> Result<Vec<LocatedWarning>, String> {
+  *program::PROGRAM_CODE_DATA
+    .write()
+    .expect("open program data for dynamic method analysis") = program::extract_program_data(snapshot)?;
+  let previous_warn_setting = runner::preprocess::is_warn_dyn_method_enabled();
+  runner::preprocess::set_warn_dyn_method(true);
+  let collected = (|| {
+    let warnings = RefCell::new(Vec::new());
+    runner::preprocess::ensure_ns_def_compiled(
+      calcit::calcit::CORE_NS,
+      calcit::calcit::BUILTIN_IMPLS_ENTRY,
+      &warnings,
+      &CallStackList::default(),
+    )
+    .map_err(|failure| failure.msg)?;
+    warnings.borrow_mut().clear();
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .map_err(|failure| failure.msg)?;
+    runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, &warnings, &CallStackList::default())
+      .map_err(|failure| failure.msg)?;
+    Ok::<Vec<LocatedWarning>, String>(
+      warnings
+        .into_inner()
+        .into_iter()
+        .filter(|warning| matches!(warning.code(), Some("P_DYNAMIC_METHOD_DISPATCH" | "P_DYNAMIC_POSTFIX_METHOD")))
+        .collect(),
+    )
+  })();
+  runner::preprocess::set_warn_dyn_method(previous_warn_setting);
+  collected
+}
+
+pub(crate) fn collect_dynamic_methods(
+  snapshot: &snapshot::Snapshot,
+  snapshot_file: &str,
+  entries: &ProgramEntries,
+  input: InputCacheStats,
+) -> Result<(Vec<LocatedWarning>, PreprocessingCacheStats), String> {
+  let context = context_revision(snapshot)?;
+  let path = cache_path(snapshot_file);
+  let (mut cache, global_reason) = load_cache(&path, &context);
+  let dependency_index = collect_dependency_index(&mut cache, snapshot, None, None, true)?;
+  let closure_revision = dependency_closure_revision(&cache, entries);
+
+  let (findings, status, preprocessing_cached, reason) = match closure_revision {
+    Ok(revision) => match cache.dynamic_methods.as_ref() {
+      Some(cached) if cached.closure_revision == revision => (
+        cached.findings.clone().into_iter().map(LocatedWarning::from).collect(),
+        "warm".to_owned(),
+        true,
+        None,
+      ),
+      cached => {
+        let findings = preprocess_dynamic_methods(snapshot, entries)?;
+        let reason = global_reason.clone().or_else(|| {
+          cached
+            .map(|_| "dependency-closure-changed".to_owned())
+            .or_else(|| Some("preprocessing-not-cached".to_owned()))
+        });
+        cache.dynamic_methods = Some(CachedDynamicMethods {
+          closure_revision: revision,
+          findings: findings.iter().map(CachedWarning::from).collect(),
+        });
+        (findings, "cold".to_owned(), false, reason)
+      }
+    },
+    Err(reason) => (
+      preprocess_dynamic_methods(snapshot, entries)?,
+      "bypassed".to_owned(),
+      false,
+      Some(reason),
+    ),
+  };
+
+  if let Err(error) = write_cache(snapshot_file, &cache) {
+    eprintln!("Warning: {error}; incremental analysis continued without persisting the cache.");
+  }
+  Ok((
+    findings,
+    PreprocessingCacheStats {
+      status,
+      preprocessing_cached,
+      reason,
+      input,
+      dependency_index,
+    },
+  ))
+}
+
 pub(crate) fn collect_check_types(
   options: &CheckTypesCommand,
   snapshot: &snapshot::Snapshot,
@@ -945,9 +1172,10 @@ pub(crate) fn collect_weak_types(
 
 #[cfg(test)]
 mod tests {
-  use super::{CachedDependency, DependencySource, reverse_affected_definitions, unresolved_dependency_record};
-  use calcit::calcit::DYNAMIC_TYPE;
+  use super::{CachedDependency, CachedWarning, DependencySource, reverse_affected_definitions, unresolved_dependency_record};
+  use calcit::calcit::{DYNAMIC_TYPE, LocatedWarning, NodeLocation};
   use std::collections::{BTreeMap, BTreeSet};
+  use std::sync::Arc;
 
   fn dependency(dependencies: &[&str]) -> CachedDependency {
     CachedDependency {
@@ -956,6 +1184,18 @@ mod tests {
       ready: true,
       dependencies: dependencies.iter().map(|item| (*item).to_owned()).collect(),
     }
+  }
+
+  #[test]
+  fn cached_dynamic_warning_preserves_diagnostic_details() {
+    let warning = LocatedWarning::new_with_detail(
+      "dynamic receiver".to_owned(),
+      NodeLocation::new(Arc::from("app.main"), Arc::from("main!"), Arc::new(vec![2, 1])),
+      Some("P_DYNAMIC_METHOD_DISPATCH".to_owned()),
+      Some("add a receiver schema".to_owned()),
+    );
+    let restored = LocatedWarning::from(CachedWarning::from(&warning));
+    assert_eq!(restored, warning);
   }
 
   #[test]

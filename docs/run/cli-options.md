@@ -66,18 +66,20 @@ adapter 候选。它只整理 Snapshot、schema 和 namespace import 中可证�
 resolver call-site 证据，并列出重复匿名 Map shape 与 `match` tag dispatch。输出带置信度、冲突、unknown slot 和
 源码路径，全部是 `review-required`；不会自动创建 Struct/Enum，也不会决定业务默认值或错误语义。
 
-在频繁 edit/analyze 循环中，可为 `analyze check-types` 或 `analyze weak-types` 增加 `--incremental`。该参数不新增命令，
+在频繁 edit/analyze 循环中，可为 `analyze check-types`、`analyze weak-types` 或 `analyze dynamic-methods` 增加 `--incremental`。该参数不新增命令，
 在项目 `.calcit/analysis-input-cache-v2.cirru` 分别复用由内容 digest 校验的主 Snapshot 与 direct module 单元，并在
 `.calcit/analysis-cache-v1.cirru` 保存按 definition revision 分离的本地结果；缓存默认使用 Cirru EDN，JSON 仅保留为显式
 互操作输出。报告会分别返回 `cache.input.entry` 与 main/module hit/miss、definition hit/miss，以及 `cache.dependency_index` 的编译器解析依赖索引摘要。
 顶层 `--entry` 会先选择对应配置，再校验和加载该 entry 的 modules；切换 entry 或严格模式默认 feature policy 时，definition cache
 会按 context revision 冷启动，不会沿用另一 entry 的分析结果。
-依赖索引按 definition 与 namespace revision 复用，变化时报告 changed/affected 数量；affected 包含反向传递调用者，但目前只作为
-后续细粒度失效的证据，不会跳过严格预处理。单个模块的传递输入变化只重载该模块，其他模块和未变化 definition 的结果仍可命中。
+依赖索引按 definition 与 namespace revision 复用，变化时报告 changed/affected 数量；affected 包含反向传递调用者。
+`dynamic-methods --incremental` 会进一步校验 init/reload 的完整 dependency closure：闭包不变时复用动态方法诊断并明确报告
+`preprocessing_cached=true`，闭包索引不完整时保守执行完整入口预处理。它不缓存 compiled AST，也不替代严格类型检查。
+单个模块的传递输入变化只重载该模块，其他模块和未变化 definition 的结果仍可命中。
 input cache 头损坏或版本不一致时会从源码重载主 Snapshot 和 modules；单个缓存单元失效时只重载该单元，有效的 definition 缓存仍可命中。
 input cache 写入失败时本次分析继续，但不会更新该缓存；definition cache 缺失、不可读，或因 schema、编译器版本、context revision
 变化而失效时，才会让 definition-local inventory 冷启动。它目前不缓存
-schema evidence、deprecated、quality、dynamic-methods 或严格预处理；最终 CI 仍应运行无缓存检查。
+schema evidence、deprecated、quality 或通用严格预处理；最终 CI 仍应运行无缓存检查。
 
 For feature-level planning, use `calcit edit scaffold`. Its primary input is a
 Cirru EDN architecture plan, preferably stored under

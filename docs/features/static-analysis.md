@@ -136,13 +136,20 @@ module 保存为独立单元，以完整传递源文件的内容 digest、module
 结果。顶层 `--entry` 会在校验与加载 module 前完成选择，严格模式补入的默认 feature policy 也参与 context revision；切换 entry
 不会错误复用另一 entry 的 module 或 definition 结果。entry policy、编译器版本或 definition cache schema 变化会让 definition-local inventory 明确冷启动。input cache 头损坏或
 版本不一致时会从源码重载主 Snapshot 和 modules；单个输入单元失效时只重载该单元，有效 definition 结果仍可命中。任何缓存写入
-失败都不会改变本次分析结果，只会报告到 stderr 并跳过对应缓存更新。
+失败都不会改变本次 `check-types`/`weak-types` 分析结果，只会报告到 stderr 并跳过对应缓存更新；需要完整 entry
+preprocessing 的 `dynamic-methods --incremental` 会拒绝模块加载失败的不完整 Snapshot，不会返回旧的 warm 诊断。
 
-当前增量边界覆盖静态分析输入加载与无需预处理的 definition-local inventory，但 `preprocessing_cached` 仍为 `false`。
+`dynamic-methods` 也可显式增加 `--incremental`。它会为活动 entry 的 init/reload roots 计算 compiler-resolved dependency closure；
+只有闭包内 definition、namespace/schema 依赖、entry policy 与编译器版本均未变化时，才复用上次动态方法诊断并报告
+`scope=entry-dependency-closure`、`preprocessing_cached=true`。闭包外的 definition 变化不会强制重跑入口预处理；闭包索引缺失或
+未解析时则报告 `bypassed` 并执行完整入口预处理。缓存的是可复核诊断，不是 compiled AST，也不参与类型正确性判断。
+
+`check-types` 与普通 `weak-types` 的增量边界仍是静态分析输入加载与无需预处理的 definition-local inventory，
+其 `preprocessing_cached` 仍为 `false`。
 依赖索引复用 compiler resolver（包括 macro 展开后的引用）并补充闭合 schema 中的限定类型/trait 引用；namespace import 变化会使
 该 namespace 的索引条目失效。它会计算反向传递 affected 集合，但现阶段不据此复用 compiled definition，避免在失效正确性尚未由
 严格检查验证前让缓存成为类型正确性依据。
-`weak-types --schema-evidence` 的编译器/call-site 证据仍按正常路径重新计算，`dynamic-methods`、`deprecated`、`quality` 与严格
+`weak-types --schema-evidence` 的编译器/call-site 证据仍按正常路径重新计算，`deprecated`、`quality` 与通用严格
 预处理也不宣称命中此缓存；同时请求 `--schema-evidence --incremental` 时，`cache.input.status` 明确为 `bypassed`。模块加载
 失败时输入缓存不会持久化，避免后来出现的模块被旧缓存漏掉。后续阶段会先用该索引验证 schema/import/type-slot 的失效范围，
 再扩大 preprocessing 复用，不能把本地 cache 当作类型正确性证明。CI 与最终验收继续保留

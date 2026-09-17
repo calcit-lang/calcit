@@ -603,7 +603,7 @@ resolver call-site 证据，并补充重复 Map shape、`match` tag dispatch 的
 `boundary-unknown`、`conflict` 和 evidence path 安排审阅；不要把建议名称当成业务模型，也不要自动生成 Struct/Enum、
 Option/Result、默认值或 FFI trust。`--summary-only` 仅用于看候选数量，真正修改前必须读取完整候选并显式选择 fix。
 
-需要连续定位类型迁移项时，可在 `analyze check-types` 或 `analyze weak-types` 增加 `--incremental`。只信报告中
+需要连续定位类型迁移项时，可在 `analyze check-types`、`analyze weak-types` 或 `analyze dynamic-methods` 增加 `--incremental`。只信报告中
 `:data :cache` 的 hit/miss 与失效原因；缓存以 Cirru EDN 保存于项目 `.calcit/`。input cache 头损坏或版本不一致时会从源码重载主
 Snapshot 和 modules；definition cache 缺失、不可读，或因 schema、编译器版本、context revision 变化而失效时，才会让
 definition-local inventory 冷启动。`cache.input` 单独说明活动 `entry`、主 Snapshot
@@ -611,8 +611,9 @@ definition-local inventory 冷启动。`cache.input` 单独说明活动 `entry`�
 解析路径变化时只重载该模块，其他模块继续复用；definition-local inventory 则继续逐项失效。
 使用顶层 `--entry` 时，缓存必须先选择对应 entry 再加载 modules；不要把另一 entry 的 module 命中视为有效证据。
 `cache.dependency-index`（JSON 中为 `dependency_index`）提供 compiler-resolved graph 的 hit/miss、edge、changed 与反向 affected 数量，
-供 Agent 判断修改波及范围；它目前是只读证据，不代表严格预处理已经复用，也不能替代无缓存检查。
-该缓存仍不覆盖 schema evidence、deprecated、quality、dynamic-methods 或严格预处理，因此不能替代最终无缓存门禁。
+供 Agent 判断修改波及范围。`dynamic-methods` 只有在 init/reload dependency closure 完整且 revision 未变时才报告
+`preprocessing_cached=true`；闭包外修改允许继续复用，缺失或未解析的闭包证据会保守回退。这里复用的是诊断结果而非 compiled AST，
+不能替代无缓存检查。该缓存仍不覆盖 schema evidence、deprecated、quality 或通用严格预处理，因此不能替代最终无缓存门禁。
 
 `:: :tag ...` 是匿名 Enum 字面量；当已有 Enum 定义在头部时，直接使用 `Enum :tag ...`，类型分析会检查变体和 payload，并在预处理阶段降为命名构造。只有需要显式携带运行时 enum prototype、跨模块动态构造或兼容旧代码时才使用 `%:: Enum :tag ...`。不要为了绕过类型检查而主动选择 `%::`。
 

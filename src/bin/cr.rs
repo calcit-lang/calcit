@@ -247,6 +247,8 @@ fn run_dynamic_methods(
   entries: &ProgramEntries,
   snapshot: &snapshot::Snapshot,
   project_namespaces: &HashSet<String>,
+  snapshot_file: &str,
+  input_cache: Option<analysis_cache::InputCacheStats>,
 ) -> Result<(), String> {
   if !matches!(options.format.as_str(), "human" | "text" | "json") {
     return Err(format!(
@@ -255,19 +257,36 @@ fn run_dynamic_methods(
     ));
   }
 
-  let previous_warn_setting = runner::preprocess::is_warn_dyn_method_enabled();
-  runner::preprocess::set_warn_dyn_method(true);
-  let collected = (|| {
-    let warnings = RefCell::new(Vec::new());
-    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
-      .map_err(|failure| failure.msg)?;
-    runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, &warnings, &CallStackList::default())
-      .map_err(|failure| failure.msg)?;
-    Ok::<Vec<LocatedWarning>, String>(warnings.into_inner())
-  })();
-  runner::preprocess::set_warn_dyn_method(previous_warn_setting);
+  let cached = options
+    .incremental
+    .then(|| {
+      analysis_cache::collect_dynamic_methods(
+        snapshot,
+        snapshot_file,
+        entries,
+        input_cache.expect("incremental dynamic analysis requires input cache evidence"),
+      )
+    })
+    .transpose()?;
 
-  let findings = collect_dynamic_method_findings(collected?, options.deps, project_namespaces);
+  let collected = if let Some((findings, _)) = &cached {
+    findings.clone()
+  } else {
+    let previous_warn_setting = runner::preprocess::is_warn_dyn_method_enabled();
+    runner::preprocess::set_warn_dyn_method(true);
+    let collected = (|| {
+      let warnings = RefCell::new(Vec::new());
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .map_err(|failure| failure.msg)?;
+      runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, &warnings, &CallStackList::default())
+        .map_err(|failure| failure.msg)?;
+      Ok::<Vec<LocatedWarning>, String>(warnings.into_inner())
+    })();
+    runner::preprocess::set_warn_dyn_method(previous_warn_setting);
+    collected?
+  };
+
+  let findings = collect_dynamic_method_findings(collected, options.deps, project_namespaces);
   let finding_count = findings.len();
   let passed = options.max.is_none_or(|limit| finding_count <= limit);
   let revision_ids = snapshot
@@ -287,6 +306,9 @@ fn run_dynamic_methods(
       if let Some(limit) = options.max {
         println!("- policy: {} (limit {limit})", if passed { "PASS" } else { "FAIL" });
       }
+      if let Some((_, stats)) = &cached {
+        print!("{}", stats.human_line());
+      }
       if !options.summary_only {
         for warning in &findings {
           println!("- {warning}");
@@ -299,36 +321,38 @@ fn run_dynamic_methods(
       } else {
         findings.iter().map(LocatedWarning::as_json).collect::<Vec<_>>()
       };
-      println!(
-        "{}",
-        serde_json::json!({
-          "schema_version": 1,
-          "command": "analyze.dynamic-methods",
-          "revision": revision,
-          "data": {
-            "filters": {
-              "include_dependencies": options.deps,
-              "summary_only": options.summary_only,
-              "max": options.max,
-            },
-            "summary": {
-              "findings": finding_count,
-              "passed": passed,
-            },
-            "findings": rows,
+      let mut report = serde_json::json!({
+        "schema_version": 1,
+        "command": "analyze.dynamic-methods",
+        "revision": revision,
+        "data": {
+          "filters": {
+            "include_dependencies": options.deps,
+            "summary_only": options.summary_only,
+            "max": options.max,
+            "incremental": options.incremental,
           },
-          "diagnostics": if passed {
-            Vec::<serde_json::Value>::new()
-          } else {
-            vec![serde_json::json!({
-              "code": "E_DYNAMIC_METHOD_POLICY",
-              "phase": "analysis",
-              "severity": "error",
-              "message": format!("Dynamic method dispatch findings {finding_count} exceed limit {}.", options.max.unwrap_or_default()),
-            })]
+          "summary": {
+            "findings": finding_count,
+            "passed": passed,
           },
-        })
-      );
+          "findings": rows,
+        },
+        "diagnostics": if passed {
+          Vec::<serde_json::Value>::new()
+        } else {
+          vec![serde_json::json!({
+            "code": "E_DYNAMIC_METHOD_POLICY",
+            "phase": "analysis",
+            "severity": "error",
+            "message": format!("Dynamic method dispatch findings {finding_count} exceed limit {}.", options.max.unwrap_or_default()),
+          })]
+        },
+      });
+      if let Some((_, stats)) = &cached {
+        report["data"]["cache"] = stats.as_json();
+      }
+      println!("{report}");
     }
     _ => unreachable!("dynamic-methods output format was validated before analysis"),
   }
@@ -347,6 +371,26 @@ fn attach_missing_core_namespaces(snapshot: &mut snapshot::Snapshot, core_snapsh
   for (namespace, file) in core_snapshot.files {
     snapshot.files.entry(namespace).or_insert(file);
   }
+}
+
+fn analysis_program_entries(
+  snapshot: &snapshot::Snapshot,
+  init_override: Option<&str>,
+  reload_override: Option<&str>,
+) -> Result<ProgramEntries, String> {
+  let selected_entry = snapshot.active_entry()?;
+  let init_fn = init_override.unwrap_or(&selected_entry.init_fn);
+  let reload_fn = reload_override.unwrap_or(&selected_entry.reload_fn);
+  let (init_ns, init_def) = util::string::extract_ns_def(init_fn)?;
+  let (reload_ns, reload_def) = util::string::extract_ns_def(reload_fn)?;
+  Ok(ProgramEntries {
+    init_fn: Arc::from(init_fn),
+    reload_fn: Arc::from(reload_fn),
+    init_def: init_def.into(),
+    init_ns: init_ns.into(),
+    reload_ns: reload_ns.into(),
+    reload_def: reload_def.into(),
+  })
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -532,7 +576,8 @@ fn run_cli() -> Result<(), String> {
       }
       AnalyzeSubcommand::CheckTypes(options) => {
         let (mut snapshot, input_cache) = if options.incremental {
-          let (snapshot, stats) = analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
+          let (snapshot, stats, _) =
+            analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
           (snapshot, Some(stats))
         } else {
           (
@@ -547,7 +592,8 @@ fn run_cli() -> Result<(), String> {
       AnalyzeSubcommand::WeakTypes(options) => {
         if !options.schema_evidence {
           let (mut snapshot, input_cache) = if options.incremental {
-            let (snapshot, stats) = analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
+            let (snapshot, stats, _) =
+              analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
             (snapshot, Some(stats))
           } else {
             (
@@ -558,6 +604,21 @@ fn run_cli() -> Result<(), String> {
           apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
           return run_weak_types(options, &snapshot, &cli_args.input, input_cache);
         }
+      }
+      AnalyzeSubcommand::DynamicMethods(options) if options.incremental => {
+        let (mut snapshot, input_cache, project_namespaces) =
+          analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
+        input_cache.ensure_complete()?;
+        apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
+        let entries = analysis_program_entries(&snapshot, cli_args.init_fn.as_deref(), cli_args.reload_fn.as_deref())?;
+        return run_dynamic_methods(
+          options,
+          &entries,
+          &snapshot,
+          &project_namespaces,
+          &cli_args.input,
+          Some(input_cache),
+        );
       }
       AnalyzeSubcommand::Deprecated(options) => {
         let mut snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input, cli_args.entry.as_deref())?;
@@ -842,7 +903,9 @@ fn run_cli() -> Result<(), String> {
           .incremental
           .then(|| analysis_cache::InputCacheStats::bypassed("schema-evidence-requires-preprocessing")),
       ),
-      AnalyzeSubcommand::DynamicMethods(options) => run_dynamic_methods(options, &entries, &snapshot, &project_namespaces),
+      AnalyzeSubcommand::DynamicMethods(options) => {
+        run_dynamic_methods(options, &entries, &snapshot, &project_namespaces, &cli_args.input, None)
+      }
       AnalyzeSubcommand::Deprecated(deprecated_options) => run_deprecated(deprecated_options, &snapshot),
       AnalyzeSubcommand::Quality(quality_options) => run_quality(quality_options, &snapshot),
       AnalyzeSubcommand::Verify(options) => verification::run(options, &cli_args.input, strict_type_policy.diagnostics),
