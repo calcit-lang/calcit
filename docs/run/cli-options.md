@@ -77,8 +77,9 @@ resolver call-site 证据，并列出重复匿名 Map shape 与 `match` tag disp
 `dynamic-methods --incremental` 会进一步校验 init/reload 的完整 dependency closure：闭包不变时复用动态方法诊断并明确报告
 `preprocessing_cached=true`，闭包索引不完整时保守执行完整入口预处理。它不缓存 compiled AST，也不替代严格类型检查。
 `--check-only --incremental` 只复用相同 closure、strict policy 与 dynamic-method policy 下已经成功的入口预处理；它只保存成功标记，
-warning/error 不缓存，reachable schema、namespace import、entry type-slot 或 policy 变化都会失效。`--keep-going` 需要逐 definition
-重新收集结构化诊断，因此不能与该成功缓存组合。
+warning/error 不缓存。reachable definition/schema、namespace import、entry type-slot、policy、编译器或 core input 变化都会冷启动；闭包证据
+缺失或含 unresolved dependency，以及 module load 失败时会执行普通检查或明确 bypass，均不会复用或更新旧的成功标记。`--keep-going`
+需要逐 definition 重新收集结构化诊断，因此不能与该成功缓存组合。
 单个模块的传递输入变化只重载该模块，其他模块和未变化 definition 的结果仍可命中。
 input cache 头损坏或版本不一致时会从源码重载主 Snapshot 和 modules；单个缓存单元失效时只重载该单元，有效的 definition 缓存仍可命中。
 input cache 写入失败时本次分析继续，但不会更新该缓存；definition cache 缺失、不可读，或因 schema、编译器版本、context revision
@@ -228,7 +229,8 @@ envelope，Calcit 自动化优先使用 Cirru EDN，只有 JSON-only consumer �
 
 频繁的小步迁移可使用 `--check-only --incremental`。当活动 entry 的 init/reload dependency closure、严格策略与动态方法策略均未变化，
 该模式复用上一次成功结果，并以 `preprocessing-cached=true` 明确报告；闭包外定义变化不强制重跑。缓存不保存 compiled AST、warning
-或 error，失败检查不会成为后续命中依据。reachable schema/import、entry type-slot、feature policy 或编译器/core 输入变化会冷启动。
+或 error，失败检查不会成为后续命中依据。reachable definition/schema、namespace import、entry type-slot、feature policy、编译器或 core input
+变化会冷启动。闭包证据缺失或含 unresolved dependency，以及 module load 失败时会执行普通检查或明确 bypass，均不会复用或更新旧的成功标记。
 `--keep-going` 仍用于收集完整结构化诊断，两者不可组合；CI 与发布门禁继续运行不带 `--incremental` 的冷检查。
 
 Use `--strict-types` when a new or fully migrated module must additionally

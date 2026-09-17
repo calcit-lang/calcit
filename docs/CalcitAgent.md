@@ -615,8 +615,9 @@ definition-local inventory 冷启动。`cache.input` 单独说明活动 `entry`�
 `cache.dependency-index`（JSON 中为 `dependency_index`）提供 compiler-resolved graph 的 hit/miss、edge、changed 与反向 affected 数量，
 供 Agent 判断修改波及范围。`dynamic-methods` 只有在 init/reload dependency closure 完整且 revision 未变时才报告
 `preprocessing_cached=true`；闭包外修改允许继续复用，缺失或未解析的闭包证据会保守回退。这里复用的是诊断结果而非 compiled AST，
-不能替代无缓存检查。`--check-only --incremental` 也只缓存成功标记，不缓存 compiled AST、warning 或 error；reachable schema/import、
-entry type-slot 或 policy 变化会失效，`--keep-going` 不使用该缓存。该缓存仍不覆盖 schema evidence、deprecated 或 quality，
+不能替代无缓存检查。`--check-only --incremental` 也只缓存成功标记，不缓存 compiled AST、warning 或 error；reachable definition/schema、
+namespace import、entry type-slot、policy、编译器或 core input 变化会冷启动。闭包证据缺失或含 unresolved dependency，以及 module load
+失败时会执行普通检查或明确 bypass，均不会复用或更新旧的成功标记；`--keep-going` 不使用该缓存。该缓存仍不覆盖 schema evidence、deprecated 或 quality，
 因此不能替代最终无缓存门禁。
 
 `:: :tag ...` 是匿名 Enum 字面量；当已有 Enum 定义在头部时，直接使用 `Enum :tag ...`，类型分析会检查变体和 payload，并在预处理阶段降为命名构造。只有需要显式携带运行时 enum prototype、跨模块动态构造或兼容旧代码时才使用 `%:: Enum :tag ...`。不要为了绕过类型检查而主动选择 `%::`。
