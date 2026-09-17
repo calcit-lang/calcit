@@ -3,6 +3,8 @@ use crate::util::string::strip_shebang;
 use cirru_edn::Edn;
 use cirru_parser::Cirru;
 use colored::Colorize;
+use md5::{Digest, Md5};
+use serde::Serialize;
 use std::collections::{BTreeSet, HashMap};
 use std::env;
 use std::fs;
@@ -82,12 +84,33 @@ impl DiffNode {
   }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct ProgramDiffStats {
   pub unchanged: usize,
   pub added: usize,
   pub removed: usize,
   pub modified: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SemanticChange {
+  pub category: String,
+  pub path: String,
+  pub definition: Option<String>,
+  pub before_revision: Option<String>,
+  pub after_revision: Option<String>,
+  pub semantic_review_required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ProgramDiffEvidence {
+  pub classification: String,
+  pub semantic_review_required: bool,
+  pub before_revision: String,
+  pub after_revision: String,
+  pub categories: Vec<String>,
+  pub changes: Vec<SemanticChange>,
+  pub stats: ProgramDiffStats,
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +119,7 @@ pub struct ProgramDiffResult {
   pub file_path: String,
   pub root: DiffNode,
   pub stats: ProgramDiffStats,
+  pub evidence: ProgramDiffEvidence,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -140,12 +164,14 @@ pub fn analyze_program_diff(git_ref: &str, base_ref: Option<&str>, input_path: &
 
       let root = diff_snapshot(&base_snapshot, &target_snapshot);
       let stats = collect_stats(&root);
+      let evidence = collect_semantic_evidence(&base_snapshot, &target_snapshot, &base_content, &target_content, &root, &stats)?;
 
       Ok(ProgramDiffResult {
         git_ref: format!("{base}..{git_ref}"),
         file_path: repo_rel_path.to_string_lossy().to_string(),
         root,
         stats,
+        evidence,
       })
     }
     None => {
@@ -159,15 +185,169 @@ pub fn analyze_program_diff(git_ref: &str, base_ref: Option<&str>, input_path: &
 
       let root = diff_snapshot(&historical_snapshot, &current_snapshot);
       let stats = collect_stats(&root);
+      let evidence = collect_semantic_evidence(
+        &historical_snapshot,
+        &current_snapshot,
+        &historical_content,
+        &current_content,
+        &root,
+        &stats,
+      )?;
 
       Ok(ProgramDiffResult {
         git_ref: git_ref.to_string(),
         file_path: repo_rel_path.to_string_lossy().to_string(),
         root,
         stats,
+        evidence,
       })
     }
   }
+}
+
+fn content_revision(content: &str) -> String {
+  let mut hasher = Md5::new();
+  hasher.update(content.as_bytes());
+  format!("md5:{}", hex::encode(hasher.finalize()))
+}
+
+fn changed_child<'a>(node: &'a DiffNode, label: &str) -> Option<&'a DiffNode> {
+  node
+    .children
+    .iter()
+    .find(|child| child.label == label && child.status != DiffStatus::Unchanged)
+}
+
+fn definition_revision(entry: Option<&CodeEntry>) -> Result<Option<String>, String> {
+  entry.map(crate::snapshot::definition_revision).transpose()
+}
+
+fn collect_semantic_evidence(
+  old: &Snapshot,
+  new: &Snapshot,
+  old_content: &str,
+  new_content: &str,
+  root: &DiffNode,
+  stats: &ProgramDiffStats,
+) -> Result<ProgramDiffEvidence, String> {
+  let before_revision = content_revision(old_content);
+  let after_revision = content_revision(new_content);
+  let mut changes = Vec::new();
+
+  for node in &root.children {
+    if node.status == DiffStatus::Unchanged || node.label == "files" {
+      continue;
+    }
+    let category = match node.label.as_str() {
+      "entries" => "entry-config",
+      "verification" => "verification-config",
+      _ => "snapshot-config",
+    };
+    changes.push(SemanticChange {
+      category: category.to_owned(),
+      path: node.label.clone(),
+      definition: None,
+      before_revision: Some(before_revision.clone()),
+      after_revision: Some(after_revision.clone()),
+      semantic_review_required: true,
+    });
+  }
+
+  if let Some(files) = root.children.iter().find(|child| child.label == "files") {
+    for namespace_node in &files.children {
+      if namespace_node.status == DiffStatus::Unchanged {
+        continue;
+      }
+      let namespace = namespace_node.label.as_str();
+      if changed_child(namespace_node, "ns").is_some() {
+        changes.push(SemanticChange {
+          category: "namespace-config".to_owned(),
+          path: format!("files/{namespace}/ns"),
+          definition: None,
+          before_revision: Some(before_revision.clone()),
+          after_revision: Some(after_revision.clone()),
+          semantic_review_required: true,
+        });
+      }
+
+      let Some(definitions) = namespace_node.children.iter().find(|child| child.label == "defs") else {
+        continue;
+      };
+      for definition_node in &definitions.children {
+        if definition_node.status == DiffStatus::Unchanged {
+          continue;
+        }
+        let definition = format!("{namespace}/{}", definition_node.label);
+        let old_entry = old.files.get(namespace).and_then(|file| file.defs.get(&definition_node.label));
+        let new_entry = new.files.get(namespace).and_then(|file| file.defs.get(&definition_node.label));
+        let old_revision = definition_revision(old_entry)?;
+        let new_revision = definition_revision(new_entry)?;
+
+        if definition_node.status != DiffStatus::Modified {
+          changes.push(SemanticChange {
+            category: "definition-lifecycle".to_owned(),
+            path: format!("files/{namespace}/defs/{}", definition_node.label),
+            definition: Some(definition),
+            before_revision: old_revision,
+            after_revision: new_revision,
+            semantic_review_required: true,
+          });
+          continue;
+        }
+
+        for field in &definition_node.children {
+          if field.status == DiffStatus::Unchanged {
+            continue;
+          }
+          let (category, review_required) = match field.label.as_str() {
+            "schema" => ("schema-signature", true),
+            "code" | "examples" | "tests" => ("executable-expression", true),
+            "ffi" => ("runtime-boundary", true),
+            "doc" => ("documentation", false),
+            "tags" => ("definition-metadata", true),
+            _ => ("unclassified", true),
+          };
+          changes.push(SemanticChange {
+            category: category.to_owned(),
+            path: format!("files/{namespace}/defs/{}/{}", definition_node.label, field.label),
+            definition: Some(definition.clone()),
+            before_revision: old_revision.clone(),
+            after_revision: new_revision.clone(),
+            semantic_review_required: review_required,
+          });
+        }
+      }
+    }
+  }
+
+  let semantic_review_required = changes.iter().any(|change| change.semantic_review_required);
+  let classification = if changes.is_empty() {
+    if old_content == new_content {
+      "unchanged"
+    } else {
+      "canonical-format-only"
+    }
+  } else if semantic_review_required {
+    "semantic-change"
+  } else {
+    "metadata-only"
+  };
+  let categories = changes
+    .iter()
+    .map(|change| change.category.clone())
+    .collect::<BTreeSet<_>>()
+    .into_iter()
+    .collect();
+
+  Ok(ProgramDiffEvidence {
+    classification: classification.to_owned(),
+    semantic_review_required,
+    before_revision,
+    after_revision,
+    categories,
+    changes,
+    stats: stats.clone(),
+  })
 }
 
 pub fn format_program_diff(result: &ProgramDiffResult) -> String {
@@ -175,6 +355,21 @@ pub fn format_program_diff(result: &ProgramDiffResult) -> String {
   output.push_str("# Program Diff\n\n");
   output.push_str(&format!("- ref: {}\n", result.git_ref));
   output.push_str(&format!("- file: {}\n", result.file_path));
+  output.push_str(&format!("- classification: {}\n", result.evidence.classification));
+  output.push_str(&format!(
+    "- semantic review required: {}\n",
+    result.evidence.semantic_review_required
+  ));
+  output.push_str(&format!("- before revision: {}\n", result.evidence.before_revision));
+  output.push_str(&format!("- after revision: {}\n", result.evidence.after_revision));
+  output.push_str(&format!(
+    "- categories: {}\n",
+    if result.evidence.categories.is_empty() {
+      "(none)".to_owned()
+    } else {
+      result.evidence.categories.join(", ")
+    }
+  ));
   output.push_str(&format!(
     "- changes: ~{} +{} -{} ={}\n\n",
     result.stats.modified, result.stats.added, result.stats.removed, result.stats.unchanged
@@ -1361,7 +1556,8 @@ fn align_sequence<T: Eq>(old: &[T], new: &[T]) -> Vec<SeqEdit> {
 mod tests {
   use super::{
     CirruEditStrategy, DiffNode, DiffStatus, SeqEdit, align_sequence, analyze_cirru_edit_advice, build_entry_tree, cirru_similarity,
-    count_cirru_nodes, diff_cirru, diff_code_entry, diff_entries, diff_entry, render_cirru_diff, render_text,
+    collect_semantic_evidence, collect_stats, count_cirru_nodes, diff_cirru, diff_code_entry, diff_entries, diff_entry, diff_snapshot,
+    parse_snapshot, render_cirru_diff, render_text,
   };
   use crate::calcit::DYNAMIC_TYPE;
   use crate::snapshot::{CodeEntry, SnapshotEntry, SnapshotRunMode, TestEntry};
@@ -1415,6 +1611,62 @@ mod tests {
       .iter()
       .find(|child| child.label == label)
       .unwrap_or_else(|| panic!("missing `{label}` in diff node `{}`", node.label))
+  }
+
+  #[test]
+  fn semantic_evidence_recognizes_canonical_format_only_changes() {
+    let snapshot = parse_snapshot(
+      include_str!("../tests/fixtures/ffi-boundary-evidence.cirru"),
+      "fixture",
+      "calcit.cirru",
+    )
+    .expect("fixture should parse");
+    let root = diff_snapshot(&snapshot, &snapshot);
+    let stats = collect_stats(&root);
+    let evidence =
+      collect_semantic_evidence(&snapshot, &snapshot, "old layout", "new layout", &root, &stats).expect("evidence should collect");
+
+    assert_eq!(evidence.classification, "canonical-format-only");
+    assert!(!evidence.semantic_review_required);
+    assert!(evidence.changes.is_empty());
+  }
+
+  #[test]
+  fn semantic_evidence_classifies_entry_schema_and_expression_changes() {
+    let old = parse_snapshot(
+      include_str!("../tests/fixtures/ffi-boundary-evidence.cirru"),
+      "fixture",
+      "calcit.cirru",
+    )
+    .expect("fixture should parse");
+    let mut new = old.clone();
+    new.entries.get_mut("default").expect("default entry should exist").description = "Changed entry".to_owned();
+    let definition = new
+      .files
+      .get_mut("ffi-evidence.main")
+      .expect("namespace should exist")
+      .defs
+      .get_mut("main!")
+      .expect("definition should exist");
+    definition.schema = DYNAMIC_TYPE.clone();
+    definition.code = leaf("changed-expression");
+
+    let root = diff_snapshot(&old, &new);
+    let stats = collect_stats(&root);
+    let evidence = collect_semantic_evidence(&old, &new, "old", "new", &root, &stats).expect("evidence should collect");
+
+    assert_eq!(evidence.classification, "semantic-change");
+    assert!(evidence.semantic_review_required);
+    assert_eq!(
+      evidence.categories,
+      vec!["entry-config", "executable-expression", "schema-signature"]
+    );
+    assert!(
+      evidence
+        .changes
+        .iter()
+        .any(|change| change.definition.as_deref() == Some("ffi-evidence.main/main!") && change.category == "schema-signature")
+    );
   }
 
   #[test]

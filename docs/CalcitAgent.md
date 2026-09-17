@@ -245,6 +245,8 @@ quote/quasiquote，并用 staged preprocess 验证 splice 后的 scope。此检�
 
 同一个 Snapshot 的写命令必须串行执行，包括 `config`、`edit`、`tree` 和 cursor mutation；两个进程同时读取再保存会发生最后写入覆盖。需要并行时使用独立 Snapshot/worktree，需要同一文件内的原子多步修改时使用 transaction 和 `--expect-revision`。
 
+升级 PR 中出现大段 `calcit.cirru` 文本变化时，先运行 `calcit calcit.cirru analyze program-diff <base-ref> --format edn`。优先读取 `:classification`、`:semantic-review-required`、`:categories` 和 `:changes`；只有 `canonical-format-only` 可以省去逐行确认格式差异，任何 config、schema/signature、runtime boundary 或 executable expression 分类仍需检查并运行对应验证。不要另找 JSON 专用入口；外部互操作确有需要时在同一命令上显式传 `--format json`。
+
 ### Feature-level architecture scaffold
 
 当任务包含多个相互调用的 definition 时，先把架构写入版本控制中的

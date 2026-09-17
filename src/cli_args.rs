@@ -676,6 +676,9 @@ pub struct ProgramDiffCommand {
   /// narrow diff to a single definition in format ns/def
   #[argh(option)]
   pub def: Option<String>,
+  /// output format: human (default), edn (primary structured data), or json (interoperability)
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

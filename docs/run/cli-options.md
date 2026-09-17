@@ -527,6 +527,24 @@ calcit --disable-stack
 
 `calcit ir` emits an internal representation for compiler debugging. Ordinary application development and CI do not need it; inspect `calcit ir --help` only when debugging that layer.
 
+## Snapshot 语义差异
+
+升级 review 统一使用现有 `analyze program-diff` 入口，不再增加独立的 diff/query 命令：
+
+```bash
+# 工作区相对 HEAD 的人类可读 Markdown/tree 报告
+calcit calcit.cirru analyze program-diff HEAD
+
+# 自动化默认选择 Cirru EDN；JSON 只作为显式互操作格式
+calcit calcit.cirru analyze program-diff HEAD --format edn
+calcit calcit.cirru analyze program-diff HEAD --format json
+
+# 比较两个 Git revision
+calcit calcit.cirru analyze program-diff main --base v0.15.5 --format edn
+```
+
+结构化结果包含 Snapshot path、before/after content revision、稳定分类、受影响 definition 与是否需要 semantic review。`canonical-format-only` 表示原始文件字节不同、但解析后的 Snapshot 没有配置、schema、definition 或可执行表达式变化；它只能减少文本 diff 的人工确认，不能替代 strict check、测试或运行时验证。`--def` 保留原有的交互式 tree diff，目前只支持 human 输出；自动化证据应省略 `--def`，在同一份 Snapshot 报告中筛选 `:changes`。
+
 ## WASM preview 命令
 
 `calcit wasm` 生成面向 browser/embedded host 的 core module；`calcit wasi` 生成可由 Wasmtime 等 WASI host 启动的 command module。两个命令把 Snapshot 路径放在子命令之后，并分别通过 help 暴露输出契约：

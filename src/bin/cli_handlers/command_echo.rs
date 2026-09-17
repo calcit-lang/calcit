@@ -901,8 +901,12 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       value "format" => &opts.format; default "text",
       value "sort" => &opts.sort; default "count"
     ),
-    AnalyzeSubcommand::ProgramDiff(opts) => echo_items!(tokens, pos "git-ref" => &opts.git_ref,
-      opt "def" => opts.def.as_deref(); default "none"
+    AnalyzeSubcommand::ProgramDiff(opts) => echo_items!(
+      tokens,
+      pos "git-ref" => &opts.git_ref,
+      opt "base" => opts.base.as_deref(); default "working-tree",
+      opt "def" => opts.def.as_deref(); default "none",
+      value "format" => &opts.format; default "human"
     ),
     AnalyzeSubcommand::CheckExamples(opts) => echo_items!(
       tokens,

@@ -980,6 +980,12 @@ In serialized type annotations, type slots appear as `'*name` (EDN symbol with `
 
 ## Limitations
 
+### Upgrade diff evidence
+
+`calcit calcit.cirru analyze program-diff <git-ref> --format edn` 会先把两侧内容解析为 typed Snapshot，再分类 entry/config、namespace/import、definition lifecycle、schema/signature、FFI boundary 与 executable expression 变化。布局、map 顺序或 canonical formatter 折叠只要不改变解析结果，就报告 `canonical-format-only` 和 `semantic-review-required false`。
+
+报告中的 content revision 用于固定参与比较的两份输入；definition change 还携带各自的稳定 definition revision。Cirru EDN 是结构化输出的首选格式，只有外部系统明确需要 JSON 时才使用 `--format json`。该命令保持只读，也不会把相似的删除/新增猜成 rename；没有可靠 identity 证据时仍分别报告 definition lifecycle。
+
 1. **Dynamic Code**: Type checks don't apply to dynamically generated code
 2. **JavaScript Interop**: JS function calls are not type-checked
 3. **Macro Expansion**: Some macros may generate code that bypasses checks
