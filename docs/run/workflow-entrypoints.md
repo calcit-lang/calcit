@@ -67,6 +67,11 @@ calcit calcit.cirru fix --preset surface-latest-v2 \
 `--apply --expect-revision <revision>`，最后以 `--verify` 逐 entry 检查。这个组合层不新增迁移规则，也不猜外部构建器；
 它只是把已有 `check`、`fix`、`analyze verify` 与 transaction 协议整理成一个可保存的 manifest。
 
+FFI 审阅也不增加顶层入口。按需运行
+`calcit calcit.cirru analyze weak-types --ffi-evidence --format edn`，取得按 operation 分类的 host、source path、
+nullable/unsafe 证据与 review-only helper/trait/adapter 候选；`fix --workflow strict` 复用同一 collector。
+默认 weak-types 不扫描这些证据，类型正确性仍由严格预处理的 warning/error 决定。
+
 ## 当前语义规范化与兼容读取
 
 兼容读取只解决“旧数据无法被当前表示读取”的问题，并与普通编译隔离。目前这类一次性入口归 `calcit edit format` 所有。

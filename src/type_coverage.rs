@@ -221,6 +221,375 @@ pub struct WeakTypeRow {
   pub occurrences: Vec<WeakTypeOccurrence>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FfiBoundaryOperation {
+  pub kind: String,
+  pub classification: String,
+  pub source: String,
+  pub member: Option<String>,
+  pub path: String,
+  pub nullable_evidence: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FfiHelperCandidate {
+  pub definition: String,
+  pub origin: String,
+  pub compatibility: String,
+  pub target: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FfiTraitCandidate {
+  pub receiver: String,
+  pub suggested_name: String,
+  pub fields: Vec<String>,
+  pub methods: Vec<String>,
+  pub contract_status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FfiAdapterCandidate {
+  pub source: String,
+  pub suggested_definition: String,
+  pub schema_cirru_edn: String,
+  pub contract_status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FfiBoundaryEvidence {
+  pub diagnostic_code: String,
+  pub definition: String,
+  pub classification: String,
+  pub target: String,
+  pub js_ffi_feature: bool,
+  pub raw_adapter_namespace: bool,
+  pub operations: Vec<FfiBoundaryOperation>,
+  pub unsafe_paths: Vec<String>,
+  pub callers: Vec<String>,
+  pub helper_candidates: Vec<FfiHelperCandidate>,
+  pub trait_candidates: Vec<FfiTraitCandidate>,
+  pub adapter_candidates: Vec<FfiAdapterCandidate>,
+  pub provenance: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FfiImportBinding {
+  source: String,
+  default_import: bool,
+}
+
+fn schema_has_js_ffi(schema: &CalcitTypeAnnotation) -> bool {
+  match schema {
+    CalcitTypeAnnotation::Fn(annotation) => annotation.features.iter().any(|feature| feature.ref_str() == "js-ffi"),
+    CalcitTypeAnnotation::Macro(annotation) => annotation.features.iter().any(|feature| feature.ref_str() == "js-ffi"),
+    _ => false,
+  }
+}
+
+fn ffi_import_bindings(code: &Cirru) -> BTreeMap<String, FfiImportBinding> {
+  let mut bindings = BTreeMap::new();
+  let Cirru::List(items) = code else {
+    return bindings;
+  };
+  let Some(Cirru::List(require)) = items
+    .iter()
+    .skip(2)
+    .find(|item| matches!(item, Cirru::List(parts) if parts.first().is_some_and(|head| head.eq_leaf(":require"))))
+  else {
+    return bindings;
+  };
+  for rule in require.iter().skip(1) {
+    let Cirru::List(parts) = rule else {
+      continue;
+    };
+    let parts = if parts.first().is_some_and(|item| item.eq_leaf("[]")) {
+      &parts[1..]
+    } else {
+      parts.as_slice()
+    };
+    if parts.len() != 3 {
+      continue;
+    }
+    let (Cirru::Leaf(source), Cirru::Leaf(kind), local) = (&parts[0], &parts[1], &parts[2]) else {
+      continue;
+    };
+    match (kind.as_ref(), local) {
+      (":as", Cirru::Leaf(alias)) | (":default", Cirru::Leaf(alias)) => {
+        bindings.insert(
+          alias.to_string(),
+          FfiImportBinding {
+            source: source.trim_start_matches('|').to_owned(),
+            default_import: kind.as_ref() == ":default",
+          },
+        );
+      }
+      (":refer", Cirru::List(names)) => {
+        for name in names {
+          if let Cirru::Leaf(name) = name
+            && name.as_ref() != "[]"
+          {
+            bindings.insert(
+              name.to_string(),
+              FfiImportBinding {
+                source: source.trim_start_matches('|').to_owned(),
+                default_import: false,
+              },
+            );
+          }
+        }
+      }
+      _ => {}
+    }
+  }
+  bindings
+}
+
+fn ffi_member_operation(head: &str) -> Option<(&'static str, &'static str, bool)> {
+  if head.starts_with(".?!") {
+    Some(("optional-method-call", ".?!", true))
+  } else if head.starts_with(".?-") {
+    Some(("optional-field-read", ".?-", true))
+  } else if head.starts_with(".!") {
+    Some(("method-call", ".!", false))
+  } else if head.starts_with(".-") {
+    Some(("field-read", ".-", false))
+  } else {
+    None
+  }
+}
+
+fn ffi_postfix_operation(head: &str) -> Option<(String, String, &'static str, bool)> {
+  for (marker, kind, optional) in [
+    (".?!", "optional-method-call", true),
+    (".?-", "optional-field-read", true),
+    (".!", "method-call", false),
+    (".-", "field-read", false),
+  ] {
+    if let Some((receiver, member)) = head.split_once(marker)
+      && !receiver.is_empty()
+      && !member.is_empty()
+    {
+      return Some((receiver.to_owned(), member.to_owned(), kind, optional));
+    }
+  }
+  None
+}
+
+fn ffi_classification(source: &str, import_source: Option<&str>, target: Option<snapshot::SnapshotTarget>) -> &'static str {
+  let lowered = format!("{} {}", source, import_source.unwrap_or_default()).to_ascii_lowercase();
+  if lowered.contains("webgpu")
+    || lowered.contains("navigator.gpu")
+    || lowered
+      .split(|character: char| !character.is_ascii_alphanumeric())
+      .any(|part| part == "gpu")
+  {
+    "webgpu"
+  } else if import_source.is_some() {
+    let package = import_source.unwrap_or_default().trim_start_matches("node:");
+    if matches!(
+      package,
+      "assert"
+        | "buffer"
+        | "child_process"
+        | "crypto"
+        | "events"
+        | "fs"
+        | "http"
+        | "https"
+        | "os"
+        | "path"
+        | "process"
+        | "stream"
+        | "url"
+        | "util"
+    ) {
+      "node"
+    } else {
+      "npm-import"
+    }
+  } else if [
+    "js/window",
+    "js/document",
+    "js/navigator",
+    "js/location",
+    "js/localstorage",
+    "js/sessionstorage",
+  ]
+  .iter()
+  .any(|prefix| lowered.contains(prefix))
+  {
+    "browser"
+  } else if ["js/process", "js/buffer", "js/global", "js/__dirname", "js/__filename"]
+    .iter()
+    .any(|prefix| lowered.contains(prefix))
+  {
+    "node"
+  } else {
+    match target {
+      Some(snapshot::SnapshotTarget::Browser) => "browser",
+      Some(snapshot::SnapshotTarget::Node) => "node",
+      _ => "unknown-host",
+    }
+  }
+}
+
+fn push_ffi_operation(
+  operations: &mut Vec<FfiBoundaryOperation>,
+  kind: &str,
+  source: String,
+  member: Option<String>,
+  path: &[usize],
+  optional: bool,
+) {
+  operations.push(FfiBoundaryOperation {
+    kind: kind.to_owned(),
+    classification: "unknown-host".to_owned(),
+    source,
+    member,
+    path: format_cirru_path("code", path),
+    nullable_evidence: if optional { "optional-access" } else { "not-proven" }.to_owned(),
+  });
+}
+
+fn scan_ffi_operations(
+  node: &Cirru,
+  path: &mut Vec<usize>,
+  quote_context: QuoteContext,
+  imports: &BTreeMap<String, FfiImportBinding>,
+  operations: &mut Vec<FfiBoundaryOperation>,
+) {
+  let Cirru::List(items) = node else {
+    return;
+  };
+  let head = items.first().and_then(|item| match item {
+    Cirru::Leaf(value) => Some(value.as_ref()),
+    _ => None,
+  });
+  if !quote_context.is_quoted()
+    && let Some(head) = head
+  {
+    if head.starts_with("js/") {
+      push_ffi_operation(operations, "raw-js-call", head.to_owned(), None, path, false);
+    } else if head == "unsafe-coerce" {
+      let source = items
+        .get(1)
+        .map(render_cirru_inline)
+        .unwrap_or_else(|| "<missing-value>".to_owned());
+      push_ffi_operation(operations, "unsafe-coerce", source, None, path, false);
+    } else if let Some((kind, marker, optional)) = ffi_member_operation(head) {
+      let receiver = items
+        .get(1)
+        .map(render_cirru_inline)
+        .unwrap_or_else(|| "<missing-receiver>".to_owned());
+      push_ffi_operation(
+        operations,
+        kind,
+        receiver,
+        Some(head.trim_start_matches(marker).to_owned()),
+        path,
+        optional,
+      );
+    } else if let Some((receiver, member, kind, optional)) = ffi_postfix_operation(head) {
+      push_ffi_operation(operations, kind, receiver, Some(member), path, optional);
+    } else if matches!(head, "aget" | "aset" | "js-get" | "js-set") {
+      let receiver = items
+        .get(1)
+        .map(render_cirru_inline)
+        .unwrap_or_else(|| "<missing-receiver>".to_owned());
+      let member = items.get(2).map(render_cirru_inline);
+      push_ffi_operation(operations, head, receiver, member, path, false);
+    } else if let Some((binding, export)) = head.split_once('/')
+      && imports.contains_key(binding)
+    {
+      push_ffi_operation(
+        operations,
+        "module-call",
+        format!("{binding}/{export}"),
+        Some(export.to_owned()),
+        path,
+        false,
+      );
+    } else if imports.get(head).is_some_and(|binding| binding.default_import) {
+      push_ffi_operation(operations, "module-call", head.to_owned(), Some("default".to_owned()), path, false);
+    }
+  }
+  for (index, child) in items.iter().enumerate() {
+    path.push(index);
+    scan_ffi_operations(child, path, quote_context.for_child(head, index), imports, operations);
+    path.pop();
+  }
+}
+
+fn code_calls_definition(code: &Cirru, caller_namespace: &str, namespace: &str, definition: &str) -> bool {
+  fn visit(node: &Cirru, caller_namespace: &str, namespace: &str, definition: &str, quote_context: QuoteContext) -> bool {
+    let Cirru::List(items) = node else {
+      return false;
+    };
+    let head = items.first().and_then(|item| match item {
+      Cirru::Leaf(value) => Some(value.as_ref()),
+      _ => None,
+    });
+    if !quote_context.is_quoted()
+      && head.is_some_and(|head| {
+        (caller_namespace == namespace && head == definition) || head == format!("{namespace}/{definition}").as_str()
+      })
+    {
+      return true;
+    }
+    items
+      .iter()
+      .enumerate()
+      .any(|(index, item)| visit(item, caller_namespace, namespace, definition, quote_context.for_child(head, index)))
+  }
+
+  visit(code, caller_namespace, namespace, definition, QuoteContext::default())
+}
+
+fn ffi_target_name(entry: &snapshot::CodeEntry, fallback: Option<snapshot::SnapshotTarget>) -> Result<String, String> {
+  let target = entry
+    .ffi
+    .as_ref()
+    .map(snapshot::parse_ffi_target)
+    .transpose()?
+    .flatten()
+    .or(fallback);
+  Ok(
+    target
+      .map(|target| target.as_str().to_owned())
+      .unwrap_or_else(|| "unspecified".to_owned()),
+  )
+}
+
+fn schema_cirru_edn(schema: &CalcitTypeAnnotation) -> Result<String, String> {
+  cirru_edn::format(&snapshot::schema_annotation_to_edn(schema), true)
+    .map_err(|error| format!("Failed to render FFI adapter schema: {error}"))
+}
+
+fn suggested_trait_name(definition: &str) -> String {
+  let mut out = String::new();
+  let mut uppercase = true;
+  for character in definition.chars() {
+    if character.is_ascii_alphanumeric() {
+      if uppercase {
+        out.extend(character.to_uppercase());
+        uppercase = false;
+      } else {
+        out.push(character);
+      }
+    } else {
+      uppercase = true;
+    }
+  }
+  if out.is_empty() {
+    "HostBoundary".to_owned()
+  } else if out.ends_with("Host") {
+    out
+  } else {
+    format!("{out}Host")
+  }
+}
+
 pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String> {
   let mut selected = BTreeSet::new();
 
@@ -992,10 +1361,219 @@ pub fn collect_weak_type_rows(options: &WeakTypesCommand, snapshot: &snapshot::S
   Ok(rows)
 }
 
+pub fn collect_ffi_boundary_evidence(
+  options: &WeakTypesCommand,
+  snapshot: &snapshot::Snapshot,
+) -> Result<Vec<FfiBoundaryEvidence>, String> {
+  let active_target = snapshot.active_entry().ok().and_then(|entry| entry.target);
+  let package_prefix = format!("{}.", snapshot.package);
+  let mut boundaries = Vec::new();
+  let mut target_error = None;
+
+  visit_scoped_definitions(
+    snapshot,
+    AnalysisScope {
+      namespace: options.ns.as_deref(),
+      namespace_prefix: options.ns_prefix.as_deref(),
+      include_dependencies: options.deps,
+    },
+    |namespace, definition, entry| {
+      if target_error.is_some() {
+        return;
+      }
+      let imports = snapshot
+        .files
+        .get(namespace)
+        .map(|file| ffi_import_bindings(&file.ns.code))
+        .unwrap_or_default();
+      let mut operations = Vec::new();
+      scan_ffi_operations(&entry.code, &mut Vec::new(), QuoteContext::default(), &imports, &mut operations);
+      operations.sort_by(|left, right| left.path.cmp(&right.path).then(left.kind.cmp(&right.kind)));
+      operations.dedup();
+
+      let js_ffi_feature = schema_has_js_ffi(entry.schema.as_ref());
+      if operations.is_empty() && !js_ffi_feature && entry.ffi.is_none() {
+        return;
+      }
+
+      let target = match ffi_target_name(entry, active_target) {
+        Ok(target) => target,
+        Err(error) => {
+          target_error = Some(format!("Invalid FFI metadata for {namespace}/{definition}: {error}"));
+          return;
+        }
+      };
+
+      let mut classifications = BTreeSet::new();
+      for operation in &mut operations {
+        let import_source = operation
+          .source
+          .split_once('/')
+          .and_then(|(binding, _)| imports.get(binding))
+          .or_else(|| imports.get(&operation.source))
+          .map(|binding| binding.source.as_str());
+        let classification = ffi_classification(&operation.source, import_source, active_target);
+        operation.classification = classification.to_owned();
+        classifications.insert(classification);
+      }
+      if classifications.is_empty() {
+        classifications.insert(ffi_classification("", None, active_target));
+      }
+      let classification = if classifications.len() == 1 {
+        classifications.iter().next().copied().unwrap_or("unknown-host").to_owned()
+      } else {
+        "mixed".to_owned()
+      };
+
+      let unsafe_paths = operations
+        .iter()
+        .filter(|operation| operation.kind == "unsafe-coerce")
+        .map(|operation| operation.path.clone())
+        .collect::<Vec<_>>();
+
+      let mut callers = Vec::new();
+      for (caller_ns, file) in &snapshot.files {
+        for (caller_def, caller_entry) in &file.defs {
+          if caller_ns == namespace && caller_def == definition {
+            continue;
+          }
+          if code_calls_definition(&caller_entry.code, caller_ns, namespace, definition) {
+            callers.push(format!("{caller_ns}/{caller_def}"));
+          }
+        }
+      }
+      callers.sort();
+      callers.dedup();
+
+      let schema_is_concrete = {
+        let mut findings = Vec::new();
+        scan_schema_dynamic_annotation(entry.schema.as_ref(), "schema", "root", &mut findings);
+        findings.is_empty() && !matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic)
+      };
+      let mut helper_candidates = Vec::new();
+      if schema_is_concrete {
+        for (candidate_ns, file) in &snapshot.files {
+          for (candidate_def, candidate) in &file.defs {
+            if candidate_ns == namespace && candidate_def == definition {
+              continue;
+            }
+            if candidate.schema != entry.schema || !schema_has_js_ffi(candidate.schema.as_ref()) {
+              continue;
+            }
+            let candidate_target = ffi_target_name(candidate, active_target).unwrap_or_else(|_| "invalid".to_owned());
+            if target != "unspecified" && candidate_target != "unspecified" && candidate_target != target {
+              continue;
+            }
+            let project_candidate = candidate_ns == &snapshot.package || candidate_ns.starts_with(&package_prefix);
+            helper_candidates.push(FfiHelperCandidate {
+              definition: format!("{candidate_ns}/{candidate_def}"),
+              origin: if project_candidate { "project" } else { "dependency" }.to_owned(),
+              compatibility: "exact-schema".to_owned(),
+              target: candidate_target,
+            });
+          }
+        }
+      }
+      helper_candidates.sort_by(|left, right| {
+        let left_rank = if left.origin == "dependency" { 0 } else { 1 };
+        let right_rank = if right.origin == "dependency" { 0 } else { 1 };
+        left_rank.cmp(&right_rank).then(left.definition.cmp(&right.definition))
+      });
+
+      let mut member_groups = BTreeMap::<String, (BTreeSet<String>, BTreeSet<String>)>::new();
+      for operation in &operations {
+        if operation.kind == "module-call" {
+          continue;
+        }
+        let Some(member) = &operation.member else {
+          continue;
+        };
+        let group = member_groups.entry(operation.source.clone()).or_default();
+        if operation.kind.contains("method") {
+          group.1.insert(member.clone());
+        } else if matches!(
+          operation.kind.as_str(),
+          "field-read" | "optional-field-read" | "aget" | "aset" | "js-get" | "js-set"
+        ) {
+          group.0.insert(member.clone());
+        }
+      }
+      let trait_candidates = member_groups
+        .into_iter()
+        .filter(|(_, (fields, methods))| !fields.is_empty() || !methods.is_empty())
+        .map(|(receiver, (fields, methods))| FfiTraitCandidate {
+          receiver,
+          suggested_name: suggested_trait_name(definition),
+          fields: fields.into_iter().collect(),
+          methods: methods.into_iter().collect(),
+          contract_status: "review-required".to_owned(),
+        })
+        .collect::<Vec<_>>();
+
+      let schema = schema_cirru_edn(entry.schema.as_ref()).unwrap_or_else(|error| format!("<unavailable: {error}>"));
+      let mut adapter_sources = BTreeSet::new();
+      for operation in &operations {
+        if operation.kind != "module-call" {
+          continue;
+        }
+        if let Some((binding, export)) = operation.source.split_once('/')
+          && let Some(import) = imports.get(binding)
+        {
+          adapter_sources.insert(format!("{}/{}", import.source, export));
+        } else if let Some(import) = imports.get(&operation.source) {
+          adapter_sources.insert(format!("{}/default", import.source));
+        }
+      }
+      let adapter_candidates = adapter_sources
+        .into_iter()
+        .map(|source| FfiAdapterCandidate {
+          source,
+          suggested_definition: format!("{definition}-adapter"),
+          schema_cirru_edn: schema.clone(),
+          contract_status: "review-required".to_owned(),
+        })
+        .collect();
+
+      boundaries.push(FfiBoundaryEvidence {
+        diagnostic_code: "I_FFI_BOUNDARY_EVIDENCE".to_owned(),
+        definition: format!("{namespace}/{definition}"),
+        classification,
+        target,
+        js_ffi_feature,
+        raw_adapter_namespace: is_raw_adapter_namespace(namespace),
+        operations,
+        unsafe_paths,
+        callers,
+        helper_candidates,
+        trait_candidates,
+        adapter_candidates,
+        provenance: vec![
+          "snapshot-source".to_owned(),
+          "declared-schema".to_owned(),
+          "namespace-imports".to_owned(),
+          "no-runtime-trust-inference".to_owned(),
+        ],
+      });
+    },
+  )?;
+
+  if let Some(error) = target_error {
+    return Err(error);
+  }
+
+  boundaries.sort_by(|left, right| left.definition.cmp(&right.definition));
+  Ok(boundaries)
+}
+
 pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot, out: &mut String) -> Result<(), String> {
   let rows = collect_weak_type_rows(options, snapshot)?;
+  let ffi_boundaries = if options.ffi_evidence {
+    collect_ffi_boundary_evidence(options, snapshot)?
+  } else {
+    Vec::new()
+  };
 
-  if rows.is_empty() {
+  if rows.is_empty() && ffi_boundaries.is_empty() {
     let _ = writeln!(out, "No weak type usage found in selected namespace scope.");
     return Ok(());
   }
@@ -1052,6 +1630,22 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
     intent_count.get("declared-unit").copied().unwrap_or(0),
     intent_count.get("declared-optional").copied().unwrap_or(0)
   );
+  if options.ffi_evidence {
+    let mut classifications = BTreeMap::<&str, usize>::new();
+    for boundary in &ffi_boundaries {
+      *classifications.entry(boundary.classification.as_str()).or_insert(0) += 1;
+    }
+    let _ = writeln!(out, "- FFI boundaries: {}", ffi_boundaries.len());
+    let _ = writeln!(
+      out,
+      "- FFI classifications: {}",
+      classifications
+        .iter()
+        .map(|(name, count)| format!("{name}={count}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+    );
+  }
   let unresolved_dynamic = rows
     .iter()
     .flat_map(|row| row.occurrences.iter())
@@ -1124,6 +1718,59 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
   if options.summary_only {
     return Ok(());
   }
+  if options.ffi_evidence && !ffi_boundaries.is_empty() {
+    let _ = writeln!(out, "\n## FFI boundary evidence");
+    let _ = writeln!(
+      out,
+      "\nStatic migration evidence only: every candidate remains review-required and does not assert runtime trust."
+    );
+    for boundary in &ffi_boundaries {
+      let _ = writeln!(out, "\n### `{}`", boundary.definition);
+      let _ = writeln!(out, "\n- diagnostic code: `{}`", boundary.diagnostic_code);
+      let _ = writeln!(out, "- classification: `{}`", boundary.classification);
+      let _ = writeln!(out, "- target: `{}`", boundary.target);
+      let _ = writeln!(out, "- js-ffi feature: `{}`", boundary.js_ffi_feature);
+      let _ = writeln!(out, "- callers: `{}`", boundary.callers.join(", "));
+      for operation in &boundary.operations {
+        let _ = writeln!(
+          out,
+          "  - `{}` classification=`{}` source=`{}` member=`{}` path=`{}` nullable=`{}`",
+          operation.kind,
+          operation.classification,
+          operation.source,
+          operation.member.as_deref().unwrap_or("-"),
+          operation.path,
+          operation.nullable_evidence
+        );
+      }
+      for helper in &boundary.helper_candidates {
+        let _ = writeln!(
+          out,
+          "  - helper candidate: `{}` origin=`{}` compatibility=`{}`",
+          helper.definition, helper.origin, helper.compatibility
+        );
+      }
+      for candidate in &boundary.trait_candidates {
+        let _ = writeln!(
+          out,
+          "  - trait manifest: `{}` receiver=`{}` fields=`{}` methods=`{}` status=`{}`",
+          candidate.suggested_name,
+          candidate.receiver,
+          candidate.fields.join(","),
+          candidate.methods.join(","),
+          candidate.contract_status
+        );
+      }
+      for candidate in &boundary.adapter_candidates {
+        let _ = writeln!(
+          out,
+          "  - adapter manifest: `{}` source=`{}` status=`{}`",
+          candidate.suggested_definition, candidate.source, candidate.contract_status
+        );
+      }
+    }
+  }
+  let _ = writeln!(out, "\n## Weak type details\n");
   let _ = writeln!(out, "- detail:");
   for kind in [
     "schema-dynamic",
@@ -1141,6 +1788,9 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
   }
   let _ = writeln!(out,);
 
+  if !rows.is_empty() {
+    let _ = writeln!(out, "## Weak type occurrences\n");
+  }
   let mut current_ns: Option<&str> = None;
   for row in &rows {
     if current_ns != Some(row.ns.as_str()) {
@@ -2365,6 +3015,11 @@ pub fn format_check_types_json(options: &CheckTypesCommand, snapshot: &snapshot:
 
 pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<String, String> {
   let rows = collect_weak_type_rows(options, snapshot)?;
+  let ffi_boundaries = if options.ffi_evidence {
+    collect_ffi_boundary_evidence(options, snapshot)?
+  } else {
+    Vec::new()
+  };
   let mut kinds = BTreeMap::<&str, usize>::new();
   let mut intents = BTreeMap::<&str, usize>::new();
   let mut namespaces = BTreeSet::<&str>::new();
@@ -2423,7 +3078,14 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
       })
     })
     .collect::<Vec<_>>();
-  let ids = rows.iter().map(|row| (row.ns.clone(), row.def.clone())).collect::<Vec<_>>();
+  let mut ids = rows.iter().map(|row| (row.ns.clone(), row.def.clone())).collect::<Vec<_>>();
+  for boundary in &ffi_boundaries {
+    if let Some((namespace, definition)) = boundary.definition.split_once('/') {
+      ids.push((namespace.to_owned(), definition.to_owned()));
+    }
+  }
+  ids.sort();
+  ids.dedup();
   let hit_count = rows.iter().map(|row| row.occurrences.len()).sum::<usize>();
   let unresolved_dynamic = rows
     .iter()
@@ -2491,8 +3153,10 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
       "suggestion": "Keep each assertion at a minimal trusted boundary, validate or normalize untrusted runtime data before application code consumes it, and add positive and negative runtime-contract tests.",
     }));
   }
+  let ffi_boundary_count = ffi_boundaries.len();
+  let ffi_boundary_rows = if options.summary_only { Vec::new() } else { ffi_boundaries };
   let envelope = serde_json::json!({
-    "schema_version": 6,
+    "schema_version": 7,
     "command": "analyze.weak-types",
     "revision": analysis_revision(snapshot, &ids)?,
     "data": {
@@ -2502,16 +3166,23 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
         "only": options.only,
         "intent": options.intent,
         "include_dependencies": options.deps,
+        "ffi_evidence": options.ffi_evidence,
         "summary_only": options.summary_only,
       },
       "summary": {
         "namespaces": namespaces.len(),
         "definitions": rows.len(),
         "hits": hit_count,
+        "ffi_boundaries": ffi_boundary_count,
         "kinds": kinds,
         "intents": intents,
       },
       "definitions": definitions,
+      "evidence": {
+        "ffi_boundaries": ffi_boundary_rows,
+        "contract_status": "review-required",
+        "runtime_trust_inferred": false,
+      },
     },
     "diagnostics": diagnostics,
   });

@@ -605,6 +605,9 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       if let Some(ns) = &opts.ns {
         desc.push_str(&format!(" in namespace `{ns}`"));
       }
+      if opts.ffi_evidence {
+        desc.push_str(", including review-only FFI boundary evidence");
+      }
       if opts.summary_only {
         desc.push_str(", returning aggregate counts only");
       }
@@ -927,6 +930,7 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       opt "intent" => opts.intent.as_deref(); default "all",
       value "format" => &opts.format; default "human",
       switch "deps" => opts.deps,
+      switch "ffi-evidence" => opts.ffi_evidence,
       switch "summary-only" => opts.summary_only
     ),
     AnalyzeSubcommand::DynamicMethods(opts) => echo_items!(

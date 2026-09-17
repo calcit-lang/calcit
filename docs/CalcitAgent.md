@@ -589,6 +589,12 @@ calcit cirru show-guide
 
 普通执行和编译不扫描或打印 Dynamic 使用率。类型安全以预处理阶段的 warning/error 为准；迁移存量项目时，再显式运行 `calcit analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved` 定位需要收窄的位置。机器读取可加 `--summary-only --format json`，只使用 kind/intent 汇总和具体 definition/path；命中数量不是编译门禁，也不应推动新增比例阈值或更多分类规则。
 
+迁移 JavaScript 边界时按需运行
+`calcit calcit.cirru analyze weak-types --ffi-evidence --format edn`。只把其中的 operation host 分类、Snapshot path、
+静态 caller 与 nullable/unsafe 路径当作证据；exact-schema helper、trait 和 adapter 都是 `review-required` 候选。
+优先审阅已安装依赖提供的 exact-schema helper，但不要据此推断运行时 trust、自动收窄 Dynamic、决定 Option/Result
+或生成业务默认值。`fix --workflow strict` 已复用同一份证据，不要再调用另一套 FFI inventory 工具。
+
 `:: :tag ...` 是匿名 Enum 字面量；当已有 Enum 定义在头部时，直接使用 `Enum :tag ...`，类型分析会检查变体和 payload，并在预处理阶段降为命名构造。只有需要显式携带运行时 enum prototype、跨模块动态构造或兼容旧代码时才使用 `%:: Enum :tag ...`。不要为了绕过类型检查而主动选择 `%::`。
 
 | 现象                   | 恢复动作                                                                 |

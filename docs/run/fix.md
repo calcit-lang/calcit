@@ -107,6 +107,12 @@ calcit calcit.cirru fix --workflow strict --verify --format edn
 `:review-required :type-findings`；已显式声明的 JS FFI/type-slot Dynamic 单独进入 `:retained-type-boundaries`，
 macro syntax 与明确的 Unit 返回不会伪装成迁移债务。
 
+`:review-required :ffi-boundaries` 与
+`analyze weak-types --ffi-evidence` 复用同一份静态证据：每个 operation 都有 host 分类和 source path，
+并列出可静态找到的 caller、nullable/unsafe 路径、exact-schema helper 以及 trait/adapter 候选。helper 会扫描已加载的
+模块并优先列出 dependency 候选；caller 仅承诺完全限定调用和同 namespace 直接调用，不冒充动态调用图。
+所有候选都是审阅清单，不是可应用 fix；workflow 不据此推断外部值可信、返回值是否 optional，或生成业务默认值。
+
 默认模式只规划。`--apply` 仍走既有 fingerprint、staged Snapshot、严格预处理和原子替换，不会应用 schema 设计、
 Dynamic 收窄、FFI trust 或业务默认值。`--verify` 是只读模式：它要求安全建议已经清空，逐 entry 运行
 `--check-only --keep-going`，并执行 Snapshot 已声明的 verification profiles；任一结果失败时保持结构化 stdout，

@@ -165,6 +165,7 @@ Audit these exceptional assertions without executing the program:
 
 ```bash
 calcit analyze weak-types --only unsafe-coerce
+calcit analyze weak-types --ffi-evidence --format edn
 ```
 
 The report gives each assertion's `code@...` Snapshot path and declared target
@@ -174,6 +175,15 @@ the `js-ffi.raw.*` adapter convention. Treat the result as a runtime-contract
 checklist: keep the assertion in one adapter, test accepted host values and
 rejected shapes, then return a normal Calcit `Option`, `Result`, struct, or enum
 to application code.
+
+The opt-in FFI evidence view groups raw operations by definition and classifies
+browser, Node, npm-import, WebGPU, and unknown-host boundaries. It reports
+Snapshot paths, nullable and unsafe evidence, statically visible callers, and
+review-only exact-schema helper, trait, and adapter candidates. Installed
+dependency helpers are listed before project-local matches. This is migration
+evidence, not a second type checker: it never infers runtime trust, chooses
+`Option`/`Result` semantics, narrows `Dynamic`, or writes source. Cirru EDN is
+the canonical machine-readable output; select JSON only for interoperability.
 
 For example, the host name can differ from the Calcit name while the field type
 stays visible to the type checker:

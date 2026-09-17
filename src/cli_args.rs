@@ -467,12 +467,15 @@ pub struct WeakTypesCommand {
   /// intent classes to include, comma-separated: unresolved,intentional-js-ffi,intentional-macro-syntax,intentional-type-slot-dynamic,explicit-unsafe,declared-unit,declared-optional
   #[argh(option)]
   pub intent: Option<String>,
-  /// output format: human (default) or json
+  /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// include dependency/core namespaces
   #[argh(switch)]
   pub deps: bool,
+  /// include review-only JS FFI boundary evidence and migration candidates
+  #[argh(switch, long = "ffi-evidence")]
+  pub ffi_evidence: bool,
   /// emit aggregate counts without per-definition details
   #[argh(switch, long = "summary-only")]
   pub summary_only: bool,
