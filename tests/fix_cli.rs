@@ -43,6 +43,20 @@ fn run_fix(snapshot: &Path, args: &[&str]) -> Output {
     .expect("fix command should run")
 }
 
+fn run_fix_with_entry(snapshot: &Path, entry: &str, args: &[&str]) -> Output {
+  Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .arg("--tips-level")
+    .arg("none")
+    .arg("--entry")
+    .arg(entry)
+    .arg(snapshot)
+    .arg("fix")
+    .args(args)
+    .output()
+    .expect("entry-scoped fix command should run")
+}
+
 fn run_calcit(snapshot: &Path, args: &[&str]) -> Output {
   Command::new(env!("CARGO_BIN_EXE_calcit"))
     .env("NO_COLOR", "1")
@@ -84,6 +98,44 @@ fn assert_success(output: &Output, context: &str) {
     String::from_utf8_lossy(&output.stdout),
     String::from_utf8_lossy(&output.stderr)
   );
+}
+
+#[test]
+fn staged_fix_validation_preserves_the_selected_browser_entry() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  let fixture = fs::read_to_string("tests/fixtures/fix-command.cirru").expect("fixture should read");
+  let fixture = fixture.replace(":entries $ {} $ :default\n    {}", ":entries $ {}\n    :default $ {}");
+  let fixture = fixture.replace(
+    "      :type-slots $ {}\n  :files $ {} $ 'fix-command.main",
+    "      :type-slots $ {}\n    :browser $ {} (:description |Browser) (:init-fn 'fix-command.main/main!) (:mode :js) (:reload-fn 'fix-command.main/reload!) (:target :browser)\n      :feature-policy $ {} (:js-ffi :error)\n      :modules $ []\n      :type-slots $ {}\n  :files $ {} $ 'fix-command.main",
+  );
+  let fixture = fixture.replace(
+    "        'main! $ %{} 'CodeEntry",
+    "        'BrowserElement $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ deftrait BrowserElement\n            .focus! $ :: 'Fn $ {} (:args $ [] 'fix-command.main/BrowserElement) (:return 'Unit)\n          :examples $ []\n          :ffi $ {} (:backend :js) (:kind :external-object) (:target :browser)\n            :names $ {} (:focus! |focus)\n          :schema $ :: 'Trait\n        'browser-focus! $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ defn browser-focus! (element)\n            do (element .focus!) &unit\n          :examples $ []\n          :ffi $ {} (:backend :js) (:target :browser)\n          :schema $ :: 'Fn $ {} (:return 'Unit)\n            :args $ [] 'fix-command.main/BrowserElement\n            :features $ #{} :js-ffi\n        'main! $ %{} 'CodeEntry",
+  );
+  fs::write(&snapshot, fixture).expect("entry fixture should write");
+
+  let preview = run_fix_with_entry(
+    &snapshot,
+    "browser",
+    &[
+      "--preset",
+      "surface-latest-v2",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "browser-focus!",
+      "--format",
+      "json",
+    ],
+  );
+
+  assert_success(&preview, "browser-entry fix preview");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["changed"], true);
+  assert_eq!(report["data"]["validation"]["status"], "passed");
+  assert_eq!(report["data"]["suggestions"][0]["rule_id"], "redundant-do-v1");
 }
 
 #[test]

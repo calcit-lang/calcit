@@ -32,6 +32,7 @@ use md5::{Digest, Md5};
 use semver::Version;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -707,6 +708,7 @@ pub(crate) fn run_staged_fix_transaction(
   operations: &[Vec<String>],
   expected_revision: Option<&str>,
   dry_run: bool,
+  validation_entry: &str,
   validation_args: &[String],
   allowed_warning_identities: Option<&[String]>,
 ) -> Result<StagedFixReport, String> {
@@ -733,7 +735,7 @@ pub(crate) fn run_staged_fix_transaction(
   let report = run_staged_transaction_with(snapshot_file, operations, expected_revision, dry_run, |stage_path, index, args| {
     let operation = run_transaction_child(stage_path, index, args)?;
     if index + 1 == operation_count {
-      validate_staged_fix(stage_path, validation_args, allowed_warning_identities)?;
+      validate_staged_fix(stage_path, validation_entry, validation_args, allowed_warning_identities)?;
     }
     Ok(operation)
   })?;
@@ -746,16 +748,13 @@ pub(crate) fn run_staged_fix_transaction(
 
 fn validate_staged_fix(
   stage_path: &Path,
+  validation_entry: &str,
   validation_args: &[String],
   allowed_warning_identities: Option<&[String]>,
 ) -> Result<(), String> {
   let executable = std::env::current_exe().map_err(|error| format!("Failed to locate current calcit executable: {error}"))?;
   let output = Command::new(&executable)
-    .arg("--tips-level")
-    .arg("none")
-    .arg(stage_path)
-    .arg("fix")
-    .args(validation_args)
+    .args(staged_fix_validation_args(stage_path, validation_entry, validation_args))
     .env("CALCIT_FIX_VALIDATE_ONLY", "1")
     .output()
     .map_err(|error| format!("Failed to validate staged fixes: {error}"))?;
@@ -784,6 +783,20 @@ fn validate_staged_fix(
       String::from_utf8_lossy(&output.stderr).trim_end()
     ))
   }
+}
+
+/// Recreate the top-level entry selection before invoking staged `fix` validation.
+fn staged_fix_validation_args(stage_path: &Path, validation_entry: &str, validation_args: &[String]) -> Vec<OsString> {
+  let mut args = vec![
+    OsString::from("--tips-level"),
+    OsString::from("none"),
+    OsString::from("--entry"),
+    OsString::from(validation_entry),
+    stage_path.as_os_str().to_owned(),
+    OsString::from("fix"),
+  ];
+  args.extend(validation_args.iter().map(OsString::from));
+  args
 }
 
 /// Return warning identities whose staged multiplicity exceeds the pre-edit baseline.
@@ -2972,7 +2985,7 @@ mod tests {
     count_legacy_inherent_impls, handle_add_import, handle_add_test, handle_format, handle_imports, handle_rm_test, handle_schema,
     load_snapshot, parse_examples_input, parse_import_rules_input, parse_input_to_cirru, parse_schema_input,
     parse_transaction_operations, rename_definition_declaration, run_staged_fix_transaction, run_staged_transaction_with,
-    save_schema_preserving_snapshot, save_snapshot, staged_warning_difference,
+    save_schema_preserving_snapshot, save_snapshot, staged_fix_validation_args, staged_warning_difference,
   };
   use crate::cli_args::{
     EditAddImportCommand, EditAddTestCommand, EditFormatCommand, EditImportsCommand, EditRmTestCommand, EditSchemaCommand,
@@ -2982,6 +2995,7 @@ mod tests {
   use calcit::calcit::CalcitTypeAnnotation;
   use cirru_edn::Edn;
   use cirru_parser::Cirru;
+  use std::ffi::OsString;
   use std::fs;
   use std::path::Path;
   use std::sync::Arc;
@@ -3227,10 +3241,43 @@ mod tests {
   fn empty_fix_plan_still_rejects_a_stale_planning_revision() {
     let fixture = TestSnapshot::from_fixture();
 
-    let error = run_staged_fix_transaction(&fixture.path, &[], Some("md5:stale"), true, &[], None)
+    let error = run_staged_fix_transaction(&fixture.path, &[], Some("md5:stale"), true, "browser", &[], None)
       .expect_err("an empty fix plan should still be bound to its planning revision");
 
     assert!(error.contains("revision mismatch"), "error: {error}");
+  }
+
+  #[test]
+  fn staged_fix_validation_preserves_selected_entry_before_snapshot_path() {
+    let args = staged_fix_validation_args(
+      Path::new("/tmp/project/calcit.cirru.staged"),
+      "browser",
+      &[
+        "--ns".to_owned(),
+        "app.browser".to_owned(),
+        "--preset".to_owned(),
+        "surface-latest-v2".to_owned(),
+      ],
+    );
+
+    assert_eq!(
+      args,
+      vec![
+        "--tips-level",
+        "none",
+        "--entry",
+        "browser",
+        "/tmp/project/calcit.cirru.staged",
+        "fix",
+        "--ns",
+        "app.browser",
+        "--preset",
+        "surface-latest-v2",
+      ]
+      .into_iter()
+      .map(OsString::from)
+      .collect::<Vec<_>>()
+    );
   }
 
   #[test]
