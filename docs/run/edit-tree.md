@@ -299,7 +299,7 @@ calcit edit add-import app.main --code 'quote (respo.core :refer $ deftime)'
 calcit edit imports app.main --input-format cirru --file imports.cirru
 ```
 
-`imports.cirru` quotes one Cirru list node. The command removes the outer `quote`, checks the `[]` marker, and uses each child expression as one import rule:
+`imports.cirru` quotes one Cirru imports vector node. The command removes the outer `quote`, checks the `[]` marker, and uses each child expression as one import rule:
 
 ```cirru
 quote $ []
