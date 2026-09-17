@@ -216,6 +216,28 @@ fn push_unique_diagnostic(diagnostics: &mut Vec<CheckDiagnostic>, diagnostic: Ch
   }
 }
 
+fn take_definition_outcome(
+  definition: &str,
+  confirmed: &mut BTreeMap<String, Vec<CheckDiagnostic>>,
+  cascaded: &mut BTreeMap<String, Vec<CheckDiagnostic>>,
+  blockers: &[String],
+) -> (&'static str, Vec<String>, Vec<CheckDiagnostic>) {
+  if let Some(mut diagnostics) = confirmed.remove(definition) {
+    if let Some(extra) = cascaded.remove(definition) {
+      for diagnostic in extra {
+        push_unique_diagnostic(&mut diagnostics, diagnostic);
+      }
+    }
+    ("failed", Vec::new(), diagnostics)
+  } else if let Some(diagnostics) = cascaded.remove(definition) {
+    ("cascaded", Vec::new(), diagnostics)
+  } else if blockers.is_empty() {
+    ("passed", Vec::new(), Vec::new())
+  } else {
+    ("blocked", blockers.to_vec(), Vec::new())
+  }
+}
+
 fn check_definitions(graph: &DefinitionGraph, components: &[Vec<String>]) -> Vec<DefinitionResult> {
   let mut statuses = BTreeMap::new();
   let mut results = Vec::new();
@@ -297,15 +319,7 @@ fn check_definitions(graph: &DefinitionGraph, components: &[Vec<String>]) -> Vec
       .into_iter()
       .collect::<Vec<_>>();
     for definition in component {
-      let (status, blocked_by, diagnostics) = if let Some(diagnostics) = confirmed.remove(definition) {
-        ("failed", Vec::new(), diagnostics)
-      } else if let Some(diagnostics) = cascaded.remove(definition) {
-        ("cascaded", Vec::new(), diagnostics)
-      } else if blockers.is_empty() {
-        ("passed", Vec::new(), Vec::new())
-      } else {
-        ("blocked", blockers.clone(), Vec::new())
-      };
+      let (status, blocked_by, diagnostics) = take_definition_outcome(definition, &mut confirmed, &mut cascaded, &blockers);
       statuses.insert(definition.clone(), status);
       results.push(DefinitionResult {
         definition: definition.clone(),
@@ -398,5 +412,41 @@ pub fn run(entries: &ProgramEntries, raw_format: &str) -> Result<(), String> {
       "Strict check found {} failed, {} blocked, and {} cascaded definition(s)",
       data.summary.failed, data.summary.blocked, data.summary.cascaded
     ))
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{CheckDiagnostic, take_definition_outcome};
+  use std::collections::BTreeMap;
+
+  fn diagnostic(message: &str, definition: &str) -> CheckDiagnostic {
+    CheckDiagnostic {
+      severity: "error",
+      code: None,
+      message: message.to_owned(),
+      definition: definition.to_owned(),
+      path: Vec::new(),
+      hint: None,
+      expected: None,
+      actual: None,
+      provenance: Vec::new(),
+    }
+  }
+
+  #[test]
+  fn failed_definition_retains_its_cascaded_diagnostics() {
+    let definition = "app.main/failing".to_owned();
+    let mut confirmed = BTreeMap::from([(definition.clone(), vec![diagnostic("own error", &definition)])]);
+    let mut cascaded = BTreeMap::from([(definition.clone(), vec![diagnostic("dependency error", "app.main/dependency")])]);
+
+    let (status, blocked_by, diagnostics) =
+      take_definition_outcome(&definition, &mut confirmed, &mut cascaded, &["app.main/dependency".to_owned()]);
+
+    assert_eq!(status, "failed");
+    assert!(blocked_by.is_empty());
+    assert_eq!(diagnostics.len(), 2);
+    assert!(confirmed.is_empty());
+    assert!(cascaded.is_empty());
   }
 }
