@@ -33,10 +33,10 @@ use colored::Colorize;
 use md5::{Digest, Md5};
 use serde::Serialize;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write as _;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use super::edit::navigate_to_path;
@@ -3140,7 +3140,11 @@ fn load_module_silent(path: &str, base_dir: &Path, module_folder: &Path) -> Resu
   result
 }
 
-fn load_module_with_sources_silent(path: &str, base_dir: &Path, module_folder: &Path) -> Result<calcit::LoadedModuleSnapshot, String> {
+pub(crate) fn load_module_with_sources_silent(
+  path: &str,
+  base_dir: &Path,
+  module_folder: &Path,
+) -> Result<calcit::LoadedModuleSnapshot, String> {
   let previous = calcit::quiet_tool_output();
   calcit::set_quiet_tool_output(true);
   let result = calcit::load_module_with_sources(path, base_dir, module_folder);
@@ -3301,54 +3305,6 @@ fn load_snapshot_for_search(input_path: &str, options: &SearchCommonOpts) -> Res
 
 pub(crate) fn load_snapshot_for_static_analysis(input_path: &str) -> Result<snapshot::Snapshot, String> {
   load_snapshot(input_path)
-}
-
-pub(crate) struct StaticAnalysisSnapshot {
-  pub snapshot: snapshot::Snapshot,
-  pub source_paths: BTreeSet<PathBuf>,
-  pub module_resolutions: BTreeMap<String, PathBuf>,
-  pub project_namespaces: HashSet<String>,
-  pub cacheable: bool,
-}
-
-pub(crate) fn load_snapshot_for_static_analysis_with_sources(input_path: &str) -> Result<StaticAnalysisSnapshot, String> {
-  let mut snapshot = load_main_snapshot(input_path)?;
-  let project_namespaces = snapshot.files.keys().cloned().collect::<HashSet<_>>();
-  let mut source_paths = BTreeSet::from([PathBuf::from(input_path)]);
-  let mut module_resolutions = BTreeMap::new();
-  let mut modules_to_load = snapshot.active_entry()?.modules.clone();
-  let mut cacheable = true;
-  let mut seen_modules = HashSet::new();
-  modules_to_load.retain(|module_path| seen_modules.insert(module_path.to_owned()));
-
-  let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
-  let module_folder = calcit::project_module_folder(base_dir);
-  for module_path in &modules_to_load {
-    match load_module_with_sources_silent(module_path, base_dir, &module_folder) {
-      Ok(loaded) => {
-        calcit::merge_project_module_files(&mut snapshot, &loaded.snapshot, module_path)?;
-        source_paths.extend(loaded.source_paths);
-        module_resolutions.extend(loaded.module_resolutions);
-      }
-      Err(error) => {
-        cacheable = false;
-        eprintln!("Warning: Failed to load module '{module_path}': {error}");
-      }
-    }
-  }
-
-  let core_snapshot = load_core_snapshot()?;
-  for (namespace, file_data) in core_snapshot.files {
-    snapshot.files.entry(namespace).or_insert(file_data);
-  }
-
-  Ok(StaticAnalysisSnapshot {
-    snapshot,
-    source_paths,
-    module_resolutions,
-    project_namespaces,
-    cacheable,
-  })
 }
 
 fn load_snapshot_with_entry(input_path: &str, entry: Option<&str>) -> Result<snapshot::Snapshot, String> {

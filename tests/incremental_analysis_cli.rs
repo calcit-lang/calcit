@@ -94,6 +94,20 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   fs::copy("tests/fixtures/ffi-boundary-evidence.cirru", &dependency_snapshot).expect("dependency fixture should copy");
   let add_module = run_calcit(&snapshot, &["config", "add-module", "./dep/"]);
   assert_success(&add_module, "add local dependency module");
+  let second_dependency = directory.0.join("dep-second");
+  fs::create_dir(&second_dependency).expect("second dependency directory should create");
+  let second_dependency_snapshot = second_dependency.join("calcit.cirru");
+  fs::copy("tests/fixtures/ffi-boundary-evidence.cirru", &second_dependency_snapshot).expect("second dependency fixture should copy");
+  let transitive_dependency = directory.0.join("dep-leaf");
+  fs::create_dir(&transitive_dependency).expect("transitive dependency directory should create");
+  let transitive_dependency_snapshot = transitive_dependency.join("calcit.cirru");
+  fs::copy("tests/fixtures/ffi-boundary-evidence.cirru", &transitive_dependency_snapshot)
+    .expect("transitive dependency fixture should copy");
+  let add_transitive_module = run_calcit(&second_dependency_snapshot, &["config", "add-module", "./dep-leaf/"]);
+  assert_success(&add_transitive_module, "add transitive dependency module");
+  let second_dependency_content = fs::read_to_string(&second_dependency_snapshot).expect("second dependency should read");
+  let add_module = run_calcit(&snapshot, &["config", "add-module", "./dep-second/"]);
+  assert_success(&add_module, "add second local dependency module");
 
   let cold = report(&snapshot, "check-types");
   let cold_cache = &cold["data"]["cache"];
@@ -106,7 +120,11 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(cold_cache["miss_reasons"]["cache-missing"], definition_count);
   assert_eq!(cold_cache["input"]["status"], "cold");
   assert_eq!(cold_cache["input"]["reason"], "cache-missing");
-  assert_eq!(cold_cache["input"]["sources"], 2);
+  assert_eq!(cold_cache["input"]["sources"], 4);
+  assert_eq!(cold_cache["input"]["main_reused"], false);
+  assert_eq!(cold_cache["input"]["module_hits"], 0);
+  assert_eq!(cold_cache["input"]["module_misses"], 2);
+  assert_eq!(cold_cache["input"]["module_miss_reasons"]["cache-missing"], 2);
   assert_eq!(cold_cache["dependency_index"]["status"], "cold");
   assert_eq!(cold_cache["dependency_index"]["hits"], 0);
   assert_eq!(cold_cache["dependency_index"]["misses"], definition_count);
@@ -120,6 +138,9 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(warm["data"]["cache"]["hits"], definition_count);
   assert_eq!(warm["data"]["cache"]["misses"], 0);
   assert_eq!(warm["data"]["cache"]["input"]["status"], "warm");
+  assert_eq!(warm["data"]["cache"]["input"]["main_reused"], true);
+  assert_eq!(warm["data"]["cache"]["input"]["module_hits"], 2);
+  assert_eq!(warm["data"]["cache"]["input"]["module_misses"], 0);
   assert_eq!(warm["data"]["cache"]["dependency_index"]["status"], "warm");
   assert_eq!(warm["data"]["cache"]["dependency_index"]["hits"], definition_count);
   assert_eq!(warm["data"]["cache"]["dependency_index"]["misses"], 0);
@@ -138,8 +159,11 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
     std::os::unix::fs::symlink(&replacement, &dependency).expect("replacement dependency symlink should create");
     let resolution_changed = report(&snapshot, "check-types");
     assert_eq!(resolution_changed["data"]["cache"]["status"], "warm");
-    assert_eq!(resolution_changed["data"]["cache"]["input"]["status"], "cold");
+    assert_eq!(resolution_changed["data"]["cache"]["input"]["status"], "partial");
     assert_eq!(resolution_changed["data"]["cache"]["input"]["reason"], "module-resolution-changed");
+    assert_eq!(resolution_changed["data"]["cache"]["input"]["main_reused"], true);
+    assert_eq!(resolution_changed["data"]["cache"]["input"]["module_hits"], 1);
+    assert_eq!(resolution_changed["data"]["cache"]["input"]["module_misses"], 1);
   }
 
   let mut dependency_content = fs::read_to_string(&dependency_snapshot).expect("dependency fixture should read");
@@ -147,8 +171,25 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   fs::write(&dependency_snapshot, dependency_content).expect("dependency fixture should update");
   let dependency_changed = report(&snapshot, "check-types");
   assert_eq!(dependency_changed["data"]["cache"]["status"], "warm");
-  assert_eq!(dependency_changed["data"]["cache"]["input"]["status"], "cold");
+  assert_eq!(dependency_changed["data"]["cache"]["input"]["status"], "partial");
   assert_eq!(dependency_changed["data"]["cache"]["input"]["reason"], "source-changed");
+  assert_eq!(dependency_changed["data"]["cache"]["input"]["main_reused"], true);
+  assert_eq!(dependency_changed["data"]["cache"]["input"]["module_hits"], 1);
+  assert_eq!(dependency_changed["data"]["cache"]["input"]["module_misses"], 1);
+  assert_eq!(
+    without_cache(dependency_changed.clone()),
+    without_cache(full_report(&snapshot, "check-types"))
+  );
+
+  let mut transitive_content = fs::read_to_string(&transitive_dependency_snapshot).expect("transitive dependency should read");
+  transitive_content.push('\n');
+  fs::write(&transitive_dependency_snapshot, transitive_content).expect("transitive dependency should update");
+  let transitive_changed = report(&snapshot, "check-types");
+  assert_eq!(transitive_changed["data"]["cache"]["input"]["status"], "partial");
+  assert_eq!(transitive_changed["data"]["cache"]["input"]["reason"], "source-changed");
+  assert_eq!(transitive_changed["data"]["cache"]["input"]["main_reused"], true);
+  assert_eq!(transitive_changed["data"]["cache"]["input"]["module_hits"], 1);
+  assert_eq!(transitive_changed["data"]["cache"]["input"]["module_misses"], 1);
 
   let edit = run_calcit(
     &snapshot,
@@ -178,7 +219,11 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(partial["data"]["cache"]["hits"], definition_count);
   assert_eq!(partial["data"]["cache"]["misses"], 1);
   assert_eq!(partial["data"]["cache"]["miss_reasons"]["not-cached"], 1);
+  assert_eq!(partial["data"]["cache"]["input"]["status"], "partial");
   assert_eq!(partial["data"]["cache"]["input"]["reason"], "source-changed");
+  assert_eq!(partial["data"]["cache"]["input"]["main_reused"], false);
+  assert_eq!(partial["data"]["cache"]["input"]["module_hits"], 2);
+  assert_eq!(partial["data"]["cache"]["input"]["module_misses"], 0);
   assert_eq!(partial["data"]["cache"]["dependency_index"]["status"], "partial");
   assert_eq!(partial["data"]["cache"]["dependency_index"]["hits"], definition_count);
   assert_eq!(partial["data"]["cache"]["dependency_index"]["misses"], 1);
@@ -240,6 +285,22 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(settled["data"]["cache"]["dependency_index"]["changed"], 0);
   assert_eq!(settled["data"]["cache"]["dependency_index"]["affected"], 0);
 
+  fs::remove_file(&second_dependency_snapshot).expect("second dependency should become temporarily unavailable");
+  let interrupted = report(&snapshot, "check-types");
+  assert_eq!(interrupted["data"]["cache"]["input"]["status"], "partial");
+  assert_eq!(interrupted["data"]["cache"]["input"]["reason"], "module-load-failed");
+  assert_eq!(interrupted["data"]["cache"]["input"]["module_hits"], 1);
+  assert_eq!(interrupted["data"]["cache"]["input"]["module_misses"], 1);
+  assert_eq!(
+    interrupted["data"]["cache"]["input"]["module_miss_reasons"]["module-load-failed"],
+    1
+  );
+  fs::write(&second_dependency_snapshot, &second_dependency_content).expect("second dependency should recover");
+  let recovered_modules = report(&snapshot, "check-types");
+  assert_eq!(recovered_modules["data"]["cache"]["input"]["status"], "warm");
+  assert_eq!(recovered_modules["data"]["cache"]["input"]["module_hits"], 2);
+  assert_eq!(without_cache(interrupted), without_cache(recovered_modules));
+
   let weak_full = full_report(&snapshot, "weak-types");
   let weak_cold = report(&snapshot, "weak-types");
   assert_eq!(weak_cold["data"]["cache"]["status"], "cold");
@@ -293,7 +354,7 @@ fn corrupt_incremental_cache_falls_back_to_a_cold_analysis() {
   let definition_count = first["data"]["cache"]["misses"]
     .as_u64()
     .expect("cold miss count should be numeric");
-  fs::write(directory.0.join(".calcit/analysis-input-cache-v1.cirru"), "not-cirru-edn").expect("input cache corruption should write");
+  fs::write(directory.0.join(".calcit/analysis-input-cache-v2.cirru"), "not-cirru-edn").expect("input cache corruption should write");
 
   let recovered_input = report(&snapshot, "check-types");
   assert_eq!(recovered_input["data"]["cache"]["status"], "warm");

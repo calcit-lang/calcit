@@ -67,11 +67,11 @@ resolver call-site 证据，并列出重复匿名 Map shape 与 `match` tag disp
 源码路径，全部是 `review-required`；不会自动创建 Struct/Enum，也不会决定业务默认值或错误语义。
 
 在频繁 edit/analyze 循环中，可为 `analyze check-types` 或 `analyze weak-types` 增加 `--incremental`。该参数不新增命令，
-在项目 `.calcit/analysis-input-cache-v1.cirru` 复用由内容 digest 校验的主 Snapshot/依赖模块合并输入，并在
+在项目 `.calcit/analysis-input-cache-v2.cirru` 分别复用由内容 digest 校验的主 Snapshot 与 direct module 单元，并在
 `.calcit/analysis-cache-v1.cirru` 保存按 definition revision 分离的本地结果；缓存默认使用 Cirru EDN，JSON 仅保留为显式
-互操作输出。报告会分别返回 `cache.input` 状态、definition hit/miss，以及 `cache.dependency_index` 的编译器解析依赖索引摘要。
+互操作输出。报告会分别返回 `cache.input` 的 main/module hit/miss、definition hit/miss，以及 `cache.dependency_index` 的编译器解析依赖索引摘要。
 依赖索引按 definition 与 namespace revision 复用，变化时报告 changed/affected 数量；affected 包含反向传递调用者，但目前只作为
-后续细粒度失效的证据，不会跳过严格预处理。输入源变化只重建合并 Snapshot，未变化 definition 的结果仍可命中。缓存损坏、版本不一致或写入失败都安全回退
+后续细粒度失效的证据，不会跳过严格预处理。单个模块的传递输入变化只重载该模块，其他模块和未变化 definition 的结果仍可命中。缓存损坏、版本不一致或写入失败都安全回退
 到冷分析。它目前不缓存 schema evidence、deprecated、quality、dynamic-methods 或严格预处理；最终 CI 仍应运行无缓存检查。
 
 For feature-level planning, use `calcit edit scaffold`. Its primary input is a

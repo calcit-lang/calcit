@@ -123,15 +123,16 @@ calcit query type-at app.main/calculate-total --path code@3.2 --format json
 
 `check-types` 会把裸 `:ref`、`:list`、`:map` 等嵌套 Dynamic slot 记为 partial coverage，并在 `schema_issues` 中返回 `[W_SCHEMA_DYNAMIC]`；未绑定的 `*type-slot` 同样记为 partial 并返回 `[W_UNRESOLVED_TYPE_SLOT]`。严格预处理才负责类型正确性：可达项目函数缺少结构化 root schema 或嵌入式 `Fn` hint 时返回 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`；通过程序直接注入且没有结构化 root schema 的 macro 也会被拒绝。Snapshot loader 会更早拒绝旧 runtime `Fn` 或 whole-`Dynamic` macro schema。发布审计使用 `--deps` 检查实际解析的 module artifact。`weak-types --format json` 只提供迁移定位所需的 kind、definition、path、detail、intent、evidence 与 suggestion；unresolved Dynamic、未绑定 slot、nil/Optional 债务分别产生 `W_DYNAMIC_TYPE_DEBT`、`W_UNRESOLVED_TYPE_SLOT`、`W_NIL_TYPE_DEBT`。声明 `:js-ffi` feature 的 definition 仍标记为明确边界，但 analyzer 不据此改变编译语义。
 
-`check-types` 与 `weak-types` 可显式增加 `--incremental`。`.calcit/analysis-input-cache-v1.cirru` 以主 Snapshot 和依赖模块
-源文件的内容 digest、module 请求解析路径和内置 core revision 校验合并后的静态分析输入，未变化时跳过这些 Cirru 文件的
-重复解析与 Snapshot 转换；
+`check-types` 与 `weak-types` 可显式增加 `--incremental`。`.calcit/analysis-input-cache-v2.cirru` 将主 Snapshot 与每个 direct
+module 保存为独立单元，以完整传递源文件的内容 digest、module 请求解析路径和内置 core revision 校验静态分析输入。主项目或
+单个模块变化时只重载失效单元，其他模块跳过 Cirru 文件的重复解析与 Snapshot 转换；
 `.calcit/analysis-cache-v1.cirru` 再保存按 definition revision 索引的只读结果。两份缓存默认都是 Cirru EDN；JSON 只用于显式
 互操作输出。结构化报告的 `data.cache.input` 单独给出输入
-缓存的 `status`、`reason` 与 `sources`，同层 `hits`、`misses` 与 `miss_reasons` 描述 definition 结果；
+缓存的 `status`、`reason`、`sources`、`main_reused`、`module_hits`、`module_misses` 与 module 失效原因，同层 `hits`、`misses`
+与 `miss_reasons` 描述 definition 结果；
 `data.cache.dependency_index` 另行报告编译器解析的 direct dependency index 命中、边数、未解析项，以及本次 changed/affected 数量；
 普通文本报告也会输出同一摘要。definition 缓存键包含 Calcit 版本、活动 entry、type slots、feature policy、target 与 definition 的完整持久化
-内容。新增或修改 definition 只重算对应条目；任一输入源变化会重新构建合并 Snapshot，但不强制丢弃未变化 definition 的
+内容。新增或修改 definition 只重算对应条目；失效输入单元会按既有顺序重新合并，但不强制丢弃其他 module 或未变化 definition 的
 结果。entry policy、编译器版本或缓存 schema 变化会明确冷启动。损坏或无法写入的缓存不会改变分析结果：工具会回退到
 冷分析，写入失败只报告到 stderr。
 
