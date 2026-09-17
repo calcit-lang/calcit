@@ -1848,12 +1848,15 @@ pub struct EditImportsCommand {
   /// namespace to update
   #[argh(positional)]
   pub namespace: String,
-  /// read imports from file (auto-detects JSON vs Cirru)
+  /// read one imports-vector syntax node from file; select its transport with --input-format
   #[argh(option)]
   pub file: Option<String>,
-  /// imports as inline text (auto-detects JSON vs Cirru)
+  /// one imports-vector syntax node as inline text; select its transport with --input-format
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

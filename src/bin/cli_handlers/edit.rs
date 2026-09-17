@@ -2341,7 +2341,7 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
   // Always use build_ns_code to produce the correct nested structure:
   //   ["ns", "namespace", [":require", rule1, rule2, ...]]
   let ns_name = &opts.namespace;
-  let rules = parse_import_rules_input(&raw)?;
+  let rules = parse_import_rules_input(&raw, opts.input_format)?;
 
   for warning in validate_import_rules(&rules)? {
     eprintln!("{} in namespace '{}': {warning}", "Warning:".yellow(), opts.namespace);
@@ -2443,23 +2443,17 @@ fn import_rules_from_json(value: &serde_json::Value) -> Result<Vec<Cirru>, Strin
   Ok(vec![json_value_to_cirru(value)?])
 }
 
-fn parse_import_rules_input(raw: &str) -> Result<Vec<Cirru>, String> {
-  let trimmed = raw.trim();
-  if trimmed.is_empty() {
-    return Err("Imports input is empty. Provide a quoted Cirru `[]` containing import rules (JSON is also accepted).".to_string());
-  }
-
-  if trimmed.starts_with('[') {
-    let value = serde_json::from_str(trimmed).map_err(|error| format!("Failed to parse imports JSON: {error}"))?;
-    return import_rules_from_json(&value);
-  }
-
-  let cirru_node = parse_input_to_cirru(trimmed)?;
-  let Cirru::List(items) = cirru_node else {
-    return Err("Imports Cirru input must be `quote $ []` followed by zero or more import rules.".to_string());
+/// Validate one decoded imports-vector syntax node and return its rule expressions.
+fn import_rules_from_syntax_node(node: &Cirru, selected_format: SyntaxInputFormat) -> Result<Vec<Cirru>, String> {
+  let Cirru::List(items) = node else {
+    return Err(format!(
+      "Imports input format `{selected_format}` expected an imports vector node headed by `[]`, received a leaf."
+    ));
   };
   if !matches!(items.first(), Some(Cirru::Leaf(head)) if &**head == "[]") {
-    return Err("Imports Cirru input must be `quote $ []` followed by zero or more import rules.".to_string());
+    return Err(format!(
+      "Imports input format `{selected_format}` expected an imports vector node headed by `[]`."
+    ));
   }
 
   items
@@ -2468,11 +2462,34 @@ fn parse_import_rules_input(raw: &str) -> Result<Vec<Cirru>, String> {
     .enumerate()
     .map(|(index, rule)| {
       if !matches!(rule, Cirru::List(_)) {
-        return Err(format!("Import rule {} inside the quoted `[]` must be an expression.", index + 1));
+        return Err(format!("Import rule {} inside the `[]` node must be an expression.", index + 1));
       }
       Ok(rule.clone())
     })
     .collect()
+}
+
+/// Decode bulk imports through the explicit syntax contract or the legacy auto-compatible path.
+fn parse_import_rules_input(raw: &str, requested_format: SyntaxInputFormat) -> Result<Vec<Cirru>, String> {
+  let trimmed = raw.trim();
+  if trimmed.is_empty() {
+    return Err(
+      "Imports input is empty. Provide one imports vector node as quoted Cirru or JSON AST; use --input-format to select the transport."
+        .to_string(),
+    );
+  }
+
+  if requested_format != SyntaxInputFormat::Auto {
+    let node = super::common::decode_mutation_syntax_input(trimmed, requested_format)?;
+    return import_rules_from_syntax_node(&node, requested_format);
+  }
+
+  if trimmed.starts_with('[') {
+    let value = serde_json::from_str(trimmed).map_err(|error| format!("Failed to parse imports JSON: {error}"))?;
+    return import_rules_from_json(&value);
+  }
+  let cirru_node = parse_input_to_cirru(trimmed)?;
+  import_rules_from_syntax_node(&cirru_node, SyntaxInputFormat::Cirru)
 }
 
 /// Extract formatted import list from ns code for comparison
@@ -3084,6 +3101,7 @@ mod tests {
       namespace: "app.main".to_string(),
       file: None,
       code: Some("quote $ []\n  audit.invalid :as".to_string()),
+      input_format: SyntaxInputFormat::Auto,
     };
 
     let error = handle_imports(&opts, &fixture.snapshot_string()).expect_err("malformed import rule should fail");
@@ -3103,18 +3121,47 @@ mod tests {
     ];
 
     assert_eq!(
-      parse_import_rules_input(cirru).expect("quoted Cirru imports should parse"),
+      parse_import_rules_input(cirru, SyntaxInputFormat::Auto).expect("quoted Cirru imports should parse"),
       expected
     );
     assert_eq!(
-      parse_import_rules_input(json).expect("JSON imports should remain supported"),
+      parse_import_rules_input(json, SyntaxInputFormat::Auto).expect("JSON imports should remain supported"),
       expected
     );
   }
 
   #[test]
+  fn imports_explicit_formats_decode_one_imports_vector_node() {
+    let cirru = "quote $ []\n  respo.core :refer $ div span";
+    let json_ast = r#"["[]",["respo.core",":refer",["div","span"]]]"#;
+    let expected = vec![list(vec![
+      leaf("respo.core"),
+      leaf(":refer"),
+      list(vec![leaf("div"), leaf("span")]),
+    ])];
+
+    assert_eq!(
+      parse_import_rules_input(cirru, SyntaxInputFormat::Cirru).expect("explicit Cirru imports should parse"),
+      expected
+    );
+    assert_eq!(
+      parse_import_rules_input(json_ast, SyntaxInputFormat::JsonAst).expect("explicit JSON AST imports should parse"),
+      expected
+    );
+  }
+
+  #[test]
+  fn imports_explicit_json_ast_rejects_legacy_rule_array_shape() {
+    let error = parse_import_rules_input(r#"[["respo.core",":refer",["div"]]]"#, SyntaxInputFormat::JsonAst)
+      .expect_err("explicit JSON AST should require the full imports vector node");
+
+    assert!(error.contains("expected an imports vector node headed by `[]`"), "error: {error}");
+  }
+
+  #[test]
   fn imports_quoted_list_requires_each_rule_to_be_an_expression() {
-    let error = parse_import_rules_input("quote $ [] respo.core").expect_err("flat quoted imports should fail");
+    let error =
+      parse_import_rules_input("quote $ [] respo.core", SyntaxInputFormat::Auto).expect_err("flat quoted imports should fail");
 
     assert!(error.contains("rule 1"), "error: {error}");
     assert!(error.contains("must be an expression"), "error: {error}");

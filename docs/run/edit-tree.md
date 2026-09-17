@@ -296,10 +296,10 @@ calcit edit rm-ns app.util
 calcit edit add-import app.main --code 'quote (respo.core :refer $ deftime)'
 
 # Bulk reset all imports for a namespace
-calcit edit imports app.main --file imports.cirru
+calcit edit imports app.main --input-format cirru --file imports.cirru
 ```
 
-`imports.cirru` quotes one Cirru list node. The command removes the outer `quote`, checks the `[]` marker, and uses each child expression as one import rule:
+`imports.cirru` quotes one Cirru imports vector node. The command removes the outer `quote`, checks the `[]` marker, and uses each child expression as one import rule:
 
 ```cirru
 quote $ []
@@ -307,7 +307,10 @@ quote $ []
   respo-ui.core :as ui
 ```
 
-The older JSON array form remains accepted for interoperability. Do not include the outer `:require`; the command rebuilds it.
+新调用应显式传 `--input-format cirru`。需要 JSON 时，`--input-format json-ast` 接收同一个完整节点，例如
+`["[]",["respo.core",":refer",["div","span"]]]`；JSON 只用于必须对接 JSON 的 consumer。
+默认的 `auto` 继续接受旧的规则数组 `[["respo.core",...]]`，但仅作为兼容读取。不要包含外层
+`:require`；命令会自行重建。
 
 ### Managing Schemas and Examples
 

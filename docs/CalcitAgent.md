@@ -340,7 +340,7 @@ calcit --check-only
 
 `edit add-import` 接收一条 import rule body，不包含 `:require`；优先使用它。只有明确要整体替换全部 imports 时才使用 `edit imports`。已有 definition 或同来源 import 需要覆盖时必须显式加 `--overwrite`。优先局部 tree mutation，不要为了改几个节点整段覆盖。最后仍需运行项目规定的测试与 codegen。
 
-整体替换多条 import 时，`edit imports --file imports.cirru` 的主格式是 quoted Cirru AST，而不是 JSON：
+整体替换多条 import 时，`edit imports --input-format cirru --file imports.cirru` 的主格式是 quoted Cirru AST，而不是 JSON：
 
 ```cirru
 quote $ []
@@ -348,7 +348,9 @@ quote $ []
   respo-ui.core :as ui
 ```
 
-CLI 去掉外层 `quote`，确认 `[]` marker 后，把数组内部每个表达式作为一条 import rule；不要包含外层 `:require`。JSON 数组仅作为互操作兼容格式保留。
+CLI 去掉外层 `quote`，确认 `[]` marker 后，把数组内部每个表达式作为一条 import rule；不要包含外层 `:require`。
+必须对接 JSON 时显式传 `--input-format json-ast`，并用完整节点
+`["[]",["respo.core",":refer",["div","span"]]]`。默认 `auto` 仍读取旧的规则数组，但只用于兼容已有脚本。
 
 ## 4. Cursor 连续编辑
 
