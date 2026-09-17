@@ -1,6 +1,19 @@
 use super::*;
 use std::sync::Arc;
 
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct SchemaEvidenceCandidate {
+  pub diagnostic_code: &'static str,
+  pub definition: String,
+  pub confidence: &'static str,
+  pub declared: Value,
+  pub candidate: Option<Value>,
+  pub unresolved_slots: Vec<String>,
+  pub evidence: Vec<Value>,
+  pub affected_usages: Vec<String>,
+  pub contract_status: &'static str,
+}
+
 fn normalize_inferred_schema(annotation: &CalcitTypeAnnotation) -> std::sync::Arc<CalcitTypeAnnotation> {
   use CalcitTypeAnnotation as Type;
   let normalized = match annotation {
@@ -245,6 +258,7 @@ fn merge_callsite_argument_evidence(
   project_definitions: &[(String, String)],
   target_ns: &str,
   target_def: &str,
+  tolerate_unavailable_owners: bool,
 ) -> Result<(std::sync::Arc<CalcitTypeAnnotation>, Vec<Value>), String> {
   struct StrictTypesGuard(bool);
 
@@ -267,6 +281,7 @@ fn merge_callsite_argument_evidence(
   let mut candidates: Vec<Option<std::sync::Arc<CalcitTypeAnnotation>>> = vec![None; signature.arg_types.len()];
   let mut paths: Vec<Vec<String>> = vec![vec![]; signature.arg_types.len()];
   let mut blocked = vec![false; signature.arg_types.len()];
+  let mut observed: Vec<HashSet<String>> = vec![HashSet::new(); signature.arg_types.len()];
   for (owner_ns, owner_def) in project_definitions {
     if is_sample_namespace(owner_ns) {
       continue;
@@ -277,14 +292,22 @@ fn merge_callsite_argument_evidence(
       .and_then(|file| file.defs.get(owner_def))
       .ok_or_else(|| format!("Project definition `{owner_ns}/{owner_def}` is missing from the source snapshot."))?;
     let owner_is_macro = list_head(&source_entry.code) == Some("defmacro");
-    runner::preprocess::compile_source_def_for_snapshot(owner_ns, owner_def, &warnings, &CallStackList::default())
-      .map_err(|failure| failure.msg)?;
+    if let Err(failure) = runner::preprocess::compile_source_def_for_snapshot(owner_ns, owner_def, &warnings, &CallStackList::default())
+    {
+      if tolerate_unavailable_owners {
+        continue;
+      }
+      return Err(failure.msg);
+    }
     let Some(compiled) = program::lookup_compiled_def(owner_ns, owner_def) else {
       continue;
     };
-    for usage in runner::preprocess::trace_definition_source_usages(owner_ns, owner_def, &warnings, &CallStackList::default())
-      .map_err(|failure| failure.msg)?
-    {
+    let usages = match runner::preprocess::trace_definition_source_usages(owner_ns, owner_def, &warnings, &CallStackList::default()) {
+      Ok(usages) => usages,
+      Err(_) if tolerate_unavailable_owners => continue,
+      Err(failure) => return Err(failure.msg),
+    };
+    for usage in usages {
       if usage.target_ns.as_ref() != target_ns || usage.target_def.as_ref() != target_def {
         continue;
       }
@@ -345,6 +368,7 @@ fn merge_callsite_argument_evidence(
           blocked[index] = true;
           continue;
         }
+        observed[index].insert(candidate.to_brief_string());
         match &candidates[index] {
           Some(current) if current != &candidate => blocked[index] = true,
           Some(_) => {}
@@ -358,7 +382,18 @@ fn merge_callsite_argument_evidence(
   let mut updated = signature.as_ref().clone();
   let mut evidence = Vec::new();
   for (index, current) in updated.arg_types.iter_mut().enumerate() {
-    if !matches!(current.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) || blocked[index] {
+    if !matches!(current.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
+      continue;
+    }
+    if blocked[index] {
+      let mut inferred = observed[index].iter().cloned().collect::<Vec<_>>();
+      inferred.sort();
+      evidence.push(serde_json::json!({
+        "kind": if inferred.len() > 1 { "conflicting-callsite-arguments" } else { "unsafe-callsite-evidence" },
+        "slot": format!("schema.args.{index}"),
+        "inferred": inferred,
+        "calls": paths[index],
+      }));
       continue;
     }
     let Some(candidate) = candidates[index].clone() else {
@@ -376,6 +411,124 @@ fn merge_callsite_argument_evidence(
     std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(updated))),
     evidence,
   ))
+}
+
+fn schema_candidate_for_definition(
+  snapshot: &Snapshot,
+  project_definitions: &[(String, String)],
+  namespace: &str,
+  definition: &str,
+  tolerate_unavailable_owners: bool,
+) -> Result<Option<SchemaEvidenceCandidate>, String> {
+  let entry = snapshot
+    .files
+    .get(namespace)
+    .and_then(|file| file.defs.get(definition))
+    .ok_or_else(|| format!("Schema evidence target `{namespace}/{definition}` does not exist."))?;
+  if matches!(
+    list_head(&entry.code),
+    Some("defmacro" | "defstruct" | "defenum" | "deftrait" | "defimpl")
+  ) {
+    return Ok(None);
+  }
+
+  let original_node = schema_edn_to_source_node(&calcit::snapshot::schema_annotation_to_edn(entry.schema.as_ref()))?;
+  let Some(inferred) = runner::preprocess::infer_compiled_definition_implementation_type(namespace, definition) else {
+    return Ok(Some(SchemaEvidenceCandidate {
+      diagnostic_code: "I_SCHEMA_CANDIDATE_EVIDENCE",
+      definition: format!("{namespace}/{definition}"),
+      confidence: "boundary-unknown",
+      declared: quoted_json(&original_node),
+      candidate: None,
+      unresolved_slots: vec!["schema".to_owned()],
+      evidence: vec![serde_json::json!({
+        "kind": "compiled-type-unavailable",
+        "target": format!("{namespace}/{definition}"),
+      })],
+      affected_usages: vec![],
+      contract_status: "review-required",
+    }));
+  };
+  let inferred = normalize_inferred_schema(&inferred);
+  let mut compiled_evidence = Vec::new();
+  collect_compiled_refinement_evidence(entry.schema.as_ref(), inferred.as_ref(), "schema", &mut compiled_evidence);
+  let (inferred, mut callsite_evidence) = merge_callsite_argument_evidence(
+    inferred,
+    snapshot,
+    project_definitions,
+    namespace,
+    definition,
+    tolerate_unavailable_owners,
+  )?;
+  let candidate = refine_schema_holes(&entry.schema, &inferred);
+  if candidate == entry.schema {
+    return Ok(None);
+  }
+
+  let replacement_node = schema_edn_to_source_node(&calcit::snapshot::schema_annotation_to_edn(candidate.as_ref()))?;
+  let mut unresolved_slots = Vec::new();
+  collect_dynamic_schema_paths(candidate.as_ref(), "schema", &mut unresolved_slots);
+  collect_unbound_schema_paths(candidate.as_ref(), "schema", &HashSet::new(), &mut unresolved_slots);
+  unresolved_slots.sort();
+  unresolved_slots.dedup();
+  callsite_evidence.insert(
+    0,
+    serde_json::json!({
+      "kind": "compiled-type-inference",
+      "target": format!("{namespace}/{definition}"),
+      "inferred": inferred.to_brief_string(),
+      "unresolved_slots": unresolved_slots,
+    }),
+  );
+  callsite_evidence.splice(1..1, compiled_evidence);
+  let has_conflict = callsite_evidence
+    .iter()
+    .any(|item| item["kind"] == "conflicting-callsite-arguments");
+  let usage_derived = callsite_evidence.iter().any(|item| item["kind"] == "resolved-callsite-arguments");
+  let confidence = if has_conflict {
+    "conflict"
+  } else if !unresolved_slots.is_empty() {
+    "boundary-unknown"
+  } else if usage_derived {
+    "usage-derived"
+  } else {
+    "exact"
+  };
+  let mut affected_usages = callsite_evidence
+    .iter()
+    .filter_map(|item| item.get("calls").and_then(Value::as_array))
+    .flatten()
+    .filter_map(Value::as_str)
+    .map(str::to_owned)
+    .collect::<Vec<_>>();
+  affected_usages.sort();
+  affected_usages.dedup();
+  Ok(Some(SchemaEvidenceCandidate {
+    diagnostic_code: "I_SCHEMA_CANDIDATE_EVIDENCE",
+    definition: format!("{namespace}/{definition}"),
+    confidence,
+    declared: quoted_json(&original_node),
+    candidate: Some(quoted_json(&replacement_node)),
+    unresolved_slots,
+    evidence: callsite_evidence,
+    affected_usages,
+    contract_status: "review-required",
+  }))
+}
+
+pub(crate) fn collect_schema_evidence_candidates(
+  snapshot: &Snapshot,
+  project_definitions: &[(String, String)],
+  targets: &[(String, String)],
+) -> Result<Vec<SchemaEvidenceCandidate>, String> {
+  let mut candidates = Vec::new();
+  for (namespace, definition) in targets {
+    if let Some(candidate) = schema_candidate_for_definition(snapshot, project_definitions, namespace, definition, true)? {
+      candidates.push(candidate);
+    }
+  }
+  candidates.sort_by(|left, right| left.definition.cmp(&right.definition));
+  Ok(candidates)
 }
 
 /// Test and example namespaces contain executable samples, not production-wide
@@ -467,40 +620,29 @@ pub(super) fn plan_schema_synthesis(
     ));
   }
 
-  let inferred = runner::preprocess::infer_compiled_definition_implementation_type(namespace, definition).ok_or_else(|| {
-    format!("Schema synthesis could not recover static implementation evidence for `{namespace}/{definition}`; no schema was guessed.")
-  })?;
-  let inferred = normalize_inferred_schema(&inferred);
-  let mut compiled_evidence = Vec::new();
-  collect_compiled_refinement_evidence(entry.schema.as_ref(), inferred.as_ref(), "schema", &mut compiled_evidence);
-  let (inferred, mut callsite_evidence) =
-    merge_callsite_argument_evidence(inferred, snapshot, project_definitions, namespace, definition)?;
-  let candidate = refine_schema_holes(&entry.schema, &inferred);
+  let Some(evidence_candidate) = schema_candidate_for_definition(snapshot, project_definitions, namespace, definition, false)? else {
+    if std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1") {
+      validate_attached_sources_against_synthesized_schema(snapshot, project_definitions, namespace, definition)?;
+    }
+    return Ok(vec![]);
+  };
+  let Some(candidate_json) = evidence_candidate.candidate.as_ref() else {
+    return Err(format!(
+      "Schema synthesis could not recover static implementation evidence for `{namespace}/{definition}`; no schema was guessed."
+    ));
+  };
   if std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1") {
     validate_attached_sources_against_synthesized_schema(snapshot, project_definitions, namespace, definition)?;
   }
-  if candidate == entry.schema {
-    return Ok(vec![]);
-  }
 
   let original_node = schema_edn_to_source_node(&calcit::snapshot::schema_annotation_to_edn(entry.schema.as_ref()))?;
-  let replacement_node = schema_edn_to_source_node(&calcit::snapshot::schema_annotation_to_edn(candidate.as_ref()))?;
-  let mut unresolved = Vec::new();
-  collect_dynamic_schema_paths(candidate.as_ref(), "schema", &mut unresolved);
-  collect_unbound_schema_paths(candidate.as_ref(), "schema", &HashSet::new(), &mut unresolved);
-  unresolved.sort();
-  unresolved.dedup();
+  let replacement_node = json_value_to_cirru(
+    candidate_json
+      .get("value")
+      .ok_or_else(|| format!("Schema evidence for `{namespace}/{definition}` omitted the Cirru candidate value."))?,
+  )?;
+  let unresolved = evidence_candidate.unresolved_slots;
   let machine_applicable = unresolved.is_empty();
-  callsite_evidence.insert(
-    0,
-    serde_json::json!({
-      "kind": "compiled-type-inference",
-      "target": format!("{namespace}/{definition}"),
-      "inferred": inferred.to_brief_string(),
-      "unresolved_slots": unresolved,
-    }),
-  );
-  callsite_evidence.splice(1..1, compiled_evidence);
   Ok(vec![FixSuggestion {
     rule_id: SYNTHESIZE_SCHEMA_RULE,
     diagnostic_code: SYNTHESIZE_SCHEMA_DIAGNOSTIC,
@@ -509,7 +651,7 @@ pub(super) fn plan_schema_synthesis(
     definition: format!("{namespace}/{definition}"),
     path: "schema".to_owned(),
     fingerprint: node_fingerprint(&original_node),
-    origin_chain: callsite_evidence,
+    origin_chain: evidence_candidate.evidence,
     original: quoted_json(&original_node),
     replacement: Some(quoted_json(&replacement_node)),
     applicability: if machine_applicable { "machine-applicable" } else { "needs-review" },

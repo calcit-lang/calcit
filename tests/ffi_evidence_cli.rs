@@ -42,7 +42,7 @@ fn ffi_evidence_classifies_operations_and_emits_review_only_candidates() {
   let output = run(&["--ffi-evidence", "--format", "json"]);
   assert_success(&output);
   let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("stdout should contain one JSON report");
-  assert_eq!(report["schema_version"], 7);
+  assert_eq!(report["schema_version"], 8);
   assert_eq!(report["data"]["filters"]["ffi_evidence"], true);
   assert_eq!(report["data"]["evidence"]["contract_status"], "review-required");
   assert_eq!(report["data"]["evidence"]["runtime_trust_inferred"], false);

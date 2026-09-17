@@ -476,6 +476,9 @@ pub struct WeakTypesCommand {
   /// include review-only JS FFI boundary evidence and migration candidates
   #[argh(switch, long = "ffi-evidence")]
   pub ffi_evidence: bool,
+  /// include review-only schema, map-shape, and dispatch candidates
+  #[argh(switch, long = "schema-evidence")]
+  pub schema_evidence: bool,
   /// emit aggregate counts without per-definition details
   #[argh(switch, long = "summary-only")]
   pub summary_only: bool,

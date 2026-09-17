@@ -64,6 +64,30 @@ fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -
 }
 
 fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
+  if options.schema_evidence {
+    struct StrictTypesGuard(bool);
+    impl Drop for StrictTypesGuard {
+      fn drop(&mut self) {
+        runner::preprocess::set_strict_types(self.0);
+      }
+    }
+    let guard = StrictTypesGuard(runner::preprocess::is_strict_types_enabled());
+    runner::preprocess::set_strict_types(false);
+    let package_prefix = format!("{}.", snapshot.package);
+    let warnings = RefCell::new(Vec::new());
+    let mut definitions = snapshot
+      .files
+      .iter()
+      .filter(|(namespace, _)| namespace.as_str() == snapshot.package || namespace.starts_with(&package_prefix))
+      .filter(|(namespace, _)| !namespace.ends_with(".$meta"))
+      .flat_map(|(namespace, file)| file.defs.keys().map(|definition| (namespace.clone(), definition.clone())))
+      .collect::<Vec<_>>();
+    definitions.sort();
+    for (namespace, definition) in definitions {
+      let _ = runner::preprocess::ensure_ns_def_compiled(&namespace, &definition, &warnings, &CallStackList::default());
+    }
+    drop(guard);
+  }
   match options.format.as_str() {
     "human" | "text" => print!("{}", type_coverage::format_weak_types(options, snapshot)?),
     "edn" => {
@@ -445,8 +469,10 @@ fn run_cli() -> Result<(), String> {
       }
       AnalyzeSubcommand::CheckPublic(_) => {}
       AnalyzeSubcommand::WeakTypes(options) => {
-        let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
-        return run_weak_types(options, &snapshot);
+        if !options.schema_evidence {
+          let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
+          return run_weak_types(options, &snapshot);
+        }
       }
       AnalyzeSubcommand::Deprecated(options) => {
         let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
@@ -2832,11 +2858,12 @@ mod tests {
       format: "json".to_owned(),
       deps: false,
       ffi_evidence: false,
+      schema_evidence: false,
       summary_only: false,
     };
     let json = type_coverage::format_weak_types_json(&options, &snapshot).expect("unsafe evidence JSON should format");
     let value: serde_json::Value = serde_json::from_str(&json).expect("unsafe evidence JSON should parse");
-    assert_eq!(value["schema_version"], 7);
+    assert_eq!(value["schema_version"], 8);
     assert_eq!(
       value["data"]["definitions"][0]["occurrences"][0]["evidence"]["source_form"],
       "raw-js-value"
@@ -2994,11 +3021,12 @@ mod tests {
       format: "json".to_owned(),
       deps: false,
       ffi_evidence: false,
+      schema_evidence: false,
       summary_only: false,
     };
     let weak_json = type_coverage::format_weak_types_json(&weak_options, &snapshot).expect("weak type JSON should format");
     let weak_value: serde_json::Value = serde_json::from_str(&weak_json).expect("weak type JSON should parse");
-    assert_eq!(weak_value["schema_version"], 7);
+    assert_eq!(weak_value["schema_version"], 8);
     assert_eq!(weak_value["command"], "analyze.weak-types");
     assert_eq!(weak_value["data"]["filters"]["intent"], "unresolved");
     assert_eq!(weak_value["data"]["definitions"][0]["occurrences"][0]["path"], "schema.args.0");

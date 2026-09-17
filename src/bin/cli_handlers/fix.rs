@@ -179,6 +179,8 @@ struct StrictWorkflowReviewRequired {
   source_fixes: Vec<StrictWorkflowSourceReview>,
   type_findings: Vec<StrictWorkflowTypeFinding>,
   ffi_boundaries: Vec<type_coverage::FfiBoundaryEvidence>,
+  schema_candidates: Vec<schema_synthesis::SchemaEvidenceCandidate>,
+  structural_candidates: type_coverage::StructuralCandidates,
 }
 
 #[derive(Debug, Serialize)]
@@ -202,6 +204,8 @@ struct StrictWorkflowTypeEvidence {
   review_required: Vec<StrictWorkflowTypeFinding>,
   retained_boundaries: Vec<StrictWorkflowTypeFinding>,
   ffi_boundaries: Vec<type_coverage::FfiBoundaryEvidence>,
+  schema_candidates: Vec<schema_synthesis::SchemaEvidenceCandidate>,
+  structural_candidates: type_coverage::StructuralCandidates,
 }
 
 #[derive(Debug, Serialize)]
@@ -250,6 +254,7 @@ fn strict_workflow_type_findings(snapshot: &Snapshot) -> Result<StrictWorkflowTy
     summary_only: false,
     format: "json".to_owned(),
     ffi_evidence: true,
+    schema_evidence: true,
   };
   let mut review_required = Vec::new();
   let mut retained_boundaries = Vec::new();
@@ -285,10 +290,14 @@ fn strict_workflow_type_findings(snapshot: &Snapshot) -> Result<StrictWorkflowTy
     });
   }
   let ffi_boundaries = type_coverage::collect_ffi_boundary_evidence(&options, snapshot)?;
+  let schema_candidates = type_coverage::collect_schema_candidates(&options, snapshot)?;
+  let structural_candidates = type_coverage::collect_structural_candidates(&options, snapshot)?;
   Ok(StrictWorkflowTypeEvidence {
     review_required,
     retained_boundaries,
     ffi_boundaries,
+    schema_candidates,
+    structural_candidates,
   })
 }
 
@@ -603,6 +612,8 @@ pub(crate) fn handle_fix_command(
           .collect(),
         type_findings: type_evidence.review_required,
         ffi_boundaries: type_evidence.ffi_boundaries,
+        schema_candidates: type_evidence.schema_candidates,
+        structural_candidates: type_evidence.structural_candidates,
       },
       retained_type_boundaries: type_evidence.retained_boundaries,
       verification: StrictWorkflowVerification {
@@ -1318,7 +1329,7 @@ fn plan_definition_rename(
   Ok(suggestions)
 }
 
-mod schema_synthesis;
+pub(crate) mod schema_synthesis;
 use schema_synthesis::plan_schema_synthesis;
 
 fn plan_value_to_zero_arg_fn(

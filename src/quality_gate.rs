@@ -148,6 +148,7 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
     format: "json".to_owned(),
     deps: options.deps,
     ffi_evidence: false,
+    schema_evidence: false,
     summary_only: false,
   };
   let deprecated_options = DeprecatedCommand {

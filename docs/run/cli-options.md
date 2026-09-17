@@ -61,6 +61,11 @@ adapter 候选。它只整理 Snapshot、schema 和 namespace import 中可证�
 运行时 trust，也不会自动收窄 Dynamic、选择 Option/Result 或写入源码。默认不启用该扫描，避免把迁移证据变成新的
 类型门禁；JSON 仅作为互操作格式。
 
+需要审阅 schema 与数据建模候选时，仍使用同一个入口：
+`calcit calcit.cirru analyze weak-types --schema-evidence --format edn`。它复用 `synthesize-schema-v1` 的编译器和
+resolver call-site 证据，并列出重复匿名 Map shape 与 `match` tag dispatch。输出带置信度、冲突、unknown slot 和
+源码路径，全部是 `review-required`；不会自动创建 Struct/Enum，也不会决定业务默认值或错误语义。
+
 For feature-level planning, use `calcit edit scaffold`. Its primary input is a
 Cirru EDN architecture plan, preferably stored under
 `docs/architectures/<feature>.cirru`:

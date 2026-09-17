@@ -113,6 +113,12 @@ macro syntax 与明确的 Unit 返回不会伪装成迁移债务。
 模块并优先列出 dependency 候选；caller 仅承诺完全限定调用和同 namespace 直接调用，不冒充动态调用图。
 所有候选都是审阅清单，不是可应用 fix；workflow 不据此推断外部值可信、返回值是否 optional，或生成业务默认值。
 
+`:review-required :schema-candidates` 与 `analyze weak-types --schema-evidence` 复用 `synthesize-schema-v1` 的
+编译器和 resolver call-site 证据；`:structural-candidates` 汇总重复匿名 Map shape 与 `match` tag dispatch。
+候选携带 `exact`、`usage-derived`、`boundary-unknown` 或 `conflict`、源码路径和受影响调用点，但 workflow 不会
+自动选择或应用它们。只有用户显式运行 `synthesize-schema-v1` 时，原有 machine-applicable schema fix 才进入写回流程；
+Map/dispatch 仍只用于人工建模。
+
 默认模式只规划。`--apply` 仍走既有 fingerprint、staged Snapshot、严格预处理和原子替换，不会应用 schema 设计、
 Dynamic 收窄、FFI trust 或业务默认值。`--verify` 是只读模式：它要求安全建议已经清空，逐 entry 运行
 `--check-only --keep-going`，并执行 Snapshot 已声明的 verification profiles；任一结果失败时保持结构化 stdout，
