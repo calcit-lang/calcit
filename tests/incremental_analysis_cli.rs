@@ -80,6 +80,20 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
   fs::copy("tests/fixtures/ffi-boundary-evidence.cirru", &snapshot).expect("analysis fixture should copy");
+  let dependency_target = directory.0.join("dep-a");
+  fs::create_dir(&dependency_target).expect("dependency target directory should create");
+  fs::copy("tests/fixtures/ffi-boundary-evidence.cirru", dependency_target.join("calcit.cirru"))
+    .expect("dependency fixture should copy");
+  let dependency = directory.0.join("dep");
+  #[cfg(unix)]
+  std::os::unix::fs::symlink(&dependency_target, &dependency).expect("dependency symlink should create");
+  #[cfg(not(unix))]
+  fs::create_dir(&dependency).expect("dependency directory should create");
+  let dependency_snapshot = dependency.join("calcit.cirru");
+  #[cfg(not(unix))]
+  fs::copy("tests/fixtures/ffi-boundary-evidence.cirru", &dependency_snapshot).expect("dependency fixture should copy");
+  let add_module = run_calcit(&snapshot, &["config", "add-module", "./dep/"]);
+  assert_success(&add_module, "add local dependency module");
 
   let cold = report(&snapshot, "check-types");
   let cold_cache = &cold["data"]["cache"];
@@ -90,12 +104,38 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(cold_cache["status"], "cold");
   assert_eq!(cold_cache["hits"], 0);
   assert_eq!(cold_cache["miss_reasons"]["cache-missing"], definition_count);
+  assert_eq!(cold_cache["input"]["status"], "cold");
+  assert_eq!(cold_cache["input"]["reason"], "cache-missing");
+  assert_eq!(cold_cache["input"]["sources"], 2);
 
   let warm = report(&snapshot, "check-types");
   assert_eq!(warm["data"]["cache"]["status"], "warm");
   assert_eq!(warm["data"]["cache"]["hits"], definition_count);
   assert_eq!(warm["data"]["cache"]["misses"], 0);
+  assert_eq!(warm["data"]["cache"]["input"]["status"], "warm");
   assert_eq!(without_cache(cold.clone()), without_cache(warm.clone()));
+
+  #[cfg(unix)]
+  {
+    let replacement = directory.0.join("dep-b");
+    fs::create_dir(&replacement).expect("replacement dependency directory should create");
+    fs::copy("tests/fixtures/ffi-boundary-evidence.cirru", replacement.join("calcit.cirru"))
+      .expect("replacement dependency fixture should copy");
+    fs::remove_file(&dependency).expect("dependency symlink should remove");
+    std::os::unix::fs::symlink(&replacement, &dependency).expect("replacement dependency symlink should create");
+    let resolution_changed = report(&snapshot, "check-types");
+    assert_eq!(resolution_changed["data"]["cache"]["status"], "warm");
+    assert_eq!(resolution_changed["data"]["cache"]["input"]["status"], "cold");
+    assert_eq!(resolution_changed["data"]["cache"]["input"]["reason"], "module-resolution-changed");
+  }
+
+  let mut dependency_content = fs::read_to_string(&dependency_snapshot).expect("dependency fixture should read");
+  dependency_content.push('\n');
+  fs::write(&dependency_snapshot, dependency_content).expect("dependency fixture should update");
+  let dependency_changed = report(&snapshot, "check-types");
+  assert_eq!(dependency_changed["data"]["cache"]["status"], "warm");
+  assert_eq!(dependency_changed["data"]["cache"]["input"]["status"], "cold");
+  assert_eq!(dependency_changed["data"]["cache"]["input"]["reason"], "source-changed");
 
   let edit = run_calcit(
     &snapshot,
@@ -114,6 +154,7 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(partial["data"]["cache"]["hits"], definition_count);
   assert_eq!(partial["data"]["cache"]["misses"], 1);
   assert_eq!(partial["data"]["cache"]["miss_reasons"]["not-cached"], 1);
+  assert_eq!(partial["data"]["cache"]["input"]["reason"], "source-changed");
 
   let edit = run_calcit(
     &snapshot,
@@ -154,6 +195,27 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
     policy_cold["data"]["cache"]["miss_reasons"]["entry-policy-changed"],
     definition_count + 1
   );
+
+  let schema_evidence = run_calcit(
+    &snapshot,
+    &[
+      "analyze",
+      "weak-types",
+      "--schema-evidence",
+      "--incremental",
+      "--summary-only",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&schema_evidence, "incremental schema evidence");
+  let schema_evidence: serde_json::Value =
+    serde_json::from_slice(&schema_evidence.stdout).expect("schema evidence stdout should contain one JSON envelope");
+  assert_eq!(schema_evidence["data"]["cache"]["input"]["status"], "bypassed");
+  assert_eq!(
+    schema_evidence["data"]["cache"]["input"]["reason"],
+    "schema-evidence-requires-preprocessing"
+  );
 }
 
 #[test]
@@ -166,9 +228,17 @@ fn corrupt_incremental_cache_falls_back_to_a_cold_analysis() {
   let definition_count = first["data"]["cache"]["misses"]
     .as_u64()
     .expect("cold miss count should be numeric");
-  fs::write(directory.0.join(".calcit/analysis-cache-v1.json"), "not-json").expect("cache corruption should write");
+  fs::write(directory.0.join(".calcit/analysis-input-cache-v1.cirru"), "not-cirru-edn").expect("input cache corruption should write");
+
+  let recovered_input = report(&snapshot, "check-types");
+  assert_eq!(recovered_input["data"]["cache"]["status"], "warm");
+  assert_eq!(recovered_input["data"]["cache"]["input"]["status"], "cold");
+  assert_eq!(recovered_input["data"]["cache"]["input"]["reason"], "cache-corrupt");
+
+  fs::write(directory.0.join(".calcit/analysis-cache-v1.cirru"), "not-cirru-edn").expect("definition cache corruption should write");
 
   let recovered = report(&snapshot, "check-types");
   assert_eq!(recovered["data"]["cache"]["status"], "cold");
   assert_eq!(recovered["data"]["cache"]["miss_reasons"]["cache-corrupt"], definition_count);
+  assert_eq!(recovered["data"]["cache"]["input"]["status"], "warm");
 }

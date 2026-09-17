@@ -1827,7 +1827,10 @@ impl CalcitTypeAnnotation {
         let raw = sym.as_ref();
         Some(raw.strip_prefix(':').unwrap_or(raw))
       }
-      Calcit::Str(text) => Some(text.as_ref()),
+      Calcit::Str(text) => {
+        let raw = text.as_ref();
+        Some(raw.strip_prefix(':').unwrap_or(raw))
+      }
       _ => None,
     }
   }
@@ -2069,6 +2072,7 @@ impl CalcitTypeAnnotation {
   fn parse_where_bound_name(form: &Calcit, generics: &[Arc<str>]) -> Option<Arc<str>> {
     let name = match form {
       Calcit::Symbol { sym, .. } => Arc::from(sym.trim_start_matches('\'')),
+      Calcit::Str(text) => Arc::from(text.trim_start_matches(['\'', ':'])),
       _ => Self::parse_type_var_form(form)?,
     };
 
@@ -2422,6 +2426,7 @@ impl CalcitTypeAnnotation {
     match form {
       Edn::Nil => Calcit::Nil,
       Edn::Tag(t) => Calcit::Tag(t.clone()),
+      Edn::Str(s) => Calcit::Str(s.clone()),
       Edn::Symbol(s) => Calcit::Symbol {
         sym: s.clone(),
         info: Arc::new(CalcitSymbolInfo {

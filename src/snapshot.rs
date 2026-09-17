@@ -3418,7 +3418,7 @@ pub fn save_snapshot_to_file<P: AsRef<Path>>(snapshot_path: P, snapshot: &Snapsh
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitFnTypeAnnotation, SchemaKind};
+  use crate::calcit::{CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTrait, SchemaKind};
   use cirru_edn::EdnListView;
 
   fn parse_one(source: &str) -> Cirru {
@@ -3427,6 +3427,39 @@ mod tests {
       .into_iter()
       .next()
       .expect("test Cirru should contain one expression")
+  }
+
+  #[test]
+  fn code_entry_json_round_trip_preserves_nested_function_schema() {
+    let fn_schema = Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![CalcitGenericBound {
+        name: Arc::from("T"),
+        traits: Arc::new(vec![Arc::new(CalcitTrait::new_reference("Show"))]),
+      }]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))],
+      return_type: Arc::new(CalcitTypeAnnotation::Unit),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    });
+    let entry = CodeEntry {
+      doc: String::new(),
+      examples: vec![],
+      tests: vec![],
+      tags: HashSet::new(),
+      code: Cirru::leaf("nil"),
+      schema: Arc::new(CalcitTypeAnnotation::Ref(Arc::new(CalcitTypeAnnotation::Fn(fn_schema)))),
+      ffi: None,
+    };
+
+    let encoded = serde_json::to_string(&entry).expect("code entry should serialize");
+    let restored: CodeEntry = serde_json::from_str(&encoded).expect("code entry should deserialize");
+
+    assert_eq!(
+      schema_annotation_to_edn(restored.schema.as_ref()),
+      schema_annotation_to_edn(entry.schema.as_ref())
+    );
   }
 
   #[test]
