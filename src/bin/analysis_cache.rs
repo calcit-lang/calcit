@@ -281,12 +281,16 @@ struct AnalysisCache {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CachedDynamicMethods {
   closure_revision: String,
+  #[serde(default)]
+  core_revision: String,
   findings: Vec<CachedWarning>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CachedStrictCheck {
   closure_revision: String,
+  #[serde(default)]
+  core_revision: String,
   strict_types: bool,
   warn_dynamic_methods: bool,
 }
@@ -1004,10 +1008,11 @@ pub(crate) fn collect_dynamic_methods(
   let (mut cache, global_reason) = load_cache(&path, &context);
   let dependency_index = collect_dependency_index(&mut cache, snapshot, None, None, true)?;
   let closure_revision = dependency_closure_revision(&cache, entries);
+  let core_revision = calcit::core_snapshot_revision();
 
   let (findings, status, preprocessing_cached, reason) = match closure_revision {
     Ok(revision) => match cache.dynamic_methods.as_ref() {
-      Some(cached) if cached.closure_revision == revision => (
+      Some(cached) if cached.closure_revision == revision && cached.core_revision == core_revision => (
         cached.findings.clone().into_iter().map(LocatedWarning::from).collect(),
         "warm".to_owned(),
         true,
@@ -1017,11 +1022,18 @@ pub(crate) fn collect_dynamic_methods(
         let findings = preprocess_dynamic_methods(snapshot, entries)?;
         let reason = global_reason.clone().or_else(|| {
           cached
-            .map(|_| "dependency-closure-changed".to_owned())
+            .map(|cached| {
+              if cached.core_revision != core_revision {
+                "core-revision-changed".to_owned()
+              } else {
+                "dependency-closure-changed".to_owned()
+              }
+            })
             .or_else(|| Some("preprocessing-not-cached".to_owned()))
         });
         cache.dynamic_methods = Some(CachedDynamicMethods {
           closure_revision: revision,
+          core_revision,
           findings: findings.iter().map(CachedWarning::from).collect(),
         });
         (findings, "cold".to_owned(), false, reason)
@@ -1062,6 +1074,7 @@ pub(crate) fn run_incremental_strict_check(
   let (mut cache, global_reason) = load_cache(&path, &context);
   let dependency_index = collect_dependency_index(&mut cache, snapshot, None, None, true)?;
   let closure_revision = dependency_closure_revision(&cache, entries);
+  let core_revision = calcit::core_snapshot_revision();
   let strict_types = runner::preprocess::is_strict_types_enabled();
   let warn_dynamic_methods = runner::preprocess::is_warn_dyn_method_enabled();
 
@@ -1069,6 +1082,7 @@ pub(crate) fn run_incremental_strict_check(
     Ok(revision) => match cache.strict_check.as_ref() {
       Some(cached)
         if cached.closure_revision == revision
+          && cached.core_revision == core_revision
           && cached.strict_types == strict_types
           && cached.warn_dynamic_methods == warn_dynamic_methods =>
       {
@@ -1078,11 +1092,18 @@ pub(crate) fn run_incremental_strict_check(
         check()?;
         let reason = global_reason.clone().or_else(|| {
           cached
-            .map(|_| "dependency-closure-changed".to_owned())
+            .map(|cached| {
+              if cached.core_revision != core_revision {
+                "core-revision-changed".to_owned()
+              } else {
+                "dependency-closure-changed".to_owned()
+              }
+            })
             .or_else(|| Some("preprocessing-not-cached".to_owned()))
         });
         cache.strict_check = Some(CachedStrictCheck {
           closure_revision: revision,
+          core_revision,
           strict_types,
           warn_dynamic_methods,
         });
