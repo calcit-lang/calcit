@@ -6,7 +6,7 @@ use std::process::Command;
 
 use calcit::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, LocatedWarning, SchemaKind};
 use calcit::call_stack::CallStackList;
-use calcit::cli_args::FixCommand;
+use calcit::cli_args::{FixCommand, WeakTypesCommand};
 use calcit::data::cirru::code_to_calcit;
 use calcit::snapshot::Snapshot;
 use calcit::{program, runner};
@@ -18,6 +18,7 @@ use serde_json::Value;
 use super::common::{cirru_to_json_value, format_path, json_value_to_cirru, markdown_cirru_section};
 use super::edit::{load_snapshot, navigate_to_path, run_staged_fix_transaction, snapshot_content_revision};
 use super::structured_output::{StructuredOutputFormat, format_json_value_as_edn};
+use crate::type_coverage;
 
 const REMOVED_DATA_API_RULE: &str = "removed-data-api-v1";
 const REMOVED_DATA_API_DIAGNOSTIC: &str = "W_REMOVED_DATA_API";
@@ -112,6 +113,8 @@ struct FixReportData<'a> {
   new_revision: &'a str,
   validation: FixValidation,
   suggestions: &'a [FixSuggestion],
+  #[serde(skip_serializing_if = "Option::is_none")]
+  workflow: Option<StrictWorkflowManifest>,
 }
 
 #[derive(Debug, Serialize)]
@@ -141,6 +144,245 @@ struct FixRuleMetadata {
   source_version_required: bool,
 }
 
+#[derive(Debug, Serialize)]
+struct StrictWorkflowManifest {
+  workflow: &'static str,
+  mode: &'static str,
+  status: &'static str,
+  entries: Vec<StrictWorkflowEntry>,
+  safe_fixes: StrictWorkflowSafeFixes,
+  review_required: StrictWorkflowReviewRequired,
+  retained_type_boundaries: Vec<StrictWorkflowTypeFinding>,
+  verification: StrictWorkflowVerification,
+  resume: StrictWorkflowResume,
+}
+
+#[derive(Debug, Serialize)]
+struct StrictWorkflowEntry {
+  name: String,
+  mode: String,
+  target: String,
+  init_fn: String,
+  reload_fn: String,
+  type_slots: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Serialize)]
+struct StrictWorkflowSafeFixes {
+  preset: &'static str,
+  suggestions: usize,
+  status: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct StrictWorkflowReviewRequired {
+  source_fixes: Vec<StrictWorkflowSourceReview>,
+  type_findings: Vec<StrictWorkflowTypeFinding>,
+  ffi_boundaries: Vec<StrictWorkflowFfiBoundary>,
+}
+
+#[derive(Debug, Serialize)]
+struct StrictWorkflowSourceReview {
+  rule_id: &'static str,
+  definition: String,
+  path: String,
+  message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct StrictWorkflowTypeFinding {
+  definition: String,
+  kind: String,
+  intent: String,
+  path: String,
+  detail: String,
+}
+
+#[derive(Debug, Serialize)]
+struct StrictWorkflowFfiBoundary {
+  definition: String,
+  target: String,
+}
+
+#[derive(Debug, Serialize)]
+struct StrictWorkflowVerification {
+  commands: Vec<Vec<String>>,
+  results: Vec<StrictWorkflowVerificationResult>,
+  external_commands: Vec<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+struct StrictWorkflowVerificationResult {
+  scope: String,
+  status: &'static str,
+  report: Value,
+}
+
+#[derive(Debug, Serialize)]
+struct StrictWorkflowResume {
+  revision: String,
+  apply_command: Vec<String>,
+}
+
+fn strict_workflow_entries(snapshot: &Snapshot) -> Vec<StrictWorkflowEntry> {
+  let mut entries = snapshot.entries.iter().collect::<Vec<_>>();
+  entries.sort_by_key(|(name, _)| *name);
+  entries
+    .into_iter()
+    .map(|(name, entry)| StrictWorkflowEntry {
+      name: name.clone(),
+      mode: entry.mode.as_str().to_owned(),
+      target: entry.target.map(|target| target.as_str()).unwrap_or("unspecified").to_owned(),
+      init_fn: entry.init_fn.clone(),
+      reload_fn: entry.reload_fn.clone(),
+      type_slots: entry.type_slots.iter().map(|(name, value)| (name.clone(), value.clone())).collect(),
+    })
+    .collect()
+}
+
+fn strict_workflow_type_findings(
+  snapshot: &Snapshot,
+) -> Result<(Vec<StrictWorkflowTypeFinding>, Vec<StrictWorkflowTypeFinding>), String> {
+  let options = WeakTypesCommand {
+    ns: None,
+    ns_prefix: None,
+    deps: false,
+    only: None,
+    intent: None,
+    summary_only: false,
+    format: "json".to_owned(),
+  };
+  let mut review_required = Vec::new();
+  let mut retained_boundaries = Vec::new();
+  for row in type_coverage::collect_weak_type_rows(&options, snapshot)? {
+    let definition = format!("{}/{}", row.ns, row.def);
+    for occurrence in row.occurrences {
+      let finding = StrictWorkflowTypeFinding {
+        definition: definition.clone(),
+        kind: occurrence.kind.as_str().to_owned(),
+        intent: occurrence.intent.as_str().to_owned(),
+        path: occurrence.path,
+        detail: occurrence.detail,
+      };
+      match occurrence.intent {
+        type_coverage::WeakTypeIntent::Unresolved
+        | type_coverage::WeakTypeIntent::DeclaredOptional
+        | type_coverage::WeakTypeIntent::ExplicitUnsafe => review_required.push(finding),
+        type_coverage::WeakTypeIntent::IntentionalJsFfi | type_coverage::WeakTypeIntent::IntentionalTypeSlotDynamic => {
+          retained_boundaries.push(finding)
+        }
+        type_coverage::WeakTypeIntent::IntentionalMacroSyntax | type_coverage::WeakTypeIntent::DeclaredUnit => {}
+      }
+    }
+  }
+  for findings in [&mut review_required, &mut retained_boundaries] {
+    findings.sort_by(|left, right| {
+      left
+        .definition
+        .cmp(&right.definition)
+        .then(left.path.cmp(&right.path))
+        .then(left.kind.cmp(&right.kind))
+        .then(left.intent.cmp(&right.intent))
+    });
+  }
+  Ok((review_required, retained_boundaries))
+}
+
+fn strict_workflow_ffi_boundaries(snapshot: &Snapshot) -> Result<Vec<StrictWorkflowFfiBoundary>, String> {
+  let mut boundaries = Vec::new();
+  let mut namespaces = snapshot.files.iter().collect::<Vec<_>>();
+  namespaces.sort_by_key(|(name, _)| *name);
+  for (namespace, file) in namespaces {
+    let mut definitions = file.defs.iter().collect::<Vec<_>>();
+    definitions.sort_by_key(|(name, _)| *name);
+    for (definition, entry) in definitions {
+      let Some(ffi) = &entry.ffi else {
+        continue;
+      };
+      let target = calcit::snapshot::parse_ffi_target(ffi)?
+        .map(|target| target.as_str().to_owned())
+        .unwrap_or_else(|| "shared".to_owned());
+      boundaries.push(StrictWorkflowFfiBoundary {
+        definition: format!("{namespace}/{definition}"),
+        target,
+      });
+    }
+  }
+  Ok(boundaries)
+}
+
+fn strict_workflow_commands(snapshot_file: &str, snapshot: &Snapshot) -> Vec<(String, Vec<String>)> {
+  let mut commands = Vec::new();
+  let mut entries = snapshot.entries.keys().cloned().collect::<Vec<_>>();
+  entries.sort();
+  for entry in entries {
+    commands.push((
+      format!("entry:{entry}"),
+      vec![
+        snapshot_file.to_owned(),
+        "--entry".to_owned(),
+        entry,
+        "--check-only".to_owned(),
+        "--keep-going".to_owned(),
+        "--format".to_owned(),
+        "json".to_owned(),
+        "--tips-level".to_owned(),
+        "none".to_owned(),
+      ],
+    ));
+  }
+  let mut profiles = snapshot.verification.profiles.keys().cloned().collect::<Vec<_>>();
+  profiles.sort();
+  for profile in profiles {
+    commands.push((
+      format!("profile:{profile}"),
+      vec![
+        snapshot_file.to_owned(),
+        "--tips-level".to_owned(),
+        "none".to_owned(),
+        "analyze".to_owned(),
+        "verify".to_owned(),
+        "--profile".to_owned(),
+        profile,
+        "--format".to_owned(),
+        "json".to_owned(),
+      ],
+    ));
+  }
+  commands
+}
+
+fn run_strict_workflow_verification(commands: &[(String, Vec<String>)]) -> Result<Vec<StrictWorkflowVerificationResult>, String> {
+  let executable = std::env::current_exe().map_err(|error| format!("Failed to locate current Calcit executable: {error}"))?;
+  let mut results = Vec::new();
+  for (scope, arguments) in commands {
+    let output = Command::new(&executable)
+      .args(arguments)
+      .output()
+      .map_err(|error| format!("Failed to run strict workflow verification for `{scope}`: {error}"))?;
+    let report = serde_json::from_slice::<Value>(&output.stdout).unwrap_or_else(|error| {
+      serde_json::json!({
+        "schema_version": 1,
+        "command": "fix.workflow.verify",
+        "data": null,
+        "diagnostics": [{
+          "code": "E_WORKFLOW_OUTPUT",
+          "phase": "verification",
+          "severity": "error",
+          "message": format!("Expected one JSON report from `{scope}`: {error}"),
+          "stderr": String::from_utf8_lossy(&output.stderr),
+        }],
+      })
+    });
+    results.push(StrictWorkflowVerificationResult {
+      scope: scope.clone(),
+      status: if output.status.success() { "passed" } else { "failed" },
+      report,
+    });
+  }
+  Ok(results)
+}
+
 /// Plan deterministic source migrations, validate them on a staged Snapshot, and optionally commit them atomically.
 pub(crate) fn handle_fix_command(
   options: &FixCommand,
@@ -165,7 +407,7 @@ pub(crate) fn handle_fix_command(
   let value_to_zero_arg_fn = selected_rules.contains(&VALUE_TO_ZERO_ARG_FN_RULE);
   let schema_synthesis = selected_rules.contains(&SYNTHESIZE_SCHEMA_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn;
-  let migration_rule = semantic_refactor || schema_synthesis;
+  let migration_rule = semantic_refactor || schema_synthesis || options.workflow.is_some();
   let validation_only = std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1");
   let project_definitions = if semantic_refactor || schema_synthesis {
     select_project_definitions(compiled_snapshot, project_namespaces)?
@@ -288,6 +530,8 @@ pub(crate) fn handle_fix_command(
           .map_err(|error| format!("Failed to encode staged semantic-rename warnings: {error}"))?
       );
       vec![]
+    } else if options.workflow.is_some() {
+      vec![]
     } else {
       warnings
         .iter()
@@ -319,7 +563,94 @@ pub(crate) fn handle_fix_command(
     semantic_warning_identities.as_deref(),
   )?;
 
-  let mode = if options.apply { "apply" } else { "preview" };
+  let mode = if options.verify {
+    "verify"
+  } else if options.apply {
+    "apply"
+  } else {
+    "preview"
+  };
+  let mut workflow_failed = false;
+  let workflow = if options.workflow.as_deref() == Some("strict") {
+    let commands = strict_workflow_commands(snapshot_file, &source_snapshot);
+    let (review_required_types, retained_type_boundaries) = strict_workflow_type_findings(&source_snapshot)?;
+    let results = if options.verify {
+      run_strict_workflow_verification(&commands)?
+    } else {
+      Vec::new()
+    };
+    workflow_failed = options.verify && (!operations.is_empty() || results.iter().any(|result| result.status != "passed"));
+    let resume_revision = if options.apply {
+      transaction.new_revision.clone()
+    } else {
+      transaction.original_revision.clone()
+    };
+    Some(StrictWorkflowManifest {
+      workflow: "strict-v1",
+      mode,
+      status: if workflow_failed {
+        "failed"
+      } else if options.verify {
+        "passed"
+      } else if options.apply {
+        "applied"
+      } else {
+        "planned"
+      },
+      entries: strict_workflow_entries(&source_snapshot),
+      safe_fixes: StrictWorkflowSafeFixes {
+        preset: SURFACE_LATEST_V2_PRESET,
+        suggestions: operations.len(),
+        status: if operations.is_empty() {
+          "clear"
+        } else if options.apply {
+          "applied"
+        } else {
+          "pending"
+        },
+      },
+      review_required: StrictWorkflowReviewRequired {
+        source_fixes: suggestions
+          .iter()
+          .filter(|suggestion| suggestion.operation.is_none())
+          .map(|suggestion| StrictWorkflowSourceReview {
+            rule_id: suggestion.rule_id,
+            definition: suggestion.definition.clone(),
+            path: suggestion.path.clone(),
+            message: suggestion.message.clone(),
+          })
+          .collect(),
+        type_findings: review_required_types,
+        ffi_boundaries: strict_workflow_ffi_boundaries(&source_snapshot)?,
+      },
+      retained_type_boundaries,
+      verification: StrictWorkflowVerification {
+        commands: commands
+          .iter()
+          .map(|(_, arguments)| std::iter::once("calcit".to_owned()).chain(arguments.iter().cloned()).collect())
+          .collect(),
+        results,
+        external_commands: Vec::new(),
+      },
+      resume: StrictWorkflowResume {
+        revision: resume_revision.clone(),
+        apply_command: vec![
+          "calcit".to_owned(),
+          snapshot_file.to_owned(),
+          "fix".to_owned(),
+          "--workflow".to_owned(),
+          "strict".to_owned(),
+          "--apply".to_owned(),
+          "--expect-revision".to_owned(),
+          resume_revision,
+          "--format".to_owned(),
+          "edn".to_owned(),
+        ],
+      },
+    })
+  } else {
+    None
+  };
   let expanded_rules = selected_rules.iter().copied().map(fix_rule_metadata).collect();
   let report = FixReport {
     schema_version: 1,
@@ -331,7 +662,10 @@ pub(crate) fn handle_fix_command(
         namespace: options.ns.as_deref(),
         definition: options.definition.as_deref(),
         replacement_name: options.replacement_name.as_deref(),
-        rule_id: options.rule.as_deref().unwrap_or("all"),
+        rule_id: options
+          .rule
+          .as_deref()
+          .unwrap_or(if options.workflow.is_some() { "workflow:strict" } else { "all" }),
         preset_id: options.preset.as_deref(),
         expanded_rule_ids: selected_rules,
         expanded_rules,
@@ -344,6 +678,7 @@ pub(crate) fn handle_fix_command(
         checked_operations: operations.len(),
       },
       suggestions: &suggestions,
+      workflow,
     },
     diagnostics: vec![],
     next: vec![],
@@ -360,7 +695,11 @@ pub(crate) fn handle_fix_command(
     }
     StructuredOutputFormat::Human => print_human_report(&report),
   }
-  Ok(())
+  if workflow_failed {
+    Err("Strict project workflow verification failed; inspect the structured workflow results.".to_owned())
+  } else {
+    Ok(())
+  }
 }
 
 /// Recreate the exact selection arguments for staged post-fix validation.
@@ -382,6 +721,10 @@ fn fix_scope_args(options: &FixCommand) -> Vec<String> {
     args.push("--preset".to_owned());
     args.push(preset.clone());
   }
+  if let Some(workflow) = &options.workflow {
+    args.push("--workflow".to_owned());
+    args.push(workflow.clone());
+  }
   if let Some(replacement) = &options.replacement_name {
     args.push("--to".to_owned());
     args.push(replacement.clone());
@@ -392,6 +735,34 @@ fn fix_scope_args(options: &FixCommand) -> Vec<String> {
 /// Reject ambiguous modes, incomplete scopes, and unknown stable rule IDs.
 fn validate_options(options: &FixCommand) -> Result<(), String> {
   StructuredOutputFormat::parse(&options.format, "fix")?;
+  if let Some(workflow) = options.workflow.as_deref()
+    && workflow != "strict"
+  {
+    return Err(format!("Unknown fix workflow `{workflow}`. Available workflows: `strict`."));
+  }
+  if options.workflow.is_none() && options.verify {
+    return Err("`calcit fix --verify` requires `--workflow strict`.".to_owned());
+  }
+  if options.workflow.is_some() && options.apply && options.expect_revision.is_none() {
+    return Err("`calcit fix --workflow strict --apply` requires `--expect-revision` from a reviewed workflow plan.".to_owned());
+  }
+  if options.workflow.is_some()
+    && (options.ns.is_some()
+      || options.definition.is_some()
+      || options.rule.is_some()
+      || options.preset.is_some()
+      || options.replacement_name.is_some())
+  {
+    return Err(
+      "`calcit fix --workflow strict` is project-scoped and conflicts with --ns, --def, --rule, --preset, and --to.".to_owned(),
+    );
+  }
+  if options.verify && (options.apply || options.dry_run || options.allow_dirty || options.allow_no_vcs) {
+    return Err(
+      "`calcit fix --workflow strict --verify` is read-only and conflicts with --apply, --dry-run, --allow-dirty, and --allow-no-vcs."
+        .to_owned(),
+    );
+  }
   if options.apply && options.dry_run {
     return Err("`calcit fix --apply` conflicts with `--dry-run`; omit both flags to preview.".to_owned());
   }
@@ -466,6 +837,9 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
 
 /// Expand one explicit rule or versioned preset into a deterministic rule sequence.
 fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
+  if options.workflow.as_deref() == Some("strict") {
+    return SURFACE_LATEST_V2_RULES.to_vec();
+  }
   if let Some(rule) = options.rule.as_deref() {
     if matches!(rule, RENAME_DEFINITION_RULE | VALUE_TO_ZERO_ARG_FN_RULE | SYNTHESIZE_SCHEMA_RULE) {
       return vec![match rule {
@@ -2699,6 +3073,19 @@ fn print_human_report(report: &FixReport<'_>) {
   println!("- rules: `{}`", report.data.filters.expanded_rule_ids.join(", "));
   println!("- suggestions: `{}`", report.data.suggestions.len());
   println!("- changed: `{}`", report.data.changed);
+  if let Some(workflow) = &report.data.workflow {
+    println!("- workflow: `{}`", workflow.workflow);
+    println!("- workflow status: `{}`", workflow.status);
+    println!("- entries: `{}`", workflow.entries.len());
+    println!("- review-required source fixes: `{}`", workflow.review_required.source_fixes.len());
+    println!(
+      "- review-required type findings: `{}`",
+      workflow.review_required.type_findings.len()
+    );
+    println!("- retained type boundaries: `{}`", workflow.retained_type_boundaries.len());
+    println!("- FFI boundaries: `{}`", workflow.review_required.ffi_boundaries.len());
+    println!("- verification results: `{}`", workflow.verification.results.len());
+  }
   for (index, suggestion) in report.data.suggestions.iter().enumerate() {
     println!("\n## Suggestion {}\n", index + 1);
     println!("- applicability: `{}`", suggestion.applicability);
