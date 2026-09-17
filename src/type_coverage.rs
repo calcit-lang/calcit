@@ -459,9 +459,6 @@ fn scan_ffi_operations(
   imports: &BTreeMap<String, FfiImportBinding>,
   operations: &mut Vec<FfiBoundaryOperation>,
 ) {
-  if quote_context.is_quoted() {
-    return;
-  }
   let Cirru::List(items) = node else {
     return;
   };
@@ -469,7 +466,9 @@ fn scan_ffi_operations(
     Cirru::Leaf(value) => Some(value.as_ref()),
     _ => None,
   });
-  if let Some(head) = head {
+  if !quote_context.is_quoted()
+    && let Some(head) = head
+  {
     if head.starts_with("js/") {
       push_ffi_operation(operations, "raw-js-call", head.to_owned(), None, path, false);
     } else if head == "unsafe-coerce" {
@@ -524,9 +523,6 @@ fn scan_ffi_operations(
 
 fn code_calls_definition(code: &Cirru, caller_namespace: &str, namespace: &str, definition: &str) -> bool {
   fn visit(node: &Cirru, caller_namespace: &str, namespace: &str, definition: &str, quote_context: QuoteContext) -> bool {
-    if quote_context.is_quoted() {
-      return false;
-    }
     let Cirru::List(items) = node else {
       return false;
     };
@@ -534,8 +530,10 @@ fn code_calls_definition(code: &Cirru, caller_namespace: &str, namespace: &str, 
       Cirru::Leaf(value) => Some(value.as_ref()),
       _ => None,
     });
-    if head
-      .is_some_and(|head| (caller_namespace == namespace && head == definition) || head == format!("{namespace}/{definition}").as_str())
+    if !quote_context.is_quoted()
+      && head.is_some_and(|head| {
+        (caller_namespace == namespace && head == definition) || head == format!("{namespace}/{definition}").as_str()
+      })
     {
       return true;
     }

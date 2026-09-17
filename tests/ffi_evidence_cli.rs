@@ -58,8 +58,11 @@ fn ffi_evidence_classifies_operations_and_emits_review_only_candidates() {
   assert_eq!(boundary["classification"], "mixed");
   assert_eq!(boundary["target"], "browser");
   assert_eq!(boundary["js_ffi_feature"], true);
-  assert_eq!(boundary["callers"], serde_json::json!(["ffi-evidence.main/main!"]));
-  assert!(boundary["unsafe_paths"].as_array().is_some_and(|paths| !paths.is_empty()));
+  assert_eq!(
+    boundary["callers"],
+    serde_json::json!(["ffi-evidence.main/main!", "ffi-evidence.main/quasiquoted-caller"])
+  );
+  assert!(boundary["unsafe_paths"].as_array().is_some_and(|paths| paths.len() == 2));
 
   let operations = boundary["operations"].as_array().expect("operations should be an array");
   assert!(operations.iter().any(|item| item["classification"] == "browser"));

@@ -29,11 +29,24 @@
               .-value host
               .!focus host
               .?!matches host |.active
+              quasiquote $ do
+                ~ $ unsafe-coerce host 'String
               unsafe-coerce host 'String
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'JsObject
             :features $ #{} :js-ffi
+        'quasiquoted-caller $ %{} 'CodeEntry (:doc "|Executable unquote must remain visible to static caller evidence.")
+          :code $ quote $ defn quasiquoted-caller ()
+            quasiquote $ do
+              ~ $ query-host js-object
+          :examples $ []
+          :schema $ :: 'Dynamic
+        'quoted-caller $ %{} 'CodeEntry (:doc "|Quoted data must not become caller evidence.")
+          :code $ quote $ defn quoted-caller ()
+            quote $ query-host js-object
+          :examples $ []
+          :schema $ :: 'Dynamic
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []

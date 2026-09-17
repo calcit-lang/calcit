@@ -246,7 +246,7 @@ and implementation-completion status are separate concerns.
 
 `analyze.weak-types` 的 `schema_version: 7` 保留单次共享扫描得到的 kind、intent、definition、path、detail、evidence 与 suggestion，并增加显式 opt-in 的 `--ffi-evidence`。该开关在同一 envelope 的 `data.evidence.ffi_boundaries` 中报告 browser、Node、npm import、WebGPU 与 unknown host 分类、结构路径、nullable/unsafe 证据、静态 caller、精确 schema helper 候选，以及 review-only trait/adapter manifest；每个 boundary 都携带稳定的信息代码 `I_FFI_BOUNDARY_EVIDENCE`。它不执行代码、不写 Snapshot，也不声称第三方契约可信。Cirru EDN 是首选结构化格式，JSON 继续用于互操作。
 
-FFI evidence 不增加 warning 数量或质量预算。未传 `--ffi-evidence` 时不会执行额外边界扫描；`--summary-only` 只保留 boundary/classification 计数，不输出候选详情。候选 helper 仅在 schema 精确相同时给出，并优先排列依赖模块；trait/adapter manifest 始终标记 `review-required`，不得自动插入 `unsafe-coerce`、选择 nullable 业务语义或扩展 Interface IR 生命周期字段。
+FFI evidence 不增加 warning 数量或质量预算。未传 `--ffi-evidence` 时不会执行额外边界扫描；`--summary-only` 只保留 `data.summary.ffi_boundaries` 的 boundary 总数，不保留 classification 聚合或候选详情。候选 helper 仅在 schema 精确相同时给出，并优先排列依赖模块；trait/adapter manifest 始终标记 `review-required`，不得自动插入 `unsafe-coerce`、选择 nullable 业务语义或扩展 Interface IR 生命周期字段。
 
 普通执行、编译和严格检查只依据类型推导产生确定的 warning/error。需要迁移存量代码时，显式运行 `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json`，按 definition/path 返回源码处理；不要把命中数量解释成类型正确性，也不要围绕数量增加阈值或分类规则。
 
