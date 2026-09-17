@@ -63,6 +63,17 @@ fn full_report(snapshot: &Path, analyzer: &str) -> serde_json::Value {
   serde_json::from_slice(&output.stdout).expect("analysis stdout should contain one JSON envelope")
 }
 
+fn report_with_entry(snapshot: &Path, analyzer: &str, entry: &str, incremental: bool) -> serde_json::Value {
+  let mut args = vec!["--entry", entry, "analyze", analyzer, "--deps"];
+  if incremental {
+    args.push("--incremental");
+  }
+  args.extend(["--format", "json"]);
+  let output = run_calcit(snapshot, &args);
+  assert_success(&output, analyzer);
+  serde_json::from_slice(&output.stdout).expect("analysis stdout should contain one JSON envelope")
+}
+
 fn without_cache(mut report: serde_json::Value) -> serde_json::Value {
   report["data"]
     .as_object_mut()
@@ -342,6 +353,86 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
     schema_evidence["data"]["cache"]["input"]["reason"],
     "schema-evidence-requires-preprocessing"
   );
+}
+
+#[test]
+fn incremental_analysis_honors_selected_entry_modules_and_policy() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  let original = fs::read_to_string("tests/fixtures/ffi-boundary-evidence.cirru").expect("analysis fixture should read");
+  let default_entry = r#"  :entries $ {} $ :default
+    {}
+      :description "|Browser evidence fixture."
+      :init-fn 'ffi-evidence.main/main!
+      :mode :js
+      :reload-fn 'ffi-evidence.main/reload!
+      :target :browser
+      :feature-policy $ {} $ :js-ffi :error
+      :modules $ []
+      :type-slots $ {}"#;
+  let multiple_entries = r#"  :entries $ {}
+    :default $ {}
+      :description "|Default incremental entry."
+      :init-fn 'ffi-evidence.main/main!
+      :mode :js
+      :reload-fn 'ffi-evidence.main/reload!
+      :target :browser
+      :feature-policy $ {} $ :js-ffi :error
+      :modules $ [] |./dep-default/
+      :type-slots $ {}
+    :test $ {}
+      :description "|Selected incremental entry."
+      :init-fn 'ffi-evidence.main/main!
+      :mode :js
+      :reload-fn 'ffi-evidence.main/reload!
+      :target :browser
+      :feature-policy $ {} $ :js-ffi :allow
+      :modules $ [] |./dep-test/
+      :type-slots $ {} $ :cache-probe :dynamic"#;
+  let configured = original.replacen(default_entry, multiple_entries, 1);
+  assert_ne!(configured, original, "fixture entry block should be replaced");
+  fs::write(&snapshot, configured).expect("multi-entry fixture should write");
+
+  for (dependency, package) in [("dep-default", "default-dependency"), ("dep-test", "test-dependency")] {
+    let dependency_directory = directory.0.join(dependency);
+    fs::create_dir(&dependency_directory).expect("dependency directory should create");
+    fs::write(dependency_directory.join("calcit.cirru"), original.replace("ffi-evidence", package))
+      .expect("dependency fixture should write");
+  }
+
+  let default = report_with_entry(&snapshot, "check-types", "default", true);
+  let definition_count = default["data"]["cache"]["misses"]
+    .as_u64()
+    .expect("definition miss count should be numeric");
+  assert_eq!(default["data"]["cache"]["input"]["entry"], "default");
+  assert_eq!(default["data"]["cache"]["input"]["module_misses"], 1);
+
+  let selected = report_with_entry(&snapshot, "check-types", "test", true);
+  assert_eq!(selected["data"]["cache"]["input"]["entry"], "test");
+  assert_eq!(selected["data"]["cache"]["input"]["status"], "partial");
+  assert_eq!(selected["data"]["cache"]["input"]["main_reused"], true);
+  assert_eq!(selected["data"]["cache"]["input"]["module_hits"], 0);
+  assert_eq!(selected["data"]["cache"]["input"]["module_misses"], 1);
+  assert_eq!(selected["data"]["cache"]["input"]["module_miss_reasons"]["not-cached"], 1);
+  assert_eq!(selected["data"]["cache"]["status"], "cold");
+  assert_eq!(selected["data"]["cache"]["miss_reasons"]["entry-policy-changed"], definition_count);
+  let selected_ids = selected["data"]["definitions"]
+    .as_array()
+    .expect("definitions should be an array")
+    .iter()
+    .filter_map(|row| row["id"].as_str())
+    .collect::<Vec<_>>();
+  assert!(selected_ids.contains(&"test-dependency.main/main!"));
+  assert!(!selected_ids.contains(&"default-dependency.main/main!"));
+
+  let selected_warm = report_with_entry(&snapshot, "check-types", "test", true);
+  assert_eq!(selected_warm["data"]["cache"]["input"]["entry"], "test");
+  assert_eq!(selected_warm["data"]["cache"]["input"]["status"], "warm");
+  assert_eq!(selected_warm["data"]["cache"]["input"]["module_hits"], 1);
+  assert_eq!(selected_warm["data"]["cache"]["status"], "warm");
+
+  let selected_full = report_with_entry(&snapshot, "check-types", "test", false);
+  assert_eq!(without_cache(selected_warm), without_cache(selected_full));
 }
 
 #[test]

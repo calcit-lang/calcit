@@ -606,9 +606,10 @@ Option/Result、默认值或 FFI trust。`--summary-only` 仅用于看候选数�
 需要连续定位类型迁移项时，可在 `analyze check-types` 或 `analyze weak-types` 增加 `--incremental`。只信报告中
 `:data :cache` 的 hit/miss 与失效原因；缓存以 Cirru EDN 保存于项目 `.calcit/`。input cache 头损坏或版本不一致时会从源码重载主
 Snapshot 和 modules；definition cache 缺失、不可读，或因 schema、编译器版本、context revision 变化而失效时，才会让
-definition-local inventory 冷启动。`cache.input` 单独说明主 Snapshot
+definition-local inventory 冷启动。`cache.input` 单独说明活动 `entry`、主 Snapshot
 与 direct modules 的复用状态，并报告 `main_reused`、`module_hits`、`module_misses` 和失效原因。单个模块的传递 source digest 或
 解析路径变化时只重载该模块，其他模块继续复用；definition-local inventory 则继续逐项失效。
+使用顶层 `--entry` 时，缓存必须先选择对应 entry 再加载 modules；不要把另一 entry 的 module 命中视为有效证据。
 `cache.dependency-index`（JSON 中为 `dependency_index`）提供 compiler-resolved graph 的 hit/miss、edge、changed 与反向 affected 数量，
 供 Agent 判断修改波及范围；它目前是只读证据，不代表严格预处理已经复用，也不能替代无缓存检查。
 该缓存仍不覆盖 schema evidence、deprecated、quality、dynamic-methods 或严格预处理，因此不能替代最终无缓存门禁。
