@@ -157,10 +157,21 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
       "def",
       "ffi-evidence.main/cache-probe",
       "--code",
-      "quote $ defn cache-probe () (reload!)",
+      "quote $ defn cache-probe () 1",
     ],
   );
   assert_success(&edit, "add cache probe definition");
+  let edit = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "schema",
+      "ffi-evidence.main/cache-probe",
+      "--code",
+      "quote 'ffi-evidence.main/reload!",
+    ],
+  );
+  assert_success(&edit, "add cache probe dependency schema");
 
   let partial = report(&snapshot, "check-types");
   assert_eq!(partial["data"]["cache"]["status"], "partial");
@@ -181,7 +192,7 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
       "def",
       "ffi-evidence.main/cache-probe",
       "--code",
-      "quote $ defn cache-probe () (do (reload!) 2)",
+      "quote $ defn cache-probe () 2",
       "--overwrite",
     ],
   );
