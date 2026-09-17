@@ -148,13 +148,19 @@ calcit calcit.cirru config modules --entry '<entry-name>' --format json
 calcit calcit.cirru config type-slots --entry '<entry-name>' --format json
 calcit calcit.cirru --check-only
 calcit calcit.cirru --entry '<entry-name>' --check-only
+calcit calcit.cirru --check-only --keep-going --format edn
 # Here --entry is the snapshot filename, not a named entry:
 calcit calcit.cirru docs check-md README.md --entry calcit.cirru --failures-only
 ```
 
 `caps tree` 和 `caps why` 回答“该仓库为什么被依赖解析器安装”；目前它们会合并显示两个根分组，
 所以根归属仍以 `deps.cirru` 为准。`config modules` 回答“某个 entry 配置加载哪些模块”；每个 named
-entry 都是独立配置，不能假设其模块继承 default。`--check-only` 只验证所选 entry 的可达预处理路径，
+entry 都是独立配置，不能假设其模块继承 default。`--check-only` 只验证所选 entry 的可达预处理路径；
+默认遇到首个阻断问题即停。需要为迁移或批量修复收集互不依赖的问题时，使用同一入口的
+`--keep-going --format edn`。报告中的 `failed` 是已确认的当前 definition 诊断，`blocked` 表示依赖失败而跳过，
+`cascaded` 表示无法安全归属当前 definition 的意外失败；三者都使进程非零退出。不要把 blocked 当成新的类型错误，也不要
+要求工具在 expression 内猜测恢复。Cirru EDN 是 Agent 默认结构化格式，只有下游只接受 JSON 时才改用
+`--format json`。该检查范围仍只包含所选 entry 的可达预处理路径，
 而 `docs check-md` 默认只带 default entry 的模块；有测试或文档专用模块时，须显式选择相应 entry 或
 重复传入 `--dep`。动态加载、未调用的公开 API 和外部消费者不在这些静态结果的证明范围内。
 

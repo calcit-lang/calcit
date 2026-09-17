@@ -1286,6 +1286,8 @@ pub struct LocatedWarning {
   location: NodeLocation,
   code: Option<String>,
   hint: Option<String>,
+  expected: Option<String>,
+  actual: Option<String>,
 }
 
 impl Display for LocatedWarning {
@@ -1310,6 +1312,8 @@ impl LocatedWarning {
       location,
       code: None,
       hint: None,
+      expected: None,
+      actual: None,
     }
   }
 
@@ -1319,6 +1323,19 @@ impl LocatedWarning {
       location,
       code,
       hint,
+      expected: None,
+      actual: None,
+    }
+  }
+
+  pub fn new_with_types(msg: String, location: NodeLocation, code: Option<String>, expected: String, actual: String) -> Self {
+    LocatedWarning {
+      message: msg,
+      location,
+      code,
+      hint: None,
+      expected: Some(expected),
+      actual: Some(actual),
     }
   }
 
@@ -1333,6 +1350,8 @@ impl LocatedWarning {
       },
       "code": code,
       "hint": &self.hint,
+      "expected": &self.expected,
+      "actual": &self.actual,
     })
   }
 
@@ -1350,6 +1369,14 @@ impl LocatedWarning {
 
   pub fn hint(&self) -> Option<&str> {
     self.hint.as_deref()
+  }
+
+  pub fn expected(&self) -> Option<&str> {
+    self.expected.as_deref()
+  }
+
+  pub fn actual(&self) -> Option<&str> {
+    self.actual.as_deref()
   }
 
   fn code_value(&self) -> Option<String> {

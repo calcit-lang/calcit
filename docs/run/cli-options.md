@@ -8,6 +8,7 @@ aliases:
   - "watch"
   - "once mode"
   - "check-only"
+  - "keep-going"
   - "reload-fn"
   - "reload fn"
   - "watch-dir"
@@ -21,6 +22,7 @@ entry_for:
   - "calcit js -w"
   - "calcit --help"
   - "calcit --reload-fn"
+  - "calcit --check-only --keep-going"
   - "calcit --macro-metrics"
   - "calcit --ffi-metrics"
   - "calcit ffi export"
@@ -168,6 +170,24 @@ for unsafe typing constructs without adding a flag:
 calcit --check-only
 calcit js
 ```
+
+默认 `--check-only` 遇到第一个阻断错误就停止，适合本地快速反馈。迁移旧项目或供 Agent 一次收集独立问题时，
+在同一个入口增加 `--keep-going`：
+
+```bash
+calcit calcit.cirru --check-only --keep-going
+calcit calcit.cirru --check-only --keep-going --format edn
+calcit calcit.cirru --check-only --keep-going --format json
+```
+
+keep-going 只在 definition 边界恢复：先按静态可达依赖顺序检查，已确认失败的依赖会让调用者标记为
+`blocked`，不会把未知后续类型重复报告成新错误；无法归属当前 definition 的意外失败单独标记为
+`cascaded`。它不在 expression 内猜测恢复点。human 输出是 Markdown-compatible 文档；结构化输出为单一
+envelope，Calcit 自动化优先使用 Cirru EDN，只有 JSON-only consumer 才显式选择 JSON。任一
+`failed`、`blocked` 或 `cascaded` 结果都保持非零退出码。`--format` 仅与
+`--check-only --keep-going` 组合使用，普通 `--check-only` 的 fail-fast 输出与行为不变。keep-going
+只收集严格预处理诊断，不混入基于统计预算的 zero-debt gate；批量问题修复通过后，再单独运行
+`calcit calcit.cirru --check-only --strict-types`。
 
 Use `--strict-types` when a new or fully migrated module must additionally
 assert that it carries no local type debt:

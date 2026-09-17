@@ -13,6 +13,12 @@ pub struct ToplevelCalcit {
   /// check-only mode: validate without execution or codegen
   #[argh(switch)]
   pub check_only: bool,
+  /// continue check-only validation across independent definitions
+  #[argh(switch)]
+  pub keep_going: bool,
+  /// check-only report format: human, edn, or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
   /// disable stack trace for errors
   #[argh(switch)]
   pub disable_stack: bool,
@@ -2864,5 +2870,15 @@ mod wasm_command_tests {
     assert_eq!(options.input.as_deref(), Some("command.cirru"));
     assert_eq!(options.init_fn.as_deref(), Some("app.main/main!"));
     assert!(!options.check_only);
+  }
+
+  #[test]
+  fn parses_keep_going_check_report_options() {
+    let command = ToplevelCalcit::from_args(&["calcit"], &["app.cirru", "--check-only", "--keep-going", "--format", "edn"])
+      .expect("parse keep-going strict check");
+    assert_eq!(command.input, "app.cirru");
+    assert!(command.check_only);
+    assert!(command.keep_going);
+    assert_eq!(command.format, "edn");
   }
 }
