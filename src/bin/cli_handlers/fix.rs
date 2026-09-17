@@ -314,6 +314,7 @@ pub(crate) fn handle_fix_command(
     &operations,
     Some(&revision),
     dry_run,
+    compiled_snapshot.active_entry_name(),
     &validation_args,
     semantic_warning_identities.as_deref(),
   )?;
