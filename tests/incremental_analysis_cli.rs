@@ -111,6 +111,9 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(cold_cache["dependency_index"]["hits"], 0);
   assert_eq!(cold_cache["dependency_index"]["misses"], definition_count);
   assert_eq!(cold_cache["dependency_index"]["changed"], definition_count);
+  let unresolved_dependencies = cold_cache["dependency_index"]["unresolved"]
+    .as_u64()
+    .expect("unresolved dependency count should be numeric");
 
   let warm = report(&snapshot, "check-types");
   assert_eq!(warm["data"]["cache"]["status"], "warm");
@@ -122,6 +125,7 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(warm["data"]["cache"]["dependency_index"]["misses"], 0);
   assert_eq!(warm["data"]["cache"]["dependency_index"]["changed"], 0);
   assert_eq!(warm["data"]["cache"]["dependency_index"]["affected"], 0);
+  assert_eq!(warm["data"]["cache"]["dependency_index"]["unresolved"], unresolved_dependencies);
   assert_eq!(without_cache(cold.clone()), without_cache(warm.clone()));
 
   #[cfg(unix)]

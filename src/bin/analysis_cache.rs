@@ -536,10 +536,11 @@ fn collect_dependency_index(
     let definition_revision = snapshot::definition_revision(entry)?;
     let namespace_revision = namespace_revision(snapshot.files.get(ns).expect("scoped namespace must exist"))?;
     match previous.get(&id) {
-      Some(record)
-        if record.ready && record.definition_revision == definition_revision && record.namespace_revision == namespace_revision =>
-      {
+      Some(record) if record.definition_revision == definition_revision && record.namespace_revision == namespace_revision => {
         stats.hits += 1;
+        if !record.ready {
+          stats.unresolved += 1;
+        }
       }
       cached => {
         stats.misses += 1;
@@ -547,7 +548,7 @@ fn collect_dependency_index(
           None => "not-indexed",
           Some(record) if record.definition_revision != definition_revision => "definition-changed",
           Some(record) if record.namespace_revision != namespace_revision => "namespace-changed",
-          Some(_) => "unresolved",
+          Some(_) => "index-stale",
         };
         *stats.miss_reasons.entry(reason.to_owned()).or_insert(0) += 1;
         changed.insert(id.clone());

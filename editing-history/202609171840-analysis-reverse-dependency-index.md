@@ -5,3 +5,4 @@
 - 依赖边包含 macro 展开时 resolver 实际看到的定义引用，并补充 schema 中限定的类型与 trait 引用。
 - 每次变化同时基于旧图和新图计算反向传递 affected 集合，删除或改写依赖边时仍能找到原调用者。
 - 当前索引只输出失效证据，不缓存或跳过严格预处理；后续必须先验证 schema/import/type-slot 的失效集合，再接入 compiled-definition cache。
+- 无法完整解析的定义会以 unresolved 状态按 revision 稳定缓存；后续报告仍明确计数，但不会在每次 warm 分析中重复执行同一个失败解析。
