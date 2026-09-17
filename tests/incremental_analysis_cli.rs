@@ -63,6 +63,17 @@ fn full_report(snapshot: &Path, analyzer: &str) -> serde_json::Value {
   serde_json::from_slice(&output.stdout).expect("analysis stdout should contain one JSON envelope")
 }
 
+fn dynamic_report(snapshot: &Path, incremental: bool) -> serde_json::Value {
+  let mut args = vec!["--compat-types", "analyze", "dynamic-methods"];
+  if incremental {
+    args.push("--incremental");
+  }
+  args.extend(["--format", "json"]);
+  let output = run_calcit(snapshot, &args);
+  assert_success(&output, "dynamic-methods");
+  serde_json::from_slice(&output.stdout).expect("dynamic method analysis stdout should contain one JSON envelope")
+}
+
 fn report_with_entry(snapshot: &Path, analyzer: &str, entry: &str, incremental: bool) -> serde_json::Value {
   let mut args = vec!["--entry", entry, "analyze", analyzer, "--deps"];
   if incremental {
@@ -458,4 +469,60 @@ fn corrupt_incremental_cache_falls_back_to_a_cold_analysis() {
   assert_eq!(recovered["data"]["cache"]["status"], "cold");
   assert_eq!(recovered["data"]["cache"]["miss_reasons"]["cache-corrupt"], definition_count);
   assert_eq!(recovered["data"]["cache"]["input"]["status"], "warm");
+}
+
+#[test]
+fn incremental_dynamic_methods_reuses_only_an_unchanged_entry_dependency_closure() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/ffi-boundary-evidence.cirru", &snapshot).expect("analysis fixture should copy");
+
+  let cold = dynamic_report(&snapshot, true);
+  assert_eq!(cold["data"]["cache"]["scope"], "entry-dependency-closure");
+  assert_eq!(cold["data"]["cache"]["status"], "cold");
+  assert_eq!(cold["data"]["cache"]["preprocessing_cached"], false);
+
+  let warm = dynamic_report(&snapshot, true);
+  assert_eq!(warm["data"]["cache"]["status"], "warm");
+  assert_eq!(warm["data"]["cache"]["preprocessing_cached"], true);
+  assert_eq!(warm["data"]["cache"]["dependency_index"]["changed"], 0);
+  assert_eq!(without_cache(warm.clone()), without_cache(dynamic_report(&snapshot, false)));
+
+  let add_unrelated = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "def",
+      "ffi-evidence.main/cache-probe",
+      "--code",
+      "quote $ defn cache-probe () 1",
+    ],
+  );
+  assert_success(&add_unrelated, "add unrelated definition");
+  let unrelated = dynamic_report(&snapshot, true);
+  assert_eq!(unrelated["data"]["cache"]["status"], "warm");
+  assert_eq!(unrelated["data"]["cache"]["preprocessing_cached"], true);
+  assert_eq!(unrelated["data"]["cache"]["dependency_index"]["changed"], 1);
+
+  let change_root = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "def",
+      "ffi-evidence.main/reload!",
+      "--overwrite",
+      "--code",
+      "quote $ defn reload! () if true &unit &unit",
+    ],
+  );
+  assert_success(&change_root, "change reload root");
+  let invalidated = dynamic_report(&snapshot, true);
+  assert_eq!(invalidated["data"]["cache"]["status"], "cold");
+  assert_eq!(invalidated["data"]["cache"]["preprocessing_cached"], false);
+  assert_eq!(invalidated["data"]["cache"]["reason"], "dependency-closure-changed");
+
+  let settled = dynamic_report(&snapshot, true);
+  assert_eq!(settled["data"]["cache"]["status"], "warm");
+  assert_eq!(settled["data"]["cache"]["preprocessing_cached"], true);
+  assert_eq!(without_cache(settled), without_cache(dynamic_report(&snapshot, false)));
 }

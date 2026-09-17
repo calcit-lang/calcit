@@ -506,6 +506,9 @@ pub struct DynamicMethodsCommand {
   /// fail when the finding count exceeds this limit
   #[argh(option)]
   pub max: Option<usize>,
+  /// reuse entry preprocessing findings when its dependency closure is unchanged
+  #[argh(switch)]
+  pub incremental: bool,
 }
 
 /// locate calls to definitions marked with the :deprecated tag
