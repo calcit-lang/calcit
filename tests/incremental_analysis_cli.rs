@@ -74,6 +74,10 @@ fn dynamic_report(snapshot: &Path, incremental: bool) -> serde_json::Value {
   serde_json::from_slice(&output.stdout).expect("dynamic method analysis stdout should contain one JSON envelope")
 }
 
+fn incremental_check(snapshot: &Path) -> Output {
+  run_calcit(snapshot, &["--compat-types", "--check-only", "--incremental"])
+}
+
 fn report_with_entry(snapshot: &Path, analyzer: &str, entry: &str, incremental: bool) -> serde_json::Value {
   let mut args = vec!["--entry", entry, "analyze", analyzer, "--deps"];
   if incremental {
@@ -526,6 +530,193 @@ fn incremental_dynamic_methods_reuses_only_an_unchanged_entry_dependency_closure
   assert_eq!(settled["data"]["cache"]["status"], "warm");
   assert_eq!(settled["data"]["cache"]["preprocessing_cached"], true);
   assert_eq!(without_cache(settled), without_cache(dynamic_report(&snapshot, false)));
+}
+
+#[test]
+fn incremental_check_only_reuses_only_a_successful_unchanged_entry_closure() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/ffi-boundary-evidence.cirru", &snapshot).expect("analysis fixture should copy");
+
+  let cold = incremental_check(&snapshot);
+  assert_success(&cold, "cold incremental strict check");
+  let cold_stdout = String::from_utf8_lossy(&cold.stdout);
+  assert!(
+    cold_stdout.contains("preprocessing-cached=false status=cold"),
+    "stdout: {cold_stdout}"
+  );
+
+  let warm = incremental_check(&snapshot);
+  assert_success(&warm, "warm incremental strict check");
+  let warm_stdout = String::from_utf8_lossy(&warm.stdout);
+  assert!(warm_stdout.contains("Check passed (cached)"), "stdout: {warm_stdout}");
+  assert!(
+    warm_stdout.contains("preprocessing-cached=true status=warm"),
+    "stdout: {warm_stdout}"
+  );
+
+  let add_unrelated = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "def",
+      "ffi-evidence.main/cache-probe",
+      "--code",
+      "quote $ defn cache-probe () 1",
+    ],
+  );
+  assert_success(&add_unrelated, "add out-of-closure definition");
+  let unrelated = incremental_check(&snapshot);
+  assert_success(&unrelated, "strict check after out-of-closure edit");
+  let unrelated_stdout = String::from_utf8_lossy(&unrelated.stdout);
+  assert!(
+    unrelated_stdout.contains("preprocessing-cached=true status=warm"),
+    "stdout: {unrelated_stdout}"
+  );
+
+  let schema_change = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "schema",
+      "ffi-evidence.main/query-host",
+      "--code",
+      "quote $ :: 'Fn $ {} (:return 'Dynamic) (:args $ [] 'JsObject) (:features $ #{} :js-ffi)",
+    ],
+  );
+  assert_success(&schema_change, "change reachable schema");
+  let invalidated = incremental_check(&snapshot);
+  assert_success(&invalidated, "strict check after reachable schema edit");
+  let invalidated_stdout = String::from_utf8_lossy(&invalidated.stdout);
+  assert!(
+    invalidated_stdout.contains("preprocessing-cached=false status=cold reason=dependency-closure-changed"),
+    "stdout: {invalidated_stdout}"
+  );
+
+  let break_root = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "def",
+      "ffi-evidence.main/reload!",
+      "--overwrite",
+      "--code",
+      "quote $ defn reload! () missing-strict-check-definition",
+    ],
+  );
+  assert_success(&break_root, "break a strict-check root");
+  let failed = incremental_check(&snapshot);
+  assert!(!failed.status.success(), "changed invalid root must not reuse a successful result");
+  let failed_stdout = String::from_utf8_lossy(&failed.stdout);
+  assert!(!failed_stdout.contains("Check passed (cached)"), "stdout: {failed_stdout}");
+}
+
+#[test]
+fn incremental_check_only_reports_policy_invalidation_separately() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/ffi-boundary-strict.cirru", &snapshot).expect("analysis fixture should copy");
+
+  let cold = incremental_check(&snapshot);
+  assert_success(&cold, "cold incremental strict check");
+
+  let policy_change = run_calcit(&snapshot, &["--compat-types", "--warn-dyn-method", "--check-only", "--incremental"]);
+  assert_success(&policy_change, "incremental strict check after policy change");
+  let stdout = String::from_utf8_lossy(&policy_change.stdout);
+  assert!(
+    stdout.contains("preprocessing-cached=false status=cold reason=preprocessing-policy-changed"),
+    "stdout: {stdout}"
+  );
+}
+
+#[test]
+fn incremental_check_only_rejects_non_check_and_keep_going_modes() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/ffi-boundary-evidence.cirru", &snapshot).expect("analysis fixture should copy");
+
+  let direct_run = run_calcit(&snapshot, &["--incremental"]);
+  assert!(!direct_run.status.success(), "incremental direct execution should fail");
+  assert!(
+    String::from_utf8_lossy(&direct_run.stderr).contains("only available with direct `--check-only`"),
+    "stderr: {}",
+    String::from_utf8_lossy(&direct_run.stderr)
+  );
+
+  let keep_going = run_calcit(&snapshot, &["--check-only", "--incremental", "--keep-going"]);
+  assert!(!keep_going.status.success(), "incremental keep-going should fail");
+  assert!(
+    String::from_utf8_lossy(&keep_going.stderr).contains("does not support `--keep-going`"),
+    "stderr: {}",
+    String::from_utf8_lossy(&keep_going.stderr)
+  );
+}
+
+#[test]
+fn incremental_dynamic_methods_invalidates_schema_import_and_type_slot_changes() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/ffi-boundary-evidence.cirru", &snapshot).expect("analysis fixture should copy");
+
+  let cold = dynamic_report(&snapshot, true);
+  assert_eq!(cold["data"]["cache"]["status"], "cold");
+  let warm = dynamic_report(&snapshot, true);
+  assert_eq!(warm["data"]["cache"]["status"], "warm");
+
+  let schema_change = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "schema",
+      "ffi-evidence.main/query-host",
+      "--code",
+      "quote $ :: 'Fn $ {} (:return 'Dynamic) (:args $ [] 'JsObject) (:features $ #{} :js-ffi)",
+    ],
+  );
+  assert_success(&schema_change, "change a reachable definition schema");
+  let schema_invalidated = dynamic_report(&snapshot, true);
+  assert_eq!(schema_invalidated["data"]["cache"]["status"], "cold");
+  assert_eq!(schema_invalidated["data"]["cache"]["reason"], "dependency-closure-changed");
+  assert_eq!(
+    schema_invalidated["data"]["cache"]["dependency_index"]["miss_reasons"]["definition-changed"],
+    1
+  );
+  assert_eq!(without_cache(schema_invalidated), without_cache(dynamic_report(&snapshot, false)));
+  assert_eq!(dynamic_report(&snapshot, true)["data"]["cache"]["status"], "warm");
+
+  let import_change = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "add-import",
+      "ffi-evidence.main",
+      "--code",
+      "quote $ ffi.helpers :refer $ dependency-number",
+    ],
+  );
+  assert_success(&import_change, "change a reachable namespace import");
+  let import_invalidated = dynamic_report(&snapshot, true);
+  assert_eq!(import_invalidated["data"]["cache"]["status"], "cold");
+  assert_eq!(import_invalidated["data"]["cache"]["reason"], "dependency-closure-changed");
+  assert!(
+    import_invalidated["data"]["cache"]["dependency_index"]["miss_reasons"]["namespace-changed"]
+      .as_u64()
+      .expect("namespace miss count should be numeric")
+      > 0
+  );
+  assert_eq!(without_cache(import_invalidated), without_cache(dynamic_report(&snapshot, false)));
+  assert_eq!(dynamic_report(&snapshot, true)["data"]["cache"]["status"], "warm");
+
+  let type_slot_change = run_calcit(&snapshot, &["config", "set-type-slot", ":dispatch-op", ":dynamic"]);
+  assert_success(&type_slot_change, "change the active entry type-slot policy");
+  let type_slot_invalidated = dynamic_report(&snapshot, true);
+  assert_eq!(type_slot_invalidated["data"]["cache"]["status"], "cold");
+  assert_eq!(type_slot_invalidated["data"]["cache"]["reason"], "entry-policy-changed");
+  assert_eq!(
+    without_cache(type_slot_invalidated),
+    without_cache(dynamic_report(&snapshot, false))
+  );
+  assert_eq!(dynamic_report(&snapshot, true)["data"]["cache"]["status"], "warm");
 }
 
 #[test]

@@ -13,6 +13,9 @@ pub struct ToplevelCalcit {
   /// check-only mode: validate without execution or codegen
   #[argh(switch)]
   pub check_only: bool,
+  /// reuse a successful entry preprocessing result in check-only mode
+  #[argh(switch)]
+  pub incremental: bool,
   /// continue check-only validation across independent definitions
   #[argh(switch)]
   pub keep_going: bool,
@@ -2904,5 +2907,15 @@ mod wasm_command_tests {
     assert!(command.check_only);
     assert!(command.keep_going);
     assert_eq!(command.format, "edn");
+  }
+
+  #[test]
+  fn parses_incremental_check_only_option() {
+    let command =
+      ToplevelCalcit::from_args(&["calcit"], &["app.cirru", "--check-only", "--incremental"]).expect("parse incremental strict check");
+    assert_eq!(command.input, "app.cirru");
+    assert!(command.check_only);
+    assert!(command.incremental);
+    assert!(!command.keep_going);
   }
 }

@@ -111,6 +111,9 @@ calcit analyze weak-types --ns app.main --intent unresolved --summary-only --for
 calcit analyze check-types --incremental --format json
 calcit analyze weak-types --incremental --intent unresolved --format edn
 
+# 复用已成功验证且 dependency closure 未变化的 entry 严格预处理
+calcit calcit.cirru --check-only --incremental
+
 # Validate only one definition's examples
 calcit analyze check-examples --ns app.main --def calculate-total
 
@@ -144,15 +147,21 @@ preprocessing 的 `dynamic-methods --incremental` 会拒绝模块加载失败的
 `scope=entry-dependency-closure`、`preprocessing_cached=true`。闭包外的 definition 变化不会强制重跑入口预处理；闭包索引缺失或
 未解析时则报告 `bypassed` 并执行完整入口预处理。缓存的是可复核诊断，不是 compiled AST，也不参与类型正确性判断。
 
+直接入口检查可使用 `calcit calcit.cirru --check-only --incremental` 复用同一 dependency closure 证据。只在上一次严格预处理完整成功、
+当前 strict/dynamic-method policy 相同且闭包 revision 未变化时才跳过重复预处理；缓存只保存成功标记，不保存 compiled AST，也不缓存
+warning 或 error。闭包外 definition 变化允许 warm hit；reachable definition/schema、namespace import、entry type-slot、feature policy、
+编译器版本或 core 输入变化会冷启动。模块加载失败、闭包证据缺失或未解析时保守执行正常检查。失败结果不会覆盖上一次成功标记，
+因此修复前的下一次调用仍会重新验证。`--keep-going` 继续承担完整结构化诊断收集，不与该成功缓存组合。
+
 `check-types` 与普通 `weak-types` 的增量边界仍是静态分析输入加载与无需预处理的 definition-local inventory，
 其 `preprocessing_cached` 仍为 `false`。
 依赖索引复用 compiler resolver（包括 macro 展开后的引用）并补充闭合 schema 中的限定类型/trait 引用；namespace import 变化会使
 该 namespace 的索引条目失效。它会计算反向传递 affected 集合，但现阶段不据此复用 compiled definition，避免在失效正确性尚未由
 严格检查验证前让缓存成为类型正确性依据。
-`weak-types --schema-evidence` 的编译器/call-site 证据仍按正常路径重新计算，`deprecated`、`quality` 与通用严格
-预处理也不宣称命中此缓存；同时请求 `--schema-evidence --incremental` 时，`cache.input.status` 明确为 `bypassed`。模块加载
+`weak-types --schema-evidence` 的编译器/call-site 证据仍按正常路径重新计算，`deprecated` 与 `quality` 也不宣称命中此缓存；
+同时请求 `--schema-evidence --incremental` 时，`cache.input.status` 明确为 `bypassed`。模块加载
 失败时输入缓存不会持久化，避免后来出现的模块被旧缓存漏掉。后续阶段会先用该索引验证 schema/import/type-slot 的失效范围，
-再扩大 preprocessing 复用，不能把本地 cache 当作类型正确性证明。CI 与最终验收继续保留
+再扩大需要编译器/call-site 数据的 analyzer 复用，不能把本地 cache 当作类型正确性证明。CI 与最终验收继续保留
 不带 `--incremental` 的冷检查。
 
 ### Target-aware public definition checks
