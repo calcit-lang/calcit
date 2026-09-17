@@ -73,7 +73,8 @@ resolver call-site 证据，并列出重复匿名 Map shape 与 `match` tag disp
 依赖索引按 definition 与 namespace revision 复用，变化时报告 changed/affected 数量；affected 包含反向传递调用者，但目前只作为
 后续细粒度失效的证据，不会跳过严格预处理。单个模块的传递输入变化只重载该模块，其他模块和未变化 definition 的结果仍可命中。
 input cache 头损坏或版本不一致时会从源码重载主 Snapshot 和 modules；单个缓存单元失效时只重载该单元，有效的 definition 缓存仍可命中。
-input cache 写入失败时本次分析继续，但不会更新该缓存；definition cache 损坏才会让 definition-local inventory 冷启动。它目前不缓存
+input cache 写入失败时本次分析继续，但不会更新该缓存；definition cache 缺失、不可读，或因 schema、编译器版本、context revision
+变化而失效时，才会让 definition-local inventory 冷启动。它目前不缓存
 schema evidence、deprecated、quality、dynamic-methods 或严格预处理；最终 CI 仍应运行无缓存检查。
 
 For feature-level planning, use `calcit edit scaffold`. Its primary input is a
