@@ -1,11 +1,14 @@
 //! Revision-keyed local cache for definition-local static analysis.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use calcit::calcit::{CalcitTrait, CalcitTypeAnnotation, LocatedWarning};
+use calcit::call_stack::CallStackList;
 use calcit::cli_args::{CheckTypesCommand, WeakTypesCommand};
-use calcit::{cli_args, project_state, runner, snapshot};
+use calcit::{cli_args, program, project_state, runner, snapshot};
 use md5::{Digest, Md5};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -58,6 +61,20 @@ pub(crate) struct CacheStats {
   pub miss_reasons: BTreeMap<String, usize>,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub input: Option<InputCacheStats>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub dependency_index: Option<DependencyIndexStats>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub(crate) struct DependencyIndexStats {
+  pub status: String,
+  pub hits: usize,
+  pub misses: usize,
+  pub unresolved: usize,
+  pub edges: usize,
+  pub changed: usize,
+  pub affected: usize,
+  pub miss_reasons: BTreeMap<String, usize>,
 }
 
 impl CacheStats {
@@ -86,6 +103,7 @@ impl CacheStats {
       "miss_reasons": self.miss_reasons,
       "cache_file": ".calcit/analysis-cache-v1.cirru",
       "input": self.input,
+      "dependency_index": self.dependency_index,
     })
   }
 
@@ -97,7 +115,7 @@ impl CacheStats {
       .collect::<Vec<_>>()
       .join(",");
     format!(
-      "- incremental-cache: scope=definition-local-inventory preprocessing-cached=false status={} hits={} misses={} reasons={} input={}\n",
+      "- incremental-cache: scope=definition-local-inventory preprocessing-cached=false status={} hits={} misses={} reasons={} input={} dependencies={}\n",
       self.status(),
       self.hits,
       self.misses,
@@ -109,6 +127,14 @@ impl CacheStats {
           Some(reason) => format!("{}({reason})", input.status),
           None => input.status.clone(),
         })
+        .unwrap_or_else(|| "not-recorded".to_owned()),
+      self
+        .dependency_index
+        .as_ref()
+        .map(|index| format!(
+          "{}(hits={},misses={},changed={},affected={},edges={},unresolved={})",
+          index.status, index.hits, index.misses, index.changed, index.affected, index.edges, index.unresolved
+        ))
         .unwrap_or_else(|| "not-recorded".to_owned())
     )
   }
@@ -144,6 +170,16 @@ struct AnalysisCache {
   calcit_version: String,
   context_revision: String,
   definitions: BTreeMap<String, CachedDefinition>,
+  #[serde(default)]
+  dependency_index: BTreeMap<String, CachedDependency>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CachedDependency {
+  definition_revision: String,
+  namespace_revision: String,
+  ready: bool,
+  dependencies: BTreeSet<String>,
 }
 
 impl AnalysisCache {
@@ -153,6 +189,7 @@ impl AnalysisCache {
       calcit_version: cli_args::CALCIT_VERSION.to_owned(),
       context_revision,
       definitions: BTreeMap::new(),
+      dependency_index: BTreeMap::new(),
     }
   }
 }
@@ -344,6 +381,8 @@ pub(crate) fn load_snapshot_for_incremental_analysis(snapshot_file: &str) -> Res
     }
   }
 
+  runner::preprocess::set_project_namespaces(&loaded.project_namespaces);
+
   Ok((loaded.snapshot, InputCacheStats::cold(reason, loaded.source_paths.len())))
 }
 
@@ -420,6 +459,178 @@ fn prune_removed_definitions(cache: &mut AnalysisCache, snapshot: &snapshot::Sna
   cache.definitions.retain(|id, _| current.contains(id));
 }
 
+fn namespace_revision(file: &snapshot::FileInSnapShot) -> Result<String, String> {
+  let bytes = serde_json::to_vec(&file.ns).map_err(|error| format!("Failed to encode namespace revision: {error}"))?;
+  let mut hasher = Md5::new();
+  hasher.update(bytes);
+  Ok(format!("md5:{}", hex::encode(hasher.finalize())))
+}
+
+fn collect_schema_dependencies(schema: &std::sync::Arc<CalcitTypeAnnotation>) -> BTreeSet<String> {
+  let dependencies = RefCell::new(BTreeSet::new());
+  let _ = runner::preprocess::map_schema_references(
+    schema.clone(),
+    &|name, args| {
+      let normalized = name.trim_start_matches('\'');
+      if normalized.contains('/') {
+        dependencies.borrow_mut().insert(normalized.to_owned());
+      }
+      std::sync::Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), args))
+    },
+    &|trait_def: std::sync::Arc<CalcitTrait>| {
+      if let Some(definition_ref) = trait_def.definition_ref.as_deref() {
+        dependencies.borrow_mut().insert(definition_ref.to_owned());
+      }
+      trait_def
+    },
+  );
+  dependencies.into_inner()
+}
+
+fn reverse_affected_definitions(
+  previous: &BTreeMap<String, CachedDependency>,
+  current: &BTreeMap<String, CachedDependency>,
+  changed: &BTreeSet<String>,
+) -> BTreeSet<String> {
+  let mut reverse = BTreeMap::<String, BTreeSet<String>>::new();
+  for (dependent, record) in previous.iter().chain(current.iter()) {
+    for dependency in &record.dependencies {
+      reverse.entry(dependency.clone()).or_default().insert(dependent.clone());
+    }
+  }
+
+  let mut affected = changed.clone();
+  let mut pending = changed.iter().cloned().collect::<VecDeque<_>>();
+  while let Some(definition) = pending.pop_front() {
+    if let Some(dependents) = reverse.get(&definition) {
+      for dependent in dependents {
+        if affected.insert(dependent.clone()) {
+          pending.push_back(dependent.clone());
+        }
+      }
+    }
+  }
+  affected
+}
+
+fn collect_dependency_index(
+  cache: &mut AnalysisCache,
+  snapshot: &snapshot::Snapshot,
+  namespace: Option<&str>,
+  namespace_prefix: Option<&str>,
+  include_dependencies: bool,
+) -> Result<DependencyIndexStats, String> {
+  let entries = type_coverage::scoped_definition_entries(snapshot, namespace, namespace_prefix, include_dependencies)?;
+  let previous = cache.dependency_index.clone();
+  let all_ids = snapshot
+    .files
+    .iter()
+    .flat_map(|(ns, file)| file.defs.keys().map(move |definition| format!("{ns}/{definition}")))
+    .collect::<BTreeSet<_>>();
+  let mut changed = BTreeSet::new();
+  let mut pending = Vec::new();
+  let mut stats = DependencyIndexStats::default();
+
+  for (ns, definition, entry) in entries {
+    let id = format!("{ns}/{definition}");
+    let definition_revision = snapshot::definition_revision(entry)?;
+    let namespace_revision = namespace_revision(snapshot.files.get(ns).expect("scoped namespace must exist"))?;
+    match previous.get(&id) {
+      Some(record)
+        if record.ready && record.definition_revision == definition_revision && record.namespace_revision == namespace_revision =>
+      {
+        stats.hits += 1;
+      }
+      cached => {
+        stats.misses += 1;
+        let reason = match cached {
+          None => "not-indexed",
+          Some(record) if record.definition_revision != definition_revision => "definition-changed",
+          Some(record) if record.namespace_revision != namespace_revision => "namespace-changed",
+          Some(_) => "unresolved",
+        };
+        *stats.miss_reasons.entry(reason.to_owned()).or_insert(0) += 1;
+        changed.insert(id.clone());
+        pending.push((
+          id,
+          ns.to_owned(),
+          definition.to_owned(),
+          definition_revision,
+          namespace_revision,
+          entry.schema.clone(),
+        ));
+      }
+    }
+  }
+
+  for removed in previous.keys().filter(|id| !all_ids.contains(*id)) {
+    changed.insert(removed.clone());
+  }
+
+  if !pending.is_empty() {
+    let extracted = program::extract_program_data(snapshot);
+    if let Ok(program_data) = extracted {
+      *program::PROGRAM_CODE_DATA.write().expect("open program data for dependency index") = program_data;
+      for (id, ns, definition, definition_revision, namespace_revision, schema) in pending {
+        let warnings = RefCell::<Vec<LocatedWarning>>::new(Vec::new());
+        match runner::preprocess::trace_definition_source_usages(&ns, &definition, &warnings, &CallStackList::default()) {
+          Ok(usages) => {
+            let mut dependencies = usages
+              .into_iter()
+              .map(|usage| format!("{}/{}", usage.target_ns, usage.target_def))
+              .collect::<BTreeSet<_>>();
+            dependencies.extend(collect_schema_dependencies(&schema));
+            cache.dependency_index.insert(
+              id,
+              CachedDependency {
+                definition_revision,
+                namespace_revision,
+                ready: true,
+                dependencies,
+              },
+            );
+          }
+          Err(_) => {
+            stats.unresolved += 1;
+            let dependencies = previous.get(&id).map(|record| record.dependencies.clone()).unwrap_or_default();
+            cache.dependency_index.insert(
+              id,
+              CachedDependency {
+                definition_revision,
+                namespace_revision,
+                ready: false,
+                dependencies,
+              },
+            );
+          }
+        }
+      }
+    } else {
+      stats.unresolved += pending.len();
+      *stats.miss_reasons.entry("program-index-failed".to_owned()).or_insert(0) += pending.len();
+    }
+  }
+
+  cache.dependency_index.retain(|id, _| all_ids.contains(id));
+  let affected = reverse_affected_definitions(&previous, &cache.dependency_index, &changed);
+  stats.changed = changed.len();
+  stats.affected = affected.len();
+  stats.edges = cache
+    .dependency_index
+    .values()
+    .filter(|record| record.ready)
+    .map(|record| record.dependencies.len())
+    .sum();
+  stats.status = match (stats.hits, stats.misses) {
+    (0, 0) => "empty",
+    (_, 0) => "warm",
+    (0, _) => "cold",
+    _ => "partial",
+  }
+  .to_owned();
+  Ok(stats)
+}
+
 pub(crate) fn collect_check_types(
   options: &CheckTypesCommand,
   snapshot: &snapshot::Snapshot,
@@ -470,6 +681,13 @@ pub(crate) fn collect_check_types(
   }
 
   type_coverage::filter_type_coverage_rows(options, &mut rows)?;
+  stats.dependency_index = Some(collect_dependency_index(
+    &mut cache,
+    snapshot,
+    options.ns.as_deref(),
+    options.ns_prefix.as_deref(),
+    options.deps,
+  )?);
   prune_removed_definitions(&mut cache, snapshot);
   if let Err(error) = write_cache(snapshot_file, &cache) {
     eprintln!("Warning: {error}; incremental analysis continued without persisting the cache.");
@@ -529,9 +747,68 @@ pub(crate) fn collect_weak_types(
   }
 
   type_coverage::filter_weak_type_rows(options, &mut rows)?;
+  stats.dependency_index = Some(collect_dependency_index(
+    &mut cache,
+    snapshot,
+    options.ns.as_deref(),
+    options.ns_prefix.as_deref(),
+    options.deps,
+  )?);
   prune_removed_definitions(&mut cache, snapshot);
   if let Err(error) = write_cache(snapshot_file, &cache) {
     eprintln!("Warning: {error}; incremental analysis continued without persisting the cache.");
   }
   Ok((rows, stats))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{CachedDependency, reverse_affected_definitions};
+  use std::collections::{BTreeMap, BTreeSet};
+
+  fn dependency(dependencies: &[&str]) -> CachedDependency {
+    CachedDependency {
+      definition_revision: "revision".to_owned(),
+      namespace_revision: "namespace".to_owned(),
+      ready: true,
+      dependencies: dependencies.iter().map(|item| (*item).to_owned()).collect(),
+    }
+  }
+
+  #[test]
+  fn reverse_dependency_index_collects_transitive_callers_and_cycles() {
+    let graph = BTreeMap::from([
+      ("app/main".to_owned(), dependency(&["app/render"])),
+      ("app/render".to_owned(), dependency(&["app/model"])),
+      ("app/model".to_owned(), dependency(&["app/helper"])),
+      ("app/helper".to_owned(), dependency(&["app/model"])),
+      ("app/unrelated".to_owned(), dependency(&[])),
+    ]);
+    let changed = BTreeSet::from(["app/model".to_owned()]);
+
+    assert_eq!(
+      reverse_affected_definitions(&BTreeMap::new(), &graph, &changed),
+      BTreeSet::from([
+        "app/helper".to_owned(),
+        "app/main".to_owned(),
+        "app/model".to_owned(),
+        "app/render".to_owned(),
+      ])
+    );
+  }
+
+  #[test]
+  fn reverse_dependency_index_retains_removed_definition_edges() {
+    let previous = BTreeMap::from([
+      ("app/main".to_owned(), dependency(&["app/removed"])),
+      ("app/removed".to_owned(), dependency(&[])),
+    ]);
+    let current = BTreeMap::from([("app/main".to_owned(), dependency(&["app/replacement"]))]);
+    let changed = BTreeSet::from(["app/removed".to_owned()]);
+
+    assert_eq!(
+      reverse_affected_definitions(&previous, &current, &changed),
+      BTreeSet::from(["app/main".to_owned(), "app/removed".to_owned()])
+    );
+  }
 }

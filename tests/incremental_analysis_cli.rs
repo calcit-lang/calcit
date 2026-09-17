@@ -107,12 +107,21 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(cold_cache["input"]["status"], "cold");
   assert_eq!(cold_cache["input"]["reason"], "cache-missing");
   assert_eq!(cold_cache["input"]["sources"], 2);
+  assert_eq!(cold_cache["dependency_index"]["status"], "cold");
+  assert_eq!(cold_cache["dependency_index"]["hits"], 0);
+  assert_eq!(cold_cache["dependency_index"]["misses"], definition_count);
+  assert_eq!(cold_cache["dependency_index"]["changed"], definition_count);
 
   let warm = report(&snapshot, "check-types");
   assert_eq!(warm["data"]["cache"]["status"], "warm");
   assert_eq!(warm["data"]["cache"]["hits"], definition_count);
   assert_eq!(warm["data"]["cache"]["misses"], 0);
   assert_eq!(warm["data"]["cache"]["input"]["status"], "warm");
+  assert_eq!(warm["data"]["cache"]["dependency_index"]["status"], "warm");
+  assert_eq!(warm["data"]["cache"]["dependency_index"]["hits"], definition_count);
+  assert_eq!(warm["data"]["cache"]["dependency_index"]["misses"], 0);
+  assert_eq!(warm["data"]["cache"]["dependency_index"]["changed"], 0);
+  assert_eq!(warm["data"]["cache"]["dependency_index"]["affected"], 0);
   assert_eq!(without_cache(cold.clone()), without_cache(warm.clone()));
 
   #[cfg(unix)]
@@ -155,6 +164,11 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(partial["data"]["cache"]["misses"], 1);
   assert_eq!(partial["data"]["cache"]["miss_reasons"]["not-cached"], 1);
   assert_eq!(partial["data"]["cache"]["input"]["reason"], "source-changed");
+  assert_eq!(partial["data"]["cache"]["dependency_index"]["status"], "partial");
+  assert_eq!(partial["data"]["cache"]["dependency_index"]["hits"], definition_count);
+  assert_eq!(partial["data"]["cache"]["dependency_index"]["misses"], 1);
+  assert_eq!(partial["data"]["cache"]["dependency_index"]["changed"], 1);
+  assert_eq!(partial["data"]["cache"]["dependency_index"]["affected"], 1);
 
   let edit = run_calcit(
     &snapshot,
