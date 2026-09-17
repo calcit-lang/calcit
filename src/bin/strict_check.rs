@@ -60,28 +60,101 @@ fn collect_graph(node: &CallTreeNode, graph: &mut DefinitionGraph) {
   }
 }
 
-fn visit_definition(
-  definition: &str,
-  graph: &DefinitionGraph,
-  visiting: &mut HashSet<String>,
-  visited: &mut HashSet<String>,
-  ordered: &mut Vec<String>,
-) {
-  if visited.contains(definition) || !visiting.insert(definition.to_owned()) {
+fn finish_definition(definition: &str, graph: &DefinitionGraph, visited: &mut HashSet<String>, finished: &mut Vec<String>) {
+  if !visited.insert(definition.to_owned()) {
     return;
   }
   if let Some(dependencies) = graph.get(definition) {
     for dependency in dependencies {
-      visit_definition(dependency, graph, visiting, visited, ordered);
+      finish_definition(dependency, graph, visited, finished);
     }
   }
-  visiting.remove(definition);
-  if visited.insert(definition.to_owned()) {
-    ordered.push(definition.to_owned());
+  finished.push(definition.to_owned());
+}
+
+fn collect_reverse_component(definition: &str, reverse: &DefinitionGraph, visited: &mut HashSet<String>, component: &mut Vec<String>) {
+  if !visited.insert(definition.to_owned()) {
+    return;
+  }
+  component.push(definition.to_owned());
+  if let Some(dependents) = reverse.get(definition) {
+    for dependent in dependents {
+      collect_reverse_component(dependent, reverse, visited, component);
+    }
   }
 }
 
-fn reachable_definitions(entries: &ProgramEntries) -> Result<(DefinitionGraph, Vec<String>), String> {
+fn visit_component(component: usize, dependencies: &[BTreeSet<usize>], visited: &mut HashSet<usize>, ordered: &mut Vec<usize>) {
+  if !visited.insert(component) {
+    return;
+  }
+  for dependency in &dependencies[component] {
+    visit_component(*dependency, dependencies, visited, ordered);
+  }
+  ordered.push(component);
+}
+
+fn strongly_connected_components(graph: &DefinitionGraph) -> Vec<Vec<String>> {
+  let mut nodes = BTreeSet::new();
+  for (definition, dependencies) in graph {
+    nodes.insert(definition.clone());
+    nodes.extend(dependencies.iter().cloned());
+  }
+
+  let mut finished = Vec::new();
+  let mut visited = HashSet::new();
+  for definition in &nodes {
+    finish_definition(definition, graph, &mut visited, &mut finished);
+  }
+
+  let mut reverse = DefinitionGraph::new();
+  for definition in &nodes {
+    reverse.entry(definition.clone()).or_default();
+  }
+  for (definition, dependencies) in graph {
+    for dependency in dependencies {
+      reverse.entry(dependency.clone()).or_default().insert(definition.clone());
+    }
+  }
+
+  let mut components = Vec::new();
+  visited.clear();
+  for definition in finished.iter().rev() {
+    if visited.contains(definition) {
+      continue;
+    }
+    let mut component = Vec::new();
+    collect_reverse_component(definition, &reverse, &mut visited, &mut component);
+    component.sort();
+    components.push(component);
+  }
+  components.sort_by(|a, b| a[0].cmp(&b[0]));
+
+  let component_by_definition = components
+    .iter()
+    .enumerate()
+    .flat_map(|(index, component)| component.iter().map(move |definition| (definition.clone(), index)))
+    .collect::<BTreeMap<_, _>>();
+  let mut dependencies = vec![BTreeSet::new(); components.len()];
+  for (definition, definition_dependencies) in graph {
+    let component = component_by_definition[definition];
+    for dependency in definition_dependencies {
+      let dependency_component = component_by_definition[dependency];
+      if component != dependency_component {
+        dependencies[component].insert(dependency_component);
+      }
+    }
+  }
+
+  let mut ordered = Vec::new();
+  let mut visited_components = HashSet::new();
+  for component in 0..components.len() {
+    visit_component(component, &dependencies, &mut visited_components, &mut ordered);
+  }
+  ordered.into_iter().map(|index| components[index].clone()).collect()
+}
+
+fn reachable_definitions(entries: &ProgramEntries) -> Result<(DefinitionGraph, Vec<Vec<String>>), String> {
   let mut graph = BTreeMap::new();
   for (ns, definition) in [
     (entries.init_ns.as_ref(), entries.init_def.as_ref()),
@@ -92,13 +165,8 @@ fn reachable_definitions(entries: &ProgramEntries) -> Result<(DefinitionGraph, V
     collect_graph(&result.tree, &mut graph);
   }
 
-  let mut ordered = Vec::new();
-  let mut visiting = HashSet::new();
-  let mut visited = HashSet::new();
-  for root in [entries.init_fn.as_ref(), entries.reload_fn.as_ref()] {
-    visit_definition(root, &graph, &mut visiting, &mut visited, &mut ordered);
-  }
-  Ok((graph, ordered))
+  let components = strongly_connected_components(&graph);
+  Ok((graph, components))
 }
 
 fn warning_diagnostic(warning: &LocatedWarning) -> CheckDiagnostic {
@@ -136,36 +204,51 @@ fn error_diagnostic(error: &CalcitErr, fallback: &str) -> CheckDiagnostic {
   }
 }
 
-fn check_definitions(graph: &DefinitionGraph, definitions: &[String]) -> Vec<DefinitionResult> {
-  let mut statuses = BTreeMap::new();
-  let mut results = Vec::with_capacity(definitions.len());
+fn push_unique_diagnostic(diagnostics: &mut Vec<CheckDiagnostic>, diagnostic: CheckDiagnostic) {
+  if !diagnostics.iter().any(|item| {
+    item.severity == diagnostic.severity
+      && item.code == diagnostic.code
+      && item.message == diagnostic.message
+      && item.definition == diagnostic.definition
+      && item.path == diagnostic.path
+  }) {
+    diagnostics.push(diagnostic);
+  }
+}
 
-  for definition in definitions {
-    let blocked_by = graph
-      .get(definition)
-      .into_iter()
-      .flatten()
+fn check_definitions(graph: &DefinitionGraph, components: &[Vec<String>]) -> Vec<DefinitionResult> {
+  let mut statuses = BTreeMap::new();
+  let mut results = Vec::new();
+
+  for component in components {
+    let component_set = component.iter().cloned().collect::<HashSet<_>>();
+    let external_blockers = component
+      .iter()
+      .flat_map(|definition| graph.get(definition).into_iter().flatten())
+      .filter(|dependency| !component_set.contains(*dependency))
       .filter(|dependency| matches!(statuses.get(*dependency), Some(&"failed" | &"blocked" | &"cascaded")))
       .cloned()
+      .collect::<BTreeSet<_>>()
+      .into_iter()
       .collect::<Vec<_>>();
-    if !blocked_by.is_empty() {
-      statuses.insert(definition.clone(), "blocked");
-      results.push(DefinitionResult {
-        definition: definition.clone(),
-        status: "blocked",
-        blocked_by,
-        diagnostics: Vec::new(),
-      });
+    if !external_blockers.is_empty() {
+      for definition in component {
+        statuses.insert(definition.clone(), "blocked");
+        results.push(DefinitionResult {
+          definition: definition.clone(),
+          status: "blocked",
+          blocked_by: external_blockers.clone(),
+          diagnostics: Vec::new(),
+        });
+      }
       continue;
     }
 
-    let Some((ns, def)) = definition.split_once('/') else {
-      statuses.insert(definition.clone(), "cascaded");
-      results.push(DefinitionResult {
-        definition: definition.clone(),
-        status: "cascaded",
-        blocked_by: Vec::new(),
-        diagnostics: vec![CheckDiagnostic {
+    let mut confirmed = BTreeMap::<String, Vec<CheckDiagnostic>>::new();
+    let mut cascaded = BTreeMap::<String, Vec<CheckDiagnostic>>::new();
+    for definition in component {
+      let Some((ns, def)) = definition.split_once('/') else {
+        cascaded.entry(definition.clone()).or_default().push(CheckDiagnostic {
           severity: "error",
           code: Some("E_INVALID_DEFINITION_ID".to_owned()),
           message: format!("Invalid qualified definition `{definition}`"),
@@ -175,47 +258,61 @@ fn check_definitions(graph: &DefinitionGraph, definitions: &[String]) -> Vec<Def
           expected: None,
           actual: None,
           provenance: Vec::new(),
-        }],
-      });
-      continue;
-    };
+        });
+        continue;
+      };
 
-    let warnings = RefCell::new(Vec::new());
-    match runner::preprocess::ensure_ns_def_compiled(ns, def, &warnings, &CallStackList::default()) {
-      Ok(_) => {
-        let diagnostics = warnings.borrow().iter().map(warning_diagnostic).collect::<Vec<_>>();
-        let status = if diagnostics.is_empty() {
-          "passed"
-        } else if diagnostics.iter().any(|diagnostic| diagnostic.definition == *definition) {
-          "failed"
+      let warnings = RefCell::new(Vec::new());
+      let outcome = runner::preprocess::ensure_ns_def_compiled(ns, def, &warnings, &CallStackList::default());
+      for diagnostic in warnings.borrow().iter().map(warning_diagnostic) {
+        if component_set.contains(&diagnostic.definition) {
+          push_unique_diagnostic(confirmed.entry(diagnostic.definition.clone()).or_default(), diagnostic);
         } else {
-          "cascaded"
-        };
-        statuses.insert(definition.clone(), status);
-        results.push(DefinitionResult {
-          definition: definition.clone(),
-          status,
-          blocked_by: Vec::new(),
-          diagnostics,
-        });
+          push_unique_diagnostic(cascaded.entry(definition.clone()).or_default(), diagnostic);
+        }
       }
-      Err(error) => {
-        let belongs_to_definition = error
-          .location
-          .as_ref()
-          .is_some_and(|location| format!("{}/{}", location.ns, location.def) == *definition);
+      if let Err(error) = outcome {
+        for diagnostic in error.warnings.iter().map(warning_diagnostic) {
+          if component_set.contains(&diagnostic.definition) {
+            push_unique_diagnostic(confirmed.entry(diagnostic.definition.clone()).or_default(), diagnostic);
+          } else {
+            push_unique_diagnostic(cascaded.entry(definition.clone()).or_default(), diagnostic);
+          }
+        }
+        let owner = error.location.as_ref().map(|location| format!("{}/{}", location.ns, location.def));
         let diagnostic = error_diagnostic(&error, definition);
-        let status = if belongs_to_definition { "failed" } else { "cascaded" };
-        let mut diagnostics = error.warnings.iter().map(warning_diagnostic).collect::<Vec<_>>();
-        diagnostics.push(diagnostic);
-        statuses.insert(definition.clone(), status);
-        results.push(DefinitionResult {
-          definition: definition.clone(),
-          status,
-          blocked_by: Vec::new(),
-          diagnostics,
-        });
+        if let Some(owner) = owner.filter(|owner| component_set.contains(owner)) {
+          push_unique_diagnostic(confirmed.entry(owner).or_default(), diagnostic);
+        } else {
+          push_unique_diagnostic(cascaded.entry(definition.clone()).or_default(), diagnostic);
+        }
       }
+    }
+
+    let blockers = confirmed
+      .keys()
+      .chain(cascaded.keys())
+      .cloned()
+      .collect::<BTreeSet<_>>()
+      .into_iter()
+      .collect::<Vec<_>>();
+    for definition in component {
+      let (status, blocked_by, diagnostics) = if let Some(diagnostics) = confirmed.remove(definition) {
+        ("failed", Vec::new(), diagnostics)
+      } else if let Some(diagnostics) = cascaded.remove(definition) {
+        ("cascaded", Vec::new(), diagnostics)
+      } else if blockers.is_empty() {
+        ("passed", Vec::new(), Vec::new())
+      } else {
+        ("blocked", blockers.clone(), Vec::new())
+      };
+      statuses.insert(definition.clone(), status);
+      results.push(DefinitionResult {
+        definition: definition.clone(),
+        status,
+        blocked_by,
+        diagnostics,
+      });
     }
   }
   results

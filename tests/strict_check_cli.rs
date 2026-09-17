@@ -75,11 +75,18 @@ fn prepare_project() -> (TestDirectory, PathBuf) {
 
   edit_definition(&snapshot, "bad-a", "quote $ defn bad-a () $ inc |x", false);
   edit_definition(&snapshot, "bad-b", "quote $ defn bad-b () $ inc |y", false);
+  edit_definition(&snapshot, "cycle-a", "quote $ defn cycle-a () $ cycle-z", false);
+  edit_definition(
+    &snapshot,
+    "cycle-z",
+    "quote $ defn cycle-z () $ do (inc |cycle-error) (cycle-a)",
+    false,
+  );
   edit_definition(&snapshot, "dependent", "quote $ defn dependent () $ bad-a", false);
   edit_definition(&snapshot, "reload!", "quote $ defn reload! () nil", false);
-  edit_definition(&snapshot, "main!", "quote $ defn main! () $ do (dependent) (bad-b)", true);
+  edit_definition(&snapshot, "main!", "quote $ defn main! () $ do (dependent) (bad-b) (cycle-a)", true);
 
-  for name in ["bad-a", "bad-b", "dependent", "main!"] {
+  for name in ["bad-a", "bad-b", "cycle-a", "cycle-z", "dependent", "main!"] {
     edit_schema(&snapshot, name, "Number");
   }
   edit_schema(&snapshot, "reload!", "Nil");
@@ -94,8 +101,8 @@ fn keep_going_reports_independent_failures_and_blocks_dependents() {
   let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("stdout should contain one JSON envelope");
   assert_eq!(report["schema_version"], 1);
   assert_eq!(report["command"], "check-only");
-  assert_eq!(report["data"]["summary"]["failed"], 2);
-  assert_eq!(report["data"]["summary"]["blocked"], 2);
+  assert_eq!(report["data"]["summary"]["failed"], 3);
+  assert_eq!(report["data"]["summary"]["blocked"], 3);
   assert_eq!(report["data"]["summary"]["cascaded"], 0);
 
   let definitions = report["data"]["definitions"].as_array().expect("definitions should be an array");
@@ -107,6 +114,9 @@ fn keep_going_reports_independent_failures_and_blocks_dependents() {
   assert_eq!(by_name["app.main/bad-b"]["status"], "failed");
   assert_eq!(by_name["app.main/bad-a"]["diagnostics"][0]["expected"], ":number");
   assert_eq!(by_name["app.main/bad-a"]["diagnostics"][0]["actual"], ":string");
+  assert_eq!(by_name["app.main/cycle-z"]["status"], "failed");
+  assert_eq!(by_name["app.main/cycle-a"]["status"], "blocked");
+  assert_eq!(by_name["app.main/cycle-a"]["blocked_by"], serde_json::json!(["app.main/cycle-z"]));
   assert_eq!(by_name["app.main/dependent"]["status"], "blocked");
   assert_eq!(by_name["app.main/dependent"]["blocked_by"], serde_json::json!(["app.main/bad-a"]));
   assert_eq!(by_name["app.main/main!"]["status"], "blocked");
