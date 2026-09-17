@@ -423,7 +423,11 @@ const scenarios = [
       if (!workflow.resume?.revision?.startsWith("md5:") || workflow.resume?.apply_command?.[0] !== "calcit") {
         throw new Error("strict workflow lost its resumable revision-bound command");
       }
-      if (!Array.isArray(workflow.entries) || !Array.isArray(workflow.review_required?.type_findings)) {
+      if (
+        !Array.isArray(workflow.entries) ||
+        !Array.isArray(workflow.review_required?.type_findings) ||
+        !Array.isArray(workflow.retained_type_boundaries)
+      ) {
         throw new Error("strict workflow lost project inventory fields");
       }
       if (workflow.verification?.commands?.[0]?.[0] !== "calcit" || workflow.verification?.external_commands?.length !== 0) {

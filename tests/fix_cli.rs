@@ -118,6 +118,26 @@ fn strict_workflow_composes_a_resumable_project_manifest() {
   assert_eq!(workflow["entries"][0]["name"], "default");
   assert_eq!(workflow["verification"]["commands"][0][0], "calcit");
   assert_eq!(workflow["verification"]["external_commands"], serde_json::json!([]));
+  assert!(
+    workflow["review_required"]["type_findings"]
+      .as_array()
+      .expect("review-required type findings should be an array")
+      .iter()
+      .all(|finding| matches!(
+        finding["intent"].as_str(),
+        Some("unresolved" | "declared-optional" | "explicit-unsafe")
+      ))
+  );
+  assert!(
+    workflow["retained_type_boundaries"]
+      .as_array()
+      .expect("retained type boundaries should be an array")
+      .iter()
+      .all(|finding| matches!(
+        finding["intent"].as_str(),
+        Some("intentional-js-ffi" | "intentional-type-slot-dynamic")
+      ))
+  );
   assert_eq!(workflow["resume"]["revision"], report["revision"]);
   assert_eq!(workflow["resume"]["apply_command"][3], "--workflow");
   assert_eq!(workflow["resume"]["apply_command"][4], "strict");

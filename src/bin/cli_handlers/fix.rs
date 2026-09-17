@@ -152,6 +152,7 @@ struct StrictWorkflowManifest {
   entries: Vec<StrictWorkflowEntry>,
   safe_fixes: StrictWorkflowSafeFixes,
   review_required: StrictWorkflowReviewRequired,
+  retained_type_boundaries: Vec<StrictWorkflowTypeFinding>,
   verification: StrictWorkflowVerification,
   resume: StrictWorkflowResume,
 }
@@ -239,7 +240,9 @@ fn strict_workflow_entries(snapshot: &Snapshot) -> Vec<StrictWorkflowEntry> {
     .collect()
 }
 
-fn strict_workflow_type_findings(snapshot: &Snapshot) -> Result<Vec<StrictWorkflowTypeFinding>, String> {
+fn strict_workflow_type_findings(
+  snapshot: &Snapshot,
+) -> Result<(Vec<StrictWorkflowTypeFinding>, Vec<StrictWorkflowTypeFinding>), String> {
   let options = WeakTypesCommand {
     ns: None,
     ns_prefix: None,
@@ -249,28 +252,40 @@ fn strict_workflow_type_findings(snapshot: &Snapshot) -> Result<Vec<StrictWorkfl
     summary_only: false,
     format: "json".to_owned(),
   };
-  let mut findings = Vec::new();
+  let mut review_required = Vec::new();
+  let mut retained_boundaries = Vec::new();
   for row in type_coverage::collect_weak_type_rows(&options, snapshot)? {
     let definition = format!("{}/{}", row.ns, row.def);
     for occurrence in row.occurrences {
-      findings.push(StrictWorkflowTypeFinding {
+      let finding = StrictWorkflowTypeFinding {
         definition: definition.clone(),
         kind: occurrence.kind.as_str().to_owned(),
         intent: occurrence.intent.as_str().to_owned(),
         path: occurrence.path,
         detail: occurrence.detail,
-      });
+      };
+      match occurrence.intent {
+        type_coverage::WeakTypeIntent::Unresolved
+        | type_coverage::WeakTypeIntent::DeclaredOptional
+        | type_coverage::WeakTypeIntent::ExplicitUnsafe => review_required.push(finding),
+        type_coverage::WeakTypeIntent::IntentionalJsFfi | type_coverage::WeakTypeIntent::IntentionalTypeSlotDynamic => {
+          retained_boundaries.push(finding)
+        }
+        type_coverage::WeakTypeIntent::IntentionalMacroSyntax | type_coverage::WeakTypeIntent::DeclaredUnit => {}
+      }
     }
   }
-  findings.sort_by(|left, right| {
-    left
-      .definition
-      .cmp(&right.definition)
-      .then(left.path.cmp(&right.path))
-      .then(left.kind.cmp(&right.kind))
-      .then(left.intent.cmp(&right.intent))
-  });
-  Ok(findings)
+  for findings in [&mut review_required, &mut retained_boundaries] {
+    findings.sort_by(|left, right| {
+      left
+        .definition
+        .cmp(&right.definition)
+        .then(left.path.cmp(&right.path))
+        .then(left.kind.cmp(&right.kind))
+        .then(left.intent.cmp(&right.intent))
+    });
+  }
+  Ok((review_required, retained_boundaries))
 }
 
 fn strict_workflow_ffi_boundaries(snapshot: &Snapshot) -> Result<Vec<StrictWorkflowFfiBoundary>, String> {
@@ -558,6 +573,7 @@ pub(crate) fn handle_fix_command(
   let mut workflow_failed = false;
   let workflow = if options.workflow.as_deref() == Some("strict") {
     let commands = strict_workflow_commands(snapshot_file, &source_snapshot);
+    let (review_required_types, retained_type_boundaries) = strict_workflow_type_findings(&source_snapshot)?;
     let results = if options.verify {
       run_strict_workflow_verification(&commands)?
     } else {
@@ -604,9 +620,10 @@ pub(crate) fn handle_fix_command(
             message: suggestion.message.clone(),
           })
           .collect(),
-        type_findings: strict_workflow_type_findings(&source_snapshot)?,
+        type_findings: review_required_types,
         ffi_boundaries: strict_workflow_ffi_boundaries(&source_snapshot)?,
       },
+      retained_type_boundaries,
       verification: StrictWorkflowVerification {
         commands: commands
           .iter()
@@ -3065,6 +3082,7 @@ fn print_human_report(report: &FixReport<'_>) {
       "- review-required type findings: `{}`",
       workflow.review_required.type_findings.len()
     );
+    println!("- retained type boundaries: `{}`", workflow.retained_type_boundaries.len());
     println!("- FFI boundaries: `{}`", workflow.review_required.ffi_boundaries.len());
     println!("- verification results: `{}`", workflow.verification.results.len());
   }

@@ -99,11 +99,13 @@ calcit calcit.cirru fix --workflow strict --verify --format edn
 ```
 
 `:data :workflow` 是可保存、可重复生成的 `strict-v1` manifest。它按稳定顺序列出所有 entry 及 type slots、
-`surface-latest-v2` 的安全建议、需要 review 的弱类型位置、显式 FFI 边界、已有 verification profile，以及逐 entry
+`surface-latest-v2` 的安全建议、需要 review 的弱类型位置、已声明保留的动态边界、显式 FFI 边界、已有 verification profile，以及逐 entry
 的严格检查命令。命令用 token list 表示，Agent 不需要重新解析 shell 字符串；`:resume :revision` 与
 `:resume :apply-command` 给出恢复下一步所需的精确 revision guard。
 无法自动应用的 source suggestion 单独保留在 `:review-required :source-fixes`，不会计入
-`:safe-fixes :suggestions`。
+`:safe-fixes :suggestions`。只有 unresolved、declared-optional 与 explicit-unsafe 类型位置进入
+`:review-required :type-findings`；已显式声明的 JS FFI/type-slot Dynamic 单独进入 `:retained-type-boundaries`，
+macro syntax 与明确的 Unit 返回不会伪装成迁移债务。
 
 默认模式只规划。`--apply` 仍走既有 fingerprint、staged Snapshot、严格预处理和原子替换，不会应用 schema 设计、
 Dynamic 收窄、FFI trust 或业务默认值。`--verify` 是只读模式：它要求安全建议已经清空，逐 entry 运行
