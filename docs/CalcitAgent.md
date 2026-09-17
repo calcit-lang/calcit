@@ -604,7 +604,8 @@ resolver call-site 证据，并补充重复 Map shape、`match` tag dispatch 的
 Option/Result、默认值或 FFI trust。`--summary-only` 仅用于看候选数量，真正修改前必须读取完整候选并显式选择 fix。
 
 需要连续定位类型迁移项时，可在 `analyze check-types` 或 `analyze weak-types` 增加 `--incremental`。只信报告中
-`:data :cache` 的 hit/miss 与失效原因；缓存以 Cirru EDN 保存于项目 `.calcit/`，损坏时会自动冷启动。`cache.input` 单独说明主 Snapshot
+`:data :cache` 的 hit/miss 与失效原因；缓存以 Cirru EDN 保存于项目 `.calcit/`。input cache 头损坏或版本不一致时会从源码重载主
+Snapshot 和 modules，definition cache 损坏才会让 definition-local inventory 冷启动。`cache.input` 单独说明主 Snapshot
 与 direct modules 的复用状态，并报告 `main_reused`、`module_hits`、`module_misses` 和失效原因。单个模块的传递 source digest 或
 解析路径变化时只重载该模块，其他模块继续复用；definition-local inventory 则继续逐项失效。
 `cache.dependency-index`（JSON 中为 `dependency_index`）提供 compiler-resolved graph 的 hit/miss、edge、changed 与反向 affected 数量，
