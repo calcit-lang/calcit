@@ -78,7 +78,7 @@ fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
     let mut definitions = snapshot
       .files
       .iter()
-      .filter(|(namespace, _)| namespace.as_str() == snapshot.package || namespace.starts_with(&package_prefix))
+      .filter(|(namespace, _)| options.deps || namespace.as_str() == snapshot.package || namespace.starts_with(&package_prefix))
       .filter(|(namespace, _)| !namespace.ends_with(".$meta"))
       .flat_map(|(namespace, file)| file.defs.keys().map(|definition| (namespace.clone(), definition.clone())))
       .collect::<Vec<_>>();

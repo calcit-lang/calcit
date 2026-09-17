@@ -599,7 +599,7 @@ calcit cirru show-guide
 `calcit calcit.cirru analyze weak-types --schema-evidence --format edn`。它复用 `synthesize-schema-v1` 的编译器与
 resolver call-site 证据，并补充重复 Map shape、`match` tag dispatch 的只读候选。只按 `exact`、`usage-derived`、
 `boundary-unknown`、`conflict` 和 evidence path 安排审阅；不要把建议名称当成业务模型，也不要自动生成 Struct/Enum、
-Option/Result、默认值或 FFI trust。`summary-only` 仅用于看候选数量，真正修改前必须读取完整候选并显式选择 fix。
+Option/Result、默认值或 FFI trust。`--summary-only` 仅用于看候选数量，真正修改前必须读取完整候选并显式选择 fix。
 
 `:: :tag ...` 是匿名 Enum 字面量；当已有 Enum 定义在头部时，直接使用 `Enum :tag ...`，类型分析会检查变体和 payload，并在预处理阶段降为命名构造。只有需要显式携带运行时 enum prototype、跨模块动态构造或兼容旧代码时才使用 `%:: Enum :tag ...`。不要为了绕过类型检查而主动选择 `%::`。
 

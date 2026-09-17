@@ -1406,7 +1406,7 @@ pub(crate) fn collect_schema_candidates(
   let package_prefix = format!("{}.", snapshot.package);
   let mut targets = rows
     .iter()
-    .filter(|row| row.ns == snapshot.package || row.ns.starts_with(&package_prefix))
+    .filter(|row| options.deps || row.ns == snapshot.package || row.ns.starts_with(&package_prefix))
     .filter(|row| {
       row
         .occurrences
@@ -1421,7 +1421,7 @@ pub(crate) fn collect_schema_candidates(
   let mut project_definitions = snapshot
     .files
     .iter()
-    .filter(|(namespace, _)| namespace.as_str() == snapshot.package || namespace.starts_with(&package_prefix))
+    .filter(|(namespace, _)| options.deps || namespace.as_str() == snapshot.package || namespace.starts_with(&package_prefix))
     .filter(|(namespace, _)| !namespace.ends_with(".$meta"))
     .flat_map(|(namespace, file)| file.defs.keys().map(|definition| (namespace.clone(), definition.clone())))
     .collect::<Vec<_>>();
