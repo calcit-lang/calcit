@@ -148,6 +148,7 @@ calcit calcit.cirru config modules --entry '<entry-name>' --format json
 calcit calcit.cirru config type-slots --entry '<entry-name>' --format json
 calcit calcit.cirru --check-only
 calcit calcit.cirru --entry '<entry-name>' --check-only
+calcit calcit.cirru --check-only --incremental
 calcit calcit.cirru --check-only --keep-going --format edn
 # Here --entry is the snapshot filename, not a named entry:
 calcit calcit.cirru docs check-md README.md --entry calcit.cirru --failures-only
@@ -603,7 +604,8 @@ resolver call-site 证据，并补充重复 Map shape、`match` tag dispatch 的
 `boundary-unknown`、`conflict` 和 evidence path 安排审阅；不要把建议名称当成业务模型，也不要自动生成 Struct/Enum、
 Option/Result、默认值或 FFI trust。`--summary-only` 仅用于看候选数量，真正修改前必须读取完整候选并显式选择 fix。
 
-需要连续定位类型迁移项时，可在 `analyze check-types`、`analyze weak-types` 或 `analyze dynamic-methods` 增加 `--incremental`。只信报告中
+需要连续执行小步迁移时，可用 `calcit calcit.cirru --check-only --incremental` 复用已成功且 closure 未变化的严格预处理，
+也可在 `analyze check-types`、`analyze weak-types` 或 `analyze dynamic-methods` 增加 `--incremental`。只信报告中
 `:data :cache` 的 hit/miss 与失效原因；缓存以 Cirru EDN 保存于项目 `.calcit/`。input cache 头损坏或版本不一致时会从源码重载主
 Snapshot 和 modules；definition cache 缺失、不可读，或因 schema、编译器版本、context revision 变化而失效时，才会让
 definition-local inventory 冷启动。`cache.input` 单独说明活动 `entry`、主 Snapshot
@@ -613,7 +615,9 @@ definition-local inventory 冷启动。`cache.input` 单独说明活动 `entry`�
 `cache.dependency-index`（JSON 中为 `dependency_index`）提供 compiler-resolved graph 的 hit/miss、edge、changed 与反向 affected 数量，
 供 Agent 判断修改波及范围。`dynamic-methods` 只有在 init/reload dependency closure 完整且 revision 未变时才报告
 `preprocessing_cached=true`；闭包外修改允许继续复用，缺失或未解析的闭包证据会保守回退。这里复用的是诊断结果而非 compiled AST，
-不能替代无缓存检查。该缓存仍不覆盖 schema evidence、deprecated、quality 或通用严格预处理，因此不能替代最终无缓存门禁。
+不能替代无缓存检查。`--check-only --incremental` 也只缓存成功标记，不缓存 compiled AST、warning 或 error；reachable schema/import、
+entry type-slot 或 policy 变化会失效，`--keep-going` 不使用该缓存。该缓存仍不覆盖 schema evidence、deprecated 或 quality，
+因此不能替代最终无缓存门禁。
 
 `:: :tag ...` 是匿名 Enum 字面量；当已有 Enum 定义在头部时，直接使用 `Enum :tag ...`，类型分析会检查变体和 payload，并在预处理阶段降为命名构造。只有需要显式携带运行时 enum prototype、跨模块动态构造或兼容旧代码时才使用 `%:: Enum :tag ...`。不要为了绕过类型检查而主动选择 `%::`。
 

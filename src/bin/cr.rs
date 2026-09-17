@@ -468,6 +468,14 @@ fn run_cli() -> Result<(), String> {
   if cli_args.keep_going && !cli_args.check_only {
     return Err("`--keep-going` requires `--check-only`.".to_owned());
   }
+  if cli_args.incremental && (!cli_args.check_only || cli_args.subcommand.is_some()) {
+    return Err("Top-level `--incremental` is only available with direct `--check-only`.".to_owned());
+  }
+  if cli_args.incremental && cli_args.keep_going {
+    return Err(
+      "`--check-only --incremental` does not support `--keep-going`; use the uncached structured diagnostic pass.".to_owned(),
+    );
+  }
   if cli_args.keep_going && strict_type_policy.zero_debt {
     return Err(
       "`--keep-going` collects strict preprocessing diagnostics; run the separate `--check-only --strict-types` zero-debt gate after it passes."
@@ -509,6 +517,55 @@ fn run_cli() -> Result<(), String> {
   {
     injection::init_async_runtime()?;
     injection::inject_platform_apis();
+  }
+
+  if cli_args.check_only && cli_args.incremental {
+    let (mut snapshot, input_cache, _) =
+      analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
+    input_cache.ensure_complete()?;
+    apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
+    let entries = analysis_program_entries(&snapshot, cli_args.init_fn.as_deref(), cli_args.reload_fn.as_deref())?;
+    let stats = analysis_cache::run_incremental_strict_check(&snapshot, &cli_args.input, &entries, input_cache, || {
+      *program::PROGRAM_CODE_DATA.write().expect("open program data for strict check") = program::extract_program_data(&snapshot)?;
+      let builtin_warnings = RefCell::new(Vec::new());
+      runner::preprocess::ensure_ns_def_compiled(
+        calcit::calcit::CORE_NS,
+        calcit::calcit::BUILTIN_IMPLS_ENTRY,
+        &builtin_warnings,
+        &CallStackList::default(),
+      )
+      .map_err(|failure| failure.msg)?;
+      run_check_only(&entries)
+    })?;
+    if stats.preprocessing_cached {
+      eprintln!("{}", "Check-only mode: validating code...".dimmed());
+      println!(
+        "  {} {}",
+        "✓".green(),
+        format!("{} preprocessed (cached)", entries.init_fn).dimmed()
+      );
+      println!(
+        "  {} {}",
+        "✓".green(),
+        format!("{} preprocessed (cached)", entries.reload_fn).dimmed()
+      );
+      println!("\n{}", "✓ Check passed (cached)".green().bold());
+    }
+    print!("{}", stats.human_line());
+    if strict_type_policy.zero_debt {
+      run_quality(
+        &QualityCommand {
+          ns: None,
+          ns_prefix: None,
+          deps: false,
+          baseline: None,
+          write_baseline: None,
+          format: "human".to_owned(),
+        },
+        &snapshot,
+      )?;
+    }
+    return Ok(());
   }
 
   // Handle standalone commands that don't need full program loading
