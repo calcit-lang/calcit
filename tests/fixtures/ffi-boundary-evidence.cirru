@@ -21,6 +21,7 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ []
         'query-host $ %{} 'CodeEntry (:doc "|Mixed browser, npm, WebGPU, and host-member evidence.")
+          :ffi $ {} (:backend :js)
           :code $ quote $ defn query-host (host)
             do
               js/document.querySelector |main

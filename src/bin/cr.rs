@@ -62,11 +62,20 @@ fn add_cache_metadata(report: String, stats: &analysis_cache::CacheStats) -> Res
   serde_json::to_string_pretty(&value).map_err(|error| format!("Failed to encode analysis envelope with cache metadata: {error}"))
 }
 
-fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot, snapshot_file: &str) -> Result<(), String> {
+fn run_check_types(
+  options: &CheckTypesCommand,
+  snapshot: &snapshot::Snapshot,
+  snapshot_file: &str,
+  input_cache: Option<analysis_cache::InputCacheStats>,
+) -> Result<(), String> {
   let cached = options
     .incremental
     .then(|| analysis_cache::collect_check_types(options, snapshot, snapshot_file))
-    .transpose()?;
+    .transpose()?
+    .map(|(rows, mut stats)| {
+      stats.input = input_cache;
+      (rows, stats)
+    });
   match options.format.as_str() {
     "human" | "text" => {
       if let Some((rows, stats)) = cached.as_ref() {
@@ -89,7 +98,12 @@ fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot, s
   Ok(())
 }
 
-fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot, snapshot_file: &str) -> Result<(), String> {
+fn run_weak_types(
+  options: &WeakTypesCommand,
+  snapshot: &snapshot::Snapshot,
+  snapshot_file: &str,
+  input_cache: Option<analysis_cache::InputCacheStats>,
+) -> Result<(), String> {
   if options.schema_evidence {
     struct StrictTypesGuard(bool);
     impl Drop for StrictTypesGuard {
@@ -117,7 +131,11 @@ fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot, sna
   let cached = options
     .incremental
     .then(|| analysis_cache::collect_weak_types(options, snapshot, snapshot_file))
-    .transpose()?;
+    .transpose()?
+    .map(|(rows, mut stats)| {
+      stats.input = input_cache;
+      (rows, stats)
+    });
   match options.format.as_str() {
     "human" | "text" => {
       if let Some((rows, stats)) = cached.as_ref() {
@@ -513,14 +531,24 @@ fn run_cli() -> Result<(), String> {
         return cli_handlers::handle_call_graph_diff_command(diff_cmd, &cli_args.input);
       }
       AnalyzeSubcommand::CheckTypes(options) => {
-        let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
-        return run_check_types(options, &snapshot, &cli_args.input);
+        let (snapshot, input_cache) = if options.incremental {
+          let (snapshot, stats) = analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input)?;
+          (snapshot, Some(stats))
+        } else {
+          (cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?, None)
+        };
+        return run_check_types(options, &snapshot, &cli_args.input, input_cache);
       }
       AnalyzeSubcommand::CheckPublic(_) => {}
       AnalyzeSubcommand::WeakTypes(options) => {
         if !options.schema_evidence {
-          let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
-          return run_weak_types(options, &snapshot, &cli_args.input);
+          let (snapshot, input_cache) = if options.incremental {
+            let (snapshot, stats) = analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input)?;
+            (snapshot, Some(stats))
+          } else {
+            (cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?, None)
+          };
+          return run_weak_types(options, &snapshot, &cli_args.input, input_cache);
         }
       }
       AnalyzeSubcommand::Deprecated(options) => {
@@ -795,8 +823,15 @@ fn run_cli() -> Result<(), String> {
             .then_some(&strict_preflight as &dyn Fn() -> Result<(), String>),
         )
       }
-      AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot, &cli_args.input),
-      AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(weak_type_options, &snapshot, &cli_args.input),
+      AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot, &cli_args.input, None),
+      AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(
+        weak_type_options,
+        &snapshot,
+        &cli_args.input,
+        weak_type_options
+          .incremental
+          .then(|| analysis_cache::InputCacheStats::bypassed("schema-evidence-requires-preprocessing")),
+      ),
       AnalyzeSubcommand::DynamicMethods(options) => run_dynamic_methods(options, &entries, &snapshot, &project_namespaces),
       AnalyzeSubcommand::Deprecated(deprecated_options) => run_deprecated(deprecated_options, &snapshot),
       AnalyzeSubcommand::Quality(quality_options) => run_quality(quality_options, &snapshot),

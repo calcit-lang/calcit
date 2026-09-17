@@ -602,8 +602,9 @@ resolver call-site 证据，并补充重复 Map shape、`match` tag dispatch 的
 Option/Result、默认值或 FFI trust。`--summary-only` 仅用于看候选数量，真正修改前必须读取完整候选并显式选择 fix。
 
 需要连续定位类型迁移项时，可在 `analyze check-types` 或 `analyze weak-types` 增加 `--incremental`。只信报告中
-`:data :cache` 的 hit/miss 与失效原因；缓存位于项目 `.calcit/`，损坏时会自动冷启动。该缓存当前只复用 definition-local
-inventory，不覆盖 schema evidence、deprecated、quality、dynamic-methods 或严格预处理，因此不能替代最终无缓存门禁。
+`:data :cache` 的 hit/miss 与失效原因；缓存位于项目 `.calcit/`，损坏时会自动冷启动。`cache.input` 单独说明主 Snapshot
+与依赖模块的合并输入是否复用，源文件内容 digest 变化会重新加载全部输入；definition-local inventory 则继续逐项失效。
+该缓存仍不覆盖 schema evidence、deprecated、quality、dynamic-methods 或严格预处理，因此不能替代最终无缓存门禁。
 
 `:: :tag ...` 是匿名 Enum 字面量；当已有 Enum 定义在头部时，直接使用 `Enum :tag ...`，类型分析会检查变体和 payload，并在预处理阶段降为命名构造。只有需要显式携带运行时 enum prototype、跨模块动态构造或兼容旧代码时才使用 `%:: Enum :tag ...`。不要为了绕过类型检查而主动选择 `%::`。
 

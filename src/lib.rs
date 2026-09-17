@@ -25,6 +25,7 @@ pub mod wasm_cli;
 
 use calcit::{CalcitErrKind, LocatedWarning};
 use call_stack::CallStackList;
+use md5::{Digest, Md5};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -62,6 +63,13 @@ pub fn load_core_snapshot() -> Result<snapshot::Snapshot, String> {
   let meta_ns = format!("{}.$meta", snapshot.package);
   snapshot.files.insert(meta_ns.to_owned(), snapshot::gen_meta_ns(&meta_ns, path));
   Ok(snapshot)
+}
+
+pub fn core_snapshot_revision() -> String {
+  let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/calcit-core.rmp"));
+  let mut hasher = Md5::new();
+  hasher.update(bytes);
+  format!("md5:{}", hex::encode(hasher.finalize()))
 }
 
 #[cfg(test)]
@@ -274,8 +282,25 @@ pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Ca
 }
 
 pub fn load_module(path: &str, base_dir: &Path, module_folder: &Path) -> Result<snapshot::Snapshot, String> {
+  load_module_with_sources(path, base_dir, module_folder).map(|loaded| loaded.snapshot)
+}
+
+pub struct LoadedModuleSnapshot {
+  pub snapshot: snapshot::Snapshot,
+  pub source_paths: HashSet<PathBuf>,
+  pub module_resolutions: HashMap<String, PathBuf>,
+}
+
+/// Load a module and report every Snapshot file and request resolution visited through its transitive module graph.
+pub fn load_module_with_sources(path: &str, base_dir: &Path, module_folder: &Path) -> Result<LoadedModuleSnapshot, String> {
   let mut loaded = HashSet::new();
-  load_module_recursive(path, base_dir, module_folder, &mut loaded)
+  let mut resolutions = HashMap::new();
+  let snapshot = load_module_recursive(path, base_dir, module_folder, &mut loaded, &mut resolutions)?;
+  Ok(LoadedModuleSnapshot {
+    snapshot,
+    source_paths: loaded,
+    module_resolutions: resolutions,
+  })
 }
 
 fn load_module_recursive(
@@ -283,6 +308,7 @@ fn load_module_recursive(
   base_dir: &Path,
   module_folder: &Path,
   loaded: &mut HashSet<PathBuf>,
+  resolutions: &mut HashMap<String, PathBuf>,
 ) -> Result<snapshot::Snapshot, String> {
   let candidates = resolve_module_snapshot_candidates(path, base_dir, module_folder);
   let mut last_error: Option<String> = None;
@@ -300,6 +326,7 @@ fn load_module_recursive(
   }
 
   for (_, fullpath, display_path) in candidates {
+    resolutions.insert(path.to_owned(), fullpath.clone());
     if loaded.contains(&fullpath) {
       return Ok(snapshot::Snapshot {
         package: String::new(),
@@ -336,7 +363,7 @@ fn load_module_recursive(
 
         let dependencies = snapshot.active_entry()?.modules.clone();
         for dependency in dependencies {
-          let dependency_snapshot = load_module_recursive(&dependency, base_dir, module_folder, loaded)?;
+          let dependency_snapshot = load_module_recursive(&dependency, base_dir, module_folder, loaded, resolutions)?;
           merge_module_files(&mut snapshot, &dependency_snapshot, &dependency)?;
         }
 
