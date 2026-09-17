@@ -320,6 +320,10 @@ pub struct VerificationConfig {
   #[serde(rename = "schema-version")]
   pub schema_version: u32,
   pub profiles: HashMap<String, VerificationProfile>,
+  #[serde(default, rename = "host-requirements")]
+  pub host_requirements: HashMap<String, String>,
+  #[serde(default, rename = "external-gates")]
+  pub external_gates: Vec<String>,
 }
 
 impl Default for VerificationConfig {
@@ -327,6 +331,8 @@ impl Default for VerificationConfig {
     Self {
       schema_version: VERIFICATION_SCHEMA_VERSION,
       profiles: HashMap::new(),
+      host_requirements: HashMap::new(),
+      external_gates: Vec::new(),
     }
   }
 }
@@ -2351,7 +2357,11 @@ fn parse_verification(data: &Edn, entries: &HashMap<String, SnapshotEntry>) -> R
   let map = data
     .view_map()
     .map_err(|e| format!("verification: expected a map: {e}; got {}", format_edn_preview(data)))?;
-  reject_unknown_verification_fields(&map, "verification", &["schema-version", "profiles"])?;
+  reject_unknown_verification_fields(
+    &map,
+    "verification",
+    &["schema-version", "host-requirements", "external-gates", "profiles"],
+  )?;
   let raw_version = map
     .get(&Edn::tag("schema-version"))
     .ok_or_else(|| "verification: missing `:schema-version` field".to_owned())?;
@@ -2378,6 +2388,62 @@ fn parse_verification(data: &Edn, entries: &HashMap<String, SnapshotEntry>) -> R
       format_edn_preview(raw_profiles)
     )
   })?;
+  let mut host_requirements = HashMap::new();
+  if let Some(raw_requirements) = map.get(&Edn::tag("host-requirements")) {
+    let requirements = raw_requirements.view_map().map_err(|e| {
+      format!(
+        "verification.host-requirements: expected a map: {e}; got {}",
+        format_edn_preview(raw_requirements)
+      )
+    })?;
+    for (raw_tool, raw_requirement) in &requirements.0 {
+      let tool = parse_verification_name(raw_tool, "verification.host-requirements")?;
+      if !matches!(tool.as_str(), "node" | "yarn" | "rustc" | "caps") {
+        return Err(format!(
+          "verification.host-requirements: unsupported tool `{tool}`; expected node, yarn, rustc, or caps"
+        ));
+      }
+      let requirement = match raw_requirement {
+        Edn::Str(value) | Edn::Symbol(value) => value.to_string(),
+        _ => {
+          return Err(format!(
+            "verification.host-requirements.{tool}: expected a version requirement string; got {}",
+            format_edn_preview(raw_requirement)
+          ));
+        }
+      };
+      semver::VersionReq::parse(&requirement).map_err(|error| {
+        format!("verification.host-requirements.{tool}: invalid semantic version requirement `{requirement}`: {error}")
+      })?;
+      if host_requirements.insert(tool.clone(), requirement).is_some() {
+        return Err(format!("verification.host-requirements: duplicate tool `{tool}`"));
+      }
+    }
+  }
+  let mut external_gates = Vec::new();
+  if let Some(raw_gates) = map.get(&Edn::tag("external-gates")) {
+    let gates = raw_gates.view_list().map_err(|e| {
+      format!(
+        "verification.external-gates: expected a list: {e}; got {}",
+        format_edn_preview(raw_gates)
+      )
+    })?;
+    for raw_gate in &gates.0 {
+      let gate = match raw_gate {
+        Edn::Str(value) | Edn::Symbol(value) => value.to_string(),
+        _ => {
+          return Err(format!(
+            "verification.external-gates: expected strings; got {}",
+            format_edn_preview(raw_gate)
+          ));
+        }
+      };
+      if gate.trim().is_empty() {
+        return Err("verification.external-gates: gate description cannot be empty".to_owned());
+      }
+      external_gates.push(gate);
+    }
+  }
   let mut profiles = HashMap::with_capacity(profiles_map.0.len());
   for (raw_name, raw_profile) in &profiles_map.0 {
     let name = parse_verification_name(raw_name, "verification.profiles")?;
@@ -2460,7 +2526,12 @@ fn parse_verification(data: &Edn, entries: &HashMap<String, SnapshotEntry>) -> R
     }
   }
 
-  Ok(VerificationConfig { schema_version, profiles })
+  Ok(VerificationConfig {
+    schema_version,
+    host_requirements,
+    external_gates,
+    profiles,
+  })
 }
 
 fn legacy_snapshot_recovery_hint(path: &str) -> Option<String> {
@@ -3345,7 +3416,10 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
   }
   edn_map.insert_key("entries", entries_map.into());
 
-  if !snapshot.verification.profiles.is_empty() {
+  if !snapshot.verification.profiles.is_empty()
+    || !snapshot.verification.host_requirements.is_empty()
+    || !snapshot.verification.external_gates.is_empty()
+  {
     let mut profiles_map = EdnMapView::default();
     for (name, profile) in &snapshot.verification.profiles {
       let mut profile_map = EdnMapView::default();
@@ -3360,11 +3434,35 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
       profile_map.insert_key("on-failure", Edn::tag(profile.on_failure.as_str()));
       profiles_map.insert_key(name.as_str(), profile_map.into());
     }
-    let verification = Edn::map_from_iter([
-      (Edn::tag("schema-version"), Edn::from(snapshot.verification.schema_version)),
-      (Edn::tag("profiles"), profiles_map.into()),
-    ]);
-    edn_map.insert_key("verification", verification);
+    let mut verification = EdnMapView::default();
+    verification.insert_key("schema-version", Edn::from(snapshot.verification.schema_version));
+    if !snapshot.verification.host_requirements.is_empty() {
+      verification.insert_key(
+        "host-requirements",
+        Edn::map_from_iter(
+          snapshot
+            .verification
+            .host_requirements
+            .iter()
+            .map(|(tool, requirement)| (Edn::tag(tool.as_str()), Edn::str(requirement.as_str()))),
+        ),
+      );
+    }
+    if !snapshot.verification.external_gates.is_empty() {
+      verification.insert_key(
+        "external-gates",
+        Edn::from(
+          snapshot
+            .verification
+            .external_gates
+            .iter()
+            .map(|gate| Edn::str(gate.as_str()))
+            .collect::<Vec<_>>(),
+        ),
+      );
+    }
+    verification.insert_key("profiles", profiles_map.into());
+    edn_map.insert_key("verification", verification.into());
   }
 
   // Build files
@@ -3475,10 +3573,18 @@ mod tests {
         on_failure: VerificationFailurePolicy::Continue,
       },
     );
+    snapshot
+      .verification
+      .host_requirements
+      .insert("node".to_owned(), ">=24.0.0".to_owned());
+    snapshot.verification.external_gates.push("yarn build".to_owned());
 
     let rendered = render_snapshot_content(&snapshot).expect("verification profile should render");
     assert!(rendered.contains(":verification"));
     assert!(rendered.contains(":schema-version 1"));
+    assert!(rendered.contains(":host-requirements"));
+    assert!(rendered.contains(":node |>=24.0.0"));
+    assert!(rendered.contains(":external-gates"));
     let parsed = cirru_edn::parse(&rendered).expect("rendered snapshot should parse");
     let restored = load_snapshot_data(&parsed, "calcit/add.cirru").expect("rendered snapshot should load");
     assert_eq!(restored.verification, snapshot.verification);

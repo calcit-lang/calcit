@@ -116,6 +116,8 @@ fn strict_workflow_composes_a_resumable_project_manifest() {
   assert_eq!(workflow["safe_fixes"]["preset"], "surface-latest-v2");
   assert!(workflow["safe_fixes"]["suggestions"].as_u64().is_some_and(|count| count > 0));
   assert_eq!(workflow["entries"][0]["name"], "default");
+  assert_eq!(workflow["preflight"]["status"], "passed");
+  assert!(workflow["preflight"]["tools"].as_array().is_some_and(|tools| !tools.is_empty()));
   assert_eq!(workflow["verification"]["commands"][0][0], "calcit");
   assert_eq!(workflow["verification"]["external_commands"], serde_json::json!([]));
   assert!(

@@ -114,6 +114,10 @@ pub struct VerificationConfig {
   #[serde(rename = "schema-version")]
   pub schema_version: u32,
   pub profiles: HashMap<String, Edn>,
+  #[serde(default, rename = "host-requirements")]
+  pub host_requirements: HashMap<String, String>,
+  #[serde(default, rename = "external-gates")]
+  pub external_gates: Vec<String>,
 }
 
 impl Default for VerificationConfig {
@@ -121,6 +125,8 @@ impl Default for VerificationConfig {
     Self {
       schema_version: 1,
       profiles: HashMap::new(),
+      host_requirements: HashMap::new(),
+      external_gates: Vec::new(),
     }
   }
 }

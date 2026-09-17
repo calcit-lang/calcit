@@ -217,7 +217,7 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 - 在一个复杂表达式中连续移动和修改：`calcit cursor` 与 `@cursor`。
 - 多个 mutation 必须一起成功：`calcit edit transaction`，先 `--dry-run`；主格式是 Cirru EDN，先运行 `calcit docs read edit-tree.md 'Atomic Transactions'` 查看最小 operation 文件和 revision 提交流程。
 - 编译器已经证明等价的迁移：升级项目优先运行 `calcit fix --preset surface-latest-v2 --format edn`，单项排查才使用 `--rule`；两者互斥。冻结的 `surface-latest-v1` 保持原有四条规则。核对 `:data :filters :expanded-rule-ids`、`:data :suggestions` 中每项的 `:source-file`、definition/path、fingerprint，只选择 `machine-applicable`。提交时必须原样重复 preview 的 `--ns`、`--def` 以及 `--rule` 或 `--preset` selectors，再加 `--apply --expect-revision <revision>`。非空建议要求 `:data :validation :status` 为 `passed`；空建议接受 `not-needed` 并跳过 apply。revision 只保护 Snapshot 新鲜度，不能代替 scope 审阅。`requires-review` 或 `:replacement nil` 需要人类决定，Agent 不得自行猜测。完整字段与 VCS guard 见 `calcit docs read fix.md --full`。
-- 整个项目进入严格语义时，先运行 `calcit calcit.cirru fix --workflow strict --format edn` 保存项目 manifest；只按其中 `:resume :revision` 执行同一 workflow 的 `--apply --expect-revision`，随后运行 `--verify`。读取 entries/type slots、安全建议、review-required 类型位置、FFI 边界与 verification results，不要为 schema、Dynamic 收窄、FFI trust 或业务默认值自行补决策，也不要猜测外部 build 命令。
+- 整个项目进入严格语义时，先运行 `calcit calcit.cirru fix --workflow strict --format edn` 保存项目 manifest；只按其中 `:resume :revision` 执行同一 workflow 的 `--apply --expect-revision`，随后运行 `--verify`。读取 preflight、entries/type slots、安全建议、review-required 类型位置、FFI 边界与 verification results，不要为 schema、Dynamic 收窄、FFI trust 或业务默认值自行补决策，也不要猜测外部 build 命令。preflight 的 `external-gates` 只是调用方待办，`executed: false` 时不得当作已通过。
 - definition 与静态 usage 一起重命名时，使用 `calcit fix --rule rename-definition-v1 --ns <ns> --def <old> --to <new> --format edn`，不要组合 `query search` 与文本替换猜调用点。普通 code、`:tests`、examples、schema 与 imports 会进入同一原子事务；macro、quoted data、dependency source 或缺少 source coordinate 的 blocker 会使事务整体拒绝，此时不得绕过为 declaration-only 改名。
 - 把 `(def name value)` 及其静态读取一起改成零参数函数时，使用 `calcit fix --rule value-to-zero-arg-fn-v1 --ns <ns> --def <name> --format edn`。该操作把初始化时的一次求值改成每次调用求值，会影响副作用、环境读取、对象身份、分配成本和缓存，Agent 必须展示并审阅这项语义变化，不能把它当作等价 lint fix 或加入 preset。普通 code、`:tests`、examples 与目标 schema 会原子更新；macro、quoted data、dependency source、schema type reference、自引用或缺少 source coordinate 时保持 fail closed。
 - 为单个 runtime value/function 补全缺失 schema 时，使用 `calcit fix --rule synthesize-schema-v1 --ns <ns> --def <name> --format edn`。它只复用正常 compiled inference 与普通项目源码中 resolver 确认、类型一致的全部调用点，填补已有 `Dynamic` 洞；`machine-applicable` 候选可按 revision 原子应用，带 `schema.args.<index>`、`schema.return...` 等 unresolved slot 的 `needs-review` 候选即使传 `--apply` 也不写回。tests/examples 的单个样本不能充当公共参数证明，不得为消除洞扩大成整个 `Dynamic`；macro、data/trait/impl contract 继续显式维护。
@@ -228,7 +228,7 @@ CLI 入口按任务收敛：entry 语义验证使用 `--check-only`，只读事�
 
 多个 named entry 需要重复执行严格静态门禁时，可在 Snapshot `:verification` 中声明 versioned profile，并运行
 `calcit calcit.cirru analyze verify --profile release --format edn`。它共享项目/module 加载以及同一 entry 的预处理事实，
-不执行外部 shell、部署、用户测试或会写生成目录的 codegen；完整 schema 与发布边界见
+并先报告 Snapshot、Calcit/`@calcit/procs` 与显式 host requirement 的只读 preflight。不执行外部 shell、部署、用户测试或会写生成目录的 codegen；完整 schema 与发布边界见
 `calcit docs read verification-profiles.md --full`。
 
 `defn`/`fn`/`let` body 本身可以顺序包含多个表达式，返回类型来自最后一项；不要为了类型推断再包一层 `do`。
