@@ -128,17 +128,21 @@ calcit query type-at app.main/calculate-total --path code@3.2 --format json
 重复解析与 Snapshot 转换；
 `.calcit/analysis-cache-v1.cirru` 再保存按 definition revision 索引的只读结果。两份缓存默认都是 Cirru EDN；JSON 只用于显式
 互操作输出。结构化报告的 `data.cache.input` 单独给出输入
-缓存的 `status`、`reason` 与 `sources`，同层 `hits`、`misses` 与 `miss_reasons` 描述 definition 结果；普通文本报告也会输出
-同一摘要。definition 缓存键包含 Calcit 版本、活动 entry、type slots、feature policy、target 与 definition 的完整持久化
+缓存的 `status`、`reason` 与 `sources`，同层 `hits`、`misses` 与 `miss_reasons` 描述 definition 结果；
+`data.cache.dependency_index` 另行报告编译器解析的 direct dependency index 命中、边数、未解析项，以及本次 changed/affected 数量；
+普通文本报告也会输出同一摘要。definition 缓存键包含 Calcit 版本、活动 entry、type slots、feature policy、target 与 definition 的完整持久化
 内容。新增或修改 definition 只重算对应条目；任一输入源变化会重新构建合并 Snapshot，但不强制丢弃未变化 definition 的
 结果。entry policy、编译器版本或缓存 schema 变化会明确冷启动。损坏或无法写入的缓存不会改变分析结果：工具会回退到
 冷分析，写入失败只报告到 stderr。
 
 当前增量边界覆盖静态分析输入加载与无需预处理的 definition-local inventory，但 `preprocessing_cached` 仍为 `false`。
+依赖索引复用 compiler resolver（包括 macro 展开后的引用）并补充闭合 schema 中的限定类型/trait 引用；namespace import 变化会使
+该 namespace 的索引条目失效。它会计算反向传递 affected 集合，但现阶段不据此复用 compiled definition，避免在失效正确性尚未由
+严格检查验证前让缓存成为类型正确性依据。
 `weak-types --schema-evidence` 的编译器/call-site 证据仍按正常路径重新计算，`dynamic-methods`、`deprecated`、`quality` 与严格
 预处理也不宣称命中此缓存；同时请求 `--schema-evidence --incremental` 时，`cache.input.status` 明确为 `bypassed`。模块加载
-失败时输入缓存不会持久化，避免后来出现的模块被旧缓存漏掉。后续阶段会在共享调用图
-能够证明 schema/import/type-slot 失效范围后再扩大复用，不能把本地 cache 当作类型正确性证明。CI 与最终验收继续保留
+失败时输入缓存不会持久化，避免后来出现的模块被旧缓存漏掉。后续阶段会先用该索引验证 schema/import/type-slot 的失效范围，
+再扩大 preprocessing 复用，不能把本地 cache 当作类型正确性证明。CI 与最终验收继续保留
 不带 `--incremental` 的冷检查。
 
 ### Target-aware public definition checks

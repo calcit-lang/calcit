@@ -107,12 +107,25 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(cold_cache["input"]["status"], "cold");
   assert_eq!(cold_cache["input"]["reason"], "cache-missing");
   assert_eq!(cold_cache["input"]["sources"], 2);
+  assert_eq!(cold_cache["dependency_index"]["status"], "cold");
+  assert_eq!(cold_cache["dependency_index"]["hits"], 0);
+  assert_eq!(cold_cache["dependency_index"]["misses"], definition_count);
+  assert_eq!(cold_cache["dependency_index"]["changed"], definition_count);
+  let unresolved_dependencies = cold_cache["dependency_index"]["unresolved"]
+    .as_u64()
+    .expect("unresolved dependency count should be numeric");
 
   let warm = report(&snapshot, "check-types");
   assert_eq!(warm["data"]["cache"]["status"], "warm");
   assert_eq!(warm["data"]["cache"]["hits"], definition_count);
   assert_eq!(warm["data"]["cache"]["misses"], 0);
   assert_eq!(warm["data"]["cache"]["input"]["status"], "warm");
+  assert_eq!(warm["data"]["cache"]["dependency_index"]["status"], "warm");
+  assert_eq!(warm["data"]["cache"]["dependency_index"]["hits"], definition_count);
+  assert_eq!(warm["data"]["cache"]["dependency_index"]["misses"], 0);
+  assert_eq!(warm["data"]["cache"]["dependency_index"]["changed"], 0);
+  assert_eq!(warm["data"]["cache"]["dependency_index"]["affected"], 0);
+  assert_eq!(warm["data"]["cache"]["dependency_index"]["unresolved"], unresolved_dependencies);
   assert_eq!(without_cache(cold.clone()), without_cache(warm.clone()));
 
   #[cfg(unix)]
@@ -148,6 +161,17 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
     ],
   );
   assert_success(&edit, "add cache probe definition");
+  let edit = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "schema",
+      "ffi-evidence.main/cache-probe",
+      "--code",
+      "quote 'ffi-evidence.main/reload!",
+    ],
+  );
+  assert_success(&edit, "add cache probe dependency schema");
 
   let partial = report(&snapshot, "check-types");
   assert_eq!(partial["data"]["cache"]["status"], "partial");
@@ -155,6 +179,11 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(partial["data"]["cache"]["misses"], 1);
   assert_eq!(partial["data"]["cache"]["miss_reasons"]["not-cached"], 1);
   assert_eq!(partial["data"]["cache"]["input"]["reason"], "source-changed");
+  assert_eq!(partial["data"]["cache"]["dependency_index"]["status"], "partial");
+  assert_eq!(partial["data"]["cache"]["dependency_index"]["hits"], definition_count);
+  assert_eq!(partial["data"]["cache"]["dependency_index"]["misses"], 1);
+  assert_eq!(partial["data"]["cache"]["dependency_index"]["changed"], 1);
+  assert_eq!(partial["data"]["cache"]["dependency_index"]["affected"], 1);
 
   let edit = run_calcit(
     &snapshot,
@@ -174,6 +203,42 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(changed["data"]["cache"]["hits"], definition_count);
   assert_eq!(changed["data"]["cache"]["misses"], 1);
   assert_eq!(changed["data"]["cache"]["miss_reasons"]["definition-changed"], 1);
+
+  let edit = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "def",
+      "ffi-evidence.main/reload!",
+      "--code",
+      "quote $ defn reload! () (do nil &unit)",
+      "--overwrite",
+    ],
+  );
+  assert_success(&edit, "change dependency target definition");
+
+  let propagated = report(&snapshot, "check-types");
+  let propagated_dependencies = &propagated["data"]["cache"]["dependency_index"];
+  assert_eq!(propagated_dependencies["changed"], 1);
+  assert!(
+    propagated_dependencies["affected"]
+      .as_u64()
+      .expect("affected dependency count should be numeric")
+      > 1,
+    "changing a referenced definition should affect at least one caller"
+  );
+  assert!(
+    propagated_dependencies["miss_reasons"]["dependency-affected"]
+      .as_u64()
+      .expect("dependency-affected count should be numeric")
+      > 0,
+    "affected callers should be retraced before persisting the graph"
+  );
+
+  let settled = report(&snapshot, "check-types");
+  assert_eq!(settled["data"]["cache"]["dependency_index"]["status"], "warm");
+  assert_eq!(settled["data"]["cache"]["dependency_index"]["changed"], 0);
+  assert_eq!(settled["data"]["cache"]["dependency_index"]["affected"], 0);
 
   let weak_full = full_report(&snapshot, "weak-types");
   let weak_cold = report(&snapshot, "weak-types");
