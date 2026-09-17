@@ -503,6 +503,7 @@ fn incremental_dynamic_methods_reuses_only_an_unchanged_entry_dependency_closure
   assert_eq!(unrelated["data"]["cache"]["status"], "warm");
   assert_eq!(unrelated["data"]["cache"]["preprocessing_cached"], true);
   assert_eq!(unrelated["data"]["cache"]["dependency_index"]["changed"], 1);
+  assert_eq!(without_cache(unrelated), without_cache(dynamic_report(&snapshot, false)));
 
   let change_root = run_calcit(
     &snapshot,
@@ -525,4 +526,39 @@ fn incremental_dynamic_methods_reuses_only_an_unchanged_entry_dependency_closure
   assert_eq!(settled["data"]["cache"]["status"], "warm");
   assert_eq!(settled["data"]["cache"]["preprocessing_cached"], true);
   assert_eq!(without_cache(settled), without_cache(dynamic_report(&snapshot, false)));
+}
+
+#[test]
+fn incremental_dynamic_methods_rejects_a_cached_module_that_can_no_longer_load() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  let fixture = fs::read_to_string("tests/fixtures/ffi-boundary-evidence.cirru").expect("analysis fixture should read");
+  fs::write(&snapshot, &fixture).expect("analysis fixture should write");
+
+  let dependency_directory = directory.0.join("dep");
+  fs::create_dir(&dependency_directory).expect("dependency directory should create");
+  let dependency_snapshot = dependency_directory.join("calcit.cirru");
+  fs::write(&dependency_snapshot, fixture.replace("ffi-evidence", "cached-dependency")).expect("dependency fixture should write");
+  let add_module = run_calcit(&snapshot, &["config", "add-module", "./dep/"]);
+  assert_success(&add_module, "add cached dependency module");
+
+  let cold = dynamic_report(&snapshot, true);
+  assert_eq!(cold["data"]["cache"]["preprocessing_cached"], false);
+  let warm = dynamic_report(&snapshot, true);
+  assert_eq!(warm["data"]["cache"]["preprocessing_cached"], true);
+
+  fs::remove_file(&dependency_snapshot).expect("cached dependency should become unavailable");
+  let incremental = run_calcit(
+    &snapshot,
+    &["--compat-types", "analyze", "dynamic-methods", "--incremental", "--format", "json"],
+  );
+  assert!(!incremental.status.success(), "incomplete incremental snapshot should fail");
+  assert!(
+    String::from_utf8_lossy(&incremental.stderr).contains("requires a complete Snapshot"),
+    "incremental failure should explain the completeness requirement: {}",
+    String::from_utf8_lossy(&incremental.stderr)
+  );
+
+  let uncached = run_calcit(&snapshot, &["--compat-types", "analyze", "dynamic-methods", "--format", "json"]);
+  assert!(!uncached.status.success(), "incomplete uncached snapshot should fail");
 }

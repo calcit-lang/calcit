@@ -94,6 +94,17 @@ impl InputCacheStats {
       module_miss_reasons: BTreeMap::new(),
     }
   }
+
+  pub(crate) fn ensure_complete(&self) -> Result<(), String> {
+    let failures = self.module_miss_reasons.get("module-load-failed").copied().unwrap_or_default();
+    if failures == 0 {
+      Ok(())
+    } else {
+      Err(format!(
+        "Incremental analysis requires a complete Snapshot, but {failures} active-entry module(s) failed to load."
+      ))
+    }
+  }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]

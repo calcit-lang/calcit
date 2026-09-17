@@ -608,6 +608,7 @@ fn run_cli() -> Result<(), String> {
       AnalyzeSubcommand::DynamicMethods(options) if options.incremental => {
         let (mut snapshot, input_cache, project_namespaces) =
           analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
+        input_cache.ensure_complete()?;
         apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
         let entries = analysis_program_entries(&snapshot, cli_args.init_fn.as_deref(), cli_args.reload_fn.as_deref())?;
         return run_dynamic_methods(

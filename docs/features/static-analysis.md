@@ -136,7 +136,8 @@ module 保存为独立单元，以完整传递源文件的内容 digest、module
 结果。顶层 `--entry` 会在校验与加载 module 前完成选择，严格模式补入的默认 feature policy 也参与 context revision；切换 entry
 不会错误复用另一 entry 的 module 或 definition 结果。entry policy、编译器版本或 definition cache schema 变化会让 definition-local inventory 明确冷启动。input cache 头损坏或
 版本不一致时会从源码重载主 Snapshot 和 modules；单个输入单元失效时只重载该单元，有效 definition 结果仍可命中。任何缓存写入
-失败都不会改变本次分析结果，只会报告到 stderr 并跳过对应缓存更新。
+失败都不会改变本次 `check-types`/`weak-types` 分析结果，只会报告到 stderr 并跳过对应缓存更新；需要完整 entry
+preprocessing 的 `dynamic-methods --incremental` 会拒绝模块加载失败的不完整 Snapshot，不会返回旧的 warm 诊断。
 
 `dynamic-methods` 也可显式增加 `--incremental`。它会为活动 entry 的 init/reload roots 计算 compiler-resolved dependency closure；
 只有闭包内 definition、namespace/schema 依赖、entry policy 与编译器版本均未变化时，才复用上次动态方法诊断并报告
