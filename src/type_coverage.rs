@@ -1728,7 +1728,8 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
     );
     for boundary in &ffi_boundaries {
       let _ = writeln!(out, "\n### `{}`", boundary.definition);
-      let _ = writeln!(out, "\n- classification: `{}`", boundary.classification);
+      let _ = writeln!(out, "\n- diagnostic code: `{}`", boundary.diagnostic_code);
+      let _ = writeln!(out, "- classification: `{}`", boundary.classification);
       let _ = writeln!(out, "- target: `{}`", boundary.target);
       let _ = writeln!(out, "- js-ffi feature: `{}`", boundary.js_ffi_feature);
       let _ = writeln!(out, "- callers: `{}`", boundary.callers.join(", "));
@@ -1771,6 +1772,7 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
       }
     }
   }
+  let _ = writeln!(out, "\n## Weak type details\n");
   let _ = writeln!(out, "- detail:");
   for kind in [
     "schema-dynamic",
@@ -1788,6 +1790,9 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
   }
   let _ = writeln!(out,);
 
+  if !rows.is_empty() {
+    let _ = writeln!(out, "## Weak type occurrences\n");
+  }
   let mut current_ns: Option<&str> = None;
   for row in &rows {
     if current_ns != Some(row.ns.as_str()) {
