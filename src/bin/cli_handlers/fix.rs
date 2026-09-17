@@ -255,6 +255,7 @@ fn strict_workflow_type_findings(snapshot: &Snapshot) -> Result<StrictWorkflowTy
     format: "json".to_owned(),
     ffi_evidence: true,
     schema_evidence: true,
+    incremental: false,
   };
   let mut review_required = Vec::new();
   let mut retained_boundaries = Vec::new();

@@ -16,7 +16,8 @@ use md5::{Digest, Md5};
 
 use crate::cli_handlers::fix::schema_synthesis::{SchemaEvidenceCandidate, collect_schema_evidence_candidates};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum DefKind {
   Data,
   Fn,
@@ -39,7 +40,8 @@ impl DefKind {
   }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum CoverageLevel {
   None,
   Partial,
@@ -56,7 +58,7 @@ impl CoverageLevel {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypeCoverageRow {
   pub ns: String,
   pub def: String,
@@ -128,7 +130,8 @@ fn entry_polymorphism(entry: &snapshot::CodeEntry) -> (Vec<String>, Vec<String>)
   (generics, where_bounds)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum WeakTypeKind {
   SchemaDynamic,
   UnresolvedTypeSlot,
@@ -159,7 +162,8 @@ impl WeakTypeKind {
   }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum WeakTypeIntent {
   Unresolved,
   IntentionalJsFfi,
@@ -196,7 +200,7 @@ impl WeakTypeIntent {
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct WeakTypeOccurrence {
   pub kind: WeakTypeKind,
   pub intent: WeakTypeIntent,
@@ -208,15 +212,15 @@ pub struct WeakTypeOccurrence {
 /// Static evidence attached only to an explicit `unsafe-coerce` boundary.
 /// It intentionally describes source *form*, not an inferred host value type:
 /// `analyze weak-types` reads a Snapshot and never executes the program.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct UnsafeCoerceEvidence {
-  pub source_form: &'static str,
+  pub source_form: String,
   pub target_schema: String,
   pub js_ffi_feature: bool,
   pub raw_adapter_namespace: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct WeakTypeRow {
   pub ns: String,
   pub def: String,
@@ -1191,7 +1195,7 @@ fn scan_cirru_weak_types(
           detail: format!("unsafe-coerce:target={target}"),
           path: format_cirru_path(root, path),
           unsafe_evidence: Some(UnsafeCoerceEvidence {
-            source_form: classify_unsafe_coerce_source(items),
+            source_form: classify_unsafe_coerce_source(items).to_owned(),
             target_schema: target,
             js_ffi_feature: false,
             raw_adapter_namespace: false,
@@ -1358,7 +1362,43 @@ where
   Ok(())
 }
 
-pub fn collect_weak_type_rows(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<Vec<WeakTypeRow>, String> {
+pub(crate) fn scoped_definition_entries<'a>(
+  snapshot: &'a snapshot::Snapshot,
+  namespace: Option<&str>,
+  namespace_prefix: Option<&str>,
+  include_dependencies: bool,
+) -> Result<Vec<(&'a str, &'a str, &'a snapshot::CodeEntry)>, String> {
+  if let Some(namespace) = namespace
+    && !snapshot.files.contains_key(namespace)
+  {
+    return Err(format!("Namespace not found: {namespace}"));
+  }
+  let mut entries = Vec::new();
+  let package = snapshot.package.as_str();
+  let package_prefix = format!("{package}.");
+  let explicit_scope = namespace.is_some() || namespace_prefix.is_some();
+  for (current_namespace, file) in &snapshot.files {
+    if !explicit_scope && current_namespace.ends_with(".$meta") {
+      continue;
+    }
+    if namespace.is_some_and(|exact| current_namespace != exact) {
+      continue;
+    }
+    if namespace_prefix.is_some_and(|prefix| !current_namespace.starts_with(prefix)) {
+      continue;
+    }
+    if !(include_dependencies || explicit_scope || current_namespace == package || current_namespace.starts_with(&package_prefix)) {
+      continue;
+    }
+    for (definition, entry) in &file.defs {
+      entries.push((current_namespace.as_str(), definition.as_str(), entry));
+    }
+  }
+  entries.sort_by(|left, right| left.0.cmp(right.0).then(left.1.cmp(right.1)));
+  Ok(entries)
+}
+
+pub(crate) fn filter_weak_type_rows(options: &WeakTypesCommand, rows: &mut Vec<WeakTypeRow>) -> Result<(), String> {
   let selected = options
     .only
     .as_deref()
@@ -1371,7 +1411,17 @@ pub fn collect_weak_type_rows(options: &WeakTypesCommand, snapshot: &snapshot::S
     .map(parse_weak_type_intents)
     .transpose()?
     .unwrap_or_else(WeakTypeIntent::all);
+  for row in rows.iter_mut() {
+    row
+      .occurrences
+      .retain(|occurrence| selected.contains(&occurrence.kind) && selected_intents.contains(&occurrence.intent));
+  }
+  rows.retain(|row| !row.occurrences.is_empty());
+  rows.sort_by(|a, b| a.ns.cmp(&b.ns).then(a.def.cmp(&b.def)));
+  Ok(())
+}
 
+pub fn collect_weak_type_rows(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<Vec<WeakTypeRow>, String> {
   let mut rows: Vec<WeakTypeRow> = vec![];
 
   visit_scoped_definitions(
@@ -1382,16 +1432,12 @@ pub fn collect_weak_type_rows(options: &WeakTypesCommand, snapshot: &snapshot::S
       include_dependencies: options.deps,
     },
     |namespace, definition, entry| {
-      if let Some(mut row) = analyze_weak_types_entry(namespace, definition, entry, &selected) {
-        row.occurrences.retain(|occurrence| selected_intents.contains(&occurrence.intent));
-        if !row.occurrences.is_empty() {
-          rows.push(row);
-        }
+      if let Some(row) = analyze_weak_types_entry(namespace, definition, entry, &WeakTypeKind::all()) {
+        rows.push(row);
       }
     },
   )?;
-
-  rows.sort_by(|a, b| a.ns.cmp(&b.ns).then(a.def.cmp(&b.def)));
+  filter_weak_type_rows(options, &mut rows)?;
   Ok(rows)
 }
 
@@ -1813,6 +1859,15 @@ pub fn collect_ffi_boundary_evidence(
 
 pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot, out: &mut String) -> Result<(), String> {
   let rows = collect_weak_type_rows(options, snapshot)?;
+  run_weak_types_report_with_rows(options, snapshot, &rows, out)
+}
+
+pub(crate) fn run_weak_types_report_with_rows(
+  options: &WeakTypesCommand,
+  snapshot: &snapshot::Snapshot,
+  rows: &[WeakTypeRow],
+  out: &mut String,
+) -> Result<(), String> {
   let ffi_boundaries = if options.ffi_evidence {
     collect_ffi_boundary_evidence(options, snapshot)?
   } else {
@@ -1837,7 +1892,7 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
   let mut ns_set: BTreeSet<&str> = BTreeSet::new();
   let mut def_count = 0usize;
 
-  for row in &rows {
+  for row in rows {
     def_count += 1;
     ns_set.insert(row.ns.as_str());
     for occurrence in &row.occurrences {
@@ -2093,7 +2148,7 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
     let _ = writeln!(out, "## Weak type occurrences\n");
   }
   let mut current_ns: Option<&str> = None;
-  for row in &rows {
+  for row in rows {
     if current_ns != Some(row.ns.as_str()) {
       let _ = writeln!(out, "namespace: {}", row.ns);
       current_ns = Some(row.ns.as_str());
@@ -2136,11 +2191,15 @@ pub fn collect_type_coverage_rows(options: &CheckTypesCommand, snapshot: &snapsh
     |namespace, definition, entry| rows.push(analyze_code_entry(namespace, definition, entry)),
   )?;
 
+  filter_type_coverage_rows(options, &mut rows)?;
+  Ok(rows)
+}
+
+pub(crate) fn filter_type_coverage_rows(options: &CheckTypesCommand, rows: &mut Vec<TypeCoverageRow>) -> Result<(), String> {
   if let Some(raw) = &options.only {
     let selected = parse_coverage_levels(raw)?;
     rows.retain(|row| selected.contains(&row.level));
   }
-
   rows.sort_by(|a, b| {
     a.ns
       .cmp(&b.ns)
@@ -2148,12 +2207,19 @@ pub fn collect_type_coverage_rows(options: &CheckTypesCommand, snapshot: &snapsh
       .then(a.kind.as_str().cmp(b.kind.as_str()))
       .then(a.def.cmp(&b.def))
   });
-  Ok(rows)
+  Ok(())
 }
 
 pub fn run_check_types_report(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot, out: &mut String) -> Result<(), String> {
   let rows = collect_type_coverage_rows(options, snapshot)?;
+  run_check_types_report_with_rows(options, &rows, out)
+}
 
+pub(crate) fn run_check_types_report_with_rows(
+  options: &CheckTypesCommand,
+  rows: &[TypeCoverageRow],
+  out: &mut String,
+) -> Result<(), String> {
   if rows.is_empty() {
     let _ = writeln!(out, "No definitions found in selected namespace scope.");
     return Ok(());
@@ -2165,7 +2231,7 @@ pub fn run_check_types_report(options: &CheckTypesCommand, snapshot: &snapshot::
   let mut polymorphic_defs = 0usize;
   let mut bounded_polymorphic_defs = 0usize;
 
-  for row in &rows {
+  for row in rows {
     *level_count.entry(row.level.as_str()).or_insert(0) += 1;
     *kind_count.entry(row.kind.as_str()).or_insert(0) += 1;
     ns_set.insert(row.ns.clone());
@@ -2222,7 +2288,7 @@ pub fn run_check_types_report(options: &CheckTypesCommand, snapshot: &snapshot::
 
   let mut current_ns: Option<&str> = None;
 
-  for row in &rows {
+  for row in rows {
     let typed_params = count_typed_params(&row.params, &row.param_annotations);
     let total_params = row.params.len();
 
@@ -3221,12 +3287,20 @@ pub(crate) fn analysis_revision(snapshot: &snapshot::Snapshot, definitions: &[(S
 
 pub fn format_check_types_json(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -> Result<String, String> {
   let rows = collect_type_coverage_rows(options, snapshot)?;
+  format_check_types_json_with_rows(options, snapshot, &rows)
+}
+
+pub(crate) fn format_check_types_json_with_rows(
+  options: &CheckTypesCommand,
+  snapshot: &snapshot::Snapshot,
+  rows: &[TypeCoverageRow],
+) -> Result<String, String> {
   let mut levels = BTreeMap::<&str, usize>::new();
   let mut kinds = BTreeMap::<&str, usize>::new();
   let mut namespaces = BTreeSet::<&str>::new();
   let mut polymorphic_defs = 0usize;
   let mut bounded_polymorphic_defs = 0usize;
-  for row in &rows {
+  for row in rows {
     *levels.entry(row.level.as_str()).or_insert(0) += 1;
     *kinds.entry(row.kind.as_str()).or_insert(0) += 1;
     namespaces.insert(row.ns.as_str());
@@ -3296,6 +3370,7 @@ pub fn format_check_types_json(options: &CheckTypesCommand, snapshot: &snapshot:
         "only": options.only,
         "include_dependencies": options.deps,
         "summary_only": options.summary_only,
+        "incremental": options.incremental,
       },
       "summary": {
         "namespaces": namespaces.len(),
@@ -3316,6 +3391,14 @@ pub fn format_check_types_json(options: &CheckTypesCommand, snapshot: &snapshot:
 
 pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<String, String> {
   let rows = collect_weak_type_rows(options, snapshot)?;
+  format_weak_types_json_with_rows(options, snapshot, &rows)
+}
+
+pub(crate) fn format_weak_types_json_with_rows(
+  options: &WeakTypesCommand,
+  snapshot: &snapshot::Snapshot,
+  rows: &[WeakTypeRow],
+) -> Result<String, String> {
   let ffi_boundaries = if options.ffi_evidence {
     collect_ffi_boundary_evidence(options, snapshot)?
   } else {
@@ -3326,7 +3409,7 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
   let mut kinds = BTreeMap::<&str, usize>::new();
   let mut intents = BTreeMap::<&str, usize>::new();
   let mut namespaces = BTreeSet::<&str>::new();
-  for row in &rows {
+  for row in rows {
     namespaces.insert(row.ns.as_str());
     for occurrence in &row.occurrences {
       *kinds.entry(occurrence.kind.as_str()).or_insert(0) += 1;
@@ -3481,6 +3564,7 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
         "ffi_evidence": options.ffi_evidence,
         "schema_evidence": options.schema_evidence,
         "summary_only": options.summary_only,
+        "incremental": options.incremental,
       },
       "summary": {
         "namespaces": namespaces.len(),
@@ -3514,9 +3598,25 @@ pub fn format_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snap
   Ok(out)
 }
 
+pub(crate) fn format_check_types_with_rows(options: &CheckTypesCommand, rows: &[TypeCoverageRow]) -> Result<String, String> {
+  let mut out = String::new();
+  run_check_types_report_with_rows(options, rows, &mut out)?;
+  Ok(out)
+}
+
 pub fn format_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<String, String> {
   let mut out = String::new();
   run_weak_types_report(options, snapshot, &mut out)?;
+  Ok(out)
+}
+
+pub(crate) fn format_weak_types_with_rows(
+  options: &WeakTypesCommand,
+  snapshot: &snapshot::Snapshot,
+  rows: &[WeakTypeRow],
+) -> Result<String, String> {
+  let mut out = String::new();
+  run_weak_types_report_with_rows(options, snapshot, rows, &mut out)?;
   Ok(out)
 }
 

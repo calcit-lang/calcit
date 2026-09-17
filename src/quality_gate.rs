@@ -139,6 +139,7 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
     format: "json".to_owned(),
     deps: options.deps,
     summary_only: false,
+    incremental: false,
   };
   let weak_options = WeakTypesCommand {
     ns: options.ns.clone(),
@@ -150,6 +151,7 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
     ffi_evidence: false,
     schema_evidence: false,
     summary_only: false,
+    incremental: false,
   };
   let deprecated_options = DeprecatedCommand {
     ns: options.ns.clone(),

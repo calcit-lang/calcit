@@ -66,6 +66,11 @@ adapter 候选。它只整理 Snapshot、schema 和 namespace import 中可证�
 resolver call-site 证据，并列出重复匿名 Map shape 与 `match` tag dispatch。输出带置信度、冲突、unknown slot 和
 源码路径，全部是 `review-required`；不会自动创建 Struct/Enum，也不会决定业务默认值或错误语义。
 
+在频繁 edit/analyze 循环中，可为 `analyze check-types` 或 `analyze weak-types` 增加 `--incremental`。该参数不新增命令，
+只在项目 `.calcit/analysis-cache-v1.json` 中保存按 definition revision 分离的本地结果；报告会返回 cache hit/miss 与明确
+失效原因。缓存损坏、版本不一致或写入失败都安全回退到冷分析。它目前不缓存 schema evidence、deprecated、quality、
+dynamic-methods 或严格预处理；最终 CI 仍应运行无缓存检查。
+
 For feature-level planning, use `calcit edit scaffold`. Its primary input is a
 Cirru EDN architecture plan, preferably stored under
 `docs/architectures/<feature>.cirru`:
