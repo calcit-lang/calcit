@@ -1,7 +1,7 @@
 //! Revision-keyed local cache for definition-local static analysis.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -18,30 +18,61 @@ use crate::type_coverage::{self, TypeCoverageRow, WeakTypeKind, WeakTypeRow};
 
 const CACHE_SCHEMA_VERSION: u32 = 1;
 const CACHE_FILE: &str = "analysis-cache-v1.cirru";
-const INPUT_CACHE_SCHEMA_VERSION: u32 = 1;
-const INPUT_CACHE_FILE: &str = "analysis-input-cache-v1.cirru";
+const INPUT_CACHE_SCHEMA_VERSION: u32 = 2;
+const INPUT_CACHE_FILE: &str = "analysis-input-cache-v2.cirru";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct InputCacheStats {
   pub status: String,
   pub reason: Option<String>,
   pub sources: usize,
+  pub main_reused: bool,
+  pub module_hits: usize,
+  pub module_misses: usize,
+  pub module_miss_reasons: BTreeMap<String, usize>,
 }
 
 impl InputCacheStats {
-  fn warm(sources: usize) -> Self {
+  fn warm(sources: usize, module_hits: usize) -> Self {
     Self {
       status: "warm".to_owned(),
       reason: None,
       sources,
+      main_reused: true,
+      module_hits,
+      module_misses: 0,
+      module_miss_reasons: BTreeMap::new(),
     }
   }
 
-  fn cold(reason: impl Into<String>, sources: usize) -> Self {
+  fn cold(reason: impl Into<String>, sources: usize, module_misses: usize, module_miss_reasons: BTreeMap<String, usize>) -> Self {
     Self {
       status: "cold".to_owned(),
       reason: Some(reason.into()),
       sources,
+      main_reused: false,
+      module_hits: 0,
+      module_misses,
+      module_miss_reasons,
+    }
+  }
+
+  fn partial(
+    reason: impl Into<String>,
+    sources: usize,
+    main_reused: bool,
+    module_hits: usize,
+    module_misses: usize,
+    module_miss_reasons: BTreeMap<String, usize>,
+  ) -> Self {
+    Self {
+      status: "partial".to_owned(),
+      reason: Some(reason.into()),
+      sources,
+      main_reused,
+      module_hits,
+      module_misses,
+      module_miss_reasons,
     }
   }
 
@@ -50,6 +81,10 @@ impl InputCacheStats {
       status: "bypassed".to_owned(),
       reason: Some(reason.into()),
       sources: 0,
+      main_reused: false,
+      module_hits: 0,
+      module_misses: 0,
+      module_miss_reasons: BTreeMap::new(),
     }
   }
 }
@@ -123,9 +158,12 @@ impl CacheStats {
       self
         .input
         .as_ref()
-        .map(|input| match input.reason.as_deref() {
-          Some(reason) => format!("{}({reason})", input.status),
-          None => input.status.clone(),
+        .map(|input| {
+          let reason = input.reason.as_deref().unwrap_or("none");
+          format!(
+            "{}(reason={reason},main-reused={},module-hits={},module-misses={})",
+            input.status, input.main_reused, input.module_hits, input.module_misses
+          )
         })
         .unwrap_or_else(|| "not-recorded".to_owned()),
       self
@@ -146,10 +184,15 @@ struct CachedAnalysisInput {
   calcit_version: String,
   core_revision: String,
   input_path: String,
+  main: CachedSnapshotUnit,
+  modules: BTreeMap<String, CachedSnapshotUnit>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CachedSnapshotUnit {
+  snapshot: snapshot::Snapshot,
   sources: BTreeMap<String, String>,
   module_resolutions: BTreeMap<String, String>,
-  project_namespaces: BTreeSet<String>,
-  snapshot: snapshot::Snapshot,
   ffi: BTreeMap<String, String>,
 }
 
@@ -224,7 +267,7 @@ fn canonical_path(path: &Path) -> Result<String, String> {
     .map_err(|error| format!("Failed to resolve analysis input '{}': {error}", path.display()))
 }
 
-fn validate_input_cache(cache: &CachedAnalysisInput, expected_input: &str) -> Result<(), String> {
+fn validate_input_cache_header(cache: &CachedAnalysisInput, expected_input: &str) -> Result<(), String> {
   if cache.schema_version != INPUT_CACHE_SCHEMA_VERSION {
     return Err("cache-schema-changed".to_owned());
   }
@@ -237,22 +280,62 @@ fn validate_input_cache(cache: &CachedAnalysisInput, expected_input: &str) -> Re
   if cache.input_path != expected_input {
     return Err("input-path-changed".to_owned());
   }
-  for (path, expected_revision) in &cache.sources {
+  Ok(())
+}
+
+fn validate_cached_snapshot_unit(unit: &CachedSnapshotUnit, base_dir: &Path, module_folder: &Path) -> Result<(), String> {
+  for (path, expected_revision) in &unit.sources {
     let revision = source_revision(Path::new(path)).map_err(|_| "source-missing".to_owned())?;
     if &revision != expected_revision {
       return Err("source-changed".to_owned());
     }
   }
-  let base_dir = Path::new(expected_input).parent().unwrap_or(Path::new("."));
-  let module_folder = calcit::project_module_folder(base_dir);
-  for (request, expected_path) in &cache.module_resolutions {
-    let (_, resolved_path, _) = calcit::resolve_module_snapshot_path(request, base_dir, &module_folder);
+  for (request, expected_path) in &unit.module_resolutions {
+    let (_, resolved_path, _) = calcit::resolve_module_snapshot_path(request, base_dir, module_folder);
     let resolved_path = canonical_path(&resolved_path).map_err(|_| "module-resolution-changed".to_owned())?;
     if &resolved_path != expected_path {
       return Err("module-resolution-changed".to_owned());
     }
   }
   Ok(())
+}
+
+fn build_cached_snapshot_unit(
+  snapshot: snapshot::Snapshot,
+  source_paths: impl IntoIterator<Item = PathBuf>,
+  module_resolutions: impl IntoIterator<Item = (String, PathBuf)>,
+) -> Result<CachedSnapshotUnit, String> {
+  let mut sources = BTreeMap::new();
+  for source in source_paths {
+    let path = canonical_path(&source)?;
+    sources.insert(path.clone(), source_revision(Path::new(&path))?);
+  }
+  let mut resolutions = BTreeMap::new();
+  for (request, path) in module_resolutions {
+    resolutions.insert(request, canonical_path(&path)?);
+  }
+  let ffi = encode_cached_ffi(&snapshot)?;
+  Ok(CachedSnapshotUnit {
+    snapshot,
+    sources,
+    module_resolutions: resolutions,
+    ffi,
+  })
+}
+
+fn restore_cached_snapshot_unit(unit: &CachedSnapshotUnit) -> Result<snapshot::Snapshot, String> {
+  let mut snapshot = unit.snapshot.clone();
+  restore_cached_ffi(&mut snapshot, &unit.ffi)?;
+  Ok(snapshot)
+}
+
+fn uncached_snapshot_unit(snapshot: snapshot::Snapshot) -> CachedSnapshotUnit {
+  CachedSnapshotUnit {
+    snapshot,
+    sources: BTreeMap::new(),
+    module_resolutions: BTreeMap::new(),
+    ffi: BTreeMap::new(),
+  }
 }
 
 fn encode_cache<T: Serialize>(value: &T, label: &str) -> Result<String, String> {
@@ -312,87 +395,133 @@ fn restore_cached_ffi(snapshot: &mut snapshot::Snapshot, cached: &BTreeMap<Strin
 pub(crate) fn load_snapshot_for_incremental_analysis(snapshot_file: &str) -> Result<(snapshot::Snapshot, InputCacheStats), String> {
   let expected_input = canonical_path(Path::new(snapshot_file))?;
   let path = input_cache_path(snapshot_file);
-  let mut reason = match fs::read_to_string(&path) {
+  let (cached, global_reason) = match fs::read_to_string(&path) {
     Ok(content) => match decode_cache::<CachedAnalysisInput>(&content) {
-      Ok(cache) => match validate_input_cache(&cache, &expected_input) {
-        Ok(()) => {
-          let mut snapshot = cache.snapshot;
-          match restore_cached_ffi(&mut snapshot, &cache.ffi) {
-            Ok(()) => {
-              let project_namespaces = cache.project_namespaces.iter().cloned().collect::<std::collections::HashSet<_>>();
-              runner::preprocess::set_project_namespaces(&project_namespaces);
-              let stats = InputCacheStats::warm(cache.sources.len());
-              return Ok((snapshot, stats));
-            }
-            Err(reason) => reason,
-          }
-        }
-        Err(reason) => reason,
+      Ok(cache) => match validate_input_cache_header(&cache, &expected_input) {
+        Ok(()) => (Some(cache), None),
+        Err(reason) => (None, Some(reason)),
       },
-      Err(_) => "cache-corrupt".to_owned(),
+      Err(_) => (None, Some("cache-corrupt".to_owned())),
     },
-    Err(error) if error.kind() == std::io::ErrorKind::NotFound => "cache-missing".to_owned(),
-    Err(_) => "cache-unreadable".to_owned(),
+    Err(error) if error.kind() == std::io::ErrorKind::NotFound => (None, Some("cache-missing".to_owned())),
+    Err(_) => (None, Some("cache-unreadable".to_owned())),
   };
 
-  let loaded = cli_handlers::load_snapshot_for_static_analysis_with_sources(snapshot_file)?;
-  let mut sources = BTreeMap::new();
-  let mut module_resolutions = BTreeMap::new();
-  let mut source_error = None;
-  for source in &loaded.source_paths {
-    match canonical_path(source).and_then(|path| source_revision(Path::new(&path)).map(|revision| (path, revision))) {
-      Ok((path, revision)) => {
-        sources.insert(path, revision);
-      }
-      Err(error) => {
-        source_error = Some(error);
-        break;
-      }
-    }
-  }
-  if source_error.is_none() {
-    for (request, resolved_path) in &loaded.module_resolutions {
-      match canonical_path(resolved_path) {
-        Ok(path) => {
-          module_resolutions.insert(request.clone(), path);
-        }
+  let base_dir = Path::new(&expected_input).parent().unwrap_or(Path::new("."));
+  let module_folder = calcit::project_module_folder(base_dir);
+  let mut first_reason = global_reason.clone();
+  let mut cacheable = true;
+
+  let cached_main = cached.as_ref().map(|cache| &cache.main);
+  let (mut snapshot, main_unit, main_reused) = match cached_main
+    .ok_or_else(|| global_reason.clone().unwrap_or_else(|| "not-cached".to_owned()))
+    .and_then(|unit| {
+      validate_cached_snapshot_unit(unit, base_dir, &module_folder)?;
+      restore_cached_snapshot_unit(unit).map(|snapshot| (snapshot, unit.clone()))
+    }) {
+    Ok((snapshot, unit)) => (snapshot, unit, true),
+    Err(reason) => {
+      first_reason.get_or_insert_with(|| reason.clone());
+      let snapshot = cli_handlers::load_main_snapshot(snapshot_file)?;
+      let unit = match build_cached_snapshot_unit(snapshot.clone(), [PathBuf::from(snapshot_file)], []) {
+        Ok(unit) => unit,
         Err(error) => {
-          source_error = Some(error);
-          break;
+          cacheable = false;
+          first_reason = Some("source-unreadable".to_owned());
+          eprintln!("Warning: Failed to cache main analysis input: {error}");
+          uncached_snapshot_unit(snapshot.clone())
+        }
+      };
+      (snapshot, unit, false)
+    }
+  };
+
+  let project_namespaces = snapshot.files.keys().cloned().collect::<HashSet<_>>();
+  let mut modules_to_load = snapshot.active_entry()?.modules.clone();
+  let mut seen_modules = HashSet::new();
+  modules_to_load.retain(|module_path| seen_modules.insert(module_path.to_owned()));
+
+  let mut module_units = BTreeMap::new();
+  let mut module_hits = 0;
+  let mut module_misses = 0;
+  let mut module_miss_reasons = BTreeMap::new();
+  for module_path in &modules_to_load {
+    let cached_unit = cached.as_ref().and_then(|cache| cache.modules.get(module_path));
+    let reused = cached_unit
+      .ok_or_else(|| global_reason.clone().unwrap_or_else(|| "not-cached".to_owned()))
+      .and_then(|unit| {
+        validate_cached_snapshot_unit(unit, base_dir, &module_folder)?;
+        restore_cached_snapshot_unit(unit).map(|snapshot| (snapshot, unit.clone()))
+      });
+    let (module_snapshot, unit) = match reused {
+      Ok((module_snapshot, unit)) => {
+        module_hits += 1;
+        (module_snapshot, unit)
+      }
+      Err(reason) => {
+        module_misses += 1;
+        first_reason.get_or_insert_with(|| reason.clone());
+        match cli_handlers::load_module_with_sources_silent(module_path, base_dir, &module_folder) {
+          Ok(loaded) => {
+            *module_miss_reasons.entry(reason).or_insert(0) += 1;
+            let unit = match build_cached_snapshot_unit(loaded.snapshot.clone(), loaded.source_paths, loaded.module_resolutions) {
+              Ok(unit) => unit,
+              Err(error) => {
+                cacheable = false;
+                eprintln!("Warning: Failed to cache module '{module_path}': {error}");
+                uncached_snapshot_unit(loaded.snapshot.clone())
+              }
+            };
+            (loaded.snapshot, unit)
+          }
+          Err(error) => {
+            cacheable = false;
+            first_reason = Some("module-load-failed".to_owned());
+            *module_miss_reasons.entry("module-load-failed".to_owned()).or_insert(0) += 1;
+            eprintln!("Warning: Failed to load module '{module_path}': {error}");
+            continue;
+          }
         }
       }
+    };
+    calcit::merge_project_module_files(&mut snapshot, &module_snapshot, module_path)?;
+    module_units.insert(module_path.clone(), unit);
+  }
+
+  let core_snapshot = calcit::load_core_snapshot()?;
+  for (namespace, file_data) in core_snapshot.files {
+    snapshot.files.entry(namespace).or_insert(file_data);
+  }
+  runner::preprocess::set_project_namespaces(&project_namespaces);
+
+  let source_count = std::iter::once(&main_unit)
+    .chain(module_units.values())
+    .flat_map(|unit| unit.sources.keys())
+    .collect::<BTreeSet<_>>()
+    .len();
+  if cacheable {
+    let cache = CachedAnalysisInput {
+      schema_version: INPUT_CACHE_SCHEMA_VERSION,
+      calcit_version: cli_args::CALCIT_VERSION.to_owned(),
+      core_revision: calcit::core_snapshot_revision(),
+      input_path: expected_input,
+      main: main_unit,
+      modules: module_units,
+    };
+    if let Err(error) = write_input_cache(snapshot_file, &cache) {
+      eprintln!("Warning: {error}; incremental analysis continued without persisting the input cache.");
     }
   }
 
-  if !loaded.cacheable {
-    reason = "module-load-failed".to_owned();
-  } else if source_error.is_some() {
-    reason = "source-unreadable".to_owned();
+  let reason = first_reason.unwrap_or_else(|| "not-cached".to_owned());
+  let stats = if main_reused && module_misses == 0 {
+    InputCacheStats::warm(source_count, module_hits)
+  } else if main_reused || module_hits > 0 {
+    InputCacheStats::partial(reason, source_count, main_reused, module_hits, module_misses, module_miss_reasons)
   } else {
-    match encode_cached_ffi(&loaded.snapshot) {
-      Ok(ffi) => {
-        let cache = CachedAnalysisInput {
-          schema_version: INPUT_CACHE_SCHEMA_VERSION,
-          calcit_version: cli_args::CALCIT_VERSION.to_owned(),
-          core_revision: calcit::core_snapshot_revision(),
-          input_path: expected_input,
-          sources,
-          module_resolutions,
-          project_namespaces: loaded.project_namespaces.iter().cloned().collect(),
-          snapshot: loaded.snapshot.clone(),
-          ffi,
-        };
-        if let Err(error) = write_input_cache(snapshot_file, &cache) {
-          eprintln!("Warning: {error}; incremental analysis continued without persisting the input cache.");
-        }
-      }
-      Err(error) => eprintln!("Warning: {error}; incremental analysis continued without persisting the input cache."),
-    }
-  }
-
-  runner::preprocess::set_project_namespaces(&loaded.project_namespaces);
-
-  Ok((loaded.snapshot, InputCacheStats::cold(reason, loaded.source_paths.len())))
+    InputCacheStats::cold(reason, source_count, module_misses, module_miss_reasons)
+  };
+  Ok((snapshot, stats))
 }
 
 fn context_revision(snapshot: &snapshot::Snapshot) -> Result<String, String> {
