@@ -1095,8 +1095,12 @@ pub(crate) fn run_incremental_strict_check(
             .map(|cached| {
               if cached.core_revision != core_revision {
                 "core-revision-changed".to_owned()
-              } else {
+              } else if cached.closure_revision != revision {
                 "dependency-closure-changed".to_owned()
+              } else if cached.strict_types != strict_types || cached.warn_dynamic_methods != warn_dynamic_methods {
+                "preprocessing-policy-changed".to_owned()
+              } else {
+                "preprocessing-not-cached".to_owned()
               }
             })
             .or_else(|| Some("preprocessing-not-cached".to_owned()))

@@ -612,6 +612,24 @@ fn incremental_check_only_reuses_only_a_successful_unchanged_entry_closure() {
 }
 
 #[test]
+fn incremental_check_only_reports_policy_invalidation_separately() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/ffi-boundary-strict.cirru", &snapshot).expect("analysis fixture should copy");
+
+  let cold = incremental_check(&snapshot);
+  assert_success(&cold, "cold incremental strict check");
+
+  let policy_change = run_calcit(&snapshot, &["--compat-types", "--warn-dyn-method", "--check-only", "--incremental"]);
+  assert_success(&policy_change, "incremental strict check after policy change");
+  let stdout = String::from_utf8_lossy(&policy_change.stdout);
+  assert!(
+    stdout.contains("preprocessing-cached=false status=cold reason=preprocessing-policy-changed"),
+    "stdout: {stdout}"
+  );
+}
+
+#[test]
 fn incremental_check_only_rejects_non_check_and_keep_going_modes() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
