@@ -410,6 +410,28 @@ const scenarios = [
     },
   },
   {
+    name: "strict project workflow manifest",
+    args: ["tests/fixtures/fix-command.cirru", "fix", "--workflow", "strict", "--format", "json"],
+    check(result) {
+      const workflow = result.data?.workflow;
+      if (result.schema_version !== 1 || result.command !== "fix" || workflow?.workflow !== "strict-v1") {
+        throw new Error("unexpected strict workflow envelope");
+      }
+      if (workflow.mode !== "preview" || workflow.status !== "planned" || workflow.safe_fixes?.preset !== "surface-latest-v2") {
+        throw new Error("strict workflow lost its plan or safe preset identity");
+      }
+      if (!workflow.resume?.revision?.startsWith("md5:") || workflow.resume?.apply_command?.[0] !== "calcit") {
+        throw new Error("strict workflow lost its resumable revision-bound command");
+      }
+      if (!Array.isArray(workflow.entries) || !Array.isArray(workflow.review_required?.type_findings)) {
+        throw new Error("strict workflow lost project inventory fields");
+      }
+      if (workflow.verification?.commands?.[0]?.[0] !== "calcit" || workflow.verification?.external_commands?.length !== 0) {
+        throw new Error("strict workflow verification commands are not explicit token lists");
+      }
+    },
+  },
+  {
     name: "machine value schema",
     args: [
       "calcit/test.cirru",

@@ -48,6 +48,12 @@ Quick note: `calcit edit format` rewrites the target snapshot using canonical se
 Enum/Struct `%::` / `%{}` 直接构造器迁移，并解包普通可执行源码中的单表达式 `do`。冻结的 v1 仍可复现原有四条规则。
 `--preset` 与 `--rule` 互斥；apply 必须重复同一 selector。
 
+整个项目的严格升级使用同一个入口：
+`calcit calcit.cirru fix --workflow strict --format edn` 生成包含 entries/type slots、安全 fixes、类型与 FFI review
+边界、verification 命令及恢复 revision 的 manifest；审阅后加 `--apply --expect-revision <revision>`，最后运行
+`--workflow strict --verify`。该 workflow 不会自动决定 schema、Dynamic 收窄、FFI trust 或业务默认值，也不会猜测
+外部包管理器。
+
 For feature-level planning, use `calcit edit scaffold`. Its primary input is a
 Cirru EDN architecture plan, preferably stored under
 `docs/architectures/<feature>.cirru`:

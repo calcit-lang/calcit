@@ -101,6 +101,84 @@ fn assert_success(output: &Output, context: &str) {
 }
 
 #[test]
+fn strict_workflow_composes_a_resumable_project_manifest() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+
+  let preview = run_fix(&snapshot, &["--workflow", "strict", "--format", "json"]);
+  assert_success(&preview, "strict workflow plan");
+  let report = parse_stdout(&preview);
+  let workflow = &report["data"]["workflow"];
+  assert_eq!(workflow["workflow"], "strict-v1");
+  assert_eq!(workflow["mode"], "preview");
+  assert_eq!(workflow["status"], "planned");
+  assert_eq!(workflow["safe_fixes"]["preset"], "surface-latest-v2");
+  assert!(workflow["safe_fixes"]["suggestions"].as_u64().is_some_and(|count| count > 0));
+  assert_eq!(workflow["entries"][0]["name"], "default");
+  assert_eq!(workflow["verification"]["commands"][0][0], "calcit");
+  assert_eq!(workflow["verification"]["external_commands"], serde_json::json!([]));
+  assert_eq!(workflow["resume"]["revision"], report["revision"]);
+  assert_eq!(workflow["resume"]["apply_command"][3], "--workflow");
+  assert_eq!(workflow["resume"]["apply_command"][4], "strict");
+
+  let conflict = run_fix(
+    &snapshot,
+    &["--workflow", "strict", "--preset", "surface-latest-v2", "--format", "json"],
+  );
+  assert!(!conflict.status.success());
+  assert!(String::from_utf8_lossy(&conflict.stderr).contains("project-scoped"));
+
+  let unbound_apply = run_fix(
+    &snapshot,
+    &["--workflow", "strict", "--apply", "--allow-no-vcs", "--format", "json"],
+  );
+  assert!(!unbound_apply.status.success());
+  assert!(String::from_utf8_lossy(&unbound_apply.stderr).contains("requires `--expect-revision`"));
+}
+
+#[test]
+fn strict_workflow_applies_safe_fixes_and_verifies_the_result() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+
+  let preview = run_fix(&snapshot, &["--workflow", "strict", "--format", "json"]);
+  assert_success(&preview, "strict workflow plan");
+  let preview_report = parse_stdout(&preview);
+  let revision = preview_report["revision"].as_str().expect("workflow revision should be text");
+
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--workflow",
+      "strict",
+      "--apply",
+      "--expect-revision",
+      revision,
+      "--allow-no-vcs",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "strict workflow apply");
+  let applied_report = parse_stdout(&applied);
+  assert_eq!(applied_report["data"]["workflow"]["status"], "applied");
+  assert_eq!(applied_report["data"]["workflow"]["safe_fixes"]["status"], "applied");
+
+  let verification = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert_success(&verification, "strict workflow verification");
+  let verification_report = parse_stdout(&verification);
+  assert_eq!(verification_report["data"]["workflow"]["status"], "passed");
+  assert_eq!(verification_report["data"]["workflow"]["safe_fixes"]["status"], "clear");
+  assert!(
+    verification_report["data"]["workflow"]["verification"]["results"]
+      .as_array()
+      .is_some_and(|results| !results.is_empty() && results.iter().all(|result| result["status"] == "passed"))
+  );
+}
+
+#[test]
 fn staged_fix_validation_preserves_the_selected_browser_entry() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

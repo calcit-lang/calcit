@@ -87,6 +87,33 @@ calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 `--preset` 与 `--rule` 互斥。apply 必须原样重复 preview 的 `--preset`、`--ns` 和 `--def`；第二次 preview
 应返回空建议。未来集合发生变化时应发布新的 preset ID，既有 ID 不应静默改变含义。
 
+## 项目级严格迁移工作流
+
+需要升级整个项目时，继续使用 `fix`，不要增加 `calcit migrate` 顶层入口：
+
+```bash
+calcit calcit.cirru fix --workflow strict --format edn
+calcit calcit.cirru fix --workflow strict --apply \
+  --expect-revision 'md5:<plan 返回的 revision>' --format edn
+calcit calcit.cirru fix --workflow strict --verify --format edn
+```
+
+`:data :workflow` 是可保存、可重复生成的 `strict-v1` manifest。它按稳定顺序列出所有 entry 及 type slots、
+`surface-latest-v2` 的安全建议、需要 review 的弱类型位置、显式 FFI 边界、已有 verification profile，以及逐 entry
+的严格检查命令。命令用 token list 表示，Agent 不需要重新解析 shell 字符串；`:resume :revision` 与
+`:resume :apply-command` 给出恢复下一步所需的精确 revision guard。
+无法自动应用的 source suggestion 单独保留在 `:review-required :source-fixes`，不会计入
+`:safe-fixes :suggestions`。
+
+默认模式只规划。`--apply` 仍走既有 fingerprint、staged Snapshot、严格预处理和原子替换，不会应用 schema 设计、
+Dynamic 收窄、FFI trust 或业务默认值。`--verify` 是只读模式：它要求安全建议已经清空，逐 entry 运行
+`--check-only --keep-going`，并执行 Snapshot 已声明的 verification profiles；任一结果失败时保持结构化 stdout，
+同时返回非零退出码。`:external-commands` 默认为空，因为 Calcit 不猜测项目使用 yarn、npm、cargo 或其他构建器；
+调用方应把外部构建作为显式步骤维护。
+
+`--workflow strict` 是项目级组合视图，因此与 `--ns`、`--def`、`--rule`、`--preset` 和 `--to` 互斥；
+`--verify` 与写入选项互斥。Cirru EDN 是 manifest 的首选格式，只有 JSON-only consumer 才显式选择 JSON。
+
 ## 原子重命名 definition 与静态引用
 
 声明和调用点需要一起变化时，不要先执行 `edit rename` 再文本搜索。使用同一个 `fix` preview/apply 闭环：

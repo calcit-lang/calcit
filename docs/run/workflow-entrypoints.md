@@ -62,6 +62,11 @@ calcit calcit.cirru fix --preset surface-latest-v2 \
 `calcit analyze` 报告；它不应该为了进入 `fix` 而制造不可靠 replacement。Snapshot canonical serialization 继续由
 `calcit edit format` 负责，因为它是表示层写回，不是语义迁移。
 
+项目级严格升级也复用同一入口：`calcit calcit.cirru fix --workflow strict --format edn` 组合 entries/type slots、
+安全 preset、弱类型与 FFI review 边界、verification profiles 和恢复 revision。审阅后用同一 workflow 加
+`--apply --expect-revision <revision>`，最后以 `--verify` 逐 entry 检查。这个组合层不新增迁移规则，也不猜外部构建器；
+它只是把已有 `check`、`fix`、`analyze verify` 与 transaction 协议整理成一个可保存的 manifest。
+
 ## 当前语义规范化与兼容读取
 
 兼容读取只解决“旧数据无法被当前表示读取”的问题，并与普通编译隔离。目前这类一次性入口归 `calcit edit format` 所有。

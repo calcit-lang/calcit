@@ -150,6 +150,12 @@ pub struct FixCommand {
   /// apply one versioned set of stable migration rules
   #[argh(option)]
   pub preset: Option<String>,
+  /// compose a project workflow; currently supports strict
+  #[argh(option)]
+  pub workflow: Option<String>,
+  /// verify a selected project workflow without mutating the snapshot
+  #[argh(switch)]
+  pub verify: bool,
   /// replacement definition name required by semantic rename rules
   #[argh(option, long = "to")]
   pub replacement_name: Option<String>,
