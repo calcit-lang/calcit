@@ -61,14 +61,36 @@
           :schema $ :: 'Fn $ {} (:async true)
             :args $ [] 'component-wasm-async-import.main/HttpRequest
             :return $ :: 'Result 'component-wasm-async-import.main/HttpResponse 'component-wasm-async-import.main/HttpError
-          :tests $ [] $ %{} 'TestEntry (:name |keeps-bounded-http-contract)
-            :code $ quote $ match (number->uint64 1024)
-              (:ok limit)
-                let
-                    request $ HttpRequest :method (HttpMethod :get) :url |https://example.test/items :headers ([]) :body (HttpBody :empty) :max-response-bytes limit
-                  assert= request request
-              (:err message) (raise message)
-            :tags $ #{} :wasm
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-bounded-http-contract)
+              :code $ quote $ match (number->uint64 1024)
+                (:ok limit)
+                  let
+                      request $ HttpRequest :method (HttpMethod :get) :url |https://example.test/items :headers ([]) :body (HttpBody :empty) :max-response-bytes limit
+                    assert= request request
+                (:err message) (raise message)
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |keeps-http-success-shape)
+              :code $ quote $ match (number->uint16 200)
+                (:ok status)
+                  let
+                      response $ HttpResponse :status status :headers ([]) :body $ HttpBody :text |hello
+                    assert= (%ok response) (%ok response)
+                (:err message) (raise message)
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |keeps-http-limit-error-shape)
+              :code $ quote $ match (number->uint64 9)
+                (:ok observed)
+                  assert=
+                    %err $ HttpError :response-too-large observed
+                    %err $ HttpError :response-too-large observed
+                (:err message) (raise message)
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |keeps-http-capability-error-shape)
+              :code $ quote $ assert=
+                %err $ HttpError :capability-denied "|origin is not granted"
+                %err $ HttpError :capability-denied "|origin is not granted"
+              :tags $ #{} :wasm
         'call-host-load $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export call-host-load (text) (host-load text)
           :examples $ []

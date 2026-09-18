@@ -168,12 +168,39 @@ packaging 还需连接 `$root` 下的 `[waitable-set-new]`、`[waitable-set-wait
 `cancelled-before-started` / `cancelled-before-returned` 终态；主动取消与向 Calcit 传递 cancellation 需要 stackless
 callback 或新的 typed cancellation 语义，不伪装成普通 typed error。完整 runnable Component 继续由 calcit-bindgen 验收。
 
+## 有界 WASI HTTP client
+
+0.16.1 首先提供 client-only、完整缓冲的 HTTP 能力，不等待 streaming、service 或完整 cancellation。
+Calcit contract 使用 `calcit:wasi-http/client.request`，request 和 response 都是闭合的 Struct/Enum，
+body 只允许 empty、UTF-8 text 或 bytes；每次请求必须携带 `max-response-bytes`。网络未授权、宿主不支持、
+请求非法、传输失败和响应超限分别返回 `HttpError`，不得伪造空的成功响应。
+
+可重复的构建链仍然只使用已有入口，contract 默认输出 Cirru EDN：
+
+```bash
+calcit app.cirru wasm --boundary component --emit-path target/component-core
+calcit app.cirru ffi export --boundary component > target/component-interface.cirru
+calcit-bindgen generate target/component-interface.cirru \
+  --core-module target/component-core/program.wasm \
+  --out target/component
+```
+
+宿主使用 `calcit-bindgen 0.1.2` 的 `wasmtime-http` feature，把生成目录中的
+`rust/wasmtime_http_adapter.rs` include 到 crate 根部，再调用 `add_to_linker`。默认配置拒绝全部网络；
+必须用 `WasiHttpConfig::allow_origin("scheme://authority")` 精确授予 origin，端口属于 authority。
+生成器会保留最终 Component 的 `calcit:wasi-http/client` import identity，不要求业务改用内部 WIT alias。
+
+CI 的可用性基线不是“能生成 WIT”：同一份 Calcit contract 必须分别经过 JS host 和 Wasmtime host，
+请求真实本机 HTTP 服务，并覆盖成功、capability denied 与 response-too-large。用户可观察的 Result、Struct
+和 Enum 形状由定义上的 `:tests` 固定；Rust/JS 测试只验证 packaging、Canonical ABI 和真实宿主行为。
+当前明确不覆盖 streaming body、HTTP service、redirect 自动跟随和主动取消，这些限制不会被静默模拟。
+
 ## 实施顺序
 
 1. 导出 directional typed contract，完成确定性、数值宽度、诊断和 Cirru EDN/JSON 等价。
 2. 为 Bool、Buffer、Number、明确宽度数值、String、递归同质 List、Unit 结果、闭合单态 Option/Result、Struct record 与普通 Enum variant 生成 Canonical ABI import/export adapter。
 3. 由 `calcit-bindgen` 生成 WIT 并打包 runnable component，在 Wasmtime 和 jco 做端到端往返。
 4. 由 Component Interface IR v3 的显式 invocation 驱动 WASI 0.3 async function adapter：已完成 export 的 `task.return`，以及 direct/indirect import 的 subtask/waitable/drop；下一步补 callback cancellation，request 路径稳定后再设计 stream。
-5. 在异步基础稳定后引入 WASI HTTP 和 socket。
+5. 在异步基础上交付有界 buffered WASI HTTP client；stream、service 与更底层 socket 继续后置。
 
 用户可观察的类型与语义优先由 Calcit definition `:tests` 覆盖；Rust 测试只覆盖 contract serialization、WASM encoding、Canonical ABI/memory layout 和 unsupported boundary。
