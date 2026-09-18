@@ -162,9 +162,11 @@ const expectedImports = [
   "host/[async-lower]flag",
   "host/[async-lower]combine",
   "host/[async-lower]load",
+  "calcit:wasi-http/client/[async-lower]request",
   "$root/[subtask-drop]",
   "[export]$root/[task-return]call-host-combine",
   "[export]$root/[task-return]call-host-flag",
+  "[export]$root/[task-return]call-host-http-request",
   "[export]$root/[task-return]call-host-load",
   "$root/[waitable-set-drop]",
   "$root/[waitable-set-new]",
@@ -240,12 +242,20 @@ const host = {
     throw new Error(`unexpected host input ${marker}`);
   },
 };
+const http = {
+  "[async-lower]request": () => {
+    throw new Error("HTTP request adapter should not run in the generic async lifecycle smoke");
+  },
+};
 const canonical = {
   "[task-return]call-host-combine": (ptr, len) => {
     combineCompletions.push(readText(ptr, len));
   },
   "[task-return]call-host-flag": flag => {
     boolCompletions.push(flag);
+  },
+  "[task-return]call-host-http-request": () => {
+    throw new Error("HTTP request completion should not run in the generic async lifecycle smoke");
   },
   "[task-return]call-host-load": (discriminant, ptr, len) => {
     completions.push([discriminant, readText(ptr, len)]);
@@ -284,7 +294,7 @@ const canonical = {
   },
 };
 
-WebAssembly.instantiate(module, { host, "$root": canonical, "[export]$root": canonical }).then(result => {
+WebAssembly.instantiate(module, { host, "calcit:wasi-http/client": http, "$root": canonical, "[export]$root": canonical }).then(result => {
   instance = result;
   const invoke = marker => {
     const [ptr, len] = allocateText(marker);
