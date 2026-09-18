@@ -195,6 +195,10 @@ CI 的可用性基线不是“能生成 WIT”：同一份 Calcit contract 必�
 和 Enum 形状由定义上的 `:tests` 固定；Rust/JS 测试只验证 packaging、Canonical ABI 和真实宿主行为。
 当前明确不覆盖 streaming body、HTTP service、redirect 自动跟随和主动取消，这些限制不会被静默模拟。
 
+[`examples/wasi-http-client/`](../../examples/wasi-http-client/) 提供可复制的最小应用：Calcit Snapshot、
+固定发布版本依赖的 Wasmtime host，以及从 Cirru EDN contract 到 runnable Component 的完整命令。
+这个示例复用上述边界和现有命令，不引入测试专用 import、源码 path dependency 或新的 CLI 包装层。
+
 ## 实施顺序
 
 1. 导出 directional typed contract，完成确定性、数值宽度、诊断和 Cirru EDN/JSON 等价。
