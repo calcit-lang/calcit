@@ -46,6 +46,14 @@ fn serve_http_response(mut stream: TcpStream) {
       break;
     }
   }
+  if request_line.split_whitespace().nth(1) == Some("/redirect") {
+    write!(
+      stream,
+      "HTTP/1.1 302 Found\r\nlocation: http://127.0.0.1:1/denied\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+    )
+    .expect("HTTP redirect response should write");
+    return;
+  }
   let (body, content_type) = match request_line.split_whitespace().nth(1) {
     Some("/ok") => (br#"{"ok":true}"#.as_slice(), "application/json"),
     Some("/large") => (b"123456789".as_slice(), "application/octet-stream"),
@@ -381,7 +389,7 @@ fn buffered_http_component_uses_real_network_capabilities_and_bounds_in_js() {
   let listener = TcpListener::bind("127.0.0.1:0").expect("local HTTP fixture should bind");
   let origin = format!("http://{}", listener.local_addr().expect("local HTTP address should resolve"));
   let server = thread::spawn(move || {
-    for stream in listener.incoming().take(2) {
+    for stream in listener.incoming().take(3) {
       serve_http_response(stream.expect("local HTTP connection should accept"));
     }
   });

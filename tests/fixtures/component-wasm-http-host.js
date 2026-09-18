@@ -67,7 +67,7 @@ const writeResponse = (outPtr, response) => {
 };
 
 const fetchScript = `
-fetch(process.argv[1], { method: process.argv[2], signal: AbortSignal.timeout(5000) }).then(async response => {
+fetch(process.argv[1], { method: process.argv[2], redirect: "error", signal: AbortSignal.timeout(5000) }).then(async response => {
   const limit = BigInt(process.argv[3]);
   let observed = 0n;
   const chunks = [];
@@ -100,14 +100,20 @@ const http = {
       writeError(outPtr, 1, "JS fixture accepts only GET with an empty body and no headers");
       return 2;
     }
-    const origin = new URL(url).origin;
+    let origin;
+    try {
+      origin = new URL(url).origin;
+    } catch (_error) {
+      writeError(outPtr, 1, "invalid request URL");
+      return 2;
+    }
     if (origin !== allowedOrigin) {
       writeError(outPtr, 0, `origin is not granted: ${origin}`);
       return 2;
     }
     const fetched = spawnSync(process.execPath, ["-e", fetchScript, url, "GET", maxResponseBytes.toString()], { encoding: "utf8" });
     if (fetched.status !== 0) {
-      writeError(outPtr, 3, fetched.stderr || "HTTP transport failed");
+      writeError(outPtr, 3, "HTTP transport failed");
       return 2;
     }
     const response = JSON.parse(fetched.stdout);
@@ -163,7 +169,9 @@ WebAssembly.instantiate(wasmModule, {
     instance.exports["[async-lift-stackful]call-host-http-request"](1, 0, 0, 0, 0, BigInt(maxResponseBytes), 1, urlPtr, urlLen);
   };
   invoke(`${allowedOrigin}/ok`, 64);
+  invoke("::malformed-url", 64);
   invoke("http://127.0.0.1:1/denied", 64);
+  invoke(`${allowedOrigin}/redirect`, 64);
   invoke(`${allowedOrigin}/large`, 8);
   const expected = [
     {
@@ -177,7 +185,9 @@ WebAssembly.instantiate(wasmModule, {
       ],
       status: 200,
     },
+    { kind: "error", errorKind: 1, message: "invalid request URL" },
     { kind: "error", errorKind: 0, message: "origin is not granted: http://127.0.0.1:1" },
+    { kind: "error", errorKind: 3, message: "HTTP transport failed" },
     { kind: "error", errorKind: 2, observed: 9 },
   ];
   if (JSON.stringify(completions) !== JSON.stringify(expected)) {
