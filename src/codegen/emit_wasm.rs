@@ -290,7 +290,11 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
       let (params, results) = component_import_signature(adapter);
       host_imports.push(HostImport {
         module: adapter.module.clone(),
-        name: adapter.symbol.clone(),
+        name: if adapter.invocation == ComponentAbiInvocation::Async {
+          component_async_import_symbol(&adapter.symbol)
+        } else {
+          adapter.symbol.clone()
+        },
         params,
         results,
       });
@@ -308,7 +312,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
       let index = host_imports.len() as u32;
       adapter.task_return_index = Some(index);
       host_imports.push(HostImport {
-        module: COMPONENT_CANONICAL_IMPORT_MODULE.into(),
+        module: COMPONENT_ASYNC_EXPORT_IMPORT_MODULE.into(),
         name: component_task_return_symbol(&adapter.symbol),
         params: component_task_return_signature(&adapter.result),
         results: vec![],
@@ -1019,14 +1023,15 @@ enum ComponentAbiInvocation {
   Async,
 }
 
-const COMPONENT_CANONICAL_IMPORT_MODULE: &str = "calcit:component/canonical";
+const COMPONENT_ASYNC_ROOT_IMPORT_MODULE: &str = "$root";
+const COMPONENT_ASYNC_EXPORT_IMPORT_MODULE: &str = "[export]$root";
 const COMPONENT_ASYNC_MAX_FLAT_PARAMETERS: usize = 4;
 
 fn register_component_async_canonical_imports(host_imports: &mut Vec<HostImport>) -> ComponentAsyncCanonicalImports {
   let mut register = |name: &str, params: Vec<ValType>, results: Vec<ValType>| {
     let index = host_imports.len() as u32;
     host_imports.push(HostImport {
-      module: COMPONENT_CANONICAL_IMPORT_MODULE.into(),
+      module: COMPONENT_ASYNC_ROOT_IMPORT_MODULE.into(),
       name: name.into(),
       params,
       results,
@@ -1034,16 +1039,24 @@ fn register_component_async_canonical_imports(host_imports: &mut Vec<HostImport>
     index
   };
   ComponentAsyncCanonicalImports {
-    waitable_set_new: register("waitable-set.new", vec![], vec![ValType::I32]),
-    waitable_set_wait: register("waitable-set.wait", vec![ValType::I32, ValType::I32], vec![ValType::I32]),
-    waitable_set_drop: register("waitable-set.drop", vec![ValType::I32], vec![]),
-    waitable_join: register("waitable.join", vec![ValType::I32, ValType::I32], vec![]),
-    subtask_drop: register("subtask.drop", vec![ValType::I32], vec![]),
+    waitable_set_new: register("[waitable-set-new]", vec![], vec![ValType::I32]),
+    waitable_set_wait: register("[waitable-set-wait]", vec![ValType::I32, ValType::I32], vec![ValType::I32]),
+    waitable_set_drop: register("[waitable-set-drop]", vec![ValType::I32], vec![]),
+    waitable_join: register("[waitable-join]", vec![ValType::I32, ValType::I32], vec![]),
+    subtask_drop: register("[subtask-drop]", vec![ValType::I32], vec![]),
   }
 }
 
+fn component_async_import_symbol(symbol: &str) -> String {
+  format!("[async-lower]{symbol}")
+}
+
+fn component_async_export_symbol(symbol: &str) -> String {
+  format!("[async-lift-stackful]{symbol}")
+}
+
 fn component_task_return_symbol(symbol: &str) -> String {
-  format!("task-return/{symbol}")
+  format!("[task-return]{symbol}")
 }
 
 #[cfg(test)]
@@ -1488,9 +1501,12 @@ fn collect_component_import_adapters(program_data: &program::CompiledProgram) ->
       let definition = format!("{namespace}/{name}");
       let (module, symbol, args) = parse_wasm_import_def(&compiled.preprocessed_code)
         .ok_or_else(|| format!("E_COMPONENT_ABI_IMPORT: `{definition}` must use `defwasm-import name (args) |module |field`"))?;
-      if module == COMPONENT_CANONICAL_IMPORT_MODULE {
+      if matches!(
+        module.as_str(),
+        COMPONENT_ASYNC_ROOT_IMPORT_MODULE | COMPONENT_ASYNC_EXPORT_IMPORT_MODULE
+      ) {
         return Err(format!(
-          "E_COMPONENT_ABI_RESERVED_IMPORT: `{definition}` cannot declare the compiler-reserved module `{COMPONENT_CANONICAL_IMPORT_MODULE}`"
+          "E_COMPONENT_ABI_RESERVED_IMPORT: `{definition}` cannot declare the compiler-reserved module `{module}`"
         ));
       }
       let source_arity = wasm_import_arity(&args)
@@ -2771,7 +2787,7 @@ fn build_component_export_adapter(
     };
     finish_component_async_export(adapter, params.len(), &mut locals, &mut instructions, cabi_realloc_index, &codecs);
     return CompiledFn {
-      export_name: Some(adapter.symbol.clone()),
+      export_name: Some(component_async_export_symbol(&adapter.symbol)),
       params,
       results: vec![],
       locals,

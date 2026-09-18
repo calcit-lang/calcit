@@ -58,7 +58,7 @@ const bytes = fs.readFileSync(process.argv[1]);
 const module = new WebAssembly.Module(bytes);
 const imports = WebAssembly.Module.imports(module);
 const importNames = imports.map(({ module, name }) => `${module}/${name}`).sort();
-if (importNames.join(",") !== "calcit:component/canonical/task-return/echo-result,calcit:component/canonical/task-return/load-text,calcit:component/canonical/task-return/load-wide") {
+if (importNames.join(",") !== "[export]$root/[task-return]echo-result,[export]$root/[task-return]load-text,[export]$root/[task-return]load-wide") {
   throw new Error(`unexpected imports: ${JSON.stringify(imports)}`);
 }
 let instance;
@@ -67,19 +67,19 @@ let returnedText = null;
 const resultCompletions = [];
 let wideCompletion = null;
 const canonical = {
-  "task-return/load-text": (ptr, len) => {
+  "[task-return]load-text": (ptr, len) => {
     completions += 1;
     returnedText = Buffer.from(instance.exports.memory.buffer, ptr, len).toString("utf8");
   },
-  "task-return/echo-result": (discriminant, ptr, len) => {
+  "[task-return]echo-result": (discriminant, ptr, len) => {
     resultCompletions.push([discriminant, Buffer.from(instance.exports.memory.buffer, ptr, len).toString("utf8")]);
   },
-  "task-return/load-wide": ptr => {
+  "[task-return]load-wide": ptr => {
     const memory = new DataView(instance.exports.memory.buffer);
     wideCompletion = Array.from({ length: 17 }, (_, index) => memory.getFloat64(ptr + index * 8, true));
   },
 };
-WebAssembly.instantiate(module, { "calcit:component/canonical": canonical }).then(result => {
+WebAssembly.instantiate(module, { "[export]$root": canonical }).then(result => {
   instance = result;
   const allocateText = text => {
     const input = Buffer.from(text, "utf8");
@@ -88,19 +88,19 @@ WebAssembly.instantiate(module, { "calcit:component/canonical": canonical }).the
     return [ptr, input.length];
   };
   const [ptr, len] = allocateText("你好 async");
-  const returned = instance.exports["load-text"](ptr, len);
+  const returned = instance.exports["[async-lift-stackful]load-text"](ptr, len);
   if (returned !== undefined) throw new Error(`async core export returned ${returned}`);
   if (completions !== 1) throw new Error(`expected one completion, got ${completions}`);
   if (returnedText !== "你好 async") throw new Error(`unexpected result: ${returnedText}`);
   const [okPtr, okLen] = allocateText("ok-value");
   const [errorPtr, errorLen] = allocateText("error-value");
-  instance.exports["echo-result"](0, okPtr, okLen);
-  instance.exports["echo-result"](1, errorPtr, errorLen);
+  instance.exports["[async-lift-stackful]echo-result"](0, okPtr, okLen);
+  instance.exports["[async-lift-stackful]echo-result"](1, errorPtr, errorLen);
   if (JSON.stringify(resultCompletions) !== JSON.stringify([[0, "ok-value"], [1, "error-value"]])) {
     throw new Error(`typed Result did not round-trip: ${JSON.stringify(resultCompletions)}`);
   }
   const expectedWide = Array.from({ length: 17 }, (_, index) => index);
-  instance.exports["load-wide"]();
+  instance.exports["[async-lift-stackful]load-wide"]();
   if (JSON.stringify(wideCompletion) !== JSON.stringify(expectedWide)) {
     throw new Error(`indirect async typed Struct did not round-trip: ${JSON.stringify(wideCompletion)}`);
   }
@@ -159,17 +159,17 @@ const bytes = fs.readFileSync(process.argv[1]);
 const module = new WebAssembly.Module(bytes);
 const imports = WebAssembly.Module.imports(module).map(({ module, name }) => `${module}/${name}`).sort();
 const expectedImports = [
-  "host/flag",
-  "host/combine",
-  "host/load",
-  "calcit:component/canonical/subtask.drop",
-  "calcit:component/canonical/task-return/call-host-combine",
-  "calcit:component/canonical/task-return/call-host-flag",
-  "calcit:component/canonical/task-return/call-host-load",
-  "calcit:component/canonical/waitable-set.drop",
-  "calcit:component/canonical/waitable-set.new",
-  "calcit:component/canonical/waitable-set.wait",
-  "calcit:component/canonical/waitable.join",
+  "host/[async-lower]flag",
+  "host/[async-lower]combine",
+  "host/[async-lower]load",
+  "$root/[subtask-drop]",
+  "[export]$root/[task-return]call-host-combine",
+  "[export]$root/[task-return]call-host-flag",
+  "[export]$root/[task-return]call-host-load",
+  "$root/[waitable-set-drop]",
+  "$root/[waitable-set-new]",
+  "$root/[waitable-set-wait]",
+  "$root/[waitable-join]",
 ].sort();
 if (JSON.stringify(imports) !== JSON.stringify(expectedImports)) {
   throw new Error(`unexpected imports: ${JSON.stringify(imports)}`);
@@ -200,7 +200,7 @@ const writeResult = (outPtr, discriminant, text) => {
 };
 
 const host = {
-  combine: (argsPtr, outPtr) => {
+  "[async-lower]combine": (argsPtr, outPtr) => {
     const memory = new DataView(instance.exports.memory.buffer);
     const left = readText(memory.getUint32(argsPtr, true), memory.getUint32(argsPtr + 4, true));
     const right = readText(memory.getUint32(argsPtr + 8, true), memory.getUint32(argsPtr + 12, true));
@@ -211,7 +211,7 @@ const host = {
     memory.setUint32(outPtr + 4, len, true);
     return 2;
   },
-  flag: (flag, outPtr) => {
+  "[async-lower]flag": (flag, outPtr) => {
     const memory = new DataView(instance.exports.memory.buffer);
     memory.setUint8(outPtr, flag === 0 ? 1 : 0);
     memory.setUint8(outPtr + 1, 0xff);
@@ -219,7 +219,7 @@ const host = {
     memory.setUint8(outPtr + 3, 0xff);
     return 2;
   },
-  load: (inputPtr, inputLen, outPtr) => {
+  "[async-lower]load": (inputPtr, inputLen, outPtr) => {
     const marker = readText(inputPtr, inputLen);
     if (marker === "immediate-ok") {
       writeResult(outPtr, 0, "ready-now");
@@ -241,27 +241,27 @@ const host = {
   },
 };
 const canonical = {
-  "task-return/call-host-combine": (ptr, len) => {
+  "[task-return]call-host-combine": (ptr, len) => {
     combineCompletions.push(readText(ptr, len));
   },
-  "task-return/call-host-flag": flag => {
+  "[task-return]call-host-flag": flag => {
     boolCompletions.push(flag);
   },
-  "task-return/call-host-load": (discriminant, ptr, len) => {
+  "[task-return]call-host-load": (discriminant, ptr, len) => {
     completions.push([discriminant, readText(ptr, len)]);
   },
-  "waitable-set.new": () => {
+  "[waitable-set-new]": () => {
     lifecycle.new += 1;
     return nextWaitableSet++;
   },
-  "waitable.join": (subtask, set) => {
+  "[waitable-join]": (subtask, set) => {
     lifecycle.join += 1;
     for (const [currentSet, currentSubtask] of joined) {
       if (currentSubtask === subtask) joined.delete(currentSet);
     }
     if (set !== 0) joined.set(set, subtask);
   },
-  "waitable-set.wait": (set, eventPtr) => {
+  "[waitable-set-wait]": (set, eventPtr) => {
     lifecycle.wait += 1;
     const subtask = joined.get(set);
     const task = pending.get(subtask);
@@ -274,21 +274,21 @@ const canonical = {
     memory.setUint32(eventPtr + 4, state, true);
     return 1;
   },
-  "subtask.drop": subtask => {
+  "[subtask-drop]": subtask => {
     lifecycle.subtaskDrop += 1;
     pending.delete(subtask);
   },
-  "waitable-set.drop": set => {
+  "[waitable-set-drop]": set => {
     lifecycle.setDrop += 1;
     joined.delete(set);
   },
 };
 
-WebAssembly.instantiate(module, { host, "calcit:component/canonical": canonical }).then(result => {
+WebAssembly.instantiate(module, { host, "$root": canonical, "[export]$root": canonical }).then(result => {
   instance = result;
   const invoke = marker => {
     const [ptr, len] = allocateText(marker);
-    const returned = instance.exports["call-host-load"](ptr, len);
+    const returned = instance.exports["[async-lift-stackful]call-host-load"](ptr, len);
     if (returned !== undefined) throw new Error(`async core export returned ${returned}`);
   };
   invoke("immediate-ok");
@@ -297,14 +297,14 @@ WebAssembly.instantiate(module, { host, "calcit:component/canonical": canonical 
   if (JSON.stringify(completions) !== JSON.stringify([[0, "ready-now"], [0, "ready-later"], [1, "typed-error"]])) {
     throw new Error(`unexpected completions: ${JSON.stringify(completions)}`);
   }
-  instance.exports["call-host-flag"](1);
-  instance.exports["call-host-flag"](0);
+  instance.exports["[async-lift-stackful]call-host-flag"](1);
+  instance.exports["[async-lift-stackful]call-host-flag"](0);
   if (JSON.stringify(boolCompletions) !== JSON.stringify([0, 1])) {
     throw new Error(`async Bool result read beyond one byte: ${JSON.stringify(boolCompletions)}`);
   }
   const [leftPtr, leftLen] = allocateText("left");
   const [rightPtr, rightLen] = allocateText("right");
-  instance.exports["call-host-combine"](leftPtr, leftLen, rightPtr, rightLen, 3, 1);
+  instance.exports["[async-lift-stackful]call-host-combine"](leftPtr, leftLen, rightPtr, rightLen, 3, 1);
   if (JSON.stringify(combineCompletions) !== JSON.stringify(["left:right:3:true"])) {
     throw new Error(`indirect async parameters did not round-trip: ${JSON.stringify(combineCompletions)}`);
   }

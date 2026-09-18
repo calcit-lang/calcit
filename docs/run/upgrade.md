@@ -119,8 +119,10 @@ Component boundary 按推导并规范化后的 schema 宽度确定性导出 `Int
 `starting` / `started` / `returned`、终态清理和 drop。
 不要把 native `async-task-v1` 队列、句柄或 polling API 搬到 Component 接口，也不要把 async import 临时改成同步 ABI。
 升级相关项目时，先重新导出 IR v3 contract，再升级 calcit-bindgen：除连接
-`task-return/<export-symbol>` 外，还需连接 `calcit:component/canonical` 下的 waitable-set、waitable.join 与 subtask.drop
-canonical builtins。当前 stackful adapter 对已收到的 cancellation 终态清理后 trap；主动取消留给 callback cancellation 阶段。
+`[export]$root/[task-return]<export-symbol>` 外，还需连接 `$root` 下的 `[waitable-set-*]`、`[waitable-join]`
+与 `[subtask-drop]` canonical builtins。async import/export 分别使用 `[async-lower]` 与
+`[async-lift-stackful]` 名称前缀，使 `wit-component` 能按 Canonical ABI 识别这些内部接缝。当前 stackful adapter
+对已收到的 cancellation 终态清理后 trap；主动取消留给 callback cancellation 阶段。
 
 ## 0.14 默认严格诊断
 
