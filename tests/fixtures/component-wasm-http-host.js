@@ -6,6 +6,9 @@ const allowedOrigin = process.argv[3];
 const wasmModule = new WebAssembly.Module(bytes);
 let instance;
 const completions = [];
+const HTTP_BODY = Object.freeze({ bytes: 0, empty: 1, text: 2 });
+const HTTP_METHOD = Object.freeze({ get: 1 });
+const HTTP_ERROR = Object.freeze({ capabilityDenied: 0, invalidRequest: 1, responseTooLarge: 2, transport: 3, unsupported: 4 });
 
 const allocateBytes = bytes => {
   if (bytes.length === 0) return [0, 0];
@@ -30,7 +33,7 @@ const writeError = (outPtr, discriminant, payload) => {
   const memory = new DataView(instance.exports.memory.buffer);
   memory.setUint8(outPtr, 1);
   memory.setUint8(outPtr + 8, discriminant);
-  if (discriminant === 2) {
+  if (discriminant === HTTP_ERROR.responseTooLarge) {
     memory.setBigUint64(outPtr + 16, BigInt(payload), true);
   } else {
     const [ptr, len] = allocateText(payload);
@@ -58,7 +61,7 @@ const writeResponse = (outPtr, response) => {
     memory.setUint32(offset + 12, valueLen, true);
   }
   memory.setUint8(outPtr, 0);
-  memory.setUint8(outPtr + 8, textual ? 2 : 0);
+  memory.setUint8(outPtr + 8, textual ? HTTP_BODY.text : HTTP_BODY.bytes);
   memory.setUint32(outPtr + 12, bodyPtr, true);
   memory.setUint32(outPtr + 16, bodyLen, true);
   memory.setUint32(outPtr + 20, headersPtr, true);
@@ -96,29 +99,29 @@ const http = {
     const maxResponseBytes = memory.getBigUint64(argsPtr + 24, true);
     const methodKind = memory.getUint8(argsPtr + 32);
     const url = readText(memory.getUint32(argsPtr + 36, true), memory.getUint32(argsPtr + 40, true));
-    if (bodyKind !== 1 || headersLength !== 0 || methodKind !== 1) {
-      writeError(outPtr, 1, "JS fixture accepts only GET with an empty body and no headers");
+    if (bodyKind !== HTTP_BODY.empty || headersLength !== 0 || methodKind !== HTTP_METHOD.get) {
+      writeError(outPtr, HTTP_ERROR.invalidRequest, "JS fixture accepts only GET with an empty body and no headers");
       return 2;
     }
     let origin;
     try {
       origin = new URL(url).origin;
     } catch (_error) {
-      writeError(outPtr, 1, "invalid request URL");
+      writeError(outPtr, HTTP_ERROR.invalidRequest, "invalid request URL");
       return 2;
     }
     if (origin !== allowedOrigin) {
-      writeError(outPtr, 0, `origin is not granted: ${origin}`);
+      writeError(outPtr, HTTP_ERROR.capabilityDenied, `origin is not granted: ${origin}`);
       return 2;
     }
     const fetched = spawnSync(process.execPath, ["-e", fetchScript, url, "GET", maxResponseBytes.toString()], { encoding: "utf8" });
     if (fetched.status !== 0) {
-      writeError(outPtr, 3, "HTTP transport failed");
+      writeError(outPtr, HTTP_ERROR.transport, "HTTP transport failed");
       return 2;
     }
     const response = JSON.parse(fetched.stdout);
     if (response.tooLarge !== undefined) {
-      writeError(outPtr, 2, response.tooLarge);
+      writeError(outPtr, HTTP_ERROR.responseTooLarge, response.tooLarge);
       return 2;
     }
     writeResponse(outPtr, response);
@@ -136,7 +139,7 @@ const canonical = {
         headers: readHeaders(headersPtr, headersLength),
         status,
       });
-    } else if (payloadKind === 2) {
+    } else if (payloadKind === HTTP_ERROR.responseTooLarge) {
       completions.push({ kind: "error", errorKind: payloadKind, observed: Number(payload) });
     } else {
       completions.push({ kind: "error", errorKind: payloadKind, message: readText(Number(payload), payloadLength) });
@@ -166,7 +169,17 @@ WebAssembly.instantiate(wasmModule, {
   instance = result;
   const invoke = (url, maxResponseBytes) => {
     const [urlPtr, urlLen] = allocateText(url);
-    instance.exports["[async-lift-stackful]call-host-http-request"](1, 0, 0, 0, 0, BigInt(maxResponseBytes), 1, urlPtr, urlLen);
+    instance.exports["[async-lift-stackful]call-host-http-request"](
+      HTTP_BODY.empty,
+      0,
+      0,
+      0,
+      0,
+      BigInt(maxResponseBytes),
+      HTTP_METHOD.get,
+      urlPtr,
+      urlLen,
+    );
   };
   invoke(`${allowedOrigin}/ok`, 64);
   invoke("::malformed-url", 64);
@@ -176,7 +189,7 @@ WebAssembly.instantiate(wasmModule, {
   const expected = [
     {
       kind: "ok",
-      bodyKind: 2,
+      bodyKind: HTTP_BODY.text,
       body: '{"ok":true}',
       headers: [
         ["connection", "close"],
@@ -185,10 +198,10 @@ WebAssembly.instantiate(wasmModule, {
       ],
       status: 200,
     },
-    { kind: "error", errorKind: 1, message: "invalid request URL" },
-    { kind: "error", errorKind: 0, message: "origin is not granted: http://127.0.0.1:1" },
-    { kind: "error", errorKind: 3, message: "HTTP transport failed" },
-    { kind: "error", errorKind: 2, observed: 9 },
+    { kind: "error", errorKind: HTTP_ERROR.invalidRequest, message: "invalid request URL" },
+    { kind: "error", errorKind: HTTP_ERROR.capabilityDenied, message: "origin is not granted: http://127.0.0.1:1" },
+    { kind: "error", errorKind: HTTP_ERROR.transport, message: "HTTP transport failed" },
+    { kind: "error", errorKind: HTTP_ERROR.responseTooLarge, observed: 9 },
   ];
   if (JSON.stringify(completions) !== JSON.stringify(expected)) {
     throw new Error(`unexpected HTTP completions: ${JSON.stringify(completions)}`);
