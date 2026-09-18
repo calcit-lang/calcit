@@ -458,7 +458,7 @@ async fn packaged_http_component_executes_through_the_wasmtime_host_adapter() {
     .args([
       "--tips-level",
       "none",
-      "tests/fixtures/component-wasm-async-import.cirru",
+      "examples/wasi-http-client/calcit.cirru",
       "wasm",
       "--boundary",
       "component",
@@ -478,7 +478,7 @@ async fn packaged_http_component_executes_through_the_wasmtime_host_adapter() {
     .args([
       "--tips-level",
       "none",
-      "tests/fixtures/component-wasm-async-import.cirru",
+      "examples/wasi-http-client/calcit.cirru",
       "ffi",
       "export",
       "--boundary",
