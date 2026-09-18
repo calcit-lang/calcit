@@ -447,7 +447,7 @@ async fn packaged_http_component_executes_through_the_wasmtime_host_adapter() {
   let listener = TcpListener::bind("127.0.0.1:0").expect("local HTTP fixture should bind");
   let origin = format!("http://{}", listener.local_addr().expect("local HTTP address should resolve"));
   let server = thread::spawn(move || {
-    for stream in listener.incoming().take(2) {
+    for stream in listener.incoming().take(3) {
       serve_http_response(stream.expect("local HTTP connection should accept"));
     }
   });
@@ -561,6 +561,20 @@ async fn packaged_http_component_executes_through_the_wasmtime_host_adapter() {
   );
   assert!(matches!(&fields[2], (name, Val::U16(200)) if name == "status"));
 
+  let mut malformed = [Val::Bool(false)];
+  request
+    .call_async(&mut store, &[http_request("::malformed-url".to_owned(), 64)], &mut malformed)
+    .await
+    .expect("malformed URL should return a typed error");
+  assert!(
+    matches!(
+      &malformed[0],
+      Val::Result(Err(Some(error)))
+        if matches!(error.as_ref(), Val::Variant(case, Some(_)) if case == "invalid-request")
+    ),
+    "unexpected Wasmtime malformed URL error: {malformed:?}"
+  );
+
   let mut denied = [Val::Bool(false)];
   request
     .call_async(&mut store, &[http_request("http://127.0.0.1:1/denied".to_owned(), 64)], &mut denied)
@@ -573,6 +587,26 @@ async fn packaged_http_component_executes_through_the_wasmtime_host_adapter() {
         if matches!(error.as_ref(), Val::Variant(case, Some(_)) if case == "capability-denied")
     ),
     "unexpected Wasmtime capability error: {denied:?}"
+  );
+
+  let mut redirected = [Val::Bool(false)];
+  request
+    .call_async(&mut store, &[http_request(format!("{origin}/redirect"), 64)], &mut redirected)
+    .await
+    .expect("redirect response should return without being followed");
+  let Val::Result(Ok(Some(response))) = &redirected[0] else {
+    panic!("unexpected Wasmtime redirect result: {redirected:?}");
+  };
+  let Val::Record(fields) = response.as_ref() else {
+    panic!("unexpected Wasmtime redirect response: {response:?}");
+  };
+  assert!(matches!(&fields[2], (name, Val::U16(302)) if name == "status"));
+  assert!(
+    matches!(&fields[1], (name, Val::List(headers)) if name == "headers" && headers.iter().any(|header|
+      matches!(header, Val::Record(values)
+        if matches!(&values[0], (field, Val::String(value)) if field == "name" && value == "location")))),
+    "redirect response should preserve the location header: {:?}",
+    fields[1]
   );
 
   let mut oversized = [Val::Bool(false)];
