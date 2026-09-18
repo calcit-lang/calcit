@@ -61,14 +61,59 @@
           :schema $ :: 'Fn $ {} (:async true)
             :args $ [] 'component-wasm-async-import.main/HttpRequest
             :return $ :: 'Result 'component-wasm-async-import.main/HttpResponse 'component-wasm-async-import.main/HttpError
-          :tests $ [] $ %{} 'TestEntry (:name |keeps-bounded-http-contract)
-            :code $ quote $ match (number->uint64 1024)
-              (:ok limit)
-                let
-                    request $ HttpRequest :method (HttpMethod :get) :url |https://example.test/items :headers ([]) :body (HttpBody :empty) :max-response-bytes limit
-                  assert= request request
-              (:err message) (raise message)
-            :tags $ #{} :wasm
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-bounded-http-contract)
+              :code $ quote $ match (number->uint64 1024)
+                (:ok limit)
+                  let
+                      request $ HttpRequest :method (HttpMethod :get) :url |https://example.test/items :headers ([]) :body (HttpBody :empty) :max-response-bytes limit
+                    assert= (HttpMethod :get) (:method request)
+                    assert= |https://example.test/items $ :url request
+                    assert= ([]) (:headers request)
+                    assert= (HttpBody :empty) (:body request)
+                    assert= limit $ :max-response-bytes request
+                (:err message) (raise message)
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |keeps-http-success-shape)
+              :code $ quote $ match (number->uint16 200)
+                (:ok status)
+                  let
+                      response $ HttpResponse :status status :headers ([]) :body $ HttpBody :text |hello
+                    assert= status $ :status response
+                    assert= ([]) (:headers response)
+                    assert= (HttpBody :text |hello) (:body response)
+                (:err message) (raise message)
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |keeps-http-limit-error-shape)
+              :code $ quote $ match (number->uint64 9)
+                (:ok observed)
+                  match
+                    %err $ HttpError :response-too-large observed
+                    (:err error)
+                      match error
+                        (:response-too-large actual) (assert= observed actual)
+                        _ $ raise "|unexpected HTTP error"
+                    (:ok _) (raise "|expected response-too-large")
+                (:err message) (raise message)
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |keeps-http-capability-error-shape)
+              :code $ quote $ match
+                %err $ HttpError :capability-denied "|origin is not granted"
+                (:err error)
+                  match error
+                    (:capability-denied message) (assert= "|origin is not granted" message)
+                    _ $ raise "|unexpected HTTP error"
+                (:ok _) (raise "|expected capability-denied")
+              :tags $ #{} :wasm
+            %{} 'TestEntry (:name |keeps-http-invalid-request-shape)
+              :code $ quote $ match
+                %err $ HttpError :invalid-request "|invalid request URL"
+                (:err error)
+                  match error
+                    (:invalid-request message) (assert= "|invalid request URL" message)
+                    _ $ raise "|unexpected HTTP error"
+                (:ok _) (raise "|expected invalid-request")
+              :tags $ #{} :wasm
         'call-host-load $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export call-host-load (text) (host-load text)
           :examples $ []

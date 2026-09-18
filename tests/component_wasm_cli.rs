@@ -1,8 +1,16 @@
 use std::fs;
+use std::io::{BufRead, BufReader, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use calcit_bindgen::COMPONENT_FILE;
+use calcit_bindgen::wasmtime_http::WasiHttpConfig;
+use wasmtime::component::{Component, Linker, Val};
+use wasmtime::{Config, Engine, Store};
 
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -25,6 +33,39 @@ impl Drop for TestDirectory {
   fn drop(&mut self) {
     let _ = fs::remove_dir_all(&self.0);
   }
+}
+
+fn serve_http_response(mut stream: TcpStream) {
+  let mut reader = BufReader::new(stream.try_clone().expect("HTTP stream should clone"));
+  let mut request_line = String::new();
+  reader.read_line(&mut request_line).expect("HTTP request line should read");
+  loop {
+    let mut header = String::new();
+    reader.read_line(&mut header).expect("HTTP request header should read");
+    if header == "\r\n" || header.is_empty() {
+      break;
+    }
+  }
+  if request_line.split_whitespace().nth(1) == Some("/redirect") {
+    write!(
+      stream,
+      "HTTP/1.1 302 Found\r\nlocation: http://127.0.0.1:1/denied\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+    )
+    .expect("HTTP redirect response should write");
+    return;
+  }
+  let (body, content_type) = match request_line.split_whitespace().nth(1) {
+    Some("/ok") => (br#"{"ok":true}"#.as_slice(), "application/json"),
+    Some("/large") => (b"123456789".as_slice(), "application/octet-stream"),
+    path => panic!("unexpected HTTP path: {path:?}"),
+  };
+  write!(
+    stream,
+    "HTTP/1.1 200 OK\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+    body.len()
+  )
+  .expect("HTTP response headers should write");
+  stream.write_all(body).expect("HTTP response body should write");
 }
 
 #[test]
@@ -341,6 +382,214 @@ WebAssembly.instantiate(module, { host, "calcit:wasi-http/client": http, "$root"
     String::from_utf8_lossy(&runtime.stdout),
     String::from_utf8_lossy(&runtime.stderr)
   );
+}
+
+#[test]
+fn buffered_http_component_uses_real_network_capabilities_and_bounds_in_js() {
+  let listener = TcpListener::bind("127.0.0.1:0").expect("local HTTP fixture should bind");
+  let origin = format!("http://{}", listener.local_addr().expect("local HTTP address should resolve"));
+  let server = thread::spawn(move || {
+    for stream in listener.incoming().take(3) {
+      serve_http_response(stream.expect("local HTTP connection should accept"));
+    }
+  });
+
+  let output = TestDirectory::create();
+  let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "tests/fixtures/component-wasm-async-import.cirru",
+      "wasm",
+      "--boundary",
+      "component",
+      "--emit-path",
+    ])
+    .arg(&output.0)
+    .output()
+    .expect("buffered HTTP Component fixture should compile");
+  assert!(
+    compile.status.success(),
+    "buffered HTTP Component compile failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&compile.stdout),
+    String::from_utf8_lossy(&compile.stderr)
+  );
+
+  let wasm = output.0.join("program.wasm");
+  let runtime = Command::new("node")
+    .arg("tests/fixtures/component-wasm-http-host.js")
+    .arg(&wasm)
+    .arg(&origin)
+    .output()
+    .expect("Node.js should execute the bounded HTTP Component adapter");
+  assert!(
+    runtime.status.success(),
+    "bounded HTTP Component runtime failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&runtime.stdout),
+    String::from_utf8_lossy(&runtime.stderr)
+  );
+  server.join().expect("local HTTP fixture should finish");
+}
+
+fn http_request(url: String, max_response_bytes: u64) -> Val {
+  Val::Record(vec![
+    ("body".to_owned(), Val::Variant("empty".to_owned(), None)),
+    ("headers".to_owned(), Val::List(vec![])),
+    ("max-response-bytes".to_owned(), Val::U64(max_response_bytes)),
+    ("method".to_owned(), Val::Variant("get".to_owned(), None)),
+    ("url".to_owned(), Val::String(url)),
+  ])
+}
+
+#[tokio::test]
+async fn packaged_http_component_executes_through_the_wasmtime_host_adapter() {
+  let listener = TcpListener::bind("127.0.0.1:0").expect("local HTTP fixture should bind");
+  let origin = format!("http://{}", listener.local_addr().expect("local HTTP address should resolve"));
+  let server = thread::spawn(move || {
+    for stream in listener.incoming().take(2) {
+      serve_http_response(stream.expect("local HTTP connection should accept"));
+    }
+  });
+
+  let output = TestDirectory::create();
+  let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "tests/fixtures/component-wasm-async-import.cirru",
+      "wasm",
+      "--boundary",
+      "component",
+      "--emit-path",
+    ])
+    .arg(&output.0)
+    .output()
+    .expect("buffered HTTP Component fixture should compile");
+  assert!(
+    compile.status.success(),
+    "buffered HTTP Component compile failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&compile.stdout),
+    String::from_utf8_lossy(&compile.stderr)
+  );
+  let contract = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "tests/fixtures/component-wasm-async-import.cirru",
+      "ffi",
+      "export",
+      "--boundary",
+      "component",
+    ])
+    .output()
+    .expect("buffered HTTP Component contract should export");
+  assert!(
+    contract.status.success(),
+    "buffered HTTP contract export failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&contract.stdout),
+    String::from_utf8_lossy(&contract.stderr)
+  );
+  let contract_path = output.0.join("interface.cirru");
+  fs::write(&contract_path, contract.stdout).expect("buffered HTTP contract should write");
+  let contract = calcit_bindgen::load_contract(&contract_path).expect("buffered HTTP contract should load");
+  let generated = output.0.join("generated");
+  calcit_bindgen::generate_contract_directory(&contract, Some(&output.0.join("program.wasm")), &generated, &[])
+    .expect("buffered HTTP Component should package");
+
+  let mut config = Config::new();
+  config.wasm_component_model_async(true);
+  config.wasm_component_model_async_stackful(true);
+  let engine = Engine::new(&config).expect("Wasmtime Component engine should create");
+  let component = Component::from_file(&engine, generated.join(COMPONENT_FILE)).expect("buffered HTTP Component should load");
+  let mut linker = Linker::new(&engine);
+  let mut fixture_host = linker.instance("host").expect("fixture host instance should define");
+  fixture_host
+    .func_wrap_concurrent(
+      "combine",
+      |_accessor, (left, right, count, enabled): (String, String, f64, bool)| {
+        Box::pin(async move { Ok((format!("{left}:{right}:{count}:{enabled}"),)) })
+      },
+    )
+    .expect("fixture combine import should define");
+  fixture_host
+    .func_wrap_concurrent("flag", |_accessor, (flag,): (bool,)| Box::pin(async move { Ok((!flag,)) }))
+    .expect("fixture flag import should define");
+  fixture_host
+    .func_wrap_concurrent("load", |_accessor, (text,): (String,)| {
+      Box::pin(async move { Ok((Ok::<String, String>(text),)) })
+    })
+    .expect("fixture load import should define");
+  let host = WasiHttpConfig::default()
+    .allow_origin(&origin)
+    .expect("local HTTP origin should be granted");
+  calcit_bindgen::wasmtime_http::add_to_linker(&mut linker, host).expect("buffered HTTP host adapter should link");
+  let mut store = Store::new(&engine, ());
+  let instance = linker
+    .instantiate_async(&mut store, &component)
+    .await
+    .expect("buffered HTTP Component should instantiate");
+  let request = instance
+    .get_func(&mut store, "call-host-http-request")
+    .expect("buffered HTTP export should exist");
+
+  let mut success = [Val::Bool(false)];
+  request
+    .call_async(&mut store, &[http_request(format!("{origin}/ok"), 64)], &mut success)
+    .await
+    .expect("buffered HTTP success should return");
+  let Val::Result(Ok(Some(response))) = &success[0] else {
+    panic!("unexpected Wasmtime HTTP success: {success:?}");
+  };
+  let Val::Record(fields) = response.as_ref() else {
+    panic!("unexpected Wasmtime HTTP response: {response:?}");
+  };
+  assert!(
+    matches!(&fields[0], (name, Val::Variant(case, Some(body)))
+      if name == "body" && case == "text" && matches!(body.as_ref(), Val::String(text) if text == r#"{"ok":true}"#)),
+    "unexpected Wasmtime HTTP body: {:?}",
+    fields[0]
+  );
+  assert!(
+    matches!(&fields[1], (name, Val::List(headers)) if name == "headers" && headers.iter().any(|header|
+      matches!(header, Val::Record(values)
+        if matches!(&values[0], (field, Val::String(value)) if field == "name" && value == "content-type")))),
+    "unexpected Wasmtime HTTP headers: {:?}",
+    fields[1]
+  );
+  assert!(matches!(&fields[2], (name, Val::U16(200)) if name == "status"));
+
+  let mut denied = [Val::Bool(false)];
+  request
+    .call_async(&mut store, &[http_request("http://127.0.0.1:1/denied".to_owned(), 64)], &mut denied)
+    .await
+    .expect("capability denial should return a typed error");
+  assert!(
+    matches!(
+      &denied[0],
+      Val::Result(Err(Some(error)))
+        if matches!(error.as_ref(), Val::Variant(case, Some(_)) if case == "capability-denied")
+    ),
+    "unexpected Wasmtime capability error: {denied:?}"
+  );
+
+  let mut oversized = [Val::Bool(false)];
+  request
+    .call_async(&mut store, &[http_request(format!("{origin}/large"), 8)], &mut oversized)
+    .await
+    .expect("response overflow should return a typed error");
+  assert!(
+    matches!(
+      &oversized[0],
+      Val::Result(Err(Some(error)))
+        if matches!(error.as_ref(), Val::Variant(case, Some(value))
+          if case == "response-too-large" && matches!(value.as_ref(), Val::U64(9)))
+    ),
+    "unexpected Wasmtime response limit error: {oversized:?}"
+  );
+  server.join().expect("local HTTP fixture should finish");
 }
 
 #[test]
