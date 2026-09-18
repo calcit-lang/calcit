@@ -18,3 +18,4 @@
 - 发布版 `calcit-bindgen 0.1.2` 的 `generate` / `check` 可重建全部 artifact。
 - 真实 loopback HTTP 验证成功、capability denied 和 response-too-large；现有跨宿主测试继续覆盖 malformed URL 与 redirect rejection。
 - review 后把 malformed URL 与 redirect no-follow 也加入 starter Snapshot 的 Wasmtime packaging 测试；Wasmtime host 保留 302 与 Location 而不跟随，确保文档声明由用户示例本身覆盖，而不只依赖 JavaScript fixture。
+- 后续 review 收紧 redirect 断言，完整检查 `HttpHeader` 的字段名、header 名称及目标 URL bytes，避免空值或被改写的 Location 误通过。

@@ -603,8 +603,21 @@ async fn packaged_http_component_executes_through_the_wasmtime_host_adapter() {
   assert!(matches!(&fields[2], (name, Val::U16(302)) if name == "status"));
   assert!(
     matches!(&fields[1], (name, Val::List(headers)) if name == "headers" && headers.iter().any(|header|
-      matches!(header, Val::Record(values)
-        if matches!(&values[0], (field, Val::String(value)) if field == "name" && value == "location")))),
+    matches!(header, Val::Record(values)
+      if matches!(
+          values.as_slice(),
+          [
+            (name, Val::String(header_name)),
+            (value, Val::List(header_value)),
+          ] if name == "name"
+            && header_name == "location"
+            && value == "value"
+            && header_value.len() == b"http://127.0.0.1:1/denied".len()
+            && header_value
+              .iter()
+              .zip(b"http://127.0.0.1:1/denied")
+              .all(|(actual, expected)| matches!(actual, Val::U8(value) if value == expected))
+      )))),
     "redirect response should preserve the location header: {:?}",
     fields[1]
   );
