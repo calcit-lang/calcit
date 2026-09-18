@@ -14,6 +14,17 @@ fn run_calcit(args: &[&str]) -> Output {
     .expect("calcit command should run")
 }
 
+fn run_component_fixture(path: &str, args: &[&str]) -> Output {
+  Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .arg("--tips-level")
+    .arg("none")
+    .arg(path)
+    .args(args)
+    .output()
+    .expect("calcit fixture command should run")
+}
+
 fn stdout(output: &Output) -> String {
   assert!(
     output.status.success(),
@@ -69,6 +80,56 @@ fn component_contract_defaults_to_edn_and_matches_explicit_json() {
     async_definition["logical_schema"]
       .as_str()
       .is_some_and(|schema| schema.contains("(:async true)"))
+  );
+}
+
+#[test]
+fn buffered_http_contract_is_closed_and_explicitly_bounded() {
+  let output = run_component_fixture(
+    "tests/fixtures/component-wasm-async-import.cirru",
+    &["ffi", "export", "--boundary", "component", "--format", "json"],
+  );
+  let json: serde_json::Value = serde_json::from_str(&stdout(&output)).expect("buffered HTTP contract should be valid JSON");
+  let interface = &json["data"]["interface"];
+  let definitions = interface["definitions"]
+    .as_array()
+    .expect("component definitions should be an array");
+  let request = definitions
+    .iter()
+    .find(|definition| definition["id"] == "component-wasm-async-import.main/host-http-request")
+    .expect("buffered HTTP request import should be exported");
+  assert_eq!(request["direction"], "import");
+  assert_eq!(request["invocation"], "async");
+  assert_eq!(request["module"], "calcit:wasi-http/client");
+  assert_eq!(request["symbol"], "request");
+  assert_eq!(request["signature"]["result"]["kind"], "result");
+
+  let declarations = interface["declarations"]
+    .as_array()
+    .expect("component declarations should be an array");
+  let http_request = declarations
+    .iter()
+    .find(|declaration| declaration["id"] == "component-wasm-async-import.main/HttpRequest")
+    .expect("HTTP request declaration should be exported");
+  let max_response_bytes = http_request["fields"]
+    .as_array()
+    .expect("HTTP request fields should be an array")
+    .iter()
+    .find(|field| field["name"] == "max-response-bytes")
+    .expect("HTTP request should carry an explicit response bound");
+  assert_eq!(max_response_bytes["type"]["kind"], "uint64");
+
+  let http_error = declarations
+    .iter()
+    .find(|declaration| declaration["id"] == "component-wasm-async-import.main/HttpError")
+    .expect("HTTP error declaration should be exported");
+  assert!(
+    http_error["variants"]
+      .as_array()
+      .expect("HTTP error variants should be an array")
+      .iter()
+      .any(|variant| variant["name"] == "response-too-large"),
+    "response overflow must remain a typed failure"
   );
 }
 
