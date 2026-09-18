@@ -290,7 +290,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
       let (params, results) = component_import_signature(adapter);
       host_imports.push(HostImport {
         module: adapter.module.clone(),
-        name: adapter.symbol.clone(),
+        name: component_import_emitted_symbol(adapter),
         params,
         results,
       });
@@ -308,7 +308,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
       let index = host_imports.len() as u32;
       adapter.task_return_index = Some(index);
       host_imports.push(HostImport {
-        module: COMPONENT_CANONICAL_IMPORT_MODULE.into(),
+        module: COMPONENT_ASYNC_EXPORT_IMPORT_MODULE.into(),
         name: component_task_return_symbol(&adapter.symbol),
         params: component_task_return_signature(&adapter.result),
         results: vec![],
@@ -1019,14 +1019,15 @@ enum ComponentAbiInvocation {
   Async,
 }
 
-const COMPONENT_CANONICAL_IMPORT_MODULE: &str = "calcit:component/canonical";
+const COMPONENT_ASYNC_ROOT_IMPORT_MODULE: &str = "$root";
+const COMPONENT_ASYNC_EXPORT_IMPORT_MODULE: &str = "[export]$root";
 const COMPONENT_ASYNC_MAX_FLAT_PARAMETERS: usize = 4;
 
 fn register_component_async_canonical_imports(host_imports: &mut Vec<HostImport>) -> ComponentAsyncCanonicalImports {
   let mut register = |name: &str, params: Vec<ValType>, results: Vec<ValType>| {
     let index = host_imports.len() as u32;
     host_imports.push(HostImport {
-      module: COMPONENT_CANONICAL_IMPORT_MODULE.into(),
+      module: COMPONENT_ASYNC_ROOT_IMPORT_MODULE.into(),
       name: name.into(),
       params,
       results,
@@ -1034,16 +1035,40 @@ fn register_component_async_canonical_imports(host_imports: &mut Vec<HostImport>
     index
   };
   ComponentAsyncCanonicalImports {
-    waitable_set_new: register("waitable-set.new", vec![], vec![ValType::I32]),
-    waitable_set_wait: register("waitable-set.wait", vec![ValType::I32, ValType::I32], vec![ValType::I32]),
-    waitable_set_drop: register("waitable-set.drop", vec![ValType::I32], vec![]),
-    waitable_join: register("waitable.join", vec![ValType::I32, ValType::I32], vec![]),
-    subtask_drop: register("subtask.drop", vec![ValType::I32], vec![]),
+    waitable_set_new: register("[waitable-set-new]", vec![], vec![ValType::I32]),
+    waitable_set_wait: register("[waitable-set-wait]", vec![ValType::I32, ValType::I32], vec![ValType::I32]),
+    waitable_set_drop: register("[waitable-set-drop]", vec![ValType::I32], vec![]),
+    waitable_join: register("[waitable-join]", vec![ValType::I32, ValType::I32], vec![]),
+    subtask_drop: register("[subtask-drop]", vec![ValType::I32], vec![]),
+  }
+}
+
+fn component_async_import_symbol(symbol: &str) -> String {
+  format!("[async-lower]{symbol}")
+}
+
+fn component_async_export_symbol(symbol: &str) -> String {
+  format!("[async-lift-stackful]{symbol}")
+}
+
+fn component_import_emitted_symbol(adapter: &ComponentImportAdapter) -> String {
+  if adapter.invocation == ComponentAbiInvocation::Async {
+    component_async_import_symbol(&adapter.symbol)
+  } else {
+    adapter.symbol.clone()
+  }
+}
+
+fn component_export_emitted_symbol(adapter: &ComponentExportAdapter) -> String {
+  if adapter.invocation == ComponentAbiInvocation::Async {
+    component_async_export_symbol(&adapter.symbol)
+  } else {
+    adapter.symbol.clone()
   }
 }
 
 fn component_task_return_symbol(symbol: &str) -> String {
-  format!("task-return/{symbol}")
+  format!("[task-return]{symbol}")
 }
 
 #[cfg(test)]
@@ -1488,9 +1513,12 @@ fn collect_component_import_adapters(program_data: &program::CompiledProgram) ->
       let definition = format!("{namespace}/{name}");
       let (module, symbol, args) = parse_wasm_import_def(&compiled.preprocessed_code)
         .ok_or_else(|| format!("E_COMPONENT_ABI_IMPORT: `{definition}` must use `defwasm-import name (args) |module |field`"))?;
-      if module == COMPONENT_CANONICAL_IMPORT_MODULE {
+      if matches!(
+        module.as_str(),
+        COMPONENT_ASYNC_ROOT_IMPORT_MODULE | COMPONENT_ASYNC_EXPORT_IMPORT_MODULE
+      ) {
         return Err(format!(
-          "E_COMPONENT_ABI_RESERVED_IMPORT: `{definition}` cannot declare the compiler-reserved module `{COMPONENT_CANONICAL_IMPORT_MODULE}`"
+          "E_COMPONENT_ABI_RESERVED_IMPORT: `{definition}` cannot declare the compiler-reserved module `{module}`"
         ));
       }
       let source_arity = wasm_import_arity(&args)
@@ -1560,10 +1588,10 @@ fn collect_component_export_adapters(
 }
 
 fn validate_component_export_symbols(adapters: &[ComponentExportAdapter]) -> Result<(), String> {
-  let mut symbol_owners = BTreeMap::<&str, Vec<&str>>::new();
+  let mut symbol_owners = BTreeMap::<String, Vec<&str>>::new();
   for adapter in adapters {
     symbol_owners
-      .entry(adapter.symbol.as_str())
+      .entry(component_export_emitted_symbol(adapter))
       .or_default()
       .push(adapter.definition.as_str());
   }
@@ -1577,10 +1605,10 @@ fn validate_component_export_symbols(adapters: &[ComponentExportAdapter]) -> Res
 }
 
 fn validate_component_import_symbols(adapters: &[ComponentImportAdapter]) -> Result<(), String> {
-  let mut symbol_owners = BTreeMap::<(&str, &str), Vec<&str>>::new();
+  let mut symbol_owners = BTreeMap::<(&str, String), Vec<&str>>::new();
   for adapter in adapters {
     symbol_owners
-      .entry((adapter.module.as_str(), adapter.symbol.as_str()))
+      .entry((adapter.module.as_str(), component_import_emitted_symbol(adapter)))
       .or_default()
       .push(adapter.definition.as_str());
   }
@@ -2771,7 +2799,7 @@ fn build_component_export_adapter(
     };
     finish_component_async_export(adapter, params.len(), &mut locals, &mut instructions, cabi_realloc_index, &codecs);
     return CompiledFn {
-      export_name: Some(adapter.symbol.clone()),
+      export_name: Some(component_export_emitted_symbol(adapter)),
       params,
       results: vec![],
       locals,
@@ -2917,7 +2945,7 @@ fn build_component_export_adapter(
   };
 
   CompiledFn {
-    export_name: Some(adapter.symbol.clone()),
+    export_name: Some(component_export_emitted_symbol(adapter)),
     params,
     results,
     locals,
@@ -7248,17 +7276,20 @@ mod tests {
 
   #[test]
   fn component_adapter_rejects_duplicate_export_symbols_deterministically() {
-    let adapter = |definition: &str| ComponentExportAdapter {
+    let adapter = |definition: &str, symbol: &str, invocation: ComponentAbiInvocation| ComponentExportAdapter {
       definition: definition.into(),
-      symbol: "run".into(),
+      symbol: symbol.into(),
       target_index: 20,
-      invocation: ComponentAbiInvocation::Sync,
+      invocation,
       task_return_index: None,
       parameters: vec![ComponentAbiType::Number],
       result: ComponentAbiType::Number,
     };
-    let error = validate_component_export_symbols(&[adapter("a.main/run"), adapter("b.main/run")])
-      .expect_err("duplicate export symbols must fail before WASM encoding");
+    let error = validate_component_export_symbols(&[
+      adapter("a.main/run", "run", ComponentAbiInvocation::Sync),
+      adapter("b.main/run", "run", ComponentAbiInvocation::Sync),
+    ])
+    .expect_err("duplicate export symbols must fail before WASM encoding");
     assert_eq!(
       error,
       "E_COMPONENT_ABI_SYMBOL_CONFLICT: export symbol `run` is declared by a.main/run, b.main/run"
@@ -7266,22 +7297,70 @@ mod tests {
   }
 
   #[test]
-  fn component_adapter_rejects_duplicate_import_symbols_deterministically() {
-    let adapter = |definition: &str| ComponentImportAdapter {
+  fn component_adapter_rejects_export_symbols_that_collide_after_async_mangling() {
+    let adapter = |definition: &str, symbol: &str, invocation: ComponentAbiInvocation| ComponentExportAdapter {
       definition: definition.into(),
-      module: "host".into(),
-      symbol: "run".into(),
-      raw_index: 0,
-      source_arity: 1,
-      invocation: ComponentAbiInvocation::Sync,
+      symbol: symbol.into(),
+      target_index: 20,
+      invocation,
+      task_return_index: None,
       parameters: vec![ComponentAbiType::Number],
       result: ComponentAbiType::Number,
     };
-    let error = validate_component_import_symbols(&[adapter("a.main/run"), adapter("b.main/run")])
-      .expect_err("duplicate import symbols must fail before WASM encoding");
+    let error = validate_component_export_symbols(&[
+      adapter("a.main/reserved", "[async-lift-stackful]run", ComponentAbiInvocation::Sync),
+      adapter("b.main/run", "run", ComponentAbiInvocation::Async),
+    ])
+    .expect_err("emitted export names must be unique after async mangling");
+    assert_eq!(
+      error,
+      "E_COMPONENT_ABI_SYMBOL_CONFLICT: export symbol `[async-lift-stackful]run` is declared by a.main/reserved, b.main/run"
+    );
+  }
+
+  #[test]
+  fn component_adapter_rejects_duplicate_import_symbols_deterministically() {
+    let adapter = |definition: &str, symbol: &str, invocation: ComponentAbiInvocation| ComponentImportAdapter {
+      definition: definition.into(),
+      module: "host".into(),
+      symbol: symbol.into(),
+      raw_index: 0,
+      source_arity: 1,
+      invocation,
+      parameters: vec![ComponentAbiType::Number],
+      result: ComponentAbiType::Number,
+    };
+    let error = validate_component_import_symbols(&[
+      adapter("a.main/run", "run", ComponentAbiInvocation::Sync),
+      adapter("b.main/run", "run", ComponentAbiInvocation::Sync),
+    ])
+    .expect_err("duplicate import symbols must fail before WASM encoding");
     assert_eq!(
       error,
       "E_COMPONENT_ABI_SYMBOL_CONFLICT: import symbol `host/run` is declared by a.main/run, b.main/run"
+    );
+  }
+
+  #[test]
+  fn component_adapter_rejects_import_symbols_that_collide_after_async_mangling() {
+    let adapter = |definition: &str, symbol: &str, invocation: ComponentAbiInvocation| ComponentImportAdapter {
+      definition: definition.into(),
+      module: "host".into(),
+      symbol: symbol.into(),
+      raw_index: 0,
+      source_arity: 1,
+      invocation,
+      parameters: vec![ComponentAbiType::Number],
+      result: ComponentAbiType::Number,
+    };
+    let error = validate_component_import_symbols(&[
+      adapter("a.main/reserved", "[async-lower]run", ComponentAbiInvocation::Sync),
+      adapter("b.main/run", "run", ComponentAbiInvocation::Async),
+    ])
+    .expect_err("emitted import names must be unique after async mangling");
+    assert_eq!(
+      error,
+      "E_COMPONENT_ABI_SYMBOL_CONFLICT: import symbol `host/[async-lower]run` is declared by a.main/reserved, b.main/run"
     );
   }
 
