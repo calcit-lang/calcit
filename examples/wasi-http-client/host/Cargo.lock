@@ -134,9 +134,9 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "calcit-bindgen"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e7ab7d192a85ce34d8b4066c99b57e0549695d4a462500d70f048eabd6c2467"
+checksum = "6ab26e245eeec29068fc5935cf92fbcfa89cc132a3a0e52e7f9f244aae255160"
 dependencies = [
  "bytes",
  "cirru_edn",

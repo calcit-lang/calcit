@@ -204,7 +204,7 @@ calcit-bindgen generate target/component-interface.cirru \
   --out target/component
 ```
 
-宿主使用 `calcit-bindgen 0.1.2` 的 `wasmtime-http` feature，把生成目录中的
+宿主使用 `calcit-bindgen 0.1.3` 的 `wasmtime-http` feature，把生成目录中的
 `rust/wasmtime_http_adapter.rs` include 到 crate 根部，再调用 `add_to_linker`。默认配置拒绝全部网络；
 必须用 `WasiHttpConfig::allow_origin("scheme://authority")` 精确授予 origin，端口属于 authority。
 生成器会保留最终 Component 的 `calcit:wasi-http/client` import identity，不要求业务改用内部 WIT alias。

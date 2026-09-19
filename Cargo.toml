@@ -69,7 +69,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 cirru_parser = "=0.2.17"
 
 [dev-dependencies]
-calcit-bindgen = { version = "0.1.2", features = ["wasmtime-http"] }
+calcit-bindgen = { version = "0.1.3", features = ["wasmtime-http"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 wasmtime = { version = "=47.0.4", default-features = false, features = ["component-model", "component-model-async", "cranelift", "runtime", "std"] }
 
