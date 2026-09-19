@@ -408,15 +408,20 @@ impl RawCodeEntry {
       })
       .collect::<Vec<_>>();
     validate_test_entries(&tests, owner)?;
+    let (code, ffi) = normalize_entry_external(self.code, self.ffi, owner)?;
+    // Match the text loader: a definition-kind schema stored as Dynamic must
+    // become the canonical marker, including for `defexternal`-lowered
+    // `deftrait` entries.
+    let schema = normalize_schema_for_code(&code, &schema);
 
     Ok(CodeEntry {
       doc: self.doc,
       examples: self.examples,
       tests,
       tags: tags_vec_to_set(self.tags),
-      code: self.code,
+      code,
       schema,
-      ffi: self.ffi,
+      ffi,
     })
   }
 }
@@ -1057,6 +1062,7 @@ impl TryFrom<Edn> for CodeEntry {
     }
 
     let code = code.ok_or_else(|| "failed to parse CodeEntry: missing code field".to_owned())?;
+    let (code, ffi) = normalize_entry_external(code, ffi, "CodeEntry")?;
     validate_test_entries(&tests, "CodeEntry.tests")?;
     let schema = normalize_schema_for_code(&code, &schema);
 
@@ -2753,6 +2759,243 @@ fn validate_strict_macro_schemas(files: &HashMap<String, FileInSnapShot>, path: 
   Ok(())
 }
 
+/// Expand a `defexternal` authoring shorthand into the canonical `deftrait` code
+/// plus external-object `:ffi` metadata. This keeps preprocess/type/codegen/query
+/// unchanged: `defexternal` is only a declaration surface.
+fn normalize_defexternal_code(code: Cirru, owner: &str) -> Result<(Cirru, Edn), String> {
+  let Cirru::List(items) = &code else {
+    return Err(format!("{owner}: expected `defexternal` form to be a list"));
+  };
+  if items.len() < 2 {
+    return Err(format!("{owner}: `defexternal` requires a trait name and members"));
+  }
+  let name = match items.get(1) {
+    Some(Cirru::Leaf(name)) if !name.is_empty() => name.clone(),
+    other => {
+      return Err(format!(
+        "{owner}: `defexternal` expects a trait name symbol, got {}",
+        format_cirru_preview(other)
+      ));
+    }
+  };
+
+  let mut target: Option<Edn> = None;
+  let mut names_pairs: Vec<(Edn, Edn)> = vec![];
+  let mut writable: Vec<Edn> = vec![];
+  let mut members: Vec<Cirru> = vec![];
+
+  for item in &items[2..] {
+    let Cirru::List(parts) = item else {
+      return Err(format!(
+        "{owner}: `defexternal` expects option/member entries, got {}",
+        format_cirru_preview(Some(item))
+      ));
+    };
+    let Some(Cirru::Leaf(head)) = parts.first() else {
+      return Err(format!(
+        "{owner}: `defexternal` expects option/member heads, got {}",
+        format_cirru_preview(Some(item))
+      ));
+    };
+    // Each outer option or member is a head plus exactly one value. Plural
+    // contents stay inside that single value (`:names` map / `:writable` set).
+    if parts.len() != 2 {
+      return Err(format!(
+        "{owner}: `defexternal` entry `{head}` expects exactly one value, got {} part(s)",
+        parts.len()
+      ));
+    }
+    match head.as_ref() {
+      ":target" => {
+        if target.is_some() {
+          return Err(format!("{owner}: `defexternal` declares `:target` more than once"));
+        }
+        let value = parts
+          .get(1)
+          .ok_or_else(|| format!("{owner}: `defexternal` `:target` is missing a value"))?;
+        target = Some(parse_defexternal_target(value, owner)?);
+      }
+      ":names" => {
+        let value = parts
+          .get(1)
+          .ok_or_else(|| format!("{owner}: `defexternal` `:names` is missing a map"))?;
+        names_pairs.extend(parse_defexternal_names(value, owner)?);
+      }
+      ":writable" => {
+        let value = parts
+          .get(1)
+          .ok_or_else(|| format!("{owner}: `defexternal` `:writable` is missing a set"))?;
+        writable.extend(parse_defexternal_writable(value, owner)?);
+      }
+      ":backend" | ":kind" => {
+        return Err(format!(
+          "{owner}: `defexternal` does not accept `{head}`; it always produces `:backend :js` and `:kind :external-object`"
+        ));
+      }
+      _ if head.starts_with(':') || head.starts_with('.') => {
+        let value = parts
+          .get(1)
+          .ok_or_else(|| format!("{owner}: `defexternal` member `{head}` is missing a schema/value"))?;
+        members.push(Cirru::List(vec![parts[0].clone(), value.clone()]));
+      }
+      other => {
+        return Err(format!(
+          "{owner}: `defexternal` expects field (`:field Type`) or method (`.method Schema`) members, got `{other}`"
+        ));
+      }
+    }
+  }
+
+  if members.is_empty() {
+    return Err(format!("{owner}: `defexternal` requires at least one field or method member"));
+  }
+
+  let mut trait_items: Vec<Cirru> = vec![Cirru::Leaf(Arc::from("deftrait")), Cirru::Leaf(name.clone())];
+  trait_items.extend(members.iter().cloned());
+  let trait_code = Cirru::List(trait_items);
+
+  let mut ffi_pairs: Vec<(Edn, Edn)> = vec![
+    (Edn::tag("backend"), Edn::tag("js")),
+    (Edn::tag("kind"), Edn::tag("external-object")),
+  ];
+  if let Some(target) = target {
+    ffi_pairs.push((Edn::tag("target"), target));
+  }
+  if !names_pairs.is_empty() {
+    ffi_pairs.push((Edn::tag("names"), Edn::Map(EdnMapView(HashMap::from_iter(names_pairs)))));
+  }
+  if !writable.is_empty() {
+    #[allow(clippy::mutable_key_type)]
+    let set: HashSet<Edn> = writable.into_iter().collect();
+    ffi_pairs.push((Edn::tag("writable"), Edn::Set(EdnSetView(set))));
+  }
+
+  Ok((trait_code, Edn::Map(EdnMapView(HashMap::from_iter(ffi_pairs)))))
+}
+
+/// Parse a `defexternal` `:target` value into a canonical target tag.
+fn parse_defexternal_target(value: &Cirru, owner: &str) -> Result<Edn, String> {
+  let Cirru::Leaf(value) = value else {
+    return Err(format!(
+      "{owner}: `defexternal` `:target` expects a tag, got {}",
+      format_cirru_preview(Some(value))
+    ));
+  };
+  let name = value.trim_start_matches(':');
+  match name {
+    "browser" | "node" | "native" | "wasm" => Ok(Edn::tag(name)),
+    _ => Err(format!(
+      "{owner}: unknown `defexternal` `:target` `{name}`; expected browser, node, native, or wasm"
+    )),
+  }
+}
+
+/// Parse a `defexternal` `:names` map into Calcit-name/host-name tag/string pairs.
+fn parse_defexternal_names(value: &Cirru, owner: &str) -> Result<Vec<(Edn, Edn)>, String> {
+  let Cirru::List(items) = value else {
+    return Err(format!(
+      "{owner}: `defexternal` `:names` expects a map, got {}",
+      format_cirru_preview(Some(value))
+    ));
+  };
+  let Some(Cirru::Leaf(head)) = items.first() else {
+    return Err(format!("{owner}: `defexternal` `:names` expects a `{{}}` map head"));
+  };
+  if head.as_ref() != "{}" {
+    return Err(format!("{owner}: `defexternal` `:names` expects a map, got `{head}`"));
+  }
+  let pairs = &items[1..];
+  let mut result = vec![];
+  for pair in pairs {
+    let Cirru::List(pair) = pair else {
+      return Err(format!(
+        "{owner}: `defexternal` `:names` expects `(key value)` pairs, got {}",
+        format_cirru_preview(Some(pair))
+      ));
+    };
+    if pair.len() != 2 {
+      return Err(format!("{owner}: `defexternal` `:names` expects `(key value)` pairs"));
+    }
+    let key = match &pair[0] {
+      Cirru::Leaf(key) if key.starts_with(':') => Edn::tag(key.trim_start_matches(':')),
+      other => {
+        return Err(format!(
+          "{owner}: `defexternal` `:names` keys must be tags, got {}",
+          format_cirru_preview(Some(other))
+        ));
+      }
+    };
+    let host = match &pair[1] {
+      Cirru::Leaf(host) if host.starts_with('|') => Edn::str(host.trim_start_matches('|')),
+      other => {
+        return Err(format!(
+          "{owner}: `defexternal` `:names` values must be strings, got {}",
+          format_cirru_preview(Some(other))
+        ));
+      }
+    };
+    result.push((key, host));
+  }
+  Ok(result)
+}
+
+/// Parse a `defexternal` `:writable` set into field tags.
+fn parse_defexternal_writable(value: &Cirru, owner: &str) -> Result<Vec<Edn>, String> {
+  let Cirru::List(items) = value else {
+    return Err(format!(
+      "{owner}: `defexternal` `:writable` expects a set, got {}",
+      format_cirru_preview(Some(value))
+    ));
+  };
+  let Some(Cirru::Leaf(head)) = items.first() else {
+    return Err(format!("{owner}: `defexternal` `:writable` expects a `#{{}}` set head"));
+  };
+  if head.as_ref() != "#{}" {
+    return Err(format!("{owner}: `defexternal` `:writable` expects a set, got `{head}`"));
+  }
+  let mut result = vec![];
+  for item in &items[1..] {
+    match item {
+      Cirru::Leaf(field) if field.starts_with(':') => result.push(Edn::tag(field.trim_start_matches(':'))),
+      other => {
+        return Err(format!(
+          "{owner}: `defexternal` `:writable` entries must be field tags, got {}",
+          format_cirru_preview(Some(other))
+        ));
+      }
+    }
+  }
+  Ok(result)
+}
+
+/// Render a Cirru node for diagnostics, or `<missing>` when absent.
+fn format_cirru_preview(node: Option<&Cirru>) -> String {
+  match node {
+    Some(node) => format!("{node:?}"),
+    None => "<missing>".to_owned(),
+  }
+}
+
+/// Whether a definition body uses the `defexternal` shorthand head.
+fn code_declares_defexternal(code: &Cirru) -> bool {
+  matches!(code, Cirru::List(items) if matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defexternal"))
+}
+
+/// Apply the `defexternal` shorthand, if present, to a parsed entry. Explicit
+/// `:ffi` metadata wins over the shorthand's generated metadata.
+fn normalize_entry_external(code: Cirru, ffi: Option<Edn>, owner: &str) -> Result<(Cirru, Option<Edn>), String> {
+  if !code_declares_defexternal(&code) {
+    return Ok((code, ffi));
+  }
+  let (trait_code, generated_ffi) = normalize_defexternal_code(code, owner)?;
+  if ffi.is_some() {
+    return Err(format!(
+      "{owner}: `defexternal` already declares external-object metadata; remove the explicit `:ffi` or use `deftrait` instead"
+    ));
+  }
+  Ok((trait_code, Some(generated_ffi)))
+}
+
 fn parse_code_entry_with_context(data: Edn, owner: &str) -> Result<CodeEntry, String> {
   with_type_annotation_warning_context(owner.to_owned(), || data.try_into()).map_err(|e| format!("{owner}: {e}"))
 }
@@ -3525,6 +3768,124 @@ mod tests {
       .into_iter()
       .next()
       .expect("test Cirru should contain one expression")
+  }
+
+  #[test]
+  fn defexternal_expands_to_deftrait_and_external_ffi_metadata() {
+    let source = r#"defexternal QueryHost
+  :target :browser
+  :names $ {} (:query |querySelector)
+  :writable $ #{} :text-content
+  :length 'Number
+  .query $ :: 'Fn $ {} (:args $ [] 'QueryHost 'String) (:return 'QueryHost)"#;
+    let (code, ffi) = normalize_defexternal_code(parse_one(source), "demo/QueryHost").expect("defexternal should expand");
+
+    let Cirru::List(items) = &code else {
+      panic!("expanded code should be a list");
+    };
+    assert!(matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "deftrait"));
+    assert!(matches!(items.get(1), Some(Cirru::Leaf(name)) if name.as_ref() == "QueryHost"));
+    // members preserve declaration order: :length, .query
+    assert!(
+      matches!(items.get(2), Some(Cirru::List(field)) if matches!(field.first(), Some(Cirru::Leaf(head)) if head.as_ref() == ":length"))
+    );
+    assert!(
+      matches!(items.get(3), Some(Cirru::List(method)) if matches!(method.first(), Some(Cirru::Leaf(head)) if head.as_ref() == ".query"))
+    );
+    assert_eq!(items.len(), 4);
+
+    let ffi = ffi.view_map().expect("ffi should be a map");
+    assert_eq!(ffi.get(&Edn::tag("backend")), Some(&Edn::tag("js")));
+    assert_eq!(ffi.get(&Edn::tag("kind")), Some(&Edn::tag("external-object")));
+    assert_eq!(ffi.get(&Edn::tag("target")), Some(&Edn::tag("browser")));
+    assert_eq!(
+      ffi.get(&Edn::tag("writable")),
+      Some(&Edn::Set(EdnSetView(HashSet::from([Edn::tag("text-content")]))))
+    );
+    let names = ffi.get(&Edn::tag("names")).expect("names should exist");
+    let names = names.view_map().expect("names should be a map");
+    assert_eq!(names.get(&Edn::tag("query")), Some(&Edn::str("querySelector")));
+  }
+
+  #[test]
+  fn defexternal_omits_empty_optional_metadata() {
+    let source = "defexternal Bare\n  :value 'String";
+    let (code, ffi) = normalize_defexternal_code(parse_one(source), "demo/Bare").expect("defexternal should expand");
+    let Cirru::List(items) = &code else {
+      panic!("expanded code should be a list");
+    };
+    assert_eq!(items.len(), 3);
+    let ffi = ffi.view_map().expect("ffi should be a map");
+    assert!(ffi.get(&Edn::tag("target")).is_none());
+    assert!(ffi.get(&Edn::tag("names")).is_none());
+    assert!(ffi.get(&Edn::tag("writable")).is_none());
+  }
+
+  #[test]
+  fn defexternal_rejects_unknown_target_and_backend() {
+    let target_error = normalize_defexternal_code(parse_one("defexternal T\n  :target :deno\n  :value 'String"), "demo/T")
+      .expect_err("unknown target should fail");
+    assert!(target_error.contains("unknown `defexternal` `:target`"), "error: {target_error}");
+
+    let backend_error = normalize_defexternal_code(parse_one("defexternal T\n  :backend :native\n  :value 'String"), "demo/T")
+      .expect_err("explicit backend should fail");
+    assert!(backend_error.contains("does not accept `:backend`"), "error: {backend_error}");
+  }
+
+  #[test]
+  fn defexternal_rejects_missing_members_and_duplicate_target() {
+    let empty = normalize_defexternal_code(parse_one("defexternal T\n  :target :node"), "demo/T").expect_err("members required");
+    assert!(empty.contains("at least one field or method"), "error: {empty}");
+
+    let duplicate = normalize_defexternal_code(
+      parse_one("defexternal T\n  :target :node\n  :target :browser\n  :value 'String"),
+      "demo/T",
+    )
+    .expect_err("duplicate target should fail");
+    assert!(duplicate.contains("more than once"), "error: {duplicate}");
+  }
+
+  #[test]
+  fn defexternal_rejects_surplus_option_or_member_values() {
+    let target = normalize_defexternal_code(parse_one("defexternal T\n  :target :browser :node\n  :value 'String"), "demo/T")
+      .expect_err("surplus target values should fail");
+    assert!(target.contains("expects exactly one value"), "error: {target}");
+
+    let member = normalize_defexternal_code(parse_one("defexternal T\n  :value 'String 'Unexpected"), "demo/T")
+      .expect_err("surplus member values should fail");
+    assert!(member.contains("expects exactly one value"), "error: {member}");
+  }
+
+  #[test]
+  fn defexternal_conflicts_with_explicit_ffi_metadata() {
+    let ffi = Edn::Map(EdnMapView(HashMap::from_iter([(Edn::tag("backend"), Edn::tag("js"))])));
+    let error = normalize_entry_external(parse_one("defexternal T\n  :value 'String"), Some(ffi), "demo/T")
+      .expect_err("explicit ffi should conflict");
+    assert!(error.contains("remove the explicit `:ffi`"), "error: {error}");
+  }
+
+  #[test]
+  fn binary_code_entry_normalizes_defexternal_schema_and_ffi() {
+    let raw = RawCodeEntry {
+      doc: String::new(),
+      examples: vec![],
+      tests: vec![],
+      tags: vec![],
+      code: parse_one("defexternal QueryHost\n  :target :browser\n  :value 'String"),
+      schema: None,
+      ffi: None,
+    };
+    let entry = raw.into_code_entry("demo/QueryHost").expect("binary entry should normalize");
+    assert!(
+      matches!(entry.code, Cirru::List(ref items) if matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "deftrait")),
+      "binary code should expand to deftrait"
+    );
+    assert!(
+      matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Custom(marker) if marker.as_ref() == &Calcit::tag("trait")),
+      "binary schema should canonicalize to the trait marker, got {:?}",
+      entry.schema
+    );
+    assert!(entry.ffi.is_some(), "binary ffi metadata should be generated");
   }
 
   #[test]
