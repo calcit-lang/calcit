@@ -132,7 +132,7 @@ export 对应 `canon lift`，超过同步 Canonical ABI 单结果上限的 flat 
 指针；import 对应 `canon lower`，结果使用 caller 传入的 return area，再复制回对应的 Calcit 值。两者是
 Canonical ABI 针对不同方向规定的函数形状，不是可以互换的自定义约定。core module 只保留显式声明的
 Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，不会携带 native core target
-的隐式 `math/io` imports。post-return、stackless callback cancellation 与 stream 仍是后续任务；尚未 lowering 的 schema
+的隐式 `math/io` imports。post-return 与 stream 仍是后续任务；尚未 lowering 的 schema
 继续在生成阶段明确失败。
 
 `cabi_realloc` 与 Calcit 内部对象当前共享同一个 bump pointer，但两类 allocation 的对齐语义不同：canonical byte range
@@ -151,9 +151,17 @@ Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_re
 Calcit 表层不重复引入 `Task<T>`。`stream<T>` 需要先明确单一 readable ownership、背压、取消和
 drop，暂不由 v3 contract 猜测或生成。
 
-当前 core adapter 已覆盖 async export，以及 direct/indirect async import。导出的 core 函数沿用参数的 Canonical ABI flat shape，
-但没有 core result；Calcit 返回值会按返回 schema lower，并且恰好调用一次 packaging 注入的 `task.return`。
-stackful core export 使用 `[async-lift-stackful]<export-symbol>`，`task.return` import 使用模块名
+当前 core adapter 已覆盖 async export，以及 direct/indirect async import。导出的 core 函数沿用参数的 Canonical ABI flat shape。
+对直接尾调用同签名 async import 的 export，编译器生成 `[async-lift]<export-symbol>` 与配套
+`[callback][async-lift]<export-symbol>`：立即完成时直接 `task.return`；需要等待时将 return area、subtask 与
+waitable set 写入每个 Component task 独立的 context，并向宿主返回 `WAIT`。callback 接收 subtask 进度后继续等待或
+完成；收到父任务取消事件时先调用 async `subtask.cancel`，必要时等待子任务进入终态，再清理 handle 并且只调用一次
+`task.cancel`。不同 task 不共享可变的全局回调状态，因此可以交错恢复。
+
+不满足“单一直接尾调用、参数顺序不变、闭合 schema 完全相同”的 async export 仍使用
+`[async-lift-stackful]<export-symbol>`，避免编译器猜测一般 Calcit 控制流的 suspension point。两条路径都没有普通 core
+result；Calcit 返回值会按返回 schema lower，并且恰好调用一次 packaging 注入的 `task.return`。
+`task.return` import 使用模块名
 `[export]$root` 与字段名 `[task-return]<export-symbol>`；`wit-component` 据此将每个字段连接到具有对应
 result type 的 `canon task.return`。这一命名只存在于 core 与 packaging 的内部契约，不是新的 Calcit API。
 
@@ -164,9 +172,10 @@ waitable set，并等待 `starting`、`started` 到 `returned`；`2` 表示无�
 移除再分别 drop subtask 与 set，typed `Result<T,E>` 继续按普通返回 schema lift；不会临时退回同步 import ABI。
 
 packaging 还需连接 `$root` 下的 `[waitable-set-new]`、`[waitable-set-wait]`、`[waitable-set-drop]`、
-`[waitable-join]` 与 `[subtask-drop]` canonical builtins。当前 stackful adapter 会清理并 trap 已收到的
-`cancelled-before-started` / `cancelled-before-returned` 终态；主动取消与向 Calcit 传递 cancellation 需要 stackless
-callback 或新的 typed cancellation 语义，不伪装成普通 typed error。完整 runnable Component 继续由 calcit-bindgen 验收。
+`[waitable-join]` 与 `[subtask-drop]` canonical builtins；stackless 路径还使用 context get/set、async
+`subtask.cancel` 与 export `task.cancel`。Wasmtime 宿主必须同时启用 component async 与 more-async-builtins。
+stackful fallback 会清理并 trap 已收到的 `cancelled-before-started` / `cancelled-before-returned` 终态；一般 Calcit
+控制流中的 typed cancellation 仍未定义，不伪装成普通 typed error。完整 runnable Component 继续由 calcit-bindgen 验收。
 
 ## 有界 WASI HTTP client
 
@@ -204,7 +213,7 @@ CI 的可用性基线不是“能生成 WIT”：同一份 Calcit contract 必�
 1. 导出 directional typed contract，完成确定性、数值宽度、诊断和 Cirru EDN/JSON 等价。
 2. 为 Bool、Buffer、Number、明确宽度数值、String、递归同质 List、Unit 结果、闭合单态 Option/Result、Struct record 与普通 Enum variant 生成 Canonical ABI import/export adapter。
 3. 由 `calcit-bindgen` 生成 WIT 并打包 runnable component，在 Wasmtime 和 jco 做端到端往返。
-4. 由 Component Interface IR v3 的显式 invocation 驱动 WASI 0.3 async function adapter：已完成 export 的 `task.return`，以及 direct/indirect import 的 subtask/waitable/drop；下一步补 callback cancellation，request 路径稳定后再设计 stream。
+4. 由 Component Interface IR v3 的显式 invocation 驱动 WASI 0.3 async function adapter：已完成 export 的 `task.return`、direct/indirect import 的 subtask/waitable/drop，以及直接尾调用 export 的 stackless callback cancellation；下一步先扩展可证明安全的 lowering 范围，再设计 stream。
 5. 在异步基础上交付有界 buffered WASI HTTP client；stream、service 与更底层 socket 继续后置。
 
 用户可观察的类型与语义优先由 Calcit definition `:tests` 覆盖；Rust 测试只覆盖 contract serialization、WASM encoding、Canonical ABI/memory layout 和 unsupported boundary。

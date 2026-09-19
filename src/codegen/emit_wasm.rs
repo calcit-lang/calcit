@@ -283,6 +283,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   let mut wasm_import_names: HashMap<String, u32> = HashMap::new();
   let mut wasm_import_arities: HashMap<String, u32> = HashMap::new();
   let mut component_async_canonical_imports = None;
+  let mut component_stackless_canonical_imports = None;
   if boundary == WasmBoundary::Component {
     for adapter in &mut component_import_adapters {
       let index = host_imports.len() as u32;
@@ -300,6 +301,9 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
       .any(|adapter| adapter.invocation == ComponentAbiInvocation::Async)
     {
       component_async_canonical_imports = Some(register_component_async_canonical_imports(&mut host_imports));
+    }
+    if component_adapters.iter().any(|adapter| adapter.stackless_tail_import.is_some()) {
+      component_stackless_canonical_imports = Some(register_component_stackless_canonical_imports(&mut host_imports));
     }
     for adapter in &mut component_adapters {
       if adapter.invocation != ComponentAbiInvocation::Async {
@@ -790,15 +794,35 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     let cabi_realloc_index = component_cabi_realloc_index.expect("Component boundary must install cabi_realloc");
     let buffer_new_index = component_buffer_new_index.expect("Component boundary must install the Buffer constructor");
     for adapter in &component_adapters {
-      compiled_fns.push(build_component_export_adapter(
-        adapter,
-        str_new_idx,
-        buffer_new_index,
-        cabi_realloc_index,
-        &component_list_codecs,
-        &component_struct_codecs,
-        &component_variant_codecs,
-      ));
+      if let Some(import_definition) = &adapter.stackless_tail_import {
+        let imported = component_import_adapters
+          .iter()
+          .find(|imported| &imported.definition == import_definition)
+          .expect("stackless tail import must reference a collected Component import");
+        let [entry, callback] = build_component_stackless_tail_export(
+          adapter,
+          imported,
+          component_async_canonical_imports
+            .as_ref()
+            .expect("stackless tail export must register async lifecycle imports"),
+          component_stackless_canonical_imports
+            .as_ref()
+            .expect("stackless tail export must register callback lifecycle imports"),
+          cabi_realloc_index,
+        );
+        compiled_fns.push(entry);
+        compiled_fns.push(callback);
+      } else {
+        compiled_fns.push(build_component_export_adapter(
+          adapter,
+          str_new_idx,
+          buffer_new_index,
+          cabi_realloc_index,
+          &component_list_codecs,
+          &component_struct_codecs,
+          &component_variant_codecs,
+        ));
+      }
     }
   }
 
@@ -987,6 +1011,7 @@ struct ComponentExportAdapter {
   symbol: String,
   target_index: u32,
   invocation: ComponentAbiInvocation,
+  stackless_tail_import: Option<String>,
   task_return_index: Option<u32>,
   parameters: Vec<ComponentAbiType>,
   result: ComponentAbiType,
@@ -1011,6 +1036,14 @@ struct ComponentAsyncCanonicalImports {
   waitable_set_drop: u32,
   waitable_join: u32,
   subtask_drop: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ComponentStacklessCanonicalImports {
+  context_get: u32,
+  context_set: u32,
+  subtask_cancel: u32,
+  task_cancel: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1043,12 +1076,44 @@ fn register_component_async_canonical_imports(host_imports: &mut Vec<HostImport>
   }
 }
 
+fn register_component_stackless_canonical_imports(host_imports: &mut Vec<HostImport>) -> ComponentStacklessCanonicalImports {
+  let mut register = |module: &str, name: &str, params: Vec<ValType>, results: Vec<ValType>| {
+    let index = host_imports.len() as u32;
+    host_imports.push(HostImport {
+      module: module.into(),
+      name: name.into(),
+      params,
+      results,
+    });
+    index
+  };
+  ComponentStacklessCanonicalImports {
+    context_get: register(COMPONENT_ASYNC_ROOT_IMPORT_MODULE, "[context-get-0]", vec![], vec![ValType::I32]),
+    context_set: register(COMPONENT_ASYNC_ROOT_IMPORT_MODULE, "[context-set-0]", vec![ValType::I32], vec![]),
+    subtask_cancel: register(
+      COMPONENT_ASYNC_ROOT_IMPORT_MODULE,
+      "[async-lower][subtask-cancel]",
+      vec![ValType::I32],
+      vec![ValType::I32],
+    ),
+    task_cancel: register(COMPONENT_ASYNC_EXPORT_IMPORT_MODULE, "[task-cancel]", vec![], vec![]),
+  }
+}
+
 fn component_async_import_symbol(symbol: &str) -> String {
   format!("[async-lower]{symbol}")
 }
 
-fn component_async_export_symbol(symbol: &str) -> String {
-  format!("[async-lift-stackful]{symbol}")
+fn component_async_export_symbol(adapter: &ComponentExportAdapter) -> String {
+  if adapter.stackless_tail_import.is_some() {
+    format!("[async-lift]{}", adapter.symbol)
+  } else {
+    format!("[async-lift-stackful]{}", adapter.symbol)
+  }
+}
+
+fn component_async_callback_symbol(adapter: &ComponentExportAdapter) -> String {
+  format!("[callback][async-lift]{}", adapter.symbol)
 }
 
 fn component_import_emitted_symbol(adapter: &ComponentImportAdapter) -> String {
@@ -1061,7 +1126,7 @@ fn component_import_emitted_symbol(adapter: &ComponentImportAdapter) -> String {
 
 fn component_export_emitted_symbol(adapter: &ComponentExportAdapter) -> String {
   if adapter.invocation == ComponentAbiInvocation::Async {
-    component_async_export_symbol(&adapter.symbol)
+    component_async_export_symbol(adapter)
   } else {
     adapter.symbol.clone()
   }
@@ -1545,13 +1610,39 @@ fn collect_component_import_adapters(program_data: &program::CompiledProgram) ->
   Ok(adapters)
 }
 
+fn direct_tail_import_definition(body: &[Calcit], args: &CalcitFnArgs) -> Option<String> {
+  let expressions = body
+    .iter()
+    .filter(|item| CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(item).is_none())
+    .collect::<Vec<_>>();
+  let [Calcit::List(call)] = expressions.as_slice() else {
+    return None;
+  };
+  let Calcit::Import(import) = call.first()? else {
+    return None;
+  };
+  let parameters = fn_param_names(args);
+  if call.len() != parameters.len() + 1 {
+    return None;
+  }
+  for (argument, parameter) in call.iter().skip(1).zip(parameters) {
+    let Calcit::Local(local) = argument else {
+      return None;
+    };
+    if local.sym.as_ref() != parameter {
+      return None;
+    }
+  }
+  Some(format!("{}/{}", import.ns, import.def))
+}
+
 fn collect_component_export_adapters(
   program_data: &program::CompiledProgram,
   fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
   fn_index: &HashMap<String, u32>,
 ) -> Result<Vec<ComponentExportAdapter>, String> {
   let mut adapters = Vec::new();
-  for (namespace, name, args, _) in fn_defs {
+  for (namespace, name, args, body) in fn_defs {
     let definition = format!("{namespace}/{name}");
     let Some(compiled) = program_data.get(namespace.as_str()).and_then(|file| file.defs.get(name.as_str())) else {
       continue;
@@ -1569,11 +1660,32 @@ fn collect_component_export_adapters(
     let target_index = *fn_index
       .get(&definition)
       .ok_or_else(|| format!("E_COMPONENT_ABI_TARGET: compiled target `{definition}` is missing"))?;
+    let stackless_tail_import = if invocation == ComponentAbiInvocation::Async {
+      direct_tail_import_definition(body, args).filter(|import_definition| {
+        let Some((import_namespace, import_name)) = import_definition.rsplit_once('/') else {
+          return false;
+        };
+        let Some(imported) = program_data
+          .get(import_namespace)
+          .and_then(|file| file.defs.get(import_name))
+          .filter(|imported| is_wasm_import_def(&imported.preprocessed_code))
+        else {
+          return false;
+        };
+        let Ok(import_signature) = component_function_schema(imported, import_definition, source_arity, program_data, false) else {
+          return false;
+        };
+        import_signature.2 == ComponentAbiInvocation::Async && import_signature.0 == parameters && import_signature.1 == result
+      })
+    } else {
+      None
+    };
     adapters.push(ComponentExportAdapter {
       definition,
       symbol: name.clone(),
       target_index,
       invocation,
+      stackless_tail_import,
       task_return_index: None,
       parameters,
       result,
@@ -1594,6 +1706,12 @@ fn validate_component_export_symbols(adapters: &[ComponentExportAdapter]) -> Res
       .entry(component_export_emitted_symbol(adapter))
       .or_default()
       .push(adapter.definition.as_str());
+    if adapter.stackless_tail_import.is_some() {
+      symbol_owners
+        .entry(component_async_callback_symbol(adapter))
+        .or_default()
+        .push(adapter.definition.as_str());
+    }
   }
   if let Some((symbol, owners)) = symbol_owners.into_iter().find(|(_, owners)| owners.len() > 1) {
     return Err(format!(
@@ -2655,6 +2773,329 @@ fn finish_component_async_export(
     }
   }
   instructions.push(Instruction::Call(task_return_index));
+}
+
+fn push_component_task_return_from_area(result: &ComponentAbiType, ret_ptr: Option<u32>, instructions: &mut Vec<Instruction<'static>>) {
+  if matches!(result, ComponentAbiType::Unit) {
+    return;
+  }
+  let ret_ptr = ret_ptr.expect("non-Unit stackless result must have a return area");
+  if component_flat_types(result).len() > COMPONENT_MAX_FLAT_PARAMETERS {
+    instructions.push(Instruction::LocalGet(ret_ptr));
+  } else {
+    push_load_value_flat(instructions, result, ret_ptr);
+  }
+}
+
+fn push_component_stackless_cleanup(
+  canonical: &ComponentAsyncCanonicalImports,
+  subtask: u32,
+  waitable_set: u32,
+  instructions: &mut Vec<Instruction<'static>>,
+) {
+  instructions.extend([
+    Instruction::LocalGet(subtask),
+    Instruction::I32Const(0),
+    Instruction::Call(canonical.waitable_join),
+    Instruction::LocalGet(subtask),
+    Instruction::Call(canonical.subtask_drop),
+    Instruction::LocalGet(waitable_set),
+    Instruction::Call(canonical.waitable_set_drop),
+  ]);
+}
+
+fn build_component_stackless_tail_export(
+  adapter: &ComponentExportAdapter,
+  imported: &ComponentImportAdapter,
+  canonical: &ComponentAsyncCanonicalImports,
+  stackless: &ComponentStacklessCanonicalImports,
+  cabi_realloc_index: u32,
+) -> [CompiledFn; 2] {
+  const STATE_RET_PTR: u64 = 0;
+  const STATE_SUBTASK: u64 = 4;
+  const STATE_WAITABLE_SET: u64 = 8;
+  const STATE_CANCEL_REQUESTED: u64 = 12;
+  const STATE_SIZE: i32 = 16;
+
+  let params = adapter.parameters.iter().flat_map(component_flat_types).collect::<Vec<_>>();
+  let mut locals = Vec::new();
+  let mut instructions = Vec::new();
+  let ret_ptr = if matches!(adapter.result, ComponentAbiType::Unit) {
+    None
+  } else {
+    let local = params.len() as u32 + locals.len() as u32;
+    locals.push(ValType::I32);
+    let layout = component_memory_layout(&adapter.result);
+    instructions.extend([
+      Instruction::I32Const(0),
+      Instruction::I32Const(0),
+      Instruction::I32Const(layout.alignment),
+      Instruction::I32Const(layout.size),
+      Instruction::Call(cabi_realloc_index),
+      Instruction::LocalSet(local),
+    ]);
+    Some(local)
+  };
+
+  if component_async_import_uses_indirect_parameters(imported) {
+    let (layout, offsets) = component_fields_layout(imported.parameters.iter());
+    let record_ptr = params.len() as u32 + locals.len() as u32;
+    locals.push(ValType::I32);
+    instructions.extend([
+      Instruction::I32Const(0),
+      Instruction::I32Const(0),
+      Instruction::I32Const(layout.alignment),
+      Instruction::I32Const(layout.size),
+      Instruction::Call(cabi_realloc_index),
+      Instruction::LocalSet(record_ptr),
+    ]);
+    let mut flat_start = 0;
+    for ((parameter, offset), width) in imported
+      .parameters
+      .iter()
+      .zip(offsets)
+      .zip(imported.parameters.iter().map(|parameter| component_flat_types(parameter).len()))
+    {
+      push_store_value_flat(&mut instructions, parameter, flat_start, record_ptr, offset);
+      flat_start += width as u32;
+    }
+    instructions.push(Instruction::LocalGet(record_ptr));
+  } else {
+    for index in 0..params.len() {
+      instructions.push(Instruction::LocalGet(index as u32));
+    }
+  }
+  if let Some(ret_ptr) = ret_ptr {
+    instructions.push(Instruction::LocalGet(ret_ptr));
+  }
+
+  let status = params.len() as u32 + locals.len() as u32;
+  locals.push(ValType::I32);
+  let status_kind = params.len() as u32 + locals.len() as u32;
+  locals.push(ValType::I32);
+  let subtask = params.len() as u32 + locals.len() as u32;
+  locals.push(ValType::I32);
+  let waitable_set = params.len() as u32 + locals.len() as u32;
+  locals.push(ValType::I32);
+  let state = params.len() as u32 + locals.len() as u32;
+  locals.push(ValType::I32);
+  instructions.extend([
+    Instruction::Call(imported.raw_index),
+    Instruction::LocalTee(status),
+    Instruction::I32Const(0x0f),
+    Instruction::I32And,
+    Instruction::LocalTee(status_kind),
+    Instruction::I32Const(2),
+    Instruction::I32Eq,
+    Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)),
+    Instruction::LocalGet(status),
+    Instruction::I32Const(2),
+    Instruction::I32Ne,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+  ]);
+  push_component_task_return_from_area(&adapter.result, ret_ptr, &mut instructions);
+  instructions.extend([
+    Instruction::Call(adapter.task_return_index.expect("stackless export must have task.return")),
+    Instruction::I32Const(0),
+    Instruction::Else,
+    Instruction::LocalGet(status_kind),
+    Instruction::I32Const(1),
+    Instruction::I32GtU,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(status),
+    Instruction::I32Const(4),
+    Instruction::I32ShrU,
+    Instruction::LocalTee(subtask),
+    Instruction::I32Eqz,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::Call(canonical.waitable_set_new),
+    Instruction::LocalSet(waitable_set),
+    Instruction::LocalGet(subtask),
+    Instruction::LocalGet(waitable_set),
+    Instruction::Call(canonical.waitable_join),
+    Instruction::I32Const(0),
+    Instruction::I32Const(0),
+    Instruction::I32Const(4),
+    Instruction::I32Const(STATE_SIZE),
+    Instruction::Call(cabi_realloc_index),
+    Instruction::LocalTee(state),
+    Instruction::I32Const(0),
+    Instruction::I32Store(mem_arg_i32(STATE_RET_PTR)),
+  ]);
+  if let Some(ret_ptr) = ret_ptr {
+    instructions.extend([
+      Instruction::LocalGet(state),
+      Instruction::LocalGet(ret_ptr),
+      Instruction::I32Store(mem_arg_i32(STATE_RET_PTR)),
+    ]);
+  }
+  instructions.extend([
+    Instruction::LocalGet(state),
+    Instruction::LocalGet(subtask),
+    Instruction::I32Store(mem_arg_i32(STATE_SUBTASK)),
+    Instruction::LocalGet(state),
+    Instruction::LocalGet(waitable_set),
+    Instruction::I32Store(mem_arg_i32(STATE_WAITABLE_SET)),
+    Instruction::LocalGet(state),
+    Instruction::I32Const(0),
+    Instruction::I32Store(mem_arg_i32(STATE_CANCEL_REQUESTED)),
+    Instruction::LocalGet(state),
+    Instruction::Call(stackless.context_set),
+    Instruction::LocalGet(waitable_set),
+    Instruction::I32Const(4),
+    Instruction::I32Shl,
+    Instruction::I32Const(2),
+    Instruction::I32Or,
+    Instruction::End,
+  ]);
+
+  let entry = CompiledFn {
+    export_name: Some(component_async_export_symbol(adapter)),
+    params,
+    results: vec![ValType::I32],
+    locals,
+    instructions,
+  };
+
+  let callback_params = vec![ValType::I32; 3];
+  let mut callback_locals = Vec::new();
+  let callback_state = callback_params.len() as u32 + callback_locals.len() as u32;
+  callback_locals.push(ValType::I32);
+  let callback_ret_ptr = callback_params.len() as u32 + callback_locals.len() as u32;
+  callback_locals.push(ValType::I32);
+  let callback_subtask = callback_params.len() as u32 + callback_locals.len() as u32;
+  callback_locals.push(ValType::I32);
+  let callback_set = callback_params.len() as u32 + callback_locals.len() as u32;
+  callback_locals.push(ValType::I32);
+  let cancel_requested = callback_params.len() as u32 + callback_locals.len() as u32;
+  callback_locals.push(ValType::I32);
+  let cancel_status = callback_params.len() as u32 + callback_locals.len() as u32;
+  callback_locals.push(ValType::I32);
+  let mut callback_instructions = vec![
+    Instruction::Call(stackless.context_get),
+    Instruction::LocalTee(callback_state),
+    Instruction::I32Eqz,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(callback_state),
+    Instruction::I32Load(mem_arg_i32(STATE_RET_PTR)),
+    Instruction::LocalSet(callback_ret_ptr),
+    Instruction::LocalGet(callback_state),
+    Instruction::I32Load(mem_arg_i32(STATE_SUBTASK)),
+    Instruction::LocalSet(callback_subtask),
+    Instruction::LocalGet(callback_state),
+    Instruction::I32Load(mem_arg_i32(STATE_WAITABLE_SET)),
+    Instruction::LocalSet(callback_set),
+    Instruction::LocalGet(callback_state),
+    Instruction::I32Load(mem_arg_i32(STATE_CANCEL_REQUESTED)),
+    Instruction::LocalSet(cancel_requested),
+    Instruction::LocalGet(0),
+    Instruction::I32Const(6),
+    Instruction::I32Eq,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::LocalGet(callback_state),
+    Instruction::I32Const(1),
+    Instruction::I32Store(mem_arg_i32(STATE_CANCEL_REQUESTED)),
+    Instruction::LocalGet(callback_subtask),
+    Instruction::I32Const(0),
+    Instruction::Call(canonical.waitable_join),
+    Instruction::LocalGet(callback_subtask),
+    Instruction::Call(stackless.subtask_cancel),
+    Instruction::LocalTee(cancel_status),
+    Instruction::I32Const(-1),
+    Instruction::I32Eq,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::LocalGet(callback_subtask),
+    Instruction::LocalGet(callback_set),
+    Instruction::Call(canonical.waitable_join),
+    Instruction::LocalGet(callback_set),
+    Instruction::I32Const(4),
+    Instruction::I32Shl,
+    Instruction::I32Const(2),
+    Instruction::I32Or,
+    Instruction::Return,
+    Instruction::End,
+    Instruction::LocalGet(cancel_status),
+    Instruction::I32Const(2),
+    Instruction::I32LtS,
+    Instruction::LocalGet(cancel_status),
+    Instruction::I32Const(4),
+    Instruction::I32GtU,
+    Instruction::I32Or,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+  ];
+  push_component_stackless_cleanup(canonical, callback_subtask, callback_set, &mut callback_instructions);
+  callback_instructions.extend([
+    Instruction::I32Const(0),
+    Instruction::Call(stackless.context_set),
+    Instruction::Call(stackless.task_cancel),
+    Instruction::I32Const(0),
+    Instruction::Return,
+    Instruction::End,
+    Instruction::LocalGet(0),
+    Instruction::I32Const(1),
+    Instruction::I32Ne,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(1),
+    Instruction::LocalGet(callback_subtask),
+    Instruction::I32Ne,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(2),
+    Instruction::I32Const(1),
+    Instruction::I32LeU,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::LocalGet(callback_set),
+    Instruction::I32Const(4),
+    Instruction::I32Shl,
+    Instruction::I32Const(2),
+    Instruction::I32Or,
+    Instruction::Return,
+    Instruction::End,
+  ]);
+  push_component_stackless_cleanup(canonical, callback_subtask, callback_set, &mut callback_instructions);
+  callback_instructions.extend([
+    Instruction::I32Const(0),
+    Instruction::Call(stackless.context_set),
+    Instruction::LocalGet(cancel_requested),
+    Instruction::I32Eqz,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::LocalGet(2),
+    Instruction::I32Const(2),
+    Instruction::I32Ne,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+  ]);
+  push_component_task_return_from_area(&adapter.result, ret_ptr.map(|_| callback_ret_ptr), &mut callback_instructions);
+  callback_instructions.extend([
+    Instruction::Call(adapter.task_return_index.expect("stackless callback must have task.return")),
+    Instruction::Else,
+    Instruction::Call(stackless.task_cancel),
+    Instruction::End,
+    Instruction::I32Const(0),
+  ]);
+
+  let callback = CompiledFn {
+    export_name: Some(component_async_callback_symbol(adapter)),
+    params: callback_params,
+    results: vec![ValType::I32],
+    locals: callback_locals,
+    instructions: callback_instructions,
+  };
+  [entry, callback]
 }
 
 fn build_component_export_adapter(
@@ -6747,6 +7188,7 @@ mod tests {
         symbol: "add-one".into(),
         target_index: 20,
         invocation: ComponentAbiInvocation::Sync,
+        stackless_tail_import: None,
         task_return_index: None,
         parameters: vec![ComponentAbiType::Number],
         result: ComponentAbiType::Number,
@@ -6767,6 +7209,7 @@ mod tests {
         symbol: "echo".into(),
         target_index: 21,
         invocation: ComponentAbiInvocation::Sync,
+        stackless_tail_import: None,
         task_return_index: None,
         parameters: vec![ComponentAbiType::String],
         result: ComponentAbiType::String,
@@ -6787,6 +7230,7 @@ mod tests {
         symbol: "echo-buffer".into(),
         target_index: 22,
         invocation: ComponentAbiInvocation::Sync,
+        stackless_tail_import: None,
         task_return_index: None,
         parameters: vec![ComponentAbiType::Buffer],
         result: ComponentAbiType::Buffer,
@@ -6812,6 +7256,7 @@ mod tests {
       symbol: "load-text".into(),
       target_index: 20,
       invocation: ComponentAbiInvocation::Async,
+      stackless_tail_import: None,
       task_return_index: Some(31),
       parameters: vec![ComponentAbiType::String],
       result: ComponentAbiType::String,
@@ -7164,6 +7609,7 @@ mod tests {
         symbol: "not".into(),
         target_index: 20,
         invocation: ComponentAbiInvocation::Sync,
+        stackless_tail_import: None,
         task_return_index: None,
         parameters: vec![ComponentAbiType::Bool],
         result: ComponentAbiType::Bool,
@@ -7281,6 +7727,7 @@ mod tests {
       symbol: symbol.into(),
       target_index: 20,
       invocation,
+      stackless_tail_import: None,
       task_return_index: None,
       parameters: vec![ComponentAbiType::Number],
       result: ComponentAbiType::Number,
@@ -7303,6 +7750,7 @@ mod tests {
       symbol: symbol.into(),
       target_index: 20,
       invocation,
+      stackless_tail_import: None,
       task_return_index: None,
       parameters: vec![ComponentAbiType::Number],
       result: ComponentAbiType::Number,
@@ -7315,6 +7763,31 @@ mod tests {
     assert_eq!(
       error,
       "E_COMPONENT_ABI_SYMBOL_CONFLICT: export symbol `[async-lift-stackful]run` is declared by a.main/reserved, b.main/run"
+    );
+  }
+
+  #[test]
+  fn component_adapter_rejects_symbols_that_collide_with_stackless_callback() {
+    let adapter = |definition: &str, symbol: &str, invocation: ComponentAbiInvocation| ComponentExportAdapter {
+      definition: definition.into(),
+      symbol: symbol.into(),
+      target_index: 20,
+      invocation,
+      stackless_tail_import: None,
+      task_return_index: None,
+      parameters: vec![ComponentAbiType::Number],
+      result: ComponentAbiType::Number,
+    };
+    let mut stackless = adapter("b.main/run", "run", ComponentAbiInvocation::Async);
+    stackless.stackless_tail_import = Some("host/run".into());
+    let error = validate_component_export_symbols(&[
+      adapter("a.main/reserved", "[callback][async-lift]run", ComponentAbiInvocation::Sync),
+      stackless,
+    ])
+    .expect_err("stackless callback export names must be reserved");
+    assert_eq!(
+      error,
+      "E_COMPONENT_ABI_SYMBOL_CONFLICT: export symbol `[callback][async-lift]run` is declared by a.main/reserved, b.main/run"
     );
   }
 

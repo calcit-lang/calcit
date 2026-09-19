@@ -59,6 +59,7 @@ async fn main() -> Result<()> {
 
   let mut config = Config::new();
   config.wasm_component_model_async(true);
+  config.wasm_component_model_more_async_builtins(true);
   config.wasm_component_model_async_stackful(true);
   let engine = Engine::new(&config).map_err(|error| anyhow!(error.to_string()))?;
   let component = Component::from_file(
