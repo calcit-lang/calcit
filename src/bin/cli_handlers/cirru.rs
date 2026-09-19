@@ -130,7 +130,7 @@ fn read_parse_edn_input(inline: Option<&str>, file: Option<&str>) -> Result<Stri
       Err("Cirru EDN input is ambiguous. Pass either inline EDN or `--file <path>` (`--file -` for stdin), not both.".to_string())
     }
     (None, None) => Err("Cirru EDN input is required. Pass inline EDN or `--file <path>` (`--file -` for stdin).".to_string()),
-    (Some("-"), None) | (None, Some("-")) => read_stdin(),
+    (None, Some("-")) => read_stdin(),
     (Some(content), None) => Ok(content.to_string()),
     (None, Some(path)) => std::fs::read_to_string(path).map_err(|error| format!("Failed to read Cirru EDN file `{path}`: {error}")),
   }

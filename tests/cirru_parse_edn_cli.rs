@@ -106,4 +106,10 @@ fn parse_edn_rejects_missing_or_ambiguous_inputs() {
   ]);
   assert!(!ambiguous.status.success());
   assert!(String::from_utf8_lossy(&ambiguous.stderr).contains("Cirru EDN input is ambiguous"));
+
+  let inline_dash = run_calcit(&["cirru", "parse-edn", "--", "-"]);
+  assert!(!inline_dash.status.success());
+  let inline_dash_stderr = String::from_utf8_lossy(&inline_dash.stderr);
+  assert!(inline_dash_stderr.contains("Failed to parse Cirru EDN"));
+  assert!(!inline_dash_stderr.contains("read Cirru EDN from stdin"));
 }

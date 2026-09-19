@@ -666,7 +666,7 @@ fn render_cirru_explanation(cmd: &CirruCommand) -> Option<String> {
     CirruSubcommand::Parse(opts) => format!("parses Cirru code `{}` into AST", opts.code),
     CirruSubcommand::Format(opts) => format!("formats JSON-encoded Cirru AST: `{}`", opts.json),
     CirruSubcommand::ParseEdn(opts) => match (opts.edn.as_deref(), opts.file.as_deref()) {
-      (Some("-"), None) | (None, Some("-")) => "parses EDN data from stdin".to_string(),
+      (None, Some("-")) => "parses EDN data from stdin".to_string(),
       (None, Some(path)) => format!("parses EDN data from file `{path}`"),
       (Some(edn), None) => format!("parses EDN data: `{edn}`"),
       _ => "parses EDN data from the selected input".to_string(),
