@@ -4,6 +4,10 @@
 
 日期：2026-09-12
 
+2026-09-14 补充：独立 typed core AST 具有长期价值，但不是自动 source fix 的前置条件。短期继续在现有
+preprocess 表示上增量建立类型、identity 和 origin 证据，不启动一次性内部 AST 重写；何时重新评估由
+第 4.3 节的触发条件决定。
+
 关联：#997、#998、#999、#989、#992–#996
 
 ## 1. 目标
@@ -75,6 +79,66 @@ core language 不拥有另一套用户类型规则。类型导向 lowering 必�
 
 compiler-owned lowering 不直接写回 Snapshot。即使某段展开树是正确的，也可能丢失 macro 所表达的人类
 意图；只有能唯一回到表层节点、并证明表层语义等价的建议才能成为 source fix。
+
+### 4.1 typed core 是语义层，不等于立即新增一棵完整 AST
+
+本 RFC 中的 typed core 首先表示一组 compiler-owned invariant，不要求当前实现立即把所有 `Calcit` 节点替换为
+新的代数数据类型，也不要求把 core tree 序列化进 Snapshot。无论底层暂时复用现有 preprocess 表示，还是以后
+引入独立 `CoreExpr`/arena，下列事实都应逐步变得显式且可查询：
+
+- definition、type、trait 和 method reference 已解析为稳定 identity，而不是只保留同名文本；
+- local binding 与引用通过稳定 local identity 关联，不依赖重新扫描 symbol 名称；
+- 每个需要参与检查或 lowering 的表达式能够关联已知类型、内部 Unknown/Unresolved 或稳定错误，不能用
+  `Dynamic` 隐藏证据缺失；
+- call、branch、binding、primitive 和静态 method target 等 core 关系不要求各 backend 重复猜测普通 List 形状；
+- compiler 生成、macro 展开和表层 source 节点之间保留一对多或多对一的 origin chain；
+- core 表示可以丢弃表层排版和部分 sugar，但不能因此成为 source rewrite 的写入目标。
+
+长期若引入独立 typed core AST，它应与 runtime value、quoted Cirru data 和 Snapshot source AST 分离。`Calcit`
+runtime value 不应仅为方便 codegen 而永久承担所有 syntax、resolved IR 和运行时数据职责；反过来，也不应为追求
+内部类型整齐而复制一套用户可观察的类型规则或 runtime 语义。
+
+### 4.2 typed core 与自动 fix 的依赖边界
+
+自动 fix 的决定性条件是目标能否唯一定位到可编辑 source AST，并证明改写保持表层语义。typed core 可以提供
+解析和类型证据，但不能代替 source identity、revision、fingerprint、origin chain 或 staged post-check。
+
+| 修复类别 | 最小所需证据 | typed core 的作用 | 默认处理 |
+|---|---|---|---|
+| 冗余 `do`、废弃拼写、确定性 constructor 迁移 | source AST 形状、revision、fingerprint | 非必要 | 可在语义等价且幂等时自动应用 |
+| definition rename、import rewrite | resolved definition identity、source coordinate | 完整 typed AST 非必要；名称解析 trace 已足够 | 无 macro/quote 歧义时自动应用 |
+| 根据 receiver 类型选择 method 或具体 primitive | receiver type、selected method identity、唯一 source origin | 提供关键 applicability 证据 | 只有 replacement 不改变求值和失败语义时自动应用 |
+| macro 展开节点触发的建议 | macro call origin、生成节点到调用点的完整映射 | 负责解释 core 诊断来源 | 无唯一表层 rewrite 时只报告 |
+| 插入 decode/narrow、选择 Option/Result 分支或默认值 | 边界类型、控制流和用户失败策略 | 可指出缺失证据，不能替用户选择策略 | 只报告并要求 review |
+| parser 尚不能构造 source AST 的非法输入 | token/CST span、错误恢复结果 | typed core 尚不存在，无法提供帮助 | 由 parser/CST repair 单独处理 |
+
+因此不得以“未来会有 typed core AST”为理由阻塞当前可由 source AST 和 resolved trace 安全完成的 fix，也不得把
+“typed core 已判定 replacement 类型正确”误当成“source fix 保持语义”的充分证明。
+
+### 4.3 短期实施决策与重新评估条件
+
+短期不开展一次性的独立 typed core AST 重构。当前优先级是：
+
+1. 补齐现有 preprocess 节点的 resolved identity、类型证据和稳定诊断；
+2. 让 source location 覆盖 expression，而不是长期依赖从带 location 的子节点反推父 List；
+3. 建立 macro/lowering origin chain，并明确 generated-only、ambiguous 和 unique-source 三种结果；
+4. 继续让 fix suggestion 指向 Snapshot quoted AST，携带 revision/fingerprint，并经过 staged preprocess 和相关测试；
+5. 在不改变表层语义的前提下，减少 backend 对未分类 List/symbol 形状的重复分派。
+
+暂缓的原因是当前自动迁移闭环可以在 source AST、名称解析 trace 和 staged validation 上继续推进，而整体替换内部
+表示会同时触及 interpreter、macro、type inference、native/JS/WASM codegen 与诊断，短期成本和回归面大于收益。
+这不是永久拒绝。出现下列任一持续性信号时，应提交独立实现 RFC，重新评估 `CoreExpr`、arena/node identity 和
+typed side table 的边界：
+
+- 同一种 core syntax 在两个以上 backend 中被重复解析，并已产生语义偏差或阻碍新 backend；
+- 类型推导必须依靠全树重复扫描、临时 side channel 或 `Calcit::List` 位置约定，导致正确性无法局部验证；
+- macro/lowering 诊断无法稳定建立 origin chain，因而大量本可安全的 source fix 只能放弃；
+- control-flow narrowing、exhaustiveness、Never 或 effect/capability evidence 无法在现有表示中清晰表达；
+- runtime value 与 compiler IR 的共享 enum 使 invariant 无法通过构造边界维护，或频繁造成 backend/runtime 分支遗漏。
+
+重新评估时至少比较三种方案：增强现有节点、现有树加 typed/origin side table、独立 typed core AST。选择依据是
+可删除的重复逻辑、能够新建立的 invariant、迁移和内存成本，以及跨 backend 的实际回归证据；不得仅以内部 enum
+更整齐或自动 fix 数量增加作为立项依据。
 
 ## 5. backend 与 host boundary
 
@@ -237,7 +301,8 @@ Rust 测试继续承担 parser/serializer、内部数据结构、原子写入、
 
 ## 11. 与既有路线的关系
 
-- `08-21-static-type-system-evolution-roadmap.md` 继续描述类型能力顺序；本 RFC 补充分层 owner 和开放值契约。
+- `08-21-static-type-system-evolution-roadmap.md` 继续描述类型能力顺序；其中“提高 typed core 表达力”不等同于
+  承诺独立 AST 重构。本 RFC 补充分层 owner、开放值契约和内部表示的重新评估条件。
 - `07-26-agent-machine-protocol-rfc.md` 继续拥有 typed result/EDN/JSON envelope；本 RFC 增加 semantic layer、
   origin chain 和 source fix 的约束。
 - `07-26-safe-structured-editing-rfc.md` 继续拥有 revision、fingerprint、transaction 和 atomic write。
