@@ -2898,6 +2898,12 @@
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :internal :trait-impl
+        'ReadableByteStream $ %{} 'CodeEntry
+          :doc "|Component Model 只读字节流标记类型。仅允许作为 async defwasm-export 的唯一直接参数；值由主机拥有，Calcit 代码不能构造、复制或访问原始句柄。"
+          :code $ quote $ def ReadableByteStream (defstruct ReadableByteStream)
+          :examples $ []
+          :schema $ :: 'Struct
+          :tags $ #{} :data :internal
         'Result $ %{} 'CodeEntry (:doc "|Rust-style Result enum")
           :code $ quote $ def Result
             impl-traits
@@ -2997,6 +3003,12 @@
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
+        'StreamConsumeError $ %{} 'CodeEntry (:doc "|有界字节流消费失败。:total-limit 表示输入超过调用方声明的总字节上限。")
+          :code $ quote $ def StreamConsumeError
+            defenum StreamConsumeError $ :total-limit
+          :examples $ []
+          :schema $ :: 'Enum
+          :tags $ #{} :data
         'StringDestruct $ %{} 'CodeEntry
           :doc "|Nominal result of destruct-str: none, or the first character with the remaining string."
           :code $ quote $ defenum StringDestruct (:some 'String 'String) (:none)
@@ -3586,6 +3598,17 @@
                   xs $ assert-type ([] 1 |x) (:: 'List 'Dynamic)
                 assert= ([] 1 |x :ready) (conj xs :ready)
               :tags $ #{} :core :unit
+        'consume-readable-byte-stream $ %{} 'CodeEntry
+          :doc "|在 Component async export 中有界消费只读字节流。max-total-bytes 与 max-chunk-bytes 必须是正整数字面量；on-chunk 必须是顶层同步 (Buffer) -> Bool，返回 false 表示成功提前停止。该调用必须是导出函数唯一的主体表达式。"
+          :code $ quote $ defn consume-readable-byte-stream (stream max-total-bytes max-chunk-bytes on-chunk)
+            raise "|consume-readable-byte-stream is only available inside a scoped async Component export"
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'ReadableByteStream 'Number 'Number $ :: 'Fn
+              {} (:return 'Bool)
+                :args $ [] 'Buffer
+            :return $ :: 'Result 'Unit 'StreamConsumeError
+          :tags $ #{} :internal
         'contains-in? $ %{} 'CodeEntry
           :doc "||Check whether every hop in a nested path exists across maps, enums, or lists. Struct fields are intentionally excluded; use direct field access instead."
           :code $ quote $ defn contains-in? (xs path)

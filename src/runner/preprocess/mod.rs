@@ -2179,6 +2179,7 @@ fn preprocess_list_call(
       call_location,
     ));
   }
+  reject_opaque_component_handle_construction(&head_form, &args, call_stack, call_location.clone())?;
   reject_raw_primitive_in_strict_source(&head_form, &args, scope_types, file_ns, call_stack, call_location.clone())?;
   warn_on_removed_data_api_call(&head_form, call_location.clone(), file_ns, check_warnings);
 
@@ -4474,6 +4475,31 @@ fn check_struct_field_access(
       check_field_in_struct(struct_arg, &field_tag, scope_types, file_ns, check_warnings);
     }
   }
+}
+
+fn reject_opaque_component_handle_construction(
+  head: &Calcit,
+  args: &CalcitList,
+  call_stack: &CallStackList,
+  location: Option<NodeLocation>,
+) -> Result<(), CalcitErr> {
+  let is_readable_byte_stream = |value: &Calcit| match value {
+    Calcit::Import(CalcitImport { ns, def, .. }) => ns.as_ref() == calcit::CORE_NS && def.as_ref() == "ReadableByteStream",
+    Calcit::StructDef(struct_def) => struct_def.definition_ref.as_deref() == Some("calcit.core/ReadableByteStream"),
+    _ => false,
+  };
+  let constructs_stream = is_readable_byte_stream(head)
+    || matches!(head, Calcit::Proc(CalcitProc::NativeStruct)) && args.first().is_some_and(is_readable_byte_stream);
+  if !constructs_stream {
+    return Ok(());
+  }
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    "ReadableByteStream is an opaque Component host handle and cannot be constructed as an ordinary Calcit Struct",
+    "E_OPAQUE_COMPONENT_HANDLE_CONSTRUCTION",
+    call_stack,
+    location,
+  ))
 }
 
 fn reject_raw_primitive_in_strict_source(
@@ -13951,6 +13977,28 @@ mod tests {
     .expect_err("legacy record-get must receive its own Struct-access diagnostic");
     assert!(record_error.msg.contains("`record-get`"));
     assert!(record_error.msg.contains("`(:field value)`"));
+  }
+
+  #[test]
+  fn opaque_component_stream_cannot_be_constructed_as_a_struct() {
+    let stream_definition = Calcit::Import(CalcitImport {
+      ns: Arc::from(calcit::CORE_NS),
+      def: Arc::from("ReadableByteStream"),
+      info: Arc::new(ImportInfo::Core {
+        at_ns: Arc::from("tests.component-stream"),
+      }),
+      def_id: None,
+    });
+    let direct_error =
+      reject_opaque_component_handle_construction(&stream_definition, &CalcitList::default(), &CallStackList::default(), None)
+        .expect_err("the public nominal definition must not construct an opaque host stream");
+    assert_eq!(direct_error.code.as_deref(), Some("E_OPAQUE_COMPONENT_HANDLE_CONSTRUCTION"));
+
+    let raw_args = CalcitList::from(std::slice::from_ref(&stream_definition));
+    let raw_error =
+      reject_opaque_component_handle_construction(&Calcit::Proc(CalcitProc::NativeStruct), &raw_args, &CallStackList::default(), None)
+        .expect_err("the raw Struct constructor must not bypass opaque host-stream ownership");
+    assert_eq!(raw_error.code.as_deref(), Some("E_OPAQUE_COMPONENT_HANDLE_CONSTRUCTION"));
   }
 
   #[test]

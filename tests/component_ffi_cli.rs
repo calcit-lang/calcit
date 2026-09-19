@@ -134,6 +134,32 @@ fn buffered_http_contract_is_closed_and_explicitly_bounded() {
 }
 
 #[test]
+fn scoped_stream_contract_exports_the_builtin_failure_enum() {
+  let output = run_component_fixture(
+    "tests/fixtures/component-wasm-stream.cirru",
+    &["ffi", "export", "--boundary", "component", "--format", "json"],
+  );
+  let json: serde_json::Value = serde_json::from_str(&stdout(&output)).expect("stream contract should be valid JSON");
+  assert_eq!(json["data"]["summary"]["unsupported"], 0);
+  let interface = &json["data"]["interface"];
+  let consume = interface["definitions"]
+    .as_array()
+    .expect("stream definitions should be an array")
+    .iter()
+    .find(|definition| definition["id"] == "component-wasm-stream.main/consume")
+    .expect("stream consumer should be exported");
+  assert_eq!(consume["signature"]["parameters"][0]["type"]["kind"], "readable-byte-stream");
+  assert_eq!(consume["signature"]["result"]["kind"], "result");
+  let error = interface["declarations"]
+    .as_array()
+    .expect("stream declarations should be an array")
+    .iter()
+    .find(|declaration| declaration["id"] == "calcit.core/StreamConsumeError")
+    .expect("stream failure enum should be exported");
+  assert_eq!(error["variants"][0]["name"], "total-limit");
+}
+
+#[test]
 fn native_json_keeps_the_v3_envelope_without_a_boundary_field() {
   let output = run_calcit(&["ffi", "export", "--json", "--ns", "test-wasm.main"]);
   let json: serde_json::Value = serde_json::from_str(&stdout(&output)).expect("native JSON stdout should stay parseable");

@@ -1,16 +1,19 @@
+use std::collections::VecDeque;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::task::{Context, Poll};
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use calcit_bindgen::COMPONENT_FILE;
 use calcit_bindgen::wasmtime_http::WasiHttpConfig;
-use wasmtime::component::{Component, Linker, Val};
-use wasmtime::{Config, Engine, Store};
+use wasmtime::component::{Component, Destination, Linker, StreamProducer, StreamReader, StreamResult, Val, VecBuffer};
+use wasmtime::{Config, Engine, Store, StoreContextMut};
 
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -178,6 +181,351 @@ WebAssembly.instantiate(module, { "[export]$root": canonical }).then(result => {
     String::from_utf8_lossy(&runtime.stdout),
     String::from_utf8_lossy(&runtime.stderr)
   );
+}
+
+#[test]
+fn scoped_stream_export_bounds_reads_and_closes_every_terminal_path() {
+  let output = TestDirectory::create();
+  let calcit_tests = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "tests/fixtures/component-wasm-stream.cirru",
+      "test",
+      "--tag",
+      "wasm",
+      "--require-match",
+      "--summary-only",
+    ])
+    .output()
+    .expect("scoped stream Calcit tests should run");
+  assert!(
+    calcit_tests.status.success(),
+    "scoped stream Calcit tests failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&calcit_tests.stdout),
+    String::from_utf8_lossy(&calcit_tests.stderr)
+  );
+  let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "tests/fixtures/component-wasm-stream.cirru",
+      "wasm",
+      "--boundary",
+      "component",
+      "--emit-path",
+    ])
+    .arg(&output.0)
+    .output()
+    .expect("scoped stream Component fixture should compile");
+  assert!(
+    compile.status.success(),
+    "scoped stream Component compile failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&compile.stdout),
+    String::from_utf8_lossy(&compile.stderr)
+  );
+
+  let wasm = output.0.join("program.wasm");
+  let script = r#"
+const fs = require("fs");
+const module = new WebAssembly.Module(fs.readFileSync(process.argv[1]));
+let instance;
+let nextSet = 40;
+let currentContext = 0;
+const reads = new Map();
+const active = new Set();
+const pending = new Map();
+const drops = new Map();
+const liveSets = new Set();
+const liveStreams = new Set();
+const completions = [];
+let cancellations = 0;
+let readCancellations = 0;
+
+const write = (ptr, bytes) => new Uint8Array(instance.exports.memory.buffer, ptr, bytes.length).set(bytes);
+const startRead = (handle, ptr, len, mode) => {
+  if (active.has(handle)) throw new Error(`more than one outstanding read for ${handle}`);
+  if (len < 1 || len > 3) throw new Error(`read ${handle} escaped chunk bound: ${len}`);
+  const call = (reads.get(handle) || 0) + 1;
+  reads.set(handle, call);
+  active.add(handle);
+  liveStreams.add(handle);
+  if (mode === "stop") {
+    write(ptr, [1, 2]);
+    active.delete(handle);
+    return 2 << 4;
+  }
+  if (handle === 8) {
+    const chunks = [[1], [2, 3], [4, 5, 6], [7]];
+    write(ptr, chunks[call - 1]);
+    active.delete(handle);
+    return chunks[call - 1].length << 4;
+  }
+  if (handle === 7 && call === 2) {
+    write(ptr, [2, 3]);
+    active.delete(handle);
+    return 2 << 4;
+  }
+  if (handle >= 100) {
+    write(ptr, [1]);
+    active.delete(handle);
+    return (1 << 4) | 1;
+  }
+  if (handle === 11) {
+    active.delete(handle);
+    return 0;
+  }
+  pending.set(handle, { ptr, len });
+  return -1;
+};
+const complete = (handle, bytes, dropped) => {
+  const read = pending.get(handle);
+  if (!read) throw new Error(`missing pending read ${handle}`);
+  if (bytes.length > read.len) throw new Error(`producer exceeded requested read length for ${handle}`);
+  write(read.ptr, bytes);
+  pending.delete(handle);
+  active.delete(handle);
+  return (bytes.length << 4) | (dropped ? 1 : 0);
+};
+const streamDrop = handle => {
+  if (active.has(handle)) throw new Error(`dropped stream ${handle} with an outstanding read`);
+  if (!liveStreams.delete(handle)) throw new Error(`dropped unknown stream ${handle}`);
+  drops.set(handle, (drops.get(handle) || 0) + 1);
+};
+const canonical = {
+  "[waitable-set-new]": () => {
+    const handle = nextSet++;
+    liveSets.add(handle);
+    return handle;
+  },
+  "[waitable-set-wait]": () => { throw new Error("stream adapter must not block internally"); },
+  "[waitable-set-drop]": handle => {
+    if (!liveSets.delete(handle)) throw new Error(`dropped unknown waitable set ${handle}`);
+  },
+  "[waitable-join]": () => {},
+  "[subtask-drop]": () => {},
+  "[context-get-0]": () => currentContext,
+  "[context-set-0]": value => { currentContext = value; },
+  "[async-lower][subtask-cancel]": () => { throw new Error("stream cancellation must use stream-cancel-read"); },
+  "[task-return]consume": (result, error) => completions.push(["consume", result, error]),
+  "[task-return]stop": (result, error) => completions.push(["stop", result, error]),
+  "[task-cancel]": () => { cancellations += 1; },
+  "[async-lower][stream-read-0]consume": (handle, ptr, len) => startRead(handle, ptr, len, "consume"),
+  "[async-lower][stream-cancel-read-0]consume": handle => {
+    if (!active.has(handle)) throw new Error(`cancelled stream ${handle} without an outstanding read`);
+    readCancellations += 1;
+    return -1;
+  },
+  "[stream-drop-readable-0]consume": streamDrop,
+  "[async-lower][stream-read-0]stop": (handle, ptr, len) => startRead(handle, ptr, len, "stop"),
+  "[async-lower][stream-cancel-read-0]stop": () => { throw new Error("early stop must not cancel a completed read"); },
+  "[stream-drop-readable-0]stop": streamDrop,
+};
+
+WebAssembly.instantiate(module, { "$root": canonical, "[export]$root": canonical }).then(result => {
+  instance = result;
+  const consume = instance.exports["[async-lift]consume"];
+  const consumeCallback = instance.exports["[callback][async-lift]consume"];
+  const stop = instance.exports["[async-lift]stop"];
+
+  const first = consume(7);
+  const firstContext = currentContext;
+  if (first !== ((40 << 4) | 2)) throw new Error(`slow producer did not yield: ${first}`);
+  const firstResume = consumeCallback(2, 7, complete(7, [1], false));
+  if (firstResume !== first) throw new Error(`second slow read did not preserve wait set: ${firstResume}`);
+  if (currentContext !== firstContext) throw new Error("stream callback replaced its context");
+  if (consumeCallback(2, 7, complete(7, [4, 5, 6], true)) !== 0) throw new Error("EOF did not exit");
+
+  if (consume(8) !== 0) throw new Error("total-limit path did not finish immediately");
+
+  const cancelled = consume(9);
+  if (cancelled !== ((42 << 4) | 2)) throw new Error(`cancel task did not yield: ${cancelled}`);
+  if (consumeCallback(6, 0, 0) !== cancelled) throw new Error("blocked read cancellation did not keep waiting");
+  active.delete(9);
+  pending.delete(9);
+  if (consumeCallback(2, 9, 2) !== 0) throw new Error("cancelled read did not exit");
+
+  if (stop(10) !== 0) throw new Error("handler early stop did not exit");
+
+  const expectedCompletions = [["consume", 0, 0], ["consume", 1, 0], ["stop", 0, 0]];
+  if (JSON.stringify(completions) !== JSON.stringify(expectedCompletions)) {
+    throw new Error(`unexpected stream completions: ${JSON.stringify(completions)}`);
+  }
+  if (cancellations !== 1) throw new Error(`expected one task cancellation, got ${cancellations}`);
+  if (readCancellations !== 1) throw new Error(`expected one read cancellation, got ${readCancellations}`);
+  for (const handle of [7, 8, 9, 10]) {
+    if (drops.get(handle) !== 1) throw new Error(`stream ${handle} dropped ${drops.get(handle)} times`);
+  }
+  if (JSON.stringify([...reads]) !== JSON.stringify([[7, 3], [8, 4], [9, 1], [10, 1]])) {
+    throw new Error(`unexpected read counts: ${JSON.stringify([...reads])}`);
+  }
+  if (consume(11) !== 0) throw new Error("zero-count completed read did not terminate");
+  if (reads.get(11) !== 1 || drops.get(11) !== 1) throw new Error("zero-count completed read retried or leaked its stream");
+  if (liveSets.size || liveStreams.size || active.size || pending.size) {
+    throw new Error("terminal stream paths leaked lifecycle handles");
+  }
+
+  if (consume(100) !== 0) throw new Error("warm-up stream did not complete");
+  const warmPages = instance.exports.memory.buffer.byteLength;
+  const probe = instance.exports.cabi_realloc(0, 0, 4, 64);
+  instance.exports.cabi_realloc(probe, 64, 4, 0);
+  for (let handle = 101; handle < 111; handle += 1) {
+    if (consume(handle) !== 0) throw new Error(`repeated stream ${handle} did not complete`);
+    const repeatedProbe = instance.exports.cabi_realloc(0, 0, 4, 64);
+    if (repeatedProbe !== probe) throw new Error(`heap high-water changed after warm-up: ${probe} -> ${repeatedProbe}`);
+    instance.exports.cabi_realloc(repeatedProbe, 64, 4, 0);
+    if (instance.exports.memory.buffer.byteLength !== warmPages) throw new Error("repeated streams grew linear memory after warm-up");
+    if (liveSets.size || liveStreams.size || active.size || pending.size) {
+      throw new Error(`repeated stream ${handle} leaked lifecycle handles`);
+    }
+  }
+}).catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
+"#;
+  let runtime = Command::new("node")
+    .args(["-e", script])
+    .arg(&wasm)
+    .output()
+    .expect("Node.js should exercise the scoped stream core adapter");
+  assert!(
+    runtime.status.success(),
+    "scoped stream Component runtime failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&runtime.stdout),
+    String::from_utf8_lossy(&runtime.stderr)
+  );
+}
+
+struct DelayedChunks {
+  chunks: VecDeque<Vec<u8>>,
+  waiting_for_chunk: bool,
+}
+
+impl StreamProducer<()> for DelayedChunks {
+  type Item = u8;
+  type Buffer = VecBuffer<u8>;
+
+  fn poll_produce<'a>(
+    mut self: Pin<&mut Self>,
+    context: &mut Context<'_>,
+    _store: StoreContextMut<'a, ()>,
+    mut destination: Destination<'a, Self::Item, Self::Buffer>,
+    finish: bool,
+  ) -> Poll<wasmtime::Result<StreamResult>> {
+    if finish {
+      return Poll::Ready(Ok(StreamResult::Cancelled));
+    }
+    if !self.waiting_for_chunk {
+      self.waiting_for_chunk = true;
+      let waker = context.waker().clone();
+      thread::spawn(move || {
+        thread::sleep(Duration::from_millis(10));
+        waker.wake();
+      });
+      return Poll::Pending;
+    }
+    self.waiting_for_chunk = false;
+    let chunk = self.chunks.pop_front().expect("delayed stream should retain a chunk after waking");
+    destination.set_buffer(chunk.into());
+    Poll::Ready(Ok(if self.chunks.is_empty() {
+      StreamResult::Dropped
+    } else {
+      StreamResult::Completed
+    }))
+  }
+}
+
+#[tokio::test]
+async fn packaged_scoped_stream_validates_three_chunks_and_repeats_after_backpressure() {
+  let output = TestDirectory::create();
+  let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "tests/fixtures/component-wasm-stream.cirru",
+      "wasm",
+      "--boundary",
+      "component",
+      "--emit-path",
+    ])
+    .arg(&output.0)
+    .output()
+    .expect("scoped stream Component fixture should compile");
+  assert!(
+    compile.status.success(),
+    "scoped stream compile failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&compile.stdout),
+    String::from_utf8_lossy(&compile.stderr)
+  );
+  let contract = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "tests/fixtures/component-wasm-stream.cirru",
+      "ffi",
+      "export",
+      "--boundary",
+      "component",
+    ])
+    .output()
+    .expect("scoped stream contract should export");
+  assert!(
+    contract.status.success(),
+    "scoped stream contract export failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&contract.stdout),
+    String::from_utf8_lossy(&contract.stderr)
+  );
+  let contract_path = output.0.join("interface.cirru");
+  fs::write(&contract_path, contract.stdout).expect("scoped stream contract should write");
+  let contract = calcit_bindgen::load_contract(&contract_path).expect("scoped stream contract should load");
+  let generated = output.0.join("generated");
+  calcit_bindgen::generate_contract_directory(&contract, Some(&output.0.join("program.wasm")), &generated, &[])
+    .expect("scoped stream Component should package");
+
+  let mut config = Config::new();
+  config.wasm_component_model_async(true);
+  config.wasm_component_model_more_async_builtins(true);
+  config.wasm_component_model_async_stackful(true);
+  let engine = Engine::new(&config).expect("Wasmtime Component engine should create");
+  let component = Component::from_file(&engine, generated.join(COMPONENT_FILE)).expect("scoped stream Component should load");
+  let linker = Linker::new(&engine);
+  let mut store = Store::new(&engine, ());
+  let instance = linker
+    .instantiate_async(&mut store, &component)
+    .await
+    .expect("scoped stream Component should instantiate");
+  let consume = instance.get_func(&mut store, "consume").expect("scoped stream export should exist");
+  for invocation in 0..6 {
+    let reader = StreamReader::new(
+      &mut store,
+      DelayedChunks {
+        chunks: VecDeque::from([vec![1], vec![2, 3], vec![4, 5, 6]]),
+        waiting_for_chunk: false,
+      },
+    )
+    .expect("host byte stream should create");
+    let stream = reader
+      .try_into_stream_any(&mut store)
+      .expect("typed host byte stream should erase to the dynamic Component value");
+    let mut results = [Val::Bool(false)];
+    tokio::time::timeout(
+      Duration::from_secs(3),
+      consume.call_async(&mut store, &[Val::Stream(stream)], &mut results),
+    )
+    .await
+    .expect("scoped stream should resume after host backpressure")
+    .expect("scoped stream call should complete");
+    assert!(
+      matches!(&results[0], Val::Result(Ok(None))),
+      "unexpected scoped stream result on invocation {invocation}: {results:?}"
+    );
+    store.assert_concurrent_state_empty();
+  }
 }
 
 #[tokio::test]
