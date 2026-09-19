@@ -1444,6 +1444,12 @@ WebAssembly.instantiate(module, { host }).then(result => {
     invalidHostNumbersTrapped = error instanceof WebAssembly.RuntimeError;
   }
   if (!invalidHostNumbersTrapped) throw new Error("out-of-bounds imported Number List result did not trap");
+  const headerBoundary = e.memory.buffer.byteLength;
+  e.__heap_ptr.value = headerBoundary;
+  const boundaryPtr = e.cabi_realloc(0, 0, 1, 1);
+  if (boundaryPtr !== headerBoundary + 8 || boundaryPtr + 1 > e.memory.buffer.byteLength) {
+    throw new Error(`cabi_realloc did not grow memory before writing a boundary header: ${boundaryPtr}`);
+  }
   const pagesBefore = e.memory.buffer.byteLength / 65536;
   const largeSize = e.memory.buffer.byteLength + 1;
   const largePtr = e.cabi_realloc(0, 0, 1, largeSize);
