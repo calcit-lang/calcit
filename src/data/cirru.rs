@@ -332,6 +332,14 @@ mod tests {
   }
 
   #[test]
+  fn parses_hex_number_literal() {
+    let upper = code_to_calcit(&Cirru::leaf("0x10"), "tests.ns", "demo", vec![]).expect("parse upper hex literal");
+    assert!(matches!(upper, Calcit::Number(n) if n == 16.0));
+    let lower = code_to_calcit(&Cirru::leaf("0xf"), "tests.ns", "demo", vec![]).expect("parse lower hex literal");
+    assert!(matches!(lower, Calcit::Number(n) if n == 15.0));
+  }
+
+  #[test]
   fn parses_strict_edn_decode_as_syntax() {
     let expr = Cirru::List(vec![Cirru::leaf("parse-cirru-edn-as"), Cirru::leaf("|do 1"), Cirru::leaf("Number")]);
 
