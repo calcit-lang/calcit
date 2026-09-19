@@ -27,8 +27,11 @@ if [[ "${CI:-}" == "true" ]]; then
 fi
 
 JOBS="${CALCIT_DOCS_CHECK_JOBS:-4}"
-if ! [[ "$JOBS" =~ ^[1-9][0-9]*$ ]]; then
-  echo "CALCIT_DOCS_CHECK_JOBS must be a positive integer, got '$JOBS'" >&2
+# Bound the value before it reaches the arithmetic comparison: the full numeric
+# regex alone would accept strings far beyond Bash's integer range, and those
+# can wrap in `(( ... ))` instead of failing.
+if ! [[ "$JOBS" =~ ^[1-9][0-9]{0,2}$ ]] || (( JOBS > 64 )); then
+  echo "CALCIT_DOCS_CHECK_JOBS must be an integer between 1 and 64, got '$JOBS'" >&2
   exit 1
 fi
 

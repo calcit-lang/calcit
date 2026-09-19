@@ -6,6 +6,9 @@ on:
 
 name: Test
 
+permissions:
+  contents: read
+
 jobs:
   wasi_preprocess:
     name: WASI preprocess regression
