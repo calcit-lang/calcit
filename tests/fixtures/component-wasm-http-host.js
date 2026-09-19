@@ -150,6 +150,10 @@ const canonical = {
   "[waitable-set-wait]": () => { throw new Error("immediate HTTP should not wait"); },
   "[subtask-drop]": () => { throw new Error("immediate HTTP should not drop a subtask"); },
   "[waitable-set-drop]": () => { throw new Error("immediate HTTP should not drop a waitable set"); },
+  "[context-get-0]": () => { throw new Error("immediate HTTP should not read callback context"); },
+  "[context-set-0]": () => { throw new Error("immediate HTTP should not set callback context"); },
+  "[async-lower][subtask-cancel]": () => { throw new Error("immediate HTTP should not cancel a subtask"); },
+  "[task-cancel]": () => { throw new Error("immediate HTTP should not cancel the parent task"); },
   "[task-return]call-host-combine": () => {},
   "[task-return]call-host-flag": () => {},
   "[task-return]call-host-load": () => {},
@@ -169,7 +173,7 @@ WebAssembly.instantiate(wasmModule, {
   instance = result;
   const invoke = (url, maxResponseBytes) => {
     const [urlPtr, urlLen] = allocateText(url);
-    instance.exports["[async-lift-stackful]call-host-http-request"](
+    const status = instance.exports["[async-lift]call-host-http-request"](
       HTTP_BODY.empty,
       0,
       0,
@@ -180,6 +184,7 @@ WebAssembly.instantiate(wasmModule, {
       urlPtr,
       urlLen,
     );
+    if (status !== 0) throw new Error(`immediate HTTP export did not exit: ${status}`);
   };
   invoke(`${allowedOrigin}/ok`, 64);
   invoke("::malformed-url", 64);

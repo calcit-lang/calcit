@@ -205,10 +205,14 @@ const expectedImports = [
   "host/[async-lower]load",
   "calcit:wasi-http/client/[async-lower]request",
   "$root/[subtask-drop]",
+  "$root/[async-lower][subtask-cancel]",
+  "$root/[context-get-0]",
+  "$root/[context-set-0]",
   "[export]$root/[task-return]call-host-combine",
   "[export]$root/[task-return]call-host-flag",
   "[export]$root/[task-return]call-host-http-request",
   "[export]$root/[task-return]call-host-load",
+  "[export]$root/[task-cancel]",
   "$root/[waitable-set-drop]",
   "$root/[waitable-set-new]",
   "$root/[waitable-set-wait]",
@@ -223,9 +227,20 @@ let nextWaitableSet = 40;
 let completions = [];
 let boolCompletions = [];
 let combineCompletions = [];
-let lifecycle = { new: 0, join: 0, wait: 0, subtaskDrop: 0, setDrop: 0 };
+let lifecycle = {
+  new: 0,
+  join: 0,
+  wait: 0,
+  subtaskDrop: 0,
+  setDrop: 0,
+  contextGet: 0,
+  contextSet: 0,
+  subtaskCancel: 0,
+  taskCancel: 0,
+};
 const pending = new Map();
 const joined = new Map();
+let currentContext = 0;
 
 const allocateText = text => {
   const bytes = Buffer.from(text, "utf8");
@@ -269,15 +284,15 @@ const host = {
       return 2;
     }
     if (marker === "delayed-ok") {
-      pending.set(7, { inputPtr, inputLen, outPtr, steps: [0, 1, 2], discriminant: 0, text: "ready-later" });
+      pending.set(7, { inputPtr, inputLen, outPtr, discriminant: 0, text: "ready-later" });
       return (7 << 4) | 0;
     }
     if (marker === "delayed-error") {
-      pending.set(8, { inputPtr, inputLen, outPtr, steps: [2], discriminant: 1, text: "typed-error" });
+      pending.set(8, { inputPtr, inputLen, outPtr, discriminant: 1, text: "typed-error" });
       return (8 << 4) | 1;
     }
     if (marker === "cancelled") {
-      pending.set(9, { inputPtr, inputLen, outPtr, steps: [4], discriminant: 1, text: "unused" });
+      pending.set(9, { inputPtr, inputLen, outPtr, discriminant: 1, text: "unused", cancelBlocked: true });
       return (9 << 4) | 1;
     }
     throw new Error(`unexpected host input ${marker}`);
@@ -314,16 +329,7 @@ const canonical = {
   },
   "[waitable-set-wait]": (set, eventPtr) => {
     lifecycle.wait += 1;
-    const subtask = joined.get(set);
-    const task = pending.get(subtask);
-    if (!task) throw new Error(`missing subtask ${subtask}`);
-    const state = task.steps.shift();
-    if (state === 1) readText(task.inputPtr, task.inputLen);
-    if (state === 2) writeResult(task.outPtr, task.discriminant, task.text);
-    const memory = new DataView(instance.exports.memory.buffer);
-    memory.setUint32(eventPtr, subtask, true);
-    memory.setUint32(eventPtr + 4, state, true);
-    return 1;
+    throw new Error(`stackless callback export must not block on waitable set ${set} at ${eventPtr}`);
   },
   "[subtask-drop]": subtask => {
     lifecycle.subtaskDrop += 1;
@@ -333,36 +339,85 @@ const canonical = {
     lifecycle.setDrop += 1;
     joined.delete(set);
   },
+  "[context-get-0]": () => {
+    lifecycle.contextGet += 1;
+    return currentContext;
+  },
+  "[context-set-0]": context => {
+    lifecycle.contextSet += 1;
+    currentContext = context;
+  },
+  "[async-lower][subtask-cancel]": subtask => {
+    lifecycle.subtaskCancel += 1;
+    const task = pending.get(subtask);
+    if (!task) throw new Error(`missing cancelled subtask ${subtask}`);
+    if (task.cancelBlocked) {
+      task.cancelBlocked = false;
+      return -1;
+    }
+    return 4;
+  },
+  "[task-cancel]": () => {
+    lifecycle.taskCancel += 1;
+  },
 };
 
 WebAssembly.instantiate(module, { host, "calcit:wasi-http/client": http, "$root": canonical, "[export]$root": canonical }).then(result => {
   instance = result;
-  const invoke = marker => {
+  const start = marker => {
     const [ptr, len] = allocateText(marker);
-    const returned = instance.exports["[async-lift-stackful]call-host-load"](ptr, len);
-    if (returned !== undefined) throw new Error(`async core export returned ${returned}`);
+    const status = instance.exports["[async-lift]call-host-load"](ptr, len);
+    return { status, context: currentContext };
   };
-  invoke("immediate-ok");
-  invoke("delayed-ok");
-  invoke("delayed-error");
-  if (JSON.stringify(completions) !== JSON.stringify([[0, "ready-now"], [0, "ready-later"], [1, "typed-error"]])) {
+  const callback = instance.exports["[callback][async-lift]call-host-load"];
+  const resume = (task, subtask, state) => {
+    currentContext = task.context;
+    const pendingTask = pending.get(subtask);
+    if (state === 1) readText(pendingTask.inputPtr, pendingTask.inputLen);
+    if (state === 2) writeResult(pendingTask.outPtr, pendingTask.discriminant, pendingTask.text);
+    return callback(1, subtask, state);
+  };
+
+  if (start("immediate-ok").status !== 0) throw new Error("immediate stackless export did not exit");
+  const delayedOk = start("delayed-ok");
+  const delayedError = start("delayed-error");
+  if (delayedOk.context === delayedError.context) throw new Error("stackless tasks reused one context record");
+  if (delayedOk.status !== ((40 << 4) | 2) || delayedError.status !== ((41 << 4) | 2)) {
+    throw new Error(`unexpected wait statuses: ${delayedOk.status}, ${delayedError.status}`);
+  }
+  if (resume(delayedOk, 7, 0) !== delayedOk.status) throw new Error("started subtask did not keep waiting");
+  if (resume(delayedOk, 7, 1) !== delayedOk.status) throw new Error("returned subtask did not keep waiting");
+  if (resume(delayedError, 8, 2) !== 0) throw new Error("error subtask did not exit");
+  if (resume(delayedOk, 7, 2) !== 0) throw new Error("successful subtask did not exit");
+  if (JSON.stringify(completions) !== JSON.stringify([[0, "ready-now"], [1, "typed-error"], [0, "ready-later"]])) {
     throw new Error(`unexpected completions: ${JSON.stringify(completions)}`);
   }
-  instance.exports["[async-lift-stackful]call-host-flag"](1);
-  instance.exports["[async-lift-stackful]call-host-flag"](0);
+  instance.exports["[async-lift]call-host-flag"](1);
+  instance.exports["[async-lift]call-host-flag"](0);
   if (JSON.stringify(boolCompletions) !== JSON.stringify([0, 1])) {
     throw new Error(`async Bool result read beyond one byte: ${JSON.stringify(boolCompletions)}`);
   }
   const [leftPtr, leftLen] = allocateText("left");
   const [rightPtr, rightLen] = allocateText("right");
-  instance.exports["[async-lift-stackful]call-host-combine"](leftPtr, leftLen, rightPtr, rightLen, 3, 1);
+  instance.exports["[async-lift]call-host-combine"](leftPtr, leftLen, rightPtr, rightLen, 3, 1);
   if (JSON.stringify(combineCompletions) !== JSON.stringify(["left:right:3:true"])) {
     throw new Error(`indirect async parameters did not round-trip: ${JSON.stringify(combineCompletions)}`);
   }
-  let cancelledTrapped = false;
-  try { invoke("cancelled"); } catch (error) { cancelledTrapped = error instanceof WebAssembly.RuntimeError; }
-  if (!cancelledTrapped) throw new Error("cancelled async import did not trap after cleanup");
-  const expectedLifecycle = { new: 3, join: 6, wait: 5, subtaskDrop: 3, setDrop: 3 };
+  const cancelled = start("cancelled");
+  currentContext = cancelled.context;
+  if (callback(6, 0, 0) !== cancelled.status) throw new Error("blocked child cancellation did not resume waiting");
+  if (resume(cancelled, 9, 4) !== 0) throw new Error("cancelled child did not exit");
+  const expectedLifecycle = {
+    new: 3,
+    join: 8,
+    wait: 0,
+    subtaskDrop: 3,
+    setDrop: 3,
+    contextGet: 6,
+    contextSet: 6,
+    subtaskCancel: 1,
+    taskCancel: 1,
+  };
   if (JSON.stringify(lifecycle) !== JSON.stringify(expectedLifecycle)) {
     throw new Error(`unexpected lifecycle: ${JSON.stringify(lifecycle)}`);
   }
@@ -501,6 +556,7 @@ async fn packaged_http_component_executes_through_the_wasmtime_host_adapter() {
 
   let mut config = Config::new();
   config.wasm_component_model_async(true);
+  config.wasm_component_model_more_async_builtins(true);
   config.wasm_component_model_async_stackful(true);
   let engine = Engine::new(&config).expect("Wasmtime Component engine should create");
   let component = Component::from_file(&engine, generated.join(COMPONENT_FILE)).expect("buffered HTTP Component should load");
