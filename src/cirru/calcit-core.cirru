@@ -2878,6 +2878,23 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data :internal
+          :tests $ [] $ %{} 'TestEntry (:name |matches-payloads-and-rejects-arity-mismatch)
+            :code $ quote $ do
+              assert= 1 $ match (%some 1)
+                (:some x) x
+                (:none) 0
+              assert= 0 $ match (%none)
+                (:some x) x
+                (:none) 0
+              assert= :a-one $ match (:: :a 1)
+                (:a x) :a-one
+                (:b x y) :b-two
+                _ :no-match
+              assert= :no-match $ match (:: :a 1 2)
+                (:a x) :a-one
+                (:b x y) :b-two
+                _ :no-match
+            :tags $ #{} :core :unit
         'OptionMappableImpl $ %{} 'CodeEntry (:doc "|Trait impl for Mappable on Option")
           :code $ quote $ defimpl OptionMappableImpl Mappable (.map option:map)
           :examples $ []
@@ -3111,6 +3128,20 @@
             :required $ []
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |chains-truthy-and-falls-to-false)
+            :code $ quote $ do
+              assert= 1 $ and 1
+              assert= false $ and nil
+              assert= false $ and 1 nil
+              assert= false $ and nil 1
+              assert= 1 $ and 1 1
+              assert= 1 $ and 1 1 1
+              assert= false $ and 1 1 nil
+              assert= false $ and nil 1 1
+              assert= true $ and (&> 10 9) (&> 10 8)
+              assert= false $ and (&> 10 11) (&> 10 8)
+              assert= false $ and (&> 10 9) (&> 10 11)
+            :tags $ #{} :core :unit
         'any? $ %{} 'CodeEntry
           :doc "|checks if any element in collection satisfies the predicate function, returns true on first match, short-circuits evaluation"
           :code $ quote $ defn any? (xs f)
@@ -3318,6 +3349,24 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic (:: 'List 'K) 'Dynamic
             :generics $ [] 'K
+          :tests $ [] $ %{} 'TestEntry (:name |assocs-nested-maps-lists-and-nil-base)
+            :code $ quote $ do
+              assert=
+                &{} :a $ &{} :b 10
+                assoc-in
+                  &{} :a $ &{} :b $ &{}
+                  [] :a :b
+                  , 10
+              assert=
+                &{} :a $ [] 1 10 3
+                assoc-in
+                  &{} :a $ [] 1 2 3
+                  [] :a 1
+                  , 10
+              assert=
+                &{} :a $ &{} :b $ &{} :c 10
+                assoc-in nil ([] :a :b :c) 10
+            :tags $ #{} :core :unit
         'atom $ %{} 'CodeEntry
           :doc "|internal function for creating atoms\nSyntax: (atom value)\nParams: value (any)\nReturns: atom\nCreates new atom with initial value"
           :code $ quote &runtime-implementation
@@ -3474,6 +3523,15 @@
             :expansion $ :: 'Expr 'Dynamic
             :required $ [] $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |matches-tag-or-falls-to-expression)
+            :code $ quote $ let
+                detect-x $ fn (x)
+                  case x (1 |one) (2 |two) (x |else)
+              do
+                assert= (detect-x 1) |one
+                assert= (detect-x 2) |two
+                assert= (detect-x 3) |else
+            :tags $ #{} :core :unit
         'case-default $ %{} 'CodeEntry
           :doc "|Case macro variant with an explicit default branch\nEvaluates the target once, compares it against pattern/result pairs, and falls back to the provided default when no pattern matches."
           :code $ quote $ defmacro case-default (item default & patterns)
@@ -3604,6 +3662,20 @@
             :expansion $ :: 'Expr 'Dynamic
             :required $ []
           :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |picks-first-truthy-clause)
+            :code $ quote $ let
+                compare-x $ fn (x)
+                  cond
+                      &> x 10
+                      , |>10
+                    (&> x 5) |>5
+                    true |<=5
+              do
+                assert= (compare-x 11) |>10
+                assert= (compare-x 10) |>5
+                assert= (compare-x 6) |>5
+                assert= (compare-x 4) |<=5
+            :tags $ #{} :core :unit
         'conj $ %{} 'CodeEntry
           :doc "|Appends values to the end of a list, returning a new list\nSupports adding multiple values by chaining additional arguments."
           :code $ quote $ defn conj (xs y0 & ys)
@@ -3674,6 +3746,33 @@
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'T $ :: 'List 'K
             :generics $ [] 'T 'K
+          :tests $ [] $ %{} 'TestEntry (:name |traverses-maps-lists-tags-and-enums)
+            :code $ quote $ do
+              assert= true $ contains-in?
+                &{} :a $ [] 1 2 3
+                [] :a 1
+              assert= false $ contains-in?
+                &{} :a $ [] 1 2 3
+                [] :a 3
+              assert= false $ contains-in?
+                &{} :a $ [] 1 2 3
+                [] :b 1
+              assert= true $ contains-in?
+                [] 1 2 $ [] 3 4
+                [] 2 1
+              assert= false $ contains-in?
+                [] 1 2 $ [] 3 4
+                [] 2 2
+              assert= false $ contains-in?
+                [] 1 2 $ [] 3 4
+                [] 3 2
+              assert= true $ contains-in?
+                &{} :a $ :: 'quote 1
+                [] :a 1
+              assert= true $ contains-in?
+                :: :a :b $ [] 1 2 3
+                [] 2 2
+            :tags $ #{} :core :unit
         'contains-symbol? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn contains-symbol? (xs y)
             if (list? xs)
@@ -4409,6 +4508,19 @@
           :schema $ :: 'Fn $ {} (:return 'D)
             :args $ [] 'D $ :: 'List 'K
             :generics $ [] 'D 'K
+          :tests $ [] $ %{} 'TestEntry (:name |dissocs-nested-maps-and-list-indexes)
+            :code $ quote $ do
+              assert=
+                &{} :a $ &{} :b $ &{}
+                dissoc-in
+                  &{} :a $ &{} :b $ &{} :c 2
+                  [] :a :b :c
+              assert=
+                &{} :a $ [] 1 3
+                dissoc-in
+                  &{} :a $ [] 1 2 3
+                  [] :a 1
+            :tags $ #{} :core :unit
         'distinct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn distinct (x) (&list:distinct x)
           :examples $ []
@@ -4511,6 +4623,14 @@
             :required $ []
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |returns-first-non-nil)
+            :code $ quote $ do
+              assert= 1 $ either nil 1
+              assert= 1 $ either 1 nil
+              assert= nil $ either nil nil
+              assert= 1 $ either nil nil 1
+              assert= 1 $ either (do nil) (do 1) (do nil)
+            :tags $ #{} :core :unit
         'empty $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn empty (x)
             if (list? x) ([]) (.empty x)
@@ -6966,9 +7086,23 @@
             :required $ [] $ :: 'Expr 'Dynamic
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-          :tests $ [] $ %{} 'TestEntry (:name |skips-unit-and-returns-next-truthy-value)
-            :code $ quote $ assert= |next (or &unit |next)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |skips-unit-and-returns-next-truthy-value)
+              :code $ quote $ assert= |next (or &unit |next)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-first-truthy-or-nil)
+              :code $ quote $ do
+                assert= 1 $ or 1
+                assert= nil $ or nil
+                assert= 1 $ or 1 nil
+                assert= 1 $ or nil 1
+                assert= 1 $ or nil nil 1
+                assert= nil $ or nil nil nil
+                assert= true $ or (&> 10 9) (&> 10 8)
+                assert= true $ or (&> 10 11) (&> 10 8)
+                assert= true $ or (&> 10 9) (&> 10 11)
+                assert= false $ or (&> 10 12) (&> 10 11)
+              :tags $ #{} :core :unit
         'pairs-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn pairs-map (xs)
             reduce xs ({})
@@ -8249,15 +8383,38 @@
               :: 'Fn $ {} (:return 'T)
                 :args $ [] $ :: 'Option 'T
             :generics $ [] 'K 'T
-          :tests $ [] $ %{} 'TestEntry (:name |updates-existing-nested-leaf)
-            :code $ quote $ assert=
-              &{} :a $ &{} :b 3
-              update-in
-                &{} :a $ &{} :b 1
-                [] :a :b
-                fn (value)
-                  + (option:unwrap value) 2
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |updates-existing-nested-leaf)
+              :code $ quote $ assert=
+                &{} :a $ &{} :b 3
+                update-in
+                  &{} :a $ &{} :b 1
+                  [] :a :b
+                  fn (value)
+                    + (option:unwrap value) 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |updates-collection-and-missing-paths)
+              :code $ quote $ do
+                assert=
+                  &{} :a $ &{} :b $ &{} :c 3
+                  update-in
+                    &{} :a $ &{} :b $ &{} :c 2
+                    [] :a :b :c
+                    fn (value)
+                      &+ (option:unwrap value) 1
+                assert=
+                  &{} :a $ [] 1 3 3
+                  update-in
+                    &{} :a $ [] 1 2 3
+                    [] :a 1
+                    fn (value)
+                      &+ (option:unwrap value) 1
+                assert=
+                  &{} :a $ &{} :b 1
+                  update-in (&{}) ([] :a :b)
+                    fn (value)
+                      if (option:none? value) 1 $ raise |expected-missing-value
+              :tags $ #{} :core :unit
         'vals $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn vals (x)
             map (to-pairs x) &list:last
@@ -8382,6 +8539,11 @@
             :required $ [] $ :: 'Expr 'Dynamic
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |gates-single-and-body)
+            :code $ quote $ do
+              assert= 1 $ when true 1
+              assert= 1 $ when true 2 1
+            :tags $ #{} :core :unit
         'when-let $ %{} 'CodeEntry
           :doc "|Consume Option<T>, evaluate the body only for some, and return Option<R>."
           :code $ quote $ defmacro when-let (pair & body)
@@ -8422,6 +8584,11 @@
             :required $ [] $ :: 'Expr 'Dynamic
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |gates-single-and-body)
+            :code $ quote $ do
+              assert= 1 $ when-not false 1
+              assert= 1 $ when-not false 2 1
+            :tags $ #{} :core :unit
         'with-cpu-time $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro with-cpu-time (x)
             let
