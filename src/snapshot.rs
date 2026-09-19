@@ -409,6 +409,10 @@ impl RawCodeEntry {
       .collect::<Vec<_>>();
     validate_test_entries(&tests, owner)?;
     let (code, ffi) = normalize_entry_external(self.code, self.ffi, owner)?;
+    // Match the text loader: a definition-kind schema stored as Dynamic must
+    // become the canonical marker, including for `defexternal`-lowered
+    // `deftrait` entries.
+    let schema = normalize_schema_for_code(&code, &schema);
 
     Ok(CodeEntry {
       doc: self.doc,
@@ -2793,6 +2797,14 @@ fn normalize_defexternal_code(code: Cirru, owner: &str) -> Result<(Cirru, Edn), 
         format_cirru_preview(Some(item))
       ));
     };
+    // Each outer option or member is a head plus exactly one value. Plural
+    // contents stay inside that single value (`:names` map / `:writable` set).
+    if parts.len() != 2 {
+      return Err(format!(
+        "{owner}: `defexternal` entry `{head}` expects exactly one value, got {} part(s)",
+        parts.len()
+      ));
+    }
     match head.as_ref() {
       ":target" => {
         if target.is_some() {
@@ -2861,6 +2873,7 @@ fn normalize_defexternal_code(code: Cirru, owner: &str) -> Result<(Cirru, Edn), 
   Ok((trait_code, Edn::Map(EdnMapView(HashMap::from_iter(ffi_pairs)))))
 }
 
+/// Parse a `defexternal` `:target` value into a canonical target tag.
 fn parse_defexternal_target(value: &Cirru, owner: &str) -> Result<Edn, String> {
   let Cirru::Leaf(value) = value else {
     return Err(format!(
@@ -2877,6 +2890,7 @@ fn parse_defexternal_target(value: &Cirru, owner: &str) -> Result<Edn, String> {
   }
 }
 
+/// Parse a `defexternal` `:names` map into Calcit-name/host-name tag/string pairs.
 fn parse_defexternal_names(value: &Cirru, owner: &str) -> Result<Vec<(Edn, Edn)>, String> {
   let Cirru::List(items) = value else {
     return Err(format!(
@@ -2925,6 +2939,7 @@ fn parse_defexternal_names(value: &Cirru, owner: &str) -> Result<Vec<(Edn, Edn)>
   Ok(result)
 }
 
+/// Parse a `defexternal` `:writable` set into field tags.
 fn parse_defexternal_writable(value: &Cirru, owner: &str) -> Result<Vec<Edn>, String> {
   let Cirru::List(items) = value else {
     return Err(format!(
@@ -2953,6 +2968,7 @@ fn parse_defexternal_writable(value: &Cirru, owner: &str) -> Result<Vec<Edn>, St
   Ok(result)
 }
 
+/// Render a Cirru node for diagnostics, or `<missing>` when absent.
 fn format_cirru_preview(node: Option<&Cirru>) -> String {
   match node {
     Some(node) => format!("{node:?}"),
@@ -2960,6 +2976,7 @@ fn format_cirru_preview(node: Option<&Cirru>) -> String {
   }
 }
 
+/// Whether a definition body uses the `defexternal` shorthand head.
 fn code_declares_defexternal(code: &Cirru) -> bool {
   matches!(code, Cirru::List(items) if matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defexternal"))
 }
@@ -3829,11 +3846,46 @@ mod tests {
   }
 
   #[test]
+  fn defexternal_rejects_surplus_option_or_member_values() {
+    let target = normalize_defexternal_code(parse_one("defexternal T\n  :target :browser :node\n  :value 'String"), "demo/T")
+      .expect_err("surplus target values should fail");
+    assert!(target.contains("expects exactly one value"), "error: {target}");
+
+    let member = normalize_defexternal_code(parse_one("defexternal T\n  :value 'String 'Unexpected"), "demo/T")
+      .expect_err("surplus member values should fail");
+    assert!(member.contains("expects exactly one value"), "error: {member}");
+  }
+
+  #[test]
   fn defexternal_conflicts_with_explicit_ffi_metadata() {
     let ffi = Edn::Map(EdnMapView(HashMap::from_iter([(Edn::tag("backend"), Edn::tag("js"))])));
     let error = normalize_entry_external(parse_one("defexternal T\n  :value 'String"), Some(ffi), "demo/T")
       .expect_err("explicit ffi should conflict");
     assert!(error.contains("remove the explicit `:ffi`"), "error: {error}");
+  }
+
+  #[test]
+  fn binary_code_entry_normalizes_defexternal_schema_and_ffi() {
+    let raw = RawCodeEntry {
+      doc: String::new(),
+      examples: vec![],
+      tests: vec![],
+      tags: vec![],
+      code: parse_one("defexternal QueryHost\n  :target :browser\n  :value 'String"),
+      schema: None,
+      ffi: None,
+    };
+    let entry = raw.into_code_entry("demo/QueryHost").expect("binary entry should normalize");
+    assert!(
+      matches!(entry.code, Cirru::List(ref items) if matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "deftrait")),
+      "binary code should expand to deftrait"
+    );
+    assert!(
+      matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Custom(marker) if marker.as_ref() == &Calcit::tag("trait")),
+      "binary schema should canonicalize to the trait marker, got {:?}",
+      entry.schema
+    );
+    assert!(entry.ffi.is_some(), "binary ffi metadata should be generated");
   }
 
   #[test]
