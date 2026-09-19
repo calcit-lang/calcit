@@ -242,6 +242,7 @@ const liveSets = new Set();
 const liveStreams = new Set();
 const completions = [];
 let cancellations = 0;
+let readCancellations = 0;
 
 const write = (ptr, bytes) => new Uint8Array(instance.exports.memory.buffer, ptr, bytes.length).set(bytes);
 const startRead = (handle, ptr, len, mode) => {
@@ -271,6 +272,10 @@ const startRead = (handle, ptr, len, mode) => {
     write(ptr, [1]);
     active.delete(handle);
     return (1 << 4) | 1;
+  }
+  if (handle === 11) {
+    active.delete(handle);
+    return 0;
   }
   pending.set(handle, { ptr, len });
   return -1;
@@ -310,6 +315,7 @@ const canonical = {
   "[async-lower][stream-read-0]consume": (handle, ptr, len) => startRead(handle, ptr, len, "consume"),
   "[async-lower][stream-cancel-read-0]consume": handle => {
     if (!active.has(handle)) throw new Error(`cancelled stream ${handle} without an outstanding read`);
+    readCancellations += 1;
     return -1;
   },
   "[stream-drop-readable-0]consume": streamDrop,
@@ -348,12 +354,15 @@ WebAssembly.instantiate(module, { "$root": canonical, "[export]$root": canonical
     throw new Error(`unexpected stream completions: ${JSON.stringify(completions)}`);
   }
   if (cancellations !== 1) throw new Error(`expected one task cancellation, got ${cancellations}`);
+  if (readCancellations !== 1) throw new Error(`expected one read cancellation, got ${readCancellations}`);
   for (const handle of [7, 8, 9, 10]) {
     if (drops.get(handle) !== 1) throw new Error(`stream ${handle} dropped ${drops.get(handle)} times`);
   }
   if (JSON.stringify([...reads]) !== JSON.stringify([[7, 3], [8, 4], [9, 1], [10, 1]])) {
     throw new Error(`unexpected read counts: ${JSON.stringify([...reads])}`);
   }
+  if (consume(11) !== 0) throw new Error("zero-count completed read did not terminate");
+  if (reads.get(11) !== 1 || drops.get(11) !== 1) throw new Error("zero-count completed read retried or leaked its stream");
   if (liveSets.size || liveStreams.size || active.size || pending.size) {
     throw new Error("terminal stream paths leaked lifecycle handles");
   }

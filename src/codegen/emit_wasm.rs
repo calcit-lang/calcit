@@ -3497,6 +3497,12 @@ fn build_component_stream_export(
     Instruction::LocalGet(count),
     Instruction::I32Eqz,
     Instruction::If(wasm_encoder::BlockType::Empty),
+  ]);
+  // A zero-item completed read cannot make progress and would otherwise spin
+  // inside this core call. Treat it as a terminal empty read, just like EOF.
+  push_component_stream_cleanup(consumer, canonical, stackless, cabi_free_index, 0, &mut step);
+  push_component_stream_task_return(adapter, 0, 0, &mut step);
+  step.extend([
     Instruction::Else,
     Instruction::LocalGet(total),
     Instruction::LocalGet(count),
