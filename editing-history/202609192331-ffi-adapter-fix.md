@@ -12,3 +12,14 @@
   类型 → 收敛访问 → 验证的流程，并解释为何不进入可 apply preset。
 - 验证：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` 全绿；
   docs check-md 69/69。
+
+## Review 跟进（PR #1231）
+
+- tiye 指出 `docs/run/fix.md` 里骨架示例的括号多余，并建议用 `calcit cirru parse` 验证结构。
+  验证发现这是真实 bug：多行形式下 `(:length 'Dynamic)` 会被解析成多一层嵌套（`[[":length", ...]]`），
+  `defexternal` 解析器会拒绝；只有单行写法才是等价的。
+- 修复：`defexternal_skeleton` 改为无括号的多行成员形式
+  （`:length 'Dynamic`、`.query $ :: 'Fn $ {} ...`），并同步 `docs/run/fix.md`
+  与 `docs/features/js-interop.md` 示例。
+- 单测 `defexternal_skeleton_filters_unexpressible_members` 增加「生成骨架必须通过
+  `validate_defexternal_shorthand`」断言，防止再次回归；集成测试期望串同步更新。

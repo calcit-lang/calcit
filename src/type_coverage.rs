@@ -660,13 +660,13 @@ fn defexternal_skeleton(name: &str, target: &str, fields: &[String], methods: &[
   }
   let mut lines = vec![format!("defexternal {name}")];
   if !target.is_empty() && target != "unspecified" && target != "invalid" {
-    lines.push(format!("  (:target :{target})"));
+    lines.push(format!("  :target :{target}"));
   }
   for field in fields {
-    lines.push(format!("  (:{field} 'Dynamic)"));
+    lines.push(format!("  :{field} 'Dynamic"));
   }
   for method in methods {
-    lines.push(format!("  (.{method} (:: 'Fn ({{}} (:args ([] '{name})) (:return 'Dynamic))))"));
+    lines.push(format!("  .{method} $ :: 'Fn $ {{}} (:args $ [] '{name}) (:return 'Dynamic)"));
   }
   lines.join("\n")
 }
@@ -3737,8 +3737,16 @@ mod tests {
     );
     assert_eq!(
       skeleton,
-      "defexternal QueryHost\n  (:target :browser)\n  (:length 'Dynamic)\n  (.query (:: 'Fn ({} (:args ([] 'QueryHost)) (:return 'Dynamic))))"
+      "defexternal QueryHost\n  :target :browser\n  :length 'Dynamic\n  .query $ :: 'Fn $ {} (:args $ [] 'QueryHost) (:return 'Dynamic)"
     );
+    // The multi-line skeleton must itself be a valid `defexternal` body.
+    let parsed = cirru_parser::parse(&skeleton)
+      .expect("skeleton should parse as Cirru")
+      .into_iter()
+      .next()
+      .expect("skeleton should contain one expression");
+    calcit::snapshot::validate_defexternal_shorthand(&parsed, "demo/QueryHost")
+      .expect("generated skeleton should validate as defexternal");
 
     // No expressible member means no paste-ready skeleton.
     assert_eq!(defexternal_skeleton("QueryHost", "browser", &["0".to_owned()], &[]), "");

@@ -2497,5 +2497,5 @@ fn strict_workflow_surfaces_ffi_boundary_defexternal_skeletons() {
     .and_then(|candidates| candidates.iter().find(|candidate| candidate["suggested_name"] == "RawReadHost"))
     .expect("a trait candidate should be reported for the bare field read");
   assert_eq!(candidate["contract_status"], "review-required");
-  assert_eq!(candidate["defexternal_skeleton"], "defexternal RawReadHost\n  (:length 'Dynamic)");
+  assert_eq!(candidate["defexternal_skeleton"], "defexternal RawReadHost\n  :length 'Dynamic");
 }

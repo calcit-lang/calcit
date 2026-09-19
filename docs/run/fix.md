@@ -280,7 +280,7 @@ candidate。每个 trait candidate 还附带一段可直接粘贴的 `defexterna
 
 ```cirru.no-check
 defexternal RawReadHost
-  (:length 'Dynamic)
+  :length 'Dynamic
 ```
 
 骨架只包含能表达为 Calcit trait 成员的字段/方法名（索引、字符串 key 会被过滤），未知 target 不写
