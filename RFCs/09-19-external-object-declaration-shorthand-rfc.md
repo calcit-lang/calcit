@@ -12,7 +12,9 @@
 
 > P1 已落地：`defexternal` 在 Snapshot 载入期规范化为 `deftrait` 代码 + `:ffi` 元数据
 > （`src/snapshot.rs` 的 `normalize_defexternal_code` / `normalize_entry_external`），并带有稳定错误。
-> P2（`calcit edit` 入口）与 P3（可选保留源码头）仍待实现。
+> P2 已落地：`calcit edit def` 可直接写入 `defexternal` 简写，写盘 schema 归一化为 `:: 'Trait`
+> （`normalize_schema_for_code` 识别 `defexternal`），且写盘前用 `validate_defexternal_shorthand`
+> 快速失败。P3（可选保留源码头）仍待评估。
 
 ## 摘要
 

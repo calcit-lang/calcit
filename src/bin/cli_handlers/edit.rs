@@ -896,6 +896,7 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
 
   let syntax_tree = decode_mutation_syntax_input(&raw, opts.input_format)?;
   let derived_macro_schema = snapshot::conservative_macro_schema(&syntax_tree, &format!("definition '{namespace}/{definition}'"))?;
+  snapshot::validate_defexternal_shorthand(&syntax_tree, &format!("{namespace}/{definition}"))?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
