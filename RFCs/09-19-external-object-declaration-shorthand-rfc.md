@@ -1,6 +1,6 @@
 # RFC：external-object trait 的简写声明形式
 
-状态：Draft
+状态：Partial
 
 日期：2026-09-19
 
@@ -9,6 +9,10 @@
 - `RFCs/08-18-calcit-typed-js-ffi-boundary-rfc.md`（JS FFI 边界主体模型）
 - `docs/features/js-interop.md`（当前用法与诊断）
 - [#1223](https://github.com/calcit-lang/calcit/issues/1223)（本 RFC 的实现跟踪）
+
+> P1 已落地：`defexternal` 在 Snapshot 载入期规范化为 `deftrait` 代码 + `:ffi` 元数据
+> （`src/snapshot.rs` 的 `normalize_defexternal_code` / `normalize_entry_external`），并带有稳定错误。
+> P2（`calcit edit` 入口）与 P3（可选保留源码头）仍待实现。
 
 ## 摘要
 

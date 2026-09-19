@@ -289,10 +289,32 @@ let
 ### 3.3 方法调用体验
 
 external-object trait 是让宿主对象"接近直接调用 JS 方法"的推荐方式。只声明适配器真正会调用的字段与
-方法，用 `:names` 映射非标识符宿主名，并且只把确实可写的字段放进 `:writable`：
+方法，用 `:names` 映射非标识符宿主名，并且只把确实可写的字段放进 `:writable`。
+
+用 `defexternal` 简写可以在一处同时声明成员与 FFI 元数据：
+
+```cirru.no-check
+defexternal QueryHost
+  :target :browser
+  :names $ {} (:query |querySelector)
+  :writable $ #{} :text-content
+  :length 'Number
+  .query $ :: 'Fn
+    {}
+      :args $ [] 'QueryHost 'String
+      :return 'QueryHost
+  .text $ :: 'Fn
+    {}
+      :args $ [] 'QueryHost
+      :return 'String
+```
+
+`defexternal` 在载入期展开为与下面等价的 `deftrait` 代码 + `CodeEntry :ffi` 元数据；
+`:backend :js` 与 `:kind :external-object` 由简写固定，不需要手写：
 
 ```cirru.no-check
 deftrait QueryHost
+  :length 'Number
   .query $ :: 'Fn
     {}
       :args $ [] 'QueryHost 'String
@@ -309,6 +331,9 @@ deftrait QueryHost
   :names $ {} (:query |querySelector)
   :writable $ #{} :text-content
 ```
+
+两种写法在类型系统、codegen 与 `calcit query def --json` 的归一化 `ffi` 输出上完全一致；不能同时使用
+`defexternal` 与显式 `:ffi`，否则报错。字段默认只读，只有列进 `:writable` 的字段可写。
 
 在适配器边界把宿主值 `unsafe-coerce` 一次，之后用普通 Calcit 方法调用：
 

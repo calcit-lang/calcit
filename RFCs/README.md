@@ -51,7 +51,7 @@
 | `08-23-typed-option-query-ergonomics-rfc.md`           | Withdrawn | 生态采用率为零；`get-or` 等六个宏已移除，直接使用查询返回的 `Option` 与 `.unwrap-or`。 |
 | `08-23-option-result-binding-macros-rfc.md`             | Partial | 保留已有 Respo 使用的 `option:let`；移除未采用的 `result:let`，Result 链直接使用 `.and-then`。 |
 | `08-29-snapshot-symbol-keys-and-tag-match-deprecation-rfc.md` | Implemented | Snapshot namespace/definition key 宽读 String/Symbol、窄写 Symbol；`tag-match` 普通废弃并迁移到原生 `match`。 |
-| `09-19-external-object-declaration-shorthand-rfc.md` | Draft | `defexternal` 简写声明 external-object trait，lowering 为等价 `deftrait` + `:ffi` 元数据；不改变普通 trait 语义与 query 输出。 |
+| `09-19-external-object-declaration-shorthand-rfc.md` | Partial | `defexternal` 简写声明 external-object trait，lowering 为等价 `deftrait` + `:ffi` 元数据；P1 载入期规范化已落地，P2 `calcit edit` 入口待做。 |
 
 ## 已执行的清理
 
