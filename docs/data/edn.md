@@ -14,6 +14,22 @@ entry_for:
 
 Cirru EDN is Calcit's typed data interchange format, inspired by [Clojure EDN](https://github.com/edn-format/edn). Use it when Calcit-specific identity matters; use JSON only when interoperating with JSON systems.
 
+## 从文件或标准输入解析
+
+短小数据可以继续直接作为参数传给 `calcit cirru parse-edn`。完整 Snapshot 或其他大型 Cirru EDN 不应塞进命令行参数；Linux、Windows 等平台对单个参数有不同的长度上限。使用 `--file` 可以绕开该限制：
+
+```bash
+calcit cirru parse-edn --file calcit.cirru
+```
+
+管道调用通过 `--file -` 显式读取标准输入，避免省略参数时意外挂起：
+
+```bash
+cat calcit.cirru | calcit cirru parse-edn --file -
+```
+
+内联 EDN 与 `--file` 互斥；命令仍只向 stdout 写出一个 JSON 文档，供只接受 JSON 的工具链消费。Calcit 自有数据与工作流继续以 Cirru EDN 为默认格式。
+
 The runtime APIs are:
 
 - `parse-cirru-edn text [type-options]`

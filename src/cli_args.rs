@@ -1420,9 +1420,12 @@ pub struct CirruFormatCommand {
 #[argh(subcommand, name = "parse-edn")]
 /// parse Cirru EDN to JSON
 pub struct CirruParseEdnCommand {
-  /// cirru EDN to parse
+  /// cirru EDN to parse; use --file - to read stdin
   #[argh(positional)]
-  pub edn: String,
+  pub edn: Option<String>,
+  /// read cirru EDN from a file; use - to read stdin
+  #[argh(option)]
+  pub file: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
