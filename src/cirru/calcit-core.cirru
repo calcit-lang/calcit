@@ -128,6 +128,14 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-primitive-schema-in-local-binding)
+            :code $ quote $ let
+                f2 &+
+              assert-type f2 $ :: 'Fn $ {} (:return 'Number)
+                :args $ [] 'Number 'Number
+              assert= 3 $ f2 1 2
+              assert= 3 $ apply f2 $ [] 1 2
+            :tags $ #{} :core :unit
         '&- $ %{} 'CodeEntry
           :doc "|internal function for subtraction\nSyntax: (&- a b)\nParams: a (number), b (number)\nReturns: number\nSubtracts second number from first, supports integers and floats"
           :code $ quote &runtime-implementation
@@ -512,12 +520,22 @@
             :required $ [] 'SyntaxList
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :effect :internal :macro
-          :tests $ [] $ %{} 'TestEntry (:name |returns-unit-after-body)
-            :code $ quote $ assert= &unit
-              &doseq
-                x $ [] 1 2
-                &+ x 1
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |returns-unit-after-body)
+              :code $ quote $ assert= &unit
+                &doseq
+                  x $ [] 1 2
+                  &+ x 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |applies-side-effects-per-item)
+              :code $ quote $ let
+                  *counted $ atom 0
+                do
+                  &doseq
+                    n $ range 5
+                    swap! *counted &+ n
+                  assert= 10 @*counted
+              :tags $ #{} :core :unit
         '&enum-def:has-variant? $ %{} 'CodeEntry (:doc "|Test whether an EnumDef declares a variant.")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1251,14 +1269,23 @@
             :generics $ [] 'P 'U
             :return $ :: 'List 'U
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |maps-key-value-pairs)
-            :code $ quote $ assert=
-              [] ([] :a 11) ([] :b 12)
-              &list:map-pair
-                [] ([] :a 1) ([] :b 2)
-                fn (k v)
-                  [] k $ + v 10
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |maps-key-value-pairs)
+              :code $ quote $ assert=
+                [] ([] :a 11) ([] :b 12)
+                &list:map-pair
+                  [] ([] :a 1) ([] :b 2)
+                  fn (k v)
+                    [] k $ + v 10
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |supports-postfix-shorthand)
+              :code $ quote $ assert=
+                [] ([] :a 1) ([] :b 11)
+                .map-pair
+                  [] ([] :a 2) ([] :b 12)
+                  fn (k n)
+                    [] k $ &- n 1
+              :tags $ #{} :core :unit
         '&list:mappend $ %{} 'CodeEntry (:doc "|internal helper for list :mappend method entry")
           :code $ quote $ defn &list:mappend (x y) (&list:concat x y)
           :examples $ []
@@ -2382,6 +2409,9 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :alias :internal
+          :tests $ [] $ %{} 'TestEntry (:name |constructs-list-from-arguments)
+            :code $ quote $ assert= ([] 1 2 3) (' 1 2 3)
+            :tags $ #{} :core :unit
         '* $ %{} 'CodeEntry (:doc "|Multiply numbers together")
           :code $ quote $ defn * (x & ys) (reduce ys x &*)
           :examples $ []
@@ -3688,11 +3718,18 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |evaluates-zero-and-half-turn)
-            :code $ quote $ do
-              assert= 1 $ cos 0
-              assert= -1 $ round $ cos 3.141592653589793
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |evaluates-zero-and-half-turn)
+              :code $ quote $ do
+                assert= 1 $ cos 0
+                assert= -1 $ round $ cos 3.141592653589793
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |satisfies-pythagorean-identity)
+              :code $ quote $ assert= 1
+                &+
+                  pow (sin 1) 2
+                  pow (cos 1) 2
+              :tags $ #{} :core :unit
         'count $ %{} 'CodeEntry
           :doc "|Count items in a collection or string. Nil is rejected instead of being treated as empty."
           :code $ quote $ defn count (x)
@@ -5231,6 +5268,13 @@
                 assert= (%none) (get open-path :missing)
                 assert= (%none) (get open-path 0)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |supports-postfix-shorthand)
+              :code $ quote $ let
+                  xs $ [] 1 2 3 4
+                do
+                  assert= (%some 1) (xs.get 0)
+                  assert= true $ xs.any? $ fn (x) (&> x 3)
+              :tags $ #{} :core :unit
         'get-args $ %{} 'CodeEntry (:doc "|读取宿主进程传入的完整参数列表，包含第 0 项。")
           :code $ quote $ defn get-args () (&get-args)
           :examples $ []
@@ -5366,6 +5410,14 @@
           :schema $ :: 'Fn $ {} (:return 'T)
             :args $ [] 'T
             :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-generic-schema-for-local-binding)
+            :code $ quote $ let
+                f1 identity
+              assert-type f1 $ :: 'Fn $ {} (:return 'T)
+                :generics $ [] 'T
+                :args $ [] 'T
+              assert= 1 $ f1 1
+            :tags $ #{} :core :unit
         'if $ %{} 'CodeEntry
           :doc "|internal syntax for conditional expressions\nSyntax: (if condition then-expr else-expr)\nParams: condition (any), then-expr (any), else-expr (any, optional)\nReturns: value of then-expr if condition is truthy, else-expr otherwise\nEvaluates condition and returns appropriate branch"
           :code $ quote &runtime-implementation
@@ -5932,6 +5984,14 @@
             :required $ [] 'SyntaxList $ :: 'Expr 'Dynamic
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |destructures-positional-and-rest-bindings)
+            :code $ quote $ do
+              let[] (x y) ([] 1 2)
+                assert= 3 $ &+ x y
+              let[] (head & tail) ([] 9 8 7)
+                do (assert= 9 head)
+                  assert= ([] 8 7) tail
+            :tags $ #{} :core :unit
         'let{} $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro let{} (items base & body)
             if
@@ -6006,6 +6066,23 @@
             :expansion $ :: 'Expr 'Dynamic
             :required $ []
           :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |branches-empty-and-head-tail)
+            :code $ quote $ do
+              assert= :empty $ list-match ([])
+                () :empty
+                (a b) :something
+              assert= :something $ list-match ([] 1)
+                () :empty
+                (a b) :something
+              assert= :something0 $ list-match ([] 1)
+                (a b) :something0
+                () :empty
+              assert=
+                [] 1 $ [] 2 3
+                list-match ([] 1 2 3)
+                  () nil
+                  (l0 ls) ([] l0 ls)
+            :tags $ #{} :core :unit
         'list? $ %{} 'CodeEntry
           :doc "|checks if value is a list\nSyntax: (list? x)\nParams: x (any)\nReturns: true if x is a list, false otherwise\nType predicate for list data structure"
           :code $ quote &runtime-implementation
@@ -7040,6 +7117,17 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |generates-descending-ranges)
               :code $ quote $ assert= ([] 5 3 1) (range 5 0 -2)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |handles-negative-fractional-and-overflow)
+              :code $ quote $ do
+                assert= ([] -2 -1 0 1) (range -2 2)
+                assert= ([] 1 1.25 1.5 1.75) (range 1 2 0.25)
+                assert= true $ try
+                  do (range 0 4294967296) false
+                  fn (_error) true
+                assert= true $ try
+                  do (range 100000000000000000000 99999999999999000000 -1) false
+                  fn (_error) true
               :tags $ #{} :core :unit
         'range-bothway $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn range-bothway (x ? y)
