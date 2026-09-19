@@ -7,13 +7,13 @@
 ## 前置版本
 
 - Calcit 0.15.6 或当前仓库构建的 `target/debug/calcit`
-- `calcit-bindgen 0.1.2`
+- `calcit-bindgen 0.1.3`
 - Rust toolchain；host 固定使用 Wasmtime 47.0.4
 
 安装已发布的生成器：
 
 ```bash
-cargo install calcit-bindgen --version 0.1.2 --locked
+cargo install calcit-bindgen --version 0.1.3 --locked
 ```
 
 ## 构建

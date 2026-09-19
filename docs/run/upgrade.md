@@ -109,7 +109,7 @@ Component boundary 按推导并规范化后的 schema 宽度确定性导出 `Int
 
 ## 0.15.3 异步 Component export 基础
 
-0.15.3 开始消费函数 schema 已有的 `:async true`，不增加新的表层 Task/Future 类型或 CLI。Component Interface IR v3
+0.15.3 开始消费函数 schema 已有的 `:async true`，不增加新的表层 Task/Future 类型或 CLI。Component Interface IR v4
 将该标记导出为 `invocation: async`；`calcit wasm --boundary component` 为对应 export 生成 WASI 0.3 async core shape：
 参数继续使用现有 Canonical ABI 类型 walker，core 函数没有返回值，逻辑返回值通过 packaging 注入的强类型
 `task.return` 恰好完成一次。
@@ -118,7 +118,7 @@ Component boundary 按推导并规范化后的 schema 宽度确定性导出 `Int
 布局的 parameter record，并传递单个 pointer。两种形状都处理立即完成以及 subtask 的
 `starting` / `started` / `returned`、终态清理和 drop。
 不要把 native `async-task-v1` 队列、句柄或 polling API 搬到 Component 接口，也不要把 async import 临时改成同步 ABI。
-升级相关项目时，先重新导出 IR v3 contract，再升级 calcit-bindgen：除连接
+升级相关项目时，先重新导出当前 contract（native 为 IR v3，Component 为 IR v4），再升级 calcit-bindgen：除连接
 `[export]$root/[task-return]<export-symbol>` 外，还需连接 `$root` 下的 `[waitable-set-*]`、`[waitable-join]`
 与 `[subtask-drop]` canonical builtins。async import/export 分别使用 `[async-lower]` 与
 `[async-lift-stackful]` 名称前缀，使 `wit-component` 能按 Canonical ABI 识别这些内部接缝。当前 stackful adapter

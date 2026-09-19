@@ -12,9 +12,9 @@ use cirru_parser::Cirru;
 pub const FFI_INTERFACE_IR_VERSION: u32 = 3;
 pub const FFI_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/ffi-interface-ir-v3.schema.json";
 pub const FFI_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/ffi-interface-ir-v3.schema.json");
-pub const COMPONENT_INTERFACE_IR_VERSION: u32 = 3;
-pub const COMPONENT_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/component-interface-ir-v3.schema.json";
-pub const COMPONENT_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/component-interface-ir-v3.schema.json");
+pub const COMPONENT_INTERFACE_IR_VERSION: u32 = 4;
+pub const COMPONENT_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/component-interface-ir-v4.schema.json";
+pub const COMPONENT_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/component-interface-ir-v4.schema.json");
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FfiInterfaceDocument {
@@ -126,6 +126,7 @@ pub enum FfiTypeIr {
   Float64,
   String,
   Buffer,
+  ReadableByteStream,
   List {
     item: Box<FfiTypeIr>,
   },
@@ -350,6 +351,7 @@ struct TypeConversionContext<'a> {
   required: &'a mut BTreeSet<String>,
   current_namespace: &'a str,
   type_parameters: &'a BTreeSet<String>,
+  allow_readable_byte_stream: bool,
 }
 
 fn normalized_type_name(name: &str) -> &str {
@@ -360,6 +362,7 @@ fn explicit_builtin_type(name: &str) -> Option<&str> {
   match normalized_type_name(name) {
     "Option" | "calcit.core/Option" => Some("Option"),
     "Result" | "calcit.core/Result" => Some("Result"),
+    "ReadableByteStream" | "calcit.core/ReadableByteStream" => Some("ReadableByteStream"),
     _ => None,
   }
 }
@@ -459,6 +462,30 @@ fn nominal_type(
   context: &mut TypeConversionContext<'_>,
 ) -> Result<FfiTypeIr, Box<FfiInterfaceDiagnostic>> {
   if let Some(builtin) = explicit_builtin_type(name) {
+    if builtin == "ReadableByteStream" {
+      if !arguments.is_empty() {
+        return Err(Box::new(diagnostic(
+          definition,
+          path,
+          "E_FFI_IR_TYPE_ARGUMENT_ARITY",
+          format!(
+            "ReadableByteStream expects no type arguments at `{path}`, but received {}.",
+            arguments.len()
+          ),
+          "Use ReadableByteStream without type arguments; the first supported stream item type is fixed to u8.",
+        )));
+      }
+      if context.allow_readable_byte_stream {
+        return Ok(FfiTypeIr::ReadableByteStream);
+      }
+      return Err(Box::new(diagnostic(
+        definition,
+        path,
+        "E_FFI_IR_COMPONENT_ONLY_TYPE",
+        "ReadableByteStream is only available at the Component boundary.",
+        "Keep native and JavaScript FFI signatures on concrete Buffer values, or expose this definition through defwasm-export.",
+      )));
+    }
     let converted = convert_type_arguments(arguments, definition, path, context)?;
     return match (builtin, converted.as_slice()) {
       ("Option", [item]) => Ok(FfiTypeIr::Option {
@@ -619,6 +646,7 @@ fn convert_signature(
   namespace: &str,
   declarations: &LocalTypeDeclarations,
   required: &mut BTreeSet<String>,
+  allow_readable_byte_stream: bool,
 ) -> Result<FfiFunctionSignatureIr, Vec<FfiInterfaceDiagnostic>> {
   let CalcitTypeAnnotation::Fn(signature) = entry.schema.as_ref() else {
     return Err(vec![diagnostic(
@@ -668,6 +696,7 @@ fn convert_signature(
     required,
     current_namespace: namespace,
     type_parameters: &type_parameters,
+    allow_readable_byte_stream,
   };
   let mut parameters = Vec::with_capacity(signature.arg_types.len());
   for (position, annotation) in signature.arg_types.iter().enumerate() {
@@ -790,6 +819,7 @@ fn convert_declaration(
     required,
     current_namespace: source.namespace(),
     type_parameters: &type_parameters,
+    allow_readable_byte_stream: false,
   };
 
   match source {
@@ -1255,7 +1285,7 @@ pub fn export_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -> Result<F
     let id = format!("{namespace}/{name}");
     let definition_diagnostic_start = diagnostics.len();
     let mut required = BTreeSet::new();
-    let mut signature = match convert_signature(entry, &id, namespace, &local_declarations, &mut required) {
+    let mut signature = match convert_signature(entry, &id, namespace, &local_declarations, &mut required, false) {
       Ok(signature) => Some(signature),
       Err(errors) => {
         diagnostics.extend(errors);
@@ -1390,6 +1420,88 @@ fn component_has_non_fixed_arity(code: &Cirru) -> bool {
   )
 }
 
+fn type_contains_readable_byte_stream(type_ir: &FfiTypeIr) -> bool {
+  match type_ir {
+    FfiTypeIr::ReadableByteStream => true,
+    FfiTypeIr::List { item } | FfiTypeIr::Option { item } => type_contains_readable_byte_stream(item),
+    FfiTypeIr::Result { ok, error } => type_contains_readable_byte_stream(ok) || type_contains_readable_byte_stream(error),
+    FfiTypeIr::Struct { arguments, .. } | FfiTypeIr::Enum { arguments, .. } => arguments.iter().any(type_contains_readable_byte_stream),
+    FfiTypeIr::Unit
+    | FfiTypeIr::Bool
+    | FfiTypeIr::Number
+    | FfiTypeIr::Int8
+    | FfiTypeIr::UInt8
+    | FfiTypeIr::Int16
+    | FfiTypeIr::UInt16
+    | FfiTypeIr::Int32
+    | FfiTypeIr::UInt32
+    | FfiTypeIr::Int64
+    | FfiTypeIr::UInt64
+    | FfiTypeIr::Float32
+    | FfiTypeIr::Float64
+    | FfiTypeIr::String
+    | FfiTypeIr::Buffer
+    | FfiTypeIr::TypeParameter { .. } => false,
+  }
+}
+
+fn validate_component_stream_signature(
+  definition: &str,
+  binding: &ComponentBinding,
+  invocation: ComponentInvocation,
+  signature: &FfiFunctionSignatureIr,
+) -> Vec<FfiInterfaceDiagnostic> {
+  let stream_parameters = signature
+    .parameters
+    .iter()
+    .filter(|parameter| type_contains_readable_byte_stream(&parameter.type_ir))
+    .collect::<Vec<_>>();
+  if stream_parameters.is_empty() && !type_contains_readable_byte_stream(&signature.result) {
+    return Vec::new();
+  }
+
+  let mut diagnostics = Vec::new();
+  if binding.direction != ComponentDirection::Export {
+    diagnostics.push(component_diagnostic(
+      definition,
+      "logical_schema.parameters",
+      "E_COMPONENT_IR_STREAM_DIRECTION",
+      "ReadableByteStream is initially supported only as a Component export parameter.",
+      "Move stream production and imported stream functions behind a handwritten host adapter; keep this binding as an async defwasm-export consumer.",
+    ));
+  }
+  if invocation != ComponentInvocation::Async {
+    diagnostics.push(component_diagnostic(
+      definition,
+      "logical_schema.invocation",
+      "E_COMPONENT_IR_STREAM_REQUIRES_ASYNC",
+      "ReadableByteStream requires an async Component export so blocked reads and cancellation remain below the Calcit surface.",
+      "Mark the function schema with :async true.",
+    ));
+  }
+  for parameter in stream_parameters {
+    if parameter.type_ir != FfiTypeIr::ReadableByteStream {
+      diagnostics.push(component_diagnostic(
+        definition,
+        format!("signature.parameters.{}.type", parameter.position),
+        "E_COMPONENT_IR_STREAM_NESTED",
+        "ReadableByteStream must be a direct parameter; nested stream ownership is not supported.",
+        "Use one direct ReadableByteStream parameter. General Stream<T>, optional streams, collections of streams, and nominal nesting remain unsupported.",
+      ));
+    }
+  }
+  if type_contains_readable_byte_stream(&signature.result) {
+    diagnostics.push(component_diagnostic(
+      definition,
+      "signature.result",
+      "E_COMPONENT_IR_STREAM_ESCAPE",
+      "ReadableByteStream cannot be returned from the scoped consumer.",
+      "Return the typed consumer result instead; the adapter owns cancellation and exactly-once readable-end drop.",
+    ));
+  }
+  diagnostics
+}
+
 pub fn export_component_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -> Result<ComponentExportReport, String> {
   let local_declarations = collect_local_type_declarations(snapshot);
   let mut candidates = snapshot
@@ -1432,13 +1544,24 @@ pub fn export_component_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -
         "Expose a fixed-arity function and use an explicit Option or List parameter.",
       ));
     }
-    let mut signature = match convert_signature(entry, &id, namespace, &local_declarations, &mut required) {
+    let mut signature = match convert_signature(entry, &id, namespace, &local_declarations, &mut required, true) {
       Ok(signature) => Some(signature),
       Err(errors) => {
         diagnostics.extend(errors.into_iter().map(componentize_diagnostic));
         None
       }
     };
+    if let Some(converted) = &signature {
+      let invocation = match entry.schema.as_ref() {
+        CalcitTypeAnnotation::Fn(signature) if signature.is_async_invocation() => ComponentInvocation::Async,
+        _ => ComponentInvocation::Sync,
+      };
+      let stream_diagnostics = validate_component_stream_signature(&id, &binding, invocation, converted);
+      if !stream_diagnostics.is_empty() {
+        diagnostics.extend(stream_diagnostics);
+        signature = None;
+      }
+    }
     if signature.is_some() {
       let (declarations, declaration_diagnostics) = convert_reachable_declarations(&id, &local_declarations, &mut required);
       if !declaration_diagnostics.is_empty() {
@@ -1691,6 +1814,98 @@ mod tests {
       schema: DYNAMIC_TYPE.clone(),
       ffi: None,
     }
+  }
+
+  fn readable_byte_stream_type() -> Arc<CalcitTypeAnnotation> {
+    Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/ReadableByteStream"),
+      Arc::new(vec![]),
+    ))
+  }
+
+  #[test]
+  fn component_ir_v4_scopes_readable_byte_stream_to_async_export_parameters() {
+    let accepted = export_component_snapshot(
+      &snapshot(vec![(
+        "consume",
+        async_component_function_entry(
+          "defwasm-export consume (stream) &unit",
+          vec![readable_byte_stream_type()],
+          Arc::new(CalcitTypeAnnotation::Unit),
+        ),
+      )]),
+      None,
+    )
+    .expect("export scoped byte stream contract");
+    assert!(accepted.diagnostics.is_empty(), "stream diagnostics: {:?}", accepted.diagnostics);
+    assert_eq!(accepted.interface.version, 4);
+    assert_eq!(
+      accepted.interface.definitions[0]
+        .signature
+        .as_ref()
+        .expect("supported stream signature")
+        .parameters[0]
+        .type_ir,
+      FfiTypeIr::ReadableByteStream
+    );
+    let encoded = serde_json::to_value(&accepted.interface).expect("serialize stream contract");
+    assert_eq!(
+      encoded["definitions"][0]["signature"]["parameters"][0]["type"]["kind"],
+      "readable-byte-stream"
+    );
+
+    let sync = export_component_snapshot(
+      &snapshot(vec![(
+        "consume",
+        component_function_entry(
+          "defwasm-export consume (stream) &unit",
+          vec![readable_byte_stream_type()],
+          Arc::new(CalcitTypeAnnotation::Unit),
+        ),
+      )]),
+      None,
+    )
+    .expect("reject synchronous stream consumer");
+    assert!(
+      sync
+        .diagnostics
+        .iter()
+        .any(|item| item.code == "E_COMPONENT_IR_STREAM_REQUIRES_ASYNC")
+    );
+
+    let imported = export_component_snapshot(
+      &snapshot(vec![(
+        "consume",
+        async_component_function_entry(
+          "defwasm-import consume (stream) |host |consume",
+          vec![readable_byte_stream_type()],
+          Arc::new(CalcitTypeAnnotation::Unit),
+        ),
+      )]),
+      None,
+    )
+    .expect("reject imported stream consumer");
+    assert!(
+      imported
+        .diagnostics
+        .iter()
+        .any(|item| item.code == "E_COMPONENT_IR_STREAM_DIRECTION")
+    );
+
+    let escaped = export_component_snapshot(
+      &snapshot(vec![(
+        "identity",
+        async_component_function_entry(
+          "defwasm-export identity (stream) stream",
+          vec![Arc::new(CalcitTypeAnnotation::List(readable_byte_stream_type()))],
+          readable_byte_stream_type(),
+        ),
+      )]),
+      None,
+    )
+    .expect("reject nested and escaping streams");
+    assert!(escaped.diagnostics.iter().any(|item| item.code == "E_COMPONENT_IR_STREAM_NESTED"));
+    assert!(escaped.diagnostics.iter().any(|item| item.code == "E_COMPONENT_IR_STREAM_ESCAPE"));
   }
 
   fn snapshot(definitions: Vec<(&str, CodeEntry)>) -> Snapshot {
@@ -2034,7 +2249,7 @@ mod tests {
       .find(|item| item.code == "E_FFI_IR_TYPE_ARGUMENT_ARITY")
       .expect("type argument arity diagnostic");
     assert_eq!(diagnostic.phase, "component-interface-ir");
-    assert!(diagnostic.suggestion.contains("Component Interface IR v3"));
+    assert!(diagnostic.suggestion.contains("Component Interface IR v4"));
     assert!(!diagnostic.suggestion.contains("FFI Interface IR v3"));
     assert!(!diagnostic.suggestion.contains("Component Component"));
   }
@@ -2044,6 +2259,31 @@ mod tests {
     let schema: serde_json::Value = serde_json::from_str(COMPONENT_INTERFACE_IR_SCHEMA).expect("parse component schema");
     assert_eq!(schema["$id"], COMPONENT_INTERFACE_IR_SCHEMA_ID);
     assert_eq!(schema["properties"]["version"]["const"], COMPONENT_INTERFACE_IR_VERSION);
+  }
+
+  #[test]
+  fn bundled_component_schema_scopes_streams_to_async_export_parameters() {
+    let schema: serde_json::Value = serde_json::from_str(COMPONENT_INTERFACE_IR_SCHEMA).expect("parse component schema");
+    let signature_branch = &schema["$defs"]["definition"]["allOf"][0];
+
+    assert_eq!(signature_branch["if"]["properties"]["direction"]["const"], "export");
+    assert_eq!(signature_branch["if"]["properties"]["invocation"]["const"], "async");
+    assert_eq!(
+      signature_branch["then"]["properties"]["signature"]["oneOf"][1]["$ref"],
+      "#/$defs/asyncExportFunctionSignature"
+    );
+    assert_eq!(
+      signature_branch["else"]["properties"]["signature"]["oneOf"][1]["$ref"],
+      "ffi-interface-ir-v3.schema.json#/$defs/functionSignature"
+    );
+    assert_eq!(
+      schema["$defs"]["asyncExportFunctionSignature"]["properties"]["result"]["$ref"],
+      "ffi-interface-ir-v3.schema.json#/$defs/type"
+    );
+    assert_eq!(
+      schema["$defs"]["asyncExportFunctionSignature"]["properties"]["parameters"]["items"]["$ref"],
+      "#/$defs/parameter"
+    );
   }
 
   #[test]

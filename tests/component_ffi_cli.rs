@@ -62,10 +62,10 @@ fn component_contract_defaults_to_edn_and_matches_explicit_json() {
   assert!(
     json["interface_schema"]
       .as_str()
-      .is_some_and(|schema| schema.ends_with("component-interface-ir-v3.schema.json"))
+      .is_some_and(|schema| schema.ends_with("component-interface-ir-v4.schema.json"))
   );
   assert_eq!(json["data"]["filters"]["boundary"], "component");
-  assert_eq!(json["data"]["interface"]["version"], 3);
+  assert_eq!(json["data"]["interface"]["version"], 4);
   assert_eq!(json["data"]["summary"]["unsupported"], 0);
   assert_eq!(json["data"]["interface"]["definitions"][0]["direction"], "import");
   assert_eq!(json["data"]["interface"]["definitions"][0]["invocation"], "sync");
