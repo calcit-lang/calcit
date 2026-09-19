@@ -28,6 +28,14 @@ mod type_coverage;
 #[cfg(test)]
 static GLOBAL_TEST_LOCK: std::sync::LazyLock<std::sync::Mutex<()>> = std::sync::LazyLock::new(|| std::sync::Mutex::new(()));
 
+/// Tests load the same embedded core snapshot hundreds of times. Decode it once
+/// per test process and let each test clone the files it needs.
+#[cfg(test)]
+fn cached_core_snapshot() -> &'static snapshot::Snapshot {
+  static CORE_SNAPSHOT: std::sync::OnceLock<snapshot::Snapshot> = std::sync::OnceLock::new();
+  CORE_SNAPSHOT.get_or_init(|| calcit::load_core_snapshot().expect("core snapshot should load"))
+}
+
 #[cfg(test)]
 #[path = "cr_tests/type_fail.rs"]
 mod cr_type_fail_tests;
@@ -3633,8 +3641,8 @@ mod tests {
         code: list(vec![leaf("raise"), leaf("|unrelated-test-ran")]),
         tags: HashSet::new(),
       });
-    for (core_ns, core_file) in calcit::load_core_snapshot().expect("core snapshot should load").files {
-      project.files.insert(core_ns, core_file);
+    for (core_ns, core_file) in &cached_core_snapshot().files {
+      project.files.insert(core_ns.clone(), core_file.clone());
     }
 
     let options = TestCommand {
@@ -3680,7 +3688,7 @@ mod tests {
         tags: HashSet::new(),
       });
 
-    let mut core = calcit::load_core_snapshot().expect("core snapshot should load");
+    let mut core = cached_core_snapshot().clone();
     core
       .files
       .get_mut("calcit.core")
@@ -3757,8 +3765,8 @@ mod tests {
         code: list(vec![leaf("raise"), leaf("|slow-test-ran")]),
         tags: HashSet::from([EdnTag::new("slow")]),
       });
-    for (core_ns, core_file) in calcit::load_core_snapshot().expect("core snapshot should load").files {
-      project.files.insert(core_ns, core_file);
+    for (core_ns, core_file) in &cached_core_snapshot().files {
+      project.files.insert(core_ns.clone(), core_file.clone());
     }
 
     let options = TestCommand {

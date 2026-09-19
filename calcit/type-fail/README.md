@@ -20,8 +20,6 @@ preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--comp
 - `cargo run --bin calcit -- calcit/type-fail/update-collection-contract-mismatch.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/collection-member-contract-mismatch.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/type-slot-record-call-arg-type-mismatch.cirru --check-only`
-- `cargo run --bin calcit -- calcit/type-fail/type-slot-bind-unknown.cirru --check-only`
-- `cargo run --bin calcit -- calcit/type-fail/type-slot-bind-duplicate.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/type-slot-unbound-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/whole-dynamic-schema-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/dynamic-nominal-method-strict.cirru --strict-types --check-only`
@@ -43,8 +41,6 @@ preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--comp
 - `update-collection-contract-mismatch.cirru` 会验证已知 `List<T>` / `Map<K,V>` receiver 将索引/键与 `T -> T` / `V -> V` updater contract 带到调用点。
 - `collection-member-contract-mismatch.cirru` 会验证已知 collection receiver 将 `get` / `contains?` 的索引或键、`includes?` 的成员、`assoc` 的索引/键/值，以及 `dissoc` 的所有 rest 索引或键类型带到调用点，包括 Enum 的 Number payload index；它也覆盖原生 `&map:dissoc`、`&list:concat` 与 `&merge` 的同质 variadic contract，`filter` / `any?` / `every?` / `each` / `map` 对 List/Set 成员或 Map pair callback 的输入与返回契约，以及 `filter` / `map` 的具名、inline 和 generic callback 对照，确保 expected output 不会反向证明未知 payload；此外还覆盖 `foldl` / `reduce` 的 accumulator/member reducer 关系，`sort` / `&list:sort` 的 `T, T -> Number` comparator 关系、函数形式 `&list:sort-by` 的 `T -> K` selector 关系，以及 `interleave` 两个输入与返回共享 `List<T>` 的契约；普通参数和 variadic rest 的失败嵌套泛型匹配都不能把候选绑定泄漏给后续参数。
 - `type-slot-record-call-arg-type-mismatch.cirru` 会验证 `bind-type` 绑定 struct 实例后，`*slot` 参与调用点类型检查。
-- `type-slot-bind-unknown.cirru` 会验证未声明 slot 的 `bind-type` 会直接失败。
-- `type-slot-bind-duplicate.cirru` 会验证同一个 slot 重复绑定会直接失败。
 - `type-slot-unbound-strict.cirru` 会验证 strict 模式拒绝可达定义中的未绑定 slot，并报告稳定的 `E_UNBOUND_TYPE_SLOT`。
 - `whole-dynamic-schema-strict.cirru` 会验证 strict 模式拒绝可达定义的 whole-Dynamic function contract，并报告稳定的 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`。
 - `dynamic-nominal-method-strict.cirru` 会验证 strict 模式拒绝 Dynamic receiver 上的 Option/Result nominal method dispatch，并报告稳定的 `E_DYNAMIC_POSTFIX_METHOD`。
@@ -75,7 +71,7 @@ preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--comp
 - strict unsafe-coerce fixtures：断言未标记 adapter 报 `E_UNSCOPED_UNSAFE_COERCE`，而词法标记的 adapter 与普通 caller 可通过 preprocessing
 - strict erased-generic fixture：断言错误文本包含 `E_ERASED_GENERIC_RELATION`、callee、参数位置、泛型变量与 narrow/adapter 迁移建议
 
-相关测试位于 [src/bin/calcit.rs](src/bin/calcit.rs)。
+相关测试位于 `src/bin/cr.rs` 的 `cr_type_fail_tests`，fixture 加载与断言逻辑在 [src/bin/cr_tests/type_fail.rs](src/bin/cr_tests/type_fail.rs)。
 
 日常单独跑这组测试时，可以直接使用：
 
@@ -103,4 +99,4 @@ preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--comp
 - `W_CORE_FN_ARG_TYPE_MISMATCH`：`calcit.core` 函数参数类型不匹配
 - `W_FN_RETURN_TYPE_MISMATCH`：函数声明返回类型与函数体实际返回类型不匹配
 - `W_GENERIC_WHERE_BOUND_MISMATCH`：泛型绑定后的实际类型不满足 `:where` trait 约束
-- type-slot fixture 额外覆盖：struct 绑定、未知 slot 绑定、重复绑定、strict 未绑定拒绝、跨程序加载的 slot 状态清理
+- type-slot fixture 额外覆盖：struct 绑定、strict 未绑定拒绝、跨程序加载的 slot 状态清理与 entry scope

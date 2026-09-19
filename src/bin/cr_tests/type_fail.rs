@@ -102,9 +102,8 @@ fn load_snippet_entries_with_main_schema(snippet: &str, main_schema: Option<Arc<
 
 fn prepare_snapshot_entries(mut snapshot: snapshot::Snapshot) -> ProgramEntries {
   let project_namespaces: HashSet<String> = snapshot.files.keys().cloned().collect();
-  let core_snapshot = calcit::load_core_snapshot().expect("load core snapshot");
 
-  for (k, v) in core_snapshot.files {
+  for (k, v) in &cached_core_snapshot().files {
     snapshot.files.insert(k.to_owned(), v.to_owned());
   }
   runner::preprocess::set_project_namespaces(&project_namespaces);
@@ -686,8 +685,8 @@ fn strict_mode_runs_definition_tests_with_generated_function_schemas() {
       tags: HashSet::new(),
     });
     project.files.insert(namespace.clone(), file);
-    for (core_ns, core_file) in calcit::load_core_snapshot().expect("core snapshot should load").files {
-      project.files.insert(core_ns, core_file);
+    for (core_ns, core_file) in &cached_core_snapshot().files {
+      project.files.insert(core_ns.clone(), core_file.clone());
     }
     let project_namespaces = HashSet::from([namespace]);
     runner::preprocess::set_project_namespaces(&project_namespaces);

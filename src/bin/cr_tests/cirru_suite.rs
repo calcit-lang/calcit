@@ -35,8 +35,7 @@ fn load_and_run_cirru(path: &str) {
     }
   }
 
-  let core_snapshot = calcit::load_core_snapshot().expect("load core snapshot");
-  for (k, v) in core_snapshot.files {
+  for (k, v) in &cached_core_snapshot().files {
     snapshot.files.insert(k.to_owned(), v.to_owned());
   }
 

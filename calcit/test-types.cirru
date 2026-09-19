@@ -102,8 +102,6 @@
             println "|--- Testing preprocess method validation ---"
             println $ test-preprocess-method-validation
             println $ test-defstruct-defenum
-            ; test-method-type-errors ; Disabled - contains intentional errors
-            ; test-proc-type-warnings
             println |Done!
             ; Note: Struct field validation requires explicit type annotations
             ; in unit tests via assert-type with Struct instances.
@@ -227,27 +225,6 @@
             , "|List method checks passed"
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-method-type-errors $ %{} 'CodeEntry
-          :doc "|Tests that invalid method calls are caught in preprocess"
-          :code $ quote $ defn test-method-type-errors () (; "⚠️" "这些代码故意包含错误，用于验证" preprocess "阶段的类型检查") (; "当启用时，会在编译阶段就报错，而不是运行时") (; "测试" 1: list "对象调用不存在的方法") (; let)
-            ; xs $ [] 1 2 3
-            ; assert-type xs :list
-            ; .invalid-method xs
-            ; "测试" 2: string "对象调用不存在的方法"
-            ; let
-            ; text |hello
-            ; assert-type text :string
-            ; .nonexistent text
-            ; "测试" 3: map "对象调用不存在的方法"
-            ; let
-            ; m $ {} $ :a 1
-            ; assert-type m :map
-            ; .invalid-map-method m
-            println "|Method type error tests are commented out"
-            println "|Uncomment them to see preprocess-time validation"
-            , "|Tests disabled to allow compilation"
-          :examples $ []
-          :schema $ :: 'Dynamic
         'test-numeric-refinements $ %{} 'CodeEntry
           :doc "|验证数值 refinement 受检转换在 native 与 JavaScript 后端保持一致。"
           :code $ quote $ defn test-numeric-refinements ()
@@ -304,14 +281,6 @@
               :: 'Fn $ {} (:return 'Number)
                 :args $ [] 'Number 'Number
               , 'Number 'Number
-        'test-proc-type-warnings $ %{} 'CodeEntry
-          :doc "|Test that should generate type warnings - disabled by default"
-          :code $ quote $ defn test-proc-type-warnings ()
-            ; This function intentionally contains type errors for testing
-            ; It is not called in normal tests to avoid blocking execution
-            println "|Warning: This test contains intentional type errors"
-          :examples $ []
-          :schema $ :: 'Dynamic
         'test-string-methods $ %{} 'CodeEntry (:doc "|Tests method calls on typed string objects")
           :code $ quote $ defn test-string-methods ()
             let
