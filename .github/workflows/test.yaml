@@ -105,6 +105,9 @@ jobs:
       - name: "verify strict diagnostics default and compatibility escape hatch"
         run: node scripts/check-strict-default.mjs
 
+      - name: "verify release manifest generator"
+        run: node --test scripts/release-manifest.test.mjs
+
       - run: cargo run --bin calcit -- calcit/test.cirru --compat-types
 
       - name: "verify WASM exports and FFI"
