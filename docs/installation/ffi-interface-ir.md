@@ -33,7 +33,7 @@ calcit calcit.cirru ffi export --boundary component
 ```
 
 默认 `--boundary native` 使用本文所述的 raw-binding Interface IR v3。
-`--boundary component` 是独立的 Component Interface IR v3，只提取
+`--boundary component` 是独立的 Component Interface IR v4，只提取
 `defwasm-import` / `defwasm-export` 并默认输出 Cirru EDN；其方向语义、
 strict type closure 与 core/bindgen 职责见
 [WASM Component 边界](wasm-component-boundary.md)。两种 boundary 使用不同的
@@ -187,12 +187,17 @@ definition 的 Snapshot binding 名称，因此支持顶层 `Foo0 = defstruct Fo
 `package_version` 读取相邻 `deps.cirru` 的 `:version`，与当前项目发版流程保持
 同一事实来源；尚未迁移版本字段的旧项目才回退到 snapshot 兼容值。
 
-## V3 版本策略
+## 版本策略
 
-当前导出直接使用 native Interface IR v3 与 Component Interface IR v3，不提供并行的
+当前导出直接使用 native Interface IR v3 与 Component Interface IR v4，不提供并行的
 v2/v1 降级输出。consumer 必须先检查 `version` 再生成；遇到未知版本时应明确拒绝并升级，
 不能忽略新的数值 `kind` 或将其退化为 `number`。仓库保留早期 schema 仅供审计已经生成的
 contract，不为尚未形成实际生态的 preview Component contract 维护读取或写入兼容层。
+
+Component Interface IR v4 增加单一、非泛化的 `readable-byte-stream` kind，对应 WIT
+`stream<u8>`。它只允许作为 `async defwasm-export` 的直接参数；import、同步调用、嵌套容器和
+返回位置都会明确失败。该类型只表达 adapter 拥有的作用域化消费能力，不表示可复制、可存储的
+通用 Calcit stream，也不暴露 Canonical ABI readable-end handle。
 
 This phase defines an inventory and generator input. It validates fixed
 function arity and the published native invocation/transport pairs, but does

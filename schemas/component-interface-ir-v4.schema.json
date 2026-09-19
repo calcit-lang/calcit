@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://calcit-lang.org/schemas/component-interface-ir-v4.schema.json",
+  "title": "Calcit Component Interface IR v4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "package", "package_version", "declarations", "definitions"],
+  "properties": {
+    "version": { "const": 4 },
+    "package": { "type": "string" },
+    "package_version": { "type": "string" },
+    "declarations": {
+      "type": "array",
+      "items": { "$ref": "ffi-interface-ir-v3.schema.json#/$defs/declaration" }
+    },
+    "definitions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/definition" }
+    }
+  },
+  "$defs": {
+    "type": {
+      "oneOf": [
+        { "$ref": "ffi-interface-ir-v3.schema.json#/$defs/type" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "readable-byte-stream" } }
+        }
+      ]
+    },
+    "parameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["position", "type"],
+      "properties": {
+        "position": { "type": "integer", "minimum": 0 },
+        "type": { "$ref": "#/$defs/type" }
+      }
+    },
+    "functionSignature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parameters", "result"],
+      "properties": {
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/parameter" }
+        },
+        "result": { "$ref": "#/$defs/type" }
+      }
+    },
+    "definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "namespace", "name", "doc", "logical_schema", "direction", "invocation", "module", "symbol", "signature", "status", "diagnostic_codes"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "namespace": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "doc": { "type": "string" },
+        "logical_schema": { "type": "string" },
+        "direction": { "enum": ["import", "export"] },
+        "invocation": { "enum": ["sync", "async"] },
+        "module": { "type": ["string", "null"] },
+        "symbol": { "type": "string", "minLength": 1 },
+        "signature": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/functionSignature" }
+          ]
+        },
+        "status": { "enum": ["supported", "unsupported"] },
+        "diagnostic_codes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

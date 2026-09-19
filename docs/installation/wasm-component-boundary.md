@@ -109,7 +109,7 @@ generic 必须在边界处已经具体化。同步 direct adapter 会在 schema 
 Component contract 沿用 `calcit ffi export`，通过 `--boundary component`
 显式选择。该边界不新增顶层 component/WIT 命令。
 
-- Component Interface IR v3 默认输出 Cirru EDN；
+- Component Interface IR v4 默认输出 Cirru EDN；
 - `--format json` 用于需要 JSON 的 consumer；
 - native raw-binding inventory 保留 human 输出和显式 `--json` 入口，但 consumer 必须检查新的 schema version；
 - Cirru EDN 和 JSON 必须表达同一个 versioned contract 与 revision。
@@ -222,7 +222,8 @@ CI 的可用性基线不是“能生成 WIT”：同一份 Calcit contract 必�
 1. 导出 directional typed contract，完成确定性、数值宽度、诊断和 Cirru EDN/JSON 等价。
 2. 为 Bool、Buffer、Number、明确宽度数值、String、递归同质 List、Unit 结果、闭合单态 Option/Result、Struct record 与普通 Enum variant 生成 Canonical ABI import/export adapter。
 3. 由 `calcit-bindgen` 生成 WIT 并打包 runnable component，在 Wasmtime 和 jco 做端到端往返。
-4. 由 Component Interface IR v3 的显式 invocation 驱动 WASI 0.3 async function adapter：已完成 export 的 `task.return`、direct/indirect import 的 subtask/waitable/drop，以及直接尾调用 export 的 stackless callback cancellation；下一步先扩展可证明安全的 lowering 范围，再设计 stream。
-5. 在异步基础上交付有界 buffered WASI HTTP client；stream、service 与更底层 socket 继续后置。
+4. 由 Component Interface IR v4 的显式 invocation 驱动 WASI 0.3 async function adapter：已完成 export 的 `task.return`、direct/indirect import 的 subtask/waitable/drop，以及直接尾调用 export 的 stackless callback cancellation。
+5. `readable-byte-stream` 先固定为 async export 的直接 `stream<u8>` 参数；WIT contract 已收敛，core adapter 必须继续以有界 chunk、单个 outstanding read、主动取消和 exactly-once drop 完成运行时闭环，不能把 raw handle 降为普通 Number。
+6. 在异步基础上继续交付有界 buffered WASI HTTP client；service 与更底层 socket 后置。
 
 用户可观察的类型与语义优先由 Calcit definition `:tests` 覆盖；Rust 测试只覆盖 contract serialization、WASM encoding、Canonical ABI/memory layout 和 unsupported boundary。
