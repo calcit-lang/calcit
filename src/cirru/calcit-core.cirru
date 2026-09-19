@@ -813,6 +813,11 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |ignores-insertion-order)
+            :code $ quote $ assert=
+              &hash $ &{} :a 1 :b 2 3 :c
+              &hash $ &{} 3 :c :a 1 :b 2
+            :tags $ #{} :core :unit
         '&impl::new $ %{} 'CodeEntry
           :doc "|internal function for creating trait impl records\nSyntax: (&impl::new trait-or-name (method value) ...)\nParams: trait-or-name (trait/tag/symbol/string), method entries (pairs)\nReturns: impl\nAccepts method key as .method, :tag, symbol, or string"
           :code $ quote &runtime-implementation
@@ -1505,6 +1510,15 @@
             :generics $ [] 'K 'V
             :return $ :: 'Optional 'Enum
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |exposes-pairs-and-folds)
+            :code $ quote $ let
+                m $ &{} :a 1 :b 2 :c 3 :d 4
+              do
+                assert= 3 $ count $ option:unwrap
+                  last $ &map:destruct m
+                assert= 10 $ foldl m 0 $ fn (acc pair)
+                  let[] (k v) pair $ &+ acc v
+            :tags $ #{} :core :unit
         '&map:diff-keys $ %{} 'CodeEntry
           :doc "|internal function for map diff keys\nSyntax: (&map:diff-keys map1 map2)\nParams: map1 (map), map2 (map)\nReturns: set\nReturns keys that differ between maps"
           :code $ quote &runtime-implementation
@@ -2021,6 +2035,11 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |converts-values-to-strings)
+            :code $ quote $ do
+              assert= :string $ type-of $ &str 1
+              assert= |1 $ &str 1
+            :tags $ #{} :core :unit
         '&str-spaced $ %{} 'CodeEntry
           :doc "|Internal function for joining strings with spaces, used by str-spaced"
           :code $ quote $ defn &str-spaced (head? x0 & xs)
@@ -4893,21 +4912,32 @@
                 :return $ :: 'MapEntryDecision 'R 'S
             :generics $ [] 'K 'V 'R 'S
             :return $ :: 'Map 'R 'S
-          :tests $ [] $ %{} 'TestEntry (:name |transforms-and-drops)
-            :code $ quote $ do
-              assert=
-                {} (:b 20) (:c 30)
-                filter-map-kv
-                  {} (:a 1) (:b 2) (:c 3)
-                  fn (k v)
-                    if (> v 1)
-                      %:: MapEntryDecision :keep k $ * v 10
-                      %:: MapEntryDecision :drop
-              assert= ({})
-                .filter-map-kv
-                  {} $ :a 1
-                  fn (k v) (%:: MapEntryDecision :drop)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |transforms-and-drops)
+              :code $ quote $ do
+                assert=
+                  {} (:b 20) (:c 30)
+                  filter-map-kv
+                    {} (:a 1) (:b 2) (:c 3)
+                    fn (k v)
+                      if (> v 1)
+                        %:: MapEntryDecision :keep k $ * v 10
+                        %:: MapEntryDecision :drop
+                assert= ({})
+                  .filter-map-kv
+                    {} $ :a 1
+                    fn (k v) (%:: MapEntryDecision :drop)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |skips-empty-and-propagates-failure)
+              :code $ quote $ do
+                assert= (&{})
+                  filter-map-kv (&{})
+                    fn (_k _v) (raise |empty-map-callback-must-not-run)
+                assert= |callback-failed $ try
+                  filter-map-kv (&{} :a 1)
+                    fn (_k _v) (raise |callback-failed)
+                  fn (error) error
+              :tags $ #{} :core :unit
         'filter-not $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn filter-not (xs f)
             filter xs $ defn %filter-not (x)
@@ -5394,6 +5424,11 @@
                 do
                   assert= (%some 1) (xs.get 0)
                   assert= true $ xs.any? $ fn (x) (&> x 3)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |reads-tag-keys-via-postfix)
+              :code $ quote $ let
+                  dict $ &{} :a 1
+                assert= 1 dict.:a
               :tags $ #{} :core :unit
         'get-args $ %{} 'CodeEntry (:doc "|读取宿主进程传入的完整参数列表，包含第 0 项。")
           :code $ quote $ defn get-args () (&get-args)
