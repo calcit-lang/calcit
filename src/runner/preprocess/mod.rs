@@ -37,8 +37,10 @@ use type_rewriting::{
 
 use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, RwLock};
+#[cfg(not(test))]
+use std::sync::{LazyLock, RwLock};
 use std::{cell::RefCell, vec};
 
 use cirru_edn::EdnTag;
@@ -47,9 +49,12 @@ use strum::ParseError;
 
 pub(crate) type ScopeTypes = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
+#[cfg(not(test))]
 static WARN_DYN_METHOD: AtomicBool = AtomicBool::new(false);
+#[cfg(not(test))]
 static STRICT_TYPES: AtomicBool = AtomicBool::new(false);
 static VERBOSE_PREPROCESS: AtomicBool = AtomicBool::new(false);
+#[cfg(not(test))]
 static PROJECT_NAMESPACES: LazyLock<RwLock<HashSet<Arc<str>>>> = LazyLock::new(|| RwLock::new(HashSet::new()));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +67,12 @@ pub struct ResolvedSourceUsage {
 
 thread_local! {
   static RESOLVED_SOURCE_USAGE_TRACE: RefCell<Option<Vec<ResolvedSourceUsage>>> = const { RefCell::new(None) };
+  #[cfg(test)]
+  static TEST_WARN_DYN_METHOD: Cell<bool> = const { Cell::new(false) };
+  #[cfg(test)]
+  static TEST_STRICT_TYPES: Cell<bool> = const { Cell::new(false) };
+  #[cfg(test)]
+  static TEST_PROJECT_NAMESPACES: RefCell<HashSet<Arc<str>>> = RefCell::new(HashSet::new());
 }
 
 /// Re-preprocess one source definition and retain only compiler-resolved definition references.
@@ -133,14 +144,28 @@ fn retain_resolved_source_usage(value: Calcit, source: &Calcit, call_stack: &Cal
 }
 
 pub fn set_project_namespaces(namespaces: &HashSet<String>) {
-  let mut target = PROJECT_NAMESPACES.write().expect("write project namespaces");
-  target.clear();
-  target.extend(namespaces.iter().map(|ns| Arc::from(ns.as_str())));
+  #[cfg(not(test))]
+  {
+    let mut target = PROJECT_NAMESPACES.write().expect("write project namespaces");
+    target.clear();
+    target.extend(namespaces.iter().map(|ns| Arc::from(ns.as_str())));
+  }
+  #[cfg(test)]
+  TEST_PROJECT_NAMESPACES.with(|target| {
+    let mut target = target.borrow_mut();
+    target.clear();
+    target.extend(namespaces.iter().map(|ns| Arc::from(ns.as_str())));
+  });
 }
 
 fn should_emit_project_source_lint(file_ns: &str) -> bool {
-  let namespaces = PROJECT_NAMESPACES.read().expect("read project namespaces");
-  namespace_is_project_source(&namespaces, file_ns)
+  #[cfg(not(test))]
+  {
+    let namespaces = PROJECT_NAMESPACES.read().expect("read project namespaces");
+    namespace_is_project_source(&namespaces, file_ns)
+  }
+  #[cfg(test)]
+  TEST_PROJECT_NAMESPACES.with(|namespaces| namespace_is_project_source(&namespaces.borrow(), file_ns))
 }
 
 fn namespace_is_project_source(namespaces: &HashSet<Arc<str>>, file_ns: &str) -> bool {
@@ -214,11 +239,17 @@ fn with_preprocess_compile_guard<T>(ns: &str, def: &str, f: impl FnOnce() -> Res
 }
 
 pub fn set_warn_dyn_method(enabled: bool) {
+  #[cfg(not(test))]
   WARN_DYN_METHOD.store(enabled, Ordering::SeqCst);
+  #[cfg(test)]
+  TEST_WARN_DYN_METHOD.with(|warn| warn.set(enabled));
 }
 
 fn warn_dyn_method_enabled() -> bool {
-  WARN_DYN_METHOD.load(Ordering::Relaxed)
+  #[cfg(not(test))]
+  return WARN_DYN_METHOD.load(Ordering::Relaxed);
+  #[cfg(test)]
+  TEST_WARN_DYN_METHOD.with(Cell::get)
 }
 
 pub fn is_warn_dyn_method_enabled() -> bool {
@@ -226,11 +257,17 @@ pub fn is_warn_dyn_method_enabled() -> bool {
 }
 
 pub fn set_strict_types(enabled: bool) {
+  #[cfg(not(test))]
   STRICT_TYPES.store(enabled, Ordering::SeqCst);
+  #[cfg(test)]
+  TEST_STRICT_TYPES.with(|strict| strict.set(enabled));
 }
 
 fn strict_types_enabled() -> bool {
-  STRICT_TYPES.load(Ordering::Relaxed)
+  #[cfg(not(test))]
+  return STRICT_TYPES.load(Ordering::Relaxed);
+  #[cfg(test)]
+  TEST_STRICT_TYPES.with(Cell::get)
 }
 
 pub fn is_strict_types_enabled() -> bool {
@@ -11805,16 +11842,48 @@ mod tests {
 
   impl ProjectNamespacesGuard {
     fn new(namespaces: &[&str]) -> Self {
-      let mut current = PROJECT_NAMESPACES.write().expect("write project namespaces");
-      let previous = std::mem::replace(&mut *current, namespaces.iter().map(|ns| Arc::from(*ns)).collect());
+      let previous = TEST_PROJECT_NAMESPACES
+        .with(|current| std::mem::replace(&mut *current.borrow_mut(), namespaces.iter().map(|ns| Arc::from(*ns)).collect()));
       Self { previous }
     }
   }
 
   impl Drop for ProjectNamespacesGuard {
     fn drop(&mut self) {
-      *PROJECT_NAMESPACES.write().expect("restore project namespaces") = std::mem::take(&mut self.previous);
+      TEST_PROJECT_NAMESPACES.with(|current| *current.borrow_mut() = std::mem::take(&mut self.previous));
     }
+  }
+
+  #[test]
+  fn preprocess_test_policies_are_thread_local() {
+    use std::sync::Barrier;
+
+    let _strict = StrictTypesGuard::new(false);
+    let _warn = WarnDynMethodGuard::new(false);
+    let _project_namespaces = ProjectNamespacesGuard::new(&[]);
+    let configured = Arc::new(Barrier::new(2));
+    let inspected = Arc::new(Barrier::new(2));
+    let worker = std::thread::spawn({
+      let configured = Arc::clone(&configured);
+      let inspected = Arc::clone(&inspected);
+      move || {
+        set_strict_types(true);
+        set_warn_dyn_method(true);
+        set_project_namespaces(&HashSet::from(["app.main".to_owned()]));
+        configured.wait();
+        inspected.wait();
+        assert!(strict_types_enabled());
+        assert!(warn_dyn_method_enabled());
+        assert!(!should_emit_project_source_lint("tests.struct"));
+      }
+    });
+
+    configured.wait();
+    assert!(!strict_types_enabled());
+    assert!(!warn_dyn_method_enabled());
+    assert!(should_emit_project_source_lint("tests.struct"));
+    inspected.wait();
+    worker.join().expect("policy test worker should finish");
   }
 
   struct CurrentFnFeaturesGuard {
@@ -15725,6 +15794,9 @@ mod tests {
   fn warns_on_invalid_struct_field() {
     use cirru_edn::EdnTag;
 
+    let _state = lock_preprocess_test_state();
+    let _compat = StrictTypesGuard::new(false);
+
     // Create a test struct type with fields: name, age
     let test_struct = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(CalcitStructDef::from_fields(
       EdnTag::from("Person"),
@@ -16863,6 +16935,9 @@ mod tests {
   #[test]
   fn checks_struct_method_arg_types() {
     use cirru_edn::EdnTag;
+
+    let _state = lock_preprocess_test_state();
+    let _compat = StrictTypesGuard::new(false);
 
     // Create a method function: defn greet (name: string, age: number) -> ...
     let method_fn = Arc::new(CalcitFn {
