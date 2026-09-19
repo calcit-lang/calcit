@@ -8661,7 +8661,12 @@ pub fn preprocess_defn(
           CalcitTypeAnnotation::Macro(signature) => Some(signature.features.clone()),
           _ => effective_fn_schema.as_ref().map(|fn_annot| fn_annot.features.clone()),
         };
-        if strict_generated_by_macro && let Some(parent) = old.as_ref() {
+        // Capability inheritance is lexical, not a strict-typing feature: a
+        // macro-generated definition body executes in the macro's capability
+        // scope in every mode. Gating this on strict mode made lenient
+        // migration planning reject host operations that strict `--check-only`
+        // accepts, because the capability check is not gated on strict typing.
+        if generated_by_macro && let Some(parent) = old.as_ref() {
           current = Some(match current {
             Some(features) => Arc::new(features.union(parent.as_ref()).cloned().collect()),
             None => parent.clone(),
