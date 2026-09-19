@@ -286,6 +286,73 @@ let
     %none
 ```
 
+### 3.3 方法调用体验
+
+external-object trait 是让宿主对象"接近直接调用 JS 方法"的推荐方式。只声明适配器真正会调用的字段与
+方法，用 `:names` 映射非标识符宿主名，并且只把确实可写的字段放进 `:writable`：
+
+```cirru.no-check
+deftrait QueryHost
+  .query $ :: 'Fn
+    {}
+      :args $ [] 'QueryHost 'String
+      :return 'QueryHost
+  .text $ :: 'Fn
+    {}
+      :args $ [] 'QueryHost
+      :return 'String
+
+:ffi $ {}
+  :backend :js
+  :kind :external-object
+  :target :browser
+  :names $ {} (:query |querySelector)
+  :writable $ #{} :text-content
+```
+
+在适配器边界把宿主值 `unsafe-coerce` 一次，之后用普通 Calcit 方法调用：
+
+```cirru.no-check
+defn read-title (element)
+  let
+      host $ unsafe-coerce element 'QueryHost
+      node $ host .query |.app
+    node .text
+```
+
+要点：
+
+- 方法调用写成 `(receiver .method args...)`；`.method` 走 external-object trait 的静态派发，
+  `.!method` 只用于裸 `JsObject` 上的原生调用，两者语义不同。
+- 返回另一个宿主对象的方法要在 trait 上声明返回类型（例如 `:return 'QueryHost`），这样就能继续链式调用。
+  Calcit 有意不引入 `Promise<T>`/`Iterator<T>` 这类泛型宿主 trait：请在适配器内部消费这类泛型宿主值，
+  只把普通 `Option`/`Result`/`Struct`/`Enum` 数据返回给业务代码。
+- 构造器与静态方法使用 `new js/Name` / `js/Name.method`；结果仍是不透明宿主值，需要同一适配器内
+  coercion 到 external trait。
+- 可空宿主值保持 `JsNullish<T>`，直到用 `js-present?`/`js-nullish?` 收窄，或改用可选访问 `.?-`/`.?!`。
+- 适配器函数要在结构化 schema 中声明 `:features $ #{} :js-ffi`。
+
+对照关系：
+
+| JavaScript | Calcit typed adapter |
+| --- | --- |
+| `el.focus()` | `el .focus!` |
+| `el.querySelector(".a").textContent` | `(el .query ".a") .text`（逐层 `let` 或嵌套） |
+| `new Date()` | `new js/Date` 后 coercion 到 external trait |
+| `el?.textContent ?? ""` | 先收窄 `JsNullish`，再用 `js-nullish->option` |
+| 裸 `JsObject` 上的 `el.foo` | 报 `E_UNTYPED_JS_OBJECT_ACCESS`，应改为声明 external trait |
+
+盘点与迁移入口：
+
+```bash
+calcit analyze weak-types --ffi-evidence --format edn
+calcit --warn-dyn-method calcit.cirru --check-only
+```
+
+`--ffi-evidence` 按 definition 分组列出裸宿主操作并给出 trait/adapter 候选；`--warn-dyn-method`
+用稳定的 `W_JS_FFI_UNTYPED_ACCESS` 盘点静态字面量 key 的裸访问。确认字段/方法集合后，用 `deftrait`
++ `:ffi` 建立最小契约，再做一次边界 coercion。
+
 ## 4. Syntax reference
 
 ### 4.1 Access global values
