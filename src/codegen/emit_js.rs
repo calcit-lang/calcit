@@ -967,7 +967,7 @@ fn gen_call_code(
         if body.len() == 1 {
           let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
           let property = external_js_property_name(type_hint, name.as_ref());
-          Ok(format!("{obj}[{}]", escape_cirru_str(&property)))
+          Ok(format!("{return_code}{obj}[{}]", escape_cirru_str(&property)))
         } else {
           Err(format!("external-access takes only 1 argument, {xs}"))
         }
@@ -2523,6 +2523,11 @@ mod tests {
       Calcit::Method(Arc::from("focus"), MethodKind::ExternalInvoke(invoke_type_hint)),
       symbol("element"),
     ])));
+    let access_type_hint = Arc::new(calcit::CalcitTypeAnnotation::Trait(external_trait_with_names()));
+    let access_form = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Method(Arc::from("inner-text"), MethodKind::ExternalAccess(access_type_hint)),
+      symbol("element"),
+    ])));
 
     assert_eq!(
       to_js_code(&get_form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("external get should compile"),
@@ -2535,6 +2540,14 @@ mod tests {
     assert_eq!(
       to_js_code(&invoke_form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("external invoke should compile"),
       "element[\"focusNow\"]()"
+    );
+    // `ExternalAccess` must honor the tail return label, otherwise a field read
+    // in tail position emits a bare expression and falls through to the
+    // enclosing match/branch fallback instead of returning the value.
+    assert_eq!(
+      to_js_code(&access_form, "tests.emit-js", &local_defs, &file_imports, &tags, Some("return "))
+        .expect("external access should compile"),
+      "return element[\"textContent\"]"
     );
   }
 
