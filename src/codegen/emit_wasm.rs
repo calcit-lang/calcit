@@ -7039,6 +7039,11 @@ fn emit_buffer_literal_equals(ctx: &mut WasmGenCtx, value: &Calcit, bytes: &[u8]
   ctx.emit(Instruction::F64ConvertI32U);
   ctx.emit(Instruction::F64Lt);
   ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::F64Trunc);
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32And);
   ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(value));
   ctx.emit(Instruction::I32TruncF64U);
