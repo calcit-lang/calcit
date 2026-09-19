@@ -284,6 +284,9 @@ pub struct FfiTraitCandidate {
   pub fields: Vec<String>,
   pub methods: Vec<String>,
   pub contract_status: String,
+  /// Paste-ready `defexternal` starting point; payload types stay `Dynamic`
+  /// placeholders until a reviewer refines the contract.
+  pub defexternal_skeleton: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -626,6 +629,46 @@ fn suggested_trait_name(definition: &str) -> String {
   } else {
     format!("{out}Host")
   }
+}
+
+/// Whether a detected host member can be written as a Calcit `defexternal`
+/// field tag or method symbol. Index/string keys from raw `aget`/`js-get`
+/// operations are not expressible as trait members.
+fn is_defexternal_member_name(name: &str) -> bool {
+  let mut chars = name.chars();
+  let Some(first) = chars.next() else {
+    return false;
+  };
+  if !(first.is_ascii_alphabetic() || first == '_') {
+    return false;
+  }
+  name
+    .chars()
+    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '?' | '!' | '*' | '<' | '>' | '=' | '+' | '-' | '/'))
+}
+
+/// Build a paste-ready `defexternal` starting point for a detected host boundary.
+/// Field and method payload types are unknown from member access alone, so the
+/// skeleton keeps `Dynamic` placeholders and stays review-required; callers must
+/// refine the contract before it can pass a strict quality gate. Returns an empty
+/// string when no detected member is expressible as a trait member.
+fn defexternal_skeleton(name: &str, target: &str, fields: &[String], methods: &[String]) -> String {
+  let fields: Vec<&String> = fields.iter().filter(|field| is_defexternal_member_name(field)).collect();
+  let methods: Vec<&String> = methods.iter().filter(|method| is_defexternal_member_name(method)).collect();
+  if fields.is_empty() && methods.is_empty() {
+    return String::new();
+  }
+  let mut lines = vec![format!("defexternal {name}")];
+  if !target.is_empty() && target != "unspecified" && target != "invalid" {
+    lines.push(format!("  (:target :{target})"));
+  }
+  for field in fields {
+    lines.push(format!("  (:{field} 'Dynamic)"));
+  }
+  for method in methods {
+    lines.push(format!("  (.{method} (:: 'Fn ({{}} (:args ([] '{name})) (:return 'Dynamic))))"));
+  }
+  lines.join("\n")
 }
 
 pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String> {
@@ -1793,12 +1836,18 @@ pub fn collect_ffi_boundary_evidence(
       let trait_candidates = member_groups
         .into_iter()
         .filter(|(_, (fields, methods))| !fields.is_empty() || !methods.is_empty())
-        .map(|(receiver, (fields, methods))| FfiTraitCandidate {
-          receiver,
-          suggested_name: suggested_trait_name(definition),
-          fields: fields.into_iter().collect(),
-          methods: methods.into_iter().collect(),
-          contract_status: "review-required".to_owned(),
+        .map(|(receiver, (fields, methods))| {
+          let suggested_name = suggested_trait_name(definition);
+          let fields: Vec<String> = fields.into_iter().collect();
+          let methods: Vec<String> = methods.into_iter().collect();
+          FfiTraitCandidate {
+            receiver,
+            defexternal_skeleton: defexternal_skeleton(&suggested_name, &target, &fields, &methods),
+            suggested_name,
+            fields,
+            methods,
+            contract_status: "review-required".to_owned(),
+          }
         })
         .collect::<Vec<_>>();
 
@@ -2116,6 +2165,12 @@ pub(crate) fn run_weak_types_report_with_rows(
           candidate.methods.join(","),
           candidate.contract_status
         );
+        if !candidate.defexternal_skeleton.is_empty() {
+          let _ = writeln!(out, "    defexternal skeleton:");
+          for line in candidate.defexternal_skeleton.lines() {
+            let _ = writeln!(out, "      {line}");
+          }
+        }
       }
       for candidate in &boundary.adapter_candidates {
         let _ = writeln!(
@@ -3631,8 +3686,8 @@ mod tests {
   use cirru_parser::Cirru;
 
   use super::{
-    WeakTypeIntent, WeakTypeKind, classify_unsafe_coerce_source, entry_schema_issues, is_raw_adapter_namespace,
-    scan_schema_dynamic_annotation,
+    WeakTypeIntent, WeakTypeKind, classify_unsafe_coerce_source, defexternal_skeleton, entry_schema_issues, is_defexternal_member_name,
+    is_raw_adapter_namespace, scan_schema_dynamic_annotation,
   };
 
   fn leaf(value: &str) -> Cirru {
@@ -3664,6 +3719,31 @@ mod tests {
       capabilities: Arc::new(HashSet::new()),
       features: Arc::new(HashSet::new()),
     }))
+  }
+
+  #[test]
+  fn defexternal_skeleton_filters_unexpressible_members() {
+    assert!(is_defexternal_member_name("textContent"));
+    assert!(is_defexternal_member_name("focus!"));
+    assert!(!is_defexternal_member_name("0"));
+    assert!(!is_defexternal_member_name("|b"));
+    assert!(!is_defexternal_member_name(""));
+
+    let skeleton = defexternal_skeleton(
+      "QueryHost",
+      "browser",
+      &["length".to_owned(), "0".to_owned()],
+      &["query".to_owned(), "|b".to_owned()],
+    );
+    assert_eq!(
+      skeleton,
+      "defexternal QueryHost\n  (:target :browser)\n  (:length 'Dynamic)\n  (.query (:: 'Fn ({} (:args ([] 'QueryHost)) (:return 'Dynamic))))"
+    );
+
+    // No expressible member means no paste-ready skeleton.
+    assert_eq!(defexternal_skeleton("QueryHost", "browser", &["0".to_owned()], &[]), "");
+    // Unknown targets are omitted rather than guessed.
+    assert!(!defexternal_skeleton("QueryHost", "unspecified", &["length".to_owned()], &[]).contains(":target"));
   }
 
   #[test]
