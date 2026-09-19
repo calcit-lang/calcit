@@ -107,6 +107,7 @@ let completions = 0;
 let returnedText = null;
 const resultCompletions = [];
 let wideCompletion = null;
+let wideReturnPtr = null;
 const canonical = {
   "[task-return]load-text": (ptr, len) => {
     completions += 1;
@@ -117,6 +118,7 @@ const canonical = {
   },
   "[task-return]load-wide": ptr => {
     const memory = new DataView(instance.exports.memory.buffer);
+    wideReturnPtr = ptr;
     wideCompletion = Array.from({ length: 17 }, (_, index) => memory.getFloat64(ptr + index * 8, true));
   },
 };
@@ -145,12 +147,21 @@ WebAssembly.instantiate(module, { "[export]$root": canonical }).then(result => {
   if (JSON.stringify(wideCompletion) !== JSON.stringify(expectedWide)) {
     throw new Error(`indirect async typed Struct did not round-trip: ${JSON.stringify(wideCompletion)}`);
   }
+  const reclaimedAsyncWide = instance.exports.cabi_realloc(0, 0, 8, 17 * 8);
+  if (reclaimedAsyncWide !== wideReturnPtr) throw new Error("stackful async task.return did not reclaim its result area");
+  instance.exports.cabi_realloc(reclaimedAsyncWide, 17 * 8, 8, 0);
   const syncWidePtr = instance.exports["load-wide-sync"]();
   const syncWideMemory = new DataView(instance.exports.memory.buffer);
   const syncWide = Array.from({ length: 17 }, (_, index) => syncWideMemory.getFloat64(syncWidePtr + index * 8, true));
   if (JSON.stringify(syncWide) !== JSON.stringify(expectedWide)) {
     throw new Error(`indirect sync typed Struct did not round-trip: ${JSON.stringify(syncWide)}`);
   }
+  instance.exports["cabi_post_load-wide-sync"](syncWidePtr);
+  const repeatedSyncWidePtr = instance.exports["load-wide-sync"]();
+  if (repeatedSyncWidePtr !== syncWidePtr) {
+    throw new Error(`sync post-return did not reuse the indirect return area: ${syncWidePtr} -> ${repeatedSyncWidePtr}`);
+  }
+  instance.exports["cabi_post_load-wide-sync"](repeatedSyncWidePtr);
 }).catch(error => {
   console.error(error);
   process.exitCode = 1;
@@ -167,6 +178,80 @@ WebAssembly.instantiate(module, { "[export]$root": canonical }).then(result => {
     String::from_utf8_lossy(&runtime.stdout),
     String::from_utf8_lossy(&runtime.stderr)
   );
+}
+
+#[tokio::test]
+async fn packaged_component_invokes_sync_post_return_in_wasmtime() {
+  let output = TestDirectory::create();
+  let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "tests/fixtures/component-wasm-async-export.cirru",
+      "wasm",
+      "--boundary",
+      "component",
+      "--emit-path",
+    ])
+    .arg(&output.0)
+    .output()
+    .expect("post-return Component fixture should compile");
+  assert!(
+    compile.status.success(),
+    "post-return Component compile failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&compile.stdout),
+    String::from_utf8_lossy(&compile.stderr)
+  );
+  let contract = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "tests/fixtures/component-wasm-async-export.cirru",
+      "ffi",
+      "export",
+      "--boundary",
+      "component",
+    ])
+    .output()
+    .expect("post-return Component contract should export");
+  assert!(
+    contract.status.success(),
+    "post-return contract export failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&contract.stdout),
+    String::from_utf8_lossy(&contract.stderr)
+  );
+  let contract_path = output.0.join("interface.cirru");
+  fs::write(&contract_path, contract.stdout).expect("post-return contract should write");
+  let contract = calcit_bindgen::load_contract(&contract_path).expect("post-return contract should load");
+  let generated = output.0.join("generated");
+  calcit_bindgen::generate_contract_directory(&contract, Some(&output.0.join("program.wasm")), &generated, &[])
+    .expect("post-return Component should package");
+
+  let mut config = Config::new();
+  config.wasm_component_model_async(true);
+  config.wasm_component_model_more_async_builtins(true);
+  config.wasm_component_model_async_stackful(true);
+  let engine = Engine::new(&config).expect("Wasmtime Component engine should create");
+  let component = Component::from_file(&engine, generated.join(COMPONENT_FILE)).expect("post-return Component should load");
+  let linker = Linker::new(&engine);
+  let mut store = Store::new(&engine, ());
+  let instance = linker
+    .instantiate_async(&mut store, &component)
+    .await
+    .expect("post-return Component should instantiate");
+  let load_wide = instance
+    .get_func(&mut store, "load-wide-sync")
+    .expect("sync wide export should exist");
+  for _ in 0..3 {
+    let mut result = [Val::Bool(false)];
+    load_wide
+      .call_async(&mut store, &[], &mut result)
+      .await
+      .expect("Wasmtime should lift the result and invoke post-return");
+    assert!(matches!(&result[0], Val::Record(fields) if fields.len() == 17));
+  }
 }
 
 #[test]
@@ -364,10 +449,20 @@ const canonical = {
 
 WebAssembly.instantiate(module, { host, "calcit:wasi-http/client": http, "$root": canonical, "[export]$root": canonical }).then(result => {
   instance = result;
+  const heapBeforeAllocatorProbe = instance.exports.__heap_ptr.value;
+  const probe = instance.exports.cabi_realloc(0, 0, 8, 24);
+  const heapAfterFirstProbe = instance.exports.__heap_ptr.value;
+  instance.exports.cabi_realloc(probe, 24, 8, 0);
+  const reusedProbe = instance.exports.cabi_realloc(0, 0, 8, 24);
+  if (reusedProbe !== probe || instance.exports.__heap_ptr.value !== heapAfterFirstProbe) {
+    throw new Error(`cabi_realloc did not reuse a released block: ${probe}, ${reusedProbe}`);
+  }
+  if (heapAfterFirstProbe <= heapBeforeAllocatorProbe) throw new Error("allocator probe did not reserve memory");
+  instance.exports.cabi_realloc(reusedProbe, 24, 8, 0);
   const start = marker => {
     const [ptr, len] = allocateText(marker);
     const status = instance.exports["[async-lift]call-host-load"](ptr, len);
-    return { status, context: currentContext };
+    return { status, context: currentContext, inputPtr: ptr, inputLen: len };
   };
   const callback = instance.exports["[callback][async-lift]call-host-load"];
   const resume = (task, subtask, state) => {
@@ -375,10 +470,16 @@ WebAssembly.instantiate(module, { host, "calcit:wasi-http/client": http, "$root"
     const pendingTask = pending.get(subtask);
     if (state === 1) readText(pendingTask.inputPtr, pendingTask.inputLen);
     if (state === 2) writeResult(pendingTask.outPtr, pendingTask.discriminant, pendingTask.text);
-    return callback(1, subtask, state);
+    const status = callback(1, subtask, state);
+    if ((state === 2 || state === 4) && status === 0) {
+      instance.exports.cabi_realloc(task.inputPtr, task.inputLen, 1, 0);
+    }
+    return status;
   };
 
-  if (start("immediate-ok").status !== 0) throw new Error("immediate stackless export did not exit");
+  const immediate = start("immediate-ok");
+  if (immediate.status !== 0) throw new Error("immediate stackless export did not exit");
+  instance.exports.cabi_realloc(immediate.inputPtr, immediate.inputLen, 1, 0);
   const delayedOk = start("delayed-ok");
   const delayedError = start("delayed-error");
   if (delayedOk.context === delayedError.context) throw new Error("stackless tasks reused one context record");
@@ -420,6 +521,19 @@ WebAssembly.instantiate(module, { host, "calcit:wasi-http/client": http, "$root"
   };
   if (JSON.stringify(lifecycle) !== JSON.stringify(expectedLifecycle)) {
     throw new Error(`unexpected lifecycle: ${JSON.stringify(lifecycle)}`);
+  }
+  for (const [marker, subtask] of [["delayed-ok", 7], ["delayed-error", 8]]) {
+    const task = start(marker);
+    if (resume(task, subtask, 2) !== 0) throw new Error(`warm-up task ${marker} did not exit`);
+  }
+  const heapBeforeReuse = instance.exports.__heap_ptr.value;
+  for (let index = 0; index < 32; index += 1) {
+    const task = start(index % 2 === 0 ? "delayed-ok" : "delayed-error");
+    const subtask = index % 2 === 0 ? 7 : 8;
+    if (resume(task, subtask, 2) !== 0) throw new Error(`repeated task ${index} did not exit`);
+  }
+  if (instance.exports.__heap_ptr.value !== heapBeforeReuse) {
+    throw new Error(`repeated post-return calls grew the heap: ${heapBeforeReuse} -> ${instance.exports.__heap_ptr.value}`);
   }
 }).catch(error => {
   console.error(error);
@@ -1050,17 +1164,20 @@ WebAssembly.instantiate(module, { host }).then(result => {
   if (resultNumberView.getUint8(resultNumberOk) !== 0 || resultNumberView.getFloat64(resultNumberOk + 8, true) !== 9.25) {
     throw new Error("Result<Number,String> ok did not round-trip");
   }
+  e["cabi_post_echo-result-number"](resultNumberOk);
   const resultError = Buffer.from("bad", "utf8");
   const [resultErrorPtr, resultErrorLen] = allocateBytes(resultError);
-  const [resultErrorTag, resultErrorValue] = readTextVariant(
-    e["echo-result-number"](1, BigInt(resultErrorPtr), resultErrorLen),
-    8,
-  );
+  const resultErrorRet = e["echo-result-number"](1, BigInt(resultErrorPtr), resultErrorLen);
+  const [resultErrorTag, resultErrorValue] = readTextVariant(resultErrorRet, 8);
   if (resultErrorTag !== 1 || resultErrorValue !== "bad") throw new Error("Result<Number,String> err did not round-trip");
+  e["cabi_post_echo-result-number"](resultErrorRet);
   const unitOk = e["echo-result-unit"](0, 0, 0);
   if (new DataView(e.memory.buffer).getUint8(unitOk) !== 0) throw new Error("Result<Unit,String> ok did not round-trip");
-  const [unitErrorTag, unitErrorValue] = readTextVariant(e["echo-result-unit"](1, resultErrorPtr, resultErrorLen), 4);
+  e["cabi_post_echo-result-unit"](unitOk);
+  const unitErrorRet = e["echo-result-unit"](1, resultErrorPtr, resultErrorLen);
+  const [unitErrorTag, unitErrorValue] = readTextVariant(unitErrorRet, 4);
   if (unitErrorTag !== 1 || unitErrorValue !== "bad") throw new Error("Result<Unit,String> err did not round-trip");
+  e["cabi_post_echo-result-unit"](unitErrorRet);
   const [resultListPtr, resultListLen] = allocateNumberList([2, 4, 8]);
   const resultListRet = e["echo-result-numbers"](0, resultListPtr, resultListLen);
   const resultListView = new DataView(e.memory.buffer);
@@ -1151,6 +1268,7 @@ WebAssembly.instantiate(module, { host }).then(result => {
   const outputLen = memory.getUint32(ret + 4, true);
   const text = Buffer.from(e.memory.buffer, outputPtr, outputLen).toString("utf8");
   if (text !== "你好 Calcit") throw new Error(`String adapter returned ${text}`);
+  e["cabi_post_echo-text"](ret);
   for (const bytes of [[], [0, 255, 17], [128, 0, 254, 1]]) {
     const [bufferPtr, bufferLen] = allocateBytes(bytes);
     expectBytes(readBytesResult(e["echo-buffer"](bufferPtr, bufferLen)), bytes, "Buffer adapter did not round-trip");
@@ -1173,11 +1291,31 @@ WebAssembly.instantiate(module, { host }).then(result => {
   const textValues = ["alpha", "", "世界"];
   const textPairs = textValues.map(value => allocateBytes(Buffer.from(value, "utf8")));
   const [textListPtr, textListLen] = allocatePairList(textPairs);
+  const textResultRet = e["echo-texts"](textListPtr, textListLen);
+  const textResultView = new DataView(e.memory.buffer);
+  const textResultBacking = textResultView.getUint32(textResultRet, true);
+  const textResultItems = Array.from({ length: textListLen }, (_, index) => textResultView.getUint32(textResultBacking + index * 8, true));
   const textResult = readPairListResult(
-    e["echo-texts"](textListPtr, textListLen),
+    textResultRet,
     (itemPtr, itemLen) => Buffer.from(e.memory.buffer, itemPtr, itemLen).toString("utf8"),
   );
   if (JSON.stringify(textResult) !== JSON.stringify(textValues)) throw new Error(`String List adapter returned ${textResult}`);
+  e["cabi_post_echo-texts"](textResultRet);
+  const reclaimedRoot = e.cabi_realloc(0, 0, 4, 8);
+  const reclaimedBacking = e.cabi_realloc(0, 0, 4, textListLen * 8);
+  const reclaimedLongItem = e.cabi_realloc(0, 0, 1, Buffer.byteLength("世界"));
+  const reclaimedShortItem = e.cabi_realloc(0, 0, 1, Buffer.byteLength("alpha"));
+  if (
+    reclaimedRoot !== textResultRet
+    || reclaimedBacking !== textResultBacking
+    || JSON.stringify([reclaimedLongItem, reclaimedShortItem].toSorted()) !== JSON.stringify(textResultItems.filter(Boolean).toSorted())
+  ) {
+    throw new Error("recursive List<String> post-return did not reclaim its result area, backing storage, and elements");
+  }
+  e.cabi_realloc(reclaimedRoot, 8, 4, 0);
+  e.cabi_realloc(reclaimedBacking, textListLen * 8, 4, 0);
+  e.cabi_realloc(reclaimedLongItem, Buffer.byteLength("世界"), 1, 0);
+  e.cabi_realloc(reclaimedShortItem, Buffer.byteLength("alpha"), 1, 0);
   const bufferValues = [[0, 255], [], [17, 0, 128]];
   const bufferPairs = bufferValues.map(allocateBytes);
   const [bufferListPtr, bufferListLen] = allocatePairList(bufferPairs);

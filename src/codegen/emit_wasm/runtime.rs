@@ -25,6 +25,7 @@ pub(super) struct HostImport {
 pub(super) struct ModuleFunctionLayout {
   pub(super) runtime_fn_count: u32,
   pub(super) table_fn_count: u32,
+  pub(super) component_free_head: bool,
 }
 
 /// List of host-imported functions.
@@ -2142,6 +2143,16 @@ pub(super) fn build_wasm_module(
     },
     &ConstExpr::i32_const(string_tag_id),
   );
+  if layout.component_free_head {
+    globals.global(
+      GlobalType {
+        val_type: ValType::I32,
+        mutable: true,
+        shared: false,
+      },
+      &ConstExpr::i32_const(0),
+    );
+  }
   module.section(&globals);
 
   // Export section: memory, heap pointer global, and named functions
