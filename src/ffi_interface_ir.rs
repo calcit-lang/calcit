@@ -2262,6 +2262,31 @@ mod tests {
   }
 
   #[test]
+  fn bundled_component_schema_scopes_streams_to_async_export_parameters() {
+    let schema: serde_json::Value = serde_json::from_str(COMPONENT_INTERFACE_IR_SCHEMA).expect("parse component schema");
+    let signature_branch = &schema["$defs"]["definition"]["allOf"][0];
+
+    assert_eq!(signature_branch["if"]["properties"]["direction"]["const"], "export");
+    assert_eq!(signature_branch["if"]["properties"]["invocation"]["const"], "async");
+    assert_eq!(
+      signature_branch["then"]["properties"]["signature"]["oneOf"][1]["$ref"],
+      "#/$defs/asyncExportFunctionSignature"
+    );
+    assert_eq!(
+      signature_branch["else"]["properties"]["signature"]["oneOf"][1]["$ref"],
+      "ffi-interface-ir-v3.schema.json#/$defs/functionSignature"
+    );
+    assert_eq!(
+      schema["$defs"]["asyncExportFunctionSignature"]["properties"]["result"]["$ref"],
+      "ffi-interface-ir-v3.schema.json#/$defs/type"
+    );
+    assert_eq!(
+      schema["$defs"]["asyncExportFunctionSignature"]["properties"]["parameters"]["items"]["$ref"],
+      "#/$defs/parameter"
+    );
+  }
+
+  #[test]
   fn component_contract_rejects_duplicate_symbols_and_non_fixed_arity() {
     let report = export_component_snapshot(
       &snapshot(vec![

@@ -39,7 +39,7 @@
         "type": { "$ref": "#/$defs/type" }
       }
     },
-    "functionSignature": {
+    "asyncExportFunctionSignature": {
       "type": "object",
       "additionalProperties": false,
       "required": ["parameters", "result"],
@@ -48,7 +48,7 @@
           "type": "array",
           "items": { "$ref": "#/$defs/parameter" }
         },
-        "result": { "$ref": "#/$defs/type" }
+        "result": { "$ref": "ffi-interface-ir-v3.schema.json#/$defs/type" }
       }
     },
     "definition": {
@@ -67,19 +67,45 @@
         "invocation": { "enum": ["sync", "async"] },
         "module": { "type": ["string", "null"] },
         "symbol": { "type": "string", "minLength": 1 },
-        "signature": {
-          "oneOf": [
-            { "type": "null" },
-            { "$ref": "#/$defs/functionSignature" }
-          ]
-        },
+        "signature": {},
         "status": { "enum": ["supported", "unsupported"] },
         "diagnostic_codes": {
           "type": "array",
           "items": { "type": "string" },
           "uniqueItems": true
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "direction": { "const": "export" },
+              "invocation": { "const": "async" }
+            },
+            "required": ["direction", "invocation"]
+          },
+          "then": {
+            "properties": {
+              "signature": {
+                "oneOf": [
+                  { "type": "null" },
+                  { "$ref": "#/$defs/asyncExportFunctionSignature" }
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "signature": {
+                "oneOf": [
+                  { "type": "null" },
+                  { "$ref": "ffi-interface-ir-v3.schema.json#/$defs/functionSignature" }
+                ]
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }
