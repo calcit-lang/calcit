@@ -387,9 +387,9 @@ calcit --warn-dyn-method calcit.cirru --check-only
 
 ```cirru.no-check
 defexternal QueryHost
-  (:target :browser)
-  (:length 'Dynamic)
-  (.query (:: 'Fn ({} (:args ([] 'QueryHost)) (:return 'Dynamic))))
+  :target :browser
+  :length 'Dynamic
+  .query $ :: 'Fn $ {} (:args $ [] 'QueryHost) (:return 'Dynamic)
 ```
 
 骨架只包含能表达为 Calcit trait 成员的字段/方法名（索引、字符串 key 会被过滤）；字段与方法类型仍是

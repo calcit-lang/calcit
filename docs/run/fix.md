@@ -272,6 +272,28 @@ CI 可以在不写回 Snapshot 的前提下解析该报告并据此阻断。
 `single-expression-do-v1` 则处理这些普通可执行位置中的 `(do expr)`，因为它没有第二个步骤；同样跳过
 `defmacro` 与 `quote`/`quasiquote`。若一个项目同时需要两种整理，直接使用 `surface-latest-v2`，不要靠文本搜索判断层级。
 
+## JS FFI 边界迁移（review-only）
+
+`calcit fix --workflow strict` 在 `review_required.ffi_boundaries` 中携带 `--ffi-evidence` 的盘点结果：
+每个裸 `JsObject` 访问会按 definition 分组，并给出 `operations`（kind/member/path）、callers 与 trait
+candidate。每个 trait candidate 还附带一段可直接粘贴的 `defexternal` 骨架：
+
+```cirru.no-check
+defexternal RawReadHost
+  :length 'Dynamic
+```
+
+骨架只包含能表达为 Calcit trait 成员的字段/方法名（索引、字符串 key 会被过滤），未知 target 不写
+`:target`，字段/方法类型用 `Dynamic` 占位，`contract_status` 保持 `review-required`。它**不会自动
+apply**：trait 名字、payload 类型与宿主名映射无法从成员访问唯一推断，自动改写会生成错误契约。正确流程是：
+
+1. `calcit analyze weak-types --ffi-evidence --format edn` 或 `--warn-dyn-method` 盘点站点；
+2. 参考骨架，用 `calcit edit def` 补全类型并建立 `defexternal` 契约；
+3. 把访问收敛到边界 coercion 后的 typed 调用，再跑目标 entry 的 `--check-only` 与行为测试。
+
+这与「自动改写边界」的原则一致：只有能唯一回到 source AST、证明保持求值与失败语义、并携带
+revision/fingerprint 前置条件的建议才进入可 apply 的 preset。
+
 ## 自动改写边界
 
 当前 preset 只收录能证明保持表层语义的一对一规则。以下项目继续由严格诊断定位，不能自动加入 preset：

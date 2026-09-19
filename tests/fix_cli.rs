@@ -2446,3 +2446,56 @@ fn named_constructor_preset_preserves_quoted_data() {
     String::from_utf8_lossy(&calcit_test.stderr)
   );
 }
+
+const FFI_BOUNDARY_FIXTURE: &str = r#"
+{}
+  :package |ffi-boundary
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'ffi-boundary.main/main!) (:mode :native) (:reload-fn 'ffi-boundary.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'ffi-boundary.main
+    %{} 'FileEntry
+      :defs $ {}
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'raw-read! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn raw-read! (element) (.-length element)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'JsObject
+            :features $ #{} :js-ffi
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns ffi-boundary.main
+"#;
+
+#[test]
+fn strict_workflow_surfaces_ffi_boundary_defexternal_skeletons() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::write(&snapshot, FFI_BOUNDARY_FIXTURE).expect("ffi boundary fixture should write");
+
+  let preview = run_fix(&snapshot, &["--workflow", "strict", "--format", "json"]);
+  assert_success(&preview, "strict workflow plan");
+  let report = parse_stdout(&preview);
+  let boundaries = report["data"]["workflow"]["review_required"]["ffi_boundaries"]
+    .as_array()
+    .expect("ffi boundaries should be an array");
+  let candidate = boundaries
+    .iter()
+    .find(|boundary| boundary["definition"] == "ffi-boundary.main/raw-read!")
+    .and_then(|boundary| boundary["trait_candidates"].as_array())
+    .and_then(|candidates| candidates.iter().find(|candidate| candidate["suggested_name"] == "RawReadHost"))
+    .expect("a trait candidate should be reported for the bare field read");
+  assert_eq!(candidate["contract_status"], "review-required");
+  assert_eq!(candidate["defexternal_skeleton"], "defexternal RawReadHost\n  :length 'Dynamic");
+}
