@@ -6,6 +6,9 @@ on:
 
 name: Test
 
+permissions:
+  contents: read
+
 jobs:
   wasi_preprocess:
     name: WASI preprocess regression
@@ -42,18 +45,36 @@ jobs:
           test "$stacksize" = "33554432"
       - run: ./target/debug/calcit -v
 
-  build_and_test:
-    name: Test
+  # Rust unit/integration tests are the longest leg, so they keep a dedicated
+  # job that runs unchanged alongside the CLI, docs, and lint jobs below.
+  rust_tests:
+    name: Rust tests
     runs-on: ubuntu-latest
-    permissions:
-      checks: write
-      contents: read
-      pull-requests: write
-
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo test
+        env:
+          RUST_MIN_STACK: "16777216"
+
+      - name: "check wasm32 library dependency boundary"
+        run: cargo check --lib --target wasm32-unknown-unknown
+
+  core_checks:
+    name: Core and CLI checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
           persist-credentials: false
 
       - uses: actions/setup-node@v6
@@ -69,40 +90,27 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.98.1
-          components: clippy
-          targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2
 
-      - run: cargo test
-        env:
-          RUST_MIN_STACK: "16777216"
-      - name: "check wasm32 library dependency boundary"
-        run: cargo check --lib --target wasm32-unknown-unknown
       - name: "run definition-attached core tests"
         run: cargo run --bin calcit -- src/cirru/calcit-core.cirru --compat-types test --tag unit --require-match
+
       - name: "prevent bundled core type-debt regressions"
         run: cargo run --bin calcit -- src/cirru/calcit-core.cirru analyze quality --baseline config/calcit-core-quality.cirru --format json
+
       - name: "prevent bundled core Dynamic classification drift"
         run: cargo build --bin calcit && node scripts/core-dynamic-classification.mjs --check
+
       - name: "verify strict diagnostics default and compatibility escape hatch"
         run: node scripts/check-strict-default.mjs
+
       - run: cargo run --bin calcit -- calcit/test.cirru --compat-types
 
       - name: "verify WASM exports and FFI"
         run: >
           cargo build --bin calcit
           && CALCIT_BIN="./target/debug/calcit" bash scripts/test-wasm.sh
-
-      - uses: giraffate/clippy-action@v1
-        with:
-          reporter: "github-pr-review"
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: "check docs markdown"
-        run: bash scripts/check-docs-md.sh
-        env:
-          RUST_MIN_STACK: "16777216"
 
       - name: "try js"
         run: >
@@ -113,6 +121,29 @@ jobs:
           && cp -v scripts/main.mjs js-out/
           && node js-out/main.mjs
           && bash scripts/test-js-command.sh
+
+  docs_checks:
+    name: Docs checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build calcit debug binary
+        run: cargo build --bin calcit
+
+      - name: "check docs markdown"
+        run: bash scripts/check-docs-md.sh
+        env:
+          RUST_MIN_STACK: "16777216"
 
       - name: Detect documentation changes
         id: docs_changes
@@ -149,3 +180,51 @@ jobs:
 
       - name: Display status from deploy
         run: echo "${{ steps.deploy.outputs.status }}"
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: giraffate/clippy-action@v1
+        with:
+          reporter: "github-pr-review"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Preserve the pre-split required check name: this aggregate job is green
+  # only when every shard above succeeded.
+  Test:
+    name: Test
+    if: ${{ always() }}
+    needs:
+      - rust_tests
+      - core_checks
+      - docs_checks
+      - clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all shards succeeded
+        run: |
+          echo "rust_tests=${{ needs.rust_tests.result }}"
+          echo "core_checks=${{ needs.core_checks.result }}"
+          echo "docs_checks=${{ needs.docs_checks.result }}"
+          echo "clippy=${{ needs.clippy.result }}"
+          test "${{ needs.rust_tests.result }}" = "success"
+          test "${{ needs.core_checks.result }}" = "success"
+          test "${{ needs.docs_checks.result }}" = "success"
+          test "${{ needs.clippy.result }}" = "success"
