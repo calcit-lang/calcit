@@ -21,7 +21,7 @@ related:
 
 `calcit ffi export` 在不执行应用代码的前提下读取项目 Snapshot，并把 typed
 raw-binding boundary 导出为确定性的 Interface IR。native Interface IR v3 与 Component
-Interface IR v3 是当前 versioned contract；`calcit-bindgen` 必须先识别对应版本，才能生成
+Interface IR v4 是当前 versioned contract；`calcit-bindgen` 必须先识别对应版本，才能生成
 Rust、Calcit、TypeScript 或 WIT。core 不生成业务层
 normalization API，也不把尚未完成的 component packaging 描述为可运行产物。
 

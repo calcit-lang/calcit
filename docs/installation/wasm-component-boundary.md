@@ -133,7 +133,8 @@ export 对应 `canon lift`，超过同步 Canonical ABI 单结果上限的 flat 
 Canonical ABI 针对不同方向规定的函数形状，不是可以互换的自定义约定。core module 只保留显式声明的
 Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，不会携带 native core target
 的隐式 `math/io` imports。同步 export 会为需要归还 guest-owned memory 的结果生成 `cabi_post_<export>`；
-尚未 lowering 的 schema 继续在生成阶段明确失败，stream 仍是后续任务。
+尚未 lowering 的 schema 继续在生成阶段明确失败；`readable-byte-stream` 已有 v4 contract，
+但在有界 consumer adapter 完成前仍会在 core WASM 生成阶段明确失败。
 
 `cabi_realloc` 与 Calcit 内部对象共享同一个 heap 高水位，但 Canonical ABI allocation 另带内部 header 与 free list。
 `cabi_realloc(old-ptr, old-size, alignment, 0)` 会验证 ownership 并回收 allocation；后续兼容 alignment 与 capacity 的请求
@@ -154,8 +155,8 @@ discriminant 的 payload，最后释放间接 return area。primitive scalar 与
 
 异步函数的参数与返回 schema 和同步函数使用同一套闭合类型规则，typed `Result<T,E>` 仍作为
 普通返回类型保留。WASI 0.3 adapter 负责 async function 的 Canonical ABI、取消与 drop；
-Calcit 表层不重复引入 `Task<T>`。`stream<T>` 需要先明确单一 readable ownership、背压、取消和
-drop，暂不由 v3 contract 猜测或生成。
+Calcit 表层不重复引入 `Task<T>`。v4 contract 只固定作用域化 `readable-byte-stream`，不泛化为
+`stream<T>`；单一 readable ownership、背压、取消和 drop 仍由 core adapter 闭环。
 
 当前 core adapter 已覆盖 async export，以及 direct/indirect async import。导出的 core 函数沿用参数的 Canonical ABI flat shape。
 对直接尾调用同签名 async import 的 export，编译器生成 `[async-lift]<export-symbol>` 与配套
