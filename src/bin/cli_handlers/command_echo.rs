@@ -665,7 +665,12 @@ fn render_cirru_explanation(cmd: &CirruCommand) -> Option<String> {
   Some(match &cmd.subcommand {
     CirruSubcommand::Parse(opts) => format!("parses Cirru code `{}` into AST", opts.code),
     CirruSubcommand::Format(opts) => format!("formats JSON-encoded Cirru AST: `{}`", opts.json),
-    CirruSubcommand::ParseEdn(opts) => format!("parses EDN data: `{}`", opts.edn),
+    CirruSubcommand::ParseEdn(opts) => match (opts.edn.as_deref(), opts.file.as_deref()) {
+      (None, Some("-")) => "parses EDN data from stdin".to_string(),
+      (None, Some(path)) => format!("parses EDN data from file `{path}`"),
+      (Some(edn), None) => format!("parses EDN data: `{edn}`"),
+      _ => "parses EDN data from the selected input".to_string(),
+    },
     CirruSubcommand::ShowGuide(_) => "displays Cirru language syntax guide".to_string(),
   })
 }
@@ -869,7 +874,12 @@ fn push_cirru(tokens: &mut Vec<String>, cmd: &CirruCommand) {
       echo_items!(tokens, pos "code" => &opts.code, switch "expr-one" => opts.expr_one_liner, switch "validate" => opts.validate)
     }
     CirruSubcommand::Format(opts) => echo_items!(tokens, pos "json" => &opts.json),
-    CirruSubcommand::ParseEdn(opts) => echo_items!(tokens, pos "edn" => &opts.edn),
+    CirruSubcommand::ParseEdn(opts) => {
+      if let Some(edn) = &opts.edn {
+        push_positional(tokens, "edn", edn);
+      }
+      push_optional(tokens, "file", opts.file.as_deref(), "none");
+    }
     CirruSubcommand::ShowGuide(_) => {}
   }
 }

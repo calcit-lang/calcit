@@ -3,6 +3,7 @@
 //! Handles: calcit cirru parse, format, parse-edn, show-guide
 
 use calcit::cli_args::{CirruCommand, CirruSubcommand};
+use std::io::Read;
 
 use super::cirru_validator;
 
@@ -10,7 +11,7 @@ pub fn handle_cirru_command(cmd: &CirruCommand) -> Result<(), String> {
   match &cmd.subcommand {
     CirruSubcommand::Parse(opts) => handle_parse(&opts.code, opts.expr_one_liner, opts.validate),
     CirruSubcommand::Format(opts) => handle_format(&opts.json),
-    CirruSubcommand::ParseEdn(opts) => handle_parse_edn(&opts.edn),
+    CirruSubcommand::ParseEdn(opts) => handle_parse_edn(opts.edn.as_deref(), opts.file.as_deref()),
     CirruSubcommand::ShowGuide(_) => handle_show_guide(),
   }
 }
@@ -115,8 +116,29 @@ fn handle_format(json_str: &str) -> Result<(), String> {
   Ok(())
 }
 
-fn handle_parse_edn(edn_str: &str) -> Result<(), String> {
-  let edn = cirru_edn::parse(edn_str).map_err(|e| format!("Failed to parse Cirru EDN: {e}"))?;
+fn read_stdin() -> Result<String, String> {
+  let mut content = String::new();
+  std::io::stdin()
+    .read_to_string(&mut content)
+    .map_err(|error| format!("Failed to read Cirru EDN from stdin: {error}"))?;
+  Ok(content)
+}
+
+fn read_parse_edn_input(inline: Option<&str>, file: Option<&str>) -> Result<String, String> {
+  match (inline, file) {
+    (Some(_), Some(_)) => {
+      Err("Cirru EDN input is ambiguous. Pass either inline EDN or `--file <path>` (`--file -` for stdin), not both.".to_string())
+    }
+    (None, None) => Err("Cirru EDN input is required. Pass inline EDN or `--file <path>` (`--file -` for stdin).".to_string()),
+    (None, Some("-")) => read_stdin(),
+    (Some(content), None) => Ok(content.to_string()),
+    (None, Some(path)) => std::fs::read_to_string(path).map_err(|error| format!("Failed to read Cirru EDN file `{path}`: {error}")),
+  }
+}
+
+fn handle_parse_edn(inline: Option<&str>, file: Option<&str>) -> Result<(), String> {
+  let content = read_parse_edn_input(inline, file)?;
+  let edn = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse Cirru EDN: {e}"))?;
 
   let json_value = serde_json::to_value(&edn).map_err(|e| format!("Failed to convert EDN to JSON: {e}"))?;
 
