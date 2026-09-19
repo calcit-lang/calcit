@@ -382,8 +382,20 @@ calcit --warn-dyn-method calcit.cirru --check-only
 ```
 
 `--ffi-evidence` 按 definition 分组列出裸宿主操作并给出 trait/adapter 候选；`--warn-dyn-method`
-用稳定的 `W_JS_FFI_UNTYPED_ACCESS` 盘点静态字面量 key 的裸访问。确认字段/方法集合后，用 `deftrait`
-+ `:ffi` 建立最小契约，再做一次边界 coercion。
+用稳定的 `W_JS_FFI_UNTYPED_ACCESS` 盘点静态字面量 key 的裸访问。每个 trait candidate 还会附带一段
+可直接粘贴的 `defexternal` 骨架，例如：
+
+```cirru.no-check
+defexternal QueryHost
+  (:target :browser)
+  (:length 'Dynamic)
+  (.query (:: 'Fn ({} (:args ([] 'QueryHost)) (:return 'Dynamic))))
+```
+
+骨架只包含能表达为 Calcit trait 成员的字段/方法名（索引、字符串 key 会被过滤）；字段与方法类型仍是
+`Dynamic` 占位，`contract_status` 保持 `review-required`，必须人工补全类型后再用于严格质量门禁。
+
+确认字段/方法集合与类型后，用 `defexternal` 建立最小契约，再做一次边界 coercion。
 
 ## 4. Syntax reference
 
