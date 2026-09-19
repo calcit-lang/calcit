@@ -2255,7 +2255,7 @@ mod tests {
   fn cursor_state_round_trips_as_cirru_edn() {
     let fixture = TestCursorSnapshot::from_fixture();
     let snapshot_file = fixture.snapshot_string();
-    let path = vec![45, 1];
+    let path = vec![43, 1];
     let (node, revision) = read_cursor_target(&snapshot_file, "app.main/main!", &path).expect("fixture cursor target should exist");
     let state = CursorState {
       snapshot: snapshot_file.clone(),
@@ -2339,7 +2339,7 @@ mod tests {
   fn persisted_cursor_moves_after_insertion_before_it() {
     let fixture = TestCursorSnapshot::from_fixture();
     let snapshot_file = fixture.snapshot_string();
-    let cursor_path = vec![45, 1];
+    let cursor_path = vec![43, 1];
     let (node, revision) =
       read_cursor_target(&snapshot_file, "app.main/main!", &cursor_path).expect("fixture cursor target should exist");
     save_cursor_state(
@@ -2364,7 +2364,7 @@ mod tests {
       .expect("fixture main definition should exist");
     entry.code = apply_operation_at_path(
       &entry.code,
-      &[45, 1],
+      &[43, 1],
       TreeOperation::InsertBefore,
       Some(&cirru_parser::Cirru::leaf("false")),
     )
@@ -2374,19 +2374,19 @@ mod tests {
     maintain_cursor_after_tree_mutation(
       &snapshot_file,
       "app.main/main!",
-      &TreeCursorMutation::InsertBefore { path: vec![45, 1] },
+      &TreeCursorMutation::InsertBefore { path: vec![43, 1] },
     )
     .expect("cursor maintenance should succeed");
     let updated = load_cursor_state(&snapshot_file).expect("updated cursor should load");
-    assert_eq!(updated.path, vec![45, 2]);
+    assert_eq!(updated.path, vec![43, 2]);
     let document = load_cursor_document(&snapshot_file).expect("cursor document should load");
     assert_eq!(
       document.anchor.as_ref().map(|state| state.path.as_slice()),
-      Some([45, 2].as_slice())
+      Some([43, 2].as_slice())
     );
     assert_eq!(
       document.marks.get("insertion").map(|state| state.path.as_slice()),
-      Some([45, 2].as_slice())
+      Some([43, 2].as_slice())
     );
     assert_eq!(
       read_cursor_target(&snapshot_file, "app.main/main!", &updated.path)
@@ -2400,7 +2400,7 @@ mod tests {
   fn cursor_document_round_trips_named_cursors_history_stack_and_clipboard() {
     let fixture = TestCursorSnapshot::from_fixture();
     let snapshot_file = fixture.snapshot_string();
-    let path = vec![45, 1];
+    let path = vec![43, 1];
     let (node, revision) = read_cursor_target(&snapshot_file, "app.main/main!", &path).expect("fixture cursor target should exist");
     let state = CursorState {
       snapshot: snapshot_file.clone(),
@@ -2409,7 +2409,7 @@ mod tests {
       definition_revision: revision,
       fingerprint: node_fingerprint(&node),
     };
-    let inactive_path = vec![45, 0];
+    let inactive_path = vec![43, 0];
     let (inactive_node, inactive_revision) =
       read_cursor_target(&snapshot_file, "app.main/main!", &inactive_path).expect("inactive cursor target should exist");
     let inactive_state = CursorState {
@@ -2461,7 +2461,7 @@ mod tests {
   fn oversized_cursor_clipboard_is_rejected_before_writing() {
     let fixture = TestCursorSnapshot::from_fixture();
     let snapshot_file = fixture.snapshot_string();
-    let path = vec![45, 1];
+    let path = vec![43, 1];
     let (node, revision) = read_cursor_target(&snapshot_file, "app.main/main!", &path).expect("fixture cursor target should exist");
     let state = CursorState {
       snapshot: snapshot_file,
@@ -2496,7 +2496,7 @@ mod tests {
   fn legacy_v1_cursor_document_loads_with_empty_extensions() {
     let fixture = TestCursorSnapshot::from_fixture();
     let snapshot_file = fixture.snapshot_string();
-    let path = vec![45, 1];
+    let path = vec![43, 1];
     let (node, revision) = read_cursor_target(&snapshot_file, "app.main/main!", &path).expect("fixture cursor target should exist");
     let state = CursorState {
       snapshot: snapshot_file.clone(),
@@ -2533,7 +2533,7 @@ mod tests {
   fn focused_preview_preserves_definition_signature() {
     let fixture = TestCursorSnapshot::from_fixture();
     let snapshot_file = fixture.snapshot_string();
-    let path = vec![45, 1];
+    let path = vec![43, 1];
     let (node, revision) = read_cursor_target(&snapshot_file, "app.main/main!", &path).expect("fixture cursor target should exist");
     let state = CursorState {
       snapshot: snapshot_file.clone(),
@@ -2559,7 +2559,7 @@ mod tests {
   fn cut_and_paste_round_trip_tree_and_cursor_clipboard() {
     let fixture = TestCursorSnapshot::from_fixture();
     let snapshot_file = fixture.snapshot_string();
-    let path = vec![45, 1];
+    let path = vec![43, 1];
     let (node, revision) = read_cursor_target(&snapshot_file, "app.main/main!", &path).expect("fixture cursor target should exist");
     save_cursor_state(
       &snapshot_file,
@@ -2575,7 +2575,7 @@ mod tests {
 
     store_cursor_clipboard(&snapshot_file, "cut", true).expect("cursor cut should succeed");
     let cut = load_cursor_document(&snapshot_file).expect("cut cursor document should load");
-    assert_eq!(cut.active.path, vec![45]);
+    assert_eq!(cut.active.path, vec![43]);
     assert_eq!(cut.clipboard.as_ref().map(|value| &value.tree), Some(&node));
 
     paste_cursor_clipboard(&snapshot_file, "append-child").expect("cursor paste should succeed");
@@ -2593,7 +2593,7 @@ mod tests {
   fn cursor_follows_moved_subtree_even_when_fingerprint_is_duplicated() {
     let fixture = TestCursorSnapshot::from_fixture();
     let snapshot_file = fixture.snapshot_string();
-    let path = vec![45, 1];
+    let path = vec![43, 1];
     let (node, revision) = read_cursor_target(&snapshot_file, "app.main/main!", &path).expect("fixture cursor target should exist");
     save_cursor_state(
       &snapshot_file,
@@ -2614,13 +2614,13 @@ mod tests {
       .and_then(|file| file.defs.get_mut("main!"))
       .expect("fixture main definition should exist");
     let duplicated =
-      apply_operation_at_path(&entry.code, &[45, 1], TreeOperation::InsertAfter, Some(&node)).expect("duplicate should insert");
+      apply_operation_at_path(&entry.code, &[43, 1], TreeOperation::InsertAfter, Some(&node)).expect("duplicate should insert");
     let after_move_insert =
-      apply_operation_at_path(&duplicated, &[45, 0], TreeOperation::InsertAfter, Some(&node)).expect("move destination should insert");
-    entry.code = apply_operation_at_path(&after_move_insert, &[45, 2], TreeOperation::Delete, None).expect("old source should delete");
+      apply_operation_at_path(&duplicated, &[43, 0], TreeOperation::InsertAfter, Some(&node)).expect("move destination should insert");
+    entry.code = apply_operation_at_path(&after_move_insert, &[43, 2], TreeOperation::Delete, None).expect("old source should delete");
     save_snapshot(&snapshot, &snapshot_file).expect("mutated fixture should save");
 
-    maintain_cursor_after_node_move(&snapshot_file, "app.main/main!", &[45, 1], &[45, 0], TreeOperation::InsertAfter, 0)
+    maintain_cursor_after_node_move(&snapshot_file, "app.main/main!", &[43, 1], &[43, 0], TreeOperation::InsertAfter, 0)
       .expect("cursor should follow the moved duplicate deterministically");
     assert_eq!(load_cursor_state(&snapshot_file).expect("moved cursor should load").path, path);
   }
@@ -2629,12 +2629,12 @@ mod tests {
   fn cursor_navigation_supports_last_child_sibling_counts_and_multi_back() {
     let fixture = TestCursorSnapshot::from_fixture();
     let snapshot_file = fixture.snapshot_string();
-    set_cursor_selection(&snapshot_file, "app.main/main!", vec![45]).expect("cursor should select parent list");
+    set_cursor_selection(&snapshot_file, "app.main/main!", vec![43]).expect("cursor should select parent list");
 
     move_cursor_to_child(&snapshot_file, None, true).expect("cursor should enter the last child");
     assert_eq!(
       load_cursor_state(&snapshot_file).expect("last child cursor should load").path,
-      vec![45, 1]
+      vec![43, 1]
     );
 
     restore_cursor(&snapshot_file, RestoreSource::History, 1).expect("cursor should return to parent");
@@ -2642,21 +2642,21 @@ mod tests {
     move_cursor_across_siblings(&snapshot_file, 1, true).expect("cursor should skip one sibling forward");
     assert_eq!(
       load_cursor_state(&snapshot_file).expect("next cursor should load").path,
-      vec![45, 1]
+      vec![43, 1]
     );
 
     restore_cursor(&snapshot_file, RestoreSource::History, 2).expect("cursor should rewind two recorded locations");
     assert_eq!(
       load_cursor_state(&snapshot_file).expect("rewound cursor should load").path,
-      vec![45]
+      vec![43]
     );
 
-    set_cursor_selection(&snapshot_file, "app.main/main!", vec![45, 0]).expect("cursor should select first sibling");
+    set_cursor_selection(&snapshot_file, "app.main/main!", vec![43, 0]).expect("cursor should select first sibling");
     let error = move_cursor_across_siblings(&snapshot_file, 2, true).expect_err("out-of-range skip should fail");
     assert!(error.contains("only 1 next sibling"), "error: {error}");
     assert_eq!(
       load_cursor_state(&snapshot_file).expect("failed move should preserve cursor").path,
-      vec![45, 0]
+      vec![43, 0]
     );
   }
 
