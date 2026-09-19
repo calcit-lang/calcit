@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
@@ -237,6 +238,8 @@ const reads = new Map();
 const active = new Set();
 const pending = new Map();
 const drops = new Map();
+const liveSets = new Set();
+const liveStreams = new Set();
 const completions = [];
 let cancellations = 0;
 
@@ -247,20 +250,27 @@ const startRead = (handle, ptr, len, mode) => {
   const call = (reads.get(handle) || 0) + 1;
   reads.set(handle, call);
   active.add(handle);
+  liveStreams.add(handle);
   if (mode === "stop") {
     write(ptr, [1, 2]);
     active.delete(handle);
     return 2 << 4;
   }
   if (handle === 8) {
-    write(ptr, call === 1 ? [1, 2, 3] : [4, 5, 6]);
+    const chunks = [[1], [2, 3], [4, 5, 6], [7]];
+    write(ptr, chunks[call - 1]);
     active.delete(handle);
-    return 3 << 4;
+    return chunks[call - 1].length << 4;
   }
   if (handle === 7 && call === 2) {
-    write(ptr, [3]);
+    write(ptr, [2, 3]);
     active.delete(handle);
-    return 1 << 4;
+    return 2 << 4;
+  }
+  if (handle >= 100) {
+    write(ptr, [1]);
+    active.delete(handle);
+    return (1 << 4) | 1;
   }
   pending.set(handle, { ptr, len });
   return -1;
@@ -276,12 +286,19 @@ const complete = (handle, bytes, dropped) => {
 };
 const streamDrop = handle => {
   if (active.has(handle)) throw new Error(`dropped stream ${handle} with an outstanding read`);
+  if (!liveStreams.delete(handle)) throw new Error(`dropped unknown stream ${handle}`);
   drops.set(handle, (drops.get(handle) || 0) + 1);
 };
 const canonical = {
-  "[waitable-set-new]": () => nextSet++,
+  "[waitable-set-new]": () => {
+    const handle = nextSet++;
+    liveSets.add(handle);
+    return handle;
+  },
   "[waitable-set-wait]": () => { throw new Error("stream adapter must not block internally"); },
-  "[waitable-set-drop]": () => {},
+  "[waitable-set-drop]": handle => {
+    if (!liveSets.delete(handle)) throw new Error(`dropped unknown waitable set ${handle}`);
+  },
   "[waitable-join]": () => {},
   "[subtask-drop]": () => {},
   "[context-get-0]": () => currentContext,
@@ -310,10 +327,10 @@ WebAssembly.instantiate(module, { "$root": canonical, "[export]$root": canonical
   const first = consume(7);
   const firstContext = currentContext;
   if (first !== ((40 << 4) | 2)) throw new Error(`slow producer did not yield: ${first}`);
-  const firstResume = consumeCallback(2, 7, complete(7, [1, 2], false));
+  const firstResume = consumeCallback(2, 7, complete(7, [1], false));
   if (firstResume !== first) throw new Error(`second slow read did not preserve wait set: ${firstResume}`);
   if (currentContext !== firstContext) throw new Error("stream callback replaced its context");
-  if (consumeCallback(2, 7, complete(7, [4, 5], true)) !== 0) throw new Error("EOF did not exit");
+  if (consumeCallback(2, 7, complete(7, [4, 5, 6], true)) !== 0) throw new Error("EOF did not exit");
 
   if (consume(8) !== 0) throw new Error("total-limit path did not finish immediately");
 
@@ -334,8 +351,26 @@ WebAssembly.instantiate(module, { "$root": canonical, "[export]$root": canonical
   for (const handle of [7, 8, 9, 10]) {
     if (drops.get(handle) !== 1) throw new Error(`stream ${handle} dropped ${drops.get(handle)} times`);
   }
-  if (JSON.stringify([...reads]) !== JSON.stringify([[7, 3], [8, 2], [9, 1], [10, 1]])) {
+  if (JSON.stringify([...reads]) !== JSON.stringify([[7, 3], [8, 4], [9, 1], [10, 1]])) {
     throw new Error(`unexpected read counts: ${JSON.stringify([...reads])}`);
+  }
+  if (liveSets.size || liveStreams.size || active.size || pending.size) {
+    throw new Error("terminal stream paths leaked lifecycle handles");
+  }
+
+  if (consume(100) !== 0) throw new Error("warm-up stream did not complete");
+  const warmPages = instance.exports.memory.buffer.byteLength;
+  const probe = instance.exports.cabi_realloc(0, 0, 4, 64);
+  instance.exports.cabi_realloc(probe, 64, 4, 0);
+  for (let handle = 101; handle < 111; handle += 1) {
+    if (consume(handle) !== 0) throw new Error(`repeated stream ${handle} did not complete`);
+    const repeatedProbe = instance.exports.cabi_realloc(0, 0, 4, 64);
+    if (repeatedProbe !== probe) throw new Error(`heap high-water changed after warm-up: ${probe} -> ${repeatedProbe}`);
+    instance.exports.cabi_realloc(repeatedProbe, 64, 4, 0);
+    if (instance.exports.memory.buffer.byteLength !== warmPages) throw new Error("repeated streams grew linear memory after warm-up");
+    if (liveSets.size || liveStreams.size || active.size || pending.size) {
+      throw new Error(`repeated stream ${handle} leaked lifecycle handles`);
+    }
   }
 }).catch(error => {
   console.error(error);
@@ -355,12 +390,12 @@ WebAssembly.instantiate(module, { "$root": canonical, "[export]$root": canonical
   );
 }
 
-struct DelayedBytes {
-  bytes: Vec<u8>,
-  pending_once: bool,
+struct DelayedChunks {
+  chunks: VecDeque<Vec<u8>>,
+  waiting_for_chunk: bool,
 }
 
-impl StreamProducer<()> for DelayedBytes {
+impl StreamProducer<()> for DelayedChunks {
   type Item = u8;
   type Buffer = VecBuffer<u8>;
 
@@ -374,8 +409,8 @@ impl StreamProducer<()> for DelayedBytes {
     if finish {
       return Poll::Ready(Ok(StreamResult::Cancelled));
     }
-    if !self.pending_once {
-      self.pending_once = true;
+    if !self.waiting_for_chunk {
+      self.waiting_for_chunk = true;
       let waker = context.waker().clone();
       thread::spawn(move || {
         thread::sleep(Duration::from_millis(10));
@@ -383,13 +418,19 @@ impl StreamProducer<()> for DelayedBytes {
       });
       return Poll::Pending;
     }
-    destination.set_buffer(std::mem::take(&mut self.bytes).into());
-    Poll::Ready(Ok(StreamResult::Dropped))
+    self.waiting_for_chunk = false;
+    let chunk = self.chunks.pop_front().expect("delayed stream should retain a chunk after waking");
+    destination.set_buffer(chunk.into());
+    Poll::Ready(Ok(if self.chunks.is_empty() {
+      StreamResult::Dropped
+    } else {
+      StreamResult::Completed
+    }))
   }
 }
 
 #[tokio::test]
-async fn packaged_scoped_stream_resumes_after_host_backpressure() {
+async fn packaged_scoped_stream_validates_three_chunks_and_repeats_after_backpressure() {
   let output = TestDirectory::create();
   let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
     .env("NO_COLOR", "1")
@@ -450,30 +491,32 @@ async fn packaged_scoped_stream_resumes_after_host_backpressure() {
     .await
     .expect("scoped stream Component should instantiate");
   let consume = instance.get_func(&mut store, "consume").expect("scoped stream export should exist");
-  let reader = StreamReader::new(
-    &mut store,
-    DelayedBytes {
-      bytes: vec![1, 2, 3],
-      pending_once: false,
-    },
-  )
-  .expect("host byte stream should create");
-  let stream = reader
-    .try_into_stream_any(&mut store)
-    .expect("typed host byte stream should erase to the dynamic Component value");
-  let mut results = [Val::Bool(false)];
-  tokio::time::timeout(
-    Duration::from_secs(3),
-    consume.call_async(&mut store, &[Val::Stream(stream)], &mut results),
-  )
-  .await
-  .expect("scoped stream should resume after host backpressure")
-  .expect("scoped stream call should complete");
-  assert!(
-    matches!(&results[0], Val::Result(Ok(None))),
-    "unexpected scoped stream result: {results:?}"
-  );
-  store.assert_concurrent_state_empty();
+  for invocation in 0..6 {
+    let reader = StreamReader::new(
+      &mut store,
+      DelayedChunks {
+        chunks: VecDeque::from([vec![1], vec![2, 3], vec![4, 5, 6]]),
+        waiting_for_chunk: false,
+      },
+    )
+    .expect("host byte stream should create");
+    let stream = reader
+      .try_into_stream_any(&mut store)
+      .expect("typed host byte stream should erase to the dynamic Component value");
+    let mut results = [Val::Bool(false)];
+    tokio::time::timeout(
+      Duration::from_secs(3),
+      consume.call_async(&mut store, &[Val::Stream(stream)], &mut results),
+    )
+    .await
+    .expect("scoped stream should resume after host backpressure")
+    .expect("scoped stream call should complete");
+    assert!(
+      matches!(&results[0], Val::Result(Ok(None))),
+      "unexpected scoped stream result on invocation {invocation}: {results:?}"
+    );
+    store.assert_concurrent_state_empty();
+  }
 }
 
 #[tokio::test]

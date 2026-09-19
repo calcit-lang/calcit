@@ -6957,6 +6957,18 @@ fn emit_equals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     return Err(format!("= expects 2 args, got {}", args.len()));
   }
 
+  let left_buffer = buffer_literal_bytes(&args[0])?;
+  let right_buffer = buffer_literal_bytes(&args[1])?;
+  match (left_buffer, right_buffer) {
+    (Some(left), Some(right)) => {
+      ctx.emit(f64_const(if left == right { 1.0 } else { 0.0 }));
+      return Ok(());
+    }
+    (Some(bytes), None) => return emit_buffer_literal_equals(ctx, &args[1], &bytes),
+    (None, Some(bytes)) => return emit_buffer_literal_equals(ctx, &args[0], &bytes),
+    (None, None) => {}
+  }
+
   let a = ctx.alloc_local();
   let b = ctx.alloc_local();
 
@@ -6966,6 +6978,101 @@ fn emit_equals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::LocalSet(b));
 
   let result = emit_equals_core(ctx, a, b)?;
+  ctx.emit(Instruction::LocalGet(result));
+  Ok(())
+}
+
+fn buffer_literal_bytes(value: &Calcit) -> Result<Option<Vec<u8>>, String> {
+  let Calcit::List(items) = value else {
+    return Ok(None);
+  };
+  let Some(head) = items.first() else {
+    return Ok(None);
+  };
+  let is_buffer = matches!(head, Calcit::Proc(CalcitProc::NativeBuffer))
+    || matches!(head, Calcit::Import(import) if import.def.as_ref() == "&buffer")
+    || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "&buffer");
+  if !is_buffer {
+    return Ok(None);
+  }
+  if items.len() == 1 {
+    return Err("&buffer expects at least one byte".into());
+  }
+  let mut bytes = Vec::with_capacity(items.len() - 1);
+  for item in items.iter().skip(1) {
+    match item {
+      Calcit::Number(value) => bytes.push(value.round() as u8),
+      Calcit::Str(value) if value.len() == 2 => {
+        bytes.push(u8::from_str_radix(value, 16).map_err(|error| format!("invalid &buffer byte {value:?}: {error}"))?)
+      }
+      _ => {
+        return Err(format!(
+          "component WASM buffer literals require numeric bytes or two-digit hex strings, got {item}"
+        ));
+      }
+    }
+  }
+  Ok(Some(bytes))
+}
+
+fn emit_buffer_literal_equals(ctx: &mut WasmGenCtx, value: &Calcit, bytes: &[u8]) -> Result<(), String> {
+  emit_expr(ctx, value)?;
+  let value = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(value));
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  let result = ctx.alloc_local();
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(f64_const((HEAP_BASE + 8) as f64));
+  ctx.emit(Instruction::F64Ge);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::MemorySize(0));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Shl);
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::I32And);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr));
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Const(HEAP_MAGIC));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::I32Const(4));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Const(
+    *ctx.tag_index.get("buffer").ok_or("buffer tag not found")? as i32
+  ));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::I32And);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(f64_const(bytes.len() as f64));
+  ctx.emit(Instruction::F64Eq);
+  ctx.begin_block_if();
+  ctx.emit(f64_const(1.0));
+  ctx.emit(Instruction::LocalSet(result));
+  for (index, byte) in bytes.iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::I32Load8U(mem_arg_byte(8 + index as u64)));
+    ctx.emit(Instruction::I32Const(i32::from(*byte)));
+    ctx.emit(Instruction::I32Ne);
+    ctx.begin_block_if();
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::LocalSet(result));
+    ctx.emit(Instruction::End);
+  }
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
   ctx.emit(Instruction::LocalGet(result));
   Ok(())
 }
