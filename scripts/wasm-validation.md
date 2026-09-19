@@ -193,6 +193,27 @@ bash scripts/test-wasm.sh
 yarn try-wasm
 ```
 
+## 手动渐进套件（不在 CI 中）
+
+CI 与 `yarn check-all` 只运行 `scripts/test-wasm.sh`。以下脚本是维护者按需运行的渐进式 / 调试工具，
+不属于默认门禁；在此登记用途，避免它们因无入口而悄悄腐化：
+
+- `scripts/test-wasm-suite.sh`：逐个把纯计算 `test-*.cirru` fixture 编译为 WASM 并运行 `main!`。
+- `scripts/test-wasm-suite-extended.sh`：编译 `calcit/test-wasm-suite.cirru` 多模块入口，在一个 WASM
+  实例中顺序运行各模块 `main!`，目标随 WASM 支持范围逐步扩大。
+- `scripts/test-wasm-run.mjs`：上面的通用 WASM runner（读取 `js-out/program.wasm`，调用 `main!`）。
+- `scripts/test-wasm-call.mjs`：手动调用指定 WASM export 的调试助手。
+
+```bash
+# 默认门禁
+bash scripts/test-wasm.sh
+
+# 手动渐进套件（用 CALCIT_BIN 指定已构建的二进制）
+CALCIT_BIN=./target/debug/calcit bash scripts/test-wasm-suite.sh
+CALCIT_BIN=./target/debug/calcit bash scripts/test-wasm-suite-extended.sh
+node scripts/test-wasm-call.mjs <export-name>
+```
+
 ## 设计文档
 
 - 设计决策与改进路线见 `RFCs/04-16-wasm-data-structures.md`
