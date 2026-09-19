@@ -500,3 +500,54 @@ fn malformed_defmacro_is_rejected_without_changing_the_snapshot() {
   }
   assert_success(&run_calcit(&snapshot, &["--check-only"]), "strict check after rejected edit");
 }
+
+#[test]
+fn overwriting_with_defexternal_drops_retained_ffi_metadata() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "def", "app.main/Host", "--code", "quote $ deftrait Host (:value 'String)"],
+    ),
+    "create external trait",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "ffi",
+        "app.main/Host",
+        "--code",
+        "{} (:backend :js) (:kind :external-object) (:target :node) (:names $ {} (:value |nodeValue))",
+      ],
+    ),
+    "set explicit ffi metadata",
+  );
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/Host",
+        "--overwrite",
+        "--code",
+        "quote $ defexternal Host (:target :browser) (:value 'String)",
+      ],
+    ),
+    "overwrite with defexternal shorthand",
+  );
+
+  // Writing `defexternal` alongside retained `:ffi` would fail the next load.
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "reload after shorthand overwrite");
+
+  let report = query_definition(&snapshot, "app.main/Host");
+  assert_eq!(report["data"]["schema"], "'Trait");
+  assert_eq!(report["data"]["ffi"][":target"]["__edn_tag"], "browser");
+  // The overwrite replaced the previous metadata, so the old `:names` override is gone.
+  assert!(report["data"]["ffi"][":names"].is_null());
+}

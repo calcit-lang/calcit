@@ -896,6 +896,7 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
 
   let syntax_tree = decode_mutation_syntax_input(&raw, opts.input_format)?;
   let derived_macro_schema = snapshot::conservative_macro_schema(&syntax_tree, &format!("definition '{namespace}/{definition}'"))?;
+  snapshot::validate_defexternal_shorthand(&syntax_tree, &format!("{namespace}/{definition}"))?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
@@ -958,6 +959,12 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   // For overwrite, preserve existing metadata (doc/examples/schema) and only replace code.
   let code_entry = if let Some(mut updated_entry) = previous_entry {
     updated_entry.code = syntax_tree;
+    // The shorthand fully determines external-object metadata, and the loader
+    // regenerates it. Carrying a retained `:ffi` would write an invalid
+    // `defexternal` + explicit `:ffi` pair that the next load rejects.
+    if snapshot::code_declares_defexternal(&updated_entry.code) {
+      updated_entry.ffi = None;
+    }
     if let Some(schema) = derived_macro_schema
       && !matches!(updated_entry.schema.as_ref(), calcit::calcit::CalcitTypeAnnotation::Macro(_))
     {

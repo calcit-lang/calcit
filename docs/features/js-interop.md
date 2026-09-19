@@ -335,6 +335,13 @@ deftrait QueryHost
 两种写法在类型系统、codegen 与 `calcit query def --json` 的归一化 `ffi` 输出上完全一致；不能同时使用
 `defexternal` 与显式 `:ffi`，否则报错。字段默认只读，只有列进 `:writable` 的字段可写。
 
+用 `calcit edit def` 写入时，`defexternal` 会在写盘时归一化 `:schema :: 'Trait`，非法简写（例如未知
+`:target`）会在写入前报错，而不是留到下次载入：
+
+```bash
+calcit calcit.cirru edit def app.browser/QueryHost --file snippet.cirru --input-format cirru
+```
+
 在适配器边界把宿主值 `unsafe-coerce` 一次，之后用普通 Calcit 方法调用：
 
 ```cirru.no-check

@@ -2025,7 +2025,7 @@ fn normalize_schema_for_code(code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -
     let marker = match head.as_ref() {
       "defstruct" => Some("struct-def"),
       "defenum" => Some("enum-def"),
-      "deftrait" => Some("trait"),
+      "deftrait" | "defexternal" => Some("trait"),
       "defimpl" => Some("impl"),
       _ => None,
     };
@@ -2977,7 +2977,7 @@ fn format_cirru_preview(node: Option<&Cirru>) -> String {
 }
 
 /// Whether a definition body uses the `defexternal` shorthand head.
-fn code_declares_defexternal(code: &Cirru) -> bool {
+pub fn code_declares_defexternal(code: &Cirru) -> bool {
   matches!(code, Cirru::List(items) if matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defexternal"))
 }
 
@@ -2994,6 +2994,16 @@ fn normalize_entry_external(code: Cirru, ffi: Option<Edn>, owner: &str) -> Resul
     ));
   }
   Ok((trait_code, Some(generated_ffi)))
+}
+
+/// Validate a `defexternal` shorthand body before it is written to a Snapshot,
+/// so malformed declarations fail at the edit boundary instead of at the next
+/// load. Non-shorthand code is left untouched.
+pub fn validate_defexternal_shorthand(code: &Cirru, owner: &str) -> Result<(), String> {
+  if code_declares_defexternal(code) {
+    normalize_defexternal_code(code.clone(), owner)?;
+  }
+  Ok(())
 }
 
 fn parse_code_entry_with_context(data: Edn, owner: &str) -> Result<CodeEntry, String> {
@@ -3886,6 +3896,26 @@ mod tests {
       entry.schema
     );
     assert!(entry.ffi.is_some(), "binary ffi metadata should be generated");
+  }
+
+  #[test]
+  fn defexternal_canonicalizes_write_schema_to_trait_marker() {
+    let code = parse_one("defexternal T\n  :value 'String");
+    let schema = normalize_schema_for_code(&code, &DYNAMIC_TYPE);
+    assert!(
+      matches!(schema.as_ref(), CalcitTypeAnnotation::Custom(marker) if marker.as_ref() == &Calcit::tag("trait")),
+      "defexternal should canonicalize to the trait marker"
+    );
+  }
+
+  #[test]
+  fn validate_defexternal_shorthand_accepts_valid_and_rejects_invalid() {
+    validate_defexternal_shorthand(&parse_one("defexternal T\n  :value 'String"), "demo/T").expect("valid shorthand should pass");
+    validate_defexternal_shorthand(&parse_one("deftrait T (.x :fn)"), "demo/T")
+      .expect("non-shorthand code should be ignored without validation");
+    let error = validate_defexternal_shorthand(&parse_one("defexternal T\n  :target :deno\n  :value 'String"), "demo/T")
+      .expect_err("invalid target should fail at the edit boundary");
+    assert!(error.contains("unknown `defexternal` `:target`"), "error: {error}");
   }
 
   #[test]
