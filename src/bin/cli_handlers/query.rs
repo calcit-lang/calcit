@@ -1028,11 +1028,15 @@ mod type_query_tests {
   fn search_results_share_cursor_indices_and_can_select_one() {
     let fixture = TestProject::from_fixture();
     let snapshot_path = fixture.snapshot_string();
+    let tail_path = format!("@{}.1", fixture.main_tail);
 
     let results = vec![(
       "app.main".to_string(),
       "main!".to_string(),
-      vec![(vec![40, 0], Cirru::leaf("do")), (vec![40, 1], Cirru::leaf("true"))],
+      vec![
+        (vec![fixture.main_tail, 0], Cirru::leaf("do")),
+        (vec![fixture.main_tail, 1], Cirru::leaf("true")),
+      ],
     )];
     let saved_query = CursorLastQuery {
       command: "search".to_string(),
@@ -1053,7 +1057,7 @@ mod type_query_tests {
     assert_eq!(
       crate::cli_handlers::cursor::resolve_cursor_path_argument(&snapshot_path, "app.main/main!", "@cursor")
         .expect("query-selected cursor should resolve"),
-      "@40.1"
+      tail_path.as_str()
     );
 
     let mut filter = None;
@@ -1061,7 +1065,7 @@ mod type_query_tests {
     resolve_search_cursor_references(&snapshot_path, &mut filter, &mut start_path)
       .expect("cursor-scoped search should infer target and path");
     assert_eq!(filter.as_deref(), Some("app.main/main!"));
-    assert_eq!(start_path.as_deref(), Some("@40.1"));
+    assert_eq!(start_path.as_deref(), Some(tail_path.as_str()));
 
     let mut type_at = QueryCommand {
       subcommand: QuerySubcommand::TypeAt(QueryTypeAtCommand {
@@ -1075,7 +1079,7 @@ mod type_query_tests {
       panic!("type-at command should remain type-at")
     };
     assert_eq!(type_at.target, "app.main/main!");
-    assert_eq!(type_at.path, "@40.1");
+    assert_eq!(type_at.path, tail_path);
 
     let mut mismatched_filter = Some("app.other/demo".to_string());
     let mut cursor_start = Some("@cursor".to_string());
