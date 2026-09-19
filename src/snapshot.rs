@@ -2977,7 +2977,7 @@ fn format_cirru_preview(node: Option<&Cirru>) -> String {
 }
 
 /// Whether a definition body uses the `defexternal` shorthand head.
-fn code_declares_defexternal(code: &Cirru) -> bool {
+pub fn code_declares_defexternal(code: &Cirru) -> bool {
   matches!(code, Cirru::List(items) if matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defexternal"))
 }
 
