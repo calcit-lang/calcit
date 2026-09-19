@@ -5650,10 +5650,15 @@
             :args $ [] $ :: 'Set 'T
             :generics $ [] 'T
             :return $ :: 'Set 'T
-          :tests $ [] $ %{} 'TestEntry (:name |adds-set-members)
-            :code $ quote $ assert= (#{} 1 2 3 4)
-              include (#{} 1 2) 3 4
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |adds-set-members)
+              :code $ quote $ assert= (#{} 1 2 3 4)
+                include (#{} 1 2) 3 4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |adds-via-postfix-method)
+              :code $ quote $ assert= (#{} 1 2 3)
+                .add (#{} 1 2) 3
+              :tags $ #{} :core :unit
         'includes? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn includes? (x k)
             if (list? x) (&list:includes? x k) (.includes? x k)
