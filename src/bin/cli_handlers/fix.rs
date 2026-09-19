@@ -2312,6 +2312,7 @@ fn collect_redundant_do_paths(node: &Cirru, path: &mut Vec<usize>, output: &mut 
   let body_start = match head {
     Some("defn") => Some(3),
     Some("fn" | "let") => Some(2),
+    Some("let[]") => Some(3),
     Some("do") => Some(1),
     _ => None,
   };
@@ -3247,10 +3248,16 @@ mod tests {
         Cirru::List(vec![]),
         Cirru::List(vec![leaf("do"), leaf("i"), leaf("j")]),
       ]),
+      Cirru::List(vec![
+        leaf("let[]"),
+        Cirru::List(vec![]),
+        Cirru::List(vec![]),
+        Cirru::List(vec![leaf("do"), leaf("k"), leaf("l")]),
+      ]),
     ]);
     let mut paths = Vec::new();
     collect_redundant_do_paths(&code, &mut Vec::new(), &mut paths);
-    assert_eq!(paths, vec![vec![3], vec![5, 2]]);
+    assert_eq!(paths, vec![vec![3], vec![5, 2], vec![8, 3]]);
   }
 
   #[test]

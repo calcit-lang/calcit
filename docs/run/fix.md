@@ -40,7 +40,7 @@ calcit calcit.cirru fix --ns app.main --def render! --format edn
 - `removed-data-api-v1` 复用编译器已有的 `W_REMOVED_DATA_API` 解析结果。只有一对一的名称迁移
   （例如 `tuple-enum` 到 `enum-definition`）标为 `machine-applicable`；`tuple?` 需要在值判断与定义判断之间选择，因而只返回
   `requires-review`，其 `replacement` 为 `null`。
-- `redundant-do-v1` 整理 `defn`、`fn`、`let` 及嵌套 `do` 的 variadic body。父结构本来就按顺序执行多项、
+- `redundant-do-v1` 整理 `defn`、`fn`、`let`、`let[]` 及嵌套 `do` 的 variadic body。父结构本来就按顺序执行多项、
   并以最后一项作为返回值时，这条规则会把直接子节点的单层 `do` splice 到父 body。`if` 分支、调用参数、binding value
   以及 `defmacro`、`quote`/`quasiquote` 数据不在自动修改范围内；macro 是否把多项 body 打包成一个表达式需要保留显式语义。
 - `single-expression-do-v1` 解包恰好只有一个 payload 的 `(do expr)`。这时 `do` 在分支、调用参数和 binding value
@@ -260,9 +260,14 @@ calcit calcit.cirru fix --ns app.main --def render! --rule redundant-do-v1 --for
 
 `redundant-do-v1` 只 splice 已知 variadic body 的直接 `do` 子节点。多表达式 `do` 在以下位置会保留：
 
-- `if`/`case` 分支、函数调用参数和 binding value 等只接收单表达式的位置；
+- 只接收单表达式的位置（`if`/`case` 分支、函数调用参数、`binding value` 等）；
 - `defmacro` body，因为 macro 可能需要显式打包返回的语法树；
 - `quote`/`quasiquote` 内作为数据保存的代码。
+
+`defn`、`fn`、`let`、`let[]` body 顶层的多余 `do` 都属可自动整理范围；JS FFI 适配器代码里常见的
+`defn`/`let` 顶层 `do` 因此可以直接用这条规则收敛。`calcit fix` 的默认预览（不传 `--rule`/`--preset`
+时）已包含 `redundant-do-v1`，报告中每项 suggestion 的 `diagnostic_code` 为稳定的 `FIX_REDUNDANT_DO`；
+CI 可以在不写回 Snapshot 的前提下解析该报告并据此阻断。
 
 `single-expression-do-v1` 则处理这些普通可执行位置中的 `(do expr)`，因为它没有第二个步骤；同样跳过
 `defmacro` 与 `quote`/`quasiquote`。若一个项目同时需要两种整理，直接使用 `surface-latest-v2`，不要靠文本搜索判断层级。
