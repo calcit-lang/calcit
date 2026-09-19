@@ -132,13 +132,19 @@ export 对应 `canon lift`，超过同步 Canonical ABI 单结果上限的 flat 
 指针；import 对应 `canon lower`，结果使用 caller 传入的 return area，再复制回对应的 Calcit 值。两者是
 Canonical ABI 针对不同方向规定的函数形状，不是可以互换的自定义约定。core module 只保留显式声明的
 Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，不会携带 native core target
-的隐式 `math/io` imports。post-return 与 stream 仍是后续任务；尚未 lowering 的 schema
-继续在生成阶段明确失败。
+的隐式 `math/io` imports。同步 export 会为需要归还 guest-owned memory 的结果生成 `cabi_post_<export>`；
+尚未 lowering 的 schema 继续在生成阶段明确失败，stream 仍是后续任务。
 
-`cabi_realloc` 与 Calcit 内部对象当前共享同一个 bump pointer，但两类 allocation 的对齐语义不同：canonical byte range
-只保证调用方请求的 alignment，Calcit 内部 Struct、Enum、List 等 f64-backed object 则在写入 header 前恢复 8 字节对齐。
-因此 String/Buffer 的奇数长度 allocation 不得让后续 nominal object 的 pointer 依赖调用顺序；adapter 仍会把未对齐的
-外部 canonical pointer 当作非法输入 trap。
+`cabi_realloc` 与 Calcit 内部对象共享同一个 heap 高水位，但 Canonical ABI allocation 另带内部 header 与 free list。
+`cabi_realloc(old-ptr, old-size, alignment, 0)` 会验证 ownership 并回收 allocation；后续兼容 alignment 与 capacity 的请求
+会复用已释放区域。canonical byte range 只保证调用方请求的 alignment，Calcit 内部 Struct、Enum、List 等
+f64-backed object 则在写入 header 前恢复 8 字节对齐。因此 String/Buffer 的奇数长度 allocation 不得让后续 nominal
+object 的 pointer 依赖调用顺序；adapter 仍会把未对齐的外部 canonical pointer 当作非法输入 trap。
+
+同步结果完成 lift 后，Component runtime 自动调用对应 post-return。回收逻辑按闭合 schema 递归处理 String、Buffer、
+List、Struct、Enum 与 Option/Result：List 先释放每个含 ownership 的 element 再释放 backing storage，variant 只访问当前
+discriminant 的 payload，最后释放间接 return area。primitive scalar 与 Unit 不生成无意义的 post-return；只含 scalar
+但因 flat 上限使用间接 return area 的复合结果仍需回收该 area。
 
 ## 异步 Component 合约
 
@@ -161,6 +167,9 @@ waitable set 写入每个 Component task 独立的 context，并向宿主返回 
 不满足“单一直接尾调用、参数顺序不变、闭合 schema 完全相同”的 async export 仍使用
 `[async-lift-stackful]<export-symbol>`，避免编译器猜测一般 Calcit 控制流的 suspension point。两条路径都没有普通 core
 result；Calcit 返回值会按返回 schema lower，并且恰好调用一次 packaging 注入的 `task.return`。
+Canonical ABI 禁止 `async` lift 同时配置 post-return；`task.return` 返回时结果已经完成 lift，因此两条 async 路径会在
+该调用之后立即使用与同步 post-return 相同的递归 ownership 规则释放 canonical result allocation。取消发生在结果交付前时，
+只释放尚未初始化的 return area 与 callback state，不读取其中可能未写完的 payload。
 `task.return` import 使用模块名
 `[export]$root` 与字段名 `[task-return]<export-symbol>`；`wit-component` 据此将每个字段连接到具有对应
 result type 的 `canon task.return`。这一命名只存在于 core 与 packaging 的内部契约，不是新的 Calcit API。

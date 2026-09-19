@@ -24,6 +24,7 @@ pub(super) struct ComponentStructCodec {
 pub(super) struct ComponentValueCodecs<'a> {
   pub str_new_index: u32,
   pub buffer_new_index: u32,
+  pub cabi_realloc_index: u32,
   pub list_codecs: &'a BTreeMap<ComponentAbiType, ComponentListCodec>,
   pub struct_codecs: &'a BTreeMap<ComponentAbiType, ComponentStructCodec>,
   pub variant_codecs: &'a BTreeMap<ComponentAbiType, ComponentVariantCodec>,
@@ -56,6 +57,59 @@ pub(super) fn component_memory_layout(value_type: &ComponentAbiType) -> Componen
     ComponentAbiType::Struct(record) => component_struct_layout(record).0,
     ComponentAbiType::Enum(enum_type) => component_enum_layout(enum_type).0,
   }
+}
+
+pub(super) fn component_type_owns_memory(value_type: &ComponentAbiType) -> bool {
+  match value_type {
+    ComponentAbiType::Buffer | ComponentAbiType::String | ComponentAbiType::List(_) => true,
+    ComponentAbiType::Option(item) => component_type_owns_memory(item),
+    ComponentAbiType::Result(ok, error) => component_type_owns_memory(ok) || component_type_owns_memory(error),
+    ComponentAbiType::Struct(record) => record.fields.iter().any(|(_, field_type)| component_type_owns_memory(field_type)),
+    ComponentAbiType::Enum(enum_type) => enum_type
+      .variants
+      .iter()
+      .any(|variant| variant.payload.iter().any(component_type_owns_memory)),
+    ComponentAbiType::Unit | ComponentAbiType::Bool | ComponentAbiType::Number | ComponentAbiType::Numeric(_) => false,
+  }
+}
+
+fn collect_component_owned_type(
+  value_type: &ComponentAbiType,
+  seen: &mut BTreeSet<ComponentAbiType>,
+  ordered: &mut Vec<ComponentAbiType>,
+) {
+  match value_type {
+    ComponentAbiType::List(item) | ComponentAbiType::Option(item) => collect_component_owned_type(item, seen, ordered),
+    ComponentAbiType::Result(ok, error) => {
+      collect_component_owned_type(ok, seen, ordered);
+      collect_component_owned_type(error, seen, ordered);
+    }
+    ComponentAbiType::Struct(record) => {
+      for (_, field_type) in &record.fields {
+        collect_component_owned_type(field_type, seen, ordered);
+      }
+    }
+    ComponentAbiType::Enum(enum_type) => {
+      for variant in &enum_type.variants {
+        for payload_type in &variant.payload {
+          collect_component_owned_type(payload_type, seen, ordered);
+        }
+      }
+    }
+    _ => {}
+  }
+  if component_type_owns_memory(value_type) && seen.insert(value_type.clone()) {
+    ordered.push(value_type.clone());
+  }
+}
+
+pub(super) fn collect_component_owned_types(adapters: &[ComponentExportAdapter]) -> Vec<ComponentAbiType> {
+  let mut seen = BTreeSet::new();
+  let mut ordered = Vec::new();
+  for adapter in adapters {
+    collect_component_owned_type(&adapter.result, &mut seen, &mut ordered);
+  }
+  ordered
 }
 
 fn component_struct_layout(record: &ComponentStructType) -> (ComponentMemoryLayout, Vec<i32>) {
@@ -697,6 +751,202 @@ pub(super) fn collect_component_compound_types(
   Ok(ordered)
 }
 
+fn push_component_owned_child_drop(
+  instructions: &mut Vec<Instruction<'static>>,
+  value_type: &ComponentAbiType,
+  base_ptr: u32,
+  offset: i32,
+  drop_indices: &BTreeMap<ComponentAbiType, u32>,
+) {
+  let Some(drop_index) = drop_indices.get(value_type) else {
+    return;
+  };
+  instructions.push(Instruction::LocalGet(base_ptr));
+  if offset != 0 {
+    instructions.extend([Instruction::I32Const(offset), Instruction::I32Add]);
+  }
+  instructions.push(Instruction::Call(*drop_index));
+}
+
+pub(super) fn build_component_drop_fn(
+  value_type: &ComponentAbiType,
+  cabi_free_index: u32,
+  drop_indices: &BTreeMap<ComponentAbiType, u32>,
+) -> CompiledFn {
+  let data_ptr = 1;
+  let len = 2;
+  let index = 3;
+  let mut instructions = Vec::new();
+  match value_type {
+    ComponentAbiType::Buffer | ComponentAbiType::String => {
+      instructions.extend([
+        Instruction::LocalGet(0),
+        Instruction::I32Load(mem_arg_i32(0)),
+        Instruction::LocalSet(data_ptr),
+        Instruction::LocalGet(0),
+        Instruction::I32Load(mem_arg_i32(4)),
+        Instruction::LocalSet(len),
+        Instruction::LocalGet(data_ptr),
+        Instruction::LocalGet(len),
+        Instruction::Call(cabi_free_index),
+      ]);
+    }
+    ComponentAbiType::List(item) => {
+      let item_layout = component_memory_layout(item);
+      instructions.extend([
+        Instruction::LocalGet(0),
+        Instruction::I32Load(mem_arg_i32(0)),
+        Instruction::LocalSet(data_ptr),
+        Instruction::LocalGet(0),
+        Instruction::I32Load(mem_arg_i32(4)),
+        Instruction::LocalSet(len),
+      ]);
+      if let Some(item_drop) = drop_indices.get(item.as_ref()) {
+        instructions.extend([
+          Instruction::I32Const(0),
+          Instruction::LocalSet(index),
+          Instruction::Block(BlockType::Empty),
+          Instruction::Loop(BlockType::Empty),
+          Instruction::LocalGet(index),
+          Instruction::LocalGet(len),
+          Instruction::I32GeU,
+          Instruction::BrIf(1),
+          Instruction::LocalGet(data_ptr),
+          Instruction::LocalGet(index),
+          Instruction::I32Const(item_layout.size),
+          Instruction::I32Mul,
+          Instruction::I32Add,
+          Instruction::Call(*item_drop),
+          Instruction::LocalGet(index),
+          Instruction::I32Const(1),
+          Instruction::I32Add,
+          Instruction::LocalSet(index),
+          Instruction::Br(0),
+          Instruction::End,
+          Instruction::End,
+        ]);
+      }
+      instructions.extend([
+        Instruction::LocalGet(data_ptr),
+        Instruction::LocalGet(len),
+        Instruction::I32Const(item_layout.size),
+        Instruction::I32Mul,
+        Instruction::Call(cabi_free_index),
+      ]);
+    }
+    ComponentAbiType::Option(item) => {
+      let payload_offset = component_variant_payload_offset(value_type);
+      instructions.extend([
+        Instruction::LocalGet(0),
+        Instruction::I32Load8U(mem_arg_byte(0)),
+        Instruction::I32Const(1),
+        Instruction::I32GtU,
+        Instruction::If(BlockType::Empty),
+        Instruction::Unreachable,
+        Instruction::End,
+        Instruction::LocalGet(0),
+        Instruction::I32Load8U(mem_arg_byte(0)),
+        Instruction::If(BlockType::Empty),
+      ]);
+      push_component_owned_child_drop(&mut instructions, item, 0, payload_offset, drop_indices);
+      instructions.push(Instruction::End);
+    }
+    ComponentAbiType::Result(ok, error) => {
+      let payload_offset = component_variant_payload_offset(value_type);
+      instructions.extend([
+        Instruction::LocalGet(0),
+        Instruction::I32Load8U(mem_arg_byte(0)),
+        Instruction::LocalTee(index),
+        Instruction::I32Const(1),
+        Instruction::I32GtU,
+        Instruction::If(BlockType::Empty),
+        Instruction::Unreachable,
+        Instruction::End,
+        Instruction::LocalGet(index),
+        Instruction::If(BlockType::Empty),
+      ]);
+      push_component_owned_child_drop(&mut instructions, error, 0, payload_offset, drop_indices);
+      instructions.push(Instruction::Else);
+      push_component_owned_child_drop(&mut instructions, ok, 0, payload_offset, drop_indices);
+      instructions.push(Instruction::End);
+    }
+    ComponentAbiType::Struct(record) => {
+      let (_, offsets) = component_struct_layout(record);
+      for ((_, field_type), offset) in record.fields.iter().zip(offsets) {
+        push_component_owned_child_drop(&mut instructions, field_type, 0, offset, drop_indices);
+      }
+    }
+    ComponentAbiType::Enum(enum_type) => {
+      let (_, payload_offset, payload_layouts) = component_enum_layout(enum_type);
+      let discriminant_size = component_enum_discriminant_size(enum_type.variants.len());
+      push_load_enum_discriminant(&mut instructions, discriminant_size, 0, 0);
+      instructions.extend([
+        Instruction::LocalTee(index),
+        Instruction::I32Const(enum_type.variants.len() as i32),
+        Instruction::I32GeU,
+        Instruction::If(BlockType::Empty),
+        Instruction::Unreachable,
+        Instruction::End,
+      ]);
+      for (variant_index, (variant, (_, offsets))) in enum_type.variants.iter().zip(payload_layouts).enumerate() {
+        instructions.extend([
+          Instruction::LocalGet(index),
+          Instruction::I32Const(variant_index as i32),
+          Instruction::I32Eq,
+          Instruction::If(BlockType::Empty),
+        ]);
+        for (payload_type, offset) in variant.payload.iter().zip(offsets) {
+          push_component_owned_child_drop(&mut instructions, payload_type, 0, payload_offset + offset, drop_indices);
+        }
+        instructions.push(Instruction::End);
+      }
+    }
+    ComponentAbiType::Unit | ComponentAbiType::Bool | ComponentAbiType::Number | ComponentAbiType::Numeric(_) => {
+      unreachable!("scalar Component values do not need a drop helper")
+    }
+  }
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::I32],
+    results: vec![],
+    locals: vec![ValType::I32; 3],
+    instructions,
+  }
+}
+
+pub(super) fn build_component_post_return_fn(
+  adapter: &ComponentExportAdapter,
+  cabi_free_index: u32,
+  drop_indices: &BTreeMap<ComponentAbiType, u32>,
+) -> CompiledFn {
+  let mut instructions = Vec::new();
+  push_component_result_reclaim(&adapter.result, 0, cabi_free_index, drop_indices, &mut instructions);
+  CompiledFn {
+    export_name: Some(component_post_return_symbol(adapter)),
+    params: vec![ValType::I32],
+    results: vec![],
+    locals: vec![],
+    instructions,
+  }
+}
+
+pub(super) fn push_component_result_reclaim(
+  result: &ComponentAbiType,
+  result_ptr: u32,
+  cabi_free_index: u32,
+  drop_indices: &BTreeMap<ComponentAbiType, u32>,
+  instructions: &mut Vec<Instruction<'static>>,
+) {
+  if let Some(drop_index) = drop_indices.get(result) {
+    instructions.extend([Instruction::LocalGet(result_ptr), Instruction::Call(*drop_index)]);
+  }
+  instructions.extend([
+    Instruction::LocalGet(result_ptr),
+    Instruction::I32Const(component_memory_layout(result).size),
+    Instruction::Call(cabi_free_index),
+  ]);
+}
+
 fn push_checked_u32_product(instructions: &mut Vec<Instruction<'static>>, value_local: u32, factor: i32, result_local: u32) {
   instructions.extend([
     Instruction::LocalGet(value_local),
@@ -1070,18 +1320,29 @@ fn push_lower_element(
       Instruction::LocalGet(src_addr),
       Instruction::F64Load(mem_arg_f64(0)),
       Instruction::LocalSet(value),
-      Instruction::LocalGet(dst_addr),
-      Instruction::LocalGet(value),
-      Instruction::I32TruncF64U,
-      Instruction::I32Const(8),
-      Instruction::I32Add,
-      Instruction::I32Store(mem_arg_i32(0)),
-      Instruction::LocalGet(dst_addr),
       Instruction::LocalGet(value),
       Instruction::I32TruncF64U,
       Instruction::F64Load(mem_arg_f64(0)),
       Instruction::I32TruncF64U,
+      Instruction::LocalSet(canonical_bool),
+      Instruction::LocalGet(dst_addr),
+      Instruction::I32Const(0),
+      Instruction::I32Const(0),
+      Instruction::I32Const(1),
+      Instruction::LocalGet(canonical_bool),
+      Instruction::Call(codecs.cabi_realloc_index),
+      Instruction::I32Store(mem_arg_i32(0)),
+      Instruction::LocalGet(dst_addr),
+      Instruction::LocalGet(canonical_bool),
       Instruction::I32Store(mem_arg_i32(4)),
+      Instruction::LocalGet(dst_addr),
+      Instruction::I32Load(mem_arg_i32(0)),
+      Instruction::LocalGet(value),
+      Instruction::I32TruncF64U,
+      Instruction::I32Const(8),
+      Instruction::I32Add,
+      Instruction::LocalGet(canonical_bool),
+      Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
     ]),
     ComponentAbiType::List(_) => {
       let codec = codecs
