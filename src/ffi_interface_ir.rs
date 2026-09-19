@@ -363,6 +363,7 @@ fn explicit_builtin_type(name: &str) -> Option<&str> {
     "Option" | "calcit.core/Option" => Some("Option"),
     "Result" | "calcit.core/Result" => Some("Result"),
     "ReadableByteStream" | "calcit.core/ReadableByteStream" => Some("ReadableByteStream"),
+    "StreamConsumeError" | "calcit.core/StreamConsumeError" => Some("StreamConsumeError"),
     _ => None,
   }
 }
@@ -485,6 +486,23 @@ fn nominal_type(
         "ReadableByteStream is only available at the Component boundary.",
         "Keep native and JavaScript FFI signatures on concrete Buffer values, or expose this definition through defwasm-export.",
       )));
+    }
+    if builtin == "StreamConsumeError" {
+      if !arguments.is_empty() {
+        return Err(Box::new(diagnostic(
+          definition,
+          path,
+          "E_FFI_IR_TYPE_ARGUMENT_ARITY",
+          format!(
+            "StreamConsumeError expects no type arguments at `{path}`, but received {}.",
+            arguments.len()
+          ),
+          "Use StreamConsumeError without type arguments.",
+        )));
+      }
+      let id = "calcit.core/StreamConsumeError".to_owned();
+      context.required.insert(id.clone());
+      return Ok(FfiTypeIr::Enum { id, arguments: vec![] });
     }
     let converted = convert_type_arguments(arguments, definition, path, context)?;
     return match (builtin, converted.as_slice()) {
@@ -927,6 +945,22 @@ fn convert_reachable_declarations(
       continue;
     }
     let Some(candidates) = declarations.get(&id) else {
+      if id == "calcit.core/StreamConsumeError" {
+        converted.insert(
+          id.clone(),
+          FfiTypeDeclarationIr::Enum {
+            id,
+            namespace: "calcit.core".into(),
+            name: "StreamConsumeError".into(),
+            type_parameters: vec![],
+            variants: vec![FfiEnumVariantIr {
+              name: "total-limit".into(),
+              payload: vec![],
+            }],
+          },
+        );
+        continue;
+      }
       diagnostics.push(diagnostic(
         owner_definition,
         format!("declarations.{id}"),

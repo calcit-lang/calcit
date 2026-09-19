@@ -32,8 +32,8 @@ use wasm_encoder::{
 use crate::builtins::syntax::get_raw_args_fn;
 use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
 use crate::calcit::{
-  Calcit, CalcitArgLabel, CalcitEnumDef, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitNumericRefinement, CalcitProc, CalcitStructDef,
-  CalcitSyntax, CalcitTypeAnnotation, MethodKind,
+  Calcit, CalcitArgLabel, CalcitEnumDef, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImport, CalcitLocal, CalcitNumericRefinement,
+  CalcitProc, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation, MethodKind,
 };
 use crate::program;
 
@@ -300,11 +300,20 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     if component_import_adapters
       .iter()
       .any(|adapter| adapter.invocation == ComponentAbiInvocation::Async)
+      || component_adapters.iter().any(|adapter| adapter.stream_consumer.is_some())
     {
       component_async_canonical_imports = Some(register_component_async_canonical_imports(&mut host_imports));
     }
-    if component_adapters.iter().any(|adapter| adapter.stackless_tail_import.is_some()) {
+    if component_adapters
+      .iter()
+      .any(|adapter| adapter.stackless_tail_import.is_some() || adapter.stream_consumer.is_some())
+    {
       component_stackless_canonical_imports = Some(register_component_stackless_canonical_imports(&mut host_imports));
+    }
+    for adapter in &mut component_adapters {
+      if let Some(consumer) = &mut adapter.stream_consumer {
+        register_component_stream_canonical_imports(&mut host_imports, &adapter.symbol, consumer);
+      }
     }
     for adapter in &mut component_adapters {
       if adapter.invocation != ComponentAbiInvocation::Async {
@@ -787,6 +796,14 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
       .fn_index
       .get(&adapter.definition)
       .ok_or_else(|| format!("E_COMPONENT_ABI_TARGET: compiled target `{}` is missing", adapter.definition))?;
+    if let Some(consumer) = &mut adapter.stream_consumer {
+      consumer.handler_index = *env.fn_index.get(&consumer.handler_definition).ok_or_else(|| {
+        format!(
+          "E_COMPONENT_STREAM_HANDLER: compiled handler `{}` for `{}` is missing",
+          consumer.handler_definition, adapter.definition
+        )
+      })?;
+    }
   }
 
   // Second pass: target failures reject the artifact. Dependency failures keep
@@ -801,9 +818,26 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     } else {
       def_name.clone()
     };
-    // Try custom implementation (avoids skip for known-good WASM rewrites).
-    let result = try_custom_def_impl(ns, def_name, &export_name, args, &env)
-      .unwrap_or_else(|| compile_fn(def_name, &export_name, args, body, &env));
+    let stream_export = boundary == WasmBoundary::Component
+      && component_adapters
+        .iter()
+        .any(|adapter| adapter.definition == format!("{ns}/{def_name}") && adapter.stream_consumer.is_some());
+    // Scoped stream exports are compiler forms. Their source body is validated above,
+    // then replaced by the dedicated adapter so a raw stream handle can never enter
+    // the ordinary Calcit numeric ABI.
+    let result = if stream_export {
+      let (arity, _) = compute_fn_arity(args);
+      Ok(CompiledFn {
+        export_name: None,
+        params: vec![ValType::F64; arity as usize],
+        results: vec![ValType::F64],
+        locals: vec![],
+        instructions: vec![Instruction::Unreachable],
+      })
+    } else {
+      try_custom_def_impl(ns, def_name, &export_name, args, &env)
+        .unwrap_or_else(|| compile_fn(def_name, &export_name, args, body, &env))
+    };
     match result {
       Ok(mut func) => {
         if boundary == WasmBoundary::Component && explicit_export {
@@ -844,7 +878,25 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
       drop_indices: &component_drop_indices,
     };
     for adapter in &component_adapters {
-      if let Some(import_definition) = &adapter.stackless_tail_import {
+      if adapter.stream_consumer.is_some() {
+        let step_index = num_imports + compiled_fns.len() as u32;
+        let [step, entry, callback] = build_component_stream_export(
+          adapter,
+          component_async_canonical_imports
+            .as_ref()
+            .expect("stream export must register async lifecycle imports"),
+          component_stackless_canonical_imports
+            .as_ref()
+            .expect("stream export must register callback lifecycle imports"),
+          buffer_new_index,
+          component_cabi_free_index.expect("stream export must install cabi_free"),
+          cabi_realloc_index,
+          step_index,
+        );
+        compiled_fns.push(step);
+        compiled_fns.push(entry);
+        compiled_fns.push(callback);
+      } else if let Some(import_definition) = &adapter.stackless_tail_import {
         let imported = component_import_adapters
           .iter()
           .find(|imported| &imported.definition == import_definition)
@@ -1064,9 +1116,23 @@ struct ComponentExportAdapter {
   target_index: u32,
   invocation: ComponentAbiInvocation,
   stackless_tail_import: Option<String>,
+  stream_consumer: Option<ComponentStreamConsumer>,
   task_return_index: Option<u32>,
   parameters: Vec<ComponentAbiType>,
   result: ComponentAbiType,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ComponentStreamConsumer {
+  parameter_index: usize,
+  max_total_bytes: u32,
+  max_chunk_bytes: u32,
+  handler_definition: String,
+  handler_index: u32,
+  total_limit_variant: u32,
+  stream_read_index: u32,
+  stream_cancel_read_index: u32,
+  stream_drop_readable_index: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1102,6 +1168,35 @@ struct ComponentStacklessCanonicalImports {
   context_set: u32,
   subtask_cancel: u32,
   task_cancel: u32,
+}
+
+fn register_component_stream_canonical_imports(
+  host_imports: &mut Vec<HostImport>,
+  symbol: &str,
+  consumer: &mut ComponentStreamConsumer,
+) {
+  let mut register = |name: String, params: Vec<ValType>, results: Vec<ValType>| {
+    let index = host_imports.len() as u32;
+    host_imports.push(HostImport {
+      module: COMPONENT_ASYNC_EXPORT_IMPORT_MODULE.into(),
+      name,
+      params,
+      results,
+    });
+    index
+  };
+  let suffix = format!("{}]{symbol}", consumer.parameter_index);
+  consumer.stream_read_index = register(
+    format!("[async-lower][stream-read-{suffix}"),
+    vec![ValType::I32, ValType::I32, ValType::I32],
+    vec![ValType::I32],
+  );
+  consumer.stream_cancel_read_index = register(
+    format!("[async-lower][stream-cancel-read-{suffix}"),
+    vec![ValType::I32],
+    vec![ValType::I32],
+  );
+  consumer.stream_drop_readable_index = register(format!("[stream-drop-readable-{suffix}"), vec![ValType::I32], vec![]);
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1163,7 +1258,7 @@ fn component_async_import_symbol(symbol: &str) -> String {
 }
 
 fn component_async_export_symbol(adapter: &ComponentExportAdapter) -> String {
-  if adapter.stackless_tail_import.is_some() {
+  if adapter.stackless_tail_import.is_some() || adapter.stream_consumer.is_some() {
     format!("[async-lift]{}", adapter.symbol)
   } else {
     format!("[async-lift-stackful]{}", adapter.symbol)
@@ -1263,6 +1358,13 @@ fn component_abi_type_inner(
             program_data,
           )?),
         )),
+        ("StreamConsumeError" | "calcit.core/StreamConsumeError", []) => Ok(ComponentAbiType::Enum(ComponentEnumType {
+          id: "calcit.core/StreamConsumeError".into(),
+          variants: vec![ComponentEnumVariant {
+            tag: "total-limit".into(),
+            payload: vec![],
+          }],
+        })),
         ("Option" | "calcit.core/Option", _) => Err(format!(
           "E_COMPONENT_ABI_TYPE_ARGUMENT_ARITY: `{definition}` at `{path}` requires Option<T> with exactly one type argument"
         )),
@@ -1499,6 +1601,7 @@ fn component_function_schema(
   source_arity: usize,
   program_data: &program::CompiledProgram,
   validate_direct_parameter_limit: bool,
+  allow_readable_byte_stream: bool,
 ) -> Result<(Vec<ComponentAbiType>, ComponentAbiType, ComponentAbiInvocation), String> {
   let signature = compiled
     .schema
@@ -1524,13 +1627,23 @@ fn component_function_schema(
     .iter()
     .enumerate()
     .map(|(index, annotation)| {
-      component_abi_type_inner(
-        annotation,
-        definition,
-        &format!("logical_schema.parameters[{index}]"),
-        &mut Vec::new(),
-        Some(program_data),
-      )
+      if is_readable_byte_stream_annotation(annotation) {
+        if allow_readable_byte_stream {
+          Ok(ComponentAbiType::Numeric(CalcitNumericRefinement::UInt32))
+        } else {
+          Err(format!(
+            "E_COMPONENT_ABI_STREAM_DIRECTION: `{definition}` at `logical_schema.parameters[{index}]` can consume ReadableByteStream only from an async Component export"
+          ))
+        }
+      } else {
+        component_abi_type_inner(
+          annotation,
+          definition,
+          &format!("logical_schema.parameters[{index}]"),
+          &mut Vec::new(),
+          Some(program_data),
+        )
+      }
     })
     .collect::<Result<Vec<_>, _>>()?;
   if let Some(index) = parameters.iter().position(|parameter| matches!(parameter, ComponentAbiType::Unit)) {
@@ -1555,6 +1668,15 @@ fn component_function_schema(
     Some(program_data),
   )?;
   Ok((parameters, result, invocation))
+}
+
+fn is_readable_byte_stream_annotation(annotation: &CalcitTypeAnnotation) -> bool {
+  matches!(
+    annotation,
+    CalcitTypeAnnotation::TypeRef(name, arguments)
+      if arguments.is_empty()
+        && matches!(name.trim_start_matches('\'').trim_start_matches(':'), "ReadableByteStream" | "calcit.core/ReadableByteStream")
+  )
 }
 
 const COMPONENT_MAX_FLAT_PARAMETERS: usize = 16;
@@ -1664,7 +1786,7 @@ fn collect_component_import_adapters(program_data: &program::CompiledProgram) ->
       let source_arity = wasm_import_arity(&args)
         .map_err(|reason| format!("E_COMPONENT_ABI_UNSUPPORTED_ARITY: `{definition}` at `logical_schema.parameters` {reason}"))?;
       let (parameters, result, invocation) =
-        component_function_schema(compiled, &definition, source_arity as usize, program_data, false)?;
+        component_function_schema(compiled, &definition, source_arity as usize, program_data, false, false)?;
       if invocation == ComponentAbiInvocation::Sync {
         validate_component_flat_parameters(&parameters, &definition)?;
       }
@@ -1711,6 +1833,188 @@ fn direct_tail_import_definition(body: &[Calcit], args: &CalcitFnArgs) -> Option
   Some(format!("{}/{}", import.ns, import.def))
 }
 
+fn direct_definition_reference(value: &Calcit) -> Option<String> {
+  match value {
+    Calcit::Import(import) => Some(format!("{}/{}", import.ns, import.def)),
+    Calcit::Symbol { sym, info, .. } => Some(format!("{}/{}", info.at_ns, sym)),
+    _ => None,
+  }
+}
+
+fn is_consume_readable_byte_stream(value: &Calcit) -> bool {
+  match value {
+    Calcit::Import(import) => import.def.as_ref() == "consume-readable-byte-stream",
+    Calcit::Symbol { sym, .. } => sym.as_ref() == "consume-readable-byte-stream",
+    _ => false,
+  }
+}
+
+fn positive_u32_literal(value: &Calcit, definition: &str, path: &str) -> Result<u32, String> {
+  let Calcit::Number(value) = value else {
+    return Err(format!(
+      "E_COMPONENT_STREAM_LITERAL_BOUND: `{definition}` at `{path}` must be a positive integer literal"
+    ));
+  };
+  if !value.is_finite() || value.fract() != 0.0 || *value <= 0.0 || *value > i32::MAX as f64 {
+    return Err(format!(
+      "E_COMPONENT_STREAM_LITERAL_BOUND: `{definition}` at `{path}` must be a positive integer literal no greater than {}",
+      i32::MAX
+    ));
+  }
+  Ok(*value as u32)
+}
+
+fn component_stream_total_limit_variant(result: &ComponentAbiType, definition: &str) -> Result<u32, String> {
+  let ComponentAbiType::Result(ok, error) = result else {
+    return Err(format!(
+      "E_COMPONENT_STREAM_RESULT: `{definition}` must return Result<Unit, StreamConsumeError>"
+    ));
+  };
+  if !matches!(ok.as_ref(), ComponentAbiType::Unit) {
+    return Err(format!(
+      "E_COMPONENT_STREAM_RESULT: `{definition}` must return Result<Unit, StreamConsumeError>"
+    ));
+  }
+  let ComponentAbiType::Enum(error) = error.as_ref() else {
+    return Err(format!(
+      "E_COMPONENT_STREAM_RESULT: `{definition}` must use a named StreamConsumeError enum"
+    ));
+  };
+  if error.id != "calcit.core/StreamConsumeError" {
+    return Err(format!(
+      "E_COMPONENT_STREAM_RESULT: `{definition}` must return Result<Unit, StreamConsumeError>, not `{}`",
+      error.id
+    ));
+  }
+  error
+    .variants
+    .iter()
+    .position(|variant| variant.tag == "total-limit" && variant.payload.is_empty())
+    .map(|index| index as u32)
+    .ok_or_else(|| {
+      format!(
+        "E_COMPONENT_STREAM_RESULT: `{definition}` error enum `{}` must define a payload-free `:total-limit` variant",
+        error.id
+      )
+    })
+}
+
+fn component_stream_consumer(
+  definition: &str,
+  body: &[Calcit],
+  args: &CalcitFnArgs,
+  signature: &CalcitFnTypeAnnotation,
+  result: &ComponentAbiType,
+  program_data: &program::CompiledProgram,
+) -> Result<Option<ComponentStreamConsumer>, String> {
+  let stream_parameters = signature
+    .arg_types
+    .iter()
+    .enumerate()
+    .filter(|(_, annotation)| is_readable_byte_stream_annotation(annotation))
+    .map(|(index, _)| index)
+    .collect::<Vec<_>>();
+  if stream_parameters.is_empty() {
+    return Ok(None);
+  }
+  let [parameter_index] = stream_parameters.as_slice() else {
+    return Err(format!(
+      "E_COMPONENT_STREAM_PARAMETER_COUNT: `{definition}` must consume exactly one ReadableByteStream"
+    ));
+  };
+  if signature.arg_types.len() != 1 || *parameter_index != 0 {
+    return Err(format!(
+      "E_COMPONENT_STREAM_PARAMETER_COUNT: `{definition}` first slice requires ReadableByteStream to be the only parameter"
+    ));
+  }
+  if !signature.is_async_invocation() {
+    return Err(format!(
+      "E_COMPONENT_STREAM_REQUIRES_ASYNC: `{definition}` must use an async function schema"
+    ));
+  }
+  let expressions = body
+    .iter()
+    .filter(|item| CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(item).is_none())
+    .collect::<Vec<_>>();
+  let [Calcit::List(call)] = expressions.as_slice() else {
+    return Err(format!(
+      "E_COMPONENT_STREAM_CONSUMER_SHAPE: `{definition}` must contain exactly one `consume-readable-byte-stream stream max-total-bytes max-chunk-bytes on-chunk` expression"
+    ));
+  };
+  let (Some(head), Some(stream), Some(max_total), Some(max_chunk), Some(handler)) =
+    (call.get(0), call.get(1), call.get(2), call.get(3), call.get(4))
+  else {
+    return Err(format!(
+      "E_COMPONENT_STREAM_CONSUMER_SHAPE: `{definition}` must call `consume-readable-byte-stream` with four arguments"
+    ));
+  };
+  if call.len() != 5 {
+    return Err(format!(
+      "E_COMPONENT_STREAM_CONSUMER_SHAPE: `{definition}` must call `consume-readable-byte-stream` with four arguments"
+    ));
+  }
+  if !is_consume_readable_byte_stream(head) {
+    return Err(format!(
+      "E_COMPONENT_STREAM_CONSUMER_SHAPE: `{definition}` must delegate its stream parameter to `consume-readable-byte-stream`"
+    ));
+  }
+  let parameters = fn_param_names(args);
+  let Some(parameter_name) = parameters.get(*parameter_index) else {
+    return Err(format!(
+      "E_COMPONENT_STREAM_PARAMETER: `{definition}` stream parameter is missing from the source arguments"
+    ));
+  };
+  if !matches!(stream, Calcit::Local(local) if local.sym.as_ref() == parameter_name) {
+    return Err(format!(
+      "E_COMPONENT_STREAM_PARAMETER: `{definition}` must pass its ReadableByteStream parameter directly without storing, copying, or wrapping it"
+    ));
+  }
+  let max_total_bytes = positive_u32_literal(max_total, definition, "consume-readable-byte-stream.max-total-bytes")?;
+  let max_chunk_bytes = positive_u32_literal(max_chunk, definition, "consume-readable-byte-stream.max-chunk-bytes")?;
+  if max_chunk_bytes > max_total_bytes {
+    return Err(format!(
+      "E_COMPONENT_STREAM_BOUND_ORDER: `{definition}` max-chunk-bytes ({max_chunk_bytes}) cannot exceed max-total-bytes ({max_total_bytes})"
+    ));
+  }
+  let handler_definition = direct_definition_reference(handler).ok_or_else(|| {
+    format!(
+      "E_COMPONENT_STREAM_HANDLER: `{definition}` requires a top-level `(Buffer) -> Bool` handler; inline or dynamic callbacks are not supported"
+    )
+  })?;
+  let (handler_namespace, handler_name) = handler_definition
+    .rsplit_once('/')
+    .ok_or_else(|| format!("E_COMPONENT_STREAM_HANDLER: invalid handler `{handler_definition}`"))?;
+  let handler = program_data
+    .get(handler_namespace)
+    .and_then(|file| file.defs.get(handler_name))
+    .ok_or_else(|| format!("E_COMPONENT_STREAM_HANDLER: `{definition}` cannot resolve handler `{handler_definition}`"))?;
+  let handler_signature = handler
+    .schema
+    .resolve_to_fn()
+    .ok_or_else(|| format!("E_COMPONENT_STREAM_HANDLER: `{handler_definition}` must declare a `(Buffer) -> Bool` function schema"))?;
+  if handler_signature.is_async_invocation()
+    || handler_signature.rest_type.is_some()
+    || !handler_signature.generics.is_empty()
+    || !matches!(handler_signature.arg_types.as_slice(), [item] if matches!(item.as_ref(), CalcitTypeAnnotation::Buffer))
+    || !matches!(handler_signature.return_type.as_ref(), CalcitTypeAnnotation::Bool)
+  {
+    return Err(format!(
+      "E_COMPONENT_STREAM_HANDLER: `{handler_definition}` must be a synchronous, monomorphic `(Buffer) -> Bool` function"
+    ));
+  }
+  Ok(Some(ComponentStreamConsumer {
+    parameter_index: *parameter_index,
+    max_total_bytes,
+    max_chunk_bytes,
+    handler_definition,
+    handler_index: 0,
+    total_limit_variant: component_stream_total_limit_variant(result, definition)?,
+    stream_read_index: 0,
+    stream_cancel_read_index: 0,
+    stream_drop_readable_index: 0,
+  }))
+}
+
 fn collect_component_export_adapters(
   program_data: &program::CompiledProgram,
   fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
@@ -1731,11 +2035,16 @@ fn collect_component_export_adapters(
       ));
     }
     let source_arity = fn_param_names(args).len();
-    let (parameters, result, invocation) = component_function_schema(compiled, &definition, source_arity, program_data, true)?;
+    let (parameters, result, invocation) = component_function_schema(compiled, &definition, source_arity, program_data, true, true)?;
+    let signature = compiled
+      .schema
+      .resolve_to_fn()
+      .expect("component_function_schema already required a resolved function schema");
+    let stream_consumer = component_stream_consumer(&definition, body, args, &signature, &result, program_data)?;
     let target_index = *fn_index
       .get(&definition)
       .ok_or_else(|| format!("E_COMPONENT_ABI_TARGET: compiled target `{definition}` is missing"))?;
-    let stackless_tail_import = if invocation == ComponentAbiInvocation::Async {
+    let stackless_tail_import = if invocation == ComponentAbiInvocation::Async && stream_consumer.is_none() {
       direct_tail_import_definition(body, args).filter(|import_definition| {
         let Some((import_namespace, import_name)) = import_definition.rsplit_once('/') else {
           return false;
@@ -1747,7 +2056,8 @@ fn collect_component_export_adapters(
         else {
           return false;
         };
-        let Ok(import_signature) = component_function_schema(imported, import_definition, source_arity, program_data, false) else {
+        let Ok(import_signature) = component_function_schema(imported, import_definition, source_arity, program_data, false, false)
+        else {
           return false;
         };
         import_signature.2 == ComponentAbiInvocation::Async && import_signature.0 == parameters && import_signature.1 == result
@@ -1761,6 +2071,7 @@ fn collect_component_export_adapters(
       target_index,
       invocation,
       stackless_tail_import,
+      stream_consumer,
       task_return_index: None,
       parameters,
       result,
@@ -1781,7 +2092,7 @@ fn validate_component_export_symbols(adapters: &[ComponentExportAdapter]) -> Res
       .entry(component_export_emitted_symbol(adapter))
       .or_default()
       .push(adapter.definition.as_str());
-    if adapter.stackless_tail_import.is_some() {
+    if adapter.stackless_tail_import.is_some() || adapter.stream_consumer.is_some() {
       symbol_owners
         .entry(component_async_callback_symbol(adapter))
         .or_default()
@@ -3067,6 +3378,340 @@ fn push_component_stackless_cleanup(
     Instruction::LocalGet(waitable_set),
     Instruction::Call(canonical.waitable_set_drop),
   ]);
+}
+
+const STREAM_STATE_HANDLE: u64 = 0;
+const STREAM_STATE_WAITABLE_SET: u64 = 4;
+const STREAM_STATE_CHUNK_PTR: u64 = 8;
+const STREAM_STATE_TOTAL: u64 = 12;
+const STREAM_STATE_CANCEL_REQUESTED: u64 = 16;
+const STREAM_STATE_SIZE: i32 = 20;
+
+fn push_component_stream_cleanup(
+  consumer: &ComponentStreamConsumer,
+  canonical: &ComponentAsyncCanonicalImports,
+  stackless: &ComponentStacklessCanonicalImports,
+  cabi_free_index: u32,
+  state: u32,
+  instructions: &mut Vec<Instruction<'static>>,
+) {
+  instructions.extend([
+    Instruction::LocalGet(state),
+    Instruction::I32Load(mem_arg_i32(STREAM_STATE_HANDLE)),
+    Instruction::I32Const(0),
+    Instruction::Call(canonical.waitable_join),
+    Instruction::LocalGet(state),
+    Instruction::I32Load(mem_arg_i32(STREAM_STATE_HANDLE)),
+    Instruction::Call(consumer.stream_drop_readable_index),
+    Instruction::LocalGet(state),
+    Instruction::I32Load(mem_arg_i32(STREAM_STATE_WAITABLE_SET)),
+    Instruction::Call(canonical.waitable_set_drop),
+    Instruction::I32Const(0),
+    Instruction::Call(stackless.context_set),
+    Instruction::LocalGet(state),
+    Instruction::I32Load(mem_arg_i32(STREAM_STATE_CHUNK_PTR)),
+    Instruction::I32Const(consumer.max_chunk_bytes as i32),
+    Instruction::Call(cabi_free_index),
+    Instruction::LocalGet(state),
+    Instruction::I32Const(STREAM_STATE_SIZE),
+    Instruction::Call(cabi_free_index),
+  ]);
+}
+
+fn push_component_stream_task_return(
+  adapter: &ComponentExportAdapter,
+  result_discriminant: i32,
+  error_variant: i32,
+  instructions: &mut Vec<Instruction<'static>>,
+) {
+  instructions.extend([
+    Instruction::I32Const(result_discriminant),
+    Instruction::I32Const(error_variant),
+    Instruction::Call(adapter.task_return_index.expect("stream export must have task.return")),
+    Instruction::I32Const(0),
+    Instruction::Return,
+  ]);
+}
+
+fn build_component_stream_export(
+  adapter: &ComponentExportAdapter,
+  canonical: &ComponentAsyncCanonicalImports,
+  stackless: &ComponentStacklessCanonicalImports,
+  buffer_new_index: u32,
+  cabi_free_index: u32,
+  cabi_realloc_index: u32,
+  step_index: u32,
+) -> [CompiledFn; 3] {
+  let consumer = adapter
+    .stream_consumer
+    .as_ref()
+    .expect("stream export builder requires a stream consumer");
+
+  // step(state, return-code) drives immediate reads in a loop and yields only
+  // while exactly one canonical stream read is outstanding.
+  let step_params = vec![ValType::I32, ValType::I32];
+  let mut step_locals = Vec::new();
+  let local = |locals: &mut Vec<ValType>, ty| {
+    let index = step_params.len() as u32 + locals.len() as u32;
+    locals.push(ty);
+    index
+  };
+  let kind = local(&mut step_locals, ValType::I32);
+  let count = local(&mut step_locals, ValType::I32);
+  let total = local(&mut step_locals, ValType::I32);
+  let continue_reading = local(&mut step_locals, ValType::I32);
+  let handler_result = local(&mut step_locals, ValType::F64);
+  let read_len = local(&mut step_locals, ValType::I32);
+  let mut step = vec![Instruction::Loop(wasm_encoder::BlockType::Empty)];
+  step.extend([
+    Instruction::LocalGet(1),
+    Instruction::I32Const(-1),
+    Instruction::I32Eq,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::LocalGet(0),
+    Instruction::I32Load(mem_arg_i32(STREAM_STATE_WAITABLE_SET)),
+    Instruction::I32Const(4),
+    Instruction::I32Shl,
+    Instruction::I32Const(2),
+    Instruction::I32Or,
+    Instruction::Return,
+    Instruction::End,
+    Instruction::LocalGet(1),
+    Instruction::I32Const(0x0f),
+    Instruction::I32And,
+    Instruction::LocalTee(kind),
+    Instruction::I32Const(1),
+    Instruction::I32GtU,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(1),
+    Instruction::I32Const(4),
+    Instruction::I32ShrU,
+    Instruction::LocalSet(count),
+    Instruction::I32Const(1),
+    Instruction::LocalSet(continue_reading),
+    Instruction::LocalGet(0),
+    Instruction::I32Load(mem_arg_i32(STREAM_STATE_TOTAL)),
+    Instruction::LocalSet(total),
+    Instruction::LocalGet(count),
+    Instruction::I32Eqz,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Else,
+    Instruction::LocalGet(total),
+    Instruction::LocalGet(count),
+    Instruction::I32Add,
+    Instruction::LocalTee(total),
+    Instruction::I32Const(consumer.max_total_bytes as i32),
+    Instruction::I32GtU,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+  ]);
+  push_component_stream_cleanup(consumer, canonical, stackless, cabi_free_index, 0, &mut step);
+  push_component_stream_task_return(adapter, 1, consumer.total_limit_variant as i32, &mut step);
+  step.extend([
+    Instruction::End,
+    Instruction::LocalGet(0),
+    Instruction::LocalGet(total),
+    Instruction::I32Store(mem_arg_i32(STREAM_STATE_TOTAL)),
+    Instruction::LocalGet(0),
+    Instruction::I32Load(mem_arg_i32(STREAM_STATE_CHUNK_PTR)),
+    Instruction::LocalGet(count),
+    Instruction::Call(buffer_new_index),
+    Instruction::Call(consumer.handler_index),
+    Instruction::LocalTee(handler_result),
+    Instruction::I32TruncF64U,
+    Instruction::LocalTee(continue_reading),
+    Instruction::F64ConvertI32U,
+    Instruction::LocalGet(handler_result),
+    Instruction::F64Ne,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(continue_reading),
+    Instruction::I32Const(1),
+    Instruction::I32GtU,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::End,
+    Instruction::LocalGet(kind),
+    Instruction::I32Const(1),
+    Instruction::I32Eq,
+    Instruction::LocalGet(continue_reading),
+    Instruction::I32Eqz,
+    Instruction::I32Or,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+  ]);
+  push_component_stream_cleanup(consumer, canonical, stackless, cabi_free_index, 0, &mut step);
+  push_component_stream_task_return(adapter, 0, 0, &mut step);
+  step.extend([
+    Instruction::End,
+    Instruction::I32Const(consumer.max_total_bytes as i32),
+    Instruction::LocalGet(total),
+    Instruction::I32Sub,
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::I32Const(consumer.max_chunk_bytes as i32),
+    Instruction::I32LtU,
+    Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)),
+    Instruction::I32Const(consumer.max_total_bytes as i32),
+    Instruction::LocalGet(total),
+    Instruction::I32Sub,
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::Else,
+    Instruction::I32Const(consumer.max_chunk_bytes as i32),
+    Instruction::End,
+    Instruction::LocalSet(read_len),
+    Instruction::LocalGet(0),
+    Instruction::I32Load(mem_arg_i32(STREAM_STATE_HANDLE)),
+    Instruction::LocalGet(0),
+    Instruction::I32Load(mem_arg_i32(STREAM_STATE_CHUNK_PTR)),
+    Instruction::LocalGet(read_len),
+    Instruction::Call(consumer.stream_read_index),
+    Instruction::LocalSet(1),
+    Instruction::Br(0),
+    Instruction::End,
+    Instruction::Unreachable,
+  ]);
+  let step_fn = CompiledFn {
+    export_name: None,
+    params: step_params,
+    results: vec![ValType::I32],
+    locals: step_locals,
+    instructions: step,
+  };
+
+  let entry_params = vec![ValType::I32];
+  let entry_locals = vec![ValType::I32, ValType::I32, ValType::I32];
+  let state = 1;
+  let waitable_set = 2;
+  let chunk_ptr = 3;
+  let entry = vec![
+    Instruction::Call(canonical.waitable_set_new),
+    Instruction::LocalSet(waitable_set),
+    Instruction::LocalGet(0),
+    Instruction::LocalGet(waitable_set),
+    Instruction::Call(canonical.waitable_join),
+    Instruction::I32Const(0),
+    Instruction::I32Const(0),
+    Instruction::I32Const(1),
+    Instruction::I32Const(consumer.max_chunk_bytes as i32),
+    Instruction::Call(cabi_realloc_index),
+    Instruction::LocalSet(chunk_ptr),
+    Instruction::I32Const(0),
+    Instruction::I32Const(0),
+    Instruction::I32Const(4),
+    Instruction::I32Const(STREAM_STATE_SIZE),
+    Instruction::Call(cabi_realloc_index),
+    Instruction::LocalSet(state),
+    Instruction::LocalGet(state),
+    Instruction::LocalGet(0),
+    Instruction::I32Store(mem_arg_i32(STREAM_STATE_HANDLE)),
+    Instruction::LocalGet(state),
+    Instruction::LocalGet(waitable_set),
+    Instruction::I32Store(mem_arg_i32(STREAM_STATE_WAITABLE_SET)),
+    Instruction::LocalGet(state),
+    Instruction::LocalGet(chunk_ptr),
+    Instruction::I32Store(mem_arg_i32(STREAM_STATE_CHUNK_PTR)),
+    Instruction::LocalGet(state),
+    Instruction::I32Const(0),
+    Instruction::I32Store(mem_arg_i32(STREAM_STATE_TOTAL)),
+    Instruction::LocalGet(state),
+    Instruction::I32Const(0),
+    Instruction::I32Store(mem_arg_i32(STREAM_STATE_CANCEL_REQUESTED)),
+    Instruction::LocalGet(state),
+    Instruction::Call(stackless.context_set),
+    Instruction::LocalGet(state),
+    Instruction::LocalGet(0),
+    Instruction::LocalGet(chunk_ptr),
+    Instruction::I32Const(consumer.max_chunk_bytes as i32),
+    Instruction::Call(consumer.stream_read_index),
+    Instruction::Call(step_index),
+  ];
+  let entry_fn = CompiledFn {
+    export_name: Some(component_async_export_symbol(adapter)),
+    params: entry_params,
+    results: vec![ValType::I32],
+    locals: entry_locals,
+    instructions: entry,
+  };
+
+  let callback_params = vec![ValType::I32; 3];
+  let callback_locals = vec![ValType::I32, ValType::I32];
+  let callback_state = 3;
+  let cancel_status = 4;
+  let mut callback = vec![
+    Instruction::Call(stackless.context_get),
+    Instruction::LocalTee(callback_state),
+    Instruction::I32Eqz,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(callback_state),
+    Instruction::I32Load(mem_arg_i32(STREAM_STATE_CANCEL_REQUESTED)),
+    Instruction::If(wasm_encoder::BlockType::Empty),
+  ];
+  push_component_stream_cleanup(consumer, canonical, stackless, cabi_free_index, callback_state, &mut callback);
+  callback.extend([
+    Instruction::Call(stackless.task_cancel),
+    Instruction::I32Const(0),
+    Instruction::Return,
+    Instruction::End,
+    Instruction::LocalGet(0),
+    Instruction::I32Const(6),
+    Instruction::I32Eq,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::LocalGet(callback_state),
+    Instruction::I32Const(1),
+    Instruction::I32Store(mem_arg_i32(STREAM_STATE_CANCEL_REQUESTED)),
+    Instruction::LocalGet(callback_state),
+    Instruction::I32Load(mem_arg_i32(STREAM_STATE_HANDLE)),
+    Instruction::Call(consumer.stream_cancel_read_index),
+    Instruction::LocalTee(cancel_status),
+    Instruction::I32Const(-1),
+    Instruction::I32Eq,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::LocalGet(callback_state),
+    Instruction::I32Load(mem_arg_i32(STREAM_STATE_WAITABLE_SET)),
+    Instruction::I32Const(4),
+    Instruction::I32Shl,
+    Instruction::I32Const(2),
+    Instruction::I32Or,
+    Instruction::Return,
+    Instruction::End,
+  ]);
+  push_component_stream_cleanup(consumer, canonical, stackless, cabi_free_index, callback_state, &mut callback);
+  callback.extend([
+    Instruction::Call(stackless.task_cancel),
+    Instruction::I32Const(0),
+    Instruction::Return,
+    Instruction::End,
+    Instruction::LocalGet(0),
+    Instruction::I32Const(2),
+    Instruction::I32Ne,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(1),
+    Instruction::LocalGet(callback_state),
+    Instruction::I32Load(mem_arg_i32(STREAM_STATE_HANDLE)),
+    Instruction::I32Ne,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(callback_state),
+    Instruction::LocalGet(2),
+    Instruction::Call(step_index),
+  ]);
+  let callback_fn = CompiledFn {
+    export_name: Some(component_async_callback_symbol(adapter)),
+    params: callback_params,
+    results: vec![ValType::I32],
+    locals: callback_locals,
+    instructions: callback,
+  };
+  [step_fn, entry_fn, callback_fn]
 }
 
 fn build_component_stackless_tail_export(
@@ -7030,8 +7675,25 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
 /// Builtin type tags always registered in tag_index, so `type-of` can return them
 /// and heap objects can carry them in their header slot.
 const BUILTIN_TYPE_TAGS: &[&str] = &[
-  "buf-list", "list", "map", "set", "enum", "struct", "number", "bool", "nil", "tag", "fn", "string", "symbol", "buffer", "none",
-  "some", "ok", "err",
+  "buf-list",
+  "list",
+  "map",
+  "set",
+  "enum",
+  "struct",
+  "number",
+  "bool",
+  "nil",
+  "tag",
+  "fn",
+  "string",
+  "symbol",
+  "buffer",
+  "none",
+  "some",
+  "ok",
+  "err",
+  "total-limit",
 ];
 
 fn collect_all_tags_from(
@@ -7517,6 +8179,7 @@ mod tests {
         target_index: 20,
         invocation: ComponentAbiInvocation::Sync,
         stackless_tail_import: None,
+        stream_consumer: None,
         task_return_index: None,
         parameters: vec![ComponentAbiType::Number],
         result: ComponentAbiType::Number,
@@ -7533,6 +8196,7 @@ mod tests {
         target_index: 21,
         invocation: ComponentAbiInvocation::Sync,
         stackless_tail_import: None,
+        stream_consumer: None,
         task_return_index: None,
         parameters: vec![ComponentAbiType::String],
         result: ComponentAbiType::String,
@@ -7549,6 +8213,7 @@ mod tests {
         target_index: 22,
         invocation: ComponentAbiInvocation::Sync,
         stackless_tail_import: None,
+        stream_consumer: None,
         task_return_index: None,
         parameters: vec![ComponentAbiType::Buffer],
         result: ComponentAbiType::Buffer,
@@ -7572,6 +8237,7 @@ mod tests {
       target_index: 20,
       invocation: ComponentAbiInvocation::Async,
       stackless_tail_import: None,
+      stream_consumer: None,
       task_return_index: Some(31),
       parameters: vec![ComponentAbiType::String],
       result: ComponentAbiType::String,
@@ -7929,6 +8595,7 @@ mod tests {
         target_index: 20,
         invocation: ComponentAbiInvocation::Sync,
         stackless_tail_import: None,
+        stream_consumer: None,
         task_return_index: None,
         parameters: vec![ComponentAbiType::Bool],
         result: ComponentAbiType::Bool,
@@ -8029,6 +8696,7 @@ mod tests {
       target_index: 20,
       invocation,
       stackless_tail_import: None,
+      stream_consumer: None,
       task_return_index: None,
       parameters: vec![],
       result,
@@ -8089,6 +8757,7 @@ mod tests {
       target_index: 20,
       invocation,
       stackless_tail_import: None,
+      stream_consumer: None,
       task_return_index: None,
       parameters: vec![ComponentAbiType::Number],
       result: ComponentAbiType::Number,
@@ -8112,6 +8781,7 @@ mod tests {
       target_index: 20,
       invocation,
       stackless_tail_import: None,
+      stream_consumer: None,
       task_return_index: None,
       parameters: vec![ComponentAbiType::Number],
       result: ComponentAbiType::Number,
@@ -8135,6 +8805,7 @@ mod tests {
       target_index: 20,
       invocation,
       stackless_tail_import: None,
+      stream_consumer: None,
       task_return_index: None,
       parameters: vec![ComponentAbiType::Number],
       result: ComponentAbiType::Number,
@@ -8160,6 +8831,7 @@ mod tests {
       target_index: 20,
       invocation: ComponentAbiInvocation::Sync,
       stackless_tail_import: None,
+      stream_consumer: None,
       task_return_index: None,
       parameters: vec![],
       result,

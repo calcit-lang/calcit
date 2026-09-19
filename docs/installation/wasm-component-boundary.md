@@ -133,8 +133,8 @@ export 对应 `canon lift`，超过同步 Canonical ABI 单结果上限的 flat 
 Canonical ABI 针对不同方向规定的函数形状，不是可以互换的自定义约定。core module 只保留显式声明的
 Component imports，同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，不会携带 native core target
 的隐式 `math/io` imports。同步 export 会为需要归还 guest-owned memory 的结果生成 `cabi_post_<export>`；
-尚未 lowering 的 schema 继续在生成阶段明确失败；`readable-byte-stream` 已有 v4 contract，
-但在有界 consumer adapter 完成前仍会在 core WASM 生成阶段明确失败。
+尚未 lowering 的 schema 继续在生成阶段明确失败；`readable-byte-stream` 只通过下文的作用域化有界
+consumer 进入 core adapter，不会落入普通 Calcit value ABI。
 
 `cabi_realloc` 与 Calcit 内部对象共享同一个 heap 高水位，但 Canonical ABI allocation 另带内部 header 与 free list。
 `cabi_realloc(old-ptr, old-size, alignment, 0)` 会验证 ownership 并回收 allocation；后续兼容 alignment 与 capacity 的请求
@@ -157,6 +157,33 @@ discriminant 的 payload，最后释放间接 return area。primitive scalar 与
 普通返回类型保留。WASI 0.3 adapter 负责 async function 的 Canonical ABI、取消与 drop；
 Calcit 表层不重复引入 `Task<T>`。v4 contract 只固定作用域化 `readable-byte-stream`，不泛化为
 `stream<T>`；单一 readable ownership、背压、取消和 drop 仍由 core adapter 闭环。
+
+### 作用域化有界字节流消费
+
+`ReadableByteStream` 只允许作为 async `defwasm-export` 的唯一直接参数。导出函数必须只有一个有效主体表达式，
+直接调用 `consume-readable-byte-stream stream max-total-bytes max-chunk-bytes on-chunk`；两个上限必须是正整数字面量，
+且 chunk 上限不能大于总量上限。handler 必须是顶层、同步、单态的 `(Buffer) -> Bool` 函数；返回 `true` 继续读取，
+返回 `false` 表示成功提前停止。导出结果固定为 `Result<Unit, StreamConsumeError>`，当前可恢复错误只有
+`:total-limit`：
+
+```cirru
+defn on-chunk (chunk) true
+
+defwasm-export consume (stream) (consume-readable-byte-stream stream 1048576 65536 on-chunk)
+```
+
+```cirru
+:: 'Fn $ {} (:async true)
+  :args $ [] 'ReadableByteStream
+  :return $ :: 'Result 'Unit 'StreamConsumeError
+```
+
+adapter 始终只保留一个 outstanding read，并把下一次请求限制为 chunk 上限与“剩余总量加一”中的较小值；多读一个字节
+只用于确定性识别超限，不会交给 handler。阻塞读取通过 stackless callback 恢复；EOF、提前停止和超限都会 unjoin、drop
+readable end 与 waitable set，并且只调用一次 `task.return`。父任务取消时先执行 async `stream.cancel-read`，必要时等待取消
+完成，再 exactly-once drop 并调用 `task.cancel`。`ReadableByteStream` 不可保存、复制、包装或作为普通 Number 使用；
+`consume-readable-byte-stream` 在这个编译器识别的 export 形状之外会明确报错。该能力继续使用现有
+`calcit wasm --boundary component` 与 `calcit ffi export --boundary component`，不增加命令入口。
 
 当前 core adapter 已覆盖 async export，以及 direct/indirect async import。导出的 core 函数沿用参数的 Canonical ABI flat shape。
 对直接尾调用同签名 async import 的 export，编译器生成 `[async-lift]<export-symbol>` 与配套
@@ -224,7 +251,7 @@ CI 的可用性基线不是“能生成 WIT”：同一份 Calcit contract 必�
 2. 为 Bool、Buffer、Number、明确宽度数值、String、递归同质 List、Unit 结果、闭合单态 Option/Result、Struct record 与普通 Enum variant 生成 Canonical ABI import/export adapter。
 3. 由 `calcit-bindgen` 生成 WIT 并打包 runnable component，在 Wasmtime 和 jco 做端到端往返。
 4. 由 Component Interface IR v4 的显式 invocation 驱动 WASI 0.3 async function adapter：已完成 export 的 `task.return`、direct/indirect import 的 subtask/waitable/drop，以及直接尾调用 export 的 stackless callback cancellation。
-5. `readable-byte-stream` 先固定为 async export 的直接 `stream<u8>` 参数；WIT contract 已收敛，core adapter 必须继续以有界 chunk、单个 outstanding read、主动取消和 exactly-once drop 完成运行时闭环，不能把 raw handle 降为普通 Number。
+5. `readable-byte-stream` 已固定为 async export 的直接 `stream<u8>` 参数；core adapter 已完成有界 chunk、单个 outstanding read、主动取消和 exactly-once drop，并由真实 Wasmtime 延迟 producer 验证，raw handle 不进入普通 Number ABI。
 6. 在异步基础上继续交付有界 buffered WASI HTTP client；service 与更底层 socket 后置。
 
 用户可观察的类型与语义优先由 Calcit definition `:tests` 覆盖；Rust 测试只覆盖 contract serialization、WASM encoding、Canonical ABI/memory layout 和 unsupported boundary。
