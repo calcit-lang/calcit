@@ -470,6 +470,44 @@ When adding or reviewing a JS FFI adapter, check these in order:
    listed in `:writable`?
 6. Does `calcit query def namespace/name --json` show the expected schema and FFI
    metadata?
+7. Does an adapter body avoid a redundant top-level `do`? `defn`/`fn`/`let`/`let[]`
+   bodies already evaluate their expressions in order and return the last one, so a
+   wrapping `do` only adds nesting.
+
+### 6.1 Remove redundant top-level `do`
+
+Keep one expression per line inside a variadic body instead of wrapping the body in `do`:
+
+```cirru.no-check
+defn read-name (host)
+  do
+    let
+        raw $ .-name host
+      unsafe-coerce raw 'String
+```
+
+The equivalent without the redundant `do` is:
+
+```cirru.no-check
+defn read-name (host)
+  let
+      raw $ .-name host
+    unsafe-coerce raw 'String
+```
+
+`calcit fix` preview includes `redundant-do-v1` by default and never writes the
+Snapshot unless you pass `--apply`, so it works as a lint. Review the plan, then
+apply with the reported revision:
+
+```bash
+calcit calcit.cirru fix --rule redundant-do-v1 --format edn
+calcit calcit.cirru fix --rule redundant-do-v1 --apply --expect-revision 'md5:<preview revision>'
+```
+
+Each suggestion reports the stable `diagnostic_code` `FIX_REDUNDANT_DO`. CI can parse
+the EDN report and fail when the suggestion list is non-empty. The rule does not touch
+`if`/`case` branches, call arguments, binding values, `defmacro` bodies, or
+`quote`/`quasiquote` data.
 
 Useful checks for a project with separate entries are:
 
