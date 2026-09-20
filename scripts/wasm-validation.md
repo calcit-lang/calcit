@@ -124,7 +124,17 @@ defwasm-export upcase (text)
 
 首版 ABI 的所有参数和返回值都是 `f64`。`Number` 直接传递；`String` 传递其 Calcit 字符串的逻辑指针（以 `f64` 表示）。因此宿主应使用下文的字符串布局读取 String，并使用 `__str_new` 或同一布局分配返回 String。`nil` 为 `0`。
 
-为了保持现有内部调试入口兼容，当前模块仍导出可编译的普通 `defn`；`defwasm-export` 的作用是声明并校验面向宿主的 ABI，而不是隐藏旧导出。以后如需要严格的 export allowlist，会以显式编译选项引入。
+普通 `defn` 只在模块内部可调用，不再自动成为宿主 ABI。公开 WASM export surface 只包含显式 `defwasm-export` 声明，以及有保留名称的 runtime symbols（`memory`、`__heap_ptr`、`__str_new`、`__string_tag`、WASI 的 `_start` 与 Component 的 `cabi_*` / adapter symbols）。因此面向宿主的函数必须显式声明，缺失的声明不会再被历史调试兼容隐式导出：
+
+```cirru.no-check
+defn internal-helper (x)
+  &+ x 1
+
+defwasm-export add-one (a)
+  internal-helper a
+```
+
+内部函数如果无法编译，仍保留一个 trapping slot 以维持 call/table 索引稳定，但该 slot 不进入公开 export surface；显式 `defwasm-export` 无法编译时，codegen 直接失败而不是暴露占位函数。迁移旧项目时，把宿主会调用的 `defn` 改成 `defwasm-export` 即可；不需要新增命令入口。
 
 ## 字符串内存布局
 

@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (log-title "|Testing cond") (test-when) (test-cond) (test-or) (test-and) (test-either) (test-case) (test-match) true
+          :code $ quote $ defwasm-export main! () (log-title "|Testing cond") (test-when) (test-cond) (test-or) (test-and) (test-either) (test-case) (test-match) true
           :examples $ []
           :schema $ :: 'Dynamic
         'test-and $ %{} 'CodeEntry (:doc |)

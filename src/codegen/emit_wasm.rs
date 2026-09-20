@@ -840,6 +840,13 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     };
     match result {
       Ok(mut func) => {
+        // Ordinary `defn` values stay callable inside the module but are not part
+        // of the public host ABI. Only explicit `defwasm-export` declarations
+        // (and reserved runtime helpers emitted separately) reach the export
+        // surface. Component adapters replace the explicit declaration itself.
+        if !explicit_export {
+          func.export_name = None;
+        }
         if boundary == WasmBoundary::Component && explicit_export {
           func.export_name = None;
         }
@@ -852,7 +859,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
         eprintln!("[wasm] trapping unsupported dependency {ns}/{def_name}: {e}");
         let (arity, _) = compute_fn_arity(args);
         compiled_fns.push(CompiledFn {
-          export_name: Some(export_name),
+          export_name: None,
           params: vec![ValType::F64; arity as usize],
           results: vec![ValType::F64],
           locals: vec![],

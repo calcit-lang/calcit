@@ -15,7 +15,7 @@
           :examples $ []
           :schema $ :: 'EnumDef
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (log-title "|Testing anonymous enum")
+          :code $ quote $ defwasm-export main! () (log-title "|Testing anonymous enum")
             assert= 1 $ try-size $ :: :dyn
             assert= 2 $ try-size $ :: :dyn 1
             assert= 3 $ try-size $ :: :dyn 1 2

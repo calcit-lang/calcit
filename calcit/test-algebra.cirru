@@ -61,7 +61,7 @@
           :examples $ []
           :schema $ :: 'Trait
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (log-title "|Testing algebra")
+          :code $ quote $ defwasm-export main! () (log-title "|Testing algebra")
             ; "|Experimental code, to simulate usages like Monad"
             test-map
             test-bind

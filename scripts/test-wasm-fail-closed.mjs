@@ -1,5 +1,8 @@
 #!/usr/bin/env node
-// Verify that an unsupported dependency slot traps instead of returning a placeholder value.
+// Verify that ordinary `defn` values stay internal: unsupported dependency slots
+// must not leak into the public host ABI. Explicit `defwasm-export` declarations
+// are the only business exports, and an unsupported explicit boundary is rejected
+// at codegen time (covered by the wasm lowering-failure fixtures).
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -20,21 +23,27 @@ for (const descriptor of WebAssembly.Module.imports(module)) {
 }
 
 const instance = new WebAssembly.Instance(module, imports);
-const unsupported = Object.entries(instance.exports).find(([name]) => name === "vals" || name.endsWith("/vals"))?.[1];
-assert.equal(typeof unsupported, "function", "expected calcit.core/vals to remain addressable as a dependency slot");
-assert.throws(() => unsupported(), WebAssembly.RuntimeError, "unsupported dependency must trap instead of returning 0.0");
+const exportNames = Object.keys(instance.exports);
 
-for (const name of [
+// Unsupported internal dependencies are internal only. They must not appear in
+// the public export surface, where a host could mistake a trapping slot for a
+// callable business export.
+for (const internal of [
+  "vals",
   "test-closure-escape",
   "test-recursive-closure-specialization",
   "test-rest-closure-specialization",
   "test-spread-closure-specialization",
   "test-dynamic-closure-callee",
 ]) {
-  const boundary = Object.entries(instance.exports).find(([exportName]) => exportName === name || exportName.endsWith(`/${name}`))?.[1];
-  assert.equal(typeof boundary, "function", `expected ${name} to remain addressable as a dependency slot`);
-  assert.throws(() => boundary(), WebAssembly.RuntimeError, `${name} must fail closed instead of returning a placeholder`);
+  const leaked = exportNames.find((name) => name === internal || name.endsWith(`/${internal}`));
+  assert.equal(leaked, undefined, `internal dependency ${internal} must not be exported`);
 }
 
-console.log("  unsupported dependency trap  OK");
-console.log("  closure specialization boundaries trap  OK");
+// Runtime helpers and `memory` remain available, so rejecting internal slots did
+// not strip the reserved host symbols.
+assert.ok(exportNames.includes("memory"), "memory must remain exported");
+assert.ok(exportNames.includes("__str_new"), "__str_new must remain exported");
+
+console.log("  unsupported internal slots are not exported  OK");
+console.log("  reserved runtime exports survive  OK");

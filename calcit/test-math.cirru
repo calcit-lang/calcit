@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (log-title "|Testing math") (test-math) (test-hex) (do true)
+          :code $ quote $ defwasm-export main! () (log-title "|Testing math") (test-math) (test-hex) (do true)
           :examples $ []
           :schema $ :: 'Dynamic
         'test-hex $ %{} 'CodeEntry (:doc |)

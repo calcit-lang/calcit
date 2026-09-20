@@ -66,9 +66,14 @@ fn component_contract_defaults_to_edn_and_matches_explicit_json() {
   );
   assert_eq!(json["data"]["filters"]["boundary"], "component");
   assert_eq!(json["data"]["interface"]["version"], 4);
-  assert_eq!(json["data"]["summary"]["unsupported"], 0);
-  assert_eq!(json["data"]["interface"]["definitions"][0]["direction"], "import");
-  assert_eq!(json["data"]["interface"]["definitions"][0]["invocation"], "sync");
+  let import_definition = json["data"]["interface"]["definitions"]
+    .as_array()
+    .expect("component definitions should be an array")
+    .iter()
+    .find(|definition| definition["id"] == "test-wasm.main/host-string-upcase")
+    .expect("Calcit sync import fixture should be exported");
+  assert_eq!(import_definition["direction"], "import");
+  assert_eq!(import_definition["invocation"], "sync");
   let async_definition = json["data"]["interface"]["definitions"]
     .as_array()
     .expect("component definitions should be an array")

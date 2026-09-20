@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (log-title "|Testing str") (test-str) (test-includes) (test-format) (test-char) (test-lisp-style) (test-bitwise) (do true)
+          :code $ quote $ defwasm-export main! () (log-title "|Testing str") (test-str) (test-includes) (test-format) (test-char) (test-lisp-style) (test-bitwise) (do true)
           :examples $ []
           :schema $ :: 'Dynamic
         'test-bitwise $ %{} 'CodeEntry (:doc |)
