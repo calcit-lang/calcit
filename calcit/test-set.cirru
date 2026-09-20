@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (log-title "|Testing set") (test-method-dispatch) (do true)
+          :code $ quote $ defwasm-export main! () (log-title "|Testing set") (test-method-dispatch) (do true)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []

@@ -38,7 +38,7 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (log-title "|Testing hole series") (test-hole-series) (; set-trace-fn! |app.main |hole-series)
+          :code $ quote $ defwasm-export main! () (log-title "|Testing hole series") (test-hole-series) (; set-trace-fn! |app.main |hole-series)
             ; println $ hole-series 100
             log-title "|Testing loop"
             test-loop

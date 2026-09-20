@@ -15,7 +15,7 @@
           :examples $ []
           :schema $ :: 'Dynamic
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (test-alias) (test-doseq) (test-let[]) (test-methods-shorthand) (test-pair) (test-match) (test-range) (do true)
+          :code $ quote $ defwasm-export main! () (test-alias) (test-doseq) (test-let[]) (test-methods-shorthand) (test-pair) (test-match) (test-range) (do true)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []

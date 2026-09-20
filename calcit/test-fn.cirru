@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {} $ 'main!
         %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (log-title "|Testing fn")
+          :code $ quote $ defwasm-export main! () (log-title "|Testing fn")
             let
                 f1 identity
                 f2 &+

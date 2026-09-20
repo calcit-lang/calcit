@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (test-cond/main!) (test-math/main!) (test-set/main!) (test-anonymous-enum/main!) (test-fn/main!) (test-lens/main!) (test-edn/main!) (test-string/main!) (test-nil/main!)
+          :code $ quote $ defwasm-export main! () (test-cond/main!) (test-math/main!) (test-set/main!) (test-anonymous-enum/main!) (test-fn/main!) (test-lens/main!) (test-edn/main!) (test-string/main!) (test-nil/main!)
           :examples $ []
           :schema $ :: 'Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
