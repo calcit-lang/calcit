@@ -170,6 +170,21 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'edn-nested-roundtrip-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-nested-roundtrip-main! ()
+            let
+                parsed $ edn-parse-nested-int-lists "|[] ([] 1 2) ([] -3)"
+              match parsed
+                (:err _) (quit! 1)
+                (:ok value)
+                  if
+                    = (format-cirru-edn value)
+                      str (char-from-code 10) "|[] ([] 1 2) ([] -3)" $ char-from-code 10
+                    println |WASI-recursive-typed-EDN:-ok
+                    quit! 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'edn-parse-int-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-int-list (text)
             try-parse-cirru-edn-as text $ :: 'List 'Int32
@@ -347,6 +362,30 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'edn-parse-nested-int-lists $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-nested-int-lists (text)
+            try-parse-cirru-edn-as text $ :: 'List $ :: 'List 'Int32
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result
+              :: 'List $ :: 'List 'Int32
+              , 'String
+          :tests $ [] $ %{} 'TestEntry (:name |parses-and-formats-closed-nesting)
+            :code $ quote $ do
+              let
+                  parsed $ edn-parse-nested-int-lists "|[] ([] 1 2) ([] -3)"
+                match parsed
+                  (:err message) (raise message)
+                  (:ok value)
+                    do
+                      assert=
+                        [] ([] 1 2) ([] -3)
+                        , value
+                      assert=
+                        str (char-from-code 10) "|[] ([] 1 2) ([] -3)" $ char-from-code 10
+                        format-cirru-edn value
+            :tags $ #{} :core :edn :unit :wasi :wasm
         'edn-parse-over-limit-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-over-limit-main! ()
             let

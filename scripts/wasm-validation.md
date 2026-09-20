@@ -71,17 +71,17 @@ WASM 相关能力分属四个不同层级，排查或文档引用时不要把它
 
 WASM 的 Number、Bool、nil 和 tag id 当前共用 f64 value ABI，运行时反射无法可靠区分这些标量。因此 `format-cirru-edn` 不增加动态类型探测规则，而是读取预处理后保留的闭合类型并生成对应 formatter。
 
-首批支持 nil、Bool、String、tag、整数 numeric refinement、直接 Number 字面量、递归的同质 `List<T>`，以及顶层闭合标量 `Map<K,V>`；直接 Number 字面量在 codegen 时复用 native formatter，保留精确字节语义。Map 首批允许 nil、Bool、String、tag 与整数 refinement 作为 key/value，并在 WASM 中按 native 规则排序；嵌套 Map 或容器 value 会以 `E_WASM_EDN_MAP_SHAPE` / `E_WASM_EDN_MAP_VALUE` 明确拒绝，直到 Cirru `$` 折叠布局也能保持字节一致。输出与 native compact formatter 一样带首尾换行，字符串遵循 Cirru leaf 的 `|text` / `"|quoted text"` 规则。WASM formatter 的单次输出分配上限为 64 KiB，超过上限会在分配前 trap；回归脚本还会把真实 Wasmtime 输出逐值交给 `cirru_edn` 重新解析。`Dynamic`、未解析类型变量、运行时普通 `Number`、Struct 与 Enum 暂时以稳定诊断明确拒绝，不能静默猜测或输出占位数据。
+当前支持 nil、Bool、String、tag、整数 numeric refinement、直接 Number 字面量，以及闭合的递归 `List<T>`、`Map<K,V>` 与 Struct；嵌套容器使用 Cirru EDN 的括号表达式布局，仍由编译期类型决定，而不是回退为 Dynamic。直接 Number 字面量在 codegen 时复用 native formatter，保留精确字节语义。Map key 仍限定为可按 native 规则稳定排序的标量，value 可以是闭合递归值。输出与 native compact formatter 一样带首尾换行，字符串遵循 Cirru leaf 的 `|text` / `"|quoted text"` 规则。WASM formatter 的单次输出分配上限为 64 KiB，超过上限会在分配前 trap；回归脚本还会把真实 Wasmtime 输出逐值交给 `cirru_edn` 重新解析。`Dynamic`、未解析类型变量、运行时普通 `Number` 与 Enum 暂时以稳定诊断明确拒绝，不能静默猜测或输出占位数据。
 
-`try-parse-cirru-edn-as` 的 WASM 实现直接消费预处理阶段生成的同一份闭合 `DataShapeGraph`，不先解析成 `Dynamic`，也不引入第二套 decoder API。当前支持 nil、Bool、Number、整数/浮点 refinement、bare 或 quoted/escaped String、编译产物已知 tag，以及顶层同质标量 `List<T>` 和 `Map<K,V>`；标量接受 bare token 和 formatter 产生的顶层 `do token`。quoted String 只接受 formatter 使用的 `\n`、`\t`、`\"`、`\\` 四种 escape，未知或截断 escape 返回语法错误。输入上限为 64 KiB，List 另设 4096 item 上限，Map 另设 2048 entry 上限；超限、语法错误、numeric refinement 越界和未知 tag 都返回稳定的 `Result :err`，不触发 trap。Map 的运行时 String key 按 UTF-8 内容 hash 和比较，因此 parser 新建的 key 可由等值字符串稳定查询。嵌套集合、Struct 与 Enum 留给后续同一 parser 的递归节点实现。
+`try-parse-cirru-edn-as` 的 WASM 实现直接消费预处理阶段生成的同一份闭合 `DataShapeGraph`，不先解析成 `Dynamic`，也不引入第二套 decoder API。当前支持 nil、Bool、Number、整数/浮点 refinement、bare 或 quoted/escaped String、编译产物已知 tag，以及递归闭合的 `List<T>`、`Map<K,V>` 和 Struct；嵌套格式化器输出的括号表达式会在进入子节点时解开，再交给对应的静态 shape parser。标量接受 bare token 和 formatter 产生的顶层 `do token`。quoted String 只接受 formatter 使用的 `\n`、`\t`、`\"`、`\\` 四种 escape，未知或截断 escape 返回语法错误。输入上限为 64 KiB，List 另设 4096 item 上限，Map 另设 2048 entry 上限；超限、语法错误、numeric refinement 越界和未知 tag 都返回稳定的 `Result :err`，不触发 trap。Map 的运行时 String key 按 UTF-8 内容 hash 和比较，因此 parser 新建的 key 可由等值字符串稳定查询。Enum 仍留给同一套静态 parser/formatter 的后续节点实现。
 
 这项能力复用现有 core API，不增加新的 CLI 或 Calcit 表层入口。WASI 文件工作流仍通过 `fs:path` 的 typed read/write API 组合。
 
 仓库回归还把这两项能力组合成一条真实的预开放文件流程：从 `/workspace/input.cirru` 读取
 `Map<String, Int32>`，在 Calcit 代码中更新数据，再把规范化的 Cirru EDN 写入
 `/workspace/output.cirru`。输入类型错误或数值 refinement 越界会沿 `Result` 分支以状态码 `1`
-退出，不产生输出文件，也不触发 WASM trap。当前闭环有意限定为顶层标量 Map；递归容器、Struct
-与 Enum 会继续扩展同一套 parser/formatter 和文件 API，而不会增加新的命令入口。
+退出，不产生输出文件，也不触发 WASM trap。这个文件闭环仍以顶层标量 Map 保持最小示例；递归容器和
+Struct 已由同一套 parser/formatter 覆盖，Enum 将沿用该闭合 shape 与文件 API 扩展，而不会增加新的命令入口。
 
 ## 编译与验证方式
 
