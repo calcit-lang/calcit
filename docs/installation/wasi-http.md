@@ -24,3 +24,9 @@ adapter 使用同一组 Calcit 类型和错误语义。
 streaming body、HTTP server、socket/TLS 细节和主动取消；这些能力不会通过增加顶层命令绕过
 当前 contract。
 
+可复制路径与版本组合见 [`examples/wasi-http-client/`](../../examples/wasi-http-client/)：
+`calcit wasm --boundary component` + `calcit ffi export --boundary component` + `calcit-bindgen 0.1.3`。
+当前稳定宿主 adapter 使用 Wasmtime 47 的 WASI 0.2 `wasi:http/outgoing-handler` 生产传输，
+Calcit-facing contract 保持 WASI 0.3 原生 async；portable、直接依赖 WASI 0.3 HTTP host 模块的
+adapter 仍被其 experimental tooling 阻塞，尚未提供。
+

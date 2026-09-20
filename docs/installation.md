@@ -46,4 +46,7 @@ Another important command is `ct`, which is the "Calcit Editor" and is available
 - [Rust bindings](installation/ffi-bindings.md)
 - [FFI Interface IR](installation/ffi-interface-ir.md)
 - [WASM Component 边界](installation/wasm-component-boundary.md)
+- [有界类型化 WASI HTTP](installation/wasi-http.md)（可复制示例见 [`examples/wasi-http-client/`](../examples/wasi-http-client/)）
+- [FFI async protocol](installation/ffi-async-protocol.md)
+- [FFI resource protocol](installation/ffi-resource-protocol.md)
 - [FFI upgrade guide](installation/ffi-upgrade-guide.md)
