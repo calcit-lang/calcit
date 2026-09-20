@@ -488,6 +488,12 @@ fn emit_parse_scalar_enum(
     ctx.emit(Instruction::I32Const((2 + payload_nodes.len()) as i32));
     ctx.emit(Instruction::I32Eq);
     ctx.emit(Instruction::LocalSet(valid));
+    ctx.emit(Instruction::LocalGet(valid));
+    ctx.emit(Instruction::I32Eqz);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::I32Const(5));
+    ctx.emit(Instruction::LocalSet(error_kind));
+    ctx.emit(Instruction::End);
 
     let values = payload_nodes.iter().map(|_| ctx.alloc_local()).collect::<Vec<_>>();
     for (payload_index, node_id) in payload_nodes.iter().enumerate() {

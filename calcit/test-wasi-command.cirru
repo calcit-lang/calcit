@@ -60,6 +60,18 @@
           :tests $ [] $ %{} 'TestEntry (:name |valid-readings)
             :code $ quote $ assert= true (clocks-valid?)
             :tags $ #{} :core :time :unit :wasi :wasm
+        'edn-enum-arity-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-enum-arity-main! ()
+            match (edn-parse-outcome "|%:: 'EdnOutcome 'ready")
+              (:ok _) (quit! 1)
+              (:err message)
+                if
+                  = message "|E_WASM_EDN_ENUM: Cirru EDN enum type, variant, or payload does not match the requested type"
+                  println |WASI-enum-arity-error:-ok
+                  quit! 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'edn-file-roundtrip-main! $ %{} 'CodeEntry (:doc "|从预开放目录读取有类型 Cirru EDN，更新计数并写回规范化数据。")
           :code $ quote $ defn edn-file-roundtrip-main! ()
             let
@@ -121,6 +133,12 @@
             println $ format-cirru-edn -0.5
             println $ format-cirru-edn $ {} (:b |two) (:a |one)
             println $ format-cirru-edn $ {} ("|b key" |two) (|a |one)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'edn-format-only-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-format-only-main! ()
+            println $ format-cirru-edn $ EdnOutcome :failed |offline
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
