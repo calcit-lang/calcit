@@ -11,6 +11,7 @@ const RANGE_ERROR: &str = "E_WASM_EDN_RANGE: numeric value is outside the reques
 const TAG_ERROR: &str = "E_WASM_EDN_TAG: tag is not present in the compiled program";
 const TOKEN_LIMIT_ERROR: &str = "E_WASM_EDN_TOKEN_LIMIT: Cirru EDN list exceeds 4096 items";
 const MAP_LIMIT_ERROR: &str = "E_WASM_EDN_MAP_LIMIT: Cirru EDN map exceeds 2048 entries";
+const ENUM_ERROR: &str = "E_WASM_EDN_ENUM: Cirru EDN enum type, variant, or payload does not match the requested type";
 
 pub(super) fn emit_try_parse_cirru_edn_as(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 3 {
@@ -67,7 +68,7 @@ pub(super) fn emit_try_parse_cirru_edn_as(ctx: &mut WasmGenCtx, args: &[Calcit])
 
   let parsed = ctx.alloc_local();
   let ok = ctx.alloc_local_typed(ValType::I32);
-  let error_kind = ctx.alloc_local_typed(ValType::I32); // 0 syntax, 1 range, 2 tag, 3 list limit, 4 map limit
+  let error_kind = ctx.alloc_local_typed(ValType::I32); // 0 syntax, 1 range, 2 tag, 3 list limit, 4 map limit, 5 enum
   emit_parse_node(ctx, &graph, graph.root, token, token_ptr, (parsed, ok, error_kind))?;
 
   ctx.emit(Instruction::LocalGet(ok));
@@ -99,7 +100,14 @@ pub(super) fn emit_try_parse_cirru_edn_as(ctx: &mut WasmGenCtx, args: &[Calcit])
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   emit_literal(ctx, MAP_LIMIT_ERROR)?;
   ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(error_kind));
+  ctx.emit(Instruction::I32Const(5));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_literal(ctx, ENUM_ERROR)?;
+  ctx.emit(Instruction::Else);
   emit_literal(ctx, SYNTAX_ERROR)?;
+  ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
@@ -139,6 +147,14 @@ fn validate_decode_shape(graph: &DataShapeGraph, node_id: usize, depth: usize) -
     DataShapeNode::Struct { fields, .. } => {
       for (_, field) in fields {
         validate_decode_shape(graph, *field, depth + 1)?;
+      }
+      Ok(())
+    }
+    DataShapeNode::Enum { variants, .. } => {
+      for (_, payloads) in variants {
+        for payload in payloads {
+          validate_decode_shape(graph, *payload, depth + 1)?;
+        }
       }
       Ok(())
     }
@@ -189,6 +205,9 @@ fn emit_parse_node(
     DataShapeNode::Map { key, value } => emit_parse_scalar_map(ctx, graph, (*key, *value), token_ptr, (parsed, ok, error_kind)),
     DataShapeNode::Struct { nominal, fields, .. } => {
       emit_parse_scalar_struct(ctx, graph, nominal, fields, token_ptr, (parsed, ok, error_kind))
+    }
+    DataShapeNode::Enum { nominal, variants, .. } => {
+      emit_parse_scalar_enum(ctx, graph, nominal, variants, token_ptr, (parsed, ok, error_kind))
     }
     _ => emit_parse_scalar(ctx, node, token, token_ptr, parsed, ok, error_kind),
   }
@@ -373,6 +392,175 @@ fn emit_parse_scalar_struct(
   Ok(())
 }
 
+fn emit_parse_scalar_enum(
+  ctx: &mut WasmGenCtx,
+  graph: &DataShapeGraph,
+  nominal: &Arc<CalcitEnumDef>,
+  variants: &[(EdnTag, Vec<usize>)],
+  token_ptr: u32,
+  outputs: (u32, u32, u32),
+) -> Result<(), String> {
+  let (parsed, ok, error_kind) = outputs;
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(ok));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(error_kind));
+  let valid = ctx.alloc_i32(1);
+  let len = load_string_len(ctx, token_ptr);
+
+  ctx.emit(Instruction::LocalGet(len));
+  ctx.emit(Instruction::I32Const(3));
+  ctx.emit(Instruction::I32GtU);
+  ctx.emit(Instruction::LocalSet(valid));
+  for (offset, expected) in b"%::".iter().copied().enumerate() {
+    ctx.emit(Instruction::LocalGet(valid));
+    ctx.begin_block_if();
+    let byte = load_byte(ctx, token_ptr, offset as i32);
+    ctx.emit(Instruction::LocalGet(byte));
+    ctx.emit(Instruction::I32Const(expected as i32));
+    ctx.emit(Instruction::I32Eq);
+    ctx.emit(Instruction::LocalSet(valid));
+    ctx.emit(Instruction::End);
+  }
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.begin_block_if();
+  let delimiter = load_byte(ctx, token_ptr, 3);
+  emit_ascii_whitespace(ctx, delimiter);
+  ctx.emit(Instruction::LocalSet(valid));
+  ctx.emit(Instruction::End);
+
+  let max_payloads = variants.iter().map(|(_, payloads)| payloads.len()).max().unwrap_or(0);
+  let starts = (0..(2 + max_payloads))
+    .map(|_| ctx.alloc_local_typed(ValType::I32))
+    .collect::<Vec<_>>();
+  let ends = (0..(2 + max_payloads))
+    .map(|_| ctx.alloc_local_typed(ValType::I32))
+    .collect::<Vec<_>>();
+  let count = ctx.alloc_i32(0);
+  emit_scan_edn_tokens(ctx, token_ptr, len, 3, (valid, count, error_kind), |ctx, start, end, index| {
+    for slot in 0..starts.len() {
+      ctx.emit(Instruction::LocalGet(index));
+      ctx.emit(Instruction::I32Const(slot as i32));
+      ctx.emit(Instruction::I32Eq);
+      ctx.begin_block_if();
+      ctx.emit(Instruction::LocalGet(start));
+      ctx.emit(Instruction::LocalSet(starts[slot]));
+      ctx.emit(Instruction::LocalGet(end));
+      ctx.emit(Instruction::LocalSet(ends[slot]));
+      ctx.emit(Instruction::End);
+    }
+    Ok(())
+  })?;
+
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Const(2));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalSet(valid));
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.begin_block_if();
+  let type_ptr = slice_string_range(ctx, token_ptr, starts[0], ends[0]);
+  emit_string_equals_literal(ctx, type_ptr, &format!("'{}", nominal.name()))?;
+  emit_string_equals_literal(ctx, type_ptr, &format!(":{}", nominal.name()))?;
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::LocalSet(valid));
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::I32Const(5));
+  ctx.emit(Instruction::LocalSet(error_kind));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  let matched = ctx.alloc_i32(0);
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.begin_block_if();
+  let variant_ptr = slice_string_range(ctx, token_ptr, starts[1], ends[1]);
+  for (variant, payload_nodes) in variants {
+    emit_string_equals_literal(ctx, variant_ptr, &format!("'{variant}"))?;
+    emit_string_equals_literal(ctx, variant_ptr, &format!(":{variant}"))?;
+    ctx.emit(Instruction::I32Or);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::LocalSet(matched));
+    ctx.emit(Instruction::LocalGet(count));
+    ctx.emit(Instruction::I32Const((2 + payload_nodes.len()) as i32));
+    ctx.emit(Instruction::I32Eq);
+    ctx.emit(Instruction::LocalSet(valid));
+
+    let values = payload_nodes.iter().map(|_| ctx.alloc_local()).collect::<Vec<_>>();
+    for (payload_index, node_id) in payload_nodes.iter().enumerate() {
+      ctx.emit(Instruction::LocalGet(valid));
+      ctx.begin_block_if();
+      let payload_ptr = slice_string_range(ctx, token_ptr, starts[2 + payload_index], ends[2 + payload_index]);
+      let payload_token = ctx.alloc_local();
+      ctx.emit(Instruction::LocalGet(payload_ptr));
+      ctx.emit(Instruction::F64ConvertI32U);
+      ctx.emit(Instruction::LocalSet(payload_token));
+      let payload_ok = ctx.alloc_local_typed(ValType::I32);
+      let payload_error = ctx.alloc_local_typed(ValType::I32);
+      emit_parse_node(
+        ctx,
+        graph,
+        *node_id,
+        payload_token,
+        payload_ptr,
+        (values[payload_index], payload_ok, payload_error),
+      )?;
+      ctx.emit(Instruction::LocalGet(payload_ok));
+      ctx.emit(Instruction::I32Eqz);
+      ctx.begin_block_if();
+      ctx.emit(Instruction::I32Const(0));
+      ctx.emit(Instruction::LocalSet(valid));
+      ctx.emit(Instruction::LocalGet(payload_error));
+      ctx.emit(Instruction::LocalSet(error_kind));
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::End);
+    }
+
+    ctx.emit(Instruction::LocalGet(valid));
+    ctx.begin_block_if();
+    let tag_id = *ctx.tag_index.get(variant.ref_str()).ok_or_else(|| {
+      format!(
+        "E_WASM_EDN_SHAPE: enum :{} variant :{} is not present in the compiled program",
+        nominal.name(),
+        variant
+      )
+    })?;
+    let enum_ptr = ctx.alloc_local_typed(ValType::I32);
+    emit_bump_alloc(ctx, ((2 + payload_nodes.len()) * 8) as i32, enum_ptr, "enum");
+    ctx.emit(Instruction::LocalGet(enum_ptr));
+    ctx.emit(f64_const(payload_nodes.len() as f64));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+    ctx.emit(Instruction::LocalGet(enum_ptr));
+    ctx.emit(f64_const(tag_id as f64));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+    for (payload_index, value) in values.iter().enumerate() {
+      ctx.emit(Instruction::LocalGet(enum_ptr));
+      ctx.emit(Instruction::LocalGet(*value));
+      ctx.emit(Instruction::F64Store(mem_arg_f64(((2 + payload_index) * 8) as u64)));
+    }
+    ctx.emit(Instruction::LocalGet(enum_ptr));
+    ctx.emit(Instruction::F64ConvertI32U);
+    ctx.emit(Instruction::LocalSet(parsed));
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::LocalSet(ok));
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::End);
+  }
+  ctx.emit(Instruction::LocalGet(matched));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(valid));
+  ctx.emit(Instruction::I32Const(5));
+  ctx.emit(Instruction::LocalSet(error_kind));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
 fn emit_parse_scalar_list(
   ctx: &mut WasmGenCtx,
   graph: &DataShapeGraph,
@@ -420,14 +608,16 @@ fn emit_parse_scalar_list(
   ctx.emit(Instruction::End);
 
   let count = ctx.alloc_i32(0);
-  emit_scan_scalar_list_tokens(ctx, token_ptr, len, valid, count, error_kind, |_ctx, _start, _end, _index| Ok(()))?;
+  emit_scan_edn_tokens(ctx, token_ptr, len, 2, (valid, count, error_kind), |_ctx, _start, _end, _index| {
+    Ok(())
+  })?;
 
   ctx.emit(Instruction::LocalGet(valid));
   ctx.begin_block_if();
   let list_ptr = emit_alloc_list(ctx, count);
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(count));
-  emit_scan_scalar_list_tokens(ctx, token_ptr, len, valid, count, error_kind, |ctx, start, end, index| {
+  emit_scan_edn_tokens(ctx, token_ptr, len, 2, (valid, count, error_kind), |ctx, start, end, index| {
     let item_ptr = slice_string_range(ctx, token_ptr, start, end);
     let item_token = ctx.alloc_local();
     ctx.emit(Instruction::LocalGet(item_ptr));
@@ -460,19 +650,19 @@ fn emit_parse_scalar_list(
   Ok(())
 }
 
-fn emit_scan_scalar_list_tokens<F>(
+fn emit_scan_edn_tokens<F>(
   ctx: &mut WasmGenCtx,
   token_ptr: u32,
   len: u32,
-  valid: u32,
-  count: u32,
-  error_kind: u32,
+  start_offset: i32,
+  state: (u32, u32, u32),
   mut on_token: F,
 ) -> Result<(), String>
 where
   F: FnMut(&mut WasmGenCtx, u32, u32, u32) -> Result<(), String>,
 {
-  let cursor = ctx.alloc_i32(2);
+  let (valid, count, error_kind) = state;
+  let cursor = ctx.alloc_i32(start_offset);
   let start = ctx.alloc_local_typed(ValType::I32);
   let end = ctx.alloc_local_typed(ValType::I32);
 

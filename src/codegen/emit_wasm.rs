@@ -7961,9 +7961,11 @@ fn build_string_pool(
   }
   if needs_edn_format {
     strings.extend(
-      ["do ", "\n", "nil", "true", "false", "[]", "([]", "{}", "%{}", ")", " ", " ("]
-        .into_iter()
-        .map(String::from),
+      [
+        "do ", "\n", "nil", "true", "false", "[]", "([]", "{}", "({}", "%{}", "(%{}", "%::", "(%::", ")", " ", " (",
+      ]
+      .into_iter()
+      .map(String::from),
     );
     strings.extend(tag_index.keys().map(|tag| format!(":{tag}")));
     strings.extend(tag_index.keys().map(|tag| format!("'{tag}")));
@@ -7981,6 +7983,7 @@ fn build_string_pool(
         "E_WASM_EDN_TAG: tag is not present in the compiled program",
         "E_WASM_EDN_TOKEN_LIMIT: Cirru EDN list exceeds 4096 items",
         "E_WASM_EDN_MAP_LIMIT: Cirru EDN map exceeds 2048 entries",
+        "E_WASM_EDN_ENUM: Cirru EDN enum type, variant, or payload does not match the requested type",
       ]
       .into_iter()
       .map(String::from),
@@ -8090,6 +8093,28 @@ pub(crate) fn try_format_enum_literal(expr: &Calcit) -> Option<String> {
 }
 
 fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
+  if let Some(graph) = DataShapeGraph::from_calcit_handle(expr) {
+    for node in &graph.nodes {
+      match node {
+        DataShapeNode::Struct { nominal, fields, .. } => {
+          strings.push(format!("'{}", nominal.name));
+          strings.push(format!(":{}", nominal.name));
+          for (field, _) in fields {
+            strings.push(format!(":{field}"));
+          }
+        }
+        DataShapeNode::Enum { nominal, variants, .. } => {
+          strings.push(format!("'{}", nominal.name()));
+          strings.push(format!(":{}", nominal.name()));
+          for (variant, _) in variants {
+            strings.push(format!("'{variant}"));
+            strings.push(format!(":{variant}"));
+          }
+        }
+        _ => {}
+      }
+    }
+  }
   match expr {
     Calcit::Str(s) => {
       strings.push(s.to_string());
