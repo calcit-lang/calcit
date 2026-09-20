@@ -4,9 +4,11 @@
 
 它与 `calcit wasi` 的 Preview 1 command 路径不同：HTTP 使用 `calcit wasm --boundary component` 生成 Canonical ABI core module，再由 `calcit-bindgen` 打包。裸 `program.wasm` 不是 runnable Component。
 
+宿主路径也据此分层：当前可复制的稳定路径使用 Wasmtime 47 的 WASI 0.2 `wasi:http/outgoing-handler` 生产传输，Calcit-facing Component contract 保持 WASI 0.3 原生 async。portable、直接的 WASI 0.3 HTTP host adapter 仍被其 experimental tooling 阻塞，尚未作为可复制路径提供；等该模块稳定后可以替换 adapter 内部实现，而不改变 Calcit contract 或这里的命令。
+
 ## 前置版本
 
-- Calcit 0.15.6 或当前仓库构建的 `target/debug/calcit`
+- Calcit 0.17.1（当前发布版本）或当前仓库构建的 `target/debug/calcit`
 - `calcit-bindgen 0.1.3`
 - Rust toolchain；host 固定使用 Wasmtime 47.0.4
 

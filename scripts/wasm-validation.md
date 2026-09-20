@@ -6,6 +6,23 @@ Calcit 通过两个公开 preview 子命令暴露 WASM codegen：`calcit wasm` �
 
 `cr-wasm` 已退出默认安装和 release assets。新的人类与 Agent 工作流应使用 `calcit wasm` / `calcit wasi`，不要依据内部 binary 名称猜测输出契约。仓库内的 WASI 自举回归使用 feature-gated harness；它不是用户 CLI，也不会由默认 `cargo install calcit` 安装。
 
+## 边界分层
+
+WASM 相关能力分属四个不同层级，排查或文档引用时不要把它们混在同一张表里：
+
+1. **表层不支持（语言语义）**：宏系统（编译前展开）、`Dynamic`、opaque host object、Atom/Ref、
+   可变参数与可选参数、动态 method dispatch。这一层由预处理与 codegen 以稳定诊断拒绝，不是 codegen 缺口。
+2. **预处理后可静态 lowering 的子集**：下表列出的纯计算与闭合数据操作，在 core 与 WASI command
+   两个目标上共享同一套 Snapshot 加载、target validation 与 codegen。
+3. **WASI command 目标**：`calcit wasi` 生成带 `_start` 的 Preview 1 command module，通过集中式
+   capability registry 提供 `println`、`get-env`、`get-args` 等；不继承 core 目标的 JS `io` imports。
+4. **Component boundary**：`calcit wasm --boundary component` 与
+   `calcit ffi export --boundary component` 走独立的 Canonical ABI adapter 与版本化 Interface IR，
+   其类型矩阵、async lifecycle 与 HTTP 边界以
+   [WASM Component 边界](../../docs/installation/wasm-component-boundary.md) 为准，不在本文件重复。
+
+下表只描述第 2 层，即 core/WASI command codegen 当前支持的最小计算子集。
+
 ## 支持的子集
 
 | 特性                                   | 支持 | 说明                     |

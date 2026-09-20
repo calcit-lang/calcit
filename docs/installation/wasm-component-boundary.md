@@ -236,6 +236,11 @@ calcit-bindgen generate target/component-interface.cirru \
 必须用 `WasiHttpConfig::allow_origin("scheme://authority")` 精确授予 origin，端口属于 authority。
 生成器会保留最终 Component 的 `calcit:wasi-http/client` import identity，不要求业务改用内部 WIT alias。
 
+当前可复制的稳定宿主路径复用 Wasmtime 47 的 WASI 0.2 `wasi:http/outgoing-handler` 生产传输，
+而 Calcit-facing Component contract 保持 WASI 0.3 原生 async。portable、直接依赖 WASI 0.3 HTTP host
+模块的 adapter 仍被 Wasmtime 当前标记为 experimental 的 tooling 阻塞，不作为可复制路径提供；等该模块稳定后，
+只需替换 adapter 内部实现，Calcit contract、命令入口与 `WasiHttpConfig` 边界都不改变。
+
 CI 的可用性基线不是“能生成 WIT”：同一份 Calcit contract 必须分别经过 JS host 和 Wasmtime host，
 请求真实本机 HTTP 服务，并覆盖成功、capability denied 与 response-too-large。用户可观察的 Result、Struct
 和 Enum 形状由定义上的 `:tests` 固定；Rust/JS 测试只验证 packaging、Canonical ABI 和真实宿主行为。
