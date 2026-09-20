@@ -4,6 +4,7 @@ use cirru_edn::EdnTag;
 const MAX_EDN_INPUT_BYTES: i32 = 64 * 1024;
 const MAX_EDN_LIST_ITEMS: i32 = 4096;
 const MAX_EDN_MAP_ENTRIES: i32 = 2048;
+const MAX_EDN_DECODE_SHAPE_DEPTH: usize = 32;
 const INPUT_LIMIT_ERROR: &str = "E_WASM_EDN_INPUT_LIMIT: Cirru EDN input exceeds 65536 bytes";
 const SYNTAX_ERROR: &str = "E_WASM_EDN_SYNTAX: invalid Cirru EDN scalar";
 const RANGE_ERROR: &str = "E_WASM_EDN_RANGE: numeric value is outside the requested type";
@@ -67,18 +68,7 @@ pub(super) fn emit_try_parse_cirru_edn_as(ctx: &mut WasmGenCtx, args: &[Calcit])
   let parsed = ctx.alloc_local();
   let ok = ctx.alloc_local_typed(ValType::I32);
   let error_kind = ctx.alloc_local_typed(ValType::I32); // 0 syntax, 1 range, 2 tag, 3 list limit, 4 map limit
-  let root = graph
-    .nodes
-    .get(graph.root)
-    .ok_or_else(|| "E_WASM_EDN_SHAPE: typed Cirru EDN parser has an invalid root node".to_string())?;
-  match root {
-    DataShapeNode::List(item) => emit_parse_scalar_list(ctx, &graph, *item, token_ptr, parsed, ok, error_kind)?,
-    DataShapeNode::Map { key, value } => emit_parse_scalar_map(ctx, &graph, (*key, *value), token_ptr, (parsed, ok, error_kind))?,
-    DataShapeNode::Struct { nominal, fields, .. } => {
-      emit_parse_scalar_struct(ctx, &graph, nominal, fields, token_ptr, (parsed, ok, error_kind))?
-    }
-    _ => emit_parse_scalar(ctx, root, token, token_ptr, parsed, ok, error_kind)?,
-  }
+  emit_parse_node(ctx, &graph, graph.root, token, token_ptr, (parsed, ok, error_kind))?;
 
   ctx.emit(Instruction::LocalGet(ok));
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
@@ -124,6 +114,11 @@ pub(super) fn emit_try_parse_cirru_edn_as(ctx: &mut WasmGenCtx, args: &[Calcit])
 }
 
 fn validate_decode_shape(graph: &DataShapeGraph, node_id: usize, depth: usize) -> Result<(), String> {
+  if depth > MAX_EDN_DECODE_SHAPE_DEPTH {
+    return Err(format!(
+      "E_WASM_EDN_DEPTH: typed Cirru EDN decode shape nesting exceeds {MAX_EDN_DECODE_SHAPE_DEPTH}"
+    ));
+  }
   let node = graph
     .nodes
     .get(node_id)
@@ -136,25 +131,14 @@ fn validate_decode_shape(graph: &DataShapeGraph, node_id: usize, depth: usize) -
     | DataShapeNode::Numeric(_)
     | DataShapeNode::String
     | DataShapeNode::Tag => Ok(()),
-    DataShapeNode::List(item) => {
-      if depth > 0 {
-        return Err("E_WASM_EDN_SHAPE: nested List parsing is not yet supported".into());
-      }
-      validate_scalar_child_shape(graph, *item)
-    }
+    DataShapeNode::List(item) => validate_decode_shape(graph, *item, depth + 1),
     DataShapeNode::Map { key, value } => {
-      if depth > 0 {
-        return Err("E_WASM_EDN_SHAPE: nested Map parsing is not yet supported".into());
-      }
-      validate_scalar_child_shape(graph, *key)?;
-      validate_scalar_child_shape(graph, *value)
+      validate_scalar_map_key_shape(graph, *key)?;
+      validate_decode_shape(graph, *value, depth + 1)
     }
     DataShapeNode::Struct { fields, .. } => {
-      if depth > 0 {
-        return Err("E_WASM_EDN_SHAPE: nested Struct parsing is not yet supported".into());
-      }
       for (_, field) in fields {
-        validate_scalar_child_shape(graph, *field)?;
+        validate_decode_shape(graph, *field, depth + 1)?;
       }
       Ok(())
     }
@@ -162,6 +146,93 @@ fn validate_decode_shape(graph: &DataShapeGraph, node_id: usize, depth: usize) -
       "E_WASM_EDN_SHAPE: {other:?} is not yet supported by the typed Cirru EDN parser"
     )),
   }
+}
+
+fn validate_scalar_map_key_shape(graph: &DataShapeGraph, node_id: usize) -> Result<(), String> {
+  let node = graph
+    .nodes
+    .get(node_id)
+    .ok_or_else(|| format!("E_WASM_EDN_SHAPE: typed Cirru EDN parser references missing node #{node_id}"))?;
+  match node {
+    DataShapeNode::Nil
+    | DataShapeNode::Unit
+    | DataShapeNode::Bool
+    | DataShapeNode::Number
+    | DataShapeNode::Numeric(_)
+    | DataShapeNode::String
+    | DataShapeNode::Tag => Ok(()),
+    other => Err(format!(
+      "E_WASM_EDN_MAP_KEY: {other:?} cannot preserve native Cirru EDN map ordering in WASM"
+    )),
+  }
+}
+
+/// Emit a parser specialized to a closed compiler-owned data-shape node.
+/// Nested values stay statically typed: this dispatch is generated while
+/// compiling and never constructs a Dynamic EDN tree at runtime.
+fn emit_parse_node(
+  ctx: &mut WasmGenCtx,
+  graph: &DataShapeGraph,
+  node_id: usize,
+  token: u32,
+  token_ptr: u32,
+  outputs: (u32, u32, u32),
+) -> Result<(), String> {
+  let (parsed, ok, error_kind) = outputs;
+  let node = graph
+    .nodes
+    .get(node_id)
+    .ok_or_else(|| format!("E_WASM_EDN_SHAPE: typed Cirru EDN parser references missing node #{node_id}"))?;
+  let (token, token_ptr) = emit_unwrap_nested_token(ctx, token, token_ptr);
+  match node {
+    DataShapeNode::List(item) => emit_parse_scalar_list(ctx, graph, *item, token_ptr, parsed, ok, error_kind),
+    DataShapeNode::Map { key, value } => emit_parse_scalar_map(ctx, graph, (*key, *value), token_ptr, (parsed, ok, error_kind)),
+    DataShapeNode::Struct { nominal, fields, .. } => {
+      emit_parse_scalar_struct(ctx, graph, nominal, fields, token_ptr, (parsed, ok, error_kind))
+    }
+    _ => emit_parse_scalar(ctx, node, token, token_ptr, parsed, ok, error_kind),
+  }
+}
+
+/// Formatter-produced nested EDN values are parenthesized (`([] ...)`,
+/// `({} ...)`, `(%{} ...)`). Remove exactly that outer expression wrapper
+/// before dispatching to the specialized collection parser.
+fn emit_unwrap_nested_token(ctx: &mut WasmGenCtx, token: u32, token_ptr: u32) -> (u32, u32) {
+  let result = ctx.alloc_local();
+  let result_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(token));
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::LocalGet(token_ptr));
+  ctx.emit(Instruction::LocalSet(result_ptr));
+  let len = load_string_len(ctx, token_ptr);
+  ctx.emit(Instruction::LocalGet(len));
+  ctx.emit(Instruction::I32Const(2));
+  ctx.emit(Instruction::I32GtU);
+  ctx.begin_block_if();
+  let first = load_byte(ctx, token_ptr, 0);
+  let last_index = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(len));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::LocalSet(last_index));
+  let last = load_byte_at(ctx, token_ptr, last_index);
+  ctx.emit(Instruction::LocalGet(first));
+  ctx.emit(Instruction::I32Const(b'(' as i32));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::LocalGet(last));
+  ctx.emit(Instruction::I32Const(b')' as i32));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::I32And);
+  ctx.begin_block_if();
+  let inner = slice_string(ctx, token_ptr, 1, last_index);
+  ctx.emit(Instruction::LocalGet(inner));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::LocalGet(inner));
+  ctx.emit(Instruction::LocalSet(result_ptr));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  (result, result_ptr)
 }
 
 fn emit_parse_scalar_struct(
@@ -232,10 +303,6 @@ fn emit_parse_scalar_struct(
       let matched = ctx.alloc_i32(0);
 
       for (index, (field, node_id)) in fields.iter().enumerate() {
-        let node = graph
-          .nodes
-          .get(*node_id)
-          .ok_or_else(|| format!("E_WASM_EDN_SHAPE: typed Cirru EDN parser references missing node #{node_id}"))?;
         emit_string_equals_literal(ctx, key_ptr, &format!(":{field}"))?;
         ctx.begin_block_if();
         ctx.emit(Instruction::I32Const(1));
@@ -247,7 +314,7 @@ fn emit_parse_scalar_struct(
         ctx.emit(Instruction::Else);
         let field_ok = ctx.alloc_local_typed(ValType::I32);
         let field_error = ctx.alloc_local_typed(ValType::I32);
-        emit_parse_scalar(ctx, node, value_token, value_ptr, values[index], field_ok, field_error)?;
+        emit_parse_node(ctx, graph, *node_id, value_token, value_ptr, (values[index], field_ok, field_error))?;
         ctx.emit(Instruction::LocalGet(field_ok));
         ctx.begin_block_if();
         ctx.emit(Instruction::I32Const(1));
@@ -306,25 +373,6 @@ fn emit_parse_scalar_struct(
   Ok(())
 }
 
-fn validate_scalar_child_shape(graph: &DataShapeGraph, node_id: usize) -> Result<(), String> {
-  let node = graph
-    .nodes
-    .get(node_id)
-    .ok_or_else(|| format!("E_WASM_EDN_SHAPE: typed Cirru EDN parser references missing node #{node_id}"))?;
-  match node {
-    DataShapeNode::Nil
-    | DataShapeNode::Unit
-    | DataShapeNode::Bool
-    | DataShapeNode::Number
-    | DataShapeNode::Numeric(_)
-    | DataShapeNode::String
-    | DataShapeNode::Tag => Ok(()),
-    other => Err(format!(
-      "E_WASM_EDN_SHAPE: nested {other:?} is not yet supported by the typed Cirru EDN parser"
-    )),
-  }
-}
-
 fn emit_parse_scalar_list(
   ctx: &mut WasmGenCtx,
   graph: &DataShapeGraph,
@@ -334,14 +382,6 @@ fn emit_parse_scalar_list(
   ok: u32,
   error_kind: u32,
 ) -> Result<(), String> {
-  let item_node = graph
-    .nodes
-    .get(item_id)
-    .ok_or_else(|| format!("E_WASM_EDN_SHAPE: typed Cirru EDN parser references missing node #{item_id}"))?;
-  if matches!(item_node, DataShapeNode::List(_)) {
-    return Err("E_WASM_EDN_SHAPE: nested List parsing is not yet supported".into());
-  }
-
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(ok));
   ctx.emit(Instruction::I32Const(0));
@@ -396,7 +436,7 @@ fn emit_parse_scalar_list(
     let item_value = ctx.alloc_local();
     let item_ok = ctx.alloc_local_typed(ValType::I32);
     let item_error = ctx.alloc_local_typed(ValType::I32);
-    emit_parse_scalar(ctx, item_node, item_token, item_ptr, item_value, item_ok, item_error)?;
+    emit_parse_node(ctx, graph, item_id, item_token, item_ptr, (item_value, item_ok, item_error))?;
     ctx.emit(Instruction::LocalGet(item_ok));
     ctx.begin_block_if();
     emit_list_store_elem(ctx, list_ptr, index, item_value);
@@ -525,20 +565,7 @@ where
   ctx.emit(Instruction::LocalSet(valid));
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::Else);
-
-  ctx.begin_block();
-  ctx.begin_loop();
-  ctx.emit(Instruction::LocalGet(cursor));
-  ctx.emit(Instruction::LocalGet(len));
-  ctx.emit(Instruction::I32GeU);
-  ctx.emit(Instruction::BrIf(1));
-  let byte = load_byte_at(ctx, token_ptr, cursor);
-  emit_ascii_whitespace(ctx, byte);
-  ctx.emit(Instruction::BrIf(1));
-  ctx.i32_inc(cursor);
-  ctx.emit(Instruction::Br(0));
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::End);
+  emit_scan_unquoted_edn_token(ctx, token_ptr, len, cursor, valid, false);
   ctx.emit(Instruction::End);
 
   ctx.emit(Instruction::LocalGet(cursor));
@@ -573,15 +600,6 @@ fn emit_parse_scalar_map(
 ) -> Result<(), String> {
   let (key_id, value_id) = nodes;
   let (parsed, ok, error_kind) = outputs;
-  let key_node = graph
-    .nodes
-    .get(key_id)
-    .ok_or_else(|| format!("E_WASM_EDN_SHAPE: typed Cirru EDN parser references missing node #{key_id}"))?;
-  let value_node = graph
-    .nodes
-    .get(value_id)
-    .ok_or_else(|| format!("E_WASM_EDN_SHAPE: typed Cirru EDN parser references missing node #{value_id}"))?;
-
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(ok));
   ctx.emit(Instruction::I32Const(0));
@@ -656,7 +674,7 @@ fn emit_parse_scalar_map(
       let key_value = ctx.alloc_local();
       let key_ok = ctx.alloc_local_typed(ValType::I32);
       let key_error = ctx.alloc_local_typed(ValType::I32);
-      emit_parse_scalar(ctx, key_node, key_token, key_ptr, key_value, key_ok, key_error)?;
+      emit_parse_node(ctx, graph, key_id, key_token, key_ptr, (key_value, key_ok, key_error))?;
 
       ctx.emit(Instruction::LocalGet(key_ok));
       ctx.begin_block_if();
@@ -668,7 +686,7 @@ fn emit_parse_scalar_map(
       let item_value = ctx.alloc_local();
       let value_ok = ctx.alloc_local_typed(ValType::I32);
       let value_error = ctx.alloc_local_typed(ValType::I32);
-      emit_parse_scalar(ctx, value_node, value_token, value_ptr, item_value, value_ok, value_error)?;
+      emit_parse_node(ctx, graph, value_id, value_token, value_ptr, (item_value, value_ok, value_error))?;
       ctx.emit(Instruction::LocalGet(value_ok));
       ctx.begin_block_if();
       ctx.emit(Instruction::LocalGet(map_ptr));
@@ -845,6 +863,28 @@ fn emit_scan_map_scalar_token(ctx: &mut WasmGenCtx, token_ptr: u32, len: u32, cu
   ctx.emit(Instruction::LocalSet(valid));
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::Else);
+  emit_scan_unquoted_edn_token(ctx, token_ptr, len, cursor, valid, true);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(cursor));
+  ctx.emit(Instruction::LocalSet(end));
+  (start, end)
+}
+
+/// Scan one bare or parenthesized EDN token while treating quoted string
+/// contents as opaque bytes. This is shared by List items and Map/Struct entry
+/// values so parentheses and whitespace inside strings never affect nesting.
+fn emit_scan_unquoted_edn_token(
+  ctx: &mut WasmGenCtx,
+  token_ptr: u32,
+  len: u32,
+  cursor: u32,
+  valid: u32,
+  stop_at_closing_parenthesis: bool,
+) {
+  let parentheses = ctx.alloc_i32(0);
+  let in_quote = ctx.alloc_i32(0);
+  let handled_quote = ctx.alloc_i32(0);
   ctx.begin_block();
   ctx.begin_loop();
   ctx.emit(Instruction::LocalGet(cursor));
@@ -852,21 +892,99 @@ fn emit_scan_map_scalar_token(ctx: &mut WasmGenCtx, token_ptr: u32, len: u32, cu
   ctx.emit(Instruction::I32GeU);
   ctx.emit(Instruction::BrIf(1));
   let byte = load_byte_at(ctx, token_ptr, cursor);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(handled_quote));
+
+  ctx.emit(Instruction::LocalGet(in_quote));
+  ctx.begin_block_if();
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(handled_quote));
+  ctx.emit(Instruction::LocalGet(byte));
+  ctx.emit(Instruction::I32Const(b'\\' as i32));
+  ctx.emit(Instruction::I32Eq);
+  ctx.begin_block_if();
+  ctx.i32_inc(cursor);
+  ctx.emit(Instruction::LocalGet(cursor));
+  ctx.emit(Instruction::LocalGet(len));
+  ctx.emit(Instruction::I32GeU);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(valid));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(byte));
+  ctx.emit(Instruction::I32Const(b'"' as i32));
+  ctx.emit(Instruction::I32Eq);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(in_quote));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(byte));
+  ctx.emit(Instruction::I32Const(b'"' as i32));
+  ctx.emit(Instruction::I32Eq);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(in_quote));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(handled_quote));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  ctx.emit(Instruction::LocalGet(handled_quote));
+  ctx.begin_block_if();
+  ctx.i32_inc(cursor);
+  ctx.emit(Instruction::Br(1));
+  ctx.emit(Instruction::End);
+
   emit_ascii_whitespace(ctx, byte);
+  ctx.emit(Instruction::LocalGet(parentheses));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::I32And);
+  if stop_at_closing_parenthesis {
+    ctx.emit(Instruction::LocalGet(byte));
+    ctx.emit(Instruction::I32Const(b')' as i32));
+    ctx.emit(Instruction::I32Eq);
+    ctx.emit(Instruction::LocalGet(parentheses));
+    ctx.emit(Instruction::I32Eqz);
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::I32Or);
+  }
+  ctx.emit(Instruction::BrIf(1));
+
+  ctx.emit(Instruction::LocalGet(byte));
+  ctx.emit(Instruction::I32Const(b'(' as i32));
+  ctx.emit(Instruction::I32Eq);
+  ctx.begin_block_if();
+  ctx.i32_inc(parentheses);
+  ctx.emit(Instruction::End);
   ctx.emit(Instruction::LocalGet(byte));
   ctx.emit(Instruction::I32Const(b')' as i32));
   ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::I32Or);
-  ctx.emit(Instruction::BrIf(1));
+  ctx.emit(Instruction::LocalGet(parentheses));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32GtU);
+  ctx.emit(Instruction::I32And);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(parentheses));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::LocalSet(parentheses));
+  ctx.emit(Instruction::End);
   ctx.i32_inc(cursor);
   ctx.emit(Instruction::Br(0));
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalGet(cursor));
-  ctx.emit(Instruction::LocalSet(end));
-  (start, end)
+
+  ctx.emit(Instruction::LocalGet(parentheses));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::LocalGet(in_quote));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalSet(valid));
 }
 
 fn emit_skip_ascii_whitespace(ctx: &mut WasmGenCtx, token_ptr: u32, len: u32, cursor: u32) {
@@ -1297,6 +1415,27 @@ fn emit_numeric_refinement_check(ctx: &mut WasmGenCtx, parsed: u32, kind: Calcit
     ctx.emit(Instruction::I32Const(1));
   }
   ctx.emit(Instruction::LocalSet(output));
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn rejects_recursive_map_keys_before_codegen() {
+    let graph = DataShapeGraph::from_nodes(
+      0,
+      vec![
+        DataShapeNode::Map { key: 1, value: 2 },
+        DataShapeNode::List(2),
+        DataShapeNode::String,
+      ],
+    )
+    .expect("test shape should be well formed");
+
+    let error = validate_decode_shape(&graph, graph.root, 0).expect_err("collection map keys must fail closed");
+    assert!(error.starts_with("E_WASM_EDN_MAP_KEY:"));
+  }
 }
 
 fn if_then_string_prefix<F>(ctx: &mut WasmGenCtx, ptr: u32, prefix: &str, body: F) -> Result<(), String>
