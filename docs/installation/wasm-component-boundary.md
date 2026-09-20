@@ -231,7 +231,7 @@ calcit-bindgen generate target/component-interface.cirru \
   --out target/component
 ```
 
-`calcit-bindgen 0.1.6` 默认同时生成 runnable Component 与
+`calcit-bindgen 0.1.7` 默认同时生成 runnable Component 与
 `rust/wasmtime-http-host`。应用复制示例中的 Cirru EDN capability 模板，显式配置 Component、导出入口、
 严格类型的参数、允许的 `scheme://authority`、响应上限与 preopen，再直接运行生成的 host。默认配置拒绝
 全部网络；端口属于 authority。生成器保留最终 Component 的 `calcit:wasi-http/client` import identity，
@@ -241,6 +241,9 @@ calcit-bindgen generate target/component-interface.cirru \
 或 Dynamic 猜测。CI 使用 `calcit-bindgen check` 验证生成目录是否与 contract 和 core module 同步。
 generated host 内由 Cargo 创建的 `Cargo.lock` 与 `target/` 是唯一被忽略的运行产物，因此真实运行后仍可
 check 或安全再生成；任何其他未知文件仍受 manifest 所有权保护。
+需要文件化业务调用时，`:arguments-file` 与 `:result-file` 继续复用同一 Cirru EDN capability 和
+preopen 列表，不增加 Calcit 命令或另一套 host。输入、权限、transport、响应超限等结果同时保留 typed
+Cirru EDN payload 与稳定进程退出码，方便脚本和 Agent 在不解析人类日志的情况下编排。
 需要嵌入已有 Rust runtime 的高级应用仍可使用底层 `wasmtime-http` library API，但它不再是起步路径。
 
 当前可复制的稳定宿主路径复用 Wasmtime 47 的 WASI 0.2 `wasi:http/outgoing-handler` 生产传输，

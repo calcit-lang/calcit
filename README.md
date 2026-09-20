@@ -34,7 +34,7 @@ cadence are maintained separately or tracked for extraction:
 
 | Module | Status and ownership |
 | --- | --- |
-| [`calcit-bindgen`](https://github.com/calcit-lang/calcit-bindgen) | 独立的实验性生成器；负责确定性的 Rust/Calcit/TypeScript/WIT generation、manifest、compatibility diff 与 stale check。已覆盖 Struct record、闭合单态 Enum 与明确宽度数值；0.1.6 把 Component Interface IR v4、async export/import、作用域化有界字节流与有界 WASI HTTP client 打包为可运行 Component，并生成读取严格 Cirru EDN 参数/结果的默认拒绝 Wasmtime host；真实 Cargo 运行后仍可 check 与安全再生成。resource、HTTP service 等后续能力继续按独立 milestone 推进。core 只保留 Interface IR export/schema/conformance；已完成的 generator 拆分由 [#544](https://github.com/calcit-lang/calcit/issues/544) 追踪。 |
+| [`calcit-bindgen`](https://github.com/calcit-lang/calcit-bindgen) | 独立的实验性生成器；负责确定性的 Rust/Calcit/TypeScript/WIT generation、manifest、compatibility diff 与 stale check。已覆盖 Struct record、闭合单态 Enum 与明确宽度数值；0.1.7 把 Component Interface IR v4、async export/import、作用域化有界字节流与有界 WASI HTTP client 打包为可运行 Component，并生成读取严格 Cirru EDN 参数/结果的默认拒绝 Wasmtime host；支持经 preopen 授权的文件参数/结果与稳定业务退出码，真实 Cargo 运行后仍可 check 与安全再生成。resource、HTTP service 等后续能力继续按独立 milestone 推进。core 只保留 Interface IR export/schema/conformance；已完成的 generator 拆分由 [#544](https://github.com/calcit-lang/calcit/issues/544) 追踪。 |
 | [`calcit-native-ffi`](https://github.com/calcit-lang/calcit-native-ffi) | Independent production shared ABI/helper crate for native modules; canonical ABI ownership is tracked in [calcit-native-ffi#7](https://github.com/calcit-lang/calcit-native-ffi/issues/7). |
 | [`caps`](https://github.com/calcit-lang/caps) | Independent production package manager released as the `calcit-caps` crate; the completed core cutover is tracked in [#555](https://github.com/calcit-lang/calcit/issues/555). |
 
