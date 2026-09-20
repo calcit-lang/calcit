@@ -19,7 +19,7 @@ WASM 相关能力分属四个不同层级，排查或文档引用时不要把它
 4. **Component boundary**：`calcit wasm --boundary component` 与
    `calcit ffi export --boundary component` 走独立的 Canonical ABI adapter 与版本化 Interface IR，
    其类型矩阵、async lifecycle 与 HTTP 边界以
-   [WASM Component 边界](../../docs/installation/wasm-component-boundary.md) 为准，不在本文件重复。
+   [WASM Component 边界](../docs/installation/wasm-component-boundary.md) 为准，不在本文件重复。
 
 下表只描述第 2 层，即 core/WASI command codegen 当前支持的最小计算子集。
 
