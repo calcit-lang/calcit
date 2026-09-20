@@ -54,8 +54,8 @@ WASM 相关能力分属四个不同层级，排查或文档引用时不要把它
 | `&str:find-index`                      | ✅   | 朴素字节子串搜索，返回偏移或 -1 |
 | `&str:includes?`                       | ✅   | `find-index >= 0`          |
 | `&str:pad-left` / `&str:pad-right`     | ✅   | 循环填充 pattern 字节    |
-| `format-cirru-edn`                     | 部分 | 由闭合静态类型导向；首批支持 nil、Bool、String、tag 与递归同质 List |
-| `try-parse-cirru-edn-as`               | 部分 | 复用闭合 `DataShapeGraph`；支持标量、顶层同质标量 List/Map 与稳定 `Result` 错误 |
+| `format-cirru-edn`                     | 部分 | 由闭合静态类型导向；支持标量及递归 List、Map value、Struct field |
+| `try-parse-cirru-edn-as`               | 部分 | 复用闭合 `DataShapeGraph`；支持标量及递归 List、Map value、Struct field 与稳定 `Result` 错误 |
 | `__str_new` (FFI)                      | ✅   | JS → WASM 字符串传递     |
 | `defwasm-import` / `defwasm-export`    | ✅   | 显式声明 host ABI，支持 Number / String |
 

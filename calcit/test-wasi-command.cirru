@@ -173,15 +173,22 @@
         'edn-nested-roundtrip-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-nested-roundtrip-main! ()
             let
-                parsed $ edn-parse-nested-int-lists "|[] ([] 1 2) ([] -3)"
-              match parsed
+                ints-result $ edn-parse-nested-int-lists "|[] ([] 1 2) ([] -3)"
+                strings-result $ edn-parse-nested-string-lists "|[] ([] \"|(\" \"|)\")"
+              match ints-result
                 (:err _) (quit! 1)
-                (:ok value)
-                  if
-                    = (format-cirru-edn value)
-                      str (char-from-code 10) "|[] ([] 1 2) ([] -3)" $ char-from-code 10
-                    println |WASI-recursive-typed-EDN:-ok
-                    quit! 1
+                (:ok ints)
+                  match strings-result
+                    (:err _) (quit! 1)
+                    (:ok strings)
+                      if
+                        and
+                          = (format-cirru-edn ints)
+                            str (char-from-code 10) "|[] ([] 1 2) ([] -3)" $ char-from-code 10
+                          = (format-cirru-edn strings)
+                            str (char-from-code 10) "|[] ([] \"|(\" \"|)\")" $ char-from-code 10
+                        println |WASI-recursive-typed-EDN:-ok
+                        quit! 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
@@ -385,6 +392,20 @@
                       assert=
                         str (char-from-code 10) "|[] ([] 1 2) ([] -3)" $ char-from-code 10
                         format-cirru-edn value
+            :tags $ #{} :core :edn :unit :wasi :wasm
+        'edn-parse-nested-string-lists $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-nested-string-lists (text)
+            try-parse-cirru-edn-as text $ :: 'List $ :: 'List 'String
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result
+              :: 'List $ :: 'List 'String
+              , 'String
+          :tests $ [] $ %{} 'TestEntry (:name |ignores-parentheses-inside-quoted-strings)
+            :code $ quote $ assert=
+              %ok $ [] $ [] "|(" "|)"
+              edn-parse-nested-string-lists "|[] ([] \"|(\" \"|)\")"
             :tags $ #{} :core :edn :unit :wasi :wasm
         'edn-parse-over-limit-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-over-limit-main! ()
