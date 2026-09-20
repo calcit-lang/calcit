@@ -231,10 +231,17 @@ calcit-bindgen generate target/component-interface.cirru \
   --out target/component
 ```
 
-宿主使用 `calcit-bindgen 0.1.3` 的 `wasmtime-http` feature，把生成目录中的
-`rust/wasmtime_http_adapter.rs` include 到 crate 根部，再调用 `add_to_linker`。默认配置拒绝全部网络；
-必须用 `WasiHttpConfig::allow_origin("scheme://authority")` 精确授予 origin，端口属于 authority。
-生成器会保留最终 Component 的 `calcit:wasi-http/client` import identity，不要求业务改用内部 WIT alias。
+`calcit-bindgen 0.1.6` 默认同时生成 runnable Component 与
+`rust/wasmtime-http-host`。应用复制示例中的 Cirru EDN capability 模板，显式配置 Component、导出入口、
+严格类型的参数、允许的 `scheme://authority`、响应上限与 preopen，再直接运行生成的 host。默认配置拒绝
+全部网络；端口属于 authority。生成器保留最终 Component 的 `calcit:wasi-http/client` import identity，
+应用不需要手写 Canonical ABI value 构造、include adapter 或维护源码 path dependency。
+
+生成 host 的 stdout 只承载 Cirru EDN 结果，诊断写入 stderr；配置类型不符会报告字段路径，不回退到 JSON
+或 Dynamic 猜测。CI 使用 `calcit-bindgen check` 验证生成目录是否与 contract 和 core module 同步。
+generated host 内由 Cargo 创建的 `Cargo.lock` 与 `target/` 是唯一被忽略的运行产物，因此真实运行后仍可
+check 或安全再生成；任何其他未知文件仍受 manifest 所有权保护。
+需要嵌入已有 Rust runtime 的高级应用仍可使用底层 `wasmtime-http` library API，但它不再是起步路径。
 
 当前可复制的稳定宿主路径复用 Wasmtime 47 的 WASI 0.2 `wasi:http/outgoing-handler` 生产传输，
 而 Calcit-facing Component contract 保持 WASI 0.3 原生 async。portable、直接依赖 WASI 0.3 HTTP host
@@ -247,7 +254,7 @@ CI 的可用性基线不是“能生成 WIT”：同一份 Calcit contract 必�
 当前明确不覆盖 streaming body、HTTP service、redirect 自动跟随和主动取消，这些限制不会被静默模拟。
 
 [`examples/wasi-http-client/`](../../examples/wasi-http-client/) 提供可复制的最小应用：Calcit Snapshot、
-固定发布版本依赖的 Wasmtime host，以及从 Cirru EDN contract 到 runnable Component 的完整命令。
+由固定发布版本生成的默认拒绝 Wasmtime host，以及从 Cirru EDN contract 到 runnable Component 的完整命令。
 这个示例复用上述边界和现有命令，不引入测试专用 import、源码 path dependency 或新的 CLI 包装层。
 
 ## 实施顺序
