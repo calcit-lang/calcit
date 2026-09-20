@@ -160,6 +160,26 @@ fn strict_workflow_composes_a_resumable_project_manifest() {
 }
 
 #[test]
+fn strict_workflow_plans_cross_namespace_macro_generated_ffi() {
+  // A macro imported from another namespace generates a closure that performs a
+  // typed external-object call. Strict `--check-only` inherits the macro
+  // capability scope, but lenient migration planning used to drop that
+  // inheritance because it is gated on strict typing. The planner then rejected
+  // the project before it could produce any plan.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-cross-ns-macro-ffi.cirru", &snapshot).expect("fixture should copy");
+
+  let check = run_calcit(&snapshot, &["--check-only"]);
+  assert_success(&check, "cross-namespace macro FFI check-only");
+
+  let preview = run_fix(&snapshot, &["--workflow", "strict", "--format", "json"]);
+  assert_success(&preview, "cross-namespace macro FFI strict workflow plan");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["workflow"]["status"], "planned");
+}
+
+#[test]
 fn strict_workflow_applies_safe_fixes_and_verifies_the_result() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
