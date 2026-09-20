@@ -4,6 +4,7 @@ use cirru_edn::EdnTag;
 
 const MAX_EDN_TYPE_DEPTH: usize = 32;
 pub(super) const MAX_EDN_OUTPUT_BYTES: i32 = 64 * 1024;
+type ResolvedEnumVariant = (EdnTag, Vec<Arc<CalcitTypeAnnotation>>);
 
 pub(super) fn emit_format_cirru_edn(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if !(1..=2).contains(&args.len()) {
@@ -24,10 +25,17 @@ pub(super) fn emit_format_cirru_edn(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   let inferred_type = infer_static_type_from_expr(&args[0])
     .ok_or_else(|| "E_WASM_EDN_TYPE: format-cirru-edn requires a closed inferred input type for WASM".to_string())?;
   let value_type = match inferred_type.as_ref() {
-    CalcitTypeAnnotation::TypeRef(_, args) => inferred_type
-      .resolve_to_struct()
-      .map(|nominal| Arc::new(CalcitTypeAnnotation::Struct(Arc::new(nominal), args.clone())))
-      .unwrap_or(inferred_type),
+    CalcitTypeAnnotation::TypeRef(_, args) => {
+      if let Some(nominal) = inferred_type.resolve_to_struct() {
+        Arc::new(CalcitTypeAnnotation::Struct(Arc::new(nominal), args.clone()))
+      } else if let Some(nominal) = inferred_type.resolve_to_enum() {
+        Arc::new(CalcitTypeAnnotation::Enum(Arc::new(nominal), args.clone()))
+      } else {
+        inferred_type
+      }
+    }
+    CalcitTypeAnnotation::StructValue(nominal) => Arc::new(CalcitTypeAnnotation::Struct(nominal.clone(), Arc::new(vec![]))),
+    CalcitTypeAnnotation::EnumValue(nominal) => Arc::new(CalcitTypeAnnotation::Enum(nominal.clone(), Arc::new(vec![]))),
     _ => inferred_type,
   };
 
@@ -64,7 +72,10 @@ pub(super) fn try_format_cirru_edn_literal(value: &Calcit) -> Option<String> {
 fn is_edn_scalar(value_type: &CalcitTypeAnnotation) -> bool {
   !matches!(
     value_type,
-    CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::Struct(_, _)
+    CalcitTypeAnnotation::List(_)
+      | CalcitTypeAnnotation::Map(_, _)
+      | CalcitTypeAnnotation::Struct(_, _)
+      | CalcitTypeAnnotation::Enum(_, _)
   )
 }
 
@@ -82,6 +93,19 @@ fn emit_edn_value(
   }
 
   match value_type {
+    CalcitTypeAnnotation::TypeRef(_, args) => {
+      if let Some(nominal) = value_type.resolve_to_struct() {
+        emit_edn_struct(ctx, value, &nominal, args, depth, nested)
+      } else if let Some(nominal) = value_type.resolve_to_enum() {
+        emit_edn_enum(ctx, value, &nominal, args, depth, nested)
+      } else {
+        Err(format!(
+          "E_WASM_EDN_TYPE: {value_type} cannot be resolved to a closed nominal type for WASM"
+        ))
+      }
+    }
+    CalcitTypeAnnotation::StructValue(nominal) => emit_edn_struct(ctx, value, nominal, &Arc::new(vec![]), depth, nested),
+    CalcitTypeAnnotation::EnumValue(nominal) => emit_edn_enum(ctx, value, nominal, &Arc::new(vec![]), depth, nested),
     CalcitTypeAnnotation::Nil => literal_local(ctx, "nil"),
     CalcitTypeAnnotation::Bool => {
       let result = ctx.alloc_local();
@@ -114,6 +138,7 @@ fn emit_edn_value(
     CalcitTypeAnnotation::List(item_type) => emit_edn_list(ctx, value, item_type.as_ref(), depth, nested),
     CalcitTypeAnnotation::Map(key_type, value_type) => emit_edn_map(ctx, value, key_type.as_ref(), value_type.as_ref(), depth, nested),
     CalcitTypeAnnotation::Struct(nominal, args) => emit_edn_struct(ctx, value, nominal, args, depth, nested),
+    CalcitTypeAnnotation::Enum(nominal, args) => emit_edn_enum(ctx, value, nominal, args, depth, nested),
     CalcitTypeAnnotation::Number => Err(
       "E_WASM_EDN_TYPE: generic Number formatting is not yet exact in WASM; use an integer numeric refinement or defer this path"
         .into(),
@@ -128,6 +153,136 @@ fn emit_edn_value(
       "E_WASM_EDN_TYPE: {other} is not yet supported by the WASM Cirru EDN formatter"
     )),
   }
+}
+
+fn resolved_enum_variants(
+  nominal: &CalcitEnumDef,
+  args: &Arc<Vec<Arc<CalcitTypeAnnotation>>>,
+) -> Result<Vec<ResolvedEnumVariant>, String> {
+  if nominal.generics().len() != args.len() {
+    return Err(format!(
+      "E_WASM_EDN_ENUM_SHAPE: enum :{} expects {} type arguments, got {}",
+      nominal.name(),
+      nominal.generics().len(),
+      args.len()
+    ));
+  }
+  let bindings = nominal
+    .generics()
+    .iter()
+    .cloned()
+    .zip(args.iter().cloned())
+    .collect::<HashMap<_, _>>();
+  Ok(
+    nominal
+      .variants()
+      .iter()
+      .map(|variant| {
+        (
+          variant.tag.clone(),
+          variant
+            .payload_types()
+            .iter()
+            .map(|payload| payload.substitute_type_vars(&bindings))
+            .collect(),
+        )
+      })
+      .collect(),
+  )
+}
+
+fn emit_edn_enum(
+  ctx: &mut WasmGenCtx,
+  value: u32,
+  nominal: &CalcitEnumDef,
+  args: &Arc<Vec<Arc<CalcitTypeAnnotation>>>,
+  depth: usize,
+  nested: bool,
+) -> Result<u32, String> {
+  let variants = resolved_enum_variants(nominal, args)?;
+  for (_, payloads) in &variants {
+    for payload in payloads {
+      validate_edn_type(payload, depth + 1)?;
+    }
+  }
+
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr));
+  let payload_count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(payload_count));
+  let variant_tag = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(variant_tag));
+
+  let result = literal_local(ctx, if nested { "(%::" } else { "%::" })?;
+  let with_name_space = concat_with_literal_after(ctx, result, " ")?;
+  ctx.emit(Instruction::LocalGet(with_name_space));
+  ctx.emit(Instruction::LocalSet(result));
+  let name = literal_local(ctx, &format!("'{}", nominal.name()))?;
+  let with_name = concat_string_locals(ctx, result, name);
+  ctx.emit(Instruction::LocalGet(with_name));
+  ctx.emit(Instruction::LocalSet(result));
+
+  let matched = ctx.alloc_i32(0);
+  for (variant, payloads) in variants {
+    let tag_id = *ctx.tag_index.get(variant.ref_str()).ok_or_else(|| {
+      format!(
+        "E_WASM_EDN_ENUM_SHAPE: enum :{} variant :{} is not present in the compiled program",
+        nominal.name(),
+        variant
+      )
+    })?;
+    ctx.emit(Instruction::LocalGet(variant_tag));
+    ctx.emit(f64_const(tag_id as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::LocalGet(payload_count));
+    ctx.emit(Instruction::I32Const(payloads.len() as i32));
+    ctx.emit(Instruction::I32Ne);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::Unreachable);
+    ctx.emit(Instruction::End);
+    let with_variant_space = concat_with_literal_after(ctx, result, " ")?;
+    ctx.emit(Instruction::LocalGet(with_variant_space));
+    ctx.emit(Instruction::LocalSet(result));
+    let variant_name = literal_local(ctx, &format!("'{variant}"))?;
+    let with_variant = concat_string_locals(ctx, result, variant_name);
+    ctx.emit(Instruction::LocalGet(with_variant));
+    ctx.emit(Instruction::LocalSet(result));
+    for (index, payload_type) in payloads.iter().enumerate() {
+      let with_space = concat_with_literal_after(ctx, result, " ")?;
+      ctx.emit(Instruction::LocalGet(with_space));
+      ctx.emit(Instruction::LocalSet(result));
+      let payload = ctx.alloc_local();
+      ctx.emit(Instruction::LocalGet(ptr));
+      ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + index) * 8) as u64)));
+      ctx.emit(Instruction::LocalSet(payload));
+      let formatted = emit_edn_value(ctx, payload, payload_type, depth + 1, true)?;
+      let with_payload = concat_string_locals(ctx, result, formatted);
+      ctx.emit(Instruction::LocalGet(with_payload));
+      ctx.emit(Instruction::LocalSet(result));
+    }
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::LocalSet(matched));
+    ctx.emit(Instruction::End);
+  }
+  ctx.emit(Instruction::LocalGet(matched));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  if nested {
+    let closed = concat_with_literal_after(ctx, result, ")")?;
+    ctx.emit(Instruction::LocalGet(closed));
+    ctx.emit(Instruction::LocalSet(result));
+  }
+  Ok(result)
 }
 
 fn resolved_struct_fields(
@@ -523,6 +678,23 @@ fn validate_edn_type(value_type: &CalcitTypeAnnotation, depth: usize) -> Result<
     ));
   }
   match value_type {
+    CalcitTypeAnnotation::TypeRef(_, args) => {
+      if let Some(nominal) = value_type.resolve_to_struct() {
+        validate_edn_type(&CalcitTypeAnnotation::Struct(Arc::new(nominal), args.clone()), depth)
+      } else if let Some(nominal) = value_type.resolve_to_enum() {
+        validate_edn_type(&CalcitTypeAnnotation::Enum(Arc::new(nominal), args.clone()), depth)
+      } else {
+        Err(format!(
+          "E_WASM_EDN_TYPE: {value_type} cannot be resolved to a closed nominal type for WASM"
+        ))
+      }
+    }
+    CalcitTypeAnnotation::StructValue(nominal) => {
+      validate_edn_type(&CalcitTypeAnnotation::Struct(nominal.clone(), Arc::new(vec![])), depth)
+    }
+    CalcitTypeAnnotation::EnumValue(nominal) => {
+      validate_edn_type(&CalcitTypeAnnotation::Enum(nominal.clone(), Arc::new(vec![])), depth)
+    }
     CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Bool | CalcitTypeAnnotation::String | CalcitTypeAnnotation::Tag => Ok(()),
     CalcitTypeAnnotation::Numeric(kind) if !matches!(kind, CalcitNumericRefinement::Float32 | CalcitNumericRefinement::Float64) => {
       Ok(())
@@ -531,6 +703,14 @@ fn validate_edn_type(value_type: &CalcitTypeAnnotation, depth: usize) -> Result<
     CalcitTypeAnnotation::Struct(nominal, args) => {
       for (_, field_type) in resolved_struct_fields(nominal, args)? {
         validate_edn_type(&field_type, depth + 1)?;
+      }
+      Ok(())
+    }
+    CalcitTypeAnnotation::Enum(nominal, args) => {
+      for (_, payloads) in resolved_enum_variants(nominal, args)? {
+        for payload in payloads {
+          validate_edn_type(&payload, depth + 1)?;
+        }
       }
       Ok(())
     }

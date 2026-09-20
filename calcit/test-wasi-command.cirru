@@ -10,10 +10,23 @@
   :files $ {} $ 'app.main
     %{} 'FileEntry
       :defs $ {}
+        'EdnEnvelope $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct EdnEnvelope (:request-id 'String)
+            :note $ :: 'Option 'String
+            :outcome 'EdnOutcome
+          :examples $ []
+          :schema $ :: 'StructDef
         'EdnJob $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct EdnJob (:name 'String) (:count 'Int32) (:ready 'Bool)
           :examples $ []
           :schema $ :: 'StructDef
+        'EdnOutcome $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum EdnOutcome
+            :ready $ :: 'List 'Int32
+            :failed 'String
+            :idle
+          :examples $ []
+          :schema $ :: 'EnumDef
         'clock-fixed-main! $ %{} 'CodeEntry (:doc "|用确定性的 WASI 假宿主验证时钟编号与纳秒到毫秒的换算。")
           :code $ quote $ defn clock-fixed-main! ()
             if
@@ -47,6 +60,18 @@
           :tests $ [] $ %{} 'TestEntry (:name |valid-readings)
             :code $ quote $ assert= true (clocks-valid?)
             :tags $ #{} :core :time :unit :wasi :wasm
+        'edn-enum-arity-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-enum-arity-main! ()
+            match (edn-parse-outcome "|%:: 'EdnOutcome 'ready")
+              (:ok _) (quit! 1)
+              (:err message)
+                if
+                  = message "|E_WASM_EDN_ENUM: Cirru EDN enum type, variant, or payload does not match the requested type"
+                  println |WASI-enum-arity-error:-ok
+                  quit! 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'edn-file-roundtrip-main! $ %{} 'CodeEntry (:doc "|从预开放目录读取有类型 Cirru EDN，更新计数并写回规范化数据。")
           :code $ quote $ defn edn-file-roundtrip-main! ()
             let
@@ -108,6 +133,12 @@
             println $ format-cirru-edn -0.5
             println $ format-cirru-edn $ {} (:b |two) (:a |one)
             println $ format-cirru-edn $ {} ("|b key" |two) (|a |one)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'edn-format-only-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-format-only-main! ()
+            println $ format-cirru-edn $ EdnOutcome :failed |offline
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
@@ -192,6 +223,42 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'edn-nominal-roundtrip-main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-nominal-roundtrip-main! ()
+            let
+                outcome $ EdnOutcome :ready $ assert-type ([] 1 -2) (:: 'List 'Int32)
+                envelope $ EdnEnvelope :request-id |r1 :note (%some "|hello world") :outcome outcome
+                typed-result $ assert-type (%ok outcome) (:: 'Result 'app.main/EdnOutcome 'String)
+              match
+                edn-parse-outcome $ format-cirru-edn outcome
+                (:err _) (quit! 1)
+                (:ok decoded-outcome)
+                  match
+                    edn-parse-envelope $ format-cirru-edn envelope
+                    (:err _) (quit! 1)
+                    (:ok decoded-envelope)
+                      match
+                        edn-parse-result-outcome $ format-cirru-edn typed-result
+                        (:err _) (quit! 1)
+                        (:ok decoded-result)
+                          if
+                            and
+                              = (format-cirru-edn outcome) (format-cirru-edn decoded-outcome)
+                              = (format-cirru-edn envelope) (format-cirru-edn decoded-envelope)
+                              = (format-cirru-edn typed-result) (format-cirru-edn decoded-result)
+                              result:err? $ edn-parse-outcome "|%:: 'EdnOutcome 'unknown"
+                              result:err? $ edn-parse-outcome "|%:: 'EdnOutcome 'ready |wrong"
+                            println |WASI-nominal-typed-EDN:-ok
+                            quit! 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'edn-parse-envelope $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-envelope (text) (try-parse-cirru-edn-as text 'EdnEnvelope)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result 'app.main/EdnEnvelope 'String
         'edn-parse-int-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-int-list (text)
             try-parse-cirru-edn-as text $ :: 'List 'Int32
@@ -407,6 +474,23 @@
               %ok $ [] $ [] "|(" "|)"
               edn-parse-nested-string-lists "|[] ([] \"|(\" \"|)\")"
             :tags $ #{} :core :edn :unit :wasi :wasm
+        'edn-parse-outcome $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-outcome (text) (try-parse-cirru-edn-as text 'EdnOutcome)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result 'app.main/EdnOutcome 'String
+          :tests $ [] $ %{} 'TestEntry (:name |parses-nominal-variants)
+            :code $ quote $ do
+              assert=
+                %ok $ EdnOutcome :ready $ assert-type ([] 1 -2) (:: 'List 'Int32)
+                edn-parse-outcome "|%:: 'EdnOutcome 'ready ([] 1 -2)"
+              assert=
+                %ok $ EdnOutcome :idle
+                edn-parse-outcome "|%:: :EdnOutcome :idle"
+              assert= true $ result:err? $ edn-parse-outcome "|%:: 'EdnOutcome 'unknown"
+              assert= true $ result:err? $ edn-parse-outcome "|%:: 'EdnOutcome 'ready |wrong"
+            :tags $ #{} :core :edn :wasi :wasm
         'edn-parse-over-limit-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-over-limit-main! ()
             let
@@ -430,6 +514,13 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'edn-parse-result-outcome $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn edn-parse-result-outcome (text)
+            try-parse-cirru-edn-as text $ :: 'Result 'app.main/EdnOutcome 'String
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result (:: 'Result 'app.main/EdnOutcome 'String) 'String
         'edn-parse-scalars $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-scalars ()
             [] (try-parse-cirru-edn-as "|do 42" 'Int32) (try-parse-cirru-edn-as "|do |hello" 'String) (try-parse-cirru-edn-as "|do :ready" 'Tag) (try-parse-cirru-edn-as "|do true" 'Bool) (try-parse-cirru-edn-as "|do nil" 'Nil) (try-parse-cirru-edn-as "|do 128" 'Int8) (try-parse-cirru-edn-as "|do 1.5" 'Int8) (try-parse-cirru-edn-as "|do |bad" 'Int32) (try-parse-cirru-edn-as "|do :wasi-typed-edn-unknown" 'Tag) (try-parse-cirru-edn-as "|do nil" 'Unit)

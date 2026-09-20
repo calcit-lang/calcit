@@ -31,6 +31,12 @@ readonly EDN_PARSE_MAP_LIMIT_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-parse-map
 readonly EDN_PARSE_MAP_LIMIT_STDOUT="${EDN_PARSE_MAP_LIMIT_OUT}/stdout.txt"
 readonly EDN_STRUCT_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-struct-roundtrip"
 readonly EDN_STRUCT_STDOUT="${EDN_STRUCT_OUT}/stdout.txt"
+readonly EDN_NOMINAL_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-nominal-roundtrip"
+readonly EDN_NOMINAL_STDOUT="${EDN_NOMINAL_OUT}/stdout.txt"
+readonly EDN_FORMAT_ONLY_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-format-only"
+readonly EDN_FORMAT_ONLY_STDOUT="${EDN_FORMAT_ONLY_OUT}/stdout.txt"
+readonly EDN_ENUM_ARITY_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-enum-arity"
+readonly EDN_ENUM_ARITY_STDOUT="${EDN_ENUM_ARITY_OUT}/stdout.txt"
 readonly EDN_FILE_OUT="${CARGO_TARGET_DIR:-target}/wasi-edn-file-roundtrip"
 readonly EDN_FILE_STDOUT="${EDN_FILE_OUT}/stdout.txt"
 readonly EDN_FILE_INVALID_STDOUT="${EDN_FILE_OUT}/invalid-stdout.txt"
@@ -325,6 +331,23 @@ grep -Fxq 'WASI-typed-EDN-map-limit:-ok' "$EDN_PARSE_MAP_LIMIT_STDOUT"
 "$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-struct-roundtrip-main! --emit-path "$EDN_STRUCT_OUT"
 wasmtime run "$EDN_STRUCT_OUT/program.wasm" >"$EDN_STRUCT_STDOUT"
 grep -Fxq "%{} 'EdnJob (:count 3) (:name |Ada) (:ready true)" "$EDN_STRUCT_STDOUT"
+
+# Named Enum, Option, and Result values use the same closed DataShapeGraph
+# path, including nested nominal payloads, without runtime type probing.
+"$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-outcome --require-match
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-nominal-roundtrip-main! --emit-path "$EDN_NOMINAL_OUT"
+wasmtime run "$EDN_NOMINAL_OUT/program.wasm" >"$EDN_NOMINAL_STDOUT"
+grep -Fxq 'WASI-nominal-typed-EDN:-ok' "$EDN_NOMINAL_STDOUT"
+
+# Keep formatter-only nominal programs independent from parser type handles.
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-format-only-main! --emit-path "$EDN_FORMAT_ONLY_OUT"
+wasmtime run "$EDN_FORMAT_ONLY_OUT/program.wasm" >"$EDN_FORMAT_ONLY_STDOUT"
+grep -Fxq "%:: 'EdnOutcome 'failed |offline" "$EDN_FORMAT_ONLY_STDOUT"
+
+# A known variant with the wrong arity is a nominal-shape error, not generic syntax.
+"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-enum-arity-main! --emit-path "$EDN_ENUM_ARITY_OUT"
+wasmtime run "$EDN_ENUM_ARITY_OUT/program.wasm" >"$EDN_ENUM_ARITY_STDOUT"
+grep -Fxq 'WASI-enum-arity-error:-ok' "$EDN_ENUM_ARITY_STDOUT"
 
 # Compose the typed parser and formatter with the existing preopened-file API.
 # This is the first end-to-end data workflow rather than another isolated
