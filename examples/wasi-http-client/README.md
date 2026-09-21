@@ -82,8 +82,8 @@ cargo run --manifest-path \
 自动跟随。配置值类型不符时，host 会报告带字段路径的错误，不猜测 Dynamic 或回退到 JSON。
 
 生成 host 的稳定退出码为：成功 `0`、输入或 `invalid-request` `2`、capability denied `3`、transport
-`4`、response-too-large `5`、unsupported `6`，其他内部失败 `1`。typed error 仍写入 Cirru EDN 结果，
-退出码只负责脚本编排。
+`4`、response-too-large `5`、unsupported `6`，其他内部失败 `1`。guest 已执行时的 typed error 仍写入
+Cirru EDN 结果；参数文件无法解析等调用前 host 错误只写入 stderr，不创建结果文件。退出码负责统一脚本编排。
 
 ## 发布版业务 smoke
 

@@ -242,8 +242,9 @@ calcit-bindgen generate target/component-interface.cirru \
 generated host 内由 Cargo 创建的 `Cargo.lock` 与 `target/` 是唯一被忽略的运行产物，因此真实运行后仍可
 check 或安全再生成；任何其他未知文件仍受 manifest 所有权保护。
 需要文件化业务调用时，`:arguments-file` 与 `:result-file` 继续复用同一 Cirru EDN capability 和
-preopen 列表，不增加 Calcit 命令或另一套 host。输入、权限、transport、响应超限等结果同时保留 typed
-Cirru EDN payload 与稳定进程退出码，方便脚本和 Agent 在不解析人类日志的情况下编排。
+preopen 列表，不增加 Calcit 命令或另一套 host。guest 返回的权限、transport、响应超限等结果同时保留
+typed Cirru EDN payload 与稳定进程退出码；参数文件解析等调用前 host 错误则以 stderr 和退出码表达，
+不会伪造 guest 结果。两类失败都可供脚本和 Agent 稳定编排。
 需要嵌入已有 Rust runtime 的高级应用仍可使用底层 `wasmtime-http` library API，但它不再是起步路径。
 
 当前可复制的稳定宿主路径复用 Wasmtime 47 的 WASI 0.2 `wasi:http/outgoing-handler` 生产传输，

@@ -15,6 +15,7 @@ result_file="$result_dir/result.cirru"
 host_manifest="$host_root/generated-component/rust/wasmtime-http-host/Cargo.toml"
 server_log="$(mktemp)"
 host_stdout="$(mktemp)"
+host_stderr="$(mktemp)"
 server_pid=""
 
 cleanup() {
@@ -22,7 +23,7 @@ cleanup() {
     kill "$server_pid" 2>/dev/null || true
     wait "$server_pid" 2>/dev/null || true
   fi
-  rm -f "$server_log" "$host_stdout" "$request_file" "$capability_file"
+  rm -f "$server_log" "$host_stdout" "$host_stderr" "$request_file" "$capability_file"
   rm -f "$result_file"
   rmdir "$result_dir" 2>/dev/null || true
 }
@@ -30,14 +31,17 @@ cleanup() {
 run_host_case() {
   local expected_status="$1"
   local expected_result="$2"
+  local expected_stderr="${3:-}"
   rm -f "$result_file"
   set +e
-  cargo run --quiet --manifest-path "$host_manifest" -- "$capability_file" > "$host_stdout"
+  cargo run --quiet --manifest-path "$host_manifest" -- "$capability_file" \
+    > "$host_stdout" 2> "$host_stderr"
   local actual_status=$?
   set -e
   if [[ "$actual_status" -ne "$expected_status" ]]; then
     echo "expected host exit $expected_status, got $actual_status" >&2
     cat "$host_stdout" >&2
+    cat "$host_stderr" >&2
     return 1
   fi
   if [[ -n "$expected_result" ]]; then
@@ -45,6 +49,9 @@ run_host_case() {
     grep -q -- "$expected_result" "$result_file"
   else
     test ! -e "$result_file"
+  fi
+  if [[ -n "$expected_stderr" ]]; then
+    grep -q -- "$expected_stderr" "$host_stderr"
   fi
 }
 
@@ -111,7 +118,7 @@ run_host_case 4 "transport"
 
 printf '{} (:invalid true)\n' > "$request_file"
 cp "$capability_example" "$capability_file"
-run_host_case 2 ""
+run_host_case 2 "" "must contain one top-level list"
 
 cp "$request_example" "$request_file"
 sed 's/:access :read-write/:access :read/' "$capability_example" > "$capability_file"
