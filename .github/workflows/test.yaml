@@ -115,6 +115,9 @@ jobs:
       - name: "run definition-attached core tests"
         run: cargo run --bin calcit -- src/cirru/calcit-core.cirru test --tag unit --require-match
 
+      - name: "strictly check bundled core source definitions"
+        run: cargo run --bin calcit -- calcit/test-wasi-command.cirru analyze check-public --ns calcit.core --ns calcit.test --ns calcit.internal --deps --summary-only
+
       - name: "verify bundled core Dynamic boundary documentation"
         run: cargo build --bin calcit && node scripts/core-dynamic-classification.mjs --check
 
@@ -203,14 +206,9 @@ jobs:
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
-    permissions:
-      checks: write
-      contents: read
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
           persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@stable
@@ -220,10 +218,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: giraffate/clippy-action@v1
-        with:
-          reporter: "github-pr-review"
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: cargo clippy -- -D warnings
 
   # Preserve the pre-split required check name: this aggregate job is green
   # only when every shard above succeeded.

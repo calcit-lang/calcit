@@ -374,21 +374,14 @@ calcit analyze dynamic-methods --deps
 
 默认只查看项目命名空间；`--deps` 包含可达依赖。此命令始终是只读定位报告，不能用命中数量判断类型正确性；CI 应运行默认严格 `--check-only`。
 
-To preprocess every definition in explicitly selected public namespaces under
-the active entry target, use:
+要在当前 entry target 下检查显式选择的公开 namespace 中全部定义，使用：
 
 ```bash
 calcit --entry node calcit.cirru analyze check-public \
   --ns package.shared --ns package.node --format json
 ```
 
-`check-public` requires one or more exact `--ns` values and an entry with an
-explicit target. Definitions without `:ffi :target` are shared; mismatched
-definition targets fail before preprocessing. Project namespaces are admitted
-by default, while `--deps` explicitly admits selected loaded dependency/core
-namespaces. Zero matches and partial checks fail. JSON schema version 1 reports
-the checked definition IDs, per-definition status, diagnostics, completeness,
-duration, and scope revision; `--summary-only` omits only the detailed rows.
+`check-public` 要求至少一个精确 `--ns`，且 entry 必须声明 target。未声明 `:ffi :target` 的定义为共享定义；目标不匹配会在预处理前失败。默认只接受项目 namespace，显式 `--deps` 才允许已加载的依赖与 core namespace。零匹配和不完整检查都会失败。JSON schema version 1 返回已检查的定义 ID、逐定义状态、诊断、完整性、耗时及 scope revision；`--summary-only` 只省略详细结果。内置 core 的 `:builtin` 运行时占位符报告为 `intrinsic`，它们没有 Calcit 函数体，其他源码定义仍严格预处理。
 
 ### Macro Expansion Metrics (--macro-metrics)
 

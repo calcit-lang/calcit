@@ -565,6 +565,45 @@ const scenarios = [
     },
   },
   {
+    name: "strict bundled core public source check",
+    args: [
+      "calcit/test-wasi-command.cirru",
+      "analyze",
+      "check-public",
+      "--ns",
+      "calcit.core",
+      "--ns",
+      "calcit.test",
+      "--ns",
+      "calcit.internal",
+      "--deps",
+      "--summary-only",
+      "--format",
+      "json",
+    ],
+    expectedStatus: 0,
+    check(result) {
+      const summary = result.data?.summary;
+      if (result.schema_version !== 1 || result.command !== "analyze.check-public") {
+        throw new Error("bundled core check lost its structured envelope");
+      }
+      if (
+        summary?.complete !== true ||
+        summary?.passed !== true ||
+        summary?.definitions_checked !== summary?.definitions_selected ||
+        summary?.definitions_passed !== summary?.definitions_selected ||
+        summary?.definitions_source_passed + summary?.definitions_intrinsic !== summary?.definitions_selected ||
+        summary?.definitions_intrinsic === 0 ||
+        result.diagnostics.length !== 0
+      ) {
+        throw new Error("bundled core source and intrinsic coverage is incomplete");
+      }
+      if (!result.data.checked_definition_ids.includes("calcit.core/unsafe-coerce") || result.data.definitions.length !== 0) {
+        throw new Error("bundled core summary omitted checked definitions or included detailed rows");
+      }
+    },
+  },
+  {
     name: "target-aware public check failure",
     args: [
       "calcit/type-fail/js-nullish-dereference-strict.cirru",

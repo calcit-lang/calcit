@@ -360,7 +360,7 @@ pub enum AnalyzeSubcommand {
   ProgramDiff(ProgramDiffCommand),
   /// check examples in namespace
   CheckExamples(CheckExamplesCommand),
-  /// preprocess every definition in selected public namespaces for the active entry target
+  /// check every definition in selected public namespaces for the active entry target
   CheckPublic(CheckPublicCommand),
   /// check type-information coverage in namespace definitions
   CheckTypes(CheckTypesCommand),
@@ -394,7 +394,7 @@ pub struct VerifyCommand {
   pub format: String,
 }
 
-/// preprocess every definition in selected public namespaces for the active entry target
+/// check every definition in selected public namespaces for the active entry target
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "check-public")]
 pub struct CheckPublicCommand {
