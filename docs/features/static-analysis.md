@@ -256,27 +256,11 @@ are preserved. Missing, duplicate, or unknown constructor fields do not qualify.
 | `quality`、baseline | 旧项目显式选择的迁移预算 | 不再隐含在 `--strict-types`；待存量依赖迁走后删除 |
 | `check-public`、`check-examples` | 检查入口可达性无法覆盖的公开定义和示例 | 保留实际验证，不建立第二套类型关系 |
 
-`analyze quality` 在 0.14.x 继续读取已有 v1/v2 baseline，兼容仍依赖它的 CI。它把 `check-types`、`weak-types` 与 `deprecated` 的迁移数量按 definition 比较，但不拥有类型正确性语义。新项目不要创建 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。`--write-baseline` 只为维护当前 core 或现有兼容工件保留，不能作为新项目的起点。
+`analyze quality` 继续读取已有 v1/v2 baseline，兼容仍依赖它的存量项目。它把 `check-types`、`weak-types` 与 `deprecated` 的迁移数量按 definition 比较，但不拥有类型正确性语义。新项目不要创建 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。`--write-baseline` 只为维护已有兼容工件保留，不能作为新项目的起点。
 
-Calcit's bundled Cirru core uses `config/calcit-core-quality.cirru` as a per-definition Cirru EDN migration baseline. `yarn check-core-quality`, the pull-request workflow, and the release workflow reject new or increased Dynamic/type-coverage debt while existing contracts are migrated incrementally. After a reviewed cleanup, regenerate the baseline with `calcit src/cirru/calcit-core.cirru analyze quality --write-baseline config/calcit-core-quality.cirru --format json`; never regenerate it merely to make an unexplained regression pass. A `.json` output path remains available only for external tooling that explicitly requires JSON. Track retained open boundaries and cleanup batches in [calcit#579](https://github.com/calcit-lang/calcit/issues/579).
+内置 Cirru core 曾使用 `config/calcit-core-quality.cirru` 记录逐 definition 的迁移数量。该文件暂留作历史参考，但 `yarn check-all`、PR 和发布流程不再运行数量门槛，也不应为了通过检查而刷新它。core 的类型正确性由编译器诊断与测试判断；仍需补齐 core 公开定义的严格可达性检查，而不是重新设定 Dynamic 数量阈值。显式 `analyze quality --baseline` 仅服务尚未迁走的旧项目。
 
-The complete position-level review lives in
-[`docs/core-dynamic-classification.md`](../core-dynamic-classification.md).
-Every schema-Dynamic path names its owning subsystem, a `migrate` or
-`retain-reviewed` decision, and the reason. `yarn check-core-dynamic-classification`
-regenerates the analysis in memory and fails when the checked-in table differs;
-after reviewing a deliberate contract change, update it with
-`yarn generate-core-dynamic-classification`. A retained position is still
-locked by the per-definition quality baseline and cannot grow silently.
-Caller-propagating output slots are reviewed separately from their receiver
-slots: typed literal `get-in` paths recover `Option<T>`, and typed List/Map/Set
-`filter` calls lower to shape-preserving core definitions. Dynamic receivers,
-dynamic paths, Struct traversal, and unsupported collection capabilities stay
-in the migration queue rather than inheriting that narrower conclusion. The
-remaining migration rows are assigned to
-[calcit#701](https://github.com/calcit-lang/calcit/issues/701), with bound-slot
-correctness for optional indexed access tracked separately by
-[calcit#694](https://github.com/calcit-lang/calcit/issues/694).
+[`docs/core-dynamic-classification.md`](../core-dynamic-classification.md) 保留逐位置的人工审阅记录：每个 schema-Dynamic 路径标明所属子系统、`migrate` 或 `retain-reviewed` 决策及原因。`yarn check-core-dynamic-classification` 仅检查文档与当前源码是否同步；有意修改契约并审阅后，再运行 `yarn generate-core-dynamic-classification` 更新清单。它不替代编译器的 warning/error，也不以位置数量决定正确性。调用方可见的输出槽位要与 receiver 槽位分开审阅：具有静态类型和字面量路径的 `get-in` 可恢复 `Option<T>`，具有静态类型的 List/Map/Set `filter` 调用会降级到保持形状的 core 定义；Dynamic receiver、动态路径、Struct 遍历以及不支持的集合能力不能沿用这一较窄结论。历史迁移记录见 [calcit#701](https://github.com/calcit-lang/calcit/issues/701)，optional indexed access 的 bound-slot 正确性另见 [calcit#694](https://github.com/calcit-lang/calcit/issues/694)。
 
 `analyze deprecated` scans calls to definitions tagged `:deprecated`. It reports every calling definition and a stable `code@...` path, and includes the target definition's documentation so migrations can be automated without maintaining a second hard-coded legacy API list. Use `--summary-only --format json` for migration gates that only need aggregate counts.
 
@@ -312,7 +296,7 @@ and implementation-completion status are separate concerns.
 
 普通执行、编译和严格检查只依据类型推导产生确定的 warning/error。需要迁移存量代码时，显式运行 `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json`，按 definition/path 返回源码处理；不要把命中数量解释成类型正确性，也不要围绕数量增加阈值或分类规则。
 
-`analyze quality` 的 v1/v2 baseline 读取在 0.14.x 保留，服务仍依赖它的现有 CI。新项目不再生成 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。0.15 将不再把 coverage/Dynamic 数量作为独立的类型正确性策略，实际删除范围由对应 release migration note 确认。
+`analyze quality` 的 v1/v2 baseline 读取暂留给仍依赖它的存量 CI。新项目不再生成 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。当前默认检查已不再把 coverage/Dynamic 数量当作独立的类型正确性策略。
 
 只需要 kind/intent 汇总时使用 `--summary-only`；human 输出在汇总后停止，JSON 保留 `data.summary` 与 scope revision，并返回空的 `data.definitions`。`defstruct`、`defenum`、`deftrait`、`defimpl` 使用明确的 definition-kind schema：`StructDef`、`EnumDef`、`Trait`、`Impl`。旧 Snapshot 的 Dynamic root 会在加载时规范化；字段、Enum payload 和方法仍正常进入迁移扫描，但 declaration root 本身不产生 `schema-dynamic` finding。
 
