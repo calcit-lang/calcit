@@ -197,11 +197,9 @@ preprocessing reports `E_UNSCOPED_UNSAFE_COERCE`. Namespace naming does not
 grant an exemption, and scoped assertions remain subject to the
 per-definition `unsafeCoerce` quality baseline.
 
-### Default strict diagnostics, zero-debt preflight, and compatibility mode
+### 默认严格诊断、入口预检查与兼容模式
 
-Starting with Calcit 0.14, normal invocations enable strict preprocessing
-diagnostics by default. A project therefore receives stable `E_*` diagnostics
-for unsafe typing constructs without adding a flag:
+Calcit 0.14 起，普通调用默认启用严格预处理诊断。项目无需额外开关，也会对无法证明安全的类型操作收到稳定的 `E_*` 诊断：
 
 ```bash
 calcit --check-only
@@ -224,8 +222,8 @@ keep-going 只在 definition 边界恢复：先按静态可达依赖顺序检查
 envelope，Calcit 自动化优先使用 Cirru EDN，只有 JSON-only consumer 才显式选择 JSON。任一
 `failed`、`blocked` 或 `cascaded` 结果都保持非零退出码。`--format` 仅与
 `--check-only --keep-going` 组合使用，普通 `--check-only` 的 fail-fast 输出与行为不变。keep-going
-只收集严格预处理诊断，不混入基于统计预算的 zero-debt gate；批量问题修复通过后，再单独运行
-`calcit calcit.cirru --check-only --strict-types`。
+只收集严格预处理诊断，不混入基于统计预算的 quality gate；批量问题修复后，可用普通
+`--check-only` 再做 fail-fast 检查。
 
 频繁的小步迁移可使用 `--check-only --incremental`。当活动 entry 的 init/reload dependency closure、严格策略与动态方法策略均未变化，
 该模式复用上一次成功结果，并以 `preprocessing-cached=true` 明确报告；闭包外定义变化不强制重跑。缓存不保存 compiled AST、warning
@@ -233,28 +231,18 @@ envelope，Calcit 自动化优先使用 Cirru EDN，只有 JSON-only consumer �
 变化会冷启动。闭包证据缺失或含 unresolved dependency，以及 module load 失败时会执行普通检查或明确 bypass，均不会复用或更新旧的成功标记。
 `--keep-going` 仍用于收集完整结构化诊断，两者不可组合；CI 与发布门禁继续运行不带 `--incremental` 的冷检查。
 
-Use `--strict-types` when a new or fully migrated module must additionally
-assert that it carries no local type debt:
+`--strict-types` 可显式确认严格策略，并在执行或代码生成前预检查所选入口；它不声明项目没有 Dynamic 或其他统计债务：
 
 ```bash
 calcit --check-only --strict-types
 calcit --strict-types js
 ```
 
-If the selected entry omits `:feature-policy :js-ffi`, default strict diagnostics use
-`:error` as its effective in-memory default without rewriting the Snapshot.
-Older entries may opt into a staged migration explicitly with
-`calcit config set feature-policy.js-ffi warn` (or `allow`); use
-`calcit config show` to audit the selected policy.
-
-Default strict diagnostics include the location-aware untyped JS FFI checks
-from `--warn-dyn-method`. The explicit `--strict-types` flag also runs the
-zero-baseline static quality gate before execution or code generation. That gate rejects unresolved or schema `Dynamic`, code
-`nil`, declared legacy optional values, deprecated calls, and explicit
-`unsafe-coerce` boundaries. Deep/open payloads may still use `Dynamic`, but a
-project that intentionally retains such boundaries should document and freeze
-them with `calcit analyze quality --baseline <file>` instead of claiming the
-zero-debt strict policy.
+所选 entry 未设置 `:feature-policy :js-ffi` 时，默认严格诊断在内存中采用 `:error`，不改写 Snapshot。
+旧 entry 可显式设置 `calcit config set feature-policy.js-ffi warn`（或 `allow`）分阶段迁移，并用
+`calcit config show` 核对策略。默认严格诊断也包含定位到源码的未类型化 JS FFI 检查。
+开放数据边界可以保留经过审阅的 `Dynamic`；是否能进入具体类型操作由编译器 warning/error 决定，
+不由 `analyze quality` 的数量预算决定。已有项目仍可显式运行该迁移期报告，但它不是严格检查的一部分。
 
 Use `--compat-types` only as a temporary migration escape hatch when an older
 project still needs the pre-0.14 warning behavior:

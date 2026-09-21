@@ -31,7 +31,7 @@ pub struct ToplevelCalcit {
   /// warn on dynamic method calls that cannot be monomorphized
   #[argh(switch)]
   pub warn_dyn_method: bool,
-  /// enforce the zero-debt quality gate in addition to the default strict diagnostics
+  /// explicitly request strict diagnostics (already the default)
   #[argh(switch)]
   pub strict_types: bool,
   /// temporarily restore pre-0.14 compatibility diagnostics during migration

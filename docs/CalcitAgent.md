@@ -26,8 +26,8 @@ leads_to:
 本文是 Agent 每次进入 Calcit 项目时需要常驻上下文的最小操作契约。只保留高频规则和可执行闭环；低频命令、完整语法与复杂重构通过 `calcit docs` 按需读取。
 
 Calcit 0.14 起，普通运行、检查和代码生成默认启用严格预处理诊断。旧项目迁移期间只能显式使用
-`--compat-types` 暂时恢复旧 warning 行为；`--strict-types` 表示进一步执行零类型债务 quality gate，
-不能与 `--compat-types` 同时使用。Agent 不应把兼容开关写进新项目或长期 CI。
+`--compat-types` 暂时恢复旧 warning 行为；`--strict-types` 显式确认严格诊断，并在执行或代码生成前检查所选入口，
+不额外运行 Dynamic 数量或 quality baseline 门槛。两种开关不能同时使用。Agent 不应把兼容开关写进新项目或长期 CI。
 
 CLI 不传格式参数时保持适合人类 review 的 Markdown-compatible 输出。需要稳定字段与自动分支时，Calcit 自有工作流优先选择 `--format edn`，因为 Cirru EDN 会保留 tag、symbol 等原生数据语义；只有对接 JSON-only 工具或既有 JSON consumer 时才显式选择 `--format json`。尚未提供 EDN 的旧命令可暂时使用 JSON，后续按共享 envelope 逐步迁移，不应为此增加新顶层入口。
 

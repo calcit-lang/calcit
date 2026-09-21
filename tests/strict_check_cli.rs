@@ -167,11 +167,15 @@ fn default_check_only_remains_fail_fast_and_format_requires_keep_going() {
     String::from_utf8_lossy(&invalid.stderr)
   );
 
-  let mixed_gate = run_calcit(&snapshot, &["--check-only", "--keep-going", "--strict-types"]);
-  assert!(!mixed_gate.status.success());
+  let explicit_strict = run_calcit(&snapshot, &["--check-only", "--keep-going", "--strict-types", "--format", "json"]);
   assert!(
-    String::from_utf8_lossy(&mixed_gate.stderr).contains("run the separate `--check-only --strict-types` zero-debt gate"),
-    "stderr:\n{}",
-    String::from_utf8_lossy(&mixed_gate.stderr)
+    !explicit_strict.status.success(),
+    "type errors must still fail explicit strict checking"
+  );
+  let report: serde_json::Value = serde_json::from_slice(&explicit_strict.stdout).expect("strict check should emit one JSON envelope");
+  assert_eq!(report["data"]["summary"]["failed"], 3);
+  assert!(
+    !String::from_utf8_lossy(&explicit_strict.stderr).contains("quality gate"),
+    "strict preprocessing must not run a statistical quality gate"
   );
 }

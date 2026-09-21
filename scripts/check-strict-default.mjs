@@ -42,6 +42,9 @@ function expectStatus(result, expected, label) {
 const scoped = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--check-only"]);
 expectStatus(scoped, 0, "default strict valid fixture");
 
+const explicitStrict = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--strict-types", "--check-only"]);
+expectStatus(explicitStrict, 0, "explicit strict accepts a checked open boundary without a quality budget");
+
 const unscoped = run(["calcit/type-fail/unsafe-coerce-unscoped-strict.cirru", "--check-only"]);
 expectStatus(unscoped, 1, "default strict invalid fixture");
 if (!unscoped.stderr.includes("E_UNSCOPED_UNSAFE_COERCE")) {

@@ -246,6 +246,16 @@ evidence based: compiler or reviewed macro lowering, core internals, reusable
 every declared field exactly once, and indexed IR with a matching concrete layout
 are preserved. Missing, duplicate, or unknown constructor fields do not qualify.
 
+### 分析入口的职责
+
+| 入口 | 当前职责 | 后续收敛方向 |
+| --- | --- | --- |
+| 默认预处理、`--check-only` | 由同一套类型关系产生 warning/error，决定类型正确性 | 保留为唯一正确性门槛 |
+| `check-types`、`weak-types` | 只读定位缺失 schema、开放边界和迁移候选 | 保留确有用户场景的源码定位；不按命中数量阻断编译 |
+| `dynamic-methods` | 只读查看未能静态分派的方法 | 默认严格诊断已阻断项目代码中的未证明分派；迁移期 `--max` 另行退役 |
+| `quality`、baseline | 旧项目显式选择的迁移预算 | 不再隐含在 `--strict-types`；待存量依赖迁走后删除 |
+| `check-public`、`check-examples` | 检查入口可达性无法覆盖的公开定义和示例 | 保留实际验证，不建立第二套类型关系 |
+
 `analyze quality` 在 0.14.x 继续读取已有 v1/v2 baseline，兼容仍依赖它的 CI。它把 `check-types`、`weak-types` 与 `deprecated` 的迁移数量按 definition 比较，但不拥有类型正确性语义。新项目不要创建 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。`--write-baseline` 只为维护当前 core 或现有兼容工件保留，不能作为新项目的起点。
 
 Calcit's bundled Cirru core uses `config/calcit-core-quality.cirru` as a per-definition Cirru EDN migration baseline. `yarn check-core-quality`, the pull-request workflow, and the release workflow reject new or increased Dynamic/type-coverage debt while existing contracts are migrated incrementally. After a reviewed cleanup, regenerate the baseline with `calcit src/cirru/calcit-core.cirru analyze quality --write-baseline config/calcit-core-quality.cirru --format json`; never regenerate it merely to make an unexplained regression pass. A `.json` output path remains available only for external tooling that explicitly requires JSON. Track retained open boundaries and cleanup batches in [calcit#579](https://github.com/calcit-lang/calcit/issues/579).
@@ -445,7 +455,7 @@ let
 
 ### Dynamic 用量审计
 
-普通执行与编译只运行默认严格预处理，以确定的 warning/error 判断类型关系，不扫描、统计或打印 Dynamic 用量。`--strict-types` 额外执行零债务 quality gate，但也不恢复用量 notice。只有迁移存量代码需要定位时，才显式运行：
+普通执行与编译只运行默认严格预处理，以确定的 warning/error 判断类型关系，不扫描、统计或打印 Dynamic 用量。`--strict-types` 只显式确认严格策略并预检查入口，不运行质量预算。只有迁移存量代码需要定位时，才显式运行：
 
 ```bash
 calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json
