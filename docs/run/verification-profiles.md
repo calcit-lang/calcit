@@ -45,7 +45,7 @@ calcit calcit.cirru analyze verify --profile release --format edn
   :profiles $ {} $ :release
     {} (:on-failure :stop)
       :entries $ [] :default :browser
-      :checks $ [] :strict :dynamic-methods :quality
+      :checks $ [] :strict :quality
 ```
 
 - `:schema-version`：目前必须为 `1`；缺失或未知版本会在任何检查运行前失败。
@@ -58,15 +58,14 @@ calcit calcit.cirru analyze verify --profile release --format edn
 - `:checks`：按声明顺序执行的检查；不能为空或重复。
 - `:on-failure`：可省略，默认为 `:stop`；`:continue` 会继续收集后续检查结果，适合一次性修复多个失败。
 
-v1 支持三个 check：
+v1 当前支持两个 check：
 
 | Check | 复用的语义 | 通过条件 |
 | --- | --- | --- |
 | `:strict` | 与 `--check-only` 相同的 init/reload 严格预处理 | 没有 warning 或 error |
-| `:dynamic-methods` | 与 `analyze dynamic-methods --max 0` 相同的动态 method 诊断 | finding 数为零 |
 | `:quality` | 与无 baseline 的 `analyze quality` 相同的 zero-debt 只读分析 | 没有 quality violation |
 
-同一 entry 同时选择 `:strict` 与 `:dynamic-methods` 时，两项共享一轮预处理及类型推导结果；不会为了生成第二份报告重新解析或重新推导。不同 entry 的 module 顶层加载结果也会按 module path 在本次命令内缓存。Entry 的 target 来自其 `:target`；未声明 target 时使用 `:mode` 作为结果中的目标标签。
+`:dynamic-methods` 数量门槛已从 profile 移除；旧配置需删去这一项，改由 `:strict` 和行为测试判断正确性。`analyze dynamic-methods` 仍可单独作为只读定位报告，但不再支持 `--max`。不同 entry 的 module 顶层加载结果会按 module path 在本次命令内缓存。Entry 的 target 来自其 `:target`；未声明 target 时使用 `:mode` 作为结果中的目标标签。
 
 Profile 不把 `test`、JS/WASM/WASI codegen、Markdown 文档执行或外部消费者回归伪装成静态检查。它们可能运行用户代码、写生成目录或需要外部 host，继续作为发布流水线中的显式步骤；需要机器可读提醒时，把稳定名称写进 `:external-gates`。后续若能复用只读 compiler phase，可扩展新的 schema 版本，不向 v1 静默加入语义。
 

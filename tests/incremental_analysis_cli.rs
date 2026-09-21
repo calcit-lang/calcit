@@ -74,6 +74,28 @@ fn dynamic_report(snapshot: &Path, incremental: bool) -> serde_json::Value {
   serde_json::from_slice(&output.stdout).expect("dynamic method analysis stdout should contain one JSON envelope")
 }
 
+#[test]
+fn dynamic_methods_reports_findings_without_a_count_policy() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  let source = fs::read_to_string("tests/fixtures/ffi-boundary-evidence.cirru").expect("analysis fixture should read");
+  let source = source.replace(".?!matches host |.active", ".greet host");
+  fs::write(&snapshot, source.replace(":args $ [] 'JsObject", ":args $ [] 'Dynamic")).expect("analysis fixture should write");
+
+  let report = dynamic_report(&snapshot, false);
+  assert_eq!(report["command"], "analyze.dynamic-methods");
+  assert!(report["data"]["summary"]["findings"].as_u64().is_some_and(|count| count > 0));
+  assert!(report["data"]["summary"].get("passed").is_none());
+  assert!(report["data"]["filters"].get("max").is_none());
+  assert_eq!(report["diagnostics"], serde_json::json!([]));
+
+  let obsolete_budget = run_calcit(&snapshot, &["--compat-types", "analyze", "dynamic-methods", "--max", "0"]);
+  assert!(
+    !obsolete_budget.status.success(),
+    "the obsolete count budget must not remain a CLI policy"
+  );
+}
+
 fn incremental_check(snapshot: &Path) -> Output {
   run_calcit(snapshot, &["--compat-types", "--check-only", "--incremental"])
 }

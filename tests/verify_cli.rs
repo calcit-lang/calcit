@@ -91,7 +91,7 @@ fn snapshot_source(entries: &str) -> String {
     :profiles $ {{}} $ :release
       {{}} (:on-failure :continue)
         :entries $ [] :default :js
-        :checks $ [] :strict :dynamic-methods :quality
+        :checks $ [] :strict :quality
   :files $ {{}} $ 'verify-fixture.main
     %{{}} 'FileEntry
       :defs $ {{}}
@@ -142,11 +142,11 @@ fn verification_profile_uses_one_contract_for_native_and_js_entries() {
   assert_eq!(value["data"]["preflight"]["snapshot"]["format"], "cirru-edn");
   assert_eq!(value["data"]["preflight"]["snapshot"]["active_entries"][0], "default");
   let checks = value["data"]["checks"].as_array().expect("checks should be an array");
-  assert_eq!(checks.len(), 6);
+  assert_eq!(checks.len(), 4);
   assert_eq!(checks[0]["entry"], "default");
   assert_eq!(checks[0]["target"], "native");
-  assert_eq!(checks[3]["entry"], "js");
-  assert_eq!(checks[3]["target"], "node");
+  assert_eq!(checks[2]["entry"], "js");
+  assert_eq!(checks[2]["target"], "node");
   assert!(checks.iter().all(|check| check["revision"] == value["revision"]));
 
   let edn_output = run_calcit(&snapshot, &["analyze", "verify", "--profile", "release", "--format", "edn"]);
@@ -317,12 +317,31 @@ fn invalid_profile_configuration_fails_before_checks_with_json_diagnostic() {
 }
 
 #[test]
+fn obsolete_dynamic_method_profile_gate_has_a_read_only_migration_hint() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  let source =
+    snapshot_source(VALID_ENTRIES).replace(":checks $ [] :strict :quality", ":checks $ [] :strict :dynamic-methods :quality");
+  fs::write(&snapshot, source).expect("fixture should write");
+
+  let output = run_calcit(&snapshot, &["analyze", "verify", "--profile", "release", "--format", "json"]);
+  assert!(!output.status.success());
+  let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("failure should remain one JSON envelope");
+  assert_eq!(value["diagnostics"][0]["code"], "E_VERIFY_CONFIG");
+  assert!(
+    value["diagnostics"][0]["message"]
+      .as_str()
+      .is_some_and(|message| message.contains("use analyze dynamic-methods"))
+  );
+}
+
+#[test]
 fn stop_policy_does_not_run_checks_after_the_first_failure() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
   let source = snapshot_source(VALID_ENTRIES)
     .replace(":on-failure :continue", ":on-failure :stop")
-    .replace(":checks $ [] :strict :dynamic-methods :quality", ":checks $ [] :quality :strict")
+    .replace(":checks $ [] :strict :quality", ":checks $ [] :quality :strict")
     .replacen(
       ":schema $ :: 'Fn $ {} (:return 'Unit)\n            :args $ []",
       ":schema $ :: 'Dynamic",

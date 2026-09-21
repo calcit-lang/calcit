@@ -71,8 +71,8 @@ calcit analyze deprecated --ns app.main
 # Reachable unresolved method dispatch, without unrelated warning categories
 calcit analyze dynamic-methods
 
-# Enforce a reviewed dynamic-dispatch budget in CI
-calcit analyze dynamic-methods --max 4 --summary-only --format json
+# 查看只读的迁移概览
+calcit analyze dynamic-methods --summary-only --format json
 
 # Existing 0.14.x projects may keep enforcing an already reviewed baseline
 calcit analyze quality --baseline config/calcit-quality.cirru
@@ -223,7 +223,7 @@ For one expression, `calcit query type-at '<ns/def>' --path code@... --format js
 
 `check-types`、默认 `weak-types`、`deprecated` 和 `quality` 只读取静态 Snapshot：它们加载配置模块与 core metadata，但不预处理或执行 application entry。显式 `weak-types --schema-evidence` 会以兼容诊断模式预处理项目 definition，以复用编译器推断；它仍不执行 entry 或 host effect。`dynamic-methods` 同样会预处理所选 entry 的 reachable definitions，因为 receiver inference 与 method specialization 属于预处理结果。使用 `--format json` 时，stdout 只包含一个带版本的 JSON envelope，其中包括稳定 scope revision、filters、summary 与 finding/definition rows；启动及命令说明留在 stderr。
 
-`analyze dynamic-methods` reports only `P_DYNAMIC_METHOD_DISPATCH` and `P_DYNAMIC_POSTFIX_METHOD`; ordinary type warnings and JS FFI diagnostics do not contaminate its count. Project namespaces are the default scope, while `--deps` includes reachable modules. `--summary-only` omits individual findings. `--max <count>` turns the report into a focused CI policy and emits `E_DYNAMIC_METHOD_POLICY` with a non-zero status when the count grows beyond the reviewed budget. A receiver made concrete by normal inference, a trait constraint, or an explicit reviewed `unsafe-coerce` boundary is not unresolved dispatch.
+`analyze dynamic-methods` 只展示 `P_DYNAMIC_METHOD_DISPATCH` 和 `P_DYNAMIC_POSTFIX_METHOD`，普通类型 warning 与 JS FFI 诊断不混入报告。默认范围为项目命名空间，`--deps` 包含可达依赖，`--summary-only` 省略逐项结果。报告不按命中数失败；需要阻断的不安全调用由默认严格预处理诊断负责。通过普通推断、trait 约束或已审阅的 `unsafe-coerce` 边界得到具体 receiver 时，不属于未解析分派。
 
 Under the default strict diagnostics, every unspecialized project method is rejected with
 `E_DYNAMIC_METHOD_DISPATCH` or `E_DYNAMIC_POSTFIX_METHOD`. Diagnostics classify
@@ -252,7 +252,7 @@ are preserved. Missing, duplicate, or unknown constructor fields do not qualify.
 | --- | --- | --- |
 | 默认预处理、`--check-only` | 由同一套类型关系产生 warning/error，决定类型正确性 | 保留为唯一正确性门槛 |
 | `check-types`、`weak-types` | 只读定位缺失 schema、开放边界和迁移候选 | 保留确有用户场景的源码定位；不按命中数量阻断编译 |
-| `dynamic-methods` | 只读查看未能静态分派的方法 | 默认严格诊断已阻断项目代码中的未证明分派；迁移期 `--max` 另行退役 |
+| `dynamic-methods` | 只读查看未能静态分派的方法 | 默认严格诊断负责阻断未证明分派；不再提供数量上限 |
 | `quality`、baseline | 旧项目显式选择的迁移预算 | 不再隐含在 `--strict-types`；待存量依赖迁走后删除 |
 | `check-public`、`check-examples` | 检查入口可达性无法覆盖的公开定义和示例 | 保留实际验证，不建立第二套类型关系 |
 
