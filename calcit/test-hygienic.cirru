@@ -38,7 +38,7 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
       :ns $ %{} 'NsEntry (:doc |)
-        :code $ quote $ :ns test-hygienic.lib
+        :code $ quote $ ns test-hygienic.lib
     'test-hygienic.main $ %{} 'FileEntry
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)

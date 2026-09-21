@@ -882,6 +882,11 @@ pub fn validate_import_rules(rules: &[Cirru]) -> Result<Vec<String>, String> {
 fn extract_import_map(nodes: &Cirru, ns_name: &str) -> Result<HashMap<Arc<str>, Arc<ImportRule>>, String> {
   match nodes {
     Cirru::List(xs) => {
+      if xs.first().is_some_and(|head| head.eq_leaf(":ns")) {
+        return Err(format!(
+          "legacy `:ns` in namespace '{ns_name}' is no longer supported; replace the namespace form with `ns {ns_name}` and preserve its `:require` rules"
+        ));
+      }
       if xs
         .iter()
         .skip(2)
@@ -893,8 +898,8 @@ fn extract_import_map(nodes: &Cirru, ns_name: &str) -> Result<HashMap<Arc<str>, 
       }
 
       match xs.as_slice() {
-        [head, Cirru::Leaf(_declared_ns)] if head.eq_leaf("ns") || head.eq_leaf(":ns") => Ok(HashMap::new()),
-        [head, Cirru::Leaf(_declared_ns), Cirru::List(require_nodes)] if head.eq_leaf("ns") || head.eq_leaf(":ns") => {
+        [head, Cirru::Leaf(_declared_ns)] if head.eq_leaf("ns") => Ok(HashMap::new()),
+        [head, Cirru::Leaf(_declared_ns), Cirru::List(require_nodes)] if head.eq_leaf("ns") => {
           if require_nodes.first().is_none_or(|node| !node.eq_leaf(":require")) {
             return Err(format!(
               "invalid ns clause in namespace '{ns_name}': expected `:require`, got {}",
@@ -927,7 +932,7 @@ fn extract_import_map(nodes: &Cirru, ns_name: &str) -> Result<HashMap<Arc<str>, 
       }
     }
     Cirru::Leaf(_) => Err(format!(
-      "invalid ns form in '{ns_name}': expected `(ns {ns_name})` (legacy `:ns` is also accepted) with an optional `:require` clause, got {nodes}"
+      "invalid ns form in '{ns_name}': expected `(ns {ns_name})` with an optional `:require` clause, got {nodes}"
     )),
   }
 }

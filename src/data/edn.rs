@@ -1,8 +1,4 @@
-use std::collections::HashMap;
 use std::sync::Arc;
-
-use bisection_key::LexiconKey;
-use cirru_parser::Cirru;
 
 use crate::calcit::{self, CalcitEnumDef, CalcitEnumValue, CalcitImpl, CalcitImport, CalcitList, CalcitLocal, CalcitStructDef};
 use crate::calcit::{Calcit, CalcitStructValue};
@@ -152,55 +148,10 @@ fn truncate_chars(raw: &str, limit: usize) -> String {
   }
 }
 
-/// Convert legacy snapshot `%Expr` / `%Leaf` EDN back to Cirru for error display.
-fn legacy_snapshot_edn_to_cirru(edn: Edn) -> Result<Cirru, String> {
-  match edn {
-    Edn::Quote(code) => Ok(code),
-    Edn::Struct(struct_value) => {
-      let mut text = None;
-      let mut data_map: HashMap<String, Cirru> = HashMap::new();
-
-      for (key, value) in struct_value.pairs.iter() {
-        match key.ref_str() {
-          "text" => {
-            if let Edn::Str(content) = value {
-              text = Some(content.to_string());
-            }
-          }
-          "data" => {
-            if let Edn::Map(data_edn) = value {
-              for (k, v) in data_edn.0.iter() {
-                if let Edn::Str(key_str) = k {
-                  data_map.insert(key_str.to_string(), legacy_snapshot_edn_to_cirru(v.clone())?);
-                }
-              }
-            }
-          }
-          _ => {}
-        }
-      }
-
-      if let Some(t) = text {
-        Ok(Cirru::leaf(t))
-      } else {
-        let mut sorted_items: Vec<_> = data_map.into_iter().collect();
-        sorted_items.sort_by(|a, b| {
-          let key_a = LexiconKey::new(&a.0).unwrap_or_else(|_| LexiconKey::default());
-          let key_b = LexiconKey::new(&b.0).unwrap_or_else(|_| LexiconKey::default());
-          key_a.cmp(&key_b)
-        });
-        Ok(Cirru::List(sorted_items.into_iter().map(|(_, v)| v).collect()))
-      }
-    }
-    _ => Err(format!("not legacy snapshot code: <{}>", edn.type_name())),
-  }
-}
-
 fn unwrap_snapshot_code_edn(value: &Edn) -> Option<&Edn> {
   match value {
     Edn::Quote(_) => Some(value),
     Edn::Struct(EdnStructView { name, pairs }) => match name.as_ref() {
-      "Expr" | "Leaf" => Some(value),
       "CodeEntry" => pairs.iter().find(|(k, _)| k.ref_str() == "code").map(|(_, v)| v),
       _ => None,
     },
@@ -208,22 +159,17 @@ fn unwrap_snapshot_code_edn(value: &Edn) -> Option<&Edn> {
   }
 }
 
-/// Format legacy `quote` / `%Expr` snapshot code as clean Cirru text.
+/// Format quoted snapshot code as clean Cirru text.
 fn try_format_snapshot_code_edn(value: &Edn) -> Option<String> {
   let code_edn = unwrap_snapshot_code_edn(value)?;
-  let cirru = legacy_snapshot_edn_to_cirru(code_edn.clone()).ok()?;
-  let formatted = cirru_parser::format(std::slice::from_ref(&cirru), true.into()).ok()?;
+  let Edn::Quote(cirru) = code_edn else {
+    return None;
+  };
+  let formatted = cirru_parser::format(std::slice::from_ref(cirru), true.into()).ok()?;
   Some(truncate_chars(formatted.trim(), SNAPSHOT_CODE_DISPLAY_CHAR_LIMIT))
 }
 
 fn legacy_snapshot_struct_summary(name: &str, pairs: &[(EdnTag, Edn)]) -> Option<Edn> {
-  if matches!(name, "Expr" | "Leaf") {
-    return try_format_snapshot_code_edn(&Edn::Struct(EdnStructView {
-      name: Arc::from(name),
-      pairs: pairs.to_owned(),
-    }))
-    .map(Edn::str);
-  }
   if name == "CodeEntry" {
     let struct_value = Edn::Struct(EdnStructView {
       name: Arc::from(name),
@@ -496,6 +442,7 @@ fn resolve_type_name(type_name: &str, options: &Calcit) -> Option<Arc<CalcitEnum
 #[cfg(test)]
 mod tests {
   use super::*;
+  use cirru_parser::Cirru;
 
   #[test]
   fn simplify_deserialize_error_strips_debug_struct() {
@@ -503,14 +450,6 @@ mod tests {
     let out = simplify_deserialize_error_message(msg);
     assert!(out.contains("struct `Expr`"), "out={out}");
     assert!(!out.contains("EdnStructView"));
-  }
-
-  #[test]
-  fn format_edn_display_shows_legacy_leaf_as_cirru() {
-    let mut leaf = EdnStructView::new("Leaf");
-    leaf.insert(EdnTag::from("text"), Edn::str("ns respo.core"));
-    let out = format_edn_display(&Edn::Struct(leaf));
-    assert!(out.contains("ns respo.core"), "out={out}");
   }
 
   #[test]
@@ -522,19 +461,12 @@ mod tests {
   }
 
   #[test]
-  fn format_deserialize_error_shows_legacy_expr_as_cirru() {
-    let mut leaf0 = EdnStructView::new("Leaf");
-    leaf0.insert(EdnTag::from("text"), Edn::str("ns"));
-    let mut leaf1 = EdnStructView::new("Leaf");
-    leaf1.insert(EdnTag::from("text"), Edn::str("app.demo"));
-    let mut data = EdnMapView::default();
-    data.insert(Edn::str("0"), Edn::Struct(leaf0));
-    data.insert(Edn::str("1"), Edn::Struct(leaf1));
-    let mut expr = EdnStructView::new("Expr");
-    expr.insert(EdnTag::from("data"), data.into());
-    let err_msg = format_deserialize_error("Cannot deserialize Edn type: struct `Expr`", &Edn::Struct(expr));
+  fn format_deserialize_error_shows_quoted_code_from_entry() {
+    let code: Cirru = vec!["ns", "app.demo"].into();
+    let mut entry = EdnStructView::new("CodeEntry");
+    entry.insert(EdnTag::from("code"), Edn::Quote(code));
+    let err_msg = format_deserialize_error("Cannot deserialize Edn type: struct `CodeEntry`", &Edn::Struct(entry));
     assert!(err_msg.contains("ns app.demo"), "err={err_msg}");
-    assert!(!err_msg.contains("legacy-expr"), "err={err_msg}");
   }
 
   #[test]

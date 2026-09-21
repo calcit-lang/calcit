@@ -23,7 +23,15 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
-## 0.19 CLI 类库查询入口
+## 0.19 兼容清理与 CLI 入口收敛
+
+当前 Snapshot 的命名空间代码必须使用 `ns name`；旧式 `:ns name` 已被拒绝，并会给出迁移提示。
+升级旧快照时，可对没有 import 的命名空间执行
+`calcit calcit.cirru edit imports <namespace> --input-format cirru --code 'quote $ []'`；
+这会通过结构化编辑重建 `ns` 节点。已有 import 的命名空间应先查询并保留规则，再用
+`edit imports` 提交，不能用空列表覆盖。
+`%Expr` / `%Leaf` 是早期快照的展示结构；当前诊断只对 `quote` 代码做 Cirru 预览。
+若旧快照仍使用这两种结构，请先用其对应旧版工具迁移，不要把它们当作当前语言代码节点。
 
 顶层 `calcit libs`（或旧二进制名 `cr libs`）已移除，统一改为 `calcit docs remote-libs`。
 子命令和参数保留：`libs search <keyword>`、`libs readme <package> [--file <file>]`、

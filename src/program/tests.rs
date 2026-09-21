@@ -311,11 +311,23 @@ fn namespace_validation_explains_require_macros_migration() {
 }
 
 #[test]
-fn namespace_validation_accepts_legacy_colon_ns_form() {
+fn namespace_validation_explains_legacy_colon_ns_migration() {
   let ns_form = cirru_list(vec![cirru_leaf(":ns"), cirru_leaf("app.main")]);
 
-  let imports = extract_import_map(&ns_form, "app.main").expect("legacy :ns form should remain compatible");
-  assert!(imports.is_empty());
+  let error = extract_import_map(&ns_form, "app.main").expect_err("legacy :ns form should be rejected");
+  assert!(error.contains("legacy `:ns`"), "error: {error}");
+  assert!(error.contains("`ns app.main`"), "error: {error}");
+
+  let ns_form_with_imports = cirru_list(vec![
+    cirru_leaf(":ns"),
+    cirru_leaf("app.main"),
+    cirru_list(vec![
+      cirru_leaf(":require"),
+      import_rule("foo.core", ":refer", cirru_list(vec![cirru_leaf("bar")])),
+    ]),
+  ]);
+  let error = extract_import_map(&ns_form_with_imports, "app.main").expect_err("legacy :ns with imports should be rejected");
+  assert!(error.contains("preserve its `:require` rules"), "error: {error}");
 }
 
 fn lock_program_test_state() -> ProgramTestStateGuard {
