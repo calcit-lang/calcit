@@ -770,6 +770,20 @@ assert.match(contractChild.stdout, /Agent contract digest: md5:[0-9a-f]{32}/);
 assert.match(contractChild.stdout, /calcit docs read edit-tree\.md 'Atomic Transactions'/);
 assert.ok(Buffer.byteLength(contractChild.stdout) < 5_000, "compact mutation contract should remain bounded");
 
+const remoteLibsHelp = spawnSync(binary, ["docs", "remote-libs", "--help"], { encoding: "utf8" });
+assert.ifError(remoteLibsHelp.error);
+assert.equal(remoteLibsHelp.status, 0, remoteLibsHelp.stderr);
+assert.match(remoteLibsHelp.stdout, /readme/);
+assert.match(remoteLibsHelp.stdout, /search/);
+const topLevelHelp = spawnSync(binary, ["--help"], { encoding: "utf8" });
+assert.ifError(topLevelHelp.error);
+assert.equal(topLevelHelp.status, 0, topLevelHelp.stderr);
+assert.doesNotMatch(topLevelHelp.stdout, /^  libs\s/m);
+const retiredLibs = spawnSync(binary, ["libs", "search", "web"], { encoding: "utf8" });
+assert.ifError(retiredLibs.error);
+assert.notEqual(retiredLibs.status, 0, "the retired top-level libs command must not reappear");
+assert.match(retiredLibs.stderr, /Unrecognized argument: search/);
+
 // Real CLI round trips, including the legacy wire format and negative paths.
 const fixtureDir = mkdtempSync(join(tmpdir(), "calcit-query-def-"));
 try {

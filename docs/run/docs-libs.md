@@ -115,7 +115,7 @@ calcit docs read Respo-Agent --module respo.calcit
 
 ## Library Discovery (`docs remote-libs`)
 
-Use `calcit docs remote-libs` for package registry discovery and package README retrieval. If you are querying calcit/module docs content, stay under `calcit docs ...`.
+通过 `calcit docs remote-libs` 查询类库索引和远端 README；查询 Calcit 或已安装模块的文档时，继续使用 `calcit docs ...`。旧顶层入口 `calcit libs` 已移除，迁移时只需在 `libs` 前加上 `docs remote-`，其子命令和参数不变。
 
 ### Searching Registry
 

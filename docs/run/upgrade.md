@@ -23,6 +23,15 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.19 CLI 类库查询入口
+
+顶层 `calcit libs`（或旧二进制名 `cr libs`）已移除，统一改为 `calcit docs remote-libs`。
+子命令和参数保留：`libs search <keyword>`、`libs readme <package> [--file <file>]`、
+`libs scan-md <module>` 分别改为 `docs remote-libs search`、`docs remote-libs readme`、
+`docs remote-libs scan-md`；不带子命令的列表查询改为 `calcit docs remote-libs`。
+升级时请同步修改项目脚本和 Agent 指南中的旧命令。查询已安装模块的文档时，优先使用
+`calcit docs list/read/search --module <module>`，无需经过远端类库索引。
+
 对于编译器能够证明等价的一对一迁移，先运行 `calcit calcit.cirru fix --preset surface-latest-v2 --format edn`
 审阅结构化计划，再用
 `--apply --expect-revision <revision>` 原子应用；完整安全边界见 [Compiler-guided Source Fixes](fix.md)。

@@ -1,8 +1,8 @@
 //! Libs subcommand handler
 //!
-//! Handles: calcit libs - fetches available Calcit libraries from registry
+//! Handles: calcit docs remote-libs - fetches available Calcit libraries from registry
 
-use calcit::cli_args::{LibsCommand, LibsSubcommand};
+use calcit::cli_args::{DocsRemoteLibsCommand, LibsSubcommand};
 use colored::Colorize;
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -72,7 +72,7 @@ fn local_module_dir(package: &str) -> Result<PathBuf, String> {
   Ok(PathBuf::from(home_dir).join(".config/calcit/modules").join(package))
 }
 
-pub fn handle_libs_command(cmd: &LibsCommand) -> Result<(), String> {
+pub fn handle_libs_command(cmd: &DocsRemoteLibsCommand) -> Result<(), String> {
   match &cmd.subcommand {
     None => handle_list_libs(),
     Some(LibsSubcommand::Readme(opts)) => handle_readme(

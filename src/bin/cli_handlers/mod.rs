@@ -1,6 +1,6 @@
 //! CLI handlers for standalone commands that don't need full program loading
 //!
-//! These handlers implement: query, docs, cirru, libs, edit, tree subcommands
+//! These handlers implement: query, docs (including remote libraries), cirru, edit, tree subcommands
 
 mod atomic_write;
 mod call_graph_diff;
@@ -39,7 +39,6 @@ pub use docs::handle_docs_command;
 pub use edit::handle_edit_command;
 pub use ffi::handle_ffi_command;
 pub(crate) use fix::handle_fix_command;
-pub use libs::handle_libs_command;
 pub use program_diff::handle_program_diff_command;
 pub use query::handle_query_command;
 pub(crate) use query::{load_main_snapshot, load_module_with_sources_silent, load_snapshot_for_static_analysis};
