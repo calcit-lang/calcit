@@ -203,6 +203,24 @@ impl FromStr for WasmTarget {
   }
 }
 
+fn deterministic_namespace_order(program_data: &program::CompiledProgram, first: Option<&str>) -> Vec<String> {
+  let mut namespaces = program_data.keys().map(|namespace| namespace.to_string()).collect::<Vec<_>>();
+  namespaces.sort_unstable();
+  if let Some(first) = first
+    && let Ok(index) = namespaces.binary_search_by(|namespace| namespace.as_str().cmp(first))
+  {
+    let first = namespaces.remove(index);
+    namespaces.insert(0, first);
+  }
+  namespaces
+}
+
+fn deterministic_definition_order(file: &program::CompiledFileData) -> Vec<(&Arc<str>, &program::CompiledDef)> {
+  let mut definitions = file.defs.iter().collect::<Vec<_>>();
+  definitions.sort_unstable_by_key(|(name, _)| *name);
+  definitions
+}
+
 pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTarget, boundary: WasmBoundary) -> Result<(), String> {
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
     return Err(
@@ -216,21 +234,13 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   let mut fn_defs: Vec<(String, String, CalcitFnArgs, Vec<Calcit>)> = Vec::new(); // (ns, def_name, args, body)
 
   // Collect init_ns first, then other namespaces (ordering for export clarity)
-  let mut ns_order: Vec<&str> = Vec::new();
-  if program_data.contains_key(init_ns) {
-    ns_order.push(init_ns);
-  }
-  for ns in program_data.keys() {
-    if ns.as_ref() != init_ns {
-      ns_order.push(ns);
-    }
-  }
+  let ns_order = deterministic_namespace_order(&program_data, Some(init_ns));
 
-  for &ns in &ns_order {
-    let Some(file_info) = program_data.get(ns) else {
+  for ns in &ns_order {
+    let Some(file_info) = program_data.get(ns.as_str()) else {
       continue;
     };
-    for (def_name, compiled) in &file_info.defs {
+    for (def_name, compiled) in deterministic_definition_order(file_info) {
       if compiled.kind != program::CompiledDefKind::Fn {
         continue;
       }
@@ -330,11 +340,11 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
       });
     }
   } else {
-    for &ns in &ns_order {
-      let Some(file_info) = program_data.get(ns) else {
+    for ns in &ns_order {
+      let Some(file_info) = program_data.get(ns.as_str()) else {
         continue;
       };
-      for (def_name, compiled) in &file_info.defs {
+      for (def_name, compiled) in deterministic_definition_order(file_info) {
         if !is_wasm_import_def(&compiled.preprocessed_code) {
           continue;
         }
@@ -380,7 +390,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   let component_free_head_global = if boundary == WasmBoundary::Component {
     let atom_count = ns_order
       .iter()
-      .filter_map(|ns| program_data.get(*ns))
+      .filter_map(|ns| program_data.get(ns.as_str()))
       .flat_map(|file| file.defs.values())
       .filter(|compiled| {
         matches!(
@@ -735,11 +745,11 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   // Collect top-level value defs before building the string pool because
   // imported constants may be inlined later by emit_expr.
   let mut value_imports: HashMap<String, Calcit> = HashMap::new();
-  for &ns in &ns_order {
-    let Some(file_info) = program_data.get(ns) else {
+  for ns in &ns_order {
+    let Some(file_info) = program_data.get(ns.as_str()) else {
       continue;
     };
-    for (def_name, compiled) in &file_info.defs {
+    for (def_name, compiled) in deterministic_definition_order(file_info) {
       if matches!(compiled.kind, program::CompiledDefKind::Value | program::CompiledDefKind::LazyValue) {
         value_imports.insert(format!("{ns}/{def_name}"), compiled.preprocessed_code.to_owned());
       }
@@ -752,11 +762,11 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   // Scan for defatom definitions — each gets a mutable WASM global (f64).
   let mut atom_initial_values: Vec<f64> = Vec::new();
   let mut atom_globals: HashMap<String, u32> = HashMap::new();
-  for &ns in &ns_order {
-    let Some(file_info) = program_data.get(ns) else {
+  for ns in &ns_order {
+    let Some(file_info) = program_data.get(ns.as_str()) else {
       continue;
     };
-    for (def_name, compiled) in &file_info.defs {
+    for (def_name, compiled) in deterministic_definition_order(file_info) {
       let qualified = format!("{ns}/{def_name}");
       if let crate::calcit::Calcit::List(xs) = &compiled.preprocessed_code
         && matches!(
@@ -1006,8 +1016,11 @@ pub fn validate_wasm_boundary(target: WasmTarget, boundary: WasmBoundary) -> Res
   }
   let program_data = program::clone_compiled_program_snapshot()?;
   let mut fn_defs = Vec::new();
-  for (namespace, file) in &program_data {
-    for (name, compiled) in &file.defs {
+  for namespace in deterministic_namespace_order(&program_data, None) {
+    let file = program_data
+      .get(namespace.as_str())
+      .expect("ordered namespace must remain in the compiled program");
+    for (name, compiled) in deterministic_definition_order(file) {
       if compiled.kind != program::CompiledDefKind::Fn || is_wasm_import_def(&compiled.preprocessed_code) {
         continue;
       }
@@ -1040,8 +1053,11 @@ fn validate_wasm_target_in_program(
     return Ok(());
   }
 
-  for (ns, file_info) in program_data {
-    for (def_name, compiled) in &file_info.defs {
+  for ns in deterministic_namespace_order(program_data, None) {
+    let file_info = program_data
+      .get(ns.as_str())
+      .expect("ordered namespace must remain in the compiled program");
+    for (def_name, compiled) in deterministic_definition_order(file_info) {
       if compiled.kind != program::CompiledDefKind::Fn {
         continue;
       }
