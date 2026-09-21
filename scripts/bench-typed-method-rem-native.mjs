@@ -5,7 +5,10 @@ const fixture = "calcit/fibo.cirru";
 const iterations = 500_000;
 const expected = String(Array.from({ length: iterations }, (_, index) => (index + 1) % 97).reduce((sum, value) => sum + value, 0));
 const samples = Number(process.argv[3] ?? 3);
-const cases = [["strict-number-rem", "app.main/bench-rem-direct!"]];
+const cases = [
+  ["typed-method", "app.main/bench-rem-typed!"],
+  ["direct-proc", "app.main/bench-rem-direct!"],
+];
 
 for (const [label, initFn] of cases) {
   runOnce(initFn);

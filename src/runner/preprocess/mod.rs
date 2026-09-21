@@ -6731,7 +6731,10 @@ fn validate_method_call(
   let method_str = method_name.as_ref();
   match resolve_impl_method(type_value.as_ref(), &impl_values, method_str) {
     ImplMethodResolution::Selected(candidate)
-      if strict_types_enabled() && should_emit_project_source_lint(file_ns) && candidate.impl_value.is_inherent() =>
+      if strict_types_enabled()
+        && should_emit_project_source_lint(file_ns)
+        && candidate.impl_value.is_inherent()
+        && !is_builtin_method_candidate(type_value.as_ref(), &candidate) =>
     {
       return Err(CalcitErr::use_msg_stack_location_with_code(
         CalcitErrKind::Type,
@@ -7438,11 +7441,34 @@ fn resolve_impl_method<'a>(type_ref: &CalcitTypeAnnotation, impls: &'a [Arc<Calc
   let candidates: Vec<_> = ordered
     .filter_map(|impl_value| impl_value.get(name).map(|entry| ImplMethodCandidate { impl_value, entry }))
     .collect();
+  // Core method tables have a fixed dispatch order for concrete built-in types.
+  if let Some(candidate) = candidates.first()
+    && is_builtin_method_candidate(type_ref, candidate)
+  {
+    return ImplMethodResolution::Selected(ImplMethodCandidate {
+      impl_value: candidate.impl_value,
+      entry: candidate.entry,
+    });
+  }
   match candidates.len() {
     0 => ImplMethodResolution::Missing,
     1 => ImplMethodResolution::Selected(candidates.into_iter().next().expect("checked one candidate")),
     _ => ImplMethodResolution::Ambiguous(candidates),
   }
+}
+
+fn is_builtin_method_candidate(type_ref: &CalcitTypeAnnotation, candidate: &ImplMethodCandidate<'_>) -> bool {
+  let expected_name = match type_ref {
+    CalcitTypeAnnotation::List(_) => "&core-list-methods",
+    CalcitTypeAnnotation::String => "&core-string-methods",
+    CalcitTypeAnnotation::Map(_, _) => "&core-map-methods",
+    CalcitTypeAnnotation::Set(_) => "&core-set-methods",
+    CalcitTypeAnnotation::Ref(_) => "&core-ref-methods",
+    CalcitTypeAnnotation::Number => "&core-number-methods",
+    CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => "&core-fn-methods",
+    _ => return false,
+  };
+  candidate.impl_value.is_inherent() && candidate.impl_value.name().ref_str() == expected_name
 }
 
 fn impl_candidate_origin(candidate: &ImplMethodCandidate<'_>) -> String {
@@ -12328,6 +12354,46 @@ mod tests {
     assert_eq!(error.code(), Some("E_ORIGINLESS_METHOD_DISPATCH"));
     assert!(error.msg.contains("LegacyRenderMethods"), "error: {error}");
     assert!(error.msg.contains("deftrait"), "error: {error}");
+  }
+
+  #[test]
+  fn typed_builtin_method_precedence_stays_static_without_weakening_nominal_dispatch() {
+    let list_type = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number));
+    let builtin = Arc::new(CalcitImpl {
+      name: EdnTag::new("&core-list-methods"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("count")]),
+      values: Arc::new(vec![Calcit::Str(Arc::from("builtin-count"))]),
+    });
+    let count_trait = source_trait("calcit.core", "Countable", "count");
+    let nominal = Arc::new(CalcitImpl {
+      name: EdnTag::new("CoreCountImpl"),
+      origin: Some(count_trait),
+      fields: Arc::new(vec![EdnTag::new("count")]),
+      values: Arc::new(vec![Calcit::Str(Arc::from("trait-count"))]),
+    });
+    let impls = vec![builtin, nominal];
+    let ImplMethodResolution::Selected(selected) = resolve_impl_method(&list_type, &impls, "count") else {
+      panic!("typed built-in method should resolve at compile time")
+    };
+    assert_eq!(selected.impl_value.name().ref_str(), "&core-list-methods");
+    assert!(is_builtin_method_candidate(&list_type, &selected));
+
+    let first = source_trait("app.a", "Show", "show");
+    let second = source_trait("app.b", "Show", "show");
+    let make_show = |name: &str, origin: Arc<CalcitTrait>| {
+      Arc::new(CalcitImpl {
+        name: EdnTag::new(name),
+        origin: Some(origin),
+        fields: Arc::new(vec![EdnTag::new("show")]),
+        values: Arc::new(vec![Calcit::Nil]),
+      })
+    };
+    let conflicting = vec![make_show("FirstShow", first), make_show("SecondShow", second)];
+    assert!(matches!(
+      resolve_impl_method(&list_type, &conflicting, "show"),
+      ImplMethodResolution::Ambiguous(_)
+    ));
   }
 
   #[test]

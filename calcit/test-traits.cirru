@@ -177,10 +177,10 @@
             ; List concatenation
             assert= ([] 1 2 3 4)
               &list:concat ([] 1 2) ([] 3 4)
-            ; List item insertion uses the typed named collection operation.
-            ; This avoids conflating append semantics with the Add trait concatenation contract.
+            ; Built-in list .add appends one item to the receiver.
+            ; The receiver type selects this method before the Add trait.
             assert= ([] 1 2)
-              append ([] 1) 2
+              .add ([] 1) 2
             println "|  Add trait: ✓"
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
@@ -299,11 +299,11 @@
             ; List comparison $ not yet implemented in compare form
             ; assert= :lt $ compare ([] 1 2) ([] 1 3)
             do
-              assert= -1 $ compare-with-trait 1 2
-              assert= 0 $ compare-with-trait 2 2
-              assert= 1 $ compare-with-trait 3 2
-              assert= -1 $ compare-with-trait |apple |banana
-              assert= 1 $ compare-with-trait |zebra |apple
+              assert= -1 $ .compare 1 2
+              assert= 0 $ .compare 2 2
+              assert= 1 $ .compare 3 2
+              assert= -1 $ .compare |apple |banana
+              assert= 1 $ .compare |zebra |apple
               assert= -1 $ compare-with-trait 1 2
               assert= -1 $ compare-with-trait |a |b
               assert-traits 1 Compare

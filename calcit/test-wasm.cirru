@@ -457,10 +457,10 @@
           :code $ quote $ defwasm-export test-list-contains-method ()
             &+
               if
-                contains? ([] 10 20 30) 1
+                .contains? ([] 10 20 30) 1
                 , 1 0
               if
-                contains? ([] 10 20 30) 9
+                .contains? ([] 10 20 30) 9
                 , 10 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -489,7 +489,7 @@
             :args $ []
         'test-list-empty-method $ %{} 'CodeEntry (:doc "|.empty returns an empty list")
           :code $ quote $ defwasm-export test-list-empty-method ()
-            count $ empty $ [] 10 20 30
+            count $ .empty $ [] 10 20 30
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -504,7 +504,7 @@
         'test-list-empty?-method $ %{} 'CodeEntry (:doc "|.empty? uses generic method dispatch")
           :code $ quote $ defwasm-export test-list-empty?-method ()
             if
-              empty? $ []
+              .empty? $ []
               , 1 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -537,10 +537,10 @@
           :code $ quote $ defwasm-export test-list-includes-method ()
             &+
               if
-                includes? ([] 10 20 30) 20
+                .includes? ([] 10 20 30) 20
                 , 1 0
               if
-                includes? ([] 10 20 30) 99
+                .includes? ([] 10 20 30) 99
                 , 10 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -548,7 +548,7 @@
         'test-list-max-empty $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-list-max-empty ()
             option:unwrap-or
-              max $ []
+              .max $ []
               , -1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -556,7 +556,7 @@
         'test-list-max-method $ %{} 'CodeEntry (:doc "|.max dispatches on list")
           :code $ quote $ defwasm-export test-list-max-method ()
             option:unwrap-or
-              max $ [] 10 20 30 15
+              .max $ [] 10 20 30 15
               , -1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -564,7 +564,7 @@
         'test-list-min-method $ %{} 'CodeEntry (:doc "|.min dispatches on list")
           :code $ quote $ defwasm-export test-list-min-method ()
             option:unwrap-or
-              min $ [] 10 20 30 15
+              .min $ [] 10 20 30 15
               , -1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -755,10 +755,10 @@
           :code $ quote $ defwasm-export test-map-contains-method ()
             &+
               if
-                contains? (&{} :a 1 :b 2) :a
+                .contains? (&{} :a 1 :b 2) :a
                 , 1 0
               if
-                contains? (&{} :a 1 :b 2) :z
+                .contains? (&{} :a 1 :b 2) :z
                 , 10 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -799,7 +799,7 @@
             :args $ []
         'test-map-empty-method $ %{} 'CodeEntry (:doc "|.empty returns an empty map")
           :code $ quote $ defwasm-export test-map-empty-method ()
-            count $ empty $ &{} :a 1 :b 2
+            count $ .empty $ &{} :a 1 :b 2
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -846,10 +846,10 @@
           :code $ quote $ defwasm-export test-map-includes-method ()
             &+
               if
-                includes? (&{} :a 10 :b 20) 20
+                .includes? (&{} :a 10 :b 20) 20
                 , 1 0
               if
-                includes? (&{} :a 10 :b 20) 99
+                .includes? (&{} :a 10 :b 20) 99
                 , 10 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -857,7 +857,7 @@
         'test-map-keys-method $ %{} 'CodeEntry
           :doc "|typed `.keys` lowers to `&map:keys` and returns Set<K> across WASM."
           :code $ quote $ defwasm-export test-map-keys-method ()
-            &set:count $ keys $ &{} :a 1 :b 2
+            &set:count $ .keys $ &{} :a 1 :b 2
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -946,7 +946,7 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
         'test-number-compare-method $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-export test-number-compare-method () (&compare 1 2)
+          :code $ quote $ defwasm-export test-number-compare-method () (.compare 1 2)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -993,7 +993,7 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
         'test-rem $ %{} 'CodeEntry (:doc |remainder)
-          :code $ quote $ defwasm-export test-rem (a b) (&number:rem a b)
+          :code $ quote $ defwasm-export test-rem (a b) (.rem a b)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
@@ -1028,10 +1028,10 @@
           :code $ quote $ defwasm-export test-set-contains-method ()
             &+
               if
-                contains? (#{} 10 20 30) 20
+                .contains? (#{} 10 20 30) 20
                 , 1 0
               if
-                contains? (#{} 10 20 30) 99
+                .contains? (#{} 10 20 30) 99
                 , 10 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -1068,7 +1068,7 @@
             :args $ []
         'test-set-empty-method $ %{} 'CodeEntry (:doc "|.empty returns an empty set")
           :code $ quote $ defwasm-export test-set-empty-method ()
-            count $ empty $ #{} 10 20 30
+            count $ .empty $ #{} 10 20 30
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -1100,10 +1100,10 @@
           :code $ quote $ defwasm-export test-set-includes-method ()
             &+
               if
-                includes? (#{} 10 20 30) 20
+                .includes? (#{} 10 20 30) 20
                 , 1 0
               if
-                includes? (#{} 10 20 30) 99
+                .includes? (#{} 10 20 30) 99
                 , 10 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -1111,7 +1111,7 @@
         'test-set-max-method $ %{} 'CodeEntry (:doc "|.max dispatches on set")
           :code $ quote $ defwasm-export test-set-max-method ()
             option:unwrap-or
-              max $ #{} 10 20 30 15
+              .max $ #{} 10 20 30 15
               , -1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -1119,7 +1119,7 @@
         'test-set-min-method $ %{} 'CodeEntry (:doc "|.min dispatches on set")
           :code $ quote $ defwasm-export test-set-min-method ()
             option:unwrap-or
-              min $ #{} 10 20 30 15
+              .min $ #{} 10 20 30 15
               , -1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -1263,13 +1263,13 @@
             :args $ []
         'test-str-find-index-found $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-find-index-found ()
-            option:unwrap-or (str-find-index |hello |ell) -1
+            option:unwrap-or (.find-index |hello |ell) -1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
         'test-str-find-index-not-found $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-find-index-not-found ()
-            option:unwrap-or (str-find-index |hello |xyz) -1
+            option:unwrap-or (.find-index |hello |xyz) -1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -1326,7 +1326,7 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
         'test-string-compare-method $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-export test-string-compare-method () (&compare |abc |abd)
+          :code $ quote $ defwasm-export test-string-compare-method () (.compare |abc |abd)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []

@@ -216,7 +216,7 @@
           :code $ quote $ fn ()
             let
                 *a $ atom 1
-              assert= 1 $ deref *a
+              assert= 1 $ .deref *a
               assert= 1 $ &atom:deref *a
             assert= 1 $ .deref $ %:: AtomBox :atom 1
             assert= 1 $ .deref $ %:: AtomBox :atom 1
@@ -447,7 +447,7 @@
               base $ {} $ :a 1
               assert= 1 $ base :a
             inside-eval: $ assert= ([] 1)
-              &list:map
+              .map
                 [] $ &{} :a 1
                 , :a
           :examples $ []
