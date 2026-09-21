@@ -91,7 +91,7 @@ fn snapshot_source(entries: &str) -> String {
     :profiles $ {{}} $ :release
       {{}} (:on-failure :continue)
         :entries $ [] :default :js
-        :checks $ [] :strict :quality
+        :checks $ [] :strict
   :files $ {{}} $ 'verify-fixture.main
     %{{}} 'FileEntry
       :defs $ {{}}
@@ -142,11 +142,11 @@ fn verification_profile_uses_one_contract_for_native_and_js_entries() {
   assert_eq!(value["data"]["preflight"]["snapshot"]["format"], "cirru-edn");
   assert_eq!(value["data"]["preflight"]["snapshot"]["active_entries"][0], "default");
   let checks = value["data"]["checks"].as_array().expect("checks should be an array");
-  assert_eq!(checks.len(), 4);
+  assert_eq!(checks.len(), 2);
   assert_eq!(checks[0]["entry"], "default");
   assert_eq!(checks[0]["target"], "native");
-  assert_eq!(checks[2]["entry"], "js");
-  assert_eq!(checks[2]["target"], "node");
+  assert_eq!(checks[1]["entry"], "js");
+  assert_eq!(checks[1]["target"], "node");
   assert!(checks.iter().all(|check| check["revision"] == value["revision"]));
 
   let edn_output = run_calcit(&snapshot, &["analyze", "verify", "--profile", "release", "--format", "edn"]);
@@ -320,8 +320,7 @@ fn invalid_profile_configuration_fails_before_checks_with_json_diagnostic() {
 fn obsolete_dynamic_method_profile_gate_has_a_read_only_migration_hint() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
-  let source =
-    snapshot_source(VALID_ENTRIES).replace(":checks $ [] :strict :quality", ":checks $ [] :strict :dynamic-methods :quality");
+  let source = snapshot_source(VALID_ENTRIES).replace(":checks $ [] :strict", ":checks $ [] :strict :dynamic-methods");
   fs::write(&snapshot, source).expect("fixture should write");
 
   let output = run_calcit(&snapshot, &["analyze", "verify", "--profile", "release", "--format", "json"]);
@@ -334,17 +333,28 @@ fn obsolete_dynamic_method_profile_gate_has_a_read_only_migration_hint() {
 }
 
 #[test]
+fn obsolete_quality_profile_gate_points_to_strict_and_existing_baselines() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  let source = snapshot_source(VALID_ENTRIES).replace(":checks $ [] :strict", ":checks $ [] :strict :quality");
+  fs::write(&snapshot, source).expect("fixture should write");
+
+  let output = run_calcit(&snapshot, &["analyze", "verify", "--profile", "release", "--format", "json"]);
+  assert!(!output.status.success());
+  let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("failure should remain one JSON envelope");
+  assert_eq!(value["diagnostics"][0]["code"], "E_VERIFY_CONFIG");
+  assert!(value["diagnostics"][0]["message"].as_str().is_some_and(|message| {
+    message.contains("replace it with `strict` and behavior tests") && message.contains("existing migration baseline")
+  }));
+}
+
+#[test]
 fn stop_policy_does_not_run_checks_after_the_first_failure() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
   let source = snapshot_source(VALID_ENTRIES)
     .replace(":on-failure :continue", ":on-failure :stop")
-    .replace(":checks $ [] :strict :quality", ":checks $ [] :quality :strict")
-    .replacen(
-      ":schema $ :: 'Fn $ {} (:return 'Unit)\n            :args $ []",
-      ":schema $ :: 'Dynamic",
-      1,
-    );
+    .replacen("defn main! () &unit", "defn main! () &list:nth 1 0", 1);
   fs::write(&snapshot, source).expect("fixture should write");
 
   let output = run_calcit(&snapshot, &["analyze", "verify", "--profile", "release", "--format", "json"]);
@@ -358,6 +368,6 @@ fn stop_policy_does_not_run_checks_after_the_first_failure() {
     String::from_utf8_lossy(&output.stdout),
     String::from_utf8_lossy(&output.stderr)
   );
-  assert_eq!(checks[0]["check"], "quality");
+  assert_eq!(checks[0]["check"], "strict");
   assert_eq!(checks[0]["status"], "failed");
 }
