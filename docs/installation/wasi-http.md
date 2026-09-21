@@ -25,7 +25,7 @@ streaming body、HTTP server、socket/TLS 细节和主动取消；这些能力�
 当前 contract。
 
 可复制路径与版本组合见 [`examples/wasi-http-client/`](../../examples/wasi-http-client/)：
-`calcit wasm --boundary component` + `calcit ffi export --boundary component` + `calcit-bindgen 0.1.6`。
+`calcit wasm --boundary component` + `calcit ffi export --boundary component` + `calcit-bindgen 0.1.7`。
 当前稳定宿主 adapter 使用 Wasmtime 47 的 WASI 0.2 `wasi:http/outgoing-handler` 生产传输，
 Calcit-facing contract 保持 WASI 0.3 原生 async；portable、直接依赖 WASI 0.3 HTTP host 模块的
 adapter 仍被其 experimental tooling 阻塞，尚未提供。
@@ -35,5 +35,10 @@ adapter 仍被其 experimental tooling 阻塞，尚未提供。
 允许的 origin、响应上限和 preopen。结果仍以 Cirru EDN 输出；JSON 仅供显式选择的 consumer 使用。
 应用无需复制 Canonical ABI 或 include adapter 的 Rust 代码，CI 可用同一组输入执行
 `calcit-bindgen check` 检测生成物过期。完整命令、最小配置和成功/拒绝/超限验证见上述示例。
-0.1.6 还会把 generated host 内精确的 `Cargo.lock` 与 `target/` 识别为可丢弃运行产物，允许
+0.1.6 起会把 generated host 内精确的 `Cargo.lock` 与 `target/` 识别为可丢弃运行产物，允许
 真实运行后继续 check 或安全再生成；其他未知文件仍会阻止覆盖。
+0.1.7 在同一 capability 文件中增加 preopen-backed `:arguments-file` 与 `:result-file`：参数文件保存
+完整的严格 Cirru EDN 参数列表，结果文件与 stdout 保持同一规范格式；路径越界、symlink 逃逸、错误权限
+和 JSON fallback 都会被拒绝。生成 host 用 `0`、`2`–`6` 区分成功、输入、权限、transport、响应超限与
+unsupported，其他内部失败为 `1`。发布版业务闭环由
+`scripts/test-published-wasi-http-business.sh` 持续验证。

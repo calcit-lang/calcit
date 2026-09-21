@@ -2,3 +2,5 @@
 /generated-core/
 /interface.cirru
 /capabilities.local.cirru
+/input/request.local.cirru
+/output/
