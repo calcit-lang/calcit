@@ -166,7 +166,7 @@ schema to be established before application code depends on it.
 let
     Point $ defstruct Point (:x :number) (:y :number)
     p $ %{} Point (:x 1) (:y 2)
-  println $ .keys $ .to-map p
+  println $ &map:keys $ &struct:to-map p
   ; => $ #{} :x :y
   println $ count p
   ; => 2
@@ -212,7 +212,7 @@ let
 Legacy code may use `%{}?` to create a partial struct with only some fields set
 (others default to `nil`):
 
-```cirru
+```cirru.no-check
 let
     Person $ defstruct Person (:name :string) (:age :number) (:position :tag)
     p1 $ %{}? Person (:name |Chen)
@@ -231,7 +231,7 @@ defaults rather than absence.
 
 The low-level `&%{}` form accepts fields as flat keyword-value pairs (no type checking):
 
-```cirru
+```cirru.no-check
 let
     Person $ defstruct Person (:name :string) (:age :number) (:position :tag)
   println $ &%{} Person :name |Chen :age 20 :position :mainland

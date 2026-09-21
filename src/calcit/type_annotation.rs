@@ -4096,10 +4096,16 @@ impl CalcitTypeAnnotation {
 
   pub(crate) fn compatible_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
     let _relation_guard = enter_compatibility_relation();
-    match bounded_plain_type_relation(self, expected, PlainRelationMode::Compatibility) {
-      Ok(Some((result, _))) => return !result.is_mismatch(),
-      Err(_) => return false,
-      Ok(None) => {}
+    // The bounded plain relation intentionally does not carry generic bindings.
+    // Let the binding-aware matcher below specialize either side before taking
+    // this fast path, otherwise a callback such as Fn(T) is rejected against
+    // an expected Fn(Number) before T can be bound.
+    if !self.contains_type_var() && !expected.contains_type_var() {
+      match bounded_plain_type_relation(self, expected, PlainRelationMode::Compatibility) {
+        Ok(Some((result, _))) => return !result.is_mismatch(),
+        Err(_) => return false,
+        Ok(None) => {}
+      }
     }
     let mut worklist = vec![(self, expected)];
     let mut visited = HashSet::new();
@@ -4180,6 +4186,16 @@ impl CalcitTypeAnnotation {
       (_, Self::Custom(expected)) if Self::custom_keyword_matches(expected, "any") => true,
       (Self::Custom(actual), _) if Self::custom_keyword_matches(actual, "any") => true,
       (Self::TypeVar(actual), Self::TypeVar(expected)) if actual == expected => true,
+      // Macro-expanded callback hints may carry an outer generic as an
+      // unresolved zero-argument TypeRef because the generated local function
+      // does not redeclare the enclosing schema's generic list. When the
+      // expected contract names the same generic, it refers to that binding.
+      (Self::TypeRef(actual, args), Self::TypeVar(expected)) if args.is_empty() && Self::type_ref_name_matches(actual, expected) => {
+        true
+      }
+      (Self::TypeVar(actual), Self::TypeRef(expected, args)) if args.is_empty() && Self::type_ref_name_matches(expected, actual) => {
+        true
+      }
       (actual, Self::TypeVar(var)) => match bindings.get(var) {
         Some(bound) if bound.as_ref() == actual => true,
         Some(bound) if matches!(bound.as_ref(), Self::Nil) => {
@@ -7916,6 +7932,31 @@ mod tests {
     let expected = CalcitTypeAnnotation::from_function_parts(vec![number.clone()], Arc::new(CalcitTypeAnnotation::Optional(number)));
 
     assert!(actual.is_compatible_with(&expected));
+  }
+
+  #[test]
+  fn generic_callback_parameter_specializes_from_expected_contract() {
+    let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let actual = CalcitTypeAnnotation::from_function_parts(vec![generic], Arc::new(CalcitTypeAnnotation::Bool));
+    let expected =
+      CalcitTypeAnnotation::from_function_parts(vec![Arc::new(CalcitTypeAnnotation::Number)], Arc::new(CalcitTypeAnnotation::Bool));
+
+    assert!(actual.is_compatible_with(&expected));
+  }
+
+  #[test]
+  fn macro_callback_type_ref_uses_same_named_outer_generic_binding() {
+    let actual = CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("T"), Arc::new(vec![])))],
+      Arc::new(CalcitTypeAnnotation::Bool),
+    );
+    let expected = CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))],
+      Arc::new(CalcitTypeAnnotation::Bool),
+    );
+    let mut bindings = TypeBindings::from([(Arc::from("T"), Arc::new(CalcitTypeAnnotation::Number))]);
+
+    assert!(actual.compatible_with_bindings(&expected, &mut bindings));
   }
 
   #[test]

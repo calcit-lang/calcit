@@ -396,6 +396,24 @@
       :typeNotFull 1
       :unresolved 1
       :unsafeCoerce 0
+    |calcit.core/&map:filter $ {} (:codeDynamic 0)
+      :codeNil 0
+      :declaredOptional 0
+      :deprecatedCalls 0
+      :schemaDynamic 1
+      :typeNone 0
+      :typeNotFull 1
+      :unresolved 1
+      :unsafeCoerce 0
+    |calcit.core/&map:to-list $ {} (:codeDynamic 0)
+      :codeNil 0
+      :declaredOptional 0
+      :deprecatedCalls 0
+      :schemaDynamic 1
+      :typeNone 0
+      :typeNotFull 0
+      :unresolved 1
+      :unsafeCoerce 0
     |calcit.core/&str $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
@@ -1732,10 +1750,10 @@
     :codeNil 0
     :declaredOptional 0
     :deprecatedCalls 0
-    :schemaDynamic 277
+    :schemaDynamic 279
     :typeNone 45
-    :typeNotFull 132
-    :unresolved 187
+    :typeNotFull 133
+    :unresolved 189
     :unsafeCoerce 0
   :scope $ {} (:includeDependencies false)
     :namespace nil

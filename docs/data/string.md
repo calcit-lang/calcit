@@ -16,11 +16,11 @@ This somewhat unusual design exists because the structural editor naturally wrap
 
 ## Character count and wire size
 
-String `.count` returns the number of Unicode scalar values consistently on the native, JavaScript, and WASM backends. Use `.utf8-byte-count` when a protocol, queue, file, or metric needs the encoded UTF-8 byte length:
+`count` 返回 Unicode 标量值的数量；协议、队列、文件或指标需要 UTF-8 编码字节数时使用 `&str:utf8-byte-count`。两者在 native、JavaScript 与 WASM 目标上保持一致：
 
 ```cirru
-assert= 2 $ "|A😀".count
-assert= 5 $ "|A😀".utf8-byte-count
+assert= 2 $ count |A😀
+assert= 5 $ &str:utf8-byte-count |A😀
 ```
 
 Keep these operations distinct: character count describes Calcit text indexing semantics, while UTF-8 byte count describes storage and wire budgets. The latter is O(1) on the native and WASM representations and uses one allocation-free linear pass in generated JavaScript.

@@ -239,8 +239,8 @@ Core types provide origin-carrying built-in trait implementations registered con
 
 ```cirru
 do
-  assert= -1 $ 1 .compare 2
-  assert= 0 $ |same .compare |same
+  assert= -1 $ &compare 1 2
+  assert= 0 $ &compare |same |same
 ```
 
 ## Option and Result helpers

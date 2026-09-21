@@ -57,11 +57,11 @@ The low-level primitive `&{}` takes flat key-value pairs:
 ```cirru
 let
     m $ {} (:a 1) (:b 2) (:c 3)
-  println $ m.get :a
+  println $ get m :a
   ; => (%some 1)
-  println $ m.get :missing
+  println $ get m :missing
   ; => (%none)
-  println $ m.contains? :b
+  println $ contains? m :b
   ; => true
   println $ count m
   ; => 3

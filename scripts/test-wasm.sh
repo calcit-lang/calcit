@@ -15,15 +15,15 @@ else
 fi
 ENTRY="calcit/test-wasm.cirru"
 FAIL_ENTRY="calcit/type-fail/schema-required-arity.cirru"
-LOWERING_FAIL_ENTRY="calcit/test-struct.cirru"
+LOWERING_FAIL_ENTRY="calcit/test-wasi-command.cirru"
 
 run_codegen() {
   local entry="$1"
   shift
   if [[ -n "$BIN" ]]; then
-    "$BIN" --compat-types wasm "$entry" "$@"
+    "$BIN" wasm "$entry" "$@"
   else
-    bash scripts/cargo-with-sdk.sh run --bin calcit -- --compat-types wasm "$entry" "$@"
+    bash scripts/cargo-with-sdk.sh run --bin calcit -- wasm "$entry" "$@"
   fi
 }
 
@@ -67,7 +67,7 @@ if [[ -e "$LOWERING_FAIL_OUT/program.wasm" ]]; then
   exit 1
 fi
 
-if ! grep -Fq "[wasm] target function test-struct.main/" <<<"$lowering_failure_out" ||
+if ! grep -Fq "[wasm] target function app.main/" <<<"$lowering_failure_out" ||
   ! grep -Fq "is not compilable" <<<"$lowering_failure_out"; then
   echo "WASM target lowering failure lost its definition context" >&2
   echo "$lowering_failure_out" >&2

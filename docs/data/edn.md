@@ -41,17 +41,17 @@ The runtime APIs are:
 
 ## Recoverable parsing with Result
 
-User-facing String methods return `Result` instead of raising on malformed input:
+严格类型代码使用返回 `Result` 的具名解析函数，以便处理格式错误：
 
 ```cirru
 let
-    parsed $ |[] .parse-cirru-edn
-    json $ |1 .parse-json
+    parsed $ try-parse-cirru-edn |[]
+    json $ try-parse-json |1
   assert= true $ parsed .ok?
   assert= true $ json .ok?
 ```
 
-The available methods are `.parse-cirru`, `.parse-cirru-list`, `.parse-cirru-edn`, and `.parse-json`. Their function-form counterparts are named `try-parse-cirru`, `try-parse-cirru-list`, `try-parse-cirru-edn`, and `try-parse-json`. Parse failures carry the parser message in `Result`'s `:err` payload, including Cirru source position and nearby input where available.
+旧式接收者方法包括 `.parse-cirru`、`.parse-cirru-list`、`.parse-cirru-edn` 和 `.parse-json`；新代码优先使用 `try-parse-cirru`、`try-parse-cirru-list`、`try-parse-cirru-edn` 与 `try-parse-json`。解析失败的信息位于 `Result` 的 `:err` 分支。
 
 Cirru syntax has a closed result type, while Cirru EDN and JSON remain `Result<Dynamic,String>` because their data shapes are open. Use `parse-cirru-edn-as` or `decode-map-as` after the boundary when application code needs a closed nominal type. The original parser procedures remain available for compatibility and still raise on malformed input.
 
@@ -68,10 +68,15 @@ These Result-returning parser methods currently run on the native and JavaScript
 
 `parse-cirru-edn-as` is a language syntax that derives a closed decoder graph at compile time, then validates and constructs the complete value recursively:
 
+公开定义需要声明可检查的函数契约；以下 `hint-fn` 与 Snapshot `Fn` schema 等价地提供这一信息：
+
 ```cirru.no-run
 def Person $ defstruct Person (:name 'String) (:age 'Number)
 
 defn decode-person (raw)
+  hint-fn $ {}
+    :args $ [] 'String
+    :return 'Person
   parse-cirru-edn-as raw Person
 ```
 
@@ -98,6 +103,9 @@ The compatibility form raises the failure like `parse-cirru-edn`. New code that 
 def Person $ defstruct Person (:name 'String) (:age 'Number)
 
 defn decode-people (raw)
+  hint-fn $ {}
+    :args $ [] 'String
+    :return $ :: 'Result (:: 'List 'Person) 'String
   try-parse-cirru-edn-as raw $ :: 'List Person
 ```
 

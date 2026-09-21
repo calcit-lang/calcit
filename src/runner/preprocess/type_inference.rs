@@ -249,6 +249,7 @@ fn resolve_generic_return_type_parts<'a>(
   }
 
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+  let mut propagated_generics: HashSet<Arc<str>> = HashSet::new();
 
   // Match fixed and variadic actual arguments against the declared types.
   // Rest-only generic functions otherwise lose their payload type before a
@@ -261,6 +262,11 @@ fn resolve_generic_return_type_parts<'a>(
       continue;
     }
     let actual_type = resolve_type_value(arg, scope_types)?;
+    for generic in generics {
+      if expected_type.contains_type_var_named(generic) && actual_type.contains_type_var_named(generic) {
+        propagated_generics.insert(generic.clone());
+      }
+    }
     if actual_type
       .as_ref()
       .prove_available_bindings(expected_type.as_ref(), &mut bindings)
@@ -271,12 +277,24 @@ fn resolve_generic_return_type_parts<'a>(
   }
 
   for generic in generics {
-    bindings.entry(generic.clone()).or_insert_with(|| calcit::DYNAMIC_TYPE.clone());
+    if !propagated_generics.contains(generic) {
+      bindings.entry(generic.clone()).or_insert_with(|| calcit::DYNAMIC_TYPE.clone());
+    }
   }
 
   let resolved = return_type.substitute_type_vars(&bindings);
-  // Only return if every declared type variable was resolved or defaulted.
-  if resolved.contains_type_var() { None } else { Some(resolved) }
+  // A generic caller may pass its own type variable through a generic helper.
+  // Preserve that symbolic relation instead of degrading it to Dynamic merely
+  // because both lexical contracts use the same stable type-variable name.
+  let unresolved_are_propagated = generics
+    .iter()
+    .filter(|generic| resolved.contains_type_var_named(generic))
+    .all(|generic| propagated_generics.contains(generic));
+  if resolved.contains_type_var() && !unresolved_are_propagated {
+    None
+  } else {
+    Some(resolved)
+  }
 }
 
 pub(crate) fn infer_return_type_from_compiled_callable(
@@ -1651,9 +1669,12 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(type_value.clone());
   }
-  // MapToList converts Map(K, V) → List(Dynamic)
+  // MapToList exposes each heterogeneous key/value pair as an open two-item
+  // list, while preserving the outer collection shape.
   if matches!(proc, CalcitProc::NativeMapToList) {
-    return Some(tag_annotation("list"));
+    return Some(Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::List(
+      calcit::DYNAMIC_TYPE.clone(),
+    )))));
   }
   if matches!(proc, CalcitProc::NativeSetToList)
     && let Some(first_arg) = xs.get(1)
@@ -2524,6 +2545,28 @@ mod tests {
       CalcitTypeAnnotation::Map(key, value)
         if matches!(key.as_ref(), CalcitTypeAnnotation::String)
           && matches!(value.as_ref(), CalcitTypeAnnotation::Number)
+    ));
+  }
+
+  #[test]
+  fn generic_return_preserves_a_callers_symbolic_payload() {
+    let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let generic_list = Arc::new(CalcitTypeAnnotation::List(type_var.clone()));
+    let items = local("items", generic_list.clone());
+
+    let inferred = resolve_generic_return_type_parts(
+      &[Arc::from("T")],
+      std::slice::from_ref(&generic_list),
+      None,
+      &generic_list,
+      std::iter::once(&items),
+      &ScopeTypes::new(),
+    )
+    .expect("a generic helper should preserve the caller's symbolic payload");
+
+    assert!(matches!(
+      inferred.as_ref(),
+      CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T")
     ));
   }
 

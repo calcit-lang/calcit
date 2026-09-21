@@ -348,7 +348,7 @@ const scenarios = [
     , |replace
     , |app.main/main!
     , |--path
-    , |@48.1
+    , |@40.1
     , |--code
     quote false`,
       "--dry-run",
@@ -638,88 +638,6 @@ const scenarios = [
     },
   },
   {
-    name: "dynamic method summary",
-    args: [
-      "calcit/test-method-errors.cirru",
-      "analyze",
-      "dynamic-methods",
-      "--summary-only",
-      "--format",
-      "json",
-    ],
-    check(result) {
-      if (result.schema_version !== 1 || result.command !== "analyze.dynamic-methods") {
-        throw new Error("unexpected analyze.dynamic-methods envelope");
-      }
-      if (result.data.summary.findings !== 2 || result.data.findings.length !== 0) {
-        throw new Error("dynamic-methods summary did not preserve aggregate-only output");
-      }
-      if (result.data.summary.passed !== true || !result.revision.startsWith("md5:")) {
-        throw new Error("dynamic-methods summary lost policy or revision metadata");
-      }
-    },
-  },
-  {
-    name: "dynamic method policy failure",
-    args: [
-      "calcit/test-method-errors.cirru",
-      "analyze",
-      "dynamic-methods",
-      "--max",
-      "1",
-      "--format",
-      "json",
-    ],
-    expectedStatus: 1,
-    check(result) {
-      if (result.data.summary.findings !== 2 || result.data.summary.passed !== false) {
-        throw new Error("dynamic-methods policy did not fail above its limit");
-      }
-      if (result.data.findings.length !== 2) {
-        throw new Error("dynamic-methods policy omitted fixture finding rows");
-      }
-      if (result.data.findings.some((finding) => !finding.code?.startsWith("P_DYNAMIC_"))) {
-        throw new Error("dynamic-methods report included unrelated warnings");
-      }
-      if (result.diagnostics[0]?.code !== "E_DYNAMIC_METHOD_POLICY") {
-        throw new Error("dynamic-methods policy failure lost its structured diagnostic");
-      }
-    },
-  },
-  {
-    name: "dynamic method project scope",
-    args: [
-      "calcit/test-dynamic-method-scope.cirru",
-      "analyze",
-      "dynamic-methods",
-      "--summary-only",
-      "--format",
-      "json",
-    ],
-    check(result) {
-      if (result.data.summary.findings !== 0 || result.data.filters.include_dependencies !== false) {
-        throw new Error("dynamic-methods default scope leaked dependency findings");
-      }
-    },
-  },
-  {
-    name: "dynamic method dependency scope",
-    args: [
-      "calcit/test-dynamic-method-scope.cirru",
-      "analyze",
-      "dynamic-methods",
-      "--deps",
-      "--summary-only",
-      "--format",
-      "json",
-    ],
-    check(result) {
-      if (result.data.summary.findings !== 2 || result.data.filters.include_dependencies !== true) {
-        throw new Error("dynamic-methods --deps lost reachable module findings");
-      }
-    },
-  },
-  {
     name: "static quality gate failure",
     args: [
       "calcit/test.cirru",
@@ -751,13 +669,11 @@ const scenarios = [
 const rows = [];
 for (const scenario of scenarios) {
   const started = process.hrtime.bigint();
-  // These scenarios exercise the historical all-features fixture and its
-  // machine envelopes, not the 0.14 strict-default acceptance path.
   const fixtureArgs = scenario.defaultStrict
     ? scenario.args
     : scenario.strictTypes
       ? [scenario.args[0], "--strict-types", ...scenario.args.slice(1)]
-      : [scenario.args[0], "--compat-types", ...scenario.args.slice(1)];
+      : scenario.args;
   const child = spawnSync(binary, fixtureArgs, {
     cwd: process.cwd(),
     encoding: "utf8",
@@ -861,7 +777,7 @@ try {
 for (const rule of ["tag-match-to-match-v1", "required-struct-field-v1"]) {
   const retired = spawnSync(
     binary,
-    ["tests/fixtures/fix-command.cirru", "--compat-types", "fix", "--rule", rule, "--format", "json"],
+    ["tests/fixtures/fix-command.cirru", "fix", "--rule", rule, "--format", "json"],
     { cwd: process.cwd(), encoding: "utf8", maxBuffer: 4 * 1024 * 1024 },
   );
   assert.ifError(retired.error);

@@ -429,7 +429,9 @@
                 *b $ atom 0
                 *c $ atom 0
               add-watch *b :change $ fn (current prev)
-                do (reset! *c current) &unit
+                do
+                  reset! *c $ assert-type current 'Number
+                  , &unit
               reset! *b 1
               assert= 1 @*b
               assert= 1 @*c
