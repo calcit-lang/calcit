@@ -17,3 +17,5 @@
 ## 验证
 
 `yarn check-all` 通过（含 304 个 core definition `:tests`）；`cargo test -q`、`cargo clippy -- -D warnings`、`cargo fmt --check`、`yarn check-agent-interface`、core `check-public` 命令和 Markdown 文档校验（340 个片段）均通过。已有失败路径测试会读取错误摘要中的 `2 passed`，因此保留该文字契约；JSON 的总体通过数与源码/intrinsic 分项仍分别给出。#1238 仍需继续审查 analyzer-only 规则与真实调用方。
+
+首次 PR Actions 的 Clippy job 在下载 reviewdog 时遇到外部 504，尚未运行 Clippy。将 job 改为直接执行仓库规定的 `cargo clippy -- -D warnings`，去掉仅用于 PR annotation 的外部下载与多余写权限；实际 lint 错误现在直接让作业失败。后续以新 commit 的 Actions 结果为准。
