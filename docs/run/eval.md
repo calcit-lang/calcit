@@ -21,7 +21,7 @@ entry_for:
 
 # Run in Eval mode
 
-短代码可以直接作为 `calcit eval '<snippet>'` 的位置参数；需要多行代码或避免 Shell 转义时，改用 `calcit eval --stdin` 并通过管道或重定向传入。两种输入方式不能同时使用。旧顶层 `calcit exec` 已移除。
+短代码可以直接作为 `calcit eval '<snippet>'` 的位置参数。带引号的多行位置参数仍受支持（见下方示例）；需要避免 Shell 转义或从管道读取时，推荐使用 `calcit eval --stdin`。两种输入方式不能同时使用。旧顶层 `calcit exec` 已移除。
 
 ```bash
 echo 'range 3' | calcit eval --stdin

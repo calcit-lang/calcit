@@ -788,6 +788,16 @@ const stdinEval = spawnSync(binary, ["eval", "--stdin"], { encoding: "utf8", inp
 assert.ifError(stdinEval.error);
 assert.equal(stdinEval.status, 0, stdinEval.stderr);
 assert.match(stdinEval.stdout, /\(\[\] 0 1 2\)/);
+const dependencyEval = spawnSync(binary, [
+  "eval", "--stdin", "--dep", "./calcit/util.cirru", "--dep", "./examples/wasi-http-client/calcit.cirru",
+], {
+  encoding: "utf8",
+  input: "util.core/log-title |dependency-ready\ncomponent-wasm-async-import.starter/main!\n",
+});
+assert.ifError(dependencyEval.error);
+assert.equal(dependencyEval.status, 0, dependencyEval.stderr);
+assert.match(dependencyEval.stdout, /dependency-ready/);
+assert.match(dependencyEval.stdout, /took .*: 0/);
 for (const [args, input, message] of [
   [["eval"], "", /No snippet provided/],
   [["eval", "--stdin"], "", /No snippet read from stdin/],
@@ -795,12 +805,12 @@ for (const [args, input, message] of [
 ]) {
   const invalidEval = spawnSync(binary, args, { encoding: "utf8", input });
   assert.ifError(invalidEval.error);
-  assert.notEqual(invalidEval.status, 0);
+  assert.equal(invalidEval.status, 1);
   assert.match(invalidEval.stderr, message);
 }
 const retiredExec = spawnSync(binary, ["exec", "--dep", "test.cirru"], { encoding: "utf8", input: "range 3" });
 assert.ifError(retiredExec.error);
-assert.notEqual(retiredExec.status, 0);
+assert.equal(retiredExec.status, 1);
 assert.match(retiredExec.stderr, /Unrecognized argument: --dep/);
 assert.doesNotMatch(topLevelHelp.stdout, /^  exec\s/m);
 const evalHelp = spawnSync(binary, ["eval", "--help"], { encoding: "utf8" });
