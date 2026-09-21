@@ -5074,13 +5074,19 @@ fn check_uses_recur(expr: &Calcit) -> bool {
 
 /// Emit instructions for a sequence of expressions (last is the return value).
 fn emit_body(ctx: &mut WasmGenCtx, exprs: &[Calcit]) -> Result<(), String> {
-  if exprs.is_empty() {
+  // Strict preprocessing may append a function contract after the executable
+  // body. `hint-fn` is compile-time metadata, not the closure's return value.
+  let executable = exprs
+    .iter()
+    .filter(|expr| !matches!(expr, Calcit::List(xs) if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::HintFn, _)))))
+    .collect::<Vec<_>>();
+  if executable.is_empty() {
     ctx.emit(f64_const(0.0));
     return Ok(());
   }
-  for (i, expr) in exprs.iter().enumerate() {
+  for (i, expr) in executable.iter().enumerate() {
     emit_expr(ctx, expr)?;
-    if i < exprs.len() - 1 {
+    if i < executable.len() - 1 {
       ctx.emit(Instruction::Drop);
     }
   }

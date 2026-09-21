@@ -125,7 +125,7 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
         'slice-as-string $ %{} 'CodeEntry (:doc "|Guarded dynamic .slice call")
-          :code $ quote $ defn slice-as-string (text) (.slice text 1 4)
+          :code $ quote $ defn slice-as-string (text) (&str:slice text 1 4)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
@@ -186,11 +186,11 @@
             let
                 typed-text |calcit
               assert-type typed-text 'String
-              assert= |alc $ .slice typed-text 1 4
+              assert= |alc $ &str:slice typed-text 1 4
             let
                 also-text |numbers
               assert-type also-text 'String
-              assert= |num $ .slice also-text 0 3
+              assert= |num $ &str:slice also-text 0 3
             println "|slice checks succeeded"
             , "|slice checks passed"
           :examples $ []
@@ -211,10 +211,10 @@
               assert-type xs 'List
               ; Call valid list methods
               let
-                  first-item $ .first xs
-                  second-item $ .nth xs 1
-                  rest-items $ .rest xs
-                  list-len $ .count xs
+                  first-item $ first xs
+                  second-item $ nth xs 1
+                  rest-items $ rest xs
+                  list-len $ count xs
                 println |first: first-item
                 println |second: second-item
                 println |rest: rest-items
@@ -250,25 +250,25 @@
                 xs $ [] 1 2 3 4 5
               assert-type xs 'List
               let
-                  first-item $ .first xs
-                  count-val $ .count xs
-                  reversed $ .reverse xs
+                  first-item $ first xs
+                  count-val $ count xs
+                  reversed $ reverse xs
                 println "|✓ List methods validated at preprocess"
             let
                 text |hello-world
               assert-type text 'String
               let
-                  sliced $ .slice text 0 5
-                  len $ .count text
-                  trimmed $ .trim text
+                  sliced $ &str:slice text 0 5
+                  len $ count text
+                  trimmed $ trim text
                 println "|✓ String methods validated at preprocess"
             let
                 m $ {} (:a 1) (:b 2)
               assert-type m 'Map
               let
-                  val $ .get m :a
-                  keys-list $ .keys m
-                  size $ .count m
+                  val $ get m :a
+                  keys-list $ keys m
+                  size $ count m
                 println "|✓ Map methods validated at preprocess"
             , "|All valid method calls passed preprocess validation"
           :examples $ []
@@ -288,11 +288,11 @@
               assert-type text 'String
               ; Call valid string methods
               let
-                  sliced $ .slice text 0 5
-                  text-len $ .count text
-                  first-char $ .first text
-                  starts $ .starts-with? text |hello
-                  splitted $ .split text |-
+                  sliced $ &str:slice text 0 5
+                  text-len $ count text
+                  first-char $ first text
+                  starts $ starts-with? text |hello
+                  splitted $ split text |-
                 println |sliced: sliced
                 println |length: text-len
                 println |first-char: first-char
@@ -336,9 +336,9 @@
               assert-type typed-list 'List
               ; :list "类型对应" calcit.core/&core-list-methods "提供的方法"
               let
-                  first-elem $ .first typed-list
-                  list-size $ .count typed-list
-                  rest-elems $ .rest typed-list
+                  first-elem $ first typed-list
+                  list-size $ count typed-list
+                  rest-elems $ rest typed-list
                 println "|Typed list access - first:" first-elem
                 println "|Typed list access - count:" list-size
                 assert= (%some 1) first-elem
@@ -348,8 +348,8 @@
                 typed-str |test-string
               assert-type typed-str 'String
               let
-                  str-len $ .count typed-str
-                  str-first $ .first typed-str
+                  str-len $ count typed-str
+                  str-first $ first typed-str
                 println "|Typed string access - count:" str-len
                 println "|Typed string access - first:" str-first
                 assert= 11 str-len

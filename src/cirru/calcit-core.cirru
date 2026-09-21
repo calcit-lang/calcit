@@ -1187,8 +1187,9 @@
               &list:concat & $ map xs &list:flatten
               [] xs
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'List)
+          :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic
+            :return $ :: 'List 'Dynamic
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |flattens-nested-lists-and-sets)
             :code $ quote $ assert=
@@ -1283,10 +1284,10 @@
                   fn (k v)
                     [] k $ + v 10
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |supports-postfix-shorthand)
+            %{} 'TestEntry (:name |uses-strict-named-call)
               :code $ quote $ assert=
                 [] ([] :a 1) ([] :b 11)
-                .map-pair
+                &list:map-pair
                   [] ([] :a 2) ([] :b 12)
                   fn (k n)
                     [] k $ &- n 1
@@ -1514,8 +1515,11 @@
             :code $ quote $ let
                 m $ &{} :a 1 :b 2 :c 3 :d 4
               do
-                assert= 3 $ count $ option:unwrap
-                  last $ &map:destruct m
+                let
+                    parts $ &map:destruct m
+                  if (some? parts)
+                    assert= 3 $ count $ option:unwrap (last parts)
+                    raise |expected-non-empty-map
                 assert= 10 $ foldl m 0 $ fn (acc pair)
                   let[] (k v) pair $ &+ acc v
             :tags $ #{} :core :unit
@@ -1613,11 +1617,12 @@
             :tags $ #{} :core :unit
         '&map:filter $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:filter (xs f)
-            reduce xs (&{})
+            reduce (&map:to-list xs) (&map:empty xs)
               defn %&map:filter (acc x)
                 hint-fn $ {}
-                  :args $ [] (:: 'Map 'K 'V) ('P)
+                  :args $ [] (:: 'Map 'K 'V) (:: 'List 'Dynamic)
                   :return $ :: 'Map 'K 'V
+                  :generics $ [] 'K 'V
                 if (f x)
                   &map:assoc acc (&list:nth x 0) (&list:nth x 1)
                   , acc
@@ -1625,8 +1630,8 @@
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Map 'K 'V)
               :: 'Fn $ {} (:return 'Bool)
-                :args $ [] 'P
-            :generics $ [] 'K 'V 'P
+                :args $ [] $ :: 'List 'Dynamic
+            :generics $ [] 'K 'V
             :return $ :: 'Map 'K 'V
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |filters-map-pairs-directly)
@@ -1637,11 +1642,12 @@
             :tags $ #{} :core :unit
         '&map:filter-kv $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:filter-kv (xs f)
-            reduce xs (&{})
+            reduce (&map:to-list xs) (&map:empty xs)
               defn %map:filter-kv (acc x)
                 hint-fn $ {}
-                  :args $ [] (:: 'Map 'K 'V) ('P)
+                  :args $ [] (:: 'Map 'K 'V) (:: 'List 'Dynamic)
                   :return $ :: 'Map 'K 'V
+                  :generics $ [] 'K 'V
                 if
                   f (&list:nth x 0) (&list:nth x 1)
                   &map:assoc acc (&list:nth x 0) (&list:nth x 1)
@@ -1745,7 +1751,7 @@
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'K 'V
             :generics $ [] 'K 'V
-            :return $ :: 'List 'Enum
+            :return $ :: 'List $ :: 'List 'Dynamic
           :tags $ #{} :builtin :internal
           :tests $ [] $ %{} 'TestEntry (:name |returns-map-pairs-directly)
             :code $ quote $ assert=
@@ -1874,6 +1880,22 @@
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
           :tags $ #{} :builtin :internal
+        '&section-by-loop $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &section-by-loop (xs acc n)
+            if
+              &<= (&list:count xs) n
+              if (&list:empty? xs) acc $ append acc xs
+              recur (drop xs n)
+                append acc $ take xs n
+                , n
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'List $ :: 'List 'T
+              , 'Number
+            :generics $ [] 'T
+            :return $ :: 'List $ :: 'List 'T
+          :tags $ #{} :internal
         '&secure-random-bytes $ %{} 'CodeEntry
           :doc "|内部安全随机字节入口；显式接收 Result 类型原型，仅供 public wrapper 与 backend lowering 使用。"
           :code $ quote &runtime-implementation
@@ -1930,11 +1952,12 @@
             :tags $ #{} :core :unit
         '&set:filter $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &set:filter (xs f)
-            reduce xs (#{})
+            reduce (&set:to-list xs) (#{})
               defn %&set:filter (acc x)
                 hint-fn $ {}
-                  :args $ [] (:: 'Set 'T) ('T)
+                  :args $ [] (:: 'Set 'T) 'T
                   :return $ :: 'Set 'T
+                  :generics $ [] 'T
                 if (f x) (&include acc x) acc
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -1972,7 +1995,7 @@
             :tags $ #{} :core :unit
         '&set:map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &set:map (xs f)
-            reduce xs (#{})
+            reduce (&set:to-list xs) (#{})
               defn %&set:map (acc x)
                 hint-fn $ {}
                   :args $ [] (:: 'Set 'U) 'T
@@ -2260,8 +2283,8 @@
                 assert= 3 $ &str:utf8-byte-count "|中"
                 assert= 4 $ &str:utf8-byte-count "|😀"
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |receiver-method-counts-wire-bytes)
-              :code $ quote $ assert= 5 ("|A😀" .utf8-byte-count)
+            %{} 'TestEntry (:name |named-call-counts-wire-bytes)
+              :code $ quote $ assert= 5 (&str:utf8-byte-count "|A😀")
               :tags $ #{} :core :unit
         '&struct-def:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to a StructDef.")
           :code $ quote &runtime-implementation
@@ -4341,8 +4364,7 @@
           :tags $ #{} :builtin :internal :meta :state :syntax
         'deref $ %{} 'CodeEntry
           :doc "|Reads Ref<T> without erasing its payload type. Prefer receiver syntax `.deref` in user code; custom host or nominal dereference behavior belongs to a typed method implementation."
-          :code $ quote $ defn deref (*a)
-            if (ref? *a) (&atom:deref *a) (.deref *a)
+          :code $ quote $ defn deref (*a) (&atom:deref *a)
           :examples $ []
             quote $ do (defatom *state 1)
               assert= 1 $ deref *state
@@ -4352,12 +4374,12 @@
             :args $ [] $ :: 'Ref 'T
             :generics $ [] 'T
           :tags $ #{} :builtin :internal :state
-          :tests $ [] $ %{} 'TestEntry (:name |receiver-method-preserves-ref-payload)
+          :tests $ [] $ %{} 'TestEntry (:name |named-call-preserves-ref-payload)
             :code $ quote $ let
                 *typed-counter $ atom 1
-              assert= 1 $ .deref *typed-counter
+              assert= 1 $ deref *typed-counter
               reset! *typed-counter 2
-              assert= 2 $ .deref *typed-counter
+              assert= 2 $ deref *typed-counter
             :tags $ #{} :core :types :unit
         'destruct-list $ %{} 'CodeEntry
           :doc "|Split a list into the nominal ListDestruct<T> enum."
@@ -4757,14 +4779,12 @@
             quote $ assert= false $ every? ([] 1 2 3)
               defn %gt1 (x) (&> x 1)
           :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Dynamic $ :: 'Fn
-              {} (:return 'Bool)
-                :args $ [] 'T
-            :generics $ [] 'T
+            :args $ [] 'Dynamic 'Fn
           :tests $ []
             %{} 'TestEntry (:name |checks-every-set-member)
               :code $ quote $ assert= true
-                every? (#{} 1 2 3) (\ > % 0)
+                every? (#{} 1 2 3)
+                  fn (x) (> x 0)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |checks-every-list-member)
               :code $ quote $ assert= true
@@ -4863,8 +4883,7 @@
             :tags $ #{} :unit
         'filter $ %{} 'CodeEntry
           :doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible."
-          :code $ quote $ defn filter (xs f)
-            if (list? xs) (&list:filter xs f) (.filter xs f)
+          :code $ quote $ defn filter (xs f) (.filter xs f)
           :examples $ []
             quote $ assert= ([] 2 4)
               filter ([] 1 2 3 4 5)
@@ -4924,7 +4943,7 @@
                         %:: MapEntryDecision :keep k $ * v 10
                         %:: MapEntryDecision :drop
                 assert= ({})
-                  .filter-map-kv
+                  filter-map-kv
                     {} $ :a 1
                     fn (k v) (%:: MapEntryDecision :drop)
               :tags $ #{} :core :unit
@@ -5254,7 +5273,7 @@
                   (x0 xss)
                     recur
                       if (contains? acc x0)
-                        update acc x0 $ \ &+ % 1
+                        update acc x0 $ fn (n) (&+ n 1)
                         &map:assoc acc x0 1
                       , xss
           :examples $ []
@@ -5418,17 +5437,17 @@
                 assert= (%none) (get open-path :missing)
                 assert= (%none) (get open-path 0)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |supports-postfix-shorthand)
-              :code $ quote $ let
-                  xs $ [] 1 2 3 4
-                do
-                  assert= (%some 1) (xs.get 0)
-                  assert= true $ xs.any? $ fn (x) (&> x 3)
-              :tags $ #{} :core :unit
             %{} 'TestEntry (:name |reads-tag-keys-via-postfix)
               :code $ quote $ let
                   dict $ &{} :a 1
                 assert= 1 dict.:a
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |uses-strict-named-calls)
+              :code $ quote $ let
+                  xs $ [] 1 2 3 4
+                do
+                  assert= (%some 1) (get xs 0)
+                  assert= true $ any? xs $ fn (x) (&> x 3)
               :tags $ #{} :core :unit
         'get-args $ %{} 'CodeEntry (:doc "|读取宿主进程传入的完整参数列表，包含第 0 项。")
           :code $ quote $ defn get-args () (&get-args)
@@ -5690,9 +5709,9 @@
               :code $ quote $ assert= (#{} 1 2 3 4)
                 include (#{} 1 2) 3 4
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |adds-via-postfix-method)
+            %{} 'TestEntry (:name |adds-via-named-call)
               :code $ quote $ assert= (#{} 1 2 3)
-                .add (#{} 1 2) 3
+                include (#{} 1 2) 3
               :tags $ #{} :core :unit
         'includes? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn includes? (x k)
@@ -5940,9 +5959,9 @@
               :code $ quote $ assert= (#{} :a :b)
                 keys $ &{} :a 1 :b 2
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |receiver-method-lowers-to-map-keys)
+            %{} 'TestEntry (:name |named-call-returns-map-keys)
               :code $ quote $ assert= (#{} :a :b)
-                .keys $ &{} :a 1 :b 2
+                keys $ &{} :a 1 :b 2
               :tags $ #{} :core :types :unit
         'keys-non-nil $ %{} 'CodeEntry (:doc "|Get keys from a map that have non-nil values")
           :code $ quote $ defn keys-non-nil (x)
@@ -6011,13 +6030,13 @@
             %{} 'TestEntry (:name |returns-last-string-character)
               :code $ quote $ assert= (%some |c) (last |abc)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |receiver-method-lowers-statically)
+            %{} 'TestEntry (:name |named-call-lowers-statically)
               :code $ quote $ do
                 assert= (%some 3)
-                  .last $ [] 1 2 3
-                assert= (%some |c) (.last |abc)
+                  last $ [] 1 2 3
+                assert= (%some |c) (last |abc)
                 assert= (%none)
-                  .last $ []
+                  last $ []
               :tags $ #{} :core :types :unit
         'let $ %{} 'CodeEntry
           :doc "|macro for local bindings\nSyntax: (let ([name value] ...) body...)\nParams: pairs (list of binding pairs), body (expressions)\nReturns: result of body with bindings in scope\nCreates multiple local bindings sequentially"
@@ -6266,8 +6285,8 @@
                   , false
               raise $ str-spaced "|expects pairs in pairs in loop, got:" pairs
             let
-                args $ map pairs &list:first
-                values $ map pairs &list:last
+                args $ &list:map-pair pairs $ fn (name _value) name
+                values $ &list:map-pair pairs $ fn (_name value) value
               assert "|loop requires symbols in pairs" $ every? args symbol?
               quasiquote $ apply (defn generated-loop ~args ~@body) ([] ~@values)
           :examples $ [] $ quote
@@ -7194,8 +7213,9 @@
           :doc "|internal function for parsing Cirru list\nSyntax: (parse-cirru-list text)\nParams: text (string)\nReturns: list\nParses Cirru text as a list of expressions"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'List)
+          :schema $ :: 'Fn $ {}
             :args $ [] 'String
+            :return $ :: 'List 'Dynamic
           :tags $ #{} :builtin :internal
         'parse-float $ %{} 'CodeEntry
           :doc "|Parse a number as Result<Number,String>; err contains the original invalid input."
@@ -7572,16 +7592,7 @@
         'section-by $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn section-by (xs0 n)
             if (>= n 1)
-              apply-args
-                  []
-                  , xs0
-                fn (acc xs)
-                  if
-                    &<= (&list:count xs) n
-                    if (&list:empty? xs) acc $ append acc xs
-                    recur
-                      append acc $ take xs n
-                      drop xs n
+              &section-by-loop xs0 ([]) n
               raise $ str-spaced "|expected positive number, got:" n
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -7953,7 +7964,9 @@
           :schema $ :: 'Macro $ {}
             :capabilities $ #{}
             :expansion $ :: 'Expr 'Unit
-            :required $ [] (:: 'Expr 'Ref) (:: 'Expr 'Fn)
+            :required $ []
+              :: 'Expr $ :: 'Ref 'Dynamic
+              :: 'Expr 'Fn
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro :state
         'symbol? $ %{} 'CodeEntry
@@ -8185,7 +8198,7 @@
               , .parse-cirru-list
           :schema $ :: 'Fn $ {}
             :args $ [] 'String
-            :return $ :: 'Result 'List 'String
+            :return $ :: 'Result (:: 'List 'Dynamic) 'String
           :tests $ [] $ %{} 'TestEntry (:name |result-method-contract)
             :code $ quote $ do
               assert= true $ result:ok? $ |a .parse-cirru-list
@@ -8457,7 +8470,7 @@
               :tags $ #{} :core :unit
         'vals $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn vals (x)
-            map (to-pairs x) &list:last
+            &list:to-set $ &map:vals x
           :examples $ []
             quote $ assert= (#{} 1 2)
               vals $ {} (:a 1) (:b 2)
@@ -8733,7 +8746,7 @@
           :examples $ []
           :schema $ :: 'Macro $ {} (:rest 'Syntax)
             :capabilities $ #{}
-            :expansion $ :: 'Expr 'Map
+            :expansion $ :: 'Expr $ :: 'Map 'Dynamic 'Dynamic
             :required $ []
           :tags $ #{} :macro
         '{} $ %{} 'CodeEntry
@@ -8752,7 +8765,7 @@
             quote $ {} (:name |Alice) (:age 30)
           :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
             :capabilities $ #{}
-            :expansion $ :: 'Expr 'Map
+            :expansion $ :: 'Expr $ :: 'Map 'Dynamic 'Dynamic
             :required $ []
           :tags $ #{} :macro
         '~ $ %{} 'CodeEntry
@@ -8941,7 +8954,8 @@
                                 , t0
               , t0
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Syntax)
+            :args $ [] 'Syntax
       :ns $ %{} 'NsEntry (:doc "|internal function and macros for `calcit.core`")
         :code $ quote $ ns calcit.internal (:require)
     'calcit.test $ %{} 'FileEntry

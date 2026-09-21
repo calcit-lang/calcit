@@ -10,6 +10,47 @@
   :files $ {} $ 'test-js.main
     %{} 'FileEntry
       :defs $ {}
+        'TestArray $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait TestArray (:length 'Number) (:0 'Dynamic) (:1 'Dynamic) (:2 'Dynamic)
+            .0 $ :: 'Fn $ {}
+              :args $ [] 'test-js.main/TestArray
+              :return 'Dynamic
+            .2 $ :: 'Fn $ {}
+              :args $ [] 'test-js.main/TestArray
+              :return 'Dynamic
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object)
+          :schema $ :: 'Trait
+        'TestConsole $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait TestConsole
+            .log $ :: 'Fn $ {}
+              :args $ [] 'test-js.main/TestConsole 'Dynamic
+              :return 'Unit
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object)
+          :schema $ :: 'Trait
+        'TestDate $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait TestDate
+            .now $ :: 'Fn $ {}
+              :args $ [] 'test-js.main/TestDate
+              :return 'Number
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object)
+          :schema $ :: 'Trait
+        'TestMath $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait TestMath (:PI 'Number)
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object)
+          :schema $ :: 'Trait
+        'TestObject $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait TestObject (:a 'Dynamic) (:a-b 'Dynamic) (:b 'Dynamic) (:c 'Dynamic)
+            .f $ :: 'Fn $ {}
+              :args $ [] 'test-js.main/TestObject
+              :return 'Dynamic
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object)
+            :writable $ #{} :a :a-b :b
+          :schema $ :: 'Trait
         'load-data-code $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro load-data-code (s)
             &data-to-code $ parse-cirru-edn $ unsafe-coerce s 'String
@@ -112,32 +153,38 @@
         'test-collection $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing quick collection syntax")
             &let
-              a $ js-array 1 2 3 4
+              a $ unsafe-coerce (js-array 1 2 3 4) test-js.main/TestArray
               assert= 4 $ .-length a
               assert= 1 $ aget a 0
               assert= 4 $ aget a 3
               assert= js/undefined $ aget a 4
               assert= 2 $ .-1 a
             &let
-              b $ js-object (:a 1) (|b 2) (:c 3)
+              b $ unsafe-coerce
+                js-object (:a 1) (|b 2) (:c 3)
+                , test-js.main/TestObject
               assert= 1 $ .-a b
               assert= 2 $ .-b b
               assert= 3 $ .-c b
               assert= 2 $ aget b |b
             let
                 c nil
-                d $ js-object $ :a 2
-                e $ js-array 1 2 3
+                d $ unsafe-coerce
+                  js-object $ :a 2
+                  , test-js.main/TestObject
+                e $ unsafe-coerce (js-array 1 2 3) test-js.main/TestArray
               assert= nil $ .?-a c
               assert= nil $ .?-1 c
               assert= 2 $ .?-a d
               assert= 2 $ .?-1 e
             let
                 caller $ fn () 2
-                c $ js-object
-                d $ js-object $ :f caller
-                e $ js-array caller
-                f $ js-array
+                c $ unsafe-coerce (js-object) test-js.main/TestObject
+                d $ unsafe-coerce
+                  js-object $ :f caller
+                  , test-js.main/TestObject
+                e $ unsafe-coerce (js-array caller) test-js.main/TestArray
+                f $ unsafe-coerce (js-array) test-js.main/TestArray
               assert= nil $ .?!f c
               assert= 2 $ .?!f d
               assert= nil $ .?!2 f
@@ -174,10 +221,10 @@
             when
               = |number $ assert-type (js/typeof 1) (quote String)
               js/console.log "|is a Number"
-            .!log (unsafe-coerce js/console JsObject) |demo
-            js/console.log "|Dates in difference syntax" $ .!now $ unsafe-coerce js/Date JsObject
-            js/console.log $ .-PI $ unsafe-coerce js/Math JsObject
-            js/console.log $ aget (unsafe-coerce js/Math JsObject) |PI
+            .!log (unsafe-coerce js/console test-js.main/TestConsole) |demo
+            js/console.log "|Dates in difference syntax" $ .!now $ unsafe-coerce js/Date test-js.main/TestDate
+            js/console.log $ .-PI $ unsafe-coerce js/Math test-js.main/TestMath
+            js/console.log $ aget (unsafe-coerce js/Math test-js.main/TestMath) |PI
             let
                 a js/{}
               aset a |name |demo
@@ -192,10 +239,12 @@
             js/console.log $ parse-cirru "|+ 1 2 3"
             js/console.log $ parse-cirru "|defn f (a b) (+ x y) (* x y)"
             println $ parse-cirru "|+ 1 2 3"
-            assert= 0 $ .-length $ new js/Array
-            assert= 7 $ .-length $ new js/Array (+ 3 4)
+            assert= 0 $ .-length $ unsafe-coerce (new js/Array) test-js.main/TestArray
+            assert= 7 $ .-length $ unsafe-coerce
+              new js/Array $ + 3 4
+              , test-js.main/TestArray
             let
-                a $ new js/Object
+                a $ unsafe-coerce (new js/Object) test-js.main/TestObject
               set! (.-a a) 2
               assert= (.-a a) 2
               assert= a.-a 2
@@ -252,11 +301,11 @@
         'test-property $ %{} 'CodeEntry (:doc "|try property ops")
           :code $ quote $ fn ()
             let
-                a $ js-object
+                a $ unsafe-coerce (js-object) test-js.main/TestObject
               js-set a |b 1
               assert= 1 $ js-get a |b
               js-delete a |b
-              assert= nil $ js-get a |b
+              assert= js/undefined $ js-get a |b
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
@@ -277,7 +326,7 @@
         'test-return-raw-code $ %{} 'CodeEntry (:doc "|return with &raw-code")
           :code $ quote $ fn ()
             let
-                a $ js-array 1 2
+                a $ unsafe-coerce (js-array 1 2) test-js.main/TestArray
                 f $ fn (t)
                   if t (.-0 a) (&raw-code |a[1])
               assert= (f true) 1

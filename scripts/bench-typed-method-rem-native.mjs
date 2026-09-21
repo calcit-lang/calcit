@@ -5,11 +5,7 @@ const fixture = "calcit/fibo.cirru";
 const iterations = 500_000;
 const expected = String(Array.from({ length: iterations }, (_, index) => (index + 1) % 97).reduce((sum, value) => sum + value, 0));
 const samples = Number(process.argv[3] ?? 3);
-const cases = [
-  ["typed-method", "app.main/bench-rem-typed!"],
-  ["dynamic-method", "app.main/bench-rem-dynamic!"],
-  ["direct-proc", "app.main/bench-rem-direct!"],
-];
+const cases = [["strict-number-rem", "app.main/bench-rem-direct!"]];
 
 for (const [label, initFn] of cases) {
   runOnce(initFn);
@@ -20,7 +16,7 @@ for (const [label, initFn] of cases) {
 
 /** Run one isolated native sample, verify its result, and return Calcit's elapsed time. */
 function runOnce(initFn) {
-  const result = spawnSync(executable, ["--compat-types", "--init-fn", initFn, fixture], { encoding: "utf8" });
+  const result = spawnSync(executable, ["--init-fn", initFn, fixture], { encoding: "utf8" });
   if (result.status !== 0) {
     throw new Error(`native benchmark failed for ${initFn}\n${result.stdout}\n${result.stderr}`);
   }

@@ -19,7 +19,7 @@
           :examples $ []
           :schema $ :: 'Enum
         'DemoBar $ %{} 'CodeEntry (:doc "|Enum with MyBar impls")
-          :code $ quote $ def DemoBar (impl-traits Demo0 MyBarImpl MyBarImpl2)
+          :code $ quote $ def DemoBar (impl-traits Demo0 MyBarImpl2)
           :examples $ []
           :schema $ :: 'Impl
         'DemoZap $ %{} 'CodeEntry (:doc "|Enum with MyZapA/MyZapB")
@@ -177,10 +177,10 @@
             ; List concatenation
             assert= ([] 1 2 3 4)
               &list:concat ([] 1 2) ([] 3 4)
-            ; Regression: list "`.add`" should keep list-method semantics.
-            ; It must not be shadowed by Add trait "`:add`" in "`&core-list-impls`."
+            ; List item insertion uses the typed named collection operation.
+            ; This avoids conflating append semantics with the Add trait concatenation contract.
             assert= ([] 1 2)
-              .add ([] 1) 2
+              append ([] 1) 2
             println "|  Add trait: ✓"
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
@@ -299,11 +299,11 @@
             ; List comparison $ not yet implemented in compare form
             ; assert= :lt $ compare ([] 1 2) ([] 1 3)
             do
-              assert= -1 $ .compare 1 2
-              assert= 0 $ .compare 2 2
-              assert= 1 $ .compare 3 2
-              assert= -1 $ .compare |apple |banana
-              assert= 1 $ .compare |zebra |apple
+              assert= -1 $ compare-with-trait 1 2
+              assert= 0 $ compare-with-trait 2 2
+              assert= 1 $ compare-with-trait 3 2
+              assert= -1 $ compare-with-trait |apple |banana
+              assert= 1 $ compare-with-trait |zebra |apple
               assert= -1 $ compare-with-trait 1 2
               assert= -1 $ compare-with-trait |a |b
               assert-traits 1 Compare
@@ -327,10 +327,10 @@
               assert-traits pb MyZapA MyZapB
               assert-traits ta MyZapA MyZapB
               assert-traits tb MyZapA MyZapB
-              assert= |zapB $ pa .zap
-              assert= |zapA $ pb .zap
-              assert= |zapB $ ta .zap
-              assert= |zapA $ tb .zap
+              assert= |zapB $ &trait-call MyZapB :zap pa
+              assert= |zapA $ &trait-call MyZapA :zap pb
+              assert= |zapB $ &trait-call MyZapB :zap ta
+              assert= |zapA $ &trait-call MyZapA :zap tb
             println "|  cross-trait conflict: ✓"
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
@@ -402,7 +402,7 @@
                 Person $ impl-traits Person0 MyZapAImpl MyZapBImpl
                 p $ %{} Person $ :name |Alice
               assert-traits p MyZapA MyZapB
-              ; "`.zap`" follows normal dispatch $ last-wins for user impls
+              ; strict dispatch requires the nominal trait origin to be explicit
               assert= |zapB $ &trait-call MyZapB :zap p
               ; "`&trait-call`" selects by trait, bypassing "`.method`" ambiguity
               assert= |zapA $ &trait-call MyZapA :zap p
@@ -423,7 +423,7 @@
             let
                 t $ %:: DemoZap :demo 1
               assert-traits t MyZapA MyZapB
-              assert= |zapB $ t .zap
+              assert= |zapB $ &trait-call MyZapB :zap t
               assert= |zapA $ &trait-call MyZapA :zap t
               assert= |zapB $ &trait-call MyZapB :zap t
             println "|  explicit trait-call: ✓"
@@ -433,8 +433,8 @@
         'test-impl-precedence-order $ %{} 'CodeEntry (:doc "|Test impl precedence order")
           :code $ quote $ defn test-impl-precedence-order () (println "|Testing impl precedence order...")
             let
-                ; impl-traits appends impls, so later ones override earlier ones
-                Person $ impl-traits Person0 MyFooImpl MyFooImpl2
+                ; strict mode keeps one implementation per nominal trait origin
+                Person $ impl-traits Person0 MyFooImpl2
                 p $ %{} Person $ :name |Alice
               assert= "|foo2 Alice" $ p .foo
             println "|  precedence: ✓"

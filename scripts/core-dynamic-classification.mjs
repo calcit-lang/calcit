@@ -252,6 +252,14 @@ const reviewedCompatibilityPositions = new Map([
 ]);
 const reviewedPublicBoundaryPositions = new Map([
   [
+    "&map:filter|schema.args.1.args.0.item",
+    "The internal Map pair callback receives heterogeneous key/value slots in a List; keep the open item explicit until tuple or named pair typing can preserve both independent parameters.",
+  ],
+  [
+    "&map:to-list|schema.return.item.item",
+    "A Map entry is a heterogeneous key/value pair, which a homogeneous List item type cannot represent without erasing one parameter; callers must narrow each slot.",
+  ],
+  [
     "&cirru-quote:to-list|schema.return.item",
     "CirruQuote converts to a recursively heterogeneous syntax tree whose leaf-or-list union is not expressible; consumers must parse or narrow nodes before ordinary typed processing.",
   ],

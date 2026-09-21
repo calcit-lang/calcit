@@ -147,10 +147,11 @@
           :code $ quote $ fn () (log-title "|if let")
             assert= 6 $ if-let
               a $ %some $ + 1 2 3
-              , a
-            assert= nil $ if-let
+              , a 0
+            assert= 0 $ if-let
               a $ get (&{}) :a
               + 1 2
+              , 0
             assert= 2 $ if-let
               a $ %none
               , 1 2
@@ -174,7 +175,8 @@
                 quote $ add $ + 1 2
                 , '%
             assert=
-              map (range 3) (\ + 1 %)
+              map (range 3)
+                fn (x) (+ 1 x)
               range 1 4
             assert=
               map-indexed (range 3)

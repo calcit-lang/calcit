@@ -436,7 +436,7 @@ if entry_error=$("$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/needs-
 fi
 grep -Fq "E_WASM_TARGET" <<<"$entry_error"
 
-if capability_error=$("$CALCIT_BIN" --compat-types wasi calcit/test-wasm.cirru --check-only 2>&1); then
+if capability_error=$("$CALCIT_BIN" wasi calcit/test-wasm.cirru --check-only 2>&1); then
   echo "WASI target unexpectedly accepted a custom host import" >&2
   exit 1
 fi

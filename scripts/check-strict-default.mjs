@@ -1,6 +1,14 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 const binary = process.env.CALCIT_STRICT_BIN ?? "./target/debug/calcit";
+
+// Ordinary project entrypoints must never silently opt back into compatibility mode.
+for (const path of ["package.json", ".github/workflows/test.yaml", ".github/workflows/publish.yaml"]) {
+  if (readFileSync(path, "utf8").includes("--compat-types")) {
+    throw new Error(`${path} must not enable compatibility mode in the default workflow`);
+  }
+}
 
 function run(args, input) {
   return spawnSync(binary, args, {

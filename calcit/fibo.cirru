@@ -18,24 +18,28 @@
           :code $ quote $ defn bench-rem-direct! ()
             println $ loop-rem-direct 500000 0
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'bench-rem-dynamic! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bench-rem-dynamic! ()
             println $ loop-rem-dynamic 500000 0
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'bench-rem-typed! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bench-rem-typed! ()
             println $ loop-rem-typed 500000 0
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'fibo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn fibo (x)
             if (< x 2) 1 $ +
               fibo $ - x 1
               fibo $ - x 2
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
         'loop-rem-direct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn loop-rem-direct (n acc)
             hint-fn $ {}
@@ -52,7 +56,7 @@
               :args $ [] 'Number 'Number
               :return 'Number
             if (&< n 1) acc $ recur (&- n 1)
-              &+ acc $ .rem (unsafe-coerce n 'Dynamic) 97
+              &+ acc $ &number:rem n 97
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
@@ -62,7 +66,7 @@
               :args $ [] 'Number 'Number
               :return 'Number
             if (&< n 1) acc $ recur (&- n 1)
-              &+ acc $ .rem n 97
+              &+ acc $ &number:rem n 97
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
@@ -70,11 +74,13 @@
           :code $ quote $ defn main! () (println "|Loaded program!")
             do (test-rem-methods!) (try-fibo)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'reload! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn reload! () (:: 'Unit)
+          :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'rem-direct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn rem-direct (n divisor)
             hint-fn $ {}
@@ -89,7 +95,7 @@
             hint-fn $ {}
               :args $ [] 'Number 'Number
               :return 'Number
-            .rem (unsafe-coerce n 'Dynamic) divisor
+            &number:rem n divisor
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
@@ -98,7 +104,7 @@
             hint-fn $ {}
               :args $ [] 'Number 'Number
               :return 'Number
-            .rem n divisor
+            &number:rem n divisor
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
@@ -106,11 +112,13 @@
           :code $ quote $ defn sieve-primes (acc n limit)
             if (&> n limit) acc $ if
               every? acc $ fn (m)
-                &> (.rem n m) 0
+                &> (&number:rem n m) 0
               recur (conj acc n) (inc n) limit
               recur acc (inc n) limit
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'Number) 'Number 'Number
+            :return $ :: 'List 'Number
         'test-rem-methods! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-rem-methods! ()
             assert= 1 $ rem-typed 98 97
@@ -119,18 +127,21 @@
             assert= (loop-rem-direct 1000 0) (loop-rem-typed 1000 0)
             assert= (loop-rem-direct 1000 0) (loop-rem-dynamic 1000 0)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'try-fibo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-fibo ()
             let
                 n 22
               println "|fibo result:" n $ fibo n
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'try-prime $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-prime ()
             println $ sieve-primes ([] 2 3 5 7 11 13) 17 400
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)

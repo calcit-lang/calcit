@@ -113,7 +113,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: "run definition-attached core tests"
-        run: cargo run --bin calcit -- src/cirru/calcit-core.cirru --compat-types test --tag unit --require-match
+        run: cargo run --bin calcit -- src/cirru/calcit-core.cirru test --tag unit --require-match
 
       - name: "prevent bundled core type-debt regressions"
         run: cargo run --bin calcit -- src/cirru/calcit-core.cirru analyze quality --baseline config/calcit-core-quality.cirru --format json
@@ -127,7 +127,7 @@ jobs:
       - name: "verify release manifest generator"
         run: node --test scripts/release-manifest.test.mjs
 
-      - run: cargo run --bin calcit -- calcit/test.cirru --compat-types
+      - run: cargo run --bin calcit -- calcit/test.cirru
 
       - name: "verify WASM exports and FFI"
         run: >
@@ -138,7 +138,7 @@ jobs:
         run: >
           yarn
           && yarn tsc
-          && cargo run --bin calcit -- calcit/test.cirru --compat-types js
+          && cargo run --bin calcit -- calcit/test.cirru js
           && ln -s ../../ node_modules/@calcit/procs
           && cp -v scripts/main.mjs js-out/
           && node js-out/main.mjs

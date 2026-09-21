@@ -24,7 +24,7 @@ fi
 ENTRY="calcit/test-wasm-suite.cirru"
 
 echo "[extended] compiling $ENTRY"
-"$BIN" --compat-types wasm "$ENTRY" 2>&1 | grep -E "skipping|wrote|panicked|preprocessing failed" || true
+"$BIN" wasm "$ENTRY" 2>&1 | grep -E "skipping|wrote|panicked|preprocessing failed" || true
 
 echo ""
 echo "[extended] running main!"

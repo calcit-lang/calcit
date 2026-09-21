@@ -216,7 +216,7 @@
           :code $ quote $ fn ()
             let
                 *a $ atom 1
-              assert= 1 $ .deref *a
+              assert= 1 $ deref *a
               assert= 1 $ &atom:deref *a
             assert= 1 $ .deref $ %:: AtomBox :atom 1
             assert= 1 $ .deref $ %:: AtomBox :atom 1
@@ -429,7 +429,9 @@
                 *b $ atom 0
                 *c $ atom 0
               add-watch *b :change $ fn (current prev)
-                do (reset! *c current) &unit
+                do
+                  reset! *c $ assert-type current 'Number
+                  , &unit
               reset! *b 1
               assert= 1 @*b
               assert= 1 @*c
@@ -445,7 +447,7 @@
               base $ {} $ :a 1
               assert= 1 $ base :a
             inside-eval: $ assert= ([] 1)
-              .map
+              &list:map
                 [] $ &{} :a 1
                 , :a
           :examples $ []

@@ -2775,11 +2775,17 @@ fn preprocess_list_call(
         if strict_types_enabled()
           && (checked_contract.is_some() || refreshed_checked_contract.is_some())
           && let Some(expected) = active_expected_types.get(arg_idx)
+          && let Some(binding_expected) = info.arg_types.get(arg_idx).or(info.rest_type.as_ref()).or(Some(expected))
+          && !empty_container_has_no_type_evidence(&form, binding_expected.as_ref())
           && let Some(actual) = resolve_type_value(&form, scope_types)
           && !contains_dynamic_type(actual.as_ref())
         {
           let mut candidate = preprocessing_type_bindings.clone();
-          if actual.as_ref().prove_with_bindings(expected.as_ref(), &mut candidate).is_proven() {
+          if actual
+            .as_ref()
+            .prove_with_bindings(binding_expected.as_ref(), &mut candidate)
+            .is_proven()
+          {
             preprocessing_type_bindings = candidate;
           }
         }
@@ -4344,52 +4350,6 @@ fn check_recur_arity_in_expr(
       // For other types, we don't need to recurse into them
       // because recur can only appear in certain contexts
     }
-  }
-}
-
-fn check_impl_traits_top_level_in_expr(expr: &Calcit, file_ns: &str, def_name: &str, check_warnings: &RefCell<Vec<LocatedWarning>>) {
-  if !warn_dyn_method_enabled() {
-    return;
-  }
-
-  match expr {
-    Calcit::List(xs) => {
-      if xs.is_empty() {
-        return;
-      }
-
-      if let Some(Calcit::Syntax(s, _)) = xs.first()
-        && (s == &CalcitSyntax::Quote || s == &CalcitSyntax::Quasiquote)
-      {
-        return;
-      }
-
-      let is_impl_traits = matches!(
-        xs.first(),
-        Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "impl-traits"
-      ) || matches!(xs.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "impl-traits");
-
-      if is_impl_traits {
-        let msg = format!(
-          "[Warn] `impl-traits` inside {file_ns}/{def_name} may block preprocess specialization; prefer top-level `def` bindings"
-        );
-        if let Some(loc) = expr.get_location() {
-          gen_check_warning_with_location(msg, loc.clone(), check_warnings);
-        } else {
-          gen_check_warning(msg, file_ns, check_warnings);
-        }
-      }
-
-      for item in xs.iter() {
-        check_impl_traits_top_level_in_expr(item, file_ns, def_name, check_warnings);
-      }
-    }
-    Calcit::Fn { info, .. } => {
-      for body_expr in &info.body {
-        check_impl_traits_top_level_in_expr(body_expr, file_ns, def_name, check_warnings);
-      }
-    }
-    _ => {}
   }
 }
 
@@ -8419,9 +8379,11 @@ pub fn preprocess_defn(
       let mut body_types: ScopeTypes = ctx.scope_types.clone();
       let mut param_symbols: Vec<Arc<str>> = vec![];
       let mut has_marked_args = false; // Track if function has & or ? markers
+      let generated_by_macro = call_stack_contains_macro(ctx.call_stack);
 
       if strict_types_enabled()
         && should_emit_project_source_lint(ctx.file_ns)
+        && !generated_by_macro
         && ys.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgOptional, _)))
       {
         return Err(CalcitErr::use_msg_stack_location_with_code(
@@ -8511,8 +8473,15 @@ pub fn preprocess_defn(
           )),
         }
       })?;
-      let def_schema = program::lookup_def_schema(ctx.file_ns, def_name.as_ref());
-      let generated_by_macro = newest_call_stack_frame_is_macro(ctx.call_stack);
+      // A macro can reach a different source definition while retaining its
+      // caller in `at_def`. Only a real Snapshot definition owns a public
+      // schema; nested named callbacks use their local expected function type.
+      let source_top_level_definition = program::has_def_code(ctx.file_ns, def_name.as_ref());
+      let def_schema = if source_top_level_definition {
+        program::lookup_def_schema(ctx.file_ns, def_name.as_ref())
+      } else {
+        calcit::DYNAMIC_TYPE.clone()
+      };
       let strict_generated_by_macro = strict_types_enabled() && generated_by_macro;
       if matches!(head, CalcitSyntax::DefWasmImport) && !has_valid_wasm_import_body(args) {
         return Err(CalcitErr::use_msg_stack_location(
@@ -8539,47 +8508,49 @@ pub fn preprocess_defn(
           CalcitTypeAnnotation::Fn(fn_annotation) => Some(fn_annotation.clone()),
           _ => None,
         });
-      reject_strict_whole_dynamic_public_schema(
-        head,
-        ctx.file_ns,
-        def_name.as_ref(),
-        &def_schema,
-        body_fn_hint.is_some(),
-        ctx.call_stack,
-        Some(definition_location.clone()),
-      )?;
-      reject_strict_unbound_type_slot_schema(
-        ctx.file_ns,
-        def_name.as_ref(),
-        &def_schema,
-        ctx.call_stack,
-        Some(definition_location.clone()),
-      )?;
-      reject_strict_bare_container_public_schema(
-        ctx.file_ns,
-        def_name.as_ref(),
-        &def_schema,
-        ctx.call_stack,
-        Some(definition_location.clone()),
-      )?;
-      reject_strict_legacy_optional_public_schema(
-        ctx.file_ns,
-        def_name.as_ref(),
-        &def_schema,
-        ctx.call_stack,
-        Some(definition_location.clone()),
-      )?;
-      warn_on_legacy_optional_public_schema(ctx.file_ns, def_name.as_ref(), &def_schema, ctx.check_warnings);
-      let schema_issues = validate_def_schema_during_preprocess(head, ctx.file_ns, def_name.as_ref(), ys, &def_schema);
-      if !schema_issues.is_empty() {
-        let details = schema_issues.join("\n  - ");
-        return Err(CalcitErr::use_msg_stack_location_with_code(
-          CalcitErrKind::Type,
-          format!("schema mismatch while preprocessing definition:\n  - {details}"),
-          "E_SCHEMA_DEF_MISMATCH",
+      if source_top_level_definition {
+        reject_strict_whole_dynamic_public_schema(
+          head,
+          ctx.file_ns,
+          def_name.as_ref(),
+          &def_schema,
+          body_fn_hint.is_some(),
           ctx.call_stack,
-          Some(definition_location),
-        ));
+          Some(definition_location.clone()),
+        )?;
+        reject_strict_unbound_type_slot_schema(
+          ctx.file_ns,
+          def_name.as_ref(),
+          &def_schema,
+          ctx.call_stack,
+          Some(definition_location.clone()),
+        )?;
+        reject_strict_bare_container_public_schema(
+          ctx.file_ns,
+          def_name.as_ref(),
+          &def_schema,
+          ctx.call_stack,
+          Some(definition_location.clone()),
+        )?;
+        reject_strict_legacy_optional_public_schema(
+          ctx.file_ns,
+          def_name.as_ref(),
+          &def_schema,
+          ctx.call_stack,
+          Some(definition_location.clone()),
+        )?;
+        warn_on_legacy_optional_public_schema(ctx.file_ns, def_name.as_ref(), &def_schema, ctx.check_warnings);
+        let schema_issues = validate_def_schema_during_preprocess(head, ctx.file_ns, def_name.as_ref(), ys, &def_schema);
+        if !schema_issues.is_empty() {
+          let details = schema_issues.join("\n  - ");
+          return Err(CalcitErr::use_msg_stack_location_with_code(
+            CalcitErrKind::Type,
+            format!("schema mismatch while preprocessing definition:\n  - {details}"),
+            "E_SCHEMA_DEF_MISMATCH",
+            ctx.call_stack,
+            Some(definition_location),
+          ));
+        }
       }
 
       // Inject declared argument types into the function body. Call-site checks alone are not
@@ -8618,10 +8589,10 @@ pub fn preprocess_defn(
           })
           .chain(fn_annot.rest_type.iter().map(|rest_type| {
             let local = resolve_local_type_refs_for_body(rest_type.substitute_type_vars(&body_type_bindings), &body_types);
-            Arc::new(CalcitTypeAnnotation::Variadic(resolve_namespace_type_refs_for_body(
-              local,
-              ctx.file_ns,
-            )))
+            // A rest contract describes each trailing call argument, while the
+            // source-level rest binding receives the collected arguments as a
+            // List. Keep Variadic in the callable schema, not in the body.
+            Arc::new(CalcitTypeAnnotation::List(resolve_namespace_type_refs_for_body(local, ctx.file_ns)))
           }))
           .collect::<Vec<_>>();
         for (param_sym, arg_type) in param_symbols.iter().zip(parameter_types) {
@@ -8769,10 +8740,6 @@ pub fn preprocess_defn(
           for body_expr in &processed_body {
             check_recur_arity_in_expr(body_expr, expected_arity, ctx.file_ns, def_name.as_ref(), ctx.check_warnings);
           }
-        }
-
-        for body_expr in &processed_body {
-          check_impl_traits_top_level_in_expr(body_expr, ctx.file_ns, def_name.as_ref(), ctx.check_warnings);
         }
       }
 
@@ -9700,6 +9667,32 @@ fn reject_strict_unproven_specialized_contract(
   ))
 }
 
+fn empty_container_has_no_type_evidence(arg: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
+  let expects_generic = expected.contains_type_var();
+  match (arg, expected) {
+    (Calcit::List(values), _) if expects_generic && values.is_empty() => true,
+    (Calcit::List(values), _) if expects_generic && values.len() == 1 => matches!(
+      values.first(),
+      Some(Calcit::Proc(CalcitProc::List | CalcitProc::NativeMap | CalcitProc::Set))
+    ),
+    (Calcit::Map(values), _) if expects_generic => values.is_empty(),
+    (Calcit::Set(values), _) if expects_generic => values.is_empty(),
+    (Calcit::List(values), CalcitTypeAnnotation::List(_)) if values.is_empty() => true,
+    (Calcit::List(values), CalcitTypeAnnotation::List(_)) if values.len() == 1 => {
+      matches!(values.first(), Some(Calcit::Proc(CalcitProc::List)))
+    }
+    (Calcit::Map(values), CalcitTypeAnnotation::Map(_, _)) => values.is_empty(),
+    (Calcit::List(values), CalcitTypeAnnotation::Map(_, _)) if values.len() == 1 => {
+      matches!(values.first(), Some(Calcit::Proc(CalcitProc::NativeMap)))
+    }
+    (Calcit::Set(values), CalcitTypeAnnotation::Set(_)) => values.is_empty(),
+    (Calcit::List(values), CalcitTypeAnnotation::Set(_)) if values.len() == 1 => {
+      matches!(values.first(), Some(Calcit::Proc(CalcitProc::Set)))
+    }
+    _ => false,
+  }
+}
+
 fn find_unproven_generic_argument(
   signature: &CalcitFnTypeAnnotation,
   args: &CalcitList,
@@ -9732,14 +9725,7 @@ fn find_unproven_generic_argument(
 
   let mut bindings = HashMap::new();
   let mut inspect = |index: usize, arg: &Calcit, expected: &Arc<CalcitTypeAnnotation>| {
-    let empty_map_has_no_type_evidence = match (arg, expected.as_ref()) {
-      (Calcit::Map(values), CalcitTypeAnnotation::Map(_, _)) => values.is_empty(),
-      (Calcit::List(values), CalcitTypeAnnotation::Map(_, _)) if values.len() == 1 => {
-        matches!(values.first(), Some(Calcit::Proc(CalcitProc::NativeMap)))
-      }
-      _ => false,
-    };
-    if empty_map_has_no_type_evidence {
+    if empty_container_has_no_type_evidence(arg, expected.as_ref()) {
       return None;
     }
     let actual = resolve_type_value(arg, scope_types).or_else(|| match arg {
@@ -10014,8 +10000,8 @@ fn effective_user_call_schema(info: &CalcitFn) -> Arc<CalcitFnTypeAnnotation> {
   signature
 }
 
-fn newest_call_stack_frame_is_macro(call_stack: &CallStackList) -> bool {
-  call_stack.0.first().is_some_and(|frame| matches!(frame.kind, StackKind::Macro))
+fn call_stack_contains_macro(call_stack: &CallStackList) -> bool {
+  call_stack.0.iter().any(|frame| matches!(frame.kind, StackKind::Macro))
 }
 
 fn reject_strict_whole_dynamic_public_schema(
@@ -10027,7 +10013,7 @@ fn reject_strict_whole_dynamic_public_schema(
   call_stack: &CallStackList,
   definition_location: Option<NodeLocation>,
 ) -> Result<(), CalcitErr> {
-  let generated_by_macro = newest_call_stack_frame_is_macro(call_stack);
+  let generated_by_macro = call_stack_contains_macro(call_stack) && !program::has_def_code(ns, def_name);
   if !strict_types_enabled()
     || !should_emit_project_source_lint(ns)
     || generated_by_macro
@@ -12004,6 +11990,25 @@ mod tests {
     assert_eq!(error.code.as_deref(), Some("E_LEGACY_OPTIONAL_PARAM"));
     assert!(error.msg.contains("Option<T>"));
     assert!(error.location.is_some(), "strict diagnostic should retain the definition location");
+  }
+
+  #[test]
+  fn strict_types_keep_macro_owned_optional_parameters_out_of_the_source_migration_rule() {
+    let _state = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+    let code = legacy_optional_definition();
+    let warnings = RefCell::new(vec![]);
+    let macro_stack = CallStackList::default().extend("calcit.core", "\\", StackKind::Macro, &Calcit::Nil, &[]);
+
+    preprocess_expr(
+      &code,
+      &HashSet::new(),
+      &mut ScopeTypes::new(),
+      "tests.strict-nil",
+      &warnings,
+      &macro_stack,
+    )
+    .expect("the source migration rule must not reject private parameters owned by a macro expansion");
   }
 
   #[test]
@@ -17774,6 +17779,37 @@ mod tests {
     .expect("macro-generated definitions have no independently maintainable public schema");
   }
 
+  #[test]
+  fn strict_types_infer_nested_named_callbacks_without_public_schema() {
+    use crate::data::cirru::code_to_calcit;
+    use cirru_parser::Cirru;
+
+    let _state = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+    let nested = code_to_calcit(
+      &Cirru::List(vec![
+        Cirru::leaf("defn"),
+        Cirru::leaf("%callback"),
+        Cirru::List(vec![Cirru::leaf("x")]),
+        Cirru::leaf("x"),
+      ]),
+      "tests.schema",
+      "outer",
+      vec![],
+    )
+    .expect("parse nested callback");
+
+    preprocess_expr(
+      &nested,
+      &HashSet::new(),
+      &mut ScopeTypes::new(),
+      "tests.schema",
+      &RefCell::new(vec![]),
+      &CallStackList::default(),
+    )
+    .expect("a nested named callback is a local function and does not require a public Snapshot schema");
+  }
+
   fn generic_relation_test_signature(
     arg_types: Vec<Arc<CalcitTypeAnnotation>>,
     return_type: Arc<CalcitTypeAnnotation>,
@@ -17832,6 +17868,12 @@ mod tests {
     assert!(
       find_unproven_generic_argument(&list_identity, &list_args, &list_scope).is_none(),
       "List<T> can preserve T as an explicitly open Dynamic binding"
+    );
+    let empty_list = Calcit::from(CalcitList::from(&[Calcit::Proc(CalcitProc::List)][..]));
+    let empty_list_args = CalcitList::from(&[empty_list][..]);
+    assert!(
+      find_unproven_generic_argument(&list_identity, &empty_list_args, &ScopeTypes::new()).is_none(),
+      "an empty List literal has no payload evidence and should adopt the expected generic container type"
     );
 
     let same_type =

@@ -39,7 +39,7 @@ for f in "${TEST_FILES[@]}"; do
   label=$(basename "$f" .cirru)
 
   # Compile to WASM and distinguish explicit unsupported targets from harness failures.
-  if compile_out=$("$BIN" --compat-types wasm "$f" 2>&1); then
+  if compile_out=$("$BIN" wasm "$f" 2>&1); then
     compile_exit=0
   else
     compile_exit=$?
