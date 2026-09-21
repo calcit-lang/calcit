@@ -276,14 +276,12 @@ pub const VERIFICATION_SCHEMA_VERSION: u32 = 1;
 #[serde(rename_all = "kebab-case")]
 pub enum VerificationCheckKind {
   Strict,
-  Quality,
 }
 
 impl VerificationCheckKind {
   pub fn as_str(self) -> &'static str {
     match self {
       Self::Strict => "strict",
-      Self::Quality => "quality",
     }
   }
 }
@@ -2490,13 +2488,17 @@ fn parse_verification(data: &Edn, entries: &HashMap<String, SnapshotEntry>) -> R
       let check_name = parse_verification_name(raw_check, &format!("{owner}.checks"))?;
       let check = match check_name.as_str() {
         "strict" => VerificationCheckKind::Strict,
-        "quality" => VerificationCheckKind::Quality,
+        "quality" => {
+          return Err(format!(
+            "{owner}.checks: `quality` was removed; replace it with `strict` and behavior tests; use analyze quality only for an existing migration baseline"
+          ));
+        }
         "dynamic-methods" => {
           return Err(format!(
             "{owner}.checks: `dynamic-methods` was removed; replace it with `strict` and behavior tests; use analyze dynamic-methods for a read-only migration report"
           ));
         }
-        _ => return Err(format!("{owner}.checks: unknown check `{check_name}`; expected strict or quality")),
+        _ => return Err(format!("{owner}.checks: unknown check `{check_name}`; expected strict")),
       };
       if !seen_checks.insert(check) {
         return Err(format!("{owner}.checks: duplicate check `{check_name}`"));
@@ -3958,7 +3960,7 @@ mod tests {
       "release".to_owned(),
       VerificationProfile {
         entries: vec!["default".to_owned()],
-        checks: vec![VerificationCheckKind::Strict, VerificationCheckKind::Quality],
+        checks: vec![VerificationCheckKind::Strict],
         on_failure: VerificationFailurePolicy::Continue,
       },
     );

@@ -7,14 +7,14 @@ use std::sync::Arc;
 
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
-use calcit::cli_args::{QualityCommand, VerifyCommand};
+use calcit::cli_args::VerifyCommand;
 use calcit::snapshot::{self, VerificationCheckKind, VerificationFailurePolicy};
 use calcit::{ProgramEntries, program, runner, util};
 use md5::{Digest, Md5};
 use serde::Serialize;
 
 use crate::cli_handlers::{StructuredOutputFormat, format_json_value_as_edn};
-use crate::{apply_strict_feature_policy_defaults, attach_missing_core_namespaces, quality_gate};
+use crate::{apply_strict_feature_policy_defaults, attach_missing_core_namespaces};
 
 const VERIFY_OUTPUT_SCHEMA_VERSION: u32 = 1;
 
@@ -492,46 +492,15 @@ fn evaluate_check(
   entry_name: &str,
   target: &str,
   revision: &str,
-  selected: &snapshot::Snapshot,
-  inference: Option<&EntryInference>,
+  inference: &EntryInference,
 ) -> VerifyCheckResult {
   let mut diagnostics = Vec::new();
   match check {
     VerificationCheckKind::Strict => {
-      let inference = inference.expect("strict check requires inference");
       if let Some(error) = &inference.error {
         diagnostics.push(error.clone());
       }
       diagnostics.extend(warning_diagnostics(&inference.warnings));
-    }
-    VerificationCheckKind::Quality => {
-      let options = QualityCommand {
-        ns: None,
-        ns_prefix: None,
-        deps: false,
-        baseline: None,
-        write_baseline: None,
-        format: "json".to_owned(),
-      };
-      match quality_gate::analyze_quality(&options, selected) {
-        Ok(outcome) => diagnostics.extend(outcome.violations.into_iter().map(|violation| VerifyDiagnostic {
-          code: "E_QUALITY_REGRESSION".to_owned(),
-          phase: "analysis".to_owned(),
-          severity: "error".to_owned(),
-          message: format!(
-            "{} exceeds zero-debt limit: actual {}, limit {}",
-            violation.metric, violation.actual, violation.limit
-          ),
-          detail: serde_json::to_value(violation).ok(),
-        })),
-        Err(message) => diagnostics.push(VerifyDiagnostic {
-          code: "E_VERIFY_QUALITY".to_owned(),
-          phase: "analysis".to_owned(),
-          severity: "error".to_owned(),
-          message,
-          detail: None,
-        }),
-      }
     }
   }
   VerifyCheckResult {
@@ -688,12 +657,9 @@ fn run_inner(
     )?;
     let entry = selected.active_entry()?;
     let target = target_label(entry);
-    let mut inference = None;
+    let inference = infer_entry(&selected, &project_namespaces);
     for check in &profile.checks {
-      if matches!(check, VerificationCheckKind::Strict) && inference.is_none() {
-        inference = Some(infer_entry(&selected, &project_namespaces));
-      }
-      let result = evaluate_check(*check, entry_name, &target, &revision, &selected, inference.as_ref());
+      let result = evaluate_check(*check, entry_name, &target, &revision, &inference);
       let failed = result.status == "failed";
       results.push(result);
       if failed && profile.on_failure == VerificationFailurePolicy::Stop {

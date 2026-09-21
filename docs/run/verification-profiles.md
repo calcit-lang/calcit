@@ -23,14 +23,14 @@ requires:
 
 # Calcit 声明式验证 Profile
 
-`calcit analyze verify` 把一组 Calcit 自己拥有的只读检查声明在 Snapshot 中，并在一次命令中按固定顺序覆盖多个 named entry：
+`calcit analyze verify` 把严格入口检查声明在 Snapshot 中，并在一次命令中按固定顺序覆盖多个 named entry：
 
 ```bash
 calcit calcit.cirru analyze verify --profile release
 calcit calcit.cirru analyze verify --profile release --format edn
 ```
 
-它属于 `analyze`，不会增加顶层 `calcit verify`。Profile 只编排现有严格预处理与 analyzer 事实，不运行 shell、部署或外部构建，也不修改 Snapshot。需要改写源码时仍使用 `calcit fix` 的 preview/apply 闭环。
+它属于 `analyze`，不会增加顶层 `calcit verify`。Profile 只编排现有严格预处理，不运行 shell、部署或外部构建，也不修改 Snapshot。需要改写源码时仍使用 `calcit fix` 的 preview/apply 闭环。
 
 ## Schema v1
 
@@ -45,7 +45,7 @@ calcit calcit.cirru analyze verify --profile release --format edn
   :profiles $ {} $ :release
     {} (:on-failure :stop)
       :entries $ [] :default :browser
-      :checks $ [] :strict :quality
+      :checks $ [] :strict
 ```
 
 - `:schema-version`：目前必须为 `1`；缺失或未知版本会在任何检查运行前失败。
@@ -58,14 +58,13 @@ calcit calcit.cirru analyze verify --profile release --format edn
 - `:checks`：按声明顺序执行的检查；不能为空或重复。
 - `:on-failure`：可省略，默认为 `:stop`；`:continue` 会继续收集后续检查结果，适合一次性修复多个失败。
 
-v1 当前支持两个 check：
+v1 当前只支持一个 check：
 
 | Check | 复用的语义 | 通过条件 |
 | --- | --- | --- |
 | `:strict` | 与 `--check-only` 相同的 init/reload 严格预处理 | 没有 warning 或 error |
-| `:quality` | 与无 baseline 的 `analyze quality` 相同的 zero-debt 只读分析 | 没有 quality violation |
 
-`:dynamic-methods` 数量门槛已从 profile 移除；旧配置需删去这一项，改由 `:strict` 和行为测试判断正确性。`analyze dynamic-methods` 仍可单独作为只读定位报告，但不再支持 `--max`。不同 entry 的 module 顶层加载结果会按 module path 在本次命令内缓存。Entry 的 target 来自其 `:target`；未声明 target 时使用 `:mode` 作为结果中的目标标签。
+`:dynamic-methods` 与 `:quality` 两个数量门槛已从 profile 移除；旧配置需删去这些项，改由 `:strict` 和行为测试判断正确性。`analyze dynamic-methods` 仍可单独作为只读定位报告；已有非零迁移 baseline 的项目暂时可显式运行 `analyze quality --baseline ...`，但不要将它加入新 profile。不同 entry 的 module 顶层加载结果会按 module path 在本次命令内缓存。Entry 的 target 来自其 `:target`；未声明 target 时使用 `:mode` 作为结果中的目标标签。
 
 Profile 不把 `test`、JS/WASM/WASI codegen、Markdown 文档执行或外部消费者回归伪装成静态检查。它们可能运行用户代码、写生成目录或需要外部 host，继续作为发布流水线中的显式步骤；需要机器可读提醒时，把稳定名称写进 `:external-gates`。后续若能复用只读 compiler phase，可扩展新的 schema 版本，不向 v1 静默加入语义。
 
@@ -118,7 +117,7 @@ requirement 使用 SemVer range。包括 `caps` 在内的 host 工具都只在�
 
 ## 发布工作流边界
 
-Profile 适合收敛重复的 Calcit-owned 静态门禁，但不能代替完整发布验收。推荐顺序是：
+Profile 适合批量验证多个 entry 的严格预处理，但不能代替完整发布验收。推荐顺序是：
 
 1. `calcit edit format` 后用 Git 检查 Snapshot 是否干净；
 2. 运行 `calcit analyze verify --profile release --format edn`；
