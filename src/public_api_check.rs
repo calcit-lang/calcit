@@ -7,6 +7,7 @@ use calcit::call_stack::CallStackList;
 use calcit::cli_args::CheckPublicCommand;
 use calcit::runner;
 use calcit::snapshot::{self, SnapshotTarget};
+use cirru_parser::Cirru;
 use serde_json::{Value, json};
 
 use crate::type_coverage;
@@ -28,6 +29,24 @@ struct PreparedDefinition {
   kind: &'static str,
   declared_target: Option<SnapshotTarget>,
   rejected: bool,
+  runtime_intrinsic: bool,
+}
+
+fn is_core_runtime_intrinsic(namespace: &str, definition: &str, entry: &snapshot::CodeEntry) -> bool {
+  if namespace != calcit::calcit::CORE_NS || !entry.tags.iter().any(|tag| tag.ref_str() == "builtin") {
+    return false;
+  }
+
+  match &entry.code {
+    Cirru::Leaf(symbol) => symbol.as_ref() == "&runtime-implementation",
+    Cirru::List(items) if items.len() == 1 => matches!(&items[0], Cirru::Leaf(symbol) if symbol.as_ref() == "&runtime-implementation"),
+    Cirru::List(items) if items.len() == 3 => {
+      matches!(&items[0], Cirru::Leaf(head) if head.as_ref() == "def")
+        && matches!(&items[1], Cirru::Leaf(name) if name.as_ref() == definition)
+        && matches!(&items[2], Cirru::Leaf(symbol) if symbol.as_ref() == "&runtime-implementation")
+    }
+    _ => false,
+  }
 }
 
 fn definition_target(entry: &snapshot::CodeEntry) -> Result<Option<SnapshotTarget>, String> {
@@ -184,6 +203,7 @@ pub fn run(
             kind,
             declared_target: None,
             rejected: true,
+            runtime_intrinsic: false,
           });
           continue;
         }
@@ -205,10 +225,12 @@ pub fn run(
           kind,
           declared_target,
           rejected: true,
+          runtime_intrinsic: false,
         });
         continue;
       }
 
+      let runtime_intrinsic = is_core_runtime_intrinsic(&namespace, &definition, entry);
       prepared.push(PreparedDefinition {
         id,
         namespace,
@@ -216,6 +238,7 @@ pub fn run(
         kind,
         declared_target,
         rejected: false,
+        runtime_intrinsic,
       });
     }
   }
@@ -245,18 +268,23 @@ pub fn run(
         definition,
         kind,
         declared_target,
+        runtime_intrinsic,
         ..
       } = row;
       checked_definition_ids.push(id.clone());
       let warning_count = warnings.borrow().len();
-      let result = runner::preprocess::ensure_ns_def_compiled(&namespace, &definition, &warnings, &CallStackList::default());
-      let status = match result {
-        Ok(()) if warnings.borrow().len() == warning_count => "passed",
-        Ok(()) => "warning",
-        Err(error) => {
-          diagnostics.push(error_diagnostic(&error, &id));
-          diagnostics.extend(error.warnings.iter().map(warning_diagnostic));
-          "failed"
+      let status = if runtime_intrinsic {
+        "intrinsic"
+      } else {
+        let result = runner::preprocess::ensure_ns_def_compiled(&namespace, &definition, &warnings, &CallStackList::default());
+        match result {
+          Ok(()) if warnings.borrow().len() == warning_count => "passed",
+          Ok(()) => "warning",
+          Err(error) => {
+            diagnostics.push(error_diagnostic(&error, &id));
+            diagnostics.extend(error.warnings.iter().map(warning_diagnostic));
+            "failed"
+          }
         }
       };
       results.push(DefinitionResult {
@@ -282,8 +310,9 @@ pub fn run(
   diagnostics.extend(warnings.borrow().iter().map(warning_diagnostic));
   let checked_count = checked_definition_ids.len();
   let passed_count = results.iter().filter(|row| row.status == "passed").count();
+  let intrinsic_count = results.iter().filter(|row| row.status == "intrinsic").count();
   let complete = selection_complete && selected_count > 0 && checked_count == selected_count;
-  let passed = complete && passed_count == selected_count && diagnostics.is_empty();
+  let passed = complete && passed_count + intrinsic_count == selected_count && diagnostics.is_empty();
   if selected_count == 0 && diagnostics.is_empty() {
     diagnostics.push(json!({
       "code": "E_PUBLIC_CHECK_EMPTY_SCOPE",
@@ -312,7 +341,9 @@ pub fn run(
           "summary": {
             "definitions_selected": selected_count,
             "definitions_checked": checked_count,
-            "definitions_passed": passed_count,
+            "definitions_passed": passed_count + intrinsic_count,
+            "definitions_source_passed": passed_count,
+            "definitions_intrinsic": intrinsic_count,
             "complete": complete,
             "passed": passed,
             "duration_ms": duration_ms,
@@ -333,6 +364,7 @@ pub fn run(
       );
       println!("- revision: {revision}");
       println!("- coverage: {checked_count}/{selected_count} definitions checked");
+      println!("- source definitions passed: {passed_count}; core runtime intrinsics: {intrinsic_count}");
       println!("- result: {} ({duration_ms:.3}ms)", if passed { "PASS" } else { "FAIL" });
       if !options.summary_only {
         for row in &results {
@@ -350,7 +382,7 @@ pub fn run(
     Ok(())
   } else {
     Err(format!(
-      "Public definition check failed: {checked_count}/{selected_count} definitions checked, {passed_count} passed, {} diagnostic(s).",
+      "Public definition check failed: {checked_count}/{selected_count} definitions checked, {passed_count} passed, {intrinsic_count} core runtime intrinsics, {} diagnostic(s).",
       diagnostics.len()
     ))
   }
@@ -362,7 +394,7 @@ mod tests {
   use std::sync::Arc;
 
   use calcit::calcit::{CalcitErrKind, CalcitErrProvenance, DYNAMIC_TYPE};
-  use cirru_edn::Edn;
+  use cirru_edn::{Edn, EdnTag};
   use cirru_parser::Cirru;
 
   fn entry_with_ffi(ffi: Option<Edn>) -> snapshot::CodeEntry {
@@ -375,6 +407,37 @@ mod tests {
       schema: DYNAMIC_TYPE.clone(),
       ffi,
     }
+  }
+
+  #[test]
+  fn only_exact_builtin_core_placeholders_skip_source_preprocessing() {
+    let mut entry = entry_with_ffi(None);
+    entry.tags.insert(EdnTag::new("builtin"));
+    entry.code = Cirru::leaf("&runtime-implementation");
+    assert!(is_core_runtime_intrinsic("calcit.core", "example", &entry));
+    assert!(!is_core_runtime_intrinsic("app.main", "example", &entry));
+
+    entry.code = Cirru::List(vec![Cirru::leaf("&runtime-implementation")]);
+    assert!(is_core_runtime_intrinsic("calcit.core", "example", &entry));
+
+    entry.code = Cirru::List(vec![
+      Cirru::leaf("def"),
+      Cirru::leaf("example"),
+      Cirru::leaf("&runtime-implementation"),
+    ]);
+    assert!(is_core_runtime_intrinsic("calcit.core", "example", &entry));
+    assert!(!is_core_runtime_intrinsic("calcit.core", "other", &entry));
+
+    entry.code = Cirru::List(vec![
+      Cirru::leaf("def"),
+      Cirru::leaf("example"),
+      Cirru::leaf("&runtime-implementation"),
+      Cirru::leaf("unexpected"),
+    ]);
+    assert!(!is_core_runtime_intrinsic("calcit.core", "example", &entry));
+    entry.code = Cirru::leaf("&runtime-implementation");
+    entry.tags.clear();
+    assert!(!is_core_runtime_intrinsic("calcit.core", "example", &entry));
   }
 
   #[test]

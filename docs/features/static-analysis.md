@@ -164,28 +164,15 @@ warning 或 error。闭包外 definition 变化允许 warm hit；reachable defin
 再扩大需要编译器/call-site 数据的 analyzer 复用，不能把本地 cache 当作类型正确性证明。CI 与最终验收继续保留
 不带 `--incremental` 的冷检查。
 
-### Target-aware public definition checks
+### 按 target 检查公开定义
 
-`analyze check-public` preprocesses every top-level definition in each exact
-`--ns` scope without running the entry or host effects. Calcit has no separate
-private-export marker, so every definition stored in a selected namespace is
-public for this command; functions, values, macros, structs, enums, traits, and
-implementations are all enumerated. Repeat `--ns` to combine a shared namespace
-with the namespace for one runtime.
+`analyze check-public` 枚举每个精确 `--ns` scope 的顶层定义，在不运行 entry 或 host effect 的情况下严格预处理源码。Calcit 没有独立的 private-export 标记，因此所选 namespace 中的函数、值、macro、struct、enum、trait 和 implementation 都会被检查；可重复传入 `--ns`，组合共享与某个运行目标专属的 namespace。
 
-The selected entry must declare `:target :browser`, `:node`, `:native`, or
-`:wasm`. A definition without `:ffi :target` is shared. A definition whose
-target differs from the entry fails with `E_JS_FFI_TARGET_MISMATCH` before its
-body is preprocessed. Missing, empty, dependency-owned, or malformed scopes
-also fail closed; pass `--deps` only when checking an explicitly selected
-loaded dependency namespace. Ordinary `--check-only` keeps its entry-reachable
-semantics.
+内置 `calcit.core` 中带 `:builtin` 标签、且代码恰好为 `&runtime-implementation` 占位符的定义没有可预处理的 Calcit 函数体。这些定义在 Snapshot 加载时校验 schema，报告为 `intrinsic`，不伪装成已通过源码预处理；其实现与声明的一致性仍由 builtin 和后端测试负责。若占位符缺少标签、位于项目 namespace，或包含额外代码，仍走普通预处理并显示诊断。core 的其他源码定义继续严格预处理。仓库 CI 使用带 `:target :wasm` 的测试 entry，检查 `calcit.core`、`calcit.test` 和 `calcit.internal`；这不代表其他 target 的后端语义已由该检查证明。
 
-JSON output uses the `analyze.check-public` schema-version 1 envelope. It always
-includes `checked_definition_ids`, completeness/pass counts, diagnostics,
-target, duration, and a deterministic scope revision. `--summary-only` omits
-the per-definition rows but retains checked IDs so CI can prove what was
-actually covered. Any preprocessing warning or error produces a non-zero exit.
+所选 entry 必须声明 `:target :browser`、`:node`、`:native` 或 `:wasm`。没有 `:ffi :target` 的定义视为共享；目标不匹配会在预处理前报告 `E_JS_FFI_TARGET_MISMATCH`。缺失、空、属于依赖但未授权或格式错误的 scope 均失败；只有显式检查已加载依赖 namespace 时才传 `--deps`。普通 `--check-only` 仍保持 entry 可达性语义。
+
+JSON 输出使用 `analyze.check-public` schema version 1，保留 `checked_definition_ids`、完整性与通过状态、诊断、target、耗时和确定性的 scope revision。`definitions_passed` 包含已通过的源码定义与内建占位符；`definitions_source_passed` 和 `definitions_intrinsic` 分开呈现两者。`--summary-only` 只省略逐定义结果，不省略已检查的 ID；CI 可以核实真实覆盖范围。任何源码预处理 warning 或 error 都返回非零。
 
 Strict call preprocessing also reports `E_ERASED_GENERIC_RELATION` when an
 argument still contains `Dynamic` at a position tied to another occurrence of

@@ -586,7 +586,7 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       None => format!("validates all code examples in namespace `{}`", opts.ns),
     },
     AnalyzeSubcommand::CheckPublic(opts) => format!(
-      "preprocesses every definition in {} selected public namespace(s) for the active entry target{}",
+      "checks every definition in {} selected public namespace(s) for the active entry target{}",
       opts.ns.len(),
       if opts.deps { ", including dependencies" } else { "" }
     ),

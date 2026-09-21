@@ -169,8 +169,9 @@ calcit --entry browser calcit.cirru analyze check-public \
 ```
 
 该检查枚举 namespace 中全部 definitions，因此未被测试入口引用的公开函数、
-data declaration 和 external trait 也会预处理。空 scope、缺少 target、错误
-runtime target 或任何诊断都会返回非零；不要用生成的引用函数或手写 export
+data declaration 和 external trait 也会预处理。内置 core 的 `:builtin`
+运行时占位符没有 Calcit 函数体，会单独报告为 `intrinsic`，不算作源码预处理通过。
+空 scope、缺少 target、错误 runtime target 或任何诊断都会返回非零；不要用生成的引用函数或手写 export
 清单替代它。普通 `--check-only` 仍只验证 entry 可达路径。
 
 ## 6. 真实消费者回归

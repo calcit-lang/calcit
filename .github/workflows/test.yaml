@@ -115,6 +115,9 @@ jobs:
       - name: "run definition-attached core tests"
         run: cargo run --bin calcit -- src/cirru/calcit-core.cirru test --tag unit --require-match
 
+      - name: "strictly check bundled core source definitions"
+        run: cargo run --bin calcit -- calcit/test-wasi-command.cirru analyze check-public --ns calcit.core --ns calcit.test --ns calcit.internal --deps --summary-only
+
       - name: "verify bundled core Dynamic boundary documentation"
         run: cargo build --bin calcit && node scripts/core-dynamic-classification.mjs --check
 
