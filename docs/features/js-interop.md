@@ -96,12 +96,9 @@ without declaring `:js-ffi`; only the wrapper's own implementation body needs
 the feature. An anonymous function uses the feature declared in its own
 `hint-fn` schema.
 
-Under the default strict diagnostics, `unsafe-coerce` has an additional backend-independent
-gate: the current function's structured schema must declare `:js-ffi`, or
-preprocessing fails with `E_UNSCOPED_UNSAFE_COERCE`. An adapter-like namespace
-name is inventory evidence, not authorization. A scoped assertion remains in
-the `unsafeCoerce` quality metric and therefore needs an explicitly reviewed
-baseline before a full strict quality gate can pass.
+默认严格诊断对 `unsafe-coerce` 增加了跨后端约束：当前函数的结构化 schema 必须声明 `:js-ffi`，
+否则预处理报 `E_UNSCOPED_UNSAFE_COERCE`。类似 adapter 的命名空间名称只能作为盘点线索，不能代替能力声明。
+经过作用域检查的转换仍应接受审阅，但严格编译不会按其出现次数运行独立质量预算。
 
 ### 2.2 Host target policy
 

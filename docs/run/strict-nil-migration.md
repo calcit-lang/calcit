@@ -1,11 +1,7 @@
 # Strict nil migration / strict nil 迁移
 
-Calcit 0.14 default strict diagnostics treat implicit absence as a compiler
-error. `--compat-types` temporarily keeps the legacy runtime behavior during
-migration; `--strict-types` additionally asserts zero type debt.
-
 Calcit 0.14 的默认严格诊断把隐式缺失值视为编译错误；迁移期间可用 `--compat-types`
-暂时保留旧运行时语义，`--strict-types` 则额外声明零类型债务。
+暂时保留旧运行时语义。`--strict-types` 显式运行严格入口检查，但不会按 Dynamic 数量判断类型正确性。
 
 ## Diagnostics / 诊断
 

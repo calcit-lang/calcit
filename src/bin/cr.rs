@@ -190,10 +190,6 @@ fn run_deprecated(options: &DeprecatedCommand, snapshot: &snapshot::Snapshot) ->
 }
 
 fn run_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
-  run_quality_with_output(options, snapshot, true)
-}
-
-fn run_quality_with_output(options: &QualityCommand, snapshot: &snapshot::Snapshot, emit_output: bool) -> Result<(), String> {
   if !matches!(options.format.as_str(), "human" | "text" | "json") {
     return Err(format!(
       "Unknown quality output format `{}`. Expected `human` or `json`.",
@@ -201,12 +197,10 @@ fn run_quality_with_output(options: &QualityCommand, snapshot: &snapshot::Snapsh
     ));
   }
   let outcome = quality_gate::analyze_quality(options, snapshot)?;
-  if emit_output {
-    match options.format.as_str() {
-      "human" | "text" => print!("{}", quality_gate::format_quality_report(&outcome)),
-      "json" => println!("{}", quality_gate::format_quality_json(&outcome)?),
-      _ => unreachable!("quality output format was validated before analysis"),
-    }
+  match options.format.as_str() {
+    "human" | "text" => print!("{}", quality_gate::format_quality_report(&outcome)),
+    "json" => println!("{}", quality_gate::format_quality_json(&outcome)?),
+    _ => unreachable!("quality output format was validated before analysis"),
   }
   if outcome.passed {
     Ok(())
@@ -484,20 +478,13 @@ fn run_cli() -> Result<(), String> {
       "`--check-only --incremental` does not support `--keep-going`; use the uncached structured diagnostic pass.".to_owned(),
     );
   }
-  if cli_args.keep_going && strict_type_policy.zero_debt {
-    return Err(
-      "`--keep-going` collects strict preprocessing diagnostics; run the separate `--check-only --strict-types` zero-debt gate after it passes."
-        .to_owned(),
-    );
-  }
   if cli_args.format != "human" && !(cli_args.check_only && cli_args.keep_going) {
     return Err("Top-level `--format` is only available with `--check-only --keep-going`.".to_owned());
   }
 
   // Query/analyze commands may run preprocessing before the normal program-loading path.
-  // Starting with 0.14, strict diagnostics are the default. `--strict-types`
-  // additionally requests the zero-debt quality preflight, while the explicit
-  // compatibility switch is the temporary migration escape hatch.
+  // Strict diagnostics are the default; the explicit flag confirms that
+  // choice while the compatibility switch remains a migration escape hatch.
   runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method || strict_type_policy.diagnostics);
   runner::preprocess::set_strict_types(strict_type_policy.diagnostics);
   runner::preprocess::set_verbose_preprocess(cli_args.verbose);
@@ -560,19 +547,6 @@ fn run_cli() -> Result<(), String> {
       println!("\n{}", "✓ Check passed (cached)".green().bold());
     }
     print!("{}", stats.human_line());
-    if strict_type_policy.zero_debt {
-      run_quality(
-        &QualityCommand {
-          ns: None,
-          ns_prefix: None,
-          deps: false,
-          baseline: None,
-          write_baseline: None,
-          format: "human".to_owned(),
-        },
-        &snapshot,
-      )?;
-    }
     return Ok(());
   }
 
@@ -853,47 +827,20 @@ fn run_cli() -> Result<(), String> {
     run_check_only(&entries)?;
   }
 
-  let run_strict_type_gate = || {
-    run_quality(
-      &QualityCommand {
-        ns: None,
-        ns_prefix: None,
-        deps: false,
-        baseline: None,
-        write_baseline: None,
-        format: "human".to_owned(),
-      },
-      &snapshot,
-    )
-  };
-
-  // `--strict-types` remains the explicit zero-debt preflight for every
-  // execution/codegen mode. Default strict diagnostics do not claim that an
-  // audited project has no reviewed open boundaries.
-  if strict_type_policy.zero_debt && !check_only && !is_public_check {
-    // Eval/exec already preprocess above so they can fail before evaluating.
-    // Other run/codegen modes still need the explicit strict preflight here.
-    if !is_eval_mode {
-      run_check_only(&entries)?;
-    }
-    run_strict_type_gate()?;
+  // Explicit strict mode can preflight the selected entry before execution or
+  // codegen, but type correctness must not depend on an analyzer budget.
+  if cli_args.strict_types && !check_only && !is_public_check && !is_eval_mode {
+    run_check_only(&entries)?;
   }
 
   let use_configured_js_mode = should_emit_js(&cli_args.subcommand, configured_run_mode);
 
   let task = if check_only {
-    let check_result = if cli_args.keep_going {
+    if cli_args.keep_going {
       strict_check::run(&entries, &cli_args.format)
     } else {
       run_check_only(&entries)
-    };
-    check_result.and_then(|_| {
-      if strict_type_policy.zero_debt {
-        run_strict_type_gate()
-      } else {
-        Ok(())
-      }
-    })
+    }
   } else if let Some(CalcitCommand::Fix(fix_options)) = &cli_args.subcommand {
     eval_once = true;
     cli_handlers::handle_fix_command(fix_options, &snapshot, &project_namespaces, &cli_args.input)
@@ -935,27 +882,13 @@ fn run_cli() -> Result<(), String> {
       ),
       AnalyzeSubcommand::CheckPublic(options) => {
         let emit_preflight_output = options.format != "json";
-        let strict_preflight = || {
-          run_check_only_with_output(&entries, emit_preflight_output)?;
-          run_quality_with_output(
-            &QualityCommand {
-              ns: None,
-              ns_prefix: None,
-              deps: false,
-              baseline: None,
-              write_baseline: None,
-              format: "human".to_owned(),
-            },
-            &snapshot,
-            emit_preflight_output,
-          )
-        };
+        let strict_preflight = || run_check_only_with_output(&entries, emit_preflight_output);
         public_api_check::run(
           options,
           &snapshot,
           &project_namespaces,
-          strict_type_policy
-            .zero_debt
+          cli_args
+            .strict_types
             .then_some(&strict_preflight as &dyn Fn() -> Result<(), String>),
         )
       }
@@ -1509,18 +1442,16 @@ fn should_emit_js(subcommand: &Option<CalcitCommand>, configured_run_mode: snaps
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct StrictTypePolicy {
   diagnostics: bool,
-  zero_debt: bool,
 }
 
-/// Resolve the 0.14 type policy without letting the migration escape hatch and
-/// the zero-debt assertion silently override each other.
+/// Resolve explicit strict and compatibility policies without silently
+/// overriding either choice.
 fn resolve_strict_type_policy(strict_types: bool, compat_types: bool) -> Result<StrictTypePolicy, String> {
   if strict_types && compat_types {
     return Err("`--strict-types` and `--compat-types` cannot be used together".to_owned());
   }
   Ok(StrictTypePolicy {
     diagnostics: !compat_types,
-    zero_debt: strict_types,
   })
 }
 
@@ -2410,28 +2341,10 @@ mod tests {
   }
 
   #[test]
-  fn strict_type_policy_defaults_diagnostics_and_keeps_zero_debt_explicit() {
-    assert_eq!(
-      resolve_strict_type_policy(false, false),
-      Ok(StrictTypePolicy {
-        diagnostics: true,
-        zero_debt: false,
-      })
-    );
-    assert_eq!(
-      resolve_strict_type_policy(true, false),
-      Ok(StrictTypePolicy {
-        diagnostics: true,
-        zero_debt: true,
-      })
-    );
-    assert_eq!(
-      resolve_strict_type_policy(false, true),
-      Ok(StrictTypePolicy {
-        diagnostics: false,
-        zero_debt: false,
-      })
-    );
+  fn strict_type_policy_defaults_diagnostics_without_quality_budgets() {
+    assert_eq!(resolve_strict_type_policy(false, false), Ok(StrictTypePolicy { diagnostics: true }));
+    assert_eq!(resolve_strict_type_policy(true, false), Ok(StrictTypePolicy { diagnostics: true }));
+    assert_eq!(resolve_strict_type_policy(false, true), Ok(StrictTypePolicy { diagnostics: false }));
     assert!(resolve_strict_type_policy(true, true).is_err());
   }
 
