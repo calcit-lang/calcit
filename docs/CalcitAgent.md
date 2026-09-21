@@ -667,8 +667,9 @@ calcit docs read-lines agent-advanced.md --start 1 --lines 80
 | typed FFI inventory          | `calcit ffi export --json`；`calcit docs read ffi-interface-ir.md --full` |
 | WASM Component contract      | `calcit ffi export --boundary component`；`calcit docs read wasm-component-boundary.md --full` |
 | 安装模块的 API/示例          | `calcit docs scopes` → `calcit docs search <kw> --module <module>`      |
+| 远端类库索引与 README        | `calcit docs remote-libs search <kw>`；`calcit docs remote-libs readme <package>` |
 
-定义级资料优先从源码元数据查询：`calcit query schema '<ns/def>'`、`calcit query examples '<ns/def>'`、`calcit query usages '<ns/def>'`。远程库发现、program diff、call graph、JS escape 等低频能力直接从对应 `--help` 开始。
+定义级资料优先从源码元数据查询：`calcit query schema '<ns/def>'`、`calcit query examples '<ns/def>'`、`calcit query usages '<ns/def>'`。远端类库统一从 `calcit docs remote-libs` 进入，旧 `calcit libs` 已移除；program diff、call graph、JS escape 等低频能力直接从对应 `--help` 开始。
 
 ## 8. 完成检查
 

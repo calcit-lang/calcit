@@ -149,9 +149,7 @@ struct ReadRenderOptions<'a> {
 pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
   match &cmd.subcommand {
     DocsSubcommand::Scopes(_) => handle_scopes(),
-    DocsSubcommand::RemoteLibs(opts) => handle_libs_command(&calcit::cli_args::LibsCommand {
-      subcommand: opts.subcommand.clone(),
-    }),
+    DocsSubcommand::RemoteLibs(opts) => handle_libs_command(opts),
     DocsSubcommand::Search(opts) => handle_search(
       &opts.keyword,
       opts.context,

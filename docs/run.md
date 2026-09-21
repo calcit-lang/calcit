@@ -66,7 +66,7 @@ Use these keywords directly with `calcit docs read` for faster section hits:
 - `eval`, `snippet`, `dep`, `type-check` → [Run in Eval mode](./run/eval.md)
 - `watch`, `once`, `entry`, `reload-fn` → [CLI Options](./run/cli-options.md)
 - `query`, `find`, `usages`, `search-expr` → [Querying definitions](./run/query.md)
-- `docs`, `read-lines`, `libs`, `readme` → [Documentation & Libraries](./run/docs-libs.md)
+- `docs`, `read-lines`, `remote-libs`, `readme` → [Documentation & Libraries](./run/docs-libs.md)
 - `edit`, `tree`, `search-replace`, `imports` → [CLI Code Editing](./run/edit-tree.md)
 - `check-only`, `analyze`, `fix`, `verification` → [CLI 工作流入口收敛](./run/workflow-entrypoints.md)
 

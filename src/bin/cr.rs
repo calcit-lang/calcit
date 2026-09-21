@@ -566,9 +566,6 @@ fn run_cli() -> Result<(), String> {
     Some(CalcitCommand::Cirru(cirru_cmd)) => {
       return cli_handlers::handle_cirru_command(cirru_cmd);
     }
-    Some(CalcitCommand::Libs(libs_cmd)) => {
-      return cli_handlers::handle_libs_command(libs_cmd);
-    }
     Some(CalcitCommand::Edit(edit_cmd)) => {
       return cli_handlers::handle_edit_command(edit_cmd, &cli_args.input);
     }

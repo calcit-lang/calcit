@@ -53,7 +53,6 @@ pub fn should_echo_command(cli_args: &ToplevelCalcit) -> bool {
     cli_args.subcommand,
     Some(CalcitCommand::Query(_))
       | Some(CalcitCommand::Docs(_))
-      | Some(CalcitCommand::Libs(_))
       | Some(CalcitCommand::Edit(_))
       | Some(CalcitCommand::Tree(_))
       | Some(CalcitCommand::Cursor(_))
@@ -95,7 +94,6 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
       },
       other => format!("{base_command} docs {}", docs_name(other)),
     },
-    CalcitCommand::Libs(cmd) => format!("{base_command} libs {}", libs_name(cmd.subcommand.as_ref()?)),
     CalcitCommand::Edit(cmd) => format!("{snapshot_command} edit {}", edit_name(&cmd.subcommand)),
     CalcitCommand::Tree(cmd) => format!("{snapshot_command} tree {}", tree_name(&cmd.subcommand)),
     CalcitCommand::Cursor(cmd) => format!("{snapshot_command} cursor {}", cursor_name(&cmd.subcommand)),
@@ -111,7 +109,6 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
   match subcommand {
     CalcitCommand::Query(cmd) => push_query(&mut tokens, cmd),
     CalcitCommand::Docs(cmd) => push_docs(&mut tokens, cmd),
-    CalcitCommand::Libs(cmd) => push_libs(&mut tokens, cmd.subcommand.as_ref()?),
     CalcitCommand::Edit(cmd) => push_edit(&mut tokens, cmd),
     CalcitCommand::Tree(cmd) => push_tree(&mut tokens, cmd),
     CalcitCommand::Cursor(cmd) => push_cursor(&mut tokens, cmd),

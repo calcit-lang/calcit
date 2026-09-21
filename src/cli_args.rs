@@ -112,8 +112,6 @@ pub enum CalcitCommand {
   Docs(DocsCommand),
   /// Cirru syntax tools (parse, format)
   Cirru(CirruCommand),
-  /// legacy alias for docs remote-libs
-  Libs(LibsCommand),
   /// execute Cirru code from stdin (bypasses shell escaping)
   Exec(ExecCommand),
   /// coarse-grained code editing (namespaces, definitions, metadata); for internal expression changes, use `tree` instead
@@ -1431,16 +1429,8 @@ pub struct CirruParseEdnCommand {
 pub struct CirruShowGuideCommand {}
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Libs subcommand - library registry
+// Remote library subcommands
 // ═══════════════════════════════════════════════════════════════════════════════
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "libs")]
-/// legacy alias for docs remote-libs
-pub struct LibsCommand {
-  #[argh(subcommand)]
-  pub subcommand: Option<LibsSubcommand>,
-}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand)]
