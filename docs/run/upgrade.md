@@ -11,6 +11,7 @@ aliases:
   - "lilac upgrade"
 id: core/run/upgrade
 related:
+  - core/run/upgrade-history
   - core/run/library-quality
   - core/run/entries
   - core/features/static-analysis
@@ -48,9 +49,9 @@ related:
 审阅结构化计划，再用
 `--apply --expect-revision <revision>` 原子应用；完整安全边界见 [Compiler-guided Source Fixes](fix.md)。
 
-从较早的 0.14 项目升级时分两阶段进行：先固定 Calcit 0.14.15，执行已经随该版本发布的
-`tag-match-to-match-v1` 与 `required-struct-field-v1` bridge；验证并提交后，再切到当前工具链运行
-`surface-latest-v2`。冻结的 `surface-latest-v1` 仍保持原来的四条规则，不会静默扩展。当前版本不会假装恢复已退休 planner，preset 也不会替代第一阶段。
+若起点是仍依赖 0.14.15 旧修复规则的项目，请先按
+[历史两阶段桥接步骤](upgrade-history.md#01415-的两阶段源码修复桥接)完成旧版迁移，
+再使用当前 preset；不要把旧 rule ID 交给当前版本。
 
 升级或类型迁移后，应显式预览一次问题写法修复。`fix` 的默认 preview 本身就是检测入口，不写 Snapshot；其中
 `redundant-do-v1` 会定位 `defn`、`fn`、`let` 等多表达式 body 中不必要的 `do`，并返回可审阅的 source path、
@@ -65,111 +66,15 @@ calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 若建议为空，则接受 `not-needed` 并跳过 apply。完整示例见
 [检测并修复冗余 `do`](fix.md#检测并修复冗余-do)。这是一项显式源码整理，不会增加普通编译 warning。
 
-## 0.14.20 WASM 命令入口收敛
+## 当前目标与历史版本迁移
 
-0.14.20 不再通过 `cargo install calcit` 或 GitHub Release 发布 `cr-wasm`。项目与 Agent 应直接选择宿主契约：
+当前项目以默认严格 `--check-only`、对应 entry 的实际运行和目标后端回归为升级验收；
+静态分析报告用于定位，不另设覆盖率或 Dynamic 数量门槛。WASM 请选择 `calcit wasm` 或
+`calcit wasi`；Component 的当前支持范围以
+[WASM Component 边界](../installation/wasm-component-boundary.md) 为准。
 
-- 原来的 `cr-wasm <snapshot> --target core` 改为 `calcit wasm <snapshot>`；
-- 原来的 `cr-wasm <snapshot> --target wasi` 改为 `calcit wasi <snapshot>`；
-- 两者的 `--check-only`、`--emit-path`、`--init-fn`、`--reload-fn` 与 `--entry` 继续由公开子命令提供。
-
-这不是能力删除：Snapshot 加载、预处理、target validation 与 codegen 仍共用同一实现。仓库为 WASI 自举保留
-feature-gated 的内部回归 harness，但它不是兼容 CLI，也不应被用户脚本调用。遇到旧 workflow 时应显式改写命令，
-不要尝试复制或重新发布该内部 binary。
-
-## 0.14.20 Component preview
-
-0.14.20 新增 opt-in 的同步 Component core boundary，不改变普通 native、JavaScript、
-`calcit wasm` 或 `calcit wasi` 项目的默认行为。只有显式使用
-`calcit ffi export --boundary component` 或 `calcit wasm --boundary component` 的项目
-需要关注：当前支持 `Unit` 结果、`Bool`、`Buffer`、`Number`、UTF-8 `String`、递归同质
-`List<T>`，以及闭合单态 `Option<T>` / `Result<T,E>` 的 import/export adapter，默认 contract
-格式为 Cirru EDN。独立的 `calcit-bindgen` 可为这些类型生成 WIT 并包装 runnable Component；
-Struct record、普通 Enum variant、明确宽度数值与 async 在该 preview 中尚未完成，不会静默退化为 Dynamic
-或 core 私有 value ABI。
-
-## 0.15.1 Struct/Enum Component boundary
-
-0.15.1 完成 monomorphic Struct record 与闭合单态 Enum variant 的同步 Component boundary。Struct 字段名称、顺序和类型完全来自
-规范化的 `defstruct` schema；嵌套 Struct 与已经支持的闭合字段类型复用统一递归 walker。边界不会根据运行时值
-补字段或猜测 layout，未具体化 generic、Dynamic 字段和其他未支持类型会带 schema path 在生成阶段失败。
-
-Enum 的 case 名称与顺序来自规范化后的 `defenum` schema，并决定从零开始的 Canonical ABI discriminant。无 payload、
-单 payload 与多 payload case 分别映射为 WIT bare case、直接 payload 与 tuple payload；payload 可递归包含已支持的
-闭合类型和 Struct。anonymous/open Enum、递归 Enum、未具体化 generic 与显式 `Unit` payload 会明确拒绝，不会退化为 Dynamic。
-
-该阶段没有新增命令：core 继续使用 `calcit ffi export --boundary component` 与
-`calcit wasm --boundary component`，WIT 与 runnable Component packaging 继续由 calcit-bindgen 的
-`generate` / `check` 负责。Struct/Enum/Result 已在 Wasmtime 与 jco/Node 完成实际往返；明确宽度数值的
-Component lowering 见下一节。
-
-从 0.14.20 preview 升级时不需要改写命令，也不要新增 WIT/component wrapper。应重新执行
-`calcit ffi export --boundary component` 导出 contract，用 calcit-bindgen `check` 查看 ABI fingerprint 与兼容性变化，
-确认后再用 `generate` 刷新 WIT、manifest 和 Component 产物。依赖 declaration 顺序的 Struct field 与 Enum case 会进入
-公开 ABI；若顺序发生变化，应把它作为显式接口变更审阅，并重新运行宿主侧 Wasmtime 或 jco 往返测试。
-
-## 0.15.2 明确宽度数值边界
-
-0.15.2 让十种明确宽度数值 refinement 直接进入 Component Canonical ABI，同时保持单一运行时数值表示。
-
-运行时值形状不变：signed/unsigned 8/16/32/64 位整数与 32/64 位浮点数是 `Number` 的静态边界 refinement，
-native 仍是 `f64`，JavaScript 仍是 `Number`。refinement 可安全地作为 `Number` 使用，普通 `Number` 不会隐式收窄；
-普通算术返回 `Number`，不会保留已经失效的范围证明。
-
-进入明确边界必须显式转换：`number->int8`、`number->uint8`、`number->int16`、`number->uint16`、`number->int32`、
-`number->uint32`、`number->int64`、`number->uint64`、`number->float32`、`number->float64` 返回
-`Result<目标类型,String>`，拒绝非整数、符号错误、溢出、NaN/Infinity 与不可接受的精度损失——不截断、不环绕、
-不静默舍入。Calcit 的 `f64` 表示无法无损覆盖全部 64 位整数，因此只承诺可精确表示的安全整数范围，host 超范围
-值明确拒绝。
-
-Component boundary 按推导并规范化后的 schema 宽度确定性导出 `Int8`、`UInt8`、`Int16`、`UInt16`、`Int32`、
-`UInt32`、`Int64`、`UInt64`、`Float32`、`Float64` 独立 kind；普通 `Number` 仍导出为 `number`，bindgen 不根据值、
-名称或调用位置猜测宽度。从 0.15.1 升级时不需要新增顶层命令、语法或 analyzer；但必须重新执行
-`calcit ffi export --boundary component`，并用 calcit-bindgen `generate` / `check` 刷新 WIT、manifest 与 Component
-产物，不保留旧数值 ABI 兼容层。旧边界写法只有在能证明等价时才由 `calcit fix` 给出迁移建议，其他仍需人工决定。
-
-## 0.15.3 异步 Component export 基础
-
-0.15.3 开始消费函数 schema 已有的 `:async true`，不增加新的表层 Task/Future 类型或 CLI。Component Interface IR v4
-将该标记导出为 `invocation: async`；`calcit wasm --boundary component` 为对应 export 生成 WASI 0.3 async core shape：
-参数继续使用现有 Canonical ABI 类型 walker，core 函数没有返回值，逻辑返回值通过 packaging 注入的强类型
-`task.return` 恰好完成一次。
-
-这是分阶段开放的能力。async import 对最多 4 个 flat 参数使用 direct shape；更多参数会写入按 Canonical ABI
-布局的 parameter record，并传递单个 pointer。两种形状都处理立即完成以及 subtask 的
-`starting` / `started` / `returned`、终态清理和 drop。
-不要把 native `async-task-v1` 队列、句柄或 polling API 搬到 Component 接口，也不要把 async import 临时改成同步 ABI。
-升级相关项目时，先重新导出当前 contract（native 为 IR v3，Component 为 IR v4），再升级 calcit-bindgen：除连接
-`[export]$root/[task-return]<export-symbol>` 外，还需连接 `$root` 下的 `[waitable-set-*]`、`[waitable-join]`
-与 `[subtask-drop]` canonical builtins。async import/export 分别使用 `[async-lower]` 与
-`[async-lift-stackful]` 名称前缀，使 `wit-component` 能按 Canonical ABI 识别这些内部接缝。当前 stackful adapter
-对已收到的 cancellation 终态清理后 trap；主动取消留给 callback cancellation 阶段。
-
-## 0.14 默认严格诊断
-
-Calcit 0.14 起，普通运行、`--check-only` 和代码生成默认启用严格预处理诊断；无需再通过
-`--strict-types` 才把不安全类型路径提升为稳定的 `E_*` 错误。`--strict-types` 仍可显式确认严格策略并在运行或代码生成前预检查入口，不再运行数量预算。尚未迁移完成的旧项目可以暂时显式使用
-`--compat-types` 恢复 0.14 之前的 warning 行为；两个开关互斥。
-
-推荐先通过 0.13.79 这个迁移桥接版本清理 warning 和质量报告，再升级到 0.14：
-
-```bash
-calcit calcit.cirru --compat-types --check-only  # 临时保留旧行为
-calcit calcit.cirru --check-only                 # 0.14 默认严格诊断
-calcit calcit.cirru --strict-types --check-only  # 显式执行严格入口检查
-```
-
-`--compat-types` 只用于限时迁移，不应成为新项目或长期 CI 的默认参数。已经在 entry 中显式配置的
-feature policy 仍然生效；兼容开关不会覆写 Snapshot。
-
-适用对象：通过 Calcit CLI 运行并产出 JS 的项目（例如 Respo）。
-
-升级完成的标准不是“`caps upgrade --all` 执行成功”，而是：
-
-- 新版 `calcit` 与独立版本的 `caps` 已分别固定到本地和 CI，且 `deps.cirru`、`calcit`、`@calcit/procs` 版本链路一致；
-- 每个声明支持的 entry 都通过 `--check-only`，并完成对应 native / JS 行为测试；
-- `check-types`、`weak-types`、`deprecated` 已生成可复查报告，存量债务有 baseline，新增债务被阻断；
-- examples、Markdown 示例、项目测试与真实消费者回归覆盖了公开能力。
+0.13–0.15 的严格诊断桥接、`cr-wasm` 迁移及 Component ABI 演进步骤已移至
+[历史版本迁移记录](upgrade-history.md)。历史版本当时的“尚未支持”不代表当前能力。
 
 ---
 
@@ -289,10 +194,7 @@ ns app.main $ :require
 ### 快速命令清单
 
 ```bash
-# 安装当前经过组合验证的独立用户工具；分别固定并记录版本
-# 0.14.20 发布并在 crates.io 可见后使用；此前继续固定 0.14.19
-cargo install calcit --bin calcit --version 0.14.20 --force
-cargo install calcit-caps --version 0.1.1 --force
+# 先按 Step A 核对 deps.cirru 和独立 caps 版本，再检查实际安装结果
 calcit --version
 caps --version
 caps upgrade --all
@@ -315,21 +217,18 @@ yarn vite build --base=./
 ### Step A：确认 Calcit CLI 版本
 
 ```bash
-# 0.14.20 发布并在 crates.io 可见后使用；此前继续固定 0.14.19
-cargo install calcit --bin calcit --version 0.14.20 --force
-cargo install calcit-caps --version 0.1.1 --force
 calcit --version
 caps --version
 caps --help
 ```
 
-说明：`calcit` 和 `caps` 是独立发布的用户工具。`:calcit-version` 只固定 runtime/compiler；caps 需要
-单独固定一个经过该 Calcit 版本和真实项目 smoke 验证的稳定版本。不要先用未经验证的旧 `caps` 改依赖，
+说明：`calcit` 和 `caps` 是独立发布的用户工具。安装或升级前先读取项目 `deps.cirru :calcit-version`，
+确认对应 release 已发布，再分别固定 Calcit 与经过真实项目 smoke 验证的 caps 稳定版本；
+旧版安装组合仅见[历史版本迁移记录](upgrade-history.md)。不要先用未经验证的旧 `caps` 改依赖，
 再用新 `calcit` 判断结果；也不要只更新本机而让 CI 继续安装另一版本。若团队通过其他受控方式分发二进制，
 使用该方式即可，但要分别记录实际版本，并确认 `caps --help` 已包含项目需要的新选项。
-`calcit 0.14.20` 发布并完成 registry 验证后，上述 `calcit 0.14.20` +
-`calcit-caps 0.1.1` 才成为推荐组合；在此之前继续使用已发布的 0.14.19。升级到后续版本时，从对应 release notes
-或 `setup-calcit` 已验证的版本矩阵选择一对明确版本，不要省略 `--version` 而隐式安装两个 latest。
+从对应 release notes 或 `setup-calcit` 已验证的版本矩阵选择一对明确版本；
+本手册不固定会过期的全局安装版本，也不要省略安装命令的 `--version` 而隐式安装两个 latest。
 
 > ⚠️ CI 中 Calcit runtime/compiler 的项目版本来自 `deps.cirru :calcit-version`；caps 使用 setup-calcit 独立固定的稳定版本，必要时通过 `caps-version` 显式覆盖。普通 workflow 不重复传 `version`。Action 会对新 Calcit release 临时提供 `cr -> calcit` 兼容链接；对旧 release 则回退到 `cr` asset 并暴露 `calcit`。新命令统一写 `calcit`。已发布的 `calcit-lang/setup-cr` tag 继续支持旧项目；GitHub Actions 不会为 Action 仓库改名重定向，因此迁移必须显式替换 `uses:`。详见 [GitHub Actions](../installation/github-actions.md)。
 
@@ -361,10 +260,12 @@ calcit docs agents --contract
 自己的开发依赖带入消费者。升级旧项目时，应把测试、examples、文档验证与维护工具专用模块
 迁到 `:dev-dependencies`，避免递归依赖图继续无边界扩张：
 
-```cirru
-{} (:calcit-version |0.13.13)
-  :dependencies $ {} (|calcit-lang/respo.calcit |0.16.67)
-  :dev-dependencies $ {} (|calcit-lang/calcit-test |0.1.0)
+以下仅展示分组结构；尖括号版本占位符必须换成已发布并经项目验证的具体版本：
+
+```cirru.no-check
+{} (:calcit-version |<published-calcit-version>)
+  :dependencies $ {} (|calcit-lang/respo.calcit |<respo-version>)
+  :dev-dependencies $ {} (|calcit-lang/calcit-test |<test-version>)
 ```
 
 可以用 `caps add --dev <org/repo>@<ref>` 和 `caps remove --dev <org/repo>` 管理开发依赖。
@@ -752,62 +653,18 @@ CI 应运行默认严格 `--check-only`，由编译器诊断决定类型正确�
 
 ### 3.6 存量项目的类型收紧策略
 
-三类命令的退出语义不同，不能只看命令是否成功：
+先让默认严格 `--check-only`、definition `:tests`、目标后端行为测试通过；
+`check-types`、`weak-types`、`deprecated` 是定位报告，不按命中数充当类型正确性门禁。
+确实动态的 JS FFI 边界应显式声明和收窄，不要通过忽略 warning 伪造通过。
 
-- `--check-only` 和实际 native/JS codegen：预处理错误或 warning 会阻断并非零退出，必须修到通过；
-- `check-examples`、`docs check-md` 和 `calcit test`：所选示例/测试失败时阻断；测试应加
-  `--require-match`，避免过滤条件拼错后“零测试通过”；
-- `check-types`、`weak-types`、`deprecated`：是静态定位报告，有命中不等于非零退出；已有 `analyze quality`
-  baseline 在 0.14.x 只作为存量项目清债 ratchet，不是类型正确性的另一套判定。
-
-老项目不必在第一次升级提交中把所有历史 Dynamic 清零，但必须先让严格检查通过，再逐步缩小边界：
-
-1. 已有 baseline 的项目继续记录 Calcit 版本与 Snapshot revision；没有 baseline 的项目不再新建；
-2. 先要求 `--check-only`、测试和行为构建全绿；
-3. 现有 baseline 只允许按模块降低，不能无说明地更新；
-4. baseline 清零后从 CI 删除对应命令和文件，继续依赖严格检查、测试和目标后端验证；
-5. 对确实动态的 JS FFI 边界显式声明 `:features $ #{} :js-ffi`，不要用 ignore warning 伪造通过。
-
-baseline 不要只保存一个总数。类型覆盖至少比较 `levels.none` 和
-`levels.none + levels.partial`（未完全覆盖总数）：`none` 变成 `partial` 是进步，不应因为
-`partial` 单项上升而失败。弱类型则分别比较 `kinds.schema-dynamic` / `unresolved-type-slot` / `code-dynamic` / `code-nil`
-和 `intents.declared-optional`，再比较 `deprecated` 的 `summary.calls`。原生 v2 或重新生成的 baseline
-还应比较 `unsafe-coerce` 的 occurrence 数；旧原生 v1 和扁平 baseline 只约束原有八项指标，不要求提供该数据。否则一种债务增加、另一种
-减少时，相同的总数会掩盖回归。
-
-新项目直接执行默认严格检查，并运行实际目标测试：
+已有非零 `analyze quality` baseline 的旧项目可暂时在 CI 比较并逐步清零；新项目不再创建 baseline，
+清零后从 CI 移除该命令。旧格式、按 definition 的预算及 0.14.x 迁移命令见
+[历史版本迁移记录](upgrade-history.md#014x-质量-baseline-迁移)。
 
 ```bash
 calcit calcit.cirru --check-only
 calcit calcit.cirru --entry test
 ```
-
-已经提交 baseline 的存量项目可在 0.14.x 继续执行比较：
-
-```bash
-calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
-```
-
-原生 v2 baseline 记录 scope、汇总指标和每个 definition 的独立预算，并将 `unsafeCoerce` 作为单独的 host-boundary 预算。新增 definition 默认预算为零；
-一个 definition 的改善不能掩盖另一个 definition 的回归。`--write-baseline` 会原子写入文件，
-但 baseline 仍需人工审阅并随仓库提交，每次提高都要在 PR 中解释。
-
-例如把首次审阅后的上限提交为 `config/calcit-upgrade-baseline.cirru`：
-
-```cirru
-{} (:typeNone 4) (:typeNotFull 22) (:schemaDynamic 21)
-  :codeDynamic 0
-  :codeNil 22
-  :unresolved 43
-  :declaredOptional 0
-  :deprecatedCalls 0
-```
-
-这个旧版扁平 shape 仍可直接传给 `analyze quality --baseline`，便于已有项目删除 Node 检查脚本后
-无缝迁移，并继续执行原本八项指标；重新执行 `--write-baseline` 会生成 v2 的按 definition 格式并开始约束 `unsafeCoerce`。如果迁移把 `none` 改善为
-`partial`，`typeNone` 会下降且 `typeNotFull` 不变；改善为 `full` 时二者都会下降。确有类型债务在
-不同分类间迁移时，应在 PR 中解释并显式更新 baseline，而不是让一个总数相互抵消。baseline 归零后
-删除 `analyze quality` 调用；0.15 将不再把 coverage/Dynamic 数量作为独立类型正确性策略。
 
 #### 公共 equality 改为同类型契约
 

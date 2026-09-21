@@ -11,10 +11,10 @@ aliases:
 entry_for:
   - "calcit ffi export --boundary component"
 id: core/wasm/component-boundary
-parent: core/wasm
+parent: core/ffi
 related:
   - core/ffi/interface-ir
-  - core/installation/host-capability-boundary
+  - core/host-capability-boundary
 ---
 
 # WASM Component 边界

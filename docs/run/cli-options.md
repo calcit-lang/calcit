@@ -41,7 +41,7 @@ Quick note: `calcit edit format` rewrites the target snapshot using canonical se
 审阅建议后使用报告中的 revision 和相同 scope selectors 执行 `--apply`。不要把这类源码整理混入普通类型 warning，
 也不要通过正则批量删除仍在单表达式位置承担顺序语义的 `do`。完整流程见 [Compiler-guided Source Fixes](fix.md#检测并修复冗余-do)。
 
-老项目先按[两阶段升级流程](upgrade.md)固定使用 Calcit 0.14.15 运行 `tag-match-to-match-v1` 与
+仍需旧规则的项目先按[历史两阶段升级流程](upgrade-history.md#01415-的两阶段源码修复桥接)固定使用 Calcit 0.14.15 运行 `tag-match-to-match-v1` 与
 `required-struct-field-v1`；验证并提交后，再使用当前工具链运行
 `calcit calcit.cirru fix --preset surface-latest-v2 --format edn`。该 preset 会在 Cirru EDN 的
 `:data :filters :expanded-rule-ids` 中列出冻结的规则集合，包括冗余 `do`、旧数据 API，以及可静态证明安全的具名
@@ -555,7 +555,10 @@ calcit wasi calcit.cirru --emit-path target/wasi-command
 
 WASI command 中的 `try-parse-cirru-edn-as` 与 `format-cirru-edn` 直接使用编译器已经推导出的闭合类型，不在运行时探测值类型。当前支持标量、递归 `List<T>`、标量 key 的 `Map<K,V>`，以及闭合 Struct field 和 Enum payload；core `Option<T>` / `Result<T,E>` 复用相同的 nominal Enum 路径。可完整往返的标量为 `Nil`、`Bool`、`String`、`Tag`、`Int8`、`UInt8`、`Int16`、`UInt16`、`Int32`、`UInt32`、`Int64` 与 `UInt64`。typed parser 还可读取 `Number`、`Float32` 与 `Float64`，但 formatter 尚不能为这些运行时浮点类型生成与 native 一致的文本，因此它们不属于当前支持的往返字段类型。Struct 输入使用 `%{} 'TypeName (:field value)`，Enum 输入使用 `%:: 'TypeName 'variant payload...`；名称、字段或 variant、payload 数量与递归 shape 都必须与声明完全一致。重复、缺失、未知项和数值越界都会返回 `Result :err`。格式化按声明字段或 variant 顺序生成 canonical Cirru EDN；开放 `Dynamic`、anonymous Enum 和其他未支持类型在 codegen 阶段明确拒绝，不会生成近似数据。
 
-`calcit wasm --boundary component` 复用同一 WASM 入口，输出供 Component tooling 包装的 core module，不增加 component/WIT 顶层命令。当前 adapter 接受 `defwasm-import` / `defwasm-export` 的 `Unit` 结果、`Bool`、`Buffer`、`Number`、明确宽度数值、UTF-8 `String`、递归同质 `List<T>`、闭合单态 `Option<T>` / `Result<T,E>`、monomorphic Struct record 与闭合单态 Enum variant：Bool 使用严格限制为 `0`/`1` 的 Canonical ABI `i32`，Number 使用 `f64`，明确宽度数值使用对应的 core shape；Buffer、String、List、Struct 与 variant 都要求闭合 schema 并严格验证 pointer、layout 和 discriminant。显式 `:async true` 的 export 使用无 core result 的 WASI 0.3 stackful shape，core export 名为 `[async-lift-stackful]<symbol>`，并通过 `[export]$root/[task-return]<symbol>` 完成一次返回；async import 使用 `[async-lower]<symbol>`，对最多 4 个 flat 参数使用 direct shape，更宽的签名使用单个 indirect parameter record pointer。两种 import shape 都通过 return area、subtask status，以及 `$root` 下的 waitable/subtask canonical intrinsics 处理立即完成和阻塞返回，并在终态 unjoin/drop。受限的 `ReadableByteStream` 只允许作为 async export 的唯一直接参数，函数体直接调用一次 `consume-readable-byte-stream`，并提供正整数字面量的总量/chunk 上限与顶层同步 `(Buffer) -> Bool` handler；结果固定为 `Result<Unit,StreamConsumeError>`。该 stackless adapter 保证单个 outstanding read、背压恢复、主动取消与 exactly-once drop，不允许 raw stream handle 进入普通值 ABI。模块同时导出 `memory` 与可按需增长 memory 的 `cabi_realloc`，且不继承 native core target 的隐式 `math/io` imports。WIT 生成与 runnable Component packaging 仍由 `calcit-bindgen` 负责。
+`calcit wasm --boundary component` 复用同一 WASM 入口，只输出供 Component tooling 包装的 core module，
+不新增 component/WIT 顶层命令；WIT 生成与 runnable Component packaging 由独立的 `calcit-bindgen` 负责。
+同步/异步类型闭包、流 adapter、Canonical ABI 限制与当前验证状态统一见
+[WASM Component 边界](../installation/wasm-component-boundary.md)，此处不维护第二份能力清单。
 
 WASM 可根据已解析的静态 callee 与函数参数 schema，特化携带非逃逸 inline closure 的普通函数调用；闭包在创建位置捕获词法局部值，因此 `Option.map`、`Result.map` 等静态方法不需要各自的 backend 拦截规则。动态 callee、可变参数函数、闭包逃逸与递归特化仍以 `E_WASM_CLOSURE_SPECIALIZATION` 明确失败，不会生成 `nil`、`0` 或失去捕获环境的替代实现。
 

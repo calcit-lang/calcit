@@ -14,7 +14,7 @@ id: core/ffi/interface-ir
 parent: core/ffi
 related:
   - core/ffi
-  - core/ffi/async-protocol
+  - core/wasm/component-boundary
 ---
 
 # FFI Interface IR
