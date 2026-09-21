@@ -2491,11 +2491,12 @@ fn parse_verification(data: &Edn, entries: &HashMap<String, SnapshotEntry>) -> R
       let check = match check_name.as_str() {
         "strict" => VerificationCheckKind::Strict,
         "quality" => VerificationCheckKind::Quality,
-        _ => {
+        "dynamic-methods" => {
           return Err(format!(
-            "{owner}.checks: unknown check `{check_name}`; expected strict or quality; use analyze dynamic-methods for a read-only migration report"
+            "{owner}.checks: `dynamic-methods` was removed; replace it with `strict` and behavior tests; use analyze dynamic-methods for a read-only migration report"
           ));
         }
+        _ => return Err(format!("{owner}.checks: unknown check `{check_name}`; expected strict or quality")),
       };
       if !seen_checks.insert(check) {
         return Err(format!("{owner}.checks: duplicate check `{check_name}`"));
