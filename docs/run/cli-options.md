@@ -369,11 +369,10 @@ For a focused, machine-readable inventory that excludes unrelated type and FFI w
 ```bash
 calcit analyze dynamic-methods
 calcit analyze dynamic-methods --summary-only --format json
-calcit analyze dynamic-methods --max 0
 calcit analyze dynamic-methods --deps
 ```
 
-The default scope contains project namespaces only. `--deps` includes reachable dependency namespaces, and `--max` returns a non-zero status when the finding count exceeds the reviewed limit.
+默认只查看项目命名空间；`--deps` 包含可达依赖。此命令始终是只读定位报告，不能用命中数量判断类型正确性；CI 应运行默认严格 `--check-only`。
 
 To preprocess every definition in explicitly selected public namespaces under
 the active entry target, use:

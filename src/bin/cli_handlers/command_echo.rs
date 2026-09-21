@@ -624,9 +624,6 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       if opts.summary_only {
         desc.push_str(", returning aggregate counts only");
       }
-      if let Some(limit) = opts.max {
-        desc.push_str(&format!(", enforcing a maximum of {limit}"));
-      }
       desc
     }
     AnalyzeSubcommand::Deprecated(opts) => {
@@ -955,8 +952,7 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       tokens,
       value "format" => &opts.format; default "human",
       switch "deps" => opts.deps,
-      switch "summary-only" => opts.summary_only,
-      opt_owned "max" => opts.max.map(|value| value.to_string()); default "none"
+      switch "summary-only" => opts.summary_only
     ),
     AnalyzeSubcommand::Deprecated(opts) => echo_items!(
       tokens,

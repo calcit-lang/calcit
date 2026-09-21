@@ -127,8 +127,7 @@ Component boundary 按推导并规范化后的 schema 宽度确定性导出 `Int
 ## 0.14 默认严格诊断
 
 Calcit 0.14 起，普通运行、`--check-only` 和代码生成默认启用严格预处理诊断；无需再通过
-`--strict-types` 才把不安全类型路径提升为稳定的 `E_*` 错误。`--strict-types` 仍保留，但语义是额外声明
-“零类型债务”，因此还会运行 zero-baseline quality gate。尚未迁移完成的旧项目可以暂时显式使用
+`--strict-types` 才把不安全类型路径提升为稳定的 `E_*` 错误。`--strict-types` 仍可显式确认严格策略并在运行或代码生成前预检查入口，不再运行数量预算。尚未迁移完成的旧项目可以暂时显式使用
 `--compat-types` 恢复 0.14 之前的 warning 行为；两个开关互斥。
 
 推荐先通过 0.13.79 这个迁移桥接版本清理 warning 和质量报告，再升级到 0.14：
@@ -136,7 +135,7 @@ Calcit 0.14 起，普通运行、`--check-only` 和代码生成默认启用严�
 ```bash
 calcit calcit.cirru --compat-types --check-only  # 临时保留旧行为
 calcit calcit.cirru --check-only                 # 0.14 默认严格诊断
-calcit calcit.cirru --strict-types --check-only  # 完成迁移后声明零债务
+calcit calcit.cirru --strict-types --check-only  # 显式执行严格入口检查
 ```
 
 `--compat-types` 只用于限时迁移，不应成为新项目或长期 CI 的默认参数。已经在 entry 中显式配置的
@@ -284,7 +283,6 @@ yarn install --immutable
 calcit calcit.cirru edit format
 calcit calcit.cirru fix --rule redundant-do-v1 --format edn
 calcit calcit.cirru --check-only
-calcit calcit.cirru analyze dynamic-methods --max 0
 calcit calcit.cirru analyze deprecated --summary-only --format json
 calcit calcit.cirru analyze weak-types --intent unresolved,declared-unit,declared-optional --summary-only --format json
 calcit calcit.cirru
@@ -720,17 +718,16 @@ strict mode 报告 `E_DYNAMIC_NOMINAL_ARGUMENT`，并指出参数位置和目标
 `try-decode-map-as`；更复杂的 host 值在小型 typed FFI adapter 内完成验证和收窄。该规则不扩大为
 所有 `Dynamic` 到 primitive 的调用，非 strict 模式也继续支持渐进迁移。
 
-再对每个 entry 运行独立的动态方法报告；已有项目可以先记录非零上限，再逐步降低：
+需要定位未能静态分派的调用时，可对每个 entry 运行只读动态方法报告：
 
 ```bash
 calcit calcit.cirru analyze dynamic-methods --summary-only --format json
-calcit calcit.cirru analyze dynamic-methods --max 0
-calcit calcit.cirru --entry test analyze dynamic-methods --max 0
+calcit calcit.cirru --entry test analyze dynamic-methods --format json
 ```
 
 该报告只统计无法静态专门化的方法调用，不混入普通类型或 JS FFI warning；默认不统计依赖，
-维护模块时可加 `--deps` 查看完整可达范围。旧的 `--warn-dyn-method --check-only` 仍适合交互排查，
-但会和其他预处理 warning 一起阻断，不适合作为单一性能指标的 CI policy。
+维护模块时可加 `--deps` 查看完整可达范围。报告本身不再提供 `--max` 数量门槛；
+CI 应运行默认严格 `--check-only`，由编译器诊断决定类型正确性。
 
 ### 3.6 存量项目的类型收紧策略
 
@@ -883,10 +880,8 @@ WASM 现在通过 `calcit wasm` 与 `calcit wasi` 提供公开 preview 命令，
     while IFS= read -r entry; do
       if [ "$entry" = "default" ]; then
         calcit calcit.cirru --check-only
-        calcit calcit.cirru analyze dynamic-methods --max 0
       else
         calcit calcit.cirru --entry "$entry" --check-only
-        calcit calcit.cirru --entry "$entry" analyze dynamic-methods --max 0
       fi
     done < <(calcit calcit.cirru config show | awk '/^Snapshot Entries:/{in_entries=1; next} in_entries && /^  [^ ]/{print $1}')
     # 仅在仍有非零 legacy baseline 时保留：
@@ -928,7 +923,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 5. `calcit calcit.cirru edit format` 后审阅 Snapshot diff
 6. `calcit calcit.cirru fix --preset surface-latest-v2 --format edn`；应用后再次 preview，确认 suggestions 为空
 7. default 与每个 named entry 的 `--check-only`
-8. 每个 entry 的 `analyze dynamic-methods --max <reviewed-limit>`；清零后使用 `--max 0`
+8. 需要定位未能静态分派的方法时，对相关 entry 运行只读 `analyze dynamic-methods --format json`
 9. 所有声明支持的 entry 行为测试（默认 once；watch 另行验收）
 10. 非零 legacy baseline 项目继续运行 `analyze quality --baseline ...`；清零后删除该项（`check-types`、dynamic/nil `weak-types`、`deprecated` 仍只作为定位报告）
 11. `calcit test --require-match`、公开 namespace 的 `check-examples` 与 `docs check-md`
@@ -944,7 +939,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 | Snapshot 规范化 | `calcit edit format` + `git diff` | 旧 configs/schema 拼写和规范化建议 | format 告警不阻断，diff 需人工审阅 |
 | 问题写法 | `calcit fix --preset surface-latest-v2 --format edn` | 多表达式 body 与单表达式位置的冗余 `do`、旧数据 API、具名 `%::` / `%{}` 构造与可应用 replacement | preview 不写入；Cirru EDN 展开 rule IDs；apply 前后均需 staged validation |
 | entry 预处理 | `calcit --entry ... --check-only` | 配置、缺失定义、参数/返回值、数据与 trait 类型错误 | 错误或 warning 均阻断 |
-| 动态分派 | `calcit analyze dynamic-methods --max <reviewed-limit>` | 动态 receiver 与无法专门化的方法；默认排除依赖和无关 FFI warning | 超过上限时阻断；`--deps` 可审计依赖 |
+| 动态分派 | `calcit analyze dynamic-methods --format json` | 动态 receiver 与无法专门化的方法；默认排除依赖和无关 FFI warning | 只读定位；`--deps` 可审计依赖，正确性由 entry 预处理判断 |
 | 静态债务 | `analyze check-types/weak-types/deprecated --format json` | 覆盖率、dynamic、nil/Optional、废弃调用 | 报告本身不按命中数阻断；仅非零 legacy baseline 项目继续比较 |
 | 示例与测试 | `check-examples`、`docs check-md`、`calcit test --require-match` | API 示例、文档片段、definition-attached tests | 失败或未匹配测试时阻断 |
 | 行为与后端 | entry、Node/Vite、项目测试 | native/JS/FFI 的真实行为差异 | 由进程退出码阻断 |

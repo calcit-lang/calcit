@@ -14,7 +14,7 @@ use md5::{Digest, Md5};
 use serde::Serialize;
 
 use crate::cli_handlers::{StructuredOutputFormat, format_json_value_as_edn};
-use crate::{apply_strict_feature_policy_defaults, attach_missing_core_namespaces, collect_dynamic_method_findings, quality_gate};
+use crate::{apply_strict_feature_policy_defaults, attach_missing_core_namespaces, quality_gate};
 
 const VERIFY_OUTPUT_SCHEMA_VERSION: u32 = 1;
 
@@ -494,7 +494,6 @@ fn evaluate_check(
   revision: &str,
   selected: &snapshot::Snapshot,
   inference: Option<&EntryInference>,
-  project_namespaces: &HashSet<String>,
 ) -> VerifyCheckResult {
   let mut diagnostics = Vec::new();
   match check {
@@ -504,21 +503,6 @@ fn evaluate_check(
         diagnostics.push(error.clone());
       }
       diagnostics.extend(warning_diagnostics(&inference.warnings));
-    }
-    VerificationCheckKind::DynamicMethods => {
-      let inference = inference.expect("dynamic-methods check requires inference");
-      if let Some(error) = &inference.error {
-        diagnostics.push(error.clone());
-      } else {
-        let findings = collect_dynamic_method_findings(inference.warnings.clone(), false, project_namespaces);
-        diagnostics.extend(findings.iter().map(|warning| VerifyDiagnostic {
-          code: warning.code().unwrap_or("E_DYNAMIC_METHOD_POLICY").to_owned(),
-          phase: "analysis".to_owned(),
-          severity: "error".to_owned(),
-          message: warning.message().to_owned(),
-          detail: Some(warning.as_json()),
-        }));
-      }
     }
     VerificationCheckKind::Quality => {
       let options = QualityCommand {
@@ -706,18 +690,10 @@ fn run_inner(
     let target = target_label(entry);
     let mut inference = None;
     for check in &profile.checks {
-      if matches!(check, VerificationCheckKind::Strict | VerificationCheckKind::DynamicMethods) && inference.is_none() {
+      if matches!(check, VerificationCheckKind::Strict) && inference.is_none() {
         inference = Some(infer_entry(&selected, &project_namespaces));
       }
-      let result = evaluate_check(
-        *check,
-        entry_name,
-        &target,
-        &revision,
-        &selected,
-        inference.as_ref(),
-        &project_namespaces,
-      );
+      let result = evaluate_check(*check, entry_name, &target, &revision, &selected, inference.as_ref());
       let failed = result.status == "failed";
       results.push(result);
       if failed && profile.on_failure == VerificationFailurePolicy::Stop {

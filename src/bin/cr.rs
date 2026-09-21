@@ -290,7 +290,6 @@ fn run_dynamic_methods(
 
   let findings = collect_dynamic_method_findings(collected, options.deps, project_namespaces);
   let finding_count = findings.len();
-  let passed = options.max.is_none_or(|limit| finding_count <= limit);
   let revision_ids = snapshot
     .files
     .iter()
@@ -305,9 +304,6 @@ fn run_dynamic_methods(
       println!("- scope: {}", if options.deps { "project+dependencies" } else { "project" });
       println!("- revision: {revision}");
       println!("- findings: {finding_count}");
-      if let Some(limit) = options.max {
-        println!("- policy: {} (limit {limit})", if passed { "PASS" } else { "FAIL" });
-      }
       if let Some((_, stats)) = &cached {
         print!("{}", stats.human_line());
       }
@@ -331,25 +327,14 @@ fn run_dynamic_methods(
           "filters": {
             "include_dependencies": options.deps,
             "summary_only": options.summary_only,
-            "max": options.max,
             "incremental": options.incremental,
           },
           "summary": {
             "findings": finding_count,
-            "passed": passed,
           },
           "findings": rows,
         },
-        "diagnostics": if passed {
-          Vec::<serde_json::Value>::new()
-        } else {
-          vec![serde_json::json!({
-            "code": "E_DYNAMIC_METHOD_POLICY",
-            "phase": "analysis",
-            "severity": "error",
-            "message": format!("Dynamic method dispatch findings {finding_count} exceed limit {}.", options.max.unwrap_or_default()),
-          })]
-        },
+        "diagnostics": [],
       });
       if let Some((_, stats)) = &cached {
         report["data"]["cache"] = stats.as_json();
@@ -359,14 +344,7 @@ fn run_dynamic_methods(
     _ => unreachable!("dynamic-methods output format was validated before analysis"),
   }
 
-  if passed {
-    Ok(())
-  } else {
-    Err(format!(
-      "Dynamic method dispatch policy failed: {finding_count} finding(s) exceed --max {}.",
-      options.max.unwrap_or_default()
-    ))
-  }
+  Ok(())
 }
 
 fn attach_missing_core_namespaces(snapshot: &mut snapshot::Snapshot, core_snapshot: snapshot::Snapshot) {

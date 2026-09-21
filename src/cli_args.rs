@@ -506,9 +506,6 @@ pub struct DynamicMethodsCommand {
   /// emit aggregate counts without individual findings
   #[argh(switch, long = "summary-only")]
   pub summary_only: bool,
-  /// fail when the finding count exceeds this limit
-  #[argh(option)]
-  pub max: Option<usize>,
   /// reuse entry preprocessing findings when its dependency closure is unchanged
   #[argh(switch)]
   pub incremental: bool,
