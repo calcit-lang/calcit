@@ -96,7 +96,7 @@ pub enum CalcitCommand {
   EmitWasm(EmitWasmCommand),
   /// emit a WebAssembly command module for a WASI host
   EmitWasi(EmitWasiCommand),
-  /// emit Cirru EDN representation of program to program-ir.cirru
+  /// diagnostic: emit compiler IR as Cirru EDN to program-ir.cirru
   EmitIr(EmitIrCommand),
   /// evaluate snippet
   Eval(EvalCommand),
@@ -112,8 +112,6 @@ pub enum CalcitCommand {
   Docs(DocsCommand),
   /// Cirru syntax tools (parse, format)
   Cirru(CirruCommand),
-  /// execute Cirru code from stdin (bypasses shell escaping)
-  Exec(ExecCommand),
   /// coarse-grained code editing (namespaces, definitions, metadata); for internal expression changes, use `tree` instead
   Edit(EditCommand),
   /// fine-grained tree operations (view and modify AST nodes within definitions)
@@ -303,7 +301,7 @@ pub struct EmitWasiCommand {
   pub check_only: bool,
 }
 
-/// emit Cirru EDN representation of program to program-ir.cirru
+/// diagnostic compiler output; not an application execution target
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "ir")]
 pub struct EmitIrCommand {
@@ -319,15 +317,9 @@ pub struct EvalCommand {
   /// evaluate a snippet
   #[argh(positional)]
   pub snippet: Option<String>,
-  /// entry file path
-  #[argh(option)]
-  pub dep: Vec<String>,
-}
-
-/// execute Cirru code from stdin (bypasses shell escaping)
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "exec")]
-pub struct ExecCommand {
+  /// read a snippet from stdin instead of a positional argument
+  #[argh(switch)]
+  pub stdin: bool,
   /// entry file path
   #[argh(option)]
   pub dep: Vec<String>,

@@ -10,7 +10,7 @@ aliases:
   - "batch rename"
   - "agent playbook"
 entry_for:
-  - "calcit exec"
+  - "calcit eval --stdin"
   - "calcit tree replace"
   - "calcit edit def"
 ---
@@ -73,13 +73,13 @@ END
 
 ---
 
-## 🔧 代码动态运行：`calcit exec`
+## 🔧 从标准输入求值：`calcit eval --stdin`
 
-在仅用于执行或评估外部代码的场景，`calcit exec` 会直接评估通过标准输入 stdin 传入的代码，常用来快速测试独立的 Cirru 代码行为：
+需要避开 Shell 转义或通过管道传递多行 Cirru 代码时，使用 `calcit eval --stdin`。旧顶层 `calcit exec` 已移除；stdin 与位置参数片段不能同时指定。
 
 ```bash
 # 也可以用管道传单行代码进行评估
-echo 'range 10' | calcit exec
+echo 'range 10' | calcit eval --stdin
 ```
 
 ---
@@ -719,23 +719,23 @@ calcit query peek 'app.util/format-date'
 calcit query def 'app.util/format-date'
 ```
 
-### 步骤 2：用 exec 快速验证写法
+### 步骤 2：用 eval 快速验证写法
 
-在真正写入项目前，先用 `calcit exec` 验证逻辑思路：
+在真正写入项目前，先用 `calcit eval --stdin` 验证逻辑思路：
 
 ```bash
-calcit project.cirru exec << 'END'
+calcit project.cirru eval --stdin << 'END'
 string->number |123
 END
 ```
 
 ```bash
-calcit project.cirru exec << 'END'
+calcit project.cirru eval --stdin << 'END'
 let ((x 10) (y 20)) (+ x y)
 END
 ```
 
-> 💡 有类型警告时 exec 会以错误退出——正好可以提前发现用法错误。
+> 💡 有类型警告时 eval 会以错误退出——正好可以提前发现用法错误。
 
 ### 步骤 3：添加新定义
 
@@ -888,7 +888,7 @@ calcit calcit/test.cirru eval 'calcit query peek $ {} (:file-pth |x)'
 
 1. 先保留当前失败命令的 stderr；需要最近 runtime/watcher stack 时再运行 `calcit query error`，若提示 stale 则忽略旧栈
 2. 用 `calcit --check-only` 快速全量验证
-3. 用 `calcit exec` 隔离验证单个表达式写法
+3. 用 `calcit eval --stdin` 隔离验证单个表达式写法
 
 ```bash
 # 检查某个定义的代码和内容
@@ -900,7 +900,7 @@ calcit query defs my.namespace
 calcit query error
 ```
 
-`calcit exec` 的 stdin 是待求值的 Calcit 源码，不是 shell 命令流；`calcit query`、`calcit tree` 等 CLI 命令应像上面那样分别执行。
+`calcit eval --stdin` 的 stdin 是待求值的 Calcit 源码，不是 shell 命令流；`calcit query`、`calcit tree` 等 CLI 命令应像上面那样分别执行。
 
 ### 错误信息对照表
 
@@ -916,7 +916,7 @@ calcit query error
 | `cannot be used as operator`             | 末尾符号被当作函数调用                        | 改用 `, acc` 前缀传递值，或用函数包裹                  |
 | `unknown data for foldl-shortcut`        | 集合与回调参数顺序错误                        | Calcit 集合在第一位：`map data fn`                     |
 | 字符串被拆分成多个 token                 | 含空格字符串没有保留为一个 string token       | 使用上文的 spaced-string 写法                          |
-| `Type warning` 导致 exec 失败            | 类型不匹配（阻断执行）                        | 优先检查 `:schema` / `hint-fn` 的参数标注              |
+| `Type warning` 导致 eval 失败            | 类型不匹配（阻断执行）                        | 优先检查 `:schema` / `hint-fn` 的参数标注              |
 | `W_CLI_OPTION_UNKNOWN_KEY`               | 选项 key 拼写错误                             | 对照 Options 列表，如 `:file-path` 而非 `:file-pth`    |
 | `W_CLI_OPTION_MISSING_REQUIRED`          | 缺少必填选项                                  | 补全 map，如 `peek-def` 必须含 `(:target …)`           |
 | `W_CLI_OPTION_TYPE_MISMATCH`             | 选项值类型错误                                | `:lines` 用数字；字符串按上文规则；布尔用 `true`/`false` |

@@ -784,6 +784,41 @@ assert.ifError(retiredLibs.error);
 assert.notEqual(retiredLibs.status, 0, "the retired top-level libs command must not reappear");
 assert.match(retiredLibs.stderr, /Unrecognized argument: search/);
 
+const stdinEval = spawnSync(binary, ["eval", "--stdin"], { encoding: "utf8", input: "range 3\n" });
+assert.ifError(stdinEval.error);
+assert.equal(stdinEval.status, 0, stdinEval.stderr);
+assert.match(stdinEval.stdout, /\(\[\] 0 1 2\)/);
+const dependencyEval = spawnSync(binary, [
+  "eval", "--stdin", "--dep", "./calcit/util.cirru", "--dep", "./examples/wasi-http-client/calcit.cirru",
+], {
+  encoding: "utf8",
+  input: "util.core/log-title |dependency-ready\ncomponent-wasm-async-import.starter/main!\n",
+});
+assert.ifError(dependencyEval.error);
+assert.equal(dependencyEval.status, 0, dependencyEval.stderr);
+assert.match(dependencyEval.stdout, /dependency-ready/);
+assert.match(dependencyEval.stdout, /took .*: 0/);
+for (const [args, input, message] of [
+  [["eval"], "", /No snippet provided/],
+  [["eval", "--stdin"], "", /No snippet read from stdin/],
+  [["eval", "--stdin", "range 3"], "range 3", /Choose either a positional snippet/],
+]) {
+  const invalidEval = spawnSync(binary, args, { encoding: "utf8", input });
+  assert.ifError(invalidEval.error);
+  assert.equal(invalidEval.status, 1);
+  assert.match(invalidEval.stderr, message);
+}
+const retiredExec = spawnSync(binary, ["exec", "--dep", "test.cirru"], { encoding: "utf8", input: "range 3" });
+assert.ifError(retiredExec.error);
+assert.equal(retiredExec.status, 1);
+assert.match(retiredExec.stderr, /Unrecognized argument: --dep/);
+assert.doesNotMatch(topLevelHelp.stdout, /^  exec\s/m);
+const evalHelp = spawnSync(binary, ["eval", "--help"], { encoding: "utf8" });
+assert.ifError(evalHelp.error);
+assert.equal(evalHelp.status, 0, evalHelp.stderr);
+assert.match(evalHelp.stdout, /--stdin/);
+assert.match(topLevelHelp.stdout, /ir\s+diagnostic compiler output/);
+
 // Real CLI round trips, including the legacy wire format and negative paths.
 const fixtureDir = mkdtempSync(join(tmpdir(), "calcit-query-def-"));
 try {
