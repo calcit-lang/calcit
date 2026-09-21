@@ -1,7 +1,10 @@
 # 系统性减少 nil：类型驱动迁移 RFC
 
-状态：Complete（下一版本发布候选；公开 nil 契约已冻结）
+状态：Implemented（公开 nil 契约已冻结；下文的“下一版本”指当时的迁移目标）
 日期：2026-08-05
+
+当前写法与检查入口以 [类型使用指南](../docs/type-guidance.md) 和
+[类库质量门禁](../docs/run/library-quality.md) 为准；本 RFC 的版本措辞保留为迁移记录。
 
 ## 目标
 

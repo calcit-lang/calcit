@@ -2,6 +2,11 @@
 
 状态：Draft
 
+> 0.19 更新：本文关于 `analyze quality`、coverage 数量和 baseline ratchet 的阶段性门禁设想
+> 已由 [默认严格诊断与类库验收](../docs/run/library-quality.md) 取代，不再作为新项目 CI 方案。
+> 类型关系与分层语义方向仍需结合 [当前分层契约](09-12-layered-semantics-and-agent-fixes-rfc.md)
+> 阅读；下文保留原计划，用于追溯尚未完成的类型能力。
+
 日期：2026-08-21
 
 ## 摘要
@@ -317,4 +322,4 @@ ratchet，避免每次类型增强引发全生态同步重写。
 - `08-05-systematic-nil-reduction-rfc.md` 是 Option/Result/Unit/Never 路线的具体迁移。
 - `08-18-calcit-typed-js-ffi-boundary-rfc.md` 和
   `08-21-js-ffi-runtime-contract-validation-rfc.md` 负责宿主边界。
-- `08-21-type-quality-ci-adoption-rfc.md` 负责把类型演进安全地推入生态。
+- `08-21-type-quality-ci-adoption-rfc.md` 记录早期 baseline ratchet 方案，现已被默认严格诊断和类库验收流程取代。

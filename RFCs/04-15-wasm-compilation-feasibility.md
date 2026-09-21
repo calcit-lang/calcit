@@ -1,5 +1,11 @@
 # WASM 编译可行性评估
 
+状态：Historical — 早期可行性比较，不是当前目标能力清单。
+
+当前 `calcit wasm`、`calcit wasi` 与 Component boundary 的支持范围，以
+[WASM Component 文档](../docs/installation/wasm-component-boundary.md)、
+CLI `--help` / `--check-only` 和目标测试为准。下文的版本、依赖和能力假设只保留为决策背景。
+
 ## 目标
 
 评估 Calcit 子集编译到 WASM 执行的可行性，分三个层面：

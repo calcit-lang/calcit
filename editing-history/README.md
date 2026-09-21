@@ -1,22 +1,10 @@
-# Editing history
+# 编辑历史档案
 
-This directory keeps short, task-specific notes that help with nearby follow-up
-work. It is not a second changelog: exact prior notes remain available from Git
-history after they leave this directory.
+这里保存有助于后续修改的设计决策、复杂故障排查和跨模块契约变更记录。已有文件保留为历史档案，不为统一格式或压缩数量而批量改写、删除。旧方案只说明当时的背景；当前行为以代码、测试、[RFC 索引](../RFCs/README.md)和用户文档为准。
 
-## Retention
+今后只有语义设计、复杂故障修复、跨模块契约变化需要新增以年月日时分开头的记录，说明决策依据、兼容边界及验证命令。机械格式化、纯版本号更新和简单测试调整由 commit 与 PR 记录，不强制新增文件。
 
-- Keep individual notes for the current development window (normally the most
-  recent 45 days), unless a completed topic has produced several overlapping
-  notes. Consolidate those clusters promptly; recency alone is not a reason to
-  retain duplicate implementation checkpoints.
-- Periodically replace older clusters with a concise topic summary in
-  [ARCHIVE.md](ARCHIVE.md), then remove their individual files.
-- Each code commit still adds one timestamped note, but it should capture only
-  durable context: the reason for the change, compatibility constraints, and
-  the relevant verification command.
-
-To recover a removed note, search the repository history, for example:
+已有的 [ARCHIVE.md](ARCHIVE.md) 也是历史材料。查找旧记录时可搜索本目录或 Git 历史：
 
 ```bash
 git log --all -- editing-history/

@@ -1,8 +1,14 @@
 # RFC：Calcit 生态类型质量门禁与 CI 采用方案
 
-状态：Draft
+状态：Superseded — 0.19.0 质量统计门槛退役方向（#1238）
 
 日期：2026-08-21
+
+> 历史方案：本文保留当时对 `analyze quality` 和按 definition baseline 的生态采用设计，
+> 不再作为新项目或新 CI 的门禁建议。当前类型正确性以默认严格预处理的 warning/error、
+> 公开 API 检查和目标后端行为测试为准；迁移期 baseline 的有限用途见
+> [类库质量门禁](../docs/run/library-quality.md) 和 [Agent 指南](../docs/CalcitAgent.md)。
+> #1238 跟踪具体退役，不应根据本文继续新增质量统计规则。
 
 ## 摘要
 
