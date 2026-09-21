@@ -38,6 +38,38 @@ impl Drop for TestDirectory {
   }
 }
 
+#[test]
+fn component_core_wasm_is_reproducible_across_processes() {
+  let first = TestDirectory::create();
+  let second = TestDirectory::create();
+  for output in [&first.0, &second.0] {
+    let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+      .env("NO_COLOR", "1")
+      .args([
+        "--tips-level",
+        "none",
+        "examples/wasi-http-client/calcit.cirru",
+        "wasm",
+        "--boundary",
+        "component",
+        "--emit-path",
+      ])
+      .arg(output)
+      .output()
+      .expect("published WASI HTTP example should compile");
+    assert!(
+      compile.status.success(),
+      "Component compile failed\nstdout:\n{}\nstderr:\n{}",
+      String::from_utf8_lossy(&compile.stdout),
+      String::from_utf8_lossy(&compile.stderr)
+    );
+  }
+
+  let first_bytes = fs::read(first.0.join("program.wasm")).expect("first core WASM should read");
+  let second_bytes = fs::read(second.0.join("program.wasm")).expect("second core WASM should read");
+  assert_eq!(first_bytes, second_bytes, "independent Component core WASM generations must match");
+}
+
 fn serve_http_response(mut stream: TcpStream) {
   let mut reader = BufReader::new(stream.try_clone().expect("HTTP stream should clone"));
   let mut request_line = String::new();
