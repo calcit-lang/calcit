@@ -3255,7 +3255,7 @@ fn extract_def_name(items: &[Cirru]) -> Option<&str> {
 /// Synthetic snippet entry points are reviewed open boundaries: their
 /// argument shape is fixed even though an ad-hoc expression may return any
 /// value. Keeping that distinction explicit lets default strict diagnostics
-/// validate `eval`/`exec` bodies without rejecting the wrapper itself.
+/// validate `eval` bodies without rejecting the wrapper itself.
 fn snippet_runtime_entry(code: Cirru) -> CodeEntry {
   let mut entry = CodeEntry::from_code(code);
   entry.schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {

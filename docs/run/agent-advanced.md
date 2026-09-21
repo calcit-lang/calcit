@@ -730,12 +730,12 @@ END
 ```
 
 ```bash
-calcit project.cirru exec << 'END'
+calcit project.cirru eval --stdin << 'END'
 let ((x 10) (y 20)) (+ x y)
 END
 ```
 
-> 💡 有类型警告时 exec 会以错误退出——正好可以提前发现用法错误。
+> 💡 有类型警告时 eval 会以错误退出——正好可以提前发现用法错误。
 
 ### 步骤 3：添加新定义
 
@@ -916,7 +916,7 @@ calcit query error
 | `cannot be used as operator`             | 末尾符号被当作函数调用                        | 改用 `, acc` 前缀传递值，或用函数包裹                  |
 | `unknown data for foldl-shortcut`        | 集合与回调参数顺序错误                        | Calcit 集合在第一位：`map data fn`                     |
 | 字符串被拆分成多个 token                 | 含空格字符串没有保留为一个 string token       | 使用上文的 spaced-string 写法                          |
-| `Type warning` 导致 exec 失败            | 类型不匹配（阻断执行）                        | 优先检查 `:schema` / `hint-fn` 的参数标注              |
+| `Type warning` 导致 eval 失败            | 类型不匹配（阻断执行）                        | 优先检查 `:schema` / `hint-fn` 的参数标注              |
 | `W_CLI_OPTION_UNKNOWN_KEY`               | 选项 key 拼写错误                             | 对照 Options 列表，如 `:file-path` 而非 `:file-pth`    |
 | `W_CLI_OPTION_MISSING_REQUIRED`          | 缺少必填选项                                  | 补全 map，如 `peek-def` 必须含 `(:target …)`           |
 | `W_CLI_OPTION_TYPE_MISMATCH`             | 选项值类型错误                                | `:lines` 用数字；字符串按上文规则；布尔用 `true`/`false` |
