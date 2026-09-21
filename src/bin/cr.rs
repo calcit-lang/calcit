@@ -653,7 +653,7 @@ fn run_cli() -> Result<(), String> {
   }
 
   let mut eval_once = false;
-  let is_eval_mode = matches!(&cli_args.subcommand, Some(CalcitCommand::Eval(_)) | Some(CalcitCommand::Exec(_)));
+  let is_eval_mode = matches!(&cli_args.subcommand, Some(CalcitCommand::Eval(_)));
   let assets_watch = cli_args.watch_dir.to_owned();
 
   if !calcit::quiet_tool_output() {
@@ -684,28 +684,20 @@ fn run_cli() -> Result<(), String> {
     eprintln!("{}", format!("project module folder: {}", module_folder.display()).dimmed());
   }
 
-  if let Some(CalcitCommand::Exec(ref command)) = cli_args.subcommand {
+  if let Some(CalcitCommand::Eval(ref command)) = cli_args.subcommand {
     eval_once = true;
-    let mut buf = String::new();
-    std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf).map_err(|e| format!("Failed to read from stdin: {e}"))?;
-    {
-      let main_file = snapshot::create_file_from_snippet(&buf)?;
-      snapshot.files.insert(String::from("app.main"), main_file);
-      project_namespaces.insert(String::from("app.main"));
-    }
-
-    for module_path in &command.dep {
-      let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
-      calcit::merge_project_module_files(&mut snapshot, &module_data, module_path)?;
-    }
-  } else if let Some(CalcitCommand::Eval(ref command)) = cli_args.subcommand {
-    eval_once = true;
-    let snippet = if let Some(ref s) = command.snippet {
-      s.clone()
-    } else {
-      return Err(
-        "No snippet provided. Use a positional argument with `calcit eval`, or use `calcit exec` to read from stdin.".to_string(),
-      );
+    let snippet = match (&command.snippet, command.stdin) {
+      (Some(_), true) => return Err("Choose either a positional snippet or `calcit eval --stdin`, not both.".to_string()),
+      (Some(snippet), false) => snippet.clone(),
+      (None, true) => {
+        let mut snippet = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut snippet).map_err(|e| format!("Failed to read from stdin: {e}"))?;
+        if snippet.trim().is_empty() {
+          return Err("No snippet read from stdin for `calcit eval --stdin`.".to_string());
+        }
+        snippet
+      }
+      (None, false) => return Err("No snippet provided. Pass a positional snippet or use `calcit eval --stdin`.".to_string()),
     };
     {
       let main_file = snapshot::create_file_from_snippet(&snippet)?;
@@ -2279,6 +2271,7 @@ mod tests {
     assert!(!should_emit_js(
       &Some(CalcitCommand::Eval(cli_args::EvalCommand {
         snippet: Some("1".to_owned()),
+        stdin: false,
         dep: vec![],
       })),
       snapshot::SnapshotRunMode::Js,

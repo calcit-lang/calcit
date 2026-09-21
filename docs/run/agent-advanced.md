@@ -10,7 +10,7 @@ aliases:
   - "batch rename"
   - "agent playbook"
 entry_for:
-  - "calcit exec"
+  - "calcit eval --stdin"
   - "calcit tree replace"
   - "calcit edit def"
 ---
@@ -73,13 +73,13 @@ END
 
 ---
 
-## 🔧 代码动态运行：`calcit exec`
+## 🔧 从标准输入求值：`calcit eval --stdin`
 
-在仅用于执行或评估外部代码的场景，`calcit exec` 会直接评估通过标准输入 stdin 传入的代码，常用来快速测试独立的 Cirru 代码行为：
+需要避开 Shell 转义或通过管道传递多行 Cirru 代码时，使用 `calcit eval --stdin`。旧顶层 `calcit exec` 已移除；stdin 与位置参数片段不能同时指定。
 
 ```bash
 # 也可以用管道传单行代码进行评估
-echo 'range 10' | calcit exec
+echo 'range 10' | calcit eval --stdin
 ```
 
 ---
@@ -719,12 +719,12 @@ calcit query peek 'app.util/format-date'
 calcit query def 'app.util/format-date'
 ```
 
-### 步骤 2：用 exec 快速验证写法
+### 步骤 2：用 eval 快速验证写法
 
-在真正写入项目前，先用 `calcit exec` 验证逻辑思路：
+在真正写入项目前，先用 `calcit eval --stdin` 验证逻辑思路：
 
 ```bash
-calcit project.cirru exec << 'END'
+calcit project.cirru eval --stdin << 'END'
 string->number |123
 END
 ```
@@ -888,7 +888,7 @@ calcit calcit/test.cirru eval 'calcit query peek $ {} (:file-pth |x)'
 
 1. 先保留当前失败命令的 stderr；需要最近 runtime/watcher stack 时再运行 `calcit query error`，若提示 stale 则忽略旧栈
 2. 用 `calcit --check-only` 快速全量验证
-3. 用 `calcit exec` 隔离验证单个表达式写法
+3. 用 `calcit eval --stdin` 隔离验证单个表达式写法
 
 ```bash
 # 检查某个定义的代码和内容
@@ -900,7 +900,7 @@ calcit query defs my.namespace
 calcit query error
 ```
 
-`calcit exec` 的 stdin 是待求值的 Calcit 源码，不是 shell 命令流；`calcit query`、`calcit tree` 等 CLI 命令应像上面那样分别执行。
+`calcit eval --stdin` 的 stdin 是待求值的 Calcit 源码，不是 shell 命令流；`calcit query`、`calcit tree` 等 CLI 命令应像上面那样分别执行。
 
 ### 错误信息对照表
 

@@ -15,10 +15,17 @@ aliases:
 entry_for:
   - "calcit eval"
   - "calcit eval --dep"
+  - "calcit eval --stdin"
   - "calcit eval --check-only"
 ---
 
 # Run in Eval mode
+
+短代码可以直接作为 `calcit eval '<snippet>'` 的位置参数；需要多行代码或避免 Shell 转义时，改用 `calcit eval --stdin` 并通过管道或重定向传入。两种输入方式不能同时使用。旧顶层 `calcit exec` 已移除。
+
+```bash
+echo 'range 3' | calcit eval --stdin
+```
 
 Use `eval` command to evaluate code snippets from CLI:
 

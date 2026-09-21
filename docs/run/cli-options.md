@@ -521,7 +521,7 @@ calcit --reload-libs
 calcit --disable-stack
 ```
 
-`calcit ir` emits an internal representation for compiler debugging. Ordinary application development and CI do not need it; inspect `calcit ir --help` only when debugging that layer.
+`calcit ir` 仅用于编译器内部表示与生成结果调试，不是普通应用的运行目标或 CI 完成证明。只有排查该层问题时才查看 `calcit ir --help`；日常项目验证仍使用直接运行、`--check-only`、`test` 或目标明确的 `js` / `wasm` / `wasi`。
 
 ## Snapshot 语义差异
 

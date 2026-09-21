@@ -32,6 +32,10 @@ related:
 升级时请同步修改项目脚本和 Agent 指南中的旧命令。查询已安装模块的文档时，优先使用
 `calcit docs list/read/search --module <module>`，无需经过远端类库索引。
 
+`calcit exec` 也合并进现有 `eval` 命令族：原来的 `echo 'range 10' | calcit exec`
+改为 `echo 'range 10' | calcit eval --stdin`。`--dep` 仍可重复传入，stdin 与位置参数片段互斥；
+未指定位置参数或 `--stdin` 时直接报错；显式传 `--stdin` 后会等待输入直到 EOF，空输入也会报错。
+
 对于编译器能够证明等价的一对一迁移，先运行 `calcit calcit.cirru fix --preset surface-latest-v2 --format edn`
 审阅结构化计划，再用
 `--apply --expect-revision <revision>` 原子应用；完整安全边界见 [Compiler-guided Source Fixes](fix.md)。
