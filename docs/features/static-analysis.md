@@ -333,7 +333,7 @@ Runnable Example:
 let
     calculate-total $ fn (items)
       hint-fn $ {}
-        :args $ [] :list
+        :args $ [] $ :: 'List 'Number
         :return :number
       reduce items 0 $ fn (acc item)
         hint-fn $ {}
@@ -685,14 +685,18 @@ Use `assert-type` to explicitly check local values during preprocessing:
 
 ```cirru
 let
-    transform-fn $ fn (x) (* x 2)
+    transform-fn $ fn (x)
+      hint-fn $ {}
+        :args $ [] 'Number
+        :return 'Number
+      * x 2
     process-data $ fn (data)
       hint-fn $ {}
-        :args $ [] :list
-        :return :list
+        :args $ [] $ :: 'List 'Number
+        :return $ :: 'List 'Number
       let
           xs data
-        assert-type xs :list
+        assert-type xs $ :: 'List 'Number
         &list:map xs transform-fn
   process-data $ [] 1 2 3
 ```

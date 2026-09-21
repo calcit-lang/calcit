@@ -115,7 +115,7 @@
               &list:rest xs
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+            :args $ [] 'Number $ :: 'List 'Number
         'test-abs $ %{} 'CodeEntry (:doc "|abs from calcit.core")
           :code $ quote $ defwasm-export test-abs (x) (abs x)
           :examples $ []
@@ -970,7 +970,7 @@
         'test-println $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-println () do (println 42) 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
+          :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
         'test-range $ %{} 'CodeEntry (:doc "|range creates list of numbers")
           :code $ quote $ defwasm-export test-range ()

@@ -1,11 +1,24 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 const binary = process.env.CALCIT_STRICT_BIN ?? "./target/debug/calcit";
 
 // Ordinary project entrypoints must never silently opt back into compatibility mode.
-for (const path of ["package.json", ".github/workflows/test.yaml", ".github/workflows/publish.yaml"]) {
-  if (readFileSync(path, "utf8").includes("--compat-types")) {
+const entrypoints = ["package.json"];
+for (const dir of ["scripts", ".github/workflows"]) {
+  for (const name of readdirSync(dir, { recursive: true })) {
+    if (/\.(?:js|mjs|sh|ts|ya?ml)$/.test(name)) entrypoints.push(`${dir}/${name}`);
+  }
+}
+for (const path of entrypoints) {
+  if (path === "scripts/check-strict-default.mjs") continue;
+  const source = readFileSync(path, "utf8");
+  if (path === "scripts/test-wasi-preprocess.sh") {
+    const compatibilityCase = 'cargo run --bin calcit -- --compat-types --check-only "$FIXTURE"';
+    if (source.split("--compat-types").length !== 2 || !source.includes(compatibilityCase)) {
+      throw new Error(`${path} may use compatibility mode only for its captured legacy fixture`);
+    }
+  } else if (source.includes("--compat-types")) {
     throw new Error(`${path} must not enable compatibility mode in the default workflow`);
   }
 }

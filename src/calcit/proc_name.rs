@@ -1131,7 +1131,7 @@ impl CalcitProc {
         arg_types: vec![map_of(type_var("K"), type_var("V"))],
       }),
       NativeMapVals => Some(ProcTypeSignature {
-        return_type: set_of(type_var("V")),
+        return_type: list_of(type_var("V")),
         arg_types: vec![map_of(type_var("K"), type_var("V"))],
       }),
       NativeMapDestruct => Some(ProcTypeSignature {

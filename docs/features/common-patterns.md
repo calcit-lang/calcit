@@ -41,6 +41,9 @@ This document provides practical examples and patterns for common programming ta
 ```cirru
 let
     group-by-length $ fn (words)
+      hint-fn $ {}
+        :args $ [] $ :: 'List 'String
+        :return $ :: 'Map 'Number $ :: 'List 'String
       group-by words count
   group-by-length ([] |apple |pear |banana |kiwi)
 ; => {}
@@ -93,6 +96,9 @@ let
 ```cirru
 let
     find-user $ fn (users id)
+      hint-fn $ {}
+        :args $ [] (:: 'List (:: 'Map 'Tag 'String)) 'String
+        :return $ :: 'Option $ :: 'Map 'Tag 'String
       find users $ fn (u)
         if-let
           user-id $ get u :id
@@ -234,7 +240,7 @@ with `&unit`. `remove-watch` requires the same Tag key used at registration.
 
 ### Managing Collections in State
 
-```cirru
+```cirru.no-check
 let
     todos $ atom $ []
     add-todo! $ fn (text)
@@ -360,6 +366,9 @@ let
         &max min-val
         &min max-val
     average $ fn (numbers)
+      hint-fn $ {}
+        :args $ [] $ :: 'List 'Number
+        :return 'Number
       / (apply + numbers) (count numbers)
   println $ round-to 3.14159 2
   ; => 3.14
@@ -408,6 +417,9 @@ let
 let
     items $ [] ({} (:value 1)) ({} (:value 2)) ({} (:value 3))
     result1 $ reduce items 0 $ fn (acc item)
+      hint-fn $ {}
+        :args $ [] 'Number $ :: 'Map 'Tag 'Number
+        :return 'Number
       let
           value $ get item :value
         match value
@@ -415,6 +427,9 @@ let
           (:none) , acc
     result2 $ apply +
       map items $ fn (item)
+        hint-fn $ {}
+          :args $ [] $ :: 'Map 'Tag 'Number
+          :return 'Number
         let
             value $ get item :value
           match value

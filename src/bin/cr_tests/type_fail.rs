@@ -606,6 +606,29 @@ fn strict_mode_rejects_source_definition_reached_from_macro_expansion_without_pu
 }
 
 #[test]
+fn strict_mode_keeps_source_optional_parameter_validation_under_macro_ancestry() {
+  run_with_large_stack(|| {
+    let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: Arc::new(CalcitTypeAnnotation::Number),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    let entries = load_snippet_entries_with_main_schema(
+      "defn independent-source (x ? y) x\n\ndefmacro call-independent ()\n  quasiquote $ independent-source 1\n\ndefn main! ()\n  call-independent",
+      Some(main_schema),
+    );
+    let _strict = StrictTypesReset::enabled();
+
+    let err = run_check_only(&entries).expect_err("source-owned optional parameters must stay invalid under macro ancestry");
+    assert!(err.contains("E_LEGACY_OPTIONAL_PARAM"), "unexpected strict error: {err}");
+  });
+}
+
+#[test]
 fn public_check_reaches_unused_definitions_without_changing_entry_check_semantics() {
   run_with_large_stack(|| {
     builtins::effects::init_effects_states();

@@ -76,10 +76,10 @@ let
     none-val $ %:: ShownMaybe :none
   assert-type some-val $ :: 'ShownMaybe 'Number
   assert= |1 $ match some-val
-    (:some item) (.debug item)
+    (:some item) (&trait-call Debug :debug item)
     (:none) |none
   assert= |none $ match none-val
-    (:some item) (.debug item)
+    (:some item) (&trait-call Debug :debug item)
     (:none) |none
 ```
 

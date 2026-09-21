@@ -274,7 +274,9 @@ A nominal `Option<T>` uses `.some?`/`.none?`. Preprocessing reports
 `W_NOMINAL_ENUM_LEGACY_USE` when old nullable checks are applied to an Option,
 so an API migration cannot silently preserve the wrong branch behavior.
 
-```cirru.no-run
+以下是旧式裸宿主对象访问的语义示意；严格类型项目应先声明 external-object trait，并在 `:js-ffi` 适配层转换对象。
+
+```cirru.no-check
 let
     node $ .?!querySelector js/document |.app
   if (js-present? node)
@@ -409,9 +411,9 @@ do js/window.innerWidth
 
 ### 4.2 Access properties
 
-Use `.-name` for property access:
+旧式 `.-name` 表示宿主属性读取；严格类型代码应给对象声明 external-object trait，而不是直接把 `JsObject` 传给静态字段访问：
 
-```cirru.no-run
+```cirru.no-check
 let
     obj $ js-object (:name |Alice)
   .-name obj

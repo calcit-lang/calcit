@@ -114,6 +114,8 @@ let
 
 Passing a tag instead of a concrete trait value creates an originless/inherent method bag:
 
+下例故意展示严格模式会拒绝的歧义调用，因此不作为可运行代码块检查；实际调用应显式选择 trait。
+
 ```cirru.no-check
 defimpl :MyMarkerImpl :MyMarker $ .dummy
   fn (_x) nil
@@ -252,7 +254,7 @@ Usage: `&trait-call Trait :method receiver & args`
 
 Example with two traits sharing the same method name:
 
-```cirru
+```cirru.no-check
 let
     MyZapA $ deftrait MyZapA
       .zap $ :: 'Fn

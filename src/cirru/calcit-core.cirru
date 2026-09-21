@@ -1764,7 +1764,7 @@
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'K 'V
             :generics $ [] 'K 'V
-            :return $ :: 'Set 'V
+            :return $ :: 'List 'V
           :tags $ #{} :builtin :internal
           :tests $ [] $ %{} 'TestEntry (:name |returns-map-values-directly)
             :code $ quote $ assert= ([] 1)

@@ -8379,11 +8379,15 @@ pub fn preprocess_defn(
       let mut body_types: ScopeTypes = ctx.scope_types.clone();
       let mut param_symbols: Vec<Arc<str>> = vec![];
       let mut has_marked_args = false; // Track if function has & or ? markers
-      let generated_by_macro = call_stack_contains_macro(ctx.call_stack);
+      let source_owned = program::has_def_code(ctx.file_ns, def_name.as_ref());
+      let generated_by_macro = call_stack_contains_macro(ctx.call_stack) && !source_owned;
 
       if strict_types_enabled()
         && should_emit_project_source_lint(ctx.file_ns)
         && !generated_by_macro
+        // These core APIs intentionally preserve omission sugar in their
+        // public calling convention until their signatures are redesigned.
+        && !(ctx.file_ns == calcit::CORE_NS && matches!(def_name.as_ref(), "if-let" | "slice" | "range-bothway"))
         && ys.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgOptional, _)))
       {
         return Err(CalcitErr::use_msg_stack_location_with_code(
@@ -8476,7 +8480,7 @@ pub fn preprocess_defn(
       // A macro can reach a different source definition while retaining its
       // caller in `at_def`. Only a real Snapshot definition owns a public
       // schema; nested named callbacks use their local expected function type.
-      let source_top_level_definition = program::has_def_code(ctx.file_ns, def_name.as_ref());
+      let source_top_level_definition = source_owned;
       let def_schema = if source_top_level_definition {
         program::lookup_def_schema(ctx.file_ns, def_name.as_ref())
       } else {
@@ -8561,6 +8565,16 @@ pub fn preprocess_defn(
         CalcitTypeAnnotation::Dynamic => EXPECTED_FN_TYPE.with(|cell| cell.borrow().clone()),
         _ => None,
       });
+      if source_owned
+        && let CalcitTypeAnnotation::Fn(declared) = def_schema.as_ref()
+        && let Some(effective) = effective_fn_schema.as_ref()
+      {
+        // An embedded hint can add invocation properties such as async, but
+        // it must not erase capabilities declared on the source definition.
+        let mut merged = effective.as_ref().clone();
+        merged.features = Arc::new(merged.features.union(declared.features.as_ref()).cloned().collect());
+        effective_fn_schema = Some(Arc::new(merged));
+      }
       if args.iter().skip(2).any(CalcitTypeAnnotation::hint_form_marks_async)
         && let Some(signature) = effective_fn_schema.as_ref()
       {

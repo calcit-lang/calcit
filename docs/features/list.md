@@ -73,9 +73,9 @@ let
 ```cirru
 let
     xs $ [] 10 20 30 40
-  println $ xs.nth 0
+  println $ nth xs 0
   ; => (%some 10)
-  println $ xs.first
+  println $ first xs
   ; => (%some 10)
   println $ last xs
   ; => (%some 40)
@@ -88,17 +88,11 @@ let
 ```cirru
 let
     xs $ [] :a :b :c
-  println $ xs.get 1
+  println $ get xs 1
   ; => (%some :b)
 ```
 
-With a known `List<T>` receiver, preprocessing lowers `.get` and `.nth` to
-list-specific count/nth primitives, lowers `.first` and `.last` to direct
-empty/access primitives, and constructs `Option<T>` directly. Receiver and
-index expressions retain source order and are evaluated once. String and Enum
-receivers use the same source forms and lower to their own primitives. Dynamic
-receivers remain on the compatibility path; new business code should keep the
-collection element type available.
+已知 `List<T>` 的访问使用具名函数 `get`、`nth`、`first` 和 `last`，返回的缺失值通过 `Option<T>` 表示。旧的 `.get` 等接收者写法仍属于兼容路径；新代码应明确保留集合的元素类型。
 
 ## Adding / Removing Elements
 
@@ -154,12 +148,12 @@ let
   ; => $ [] 1 1 3 4 5
 ```
 
-Sort by key function (method-style):
+按 key 函数排序：
 
 ```cirru
 let
     xs $ [] 1 2 3 4 5
-  println $ xs .sort-by
+  println $ &list:sort-by xs
     fn (x) (- 0 x)
   ; => $ [] 5 4 3 2 1
 ```
@@ -209,12 +203,12 @@ let
   ; => $ [] ([] 0 1) ([] 1 2) ([] 2 3) ([] 3 4) ([] 4 5)
 ```
 
-Flatten one level of nesting (method-style):
+将嵌套列表展开一层：
 
 ```cirru
 let
     nested $ [] ([] 1 2) ([] 3 4) ([] 5)
-  println $ nested .flatten
+  println $ &list:flatten nested
   ; => $ [] 1 2 3 4 5
 ```
 
@@ -224,10 +218,18 @@ let
 let
     xs $ [] 1 2 3 4 5
   println $ reduce xs 0
-    fn (acc x) (+ acc x)
+    fn (acc x)
+      hint-fn $ {}
+        :args $ [] 'Number 'Number
+        :return 'Number
+      + acc x
   ; => 15
   println $ foldl xs 0
-    fn (acc x) (+ acc x)
+    fn (acc x)
+      hint-fn $ {}
+        :args $ [] 'Number 'Number
+        :return 'Number
+      + acc x
   ; => 15
   println $ any? xs
     fn (x) (> x 4)
@@ -264,7 +266,7 @@ let
 ```cirru
 let
     xs $ [] 1 2 2 3 3 3
-  println $ xs .to-set
+  println $ &list:to-set xs
   ; => $ #{} 1 2 3
 ```
 
@@ -318,7 +320,7 @@ Convert to set (removes duplicates, loses order):
 ```cirru
 let
     xs $ [] 1 2 2 3 3 3
-  println $ xs .to-set
+  println $ &list:to-set xs
   ; => $ #{} 1 2 3
 ```
 

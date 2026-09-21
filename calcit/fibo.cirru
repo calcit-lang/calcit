@@ -20,18 +20,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-        'bench-rem-dynamic! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn bench-rem-dynamic! ()
-            println $ loop-rem-dynamic 500000 0
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
-        'bench-rem-typed! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn bench-rem-typed! ()
-            println $ loop-rem-typed 500000 0
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
         'fibo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn fibo (x)
             if (< x 2) 1 $ +
@@ -42,26 +30,6 @@
             :args $ [] 'Number
         'loop-rem-direct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn loop-rem-direct (n acc)
-            hint-fn $ {}
-              :args $ [] 'Number 'Number
-              :return 'Number
-            if (&< n 1) acc $ recur (&- n 1)
-              &+ acc $ &number:rem n 97
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
-        'loop-rem-dynamic $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn loop-rem-dynamic (n acc)
-            hint-fn $ {}
-              :args $ [] 'Number 'Number
-              :return 'Number
-            if (&< n 1) acc $ recur (&- n 1)
-              &+ acc $ &number:rem n 97
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
-        'loop-rem-typed $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn loop-rem-typed (n acc)
             hint-fn $ {}
               :args $ [] 'Number 'Number
               :return 'Number
@@ -90,24 +58,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
-        'rem-dynamic $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn rem-dynamic (n divisor)
-            hint-fn $ {}
-              :args $ [] 'Number 'Number
-              :return 'Number
-            &number:rem n divisor
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
-        'rem-typed $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn rem-typed (n divisor)
-            hint-fn $ {}
-              :args $ [] 'Number 'Number
-              :return 'Number
-            &number:rem n divisor
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
         'sieve-primes $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sieve-primes (acc n limit)
             if (&> n limit) acc $ if
@@ -121,11 +71,8 @@
             :return $ :: 'List 'Number
         'test-rem-methods! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-rem-methods! ()
-            assert= 1 $ rem-typed 98 97
-            assert= 1 $ rem-dynamic 98 97
             assert= 1 $ rem-direct 98 97
-            assert= (loop-rem-direct 1000 0) (loop-rem-typed 1000 0)
-            assert= (loop-rem-direct 1000 0) (loop-rem-dynamic 1000 0)
+            assert= 47025 $ loop-rem-direct 1000 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
