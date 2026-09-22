@@ -232,14 +232,10 @@ try {
     ["aa-layout-field", "zz-layout-field"],
     "Struct field layout must be lexical rather than tag-registration order"
   );
-  const legacyLayoutValue = new runtimeA.CalcitStructValue(
-    layoutDef.name,
-    [lateField, earlyField],
-    ["late", "early"],
-    { name: layoutDef.name, fields: [lateField, earlyField], fieldTypes: [todoType, todoType], impls: [] }
-  );
-  assert.deepEqual(legacyLayoutValue.fields, [earlyField, lateField], "legacy Struct metadata should be canonicalized");
-  assert.deepEqual(legacyLayoutValue.values, ["early", "late"], "canonicalization must preserve field/value alignment");
+  const reverseLayoutValue = new runtimeA.CalcitStructValue(layoutDef.name, [lateField, earlyField], ["late", "early"], layoutDef);
+  assert.deepEqual(reverseLayoutValue.fields, [earlyField, lateField], "Struct value fields should be canonicalized");
+  assert.deepEqual(reverseLayoutValue.values, ["early", "late"], "canonicalization must preserve field/value alignment");
+  assert.equal(reverseLayoutValue.structRef, layoutDef, "Struct values should retain their canonical definition");
   const layoutValue = new runtimeA.CalcitStructValue(layoutDef.name, layoutDef.fields, ["early", "late"], layoutDef);
   assert.equal(layoutValue.nthAt(0, earlyField), "early", "indexed Struct reads should use the stable layout");
   assert.equal(layoutValue.assocAt(1, lateField, "updated").values[1], "updated");
