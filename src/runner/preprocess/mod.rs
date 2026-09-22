@@ -2165,15 +2165,10 @@ fn preprocess_list_call(
       || matches!(&head_form, Calcit::Symbol { sym, .. } if sym.as_ref() == name)
   };
 
-  if strict_types_enabled()
-    && should_emit_project_source_lint(file_ns)
-    && (is_constructor_named("%{}?")
-      || is_constructor_named("&%{}?")
-      || matches!(head_form, Calcit::Proc(CalcitProc::NativeStructPartial)))
-  {
+  if should_emit_project_source_lint(file_ns) && (is_constructor_named("%{}?") || is_constructor_named("&%{}?")) {
     return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
-      "partial Struct construction implicitly fills omitted fields with nil; use `%{}` and provide every field explicitly, using `%none` for fields declared as Option<T>",
+      "partial Struct constructors `%{}?` and `&%{}?` have been removed; use `%{}` and provide every field explicitly, using `%none` for fields declared as Option<T>",
       "E_PARTIAL_STRUCT_NIL_FILL",
       call_stack,
       call_location,
@@ -12062,26 +12057,18 @@ mod tests {
   }
 
   #[test]
-  fn strict_types_rejects_partial_struct_nil_fill_but_compat_mode_keeps_it() {
+  fn removed_partial_struct_constructors_fail_in_strict_and_compat_modes() {
     let _state = lock_preprocess_test_state();
-    let code = Calcit::from(vec![Calcit::Proc(CalcitProc::NativeStructPartial), Calcit::Nil]);
-
-    {
-      let _strict = StrictTypesGuard::new(false);
-      preprocess_test_expr(&code).expect("compatibility mode should keep partial Struct construction");
-    }
-
-    let _strict = StrictTypesGuard::new(true);
-    let error = preprocess_test_expr(&code).expect_err("strict mode should reject omitted Struct fields");
-    assert_eq!(error.code.as_deref(), Some("E_PARTIAL_STRUCT_NIL_FILL"));
-    assert!(error.msg.contains("%none"));
-
-    for constructor in ["%{}?", "&%{}?"] {
-      let source_call = Cirru::List(vec![Cirru::leaf(constructor), Cirru::leaf("Profile")]);
-      let source_code =
-        code_to_calcit(&source_call, "tests.strict-nil", "build-profile", vec![]).expect("parse source partial Struct constructor");
-      let source_error = preprocess_test_expr(&source_code).expect_err("strict mode should reject source constructor before expansion");
-      assert_eq!(source_error.code.as_deref(), Some("E_PARTIAL_STRUCT_NIL_FILL"));
+    for strict in [false, true] {
+      let _strict = StrictTypesGuard::new(strict);
+      for constructor in ["%{}?", "&%{}?"] {
+        let source_call = Cirru::List(vec![Cirru::leaf(constructor), Cirru::leaf("Profile")]);
+        let source_code =
+          code_to_calcit(&source_call, "tests.strict-nil", "build-profile", vec![]).expect("parse source partial Struct constructor");
+        let source_error = preprocess_test_expr(&source_code).expect_err("removed constructor must fail before expansion");
+        assert_eq!(source_error.code.as_deref(), Some("E_PARTIAL_STRUCT_NIL_FILL"));
+        assert!(source_error.msg.contains("%none"));
+      }
     }
   }
 

@@ -207,10 +207,9 @@ let
   println $ &struct:assoc p :x 100
 ```
 
-## Partial Struct Construction
+## 部分 Struct 构造迁移
 
-Legacy code may use `%{}?` to create a partial struct with only some fields set
-(others default to `nil`):
+旧代码可能用 `%{}?` 只填写部分字段，其余字段曾被隐式补成 `nil`：
 
 ```cirru.no-check
 let
@@ -222,12 +221,10 @@ let
   ; => nil
 ```
 
-This is a compatibility surface, not a typed construction pattern.
-The default strict diagnostics reject both `%{}?` and its low-level `&%{}?` spelling with
-`E_PARTIAL_STRUCT_NIL_FILL`. Migrate by using `%{}` with every field present, or
-change fields that are genuinely absent to `Option<T>` and provide `%none`.
-There is no automatic rewrite because omitted fields may require business
-defaults rather than absence.
+`%{}?` 与底层 `&%{}?` 已从运行时和 JS backend 移除；严格模式与
+`--compat-types` 都会返回 `E_PARTIAL_STRUCT_NIL_FILL`。改用 `%{}` 明确填写字段；
+确实可能缺失的字段应声明为 `Option<T>` 并提供 `%none`。遗漏字段也可能需要业务默认值，
+因此不能自动改写。
 
 The low-level `&%{}` form accepts fields as flat keyword-value pairs (no type checking):
 

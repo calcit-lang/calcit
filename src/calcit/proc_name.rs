@@ -459,8 +459,6 @@ pub enum CalcitProc {
   NativeLooseStruct,
   #[strum(serialize = "&%{}")]
   NativeStruct,
-  #[strum(serialize = "&%{}?")]
-  NativeStructPartial,
   #[strum(serialize = "&struct:with")]
   NativeStructWith,
   #[strum(serialize = "&struct:impls")]
@@ -1269,10 +1267,6 @@ impl CalcitProc {
         arg_types: vec![variadic_dynamic()],
       }),
       NativeStruct => Some(ProcTypeSignature {
-        return_type: some_tag("struct"),
-        arg_types: vec![some_tag("struct-def"), variadic_dynamic()],
-      }),
-      NativeStructPartial => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct-def"), variadic_dynamic()],
       }),

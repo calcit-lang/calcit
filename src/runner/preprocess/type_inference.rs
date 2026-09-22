@@ -1725,7 +1725,7 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(enum_type);
   }
-  if matches!(proc, CalcitProc::NativeStruct | CalcitProc::NativeStructPartial)
+  if matches!(proc, CalcitProc::NativeStruct)
     && let Some(struct_type) = infer_struct_value_literal_type(xs, scope_types)
   {
     return Some(struct_type);

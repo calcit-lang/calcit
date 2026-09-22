@@ -6090,7 +6090,6 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     }
     CalcitProc::NativeStructFromMap
     | CalcitProc::NativeStructExtendAs
-    | CalcitProc::NativeStructPartial
     | CalcitProc::NativeStructImpls
     | CalcitProc::NativeStructWithAt
     | CalcitProc::NativeLooseStruct => Err(format!("Struct operation {proc} not yet supported in WASM codegen")),

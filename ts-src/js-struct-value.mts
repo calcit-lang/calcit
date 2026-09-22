@@ -249,37 +249,6 @@ export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): Calc
   }
 };
 
-export let _$n__PCT__$M__$q_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): CalcitValue => {
-  let recordProto: CalcitStructValue;
-  let values: Array<CalcitValue>;
-  if (proto instanceof CalcitStructDef) {
-    recordProto = new CalcitStructValue(proto.name, proto.fields, new Array(proto.fields.length).fill(null), proto);
-    values = recordProto.values.slice();
-  } else {
-    throw new Error("Expected prototype to be a struct");
-  }
-
-  if (xs.length % 2 !== 0) {
-    throw new Error("Expected even number of key/value");
-  }
-
-  let touched = new Set<number>();
-  for (let i = 0; i < xs.length; i += 2) {
-    let k = castTag(xs[i]);
-    let idx = findInFields(recordProto.fields, k);
-    if (idx < 0) {
-      throw new Error(`Cannot find field ${k} among ${recordProto.fields}`);
-    }
-    if (touched.has(idx)) {
-      throw new Error(`struct field already has value, probably duplicated key: ${k}`);
-    }
-    touched.add(idx);
-    values[idx] = xs[i + 1];
-  }
-
-  return new CalcitStructValue(recordProto.name, recordProto.fields, values, recordProto.structRef);
-};
-
 /// update record with new values
 export let _$n_struct_$o_with = (proto: CalcitValue, ...xs: Array<CalcitValue>): CalcitValue => {
   if (proto instanceof CalcitStructValue) {

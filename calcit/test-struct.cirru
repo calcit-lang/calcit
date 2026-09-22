@@ -88,7 +88,7 @@
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'test-struct.main/Point2D
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (test-struct) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-struct-with) (test-partial-struct) (test-loose-struct-rewrite) (test-map-to-struct) (test-postfix) (do true)
+          :code $ quote $ defn main! () (test-struct) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-struct-with) (test-loose-struct-rewrite) (test-map-to-struct) (test-postfix) (do true)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
@@ -203,22 +203,6 @@
                 persian $ &struct:extend-as kitty :Persian :age 10
                 assert= 10 $ &struct:nth persian 0 :age
                 assert= :Persian $ &struct:get-name persian
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-        'test-partial-struct $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn () (log-title "|Testing partial struct")
-            let
-                p1 $ %{}? Person $ :name |Chen
-                p2 $ %{}? Person (:name |Chen) (:age 20) (:position :mainland)
-                p3 $ %{}? Person $ :age 31
-              assert= |Chen $ :name p1
-              assert= nil $ :age p1
-              assert= nil $ :position p1
-              assert= 20 $ :age p2
-              assert= nil $ :name p3
-              assert= 31 $ :age p3
-              assert= nil $ :position p3
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []

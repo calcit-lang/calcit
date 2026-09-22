@@ -191,9 +191,6 @@
                 data $ [] 1 2 $ &{} :a 1 :b (:: :t 3 |a true)
               assert= data $ eval $ &data-to-code data
             let
-                d $ %{}? A
-              assert= true $ struct? d
-            let
                 data $ #{} 1 2 3
               assert= data $ eval $ &data-to-code data
             let
