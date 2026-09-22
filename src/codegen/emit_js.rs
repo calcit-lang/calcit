@@ -318,7 +318,7 @@ fn js_module_binds_name(ns: &str, root: &str) -> bool {
 /// exists. This keeps `js/Element` pointed at `globalThis.Element` even when the
 /// same module imports a Calcit schema named `Element`.
 fn qualify_js_host_global(ns: &str, code: &str) -> String {
-  let root = code.split('.').next().unwrap_or(code);
+  let root = code.split(['.', '?', '[']).next().unwrap_or(code);
   if root.is_empty() || root == "globalThis" || !is_plain_js_identifier(root) {
     return code.to_owned();
   }
@@ -2555,6 +2555,11 @@ mod tests {
     // A same-name module binding (import or def) must not shadow the host global.
     assert_eq!(qualify_js_host_global(ns, "Element"), "globalThis.Element");
     assert_eq!(qualify_js_host_global(ns, "Element.prototype"), "globalThis.Element.prototype");
+    assert_eq!(qualify_js_host_global(ns, "Element?.prototype"), "globalThis.Element?.prototype");
+    assert_eq!(
+      qualify_js_host_global(ns, r#"Element["prototype"]"#),
+      r#"globalThis.Element["prototype"]"#
+    );
     assert_eq!(qualify_js_host_global(ns, "Math.PI"), "globalThis.Math.PI");
     // Explicit `globalThis`, non-colliding globals, and JS operators stay untouched.
     assert_eq!(qualify_js_host_global(ns, "globalThis.Element"), "globalThis.Element");
