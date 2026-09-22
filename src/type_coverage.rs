@@ -1017,7 +1017,6 @@ fn classify_code_dynamic(parent: Option<&WeakCodeParent>) -> &'static str {
     Some("defstruct") => "defstruct",
     Some("defenum") => "defenum",
     Some("deftrait") => "deftrait",
-    Some("quote") | Some("quasiquote") => "quoted",
     Some("[]") => "list-item",
     _ => "literal",
   }
@@ -1173,7 +1172,7 @@ fn scan_cirru_weak_types(
           weak_type_detail(WeakTypeKind::SchemaDynamic, detail_prefix),
           format_cirru_path(root, path),
         );
-      } else if is_dynamic && root == "code" && selected.contains(&WeakTypeKind::CodeDynamic) {
+      } else if is_dynamic && root == "code" && selected.contains(&WeakTypeKind::CodeDynamic) && !state.quote_context.is_quoted() {
         let detail = if text.as_ref() == ":any" {
           format!("legacy-any:{}", classify_code_dynamic(parent))
         } else {

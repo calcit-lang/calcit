@@ -283,6 +283,8 @@ and implementation-completion status are separate concerns.
 
 普通执行、编译和严格检查只依据类型推导产生确定的 warning/error。需要迁移存量代码时，显式运行 `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json`，按 definition/path 返回源码处理；不要把命中数量解释成类型正确性，也不要围绕数量增加阈值或分类规则。
 
+`code-dynamic` 只定位活动代码中的类型位置：`quote` 与 `quasiquote` 中作为数据保存的 `:dynamic` 不计入结果，`~` / `~@` 展开后重新进入活动代码的表达式仍会定位。此报告不判断类型关系；需要确认能否通过检查时仍以默认严格诊断为准。
+
 `analyze quality` 的 v1/v2 baseline 读取暂留给仍依赖它的存量 CI。新项目不再生成 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。当前默认检查已不再把 coverage/Dynamic 数量当作独立的类型正确性策略。
 
 只需要 kind/intent 汇总时使用 `--summary-only`；human 输出在汇总后停止，JSON 保留 `data.summary` 与 scope revision，并返回空的 `data.definitions`。`defstruct`、`defenum`、`deftrait`、`defimpl` 使用明确的 definition-kind schema：`StructDef`、`EnumDef`、`Trait`、`Impl`。旧 Snapshot 的 Dynamic root 会在加载时规范化；字段、Enum payload 和方法仍正常进入迁移扫描，但 declaration root 本身不产生 `schema-dynamic` finding。
