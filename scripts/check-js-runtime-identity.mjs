@@ -91,6 +91,7 @@ try {
   const anonymousEnumValue = new runtimeA.CalcitEnumValue(todoField, [""]);
   assert.equal(runtimeA._$n_enum_def_$o_has_variant_$q_(todoEnum, todoField), true);
   assert.equal(runtimeA._$n_enum_def_$o_has_variant, undefined, "retired Enum export alias must not remain public");
+  assert.equal(runtimeA._$n__PCT__$M__$q_, undefined, "retired partial Struct constructor must not remain public");
   const jsData = new runtimeA.CalcitSliceMap([todoField, "next"]);
   const jsDataOptions = new runtimeA.CalcitSliceMap([runtimeA.newTag("add-colon"), true]);
   assert.deepEqual(runtimeA.to_js_data(jsData), { draft: "next" });

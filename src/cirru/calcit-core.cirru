@@ -75,25 +75,6 @@
             :expansion $ :: 'Expr 'Struct
             :required $ [] $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-        '%{}? $ %{} 'CodeEntry
-          :doc "|Partial struct constructor. It allows declared Optional fields to be omitted and fills them with nil."
-          :code $ quote $ defmacro %{}? (R & xs)
-            if
-              not $ and (list? xs) (every? xs list?)
-              raise $ str-spaced "|%{}? expects field entries in list, got:" xs
-            &let
-              args $ &list:concat & xs
-              quasiquote $ &%{}? ~R ~@args
-          :examples $ [] $ quote
-            let
-                Point $ defstruct Point (:x 'Number) (:y 'Number)
-                p $ %{}? Point $ :x 1
-              assert= nil $ :y p
-          :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'Struct
-            :required $ [] 'SyntaxSymbol
-          :tags $ #{} :macro
         '& $ %{} 'CodeEntry
           :doc "|internal syntax for spreading in function definition and call\nSyntax: (& rest-args) in params or (f & args) in calls\nParams: varies based on context\nReturns: varies based on context\nMarks rest parameters or argument spreading"
           :code $ quote &runtime-implementation
@@ -102,13 +83,6 @@
           :tags $ #{} :builtin :internal :syntax
         '&%{} $ %{} 'CodeEntry
           :doc "|Internal native constructor for a struct value from a StructDef and field/value pairs."
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Struct)
-            :args $ [] 'Struct
-          :tags $ #{} :builtin :internal
-        '&%{}? $ %{} 'CodeEntry
-          :doc "|Internal partial struct constructor; omitted declared Optional fields default to nil."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Struct)

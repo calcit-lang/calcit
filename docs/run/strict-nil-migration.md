@@ -35,10 +35,9 @@ sentinel，因此不会被拒绝。
 The 2026-09-02 workspace census separated executable source from documentation,
 quoted examples, vendored copies, and obsolete `compact.cirru` snapshots.
 
-- Calcit keeps four executable `%{}?` compatibility tests: one in
-  `calcit/test-edn.cirru` and three in `calcit/test-struct.cirru`. The core macro,
-  its quoted example, and API metadata are definitions/documentation rather than
-  application call sites.
+- 该次历史盘点发现 Calcit 自身有四处 `%{}?` 兼容测试：
+  `calcit/test-edn.cirru` 一处、`calcit/test-struct.cirru` 三处；0.19 清理已移除这些
+  调用及 core 定义，当前不再将其作为可执行兼容面。
 - Calcit's `fn` placeholder lowering still generates `(? % %2)` when a `%2`
   placeholder is present. The matching `test-macro.cirru` forms exercise that
   generated compatibility behavior.
@@ -53,8 +52,8 @@ quoted examples, vendored copies, and obsolete `compact.cirru` snapshots.
   contains documentation metadata only.
 
 首轮结果说明真正需要迁移的重点是 `fn` 的 `%2` placeholder lowering、std/lilac 的
-公共可选参数，以及 editor/gen-code 的宿主回调；Calcit 内的 `%{}?` 调用目前都是兼容
-测试，不应误当成推荐写法。
+公共可选参数，以及 editor/gen-code 的宿主回调；Calcit 内的 `%{}?` 兼容测试现已退役，
+不能再作为新代码模板。
 
 Reproduce the text-level census with:
 

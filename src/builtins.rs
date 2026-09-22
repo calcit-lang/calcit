@@ -578,7 +578,6 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     // structs
     NativeLooseStruct => structs::call_loose_struct(args),
     NativeStruct => structs::call_struct(args),
-    NativeStructPartial => structs::call_struct_partial(args),
     NativeStructWith => structs::struct_with(args),
     NativeStructImpls => structs::get_impls(args),
     NativeStructFromMap => structs::struct_from_map(args),

@@ -261,9 +261,8 @@ implicitly:
 - `E_LEGACY_OPTIONAL_PARAM`: a `?` parameter would bind an omitted argument to
   `nil`. Remove the marker, declare trailing parameters as `Option<T>`, and let
   omission insert `%none` (or pass `%some value` / `%none` explicitly).
-- `E_PARTIAL_STRUCT_NIL_FILL`: `%{}?` / `&%{}?` would fill omitted Struct fields
-  with `nil`. Use `%{}` and provide every field explicitly; an `Option<T>` field
-  receives `%none` rather than `nil`.
+- `E_PARTIAL_STRUCT_NIL_FILL`：`%{}?` / `&%{}?` 已退役，所有模式都拒绝隐式
+  `nil` 填充。改用 `%{}` 明确提供字段；可缺失字段应声明为 `Option<T>` 并使用 `%none`。
 - `E_NIL_FOR_UNIT`: a function declared to return `Unit` actually returns the
   distinct `Nil` value. Replace returned `nil` / `;nil` with `&unit`, or end the
   body with an effect that already returns Unit. Intermediate nil expressions

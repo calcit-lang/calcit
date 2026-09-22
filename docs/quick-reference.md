@@ -290,8 +290,7 @@ let
 
 - `defstruct` - define a struct type with typed fields
 - `%{}` - create a named struct value, or an anonymous value with `%{} _ ...`
-- `%{}?`, `&%{}?` - legacy partial Struct constructors (unset fields default to
-  nil; both are rejected by the default strict diagnostics with `E_PARTIAL_STRUCT_NIL_FILL`)
+- `%{}?`, `&%{}?` - 已退役的部分 Struct 构造器；所有模式都以 `E_PARTIAL_STRUCT_NIL_FILL` 拒绝
 - `&%{}` - low-level struct constructor (flat key-value pairs, no type check)
 - `struct-with` - update multiple declared fields
 - `&struct:get` - internal/dynamic-boundary field lookup; normal typed code must use `(:field value)`

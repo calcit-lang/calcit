@@ -26,6 +26,10 @@ related:
 
 ## 0.19 兼容清理与 CLI 入口收敛
 
+`%{}?` 与底层 `&%{}?` 已退役，`--compat-types` 也不再恢复其隐式 `nil` 补字段行为。
+旧代码应改用完整的 `%{}` 构造；确实可能缺失的字段先声明为 `Option<T>`，再显式提供
+`%none`，不能由编译器猜测业务默认值。旧调用会给出 `E_PARTIAL_STRUCT_NIL_FILL` 迁移错误。
+
 JavaScript runtime 的 `to-js-data value true/false` 布尔第二参数已退役；需要保留 tag 键的冒号时，
 改用 `to-js-data value $ {} (:add-colon true)`，无需该行为时只传 `value`。旧布尔写法现在明确报错，
 避免在升级后静默转换出不同的 JSON key。`@calcit/procs` 的旧导出

@@ -146,8 +146,8 @@ actually calls them while deciding the expansion.
 
 Two motivating cases illustrate the distinction:
 
-- Core `%{}?` receives a struct name as `SyntaxSymbol`, then a rest sequence of
-  `SyntaxList` field entries, and expands to `Expr<Struct>`.
+- Core `%{}` 接收 Struct 构造目标和字段项，并展开成 `Expr<Struct>`；字段缺失由
+  声明的 `Option<T>` 语义处理，而非旧 `%{}?` 的隐式 `nil` 填充。
 - Respo `defstyle` receives a style name as `SyntaxSymbol` and rule data as
   `SyntaxList`; its expansion is a definition/declaration contract rather than
   a runtime function return value.

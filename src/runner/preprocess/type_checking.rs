@@ -577,11 +577,7 @@ pub(crate) fn check_proc_arg_types(
 
   if matches!(
     proc,
-    CalcitProc::NativeStruct
-      | CalcitProc::NativeStructPartial
-      | CalcitProc::NativeStructGet
-      | CalcitProc::NativeStructNth
-      | CalcitProc::NativeLooseStruct
+    CalcitProc::NativeStruct | CalcitProc::NativeStructGet | CalcitProc::NativeStructNth | CalcitProc::NativeLooseStruct
   ) {
     return;
   }
