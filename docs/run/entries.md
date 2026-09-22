@@ -51,11 +51,13 @@ Bare `calcit calcit.cirru` selects `entries.default` and emits JavaScript becaus
 
 Use `:description` for a concise, human- and agent-readable explanation of the entry's purpose. It has no runtime effect and may be omitted in existing snapshots. Update it with `calcit config set description "Interactive browser client"` (or add `--entry server` for a named entry).
 
-Use the structured config command to declare the host target rather than editing the Snapshot as plain text. Accepted values are `browser`, `node`, `native`, and `wasm`; add `--entry <name>` to update a named entry. `calcit config show` displays the parsed target and prints `(none)` for an entry that has not declared one.
+Use the structured config command to declare the host target rather than editing the Snapshot as plain text. Accepted values are `browser`, `node`, `native`, and `wasm`; add `--entry <name>` to update a named entry. `calcit config show` displays the parsed target and prints `(none)` for an entry that has not declared one. Remove a target with `calcit config unset target` (add `--entry <name>` for a named entry); it restores the unspecified-target semantics, and repeating it is stable and leaves the Snapshot unchanged.
 
 ```bash
 calcit config set target browser
 calcit config set --entry server target native
+calcit config unset target
+calcit config unset --entry server target
 calcit config show
 calcit config show --format json
 ```

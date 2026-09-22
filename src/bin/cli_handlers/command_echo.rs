@@ -1470,6 +1470,7 @@ fn config_name(subcommand: &ConfigSubcommand) -> &'static str {
     ConfigSubcommand::TypeSlots(_) => "type-slots",
     ConfigSubcommand::Version(_) => "version",
     ConfigSubcommand::Set(_) => "set",
+    ConfigSubcommand::Unset(_) => "unset",
     ConfigSubcommand::AddModule(_) => "add-module",
     ConfigSubcommand::RmModule(_) => "rm-module",
     ConfigSubcommand::SetTypeSlot(_) => "set-type-slot",
@@ -1506,6 +1507,10 @@ fn push_config(tokens: &mut Vec<String>, cmd: &ConfigCommand) {
     ConfigSubcommand::Set(opts) => {
       echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
       echo_items!(tokens, pos "key" => &opts.key, pos "value" => &opts.value);
+    }
+    ConfigSubcommand::Unset(opts) => {
+      echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
+      echo_items!(tokens, pos "key" => &opts.key);
     }
     ConfigSubcommand::AddModule(opts) => {
       echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");

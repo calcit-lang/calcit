@@ -4,7 +4,7 @@
 
 use calcit::cli_args::{
   ConfigAddModuleCommand, ConfigCommand, ConfigModulesCommand, ConfigRmModuleCommand, ConfigRmTypeSlotCommand, ConfigSetCommand,
-  ConfigSetTypeSlotCommand, ConfigShowCommand, ConfigSubcommand, ConfigTypeSlotsCommand, ConfigVersionCommand,
+  ConfigSetTypeSlotCommand, ConfigShowCommand, ConfigSubcommand, ConfigTypeSlotsCommand, ConfigUnsetCommand, ConfigVersionCommand,
 };
 use calcit::snapshot;
 use calcit::util::string::strip_shebang;
@@ -276,6 +276,7 @@ pub fn handle_config_command(cmd: &ConfigCommand, snapshot_file: &str) -> Result
     ConfigSubcommand::TypeSlots(opts) => handle_type_slots(opts, snapshot_file),
     ConfigSubcommand::Version(opts) => handle_version(opts, snapshot_file),
     ConfigSubcommand::Set(opts) => handle_set(opts, snapshot_file),
+    ConfigSubcommand::Unset(opts) => handle_unset(opts, snapshot_file),
     ConfigSubcommand::AddModule(opts) => handle_add_module(opts, snapshot_file),
     ConfigSubcommand::RmModule(opts) => handle_rm_module(opts, snapshot_file),
     ConfigSubcommand::SetTypeSlot(opts) => handle_set_type_slot(opts, snapshot_file),
@@ -593,6 +594,30 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
   Ok(())
 }
 
+fn handle_unset(opts: &ConfigUnsetCommand, snapshot_file: &str) -> Result<(), String> {
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  let entry_label = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
+  let entry = select_entry_mut(&mut snapshot, opts.entry.as_deref())?;
+
+  let message = match opts.key.as_str() {
+    "target" => {
+      if entry.target.is_none() {
+        format!("{} [{entry_label}] target is already unset", "✓".green())
+      } else {
+        entry.target = None;
+        format!("{} Unset [{entry_label}] target", "✓".green())
+      }
+    }
+    _ => {
+      return Err(format!("Unknown config key '{}' for unset. Valid keys: target", opts.key));
+    }
+  };
+
+  save_snapshot(&snapshot, snapshot_file)?;
+  println!("{message}");
+  Ok(())
+}
+
 fn version_command_replacement(value: Option<&str>, snapshot_file: &str) -> String {
   let deps_path = deps_path_for_snapshot(snapshot_file);
   match value {
@@ -897,6 +922,51 @@ mod tests {
     )
     .expect_err("unknown target should fail before writing");
     assert_eq!(error, "Unknown entry target 'desktop'. Valid targets: browser, node, native, wasm");
+    assert_eq!(fs::read_to_string(&temp_path).expect("read unchanged fixture"), before_invalid);
+
+    fs::remove_file(temp_path).expect("remove fixture");
+  }
+
+  #[test]
+  fn config_unset_target_round_trips_and_is_idempotent() {
+    let source = "{} (:package |demo)\n  :entries $ {}\n    :default $ {} (:mode :js) (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:target :browser)\n      :modules $ []\n  :files $ {}\n";
+    let temp_path = std::env::temp_dir().join(format!("calcit-entry-target-unset-{}.cirru", std::process::id()));
+    fs::write(&temp_path, source).expect("write fixture");
+    let path = temp_path.to_string_lossy();
+
+    handle_unset(
+      &ConfigUnsetCommand {
+        entry: None,
+        key: "target".to_owned(),
+      },
+      &path,
+    )
+    .expect("unset entry target");
+    let saved = load_snapshot_for_display(&path).expect("reload configured snapshot");
+    assert_eq!(saved.entries[snapshot::DEFAULT_ENTRY_NAME].target, None);
+
+    // A repeated unset must be stable and leave the snapshot byte-identical.
+    let after_first = fs::read_to_string(&temp_path).expect("read unset fixture");
+    handle_unset(
+      &ConfigUnsetCommand {
+        entry: None,
+        key: "target".to_owned(),
+      },
+      &path,
+    )
+    .expect("repeat unset entry target");
+    assert_eq!(fs::read_to_string(&temp_path).expect("read repeat fixture"), after_first);
+
+    let before_invalid = fs::read_to_string(&temp_path).expect("read configured fixture");
+    let error = handle_unset(
+      &ConfigUnsetCommand {
+        entry: None,
+        key: "mode".to_owned(),
+      },
+      &path,
+    )
+    .expect_err("unsupported key should fail before writing");
+    assert_eq!(error, "Unknown config key 'mode' for unset. Valid keys: target");
     assert_eq!(fs::read_to_string(&temp_path).expect("read unchanged fixture"), before_invalid);
 
     fs::remove_file(temp_path).expect("remove fixture");
