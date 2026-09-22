@@ -10,7 +10,6 @@ import {
   findInFields,
   compareTagNames,
   canonicalizeTagPairs,
-  tagNamesAreCanonical,
 } from "./calcit-data.mjs";
 
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
@@ -31,12 +30,7 @@ export class CalcitStructValue {
     this.fields = canonicalFields;
     this.values = canonicalValues;
     this.cachedHash = null;
-    this.structRef =
-      structRef == null
-        ? new CalcitStructDef(name, canonicalFields, new Array(canonicalFields.length).fill(null))
-        : tagNamesAreCanonical(structRef.fields)
-          ? structRef
-          : new CalcitStructDef(structRef.name, structRef.fields, structRef.fieldTypes, structRef.impls);
+    this.structRef = structRef ?? new CalcitStructDef(name, canonicalFields, new Array(canonicalFields.length).fill(null));
   }
   get(k: CalcitValue) {
     let field = castTag(k);
