@@ -146,8 +146,9 @@ actually calls them while deciding the expansion.
 
 Two motivating cases illustrate the distinction:
 
-- Core `%{}` 接收 Struct 构造目标和字段项，并展开成 `Expr<Struct>`；字段缺失由
-  声明的 `Option<T>` 语义处理，而非旧 `%{}?` 的隐式 `nil` 填充。
+- Core `%{}` 接收 Struct 构造目标和字段项，并展开成 `Expr<Struct>`；所有字段都须
+  显式提供，`Option<T>` 字段需要缺失值时填写 `%none`。只有直接以 Struct 名称构造
+  的写法可省略末尾的 `Option<T>` 字段；旧 `%{}?` 的隐式 `nil` 填充已退役。
 - Respo `defstyle` receives a style name as `SyntaxSymbol` and rule data as
   `SyntaxList`; its expansion is a definition/declaration contract rather than
   a runtime function return value.
