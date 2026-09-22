@@ -295,6 +295,40 @@ fn is_native_map_reference(value: &Calcit) -> bool {
   }
 }
 
+fn is_plain_js_identifier(name: &str) -> bool {
+  let mut chars = name.chars();
+  match chars.next() {
+    Some(c) if c.is_ascii_alphabetic() || c == '_' || c == '$' => {}
+    _ => return false,
+  }
+  chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+}
+
+fn js_module_binds_name(ns: &str, root: &str) -> bool {
+  let program = program::PROGRAM_CODE_DATA.read().unwrap_or_else(|error| error.into_inner());
+  let Some(file) = program.get(ns) else {
+    return false;
+  };
+  file.defs.keys().any(|name| escape_var(name.as_ref()) == root) || file.import_map.keys().any(|name| escape_var(name.as_ref()) == root)
+}
+
+/// `js/...` denotes a host global. A generated module binding with the same name
+/// (a project def or a `:refer`/`:as` import) shadows that global in the emitted
+/// module, so qualify the reference with `globalThis.` whenever a collision
+/// exists. This keeps `js/Element` pointed at `globalThis.Element` even when the
+/// same module imports a Calcit schema named `Element`.
+fn qualify_js_host_global(ns: &str, code: &str) -> String {
+  let root = code.split(['.', '?', '[']).next().unwrap_or(code);
+  if root.is_empty() || root == "globalThis" || !is_plain_js_identifier(root) {
+    return code.to_owned();
+  }
+  if js_module_binds_name(ns, root) {
+    format!("globalThis.{code}")
+  } else {
+    code.to_owned()
+  }
+}
+
 fn to_js_code(
   xs: &Calcit,
   ns: &str,
@@ -432,7 +466,7 @@ fn to_js_code(
         let proc_prefix = get_proc_prefix(ns);
         Ok(format!("new {proc_prefix}CalcitCirruQuote({})", cirru_to_js(code)?))
       }
-      Calcit::RawCode(_, code) => Ok((**code).to_owned()),
+      Calcit::RawCode(calcit::RawCodeType::Js, code) => Ok(qualify_js_host_global(ns, code)),
       a => Err(format!(
         "cannot emit JS for compiler-only value `{a}`; preprocessing should lower data definitions to runtime references"
       )),
@@ -2493,6 +2527,44 @@ mod tests {
     .expect("declared async function should compile");
 
     assert!(code.starts_with("export async function load_text()"), "{code}");
+  }
+
+  #[test]
+  fn js_host_global_reference_qualifies_only_on_module_binding_collision() {
+    let ns = "tests.emit-js-global-shadow";
+    program::PROGRAM_CODE_DATA.write().expect("open program code").insert(
+      Arc::from(ns),
+      program::ProgramFileData {
+        import_map: HashMap::from([(
+          Arc::from("Element"),
+          Arc::new(program::ImportRule::NsReferDef(Arc::from("tests.schema"), Arc::from("Element"))),
+        )]),
+        defs: HashMap::from([(
+          Arc::from("Math"),
+          program::ProgramDefEntry {
+            code: Calcit::Nil,
+            schema: calcit::DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: None,
+          },
+        )]),
+      },
+    );
+
+    // A same-name module binding (import or def) must not shadow the host global.
+    assert_eq!(qualify_js_host_global(ns, "Element"), "globalThis.Element");
+    assert_eq!(qualify_js_host_global(ns, "Element.prototype"), "globalThis.Element.prototype");
+    assert_eq!(qualify_js_host_global(ns, "Element?.prototype"), "globalThis.Element?.prototype");
+    assert_eq!(
+      qualify_js_host_global(ns, r#"Element["prototype"]"#),
+      r#"globalThis.Element["prototype"]"#
+    );
+    assert_eq!(qualify_js_host_global(ns, "Math.PI"), "globalThis.Math.PI");
+    // Explicit `globalThis`, non-colliding globals, and JS operators stay untouched.
+    assert_eq!(qualify_js_host_global(ns, "globalThis.Element"), "globalThis.Element");
+    assert_eq!(qualify_js_host_global(ns, "Array.from"), "Array.from");
+    assert_eq!(qualify_js_host_global(ns, "typeof"), "typeof");
   }
 
   #[test]
