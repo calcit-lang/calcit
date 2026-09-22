@@ -792,7 +792,7 @@ WASM 现在通过 `calcit wasm` 与 `calcit wasi` 提供公开 preview 命令，
 
 注意：`check-types`、`weak-types`、`deprecated` 仍是展示报告，不按命中数量失败。只有仍有非零
 legacy baseline 的项目才在 CI 保留 `analyze quality --baseline ...`；baseline 清零后删除该命令，
-不再把数量策略当作独立类型正确性判定。
+不再把数量策略当作独立类型正确性判定。`--write-baseline` 仅允许在已存在的文件上降低预算，不能作为新项目初始化步骤。
 `test --require-match` 会避免 tag 或 scope 写错后零测试仍退出成功。项目没有 named `test` entry 或
 definition-attached unit tests 时，应删除对应示例行并替换成项目真实测试命令，而不是机械照抄。
 
