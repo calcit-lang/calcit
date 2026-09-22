@@ -129,8 +129,9 @@ let
 
 先用 `fs:path` 把 UTF-8 String 提升为 nominal `FsPath`，再调用 `.read-text`、
 `.read-dir`、`.walk-dir` 或 `.write-text`，这些方法返回 `Result<...,String>`。
-String 本身不携带文件系统语义；`try-read-file`、`try-read-dir`、
-`try-write-file` 与底层 raising procedures 仅保留为兼容入口。
+String 本身不携带文件系统语义；旧 `try-read-file` / `try-write-file` 已退役，
+先通过 `fs:path` 构造路径再调用 `.read-text` / `.write-text`。`try-read-dir`
+与底层 raising procedures 暂留为兼容入口。
 这些文件效果支持 native 与生成的 JavaScript。WASI command 支持基于 preopen 的
 文本读写和 `.read-dir`；core WASM 明确拒绝宿主文件效果，`.walk-dir` 尚未接入 WASI。
 
