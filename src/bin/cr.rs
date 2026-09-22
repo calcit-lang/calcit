@@ -3020,6 +3020,36 @@ mod tests {
   }
 
   #[test]
+  fn analyze_weak_types_skips_quoted_dynamic_but_keeps_unquoted_schema() {
+    let entry = code_entry(
+      list(vec![
+        leaf("defn"),
+        leaf("template"),
+        list(vec![]),
+        list(vec![leaf("quote"), list(vec![leaf("::"), leaf(":dynamic")])]),
+        list(vec![leaf("quasiquote"), list(vec![leaf("::"), leaf(":dynamic")])]),
+        list(vec![
+          leaf("quasiquote"),
+          list(vec![leaf("::"), list(vec![leaf("~"), leaf(":dynamic")])]),
+        ]),
+        list(vec![leaf("assert-type"), leaf("value"), leaf(":dynamic")]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+
+    let row = type_coverage::analyze_weak_types_entry(
+      "app.macro",
+      "template",
+      &entry,
+      &BTreeSet::from([type_coverage::WeakTypeKind::CodeDynamic]),
+    )
+    .expect("unquoted Dynamic positions should remain visible");
+
+    let paths = row.occurrences.iter().map(|item| item.path.as_str()).collect::<Vec<_>>();
+    assert_eq!(paths, vec!["code@5.1.1.1", "code@6.2"]);
+  }
+
+  #[test]
   fn analyze_weak_types_marks_dynamic_ffi_boundaries_as_intentional() {
     let entry = snapshot::CodeEntry {
       doc: "".to_owned(),
