@@ -195,6 +195,29 @@ fn collect_check_md_module_paths_rejects_retired_configs() {
 }
 
 #[test]
+fn collect_check_md_module_paths_rejects_legacy_code_entries() {
+  let root = unique_temp_dir("check-md-legacy-code");
+  let entry = root.join("mini.cirru");
+  let content = r#"{} (:package |mini)
+  :version |0.0.0
+  :entries $ {}
+    :default $ {} (:mode :native) (:init-fn |mini/main!) (:reload-fn |mini/main!)
+      :modules $ [] |respo.calcit/
+  :files $ {}
+    |mini $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:code $ %{} :Expr) (:examples $ []) (:schema nil)
+      :defs $ {}
+"#;
+  write_file(&entry, content);
+
+  let error = collect_check_md_module_paths(entry.to_str().expect("entry path should be utf-8"), &[])
+    .expect_err("docs dependency discovery must reject legacy code entries");
+  assert!(error.contains("Expr"), "error: {error}");
+
+  fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn load_entry_snapshot_for_check_md_reads_respo_project() {
   let entry = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../respo/respo/calcit.cirru");
   if !entry.exists() {

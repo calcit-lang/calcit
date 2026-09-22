@@ -17,7 +17,6 @@ use std::sync::Once;
 use calcit::ProgramEntries;
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
-use calcit::data::edn::format_edn_display;
 use calcit::program;
 use calcit::runner;
 use calcit::snapshot;
@@ -1537,78 +1536,13 @@ fn ensure_runtime_initialized() {
 }
 
 fn collect_check_md_module_paths(entry: &str, deps: &[String]) -> Result<Vec<String>, String> {
-  let resolved_entry = Path::new(entry);
-  calcit::validate_snapshot_path(resolved_entry)?;
-  let mut content =
-    fs::read_to_string(resolved_entry).map_err(|e| format!("Failed to read entry file '{}': {e}", resolved_entry.display()))?;
-  util::string::strip_shebang(&mut content);
-  let data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse entry file '{}': {e}", resolved_entry.display()))?;
-
-  // Extract entries.default.modules directly from raw EDN. This is necessary
-  // because older code-entry encodings may not fully deserialize, while docs
-  // checking only needs the module list.
-  // Fail fast on malformed modules to avoid silently dropping dependencies.
-  let module_paths_from_entry: Vec<String> = extract_modules_from_edn(&data, entry)?;
-
-  let mut module_paths = module_paths_from_entry;
+  let snapshot = load_entry_snapshot_for_check_md(entry)?;
+  let mut module_paths = snapshot.active_entry()?.modules.clone();
   module_paths.extend(deps.iter().cloned());
 
   let mut seen_modules: HashSet<String> = HashSet::new();
   module_paths.retain(|module_path| seen_modules.insert(module_path.to_owned()));
   Ok(module_paths)
-}
-
-/// Extract the default entry's module list from an EDN snapshot value without fully
-/// deserializing the snapshot. This tolerates old-format entries (e.g. `%{} :Expr`)
-/// that `load_snapshot_data` cannot handle.
-fn extract_modules_from_edn(data: &cirru_edn::Edn, source_path: &str) -> Result<Vec<String>, String> {
-  use cirru_edn::Edn;
-
-  // Both old and new snapshot formats use a top-level Map or Struct.
-  let get_field = |edn: &Edn, key: &str| -> Option<Edn> {
-    match edn {
-      Edn::Map(map) => map.tag_get(key).cloned(),
-      Edn::Struct(struct_value) => struct_value.pairs.iter().find(|(k, _)| k.ref_str() == key).map(|(_, v)| v.clone()),
-      _ => None,
-    }
-  };
-
-  if get_field(data, "configs").is_some() {
-    return Err(snapshot::retired_snapshot_configs_error(source_path));
-  }
-  let entry = match get_field(data, "entries") {
-    Some(entries) => match get_field(&entries, snapshot::DEFAULT_ENTRY_NAME) {
-      Some(entry) => entry,
-      None => return Err("Snapshot `:entries` is missing `:default`".to_owned()),
-    },
-    None => return Ok(vec![]),
-  };
-  let modules_edn = match get_field(&entry, "modules") {
-    Some(modules) => modules,
-    None => return Ok(vec![]),
-  };
-
-  match modules_edn {
-    Edn::List(list) => {
-      let mut paths: Vec<String> = vec![];
-      for item in &list.0 {
-        match item {
-          Edn::Str(s) => paths.push(s.to_string()),
-          _ => {
-            return Err(format!(
-              "Failed to parse `entries.default.modules`: expected list of strings, got item `{}`",
-              format_edn_display(item)
-            ));
-          }
-        }
-      }
-      Ok(paths)
-    }
-    _ => Err(format!(
-      "Failed to parse `entries.default.modules`: expected list, got `{}`",
-      format_edn_display(&modules_edn)
-    )),
-  }
 }
 
 pub(crate) fn load_entry_snapshot_for_check_md(entry: &str) -> Result<snapshot::Snapshot, String> {
