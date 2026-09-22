@@ -4120,7 +4120,7 @@
               ~@ $ if (every? pairs list?)
                 do
                   assert "|defimpl expects method pairs" $ and (list? pairs) (every? pairs list?)
-                  assert "|defimpl expects (:method value) pairs" $ every? pairs $ fn (pair)
+                  assert "|defimpl expects (.method value) pairs" $ every? pairs $ fn (pair)
                     &let
                       items $ if
                         &= [] $ &list:first pair
@@ -4131,9 +4131,7 @@
                           , pair
                       and
                         &= 2 $ count items
-                        or
-                          tag? $ &list:first items
-                          &= :method $ type-of $ &list:first items
+                        &= :method $ type-of $ &list:first items
                   map pairs $ fn (pair)
                     &let
                       items $ if
@@ -4144,16 +4142,16 @@
                           &list:rest pair
                           , pair
                       do
-                        assert "|defimpl expects (:method value) pairs" $ &= 2 $ count items
+                        assert "|defimpl expects (.method value) pairs" $ &= 2 $ count items
                         let
                             k0 $ &list:first items
                             v0 $ &list:nth items 1
-                            key $ if (tag? k0) k0 $ if
+                            key $ if
                               &= :method $ type-of k0
                               let
                                   s $ format-to-lisp k0
                                 turn-tag $ &str:slice s 1 $ count s
-                              raise $ str-spaced "|defimpl expects method key as :tag or .method, got:" k0
+                              raise $ str-spaced "|defimpl expects .method key, got:" k0
                           quasiquote $ [] ~key ~v0
                 do
                   assert "|defimpl expects even number of items" $ &= 0 $ &number:rem (count pairs) 2
@@ -4168,16 +4166,16 @@
                             &list:rest pair
                             , pair
                         do
-                          assert "|defimpl expects (:method value) pairs" $ &= 2 $ count items
+                          assert "|defimpl expects (.method value) pairs" $ &= 2 $ count items
                           let
                               k0 $ &list:first items
                               v0 $ &list:nth items 1
-                              key $ if (tag? k0) k0 $ if
+                              key $ if
                                 &= :method $ type-of k0
                                 let
                                     s $ format-to-lisp k0
                                   turn-tag $ &str:slice s 1 $ count s
-                                raise $ str-spaced "|defimpl expects method key as :tag or .method, got:" k0
+                                raise $ str-spaced "|defimpl expects .method key, got:" k0
                             quasiquote $ [] ~key ~v0
           :examples $ []
           :schema $ :: 'Macro $ {} (:rest 'Syntax)
@@ -4297,7 +4295,7 @@
             :required $ [] 'Syntax
           :tags $ #{} :macro
         'deftrait $ %{} 'CodeEntry
-          :doc "|macro for defining traits\nSyntax: (deftrait Name (.method (:: :fn $ {} (:args [...]) (:return t))) ...)\nParams: Name (symbol/tag), methods (list of (tag type))\nNotes: use :fn (tag) for DynFn when signature is intentionally omitted\nReturns: trait definition value\nExpands to &trait::new"
+          :doc "|定义 trait。普通方法使用 `.method` 键，例如 `(deftrait Shape (.draw (:: 'Fn $ {} (:args [...]) (:return 'Unit))))`；只有带 `:ffi {:kind :external-object}` 的宿主属性使用 `:field` 键。省略完整签名时，`:fn` 表示动态函数类型。展开为 `&trait::new`。"
           :code $ quote $ defmacro deftrait (name & methods)
             assert "|deftrait expects (method type) pairs" $ every? methods list?
             &let

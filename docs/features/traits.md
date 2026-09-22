@@ -91,7 +91,7 @@ let
 
 **2) Method pair forms**
 
-Prefer dot-style keys (`.foo`). Legacy tag keys (`:foo`) are still accepted for compatibility.
+普通 trait 的方法键统一使用 dot 写法（如 `.foo`）；旧 tag 写法（如 `:foo`）已退役。
 
 ```cirru
 let
@@ -103,7 +103,7 @@ let
           :return 'String
     Person0 $ defstruct Person (:name 'String)
     ImplB $ defimpl ImplB MyFoo
-      :: :foo $ fn (p) (assert-type p Person0)
+      :: .foo $ fn (p) (assert-type p Person0)
         str |B: $ :name p
     PersonB $ impl-traits Person0 ImplB
     pb $ %{} PersonB (:name |Bob)

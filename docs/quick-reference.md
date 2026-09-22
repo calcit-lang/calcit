@@ -194,7 +194,7 @@ let
 - Required named-Struct field access: use `(:name value)` or receiver-first `value.:name`; the checker validates the declared type and lowers it to indexed access
 - 可选查询使用 `get` 并处理其 `Option`：静态 Map/索引集合返回 `Option<T>`；显式开放的 `Dynamic` 在运行值为 Struct 时返回 `Option<Dynamic>`。静态已知 Struct 的必填字段仍使用 `(:field value)`，应用代码不要直接调用 `&struct:get`
 - An unresolved short nominal receiver such as `'Router` means its declaration context was lost; qualify the schema (for example `'app.schema/Router`) instead of hiding the diagnostic with `&struct:get`
-- Trait/impl declarations prefer dot method keys like `.foo`; legacy tag keys like `:foo` remain compatible but emit a default warning in `deftrait`/`defimpl`
+- 普通 `deftrait` / `defimpl` 的方法键使用 `.foo`；旧 `:foo` 写法已退役并报告 `E_LEGACY_TRAIT_METHOD_KEY`。声明 external-object 属性的 `:field` 不受影响。
 
 ## File Structure
 
