@@ -519,11 +519,10 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
   return `(#js ${JSON.stringify(x)})`;
 };
 
-export let to_js_data = (x: CalcitValue, options?: CalcitValue | boolean): any => {
+export let to_js_data = (x: CalcitValue, options?: CalcitValue): any => {
   let addColon = false;
   if (typeof options === "boolean") {
-    console.warn("to-js-data: the addColon boolean argument is deprecated; pass an options map instead");
-    addColon = options;
+    throw new Error("to-js-data no longer accepts a boolean second argument; pass an options map with :add-colon instead");
   } else if (options !== undefined) {
     let jsOptions = to_js_data_inner(options, false) as Record<string, any>;
     addColon = jsOptions[":add-colon"] === true || jsOptions["add-colon"] === true;
