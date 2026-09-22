@@ -50,6 +50,9 @@ JavaScript runtime 的 `to-js-data value true/false` 布尔第二参数已退役
 若旧快照仍使用这两种结构，请先用其对应旧版工具迁移，不要把它们当作当前语言代码节点。
 `docs check-md` 读取项目依赖时也使用同一严格 Snapshot loader，不再单独从旧格式中提取模块列表；
 先完成快照迁移，再运行文档代码块检查。
+普通 `deftrait` / `defimpl` 方法键原来的 `:render` 等 tag 写法已退役，改成 `.render` 等 dot 写法；
+类型标注中的 `:fn` 不变。external-object trait 的属性条目（如 `:field 'String`）仍使用 tag，
+不要把它们批量改为 dot。
 
 顶层 `calcit libs`（或旧二进制名 `cr libs`）已移除，统一改为 `calcit docs remote-libs`。
 子命令和参数保留：`libs search <keyword>`、`libs readme <package> [--file <file>]`、

@@ -2546,7 +2546,7 @@ fn preprocess_list_call(
         call_location.clone(),
       )?;
 
-      warn_on_trait_impl_method_tag_syntax(info.as_ref(), &args, file_ns, def_name.as_ref(), check_warnings);
+      reject_legacy_trait_method_tag_syntax(info.as_ref(), &args, file_ns, def_name.as_ref(), call_stack)?;
 
       // println!("eval macro: {}", primes::CrListWrap(xs.to_owned()));
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
@@ -5951,19 +5951,19 @@ fn warn_on_nominal_enum_truthiness(
   }
 }
 
-fn warn_on_trait_impl_method_tag_syntax(
+fn reject_legacy_trait_method_tag_syntax(
   macro_info: &crate::calcit::CalcitMacro,
   args: &CalcitList,
   file_ns: &str,
   def_name: &str,
-  check_warnings: &RefCell<Vec<LocatedWarning>>,
-) {
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
   if file_ns == calcit::CORE_NS {
-    return;
+    return Ok(());
   }
 
   if macro_info.def_ns.as_ref() != calcit::CORE_NS {
-    return;
+    return Ok(());
   }
 
   // External-object traits intentionally use `:field` entries for typed
@@ -5976,13 +5976,13 @@ fn warn_on_trait_impl_method_tag_syntax(
   let source_name = trait_name.as_deref().unwrap_or(def_name);
 
   if macro_name_is_external_object(macro_info, file_ns, source_name) {
-    return;
+    return Ok(());
   }
 
   let (macro_name, pair_start_idx) = match macro_info.name.as_ref() {
     "deftrait" => ("deftrait", 1),
     "defimpl" => ("defimpl", 2),
-    _ => return,
+    _ => return Ok(()),
   };
 
   for entry in args.iter().skip(pair_start_idx) {
@@ -5994,16 +5994,17 @@ fn warn_on_trait_impl_method_tag_syntax(
       continue;
     };
 
-    let message = format!(
-      "[Warn] `{macro_name}` method key `:{method_name}` in {file_ns}/{source_name} uses legacy tag style; prefer dot method key `.{method_name}` for migration (`:{method_name}` remains compatible)"
-    );
-
-    if let Some(loc) = entry.get_location() {
-      gen_check_warning_with_location(message, loc, check_warnings);
-    } else {
-      gen_check_warning(message, file_ns, check_warnings);
-    }
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "`{macro_name}` method key `:{method_name}` in {file_ns}/{source_name} is retired; use `.{method_name}` instead (external-object `:field` remains supported)"
+      ),
+      "E_LEGACY_TRAIT_METHOD_KEY",
+      call_stack,
+      entry.get_location(),
+    ));
   }
+  Ok(())
 }
 
 fn macro_name_is_external_object(macro_info: &crate::calcit::CalcitMacro, file_ns: &str, def_name: &str) -> bool {
@@ -16021,7 +16022,7 @@ mod tests {
   }
 
   #[test]
-  fn warns_on_trait_impl_method_tag_syntax() {
+  fn rejects_legacy_trait_impl_method_tag_syntax() {
     let _lock = lock_preprocess_test_state();
     let _warn_guard = WarnDynMethodGuard::new(true);
 
@@ -16046,17 +16047,41 @@ mod tests {
       signature: Arc::new(strict_macro_signature(vec![], vec![], None, MacroExpansionType::Dynamic)),
     };
 
-    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+    let error = reject_legacy_trait_method_tag_syntax(&macro_info, &args, "tests.trait", "demo", &stack)
+      .expect_err("legacy tag method key must be rejected");
+    assert_eq!(error.code(), Some("E_LEGACY_TRAIT_METHOD_KEY"));
+    assert!(error.to_string().contains(".foo"), "error: {error}");
 
-    warn_on_trait_impl_method_tag_syntax(&macro_info, &args, "tests.trait", "demo", &warnings);
+    let dot_expr = Cirru::List(vec![
+      Cirru::leaf("defimpl"),
+      Cirru::leaf("MyFooImpl"),
+      Cirru::leaf("MyFoo"),
+      Cirru::List(vec![Cirru::leaf(".foo"), Cirru::leaf("myfoo:foo")]),
+    ]);
+    let dot_code = code_to_calcit(&dot_expr, "tests.trait", "demo", vec![]).expect("parse dot method");
+    let Calcit::List(dot_items) = dot_code else {
+      panic!("expected list form");
+    };
+    reject_legacy_trait_method_tag_syntax(&macro_info, &dot_items.drop_left(), "tests.trait", "demo", &stack)
+      .expect("dot method key remains supported");
 
-    let warning_msgs: Vec<String> = warnings.borrow().iter().map(|w| w.to_string()).collect();
-    assert!(
-      warning_msgs
-        .iter()
-        .any(|msg| msg.contains("defimpl") && msg.contains("legacy tag style") && msg.contains(".foo")),
-      "expected migration warning for trait/impl method key, got: {warning_msgs:?}"
-    );
+    let trait_expr = Cirru::List(vec![
+      Cirru::leaf("deftrait"),
+      Cirru::leaf("MyFoo"),
+      Cirru::List(vec![Cirru::leaf(":foo"), Cirru::leaf(":fn")]),
+    ]);
+    let trait_code = code_to_calcit(&trait_expr, "tests.trait", "demo", vec![]).expect("parse trait");
+    let Calcit::List(trait_items) = trait_code else {
+      panic!("expected list form");
+    };
+    let trait_info = CalcitMacro {
+      name: Arc::from("deftrait"),
+      ..macro_info
+    };
+    let trait_error = reject_legacy_trait_method_tag_syntax(&trait_info, &trait_items.drop_left(), "tests.trait", "demo", &stack)
+      .expect_err("legacy tag trait method key must be rejected");
+    assert_eq!(trait_error.code(), Some("E_LEGACY_TRAIT_METHOD_KEY"));
   }
 
   #[test]
