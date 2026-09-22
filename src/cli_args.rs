@@ -2727,6 +2727,8 @@ pub enum ConfigSubcommand {
   Version(ConfigVersionCommand),
   /// set a configuration key to a value (mode, target, init-fn, reload-fn, description, feature-policy.<name>, version)
   Set(ConfigSetCommand),
+  /// unset an optional configuration key (target)
+  Unset(ConfigUnsetCommand),
   /// add a module path to an entry's modules
   AddModule(ConfigAddModuleCommand),
   /// remove a module path from an entry's modules
@@ -2798,6 +2800,18 @@ pub struct ConfigSetCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "unset")]
+/// unset an optional configuration key (target)
+pub struct ConfigUnsetCommand {
+  /// apply to a named entry (e.g. "test"); defaults to "default"
+  #[argh(option)]
+  pub entry: Option<String>,
+  /// config key to unset: target
+  #[argh(positional)]
+  pub key: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "add-module")]
 /// add a module path to an entry
 pub struct ConfigAddModuleCommand {
@@ -2851,6 +2865,28 @@ pub struct ConfigRmTypeSlotCommand {
 #[cfg(test)]
 mod wasm_command_tests {
   use super::*;
+
+  #[test]
+  fn parses_config_unset_target() {
+    let parsed = ToplevelCalcit::from_args(&["calcit"], &["config", "unset", "target"]).expect("parse config unset");
+    let Some(CalcitCommand::Config(cmd)) = parsed.subcommand else {
+      panic!("expected config subcommand");
+    };
+    let ConfigSubcommand::Unset(opts) = cmd.subcommand else {
+      panic!("expected config unset subcommand");
+    };
+    assert_eq!(opts.entry, None);
+    assert_eq!(opts.key, "target");
+
+    let named = ToplevelCalcit::from_args(&["calcit"], &["config", "unset", "--entry", "server", "target"]).expect("parse named unset");
+    let Some(CalcitCommand::Config(cmd)) = named.subcommand else {
+      panic!("expected config subcommand");
+    };
+    let ConfigSubcommand::Unset(opts) = cmd.subcommand else {
+      panic!("expected config unset subcommand");
+    };
+    assert_eq!(opts.entry.as_deref(), Some("server"));
+  }
 
   #[test]
   fn parses_public_wasm_commands_with_distinct_targets() {

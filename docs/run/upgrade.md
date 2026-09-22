@@ -35,6 +35,11 @@ related:
 `Result<String,String>` 与 `Result<Unit,String>`；不要迁回会抛出异常的原始 `read-file` /
 `write-file`。`try-read-dir` 暂留供递归 `.walk-dir` 使用，后续单独整理。
 
+entry 的 `:target` 现在可以通过既有命令族撤销：`calcit config unset target [--entry <name>]`
+删除该 entry 的 `:target`，恢复“未指定 target”的语义（`config show` 显示 `(none)`）。
+重复执行 unset 稳定返回 “already unset”，且不改写 Snapshot 内容；`unset` 目前只接受 `target`，
+其他 key 会给出明确错误。同时用于 browser 与 Node 的项目不必再手改 Snapshot 回退。
+
 JavaScript runtime 的 `to-js-data value true/false` 布尔第二参数已退役；需要保留 tag 键的冒号时，
 改用 `to-js-data value $ {} (:add-colon true)`，无需该行为时只传 `value`。旧布尔写法现在明确报错，
 避免在升级后静默转换出不同的 JSON key。`@calcit/procs` 的旧导出
