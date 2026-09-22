@@ -10,7 +10,7 @@ use crate::{
     CalcitImport, CalcitList, CalcitLocal, CalcitNumberBinaryOp, CalcitProc, CalcitScope, CalcitStructDef, CalcitSymbolInfo,
     CalcitSyntax, CalcitTrait, CalcitTraitMemberKind, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning,
     MacroExpansionType, MacroSignature, MacroSyntaxType, NodeLocation, ParamShape, ParamShapeToken, RawCodeType, SchemaKind,
-    brief_type_of_value, compare_param_shapes, pop_type_slot_override, push_type_slot_override, register_type_slot,
+    brief_type_of_value, pop_type_slot_override, push_type_slot_override, register_type_slot, validate_definition_schema_shape,
   },
   call_stack::{CallStackList, StackKind, find_preferred_macro_location},
   codegen, program, runner,
@@ -10194,64 +10194,21 @@ fn validate_def_schema_during_preprocess(
   args: &CalcitList,
   schema: &CalcitTypeAnnotation,
 ) -> Vec<String> {
-  if let CalcitTypeAnnotation::Macro(signature) = schema {
-    if !matches!(head, CalcitSyntax::Defmacro) {
-      let code_kind = match head {
-        CalcitSyntax::Defn => "defn",
-        CalcitSyntax::DefWasmExport => "defwasm-export",
-        CalcitSyntax::DefWasmImport => "defwasm-import",
-        _ => "non-macro definition",
-      };
-      return vec![format!(
-        "[E_SCHEMA_KIND] {ns}/{def_name}: schema :kind is :macro but code uses {code_kind}"
-      )];
-    }
-    let code_shape = analyze_def_schema_param_shape(args);
-    let schema_shape = ParamShape {
-      required: signature.required_inputs.len(),
-      optional: signature.optional_inputs.len(),
-      has_rest: signature.rest_input.is_some(),
-      errors: vec![],
-    };
-    return compare_param_shapes(&format!("{ns}/{def_name}"), &code_shape, &schema_shape);
-  }
-  let CalcitTypeAnnotation::Fn(fn_annot) = schema else {
+  if !matches!(schema, CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::Macro(_)) {
     return vec![];
-  };
-
+  }
   let code_kind = match head {
     CalcitSyntax::Defn => "defn",
     CalcitSyntax::DefWasmExport => "defwasm-export",
     CalcitSyntax::DefWasmImport => "defwasm-import",
     CalcitSyntax::Defmacro => "defmacro",
-    _ => return vec![],
+    _ => "non-macro definition",
   };
-
-  let mut issues: Vec<String> = vec![];
-
-  match (fn_annot.fn_kind, code_kind) {
-    (SchemaKind::Fn, "defmacro") => {
-      issues.push(format!(
-        "[E_SCHEMA_KIND] {ns}/{def_name}: schema :kind is :fn but code uses defmacro"
-      ));
-    }
-    (SchemaKind::Macro, "defn" | "defwasm-export" | "defwasm-import") => {
-      issues.push(format!(
-        "[E_SCHEMA_KIND] {ns}/{def_name}: schema :kind is :macro but code uses {code_kind}"
-      ));
-    }
-    _ => {}
+  if matches!(schema, CalcitTypeAnnotation::Fn(_)) && code_kind == "non-macro definition" {
+    return vec![];
   }
-
-  let mut code_shape = analyze_def_schema_param_shape(args);
-  let mut schema_shape = ParamShape::from_schema(&fn_annot.arg_types, fn_annot.rest_type.is_some());
-  if code_kind != "defmacro" {
-    code_shape = code_shape.as_fixed_arity();
-    schema_shape = schema_shape.as_fixed_arity();
-  }
-  issues.extend(compare_param_shapes(&format!("{ns}/{def_name}"), &code_shape, &schema_shape));
-
-  issues
+  let code_shape = analyze_def_schema_param_shape(args);
+  validate_definition_schema_shape(&format!("{ns}/{def_name}"), code_kind, &code_shape, schema)
 }
 
 #[cfg(test)]

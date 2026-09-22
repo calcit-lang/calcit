@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use calcit::calcit::{
   CalcitProc, CalcitSyntax, CalcitTypeAnnotation, MacroExpansionType, MacroSyntaxType, ParamShape, ParamShapeToken, ProcTypeSignature,
-  SchemaKind, SyntaxTypeSignature, compare_param_shapes, resolve_type_slot,
+  SchemaKind, SyntaxTypeSignature, resolve_type_slot, validate_definition_schema_shape,
 };
 use calcit::cli_args::{CheckTypesCommand, WeakTypesCommand};
 use calcit::snapshot;
@@ -2565,84 +2565,28 @@ fn analyze_builtin_proc(def_name: &str, sig: &ProcTypeSignature) -> TypeCoverage
   }
 }
 
-/// Validate that a code entry matches its schema (kind, arity, rest param presence).
-/// Returns a list of warning/error messages. Empty means no issues.
-/// - `&runtime-implementation` = builtin proc/syntax → always skipped.
-/// - Schema `:kind :fn`   → code must use `defn`.
-/// - Schema `:kind :macro` → code must use `defmacro`.
-/// - Schema `:args` length must match required param count in code.
-/// - Schema `:rest` presence must match `&` rest param in code.
+/// Inventory the same definition/schema contract used by preprocessing.
+/// Source Cirru owns only the code-kind and parameter-shape decoding here.
 pub fn validate_def_vs_schema(ns: &str, def_name: &str, code: &Cirru, schema: &CalcitTypeAnnotation) -> Vec<String> {
-  // builtin proc/syntax — skip structural checks
   if matches!(code, Cirru::Leaf(s) if s.as_ref() == "&runtime-implementation") {
     return vec![];
   }
-
-  if let CalcitTypeAnnotation::Macro(signature) = schema {
-    let Cirru::List(xs) = code else { return vec![] };
-    if !matches!(xs.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defmacro") {
-      let code_kind = xs
-        .first()
-        .and_then(|head| match head {
-          Cirru::Leaf(head) => Some(head.as_ref()),
-          _ => None,
-        })
-        .unwrap_or("non-macro definition");
-      return vec![format!(
-        "[E_SCHEMA_KIND] {ns}/{def_name}: schema :kind is :macro but code uses {code_kind}"
-      )];
-    }
-    let code_shape = analyze_param_shape(xs.get(2));
-    let schema_shape = ParamShape {
-      required: signature.required_inputs.len(),
-      optional: signature.optional_inputs.len(),
-      has_rest: signature.rest_input.is_some(),
-      errors: vec![],
-    };
-    return compare_param_shapes(&format!("{ns}/{def_name}"), &code_shape, &schema_shape);
-  }
-
-  let CalcitTypeAnnotation::Fn(fn_annot) = schema else {
-    // Non-Fn schema (Dynamic, etc.) has no structural constraints
+  if !matches!(schema, CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::Macro(_)) {
     return vec![];
-  };
-
-  let Cirru::List(xs) = code else {
+  }
+  let Cirru::List(xs) = code else { return vec![] };
+  let code_kind = xs
+    .first()
+    .and_then(|head| match head {
+      Cirru::Leaf(head) => Some(head.as_ref()),
+      _ => None,
+    })
+    .unwrap_or("non-macro definition");
+  if matches!(schema, CalcitTypeAnnotation::Fn(_)) && !matches!(code_kind, "defn" | "defmacro") {
     return vec![];
-  };
-
-  let code_kind = match xs.first() {
-    Some(Cirru::Leaf(s)) if s.as_ref() == "defn" => "defn",
-    Some(Cirru::Leaf(s)) if s.as_ref() == "defmacro" => "defmacro",
-    _ => return vec![], // not a defn/defmacro form — skip
-  };
-
-  let mut issues: Vec<String> = vec![];
-
-  // Kind mismatch
-  match (fn_annot.fn_kind, code_kind) {
-    (SchemaKind::Fn, "defmacro") => {
-      issues.push(format!(
-        "[E_SCHEMA_KIND] {ns}/{def_name}: schema :kind is :fn but code uses defmacro"
-      ));
-    }
-    (SchemaKind::Macro, "defn") => {
-      issues.push(format!(
-        "[E_SCHEMA_KIND] {ns}/{def_name}: schema :kind is :macro but code uses defn"
-      ));
-    }
-    _ => {}
   }
-
-  let mut code_shape = analyze_param_shape(xs.get(2));
-  let mut schema_shape = ParamShape::from_schema(&fn_annot.arg_types, fn_annot.rest_type.is_some());
-  if code_kind != "defmacro" {
-    code_shape = code_shape.as_fixed_arity();
-    schema_shape = schema_shape.as_fixed_arity();
-  }
-  issues.extend(compare_param_shapes(&format!("{ns}/{def_name}"), &code_shape, &schema_shape));
-
-  issues
+  let code_shape = analyze_param_shape(xs.get(2));
+  validate_definition_schema_shape(&format!("{ns}/{def_name}"), code_kind, &code_shape, schema)
 }
 
 /// Count required params and detect rest param from a defn/defmacro args form.

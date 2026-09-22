@@ -2,7 +2,7 @@ use std::{fmt::Display, sync::Arc};
 
 use crate::Calcit;
 
-use super::{CalcitGenericBound, CalcitLocal, CalcitTypeAnnotation};
+use super::{CalcitGenericBound, CalcitLocal, CalcitTypeAnnotation, SchemaKind};
 
 /// Counts the continuous `Option<T>` suffix of a fixed-arity parameter list.
 /// Incomplete type metadata is not enough to make any parameter omittable.
@@ -131,6 +131,52 @@ pub fn compare_param_shapes(owner: &str, code: &ParamShape, schema: &ParamShape)
     });
   }
   issues
+}
+
+/// Apply one definition/schema contract to both source inventories and
+/// preprocessed definitions. Callers own parsing their respective argument
+/// forms into a ParamShape; this function owns kind and arity semantics.
+pub fn validate_definition_schema_shape(
+  owner: &str,
+  code_kind: &str,
+  code_shape: &ParamShape,
+  schema: &CalcitTypeAnnotation,
+) -> Vec<String> {
+  match schema {
+    CalcitTypeAnnotation::Macro(signature) => {
+      if code_kind != "defmacro" {
+        return vec![format!("[E_SCHEMA_KIND] {owner}: schema :kind is :macro but code uses {code_kind}")];
+      }
+      let schema_shape = ParamShape {
+        required: signature.required_inputs.len(),
+        optional: signature.optional_inputs.len(),
+        has_rest: signature.rest_input.is_some(),
+        errors: vec![],
+      };
+      compare_param_shapes(owner, code_shape, &schema_shape)
+    }
+    CalcitTypeAnnotation::Fn(fn_annot) => {
+      let mut issues = vec![];
+      match (fn_annot.fn_kind, code_kind) {
+        (SchemaKind::Fn, "defmacro") => {
+          issues.push(format!("[E_SCHEMA_KIND] {owner}: schema :kind is :fn but code uses defmacro"));
+        }
+        (SchemaKind::Macro, "defn" | "defwasm-export" | "defwasm-import") => {
+          issues.push(format!("[E_SCHEMA_KIND] {owner}: schema :kind is :macro but code uses {code_kind}"));
+        }
+        _ => {}
+      }
+      let mut schema_shape = ParamShape::from_schema(&fn_annot.arg_types, fn_annot.rest_type.is_some());
+      let mut code_shape = code_shape.clone();
+      if code_kind != "defmacro" {
+        schema_shape = schema_shape.as_fixed_arity();
+        code_shape = code_shape.as_fixed_arity();
+      }
+      issues.extend(compare_param_shapes(owner, &code_shape, &schema_shape));
+      issues
+    }
+    _ => vec![],
+  }
 }
 
 /// structure of a function arguments
