@@ -196,7 +196,15 @@ fn collect_check_md_module_paths_rejects_retired_configs() {
 
 #[test]
 fn collect_check_md_module_paths_rejects_legacy_code_entries() {
+  struct RemoveTempDirOnDrop(std::path::PathBuf);
+  impl Drop for RemoveTempDirOnDrop {
+    fn drop(&mut self) {
+      let _ = fs::remove_dir_all(&self.0);
+    }
+  }
+
   let root = unique_temp_dir("check-md-legacy-code");
+  let _cleanup = RemoveTempDirOnDrop(root.clone());
   let entry = root.join("mini.cirru");
   let content = r#"{} (:package |mini)
   :version |0.0.0
@@ -213,8 +221,6 @@ fn collect_check_md_module_paths_rejects_legacy_code_entries() {
   let error = collect_check_md_module_paths(entry.to_str().expect("entry path should be utf-8"), &[])
     .expect_err("docs dependency discovery must reject legacy code entries");
   assert!(error.contains("Expr"), "error: {error}");
-
-  fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
