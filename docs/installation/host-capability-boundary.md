@@ -96,9 +96,9 @@ The matrix records what exists today, not an entitlement for every backend.
 
 - Open JSON data: String `.parse-json` and its `Result<Dynamic,String>` wrapper;
   decode the Dynamic value into a closed Struct/Enum before business logic.
-- Filesystem paths: construct `FsPath` with `fs:path`; use `.read-text`,
-  `.write-text`, `.read-dir`, and `.walk-dir`. String-path `try-read-*` and raw
-  raising procedures are compatibility or implementation entries.
+- 文件系统路径：用 `fs:path` 构造 `FsPath`，再调用 `.read-text`、`.write-text`、
+  `.read-dir` 或 `.walk-dir`。旧 String-path `try-read-file` / `try-write-file` 已退役；
+  `try-read-dir` 暂作兼容入口，raw raising procedures 只供底层边界使用。
 - 文件系统：WASI command 的 `.read-text` / `.write-text` / `.read-dir` 只解析 host 显式授予的
   preopen，选择最长 guest 路径前缀，并拒绝绝对路径、`..` 越界、非法 UTF-8 与
   无法推进的 partial I/O。`.read-dir` 通过 cookie 分页枚举即时子项、过滤 `.` 与

@@ -8212,20 +8212,6 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'String $ :: 'Option 'Bool
             :return $ :: 'Result (:: 'List 'String) 'String
-        'try-read-file $ %{} 'CodeEntry
-          :doc "|兼容 String path 的 UTF-8 读取入口，复用 FsPath 的类型化 runtime boundary；新代码应使用 FsPath .read-text。"
-          :code $ quote $ defn try-read-file (path) (&fs-read-text Result path "|try-read-file failed")
-          :examples $ [] $ quote (try-read-file |/calcit-result-contract-does-not-exist/file)
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Result 'String 'String
-        'try-write-file $ %{} 'CodeEntry
-          :doc "|兼容 String path 的 UTF-8 写入入口，复用 FsPath 的类型化 runtime boundary；新代码应使用 FsPath .write-text。"
-          :code $ quote $ defn try-write-file (path content) (&fs-write-text Result path content "|try-write-file failed")
-          :examples $ [] $ quote (try-write-file |/calcit-result-contract-does-not-exist/file |content)
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String 'String
-            :return $ :: 'Result 'Unit 'String
         'tuple-enum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn tuple-enum (_value)
             raise "|`tuple-enum` was removed; use `enum-definition`, which returns Option<EnumDef>"

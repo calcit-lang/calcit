@@ -6,9 +6,8 @@
   :definitions $ {}
     'calcit.core/&fs-read-text $ {}
       :mode :ensure
-      :kind :fn
+      :kind :data
       :doc "|内部 UTF-8 文件读取边界；显式接收 Result 原型和宿主错误前缀，供 FsPath wrapper 与 backend lowering 使用。"
-      :params $ [] 'result-type 'path 'host-error
       :schema $ :: 'Fn
         {}
           :args $ [] 'EnumDef 'String 'String
@@ -16,9 +15,8 @@
       :code $ quote &runtime-implementation
     'calcit.core/&fs-write-text $ {}
       :mode :ensure
-      :kind :fn
+      :kind :data
       :doc "|内部 UTF-8 文件写入边界；显式接收 Result 原型和宿主错误前缀，供 FsPath wrapper 与 backend lowering 使用。"
-      :params $ [] 'result-type 'path 'content 'host-error
       :schema $ :: 'Fn
         {}
           :args $ [] 'EnumDef 'String 'String 'String
@@ -48,32 +46,6 @@
       :code $ quote
         defn fs-path:write-text (self content)
           &fs-write-text Result (:value self) content "|fs-path:write-text failed"
-    'calcit.core/try-read-file $ {}
-      :mode :ensure
-      :kind :fn
-      :doc "|兼容 String path 的 UTF-8 读取入口，复用 FsPath 的类型化 runtime boundary。"
-      :params $ [] 'path
-      :schema $ :: 'Fn
-        {}
-          :args $ [] 'String
-          :return $ :: 'Result 'String 'String
-      :code $ quote
-        defn try-read-file (path)
-          &fs-read-text Result path "|try-read-file failed"
-    'calcit.core/try-write-file $ {}
-      :mode :ensure
-      :kind :fn
-      :doc "|兼容 String path 的 UTF-8 写入入口，复用 FsPath 的类型化 runtime boundary。"
-      :params $ [] 'path 'content
-      :schema $ :: 'Fn
-        {}
-          :args $ [] 'String 'String
-          :return $ :: 'Result 'Unit 'String
-      :code $ quote
-        defn try-write-file (path content)
-          &fs-write-text Result path content "|try-write-file failed"
   :edges $ #{}
     :: :call 'calcit.core/fs-path:read-text 'calcit.core/&fs-read-text
     :: :call 'calcit.core/fs-path:write-text 'calcit.core/&fs-write-text
-    :: :call 'calcit.core/try-read-file 'calcit.core/&fs-read-text
-    :: :call 'calcit.core/try-write-file 'calcit.core/&fs-write-text
