@@ -522,7 +522,7 @@ pub struct DeprecatedCommand {
   pub summary_only: bool,
 }
 
-/// enforce static quality budgets or generate a reviewed baseline
+/// compare existing legacy quality budgets or reduce a reviewed baseline
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "quality")]
 pub struct QualityCommand {
@@ -538,7 +538,7 @@ pub struct QualityCommand {
   /// compare against a committed Cirru EDN baseline, or an explicit .json file
   #[argh(option)]
   pub baseline: Option<String>,
-  /// write a Cirru EDN baseline by default; use .json only for external tools
+  /// lower an existing baseline only; new projects use strict checks instead
   #[argh(option, long = "write-baseline")]
   pub write_baseline: Option<String>,
   /// output format: human (default) or json

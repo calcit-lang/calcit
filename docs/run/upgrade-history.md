@@ -177,8 +177,8 @@ calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 ```
 
 原生 v2 baseline 记录 scope、汇总指标和每个 definition 的独立预算，并将 `unsafeCoerce` 作为单独的 host-boundary 预算。新增 definition 默认预算为零；
-一个 definition 的改善不能掩盖另一个 definition 的回归。`--write-baseline` 会原子写入文件，
-但 baseline 仍需人工审阅并随仓库提交，每次提高都要在 PR 中解释。
+一个 definition 的改善不能掩盖另一个 definition 的回归。`--write-baseline` 仅在现有文件上降低或保持预算，并原子写入；
+不能用于新建 baseline 或提高任何 definition 的指标。baseline 仍需人工审阅并随仓库提交，清零后应删除。
 
 例如把首次审阅后的上限提交为 `config/calcit-upgrade-baseline.cirru`：
 
@@ -192,7 +192,7 @@ calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 ```
 
 这个旧版扁平 shape 仍可直接传给 `analyze quality --baseline`，便于已有项目删除 Node 检查脚本后
-无缝迁移，并继续执行原本八项指标；重新执行 `--write-baseline` 会生成 v2 的按 definition 格式并开始约束 `unsafeCoerce`。如果迁移把 `none` 改善为
+无缝迁移，并继续执行原本八项指标；在现有文件上执行 `--write-baseline` 会生成 v2 的按 definition 格式，并要求新增的 `unsafeCoerce` 指标为零或不超过旧预算。如果迁移把 `none` 改善为
 `partial`，`typeNone` 会下降且 `typeNotFull` 不变；改善为 `full` 时二者都会下降。确有类型债务在
-不同分类间迁移时，应在 PR 中解释并显式更新 baseline，而不是让一个总数相互抵消。baseline 归零后
+不同分类间迁移时，不应通过自动写入抬高另一项预算；先依默认诊断与测试解决问题，确需调整存量文件时单独人工审阅。baseline 归零后
 删除 `analyze quality` 调用；0.15 将不再把 coverage/Dynamic 数量作为独立类型正确性策略。

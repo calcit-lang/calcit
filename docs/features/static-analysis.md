@@ -243,7 +243,7 @@ are preserved. Missing, duplicate, or unknown constructor fields do not qualify.
 | `quality`、baseline | 旧项目显式选择的迁移预算 | 不再隐含在 `--strict-types`；待存量依赖迁走后删除 |
 | `check-public`、`check-examples` | 检查入口可达性无法覆盖的公开定义和示例 | 保留实际验证，不建立第二套类型关系 |
 
-`analyze quality` 继续读取已有 v1/v2 baseline，兼容仍依赖它的存量项目。它把 `check-types`、`weak-types` 与 `deprecated` 的迁移数量按 definition 比较，但不拥有类型正确性语义。新项目不要创建 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。`--write-baseline` 只为维护已有兼容工件保留，不能作为新项目的起点。
+`analyze quality` 继续读取已有 v1/v2 baseline，兼容仍依赖它的存量项目。它把 `check-types`、`weak-types` 与 `deprecated` 的迁移数量按 definition 比较，但不拥有类型正确性语义。新项目不要创建 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。`--write-baseline` 只接受已存在的文件，且拒绝任何 definition 的预算增加；旧版扁平 baseline 则按原有汇总指标比较。升级 v1/扁平文件到 v2 时，原先未记录的 `unsafeCoerce` 预算也从零开始，须先消除新增债务。
 
 内置 Cirru core 曾使用 `config/calcit-core-quality.cirru` 记录逐 definition 的迁移数量。该文件暂留作历史参考，但 `yarn check-all`、PR 和发布流程不再运行数量门槛，也不应为了通过检查而刷新它。core 的类型正确性由编译器诊断与测试判断；仍需补齐 core 公开定义的严格可达性检查，而不是重新设定 Dynamic 数量阈值。显式 `analyze quality --baseline` 仅服务尚未迁走的旧项目。
 

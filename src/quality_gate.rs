@@ -254,15 +254,51 @@ fn compare_metrics(
     .collect()
 }
 
-fn compare_detailed_baseline(current: &QualitySnapshot, baseline: &QualityBaseline) -> Vec<QualityViolation> {
+fn compare_detailed_baseline(
+  current: &QualitySnapshot,
+  baseline: &QualityBaseline,
+  include_unsafe_coerce: bool,
+) -> Vec<QualityViolation> {
   let mut violations = vec![];
-  let include_unsafe_coerce = baseline.schema_version >= 2;
   for (definition, actual) in &current.definitions {
     let limit = baseline.definitions.get(definition).cloned().unwrap_or_default();
     violations.extend(compare_metrics(actual, &limit, Some(definition), include_unsafe_coerce));
   }
   violations.sort_by(|left, right| left.definition.cmp(&right.definition).then(left.metric.cmp(&right.metric)));
   violations
+}
+
+fn validate_baseline_update(path: &Path, scope: &QualityScope, current: &QualitySnapshot) -> Result<(), String> {
+  if !path.is_file() {
+    return Err(format!(
+      "Quality baseline '{}' does not exist as a file. `--write-baseline` only updates an existing legacy baseline; new projects should use strict checks and behavior tests instead.",
+      path.display()
+    ));
+  }
+  let violations = match read_baseline(path)? {
+    Ok(baseline) => {
+      if baseline.scope != *scope {
+        return Err(format!(
+          "Quality baseline scope does not match this command. Baseline: {:?}; current: {:?}. Use the same --ns/--ns-prefix/--deps flags.",
+          baseline.scope, scope
+        ));
+      }
+      // Updating a v1 baseline writes v2, which starts tracking unsafeCoerce.
+      compare_detailed_baseline(current, &baseline, true)
+    }
+    Err(legacy_limits) => compare_metrics(&current.metrics, &legacy_limits, None, true),
+  };
+  if let Some(violation) = violations.first() {
+    let owner = violation.definition.as_deref().unwrap_or("project");
+    return Err(format!(
+      "Cannot raise quality baseline '{}': {owner} {} is {} (existing limit {}). Reduce the debt before updating this legacy baseline; use strict checks and behavior tests for correctness.",
+      path.display(),
+      violation.metric,
+      violation.actual,
+      violation.limit
+    ));
+  }
+  Ok(())
 }
 
 fn reported_baseline_limits(current: &QualitySnapshot, baseline: &QualityBaseline) -> QualityMetrics {
@@ -383,6 +419,7 @@ pub fn analyze_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) 
   let current = collect_quality_snapshot(options, snapshot)?;
 
   if let Some(path) = &options.write_baseline {
+    validate_baseline_update(Path::new(path), &scope, &current)?;
     write_baseline(Path::new(path), &scope, &current)?;
     return Ok(QualityOutcome {
       revision: current.revision,
@@ -406,7 +443,7 @@ pub fn analyze_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) 
             baseline.scope, scope
           ));
         }
-        let violations = compare_detailed_baseline(&current, &baseline);
+        let violations = compare_detailed_baseline(&current, &baseline, baseline.schema_version >= 2);
         let limits = reported_baseline_limits(&current, &baseline);
         let mode = if baseline.schema_version == 1 {
           "native-baseline-v1"
@@ -581,6 +618,95 @@ mod tests {
   }
 
   #[test]
+  fn baseline_update_requires_an_existing_file() {
+    let path = temp_baseline_path("missing-update", "cirru");
+    assert!(!path.exists(), "test path must not already exist");
+    let error = validate_baseline_update(&path, &default_scope(), &sample_snapshot()).expect_err("new baseline must be rejected");
+    assert!(error.contains("only updates an existing legacy baseline"), "error: {error}");
+    assert!(!path.exists(), "a rejected update must not create a baseline");
+  }
+
+  #[test]
+  fn baseline_update_only_lowers_existing_definition_budgets() {
+    let path = temp_baseline_path("update-ratchet", "cirru");
+    let original = sample_snapshot();
+    write_baseline(&path, &default_scope(), &original).expect("create existing baseline fixture");
+    let initial_content = fs::read_to_string(&path).expect("read original baseline");
+
+    validate_baseline_update(&path, &default_scope(), &original).expect("unchanged debt is allowed");
+    let increased = QualitySnapshot {
+      metrics: metrics(2),
+      definitions: BTreeMap::from([("app/main".to_owned(), metrics(2))]),
+      ..original.clone()
+    };
+    let error = validate_baseline_update(&path, &default_scope(), &increased).expect_err("increased debt must be rejected");
+    assert!(error.contains("app/main schemaDynamic is 2 (existing limit 1)"), "error: {error}");
+    assert_eq!(fs::read_to_string(&path).expect("read retained baseline"), initial_content);
+
+    let decreased = QualitySnapshot {
+      metrics: metrics(0),
+      definitions: BTreeMap::new(),
+      ..original
+    };
+    validate_baseline_update(&path, &default_scope(), &decreased).expect("reduced debt is allowed");
+    fs::remove_file(&path).expect("remove baseline fixture");
+  }
+
+  #[test]
+  fn baseline_update_cannot_add_unsafe_debt_when_upgrading_v1() {
+    let path = temp_baseline_path("v1-update", "json");
+    let source = r#"{
+      "schemaVersion": 1,
+      "scope": {"namespace": null, "namespacePrefix": null, "includeDependencies": false},
+      "metrics": {"typeNone": 0, "typeNotFull": 0, "schemaDynamic": 0, "codeDynamic": 0, "codeNil": 0, "unresolved": 0, "declaredOptional": 0, "deprecatedCalls": 0},
+      "definitions": {}
+    }"#;
+    fs::write(&path, source).expect("create v1 baseline fixture");
+    let current = QualitySnapshot {
+      revision: "md5:test".to_owned(),
+      metrics: QualityMetrics {
+        unsafe_coerce: 1,
+        ..QualityMetrics::default()
+      },
+      definitions: BTreeMap::from([(
+        "app/adapter".to_owned(),
+        QualityMetrics {
+          unsafe_coerce: 1,
+          ..QualityMetrics::default()
+        },
+      )]),
+    };
+    let error = validate_baseline_update(&path, &default_scope(), &current).expect_err("new unsafe debt must be rejected");
+    assert!(error.contains("unsafeCoerce is 1 (existing limit 0)"), "error: {error}");
+    fs::remove_file(&path).expect("remove v1 fixture");
+  }
+
+  #[test]
+  fn flat_baseline_update_checks_totals_and_native_update_checks_scope() {
+    let flat_path = temp_baseline_path("flat-update", "json");
+    fs::write(&flat_path, serde_json::to_string(&metrics(1)).expect("encode flat baseline")).expect("create flat baseline fixture");
+    validate_baseline_update(&flat_path, &default_scope(), &sample_snapshot()).expect("unchanged flat total is allowed");
+    let increased = QualitySnapshot {
+      metrics: metrics(2),
+      definitions: BTreeMap::from([("app/main".to_owned(), metrics(2))]),
+      ..sample_snapshot()
+    };
+    let error = validate_baseline_update(&flat_path, &default_scope(), &increased).expect_err("higher flat total must be rejected");
+    assert!(error.contains("project schemaDynamic is 2 (existing limit 1)"), "error: {error}");
+    fs::remove_file(&flat_path).expect("remove flat fixture");
+
+    let native_path = temp_baseline_path("scoped-update", "cirru");
+    write_baseline(&native_path, &default_scope(), &sample_snapshot()).expect("create scoped fixture");
+    let scoped = QualityScope {
+      namespace: Some("app.main".to_owned()),
+      ..default_scope()
+    };
+    let error = validate_baseline_update(&native_path, &scoped, &sample_snapshot()).expect_err("scope change must be rejected");
+    assert!(error.contains("scope does not match"), "error: {error}");
+    fs::remove_file(&native_path).expect("remove scoped fixture");
+  }
+
+  #[test]
   fn legacy_flat_cirru_edn_baseline_remains_readable() {
     let source = "{} (:typeNone 1) (:typeNotFull 1) (:schemaDynamic 2) (:codeDynamic 0) (:codeNil 0) (:unresolved 2) (:declaredOptional 0) (:deprecatedCalls 0)";
     let path = temp_baseline_path("legacy", "cirru");
@@ -656,7 +782,7 @@ mod tests {
         },
       )]),
     };
-    assert!(compare_detailed_baseline(&current, &baseline).is_empty());
+    assert!(compare_detailed_baseline(&current, &baseline, false).is_empty());
     assert_eq!(reported_baseline_limits(&current, &baseline).unsafe_coerce, 1);
   }
 
@@ -678,7 +804,7 @@ mod tests {
       definitions: BTreeMap::from([("app/a".to_owned(), metrics(0)), ("app/b".to_owned(), metrics(1))]),
     };
 
-    let violations = compare_detailed_baseline(&current, &baseline);
+    let violations = compare_detailed_baseline(&current, &baseline, true);
     assert_eq!(violations.len(), 1);
     assert_eq!(violations[0].definition.as_deref(), Some("app/b"));
     assert_eq!(violations[0].metric, "schemaDynamic");

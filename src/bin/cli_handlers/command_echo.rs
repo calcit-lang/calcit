@@ -635,7 +635,7 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
     }
     AnalyzeSubcommand::Quality(opts) => {
       if let Some(path) = &opts.write_baseline {
-        format!("writes a per-definition static quality baseline to `{path}`")
+        format!("updates an existing legacy quality baseline at `{path}` without raising its budgets")
       } else if let Some(path) = &opts.baseline {
         format!("enforces static quality budgets from `{path}`")
       } else {
