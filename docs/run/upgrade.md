@@ -26,6 +26,12 @@ related:
 
 ## 0.19 兼容清理与 CLI 入口收敛
 
+JavaScript runtime 的 `to-js-data value true/false` 布尔第二参数已退役；需要保留 tag 键的冒号时，
+改用 `to-js-data value $ {} (:add-colon true)`，无需该行为时只传 `value`。旧布尔写法现在明确报错，
+避免在升级后静默转换出不同的 JSON key。`@calcit/procs` 的旧导出
+`_$n_enum_def_$o_has_variant` 也已移除；直接调用 runtime 的代码应使用与
+`&enum-def:has-variant?` 对应的 `_$n_enum_def_$o_has_variant_$q_`。
+
 当前 Snapshot 的命名空间代码必须使用 `ns name`；旧式 `:ns name` 已被拒绝，并会给出迁移提示。
 升级旧快照时，可对没有 import 的命名空间执行
 `calcit calcit.cirru edit imports <namespace> --input-format cirru --code 'quote $ []'`；

@@ -708,8 +708,6 @@ export let _$n_enum_def_$o_has_variant_$q_ = function (enumPrototype: CalcitValu
   return proto.contains(variantTag);
 };
 
-export let _$n_enum_def_$o_has_variant = _$n_enum_def_$o_has_variant_$q_;
-
 export let _$n_enum_def_$o_variant_arity = function (enumPrototype: CalcitValue, variantTag: CalcitTag) {
   if (arguments.length !== 2) throw new Error("&enum-def:variant-arity takes 2 arguments");
   const proto = assert_enum_tag_args("&enum-def:variant-arity", enumPrototype, variantTag);

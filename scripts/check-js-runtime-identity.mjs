@@ -89,6 +89,13 @@ try {
   const todoEnum = new runtimeA.CalcitEnumDef(new runtimeA.CalcitStructValue(todoName, [todoField], [todoType]));
   const todoEnumValue = new runtimeA.CalcitEnumValue(todoField, [""], todoEnum);
   const anonymousEnumValue = new runtimeA.CalcitEnumValue(todoField, [""]);
+  assert.equal(runtimeA._$n_enum_def_$o_has_variant_$q_(todoEnum, todoField), true);
+  assert.equal(runtimeA._$n_enum_def_$o_has_variant, undefined, "retired Enum export alias must not remain public");
+  const jsData = new runtimeA.CalcitSliceMap([todoField, "next"]);
+  const jsDataOptions = new runtimeA.CalcitSliceMap([runtimeA.newTag("add-colon"), true]);
+  assert.deepEqual(runtimeA.to_js_data(jsData), { draft: "next" });
+  assert.deepEqual(runtimeA.to_js_data(jsData, jsDataOptions), { ":draft": "next" });
+  assert.throws(() => runtimeA.to_js_data(jsData, true), /no longer accepts a boolean second argument/);
   const zeroWait = runtimeA._$n_wait_ms(todoEnum, 0, "wait failed");
   assert.equal(zeroWait.tag, runtimeA.newTag("ok"));
   assert.deepEqual(waits, [], "zero wait must not invoke the JavaScript host");
