@@ -379,7 +379,7 @@ fn read_baseline(path: &Path) -> Result<Result<QualityBaseline, QualityMetrics>,
   }
 }
 
-fn write_baseline(path: &Path, scope: &QualityScope, current: &QualitySnapshot) -> Result<(), String> {
+fn write_baseline(path: &Path, scope: &QualityScope, current: &QualitySnapshot, update_existing: bool) -> Result<(), String> {
   let zero = QualityMetrics::default();
   let baseline = QualityBaseline {
     schema_version: QUALITY_BASELINE_SCHEMA_VERSION,
@@ -407,6 +407,10 @@ fn write_baseline(path: &Path, scope: &QualityScope, current: &QualitySnapshot) 
     content.push('\n');
   }
   let staged = crate::cli_handlers::stage_atomic_file(path, content.as_bytes(), "quality baseline")?;
+  if update_existing {
+    // Keep the writer lock from validation through the atomic replacement.
+    validate_baseline_update(path, scope, current)?;
+  }
   staged.commit()
 }
 
@@ -419,8 +423,7 @@ pub fn analyze_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) 
   let current = collect_quality_snapshot(options, snapshot)?;
 
   if let Some(path) = &options.write_baseline {
-    validate_baseline_update(Path::new(path), &scope, &current)?;
-    write_baseline(Path::new(path), &scope, &current)?;
+    write_baseline(Path::new(path), &scope, &current, true)?;
     return Ok(QualityOutcome {
       revision: current.revision,
       scope,
@@ -593,7 +596,7 @@ mod tests {
   #[test]
   fn cirru_edn_is_the_default_baseline_format() {
     let path = temp_baseline_path("native", "cirru");
-    write_baseline(&path, &default_scope(), &sample_snapshot()).expect("write Cirru EDN baseline");
+    write_baseline(&path, &default_scope(), &sample_snapshot(), false).expect("write Cirru EDN baseline");
 
     let content = fs::read_to_string(&path).expect("read Cirru EDN baseline");
     assert!(content.starts_with("{}"));
@@ -607,7 +610,7 @@ mod tests {
   #[test]
   fn explicit_json_baseline_remains_available() {
     let path = temp_baseline_path("native", "json");
-    write_baseline(&path, &default_scope(), &sample_snapshot()).expect("write JSON baseline");
+    write_baseline(&path, &default_scope(), &sample_snapshot(), false).expect("write JSON baseline");
 
     let content = fs::read_to_string(&path).expect("read JSON baseline");
     assert!(content.starts_with('{'));
@@ -621,7 +624,7 @@ mod tests {
   fn baseline_update_requires_an_existing_file() {
     let path = temp_baseline_path("missing-update", "cirru");
     assert!(!path.exists(), "test path must not already exist");
-    let error = validate_baseline_update(&path, &default_scope(), &sample_snapshot()).expect_err("new baseline must be rejected");
+    let error = write_baseline(&path, &default_scope(), &sample_snapshot(), true).expect_err("new baseline must be rejected");
     assert!(error.contains("only updates an existing legacy baseline"), "error: {error}");
     assert!(!path.exists(), "a rejected update must not create a baseline");
   }
@@ -630,16 +633,16 @@ mod tests {
   fn baseline_update_only_lowers_existing_definition_budgets() {
     let path = temp_baseline_path("update-ratchet", "cirru");
     let original = sample_snapshot();
-    write_baseline(&path, &default_scope(), &original).expect("create existing baseline fixture");
+    write_baseline(&path, &default_scope(), &original, false).expect("create existing baseline fixture");
     let initial_content = fs::read_to_string(&path).expect("read original baseline");
 
-    validate_baseline_update(&path, &default_scope(), &original).expect("unchanged debt is allowed");
+    write_baseline(&path, &default_scope(), &original, true).expect("unchanged debt is allowed");
     let increased = QualitySnapshot {
       metrics: metrics(2),
       definitions: BTreeMap::from([("app/main".to_owned(), metrics(2))]),
       ..original.clone()
     };
-    let error = validate_baseline_update(&path, &default_scope(), &increased).expect_err("increased debt must be rejected");
+    let error = write_baseline(&path, &default_scope(), &increased, true).expect_err("increased debt must be rejected");
     assert!(error.contains("app/main schemaDynamic is 2 (existing limit 1)"), "error: {error}");
     assert_eq!(fs::read_to_string(&path).expect("read retained baseline"), initial_content);
 
@@ -648,7 +651,30 @@ mod tests {
       definitions: BTreeMap::new(),
       ..original
     };
-    validate_baseline_update(&path, &default_scope(), &decreased).expect("reduced debt is allowed");
+    write_baseline(&path, &default_scope(), &decreased, true).expect("reduced debt is allowed");
+    assert_eq!(
+      read_baseline(&path)
+        .expect("read reduced baseline")
+        .expect("native baseline")
+        .metrics,
+      metrics(0)
+    );
+    fs::remove_file(&path).expect("remove baseline fixture");
+  }
+
+  #[test]
+  fn baseline_update_respects_existing_writer_lock() {
+    let path = temp_baseline_path("locked-update", "cirru");
+    write_baseline(&path, &default_scope(), &sample_snapshot(), false).expect("create baseline fixture");
+    let initial_content = fs::read_to_string(&path).expect("read baseline fixture");
+    let staged = crate::cli_handlers::stage_atomic_file(&path, b"pending", "quality baseline").expect("hold writer lock");
+
+    let error = write_baseline(&path, &default_scope(), &sample_snapshot(), true).expect_err("second writer must wait");
+    assert!(error.contains("Failed to acquire writer lock"), "error: {error}");
+    assert_eq!(fs::read_to_string(&path).expect("read unchanged baseline"), initial_content);
+
+    drop(staged);
+    write_baseline(&path, &default_scope(), &sample_snapshot(), true).expect("update after lock release");
     fs::remove_file(&path).expect("remove baseline fixture");
   }
 
@@ -676,7 +702,7 @@ mod tests {
         },
       )]),
     };
-    let error = validate_baseline_update(&path, &default_scope(), &current).expect_err("new unsafe debt must be rejected");
+    let error = write_baseline(&path, &default_scope(), &current, true).expect_err("new unsafe debt must be rejected");
     assert!(error.contains("unsafeCoerce is 1 (existing limit 0)"), "error: {error}");
     fs::remove_file(&path).expect("remove v1 fixture");
   }
@@ -691,17 +717,25 @@ mod tests {
       definitions: BTreeMap::from([("app/main".to_owned(), metrics(2))]),
       ..sample_snapshot()
     };
-    let error = validate_baseline_update(&flat_path, &default_scope(), &increased).expect_err("higher flat total must be rejected");
+    let error = write_baseline(&flat_path, &default_scope(), &increased, true).expect_err("higher flat total must be rejected");
     assert!(error.contains("project schemaDynamic is 2 (existing limit 1)"), "error: {error}");
+    write_baseline(&flat_path, &default_scope(), &sample_snapshot(), true).expect("flat baseline can migrate without higher debt");
+    assert_eq!(
+      read_baseline(&flat_path)
+        .expect("read migrated baseline")
+        .expect("native baseline")
+        .metrics,
+      metrics(1)
+    );
     fs::remove_file(&flat_path).expect("remove flat fixture");
 
     let native_path = temp_baseline_path("scoped-update", "cirru");
-    write_baseline(&native_path, &default_scope(), &sample_snapshot()).expect("create scoped fixture");
+    write_baseline(&native_path, &default_scope(), &sample_snapshot(), false).expect("create scoped fixture");
     let scoped = QualityScope {
       namespace: Some("app.main".to_owned()),
       ..default_scope()
     };
-    let error = validate_baseline_update(&native_path, &scoped, &sample_snapshot()).expect_err("scope change must be rejected");
+    let error = write_baseline(&native_path, &scoped, &sample_snapshot(), true).expect_err("scope change must be rejected");
     assert!(error.contains("scope does not match"), "error: {error}");
     fs::remove_file(&native_path).expect("remove scoped fixture");
   }
