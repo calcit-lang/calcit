@@ -195,6 +195,28 @@ fn calcit_fs_path_read_text_runs_with_real_wasi_03_preopen() {
 }
 
 #[test]
+fn manifest_result_branches_retain_nominal_payload_type() {
+  let result = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .args([
+      "examples/wasi-command/calcit.cirru",
+      "query",
+      "type-at",
+      "app.main/transform-manifest",
+      "--path",
+      "@3",
+      "--format",
+      "json",
+    ])
+    .output()
+    .expect("query Manifest type evidence");
+  assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+  let report: serde_json::Value = serde_json::from_slice(&result.stdout).expect("JSON type-at envelope");
+  assert_eq!(report["data"]["inferred_type"], ":: 'Result 'Manifest 'String");
+  assert_eq!(report["data"]["confidence"], "exact");
+  assert_eq!(report["data"]["dynamic_intent"], serde_json::Value::Null);
+}
+
+#[test]
 fn command_without_reachable_file_effect_omits_filesystem_imports() {
   let output = tempfile::tempdir().expect("output directory");
   let compiled = calcit(

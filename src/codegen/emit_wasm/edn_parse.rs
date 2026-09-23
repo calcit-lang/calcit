@@ -1613,27 +1613,6 @@ fn emit_numeric_refinement_check(ctx: &mut WasmGenCtx, parsed: u32, kind: Calcit
   ctx.emit(Instruction::LocalSet(output));
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn rejects_recursive_map_keys_before_codegen() {
-    let graph = DataShapeGraph::from_nodes(
-      0,
-      vec![
-        DataShapeNode::Map { key: 1, value: 2 },
-        DataShapeNode::List(2),
-        DataShapeNode::String,
-      ],
-    )
-    .expect("test shape should be well formed");
-
-    let error = validate_decode_shape(&graph, graph.root, 0).expect_err("collection map keys must fail closed");
-    assert!(error.starts_with("E_WASM_EDN_MAP_KEY:"));
-  }
-}
-
 fn if_then_string_prefix<F>(ctx: &mut WasmGenCtx, ptr: u32, prefix: &str, body: F) -> Result<(), String>
 where
   F: FnOnce(&mut WasmGenCtx) -> Result<(), String>,
@@ -1743,4 +1722,25 @@ fn slice_string_range(ctx: &mut WasmGenCtx, ptr: u32, start: u32, end: u32) -> u
   ctx.emit(Instruction::LocalGet(len));
   ctx.emit(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
   output
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn rejects_recursive_map_keys_before_codegen() {
+    let graph = DataShapeGraph::from_nodes(
+      0,
+      vec![
+        DataShapeNode::Map { key: 1, value: 2 },
+        DataShapeNode::List(2),
+        DataShapeNode::String,
+      ],
+    )
+    .expect("test shape should be well formed");
+
+    let error = validate_decode_shape(&graph, graph.root, 0).expect_err("collection map keys must fail closed");
+    assert!(error.starts_with("E_WASM_EDN_MAP_KEY:"));
+  }
 }
