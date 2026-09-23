@@ -59,9 +59,9 @@ use component::{
 use methods::{emit_call_args, emit_method_invoke};
 use runtime::{
   HostImport, ModuleFunctionLayout, build_runtime_fns, build_utf8_valid_fn, build_wasi_component_get_env_fn,
-  build_wasi_component_route_path_fn, build_wasi_get_args_fn, build_wasi_get_env_fn, build_wasi_open_path_fn, build_wasi_read_dir_fn,
-  build_wasi_read_text_fn, build_wasi_wait_fn, build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module, core_host_import,
-  host_imports_for_target,
+  build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasi_get_args_fn, build_wasi_get_env_fn,
+  build_wasi_open_path_fn, build_wasi_read_dir_fn, build_wasi_read_text_fn, build_wasi_wait_fn, build_wasi_write_all_fn,
+  build_wasi_write_text_fn, build_wasm_module, core_host_import, host_imports_for_target,
 };
 use structs::{
   emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_contains, emit_struct_count,
@@ -531,6 +531,19 @@ fn emit_wasm_impl(
     let route_idx = num_imports + compiled_fns.len() as u32;
     runtime_fn_index.insert("__rt_wasi_component_route_path".into(), route_idx);
     compiled_fns.push(build_wasi_component_route_path_fn());
+    let import_indices = index_host_imports(&host_imports);
+    let select_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_component_select_preopen".into(), select_idx);
+    compiled_fns.push(build_wasi_component_select_preopen_fn(
+      *import_indices
+        .get(&("wasi:filesystem/preopens@0.3.1".into(), "get-directories".into()))
+        .expect("WASI preopen import must be registered"),
+      *import_indices
+        .get(&("wasi:filesystem/types@0.3.1".into(), "[resource-drop]descriptor".into()))
+        .expect("WASI descriptor drop import must be registered"),
+      component_cabi_free_index.expect("Component boundary must install cabi_free"),
+      route_idx,
+    ));
   }
 
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
@@ -8681,6 +8694,8 @@ fn wasi_component_file_imports() -> Vec<HostImport> {
 #[cfg(test)]
 mod tests {
   use std::collections::{BTreeMap, HashMap};
+  use std::fs;
+  use std::process::Command;
   use std::str::FromStr;
   use std::sync::Arc;
 
@@ -8688,12 +8703,12 @@ mod tests {
   use super::{
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport,
-    ModuleFunctionLayout, WasmBoundary, WasmTarget, build_cabi_realloc_fn, build_component_export_adapter,
-    build_component_import_adapter, build_string_pool, build_wasi_component_route_path_fn, build_wasm_module, component_abi_type,
-    component_export_needs_post_return, component_flat_types, component_import_signature, component_memory_layout,
-    component_task_return_signature, expr_uses_wasi_file, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
-    reject_reachable_wasi_command_dependencies, validate_component_export_symbols, validate_component_flat_parameters,
-    validate_component_import_symbols, wasi_component_file_imports,
+    ModuleFunctionLayout, WasmBoundary, WasmTarget, build_cabi_free_fn, build_cabi_realloc_fn, build_component_export_adapter,
+    build_component_import_adapter, build_string_pool, build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn,
+    build_wasm_module, component_abi_type, component_export_needs_post_return, component_flat_types, component_import_signature,
+    component_memory_layout, component_task_return_signature, expr_uses_wasi_file, host_imports_for_target, index_host_imports,
+    must_reject_extraction_failure, reject_reachable_wasi_command_dependencies, validate_component_export_symbols,
+    validate_component_flat_parameters, validate_component_import_symbols, wasi_component_file_imports,
   };
   use crate::calcit::{
     Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSyntax,
@@ -8701,7 +8716,7 @@ mod tests {
   };
   use cirru_edn::EdnTag;
   use wasm_encoder::{Instruction, ValType};
-  use wasmtime::{Engine, Instance, Module, Store};
+  use wasmtime::{Caller, Engine, Extern, Func, Instance, Module, Store};
 
   fn declaration(head: CalcitSyntax) -> Calcit {
     let items = [Calcit::Syntax(head, Arc::from("dependency.ns"))];
@@ -8923,6 +8938,221 @@ mod tests {
         route.call(&mut store, (64, 8192, name.len() as i32)).expect("route call"),
         expected,
         "path={path:?}, preopen={name:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn wasi_03_select_preopen_releases_unselected_resources() {
+    #[derive(Default)]
+    struct HostState {
+      directories: Vec<(i32, String)>,
+      dropped: Vec<i32>,
+      freed: Vec<(i32, i32)>,
+    }
+    let imports = vec![
+      HostImport {
+        module: "test".into(),
+        name: "get-directories".into(),
+        params: vec![ValType::I32],
+        results: vec![],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "drop-descriptor".into(),
+        params: vec![ValType::I32],
+        results: vec![],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "free".into(),
+        params: vec![ValType::I32; 2],
+        results: vec![],
+      },
+    ];
+    let route = build_wasi_component_route_path_fn();
+    let mut select = build_wasi_component_select_preopen_fn(0, 1, 2, 3);
+    select.export_name = Some("select".into());
+    let bytes = build_wasm_module(
+      &[route, select],
+      &imports,
+      16384,
+      &[],
+      &[],
+      1,
+      ModuleFunctionLayout {
+        runtime_fn_count: 0,
+        table_fn_count: 0,
+        component_free_head: false,
+      },
+    )
+    .expect("valid preopen selector module");
+    let engine = Engine::default();
+    let module = Module::new(&engine, &bytes).expect("valid preopen selector");
+    let mut store = Store::new(&engine, HostState::default());
+    let get_directories = Func::wrap(&mut store, |mut caller: Caller<'_, HostState>, retptr: i32| {
+      let directories = caller.data().directories.clone();
+      let memory = caller.get_export("memory").expect("memory export").into_memory().expect("memory");
+      let mut name_ptr = 8192usize;
+      for (index, (handle, name)) in directories.iter().enumerate() {
+        let entry = 4096 + index * 12;
+        memory.write(&mut caller, entry, &handle.to_le_bytes()).expect("descriptor handle");
+        memory
+          .write(&mut caller, entry + 4, &(name_ptr as i32).to_le_bytes())
+          .expect("name pointer");
+        memory
+          .write(&mut caller, entry + 8, &(name.len() as i32).to_le_bytes())
+          .expect("name length");
+        memory.write(&mut caller, name_ptr, name.as_bytes()).expect("name bytes");
+        name_ptr += name.len().max(1);
+      }
+      let result = retptr as usize;
+      let list_ptr: i32 = if directories.is_empty() { 0 } else { 4096 };
+      memory.write(&mut caller, result, &list_ptr.to_le_bytes()).expect("list pointer");
+      memory
+        .write(&mut caller, result + 4, &(directories.len() as i32).to_le_bytes())
+        .expect("list length");
+    });
+    let drop_descriptor = Func::wrap(&mut store, |mut caller: Caller<'_, HostState>, descriptor: i32| {
+      caller.data_mut().dropped.push(descriptor);
+    });
+    let free = Func::wrap(&mut store, |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| {
+      caller.data_mut().freed.push((ptr, len));
+    });
+    let instance = Instance::new(
+      &mut store,
+      &module,
+      &[Extern::Func(get_directories), Extern::Func(drop_descriptor), Extern::Func(free)],
+    )
+    .expect("instantiate selector");
+    let memory = instance.get_memory(&mut store, "memory").expect("module memory");
+    let select = instance
+      .get_typed_func::<(i32, i32), i32>(&mut store, "select")
+      .expect("select function");
+
+    store.data_mut().directories = vec![(11, ".".into()), (22, "/workspace".into()), (33, "/workspace2".into())];
+    let path = "workspace/input.cirru";
+    memory
+      .write(&mut store, 64, &(path.len() as f64).to_le_bytes())
+      .expect("path length");
+    memory.write(&mut store, 72, path.as_bytes()).expect("path bytes");
+    assert_eq!(select.call(&mut store, (64, 2048)).expect("select preopen"), 1);
+    let output = &memory.data(&store)[2048..2060];
+    assert_eq!(i32::from_le_bytes(output[0..4].try_into().unwrap()), 22);
+    assert_eq!(i32::from_le_bytes(output[4..8].try_into().unwrap()), 82);
+    assert_eq!(i32::from_le_bytes(output[8..12].try_into().unwrap()), 11);
+    assert_eq!(store.data().dropped, [11, 33]);
+    assert_eq!(store.data().freed.len(), 4, "all names and the list must be freed");
+
+    store.data_mut().dropped.clear();
+    store.data_mut().freed.clear();
+    let invalid = "workspace/../secret";
+    memory
+      .write(&mut store, 64, &(invalid.len() as f64).to_le_bytes())
+      .expect("path length");
+    memory.write(&mut store, 72, invalid.as_bytes()).expect("path bytes");
+    assert_eq!(select.call(&mut store, (64, 2048)).expect("reject invalid path"), 0);
+    assert_eq!(store.data().dropped, [11, 22, 33]);
+    assert_eq!(store.data().freed.len(), 4);
+    assert_eq!(&memory.data(&store)[2048..2060], &[0; 12]);
+
+    store.data_mut().dropped.clear();
+    store.data_mut().freed.clear();
+    store.data_mut().directories = (0..65).map(|index| (index, ".".into())).collect();
+    assert_eq!(select.call(&mut store, (64, 2048)).expect("reject oversized table"), 0);
+    assert_eq!(store.data().dropped.len(), 65);
+    assert_eq!(store.data().freed.len(), 66);
+
+    store.data_mut().dropped.clear();
+    store.data_mut().freed.clear();
+    store.data_mut().directories.clear();
+    assert_eq!(select.call(&mut store, (64, 2048)).expect("reject empty preopens"), 0);
+    assert!(store.data().dropped.is_empty());
+    assert_eq!(store.data().freed, [(0, 0)]);
+    assert_eq!(&memory.data(&store)[2048..2060], &[0; 12]);
+  }
+
+  #[test]
+  fn wasi_03_select_preopen_runs_with_real_wasmtime_host() {
+    let Some(cli) = std::env::var_os("WASMTIME_CLI") else {
+      return;
+    };
+    let host = tempfile::tempdir().expect("host directory");
+    let output = tempfile::tempdir().expect("Component output directory");
+    for (path, should_succeed) in [("workspace/input.cirru", true), ("other/input.cirru", false)] {
+      let imports = vec![
+        HostImport {
+          module: "wasi:filesystem/preopens@0.3.1".into(),
+          name: "get-directories".into(),
+          params: vec![ValType::I32],
+          results: vec![],
+        },
+        HostImport {
+          module: "wasi:filesystem/types@0.3.1".into(),
+          name: "[resource-drop]descriptor".into(),
+          params: vec![ValType::I32],
+          results: vec![],
+        },
+      ];
+      let mut free = build_cabi_free_fn(2);
+      free.export_name = Some("cabi_free".into());
+      let mut realloc = build_cabi_realloc_fn(2, 2);
+      realloc.export_name = Some("cabi_realloc".into());
+      let run = CompiledFn {
+        export_name: Some("wasi:cli/run@0.3.1#run".into()),
+        params: vec![],
+        results: vec![ValType::I32],
+        locals: vec![],
+        instructions: vec![
+          Instruction::I32Const(16),
+          Instruction::I32Const(2048),
+          Instruction::Call(5),
+          Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)),
+          Instruction::I32Const(2048),
+          Instruction::I32Load(super::mem_arg_i32(0)),
+          Instruction::Call(1),
+          Instruction::I32Const(0),
+          Instruction::Else,
+          Instruction::I32Const(1),
+          Instruction::End,
+        ],
+      };
+      let mut string_data = (path.len() as f64).to_le_bytes().to_vec();
+      string_data.extend_from_slice(path.as_bytes());
+      let core = build_wasm_module(
+        &[
+          free,
+          realloc,
+          build_wasi_component_route_path_fn(),
+          build_wasi_component_select_preopen_fn(0, 1, 2, 4),
+          run,
+        ],
+        &imports,
+        16384,
+        &string_data,
+        &[],
+        1,
+        ModuleFunctionLayout {
+          runtime_fn_count: 4,
+          table_fn_count: 0,
+          component_free_head: true,
+        },
+      )
+      .expect("valid core command");
+      let component = calcit_bindgen::package_wasi_command(&core).expect("package real preopen command");
+      let module = output.path().join("program.wasm");
+      fs::write(&module, component).expect("write test Component");
+      let result = Command::new(&cli)
+        .args(["run", "-S", "p3", "--dir"])
+        .arg(format!("{}::/workspace", host.path().display()))
+        .arg(&module)
+        .output()
+        .expect("run WASI 0.3 preopen command");
+      assert_eq!(
+        result.status.success(),
+        should_succeed,
+        "path {path:?}: {}",
+        String::from_utf8_lossy(&result.stderr)
       );
     }
   }

@@ -64,6 +64,8 @@ jobs:
         run: |
           WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.0-x86_64-linux/wasmtime" \
             cargo test --test wasi_command_component_cli
+          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.0-x86_64-linux/wasmtime" \
+            cargo test --lib wasi_03_select_preopen_runs_with_real_wasmtime_host
           cargo run --bin calcit -- tests/fixtures/wasi-command-03.cirru test app.main/main! --require-match
           cargo run --bin calcit -- tests/fixtures/wasi-command-03.cirru test app.main/transform-content --require-match
           cargo run --bin calcit -- tests/fixtures/wasi-command-03-get-args.cirru test app.main/main! --require-match

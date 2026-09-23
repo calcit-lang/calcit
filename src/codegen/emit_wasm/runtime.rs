@@ -884,6 +884,163 @@ pub(super) fn build_wasi_component_route_path_fn() -> CompiledFn {
   b.finish(vec![ValType::I32; 3], vec![ValType::I32])
 }
 
+/// Select the longest matching preopen and transfer only its owned descriptor.
+/// All other descriptors and Canonical ABI allocations are released here.
+pub(super) fn build_wasi_component_select_preopen_fn(
+  get_directories_idx: u32,
+  drop_descriptor_idx: u32,
+  free_idx: u32,
+  route_path_idx: u32,
+) -> CompiledFn {
+  // params: Calcit path pointer, output tuple { descriptor, relative ptr, relative len }.
+  let mut b = RuntimeFnBuilder::new(2);
+  let entries = b.alloc_i32();
+  let count = b.alloc_i32();
+  let index = b.alloc_i32();
+  let entry = b.alloc_i32();
+  let candidate = b.alloc_i32();
+  let best_offset = b.alloc_i32();
+  let best_index = b.alloc_i32();
+  let path_len = b.alloc_i32();
+
+  // The first eight bytes are reserved scratch space below the managed heap.
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Call(get_directories_idx));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalSet(entries));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalSet(count));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::LocalSet(best_offset));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::LocalSet(best_index));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Store(mem_arg_i32(4)));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Store(mem_arg_i32(8)));
+
+  // Oversized preopen tables never grant authority, but every handle still drops.
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(WASI_PREOPEN_FD_LIMIT));
+  b.emit(Instruction::I32LeU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(entries));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(12));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(entry));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(entry));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::LocalGet(entry));
+  b.emit(Instruction::I32Load(mem_arg_i32(8)));
+  b.emit(Instruction::Call(route_path_idx));
+  b.emit(Instruction::LocalTee(candidate));
+  b.emit(Instruction::LocalGet(best_offset));
+  b.emit(Instruction::I32GtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(candidate));
+  b.emit(Instruction::LocalSet(best_offset));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalSet(best_index));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(entries));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(12));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(entry));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalGet(best_index));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::LocalGet(entry));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(entry));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::Call(drop_descriptor_idx));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(entry));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::LocalGet(entry));
+  b.emit(Instruction::I32Load(mem_arg_i32(8)));
+  b.emit(Instruction::Call(free_idx));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(entries));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(12));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::Call(free_idx));
+
+  b.emit(Instruction::LocalGet(best_index));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(path_len));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(best_offset));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Store(mem_arg_i32(4)));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::LocalGet(path_len));
+  b.emit(Instruction::LocalGet(best_offset));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32Store(mem_arg_i32(8)));
+  b.emit(Instruction::I32Const(1));
+  b.finish(vec![ValType::I32; 2], vec![ValType::I32])
+}
+
 /// Validate an RFC 3629 UTF-8 byte sequence without constructing a Calcit value.
 pub(super) fn build_utf8_valid_fn() -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(2);
