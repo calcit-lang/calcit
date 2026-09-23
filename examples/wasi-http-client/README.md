@@ -2,7 +2,7 @@
 
 这个示例把 Calcit 的 buffered typed HTTP Component 边界整理成一条可复制的应用路径。网络默认拒绝；宿主必须在 Cirru EDN capability 文件中显式授予精确的 `scheme://authority`。请求、响应与失败使用闭合 Struct、Enum 和 Result，不把 socket、TLS、stream 或 Wasmtime resource 暴露给 Calcit 代码。
 
-它与 `calcit wasi` 的 Preview 1 command 路径不同：HTTP 使用 `calcit wasm --boundary component` 生成 Canonical ABI core module，再由 `calcit-bindgen` 打包 runnable Component 和可直接运行的 Wasmtime host。示例不再维护手写 Rust ABI 层，也不需要源码 path dependency 或新的顶层命令。
+它与 `calcit wasi` 默认的 Preview 1 command 路径及尚限纯计算的 WASI 0.3 command 路径不同：HTTP 使用 `calcit wasm --boundary component` 生成 Canonical ABI core module，再由 `calcit-bindgen` 打包 runnable Component 和可直接运行的 Wasmtime host。示例不再维护手写 Rust ABI 层，也不需要源码 path dependency 或新的顶层命令。
 
 当前稳定路径使用 Wasmtime 47 的 WASI 0.2 `wasi:http/outgoing-handler` 生产传输，Calcit-facing Component contract 保持 WASI 0.3 原生 async。portable、直接的 WASI 0.3 HTTP host adapter 仍受 experimental tooling 限制；以后可替换生成器内部 adapter，不改变 Calcit contract、配置格式或这里的命令。
 

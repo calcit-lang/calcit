@@ -296,6 +296,9 @@ pub struct EmitWasiCommand {
   /// override the configured reload definition
   #[argh(option)]
   pub reload_fn: Option<String>,
+  /// output ABI boundary: native (Preview 1 default) or component (WASI 0.3)
+  #[argh(option, default = "String::from(\"native\")")]
+  pub boundary: String,
   /// validate the WASI command without writing program.wasm
   #[argh(switch)]
   pub check_only: bool,
@@ -2914,7 +2917,15 @@ mod wasm_command_tests {
     };
     assert_eq!(options.input.as_deref(), Some("command.cirru"));
     assert_eq!(options.init_fn.as_deref(), Some("app.main/main!"));
+    assert_eq!(options.boundary, "native");
     assert!(!options.check_only);
+
+    let component = ToplevelCalcit::from_args(&["calcit"], &["wasi", "command.cirru", "--boundary", "component"])
+      .expect("parse WASI 0.3 command boundary");
+    let Some(CalcitCommand::EmitWasi(options)) = component.subcommand else {
+      panic!("expected wasi subcommand");
+    };
+    assert_eq!(options.boundary, "component");
   }
 
   #[test]

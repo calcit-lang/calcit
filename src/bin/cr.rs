@@ -544,18 +544,17 @@ fn run_cli() -> Result<(), String> {
       return calcit::wasm_cli::run(&options, codegen::emit_wasm::WasmTarget::Core);
     }
     Some(CalcitCommand::EmitWasi(command)) => {
-      return calcit::wasm_cli::run(
-        &resolve_public_wasm_options(
-          &cli_args,
-          command.input.as_deref(),
-          command.emit_path.as_deref(),
-          command.init_fn.as_deref(),
-          command.reload_fn.as_deref(),
-          command.entry.as_deref(),
-          command.check_only,
-        ),
-        codegen::emit_wasm::WasmTarget::Wasi,
+      let mut options = resolve_public_wasm_options(
+        &cli_args,
+        command.input.as_deref(),
+        command.emit_path.as_deref(),
+        command.init_fn.as_deref(),
+        command.reload_fn.as_deref(),
+        command.entry.as_deref(),
+        command.check_only,
       );
+      options.boundary = command.boundary.parse()?;
+      return calcit::wasm_cli::run(&options, codegen::emit_wasm::WasmTarget::Wasi);
     }
     Some(CalcitCommand::Query(query_cmd)) => {
       return cli_handlers::handle_query_command(query_cmd, &cli_args.input);

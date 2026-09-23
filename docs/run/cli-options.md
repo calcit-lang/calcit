@@ -542,15 +542,17 @@ calcit calcit.cirru analyze program-diff main --base v0.15.5 --format edn
 
 ## WASM preview 命令
 
-`calcit wasm` 生成面向 browser/embedded host 的 core module；`calcit wasi` 当前生成可由 Wasmtime 等 WASI host 启动的 WASI Preview 1 command core module。它尚不是 WASI 0.3 command Component。通用的 `calcit wasm --boundary component` 输出供 Component tooling 包装的 core module，也不等价于 WASI 0.3 command；`calcit wasi --boundary component` 会以 `E_WASM_BOUNDARY` 明确拒绝。两个命令把 Snapshot 路径放在子命令之后，并分别通过 help 暴露输出契约：
+`calcit wasm` 生成面向 browser/embedded host 的 core module；`calcit wasi` 默认仍生成可由 Wasmtime 等 WASI host 启动的 WASI Preview 1 command core module。显式使用 `calcit wasi --boundary component` 则生成 WASI 0.3 `wasi:cli/command` Component，目前只支持零参数纯计算入口；成功时退出码为 0。通用的 `calcit wasm --boundary component` 输出供 Component tooling 包装的 core module，不等价于 WASI 0.3 command。两个命令把 Snapshot 路径放在子命令之后，并分别通过 help 暴露输出契约：
 
 ```bash
 calcit wasm calcit.cirru --emit-path js-out
 calcit wasm calcit.cirru --boundary component --emit-path target/component-core
 calcit wasi calcit.cirru --emit-path target/wasi-command
+calcit wasi tests/fixtures/wasi-command-03.cirru --boundary component --emit-path target/wasi-03-command
+wasmtime run -S p3 target/wasi-03-command/program.wasm
 ```
 
-两个命令都支持 `--entry`、`--init-fn`、`--reload-fn` 和 `--check-only`。`--check-only` 会执行与实际生成相同的 target validation，但不会写出 `program.wasm`。WASI command 的 init definition 必须为零参数；不支持的宿主能力以稳定的 `E_WASM_CAPABILITY` 失败，不会退回 core module 的 JavaScript imports。
+两个命令都支持 `--entry`、`--init-fn`、`--reload-fn` 和 `--check-only`。WASI 0.3 Component 的 `--check-only` 会完成 codegen 与封装验证，但不会写出 `program.wasm`。WASI command 的 init definition 必须为零参数；Component 路径还要求显式 `Unit` 返回 schema，避免把 `Result` 等返回值悄然当成成功退出。现有 Preview 1 宿主能力在 Component 路径以 `E_WASI_COMMAND_CAPABILITY` 明确失败，不会静默退回 Preview 1。通用 `defwasm-export` 也会以 `E_WASI_COMMAND_EXPORT` 拒绝，不会悄然丢弃。参数、环境、标准流、文件系统、时钟、随机数和显式退出码仍待后续 lowering，不能把纯计算 Component 当成完整可用的 WASI 0.3 command 业务路径。
 
 WASI command 中的 `try-parse-cirru-edn-as` 与 `format-cirru-edn` 直接使用编译器已经推导出的闭合类型，不在运行时探测值类型。当前支持标量、递归 `List<T>`、标量 key 的 `Map<K,V>`，以及闭合 Struct field 和 Enum payload；core `Option<T>` / `Result<T,E>` 复用相同的 nominal Enum 路径。可完整往返的标量为 `Nil`、`Bool`、`String`、`Tag`、`Int8`、`UInt8`、`Int16`、`UInt16`、`Int32`、`UInt32`、`Int64` 与 `UInt64`。typed parser 还可读取 `Number`、`Float32` 与 `Float64`，但 formatter 尚不能为这些运行时浮点类型生成与 native 一致的文本，因此它们不属于当前支持的往返字段类型。Struct 输入使用 `%{} 'TypeName (:field value)`，Enum 输入使用 `%:: 'TypeName 'variant payload...`；名称、字段或 variant、payload 数量与递归 shape 都必须与声明完全一致。重复、缺失、未知项和数值越界都会返回 `Result :err`。格式化按声明字段或 variant 顺序生成 canonical Cirru EDN；开放 `Dynamic`、anonymous Enum 和其他未支持类型在 codegen 阶段明确拒绝，不会生成近似数据。
 
