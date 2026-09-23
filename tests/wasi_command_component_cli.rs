@@ -186,23 +186,41 @@ fn preview1_capabilities_fail_before_writing_a_component() {
 }
 
 #[test]
-fn unsupported_environment_capability_fails_during_check_only() {
+fn command_environment_preserves_option_and_utf8_content() {
   let output = tempfile::tempdir().expect("output directory");
-  let result = calcit(
-    &[
-      "tests/fixtures/wasi-command-03-get-env.cirru",
-      "wasi",
-      "--boundary",
-      "component",
-      "--check-only",
-    ],
-    output.path(),
-  );
-  assert!(!result.status.success(), "get-env must not compile to a trapping dependency");
-  let error = String::from_utf8_lossy(&result.stderr);
-  assert!(error.contains("E_WASI_COMMAND_CAPABILITY"), "{error}");
-  assert!(error.contains("calcit.core/get-env"), "{error}");
+  let fixture = "tests/fixtures/wasi-command-03-get-env.cirru";
+  let check = calcit(&[fixture, "wasi", "--boundary", "component", "--check-only"], output.path());
+  assert!(check.status.success(), "{}", String::from_utf8_lossy(&check.stderr));
   assert!(!output.path().join("program.wasm").exists());
+
+  let compiled = calcit(&[fixture, "wasi", "--boundary", "component"], output.path());
+  assert!(compiled.status.success(), "{}", String::from_utf8_lossy(&compiled.stderr));
+  let mut config = Config::new();
+  config.wasm_component_model_async(true);
+  config.wasm_component_model_async_stackful(true);
+  let engine = Engine::new(&config).expect("Wasmtime engine");
+  let wasm = fs::read(output.path().join("program.wasm")).expect("command Component");
+  Component::new(&engine, &wasm).expect("valid command Component");
+
+  if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
+    for (value, expected_status) in [(Some("你好"), 7), (Some("other"), 9), (Some(""), 9), (None, 8)] {
+      let mut command = Command::new(&cli);
+      command.args(["run", "-S", "p3"]);
+      if let Some(value) = value {
+        command.arg("--env").arg(format!("CALCIT_TEST={value}"));
+      }
+      let result = command
+        .arg(output.path().join("program.wasm"))
+        .output()
+        .expect("run WASI 0.3 command with environment");
+      assert_eq!(
+        result.status.code(),
+        Some(expected_status),
+        "environment {value:?}: {}",
+        String::from_utf8_lossy(&result.stderr)
+      );
+    }
+  }
 }
 
 #[test]

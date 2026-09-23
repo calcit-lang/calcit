@@ -10,11 +10,20 @@
   :files $ {} $ 'app.main
     %{} 'FileEntry
       :defs $ {}
-        'main! $ %{} 'CodeEntry (:doc "|验证尚未支持的 WASI 0.3 环境变量能力在编译期失败。")
-          :code $ quote $ defn main! () (get-env |CALCIT_TEST) &unit
+        'main! $ %{} 'CodeEntry (:doc "|验证 WASI 0.3 命令环境变量的 Option 与 UTF-8 值。")
+          :code $ quote $ defn main! ()
+            let
+                environment $ get-env |CALCIT_TEST
+              if
+                = (environment .unwrap-or |missing) "|你好"
+                quit! 7
+                if (environment .some?) (quit! 9) (quit! 8)
+            , &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |missing-env-is-none)
+            :code $ quote $ assert= (%none) (get-env |__CALCIT_WASI_03_MISSING_ENV_7A1C__)
         'reload! $ %{} 'CodeEntry (:doc "|开发模式重载占位入口。")
           :code $ quote $ defn reload! () &unit
           :examples $ []

@@ -54,6 +54,7 @@ jobs:
           cargo run --bin calcit -- tests/fixtures/wasi-command-03.cirru test app.main/main! --require-match
           cargo run --bin calcit -- tests/fixtures/wasi-command-03.cirru test app.main/transform-content --require-match
           cargo run --bin calcit -- tests/fixtures/wasi-command-03-get-args.cirru test app.main/main! --require-match
+          cargo run --bin calcit -- tests/fixtures/wasi-command-03-get-env.cirru test app.main/main! --require-match
 
   wasi_business_smoke:
     name: Published WASI HTTP business loop
