@@ -18,7 +18,7 @@
 //! Struct/Enum pointers: i32 offsets into linear memory, converted to/from f64.
 //! Output is a `.wasm` binary that can be loaded by Node.js, Deno, or any WASM runtime.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::str::FromStr;
@@ -222,9 +222,26 @@ fn deterministic_definition_order(file: &program::CompiledFileData) -> Vec<(&Arc
 }
 
 pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTarget, boundary: WasmBoundary) -> Result<(), String> {
-  validate_wasm_target_boundary(target, boundary)?;
+  emit_wasm_impl(init_ns, init_def, emit_path, target, boundary, true)
+}
+
+pub fn check_wasm_command_component(init_ns: &str, init_def: &str) -> Result<(), String> {
+  emit_wasm_impl(init_ns, init_def, "", WasmTarget::Wasi, WasmBoundary::Component, false)
+}
+
+fn emit_wasm_impl(
+  init_ns: &str,
+  init_def: &str,
+  emit_path: &str,
+  target: WasmTarget,
+  boundary: WasmBoundary,
+  write_output: bool,
+) -> Result<(), String> {
   let program_data = program::clone_compiled_program_snapshot()?;
   validate_wasm_target_in_program(&program_data, init_ns, init_def, target)?;
+  if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
+    validate_wasm_command_component_in_program(&program_data, init_ns, init_def)?;
+  }
 
   // First pass: extract all function signatures from all namespaces
   let mut fn_defs: Vec<(String, String, CalcitFnArgs, Vec<Calcit>)> = Vec::new(); // (ns, def_name, args, body)
@@ -254,7 +271,9 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
           if must_reject_extraction_failure(init_ns, ns, &compiled.preprocessed_code) {
             return Err(format!("[wasm] target function {ns}/{def_name} is not compilable: {e}"));
           }
-          eprintln!("[wasm] omitting unsupported dependency {ns}/{def_name}: {e}");
+          if write_output {
+            eprintln!("[wasm] omitting unsupported dependency {ns}/{def_name}: {e}");
+          }
         }
       }
     }
@@ -274,12 +293,12 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   } else {
     host_imports_for_target(target)
   };
-  let mut component_import_adapters = if boundary == WasmBoundary::Component {
+  let mut component_import_adapters = if boundary == WasmBoundary::Component && target == WasmTarget::Core {
     collect_component_import_adapters(&program_data)?
   } else {
     Vec::new()
   };
-  let mut component_adapters = if boundary == WasmBoundary::Component {
+  let mut component_adapters = if boundary == WasmBoundary::Component && target == WasmTarget::Core {
     let provisional_fn_index = fn_defs
       .iter()
       .map(|(namespace, name, _, _)| (format!("{namespace}/{name}"), 0))
@@ -375,7 +394,9 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
       None
     },
   );
-  eprintln!("[wasm] tag index: {tag_index:?}");
+  if write_output {
+    eprintln!("[wasm] tag index: {tag_index:?}");
+  }
 
   let (mut compiled_fns, mut runtime_fn_index) = build_runtime_fns(
     num_imports,
@@ -400,7 +421,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
   } else {
     None
   };
-  if target == WasmTarget::Wasi {
+  if target == WasmTarget::Wasi && boundary == WasmBoundary::Native {
     let fd_write_idx = *index_host_imports(&host_imports)
       .get(&("wasi_snapshot_preview1".into(), "fd_write".into()))
       .expect("WASI fd_write import must be registered");
@@ -591,7 +612,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     }
   }
 
-  if target == WasmTarget::Wasi {
+  if target == WasmTarget::Wasi && boundary == WasmBoundary::Native {
     let import_indices = index_host_imports(&host_imports);
     let wasi_import = |name: &str| {
       *import_indices
@@ -797,6 +818,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     fn_table_index,
     host_imports: index_host_imports(&host_imports),
     target,
+    boundary,
   };
   for adapter in &mut component_adapters {
     adapter.target_index = *env
@@ -813,6 +835,7 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     }
   }
 
+  let mut unsupported_dependencies = HashMap::new();
   // Second pass: target failures reject the artifact. Dependency failures keep
   // a trapping slot so preassigned call and table indices remain stable.
   for (ns, def_name, args, body) in &fn_defs {
@@ -863,7 +886,12 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
         if ns == init_ns || explicit_export {
           return Err(format!("[wasm] target function {ns}/{def_name} is not compilable: {e}"));
         }
-        eprintln!("[wasm] trapping unsupported dependency {ns}/{def_name}: {e}");
+        if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
+          unsupported_dependencies.insert(num_imports + compiled_fns.len() as u32, (format!("{ns}/{def_name}"), e.clone()));
+        }
+        if write_output {
+          eprintln!("[wasm] trapping unsupported dependency {ns}/{def_name}: {e}");
+        }
         let (arity, _) = compute_fn_arity(args);
         compiled_fns.push(CompiledFn {
           export_name: None,
@@ -956,12 +984,24 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
         "E_WASM_TARGET: WASI command entry `{qualified_init}` must take no arguments, got {init_arity}"
       ));
     }
+    if boundary == WasmBoundary::Component {
+      reject_reachable_wasi_command_dependencies(&compiled_fns, num_imports, init_index, &unsupported_dependencies)?;
+    }
+    let component_command = boundary == WasmBoundary::Component;
     compiled_fns.push(CompiledFn {
-      export_name: Some("_start".into()),
+      export_name: Some(if component_command {
+        "wasi:cli/run@0.3.0#run".into()
+      } else {
+        "_start".into()
+      }),
       params: vec![],
-      results: vec![],
+      results: if component_command { vec![ValType::I32] } else { vec![] },
       locals: vec![],
-      instructions: vec![Instruction::Call(init_index), Instruction::Drop],
+      instructions: if component_command {
+        vec![Instruction::Call(init_index), Instruction::Drop, Instruction::I32Const(0)]
+      } else {
+        vec![Instruction::Call(init_index), Instruction::Drop]
+      },
     });
   }
 
@@ -984,7 +1024,14 @@ pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTar
     },
   )?;
 
-  // Write output
+  let wasm_bytes = if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
+    calcit_bindgen::package_wasi_command(&wasm_bytes)?
+  } else {
+    wasm_bytes
+  };
+  if !write_output {
+    return Ok(());
+  }
   let out_path = Path::new(emit_path);
   if !out_path.exists() {
     fs::create_dir_all(out_path).map_err(|e| format!("failed to create dir: {e}"))?;
@@ -1001,8 +1048,14 @@ pub fn validate_wasm_target(init_ns: &str, init_def: &str, target: WasmTarget) -
   validate_wasm_target_in_program(&program_data, init_ns, init_def, target)
 }
 
-pub fn validate_wasm_boundary(target: WasmTarget, boundary: WasmBoundary) -> Result<(), String> {
-  validate_wasm_target_boundary(target, boundary)?;
+pub fn validate_wasm_boundary(target: WasmTarget, boundary: WasmBoundary, init_ns: &str, init_def: &str) -> Result<(), String> {
+  if target == WasmTarget::Wasi {
+    if boundary == WasmBoundary::Component {
+      let program_data = program::clone_compiled_program_snapshot()?;
+      validate_wasm_command_component_in_program(&program_data, init_ns, init_def)?;
+    }
+    return Ok(());
+  }
   if boundary == WasmBoundary::Native {
     return Ok(());
   }
@@ -1032,15 +1085,6 @@ pub fn validate_wasm_boundary(target: WasmTarget, boundary: WasmBoundary) -> Res
     .collect::<HashMap<_, _>>();
   collect_component_import_adapters(&program_data)?;
   collect_component_export_adapters(&program_data, &fn_defs, &fn_index)?;
-  Ok(())
-}
-
-fn validate_wasm_target_boundary(target: WasmTarget, boundary: WasmBoundary) -> Result<(), String> {
-  if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
-    return Err(
-      "E_WASM_BOUNDARY: `calcit wasi` currently emits a WASI Preview 1 core command, not a WASI 0.3 command Component; `--boundary component` is not supported for this target".into(),
-    );
-  }
   Ok(())
 }
 
@@ -1089,6 +1133,35 @@ fn validate_wasm_target_in_program(
   Ok(())
 }
 
+fn validate_wasm_command_component_in_program(
+  program_data: &program::CompiledProgram,
+  init_ns: &str,
+  init_def: &str,
+) -> Result<(), String> {
+  for namespace in deterministic_namespace_order(program_data, None) {
+    let file = program_data.get(namespace.as_str()).expect("ordered namespace must exist");
+    for (name, compiled) in deterministic_definition_order(file) {
+      if is_wasm_export_def(&compiled.preprocessed_code) {
+        return Err(format!(
+          "E_WASI_COMMAND_EXPORT: `{namespace}/{name}` declares a generic Component export; `calcit wasi --boundary component` only exports `wasi:cli/run@0.3.0`"
+        ));
+      }
+    }
+  }
+  let qualified_init = format!("{init_ns}/{init_def}");
+  let signature = program_data
+    .get(init_ns)
+    .and_then(|file| file.defs.get(init_def))
+    .and_then(|compiled| compiled.schema.resolve_to_fn())
+    .ok_or_else(|| format!("E_WASI_COMMAND_ENTRY: `{qualified_init}` needs an explicit function schema returning Unit"))?;
+  if !matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Unit) {
+    return Err(format!(
+      "E_WASI_COMMAND_ENTRY: `{qualified_init}` must return Unit; other results cannot be silently discarded"
+    ));
+  }
+  Ok(())
+}
+
 /// Intermediate representation of a compiled function before encoding.
 struct CompiledFn {
   export_name: Option<String>,
@@ -1098,6 +1171,45 @@ struct CompiledFn {
   locals: Vec<ValType>,
   /// Instruction sequence for the function body
   instructions: Vec<Instruction<'static>>,
+}
+
+fn reject_reachable_wasi_command_dependencies(
+  functions: &[CompiledFn],
+  num_imports: u32,
+  entry_index: u32,
+  unsupported: &HashMap<u32, (String, String)>,
+) -> Result<(), String> {
+  let mut pending = vec![entry_index];
+  let mut visited = HashSet::new();
+  while let Some(index) = pending.pop() {
+    if !visited.insert(index) {
+      continue;
+    }
+    if let Some((definition, reason)) = unsupported.get(&index) {
+      let code = if reason.starts_with("E_WASI_COMMAND_CAPABILITY:") {
+        "E_WASI_COMMAND_CAPABILITY"
+      } else {
+        "E_WASI_COMMAND_DEPENDENCY"
+      };
+      return Err(format!("{code}: reachable `{definition}` cannot compile: {reason}"));
+    }
+    if index < num_imports {
+      continue;
+    }
+    let function = functions
+      .get((index - num_imports) as usize)
+      .ok_or_else(|| format!("E_WASI_COMMAND_DEPENDENCY: missing function index {index}"))?;
+    for instruction in &function.instructions {
+      match instruction {
+        Instruction::Call(callee) => pending.push(*callee),
+        Instruction::CallIndirect { .. } => {
+          return Err("E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability".into());
+        }
+        _ => {}
+      }
+    }
+  }
+  Ok(())
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -4396,6 +4508,7 @@ struct WasmCompileEnv {
   host_imports: HashMap<(String, String), u32>,
   /// Selected output ABI. Surface Calcit calls stay target-independent.
   target: WasmTarget,
+  boundary: WasmBoundary,
 }
 
 fn extract_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Calcit>), String> {
@@ -4535,6 +4648,7 @@ struct WasmGenCtx {
   host_imports: HashMap<(String, String), u32>,
   /// Selected output ABI. Surface Calcit calls stay target-independent.
   target: WasmTarget,
+  boundary: WasmBoundary,
   /// Statically known closures retain the lexical local bindings visible at creation.
   /// They are specialized at known call sites instead of receiving a dynamic heap ABI.
   lambda_locals: HashMap<String, Arc<InlineClosure>>,
@@ -4565,6 +4679,7 @@ impl WasmGenCtx {
       fn_table_index: env.fn_table_index,
       host_imports: env.host_imports,
       target: env.target,
+      boundary: env.boundary,
       lambda_locals: HashMap::new(),
       specialization_stack: vec![],
     }
@@ -5448,6 +5563,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       let name = sym.as_ref();
       // IO functions: call host log_value for each arg, return nil
       if matches!(name, "println" | "eprintln" | "echo") {
+        if ctx.target == WasmTarget::Wasi && ctx.boundary == WasmBoundary::Component {
+          return Err(format!("E_WASI_COMMAND_CAPABILITY: `{name}` needs WASI 0.3 stdio lowering"));
+        }
         if ctx.target == WasmTarget::Wasi {
           return emit_wasi_print(ctx, name, &args_list);
         }
@@ -5504,6 +5622,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       // Registered procs (eprintln, println, echo, etc.)
       let name = name.as_ref();
       if matches!(name, "println" | "eprintln" | "echo") {
+        if ctx.target == WasmTarget::Wasi && ctx.boundary == WasmBoundary::Component {
+          return Err(format!("E_WASI_COMMAND_CAPABILITY: `{name}` needs WASI 0.3 stdio lowering"));
+        }
         if ctx.target == WasmTarget::Wasi {
           return emit_wasi_print(ctx, name, &args_list);
         }
@@ -6288,6 +6409,9 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
           ctx.emit(Instruction::Call(resolve_host_import(ctx, "io", "get_env")?));
         }
         WasmTarget::Wasi => {
+          if ctx.boundary == WasmBoundary::Component {
+            return Err("E_WASI_COMMAND_CAPABILITY: `get-env` needs WASI 0.3 environment lowering".into());
+          }
           ctx.emit(Instruction::LocalGet(name));
           ctx.emit(Instruction::I32TruncF64U);
           ctx.call_rt("__rt_wasi_get_env");
@@ -6311,6 +6435,9 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       expect_arity(0, args, "get-args")?;
       if ctx.target != WasmTarget::Wasi {
         return Err("E_WASM_CAPABILITY: process arguments are unavailable for the core WASM target".into());
+      }
+      if ctx.boundary == WasmBoundary::Component {
+        return Err("E_WASI_COMMAND_CAPABILITY: `get-args` needs WASI 0.3 environment lowering".into());
       }
       ctx.call_rt("__rt_wasi_get_args");
       Ok(())
@@ -6341,6 +6468,9 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       let code = ctx.alloc_local();
       ctx.emit(Instruction::LocalSet(code));
       if ctx.target == WasmTarget::Wasi {
+        if ctx.boundary == WasmBoundary::Component {
+          return Err("E_WASI_COMMAND_CAPABILITY: `quit!` needs WASI 0.3 exit lowering".into());
+        }
         ctx.emit(Instruction::LocalGet(code));
         ctx.emit(f64_const(0.0));
         ctx.emit(Instruction::F64Lt);
@@ -6655,6 +6785,9 @@ fn emit_wasi_write_literal(ctx: &mut WasmGenCtx, fd: i32, text: &str) -> Result<
 
 /// Read a Preview 1 clock into the runtime scratch area and return milliseconds.
 fn emit_wasi_clock_ms(ctx: &mut WasmGenCtx, clock_id: i32, proc_name: &str) -> Result<(), String> {
+  if ctx.boundary == WasmBoundary::Component {
+    return Err(format!("E_WASI_COMMAND_CAPABILITY: `{proc_name}` needs WASI 0.3 clocks lowering"));
+  }
   if ctx.target != WasmTarget::Wasi {
     return Err(format!("E_WASM_CAPABILITY: {proc_name} is unavailable for the core WASM target"));
   }
@@ -6679,6 +6812,9 @@ fn emit_wasi_clock_ms(ctx: &mut WasmGenCtx, clock_id: i32, proc_name: &str) -> R
 
 /// Lower the typed synchronous wait boundary through Preview 1 `poll_oneoff`.
 fn emit_wasi_wait_ms(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if ctx.boundary == WasmBoundary::Component {
+    return Err("E_WASI_COMMAND_CAPABILITY: `&wait-ms` needs WASI 0.3 clocks lowering".into());
+  }
   expect_arity(3, args, "&wait-ms")?;
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: wait-ms is unavailable for the core WASM target".into());
@@ -6734,6 +6870,9 @@ fn emit_wasi_wait_ms(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
 
 /// Fill a managed Buffer through Preview 1 and wrap it in the caller's Result type.
 fn emit_wasi_secure_random_bytes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if ctx.boundary == WasmBoundary::Component {
+    return Err("E_WASI_COMMAND_CAPABILITY: `&secure-random-bytes` needs WASI 0.3 random lowering".into());
+  }
   expect_arity(3, args, "&secure-random-bytes")?;
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: secure-random-bytes is unavailable for the core WASM target".into());
@@ -6801,6 +6940,9 @@ fn emit_wasi_secure_random_bytes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 
 /// Lower the typed filesystem read boundary through private Preview 1 helpers.
 fn emit_wasi_fs_read_text(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if ctx.boundary == WasmBoundary::Component {
+    return Err("E_WASI_COMMAND_CAPABILITY: `&fs-read-text` needs WASI 0.3 filesystem lowering".into());
+  }
   expect_arity(3, args, "&fs-read-text")?;
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: filesystem reads are unavailable for the core WASM target".into());
@@ -6828,6 +6970,9 @@ fn emit_wasi_fs_read_text(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
 
 /// Lower the typed filesystem directory boundary through a private Preview 1 helper.
 fn emit_wasi_fs_read_dir(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if ctx.boundary == WasmBoundary::Component {
+    return Err("E_WASI_COMMAND_CAPABILITY: `&fs-read-dir` needs WASI 0.3 filesystem lowering".into());
+  }
   expect_arity(4, args, "&fs-read-dir")?;
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: filesystem directory reads are unavailable for the core WASM target".into());
@@ -6901,6 +7046,9 @@ fn emit_wasi_fs_read_dir(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
 
 /// Lower the typed filesystem write boundary through private Preview 1 helpers.
 fn emit_wasi_fs_write_text(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if ctx.boundary == WasmBoundary::Component {
+    return Err("E_WASI_COMMAND_CAPABILITY: `&fs-write-text` needs WASI 0.3 filesystem lowering".into());
+  }
   expect_arity(4, args, "&fs-write-text")?;
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: filesystem writes are unavailable for the core WASM target".into());
@@ -8214,13 +8362,13 @@ mod tests {
 
   use super::component::component_type_owns_memory;
   use super::{
-    ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
+    CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport,
     WasmBoundary, WasmTarget, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, build_string_pool,
     component_abi_type, component_export_needs_post_return, component_flat_types, component_import_signature, component_memory_layout,
     component_task_return_signature, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
-    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols,
-    validate_wasm_target_boundary,
+    reject_reachable_wasi_command_dependencies, validate_component_export_symbols, validate_component_flat_parameters,
+    validate_component_import_symbols,
   };
   use crate::calcit::{
     Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitStructDef, CalcitStructValue, CalcitSyntax, CalcitTypeAnnotation,
@@ -8345,15 +8493,37 @@ mod tests {
   }
 
   #[test]
-  fn wasi_component_boundary_is_rejected_without_suggesting_the_core_component_target() {
-    let error = validate_wasm_target_boundary(WasmTarget::Wasi, WasmBoundary::Component).unwrap_err();
-
-    assert!(error.starts_with("E_WASM_BOUNDARY:"));
-    assert!(error.contains("WASI Preview 1 core command"));
-    assert!(error.contains("WASI 0.3 command Component"));
-    assert!(!error.contains("use `calcit wasm"));
-    assert!(validate_wasm_target_boundary(WasmTarget::Wasi, WasmBoundary::Native).is_ok());
-    assert!(validate_wasm_target_boundary(WasmTarget::Core, WasmBoundary::Component).is_ok());
+  fn wasi_command_rejects_reachable_failed_dependency_but_not_unrelated_core_code() {
+    let function = |instructions| CompiledFn {
+      export_name: None,
+      params: vec![],
+      results: vec![],
+      locals: vec![],
+      instructions,
+    };
+    let mut functions = [
+      function(vec![Instruction::Call(3)]),
+      function(vec![Instruction::Call(4)]),
+      function(vec![Instruction::Unreachable]),
+      function(vec![]),
+    ];
+    let unsupported = HashMap::from([(
+      4,
+      (
+        "calcit.core/get-args".into(),
+        "E_WASI_COMMAND_CAPABILITY: `get-args` needs WASI 0.3 environment lowering".into(),
+      ),
+    )]);
+    let error = reject_reachable_wasi_command_dependencies(&functions, 2, 2, &unsupported).unwrap_err();
+    assert!(error.starts_with("E_WASI_COMMAND_CAPABILITY:"), "{error}");
+    assert!(error.contains("calcit.core/get-args"), "{error}");
+    assert!(reject_reachable_wasi_command_dependencies(&functions, 2, 5, &unsupported).is_ok());
+    functions[3].instructions.push(Instruction::CallIndirect {
+      type_index: 0,
+      table_index: 0,
+    });
+    let indirect = reject_reachable_wasi_command_dependencies(&functions, 2, 5, &unsupported).unwrap_err();
+    assert!(indirect.starts_with("E_WASI_COMMAND_INDIRECT:"), "{indirect}");
   }
 
   #[test]

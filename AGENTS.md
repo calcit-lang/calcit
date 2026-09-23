@@ -70,7 +70,7 @@ calcit docs agents --full
 - `calcit <entry>`、`calcit <entry> js` 默认都是**单次执行**（once）。
 - 需要监听时，显式传 `-w` 或 `--watch`（如 `calcit -w <entry>`、`calcit <entry> js -w`）。
 - `calcit <entry> ir` 仅用于编译器与生成结果调试，不作为普通项目的运行或验证方式。
-- WASM codegen 通过 `calcit wasm`（browser/embedded core module）与 `calcit wasi`（WASI command module）提供公开 preview 命令；两者必须共享加载、预处理、target validation 与 codegen 语义。不要恢复 `cr-wasm` 或新增平行公开入口；WASI 自举只通过 feature-gated 的 `calcit-wasi-preprocess-harness` 与 `scripts/test-wasi-preprocess.sh` 验证。
+- WASM codegen 通过 `calcit wasm`（browser/embedded core module）与 `calcit wasi`（WASI command module）提供公开 preview 命令；两者必须共享加载、预处理、target validation 与 codegen 语义。`calcit wasi` 默认仍为 Preview 1；`--boundary component` 是 WASI 0.3 command 的显式增量路径，目前仅支持零参数纯计算入口。不要恢复 `cr-wasm` 或新增平行公开入口；Preview 1 自举通过 feature-gated 的 `calcit-wasi-preprocess-harness` 与 `scripts/test-wasi-preprocess.sh` 验证，WASI 0.3 command 另用真实 Wasmtime smoke 验证。
 
 ### calcit eval 基础与常见踩坑
 

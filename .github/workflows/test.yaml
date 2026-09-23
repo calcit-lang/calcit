@@ -29,6 +29,31 @@ jobs:
       - name: Verify native and WASI preprocessing parity
         run: bash scripts/test-wasi-preprocess.sh
 
+  wasi03_command_smoke:
+    name: WASI 0.3 command Component smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Wasmtime 47.0.4 with verified digest
+        run: |
+          curl --fail --location --silent --show-error \
+            'https://github.com/bytecodealliance/wasmtime/releases/download/v47.0.4/wasmtime-v47.0.4-x86_64-linux.tar.xz' \
+            --output "$RUNNER_TEMP/wasmtime-v47.0.4-x86_64-linux.tar.xz"
+          echo "446e8641ba372333670ba0373d5d3083e5cf0dd001b66088afbb3983db0f768f  $RUNNER_TEMP/wasmtime-v47.0.4-x86_64-linux.tar.xz" | sha256sum -c -
+          tar -xf "$RUNNER_TEMP/wasmtime-v47.0.4-x86_64-linux.tar.xz" -C "$RUNNER_TEMP"
+      - name: Run Calcit and Wasmtime command smoke
+        run: |
+          WASMTIME_47_CLI="$RUNNER_TEMP/wasmtime-v47.0.4-x86_64-linux/wasmtime" \
+            cargo test --test wasi_command_component_cli
+          cargo run --bin calcit -- tests/fixtures/wasi-command-03.cirru test app.main/main! --require-match
+          cargo run --bin calcit -- tests/fixtures/wasi-command-03.cirru test app.main/transform-content --require-match
+
   wasi_business_smoke:
     name: Published WASI HTTP business loop
     runs-on: ubuntu-latest
@@ -226,6 +251,8 @@ jobs:
     name: Test
     if: ${{ always() }}
     needs:
+      - wasi_preprocess
+      - wasi03_command_smoke
       - wasi_business_smoke
       - rust_tests
       - core_checks
@@ -235,11 +262,15 @@ jobs:
     steps:
       - name: Verify all shards succeeded
         run: |
+          echo "wasi_preprocess=${{ needs.wasi_preprocess.result }}"
+          echo "wasi03_command_smoke=${{ needs.wasi03_command_smoke.result }}"
           echo "rust_tests=${{ needs.rust_tests.result }}"
           echo "wasi_business_smoke=${{ needs.wasi_business_smoke.result }}"
           echo "core_checks=${{ needs.core_checks.result }}"
           echo "docs_checks=${{ needs.docs_checks.result }}"
           echo "clippy=${{ needs.clippy.result }}"
+          test "${{ needs.wasi_preprocess.result }}" = "success"
+          test "${{ needs.wasi03_command_smoke.result }}" = "success"
           test "${{ needs.rust_tests.result }}" = "success"
           test "${{ needs.wasi_business_smoke.result }}" = "success"
           test "${{ needs.core_checks.result }}" = "success"

@@ -1746,6 +1746,7 @@ mod sort_tests {
         fn_table_index: HashMap::new(),
         host_imports: HashMap::new(),
         target: WasmTarget::Core,
+        boundary: WasmBoundary::Native,
       },
     )
   }
