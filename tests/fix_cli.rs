@@ -240,6 +240,10 @@ fn fix_preview_reports_malformed_external_object_trait_without_macro_capability_
     "diagnostic must describe the bad shape: {diagnostic}"
   );
   assert!(
+    diagnostic.contains("((:icons (quote Dynamic)))"),
+    "diagnostic must include the offending nested method entry: {diagnostic}"
+  );
+  assert!(
     !diagnostic.contains("capability :log"),
     "diagnostic must not expose an unrelated macro capability: {diagnostic}"
   );
