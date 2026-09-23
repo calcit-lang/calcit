@@ -28,6 +28,8 @@ jobs:
           version: "18.0.3"
       - name: Verify native and WASI preprocessing parity
         run: bash scripts/test-wasi-preprocess.sh
+      - name: Verify typed manifest business fixture across native, JS, and Preview 1
+        run: bash scripts/test-wasi-manifest-business.sh
 
   wasi03_command_smoke:
     name: WASI 0.3 command Component smoke

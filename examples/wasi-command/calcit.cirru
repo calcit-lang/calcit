@@ -10,6 +10,16 @@
   :files $ {} $ 'app.main
     %{} 'FileEntry
       :defs $ {}
+        'Manifest $ %{} 'CodeEntry (:doc "|小型配置清单：具名、启用状态与版本号。")
+          :code $ quote $ defstruct Manifest (:name 'String) (:enabled 'Bool) (:revision 'Int32)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'decode-manifest $ %{} 'CodeEntry (:doc "|把 Cirru EDN 文本明确解码为 Manifest；非法结构返回 Result 错误。")
+          :code $ quote $ defn decode-manifest (text) (try-parse-cirru-edn-as text 'Manifest)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result 'app.main/Manifest 'String
         'fail! $ %{} 'CodeEntry (:doc "|向 stderr 输出错误并以指定状态码退出。")
           :code $ quote $ defn fail! (code message) (eprintln message) (quit! code)
           :examples $ []
@@ -39,6 +49,53 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'manifest-main! $ %{} 'CodeEntry (:doc "|从预开放目录读取、转换并写回配置清单；失败以稳定退出码报告。")
+          :code $ quote $ defn manifest-main! ()
+            match
+              .read-text $ fs:path |workspace/input.cirru
+              (:err message)
+                fail! 66 $ str |input: message
+              (:ok content)
+                match (process-manifest |prod- content)
+                  (:err message)
+                    fail! 65 $ str |manifest: message
+                  (:ok output)
+                    match
+                      .write-text (fs:path |workspace/output.cirru) output
+                      (:err message)
+                        fail! 73 $ str |output: message
+                      (:ok _) (println |Manifest-written)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'process-manifest $ %{} 'CodeEntry (:doc "|使用普通 Result 方法串联解码、业务变换和 Cirru EDN 输出。")
+          :code $ quote $ defn process-manifest (prefix content)
+            (decode-manifest content) .and-then $ fn (manifest)
+              (transform-manifest prefix manifest) .map $ fn (updated) (format-cirru-edn updated)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String 'String
+            :return $ :: 'Result 'String 'String
+          :tests $ []
+            %{} 'TestEntry (:name |transforms-typed-config)
+              :code $ quote $ match
+                process-manifest |prod- "|%{} 'Manifest (:name |api) (:enabled true) (:revision 3)"
+                (:err message) (raise message)
+                (:ok output)
+                  match (decode-manifest output)
+                    (:err message) (raise message)
+                    (:ok value)
+                      do
+                        assert= |prod-api $ :name value
+                        assert= true $ :enabled value
+                        assert= 3 $ :revision value
+              :tags $ #{} :unit :wasi
+            %{} 'TestEntry (:name |rejects-invalid-config)
+              :code $ quote $ do
+                assert= true $ result:err? $ process-manifest |prod- "|%{} 'Manifest (:name |) (:enabled true) (:revision 3)"
+                assert= true $ result:err? $ process-manifest |prod- "|%{} 'Manifest (:name |api) (:enabled true) (:revision -1)"
+                assert= true $ result:err? $ process-manifest |prod- "|%{} 'Manifest (:name |api) (:enabled |yes) (:revision 3)"
+              :tags $ #{} :unit :wasi
         'reload! $ %{} 'CodeEntry (:doc "|开发模式重载占位入口。")
           :code $ quote $ defn reload! () (println |Reloaded)
           :examples $ []
@@ -52,5 +109,18 @@
           :tests $ [] $ %{} 'TestEntry (:name |prefixes-text)
             :code $ quote $ assert= "|prefix: payload" (transform-content "|prefix: " |payload)
             :tags $ #{} :unit :wasi
+        'transform-manifest $ %{} 'CodeEntry (:doc "|校验清单并加上部署名称前缀，不改变启用状态或版本号。")
+          :code $ quote $ defn transform-manifest (prefix manifest)
+            let
+                name $ :name manifest
+                revision $ :revision manifest
+              if
+                or (= name |) (< revision 0)
+                %err |invalid-manifest
+                %ok $ Manifest :name (str prefix name) :enabled (:enabled manifest) :revision revision
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String 'app.main/Manifest
+            :return $ :: 'Result 'app.main/Manifest 'String
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)
