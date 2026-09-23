@@ -15,7 +15,7 @@ use im_ternary_tree::TernaryTreeList;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use cirru_edn::EdnTag;
@@ -2062,13 +2062,19 @@ fn extract_preprocessed_fn_parts(code: &Calcit) -> Result<PreprocessedFnParts, S
   }
 }
 
+fn write_cached_js_artifact(ns: &str, path: &Path, content: &str, defs: HashSet<Arc<str>>) -> Result<bool, String> {
+  let wrote_new = write_file_if_changed(path, content)?;
+  internal_states::write_as_ns_cache(ns, defs);
+  Ok(wrote_new)
+}
+
 pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
   let code_emit_path = Path::new(emit_path);
-  if !code_emit_path.exists() {
-    let _ = fs::create_dir(code_emit_path);
-  }
+  fs::create_dir_all(code_emit_path)
+    .map_err(|e| format!("failed to prepare JavaScript output directory {}: {e}", code_emit_path.display()))?;
 
   let mut unchanged_ns: HashSet<Arc<str>> = HashSet::new();
+  let mut written_paths: Vec<PathBuf> = Vec::new();
 
   let program = program::clone_compiled_program_snapshot()?;
   for (ns, file) in program.iter() {
@@ -2096,9 +2102,6 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         }
       }
     }
-    // remember defs of each ns for comparing
-    internal_states::write_as_ns_cache(ns, defs_in_current);
-
     // reset index each file
     reset_js_gensym_index();
 
@@ -2272,17 +2275,22 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     tags_code.push_str(&snippets::tmpl_tags_init(&tag_arr, tag_prefix));
 
     let js_file_path = code_emit_path.join(to_mjs_filename(ns));
-    let wrote_new = write_file_if_changed(
+    let wrote_new = write_cached_js_artifact(
+      ns,
       &js_file_path,
       &format!("{import_code}{tags_code}\n{defs_code}\n\n{vals_code}\n{direct_code}"),
+      defs_in_current,
     )?;
     if wrote_new {
-      println!("emitted: {}", js_file_path.to_str().expect("exptract path"));
+      written_paths.push(js_file_path);
     } else {
       unchanged_ns.insert(ns.to_owned());
     }
   }
 
+  for path in written_paths {
+    println!("emitted: {}", path.display());
+  }
   if !unchanged_ns.is_empty() {
     println!("\n... and {} files not changed.", unchanged_ns.len());
   }
@@ -2297,6 +2305,22 @@ mod tests {
   use super::*;
   use crate::calcit::CalcitSymbolInfo;
   use std::collections::HashMap;
+
+  #[test]
+  fn namespace_cache_waits_for_a_successful_artifact_write() {
+    let root = tempfile::tempdir().expect("temporary output root");
+    let path = root.path().join("missing-parent/retry.mjs");
+    let ns = "calcit.test.failed-artifact-cache";
+    let defs = HashSet::from([Arc::<str>::from("main!")]);
+    assert!(internal_states::lookup_prev_ns_cache(ns).is_none());
+
+    assert!(write_cached_js_artifact(ns, &path, "export default null;", defs.clone()).is_err());
+    assert!(internal_states::lookup_prev_ns_cache(ns).is_none());
+
+    fs::create_dir_all(path.parent().expect("artifact parent")).expect("create parent for retry");
+    assert!(write_cached_js_artifact(ns, &path, "export default null;", defs.clone()).expect("retry writes artifact"));
+    assert_eq!(internal_states::lookup_prev_ns_cache(ns), Some(defs));
+  }
 
   fn imported_native_map() -> Calcit {
     Calcit::Import(CalcitImport {

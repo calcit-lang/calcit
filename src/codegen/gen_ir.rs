@@ -113,12 +113,10 @@ pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
   };
 
   let code_emit_path = Path::new(emit_path);
-  if !code_emit_path.exists() {
-    let _ = fs::create_dir(code_emit_path);
-  }
+  fs::create_dir_all(code_emit_path).map_err(|e| format!("failed to prepare IR output directory {}: {e}", code_emit_path.display()))?;
 
   let js_file_path = code_emit_path.join("program-ir.cirru");
-  let _ = fs::write(&js_file_path, content);
+  fs::write(&js_file_path, content).map_err(|e| format!("failed to write IR artifact {}: {e}", js_file_path.display()))?;
   println!("wrote to: {}", js_file_path.to_str().expect("extract path"));
 
   Ok(())
