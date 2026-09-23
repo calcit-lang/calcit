@@ -34,6 +34,12 @@ expect_output() {
   grep -Fxq 'Manifest-written' "$CASE_ROOT/stdout"
 }
 
+expect_method_eval_output() {
+  local markers
+  markers=$(grep -Ex 'receiver|argument|api!' "$1")
+  [[ "$markers" == $'receiver\nargument\napi!' ]]
+}
+
 run_native() {
   (cd "$1" && "$CALCIT_BIN" --init-fn app.main/manifest-main! "$SNAPSHOT")
 }
@@ -90,3 +96,9 @@ expect_status 73 wasmtime run --dir "$CASE_ROOT/preview1-output-denied/workspace
 "$CALCIT_BIN" --init-fn app.main/manifest-main! wasi "$SNAPSHOT" \
   --boundary component --check-only --emit-path "$OUTPUT/component"
 test ! -e "$OUTPUT/component/program.wasm"
+
+"$CALCIT_BIN" --init-fn app.main/method-eval-main! "$SNAPSHOT" >"$CASE_ROOT/native-method-eval"
+expect_method_eval_output "$CASE_ROOT/native-method-eval"
+"$CALCIT_BIN" --init-fn app.main/method-eval-main! --emit-path "$OUTPUT/js-method-eval" "$SNAPSHOT" js
+node scripts/run-wasi-manifest-js.mjs "$OUTPUT/js-method-eval/app.main.mjs" "$CASE_ROOT" "" method-eval >"$CASE_ROOT/js-method-eval"
+expect_method_eval_output "$CASE_ROOT/js-method-eval"

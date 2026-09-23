@@ -17,4 +17,12 @@
 - Rust 单元测试限定互补构造器的合并条件；CLI 集成测试从真实 Snapshot 查询具名 payload。
 - Manifest `:tests` 与 native / Node JS / Preview 1 / 真实 WASI 0.3 Component 的业务回归由同一 fixture 驱动。
 
+## 有副作用方法实参的后续复现
+
+增加独立的 `method-eval-main!` 验收入口，仍调用普通 `Result.map`：receiver 在 `do` 中输出 `receiver`，回调实参在另一个 `do` 中输出 `argument`，回调结果输出 `api!`。native 路径原本可执行，但 WASI 0.3 Component 报“nested fn/defn closure values are not yet supported”，尽管 `query type-at` 已显示精确 `Result<String, String>`、具名 `Manifest` 回调参数与静态方法 lowering。
+
+WASM 静态调用专化现在识别仅由无绑定 `do`/`CoreLet` 顺序表达式包住的内联回调，按实参从左到右先执行副作用，再捕获并内联回调；不把任意闭包值开放给 WASM，也不提前执行回调体。业务脚本比较 native、Node JS 和真实 WASI 0.3 Component 的相同三行标记，证明 receiver 与参数各求值一次且顺序相同。
+
+负例测试使用 Calcit CLI 在临时 Snapshot 中把成功分支的 `Manifest` payload 替换为 `String`；严格预处理以 `W_FN_RETURN_TYPE_MISMATCH` 拒绝 `Result<String, String>` 冒充 `Result<Manifest, String>`，没有静默扩宽。
+
 剩余边界：Cirru EDN 输入仍需在 `try-parse-cirru-edn-as` 一次性验证为 `Manifest`。本次没有扩大任意 `Dynamic` 值的推断权限。

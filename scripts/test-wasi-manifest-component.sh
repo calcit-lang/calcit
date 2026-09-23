@@ -66,3 +66,15 @@ expect_status 66 "$WASMTIME_BIN" run -S p3 \
   -W component-model-more-async-builtins=y \
   "$CASE_ROOT/component/program.wasm"
 test ! -e "$CASE_ROOT/no-preopen/workspace/output.cirru"
+
+"$CALCIT_BIN" --init-fn app.main/method-eval-main! wasi "$SNAPSHOT" \
+  --boundary component --check-only --emit-path "$CASE_ROOT/method-eval-check"
+test ! -e "$CASE_ROOT/method-eval-check/program.wasm"
+"$CALCIT_BIN" --init-fn app.main/method-eval-main! wasi "$SNAPSHOT" \
+  --boundary component --emit-path "$CASE_ROOT/method-eval"
+"$WASMTIME_BIN" run -S p3 \
+  -W component-model-async-stackful=y \
+  -W component-model-more-async-builtins=y \
+  "$CASE_ROOT/method-eval/program.wasm" >"$CASE_ROOT/method-eval-output"
+markers=$(grep -Ex 'receiver|argument|api!' "$CASE_ROOT/method-eval-output")
+[[ "$markers" == $'receiver\nargument\napi!' ]]

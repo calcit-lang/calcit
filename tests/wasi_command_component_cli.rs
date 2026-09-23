@@ -217,6 +217,65 @@ fn manifest_result_branches_retain_nominal_payload_type() {
 }
 
 #[test]
+fn effectful_result_method_keeps_nominal_callback_and_static_lowering() {
+  let result = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .args([
+      "examples/wasi-command/calcit.cirru",
+      "query",
+      "type-at",
+      "app.main/method-eval-main!",
+      "--path",
+      "@3.1.0.1",
+      "--format",
+      "json",
+    ])
+    .output()
+    .expect("query effectful Result method evidence");
+  assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+  let report: serde_json::Value = serde_json::from_slice(&result.stdout).expect("JSON type-at envelope");
+  assert_eq!(report["data"]["inferred_type"], ":: 'calcit.core/Result 'String 'String");
+  assert_eq!(report["data"]["confidence"], "exact");
+  assert_eq!(report["data"]["lowering"]["kind"], "static-method-call");
+  assert_eq!(report["data"]["bindings"][0]["type"], "'app.main/Manifest");
+}
+
+#[test]
+fn manifest_result_payload_mismatch_fails_strict_preprocessing() {
+  let fixture = tempfile::tempdir().expect("temporary Snapshot directory");
+  let snapshot = fixture.path().join("calcit.cirru");
+  fs::copy("examples/wasi-command/calcit.cirru", &snapshot).expect("copy business Snapshot");
+  let edit = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .arg(&snapshot)
+    .args([
+      "tree",
+      "replace",
+      "app.main/transform-manifest",
+      "--path",
+      "@3.2.3",
+      "--code",
+      "quote $ %ok |wrong-payload",
+    ])
+    .output()
+    .expect("edit temporary Snapshot through Calcit CLI");
+  assert!(edit.status.success(), "{}", String::from_utf8_lossy(&edit.stderr));
+  let check = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .args(["--init-fn", "app.main/manifest-main!"])
+    .arg(&snapshot)
+    .arg("--check-only")
+    .output()
+    .expect("check mismatched Result payload");
+  assert!(
+    !check.status.success(),
+    "a String payload must not satisfy Result<Manifest, String>"
+  );
+  let diagnostic = String::from_utf8_lossy(&check.stderr);
+  assert!(
+    diagnostic.contains("W_FN_RETURN_TYPE_MISMATCH") && diagnostic.contains("Manifest") && diagnostic.contains(":string"),
+    "{diagnostic}"
+  );
+}
+
+#[test]
 fn command_without_reachable_file_effect_omits_filesystem_imports() {
   let output = tempfile::tempdir().expect("output directory");
   let compiled = calcit(

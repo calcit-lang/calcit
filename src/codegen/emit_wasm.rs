@@ -5083,6 +5083,23 @@ fn resolve_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineC
   }
 }
 
+fn inline_closure_tail(expr: &Calcit) -> (Vec<&Calcit>, &Calcit) {
+  let mut effects = vec![];
+  let mut tail = expr;
+  while let Calcit::List(items) = tail {
+    // Only unroll sequencing without bindings; named lets may change the closure's captures.
+    if !matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)))
+      || !matches!(items.get(1), Some(Calcit::List(pair)) if pair.is_empty())
+      || items.len() < 3
+    {
+      break;
+    }
+    effects.extend(items.iter().skip(2).take(items.len() - 3));
+    tail = items.get(items.len() - 1).expect("nonempty CoreLet body");
+  }
+  (effects, tail)
+}
+
 fn emit_inline_closure_body(ctx: &mut WasmGenCtx, closure: &InlineClosure, param_locals: &[u32]) -> Result<(), String> {
   if closure.params.len() != param_locals.len() {
     return Err(format!(
@@ -5153,11 +5170,12 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
     return Ok(false);
   };
 
-  let closures = args
+  let closure_args = args
     .iter()
     .enumerate()
     .map(|(index, arg)| {
-      let closure = resolve_inline_closure(ctx, arg);
+      let (effects, tail) = inline_closure_tail(arg);
+      let closure = resolve_inline_closure(ctx, tail);
       if let Some(closure) = &closure {
         let expected_arity = definition.callback_arities.get(&index).ok_or_else(|| {
           format!(
@@ -5173,10 +5191,10 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
           ));
         }
       }
-      Ok(closure)
+      Ok(closure.map(|_| (effects, tail)))
     })
     .collect::<Result<Vec<_>, String>>()?;
-  if closures.iter().all(Option::is_none) {
+  if closure_args.iter().all(Option::is_none) {
     return Ok(false);
   }
   if !definition.fixed_arity || definition.params.len() != args.len() {
@@ -5191,8 +5209,13 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
   }
 
   let mut bindings = Vec::with_capacity(args.len());
-  for (arg, closure) in args.iter().zip(closures) {
-    if let Some(closure) = closure {
+  for (arg, closure_arg) in args.iter().zip(closure_args) {
+    if let Some((effects, tail)) = closure_arg {
+      for effect in effects {
+        emit_expr(ctx, effect)?;
+        ctx.emit(Instruction::Drop);
+      }
+      let closure = resolve_inline_closure(ctx, tail).expect("validated inline closure");
       bindings.push(InlineArgument::Closure(closure));
     } else {
       emit_expr(ctx, arg)?;

@@ -63,6 +63,8 @@ cat target/wasi-command-data/output.txt
 
 类型查询可检查这条业务路径：`query type-at app.main/transform-manifest --path @3` 返回精确的 `Result<Manifest, String>`，`query type-at app.main/process-manifest --path @3` 返回 `Result<String, String>`；后者的 `.and-then` 被静态 lowering，闭包中的 `manifest` 和 `updated` 都保持具名 `Manifest`。Cirru EDN 文本只在 `try-parse-cirru-edn-as` 处解码为具名结构，业务代码不靠 `Dynamic`、`unsafe-coerce` 或 native call 绕过类型。
 
+独立的 `method-eval-main!` 用普通 `Result.map` 验证有副作用的 receiver 与回调实参：native、Node JS 和真实 Component 都按 `receiver`、`argument`、`api!` 的顺序各输出一次。它不改变上面的文件业务输出；两个回归脚本会一同执行这个检查。
+
 ```bash
 cargo build --bin calcit
 bash scripts/test-wasi-manifest-business.sh
