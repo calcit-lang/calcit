@@ -68,7 +68,7 @@ defimpl ImplName Trait ...
 ```
 
 - First argument is the **impl value name**.
-- Second argument is the concrete **trait value** (normally a symbol). A tag is accepted only for the legacy method-bag form described below.
+- 第二个参数必须是具体的 **trait 值**（symbol）。旧 tag method-bag 形式已退役，不能作为用户态 trait 实现。
 
 Examples:
 
