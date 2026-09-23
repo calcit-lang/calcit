@@ -732,7 +732,7 @@ fn run_cli() -> Result<(), String> {
 
     // Whole-project fix can inspect definitions outside the selected entry's closure.
     let mut module_paths = snapshot.active_entry()?.modules.clone();
-    if matches!(&cli_args.subcommand, Some(CalcitCommand::Fix(_))) {
+    if matches!(&cli_args.subcommand, Some(CalcitCommand::Fix(options)) if options.ns.is_none()) {
       let mut entry_names = snapshot.entries.keys().cloned().collect::<Vec<_>>();
       entry_names.sort();
       for name in entry_names {

@@ -260,6 +260,22 @@ fn whole_project_fix_loads_modules_from_all_entries_and_reports_missing_dependen
   fs::copy("calcit/fibo.cirru", &snapshot).expect("multi-entry fixture should copy");
   fs::copy("calcit/util.cirru", directory.path().join("util.cirru")).expect("module fixture should copy");
 
+  assert_success(
+    &run_calcit(&snapshot, &["config", "add-module", "--entry", "prime", "./missing.cirru"]),
+    "unrelated entry module declaration",
+  );
+  assert_success(
+    &run_fix(
+      &snapshot,
+      &["--ns", "app.main", "--preset", "surface-latest-v2", "--format", "json"],
+    ),
+    "scoped fix must not load an unrelated missing module",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["config", "rm-module", "--entry", "prime", "./missing.cirru"]),
+    "remove unrelated entry module declaration",
+  );
+
   for (args, context) in [
     (
       vec!["config", "add-module", "--entry", "prime", "./util.cirru"],
