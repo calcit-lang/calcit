@@ -432,6 +432,7 @@ fn emit_wasm_impl(
     *tag_index.get("list").expect("list tag must exist") as i32,
     *tag_index.get("string").expect("string tag must exist") as i32,
     *tag_index.get("enum").expect("enum tag must exist") as i32,
+    *tag_index.get("set").expect("set tag must exist") as i32,
   );
   let component_free_head_global = if boundary == WasmBoundary::Component {
     let atom_count = ns_order

@@ -304,6 +304,35 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-enum-map-set-equality $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-map-set-equality ()
+            if
+              &=
+                %some $ &{} :item $ %some 1
+                %some $ &{} :item $ %some 1
+              if
+                &=
+                  %some $ #{} 1 2
+                  %some $ #{} 2 1
+                , 1 0
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'test-enum-map-set-inequality $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-map-set-inequality ()
+            if
+              &=
+                %some $ &{} :item $ %some 1
+                %some $ &{} :item $ %some 2
+              , 0 $ if
+                &=
+                  %some $ #{} 1 2
+                  %some $ #{} 1 3
+                , 0 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
         'test-enum-structural-equality $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-structural-equality ()
             if

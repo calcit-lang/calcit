@@ -2667,6 +2667,9 @@
                 assert= false $ =
                   :: :ready $ %some 1
                   :: :other $ %some 1
+                assert= false $ =
+                  :: :ready $ %some 1
+                  :: :ready $ %some 2
               :tags $ #{} :core :unit
         '> $ %{} 'CodeEntry
           :doc "|Greater-than comparison for one or more numbers\nReturns true only when the value strictly decreases across every argument."
