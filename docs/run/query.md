@@ -64,10 +64,22 @@ calcit query def calcit.core/to-js-data
 
 For source-backed definitions, `query def` prints the stored Cirru body. For special builtin helpers such as `calcit.core/to-js-data`, it falls back to builtin metadata (doc, schema, examples count) even when no snapshot source exists.
 
-Since 0.14.3, automation should use `calcit query def namespace/name --format json`.
-Stdout is one JSON envelope (`schema_version: 1`, `command: "query.def"`, `revision`,
-`data`, `diagnostics`); command echoes and warnings remain on stderr. Failures exit
-nonzero with diagnostics on stderr, not a partial success object. `data` contains
+Agent 查询优先显式使用 `--format edn`，例如 `calcit query def namespace/name --format edn`；
+需要与 JSON 工具互操作时再指定 `--format json`。`query type`、`type-at`、`context`、
+`def`、`config`，以及只读的 `config show/modules/type-slots` 使用相同的结构化输出约定。
+human 默认仍使用 Markdown。成功与失败的 stdout 各只有一个可解析的 envelope；失败
+非零退出，`data` 为 `nil`／`null`，诊断放在 `diagnostics`，命令回显与日志留在 stderr。
+EDN 键为 `:schema-version` 等 tag；JSON 对应 `schema_version`。两种格式的身份、
+revision、类型事实和诊断语义一致。没有源码函数体的 runtime-only 定义会显示 leaf
+占位符并给出 `I_SOURCE_BODY_UNAVAILABLE`，不会因格式化失败丢失整个查询。
+
+```bash
+calcit calcit/test.cirru query type "'String" --format edn
+calcit calcit/test.cirru query context 'calcit.core/&list:contains?' --format edn
+calcit calcit/test.cirru config show --format edn
+```
+
+`query def` 的 `data` 包含
 `id`, `doc`, `tags`, `examples`, `tests`, `code`, `schema`, `ffi`, and `ffi_edn`.
 `ffi` is complete EDN-encoded JSON, using the same representation as `cirru parse-edn`:
 tag map keys retain `:`, tag values use `{"__edn_tag":"js"}`, and sets use
