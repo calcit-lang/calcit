@@ -712,7 +712,7 @@ core/runtime 边界使用，后续会作为独立的 internal runtime-polymorphi
 
 `calcit edit format` 负责可解析性、canonical serialization 和已知旧结构迁移；它不是完整的语义 linter。告警写到 stderr 且不会阻止格式化。CI 需要在 format 后检查 `git diff`，并单独读取 `check-types` / `weak-types --format json` 来执行项目自己的质量阈值。
 
-### 3.8 Trait impl 从方法包迁移为 nominal impl
+### 3.8 Trait impl 从 tag method bag 迁移为 nominal impl
 
 旧代码可能把 tag 作为 `defimpl` 的 trait 参数：
 
@@ -721,7 +721,9 @@ defimpl :RenderImpl :Render $ .render
   fn (x) str x
 ```
 
-这种写法继续参与普通 `.method` 分派，但现在明确视为**不具名的 inherent method bag**；它不会满足 `assert-traits`、函数/数据结构的 `:where` 约束，也不能被 `&trait-call` 选中。`calcit edit format` 会给出不阻断执行的 `W_LEGACY_INHERENT_IMPL` 迁移告警。需要能力约束的新代码应改成：
+这种 originless inherent method bag 已退役：`defimpl` 现在要求 impl 名与 trait 都是 symbol，遇到 tag 会以
+`E_LEGACY_DEFIMPL_TAG` 失败。它本来也不会满足 `assert-traits`、函数/数据结构的 `:where` 约束，也不能被
+`&trait-call` 选中。需要能力约束的代码应改成：
 
 ```cirru
 let

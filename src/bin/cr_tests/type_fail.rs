@@ -629,6 +629,16 @@ fn strict_mode_keeps_source_optional_parameter_validation_under_macro_ancestry()
 }
 
 #[test]
+fn defimpl_rejects_legacy_tag_arguments() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries("defn main! ()\n  defimpl :LegacyImpl :LegacyTrait\n    .dummy $ fn (x) x");
+
+    let err = run_check_only(&entries).expect_err("legacy tag defimpl must be rejected");
+    assert!(err.contains("E_LEGACY_DEFIMPL_TAG"), "unexpected error: {err}");
+  });
+}
+
+#[test]
 fn public_check_reaches_unused_definitions_without_changing_entry_check_semantics() {
   run_with_large_stack(|| {
     builtins::effects::init_effects_states();

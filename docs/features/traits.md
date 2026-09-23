@@ -16,7 +16,7 @@ Calcit provides a lightweight nominal trait system for attaching method implemen
 Keep two concepts separate:
 
 - A **trait impl** has a concrete `deftrait` value as its origin. It participates in `.method` dispatch and can satisfy `assert-traits`, generic `:where` bounds, and `&trait-call`.
-- An **inherent method bag** has no trait origin. It remains compatible with legacy dispatch through `.method`, but it does not prove any trait capability.
+- An **inherent method bag** has no trait origin. It only exists inside core bootstrap via `&impl::new` with a tag origin; user-level `defimpl` no longer creates one, and it does not prove any trait capability.
 
 ## Quick Recipes
 
@@ -110,18 +110,9 @@ let
   pb .foo
 ```
 
-**3) Legacy tag-based method bags (compatibility only)**
+**3) Nominal trait arguments are required**
 
-Passing a tag instead of a concrete trait value creates an originless/inherent method bag:
-
-下例故意展示严格模式会拒绝的歧义调用，因此不作为可运行代码块检查；实际调用应显式选择 trait。
-
-```cirru.no-check
-defimpl :MyMarkerImpl :MyMarker $ .dummy
-  fn (_x) nil
-```
-
-This form is retained so older `.method` dispatch keeps working. It does **not** implement a nominal trait and therefore cannot satisfy `assert-traits`, a generic `:where` bound, or `&trait-call`. `calcit edit format` reports the non-blocking `W_LEGACY_INHERENT_IMPL` migration advisory. New code should define a real trait and pass its symbol:
+`defimpl` requires a symbol for both the impl name and the trait. Passing a tag — the old originless/inherent method bag form `defimpl :MyMarkerImpl :MyMarker ...` — is retired and fails with `E_LEGACY_DEFIMPL_TAG`. It never implemented a nominal trait and could not satisfy `assert-traits`, a generic `:where` bound, or `&trait-call`. Define a real trait and pass its symbol:
 
 ```cirru
 let
