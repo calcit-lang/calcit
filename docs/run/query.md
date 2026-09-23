@@ -67,6 +67,8 @@ For source-backed definitions, `query def` prints the stored Cirru body. For spe
 Agent 查询优先显式使用 `--format edn`，例如 `calcit query def namespace/name --format edn`；
 需要与 JSON 工具互操作时再指定 `--format json`。`query type`、`type-at`、`context`、
 `def`、`config`，以及只读的 `config show/modules/type-slots` 使用相同的结构化输出约定。
+其中 `query config --format edn/json` 复用 `config show`，envelope 的 `command` 为
+`config.show`，便于收敛旧查询入口。
 human 默认仍使用 Markdown。成功与失败的 stdout 各只有一个可解析的 envelope；失败
 非零退出，`data` 为 `nil`／`null`，诊断放在 `diagnostics`，命令回显与日志留在 stderr。
 EDN 键为 `:schema-version` 等 tag；JSON 对应 `schema_version`。两种格式的身份、
