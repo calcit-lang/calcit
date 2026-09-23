@@ -9295,6 +9295,176 @@ mod tests {
   }
 
   #[test]
+  fn wasi_03_read_stream_runs_with_real_wasmtime_host() {
+    let Some(cli) = std::env::var_os("WASMTIME_CLI") else {
+      return;
+    };
+    let host = tempfile::tempdir().expect("host directory");
+    fs::write(host.path().join("input.cirru"), "hello").expect("host input file");
+    let output = tempfile::tempdir().expect("Component output directory");
+    let mut imports = wasi_component_file_imports();
+    let canonical = super::register_component_async_canonical_imports(&mut imports);
+    let task_return = imports.len() as u32;
+    imports.push(HostImport {
+      module: "[export]wasi:cli/run@0.3.1".into(),
+      name: "[task-return]run".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    });
+    let import_indices = index_host_imports(&imports);
+    let descriptor_module = "wasi:filesystem/types@0.3.1";
+    let import = |name: &str| {
+      *import_indices
+        .get(&(descriptor_module.into(), name.into()))
+        .expect("filesystem import")
+    };
+    let free_index = imports.len() as u32;
+    let mut free = build_cabi_free_fn(2);
+    free.export_name = Some("cabi_free".into());
+    let mut realloc = build_cabi_realloc_fn(free_index, 2);
+    realloc.export_name = Some("cabi_realloc".into());
+    let open_index = free_index + 4;
+    let run = CompiledFn {
+      export_name: Some("[async-lift-stackful]wasi:cli/run@0.3.1#run".into()),
+      params: vec![],
+      results: vec![],
+      locals: vec![ValType::I32; 5],
+      instructions: vec![
+        Instruction::I32Const(16),
+        Instruction::I32Const(0),
+        Instruction::I32Const(1),
+        Instruction::I32Const(2048),
+        Instruction::Call(open_index),
+        Instruction::I32Eqz,
+        Instruction::If(wasm_encoder::BlockType::Empty),
+        Instruction::I32Const(1),
+        Instruction::Call(task_return),
+        Instruction::Return,
+        Instruction::End,
+        Instruction::I32Const(2048),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::I64Const(0),
+        Instruction::I32Const(1024),
+        Instruction::Call(import("[method]descriptor.read-via-stream")),
+        Instruction::I32Const(1024),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::LocalSet(0),
+        Instruction::I32Const(1028),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::LocalSet(1),
+        Instruction::LocalGet(0),
+        Instruction::I32Const(4096),
+        Instruction::I32Const(16),
+        Instruction::Call(import("[async-lower][stream-read-0][method]descriptor.read-via-stream")),
+        Instruction::LocalSet(2),
+        Instruction::LocalGet(0),
+        Instruction::I32Const(4104),
+        Instruction::I32Const(16),
+        Instruction::Call(import("[async-lower][stream-read-0][method]descriptor.read-via-stream")),
+        Instruction::LocalSet(3),
+        Instruction::LocalGet(0),
+        Instruction::Call(import("[stream-drop-readable-0][method]descriptor.read-via-stream")),
+        Instruction::LocalGet(1),
+        Instruction::I32Const(3072),
+        Instruction::Call(import("[future-read-1][method]descriptor.read-via-stream")),
+        Instruction::LocalSet(4),
+        Instruction::LocalGet(1),
+        Instruction::Call(import("[future-drop-readable-1][method]descriptor.read-via-stream")),
+        Instruction::I32Const(2048),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::Call(import("[resource-drop]descriptor")),
+        Instruction::LocalGet(2),
+        Instruction::I32Const(80),
+        Instruction::I32Eq,
+        Instruction::LocalGet(3),
+        Instruction::I32Const(1),
+        Instruction::I32Eq,
+        Instruction::I32And,
+        Instruction::LocalGet(4),
+        Instruction::I32Eqz,
+        Instruction::I32And,
+        Instruction::I32Const(3072),
+        Instruction::I32Load8U(super::mem_arg_byte(0)),
+        Instruction::I32Eqz,
+        Instruction::I32And,
+        Instruction::I32Const(4096),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::I32Const(0x6c6c6568),
+        Instruction::I32Eq,
+        Instruction::I32And,
+        Instruction::I32Const(4100),
+        Instruction::I32Load8U(super::mem_arg_byte(0)),
+        Instruction::I32Const(b'o' as i32),
+        Instruction::I32Eq,
+        Instruction::I32And,
+        Instruction::If(wasm_encoder::BlockType::Empty),
+        Instruction::I32Const(0),
+        Instruction::Call(task_return),
+        Instruction::Else,
+        Instruction::I32Const(1),
+        Instruction::Call(task_return),
+        Instruction::End,
+      ],
+    };
+    let mut string_data = ("workspace/input.cirru".len() as f64).to_le_bytes().to_vec();
+    string_data.extend_from_slice(b"workspace/input.cirru");
+    let core = build_wasm_module(
+      &[
+        free,
+        realloc,
+        build_wasi_component_route_path_fn(),
+        build_wasi_component_select_preopen_fn(
+          *import_indices
+            .get(&("wasi:filesystem/preopens@0.3.1".into(), "get-directories".into()))
+            .expect("preopen import"),
+          import("[resource-drop]descriptor"),
+          free_index,
+          free_index + 2,
+        ),
+        build_wasi_component_open_at_fn(
+          free_index + 3,
+          import("[async-lower][method]descriptor.open-at"),
+          import("[resource-drop]descriptor"),
+          free_index,
+          free_index + 1,
+          &canonical,
+        ),
+        run,
+      ],
+      &imports,
+      16384,
+      &string_data,
+      &[],
+      1,
+      ModuleFunctionLayout {
+        runtime_fn_count: 5,
+        table_fn_count: 0,
+        component_free_head: true,
+      },
+    )
+    .expect("valid file stream core command");
+    let component = calcit_bindgen::package_wasi_command(&core).expect("package file stream command");
+    let module = output.path().join("read-stream.wasm");
+    fs::write(&module, component).expect("write file stream Component");
+    let result = Command::new(&cli)
+      .args([
+        "run",
+        "-S",
+        "p3",
+        "-W",
+        "component-model-async-stackful=y",
+        "-W",
+        "component-model-more-async-builtins=y",
+        "--dir",
+      ])
+      .arg(format!("{}::/workspace", host.path().display()))
+      .arg(&module)
+      .output()
+      .expect("run WASI 0.3 file stream command");
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+  }
+
+  #[test]
   fn wasi_command_rejects_reachable_failed_dependency_but_not_unrelated_core_code() {
     let function = |instructions| CompiledFn {
       export_name: None,
