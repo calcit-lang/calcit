@@ -312,6 +312,14 @@ fn emit_wasm_impl(
   let mut component_async_canonical_imports = None;
   let mut component_stackless_canonical_imports = None;
   if boundary == WasmBoundary::Component {
+    if target == WasmTarget::Wasi {
+      host_imports.push(HostImport {
+        module: "wasi:cli/exit@0.3.0".into(),
+        name: "exit-with-code".into(),
+        params: vec![ValType::I32],
+        results: vec![],
+      });
+    }
     for adapter in &mut component_import_adapters {
       let index = host_imports.len() as u32;
       adapter.raw_index = index;
@@ -6468,9 +6476,6 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       let code = ctx.alloc_local();
       ctx.emit(Instruction::LocalSet(code));
       if ctx.target == WasmTarget::Wasi {
-        if ctx.boundary == WasmBoundary::Component {
-          return Err("E_WASI_COMMAND_CAPABILITY: `quit!` needs WASI 0.3 exit lowering".into());
-        }
         ctx.emit(Instruction::LocalGet(code));
         ctx.emit(f64_const(0.0));
         ctx.emit(Instruction::F64Lt);
@@ -6488,10 +6493,15 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
         ctx.emit(Instruction::End);
         ctx.emit(Instruction::LocalGet(code));
         ctx.emit(Instruction::I32TruncF64U);
-        ctx.emit(Instruction::Call(resolve_host_import(ctx, "wasi_snapshot_preview1", "proc_exit")?));
+        let (module, name) = if ctx.boundary == WasmBoundary::Component {
+          ("wasi:cli/exit@0.3.0", "exit-with-code")
+        } else {
+          ("wasi_snapshot_preview1", "proc_exit")
+        };
+        ctx.emit(Instruction::Call(resolve_host_import(ctx, module, name)?));
       }
       // Core WASM has no process-exit capability, and a conforming WASI host
-      // never returns from proc_exit. Trap if either path reaches this point.
+      // never returns from either exit import. Trap if execution reaches here.
       ctx.emit(Instruction::Unreachable);
       ctx.emit(f64_const(0.0)); // unreachable, but keeps type stack valid
       Ok(())

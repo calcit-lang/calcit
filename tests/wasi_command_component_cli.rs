@@ -49,7 +49,14 @@ fn pure_calcit_entry_emits_runnable_wasi_03_command_component() {
   config.wasm_component_model_async_stackful(true);
   let engine = Engine::new(&config).expect("Wasmtime engine");
   let component = Component::new(&engine, &first_wasm).expect("valid command Component");
-  assert_eq!(component.component_type().imports(&engine).count(), 0);
+  assert_eq!(
+    component
+      .component_type()
+      .imports(&engine)
+      .map(|(name, _)| name)
+      .collect::<Vec<_>>(),
+    vec!["wasi:cli/exit@0.3.0"]
+  );
   assert!(
     component
       .component_type()
@@ -57,13 +64,65 @@ fn pure_calcit_entry_emits_runnable_wasi_03_command_component() {
       .any(|(name, _)| name == "wasi:cli/run@0.3.0")
   );
 
-  if let Some(cli) = std::env::var_os("WASMTIME_47_CLI") {
+  if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
     let result = Command::new(cli)
       .args(["run", "-S", "p3"])
       .arg(first.path().join("program.wasm"))
       .output()
       .expect("run WASI 0.3 command");
     assert_eq!(result.status.code(), Some(0), "{}", String::from_utf8_lossy(&result.stderr));
+  }
+}
+
+#[test]
+fn quit_exits_with_the_requested_wasi_03_status_code() {
+  let output = tempfile::tempdir().expect("output directory");
+  let fixture = "tests/fixtures/wasi-command-03-exit.cirru";
+  let check = calcit(&[fixture, "wasi", "--boundary", "component", "--check-only"], output.path());
+  assert!(check.status.success(), "{}", String::from_utf8_lossy(&check.stderr));
+  assert!(!output.path().join("program.wasm").exists());
+
+  let compiled = calcit(&[fixture, "wasi", "--boundary", "component"], output.path());
+  assert!(compiled.status.success(), "{}", String::from_utf8_lossy(&compiled.stderr));
+  let mut config = Config::new();
+  config.wasm_component_model_async(true);
+  config.wasm_component_model_async_stackful(true);
+  let engine = Engine::new(&config).expect("Wasmtime engine");
+  let wasm = fs::read(output.path().join("program.wasm")).expect("command Component");
+  Component::new(&engine, &wasm).expect("valid command Component");
+
+  if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
+    let result = Command::new(cli)
+      .args(["run", "-S", "p3"])
+      .arg(output.path().join("program.wasm"))
+      .output()
+      .expect("run WASI 0.3 command with explicit exit");
+    assert_eq!(result.status.code(), Some(7), "{}", String::from_utf8_lossy(&result.stderr));
+    assert!(result.stdout.is_empty());
+    assert!(result.stderr.is_empty());
+  }
+}
+
+#[test]
+fn quit_rejects_out_of_range_status_instead_of_wrapping_it() {
+  let output = tempfile::tempdir().expect("output directory");
+  let fixture = "tests/fixtures/wasi-command-03-exit-invalid.cirru";
+  let compiled = calcit(&[fixture, "wasi", "--boundary", "component"], output.path());
+  assert!(compiled.status.success(), "{}", String::from_utf8_lossy(&compiled.stderr));
+
+  if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
+    let result = Command::new(cli)
+      .args(["run", "-S", "p3"])
+      .arg(output.path().join("program.wasm"))
+      .output()
+      .expect("run WASI 0.3 command with invalid exit code");
+    assert!(!result.status.success(), "out-of-range exit status must fail");
+    assert_ne!(result.status.code(), Some(0), "exit code must not wrap to success");
+    assert!(
+      String::from_utf8_lossy(&result.stderr).contains("wasm trap"),
+      "{}",
+      String::from_utf8_lossy(&result.stderr)
+    );
   }
 }
 
