@@ -159,6 +159,50 @@ fn calcit_fs_path_read_text_runs_with_real_wasi_03_preopen() {
   );
   assert!(!outside.path().join("denied.txt").exists(), "preopen escape must not write outside");
 
+  for (entry, marker) in [
+    ("app.main/main-read-loop!", "Read-loop-ok"),
+    ("app.main/main-growth-loop!", "Growth-ok"),
+  ] {
+    let output = tempfile::tempdir().expect("loop Component output directory");
+    let compiled = calcit(
+      &[
+        "--init-fn",
+        entry,
+        "tests/fixtures/wasi-command-03.cirru",
+        "wasi",
+        "--boundary",
+        "component",
+      ],
+      output.path(),
+    );
+    assert!(compiled.status.success(), "{entry}: {}", String::from_utf8_lossy(&compiled.stderr));
+    let result = Command::new(&cli)
+      .args([
+        "run",
+        "-S",
+        "p3",
+        "-W",
+        "component-model-async-stackful=y",
+        "-W",
+        "component-model-more-async-builtins=y",
+        "--dir",
+      ])
+      .arg(format!("{}::/workspace", host.path().display()))
+      .arg(output.path().join("program.wasm"))
+      .output()
+      .expect("run loop Component");
+    assert_eq!(
+      result.status.code(),
+      Some(0),
+      "{entry}: {}",
+      String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(
+      String::from_utf8_lossy(&result.stdout).contains(marker),
+      "{entry}: expected {marker}"
+    );
+  }
+
   let overflow = tempfile::tempdir().expect("oversized write output");
   let compiled = calcit(
     &[

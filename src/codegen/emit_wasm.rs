@@ -7170,6 +7170,9 @@ fn emit_wasi_fs_read_text(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
     ctx.emit(Instruction::I32Const(8));
     ctx.call_rt("__cabi_realloc");
     ctx.emit(Instruction::LocalSet(output));
+    // This expression can be inlined into a loop, so a failed read must not reuse prior data.
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::LocalSet(data));
     ctx.emit(Instruction::LocalGet(path));
     ctx.emit(Instruction::LocalGet(output));
     ctx.call_rt("__rt_wasi_component_read_bytes");

@@ -34,6 +34,18 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'main-growth-loop! $ %{} 'CodeEntry (:doc "|验证大文件读取后反复构造小型 Result 值不会越界。")
+          :code $ quote $ defn main-growth-loop! ()
+            let
+                indexes $ range 5000
+                content $ result:unwrap-or (read-workspace-file |workspace/limit.txt) |missing
+              assert= 4194304 $ count content
+              each indexes $ fn (index)
+                assert= true $ result:ok? $ %ok index
+              println |Growth-ok
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'main-overflow! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main-overflow! ()
             assert= 4194305 $ count $ str
@@ -44,6 +56,19 @@
                 result:unwrap-or (read-workspace-file |workspace/limit.txt) |missing
                 , |x
             , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'main-read-loop! $ %{} 'CodeEntry (:doc "|验证同一内联循环先读取成功文件、再读取缺失文件时稳定返回 Result 错误。")
+          :code $ quote $ defn main-read-loop! ()
+            each ([] |workspace/valid.txt |workspace/no-such-file |workspace/no-such-file |workspace/no-such-file)
+              fn (path)
+                let
+                    result $ .read-text $ fs:path path
+                  if (= path |workspace/valid.txt)
+                    assert= true $ result:ok? result
+                    assert= true $ result:err? result
+            println |Read-loop-ok
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
