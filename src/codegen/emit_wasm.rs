@@ -58,9 +58,10 @@ use component::{
 };
 use methods::{emit_call_args, emit_method_invoke};
 use runtime::{
-  HostImport, ModuleFunctionLayout, build_runtime_fns, build_utf8_valid_fn, build_wasi_component_get_env_fn, build_wasi_get_args_fn,
-  build_wasi_get_env_fn, build_wasi_open_path_fn, build_wasi_read_dir_fn, build_wasi_read_text_fn, build_wasi_wait_fn,
-  build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module, core_host_import, host_imports_for_target,
+  HostImport, ModuleFunctionLayout, build_runtime_fns, build_utf8_valid_fn, build_wasi_component_get_env_fn,
+  build_wasi_component_route_path_fn, build_wasi_get_args_fn, build_wasi_get_env_fn, build_wasi_open_path_fn, build_wasi_read_dir_fn,
+  build_wasi_read_text_fn, build_wasi_wait_fn, build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module, core_host_import,
+  host_imports_for_target,
 };
 use structs::{
   emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_contains, emit_struct_count,
@@ -525,6 +526,12 @@ fn emit_wasm_impl(
   let str_new_idx = num_imports + compiled_fns.len() as u32;
   runtime_fn_index.insert("__str_new".to_string(), str_new_idx);
   compiled_fns.push(build_str_new_fn(str_tag_id, component_cabi_realloc_index));
+
+  if wasi_command_file {
+    let route_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_component_route_path".into(), route_idx);
+    compiled_fns.push(build_wasi_component_route_path_fn());
+  }
 
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
     let environment_idx = *index_host_imports(&host_imports)
@@ -8682,11 +8689,11 @@ mod tests {
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport,
     ModuleFunctionLayout, WasmBoundary, WasmTarget, build_cabi_realloc_fn, build_component_export_adapter,
-    build_component_import_adapter, build_string_pool, build_wasm_module, component_abi_type, component_export_needs_post_return,
-    component_flat_types, component_import_signature, component_memory_layout, component_task_return_signature, expr_uses_wasi_file,
-    host_imports_for_target, index_host_imports, must_reject_extraction_failure, reject_reachable_wasi_command_dependencies,
-    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols,
-    wasi_component_file_imports,
+    build_component_import_adapter, build_string_pool, build_wasi_component_route_path_fn, build_wasm_module, component_abi_type,
+    component_export_needs_post_return, component_flat_types, component_import_signature, component_memory_layout,
+    component_task_return_signature, expr_uses_wasi_file, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
+    reject_reachable_wasi_command_dependencies, validate_component_export_symbols, validate_component_flat_parameters,
+    validate_component_import_symbols, wasi_component_file_imports,
   };
   use crate::calcit::{
     Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSyntax,
@@ -8694,6 +8701,7 @@ mod tests {
   };
   use cirru_edn::EdnTag;
   use wasm_encoder::{Instruction, ValType};
+  use wasmtime::{Engine, Instance, Module, Store};
 
   fn declaration(head: CalcitSyntax) -> Calcit {
     let items = [Calcit::Syntax(head, Arc::from("dependency.ns"))];
@@ -8865,6 +8873,58 @@ mod tests {
     )
     .expect("valid core module");
     calcit_bindgen::package_wasi_command(&core).expect("pinned WASI 0.3.1 WIT accepts filesystem imports");
+  }
+
+  #[test]
+  fn wasi_03_route_path_enforces_guest_preopen_boundaries() {
+    let mut route_fn = build_wasi_component_route_path_fn();
+    route_fn.export_name = Some("route".into());
+    let bytes = build_wasm_module(
+      &[route_fn],
+      &[],
+      16384,
+      &[],
+      &[],
+      1,
+      ModuleFunctionLayout {
+        runtime_fn_count: 0,
+        table_fn_count: 0,
+        component_free_head: false,
+      },
+    )
+    .expect("valid route helper module");
+    let engine = Engine::default();
+    let module = Module::new(&engine, &bytes).expect("valid route helper");
+    let mut store = Store::new(&engine, ());
+    let instance = Instance::new(&mut store, &module, &[]).expect("instantiate route helper");
+    let memory = instance.get_memory(&mut store, "memory").expect("module memory");
+    let route = instance
+      .get_typed_func::<(i32, i32, i32), i32>(&mut store, "route")
+      .expect("route function");
+    for (path, name, expected) in [
+      ("workspace/input.cirru", "/workspace", 10),
+      ("workspace/input.cirru", ".", 0),
+      ("workspace/input.cirru", "/", 0),
+      ("workspace2/input.cirru", "/workspace", -1),
+      ("workspace", "/workspace", -1),
+      ("/workspace/input.cirru", "/workspace", -1),
+      ("workspace/../input.cirru", "/workspace", -1),
+      ("workspace/a..b", "/workspace", 10),
+      ("workspace/\0file", "/workspace", -1),
+      ("项目/input.cirru", "/项目", 7),
+      ("workspace/input.cirru", "", -1),
+    ] {
+      memory
+        .write(&mut store, 64, &(path.len() as f64).to_le_bytes())
+        .expect("path length");
+      memory.write(&mut store, 72, path.as_bytes()).expect("path bytes");
+      memory.write(&mut store, 8192, name.as_bytes()).expect("preopen name");
+      assert_eq!(
+        route.call(&mut store, (64, 8192, name.len() as i32)).expect("route call"),
+        expected,
+        "path={path:?}, preopen={name:?}"
+      );
+    }
   }
 
   #[test]
