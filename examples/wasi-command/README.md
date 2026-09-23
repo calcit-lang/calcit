@@ -1,6 +1,6 @@
 # WASI command 文本处理示例
 
-这个示例展示 Calcit 当前可直接用于小型批处理业务的最短路径：读取命令行参数和环境变量，从 Wasmtime 显式预开放的目录读取文本，转换后写回文件，并用稳定的进程状态码报告失败。它使用默认的 WASI Preview 1 路径；WASI 0.3.1 `--boundary component` 已支持参数、环境变量、标准输出/标准错误和退出码，但尚未覆盖文件能力。
+这个示例展示 Calcit 当前可直接用于小型批处理业务的最短路径：读取命令行参数和环境变量，从 Wasmtime 显式预开放的目录读取文本，转换后写回文件，并用稳定的进程状态码报告失败。默认仍生成 WASI Preview 1 模块；显式传 `--boundary component` 则生成支持上述文本读写的 WASI 0.3.1 Component。两条路径都要求 host 授予预开放目录；Component 文本读写各限 4 MiB。
 
 它只使用公开的 `calcit wasi` 入口，不需要 `cr-wasm`、JavaScript host import 或自定义 descriptor API。Calcit 程序只看到 guest path；host path 和授权范围由启动 Wasmtime 的命令决定。
 
@@ -60,6 +60,8 @@ cat target/wasi-command-data/output.txt
 同一 Snapshot 还提供 `app.main/manifest-main!`：从预开放目录读取 `Manifest`，用 `try-parse-cirru-edn-as` 解码为具名 Struct，验证名称与版本，再把名称加上 `prod-` 前缀并写回 Cirru EDN。`process-manifest` 中的 `.and-then` / `.map` 和文件操作中的 `.read-text` / `.write-text` 都是普通方法调用；非法业务数据返回 `Result` 错误，不会先创建输出文件。输入、错误输入和期望输出分别在 `manifest-input.cirru`、`manifest-invalid.cirru`、`manifest-output.cirru`。
 
 该文件入口已在 native、Node JS、真实 Preview 1 和 Wasmtime 49 的 WASI 0.3 Component 执行，四条路径使用同一份业务逻辑与期望输出。Component 必须显式使用 `--boundary component`，运行时启用 `-S p3 -W component-model-async-stackful=y -W component-model-more-async-builtins=y`，并用 `--dir HOST::/workspace` 授予预开放目录。`--check-only` 验证能力但不产出 artifact；缺失 preopen、非法输入和写入失败分别返回稳定的退出码。文件写入使用 create + truncate，失败时可能留下截断或部分输出，不承诺原子替换。
+
+类型查询可检查这条业务路径：`query type-at app.main/transform-manifest --path @3` 返回精确的 `Result<Manifest, String>`，`query type-at app.main/process-manifest --path @3` 返回 `Result<String, String>`；后者的 `.and-then` 被静态 lowering，闭包中的 `manifest` 和 `updated` 都保持具名 `Manifest`。Cirru EDN 文本只在 `try-parse-cirru-edn-as` 处解码为具名结构，业务代码不靠 `Dynamic`、`unsafe-coerce` 或 native call 绕过类型。
 
 ```bash
 cargo build --bin calcit
