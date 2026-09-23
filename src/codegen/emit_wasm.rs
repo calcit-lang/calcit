@@ -361,6 +361,9 @@ fn emit_wasm_impl(
         params: vec![ValType::I32],
         results: vec![],
       });
+      if wasi_command_file {
+        host_imports.extend(wasi_component_file_imports());
+      }
       if wasi_command_stdio {
         for interface in ["stdout", "stderr"] {
           let module = format!("wasi:cli/{interface}@0.3.1");
@@ -8577,6 +8580,97 @@ fn expr_uses_wasi_file(expr: &Calcit) -> bool {
   }
 }
 
+fn wasi_component_file_imports() -> Vec<HostImport> {
+  // Keep descriptors, streams, and futures below the FsPath Result boundary.
+  // WIT counts the write stream as slot 0, so its returned future is slot 1.
+  vec![
+    HostImport {
+      module: "wasi:filesystem/preopens@0.3.1".into(),
+      name: "get-directories".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[resource-drop]descriptor".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[async-lower][method]descriptor.open-at".into(),
+      params: vec![ValType::I32, ValType::I32],
+      results: vec![ValType::I32],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[method]descriptor.read-via-stream".into(),
+      params: vec![ValType::I32, ValType::I64, ValType::I32],
+      results: vec![],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[async-lower][stream-read-0][method]descriptor.read-via-stream".into(),
+      params: vec![ValType::I32; 3],
+      results: vec![ValType::I32],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[stream-drop-readable-0][method]descriptor.read-via-stream".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[future-read-1][method]descriptor.read-via-stream".into(),
+      params: vec![ValType::I32; 2],
+      results: vec![ValType::I32],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[future-drop-readable-1][method]descriptor.read-via-stream".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[stream-new-0][method]descriptor.write-via-stream".into(),
+      params: vec![],
+      results: vec![ValType::I64],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[stream-write-0][method]descriptor.write-via-stream".into(),
+      params: vec![ValType::I32; 3],
+      results: vec![ValType::I32],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[stream-drop-writable-0][method]descriptor.write-via-stream".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[method]descriptor.write-via-stream".into(),
+      params: vec![ValType::I32, ValType::I32, ValType::I64],
+      results: vec![ValType::I32],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[future-read-1][method]descriptor.write-via-stream".into(),
+      params: vec![ValType::I32; 2],
+      results: vec![ValType::I32],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[future-drop-readable-1][method]descriptor.write-via-stream".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    },
+  ]
+}
+
 #[cfg(test)]
 mod tests {
   use std::collections::{BTreeMap, HashMap};
@@ -8587,11 +8681,12 @@ mod tests {
   use super::{
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport,
-    WasmBoundary, WasmTarget, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, build_string_pool,
-    component_abi_type, component_export_needs_post_return, component_flat_types, component_import_signature, component_memory_layout,
-    component_task_return_signature, expr_uses_wasi_file, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
-    reject_reachable_wasi_command_dependencies, validate_component_export_symbols, validate_component_flat_parameters,
-    validate_component_import_symbols,
+    ModuleFunctionLayout, WasmBoundary, WasmTarget, build_cabi_realloc_fn, build_component_export_adapter,
+    build_component_import_adapter, build_string_pool, build_wasm_module, component_abi_type, component_export_needs_post_return,
+    component_flat_types, component_import_signature, component_memory_layout, component_task_return_signature, expr_uses_wasi_file,
+    host_imports_for_target, index_host_imports, must_reject_extraction_failure, reject_reachable_wasi_command_dependencies,
+    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols,
+    wasi_component_file_imports,
   };
   use crate::calcit::{
     Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSyntax,
@@ -8727,6 +8822,49 @@ mod tests {
     assert!(expr_uses_wasi_file(&Calcit::Proc(CalcitProc::NativeFsReadText)));
     assert!(expr_uses_wasi_file(&Calcit::Proc(CalcitProc::NativeFsWriteText)));
     assert!(!expr_uses_wasi_file(&directory));
+  }
+
+  #[test]
+  fn wasi_03_filesystem_preopen_imports_match_pinned_command_wit() {
+    let imports = wasi_component_file_imports();
+    let fns = vec![
+      CompiledFn {
+        export_name: Some("cabi_realloc".into()),
+        params: vec![ValType::I32; 4],
+        results: vec![ValType::I32],
+        locals: vec![],
+        instructions: vec![Instruction::I32Const(32)],
+      },
+      CompiledFn {
+        export_name: Some("cabi_free".into()),
+        params: vec![ValType::I32; 2],
+        results: vec![],
+        locals: vec![],
+        instructions: vec![],
+      },
+      CompiledFn {
+        export_name: Some("wasi:cli/run@0.3.1#run".into()),
+        params: vec![],
+        results: vec![ValType::I32],
+        locals: vec![],
+        instructions: vec![Instruction::I32Const(0)],
+      },
+    ];
+    let core = build_wasm_module(
+      &fns,
+      &imports,
+      16,
+      &[],
+      &[],
+      1,
+      ModuleFunctionLayout {
+        runtime_fn_count: 0,
+        table_fn_count: 0,
+        component_free_head: false,
+      },
+    )
+    .expect("valid core module");
+    calcit_bindgen::package_wasi_command(&core).expect("pinned WASI 0.3.1 WIT accepts filesystem imports");
   }
 
   #[test]
