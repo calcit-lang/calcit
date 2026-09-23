@@ -287,6 +287,12 @@ fn emit_wasm_impl(
     && fn_defs
       .iter()
       .any(|(namespace, _, _, body)| namespace != "calcit.core" && body.iter().any(expr_uses_wasi_stdio));
+  let wasi_command_file = target == WasmTarget::Wasi
+    && boundary == WasmBoundary::Component
+    && fn_defs
+      .iter()
+      .any(|(namespace, _, _, body)| namespace != "calcit.core" && body.iter().any(expr_uses_wasi_file));
+  let wasi_command_stackful = wasi_command_stdio || wasi_command_file;
   // Build the import table before assigning user function indices. Built-in imports
   // stay first so internal lowering keeps its stable indices; user declarations
   // append after them.
@@ -374,6 +380,8 @@ fn emit_wasm_impl(
             });
           }
         }
+      }
+      if wasi_command_stackful {
         host_imports.push(HostImport {
           module: "[export]wasi:cli/run@0.3.1".into(),
           name: "[task-return]run".into(),
@@ -1069,7 +1077,7 @@ fn emit_wasm_impl(
     }
     let component_command = boundary == WasmBoundary::Component;
     compiled_fns.push(CompiledFn {
-      export_name: Some(if component_command && wasi_command_stdio {
+      export_name: Some(if component_command && wasi_command_stackful {
         "[async-lift-stackful]wasi:cli/run@0.3.1#run".into()
       } else if component_command {
         "wasi:cli/run@0.3.1#run".into()
@@ -1077,13 +1085,13 @@ fn emit_wasm_impl(
         "_start".into()
       }),
       params: vec![],
-      results: if component_command && !wasi_command_stdio {
+      results: if component_command && !wasi_command_stackful {
         vec![ValType::I32]
       } else {
         vec![]
       },
       locals: vec![],
-      instructions: if component_command && wasi_command_stdio {
+      instructions: if component_command && wasi_command_stackful {
         vec![
           Instruction::Call(init_index),
           Instruction::Drop,
@@ -8554,6 +8562,21 @@ fn expr_uses_wasi_stdio(expr: &Calcit) -> bool {
   }
 }
 
+fn expr_uses_wasi_file(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::List(xs) => xs.iter().any(expr_uses_wasi_file),
+    Calcit::Proc(CalcitProc::NativeFsReadText | CalcitProc::NativeFsWriteText) => true,
+    Calcit::Import(CalcitImport { ns, def, .. }) => {
+      ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "fs-path:read-text" | "fs-path:write-text")
+    }
+    Calcit::Method(name, MethodKind::Invoke(receiver)) => {
+      matches!(name.as_ref(), "read-text" | "write-text")
+        && matches!(receiver.as_ref(), CalcitTypeAnnotation::TypeRef(type_name, _) if type_name.as_ref() == "calcit.core/FsPath")
+    }
+    _ => false,
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use std::collections::{BTreeMap, HashMap};
@@ -8566,12 +8589,13 @@ mod tests {
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport,
     WasmBoundary, WasmTarget, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, build_string_pool,
     component_abi_type, component_export_needs_post_return, component_flat_types, component_import_signature, component_memory_layout,
-    component_task_return_signature, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
+    component_task_return_signature, expr_uses_wasi_file, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
     reject_reachable_wasi_command_dependencies, validate_component_export_symbols, validate_component_flat_parameters,
     validate_component_import_symbols,
   };
   use crate::calcit::{
-    Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitStructDef, CalcitStructValue, CalcitSyntax, CalcitTypeAnnotation,
+    Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSyntax,
+    CalcitTypeAnnotation, MethodKind,
   };
   use cirru_edn::EdnTag;
   use wasm_encoder::{Instruction, ValType};
@@ -8690,6 +8714,19 @@ mod tests {
     assert_eq!(WasmBoundary::from_str("native"), Ok(WasmBoundary::Native));
     assert_eq!(WasmBoundary::from_str("component"), Ok(WasmBoundary::Component));
     assert!(WasmBoundary::from_str("wit").unwrap_err().starts_with("E_WASM_BOUNDARY:"));
+  }
+
+  #[test]
+  fn wasi_file_effects_require_stackful_command_without_enabling_directory_calls() {
+    let fs_path = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/FsPath"), Arc::new(vec![])));
+    let read = Calcit::Method(Arc::from("read-text"), MethodKind::Invoke(fs_path.clone()));
+    let write = Calcit::Method(Arc::from("write-text"), MethodKind::Invoke(fs_path.clone()));
+    let directory = Calcit::Method(Arc::from("read-dir"), MethodKind::Invoke(fs_path));
+    assert!(expr_uses_wasi_file(&Calcit::from(vec![read])));
+    assert!(expr_uses_wasi_file(&Calcit::from(vec![Calcit::from(vec![write])])));
+    assert!(expr_uses_wasi_file(&Calcit::Proc(CalcitProc::NativeFsReadText)));
+    assert!(expr_uses_wasi_file(&Calcit::Proc(CalcitProc::NativeFsWriteText)));
+    assert!(!expr_uses_wasi_file(&directory));
   }
 
   #[test]
