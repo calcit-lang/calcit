@@ -18,7 +18,7 @@
 //! Struct/Enum pointers: i32 offsets into linear memory, converted to/from f64.
 //! Output is a `.wasm` binary that can be loaded by Node.js, Deno, or any WASM runtime.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::str::FromStr;
@@ -835,6 +835,7 @@ fn emit_wasm_impl(
     }
   }
 
+  let mut unsupported_dependencies = HashMap::new();
   // Second pass: target failures reject the artifact. Dependency failures keep
   // a trapping slot so preassigned call and table indices remain stable.
   for (ns, def_name, args, body) in &fn_defs {
@@ -884,6 +885,9 @@ fn emit_wasm_impl(
       Err(e) => {
         if ns == init_ns || explicit_export {
           return Err(format!("[wasm] target function {ns}/{def_name} is not compilable: {e}"));
+        }
+        if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
+          unsupported_dependencies.insert(num_imports + compiled_fns.len() as u32, (format!("{ns}/{def_name}"), e.clone()));
         }
         if write_output {
           eprintln!("[wasm] trapping unsupported dependency {ns}/{def_name}: {e}");
@@ -979,6 +983,9 @@ fn emit_wasm_impl(
       return Err(format!(
         "E_WASM_TARGET: WASI command entry `{qualified_init}` must take no arguments, got {init_arity}"
       ));
+    }
+    if boundary == WasmBoundary::Component {
+      reject_reachable_wasi_command_dependencies(&compiled_fns, num_imports, init_index, &unsupported_dependencies)?;
     }
     let component_command = boundary == WasmBoundary::Component;
     compiled_fns.push(CompiledFn {
@@ -1164,6 +1171,45 @@ struct CompiledFn {
   locals: Vec<ValType>,
   /// Instruction sequence for the function body
   instructions: Vec<Instruction<'static>>,
+}
+
+fn reject_reachable_wasi_command_dependencies(
+  functions: &[CompiledFn],
+  num_imports: u32,
+  entry_index: u32,
+  unsupported: &HashMap<u32, (String, String)>,
+) -> Result<(), String> {
+  let mut pending = vec![entry_index];
+  let mut visited = HashSet::new();
+  while let Some(index) = pending.pop() {
+    if !visited.insert(index) {
+      continue;
+    }
+    if let Some((definition, reason)) = unsupported.get(&index) {
+      let code = if reason.starts_with("E_WASI_COMMAND_CAPABILITY:") {
+        "E_WASI_COMMAND_CAPABILITY"
+      } else {
+        "E_WASI_COMMAND_DEPENDENCY"
+      };
+      return Err(format!("{code}: reachable `{definition}` cannot compile: {reason}"));
+    }
+    if index < num_imports {
+      continue;
+    }
+    let function = functions
+      .get((index - num_imports) as usize)
+      .ok_or_else(|| format!("E_WASI_COMMAND_DEPENDENCY: missing function index {index}"))?;
+    for instruction in &function.instructions {
+      match instruction {
+        Instruction::Call(callee) => pending.push(*callee),
+        Instruction::CallIndirect { .. } => {
+          return Err("E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability".into());
+        }
+        _ => {}
+      }
+    }
+  }
+  Ok(())
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -8316,12 +8362,13 @@ mod tests {
 
   use super::component::component_type_owns_memory;
   use super::{
-    ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
+    CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport,
     WasmBoundary, WasmTarget, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, build_string_pool,
     component_abi_type, component_export_needs_post_return, component_flat_types, component_import_signature, component_memory_layout,
     component_task_return_signature, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
-    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols,
+    reject_reachable_wasi_command_dependencies, validate_component_export_symbols, validate_component_flat_parameters,
+    validate_component_import_symbols,
   };
   use crate::calcit::{
     Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitStructDef, CalcitStructValue, CalcitSyntax, CalcitTypeAnnotation,
@@ -8443,6 +8490,40 @@ mod tests {
     assert_eq!(WasmBoundary::from_str("native"), Ok(WasmBoundary::Native));
     assert_eq!(WasmBoundary::from_str("component"), Ok(WasmBoundary::Component));
     assert!(WasmBoundary::from_str("wit").unwrap_err().starts_with("E_WASM_BOUNDARY:"));
+  }
+
+  #[test]
+  fn wasi_command_rejects_reachable_failed_dependency_but_not_unrelated_core_code() {
+    let function = |instructions| CompiledFn {
+      export_name: None,
+      params: vec![],
+      results: vec![],
+      locals: vec![],
+      instructions,
+    };
+    let mut functions = [
+      function(vec![Instruction::Call(3)]),
+      function(vec![Instruction::Call(4)]),
+      function(vec![Instruction::Unreachable]),
+      function(vec![]),
+    ];
+    let unsupported = HashMap::from([(
+      4,
+      (
+        "calcit.core/get-args".into(),
+        "E_WASI_COMMAND_CAPABILITY: `get-args` needs WASI 0.3 environment lowering".into(),
+      ),
+    )]);
+    let error = reject_reachable_wasi_command_dependencies(&functions, 2, 2, &unsupported).unwrap_err();
+    assert!(error.starts_with("E_WASI_COMMAND_CAPABILITY:"), "{error}");
+    assert!(error.contains("calcit.core/get-args"), "{error}");
+    assert!(reject_reachable_wasi_command_dependencies(&functions, 2, 5, &unsupported).is_ok());
+    functions[3].instructions.push(Instruction::CallIndirect {
+      type_index: 0,
+      table_index: 0,
+    });
+    let indirect = reject_reachable_wasi_command_dependencies(&functions, 2, 5, &unsupported).unwrap_err();
+    assert!(indirect.starts_with("E_WASI_COMMAND_INDIRECT:"), "{indirect}");
   }
 
   #[test]

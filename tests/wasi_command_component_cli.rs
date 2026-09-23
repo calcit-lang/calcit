@@ -90,6 +90,26 @@ fn preview1_capabilities_fail_before_writing_a_component() {
 }
 
 #[test]
+fn reachable_core_wrapper_capabilities_fail_during_check_only() {
+  let output = tempfile::tempdir().expect("output directory");
+  let result = calcit(
+    &[
+      "tests/fixtures/wasi-command-03-get-args.cirru",
+      "wasi",
+      "--boundary",
+      "component",
+      "--check-only",
+    ],
+    output.path(),
+  );
+  assert!(!result.status.success(), "get-args must not compile to a trapping dependency");
+  let error = String::from_utf8_lossy(&result.stderr);
+  assert!(error.contains("E_WASI_COMMAND_CAPABILITY"), "{error}");
+  assert!(error.contains("calcit.core/get-args"), "{error}");
+  assert!(!output.path().join("program.wasm").exists());
+}
+
+#[test]
 fn generic_component_exports_do_not_silently_disappear() {
   let output = tempfile::tempdir().expect("output directory");
   let result = calcit(
