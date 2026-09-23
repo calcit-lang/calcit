@@ -1759,9 +1759,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool, verbose
   }
 
   let code_emit_path = Path::new(emit_path);
-  if !code_emit_path.exists() {
-    let _ = fs::create_dir(code_emit_path);
-  }
+  fs::create_dir_all(code_emit_path).map_err(|e| format!("failed to prepare output directory {}: {e}", code_emit_path.display()))?;
 
   let js_file_path = code_emit_path.join(format!("{COMPILE_ERRORS_FILE}.mjs"));
 
@@ -1777,10 +1775,15 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool, verbose
       let headline = failure.headline();
       call_stack::display_stack_with_docs(&headline, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
 
-      let _ = fs::write(
+      if let Err(write_error) = fs::write(
         &js_file_path,
         format!("export default \"Preprocessing failed:\\n{}\";", headline.trim().escape_default()),
-      );
+      ) {
+        return Err(format!(
+          "{headline}; failed to write diagnostic artifact {}: {write_error}",
+          js_file_path.display()
+        ));
+      }
       return Err(headline);
     }
   }
@@ -1804,8 +1807,12 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool, verbose
 
   // clear if there are no errors
   let no_error_code = String::from("export default null;");
-  if !(js_file_path.exists() && fs::read_to_string(&js_file_path).map_err(|e| e.to_string())? == no_error_code) {
-    let _ = fs::write(&js_file_path, no_error_code);
+  if !(js_file_path.exists()
+    && fs::read_to_string(&js_file_path).map_err(|e| format!("failed to read diagnostic artifact {}: {e}", js_file_path.display()))?
+      == no_error_code)
+  {
+    fs::write(&js_file_path, no_error_code)
+      .map_err(|e| format!("failed to write diagnostic artifact {}: {e}", js_file_path.display()))?;
   }
 
   if ir_mode {
@@ -1843,7 +1850,8 @@ fn throw_on_js_warnings(warnings: &[LocatedWarning], js_file_path: &Path) -> Res
       content = format!("{content}\n{warn}");
     }
 
-    let _ = fs::write(js_file_path, format!("export default \"{}\";", content.trim().escape_default()));
+    fs::write(js_file_path, format!("export default \"{}\";", content.trim().escape_default()))
+      .map_err(|e| format!("failed to write diagnostic artifact {}: {e}", js_file_path.display()))?;
     Err(format!(
       "Found {} warnings, codegen blocked. errors in {}.mjs",
       warnings.len(),

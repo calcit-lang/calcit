@@ -589,6 +589,8 @@ calcit cirru show-guide
 3. definition：`analyze check-examples --ns <ns> --def <def>`；存在 definition-attached tests 时运行 `calcit test <ns>/<def>`。
 4. 项目：运行 `calcit test` 及仓库规定的 entry 和测试；默认 `calcit test` 只发现当前输入 snapshot 定义的命名空间，不触发 `calcit-core.cirru` 或外部模块中的测试。变更范围明确时可先用 `calcit test --affected <ns>/<def>` 做静态依赖筛选，但提交前仍按仓库要求执行全量门禁。CI/Agent 按 tag 或 affected 筛选时加 `--require-match`，避免空选择误报成功；大套件可加 `--summary-only --format json` 保持 stdout 紧凑可解析。只有项目目标是 JavaScript 时才运行对应的 `calcit js` codegen。
 
+JavaScript 生成使用已有的 `--emit-path`，允许目标目录的父层尚不存在；命令会递归创建目录。任何输出目录、诊断 sidecar 或模块写入失败都会返回非零，不再把未写入的文件报告为 `emitted`。Agent 应同时检查进程状态与预期产物；失败后可能仍留有本轮已写入的部分文件，不能把目录存在或旧产物当作本次成功的证据。
+
 `type-at` 的 unresolved/dynamic warning 只表示静态证据不足；`check-examples` 输出 `No functions with examples` 且退出 0 只表示没有 example 覆盖。二者都不是完成证明，仍要继续项目级 check、测试和目标 codegen。
 
 `calcit query tests <ns>/<def>` 查询 definition-attached tests；`calcit edit add-test <ns>/<def> <name> --code 'quote $ ...'` 添加稳定命名的测试，`calcit edit rm-test <ns>/<def> <name>` 按名称删除。`calcit test --affected <ns>/<def>` 使用编译后的传递依赖图选择测试；静态分析失败的测试会保守地被选中并报告为失败，不会静默漏测。

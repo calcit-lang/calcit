@@ -15,7 +15,7 @@ use im_ternary_tree::TernaryTreeList;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use cirru_edn::EdnTag;
@@ -2064,11 +2064,11 @@ fn extract_preprocessed_fn_parts(code: &Calcit) -> Result<PreprocessedFnParts, S
 
 pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
   let code_emit_path = Path::new(emit_path);
-  if !code_emit_path.exists() {
-    let _ = fs::create_dir(code_emit_path);
-  }
+  fs::create_dir_all(code_emit_path)
+    .map_err(|e| format!("failed to prepare JavaScript output directory {}: {e}", code_emit_path.display()))?;
 
   let mut unchanged_ns: HashSet<Arc<str>> = HashSet::new();
+  let mut written_paths: Vec<PathBuf> = Vec::new();
 
   let program = program::clone_compiled_program_snapshot()?;
   for (ns, file) in program.iter() {
@@ -2277,12 +2277,15 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       &format!("{import_code}{tags_code}\n{defs_code}\n\n{vals_code}\n{direct_code}"),
     )?;
     if wrote_new {
-      println!("emitted: {}", js_file_path.to_str().expect("exptract path"));
+      written_paths.push(js_file_path);
     } else {
       unchanged_ns.insert(ns.to_owned());
     }
   }
 
+  for path in written_paths {
+    println!("emitted: {}", path.display());
+  }
   if !unchanged_ns.is_empty() {
     println!("\n... and {} files not changed.", unchanged_ns.len());
   }
