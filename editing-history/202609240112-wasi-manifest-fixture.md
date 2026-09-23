@@ -5,3 +5,5 @@
 当前 native、Node JS、Preview 1 共用同一 Snapshot 与输入/输出数据。WASI 0.3 Component 仍明确拒绝文件能力；本次回归把这种拒绝固定为过渡状态，#1267 实现 lowering 后必须把它替换为真实 Component 成功与失败回归。此切片不增加 Calcit 顶层工具入口，不引入 Dynamic/unsafe 或手写 WIT host glue。
 
 样例同时暴露了 JS `match` 的 Unit 分支会落入 fallback 的问题：具名 `:ok` 已匹配并执行 `println`，却继续抛出未匹配异常。修复位置在 indexed match codegen，仅在分支体未自行返回时离开 wrapper；已有值返回分支保持原行为。验证以 definition `:tests` 和 native、JS、Preview 1 真正执行同一配置变换为准。
+
+PR review 进一步指出：补上的 Unit 退出语句使原本不遵守返回标签的 TagAccess 值分支变成 `undefined`。因此 TagAccess 也必须像其他值表达式一样在返回位置生成 `return`；新增代码生成回归分别约束 Unit 退出和值返回，不以业务样例碰巧未触发该分支作为完成证明。
