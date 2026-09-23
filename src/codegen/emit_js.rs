@@ -992,7 +992,7 @@ fn gen_call_code(
         if body.len() == 1 {
           let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
           let tag = tags::tag_access(name);
-          Ok(format!("{obj}.get({tag})"))
+          Ok(format!("{return_code}{obj}.get({tag})"))
         } else {
           Err(format!("tag-accessor takes only 1 argument, {xs}"))
         }
@@ -1549,8 +1549,10 @@ fn gen_indexed_match_code(
     }
     let body_code = to_js_code(&pair[1], ns, &scoped_defs, file_imports, tags, Some(return_label))?;
     writeln!(chunk, "{body_code}").expect("write");
+    // Unit-valued branches may emit a statement without an explicit return.
+    // Leave the match here instead of falling through to its fallback.
+    writeln!(chunk, "return;").expect("write");
     writeln!(chunk, "}}").expect("write");
-    writeln!(chunk, "break;").expect("write");
   }
   writeln!(chunk, "}}").expect("write");
 
@@ -2399,6 +2401,42 @@ mod tests {
     assert!(code.contains("case _t_.running.idx:"), "{code}");
     assert!(code.contains("case _t_.done.idx:"), "{code}");
     assert!(!code.contains(" else if "), "{code}");
+  }
+
+  #[test]
+  fn indexed_enum_match_unit_branch_does_not_reach_fallback() {
+    let effect = Calcit::from(vec![symbol("println"), Calcit::Number(42.0)]);
+    let branch = Calcit::from(vec![Calcit::from(vec![Calcit::Tag(EdnTag::from("ok"))]), effect]);
+    let table = CalcitList::Vector(vec![branch, Calcit::Nil]);
+    let local_defs = HashSet::from([Arc::from("state")]);
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+
+    let code = gen_indexed_match_code(&symbol("state"), &table, &local_defs, "tests.emit-js", &file_imports, &tags, None)
+      .expect("indexed match codegen");
+
+    let effect = code.find("console.log(").expect("Unit effect must emit in the matched branch");
+    let exit = code[effect..].find("return;").expect("matched Unit branch must leave the match");
+    let fallback = code[effect..].find("throw new Error").expect("unmatched fallback must remain");
+    assert!(exit < fallback, "matched Unit branch must leave before fallback: {code}");
+  }
+
+  #[test]
+  fn indexed_enum_match_tag_access_branch_returns_value() {
+    let access = Calcit::from(vec![Calcit::Method(Arc::from("name"), MethodKind::TagAccess), symbol("state")]);
+    let branch = Calcit::from(vec![Calcit::from(vec![Calcit::Tag(EdnTag::from("ok"))]), access]);
+    let table = CalcitList::Vector(vec![branch, Calcit::Nil]);
+    let local_defs = HashSet::from([Arc::from("state")]);
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+
+    let code = gen_indexed_match_code(&symbol("state"), &table, &local_defs, "tests.emit-js", &file_imports, &tags, None)
+      .expect("indexed match codegen");
+
+    assert!(
+      code.contains("return state.get(_t_.name)"),
+      "matched tag access must return its value: {code}"
+    );
   }
 
   #[test]

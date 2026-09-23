@@ -28,6 +28,19 @@ jobs:
           version: "18.0.3"
       - name: Verify native and WASI preprocessing parity
         run: bash scripts/test-wasi-preprocess.sh
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Prepare JS runtime for the shared business fixture
+        run: |
+          corepack enable
+          corepack prepare yarn@4.12.0 --activate
+          yarn
+          yarn compile
+          mkdir -p node_modules/@calcit
+          ln -s ../../ node_modules/@calcit/procs
+      - name: Verify typed manifest business fixture across native, JS, and Preview 1
+        run: bash scripts/test-wasi-manifest-business.sh
 
   wasi03_command_smoke:
     name: WASI 0.3 command Component smoke
