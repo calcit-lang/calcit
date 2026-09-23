@@ -68,6 +68,22 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'method-eval-main! $ %{} 'CodeEntry
+          :doc "|验收普通 Result.map 的 receiver 与回调实参副作用只各执行一次；不用于正式文件业务。"
+          :code $ quote $ defn method-eval-main! ()
+            let
+                result $
+                  do (println |receiver)
+                    decode-manifest "|%{} 'Manifest (:name |api) (:enabled true) (:revision 3)"
+                  , .map $ do (println |argument)
+                    fn (manifest)
+                      str (:name manifest) |!
+              match result
+                (:ok value) (println value)
+                (:err message) (fail! 70 message)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'process-manifest $ %{} 'CodeEntry (:doc "|使用普通 Result 方法串联解码、业务变换和 Cirru EDN 输出。")
           :code $ quote $ defn process-manifest (prefix content)
             (decode-manifest content) .and-then $ fn (manifest)

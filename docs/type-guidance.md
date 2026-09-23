@@ -132,8 +132,10 @@ let
 String 本身不携带文件系统语义；旧 `try-read-file` / `try-write-file` 已退役，
 先通过 `fs:path` 构造路径再调用 `.read-text` / `.write-text`。`try-read-dir`
 与底层 raising procedures 暂留为兼容入口。
-这些文件效果支持 native 与生成的 JavaScript。WASI command 支持基于 preopen 的
-文本读写和 `.read-dir`；core WASM 明确拒绝宿主文件效果，`.walk-dir` 尚未接入 WASI。
+这些文件效果支持 native 与生成的 JavaScript。WASI 0.3 Component command 目前支持基于
+preopen 的 `.read-text` / `.write-text`（UTF-8，最多 4 MiB）。写入采用 create + truncate，
+失败可能留下截断或部分内容，不是原子替换；超限在打开前拒绝。`.read-dir` 和 `.walk-dir`
+仍待实现。core WASM 明确拒绝宿主文件效果。
 
 需要同步等待时使用 `wait-ms`，让缺少宿主能力或等待失败继续保留在
 `Result<Unit,String>` 中。参数是明确的整数毫秒，不接受隐式舍入；异步调度仍使用

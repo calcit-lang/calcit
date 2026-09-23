@@ -2,9 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const [modulePath, workDir, denyOutput] = process.argv.slice(2);
+const [modulePath, workDir, denyOutput, entry] = process.argv.slice(2);
 if (!modulePath || !workDir) {
-  throw new Error("usage: run-wasi-manifest-js.mjs <module> <work-dir> [deny-output]");
+  throw new Error("usage: run-wasi-manifest-js.mjs <module> <work-dir> [deny-output] [entry]");
 }
 
 const hostPath = (guestPath) => {
@@ -25,4 +25,10 @@ globalThis.__calcit_injections__ = {
 };
 
 const command = await import(pathToFileURL(path.resolve(modulePath)).href);
-command.manifest_main_$x_();
+if (entry === "method-eval") {
+  command.method_eval_main_$x_();
+} else if (!entry || entry === "manifest") {
+  command.manifest_main_$x_();
+} else {
+  throw new Error("unknown entry: " + entry);
+}

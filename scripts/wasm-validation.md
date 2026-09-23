@@ -83,6 +83,15 @@ WASM 的 Number、Bool、nil 和 tag id 当前共用 f64 value ABI，运行时�
 退出，不产生输出文件，也不触发 WASM trap。这个文件闭环仍以顶层标量 Map 保持最小示例；递归容器和
 Struct、Enum、Option 与 Result 已由同一套 parser/formatter 覆盖，不会增加新的命令入口。
 
+`examples/wasi-command/calcit.cirru` 的具名 `Manifest` 业务入口另由
+`scripts/test-wasi-manifest-component.sh` 在 Wasmtime 49/WASI 0.3.1 上验证；它与
+`scripts/test-wasi-manifest-business.sh` 的 native、Node JS、Preview 1 使用同一份输入、期望输出和
+`Result` 分支。Component 运行需要显式 `--boundary component`、`-S p3`、两个 Component async
+开关及 `--dir HOST::/workspace`。写入是 create + truncate，失败可能留下截断或部分文件，
+不能误称为原子替换。
+同一 Snapshot 的 `method-eval-main!` 单独验证普通 `Result.map`：有副作用的 receiver 和回调实参
+在 native、Node JS、真实 Component 均按 `receiver`、`argument`、`api!` 各输出一次，不修改文件业务结果。
+
 ## 编译与验证方式
 
 生成 browser/embedded core module：

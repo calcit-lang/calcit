@@ -408,7 +408,7 @@ Struct，`get` 可按运行时字段名返回 `Option<Dynamic>`。
 
 - `echo`, `println` - output
 - `fs:path`：从 UTF-8 String 构造 nominal `FsPath`，不执行路径规范化
-- `FsPath .read-text`、`.read-dir`、`.walk-dir`、`.write-text`：返回 `Result` 的可恢复文件效果；WASI command 支持文本读写与 `.read-dir`，core WASM 不可用，`.walk-dir` 尚未接入 WASI
+- `FsPath .read-text`、`.read-dir`、`.walk-dir`、`.write-text`：返回 `Result` 的可恢复文件效果；WASI 0.3 Component command 支持 preopen 内最多 4 MiB UTF-8 文本读写（写入 create + truncate，非原子），目录效果待实现；core WASM 不可用
 - `try-read-dir`：基于 String path 的兼容目录函数，返回 `Result`；文件读写改用 `fs:path` 的方法
 - `read-file`、`read-dir`、`write-file`：保留异常语义的兼容 primitives（native/JS；WASM 不可用）
 - `ffi:task`, `FfiTask .cancel` / `.cancel-with` - nominal native async task lifecycle API

@@ -104,6 +104,17 @@ pub(super) fn emit_hash_proc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 pub(super) fn emit_bump_alloc(ctx: &mut WasmGenCtx, byte_size: i32, ptr_local: u32, type_tag: &str) {
   let tag_val = get_type_tag(ctx, type_tag) as i32;
   emit_align_heap_ptr(ctx);
+  let end = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::I32Const(byte_size.checked_add(8).expect("fixed heap allocation size")));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalTee(end));
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  emit_ensure_memory_covers(ctx, end);
   // Write magic at raw_base+0.
   ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
   ctx.emit(Instruction::I32Const(HEAP_MAGIC));
@@ -127,19 +138,63 @@ pub(super) fn emit_bump_alloc(ctx: &mut WasmGenCtx, byte_size: i32, ptr_local: u
 pub(super) fn emit_bump_alloc_dynamic(ctx: &mut WasmGenCtx, size_local: u32, ptr_local: u32, type_tag: &str) {
   let tag_val = get_type_tag(ctx, type_tag) as i32;
   emit_align_heap_ptr(ctx);
+  let end = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalTee(ptr_local));
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(Instruction::LocalGet(size_local));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalTee(end));
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  emit_ensure_memory_covers(ctx, end);
   ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
   ctx.emit(Instruction::I32Const(HEAP_MAGIC));
   ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
   ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
   ctx.emit(Instruction::I32Const(tag_val));
   ctx.emit(Instruction::I32Store(mem_arg_i32(4)));
-  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalTee(ptr_local));
-  ctx.emit(Instruction::LocalGet(size_local));
-  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(end));
   ctx.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
+}
+
+/// Grow linear memory to contain every byte before writing an allocation header.
+fn emit_ensure_memory_covers(ctx: &mut WasmGenCtx, end: u32) {
+  let desired_pages = ctx.alloc_local_typed(ValType::I32);
+  let current_pages = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(end));
+  ctx.emit(Instruction::I64ExtendI32U);
+  ctx.emit(Instruction::I64Const(65_535));
+  ctx.emit(Instruction::I64Add);
+  ctx.emit(Instruction::I64Const(16));
+  ctx.emit(Instruction::I64ShrU);
+  ctx.emit(Instruction::I32WrapI64);
+  ctx.emit(Instruction::LocalSet(desired_pages));
+  ctx.emit(Instruction::MemorySize(0));
+  ctx.emit(Instruction::LocalTee(current_pages));
+  ctx.emit(Instruction::LocalGet(desired_pages));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(desired_pages));
+  ctx.emit(Instruction::LocalGet(current_pages));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::MemoryGrow(0));
+  ctx.emit(Instruction::I32Const(-1));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
 }
 
 /// Restore the eight-byte alignment required by internal f64-backed objects.

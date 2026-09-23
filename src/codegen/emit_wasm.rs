@@ -58,9 +58,11 @@ use component::{
 };
 use methods::{emit_call_args, emit_method_invoke};
 use runtime::{
-  HostImport, ModuleFunctionLayout, build_runtime_fns, build_utf8_valid_fn, build_wasi_component_get_env_fn, build_wasi_get_args_fn,
-  build_wasi_get_env_fn, build_wasi_open_path_fn, build_wasi_read_dir_fn, build_wasi_read_text_fn, build_wasi_wait_fn,
-  build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module, core_host_import, host_imports_for_target,
+  HostImport, ModuleFunctionLayout, WasiComponentReadImports, WasiComponentWriteImports, build_runtime_fns, build_utf8_valid_fn,
+  build_wasi_component_get_env_fn, build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn,
+  build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasi_component_write_bytes_fn,
+  build_wasi_get_args_fn, build_wasi_get_env_fn, build_wasi_open_path_fn, build_wasi_read_dir_fn, build_wasi_read_text_fn,
+  build_wasi_wait_fn, build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module, core_host_import, host_imports_for_target,
 };
 use structs::{
   emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_contains, emit_struct_count,
@@ -287,6 +289,9 @@ fn emit_wasm_impl(
     && fn_defs
       .iter()
       .any(|(namespace, _, _, body)| namespace != "calcit.core" && body.iter().any(expr_uses_wasi_stdio));
+  let wasi_command_file =
+    target == WasmTarget::Wasi && boundary == WasmBoundary::Component && reachable_wasi_file_effect(&program_data, init_ns, init_def);
+  let wasi_command_stackful = wasi_command_stdio || wasi_command_file;
   // Build the import table before assigning user function indices. Built-in imports
   // stay first so internal lowering keeps its stable indices; user declarations
   // append after them.
@@ -355,6 +360,9 @@ fn emit_wasm_impl(
         params: vec![ValType::I32],
         results: vec![],
       });
+      if wasi_command_file {
+        host_imports.extend(wasi_component_file_imports());
+      }
       if wasi_command_stdio {
         for interface in ["stdout", "stderr"] {
           let module = format!("wasi:cli/{interface}@0.3.1");
@@ -374,6 +382,8 @@ fn emit_wasm_impl(
             });
           }
         }
+      }
+      if wasi_command_stackful {
         host_imports.push(HostImport {
           module: "[export]wasi:cli/run@0.3.1".into(),
           name: "[task-return]run".into(),
@@ -382,9 +392,10 @@ fn emit_wasm_impl(
         });
       }
     }
-    if component_import_adapters
-      .iter()
-      .any(|adapter| adapter.invocation == ComponentAbiInvocation::Async)
+    if wasi_command_file
+      || component_import_adapters
+        .iter()
+        .any(|adapter| adapter.invocation == ComponentAbiInvocation::Async)
       || component_adapters.iter().any(|adapter| adapter.stream_consumer.is_some())
     {
       component_async_canonical_imports = Some(register_component_async_canonical_imports(&mut host_imports));
@@ -514,6 +525,87 @@ fn emit_wasm_impl(
   let str_new_idx = num_imports + compiled_fns.len() as u32;
   runtime_fn_index.insert("__str_new".to_string(), str_new_idx);
   compiled_fns.push(build_str_new_fn(str_tag_id, component_cabi_realloc_index));
+
+  if wasi_command_file {
+    let route_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_component_route_path".into(), route_idx);
+    compiled_fns.push(build_wasi_component_route_path_fn());
+    let import_indices = index_host_imports(&host_imports);
+    let select_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_component_select_preopen".into(), select_idx);
+    compiled_fns.push(build_wasi_component_select_preopen_fn(
+      *import_indices
+        .get(&("wasi:filesystem/preopens@0.3.1".into(), "get-directories".into()))
+        .expect("WASI preopen import must be registered"),
+      *import_indices
+        .get(&("wasi:filesystem/types@0.3.1".into(), "[resource-drop]descriptor".into()))
+        .expect("WASI descriptor drop import must be registered"),
+      component_cabi_free_index.expect("Component boundary must install cabi_free"),
+      route_idx,
+    ));
+    let open_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_component_open_at".into(), open_idx);
+    let descriptor_module = "wasi:filesystem/types@0.3.1";
+    compiled_fns.push(build_wasi_component_open_at_fn(
+      select_idx,
+      *import_indices
+        .get(&(descriptor_module.into(), "[async-lower][method]descriptor.open-at".into()))
+        .expect("WASI open-at import must be registered"),
+      *import_indices
+        .get(&(descriptor_module.into(), "[resource-drop]descriptor".into()))
+        .expect("WASI descriptor drop import must be registered"),
+      component_cabi_free_index.expect("Component boundary must install cabi_free"),
+      component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
+      component_async_canonical_imports
+        .as_ref()
+        .expect("WASI async file operations must register canonical lifecycle imports"),
+    ));
+    let read_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_component_read_bytes".into(), read_idx);
+    let descriptor_import = |name: &str| {
+      *import_indices
+        .get(&(descriptor_module.into(), name.into()))
+        .unwrap_or_else(|| panic!("WASI descriptor import {name} must be registered"))
+    };
+    compiled_fns.push(build_wasi_component_read_bytes_fn(
+      WasiComponentReadImports {
+        open: open_idx,
+        read_via_stream: descriptor_import("[method]descriptor.read-via-stream"),
+        stream_read: descriptor_import("[async-lower][stream-read-0][method]descriptor.read-via-stream"),
+        stream_drop: descriptor_import("[stream-drop-readable-0][method]descriptor.read-via-stream"),
+        future_read: descriptor_import("[future-read-1][method]descriptor.read-via-stream"),
+        future_drop: descriptor_import("[future-drop-readable-1][method]descriptor.read-via-stream"),
+        descriptor_drop: descriptor_import("[resource-drop]descriptor"),
+        free: component_cabi_free_index.expect("Component boundary must install cabi_free"),
+        realloc: component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
+      },
+      component_async_canonical_imports
+        .as_ref()
+        .expect("WASI async file operations must register canonical lifecycle imports"),
+    ));
+    let write_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_component_write_bytes".into(), write_idx);
+    compiled_fns.push(build_wasi_component_write_bytes_fn(
+      WasiComponentWriteImports {
+        open: open_idx,
+        stream_new: descriptor_import("[stream-new-0][method]descriptor.write-via-stream"),
+        stream_write: descriptor_import("[stream-write-0][method]descriptor.write-via-stream"),
+        stream_drop: descriptor_import("[stream-drop-writable-0][method]descriptor.write-via-stream"),
+        write_via_stream: descriptor_import("[method]descriptor.write-via-stream"),
+        future_read: descriptor_import("[future-read-1][method]descriptor.write-via-stream"),
+        future_drop: descriptor_import("[future-drop-readable-1][method]descriptor.write-via-stream"),
+        descriptor_drop: descriptor_import("[resource-drop]descriptor"),
+        free: component_cabi_free_index.expect("Component boundary must install cabi_free"),
+        realloc: component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
+      },
+      component_async_canonical_imports
+        .as_ref()
+        .expect("WASI async file operations must register canonical lifecycle imports"),
+    ));
+    let utf8_valid_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_utf8_valid".into(), utf8_valid_idx);
+    compiled_fns.push(build_utf8_valid_fn());
+  }
 
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
     let environment_idx = *index_host_imports(&host_imports)
@@ -1069,7 +1161,7 @@ fn emit_wasm_impl(
     }
     let component_command = boundary == WasmBoundary::Component;
     compiled_fns.push(CompiledFn {
-      export_name: Some(if component_command && wasi_command_stdio {
+      export_name: Some(if component_command && wasi_command_stackful {
         "[async-lift-stackful]wasi:cli/run@0.3.1#run".into()
       } else if component_command {
         "wasi:cli/run@0.3.1#run".into()
@@ -1077,13 +1169,13 @@ fn emit_wasm_impl(
         "_start".into()
       }),
       params: vec![],
-      results: if component_command && !wasi_command_stdio {
+      results: if component_command && !wasi_command_stackful {
         vec![ValType::I32]
       } else {
         vec![]
       },
       locals: vec![],
-      instructions: if component_command && wasi_command_stdio {
+      instructions: if component_command && wasi_command_stackful {
         vec![
           Instruction::Call(init_index),
           Instruction::Drop,
@@ -4991,6 +5083,23 @@ fn resolve_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineC
   }
 }
 
+fn inline_closure_tail(expr: &Calcit) -> (Vec<&Calcit>, &Calcit) {
+  let mut effects = vec![];
+  let mut tail = expr;
+  while let Calcit::List(items) = tail {
+    // Only unroll sequencing without bindings; named lets may change the closure's captures.
+    if !matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)))
+      || !matches!(items.get(1), Some(Calcit::List(pair)) if pair.is_empty())
+      || items.len() < 3
+    {
+      break;
+    }
+    effects.extend(items.iter().skip(2).take(items.len() - 3));
+    tail = items.get(items.len() - 1).expect("nonempty CoreLet body");
+  }
+  (effects, tail)
+}
+
 fn emit_inline_closure_body(ctx: &mut WasmGenCtx, closure: &InlineClosure, param_locals: &[u32]) -> Result<(), String> {
   if closure.params.len() != param_locals.len() {
     return Err(format!(
@@ -5061,11 +5170,12 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
     return Ok(false);
   };
 
-  let closures = args
+  let closure_args = args
     .iter()
     .enumerate()
     .map(|(index, arg)| {
-      let closure = resolve_inline_closure(ctx, arg);
+      let (effects, tail) = inline_closure_tail(arg);
+      let closure = resolve_inline_closure(ctx, tail);
       if let Some(closure) = &closure {
         let expected_arity = definition.callback_arities.get(&index).ok_or_else(|| {
           format!(
@@ -5081,10 +5191,10 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
           ));
         }
       }
-      Ok(closure)
+      Ok(closure.map(|_| (effects, tail)))
     })
     .collect::<Result<Vec<_>, String>>()?;
-  if closures.iter().all(Option::is_none) {
+  if closure_args.iter().all(Option::is_none) {
     return Ok(false);
   }
   if !definition.fixed_arity || definition.params.len() != args.len() {
@@ -5099,8 +5209,13 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
   }
 
   let mut bindings = Vec::with_capacity(args.len());
-  for (arg, closure) in args.iter().zip(closures) {
-    if let Some(closure) = closure {
+  for (arg, closure_arg) in args.iter().zip(closure_args) {
+    if let Some((effects, tail)) = closure_arg {
+      for effect in effects {
+        emit_expr(ctx, effect)?;
+        ctx.emit(Instruction::Drop);
+      }
+      let closure = resolve_inline_closure(ctx, tail).expect("validated inline closure");
       bindings.push(InlineArgument::Closure(closure));
     } else {
       emit_expr(ctx, arg)?;
@@ -7033,12 +7148,75 @@ fn emit_wasi_secure_random_bytes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 
 /// Lower the typed filesystem read boundary through private Preview 1 helpers.
 fn emit_wasi_fs_read_text(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if ctx.boundary == WasmBoundary::Component {
-    return Err("E_WASI_COMMAND_CAPABILITY: `&fs-read-text` needs WASI 0.3 filesystem lowering".into());
-  }
   expect_arity(3, args, "&fs-read-text")?;
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: filesystem reads are unavailable for the core WASM target".into());
+  }
+  if ctx.boundary == WasmBoundary::Component {
+    if !ctx.runtime_fn_index.contains_key("__rt_wasi_component_read_bytes") {
+      return Err("E_WASI_COMMAND_CAPABILITY: `&fs-read-text` needs a reachable WASI 0.3 filesystem effect".into());
+    }
+    let path = emit_ptr_to_i32(ctx, &args[1])?;
+    let host_error = ctx.alloc_local();
+    emit_expr(ctx, &args[2])?;
+    ctx.emit(Instruction::LocalSet(host_error));
+    let output = ctx.alloc_local_typed(ValType::I32);
+    let data = ctx.alloc_local_typed(ValType::I32);
+    let length = ctx.alloc_local_typed(ValType::I32);
+    let success = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::I32Const(4));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.call_rt("__cabi_realloc");
+    ctx.emit(Instruction::LocalSet(output));
+    // This expression can be inlined into a loop, so a failed read must not reuse prior data.
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::LocalSet(data));
+    ctx.emit(Instruction::LocalGet(path));
+    ctx.emit(Instruction::LocalGet(output));
+    ctx.call_rt("__rt_wasi_component_read_bytes");
+    ctx.emit(Instruction::LocalSet(success));
+    ctx.emit(Instruction::LocalGet(success));
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    ctx.emit(Instruction::LocalGet(output));
+    ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+    ctx.emit(Instruction::LocalSet(data));
+    ctx.emit(Instruction::LocalGet(output));
+    ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
+    ctx.emit(Instruction::LocalSet(length));
+    ctx.emit(Instruction::LocalGet(data));
+    ctx.emit(Instruction::LocalGet(length));
+    ctx.call_rt("__rt_utf8_valid");
+    ctx.emit(Instruction::LocalSet(success));
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::LocalGet(success));
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+    ctx.emit(Instruction::LocalGet(data));
+    ctx.emit(Instruction::LocalGet(length));
+    ctx.call_rt("__str_new");
+    let content = ctx.alloc_local();
+    ctx.emit(Instruction::LocalSet(content));
+    ctx.emit(Instruction::LocalGet(data));
+    ctx.emit(Instruction::I32Const(runtime::WASI_TEXT_FILE_LIMIT as i32 + 1));
+    ctx.call_rt("__cabi_free");
+    ctx.emit(Instruction::LocalGet(output));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.call_rt("__cabi_free");
+    emit_result_enum(ctx, "ok", content)?;
+    ctx.emit(Instruction::Else);
+    ctx.emit(Instruction::LocalGet(data));
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    ctx.emit(Instruction::LocalGet(data));
+    ctx.emit(Instruction::I32Const(runtime::WASI_TEXT_FILE_LIMIT as i32 + 1));
+    ctx.call_rt("__cabi_free");
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::LocalGet(output));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.call_rt("__cabi_free");
+    emit_result_enum(ctx, "err", host_error)?;
+    ctx.emit(Instruction::End);
+    return Ok(());
   }
   let path = emit_ptr_to_i32(ctx, &args[1])?;
   let host_error = ctx.alloc_local();
@@ -7139,12 +7317,31 @@ fn emit_wasi_fs_read_dir(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
 
 /// Lower the typed filesystem write boundary through private Preview 1 helpers.
 fn emit_wasi_fs_write_text(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if ctx.boundary == WasmBoundary::Component {
-    return Err("E_WASI_COMMAND_CAPABILITY: `&fs-write-text` needs WASI 0.3 filesystem lowering".into());
-  }
   expect_arity(4, args, "&fs-write-text")?;
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: filesystem writes are unavailable for the core WASM target".into());
+  }
+  if ctx.boundary == WasmBoundary::Component {
+    if !ctx.runtime_fn_index.contains_key("__rt_wasi_component_write_bytes") {
+      return Err("E_WASI_COMMAND_CAPABILITY: `&fs-write-text` needs a reachable WASI 0.3 filesystem effect".into());
+    }
+    let path = emit_ptr_to_i32(ctx, &args[1])?;
+    let content = emit_ptr_to_i32(ctx, &args[2])?;
+    let host_error = ctx.alloc_local();
+    emit_expr(ctx, &args[3])?;
+    ctx.emit(Instruction::LocalSet(host_error));
+    ctx.emit(Instruction::LocalGet(path));
+    ctx.emit(Instruction::LocalGet(content));
+    ctx.call_rt("__rt_wasi_component_write_bytes");
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+    let unit = ctx.alloc_local();
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::LocalSet(unit));
+    emit_result_enum(ctx, "ok", unit)?;
+    ctx.emit(Instruction::Else);
+    emit_result_enum(ctx, "err", host_error)?;
+    ctx.emit(Instruction::End);
+    return Ok(());
   }
   let path = emit_ptr_to_i32(ctx, &args[1])?;
   let content = emit_ptr_to_i32(ctx, &args[2])?;
@@ -8554,9 +8751,147 @@ fn expr_uses_wasi_stdio(expr: &Calcit) -> bool {
   }
 }
 
+fn expr_uses_wasi_file(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::List(xs) => xs.iter().any(expr_uses_wasi_file),
+    Calcit::Proc(CalcitProc::NativeFsReadText | CalcitProc::NativeFsWriteText) => true,
+    Calcit::Import(CalcitImport { ns, def, .. }) => {
+      ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "fs-path:read-text" | "fs-path:write-text")
+    }
+    Calcit::Method(name, MethodKind::Invoke(receiver)) => {
+      matches!(name.as_ref(), "read-text" | "write-text")
+        && matches!(receiver.as_ref(), CalcitTypeAnnotation::TypeRef(type_name, _) if type_name.as_ref() == "calcit.core/FsPath")
+    }
+    _ => false,
+  }
+}
+
+fn reachable_wasi_file_effect(program_data: &program::CompiledProgram, init_ns: &str, init_def: &str) -> bool {
+  let definitions = program_data
+    .iter()
+    .flat_map(|(namespace, file)| {
+      file
+        .defs
+        .values()
+        .map(move |definition| (definition.def_id, (namespace.as_ref(), definition)))
+    })
+    .collect::<HashMap<_, _>>();
+  let Some(entry) = program_data.get(init_ns).and_then(|file| file.defs.get(init_def)) else {
+    return false;
+  };
+  let mut pending = vec![entry.def_id];
+  let mut visited = HashSet::new();
+  while let Some(id) = pending.pop() {
+    if !visited.insert(id) {
+      continue;
+    }
+    let Some((namespace, definition)) = definitions.get(&id) else {
+      continue;
+    };
+    if *namespace != "calcit.core" && expr_uses_wasi_file(&definition.preprocessed_code) {
+      return true;
+    }
+    pending.extend(definition.deps.iter().copied());
+  }
+  false
+}
+
+fn wasi_component_file_imports() -> Vec<HostImport> {
+  // Keep descriptors, streams, and futures below the FsPath Result boundary.
+  // WIT counts the write stream as slot 0, so its returned future is slot 1.
+  vec![
+    HostImport {
+      module: "wasi:filesystem/preopens@0.3.1".into(),
+      name: "get-directories".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[resource-drop]descriptor".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[async-lower][method]descriptor.open-at".into(),
+      params: vec![ValType::I32, ValType::I32],
+      results: vec![ValType::I32],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[method]descriptor.read-via-stream".into(),
+      params: vec![ValType::I32, ValType::I64, ValType::I32],
+      results: vec![],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[async-lower][stream-read-0][method]descriptor.read-via-stream".into(),
+      params: vec![ValType::I32; 3],
+      results: vec![ValType::I32],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[stream-drop-readable-0][method]descriptor.read-via-stream".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[future-read-1][method]descriptor.read-via-stream".into(),
+      params: vec![ValType::I32; 2],
+      results: vec![ValType::I32],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[future-drop-readable-1][method]descriptor.read-via-stream".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[stream-new-0][method]descriptor.write-via-stream".into(),
+      params: vec![],
+      results: vec![ValType::I64],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[stream-write-0][method]descriptor.write-via-stream".into(),
+      params: vec![ValType::I32; 3],
+      results: vec![ValType::I32],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[stream-drop-writable-0][method]descriptor.write-via-stream".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[method]descriptor.write-via-stream".into(),
+      params: vec![ValType::I32, ValType::I32, ValType::I64],
+      results: vec![ValType::I32],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[future-read-1][method]descriptor.write-via-stream".into(),
+      params: vec![ValType::I32; 2],
+      results: vec![ValType::I32],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[future-drop-readable-1][method]descriptor.write-via-stream".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    },
+  ]
+}
+
 #[cfg(test)]
 mod tests {
   use std::collections::{BTreeMap, HashMap};
+  use std::fs;
+  use std::process::Command;
   use std::str::FromStr;
   use std::sync::Arc;
 
@@ -8564,17 +8899,21 @@ mod tests {
   use super::{
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport,
-    WasmBoundary, WasmTarget, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, build_string_pool,
+    ModuleFunctionLayout, WasiComponentReadImports, WasmBoundary, WasmTarget, build_cabi_free_fn, build_cabi_realloc_fn,
+    build_component_export_adapter, build_component_import_adapter, build_string_pool, build_wasi_component_open_at_fn,
+    build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasm_module,
     component_abi_type, component_export_needs_post_return, component_flat_types, component_import_signature, component_memory_layout,
-    component_task_return_signature, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
+    component_task_return_signature, expr_uses_wasi_file, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
     reject_reachable_wasi_command_dependencies, validate_component_export_symbols, validate_component_flat_parameters,
-    validate_component_import_symbols,
+    validate_component_import_symbols, wasi_component_file_imports,
   };
   use crate::calcit::{
-    Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitStructDef, CalcitStructValue, CalcitSyntax, CalcitTypeAnnotation,
+    Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSyntax,
+    CalcitTypeAnnotation, MethodKind,
   };
   use cirru_edn::EdnTag;
   use wasm_encoder::{Instruction, ValType};
+  use wasmtime::{Caller, Engine, Extern, Func, Instance, Module, Store};
 
   fn declaration(head: CalcitSyntax) -> Calcit {
     let items = [Calcit::Syntax(head, Arc::from("dependency.ns"))];
@@ -8690,6 +9029,799 @@ mod tests {
     assert_eq!(WasmBoundary::from_str("native"), Ok(WasmBoundary::Native));
     assert_eq!(WasmBoundary::from_str("component"), Ok(WasmBoundary::Component));
     assert!(WasmBoundary::from_str("wit").unwrap_err().starts_with("E_WASM_BOUNDARY:"));
+  }
+
+  #[test]
+  fn wasi_file_effects_require_stackful_command_without_enabling_directory_calls() {
+    let fs_path = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/FsPath"), Arc::new(vec![])));
+    let read = Calcit::Method(Arc::from("read-text"), MethodKind::Invoke(fs_path.clone()));
+    let write = Calcit::Method(Arc::from("write-text"), MethodKind::Invoke(fs_path.clone()));
+    let directory = Calcit::Method(Arc::from("read-dir"), MethodKind::Invoke(fs_path));
+    assert!(expr_uses_wasi_file(&Calcit::from(vec![read])));
+    assert!(expr_uses_wasi_file(&Calcit::from(vec![Calcit::from(vec![write])])));
+    assert!(expr_uses_wasi_file(&Calcit::Proc(CalcitProc::NativeFsReadText)));
+    assert!(expr_uses_wasi_file(&Calcit::Proc(CalcitProc::NativeFsWriteText)));
+    assert!(!expr_uses_wasi_file(&directory));
+  }
+
+  #[test]
+  fn wasi_03_filesystem_preopen_imports_match_pinned_command_wit() {
+    let imports = wasi_component_file_imports();
+    let fns = vec![
+      CompiledFn {
+        export_name: Some("cabi_realloc".into()),
+        params: vec![ValType::I32; 4],
+        results: vec![ValType::I32],
+        locals: vec![],
+        instructions: vec![Instruction::I32Const(32)],
+      },
+      CompiledFn {
+        export_name: Some("cabi_free".into()),
+        params: vec![ValType::I32; 2],
+        results: vec![],
+        locals: vec![],
+        instructions: vec![],
+      },
+      CompiledFn {
+        export_name: Some("wasi:cli/run@0.3.1#run".into()),
+        params: vec![],
+        results: vec![ValType::I32],
+        locals: vec![],
+        instructions: vec![Instruction::I32Const(0)],
+      },
+    ];
+    let core = build_wasm_module(
+      &fns,
+      &imports,
+      16,
+      &[],
+      &[],
+      1,
+      ModuleFunctionLayout {
+        runtime_fn_count: 0,
+        table_fn_count: 0,
+        component_free_head: false,
+      },
+    )
+    .expect("valid core module");
+    calcit_bindgen::package_wasi_command(&core).expect("pinned WASI 0.3.1 WIT accepts filesystem imports");
+  }
+
+  #[test]
+  fn wasi_03_route_path_enforces_guest_preopen_boundaries() {
+    let mut route_fn = build_wasi_component_route_path_fn();
+    route_fn.export_name = Some("route".into());
+    let bytes = build_wasm_module(
+      &[route_fn],
+      &[],
+      16384,
+      &[],
+      &[],
+      1,
+      ModuleFunctionLayout {
+        runtime_fn_count: 0,
+        table_fn_count: 0,
+        component_free_head: false,
+      },
+    )
+    .expect("valid route helper module");
+    let engine = Engine::default();
+    let module = Module::new(&engine, &bytes).expect("valid route helper");
+    let mut store = Store::new(&engine, ());
+    let instance = Instance::new(&mut store, &module, &[]).expect("instantiate route helper");
+    let memory = instance.get_memory(&mut store, "memory").expect("module memory");
+    let route = instance
+      .get_typed_func::<(i32, i32, i32), i32>(&mut store, "route")
+      .expect("route function");
+    for (path, name, expected) in [
+      ("workspace/input.cirru", "/workspace", 10),
+      ("workspace/input.cirru", ".", 0),
+      ("workspace/input.cirru", "/", 0),
+      ("workspace2/input.cirru", "/workspace", -1),
+      ("workspace", "/workspace", -1),
+      ("/workspace/input.cirru", "/workspace", -1),
+      ("workspace/../input.cirru", "/workspace", -1),
+      ("workspace/a..b", "/workspace", 10),
+      ("workspace/\0file", "/workspace", -1),
+      ("项目/input.cirru", "/项目", 7),
+      ("workspace/input.cirru", "", -1),
+    ] {
+      memory
+        .write(&mut store, 64, &(path.len() as f64).to_le_bytes())
+        .expect("path length");
+      memory.write(&mut store, 72, path.as_bytes()).expect("path bytes");
+      memory.write(&mut store, 8192, name.as_bytes()).expect("preopen name");
+      assert_eq!(
+        route.call(&mut store, (64, 8192, name.len() as i32)).expect("route call"),
+        expected,
+        "path={path:?}, preopen={name:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn wasi_03_select_preopen_releases_unselected_resources() {
+    #[derive(Default)]
+    struct HostState {
+      directories: Vec<(i32, String)>,
+      dropped: Vec<i32>,
+      freed: Vec<(i32, i32)>,
+    }
+    let imports = vec![
+      HostImport {
+        module: "test".into(),
+        name: "get-directories".into(),
+        params: vec![ValType::I32],
+        results: vec![],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "drop-descriptor".into(),
+        params: vec![ValType::I32],
+        results: vec![],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "free".into(),
+        params: vec![ValType::I32; 2],
+        results: vec![],
+      },
+    ];
+    let route = build_wasi_component_route_path_fn();
+    let mut select = build_wasi_component_select_preopen_fn(0, 1, 2, 3);
+    select.export_name = Some("select".into());
+    let bytes = build_wasm_module(
+      &[route, select],
+      &imports,
+      16384,
+      &[],
+      &[],
+      1,
+      ModuleFunctionLayout {
+        runtime_fn_count: 0,
+        table_fn_count: 0,
+        component_free_head: false,
+      },
+    )
+    .expect("valid preopen selector module");
+    let engine = Engine::default();
+    let module = Module::new(&engine, &bytes).expect("valid preopen selector");
+    let mut store = Store::new(&engine, HostState::default());
+    let get_directories = Func::wrap(&mut store, |mut caller: Caller<'_, HostState>, retptr: i32| {
+      let directories = caller.data().directories.clone();
+      let memory = caller.get_export("memory").expect("memory export").into_memory().expect("memory");
+      let mut name_ptr = 8192usize;
+      for (index, (handle, name)) in directories.iter().enumerate() {
+        let entry = 4096 + index * 12;
+        memory.write(&mut caller, entry, &handle.to_le_bytes()).expect("descriptor handle");
+        memory
+          .write(&mut caller, entry + 4, &(name_ptr as i32).to_le_bytes())
+          .expect("name pointer");
+        memory
+          .write(&mut caller, entry + 8, &(name.len() as i32).to_le_bytes())
+          .expect("name length");
+        memory.write(&mut caller, name_ptr, name.as_bytes()).expect("name bytes");
+        name_ptr += name.len().max(1);
+      }
+      let result = retptr as usize;
+      let list_ptr: i32 = if directories.is_empty() { 0 } else { 4096 };
+      memory.write(&mut caller, result, &list_ptr.to_le_bytes()).expect("list pointer");
+      memory
+        .write(&mut caller, result + 4, &(directories.len() as i32).to_le_bytes())
+        .expect("list length");
+    });
+    let drop_descriptor = Func::wrap(&mut store, |mut caller: Caller<'_, HostState>, descriptor: i32| {
+      caller.data_mut().dropped.push(descriptor);
+    });
+    let free = Func::wrap(&mut store, |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| {
+      caller.data_mut().freed.push((ptr, len));
+    });
+    let instance = Instance::new(
+      &mut store,
+      &module,
+      &[Extern::Func(get_directories), Extern::Func(drop_descriptor), Extern::Func(free)],
+    )
+    .expect("instantiate selector");
+    let memory = instance.get_memory(&mut store, "memory").expect("module memory");
+    let select = instance
+      .get_typed_func::<(i32, i32), i32>(&mut store, "select")
+      .expect("select function");
+
+    store.data_mut().directories = vec![(11, ".".into()), (22, "/workspace".into()), (33, "/workspace2".into())];
+    let path = "workspace/input.cirru";
+    memory
+      .write(&mut store, 64, &(path.len() as f64).to_le_bytes())
+      .expect("path length");
+    memory.write(&mut store, 72, path.as_bytes()).expect("path bytes");
+    assert_eq!(select.call(&mut store, (64, 2048)).expect("select preopen"), 1);
+    let output = &memory.data(&store)[2048..2060];
+    assert_eq!(i32::from_le_bytes(output[0..4].try_into().unwrap()), 22);
+    assert_eq!(i32::from_le_bytes(output[4..8].try_into().unwrap()), 82);
+    assert_eq!(i32::from_le_bytes(output[8..12].try_into().unwrap()), 11);
+    assert_eq!(store.data().dropped, [11, 33]);
+    assert_eq!(store.data().freed.len(), 4, "all names and the list must be freed");
+
+    store.data_mut().dropped.clear();
+    store.data_mut().freed.clear();
+    let invalid = "workspace/../secret";
+    memory
+      .write(&mut store, 64, &(invalid.len() as f64).to_le_bytes())
+      .expect("path length");
+    memory.write(&mut store, 72, invalid.as_bytes()).expect("path bytes");
+    assert_eq!(select.call(&mut store, (64, 2048)).expect("reject invalid path"), 0);
+    assert_eq!(store.data().dropped, [11, 22, 33]);
+    assert_eq!(store.data().freed.len(), 4);
+    assert_eq!(&memory.data(&store)[2048..2060], &[0; 12]);
+
+    store.data_mut().dropped.clear();
+    store.data_mut().freed.clear();
+    store.data_mut().directories = (0..65).map(|index| (index, ".".into())).collect();
+    assert_eq!(select.call(&mut store, (64, 2048)).expect("reject oversized table"), 0);
+    assert_eq!(store.data().dropped.len(), 65);
+    assert_eq!(store.data().freed.len(), 66);
+
+    store.data_mut().dropped.clear();
+    store.data_mut().freed.clear();
+    store.data_mut().directories.clear();
+    assert_eq!(select.call(&mut store, (64, 2048)).expect("reject empty preopens"), 0);
+    assert!(store.data().dropped.is_empty());
+    assert_eq!(store.data().freed, [(0, 0)]);
+    assert_eq!(&memory.data(&store)[2048..2060], &[0; 12]);
+  }
+
+  #[test]
+  fn wasi_03_select_preopen_runs_with_real_wasmtime_host() {
+    let Some(cli) = std::env::var_os("WASMTIME_CLI") else {
+      return;
+    };
+    let host = tempfile::tempdir().expect("host directory");
+    let output = tempfile::tempdir().expect("Component output directory");
+    for (path, should_succeed) in [("workspace/input.cirru", true), ("other/input.cirru", false)] {
+      let imports = vec![
+        HostImport {
+          module: "wasi:filesystem/preopens@0.3.1".into(),
+          name: "get-directories".into(),
+          params: vec![ValType::I32],
+          results: vec![],
+        },
+        HostImport {
+          module: "wasi:filesystem/types@0.3.1".into(),
+          name: "[resource-drop]descriptor".into(),
+          params: vec![ValType::I32],
+          results: vec![],
+        },
+      ];
+      let mut free = build_cabi_free_fn(2);
+      free.export_name = Some("cabi_free".into());
+      let mut realloc = build_cabi_realloc_fn(2, 2);
+      realloc.export_name = Some("cabi_realloc".into());
+      let run = CompiledFn {
+        export_name: Some("wasi:cli/run@0.3.1#run".into()),
+        params: vec![],
+        results: vec![ValType::I32],
+        locals: vec![],
+        instructions: vec![
+          Instruction::I32Const(16),
+          Instruction::I32Const(2048),
+          Instruction::Call(5),
+          Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)),
+          Instruction::I32Const(2048),
+          Instruction::I32Load(super::mem_arg_i32(0)),
+          Instruction::Call(1),
+          Instruction::I32Const(0),
+          Instruction::Else,
+          Instruction::I32Const(1),
+          Instruction::End,
+        ],
+      };
+      let mut string_data = (path.len() as f64).to_le_bytes().to_vec();
+      string_data.extend_from_slice(path.as_bytes());
+      let core = build_wasm_module(
+        &[
+          free,
+          realloc,
+          build_wasi_component_route_path_fn(),
+          build_wasi_component_select_preopen_fn(0, 1, 2, 4),
+          run,
+        ],
+        &imports,
+        16384,
+        &string_data,
+        &[],
+        1,
+        ModuleFunctionLayout {
+          runtime_fn_count: 4,
+          table_fn_count: 0,
+          component_free_head: true,
+        },
+      )
+      .expect("valid core command");
+      let component = calcit_bindgen::package_wasi_command(&core).expect("package real preopen command");
+      let module = output.path().join("program.wasm");
+      fs::write(&module, component).expect("write test Component");
+      let result = Command::new(&cli)
+        .args(["run", "-S", "p3", "--dir"])
+        .arg(format!("{}::/workspace", host.path().display()))
+        .arg(&module)
+        .output()
+        .expect("run WASI 0.3 preopen command");
+      assert_eq!(
+        result.status.success(),
+        should_succeed,
+        "path {path:?}: {}",
+        String::from_utf8_lossy(&result.stderr)
+      );
+    }
+  }
+
+  #[test]
+  fn wasi_03_async_open_at_runs_with_real_wasmtime_host() {
+    let Some(cli) = std::env::var_os("WASMTIME_CLI") else {
+      return;
+    };
+    let host = tempfile::tempdir().expect("host directory");
+    fs::write(host.path().join("input.cirru"), "hello").expect("host input file");
+    let output = tempfile::tempdir().expect("Component output directory");
+    for (path, should_succeed) in [
+      ("workspace/input.cirru", true),
+      ("workspace/missing.cirru", false),
+      ("other/input.cirru", false),
+      ("workspace/../input.cirru", false),
+    ] {
+      let mut imports = vec![
+        HostImport {
+          module: "wasi:filesystem/preopens@0.3.1".into(),
+          name: "get-directories".into(),
+          params: vec![ValType::I32],
+          results: vec![],
+        },
+        HostImport {
+          module: "wasi:filesystem/types@0.3.1".into(),
+          name: "[resource-drop]descriptor".into(),
+          params: vec![ValType::I32],
+          results: vec![],
+        },
+        HostImport {
+          module: "wasi:filesystem/types@0.3.1".into(),
+          name: "[async-lower][method]descriptor.open-at".into(),
+          params: vec![ValType::I32; 2],
+          results: vec![ValType::I32],
+        },
+      ];
+      let canonical = super::register_component_async_canonical_imports(&mut imports);
+      let task_return = imports.len() as u32;
+      imports.push(HostImport {
+        module: "[export]wasi:cli/run@0.3.1".into(),
+        name: "[task-return]run".into(),
+        params: vec![ValType::I32],
+        results: vec![],
+      });
+      let free_index = imports.len() as u32;
+      let mut free = build_cabi_free_fn(2);
+      free.export_name = Some("cabi_free".into());
+      let mut realloc = build_cabi_realloc_fn(free_index, 2);
+      realloc.export_name = Some("cabi_realloc".into());
+      let open_index = free_index + 4;
+      let instructions = vec![
+        Instruction::I32Const(16),
+        Instruction::I32Const(0),
+        Instruction::I32Const(1),
+        Instruction::I32Const(2048),
+        Instruction::Call(open_index),
+        Instruction::If(wasm_encoder::BlockType::Empty),
+        Instruction::I32Const(2048),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::Call(1),
+        Instruction::I32Const(0),
+        Instruction::Call(task_return),
+        Instruction::Else,
+        Instruction::I32Const(1),
+        Instruction::Call(task_return),
+        Instruction::End,
+      ];
+      let run = CompiledFn {
+        export_name: Some("[async-lift-stackful]wasi:cli/run@0.3.1#run".into()),
+        params: vec![],
+        results: vec![],
+        locals: vec![],
+        instructions,
+      };
+      let mut string_data = (path.len() as f64).to_le_bytes().to_vec();
+      string_data.extend_from_slice(path.as_bytes());
+      let core = build_wasm_module(
+        &[
+          free,
+          realloc,
+          build_wasi_component_route_path_fn(),
+          build_wasi_component_select_preopen_fn(0, 1, free_index, free_index + 2),
+          build_wasi_component_open_at_fn(free_index + 3, 2, 1, free_index, free_index + 1, &canonical),
+          run,
+        ],
+        &imports,
+        16384,
+        &string_data,
+        &[],
+        1,
+        ModuleFunctionLayout {
+          runtime_fn_count: 5,
+          table_fn_count: 0,
+          component_free_head: true,
+        },
+      )
+      .expect("valid async open-at core command");
+      let component = calcit_bindgen::package_wasi_command(&core).expect("package async open-at command");
+      let module = output.path().join("open-at.wasm");
+      fs::write(&module, component).expect("write async open-at Component");
+      let result = Command::new(&cli)
+        .args(["run", "-S", "p3", "-W", "component-model-async-stackful=y", "--dir"])
+        .arg(format!("{}::/workspace", host.path().display()))
+        .arg(&module)
+        .output()
+        .expect("run WASI 0.3 open-at command");
+      assert!(
+        result.stderr.is_empty(),
+        "unexpected host trap for {path:?}: {}",
+        String::from_utf8_lossy(&result.stderr)
+      );
+      assert_eq!(
+        result.status.success(),
+        should_succeed,
+        "path {path:?}: {}",
+        String::from_utf8_lossy(&result.stderr)
+      );
+    }
+  }
+
+  #[test]
+  fn wasi_03_read_stream_runs_with_real_wasmtime_host() {
+    let Some(cli) = std::env::var_os("WASMTIME_CLI") else {
+      return;
+    };
+    let host = tempfile::tempdir().expect("host directory");
+    fs::write(host.path().join("input.cirru"), "hello").expect("host input file");
+    let output = tempfile::tempdir().expect("Component output directory");
+    let mut imports = wasi_component_file_imports();
+    let canonical = super::register_component_async_canonical_imports(&mut imports);
+    let task_return = imports.len() as u32;
+    imports.push(HostImport {
+      module: "[export]wasi:cli/run@0.3.1".into(),
+      name: "[task-return]run".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    });
+    let import_indices = index_host_imports(&imports);
+    let descriptor_module = "wasi:filesystem/types@0.3.1";
+    let import = |name: &str| {
+      *import_indices
+        .get(&(descriptor_module.into(), name.into()))
+        .expect("filesystem import")
+    };
+    let free_index = imports.len() as u32;
+    let mut free = build_cabi_free_fn(2);
+    free.export_name = Some("cabi_free".into());
+    let mut realloc = build_cabi_realloc_fn(free_index, 2);
+    realloc.export_name = Some("cabi_realloc".into());
+    let open_index = free_index + 4;
+    let run = CompiledFn {
+      export_name: Some("[async-lift-stackful]wasi:cli/run@0.3.1#run".into()),
+      params: vec![],
+      results: vec![],
+      locals: vec![ValType::I32; 5],
+      instructions: vec![
+        Instruction::I32Const(16),
+        Instruction::I32Const(0),
+        Instruction::I32Const(1),
+        Instruction::I32Const(2048),
+        Instruction::Call(open_index),
+        Instruction::I32Eqz,
+        Instruction::If(wasm_encoder::BlockType::Empty),
+        Instruction::I32Const(1),
+        Instruction::Call(task_return),
+        Instruction::Return,
+        Instruction::End,
+        Instruction::I32Const(2048),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::I64Const(0),
+        Instruction::I32Const(1024),
+        Instruction::Call(import("[method]descriptor.read-via-stream")),
+        Instruction::I32Const(1024),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::LocalSet(0),
+        Instruction::I32Const(1028),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::LocalSet(1),
+        Instruction::LocalGet(0),
+        Instruction::I32Const(4096),
+        Instruction::I32Const(16),
+        Instruction::Call(import("[async-lower][stream-read-0][method]descriptor.read-via-stream")),
+        Instruction::LocalSet(2),
+        Instruction::LocalGet(0),
+        Instruction::I32Const(4104),
+        Instruction::I32Const(16),
+        Instruction::Call(import("[async-lower][stream-read-0][method]descriptor.read-via-stream")),
+        Instruction::LocalSet(3),
+        Instruction::LocalGet(0),
+        Instruction::Call(import("[stream-drop-readable-0][method]descriptor.read-via-stream")),
+        Instruction::LocalGet(1),
+        Instruction::I32Const(3072),
+        Instruction::Call(import("[future-read-1][method]descriptor.read-via-stream")),
+        Instruction::LocalSet(4),
+        Instruction::LocalGet(1),
+        Instruction::Call(import("[future-drop-readable-1][method]descriptor.read-via-stream")),
+        Instruction::I32Const(2048),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::Call(import("[resource-drop]descriptor")),
+        Instruction::LocalGet(2),
+        Instruction::I32Const(80),
+        Instruction::I32Eq,
+        Instruction::LocalGet(3),
+        Instruction::I32Const(1),
+        Instruction::I32Eq,
+        Instruction::I32And,
+        Instruction::LocalGet(4),
+        Instruction::I32Eqz,
+        Instruction::I32And,
+        Instruction::I32Const(3072),
+        Instruction::I32Load8U(super::mem_arg_byte(0)),
+        Instruction::I32Eqz,
+        Instruction::I32And,
+        Instruction::I32Const(4096),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::I32Const(0x6c6c6568),
+        Instruction::I32Eq,
+        Instruction::I32And,
+        Instruction::I32Const(4100),
+        Instruction::I32Load8U(super::mem_arg_byte(0)),
+        Instruction::I32Const(b'o' as i32),
+        Instruction::I32Eq,
+        Instruction::I32And,
+        Instruction::If(wasm_encoder::BlockType::Empty),
+        Instruction::I32Const(0),
+        Instruction::Call(task_return),
+        Instruction::Else,
+        Instruction::I32Const(1),
+        Instruction::Call(task_return),
+        Instruction::End,
+      ],
+    };
+    let mut string_data = ("workspace/input.cirru".len() as f64).to_le_bytes().to_vec();
+    string_data.extend_from_slice(b"workspace/input.cirru");
+    let core = build_wasm_module(
+      &[
+        free,
+        realloc,
+        build_wasi_component_route_path_fn(),
+        build_wasi_component_select_preopen_fn(
+          *import_indices
+            .get(&("wasi:filesystem/preopens@0.3.1".into(), "get-directories".into()))
+            .expect("preopen import"),
+          import("[resource-drop]descriptor"),
+          free_index,
+          free_index + 2,
+        ),
+        build_wasi_component_open_at_fn(
+          free_index + 3,
+          import("[async-lower][method]descriptor.open-at"),
+          import("[resource-drop]descriptor"),
+          free_index,
+          free_index + 1,
+          &canonical,
+        ),
+        run,
+      ],
+      &imports,
+      16384,
+      &string_data,
+      &[],
+      1,
+      ModuleFunctionLayout {
+        runtime_fn_count: 5,
+        table_fn_count: 0,
+        component_free_head: true,
+      },
+    )
+    .expect("valid file stream core command");
+    let component = calcit_bindgen::package_wasi_command(&core).expect("package file stream command");
+    let module = output.path().join("read-stream.wasm");
+    fs::write(&module, component).expect("write file stream Component");
+    let result = Command::new(&cli)
+      .args([
+        "run",
+        "-S",
+        "p3",
+        "-W",
+        "component-model-async-stackful=y",
+        "-W",
+        "component-model-more-async-builtins=y",
+        "--dir",
+      ])
+      .arg(format!("{}::/workspace", host.path().display()))
+      .arg(&module)
+      .output()
+      .expect("run WASI 0.3 file stream command");
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+  }
+
+  #[test]
+  fn wasi_03_bounded_read_bytes_runs_with_real_wasmtime_host() {
+    let Some(cli) = std::env::var_os("WASMTIME_CLI") else {
+      return;
+    };
+    let host = tempfile::tempdir().expect("host directory");
+    fs::write(host.path().join("short.cirru"), "hello").expect("short input");
+    fs::write(host.path().join("large.cirru"), vec![b'a'; 128 * 1024]).expect("multi-chunk input");
+    fs::write(host.path().join("empty.cirru"), []).expect("empty input");
+    fs::write(host.path().join("limit.cirru"), vec![b'e'; 4 * 1024 * 1024]).expect("boundary input");
+    fs::write(host.path().join("oversized.cirru"), vec![b'x'; 4 * 1024 * 1024 + 1]).expect("oversized input");
+    let output = tempfile::tempdir().expect("Component output directory");
+    for (path, expected_len, expected_first) in [
+      ("workspace/short.cirru", Some(5), Some(b'h')),
+      ("workspace/large.cirru", Some(128 * 1024), Some(b'a')),
+      ("workspace/empty.cirru", Some(0), None),
+      ("workspace/limit.cirru", Some(4 * 1024 * 1024), Some(b'e')),
+      ("workspace/oversized.cirru", None, None),
+      ("workspace/missing.cirru", None, None),
+    ] {
+      let mut imports = wasi_component_file_imports();
+      let canonical = super::register_component_async_canonical_imports(&mut imports);
+      let task_return = imports.len() as u32;
+      imports.push(HostImport {
+        module: "[export]wasi:cli/run@0.3.1".into(),
+        name: "[task-return]run".into(),
+        params: vec![ValType::I32],
+        results: vec![],
+      });
+      let import_indices = index_host_imports(&imports);
+      let import = |name: &str| {
+        *import_indices
+          .get(&("wasi:filesystem/types@0.3.1".into(), name.into()))
+          .expect("filesystem import")
+      };
+      let free_index = imports.len() as u32;
+      let mut free = build_cabi_free_fn(2);
+      free.export_name = Some("cabi_free".into());
+      let mut realloc = build_cabi_realloc_fn(free_index, 2);
+      realloc.export_name = Some("cabi_realloc".into());
+      let mut instructions = vec![
+        Instruction::I32Const(16),
+        Instruction::I32Const(2048),
+        Instruction::Call(free_index + 5),
+        Instruction::LocalSet(0),
+      ];
+      if let Some(expected_len) = expected_len {
+        instructions.extend([
+          Instruction::LocalGet(0),
+          Instruction::If(wasm_encoder::BlockType::Empty),
+          Instruction::I32Const(2052),
+          Instruction::I32Load(super::mem_arg_i32(0)),
+          Instruction::I32Const(expected_len),
+          Instruction::I32Eq,
+          Instruction::LocalSet(1),
+        ]);
+        if let Some(expected_first) = expected_first {
+          instructions.extend([
+            Instruction::LocalGet(1),
+            Instruction::I32Const(2048),
+            Instruction::I32Load(super::mem_arg_i32(0)),
+            Instruction::I32Load8U(super::mem_arg_byte(0)),
+            Instruction::I32Const(expected_first as i32),
+            Instruction::I32Eq,
+            Instruction::I32And,
+            Instruction::LocalSet(1),
+          ]);
+        }
+        instructions.extend([
+          Instruction::I32Const(2048),
+          Instruction::I32Load(super::mem_arg_i32(0)),
+          Instruction::I32Const(4 * 1024 * 1024 + 1),
+          Instruction::Call(free_index),
+          Instruction::End,
+        ]);
+      } else {
+        instructions.extend([
+          Instruction::LocalGet(0),
+          Instruction::I32Eqz,
+          Instruction::LocalSet(1),
+          Instruction::LocalGet(0),
+          Instruction::If(wasm_encoder::BlockType::Empty),
+          Instruction::I32Const(2048),
+          Instruction::I32Load(super::mem_arg_i32(0)),
+          Instruction::I32Const(4 * 1024 * 1024 + 1),
+          Instruction::Call(free_index),
+          Instruction::End,
+        ]);
+      }
+      instructions.extend([
+        Instruction::LocalGet(1),
+        Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)),
+        Instruction::I32Const(0),
+        Instruction::Else,
+        Instruction::I32Const(1),
+        Instruction::End,
+        Instruction::Call(task_return),
+      ]);
+      let run = CompiledFn {
+        export_name: Some("[async-lift-stackful]wasi:cli/run@0.3.1#run".into()),
+        params: vec![],
+        results: vec![],
+        locals: vec![ValType::I32; 2],
+        instructions,
+      };
+      let mut string_data = (path.len() as f64).to_le_bytes().to_vec();
+      string_data.extend_from_slice(path.as_bytes());
+      let core = build_wasm_module(
+        &[
+          free,
+          realloc,
+          build_wasi_component_route_path_fn(),
+          build_wasi_component_select_preopen_fn(
+            *import_indices
+              .get(&("wasi:filesystem/preopens@0.3.1".into(), "get-directories".into()))
+              .expect("preopen import"),
+            import("[resource-drop]descriptor"),
+            free_index,
+            free_index + 2,
+          ),
+          build_wasi_component_open_at_fn(
+            free_index + 3,
+            import("[async-lower][method]descriptor.open-at"),
+            import("[resource-drop]descriptor"),
+            free_index,
+            free_index + 1,
+            &canonical,
+          ),
+          build_wasi_component_read_bytes_fn(
+            WasiComponentReadImports {
+              open: free_index + 4,
+              read_via_stream: import("[method]descriptor.read-via-stream"),
+              stream_read: import("[async-lower][stream-read-0][method]descriptor.read-via-stream"),
+              stream_drop: import("[stream-drop-readable-0][method]descriptor.read-via-stream"),
+              future_read: import("[future-read-1][method]descriptor.read-via-stream"),
+              future_drop: import("[future-drop-readable-1][method]descriptor.read-via-stream"),
+              descriptor_drop: import("[resource-drop]descriptor"),
+              free: free_index,
+              realloc: free_index + 1,
+            },
+            &canonical,
+          ),
+          run,
+        ],
+        &imports,
+        16384,
+        &string_data,
+        &[],
+        1,
+        ModuleFunctionLayout {
+          runtime_fn_count: 6,
+          table_fn_count: 0,
+          component_free_head: true,
+        },
+      )
+      .expect("valid bounded file reader core command");
+      let component = calcit_bindgen::package_wasi_command(&core).expect("package bounded file reader");
+      let module = output.path().join("bounded-read.wasm");
+      fs::write(&module, component).expect("write bounded file reader Component");
+      let result = Command::new(&cli)
+        .args([
+          "run",
+          "-S",
+          "p3",
+          "-W",
+          "component-model-async-stackful=y",
+          "-W",
+          "component-model-more-async-builtins=y",
+          "--dir",
+        ])
+        .arg(format!("{}::/workspace", host.path().display()))
+        .arg(&module)
+        .output()
+        .expect("run bounded file reader");
+      assert!(
+        result.status.success(),
+        "path {path:?}: {}",
+        String::from_utf8_lossy(&result.stderr)
+      );
+    }
   }
 
   #[test]

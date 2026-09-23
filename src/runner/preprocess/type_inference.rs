@@ -174,6 +174,49 @@ fn merge_if_branch_types(
   }
 }
 
+fn result_constructor_variant(expr: &Calcit) -> Option<&'static str> {
+  let Calcit::List(items) = expr else { return None };
+  match items.first()? {
+    Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS => match def.as_ref() {
+      "%ok" => Some("ok"),
+      "%err" => Some("err"),
+      _ => None,
+    },
+    Calcit::Registered(name) => match name.as_ref() {
+      "%ok" | "calcit.core/%ok" => Some("ok"),
+      "%err" | "calcit.core/%err" => Some("err"),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+fn merge_result_constructor_branches(
+  true_expr: &Calcit,
+  true_type: &CalcitTypeAnnotation,
+  false_expr: &Calcit,
+  false_type: &CalcitTypeAnnotation,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  let (ok_type, err_type) = match (result_constructor_variant(true_expr), result_constructor_variant(false_expr)) {
+    (Some("ok"), Some("err")) => (true_type, false_type),
+    (Some("err"), Some("ok")) => (false_type, true_type),
+    _ => return None,
+  };
+  let (CalcitTypeAnnotation::TypeRef(ok_name, ok_args), CalcitTypeAnnotation::TypeRef(err_name, err_args)) = (ok_type, err_type) else {
+    return None;
+  };
+  if ok_name != err_name || !matches!(ok_name.as_ref(), "Result" | "calcit.core/Result") || ok_args.len() != 2 || err_args.len() != 2 {
+    return None;
+  }
+  if !matches!(ok_args[1].as_ref(), CalcitTypeAnnotation::Dynamic) || !matches!(err_args[0].as_ref(), CalcitTypeAnnotation::Dynamic) {
+    return None;
+  }
+  Some(Arc::new(CalcitTypeAnnotation::TypeRef(
+    ok_name.clone(),
+    Arc::new(vec![ok_args[0].clone(), err_args[1].clone()]),
+  )))
+}
+
 pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   if xs.len() < 3 {
     return None;
@@ -184,7 +227,8 @@ pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
 
   if let Some(false_expr) = xs.get(3) {
     let false_type = resolve_type_value(false_expr, scope_types)?;
-    merge_if_branch_types(true_type, false_type)
+    merge_result_constructor_branches(true_expr, true_type.as_ref(), false_expr, false_type.as_ref())
+      .or_else(|| merge_if_branch_types(true_type, false_type))
   } else {
     Some(Arc::new(CalcitTypeAnnotation::Optional(true_type)))
   }
@@ -2430,6 +2474,30 @@ mod tests {
       merge_if_branch_types(calcit::DYNAMIC_TYPE.clone(), Arc::new(CalcitTypeAnnotation::Number)).as_deref(),
       Some(CalcitTypeAnnotation::Dynamic)
     ));
+  }
+
+  #[test]
+  fn opposite_result_constructors_complete_only_their_missing_generic_slots() {
+    let result = |ok: Arc<CalcitTypeAnnotation>, err: Arc<CalcitTypeAnnotation>| {
+      Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("calcit.core/Result"),
+        Arc::new(vec![ok, err]),
+      ))
+    };
+    let ok_expr = Calcit::from(vec![Calcit::Registered(Arc::from("%ok")), Calcit::Number(1.0)]);
+    let err_expr = Calcit::from(vec![Calcit::Registered(Arc::from("%err")), Calcit::Str(Arc::from("failed"))]);
+    let ok_type = result(Arc::new(CalcitTypeAnnotation::Number), calcit::DYNAMIC_TYPE.clone());
+    let err_type = result(calcit::DYNAMIC_TYPE.clone(), Arc::new(CalcitTypeAnnotation::String));
+    let expected = result(Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String));
+    assert_eq!(
+      merge_result_constructor_branches(&ok_expr, ok_type.as_ref(), &err_expr, err_type.as_ref()),
+      Some(expected.clone())
+    );
+    assert_eq!(
+      merge_result_constructor_branches(&err_expr, err_type.as_ref(), &ok_expr, ok_type.as_ref()),
+      Some(expected)
+    );
+    assert!(merge_result_constructor_branches(&ok_expr, ok_type.as_ref(), &ok_expr, ok_type.as_ref()).is_none());
   }
 
   #[test]
