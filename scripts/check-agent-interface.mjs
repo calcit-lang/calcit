@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
@@ -742,6 +742,115 @@ for (const scenario of scenarios) {
   });
 }
 
+// Keep EDN native while comparing its envelope semantics against JSON interoperability.
+const normalizeEdnKeys = (value, reference) => {
+  if (Array.isArray(value)) return value.map((child, index) => normalizeEdnKeys(child, reference?.[index]));
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => {
+        const raw = key.startsWith(":") ? key.slice(1) : key;
+        const normalized = reference && Object.hasOwn(reference, raw) ? raw : raw.replaceAll("-", "_");
+        return [normalized, normalizeEdnKeys(child, reference?.[normalized])];
+      }),
+    );
+  }
+  return value;
+};
+const parseEdnRaw = (text, name) => {
+  const parsed = spawnSync(binary, ["cirru", "parse-edn", text], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
+  assert.equal(parsed.status, 0, `${name}: EDN output is not one parseable document:\n${text}\n${parsed.stderr}`);
+  return JSON.parse(parsed.stdout);
+};
+const parseEdnEnvelope = (text, name, reference) => normalizeEdnKeys(parseEdnRaw(text, name), reference);
+const querySnapshotBefore = readFileSync("calcit/test.cirru");
+for (const { name, base, expectedStatus = 0, check } of [
+  {
+    name: "builtin type EDN",
+    base: ["calcit/test.cirru", "query", "type", "'String"],
+    check: (result) => assert.ok(result.data.methods.some((method) => method.name === ".contains?")),
+  },
+  {
+    name: "runtime-only context EDN",
+    base: ["calcit/test.cirru", "query", "context", "calcit.core/&list:contains?", "--budget", "1800"],
+    check: (result) => {
+      assert.equal(result.data.code.cirru, "&runtime-implementation");
+      assert.ok(result.diagnostics.some((item) => item.code === "I_SOURCE_BODY_UNAVAILABLE"));
+    },
+  },
+  {
+    name: "source definition EDN",
+    base: ["calcit/test.cirru", "query", "def", "app.main/main!"],
+    check: (result) => assert.equal(result.data.id, "app.main/main!"),
+  },
+  {
+    name: "expression type EDN",
+    base: ["calcit/test.cirru", "query", "type-at", "test-struct.main/sum-point", "--path", "code@3.1"],
+    check: (result) => assert.equal(result.data.inferred_type, "'Number"),
+  },
+  {
+    name: "source search EDN",
+    base: ["calcit/test.cirru", "query", "search", "main!", "--filter", "app.main/main!"],
+    check: (result) => assert.ok(result.data.summary.matches > 0),
+  },
+  {
+    name: "invalid type EDN failure",
+    base: ["calcit/test.cirru", "query", "type", "not-a-type"],
+    expectedStatus: 1,
+    check: (result) => assert.equal(result.diagnostics[0].code, "E_QUERY_INVALID_TYPE"),
+  },
+  {
+    name: "invalid expression path EDN failure",
+    base: ["calcit/test.cirru", "query", "type-at", "test-struct.main/sum-point", "--path", "code@999"],
+    expectedStatus: 1,
+    check: (result) => {
+      assert.equal(result.schema_version, 2);
+      assert.equal(result.diagnostics[0].code, "E_QUERY_INVALID_PATH");
+    },
+  },
+  {
+    name: "missing definition EDN failure",
+    base: ["calcit/test.cirru", "query", "context", "calcit.core/not-there"],
+    expectedStatus: 1,
+    check: (result) => assert.equal(result.diagnostics[0].code, "E_QUERY_TARGET_NOT_FOUND"),
+  },
+  {
+    name: "entry config EDN",
+    base: ["calcit/test.cirru", "config", "show"],
+    check: (result) => assert.equal(result.data.package, "app"),
+  },
+  {
+    name: "query config EDN",
+    base: ["calcit/test.cirru", "query", "config"],
+    check: (result) => assert.equal(result.command, "config.show"),
+  },
+  {
+    name: "entry modules EDN",
+    base: ["calcit/test.cirru", "config", "modules"],
+    check: (result) => assert.equal(result.data.entry.name, "default"),
+  },
+  {
+    name: "entry type slots EDN",
+    base: ["calcit/test.cirru", "config", "type-slots"],
+    check: (result) => assert.equal(result.data.entry.name, "default"),
+  },
+  {
+    name: "missing entry EDN failure",
+    base: ["calcit/test.cirru", "config", "modules", "--entry", "not-there"],
+    expectedStatus: 1,
+    check: (result) => assert.equal(result.diagnostics[0].code, "E_CONFIG_ENTRY_NOT_FOUND"),
+  },
+]) {
+  const json = spawnSync(binary, [...base, "--format", "json"], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
+  const edn = spawnSync(binary, [...base, "--format", "edn"], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
+  assert.equal(json.status, expectedStatus, `${name}: JSON failed:\n${json.stderr}`);
+  assert.equal(edn.status, expectedStatus, `${name}: EDN failed:\n${edn.stderr}`);
+  const jsonEnvelope = JSON.parse(json.stdout);
+  const ednEnvelope = parseEdnEnvelope(edn.stdout, name, jsonEnvelope);
+  assert.deepEqual(ednEnvelope, jsonEnvelope, `${name}: EDN and JSON semantics diverged`);
+  check(ednEnvelope);
+}
+assert.deepEqual(readFileSync("calcit/test.cirru"), querySnapshotBefore, "query and config reads must not mutate the Snapshot");
+
 const unicodeDefsChild = spawnSync(binary, ["calcit/test-wasi-command.cirru", "query", "defs", "app.main"], {
   cwd: process.cwd(),
   encoding: "utf8",
@@ -837,6 +946,14 @@ try {
   const machine = query("--format", "json", "--json", "--raw");
   assert.equal(machine.status, 0, machine.stderr);
   const data = JSON.parse(machine.stdout).data;
+  const nativeEdn = query("--format", "edn");
+  assert.equal(nativeEdn.status, 0, nativeEdn.stderr);
+  const nativeEnvelope = parseEdnRaw(nativeEdn.stdout, "definition FFI EDN");
+  assert.deepEqual(nativeEnvelope[":data"][":ffi"], data.ffi, "EDN FFI must remain native rather than JSON-encoded metadata");
+  const jsonEnvelope = JSON.parse(machine.stdout);
+  const normalizedEnvelope = normalizeEdnKeys(nativeEnvelope, jsonEnvelope);
+  normalizedEnvelope.data.ffi = data.ffi;
+  assert.deepEqual(normalizedEnvelope, jsonEnvelope);
   assert.equal(Object.keys(data.ffi[":names"]).length, 300);
   assert.equal(data.ffi[":names"][":member-299"], "宿主\\\"\n299");
   const roundTrip = run("cirru", "parse-edn", data.ffi_edn);
@@ -849,15 +966,28 @@ try {
   assert.equal(JSON.parse(legacyJson[2]).ffi, data.ffi_edn);
   assert.ok(legacy.stdout.includes(data.ffi_edn), "raw human FFI must also be complete");
   assert.match(query().stdout, /FFI \(preview; use --raw/);
-  for (const args of [
-    ["query", "def", "app.main/nonexistent-875", "--format", "json"],
-    ["query", "def", "app.main/main!", "--format", "invalid"],
+  for (const [args, structured] of [
+    [["query", "def", "app.main/nonexistent-875", "--format", "json"], true],
+    [["query", "def", "app.main/main!", "--format", "invalid"], false],
   ]) {
     const failed = run(...args);
     assert.notEqual(failed.status, 0);
-    assert.equal(failed.stdout, "", "query failure must not emit partial success JSON");
+    if (structured) {
+      const envelope = JSON.parse(failed.stdout);
+      assert.equal(envelope.data, null, "query failure must not emit partial success data");
+      assert.equal(envelope.diagnostics[0].code, "E_QUERY_TARGET_NOT_FOUND");
+    } else {
+      assert.equal(failed.stdout, "", "unknown output format has no parseable structured contract");
+    }
     assert.ok(failed.stderr.length > 0);
   }
+  const inertEntry = run("edit", "def", "app.main/main!", "--overwrite", "--code", "quote $ defn main! () $ raise |query-must-not-run");
+  assert.equal(inertEntry.status, 0, inertEntry.stderr);
+  const beforeRead = readFileSync(fixture);
+  const readOnlyQuery = run("query", "type", "'String", "--format", "edn");
+  assert.equal(readOnlyQuery.status, 0, "queries must not execute the project's init function");
+  assert.equal(parseEdnEnvelope(readOnlyQuery.stdout, "inert entry read").command, "query.type");
+  assert.deepEqual(readFileSync(fixture), beforeRead, "query must leave the Snapshot unchanged");
 } finally {
   rmSync(fixtureDir, { recursive: true, force: true });
 }

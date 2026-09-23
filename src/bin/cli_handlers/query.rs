@@ -11,14 +11,15 @@ use super::cursor::{
   CursorLastQuery, load_cursor_last_query, resolve_active_cursor_reference, resolve_cursor_path_argument,
   resolve_cursor_target_argument, set_cursor_from_query_match,
 };
+use super::structured_output::{StructuredOutputFormat, format_json_value_as_edn, json_value_to_edn};
 use super::tips::command_guidance_enabled;
 use calcit::CalcitTypeAnnotation;
 use calcit::calcit::{Calcit, CalcitFnTypeAnnotation, DYNAMIC_TYPE, LocatedWarning};
 use calcit::call_stack::CallStackList;
 use calcit::call_tree::{CallTreeAnalyzer, CallTreeConfig};
 use calcit::cli_args::{
-  QueryAnchorsCommand, QueryCommand, QueryContextCommand, QueryDefCommand, QueryDefsCommand, QueryHostProcsCommand, QueryPathCommand,
-  QuerySubcommand, QueryTypeAtCommand, QueryTypeCommand,
+  ConfigCommand, ConfigShowCommand, ConfigSubcommand, QueryAnchorsCommand, QueryCommand, QueryConfigCommand, QueryContextCommand,
+  QueryDefCommand, QueryDefsCommand, QueryHostProcsCommand, QueryPathCommand, QuerySubcommand, QueryTypeAtCommand, QueryTypeCommand,
 };
 use calcit::data::cirru::code_to_calcit;
 use calcit::data::edn::format_edn_display;
@@ -73,11 +74,7 @@ struct SpecialBuiltinQueryMeta {
   semantic_tags: &'static [&'static str],
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum QueryRenderFormat {
-  Human,
-  Json,
-}
+type QueryRenderFormat = StructuredOutputFormat;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -124,11 +121,20 @@ struct SearchCatalog {
 }
 
 fn parse_query_render_format(raw: &str) -> Result<QueryRenderFormat, String> {
-  match raw {
-    "human" | "text" => Ok(QueryRenderFormat::Human),
-    "json" => Ok(QueryRenderFormat::Json),
-    other => Err(format!("Unknown query output format `{other}`. Expected `human` or `json`.")),
-  }
+  StructuredOutputFormat::parse(raw, "query output")
+}
+
+fn emit_query_structured<T: Serialize>(value: &T, format: QueryRenderFormat, context: &str) -> Result<(), String> {
+  let rendered = match format {
+    QueryRenderFormat::Edn => {
+      let json = serde_json::to_value(value).map_err(|error| format!("Failed to encode {context}: {error}"))?;
+      format_json_value_as_edn(&json)?
+    }
+    QueryRenderFormat::Json => serde_json::to_string_pretty(value).map_err(|error| format!("Failed to encode {context}: {error}"))?,
+    QueryRenderFormat::Human => return Err(format!("Cannot emit human {context} as structured output")),
+  };
+  println!("{rendered}");
+  Ok(())
 }
 
 fn semantic_revision(parts: &[&str]) -> String {
@@ -691,14 +697,69 @@ fn resolve_query_cursor_references(cmd: &mut QueryCommand, input_path: &str) -> 
   Ok(())
 }
 
+fn structured_query_request(cmd: &QueryCommand) -> Option<(QueryRenderFormat, &'static str, &str)> {
+  let (raw_format, command, target) = match &cmd.subcommand {
+    QuerySubcommand::Type(opts) => (opts.format.as_str(), "query.type", opts.target.as_str()),
+    QuerySubcommand::TypeAt(opts) => (opts.format.as_str(), "query.type-at", opts.target.as_str()),
+    QuerySubcommand::Context(opts) => (opts.format.as_str(), "query.context", opts.target.as_str()),
+    QuerySubcommand::Def(opts) => (opts.format.as_str(), "query.def", opts.target.as_str()),
+    _ => return None,
+  };
+  match parse_query_render_format(raw_format).ok()? {
+    QueryRenderFormat::Human => None,
+    format => Some((format, command, target)),
+  }
+}
+
+fn query_failure_code(command: &str, error: &str) -> &'static str {
+  if command == "query.type" && (error.starts_with("Unknown builtin type") || error.contains("Failed to parse type")) {
+    "E_QUERY_INVALID_TYPE"
+  } else if error.starts_with("Path index") || error.starts_with("Invalid path") {
+    "E_QUERY_INVALID_PATH"
+  } else if error.contains("not found") || error.contains("does not exist") {
+    "E_QUERY_TARGET_NOT_FOUND"
+  } else if error.contains("preprocess") || error.contains("compile") {
+    "E_QUERY_PREPROCESS"
+  } else {
+    "E_QUERY_FAILED"
+  }
+}
+
 pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), String> {
+  let result = handle_query_command_inner(cmd, input_path);
+  if let Err(error) = &result
+    && let Some((format, command, target)) = structured_query_request(cmd)
+  {
+    let envelope = serde_json::json!({
+      "schema_version": if command == "query.type-at" { TYPE_AT_SCHEMA_VERSION } else { 1 },
+      "command": command,
+      "revision": null,
+      "data": null,
+      "diagnostics": [{
+        "code": query_failure_code(command, error),
+        "phase": "query",
+        "severity": "error",
+        "message": error,
+        "path": null,
+        "intent": null,
+        "provenance": [],
+        "target": target,
+      }],
+      "next": [],
+    });
+    emit_query_structured(&envelope, format, "query failure")?;
+  }
+  result
+}
+
+fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str) -> Result<(), String> {
   let mut resolved = cmd.clone();
   resolve_query_cursor_references(&mut resolved, input_path)?;
   match &resolved.subcommand {
     QuerySubcommand::Ns(opts) => handle_ns(input_path, opts.namespace.as_deref(), opts.deps),
     QuerySubcommand::Defs(opts) => handle_defs(input_path, opts),
     QuerySubcommand::Pkg(_) => handle_pkg(input_path),
-    QuerySubcommand::Config(_) => handle_config(input_path),
+    QuerySubcommand::Config(opts) => handle_config(input_path, opts),
     QuerySubcommand::Error(_) => handle_error(input_path),
     QuerySubcommand::Modules(_) => handle_modules(input_path),
     QuerySubcommand::Def(opts) => {
@@ -1173,7 +1234,7 @@ mod type_query_tests {
   fn query_format_and_unicode_truncation_are_deterministic() {
     assert_eq!(parse_query_render_format("human"), Ok(QueryRenderFormat::Human));
     assert_eq!(parse_query_render_format("json"), Ok(QueryRenderFormat::Json));
-    assert!(parse_query_render_format("edn").is_err());
+    assert_eq!(parse_query_render_format("edn"), Ok(QueryRenderFormat::Edn));
     assert_eq!(truncate_chars("你好 Calcit", 2), ("你好…".to_owned(), true));
     assert_eq!(truncate_chars("你好", 2), ("你好".to_owned(), false));
   }
@@ -1582,7 +1643,7 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
     vec![]
   };
 
-  if format == QueryRenderFormat::Json {
+  if format != QueryRenderFormat::Human {
     let envelope = SemanticQueryEnvelope {
       schema_version: 1,
       command: "query.type",
@@ -1591,11 +1652,7 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
       diagnostics,
       next: vec![],
     };
-    println!(
-      "{}",
-      serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to encode type query result: {error}"))?
-    );
-    return Ok(());
+    return emit_query_structured(&envelope, format, "type query result");
   }
 
   println!("# Type\n\n- Resolved from: `{}`\n- Revision: `{revision}`\n", data.resolved_from);
@@ -2379,10 +2436,7 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
 
   match format {
     QueryRenderFormat::Human => print!("{}", render_type_at_human(&envelope)),
-    QueryRenderFormat::Json => println!(
-      "{}",
-      serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to encode type-at result: {error}"))?
-    ),
+    QueryRenderFormat::Edn | QueryRenderFormat::Json => emit_query_structured(&envelope, format, "type-at result")?,
   }
   Ok(())
 }
@@ -2450,8 +2504,11 @@ fn context_features(annotation: &CalcitTypeAnnotation) -> Vec<String> {
 
 fn build_context_code(node: &Cirru, max_chars: usize) -> Result<ContextCode, String> {
   let nodes = count_cirru_nodes(node);
-  let rendered = cirru_parser::format(std::slice::from_ref(node), true.into())
-    .map_err(|error| format!("Failed to format definition code: {error}"))?;
+  let rendered = match node {
+    Cirru::Leaf(value) => value.to_string(),
+    Cirru::List(_) => cirru_parser::format(std::slice::from_ref(node), true.into())
+      .map_err(|error| format!("Failed to format definition code: {error}"))?,
+  };
   let (cirru, truncated) = truncate_chars(rendered.trim(), max_chars);
   let tree = if !truncated && nodes <= 180 {
     Some(cirru_to_json(node))
@@ -2685,6 +2742,17 @@ fn build_regular_context(
   let coverage = crate::type_coverage::analyze_code_entry(namespace, definition, entry);
   let intentional_ffi = context_features(entry.schema.as_ref()).iter().any(|feature| feature == "js-ffi");
   let mut diagnostics = weak_type_diagnostics(entry, opts.budget);
+  if matches!(&entry.code, Cirru::Leaf(_)) {
+    diagnostics.push(ContextDiagnostic {
+      code: "I_SOURCE_BODY_UNAVAILABLE".to_owned(),
+      phase: "source",
+      severity: "info",
+      message: "definition has a leaf placeholder rather than a source body".to_owned(),
+      path: Some("code".to_owned()),
+      intent: None,
+      provenance: vec![],
+    });
+  }
   if coverage.level == crate::type_coverage::CoverageLevel::None && !intentional_ffi {
     diagnostics.insert(
       0,
@@ -3127,10 +3195,7 @@ fn handle_context(input_path: &str, opts: &QueryContextCommand) -> Result<(), St
 
   match format {
     QueryRenderFormat::Human => print!("{}", render_context_human(&envelope)),
-    QueryRenderFormat::Json => println!(
-      "{}",
-      serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to encode context query result: {error}"))?
-    ),
+    QueryRenderFormat::Edn | QueryRenderFormat::Json => emit_query_structured(&envelope, format, "context query result")?,
   }
   Ok(())
 }
@@ -3533,13 +3598,23 @@ fn handle_pkg(input_path: &str) -> Result<(), String> {
   Ok(())
 }
 
-fn handle_config(input_path: &str) -> Result<(), String> {
+fn handle_config(input_path: &str, opts: &QueryConfigCommand) -> Result<(), String> {
+  let format = parse_query_render_format(&opts.format)?;
+  if format != QueryRenderFormat::Human {
+    let command = ConfigCommand {
+      subcommand: ConfigSubcommand::Show(ConfigShowCommand {
+        entry: None,
+        format: opts.format.clone(),
+      }),
+    };
+    return super::config::handle_config_command(&command, input_path);
+  }
   let snapshot = load_main_snapshot(input_path)?;
 
-  println!("{}", "Project Config:".bold());
+  println!("# Project configuration\n");
   let deps_path = deps_path_for_snapshot(input_path);
-  println!("  {}: managed in deps.cirru (use `caps version get {deps_path}`)", "version".cyan());
-  println!("\n{}", "Snapshot Entries:".bold());
+  println!("Version: managed in `deps.cirru` (use `caps version get {deps_path}`).\n");
+  println!("## Snapshot entries\n");
 
   let mut names: Vec<&String> = snapshot.entries.keys().collect();
   names.sort();
@@ -3550,12 +3625,12 @@ fn handle_config(input_path: &str) -> Result<(), String> {
       .get(name)
       .ok_or_else(|| format!("Missing entry config for '{name}'"))?;
 
-    println!("  {}", name.cyan());
-    println!("    {}: {}", "mode".cyan(), entry.mode);
-    println!("    {}: {}", "init_fn".cyan(), entry.init_fn);
-    println!("    {}: {}", "reload_fn".cyan(), entry.reload_fn);
-    println!("    {}: {:?}", "modules".cyan(), entry.modules);
-    println!("    {}: {:?}", "type_slots".cyan(), entry.type_slots);
+    println!("### `{name}`\n");
+    println!("- Mode: `{}`", entry.mode);
+    println!("- Init: `{}`", entry.init_fn);
+    println!("- Reload: `{}`", entry.reload_fn);
+    println!("- Modules: `{:?}`", entry.modules);
+    println!("- Type slots: `{:?}`\n", entry.type_slots);
   }
 
   Ok(())
@@ -3699,7 +3774,8 @@ fn render_chunked_display(display: &ChunkedDisplay) -> String {
 }
 
 fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryDefCommand) -> Result<(), String> {
-  let json_only = matches!(parse_query_render_format(&opts.format)?, QueryRenderFormat::Json);
+  let format = parse_query_render_format(&opts.format)?;
+  let structured = format != QueryRenderFormat::Human;
   let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
 
   let file_data = snapshot
@@ -3710,7 +3786,7 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
   if !file_data.defs.contains_key(definition)
     && let Some(meta) = lookup_special_builtin_query_meta(namespace, definition)?
   {
-    if json_only {
+    if structured {
       let schema = meta
         .schema
         .as_function()
@@ -3729,8 +3805,7 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
         "builtin": true,
         "kind": "special-proc"
       });
-      println!("{}", format_def_query_json(data, None)?);
-      return Ok(());
+      return emit_def_query(data, None, format, None);
     }
     let mut out = String::new();
     let _ = writeln!(&mut out, "# Definition `{namespace}/{definition}`\n");
@@ -3780,13 +3855,17 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
     .get(resolved_definition.as_str())
     .expect("resolved definition exists");
 
-  if json_only {
+  if structured {
     let mut data = code_entry_to_json(code_entry)?;
     data["id"] = serde_json::json!(format!("{namespace}/{resolved_definition}"));
     data["ffi_edn"] = data["ffi"].take();
     data["ffi"] = serde_json::to_value(&code_entry.ffi).map_err(|e| format!("Failed to serialize FFI metadata: {e}"))?;
-    println!("{}", format_def_query_json(data, Some(snapshot::definition_revision(code_entry)?))?);
-    return Ok(());
+    return emit_def_query(
+      data,
+      Some(snapshot::definition_revision(code_entry)?),
+      format,
+      code_entry.ffi.as_ref(),
+    );
   }
 
   let mut out = String::new();
@@ -3901,6 +3980,39 @@ fn format_def_query_json(data: serde_json::Value, revision: Option<String>) -> R
     "diagnostics": [],
   }))
   .map_err(|e| format!("Failed to encode definition query JSON: {e}"))
+}
+
+fn emit_def_query(
+  data: serde_json::Value,
+  revision: Option<String>,
+  format: QueryRenderFormat,
+  ffi: Option<&cirru_edn::Edn>,
+) -> Result<(), String> {
+  let json = format_def_query_json(data, revision)?;
+  match format {
+    QueryRenderFormat::Json => println!("{json}"),
+    QueryRenderFormat::Edn => {
+      let json_value = serde_json::from_str::<serde_json::Value>(&json)
+        .map_err(|error| format!("Failed to decode definition query result: {error}"))?;
+      let mut value = json_value_to_edn(&json_value)?;
+      if let Some(ffi) = ffi {
+        let cirru_edn::Edn::Map(root) = &mut value else {
+          return Err("Definition query envelope must be a map".to_owned());
+        };
+        let Some(cirru_edn::Edn::Map(data)) = root.0.get_mut(&cirru_edn::Edn::tag("data")) else {
+          return Err("Definition query data must be a map".to_owned());
+        };
+        // The EDN form keeps FFI metadata native, not its JSON interoperability encoding.
+        data.insert(cirru_edn::Edn::tag("ffi"), ffi.clone());
+      }
+      println!(
+        "{}",
+        cirru_edn::format(&value, true).map_err(|error| format!("Failed to format definition EDN: {error}"))?
+      );
+    }
+    QueryRenderFormat::Human => return Err("Cannot emit human definition as structured output".to_owned()),
+  }
+  Ok(())
 }
 
 fn code_entry_to_json(entry: &snapshot::CodeEntry) -> Result<serde_json::Value, String> {
@@ -5076,19 +5188,25 @@ fn finish_search_results(
   if common_opts.compact_output {
     return Ok(());
   }
-  if common_opts.format == QueryRenderFormat::Json {
-    println!(
-      "{}",
-      format_search_results_json(
-        info.envelope_command,
-        info.pattern,
-        info.pattern_is_json,
-        info.start_path,
-        common_opts,
-        catalog,
-        all_results,
-      )?
-    );
+  if common_opts.format != QueryRenderFormat::Human {
+    let json = format_search_results_json(
+      info.envelope_command,
+      info.pattern,
+      info.pattern_is_json,
+      info.start_path,
+      common_opts,
+      catalog,
+      all_results,
+    )?;
+    match common_opts.format {
+      QueryRenderFormat::Json => println!("{json}"),
+      QueryRenderFormat::Edn => {
+        let value =
+          serde_json::from_str::<serde_json::Value>(&json).map_err(|error| format!("Failed to decode search query result: {error}"))?;
+        emit_query_structured(&value, QueryRenderFormat::Edn, "search query result")?;
+      }
+      QueryRenderFormat::Human => unreachable!("structured search format checked above"),
+    }
     return Ok(());
   }
   print_search_results_human(catalog, all_results, common_opts, info.display);

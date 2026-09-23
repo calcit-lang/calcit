@@ -18,6 +18,7 @@ use std::path::Path;
 
 use super::common::{deps_path_for_snapshot, guard_snapshot_mutation_toolchain, package_version_for_snapshot};
 use super::edit::{load_snapshot, save_snapshot};
+use super::structured_output::{StructuredOutputFormat, format_json_value_as_edn};
 
 const CONFIG_JSON_SCHEMA_VERSION: u32 = 1;
 
@@ -181,7 +182,12 @@ fn config_error_code(error: &str) -> &'static str {
   }
 }
 
-fn emit_config_json<T: Serialize>(command: &'static str, revision: Option<String>, result: Result<T, String>) -> Result<(), String> {
+fn emit_config_structured<T: Serialize>(
+  command: &'static str,
+  revision: Option<String>,
+  result: Result<T, String>,
+  format: StructuredOutputFormat,
+) -> Result<(), String> {
   match result {
     Ok(data) => {
       let envelope = ConfigJsonEnvelope {
@@ -191,10 +197,7 @@ fn emit_config_json<T: Serialize>(command: &'static str, revision: Option<String
         diagnostics: vec![],
         revision,
       };
-      println!(
-        "{}",
-        serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to serialize config JSON: {error}"))?
-      );
+      emit_config_envelope(&envelope, format)?;
       Ok(())
     }
     Err(error) => {
@@ -208,21 +211,29 @@ fn emit_config_json<T: Serialize>(command: &'static str, revision: Option<String
         }],
         revision,
       };
-      println!(
-        "{}",
-        serde_json::to_string_pretty(&envelope).map_err(|json_error| format!("Failed to serialize config JSON: {json_error}"))?
-      );
+      emit_config_envelope(&envelope, format)?;
       Err(error)
     }
   }
 }
 
-fn json_output_requested(format: &str) -> Result<bool, String> {
-  match format {
-    "human" | "text" => Ok(false),
-    "json" => Ok(true),
-    other => Err(format!("Unknown config output format `{other}`. Expected `human` or `json`.")),
-  }
+fn emit_config_envelope<T: Serialize>(envelope: &ConfigJsonEnvelope<T>, format: StructuredOutputFormat) -> Result<(), String> {
+  let rendered = match format {
+    StructuredOutputFormat::Json => {
+      serde_json::to_string_pretty(envelope).map_err(|error| format!("Failed to serialize config JSON: {error}"))?
+    }
+    StructuredOutputFormat::Edn => {
+      let value = serde_json::to_value(envelope).map_err(|error| format!("Failed to serialize config EDN: {error}"))?;
+      format_json_value_as_edn(&value)?
+    }
+    StructuredOutputFormat::Human => return Err("Cannot emit human config as structured output".to_owned()),
+  };
+  println!("{rendered}");
+  Ok(())
+}
+
+fn config_output_format(format: &str) -> Result<StructuredOutputFormat, String> {
+  StructuredOutputFormat::parse(format, "config output")
 }
 
 fn read_snapshot_content(input_path: &str) -> Result<Vec<u8>, String> {
@@ -307,11 +318,12 @@ fn format_target(target: Option<snapshot::SnapshotTarget>) -> &'static str {
 }
 
 fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String> {
-  if json_output_requested(&opts.format)? {
+  let format = config_output_format(&opts.format)?;
+  if format != StructuredOutputFormat::Human {
     let (revision, result) = config_json_query(input_path, |snapshot| {
       config_show_json(&snapshot, opts.entry.as_deref(), package_version_for_snapshot(input_path)?)
     });
-    return emit_config_json("config.show", revision, result);
+    return emit_config_structured("config.show", revision, result, format);
   }
   let snapshot = load_snapshot_for_display(input_path)?;
 
@@ -374,7 +386,8 @@ fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String>
 }
 
 fn handle_type_slots(opts: &ConfigTypeSlotsCommand, input_path: &str) -> Result<(), String> {
-  if json_output_requested(&opts.format)? {
+  let format = config_output_format(&opts.format)?;
+  if format != StructuredOutputFormat::Human {
     let (revision, result) = config_json_query(input_path, |snapshot| {
       let name = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
       let entry = snapshot.entries.get(name).ok_or_else(|| missing_entry_error(&snapshot, name))?;
@@ -385,7 +398,7 @@ fn handle_type_slots(opts: &ConfigTypeSlotsCommand, input_path: &str) -> Result<
         entry,
       })
     });
-    return emit_config_json("config.type-slots", revision, result);
+    return emit_config_structured("config.type-slots", revision, result, format);
   }
   let snapshot = load_snapshot_for_display(input_path)?;
   let name = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
@@ -408,7 +421,8 @@ fn handle_type_slots(opts: &ConfigTypeSlotsCommand, input_path: &str) -> Result<
 }
 
 fn handle_modules(opts: &ConfigModulesCommand, input_path: &str) -> Result<(), String> {
-  if json_output_requested(&opts.format)? {
+  let format = config_output_format(&opts.format)?;
+  if format != StructuredOutputFormat::Human {
     let (revision, result) = config_json_query(input_path, |snapshot| {
       let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
       let module_folder = calcit::project_module_folder(base_dir);
@@ -436,7 +450,7 @@ fn handle_modules(opts: &ConfigModulesCommand, input_path: &str) -> Result<(), S
         modules,
       })
     });
-    return emit_config_json("config.modules", revision, result);
+    return emit_config_structured("config.modules", revision, result, format);
   }
   let snapshot = load_snapshot_for_display(input_path)?;
 
