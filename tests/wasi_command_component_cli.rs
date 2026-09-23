@@ -55,7 +55,7 @@ fn pure_calcit_entry_emits_runnable_wasi_03_command_component() {
       .imports(&engine)
       .map(|(name, _)| name)
       .collect::<Vec<_>>(),
-    vec!["wasi:cli/exit@0.3.0"]
+    vec!["wasi:cli/environment@0.3.0", "wasi:cli/exit@0.3.0"]
   );
   assert!(
     component
@@ -127,6 +127,43 @@ fn quit_rejects_out_of_range_status_instead_of_wrapping_it() {
 }
 
 #[test]
+fn command_arguments_preserve_order_and_utf8_content() {
+  let output = tempfile::tempdir().expect("output directory");
+  let fixture = "tests/fixtures/wasi-command-03-get-args.cirru";
+  let check = calcit(&[fixture, "wasi", "--boundary", "component", "--check-only"], output.path());
+  assert!(check.status.success(), "{}", String::from_utf8_lossy(&check.stderr));
+  assert!(!output.path().join("program.wasm").exists());
+
+  let compiled = calcit(&[fixture, "wasi", "--boundary", "component"], output.path());
+  assert!(compiled.status.success(), "{}", String::from_utf8_lossy(&compiled.stderr));
+  let mut config = Config::new();
+  config.wasm_component_model_async(true);
+  config.wasm_component_model_async_stackful(true);
+  let engine = Engine::new(&config).expect("Wasmtime engine");
+  let wasm = fs::read(output.path().join("program.wasm")).expect("command Component");
+  Component::new(&engine, &wasm).expect("valid command Component");
+
+  if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
+    for (argument, expected_status) in [("你好", 7), ("beta", 8)] {
+      let result = Command::new(&cli)
+        .args(["run", "-S", "p3"])
+        .arg(output.path().join("program.wasm"))
+        .arg(argument)
+        .output()
+        .expect("run WASI 0.3 command with arguments");
+      assert_eq!(
+        result.status.code(),
+        Some(expected_status),
+        "argument {argument:?}: {}",
+        String::from_utf8_lossy(&result.stderr)
+      );
+      assert!(result.stdout.is_empty());
+      assert!(result.stderr.is_empty());
+    }
+  }
+}
+
+#[test]
 fn preview1_capabilities_fail_before_writing_a_component() {
   let output = tempfile::tempdir().expect("output directory");
   let result = calcit(
@@ -149,11 +186,11 @@ fn preview1_capabilities_fail_before_writing_a_component() {
 }
 
 #[test]
-fn reachable_core_wrapper_capabilities_fail_during_check_only() {
+fn unsupported_environment_capability_fails_during_check_only() {
   let output = tempfile::tempdir().expect("output directory");
   let result = calcit(
     &[
-      "tests/fixtures/wasi-command-03-get-args.cirru",
+      "tests/fixtures/wasi-command-03-get-env.cirru",
       "wasi",
       "--boundary",
       "component",
@@ -161,10 +198,10 @@ fn reachable_core_wrapper_capabilities_fail_during_check_only() {
     ],
     output.path(),
   );
-  assert!(!result.status.success(), "get-args must not compile to a trapping dependency");
+  assert!(!result.status.success(), "get-env must not compile to a trapping dependency");
   let error = String::from_utf8_lossy(&result.stderr);
   assert!(error.contains("E_WASI_COMMAND_CAPABILITY"), "{error}");
-  assert!(error.contains("calcit.core/get-args"), "{error}");
+  assert!(error.contains("calcit.core/get-env"), "{error}");
   assert!(!output.path().join("program.wasm").exists());
 }
 

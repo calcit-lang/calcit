@@ -1,6 +1,6 @@
 # WASI command 文本处理示例
 
-这个示例展示 Calcit 当前可直接用于小型批处理业务的最短路径：读取命令行参数和环境变量，从 Wasmtime 显式预开放的目录读取文本，转换后写回文件，并用稳定的进程状态码报告失败。它使用默认的 WASI Preview 1 路径；WASI 0.3 `--boundary component` 已支持退出码，但尚未覆盖参数、环境变量和文件能力。
+这个示例展示 Calcit 当前可直接用于小型批处理业务的最短路径：读取命令行参数和环境变量，从 Wasmtime 显式预开放的目录读取文本，转换后写回文件，并用稳定的进程状态码报告失败。它使用默认的 WASI Preview 1 路径；WASI 0.3 `--boundary component` 已支持参数和退出码，但尚未覆盖环境变量和文件能力。
 
 它只使用公开的 `calcit wasi` 入口，不需要 `cr-wasm`、JavaScript host import 或自定义 descriptor API。Calcit 程序只看到 guest path；host path 和授权范围由启动 Wasmtime 的命令决定。
 
