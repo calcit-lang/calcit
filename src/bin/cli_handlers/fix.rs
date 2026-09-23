@@ -975,7 +975,7 @@ fn compile_selected_definitions(definitions: &[(String, String)]) -> Result<Vec<
   let warnings = RefCell::new(Vec::new());
   for (namespace, definition) in definitions {
     runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default())
-      .map_err(|failure| failure.msg)?;
+      .map_err(|failure| format!("Failed to preprocess fix target {namespace}/{definition}: {failure}"))?;
   }
   Ok(warnings.into_inner())
 }

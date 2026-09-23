@@ -180,6 +180,76 @@ fn strict_workflow_plans_cross_namespace_macro_generated_ffi() {
 }
 
 #[test]
+fn fix_preview_reports_malformed_external_object_trait_without_macro_capability_noise() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("calcit/util.cirru", &snapshot).expect("fixture should copy");
+
+  for (args, context) in [
+    (
+      vec!["edit", "def", "util.core/Host", "--code", "quote $ deftrait Host (:icons 'Dynamic)"],
+      "valid external-object trait creation",
+    ),
+    (
+      vec!["edit", "schema", "util.core/Host", "--code", "quote $ :: 'Trait"],
+      "external-object trait schema",
+    ),
+    (
+      vec![
+        "edit",
+        "ffi",
+        "util.core/Host",
+        "--code",
+        "{} (:backend :js) (:kind :external-object)",
+      ],
+      "external-object trait FFI metadata",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+
+  let valid_snapshot = fs::read(&snapshot).expect("valid snapshot should read");
+  let valid_preview = run_fix(&snapshot, &["--preset", "surface-latest-v2", "--format", "json"]);
+  assert_success(&valid_preview, "whole-project preview with valid external-object trait");
+  assert_eq!(fs::read(&snapshot).expect("valid snapshot should remain readable"), valid_snapshot);
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "util.core/Host",
+        "--overwrite",
+        "--code",
+        "quote $ deftrait Host ((:icons 'Dynamic))",
+      ],
+    ),
+    "malformed external-object trait setup",
+  );
+  let invalid_snapshot = fs::read(&snapshot).expect("invalid snapshot should read");
+  let invalid_preview = run_fix(&snapshot, &["--preset", "surface-latest-v2", "--format", "json"]);
+  assert!(!invalid_preview.status.success(), "malformed trait preview must fail");
+  let diagnostic = String::from_utf8_lossy(&invalid_preview.stderr);
+  assert!(
+    diagnostic.contains("util.core/Host"),
+    "diagnostic must locate the source definition: {diagnostic}"
+  );
+  assert!(
+    diagnostic.contains("deftrait expects each method as (method type)"),
+    "diagnostic must describe the bad shape: {diagnostic}"
+  );
+  assert!(
+    !diagnostic.contains("capability :log"),
+    "diagnostic must not expose an unrelated macro capability: {diagnostic}"
+  );
+  assert_eq!(
+    fs::read(&snapshot).expect("invalid snapshot should remain readable"),
+    invalid_snapshot
+  );
+}
+
+#[test]
 fn strict_workflow_applies_safe_fixes_and_verifies_the_result() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

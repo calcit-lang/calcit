@@ -369,6 +369,16 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
+          :tests $ []
+            %{} 'TestEntry (:name |accepts-external-field-pair)
+              :code $ quote $ assert= false
+                throws? $ macroexpand $ quote
+                  deftrait Host $ :icons 'Dynamic
+            %{} 'TestEntry (:name |rejects-nested-field-pair)
+              :code $ quote $ assert= true
+                throws? $ macroexpand $ quote
+                  deftrait Host $
+                    :icons 'Dynamic
         'test-enum-impl-precedence-order $ %{} 'CodeEntry (:doc "|Test enum impl precedence order")
           :code $ quote $ defn test-enum-impl-precedence-order () (println "|Testing enum impl precedence order...")
             let
@@ -546,4 +556,5 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
       :ns $ %{} 'NsEntry (:doc |)
-        :code $ quote $ ns test-traits.main (:require)
+        :code $ quote $ ns test-traits.main
+          :require $ calcit.test :refer $ throws?

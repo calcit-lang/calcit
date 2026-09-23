@@ -4291,7 +4291,7 @@
         'deftrait $ %{} 'CodeEntry
           :doc "|定义 trait。普通方法使用 `.method` 键，例如 `(deftrait Shape (.draw (:: 'Fn $ {} (:args [...]) (:return 'Unit))))`；只有带 `:ffi {:kind :external-object}` 的宿主属性使用 `:field` 键。省略完整签名时，`:fn` 表示动态函数类型。展开为 `&trait::new`。"
           :code $ quote $ defmacro deftrait (name & methods)
-            assert "|deftrait expects (method type) pairs" $ every? methods list?
+            if (every? methods list?) &unit $ raise "|deftrait expects each method as (method type) pair"
             &let
               normalized $ map methods $ fn (entry)
                 &let
@@ -4300,7 +4300,9 @@
                     &list:rest entry
                     , entry
                   do
-                    assert "|deftrait expects (method type) pairs" $ &= 2 $ count items
+                    if
+                      &= 2 $ count items
+                      , &unit $ raise $ str-spaced "|deftrait expects each method as (method type), got:" (format-to-lisp entry)
                     let
                         m0 $ &list:first items
                         t0 $ &list:nth items 1
