@@ -282,6 +282,11 @@ fn emit_wasm_impl(
   if fn_defs.is_empty() {
     return Err(format!("namespace not found or no functions: {init_ns}"));
   }
+  let wasi_command_stdio = target == WasmTarget::Wasi
+    && boundary == WasmBoundary::Component
+    && fn_defs
+      .iter()
+      .any(|(namespace, _, _, body)| namespace != "calcit.core" && body.iter().any(expr_uses_wasi_stdio));
   // Build the import table before assigning user function indices. Built-in imports
   // stay first so internal lowering keeps its stable indices; user declarations
   // append after them.
@@ -350,6 +355,31 @@ fn emit_wasm_impl(
         params: vec![ValType::I32],
         results: vec![],
       });
+      if wasi_command_stdio {
+        for interface in ["stdout", "stderr"] {
+          let module = format!("wasi:cli/{interface}@0.3.1");
+          for (name, params, results) in [
+            ("[stream-new-0]write-via-stream", vec![], vec![ValType::I64]),
+            ("[stream-write-0]write-via-stream", vec![ValType::I32; 3], vec![ValType::I32]),
+            ("[stream-drop-writable-0]write-via-stream", vec![ValType::I32], vec![]),
+            ("[future-drop-readable-1]write-via-stream", vec![ValType::I32], vec![]),
+            ("write-via-stream", vec![ValType::I32], vec![ValType::I32]),
+          ] {
+            host_imports.push(HostImport {
+              module: module.clone(),
+              name: name.into(),
+              params,
+              results,
+            });
+          }
+        }
+        host_imports.push(HostImport {
+          module: "[export]wasi:cli/run@0.3.1".into(),
+          name: "[task-return]run".into(),
+          params: vec![ValType::I32],
+          results: vec![],
+        });
+      }
     }
     if component_import_adapters
       .iter()
@@ -1036,15 +1066,32 @@ fn emit_wasm_impl(
     }
     let component_command = boundary == WasmBoundary::Component;
     compiled_fns.push(CompiledFn {
-      export_name: Some(if component_command {
+      export_name: Some(if component_command && wasi_command_stdio {
+        "[async-lift-stackful]wasi:cli/run@0.3.1#run".into()
+      } else if component_command {
         "wasi:cli/run@0.3.1#run".into()
       } else {
         "_start".into()
       }),
       params: vec![],
-      results: if component_command { vec![ValType::I32] } else { vec![] },
+      results: if component_command && !wasi_command_stdio {
+        vec![ValType::I32]
+      } else {
+        vec![]
+      },
       locals: vec![],
-      instructions: if component_command {
+      instructions: if component_command && wasi_command_stdio {
+        vec![
+          Instruction::Call(init_index),
+          Instruction::Drop,
+          Instruction::I32Const(0),
+          Instruction::Call(
+            *index_host_imports(&host_imports)
+              .get(&("[export]wasi:cli/run@0.3.1".into(), "[task-return]run".into()))
+              .expect("stdio command must register task return"),
+          ),
+        ]
+      } else if component_command {
         vec![Instruction::Call(init_index), Instruction::Drop, Instruction::I32Const(0)]
       } else {
         vec![Instruction::Call(init_index), Instruction::Drop]
@@ -5611,7 +5658,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       // IO functions: call host log_value for each arg, return nil
       if matches!(name, "println" | "eprintln" | "echo") {
         if ctx.target == WasmTarget::Wasi && ctx.boundary == WasmBoundary::Component {
-          return Err(format!("E_WASI_COMMAND_CAPABILITY: `{name}` needs WASI 0.3 stdio lowering"));
+          return emit_wasi_component_print(ctx, name, &args_list);
         }
         if ctx.target == WasmTarget::Wasi {
           return emit_wasi_print(ctx, name, &args_list);
@@ -5670,7 +5717,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       let name = name.as_ref();
       if matches!(name, "println" | "eprintln" | "echo") {
         if ctx.target == WasmTarget::Wasi && ctx.boundary == WasmBoundary::Component {
-          return Err(format!("E_WASI_COMMAND_CAPABILITY: `{name}` needs WASI 0.3 stdio lowering"));
+          return emit_wasi_component_print(ctx, name, &args_list);
         }
         if ctx.target == WasmTarget::Wasi {
           return emit_wasi_print(ctx, name, &args_list);
@@ -7133,6 +7180,115 @@ fn emit_wasi_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<
   Ok(())
 }
 
+fn emit_wasi_component_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
+  let interface = if name == "eprintln" { "stderr" } else { "stdout" };
+  for (index, arg) in args.iter().enumerate() {
+    if index > 0 {
+      emit_wasi_component_write_literal(ctx, interface, " ")?;
+    }
+    emit_expr(ctx, arg)?;
+    let value = ctx.alloc_local();
+    ctx.emit(Instruction::LocalSet(value));
+    let ptr = emit_turn_string_from_local(ctx, value);
+    emit_wasi_component_write_string(ctx, interface, ptr)?;
+  }
+  emit_wasi_component_write_literal(ctx, interface, "\n")?;
+  ctx.emit(f64_const(0.0));
+  Ok(())
+}
+
+fn emit_wasi_component_write_literal(ctx: &mut WasmGenCtx, interface: &str, text: &str) -> Result<(), String> {
+  let ptr = *ctx
+    .string_pool
+    .get(text)
+    .ok_or_else(|| format!("internal WASI output literal missing from string pool: {text:?}"))?;
+  let ptr_local = ctx.alloc_i32(ptr as i32);
+  emit_wasi_component_write_string(ctx, interface, ptr_local)
+}
+
+fn emit_wasi_component_write_string(ctx: &mut WasmGenCtx, interface: &str, ptr: u32) -> Result<(), String> {
+  let module = format!("wasi:cli/{interface}@0.3.1");
+  let new = resolve_host_import(ctx, &module, "[stream-new-0]write-via-stream")?;
+  let write = resolve_host_import(ctx, &module, "[stream-write-0]write-via-stream")?;
+  let drop_writer = resolve_host_import(ctx, &module, "[stream-drop-writable-0]write-via-stream")?;
+  let drop_future = resolve_host_import(ctx, &module, "[future-drop-readable-1]write-via-stream")?;
+  let output = resolve_host_import(ctx, &module, "write-via-stream")?;
+  let pair = ctx.alloc_local_typed(ValType::I64);
+  let writer = ctx.alloc_local_typed(ValType::I32);
+  let future = ctx.alloc_local_typed(ValType::I32);
+  let offset = ctx.alloc_local_typed(ValType::I32);
+  let remaining = ctx.alloc_local_typed(ValType::I32);
+  let count = ctx.alloc_local_typed(ValType::I32);
+  let result = ctx.alloc_local_typed(ValType::I32);
+
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(remaining));
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(offset));
+  ctx.emit(Instruction::Call(new));
+  ctx.emit(Instruction::LocalSet(pair));
+  ctx.emit(Instruction::LocalGet(pair));
+  ctx.emit(Instruction::I32WrapI64);
+  ctx.emit(Instruction::Call(output));
+  ctx.emit(Instruction::LocalSet(future));
+  ctx.emit(Instruction::LocalGet(pair));
+  ctx.emit(Instruction::I64Const(32));
+  ctx.emit(Instruction::I64ShrU);
+  ctx.emit(Instruction::I32WrapI64);
+  ctx.emit(Instruction::LocalSet(writer));
+
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(remaining));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::BrIf(1));
+  ctx.emit(Instruction::LocalGet(writer));
+  ctx.emit(Instruction::LocalGet(offset));
+  ctx.emit(Instruction::LocalGet(remaining));
+  ctx.emit(Instruction::I32Const(1 << 28));
+  ctx.emit(Instruction::I32GtU);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  ctx.emit(Instruction::I32Const(1 << 28));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(remaining));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::Call(write));
+  ctx.emit(Instruction::LocalTee(result));
+  ctx.emit(Instruction::I32Const(15));
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(result));
+  ctx.emit(Instruction::I32Const(4));
+  ctx.emit(Instruction::I32ShrU);
+  ctx.emit(Instruction::LocalTee(count));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(offset));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(offset));
+  ctx.emit(Instruction::LocalGet(remaining));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::LocalSet(remaining));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(writer));
+  ctx.emit(Instruction::Call(drop_writer));
+  ctx.emit(Instruction::LocalGet(future));
+  ctx.emit(Instruction::Call(drop_future));
+  Ok(())
+}
+
 fn resolve_host_import(ctx: &WasmGenCtx, module: &str, name: &str) -> Result<u32, String> {
   ctx
     .host_imports
@@ -8354,6 +8510,20 @@ fn expr_uses_typed_cirru_edn_parse(expr: &Calcit) -> bool {
   }
 }
 
+fn expr_uses_wasi_stdio(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::List(xs) => {
+      let writes = match xs.first() {
+        Some(Calcit::Symbol { sym, .. }) => matches!(sym.as_ref(), "println" | "eprintln" | "echo"),
+        Some(Calcit::Registered(name)) => matches!(name.as_ref(), "println" | "eprintln" | "echo"),
+        _ => false,
+      };
+      writes || xs.iter().any(expr_uses_wasi_stdio)
+    }
+    _ => false,
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use std::collections::{BTreeMap, HashMap};
@@ -8510,13 +8680,13 @@ mod tests {
     let unsupported = HashMap::from([(
       4,
       (
-        "calcit.core/println".into(),
-        "E_WASI_COMMAND_CAPABILITY: `println` needs WASI 0.3 stdio lowering".into(),
+        "calcit.core/fs-path:read-text".into(),
+        "E_WASI_COMMAND_CAPABILITY: `&fs-read-text` needs WASI 0.3 filesystem lowering".into(),
       ),
     )]);
     let error = reject_reachable_wasi_command_dependencies(&functions, 2, 2, &unsupported).unwrap_err();
     assert!(error.starts_with("E_WASI_COMMAND_CAPABILITY:"), "{error}");
-    assert!(error.contains("calcit.core/println"), "{error}");
+    assert!(error.contains("calcit.core/fs-path:read-text"), "{error}");
     assert!(reject_reachable_wasi_command_dependencies(&functions, 2, 5, &unsupported).is_ok());
     functions[3].instructions.push(Instruction::CallIndirect {
       type_index: 0,

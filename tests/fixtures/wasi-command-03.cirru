@@ -10,8 +10,8 @@
   :files $ {} $ 'app.main
     %{} 'FileEntry
       :defs $ {}
-        'main! $ %{} 'CodeEntry (:doc "|WASI 0.3 command Component 的零参数纯计算入口。")
-          :code $ quote $ defn main! () (transform-content "|prefix: " |payload) &unit
+        'main! $ %{} 'CodeEntry (:doc "|WASI 0.3 command Component 的标准输出与错误输出回归入口。")
+          :code $ quote $ defn main! () (println "|你好" 42) (eprintln "|错误") (echo |done) &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []

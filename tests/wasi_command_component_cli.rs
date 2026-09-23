@@ -17,7 +17,7 @@ fn calcit(args: &[&str], output: &Path) -> Output {
 }
 
 #[test]
-fn pure_calcit_entry_emits_runnable_wasi_03_command_component() {
+fn calcit_stdio_entry_emits_runnable_wasi_03_command_component() {
   let first = tempfile::tempdir().expect("first output directory");
   let second = tempfile::tempdir().expect("second output directory");
   let check = calcit(
@@ -47,6 +47,7 @@ fn pure_calcit_entry_emits_runnable_wasi_03_command_component() {
   let mut config = Config::new();
   config.wasm_component_model_async(true);
   config.wasm_component_model_async_stackful(true);
+  config.wasm_component_model_more_async_builtins(true);
   let engine = Engine::new(&config).expect("Wasmtime engine");
   let component = Component::new(&engine, &first_wasm).expect("valid command Component");
   assert_eq!(
@@ -55,7 +56,13 @@ fn pure_calcit_entry_emits_runnable_wasi_03_command_component() {
       .imports(&engine)
       .map(|(name, _)| name)
       .collect::<Vec<_>>(),
-    vec!["wasi:cli/environment@0.3.1", "wasi:cli/exit@0.3.1"]
+    vec![
+      "wasi:cli/environment@0.3.1",
+      "wasi:cli/exit@0.3.1",
+      "wasi:cli/types@0.3.1",
+      "wasi:cli/stdout@0.3.1",
+      "wasi:cli/stderr@0.3.1",
+    ]
   );
   assert!(
     component
@@ -66,11 +73,21 @@ fn pure_calcit_entry_emits_runnable_wasi_03_command_component() {
 
   if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
     let result = Command::new(cli)
-      .args(["run", "-S", "p3"])
+      .args([
+        "run",
+        "-S",
+        "p3",
+        "-W",
+        "component-model-more-async-builtins=y",
+        "-W",
+        "component-model-async-stackful=y",
+      ])
       .arg(first.path().join("program.wasm"))
       .output()
       .expect("run WASI 0.3 command");
     assert_eq!(result.status.code(), Some(0), "{}", String::from_utf8_lossy(&result.stderr));
+    assert_eq!(result.stdout, "你好 42\ndone\n".as_bytes());
+    assert_eq!(result.stderr, "错误\n".as_bytes());
   }
 }
 
