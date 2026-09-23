@@ -2219,10 +2219,15 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     if !collected_imports.is_empty() {
       let mut xs = collected_imports.0.iter().to_owned().collect::<Vec<_>>();
       xs.sort();
+      let mut emitted_namespace_imports = HashSet::new();
       for item in &xs {
         // println!("import item: {:?}", item);
         match &*item.info {
           ImportInfo::NsAs { .. } => {
+            // Source aliases and nominal schema references can request the same JS binding.
+            if !emitted_namespace_imports.insert(&item.ns) {
+              continue;
+            }
             let import_target = if is_cirru_string(&item.ns) {
               wrap_js_str(&item.ns[1..])
             } else {
