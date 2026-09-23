@@ -42,6 +42,13 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
+        'make-reel-for-tag-access $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-reel-for-tag-access ()
+            {} $ :store 1
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Map 'Tag 'Number
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (:: 'Unit)
           :examples $ []
