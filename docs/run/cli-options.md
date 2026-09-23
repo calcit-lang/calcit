@@ -565,7 +565,7 @@ WASM 可根据已解析的静态 callee 与函数参数 schema，特化携带非
 
 WASI command 继续使用与原生、JavaScript 相同的 `get-env` 和 `get-args` API。默认 Preview 1 路径两者均可用；WASI 0.3 Component 的 `get-args` 通过 `wasi:cli/environment@0.3.1#get-arguments` 返回包含第 0 项的完整 `List<String>`。`get-env` 从同一接口的 `get-environment` 按名称查找，保留 `Option<String>`：未设置时为 `%none`，已设置为空字符串时为 `%some |`；非 ASCII 名称和值按 UTF-8 字节精确比较和复制。宿主只会提供显式授权的环境变量，例如用 `wasmtime run -S p3 --env CALCIT_TEST=你好 program.wasm`。Preview 1 与 Component 的内存 ABI 都只存在于编译器内部，不进入 Calcit 源码接口。
 
-`println` 和 `echo` 写标准输出，`eprintln` 写标准错误，保留参数间空格与结尾换行。编译器通过 `wasi:cli/stdout` / `stderr@0.3.1` 的字节流处理部分写入，支持 UTF-8 和长文本；标准输入尚未支持。当前输出路径尚未把宿主返回的异步完成错误转换为 Calcit `Result`，因此不要把它当成可靠持久化或审计通道。
+`println` 和 `echo` 写标准输出，`eprintln` 写标准错误，保留参数间空格与结尾换行。编译器通过 `wasi:cli/stdout` / `stderr@0.3.1` 的字节流处理部分写入，支持 UTF-8 和长文本；标准输入尚未支持。输出流关闭后会等待宿主 completion future 并检查结果，失败时陷阱终止，而不会误报成功。`println` 等表层函数仍不返回 `Result`，因此不要把它们当成可靠持久化或审计通道。
 
 command init definition 正常返回时，进程状态为 `0`；调用 `quit!` 可显式设置 `0..255` 的整数退出状态。Preview 1 路径在内部调用 `proc_exit`，WASI 0.3 Component 路径调用 `wasi:cli/exit@0.3.1#exit-with-code`；Calcit 源码无需感知这两套 ABI。
 

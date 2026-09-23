@@ -362,6 +362,7 @@ fn emit_wasm_impl(
             ("[stream-new-0]write-via-stream", vec![], vec![ValType::I64]),
             ("[stream-write-0]write-via-stream", vec![ValType::I32; 3], vec![ValType::I32]),
             ("[stream-drop-writable-0]write-via-stream", vec![ValType::I32], vec![]),
+            ("[future-read-1]write-via-stream", vec![ValType::I32; 2], vec![ValType::I32]),
             ("[future-drop-readable-1]write-via-stream", vec![ValType::I32], vec![]),
             ("write-via-stream", vec![ValType::I32], vec![ValType::I32]),
           ] {
@@ -492,10 +493,12 @@ fn emit_wasm_impl(
 
   let (component_cabi_free_index, component_cabi_realloc_index) = if boundary == WasmBoundary::Component {
     let free_index = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__cabi_free".into(), free_index);
     compiled_fns.push(build_cabi_free_fn(
       component_free_head_global.expect("Component boundary must reserve a free-list global"),
     ));
     let realloc_index = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__cabi_realloc".into(), realloc_index);
     compiled_fns.push(build_cabi_realloc_fn(
       free_index,
       component_free_head_global.expect("Component boundary must reserve a free-list global"),
@@ -7211,6 +7214,7 @@ fn emit_wasi_component_write_string(ctx: &mut WasmGenCtx, interface: &str, ptr: 
   let new = resolve_host_import(ctx, &module, "[stream-new-0]write-via-stream")?;
   let write = resolve_host_import(ctx, &module, "[stream-write-0]write-via-stream")?;
   let drop_writer = resolve_host_import(ctx, &module, "[stream-drop-writable-0]write-via-stream")?;
+  let read_future = resolve_host_import(ctx, &module, "[future-read-1]write-via-stream")?;
   let drop_future = resolve_host_import(ctx, &module, "[future-drop-readable-1]write-via-stream")?;
   let output = resolve_host_import(ctx, &module, "write-via-stream")?;
   let pair = ctx.alloc_local_typed(ValType::I64);
@@ -7220,6 +7224,7 @@ fn emit_wasi_component_write_string(ctx: &mut WasmGenCtx, interface: &str, ptr: 
   let remaining = ctx.alloc_local_typed(ValType::I32);
   let count = ctx.alloc_local_typed(ValType::I32);
   let result = ctx.alloc_local_typed(ValType::I32);
+  let completion = ctx.alloc_local_typed(ValType::I32);
 
   ctx.emit(Instruction::LocalGet(ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
@@ -7284,6 +7289,31 @@ fn emit_wasi_component_write_string(ctx: &mut WasmGenCtx, interface: &str, ptr: 
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::LocalGet(writer));
   ctx.emit(Instruction::Call(drop_writer));
+  // The host completes the write only after the writable end closes.
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32Const(4));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.call_rt("__cabi_realloc");
+  ctx.emit(Instruction::LocalSet(completion));
+  ctx.emit(Instruction::LocalGet(future));
+  ctx.emit(Instruction::LocalGet(completion));
+  ctx.emit(Instruction::Call(read_future));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32Ne);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(completion));
+  ctx.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32Ne);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(completion));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.call_rt("__cabi_free");
   ctx.emit(Instruction::LocalGet(future));
   ctx.emit(Instruction::Call(drop_future));
   Ok(())
