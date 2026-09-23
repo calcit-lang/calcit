@@ -542,7 +542,7 @@ calcit calcit.cirru analyze program-diff main --base v0.15.5 --format edn
 
 ## WASM preview 命令
 
-`calcit wasm` 生成面向 browser/embedded host 的 core module；`calcit wasi` 默认仍生成可由 Wasmtime 等 WASI host 启动的 WASI Preview 1 command core module。显式使用 `calcit wasi --boundary component` 则生成 WASI 0.3 `wasi:cli/command` Component，目前支持零参数纯计算入口及 `quit!` 的整数退出码；正常返回时退出码为 0。通用的 `calcit wasm --boundary component` 输出供 Component tooling 包装的 core module，不等价于 WASI 0.3 command。两个命令把 Snapshot 路径放在子命令之后，并分别通过 help 暴露输出契约：
+`calcit wasm` 生成面向 browser/embedded host 的 core module；`calcit wasi` 默认仍生成可由 Wasmtime 等 WASI host 启动的 WASI Preview 1 command core module。显式使用 `calcit wasi --boundary component` 则生成 WASI 0.3 `wasi:cli/command` Component，目前支持零参数纯计算入口、`get-args` 和 `quit!` 的整数退出码；正常返回时退出码为 0。通用的 `calcit wasm --boundary component` 输出供 Component tooling 包装的 core module，不等价于 WASI 0.3 command。两个命令把 Snapshot 路径放在子命令之后，并分别通过 help 暴露输出契约：
 
 ```bash
 calcit wasm calcit.cirru --emit-path js-out
@@ -552,7 +552,7 @@ calcit wasi tests/fixtures/wasi-command-03.cirru --boundary component --emit-pat
 wasmtime run -S p3 target/wasi-03-command/program.wasm
 ```
 
-两个命令都支持 `--entry`、`--init-fn`、`--reload-fn` 和 `--check-only`。WASI 0.3 Component 的 `--check-only` 会完成 codegen 与封装验证，但不会写出 `program.wasm`。WASI command 的 init definition 必须为零参数；Component 路径还要求显式 `Unit` 返回 schema，避免把 `Result` 等返回值悄然当成成功退出。现有 Preview 1 宿主能力在 Component 路径以 `E_WASI_COMMAND_CAPABILITY` 明确失败；编译器还会沿入口的直接调用链检查失败的依赖，不会把 `get-args` 等核心包装函数变成运行时 trap。当前无法证明目标安全的间接调用会以 `E_WASI_COMMAND_INDIRECT` 拒绝。通用 `defwasm-export` 以 `E_WASI_COMMAND_EXPORT` 拒绝，不会悄然丢弃。参数、环境、标准流、文件系统、时钟和随机数仍待后续 lowering，不能把当前 Component 当成完整可用的 WASI 0.3 command 业务路径。
+两个命令都支持 `--entry`、`--init-fn`、`--reload-fn` 和 `--check-only`。WASI 0.3 Component 的 `--check-only` 会完成 codegen 与封装验证，但不会写出 `program.wasm`。WASI command 的 init definition 必须为零参数；Component 路径还要求显式 `Unit` 返回 schema，避免把 `Result` 等返回值悄然当成成功退出。尚未迁移的 Preview 1 宿主能力在 Component 路径以 `E_WASI_COMMAND_CAPABILITY` 明确失败；编译器还会沿入口的直接调用链检查失败的依赖，不会把 `get-env` 等核心包装函数变成运行时 trap。当前无法证明目标安全的间接调用会以 `E_WASI_COMMAND_INDIRECT` 拒绝。通用 `defwasm-export` 以 `E_WASI_COMMAND_EXPORT` 拒绝，不会悄然丢弃。环境变量、标准流、文件系统、时钟和随机数仍待后续 lowering，不能把当前 Component 当成完整可用的 WASI 0.3 command 业务路径。
 
 WASI command 中的 `try-parse-cirru-edn-as` 与 `format-cirru-edn` 直接使用编译器已经推导出的闭合类型，不在运行时探测值类型。当前支持标量、递归 `List<T>`、标量 key 的 `Map<K,V>`，以及闭合 Struct field 和 Enum payload；core `Option<T>` / `Result<T,E>` 复用相同的 nominal Enum 路径。可完整往返的标量为 `Nil`、`Bool`、`String`、`Tag`、`Int8`、`UInt8`、`Int16`、`UInt16`、`Int32`、`UInt32`、`Int64` 与 `UInt64`。typed parser 还可读取 `Number`、`Float32` 与 `Float64`，但 formatter 尚不能为这些运行时浮点类型生成与 native 一致的文本，因此它们不属于当前支持的往返字段类型。Struct 输入使用 `%{} 'TypeName (:field value)`，Enum 输入使用 `%:: 'TypeName 'variant payload...`；名称、字段或 variant、payload 数量与递归 shape 都必须与声明完全一致。重复、缺失、未知项和数值越界都会返回 `Result :err`。格式化按声明字段或 variant 顺序生成 canonical Cirru EDN；开放 `Dynamic`、anonymous Enum 和其他未支持类型在 codegen 阶段明确拒绝，不会生成近似数据。
 
@@ -563,7 +563,7 @@ WASI command 中的 `try-parse-cirru-edn-as` 与 `format-cirru-edn` 直接使用
 
 WASM 可根据已解析的静态 callee 与函数参数 schema，特化携带非逃逸 inline closure 的普通函数调用；闭包在创建位置捕获词法局部值，因此 `Option.map`、`Result.map` 等静态方法不需要各自的 backend 拦截规则。动态 callee、可变参数函数、闭包逃逸与递归特化仍以 `E_WASM_CLOSURE_SPECIALIZATION` 明确失败，不会生成 `nil`、`0` 或失去捕获环境的替代实现。
 
-WASI command 当前可通过与原生、JavaScript 相同的 `get-env` 和 `get-args` API 读取环境变量与命令参数。`get-env` 返回 `Option<String>`；`get-args` 返回包含第 0 项的完整 `List<String>`。Preview 1 的缓冲区和指针 ABI 只存在于编译器内部，不进入 Calcit 源码接口。
+WASI command 继续使用与原生、JavaScript 相同的 `get-env` 和 `get-args` API。默认 Preview 1 路径两者均可用；WASI 0.3 Component 目前已支持 `get-args`，通过 `wasi:cli/environment@0.3.0#get-arguments` 返回包含第 0 项的完整 `List<String>`，`get-env` 尚未迁移，会在编译时明确失败。Preview 1 与 Component 的内存 ABI 都只存在于编译器内部，不进入 Calcit 源码接口。
 
 command init definition 正常返回时，进程状态为 `0`；调用 `quit!` 可显式设置 `0..255` 的整数退出状态。Preview 1 路径在内部调用 `proc_exit`，WASI 0.3 Component 路径调用 `wasi:cli/exit@0.3.0#exit-with-code`；Calcit 源码无需感知这两套 ABI。
 

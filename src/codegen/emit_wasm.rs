@@ -298,6 +298,18 @@ fn emit_wasm_impl(
   } else {
     Vec::new()
   };
+  if boundary == WasmBoundary::Component && target == WasmTarget::Wasi {
+    component_import_adapters.push(ComponentImportAdapter {
+      definition: "calcit.core/get-args".into(),
+      module: "wasi:cli/environment@0.3.0".into(),
+      symbol: "get-arguments".into(),
+      raw_index: 0,
+      source_arity: 0,
+      invocation: ComponentAbiInvocation::Sync,
+      parameters: vec![],
+      result: ComponentAbiType::List(Box::new(ComponentAbiType::String)),
+    });
+  }
   let mut component_adapters = if boundary == WasmBoundary::Component && target == WasmTarget::Core {
     let provisional_fn_index = fn_defs
       .iter()
@@ -611,6 +623,9 @@ fn emit_wasm_impl(
       wasm_import_names.insert(local_name.to_string(), index);
       wasm_import_arities.insert(adapter.definition.clone(), adapter.source_arity);
       wasm_import_arities.insert(local_name.to_string(), adapter.source_arity);
+      if target == WasmTarget::Wasi && adapter.definition == "calcit.core/get-args" {
+        runtime_fn_index.insert("__rt_wasi_get_args".into(), index);
+      }
       compiled_fns.push(build_component_import_adapter(
         adapter,
         component_async_canonical_imports.as_ref(),
@@ -6444,9 +6459,6 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       if ctx.target != WasmTarget::Wasi {
         return Err("E_WASM_CAPABILITY: process arguments are unavailable for the core WASM target".into());
       }
-      if ctx.boundary == WasmBoundary::Component {
-        return Err("E_WASI_COMMAND_CAPABILITY: `get-args` needs WASI 0.3 environment lowering".into());
-      }
       ctx.call_rt("__rt_wasi_get_args");
       Ok(())
     }
@@ -8520,13 +8532,13 @@ mod tests {
     let unsupported = HashMap::from([(
       4,
       (
-        "calcit.core/get-args".into(),
-        "E_WASI_COMMAND_CAPABILITY: `get-args` needs WASI 0.3 environment lowering".into(),
+        "calcit.core/get-env".into(),
+        "E_WASI_COMMAND_CAPABILITY: `get-env` needs WASI 0.3 environment lowering".into(),
       ),
     )]);
     let error = reject_reachable_wasi_command_dependencies(&functions, 2, 2, &unsupported).unwrap_err();
     assert!(error.starts_with("E_WASI_COMMAND_CAPABILITY:"), "{error}");
-    assert!(error.contains("calcit.core/get-args"), "{error}");
+    assert!(error.contains("calcit.core/get-env"), "{error}");
     assert!(reject_reachable_wasi_command_dependencies(&functions, 2, 5, &unsupported).is_ok());
     functions[3].instructions.push(Instruction::CallIndirect {
       type_index: 0,
