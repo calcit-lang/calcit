@@ -991,6 +991,7 @@ fn gen_call_code(
       MethodKind::TagAccess => {
         if body.len() == 1 {
           let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+          tags.borrow_mut().insert(EdnTag::from(name.as_ref()));
           let tag = tags::tag_access(name);
           Ok(format!("{return_code}{obj}.get({tag})"))
         } else {

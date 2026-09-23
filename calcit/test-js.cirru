@@ -85,6 +85,7 @@
             test-for-await
             test-case-async
             test-return-raw-code
+            test-method-tag-access
             do true
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
@@ -298,6 +299,19 @@
               assert= b -1
           :examples $ []
           :schema $ :: 'Dynamic
+        'test-method-tag-access $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-method-tag-access ()
+            let
+                reel $ make-reel-for-tag-access
+              assert= 1 reel.:store
+              assert= 1 $ let
+                  another $ make-reel-for-tag-access
+                , another.:store
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |registers-method-only-tag)
+            :code $ quote $ test-method-tag-access
         'test-property $ %{} 'CodeEntry (:doc "|try property ops")
           :code $ quote $ fn ()
             let
@@ -346,4 +360,4 @@
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-js.main
           :require (|os :as os) (|assert :as assert)
-            util.core :refer $ log-title
+            util.core :refer $ [] log-title make-reel-for-tag-access
