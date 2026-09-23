@@ -9158,6 +9158,189 @@ mod tests {
   }
 
   #[test]
+  fn wasi_03_async_open_at_runs_with_real_wasmtime_host() {
+    let Some(cli) = std::env::var_os("WASMTIME_CLI") else {
+      return;
+    };
+    let host = tempfile::tempdir().expect("host directory");
+    fs::write(host.path().join("input.cirru"), "hello").expect("host input file");
+    let output = tempfile::tempdir().expect("Component output directory");
+    for (path, should_succeed) in [("workspace/input.cirru", true), ("workspace/missing.cirru", false)] {
+      let mut imports = vec![
+        HostImport {
+          module: "wasi:filesystem/preopens@0.3.1".into(),
+          name: "get-directories".into(),
+          params: vec![ValType::I32],
+          results: vec![],
+        },
+        HostImport {
+          module: "wasi:filesystem/types@0.3.1".into(),
+          name: "[resource-drop]descriptor".into(),
+          params: vec![ValType::I32],
+          results: vec![],
+        },
+        HostImport {
+          module: "wasi:filesystem/types@0.3.1".into(),
+          name: "[async-lower][method]descriptor.open-at".into(),
+          params: vec![ValType::I32; 2],
+          results: vec![ValType::I32],
+        },
+      ];
+      let canonical = super::register_component_async_canonical_imports(&mut imports);
+      let task_return = imports.len() as u32;
+      imports.push(HostImport {
+        module: "[export]wasi:cli/run@0.3.1".into(),
+        name: "[task-return]run".into(),
+        params: vec![ValType::I32],
+        results: vec![],
+      });
+      let free_index = imports.len() as u32;
+      let mut free = build_cabi_free_fn(2);
+      free.export_name = Some("cabi_free".into());
+      let mut realloc = build_cabi_realloc_fn(free_index, 2);
+      realloc.export_name = Some("cabi_realloc".into());
+      let select_index = free_index + 3;
+      let instructions = vec![
+        Instruction::I32Const(16),
+        Instruction::I32Const(2048),
+        Instruction::Call(select_index),
+        Instruction::I32Eqz,
+        Instruction::If(wasm_encoder::BlockType::Empty),
+        Instruction::I32Const(1),
+        Instruction::Call(task_return),
+        Instruction::Return,
+        Instruction::End,
+        // Indirect Canonical ABI arguments: borrow, path flags, string, open flags, descriptor flags.
+        Instruction::I32Const(256),
+        Instruction::I32Const(2048),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::I32Store(super::mem_arg_i32(0)),
+        Instruction::I32Const(256),
+        Instruction::I32Const(0),
+        Instruction::I32Store(super::mem_arg_i32(4)),
+        Instruction::I32Const(256),
+        Instruction::I32Const(2048),
+        Instruction::I32Load(super::mem_arg_i32(4)),
+        Instruction::I32Store(super::mem_arg_i32(8)),
+        Instruction::I32Const(256),
+        Instruction::I32Const(2048),
+        Instruction::I32Load(super::mem_arg_i32(8)),
+        Instruction::I32Store(super::mem_arg_i32(12)),
+        Instruction::I32Const(256),
+        Instruction::I32Const(0),
+        Instruction::I32Store(super::mem_arg_i32(16)),
+        Instruction::I32Const(256),
+        Instruction::I32Const(1),
+        Instruction::I32Store(super::mem_arg_i32(20)),
+        Instruction::I32Const(256),
+        Instruction::I32Const(1024),
+        Instruction::Call(2),
+        Instruction::LocalTee(0),
+        Instruction::I32Const(15),
+        Instruction::I32And,
+        Instruction::I32Const(2),
+        Instruction::I32Ne,
+        Instruction::If(wasm_encoder::BlockType::Empty),
+        Instruction::LocalGet(0),
+        Instruction::I32Const(4),
+        Instruction::I32ShrU,
+        Instruction::LocalSet(1),
+        Instruction::Call(canonical.waitable_set_new),
+        Instruction::LocalSet(2),
+        Instruction::LocalGet(1),
+        Instruction::LocalGet(2),
+        Instruction::Call(canonical.waitable_join),
+        Instruction::Block(wasm_encoder::BlockType::Empty),
+        Instruction::Loop(wasm_encoder::BlockType::Empty),
+        Instruction::LocalGet(2),
+        Instruction::I32Const(512),
+        Instruction::Call(canonical.waitable_set_wait),
+        Instruction::Drop,
+        Instruction::I32Const(516),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::I32Const(2),
+        Instruction::I32Eq,
+        Instruction::BrIf(1),
+        Instruction::Br(0),
+        Instruction::End,
+        Instruction::End,
+        Instruction::LocalGet(1),
+        Instruction::I32Const(0),
+        Instruction::Call(canonical.waitable_join),
+        Instruction::LocalGet(1),
+        Instruction::Call(canonical.subtask_drop),
+        Instruction::LocalGet(2),
+        Instruction::Call(canonical.waitable_set_drop),
+        Instruction::End,
+        Instruction::I32Const(2048),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::Call(1),
+        Instruction::I32Const(1024),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::If(wasm_encoder::BlockType::Empty),
+        Instruction::I32Const(1),
+        Instruction::Call(task_return),
+        Instruction::Else,
+        Instruction::I32Const(1028),
+        Instruction::I32Load(super::mem_arg_i32(0)),
+        Instruction::Call(1),
+        Instruction::I32Const(0),
+        Instruction::Call(task_return),
+        Instruction::End,
+      ];
+      let run = CompiledFn {
+        export_name: Some("[async-lift-stackful]wasi:cli/run@0.3.1#run".into()),
+        params: vec![],
+        results: vec![],
+        locals: vec![ValType::I32; 3],
+        instructions,
+      };
+      let mut string_data = (path.len() as f64).to_le_bytes().to_vec();
+      string_data.extend_from_slice(path.as_bytes());
+      let core = build_wasm_module(
+        &[
+          free,
+          realloc,
+          build_wasi_component_route_path_fn(),
+          build_wasi_component_select_preopen_fn(0, 1, free_index, free_index + 2),
+          run,
+        ],
+        &imports,
+        16384,
+        &string_data,
+        &[],
+        1,
+        ModuleFunctionLayout {
+          runtime_fn_count: 4,
+          table_fn_count: 0,
+          component_free_head: true,
+        },
+      )
+      .expect("valid async open-at core command");
+      let component = calcit_bindgen::package_wasi_command(&core).expect("package async open-at command");
+      let module = output.path().join("open-at.wasm");
+      fs::write(&module, component).expect("write async open-at Component");
+      let result = Command::new(&cli)
+        .args(["run", "-S", "p3", "-W", "component-model-async-stackful=y", "--dir"])
+        .arg(format!("{}::/workspace", host.path().display()))
+        .arg(&module)
+        .output()
+        .expect("run WASI 0.3 open-at command");
+      assert!(
+        result.stderr.is_empty(),
+        "unexpected host trap for {path:?}: {}",
+        String::from_utf8_lossy(&result.stderr)
+      );
+      assert_eq!(
+        result.status.success(),
+        should_succeed,
+        "path {path:?}: {}",
+        String::from_utf8_lossy(&result.stderr)
+      );
+    }
+  }
+
+  #[test]
   fn wasi_command_rejects_reachable_failed_dependency_but_not_unrelated_core_code() {
     let function = |instructions| CompiledFn {
       export_name: None,
