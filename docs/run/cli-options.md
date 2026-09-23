@@ -542,7 +542,7 @@ calcit calcit.cirru analyze program-diff main --base v0.15.5 --format edn
 
 ## WASM preview 命令
 
-`calcit wasm` 生成面向 browser/embedded host 的 core module；`calcit wasi` 生成可由 Wasmtime 等 WASI host 启动的 command module。两个命令把 Snapshot 路径放在子命令之后，并分别通过 help 暴露输出契约：
+`calcit wasm` 生成面向 browser/embedded host 的 core module；`calcit wasi` 当前生成可由 Wasmtime 等 WASI host 启动的 WASI Preview 1 command core module。它尚不是 WASI 0.3 command Component。通用的 `calcit wasm --boundary component` 输出供 Component tooling 包装的 core module，也不等价于 WASI 0.3 command；`calcit wasi --boundary component` 会以 `E_WASM_BOUNDARY` 明确拒绝。两个命令把 Snapshot 路径放在子命令之后，并分别通过 help 暴露输出契约：
 
 ```bash
 calcit wasm calcit.cirru --emit-path js-out

@@ -222,11 +222,7 @@ fn deterministic_definition_order(file: &program::CompiledFileData) -> Vec<(&Arc
 }
 
 pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTarget, boundary: WasmBoundary) -> Result<(), String> {
-  if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
-    return Err(
-      "E_WASM_BOUNDARY: `calcit wasi` does not support the Component boundary; use `calcit wasm --boundary component`".into(),
-    );
-  }
+  validate_wasm_target_boundary(target, boundary)?;
   let program_data = program::clone_compiled_program_snapshot()?;
   validate_wasm_target_in_program(&program_data, init_ns, init_def, target)?;
 
@@ -1006,13 +1002,9 @@ pub fn validate_wasm_target(init_ns: &str, init_def: &str, target: WasmTarget) -
 }
 
 pub fn validate_wasm_boundary(target: WasmTarget, boundary: WasmBoundary) -> Result<(), String> {
+  validate_wasm_target_boundary(target, boundary)?;
   if boundary == WasmBoundary::Native {
     return Ok(());
-  }
-  if target == WasmTarget::Wasi {
-    return Err(
-      "E_WASM_BOUNDARY: `calcit wasi` does not support the Component boundary; use `calcit wasm --boundary component`".into(),
-    );
   }
   let program_data = program::clone_compiled_program_snapshot()?;
   let mut fn_defs = Vec::new();
@@ -1040,6 +1032,15 @@ pub fn validate_wasm_boundary(target: WasmTarget, boundary: WasmBoundary) -> Res
     .collect::<HashMap<_, _>>();
   collect_component_import_adapters(&program_data)?;
   collect_component_export_adapters(&program_data, &fn_defs, &fn_index)?;
+  Ok(())
+}
+
+fn validate_wasm_target_boundary(target: WasmTarget, boundary: WasmBoundary) -> Result<(), String> {
+  if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
+    return Err(
+      "E_WASM_BOUNDARY: `calcit wasi` currently emits a WASI Preview 1 core command, not a WASI 0.3 command Component; `--boundary component` is not supported for this target".into(),
+    );
+  }
   Ok(())
 }
 
@@ -8219,6 +8220,7 @@ mod tests {
     component_abi_type, component_export_needs_post_return, component_flat_types, component_import_signature, component_memory_layout,
     component_task_return_signature, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
     validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols,
+    validate_wasm_target_boundary,
   };
   use crate::calcit::{
     Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitStructDef, CalcitStructValue, CalcitSyntax, CalcitTypeAnnotation,
@@ -8340,6 +8342,18 @@ mod tests {
     assert_eq!(WasmBoundary::from_str("native"), Ok(WasmBoundary::Native));
     assert_eq!(WasmBoundary::from_str("component"), Ok(WasmBoundary::Component));
     assert!(WasmBoundary::from_str("wit").unwrap_err().starts_with("E_WASM_BOUNDARY:"));
+  }
+
+  #[test]
+  fn wasi_component_boundary_is_rejected_without_suggesting_the_core_component_target() {
+    let error = validate_wasm_target_boundary(WasmTarget::Wasi, WasmBoundary::Component).unwrap_err();
+
+    assert!(error.starts_with("E_WASM_BOUNDARY:"));
+    assert!(error.contains("WASI Preview 1 core command"));
+    assert!(error.contains("WASI 0.3 command Component"));
+    assert!(!error.contains("use `calcit wasm"));
+    assert!(validate_wasm_target_boundary(WasmTarget::Wasi, WasmBoundary::Native).is_ok());
+    assert!(validate_wasm_target_boundary(WasmTarget::Core, WasmBoundary::Component).is_ok());
   }
 
   #[test]
