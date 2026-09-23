@@ -793,6 +793,18 @@ for (const { name, base, expectedStatus = 0, check } of [
     check: (result) => assert.ok(result.data.summary.matches > 0),
   },
   {
+    name: "type mismatch diagnostics EDN",
+    base: [
+      "calcit/type-fail/schema-call-arg-type-mismatch.cirru",
+      "query",
+      "type-at",
+      "type-fail-schema-call-arg-type.main/main!",
+      "--path",
+      "code@3",
+    ],
+    check: (result) => assert.ok(result.diagnostics.some((item) => item.code === "W_FN_ARG_TYPE_MISMATCH")),
+  },
+  {
     name: "invalid type EDN failure",
     base: ["calcit/test.cirru", "query", "type", "not-a-type"],
     expectedStatus: 1,
