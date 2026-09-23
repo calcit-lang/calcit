@@ -59,9 +59,9 @@ use component::{
 use methods::{emit_call_args, emit_method_invoke};
 use runtime::{
   HostImport, ModuleFunctionLayout, build_runtime_fns, build_utf8_valid_fn, build_wasi_component_get_env_fn,
-  build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasi_get_args_fn, build_wasi_get_env_fn,
-  build_wasi_open_path_fn, build_wasi_read_dir_fn, build_wasi_read_text_fn, build_wasi_wait_fn, build_wasi_write_all_fn,
-  build_wasi_write_text_fn, build_wasm_module, core_host_import, host_imports_for_target,
+  build_wasi_component_open_at_fn, build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasi_get_args_fn,
+  build_wasi_get_env_fn, build_wasi_open_path_fn, build_wasi_read_dir_fn, build_wasi_read_text_fn, build_wasi_wait_fn,
+  build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module, core_host_import, host_imports_for_target,
 };
 use structs::{
   emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_contains, emit_struct_count,
@@ -394,9 +394,10 @@ fn emit_wasm_impl(
         });
       }
     }
-    if component_import_adapters
-      .iter()
-      .any(|adapter| adapter.invocation == ComponentAbiInvocation::Async)
+    if wasi_command_file
+      || component_import_adapters
+        .iter()
+        .any(|adapter| adapter.invocation == ComponentAbiInvocation::Async)
       || component_adapters.iter().any(|adapter| adapter.stream_consumer.is_some())
     {
       component_async_canonical_imports = Some(register_component_async_canonical_imports(&mut host_imports));
@@ -543,6 +544,23 @@ fn emit_wasm_impl(
         .expect("WASI descriptor drop import must be registered"),
       component_cabi_free_index.expect("Component boundary must install cabi_free"),
       route_idx,
+    ));
+    let open_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_component_open_at".into(), open_idx);
+    let descriptor_module = "wasi:filesystem/types@0.3.1";
+    compiled_fns.push(build_wasi_component_open_at_fn(
+      select_idx,
+      *import_indices
+        .get(&(descriptor_module.into(), "[async-lower][method]descriptor.open-at".into()))
+        .expect("WASI open-at import must be registered"),
+      *import_indices
+        .get(&(descriptor_module.into(), "[resource-drop]descriptor".into()))
+        .expect("WASI descriptor drop import must be registered"),
+      component_cabi_free_index.expect("Component boundary must install cabi_free"),
+      component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
+      component_async_canonical_imports
+        .as_ref()
+        .expect("WASI async file operations must register canonical lifecycle imports"),
     ));
   }
 
@@ -8704,11 +8722,12 @@ mod tests {
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport,
     ModuleFunctionLayout, WasmBoundary, WasmTarget, build_cabi_free_fn, build_cabi_realloc_fn, build_component_export_adapter,
-    build_component_import_adapter, build_string_pool, build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn,
-    build_wasm_module, component_abi_type, component_export_needs_post_return, component_flat_types, component_import_signature,
-    component_memory_layout, component_task_return_signature, expr_uses_wasi_file, host_imports_for_target, index_host_imports,
-    must_reject_extraction_failure, reject_reachable_wasi_command_dependencies, validate_component_export_symbols,
-    validate_component_flat_parameters, validate_component_import_symbols, wasi_component_file_imports,
+    build_component_import_adapter, build_string_pool, build_wasi_component_open_at_fn, build_wasi_component_route_path_fn,
+    build_wasi_component_select_preopen_fn, build_wasm_module, component_abi_type, component_export_needs_post_return,
+    component_flat_types, component_import_signature, component_memory_layout, component_task_return_signature, expr_uses_wasi_file,
+    host_imports_for_target, index_host_imports, must_reject_extraction_failure, reject_reachable_wasi_command_dependencies,
+    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols,
+    wasi_component_file_imports,
   };
   use crate::calcit::{
     Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSyntax,
@@ -9165,7 +9184,12 @@ mod tests {
     let host = tempfile::tempdir().expect("host directory");
     fs::write(host.path().join("input.cirru"), "hello").expect("host input file");
     let output = tempfile::tempdir().expect("Component output directory");
-    for (path, should_succeed) in [("workspace/input.cirru", true), ("workspace/missing.cirru", false)] {
+    for (path, should_succeed) in [
+      ("workspace/input.cirru", true),
+      ("workspace/missing.cirru", false),
+      ("other/input.cirru", false),
+      ("workspace/../input.cirru", false),
+    ] {
       let mut imports = vec![
         HostImport {
           module: "wasi:filesystem/preopens@0.3.1".into(),
@@ -9199,92 +9223,21 @@ mod tests {
       free.export_name = Some("cabi_free".into());
       let mut realloc = build_cabi_realloc_fn(free_index, 2);
       realloc.export_name = Some("cabi_realloc".into());
-      let select_index = free_index + 3;
+      let open_index = free_index + 4;
       let instructions = vec![
         Instruction::I32Const(16),
-        Instruction::I32Const(2048),
-        Instruction::Call(select_index),
-        Instruction::I32Eqz,
-        Instruction::If(wasm_encoder::BlockType::Empty),
+        Instruction::I32Const(0),
         Instruction::I32Const(1),
-        Instruction::Call(task_return),
-        Instruction::Return,
-        Instruction::End,
-        // Indirect Canonical ABI arguments: borrow, path flags, string, open flags, descriptor flags.
-        Instruction::I32Const(256),
         Instruction::I32Const(2048),
-        Instruction::I32Load(super::mem_arg_i32(0)),
-        Instruction::I32Store(super::mem_arg_i32(0)),
-        Instruction::I32Const(256),
-        Instruction::I32Const(0),
-        Instruction::I32Store(super::mem_arg_i32(4)),
-        Instruction::I32Const(256),
-        Instruction::I32Const(2048),
-        Instruction::I32Load(super::mem_arg_i32(4)),
-        Instruction::I32Store(super::mem_arg_i32(8)),
-        Instruction::I32Const(256),
-        Instruction::I32Const(2048),
-        Instruction::I32Load(super::mem_arg_i32(8)),
-        Instruction::I32Store(super::mem_arg_i32(12)),
-        Instruction::I32Const(256),
-        Instruction::I32Const(0),
-        Instruction::I32Store(super::mem_arg_i32(16)),
-        Instruction::I32Const(256),
-        Instruction::I32Const(1),
-        Instruction::I32Store(super::mem_arg_i32(20)),
-        Instruction::I32Const(256),
-        Instruction::I32Const(1024),
-        Instruction::Call(2),
-        Instruction::LocalTee(0),
-        Instruction::I32Const(15),
-        Instruction::I32And,
-        Instruction::I32Const(2),
-        Instruction::I32Ne,
+        Instruction::Call(open_index),
         Instruction::If(wasm_encoder::BlockType::Empty),
-        Instruction::LocalGet(0),
-        Instruction::I32Const(4),
-        Instruction::I32ShrU,
-        Instruction::LocalSet(1),
-        Instruction::Call(canonical.waitable_set_new),
-        Instruction::LocalSet(2),
-        Instruction::LocalGet(1),
-        Instruction::LocalGet(2),
-        Instruction::Call(canonical.waitable_join),
-        Instruction::Block(wasm_encoder::BlockType::Empty),
-        Instruction::Loop(wasm_encoder::BlockType::Empty),
-        Instruction::LocalGet(2),
-        Instruction::I32Const(512),
-        Instruction::Call(canonical.waitable_set_wait),
-        Instruction::Drop,
-        Instruction::I32Const(516),
-        Instruction::I32Load(super::mem_arg_i32(0)),
-        Instruction::I32Const(2),
-        Instruction::I32Eq,
-        Instruction::BrIf(1),
-        Instruction::Br(0),
-        Instruction::End,
-        Instruction::End,
-        Instruction::LocalGet(1),
-        Instruction::I32Const(0),
-        Instruction::Call(canonical.waitable_join),
-        Instruction::LocalGet(1),
-        Instruction::Call(canonical.subtask_drop),
-        Instruction::LocalGet(2),
-        Instruction::Call(canonical.waitable_set_drop),
-        Instruction::End,
         Instruction::I32Const(2048),
         Instruction::I32Load(super::mem_arg_i32(0)),
         Instruction::Call(1),
-        Instruction::I32Const(1024),
-        Instruction::I32Load(super::mem_arg_i32(0)),
-        Instruction::If(wasm_encoder::BlockType::Empty),
-        Instruction::I32Const(1),
+        Instruction::I32Const(0),
         Instruction::Call(task_return),
         Instruction::Else,
-        Instruction::I32Const(1028),
-        Instruction::I32Load(super::mem_arg_i32(0)),
-        Instruction::Call(1),
-        Instruction::I32Const(0),
+        Instruction::I32Const(1),
         Instruction::Call(task_return),
         Instruction::End,
       ];
@@ -9292,7 +9245,7 @@ mod tests {
         export_name: Some("[async-lift-stackful]wasi:cli/run@0.3.1#run".into()),
         params: vec![],
         results: vec![],
-        locals: vec![ValType::I32; 3],
+        locals: vec![],
         instructions,
       };
       let mut string_data = (path.len() as f64).to_le_bytes().to_vec();
@@ -9303,6 +9256,7 @@ mod tests {
           realloc,
           build_wasi_component_route_path_fn(),
           build_wasi_component_select_preopen_fn(0, 1, free_index, free_index + 2),
+          build_wasi_component_open_at_fn(free_index + 3, 2, 1, free_index, free_index + 1, &canonical),
           run,
         ],
         &imports,
@@ -9311,7 +9265,7 @@ mod tests {
         &[],
         1,
         ModuleFunctionLayout {
-          runtime_fn_count: 4,
+          runtime_fn_count: 5,
           table_fn_count: 0,
           component_free_head: true,
         },
