@@ -303,6 +303,10 @@ check("gcd(48,18)", 6, e.gcd, 48, 18);
 // --- Tag tests ---
 check("test-tag-eq()", 1, e["test-tag-eq"]);
 check("test-tag-neq()", 0, e["test-tag-neq"]);
+check("test-enum-structural-equality()", 1, e["test-enum-structural-equality"]);
+check("test-enum-structural-inequality()", 1, e["test-enum-structural-inequality"]);
+check("test-enum-map-set-equality()", 1, e["test-enum-map-set-equality"]);
+check("test-enum-map-set-inequality()", 1, e["test-enum-map-set-inequality"]);
 
 // --- Struct tests ---
 check("test-struct-sum(3,4)", 7, e["test-struct-sum"], 3, 4);

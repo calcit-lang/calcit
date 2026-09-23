@@ -81,6 +81,16 @@ try {
   assert.equal(typedMapKeys.contains(mapKeyA), true);
   assert.equal(typedMapKeys.contains(mapKeyB), true);
 
+  for (const map of [
+    new runtimeA.CalcitSliceMap([mapKeyA, 1, mapKeyB, 1]),
+    new runtimeA.CalcitSliceMap([mapKeyA, 1, mapKeyB, 1]).turnMap(),
+  ]) {
+    const values = runtimeA._$n_map_$o_vals(map);
+    assert.ok(values instanceof runtimeA.CalcitSliceList, "&map:vals must match its List<V> contract on JS");
+    assert.deepEqual(runtimeA.listToArray(values), [1, 1], "&map:vals must preserve duplicate values");
+  }
+  assert.throws(() => runtimeA._$n_map_$o_vals(1), /&map:vals expected a Map/);
+
   const todoName = runtimeA.newTag("TodoState");
   const todoField = runtimeA.newTag("draft");
   const todoType = new runtimeA.CalcitSymbol("String");
