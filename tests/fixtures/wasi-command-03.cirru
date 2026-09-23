@@ -23,6 +23,33 @@
             assert= true $ result:err? $ read-workspace-file |workspace/invalid.txt
             assert= true $ result:err? $ read-workspace-file |workspace/oversized.txt
             assert= true $ result:err? $ read-workspace-file |workspace/no-such-file
+            assert= true $ result:err? $ read-workspace-file |workspace/escape/secret.txt
+            assert= true $ result:ok? $ write-workspace-file |workspace/written.txt "|你好"
+            assert= "|你好" $ result:unwrap-or (read-workspace-file |workspace/written.txt) |missing
+            assert= true $ result:err? $ write-workspace-file |workspace/escape/denied.txt |blocked
+            assert= true $ result:err? $ write-workspace-file |workspace/no-dir/missing.txt |blocked
+            assert= true $ result:ok? $ write-workspace-file |workspace/limit-output.txt
+              result:unwrap-or (read-workspace-file |workspace/limit.txt) |missing
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'main-overflow! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main-overflow! ()
+            assert= 4194305 $ count $ str
+              result:unwrap-or (read-workspace-file |workspace/limit.txt) |missing
+              , |x
+            assert= true $ result:err? $ write-workspace-file |workspace/oversized-output.txt
+              str
+                result:unwrap-or (read-workspace-file |workspace/limit.txt) |missing
+                , |x
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'main-unsupported! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main-unsupported! ()
+            assert= true $ result:ok? $ .read-dir (fs:path |workspace)
             , &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -55,6 +82,17 @@
             :args $ [] 'String 'String
           :tests $ [] $ %{} 'TestEntry (:name |prefixes-text)
             :code $ quote $ assert= "|prefix: payload" (transform-content "|prefix: " |payload)
+            :tags $ #{} :unit :wasi
+        'write-workspace-file $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn write-workspace-file (path content)
+            .write-text (fs:path path) content
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String 'String
+            :return $ :: 'Result 'Unit 'String
+          :tests $ [] $ %{} 'TestEntry (:name |denies-missing-root)
+            :code $ quote $ assert= true
+              result:err? $ write-workspace-file |/calcit-no-such-preopen/file.txt |content
             :tags $ #{} :unit :wasi
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)

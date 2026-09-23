@@ -59,11 +59,12 @@ cat target/wasi-command-data/output.txt
 
 同一 Snapshot 还提供 `app.main/manifest-main!`：从预开放目录读取 `Manifest`，用 `try-parse-cirru-edn-as` 解码为具名 Struct，验证名称与版本，再把名称加上 `prod-` 前缀并写回 Cirru EDN。`process-manifest` 中的 `.and-then` / `.map` 和文件操作中的 `.read-text` / `.write-text` 都是普通方法调用；非法业务数据返回 `Result` 错误，不会先创建输出文件。输入、错误输入和期望输出分别在 `manifest-input.cirru`、`manifest-invalid.cirru`、`manifest-output.cirru`。
 
-目前该文件入口已在 native、Node JS 和真实 Preview 1 Wasmtime 执行；它是后续 WASI 0.3 文件 lowering 的共享验收程序，**尚不能作为 0.3 Component 运行**。显式 `--boundary component --check-only` 现在应报告 `E_WASI_COMMAND_CAPABILITY`，且不产出 artifact。不要把 Preview 1 的成功当作 0.3 的完成证明。
+该文件入口已在 native、Node JS、真实 Preview 1 和 Wasmtime 49 的 WASI 0.3 Component 执行，四条路径使用同一份业务逻辑与期望输出。Component 必须显式使用 `--boundary component`，运行时启用 `-S p3 -W component-model-async-stackful=y -W component-model-more-async-builtins=y`，并用 `--dir HOST::/workspace` 授予预开放目录。`--check-only` 验证能力但不产出 artifact；缺失 preopen、非法输入和写入失败分别返回稳定的退出码。文件写入使用 create + truncate，失败时可能留下截断或部分输出，不承诺原子替换。
 
 ```bash
 cargo build --bin calcit
 bash scripts/test-wasi-manifest-business.sh
+WASMTIME_CLI=/path/to/wasmtime-49 bash scripts/test-wasi-manifest-component.sh
 ```
 
-该脚本执行 definition `:tests`、跨后端正常与失败路径、精确输出比较，并验证 0.3 当前的明确拒绝。后续 #1267 接入 0.3 文件能力时，同一输入/输出与失败约定应直接用于真实 Component 回归，不再另造一套业务逻辑。
+第一项脚本执行 definition `:tests`、native/Node JS/Preview 1 的正常与失败路径和精确输出比较；第二项脚本复用同一输入/输出，在真实 WASI 0.3 Component 中验证成功、非法业务数据、缺失输入、写入失败和未授予 preopen 的拒绝。

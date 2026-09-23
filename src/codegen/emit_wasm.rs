@@ -58,11 +58,11 @@ use component::{
 };
 use methods::{emit_call_args, emit_method_invoke};
 use runtime::{
-  HostImport, ModuleFunctionLayout, WasiComponentReadImports, build_runtime_fns, build_utf8_valid_fn, build_wasi_component_get_env_fn,
-  build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn,
-  build_wasi_component_select_preopen_fn, build_wasi_get_args_fn, build_wasi_get_env_fn, build_wasi_open_path_fn,
-  build_wasi_read_dir_fn, build_wasi_read_text_fn, build_wasi_wait_fn, build_wasi_write_all_fn, build_wasi_write_text_fn,
-  build_wasm_module, core_host_import, host_imports_for_target,
+  HostImport, ModuleFunctionLayout, WasiComponentReadImports, WasiComponentWriteImports, build_runtime_fns, build_utf8_valid_fn,
+  build_wasi_component_get_env_fn, build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn,
+  build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasi_component_write_bytes_fn,
+  build_wasi_get_args_fn, build_wasi_get_env_fn, build_wasi_open_path_fn, build_wasi_read_dir_fn, build_wasi_read_text_fn,
+  build_wasi_wait_fn, build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module, core_host_import, host_imports_for_target,
 };
 use structs::{
   emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_contains, emit_struct_count,
@@ -575,6 +575,25 @@ fn emit_wasm_impl(
         stream_drop: descriptor_import("[stream-drop-readable-0][method]descriptor.read-via-stream"),
         future_read: descriptor_import("[future-read-1][method]descriptor.read-via-stream"),
         future_drop: descriptor_import("[future-drop-readable-1][method]descriptor.read-via-stream"),
+        descriptor_drop: descriptor_import("[resource-drop]descriptor"),
+        free: component_cabi_free_index.expect("Component boundary must install cabi_free"),
+        realloc: component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
+      },
+      component_async_canonical_imports
+        .as_ref()
+        .expect("WASI async file operations must register canonical lifecycle imports"),
+    ));
+    let write_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_component_write_bytes".into(), write_idx);
+    compiled_fns.push(build_wasi_component_write_bytes_fn(
+      WasiComponentWriteImports {
+        open: open_idx,
+        stream_new: descriptor_import("[stream-new-0][method]descriptor.write-via-stream"),
+        stream_write: descriptor_import("[stream-write-0][method]descriptor.write-via-stream"),
+        stream_drop: descriptor_import("[stream-drop-writable-0][method]descriptor.write-via-stream"),
+        write_via_stream: descriptor_import("[method]descriptor.write-via-stream"),
+        future_read: descriptor_import("[future-read-1][method]descriptor.write-via-stream"),
+        future_drop: descriptor_import("[future-drop-readable-1][method]descriptor.write-via-stream"),
         descriptor_drop: descriptor_import("[resource-drop]descriptor"),
         free: component_cabi_free_index.expect("Component boundary must install cabi_free"),
         realloc: component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
@@ -7272,12 +7291,31 @@ fn emit_wasi_fs_read_dir(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
 
 /// Lower the typed filesystem write boundary through private Preview 1 helpers.
 fn emit_wasi_fs_write_text(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if ctx.boundary == WasmBoundary::Component {
-    return Err("E_WASI_COMMAND_CAPABILITY: `&fs-write-text` needs WASI 0.3 filesystem lowering".into());
-  }
   expect_arity(4, args, "&fs-write-text")?;
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: filesystem writes are unavailable for the core WASM target".into());
+  }
+  if ctx.boundary == WasmBoundary::Component {
+    if !ctx.runtime_fn_index.contains_key("__rt_wasi_component_write_bytes") {
+      return Err("E_WASI_COMMAND_CAPABILITY: `&fs-write-text` needs a reachable WASI 0.3 filesystem effect".into());
+    }
+    let path = emit_ptr_to_i32(ctx, &args[1])?;
+    let content = emit_ptr_to_i32(ctx, &args[2])?;
+    let host_error = ctx.alloc_local();
+    emit_expr(ctx, &args[3])?;
+    ctx.emit(Instruction::LocalSet(host_error));
+    ctx.emit(Instruction::LocalGet(path));
+    ctx.emit(Instruction::LocalGet(content));
+    ctx.call_rt("__rt_wasi_component_write_bytes");
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+    let unit = ctx.alloc_local();
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::LocalSet(unit));
+    emit_result_enum(ctx, "ok", unit)?;
+    ctx.emit(Instruction::Else);
+    emit_result_enum(ctx, "err", host_error)?;
+    ctx.emit(Instruction::End);
+    return Ok(());
   }
   let path = emit_ptr_to_i32(ctx, &args[1])?;
   let content = emit_ptr_to_i32(ctx, &args[2])?;

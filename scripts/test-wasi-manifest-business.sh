@@ -87,11 +87,6 @@ prepare_case preview1-output-denied input
 mkdir "$CASE_ROOT/preview1-output-denied/workspace/output.cirru"
 expect_status 73 wasmtime run --dir "$CASE_ROOT/preview1-output-denied/workspace::/workspace" "$WASM_MODULE"
 
-# The business fixture must remain a precise unsupported capability until P3 filesystem lowering lands.
-if "$CALCIT_BIN" --init-fn app.main/manifest-main! wasi "$SNAPSHOT" \
-  --boundary component --check-only --emit-path "$OUTPUT/component" >"$CASE_ROOT/stdout" 2>"$CASE_ROOT/stderr"; then
-  echo 'WASI 0.3 unexpectedly accepted a file effect before filesystem lowering' >&2
-  exit 1
-fi
-grep -Fq 'E_WASI_COMMAND_CAPABILITY' "$CASE_ROOT/stderr"
+"$CALCIT_BIN" --init-fn app.main/manifest-main! wasi "$SNAPSHOT" \
+  --boundary component --check-only --emit-path "$OUTPUT/component"
 test ! -e "$OUTPUT/component/program.wasm"

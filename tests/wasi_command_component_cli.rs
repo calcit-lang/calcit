@@ -92,6 +92,7 @@ fn calcit_stdio_entry_emits_runnable_wasi_03_command_component() {
 }
 
 #[test]
+#[cfg(unix)]
 fn calcit_fs_path_read_text_runs_with_real_wasi_03_preopen() {
   let Some(cli) = std::env::var_os("WASMTIME_CLI") else {
     return;
@@ -100,6 +101,12 @@ fn calcit_fs_path_read_text_runs_with_real_wasi_03_preopen() {
   fs::write(host.path().join("valid.txt"), "你好").expect("valid UTF-8 file");
   fs::write(host.path().join("invalid.txt"), [0xff, 0xfe]).expect("invalid UTF-8 file");
   fs::write(host.path().join("oversized.txt"), vec![b'x'; 4 * 1024 * 1024 + 1]).expect("oversized file");
+  fs::write(host.path().join("limit.txt"), vec![b'a'; 4 * 1024 * 1024]).expect("boundary-size input");
+  fs::write(host.path().join("written.txt"), "stale content").expect("preexisting output file");
+  fs::write(host.path().join("oversized-output.txt"), "sentinel").expect("preexisting oversized target");
+  let outside = tempfile::tempdir().expect("outside directory");
+  fs::write(outside.path().join("secret.txt"), "not authorized").expect("outside file");
+  std::os::unix::fs::symlink(outside.path(), host.path().join("escape")).expect("escape symlink");
   let output = tempfile::tempdir().expect("Component output directory");
   let compiled = calcit(
     &[
@@ -125,7 +132,7 @@ fn calcit_fs_path_read_text_runs_with_real_wasi_03_preopen() {
   assert!(imports.contains(&"wasi:filesystem/preopens@0.3.1"));
   assert!(imports.contains(&"wasi:filesystem/types@0.3.1"));
 
-  let result = Command::new(cli)
+  let result = Command::new(&cli)
     .args([
       "run",
       "-S",
@@ -141,6 +148,50 @@ fn calcit_fs_path_read_text_runs_with_real_wasi_03_preopen() {
     .output()
     .expect("run file-reading Component");
   assert_eq!(result.status.code(), Some(0), "{}", String::from_utf8_lossy(&result.stderr));
+  assert_eq!(fs::read_to_string(host.path().join("written.txt")).expect("written file"), "你好");
+  assert_eq!(
+    fs::read(host.path().join("limit-output.txt")).expect("boundary-size output"),
+    vec![b'a'; 4 * 1024 * 1024]
+  );
+  assert_eq!(
+    fs::read_to_string(host.path().join("oversized-output.txt")).expect("unchanged oversized target"),
+    "sentinel"
+  );
+  assert!(!outside.path().join("denied.txt").exists(), "preopen escape must not write outside");
+
+  let overflow = tempfile::tempdir().expect("oversized write output");
+  let compiled = calcit(
+    &[
+      "--init-fn",
+      "app.main/main-overflow!",
+      "tests/fixtures/wasi-command-03.cirru",
+      "wasi",
+      "--boundary",
+      "component",
+    ],
+    overflow.path(),
+  );
+  assert!(compiled.status.success(), "{}", String::from_utf8_lossy(&compiled.stderr));
+  let rejected = Command::new(&cli)
+    .args([
+      "run",
+      "-S",
+      "p3",
+      "-W",
+      "component-model-async-stackful=y",
+      "-W",
+      "component-model-more-async-builtins=y",
+      "--dir",
+    ])
+    .arg(format!("{}::/workspace", host.path().display()))
+    .arg(overflow.path().join("program.wasm"))
+    .output()
+    .expect("run oversized-write Component");
+  assert_eq!(rejected.status.code(), Some(0), "{}", String::from_utf8_lossy(&rejected.stderr));
+  assert_eq!(
+    fs::read_to_string(host.path().join("oversized-output.txt")).expect("unchanged oversized target"),
+    "sentinel"
+  );
 }
 
 #[test]
@@ -280,9 +331,9 @@ fn command_arguments_preserve_order_and_utf8_content() {
 }
 
 #[test]
-fn preview1_capabilities_fail_before_writing_a_component() {
+fn component_file_capabilities_check_only_without_writing_an_artifact() {
   let output = tempfile::tempdir().expect("output directory");
-  let result = calcit(
+  let supported = calcit(
     &[
       "examples/wasi-command/calcit.cirru",
       "wasi",
@@ -292,11 +343,26 @@ fn preview1_capabilities_fail_before_writing_a_component() {
     ],
     output.path(),
   );
-  assert!(!result.status.success(), "Preview 1 capability must not compile as WASI 0.3");
+  assert!(supported.status.success(), "{}", String::from_utf8_lossy(&supported.stderr));
+  assert!(!output.path().join("program.wasm").exists());
+
+  let unsupported = calcit(
+    &[
+      "--init-fn",
+      "app.main/main-unsupported!",
+      "tests/fixtures/wasi-command-03.cirru",
+      "wasi",
+      "--boundary",
+      "component",
+      "--check-only",
+    ],
+    output.path(),
+  );
+  assert!(!unsupported.status.success(), "unimplemented directory access must fail");
   assert!(
-    String::from_utf8_lossy(&result.stderr).contains("E_WASI_COMMAND_CAPABILITY"),
+    String::from_utf8_lossy(&unsupported.stderr).contains("E_WASI_COMMAND_CAPABILITY"),
     "{}",
-    String::from_utf8_lossy(&result.stderr)
+    String::from_utf8_lossy(&unsupported.stderr)
   );
   assert!(!output.path().join("program.wasm").exists());
 }
