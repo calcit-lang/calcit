@@ -563,9 +563,11 @@ WASI command 中的 `try-parse-cirru-edn-as` 与 `format-cirru-edn` 直接使用
 
 WASM 可根据已解析的静态 callee 与函数参数 schema，特化携带非逃逸 inline closure 的普通函数调用；闭包在创建位置捕获词法局部值，因此 `Option.map`、`Result.map` 等静态方法不需要各自的 backend 拦截规则。动态 callee、可变参数函数、闭包逃逸与递归特化仍以 `E_WASM_CLOSURE_SPECIALIZATION` 明确失败，不会生成 `nil`、`0` 或失去捕获环境的替代实现。
 
-WASI command 继续使用与原生、JavaScript 相同的 `get-env` 和 `get-args` API。默认 Preview 1 路径两者均可用；WASI 0.3 Component 的 `get-args` 通过 `wasi:cli/environment@0.3.0#get-arguments` 返回包含第 0 项的完整 `List<String>`。`get-env` 从同一接口的 `get-environment` 按名称查找，保留 `Option<String>`：未设置时为 `%none`，已设置为空字符串时为 `%some |`；非 ASCII 名称和值按 UTF-8 字节精确比较和复制。宿主只会提供显式授权的环境变量，例如用 `wasmtime run -S p3 --env CALCIT_TEST=你好 program.wasm`。Preview 1 与 Component 的内存 ABI 都只存在于编译器内部，不进入 Calcit 源码接口。
+WASI command 继续使用与原生、JavaScript 相同的 `get-env` 和 `get-args` API。默认 Preview 1 路径两者均可用；WASI 0.3 Component 的 `get-args` 通过 `wasi:cli/environment@0.3.1#get-arguments` 返回包含第 0 项的完整 `List<String>`。`get-env` 从同一接口的 `get-environment` 按名称查找，保留 `Option<String>`：未设置时为 `%none`，已设置为空字符串时为 `%some |`；非 ASCII 名称和值按 UTF-8 字节精确比较和复制。宿主只会提供显式授权的环境变量，例如用 `wasmtime run -S p3 --env CALCIT_TEST=你好 program.wasm`。Preview 1 与 Component 的内存 ABI 都只存在于编译器内部，不进入 Calcit 源码接口。
 
-command init definition 正常返回时，进程状态为 `0`；调用 `quit!` 可显式设置 `0..255` 的整数退出状态。Preview 1 路径在内部调用 `proc_exit`，WASI 0.3 Component 路径调用 `wasi:cli/exit@0.3.0#exit-with-code`；Calcit 源码无需感知这两套 ABI。
+command init definition 正常返回时，进程状态为 `0`；调用 `quit!` 可显式设置 `0..255` 的整数退出状态。Preview 1 路径在内部调用 `proc_exit`，WASI 0.3 Component 路径调用 `wasi:cli/exit@0.3.1#exit-with-code`；Calcit 源码无需感知这两套 ABI。
+
+版本坐标（2026-09-23）：WASI 规范 release 为 `v0.3.1`，这里使用的 `wasi:cli`、`wasi:clocks`、`wasi:filesystem`、`wasi:random` 和 `wasi:sockets` WIT package 均为 `0.3.1`，来源与校验值由 `calcit-bindgen 0.1.9` 维护；其 Component 包装依赖 `wit-component 0.258.0`。实际运行验收使用已发布的 Wasmtime `49.0.0`，命令形如 `wasmtime run -S p3 program.wasm`。Wasmtime 49 内置的 p3 CLI WIT 仍标记为 `0.3.0`，但生成的 `0.3.1` Component 已用正式二进制测试参数、环境、退出码及拒绝路径；不能仅凭内置文件的版本文字判断兼容性，也不能把 WIT parse 当作运行验收。默认目标仍是 Preview 1，切换由 #1269 负责。
 
 WASI command 也复用 `unix-time-ms` 与 `cpu-time`。前者读取系统实时时钟；后者读取单调时钟，只保证同一进程内两次读数的差值有意义。两者均返回毫秒数；Preview 1 的纳秒结果与错误码由编译器内部转换和检查，宿主失败时不会返回 `0` 或 `nil`。
 
