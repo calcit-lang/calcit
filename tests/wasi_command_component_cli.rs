@@ -92,7 +92,59 @@ fn calcit_stdio_entry_emits_runnable_wasi_03_command_component() {
 }
 
 #[test]
-fn command_with_file_definitions_packages_pinned_filesystem_imports() {
+fn calcit_fs_path_read_text_runs_with_real_wasi_03_preopen() {
+  let Some(cli) = std::env::var_os("WASMTIME_CLI") else {
+    return;
+  };
+  let host = tempfile::tempdir().expect("preopen directory");
+  fs::write(host.path().join("valid.txt"), "你好").expect("valid UTF-8 file");
+  fs::write(host.path().join("invalid.txt"), [0xff, 0xfe]).expect("invalid UTF-8 file");
+  fs::write(host.path().join("oversized.txt"), vec![b'x'; 4 * 1024 * 1024 + 1]).expect("oversized file");
+  let output = tempfile::tempdir().expect("Component output directory");
+  let compiled = calcit(
+    &[
+      "--init-fn",
+      "app.main/main-file!",
+      "tests/fixtures/wasi-command-03.cirru",
+      "wasi",
+      "--boundary",
+      "component",
+    ],
+    output.path(),
+  );
+  assert!(compiled.status.success(), "{}", String::from_utf8_lossy(&compiled.stderr));
+  let mut config = Config::new();
+  config.wasm_component_model_async(true);
+  config.wasm_component_model_async_stackful(true);
+  config.wasm_component_model_more_async_builtins(true);
+  let engine = Engine::new(&config).expect("Wasmtime engine");
+  let bytes = fs::read(output.path().join("program.wasm")).expect("file-reading Component");
+  let component = Component::new(&engine, &bytes).expect("pinned filesystem imports");
+  let component_type = component.component_type();
+  let imports = component_type.imports(&engine).map(|(name, _)| name).collect::<Vec<_>>();
+  assert!(imports.contains(&"wasi:filesystem/preopens@0.3.1"));
+  assert!(imports.contains(&"wasi:filesystem/types@0.3.1"));
+
+  let result = Command::new(cli)
+    .args([
+      "run",
+      "-S",
+      "p3",
+      "-W",
+      "component-model-async-stackful=y",
+      "-W",
+      "component-model-more-async-builtins=y",
+      "--dir",
+    ])
+    .arg(format!("{}::/workspace", host.path().display()))
+    .arg(output.path().join("program.wasm"))
+    .output()
+    .expect("run file-reading Component");
+  assert_eq!(result.status.code(), Some(0), "{}", String::from_utf8_lossy(&result.stderr));
+}
+
+#[test]
+fn command_without_reachable_file_effect_omits_filesystem_imports() {
   let output = tempfile::tempdir().expect("output directory");
   let compiled = calcit(
     &[
@@ -113,11 +165,11 @@ fn command_with_file_definitions_packages_pinned_filesystem_imports() {
   config.wasm_component_model_more_async_builtins(true);
   let engine = Engine::new(&config).expect("Wasmtime engine");
   let bytes = fs::read(output.path().join("program.wasm")).expect("command Component");
-  let component = Component::new(&engine, &bytes).expect("filesystem imports match the pinned command world");
+  let component = Component::new(&engine, &bytes).expect("valid command Component");
   let component_type = component.component_type();
   let imports = component_type.imports(&engine).map(|(name, _)| name).collect::<Vec<_>>();
-  assert!(imports.contains(&"wasi:filesystem/preopens@0.3.1"));
-  assert!(imports.contains(&"wasi:filesystem/types@0.3.1"));
+  assert!(!imports.contains(&"wasi:filesystem/preopens@0.3.1"));
+  assert!(!imports.contains(&"wasi:filesystem/types@0.3.1"));
 
   if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
     let result = Command::new(cli)
@@ -132,7 +184,7 @@ fn command_with_file_definitions_packages_pinned_filesystem_imports() {
       ])
       .arg(output.path().join("program.wasm"))
       .output()
-      .expect("run WASI 0.3 command with declared filesystem interfaces");
+      .expect("run WASI 0.3 command without filesystem imports");
     assert_eq!(result.status.code(), Some(0), "{}", String::from_utf8_lossy(&result.stderr));
     assert_eq!(result.stdout, b"Reloaded\n");
   }

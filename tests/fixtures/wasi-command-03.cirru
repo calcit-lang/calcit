@@ -17,6 +17,32 @@
             :args $ []
           :tests $ [] $ %{} 'TestEntry (:name |returns-unit)
             :code $ quote $ assert= &unit (main!)
+        'main-file! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main-file! ()
+            assert= "|你好" $ result:unwrap-or (read-workspace-file |workspace/valid.txt) |missing
+            assert= true $ result:err? $ read-workspace-file |workspace/invalid.txt
+            assert= true $ result:err? $ read-workspace-file |workspace/oversized.txt
+            assert= true $ result:err? $ read-workspace-file |workspace/no-such-file
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'read-workspace-file $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-workspace-file (path)
+            .read-text $ fs:path path
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Result 'String 'String
+          :tests $ []
+            %{} 'TestEntry (:name |reads-project-file)
+              :code $ quote $ assert= true
+                result:ok? $ read-workspace-file |Cargo.toml
+              :tags $ #{} :unit :wasi
+            %{} 'TestEntry (:name |reports-missing-file)
+              :code $ quote $ assert= true
+                result:err? $ read-workspace-file |workspace/no-such-file
+              :tags $ #{} :unit :wasi
         'reload! $ %{} 'CodeEntry (:doc "|开发模式重载占位入口。")
           :code $ quote $ defn reload! () &unit
           :examples $ []
