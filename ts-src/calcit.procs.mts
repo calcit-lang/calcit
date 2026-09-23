@@ -2788,6 +2788,14 @@ export let _$n_map_$o_keys = (m: CalcitValue): CalcitSet => {
   }
 };
 
+export let _$n_map_$o_vals = (m: CalcitValue): CalcitSliceList => {
+  if (m instanceof CalcitMap || m instanceof CalcitSliceMap) {
+    return new CalcitSliceList(m.pairs().map((pair) => pair[1]));
+  } else {
+    throw new Error("&map:vals expected a Map");
+  }
+};
+
 export let _$n_map_$o_diff_new = (a: CalcitValue, b: CalcitValue): CalcitMap => {
   if ((a instanceof CalcitMap || a instanceof CalcitSliceMap) && (b instanceof CalcitMap || b instanceof CalcitSliceMap)) {
     return a.diffNew(b);

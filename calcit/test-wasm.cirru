@@ -304,6 +304,47 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-enum-structural-equality $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-structural-equality ()
+            if
+              &= (%some 1) (%some 1)
+              if
+                &=
+                  [] $ %some 1
+                  [] $ %some 1
+                if
+                  &=
+                    &{} :item $ %some 1
+                    &{} :item $ %some 1
+                  if
+                    &=
+                      %some $ %some 1
+                      %some $ %some 1
+                    if
+                      &= (%none) (%none)
+                      if
+                        &= (:: :ok 1) (:: :ok 1)
+                        , 1 0
+                      , 0
+                    , 0
+                  , 0
+                , 0
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'test-enum-structural-inequality $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-structural-inequality ()
+            if
+              &= (%some 1) (%some 2)
+              , 0 $ if
+                &= (:: :ok 1) (:: :err 1)
+                , 0 $ if
+                  &= (%none) (%some 1)
+                  , 0 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
         'test-enum-sum $ %{} 'CodeEntry
           :doc "|Enum create + nth access: idx 1 and 2 are payloads"
           :code $ quote $ defwasm-export test-enum-sum ()

@@ -431,6 +431,7 @@ fn emit_wasm_impl(
     *tag_index.get("map").expect("map tag must exist") as i32,
     *tag_index.get("list").expect("list tag must exist") as i32,
     *tag_index.get("string").expect("string tag must exist") as i32,
+    *tag_index.get("enum").expect("enum tag must exist") as i32,
   );
   let component_free_head_global = if boundary == WasmBoundary::Component {
     let atom_count = ns_order
@@ -7334,6 +7335,7 @@ fn emit_equals_core_impl(ctx: &mut WasmGenCtx, a: u32, b: u32, structural_sets: 
   let list_tag = *ctx.tag_index.get("list").ok_or("list tag not found")? as i32;
   let set_tag = *ctx.tag_index.get("set").ok_or("set tag not found")? as i32;
   let map_tag = *ctx.tag_index.get("map").ok_or("map tag not found")? as i32;
+  let enum_tag = *ctx.tag_index.get("enum").ok_or("enum tag not found")? as i32;
   let rt_str_compare = *ctx
     .runtime_fn_index
     .get("__rt_str_compare")
@@ -7346,6 +7348,10 @@ fn emit_equals_core_impl(ctx: &mut WasmGenCtx, a: u32, b: u32, structural_sets: 
     .runtime_fn_index
     .get("__rt_map_equal")
     .ok_or("runtime helper __rt_map_equal not found")?;
+  let rt_value_equal = *ctx
+    .runtime_fn_index
+    .get("__rt_value_equal")
+    .ok_or("runtime helper __rt_value_equal not found")?;
 
   // Default: not equal
   ctx.emit(f64_const(0.0));
@@ -7453,7 +7459,7 @@ fn emit_equals_core_impl(ctx: &mut WasmGenCtx, a: u32, b: u32, structural_sets: 
   ctx.emit(Instruction::I32And);
   ctx.begin_block_if();
 
-  // --- List comparison: same count + each element F64Eq ---
+  // --- List comparison: same count + structural element equality ---
   ctx.emit(Instruction::LocalGet(tag_a));
   ctx.emit(Instruction::I32Const(list_tag));
   ctx.emit(Instruction::I32Eq);
@@ -7500,73 +7506,13 @@ fn emit_equals_core_impl(ctx: &mut WasmGenCtx, a: u32, b: u32, structural_sets: 
       ctx.emit(Instruction::I32Mul);
       ctx.emit(Instruction::I32Add);
       ctx.emit(Instruction::LocalSet(offset_b));
-      // Deep element comparison: f64 fast-path, then inline string comparison.
-      let elem_a = ctx.alloc_local(); // f64
-      let elem_b = ctx.alloc_local(); // f64
-      let elems_eq = ctx.alloc_i32(0); // i32: 0=not-equal, 1=equal
-      let elem_a_i32 = ctx.alloc_local_typed(ValType::I32);
-      let elem_b_i32 = ctx.alloc_local_typed(ValType::I32);
-      let elem_tag_a = ctx.alloc_local_typed(ValType::I32);
-      let elem_tag_b = ctx.alloc_local_typed(ValType::I32);
+      let elems_eq = ctx.alloc_local_typed(ValType::I32);
       ctx.emit(Instruction::LocalGet(offset_a));
       ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-      ctx.emit(Instruction::LocalSet(elem_a));
       ctx.emit(Instruction::LocalGet(offset_b));
       ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-      ctx.emit(Instruction::LocalSet(elem_b));
-      // Fast path: pointer equality
-      ctx.emit(Instruction::LocalGet(elem_a));
-      ctx.emit(Instruction::LocalGet(elem_b));
-      ctx.emit(Instruction::F64Eq);
-      ctx.begin_block_if();
-      ctx.emit(Instruction::I32Const(1));
+      ctx.emit(Instruction::Call(rt_value_equal));
       ctx.emit(Instruction::LocalSet(elems_eq));
-      ctx.emit(Instruction::Else);
-      // Check if both are valid heap pointers
-      let heap_min_elem = (HEAP_BASE + 8) as f64;
-      ctx.emit(Instruction::LocalGet(elem_a));
-      ctx.emit(f64_const(heap_min_elem));
-      ctx.emit(Instruction::F64Ge);
-      ctx.emit(Instruction::LocalGet(elem_b));
-      ctx.emit(f64_const(heap_min_elem));
-      ctx.emit(Instruction::F64Ge);
-      ctx.emit(Instruction::I32And);
-      ctx.begin_block_if();
-      ctx.emit(Instruction::LocalGet(elem_a));
-      ctx.emit(Instruction::I32TruncF64U);
-      ctx.emit(Instruction::LocalSet(elem_a_i32));
-      ctx.emit(Instruction::LocalGet(elem_b));
-      ctx.emit(Instruction::I32TruncF64U);
-      ctx.emit(Instruction::LocalSet(elem_b_i32));
-      // Read type tags
-      ctx.emit(Instruction::LocalGet(elem_a_i32));
-      ctx.emit(Instruction::I32Const(4));
-      ctx.emit(Instruction::I32Sub);
-      ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
-      ctx.emit(Instruction::LocalSet(elem_tag_a));
-      ctx.emit(Instruction::LocalGet(elem_b_i32));
-      ctx.emit(Instruction::I32Const(4));
-      ctx.emit(Instruction::I32Sub);
-      ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
-      ctx.emit(Instruction::LocalSet(elem_tag_b));
-      // Both strings? Call str_compare
-      ctx.emit(Instruction::LocalGet(elem_tag_a));
-      ctx.emit(Instruction::I32Const(string_tag));
-      ctx.emit(Instruction::I32Eq);
-      ctx.emit(Instruction::LocalGet(elem_tag_b));
-      ctx.emit(Instruction::I32Const(string_tag));
-      ctx.emit(Instruction::I32Eq);
-      ctx.emit(Instruction::I32And);
-      ctx.begin_block_if();
-      ctx.emit(Instruction::LocalGet(elem_a_i32));
-      ctx.emit(Instruction::LocalGet(elem_b_i32));
-      ctx.emit(Instruction::Call(rt_str_compare));
-      ctx.emit(f64_const(0.0));
-      ctx.emit(Instruction::F64Eq); // 1 if equal
-      ctx.emit(Instruction::LocalSet(elems_eq));
-      ctx.emit(Instruction::End); // string if
-      ctx.emit(Instruction::End); // both-heap if
-      ctx.emit(Instruction::End); // fast-path if
       // if NOT elems_eq → all_eq = 0, break
       ctx.emit(Instruction::LocalGet(elems_eq));
       ctx.emit(Instruction::I32Eqz);
@@ -7715,6 +7661,18 @@ fn emit_equals_core_impl(ctx: &mut WasmGenCtx, a: u32, b: u32, structural_sets: 
   ctx.emit(Instruction::F64ConvertI32U);
   ctx.emit(Instruction::LocalSet(result));
   ctx.emit(Instruction::End); // end map if
+
+  // --- Enum comparison: variant tag and recursive payloads ---
+  ctx.emit(Instruction::LocalGet(tag_a));
+  ctx.emit(Instruction::I32Const(enum_tag));
+  ctx.emit(Instruction::I32Eq);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(a));
+  ctx.emit(Instruction::LocalGet(b));
+  ctx.emit(Instruction::Call(rt_value_equal));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::End); // end enum if
 
   ctx.emit(Instruction::End); // "not yet resolved" if
   ctx.emit(Instruction::End); // "same type tag" if

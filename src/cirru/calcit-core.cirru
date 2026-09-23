@@ -2650,6 +2650,24 @@
                 assert= true $ = 1 x
                 assert= false $ = 2 x
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |compares-nested-option-and-enum)
+              :code $ quote $ do
+                assert= true $ = (%some "|你好") (%some "|你好")
+                assert= false $ = (%some "|甲") (%some "|乙")
+                assert= true $ = (%none) (%none)
+                assert= true $ =
+                  [] $ %some 1
+                  [] $ %some 1
+                assert= true $ =
+                  {} $ :value $ %some 1
+                  {} $ :value $ %some 1
+                assert= true $ =
+                  :: :ready $ %some 1
+                  :: :ready $ %some 1
+                assert= false $ =
+                  :: :ready $ %some 1
+                  :: :other $ %some 1
+              :tags $ #{} :core :unit
         '> $ %{} 'CodeEntry
           :doc "|Greater-than comparison for one or more numbers\nReturns true only when the value strictly decreases across every argument."
           :code $ quote $ defn > (x & ys)
