@@ -4107,76 +4107,49 @@
             :required $ [] 'Syntax
           :tags $ #{} :macro
         'defimpl $ %{} 'CodeEntry
-          :doc "|macro for defining trait implementation values\nSyntax: (defimpl ImplName Trait (.method value) ...)\nParams: ImplName (symbol), Trait (symbol), method pairs\nReturns: impl value\nNotes: new code passes raw symbols; tag arguments remain only as legacy compatibility for originless method bags. This macro does not attach an impl to a target type/value; use `impl-traits` separately.\nExpands to &impl::new"
+          :doc "|macro for defining trait implementation values\nSyntax: (defimpl ImplName Trait (.method value) ...)\nParams: ImplName (symbol), Trait (nominal trait symbol), method pairs\nReturns: impl value\nNotes: name and trait must be symbols; legacy tag names/origins are retired with E_LEGACY_DEFIMPL_TAG. Define a capability with deftrait and pass its symbol. This macro does not attach an impl to a target type/value; use `impl-traits` separately.\nExpands to &impl::new"
           :code $ quote $ defmacro defimpl (name trait & pairs)
             if
-              not $ or (tag? name) (symbol? name)
-              raise $ str-spaced "|defimpl misuse. Expected: first argument is impl name symbol (legacy tag accepted). Actual:" name "|Fix: rewrite as (defimpl ImplName Trait ...)."
+              not $ symbol? name
+              raise $ str-spaced "|defimpl expects an impl name symbol (E_LEGACY_DEFIMPL_TAG); legacy tag names are retired. Actual:" name "|Fix: rewrite as (defimpl ImplName Trait ...)."
             if
-              not $ or (tag? trait) (symbol? trait)
-              raise $ str-spaced "|defimpl misuse. Expected: second argument is trait symbol (legacy tag accepted). Actual:" trait "|Fix: rewrite as (defimpl ImplName Trait ...)."
-            quasiquote $ def ~name $ &impl::new
-              ~ $ if (tag? trait) (turn-tag trait) trait
-              ~@ $ if (every? pairs list?)
-                do
-                  assert "|defimpl expects method pairs" $ and (list? pairs) (every? pairs list?)
-                  assert "|defimpl expects (.method value) pairs" $ every? pairs $ fn (pair)
-                    &let
-                      items $ if
-                        &= [] $ &list:first pair
-                        &list:rest pair
-                        if
-                          &= (quote ::) (&list:first pair)
-                          &list:rest pair
-                          , pair
-                      and
-                        &= 2 $ count items
-                        &= :method $ type-of $ &list:first items
-                  map pairs $ fn (pair)
-                    &let
-                      items $ if
-                        &= [] $ &list:first pair
-                        &list:rest pair
-                        if
-                          &= (quote ::) (&list:first pair)
-                          &list:rest pair
-                          , pair
-                      do
-                        assert "|defimpl expects (.method value) pairs" $ &= 2 $ count items
-                        let
-                            k0 $ &list:first items
-                            v0 $ &list:nth items 1
-                            key $ if
-                              &= :method $ type-of k0
-                              let
-                                  s $ format-to-lisp k0
-                                turn-tag $ &str:slice s 1 $ count s
-                              raise $ str-spaced "|defimpl expects .method key, got:" k0
-                          quasiquote $ [] ~key ~v0
-                do
-                  assert "|defimpl expects even number of items" $ &= 0 $ &number:rem (count pairs) 2
-                  map (section-by pairs 2)
-                    fn (pair)
-                      &let
-                        items $ if
-                          &= [] $ &list:first pair
-                          &list:rest pair
-                          if
-                            &= (quote ::) (&list:first pair)
-                            &list:rest pair
-                            , pair
-                        do
-                          assert "|defimpl expects (.method value) pairs" $ &= 2 $ count items
+              not $ symbol? trait
+              raise $ str-spaced "|defimpl expects a nominal trait symbol (E_LEGACY_DEFIMPL_TAG); legacy tag origins are retired, define the trait with deftrait and pass its symbol. Actual:" trait "|Fix: rewrite as (defimpl ImplName Trait ...)."
+            assert "|defimpl expects method pairs" $ and (list? pairs) (every? pairs list?)
+            assert "|defimpl expects (.method value) pairs" $ every? pairs $ fn (pair)
+              &let
+                items $ if
+                  &= [] $ &list:first pair
+                  &list:rest pair
+                  if
+                    &= (quote ::) (&list:first pair)
+                    &list:rest pair
+                    , pair
+                and
+                  &= 2 $ count items
+                  &= :method $ type-of $ &list:first items
+            quasiquote $ def ~name $ &impl::new (~ trait)
+              ~@ $ map pairs $ fn (pair)
+                &let
+                  items $ if
+                    &= [] $ &list:first pair
+                    &list:rest pair
+                    if
+                      &= (quote ::) (&list:first pair)
+                      &list:rest pair
+                      , pair
+                  do
+                    assert "|defimpl expects (.method value) pairs" $ &= 2 $ count items
+                    let
+                        k0 $ &list:first items
+                        v0 $ &list:nth items 1
+                        key $ if
+                          &= :method $ type-of k0
                           let
-                              k0 $ &list:first items
-                              v0 $ &list:nth items 1
-                              key $ if
-                                &= :method $ type-of k0
-                                let
-                                    s $ format-to-lisp k0
-                                  turn-tag $ &str:slice s 1 $ count s
-                                raise $ str-spaced "|defimpl expects .method key, got:" k0
-                            quasiquote $ [] ~key ~v0
+                              s $ format-to-lisp k0
+                            turn-tag $ &str:slice s 1 $ count s
+                          raise $ str-spaced "|defimpl expects .method key, got:" k0
+                      quasiquote $ [] ~key ~v0
           :examples $ []
           :schema $ :: 'Macro $ {} (:rest 'Syntax)
             :capabilities $ #{}

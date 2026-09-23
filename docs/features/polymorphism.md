@@ -149,7 +149,7 @@ let
 
 If the trait is missing or its selected impl is incomplete, `assert-traits` raises an error. Methods are not combined across unrelated impls: implementing `TraitA/.render` never satisfies `TraitB/.render`.
 
-`defimpl` validates concrete trait implementations when they are created: missing or extra methods and non-callable values are rejected, and native preprocessing compares typed method signatures when metadata is available. Passing a tag as the trait argument remains a legacy way to create an inherent method bag; `calcit edit format` reports `W_LEGACY_INHERENT_IMPL` because that value cannot satisfy `assert-traits`, `:where`, or `&trait-call`. The advisory is non-blocking, so compatible `.method` code continues to run.
+`defimpl` validates concrete trait implementations when they are created: missing or extra methods and non-callable values are rejected, and native preprocessing compares typed method signatures when metadata is available. The impl name and trait must be symbols; the legacy tag form `defimpl :Impl :Trait ...` (an originless inherent method bag) is retired and fails with `E_LEGACY_DEFIMPL_TAG`, because it cannot satisfy `assert-traits`, `:where`, or `&trait-call`.
 
 ## Generic `:where` bounds on functions
 
