@@ -301,7 +301,7 @@ fn emit_wasm_impl(
   if boundary == WasmBoundary::Component && target == WasmTarget::Wasi {
     component_import_adapters.push(ComponentImportAdapter {
       definition: "calcit.core/get-args".into(),
-      module: "wasi:cli/environment@0.3.0".into(),
+      module: "wasi:cli/environment@0.3.1".into(),
       symbol: "get-arguments".into(),
       raw_index: 0,
       source_arity: 0,
@@ -326,7 +326,7 @@ fn emit_wasm_impl(
   if boundary == WasmBoundary::Component {
     if target == WasmTarget::Wasi {
       host_imports.push(HostImport {
-        module: "wasi:cli/exit@0.3.0".into(),
+        module: "wasi:cli/exit@0.3.1".into(),
         name: "exit-with-code".into(),
         params: vec![ValType::I32],
         results: vec![],
@@ -345,7 +345,7 @@ fn emit_wasm_impl(
     }
     if target == WasmTarget::Wasi {
       host_imports.push(HostImport {
-        module: "wasi:cli/environment@0.3.0".into(),
+        module: "wasi:cli/environment@0.3.1".into(),
         name: "get-environment".into(),
         params: vec![ValType::I32],
         results: vec![],
@@ -484,7 +484,7 @@ fn emit_wasm_impl(
 
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
     let environment_idx = *index_host_imports(&host_imports)
-      .get(&("wasi:cli/environment@0.3.0".into(), "get-environment".into()))
+      .get(&("wasi:cli/environment@0.3.1".into(), "get-environment".into()))
       .expect("WASI 0.3 environment import must be registered");
     let get_env_idx = num_imports + compiled_fns.len() as u32;
     runtime_fn_index.insert("__rt_wasi_get_env".into(), get_env_idx);
@@ -1037,7 +1037,7 @@ fn emit_wasm_impl(
     let component_command = boundary == WasmBoundary::Component;
     compiled_fns.push(CompiledFn {
       export_name: Some(if component_command {
-        "wasi:cli/run@0.3.0#run".into()
+        "wasi:cli/run@0.3.1#run".into()
       } else {
         "_start".into()
       }),
@@ -1190,7 +1190,7 @@ fn validate_wasm_command_component_in_program(
     for (name, compiled) in deterministic_definition_order(file) {
       if is_wasm_export_def(&compiled.preprocessed_code) {
         return Err(format!(
-          "E_WASI_COMMAND_EXPORT: `{namespace}/{name}` declares a generic Component export; `calcit wasi --boundary component` only exports `wasi:cli/run@0.3.0`"
+          "E_WASI_COMMAND_EXPORT: `{namespace}/{name}` declares a generic Component export; `calcit wasi --boundary component` only exports `wasi:cli/run@0.3.1`"
         ));
       }
     }
@@ -6527,7 +6527,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
         ctx.emit(Instruction::LocalGet(code));
         ctx.emit(Instruction::I32TruncF64U);
         let (module, name) = if ctx.boundary == WasmBoundary::Component {
-          ("wasi:cli/exit@0.3.0", "exit-with-code")
+          ("wasi:cli/exit@0.3.1", "exit-with-code")
         } else {
           ("wasi_snapshot_preview1", "proc_exit")
         };

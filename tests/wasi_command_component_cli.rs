@@ -55,13 +55,13 @@ fn pure_calcit_entry_emits_runnable_wasi_03_command_component() {
       .imports(&engine)
       .map(|(name, _)| name)
       .collect::<Vec<_>>(),
-    vec!["wasi:cli/environment@0.3.0", "wasi:cli/exit@0.3.0"]
+    vec!["wasi:cli/environment@0.3.1", "wasi:cli/exit@0.3.1"]
   );
   assert!(
     component
       .component_type()
       .exports(&engine)
-      .any(|(name, _)| name == "wasi:cli/run@0.3.0")
+      .any(|(name, _)| name == "wasi:cli/run@0.3.1")
   );
 
   if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
