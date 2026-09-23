@@ -2034,6 +2034,152 @@ pub(super) fn build_wasi_get_env_fn(environ_sizes_get_idx: u32, environ_get_idx:
   b.finish(vec![ValType::I32], vec![ValType::F64])
 }
 
+/// Lift one value from the WASI 0.3 environment list without exposing its
+/// Canonical ABI tuple layout to Calcit source code.
+pub(super) fn build_wasi_component_get_env_fn(environment_idx: u32, str_new_idx: u32, realloc_idx: u32, free_idx: u32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(1);
+  let result = b.alloc_i32();
+  let entries = b.alloc_i32();
+  let count = b.alloc_i32();
+  let index = b.alloc_i32();
+  let entry = b.alloc_i32();
+  let name_len = b.alloc_i32();
+  let byte_index = b.alloc_i32();
+  let key_ptr = b.alloc_i32();
+  let found = b.alloc_f64();
+
+  b.emit(f64_const(0.0));
+  b.emit(Instruction::LocalSet(found));
+
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(name_len));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::Call(realloc_idx));
+  b.emit(Instruction::LocalTee(result));
+  b.emit(Instruction::Call(environment_idx));
+  b.emit(Instruction::LocalGet(result));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalSet(entries));
+  b.emit(Instruction::LocalGet(result));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::LocalSet(count));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(entries));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(entry));
+  b.emit(Instruction::LocalGet(entry));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(entry));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalSet(key_ptr));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(byte_index));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(byte_index));
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(key_ptr));
+  b.emit(Instruction::LocalGet(byte_index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(byte_index));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(byte_index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(byte_index));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(byte_index));
+  b.emit(Instruction::LocalGet(name_len));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(entry));
+  b.emit(Instruction::I32Load(mem_arg_i32(8)));
+  b.emit(Instruction::LocalGet(entry));
+  b.emit(Instruction::I32Load(mem_arg_i32(12)));
+  b.emit(Instruction::Call(str_new_idx));
+  b.emit(Instruction::LocalSet(found));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  // The selected value has been copied into a Calcit-owned string. Reclaim
+  // every Canonical ABI allocation, including entries we did not match.
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(entries));
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(entry));
+  for (ptr_offset, len_offset) in [(0, 4), (8, 12)] {
+    b.emit(Instruction::LocalGet(entry));
+    b.emit(Instruction::I32Load(mem_arg_i32(ptr_offset)));
+    b.emit(Instruction::LocalGet(entry));
+    b.emit(Instruction::I32Load(mem_arg_i32(len_offset)));
+    b.emit(Instruction::Call(free_idx));
+  }
+  b.emit(Instruction::LocalGet(index));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(index));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(entries));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::Call(free_idx));
+  b.emit(Instruction::LocalGet(result));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::Call(free_idx));
+  b.emit(Instruction::LocalGet(found));
+  b.finish(vec![ValType::I32], vec![ValType::F64])
+}
+
 /// Maximum arity covered by canonical call_indirect type entries.
 /// Types 0..MAX_CANONICAL_ARITY are reserved: type N = (f64 × N) → f64.
 pub(super) const MAX_CANONICAL_ARITY: u32 = 8;

@@ -58,9 +58,9 @@ use component::{
 };
 use methods::{emit_call_args, emit_method_invoke};
 use runtime::{
-  HostImport, ModuleFunctionLayout, build_runtime_fns, build_utf8_valid_fn, build_wasi_get_args_fn, build_wasi_get_env_fn,
-  build_wasi_open_path_fn, build_wasi_read_dir_fn, build_wasi_read_text_fn, build_wasi_wait_fn, build_wasi_write_all_fn,
-  build_wasi_write_text_fn, build_wasm_module, core_host_import, host_imports_for_target,
+  HostImport, ModuleFunctionLayout, build_runtime_fns, build_utf8_valid_fn, build_wasi_component_get_env_fn, build_wasi_get_args_fn,
+  build_wasi_get_env_fn, build_wasi_open_path_fn, build_wasi_read_dir_fn, build_wasi_read_text_fn, build_wasi_wait_fn,
+  build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module, core_host_import, host_imports_for_target,
 };
 use structs::{
   emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_contains, emit_struct_count,
@@ -343,6 +343,14 @@ fn emit_wasm_impl(
         results,
       });
     }
+    if target == WasmTarget::Wasi {
+      host_imports.push(HostImport {
+        module: "wasi:cli/environment@0.3.0".into(),
+        name: "get-environment".into(),
+        params: vec![ValType::I32],
+        results: vec![],
+      });
+    }
     if component_import_adapters
       .iter()
       .any(|adapter| adapter.invocation == ComponentAbiInvocation::Async)
@@ -471,6 +479,20 @@ fn emit_wasm_impl(
   let str_new_idx = num_imports + compiled_fns.len() as u32;
   runtime_fn_index.insert("__str_new".to_string(), str_new_idx);
   compiled_fns.push(build_str_new_fn(str_tag_id, component_cabi_realloc_index));
+
+  if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
+    let environment_idx = *index_host_imports(&host_imports)
+      .get(&("wasi:cli/environment@0.3.0".into(), "get-environment".into()))
+      .expect("WASI 0.3 environment import must be registered");
+    let get_env_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_get_env".into(), get_env_idx);
+    compiled_fns.push(build_wasi_component_get_env_fn(
+      environment_idx,
+      str_new_idx,
+      component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
+      component_cabi_free_index.expect("Component boundary must install cabi_free"),
+    ));
+  }
 
   let component_buffer_new_index = if boundary == WasmBoundary::Component {
     let buffer_tag_id = *tag_index.get("buffer").expect("buffer tag must exist") as i32;
@@ -6432,9 +6454,6 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
           ctx.emit(Instruction::Call(resolve_host_import(ctx, "io", "get_env")?));
         }
         WasmTarget::Wasi => {
-          if ctx.boundary == WasmBoundary::Component {
-            return Err("E_WASI_COMMAND_CAPABILITY: `get-env` needs WASI 0.3 environment lowering".into());
-          }
           ctx.emit(Instruction::LocalGet(name));
           ctx.emit(Instruction::I32TruncF64U);
           ctx.call_rt("__rt_wasi_get_env");
@@ -8532,13 +8551,13 @@ mod tests {
     let unsupported = HashMap::from([(
       4,
       (
-        "calcit.core/get-env".into(),
-        "E_WASI_COMMAND_CAPABILITY: `get-env` needs WASI 0.3 environment lowering".into(),
+        "calcit.core/println".into(),
+        "E_WASI_COMMAND_CAPABILITY: `println` needs WASI 0.3 stdio lowering".into(),
       ),
     )]);
     let error = reject_reachable_wasi_command_dependencies(&functions, 2, 2, &unsupported).unwrap_err();
     assert!(error.starts_with("E_WASI_COMMAND_CAPABILITY:"), "{error}");
-    assert!(error.contains("calcit.core/get-env"), "{error}");
+    assert!(error.contains("calcit.core/println"), "{error}");
     assert!(reject_reachable_wasi_command_dependencies(&functions, 2, 5, &unsupported).is_ok());
     functions[3].instructions.push(Instruction::CallIndirect {
       type_index: 0,
