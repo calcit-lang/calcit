@@ -3265,11 +3265,11 @@ mod tests {
     assert_eq!(optional_parameter_candidate(&CalcitTypeAnnotation::Dynamic), None);
     assert_eq!(
       optional_parameter_candidate(&CalcitTypeAnnotation::Number),
-      Some("Option<Number>".to_owned())
+      Some("Option<:number>".to_owned())
     );
     assert_eq!(
       optional_parameter_candidate(&CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::String))),
-      Some("Option<String>".to_owned())
+      Some("Option<:string>".to_owned())
     );
     let option = CalcitTypeAnnotation::TypeRef(
       Arc::from("calcit.core/Option"),
