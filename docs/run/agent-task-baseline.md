@@ -25,7 +25,7 @@ requires:
 
 ## 固定输入与执行边界
 
-- 普通任务的 Calcit 起点为 `538934af13a86e53c6c31592d7ad33ab7da12c45`（0.20.0 加待审的多入口 `fix` 修复）；使用独立、干净的 worktree，不在当前用户 checkout 上重置或覆盖。该 commit 尚未进入 main，若 #1346 的审查要求修改，记录新 SHA 并重新冻结，不静默替换。
+- 普通任务的固定 Calcit 起点为 `538934af13a86e53c6c31592d7ad33ab7da12c45`（0.20.0 加当时的多入口 `fix` 修复）；使用独立、干净的 worktree，不在当前用户 checkout 上重置或覆盖。此 SHA 属于历史堆叠分支，不是 main 的祖先；#1346 的完整改动随后 squash 合入 main `497c1dfd60ac56d5da754ce46447ebd3b535f106`。旧基线仍从固定 SHA 运行；以 main 做后续对照时，必须另记实际起点与两者差异，不把合并 SHA 静默替换为旧起点。
 - 真实 JS 消费者起点另行固定：Cumulo Reel `b0b464d21d781042053a589a19d5e8c7f5a09383`，Timegrass `cd2ddb05f88f51267fade6baa3fda681159440bc`。依赖采用这些 revision 自身的锁文件；安装策略、安全年龄门禁、Node 与 Calcit 版本必须写入每次运行记录。
 - T06–T08 是已经发生的历史故障，保留各自原始 Calcit 起点，不把今天的候选修复冒充旧基线。任务规范允许阅读 `AGENTS.md`、`calcit docs agents --contract`、目标仓库版本化文档和该任务点名的源码/测试；不预先泄露修复 PR 的 diff 给 Agent。T10–T11 是 held-out 验收组，不用来决定 #1303–#1305 的命名或指南内容。
 - 每个任务从固定起点的临时 worktree 开始。修改 Snapshot 前遵守当前 mutation contract；优先 Cirru EDN，只有外部 JSON-only 接口才显式请求 JSON。保存原始指令、命令及 stdout/stderr、最终 diff、测试输出和人工审阅意见。失败不能靠放宽类型、扩大 `Dynamic`、把方法换成 native call、插入未经证明的 `unsafe-coerce` 或修改预期来消除。
@@ -54,4 +54,4 @@ requires:
 
 2026-09-24 的确定性工具基线：在 Calcit `538934af13a86e53c6c31592d7ad33ab7da12c45` 上执行 `cargo test --test fix_cli --test edit_cli --test cirru_parse_edn_cli --test js_artifact_output_cli --test js_namespace_import_cli --quiet`，五个 suite 分别通过 33、10、3、3、1 项（共 50 项）。同一 commit 的 `yarn check-agent-interface` 通过 32/32 场景。测试数量和绿灯只标记现有工具契约，并非 11 个任务各自的 Agent 完成率、耗时或人工审阅成本。
 
-当前已留下 T06–T08 的确定性前后故障记录（见 #1302 评论）；T07 的后续 target 误判在 #1346 有最小回归和 Cumulo 原项目只读预览证据。其余任务的“契约探针”可运行，但尚未完成冻结模型配置的 Agent 基线、matched rerun 和人工审阅原始记录；T04/T09 的消费者业务验收仍以各自 issue 为准。不要将本目录或一次绿色 CI 解释为 #1302 的全部验收完成。
+当前已留下 T06–T08 的确定性前后故障记录（见 #1302 评论）；T07 的后续 target 误判随 #1346 合入 main，附有最小回归和 Cumulo 原项目只读预览证据。其余任务的“契约探针”可运行，但尚未完成冻结模型配置的 Agent 基线、matched rerun 和人工审阅原始记录；T04/T09 的消费者业务验收仍以各自 issue 为准。不要将本目录或一次绿色 CI 解释为 #1302 的全部验收完成。
