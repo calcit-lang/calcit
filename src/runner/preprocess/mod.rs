@@ -6335,9 +6335,9 @@ fn validate_method_call(
 fn is_callable_type(type_ann: &CalcitTypeAnnotation) -> bool {
   match type_ann {
     CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn => true,
-    CalcitTypeAnnotation::Optional(inner) => is_callable_type(inner.as_ref()),
+    CalcitTypeAnnotation::Optional(_) => false,
     CalcitTypeAnnotation::Dynamic => true,
-    CalcitTypeAnnotation::TypeRef(_, _) | CalcitTypeAnnotation::TypeSlot(_) => type_ann.resolve_to_fn().is_some(),
+    CalcitTypeAnnotation::TypeRef(_, _) | CalcitTypeAnnotation::TypeSlot(_) => type_ann.resolve_to_nonoptional_fn().is_some(),
     _ => false,
   }
 }
@@ -9971,6 +9971,16 @@ mod tests {
       }),
       location: Some(Arc::from(vec![1, 2, 3])),
     }
+  }
+
+  #[test]
+  fn optional_function_needs_a_presence_proof_before_it_is_callable() {
+    let signature = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::Number)],
+      Arc::new(CalcitTypeAnnotation::String),
+    ));
+    assert!(is_callable_type(signature.as_ref()));
+    assert!(!is_callable_type(&CalcitTypeAnnotation::Optional(signature)));
   }
 
   #[test]
