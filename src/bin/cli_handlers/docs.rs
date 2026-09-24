@@ -175,7 +175,15 @@ pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
       opts.refresh,
     ),
     DocsSubcommand::ReadLines(opts) => handle_read_lines(&opts.filename, opts.start, opts.lines, opts.module.as_deref()),
-    DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry, &opts.dep, opts.quiet, opts.failures_only),
+    DocsSubcommand::CheckMd(opts) => {
+      if opts.legacy_entry.is_some() {
+        return Err(
+          "docs check-md --entry used to select a Snapshot file. Use --snapshot <file> instead; --entry selects a named entry in other commands."
+            .to_owned(),
+        );
+      }
+      handle_check_md(&opts.file, &opts.snapshot, &opts.dep, opts.quiet, opts.failures_only)
+    }
     DocsSubcommand::FormatMd(opts) => handle_format_md(&opts.file, opts.check),
     DocsSubcommand::Graph(opts) => handle_graph_command(&opts.subcommand),
   }

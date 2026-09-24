@@ -79,6 +79,7 @@ calcit docs agents --full
   - ✅ `cargo run --bin calcit -- calcit/test.cirru eval --dep ~/.config/calcit/modules/respo.calcit/ -- 'ns app.demo $ :require respo.util.detect :refer $ element?\n\nelement? nil'`
 - **首表达式 `ns` 会注入当前 eval 程序**：当 snippet 第一个表达式是 `ns` 时，会把 `ns <NS> ...` 从第 3 个节点开始（通常是 `:require` 等规则）合并到运行用的 `ns app.main`，用于在 eval 中显式导入命名空间。
 - **`docs check-md` 也支持依赖模块**：`calcit docs check-md` 可通过多次 `--dep` 传参，内部会透传给 `eval`/`--check-only`。这样 markdown 代码块可配合首行 `ns ... :require ...` 访问模块函数。
+  - `docs check-md --snapshot <file>` 选择求值用的 Snapshot 文件；顶层和 config 的 `--entry` 选择 Snapshot 内的 named entry。旧 `docs check-md --entry` 会明确报错并提示迁移，不要在新脚本中使用。
   - ✅ `cargo run --bin calcit -- calcit/test.cirru docs check-md docs/CalcitAgent.md --dep ~/.config/calcit/modules/respo.calcit/`
 - **顶层无需额外括号**：Cirru 语法本身就不需要"最外层括号"，顶层可以直接是表达式。可用 `calcit cirru parse -e` 观察解析结果。
   - ✅ `cargo run --bin calcit -- calcit/test.cirru eval 'range 3'`

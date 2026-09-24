@@ -1335,9 +1335,12 @@ pub struct DocsCheckMdCommand {
   /// path to the markdown file to check
   #[argh(positional)]
   pub file: String,
-  /// entry .cirru file for eval context (default: calcit.cirru)
+  /// snapshot .cirru file for eval context (default: calcit.cirru)
   #[argh(option, default = "String::from(\"calcit.cirru\")")]
-  pub entry: String,
+  pub snapshot: String,
+  /// retired spelling for --snapshot; --entry selects a named entry elsewhere
+  #[argh(option, long = "entry")]
+  pub legacy_entry: Option<String>,
   /// extra dependency module path for eval context, can be provided multiple times; defaults to modules from entries.default.modules; paths ending with '/' resolve calcit.cirru and reject retired compact.cirru modules
   #[argh(option)]
   pub dep: Vec<String>,

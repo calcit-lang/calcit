@@ -808,10 +808,10 @@ calcit tree replace 'app.core/checkout' --path @3.2.1 --code 'quote calculate-di
 
 ```bash
 # 仓库内验证本文档全部 cirru 块
-calcit calcit/test.cirru docs check-md docs/run/agent-advanced.md --entry calcit/test.cirru
+calcit calcit/test.cirru docs check-md docs/run/agent-advanced.md --snapshot calcit/test.cirru
 
 # 等价写法（显式 entry）
-calcit docs check-md docs/run/agent-advanced.md --entry calcit/test.cirru
+calcit docs check-md docs/run/agent-advanced.md --snapshot calcit/test.cirru
 ```
 
 块类型速查：`cirru` = 完整 eval；`cirru.no-check` = 仅语法示意，不参与类型检查。

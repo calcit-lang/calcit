@@ -155,7 +155,7 @@ calcit calcit.cirru --entry '<entry-name>' --check-only
 calcit calcit.cirru --check-only --incremental
 calcit calcit.cirru --check-only --keep-going --format edn
 # Here --entry is the snapshot filename, not a named entry:
-calcit calcit.cirru docs check-md README.md --entry calcit.cirru --failures-only
+calcit calcit.cirru docs check-md README.md --snapshot calcit.cirru --failures-only
 ```
 
 `caps tree` 和 `caps why` 回答“该仓库为什么被依赖解析器安装”；目前它们会合并显示两个根分组，
@@ -169,10 +169,10 @@ entry 都是独立配置，不能假设其模块继承 default。`--check-only` 
 而 `docs check-md` 默认只带 default entry 的模块；有测试或文档专用模块时，须显式选择相应 entry 或
 重复传入 `--dep`。动态加载、未调用的公开 API 和外部消费者不在这些静态结果的证明范围内。
 
-注意：`config modules --entry` 与顶层 `--entry` 选择 named entry；`docs check-md --entry` 则选择用于
-检查的 snapshot 文件（`calcit.cirru`），两者不是同一种参数。
+`config modules --entry` 与顶层 `--entry` 均选择 named entry；`docs check-md --snapshot` 则选择用于
+检查的 Snapshot 文件（默认 `calcit.cirru`）。旧写法 `docs check-md --entry` 会报错并给出迁移提示，避免同名参数指代两种对象。
 
-Agent 和 CI 读取 entry 配置时使用 config 查询的 `--format json`，不要解析彩色 human 输出。三个命令
+Agent 和 CI 读取 entry 配置时优先使用 config 查询的 `--format edn`；对接仅支持 JSON 的工具时显式使用 `--format json`，不要解析彩色 human 输出。三个命令
 都返回带 `schema_version`、`command`、`data`、`diagnostics` 与 Snapshot `revision` 的单一 envelope；
 entry 不存在或 Snapshot 配置无效时仍输出结构化诊断并以非零状态退出。
 

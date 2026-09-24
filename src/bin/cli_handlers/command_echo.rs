@@ -815,7 +815,14 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
       opt "module" => opts.module.as_deref(); default "none"
     ),
     DocsSubcommand::CheckMd(opts) => {
-      echo_items!(tokens, pos "file" => &opts.file, value "entry" => &opts.entry; default "calcit.cirru", list "dep" => &opts.dep, switch "failures-only" => opts.failures_only)
+      echo_items!(
+        tokens,
+        pos "file" => &opts.file,
+        value "snapshot" => &opts.snapshot; default "calcit.cirru",
+        opt "entry" => opts.legacy_entry.as_deref(); default "none",
+        list "dep" => &opts.dep,
+        switch "failures-only" => opts.failures_only
+      )
     }
     DocsSubcommand::FormatMd(opts) => echo_items!(tokens, pos "file" => &opts.file, switch "check" => opts.check),
     DocsSubcommand::Graph(opts) => match &opts.subcommand {
