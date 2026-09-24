@@ -192,6 +192,10 @@ fn context_method(
   }
 }
 
+fn method_contract_fingerprint(methods: &Option<Vec<ContextMethod>>) -> Result<String, String> {
+  serde_json::to_string(methods).map_err(|error| format!("Failed to encode method contracts for revision: {error}"))
+}
+
 fn render_context_method(method: &ContextMethod) -> String {
   let mut rendered = format!("- `{}` (`{}`): {}", method.name, method.origin, method.status);
   if let (Some(args), Some(result)) = (&method.parameter_types, &method.return_type) {
@@ -1304,6 +1308,14 @@ mod type_query_tests {
     assert_eq!(list_get.return_type.as_deref(), Some("type calcit.core/Option<number>"));
     assert_eq!(list_get.definition.as_deref(), Some("calcit.core/get"));
     assert!(render_context_method(&list_get).contains("(number) -> type calcit.core/Option<number>"));
+    let original_fingerprint = method_contract_fingerprint(&Some(vec![list_get.clone()])).expect("method serialization");
+    let mut changed = list_get.clone();
+    changed.return_type = Some("type calcit.core/Option<string>".to_owned());
+    let changed_fingerprint = method_contract_fingerprint(&Some(vec![changed])).expect("method serialization");
+    assert_ne!(
+      original_fingerprint, changed_fingerprint,
+      "a changed callable contract must change the query revision"
+    );
 
     let map = parse_type_annotation_query(":: 'Map 'String 'Number").expect("typed map should parse");
     let map_get = runner::preprocess::static_method_contract(map.as_ref(), ".get");
@@ -1732,21 +1744,13 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
       .map(|(method, contract)| context_method(method, contract))
       .collect::<Vec<_>>()
   });
-  let method_fingerprint = methods
-    .as_ref()
-    .map(|items| {
-      items
-        .iter()
-        .map(|method| format!("{}@{}", method.name, method.origin))
-        .collect::<Vec<_>>()
-        .join("\n")
-    })
-    .unwrap_or_else(|| "unknown".to_owned());
-  let revision = definition_type_query_target(&opts.target)
+  let method_fingerprint = method_contract_fingerprint(&methods)?;
+  let source_revision = definition_type_query_target(&opts.target)
     .and_then(|(namespace, definition)| snapshot.files.get(namespace).and_then(|file| file.defs.get(definition)))
     .map(snapshot::definition_revision)
     .transpose()?
-    .unwrap_or_else(|| semantic_revision(&[&rendered_type, &method_fingerprint]));
+    .unwrap_or_default();
+  let revision = semantic_revision(&[&rendered_type, &method_fingerprint, &source_revision]);
 
   let data = TypeQueryData {
     target: opts.target.clone(),
