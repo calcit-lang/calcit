@@ -3867,16 +3867,35 @@ impl CalcitTypeAnnotation {
 
   /// Resolve this type annotation to a `Fn` type, unwrapping Optional/TypeRef/TypeSlot layers.
   pub fn resolve_to_fn(&self) -> Option<Arc<CalcitFnTypeAnnotation>> {
-    match self {
-      Self::Fn(fn_annot) => Some(fn_annot.clone()),
-      Self::Optional(inner) => inner.resolve_to_fn(),
-      Self::TypeRef(name, _) => {
-        let stripped = name.trim_start_matches('\'').trim_start_matches(':');
-        resolve_type_ref_as_schema(stripped).and_then(|schema| schema.resolve_to_fn())
-      }
-      Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.resolve_to_fn()),
-      _ => None,
+    if let Self::Fn(fn_annot) = self {
+      return Some(fn_annot.clone());
     }
+    fn resolve(annotation: &CalcitTypeAnnotation, visited: &mut HashSet<String>, depth: usize) -> Option<Arc<CalcitFnTypeAnnotation>> {
+      if depth >= TYPE_DIAGNOSTIC_DEPTH_LIMIT {
+        return None;
+      }
+      match annotation {
+        CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.clone()),
+        CalcitTypeAnnotation::Optional(inner) => resolve(inner, visited, depth + 1),
+        CalcitTypeAnnotation::TypeRef(name, _) => {
+          let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+          let key = format!("type:{stripped}");
+          if !visited.insert(key) {
+            return None;
+          }
+          resolve_type_ref_as_schema(stripped).and_then(|schema| resolve(&schema, visited, depth + 1))
+        }
+        CalcitTypeAnnotation::TypeSlot(name) => {
+          let key = format!("slot:{name}");
+          if !visited.insert(key) {
+            return None;
+          }
+          resolve_type_slot(name).and_then(|bound| resolve(&bound, visited, depth + 1))
+        }
+        _ => None,
+      }
+    }
+    resolve(self, &mut HashSet::new(), 0)
   }
 
   fn core_impl_list_symbol(&self) -> Option<&'static str> {

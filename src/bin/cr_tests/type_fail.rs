@@ -1093,6 +1093,60 @@ fn type_fail_call_arg_fixture_reports_warning_code() {
 }
 
 #[test]
+fn named_callback_schema_rejects_wrong_arguments_and_non_callable_aliases() {
+  run_with_large_stack(|| {
+    let fn_schema = |args: Vec<Arc<CalcitTypeAnnotation>>, return_type: CalcitTypeAnnotation| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: args,
+        return_type: Arc::new(return_type),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })))
+    };
+
+    for (alias_schema, expected_message) in [
+      (
+        fn_schema(vec![Arc::new(CalcitTypeAnnotation::String)], CalcitTypeAnnotation::Number),
+        "W_LOCAL_FN_ARG_TYPE_MISMATCH",
+      ),
+      (Arc::new(CalcitTypeAnnotation::Number), "non-function type"),
+      (
+        Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("app.main/NamedCallback"), Arc::new(vec![]))),
+        "non-function type",
+      ),
+    ] {
+      builtins::effects::init_effects_states();
+      let mut snapshot = snapshot::Snapshot::default();
+      let mut file = snapshot::create_file_from_snippet(concat!(
+        "def NamedCallback &unit\n\n",
+        "defn invoke (callback) (callback 42)\n\n",
+        "defn main! () $ invoke $ fn (text) $ count text\n\n",
+        "defn reload! () &unit",
+      ))
+      .expect("named callback snippet should parse");
+      file.defs.get_mut("NamedCallback").expect("alias definition").schema = alias_schema;
+      file.defs.get_mut("invoke").expect("callback definition").schema = fn_schema(
+        vec![Arc::new(CalcitTypeAnnotation::TypeRef(
+          Arc::from("app.main/NamedCallback"),
+          Arc::new(vec![]),
+        ))],
+        CalcitTypeAnnotation::Number,
+      );
+      file.defs.get_mut("main!").expect("main definition").schema = fn_schema(vec![], CalcitTypeAnnotation::Number);
+      file.defs.get_mut("reload!").expect("reload definition").schema = fn_schema(vec![], CalcitTypeAnnotation::Unit);
+      snapshot.files.insert("app.main".to_owned(), file);
+      let entries = prepare_snapshot_entries(snapshot);
+      let _strict = StrictTypesReset::enabled();
+      let error = run_check_only(&entries).expect_err("invalid named callback call must be rejected");
+      assert!(error.contains(expected_message), "expected {expected_message}: {error}");
+    }
+  });
+}
+
+#[test]
 fn mixed_public_equality_reports_guided_type_mismatches() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("do\n  = 1 |one\n  = 1 1 |one\n  not= 1 |one\n  /= 1 |one");

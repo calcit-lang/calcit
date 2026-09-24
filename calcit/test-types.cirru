@@ -23,6 +23,11 @@
               :return 'Unit
           :examples $ []
           :schema $ :: 'Trait
+        'NamedCallback $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def NamedCallback &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'String
         'Person $ %{} 'CodeEntry (:doc "|Struct definition for type checks")
           :code $ quote $ defstruct Person (:name 'String) (:age nil)
           :examples $ []
@@ -76,6 +81,26 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String 'Number
+        'forward-named-callback $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn forward-named-callback (callback) (invoke-named-callback callback |abcd)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'test-types.main/NamedCallback
+          :tests $ [] $ %{} 'TestEntry (:name |forwards-named-fn-contract)
+            :code $ quote $ assert= 4
+              forward-named-callback $ fn (text) (count text)
+            :tags $ #{} :core :unit
+        'invoke-named-callback $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn invoke-named-callback (callback text) (callback text)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'test-types.main/NamedCallback 'String
+          :tests $ [] $ %{} 'TestEntry (:name |invokes-named-fn-contract)
+            :code $ quote $ assert= 3
+              invoke-named-callback
+                fn (text) (count text)
+                , |abc
+            :tags $ #{} :core :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Testing types...")
             println $ add-numbers 1 2

@@ -872,7 +872,7 @@ pub(crate) fn check_local_fn_call_arg_types(
     &*local.type_info
   };
 
-  let CalcitTypeAnnotation::Fn(fn_annot) = local_type else {
+  let Some(fn_annot) = local_type.resolve_to_fn() else {
     return;
   };
 

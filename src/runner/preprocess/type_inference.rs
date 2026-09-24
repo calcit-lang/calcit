@@ -641,7 +641,7 @@ fn infer_core_apply_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes
   let callable_type = call_expr.get(1).and_then(|callable| resolve_type_value(callable, scope_types))?;
   let arguments = call_expr.get(2)?;
   let arguments_type = resolve_type_value(arguments, scope_types)?;
-  let CalcitTypeAnnotation::Fn(signature) = callable_type.as_ref() else {
+  let Some(signature) = callable_type.resolve_to_fn() else {
     return None;
   };
   let CalcitTypeAnnotation::List(item_type) = arguments_type.as_ref() else {
@@ -1049,10 +1049,13 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         // If it's a function type, return its return type
         Calcit::Local(local) => {
           let type_ann = &local.type_info;
-          match type_ann.as_ref() {
-            CalcitTypeAnnotation::Fn(fn_type) => Some(invocation_return_type(fn_type, fn_type.return_type.clone(), false)),
-            CalcitTypeAnnotation::DynFn => Some(calcit::DYNAMIC_TYPE.clone()),
-            _ => Some(type_ann.clone()),
+          if let Some(fn_type) = type_ann.resolve_to_fn() {
+            Some(invocation_return_type(&fn_type, fn_type.return_type.clone(), false))
+          } else {
+            match type_ann.as_ref() {
+              CalcitTypeAnnotation::DynFn => Some(calcit::DYNAMIC_TYPE.clone()),
+              _ => Some(type_ann.clone()),
+            }
           }
         }
 
@@ -1223,12 +1226,15 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         // First infer what type the head returns, then if it's a function, get its return type
         Calcit::List(_) => {
           if let Some(head_type) = infer_type_from_expr(head, scope_types) {
-            match head_type.as_ref() {
-              CalcitTypeAnnotation::Fn(fn_type) => Some(invocation_return_type(fn_type, fn_type.return_type.clone(), false)),
-              CalcitTypeAnnotation::DynFn => Some(calcit::DYNAMIC_TYPE.clone()),
-              // If head returns a non-function type, the call will fail at runtime
-              // Return the non-callable type so caller can detect this issue
-              _ => Some(head_type),
+            if let Some(fn_type) = head_type.resolve_to_fn() {
+              Some(invocation_return_type(&fn_type, fn_type.return_type.clone(), false))
+            } else {
+              match head_type.as_ref() {
+                CalcitTypeAnnotation::DynFn => Some(calcit::DYNAMIC_TYPE.clone()),
+                // If head returns a non-function type, the call will fail at runtime
+                // Return the non-callable type so caller can detect this issue
+                _ => Some(head_type),
+              }
             }
           } else {
             None
