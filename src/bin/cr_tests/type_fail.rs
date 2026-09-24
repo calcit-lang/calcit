@@ -1093,6 +1093,106 @@ fn type_fail_call_arg_fixture_reports_warning_code() {
 }
 
 #[test]
+fn named_callback_schema_rejects_wrong_arguments_and_non_callable_aliases() {
+  run_with_large_stack(|| {
+    let fn_schema = |args: Vec<Arc<CalcitTypeAnnotation>>, return_type: CalcitTypeAnnotation| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: args,
+        return_type: Arc::new(return_type),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })))
+    };
+
+    let generic_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))],
+      return_type: Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+
+    for (alias_schema, applied_args, expected_message) in [
+      (
+        fn_schema(vec![Arc::new(CalcitTypeAnnotation::String)], CalcitTypeAnnotation::Number),
+        vec![],
+        "calling `callback` arg 1 expects type",
+      ),
+      (
+        generic_schema,
+        vec![Arc::new(CalcitTypeAnnotation::String)],
+        "calling `callback` arg 1 expects type",
+      ),
+      (Arc::new(CalcitTypeAnnotation::Number), vec![], "non-function type"),
+      (
+        Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("app.main/NamedCallback"), Arc::new(vec![]))),
+        vec![],
+        "non-function type",
+      ),
+    ] {
+      builtins::effects::init_effects_states();
+      let mut snapshot = snapshot::Snapshot::default();
+      let generic_case = !applied_args.is_empty();
+      let snippet = if generic_case {
+        "def NamedCallback &unit\n\ndefn invoke (callback) (callback 42)\n\ndefn main! () $ invoke $ fn (text) text\n\ndefn reload! () &unit"
+      } else {
+        "def NamedCallback &unit\n\ndefn invoke (callback) (callback 42)\n\ndefn main! () $ invoke $ fn (text) $ count text\n\ndefn reload! () &unit"
+      };
+      let mut file = snapshot::create_file_from_snippet(snippet).expect("named callback snippet should parse");
+      file.defs.get_mut("NamedCallback").expect("alias definition").schema = alias_schema;
+      file.defs.get_mut("invoke").expect("callback definition").schema = fn_schema(
+        vec![Arc::new(CalcitTypeAnnotation::TypeRef(
+          Arc::from("app.main/NamedCallback"),
+          Arc::new(applied_args.clone()),
+        ))],
+        if generic_case {
+          CalcitTypeAnnotation::String
+        } else {
+          CalcitTypeAnnotation::Number
+        },
+      );
+      file.defs.get_mut("main!").expect("main definition").schema = fn_schema(
+        vec![],
+        if generic_case {
+          CalcitTypeAnnotation::String
+        } else {
+          CalcitTypeAnnotation::Number
+        },
+      );
+      file.defs.get_mut("reload!").expect("reload definition").schema = fn_schema(vec![], CalcitTypeAnnotation::Unit);
+      snapshot.files.insert("app.main".to_owned(), file);
+      let entries = prepare_snapshot_entries(snapshot);
+      if !applied_args.is_empty() {
+        let applied = CalcitTypeAnnotation::TypeRef(Arc::from("app.main/NamedCallback"), Arc::new(applied_args));
+        let resolved = applied.resolve_to_fn().expect("applied generic callback should resolve");
+        assert_eq!(resolved.arg_types, vec![Arc::new(CalcitTypeAnnotation::String)]);
+        assert_eq!(resolved.return_type, Arc::new(CalcitTypeAnnotation::String));
+        assert!(resolved.generics.is_empty());
+        let missing = CalcitTypeAnnotation::TypeRef(Arc::from("app.main/NamedCallback"), Arc::new(vec![]));
+        assert!(
+          missing.resolve_to_fn().is_none(),
+          "generic callback application requires its type argument"
+        );
+      }
+      let _strict = StrictTypesReset::enabled();
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect("named callback fixture should preprocess with diagnostics");
+      let warnings = warnings.borrow();
+      assert!(
+        warnings.iter().any(|warning| warning.message().contains(expected_message)),
+        "expected {expected_message} among diagnostics: {warnings:?}"
+      );
+    }
+  });
+}
+
+#[test]
 fn mixed_public_equality_reports_guided_type_mismatches() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("do\n  = 1 |one\n  = 1 1 |one\n  not= 1 |one\n  /= 1 |one");

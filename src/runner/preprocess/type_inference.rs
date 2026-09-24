@@ -641,9 +641,7 @@ fn infer_core_apply_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes
   let callable_type = call_expr.get(1).and_then(|callable| resolve_type_value(callable, scope_types))?;
   let arguments = call_expr.get(2)?;
   let arguments_type = resolve_type_value(arguments, scope_types)?;
-  let CalcitTypeAnnotation::Fn(signature) = callable_type.as_ref() else {
-    return None;
-  };
+  let signature = callable_type.resolve_to_nonoptional_fn()?;
   let CalcitTypeAnnotation::List(item_type) = arguments_type.as_ref() else {
     return None;
   };
@@ -1049,10 +1047,13 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         // If it's a function type, return its return type
         Calcit::Local(local) => {
           let type_ann = &local.type_info;
-          match type_ann.as_ref() {
-            CalcitTypeAnnotation::Fn(fn_type) => Some(invocation_return_type(fn_type, fn_type.return_type.clone(), false)),
-            CalcitTypeAnnotation::DynFn => Some(calcit::DYNAMIC_TYPE.clone()),
-            _ => Some(type_ann.clone()),
+          if let Some(fn_type) = type_ann.resolve_to_nonoptional_fn() {
+            Some(invocation_return_type(&fn_type, fn_type.return_type.clone(), false))
+          } else {
+            match type_ann.as_ref() {
+              CalcitTypeAnnotation::DynFn => Some(calcit::DYNAMIC_TYPE.clone()),
+              _ => Some(type_ann.clone()),
+            }
           }
         }
 
@@ -1223,12 +1224,15 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         // First infer what type the head returns, then if it's a function, get its return type
         Calcit::List(_) => {
           if let Some(head_type) = infer_type_from_expr(head, scope_types) {
-            match head_type.as_ref() {
-              CalcitTypeAnnotation::Fn(fn_type) => Some(invocation_return_type(fn_type, fn_type.return_type.clone(), false)),
-              CalcitTypeAnnotation::DynFn => Some(calcit::DYNAMIC_TYPE.clone()),
-              // If head returns a non-function type, the call will fail at runtime
-              // Return the non-callable type so caller can detect this issue
-              _ => Some(head_type),
+            if let Some(fn_type) = head_type.resolve_to_nonoptional_fn() {
+              Some(invocation_return_type(&fn_type, fn_type.return_type.clone(), false))
+            } else {
+              match head_type.as_ref() {
+                CalcitTypeAnnotation::DynFn => Some(calcit::DYNAMIC_TYPE.clone()),
+                // If head returns a non-function type, the call will fail at runtime
+                // Return the non-callable type so caller can detect this issue
+                _ => Some(head_type),
+              }
             }
           } else {
             None
@@ -2668,6 +2672,51 @@ mod tests {
       infer_core_apply_return_type(&call, &ScopeTypes::new()).as_deref(),
       Some(CalcitTypeAnnotation::String)
     ));
+  }
+
+  #[test]
+  fn apply_does_not_infer_a_return_for_an_optional_callable() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let signature = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![number],
+      Arc::new(CalcitTypeAnnotation::String),
+    ));
+    let callable = local("maybe-format", Arc::new(CalcitTypeAnnotation::Optional(signature)));
+    let arguments = proc_call(CalcitProc::List, vec![Calcit::Number(1.0)]);
+    let call = CalcitList::from(&[symbol("apply"), callable, arguments][..]);
+
+    assert!(infer_core_apply_return_type(&call, &ScopeTypes::new()).is_none());
+  }
+
+  #[test]
+  fn optional_callable_heads_keep_their_absence_in_return_inference() {
+    let signature = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::Number)],
+      Arc::new(CalcitTypeAnnotation::String),
+    ));
+    let optional_callable = Arc::new(CalcitTypeAnnotation::Optional(signature));
+    let direct_call = Calcit::from(vec![local("maybe-format", optional_callable.clone()), Calcit::Number(1.0)]);
+    assert_eq!(
+      infer_type_from_expr(&direct_call, &ScopeTypes::new()),
+      Some(optional_callable.clone())
+    );
+
+    let provider = local(
+      "provider",
+      Arc::new(CalcitTypeAnnotation::from_function_parts(vec![], optional_callable.clone())),
+    );
+    let nested_call = Calcit::from(vec![Calcit::from(vec![provider]), Calcit::Number(1.0)]);
+    assert_eq!(
+      infer_type_from_expr(&nested_call, &ScopeTypes::new()),
+      Some(optional_callable.clone())
+    );
+
+    let slot_name: Arc<str> = Arc::from("optional-callable-regression");
+    calcit::push_type_slot_override(slot_name.clone(), optional_callable);
+    let alias = Arc::new(CalcitTypeAnnotation::TypeSlot(slot_name.clone()));
+    let alias_call = Calcit::from(vec![local("maybe-aliased", alias.clone()), Calcit::Number(1.0)]);
+    assert_eq!(infer_type_from_expr(&alias_call, &ScopeTypes::new()), Some(alias));
+    calcit::pop_type_slot_override(&slot_name);
   }
 
   #[test]

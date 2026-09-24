@@ -2734,15 +2734,7 @@ fn preprocess_list_call(
             expected.clone()
           }
         });
-        let expected_fn = if let Some(expected_type) = expected_type.as_ref() {
-          if let CalcitTypeAnnotation::Fn(fn_annot) = expected_type.as_ref() {
-            Some(fn_annot.clone())
-          } else {
-            None
-          }
-        } else {
-          None
-        };
+        let expected_fn = expected_type.as_ref().and_then(|expected_type| expected_type.resolve_to_fn());
 
         // Set expected struct type hint if this arg position has a struct-typed param
         // This enables field-type-aware preprocessing of hashmap literals (e.g., DomProps)
@@ -3451,9 +3443,9 @@ fn preprocess_list_call(
           };
 
           if let Some(ref ty) = local_type
-            && let CalcitTypeAnnotation::Fn(fn_annot) = ty.as_ref()
+            && let Some(fn_annot) = ty.resolve_to_fn()
             && let Some(rewritten) =
-              try_rewrite_local_fn_enum_args_to_named_enums(fn_annot, &local_sym, &processed_args, file_ns, &def_name, check_warnings)
+              try_rewrite_local_fn_enum_args_to_named_enums(&fn_annot, &local_sym, &processed_args, file_ns, &def_name, check_warnings)
           {
             ys = CalcitList::new_inner_from(&[ys.first().unwrap().to_owned()]);
             for item in rewritten.iter() {
@@ -3468,10 +3460,10 @@ fn preprocess_list_call(
               Some(local.type_info.clone())
             };
             if let Some(local_type) = local_type
-              && let CalcitTypeAnnotation::Fn(signature) = local_type.as_ref()
+              && let Some(signature) = local_type.resolve_to_fn()
             {
-              reject_strict_dynamic_nominal_argument(&head_form, &updated_args, signature, scope_types, file_ns, call_stack)?;
-              reject_strict_unproven_generic_relation(&head_form, &updated_args, signature, scope_types, file_ns, call_stack)?;
+              reject_strict_dynamic_nominal_argument(&head_form, &updated_args, &signature, scope_types, file_ns, call_stack)?;
+              reject_strict_unproven_generic_relation(&head_form, &updated_args, &signature, scope_types, file_ns, call_stack)?;
             }
             check_local_fn_call_arg_types(&head_form, local, &updated_args, scope_types, &call_info, check_warnings);
           }
@@ -6342,10 +6334,10 @@ fn validate_method_call(
 /// Check if a type annotation represents a callable type (function or method)
 fn is_callable_type(type_ann: &CalcitTypeAnnotation) -> bool {
   match type_ann {
-    CalcitTypeAnnotation::Fn(_) => true,
-    CalcitTypeAnnotation::DynFn => true,
-    CalcitTypeAnnotation::Optional(inner) => is_callable_type(inner.as_ref()),
+    CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn => true,
+    CalcitTypeAnnotation::Optional(_) => false,
     CalcitTypeAnnotation::Dynamic => true,
+    CalcitTypeAnnotation::TypeRef(_, _) | CalcitTypeAnnotation::TypeSlot(_) => type_ann.resolve_to_nonoptional_fn().is_some(),
     _ => false,
   }
 }
@@ -9979,6 +9971,16 @@ mod tests {
       }),
       location: Some(Arc::from(vec![1, 2, 3])),
     }
+  }
+
+  #[test]
+  fn optional_function_needs_a_presence_proof_before_it_is_callable() {
+    let signature = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::Number)],
+      Arc::new(CalcitTypeAnnotation::String),
+    ));
+    assert!(is_callable_type(signature.as_ref()));
+    assert!(!is_callable_type(&CalcitTypeAnnotation::Optional(signature)));
   }
 
   #[test]

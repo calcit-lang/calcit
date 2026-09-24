@@ -3867,16 +3867,64 @@ impl CalcitTypeAnnotation {
 
   /// Resolve this type annotation to a `Fn` type, unwrapping Optional/TypeRef/TypeSlot layers.
   pub fn resolve_to_fn(&self) -> Option<Arc<CalcitFnTypeAnnotation>> {
-    match self {
-      Self::Fn(fn_annot) => Some(fn_annot.clone()),
-      Self::Optional(inner) => inner.resolve_to_fn(),
-      Self::TypeRef(name, _) => {
-        let stripped = name.trim_start_matches('\'').trim_start_matches(':');
-        resolve_type_ref_as_schema(stripped).and_then(|schema| schema.resolve_to_fn())
+    self.resolve_fn_with_optionality().map(|(signature, _)| signature)
+  }
+
+  /// Resolve a callable only when no Optional layer remains along its alias chain.
+  pub(crate) fn resolve_to_nonoptional_fn(&self) -> Option<Arc<CalcitFnTypeAnnotation>> {
+    self
+      .resolve_fn_with_optionality()
+      .and_then(|(signature, optional)| (!optional).then_some(signature))
+  }
+
+  fn resolve_fn_with_optionality(&self) -> Option<(Arc<CalcitFnTypeAnnotation>, bool)> {
+    fn resolve(
+      annotation: &CalcitTypeAnnotation,
+      visited: &mut HashSet<String>,
+      depth: usize,
+    ) -> Option<(Arc<CalcitFnTypeAnnotation>, bool)> {
+      if depth >= TYPE_DIAGNOSTIC_DEPTH_LIMIT {
+        return None;
       }
-      Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.resolve_to_fn()),
-      _ => None,
+      match annotation {
+        CalcitTypeAnnotation::Fn(fn_annot) => Some((fn_annot.clone(), false)),
+        CalcitTypeAnnotation::Optional(inner) => resolve(inner, visited, depth + 1).map(|(signature, _)| (signature, true)),
+        CalcitTypeAnnotation::TypeRef(name, args) => {
+          let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+          let key = format!("type:{stripped}");
+          if !visited.insert(key) {
+            return None;
+          }
+          let schema = resolve_type_ref_as_schema(stripped)?;
+          let (signature, optional) = resolve(&schema, visited, depth + 1)?;
+          if signature.generics.len() != args.len() {
+            return None;
+          }
+          if args.is_empty() {
+            return Some((signature, optional));
+          }
+          let bindings: TypeBindings = signature.generics.iter().cloned().zip(args.iter().cloned()).collect();
+          validate_runtime_generic_where_bounds(&bindings, &signature.where_bounds).ok()?;
+          let specialized = CalcitTypeAnnotation::Fn(signature).substitute_type_vars(&bindings);
+          let CalcitTypeAnnotation::Fn(specialized) = specialized.as_ref() else {
+            return None;
+          };
+          let mut specialized = specialized.as_ref().clone();
+          specialized.generics = Arc::new(vec![]);
+          specialized.where_bounds = Arc::new(vec![]);
+          Some((Arc::new(specialized), optional))
+        }
+        CalcitTypeAnnotation::TypeSlot(name) => {
+          let key = format!("slot:{name}");
+          if !visited.insert(key) {
+            return None;
+          }
+          resolve_type_slot(name).and_then(|bound| resolve(&bound, visited, depth + 1))
+        }
+        _ => None,
+      }
     }
+    resolve(self, &mut HashSet::new(), 0)
   }
 
   fn core_impl_list_symbol(&self) -> Option<&'static str> {
