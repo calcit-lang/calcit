@@ -1439,6 +1439,7 @@ fn plan_optional_parameter_diagnostics(
   let mut optional = false;
   let mut argument_index = 0;
   let mut suggestions = Vec::new();
+  let mut candidate_arg_types = signature.map(|signature| signature.arg_types.clone());
   for (source_index, arg) in args.iter().enumerate() {
     if arg.eq_leaf("?") {
       optional = true;
@@ -1450,7 +1451,14 @@ fn plan_optional_parameter_diagnostics(
     }
     if optional {
       let declared = signature.and_then(|signature| signature.arg_types.get(argument_index));
-      let candidate = declared.and_then(|annotation| optional_parameter_candidate(annotation));
+      let candidate = declared
+        .filter(|annotation| optional_parameter_schema_type(annotation).is_some())
+        .and_then(|annotation| optional_parameter_candidate(annotation));
+      candidate_arg_types = candidate_arg_types.and_then(|mut arg_types| {
+        let candidate_type = declared.and_then(optional_parameter_schema_type)?;
+        *arg_types.get_mut(argument_index)? = candidate_type;
+        Some(arg_types)
+      });
       let parameter = leaf_value(arg).unwrap_or("<destructured>");
       let reason = if candidate.is_some() {
         "declared-type-only; body presence checks, explicit nil, generated/external callers, and call evaluation are not yet proven"
@@ -1486,8 +1494,17 @@ fn plan_optional_parameter_diagnostics(
     argument_index += 1;
   }
   if !suggestions.is_empty() {
+    let candidate_fn_schema_edn = signature
+      .zip(candidate_arg_types)
+      .filter(|(signature, arg_types)| signature.arg_types.len() == argument_index && arg_types.len() == argument_index)
+      .and_then(|(signature, arg_types)| {
+        let mut candidate = signature.clone();
+        candidate.arg_types = arg_types;
+        cirru_edn::format(&candidate.to_schema_edn(), true).ok()
+      });
     let usage_evidence = collect_optional_parameter_usages(snapshot, namespace, definition, project_definitions);
     for suggestion in &mut suggestions {
+      suggestion.origin_chain[0]["candidate_fn_schema_edn"] = serde_json::json!(candidate_fn_schema_edn.as_deref());
       suggestion.origin_chain.extend(usage_evidence.iter().cloned());
     }
   }
@@ -1572,6 +1589,11 @@ fn collect_optional_parameter_usages(
           } else {
             Vec::new()
           },
+          "explicit_false_arguments": if call_kind == "direct-call" {
+            call.iter().skip(1).enumerate().filter_map(|(index, item)| item.eq_leaf("false").then_some(index)).collect::<Vec<_>>()
+          } else {
+            Vec::new()
+          },
         }));
       }
     }
@@ -1603,6 +1625,25 @@ fn optional_parameter_candidate(annotation: &CalcitTypeAnnotation) -> Option<Str
       }
     }
     other => Some(format!("Option<{}>", other.to_brief_string())),
+  }
+}
+
+/// Build a declaration-backed nominal Option slot without guessing through aliases or open types.
+fn optional_parameter_schema_type(annotation: &std::sync::Arc<CalcitTypeAnnotation>) -> Option<std::sync::Arc<CalcitTypeAnnotation>> {
+  let mut inner = annotation.as_ref();
+  while let CalcitTypeAnnotation::Optional(next) = inner {
+    inner = next.as_ref();
+  }
+  match inner {
+    CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn => None,
+    CalcitTypeAnnotation::TypeRef(name, args) if matches!(name.as_ref(), "Option" | "calcit.core/Option") && args.len() == 1 => {
+      (!matches!(args[0].as_ref(), CalcitTypeAnnotation::Dynamic)).then(|| std::sync::Arc::new(inner.clone()))
+    }
+    CalcitTypeAnnotation::TypeRef(..) | CalcitTypeAnnotation::TypeSlot(..) => None,
+    _ => Some(std::sync::Arc::new(CalcitTypeAnnotation::TypeRef(
+      "calcit.core/Option".into(),
+      std::sync::Arc::new(vec![std::sync::Arc::new(inner.clone())]),
+    ))),
   }
 }
 
