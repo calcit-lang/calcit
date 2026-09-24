@@ -8564,45 +8564,50 @@ pub fn preprocess_core_let(
   let mut body_types: ScopeTypes = ctx.scope_types.clone();
   let binding = match args.first() {
     Some(Calcit::List(ys)) if ys.is_empty() => Calcit::from(CalcitList::default()),
-    Some(Calcit::List(ys)) if ys.len() == 2 => match (&ys[0], &ys[1]) {
-      (Calcit::Symbol { sym, info, location }, a) => {
+    Some(Calcit::List(ys)) if ys.len() == 2 => {
+      let (sym, info, location, existing_type) = match &ys[0] {
+        Calcit::Symbol { sym, info, location } => (sym, info, location, None),
+        // Macro-expanded conditions may reprocess an already lowered typed-access binding.
+        Calcit::Local(local) => (&local.sym, &local.info, &local.location, Some(local.type_info.clone())),
+        a => {
+          return Err(CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Syntax,
+            format!("invalid pair for &let binding: {a} {}", ys[1]),
+            ctx.call_stack,
+            a.get_location().or_else(|| ys[1].get_location()),
+          ));
+        }
+      };
+      let a = &ys[1];
+      if existing_type.is_none() {
         let loc = NodeLocation::new(
           info.at_ns.to_owned(),
           info.at_def.to_owned(),
           location.to_owned().unwrap_or_default(),
         );
         check_symbol(sym, ys, loc, ctx.check_warnings);
-        body_defs.insert(sym.to_owned());
-        let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
-
-        // Try to infer type from the binding expression
-        let inferred_type = infer_type_from_expr(&form, &body_types).unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone());
-
-        let name = Calcit::Local(CalcitLocal {
-          idx: CalcitLocal::track_sym(sym),
-          sym: sym.to_owned(),
-          info: Arc::new(CalcitSymbolInfo {
-            at_ns: info.at_ns.to_owned(),
-            at_def: info.at_def.to_owned(),
-          }),
-          location: location.to_owned(),
-          type_info: inferred_type.clone(),
-        });
-
-        // Also store in scope_types for later use
-        body_types.insert(sym.to_owned(), inferred_type);
-
-        Calcit::from(CalcitList::from(&[name, form]))
       }
-      (a, b) => {
-        return Err(CalcitErr::use_msg_stack_location(
-          CalcitErrKind::Syntax,
-          format!("invalid pair for &let binding: {a} {b}"),
-          ctx.call_stack,
-          a.get_location().or_else(|| b.get_location()),
-        ));
-      }
-    },
+      body_defs.insert(sym.to_owned());
+      let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+
+      let inferred_type = existing_type
+        .unwrap_or_else(|| infer_type_from_expr(&form, &body_types).unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone()));
+
+      let name = Calcit::Local(CalcitLocal {
+        idx: CalcitLocal::track_sym(sym),
+        sym: sym.to_owned(),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: info.at_ns.to_owned(),
+          at_def: info.at_def.to_owned(),
+        }),
+        location: location.to_owned(),
+        type_info: inferred_type.clone(),
+      });
+
+      body_types.insert(sym.to_owned(), inferred_type);
+
+      Calcit::from(CalcitList::from(&[name, form]))
+    }
     Some(a @ Calcit::List(_)) => {
       return Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Syntax,
