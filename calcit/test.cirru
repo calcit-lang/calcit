@@ -132,6 +132,7 @@
             test-generics/main!
             test-enum/main!
             test-traits/main!
+            assert= 2 $ cross-module-counter-next $ %{} test-traits.external/Counter (:value 1)
             test-doc-smoke/main!
             test-def-meta/main!
             test-buffer
