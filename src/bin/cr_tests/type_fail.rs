@@ -144,6 +144,30 @@ fn load_fixture_entries(path: &str) -> ProgramEntries {
   load_fixture_entries_with_entry(path, None)
 }
 
+/// Ensures nested external methods reject explicit arguments during preprocessing.
+#[test]
+fn nested_external_method_rejects_explicit_extra_argument() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/test-js.cirru");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(
+      &entries.init_ns,
+      "test-nested-external-arity-fail",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("negative external-method fixture should preprocess with an arity diagnostic");
+
+    let warnings = warnings.borrow();
+    assert!(
+      warnings.iter().any(|warning| warning
+        .message()
+        .contains("Method `.upper` expects 1 args (including receiver), got 2")),
+      "expected explicit-argument arity diagnostic for nested external method: {warnings:?}"
+    );
+  });
+}
+
 #[test]
 fn result_generic_declaration_order_preserves_ok_and_err_payload_types() {
   run_with_large_stack(|| {
