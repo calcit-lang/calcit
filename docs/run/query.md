@@ -81,13 +81,12 @@ calcit calcit/test.cirru query context 'calcit.core/&list:contains?' --format ed
 calcit calcit/test.cirru config show --format edn
 ```
 
-`query def` 的 `data` 包含
-`id`, `doc`, `tags`, `examples`, `tests`, `code`, `schema`, `ffi`, and `ffi_edn`.
-`ffi` is complete EDN-encoded JSON, using the same representation as `cirru parse-edn`:
-tag map keys retain `:`, tag values use `{"__edn_tag":"js"}`, and sets use
-`{"__edn_set":[...]}`. `ffi_edn` is complete, parseable Cirru EDN text. Both are
-`null` when absent; neither is a preview. Source-backed definitions have a content
-revision; source-less builtins have `revision: null`, `code: null`, and `builtin: true`.
+`query def` 的 `data` 包含 `id`、`doc`、`tags`、`examples`、`tests`、`code`、
+`schema`、`ffi` 和 `ffi_edn`。`--format edn` 的 `:ffi` 保留原生 Cirru EDN Map/Tag；
+`--format json` 的 `ffi` 才使用互操作编码：tag 键保留 `:`，tag 值使用
+`{"__edn_tag":"js"}`，set 使用 `{"__edn_set":[...]}`。`ffi_edn` 是完整可解析的
+Cirru EDN 文本；缺失时为 `nil`／`null`，两者均不是 preview。有源码定义带内容
+`revision`；无源码 builtin 的 `revision`、`code` 为 `nil`／`null`，`builtin` 为 `true`。
 The schema field remains a Cirru syntax tree, not raw persisted schema data.
 
 兼容性：`--json` 仍在 human 输出末尾附加 `JSON:` 与旧字段对象，其中 `ffi` 保持

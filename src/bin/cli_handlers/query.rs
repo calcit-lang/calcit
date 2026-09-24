@@ -703,6 +703,8 @@ fn structured_query_request(cmd: &QueryCommand) -> Option<(QueryRenderFormat, &'
     QuerySubcommand::TypeAt(opts) => (opts.format.as_str(), "query.type-at", opts.target.as_str()),
     QuerySubcommand::Context(opts) => (opts.format.as_str(), "query.context", opts.target.as_str()),
     QuerySubcommand::Def(opts) => (opts.format.as_str(), "query.def", opts.target.as_str()),
+    QuerySubcommand::Search(opts) => (opts.format.as_str(), "query.search", opts.pattern.as_str()),
+    QuerySubcommand::SearchExpr(opts) => (opts.format.as_str(), "query.search-expr", opts.pattern.as_str()),
     _ => return None,
   };
   match parse_query_render_format(raw_format).ok()? {
@@ -714,7 +716,7 @@ fn structured_query_request(cmd: &QueryCommand) -> Option<(QueryRenderFormat, &'
 fn query_failure_code(command: &str, error: &str) -> &'static str {
   if command == "query.type" && (error.starts_with("Unknown builtin type") || error.contains("Failed to parse type")) {
     "E_QUERY_INVALID_TYPE"
-  } else if error.starts_with("Path index") || error.starts_with("Invalid path") {
+  } else if error.starts_with("Path index") || error.starts_with("Invalid path") || error.starts_with("Invalid start path") {
     "E_QUERY_INVALID_PATH"
   } else if error.contains("not found") || error.contains("does not exist") {
     "E_QUERY_TARGET_NOT_FOUND"
@@ -3983,11 +3985,17 @@ fn format_def_query_json(data: serde_json::Value, revision: Option<String>) -> R
 }
 
 fn emit_def_query(
-  data: serde_json::Value,
+  mut data: serde_json::Value,
   revision: Option<String>,
   format: QueryRenderFormat,
   ffi: Option<&cirru_edn::Edn>,
 ) -> Result<(), String> {
+  if format == QueryRenderFormat::Edn && ffi.is_some() {
+    data
+      .as_object_mut()
+      .ok_or_else(|| "Definition query data must be an object".to_owned())?
+      .remove("ffi");
+  }
   let json = format_def_query_json(data, revision)?;
   match format {
     QueryRenderFormat::Json => println!("{json}"),

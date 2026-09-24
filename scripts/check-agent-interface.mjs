@@ -826,6 +826,24 @@ for (const { name, base, expectedStatus = 0, check } of [
     check: (result) => assert.equal(result.diagnostics[0].code, "E_QUERY_TARGET_NOT_FOUND"),
   },
   {
+    name: "invalid search path EDN failure",
+    base: ["calcit/test.cirru", "query", "search", "main!", "--filter", "app.main/main!", "--start-path", "banana"],
+    expectedStatus: 1,
+    check: (result) => {
+      assert.equal(result.command, "query.search");
+      assert.equal(result.diagnostics[0].code, "E_QUERY_INVALID_PATH");
+    },
+  },
+  {
+    name: "invalid expression search EDN failure",
+    base: ["calcit/test.cirru", "query", "search-expr", "foo ("],
+    expectedStatus: 1,
+    check: (result) => {
+      assert.equal(result.command, "query.search-expr");
+      assert.equal(result.diagnostics[0].code, "E_QUERY_FAILED");
+    },
+  },
+  {
     name: "entry config EDN",
     base: ["calcit/test.cirru", "config", "show"],
     check: (result) => assert.equal(result.data.package, "app"),
@@ -951,7 +969,7 @@ try {
     return child;
   };
   const names = Array.from({ length: 300 }, (_, i) => `(:member-${i} ${JSON.stringify(`|宿主\\\"\n${i}`)})`).join(" ");
-  const ffi = `{} (:backend :js) (:names $ {} ${names})`;
+  const ffi = `{} (:backend :js) (:names $ {} ${names} (:foo_bar |first) (:foo-bar |second))`;
   const edit = run("edit", "ffi", "app.main/main!", "--code", ffi);
   assert.equal(edit.status, 0, edit.stderr);
   const query = (...flags) => run("query", "def", "app.main/main!", ...flags);
@@ -966,8 +984,10 @@ try {
   const normalizedEnvelope = normalizeEdnKeys(nativeEnvelope, jsonEnvelope);
   normalizedEnvelope.data.ffi = data.ffi;
   assert.deepEqual(normalizedEnvelope, jsonEnvelope);
-  assert.equal(Object.keys(data.ffi[":names"]).length, 300);
+  assert.equal(Object.keys(data.ffi[":names"]).length, 302);
   assert.equal(data.ffi[":names"][":member-299"], "宿主\\\"\n299");
+  assert.equal(data.ffi[":names"][":foo_bar"], "first");
+  assert.equal(data.ffi[":names"][":foo-bar"], "second");
   const roundTrip = run("cirru", "parse-edn", data.ffi_edn);
   assert.equal(roundTrip.status, 0, roundTrip.stderr);
   assert.deepEqual(JSON.parse(roundTrip.stdout), data.ffi);
@@ -996,9 +1016,9 @@ try {
   const inertEntry = run("edit", "def", "app.main/main!", "--overwrite", "--code", "quote $ defn main! () $ raise |query-must-not-run");
   assert.equal(inertEntry.status, 0, inertEntry.stderr);
   const beforeRead = readFileSync(fixture);
-  const readOnlyQuery = run("query", "type", "'String", "--format", "edn");
+  const readOnlyQuery = run("query", "context", "app.main/main!", "--format", "edn");
   assert.equal(readOnlyQuery.status, 0, "queries must not execute the project's init function");
-  assert.equal(parseEdnEnvelope(readOnlyQuery.stdout, "inert entry read").command, "query.type");
+  assert.equal(parseEdnEnvelope(readOnlyQuery.stdout, "inert entry read").command, "query.context");
   assert.deepEqual(readFileSync(fixture), beforeRead, "query must leave the Snapshot unchanged");
 } finally {
   rmSync(fixtureDir, { recursive: true, force: true });
