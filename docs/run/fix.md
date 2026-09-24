@@ -35,6 +35,10 @@ calcit calcit.cirru fix
 calcit calcit.cirru fix --ns app.main --def render! --format edn
 ```
 
+不带 `--ns` 的整项目预览覆盖所有 named entry 的源码，因此按 target 中立的方式规划改写；例如 browser 默认入口不会阻止扫描
+server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定义，也不能代替逐入口的 `--check-only` 或 `fix --workflow strict --verify`。
+限定 `--ns`/`--def` 时仍使用所选 `--entry` 的 target 检查；检查 Node-only 定义时应显式选择 Node entry。
+
 当前稳定规则包括：
 
 - `removed-data-api-v1` 复用编译器已有的 `W_REMOVED_DATA_API` 解析结果。只有一对一的名称迁移
@@ -329,7 +333,10 @@ apply 必须原样重复 preview 使用的 `--ns`、`--def` 以及 `--rule` 或 
 
 写入流程复用 `tree replace` 的 `--expect` guard 和现有 transaction：规划完成后即使调用方没有显式传
 `--expect-revision`，transaction 也必须绑定规划时捕获的 revision。全部 replacement 先在 staged Snapshot 上执行，重新加载并
-以调用方选中的同一 `--entry` 及其 target、modules、type slots 预处理选定 scope，最后才原子替换源文件。revision 过期、节点不匹配、替换重叠、parse/schema/preprocess 失败时均不写入。
+以调用方选中的同一 `--entry` 加载 modules、type slots 并预处理选定 scope，最后才原子替换源文件。带 `--ns` 的局部 scope
+检查该 entry 的 target；不带 `--ns` 的整项目 staged 预处理与预览一样为 target 中立，不能证明 browser 或 Node 入口兼容，
+仍需对每个 entry 分别运行 `--check-only` 或 `fix --workflow strict --verify`。revision 过期、节点不匹配、替换重叠、
+parse/schema/preprocess 失败时均不写入。
 重复运行同一规则必须返回空 suggestions，不能再次改写。
 
 为了让旧兼容代码在已经启用严格错误的版本中仍可迁移，初次规划会在隔离的兼容 preprocess 中收集 warning 和类型证据；这一步

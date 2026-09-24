@@ -385,6 +385,9 @@ pub(crate) fn handle_fix_command(
   snapshot_file: &str,
 ) -> Result<(), String> {
   validate_options(options)?;
+  // A whole-project plan covers definitions from every named entry, so it has
+  // no single host target. Entry-scoped checks still enforce their own target.
+  let _target_scope = FixTargetScope::new(options.ns.is_none());
   let selected_rules = selected_rule_ids(options);
   let source_snapshot = load_snapshot(snapshot_file)?;
   let source_content = fs::read_to_string(snapshot_file).map_err(|error| format!("Failed to read {snapshot_file}: {error}"))?;
@@ -708,6 +711,26 @@ pub(crate) fn handle_fix_command(
     Err("Strict project workflow verification failed; inspect the structured workflow results.".to_owned())
   } else {
     Ok(())
+  }
+}
+
+struct FixTargetScope(Option<crate::snapshot::SnapshotTarget>);
+
+impl FixTargetScope {
+  fn new(whole_project: bool) -> Option<Self> {
+    if whole_project {
+      let previous = program::active_entry_target();
+      program::configure_entry_target(None);
+      Some(Self(previous))
+    } else {
+      None
+    }
+  }
+}
+
+impl Drop for FixTargetScope {
+  fn drop(&mut self) {
+    program::configure_entry_target(self.0);
   }
 }
 

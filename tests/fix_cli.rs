@@ -551,6 +551,46 @@ fn whole_project_fix_loads_modules_from_all_entries_and_reports_missing_dependen
 }
 
 #[test]
+fn whole_project_fix_previews_node_only_definitions_without_weakening_entry_checks() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  let fixture = fs::read_to_string("calcit/fibo.cirru").expect("fixture should read");
+  let fixture = fixture.replace(
+    "(:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)",
+    "(:init-fn 'app.main/main!) (:mode :js) (:reload-fn 'app.main/reload!) (:target :browser)",
+  );
+  let fixture = fixture.replace(
+    "(:init-fn 'app.main/try-prime) (:mode :native) (:reload-fn 'app.main/try-prime)",
+    "(:init-fn 'app.main/try-prime) (:mode :js) (:reload-fn 'app.main/try-prime) (:target :node)",
+  );
+  let fixture = fixture.replace(
+    "        'reload! $ %{} 'CodeEntry",
+    "        'NodeClock $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ deftrait NodeClock\n            .get-date $ :: 'Fn $ {} (:args $ [] 'app.main/NodeClock) (:return 'Number)\n          :examples $ []\n          :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)\n            :names $ {} (:get-date |getDate)\n          :schema $ :: 'Trait\n        'node-date $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ defn node-date ()\n            do $ let\n                date $ unsafe-coerce (new js/Date) NodeClock\n              date .get-date\n          :examples $ []\n          :ffi $ {} (:backend :js) (:target :node)\n          :schema $ :: 'Fn $ {} (:args $ []) (:return 'Number) (:features $ #{} :js-ffi)\n        'reload! $ %{} 'CodeEntry",
+  );
+  fs::write(&snapshot, &fixture).expect("multi-target fixture should write");
+
+  let source = fs::read(&snapshot).expect("source snapshot should read");
+  let preview = run_fix(&snapshot, &["--preset", "surface-latest-v2", "--format", "json"]);
+  assert_success(&preview, "whole-project multi-target fix preview");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["command"], "fix");
+  assert!(
+    report["data"]["suggestions"].as_array().is_some_and(|suggestions| suggestions
+      .iter()
+      .any(|suggestion| { suggestion["definition"] == "app.main/node-date" && suggestion["rule_id"] == "redundant-do-v1" })),
+    "whole-project preview must visit the Node-only definition: {report}"
+  );
+  assert_eq!(fs::read(&snapshot).expect("source snapshot should remain readable"), source);
+
+  let browser_scope = run_fix(&snapshot, &["--ns", "app.main", "--def", "node-date", "--format", "json"]);
+  assert!(!browser_scope.status.success(), "browser-scoped node-only definition must fail");
+  assert!(String::from_utf8_lossy(&browser_scope.stderr).contains("selected entry targets `browser`"));
+
+  let server_scope = run_fix_with_entry(&snapshot, "prime", &["--ns", "app.main", "--def", "node-date", "--format", "json"]);
+  assert_success(&server_scope, "server-scoped node-only definition");
+}
+
+#[test]
 fn strict_workflow_applies_safe_fixes_and_verifies_the_result() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
