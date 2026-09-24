@@ -74,14 +74,16 @@ calcit query config
 calcit query ns <target-ns>
 calcit query defs <target-ns>
 calcit config type-slots
-calcit config show --format json
-calcit config modules --format json
-calcit config type-slots --format json
+calcit config show --format edn
+calcit config modules --format edn
+calcit config type-slots --format edn
 ```
 
-自动化应使用三个 config 查询的 `--format json`，不要解析带颜色的人类输出。成功与失败都会使用
-`schema_version`、`command`、`data`、`diagnostics`、`revision` 组成的单一 JSON envelope；失败仍以非零
-状态退出。`config show` 的全 entry 结果按名称排序，`config modules` 会为每个声明路径报告
+Calcit 自有自动化应使用三个 config 查询的 `--format edn`，不要解析面向人的输出；对接 JSON-only
+工具时才显式选择 `--format json`。两种结构化格式的成功与失败结果都只输出一个 envelope，
+包含版本、命令、数据、诊断和 revision；EDN 键为 `:schema-version` 等 kebab-case 名称，
+JSON 对应 `schema_version` 等兼容名称。失败仍以非零状态退出。`config show` 的全部入口结果按名称排序，
+`config modules` 会为每个声明路径报告
 `loaded`/`failed` 和解析出的 package。
 
 Type slot 优先用配置命令维护，避免直接改 snapshot：

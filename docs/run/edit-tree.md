@@ -74,8 +74,8 @@ calcit calcit.cirru cursor rm-mark render-start
 Definition-oriented `query`, `tree`, and `edit` commands accept `@cursor` as their target. Path-based commands also accept it as the path, so the current definition and selection do not need to be repeated:
 
 ```bash
-calcit calcit.cirru query context @cursor --format json
-calcit calcit.cirru query type-at @cursor --path @cursor --format json
+calcit calcit.cirru query context @cursor --format edn
+calcit calcit.cirru query type-at @cursor --path @cursor --format edn
 calcit calcit.cirru tree show @cursor --path @cursor
 calcit calcit.cirru tree replace @cursor --path @cursor \
   --code 'quote $ render-list items'

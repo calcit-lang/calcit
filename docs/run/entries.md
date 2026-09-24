@@ -59,14 +59,14 @@ calcit config set --entry server target native
 calcit config unset target
 calcit config unset --entry server target
 calcit config show
-calcit config show --format json
+calcit config show --format edn
 ```
 
-`config show`, `config modules`, and `config type-slots` accept `--format human|json`. JSON mode writes one
-schema-versioned envelope to stdout and keeps command explanations and incidental log output on stderr. Each selected entry
-includes its name, mode, optional target, init/reload definitions, description, modules, type slots, and feature
-policy. The all-entry `config show` form sorts entries by name; missing entries return a non-zero status with a
-structured diagnostic instead of partial success output.
+`config show`、`config modules` 和 `config type-slots` 支持 `--format human|edn|json`。Calcit 自有自动化优先
+选择 Cirru EDN；只有对接 JSON-only 工具时才显式选择 JSON。两种结构化格式都向 stdout 输出单一带版本的
+envelope，命令说明与其他日志留在 stderr。选中的入口包含名称、mode、可选 target、初始化与 reload 定义、
+description、modules、type slots 和 feature policy。未指定入口的 `config show` 按名称排序；入口不存在时
+以非零状态和结构化诊断返回，不会输出部分成功结果。
 
 `:init-fn` and `:reload-fn` are Calcit definition symbols, written as `'app.main/main!` rather than strings. Existing string-valued entries remain compatible on read and are converted on the next canonical snapshot write.
 
@@ -80,7 +80,7 @@ calcit config set --entry server target native
 calcit config set-type-slot --entry server :dispatch-op app.schema/ServerOp
 calcit config type-slots
 calcit config type-slots --entry server
-calcit config type-slots --entry server --format json
+calcit config type-slots --entry server --format edn
 ```
 
 The type-slot environment is selected before preprocessing starts, so the binding applies to the whole reachable call graph. Entry functions do not need a `with-type-slot` wrapper.

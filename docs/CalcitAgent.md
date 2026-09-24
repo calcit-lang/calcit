@@ -189,7 +189,8 @@ entry 都是独立配置，不能假设其模块继承 default。`--check-only` 
 检查的 Snapshot 文件（默认 `calcit.cirru`）。旧写法 `docs check-md --entry` 会报错并给出迁移提示，避免同名参数指代两种对象。
 
 Agent 和 CI 读取 entry 配置时优先使用 config 查询的 `--format edn`；对接仅支持 JSON 的工具时显式使用 `--format json`，不要解析彩色 human 输出。三个命令
-都返回带 `schema_version`、`command`、`data`、`diagnostics` 与 Snapshot `revision` 的单一 envelope；
+都返回带版本、命令、数据、诊断与 Snapshot revision 的单一 envelope；EDN 键为 `:schema-version`、
+`:command`、`:data`、`:diagnostics`、`:revision`，JSON 对应 `schema_version` 等兼容名称；
 entry 不存在或 Snapshot 配置无效时仍输出结构化诊断并以非零状态退出。
 
 读取源码优先使用 human 输出；其中包含代码的查询与 `tree show` 按 Markdown 组织，Cirru、JSON AST 和普通说明使用明确的 fenced block 或段落边界，适合人类 review，也方便 LLM 保留代码边界。需要稳定字段、自动分支或静态证据时优先使用 `--format edn`；仅对接 JSON-only 工具时显式使用 `--format json`。两种结构化格式各自承诺 stdout 为单个可解析 envelope；某些命令的 `--json` 只是在人类输出中附加 fenced JSON，具体以子命令 `--help` 为准。不要把 Markdown heading、fence 或截断说明复制为 Calcit 源码。
@@ -308,12 +309,12 @@ calcit cursor show
 calcit cursor apply replace --code 'quote <replacement-leaf>'
 calcit tree show @cursor --path @cursor
 calcit query type-at @cursor --path @cursor --format edn
-calcit --entry '<target-entry>' calcit.cirru analyze check-public --ns '<public-namespace>' --format edn
+calcit --entry '<target-entry>' calcit.cirru analyze check-public --ns '<public-namespace>' --format json
 calcit analyze check-examples --ns '<namespace>' --def '<definition>'
 calcit test '<namespace>/<definition>'
 ```
 
-`type-at --format json` 的语义路径可能是 `code@3.2`，而 `tree --path` 需要 `@3.2`；不要把仍含 `code@` 的 follow-up 命令直接交给 `tree`。
+`type-at --format edn` 的语义路径可能是 `code@3.2`，而 `tree --path` 需要 `@3.2`；不要把仍含 `code@` 的 follow-up 命令直接交给 `tree`。`check-public` 目前只支持 human/json，所以上述公开 API 审计显式使用 JSON。
 
 读取 `query type`、`type-at` 或 `context` 的方法契约时，先看 `status`：`proven` 表示接收者实例化后，调用参数与结果已有精确类型；`open` 表示仍含 `Dynamic`/`DynFn` 或缺少可证明的 schema，不能据此生成精确调用。例如 `Option<Dynamic>` 的 `.unwrap-or` 是开放契约，但不读取内部值的 `.some? -> Bool` 仍可证明。`ambiguous` 需要先消除 trait/impl 来源冲突，不要按展示顺序猜一个实现。
 
@@ -619,7 +620,7 @@ calcit cirru show-guide
 按从便宜到昂贵的顺序形成闭环：
 
 1. 结构：`cursor show` 或 `tree show`，确认实际 subtree。
-2. 语义：`query type-at ... --format json`，运行 `analyze check-types --summary-only`；类库发布还要针对每个 entry target 运行 `analyze check-public --ns <shared> --ns <target-specific> --format json`，以 `checked_definition_ids` 与 `complete: true` 证明未引用的公开函数、data/trait definitions 也已预处理。不要注入临时引用函数或维护手写 export 清单。发布审计加 `--deps --format json`，以 Snapshot loader 成功解析作为 strict macro schema 的门槛。已结构化 `CodeEntry` 中的旧 runtime `Fn` / `Dynamic` macro schema 必须用最终兼容版本 0.13.51 迁移为显式 Macro contract。更早的 direct-quote macro 则使用当前 `edit format`，它只按参数形状生成 `Syntax` / `Expr<Dynamic>` / 空 capabilities 的保守 contract；必须人工审阅和收窄，不能把该桥接结果当成推断出的业务语义。看到 `W_TYPE_COVERAGE_GAPS` 后可执行 `analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved`，按 path/detail 定位迁移项。类型正确性只由默认严格预处理的 warning/error 决定。已有项目在 0.14.x 可继续用 `analyze quality --baseline ...` 作为清债 ratchet；新项目不生成 baseline，存量项目清零后也应删除它。
+2. 语义：`query type-at ... --format edn`，运行 `analyze check-types --summary-only`；类库发布还要针对每个 entry target 运行 `analyze check-public --ns <shared> --ns <target-specific> --format json`，以 `checked_definition_ids` 与 `complete: true` 证明未引用的公开函数、data/trait definitions 也已预处理。`check-public` 暂只提供 JSON 结构化输出，不要把本节的 EDN 默认扩展到该命令。不要注入临时引用函数或维护手写 export 清单。发布审计加 `--deps --format json`，以 Snapshot loader 成功解析作为 strict macro schema 的门槛。已结构化 `CodeEntry` 中的旧 runtime `Fn` / `Dynamic` macro schema 必须用最终兼容版本 0.13.51 迁移为显式 Macro contract。更早的 direct-quote macro 则使用当前 `edit format`，它只按参数形状生成 `Syntax` / `Expr<Dynamic>` / 空 capabilities 的保守 contract；必须人工审阅和收窄，不能把该桥接结果当成推断出的业务语义。看到 `W_TYPE_COVERAGE_GAPS` 后可执行 `analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved`，按 path/detail 定位迁移项。类型正确性只由默认严格预处理的 warning/error 决定。已有项目在 0.14.x 可继续用 `analyze quality --baseline ...` 作为清债 ratchet；新项目不生成 baseline，存量项目清零后也应删除它。
 3. definition：`analyze check-examples --ns <ns> --def <def>`；存在 definition-attached tests 时运行 `calcit test <ns>/<def>`。
 4. 项目：运行 `calcit test` 及仓库规定的 entry 和测试；默认 `calcit test` 只发现当前输入 snapshot 定义的命名空间，不触发 `calcit-core.cirru` 或外部模块中的测试。变更范围明确时可先用 `calcit test --affected <ns>/<def>` 做静态依赖筛选，但提交前仍按仓库要求执行全量门禁。CI/Agent 按 tag 或 affected 筛选时加 `--require-match`，避免空选择误报成功；大套件可加 `--summary-only --format json` 保持 stdout 紧凑可解析。只有项目目标是 JavaScript 时才运行对应的 `calcit js` codegen。
 

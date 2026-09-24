@@ -157,8 +157,8 @@ calcit query search hello --source all
 # Limit to one definition
 calcit query search hello --filter app.main/main!
 
-# Stable paths and matched trees in one JSON envelope
-calcit query search hello --filter app.main/main! --format json
+# Stable paths and matched trees in one Cirru EDN envelope
+calcit query search hello --filter app.main/main! --format edn
 ```
 
 ### Search Expressions (`search-expr`)
@@ -170,8 +170,8 @@ calcit query search-expr "fn (x)"
 # Limit to one definition
 calcit query search-expr "fn (x)" --filter app.main/main!
 
-# `--json` decodes the pattern; `--format json` controls result encoding
-calcit query search-expr '["fn",["x"]]' --json --filter app.main/main! --format json
+# `--json` decodes the pattern; `--format edn` controls result encoding independently
+calcit query search-expr '["fn",["x"]]' --json --filter app.main/main! --format edn
 ```
 
 `query search` defaults to `--source all` for compatibility. `project` means namespaces stored in the input Snapshot,
@@ -179,12 +179,11 @@ calcit query search-expr '["fn",["x"]]' --json --filter app.main/main! --format 
 entry (`--entry` selects a different complete entry configuration). Source filtering happens before deterministic
 definition ordering and global `cursor_index` assignment.
 
-Search JSON results contain a summary plus definition rows with `code@...` paths and the matched Cirru tree. Every
-definition and match reports `source` plus an `origin` object containing its package and module path. `node_kind`
-is `leaf`, `call`, or `expr`; in particular, a bare `%none` leaf and the callee inside `(%none)` no longer require
-parent-tree inference. `--parent-path` also returns the editable parent path for leaf searches. JSON stdout remains
-one schema-versioned envelope. With the default source and no explicit `--entry`, a project/core namespace filter
-keeps the previous shallow-loading behavior and does not load unrelated dependency modules.
+结构化搜索结果包含摘要、带 `code@...` 路径的定义，以及匹配的 Cirru 树。每条定义与匹配都包含
+`source` 和表示 package/module 路径的 `origin`。`node_kind` 区分 `leaf`、`call` 和 `expr`，
+因此裸 `%none` 叶子与 `(%none)` 中的被调用项不必再靠父树猜测。`--parent-path` 可返回叶子匹配的
+可编辑父路径。EDN stdout 是单个带版本的 envelope；JSON 只作为显式互操作投影。默认 source 且未显式
+指定 `--entry` 时，project/core namespace 过滤仍沿用浅加载，不会装载无关依赖模块。
 
 ### Inspect Static Type Methods (`type`)
 
@@ -198,8 +197,8 @@ calcit query type ":: 'List 'Number"
 # A definition with an explicit static schema
 calcit query type calcit.core/ceil
 
-# Machine-readable result; stdout is one JSON value
-calcit query type "'Number" --format json
+# Machine-readable result; stdout is one Cirru EDN value
+calcit query type "'Number" --format edn
 ```
 
 `query type` loads and preprocesses static metadata but does not run the project init or reload function. It lists methods in dispatch-precedence order and shows the impl that contributes each method. Definition targets first use an explicit schema, then static source inference. This allows `defstruct` and `defenum` declarations with a dynamic entry schema to expose their named type and methods without constructing a runtime value. If neither source is sufficient, query a concrete type annotation instead.
@@ -213,7 +212,7 @@ Use a Snapshot path returned by `query search`, `query context`, or another stru
 calcit query type-at test-struct.main/sum-point --path code@3.1
 
 # Machine-readable evidence envelope
-calcit query type-at test-struct.main/sum-point --path code@3.1 --format json
+calcit query type-at test-struct.main/sum-point --path code@3.1 --format edn
 ```
 
 `query type-at` statically preprocesses the selected definition and reports:
@@ -227,7 +226,10 @@ calcit query type-at test-struct.main/sum-point --path code@3.1 --format json
 
 The command does not invoke the project init/reload function. A dynamic FFI boundary is labeled `intentional-js-ffi` when the enclosing schema declares `:features $ #{} :js-ffi`; unresolved expressions remain explicit rather than triggering a runtime fallback. Named `defstruct`/`defenum` values are retained as source-backed type references, so field and method metadata can be resolved without constructing application values.
 
-`type-at --format json` uses protocol `schema_version: 2`. Version 2 adds the required `data.lowering` object with `status`, `kind`, `source_head`, `lowered_head`, and `detail`. Tooling can use `status: specialized` to confirm that rich source syntax reached a type-selected primitive, and should treat `dynamic` or `unavailable` as a migration/checking signal rather than assuming that successful inference implies optimized execution.
+`type-at --format edn` 使用版本 2 的结构化协议，包含 `:data :lowering` 中的 `:status`、`:kind`、
+`:source-head`、`:lowered-head` 和 `:detail`。显式选择 JSON 时，对应键为 `schema_version`、
+`data.lowering.source_head` 等兼容形式。`specialized` 表示源码语义已经选择类型专门化的 primitive；
+`dynamic` 或 `unavailable` 仍需作为迁移和检查线索，不能因为推断成功就假定执行路径已优化。
 
 ### Gather Definition Context (`context`)
 
@@ -235,21 +237,21 @@ The command does not invoke the project init/reload function. A dynamic FFI boun
 # One bounded view for understanding or preparing to edit a definition
 calcit query context app.main/main!
 
-# Return the typed result envelope as JSON
-calcit query context app.main/main! --format json
+# Return the typed result envelope as Cirru EDN
+calcit query context app.main/main! --format edn
 
 # Use a smaller content budget and include dependency/core usages
 calcit query context app.main/main! --budget 2400 --deps
 
 # Builtin helpers without a Snapshot body use curated metadata
-calcit query context calcit.core/to-js-data --format json
+calcit query context calcit.core/to-js-data --format edn
 ```
 
 `query context` combines information that otherwise requires several commands:
 
 - definition identity and deterministic revision;
 - Snapshot doc, tags, schema features, examples, and a bounded code preview;
-- a JSON syntax tree for small code/example forms, or a follow-up command when omitted;
+- 小型代码或示例的结构化语法树；若省略则提供后续查询命令；
 - trusted type-coverage state and static methods;
 - direct dependencies and usage locations such as `code@3.2`;
 - unresolved versus intentional (`:js-ffi`) dynamic-type diagnostics;
@@ -257,7 +259,8 @@ calcit query context calcit.core/to-js-data --format json
 
 The numeric paths are scoped to the returned revision. Re-query after a change before using a path for editing. `--budget` is an approximate character budget for variable-size content; explicit `--dependency-limit`, `--usage-limit`, and `--example-limit` bounds are also available.
 
-With `--format json`, stdout contains one JSON envelope. Command explanations and platform registration remain on stderr, so callers should consume stdout as the machine result.
+选择 `--format edn` 时，stdout 只包含一个 Cirru EDN envelope；JSON-only consumer 可显式选择
+`--format json` 获取对应的 JSON envelope。命令说明与平台注册信息留在 stderr，不应和结构化结果混读。
 
 ## Quick Recipes (for fast locating)
 
@@ -271,7 +274,7 @@ calcit query def calcit.core/assoc
 ### Collect edit context in one call
 
 ```bash
-calcit query context app.main/main! --format json
+calcit query context app.main/main! --format edn
 ```
 
 ### Locate all call sites before refactor
