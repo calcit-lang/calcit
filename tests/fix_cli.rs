@@ -142,7 +142,7 @@ fn optional_parameter_rule_reports_review_evidence_without_writing() {
         "fix-command.main/reload!",
         "--overwrite",
         "--code",
-        "quote $ defn reload! () (let ((invoke ambiguous)) (invoke false)) &unit",
+        "quote $ defn reload! () (identity ambiguous) &unit",
       ],
     ),
     "install function-value legacy caller",
@@ -210,11 +210,14 @@ fn optional_parameter_rule_reports_review_evidence_without_writing() {
       .iter()
       .any(|item| item == "fix-command.main/shadowed-optional")
   );
-  assert!(origins.iter().any(|item| {
-    item["kind"] == "resolved-project-reference"
-      && item["definition"] == "fix-command.main/reload!"
-      && item["call_kind"] == "function-value"
-  }));
+  assert!(
+    origins.iter().any(|item| {
+      item["kind"] == "resolved-project-reference"
+        && item["definition"] == "fix-command.main/reload!"
+        && item["call_kind"] == "function-value"
+    }),
+    "expected direct function-value evidence: {origins:?}"
+  );
   assert!(suggestions[0]["origin_chain"][0]["candidate_type"].is_null());
   assert!(suggestions[0]["replacement"].is_null());
   assert_eq!(fs::read(&snapshot).expect("snapshot should remain readable"), before);
