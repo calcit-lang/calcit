@@ -6637,6 +6637,17 @@ fn collect_impls_from_value(value: &Calcit) -> Option<Vec<Arc<CalcitImpl>>> {
 }
 
 fn get_impls_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<CalcitImpl>>> {
+  if let CalcitTypeAnnotation::TypeRef(name, _) = type_value {
+    let reference = name.trim_start_matches('\'').trim_start_matches(':');
+    if let Some((ns, def)) = reference.rsplit_once('/')
+      && let Some(Calcit::StructDef(struct_def)) = resolve_program_value_for_preprocess(ns, def, None)
+    {
+      let mut impls = resolve_core_impls("&core-struct-impls").unwrap_or_default();
+      impls.extend(struct_def.impls.iter().cloned());
+      return Some(impls);
+    }
+  }
+
   if let Some(struct_def) = type_value.resolve_to_struct() {
     // Prepend core struct impls; user impls come after and win (last_wins=true)
     let mut impls = resolve_core_impls("&core-struct-impls").unwrap_or_default();

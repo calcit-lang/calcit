@@ -7,8 +7,36 @@
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
-  :files $ {} $ 'test-traits.main
-    %{} 'FileEntry
+  :files $ {}
+    'test-traits.external $ %{} 'FileEntry
+      :defs $ {}
+        'Counter $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def Counter
+            impl-traits
+              defstruct Counter $ :value 'Number
+              , CounterOpsImpl
+          :examples $ []
+          :schema $ :: 'StructDef
+        'CounterOps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait CounterOps
+            .next $ :: 'Fn $ {}
+              :args $ [] 'test-traits.external/Counter
+              :return 'test-traits.external/Counter
+          :examples $ []
+          :schema $ :: 'Trait
+        'CounterOpsImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl CounterOpsImpl CounterOps (.next counter:next)
+          :examples $ []
+          :schema $ :: 'Impl
+        'counter:next $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn counter:next (self)
+            %{} Counter $ :value $ inc (:value self)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'test-traits.external/Counter)
+            :args $ [] 'test-traits.external/Counter
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-traits.external
+    'test-traits.main $ %{} 'FileEntry
       :defs $ {}
         'CoreShowImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl CoreShowImpl calcit.core/Show (.show core-show:show)
