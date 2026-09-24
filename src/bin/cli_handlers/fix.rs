@@ -1439,6 +1439,7 @@ fn plan_optional_parameter_diagnostics(
   let mut optional = false;
   let mut argument_index = 0;
   let mut suggestions = Vec::new();
+  let mut candidate_arg_types = signature.map(|signature| signature.arg_types.clone());
   for (source_index, arg) in args.iter().enumerate() {
     if arg.eq_leaf("?") {
       optional = true;
@@ -1450,7 +1451,14 @@ fn plan_optional_parameter_diagnostics(
     }
     if optional {
       let declared = signature.and_then(|signature| signature.arg_types.get(argument_index));
-      let candidate = declared.and_then(|annotation| optional_parameter_candidate(annotation));
+      let candidate = declared
+        .filter(|annotation| optional_parameter_schema_type(annotation).is_some())
+        .and_then(|annotation| optional_parameter_candidate(annotation));
+      candidate_arg_types = candidate_arg_types.and_then(|mut arg_types| {
+        let candidate_type = declared.and_then(optional_parameter_schema_type)?;
+        *arg_types.get_mut(argument_index)? = candidate_type;
+        Some(arg_types)
+      });
       let parameter = leaf_value(arg).unwrap_or("<destructured>");
       let reason = if candidate.is_some() {
         "declared-type-only; body presence checks, explicit nil, generated/external callers, and call evaluation are not yet proven"
@@ -1486,8 +1494,20 @@ fn plan_optional_parameter_diagnostics(
     argument_index += 1;
   }
   if !suggestions.is_empty() {
+    let candidate_fn_schema_edn = signature
+      .zip(candidate_arg_types)
+      .filter(|(signature, arg_types)| signature.arg_types.len() == argument_index && arg_types.len() == argument_index)
+      .and_then(|(signature, arg_types)| {
+        let mut candidate = signature.clone();
+        candidate.arg_types = arg_types;
+        if !optional_candidate_signature_is_closed(&candidate) {
+          return None;
+        }
+        cirru_edn::format(&candidate.to_schema_edn(), true).ok()
+      });
     let usage_evidence = collect_optional_parameter_usages(snapshot, namespace, definition, project_definitions);
     for suggestion in &mut suggestions {
+      suggestion.origin_chain[0]["candidate_fn_schema_edn"] = serde_json::json!(candidate_fn_schema_edn.as_deref());
       suggestion.origin_chain.extend(usage_evidence.iter().cloned());
     }
   }
@@ -1572,6 +1592,11 @@ fn collect_optional_parameter_usages(
           } else {
             Vec::new()
           },
+          "explicit_false_arguments": if call_kind == "direct-call" {
+            call.iter().skip(1).enumerate().filter_map(|(index, item)| item.eq_leaf("false").then_some(index)).collect::<Vec<_>>()
+          } else {
+            Vec::new()
+          },
         }));
       }
     }
@@ -1603,6 +1628,65 @@ fn optional_parameter_candidate(annotation: &CalcitTypeAnnotation) -> Option<Str
       }
     }
     other => Some(format!("Option<{}>", other.to_brief_string())),
+  }
+}
+
+/// Build a declaration-backed nominal Option slot without guessing through aliases or open types.
+fn optional_parameter_schema_type(annotation: &std::sync::Arc<CalcitTypeAnnotation>) -> Option<std::sync::Arc<CalcitTypeAnnotation>> {
+  let mut inner = annotation.as_ref();
+  while let CalcitTypeAnnotation::Optional(next) = inner {
+    inner = next.as_ref();
+  }
+  if !optional_candidate_type_is_closed(inner) {
+    return None;
+  }
+  match inner {
+    CalcitTypeAnnotation::TypeRef(name, args) if matches!(name.as_ref(), "Option" | "calcit.core/Option") && args.len() == 1 => {
+      Some(std::sync::Arc::new(inner.clone()))
+    }
+    CalcitTypeAnnotation::TypeRef(..) | CalcitTypeAnnotation::TypeSlot(..) => None,
+    _ => Some(std::sync::Arc::new(CalcitTypeAnnotation::TypeRef(
+      "calcit.core/Option".into(),
+      std::sync::Arc::new(vec![std::sync::Arc::new(inner.clone())]),
+    ))),
+  }
+}
+
+/// A review-only candidate must not preserve explicit open members in any signature position.
+fn optional_candidate_signature_is_closed(signature: &CalcitFnTypeAnnotation) -> bool {
+  signature.arg_types.iter().all(|arg| optional_candidate_type_is_closed(arg))
+    && optional_candidate_type_is_closed(&signature.return_type)
+    && signature
+      .rest_type
+      .as_ref()
+      .is_none_or(|rest| optional_candidate_type_is_closed(rest))
+}
+
+fn optional_candidate_type_is_closed(annotation: &CalcitTypeAnnotation) -> bool {
+  match annotation {
+    CalcitTypeAnnotation::Dynamic
+    | CalcitTypeAnnotation::DynFn
+    | CalcitTypeAnnotation::AnonymousEnum
+    | CalcitTypeAnnotation::Custom(_)
+    | CalcitTypeAnnotation::TypeSlot(_)
+    | CalcitTypeAnnotation::Macro(_)
+    | CalcitTypeAnnotation::Syntax(_) => false,
+    CalcitTypeAnnotation::List(inner)
+    | CalcitTypeAnnotation::Set(inner)
+    | CalcitTypeAnnotation::Ref(inner)
+    | CalcitTypeAnnotation::Variadic(inner)
+    | CalcitTypeAnnotation::Optional(inner)
+    | CalcitTypeAnnotation::JsNullish(inner) => optional_candidate_type_is_closed(inner),
+    CalcitTypeAnnotation::Map(key, value) => optional_candidate_type_is_closed(key) && optional_candidate_type_is_closed(value),
+    CalcitTypeAnnotation::TypeRef(_, args) => {
+      args.iter().all(|arg| optional_candidate_type_is_closed(arg))
+        && (annotation.resolve_to_struct().is_some() || annotation.resolve_to_enum().is_some())
+    }
+    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) => {
+      args.iter().all(|arg| optional_candidate_type_is_closed(arg))
+    }
+    CalcitTypeAnnotation::Fn(signature) => optional_candidate_signature_is_closed(signature),
+    _ => true,
   }
 }
 
@@ -3381,8 +3465,9 @@ mod tests {
   use super::{
     FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_potential_local_bindings, collect_redundant_do_paths,
     fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion, legacy_constructor_replacement, migration_for_source_leaf,
-    optional_parameter_candidate, prototype_is_shadowed, resolve_fix_target, rewrite_loaded_schema_type_references,
-    rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
+    optional_candidate_signature_is_closed, optional_candidate_type_is_closed, optional_parameter_candidate, prototype_is_shadowed,
+    resolve_fix_target, rewrite_loaded_schema_type_references, rewrite_named_constructor_tree, struct_fields_are_complete,
+    suggestion_operations,
   };
   use calcit::calcit::{CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTrait, CalcitTypeAnnotation, SchemaKind};
   use cirru_parser::Cirru;
@@ -3412,6 +3497,35 @@ mod tests {
       Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]),
     );
     assert_eq!(optional_parameter_candidate(&option), Some(option.to_brief_string()));
+  }
+
+  #[test]
+  fn optional_fn_candidate_checks_nested_members_and_rest_type() {
+    let open_map = Arc::new(CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::Number),
+      Arc::new(CalcitTypeAnnotation::Dynamic),
+    ));
+    let closed_map = Arc::new(CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::Number),
+      Arc::new(CalcitTypeAnnotation::String),
+    ));
+    assert!(!optional_candidate_type_is_closed(&CalcitTypeAnnotation::List(open_map)));
+    assert!(optional_candidate_type_is_closed(&CalcitTypeAnnotation::List(closed_map)));
+
+    let mut signature = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
+      return_type: Arc::new(CalcitTypeAnnotation::Unit),
+      fn_kind: SchemaKind::Fn,
+      rest_type: Some(Arc::new(CalcitTypeAnnotation::Dynamic)),
+      features: Arc::new(std::collections::HashSet::new()),
+    };
+    assert!(!optional_candidate_signature_is_closed(&signature));
+    signature.rest_type = Some(Arc::new(CalcitTypeAnnotation::String));
+    assert!(optional_candidate_signature_is_closed(&signature));
+    signature.return_type = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Dynamic)));
+    assert!(!optional_candidate_signature_is_closed(&signature));
   }
 
   #[test]

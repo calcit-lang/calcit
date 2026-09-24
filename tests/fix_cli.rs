@@ -128,7 +128,7 @@ fn optional_parameter_rule_reports_review_evidence_without_writing() {
         "fix-command.main/main!",
         "--overwrite",
         "--code",
-        "quote $ defn main! () (ambiguous nil) &unit",
+        "quote $ defn main! () (ambiguous) (ambiguous false) (ambiguous nil) &unit",
       ],
     ),
     "install direct legacy caller",
@@ -198,6 +198,19 @@ fn optional_parameter_rule_reports_review_evidence_without_writing() {
       && item["provided_arguments"] == 1
       && item["explicit_nil_arguments"] == serde_json::json!([0])
   }));
+  assert!(origins.iter().any(|item| {
+    item["kind"] == "resolved-project-reference"
+      && item["definition"] == "fix-command.main/main!"
+      && item["provided_arguments"] == 0
+      && item["explicit_nil_arguments"] == serde_json::json!([])
+  }));
+  assert!(origins.iter().any(|item| {
+    item["kind"] == "resolved-project-reference"
+      && item["definition"] == "fix-command.main/main!"
+      && item["provided_arguments"] == 1
+      && item["explicit_false_arguments"] == serde_json::json!([0])
+      && item["explicit_nil_arguments"] == serde_json::json!([])
+  }));
   assert!(
     !origins
       .iter()
@@ -219,6 +232,7 @@ fn optional_parameter_rule_reports_review_evidence_without_writing() {
     "expected direct function-value evidence: {origins:?}"
   );
   assert!(suggestions[0]["origin_chain"][0]["candidate_type"].is_null());
+  assert!(suggestions[0]["origin_chain"][0]["candidate_fn_schema_edn"].is_null());
   assert!(suggestions[0]["replacement"].is_null());
   assert_eq!(fs::read(&snapshot).expect("snapshot should remain readable"), before);
 
@@ -292,7 +306,251 @@ fn optional_parameter_rule_reports_declared_type_candidate() {
   let suggestion = &report["data"]["suggestions"][0];
   assert_eq!(suggestion["origin_chain"][0]["declared_type"], ":number");
   assert_eq!(suggestion["origin_chain"][0]["candidate_type"], "Option<:number>");
+  let candidate_schema = suggestion["origin_chain"][0]["candidate_fn_schema_edn"]
+    .as_str()
+    .expect("declared function should have a complete review-only schema candidate");
+  assert!(candidate_schema.contains("Option"), "candidate schema: {candidate_schema}");
+  assert!(candidate_schema.contains("Number"), "candidate schema: {candidate_schema}");
+  assert!(candidate_schema.contains("Bool"), "candidate schema: {candidate_schema}");
   assert_eq!(suggestion["applicability"], "needs-review");
+  assert_eq!(fs::read(&snapshot).expect("snapshot should remain readable"), before);
+}
+
+#[test]
+fn optional_parameter_rule_omits_open_fn_candidates() {
+  for (case, schema, has_slot_candidate) in [
+    (
+      "bare List tail",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Number 'List) (:return 'Unit)",
+      false,
+    ),
+    (
+      "bare Map tail",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Number 'Map) (:return 'Unit)",
+      false,
+    ),
+    (
+      "open required argument",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic 'Number) (:return 'Unit)",
+      true,
+    ),
+    (
+      "open return",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Number 'Number) (:return 'Dynamic)",
+      true,
+    ),
+  ] {
+    let directory = TestDirectory::create();
+    let snapshot = directory.path().join("calcit.cirru");
+    fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          "fix-command.main/ambiguous",
+          "--overwrite",
+          "--code",
+          "quote $ defn ambiguous (required ? value) &unit",
+        ],
+      ),
+      case,
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", "fix-command.main/ambiguous", "--code", schema]),
+      case,
+    );
+    let before = fs::read(&snapshot).expect("snapshot should be readable");
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "optional-parameters-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        "ambiguous",
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, case);
+    let report = parse_stdout(&preview);
+    let suggestion = &report["data"]["suggestions"][0];
+    assert_eq!(
+      suggestion["origin_chain"][0]["candidate_type"].is_string(),
+      has_slot_candidate,
+      "{case}"
+    );
+    assert!(suggestion["origin_chain"][0]["candidate_fn_schema_edn"].is_null(), "{case}");
+    assert_eq!(suggestion["applicability"], "needs-review", "{case}");
+    assert_eq!(fs::read(&snapshot).expect("snapshot should remain readable"), before, "{case}");
+  }
+}
+
+#[test]
+fn optional_parameter_rule_does_not_call_a_schema_alias_complete() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "def", "fix-command.main/OpenAlias", "--code", "quote $ def OpenAlias &unit"],
+    ),
+    "install schema-backed alias definition",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/OpenAlias",
+        "--code",
+        "quote $ :: 'List 'Dynamic",
+      ],
+    ),
+    "install open alias schema",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/ambiguous",
+        "--overwrite",
+        "--code",
+        "quote $ defn ambiguous (required ? value) &unit",
+      ],
+    ),
+    "install optional function using alias",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/ambiguous",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'fix-command.main/OpenAlias 'Number) (:return 'Unit)",
+      ],
+    ),
+    "install function schema with alias",
+  );
+  let before = fs::read(&snapshot).expect("snapshot should be readable");
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "optional-parameters-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "ambiguous",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "schema-backed alias candidate preview");
+  let report = parse_stdout(&preview);
+  let suggestion = &report["data"]["suggestions"][0];
+  assert_eq!(suggestion["origin_chain"][0]["candidate_type"], "Option<:number>");
+  assert!(suggestion["origin_chain"][0]["candidate_fn_schema_edn"].is_null());
+  assert_eq!(suggestion["applicability"], "needs-review");
+  assert_eq!(fs::read(&snapshot).expect("snapshot should remain readable"), before);
+}
+
+#[test]
+fn optional_parameter_rule_keeps_multiple_trailing_candidates_review_only() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/ambiguous",
+        "--overwrite",
+        "--code",
+        "quote $ defn ambiguous (url ? trace timeout) &unit",
+      ],
+    ),
+    "install multiple trailing optional parameters",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/ambiguous",
+        "--code",
+        "quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] 'String 'T 'Number) (:return 'Unit) (:features $ #{} :js-ffi)",
+      ],
+    ),
+    "install complete declared function schema",
+  );
+  let before = fs::read(&snapshot).expect("snapshot should be readable");
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "optional-parameters-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "ambiguous",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "multiple optional parameter preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
+  assert_eq!(suggestions.len(), 2);
+  let candidate_schema = suggestions[0]["origin_chain"][0]["candidate_fn_schema_edn"]
+    .as_str()
+    .expect("complete declaration should have a review-only Fn candidate");
+  assert_eq!(
+    candidate_schema.matches("Option").count(),
+    2,
+    "candidate schema: {candidate_schema}"
+  );
+  assert!(candidate_schema.contains("String") && candidate_schema.contains("Number") && candidate_schema.contains("Unit"));
+  assert!(
+    candidate_schema.contains("generics") && candidate_schema.contains("T"),
+    "candidate schema: {candidate_schema}"
+  );
+  assert!(candidate_schema.contains("js-ffi"), "candidate schema: {candidate_schema}");
+  let candidate_edn = cirru_edn::parse(candidate_schema).expect("candidate Fn schema should be valid Cirru EDN");
+  calcit::snapshot::schema_edn_to_cirru(&candidate_edn).expect("candidate Fn schema should map to source syntax");
+  assert_eq!(suggestions[1]["origin_chain"][0]["candidate_fn_schema_edn"], candidate_schema);
+  assert!(
+    suggestions
+      .iter()
+      .all(|suggestion| suggestion["applicability"] == "needs-review" && suggestion["replacement"].is_null())
+  );
+  let edn_preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "optional-parameters-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "ambiguous",
+      "--format",
+      "edn",
+    ],
+  );
+  assert_success(&edn_preview, "native EDN optional parameter preview");
+  cirru_edn::parse(&String::from_utf8_lossy(&edn_preview.stdout)).expect("optional parameter EDN should parse");
   assert_eq!(fs::read(&snapshot).expect("snapshot should remain readable"), before);
 }
 
