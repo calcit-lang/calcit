@@ -1290,7 +1290,7 @@ mod type_query_tests {
   fn method_query_reuses_bound_collection_contracts_and_keeps_open_schemas_explicit() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");
-    prepare_program_for_type_query_on_cli_stack(snapshot);
+    prepare_program_for_type_query_on_cli_stack(snapshot.clone());
 
     let list = parse_type_annotation_query(":: 'List 'Number").expect("typed list should parse");
     let list_get = runner::preprocess::static_method_contracts(list.as_ref())
