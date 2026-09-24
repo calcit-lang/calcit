@@ -154,7 +154,7 @@ calcit calcit.cirru --check-only
 calcit calcit.cirru --entry '<entry-name>' --check-only
 calcit calcit.cirru --check-only --incremental
 calcit calcit.cirru --check-only --keep-going --format edn
-# Here --entry is the snapshot filename, not a named entry:
+# 这里 --snapshot 指定 Snapshot 文件，--entry 仍表示 named entry：
 calcit calcit.cirru docs check-md README.md --snapshot calcit.cirru --failures-only
 ```
 
