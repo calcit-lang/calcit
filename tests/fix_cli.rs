@@ -141,6 +141,7 @@ fn optional_parameter_rule_reports_review_evidence_without_writing() {
   assert_eq!(suggestions[0]["applicability"], "needs-review");
   assert_eq!(suggestions[0]["origin_chain"][0]["parameter"], "value");
   assert_eq!(suggestions[0]["origin_chain"][0]["argument_index"], 0);
+  assert_eq!(suggestions[0]["path"], "code@2.1");
   assert!(suggestions[0]["origin_chain"][0]["candidate_type"].is_null());
   assert!(suggestions[0]["replacement"].is_null());
   assert_eq!(fs::read(&snapshot).expect("snapshot should remain readable"), before);
@@ -161,6 +162,61 @@ fn optional_parameter_rule_reports_review_evidence_without_writing() {
   );
   assert!(!apply.status.success(), "review-only rule must reject apply");
   assert!(String::from_utf8_lossy(&apply.stderr).contains("review-only"));
+  assert_eq!(fs::read(&snapshot).expect("snapshot should remain readable"), before);
+}
+
+#[test]
+fn optional_parameter_rule_reports_declared_type_candidate() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/ambiguous",
+        "--overwrite",
+        "--code",
+        "quote $ defn ambiguous (? value) (tuple? value)",
+      ],
+    ),
+    "install typed optional source",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/ambiguous",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Bool)",
+      ],
+    ),
+    "install typed optional schema",
+  );
+  let before = fs::read(&snapshot).expect("snapshot should be readable");
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "optional-parameters-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "ambiguous",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "typed optional parameter evidence preview");
+  let report = parse_stdout(&preview);
+  let suggestion = &report["data"]["suggestions"][0];
+  assert_eq!(suggestion["origin_chain"][0]["declared_type"], ":number");
+  assert_eq!(suggestion["origin_chain"][0]["candidate_type"], "Option<:number>");
+  assert_eq!(suggestion["applicability"], "needs-review");
   assert_eq!(fs::read(&snapshot).expect("snapshot should remain readable"), before);
 }
 

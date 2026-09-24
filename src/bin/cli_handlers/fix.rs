@@ -1430,7 +1430,7 @@ fn plan_optional_parameter_diagnostics(
         semantic_layer: "surface",
         source_file: snapshot_file.to_owned(),
         definition: format!("{namespace}/{definition}"),
-        path: format!("code.2.{source_index}"),
+        path: format!("code{}", format_path(&[2, source_index])),
         fingerprint: node_fingerprint(arg),
         origin_chain: vec![serde_json::json!({
           "kind": "legacy-optional-parameter",
