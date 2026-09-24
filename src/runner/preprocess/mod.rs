@@ -33,7 +33,9 @@ use type_inference::{
   infer_struct_field_type, infer_struct_value_annotation, infer_type_from_expr, is_pending_async_value, resolve_enum_value,
   resolve_program_value_for_preprocess, resolve_type_value,
 };
-pub use type_inference::{infer_compiled_definition_implementation_type, infer_static_type_from_expr};
+pub use type_inference::{
+  infer_compiled_definition_implementation_type, infer_static_type_from_expr, resolve_core_nominal_instance_type,
+};
 use type_rewriting::{
   build_enum_ref_node, build_struct_ref_node, try_rewrite_enum_args_to_named_enums, try_rewrite_local_fn_enum_args_to_named_enums,
   try_rewrite_loose_struct_args_to_structs, try_rewrite_map_args_to_structs,
@@ -755,6 +757,12 @@ fn resolve_trait_def_from_source_code(code: &Calcit) -> Option<CalcitTrait> {
 
 fn lookup_source_backed_trait_def(ns: &str, def: &str) -> Option<CalcitTrait> {
   program::lookup_def_code(ns, def).and_then(|code| resolve_trait_def_from_source_code(&code))
+}
+
+/// Resolve a source-declared trait without running project initialization.
+pub fn resolve_source_trait_instance_type(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  lookup_source_backed_trait_def(ns, def)
+    .map(|trait_def| Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def.with_definition_ref(ns, def)))))
 }
 
 fn parse_trait_name_from_source(form: &Calcit) -> Option<EdnTag> {
@@ -7002,6 +7010,244 @@ pub struct StaticMethodDescriptor {
   pub origin: String,
 }
 
+/// Compiler-resolved callable evidence for one receiver method. An open or
+/// ambiguous result must not be presented as an instantiated signature.
+#[derive(Debug, Clone)]
+pub struct StaticMethodContract {
+  pub status: &'static str,
+  pub arg_types: Option<Vec<Arc<CalcitTypeAnnotation>>>,
+  pub rest_type: Option<Arc<CalcitTypeAnnotation>>,
+  pub return_type: Option<Arc<CalcitTypeAnnotation>>,
+  pub generics: Vec<String>,
+  pub bounds: Vec<String>,
+  pub features: Vec<String>,
+  pub definition: Option<String>,
+  pub detail: Option<String>,
+}
+
+impl StaticMethodContract {
+  fn open(detail: impl Into<String>) -> Self {
+    Self {
+      status: "open",
+      arg_types: None,
+      rest_type: None,
+      return_type: None,
+      generics: vec![],
+      bounds: vec![],
+      features: vec![],
+      definition: None,
+      detail: Some(detail.into()),
+    }
+  }
+
+  fn ambiguous(detail: impl Into<String>) -> Self {
+    let mut contract = Self::open(detail);
+    contract.status = "ambiguous";
+    contract
+  }
+}
+
+fn checked_core_method_contract(receiver: &CalcitTypeAnnotation, namespace: &str, definition: &str) -> Option<StaticMethodContract> {
+  let arity = checked_call_contract_arity(namespace, definition)?;
+  let receiver_value = Calcit::Local(CalcitLocal {
+    idx: 0,
+    sym: Arc::from("receiver"),
+    info: Arc::new(CalcitSymbolInfo {
+      at_ns: Arc::from("calcit.query"),
+      at_def: Arc::from("method-contract"),
+    }),
+    location: None,
+    type_info: Arc::new(receiver.clone()),
+  });
+  let mut args = vec![receiver_value];
+  args.extend(std::iter::repeat_n(Calcit::Nil, arity.saturating_sub(1)));
+  let args = CalcitList::from(args.as_slice());
+  let contract = resolve_checked_call_contract(namespace, definition, &args, &ScopeTypes::new())?;
+  let expected_types = contract.expected_types?;
+  let has_open_types = expected_types
+    .iter()
+    .any(|annotation| annotation_dynamic_weight(annotation.as_ref()) > 0)
+    || annotation_dynamic_weight(contract.return_type.as_ref()) > 0;
+  Some(StaticMethodContract {
+    status: if has_open_types { "open" } else { "proven" },
+    arg_types: (!has_open_types).then(|| expected_types.into_iter().skip(1).collect()),
+    rest_type: None,
+    return_type: (!has_open_types).then_some(contract.return_type),
+    generics: vec![],
+    bounds: vec![],
+    features: vec![],
+    definition: Some(format!("{namespace}/{definition}")),
+    detail: has_open_types.then(|| "specialized contract retains Dynamic or DynFn; inspect the call boundary".to_owned()),
+  })
+}
+
+/// Reuse dispatch selection, source schema, and receiver binding from normal
+/// preprocessing instead of maintaining a query-only method registry.
+pub fn static_method_contract(receiver: &CalcitTypeAnnotation, method_name: &str) -> StaticMethodContract {
+  let traits = trait_list_from_type(receiver);
+  let impls = if traits.is_none() { get_impls_from_type(receiver) } else { None };
+  static_method_contract_with_impls(receiver, method_name, traits.as_deref(), impls.as_deref())
+}
+
+/// Resolve a complete method list while loading the receiver's implementation
+/// metadata only once. Query type and bounded context views share this path.
+pub fn static_method_contracts(receiver: &CalcitTypeAnnotation) -> Option<Vec<(StaticMethodDescriptor, StaticMethodContract)>> {
+  let descriptors = static_method_descriptors(receiver)?;
+  let traits = trait_list_from_type(receiver);
+  let impls = if traits.is_none() { get_impls_from_type(receiver) } else { None };
+  Some(
+    descriptors
+      .into_iter()
+      .map(|descriptor| {
+        let contract = static_method_contract_with_impls(receiver, &descriptor.name, traits.as_deref(), impls.as_deref());
+        (descriptor, contract)
+      })
+      .collect(),
+  )
+}
+
+fn static_method_contract_with_impls(
+  receiver: &CalcitTypeAnnotation,
+  method_name: &str,
+  traits: Option<&[Arc<CalcitTrait>]>,
+  impls: Option<&[Arc<CalcitImpl>]>,
+) -> StaticMethodContract {
+  let bare_name = method_name.trim_start_matches('.');
+  let (schema, definition) = if let Some(traits) = traits {
+    match resolve_trait_method(traits, bare_name) {
+      TraitMethodResolution::Selected(candidate) => (candidate.method_type, Some(candidate.trait_def.origin_label())),
+      TraitMethodResolution::Ambiguous(candidates) => {
+        return StaticMethodContract::ambiguous(format!(
+          "multiple trait origins: {}",
+          candidates
+            .iter()
+            .map(|candidate| candidate.trait_def.origin_label())
+            .collect::<Vec<_>>()
+            .join(", ")
+        ));
+      }
+      TraitMethodResolution::Invalid(error) => return StaticMethodContract::open(error),
+      TraitMethodResolution::Missing => return StaticMethodContract::open("method is not present in the resolved trait set"),
+    }
+  } else {
+    let Some(impls) = impls else {
+      return StaticMethodContract::open("receiver has no statically resolved implementation metadata");
+    };
+    let selected = match resolve_impl_method(receiver, impls, bare_name) {
+      ImplMethodResolution::Selected(candidate) => candidate,
+      ImplMethodResolution::Ambiguous(candidates) => {
+        return StaticMethodContract::ambiguous(format!(
+          "multiple implementation origins: {}",
+          candidates.iter().map(impl_candidate_origin).collect::<Vec<_>>().join(", ")
+        ));
+      }
+      ImplMethodResolution::Missing => return StaticMethodContract::open("method is not present in the resolved implementation"),
+    };
+    let entry = selected.entry;
+    match entry {
+      Calcit::Import(import) => {
+        if let Some(contract) = checked_core_method_contract(receiver, &import.ns, &import.def) {
+          return contract;
+        }
+      }
+      Calcit::Fn { info, .. } => {
+        if let Some(contract) = checked_core_method_contract(receiver, &info.def_ns, &info.name) {
+          return contract;
+        }
+      }
+      _ => {}
+    }
+    let trait_schema = selected.impl_value.origin().and_then(|trait_def| {
+      trait_def
+        .method_index(bare_name)
+        .and_then(|index| trait_def.method_types.get(index).cloned())
+    });
+    let (entry_schema, definition) = match entry {
+      Calcit::Import(import) => (
+        Some(program::lookup_def_schema(&import.ns, &import.def)),
+        Some(format!("{}/{}", import.ns, import.def)),
+      ),
+      Calcit::Fn { info, .. } => (
+        Some(Arc::new(CalcitTypeAnnotation::from_calcit_fn(info))),
+        info
+          .def_ref
+          .as_ref()
+          .map(|reference| format!("{}/{}", reference.def_ns, reference.def_name)),
+      ),
+      Calcit::Proc(proc) => (
+        proc.get_type_signature().map(|signature| {
+          Arc::new(CalcitTypeAnnotation::from_function_parts(
+            signature.arg_types.clone(),
+            signature.return_type.clone(),
+          ))
+        }),
+        None,
+      ),
+      _ => (None, None),
+    };
+    let Some(schema) = trait_schema.or(entry_schema) else {
+      return StaticMethodContract::open("selected method has no callable schema");
+    };
+    (schema, definition)
+  };
+
+  let Some(signature) = schema.as_function() else {
+    return StaticMethodContract::open("selected method schema is not callable");
+  };
+  let Some(expected_receiver) = signature.arg_types.first() else {
+    return StaticMethodContract::open("selected method schema has no receiver parameter");
+  };
+  let mut bindings = HashMap::new();
+  if !receiver.prove_with_bindings(expected_receiver.as_ref(), &mut bindings).is_proven() {
+    return StaticMethodContract::open(format!(
+      "receiver {} cannot prove schema receiver {}",
+      receiver.describe(),
+      expected_receiver.describe()
+    ));
+  }
+  let mut features = signature.features.iter().map(|feature| feature.to_string()).collect::<Vec<_>>();
+  features.sort();
+  let has_open_types = signature
+    .arg_types
+    .iter()
+    .any(|annotation| annotation_dynamic_weight(annotation.as_ref()) > 0)
+    || signature
+      .rest_type
+      .as_ref()
+      .is_some_and(|annotation| annotation_dynamic_weight(annotation.as_ref()) > 0)
+    || annotation_dynamic_weight(signature.return_type.as_ref()) > 0;
+  StaticMethodContract {
+    status: if has_open_types { "open" } else { "proven" },
+    arg_types: (!has_open_types).then(|| {
+      signature
+        .arg_types
+        .iter()
+        .skip(1)
+        .map(|arg| arg.substitute_type_vars(&bindings))
+        .collect()
+    }),
+    rest_type: (!has_open_types)
+      .then(|| signature.rest_type.as_ref().map(|rest| rest.substitute_type_vars(&bindings)))
+      .flatten(),
+    return_type: (!has_open_types).then(|| signature.return_type.substitute_type_vars(&bindings)),
+    generics: signature
+      .generics
+      .iter()
+      .filter(|name| !bindings.contains_key(*name))
+      .map(ToString::to_string)
+      .collect(),
+    bounds: signature
+      .where_bounds
+      .iter()
+      .filter(|bound| !bindings.contains_key(&bound.name))
+      .map(|bound| bound.to_brief_string())
+      .collect(),
+    features,
+    definition,
+    detail: has_open_types.then(|| "declared schema retains Dynamic or DynFn; precise call contract is unproven".to_owned()),
+  }
+}
+
 /// List methods available for a statically known type, ordered from higher to
 /// lower dispatch precedence. Returns `None` when method metadata cannot be
 /// resolved (for example for a dynamic or external JS type).
@@ -11662,6 +11908,45 @@ mod tests {
         },
       ]
     );
+  }
+
+  #[test]
+  fn static_method_contract_reports_ambiguity_and_missing_evidence() {
+    let low_impl = Arc::new(CalcitImpl {
+      name: EdnTag::new("LowImpl"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("shared")]),
+      values: Arc::new(vec![Calcit::Nil]),
+    });
+    let high_impl = Arc::new(CalcitImpl {
+      name: EdnTag::new("HighImpl"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("shared")]),
+      values: Arc::new(vec![Calcit::Nil]),
+    });
+    let mut nominal = CalcitStructDef::from_fields(EdnTag::new("Demo"), vec![]);
+    nominal.impls = vec![low_impl, high_impl];
+    let receiver = CalcitTypeAnnotation::StructValue(Arc::new(nominal));
+    let duplicate = static_method_contract(&receiver, ".shared");
+    assert_eq!(duplicate.status, "ambiguous");
+    assert!(duplicate.detail.unwrap().contains("HighImpl"));
+    assert!(duplicate.arg_types.is_none());
+
+    let single_trait = CalcitTypeAnnotation::Trait(source_trait("app.a", "Show", "render"));
+    let open = static_method_contract(&single_trait, ".render");
+    assert_eq!(open.status, "open");
+    assert!(open.arg_types.is_none(), "DynFn must not become a callable proof");
+
+    let trait_set = CalcitTypeAnnotation::TraitSet(Arc::new(vec![
+      source_trait("app.a", "Show", "render"),
+      source_trait("app.b", "Show", "render"),
+    ]));
+    let conflict = static_method_contract(&trait_set, ".render");
+    assert_eq!(conflict.status, "ambiguous");
+    assert!(conflict.detail.unwrap().contains("app.b/Show"));
+    assert!(conflict.return_type.is_none());
+
+    assert!(static_method_contracts(&CalcitTypeAnnotation::Dynamic).is_none());
   }
 
   fn source_trait(ns: &str, name: &str, method: &str) -> Arc<CalcitTrait> {

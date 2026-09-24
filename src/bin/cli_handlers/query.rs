@@ -160,6 +160,68 @@ struct SemanticQueryEnvelope<T> {
 struct ContextMethod {
   name: String,
   origin: String,
+  status: &'static str,
+  parameter_types: Option<Vec<String>>,
+  rest_type: Option<String>,
+  return_type: Option<String>,
+  generics: Vec<String>,
+  bounds: Vec<String>,
+  features: Vec<String>,
+  definition: Option<String>,
+  detail: Option<String>,
+}
+
+fn context_method(
+  descriptor: runner::preprocess::StaticMethodDescriptor,
+  contract: runner::preprocess::StaticMethodContract,
+) -> ContextMethod {
+  ContextMethod {
+    name: descriptor.name,
+    origin: descriptor.origin,
+    status: contract.status,
+    parameter_types: contract
+      .arg_types
+      .map(|args| args.iter().map(|annotation| annotation.describe()).collect()),
+    rest_type: contract.rest_type.map(|annotation| annotation.describe()),
+    return_type: contract.return_type.map(|annotation| annotation.describe()),
+    generics: contract.generics,
+    bounds: contract.bounds,
+    features: contract.features,
+    definition: contract.definition,
+    detail: contract.detail,
+  }
+}
+
+fn method_contract_fingerprint(methods: &Option<Vec<ContextMethod>>) -> Result<String, String> {
+  serde_json::to_string(methods).map_err(|error| format!("Failed to encode method contracts for revision: {error}"))
+}
+
+fn render_context_method(method: &ContextMethod) -> String {
+  let mut rendered = format!("- `{}` (`{}`): {}", method.name, method.origin, method.status);
+  if !method.generics.is_empty() {
+    let generics = method.generics.iter().map(|name| format!("'{name}")).collect::<Vec<_>>();
+    rendered.push_str(&format!(" for<{}>", generics.join(", ")));
+  }
+  if let (Some(args), Some(result)) = (&method.parameter_types, &method.return_type) {
+    let mut parameters = args.clone();
+    if let Some(rest) = &method.rest_type {
+      parameters.push(format!("...{rest}"));
+    }
+    rendered.push_str(&format!(" `({}) -> {result}`", parameters.join(", ")));
+  }
+  if !method.bounds.is_empty() {
+    rendered.push_str(&format!("; where {}", method.bounds.join(", ")));
+  }
+  if !method.features.is_empty() {
+    rendered.push_str(&format!("; features {}", method.features.join(", ")));
+  }
+  if let Some(definition) = &method.definition {
+    rendered.push_str(&format!("; `calcit query context '{definition}'`"));
+  }
+  if let Some(detail) = &method.detail {
+    rendered.push_str(&format!("; {detail}"));
+  }
+  rendered
 }
 
 #[derive(Debug, Serialize)]
@@ -1233,6 +1295,91 @@ mod type_query_tests {
   }
 
   #[test]
+  fn method_query_reuses_bound_collection_contracts_and_keeps_open_schemas_explicit() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_core_snapshot().expect("core snapshot should load");
+    prepare_program_for_type_query_on_cli_stack(snapshot.clone());
+
+    let list = parse_type_annotation_query(":: 'List 'Number").expect("typed list should parse");
+    let list_get = runner::preprocess::static_method_contracts(list.as_ref())
+      .expect("list methods should resolve")
+      .into_iter()
+      .find(|(method, _)| method.name == ".get")
+      .map(|(method, contract)| context_method(method, contract))
+      .expect("list get should exist");
+    assert_eq!(list_get.status, "proven");
+    assert_eq!(list_get.parameter_types, Some(vec!["number".to_owned()]));
+    assert_eq!(list_get.return_type.as_deref(), Some("type calcit.core/Option<number>"));
+    assert_eq!(list_get.definition.as_deref(), Some("calcit.core/get"));
+    assert!(render_context_method(&list_get).contains("(number) -> type calcit.core/Option<number>"));
+    let original_fingerprint = method_contract_fingerprint(&Some(vec![list_get.clone()])).expect("method serialization");
+    let mut changed = list_get.clone();
+    changed.return_type = Some("type calcit.core/Option<string>".to_owned());
+    let changed_fingerprint = method_contract_fingerprint(&Some(vec![changed])).expect("method serialization");
+    assert_ne!(
+      original_fingerprint, changed_fingerprint,
+      "a changed callable contract must change the query revision"
+    );
+
+    let map = parse_type_annotation_query(":: 'Map 'String 'Number").expect("typed map should parse");
+    let map_get = runner::preprocess::static_method_contract(map.as_ref(), ".get");
+    assert_eq!(map_get.status, "proven");
+    assert_eq!(map_get.arg_types.unwrap()[0].describe(), "string");
+    assert_eq!(map_get.return_type.unwrap().describe(), "type calcit.core/Option<number>");
+
+    let option = parse_type_annotation_query(":: 'Option 'Number").expect("typed Option should parse");
+    let unwrap_or = runner::preprocess::static_method_contract(option.as_ref(), ".unwrap-or");
+    assert_eq!(unwrap_or.status, "proven");
+    assert_eq!(unwrap_or.arg_types.unwrap()[0].describe(), "number");
+    assert_eq!(unwrap_or.return_type.unwrap().describe(), "number");
+    assert!(unwrap_or.generics.is_empty(), "receiver-bound generic must not appear unbound");
+
+    let option_map = runner::preprocess::static_method_contract(option.as_ref(), ".map");
+    assert_eq!(option_map.status, "open", "DynFn schema must not imply a precise callback contract");
+    assert!(option_map.arg_types.is_none());
+    assert!(option_map.return_type.is_none());
+
+    let result = parse_type_annotation_query(":: 'Result 'Number 'String").expect("typed Result should parse");
+    let map_err = runner::preprocess::static_method_contract(result.as_ref(), ".map-err");
+    assert_eq!(map_err.status, "proven");
+    let rendered = render_context_method(&context_method(
+      runner::preprocess::StaticMethodDescriptor {
+        name: ".map-err".to_owned(),
+        origin: "calcit.core/ResultOps".to_owned(),
+      },
+      map_err.clone(),
+    ));
+    assert!(rendered.contains("for<'F>"));
+    assert_eq!(map_err.arg_types.unwrap()[0].describe(), "fn(string) -> 'F");
+    assert_eq!(map_err.return_type.unwrap().describe(), "type Result<number, 'F>");
+    assert_eq!(map_err.generics, vec!["F"]);
+
+    let (fs_path, source) =
+      on_cli_stack(move || resolve_type_query_target(&snapshot, "calcit.core/FsPath")).expect("core FsPath type should resolve");
+    assert_eq!(source, "resolved core nominal definition");
+    let read_text = on_cli_stack(move || runner::preprocess::static_method_contract(fs_path.as_ref(), ".read-text"));
+    assert_eq!(read_text.status, "proven");
+    assert!(read_text.arg_types.unwrap().is_empty());
+    assert_eq!(read_text.return_type.unwrap().describe(), "type Result<string, string>");
+    assert_eq!(read_text.definition.as_deref(), Some("calcit.core/fs-path:read-text"));
+  }
+
+  #[test]
+  fn method_query_reads_source_external_object_trait_without_project_initialization() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_snapshot("calcit/test-js.cirru").expect("JS fixture should load");
+    prepare_program_for_type_query_on_cli_stack(snapshot.clone());
+
+    let (trait_type, source) =
+      on_cli_stack(move || resolve_type_query_target(&snapshot, "test-js.main/TestDate")).expect("external trait should resolve");
+    assert_eq!(source, "source trait definition");
+    let method = on_cli_stack(move || runner::preprocess::static_method_contract(trait_type.as_ref(), ".now"));
+    assert_eq!(method.status, "proven");
+    assert!(method.arg_types.unwrap().is_empty());
+    assert_eq!(method.return_type.unwrap().describe(), "number");
+  }
+
+  #[test]
   fn query_format_and_unicode_truncation_are_deterministic() {
     assert_eq!(parse_query_render_format("human"), Ok(QueryRenderFormat::Human));
     assert_eq!(parse_query_render_format("json"), Ok(QueryRenderFormat::Json));
@@ -1551,6 +1698,10 @@ fn resolve_type_query_target(snapshot: &snapshot::Snapshot, target: &str) -> Res
       return Err(format!("Definition `{target}` not found"));
     }
 
+    if let Some(trait_type) = runner::preprocess::resolve_source_trait_instance_type(namespace, definition) {
+      return Ok((trait_type, "source trait definition"));
+    }
+
     let annotation = program::lookup_def_schema(namespace, definition);
     let is_data_definition_marker = matches!(
       annotation.as_ref(),
@@ -1559,6 +1710,10 @@ fn resolve_type_query_target(snapshot: &snapshot::Snapshot, target: &str) -> Res
     );
     if !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic) && !is_data_definition_marker {
       return Ok((annotation, "definition schema"));
+    }
+
+    if is_data_definition_marker && let Some(inferred) = runner::preprocess::resolve_core_nominal_instance_type(namespace, definition) {
+      return Ok((inferred, "resolved core nominal definition"));
     }
 
     let symbol = code_to_calcit(&Cirru::Leaf(Arc::from(definition)), namespace, "&query:type", vec![])?;
@@ -1595,30 +1750,19 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
   prepare_program_for_type_query(&snapshot)?;
   let (annotation, source) = resolve_type_query_target(&snapshot, &opts.target)?;
   let rendered_type = format_type_query_annotation(annotation.as_ref())?;
-  let methods = runner::preprocess::static_method_descriptors(annotation.as_ref()).map(|items| {
+  let methods = runner::preprocess::static_method_contracts(annotation.as_ref()).map(|items| {
     items
       .into_iter()
-      .map(|method| ContextMethod {
-        name: method.name,
-        origin: method.origin,
-      })
+      .map(|(method, contract)| context_method(method, contract))
       .collect::<Vec<_>>()
   });
-  let method_fingerprint = methods
-    .as_ref()
-    .map(|items| {
-      items
-        .iter()
-        .map(|method| format!("{}@{}", method.name, method.origin))
-        .collect::<Vec<_>>()
-        .join("\n")
-    })
-    .unwrap_or_else(|| "unknown".to_owned());
-  let revision = definition_type_query_target(&opts.target)
+  let method_fingerprint = method_contract_fingerprint(&methods)?;
+  let source_revision = definition_type_query_target(&opts.target)
     .and_then(|(namespace, definition)| snapshot.files.get(namespace).and_then(|file| file.defs.get(definition)))
     .map(snapshot::definition_revision)
     .transpose()?
-    .unwrap_or_else(|| semantic_revision(&[&rendered_type, &method_fingerprint]));
+    .unwrap_or_default();
+  let revision = semantic_revision(&[&rendered_type, &method_fingerprint, &source_revision]);
 
   let data = TypeQueryData {
     target: opts.target.clone(),
@@ -1673,7 +1817,7 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
     Some(methods) => {
       println!("Count: {} (high → low precedence).\n", methods.len());
       for method in methods {
-        println!("- `{}` (`{}`)", method.name, method.origin);
+        println!("{}", render_context_method(&method));
       }
     }
     None => {
@@ -2241,7 +2385,7 @@ fn render_type_at_human(envelope: &SemanticQueryEnvelope<TypeAtData>) -> String 
   match &data.static_methods {
     Some(methods) => {
       for method in methods {
-        let _ = writeln!(&mut out, "- `{}` (`{}`)", method.name, method.origin);
+        let _ = writeln!(&mut out, "{}", render_context_method(method));
       }
     }
     None => {
@@ -2292,7 +2436,7 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
   let target_node = navigate_to_path(&entry.code, &target_path)?;
   let semantic_path = semantic_code_path(&target_path);
   let expression = format_cirru_expression(&target_node);
-  let revision = snapshot::definition_revision(entry)?;
+  let source_revision = snapshot::definition_revision(entry)?;
 
   prepare_program_for_type_query(&snapshot)?;
   let warnings = RefCell::<Vec<LocatedWarning>>::new(vec![]);
@@ -2323,16 +2467,15 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
     None => (None, None),
   };
   let methods = inferred.as_ref().and_then(|annotation| {
-    runner::preprocess::static_method_descriptors(annotation.as_ref()).map(|items| {
+    runner::preprocess::static_method_contracts(annotation.as_ref()).map(|items| {
       items
         .into_iter()
-        .map(|method| ContextMethod {
-          name: method.name,
-          origin: method.origin,
-        })
+        .map(|(method, contract)| context_method(method, contract))
         .collect::<Vec<_>>()
     })
   });
+  let method_fingerprint = method_contract_fingerprint(&methods)?;
+  let revision = semantic_revision(&[&source_revision, &method_fingerprint]);
 
   let fn_features = context_features(entry.schema.as_ref());
   let dynamic_intent = if inferred
@@ -2667,16 +2810,13 @@ fn context_docs(definition: &str, diagnostics: &mut Vec<ContextDiagnostic>) -> C
 }
 
 fn context_methods(annotation: &CalcitTypeAnnotation, budget: usize) -> Option<ContextCollection<ContextMethod>> {
-  let methods = runner::preprocess::static_method_descriptors(annotation)?;
+  let methods = runner::preprocess::static_method_contracts(annotation)?;
   let total = methods.len();
-  let limit = (budget / 90).clamp(4, 80);
+  let limit = (budget / 240).clamp(4, 80);
   let items = methods
     .into_iter()
     .take(limit)
-    .map(|method| ContextMethod {
-      name: method.name,
-      origin: method.origin,
-    })
+    .map(|(method, contract)| context_method(method, contract))
     .collect();
   Some(ContextCollection::new(total, items))
 }
@@ -3127,7 +3267,7 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
         if methods.truncated { " (truncated)" } else { "" }
       );
       for method in &methods.items {
-        let _ = writeln!(&mut out, "- `{}` (`{}`)", method.name, method.origin);
+        let _ = writeln!(&mut out, "{}", render_context_method(method));
       }
     }
     None => {
