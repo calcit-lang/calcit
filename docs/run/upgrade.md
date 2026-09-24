@@ -232,7 +232,7 @@ calcit calcit.cirru edit format
 calcit calcit.cirru fix --rule redundant-do-v1 --format edn
 calcit calcit.cirru --check-only
 calcit calcit.cirru analyze deprecated --summary-only --format json
-calcit calcit.cirru analyze weak-types --intent unresolved,declared-unit,declared-optional --summary-only --format json
+calcit calcit.cirru analyze weak-types --intent unresolved,declared-unit,declared-optional --summary-only --format edn
 calcit calcit.cirru
 yarn vite build --base=./
 ```
@@ -726,7 +726,7 @@ core/runtime 边界使用，后续会作为独立的 internal runtime-polymorphi
 
 ### 3.7 format 的边界
 
-`calcit edit format` 负责可解析性、canonical serialization 和已知旧结构迁移；它不是完整的语义 linter。告警写到 stderr 且不会阻止格式化。CI 需要在 format 后检查 `git diff`，并单独读取 `check-types` / `weak-types --format json` 来执行项目自己的质量阈值。
+`calcit edit format` 负责可解析性、canonical serialization 和已知旧结构迁移；它不是完整的语义 linter。告警写到 stderr 且不会阻止格式化。CI 需要在 format 后检查 `git diff`，并单独读取 `check-types --format json` 与 `weak-types --format edn`；前者目前仅支持 JSON 结构化输出，后者在 Calcit 工作流中优先使用 Cirru EDN。存量项目自己的质量阈值不得代替默认严格类型诊断。
 
 ### 3.8 Trait impl 从 tag method bag 迁移为 nominal impl
 
@@ -861,12 +861,12 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 | 问题写法 | `calcit fix --preset surface-latest-v2 --format edn` | 多表达式 body 与单表达式位置的冗余 `do`、旧数据 API、具名 `%::` / `%{}` 构造与可应用 replacement | preview 不写入；Cirru EDN 展开 rule IDs；apply 前后均需 staged validation |
 | entry 预处理 | `calcit --entry ... --check-only` | 配置、缺失定义、参数/返回值、数据与 trait 类型错误 | 错误或 warning 均阻断 |
 | 动态分派 | `calcit analyze dynamic-methods --format json` | 动态 receiver 与无法专门化的方法；默认排除依赖和无关 FFI warning | 只读定位；`--deps` 可审计依赖，正确性由 entry 预处理判断 |
-| 静态债务 | `analyze check-types/weak-types/deprecated --format json` | 覆盖率、dynamic、nil/Optional、废弃调用 | 报告本身不按命中数阻断；仅非零 legacy baseline 项目继续比较 |
+| 静态债务 | `analyze weak-types --format edn`；`check-types/deprecated --format json` | 覆盖率、dynamic、nil/Optional、废弃调用 | 仅后两者暂未提供 EDN；报告本身不按命中数阻断，非零 legacy baseline 项目才继续比较 |
 | 示例与测试 | `check-examples`、`docs check-md`、`calcit test --require-match` | API 示例、文档片段、definition-attached tests | 失败或未匹配测试时阻断 |
 | 行为与后端 | entry、Node/Vite、项目测试 | native/JS/FFI 的真实行为差异 | 由进程退出码阻断 |
 
 每次失败先查看终端诊断；需要完整运行栈时再看 `.calcit/error.cirru` 或执行
-`calcit calcit.cirru query error`。针对单个定义可用 `calcit query context <ns/def> --format json`，针对
-具体表达式可用诊断返回的 Snapshot path 调用 `calcit query type-at <ns/def> --path code@... --format json`。
+`calcit calcit.cirru query error`。针对单个定义可用 `calcit query context <ns/def> --format edn`，针对
+具体表达式可用诊断返回的 Snapshot path 调用 `calcit query type-at <ns/def> --path code@... --format edn`；只有对接 JSON-only consumer 时才显式改用 JSON。
 
 call graph 的 `--show-unused` 只能作为 entry-relative 线索；公开 API 和替代入口可能被列为 unreachable，不能据此自动删除。

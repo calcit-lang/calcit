@@ -99,13 +99,13 @@ calcit analyze weak-types --ns app.main --schema-evidence --format edn
 calcit analyze check-types --ns app.main --format json
 # Include installed modules when inventorying legacy macro contracts
 calcit analyze check-types --deps --format json
-calcit analyze weak-types --ns app.main --intent unresolved --format json
+calcit analyze weak-types --ns app.main --intent unresolved --format edn
 calcit analyze deprecated --ns app.main --format json
 calcit analyze dynamic-methods --format json
 
 # Keep aggregate counts but omit definition rows (especially useful for agents)
 calcit analyze check-types --ns app.main --summary-only --format json
-calcit analyze weak-types --ns app.main --intent unresolved --summary-only --format json
+calcit analyze weak-types --ns app.main --intent unresolved --summary-only --format edn
 
 # 迁移循环中按 definition revision 复用本地分析结果
 calcit analyze check-types --incremental --format json
@@ -121,10 +121,12 @@ calcit analyze check-examples --ns app.main --def calculate-total
 calcit analyze check-examples --ns app.main --def 'detect-nodejs?' --js
 
 # Explain one expression using inferred and expected types
-calcit query type-at app.main/calculate-total --path code@3.2 --format json
+calcit query type-at app.main/calculate-total --path code@3.2 --format edn
 ```
 
-`check-types` 会把裸 `:ref`、`:list`、`:map` 等嵌套 Dynamic slot 记为 partial coverage，并在 `schema_issues` 中返回 `[W_SCHEMA_DYNAMIC]`；未绑定的 `*type-slot` 同样记为 partial 并返回 `[W_UNRESOLVED_TYPE_SLOT]`。严格预处理才负责类型正确性：可达项目函数缺少结构化 root schema 或嵌入式 `Fn` hint 时返回 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`；通过程序直接注入且没有结构化 root schema 的 macro 也会被拒绝。Snapshot loader 会更早拒绝旧 runtime `Fn` 或 whole-`Dynamic` macro schema。发布审计使用 `--deps` 检查实际解析的 module artifact。`weak-types --format json` 只提供迁移定位所需的 kind、definition、path、detail、intent、evidence 与 suggestion；unresolved Dynamic、未绑定 slot、nil/Optional 债务分别产生 `W_DYNAMIC_TYPE_DEBT`、`W_UNRESOLVED_TYPE_SLOT`、`W_NIL_TYPE_DEBT`。声明 `:js-ffi` feature 的 definition 仍标记为明确边界，但 analyzer 不据此改变编译语义。
+当前 `check-types`、`deprecated` 与 `dynamic-methods` 的结构化输出仅支持 JSON；支持 EDN 的 `weak-types` 和 `query type-at` 在 Calcit 自有工作流中优先使用 Cirru EDN，对接 JSON-only 工具时再显式选择 JSON。
+
+`check-types` 会把裸 `:ref`、`:list`、`:map` 等嵌套 Dynamic slot 记为 partial coverage，并在 `schema_issues` 中返回 `[W_SCHEMA_DYNAMIC]`；未绑定的 `*type-slot` 同样记为 partial 并返回 `[W_UNRESOLVED_TYPE_SLOT]`。严格预处理才负责类型正确性：可达项目函数缺少结构化 root schema 或嵌入式 `Fn` hint 时返回 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`；通过程序直接注入且没有结构化 root schema 的 macro 也会被拒绝。Snapshot loader 会更早拒绝旧 runtime `Fn` 或 whole-`Dynamic` macro schema。发布审计使用 `--deps` 检查实际解析的 module artifact。`weak-types --format edn` 只提供迁移定位所需的 kind、definition、path、detail、intent、evidence 与 suggestion；unresolved Dynamic、未绑定 slot、nil/Optional 债务分别产生 `W_DYNAMIC_TYPE_DEBT`、`W_UNRESOLVED_TYPE_SLOT`、`W_NIL_TYPE_DEBT`。声明 `:js-ffi` feature 的 definition 仍标记为明确边界，但 analyzer 不据此改变编译语义。
 
 `check-types` 与 `weak-types` 可显式增加 `--incremental`。`.calcit/analysis-input-cache-v2.cirru` 将主 Snapshot 与每个 direct
 module 保存为独立单元，以完整传递源文件的内容 digest、module 请求解析路径和内置 core revision 校验静态分析输入。主项目或
@@ -281,7 +283,7 @@ and implementation-completion status are separate concerns.
 
 这些 evidence 不增加 warning 数量或质量预算。未传对应开关时不会执行额外扫描；`--summary-only` 只保留 `data.summary` 中的候选总数，不保留候选详情。候选 helper 仅在 schema 精确相同时给出，并优先排列依赖模块；trait/adapter manifest 始终标记 `review-required`，不得自动插入 `unsafe-coerce`、选择 nullable 业务语义或扩展 Interface IR 生命周期字段。
 
-普通执行、编译和严格检查只依据类型推导产生确定的 warning/error。需要迁移存量代码时，显式运行 `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json`，按 definition/path 返回源码处理；不要把命中数量解释成类型正确性，也不要围绕数量增加阈值或分类规则。
+普通执行、编译和严格检查只依据类型推导产生确定的 warning/error。需要迁移存量代码时，显式运行 `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format edn`，按 definition/path 返回源码处理；不要把命中数量解释成类型正确性，也不要围绕数量增加阈值或分类规则。
 
 `code-dynamic` 只定位活动代码中的类型位置：`quote` 与 `quasiquote` 中作为数据保存的 `:dynamic` 不计入结果，`~` / `~@` 展开后重新进入活动代码的表达式仍会定位。此报告不判断类型关系；需要确认能否通过检查时仍以默认严格诊断为准。
 
