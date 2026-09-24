@@ -542,6 +542,22 @@ Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。
 
 需要尝试备用来源时使用 `.or-else`；它只在 `none`/`err` 分支调用 fallback。`.unwrap` 只适合已经由原生 `match`、`.some?` 或明确不变量证明为 `some` 的位置；默认值用 `.unwrap-or`，继续转换用 `.map` / `.and-then`。接收者已静态推断为 `Option`/`Result` 时，避免使用 `option:*` / `result:*` 的函数形式，以便接收者类型和类型流保持可见；未类型化 legacy 数据或 core 边界才保留直接 helper。
 
+以下正反例可以直接由 `docs check-md` 执行。Unicode 字符数量不同于 UTF-8 字节数；`List.get` 的越界结果是 `%none`；列表的 `.contains?` 查询索引，`.includes?` 才查询元素；解析失败保留为 `Result` 的错误分支：
+
+```cirru
+let
+    xs $ [] 10 20
+  assert= 2 $ count |A😀
+  assert= 5 $ &str:utf8-byte-count |A😀
+  assert= (%some 20) $ xs.get 1
+  assert= (%none) $ xs.get 2
+  assert= true $ xs.contains? 1
+  assert= false $ xs.contains? 20
+  assert= true $ xs.includes? 20
+  assert= (%ok 1.5) $ parse-float |1.5
+  assert= true $ (parse-float |bad).err?
+```
+
 `get-in` 返回 `Option<T>`，适合开放数据中可能缺失的路径。完整类型的嵌套 Map 配合非空字面量路径时，`get-in`、`assoc-in`、`update-in` 会编译为直接的类型化访问/重建链，并保证接收者、各路径段和 updater 按源码顺序各求值一次。动态路径、动态接收者和混合容器保留为显式兼容边界。路径进入 Struct 时应改用类型化的 `(:field value)` 或 `value.:field` 访问，字段需要可缺失时在 Struct 中声明 `Option<T>`。`update-in` 的 updater 接收 `Option<T>`，缺失分支应显式处理，不要无条件 unwrap：
 
 ```cirru.no-check
