@@ -119,7 +119,7 @@ fn compact_agent_contract_is_versioned_bounded_and_embedded_in_the_full_guide() 
 
   assert_eq!(AGENT_MUTATION_CONTRACT_VERSION, 1);
   assert_eq!(contract, repeated);
-  assert_eq!(contract.digest, "md5:c57c723d4af4e4b3c43c3fd7469b4dae");
+  assert_eq!(contract.digest, "md5:36cd648e816feb68a11aa59f4e68fb0b");
   assert!(contract.content.lines().count() <= 40, "contract should stay cheap to reload");
   assert!(contract.content.len() <= 5_000, "contract should stay compact");
   assert!(EMBEDDED_AGENTS_DOC.contains(&contract.content));
@@ -131,6 +131,9 @@ fn compact_agent_contract_is_versioned_bounded_and_embedded_in_the_full_guide() 
     "mutation 必须串行",
     "修改前展示真实 subtree",
     "模块仓库",
+    "普通应用修改按一个闭环执行",
+    "calcit tree show",
+    "calcit tree search-replace",
     "calcit docs agents --full",
     "calcit docs read edit-tree.md 'Atomic Transactions'",
   ] {

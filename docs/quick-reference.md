@@ -233,7 +233,7 @@ let
 - `range` - generate number range
 - `take`, `drop` - slice operations
 - `distinct` - remove duplicates
-- `&list:contains?`, `&list:includes?` - membership tests
+- `xs .contains? index` / `&list:contains?` 检查索引是否在界内；`xs .includes? value` / `&list:includes?` 检查元素值是否存在。两者不能互换。
 
 ### Map Operations
 
@@ -241,7 +241,7 @@ let
 - `&map:get` - get value by key
 - `&map:assoc`, `&map:dissoc` - add/remove entries
 - `&map:merge` - merge maps
-- `&map:contains?`, `&map:includes?` - key membership
+- `m .contains? key` / `&map:contains?` 检查键；`m .includes? value` / `&map:includes?` 检查值。两者不能互换。
 - `keys`, `vals` - extract keys/values
 - `to-pairs`, `pairs-map` - convert to/from pairs
 - `map-list-kv` - collect `List<U>` with a typed `Fn(K,V)->U` callback
