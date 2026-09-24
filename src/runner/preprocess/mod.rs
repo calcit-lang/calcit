@@ -7040,6 +7040,12 @@ impl StaticMethodContract {
     }
   }
 
+  fn open_with_definition(detail: impl Into<String>, definition: Option<String>) -> Self {
+    let mut contract = Self::open(detail);
+    contract.definition = definition;
+    contract
+  }
+
   fn ambiguous(detail: impl Into<String>) -> Self {
     let mut contract = Self::open(detail);
     contract.status = "ambiguous";
@@ -7192,18 +7198,21 @@ fn static_method_contract_with_impls(
   };
 
   let Some(signature) = schema.as_function() else {
-    return StaticMethodContract::open("selected method schema is not callable");
+    return StaticMethodContract::open_with_definition("selected method schema is not callable", definition);
   };
   let Some(expected_receiver) = signature.arg_types.first() else {
-    return StaticMethodContract::open("selected method schema has no receiver parameter");
+    return StaticMethodContract::open_with_definition("selected method schema has no receiver parameter", definition);
   };
   let mut bindings = HashMap::new();
   if !receiver.prove_with_bindings(expected_receiver.as_ref(), &mut bindings).is_proven() {
-    return StaticMethodContract::open(format!(
-      "receiver {} cannot prove schema receiver {}",
-      receiver.describe(),
-      expected_receiver.describe()
-    ));
+    return StaticMethodContract::open_with_definition(
+      format!(
+        "receiver {} cannot prove schema receiver {}",
+        receiver.describe(),
+        expected_receiver.describe()
+      ),
+      definition,
+    );
   }
   let mut features = signature.features.iter().map(|feature| feature.to_string()).collect::<Vec<_>>();
   features.sort();
@@ -11933,6 +11942,7 @@ mod tests {
     let single_trait = CalcitTypeAnnotation::Trait(source_trait("app.a", "Show", "render"));
     let open = static_method_contract(&single_trait, ".render");
     assert_eq!(open.status, "open");
+    assert_eq!(open.definition.as_deref(), Some("app.a/Show"));
     assert!(open.arg_types.is_none(), "DynFn must not become a callable proof");
 
     let trait_set = CalcitTypeAnnotation::TraitSet(Arc::new(vec![
@@ -11945,6 +11955,30 @@ mod tests {
     assert!(conflict.return_type.is_none());
 
     assert!(static_method_contracts(&CalcitTypeAnnotation::Dynamic).is_none());
+  }
+
+  #[test]
+  fn static_method_contract_retains_origin_but_not_signature_when_generic_binding_fails() {
+    let var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let expected_receiver = Arc::new(CalcitTypeAnnotation::Map(var.clone(), var.clone()));
+    let signature = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![expected_receiver, var.clone()], var));
+    let trait_def = Arc::new(
+      CalcitTrait::new(EdnTag::new("Same"), vec![EdnTag::new("same")], vec![signature]).with_definition_ref("app.contracts", "Same"),
+    );
+    let traits = [trait_def];
+    let mismatched = CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String));
+    let open = static_method_contract_with_impls(&mismatched, ".same", Some(&traits), None);
+    assert_eq!(open.status, "open");
+    assert_eq!(open.definition.as_deref(), Some("app.contracts/Same"));
+    assert!(open.detail.unwrap().contains("cannot prove schema receiver"));
+    assert!(open.arg_types.is_none());
+    assert!(open.return_type.is_none());
+
+    let matched = CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::Number));
+    let proven = static_method_contract_with_impls(&matched, ".same", Some(&traits), None);
+    assert_eq!(proven.status, "proven");
+    assert_eq!(proven.arg_types.unwrap()[0].describe(), "number");
+    assert_eq!(proven.return_type.unwrap().describe(), "number");
   }
 
   fn source_trait(ns: &str, name: &str, method: &str) -> Arc<CalcitTrait> {
