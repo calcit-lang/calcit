@@ -246,6 +246,10 @@ calcit calcit.cirru fix --rule optional-parameters-v1 --ns app.main --def legacy
 ```
 
 预览中的 `declared_type` 来自现有 schema；仅在声明足够具体时才给出 `candidate_type`。
+同一建议的 `origin_chain` 还列出编译器解析到的项目源码引用：直接调用、带展开参数的调用、
+函数值引用及 macro 生成的引用分开报告，并标明直接调用的实参数量和显式 `nil` 位置。
+`project-reference-scan` 明确报告扫描范围和无法预处理的定义；目前只覆盖定义源码，
+definition-attached tests/examples 与仓库外消费者仍未纳入完整性证明。
 候选并不证明函数体对缺失值的处理、显式 `nil` 与省略调用是否等价，也不证明 macro、跨模块消费者
 和函数值调用均可定位。因此该规则目前一律标记 `needs-review`，不接受 `--apply`，也不在默认 preset 中。
 人工迁移应在审阅这些语义后，把声明和所有调用点一起改为明确的 `Option` 契约并运行严格检查与业务测试；
