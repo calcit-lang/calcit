@@ -1137,22 +1137,33 @@ fn named_callback_schema_rejects_wrong_arguments_and_non_callable_aliases() {
     ] {
       builtins::effects::init_effects_states();
       let mut snapshot = snapshot::Snapshot::default();
-      let mut file = snapshot::create_file_from_snippet(concat!(
-        "def NamedCallback &unit\n\n",
-        "defn invoke (callback) (callback 42)\n\n",
-        "defn main! () $ invoke $ fn (text) $ count text\n\n",
-        "defn reload! () &unit",
-      ))
-      .expect("named callback snippet should parse");
+      let generic_case = !applied_args.is_empty();
+      let snippet = if generic_case {
+        "def NamedCallback &unit\n\ndefn invoke (callback) (callback 42)\n\ndefn main! () $ invoke $ fn (text) text\n\ndefn reload! () &unit"
+      } else {
+        "def NamedCallback &unit\n\ndefn invoke (callback) (callback 42)\n\ndefn main! () $ invoke $ fn (text) $ count text\n\ndefn reload! () &unit"
+      };
+      let mut file = snapshot::create_file_from_snippet(snippet).expect("named callback snippet should parse");
       file.defs.get_mut("NamedCallback").expect("alias definition").schema = alias_schema;
       file.defs.get_mut("invoke").expect("callback definition").schema = fn_schema(
         vec![Arc::new(CalcitTypeAnnotation::TypeRef(
           Arc::from("app.main/NamedCallback"),
           Arc::new(applied_args.clone()),
         ))],
-        CalcitTypeAnnotation::Number,
+        if generic_case {
+          CalcitTypeAnnotation::String
+        } else {
+          CalcitTypeAnnotation::Number
+        },
       );
-      file.defs.get_mut("main!").expect("main definition").schema = fn_schema(vec![], CalcitTypeAnnotation::Number);
+      file.defs.get_mut("main!").expect("main definition").schema = fn_schema(
+        vec![],
+        if generic_case {
+          CalcitTypeAnnotation::String
+        } else {
+          CalcitTypeAnnotation::Number
+        },
+      );
       file.defs.get_mut("reload!").expect("reload definition").schema = fn_schema(vec![], CalcitTypeAnnotation::Unit);
       snapshot.files.insert("app.main".to_owned(), file);
       let entries = prepare_snapshot_entries(snapshot);
