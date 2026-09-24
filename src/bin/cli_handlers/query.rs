@@ -1334,6 +1334,20 @@ mod type_query_tests {
     assert_eq!(unwrap_or.return_type.unwrap().describe(), "number");
     assert!(unwrap_or.generics.is_empty(), "receiver-bound generic must not appear unbound");
 
+    let open_option = parse_type_annotation_query(":: 'Option 'Dynamic").expect("open Option should parse");
+    let open_unwrap_or = runner::preprocess::static_method_contract(open_option.as_ref(), ".unwrap-or");
+    assert_eq!(
+      open_unwrap_or.status, "open",
+      "receiver-bound Dynamic must not become a precise contract"
+    );
+    assert!(open_unwrap_or.arg_types.is_none());
+    assert!(open_unwrap_or.return_type.is_none());
+    let open_and_then = runner::preprocess::static_method_contract(open_option.as_ref(), ".and-then");
+    assert_eq!(open_and_then.status, "open", "nested Dynamic callback input must remain open");
+    let some = runner::preprocess::static_method_contract(open_option.as_ref(), ".some?");
+    assert_eq!(some.status, "proven", "presence check does not expose the Dynamic payload");
+    assert_eq!(some.return_type.unwrap().describe(), "bool");
+
     let option_map = runner::preprocess::static_method_contract(option.as_ref(), ".map");
     assert_eq!(option_map.status, "open", "DynFn schema must not imply a precise callback contract");
     assert!(option_map.arg_types.is_none());

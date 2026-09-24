@@ -300,6 +300,8 @@ calcit test '<namespace>/<definition>'
 
 `type-at --format json` 的语义路径可能是 `code@3.2`，而 `tree --path` 需要 `@3.2`；不要把仍含 `code@` 的 follow-up 命令直接交给 `tree`。
 
+读取 `query type`、`type-at` 或 `context` 的方法契约时，先看 `status`：`proven` 表示接收者实例化后，调用参数与结果已有精确类型；`open` 表示仍含 `Dynamic`/`DynFn` 或缺少可证明的 schema，不能据此生成精确调用。例如 `Option<Dynamic>` 的 `.unwrap-or` 是开放契约，但不读取内部值的 `.some? -> Bool` 仍可证明。`ambiguous` 需要先消除 trait/impl 来源冲突，不要按展示顺序猜一个实现。
+
 最后运行当前仓库规定的测试和目标 codegen。只有项目目标是 JS 时，`calcit js` 才是对应的编译检查；它不是所有 Calcit 项目的通用完成证明。
 
 ### 废弃 API 清理

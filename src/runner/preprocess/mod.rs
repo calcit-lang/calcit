@@ -7207,29 +7207,27 @@ fn static_method_contract_with_impls(
   }
   let mut features = signature.features.iter().map(|feature| feature.to_string()).collect::<Vec<_>>();
   features.sort();
-  let has_open_types = signature
+  let arg_types = signature
     .arg_types
     .iter()
-    .any(|annotation| annotation_dynamic_weight(annotation.as_ref()) > 0)
-    || signature
-      .rest_type
+    .skip(1)
+    .map(|arg| arg.substitute_type_vars(&bindings))
+    .collect::<Vec<_>>();
+  let rest_type = signature.rest_type.as_ref().map(|rest| rest.substitute_type_vars(&bindings));
+  let return_type = signature.return_type.substitute_type_vars(&bindings);
+  let has_open_types = annotation_dynamic_weight(expected_receiver.as_ref()) > 0
+    || arg_types
+      .iter()
+      .any(|annotation| annotation_dynamic_weight(annotation.as_ref()) > 0)
+    || rest_type
       .as_ref()
       .is_some_and(|annotation| annotation_dynamic_weight(annotation.as_ref()) > 0)
-    || annotation_dynamic_weight(signature.return_type.as_ref()) > 0;
+    || annotation_dynamic_weight(return_type.as_ref()) > 0;
   StaticMethodContract {
     status: if has_open_types { "open" } else { "proven" },
-    arg_types: (!has_open_types).then(|| {
-      signature
-        .arg_types
-        .iter()
-        .skip(1)
-        .map(|arg| arg.substitute_type_vars(&bindings))
-        .collect()
-    }),
-    rest_type: (!has_open_types)
-      .then(|| signature.rest_type.as_ref().map(|rest| rest.substitute_type_vars(&bindings)))
-      .flatten(),
-    return_type: (!has_open_types).then(|| signature.return_type.substitute_type_vars(&bindings)),
+    arg_types: (!has_open_types).then_some(arg_types),
+    rest_type: (!has_open_types).then_some(rest_type).flatten(),
+    return_type: (!has_open_types).then_some(return_type),
     generics: signature
       .generics
       .iter()
@@ -7244,7 +7242,7 @@ fn static_method_contract_with_impls(
       .collect(),
     features,
     definition,
-    detail: has_open_types.then(|| "declared schema retains Dynamic or DynFn; precise call contract is unproven".to_owned()),
+    detail: has_open_types.then(|| "specialized schema retains Dynamic or DynFn; precise call contract is unproven".to_owned()),
   }
 }
 
