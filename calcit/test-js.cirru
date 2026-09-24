@@ -51,6 +51,18 @@
           :ffi $ {} (:backend :js) (:kind :external-object)
             :writable $ #{} :a :a-b :b
           :schema $ :: 'Trait
+        'TestStringChain $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait TestStringChain
+            .upper $ :: 'Fn $ {}
+              :args $ [] 'test-js.main/TestStringChain
+              :return 'test-js.main/TestStringChain
+            .lower $ :: 'Fn $ {}
+              :args $ [] 'test-js.main/TestStringChain
+              :return 'String
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object)
+            :names $ {} (:lower |toLowerCase) (:upper |toUpperCase)
+          :schema $ :: 'Trait
         'load-data-code $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro load-data-code (s)
             &data-to-code $ parse-cirru-edn $ unsafe-coerce s 'String
@@ -86,6 +98,7 @@
             test-case-async
             test-return-raw-code
             test-method-tag-access
+            test-nested-external-chain
             do true
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
@@ -312,6 +325,17 @@
             :args $ []
           :tests $ [] $ %{} 'TestEntry (:name |registers-method-only-tag)
             :code $ quote $ test-method-tag-access
+        'test-nested-external-chain $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-nested-external-chain ()
+            let
+                base $ unsafe-coerce |AbC test-js.main/TestStringChain
+                upper $ .upper base
+              assert= |abc $ .lower $ .upper base
+              assert= |abc $ .lower upper
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+            :features $ #{} :js-ffi
         'test-property $ %{} 'CodeEntry (:doc "|try property ops")
           :code $ quote $ fn ()
             let

@@ -108,8 +108,8 @@ pub(crate) fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> O
       .get(sym)
       .cloned()
       .map(resolve_trait_type_ref)
-      .or_else(|| infer_type_from_expr(target, scope_types)),
-    _ => infer_type_from_expr(target, scope_types),
+      .or_else(|| infer_type_from_expr(target, scope_types).map(resolve_trait_type_ref)),
+    _ => infer_type_from_expr(target, scope_types).map(resolve_trait_type_ref),
   }
 }
 
