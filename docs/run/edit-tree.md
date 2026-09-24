@@ -78,7 +78,7 @@ calcit calcit.cirru query context @cursor --format edn
 calcit calcit.cirru query type-at @cursor --path @cursor --format edn
 calcit calcit.cirru tree show @cursor --path @cursor
 calcit calcit.cirru tree replace @cursor --path @cursor \
-  --code 'quote $ render-list items'
+  --input-format cirru --code 'quote $ render-list items'
 calcit calcit.cirru edit split-def @cursor --path @cursor --name render-items
 ```
 
@@ -88,9 +88,9 @@ For the most common mutations, `cursor apply` infers both the definition target 
 
 ```bash
 calcit calcit.cirru cursor apply swap-next
-calcit calcit.cirru cursor apply replace --code 'quote $ render-list items'
-calcit calcit.cirru cursor apply wrap --code 'quote $ when visible? self'
-calcit calcit.cirru cursor apply insert-after --file .calcit/snippets/branch.cirru
+calcit calcit.cirru cursor apply replace --input-format cirru --code 'quote $ render-list items'
+calcit calcit.cirru cursor apply wrap --input-format cirru --code 'quote $ when visible? self'
+calcit calcit.cirru cursor apply insert-after --input-format cirru --file .calcit/snippets/branch.cirru
 ```
 
 `cursor apply unwrap` splices every child of the selected list into its parent. It is not necessarily the inverse of a wrapper template containing extra syntax such as `quote $ do self`; use `raise` when the intent is to replace a parent with one selected child.
@@ -105,7 +105,7 @@ Once a cursor is set, successful tree mutations in that definition maintain it e
 
 ```bash
 calcit --cursor-after focus calcit.cirru tree replace app.main/render! \
-  --path @cursor --code 'quote $ render-list next-items'
+  --path @cursor --input-format cirru --code 'quote $ render-list next-items'
 ```
 
 `cursor show` reparses the snapshot and verifies the saved subtree fingerprint. If an external change invalidated the numeric path, a unique fingerprint match may relocate it; zero or multiple matches are rejected rather than guessed. The default `--view focus` uses Cirru's structural focus formatter on the surrounding definition and preserves its signature; `--view node` shows only the selection, while `--view full` shows the whole definition. Human display wraps only the presentation copy in `CURSOR`; `cursor show --format json` returns the real subtree as `tree` and the presentation tree as `preview_tree`, so the wrapper never changes source paths.
@@ -226,6 +226,8 @@ The primary input format is a Cirru EDN list of CLI argument lists. Each inner l
     , |app.main/main!
     , |--path
     , |@3.2
+    , |--input-format
+    , |cirru
     , |--code
     quote $ println |done
 ```
@@ -244,7 +246,7 @@ JSON argument lists remain accepted as a compatibility format for callers that a
 ```json
 [
   ["edit", "doc", "app.main/main!", "Updated by transaction"],
-  ["tree", "replace", "app.main/main!", "--path", "@3.2", "--code", "quote $ println |done"]
+  ["tree", "replace", "app.main/main!", "--path", "@3.2", "--input-format", "cirru", "--code", "quote $ println |done"]
 ]
 ```
 
@@ -293,7 +295,7 @@ calcit edit rm-ns app.util
 
 ```bash
 # Add an import to a namespace
-calcit edit add-import app.main --code 'quote (respo.core :refer $ deftime)'
+calcit edit add-import app.main --input-format cirru --code 'quote (respo.core :refer $ deftime)'
 
 # Bulk reset all imports for a namespace
 calcit edit imports app.main --input-format cirru --file imports.cirru
@@ -316,10 +318,10 @@ quote $ []
 
 ```bash
 # Schema accepts exactly one quoted Cirru type node.
-calcit edit schema 'app.main/*enabled?' --code "quote $ :: 'Ref 'Bool"
+calcit edit schema 'app.main/*enabled?' --input-format cirru --code "quote $ :: 'Ref 'Bool"
 
 # Concrete defstruct/defenum value schemas use a fully qualified nominal type.
-calcit edit schema app.schema/store --code "quote 'app.schema/Store"
+calcit edit schema app.schema/store --input-format cirru --code "quote 'app.schema/Store"
 
 # Each top-level quote becomes one example; leaves remain representable.
 calcit edit examples app.main/add << 'END'
@@ -349,7 +351,7 @@ calcit tree show app.main/main!
 
 ```bash
 # Replace numeric leaf '1' with '10' inside the definition
-calcit tree search-replace app.main/main! --pattern '1' --code 'quote 10'
+calcit tree search-replace app.main/main! --pattern '1' --input-format cirru --code 'quote 10'
 ```
 
 ### Path-based Operations
@@ -359,11 +361,11 @@ You can use numeric paths to locate deep nodes:
 ```bash
 # Replace the node at path @1.2.0
 calcit tree replace app.main/main! --path '@1.2.0' \
-  --expect 'quote old-value' --code 'quote $ + 1 2'
+  --expect 'quote old-value' --input-format cirru --code 'quote $ + 1 2'
 
 # Insert before a node
 calcit tree insert-before app.main/main! --path '@1.0' \
-  --expect 'quote (render-page)' --code 'quote (println |started)'
+  --expect 'quote (render-page)' --input-format cirru --code 'quote (println |started)'
 
 # Delete a node
 calcit tree delete app.main/main! --path '@1.0' --expect 'quote (render-page)'
