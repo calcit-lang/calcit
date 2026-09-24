@@ -57,13 +57,13 @@
 
 直接使用命令修改 calcit 程序时不需要调用 cargo, 直接按照文档给出的命令行示例执行即可。
 
-在开始任何 `calcit edit` / `calcit tree` 修改前，先把下面这条命令当作**硬前置步骤**执行一遍，而不是可选建议：
+在开始任何 `calcit edit` / `calcit tree` / `calcit cursor` 修改前，先读取内嵌的紧凑 mutation contract：
 
 ```bash
-calcit docs agents --full
+calcit docs agents --contract
 ```
 
-未先阅读最新 Agent 指南时，不要直接开始改 `calcit.cirru`；旧文件名 `compact.cirru` 已停用，必须先按升级指南迁移。
+首次使用、contract digest 改变，或任务涉及契约未覆盖的能力时，再运行 `calcit docs agents --full` 或读取相关章节；不要让普通应用修改默认加载全部 ABI 与历史迁移资料。未先阅读当前契约时，不要直接改 `calcit.cirru`；旧文件名 `compact.cirru` 已停用，必须先按升级指南迁移。
 
 ### 运行模式更新（calcit / js）
 
