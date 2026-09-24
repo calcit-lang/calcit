@@ -30,7 +30,7 @@ parent: core/run
 ```bash
 # 搜索 → 修改 → 验证
 calcit query search 'symbol' --filter 'ns/def'                    # 1. 定位（输出：@3.2.1 in ...）
-calcit tree replace 'ns/def' --path '@3.2.1' --code 'quote |new' # 2. 修改
+calcit tree replace 'ns/def' --path '@3.2.1' --input-format cirru --code 'quote |new' # 2. 修改
 calcit tree show 'ns/def' --path '3.2.1'                         # 3. 验证（可选）
 ```
 
@@ -39,7 +39,7 @@ calcit tree show 'ns/def' --path '3.2.1'                         # 3. 验证（�
 ```bash
 calcit query search 'target' --filter 'ns/def'                    # 搜索符号/字符串
 calcit query search-expr 'fn (x)' --filter 'ns/def'               # 搜索代码结构
-calcit tree replace-leaf 'ns/def' --pattern 'old' --code 'quote |new' # 批量替换叶子节点
+calcit tree replace-leaf 'ns/def' --pattern 'old' --input-format cirru --code 'quote |new' # 批量替换叶子节点
 ```
 
 ### 选择定位与修改命令
