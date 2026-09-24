@@ -94,6 +94,23 @@ let
 
 已知 `List<T>` 的访问优先使用接收者方法 `.get`、`.nth`、`.first` 和 `.last`，让元素类型随 receiver 进入推断；对应的前缀函数仍可使用，并不是 `.get` 的替代契约。索引不存在时返回 `%none`，不要把缺失当作 `nil`。
 
+### 索引范围与元素成员
+
+`xs.contains? index` 检查 Number 索引是否在有效范围内；`xs.includes? value` 检查列表中是否有指定的 `T` 元素。两者不是别名：查询元素时不要把值误传给 `.contains?`。
+
+```cirru
+let
+    xs $ [] :a :b :c
+  println $ xs.contains? 1
+  ; => true
+  println $ xs.contains? 3
+  ; => false
+  println $ xs.includes? :b
+  ; => true
+  println $ xs.includes? :d
+  ; => false
+```
+
 ## Adding / Removing Elements
 
 ```cirru
@@ -158,7 +175,7 @@ let
   ; => $ [] 5 4 3 2 1
 ```
 
-For `List<T>`, a function selector is checked as `T -> K`; the key type remains generic because the runtime comparison supports multiple scalar key types. A Tag selector keeps the compatibility path used to read a field or map key.
+对于 `List<T>`，作为 selector 的函数按 `T -> K` 检查；排序键 `K` 保持泛型。Tag selector 仍可用于读取字段或 Map key，但新代码优先写出可推断的函数。
 
 Reverse:
 
@@ -182,13 +199,15 @@ let
   ; => $ [] 1 2 3
   println $ find xs
     fn (x) (> x 3)
-  ; => 4
+  ; => (%some 4)
   println $ find-index xs
     fn (x) (> x 3)
-  ; => 3
+  ; => (%some 3)
   println $ index-of xs 3
-  ; => 2
+  ; => (%some 2)
 ```
+
+`find` 返回 `Option<T>`，`find-index` 和 `index-of` 返回 `Option<Number>`；找不到时为 `%none`，使用前应明确处理该分支。
 
 ## Transforming
 
@@ -300,7 +319,9 @@ let
   ; => $ [] 30 40 50
 ```
 
-### Zip two lists together
+### 按索引配对两个 List
+
+`nth` 返回 `Option<T>`，所以第二个 List 较短时仍能表示缺失，不应把结果误写成必有的裸值：
 
 ```cirru
 let
@@ -310,7 +331,7 @@ let
       fn (i k)
         [] k $ nth vs i
   println zipped
-  ; => $ [] ([] :a 1) ([] :b 2) ([] :c 3)
+  ; => $ [] ([] :a (%some 1)) ([] :b (%some 2)) ([] :c (%some 3))
 ```
 
 ### Deduplicate
