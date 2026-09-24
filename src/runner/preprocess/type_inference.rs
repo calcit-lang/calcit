@@ -93,6 +93,7 @@ fn mark_async_callable(annotation: Arc<CalcitTypeAnnotation>, is_async: bool) ->
   }
 }
 
+/// Resolves expression type evidence and normalizes trait references for method inference.
 pub(crate) fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   match target {
     Calcit::Local(local) => {
