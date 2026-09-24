@@ -325,6 +325,15 @@
             :args $ []
           :tests $ [] $ %{} 'TestEntry (:name |registers-method-only-tag)
             :code $ quote $ test-method-tag-access
+        'test-nested-external-arity-fail $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-nested-external-arity-fail ()
+            let
+                base $ unsafe-coerce |AbC test-js.main/TestStringChain
+              .lower $ .upper base |unexpected
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
+            :features $ #{} :js-ffi
         'test-nested-external-chain $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-nested-external-chain ()
             let
