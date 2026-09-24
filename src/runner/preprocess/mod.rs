@@ -7180,15 +7180,18 @@ fn static_method_contract_with_impls(
           .as_ref()
           .map(|reference| format!("{}/{}", reference.def_ns, reference.def_name)),
       ),
-      Calcit::Proc(proc) => (
-        proc.get_type_signature().map(|signature| {
-          Arc::new(CalcitTypeAnnotation::from_function_parts(
-            signature.arg_types.clone(),
-            signature.return_type.clone(),
-          ))
-        }),
-        None,
-      ),
+      Calcit::Proc(proc) => {
+        let (namespace, definition) = proc.get_ns_def();
+        (
+          proc.get_type_signature().map(|signature| {
+            Arc::new(CalcitTypeAnnotation::from_function_parts(
+              signature.arg_types.clone(),
+              signature.return_type.clone(),
+            ))
+          }),
+          Some(format!("{namespace}/{definition}")),
+        )
+      }
       _ => (None, None),
     };
     let Some(schema) = trait_schema.or(entry_schema) else {
@@ -7200,7 +7203,7 @@ fn static_method_contract_with_impls(
   let Some(signature) = schema.as_function() else {
     return StaticMethodContract::open_with_definition("selected method schema is not callable", definition);
   };
-  let Some(expected_receiver) = signature.arg_types.first() else {
+  let Some(expected_receiver) = signature.arg_types.first().or(signature.rest_type.as_ref()) else {
     return StaticMethodContract::open_with_definition("selected method schema has no receiver parameter", definition);
   };
   let mut bindings = HashMap::new();

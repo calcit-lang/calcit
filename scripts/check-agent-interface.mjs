@@ -770,6 +770,18 @@ for (const { name, base, expectedStatus = 0, check } of [
     check: (result) => assert.ok(result.data.methods.some((method) => method.name === ".contains?")),
   },
   {
+    name: "variadic list method EDN",
+    base: ["calcit/test.cirru", "query", "type", ":: 'List 'Number"],
+    check: (result) => {
+      const method = result.data.methods.find((item) => item.name === ".concat");
+      assert.equal(method?.status, "proven");
+      assert.deepEqual(method.parameter_types, []);
+      assert.equal(method.rest_type, "list<number>");
+      assert.equal(method.return_type, "list<number>");
+      assert.equal(method.definition, "calcit.core/&list:concat");
+    },
+  },
+  {
     name: "runtime-only context EDN",
     base: ["calcit/test.cirru", "query", "context", "calcit.core/&list:contains?", "--budget", "1800"],
     check: (result) => {
