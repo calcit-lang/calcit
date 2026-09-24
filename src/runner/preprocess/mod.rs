@@ -8912,7 +8912,7 @@ pub fn preprocess_unsafe_coerce(
   {
     return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
-      "`unsafe-coerce` is outside a lexical `:js-ffi` boundary; move the host assertion into a small adapter function whose structured `Fn` schema declares `:features $ #{} :js-ffi`, validate or convert the host value there, and return typed Calcit data",
+      "`unsafe-coerce` is outside a lexical `:js-ffi` boundary; `calcit edit ffi` only changes CodeEntry export metadata and does not grant this permission. Move the host assertion into a small adapter with a structured `Fn` schema, then use `calcit edit schema '<namespace>/<definition>' --add-feature js-ffi`; validate or convert the host value there and return typed Calcit data",
       "E_UNSCOPED_UNSAFE_COERCE",
       ctx.call_stack,
       args.first().and_then(Calcit::get_location),
@@ -12263,6 +12263,8 @@ mod tests {
     assert_eq!(error.code.as_deref(), Some("E_UNSCOPED_UNSAFE_COERCE"));
     assert!(error.msg.contains("`:js-ffi` boundary"));
     assert!(error.msg.contains("structured `Fn` schema"));
+    assert!(error.msg.contains("`calcit edit ffi` only changes CodeEntry export metadata"));
+    assert!(error.msg.contains("--add-feature js-ffi"));
 
     let _features = CurrentFnFeaturesGuard::js_ffi();
     let resolved = preprocess_expr(
