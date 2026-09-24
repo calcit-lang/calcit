@@ -23,7 +23,7 @@ parent: core/run
 
 这不是建议项，而是进入实际修改前的检查项。跳过这一步，往往会直接沿用旧用法假设，尤其容易误判 `calcit tree replace --path ''`、imports 输入格式和 watcher 验收边界。
 
-**核心原则：用命令行工具（不要直接编辑文件），用 search 定位（比逐层导航快 10 倍）**
+**核心原则：先用查询命令定位，再通过结构化编辑命令修改，并运行适用的检查与测试。**
 
 ### 标准流程
 
@@ -42,10 +42,12 @@ calcit query search-expr 'fn (x)' --filter 'ns/def'               # 搜索代码
 calcit tree replace-leaf 'ns/def' --pattern 'old' --code 'quote |new' # 批量替换叶子节点
 ```
 
-### 效率对比
+### 选择定位与修改命令
 
-| 操作       | 传统方法                | search 方法         | 效率     |
-| ---------- | ----------------------- | ------------------- | -------- |
-| 定位符号   | 逐层 `tree show` 10+ 步 | `query search` 1 步 | **10倍** |
-| 查找表达式 | 手动遍历代码            | `search-expr` 1 步  | **10倍** |
-| 批量重命名 | 手动找每处              | 自动列出所有位置    | **5倍**  |
+| 需求 | 先定位 | 再修改或核对 |
+| --- | --- | --- |
+| 查找符号或字符串 | `query search` | 核对返回的定义 revision 与 Snapshot path 后使用 `tree` |
+| 查找表达式结构 | `query search-expr` | 查看匹配的 Cirru 树，再选择结构化编辑 |
+| 跨调用点重命名 | `query usages` | 使用 `fix --rule rename-definition-v1` 的预览与应用闭环，核对结果；不要把纯文本替换当成语义重命名 |
+
+这些是工作流选择，不是效率倍率。Agent 完成时间、重试与人工审阅成本须按 #1302 的固定任务和原始记录评估。
