@@ -147,9 +147,9 @@ caps tree
 caps why '<owner/repo>'
 calcit calcit.cirru config modules
 calcit calcit.cirru config modules --entry '<entry-name>'
-calcit calcit.cirru config show --format json
-calcit calcit.cirru config modules --entry '<entry-name>' --format json
-calcit calcit.cirru config type-slots --entry '<entry-name>' --format json
+calcit calcit.cirru config show --format edn
+calcit calcit.cirru config modules --entry '<entry-name>' --format edn
+calcit calcit.cirru config type-slots --entry '<entry-name>' --format edn
 calcit calcit.cirru --check-only
 calcit calcit.cirru --entry '<entry-name>' --check-only
 calcit calcit.cirru --check-only --incremental
@@ -166,8 +166,9 @@ entry 都是独立配置，不能假设其模块继承 default。`--check-only` 
 `cascaded` 表示无法安全归属当前 definition 的意外失败；三者都使进程非零退出。不要把 blocked 当成新的类型错误，也不要
 要求工具在 expression 内猜测恢复。Cirru EDN 是 Agent 默认结构化格式，只有下游只接受 JSON 时才改用
 `--format json`。该检查范围仍只包含所选 entry 的可达预处理路径，
-而 `docs check-md` 默认只带 default entry 的模块；有测试或文档专用模块时，须显式选择相应 entry 或
-重复传入 `--dep`。动态加载、未调用的公开 API 和外部消费者不在这些静态结果的证明范围内。
+而 `docs check-md` 默认只带所选 Snapshot 的 default entry 模块；有测试或文档专用模块时，可通过
+`--snapshot` 选择相应的专用 Snapshot，或重复传入 `--dep`，不能用 `--entry` 选择该命令的 named entry。
+动态加载、未调用的公开 API 和外部消费者不在这些静态结果的证明范围内。
 
 `config modules --entry` 与顶层 `--entry` 均选择 named entry；`docs check-md --snapshot` 则选择用于
 检查的 Snapshot 文件（默认 `calcit.cirru`）。旧写法 `docs check-md --entry` 会报错并给出迁移提示，避免同名参数指代两种对象。
@@ -176,7 +177,7 @@ Agent 和 CI 读取 entry 配置时优先使用 config 查询的 `--format edn`�
 都返回带 `schema_version`、`command`、`data`、`diagnostics` 与 Snapshot `revision` 的单一 envelope；
 entry 不存在或 Snapshot 配置无效时仍输出结构化诊断并以非零状态退出。
 
-读取源码优先使用 human 输出；其中包含代码的查询与 `tree show` 按 Markdown 组织，Cirru、JSON AST 和普通说明使用明确的 fenced block 或段落边界，适合人类 review，也方便 LLM 保留代码边界。只有需要稳定字段、自动分支或静态证据时才使用 `--format json`。`--format json` 承诺 stdout 为单个 JSON envelope；某些命令的 `--json` 只是在人类输出中附加 fenced JSON，具体以子命令 `--help` 为准。不要把 Markdown heading、fence 或截断说明复制为 Calcit 源码。
+读取源码优先使用 human 输出；其中包含代码的查询与 `tree show` 按 Markdown 组织，Cirru、JSON AST 和普通说明使用明确的 fenced block 或段落边界，适合人类 review，也方便 LLM 保留代码边界。需要稳定字段、自动分支或静态证据时优先使用 `--format edn`；仅对接 JSON-only 工具时显式使用 `--format json`。两种结构化格式各自承诺 stdout 为单个可解析 envelope；某些命令的 `--json` 只是在人类输出中附加 fenced JSON，具体以子命令 `--help` 为准。不要把 Markdown heading、fence 或截断说明复制为 Calcit 源码。
 
 ## 2. 最小心智模型
 
@@ -285,14 +286,14 @@ snippets 等临时状态；不要把需要评审的设计落进隐藏目录。
 下面是需要替换 `<...>` 占位符的任务模板，不能原样执行。target、needle 和 replacement 必须来自当前项目及用户目标。先看搜索结果中的 `[#N]`，确认后再用同一序号设置 cursor：
 
 ```bash
-calcit query context '<namespace/definition>' --format json
+calcit query context '<namespace/definition>' --format edn
 calcit query search '<existing-leaf>' --filter '<namespace/definition>' --exact
 calcit query search '<existing-leaf>' --filter '<namespace/definition>' --exact --set-cursor 0
 calcit cursor show
 calcit cursor apply replace --code 'quote <replacement-leaf>'
 calcit tree show @cursor --path @cursor
-calcit query type-at @cursor --path @cursor --format json
-calcit --entry '<target-entry>' calcit.cirru analyze check-public --ns '<public-namespace>' --format json
+calcit query type-at @cursor --path @cursor --format edn
+calcit --entry '<target-entry>' calcit.cirru analyze check-public --ns '<public-namespace>' --format edn
 calcit analyze check-examples --ns '<namespace>' --def '<definition>'
 calcit test '<namespace>/<definition>'
 ```
