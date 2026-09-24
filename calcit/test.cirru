@@ -87,6 +87,18 @@
           :code $ quote $ defenum ValueBox (:value 'Dynamic)
           :examples $ []
           :schema $ :: 'EnumDef
+        'cross-module-counter-next $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn cross-module-counter-next (input)
+            let
+                typed $ assert-type input 'test-traits.external/Counter
+              :value $ typed .next
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |resolves-module-struct-trait)
+            :code $ quote $ assert= 2
+              cross-module-counter-next $ %{} test-traits.external/Counter $ :value 1
+            :tags $ #{} :trait :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (&init-builtin-impls!)
             println $ &get-os
