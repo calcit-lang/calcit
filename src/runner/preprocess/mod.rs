@@ -7039,6 +7039,12 @@ impl StaticMethodContract {
       detail: Some(detail.into()),
     }
   }
+
+  fn ambiguous(detail: impl Into<String>) -> Self {
+    let mut contract = Self::open(detail);
+    contract.status = "ambiguous";
+    contract
+  }
 }
 
 fn checked_core_method_contract(receiver: &CalcitTypeAnnotation, namespace: &str, definition: &str) -> Option<StaticMethodContract> {
@@ -7111,7 +7117,7 @@ fn static_method_contract_with_impls(
     match resolve_trait_method(traits, bare_name) {
       TraitMethodResolution::Selected(candidate) => (candidate.method_type, Some(candidate.trait_def.origin_label())),
       TraitMethodResolution::Ambiguous(candidates) => {
-        let mut result = StaticMethodContract::open(format!(
+        return StaticMethodContract::ambiguous(format!(
           "multiple trait origins: {}",
           candidates
             .iter()
@@ -7119,8 +7125,6 @@ fn static_method_contract_with_impls(
             .collect::<Vec<_>>()
             .join(", ")
         ));
-        result.status = "ambiguous";
-        return result;
       }
       TraitMethodResolution::Invalid(error) => return StaticMethodContract::open(error),
       TraitMethodResolution::Missing => return StaticMethodContract::open("method is not present in the resolved trait set"),
@@ -7132,12 +7136,10 @@ fn static_method_contract_with_impls(
     let selected = match resolve_impl_method(receiver, impls, bare_name) {
       ImplMethodResolution::Selected(candidate) => candidate,
       ImplMethodResolution::Ambiguous(candidates) => {
-        let mut result = StaticMethodContract::open(format!(
+        return StaticMethodContract::ambiguous(format!(
           "multiple implementation origins: {}",
           candidates.iter().map(impl_candidate_origin).collect::<Vec<_>>().join(", ")
         ));
-        result.status = "ambiguous";
-        return result;
       }
       ImplMethodResolution::Missing => return StaticMethodContract::open("method is not present in the resolved implementation"),
     };

@@ -198,6 +198,10 @@ fn method_contract_fingerprint(methods: &Option<Vec<ContextMethod>>) -> Result<S
 
 fn render_context_method(method: &ContextMethod) -> String {
   let mut rendered = format!("- `{}` (`{}`): {}", method.name, method.origin, method.status);
+  if !method.generics.is_empty() {
+    let generics = method.generics.iter().map(|name| format!("'{name}")).collect::<Vec<_>>();
+    rendered.push_str(&format!(" for<{}>", generics.join(", ")));
+  }
   if let (Some(args), Some(result)) = (&method.parameter_types, &method.return_type) {
     let mut parameters = args.clone();
     if let Some(rest) = &method.rest_type {
@@ -1338,6 +1342,14 @@ mod type_query_tests {
     let result = parse_type_annotation_query(":: 'Result 'Number 'String").expect("typed Result should parse");
     let map_err = runner::preprocess::static_method_contract(result.as_ref(), ".map-err");
     assert_eq!(map_err.status, "proven");
+    let rendered = render_context_method(&context_method(
+      runner::preprocess::StaticMethodDescriptor {
+        name: ".map-err".to_owned(),
+        origin: "calcit.core/ResultOps".to_owned(),
+      },
+      map_err.clone(),
+    ));
+    assert!(rendered.contains("for<'F>"));
     assert_eq!(map_err.arg_types.unwrap()[0].describe(), "fn(string) -> 'F");
     assert_eq!(map_err.return_type.unwrap().describe(), "type Result<number, 'F>");
     assert_eq!(map_err.generics, vec!["F"]);
@@ -2424,7 +2436,7 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
   let target_node = navigate_to_path(&entry.code, &target_path)?;
   let semantic_path = semantic_code_path(&target_path);
   let expression = format_cirru_expression(&target_node);
-  let revision = snapshot::definition_revision(entry)?;
+  let source_revision = snapshot::definition_revision(entry)?;
 
   prepare_program_for_type_query(&snapshot)?;
   let warnings = RefCell::<Vec<LocatedWarning>>::new(vec![]);
@@ -2462,6 +2474,8 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
         .collect::<Vec<_>>()
     })
   });
+  let method_fingerprint = method_contract_fingerprint(&methods)?;
+  let revision = semantic_revision(&[&source_revision, &method_fingerprint]);
 
   let fn_features = context_features(entry.schema.as_ref());
   let dynamic_intent = if inferred
