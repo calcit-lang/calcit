@@ -363,7 +363,7 @@ fn merge_callsite_argument_evidence(
           &argument_path,
           matches!(source_items[index + 1], Cirru::List(_)),
         );
-        let Some(candidate) = super::super::query::infer_type_at_target(&source_argument, processed_argument, owner_ns)
+        let Some(candidate) = super::super::query::infer_type_at_target(&source_argument, processed_argument)
           .map(|value| normalize_inferred_schema(&value))
         else {
           blocked[index] = true;

@@ -1660,12 +1660,56 @@ mod type_query_tests {
       location: None,
     };
 
-    let inferred = infer_type_at_target(&source, None, "tests.type-at").expect("implicit core constructor should retain its schema");
+    let inferred = infer_type_at_target(&source, None).expect("implicit core constructor should retain its schema");
     let CalcitTypeAnnotation::Fn(signature) = inferred.as_ref() else {
       panic!("expected constructor function schema, got {inferred:?}");
     };
     assert!(signature.arg_types.is_empty());
     assert!(signature.return_type.to_brief_string().contains("Option"));
+  }
+
+  #[test]
+  fn type_at_does_not_borrow_global_schema_for_unresolved_shadowed_symbol() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_core_snapshot().expect("core snapshot should load");
+    prepare_program_for_type_query_on_cli_stack(snapshot);
+    assert!(
+      !matches!(
+        program::lookup_def_schema(calcit::calcit::CORE_NS, "count").as_ref(),
+        CalcitTypeAnnotation::Dynamic
+      ),
+      "the regression requires a real same-named global schema"
+    );
+    let source = Calcit::Symbol {
+      sym: Arc::from("count"),
+      info: Arc::new(calcit::calcit::CalcitSymbolInfo {
+        at_ns: Arc::from("tests.type-at"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+    };
+
+    assert!(
+      infer_type_at_target(&source, None).is_none(),
+      "a core function of the same name cannot prove an unresolved local symbol"
+    );
+    assert!(
+      infer_type_at_target(&source, Some(&source)).is_none(),
+      "an unlowered symbol is still not lexical binding evidence"
+    );
+
+    let local = Calcit::Local(calcit::calcit::CalcitLocal {
+      idx: 0,
+      sym: Arc::from("count"),
+      info: Arc::new(calcit::calcit::CalcitSymbolInfo {
+        at_ns: Arc::from("tests.type-at"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::String),
+    });
+    let inferred = infer_type_at_target(&source, Some(&local)).expect("resolved local should retain its lexical type");
+    assert!(matches!(inferred.as_ref(), CalcitTypeAnnotation::String));
   }
 
   #[test]
@@ -2028,24 +2072,26 @@ fn expected_type_at_path(
     .map(|expected| (expected, "callable parameter".to_owned()))
 }
 
-/// Prefer processed static evidence, then recover source and implicit-core
-/// definition schemas when preprocessing stopped before node correlation.
-pub(super) fn infer_type_at_target(source: &Calcit, processed: Option<&Calcit>, namespace: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+/// Prefer processed static evidence. Unresolved source symbols cannot borrow
+/// a same-named global schema, except the implicit core `%none` constructor.
+pub(super) fn infer_type_at_target(source: &Calcit, processed: Option<&Calcit>) -> Option<Arc<CalcitTypeAnnotation>> {
+  if let Calcit::Symbol { sym, .. } = source {
+    // A source symbol has no lexical resolution. A same-named definition is
+    // not evidence when preprocessing failed or could not correlate the node.
+    return processed
+      .filter(|node| !matches!(node, Calcit::Symbol { .. }))
+      .and_then(runner::preprocess::infer_static_type_from_expr)
+      .or_else(|| {
+        if processed.is_some() || sym.as_ref() != "%none" {
+          return None;
+        }
+        let core = program::lookup_def_schema(calcit::calcit::CORE_NS, sym);
+        (!matches!(core.as_ref(), CalcitTypeAnnotation::Dynamic)).then_some(core)
+      });
+  }
   processed
     .and_then(runner::preprocess::infer_static_type_from_expr)
     .or_else(|| runner::preprocess::infer_static_type_from_expr(source))
-    .or_else(|| match source {
-      Calcit::Symbol { sym, .. } => {
-        let local = program::lookup_def_schema(namespace, sym);
-        if !matches!(local.as_ref(), CalcitTypeAnnotation::Dynamic) {
-          Some(local)
-        } else {
-          let core = program::lookup_def_schema(calcit::calcit::CORE_NS, sym);
-          (!matches!(core.as_ref(), CalcitTypeAnnotation::Dynamic)).then_some(core)
-        }
-      }
-      _ => None,
-    })
 }
 
 fn type_at_evidence(node: &Calcit, path: &str, used_preprocessed: bool) -> TypeAtEvidence {
@@ -2470,7 +2516,7 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
       .collect::<Result<Vec<_>, _>>()?,
   )?;
   let inference_target = processed_target.unwrap_or(&source_target);
-  let inferred = infer_type_at_target(&source_target, processed_target, namespace);
+  let inferred = infer_type_at_target(&source_target, processed_target);
   let expected = expected_type_at_path(entry, processed_root, namespace, &definition, &target_path);
   let inferred_rendered = inferred
     .as_ref()
