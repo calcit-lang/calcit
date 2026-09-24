@@ -975,7 +975,14 @@ fn compile_selected_definitions(definitions: &[(String, String)]) -> Result<Vec<
   let warnings = RefCell::new(Vec::new());
   for (namespace, definition) in definitions {
     runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default())
-      .map_err(|failure| format!("Failed to preprocess fix target {namespace}/{definition}: {failure}"))?;
+      .map_err(|failure| {
+        let hint = if failure.msg.starts_with("unknown ns/def in program:") {
+          " Check each entry's declared modules with `calcit <snapshot> config modules --entry <entry>`, then add or install the missing dependency."
+        } else {
+          ""
+        };
+        format!("Failed to preprocess fix target {namespace}/{definition}: {failure}{hint}")
+      })?;
   }
   Ok(warnings.into_inner())
 }

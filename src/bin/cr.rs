@@ -730,8 +730,20 @@ fn run_cli() -> Result<(), String> {
       println!("running entry: {}", snapshot.active_entry_name());
     }
 
-    // attach modules
-    let module_paths = snapshot.active_entry()?.modules.clone();
+    // Whole-project fix can inspect definitions outside the selected entry's closure.
+    let mut module_paths = snapshot.active_entry()?.modules.clone();
+    if matches!(&cli_args.subcommand, Some(CalcitCommand::Fix(options)) if options.ns.is_none()) {
+      let mut entry_names = snapshot.entries.keys().cloned().collect::<Vec<_>>();
+      entry_names.sort();
+      for name in entry_names {
+        let entry = snapshot.entries.get(&name).expect("entry name came from snapshot");
+        for module_path in &entry.modules {
+          if !module_paths.contains(module_path) {
+            module_paths.push(module_path.clone());
+          }
+        }
+      }
+    }
     for module_path in &module_paths {
       let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
       calcit::merge_project_module_files(&mut snapshot, &module_data, module_path)?;

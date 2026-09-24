@@ -254,6 +254,107 @@ fn fix_preview_reports_malformed_external_object_trait_without_macro_capability_
 }
 
 #[test]
+fn whole_project_fix_loads_modules_from_all_entries_and_reports_missing_dependencies() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("calcit/fibo.cirru", &snapshot).expect("multi-entry fixture should copy");
+  fs::copy("calcit/util.cirru", directory.path().join("util.cirru")).expect("module fixture should copy");
+
+  assert_success(
+    &run_calcit(&snapshot, &["config", "add-module", "--entry", "prime", "./missing.cirru"]),
+    "unrelated entry module declaration",
+  );
+  assert_success(
+    &run_fix(
+      &snapshot,
+      &["--ns", "app.main", "--preset", "surface-latest-v2", "--format", "json"],
+    ),
+    "scoped fix must not load an unrelated missing module",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["config", "rm-module", "--entry", "prime", "./missing.cirru"]),
+    "remove unrelated entry module declaration",
+  );
+
+  for (args, context) in [
+    (
+      vec!["config", "add-module", "--entry", "prime", "./util.cirru"],
+      "prime entry module declaration",
+    ),
+    (
+      vec![
+        "edit",
+        "add-import",
+        "app.main",
+        "--code",
+        "quote $ util.core :refer $ make-reel-for-tag-access",
+      ],
+      "project import of prime-only module",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "app.main/use-prime-module",
+        "--code",
+        "quote $ defn use-prime-module () $ make-reel-for-tag-access",
+      ],
+      "definition outside the default entry closure",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "app.main/use-prime-module",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Map 'Tag 'Number)",
+      ],
+      "project definition schema",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "default entry strict check");
+  assert_success(
+    &run_calcit(&snapshot, &["--entry", "prime", "--check-only"]),
+    "prime entry strict check",
+  );
+
+  let source = fs::read(&snapshot).expect("source snapshot should read");
+  let preview = run_fix(&snapshot, &["--preset", "surface-latest-v2", "--format", "json"]);
+  assert_success(&preview, "whole-project fix with prime-only module");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["validation"]["status"], "passed");
+  assert_eq!(fs::read(&snapshot).expect("source snapshot should remain readable"), source);
+
+  assert_success(
+    &run_calcit(&snapshot, &["config", "rm-module", "--entry", "prime", "./util.cirru"]),
+    "remove intentionally missing dependency",
+  );
+  let missing_source = fs::read(&snapshot).expect("missing-dependency snapshot should read");
+  let missing = run_fix(&snapshot, &["--preset", "surface-latest-v2", "--format", "json"]);
+  assert!(!missing.status.success(), "truly missing module must fail");
+  let diagnostic = String::from_utf8_lossy(&missing.stderr);
+  assert!(
+    diagnostic.contains("app.main/use-prime-module"),
+    "diagnostic must locate the caller: {diagnostic}"
+  );
+  assert!(
+    diagnostic.contains("util.core/make-reel-for-tag-access"),
+    "diagnostic must name the missing definition: {diagnostic}"
+  );
+  assert!(
+    diagnostic.contains("config modules --entry"),
+    "diagnostic must provide a repair action: {diagnostic}"
+  );
+  assert_eq!(
+    fs::read(&snapshot).expect("missing-dependency snapshot should remain readable"),
+    missing_source
+  );
+}
+
+#[test]
 fn strict_workflow_applies_safe_fixes_and_verifies_the_result() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
