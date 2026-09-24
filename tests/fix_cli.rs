@@ -119,6 +119,47 @@ fn optional_parameter_rule_reports_review_evidence_without_writing() {
     ),
     "install legacy optional source",
   );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/main!",
+        "--overwrite",
+        "--code",
+        "quote $ defn main! () (ambiguous nil) &unit",
+      ],
+    ),
+    "install direct legacy caller",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/reload!",
+        "--overwrite",
+        "--code",
+        "quote $ defn reload! () (identity ambiguous) &unit",
+      ],
+    ),
+    "install function-value legacy caller",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/shadowed-optional",
+        "--code",
+        "quote $ defn shadowed-optional () (let ((ambiguous $ fn (x) x)) (ambiguous 3))",
+      ],
+    ),
+    "install shadowed local name",
+  );
   let before = fs::read(&snapshot).expect("snapshot should be readable");
   let preview = run_fix(
     &snapshot,
@@ -142,6 +183,41 @@ fn optional_parameter_rule_reports_review_evidence_without_writing() {
   assert_eq!(suggestions[0]["origin_chain"][0]["parameter"], "value");
   assert_eq!(suggestions[0]["origin_chain"][0]["argument_index"], 0);
   assert_eq!(suggestions[0]["path"], "code@2.1");
+  let origins = suggestions[0]["origin_chain"]
+    .as_array()
+    .expect("origin evidence should be an array");
+  assert!(
+    origins
+      .iter()
+      .any(|item| item["kind"] == "project-reference-scan" && item["external_consumers"] == "unproven")
+  );
+  assert!(origins.iter().any(|item| {
+    item["kind"] == "resolved-project-reference"
+      && item["definition"] == "fix-command.main/main!"
+      && item["call_kind"] == "direct-call"
+      && item["provided_arguments"] == 1
+      && item["explicit_nil_arguments"] == serde_json::json!([0])
+  }));
+  assert!(
+    !origins
+      .iter()
+      .any(|item| item["definition"] == "fix-command.main/shadowed-optional")
+  );
+  assert!(
+    !origins[1]["failed_definitions"]
+      .as_array()
+      .expect("scan failures should be an array")
+      .iter()
+      .any(|item| item == "fix-command.main/shadowed-optional")
+  );
+  assert!(
+    origins.iter().any(|item| {
+      item["kind"] == "resolved-project-reference"
+        && item["definition"] == "fix-command.main/reload!"
+        && item["call_kind"] == "function-value"
+    }),
+    "expected direct function-value evidence: {origins:?}"
+  );
   assert!(suggestions[0]["origin_chain"][0]["candidate_type"].is_null());
   assert!(suggestions[0]["replacement"].is_null());
   assert_eq!(fs::read(&snapshot).expect("snapshot should remain readable"), before);

@@ -404,12 +404,12 @@ pub(crate) fn handle_fix_command(
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn;
   let migration_rule = semantic_refactor || schema_synthesis || optional_parameters || options.workflow.is_some();
   let validation_only = std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1");
-  let project_definitions = if semantic_refactor || schema_synthesis {
+  let project_definitions = if semantic_refactor || schema_synthesis || optional_parameters {
     select_project_definitions(compiled_snapshot, project_namespaces)?
   } else {
     select_definitions(options, compiled_snapshot, project_namespaces)?
   };
-  let selected_definitions = if schema_synthesis && validation_only {
+  let selected_definitions = if (schema_synthesis && validation_only) || optional_parameters {
     select_definitions(options, compiled_snapshot, project_namespaces)?
   } else {
     project_definitions.clone()
@@ -456,7 +456,12 @@ pub(crate) fn handle_fix_command(
       &project_definitions,
     )?);
   } else if optional_parameters {
-    suggestions.extend(plan_optional_parameter_diagnostics(options, &source_snapshot, snapshot_file)?);
+    suggestions.extend(plan_optional_parameter_diagnostics(
+      options,
+      &source_snapshot,
+      snapshot_file,
+      &project_definitions,
+    )?);
   } else if selected_rules.contains(&REMOVED_DATA_API_RULE) {
     suggestions.extend(plan_removed_data_api_fixes(options, &source_snapshot, snapshot_file, &warnings)?);
   }
@@ -1012,7 +1017,7 @@ fn compile_selected_definitions(definitions: &[(String, String)]) -> Result<Vec<
 
 /// Preprocess legacy source without strict rejection so fix planning can consume compiler warnings and type evidence.
 /// The staged validation subprocess still uses strict mode after applying the planned operations.
-fn compile_selected_definitions_for_migration(definitions: &[(String, String)]) -> Result<Vec<LocatedWarning>, String> {
+fn with_legacy_migration_mode<T>(run: impl FnOnce() -> T) -> T {
   struct StrictTypesGuard(bool);
 
   impl Drop for StrictTypesGuard {
@@ -1023,9 +1028,13 @@ fn compile_selected_definitions_for_migration(definitions: &[(String, String)]) 
 
   let guard = StrictTypesGuard(runner::preprocess::is_strict_types_enabled());
   runner::preprocess::set_strict_types(false);
-  let result = compile_selected_definitions(definitions);
+  let result = run();
   drop(guard);
   result
+}
+
+fn compile_selected_definitions_for_migration(definitions: &[(String, String)]) -> Result<Vec<LocatedWarning>, String> {
+  with_legacy_migration_mode(|| compile_selected_definitions(definitions))
 }
 
 /// Serialize the pre-edit warning multiset for semantic-refactor validation.
@@ -1374,6 +1383,7 @@ fn plan_optional_parameter_diagnostics(
   options: &FixCommand,
   snapshot: &Snapshot,
   snapshot_file: &str,
+  project_definitions: &[(String, String)],
 ) -> Result<Vec<FixSuggestion>, String> {
   let namespace = options.ns.as_deref().expect("optional parameter rule requires namespace");
   let definition = options.definition.as_deref().expect("optional parameter rule requires definition");
@@ -1452,7 +1462,110 @@ fn plan_optional_parameter_diagnostics(
     }
     argument_index += 1;
   }
+  if !suggestions.is_empty() {
+    let usage_evidence = collect_optional_parameter_usages(snapshot, namespace, definition, project_definitions);
+    for suggestion in &mut suggestions {
+      suggestion.origin_chain.extend(usage_evidence.iter().cloned());
+    }
+  }
   Ok(suggestions)
+}
+
+/// Collect resolver-backed local source references; attached sources and external consumers remain outside this proof.
+fn collect_optional_parameter_usages(
+  snapshot: &Snapshot,
+  target_ns: &str,
+  target_def: &str,
+  project_definitions: &[(String, String)],
+) -> Vec<Value> {
+  with_legacy_migration_mode(|| {
+    let warnings = RefCell::new(Vec::new());
+    let mut evidence = Vec::new();
+    let mut failed_definitions = Vec::new();
+    for (owner_ns, owner_def) in project_definitions {
+      let Some(entry) = snapshot.files.get(owner_ns).and_then(|file| file.defs.get(owner_def)) else {
+        failed_definitions.push(format!("{owner_ns}/{owner_def}"));
+        continue;
+      };
+      let usages = match runner::preprocess::trace_definition_source_usages(owner_ns, owner_def, &warnings, &CallStackList::default()) {
+        Ok(usages) => usages,
+        Err(_) => {
+          failed_definitions.push(format!("{owner_ns}/{owner_def}"));
+          continue;
+        }
+      };
+      for usage in usages {
+        if usage.target_ns.as_ref() != target_ns || usage.target_def.as_ref() != target_def {
+          continue;
+        }
+        let owner = format!("{owner_ns}/{owner_def}");
+        if !usage.macro_origin.is_empty() {
+          evidence.push(serde_json::json!({
+            "kind": "macro-origin-reference",
+            "definition": owner,
+            "macro_origin": usage.macro_origin,
+          }));
+          continue;
+        }
+        let Some(location) = usage.location else {
+          evidence.push(serde_json::json!({"kind": "unlocated-reference", "definition": owner}));
+          continue;
+        };
+        if location.ns.as_ref() != owner_ns || location.def.as_ref() != owner_def {
+          evidence.push(serde_json::json!({
+            "kind": "outside-editable-source",
+            "definition": owner,
+            "location": location.to_string(),
+          }));
+          continue;
+        }
+        let path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
+        let parent = path
+          .split_last()
+          .and_then(|(index, parent_path)| navigate_to_path(&entry.code, parent_path).ok().map(|node| (*index, node)));
+        let Some((index, Cirru::List(call))) = parent else {
+          evidence.push(serde_json::json!({
+            "kind": "unlocated-reference",
+            "definition": owner,
+            "path": format!("code{}", format_path(&path)),
+          }));
+          continue;
+        };
+        let call_kind = if index == 0 && !call.iter().skip(1).any(|item| item.eq_leaf("&")) {
+          "direct-call"
+        } else if index == 0 {
+          "spread-call"
+        } else {
+          "function-value"
+        };
+        evidence.push(serde_json::json!({
+          "kind": "resolved-project-reference",
+          "definition": owner,
+          "path": format!("code{}", format_path(&path)),
+          "call_kind": call_kind,
+          "provided_arguments": if call_kind == "direct-call" { Some(call.len().saturating_sub(1)) } else { None },
+          "explicit_nil_arguments": if call_kind == "direct-call" {
+            call.iter().skip(1).enumerate().filter_map(|(index, item)| item.eq_leaf("nil").then_some(index)).collect::<Vec<_>>()
+          } else {
+            Vec::new()
+          },
+        }));
+      }
+    }
+    evidence.sort_by_key(|value| value.to_string());
+    evidence.insert(
+      0,
+      serde_json::json!({
+        "kind": "project-reference-scan",
+        "scope": "definition-code-only",
+        "scanned_definitions": project_definitions.len(),
+        "failed_definitions": failed_definitions,
+        "external_consumers": "unproven",
+        "attached_sources": "untraced",
+      }),
+    );
+    evidence
+  })
 }
 
 fn optional_parameter_candidate(annotation: &CalcitTypeAnnotation) -> Option<String> {
