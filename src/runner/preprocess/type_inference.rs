@@ -639,6 +639,9 @@ fn enrich_declared_struct_return_with_impls(
 /// public compatibility schema's Dynamic return instead of guessing.
 fn infer_core_apply_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   let callable_type = call_expr.get(1).and_then(|callable| resolve_type_value(callable, scope_types))?;
+  if matches!(callable_type.as_ref(), CalcitTypeAnnotation::Optional(_)) {
+    return None;
+  }
   let arguments = call_expr.get(2)?;
   let arguments_type = resolve_type_value(arguments, scope_types)?;
   let signature = callable_type.resolve_to_fn()?;
@@ -2672,6 +2675,20 @@ mod tests {
       infer_core_apply_return_type(&call, &ScopeTypes::new()).as_deref(),
       Some(CalcitTypeAnnotation::String)
     ));
+  }
+
+  #[test]
+  fn apply_does_not_infer_a_return_for_an_optional_callable() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let signature = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![number],
+      Arc::new(CalcitTypeAnnotation::String),
+    ));
+    let callable = local("maybe-format", Arc::new(CalcitTypeAnnotation::Optional(signature)));
+    let arguments = proc_call(CalcitProc::List, vec![Calcit::Number(1.0)]);
+    let call = CalcitList::from(&[symbol("apply"), callable, arguments][..]);
+
+    assert!(infer_core_apply_return_type(&call, &ScopeTypes::new()).is_none());
   }
 
   #[test]
