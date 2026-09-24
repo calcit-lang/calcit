@@ -21,17 +21,21 @@ entry_for:
 
 本文定位为 Agents 约束与完整操作手册：覆盖硬前置步骤、命令边界、复杂重构与系统化排障。`docs/CalcitAgent.md` 用于查询与局部编辑速查，不替代本文中的约束规则。
 
-## 🚀 🚀 快速开始与零逃逸 Stdin 工作流（新 LLM 必读）
+## 快速开始：显式语法节点输入
 
-对于所有接收表达式和代码输入的修改命令（如 `calcit tree replace`, `calcit edit def`, `calcit edit add-import`, `calcit edit schema` 等），有三种输入方式，按推荐顺序：
+普通应用修改先运行 `calcit docs agents --contract`，再按需查看本页。对于接收语法节点的修改命令（如
+`calcit tree replace`、`calcit edit def`、`calcit edit add-import` 和 `calcit edit schema`），明确指定输入传输格式：
+Calcit 源码使用 `--input-format cirru` 和带 `quote` 的 Cirru 结构；只有 JSON AST 互操作才使用
+`--input-format json-ast`。`auto` 仅保留旧调用兼容，不是新任务的推荐写法。
 
-| 方式                | 适用场景             | 格式检测                     |
-| ------------------- | -------------------- | ---------------------------- |
-| **stdin**（免参数） | 多行代码、含特殊字符 | 自动（`[`=JSON，其他=Cirru） |
-| `--file <path>`     | 从文件读取           | 自动                         |
-| `--code <text>`     | 单行简单代码         | 自动                         |
+| 传输方式 | 适用场景 | 格式选择 |
+| --- | --- | --- |
+| stdin（省略 `--file` 和 `--code`） | 多行结构、避免 Shell 转义 | 显式 `--input-format cirru` |
+| `--file <path>` | 可复核的多行片段 | 显式 `--input-format cirru`；JSON AST 按需指定 |
+| `--code <text>` | 短小的单行结构 | 显式 `--input-format cirru`；JSON AST 按需指定 |
 
-当**同时省略 `--file` 和 `--code`** 时，命令默认从 stdin 读取。无需 Shell 转义，不需临时文件——这是极力推荐的高级重构方式。
+省略 `--file` 和 `--code` 时命令从 stdin 读取，不需要另加 `--stdin`。stdin 只改变文本来源，不改变 `quote`
+边界或输入格式；无论哪一种传输方式，都先从 `query`/`tree show` 确认目标，再使用 revision 或内容前置条件保护写入。
 
 确实需要复用或审阅 `--file` 输入时，在项目内使用 `.calcit/snippets/<name>`，并让 `.calcit/` 保持在 `.gitignore`；不要为仓库相关输入使用全局 `/tmp`。CLI 会在 stderr 提示迁移 `/tmp/...` 与 `/private/tmp/...` 路径。
 
@@ -53,23 +57,26 @@ calcit config modules
 calcit tree show 'app.core/main!' --path @3.1.0
 ```
 
-### 极力推荐：免参数 Stdin 重构流（在 zsh / bash 下通过 heredoc）
+### 多行 Stdin 重构流（zsh / bash heredoc）
 
 ```bash
 # 不需要本地临时文件，不需要艰难的 Shell 字符转义，直接传递多行 Cirru 结构定义
-calcit calcit.cirru tree replace 'app.main/main!' --path '@3.1' << 'END'
+calcit calcit.cirru tree replace 'app.main/main!' --path '@3.1' --input-format cirru << 'END'
 quote (println |abc)
 END
 
 # 添加导入 (edit add-import) 也同样天然支持免参数从 stdin 读取
-calcit calcit.cirru edit add-import app.main << 'END'
-quote (app.config :refer $ dev?)
+calcit calcit.cirru edit add-import app.main --input-format cirru << 'END'
+quote $ app.config :refer $ dev?
 END
 ```
 
-> 💡 提示：如果只需做单行短代码段修改，也可以直接使用传统的 `--code 'quote ...'`。
+短片段可以直接使用 `--input-format cirru --code 'quote ...'`；多处相关修改先用 `edit transaction --dry-run`
+检查 revision、operation 和预期 diff，再决定是否应用。
 
-`edit schema` 同样要求 `quote` 边界：原子类型写成 `--code 'quote :string'`，参数化类型写成 `--code 'quote $ :: :ref :bool'`，函数 schema 的 payload 使用 `:: :fn $ {}` 包装。`edit examples` 则要求每个顶层 example 各自带 `quote`，例如 `quote $ add 1 2` 和 `quote |literal`。这样 leaf 与表达式在 CLI 中始终可表示，也不需要额外的 `--leaf` 分支。
+`edit schema` 与 `edit examples` 同样需要 `quote` 边界，但具体结构取决于选中的 definition。
+先用 `calcit query schema <ns/def>` 和 `calcit docs read edit-tree.md --full` 核对当前类型写法；不要套用旧版小写
+`:fn`、`:ref` 等示例去覆盖已有 `Fn`、`Ref` 或泛型 schema。
 
 ---
 
@@ -185,7 +192,7 @@ echo 'range 10' | calcit eval --stdin
 1. **确立骨架**：先替换目标节点为一个带有占位符的简单结构。
 
    ```bash
-   calcit tree replace '<ns/def>' --path @4.0 --code 'quote (let ((x 1)) {{BODY}})'
+   calcit tree replace '<ns/def>' --path @4.0 --input-format cirru --code 'quote (let ((x 1)) {{BODY}})'
    ```
 
 2. **定位占位符**：使用 `tree show` 确认占位符的具体路径。
@@ -197,7 +204,7 @@ echo 'range 10' | calcit eval --stdin
 3. **填充内容**：针对占位符路径进行下一层的精细替换。
 
    ```bash
-   calcit tree replace '<ns/def>' --path @4.0.2 --code 'quote (if (= x 1) {{TRUE_BRANCH}} {{FALSE_BRANCH}})'
+   calcit tree replace '<ns/def>' --path @4.0.2 --input-format cirru --code 'quote (if (= x 1) {{TRUE_BRANCH}} {{FALSE_BRANCH}})'
    ```
 
 4. **递归迭代**：重复上述步骤直到所有占位符都被替换为最终逻辑。
@@ -250,20 +257,20 @@ echo 'range 10' | calcit eval --stdin
 ### 添加新函数
 
 ```bash
-calcit edit def 'app.core/multiply' --code 'quote (defn multiply (x y) (* x y))'
+calcit edit def 'app.core/multiply' --input-format cirru --code 'quote (defn multiply (x y) (* x y))'
 ```
 
 ### 基本操作
 
 ```bash
 # 添加新函数
-calcit edit def 'app.core/multiply' --code 'quote (defn multiply (x y) (* x y))'
+calcit edit def 'app.core/multiply' --input-format cirru --code 'quote (defn multiply (x y) (* x y))'
 
 # 覆盖已有定义（`--overwrite`）
-calcit edit def 'app.core/multiply' --code 'quote (defn multiply (x y) (* x y))' --overwrite
+calcit edit def 'app.core/multiply' --input-format cirru --code 'quote (defn multiply (x y) (* x y))' --overwrite
 
 # 添加 :refer import
-calcit edit add-import app.main --code 'quote (app.util :refer $ helper)'
+calcit edit add-import app.main --input-format cirru --code 'quote $ app.util :refer $ helper'
 
 # 触发热更新（watcher 模式下写入 .compact-inc.cirru）
 calcit edit inc --changed 'app.core/my-fn'
@@ -279,10 +286,10 @@ calcit query search pattern --filter '<ns/def>'
 calcit tree show '<ns/def>' --path @3.1.0
 
 # 3. 执行替换
-calcit tree replace '<ns/def>' --path @3.1.0 --code 'quote new-value'
+calcit tree replace '<ns/def>' --path @3.1.0 --input-format cirru --code 'quote new-value'
 
 # 4. 或搜索替换叶子
-calcit tree search-replace '<ns/def>' --pattern old-sym --code 'quote new-sym'
+calcit tree search-replace '<ns/def>' --pattern old-sym --input-format cirru --code 'quote new-sym'
 
 # 5. 验证写回结果
 calcit query def '<ns/def>'
@@ -392,7 +399,7 @@ resolver 确认、类型一致的完整调用集合填洞。若 suggestion 是 `
 
 ```bash
 calcit edit mv-def app.util/helper-fn app.core/helper-fn
-calcit edit add-import app.main --code 'quote (app.core :refer $ helper-fn)'
+calcit edit add-import app.main --input-format cirru --code 'quote $ app.core :refer $ helper-fn'
 ```
 
 ```bash
@@ -420,7 +427,7 @@ calcit edit mv 'app.core/main-fn' --from @3.1.2 --path @3.0 --at after
 
 ```bash
 # wrap：模板中用 self 引用原节点
-calcit tree wrap 'app.core/main-fn' --path @3.1.2 --code 'quote (println self)'
+calcit tree wrap 'app.core/main-fn' --path @3.1.2 --input-format cirru --code 'quote (println self)'
 
 # unwrap / raise
 calcit tree unwrap 'app.core/main-fn' --path @3.1.2
@@ -433,7 +440,7 @@ calcit tree raise 'app.core/main-fn' --path @3.1.2
 
 ```bash
 # 搜索替换所有匹配 of leaf
-calcit tree replace-leaf 'app.core/process' --pattern old-var --code 'quote new-var'
+calcit tree replace-leaf 'app.core/process' --pattern old-var --input-format cirru --code 'quote new-var'
 ```
 
 ### 树形展示路径标注（`--path-annotations`）
@@ -469,10 +476,10 @@ defn process (xs)
 
 ```bash
 # 多匹配时列出候选（带路径、上下文、命令建议）
-calcit tree search-replace 'app.main/main!' --pattern 'old-name' --code 'quote new-name'
+calcit tree search-replace 'app.main/main!' --pattern 'old-name' --input-format cirru --code 'quote new-name'
 
 # 直接选择第 2 个候选
-calcit tree search-replace 'app.main/main!' --pattern 'old-name' --code 'quote new-name' --pick 2
+calcit tree search-replace 'app.main/main!' --pattern 'old-name' --input-format cirru --code 'quote new-name' --pick 2
 ```
 
 候选展示格式：
@@ -496,7 +503,7 @@ calcit tree search-replace 'app.main/main!' --pattern 'old-name' --code 'quote n
 calcit tree search-replace 'app.main/main!' \
   --selector 'path heading def {} :name |add nth 2 heading let nth 0' \
   --pattern 'old-var' \
-  --code 'quote new-var'
+  --input-format cirru --code 'quote new-var'
 ```
 
 与 `calcit query path` 使用同一套选择器语法（裸叶子/`heading`/`nth`）。等效于先用 `calcit query path` 获取数字路径再传 `--path`，但一步完成。
@@ -568,7 +575,7 @@ calcit query anchors app.main
 
 `calcit tree replace` 的 path 不能为空（写操作不允许 root path）。当你需要完整替换一个定义体时：
 
-- 更推荐 `calcit edit def ns/def --code 'quote (defn ...)' --overwrite`
+- 更推荐 `calcit edit def ns/def --input-format cirru --code 'quote (defn ...)' --overwrite`
 - 先在 snippet 里组织完整定义，再一次性覆盖，验证也更直接
 - 替换成功后仍应立刻执行 `calcit query def` 确认写回结构符合预期
 
@@ -577,22 +584,22 @@ calcit query anchors app.main
 `--code` 参数必须是带 `quote` 边界的 **Cirru EDN quoted AST**。`quote` 恰好包住一个节点，写入前会被 CLI 剥离：
 
 - AST path：`calcit tree show app.main/fn --path @3.1.0`
-- 表达式：`calcit tree replace app.main/fn --path @2 --code 'quote (println |hello)'`
-- symbol leaf：`calcit tree replace app.main/fn --path @2.0 --code 'quote new-symbol'`
-- string leaf：`calcit tree search-replace app.main/fn --pattern '|old text' --code 'quote "|new text"'`
-- 覆盖已有定义：`calcit edit def app.main/fn --code 'quote (defn fn () nil)' --overwrite`
+- 表达式：`calcit tree replace app.main/fn --path @2 --input-format cirru --code 'quote (println |hello)'`
+- symbol leaf：`calcit tree replace app.main/fn --path @2.0 --input-format cirru --code 'quote new-symbol'`
+- string leaf：`calcit tree search-replace app.main/fn --pattern '|old text' --input-format cirru --code 'quote "|new text"'`
+- 覆盖已有定义：`calcit edit def app.main/fn --input-format cirru --code 'quote (defn fn () nil)' --overwrite`
 
 **实战示例：**
 
 ```bash
 # ✅ 替换表达式
-calcit tree replace app.main/fn --path @2 --code 'quote (println |hello)'
+calcit tree replace app.main/fn --path @2 --input-format cirru --code 'quote (println |hello)'
 
 # ✅ 替换 symbol leaf
-calcit tree replace app.main/fn --path @2.0 --code 'quote new-symbol'
+calcit tree replace app.main/fn --path @2.0 --input-format cirru --code 'quote new-symbol'
 
 # ✅ 搜索替换 symbol leaf
-calcit tree search-replace app.main/fn --pattern old-var --code 'quote new-var'
+calcit tree search-replace app.main/fn --pattern old-var --input-format cirru --code 'quote new-var'
 ```
 
 ### 3. Cirru 字符串和数据类型 ⭐⭐
@@ -643,33 +650,28 @@ send-to-component! $ %:: _ :clipboard/read text
 
 ### 5. 命名空间 import 操作 ⭐⭐⭐
 
-`calcit edit add-import` **仅支持 `:refer` 单符号导入**：
+`calcit edit add-import` 每次只增加一条规则，可以是 `:refer`、`:as` 或 `:default`，不需要外层
+`:require`。同来源 namespace 已有规则时默认拒绝；只有明确要替换它时才传 `--overwrite`，不要靠连续调用猜测合并行为：
 
 ```bash
 # ✅ 正确：添加 :refer import
-calcit edit add-import app.main --code 'quote (app.util :refer $ helper)'
+calcit edit add-import app.main --input-format cirru --code 'quote $ app.util :refer $ helper'
 
-# ✅ 分两次添加 :as 和 :refer（Calcit 不支持合并写法）
-calcit edit add-import app.main --code 'quote (app.schema :refer $ schema)'
-calcit edit add-import app.main --code 'quote (app.schema :refer $ Op)'
+# ✅ 另一种单规则写法：为 namespace 指定 alias
+calcit edit add-import app.main --input-format cirru --code 'quote $ app.schema :as schema'
 ```
 
-**常见陷阱：**
+需要同时审阅多条规则（包括同来源的 alias 与 refer）时，先用 `calcit query ns app.main` 查看当前规则，
+再用 `edit imports` 显式提交完整规则向量；此命令会替换全部 imports，不能把它当作追加：
 
-❌ **在 Cirru 源码中合并 `:as` 和 `:refer` 到同一条 import 规则**
-
-```cirru.no-check
-;; ❌ 错误：:refer 部分被静默丢弃，Op 无法被找到
-ns app.main $ :require
-  app.schema :as schema :refer $ Op
-
-;; ✅ 正确：拆成两条独立规则
-ns app.main $ :require
+```cirru
+quote $ []
   app.schema :as schema
   app.schema :refer $ Op
 ```
 
-> `add-import` 不支持 `:as` / `:rename` / 多条规则批量写入。复杂 import 操作需传统 `calcit edit imports` / `calcit edit add-ns`。
+`edit imports` 的命令参数为 `--input-format cirru --file <imports.cirru>`；需要 JSON AST 互操作时显式选
+`--input-format json-ast`。不要让旧版 `auto` 格式检测承担新脚本的语法边界。
 
 ### 6. 推荐工作流程
 
@@ -683,7 +685,7 @@ calcit query search target --filter '<ns/def>'
 calcit tree show '<ns/def>' --path @3.1.0
 
 # 3. 执行修改
-calcit tree replace '<ns/def>' --path @3.1.0 --code 'quote new-value'
+calcit tree replace '<ns/def>' --path @3.1.0 --input-format cirru --code 'quote new-value'
 
 # 4. 验证
 calcit query def '<ns/def>'
@@ -740,7 +742,7 @@ END
 ### 步骤 3：添加新定义
 
 ```bash
-calcit edit def 'app.util/calculate-discount' --code 'quote (defn calculate-discount (price rate) (* price (- 1 rate)))'
+calcit edit def 'app.util/calculate-discount' --input-format cirru --code 'quote (defn calculate-discount (price rate) (* price (- 1 rate)))'
 calcit query def 'app.util/calculate-discount'
 ```
 
@@ -748,9 +750,9 @@ calcit query def 'app.util/calculate-discount'
 
 ```bash
 calcit query defs app.core
-calcit edit add-import app.core --code 'quote (app.util :refer $ calculate-discount)'
+calcit edit add-import app.core --input-format cirru --code 'quote $ app.util :refer $ calculate-discount'
 calcit query search total-price --filter 'app.core/checkout'
-calcit tree replace 'app.core/checkout' --path @3.2.1 --code 'quote (calculate-discount total-price 0.1)'
+calcit tree replace 'app.core/checkout' --path @3.2.1 --input-format cirru --code 'quote (calculate-discount total-price 0.1)'
 ```
 
 ### 步骤 5：触发热更新并验证
@@ -767,14 +769,15 @@ calcit query def 'app.core/checkout'
 
 ```bash
 # 忘记 import → unknown symbol
-calcit edit add-import app.core --code 'quote (app.util :refer $ calculate-discount)'
+calcit edit add-import app.core --input-format cirru --code 'quote $ app.util :refer $ calculate-discount'
 
 # 函数参数顺序传错 → 定位并修改调用
 calcit query search calculate-discount --filter 'app.core/checkout'
-calcit tree replace 'app.core/checkout' --path @3.2.1 --code 'quote calculate-discount'
+calcit tree replace 'app.core/checkout' --path @3.2.1 --input-format cirru --code 'quote calculate-discount'
 ```
 
-> `edit rename` 拼写错误可用 `calcit edit rename` 修正。
+跨调用点的 definition 重命名不要只改声明；先用 `calcit fix --rule rename-definition-v1 --ns <ns> --def <old> --to <new> --format edn`
+预览 resolver 确认的引用，再按 revision guard 原子应用。单个源码 leaf 的拼写调整仍可用 `tree search-replace`。
 
 ---
 
