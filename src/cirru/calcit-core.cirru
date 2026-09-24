@@ -5422,6 +5422,18 @@
                   assert= (%some 1) (get xs 0)
                   assert= true $ any? xs $ fn (x) (&> x 3)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |typed-nested-get-inside-when)
+              :code $ quote $ let
+                  states $ assert-type
+                    atom $ {} $ 1
+                      {} $ :status :active
+                    :: 'Ref $ :: 'Map 'Number $ :: 'Map 'Tag 'Dynamic
+                assert= :active $ when
+                  = :active $ option:unwrap $ get
+                    option:unwrap $ get @states 1
+                    , :status
+                  , :active
+              :tags $ #{} :core :unit
         'get-args $ %{} 'CodeEntry (:doc "|读取宿主进程传入的完整参数列表，包含第 0 项。")
           :code $ quote $ defn get-args () (&get-args)
           :examples $ []
