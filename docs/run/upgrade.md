@@ -250,6 +250,7 @@ calcit calcit.cirru fix --rule optional-parameters-v1 --ns app.main --def legacy
 `candidate_fn_schema_edn` 会给出完整的只读 Fn schema 候选，
 保留原参数、返回、泛型与 feature 元数据，并把旧 `?` 尾参数写成 `Option<T>`。它是 Cirru EDN 字符串，
 可供审阅或作为手动编辑的起点；不表示函数体与调用点已可安全自动改写。
+命名类型引用需要能解析为确定的 nominal struct/enum；无法证实的别名不生成完整候选。
 同一建议的 `origin_chain` 还列出编译器解析到的项目源码引用：直接调用、带展开参数的调用、
 函数值引用及 macro 生成的引用分开报告，并标明直接调用的实参数量，以及显式 `nil`、`false` 的位置。
 `project-reference-scan` 明确报告扫描范围和无法预处理的定义；目前只覆盖定义源码，

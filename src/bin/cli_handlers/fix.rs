@@ -1678,7 +1678,11 @@ fn optional_candidate_type_is_closed(annotation: &CalcitTypeAnnotation) -> bool 
     | CalcitTypeAnnotation::Optional(inner)
     | CalcitTypeAnnotation::JsNullish(inner) => optional_candidate_type_is_closed(inner),
     CalcitTypeAnnotation::Map(key, value) => optional_candidate_type_is_closed(key) && optional_candidate_type_is_closed(value),
-    CalcitTypeAnnotation::TypeRef(_, args) | CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) => {
+    CalcitTypeAnnotation::TypeRef(_, args) => {
+      args.iter().all(|arg| optional_candidate_type_is_closed(arg))
+        && (annotation.resolve_to_struct().is_some() || annotation.resolve_to_enum().is_some())
+    }
+    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) => {
       args.iter().all(|arg| optional_candidate_type_is_closed(arg))
     }
     CalcitTypeAnnotation::Fn(signature) => optional_candidate_signature_is_closed(signature),

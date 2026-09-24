@@ -390,6 +390,81 @@ fn optional_parameter_rule_omits_open_fn_candidates() {
 }
 
 #[test]
+fn optional_parameter_rule_does_not_call_a_schema_alias_complete() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "def", "fix-command.main/OpenAlias", "--code", "quote $ def OpenAlias &unit"],
+    ),
+    "install schema-backed alias definition",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/OpenAlias",
+        "--code",
+        "quote $ :: 'List 'Dynamic",
+      ],
+    ),
+    "install open alias schema",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/ambiguous",
+        "--overwrite",
+        "--code",
+        "quote $ defn ambiguous (required ? value) &unit",
+      ],
+    ),
+    "install optional function using alias",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/ambiguous",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'fix-command.main/OpenAlias 'Number) (:return 'Unit)",
+      ],
+    ),
+    "install function schema with alias",
+  );
+  let before = fs::read(&snapshot).expect("snapshot should be readable");
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "optional-parameters-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "ambiguous",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "schema-backed alias candidate preview");
+  let report = parse_stdout(&preview);
+  let suggestion = &report["data"]["suggestions"][0];
+  assert_eq!(suggestion["origin_chain"][0]["candidate_type"], "Option<:number>");
+  assert!(suggestion["origin_chain"][0]["candidate_fn_schema_edn"].is_null());
+  assert_eq!(suggestion["applicability"], "needs-review");
+  assert_eq!(fs::read(&snapshot).expect("snapshot should remain readable"), before);
+}
+
+#[test]
 fn optional_parameter_rule_keeps_multiple_trailing_candidates_review_only() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
