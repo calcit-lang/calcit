@@ -588,21 +588,21 @@ wasmtime run --dir ./data::/workspace target/wasi-command/program.wasm
 
 未提供 preopen、以 `/` 开头的绝对路径、包含完整 `..` 分段的越界路径、非法 UTF-8、I/O 错误和无法继续推进的 partial I/O 都返回 `Result :err`。当前 WASI 文本读取单文件上限为 4 MiB。`.read-dir` 枚举即时子项，沿 Preview 1 cookie 处理分页和截断记录，过滤 `.`、`..` 后按完整 guest path 排序；单次最多返回 4096 项，累计路径字节最多 4 MiB，单个 UTF-8 名称最多 4096 字节。超过限制同样返回错误，避免模块为不受控输入分配过量线性内存。Calcit 不接触 raw descriptor；`calcit wasm` 的 core module 也不会继承文件权限，而是在 codegen 阶段以 `E_WASM_CAPABILITY` 拒绝。递归 `.walk-dir` 尚未接入 WASI。
 
-## Markdown code checking
+## Markdown 代码块检查
 
-Use `docs check-md` to validate fenced code blocks in markdown files:
+使用 `docs check-md` 验证 Markdown 文件中的 Cirru 代码块：
 
 ```bash
 calcit docs check-md README.md
 ```
 
-This defaults to `calcit.cirru` as the eval entry. If your project uses a different snapshot filename, pass it explicitly with `--entry`:
+默认读取 `calcit.cirru` 作为求值 Snapshot。项目使用其他文件名时，以 `--snapshot` 指定文件路径；`--entry` 在其他常用命令中表示 Snapshot 内的 named entry，不再用于选择文件：
 
 ```bash
-calcit docs check-md README.md --entry calcit.cirru
+calcit docs check-md README.md --snapshot calcit.cirru
 ```
 
-Load module dependencies with repeatable `--dep` options:
+需要额外模块时可重复传入 `--dep`：
 
 ```bash
 calcit docs check-md README.md --dep ./ --dep ~/.config/calcit/modules/memof/

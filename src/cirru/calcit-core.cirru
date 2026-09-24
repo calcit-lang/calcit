@@ -983,7 +983,7 @@
               &list:concat ([] 1 2) ([] 4 5) ([] 7 8)
             :tags $ #{} :core :unit
         '&list:contains? $ %{} 'CodeEntry
-          :doc "|internal function for checking if list contains element\nSyntax: (&list:contains? list element)\nParams: list (list), element (any)\nReturns: boolean\nReturns true if list contains element"
+          :doc "|内部原语：按索引检查 List 是否包含该位置。参数为 List<T> 和 Number 索引，返回 Bool；有效索引范围为 0 到 count-1。检查元素是否存在请使用接收者方法 .includes?（底层为 &list:includes?）。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
@@ -1187,13 +1187,18 @@
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
         '&list:includes? $ %{} 'CodeEntry
-          :doc "|internal function for checking if list includes element\nSyntax: (&list:includes? list element)\nParams: list (list), element (any)\nReturns: boolean\nReturns true if list includes element (alias for contains?)"
+          :doc "|内部原语：检查 List 中是否包含指定元素，参数为 List<T> 和 T，返回 Bool。它与按 Number 索引检查范围的 &list:contains? 不同；业务代码优先使用接收者方法 .includes?。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] (:: 'List 'T) 'T
             :generics $ [] 'T
-          :tags $ #{} :alias :builtin :internal
+          :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |checks-list-elements)
+            :code $ quote $ do
+              assert= true $ &list:includes? ([] :a :b :c) :b
+              assert= false $ &list:includes? ([] :a :b :c) :d
+            :tags $ #{} :core :unit
         '&list:last $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
