@@ -95,7 +95,7 @@ caps why calcit-lang/memof
 # Inspect the module list for each relevant executable entry.
 calcit calcit.cirru config modules
 calcit calcit.cirru config modules --entry test
-calcit calcit.cirru config modules --entry test --format json
+calcit calcit.cirru config modules --entry test --format edn
 
 # Validate the reachable paths for those entries.
 calcit calcit.cirru --check-only
@@ -109,8 +109,9 @@ metadata, or Markdown snippets. They also currently merge root `:dependencies` a
 group. An installed module is therefore not automatically a runtime dependency: it can be a development
 module, a module configured only for another entry, or a module retained for a documentation check.
 
-Automation should add `--format json`: the single versioned envelope includes the complete selected entry and a
-deterministic module list whose rows distinguish `loaded` paths and unresolved `failed` paths.
+Calcit 自有自动化优先显式选择 `--format edn`：单一版本化 envelope 包含完整的具名入口与确定顺序的模块列表，
+并区分已加载的 `loaded` 路径和未解析的 `failed` 路径。只有对接 JSON-only 工具时才显式选择
+`--format json`；两种结构化格式保留相同字段语义。
 
 具名入口不会继承默认入口的模块；CI 或发布支持的每个入口都要单独核对。
 检查 Markdown 代码时，`calcit docs check-md` 默认使用 `calcit.cirru` Snapshot 与其默认入口的模块；
