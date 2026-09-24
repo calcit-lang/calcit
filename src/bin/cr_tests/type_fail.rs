@@ -144,6 +144,7 @@ fn load_fixture_entries(path: &str) -> ProgramEntries {
   load_fixture_entries_with_entry(path, None)
 }
 
+/// Ensures nested external methods reject explicit arguments during preprocessing.
 #[test]
 fn nested_external_method_rejects_explicit_extra_argument() {
   run_with_large_stack(|| {
