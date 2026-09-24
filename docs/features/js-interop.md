@@ -100,6 +100,27 @@ the feature. An anonymous function uses the feature declared in its own
 否则预处理报 `E_UNSCOPED_UNSAFE_COERCE`。类似 adapter 的命名空间名称只能作为盘点线索，不能代替能力声明。
 经过作用域检查的转换仍应接受审阅，但严格编译不会按其出现次数运行独立质量预算。
 
+`calcit edit ffi` 修改的是 CodeEntry 的导出/宿主元数据，**不会**给函数体授予词法 `:js-ffi` 权限。
+已有完整 `Fn` schema 时，可只增加这一项 feature，不必重写参数、返回类型、泛型及其他 feature：
+
+```bash
+calcit calcit.cirru edit schema 'app.js_adapter/read-day' --add-feature js-ffi
+```
+
+若 schema 仍为 `Dynamic` 或其他非 `Fn` 类型，此命令会拒绝修改；先声明准确的 `Fn` 签名，
+并把宿主值检查/转换局限在小型 adapter 中，不要为通过检查而扩大业务层的 `Dynamic`。
+需要预览、过期 revision 拒绝和原子提交时，将同一操作放入现有 `edit transaction`：
+
+```bash
+calcit calcit.cirru edit transaction \
+  --code '[] $ [] |edit |schema |app.js_adapter/read-day |--add-feature |js-ffi' \
+  --dry-run --format edn
+```
+
+确认预览后，带上结果里的 `original-revision` 作为 `--expect-revision` 再执行同一事务；
+重复添加同一 feature 不会再次改写 Snapshot。对 dayjs 等第三方对象，优先用 typed adapter 或
+external-object trait 暴露稳定接口，并在 Calcit 测试中覆盖有效和无效宿主值。
+
 ### 2.2 Host target policy
 
 Entries can additionally declare an explicit host target:

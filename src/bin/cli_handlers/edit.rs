@@ -10,7 +10,7 @@
 //!
 //! Syntax-node commands select `cirru` or `json-ast` explicitly; `auto` remains for compatibility.
 
-use calcit::calcit::DYNAMIC_TYPE;
+use calcit::calcit::{CalcitTypeAnnotation, DYNAMIC_TYPE};
 use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddNsCommand, EditAddTestCommand, EditCommand, EditCpCommand, EditDefCommand,
   EditDocCommand, EditExamplesCommand, EditFfiCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand,
@@ -1601,6 +1601,45 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
 
   let resolved_definition =
     resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
+
+  if let Some(feature) = &opts.add_feature {
+    if opts.clear || opts.file.is_some() || opts.code.is_some() {
+      return Err("`edit schema --add-feature` cannot be combined with --clear, --file, or --code".to_owned());
+    }
+    if feature != "js-ffi" {
+      return Err(format!(
+        "Unsupported schema feature `{feature}`; currently --add-feature supports only `js-ffi`"
+      ));
+    }
+    let existing = &file_data.defs[&resolved_definition].schema;
+    let CalcitTypeAnnotation::Fn(signature) = existing.as_ref() else {
+      return Err(format!(
+        "`{namespace}/{resolved_definition}` needs a structured Fn schema before `--add-feature js-ffi`; declare its arguments and return type with `calcit edit schema`, then add the feature. `calcit edit ffi` changes export metadata, not lexical JS FFI permission."
+      ));
+    };
+    if signature.features.iter().any(|item| item.ref_str() == feature) {
+      println!(
+        "{} Schema feature :{feature} is already present for '{namespace}/{resolved_definition}'",
+        "✓".green()
+      );
+      return Ok(());
+    }
+    let mut updated = signature.as_ref().clone();
+    let mut features = updated.features.as_ref().clone();
+    features.insert(EdnTag::new(feature.as_str()));
+    updated.features = Arc::new(features);
+    save_schema_preserving_snapshot(
+      snapshot_file,
+      namespace,
+      &resolved_definition,
+      &CalcitTypeAnnotation::Fn(Arc::new(updated)),
+    )?;
+    println!(
+      "{} Added schema feature :{feature} to '{namespace}/{resolved_definition}'",
+      "✓".green()
+    );
+    return Ok(());
+  }
 
   let schema = if opts.clear {
     DYNAMIC_TYPE.clone()
@@ -3463,6 +3502,7 @@ mod tests {
       code: Some("quote $ :: 'Fn $ {} (:args ([] (:: 'List 'Dynamic))) (:return (:: 'List 'Dynamic))".to_owned()),
       input_format: SyntaxInputFormat::Auto,
       clear: false,
+      add_feature: None,
     };
 
     handle_schema(&opts, &path).expect("explicit List<Dynamic> schema should be written");
@@ -3477,6 +3517,65 @@ mod tests {
   }
 
   #[test]
+  fn schema_add_js_ffi_feature_preserves_signature_and_rejects_unstructured_schema() {
+    let fixture = TestSnapshot::from_fixture();
+    let path = fixture.snapshot_string();
+    let target = "app.main/test-fn".to_owned();
+    let declared = EditSchemaCommand {
+      target: target.clone(),
+      file: None,
+      code: Some("quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] 'T) (:return 'T) (:features $ #{} :async)".to_owned()),
+      input_format: SyntaxInputFormat::Auto,
+      clear: false,
+      add_feature: None,
+    };
+    handle_schema(&declared, &path).expect("generic Fn schema should be accepted");
+    let before = load_snapshot(&path).expect("original schema should load");
+    let original = &before.files["app.main"].defs["test-fn"];
+
+    let feature = EditSchemaCommand {
+      target: target.clone(),
+      file: None,
+      code: None,
+      input_format: SyntaxInputFormat::Auto,
+      clear: false,
+      add_feature: Some("js-ffi".to_owned()),
+    };
+    handle_schema(&feature, &path).expect("feature should be added locally");
+    let after = load_snapshot(&path).expect("updated schema should load");
+    let updated = &after.files["app.main"].defs["test-fn"];
+    let (CalcitTypeAnnotation::Fn(old_signature), CalcitTypeAnnotation::Fn(new_signature)) =
+      (original.schema.as_ref(), updated.schema.as_ref())
+    else {
+      panic!("both schemas should be Fn annotations");
+    };
+    assert_eq!(new_signature.generics, old_signature.generics);
+    assert_eq!(new_signature.arg_types, old_signature.arg_types);
+    assert_eq!(new_signature.return_type, old_signature.return_type);
+    assert_eq!(new_signature.where_bounds, old_signature.where_bounds);
+    assert_eq!(new_signature.rest_type, old_signature.rest_type);
+    assert!(new_signature.features.iter().any(|item| item.ref_str() == "async"));
+    assert!(new_signature.features.iter().any(|item| item.ref_str() == "js-ffi"));
+    assert_eq!(updated.code, original.code);
+    assert_eq!(updated.doc, original.doc);
+    assert_eq!(updated.examples, original.examples);
+    assert_eq!(updated.tests, original.tests);
+    assert_eq!(updated.tags, original.tags);
+    assert_eq!(updated.ffi, original.ffi);
+
+    let clear = EditSchemaCommand {
+      target,
+      clear: true,
+      add_feature: None,
+      ..feature.clone()
+    };
+    handle_schema(&clear, &path).expect("schema should clear");
+    let error = handle_schema(&feature, &path).expect_err("dynamic schema must not gain a lexical capability");
+    assert!(error.contains("needs a structured Fn schema"), "error: {error}");
+    assert!(error.contains("`calcit edit ffi` changes export metadata"), "error: {error}");
+  }
+
+  #[test]
   fn schema_edit_tag_value_survives_canonical_snapshot_formatting() {
     let fixture = TestSnapshot::from_fixture();
     let path = fixture.snapshot_string();
@@ -3486,6 +3585,7 @@ mod tests {
       code: Some("quote 'Tag".to_owned()),
       input_format: SyntaxInputFormat::Auto,
       clear: false,
+      add_feature: None,
     };
 
     handle_schema(&opts, &path).expect("Tag value schema should be written");

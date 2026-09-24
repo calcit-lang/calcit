@@ -56,6 +56,76 @@ fn query_definition(snapshot: &Path, target: &str) -> serde_json::Value {
   serde_json::from_slice(&output.stdout).expect("query def stdout should contain one JSON value")
 }
 
+#[test]
+fn schema_feature_edit_preserves_contract_and_works_in_guarded_transaction() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let target = "app.main/main!";
+  let before = query_definition(&snapshot, target);
+  let original = fs::read(&snapshot).expect("snapshot should read");
+  let operation = "[] $ [] |edit |schema |app.main/main! |--add-feature |js-ffi";
+
+  let stale = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "transaction",
+      "--code",
+      operation,
+      "--expect-revision",
+      "md5:stale",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!stale.status.success());
+  assert!(String::from_utf8_lossy(&stale.stderr).contains("Snapshot revision mismatch"));
+  assert_eq!(fs::read(&snapshot).expect("snapshot should remain"), original);
+
+  let preview = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", operation, "--dry-run", "--format", "json"],
+  );
+  assert_success(&preview, "preview schema feature change");
+  let preview_value: serde_json::Value = serde_json::from_slice(&preview.stdout).expect("preview JSON should parse");
+  assert_eq!(preview_value["changed"], true);
+  assert_eq!(fs::read(&snapshot).expect("preview must not write"), original);
+
+  let original_revision = preview_value["original_revision"].as_str().expect("transaction revision");
+  let apply = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "transaction",
+      "--code",
+      operation,
+      "--expect-revision",
+      original_revision,
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&apply, "apply schema feature change");
+  let after = query_definition(&snapshot, target);
+  assert_eq!(after["data"]["code"], before["data"]["code"]);
+  assert_eq!(after["data"]["doc"], before["data"]["doc"]);
+  assert_eq!(after["data"]["ffi"], before["data"]["ffi"]);
+  let schema = after["data"]["schema"].to_string();
+  assert!(schema.contains(":return") && schema.contains("'Number"), "schema: {schema}");
+  assert!(schema.contains(":features"), "schema: {schema}");
+  assert!(schema.contains(":js-ffi"), "schema: {schema}");
+
+  let first_apply = fs::read(&snapshot).expect("updated snapshot should read");
+  let repeat = run_calcit(&snapshot, &["edit", "schema", target, "--add-feature", "js-ffi"]);
+  assert_success(&repeat, "repeat feature add should be idempotent");
+  assert_eq!(fs::read(&snapshot).expect("idempotent snapshot should read"), first_apply);
+
+  let unsupported = run_calcit(&snapshot, &["edit", "schema", target, "--add-feature", "unknown"]);
+  assert!(!unsupported.status.success());
+  assert!(String::from_utf8_lossy(&unsupported.stderr).contains("Unsupported schema feature"));
+  assert_eq!(fs::read(&snapshot).expect("rejected snapshot should remain"), first_apply);
+}
+
 fn prepare_minimal_snapshot(directory: &TestDirectory) -> PathBuf {
   let snapshot = directory.snapshot();
   fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");

@@ -1715,6 +1715,9 @@ pub struct EditSchemaCommand {
   /// clear schema field
   #[argh(switch, long = "clear")]
   pub clear: bool,
+  /// add js-ffi to an existing structured Fn schema without replacing its signature
+  #[argh(option, long = "add-feature")]
+  pub add_feature: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

@@ -338,6 +338,8 @@ fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
       let mut desc = format!("updates type schema for `{}`", opts.target);
       if opts.clear {
         desc.push_str(" (clears existing schema)");
+      } else if let Some(feature) = &opts.add_feature {
+        desc.push_str(&format!(" (adds feature :{feature} to existing Fn schema)"));
       }
       desc
     }
