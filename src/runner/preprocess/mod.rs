@@ -33,7 +33,9 @@ use type_inference::{
   infer_struct_field_type, infer_struct_value_annotation, infer_type_from_expr, is_pending_async_value, resolve_enum_value,
   resolve_program_value_for_preprocess, resolve_type_value,
 };
-pub use type_inference::{infer_compiled_definition_implementation_type, infer_static_type_from_expr};
+pub use type_inference::{
+  infer_compiled_definition_implementation_type, infer_static_type_from_expr, resolve_core_nominal_instance_type,
+};
 use type_rewriting::{
   build_enum_ref_node, build_struct_ref_node, try_rewrite_enum_args_to_named_enums, try_rewrite_local_fn_enum_args_to_named_enums,
   try_rewrite_loose_struct_args_to_structs, try_rewrite_map_args_to_structs,
@@ -755,6 +757,12 @@ fn resolve_trait_def_from_source_code(code: &Calcit) -> Option<CalcitTrait> {
 
 fn lookup_source_backed_trait_def(ns: &str, def: &str) -> Option<CalcitTrait> {
   program::lookup_def_code(ns, def).and_then(|code| resolve_trait_def_from_source_code(&code))
+}
+
+/// Resolve a source-declared trait without running project initialization.
+pub fn resolve_source_trait_instance_type(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  lookup_source_backed_trait_def(ns, def)
+    .map(|trait_def| Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def.with_definition_ref(ns, def)))))
 }
 
 fn parse_trait_name_from_source(form: &Calcit) -> Option<EdnTag> {
@@ -7100,7 +7108,7 @@ fn static_method_contract_with_impls(
 ) -> StaticMethodContract {
   let bare_name = method_name.trim_start_matches('.');
   let (schema, definition) = if let Some(traits) = traits {
-    match resolve_trait_method(&traits, bare_name) {
+    match resolve_trait_method(traits, bare_name) {
       TraitMethodResolution::Selected(candidate) => (candidate.method_type, Some(candidate.trait_def.origin_label())),
       TraitMethodResolution::Ambiguous(candidates) => {
         let mut result = StaticMethodContract::open(format!(
@@ -7121,7 +7129,7 @@ fn static_method_contract_with_impls(
     let Some(impls) = impls else {
       return StaticMethodContract::open("receiver has no statically resolved implementation metadata");
     };
-    let selected = match resolve_impl_method(receiver, &impls, bare_name) {
+    let selected = match resolve_impl_method(receiver, impls, bare_name) {
       ImplMethodResolution::Selected(candidate) => candidate,
       ImplMethodResolution::Ambiguous(candidates) => {
         let mut result = StaticMethodContract::open(format!(
@@ -11898,6 +11906,45 @@ mod tests {
         },
       ]
     );
+  }
+
+  #[test]
+  fn static_method_contract_reports_ambiguity_and_missing_evidence() {
+    let low_impl = Arc::new(CalcitImpl {
+      name: EdnTag::new("LowImpl"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("shared")]),
+      values: Arc::new(vec![Calcit::Nil]),
+    });
+    let high_impl = Arc::new(CalcitImpl {
+      name: EdnTag::new("HighImpl"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("shared")]),
+      values: Arc::new(vec![Calcit::Nil]),
+    });
+    let mut nominal = CalcitStructDef::from_fields(EdnTag::new("Demo"), vec![]);
+    nominal.impls = vec![low_impl, high_impl];
+    let receiver = CalcitTypeAnnotation::StructValue(Arc::new(nominal));
+    let duplicate = static_method_contract(&receiver, ".shared");
+    assert_eq!(duplicate.status, "ambiguous");
+    assert!(duplicate.detail.unwrap().contains("HighImpl"));
+    assert!(duplicate.arg_types.is_none());
+
+    let single_trait = CalcitTypeAnnotation::Trait(source_trait("app.a", "Show", "render"));
+    let open = static_method_contract(&single_trait, ".render");
+    assert_eq!(open.status, "open");
+    assert!(open.arg_types.is_none(), "DynFn must not become a callable proof");
+
+    let trait_set = CalcitTypeAnnotation::TraitSet(Arc::new(vec![
+      source_trait("app.a", "Show", "render"),
+      source_trait("app.b", "Show", "render"),
+    ]));
+    let conflict = static_method_contract(&trait_set, ".render");
+    assert_eq!(conflict.status, "ambiguous");
+    assert!(conflict.detail.unwrap().contains("app.b/Show"));
+    assert!(conflict.return_type.is_none());
+
+    assert!(static_method_contracts(&CalcitTypeAnnotation::Dynamic).is_none());
   }
 
   fn source_trait(ns: &str, name: &str, method: &str) -> Arc<CalcitTrait> {

@@ -1322,6 +1322,37 @@ mod type_query_tests {
     assert_eq!(option_map.status, "open", "DynFn schema must not imply a precise callback contract");
     assert!(option_map.arg_types.is_none());
     assert!(option_map.return_type.is_none());
+
+    let result = parse_type_annotation_query(":: 'Result 'Number 'String").expect("typed Result should parse");
+    let map_err = runner::preprocess::static_method_contract(result.as_ref(), ".map-err");
+    assert_eq!(map_err.status, "proven");
+    assert_eq!(map_err.arg_types.unwrap()[0].describe(), "fn(string) -> 'F");
+    assert_eq!(map_err.return_type.unwrap().describe(), "type Result<number, 'F>");
+    assert_eq!(map_err.generics, vec!["F"]);
+
+    let (fs_path, source) =
+      on_cli_stack(move || resolve_type_query_target(&snapshot, "calcit.core/FsPath")).expect("core FsPath type should resolve");
+    assert_eq!(source, "resolved core nominal definition");
+    let read_text = on_cli_stack(move || runner::preprocess::static_method_contract(fs_path.as_ref(), ".read-text"));
+    assert_eq!(read_text.status, "proven");
+    assert!(read_text.arg_types.unwrap().is_empty());
+    assert_eq!(read_text.return_type.unwrap().describe(), "type Result<string, string>");
+    assert_eq!(read_text.definition.as_deref(), Some("calcit.core/fs-path:read-text"));
+  }
+
+  #[test]
+  fn method_query_reads_source_external_object_trait_without_project_initialization() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_snapshot("calcit/test-js.cirru").expect("JS fixture should load");
+    prepare_program_for_type_query_on_cli_stack(snapshot.clone());
+
+    let (trait_type, source) =
+      on_cli_stack(move || resolve_type_query_target(&snapshot, "test-js.main/TestDate")).expect("external trait should resolve");
+    assert_eq!(source, "source trait definition");
+    let method = on_cli_stack(move || runner::preprocess::static_method_contract(trait_type.as_ref(), ".now"));
+    assert_eq!(method.status, "proven");
+    assert!(method.arg_types.unwrap().is_empty());
+    assert_eq!(method.return_type.unwrap().describe(), "number");
   }
 
   #[test]
@@ -1643,6 +1674,10 @@ fn resolve_type_query_target(snapshot: &snapshot::Snapshot, target: &str) -> Res
       return Err(format!("Definition `{target}` not found"));
     }
 
+    if let Some(trait_type) = runner::preprocess::resolve_source_trait_instance_type(namespace, definition) {
+      return Ok((trait_type, "source trait definition"));
+    }
+
     let annotation = program::lookup_def_schema(namespace, definition);
     let is_data_definition_marker = matches!(
       annotation.as_ref(),
@@ -1651,6 +1686,10 @@ fn resolve_type_query_target(snapshot: &snapshot::Snapshot, target: &str) -> Res
     );
     if !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic) && !is_data_definition_marker {
       return Ok((annotation, "definition schema"));
+    }
+
+    if is_data_definition_marker && let Some(inferred) = runner::preprocess::resolve_core_nominal_instance_type(namespace, definition) {
+      return Ok((inferred, "resolved core nominal definition"));
     }
 
     let symbol = code_to_calcit(&Cirru::Leaf(Arc::from(definition)), namespace, "&query:type", vec![])?;

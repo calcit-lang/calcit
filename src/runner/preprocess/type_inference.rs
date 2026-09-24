@@ -1921,6 +1921,19 @@ pub fn infer_static_type_from_expr(expr: &Calcit) -> Option<Arc<CalcitTypeAnnota
   infer_type_from_expr(expr, &ScopeTypes::new())
 }
 
+/// Resolve a declarative core nominal definition through the same value path
+/// used by method preprocessing, preserving attached implementations.
+pub fn resolve_core_nominal_instance_type(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  if ns != calcit::CORE_NS || !program::lookup_def_code(ns, def).is_some_and(|code| code_resolves_to_nominal_type_def(&code)) {
+    return None;
+  }
+  match resolve_program_value_for_preprocess(ns, def, None)? {
+    Calcit::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def), Arc::new(vec![])))),
+    Calcit::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def), Arc::new(vec![])))),
+    _ => None,
+  }
+}
+
 /// Recover the implementation type already present in a compiled definition.
 ///
 /// This deliberately reuses the normal preprocessor output and bottom-up
