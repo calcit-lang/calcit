@@ -36,6 +36,8 @@ const VALUE_TO_ZERO_ARG_FN_RULE: &str = "value-to-zero-arg-fn-v1";
 const VALUE_TO_ZERO_ARG_FN_DIAGNOSTIC: &str = "REFACTOR_VALUE_TO_ZERO_ARG_FN";
 const SYNTHESIZE_SCHEMA_RULE: &str = "synthesize-schema-v1";
 const SYNTHESIZE_SCHEMA_DIAGNOSTIC: &str = "REFACTOR_SYNTHESIZE_SCHEMA";
+const OPTIONAL_PARAMETERS_RULE: &str = "optional-parameters-v1";
+const OPTIONAL_PARAMETERS_DIAGNOSTIC: &str = "E_LEGACY_OPTIONAL_PARAM";
 const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
 const SURFACE_LATEST_V2_PRESET: &str = "surface-latest-v2";
 const AVAILABLE_RULES: [&str; 5] = [
@@ -398,8 +400,9 @@ pub(crate) fn handle_fix_command(
   let semantic_rename = selected_rules.contains(&RENAME_DEFINITION_RULE);
   let value_to_zero_arg_fn = selected_rules.contains(&VALUE_TO_ZERO_ARG_FN_RULE);
   let schema_synthesis = selected_rules.contains(&SYNTHESIZE_SCHEMA_RULE);
+  let optional_parameters = selected_rules.contains(&OPTIONAL_PARAMETERS_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn;
-  let migration_rule = semantic_refactor || schema_synthesis || options.workflow.is_some();
+  let migration_rule = semantic_refactor || schema_synthesis || optional_parameters || options.workflow.is_some();
   let validation_only = std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1");
   let project_definitions = if semantic_refactor || schema_synthesis {
     select_project_definitions(compiled_snapshot, project_namespaces)?
@@ -452,6 +455,8 @@ pub(crate) fn handle_fix_command(
       snapshot_file,
       &project_definitions,
     )?);
+  } else if optional_parameters {
+    suggestions.extend(plan_optional_parameter_diagnostics(options, &source_snapshot, snapshot_file)?);
   } else if selected_rules.contains(&REMOVED_DATA_API_RULE) {
     suggestions.extend(plan_removed_data_api_fixes(options, &source_snapshot, snapshot_file, &warnings)?);
   }
@@ -774,6 +779,12 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   let semantic_rename = options.rule.as_deref() == Some(RENAME_DEFINITION_RULE);
   let value_to_zero_arg_fn = options.rule.as_deref() == Some(VALUE_TO_ZERO_ARG_FN_RULE);
   let schema_synthesis = options.rule.as_deref() == Some(SYNTHESIZE_SCHEMA_RULE);
+  let optional_parameters = options.rule.as_deref() == Some(OPTIONAL_PARAMETERS_RULE);
+  if optional_parameters && options.apply {
+    return Err(format!(
+      "Fix rule `{OPTIONAL_PARAMETERS_RULE}` is review-only until body and caller semantics can be proven; omit `--apply` to inspect the migration evidence."
+    ));
+  }
   if semantic_rename {
     if options.ns.is_none() || options.definition.is_none() || options.replacement_name.is_none() {
       return Err(format!(
@@ -784,7 +795,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     if replacement.is_empty() || replacement.contains('/') {
       return Err("`calcit fix --to` must be one non-empty unqualified definition name.".to_owned());
     }
-  } else if value_to_zero_arg_fn || schema_synthesis {
+  } else if value_to_zero_arg_fn || schema_synthesis || optional_parameters {
     if options.ns.is_none() || options.definition.is_none() {
       return Err(format!(
         "Fix rule `{}` requires exact `--ns` and `--def` arguments.",
@@ -818,12 +829,13 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | RENAME_DEFINITION_RULE
         | VALUE_TO_ZERO_ARG_FN_RULE
         | SYNTHESIZE_SCHEMA_RULE
+        | OPTIONAL_PARAMETERS_RULE
         | TAG_MATCH_RULE
         | REQUIRED_STRUCT_FIELD_RULE
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -840,11 +852,15 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
     return SURFACE_LATEST_V2_RULES.to_vec();
   }
   if let Some(rule) = options.rule.as_deref() {
-    if matches!(rule, RENAME_DEFINITION_RULE | VALUE_TO_ZERO_ARG_FN_RULE | SYNTHESIZE_SCHEMA_RULE) {
+    if matches!(
+      rule,
+      RENAME_DEFINITION_RULE | VALUE_TO_ZERO_ARG_FN_RULE | SYNTHESIZE_SCHEMA_RULE | OPTIONAL_PARAMETERS_RULE
+    ) {
       return vec![match rule {
         RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
         VALUE_TO_ZERO_ARG_FN_RULE => VALUE_TO_ZERO_ARG_FN_RULE,
-        _ => SYNTHESIZE_SCHEMA_RULE,
+        SYNTHESIZE_SCHEMA_RULE => SYNTHESIZE_SCHEMA_RULE,
+        _ => OPTIONAL_PARAMETERS_RULE,
       }];
     }
     return AVAILABLE_RULES.iter().copied().filter(|candidate| *candidate == rule).collect();
@@ -913,6 +929,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       diagnostic_code: SYNTHESIZE_SCHEMA_DIAGNOSTIC,
       evidence_source: "compiled-type-inference",
       lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    OPTIONAL_PARAMETERS_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: OPTIONAL_PARAMETERS_DIAGNOSTIC,
+      evidence_source: "source-parameters-and-declared-schema",
+      lifecycle: "review-required",
       source_version_required: false,
     },
     _ => unreachable!("selected fix rule must have current-semantics metadata"),
@@ -1345,6 +1368,98 @@ fn plan_definition_rename(
 
 pub(crate) mod schema_synthesis;
 use schema_synthesis::plan_schema_synthesis;
+
+/// Surface legacy omission markers from the unexpanded Snapshot without implying a safe rewrite.
+fn plan_optional_parameter_diagnostics(
+  options: &FixCommand,
+  snapshot: &Snapshot,
+  snapshot_file: &str,
+) -> Result<Vec<FixSuggestion>, String> {
+  let namespace = options.ns.as_deref().expect("optional parameter rule requires namespace");
+  let definition = options.definition.as_deref().expect("optional parameter rule requires definition");
+  let entry = snapshot
+    .files
+    .get(namespace)
+    .and_then(|file| file.defs.get(definition))
+    .ok_or_else(|| format!("Optional parameter source `{namespace}/{definition}` does not exist in the editable Snapshot."))?;
+  let Cirru::List(code) = &entry.code else {
+    return Err(format!(
+      "Optional parameter source `{namespace}/{definition}` is not a definition form."
+    ));
+  };
+  let head = code.first().and_then(leaf_value);
+  if !matches!(head, Some("defn" | "defcomp" | "defn-js")) {
+    return Err(format!(
+      "Fix rule `{OPTIONAL_PARAMETERS_RULE}` requires a source function definition, found `{}` at `{namespace}/{definition}`.",
+      head.unwrap_or("<non-leaf>")
+    ));
+  }
+  let Some(Cirru::List(args)) = code.get(2) else {
+    return Err(format!(
+      "Source function `{namespace}/{definition}` has no inspectable argument list."
+    ));
+  };
+  let signature = match entry.schema.as_ref() {
+    CalcitTypeAnnotation::Fn(signature) => Some(signature.as_ref()),
+    _ => None,
+  };
+  let mut optional = false;
+  let mut argument_index = 0;
+  let mut suggestions = Vec::new();
+  for (source_index, arg) in args.iter().enumerate() {
+    if arg.eq_leaf("?") {
+      optional = true;
+      continue;
+    }
+    if arg.eq_leaf("&") {
+      optional = false;
+      continue;
+    }
+    if optional {
+      let declared = signature.and_then(|signature| signature.arg_types.get(argument_index));
+      let candidate = declared.and_then(|annotation| match annotation.as_ref() {
+        CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn => None,
+        CalcitTypeAnnotation::Optional(inner) if !matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic) => {
+          Some(format!("Option<{}>", inner.to_brief_string()))
+        }
+        other => Some(format!("Option<{}>", other.to_brief_string())),
+      });
+      let parameter = leaf_value(arg).unwrap_or("<destructured>");
+      let reason = if candidate.is_some() {
+        "declared-type-only; body presence checks, explicit nil, generated/external callers, and call evaluation are not yet proven"
+      } else {
+        "no precise declared parameter type; type and call semantics require review"
+      };
+      suggestions.push(FixSuggestion {
+        rule_id: OPTIONAL_PARAMETERS_RULE,
+        diagnostic_code: OPTIONAL_PARAMETERS_DIAGNOSTIC,
+        semantic_layer: "surface",
+        source_file: snapshot_file.to_owned(),
+        definition: format!("{namespace}/{definition}"),
+        path: format!("code.2.{source_index}"),
+        fingerprint: node_fingerprint(arg),
+        origin_chain: vec![serde_json::json!({
+          "kind": "legacy-optional-parameter",
+          "parameter": parameter,
+          "argument_index": argument_index,
+          "declared_type": declared.map(|annotation| annotation.to_brief_string()),
+          "candidate_type": candidate,
+          "reason": reason,
+        })],
+        original: quoted_json(arg),
+        replacement: None,
+        applicability: "needs-review",
+        message: format!(
+          "Legacy optional parameter `{parameter}` needs an explicit Option contract and coordinated caller/body review; {reason}."
+        ),
+        target_path: vec![2, source_index],
+        operation: None,
+      });
+    }
+    argument_index += 1;
+  }
+  Ok(suggestions)
+}
 
 fn plan_value_to_zero_arg_fn(
   options: &FixCommand,

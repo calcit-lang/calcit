@@ -101,6 +101,70 @@ fn assert_success(output: &Output, context: &str) {
 }
 
 #[test]
+fn optional_parameter_rule_reports_review_evidence_without_writing() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/ambiguous",
+        "--overwrite",
+        "--code",
+        "quote $ defn ambiguous (? value) (tuple? value)",
+      ],
+    ),
+    "install legacy optional source",
+  );
+  let before = fs::read(&snapshot).expect("snapshot should be readable");
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "optional-parameters-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "ambiguous",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "optional parameter evidence preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
+  assert_eq!(suggestions.len(), 1);
+  assert_eq!(suggestions[0]["diagnostic_code"], "E_LEGACY_OPTIONAL_PARAM");
+  assert_eq!(suggestions[0]["applicability"], "needs-review");
+  assert_eq!(suggestions[0]["origin_chain"][0]["parameter"], "value");
+  assert_eq!(suggestions[0]["origin_chain"][0]["argument_index"], 0);
+  assert!(suggestions[0]["origin_chain"][0]["candidate_type"].is_null());
+  assert!(suggestions[0]["replacement"].is_null());
+  assert_eq!(fs::read(&snapshot).expect("snapshot should remain readable"), before);
+
+  let apply = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "optional-parameters-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "ambiguous",
+      "--apply",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!apply.status.success(), "review-only rule must reject apply");
+  assert!(String::from_utf8_lossy(&apply.stderr).contains("review-only"));
+  assert_eq!(fs::read(&snapshot).expect("snapshot should remain readable"), before);
+}
+
+#[test]
 fn strict_workflow_composes_a_resumable_project_manifest() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

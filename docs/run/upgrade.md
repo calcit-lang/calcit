@@ -239,6 +239,18 @@ yarn vite build --base=./
 
 说明：`yarn install` 只在 lockfile 迁移或依赖变更时需要；平时可直接从 `yarn install --immutable` 开始。
 
+旧项目遇到 `E_LEGACY_OPTIONAL_PARAM` 时，可先按单个定义检查原始 `?` 参数：
+
+```bash
+calcit calcit.cirru fix --rule optional-parameters-v1 --ns app.main --def legacy-helper --format edn
+```
+
+预览中的 `declared_type` 来自现有 schema；仅在声明足够具体时才给出 `candidate_type`。
+候选并不证明函数体对缺失值的处理、显式 `nil` 与省略调用是否等价，也不证明 macro、跨模块消费者
+和函数值调用均可定位。因此该规则目前一律标记 `needs-review`，不接受 `--apply`，也不在默认 preset 中。
+人工迁移应在审阅这些语义后，把声明和所有调用点一起改为明确的 `Option` 契约并运行严格检查与业务测试；
+不要把 `nil` 一律改成 `%none`，也不要为了通过检查扩大 `Dynamic`。
+
 ### Step A：确认 Calcit CLI 版本
 
 ```bash
