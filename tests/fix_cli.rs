@@ -565,14 +565,21 @@ fn whole_project_fix_previews_node_only_definitions_without_weakening_entry_chec
   );
   let fixture = fixture.replace(
     "        'reload! $ %{} 'CodeEntry",
-    "        'NodeClock $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ deftrait NodeClock\n            .get-date $ :: 'Fn $ {} (:args $ [] 'app.main/NodeClock) (:return 'Number)\n          :examples $ []\n          :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)\n            :names $ {} (:get-date |getDate)\n          :schema $ :: 'Trait\n        'node-date $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ defn node-date ()\n            let\n                date $ unsafe-coerce (new js/Date) NodeClock\n              date .get-date\n          :examples $ []\n          :ffi $ {} (:backend :js) (:target :node)\n          :schema $ :: 'Fn $ {} (:args $ []) (:return 'Number) (:features $ #{} :js-ffi)\n        'reload! $ %{} 'CodeEntry",
+    "        'NodeClock $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ deftrait NodeClock\n            .get-date $ :: 'Fn $ {} (:args $ [] 'app.main/NodeClock) (:return 'Number)\n          :examples $ []\n          :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)\n            :names $ {} (:get-date |getDate)\n          :schema $ :: 'Trait\n        'node-date $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ defn node-date ()\n            do $ let\n                date $ unsafe-coerce (new js/Date) NodeClock\n              date .get-date\n          :examples $ []\n          :ffi $ {} (:backend :js) (:target :node)\n          :schema $ :: 'Fn $ {} (:args $ []) (:return 'Number) (:features $ #{} :js-ffi)\n        'reload! $ %{} 'CodeEntry",
   );
   fs::write(&snapshot, &fixture).expect("multi-target fixture should write");
 
   let source = fs::read(&snapshot).expect("source snapshot should read");
   let preview = run_fix(&snapshot, &["--preset", "surface-latest-v2", "--format", "json"]);
   assert_success(&preview, "whole-project multi-target fix preview");
-  assert_eq!(parse_stdout(&preview)["command"], "fix");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["command"], "fix");
+  assert!(
+    report["data"]["suggestions"].as_array().is_some_and(|suggestions| suggestions
+      .iter()
+      .any(|suggestion| { suggestion["definition"] == "app.main/node-date" && suggestion["rule_id"] == "redundant-do-v1" })),
+    "whole-project preview must visit the Node-only definition: {report}"
+  );
   assert_eq!(fs::read(&snapshot).expect("source snapshot should remain readable"), source);
 
   let browser_scope = run_fix(&snapshot, &["--ns", "app.main", "--def", "node-date", "--format", "json"]);
