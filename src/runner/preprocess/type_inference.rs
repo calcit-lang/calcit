@@ -2706,7 +2706,17 @@ mod tests {
       Arc::new(CalcitTypeAnnotation::from_function_parts(vec![], optional_callable.clone())),
     );
     let nested_call = Calcit::from(vec![Calcit::from(vec![provider]), Calcit::Number(1.0)]);
-    assert_eq!(infer_type_from_expr(&nested_call, &ScopeTypes::new()), Some(optional_callable));
+    assert_eq!(
+      infer_type_from_expr(&nested_call, &ScopeTypes::new()),
+      Some(optional_callable.clone())
+    );
+
+    let slot_name: Arc<str> = Arc::from("optional-callable-regression");
+    calcit::push_type_slot_override(slot_name.clone(), optional_callable);
+    let alias = Arc::new(CalcitTypeAnnotation::TypeSlot(slot_name.clone()));
+    let alias_call = Calcit::from(vec![local("maybe-aliased", alias.clone()), Calcit::Number(1.0)]);
+    assert_eq!(infer_type_from_expr(&alias_call, &ScopeTypes::new()), Some(alias));
+    calcit::pop_type_slot_override(&slot_name);
   }
 
   #[test]
