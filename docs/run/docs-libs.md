@@ -154,7 +154,9 @@ calcit docs remote-libs scan-md memof
 calcit docs check-md README.md
 ```
 
-By default this uses `calcit.cirru` as the entry file. For projects using another snapshot filename, pass `--entry <snapshot-file>` explicitly.
+默认使用 `calcit.cirru` Snapshot；项目使用其他 Snapshot 文件时，显式传入 `--snapshot <file>`，
+例如 `calcit docs check-md README.md --snapshot docs-example.cirru`。
+旧 `docs check-md --entry` 已停用；顶层和 `config` 命令的 `--entry` 才选择 Snapshot 内的具名入口。
 
 It supports specific block types:
 

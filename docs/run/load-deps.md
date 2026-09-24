@@ -112,11 +112,11 @@ module, a module configured only for another entry, or a module retained for a d
 Automation should add `--format json`: the single versioned envelope includes the complete selected entry and a
 deterministic module list whose rows distinguish `loaded` paths and unresolved `failed` paths.
 
-Named entries do not inherit the default entry's modules. Audit each entry that CI or a release supports.
-For Markdown code, `calcit docs check-md` defaults to modules from the default entry; use an explicit
-`--entry <snapshot>` and repeat `--dep <module-path>` for additional documentation-only modules. These
-checks provide static evidence for selected paths, not a guarantee about dynamic loading or external
-consumer usage.
+具名入口不会继承默认入口的模块；CI 或发布支持的每个入口都要单独核对。
+检查 Markdown 代码时，`calcit docs check-md` 默认使用 `calcit.cirru` Snapshot 与其默认入口的模块；
+项目使用其他 Snapshot 文件时传 `--snapshot <file>`，仅供文档示例使用的额外模块可重复传入
+`--dep <module-path>`。旧 `docs check-md --entry` 已停用，不能用于选择 Snapshot。
+这些检查只证明所选路径的静态依赖，不保证动态加载或仓库外消费者的行为。
 
 The positional input may point to a standalone dependency file. Its parent directory becomes the project
 root even when no `calcit.cirru` exists:
