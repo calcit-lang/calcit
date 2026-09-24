@@ -165,7 +165,7 @@ defn add (a b) (+ a b)
 - 数值边界 refinement：`'Int8`, `'UInt8`, `'Int16`, `'UInt16`, `'Int32`, `'UInt32`, `'Int64`, `'UInt64`, `'Float32`, `'Float64`
 - `number->int8` 等同系列函数把 `'Number` 受检转换为 `Result<refinement,String>`；不会隐式截断或舍入
 - `'List`, `'Map`, `'Set`, `'Struct`, `'Enum`, `'StructDef`, `'EnumDef`, `'Fn`
-- `'Dynamic` - wildcard type (default when no annotation)
+- `'Dynamic`：用户显式选择的开放值类型；缺少类型证据时的编译器内部 Unknown/Unresolved 不是 `Dynamic`，不应以它代替待推断的类型
 - Generic types (Cirru style):
 
 ```cirru
