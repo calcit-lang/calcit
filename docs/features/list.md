@@ -83,16 +83,16 @@ let
   ; => 4
 ```
 
-`get` uses the same `Option<T>` contract as `nth`:
+`List<T>` 的 `.get` 与 `.nth` 都返回 `Option<T>`：
 
 ```cirru
 let
     xs $ [] :a :b :c
-  println $ get xs 1
+  println $ xs.get 1
   ; => (%some :b)
 ```
 
-已知 `List<T>` 的访问使用具名函数 `get`、`nth`、`first` 和 `last`，返回的缺失值通过 `Option<T>` 表示。旧的 `.get` 等接收者写法仍属于兼容路径；新代码应明确保留集合的元素类型。
+已知 `List<T>` 的访问优先使用接收者方法 `.get`、`.nth`、`.first` 和 `.last`，让元素类型随 receiver 进入推断；对应的前缀函数仍可使用，并不是 `.get` 的替代契约。索引不存在时返回 `%none`，不要把缺失当作 `nil`。
 
 ## Adding / Removing Elements
 

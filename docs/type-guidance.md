@@ -31,7 +31,7 @@ Dynamic 表示用户明确选择的开放 Calcit 值，不等于编译器尚未�
 
 ```bash
 calcit analyze check-types --summary-only
-calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json
+calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format edn
 ```
 
 ## Schema 类型别名在各后端一致展开
