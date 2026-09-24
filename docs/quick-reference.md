@@ -165,7 +165,7 @@ defn add (a b) (+ a b)
 - 数值边界 refinement：`'Int8`, `'UInt8`, `'Int16`, `'UInt16`, `'Int32`, `'UInt32`, `'Int64`, `'UInt64`, `'Float32`, `'Float64`
 - `number->int8` 等同系列函数把 `'Number` 受检转换为 `Result<refinement,String>`；不会隐式截断或舍入
 - `'List`, `'Map`, `'Set`, `'Struct`, `'Enum`, `'StructDef`, `'EnumDef`, `'Fn`
-- `'Dynamic`：用户显式选择的开放值类型；缺少类型证据时的编译器内部 Unknown/Unresolved 不是 `Dynamic`，不应以它代替待推断的类型
+- `'Dynamic`：开放 Calcit 值类型，可由用户显式声明；部分推断路径缺少足够证据时也会保守回退到它。它不是表达泛型关系的默认写法：输入与返回需共享类型时声明 `:generics`/TypeVar，只约束能力时使用 trait `:where`
 - Generic types (Cirru style):
 
 ```cirru
