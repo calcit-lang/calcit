@@ -246,7 +246,8 @@ calcit calcit.cirru fix --rule optional-parameters-v1 --ns app.main --def legacy
 ```
 
 预览中的 `declared_type` 来自现有 schema；仅在声明足够具体时才给出 `candidate_type`。
-如果所有尾参数都具备可用的声明类型，`candidate_fn_schema_edn` 会给出完整的只读 Fn schema 候选，
+如果所有尾参数都具备可用的声明类型，且原 Fn 声明的参数、返回与 rest 没有开放的 `Dynamic` 成员，
+`candidate_fn_schema_edn` 会给出完整的只读 Fn schema 候选，
 保留原参数、返回、泛型与 feature 元数据，并把旧 `?` 尾参数写成 `Option<T>`。它是 Cirru EDN 字符串，
 可供审阅或作为手动编辑的起点；不表示函数体与调用点已可安全自动改写。
 同一建议的 `origin_chain` 还列出编译器解析到的项目源码引用：直接调用、带展开参数的调用、

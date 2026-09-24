@@ -2,7 +2,7 @@
 
 ## 决策
 
-`optional-parameters-v1` 此前只给出单个参数的 `Option<T>` 提示，维护者仍需手工重建整条 Fn 声明。现在仅从已有、完整且可序列化的 Fn schema 构造 `candidate_fn_schema_edn`：保留非可选参数、返回值、泛型和 feature，只把明确的旧 `?` 尾参数改为 nominal `Option<T>`。类型开放、别名或参数数量不匹配时不猜测完整候选。预览额外区分遗漏、显式 `nil` 与显式 `false`。
+`optional-parameters-v1` 此前只给出单个参数的 `Option<T>` 提示，维护者仍需手工重建整条 Fn 声明。现在仅从已有、完整且可序列化的 Fn schema 构造 `candidate_fn_schema_edn`：保留非可选参数、返回值、泛型和 feature，只把明确的旧 `?` 尾参数改为 nominal `Option<T>`。类型开放（包括容器嵌套、原参数、返回及 rest）、别名或参数数量不匹配时不猜测完整候选。预览额外区分遗漏、显式 `nil` 与显式 `false`。
 
 ## 安全边界与验证
 
