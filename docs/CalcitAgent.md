@@ -23,7 +23,7 @@ leads_to:
 
 # Calcit Agent 快速实践（局部查看与编辑优先）
 
-本文是 Agent 每次进入 Calcit 项目时需要常驻上下文的最小操作契约。只保留高频规则和可执行闭环；低频命令、完整语法与复杂重构通过 `calcit docs` 按需读取。
+本文是按需读取的完整 Agent 指南。每次进入项目默认只读取下方的紧凑契约（`calcit docs agents --contract`）；遇到复杂重构或目标专用能力时，再加载相关章节或 `--full`，不把整篇指南常驻上下文。
 
 Calcit 0.14 起，普通运行、检查和代码生成默认启用严格预处理诊断。旧项目迁移期间只能显式使用
 `--compat-types` 暂时恢复旧 warning 行为；`--strict-types` 显式确认严格诊断，并在执行或代码生成前检查所选入口，
@@ -42,6 +42,21 @@ CLI 不传格式参数时保持适合人类 review 的 Markdown-compatible 输�
 5. target、path 和替换内容必须来自 `query` / `tree show`；修改前展示真实 subtree，修改后重新 show/search，并运行项目规定的 check、test 和目标 codegen。
 6. 不得把 `CURSOR`、`FOLDED:*`、chunk 标题、path annotation 或 `preview_tree` 写回 Snapshot；机器读取 cursor 时只信 `tree` 字段。
 7. 发现语言/编译器/CLI 缺陷，向 Calcit 核心仓库提交最小复现；发现模块缺陷，先用解析后的模块路径和 Git remote 确认 owner，再提交到模块仓库。不能猜仓库，也不能只留在聊天或提交说明中。
+
+普通应用修改按一个闭环执行，不必预先学习 Canonical ABI。以下占位符须从当前项目查询结果和用户目标替换，不能原样运行：
+
+```bash
+calcit query context '<namespace/definition>' --format edn
+calcit query search '<existing-leaf>' --filter '<namespace/definition>' --exact
+calcit tree show '<namespace/definition>' --path '<path-from-search>'
+calcit tree search-replace '<namespace/definition>' --pattern '<existing-leaf>' --code 'quote <replacement-leaf>'
+calcit tree show '<namespace/definition>' --path '<path-from-search>'
+calcit --check-only
+calcit test '<namespace>/<definition>' --require-match
+calcit --entry '<named-entry>' calcit.cirru
+```
+
+最后一条会按入口 mode 执行或生成目标产物。替换前确认唯一命中并查看真实 subtree；替换后重新查询。涉及多个定义或调用点时改用 transaction 与 revision 前置条件，完整命令和失败恢复再按需读取下文章节。
 
 按需加载权威细节：
 

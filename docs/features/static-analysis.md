@@ -422,16 +422,16 @@ let
 | `'Struct` | Struct value (anonymous or named) |
 | `'Fn` | Function |
 | `'Ref` | Atom / Ref |
-| `'Dynamic` | Unknown/unresolved type; static checks are disabled at this boundary |
+| `'Dynamic` | 用户显式选择的开放 Calcit 值；可保存、传递和包装，读取具体内容时须提供类型证据，不等同于编译器内部 Unknown/Unresolved |
 
-`:any` is a legacy alias for `:dynamic`; both are accepted as input and formatter output is `'Dynamic`.
+`:any` 是历史别名；旧输入可迁移为 `'Dynamic`，但新代码应显式声明开放边界。不要把编译器无法推断的类型自动改写成 `Dynamic`，也不要因此跳过默认严格检查。
 
 ### Dynamic 用量审计
 
 普通执行与编译只运行默认严格预处理，以确定的 warning/error 判断类型关系，不扫描、统计或打印 Dynamic 用量。`--strict-types` 只显式确认严格策略并预检查入口，不运行质量预算。只有迁移存量代码需要定位时，才显式运行：
 
 ```bash
-calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format json
+calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format edn
 ```
 
 Dynamic 应限制在 JS FFI、宏和框架开放数据边界。普通多态使用 TypeVar/`:generics`，能力约束使用 trait/`:where`，缺失使用 `Option<T>`，失败使用 `Result<T,E>`。
