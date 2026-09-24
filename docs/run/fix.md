@@ -35,6 +35,10 @@ calcit calcit.cirru fix
 calcit calcit.cirru fix --ns app.main --def render! --format edn
 ```
 
+不带 `--ns` 的整项目预览覆盖所有 named entry 的源码，因此按 target 中立的方式规划改写；例如 browser 默认入口不会阻止扫描
+server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定义，也不能代替逐入口的 `--check-only` 或 `fix --workflow strict --verify`。
+限定 `--ns`/`--def` 时仍使用所选 `--entry` 的 target 检查；检查 Node-only 定义时应显式选择 Node entry。
+
 当前稳定规则包括：
 
 - `removed-data-api-v1` 复用编译器已有的 `W_REMOVED_DATA_API` 解析结果。只有一对一的名称迁移
