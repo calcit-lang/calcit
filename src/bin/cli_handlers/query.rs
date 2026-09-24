@@ -1312,6 +1312,12 @@ mod type_query_tests {
     assert_eq!(list_get.return_type.as_deref(), Some("type calcit.core/Option<number>"));
     assert_eq!(list_get.definition.as_deref(), Some("calcit.core/get"));
     assert!(render_context_method(&list_get).contains("(number) -> type calcit.core/Option<number>"));
+    let list_concat = runner::preprocess::static_method_contract(list.as_ref(), ".concat");
+    assert_eq!(list_concat.status, "proven", "the first variadic argument is the method receiver");
+    assert!(list_concat.arg_types.unwrap().is_empty());
+    assert_eq!(list_concat.rest_type.unwrap().describe(), "list<number>");
+    assert_eq!(list_concat.return_type.unwrap().describe(), "list<number>");
+    assert_eq!(list_concat.definition.as_deref(), Some("calcit.core/&list:concat"));
     let original_fingerprint = method_contract_fingerprint(&Some(vec![list_get.clone()])).expect("method serialization");
     let mut changed = list_get.clone();
     changed.return_type = Some("type calcit.core/Option<string>".to_owned());

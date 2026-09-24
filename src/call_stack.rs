@@ -124,6 +124,10 @@ pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Arc
   display_stack_with_docs(failure, stack, location, None)
 }
 
+fn stack_argument_to_edn(value: &Calcit) -> Edn {
+  edn::calcit_to_edn(value).unwrap_or_else(|error| Edn::str(format!("<non-EDN stack argument: {error}>")))
+}
+
 pub fn display_stack_with_docs(
   failure: &str,
   stack: &CallStackList,
@@ -218,7 +222,7 @@ pub fn display_stack_with_docs(
   for (_, s, stack_location) in &stack_rows {
     let mut args = EdnListView::default();
     for v in s.args.iter() {
-      let edn_val = edn::calcit_to_edn(v)?;
+      let edn_val = stack_argument_to_edn(v);
       args.push(edn::compact_edn_for_display(&edn_val, 0));
     }
     let mut info_map = vec![
@@ -386,4 +390,18 @@ fn is_macro_called_from_user(item: &CalcitStack) -> bool {
 
 fn is_internal_macro_ns(ns: &str) -> bool {
   ns == "calcit.internal" || ns.starts_with("calcit.internal.")
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn stack_arguments_keep_non_edn_values_from_masking_the_failure() {
+    assert_eq!(stack_argument_to_edn(&Calcit::Number(42.0)), Edn::Number(42.0));
+    assert_eq!(
+      stack_argument_to_edn(&Calcit::Unit),
+      Edn::str("<non-EDN stack argument: not able to generate EDN: Unit>")
+    );
+  }
 }
