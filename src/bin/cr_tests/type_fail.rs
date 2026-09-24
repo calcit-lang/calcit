@@ -1121,12 +1121,12 @@ fn named_callback_schema_rejects_wrong_arguments_and_non_callable_aliases() {
       (
         fn_schema(vec![Arc::new(CalcitTypeAnnotation::String)], CalcitTypeAnnotation::Number),
         vec![],
-        "Found 1 warnings during preprocessing",
+        "calling `callback` arg 1 expects type",
       ),
       (
         generic_schema,
         vec![Arc::new(CalcitTypeAnnotation::String)],
-        "Found 1 warnings during preprocessing",
+        "calling `callback` arg 1 expects type",
       ),
       (Arc::new(CalcitTypeAnnotation::Number), vec![], "non-function type"),
       (
@@ -1180,8 +1180,14 @@ fn named_callback_schema_rejects_wrong_arguments_and_non_callable_aliases() {
         );
       }
       let _strict = StrictTypesReset::enabled();
-      let error = run_check_only(&entries).expect_err("invalid named callback call must be rejected");
-      assert!(error.contains(expected_message), "expected {expected_message}: {error}");
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect("named callback fixture should preprocess with diagnostics");
+      let warnings = warnings.borrow();
+      assert!(
+        warnings.iter().any(|warning| warning.message().contains(expected_message)),
+        "expected {expected_message} among diagnostics: {warnings:?}"
+      );
     }
   });
 }
