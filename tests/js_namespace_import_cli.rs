@@ -51,6 +51,30 @@ fn assert_success(output: &Output, context: &str) {
   );
 }
 
+fn assert_generated_js_runs(project_path: &Path, emit_path: &Path) {
+  let script = r#"
+import { symlink } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+const projectPath = process.env.CALCIT_JS_PROJECT_PATH;
+const emitPath = process.env.CALCIT_JS_EMIT_PATH;
+await symlink(resolve("node_modules"), join(projectPath, "node_modules"), process.platform === "win32" ? "junction" : "dir");
+const generated = await import(pathToFileURL(join(emitPath, "app.main.mjs")).href);
+await generated.main_$x_();
+"#;
+  let output = Command::new("node")
+    .current_dir(env!("CARGO_MANIFEST_DIR"))
+    .arg("--input-type=module")
+    .arg("--eval")
+    .arg(script)
+    .env("CALCIT_JS_PROJECT_PATH", project_path)
+    .env("CALCIT_JS_EMIT_PATH", emit_path)
+    .output()
+    .expect("node command should run");
+  assert_success(&output, "generated JavaScript execution");
+}
+
 #[test]
 fn nominal_decoder_and_source_alias_share_one_js_namespace_binding() {
   let directory = TestDirectory::create();
@@ -140,4 +164,7 @@ fn nominal_decoder_and_source_alias_share_one_js_namespace_binding() {
     generated.contains("nominal:$app_DOT_model.Thing"),
     "nominal decoder must remain:\n{generated}"
   );
+  if std::env::var_os("CALCIT_JS_NAMESPACE_IMPORT_RUNTIME").is_some() {
+    assert_generated_js_runs(directory.path(), &emit_path);
+  }
 }
