@@ -1107,14 +1107,31 @@ fn named_callback_schema_rejects_wrong_arguments_and_non_callable_aliases() {
       })))
     };
 
-    for (alias_schema, expected_message) in [
+    let generic_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))],
+      return_type: Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+
+    for (alias_schema, applied_args, expected_message) in [
       (
         fn_schema(vec![Arc::new(CalcitTypeAnnotation::String)], CalcitTypeAnnotation::Number),
-        "W_LOCAL_FN_ARG_TYPE_MISMATCH",
+        vec![],
+        "Found 1 warnings during preprocessing",
       ),
-      (Arc::new(CalcitTypeAnnotation::Number), "non-function type"),
+      (
+        generic_schema,
+        vec![Arc::new(CalcitTypeAnnotation::String)],
+        "Found 1 warnings during preprocessing",
+      ),
+      (Arc::new(CalcitTypeAnnotation::Number), vec![], "non-function type"),
       (
         Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("app.main/NamedCallback"), Arc::new(vec![]))),
+        vec![],
         "non-function type",
       ),
     ] {
@@ -1131,7 +1148,7 @@ fn named_callback_schema_rejects_wrong_arguments_and_non_callable_aliases() {
       file.defs.get_mut("invoke").expect("callback definition").schema = fn_schema(
         vec![Arc::new(CalcitTypeAnnotation::TypeRef(
           Arc::from("app.main/NamedCallback"),
-          Arc::new(vec![]),
+          Arc::new(applied_args.clone()),
         ))],
         CalcitTypeAnnotation::Number,
       );
@@ -1139,6 +1156,18 @@ fn named_callback_schema_rejects_wrong_arguments_and_non_callable_aliases() {
       file.defs.get_mut("reload!").expect("reload definition").schema = fn_schema(vec![], CalcitTypeAnnotation::Unit);
       snapshot.files.insert("app.main".to_owned(), file);
       let entries = prepare_snapshot_entries(snapshot);
+      if !applied_args.is_empty() {
+        let applied = CalcitTypeAnnotation::TypeRef(Arc::from("app.main/NamedCallback"), Arc::new(applied_args));
+        let resolved = applied.resolve_to_fn().expect("applied generic callback should resolve");
+        assert_eq!(resolved.arg_types, vec![Arc::new(CalcitTypeAnnotation::String)]);
+        assert_eq!(resolved.return_type, Arc::new(CalcitTypeAnnotation::String));
+        assert!(resolved.generics.is_empty());
+        let missing = CalcitTypeAnnotation::TypeRef(Arc::from("app.main/NamedCallback"), Arc::new(vec![]));
+        assert!(
+          missing.resolve_to_fn().is_none(),
+          "generic callback application requires its type argument"
+        );
+      }
       let _strict = StrictTypesReset::enabled();
       let error = run_check_only(&entries).expect_err("invalid named callback call must be rejected");
       assert!(error.contains(expected_message), "expected {expected_message}: {error}");

@@ -3877,13 +3877,30 @@ impl CalcitTypeAnnotation {
       match annotation {
         CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.clone()),
         CalcitTypeAnnotation::Optional(inner) => resolve(inner, visited, depth + 1),
-        CalcitTypeAnnotation::TypeRef(name, _) => {
+        CalcitTypeAnnotation::TypeRef(name, args) => {
           let stripped = name.trim_start_matches('\'').trim_start_matches(':');
           let key = format!("type:{stripped}");
           if !visited.insert(key) {
             return None;
           }
-          resolve_type_ref_as_schema(stripped).and_then(|schema| resolve(&schema, visited, depth + 1))
+          let schema = resolve_type_ref_as_schema(stripped)?;
+          let signature = resolve(&schema, visited, depth + 1)?;
+          if signature.generics.len() != args.len() {
+            return None;
+          }
+          if args.is_empty() {
+            return Some(signature);
+          }
+          let bindings: TypeBindings = signature.generics.iter().cloned().zip(args.iter().cloned()).collect();
+          validate_runtime_generic_where_bounds(&bindings, &signature.where_bounds).ok()?;
+          let specialized = CalcitTypeAnnotation::Fn(signature).substitute_type_vars(&bindings);
+          let CalcitTypeAnnotation::Fn(specialized) = specialized.as_ref() else {
+            return None;
+          };
+          let mut specialized = specialized.as_ref().clone();
+          specialized.generics = Arc::new(vec![]);
+          specialized.where_bounds = Arc::new(vec![]);
+          Some(Arc::new(specialized))
         }
         CalcitTypeAnnotation::TypeSlot(name) => {
           let key = format!("slot:{name}");

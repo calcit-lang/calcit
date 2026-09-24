@@ -641,9 +641,7 @@ fn infer_core_apply_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes
   let callable_type = call_expr.get(1).and_then(|callable| resolve_type_value(callable, scope_types))?;
   let arguments = call_expr.get(2)?;
   let arguments_type = resolve_type_value(arguments, scope_types)?;
-  let Some(signature) = callable_type.resolve_to_fn() else {
-    return None;
-  };
+  let signature = callable_type.resolve_to_fn()?;
   let CalcitTypeAnnotation::List(item_type) = arguments_type.as_ref() else {
     return None;
   };
