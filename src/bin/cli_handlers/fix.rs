@@ -1417,13 +1417,7 @@ fn plan_optional_parameter_diagnostics(
     }
     if optional {
       let declared = signature.and_then(|signature| signature.arg_types.get(argument_index));
-      let candidate = declared.and_then(|annotation| match annotation.as_ref() {
-        CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn => None,
-        CalcitTypeAnnotation::Optional(inner) if !matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic) => {
-          Some(format!("Option<{}>", inner.to_brief_string()))
-        }
-        other => Some(format!("Option<{}>", other.to_brief_string())),
-      });
+      let candidate = declared.and_then(|annotation| optional_parameter_candidate(annotation));
       let parameter = leaf_value(arg).unwrap_or("<destructured>");
       let reason = if candidate.is_some() {
         "declared-type-only; body presence checks, explicit nil, generated/external callers, and call evaluation are not yet proven"
@@ -1459,6 +1453,21 @@ fn plan_optional_parameter_diagnostics(
     argument_index += 1;
   }
   Ok(suggestions)
+}
+
+fn optional_parameter_candidate(annotation: &CalcitTypeAnnotation) -> Option<String> {
+  match annotation {
+    CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn => None,
+    CalcitTypeAnnotation::Optional(inner) => optional_parameter_candidate(inner),
+    CalcitTypeAnnotation::TypeRef(name, args) if matches!(name.as_ref(), "Option" | "calcit.core/Option") && args.len() == 1 => {
+      if matches!(args[0].as_ref(), CalcitTypeAnnotation::Dynamic) {
+        None
+      } else {
+        Some(annotation.to_brief_string())
+      }
+    }
+    other => Some(format!("Option<{}>", other.to_brief_string())),
+  }
 }
 
 fn plan_value_to_zero_arg_fn(
@@ -3236,8 +3245,8 @@ mod tests {
   use super::{
     FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_potential_local_bindings, collect_redundant_do_paths,
     fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion, legacy_constructor_replacement, migration_for_source_leaf,
-    prototype_is_shadowed, resolve_fix_target, rewrite_loaded_schema_type_references, rewrite_named_constructor_tree,
-    struct_fields_are_complete, suggestion_operations,
+    optional_parameter_candidate, prototype_is_shadowed, resolve_fix_target, rewrite_loaded_schema_type_references,
+    rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
   };
   use calcit::calcit::{CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTrait, CalcitTypeAnnotation, SchemaKind};
   use cirru_parser::Cirru;
@@ -3249,6 +3258,24 @@ mod tests {
 
   fn leaf(value: &str) -> Cirru {
     Cirru::leaf(value)
+  }
+
+  #[test]
+  fn optional_parameter_candidates_do_not_invent_dynamic_or_double_wrap_option() {
+    assert_eq!(optional_parameter_candidate(&CalcitTypeAnnotation::Dynamic), None);
+    assert_eq!(
+      optional_parameter_candidate(&CalcitTypeAnnotation::Number),
+      Some("Option<Number>".to_owned())
+    );
+    assert_eq!(
+      optional_parameter_candidate(&CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::String))),
+      Some("Option<String>".to_owned())
+    );
+    let option = CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]),
+    );
+    assert_eq!(optional_parameter_candidate(&option), Some(option.to_brief_string()));
   }
 
   #[test]
