@@ -64,16 +64,29 @@ calcit query def calcit.core/to-js-data
 
 For source-backed definitions, `query def` prints the stored Cirru body. For special builtin helpers such as `calcit.core/to-js-data`, it falls back to builtin metadata (doc, schema, examples count) even when no snapshot source exists.
 
-Since 0.14.3, automation should use `calcit query def namespace/name --format json`.
-Stdout is one JSON envelope (`schema_version: 1`, `command: "query.def"`, `revision`,
-`data`, `diagnostics`); command echoes and warnings remain on stderr. Failures exit
-nonzero with diagnostics on stderr, not a partial success object. `data` contains
-`id`, `doc`, `tags`, `examples`, `tests`, `code`, `schema`, `ffi`, and `ffi_edn`.
-`ffi` is complete EDN-encoded JSON, using the same representation as `cirru parse-edn`:
-tag map keys retain `:`, tag values use `{"__edn_tag":"js"}`, and sets use
-`{"__edn_set":[...]}`. `ffi_edn` is complete, parseable Cirru EDN text. Both are
-`null` when absent; neither is a preview. Source-backed definitions have a content
-revision; source-less builtins have `revision: null`, `code: null`, and `builtin: true`.
+Agent 查询优先显式使用 `--format edn`，例如 `calcit query def namespace/name --format edn`；
+需要与 JSON 工具互操作时再指定 `--format json`。`query type`、`type-at`、`context`、
+`def`、`config`，以及只读的 `config show/modules/type-slots` 使用相同的结构化输出约定。
+其中 `query config --format edn/json` 复用 `config show`，envelope 的 `command` 为
+`config.show`，便于收敛旧查询入口。
+human 默认仍使用 Markdown。成功与失败的 stdout 各只有一个可解析的 envelope；失败
+非零退出，`data` 为 `nil`／`null`，诊断放在 `diagnostics`，命令回显与日志留在 stderr。
+EDN 键为 `:schema-version` 等 tag；JSON 对应 `schema_version`。两种格式的身份、
+revision、类型事实和诊断语义一致。没有源码函数体的 runtime-only 定义会显示 leaf
+占位符并给出 `I_SOURCE_BODY_UNAVAILABLE`，不会因格式化失败丢失整个查询。
+
+```bash
+calcit calcit/test.cirru query type "'String" --format edn
+calcit calcit/test.cirru query context 'calcit.core/&list:contains?' --format edn
+calcit calcit/test.cirru config show --format edn
+```
+
+`query def` 的 `data` 包含 `id`、`doc`、`tags`、`examples`、`tests`、`code`、
+`schema`、`ffi` 和 `ffi_edn`。`--format edn` 的 `:ffi` 保留原生 Cirru EDN Map/Tag；
+`--format json` 的 `ffi` 才使用互操作编码：tag 键保留 `:`，tag 值使用
+`{"__edn_tag":"js"}`，set 使用 `{"__edn_set":[...]}`。`ffi_edn` 是完整可解析的
+Cirru EDN 文本；缺失时为 `nil`／`null`，两者均不是 preview。有源码定义带内容
+`revision`；无源码 builtin 的 `revision`、`code` 为 `nil`／`null`，`builtin` 为 `true`。
 The schema field remains a Cirru syntax tree, not raw persisted schema data.
 
 兼容性：`--json` 仍在 human 输出末尾附加 `JSON:` 与旧字段对象，其中 `ffi` 保持

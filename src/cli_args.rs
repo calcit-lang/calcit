@@ -759,7 +759,7 @@ pub struct QueryTypeCommand {
   /// builtin type annotation (e.g. 'Number or ":: 'List 'Number") or namespace/definition
   #[argh(positional)]
   pub target: String,
-  /// output format: Markdown-compatible human (default) or json
+  /// output format: Markdown-compatible human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }
@@ -774,7 +774,7 @@ pub struct QueryTypeAtCommand {
   /// snapshot path, e.g. "code@3.2", "@3.2", or "3.2"
   #[argh(option)]
   pub path: String,
-  /// output format: Markdown-compatible human (default) or json
+  /// output format: Markdown-compatible human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }
@@ -789,7 +789,7 @@ pub struct QueryContextCommand {
   /// approximate character budget for variable-size content
   #[argh(option, default = "6000")]
   pub budget: usize,
-  /// output format: Markdown-compatible human (default) or json
+  /// output format: Markdown-compatible human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// include references from dependency and core namespaces
@@ -852,7 +852,11 @@ pub struct QueryPkgCommand {}
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "config")]
 /// read project configs (init_fn, reload_fn, version)
-pub struct QueryConfigCommand {}
+pub struct QueryConfigCommand {
+  /// output format: Markdown-compatible human (default), edn, or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "error")]
@@ -874,7 +878,7 @@ pub struct QueryDefCommand {
   /// append fenced legacy JSON to Markdown-compatible human output; prefer --format json for automation
   #[argh(switch)]
   pub json: bool,
-  /// output format: Markdown-compatible human (default) or a single versioned json envelope
+  /// output format: Markdown-compatible human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// preferred nodes per display fragment when large expressions are chunked
@@ -988,7 +992,7 @@ pub struct QuerySearchCommand {
   /// also print parent path for each match (strip trailing index for editable node)
   #[argh(switch, long = "parent-path")]
   pub parent_path: bool,
-  /// output format: Markdown-compatible human (default) or json
+  /// output format: Markdown-compatible human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// set the persistent cursor to this zero-based global match index
@@ -1024,7 +1028,7 @@ pub struct QuerySearchExprCommand {
   /// start index for detailed display window (3 detailed items)
   #[argh(option, long = "detail-offset", default = "0")]
   pub detail_offset: usize,
-  /// output format: Markdown-compatible human (default) or json
+  /// output format: Markdown-compatible human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// set the persistent cursor to this zero-based global match index
@@ -2749,7 +2753,7 @@ pub struct ConfigShowCommand {
   /// show a named entry (e.g. "test"); defaults to showing all entries
   #[argh(option)]
   pub entry: Option<String>,
-  /// output format: human (default) or json
+  /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }
@@ -2761,7 +2765,7 @@ pub struct ConfigModulesCommand {
   /// list modules for a named entry (e.g. "test"); defaults to "default"
   #[argh(option)]
   pub entry: Option<String>,
-  /// output format: human (default) or json
+  /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }
@@ -2773,7 +2777,7 @@ pub struct ConfigTypeSlotsCommand {
   /// list bindings for a named entry; defaults to "default"
   #[argh(option)]
   pub entry: Option<String>,
-  /// output format: human (default) or json
+  /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }
