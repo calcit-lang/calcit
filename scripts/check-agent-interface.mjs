@@ -1030,7 +1030,7 @@ try {
   const inertReload = run("edit", "def", "app.main/reload!", "--overwrite", "--code", "quote $ defn reload! () $ raise |reload-must-not-run");
   assert.equal(inertReload.status, 0, inertReload.stderr);
   const beforeRead = readFileSync(fixture);
-  for (const { name, args, command, expectedStatus = 0 } of [
+  for (const { name, args, command, expectedStatus = 0, expectedDiagnostic } of [
     { name: "type", args: ["query", "type", "'String"], command: "query.type" },
     { name: "type-at", args: ["query", "type-at", "app.main/main!", "--path", "code@3"], command: "query.type-at" },
     { name: "context", args: ["query", "context", "app.main/main!"], command: "query.context" },
@@ -1038,8 +1038,8 @@ try {
     { name: "query config", args: ["query", "config"], command: "config.show" },
     { name: "config show", args: ["config", "show"], command: "config.show" },
     { name: "config modules", args: ["config", "modules"], command: "config.modules" },
-    { name: "missing context", args: ["query", "context", "app.main/not-there"], command: "query.context", expectedStatus: 1 },
-    { name: "invalid type", args: ["query", "type", "not-a-type"], command: "query.type", expectedStatus: 1 },
+    { name: "missing context", args: ["query", "context", "app.main/not-there"], command: "query.context", expectedStatus: 1, expectedDiagnostic: "E_QUERY_TARGET_NOT_FOUND" },
+    { name: "invalid type", args: ["query", "type", "not-a-type"], command: "query.type", expectedStatus: 1, expectedDiagnostic: "E_QUERY_INVALID_TYPE" },
   ]) {
     for (const format of ["edn", "json"]) {
       const readOnlyQuery = run(...args, "--format", format);
@@ -1048,6 +1048,10 @@ try {
         ? parseEdnRaw(readOnlyQuery.stdout, `${name} EDN`)
         : JSON.parse(readOnlyQuery.stdout);
       assert.equal(envelope[format === "edn" ? ":command" : "command"], command, `${name} ${format} lost its structured envelope`);
+      if (expectedDiagnostic) {
+        const diagnostics = envelope[format === "edn" ? ":diagnostics" : "diagnostics"];
+        assert.equal(diagnostics?.[0]?.[format === "edn" ? ":code" : "code"], expectedDiagnostic, `${name} ${format} reported the wrong diagnostic`);
+      }
       assert.deepEqual(readFileSync(fixture), beforeRead, `${name} ${format} must leave the Snapshot unchanged`);
     }
   }
