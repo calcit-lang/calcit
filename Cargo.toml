@@ -43,6 +43,7 @@ exclude = [
 # cirru_edn = { path = "/Users/chenyong/repo/cirru/edn.rs" }
 # cirru_parser = { path = "/Users/chenyong/repo/cirru/parser.rs" }
 argh = "0.1.19"
+base64 = "0.22.1"
 hex = "0.4.3"
 md-5 = "0.11.0"
 rpds = "1.2.1"

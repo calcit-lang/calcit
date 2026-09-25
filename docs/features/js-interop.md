@@ -692,13 +692,15 @@ Common diagnostics:
     :modules $ {} $ :path |node:path
 ```
 
-对应文件内容为 `(value) => path.basename(value)`。生成的 JS 会保留 `app.main/base-name` 注释作为定位锚点；Node 的语法检查和运行时堆栈仍指向生成文件及其行号，后续可再提供精确 source map。当前仅保守地筛查 `import`、`export`、`require` 词元（连字符串中的同名词元也可能被拒绝），不承诺完整 JavaScript 解析或静态验证函数返回值。
+对应文件内容为 `(value) => path.basename(value)`。生成的 JS 会保留包含定义、来源及内容 hash 的注释，并内嵌 Source Map v3。Node 运行时可加 `--enable-source-maps`，把异常栈定位到 `calcit://模块@版本/namespace/definition/file/模块相对路径?hash=...:行号:列号`；inline 实现显示 `.../inline`。只有原样嵌入的 JS 表达式映射到原文件的 UTF-16 列位置，Calcit 生成的包装代码没有伪造来源。map 与生成文件在同一产物中，搬移生成目录或显式重新构建后仍可使用对应版本的映射。当前仅保守地筛查 `import`、`export`、`require` 词元（连字符串中的同名词元也可能被拒绝），不承诺完整 JavaScript 解析或静态验证函数返回值。
+
+下游 Node 排错时，保留原始 stack，使用 `node --enable-source-maps <入口>` 重现；从 `calcit://` 行中的模块、定义和 `file/` 路径找到模块根目录下可编辑的 JS 文件。`inline` 则用 `calcit <snapshot> query def <namespace>/<definition>` 查看 Snapshot 中的实现。无需改写生成的 `.mjs`。浏览器可在开发者工具启用 JavaScript source maps 后，在同一 `calcit://` 来源定位行号；若宿主不识别内嵌 map，则依据生成文件中 `JS FFI:` 注释找定义和 source hash，再用 `query def` 核对。语法错误仍以宿主的生成文件位置及邻近注释为准；`:modules` 解析错误可查看失败的 import 上一行 `JS FFI module:` 注释，其中保留定义与别名。编译器不会替换异常对象、`cause` 或 stack 格式。
 
 第一阶段仅接受 Number、String、Bool、Unit、JsObject 与相应 JsNullish 边界；不把 Calcit 集合或 nominal 值隐式当作 JS 容器。泛型、rest 参数和 async 签名暂不开放。native 调用会明确报错。JS 文件必须位于所属模块根目录内，绝对路径、`..` 和 symlink 越界会失败。实际用法与下游模块 smoke 见 `calcit/js-ffi-module/calcit.cirru`、`calcit/js-ffi-consumer.cirru` 和 `yarn check-js-ffi-source`。
 
 跨 namespace 使用时沿用普通 Calcit `:require`。示例的 `app.api` 先从 `app.main` 引用 JS FFI 定义并包装为 `plus-four`、`file-label`、`next-count`；下游 `test-nil.main` 同时直接引用 `app.main` 和引用 `app.api`。回归脚本把模块与消费者复制到独立源码目录构建，再搬移生成目录执行，确认两条 Calcit 引用路径共享同一个有状态定义，且没有 snippet 专用 import、路径补丁或软链接。这仍不是已发布模块的干净安装验收；该步骤由 #1360 跟进。
 
-运行 `calcit <snapshot> js -w` 时，已声明的 `:file` JS 源码会进入现有 watcher：直接保存或原子替换文件都会重新生成 JS，无需触碰 Calcit Snapshot 或 `.compact-inc.cirru`。普通单次构建与只读查询不启用这些文件 watcher。`yarn check-js-ffi-source` 覆盖两种保存方式及跨 namespace wrapper 的更新行为。
+修改 `:file` JS 源码后，当前推荐显式重新运行 `calcit <snapshot> js`，再执行宿主测试。`-w` 会尝试监听模块资源，但外部 JS 文件的文件系统事件在不同环境下尚未形成可靠的发布契约，不能仅凭 watch 日志判断产物已更新。普通单次构建与只读查询不启用文件监听。`yarn check-js-ffi-source` 对直接保存、原子替换分别重新构建，验证跨 namespace wrapper 与 source map 使用新内容。
 
 Agent 排查时先用现有查询入口，不需要猜依赖模块或 JS 文件的路径：
 
@@ -708,4 +710,4 @@ calcit calcit/js-ffi-consumer.cirru query def app.main/base-name
 calcit calcit/js-ffi-consumer.cirru query def app.main/plus-one --raw
 ```
 
-`query context` 的 `:js-ffi` 给出 target、所属模块、模块根目录、`inline`/`file` 来源、模块相对文件路径和显式外部模块；`:next` 指向完整 `query def`。后者在 Markdown 输出中将元数据与 inline JavaScript 的 `javascript` 代码块分开，`--format edn` 保留原生 FFI 数据，`--format json` 只在 JSON 工具链需要时显式选用。查询只读取元数据，不执行 JS。`Fn` schema 是作者声明，不代表编译器已验证 JS 的参数和返回值；仍需外部语法检查与真实宿主运行。文件实现直接编辑 `module root + source file`，不要修改生成的 `.mjs`。这一步只提供定义级定位；精确 JS 源行映射由 #1362 完成。
+`query context` 的 `:js-ffi` 给出 target、所属模块、模块根目录、`inline`/`file` 来源、模块相对文件路径和显式外部模块；`:next` 指向完整 `query def`。后者在 Markdown 输出中将元数据与 inline JavaScript 的 `javascript` 代码块分开，`--format edn` 保留原生 FFI 数据，`--format json` 只在 JSON 工具链需要时显式选用。查询只读取元数据，不执行 JS。`Fn` schema 是作者声明，不代表编译器已验证 JS 的参数和返回值；仍需外部语法检查与真实宿主运行。文件实现直接编辑 `module root + source file`，不要修改生成的 `.mjs`。

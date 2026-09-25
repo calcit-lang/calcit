@@ -2734,6 +2734,7 @@ fn js_ffi_owner(input_path: &str, snapshot: &snapshot::Snapshot, namespace: &str
   if snapshot.files.contains_key(namespace) && namespace_source(snapshot, namespace) == "project" {
     return Some(calcit::JsNamespaceSource {
       module: snapshot.package.clone(),
+      version: snapshot.version.clone(),
       root: base_dir.to_path_buf(),
     });
   }

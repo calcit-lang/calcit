@@ -234,6 +234,7 @@ name = "calcit"
 version = "0.20.0"
 dependencies = [
  "argh",
+ "base64",
  "bisection_key",
  "calcit-bindgen",
  "calcit_native_ffi",

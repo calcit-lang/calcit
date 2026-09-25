@@ -296,6 +296,7 @@ pub struct LoadedModuleSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JsNamespaceSource {
   pub module: String,
+  pub version: String,
   pub root: PathBuf,
 }
 
@@ -386,6 +387,7 @@ fn load_module_recursive(
           }
           let source = JsNamespaceSource {
             module: snapshot.package.clone(),
+            version: snapshot.version.clone(),
             root: root.to_path_buf(),
           };
           if let Some(previous) = namespace_sources.insert(namespace.clone(), source.clone())
