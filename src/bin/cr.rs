@@ -786,6 +786,7 @@ fn run_cli() -> Result<(), String> {
       namespace.clone(),
       calcit::JsNamespaceSource {
         module: snapshot.package.clone(),
+        version: snapshot.version.clone(),
         root: if base_dir.as_os_str().is_empty() {
           PathBuf::from(".")
         } else {

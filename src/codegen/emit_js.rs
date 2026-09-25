@@ -5,6 +5,7 @@ mod helpers;
 mod internal_states;
 mod paths;
 mod runtime;
+mod source_map;
 use std::fmt::Write;
 mod snippets;
 mod symbols;
@@ -20,6 +21,7 @@ use std::sync::Arc;
 use std::sync::{LazyLock, RwLock};
 
 use cirru_edn::EdnTag;
+use md5::{Digest, Md5};
 
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::builtins::syntax::get_raw_args_fn;
@@ -83,7 +85,27 @@ pub fn configure_js_namespace_sources(sources: std::collections::HashMap<String,
   Ok(())
 }
 
-fn read_js_ffi_expression(ns: &str, def: &str, source: &JsFfiSource) -> Result<String, String> {
+struct JsFfiExpression {
+  code: String,
+  original: String,
+  original_start_line: usize,
+  original_start_column: usize,
+  source_name: String,
+}
+
+fn ffi_source_uri_part(value: &str, keep_slashes: bool) -> String {
+  let mut escaped = String::new();
+  for byte in value.bytes() {
+    if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') || (keep_slashes && byte == b'/') {
+      escaped.push(byte as char);
+    } else {
+      write!(escaped, "%{byte:02X}").expect("escape source URI");
+    }
+  }
+  escaped
+}
+
+fn read_js_ffi_expression(ns: &str, def: &str, source: &JsFfiSource) -> Result<JsFfiExpression, String> {
   let sources = JS_NAMESPACE_SOURCES.read().expect("read JavaScript namespace sources");
   let owner = sources
     .get(ns)
@@ -107,9 +129,18 @@ fn read_js_ffi_expression(ns: &str, def: &str, source: &JsFfiSource) -> Result<S
       fs::read_to_string(&canonical_source).map_err(|error| format!("{ns}/{def}: failed to read JS FFI resource: {error}"))?
     }
   };
-  let expression = expression.trim().trim_end_matches(';').trim();
-  if expression.is_empty()
-    || expression
+  let mut hasher = Md5::new();
+  hasher.update(expression.as_bytes());
+  let hash = hex::encode(hasher.finalize());
+  let original = expression;
+  let trimmed_prefix_len = original.len() - original.trim_start().len();
+  let trimmed_prefix = &original[..trimmed_prefix_len];
+  let prefix_lines = source_map::js_line_slices(trimmed_prefix);
+  let original_start_line = prefix_lines.len() - 1;
+  let original_start_column = prefix_lines.last().expect("source prefix line").encode_utf16().count();
+  let code = original.trim().trim_end_matches(';').trim();
+  if code.is_empty()
+    || code
       .split(|character: char| !character.is_ascii_alphanumeric() && character != '_' && character != '$')
       .any(|token| matches!(token, "import" | "export" | "require"))
   {
@@ -117,7 +148,23 @@ fn read_js_ffi_expression(ns: &str, def: &str, source: &JsFfiSource) -> Result<S
       "{ns}/{def}: JS FFI source must be one expression without import/export/require declarations or calls"
     ));
   }
-  Ok(expression.to_owned())
+  let location = match source {
+    JsFfiSource::Inline(_) => "inline".to_owned(),
+    JsFfiSource::File { path } => format!("file/{}", ffi_source_uri_part(path, true)),
+  };
+  Ok(JsFfiExpression {
+    code: code.to_owned(),
+    original,
+    original_start_line,
+    original_start_column,
+    source_name: format!(
+      "calcit://{}@{}/{ns}/{def}/{location}?hash={hash}",
+      ffi_source_uri_part(&owner.module, false),
+      ffi_source_uri_part(if owner.version.is_empty() { "unversioned" } else { &owner.version }, false),
+      ns = ffi_source_uri_part(ns, false),
+      def = ffi_source_uri_part(def, false),
+    ),
+  })
 }
 
 struct ImportsDict(HashSet<CalcitImport>);
@@ -2194,6 +2241,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     } else {
       format!("\nimport * as $clt from {core_lib};")
     };
+    let mut ffi_line_mappings: Vec<source_map::FfiLineMapping> = vec![];
 
     let mut def_names: HashSet<Arc<str>> = HashSet::new(); // multiple parts of scoped defs need to be tracked
 
@@ -2245,16 +2293,32 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
             let mut bindings = Vec::new();
             for (index, (alias, specifier)) in source.modules.iter().enumerate() {
               let binding = format!("$ffi_{}_{}", escape_var(&def), index);
-              writeln!(import_code, "\nimport * as {binding} from {};", wrap_js_str(specifier)).expect("write");
+              writeln!(
+                import_code,
+                "\n// JS FFI module: {} alias {alias}\nimport * as {binding} from {};",
+                expression.source_name,
+                wrap_js_str(specifier)
+              )
+              .expect("write");
               aliases.push(alias.as_str());
               bindings.push(binding);
             }
+            let generated_line = source_map::js_line_slices(&defs_code).len() - 1 + 3;
+            ffi_line_mappings.push(source_map::FfiLineMapping {
+              generated_line,
+              original_line: expression.original_start_line,
+              original_first_column: expression.original_start_column,
+              code: expression.code.clone(),
+              source_name: expression.source_name.clone(),
+              source_content: expression.original.clone(),
+            });
             writeln!(
               defs_code,
-              "\n// JS FFI: {ns}/{def}\nexport var {} = (({}) => (\n{}\n))({});",
+              "\n// JS FFI: {ns}/{def} ({})\nexport var {} = (({}) => (\n{}\n))({});",
+              expression.source_name,
               escape_var(&def),
               aliases.join(", "),
-              expression,
+              expression.code,
               bindings.join(", ")
             )
             .expect("write");
@@ -2389,12 +2453,16 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     tags_code.push_str(&snippets::tmpl_tags_init(&tag_arr, tag_prefix));
 
     let js_file_path = code_emit_path.join(to_mjs_filename(ns));
-    let wrote_new = write_cached_js_artifact(
-      ns,
-      &js_file_path,
-      &format!("{import_code}{tags_code}\n{defs_code}\n\n{vals_code}\n{direct_code}"),
-      defs_in_current,
-    )?;
+    let prefix_lines = source_map::js_line_slices(&import_code).len() - 1 + source_map::js_line_slices(&tags_code).len() - 1 + 1;
+    let mut output = format!("{import_code}{tags_code}\n{defs_code}\n\n{vals_code}\n{direct_code}");
+    if !ffi_line_mappings.is_empty() {
+      output.push_str(&source_map::source_map_comment(
+        &to_mjs_filename(ns),
+        prefix_lines,
+        &ffi_line_mappings,
+      ));
+    }
+    let wrote_new = write_cached_js_artifact(ns, &js_file_path, &output, defs_in_current)?;
     if wrote_new {
       written_paths.push(js_file_path);
     } else {
@@ -2429,6 +2497,7 @@ mod tests {
       "ffi_asset_test.api".to_owned(),
       crate::JsNamespaceSource {
         module: "ffi_asset_test".to_owned(),
+        version: "0.1.0".to_owned(),
         root: source.path().to_path_buf(),
       },
     );
@@ -2436,12 +2505,12 @@ mod tests {
       path: "js/api.js".to_owned(),
     };
     assert_eq!(
-      read_js_ffi_expression("ffi_asset_test.api", "plus-one", &declaration).unwrap(),
+      read_js_ffi_expression("ffi_asset_test.api", "plus-one", &declaration).unwrap().code,
       "(x) => x + 1"
     );
     fs::write(source.path().join("js/api.js"), "(x) => x + 2;\n").expect("updated expression");
     assert_eq!(
-      read_js_ffi_expression("ffi_asset_test.api", "plus-one", &declaration).unwrap(),
+      read_js_ffi_expression("ffi_asset_test.api", "plus-one", &declaration).unwrap().code,
       "(x) => x + 2"
     );
     fs::write(source.path().join("js/api.js"), "import { add } from './helper.mjs';\nadd").expect("invalid module");
@@ -2460,6 +2529,41 @@ mod tests {
       assert!(read_js_ffi_expression("ffi_asset_test.api", "escape", &escaping).is_err());
     }
     JS_NAMESPACE_SOURCES.write().expect("namespace roots").remove("ffi_asset_test.api");
+  }
+
+  #[test]
+  fn inline_expression_keeps_original_line_and_module_identity() {
+    let root = tempfile::tempdir().expect("source root");
+    JS_NAMESPACE_SOURCES.write().expect("namespace roots").insert(
+      "inline_line_test.api".to_owned(),
+      crate::JsNamespaceSource {
+        module: "inline_line_test".to_owned(),
+        version: "0.22.0".to_owned(),
+        root: root.path().to_path_buf(),
+      },
+    );
+    let expression = read_js_ffi_expression(
+      "inline_line_test.api",
+      "run",
+      &JsFfiSource::Inline("\r\n  (x) => {\r\n    throw Error(\"测试\");\r\n  }\r\n".to_owned()),
+    )
+    .expect("inline expression");
+    assert_eq!(expression.original_start_line, 1);
+    assert_eq!(expression.original_start_column, 2);
+    assert_eq!(expression.code, "(x) => {\r\n    throw Error(\"测试\");\r\n  }");
+    assert!(
+      expression
+        .source_name
+        .starts_with("calcit://inline_line_test@0.22.0/inline_line_test.api/run/inline?hash=")
+    );
+    JS_NAMESPACE_SOURCES
+      .write()
+      .expect("namespace roots")
+      .remove("inline_line_test.api");
+    assert_eq!(
+      ffi_source_uri_part("js dir/名字?#.js", true),
+      "js%20dir/%E5%90%8D%E5%AD%97%3F%23.js"
+    );
   }
 
   #[test]
