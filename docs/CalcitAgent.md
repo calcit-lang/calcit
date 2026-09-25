@@ -644,8 +644,9 @@ JavaScript 生成使用已有的 `--emit-path`，允许目标目录的父层尚�
 
 定位模块内 JS FFI 时复用 `query`，不要猜片段路径或增加专用命令：先用
 `calcit calcit.cirru query context <namespace/definition> --format edn` 读取 Fn schema、`:js-ffi`、target、
-所属模块和 `inline`/`file` 来源；再用 `calcit calcit.cirru query def <namespace/definition>` 查看定义与
-独立的 JavaScript 代码块。查询不执行 JS，schema 也不是对 JS 实现的类型证明。文件实现应编辑所属模块根目录下的
+所属模块和 `inline`/`file` 来源；再用 `calcit calcit.cirru query def <namespace/definition>` 查看定义。
+`inline` 来源会显示独立的 JavaScript 代码块；`file` 来源只显示元数据与相对源文件路径。
+查询不执行 JS，schema 也不是对 JS 实现的类型证明。文件实现应编辑所属模块根目录下的
 相对 `.js`/`.mjs` 文件，并显式重新构建；不要改生成的 `.mjs` 或依赖 snippet 相对 import。
 完整声明、`:modules`、发布和排错流程见 `calcit docs read js-interop.md --full`。该命令读取本机配置的
 Calcit 文档目录；若读不到新章节，先更新文档 checkout，不要把旧文档或旧版 CLI 输出当作当前功能证据。
