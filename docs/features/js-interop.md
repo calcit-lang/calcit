@@ -694,7 +694,7 @@ Common diagnostics:
 
 对应文件内容为 `(value) => path.basename(value)`。生成的 JS 会保留包含定义、来源及内容 hash 的注释，并内嵌 Source Map v3。Node 运行时可加 `--enable-source-maps`，把异常栈定位到 `calcit://模块@版本/namespace/definition/file/模块相对路径?hash=...:行号:列号`；inline 实现显示 `.../inline`。只有原样嵌入的 JS 表达式映射到原文件的 UTF-16 列位置，Calcit 生成的包装代码没有伪造来源。map 与生成文件在同一产物中，搬移生成目录或显式重新构建后仍可使用对应版本的映射。当前仅保守地筛查 `import`、`export`、`require` 词元（连字符串中的同名词元也可能被拒绝），不承诺完整 JavaScript 解析或静态验证函数返回值。
 
-下游 Node 排错时，保留原始 stack，使用 `node --enable-source-maps <入口>` 重现；从 `calcit://` 行中的模块、定义和 `file/` 路径找到模块根目录下可编辑的 JS 文件。`inline` 则用 `calcit <snapshot> query def <namespace>/<definition>` 查看 Snapshot 中的实现。无需改写生成的 `.mjs`。浏览器可在开发者工具启用 JavaScript source maps 后，在同一 `calcit://` 来源定位行号；若宿主不识别内嵌 map，则依据生成文件中 `JS FFI:` 注释找定义和 source hash，再用 `query def` 核对。语法错误仍以宿主的生成文件位置及邻近注释为准；`:modules` 解析错误可查看失败的 import 上一行 `JS FFI module:` 注释，其中保留定义与别名。编译器不会替换异常对象、`cause` 或 stack 格式。
+下游 Node 排错时，保留原始 stack，使用 `node --enable-source-maps <入口>` 重现；从 `calcit://` 行中的模块、定义和 `file/` 路径找到模块根目录下可编辑的 JS 文件。`inline` 则用 `calcit <snapshot> query def <namespace>/<definition>` 查看 Snapshot 中的实现。无需改写生成的 `.mjs`。浏览器捕获到的原始 `Error.stack` 仍可能只显示生成文件的行列；在开发者工具启用 JavaScript source maps 后，用该位置查看对应的 `calcit://` 来源，不要把原始 stack 当成映射失败。若宿主不识别内嵌 map，则依据生成文件中 `JS FFI:` 注释找定义和 source hash，再用 `query def` 核对。语法错误仍以宿主的生成文件位置及邻近注释为准；`:modules` 解析错误可查看失败的 import 上一行 `JS FFI module:` 注释，其中保留定义与别名。编译器不会替换异常对象、`cause` 或 stack 格式。
 
 第一阶段仅接受 Number、String、Bool、Unit、JsObject 与相应 JsNullish 边界；不把 Calcit 集合或 nominal 值隐式当作 JS 容器。泛型、rest 参数和 async 签名暂不开放。native 调用会明确报错。JS 文件必须位于所属模块根目录内，绝对路径、`..` 和 symlink 越界会失败。实际用法与下游模块 smoke 见 `calcit/js-ffi-module/calcit.cirru`、`calcit/js-ffi-consumer.cirru` 和 `yarn check-js-ffi-source`。
 

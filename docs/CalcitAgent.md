@@ -642,6 +642,15 @@ JavaScript 生成使用已有的 `--emit-path`，允许目标目录的父层尚�
 优先审阅已安装依赖提供的 exact-schema helper，但不要据此推断运行时 trust、自动收窄 Dynamic、决定 Option/Result
 或生成业务默认值。`fix --workflow strict` 已复用同一份证据，不要再调用另一套 FFI inventory 工具。
 
+定位模块内 JS FFI 时复用 `query`，不要猜片段路径或增加专用命令：先用
+`calcit calcit.cirru query context <namespace/definition> --format edn` 读取 Fn schema、`:js-ffi`、target、
+所属模块和 `inline`/`file` 来源；再用 `calcit calcit.cirru query def <namespace/definition>` 查看定义。
+`inline` 来源会显示独立的 JavaScript 代码块；`file` 来源只显示元数据与相对源文件路径。
+查询不执行 JS，schema 也不是对 JS 实现的类型证明。文件实现应编辑所属模块根目录下的
+相对 `.js`/`.mjs` 文件，并显式重新构建；不要改生成的 `.mjs` 或依赖 snippet 相对 import。
+完整声明、`:modules`、发布和排错流程见 `calcit docs read js-interop.md --full`。该命令读取本机配置的
+Calcit 文档目录；若读不到新章节，先更新文档 checkout，不要把旧文档或旧版 CLI 输出当作当前功能证据。
+
 需要集中审阅可收窄的 schema 与数据形状时，使用
 `calcit calcit.cirru analyze weak-types --schema-evidence --format edn`。它复用 `synthesize-schema-v1` 的编译器与
 resolver call-site 证据，并补充重复 Map shape、`match` tag dispatch 的只读候选。只按 `exact`、`usage-derived`、
@@ -709,6 +718,7 @@ calcit docs read-lines agent-advanced.md --start 1 --lines 80
 | 错误排查                     | `calcit docs read debugging.md --full`；`calcit query error`            |
 | 文档图与 frontmatter         | `calcit docs read docs-indexing.md --full`；`calcit docs graph --help`  |
 | typed FFI inventory          | `calcit ffi export --json`；`calcit docs read ffi-interface-ir.md --full` |
+| 模块内 JS FFI 声明与排错       | `calcit docs read js-interop.md --full`；`calcit query context <ns/def> --format edn`；`calcit query def <ns/def>` |
 | WASM Component contract      | `calcit ffi export --boundary component`；`calcit docs read wasm-component-boundary.md --full` |
 | 安装模块的 API/示例          | `calcit docs scopes` → `calcit docs search <kw> --module <module>`      |
 | 远端类库索引与 README        | `calcit docs remote-libs search <kw>`；`calcit docs remote-libs readme <package>` |
