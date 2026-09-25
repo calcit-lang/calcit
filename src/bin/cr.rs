@@ -50,6 +50,7 @@ use calcit::cli_args::{
   AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, DeprecatedCommand, DynamicMethodsCommand,
   EffectsGraphCommand, QualityCommand, TestCommand, ToplevelCalcit, WeakTypesCommand,
 };
+use calcit::js_ffi_source::{JsFfiSource, parse_js_source};
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use colored::Colorize;
@@ -793,10 +794,20 @@ fn run_cli() -> Result<(), String> {
       },
     );
   }
-  codegen::emit_js::configure_js_namespace_sources(js_namespace_sources)?;
   apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
   let selected_entry = snapshot.active_entry()?.clone();
   let configured_run_mode = selected_entry.mode;
+  let watch_js = should_emit_js(&cli_args.subcommand, configured_run_mode)
+    && match &cli_args.subcommand {
+      Some(CalcitCommand::EmitJs(options)) => options.watch,
+      _ => cli_args.watch,
+    };
+  let js_ffi_watch_files = if watch_js {
+    collect_js_ffi_watch_files(&snapshot, &js_namespace_sources)?
+  } else {
+    HashSet::new()
+  };
+  codegen::emit_js::configure_js_namespace_sources(js_namespace_sources)?;
   let config_init = selected_entry.init_fn;
   let config_reload = selected_entry.reload_fn;
   let init_fn = cli_args.init_fn.as_deref().unwrap_or(&config_init);
@@ -973,7 +984,7 @@ fn run_cli() -> Result<(), String> {
   if !eval_once {
     runner::track::track_task_add();
     let args = cli_args.clone();
-    std::thread::spawn(move || watch_files(entries, args, assets_watch, configured_run_mode));
+    std::thread::spawn(move || watch_files(entries, args, assets_watch, js_ffi_watch_files, configured_run_mode));
   }
   #[cfg(not(target_arch = "wasm32"))]
   injection::exit_when_async_cleared()?;
@@ -1509,10 +1520,49 @@ fn run_js_unescape(symbol: &str) -> Result<(), String> {
   Ok(())
 }
 
+fn collect_js_ffi_watch_files(
+  snapshot: &snapshot::Snapshot,
+  sources: &HashMap<String, calcit::JsNamespaceSource>,
+) -> Result<HashSet<PathBuf>, String> {
+  let mut paths = HashSet::new();
+  for (namespace, owner) in sources {
+    let root = owner
+      .root
+      .canonicalize()
+      .map_err(|error| format!("{namespace}: cannot resolve JS FFI module root: {error}"))?;
+    let file = snapshot
+      .files
+      .get(namespace)
+      .ok_or_else(|| format!("{namespace}: missing JS FFI namespace in loaded Snapshot"))?;
+    for (definition, entry) in &file.defs {
+      let Some(ffi) = &entry.ffi else { continue };
+      let Some(implementation) = parse_js_source(ffi).map_err(|error| format!("{namespace}/{definition}: {error}"))? else {
+        continue;
+      };
+      let JsFfiSource::File { path } = implementation.source else {
+        continue;
+      };
+      let source = owner
+        .root
+        .join(&path)
+        .canonicalize()
+        .map_err(|error| format!("{namespace}/{definition}: cannot resolve JS FFI source `{path}`: {error}"))?;
+      if !source.starts_with(&root) || !source.is_file() {
+        return Err(format!(
+          "{namespace}/{definition}: JS FFI source `{path}` escapes its module root or is not a file"
+        ));
+      }
+      paths.insert(source);
+    }
+  }
+  Ok(paths)
+}
+
 pub fn watch_files(
   entries: ProgramEntries,
   settings: ToplevelCalcit,
   assets_watch: Option<String>,
+  js_ffi_files: HashSet<PathBuf>,
   configured_run_mode: snapshot::SnapshotRunMode,
 ) {
   println!("\nRunning: in watch mode...\n");
@@ -1536,6 +1586,18 @@ pub fn watch_files(
 
   debouncer.watcher().watch(&inc_path, RecursiveMode::NonRecursive).expect("watch");
 
+  let js_ffi_folders: HashSet<PathBuf> = js_ffi_files
+    .iter()
+    .filter_map(|path| path.parent().map(Path::to_path_buf))
+    .collect();
+  for folder in js_ffi_folders {
+    debouncer
+      .watcher()
+      .watch(&folder, RecursiveMode::NonRecursive)
+      .expect("watch JS FFI source folder");
+    println!("JS FFI sources to watch: {}", folder.display());
+  }
+
   if let Some(assets_folder) = assets_watch.as_ref() {
     match debouncer.watcher().watch(Path::new(assets_folder), RecursiveMode::Recursive) {
       Ok(_) => {
@@ -1547,9 +1609,22 @@ pub fn watch_files(
 
   while !injection::shutdown_requested() {
     match rx.recv_timeout(Duration::from_millis(100)) {
-      Ok(Ok(_event)) => {
+      Ok(Ok(events)) => {
         if injection::shutdown_requested() {
           break;
+        }
+        if settings.verbose {
+          eprintln!("watch events: {events:?}");
+        }
+        let js_ffi_changed = events
+          .iter()
+          .any(|event| js_ffi_files.contains(&event.path) || event.path.canonicalize().is_ok_and(|path| js_ffi_files.contains(&path)));
+        let inc_changed = events.iter().any(|event| event.path == inc_path);
+        if js_ffi_changed && !inc_changed && should_emit_js(&settings.subcommand, configured_run_mode) {
+          if let Err(error) = run_codegen_with_timeout(&entries, &settings.emit_path, false, settings.timeout, settings.verbose) {
+            eprintln!("failed to recompile JS FFI source: {error}");
+          }
+          continue;
         }
         // load new program code
         let mut content = fs::read_to_string(&inc_path).expect("reading inc file");

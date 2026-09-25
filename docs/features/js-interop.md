@@ -697,3 +697,5 @@ Common diagnostics:
 第一阶段仅接受 Number、String、Bool、Unit、JsObject 与相应 JsNullish 边界；不把 Calcit 集合或 nominal 值隐式当作 JS 容器。泛型、rest 参数和 async 签名暂不开放。native 调用会明确报错。JS 文件必须位于所属模块根目录内，绝对路径、`..` 和 symlink 越界会失败。实际用法与下游模块 smoke 见 `calcit/js-ffi-module/calcit.cirru`、`calcit/js-ffi-consumer.cirru` 和 `yarn check-js-ffi-source`。
 
 跨 namespace 使用时沿用普通 Calcit `:require`。示例的 `app.api` 先从 `app.main` 引用 JS FFI 定义并包装为 `plus-four`、`file-label`、`next-count`；下游 `test-nil.main` 同时直接引用 `app.main` 和引用 `app.api`。回归脚本把模块与消费者复制到独立源码目录构建，再搬移生成目录执行，确认两条 Calcit 引用路径共享同一个有状态定义，且没有 snippet 专用 import、路径补丁或软链接。这仍不是已发布模块的干净安装验收；该步骤由 #1360 跟进。
+
+运行 `calcit <snapshot> js -w` 时，已声明的 `:file` JS 源码会进入现有 watcher：直接保存或原子替换文件都会重新生成 JS，无需触碰 Calcit Snapshot 或 `.compact-inc.cirru`。普通单次构建与只读查询不启用这些文件 watcher。`yarn check-js-ffi-source` 覆盖两种保存方式及跨 namespace wrapper 的更新行为。

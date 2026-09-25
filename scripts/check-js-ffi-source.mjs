@@ -1,8 +1,17 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import { cp, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { cp, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
+
+async function waitFor(check, description) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (await check()) return;
+    await delay(100);
+  }
+  throw new Error(`Timed out waiting for ${description}`);
+}
 
 const repository = fileURLToPath(new URL("..", import.meta.url));
 const fixture = await mkdtemp(join(repository, "target/js-ffi-fixture-"));
@@ -58,7 +67,40 @@ try {
   assert.equal(module.count_a(), 3);
   assert.equal(api.next_count(), 4, "normal Calcit imports must share one JS FFI definition instance");
   assert.notEqual(module.count_a, module.count_b, "each Calcit definition receives its own expression instance");
-  console.log("embedded inline/file JS FFI and ordinary cross-namespace imports passed");
+  const watchOutput = join(fixture, "watch-generated");
+  const watcher = spawn(resolve(repository, "target/debug/calcit"), [input, "--emit-path", watchOutput, "js", "-w"], {
+    cwd: fixture,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let watchLogs = "";
+  watcher.stdout.on("data", (data) => { watchLogs += data.toString(); });
+  watcher.stderr.on("data", (data) => { watchLogs += data.toString(); });
+  try {
+    await waitFor(() => watchLogs.includes("Running: in watch mode") && watchLogs.includes("JS FFI sources to watch"), `JS FFI watcher readiness: ${watchLogs}`);
+    await writeFile(join(fixture, "js-ffi-module/js-ffi-assets/add-two.js"), "(value) => value + 3\n");
+    try {
+      await waitFor(async () => {
+        const code = await readFile(join(watchOutput, "app.main.mjs"), "utf8").catch(() => "");
+        return code.includes("(value) => value + 3");
+      }, "JS-only watch rebuild");
+    } catch (error) {
+      throw new Error(`${error}\nWatcher output:\n${watchLogs}`);
+    }
+    assert.equal(watcher.exitCode, null, `watcher stopped early: ${watchLogs}`);
+    const updated = await import(pathToFileURL(join(watchOutput, "app.api.mjs")).href);
+    assert.equal(updated.plus_four(2), 8);
+    const replacement = join(fixture, "js-ffi-module/js-ffi-assets/add-two.js.next");
+    await writeFile(replacement, "(value) => value + 4\n");
+    await rename(replacement, join(fixture, "js-ffi-module/js-ffi-assets/add-two.js"));
+    await waitFor(async () => {
+      const code = await readFile(join(watchOutput, "app.main.mjs"), "utf8");
+      return code.includes("(value) => value + 4");
+    }, "atomic JS-only watch rebuild");
+  } finally {
+    watcher.kill("SIGINT");
+    await waitFor(() => watcher.exitCode !== null || watcher.signalCode !== null, "watcher shutdown");
+  }
+  console.log("embedded JS FFI, ordinary Calcit imports, and JS-only watch rebuild passed");
 } finally {
   await rm(fixture, { recursive: true, force: true });
   await rm(relocated, { recursive: true, force: true });
