@@ -54,7 +54,9 @@ try {
       assert.doesNotMatch(await readFile(join(browserOutput, name), "utf8"), /from "node:path"/);
     }
   }
-  assert.match(await readFile(join(browserOutput, "app.main.mjs"), "utf8"), /JS FFI: app\.main\/browser-available\?/);
+  const browserModule = await readFile(join(browserOutput, "app.main.mjs"), "utf8");
+  assert.match(browserModule, /JS FFI: app\.main\/browser-available\?/);
+  assert.doesNotMatch(browserModule, /JS FFI: app\.main\/(?:plus-one|plus-two|base-name)/);
   const crossTarget = spawnSync(resolve(repository, "target/debug/calcit"), [browserInput, "--init-fn", "test-nil.main/main!", "--check-only"], {
     cwd: fixture,
     encoding: "utf8",
@@ -80,6 +82,7 @@ try {
   const apiSource = await readFile(join(generated, "app.api.mjs"), "utf8");
   const consumerSource = await readFile(join(generated, "test-nil.main.mjs"), "utf8");
   assert.match(source, /JS FFI: app\.main\/plus-two/);
+  assert.match(source, /JS FFI: app\.main\/plus-one/);
   assert.doesNotMatch(source, /JS FFI: app\.main\/browser-available\?/);
   assert.match(source, /sourceMappingURL=data:application\/json;base64,/);
   assert.match(source, /JS FFI module: calcit:\/\/app@[^\n]+ alias path\nimport \* as [^\n]+ from "node:path"/);
