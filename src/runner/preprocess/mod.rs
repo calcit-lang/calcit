@@ -466,6 +466,15 @@ fn ensure_ns_def_preprocessed(
   let ns = raw_ns;
   let def = raw_def;
 
+  // Check references before the compiled cache: host-specific functions must
+  // not escape as values into an entry with a different target.
+  if program::lookup_def_ffi(ns, def)
+    .as_ref()
+    .is_some_and(|ffi| crate::snapshot::ffi_metadata_value(ffi, "js").is_some())
+  {
+    validate_js_ffi_definition_target("embedded JS FFI reference", None, ns, def, call_stack)?;
+  }
+
   if program::lookup_compiled_def(ns, def).is_some() {
     return Ok(());
   }
