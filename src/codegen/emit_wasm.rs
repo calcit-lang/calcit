@@ -1283,6 +1283,18 @@ fn validate_wasm_target_in_program(
   init_def: &str,
   target: WasmTarget,
 ) -> Result<(), String> {
+  for (namespace, file) in program_data {
+    for definition in file.defs.keys() {
+      if program::lookup_def_ffi(namespace, definition)
+        .as_ref()
+        .is_some_and(|ffi| crate::js_ffi_source::parse_js_source(ffi).ok().flatten().is_some())
+      {
+        return Err(format!(
+          "E_WASM_UNSUPPORTED_JS_FFI: `{namespace}/{definition}` has a JavaScript implementation; WASM cannot lower this definition"
+        ));
+      }
+    }
+  }
   if target == WasmTarget::Core {
     return Ok(());
   }

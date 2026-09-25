@@ -115,6 +115,8 @@ fn run_check_only(entries: &ProgramEntries, target: WasmTarget, boundary: WasmBo
     &check_warnings,
   )?;
 
+  codegen::emit_wasm::validate_wasm_target(&entries.init_ns, &entries.init_def, target)?;
+
   if target == WasmTarget::Wasi {
     preprocess_wasm_namespace(entries, &check_warnings)?;
     codegen::emit_wasm::validate_wasm_target(&entries.init_ns, &entries.init_def, target)?;

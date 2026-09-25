@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 #[allow(unused_imports)]
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -679,6 +679,7 @@ fn run_cli() -> Result<(), String> {
   let input_path_str = input_path.to_string_lossy().to_string();
   let base_dir = input_path.parent().expect("extract parent");
   let module_folder = calcit::project_module_folder(base_dir);
+  let mut js_namespace_sources: HashMap<String, calcit::JsNamespaceSource> = HashMap::new();
   if !calcit::quiet_tool_output() {
     eprintln!("{}", format!("project module folder: {}", module_folder.display()).dimmed());
   }
@@ -705,8 +706,18 @@ fn run_cli() -> Result<(), String> {
     }
 
     for module_path in &command.dep {
-      let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
-      calcit::merge_project_module_files(&mut snapshot, &module_data, module_path)?;
+      let loaded = calcit::load_module_with_sources(module_path, base_dir, &module_folder)?;
+      for (namespace, source) in loaded.namespace_sources {
+        if let Some(previous) = js_namespace_sources.insert(namespace.clone(), source.clone())
+          && previous != source
+        {
+          return Err(format!(
+            "namespace `{namespace}` has conflicting JS FFI source owners: {:?} and {:?}",
+            previous, source
+          ));
+        }
+      }
+      calcit::merge_project_module_files(&mut snapshot, &loaded.snapshot, module_path)?;
     }
   } else {
     calcit::validate_snapshot_path(&input_path)?;
@@ -745,10 +756,44 @@ fn run_cli() -> Result<(), String> {
       }
     }
     for module_path in &module_paths {
-      let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
-      calcit::merge_project_module_files(&mut snapshot, &module_data, module_path)?;
+      let loaded = calcit::load_module_with_sources(module_path, base_dir, &module_folder)?;
+      for (namespace, source) in loaded.namespace_sources {
+        if let Some(previous) = js_namespace_sources.insert(namespace.clone(), source.clone())
+          && previous != source
+        {
+          return Err(format!(
+            "namespace `{namespace}` has conflicting JS FFI source owners: {:?} and {:?}",
+            previous, source
+          ));
+        }
+      }
+      calcit::merge_project_module_files(&mut snapshot, &loaded.snapshot, module_path)?;
     }
   }
+  for namespace in &project_namespaces {
+    if !snapshot.files.get(namespace).is_some_and(|file| {
+      file.defs.values().any(|entry| {
+        entry
+          .ffi
+          .as_ref()
+          .is_some_and(|ffi| calcit::js_ffi_source::parse_js_source(ffi).ok().flatten().is_some())
+      })
+    }) {
+      continue;
+    }
+    js_namespace_sources.insert(
+      namespace.clone(),
+      calcit::JsNamespaceSource {
+        module: snapshot.package.clone(),
+        root: if base_dir.as_os_str().is_empty() {
+          PathBuf::from(".")
+        } else {
+          base_dir.to_path_buf()
+        },
+      },
+    );
+  }
+  codegen::emit_js::configure_js_namespace_sources(js_namespace_sources)?;
   apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
   let selected_entry = snapshot.active_entry()?.clone();
   let configured_run_mode = selected_entry.mode;

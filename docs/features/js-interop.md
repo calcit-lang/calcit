@@ -665,4 +665,25 @@ Common diagnostics:
 | `E_JS_FFI_NULLABLE_DEREF` | Strict project source dereferences `JsNullish<JsObject>` directly. | Use optional access or narrow with a dedicated JS predicate. |
 | `E_JS_FFI_NULLABLE_PREDICATE` | Strict project source applies legacy `nil?`/`some?` to `JsNullish<T>`. | Use `js-nullish?`/`js-present?`, then convert explicitly if needed. |
 | `E_JS_FFI_FIELD_READONLY` | A typed external field is written without permission. | Add the field to `:ffi :writable` only if the host API permits it. |
+
+## 模块内 JS 实现（0.22 预览）
+
+定义级 `:ffi :js` 可以指定一个 JS 函数表达式，或指定当前 Calcit 模块根目录下的 ESM 文件及具名导出。调用者只需加载 Calcit 模块并按普通 namespace 引用该定义；不必为了这段实现另装 npm 包。两个形式都要求完整的 `Fn` schema 和显式 `:js-ffi` feature。schema 是作者承诺的外部边界，编译器不解析 JS 来证明返回值。
+
+```cirru.no-check
+:schema $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'Number)
+  :features $ #{} :js-ffi
+:ffi $ {} (:target :node)
+  :js $ {} $ :inline "|(x) => x + 1"
+```
+
+文件形式把相对路径和导出名写在同一个定义中。被本地 `import` 引用的 helper 文件必须显式列在 `:assets`；这些文件随生成产物保留相对目录，原始字节不经过 Cirru 格式化。
+
+```cirru.no-check
+:ffi $ {} (:target :node)
+  :js $ {} (:file |js-ffi-assets/math.mjs) (:export |addTwo)
+    :assets $ [] |js-ffi-assets/helper.mjs
+```
+
+第一阶段仅接受 Number、String、Bool、Unit、JsObject 与相应 JsNullish 边界；不把 Calcit 集合或 nominal 值隐式当作 JS 容器。泛型、rest 参数和 async 签名暂不开放。native 调用会明确报错。JS 文件必须位于所属模块根目录内，绝对路径、`..` 和 symlink 越界会失败。实际用法与下游模块 smoke 见 `calcit/js-ffi-module/calcit.cirru`、`calcit/js-ffi-consumer.cirru` 和 `yarn check-js-ffi-source`。
 ```
