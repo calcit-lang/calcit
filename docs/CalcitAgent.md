@@ -49,7 +49,7 @@ CLI 不传格式参数时保持适合人类 review 的 Markdown-compatible 输�
 calcit query context '<namespace/definition>' --format edn
 calcit query search '<existing-leaf>' --filter '<namespace/definition>' --exact
 calcit tree show '<namespace/definition>' --path '<path-from-search>'
-calcit tree search-replace '<namespace/definition>' --pattern '<existing-leaf>' --code 'quote <replacement-leaf>'
+calcit tree search-replace '<namespace/definition>' --pattern '<existing-leaf>' --input-format cirru --code 'quote <replacement-leaf>'
 calcit tree show '<namespace/definition>' --path '<path-from-search>'
 calcit --check-only
 calcit test '<namespace>/<definition>' --require-match
@@ -306,7 +306,7 @@ calcit query context '<namespace/definition>' --format edn
 calcit query search '<existing-leaf>' --filter '<namespace/definition>' --exact
 calcit query search '<existing-leaf>' --filter '<namespace/definition>' --exact --set-cursor 0
 calcit cursor show
-calcit cursor apply replace --code 'quote <replacement-leaf>'
+calcit cursor apply replace --input-format cirru --code 'quote <replacement-leaf>'
 calcit tree show @cursor --path @cursor
 calcit query type-at @cursor --path @cursor --format edn
 calcit --entry '<target-entry>' calcit.cirru analyze check-public --ns '<public-namespace>' --format json
@@ -329,7 +329,7 @@ calcit test '<namespace>/<definition>'
 ```bash
 calcit query search '|Old title' --filter 'app.main/comp-page' --exact
 calcit tree search-replace 'app.main/comp-page' \
-  --pattern '|Old title' --code 'quote "|New title"'
+  --pattern '|Old title' --input-format cirru --code 'quote "|New title"'
 calcit query search '|New title' --filter 'app.main/comp-page' --exact
 ```
 
@@ -340,7 +340,7 @@ calcit query search '|New title' --filter 'app.main/comp-page' --exact
 ```bash
 calcit query search '<leaf-in-expression>' --filter '<namespace/definition>' --exact --set-cursor 0
 calcit cursor parent
-calcit cursor apply insert-after --code 'quote $ <new-expression>'
+calcit cursor apply insert-after --input-format cirru --code 'quote $ <new-expression>'
 calcit --cursor-after focus cursor next
 ```
 
@@ -349,9 +349,9 @@ calcit --cursor-after focus cursor next
 ```bash
 calcit edit add-ns app.util
 calcit edit def 'app.util/double' \
-  --code 'quote $ defn double (x) (* x 2)'
+  --input-format cirru --code 'quote $ defn double (x) (* x 2)'
 calcit edit add-import app.main \
-  --code 'quote $ app.util :refer $ double'
+  --input-format cirru --code 'quote $ app.util :refer $ double'
 calcit query def 'app.util/double'
 calcit --check-only
 ```
@@ -588,14 +588,16 @@ empty list/map: quote $ []      /    quote $ {}
 
 | 输入方式              | 适用场景                             |
 | --------------------- | ------------------------------------ |
-| `--code 'quote ...'`  | 简短单行输入                         |
+| `--input-format cirru --code 'quote ...'` | 简短单行 Cirru 输入 |
 | `--file <file>`       | 需要复用、审阅或 transaction 的输入；临时文件放 `.calcit/snippets/` |
 | 省略两者，从 stdin 读 | 一次性多行内容，避免 Shell 转义      |
+
+三种方式都按实际内容显式选择 `--input-format cirru` 或 `--input-format json-ast`；不要依赖仅供旧脚本兼容的 `auto`。
 
 修改命令没有 `--stdin` 参数。多行内容直接省略 `--file/--code`：
 
 ```bash
-calcit tree replace 'app.main/main!' --path '@3.1' <<'END'
+calcit tree replace 'app.main/main!' --path '@3.1' --input-format cirru <<'END'
 quote $ if ready?
   render-ready
   render-loading
@@ -628,7 +630,7 @@ JavaScript 生成使用已有的 `--emit-path`，允许目标目录的父层尚�
 
 `type-at` 的 unresolved/dynamic warning 只表示静态证据不足；`check-examples` 输出 `No functions with examples` 且退出 0 只表示没有 example 覆盖。二者都不是完成证明，仍要继续项目级 check、测试和目标 codegen。
 
-`calcit query tests <ns>/<def>` 查询 definition-attached tests；`calcit edit add-test <ns>/<def> <name> --code 'quote $ ...'` 添加稳定命名的测试，`calcit edit rm-test <ns>/<def> <name>` 按名称删除。`calcit test --affected <ns>/<def>` 使用编译后的传递依赖图选择测试；静态分析失败的测试会保守地被选中并报告为失败，不会静默漏测。
+`calcit query tests <ns>/<def>` 查询 definition-attached tests；`calcit edit add-test <ns>/<def> <name> --input-format cirru --code 'quote $ ...'` 添加稳定命名的测试，`calcit edit rm-test <ns>/<def> <name>` 按名称删除。`calcit test --affected <ns>/<def>` 使用编译后的传递依赖图选择测试；静态分析失败的测试会保守地被选中并报告为失败，不会静默漏测。
 
 不要用多个 `'Dynamic` 假装多态：参数与返回共享类型时声明 `:generics`/TypeVar，只依赖能力时增加 trait `:where`，同质 collection/ref 保留 type arg，有限异构值使用 enum。类型写法统一用 quoted symbols，例如 `'String`、`'Number`、`'List` 和 `'Dynamic`；`:any`、`:dynamic` 等旧 tag 写法仅为兼容输入，运行 `calcit edit format` 后会在类型位置规范化。只有明确的 FFI、global state 或 macro 边界保留 dynamic，并尽快在进入 typed code 时 validate/convert。
 

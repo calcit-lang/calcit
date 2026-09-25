@@ -119,7 +119,7 @@ fn compact_agent_contract_is_versioned_bounded_and_embedded_in_the_full_guide() 
 
   assert_eq!(AGENT_MUTATION_CONTRACT_VERSION, 1);
   assert_eq!(contract, repeated);
-  assert_eq!(contract.digest, "md5:36cd648e816feb68a11aa59f4e68fb0b");
+  assert_eq!(contract.digest, "md5:8c8ec6f23fb90ce07867f2a77d0bd193");
   assert!(contract.content.lines().count() <= 40, "contract should stay cheap to reload");
   assert!(contract.content.len() <= 5_000, "contract should stay compact");
   assert!(EMBEDDED_AGENTS_DOC.contains(&contract.content));
