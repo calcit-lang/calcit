@@ -194,7 +194,25 @@ try {
   assert.notEqual(syntax.status, 0, "invalid external JavaScript must fail syntax validation");
   assert.match(syntax.stderr, /SyntaxError/);
   assert.match(syntax.stderr, /app\.main\.mjs/);
-  console.log("embedded JS FFI, runtime contract failures, ordinary Calcit imports, exception stack, and explicit JS-only rebuild passed");
+  await writeFile(fileExpression, "(value) => value + 2\n");
+  const renamedExpression = join(fixture, "js-ffi-module/js-ffi-assets/add-two-renamed.js");
+  await rename(fileExpression, renamedExpression);
+  execFileSync(resolve(repository, "target/debug/calcit"), [
+    moduleSnapshot,
+    "edit", "ffi", "app.main/plus-two",
+    "--code", "{} (:target :node) (:js $ {} $ :file |js-ffi-assets/add-two-renamed.js)",
+  ], { cwd: fixture, stdio: "pipe" });
+  rebuild();
+  const renamedSource = await readFile(join(rebuilt, "app.main.mjs"), "utf8");
+  assert.match(renamedSource, /JS FFI: app\.main\/plus-two \(calcit:\/\/app@[^/]+\/app\.main\/plus-two\/file\/js-ffi-assets\/add-two-renamed\.js\?hash=/);
+  const sourceMapData = renamedSource.match(/sourceMappingURL=data:application\/json;base64,([^\n]+)/)?.[1];
+  assert.ok(sourceMapData, "renamed JS FFI must emit a source map");
+  const renamedMap = JSON.parse(Buffer.from(sourceMapData, "base64").toString("utf8"));
+  assert.ok(renamedMap.sources.some((sourceName) => sourceName.includes("/file/js-ffi-assets/add-two-renamed.js?hash=")));
+  assert.ok(renamedMap.sources.every((sourceName) => !sourceName.includes("/file/js-ffi-assets/add-two.js?hash=")));
+  assert.ok(renamedMap.sourcesContent.includes("(value) => value + 2\n"));
+  execFileSync(process.execPath, ["--check", join(rebuilt, "app.main.mjs")]);
+  console.log("embedded JS FFI, runtime contract failures, ordinary Calcit imports, exception stack, and explicit JS-only rebuild/rename passed");
 } finally {
   await rm(fixture, { recursive: true, force: true });
   await rm(relocated, { recursive: true, force: true });
