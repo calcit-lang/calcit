@@ -699,3 +699,13 @@ Common diagnostics:
 跨 namespace 使用时沿用普通 Calcit `:require`。示例的 `app.api` 先从 `app.main` 引用 JS FFI 定义并包装为 `plus-four`、`file-label`、`next-count`；下游 `test-nil.main` 同时直接引用 `app.main` 和引用 `app.api`。回归脚本把模块与消费者复制到独立源码目录构建，再搬移生成目录执行，确认两条 Calcit 引用路径共享同一个有状态定义，且没有 snippet 专用 import、路径补丁或软链接。这仍不是已发布模块的干净安装验收；该步骤由 #1360 跟进。
 
 运行 `calcit <snapshot> js -w` 时，已声明的 `:file` JS 源码会进入现有 watcher：直接保存或原子替换文件都会重新生成 JS，无需触碰 Calcit Snapshot 或 `.compact-inc.cirru`。普通单次构建与只读查询不启用这些文件 watcher。`yarn check-js-ffi-source` 覆盖两种保存方式及跨 namespace wrapper 的更新行为。
+
+Agent 排查时先用现有查询入口，不需要猜依赖模块或 JS 文件的路径：
+
+```bash
+calcit calcit/js-ffi-consumer.cirru query context app.main/base-name --format edn
+calcit calcit/js-ffi-consumer.cirru query def app.main/base-name
+calcit calcit/js-ffi-consumer.cirru query def app.main/plus-one --raw
+```
+
+`query context` 的 `:js-ffi` 给出 target、所属模块、模块根目录、`inline`/`file` 来源、模块相对文件路径和显式外部模块；`:next` 指向完整 `query def`。后者在 Markdown 输出中将元数据与 inline JavaScript 的 `javascript` 代码块分开，`--format edn` 保留原生 FFI 数据，`--format json` 只在 JSON 工具链需要时显式选用。查询只读取元数据，不执行 JS。`Fn` schema 是作者声明，不代表编译器已验证 JS 的参数和返回值；仍需外部语法检查与真实宿主运行。文件实现直接编辑 `module root + source file`，不要修改生成的 `.mjs`。这一步只提供定义级定位；精确 JS 源行映射由 #1362 完成。
