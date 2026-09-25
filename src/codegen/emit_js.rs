@@ -2532,6 +2532,55 @@ mod tests {
   }
 
   #[test]
+  fn module_file_expression_resolves_equal_paths_with_their_owners() {
+    let first = tempfile::tempdir().expect("first module root");
+    let second = tempfile::tempdir().expect("second module root");
+    for (root, expression) in [(first.path(), "(x) => x + 1"), (second.path(), "(x) => x + 2")] {
+      fs::create_dir_all(root.join("js")).expect("JS resource directory");
+      fs::write(root.join("js/api.js"), expression).expect("module-owned expression");
+    }
+    {
+      let mut sources = JS_NAMESPACE_SOURCES.write().expect("namespace roots");
+      sources.insert(
+        "ffi_owner_a.api".to_owned(),
+        crate::JsNamespaceSource {
+          module: "ffi_owner_a".to_owned(),
+          version: "0.1.0".to_owned(),
+          root: first.path().to_path_buf(),
+        },
+      );
+      sources.insert(
+        "ffi_owner_b.api".to_owned(),
+        crate::JsNamespaceSource {
+          module: "ffi_owner_b".to_owned(),
+          version: "0.2.0".to_owned(),
+          root: second.path().to_path_buf(),
+        },
+      );
+    }
+    let declaration = JsFfiSource::File {
+      path: "js/api.js".to_owned(),
+    };
+    let first_expression = read_js_ffi_expression("ffi_owner_a.api", "run", &declaration).expect("first expression");
+    let second_expression = read_js_ffi_expression("ffi_owner_b.api", "run", &declaration).expect("second expression");
+    assert_eq!(first_expression.code, "(x) => x + 1");
+    assert_eq!(second_expression.code, "(x) => x + 2");
+    assert!(
+      first_expression
+        .source_name
+        .starts_with("calcit://ffi_owner_a@0.1.0/ffi_owner_a.api/run/file/js/api.js?hash=")
+    );
+    assert!(
+      second_expression
+        .source_name
+        .starts_with("calcit://ffi_owner_b@0.2.0/ffi_owner_b.api/run/file/js/api.js?hash=")
+    );
+    let mut sources = JS_NAMESPACE_SOURCES.write().expect("namespace roots");
+    sources.remove("ffi_owner_a.api");
+    sources.remove("ffi_owner_b.api");
+  }
+
+  #[test]
   fn inline_expression_keeps_original_line_and_module_identity() {
     let root = tempfile::tempdir().expect("source root");
     JS_NAMESPACE_SOURCES.write().expect("namespace roots").insert(
