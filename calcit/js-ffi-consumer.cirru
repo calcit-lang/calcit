@@ -14,7 +14,10 @@
           :code $ quote $ defn main! ()
             assert= 3 $ plus-one 2
             assert= 4 $ plus-two 2
+            assert= 6 $ plus-four 2
+            assert= |example.txt $ file-label |/tmp/example.txt
             assert= 1 $ count-a
+            assert= 2 $ next-count
             assert= 1 $ count-b
             println |consumer-ok
           :examples $ []
@@ -27,4 +30,6 @@
             :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-nil.main
-          :require $ app.main :refer $ plus-one plus-two count-a count-b
+          :require
+            app.main :refer $ plus-one plus-two count-a count-b
+            app.api :refer $ plus-four file-label next-count

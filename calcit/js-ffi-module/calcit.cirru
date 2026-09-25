@@ -7,8 +7,29 @@
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
-  :files $ {} $ 'app.main
-    %{} 'FileEntry
+  :files $ {}
+    'app.api $ %{} 'FileEntry
+      :defs $ {}
+        'file-label $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn file-label (x) (base-name x)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String
+        'next-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn next-count () (count-a)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'plus-four $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn plus-four (x)
+            plus-two $ plus-two x
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.api
+          :require $ app.main :refer $ plus-two base-name count-a
+    'app.main $ %{} 'FileEntry
       :defs $ {}
         'base-name $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn base-name (x) x

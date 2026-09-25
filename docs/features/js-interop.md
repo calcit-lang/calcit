@@ -695,4 +695,5 @@ Common diagnostics:
 对应文件内容为 `(value) => path.basename(value)`。生成的 JS 会保留 `app.main/base-name` 注释作为定位锚点；Node 的语法检查和运行时堆栈仍指向生成文件及其行号，后续可再提供精确 source map。当前仅保守地筛查 `import`、`export`、`require` 词元（连字符串中的同名词元也可能被拒绝），不承诺完整 JavaScript 解析或静态验证函数返回值。
 
 第一阶段仅接受 Number、String、Bool、Unit、JsObject 与相应 JsNullish 边界；不把 Calcit 集合或 nominal 值隐式当作 JS 容器。泛型、rest 参数和 async 签名暂不开放。native 调用会明确报错。JS 文件必须位于所属模块根目录内，绝对路径、`..` 和 symlink 越界会失败。实际用法与下游模块 smoke 见 `calcit/js-ffi-module/calcit.cirru`、`calcit/js-ffi-consumer.cirru` 和 `yarn check-js-ffi-source`。
-```
+
+跨 namespace 使用时沿用普通 Calcit `:require`。示例的 `app.api` 先从 `app.main` 引用 JS FFI 定义并包装为 `plus-four`、`file-label`、`next-count`；下游 `test-nil.main` 同时直接引用 `app.main` 和引用 `app.api`。回归脚本把模块与消费者复制到独立源码目录构建，再搬移生成目录执行，确认两条 Calcit 引用路径共享同一个有状态定义，且没有 snippet 专用 import、路径补丁或软链接。这仍不是已发布模块的干净安装验收；该步骤由 #1360 跟进。
