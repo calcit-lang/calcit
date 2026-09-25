@@ -379,6 +379,7 @@ struct DefinitionContextData {
 struct JsFfiQueryInfo {
   target: Option<String>,
   owner_module: Option<String>,
+  owner_version: Option<String>,
   module_root: Option<String>,
   source_kind: Option<&'static str>,
   source_file: Option<String>,
@@ -2734,7 +2735,10 @@ fn js_ffi_owner(input_path: &str, snapshot: &snapshot::Snapshot, namespace: &str
   if snapshot.files.contains_key(namespace) && namespace_source(snapshot, namespace) == "project" {
     return Some(calcit::JsNamespaceSource {
       module: snapshot.package.clone(),
-      version: snapshot.version.clone(),
+      version: calcit::module_manifest_version(base_dir)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| snapshot.version.clone()),
       root: base_dir.to_path_buf(),
     });
   }
@@ -2770,6 +2774,7 @@ fn js_ffi_query_info(input_path: &str, snapshot: &snapshot::Snapshot, namespace:
   Some(JsFfiQueryInfo {
     target,
     owner_module: owner.as_ref().map(|source| source.module.clone()),
+    owner_version: owner.as_ref().map(|source| source.version.clone()),
     module_root: owner.map(|source| source.root.canonicalize().unwrap_or(source.root).to_string_lossy().into_owned()),
     source_kind,
     source_file,
@@ -2783,6 +2788,11 @@ fn render_js_ffi_info(info: &JsFfiQueryInfo, inline_source: Option<&str>) -> Str
   let _ = writeln!(&mut out, "## JavaScript implementation\n");
   let _ = writeln!(&mut out, "- Target: `{}`", info.target.as_deref().unwrap_or("unknown"));
   let _ = writeln!(&mut out, "- Owner module: `{}`", info.owner_module.as_deref().unwrap_or("unknown"));
+  let _ = writeln!(
+    &mut out,
+    "- Owner version: `{}`",
+    info.owner_version.as_deref().unwrap_or("unknown")
+  );
   if let Some(root) = &info.module_root {
     let _ = writeln!(&mut out, "- Module root: `{root}`");
   }

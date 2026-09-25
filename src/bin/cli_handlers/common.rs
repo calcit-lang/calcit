@@ -266,22 +266,7 @@ pub fn deps_path_for_snapshot(snapshot_path: &str) -> String {
 /// Snapshot. Project versions moved out of `calcit.cirru`, so read-only tools
 /// must not report the compatibility value still present in older snapshots.
 pub fn package_version_for_snapshot(snapshot_path: &str) -> Result<Option<String>, String> {
-  let deps_path = deps_path_for_snapshot(snapshot_path);
-  if !Path::new(&deps_path).exists() {
-    return Ok(None);
-  }
-
-  let content = fs::read_to_string(&deps_path).map_err(|error| format!("Failed to read {deps_path}: {error}"))?;
-  let data = cirru_edn::parse(&content).map_err(|error| format!("Failed to parse {deps_path}: {error}"))?;
-  let deps = data
-    .view_map()
-    .map_err(|error| format!("Invalid dependency manifest {deps_path}: {error}"))?;
-  match deps.get_or_nil("version") {
-    Edn::Str(version) if version.trim().is_empty() || version.as_ref() == "|" => Ok(None),
-    Edn::Str(version) => Ok(Some(version.to_string())),
-    Edn::Nil => Ok(None),
-    value => Err(format!("Invalid :version in {deps_path}: expected a string, got {value}")),
-  }
+  calcit::module_manifest_version(Path::new(snapshot_path).parent().unwrap_or_else(|| Path::new(".")))
 }
 
 /// Refuse to rewrite a Snapshot with a different Calcit release than the one
