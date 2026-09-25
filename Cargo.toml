@@ -2,7 +2,7 @@
 [package]
 name = "calcit"
 autobins = false
-version = "0.22.0-alpha.1"
+version = "0.22.0-alpha.2"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2024"
 license = "MIT"
