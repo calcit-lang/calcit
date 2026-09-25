@@ -60,6 +60,40 @@ try {
   assert.equal(module.count_a(), 3);
   assert.equal(api.next_count(), 4, "normal Calcit imports must share one JS FFI definition instance");
   assert.notEqual(module.count_a, module.count_b, "each Calcit definition receives its own expression instance");
+  const fileExpression = join(fixture, "js-ffi-module/js-ffi-assets/add-two.js");
+  const originalExpression = await readFile(fileExpression, "utf8");
+  const buildContractCase = (name) => {
+    const caseOutput = join(fixture, `contract-${name}`);
+    execFileSync(resolve(repository, "target/debug/calcit"), [input, "--emit-path", caseOutput, "js"], {
+      cwd: fixture,
+      stdio: "pipe",
+    });
+    execFileSync(process.execPath, ["--check", join(caseOutput, "app.main.mjs")]);
+    return caseOutput;
+  };
+  await writeFile(fileExpression, "42\n");
+  const nonFunctionOutput = buildContractCase("non-function");
+  const nonFunction = spawnSync(process.execPath, ["--input-type=module", "-e", 'import("./app.main.mjs").then((module) => module.plus_two(2))'], {
+    cwd: nonFunctionOutput,
+    encoding: "utf8",
+  });
+  assert.notEqual(nonFunction.status, 0, "a syntactically valid non-function must fail when the Calcit definition is called");
+  assert.match(nonFunction.stderr, /TypeError/);
+  for (const [name, expression, actual] of [
+    ["wrong-return", '() => "wrong"\n', "wrong"],
+    ["null-return", "() => null\n", "null"],
+    ["undefined-return", "() => undefined\n", "undefined"],
+  ]) {
+    await writeFile(fileExpression, expression);
+    const caseOutput = buildContractCase(name);
+    const observed = spawnSync(process.execPath, ["--input-type=module", "-e", 'import("./app.main.mjs").then((module) => { const value = module.plus_two(2); if (typeof value !== "number") { console.error(`FFI_RETURN_CONTRACT_MISMATCH:${String(value)}`); process.exitCode = 23; } })'], {
+      cwd: caseOutput,
+      encoding: "utf8",
+    });
+    assert.equal(observed.status, 23, `${name} must remain visible to an external runtime-contract check`);
+    assert.match(observed.stderr, new RegExp(`FFI_RETURN_CONTRACT_MISMATCH:${actual}`));
+  }
+  await writeFile(fileExpression, originalExpression);
   const rebuilt = join(fixture, "rebuilt");
   const rebuild = () => execFileSync(resolve(repository, "target/debug/calcit"), [input, "--emit-path", rebuilt, "js"], {
     cwd: fixture,
@@ -112,7 +146,7 @@ try {
   assert.notEqual(syntax.status, 0, "invalid external JavaScript must fail syntax validation");
   assert.match(syntax.stderr, /SyntaxError/);
   assert.match(syntax.stderr, /app\.main\.mjs/);
-  console.log("embedded JS FFI, ordinary Calcit imports, exception stack, and explicit JS-only rebuild passed");
+  console.log("embedded JS FFI, runtime contract failures, ordinary Calcit imports, exception stack, and explicit JS-only rebuild passed");
 } finally {
   await rm(fixture, { recursive: true, force: true });
   await rm(relocated, { recursive: true, force: true });
