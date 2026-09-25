@@ -23,6 +23,7 @@ use calcit::cli_args::{
 };
 use calcit::data::cirru::code_to_calcit;
 use calcit::data::edn::format_edn_display;
+use calcit::js_ffi_source::{JsFfiSource, parse_js_source};
 use calcit::load_core_snapshot;
 use calcit::project_state::{self, ERROR_STATE_FILE};
 use calcit::snapshot;
@@ -364,6 +365,7 @@ struct DefinitionContextData {
   tags: Vec<String>,
   schema: Option<String>,
   features: Vec<String>,
+  js_ffi: Option<JsFfiQueryInfo>,
   code: ContextCode,
   examples: ContextCollection<ContextExample>,
   tests: ContextCollection<ContextTest>,
@@ -371,6 +373,17 @@ struct DefinitionContextData {
   usages: ContextCollection<ContextUsage>,
   docs: ContextCollection<ContextDocLink>,
   static_methods: Option<ContextCollection<ContextMethod>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct JsFfiQueryInfo {
+  target: Option<String>,
+  owner_module: Option<String>,
+  module_root: Option<String>,
+  source_kind: Option<&'static str>,
+  source_file: Option<String>,
+  modules: BTreeMap<String, String>,
+  metadata_error: Option<String>,
 }
 
 fn special_builtin_dynamic_fn(arg_types: Vec<Arc<CalcitTypeAnnotation>>) -> Arc<CalcitTypeAnnotation> {
@@ -1406,6 +1419,35 @@ mod type_query_tests {
     assert_eq!(parse_query_render_format("edn"), Ok(QueryRenderFormat::Edn));
     assert_eq!(truncate_chars("你好 Calcit", 2), ("你好…".to_owned(), true));
     assert_eq!(truncate_chars("你好", 2), ("你好".to_owned(), false));
+  }
+
+  #[test]
+  fn js_ffi_query_exposes_dependency_owner_and_source_without_executing_js() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let input = "calcit/js-ffi-consumer.cirru";
+    let snapshot = load_snapshot(input).expect("JS FFI consumer should load");
+    let file = snapshot.files.get("app.main").expect("dependency namespace");
+    let inline = file
+      .defs
+      .get("plus-one")
+      .and_then(|entry| entry.ffi.as_ref())
+      .expect("inline metadata");
+    let inline_info = js_ffi_query_info(input, &snapshot, "app.main", inline).expect("inline query info");
+    assert_eq!(inline_info.target.as_deref(), Some("node"));
+    assert_eq!(inline_info.owner_module.as_deref(), Some("app"));
+    assert_eq!(inline_info.source_kind, Some("inline"));
+    assert!(render_js_ffi_info(&inline_info, Some("(x)=>x+1")).contains("```javascript\n(x)=>x+1"));
+
+    let file_ffi = file
+      .defs
+      .get("base-name")
+      .and_then(|entry| entry.ffi.as_ref())
+      .expect("file metadata");
+    let file_info = js_ffi_query_info(input, &snapshot, "app.main", file_ffi).expect("file query info");
+    assert_eq!(file_info.source_kind, Some("file"));
+    assert_eq!(file_info.source_file.as_deref(), Some("js-ffi-assets/base-name.js"));
+    assert_eq!(file_info.modules.get("path").map(String::as_str), Some("node:path"));
+    assert!(file_info.module_root.as_deref().is_some_and(|root| root.ends_with("js-ffi-module")));
   }
 
   fn context_test_options(target: &str) -> QueryContextCommand {
@@ -2687,6 +2729,88 @@ fn namespace_source(snapshot: &snapshot::Snapshot, namespace: &str) -> String {
   }
 }
 
+fn js_ffi_owner(input_path: &str, snapshot: &snapshot::Snapshot, namespace: &str) -> Option<calcit::JsNamespaceSource> {
+  let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
+  if snapshot.files.contains_key(namespace) && namespace_source(snapshot, namespace) == "project" {
+    return Some(calcit::JsNamespaceSource {
+      module: snapshot.package.clone(),
+      root: base_dir.to_path_buf(),
+    });
+  }
+  let module_folder = calcit::project_module_folder(base_dir);
+  for module_path in &snapshot.active_entry().ok()?.modules {
+    if let Ok(loaded) = load_module_with_sources_silent(module_path, base_dir, &module_folder)
+      && let Some(owner) = loaded.namespace_sources.get(namespace)
+    {
+      return Some(owner.clone());
+    }
+  }
+  None
+}
+
+fn js_ffi_query_info(input_path: &str, snapshot: &snapshot::Snapshot, namespace: &str, ffi: &cirru_edn::Edn) -> Option<JsFfiQueryInfo> {
+  snapshot::ffi_metadata_value(ffi, "js")?;
+  let owner = js_ffi_owner(input_path, snapshot, namespace);
+  let target = snapshot::parse_ffi_target(ffi)
+    .ok()
+    .flatten()
+    .map(|target| target.as_str().to_owned());
+  let (source_kind, source_file, modules, metadata_error) = match parse_js_source(ffi) {
+    Ok(Some(source)) => {
+      let (kind, file) = match source.source {
+        JsFfiSource::Inline(_) => (Some("inline"), None),
+        JsFfiSource::File { path } => (Some("file"), Some(path)),
+      };
+      (kind, file, source.modules.into_iter().collect(), None)
+    }
+    Ok(None) => (None, None, BTreeMap::new(), None),
+    Err(error) => (None, None, BTreeMap::new(), Some(error)),
+  };
+  Some(JsFfiQueryInfo {
+    target,
+    owner_module: owner.as_ref().map(|source| source.module.clone()),
+    module_root: owner.map(|source| source.root.canonicalize().unwrap_or(source.root).to_string_lossy().into_owned()),
+    source_kind,
+    source_file,
+    modules,
+    metadata_error,
+  })
+}
+
+fn render_js_ffi_info(info: &JsFfiQueryInfo, inline_source: Option<&str>) -> String {
+  let mut out = String::new();
+  let _ = writeln!(&mut out, "## JavaScript implementation\n");
+  let _ = writeln!(&mut out, "- Target: `{}`", info.target.as_deref().unwrap_or("unknown"));
+  let _ = writeln!(&mut out, "- Owner module: `{}`", info.owner_module.as_deref().unwrap_or("unknown"));
+  if let Some(root) = &info.module_root {
+    let _ = writeln!(&mut out, "- Module root: `{root}`");
+  }
+  if let Some(kind) = info.source_kind {
+    let _ = writeln!(&mut out, "- Source kind: `{kind}`");
+  }
+  if let Some(file) = &info.source_file {
+    let _ = writeln!(&mut out, "- Source file: `{file}` (relative to module root)");
+  }
+  if !info.modules.is_empty() {
+    let _ = writeln!(&mut out, "- External modules:");
+    for (alias, specifier) in &info.modules {
+      let _ = writeln!(&mut out, "  - `{alias}` → `{specifier}`");
+    }
+  }
+  if let Some(error) = &info.metadata_error {
+    let _ = writeln!(&mut out, "- Metadata error: {error}");
+  }
+  let _ = writeln!(
+    &mut out,
+    "- Contract: the Fn schema is declared by the module author; it does not prove the JavaScript implementation."
+  );
+  if let Some(source) = inline_source {
+    let _ = writeln!(&mut out, "\n### Inline JavaScript\n");
+    out.push_str(&markdown_fenced_block("javascript", source));
+  }
+  out
+}
+
 fn context_schema(annotation: &CalcitTypeAnnotation) -> Result<Option<String>, String> {
   match annotation {
     CalcitTypeAnnotation::Dynamic => Ok(None),
@@ -3063,6 +3187,7 @@ fn build_regular_context(
     tags,
     schema: context_schema(entry.schema.as_ref())?,
     features: context_features(entry.schema.as_ref()),
+    js_ffi: None,
     code,
     examples,
     tests,
@@ -3140,6 +3265,7 @@ fn build_special_builtin_context(
     tags: tags.clone(),
     schema: Some(schema),
     features: tags,
+    js_ffi: None,
     code: ContextCode {
       root: "code",
       nodes: 0,
@@ -3191,6 +3317,9 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
   let _ = writeln!(&mut out, "- Source: `{}`", data.source);
   let _ = writeln!(&mut out, "- Kind: `{}`", data.kind);
   let _ = writeln!(&mut out, "- Type coverage: `{}`", data.coverage);
+  if let Some(info) = &data.js_ffi {
+    let _ = writeln!(&mut out, "- JavaScript FFI: `{}`", info.source_kind.unwrap_or("invalid"));
+  }
   let _ = writeln!(
     &mut out,
     "- Tags: {}",
@@ -3232,6 +3361,11 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
     out.push_str(&markdown_fenced_block("cirru", schema));
   } else {
     let _ = writeln!(&mut out, "_Dynamic; no explicit schema._");
+  }
+
+  if let Some(info) = &data.js_ffi {
+    let _ = writeln!(&mut out);
+    out.push_str(&render_js_ffi_info(info, None));
   }
 
   let _ = writeln!(
@@ -3385,7 +3519,7 @@ fn handle_context(input_path: &str, opts: &QueryContextCommand) -> Result<(), St
     .get(namespace)
     .ok_or_else(|| format!("Namespace `{namespace}` not found"))?;
 
-  let envelope = if !file.defs.contains_key(requested_definition) {
+  let mut envelope = if !file.defs.contains_key(requested_definition) {
     if let Some(meta) = lookup_special_builtin_query_meta(namespace, requested_definition)? {
       build_special_builtin_context(&snapshot, namespace, requested_definition, meta, opts)?
     } else {
@@ -3400,6 +3534,19 @@ fn handle_context(input_path: &str, opts: &QueryContextCommand) -> Result<(), St
     let entry = file.defs.get(requested_definition).expect("checked definition exists");
     build_regular_context(&snapshot, namespace, requested_definition, entry, opts)?
   };
+
+  if let Some((_, definition)) = envelope.data.id.split_once('/')
+    && let Some(entry) = file.defs.get(definition)
+    && let Some(ffi) = &entry.ffi
+  {
+    envelope.data.js_ffi = js_ffi_query_info(input_path, &snapshot, namespace, ffi);
+    if envelope.data.js_ffi.is_some() {
+      let command = format!("calcit query def {namespace}/{definition}");
+      if !envelope.next.contains(&command) {
+        envelope.next.push(command);
+      }
+    }
+  }
 
   match format {
     QueryRenderFormat::Human => print!("{}", render_context_human(&envelope)),
@@ -4068,6 +4215,13 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
     data["id"] = serde_json::json!(format!("{namespace}/{resolved_definition}"));
     data["ffi_edn"] = data["ffi"].take();
     data["ffi"] = serde_json::to_value(&code_entry.ffi).map_err(|e| format!("Failed to serialize FFI metadata: {e}"))?;
+    data["js_ffi"] = serde_json::to_value(
+      code_entry
+        .ffi
+        .as_ref()
+        .and_then(|ffi| js_ffi_query_info(input_path, &snapshot, namespace, ffi)),
+    )
+    .map_err(|error| format!("Failed to serialize JavaScript FFI provenance: {error}"))?;
     return emit_def_query(
       data,
       Some(snapshot::definition_revision(code_entry)?),
@@ -4116,6 +4270,17 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
     };
     let _ = writeln!(&mut out, "\n## {}\n", label.trim_end_matches(':'));
     out.push_str(&markdown_fenced_block("cirru", &text));
+    if let Some(info) = js_ffi_query_info(input_path, &snapshot, namespace, ffi) {
+      let inline_source = parse_js_source(ffi)
+        .ok()
+        .flatten()
+        .and_then(|implementation| match implementation.source {
+          JsFfiSource::Inline(source) => Some(source),
+          JsFfiSource::File { .. } => None,
+        });
+      let _ = writeln!(&mut out);
+      out.push_str(&render_js_ffi_info(&info, inline_source.as_deref()));
+    }
   }
 
   if !code_entry.examples.is_empty() {

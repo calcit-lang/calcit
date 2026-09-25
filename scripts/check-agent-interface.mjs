@@ -32,6 +32,28 @@ const scenarios = [
     },
   },
   {
+    name: "module-owned JS FFI definition provenance",
+    args: ["calcit/js-ffi-consumer.cirru", "query", "def", "app.main/base-name", "--format", "json"],
+    check(result) {
+      const ffi = result.data.js_ffi;
+      assert.equal(ffi?.target, "node");
+      assert.equal(ffi?.owner_module, "app");
+      assert.equal(ffi?.source_kind, "file");
+      assert.equal(ffi?.source_file, "js-ffi-assets/base-name.js");
+      assert.equal(ffi?.modules.path, "node:path");
+      assert.match(ffi.module_root, /js-ffi-module$/);
+    },
+  },
+  {
+    name: "module-owned JS FFI context provenance",
+    args: ["calcit/js-ffi-consumer.cirru", "query", "context", "app.main/plus-one", "--format", "json"],
+    check(result) {
+      assert.equal(result.data.js_ffi?.source_kind, "inline");
+      assert.equal(result.data.js_ffi?.owner_module, "app");
+      assert.ok(result.next.includes("calcit query def app.main/plus-one"));
+    },
+  },
+  {
     name: "typed FFI Interface IR",
     args: ["calcit/test.cirru", "ffi", "export", "--json"],
     check(result) {
