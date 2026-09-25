@@ -15,7 +15,7 @@
             assert= 3 $ plus-one 2
             assert= 4 $ plus-two 2
             assert= 1 $ count-a
-            assert= 2 $ count-b
+            assert= 1 $ count-b
             println |consumer-ok
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)

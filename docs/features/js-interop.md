@@ -668,7 +668,7 @@ Common diagnostics:
 
 ## 模块内 JS 实现（0.22 预览）
 
-定义级 `:ffi :js` 可以指定一个 JS 函数表达式，或指定当前 Calcit 模块根目录下的 ESM 文件及具名导出。调用者只需加载 Calcit 模块并按普通 namespace 引用该定义；不必为了这段实现另装 npm 包。两个形式都要求完整的 `Fn` schema 和显式 `:js-ffi` feature。schema 是作者承诺的外部边界，编译器不解析 JS 来证明返回值。
+定义级 `:ffi :js` 可以指定一个 JS 函数表达式，或指定当前 Calcit 模块根目录下包含单个表达式的 `.js`/`.mjs` 文件。构建时把表达式嵌入所属 Calcit namespace 的生成文件，不复制成独立的 JS 模块；调用者只需加载 Calcit 模块并按普通 namespace 引用定义。两个形式都要求完整的 `Fn` schema 和显式 `:js-ffi` feature。schema 是作者承诺的外部边界，编译器不解析 JS 来证明返回值。
 
 ```cirru.no-check
 :schema $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'Number)
@@ -677,13 +677,22 @@ Common diagnostics:
   :js $ {} $ :inline "|(x) => x + 1"
 ```
 
-文件形式把相对路径和导出名写在同一个定义中。被本地 `import` 引用的 helper 文件必须显式列在 `:assets`；这些文件随生成产物保留相对目录，原始字节不经过 Cirru 格式化。
+文件形式只声明一个源码文件。文件内容须是求值为函数的单个表达式，不能写 `import`/`export`，也不能用动态 `import()` 或 `require()` 引用其他 snippet。原始源码不经过 Cirru 格式化。共享代码应提升为普通 Calcit 定义，或显式声明外部模块；不同定义即使引用同一个 JS 文件，也各自求值一次。
 
 ```cirru.no-check
 :ffi $ {} (:target :node)
-  :js $ {} (:file |js-ffi-assets/math.mjs) (:export |addTwo)
-    :assets $ [] |js-ffi-assets/helper.mjs
+  :js $ {} $ :file |js-ffi-assets/add-two.js
 ```
+
+需要 Node 内置模块或已安装的 npm ESM 包时，在 `:modules` 中以别名显式声明。编译器在生成的 Calcit namespace 顶层导入模块，再把别名作为词法变量交给表达式；不会把相对路径按原始 snippet 的目录解析，也不自动安装 npm 包。`node:` 模块只能用于 `:node` target；相对、绝对和 URL specifier 均拒绝。
+
+```cirru.no-check
+:ffi $ {} (:target :node)
+  :js $ {} (:file |js-ffi-assets/base-name.js)
+    :modules $ {} $ :path |node:path
+```
+
+对应文件内容为 `(value) => path.basename(value)`。生成的 JS 会保留 `app.main/base-name` 注释作为定位锚点；Node 的语法检查和运行时堆栈仍指向生成文件及其行号，后续可再提供精确 source map。当前仅保守地筛查 `import`、`export`、`require` 词元（连字符串中的同名词元也可能被拒绝），不承诺完整 JavaScript 解析或静态验证函数返回值。
 
 第一阶段仅接受 Number、String、Bool、Unit、JsObject 与相应 JsNullish 边界；不把 Calcit 集合或 nominal 值隐式当作 JS 容器。泛型、rest 参数和 async 签名暂不开放。native 调用会明确报错。JS 文件必须位于所属模块根目录内，绝对路径、`..` 和 symlink 越界会失败。实际用法与下游模块 smoke 见 `calcit/js-ffi-module/calcit.cirru`、`calcit/js-ffi-consumer.cirru` 和 `yarn check-js-ffi-source`。
 ```

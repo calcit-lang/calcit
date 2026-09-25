@@ -20,7 +20,6 @@ use std::sync::Arc;
 use std::sync::{LazyLock, RwLock};
 
 use cirru_edn::EdnTag;
-use md5::Digest;
 
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::builtins::syntax::get_raw_args_fn;
@@ -84,51 +83,41 @@ pub fn configure_js_namespace_sources(sources: std::collections::HashMap<String,
   Ok(())
 }
 
-fn emit_js_ffi_asset(ns: &str, def: &str, source: &JsFfiSource, output: &Path) -> Result<String, String> {
+fn read_js_ffi_expression(ns: &str, def: &str, source: &JsFfiSource) -> Result<String, String> {
   let sources = JS_NAMESPACE_SOURCES.read().expect("read JavaScript namespace sources");
   let owner = sources
     .get(ns)
     .ok_or_else(|| format!("{ns}/{def}: no source module owner for JS FFI"))?;
-  let package = &owner.module;
-  let asset_root = output.join(".ffi").join(package);
-  fs::create_dir_all(&asset_root).map_err(|error| format!("{ns}/{def}: failed to create JS FFI asset directory: {error}"))?;
-  write_file_if_changed(&asset_root.join("package.json"), "{\"type\":\"module\"}\n")?;
-  match source {
-    JsFfiSource::Inline(code) => {
-      let digest = md5::Md5::digest(format!("{ns}/{def}").as_bytes());
-      let hex = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-      let filename = format!("inline-{hex}.mjs");
-      let path = asset_root.join(&filename);
-      write_file_if_changed(&path, &format!("export const implementation = ({code});\n"))?;
-      Ok(format!("./.ffi/{package}/{filename}"))
-    }
-    JsFfiSource::File { path, assets, .. } => {
+  let expression = match source {
+    JsFfiSource::Inline(code) => code.clone(),
+    JsFfiSource::File { path } => {
       let root = &owner.root;
       let canonical_root = root
         .canonicalize()
         .map_err(|error| format!("{ns}/{def}: cannot resolve module root: {error}"))?;
-      for resource in std::iter::once(path).chain(assets.iter()) {
-        let source_path = root.join(resource);
-        let canonical_source = source_path
-          .canonicalize()
-          .map_err(|error| format!("{ns}/{def}: cannot resolve JS FFI resource {}: {error}", source_path.display()))?;
-        if !canonical_source.starts_with(&canonical_root) || !canonical_source.is_file() {
-          return Err(format!(
-            "{ns}/{def}: JS FFI resource `{resource}` escapes its module root or is not a file"
-          ));
-        }
-        let destination = asset_root.join(resource);
-        if let Some(parent) = destination.parent() {
-          fs::create_dir_all(parent).map_err(|error| format!("{ns}/{def}: failed to create JS FFI asset parent: {error}"))?;
-        }
-        let bytes = fs::read(&canonical_source).map_err(|error| format!("{ns}/{def}: failed to read JS FFI resource: {error}"))?;
-        if fs::read(&destination).ok().as_deref() != Some(bytes.as_slice()) {
-          fs::write(&destination, bytes).map_err(|error| format!("{ns}/{def}: failed to write JS FFI resource: {error}"))?;
-        }
+      let source_path = root.join(path);
+      let canonical_source = source_path
+        .canonicalize()
+        .map_err(|error| format!("{ns}/{def}: cannot resolve JS FFI resource {}: {error}", source_path.display()))?;
+      if !canonical_source.starts_with(&canonical_root) || !canonical_source.is_file() {
+        return Err(format!(
+          "{ns}/{def}: JS FFI resource `{path}` escapes its module root or is not a file"
+        ));
       }
-      Ok(format!("./.ffi/{package}/{path}"))
+      fs::read_to_string(&canonical_source).map_err(|error| format!("{ns}/{def}: failed to read JS FFI resource: {error}"))?
     }
+  };
+  let expression = expression.trim().trim_end_matches(';').trim();
+  if expression.is_empty()
+    || expression
+      .split(|character: char| !character.is_ascii_alphanumeric() && character != '_' && character != '$')
+      .any(|token| matches!(token, "import" | "export" | "require"))
+  {
+    return Err(format!(
+      "{ns}/{def}: JS FFI source must be one expression without import/export/require declarations or calls"
+    ));
   }
+  Ok(expression.to_owned())
 }
 
 struct ImportsDict(HashSet<CalcitImport>);
@@ -2175,12 +2164,12 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     if !internal_states::is_first_compilation() {
       let app_pkg_name = entry_ns.split('.').collect::<Vec<&str>>()[0];
       let pkg_name = ns.split('.').collect::<Vec<&str>>()[0]; // TODO simpler
-      let has_js_ffi_asset = file.keys().any(|def| {
+      let has_js_ffi_source = file.keys().any(|def| {
         program::lookup_def_ffi(ns, def)
           .as_ref()
           .is_some_and(|ffi| crate::js_ffi_source::parse_js_source(ffi).ok().flatten().is_some())
       });
-      if app_pkg_name != pkg_name && !has_js_ffi_asset {
+      if app_pkg_name != pkg_name && !has_js_ffi_source {
         match internal_states::lookup_prev_ns_cache(ns) {
           Some(v) if v == defs_in_current => {
             // same as last time, skip
@@ -2251,14 +2240,24 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
                 "{ns}/{def}: JS FFI target {expected:?} does not match entry target {active:?}"
               ));
             }
-            let asset = emit_js_ffi_asset(ns, &def, &source, code_emit_path)?;
-            let binding = format!("$ffi_{}", escape_var(&def));
-            let export = match source {
-              JsFfiSource::Inline(_) => "implementation",
-              JsFfiSource::File { ref export, .. } => export,
-            };
-            writeln!(import_code, "\nimport {{ {export} as {binding} }} from {};", wrap_js_str(&asset)).expect("write");
-            writeln!(defs_code, "\nexport var {} = {binding};", escape_var(&def)).expect("write");
+            let expression = read_js_ffi_expression(ns, &def, &source.source)?;
+            let mut aliases = Vec::new();
+            let mut bindings = Vec::new();
+            for (index, (alias, specifier)) in source.modules.iter().enumerate() {
+              let binding = format!("$ffi_{}_{}", escape_var(&def), index);
+              writeln!(import_code, "\nimport * as {binding} from {};", wrap_js_str(specifier)).expect("write");
+              aliases.push(alias.as_str());
+              bindings.push(binding);
+            }
+            writeln!(
+              defs_code,
+              "\n// JS FFI: {ns}/{def}\nexport var {} = (({}) => (\n{}\n))({});",
+              escape_var(&def),
+              aliases.join(", "),
+              expression,
+              bindings.join(", ")
+            )
+            .expect("write");
             continue;
           }
           let fn_parts = extract_preprocessed_fn_parts(&compiled_def.preprocessed_code)?;
@@ -2422,16 +2421,10 @@ mod tests {
   use std::collections::HashMap;
 
   #[test]
-  fn module_file_assets_keep_relative_imports_and_js_only_changes() {
+  fn module_file_expression_reads_current_source_and_rejects_module_syntax() {
     let source = tempfile::tempdir().expect("source root");
-    let output = tempfile::tempdir().expect("output root");
     fs::create_dir_all(source.path().join("js")).expect("JS resource directory");
-    fs::write(source.path().join("js/helper.mjs"), "export const add = (x) => x + 1;\n").expect("helper");
-    fs::write(
-      source.path().join("js/api.mjs"),
-      "import { add } from './helper.mjs';\nexport const plusOne = add;\n",
-    )
-    .expect("entry asset");
+    fs::write(source.path().join("js/api.js"), "(x) => x + 1;\n").expect("entry expression");
     JS_NAMESPACE_SOURCES.write().expect("namespace roots").insert(
       "ffi_asset_test.api".to_owned(),
       crate::JsNamespaceSource {
@@ -2440,29 +2433,31 @@ mod tests {
       },
     );
     let declaration = JsFfiSource::File {
-      path: "js/api.mjs".to_owned(),
-      export: "plusOne".to_owned(),
-      assets: vec!["js/helper.mjs".to_owned()],
+      path: "js/api.js".to_owned(),
     };
     assert_eq!(
-      emit_js_ffi_asset("ffi_asset_test.api", "plus-one", &declaration, output.path()).unwrap(),
-      "./.ffi/ffi_asset_test/js/api.mjs"
+      read_js_ffi_expression("ffi_asset_test.api", "plus-one", &declaration).unwrap(),
+      "(x) => x + 1"
     );
-    let copied = output.path().join(".ffi/ffi_asset_test/js/helper.mjs");
-    assert_eq!(fs::read_to_string(&copied).unwrap(), "export const add = (x) => x + 1;\n");
-    fs::write(source.path().join("js/helper.mjs"), "export const add = (x) => x + 2;\n").expect("updated helper");
-    emit_js_ffi_asset("ffi_asset_test.api", "plus-one", &declaration, output.path()).unwrap();
-    assert_eq!(fs::read_to_string(&copied).unwrap(), "export const add = (x) => x + 2;\n");
+    fs::write(source.path().join("js/api.js"), "(x) => x + 2;\n").expect("updated expression");
+    assert_eq!(
+      read_js_ffi_expression("ffi_asset_test.api", "plus-one", &declaration).unwrap(),
+      "(x) => x + 2"
+    );
+    fs::write(source.path().join("js/api.js"), "import { add } from './helper.mjs';\nadd").expect("invalid module");
+    assert!(read_js_ffi_expression("ffi_asset_test.api", "plus-one", &declaration).is_err());
+    fs::write(source.path().join("js/api.js"), "() => import('./helper.mjs')").expect("invalid dynamic import");
+    assert!(read_js_ffi_expression("ffi_asset_test.api", "plus-one", &declaration).is_err());
+    fs::write(source.path().join("js/api.js"), "() => import /* comment */ ('./helper.mjs')").expect("invalid spaced import");
+    assert!(read_js_ffi_expression("ffi_asset_test.api", "plus-one", &declaration).is_err());
     #[cfg(unix)]
     {
       let outside = tempfile::NamedTempFile::new().expect("outside resource");
       std::os::unix::fs::symlink(outside.path(), source.path().join("js/escape.mjs")).expect("escaping symlink");
       let escaping = JsFfiSource::File {
         path: "js/escape.mjs".to_owned(),
-        export: "escape".to_owned(),
-        assets: vec![],
       };
-      assert!(emit_js_ffi_asset("ffi_asset_test.api", "escape", &escaping, output.path()).is_err());
+      assert!(read_js_ffi_expression("ffi_asset_test.api", "escape", &escaping).is_err());
     }
     JS_NAMESPACE_SOURCES.write().expect("namespace roots").remove("ffi_asset_test.api");
   }

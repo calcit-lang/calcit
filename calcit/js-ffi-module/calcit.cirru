@@ -10,12 +10,20 @@
   :files $ {} $ 'app.main
     %{} 'FileEntry
       :defs $ {}
+        'base-name $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn base-name (x) x
+          :examples $ []
+          :ffi $ {} (:target :node)
+            :js $ {} (:file |js-ffi-assets/base-name.js)
+              :modules $ {} $ :path |node:path
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String
+            :features $ #{} :js-ffi
         'count-a $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn count-a () 0
           :examples $ []
           :ffi $ {} (:target :node)
-            :js $ {} (:export |nextCount) (:file |js-ffi-assets/math.mjs)
-              :assets $ [] |js-ffi-assets/helper.mjs
+            :js $ {} $ :file |js-ffi-assets/count.js
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
             :features $ #{} :js-ffi
@@ -23,8 +31,7 @@
           :code $ quote $ defn count-b () 0
           :examples $ []
           :ffi $ {} (:target :node)
-            :js $ {} (:export |nextCount) (:file |js-ffi-assets/math.mjs)
-              :assets $ [] |js-ffi-assets/helper.mjs
+            :js $ {} $ :file |js-ffi-assets/count.js
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
             :features $ #{} :js-ffi
@@ -48,8 +55,7 @@
           :code $ quote $ defn plus-two (x) x
           :examples $ []
           :ffi $ {} (:target :node)
-            :js $ {} (:export |addTwo) (:file |js-ffi-assets/math.mjs)
-              :assets $ [] |js-ffi-assets/helper.mjs
+            :js $ {} $ :file |js-ffi-assets/add-two.js
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
             :features $ #{} :js-ffi

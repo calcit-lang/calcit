@@ -8,7 +8,13 @@ use std::path::{Component, Path};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JsFfiSource {
   Inline(String),
-  File { path: String, export: String, assets: Vec<String> },
+  File { path: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JsFfiImplementation {
+  pub source: JsFfiSource,
+  pub modules: Vec<(String, String)>,
 }
 
 fn field<'a>(value: &'a Edn, name: &str) -> Option<&'a Edn> {
@@ -23,45 +29,99 @@ fn string_field(value: &Edn, name: &str) -> Result<Option<String>, String> {
   }
 }
 
-pub fn parse_js_source(ffi: &Edn) -> Result<Option<JsFfiSource>, String> {
+pub fn parse_js_source(ffi: &Edn) -> Result<Option<JsFfiImplementation>, String> {
   let Some(js) = field(ffi, "js") else { return Ok(None) };
   if !matches!(js, Edn::Map(_) | Edn::Struct(_)) {
     return Err(format!("`:ffi :js` must be a map, got `{js}`"));
   }
   let inline = string_field(js, "inline")?;
   let file = string_field(js, "file")?;
-  let export = string_field(js, "export")?;
-  let assets = match field(js, "assets") {
+  if field(js, "export").is_some() || field(js, "assets").is_some() {
+    return Err("`:js :export` and `:assets` are unsupported; a JS file must contain one expression".to_owned());
+  }
+  let mut modules = match field(js, "modules") {
     None => vec![],
-    Some(Edn::List(items)) => items
+    Some(Edn::Map(entries)) => entries
       .0
       .iter()
-      .map(|item| match item {
-        Edn::Str(value) => {
-          validate_resource_path(value)?;
-          Ok(value.to_string())
+      .map(|(alias, specifier)| {
+        let Edn::Tag(alias) = alias else {
+          return Err("`:js :modules` aliases must be tags".to_owned());
+        };
+        let Edn::Str(specifier) = specifier else {
+          return Err("`:js :modules` specifiers must be strings".to_owned());
+        };
+        if !is_js_identifier(alias.ref_str())
+          || matches!(
+            alias.ref_str(),
+            "await"
+              | "break"
+              | "case"
+              | "catch"
+              | "class"
+              | "const"
+              | "continue"
+              | "debugger"
+              | "default"
+              | "delete"
+              | "do"
+              | "else"
+              | "export"
+              | "extends"
+              | "false"
+              | "finally"
+              | "for"
+              | "function"
+              | "if"
+              | "import"
+              | "in"
+              | "instanceof"
+              | "let"
+              | "new"
+              | "null"
+              | "return"
+              | "super"
+              | "switch"
+              | "this"
+              | "throw"
+              | "true"
+              | "try"
+              | "typeof"
+              | "var"
+              | "void"
+              | "while"
+              | "with"
+              | "yield"
+          )
+        {
+          return Err(format!("invalid JS module alias `{alias}`"));
         }
-        _ => Err("`:js :assets` must contain only resource path strings".to_owned()),
+        if !valid_module_specifier(specifier) {
+          return Err(format!("JS module `{specifier}` must be a node: builtin or bare package specifier"));
+        }
+        Ok((alias.ref_str().to_owned(), specifier.to_string()))
       })
       .collect::<Result<Vec<_>, String>>()?,
-    Some(_) => return Err("`:js :assets` must be a list of resource path strings".to_owned()),
+    Some(_) => return Err("`:js :modules` must be a map of aliases to module specifiers".to_owned()),
   };
-  match (inline, file, export) {
-    (Some(source), None, None) if !source.trim().is_empty() && assets.is_empty() => Ok(Some(JsFfiSource::Inline(source))),
-    (None, Some(path), Some(export)) => {
+  modules.sort();
+  let source = match (inline, file) {
+    (Some(source), None) if !source.trim().is_empty() => JsFfiSource::Inline(source),
+    (None, Some(path)) => {
       validate_resource_path(&path)?;
-      if !is_js_identifier(&export) {
-        return Err("`:js :export` must be a JavaScript identifier".to_owned());
-      }
-      Ok(Some(JsFfiSource::File { path, export, assets }))
+      JsFfiSource::File { path }
     }
-    _ => Err("`:ffi :js` requires either nonempty `:inline` or both `:file` and `:export`".to_owned()),
-  }
+    _ => return Err("`:ffi :js` requires exactly one of nonempty `:inline` or `:file`".to_owned()),
+  };
+  Ok(Some(JsFfiImplementation { source, modules }))
 }
 
-pub fn validate_js_source(ffi: &Edn, schema: &CalcitTypeAnnotation) -> Result<Option<JsFfiSource>, String> {
+pub fn validate_js_source(ffi: &Edn, schema: &CalcitTypeAnnotation) -> Result<Option<JsFfiImplementation>, String> {
   let Some(source) = parse_js_source(ffi)? else { return Ok(None) };
   match parse_ffi_target(ffi)? {
+    Some(SnapshotTarget::Browser) if source.modules.iter().any(|(_, module)| module.starts_with("node:")) => {
+      return Err("`:js :modules` node: imports require the node target".to_owned());
+    }
     Some(SnapshotTarget::Browser | SnapshotTarget::Node) => {}
     None => return Err("`:ffi :js` requires an explicit browser or node target".to_owned()),
     Some(target) => return Err(format!("`:ffi :js` cannot target {target:?}; use browser or node")),
@@ -130,6 +190,19 @@ fn is_js_identifier(value: &str) -> bool {
     && chars.all(|c| c == '_' || c == '$' || c.is_ascii_alphanumeric())
 }
 
+fn valid_module_specifier(value: &str) -> bool {
+  if let Some(builtin) = value.strip_prefix("node:") {
+    return !builtin.is_empty()
+      && !builtin.contains(['\\', ':'])
+      && !builtin.chars().any(char::is_whitespace)
+      && builtin.split('/').all(|part| !part.is_empty() && part != "." && part != "..");
+  }
+  matches!(value.chars().next(), Some('@') | Some('a'..='z') | Some('A'..='Z'))
+    && !value.contains(['\\', ':'])
+    && !value.chars().any(char::is_whitespace)
+    && value.split('/').all(|part| !part.is_empty() && part != "." && part != "..")
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -147,19 +220,20 @@ mod tests {
     let inline = ffi(Edn::map_from_iter([(Edn::tag("inline"), Edn::str("(x) => x + 1"))]));
     assert_eq!(
       parse_js_source(&inline).unwrap(),
-      Some(JsFfiSource::Inline("(x) => x + 1".to_owned()))
+      Some(JsFfiImplementation {
+        source: JsFfiSource::Inline("(x) => x + 1".to_owned()),
+        modules: vec![]
+      })
     );
 
-    let file = ffi(Edn::map_from_iter([
-      (Edn::tag("file"), Edn::str("js/math.mjs")),
-      (Edn::tag("export"), Edn::str("addOne")),
-    ]));
+    let file = ffi(Edn::map_from_iter([(Edn::tag("file"), Edn::str("js/math.mjs"))]));
     assert_eq!(
       parse_js_source(&file).unwrap(),
-      Some(JsFfiSource::File {
-        path: "js/math.mjs".to_owned(),
-        export: "addOne".to_owned(),
-        assets: vec![]
+      Some(JsFfiImplementation {
+        source: JsFfiSource::File {
+          path: "js/math.mjs".to_owned()
+        },
+        modules: vec![]
       })
     );
   }
@@ -167,18 +241,49 @@ mod tests {
   #[test]
   fn rejects_ambiguous_or_escaping_files() {
     for path in ["../secret.mjs", "/tmp/file.mjs", "js/../../file.mjs", "file.txt", ""] {
-      let file = ffi(Edn::map_from_iter([
-        (Edn::tag("file"), Edn::str(path)),
-        (Edn::tag("export"), Edn::str("run")),
-      ]));
+      let file = ffi(Edn::map_from_iter([(Edn::tag("file"), Edn::str(path))]));
       assert!(parse_js_source(&file).is_err(), "path should fail: {path}");
     }
     let both = ffi(Edn::map_from_iter([
       (Edn::tag("inline"), Edn::str("() => 1")),
       (Edn::tag("file"), Edn::str("js/file.mjs")),
-      (Edn::tag("export"), Edn::str("run")),
     ]));
     assert!(parse_js_source(&both).is_err());
+    let legacy = ffi(Edn::map_from_iter([
+      (Edn::tag("file"), Edn::str("js/file.mjs")),
+      (Edn::tag("export"), Edn::str("run")),
+    ]));
+    assert!(parse_js_source(&legacy).is_err());
+  }
+
+  #[test]
+  fn explicit_modules_reject_relative_paths() {
+    let source = |specifier| {
+      ffi(Edn::map_from_iter([
+        (Edn::tag("file"), Edn::str("js/file.js")),
+        (Edn::tag("modules"), Edn::map_from_iter([(Edn::tag("path"), Edn::str(specifier))])),
+      ]))
+    };
+    assert_eq!(
+      parse_js_source(&source("node:path")).unwrap(),
+      Some(JsFfiImplementation {
+        source: JsFfiSource::File {
+          path: "js/file.js".to_owned()
+        },
+        modules: vec![("path".to_owned(), "node:path".to_owned())],
+      })
+    );
+    for specifier in [
+      "./helper.js",
+      "../helper.js",
+      "/tmp/helper.js",
+      "file:///tmp/helper.js",
+      "https://example.com/x.js",
+      "node:",
+      "#private",
+    ] {
+      assert!(parse_js_source(&source(specifier)).is_err(), "specifier should fail: {specifier}");
+    }
   }
 
   #[test]
