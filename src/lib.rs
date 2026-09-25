@@ -26,6 +26,7 @@ pub mod wasm_cli;
 
 use calcit::{CalcitErrKind, LocatedWarning};
 use call_stack::CallStackList;
+use cirru_edn::Edn;
 use md5::{Digest, Md5};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -51,6 +52,51 @@ pub fn set_quiet_tool_output(v: bool) {
 
 pub fn quiet_tool_output() -> bool {
   QUIET_TOOL_OUTPUT.load(Ordering::Relaxed)
+}
+
+/// Read the package version from the module manifest, which owns versions for
+/// both project roots and installed modules. Old modules without a manifest may
+/// still use their Snapshot compatibility version.
+pub fn module_manifest_version(root: &Path) -> Result<Option<String>, String> {
+  let deps_path = root.join("deps.cirru");
+  if !deps_path.exists() {
+    return Ok(None);
+  }
+  let content = fs::read_to_string(&deps_path).map_err(|error| format!("Failed to read {}: {error}", deps_path.display()))?;
+  let data = cirru_edn::parse(&content).map_err(|error| format!("Failed to parse {}: {error}", deps_path.display()))?;
+  let deps = data
+    .view_map()
+    .map_err(|error| format!("Invalid dependency manifest {}: {error}", deps_path.display()))?;
+  match deps.get_or_nil("version") {
+    Edn::Str(version) if version.trim().is_empty() || version.as_ref() == "|" => Ok(None),
+    Edn::Str(version) => Ok(Some(version.to_string())),
+    Edn::Nil => Ok(None),
+    value => Err(format!(
+      "Invalid :version in {}: expected a string, got {value}",
+      deps_path.display()
+    )),
+  }
+}
+
+#[cfg(test)]
+mod module_manifest_version_tests {
+  use super::module_manifest_version;
+  use std::fs;
+
+  #[test]
+  fn reads_version_from_deps_instead_of_snapshot_compatibility_value() {
+    let root = tempfile::tempdir().expect("temporary module root");
+    assert_eq!(module_manifest_version(root.path()).unwrap(), None);
+    fs::write(root.path().join("deps.cirru"), "{} (:version |0.22.0-alpha.1)\n").unwrap();
+    assert_eq!(module_manifest_version(root.path()).unwrap().as_deref(), Some("0.22.0-alpha.1"));
+  }
+
+  #[test]
+  fn rejects_invalid_manifest_version() {
+    let root = tempfile::tempdir().expect("temporary module root");
+    fs::write(root.path().join("deps.cirru"), "{} (:version 42)\n").unwrap();
+    assert!(module_manifest_version(root.path()).unwrap_err().contains("expected a string"));
+  }
 }
 
 pub fn load_core_snapshot() -> Result<snapshot::Snapshot, String> {
@@ -387,7 +433,7 @@ fn load_module_recursive(
           }
           let source = JsNamespaceSource {
             module: snapshot.package.clone(),
-            version: snapshot.version.clone(),
+            version: module_manifest_version(root)?.unwrap_or_else(|| snapshot.version.clone()),
             root: root.to_path_buf(),
           };
           if let Some(previous) = namespace_sources.insert(namespace.clone(), source.clone())

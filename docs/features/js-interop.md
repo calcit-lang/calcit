@@ -702,6 +702,8 @@ Common diagnostics:
 
 修改 `:file` JS 源码后，当前推荐显式重新运行 `calcit <snapshot> js`，再执行宿主测试。`-w` 会尝试监听模块资源，但外部 JS 文件的文件系统事件在不同环境下尚未形成可靠的发布契约，不能仅凭 watch 日志判断产物已更新。普通单次构建与只读查询不启用文件监听。`yarn check-js-ffi-source` 对直接保存、原子替换分别重新构建，验证跨 namespace wrapper 与 source map 使用新内容。
 
+来源 URI 中的模块版本以所属模块的 `deps.cirru :version` 为准，不使用 Snapshot 的旧版本占位值；`query context` 也返回同一 owner version。
+
 Agent 排查时先用现有查询入口，不需要猜依赖模块或 JS 文件的路径：
 
 ```bash
