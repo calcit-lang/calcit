@@ -665,4 +665,37 @@ Common diagnostics:
 | `E_JS_FFI_NULLABLE_DEREF` | Strict project source dereferences `JsNullish<JsObject>` directly. | Use optional access or narrow with a dedicated JS predicate. |
 | `E_JS_FFI_NULLABLE_PREDICATE` | Strict project source applies legacy `nil?`/`some?` to `JsNullish<T>`. | Use `js-nullish?`/`js-present?`, then convert explicitly if needed. |
 | `E_JS_FFI_FIELD_READONLY` | A typed external field is written without permission. | Add the field to `:ffi :writable` only if the host API permits it. |
+
+## 模块内 JS 实现（0.22 预览）
+
+定义级 `:ffi :js` 可以指定一个 JS 函数表达式，或指定当前 Calcit 模块根目录下包含单个表达式的 `.js`/`.mjs` 文件。构建时把表达式嵌入所属 Calcit namespace 的生成文件，不复制成独立的 JS 模块；调用者只需加载 Calcit 模块并按普通 namespace 引用定义。两个形式都要求完整的 `Fn` schema 和显式 `:js-ffi` feature。schema 是作者承诺的外部边界，编译器不解析 JS 来证明返回值。
+
+```cirru.no-check
+:schema $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'Number)
+  :features $ #{} :js-ffi
+:ffi $ {} (:target :node)
+  :js $ {} $ :inline "|(x) => x + 1"
 ```
+
+文件形式只声明一个源码文件。文件内容须是求值为函数的单个表达式，不能写 `import`/`export`，也不能用动态 `import()` 或 `require()` 引用其他 snippet。原始源码不经过 Cirru 格式化。共享代码应提升为普通 Calcit 定义，或显式声明外部模块；不同定义即使引用同一个 JS 文件，也各自求值一次。
+
+```cirru.no-check
+:ffi $ {} (:target :node)
+  :js $ {} $ :file |js-ffi-assets/add-two.js
+```
+
+需要 Node 内置模块或已安装的 npm ESM 包时，在 `:modules` 中以别名显式声明。编译器在生成的 Calcit namespace 顶层导入模块，再把别名作为词法变量交给表达式；不会把相对路径按原始 snippet 的目录解析，也不自动安装 npm 包。`node:` 模块只能用于 `:node` target；相对、绝对和 URL specifier 均拒绝。
+
+```cirru.no-check
+:ffi $ {} (:target :node)
+  :js $ {} (:file |js-ffi-assets/base-name.js)
+    :modules $ {} $ :path |node:path
+```
+
+对应文件内容为 `(value) => path.basename(value)`。生成的 JS 会保留 `app.main/base-name` 注释作为定位锚点；Node 的语法检查和运行时堆栈仍指向生成文件及其行号，后续可再提供精确 source map。当前仅保守地筛查 `import`、`export`、`require` 词元（连字符串中的同名词元也可能被拒绝），不承诺完整 JavaScript 解析或静态验证函数返回值。
+
+第一阶段仅接受 Number、String、Bool、Unit、JsObject 与相应 JsNullish 边界；不把 Calcit 集合或 nominal 值隐式当作 JS 容器。泛型、rest 参数和 async 签名暂不开放。native 调用会明确报错。JS 文件必须位于所属模块根目录内，绝对路径、`..` 和 symlink 越界会失败。实际用法与下游模块 smoke 见 `calcit/js-ffi-module/calcit.cirru`、`calcit/js-ffi-consumer.cirru` 和 `yarn check-js-ffi-source`。
+
+跨 namespace 使用时沿用普通 Calcit `:require`。示例的 `app.api` 先从 `app.main` 引用 JS FFI 定义并包装为 `plus-four`、`file-label`、`next-count`；下游 `test-nil.main` 同时直接引用 `app.main` 和引用 `app.api`。回归脚本把模块与消费者复制到独立源码目录构建，再搬移生成目录执行，确认两条 Calcit 引用路径共享同一个有状态定义，且没有 snippet 专用 import、路径补丁或软链接。这仍不是已发布模块的干净安装验收；该步骤由 #1360 跟进。
+
+运行 `calcit <snapshot> js -w` 时，已声明的 `:file` JS 源码会进入现有 watcher：直接保存或原子替换文件都会重新生成 JS，无需触碰 Calcit Snapshot 或 `.compact-inc.cirru`。普通单次构建与只读查询不启用这些文件 watcher。`yarn check-js-ffi-source` 覆盖两种保存方式及跨 namespace wrapper 的更新行为。

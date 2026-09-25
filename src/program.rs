@@ -942,6 +942,14 @@ fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<Pr
   let mut defs: HashMap<Arc<str>, ProgramDefEntry> = HashMap::with_capacity(file.defs.len());
   for (def, entry) in &file.defs {
     let at_def = def.to_owned();
+    if let Some(ffi) = &entry.ffi
+      && crate::js_ffi_source::validate_js_source(ffi, entry.schema.as_ref())
+        .map_err(|error| format!("{ns}/{def}: {error}"))?
+        .is_some()
+      && !matches!(&entry.code, Cirru::List(items) if matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defn"))
+    {
+      return Err(format!("{ns}/{def}: `:ffi :js` requires a `defn` declaration"));
+    }
     let code = code_to_calcit(&entry.code, &ns, &at_def, vec![])?;
     let schema = entry.schema.clone();
     let doc = Arc::from(entry.doc.as_str());

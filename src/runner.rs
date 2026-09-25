@@ -731,7 +731,26 @@ fn complete_trailing_option_args(values: &[Calcit], info: &CalcitFn) -> Option<V
   Some(completed)
 }
 
+fn reject_native_js_implementation(info: &CalcitFn, call_stack: &CallStackList) -> Result<(), CalcitErr> {
+  let (owner_ns, owner_def) = info
+    .def_ref
+    .as_ref()
+    .map(|def_ref| (def_ref.def_ns.as_ref(), def_ref.def_name.as_ref()))
+    .unwrap_or((info.def_ns.as_ref(), info.name.as_ref()));
+  if let Some(ffi) = program::lookup_def_ffi(owner_ns, owner_def)
+    && crate::js_ffi_source::parse_js_source(&ffi).ok().flatten().is_some()
+  {
+    return Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Type,
+      format!("JavaScript implementation `{owner_ns}/{owner_def}` is unavailable in the native runtime; compile this entry to JS"),
+      call_stack,
+    ));
+  }
+  Ok(())
+}
+
 pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  reject_native_js_implementation(info, call_stack)?;
   let completed_values = complete_trailing_option_args(values, info);
   let values = completed_values.as_deref().unwrap_or(values);
   let mut body_scope = (*info.scope).to_owned();
@@ -784,6 +803,7 @@ pub fn run_fn_during_shutdown(values: &[Calcit], info: &CalcitFn, call_stack: &C
 
 /// quick path for `run_fn` which takes ownership of values
 pub fn run_fn_owned(values: Vec<Calcit>, info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  reject_native_js_implementation(info, call_stack)?;
   let values = complete_trailing_option_args(&values, info).unwrap_or(values);
   let mut body_scope = (*info.scope).to_owned();
   let frame_checkpoint = body_scope.frame_checkpoint();

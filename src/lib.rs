@@ -15,6 +15,7 @@ pub mod ffi_abi;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod ffi_async;
 pub mod ffi_interface_ir;
+pub mod js_ffi_source;
 pub mod program;
 pub mod program_diff;
 pub mod project_state;
@@ -289,17 +290,26 @@ pub struct LoadedModuleSnapshot {
   pub snapshot: snapshot::Snapshot,
   pub source_paths: HashSet<PathBuf>,
   pub module_resolutions: HashMap<String, PathBuf>,
+  pub namespace_sources: HashMap<String, JsNamespaceSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JsNamespaceSource {
+  pub module: String,
+  pub root: PathBuf,
 }
 
 /// Load a module and report every Snapshot file and request resolution visited through its transitive module graph.
 pub fn load_module_with_sources(path: &str, base_dir: &Path, module_folder: &Path) -> Result<LoadedModuleSnapshot, String> {
   let mut loaded = HashSet::new();
   let mut resolutions = HashMap::new();
-  let snapshot = load_module_recursive(path, base_dir, module_folder, &mut loaded, &mut resolutions)?;
+  let mut namespace_sources = HashMap::new();
+  let snapshot = load_module_recursive(path, base_dir, module_folder, &mut loaded, &mut resolutions, &mut namespace_sources)?;
   Ok(LoadedModuleSnapshot {
     snapshot,
     source_paths: loaded,
     module_resolutions: resolutions,
+    namespace_sources,
   })
 }
 
@@ -309,6 +319,7 @@ fn load_module_recursive(
   module_folder: &Path,
   loaded: &mut HashSet<PathBuf>,
   resolutions: &mut HashMap<String, PathBuf>,
+  namespace_sources: &mut HashMap<String, JsNamespaceSource>,
 ) -> Result<snapshot::Snapshot, String> {
   let candidates = resolve_module_snapshot_candidates(path, base_dir, module_folder);
   let mut last_error: Option<String> = None;
@@ -361,9 +372,36 @@ fn load_module_recursive(
           return Ok(snapshot);
         }
 
+        let root = fullpath
+          .parent()
+          .ok_or_else(|| format!("module snapshot has no parent: {}", fullpath.display()))?;
+        for (namespace, file) in &snapshot.files {
+          if !file.defs.values().any(|entry| {
+            entry
+              .ffi
+              .as_ref()
+              .is_some_and(|ffi| crate::js_ffi_source::parse_js_source(ffi).ok().flatten().is_some())
+          }) {
+            continue;
+          }
+          let source = JsNamespaceSource {
+            module: snapshot.package.clone(),
+            root: root.to_path_buf(),
+          };
+          if let Some(previous) = namespace_sources.insert(namespace.clone(), source.clone())
+            && previous != source
+          {
+            return Err(format!(
+              "namespace `{namespace}` has multiple JS resource owners: {:?} and {:?}",
+              previous, source
+            ));
+          }
+        }
+
         let dependencies = snapshot.active_entry()?.modules.clone();
         for dependency in dependencies {
-          let dependency_snapshot = load_module_recursive(&dependency, base_dir, module_folder, loaded, resolutions)?;
+          let dependency_snapshot =
+            load_module_recursive(&dependency, base_dir, module_folder, loaded, resolutions, namespace_sources)?;
           merge_module_files(&mut snapshot, &dependency_snapshot, &dependency)?;
         }
 
