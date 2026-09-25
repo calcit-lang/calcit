@@ -96,11 +96,25 @@ try {
       const code = await readFile(join(watchOutput, "app.main.mjs"), "utf8");
       return code.includes("(value) => value + 4");
     }, "atomic JS-only watch rebuild");
+    await writeFile(join(fixture, "js-ffi-module/js-ffi-assets/add-two.js"), '(value) => { throw new Error("ffi-intentional"); }\n');
+    await waitFor(async () => {
+      const code = await readFile(join(watchOutput, "app.main.mjs"), "utf8");
+      return code.includes('throw new Error("ffi-intentional")');
+    }, "throwing JS-only watch rebuild");
+    const thrown = spawnSync(process.execPath, ["--input-type=module", "-e", 'import("./app.api.mjs").then((api) => api.plus_four(2))'], {
+      cwd: watchOutput,
+      encoding: "utf8",
+    });
+    assert.notEqual(thrown.status, 0, "a JS FFI exception must propagate through the Calcit wrapper");
+    assert.match(thrown.stderr, /ffi-intentional/);
+    assert.match(thrown.stderr, /app\.main\.mjs/);
+    assert.match(thrown.stderr, /app\.api\.mjs/);
+    assert.match(await readFile(join(watchOutput, "app.main.mjs"), "utf8"), /JS FFI: app\.main\/plus-two/);
   } finally {
     watcher.kill("SIGINT");
     await waitFor(() => watcher.exitCode !== null || watcher.signalCode !== null, "watcher shutdown");
   }
-  console.log("embedded JS FFI, ordinary Calcit imports, and JS-only watch rebuild passed");
+  console.log("embedded JS FFI, ordinary Calcit imports, exception stack, and JS-only watch rebuild passed");
 } finally {
   await rm(fixture, { recursive: true, force: true });
   await rm(relocated, { recursive: true, force: true });
