@@ -2284,9 +2284,9 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
               && let Some(active) = program::active_entry_target()
               && expected != active
             {
-              return Err(format!(
-                "{ns}/{def}: JS FFI target {expected:?} does not match entry target {active:?}"
-              ));
+              // Calls are rejected during preprocessing; unrelated host definitions
+              // must not inject imports into the selected entry's JS output.
+              continue;
             }
             let expression = read_js_ffi_expression(ns, &def, &source.source)?;
             let mut aliases = Vec::new();

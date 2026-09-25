@@ -12,6 +12,15 @@ try {
   const output = join(fixture, "generated");
   await cp(resolve(repository, "calcit/js-ffi-consumer.cirru"), input);
   await cp(resolve(repository, "calcit/js-ffi-module"), join(fixture, "js-ffi-module"), { recursive: true });
+  const moduleSnapshot = join(fixture, "js-ffi-module/calcit.cirru");
+  await writeFile(join(fixture, "js-ffi-module/js-ffi-assets/browser-available.js"), '() => typeof document !== "undefined"\n');
+  for (const args of [
+    ["edit", "def", "app.main/browser-available?", "--code", "quote $ defn browser-available? () false"],
+    ["edit", "schema", "app.main/browser-available?", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool) (:features $ #{} :js-ffi)"],
+    ["edit", "ffi", "app.main/browser-available?", "--code", "{} (:target :browser) (:js $ {} $ :file |js-ffi-assets/browser-available.js)"],
+  ]) {
+    execFileSync(resolve(repository, "target/debug/calcit"), [moduleSnapshot, ...args], { cwd: fixture, stdio: "pipe" });
+  }
   const native = spawnSync(resolve(repository, "target/debug/calcit"), [input], {
     cwd: fixture,
     encoding: "utf8",
@@ -29,12 +38,49 @@ try {
     stdio: "inherit",
   });
 
+  const browserInput = join(fixture, "browser-consumer.cirru");
+  const browserOutput = join(fixture, "browser-generated");
+  await cp(input, browserInput);
+  execFileSync(resolve(repository, "target/debug/calcit"), [browserInput, "config", "set", "target", "browser"], {
+    cwd: fixture,
+    stdio: "pipe",
+  });
+  execFileSync(resolve(repository, "target/debug/calcit"), [browserInput, "--init-fn", "test-nil.main/reload!", "--emit-path", browserOutput, "js"], {
+    cwd: fixture,
+    stdio: "pipe",
+  });
+  for (const name of await readdir(browserOutput)) {
+    if (name.endsWith(".mjs")) {
+      assert.doesNotMatch(await readFile(join(browserOutput, name), "utf8"), /from "node:path"/);
+    }
+  }
+  assert.match(await readFile(join(browserOutput, "app.main.mjs"), "utf8"), /JS FFI: app\.main\/browser-available\?/);
+  const crossTarget = spawnSync(resolve(repository, "target/debug/calcit"), [browserInput, "--init-fn", "test-nil.main/main!", "--check-only"], {
+    cwd: fixture,
+    encoding: "utf8",
+  });
+  assert.notEqual(crossTarget.status, 0, "a browser entry must reject a reachable Node-only JS FFI call");
+  assert.match(crossTarget.stderr, /E_JS_FFI_TARGET_MISMATCH/);
+  for (const args of [
+    ["edit", "def", "test-nil.main/reference-only", "--code", "quote $ defn reference-only () (println app.main/base-name)"],
+    ["edit", "schema", "test-nil.main/reference-only", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+  ]) {
+    execFileSync(resolve(repository, "target/debug/calcit"), [browserInput, ...args], { cwd: fixture, stdio: "pipe" });
+  }
+  const crossTargetValue = spawnSync(resolve(repository, "target/debug/calcit"), [browserInput, "--init-fn", "test-nil.main/reference-only", "--check-only"], {
+    cwd: fixture,
+    encoding: "utf8",
+  });
+  assert.notEqual(crossTargetValue.status, 0, "a browser entry must reject a Node-only JS FFI function value");
+  assert.match(crossTargetValue.stderr, /E_JS_FFI_TARGET_MISMATCH/);
+
   await cp(output, join(relocated, "generated"), { recursive: true });
   const generated = join(relocated, "generated");
   const source = await readFile(join(generated, "app.main.mjs"), "utf8");
   const apiSource = await readFile(join(generated, "app.api.mjs"), "utf8");
   const consumerSource = await readFile(join(generated, "test-nil.main.mjs"), "utf8");
   assert.match(source, /JS FFI: app\.main\/plus-two/);
+  assert.doesNotMatch(source, /JS FFI: app\.main\/browser-available\?/);
   assert.match(source, /sourceMappingURL=data:application\/json;base64,/);
   assert.match(source, /JS FFI module: calcit:\/\/app@[^\n]+ alias path\nimport \* as [^\n]+ from "node:path"/);
   assert.match(source, /\(value\) => value \+ 2/);
@@ -120,7 +166,6 @@ try {
   assert.match(thrown.stderr, /calcit:\/\/app@[^/]*\/app\.main\/plus-two\/file\/js-ffi-assets\/add-two\.js\?hash=[a-f0-9]+:4:9/);
   assert.match(thrown.stderr, /app\.api\.mjs/);
   assert.match(await readFile(join(rebuilt, "app.main.mjs"), "utf8"), /JS FFI: app\.main\/plus-two/);
-  const moduleSnapshot = join(fixture, "js-ffi-module/calcit.cirru");
   const moduleSnapshotSource = await readFile(moduleSnapshot, "utf8");
   await writeFile(moduleSnapshot, moduleSnapshotSource.replace("|node:path", "|missing-ffi-package-1362"));
   const missingOutput = join(fixture, "missing-generated");
