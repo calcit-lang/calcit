@@ -1027,11 +1027,34 @@ try {
   }
   const inertEntry = run("edit", "def", "app.main/main!", "--overwrite", "--code", "quote $ defn main! () $ raise |query-must-not-run");
   assert.equal(inertEntry.status, 0, inertEntry.stderr);
+  const inertReload = run("edit", "def", "app.main/reload!", "--overwrite", "--code", "quote $ defn reload! () $ raise |reload-must-not-run");
+  assert.equal(inertReload.status, 0, inertReload.stderr);
   const beforeRead = readFileSync(fixture);
-  const readOnlyQuery = run("query", "context", "app.main/main!", "--format", "edn");
-  assert.equal(readOnlyQuery.status, 0, "queries must not execute the project's init function");
-  assert.equal(parseEdnEnvelope(readOnlyQuery.stdout, "inert entry read").command, "query.context");
-  assert.deepEqual(readFileSync(fixture), beforeRead, "query must leave the Snapshot unchanged");
+  for (const { name, args, command, expectedStatus = 0, expectedDiagnostic } of [
+    { name: "type", args: ["query", "type", "'String"], command: "query.type" },
+    { name: "type-at", args: ["query", "type-at", "app.main/main!", "--path", "code@3"], command: "query.type-at" },
+    { name: "context", args: ["query", "context", "app.main/main!"], command: "query.context" },
+    { name: "definition", args: ["query", "def", "app.main/main!"], command: "query.def" },
+    { name: "query config", args: ["query", "config"], command: "config.show" },
+    { name: "config show", args: ["config", "show"], command: "config.show" },
+    { name: "config modules", args: ["config", "modules"], command: "config.modules" },
+    { name: "missing context", args: ["query", "context", "app.main/not-there"], command: "query.context", expectedStatus: 1, expectedDiagnostic: "E_QUERY_TARGET_NOT_FOUND" },
+    { name: "invalid type", args: ["query", "type", "not-a-type"], command: "query.type", expectedStatus: 1, expectedDiagnostic: "E_QUERY_INVALID_TYPE" },
+  ]) {
+    for (const format of ["edn", "json"]) {
+      const readOnlyQuery = run(...args, "--format", format);
+      assert.equal(readOnlyQuery.status, expectedStatus, `${name} ${format} must not execute init/reload:\n${readOnlyQuery.stderr}`);
+      const envelope = format === "edn"
+        ? parseEdnRaw(readOnlyQuery.stdout, `${name} EDN`)
+        : JSON.parse(readOnlyQuery.stdout);
+      assert.equal(envelope[format === "edn" ? ":command" : "command"], command, `${name} ${format} lost its structured envelope`);
+      if (expectedDiagnostic) {
+        const diagnostics = envelope[format === "edn" ? ":diagnostics" : "diagnostics"];
+        assert.equal(diagnostics?.[0]?.[format === "edn" ? ":code" : "code"], expectedDiagnostic, `${name} ${format} reported the wrong diagnostic`);
+      }
+      assert.deepEqual(readFileSync(fixture), beforeRead, `${name} ${format} must leave the Snapshot unchanged`);
+    }
+  }
 } finally {
   rmSync(fixtureDir, { recursive: true, force: true });
 }
