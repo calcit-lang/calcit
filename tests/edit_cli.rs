@@ -198,6 +198,62 @@ fn schema_feature_edit_preserves_contract_and_works_in_guarded_transaction() {
   assert_eq!(fs::read(&snapshot).expect("rejected snapshot should remain"), first_apply);
 }
 
+#[test]
+fn ffi_metadata_edit_commits_with_schema_and_rolls_back_on_failure() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let target = "app.main/main!";
+  let original = fs::read(&snapshot).expect("snapshot should read");
+  let operations = serde_json::json!([
+    ["edit", "schema", target, "--add-feature", "js-ffi"],
+    ["edit", "ffi", target, "--code", "{} (:backend :js) (:target :browser)"]
+  ])
+  .to_string();
+
+  let preview = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", &operations, "--dry-run", "--format", "json"],
+  );
+  assert_success(&preview, "preview schema and FFI metadata together");
+  let preview_value: serde_json::Value = serde_json::from_slice(&preview.stdout).expect("preview JSON should parse");
+  assert_eq!(preview_value["changed"], true);
+  assert_eq!(fs::read(&snapshot).expect("preview should not write"), original);
+
+  let stale = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", &operations, "--expect-revision", "md5:stale"],
+  );
+  assert!(!stale.status.success());
+  assert!(String::from_utf8_lossy(&stale.stderr).contains("Snapshot revision mismatch"));
+  assert_eq!(fs::read(&snapshot).expect("stale transaction should not write"), original);
+
+  let rollback_operations = serde_json::json!([
+    ["edit", "ffi", target, "--code", "{} (:backend :js)"],
+    ["edit", "schema", target, "--code", "not-a-schema"]
+  ])
+  .to_string();
+  let rollback = run_calcit(&snapshot, &["edit", "transaction", "--code", &rollback_operations]);
+  assert!(!rollback.status.success());
+  assert!(String::from_utf8_lossy(&rollback.stderr).contains("Transaction operation 2 failed"));
+  assert_eq!(fs::read(&snapshot).expect("failed transaction should not write"), original);
+
+  let invalid_metadata = serde_json::json!([["edit", "ffi", target, "--code", "[]"]]).to_string();
+  let invalid = run_calcit(&snapshot, &["edit", "transaction", "--code", &invalid_metadata]);
+  assert!(!invalid.status.success());
+  assert!(String::from_utf8_lossy(&invalid.stderr).contains("FFI metadata must be an EDN map"));
+  assert_eq!(fs::read(&snapshot).expect("invalid FFI should not write"), original);
+
+  let revision = preview_value["original_revision"].as_str().expect("preview revision");
+  let apply = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", &operations, "--expect-revision", revision],
+  );
+  assert_success(&apply, "apply schema and FFI metadata together");
+  let after = query_definition(&snapshot, target);
+  assert!(after["data"]["schema"].to_string().contains(":js-ffi"));
+  assert!(after["data"]["ffi"].to_string().contains(":backend"));
+}
+
 fn prepare_minimal_snapshot(directory: &TestDirectory) -> PathBuf {
   let snapshot = directory.snapshot();
   fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");

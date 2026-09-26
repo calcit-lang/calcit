@@ -223,6 +223,8 @@ parallel.
 
 `calcit edit transaction` applies existing `edit`, `tree`, and `config` mutations to a staged snapshot. The original snapshot is replaced only after every operation succeeds and the staged result can be loaded and serialized again. A failed operation, stale revision, or `--dry-run` leaves the original file unchanged.
 
+仅修改 Snapshot 的 `edit ffi` 元数据可与 `edit schema` 和 tree 修改一起进入事务。这不会将外部 JavaScript 文件纳入事务或写入文件；`edit ffi --file` 只读取输入，然后更新 Snapshot。
+
 The primary input format is a Cirru EDN list of CLI argument lists. Each inner list is exactly the argument sequence that would follow the snapshot path in an ordinary command. A `quote` value can be embedded directly after `--code`, so multiline Calcit code remains structured rather than escaped inside a string:
 
 ```cirru.no-check
