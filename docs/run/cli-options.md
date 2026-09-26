@@ -581,7 +581,9 @@ WASI command 可通过 `FsPath .read-text` 与 `.write-text` 访问 host 显式�
 
 ```bash
 calcit wasi calcit.cirru --emit-path target/wasi-command
-wasmtime run --dir ./data::/workspace target/wasi-command/program.wasm
+wasmtime run -S p3 -W component-model-more-async-builtins=y \
+  -W component-model-async-stackful=y --dir ./data::/workspace \
+  target/wasi-command/program.wasm
 ```
 
 仓库中的 [`examples/wasi-command/`](../../examples/wasi-command/) 提供了一个可直接运行的文本处理项目：它从命令行接收 guest 输入/输出路径，通过环境变量选择前缀，处理 Result 错误分支，并以稳定的非零状态码报告参数、读取或写入失败。新项目应先复用这个单一 `calcit wasi` 工作流，不需要增加包装命令。
