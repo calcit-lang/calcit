@@ -42,6 +42,9 @@ pub(crate) fn with_proven_helper_contracts<'a>(
   impl Drop for StrictGuard {
     fn drop(&mut self) {
       calcit::runner::preprocess::set_strict_types(self.0);
+      // A later analysis may compile with different strictness. Compiled
+      // definitions do not encode that mode or replay their diagnostics.
+      let _ = calcit::program::clear_runtime_caches_for_reload(Arc::from("query.type"), Arc::from("query.type"), true);
     }
   }
   let _guard = StrictGuard(calcit::runner::preprocess::is_strict_types_enabled());

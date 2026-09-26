@@ -63,6 +63,8 @@ try {
   const quality = JSON.parse(run(snapshot, "analyze", "quality", "--ns", "app.main", "--format", "json"));
   assert.equal(quality.data.passed, true);
   assert.equal(quality.data.metrics.schemaDynamic, 0);
+  const evidence = JSON.parse(run(snapshot, "analyze", "weak-types", "--schema-evidence", "--ns", "app.main", "--format", "json"));
+  assert.equal(evidence.data.summary.hits, 0);
   assert.equal(await readFile(snapshot, "utf8"), before);
 
   // Compile failures belong to the CLI boundary, not runtime try assertions.
