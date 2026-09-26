@@ -2,6 +2,7 @@
 //!
 //! Handles: calcit docs remote-libs - fetches available Calcit libraries from registry
 
+use super::stdout::cli_println as println;
 use calcit::cli_args::{DocsRemoteLibsCommand, LibsSubcommand};
 use colored::Colorize;
 use serde::Deserialize;

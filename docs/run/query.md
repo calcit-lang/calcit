@@ -42,6 +42,18 @@ Calcit provides a powerful `query` subcommand to inspect code, find definitions,
 
 ## Core Query Commands
 
+### 管道输出与退出状态
+
+文档读取和 `query` 输出可以交给 `head` 等工具读取前缀，例如
+`calcit docs search Fn | head -n 1`。下游提前关闭 stdout 时，Calcit 将
+BrokenPipe 视为读者主动结束，安静退出且状态为 `0`，不输出 panic/backtrace。
+这不保证截断后的 JSON 或 Cirru EDN 仍是完整文档；需要解析时应读取完整输出，
+或优先使用查询命令已有的范围、预算等参数。
+
+其他 stdout 写入错误仍报告到 stderr 并以状态 `1` 退出，不作为成功处理。
+该约定用于 CLI 文档/查询展示及其共享渲染函数，不修改 Calcit 程序运行时的
+`println`、FFI、watch 或其他执行模式的错误语义。
+
 ### List Namespaces (`ns`)
 
 ```bash

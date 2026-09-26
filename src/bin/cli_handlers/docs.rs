@@ -2,6 +2,7 @@
 //!
 //! Handles: calcit docs scopes, search, list, sections, read, read-lines
 
+use super::stdout::{cli_print as print, cli_println as println};
 use calcit::cli_args::{DocsCommand, DocsGraphSubcommand, DocsSubcommand};
 use colored::Colorize;
 use md5::{Digest, Md5};
