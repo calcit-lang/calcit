@@ -697,6 +697,16 @@ fn if_join_preserves_option_payload_for_arithmetic_checks() {
 }
 
 #[test]
+fn non_diverging_if_branch_still_cannot_enter_an_option_contract() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries("defn main! ()\n  let\n      value $ if (> 1 0) (%some 1) |wrong\n    option:unwrap value");
+    let _strict = StrictTypesReset::enabled();
+    let error = run_check_only(&entries).expect_err("a returning String branch must not be treated like raise");
+    assert!(error.contains("E_DYNAMIC_NOMINAL_ARGUMENT"), "unexpected error: {error}");
+  });
+}
+
+#[test]
 fn defimpl_rejects_legacy_tag_arguments() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("defn main! ()\n  defimpl :LegacyImpl :LegacyTrait\n    .dummy $ fn (x) x");

@@ -307,14 +307,22 @@ pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
   }
 
   let true_expr = xs.get(2)?;
-  let true_type = resolve_type_value(true_expr, scope_types)?;
-
   if let Some(false_expr) = xs.get(3) {
+    // A direct raise has no value to join with the live branch. Keep an
+    // ordinary Dynamic branch in the join; only proven divergence is bottom.
+    if expression_definitely_diverges(true_expr) {
+      return resolve_type_value(false_expr, scope_types);
+    }
+    if expression_definitely_diverges(false_expr) {
+      return resolve_type_value(true_expr, scope_types);
+    }
+    let true_type = resolve_type_value(true_expr, scope_types)?;
     let false_type = resolve_type_value(false_expr, scope_types)?;
     merge_result_constructor_branches(true_expr, true_type.as_ref(), false_expr, false_type.as_ref())
       .or_else(|| merge_option_absence_branch(true_expr, &true_type, false_expr, &false_type))
       .or_else(|| merge_if_branch_types(true_type, false_type))
   } else {
+    let true_type = resolve_type_value(true_expr, scope_types)?;
     Some(Arc::new(CalcitTypeAnnotation::Optional(true_type)))
   }
 }
@@ -2598,6 +2606,37 @@ mod tests {
       merge_if_branch_types(calcit::DYNAMIC_TYPE.clone(), Arc::new(CalcitTypeAnnotation::Number)).as_deref(),
       Some(CalcitTypeAnnotation::Dynamic)
     ));
+  }
+
+  #[test]
+  fn direct_raise_if_branch_preserves_the_live_type() {
+    let option_number = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+    ));
+    let live = local("value", option_number.clone());
+    let raise = proc_call(CalcitProc::Raise, vec![Calcit::Str(Arc::from("missing"))]);
+    let if_expr = |true_branch: Calcit, false_branch: Calcit| {
+      CalcitList::from(&[
+        Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.raise")),
+        Calcit::Bool(true),
+        true_branch,
+        false_branch,
+      ] as &[Calcit])
+    };
+
+    assert_eq!(
+      infer_if_return_type(&if_expr(live.clone(), raise.clone()), &ScopeTypes::new()),
+      Some(option_number.clone())
+    );
+    assert_eq!(
+      infer_if_return_type(&if_expr(raise, live.clone()), &ScopeTypes::new()),
+      Some(option_number.clone())
+    );
+    assert_ne!(
+      infer_if_return_type(&if_expr(live, local("open", calcit::DYNAMIC_TYPE.clone())), &ScopeTypes::new()),
+      Some(option_number)
+    );
   }
 
   #[test]

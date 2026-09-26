@@ -43,8 +43,36 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic
             :return $ :: 'Option 'Dynamic
+        'infer-raise-left $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-raise-left (enabled)
+            let
+                value $ if enabled (raise |missing-left) (%some 2)
+              option:unwrap value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Bool
+          :tests $ [] $ %{} 'TestEntry (:name |retains-option-and-raise)
+            :code $ quote $ do
+              assert= 2 $ infer-raise-left false
+              assert= true $ try (infer-raise-left true)
+                fn (error) true
+            :tags $ #{} :unit
+        'infer-raise-right $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-raise-right (enabled)
+            let
+                value $ if enabled (%some 1) (raise |missing-right)
+              option:unwrap value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Bool
+          :tests $ [] $ %{} 'TestEntry (:name |retains-option-and-raise)
+            :code $ quote $ do
+              assert= 1 $ infer-raise-right true
+              assert= true $ try (infer-raise-right false)
+                fn (error) true
+            :tags $ #{} :unit
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity)
+          :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity) (infer-raise-right true) (infer-raise-left false)
           :examples $ []
           :schema $ :: 'Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
