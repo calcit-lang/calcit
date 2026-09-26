@@ -154,24 +154,77 @@ fn normalize_variadic_as_list(value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTyp
 // If-branch type merging
 // ---------------------------------------------------------------------------
 
-fn merge_if_branch_types(
-  true_type: Arc<CalcitTypeAnnotation>,
-  false_type: Arc<CalcitTypeAnnotation>,
+fn wrap_option_like(template: &CalcitTypeAnnotation, inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  match template {
+    CalcitTypeAnnotation::Optional(_) => Arc::new(CalcitTypeAnnotation::Optional(inner)),
+    CalcitTypeAnnotation::TypeRef(name, _) => Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), Arc::new(vec![inner]))),
+    _ => inner,
+  }
+}
+
+fn compatible_if_join(
+  true_type: &Arc<CalcitTypeAnnotation>,
+  false_type: &Arc<CalcitTypeAnnotation>,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
   let true_accepts_false = true_type.as_ref().is_compatible_with(false_type.as_ref());
   let false_accepts_true = false_type.as_ref().is_compatible_with(true_type.as_ref());
   let true_weight = super::annotation_dynamic_weight(true_type.as_ref());
   let false_weight = super::annotation_dynamic_weight(false_type.as_ref());
 
-  // A compatibility join may retain the weaker branch shape, but must never
-  // turn Dynamic evidence into a more concrete result merely because the
-  // legacy matcher accepts Dynamic symmetrically.
-  if true_accepts_false && true_weight >= false_weight {
-    Some(true_type)
-  } else if false_accepts_true && false_weight >= true_weight {
-    Some(false_type)
+  // A candidate branch is a valid join only when the *other* branch is
+  // acceptable where it is required. The option wrappers are asymmetric on
+  // purpose (`Number` is accepted where `Option<Number>` is required, but not
+  // the reverse), so checking the wrong direction would silently drop the
+  // option branch and erase the possibility of absence. When both branches are
+  // valid, prefer the more Dynamic one so evidence is never narrowed.
+  if false_accepts_true && true_weight >= false_weight {
+    Some(true_type.clone())
+  } else if true_accepts_false && false_weight >= true_weight {
+    Some(false_type.clone())
   } else {
     None
+  }
+}
+
+/// Payload of a schema-level `Option<T>` (`TypeRef`) only. The internal
+/// `Optional` marker used for control-flow joins keeps its historical
+/// compatibility path so core bootstrap macros are unaffected.
+fn schema_option_payload(type_value: &CalcitTypeAnnotation) -> Option<Arc<CalcitTypeAnnotation>> {
+  match type_value {
+    CalcitTypeAnnotation::TypeRef(_, _) => type_value.option_payload(),
+    _ => None,
+  }
+}
+
+fn merge_if_branch_types(
+  true_type: Arc<CalcitTypeAnnotation>,
+  false_type: Arc<CalcitTypeAnnotation>,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  if let Some(joined) = compatible_if_join(&true_type, &false_type) {
+    return Some(joined);
+  }
+
+  // The branches share no compatible annotation. When one side is a schema
+  // `Option<T>`, widen the other branch back into the wrapper so the
+  // possibility of absence is not erased; otherwise an unchecked operation
+  // could observe `none` as `NaN`.
+  match (
+    schema_option_payload(true_type.as_ref()),
+    schema_option_payload(false_type.as_ref()),
+  ) {
+    (Some(true_inner), Some(false_inner)) => {
+      let merged = merge_if_branch_types(true_inner, false_inner)?;
+      Some(wrap_option_like(true_type.as_ref(), merged))
+    }
+    (Some(true_inner), None) => {
+      let merged = merge_if_branch_types(true_inner, false_type.clone())?;
+      Some(wrap_option_like(true_type.as_ref(), merged))
+    }
+    (None, Some(false_inner)) => {
+      let merged = merge_if_branch_types(true_type.clone(), false_inner)?;
+      Some(wrap_option_like(false_type.as_ref(), merged))
+    }
+    (None, None) => None,
   }
 }
 
@@ -2563,6 +2616,45 @@ mod tests {
     assert_eq!(merge_option_absence_branch(&value, &concrete, &none, &open), Some(concrete.clone()));
     assert!(merge_option_absence_branch(&value, &concrete, &value, &open).is_none());
     assert_eq!(merge_if_branch_types(concrete, open.clone()), Some(open));
+  }
+
+  #[test]
+  fn if_join_widens_payload_branches_back_into_the_option_wrapper() {
+    let option = |payload| {
+      Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("calcit.core/Option"),
+        Arc::new(vec![payload]),
+      ))
+    };
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let option_number = option(number.clone());
+
+    // A plain payload branch joined with its Option form keeps the Option so
+    // absence is not erased before arithmetic checks run.
+    assert_eq!(
+      merge_if_branch_types(number.clone(), option_number.clone()),
+      Some(option_number.clone())
+    );
+    assert_eq!(
+      merge_if_branch_types(option_number.clone(), number.clone()),
+      Some(option_number.clone())
+    );
+
+    // An internal Optional wrapper is kept by the corrected compatibility
+    // direction instead of being dropped for the plain payload.
+    let optional_number = Arc::new(CalcitTypeAnnotation::Optional(number.clone()));
+    assert_eq!(
+      merge_if_branch_types(number.clone(), optional_number.clone()),
+      Some(optional_number)
+    );
+
+    // Open payloads stay open instead of narrowing to one concrete branch.
+    let option_dynamic = option(calcit::DYNAMIC_TYPE.clone());
+    assert_eq!(merge_if_branch_types(number.clone(), option_dynamic.clone()), Some(option_dynamic));
+
+    // Unrelated payloads must not fabricate a shared Option.
+    let option_string = option(Arc::new(CalcitTypeAnnotation::String));
+    assert!(merge_if_branch_types(number, option_string).is_none());
   }
 
   #[test]

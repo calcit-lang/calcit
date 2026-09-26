@@ -677,6 +677,26 @@ fn strict_mode_keeps_source_optional_parameter_validation_under_macro_ancestry()
 }
 
 #[test]
+fn if_join_preserves_option_payload_for_arithmetic_checks() {
+  run_with_large_stack(|| {
+    let entries =
+      load_snippet_entries("defn bad () :number\n  let\n      x $ if (> 1 2) 0 (min ([] 1 2))\n    * 10 x\n\ndefn main! ()\n  bad\n");
+
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "bad", &warnings, &CallStackList::default())
+      .expect("the Option-tainted arithmetic body should preprocess without a hard failure");
+    assert!(
+      warnings
+        .borrow()
+        .iter()
+        .any(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("Option")),
+      "expected an Option payload mismatch diagnostic: {:?}",
+      warnings.borrow()
+    );
+  });
+}
+
+#[test]
 fn defimpl_rejects_legacy_tag_arguments() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("defn main! ()\n  defimpl :LegacyImpl :LegacyTrait\n    .dummy $ fn (x) x");
