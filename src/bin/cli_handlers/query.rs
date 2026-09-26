@@ -1486,6 +1486,19 @@ mod type_query_tests {
   }
 
   #[test]
+  fn context_examples_render_symbol_leaf_without_failing_collection() {
+    let examples = vec![
+      Cirru::Leaf("ConsoleHost".into()),
+      Cirru::List(vec![Cirru::Leaf("identity".into()), Cirru::Leaf("1".into())]),
+    ];
+    let collection = build_context_examples(&examples, 2, 1200).expect("leaf and list examples should render");
+    assert_eq!(collection.total, 2);
+    assert_eq!(collection.items[0].cirru, "ConsoleHost");
+    assert_eq!(collection.items[0].tree, Some(serde_json::json!("ConsoleHost")));
+    assert_eq!(collection.items[1].cirru, "identity 1");
+  }
+
+  #[test]
   fn special_builtin_context_preserves_examples_and_intent() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");
@@ -2901,8 +2914,11 @@ fn build_context_examples(examples: &[Cirru], limit: usize, budget: usize) -> Re
 
   for (index, example) in examples.iter().take(returned_count).enumerate() {
     let nodes = count_cirru_nodes(example);
-    let rendered = cirru_parser::format(std::slice::from_ref(example), true.into())
-      .map_err(|error| format!("Failed to format definition example {index}: {error}"))?;
+    let rendered = match example {
+      Cirru::Leaf(value) => value.to_string(),
+      Cirru::List(_) => cirru_parser::format(std::slice::from_ref(example), true.into())
+        .map_err(|error| format!("Failed to format definition example {index}: {error}"))?,
+    };
     let (cirru, truncated) = truncate_chars(rendered.trim(), per_example_budget);
     items.push(ContextExample {
       index,
