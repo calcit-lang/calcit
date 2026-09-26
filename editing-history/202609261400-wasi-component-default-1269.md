@@ -1,0 +1,6 @@
+# calcit wasi 默认切换到 WASI 0.3 Component
+
+- #1269 第一阶段的落地：`calcit wasi` 的 `--boundary` 默认从 `native`（Preview 1）改为 `component`（WASI 0.3.1 `wasi:cli/command`）。`calcit wasm` 默认保持 `native`（core module），通用 `calcit wasm --boundary component` 不受影响。
+- 有界差异核对结论（issue 评论已记录）：Component 已验证覆盖 stdout/stderr、`get-args`、`get-env`、`quit!`、`read-stdin-text` 与 `FsPath .read-text` / `.write-text`；Preview 1 独有 `unix-time-ms`、`cpu-time`、`wait-ms`、`secure-random-bytes`、`.read-dir`，Component 以 `E_WASI_COMMAND_CAPABILITY` 明确失败。本地工作区未发现 P1-only 能力的外部具名消费者，外部使用标记为未知而非“无使用者”，因此不删除 P1 实现，只保留显式 `--boundary native`。
+- 同步更新：`src/cli_args.rs` 默认值与 CLI 解析测试；`scripts/test-wasi-preprocess.sh`、`scripts/test-wasi-manifest-business.sh`、`scripts/test-wasi-stdin.mjs` 中需要 Preview 1 的调用显式加 `--boundary native`；`AGENTS.md`、`docs/run/cli-options.md`、`docs/run/upgrade.md`、`docs/CalcitAgent.md`、`docs/installation/host-capability-boundary.md`、`scripts/wasm-validation.md`、`examples/wasi-command/README.md` 修正默认与能力描述，并纠正“stdin/文件系统待 lowering”的过期说法。
+- 验证：`cargo fmt`、`cargo clippy -- -D warnings`、`cargo test`（20 个测试二进制全部通过，含 `wasi_command_component_cli` 12/12）、`bash scripts/test-wasi-preprocess.sh`（Wasmtime 18.0.3，退出 0）、`docs check-md` 71 文件 / 347 blocks 通过。Seam 说明：`src/bin/cr.rs` 中 `resolve_public_wasm_options` 的 `WasmBoundary::Native` 只是占位，dispatch 会立即用命令默认值覆盖。

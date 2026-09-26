@@ -35,7 +35,7 @@ try {
   const js = join(temp, "js");
   calcit(...entry, "--emit-path", js, "js");
   const component = join(temp, "component");
-  const preview1 = run(binary, [...entry, "wasi", "--emit-path", join(temp, "preview1")]);
+  const preview1 = run(binary, [...entry, "wasi", "--boundary", "native", "--emit-path", join(temp, "preview1")]);
   assert.notEqual(preview1.status, 0);
   assert.match(preview1.stderr, /read-stdin-text requires.*--boundary component/);
   calcit(...entry, "wasi", "--boundary", "component", "--emit-path", component);

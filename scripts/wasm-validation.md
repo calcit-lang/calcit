@@ -86,7 +86,7 @@ Struct、Enum、Option 与 Result 已由同一套 parser/formatter 覆盖，不�
 `examples/wasi-command/calcit.cirru` 的具名 `Manifest` 业务入口另由
 `scripts/test-wasi-manifest-component.sh` 在 Wasmtime 49/WASI 0.3.1 上验证；它与
 `scripts/test-wasi-manifest-business.sh` 的 native、Node JS、Preview 1 使用同一份输入、期望输出和
-`Result` 分支。Component 运行需要显式 `--boundary component`、`-S p3`、两个 Component async
+`Result` 分支。`calcit wasi` 默认生成 WASI 0.3 Component；Preview 1 需显式 `--boundary native`。Component 运行需要 `-S p3`、两个 Component async
 开关及 `--dir HOST::/workspace`。写入是 create + truncate，失败可能留下截断或部分文件，
 不能误称为原子替换。
 同一 Snapshot 的 `method-eval-main!` 单独验证普通 `Result.map`：有副作用的 receiver 和回调实参
