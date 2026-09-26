@@ -16,9 +16,10 @@ try {
   run(snapshot, "test", "--tag", "helper-inference", "--require-match");
   const data = JSON.parse(run("cirru", "parse-edn", "--file", snapshot));
   const tests = data[":files"]["'app.main"].defs["'main!"].tests;
-  assert.equal(tests.length, 1, "the shared semantic contract must be present");
+  assert.deepEqual(tests.map(test => test.name).sort(),
+    ["closed-helper-contract", "independent-method-instantiations"], "the shared semantic contracts must be present");
   run(snapshot, "edit", "def", "app.main/run-tests", "--input-format", "json-ast", "--code",
-    JSON.stringify(["defwasm-export", "run-tests", [], tests[0].code.__edn_quote, "&unit"]));
+    JSON.stringify(["defwasm-export", "run-tests", [], ...tests.map(test => test.code.__edn_quote), "&unit"]));
   run(snapshot, "edit", "schema", "app.main/run-tests", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
   const entry = [snapshot, "--init-fn", "app.main/run-tests", "--reload-fn", "app.main/run-tests"];
@@ -45,11 +46,19 @@ try {
   assert.equal(context.data.inferred_schema, type.data.inferred_type);
   assert.ok(context.diagnostics.some((d) => d.code === "I_SCHEMA_INFERRED"));
   assert.ok(!context.diagnostics.some((d) => d.code === "W_TYPE_COVERAGE_NONE" || d.code === "W_DYNAMIC_TYPE_UNRESOLVED"));
+  const lengthsType = query("type-at", "app.main/helper-lengths", "--path", "code");
+  const lengthsContext = query("context", "app.main/helper-lengths");
+  assert.match(lengthsType.data.inferred_type, /'List 'Number/);
+  assert.equal(lengthsType.data.confidence, "exact");
+  assert.equal(lengthsContext.data.schema, null);
+  assert.equal(lengthsContext.data.inferred_schema, lengthsType.data.inferred_type);
   assert.equal(await readFile(snapshot, "utf8"), before);
 
   // Compile failures belong to the CLI boundary, not runtime try assertions.
   const failures = [
     ["unproved input", "defn bad (x) x"],
+    ["one concrete caller cannot prove an input contract", "defn bad () $ cycle-peer 1", undefined, "defn cycle-peer (x) x"],
+    ["inferred list conflicts with callback input", "defn bad () $ .map (helper-list) $ fn (x) $ &str:count x"],
     ["mixed return", "defn bad () $ if (= 3 $ helper-number) 1 |text"],
     ["recursive helper", "defn bad ()\n  bad\n  , 1"],
     ["mutual recursion", "defn bad ()\n  cycle-peer\n  , 1", undefined, "defn cycle-peer ()\n  bad\n  , 2"],
