@@ -19,7 +19,7 @@ entry_for:
 
 本文档为 AI Agent 提供 Calcit 项目的操作指南。
 
-本文定位为 Agents 约束与完整操作手册：覆盖硬前置步骤、命令边界、复杂重构与系统化排障。`docs/CalcitAgent.md` 用于查询与局部编辑速查，不替代本文中的约束规则。
+本文是按需阅读的进阶操作手册，覆盖复杂重构与系统化排障。首次写入前的硬前置步骤是 `calcit docs agents --contract`；`docs/CalcitAgent.md` 是完整 Agent 指南与契约的权威来源，本页不替代其中的约束。首次使用、契约 digest 改变或任务超出紧凑契约时，再阅读完整指南或相关章节。
 
 ## 快速开始：显式语法节点输入
 
