@@ -2926,6 +2926,12 @@
           :examples $ []
           :schema $ :: 'Enum
           :tags $ #{} :data
+        'MapEntry $ %{} 'CodeEntry
+          :doc "|保留键和值各自类型的具名 Map 条目，可用于排序和索引映射；不改变旧的 &map:to-list 返回值。"
+          :code $ quote $ defstruct MapEntry ([] 'K 'V) (:key 'K) (:value 'V)
+          :examples $ []
+          :schema $ :: 'StructDef
+          :tags $ #{} :data
         'MapEntryDecision $ %{} 'CodeEntry
           :doc "|Typed decision returned by filter-map-kv: :keep supplies the output key/value and :drop omits the input entry."
           :code $ quote $ def MapEntryDecision
@@ -6508,6 +6514,37 @@
                 map
                   [] (FsPath :value |a) (FsPath :value |b)
                   fn (path) (:value path)
+              :tags $ #{} :core :unit
+        'map-entries $ %{} 'CodeEntry
+          :doc "|将 Map<K,V> 转为 List<MapEntry<K,V>>，保留 key/value 类型；需要类型化排序时使用它，旧 &map:to-list 保持原语义。"
+          :code $ quote $ defn map-entries (xs)
+            map-list-kv xs $ fn (key value)
+              %{} MapEntry (:key key) (:value value)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'List $ :: 'MapEntry 'K 'V
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-key-value-types)
+              :code $ quote $ do
+                let
+                    entries $ map-entries $ &{} :a 1 :b 2
+                  assert-type entries $ :: 'List $ :: 'MapEntry 'Tag 'Number
+                  assert= 2 $ count entries
+                  assert= (#{} 1 2)
+                    &list:to-set $ map entries $ fn (entry) (:value entry)
+                , &unit
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |survives-sort-and-indexing)
+              :code $ quote $ do
+                let
+                    entries $ map-entries $ &{} |b 2 |a 1
+                    sorted $ &list:sort-by entries :value
+                    values $ map-indexed sorted $ fn (idx entry) (:value entry)
+                  assert-type values $ :: 'List 'Number
+                  assert= ([] 1 2) values
+                , &unit
               :tags $ #{} :core :unit
         'map-indexed $ %{} 'CodeEntry
           :doc "|Map over a List<T> with indices. The callback receives (index value), and the result is List<U>."

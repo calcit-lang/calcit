@@ -24,6 +24,39 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## Map 条目参与排序与组件调用
+
+旧的 `&map:to-list` 生成异构的 `[key value]` 列表；即使输入是 `Map<K,V>`，
+该列表的成员也不能同时被推断为 `K` 和 `V`。把它解构后直接传给接受具名 Struct 的函数，
+可能遇到 `E_DYNAMIC_NOMINAL_ARGUMENT`。此处不应给旧原语伪造一个同质列表类型，也不要用
+`assert-type` 将未经证明的动态值硬转为具名类型。
+
+需要保留类型时，改用 `map-entries`。它返回 `List<MapEntry<K,V>>`，条目提供 `:key` 与
+`:value` 字段；下游排序、`map-indexed` 与组件调用继续按各自的类型检查。例如：
+
+```cirru
+-> tasks map-entries
+  &list:sort-by :key
+  map-indexed $ fn (idx entry)
+    comp-task (:value entry) idx false || ||
+```
+
+如果排序键位于值内部，例如 `Task.sort-id`，仍可对条目使用 `sort`，但当前对嵌套的比较函数
+不会自动从泛型容器推断 `a`、`b` 的精确类型；在比较函数内声明 `hint-fn` 的 `:args` 为
+`MapEntry<K,V>`，再读取 `(:sort-id $ :value a)`。例如，`Task` 是项目中的具名 Struct 时：
+
+```cirru
+sort entries $ fn (a b)
+  hint-fn $ {}
+    :args $ [] (:: 'MapEntry 'String 'app.schema/Task) (:: 'MapEntry 'String 'app.schema/Task)
+    :return 'Number
+  &compare (:sort-id $ :value a) (:sort-id $ :value b)
+```
+
+这是局部、显式的类型补充，不需要新增
+编译器特殊规则。`map-entries` 不会自动修改旧调用；升级时应在实际消费者项目中运行
+`analyze check-public`、对应测试及 JS 构建，确认业务排序和渲染结果。
+
 ## 0.19 兼容清理与 CLI 入口收敛
 
 `%{}?` 与底层 `&%{}?` 已退役，`--compat-types` 也不再恢复其隐式 `nil` 补字段行为。
