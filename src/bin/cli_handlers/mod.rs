@@ -42,7 +42,9 @@ pub use ffi::handle_ffi_command;
 pub(crate) use fix::handle_fix_command;
 pub use program_diff::handle_program_diff_command;
 pub use query::handle_query_command;
-pub(crate) use query::{load_main_snapshot, load_module_with_sources_silent, load_snapshot_for_static_analysis};
+pub(crate) use query::{
+  load_main_snapshot, load_module_with_sources_silent, load_snapshot_for_static_analysis, prepare_program_for_type_query,
+};
 pub(crate) use scaffold::handle_scaffold_command;
 pub(crate) use structured_output::{StructuredOutputFormat, format_json_value_as_edn};
 pub use tips::{set_tips_level, suppress_command_guidance};

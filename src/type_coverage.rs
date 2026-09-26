@@ -1,6 +1,8 @@
 //! Type coverage and weak-type analysis for `calcit analyze`.
 #![allow(dead_code)]
 
+use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::sync::Arc;
@@ -15,6 +17,74 @@ use cirru_parser::Cirru;
 use md5::{Digest, Md5};
 
 use crate::cli_handlers::fix::schema_synthesis::{SchemaEvidenceCandidate, collect_schema_evidence_candidates};
+
+/// Analyze compiler-proven absent contracts without changing source declarations.
+/// Failed proofs retain their original coverage; explicit Dynamic is never inferred.
+pub(crate) fn with_proven_helper_contracts<'a>(
+  snapshot: &'a snapshot::Snapshot,
+  namespace: Option<&str>,
+  namespace_prefix: Option<&str>,
+  include_dependencies: bool,
+) -> Result<Cow<'a, snapshot::Snapshot>, String> {
+  let targets = scoped_definition_entries(snapshot, namespace, namespace_prefix, include_dependencies)?
+    .into_iter()
+    .filter(|(_, _, entry)| {
+      snapshot::schema_annotation_is_missing(&entry.schema)
+        && matches!(&entry.code, Cirru::List(items) if matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defn"))
+    })
+    .map(|(ns, def, _)| (ns.to_owned(), def.to_owned()))
+    .collect::<Vec<_>>();
+  let mut effective = Cow::Borrowed(snapshot);
+  if targets.is_empty() {
+    return Ok(effective);
+  }
+  struct StrictGuard(bool);
+  impl Drop for StrictGuard {
+    fn drop(&mut self) {
+      calcit::runner::preprocess::set_strict_types(self.0);
+      // A later analysis may compile with different strictness. Compiled
+      // definitions do not encode that mode or replay their diagnostics.
+      let _ = calcit::program::clear_runtime_caches_for_reload(Arc::from("query.type"), Arc::from("query.type"), true);
+    }
+  }
+  let _guard = StrictGuard(calcit::runner::preprocess::is_strict_types_enabled());
+  calcit::runner::preprocess::set_strict_types(true);
+  if crate::cli_handlers::prepare_program_for_type_query(snapshot).is_err() {
+    return Ok(effective);
+  }
+  for (namespace, definition) in targets {
+    let warnings = RefCell::new(vec![]);
+    let result = calcit::runner::preprocess::compile_source_def_for_snapshot(
+      &namespace,
+      &definition,
+      &warnings,
+      &calcit::call_stack::CallStackList::default(),
+    );
+    if result.is_err() || !warnings.borrow().is_empty() {
+      // Cached compiled definitions do not replay diagnostics. Discard a failed
+      // proof's cache before another target can reuse its dependencies as evidence.
+      if crate::cli_handlers::prepare_program_for_type_query(snapshot).is_err() {
+        break;
+      }
+      continue;
+    }
+    if let Some(schema) = calcit::program::lookup_compiled_def(&namespace, &definition)
+      .and_then(|compiled| calcit::runner::preprocess::infer_static_type_from_expr(&compiled.preprocessed_code))
+      .filter(|schema| matches!(schema.as_ref(), CalcitTypeAnnotation::Fn(_)))
+    {
+      effective
+        .to_mut()
+        .files
+        .get_mut(&namespace)
+        .expect("scoped namespace")
+        .defs
+        .get_mut(&definition)
+        .expect("scoped definition")
+        .schema = schema;
+    }
+  }
+  Ok(effective)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]

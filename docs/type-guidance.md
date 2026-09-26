@@ -104,6 +104,8 @@ calcit calcit.cirru --entry test
 
 `analyze check-types` 与 `analyze weak-types` 只帮助定位迁移清单，不决定程序是否类型正确，也不输出 Dynamic 比例、shape/family 排名或另一套关系判断。需要清理时使用 kind、intent、definition、path 和 detail 回到源码；值能否进入 typed code 只由严格预处理诊断决定。
 
+对于省略 schema、且编译器已经能够证明完整契约的封闭 helper，`check-types`、`weak-types` 和 `quality` 使用同一份推断结果；增量分析也遵循这一规则。删除这类冗余标注不应增加迁移债务。分析不会把推断结果写回源码，也不会替换显式 `Dynamic`；推断失败的定义仍按原有缺失契约报告。
+
 已有 CI 的 `analyze quality` 与 baseline 在 0.14.x 保留为有界兼容面，便于存量项目逐步把债务清零：
 
 ```bash

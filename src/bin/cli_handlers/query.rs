@@ -917,7 +917,7 @@ fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str) -> Result<()
   }
 }
 
-fn prepare_program_for_type_query(snapshot: &snapshot::Snapshot) -> Result<(), String> {
+pub(crate) fn prepare_program_for_type_query(snapshot: &snapshot::Snapshot) -> Result<(), String> {
   program::clear_runtime_caches_for_reload(Arc::from("query.type"), Arc::from("query.type"), true)?;
   {
     let mut program_data = program::PROGRAM_CODE_DATA
@@ -1039,6 +1039,24 @@ mod type_query_tests {
 
   fn prepare_program_for_type_query_on_cli_stack(snapshot: snapshot::Snapshot) {
     on_cli_stack(move || prepare_program_for_type_query(&snapshot)).expect("static type metadata should prepare");
+  }
+
+  #[test]
+  fn helper_analysis_does_not_leak_strict_compilation_cache() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    on_cli_stack(|| {
+      let snapshot = load_snapshot_for_static_analysis("calcit/test-helper-inference.cirru", None).expect("helper fixture");
+      let strict = runner::preprocess::is_strict_types_enabled();
+      let effective =
+        crate::type_coverage::with_proven_helper_contracts(&snapshot, Some("app.main"), None, false).expect("helper analysis");
+      assert!(matches!(
+        effective.files["app.main"].defs["helper-count"].schema.as_ref(),
+        CalcitTypeAnnotation::Fn(_)
+      ));
+      assert_eq!(runner::preprocess::is_strict_types_enabled(), strict);
+      assert!(program::lookup_compiled_def("app.main", "helper-count").is_none());
+      assert!(program::lookup_compiled_def(calcit::calcit::CORE_NS, calcit::calcit::BUILTIN_IMPLS_ENTRY).is_none());
+    });
   }
 
   #[test]

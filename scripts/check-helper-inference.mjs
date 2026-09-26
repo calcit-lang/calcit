@@ -52,6 +52,19 @@ try {
   assert.equal(lengthsType.data.confidence, "exact");
   assert.equal(lengthsContext.data.schema, null);
   assert.equal(lengthsContext.data.inferred_schema, lengthsType.data.inferred_type);
+  // Legacy analysis must consume the same proof, including its incremental path.
+  for (const flags of [[], ["--incremental"], ["--incremental"]]) {
+    const coverage = JSON.parse(run(snapshot, "analyze", "check-types", "--ns", "app.main", "--format", "json", ...flags));
+    assert.ok(coverage.data.definitions.length > 0);
+    assert.ok(coverage.data.definitions.every(def => def.coverage === "full"));
+    const weak = JSON.parse(run(snapshot, "analyze", "weak-types", "--ns", "app.main", "--format", "json", ...flags));
+    assert.equal(weak.data.summary.hits, 0);
+  }
+  const quality = JSON.parse(run(snapshot, "analyze", "quality", "--ns", "app.main", "--format", "json"));
+  assert.equal(quality.data.passed, true);
+  assert.equal(quality.data.metrics.schemaDynamic, 0);
+  const evidence = JSON.parse(run(snapshot, "analyze", "weak-types", "--schema-evidence", "--ns", "app.main", "--format", "json"));
+  assert.equal(evidence.data.summary.hits, 0);
   assert.equal(await readFile(snapshot, "utf8"), before);
 
   // Compile failures belong to the CLI boundary, not runtime try assertions.
@@ -67,6 +80,7 @@ try {
     ["WASM export boundary", "defwasm-export bad () 1"],
     ["WASM import boundary", "defwasm-import bad () |env |value"],
     ["conflicting use", "defn bad () $ &str:count $ helper-number"],
+    ["invalid helper dependency", "defn bad () $ cycle-peer", undefined, "defn cycle-peer () $ &str:count 1"],
     ["explicit Dynamic", "defn bad () 1", "quote $ :: 'Dynamic"],
     ["open container", "defn bad () $ []"],
   ];
@@ -80,6 +94,18 @@ try {
     assert.ifError(result.error);
     assert.equal(result.status, 1, `${label} must fail closed:\n${result.stdout}\n${result.stderr}`);
     assert.match(result.stderr, /E_WHOLE_DYNAMIC_PUBLIC_SCHEMA|W_PROC_ARG_TYPE_MISMATCH|expects type|warnings during preprocessing/);
+    {
+      const original = await readFile(bad, "utf8");
+      const coverage = JSON.parse(run(bad, "analyze", "check-types", "--ns", "app.main", "--format", "json"));
+      assert.equal(coverage.data.definitions.find(def => def.id === "app.main/bad").coverage, "none", label);
+      if (label === "invalid helper dependency") {
+        assert.equal(coverage.data.definitions.find(def => def.id === "app.main/cycle-peer").coverage, "none",
+          "a cached dependency must not lose its compile warning");
+      }
+      const weak = JSON.parse(run(bad, "analyze", "weak-types", "--ns", "app.main", "--format", "json"));
+      assert.ok(weak.data.summary.hits > 0, `${label} must remain visible`);
+      assert.equal(await readFile(bad, "utf8"), original);
+    }
   }
   console.log("Closed helper inference: shared native/JS/WASM tests, query evidence and rejected boundaries passed");
 } finally {
