@@ -22,7 +22,7 @@
             .next $ :: 'Fn $ {}
               :args $ [] 'test-traits.external/Counter
               :return 'test-traits.external/Counter
-          :examples $ []
+          :examples $ [] $ quote CounterOps
           :schema $ :: 'Trait
         'CounterOpsImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl CounterOpsImpl CounterOps (.next counter:next)
