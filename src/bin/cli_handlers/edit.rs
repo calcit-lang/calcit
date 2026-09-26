@@ -528,6 +528,7 @@ fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
           | "rm-def"
           | "doc"
           | "schema"
+          | "ffi"
           | "examples"
           | "add-example"
           | "rm-example"
