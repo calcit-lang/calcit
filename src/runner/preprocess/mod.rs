@@ -27,6 +27,7 @@ use checked_call_contract::{
 use type_checking::{
   CallTypeCheckInfo, check_core_fn_arg_types, check_function_return_type, check_local_fn_call_arg_types, check_proc_arg_types,
   check_reset_arg_types, check_user_fn_arg_types, detect_return_type_hint_from_processed_body,
+  specialize_collection_sort_expected_types,
 };
 use type_inference::{
   extract_literal_list_items, find_struct_lookup_in_literal_path, fully_typed_literal_assoc_path, fully_typed_literal_lookup_path,
@@ -3212,11 +3213,22 @@ fn preprocess_list_call(
               expected_method_argument_types(receiver_type.as_ref(), name)
                 .and_then(|types| types.get(ys.len() - 2).cloned())
                 .and_then(|expected| expected.resolve_to_fn())
+            } else if !has_spread
+              && ys.len() == 2
+              && let Calcit::Proc(proc @ (CalcitProc::Sort | CalcitProc::NativeListSort)) = &head_form
+              && let Some(receiver) = ys.get(1)
+              && let Some(signature) = proc.get_type_signature()
+            {
+              // Use the same list member contract as the later proc argument check.
+              let candidate_args = CalcitList::from(&[receiver.to_owned(), a.to_owned()]);
+              specialize_collection_sort_expected_types(&candidate_args, scope_types, &signature.arg_types)
+                .and_then(|types| types.get(1).and_then(|expected| expected.resolve_to_fn()))
             } else {
               None
             };
-            let is_prefix_method = matches!(&head_form, Calcit::Method(_, calcit::MethodKind::Invoke(_)));
-            let previous_fn = is_prefix_method.then(|| {
+            let has_callback_contract = matches!(&head_form, Calcit::Method(_, calcit::MethodKind::Invoke(_)))
+              || matches!(&head_form, Calcit::Proc(CalcitProc::Sort | CalcitProc::NativeListSort));
+            let previous_fn = has_callback_contract.then(|| {
               EXPECTED_FN_TYPE.with(|cell| {
                 let mut slot = cell.borrow_mut();
                 let previous = slot.take();

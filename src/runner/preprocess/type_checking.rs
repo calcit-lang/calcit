@@ -267,7 +267,7 @@ fn specialize_collection_fold_expected_types(
   Some(specialized)
 }
 
-fn specialize_collection_sort_expected_types(
+pub(super) fn specialize_collection_sort_expected_types(
   args: &CalcitList,
   scope_types: &ScopeTypes,
   expected_types: &[Arc<CalcitTypeAnnotation>],

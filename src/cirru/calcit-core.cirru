@@ -6546,6 +6546,17 @@
                   assert= ([] 1 2) values
                 , &unit
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |infers-sort-comparator-fields)
+              :code $ quote $ do
+                let
+                    entries $ map-entries $ &{} |b 2 |a 1
+                    sorted $ sort entries $ fn (left right)
+                      - (:value left) (:value right)
+                    values $ map sorted $ fn (entry) (:value entry)
+                  assert-type sorted $ :: 'List $ :: 'MapEntry 'String 'Number
+                  assert= ([] 1 2) values
+                , &unit
+              :tags $ #{} :core :unit
         'map-indexed $ %{} 'CodeEntry
           :doc "|Map over a List<T> with indices. The callback receives (index value), and the result is List<U>."
           :code $ quote $ defn map-indexed (xs f)
