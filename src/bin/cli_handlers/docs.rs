@@ -525,6 +525,10 @@ fn score_doc_query(doc: &GuideDoc, query_lower: &str) -> usize {
     score += match_score(entry, query_lower, 180, 96);
   }
 
+  // Document shape ranks actual matches; it must not manufacture relevance.
+  if score == 0 {
+    return 0;
+  }
   score.saturating_add_signed(score_doc_shape(doc))
 }
 

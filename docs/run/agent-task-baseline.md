@@ -1,6 +1,6 @@
 ---
 title: "Calcit Agent 任务基线"
-summary: "0.21 的固定任务、可重复工具契约与 Agent 效率实验记录口径"
+summary: "真实 Agent 任务的轻量验收，以及按需使用的历史工具契约与实验参考"
 scope: "core"
 kind: "guide"
 category: "run"
@@ -21,16 +21,28 @@ requires:
 
 # Calcit Agent 任务基线
 
-本文固定 [#1302](https://github.com/calcit-lang/calcit/issues/1302) 的 11 个小任务，供 0.21 应用验收及以后评估查询、文档和迁移改动使用。它不是新的 CLI 命令或 CI 跑分。任务的工具契约测试只能证明某个确定性行为，不能证明 Agent 在同样时间内完成了业务改动；目前没有可比较的模型运行记录，因此**不报告效率提升倍数**。
+本文提供真实 Agent 任务的轻量验收方式，并保留 [#1302](https://github.com/calcit-lang/calcit/issues/1302) 的历史任务目录作为按需参考。按 2026-09-26 收敛后的 [#1306](https://github.com/calcit-lang/calcit/issues/1306)，当前 0.23 验收围绕一次实用的 Respo 修改，不要求先执行全部历史任务、冻结模型或重复三次实验。
 
-## 固定输入与执行边界
+## 当前任务验收
+
+在独立分支完成一个小的 typed helper 或组件数据修改，实际使用 [#1307](https://github.com/calcit-lang/calcit/issues/1307) 的推断改善。沿用现有 query → edit/fix → check/:tests → JS 运行路径，不新增命令、报告格式或统计 analyzer。
+
+- 记录实际仓库 revision、明确的工具版本、任务目标、关键命令、重试原因和待人工判断点。候选编译器未发布时明确标记 unreleased revision；依赖仍优先使用精确发布版本。
+- 提供修改前后源码和 PR，说明减少了哪些重复标注或必要工具步骤；保持严格类型和普通方法调用，不通过扩大 Dynamic、插入未经证明的 unsafe-coerce 或改用 native call 消除失败。
+- 语义断言放在 definition `:tests`，验证相关 JS 构建、运行和浏览器目标 smoke。复用已有模块/宿主边界证据，不要求重新迁移整个应用。
+- 在同一个任务中核对适用的查询契约、方法信息和局部 JS FFI 行为；可选参数迁移使用独立有界案例，不强塞进应用。遇到具体阻塞先记录复现和负责 issue，不把失败记录为已通过。
+- 候选验收后发布，再用公开包复测必要场景。发布后复测不作为发布前的循环依赖；milestone 收尾仍需完成发布和成果 Discussion。
+
+任务的确定性测试只能证明对应行为；没有可比较的模型运行记录时，**不报告效率提升倍数**。以下历史起点与实验口径仅用于主动开展对照研究，不是日常开发或当前发版的额外门禁。
+
+## 历史实验：固定输入与执行边界（按需）
 
 - 普通任务的固定 Calcit 起点为 `538934af13a86e53c6c31592d7ad33ab7da12c45`（0.20.0 加当时的多入口 `fix` 修复）；使用独立、干净的 worktree，不在当前用户 checkout 上重置或覆盖。此 SHA 属于历史堆叠分支，不是 main 的祖先；#1346 的完整改动随后 squash 合入 main `497c1dfd60ac56d5da754ce46447ebd3b535f106`。旧基线仍从固定 SHA 运行；以 main 做后续对照时，必须另记实际起点与两者差异，不把合并 SHA 静默替换为旧起点。
 - 真实 JS 消费者起点另行固定：Cumulo Reel `b0b464d21d781042053a589a19d5e8c7f5a09383`，Timegrass `cd2ddb05f88f51267fade6baa3fda681159440bc`。依赖采用这些 revision 自身的锁文件；安装策略、安全年龄门禁、Node 与 Calcit 版本必须写入每次运行记录。
 - T06–T08 是已经发生的历史故障，保留各自原始 Calcit 起点，不把今天的候选修复冒充旧基线。任务规范允许阅读 `AGENTS.md`、`calcit docs agents --contract`、目标仓库版本化文档和该任务点名的源码/测试；不预先泄露修复 PR 的 diff 给 Agent。T10–T11 是 held-out 验收组，不用来决定 #1303–#1305 的命名或指南内容。
 - 每个任务从固定起点的临时 worktree 开始。修改 Snapshot 前遵守当前 mutation contract；优先 Cirru EDN，只有外部 JSON-only 接口才显式请求 JSON。保存原始指令、命令及 stdout/stderr、最终 diff、测试输出和人工审阅意见。失败不能靠放宽类型、扩大 `Dynamic`、把方法换成 native call、插入未经证明的 `unsafe-coerce` 或修改预期来消除。
 
-## 任务目录
+## 历史任务目录（按需）
 
 下表的“契约探针”是今天在 `C` 上可重复运行的最低确定性检查；`H` 只标明旧故障的输入起点，旧 commit 未必含修复后的测试文件。真实任务完成还必须审阅目标 diff 与业务行为；探针通过本身不算任务完成。`C` 表示上述普通 Calcit 起点，`R` 表示真实消费者起点，`H` 表示另列的历史起点。
 
@@ -48,10 +60,10 @@ requires:
 | T10 · C · held-out | 在 `tests/edit_cli.rs` 的 `prepare_minimal_snapshot` 生成的 Snapshot 上做 guarded `edit transaction`，同时故意让预览的 Snapshot revision 过期。 | 事务整体拒绝且 Snapshot 未变；新 revision 下两项一起成功，人工可审阅 diff。 | `cargo test --test edit_cli schema_feature_edit_preserves_contract_and_works_in_guarded_transaction` 与 `yarn check-agent-interface` 的 `staged edit transaction`；区分“部分写入”“过期 revision”“传输格式混淆”。 |
 | T11 · C · held-out | 用 `cirru parse-edn --file` 读取大于参数长度限制的 Cirru EDN，并比较 stdin 与文件结果。 | 源数据的 EDN 结构和值一致；缺输入、文件与 inline 同传均有明确错误。当前命令的 JSON 兼容输出不代表其他查询应默认 JSON。 | `cargo test --test cirru_parse_edn_cli`；区分“截断”“错误输入选择”“格式误判”。 |
 
-## 原始记录与比较规则
+## 对照实验的记录与比较规则（按需）
 
-每一次 Agent 运行单独记录：任务 ID、输入仓库和完整 commit、依赖锁文件 checksum、Calcit/Node/Yarn 版本、模型标识与配置、允许的文档和上下文上限、开始/结束时间、每次工具调用及状态/输出字节数、重试和失败分类、最终 diff、行为测试、人工审阅修改及其原因。失败也保留原始记录，不只统计成功样本。对查询、文档或迁移改动，前后使用相同模型、配置、上下文上限和任务起点；代表任务至少各运行 3 次，报告每次结果及波动，不以 3 次样本宣称统计显著。
+只有主动开展对照实验时，才使用以下完整记录口径：任务 ID、输入仓库和完整 commit、依赖锁文件 checksum、Calcit/Node/Yarn 版本、模型标识与配置、允许的文档和上下文上限、开始/结束时间、每次工具调用及状态/输出字节数、重试和失败分类、最终 diff、行为测试、人工审阅修改及其原因。失败也保留原始记录，不只统计成功样本。对查询、文档或迁移改动，前后使用相同模型、配置、上下文上限和任务起点；代表任务至少各运行 3 次，报告每次结果及波动，不以 3 次样本宣称统计显著。普通应用验收使用上面的轻量记录，不承担这些实验要求。
 
 2026-09-24 的确定性工具基线：在 Calcit `538934af13a86e53c6c31592d7ad33ab7da12c45` 上执行 `cargo test --test fix_cli --test edit_cli --test cirru_parse_edn_cli --test js_artifact_output_cli --test js_namespace_import_cli --quiet`，五个 suite 分别通过 33、10、3、3、1 项（共 50 项）。同一 commit 的 `yarn check-agent-interface` 通过 32/32 场景。测试数量和绿灯只标记现有工具契约，并非 11 个任务各自的 Agent 完成率、耗时或人工审阅成本。
 
-当前已留下 T06–T08 的确定性前后故障记录（见 #1302 评论）；T07 的后续 target 误判随 #1346 合入 main，附有最小回归和 Cumulo 原项目只读预览证据。其余任务的“契约探针”可运行，但尚未完成冻结模型配置的 Agent 基线、matched rerun 和人工审阅原始记录；T04/T09 的消费者业务验收仍以各自 issue 为准。不要将本目录或一次绿色 CI 解释为 #1302 的全部验收完成。
+历史记录包括 T06–T08 的确定性前后故障（见 #1302 评论）；T07 的后续 target 误判随 #1346 合入 main，附有最小回归和 Cumulo 原项目只读预览证据。这些记录不构成冻结模型配置的基线或 matched rerun，不能据此宣称模型效率提升。当前任务与消费者验收以收敛后的 #1306、#1285、#1286 为准；缺少历史模型实验不是它们的前置阻塞。
