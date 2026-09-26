@@ -29,14 +29,19 @@ pub(super) struct ModuleFunctionLayout {
   pub(super) component_free_head: bool,
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum WasiComponentReadSource {
+  File { open: u32, descriptor_drop: u32 },
+  Stdin,
+}
+
 pub(super) struct WasiComponentReadImports {
-  pub(super) open: u32,
+  pub(super) source: WasiComponentReadSource,
   pub(super) read_via_stream: u32,
   pub(super) stream_read: u32,
   pub(super) stream_drop: u32,
   pub(super) future_read: u32,
   pub(super) future_drop: u32,
-  pub(super) descriptor_drop: u32,
   pub(super) free: u32,
   pub(super) realloc: u32,
 }
@@ -1288,18 +1293,18 @@ pub(super) fn build_wasi_component_read_bytes_fn(
   canonical: &ComponentAsyncCanonicalImports,
 ) -> CompiledFn {
   let WasiComponentReadImports {
-    open: open_idx,
+    source,
     read_via_stream: read_via_stream_idx,
     stream_read: stream_read_idx,
     stream_drop: stream_drop_idx,
     future_read: future_read_idx,
     future_drop: future_drop_idx,
-    descriptor_drop: descriptor_drop_idx,
     free: free_idx,
     realloc: realloc_idx,
   } = imports;
-  // params: Calcit path pointer, output pair { byte pointer, byte count }.
-  let mut b = RuntimeFnBuilder::new(2);
+  // File params: path, output pair. Stdin param: output pair only.
+  let output_param = u32::from(matches!(source, WasiComponentReadSource::File { .. }));
+  let mut b = RuntimeFnBuilder::new(output_param + 1);
   let opened = b.alloc_i32();
   let pair = b.alloc_i32();
   let data = b.alloc_i32();
@@ -1320,36 +1325,42 @@ pub(super) fn build_wasi_component_read_bytes_fn(
   let data_capacity = WASI_TEXT_FILE_LIMIT as i32 + 1;
 
   for instruction in [
-    Instruction::LocalGet(1),
+    Instruction::LocalGet(output_param),
     Instruction::I32Const(0),
     Instruction::I32Store(mem_arg_i32(0)),
-    Instruction::LocalGet(1),
+    Instruction::LocalGet(output_param),
     Instruction::I32Const(0),
     Instruction::I32Store(mem_arg_i32(4)),
-    Instruction::I32Const(0),
-    Instruction::I32Const(0),
-    Instruction::I32Const(4),
-    Instruction::I32Const(12),
-    Instruction::Call(realloc_idx),
-    Instruction::LocalSet(opened),
-    Instruction::LocalGet(0),
-    Instruction::I32Const(0),
-    Instruction::I32Const(1),
-    Instruction::LocalGet(opened),
-    Instruction::Call(open_idx),
-    Instruction::I32Eqz,
-    Instruction::If(BlockType::Empty),
-    Instruction::LocalGet(opened),
-    Instruction::I32Const(12),
-    Instruction::Call(free_idx),
-    Instruction::I32Const(0),
-    Instruction::Return,
-    Instruction::End,
-    Instruction::LocalGet(opened),
-    Instruction::I32Load(mem_arg_i32(0)),
-    Instruction::LocalSet(fd),
   ] {
     b.emit(instruction);
+  }
+  if let WasiComponentReadSource::File { open, .. } = source {
+    for instruction in [
+      Instruction::I32Const(0),
+      Instruction::I32Const(0),
+      Instruction::I32Const(4),
+      Instruction::I32Const(12),
+      Instruction::Call(realloc_idx),
+      Instruction::LocalSet(opened),
+      Instruction::LocalGet(0),
+      Instruction::I32Const(0),
+      Instruction::I32Const(1),
+      Instruction::LocalGet(opened),
+      Instruction::Call(open),
+      Instruction::I32Eqz,
+      Instruction::If(BlockType::Empty),
+      Instruction::LocalGet(opened),
+      Instruction::I32Const(12),
+      Instruction::Call(free_idx),
+      Instruction::I32Const(0),
+      Instruction::Return,
+      Instruction::End,
+      Instruction::LocalGet(opened),
+      Instruction::I32Load(mem_arg_i32(0)),
+      Instruction::LocalSet(fd),
+    ] {
+      b.emit(instruction);
+    }
   }
 
   for (size, alignment, local) in [(8, 4, pair), (data_capacity, 1, data), (32, 4, future_result), (8, 8, event)] {
@@ -1364,9 +1375,11 @@ pub(super) fn build_wasi_component_read_bytes_fn(
       b.emit(instruction);
     }
   }
+  if matches!(source, WasiComponentReadSource::File { .. }) {
+    b.emit(Instruction::LocalGet(fd));
+    b.emit(Instruction::I64Const(0));
+  }
   for instruction in [
-    Instruction::LocalGet(fd),
-    Instruction::I64Const(0),
     Instruction::LocalGet(pair),
     Instruction::Call(read_via_stream_idx),
     Instruction::LocalGet(pair),
@@ -1496,8 +1509,22 @@ pub(super) fn build_wasi_component_read_bytes_fn(
   }
 
   for instruction in [
+    // Early rejection cancels the producer. At EOF, observe its completion
+    // before dropping the stream so cancellation cannot hide a host error.
+    Instruction::LocalGet(valid),
+    Instruction::I32Eqz,
+    Instruction::If(BlockType::Empty),
     Instruction::LocalGet(stream),
     Instruction::Call(stream_drop_idx),
+    Instruction::End,
+  ] {
+    b.emit(instruction);
+  }
+  // Preserve ownership independently of completion, which may change valid.
+  let stream_owned = b.alloc_i32();
+  b.emit(Instruction::LocalGet(valid));
+  b.emit(Instruction::LocalSet(stream_owned));
+  for instruction in [
     Instruction::LocalGet(future),
     Instruction::LocalGet(future_result),
     Instruction::Call(future_read_idx),
@@ -1542,44 +1569,64 @@ pub(super) fn build_wasi_component_read_bytes_fn(
     Instruction::LocalGet(done),
     Instruction::I32And,
     Instruction::LocalSet(valid),
-    // A failed future may own an error-code::other string.
-    Instruction::LocalGet(future_status),
-    Instruction::I32Eqz,
+  ] {
+    b.emit(instruction);
+  }
+  if matches!(source, WasiComponentReadSource::File { .. }) {
+    for instruction in [
+      // A failed future may own an error-code::other string.
+      Instruction::LocalGet(future_status),
+      Instruction::I32Eqz,
+      Instruction::If(BlockType::Empty),
+      Instruction::LocalGet(future_result),
+      Instruction::I32Load8U(mem_arg_byte(0)),
+      Instruction::I32Const(1),
+      Instruction::I32Eq,
+      Instruction::If(BlockType::Empty),
+      Instruction::LocalGet(future_result),
+      Instruction::I32Load8U(mem_arg_byte(4)),
+      Instruction::I32Const(36),
+      Instruction::I32Eq,
+      Instruction::If(BlockType::Empty),
+      Instruction::LocalGet(future_result),
+      Instruction::I32Load8U(mem_arg_byte(8)),
+      Instruction::I32Const(1),
+      Instruction::I32Eq,
+      Instruction::If(BlockType::Empty),
+      Instruction::LocalGet(future_result),
+      Instruction::I32Load(mem_arg_i32(12)),
+      Instruction::LocalGet(future_result),
+      Instruction::I32Load(mem_arg_i32(16)),
+      Instruction::Call(free_idx),
+      Instruction::End,
+      Instruction::End,
+      Instruction::End,
+      Instruction::End,
+    ] {
+      b.emit(instruction);
+    }
+  }
+  for instruction in [
+    Instruction::LocalGet(stream_owned),
     Instruction::If(BlockType::Empty),
-    Instruction::LocalGet(future_result),
-    Instruction::I32Load8U(mem_arg_byte(0)),
-    Instruction::I32Const(1),
-    Instruction::I32Eq,
-    Instruction::If(BlockType::Empty),
-    Instruction::LocalGet(future_result),
-    Instruction::I32Load8U(mem_arg_byte(4)),
-    Instruction::I32Const(36),
-    Instruction::I32Eq,
-    Instruction::If(BlockType::Empty),
-    Instruction::LocalGet(future_result),
-    Instruction::I32Load8U(mem_arg_byte(8)),
-    Instruction::I32Const(1),
-    Instruction::I32Eq,
-    Instruction::If(BlockType::Empty),
-    Instruction::LocalGet(future_result),
-    Instruction::I32Load(mem_arg_i32(12)),
-    Instruction::LocalGet(future_result),
-    Instruction::I32Load(mem_arg_i32(16)),
-    Instruction::Call(free_idx),
-    Instruction::End,
-    Instruction::End,
-    Instruction::End,
+    Instruction::LocalGet(stream),
+    Instruction::Call(stream_drop_idx),
     Instruction::End,
     Instruction::LocalGet(future),
     Instruction::Call(future_drop_idx),
-    Instruction::LocalGet(fd),
-    Instruction::Call(descriptor_drop_idx),
     Instruction::LocalGet(waitable_set),
     Instruction::Call(canonical.waitable_set_drop),
   ] {
     b.emit(instruction);
   }
-  for (local, size) in [(opened, 12), (pair, 8), (future_result, 32), (event, 8)] {
+  if let WasiComponentReadSource::File { descriptor_drop, .. } = source {
+    b.emit(Instruction::LocalGet(fd));
+    b.emit(Instruction::Call(descriptor_drop));
+    b.emit(Instruction::LocalGet(opened));
+    b.emit(Instruction::I32Const(12));
+    b.emit(Instruction::Call(free_idx));
+  }
+  for (local, size) in [(pair, 8), (future_result, 32), (event, 8)] {
     for instruction in [
       Instruction::LocalGet(local),
       Instruction::I32Const(size),
@@ -1591,10 +1638,10 @@ pub(super) fn build_wasi_component_read_bytes_fn(
   for instruction in [
     Instruction::LocalGet(valid),
     Instruction::If(BlockType::Empty),
-    Instruction::LocalGet(1),
+    Instruction::LocalGet(output_param),
     Instruction::LocalGet(data),
     Instruction::I32Store(mem_arg_i32(0)),
-    Instruction::LocalGet(1),
+    Instruction::LocalGet(output_param),
     Instruction::LocalGet(count),
     Instruction::I32Store(mem_arg_i32(4)),
     Instruction::I32Const(1),
@@ -1607,7 +1654,7 @@ pub(super) fn build_wasi_component_read_bytes_fn(
   ] {
     b.emit(instruction);
   }
-  b.finish(vec![ValType::I32; 2], vec![ValType::I32])
+  b.finish(vec![ValType::I32; (output_param + 1) as usize], vec![ValType::I32])
 }
 
 /// Write a bounded Calcit string through a preopened WASI 0.3 descriptor.

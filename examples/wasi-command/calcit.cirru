@@ -68,6 +68,18 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'manifest-stdin-main! $ %{} 'CodeEntry
+          :doc "|从 stdin 读取 Cirru EDN 并复用 process-manifest，将结果写到 stdout；读取失败退出 66，业务失败退出 65。"
+          :code $ quote $ defn manifest-stdin-main! ()
+            match (read-stdin-text)
+              (:err message) (fail! 66 message)
+              (:ok content)
+                match (process-manifest |prod- content)
+                  (:err message) (fail! 65 message)
+                  (:ok output) (echo output)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'method-eval-main! $ %{} 'CodeEntry
           :doc "|验收普通 Result.map 的 receiver 与回调实参副作用只各执行一次；不用于正式文件业务。"
           :code $ quote $ defn method-eval-main! ()
@@ -111,6 +123,18 @@
                 assert= true $ result:err? $ process-manifest |prod- "|%{} 'Manifest (:name |) (:enabled true) (:revision 3)"
                 assert= true $ result:err? $ process-manifest |prod- "|%{} 'Manifest (:name |api) (:enabled true) (:revision -1)"
                 assert= true $ result:err? $ process-manifest |prod- "|%{} 'Manifest (:name |api) (:enabled |yes) (:revision 3)"
+              :tags $ #{} :unit :wasi
+            %{} 'TestEntry (:name |pipeline-inputs)
+              :code $ quote $ do
+                assert= true $ .err? $ process-manifest |prod- |
+                match
+                  process-manifest |prod- "|%{} 'Manifest (:name |服务😀) (:enabled true) (:revision 3)"
+                  (:err message) (raise message)
+                  (:ok output)
+                    match (decode-manifest output)
+                      (:err message) (raise message)
+                      (:ok value)
+                        assert= "|prod-服务😀" $ :name value
               :tags $ #{} :unit :wasi
         'reload! $ %{} 'CodeEntry (:doc "|开发模式重载占位入口。")
           :code $ quote $ defn reload! () (println |Reloaded)
