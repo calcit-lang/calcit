@@ -328,6 +328,21 @@ let
   calculate-total $ [] 1 2 3
 ```
 
+### 方法回调的上下文推断
+
+当 receiver 已有完整容器类型时，前缀和后缀方法都将相同的元素类型传入回调。
+例如下面的 `x` 来自 `List<Number>`，无需重复写 `hint-fn` 或 `assert-type`，
+回调内可直接使用普通 Number 方法：
+
+```cirru
+assert= ([] 2 3 4)
+  .map ([] 1 2 3) $ fn (x) $ .add x 1
+```
+
+不同调用分别实例化泛型关系；String 容器的回调不会沿用前一个 Number 调用的绑定。
+这些约束来自 receiver 和方法契约，而非从某个测试猜测公共函数签名。
+未知参数、递归或 FFI 边界仍需明确契约；不以 Dynamic 或 native call 替代缺失的证明。
+
 ### Return Type Annotations
 
 There are two ways to specify return types:

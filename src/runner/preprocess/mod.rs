@@ -3202,7 +3202,33 @@ fn preprocess_list_call(
               ys = ys.push(a.to_owned());
               return Ok(());
             }
-            let form = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+            // Prefix methods share the receiver-specialized callback contract
+            // used by postfix methods. Process the receiver before deriving it.
+            let expected_fn = if !has_spread
+              && let Calcit::Method(name, calcit::MethodKind::Invoke(_)) = &head_form
+              && let Some(receiver) = ys.get(1)
+              && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
+            {
+              expected_method_argument_types(receiver_type.as_ref(), name)
+                .and_then(|types| types.get(ys.len() - 2).cloned())
+                .and_then(|expected| expected.resolve_to_fn())
+            } else {
+              None
+            };
+            let is_prefix_method = matches!(&head_form, Calcit::Method(_, calcit::MethodKind::Invoke(_)));
+            let previous_fn = is_prefix_method.then(|| {
+              EXPECTED_FN_TYPE.with(|cell| {
+                let mut slot = cell.borrow_mut();
+                let previous = slot.take();
+                *slot = expected_fn;
+                previous
+              })
+            });
+            let result = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+            if let Some(previous_fn) = previous_fn {
+              EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous_fn);
+            }
+            let form = result?;
             ys = ys.push(form);
             Ok(())
           })?;
