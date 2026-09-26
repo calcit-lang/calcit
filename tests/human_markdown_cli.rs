@@ -102,6 +102,27 @@ fn json_query_contract_remains_one_clean_value() {
 }
 
 #[test]
+fn trait_leaf_example_context_is_one_cirru_edn_envelope() {
+  let output = run_snapshot(
+    Path::new("calcit/test-traits.cirru"),
+    &["query", "context", "test-traits.external/CounterOps", "--format", "edn"],
+  );
+  let text = stdout(&output);
+  let parsed = cirru_edn::parse(&text).expect("context stdout should contain one Cirru EDN envelope");
+  let cirru_edn::Edn::Map(root) = parsed else {
+    panic!("context envelope should be a map");
+  };
+  assert_eq!(
+    root.get(&cirru_edn::Edn::tag("command")),
+    Some(&cirru_edn::Edn::str("query.context"))
+  );
+  assert!(
+    text.contains("(:cirru |CounterOps)"),
+    "trait leaf example should be rendered: {text}"
+  );
+}
+
+#[test]
 fn code_bearing_tree_diagnostic_stays_on_stderr_with_a_fence() {
   let output = run_calcit(&["tree", "show", "app.main/main!", "--path", "999"]);
   assert!(!output.status.success());
