@@ -76,9 +76,9 @@ prepare_case js-output-denied input
 expect_status 73 node scripts/run-wasi-manifest-js.mjs "$JS_MODULE" "$CASE_ROOT/js-output-denied" deny-output
 test ! -e "$CASE_ROOT/js-output-denied/workspace/output.cirru"
 
-"$CALCIT_BIN" --init-fn app.main/manifest-main! wasi "$SNAPSHOT" --check-only --emit-path "$OUTPUT/preview1-check"
+"$CALCIT_BIN" --init-fn app.main/manifest-main! wasi --boundary native "$SNAPSHOT" --check-only --emit-path "$OUTPUT/preview1-check"
 test ! -e "$OUTPUT/preview1-check/program.wasm"
-"$CALCIT_BIN" --init-fn app.main/manifest-main! wasi "$SNAPSHOT" --emit-path "$OUTPUT/preview1"
+"$CALCIT_BIN" --init-fn app.main/manifest-main! wasi --boundary native "$SNAPSHOT" --emit-path "$OUTPUT/preview1"
 readonly WASM_MODULE="$OUTPUT/preview1/program.wasm"
 prepare_case preview1 input
 expect_status 0 wasmtime run --dir "$CASE_ROOT/preview1/workspace::/workspace" "$WASM_MODULE"

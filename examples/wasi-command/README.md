@@ -17,7 +17,7 @@ wasmtime run -S p3 -W component-model-async-stackful=y \
   < examples/wasi-command/manifest-input.cirru
 ```
 
-Component 验证版本为 Wasmtime 49.0.1 / WIT 0.3.1，不需要授予文件目录权限。stdin 只接入 Component，不新增 Preview 1 实现；默认边界切换由 #1269 单独推进。
+Component 验证版本为 Wasmtime 49.0.1 / WIT 0.3.1，不需要授予文件目录权限。stdin 只接入 Component，不新增 Preview 1 实现；`calcit wasi` 现在默认走 Component（#1269），上面示例中的 `--boundary component` 也可省略。
 
 注意文本读取与业务解码是两层契约：WASM 现有 Cirru EDN 解码器仍有 **64 KiB** 输入限制，因此这个跨目标 Manifest 示例只承诺该范围内的业务输入；超过时 Component 返回业务错误 65（`E_WASM_EDN_INPUT_LIMIT`），不是 reader 的读取错误 66。4 MiB 是原始文本 reader 的上限，不代表 EDN 解码器已扩容。
 
@@ -41,7 +41,7 @@ WASMTIME_CLI=/path/to/wasmtime-49.0.1 node scripts/test-wasi-stdin.mjs
 
 该脚本复用 definition `:tests`，并检查空/Unicode/跨块 UTF-8/非法编码/上限/超限输入。宿主 Canonical ABI 与资源错误由 Rust 的 `wasi_03_bounded_` 测试补充，不在 Rust 重写业务转换断言。
 
-这个示例展示 Calcit 当前可直接用于小型批处理业务的最短路径：读取命令行参数和环境变量，从 Wasmtime 显式预开放的目录读取文本，转换后写回文件，并用稳定的进程状态码报告失败。默认仍生成 WASI Preview 1 模块；显式传 `--boundary component` 则生成支持上述文本读写的 WASI 0.3.1 Component。两条路径都要求 host 授予预开放目录；Component 文本读写各限 4 MiB。
+这个示例展示 Calcit 当前可直接用于小型批处理业务的最短路径：读取命令行参数和环境变量，从 Wasmtime 显式预开放的目录读取文本，转换后写回文件，并用稳定的进程状态码报告失败。`calcit wasi` 默认生成支持上述文本读写的 WASI 0.3.1 `wasi:cli/command` Component；显式传 `--boundary native` 则生成 Preview 1 模块。两条路径都要求 host 授予预开放目录；Component 文本读写各限 4 MiB。
 
 它只使用公开的 `calcit wasi` 入口，不需要 `cr-wasm`、JavaScript host import 或自定义 descriptor API。Calcit 程序只看到 guest path；host path 和授权范围由启动 Wasmtime 的命令决定。
 
@@ -54,7 +54,7 @@ mkdir -p target/wasi-command-data
 printf '%s' 'payload' > target/wasi-command-data/input.txt
 ```
 
-从仓库源码构建 Calcit 并生成 WASI command module：
+从仓库源码构建 Calcit 并生成 WASI 0.3 command Component（默认）：
 
 ```bash
 cargo build --bin calcit
@@ -62,10 +62,13 @@ cargo build --bin calcit
   --emit-path target/wasi-command-example
 ```
 
-把 host 的工作目录授权为 guest 中的 `workspace`，然后传入 guest 输入、输出路径：
+把 host 的工作目录授权为 guest 中的 `workspace`，然后传入 guest 输入、输出路径。默认的 WASI 0.3 Component 需要 Wasmtime 49 及三个特性开关：
 
 ```bash
 wasmtime run \
+  -S p3 \
+  -W component-model-async-stackful=y \
+  -W component-model-more-async-builtins=y \
   --dir ./target/wasi-command-data::/workspace \
   --env WASI_PREFIX='prefix: ' \
   target/wasi-command-example/program.wasm \
@@ -74,6 +77,8 @@ wasmtime run \
 cat target/wasi-command-data/output.txt
 # prefix: payload
 ```
+
+若要使用 Preview 1 模块，构建时显式传 `--boundary native`，之后直接 `wasmtime run` 即可（不需要上述 `-W` 开关）。
 
 `WASI_PREFIX` 未设置时默认为空字符串。程序不会接受 host 的绝对路径，也不能越过预开放目录访问文件。
 
@@ -100,7 +105,7 @@ cat target/wasi-command-data/output.txt
 
 同一 Snapshot 还提供 `app.main/manifest-main!`：从预开放目录读取 `Manifest`，用 `try-parse-cirru-edn-as` 解码为具名 Struct，验证名称与版本，再把名称加上 `prod-` 前缀并写回 Cirru EDN。`process-manifest` 中的 `.and-then` / `.map` 和文件操作中的 `.read-text` / `.write-text` 都是普通方法调用；非法业务数据返回 `Result` 错误，不会先创建输出文件。输入、错误输入和期望输出分别在 `manifest-input.cirru`、`manifest-invalid.cirru`、`manifest-output.cirru`。
 
-该文件入口已在 native、Node JS、真实 Preview 1 和 Wasmtime 49 的 WASI 0.3 Component 执行，四条路径使用同一份业务逻辑与期望输出。Component 必须显式使用 `--boundary component`，运行时启用 `-S p3 -W component-model-async-stackful=y -W component-model-more-async-builtins=y`，并用 `--dir HOST::/workspace` 授予预开放目录。`--check-only` 验证能力但不产出 artifact；缺失 preopen、非法输入和写入失败分别返回稳定的退出码。文件写入使用 create + truncate，失败时可能留下截断或部分输出，不承诺原子替换。
+该文件入口已在 native、Node JS、真实 Preview 1 和 Wasmtime 49 的 WASI 0.3 Component 执行，四条路径使用同一份业务逻辑与期望输出。Component 是 `calcit wasi` 默认边界；Preview 1 需显式使用 `--boundary native`。Component 运行时启用 `-S p3 -W component-model-async-stackful=y -W component-model-more-async-builtins=y`，并用 `--dir HOST::/workspace` 授予预开放目录。`--check-only` 验证能力但不产出 artifact；缺失 preopen、非法输入和写入失败分别返回稳定的退出码。文件写入使用 create + truncate，失败时可能留下截断或部分输出，不承诺原子替换。
 
 类型查询可检查这条业务路径：`query type-at app.main/transform-manifest --path @3` 返回精确的 `Result<Manifest, String>`，`query type-at app.main/process-manifest --path @3` 返回 `Result<String, String>`；后者的 `.and-then` 被静态 lowering，闭包中的 `manifest` 和 `updated` 都保持具名 `Manifest`。Cirru EDN 文本只在 `try-parse-cirru-edn-as` 处解码为具名结构，业务代码不靠 `Dynamic`、`unsafe-coerce` 或 native call 绕过类型。
 

@@ -122,7 +122,7 @@ calcit .calcit/snippets/demo.cirru query config
 
 临时验证代码使用 `calcit eval '<snippet>'`；多行代码或需要绕过 Shell 转义时，使用 `calcit eval --stdin` 从管道读取。两种输入方式互斥，旧顶层 `calcit exec` 已移除。
 
-仅在任务以 WASM 为目标时加载目标专用指南：`calcit wasm <snapshot>` 生成 browser/embedded core module；`calcit wasm <snapshot> --boundary component` 生成供 Component tooling 包装的 core module；`calcit wasi <snapshot>` 默认生成 Preview 1 command，显式加 `--boundary component` 才生成 WASI 0.3.1 command。这些产物不能互换，也不能从 binary 名称猜测宿主能力。先看对应子命令的 `--help`，再用 `--check-only` 获得当前目标的类型与 capability 诊断；普通 JS/native 应用修改不需要 Canonical ABI 知识。
+仅在任务以 WASM 为目标时加载目标专用指南：`calcit wasm <snapshot>` 生成 browser/embedded core module；`calcit wasm <snapshot> --boundary component` 生成供 Component tooling 包装的 core module；`calcit wasi <snapshot>` 默认生成 WASI 0.3.1 command，显式加 `--boundary native` 才生成 Preview 1 command。这些产物不能互换，也不能从 binary 名称猜测宿主能力。先看对应子命令的 `--help`，再用 `--check-only` 获得当前目标的类型与 capability 诊断；普通 JS/native 应用修改不需要 Canonical ABI 知识。
 
 WASM/Component 类型闭包、异步 adapter 和 ABI 细节见 [WASM Component 边界](installation/wasm-component-boundary.md)；WASI 版本、命令、preopen 和已支持的宿主能力见 [CLI 选项](run/cli-options.md) 的 WASI 部分。只有生成 Component contract/WIT 时才按需查阅 `calcit ffi export --boundary component` 与 `calcit-bindgen` 文档。不要调用已停止发布的 `cr-wasm` 或仓库内部回归 harness 代替公开命令。
 

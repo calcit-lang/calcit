@@ -95,7 +95,9 @@ calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 
 当前项目以默认严格 `--check-only`、对应 entry 的实际运行和目标后端回归为升级验收；
 静态分析报告用于定位，不另设覆盖率或 Dynamic 数量门槛。WASM 请选择 `calcit wasm` 或
-`calcit wasi`；Component 的当前支持范围以
+`calcit wasi`；`calcit wasi` 从 0.24 起默认输出 WASI 0.3.1 `wasi:cli/command` Component，
+Preview 1 core module 需显式 `--boundary native`（时钟、`wait-ms`、安全随机数、`.read-dir`
+等尚未迁移能力仍走该路径）。Component 的当前支持范围以
 [WASM Component 边界](../installation/wasm-component-boundary.md) 为准。
 
 0.13–0.15 的严格诊断桥接、`cr-wasm` 迁移及 Component ABI 演进步骤已移至

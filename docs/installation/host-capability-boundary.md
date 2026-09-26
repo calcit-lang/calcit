@@ -71,17 +71,17 @@ no-op or fabricated success value.
 | --- | --- | --- | --- | --- | --- |
 | Pure Calcit data/control and typed `Option`/`Result` composition | yes | yes | yes | supported subset | core definitions and methods |
 | JSON parse/stringify | yes | yes | yes | unavailable | String `.parse-json` / Result wrappers; core JSON procedures |
-| Current Unix time in milliseconds | yes | unavailable | unavailable | WASI Preview 1 realtime clock; core WASM unavailable | `unix-time-ms` |
-| Monotonic milliseconds for elapsed-time measurement | yes | unavailable | unavailable | WASI Preview 1 monotonic clock; core WASM unavailable | `cpu-time`（只比较同一进程内两次调用的差值） |
-| 同步等待 | 当前线程 sleep | host injection 或 `Atomics.wait` | 主线程通常不可用并返回错误 | WASI Preview 1 `poll_oneoff`；core WASM unavailable | `wait-ms`，返回 `Result<Unit,String>` |
+| Current Unix time in milliseconds | yes | unavailable | unavailable | WASI Preview 1 realtime clock; Component 待实现；core WASM unavailable | `unix-time-ms` |
+| Monotonic milliseconds for elapsed-time measurement | yes | unavailable | unavailable | WASI Preview 1 monotonic clock; Component 待实现；core WASM unavailable | `cpu-time`（只比较同一进程内两次调用的差值） |
+| 同步等待 | 当前线程 sleep | host injection 或 `Atomics.wait` | 主线程通常不可用并返回错误 | WASI Preview 1 `poll_oneoff`；Component 待实现；core WASM unavailable | `wait-ms`，返回 `Result<Unit,String>` |
 | Construct and inspect a path value without I/O | yes | yes | yes | value-level support only | `fs:path`, `FsPath .to-string` |
-| `FsPath .read-text` / `.write-text` | yes | host injection | browser `localStorage` adapter | WASI Preview 1 preopen；core WASM unavailable | `FsPath` Result-returning methods |
-| `FsPath .read-dir` | yes | host injection | unavailable | WASI Preview 1 preopen；core WASM unavailable | `FsPath` Result-returning methods |
+| `FsPath .read-text` / `.write-text` | yes | host injection | browser `localStorage` adapter | WASI 0.3 Component 与 Preview 1 preopen；core WASM unavailable | `FsPath` Result-returning methods |
+| `FsPath .read-dir` | yes | host injection | unavailable | WASI Preview 1 preopen；Component 待实现；core WASM unavailable | `FsPath` Result-returning methods |
 | `FsPath .walk-dir` | yes | host injection | unavailable | unavailable | `FsPath` Result-returning methods |
 | Process and signal lifecycle | `calcit.std` native module | Node adapter | unavailable | unavailable | typed process/signal APIs in `calcit.std` |
 | Repeating timer and timezone/date | `calcit.std` native module | Node adapter | browser adapter | unavailable | typed timer/date APIs in `calcit.std` |
 | Glob | focused native module | Node adapter | unavailable | unavailable | focused glob module; do not infer browser support |
-| 安全随机字节 | 系统 CSPRNG | Web Crypto | Web Crypto | WASI Preview 1 `random_get`；core WASM unavailable | `secure-random-bytes`，返回 `Result<Buffer,String>` |
+| 安全随机字节 | 系统 CSPRNG | Web Crypto | Web Crypto | WASI Preview 1 `random_get`；Component 待实现；core WASM unavailable | `secure-random-bytes`，返回 `Result<Buffer,String>` |
 | 其他密码学能力 | focused native module | Node adapter | browser crypto adapter | unavailable | focused crypto module or host adapter |
 | HTTP fetch | `calcit-fetch` native module | Node adapter | browser adapter | unavailable | typed task/response APIs in `calcit-fetch` or a host adapter |
 | HTTP and WebSocket servers | `calcit-http` / `calcit-wss` native modules | Node adapter | unavailable | unavailable | typed server/request/response capabilities in focused modules |

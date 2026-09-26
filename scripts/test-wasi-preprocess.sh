@@ -99,12 +99,12 @@ WASMTIME_NEW_CLI=0 wasmtime run \
 # through the conventional no-argument `_start` export.
 cargo build --features "$HARNESS_FEATURE" --bin "$HARNESS_BIN_NAME" --bin calcit
 cargo run --bin calcit -- "$COMMAND_FIXTURE" test --tag wasi --require-match
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --check-only --emit-path "$CHECK_ONLY_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --check-only --emit-path "$CHECK_ONLY_OUT"
 if [[ -e "$CHECK_ONLY_OUT/program.wasm" ]]; then
   echo "WASI check-only unexpectedly wrote a module" >&2
   exit 1
 fi
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --emit-path "$COMMAND_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --emit-path "$COMMAND_OUT"
 wasmtime run \
   --env CALCIT_WASI_TEST_ENV=环境 \
   "$COMMAND_OUT/program.wasm" \
@@ -133,7 +133,7 @@ if native_invalid_error=$("$CALCIT_BIN" --init-fn app.main/exit-invalid! "$COMMA
 fi
 grep -Fq "integer exit code in 0..255" <<<"$native_invalid_error"
 
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/exit-7! --emit-path "$EXIT_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/exit-7! --emit-path "$EXIT_OUT"
 wasi_exit_status=0
 wasmtime run "$EXIT_OUT/program.wasm" >/dev/null 2>&1 || wasi_exit_status=$?
 if [[ "$wasi_exit_status" -ne 7 ]]; then
@@ -142,18 +142,18 @@ if [[ "$wasi_exit_status" -ne 7 ]]; then
 fi
 
 
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/exit-invalid! --emit-path "$INVALID_EXIT_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/exit-invalid! --emit-path "$INVALID_EXIT_OUT"
 if wasmtime run "$INVALID_EXIT_OUT/program.wasm" >/dev/null 2>"$INVALID_EXIT_STDERR"; then
   echo "WASI quit! unexpectedly accepted exit status 256" >&2
   exit 1
 fi
 grep -Fq "unreachable" "$INVALID_EXIT_STDERR"
 
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/clock-main! --emit-path "$CLOCK_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/clock-main! --emit-path "$CLOCK_OUT"
 wasmtime run "$CLOCK_OUT/program.wasm" >"$CLOCK_STDOUT"
 grep -Fxq "WASI-clocks: ok" "$CLOCK_STDOUT"
 
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/clock-fixed-main! --emit-path "$FIXED_CLOCK_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/clock-fixed-main! --emit-path "$FIXED_CLOCK_OUT"
 node scripts/test-wasi-clock-host.mjs "$FIXED_CLOCK_OUT/program.wasm"
 
 if clock_capability_error=$("$CALCIT_BIN" wasm "$COMMAND_FIXTURE" --init-fn app.main/clock-main! --emit-path "$CORE_CLOCK_OUT" 2>&1); then
@@ -162,12 +162,12 @@ if clock_capability_error=$("$CALCIT_BIN" wasm "$COMMAND_FIXTURE" --init-fn app.
 fi
 grep -Fq "E_WASM_CAPABILITY" <<<"$clock_capability_error"
 
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/wait-main! --emit-path "$WAIT_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/wait-main! --emit-path "$WAIT_OUT"
 wasmtime run "$WAIT_OUT/program.wasm" >"$WAIT_STDOUT"
 grep -Fxq "WASI-wait: ok" "$WAIT_STDOUT"
 
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/wait-fixed-main! --emit-path "$FIXED_WAIT_OUT"
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/wait-failure-main! --emit-path "$FAILED_WAIT_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/wait-fixed-main! --emit-path "$FIXED_WAIT_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/wait-failure-main! --emit-path "$FAILED_WAIT_OUT"
 node scripts/test-wasi-wait-host.mjs "$FIXED_WAIT_OUT/program.wasm" "$FAILED_WAIT_OUT/program.wasm"
 
 if wait_capability_error=$(
@@ -178,11 +178,11 @@ if wait_capability_error=$(
 fi
 grep -Fq "E_WASM_CAPABILITY" <<<"$wait_capability_error"
 
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/random-main! --emit-path "$RANDOM_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/random-main! --emit-path "$RANDOM_OUT"
 wasmtime run "$RANDOM_OUT/program.wasm" >"$RANDOM_STDOUT"
 grep -Fxq "secure-random: ok" "$RANDOM_STDOUT"
 
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/random-fixed-main! --emit-path "$FIXED_RANDOM_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/random-fixed-main! --emit-path "$FIXED_RANDOM_OUT"
 node scripts/test-wasi-random-host.mjs "$FIXED_RANDOM_OUT/program.wasm"
 
 if random_capability_error=$("$CALCIT_BIN" wasm "$COMMAND_FIXTURE" --init-fn app.main/random-main! --emit-path "$CORE_RANDOM_OUT" 2>&1); then
@@ -197,7 +197,7 @@ mkdir -p "$WASI_FS_HOST_DIR/listing"
 : >"$WASI_FS_HOST_DIR/listing/b.txt"
 : >"$WASI_FS_HOST_DIR/listing/a.txt"
 : >"$WASI_FS_HOST_DIR/listing/子.txt"
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/filesystem-main! --emit-path "$FILESYSTEM_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/filesystem-main! --emit-path "$FILESYSTEM_OUT"
 wasmtime run \
   --dir "$WASI_FS_HOST_DIR::/workspace" \
   "$FILESYSTEM_OUT/program.wasm" >"$FILESYSTEM_STDOUT"
@@ -205,31 +205,31 @@ grep -Fxq "WASI-filesystem: ok" "$FILESYSTEM_STDOUT"
 grep -Fxq 'WASI-written: 好' "$WASI_FS_HOST_DIR/output.txt"
 node scripts/test-wasi-filesystem-host.mjs "$FILESYSTEM_OUT/program.wasm"
 
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/filesystem-read-dir-main! --emit-path "$READ_DIR_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/filesystem-read-dir-main! --emit-path "$READ_DIR_OUT"
 wasmtime run \
   --dir "$WASI_FS_HOST_DIR::/workspace" \
   "$READ_DIR_OUT/program.wasm" >"$READ_DIR_STDOUT"
 grep -Fxq "WASI-read-dir: ok" "$READ_DIR_STDOUT"
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/filesystem-read-dir-error-main! --emit-path "$READ_DIR_ERROR_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/filesystem-read-dir-error-main! --emit-path "$READ_DIR_ERROR_OUT"
 node scripts/test-wasi-read-dir-host.mjs "$READ_DIR_OUT/program.wasm" "$READ_DIR_ERROR_OUT/program.wasm"
 
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/filesystem-denied-main! --emit-path "$FILESYSTEM_DENIED_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/filesystem-denied-main! --emit-path "$FILESYSTEM_DENIED_OUT"
 wasmtime run "$FILESYSTEM_DENIED_OUT/program.wasm" >"$FILESYSTEM_DENIED_STDOUT"
 grep -Fxq "WASI-filesystem-denied: ok" "$FILESYSTEM_DENIED_STDOUT"
 
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/filesystem-traversal-main! --emit-path "$FILESYSTEM_TRAVERSAL_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/filesystem-traversal-main! --emit-path "$FILESYSTEM_TRAVERSAL_OUT"
 wasmtime run \
   --dir "$WASI_FS_HOST_DIR::/workspace" \
   "$FILESYSTEM_TRAVERSAL_OUT/program.wasm" >"$FILESYSTEM_TRAVERSAL_STDOUT"
 grep -Fxq "WASI-filesystem-traversal: ok" "$FILESYSTEM_TRAVERSAL_STDOUT"
 
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/filesystem-invalid-utf8-main! --emit-path "$FILESYSTEM_UTF8_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/filesystem-invalid-utf8-main! --emit-path "$FILESYSTEM_UTF8_OUT"
 wasmtime run \
   --dir "$WASI_FS_HOST_DIR::/workspace" \
   "$FILESYSTEM_UTF8_OUT/program.wasm" >"$FILESYSTEM_UTF8_STDOUT"
 grep -Fxq "WASI-filesystem-invalid-utf8: ok" "$FILESYSTEM_UTF8_STDOUT"
 
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/filesystem-absolute-main! --emit-path "$FILESYSTEM_ABSOLUTE_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/filesystem-absolute-main! --emit-path "$FILESYSTEM_ABSOLUTE_OUT"
 wasmtime run \
   --dir "$WASI_FS_HOST_DIR::/workspace" \
   "$FILESYSTEM_ABSOLUTE_OUT/program.wasm" >"$FILESYSTEM_ABSOLUTE_STDOUT"
@@ -257,7 +257,7 @@ grep -Fq "E_WASM_CAPABILITY" <<<"$read_dir_capability_error"
 mkdir -p "$EDN_FORMAT_OUT"
 "$CALCIT_BIN" "$COMMAND_FIXTURE" --init-fn app.main/edn-format-main! >"$EDN_FORMAT_NATIVE_RAW_STDOUT"
 grep -Ev '^took [0-9.]+ms: nil$' "$EDN_FORMAT_NATIVE_RAW_STDOUT" >"$EDN_FORMAT_NATIVE_STDOUT"
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-format-main! --emit-path "$EDN_FORMAT_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/edn-format-main! --emit-path "$EDN_FORMAT_OUT"
 wasmtime run "$EDN_FORMAT_OUT/program.wasm" >"$EDN_FORMAT_STDOUT"
 cmp "$EDN_FORMAT_NATIVE_STDOUT" "$EDN_FORMAT_STDOUT"
 grep -Fxq '[] :ready :paused' "$EDN_FORMAT_STDOUT"
@@ -281,7 +281,7 @@ assert_wasi_edn_limit() {
   local case_name="$2"
   local case_out="${EDN_FORMAT_LIMIT_OUT}/${case_name}"
   local case_stderr="${case_out}/stderr.txt"
-  "$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn "$init_fn" --emit-path "$case_out"
+  "$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn "$init_fn" --emit-path "$case_out"
   if wasmtime run "$case_out/program.wasm" >/dev/null 2>"$case_stderr"; then
     echo "WASI Cirru EDN formatter unexpectedly accepted the ${case_name} over-limit case" >&2
     exit 1
@@ -297,55 +297,55 @@ assert_wasi_edn_limit app.main/edn-format-escaped-over-limit-main! escaped-outpu
 # slice covers closed scalars and turns syntax, range, tag-universe, and input
 # resource failures into Result :err values rather than Wasmtime traps.
 "$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-scalars --require-match
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-main! --emit-path "$EDN_PARSE_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-main! --emit-path "$EDN_PARSE_OUT"
 wasmtime run "$EDN_PARSE_OUT/program.wasm" >"$EDN_PARSE_STDOUT"
 grep -Fxq 'WASI-typed-EDN-scalars:-ok' "$EDN_PARSE_STDOUT"
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-over-limit-main! --emit-path "$EDN_PARSE_LIMIT_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-over-limit-main! --emit-path "$EDN_PARSE_LIMIT_OUT"
 wasmtime run "$EDN_PARSE_LIMIT_OUT/program.wasm" >"$EDN_PARSE_LIMIT_STDOUT"
 grep -Fxq 'WASI-typed-EDN-limit:-ok' "$EDN_PARSE_LIMIT_STDOUT"
 "$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-int-list --require-match
 "$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-string-list --require-match
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-list-main! --emit-path "$EDN_PARSE_LIST_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-list-main! --emit-path "$EDN_PARSE_LIST_OUT"
 wasmtime run "$EDN_PARSE_LIST_OUT/program.wasm" >"$EDN_PARSE_LIST_STDOUT"
 grep -Fxq 'WASI-typed-EDN-lists:-ok' "$EDN_PARSE_LIST_STDOUT"
 "$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-nested-int-lists --require-match
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-nested-roundtrip-main! --emit-path "${EDN_PARSE_LIST_OUT}/recursive"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/edn-nested-roundtrip-main! --emit-path "${EDN_PARSE_LIST_OUT}/recursive"
 wasmtime run "${EDN_PARSE_LIST_OUT}/recursive/program.wasm" >"${EDN_PARSE_LIST_OUT}/recursive.stdout"
 grep -Fxq 'WASI-recursive-typed-EDN:-ok' "${EDN_PARSE_LIST_OUT}/recursive.stdout"
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-list-over-limit-main! --emit-path "$EDN_PARSE_LIST_LIMIT_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-list-over-limit-main! --emit-path "$EDN_PARSE_LIST_LIMIT_OUT"
 wasmtime run "$EDN_PARSE_LIST_LIMIT_OUT/program.wasm" >"$EDN_PARSE_LIST_LIMIT_STDOUT"
 grep -Fxq 'WASI-typed-EDN-list-limit:-ok' "$EDN_PARSE_LIST_LIMIT_STDOUT"
 "$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-tag-string-map --require-match
 "$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-string-int-map --require-match
 "$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-large-fraction --require-match
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-map-main! --emit-path "$EDN_PARSE_MAP_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-map-main! --emit-path "$EDN_PARSE_MAP_OUT"
 wasmtime run "$EDN_PARSE_MAP_OUT/program.wasm" >"$EDN_PARSE_MAP_STDOUT"
 grep -Fxq 'WASI-typed-EDN-maps:-ok' "$EDN_PARSE_MAP_STDOUT"
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-map-over-limit-main! --emit-path "$EDN_PARSE_MAP_LIMIT_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/edn-parse-map-over-limit-main! --emit-path "$EDN_PARSE_MAP_LIMIT_OUT"
 wasmtime run "$EDN_PARSE_MAP_LIMIT_OUT/program.wasm" >"$EDN_PARSE_MAP_LIMIT_STDOUT"
 grep -Fxq 'WASI-typed-EDN-map-limit:-ok' "$EDN_PARSE_MAP_LIMIT_STDOUT"
 
 # Nominal Struct decoding validates the declared name and exact field set,
 # then formatting preserves native declaration-order bytes.
 "$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-job --require-match
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-struct-roundtrip-main! --emit-path "$EDN_STRUCT_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/edn-struct-roundtrip-main! --emit-path "$EDN_STRUCT_OUT"
 wasmtime run "$EDN_STRUCT_OUT/program.wasm" >"$EDN_STRUCT_STDOUT"
 grep -Fxq "%{} 'EdnJob (:count 3) (:name |Ada) (:ready true)" "$EDN_STRUCT_STDOUT"
 
 # Named Enum, Option, and Result values use the same closed DataShapeGraph
 # path, including nested nominal payloads, without runtime type probing.
 "$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-parse-outcome --require-match
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-nominal-roundtrip-main! --emit-path "$EDN_NOMINAL_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/edn-nominal-roundtrip-main! --emit-path "$EDN_NOMINAL_OUT"
 wasmtime run "$EDN_NOMINAL_OUT/program.wasm" >"$EDN_NOMINAL_STDOUT"
 grep -Fxq 'WASI-nominal-typed-EDN:-ok' "$EDN_NOMINAL_STDOUT"
 
 # Keep formatter-only nominal programs independent from parser type handles.
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-format-only-main! --emit-path "$EDN_FORMAT_ONLY_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/edn-format-only-main! --emit-path "$EDN_FORMAT_ONLY_OUT"
 wasmtime run "$EDN_FORMAT_ONLY_OUT/program.wasm" >"$EDN_FORMAT_ONLY_STDOUT"
 grep -Fxq "%:: 'EdnOutcome 'failed |offline" "$EDN_FORMAT_ONLY_STDOUT"
 
 # A known variant with the wrong arity is a nominal-shape error, not generic syntax.
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-enum-arity-main! --emit-path "$EDN_ENUM_ARITY_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/edn-enum-arity-main! --emit-path "$EDN_ENUM_ARITY_OUT"
 wasmtime run "$EDN_ENUM_ARITY_OUT/program.wasm" >"$EDN_ENUM_ARITY_STDOUT"
 grep -Fxq 'WASI-enum-arity-error:-ok' "$EDN_ENUM_ARITY_STDOUT"
 
@@ -354,7 +354,7 @@ grep -Fxq 'WASI-enum-arity-error:-ok' "$EDN_ENUM_ARITY_STDOUT"
 # parser/formatter fixture.
 printf '%s\n' '{} (|count 2)' >"$WASI_FS_HOST_DIR/input.cirru"
 "$CALCIT_BIN" "$COMMAND_FIXTURE" test app.main/edn-transform-count-map --require-match
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/edn-file-roundtrip-main! --emit-path "$EDN_FILE_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/edn-file-roundtrip-main! --emit-path "$EDN_FILE_OUT"
 wasmtime run \
   --dir "$WASI_FS_HOST_DIR::/workspace" \
   "$EDN_FILE_OUT/program.wasm" >"$EDN_FILE_STDOUT"
@@ -391,7 +391,7 @@ if [[ -e "$WASI_FS_HOST_DIR/output.cirru" ]]; then
   exit 1
 fi
 
-"$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/number-fits-unknown-main! --emit-path "$NUMBER_FITS_UNKNOWN_OUT"
+"$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/number-fits-unknown-main! --emit-path "$NUMBER_FITS_UNKNOWN_OUT"
 wasmtime run "$NUMBER_FITS_UNKNOWN_OUT/program.wasm" >"$NUMBER_FITS_UNKNOWN_STDOUT"
 grep -Fxq 'WASI-number-fits-unknown:-ok' "$NUMBER_FITS_UNKNOWN_STDOUT"
 
@@ -400,7 +400,7 @@ grep -Fxq 'WASI-number-fits-unknown:-ok' "$NUMBER_FITS_UNKNOWN_STDOUT"
 mkdir -p "$WASI_FS_HOST_DIR/starter"
 printf '%s' 'payload' >"$WASI_FS_HOST_DIR/starter/input.txt"
 "$CALCIT_BIN" "$STARTER_FIXTURE" test --tag wasi --require-match
-"$CALCIT_BIN" wasi "$STARTER_FIXTURE" --emit-path "$STARTER_OUT"
+"$CALCIT_BIN" wasi --boundary native "$STARTER_FIXTURE" --emit-path "$STARTER_OUT"
 wasmtime run \
   --dir "$WASI_FS_HOST_DIR/starter::/workspace" \
   --env 'WASI_PREFIX=prefix: ' \
@@ -430,13 +430,13 @@ if target_error=$("$NATIVE_HARNESS_BIN" "$COMMAND_FIXTURE" --target unknown 2>&1
 fi
 grep -Fq "E_WASM_TARGET" <<<"$target_error"
 
-if entry_error=$("$CALCIT_BIN" wasi "$COMMAND_FIXTURE" --init-fn app.main/needs-arg --check-only 2>&1); then
+if entry_error=$("$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --init-fn app.main/needs-arg --check-only 2>&1); then
   echo "WASI target unexpectedly accepted a command entry with arguments" >&2
   exit 1
 fi
 grep -Fq "E_WASM_TARGET" <<<"$entry_error"
 
-if capability_error=$("$CALCIT_BIN" wasi calcit/test-wasm.cirru --check-only 2>&1); then
+if capability_error=$("$CALCIT_BIN" wasi --boundary native calcit/test-wasm.cirru --check-only 2>&1); then
   echo "WASI target unexpectedly accepted a custom host import" >&2
   exit 1
 fi
