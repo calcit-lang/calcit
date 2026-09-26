@@ -123,12 +123,12 @@ main_$x_(); // which corresponds to `main!` function in calcit
 
 ### CLI and Agent Workflow
 
-The recommended workflow is plain text editing plus CLI validation, often driven by an AI agent in terminal.
+常规修改先读取紧凑 Agent 契约，再查询、结构化编辑并验证；复杂操作按需读取完整指南。不要把 `calcit.cirru` Snapshot 当作普通文本直接改写。
 
 Common commands:
 
 ```bash
-calcit docs agents --full   # read the current agent workflow guide
+calcit docs agents --contract # read the compact mutation contract first
 calcit query search 'foo'   # locate code by symbol or string
 calcit edit ...             # structured edits for defs, imports, config, modules
 calcit js                   # compile once
