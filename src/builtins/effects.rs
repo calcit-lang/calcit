@@ -293,6 +293,25 @@ pub fn fs_read_text(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(result)
 }
 
+/// Consume bounded stdin without replacing malformed UTF-8 or closing fd 0.
+pub fn read_stdin_text(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  use std::io::Read;
+  let [result_type @ Calcit::EnumDef(_), Calcit::Str(host_error)] = xs else {
+    return CalcitErr::err_str(CalcitErrKind::Type, "&read-stdin-text expected Result and a host error message");
+  };
+  const LIMIT: usize = 4 * 1024 * 1024;
+  let mut bytes = Vec::new();
+  let result = std::io::stdin().lock().take((LIMIT + 1) as u64).read_to_end(&mut bytes);
+  let content = result
+    .ok()
+    .filter(|_| bytes.len() <= LIMIT)
+    .and_then(|_| String::from_utf8(bytes).ok());
+  match content {
+    Some(text) => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("ok"), Calcit::new_str(text)]),
+    None => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("err"), Calcit::Str(host_error.to_owned())]),
+  }
+}
+
 /// List immediate children as nominal filesystem paths and preserve host failures as Result values.
 pub fn fs_read_dir(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let [

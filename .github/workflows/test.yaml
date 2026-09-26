@@ -53,25 +53,25 @@ jobs:
         with:
           toolchain: 1.98.1
       - uses: Swatinem/rust-cache@v2
-      - name: Install Wasmtime 49.0.0 with verified digest
+      - name: Install Wasmtime 49.0.1 with verified digest
         run: |
           curl --fail --location --silent --show-error \
-            'https://github.com/bytecodealliance/wasmtime/releases/download/v49.0.0/wasmtime-v49.0.0-x86_64-linux.tar.xz' \
-            --output "$RUNNER_TEMP/wasmtime-v49.0.0-x86_64-linux.tar.xz"
-          echo "a956c279ac6e80109369a285db30fc46f68239fa1bbeb03ccfa8e913bbca85fc  $RUNNER_TEMP/wasmtime-v49.0.0-x86_64-linux.tar.xz" | sha256sum -c -
-          tar -xf "$RUNNER_TEMP/wasmtime-v49.0.0-x86_64-linux.tar.xz" -C "$RUNNER_TEMP"
+            'https://github.com/bytecodealliance/wasmtime/releases/download/v49.0.1/wasmtime-v49.0.1-x86_64-linux.tar.xz' \
+            --output "$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux.tar.xz"
+          echo "c71f7e0d30a92e418f0d17db7c6d8f6664c1ad764340a1278678f4209deab534  $RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux.tar.xz" | sha256sum -c -
+          tar -xf "$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux.tar.xz" -C "$RUNNER_TEMP"
       - name: Run Calcit and Wasmtime command smoke
         run: |
-          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.0-x86_64-linux/wasmtime" \
+          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
             cargo test --test wasi_command_component_cli
-          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.0-x86_64-linux/wasmtime" \
+          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
             cargo test --lib wasi_03_select_preopen_runs_with_real_wasmtime_host
-          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.0-x86_64-linux/wasmtime" \
+          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
             cargo test --lib wasi_03_async_open_at_runs_with_real_wasmtime_host
-          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.0-x86_64-linux/wasmtime" \
+          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
             cargo test --lib wasi_03_read_stream_runs_with_real_wasmtime_host
-          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.0-x86_64-linux/wasmtime" \
-            cargo test --lib wasi_03_bounded_read_bytes_runs_with_real_wasmtime_host
+          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
+            cargo test --lib wasi_03_bounded_
           cargo run --bin calcit -- tests/fixtures/wasi-command-03.cirru test app.main/main! --require-match
           cargo run --bin calcit -- tests/fixtures/wasi-command-03.cirru test app.main/transform-content --require-match
           cargo run --bin calcit -- tests/fixtures/wasi-command-03.cirru test app.main/read-workspace-file --require-match
@@ -79,8 +79,21 @@ jobs:
           cargo run --bin calcit -- tests/fixtures/wasi-command-03-get-args.cirru test app.main/main! --require-match
           cargo run --bin calcit -- tests/fixtures/wasi-command-03-get-env.cirru test app.main/main! --require-match
           cargo build --bin calcit
-          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.0-x86_64-linux/wasmtime" \
+          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
             bash scripts/test-wasi-manifest-component.sh
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Verify shared native, Node and Component stdin pipeline
+        run: |
+          corepack enable
+          corepack prepare yarn@4.12.0 --activate
+          yarn install --immutable
+          yarn compile
+          mkdir -p node_modules/@calcit
+          ln -s ../../ node_modules/@calcit/procs
+          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
+            node scripts/test-wasi-stdin.mjs
 
   wasi_business_smoke:
     name: Published WASI HTTP business loop

@@ -1852,6 +1852,13 @@
             :args $ [] 'String
             :return $ :: 'Optional 'Number
           :tags $ #{} :builtin :internal
+        '&read-stdin-text $ %{} 'CodeEntry (:doc "|内部有界 stdin 文本边界，显式接收 Result 与错误消息。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'EnumDef 'String
+            :return $ :: 'Result 'String 'String
+          :tags $ #{} :builtin :internal :io
         '&reset-gensym-index! $ %{} 'CodeEntry
           :doc "|internal function for resetting gensym index\nSyntax: (&reset-gensym-index!)\nParams: none\nReturns: nil\nResets the global gensym counter to 0 for deterministic symbol generation"
           :code $ quote &runtime-implementation
@@ -7476,6 +7483,15 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
           :tags $ #{} :builtin :file :internal :io
+        'read-stdin-text $ %{} 'CodeEntry
+          :doc "|同步读取 stdin 至 EOF，最多 4 MiB，严格 UTF-8；返回 Result<String,String>。失败或超限可能已消费部分输入，不保证可重试。Node 需 read_stdin 字节注入；browser 返回 unsupported；WASI 需 --boundary component。"
+          :code $ quote $ defn read-stdin-text ()
+            &read-stdin-text Result "|read-stdin-text failed: host read error, invalid UTF-8, or input exceeds 4 MiB"
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Result 'String 'String
+          :tags $ #{} :core :io
         'recur $ %{} 'CodeEntry
           :doc "|internal function for tail recursion\nSyntax: (recur args...)\nParams: args (any, variable number)\nReturns: recur structure for tail call optimization\nEnables tail call optimization by marking recursive calls"
           :code $ quote &runtime-implementation

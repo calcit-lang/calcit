@@ -1825,6 +1825,7 @@ export let buffer_$q_ = (x: CalcitValue): boolean => {
 export let _$n_str_$o_escape = (x: string) => JSON.stringify(x);
 
 export type CalcitFileInjections = {
+  read_stdin?: (maximumBytes: number) => unknown;
   read_file?: (path: string) => unknown;
   read_dir?: (path: string, recursive: boolean) => unknown;
   write_file?: (path: string, content: string) => unknown;
@@ -1872,6 +1873,25 @@ export let _$n_fs_read_text = (resultType: CalcitEnumDef, path: string, hostErro
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
     return new CalcitEnumValue(newTag("err"), [`${hostError}: ${message}`], resultType);
+  }
+};
+
+/** Read bounded stdin bytes through the explicit Node host boundary. */
+export let _$n_read_stdin_text = (resultType: CalcitEnumDef, hostError: string): CalcitEnumValue => {
+  if (!inNodeJs) {
+    return new CalcitEnumValue(newTag("err"), ["read-stdin-text is unsupported in browser JavaScript hosts"], resultType);
+  }
+  try {
+    const limit = 4 * 1024 * 1024;
+    const bytes = get_file_injection("read_stdin")(limit + 1);
+    if (!(bytes instanceof Uint8Array) || bytes.byteLength > limit) {
+      return new CalcitEnumValue(newTag("err"), [hostError], resultType);
+    }
+    // Preserve a leading BOM as text, matching native and WASM decoding.
+    const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+    return new CalcitEnumValue(newTag("ok"), [text], resultType);
+  } catch {
+    return new CalcitEnumValue(newTag("err"), [hostError], resultType);
   }
 };
 /** List immediate children as nominal filesystem paths and preserve host failures as Result values. */

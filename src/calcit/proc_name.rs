@@ -128,6 +128,8 @@ pub enum CalcitProc {
   ReadFile,
   #[strum(serialize = "&fs-read-text")]
   NativeFsReadText,
+  #[strum(serialize = "&read-stdin-text")]
+  NativeReadStdinText,
   #[strum(serialize = "&fs-read-dir")]
   NativeFsReadDir,
   #[strum(serialize = "read-dir")]
@@ -1378,6 +1380,13 @@ impl CalcitProc {
           Arc::new(vec![some_tag("string"), some_tag("string")]),
         )),
         arg_types: vec![some_tag("enum-def"), some_tag("string"), some_tag("string")],
+      }),
+      NativeReadStdinText => Some(ProcTypeSignature {
+        return_type: Arc::new(CalcitTypeAnnotation::TypeRef(
+          Arc::from("Result"),
+          Arc::new(vec![some_tag("string"), some_tag("string")]),
+        )),
+        arg_types: vec![some_tag("enum-def"), some_tag("string")],
       }),
       NativeFsReadDir => Some(ProcTypeSignature {
         return_type: Arc::new(CalcitTypeAnnotation::TypeRef(

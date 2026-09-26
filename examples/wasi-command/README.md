@@ -1,5 +1,46 @@
 # WASI command 文本处理示例
 
+## stdin Cirru EDN 管道
+
+`app.main/manifest-stdin-main!` 复用下文文件入口的 `process-manifest`，没有第二套业务转换器。`read-stdin-text` 同步读取至 EOF，严格验证 UTF-8，最多接收 **4 MiB 原始字节**，返回 `Result<String, String>`。超限、非法 UTF-8 或宿主读取失败返回 `:err`；已消费的数据不保证可重试。空 stdin 是合法的空文本，但不是合法的 Manifest，所以业务入口返回 65。读取失败返回 66；错误写入 stderr，stdout 只输出成功的 Cirru EDN。
+
+```bash
+cargo build --bin calcit
+./target/debug/calcit --init-fn app.main/manifest-stdin-main! \
+  examples/wasi-command/calcit.cirru < examples/wasi-command/manifest-input.cirru
+
+./target/debug/calcit --init-fn app.main/manifest-stdin-main! \
+  wasi examples/wasi-command/calcit.cirru --boundary component \
+  --emit-path target/manifest-stdin
+wasmtime run -S p3 -W component-model-async-stackful=y \
+  -W component-model-more-async-builtins=y target/manifest-stdin/program.wasm \
+  < examples/wasi-command/manifest-input.cirru
+```
+
+Component 验证版本为 Wasmtime 49.0.1 / WIT 0.3.1，不需要授予文件目录权限。stdin 只接入 Component，不新增 Preview 1 实现；默认边界切换由 #1269 单独推进。
+
+注意文本读取与业务解码是两层契约：WASM 现有 Cirru EDN 解码器仍有 **64 KiB** 输入限制，因此这个跨目标 Manifest 示例只承诺该范围内的业务输入；超过时 Component 返回业务错误 65（`E_WASM_EDN_INPUT_LIMIT`），不是 reader 的读取错误 66。4 MiB 是原始文本 reader 的上限，不代表 EDN 解码器已扩容。
+
+Node 使用与已有文件能力一致的显式 host injection：`read_stdin(maximumBytes)` 返回至多指定数量的 `Uint8Array` 字节，不自行解码或关闭 fd 0。runtime 检查返回类型、上限与 UTF-8；不能使用无界 `readFileSync(0)` 或提前截断到上限并伪装 EOF。可运行 host 见本目录 `run-stdin.mjs`：
+
+```bash
+yarn compile
+./target/debug/calcit --init-fn app.main/manifest-stdin-main! \
+  --emit-path target/manifest-stdin-js examples/wasi-command/calcit.cirru js
+node examples/wasi-command/run-stdin.mjs target/manifest-stdin-js/app.main.mjs \
+  < examples/wasi-command/manifest-input.cirru
+```
+
+browser 没有 stdin，明确返回 unsupported，不使用 localStorage 模拟。这个功能没有公开 stream/Task API，也不是交互式逐行 reader；连接终端时会等待 EOF。native CLI 的运行耗时及返回值现在写到 stderr，避免污染业务管道；依赖旧 stdout 计时文本的脚本应改读 stderr。
+
+真实跨目标回归入口：
+
+```bash
+WASMTIME_CLI=/path/to/wasmtime-49.0.1 node scripts/test-wasi-stdin.mjs
+```
+
+该脚本复用 definition `:tests`，并检查空/Unicode/跨块 UTF-8/非法编码/上限/超限输入。宿主 Canonical ABI 与资源错误由 Rust 的 `wasi_03_bounded_` 测试补充，不在 Rust 重写业务转换断言。
+
 这个示例展示 Calcit 当前可直接用于小型批处理业务的最短路径：读取命令行参数和环境变量，从 Wasmtime 显式预开放的目录读取文本，转换后写回文件，并用稳定的进程状态码报告失败。默认仍生成 WASI Preview 1 模块；显式传 `--boundary component` 则生成支持上述文本读写的 WASI 0.3.1 Component。两条路径都要求 host 授予预开放目录；Component 文本读写各限 4 MiB。
 
 它只使用公开的 `calcit wasi` 入口，不需要 `cr-wasm`、JavaScript host import 或自定义 descriptor API。Calcit 程序只看到 guest path；host path 和授权范围由启动 Wasmtime 的命令决定。

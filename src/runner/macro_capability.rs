@@ -78,7 +78,7 @@ fn proc_policy(proc: CalcitProc) -> Option<CapabilityPolicy> {
     | AddWatch
     | RemoveWatch => MacroCapability::MutableState,
     WriteFile => return Some(CapabilityPolicy::Forbidden(MacroCapability::FsWrite)),
-    NativeWaitMs => return Some(CapabilityPolicy::Forbidden(MacroCapability::Process)),
+    NativeWaitMs | NativeReadStdinText => return Some(CapabilityPolicy::Forbidden(MacroCapability::Process)),
     Quit => return Some(CapabilityPolicy::Forbidden(MacroCapability::Process)),
     _ => return None,
   };
@@ -261,6 +261,12 @@ mod tests {
       check_proc(CalcitProc::WriteFile, &CallStackList::default())
     })
     .expect_err("file writes are not an opt-in escape hatch");
+    assert_eq!(error.code(), Some("E_MACRO_CAPABILITY_DISALLOWED"));
+    let declared = Arc::new(HashSet::from([MacroCapability::Process]));
+    let error = with_macro_context(Arc::from("app/read-input"), declared, None, || {
+      check_proc(CalcitProc::NativeReadStdinText, &CallStackList::default())
+    })
+    .expect_err("macro expansion must never consume runtime stdin");
     assert_eq!(error.code(), Some("E_MACRO_CAPABILITY_DISALLOWED"));
   }
 

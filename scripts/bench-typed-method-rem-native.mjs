@@ -26,7 +26,7 @@ function runOnce(initFn) {
   if (!result.stdout.split("\n").some((line) => line.trim() === expected)) {
     throw new Error(`native benchmark returned an unexpected result for ${initFn}\n${result.stdout}`);
   }
-  const matched = result.stdout.match(/took ([\d.]+)ms:/);
+  const matched = result.stderr.match(/took ([\d.]+)ms:/);
   if (matched == null) {
     throw new Error(`native benchmark did not report elapsed time for ${initFn}\n${result.stdout}`);
   }

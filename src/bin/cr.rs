@@ -968,7 +968,13 @@ fn run_cli() -> Result<(), String> {
       })
       .map(|v| {
         let duration = Instant::now().duration_since(started_time);
-        println!("{}{}", format!("took {}ms: ", duration.as_micros() as f64 / 1000.0).dimmed(), v);
+        let timing = format!("took {}ms: ", duration.as_micros() as f64 / 1000.0);
+        if is_eval_mode {
+          // eval explicitly queries a value; preserve its existing result output.
+          println!("{}{}", timing.dimmed(), v);
+        } else {
+          eprintln!("{}{}", timing.dimmed(), v);
+        }
       })
   };
 
@@ -1756,7 +1762,7 @@ fn recall_program(
       e.msg
     })?;
     let duration = Instant::now().duration_since(started_time);
-    println!("{}{}", format!("took {}ms: ", duration.as_micros() as f64 / 1000.0).dimmed(), v);
+    eprintln!("{}{}", format!("took {}ms: ", duration.as_micros() as f64 / 1000.0).dimmed(), v);
     Ok(())
   };
 
