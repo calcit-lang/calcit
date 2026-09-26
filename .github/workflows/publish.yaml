@@ -63,8 +63,10 @@ jobs:
           && cp -v scripts/main.mjs js-out/
           && node js-out/main.mjs
 
-      - name: "verify shared Unicode string semantics"
-        run: node scripts/check-string-unicode.mjs
+      - name: "verify shared Calcit backend contracts"
+        run: |
+          node scripts/check-string-unicode.mjs
+          node scripts/check-helper-inference.mjs
 
       - name: "check docs markdown"
         run: bash scripts/check-docs-md.sh
