@@ -21,6 +21,7 @@ mod markdown_read;
 mod program_diff;
 mod query;
 mod scaffold;
+mod stdout;
 mod structured_output;
 #[cfg(test)]
 mod test_support;

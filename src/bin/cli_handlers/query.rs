@@ -11,6 +11,7 @@ use super::cursor::{
   CursorLastQuery, load_cursor_last_query, resolve_active_cursor_reference, resolve_cursor_path_argument,
   resolve_cursor_target_argument, set_cursor_from_query_match,
 };
+use super::stdout::{cli_print as print, cli_println as println};
 use super::structured_output::{StructuredOutputFormat, format_json_value_as_edn, json_value_to_edn};
 use super::tips::command_guidance_enabled;
 use calcit::CalcitTypeAnnotation;

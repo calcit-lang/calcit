@@ -447,9 +447,9 @@ pub fn emit_cli_output(content: &str, to_stderr: bool) {
       eprintln!();
     }
   } else {
-    print!("{content}");
+    super::stdout::cli_print!("{content}");
     if !content.ends_with('\n') {
-      println!();
+      super::stdout::cli_println!();
     }
   }
 }
