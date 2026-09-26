@@ -612,6 +612,10 @@ fn find_doc_by_query_matches_aliases_and_titles() {
 
   assert_eq!(find_doc_by_query(&docs, "search-replace").unwrap().filename, "edit-tree.md");
   assert_eq!(find_doc_by_query(&docs, "CLI Code Editing").unwrap().filename, "edit-tree.md");
+  assert_eq!(score_doc_query(&docs[0], "missing-agent-task-xyz.md"), 0);
+  let error = find_doc_by_query(&docs, "missing-agent-task-xyz.md").unwrap_err();
+  assert!(error.contains("not found"));
+  assert!(error.contains("calcit docs list"));
 }
 
 #[test]
