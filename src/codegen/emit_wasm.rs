@@ -5728,8 +5728,16 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "foldl'" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
           // `filter-not` — keep elements where f(elem) is falsy.
           "filter-not" if args_list.len() == 2 => return emit_filter_not(ctx, &args_list),
-          // `slice` — delegated to list slice (list-only, 2-3 args).
-          "slice" if args_list.len() >= 2 && args_list.len() <= 3 => return emit_list_slice(ctx, &args_list),
+          // Preserve the proven receiver type and source arity. Calling the
+          // legacy optional core wrapper would confuse end=0 with omitted nil
+          // in the unboxed WASM representation.
+          "slice" if args_list.len() >= 2 && args_list.len() <= 3 => {
+            return match infer_static_type_from_expr(&args_list[0]).as_deref() {
+              Some(CalcitTypeAnnotation::String) => emit_str_slice(ctx, &args_list),
+              Some(CalcitTypeAnnotation::List(_)) => emit_list_slice(ctx, &args_list),
+              _ => Err("slice requires a statically proven String or List receiver in WASM".into()),
+            };
+          }
           // `dissoc` — delegated to map dissoc for 2-arg calls.
           "dissoc" if args_list.len() == 2 => return emit_map_dissoc(ctx, &args_list),
           // `conj` — append one or more elements to a list.

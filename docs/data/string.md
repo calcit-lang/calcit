@@ -27,7 +27,7 @@ Keep these operations distinct: character count describes Calcit text indexing s
 
 ## 索引与切片
 
-native 与 JavaScript 中，`first`、`last`、`nth`/`get`、`rest`、`slice` 和相应方法均按 Unicode 标量访问，不能把 JS 的 UTF-16 单元偏移当成 Calcit 索引。组合字符仍可能包含多个标量；这里不提供字素簇或 locale 分词语义。
+native、JavaScript 与 WASM 已验证的静态字符串路径中，`first`、`last`、`nth`/`get`、`rest`、`slice` 和相应方法按 Unicode 标量访问，不能把 JS 的 UTF-16 单元偏移或 WASM 的 UTF-8 字节偏移当成 Calcit 索引。组合字符仍可能包含多个标量；这里不提供字素簇或 locale 分词语义。
 
 ```cirru
 assert= (%some |😀) $ last |中😀
@@ -41,7 +41,9 @@ assert= 2 $ count |é
 
 0.23 的这项 JS 修复无需源码迁移；不要在应用中通过 UTF-16 偏移补偿 emoji 长度。内部使用无字符数组分配的标量扫描，ASCII/BMP 有快速路径。JS FFI 传入的孤立 surrogate 不是合法 Unicode 标量，不在本次跨 backend 保证范围内。
 
-WASM 的字符计数与 UTF-8 字节计数已有对应实现，但 `first`/`nth`/`rest`/`slice`/`contains?` 尚有字节索引遗留，不能据此假定所有字符串操作已对齐；由 [#1381](https://github.com/calcit-lang/calcit/issues/1381) 修复。本次 JS 修复不扩大 WASI 能力。
+WASM 的底层 `first`/`nth`/`rest`/`slice`/`contains?` 复用有界的标量边界扫描：空串 `rest` 保持空串，超大合法索引按越界处理，复制范围不越过源字符串。普通 `slice` 根据已证明的 String/List receiver 选择现有 lowering，不再无条件解释成列表；缺少类型证据时明确拒绝。传入参数按原顺序各求值一次，再验证索引。
+
+native/JS 的非法索引通过既有错误路径报告；当前 WASM 对应为 trap，尚不提供可捕获的 `try` 语义。共享 Calcit 测试验证正常结果，宿主测试验证 trap 与求值顺序。不将这些结果外推到所有 Dynamic 方法、任意 host 字符串或其他文本操作；本次修复不扩大 WASI 宿主能力。
 
 ## Tag
 
