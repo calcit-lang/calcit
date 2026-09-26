@@ -1199,6 +1199,7 @@ fn emit_method_first(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), St
 
 fn emit_method_rest(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), String> {
   let list_tag = get_type_tag(ctx, "list");
+  let string_tag = get_type_tag(ctx, "string");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
   ctx.emit(Instruction::LocalSet(type_local));
@@ -1209,7 +1210,15 @@ fn emit_method_rest(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), Str
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   emit_list_rest_from_local(ctx, receiver_local);
   ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(type_local));
+  ctx.emit(f64_const(string_tag));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  let ptr = emit_ptr_local_from_receiver(ctx, receiver_local);
+  emit_str_rest_from_ptr(ctx, ptr);
+  ctx.emit(Instruction::Else);
   ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   Ok(())
 }

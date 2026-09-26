@@ -185,187 +185,184 @@ pub(super) fn emit_str_concat_from_ptrs(ctx: &mut WasmGenCtx, ptr_a: u32, ptr_b:
   ctx.ptr_to_f64(ptr_c);
 }
 
-/// `&str:nth str idx` — one-byte string at index `idx`, or nil when out of range.
+/// Reject invalid numbers and saturate large valid indices after all call
+/// arguments have been evaluated. This preserves eager argument effects.
+/// A string cannot contain more than u32::MAX bytes in wasm32 memory.
+fn emit_str_index(ctx: &mut WasmGenCtx, value: u32) -> u32 {
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::F64Trunc);
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ge);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(f64_const(f64::INFINITY));
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  let index = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncSatF64U);
+  ctx.emit(Instruction::LocalSet(index));
+  index
+}
+
+fn emit_str_index_value(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<u32, String> {
+  let value = ctx.alloc_local();
+  emit_expr(ctx, expr)?;
+  ctx.emit(Instruction::LocalSet(value));
+  Ok(value)
+}
+
+/// Advance a byte offset by one UTF-8 scalar, clamping at byte_len. Every byte
+/// load is guarded independently; empty strings never read or subtract a byte.
+fn emit_str_advance_scalar(ctx: &mut WasmGenCtx, ptr: u32, len: u32, offset: u32) {
+  ctx.emit(Instruction::LocalGet(offset));
+  ctx.emit(Instruction::LocalGet(len));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::If(BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(offset));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(offset));
+  ctx.emit(Instruction::Block(BlockType::Empty));
+  ctx.emit(Instruction::Loop(BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(offset));
+  ctx.emit(Instruction::LocalGet(len));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::LocalGet(offset));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Load8U(mem_arg_byte(8)));
+  ctx.emit(Instruction::I32Const(0xc0));
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::I32Const(0x80));
+  ctx.emit(Instruction::I32Ne);
+  ctx.emit(Instruction::BrIf(1));
+  ctx.emit(Instruction::LocalGet(offset));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(offset));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+}
+
+/// Convert a scalar index to a bounded byte offset without allocating text.
+fn emit_str_scalar_offset(ctx: &mut WasmGenCtx, ptr: u32, len: u32, index: u32) -> u32 {
+  let offset = ctx.alloc_i32(0);
+  let scalar = ctx.alloc_i32(0);
+  ctx.emit(Instruction::Block(BlockType::Empty));
+  ctx.emit(Instruction::Loop(BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(scalar));
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
+  ctx.emit(Instruction::LocalGet(offset));
+  ctx.emit(Instruction::LocalGet(len));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
+  emit_str_advance_scalar(ctx, ptr, len, offset);
+  ctx.emit(Instruction::LocalGet(scalar));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(scalar));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  offset
+}
+
+/// Copy a range of already bounded scalar-aligned byte offsets. Reversed
+/// ranges produce an empty string without signed subtraction or underflow.
+fn emit_str_copy_range(ctx: &mut WasmGenCtx, ptr: u32, start: u32, end: u32) {
+  let size = ctx.alloc_i32(0);
+  ctx.emit(Instruction::LocalGet(end));
+  ctx.emit(Instruction::LocalGet(start));
+  ctx.emit(Instruction::I32GtU);
+  ctx.emit(Instruction::If(BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(end));
+  ctx.emit(Instruction::LocalGet(start));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::LocalSet(size));
+  ctx.emit(Instruction::End);
+  let (result, dst) = emit_str_alloc(ctx, size);
+  ctx.emit(Instruction::LocalGet(dst));
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(start));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(size));
+  ctx.emit(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
+  ctx.ptr_to_f64(result);
+}
+
+/// `&str:nth str idx` — one scalar as a string, or nil when out of range.
 pub(super) fn emit_str_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&str:nth")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
 
-  let idx = ctx.alloc_local_typed(ValType::I32);
-  emit_expr(ctx, &args[1])?;
-  ctx.emit(Instruction::I32TruncF64S);
-  ctx.emit(Instruction::LocalSet(idx));
-
-  let len = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(len));
-
-  // Out-of-range returns nil (0.0). In-range returns a fresh 1-byte string.
-  ctx.emit(Instruction::LocalGet(idx));
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::I32LtS);
-  ctx.emit(Instruction::If(BlockType::Result(ValType::F64)));
-  ctx.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
-  ctx.emit(Instruction::Else);
-  ctx.emit(Instruction::LocalGet(idx));
+  let value = emit_str_index_value(ctx, &args[1])?;
+  let index = emit_str_index(ctx, value);
+  let len = emit_load_count_i32(ctx, ptr);
+  let start = emit_str_scalar_offset(ctx, ptr, len, index);
+  ctx.emit(Instruction::LocalGet(start));
   ctx.emit(Instruction::LocalGet(len));
   ctx.emit(Instruction::I32GeU);
   ctx.emit(Instruction::If(BlockType::Result(ValType::F64)));
   ctx.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
   ctx.emit(Instruction::Else);
 
-  let one = ctx.alloc_i32(1);
-  let (ptr_b, dst_b) = emit_str_alloc(ctx, one);
-
-  let byte = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(idx));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::I32Load8U(mem_arg_byte(0)));
-  ctx.emit(Instruction::LocalSet(byte));
-
-  ctx.emit(Instruction::LocalGet(dst_b));
-  ctx.emit(Instruction::LocalGet(byte));
-  ctx.emit(Instruction::I32Store8(mem_arg_byte(0)));
-
-  ctx.ptr_to_f64(ptr_b);
-  ctx.emit(Instruction::End);
+  let end = ctx.i32_offset(start, 0);
+  emit_str_advance_scalar(ctx, ptr, len, end);
+  emit_str_copy_range(ctx, ptr, start, end);
   ctx.emit(Instruction::End);
   Ok(())
 }
 
-/// `&str:first str` — first byte value as f64.
+/// `&str:first str` — first scalar as a string, or nil.
 pub(super) fn emit_str_first(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&str:first")?;
-  let ptr = emit_ptr_to_i32(ctx, &args[0])?;
-
-  let len = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(len));
-
-  // empty string → nil
-  ctx.emit(Instruction::LocalGet(len));
-  ctx.emit(Instruction::I32Eqz);
-  ctx.emit(Instruction::If(BlockType::Result(ValType::F64)));
-  ctx.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
-  ctx.emit(Instruction::Else);
-
-  // allocate a 1-byte string and copy the first byte
-  let one = ctx.alloc_i32(1);
-  let (ptr_b, dst_b) = emit_str_alloc(ctx, one);
-
-  let byte = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::I32Load8U(mem_arg_byte(8))); // offset 8 = first byte after byte_len field
-  ctx.emit(Instruction::LocalSet(byte));
-
-  ctx.emit(Instruction::LocalGet(dst_b));
-  ctx.emit(Instruction::LocalGet(byte));
-  ctx.emit(Instruction::I32Store8(mem_arg_byte(0)));
-
-  ctx.ptr_to_f64(ptr_b);
-  ctx.emit(Instruction::End); // end else
-  Ok(())
+  emit_str_nth(ctx, &[args[0].clone(), Calcit::Number(0.0)])
 }
 
-/// `&str:rest str` — new string without the first byte.
+/// `&str:rest str` — new string without the first scalar; empty stays empty.
 pub(super) fn emit_str_rest(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&str:rest")?;
-  let ptr_a = emit_ptr_to_i32(ctx, &args[0])?;
-
-  let old_len = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr_a));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(old_len));
-
-  let new_len = ctx.i32_offset(old_len, -1);
-
-  let (ptr_b, dst_b) = emit_str_alloc(ctx, new_len);
-
-  // src = ptr_a + 8 + 1 (skip byte_len header + first byte)
-  let src = ctx.i32_offset(ptr_a, 9);
-
-  ctx.emit(Instruction::LocalGet(dst_b));
-  ctx.emit(Instruction::LocalGet(src));
-  ctx.emit(Instruction::LocalGet(new_len));
-  ctx.emit(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
-
-  ctx.ptr_to_f64(ptr_b);
+  let ptr = emit_ptr_to_i32(ctx, &args[0])?;
+  emit_str_rest_from_ptr(ctx, ptr);
   Ok(())
 }
 
-/// `&str:slice str start end` — new string from bytes [start, end) (byte indices).
+pub(super) fn emit_str_rest_from_ptr(ctx: &mut WasmGenCtx, ptr: u32) {
+  let len = emit_load_count_i32(ctx, ptr);
+  let start = ctx.alloc_i32(0);
+  emit_str_advance_scalar(ctx, ptr, len, start);
+  emit_str_copy_range(ctx, ptr, start, len);
+}
+
+/// `&str:slice str start end` — scalar range [start, end), clamped to the text.
 pub(super) fn emit_str_slice(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 3 && args.len() != 2 {
     return Err("&str:slice expects 2 or 3 args (str, start[, end])".into());
   }
-  let ptr_a = emit_ptr_to_i32(ctx, &args[0])?;
-
-  let start = ctx.alloc_local_typed(ValType::I32);
-  emit_expr(ctx, &args[1])?;
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(start));
-
-  let end = ctx.alloc_local_typed(ValType::I32);
-  if args.len() == 3 {
-    emit_expr(ctx, &args[2])?;
-    ctx.emit(Instruction::I32TruncF64U);
-    ctx.emit(Instruction::LocalSet(end));
-  } else {
-    // end defaults to the byte length of the string
-    ctx.emit(Instruction::LocalGet(ptr_a));
-    ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-    ctx.emit(Instruction::I32TruncF64U);
-    ctx.emit(Instruction::LocalSet(end));
-  }
-
-  // new_len = max(0, end - start) — clamp to avoid underflow when start > end
-  let raw_len = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(end));
-  ctx.emit(Instruction::LocalGet(start));
-  ctx.emit(Instruction::I32Sub);
-  ctx.emit(Instruction::LocalSet(raw_len));
-
-  let new_len = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(raw_len));
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::I32LtS);
-  ctx.emit(Instruction::If(BlockType::Empty));
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(new_len));
-  ctx.emit(Instruction::Else);
-  ctx.emit(Instruction::LocalGet(raw_len));
-  ctx.emit(Instruction::LocalSet(new_len));
-  ctx.emit(Instruction::End);
-
-  let (ptr_b, dst_b) = emit_str_alloc(ctx, new_len);
-
-  // src = ptr_a + 8 + start; only copy if new_len > 0
-  let src = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr_a));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(start));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(src));
-
-  ctx.emit(Instruction::LocalGet(new_len));
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::I32GtS);
-  ctx.emit(Instruction::If(BlockType::Empty));
-  ctx.emit(Instruction::LocalGet(dst_b));
-  ctx.emit(Instruction::LocalGet(src));
-  ctx.emit(Instruction::LocalGet(new_len));
-  ctx.emit(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
-  ctx.emit(Instruction::End);
-
-  ctx.ptr_to_f64(ptr_b);
+  let ptr = emit_ptr_to_i32(ctx, &args[0])?;
+  let from_value = emit_str_index_value(ctx, &args[1])?;
+  let to_value = args.get(2).map(|expr| emit_str_index_value(ctx, expr)).transpose()?;
+  let from = emit_str_index(ctx, from_value);
+  let to = to_value.map(|value| emit_str_index(ctx, value));
+  let len = emit_load_count_i32(ctx, ptr);
+  let start = emit_str_scalar_offset(ctx, ptr, len, from);
+  let end = to.map(|index| emit_str_scalar_offset(ctx, ptr, len, index)).unwrap_or(len);
+  emit_str_copy_range(ctx, ptr, start, end);
   Ok(())
 }
 
@@ -380,19 +377,17 @@ pub(super) fn emit_str_compare(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   Ok(())
 }
 
-/// `&str:contains? str idx` — 1.0 if the byte index is within string length, else 0.0.
+/// `&str:contains? str idx` — whether the scalar index is within the string.
 pub(super) fn emit_str_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&str:contains?")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  // byte_len as i32
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::I32TruncF64U);
-  // idx as i32
-  emit_expr(ctx, &args[1])?;
-  ctx.emit(Instruction::I32TruncF64U);
-  // byte_len > idx → 1 if in bounds, 0 otherwise
-  ctx.emit(Instruction::I32GtU);
+  let value = emit_str_index_value(ctx, &args[1])?;
+  let index = emit_str_index(ctx, value);
+  let len = emit_load_count_i32(ctx, ptr);
+  let offset = emit_str_scalar_offset(ctx, ptr, len, index);
+  ctx.emit(Instruction::LocalGet(offset));
+  ctx.emit(Instruction::LocalGet(len));
+  ctx.emit(Instruction::I32LtU);
   ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
 }

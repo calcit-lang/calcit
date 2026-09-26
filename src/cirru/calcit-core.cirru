@@ -2242,11 +2242,43 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |slices-unicode-character-ranges)
-            :code $ quote $ do
-              assert= |bc $ &str:slice |abcd 1 3
-              assert= "|文字" $ &str:slice "|中文字符串" 1 3
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |slices-unicode-character-ranges)
+              :code $ quote $ do
+                assert= |bc $ &str:slice |abcd 1 3
+                assert= "|文字" $ &str:slice "|中文字符串" 1 3
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |scalar-slice-boundaries)
+              :code $ quote $ do
+                assert= | $ slice "|😀中" 0 0
+                assert= ([])
+                  slice ([] 1 2) 0 0
+                assert= | $ .slice "|😀中" 0 0
+                assert= | $ &str:rest |
+                assert= | $ &str:rest "|😀"
+                assert= "|文" $ &str:rest "|中文"
+                assert= nil $ &str:nth "|😀" 100000000000000000000
+                assert= false $ &str:contains? "|😀" 100000000000000000000
+                assert= | $ &str:slice "|😀" 100000000000000000000 100000000000000000000
+                assert= "|😀" $ &str:slice "|😀" 0 100000000000000000000
+                assert= | $ &str:slice "|😀中" 1 1
+                assert= "|😀" $ &str:slice "|😀" 0 1
+                assert= "|中" $ &str:slice
+                  do (println |unicode-receiver) "|😀中"
+                  do (println |unicode-start) 1
+                  do (println |unicode-end) 99
+              :tags $ #{} :core :unicode :unit
+            %{} 'TestEntry (:name |scalar-slice-invalid-evaluation)
+              :code $ quote $ do
+                assert= true $ try
+                  do
+                    &str:slice
+                      do (println |unicode-invalid-receiver) "|😀中"
+                      do (println |unicode-invalid-start) -1
+                      do (println |unicode-invalid-end) 99
+                    , false
+                  fn (message) true
+              :tags $ #{} :core :unicode :unit
         '&str:utf8-byte-count $ %{} 'CodeEntry
           :doc "|Return the UTF-8 wire byte length of a String in O(1) on native/WASM and one linear pass on JavaScript. Prefer receiver method .utf8-byte-count in application code."
           :code $ quote &runtime-implementation
