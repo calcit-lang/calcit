@@ -3362,6 +3362,25 @@
                   {} (:a 1) (:b |x) (:ready true)
                   assoc m :ready true
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-struct-through-option-match)
+              :code $ quote $ let
+                  Draft $ defstruct Draft (:text 'String) (:mono? 'Bool)
+                  original $ %{} Draft (:text |old) (:mono? false)
+                  drafts $ {} $ |a original
+                  changed $ match (get drafts |a)
+                    (:some draft)
+                      assoc drafts |a $ -> draft (assoc :text |new) (assoc :mono? true)
+                    (:none) drafts
+                assert=
+                  {} $ |a $ %{} Draft (:text |new) (:mono? true)
+                  , changed
+                assert-type changed $ :: 'Map 'String 'Draft
+                assert= changed $ match (.get drafts |a)
+                  (:some draft)
+                    .assoc drafts |a $ -> draft (assoc :text |new) (assoc :mono? true)
+                  (:none) drafts
+                assert= (%none) (get drafts |missing)
+              :tags $ #{} :core :unit
         'assoc-in $ %{} 'CodeEntry
           :doc "|associates a value at a nested path in a data structure, creates intermediate maps if needed"
           :code $ quote $ defn assoc-in (data path v)
@@ -5032,6 +5051,35 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |returns-first-string-character)
               :code $ quote $ assert= (%some |a) (first |abc)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-option-payload-through-lowering)
+              :code $ quote $ let
+                  words $ [] |first |last
+                  title $ option:unwrap-or (first words) |empty
+                  ending $ option:unwrap-or (last words) |empty
+                assert-type title 'String
+                assert-type ending 'String
+                assert= false $ blank? title
+                assert= false $ blank? ending
+                assert= |first title
+                assert= |last ending
+                assert= |empty $ option:unwrap-or
+                  first $ []
+                  , |empty
+                assert= |empty $ option:unwrap-or
+                  last $ []
+                  , |empty
+                assert= (%some nil)
+                  first $ [] nil
+                assert= (%some nil)
+                  last $ [] nil
+                assert= false $ blank? $ option:unwrap-or (first "|中文") |empty
+                assert= false $ blank? $ option:unwrap-or (last "|中文") |empty
+                assert= false $ blank? $ option:unwrap-or (nth "|中文" 1) |empty
+                assert= "|中" $ option:unwrap-or (get "|中文" 0) |empty
+                assert= |empty $ option:unwrap-or (get "|中文" 9) |empty
+                assert= |empty $ option:unwrap-or (first |) |empty
+                assert= (%some "|文") (last "|中文")
               :tags $ #{} :core :unit
         'flipped $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro flipped (f & args)

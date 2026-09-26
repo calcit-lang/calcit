@@ -1542,7 +1542,7 @@ fn generated_optional_index_access(
         index.to_owned(),
         generated_call(vec![Calcit::Proc(count_proc), receiver.to_owned()]),
       ]),
-      generated_optional_value(generated_call(vec![Calcit::Proc(nth_proc), receiver, index.to_owned()]), file_ns),
+      generated_optional_value(generated_guarded_nth(nth_proc, receiver, index.to_owned(), file_ns), file_ns),
       none.to_owned(),
       file_ns,
     ),
@@ -1560,19 +1560,45 @@ fn generated_optional_index_access(
   }
 }
 
+// String primitives are nullable in isolation. These callers have already
+// proved the index is present; retain that evidence without changing their
+// public primitive schemas or narrowing nullable collection payloads.
+fn generated_present_string(value: Calcit, file_ns: &str) -> Calcit {
+  generated_call(vec![
+    Calcit::Syntax(CalcitSyntax::AssertType, Arc::from(file_ns)),
+    value,
+    Calcit::tag("string"),
+  ])
+}
+
+fn generated_guarded_nth(proc: CalcitProc, receiver: Calcit, index: Calcit, file_ns: &str) -> Calcit {
+  let value = generated_call(vec![Calcit::Proc(proc), receiver, index]);
+  if proc == CalcitProc::NativeStrNth {
+    generated_present_string(value, file_ns)
+  } else {
+    value
+  }
+}
+
 fn generated_optional_first_access(receiver: Calcit, receiver_type: &CalcitTypeAnnotation, file_ns: &str) -> Option<Calcit> {
   let none = generated_absent_value(file_ns);
   match receiver_type {
     CalcitTypeAnnotation::List(_) => Some(generated_if(
       generated_call(vec![Calcit::Proc(CalcitProc::NativeListEmpty), receiver.to_owned()]),
       none,
-      generated_optional_value(generated_call(vec![Calcit::Proc(CalcitProc::NativeListFirst), receiver]), file_ns),
+      generated_optional_value(
+        generated_call(vec![Calcit::Proc(CalcitProc::NativeListNth), receiver, Calcit::Number(0.0)]),
+        file_ns,
+      ),
       file_ns,
     )),
     CalcitTypeAnnotation::String => Some(generated_if(
       generated_call(vec![Calcit::Proc(CalcitProc::NativeStrEmpty), receiver.to_owned()]),
       none,
-      generated_optional_value(generated_call(vec![Calcit::Proc(CalcitProc::NativeStrFirst), receiver]), file_ns),
+      generated_optional_value(
+        generated_present_string(generated_call(vec![Calcit::Proc(CalcitProc::NativeStrFirst), receiver]), file_ns),
+        file_ns,
+      ),
       file_ns,
     )),
     value
@@ -1604,16 +1630,8 @@ fn generated_optional_last_access(
   call_stack: &CallStackList,
 ) -> Result<Option<Calcit>, CalcitErr> {
   let none = generated_absent_value(file_ns);
-  if matches!(receiver_type, CalcitTypeAnnotation::List(_)) {
-    return Ok(Some(generated_if(
-      generated_call(vec![Calcit::Proc(CalcitProc::NativeListEmpty), receiver.to_owned()]),
-      none,
-      generated_optional_value(generated_call(vec![Calcit::Proc(CalcitProc::NativeListLast), receiver]), file_ns),
-      file_ns,
-    )));
-  }
-
   let (count_proc, nth_proc) = match receiver_type {
+    CalcitTypeAnnotation::List(_) => (CalcitProc::NativeListCount, CalcitProc::NativeListNth),
     CalcitTypeAnnotation::String => (CalcitProc::NativeStrCount, CalcitProc::NativeStrNth),
     value
       if matches!(value, CalcitTypeAnnotation::EnumValue(_) | CalcitTypeAnnotation::AnonymousEnum)
@@ -1631,11 +1649,12 @@ fn generated_optional_last_access(
       count.to_owned(),
     ]),
     generated_optional_value(
-      generated_call(vec![
-        Calcit::Proc(nth_proc),
+      generated_guarded_nth(
+        nth_proc,
         receiver.to_owned(),
         generated_call(vec![Calcit::Proc(CalcitProc::NativeMinus), count.to_owned(), Calcit::Number(1.0)]),
-      ]),
+        file_ns,
+      ),
       file_ns,
     ),
     none,
@@ -4230,6 +4249,13 @@ fn check_struct_field_access(
   }
   // Also check calcit.core imports that perform required struct field access.
   else if let Calcit::Import(CalcitImport { ns, def, .. }) = head {
+    if ns.as_ref() == calcit::CORE_NS
+      && def.as_ref() == "assoc"
+      && args.len() == 3
+      && let (Some(receiver), Some(field)) = (args.first(), args.get(1))
+    {
+      check_field_in_struct(receiver, field, scope_types, file_ns, check_warnings);
+    }
     if &**ns == calcit::CORE_NS
       && (&**def == "record-get" || &**def == "&struct:get")
       && args.len() >= 2
@@ -10574,9 +10600,9 @@ mod tests {
     .expect("List first should specialize");
     let first_code = expanded_first.lisp_str();
     assert!(first_code.contains("&list:empty?"));
-    assert!(first_code.contains("&list:first"));
+    assert!(!first_code.contains("&list:first"));
     assert!(!first_code.contains("&list:count"));
-    assert!(!first_code.contains("&list:nth"));
+    assert!(first_code.contains("&list:nth"));
     assert_eq!(first_code.matches("source-list").count(), 1, "caller receiver is evaluated once");
 
     let last_args = CalcitList::from(&[typed_list] as &[Calcit]);
@@ -10591,10 +10617,9 @@ mod tests {
     .expect("build typed last expansion")
     .expect("List last should specialize");
     let last_code = expanded_last.lisp_str();
-    assert!(last_code.contains("&list:empty?"));
-    assert!(last_code.contains("&list:last"));
-    assert!(!last_code.contains("&list:count"));
-    assert!(!last_code.contains("&list:nth"));
+    assert!(!last_code.contains("&list:last"));
+    assert!(last_code.contains("&list:count"));
+    assert!(last_code.contains("&list:nth"));
     assert_eq!(last_code.matches("source-list").count(), 1, "caller receiver is evaluated once");
   }
 
