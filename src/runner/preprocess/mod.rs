@@ -9882,6 +9882,7 @@ fn helper_body_has_recursive_edge(body: &Calcit) -> bool {
   fn contains_recur(expr: &Calcit) -> bool {
     match expr {
       Calcit::Recur(_) | Calcit::Proc(CalcitProc::Recur) => true,
+      Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "recur" => true,
       Calcit::List(items) => items.iter().any(contains_recur),
       _ => false,
     }
@@ -10065,6 +10066,16 @@ mod tests {
   };
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
+
+  #[test]
+  fn helper_recursion_scan_rejects_qualified_recur_before_concrete_return() {
+    // Test the compiled import representation independently of earlier CLI checks.
+    let recur = core_import("recur", "tests.helper-inference");
+    let body = Calcit::from(vec![Calcit::from(vec![recur]), Calcit::Number(1.0)]);
+    assert!(helper_body_has_recursive_edge(&body));
+    let ordinary = Calcit::from(vec![core_import("count", "tests.helper-inference"), Calcit::Number(1.0)]);
+    assert!(!helper_body_has_recursive_edge(&ordinary));
+  }
 
   fn strict_macro_signature(
     required_inputs: Vec<MacroSyntaxType>,

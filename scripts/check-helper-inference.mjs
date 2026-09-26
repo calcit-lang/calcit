@@ -54,6 +54,7 @@ try {
     ["recursive helper", "defn bad ()\n  bad\n  , 1"],
     ["mutual recursion", "defn bad ()\n  cycle-peer\n  , 1", undefined, "defn cycle-peer ()\n  bad\n  , 2"],
     ["recur helper", "defn bad ()\n  recur\n  , 1"],
+    ["qualified recur helper", "defn bad ()\n  calcit.core/recur\n  , 1"],
     ["WASM export boundary", "defwasm-export bad () 1"],
     ["WASM import boundary", "defwasm-import bad () |env |value"],
     ["conflicting use", "defn bad () $ &str:count $ helper-number"],
