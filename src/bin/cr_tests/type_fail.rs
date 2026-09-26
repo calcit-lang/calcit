@@ -144,6 +144,30 @@ fn load_fixture_entries(path: &str) -> ProgramEntries {
   load_fixture_entries_with_entry(path, None)
 }
 
+#[test]
+fn type_fail_struct_update_after_option_match_rejects_invalid_fields_and_values() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for (update, diagnostic) in [
+      ("assoc draft :ready? |wrong", "expects type `:bool`, but got `:string`"),
+      ("assoc draft :missing true", "Field `:missing` does not exist"),
+    ] {
+      let snippet = format!(
+        "let\n    Draft $ defstruct Draft (:ready? 'Bool)\n    drafts $ {{}} $ |a $ %{{}} Draft (:ready? false)\n  match (get drafts |a)\n    (:some draft) $ {update}\n    (:none) &unit"
+      );
+      let entries = load_snippet_entries(&snippet);
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect("invalid updates should produce type diagnostics, not unrelated preprocessing failures");
+      assert!(
+        warnings.borrow().iter().any(|warning| warning.message().contains(diagnostic)),
+        "expected {diagnostic}: {:?}",
+        warnings.borrow()
+      );
+    }
+  });
+}
+
 /// Ensures nested external methods reject explicit arguments during preprocessing.
 #[test]
 fn nested_external_method_rejects_explicit_extra_argument() {

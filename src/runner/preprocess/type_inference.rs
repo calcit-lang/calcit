@@ -175,17 +175,19 @@ fn merge_if_branch_types(
   }
 }
 
-fn result_constructor_variant(expr: &Calcit) -> Option<&'static str> {
+fn nominal_constructor_variant(expr: &Calcit) -> Option<&'static str> {
   let Calcit::List(items) = expr else { return None };
   match items.first()? {
     Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS => match def.as_ref() {
       "%ok" => Some("ok"),
       "%err" => Some("err"),
+      "%none" if items.len() == 1 => Some("none"),
       _ => None,
     },
     Calcit::Registered(name) => match name.as_ref() {
       "%ok" | "calcit.core/%ok" => Some("ok"),
       "%err" | "calcit.core/%err" => Some("err"),
+      "%none" | "calcit.core/%none" if items.len() == 1 => Some("none"),
       _ => None,
     },
     _ => None,
@@ -198,7 +200,7 @@ fn merge_result_constructor_branches(
   false_expr: &Calcit,
   false_type: &CalcitTypeAnnotation,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
-  let (ok_type, err_type) = match (result_constructor_variant(true_expr), result_constructor_variant(false_expr)) {
+  let (ok_type, err_type) = match (nominal_constructor_variant(true_expr), nominal_constructor_variant(false_expr)) {
     (Some("ok"), Some("err")) => (true_type, false_type),
     (Some("err"), Some("ok")) => (false_type, true_type),
     _ => return None,
@@ -218,6 +220,34 @@ fn merge_result_constructor_branches(
   )))
 }
 
+fn merge_option_absence_branch(
+  true_expr: &Calcit,
+  true_type: &Arc<CalcitTypeAnnotation>,
+  false_expr: &Calcit,
+  false_type: &Arc<CalcitTypeAnnotation>,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  let (absent_type, other_type) = if nominal_constructor_variant(true_expr) == Some("none") {
+    (true_type, false_type)
+  } else if nominal_constructor_variant(false_expr) == Some("none") {
+    (false_type, true_type)
+  } else {
+    return None;
+  };
+  let (CalcitTypeAnnotation::TypeRef(absent_name, absent_args), CalcitTypeAnnotation::TypeRef(other_name, other_args)) =
+    (absent_type.as_ref(), other_type.as_ref())
+  else {
+    return None;
+  };
+  // Only a known empty constructor has no payload evidence. An arbitrary
+  // Option<Dynamic> branch must still weaken the join, never narrow it.
+  (absent_name == other_name
+    && matches!(absent_name.as_ref(), "Option" | "calcit.core/Option")
+    && absent_args.len() == 1
+    && other_args.len() == 1
+    && matches!(absent_args[0].as_ref(), CalcitTypeAnnotation::Dynamic))
+  .then(|| other_type.clone())
+}
+
 pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   if xs.len() < 3 {
     return None;
@@ -229,6 +259,7 @@ pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
   if let Some(false_expr) = xs.get(3) {
     let false_type = resolve_type_value(false_expr, scope_types)?;
     merge_result_constructor_branches(true_expr, true_type.as_ref(), false_expr, false_type.as_ref())
+      .or_else(|| merge_option_absence_branch(true_expr, &true_type, false_expr, &false_type))
       .or_else(|| merge_if_branch_types(true_type, false_type))
   } else {
     Some(Arc::new(CalcitTypeAnnotation::Optional(true_type)))
@@ -2492,6 +2523,24 @@ mod tests {
       merge_if_branch_types(calcit::DYNAMIC_TYPE.clone(), Arc::new(CalcitTypeAnnotation::Number)).as_deref(),
       Some(CalcitTypeAnnotation::Dynamic)
     ));
+  }
+
+  #[test]
+  fn option_join_only_ignores_a_known_empty_constructor() {
+    let option = |payload| {
+      Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("calcit.core/Option"),
+        Arc::new(vec![payload]),
+      ))
+    };
+    let concrete = option(Arc::new(CalcitTypeAnnotation::Number));
+    let open = option(calcit::DYNAMIC_TYPE.clone());
+    let value = Calcit::Registered(Arc::from("unknown-option"));
+    let none = Calcit::from(vec![Calcit::Registered(Arc::from("calcit.core/%none"))]);
+    assert_eq!(merge_option_absence_branch(&none, &open, &value, &concrete), Some(concrete.clone()));
+    assert_eq!(merge_option_absence_branch(&value, &concrete, &none, &open), Some(concrete.clone()));
+    assert!(merge_option_absence_branch(&value, &concrete, &value, &open).is_none());
+    assert_eq!(merge_if_branch_types(concrete, open.clone()), Some(open));
   }
 
   #[test]
