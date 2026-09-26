@@ -44,6 +44,14 @@ calcit edit format
 
 This command also rewrites older namespace records into canonical shapes. Namespace keys under `:files` and definition keys under `:defs` are written as Symbols; readers continue accepting legacy String keys. A snapshot containing both forms of the same normalized identifier is rejected instead of silently overwriting one entry. A retired `compact.cirru` must first be copied or renamed to `calcit.cirru`; then `edit format` alone can migrate early direct-quote code and top-level `:configs` through an isolated one-way loader. It reports migrated node counts and rejects ambiguous legacy configs. Runtime loading and other edits remain strict. A direct-quote `defmacro` is the narrow exception to ordinary Dynamic initialization: its parameter markers become conservative `Syntax` required/optional/rest slots, its expansion is `Expr<Dynamic>`, and its capability set is empty, so the canonical result is immediately readable without granting effects. Existing structured Dynamic macro schemas remain rejected. For accepted snapshots, stderr identifies `W_LEGACY_ANY` or `W_DYNAMIC_TYPE_DEBT` when follow-up work is recommended. It does not invent concrete semantic types; follow dynamic or unbound-slot warnings with `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved`.
 
+### Schema 缺省与显式 Dynamic
+
+未声明 `:schema` 和显式 `Dynamic` 不是同一意图：前者表示缺少声明，后者表示用户选择开放类型边界。`edit def` 创建未标注定义，以及后续结构化编辑、`edit format`，均保留缺省状态，不自动写入 `Dynamic`。
+
+`calcit edit schema app.main/helper --clear` 删除已有 schema 字段，而不是声明 `Dynamic`。如需显式开放声明，使用 `calcit edit schema app.main/helper --input-format cirru --code "quote $ :: 'Dynamic"`。两种状态拥有不同的 definition revision，不能混用旧的编辑前置条件或分析证据。
+
+清除声明不等于通过类型检查，也不启用新的推断能力；当前严格模式仍要求无法证明的函数边界提供结构化 `Fn` 契约。编辑后继续运行 `calcit --check-only`。函数体推断由 [#1307](https://github.com/calcit-lang/calcit/issues/1307) 跟进，不应通过自动补写 `Dynamic` 绕过。
+
 ### Persistent Tree Cursor
 
 For a sequence of edits in one complex expression, `calcit cursor` stores the active tree selection in `.calcit/cursor.cirru` next to the snapshot. `.calcit/` is the shared project-local state directory for the cursor, recent error stack, snippets, and other bounded local artifacts; it does not become part of the source snapshot:

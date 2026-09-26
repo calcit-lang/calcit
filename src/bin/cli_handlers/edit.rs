@@ -1632,7 +1632,7 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
       snapshot_file,
       namespace,
       &resolved_definition,
-      &CalcitTypeAnnotation::Fn(Arc::new(updated)),
+      Some(&CalcitTypeAnnotation::Fn(Arc::new(updated))),
     )?;
     println!(
       "{} Added schema feature :{feature} to '{namespace}/{resolved_definition}'",
@@ -1650,7 +1650,12 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
     snapshot::parse_schema_annotation_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?
   };
 
-  save_schema_preserving_snapshot(snapshot_file, namespace, &resolved_definition, schema.as_ref())?;
+  save_schema_preserving_snapshot(
+    snapshot_file,
+    namespace,
+    &resolved_definition,
+    (!opts.clear).then_some(schema.as_ref()),
+  )?;
 
   if opts.clear {
     println!(
@@ -1692,7 +1697,7 @@ fn save_schema_preserving_snapshot(
   snapshot_file: &str,
   namespace: &str,
   definition: &str,
-  schema: &calcit::calcit::CalcitTypeAnnotation,
+  schema: Option<&calcit::calcit::CalcitTypeAnnotation>,
 ) -> Result<(), String> {
   let original = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
   let shebang = original.lines().next().filter(|line| line.starts_with("#!")).map(str::to_owned);
@@ -1719,11 +1724,15 @@ fn save_schema_preserving_snapshot(
   let Edn::Struct(entry) = definition_value else {
     return Err(format!("Definition '{namespace}/{definition}' must be a CodeEntry struct"));
   };
-  let schema_edn = snapshot::schema_annotation_to_edn(schema);
-  if let Some(value) = find_edn_struct_value_mut(entry, "schema") {
-    *value = schema_edn;
+  if let Some(schema) = schema {
+    let schema_edn = snapshot::schema_annotation_to_edn(schema);
+    if let Some(value) = find_edn_struct_value_mut(entry, "schema") {
+      *value = schema_edn;
+    } else {
+      entry.pairs.push((EdnTag::new("schema"), schema_edn));
+    }
   } else {
-    entry.pairs.push((EdnTag::new("schema"), schema_edn));
+    entry.pairs.retain(|(key, _)| key.ref_str() != "schema");
   }
 
   let formatted = cirru_edn::format(&data, true).map_err(|e| format!("Failed to format snapshot EDN: {e}"))?;
@@ -3623,7 +3632,8 @@ mod tests {
     let before = cirru_edn::parse(source.strip_prefix("#! /usr/bin/env calcit\n").expect("shebang")).expect("parse source");
     let schema = calcit::snapshot::parse_schema_annotation_for_write(&leaf(":string")).expect("parse schema");
 
-    save_schema_preserving_snapshot(&fixture.snapshot_string(), "app.main", "target", schema.as_ref()).expect("save target schema");
+    save_schema_preserving_snapshot(&fixture.snapshot_string(), "app.main", "target", Some(schema.as_ref()))
+      .expect("save target schema");
 
     let output = fs::read_to_string(&fixture.path).expect("read snapshot");
     assert!(output.starts_with("#! /usr/bin/env calcit\n"));
@@ -3642,26 +3652,21 @@ mod tests {
       let cirru_edn::Edn::Struct(definition) = defs.get_or_nil(definition_name) else {
         panic!("definition")
       };
-      definition["schema"].clone()
+      definition
+        .pairs
+        .iter()
+        .find(|(key, _)| key.ref_str() == "schema")
+        .map(|(_, value)| value.clone())
     };
 
     assert_eq!(schema_for(&before, "legacy"), schema_for(&after, "legacy"));
     assert_ne!(schema_for(&before, "target"), schema_for(&after, "target"));
 
-    save_schema_preserving_snapshot(
-      &fixture.snapshot_string(),
-      "app.main",
-      "target",
-      calcit::calcit::DYNAMIC_TYPE.as_ref(),
-    )
-    .expect("clear target schema");
+    save_schema_preserving_snapshot(&fixture.snapshot_string(), "app.main", "target", None).expect("clear target schema");
     let cleared_text = fs::read_to_string(&fixture.path).expect("read cleared snapshot");
     let cleared = cirru_edn::parse(cleared_text.strip_prefix("#! /usr/bin/env calcit\n").expect("shebang")).expect("parse cleared");
     assert_eq!(schema_for(&before, "legacy"), schema_for(&cleared, "legacy"));
-    assert_eq!(
-      schema_for(&cleared, "target"),
-      calcit::snapshot::schema_annotation_to_edn(calcit::calcit::DYNAMIC_TYPE.as_ref())
-    );
+    assert_eq!(schema_for(&cleared, "target"), None);
   }
 
   #[test]

@@ -768,13 +768,16 @@ pub fn schema_annotation_to_edn(schema: &CalcitTypeAnnotation) -> Edn {
 
 fn code_entry_edn_pairs(data: &CodeEntry) -> Vec<(EdnTag, Edn)> {
   let schema = normalize_schema_for_code(&data.code, &data.schema);
-  let schema_edn = schema_annotation_to_edn(schema.as_ref());
   let mut pairs = vec![
     ("doc".into(), data.doc.to_owned().into()),
     ("examples".into(), data.examples.to_owned().into()),
     ("code".into(), data.code.to_owned().into()),
-    ("schema".into(), schema_edn),
   ];
+  // Absence is an inference hole, not an explicit open boundary. Preserve
+  // that distinction through every structural edit and format round trip.
+  if !schema_annotation_is_missing(&schema) {
+    pairs.push(("schema".into(), schema_annotation_to_edn(schema.as_ref())));
+  }
   if !data.tests.is_empty() {
     pairs.insert(
       2,
@@ -935,6 +938,9 @@ pub fn definition_revision(entry: &CodeEntry) -> Result<String, String> {
   let schema = cirru_edn::format(&schema_annotation_to_edn(entry.schema.as_ref()), true)
     .map_err(|error| format!("Failed to format definition schema for revision: {error}"))?;
   update_part(&mut hasher, "schema", schema.as_bytes());
+  if schema_annotation_is_missing(&entry.schema) {
+    update_part(&mut hasher, "schema-presence", b"missing");
+  }
 
   let code = render_cirru_node_for_revision(&entry.code, "code")?;
   update_part(&mut hasher, "code", &code);
@@ -4867,6 +4873,29 @@ mod tests {
     let code = Cirru::List(vec![Cirru::leaf("defstruct")]);
     let explicit = Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("struct"))));
     assert_eq!(normalize_schema_for_code(&code, &explicit), explicit);
+  }
+
+  #[test]
+  fn edn_schema_round_trip_preserves_absence_and_explicit_dynamic() {
+    let missing = CodeEntry::from_code(Cirru::List(vec![
+      Cirru::leaf("defn"),
+      Cirru::leaf("helper"),
+      Cirru::List(vec![]),
+      Cirru::leaf("1"),
+    ]));
+    let mut explicit = missing.clone();
+    explicit.schema = Arc::new(CalcitTypeAnnotation::Dynamic);
+    assert_ne!(definition_revision(&missing).unwrap(), definition_revision(&explicit).unwrap());
+
+    for (entry, expected_missing) in [(missing, true), (explicit, false)] {
+      let mut decoded = entry;
+      for _ in 0..2 {
+        let rendered = cirru_edn::format(&Edn::from(&decoded), true).unwrap();
+        assert_eq!(rendered.contains(":schema"), !expected_missing, "{rendered}");
+        decoded = CodeEntry::try_from(cirru_edn::parse(&rendered).unwrap()).unwrap();
+        assert_eq!(schema_annotation_is_missing(&decoded.schema), expected_missing);
+      }
+    }
   }
 
   #[test]
