@@ -1316,6 +1316,21 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// Returns the payload annotation of an option-shaped type, covering both the
+  /// internal `Optional` wrapper and the `Option<T>` `TypeRef` form used by
+  /// schemas such as `min`/`max`. Non-option types return `None`.
+  pub(crate) fn option_payload(&self) -> Option<Arc<CalcitTypeAnnotation>> {
+    match self {
+      Self::Optional(inner) => Some(inner.clone()),
+      Self::TypeRef(name, args) => {
+        let name = name.trim_start_matches('\'').trim_start_matches(':');
+        (args.len() == 1 && matches!(name, "Option" | "calcit.core/Option")).then(|| args[0].clone())
+      }
+      Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.option_payload()),
+      _ => None,
+    }
+  }
+
   fn bind_declared_generics_from_applied_args(
     declared_generics: &[Arc<str>],
     applied_args: &[Arc<CalcitTypeAnnotation>],
