@@ -8302,16 +8302,27 @@ pub fn preprocess_defn(
           CalcitTypeAnnotation::Fn(fn_annotation) => Some(fn_annotation.clone()),
           _ => None,
         });
+      // A zero-input helper has no caller-dependent parameter constraints.
+      // Infer only absent contracts; an explicit Dynamic remains intentional.
+      let infer_helper_schema = source_top_level_definition
+        && matches!(head, CalcitSyntax::Defn)
+        && ys.is_empty()
+        && crate::snapshot::schema_annotation_is_missing(&def_schema)
+        && program::lookup_def_ffi(ctx.file_ns, def_name.as_ref()).is_none()
+        && body_fn_hint.is_none()
+        && !args.iter().skip(2).any(CalcitTypeAnnotation::hint_form_marks_async);
       if source_top_level_definition {
-        reject_strict_whole_dynamic_public_schema(
-          head,
-          ctx.file_ns,
-          def_name.as_ref(),
-          &def_schema,
-          body_fn_hint.is_some(),
-          ctx.call_stack,
-          Some(definition_location.clone()),
-        )?;
+        if !infer_helper_schema {
+          reject_strict_whole_dynamic_public_schema(
+            head,
+            ctx.file_ns,
+            def_name.as_ref(),
+            &def_schema,
+            body_fn_hint.is_some(),
+            ctx.call_stack,
+            Some(definition_location.clone()),
+          )?;
+        }
         reject_strict_unbound_type_slot_schema(
           ctx.file_ns,
           def_name.as_ref(),
@@ -8461,6 +8472,36 @@ pub fn preprocess_defn(
         xs = xs.push_right(form);
         Ok(())
       })?;
+
+      if infer_helper_schema {
+        let inferred = type_inference::infer_unhinted_callback_signature(&xs.clone().into(), &body_types)
+          .filter(inferred_helper_contract_is_closed)
+          .filter(|_| !helper_body_has_recursive_edge(&Calcit::from(processed_body.clone())));
+        if let Some(CalcitTypeAnnotation::Fn(signature)) = inferred.as_deref() {
+          effective_fn_schema = Some(signature.clone());
+          let hint = Calcit::from(vec![
+            Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ctx.file_ns)),
+            signature.to_schema_calcit(),
+          ]);
+          let mut forms = xs.to_vec();
+          forms.insert(3, hint.clone());
+          xs = TernaryTreeList::from(forms);
+          processed_body.insert(0, hint);
+        } else {
+          // Compatibility mode retains its previous open contract, while
+          // strict mode still rejects an unproved boundary.
+          CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = prev_features.clone());
+          reject_strict_whole_dynamic_public_schema(
+            head,
+            ctx.file_ns,
+            def_name.as_ref(),
+            &def_schema,
+            false,
+            ctx.call_stack,
+            Some(definition_location.clone()),
+          )?;
+        }
+      }
 
       // Check function return type if declared
       // Extract return type hint from processed body (after preprocessing)
@@ -9811,6 +9852,41 @@ fn effective_user_call_schema(info: &CalcitFn) -> Arc<CalcitFnTypeAnnotation> {
 
 fn call_stack_contains_macro(call_stack: &CallStackList) -> bool {
   call_stack.0.iter().any(|frame| matches!(frame.kind, StackKind::Macro))
+}
+
+fn inferred_helper_contract_is_closed(schema: &Arc<CalcitTypeAnnotation>) -> bool {
+  find_schema_annotation(schema, "schema", &mut |annotation, _| {
+    matches!(
+      annotation.as_ref(),
+      CalcitTypeAnnotation::Dynamic
+        | CalcitTypeAnnotation::DynFn
+        | CalcitTypeAnnotation::TypeVar(_)
+        | CalcitTypeAnnotation::TypeSlot(_)
+        | CalcitTypeAnnotation::AnonymousEnum
+        | CalcitTypeAnnotation::Custom(_)
+    )
+    .then_some(())
+  })
+  .is_none()
+    && schema.prove_with_bindings(schema, &mut HashMap::new()).is_proven()
+}
+
+fn helper_body_has_recursive_edge(body: &Calcit) -> bool {
+  let deps = program::collect_compiled_deps(body);
+  let cyclic = PREPROCESS_COMPILE_GUARD.with(|guard| {
+    guard
+      .borrow()
+      .iter()
+      .any(|(ns, def)| program::lookup_def_id(ns, def).is_some_and(|id| deps.contains(&id)))
+  });
+  fn contains_recur(expr: &Calcit) -> bool {
+    match expr {
+      Calcit::Recur(_) | Calcit::Proc(CalcitProc::Recur) => true,
+      Calcit::List(items) => items.iter().any(contains_recur),
+      _ => false,
+    }
+  }
+  cyclic || contains_recur(body)
 }
 
 fn reject_strict_whole_dynamic_public_schema(

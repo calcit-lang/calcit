@@ -71,7 +71,7 @@ fn schema_clear_and_structural_edits_preserve_missing_intent() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn helper () 1",
+        "quote $ defn helper (x) x",
       ],
     ),
     "create unannotated helper",

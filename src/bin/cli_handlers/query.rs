@@ -365,6 +365,8 @@ struct DefinitionContextData {
   doc_truncated: bool,
   tags: Vec<String>,
   schema: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  inferred_schema: Option<String>,
   features: Vec<String>,
   js_ffi: Option<JsFfiQueryInfo>,
   code: ContextCode,
@@ -3082,8 +3084,8 @@ fn build_regular_context(
   entry: &snapshot::CodeEntry,
   opts: &QueryContextCommand,
 ) -> Result<SemanticQueryEnvelope<DefinitionContextData>, String> {
-  let revision = snapshot::definition_revision(entry)?;
-  let coverage = crate::type_coverage::analyze_code_entry(namespace, definition, entry);
+  let mut revision = snapshot::definition_revision(entry)?;
+  let mut coverage = crate::type_coverage::analyze_code_entry(namespace, definition, entry);
   let intentional_ffi = context_features(entry.schema.as_ref()).iter().any(|feature| feature == "js-ffi");
   let mut diagnostics = weak_type_diagnostics(entry, opts.budget);
   if matches!(&entry.code, Cirru::Leaf(_)) {
@@ -3124,6 +3126,47 @@ fn build_regular_context(
   }
 
   let metadata_ready = prepare_program_for_type_query(snapshot);
+  let inferred_schema = if metadata_ready.is_ok() && snapshot::schema_annotation_is_missing(&entry.schema) {
+    let warnings = RefCell::new(vec![]);
+    let result = runner::preprocess::compile_source_def_for_snapshot(namespace, definition, &warnings, &CallStackList::default());
+    diagnostics.extend(warnings.borrow().iter().map(warning_to_context_diagnostic));
+    if let Err(error) = &result {
+      diagnostics.push(ContextDiagnostic {
+        code: error.code.clone().unwrap_or_else(|| "E_PREPROCESS".to_owned()),
+        phase: "preprocess",
+        severity: "error",
+        message: error.msg.clone(),
+        path: Some("code".to_owned()),
+        intent: None,
+        provenance: error.provenance.as_ref().clone(),
+      });
+    }
+    if result.is_ok() && warnings.borrow().is_empty() {
+      program::lookup_compiled_def(namespace, definition)
+        .and_then(|compiled| runner::preprocess::infer_static_type_from_expr(&compiled.preprocessed_code))
+        .filter(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Fn(_)))
+    } else {
+      None
+    }
+  } else {
+    None
+  };
+  if let Some(schema) = &inferred_schema {
+    let mut effective = entry.clone();
+    effective.schema = schema.clone();
+    coverage = crate::type_coverage::analyze_code_entry(namespace, definition, &effective);
+    diagnostics = weak_type_diagnostics(&effective, opts.budget);
+    diagnostics.push(ContextDiagnostic {
+      code: "I_SCHEMA_INFERRED".to_owned(),
+      phase: "preprocess",
+      severity: "info",
+      message: "Function contract is proven by ordinary preprocessing; no root schema was written to source".to_owned(),
+      path: Some("code".to_owned()),
+      intent: None,
+      provenance: vec![],
+    });
+    revision = semantic_revision(&[&revision, &format_type_query_annotation(schema)?]);
+  }
   if let Err(error) = &metadata_ready {
     diagnostics.push(ContextDiagnostic {
       code: "W_STATIC_METADATA_UNAVAILABLE".to_owned(),
@@ -3177,8 +3220,9 @@ fn build_regular_context(
   let usages = context_usages(snapshot, namespace, definition, opts.deps, opts.usage_limit);
   let id = format!("{namespace}/{definition}");
   let docs = context_docs(&id, &mut diagnostics);
+  let effective_schema = inferred_schema.as_deref().unwrap_or(entry.schema.as_ref());
   let static_methods = if metadata_ready.is_ok() {
-    context_methods(entry.schema.as_ref(), opts.budget / 3)
+    context_methods(effective_schema, opts.budget / 3)
   } else {
     None
   };
@@ -3198,7 +3242,8 @@ fn build_regular_context(
     doc_truncated,
     tags,
     schema: context_schema(entry.schema.as_ref())?,
-    features: context_features(entry.schema.as_ref()),
+    inferred_schema: inferred_schema.as_ref().map(|schema| context_schema(schema)).transpose()?.flatten(),
+    features: context_features(effective_schema),
     js_ffi: None,
     code,
     examples,
@@ -3276,6 +3321,7 @@ fn build_special_builtin_context(
     doc_truncated,
     tags: tags.clone(),
     schema: Some(schema),
+    inferred_schema: None,
     features: tags,
     js_ffi: None,
     code: ContextCode {
@@ -3372,7 +3418,11 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
   if let Some(schema) = &data.schema {
     out.push_str(&markdown_fenced_block("cirru", schema));
   } else {
-    let _ = writeln!(&mut out, "_Dynamic; no explicit schema._");
+    let _ = writeln!(&mut out, "_No explicit schema._");
+  }
+  if let Some(schema) = &data.inferred_schema {
+    let _ = writeln!(&mut out, "\n## Inferred schema\n\n_Compiler evidence; not written to source._\n");
+    out.push_str(&markdown_fenced_block("cirru", schema));
   }
 
   if let Some(info) = &data.js_ffi {

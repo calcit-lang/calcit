@@ -18,6 +18,27 @@ Calcit 的类型规则处于表层语言与 macro 展开后的 typed core 之间
 类型关系。完整的分层 owner、开放值与 Agent source-fix 契约见
 [`09-12-layered-semantics-and-agent-fixes-rfc.md`](../RFCs/09-12-layered-semantics-and-agent-fixes-rfc.md)。
 
+## 可省略声明的闭合 helper
+
+普通、非递归、零参数 `defn`，在函数体能够证明完整返回类型时，可以省略重复的 root `:schema`。例如下列 helper 可由正常预处理得到 `Fn () -> Number`：
+
+```cirru
+defn initial-count () $ .count $ [] 1 2 3
+```
+
+调用这个 helper 的普通方法和回调继续读取同一份已检查签名；不是从某一个调用、测试或示例猜测公开契约。编译器只在 typed core 中补充签名，不修改 Snapshot。已有明确 schema 仍然优先；显式 `Dynamic` 不会被当成缺省声明自动收紧。
+
+当前这一步不推断有参数 helper 的公开签名，也不放宽递归、WASM import/export、FFI 元数据和异步边界。函数体存在冲突分支、未确定的类型参数或开放容器时，仍需补足契约。省略声明不是关闭类型检查，错误使用推断结果仍会失败。
+
+Agent 可用现有查询核对证据：
+
+```bash
+calcit query type-at app.main/initial-count --path code --format edn
+calcit query context app.main/initial-count --format edn
+```
+
+`type-at` 返回完整推断函数类型；`context` 保留缺省的 `:schema`，另以 `:inferred-schema` 展示编译器证据。查询不写回声明。要主动移除已确认冗余的声明，使用 `edit schema ... --clear` 后重新严格检查及运行测试；不要批量清除无法推断的边界。
+
 ## Dynamic 是边界，不是默认多态
 
 `Dynamic` 适合 JS FFI、框架开放数据、宏和确实无法提前知道的外部输入。普通函数不要用多个 `Dynamic` 表示“它们应该是同一个类型”：输入和返回关联时用 `:generics` 与 TypeVar；只需要能力时用 trait 与 `:where`；同质集合写出元素类型；有限异构数据定义为 Enum；可缺失值使用 `Option<T>`，带失败信息使用 `Result<T, E>`。

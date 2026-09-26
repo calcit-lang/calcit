@@ -245,6 +245,8 @@ The command does not invoke the project init/reload function. A dynamic FFI boun
 
 ### Gather Definition Context (`context`)
 
+对于未声明 root schema、但普通预处理已证明签名的 helper，结构化输出保留 `:schema nil`，另外提供 `:inferred-schema`；human 输出单独显示 “Inferred schema”。它是编译器证据，不是源码声明，查询不会写回 Snapshot。此时不会再仅因缺少 root schema 报告未解析类型；实际预处理错误仍会出现在 diagnostics 中。
+
 ```bash
 # One bounded view for understanding or preparing to edit a definition
 calcit query context app.main/main!

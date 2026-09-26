@@ -465,6 +465,28 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     // Avoid evaluating compiled payloads during preprocess type inference.
     // Evaluating function code here can recurse back into preprocess and overflow stack.
     match compiled.preprocessed_code {
+      Calcit::List(ref forms) if crate::snapshot::schema_annotation_is_missing(&declared_schema) => {
+        // Source-backed definitions retain a preprocessed defn rather than a
+        // runtime Fn. Reuse its checked contract, without evaluating the body
+        // or replacing an explicit public Dynamic declaration.
+        if let Some(CalcitTypeAnnotation::Fn(info)) = forms
+          .iter()
+          .skip(3)
+          .find_map(CalcitTypeAnnotation::extract_fn_annotation_from_hint_form)
+          .as_deref()
+        {
+          let returned = resolve_generic_return_type_parts(
+            info.generics.as_ref(),
+            &info.arg_types,
+            info.rest_type.as_ref(),
+            &info.return_type,
+            call_expr.iter().skip(1),
+            scope_types,
+          )
+          .or_else(|| (!info.return_type.contains_type_var()).then(|| info.return_type.clone()))?;
+          return Some(invocation_return_type(info, returned, definition_marks_async(ns, def)));
+        }
+      }
       Calcit::Fn { info, .. } => {
         if let Some(resolved) = resolve_generic_return_type(&info, call_expr.iter().skip(1), scope_types) {
           return Some(if definition_marks_async(ns, def) {
