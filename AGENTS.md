@@ -139,14 +139,6 @@ calcit docs agents --contract
 5. **最终确认发布成功**：轮询 GitHub Actions 直到 publish workflow 成功，并在 crates.io / npm 上确认新版本可见（版本号一致）。
 6. **发布 milestone 成果长文**：从当前 milestone 起，每个 milestone 收尾时，除完成发版外，还必须在本仓库 GitHub Discussions 发布一篇中文长篇成果文章，再标记阶段交付完成。不能用 Release notes、commit/issue 清单或聊天摘要代替。
 
-### Milestone 成果 Discussion
-
-- **面向维护者理解成果**：先概括本阶段解决了什么实际问题、用户现在可以做什么，以及对 AI Agents 开发效率的具体改善；再解释关键设计取舍。围绕成果组织长文，不按提交顺序堆砌，也不为篇幅填充内容。
-- **用实例展示变化**：提供代表性的改进前后代码、可执行命令、预期输出或真实项目案例。按需使用小表格或示意图帮助理解；明确 native、JS、WASM/WASI 各自实际支持与验证到的范围。
-- **交代证据与边界**：链接 milestone、正式 Release、关键 issues/PR 和验证记录；说明升级步骤、兼容性变化、已知限制、延期事项及下一阶段方向。未验证的能力与未来计划不得写成已交付成果。
-- **便于发现且不重复维护**：发布前检查同一 milestone 是否已有成果 Discussion，已有则更新而不重复发帖。发布后在 milestone 描述和 Release notes 中回链该文章，并向用户提供链接；正文留在 Discussions，不在仓库另存一份长期镜像。
-- **受阻时如实收尾**：如果 Discussions 不可用或权限不足，保留草稿并说明待发布，不宣称成果文章已完成。未完成的 milestone 不提前发布完成总结；不自动补写所有历史 milestone，除非用户另有要求。
-
 ```bash
 # 版本号更新（允许直接在已验证的 main 操作；不要求创建 release PR）
 git switch main
@@ -181,6 +173,14 @@ npm view @calcit/procs version
 ```
 
 > ⚠️ **`gh run watch` 是交互式 pager（类似 less），在脚本或 Agent 场景下会卡住**，按 `q` 退出后续命令也不会被执行。验证时统一用 `gh pr checks <pr-number>` 和 `gh run list --limit 5` 轮询。
+
+### Milestone 成果 Discussion
+
+- **面向维护者理解成果**：先概括本阶段解决了什么实际问题、用户现在可以做什么，以及对 AI Agents 开发效率的具体改善；再解释关键设计取舍。围绕成果组织长文，不按提交顺序堆砌，也不为篇幅填充内容。
+- **用实例展示变化**：提供代表性的改进前后代码、可执行命令、预期输出或真实项目案例。按需使用小表格或示意图帮助理解；明确 native、JS、WASM/WASI 各自实际支持与验证到的范围。
+- **交代证据与边界**：链接 milestone、正式 Release、关键 issues/PR 和验证记录；说明升级步骤、兼容性变化、已知限制、延期事项及下一阶段方向。未验证的能力与未来计划不得写成已交付成果。
+- **便于发现且不重复维护**：发布前检查同一 milestone 是否已有成果 Discussion，已有则更新而不重复发帖。发布后在 milestone 描述和 Release notes 中回链该文章，并向用户提供链接；正文留在 Discussions，不在仓库另存一份长期镜像。
+- **受阻时如实收尾**：如果 Discussions 不可用或权限不足，保留草稿并说明待发布，不宣称成果文章已完成。未完成的 milestone 不提前发布完成总结；不自动补写所有历史 milestone，除非用户另有要求。
 
 ## 性能与资源验证
 
