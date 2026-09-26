@@ -1712,7 +1712,7 @@ pub struct EditSchemaCommand {
   /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
   #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
   pub input_format: SyntaxInputFormat,
-  /// clear schema field
+  /// remove the schema declaration; does not declare Dynamic or bypass strict checking
   #[argh(switch, long = "clear")]
   pub clear: bool,
   /// add js-ffi to an existing structured Fn schema without replacing its signature

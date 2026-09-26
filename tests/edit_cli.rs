@@ -57,6 +57,78 @@ fn query_definition(snapshot: &Path, target: &str) -> serde_json::Value {
 }
 
 #[test]
+fn schema_clear_and_structural_edits_preserve_missing_intent() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let target = "app.main/helper";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn helper () 1",
+      ],
+    ),
+    "create unannotated helper",
+  );
+  let read_entry = || {
+    let source = fs::read_to_string(&snapshot).unwrap();
+    let data = cirru_edn::parse(&source).unwrap();
+    let parsed = calcit::snapshot::load_snapshot_data(&data, snapshot.to_str().unwrap()).unwrap();
+    parsed.files["app.main"].defs["helper"].clone()
+  };
+  let missing = read_entry();
+  assert!(calcit::snapshot::schema_annotation_is_missing(&missing.schema));
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "schema", target, "--input-format", "cirru", "--code", "quote $ :: 'Dynamic"],
+    ),
+    "explicit Dynamic remains a declaration",
+  );
+  assert_success(&run_calcit(&snapshot, &["edit", "format"]), "format explicit schema");
+  let explicit = read_entry();
+  assert!(!calcit::snapshot::schema_annotation_is_missing(&explicit.schema));
+  assert_ne!(
+    calcit::snapshot::definition_revision(&missing).unwrap(),
+    calcit::snapshot::definition_revision(&explicit).unwrap()
+  );
+
+  assert_success(&run_calcit(&snapshot, &["edit", "schema", target, "--clear"]), "remove schema");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/unrelated",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn unrelated () 2",
+      ],
+    ),
+    "edit unrelated definition",
+  );
+  assert_success(&run_calcit(&snapshot, &["edit", "format"]), "format missing schema");
+  let cleared = read_entry();
+  assert!(calcit::snapshot::schema_annotation_is_missing(&cleared.schema));
+  assert_eq!(
+    calcit::snapshot::definition_revision(&missing).unwrap(),
+    calcit::snapshot::definition_revision(&cleared).unwrap()
+  );
+  let failure = run_calcit(&snapshot, &["--init-fn", target, "--check-only"]);
+  assert!(!failure.status.success(), "clearing must not bypass strict validation");
+  assert!(String::from_utf8_lossy(&failure.stderr).contains("has no declared function schema"));
+}
+
+#[test]
 fn schema_feature_edit_preserves_contract_and_works_in_guarded_transaction() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);
