@@ -32,9 +32,10 @@ related:
 `assert-type` 将未经证明的动态值硬转为具名类型。
 
 需要保留类型时，改用 `map-entries`。它返回 `List<MapEntry<K,V>>`，条目提供 `:key` 与
-`:value` 字段；下游排序、`map-indexed` 与组件调用继续按各自的类型检查。例如：
+`:value` 字段；下游排序、`map-indexed` 与组件调用继续按各自的类型检查。以下片段依赖
+项目中的 `tasks`、`comp-task` 定义，是迁移模板而非独立可执行的表达式：
 
-```cirru
+```cirru.no-check
 -> tasks map-entries
   &list:sort-by :key
   map-indexed $ fn (idx entry)
@@ -45,7 +46,7 @@ related:
 不会自动从泛型容器推断 `a`、`b` 的精确类型；在比较函数内声明 `hint-fn` 的 `:args` 为
 `MapEntry<K,V>`，再读取 `(:sort-id $ :value a)`。例如，`Task` 是项目中的具名 Struct 时：
 
-```cirru
+```cirru.no-check
 sort entries $ fn (a b)
   hint-fn $ {}
     :args $ [] (:: 'MapEntry 'String 'app.schema/Task) (:: 'MapEntry 'String 'app.schema/Task)
