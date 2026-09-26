@@ -197,6 +197,9 @@ jobs:
           && node js-out/main.mjs
           && bash scripts/test-js-command.sh
 
+      - name: "verify shared Unicode string semantics"
+        run: node scripts/check-string-unicode.mjs
+
       - name: "run generated namespace-import regression in Node"
         run: CALCIT_JS_NAMESPACE_IMPORT_RUNTIME=1 cargo test --test js_namespace_import_cli
 

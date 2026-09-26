@@ -6071,6 +6071,61 @@
                 assert= (%none)
                   last $ []
               :tags $ #{} :core :types :unit
+            %{} 'TestEntry (:name |unicode-scalar-indexing)
+              :code $ quote $ do
+                assert= 3 $ count "|A😀中"
+                assert= 8 $ &str:utf8-byte-count "|A😀中"
+                assert= 2 $ count "|é"
+                assert= (%some "|😀") (first "|😀中")
+                assert= (%some "|😀") (last "|中😀")
+                assert= (%some "|中") (last "|😀中")
+                assert= (%some "|😀") (nth "|A😀中" 1)
+                assert= (%some "|中") (get "|A😀中" 2)
+                assert= (%none) (nth "|A😀中" 3)
+                assert= (%none) (get "|A😀中" 99)
+                assert= (%none) (first |)
+                assert= (%none) (last |)
+                assert= (%some |b) (nth |abc 1)
+                assert= (%some "|文") (nth "|中文" 1)
+                assert= "|😀" $ &str:first "|😀中"
+                assert= nil $ &str:first |
+                assert= "|中" $ &str:nth "|😀中" 1
+                assert= nil $ &str:nth "|😀中" 2
+                assert= true $ &str:contains? "|😀中" 1
+                assert= false $ &str:contains? "|😀中" 2
+                assert= false $ &str:contains? | 0
+                assert= "|中" $ rest "|😀中"
+                assert= | $ rest |
+                assert= "|😀中" $ slice "|A😀中文" 1 3
+                assert= "|😀中" $ .slice "|A😀中文" 1 3
+                assert= (%some "|中") (.nth "|A😀中" 2)
+                assert= (%some "|😀") (.last "|中😀")
+                assert= "|中" $ &str:slice "|😀中" 1 99
+                assert= | $ &str:slice "|😀中" 99 100
+                assert= | $ &str:slice "|😀中" 2 1
+                assert= | $ &str:slice | 0 0
+              :tags $ #{} :core :unicode :unit
+            %{} 'TestEntry (:name |rejects-invalid-string-indices)
+              :code $ quote $ do
+                assert= true $ try
+                  do (&str:nth "|😀" -1) false
+                  fn (message) true
+                assert= true $ try
+                  do (&str:nth "|😀" 0.5) false
+                  fn (message) true
+                assert= true $ try
+                  do (&str:contains? "|😀" -1) false
+                  fn (message) true
+                assert= true $ try
+                  do (&str:contains? "|😀" 0.5) false
+                  fn (message) true
+                assert= true $ try
+                  do (&str:slice "|😀" -1 1) false
+                  fn (message) true
+                assert= true $ try
+                  do (&str:slice "|😀" 0 0.5) false
+                  fn (message) true
+              :tags $ #{} :core :unicode :unit
         'let $ %{} 'CodeEntry
           :doc "|macro for local bindings\nSyntax: (let ([name value] ...) body...)\nParams: pairs (list of binding pairs), body (expressions)\nReturns: result of body with bindings in scope\nCreates multiple local bindings sequentially"
           :code $ quote $ defmacro let (pairs & body)

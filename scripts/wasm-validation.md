@@ -46,11 +46,11 @@ WASM 相关能力分属四个不同层级，排查或文档引用时不要把它
 | List / Map / Set                       | ✅   | 线性内存 bump allocator  |
 | `println` / `echo` / IO               | ✅   | 通过 `io/log_value` host import |
 | 字符串字面量                           | ✅   | 编译期写入数据段         |
-| `&str:count` / `&str:first` / `&str:rest` / `&str:slice` | ✅ | UTF-8 字节操作 |
-| `&str:nth`                            | ✅   | 返回单字符字符串或 nil |
+| `&str:count`                          | ✅   | Unicode 标量数；不是 UTF-8 字节数 |
+| `&str:first` / `&str:rest` / `&str:slice` / `&str:nth` | 有限 | 现有实现仍按字节访问，仅 ASCII 正常范围已验证；Unicode、空串与切片边界修复见 [#1381](https://github.com/calcit-lang/calcit/issues/1381) |
 | `&str:concat`                          | ✅   | bump alloc + `memory.copy` |
 | `&str:compare`                         | ✅   | 逐字节字典序比较         |
-| `&str:contains?`                       | ✅   | 字节索引范围检查         |
+| `&str:contains?`                       | 有限 | 仍按字节索引检查，非 ASCII 与 native 不一致；见 #1381 |
 | `&str:find-index`                      | ✅   | 朴素字节子串搜索，返回偏移或 -1 |
 | `&str:includes?`                       | ✅   | `find-index >= 0`          |
 | `&str:pad-left` / `&str:pad-right`     | ✅   | 循环填充 pattern 字节    |

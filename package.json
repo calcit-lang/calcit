@@ -21,7 +21,7 @@
     "test-rs": "cargo test -q",
     "test-fail": "cargo test -q --bin calcit type_fail_",
     "test-snippets": "cargo test -q snippets::tests",
-    "check-js-runtime": "node scripts/check-js-runtime-identity.mjs",
+    "check-js-runtime": "node scripts/check-js-runtime-identity.mjs && cargo build --bin calcit && node scripts/check-string-unicode.mjs",
     "check-js-ffi-source": "cargo build --bin calcit && node scripts/check-js-ffi-source.mjs",
     "check-literal-paths": "cargo run --bin calcit -- calcit/bench-literal-paths.cirru && cargo run --bin calcit -- --emit-path target/literal-path-js calcit/bench-literal-paths.cirru js && node scripts/bench-literal-paths.mjs",
     "check-typed-method-rem": "cargo run --bin calcit -- calcit/fibo.cirru && cargo run --bin calcit -- --emit-path target/typed-method-rem-js calcit/fibo.cirru js && node scripts/bench-typed-method-rem.mjs",
