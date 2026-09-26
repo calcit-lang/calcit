@@ -917,7 +917,7 @@ fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str) -> Result<()
   }
 }
 
-fn prepare_program_for_type_query(snapshot: &snapshot::Snapshot) -> Result<(), String> {
+pub(crate) fn prepare_program_for_type_query(snapshot: &snapshot::Snapshot) -> Result<(), String> {
   program::clear_runtime_caches_for_reload(Arc::from("query.type"), Arc::from("query.type"), true)?;
   {
     let mut program_data = program::PROGRAM_CODE_DATA

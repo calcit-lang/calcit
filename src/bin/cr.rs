@@ -77,6 +77,9 @@ fn run_check_types(
   snapshot_file: &str,
   input_cache: Option<analysis_cache::InputCacheStats>,
 ) -> Result<(), String> {
+  let effective =
+    type_coverage::with_proven_helper_contracts(snapshot, options.ns.as_deref(), options.ns_prefix.as_deref(), options.deps)?;
+  let snapshot = effective.as_ref();
   let cached = options
     .incremental
     .then(|| analysis_cache::collect_check_types(options, snapshot, snapshot_file))
@@ -113,6 +116,9 @@ fn run_weak_types(
   snapshot_file: &str,
   input_cache: Option<analysis_cache::InputCacheStats>,
 ) -> Result<(), String> {
+  let effective =
+    type_coverage::with_proven_helper_contracts(snapshot, options.ns.as_deref(), options.ns_prefix.as_deref(), options.deps)?;
+  let snapshot = effective.as_ref();
   if options.schema_evidence {
     struct StrictTypesGuard(bool);
     impl Drop for StrictTypesGuard {
@@ -197,7 +203,9 @@ fn run_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) -> Resul
       options.format
     ));
   }
-  let outcome = quality_gate::analyze_quality(options, snapshot)?;
+  let effective =
+    type_coverage::with_proven_helper_contracts(snapshot, options.ns.as_deref(), options.ns_prefix.as_deref(), options.deps)?;
+  let outcome = quality_gate::analyze_quality(options, effective.as_ref())?;
   match options.format.as_str() {
     "human" | "text" => print!("{}", quality_gate::format_quality_report(&outcome)),
     "json" => println!("{}", quality_gate::format_quality_json(&outcome)?),
