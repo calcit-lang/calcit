@@ -505,14 +505,8 @@ export let _$n_str = (x: CalcitValue): string => {
 
 export let _$n_str_$o_contains_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
   if (typeof xs === "string") {
-    if (typeof x != "number") {
-      throw new Error("Expected number index for detecting");
-    }
-    let size = xs.length;
-    if (x >= 0 && x < size) {
-      return true;
-    }
-    return false;
+    checkStringIndex(x);
+    return stringScalarOffset(xs, x) < xs.length;
   }
 
   throw new Error("string `contains?` expected a string");
@@ -595,9 +589,13 @@ export let _$n_set_$o_includes_$q_ = (xs: CalcitValue, x: CalcitValue): boolean 
 
 export let _$n_str_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
   if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
-  if (typeof k !== "number") throw new Error("Expected number index for a list");
+  checkStringIndex(k);
 
-  if (typeof xs === "string") return xs[k];
+  if (typeof xs === "string") {
+    const offset = stringScalarOffset(xs, k);
+    const scalar = xs.codePointAt(offset);
+    return scalar === undefined ? null : String.fromCodePoint(scalar);
+  }
 
   throw new Error("Does not support `nth` on this type");
 };
@@ -1026,7 +1024,7 @@ export let _$n_list_$o_last = (xs: CalcitValue): CalcitValue => {
 
 export let _$n_str_$o_first = (xs: CalcitValue): CalcitValue => {
   if (typeof xs === "string") {
-    return xs[0];
+    return _$n_str_$o_nth(xs, 0);
   }
   console.error(xs);
   throw new Error("Expected a string");
@@ -1076,7 +1074,7 @@ export let _$n_list_$o_rest = (xs: CalcitValue): CalcitList | CalcitSliceList =>
 };
 
 export let _$n_str_$o_rest = (xs: CalcitValue): CalcitValue => {
-  if (typeof xs === "string") return xs.slice(1);
+  if (typeof xs === "string") return xs.slice(stringScalarOffset(xs, 1));
 
   console.error(xs);
   throw new Error("Expects a string");
@@ -1116,7 +1114,7 @@ export let last = (xs: CalcitValue): CalcitValue => {
     return xs.get(xs.len() - 1);
   }
   if (typeof xs === "string") {
-    return xs[xs.length - 1];
+    return _$n_str_$o_nth(xs, Math.max(0, _$n_str_$o_count(xs) - 1));
   }
   console.error(xs);
   throw new Error("Data not ready for last");
@@ -1130,7 +1128,7 @@ export let butlast = (xs: CalcitValue): CalcitList | CalcitSliceList | string =>
     return xs.slice(0, xs.len() - 1);
   }
   if (typeof xs === "string") {
-    return xs.slice(0, -1);
+    return _$n_str_$o_slice(xs, 0, Math.max(0, _$n_str_$o_count(xs) - 1));
   }
   console.error(xs);
   throw new Error("Data not ready for butlast");
@@ -1447,12 +1445,34 @@ export let split = (xs: string, x: string): CalcitSliceList => {
 export let split_lines = (xs: string): CalcitSliceList => {
   return new CalcitSliceList(xs.split("\n"));
 };
-export let _$n_str_$o_slice = (xs: string, m: number, n: number): string => {
-  if (n <= m) {
-    console.warn("endIndex too small");
-    return "";
+function checkStringIndex(index: CalcitValue): asserts index is number {
+  if (typeof index !== "number" || !Number.isInteger(index) || index < 0) {
+    throw new Error("String index must be a non-negative integer");
   }
-  return xs.substring(m, n);
+}
+
+// Translate scalar indices without allocating an array of characters. Clamp
+// to the end, matching Rust's chars().skip(); never split a surrogate pair.
+function stringScalarOffset(text: string, index: number): number {
+  if (index === 0) return 0;
+  // ASCII/BMP text needs no scalar-to-code-unit translation. Let the engine
+  // scan this common path instead of allocating or walking characters in JS.
+  if (!/[\uD800-\uDBFF]/.test(text)) return Math.min(index, text.length);
+  let offset = 0;
+  for (let scalar = 0; scalar < index && offset < text.length; scalar += 1) {
+    offset += text.codePointAt(offset)! > 0xffff ? 2 : 1;
+  }
+  return offset;
+}
+
+export let _$n_str_$o_slice = (xs: string, m: number, n?: number): string => {
+  if (typeof xs !== "string") throw new Error("&str:slice expected a string");
+  checkStringIndex(m);
+  if (n !== undefined) checkStringIndex(n);
+  if (n !== undefined && n <= m) return "";
+  const start = stringScalarOffset(xs, m);
+  const end = n === undefined ? xs.length : stringScalarOffset(xs, n);
+  return xs.slice(start, end);
 };
 
 export let _$n_str_$o_find_index = (x: string, y: string): number => {

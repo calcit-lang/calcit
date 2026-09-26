@@ -56,6 +56,15 @@ try {
   assert.equal(runtimeA._$n_str_$o_utf8_byte_count("中"), 3, "three-byte UTF-8 scalars must be counted exactly");
   assert.equal(runtimeA._$n_str_$o_utf8_byte_count("😀"), 4, "surrogate pairs must count as one four-byte UTF-8 scalar");
   assert.equal(runtimeA._$n_str_$o_count("A😀"), 2, "string count must use Unicode scalars rather than UTF-16 code units");
+  // Non-finite JS host values are not representable as ordinary source literals.
+  for (const index of [NaN, Infinity, -Infinity]) {
+    assert.throws(() => runtimeA._$n_str_$o_nth("😀", index), /non-negative integer/);
+    assert.throws(() => runtimeA._$n_str_$o_contains_$q_("😀", index), /non-negative integer/);
+    assert.throws(() => runtimeA._$n_str_$o_slice("😀", 0, index), /non-negative integer/);
+  }
+  assert.equal(runtimeA._$n_str_$o_slice("A😀中", 1), "😀中", "omitted end retains scalar indexing");
+  assert.equal(runtimeA.last("中😀"), "😀", "legacy runtime exports must retain complete scalars");
+  assert.equal(runtimeA.butlast("中😀"), "中");
 
   const boundedList = new runtimeA.CalcitSliceList([1, 2]);
   assert.equal(runtimeA._$n_list_$o_nth(boundedList, 1), 2);
