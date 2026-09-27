@@ -198,6 +198,9 @@ jobs:
       - name: "verify Dynamic-valued atom inference in Calcit"
         run: cargo run --bin calcit -- calcit/test-types-inference.cirru test 'test-types-inference.main/*dynamic-ref' --require-match
 
+      - name: "verify type inference semantics in Calcit"
+        run: cargo run --bin calcit -- calcit/test-types-inference.cirru test --tag unit --require-match
+
       - name: "verify WASM exports and FFI"
         run: >
           cargo build --bin calcit
