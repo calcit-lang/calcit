@@ -497,7 +497,15 @@ fn resolve_generic_return_type_parts<'a>(
     if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
       continue;
     }
-    let actual_type = resolve_type_value(arg, scope_types)?;
+    let actual_type = resolve_type_value(arg, scope_types).or_else(|| match arg {
+      Calcit::Local(local)
+        if matches!(expected_type.as_ref(), CalcitTypeAnnotation::TypeVar(_))
+          && matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Dynamic) =>
+      {
+        Some(local.type_info.clone())
+      }
+      _ => None,
+    })?;
     if core_option_none_without_payload(arg, actual_type.as_ref(), expected_type.as_ref()) {
       continue;
     }
@@ -2996,6 +3004,31 @@ mod tests {
     };
     let unknown_list = local("xs", calcit::DYNAMIC_TYPE.clone());
     assert!(resolve_generic_return_type(&fn_info, std::iter::once(&unknown_list), &ScopeTypes::new()).is_none());
+  }
+
+  #[test]
+  fn direct_generic_argument_preserves_a_dynamic_local_boundary() {
+    let payload = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let return_type = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Result"),
+      Arc::new(vec![payload.clone(), Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("E")))]),
+    ));
+    let dynamic_value = local("value", calcit::DYNAMIC_TYPE.clone());
+    let resolved = resolve_generic_return_type_parts(
+      &[Arc::from("T"), Arc::from("E")],
+      &[payload],
+      None,
+      &return_type,
+      std::iter::once(&dynamic_value),
+      &ScopeTypes::new(),
+    )
+    .expect("a direct generic argument should retain its Dynamic boundary");
+    assert!(matches!(resolved.as_ref(),
+      CalcitTypeAnnotation::TypeRef(name, args)
+        if name.as_ref() == "calcit.core/Result"
+          && matches!(args.as_slice(), [ok, err]
+            if matches!(ok.as_ref(), CalcitTypeAnnotation::Dynamic)
+              && matches!(err.as_ref(), CalcitTypeAnnotation::Dynamic))));
   }
 
   #[test]

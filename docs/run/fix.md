@@ -76,8 +76,9 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
 - `core-result-method-v1` 只处理 `result:unwrap-or result fallback` 到 `result .unwrap-or fallback`。
   已证明来自 core 的 `%err error` 或 `Result :err error` 没有成功值，因而可由具体 fallback
   确定成功类型，同时保留错误类型；方法契约仍须为 `proven`，源码引用、求值次数和顺序也须可证明。
-  普通 `Result<Dynamic,E>`、`%ok` / `Result :ok`（尤其成功值来自 Dynamic）、同名类型遮蔽、
-  函数值和未知 macro 只给 `requires-review`，不把 fallback 当成已存在成功值的类型证据。
+  成功值有具体类型、方法契约已证明的 core `%ok` 也可迁移；备用值不能代替成功值的类型证据。
+  普通 `Result<Dynamic,E>`、成功值来自 Dynamic 的 `%ok` / `Result :ok`、同名类型遮蔽、
+  函数值和未知 macro 只给 `requires-review`；具名构造若缺少精确源码类型证据同样保留审阅。
   与 Option 规则一样，本规则须显式选择，不修改已发布 preset，也不自动改写 `:tests` / `:examples`。
   先运行 `calcit calcit.cirru fix --rule core-result-method-v1 --format edn` 预览，再带原样
   `--expect-revision` 应用；重复预览应为空，随后运行严格类型检查和项目测试。

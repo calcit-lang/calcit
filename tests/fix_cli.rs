@@ -3337,6 +3337,138 @@ fn result_error_helpers_infer_fallback_without_erasing_error_payload() {
 }
 
 #[test]
+fn result_success_with_dynamic_payload_stays_open_across_fallback() {
+  for (definition, expected_type, expected_confidence) in [
+    ("infer-result-ok-open", "'Dynamic", "unknown"),
+    ("infer-named-result-ok-open", "'Dynamic", "unknown"),
+    ("infer-result-ok-concrete", "'Number", "exact"),
+    ("infer-named-result-ok-concrete", "'Number", "exact"),
+    ("infer-result-err-fallback", "'Number", "exact"),
+    ("infer-named-result-err-fallback", "'Number", "exact"),
+  ] {
+    let target = format!("test-types-inference.main/{definition}");
+    let result = run_calcit(
+      Path::new("calcit/test-types-inference.cirru"),
+      &["query", "type-at", &target, "--path", "@3", "--format", "json"],
+    );
+    assert_success(&result, "Result success and fallback type query");
+    let report = parse_stdout(&result);
+    assert_eq!(report["data"]["inferred_type"], expected_type, "{target}: {report}");
+    assert_eq!(report["data"]["confidence"], expected_confidence, "{target}: {report}");
+  }
+}
+
+#[test]
+fn result_method_fix_uses_concrete_success_evidence_but_not_dynamic_fallback() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("calcit/test-types-inference.cirru", &snapshot).expect("copy type inference Snapshot");
+  let args = [
+    "--rule",
+    "core-result-method-v1",
+    "--ns",
+    "test-types-inference.main",
+    "--def",
+    "infer-result-ok-concrete",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &args);
+  assert_success(&preview, "concrete Result success method preview");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["suggestions"][0]["applicability"], "machine-applicable", "{report}");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-result-method-v1",
+      "--ns",
+      "test-types-inference.main",
+      "--def",
+      "infer-result-ok-concrete",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "concrete Result success method apply");
+  let repeated = run_fix(&snapshot, &args);
+  assert_success(&repeated, "concrete Result success method idempotence preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+
+  let open = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-result-method-v1",
+      "--ns",
+      "test-types-inference.main",
+      "--def",
+      "infer-result-ok-open",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&open, "dynamic Result success method preview");
+  let open_report = parse_stdout(&open);
+  assert_eq!(
+    open_report["data"]["suggestions"][0]["applicability"], "requires-review",
+    "{open_report}"
+  );
+}
+
+#[test]
+fn strict_result_success_consumption_rejects_dynamic_payload() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("calcit/test-types-inference.cirru", &snapshot).expect("copy type inference Snapshot");
+  let target = "test-types-inference.main/consume-open-result";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn consume-open-result (value) ((result:unwrap-or (%ok value) 7) .add 1)",
+      ],
+    ),
+    "install open Result consumer",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Number)",
+      ],
+    ),
+    "declare open Result consumer",
+  );
+  let checked = run_calcit(&snapshot, &["--check-only", "--init-fn", target]);
+  assert!(
+    !checked.status.success(),
+    "Dynamic success payload must not become a statically callable Number"
+  );
+  let diagnostic = String::from_utf8_lossy(&checked.stderr);
+  assert!(
+    diagnostic.contains("E_DYNAMIC_POSTFIX_METHOD") && diagnostic.contains(".add"),
+    "{diagnostic}"
+  );
+}
+
+#[test]
 fn core_result_method_rule_keeps_open_and_shadowed_receivers_for_review() {
   let directory = TestDirectory::create();
   for (name, code, schema) in [
