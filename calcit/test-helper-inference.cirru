@@ -46,7 +46,7 @@
                   .map (helper-list)
                     fn (x) (inc x)
                 assert= 3 $ .unwrap-or
-                  %some $ helper-number
+                  Option :some $ helper-number
                   , 0
               :tags $ #{} :helper-inference :unit
             %{} 'TestEntry (:name |independent-method-instantiations)

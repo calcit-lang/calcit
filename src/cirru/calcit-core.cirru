@@ -27,41 +27,41 @@
             :args $ [] 'Dynamic 'Tag
           :tags $ #{} :builtin :internal
         '%err $ %{} 'CodeEntry
-          :doc "|构造 Result<T,E> 的 :err 值；类型名 Result 用于 schema，值由 %err 或具名 Enum 构造语法创建。"
+          :doc "|已弃用的 Result<T,E> :err 构造 helper；推荐直接写 Result :err error。可用 calcit fix --rule core-nominal-constructor-v1 迁移可证明的调用。最早在 0.26.0、且真实消费者完成迁移后移除。"
           :code $ quote $ defn %err (message) (%:: Result :err message)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'E
             :generics $ [] 'T 'E
             :return $ :: 'Result 'T 'E
-          :tags $ #{} :constructor
+          :tags $ #{} :constructor :deprecated
         '%none $ %{} 'CodeEntry
-          :doc "|构造 Option<T> 的 :none 值；类型名 Option 用于 schema，值由 %none 或具名 Enum 构造语法创建。需要具体 T 时用 schema 提供类型证据。"
+          :doc "|已弃用的 Option<T> :none 构造 helper；推荐直接写 Option :none。可用 calcit fix --rule core-nominal-constructor-v1 迁移可证明的调用。最早在 0.26.0、且真实消费者完成迁移后移除。"
           :code $ quote $ defn %none () (%:: Option :none)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ []
             :generics $ [] 'T
             :return $ :: 'Option 'T
-          :tags $ #{} :constructor
+          :tags $ #{} :constructor :deprecated
         '%ok $ %{} 'CodeEntry
-          :doc "|构造 Result<T,E> 的 :ok 值；类型名 Result 用于 schema，值由 %ok 或具名 Enum 构造语法创建。"
+          :doc "|已弃用的 Result<T,E> :ok 构造 helper；推荐直接写 Result :ok value。可用 calcit fix --rule core-nominal-constructor-v1 迁移可证明的调用。最早在 0.26.0、且真实消费者完成迁移后移除。"
           :code $ quote $ defn %ok (value) (%:: Result :ok value)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'T
             :generics $ [] 'T 'E
             :return $ :: 'Result 'T 'E
-          :tags $ #{} :constructor
+          :tags $ #{} :constructor :deprecated
         '%some $ %{} 'CodeEntry
-          :doc "|构造 Option<T> 的 :some 值；类型名 Option 用于 schema，值由 %some 或具名 Enum 构造语法创建。已知接收者上的操作优先使用 .method。"
+          :doc "|已弃用的 Option<T> :some 构造 helper；推荐直接写 Option :some value。可用 calcit fix --rule core-nominal-constructor-v1 迁移可证明的调用。最早在 0.26.0、且真实消费者完成迁移后移除。"
           :code $ quote $ defn %some (value) (%:: Option :some value)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'T
             :generics $ [] 'T
             :return $ :: 'Option 'T
-          :tags $ #{} :constructor
+          :tags $ #{} :constructor :deprecated
         '%{} $ %{} 'CodeEntry
           :doc "|Construct a struct value. Use a StructDef for nominal values or `_` for an anonymous struct."
           :code $ quote $ defmacro %{} (R & xs)
@@ -2966,7 +2966,7 @@
           :schema $ :: 'Trait
           :tags $ #{} :trait
         'Option $ %{} 'CodeEntry
-          :doc "|Calcit 泛型 Option<T> 的 nominal 类型名，可用于公开 schema；此 core 定义自身是内部实现，不是构造函数。使用 %some/%none 构造值，用 query type 查询已知 Option<T> 的方法。"
+          :doc "|Calcit 泛型 Option<T> 的 nominal Enum 定义：用作公开 schema，也可直接调用 Option :some value 或 Option :none 构造值；已知接收者上优先使用 .method。%some/%none 是待迁移的旧 helper。"
           :code $ quote $ def Option
             impl-traits
               defenum Option ([] 'T) (:some 'T) (:none)
@@ -2974,23 +2974,36 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data :internal
-          :tests $ [] $ %{} 'TestEntry (:name |matches-payloads-and-rejects-arity-mismatch)
-            :code $ quote $ do
-              assert= 1 $ match (%some 1)
-                (:some x) x
-                (:none) 0
-              assert= 0 $ match (%none)
-                (:some x) x
-                (:none) 0
-              assert= :a-one $ match (:: :a 1)
-                (:a x) :a-one
-                (:b x y) :b-two
-                _ :no-match
-              assert= :no-match $ match (:: :a 1 2)
-                (:a x) :a-one
-                (:b x y) :b-two
-                _ :no-match
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |matches-payloads-and-rejects-arity-mismatch)
+              :code $ quote $ do
+                assert= 1 $ match (%some 1)
+                  (:some x) x
+                  (:none) 0
+                assert= 0 $ match (%none)
+                  (:some x) x
+                  (:none) 0
+                assert= :a-one $ match (:: :a 1)
+                  (:a x) :a-one
+                  (:b x y) :b-two
+                  _ :no-match
+                assert= :no-match $ match (:: :a 1 2)
+                  (:a x) :a-one
+                  (:b x y) :b-two
+                  _ :no-match
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |direct-construction-preserves-value-and-failure)
+              :code $ quote $ do
+                assert= (%some 3) (Option :some 3)
+                assert= (%none) (Option :none)
+                assert= 3 $ .unwrap $ Option :some 3
+                assert= true $ try
+                  .unwrap $ Option :none
+                  fn (message) true
+                assert= true $ try
+                  Option :some $ raise |boom
+                  fn (message) (= message |boom)
+              :tags $ #{} :core :unit
         'OptionMappableImpl $ %{} 'CodeEntry (:doc "|Trait impl for Mappable on Option")
           :code $ quote $ defimpl OptionMappableImpl Mappable (.map option:map)
           :examples $ []
@@ -3048,7 +3061,7 @@
           :schema $ :: 'Struct
           :tags $ #{} :data :internal
         'Result $ %{} 'CodeEntry
-          :doc "|Calcit 泛型 Result<T,E> 的 nominal 类型名，可用于公开 schema；此 core 定义自身是内部实现，不是构造函数。使用 %ok/%err 构造值，用 query type 查询已知 Result<T,E> 的方法。"
+          :doc "|Calcit 泛型 Result<T,E> 的 nominal Enum 定义：用作公开 schema，也可直接调用 Result :ok value 或 Result :err error 构造值；已知接收者上优先使用 .method。%ok/%err 是待迁移的旧 helper。"
           :code $ quote $ def Result
             impl-traits
               defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
@@ -3056,6 +3069,16 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data :internal
+          :tests $ [] $ %{} 'TestEntry (:name |direct-construction-preserves-value-and-failure)
+            :code $ quote $ do
+              assert= (%ok 3) (Result :ok 3)
+              assert= (%err |bad) (Result :err |bad)
+              assert= 3 $ .unwrap-or (Result :ok 3) 0
+              assert= 0 $ .unwrap-or (Result :err |bad) 0
+              assert= true $ try
+                Result :ok $ raise |boom
+                fn (message) (= message |boom)
+            :tags $ #{} :core :unit
         'ResultMappableImpl $ %{} 'CodeEntry (:doc "|Trait impl for Mappable on Result")
           :code $ quote $ defimpl ResultMappableImpl Mappable (.map result:map)
           :examples $ []

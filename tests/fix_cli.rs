@@ -2730,6 +2730,203 @@ fn retired_surface_rules_point_to_the_published_migration_bridge() {
 }
 
 #[test]
+fn core_nominal_constructor_rule_previews_applies_and_is_idempotent() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/core-constructors",
+        "--code",
+        "quote $ defn core-constructors () (%some (%ok 1)) (%none) (%err |bad) &unit",
+      ],
+    ),
+    "install constructor calls",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/core-constructors",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)",
+      ],
+    ),
+    "declare constructor test schema",
+  );
+
+  let args = [
+    "--rule",
+    "core-nominal-constructor-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "core-constructors",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &args);
+  assert_success(&preview, "constructor preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
+  assert_eq!(suggestions.len(), 3, "report: {report}");
+  assert!(
+    suggestions
+      .iter()
+      .all(|suggestion| suggestion["applicability"] == "machine-applicable")
+  );
+  assert_eq!(report["data"]["validation"]["status"], "passed");
+  let revision = report["revision"].as_str().expect("preview should return revision");
+
+  let stale = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-nominal-constructor-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "core-constructors",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      "md5:stale",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!stale.status.success());
+  assert!(String::from_utf8_lossy(&stale.stderr).contains("Snapshot revision mismatch"));
+
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-nominal-constructor-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "core-constructors",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      revision,
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "constructor apply");
+  let updated = fs::read_to_string(&snapshot).expect("updated fixture should read");
+  assert!(updated.contains("Option :some $ Result :ok 1"), "snapshot: {updated}");
+  assert!(updated.contains("Option :none"), "snapshot: {updated}");
+  assert!(updated.contains("Result :err |bad"), "snapshot: {updated}");
+  let repeated = run_fix(&snapshot, &args);
+  assert_success(&repeated, "constructor idempotence preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+}
+
+#[test]
+fn core_nominal_constructor_rule_reviews_shadowed_types_and_function_values() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/shadowed-option",
+        "--code",
+        "quote $ defn shadowed-option (Option) (%some Option)",
+      ],
+    ),
+    "install shadowed nominal name",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/shadowed-option",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return $ :: 'Option 'Number)",
+      ],
+    ),
+    "declare shadowed constructor schema",
+  );
+  let shadowed = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-nominal-constructor-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "shadowed-option",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&shadowed, "shadowed constructor preview");
+  let report = parse_stdout(&shadowed);
+  assert_eq!(report["data"]["suggestions"][0]["applicability"], "requires-review");
+  assert_eq!(report["data"]["suggestions"][0]["replacement"], serde_json::Value::Null);
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/constructor-as-value",
+        "--code",
+        "quote $ defn constructor-as-value () %some",
+      ],
+    ),
+    "install function-value constructor reference",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/constructor-as-value",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)",
+      ],
+    ),
+    "declare function-value schema",
+  );
+  let value = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-nominal-constructor-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "constructor-as-value",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&value, "function-value constructor preview");
+  let report = parse_stdout(&value);
+  assert_eq!(report["data"]["suggestions"][0]["applicability"], "requires-review");
+  assert_eq!(report["data"]["suggestions"][0]["replacement"], serde_json::Value::Null);
+  assert_eq!(report["data"]["validation"]["checked_operations"], 0);
+}
+
+#[test]
 fn surface_latest_preset_migrates_named_enum_and_struct_constructors() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

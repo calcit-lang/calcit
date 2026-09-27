@@ -53,6 +53,13 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   `Result :ok value`。
 - `named-struct-constructor-v1` 把能静态解析到项目 `defstruct` 的 `%{} Person (:name name)` 改为
   `Person :name name`，并保持字段表达式的原始求值顺序。
+- `core-nominal-constructor-v1` 是 0.25.0 的 Option/Result 构造器迁移试点：把编译器已解析到
+  `calcit.core/%some/%none/%ok/%err`、且实参数量匹配的调用改为 `Option :some/:none` 或
+  `Result :ok/:err`。嵌套构造在一次 guarded subtree replacement 内完成，每个 payload 仍按原位置
+  求值一次；局部遮蔽、函数值引用和未经证明的 macro 展开不自动改写。当前须显式指定 `--rule`，
+  不静默修改已有升级 preset；旧 helper 从 0.25.0 标记弃用，在真实消费者迁移且至少经过一个版本窗口后
+  才考虑移除，最早为 0.26.0。试点只扫描所选 definition 的源码 `:code`；definition-attached
+  `:tests`、`:examples`、macro 定义与无法映射回源码的展开引用暂不自动改写，须人工检查。
 - `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
   同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples
@@ -90,6 +97,15 @@ calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 
 `--preset` 与 `--rule` 互斥。apply 必须原样重复 preview 的 `--preset`、`--ns` 和 `--def`；第二次 preview
 应返回空建议。未来集合发生变化时应发布新的 preset ID，既有 ID 不应静默改变含义。
+
+单独迁移 Option/Result 构造 helper 时，先在真实项目中预览 `requires-review` 与 `machine-applicable`
+的区别，再应用并重新预览确认幂等。应用前必须确认项目 `deps.cirru` 所锁定的 Calcit 版本与运行的 CLI 一致：
+
+```bash
+calcit calcit.cirru fix --rule core-nominal-constructor-v1 --format edn
+calcit calcit.cirru fix --rule core-nominal-constructor-v1 --apply --expect-revision 'md5:<预览返回的 revision>'
+calcit calcit.cirru fix --rule core-nominal-constructor-v1 --format edn
+```
 
 ## 项目级严格迁移工作流
 

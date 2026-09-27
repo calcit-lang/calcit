@@ -121,7 +121,7 @@ Decode exactly once, at the boundary. Passing an already nominal Struct to
 an updater or history loader from accidentally re-decoding typed state and
 failing later with “expected map, got struct”.
 
-It converts a Map to a nominal Struct recursively, rejects unknown keys and missing required fields, and reports the path of a bad nested value. A missing `Option<T>` field becomes `%none`; a present raw `T` becomes `%some T`. Already-wrapped `%some` and `%none` values are also accepted.
+它会递归地把 Map 解码为 nominal Struct，拒绝未知 key 与缺失的必填字段，并报告错误值所在路径。缺失的 `Option<T>` 字段变成 `Option :none`，已有的原始 `T` 变成 `Option :some value`。旧 helper 创建的等价值在迁移窗口内仍可读取。
 
 ```cirru.no-run
 defstruct Response (:code 'Number)
@@ -129,8 +129,8 @@ defstruct Response (:code 'Number)
   :body 'Dynamic
 
 ; `raw` may be { :code 200, :message |ok, :body ... }
-; the result is Response(:code 200, :message (%some |ok), :body ...)
-; omitting :message produces (%none)
+; the result is Response(:code 200, :message (Option :some |ok), :body ...)
+; omitting :message produces (Option :none)
 ```
 
 Unlike the closed text decoder, `decode-map-as` permits an explicitly declared `Dynamic` leaf for an open payload such as an HTTP response body. Keep it at the boundary and decode it again into a closed Struct/Enum before application logic depends on it. It never treats `nil` as an empty map or silently supplies required fields. Native and JavaScript support this syntax; the WASM backend does not currently support typed decoder syntaxes.

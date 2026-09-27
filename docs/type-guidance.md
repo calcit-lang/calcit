@@ -181,7 +181,7 @@ reason/payload 使用方法级泛型，因此不会为了宿主编码而抹掉�
 
 `Map<K,V>` receiver 的 `.get`，以及 `List<T>`、String、Enum receiver 的 `.get`、`.nth`、`.first`、`.last`，会在 preprocess 阶段降低为对应类型的 `&scope:*` primitive 与显式 Option 构造，不再执行通用函数中的 receiver type predicates。对应的前缀形式保持兼容并使用同一 lowering；业务代码优先使用 receiver 形式来保留类型意图。
 
-对 `update-in` 的缺失值给默认值或明确处理 `%none`，不要无条件 unwrap：
+对 `update-in` 的缺失值给默认值或明确处理 `Option :none`，不要无条件 unwrap：
 
 ```cirru.no-check
 update-in data ([] :settings :retries)
@@ -200,7 +200,7 @@ Profile :name |Ada
 ```
 
 参数必须是 `:field value` 对，必填字段不能省略；末尾声明为 `Option<T>`
-的字段可以省略，Calcit 会补成 `%none`。需要显式控制所有字段时使用
+的字段可以省略，Calcit 会补成 `Option :none`。需要显式控制所有字段时使用
 `%{} Profile ...` 并完整提供字段。`%{}?` 与底层 `&%{}?` 已退役，
 包括 `--compat-types` 在内都会以 `E_PARTIAL_STRUCT_NIL_FILL` 拒绝；不要用隐式 `nil`
 模拟可缺失字段。

@@ -258,11 +258,11 @@ contradictory request.
 Strict preprocessing also rejects two constructs that manufacture `nil`
 implicitly:
 
-- `E_LEGACY_OPTIONAL_PARAM`: a `?` parameter would bind an omitted argument to
-  `nil`. Remove the marker, declare trailing parameters as `Option<T>`, and let
-  omission insert `%none` (or pass `%some value` / `%none` explicitly).
+- `E_LEGACY_OPTIONAL_PARAM`：`?` 参数会把省略的实参绑定到 `nil`。移除该标记，将末尾参数
+  声明为 `Option<T>`；省略实参时由 Calcit 插入 `Option :none`，显式调用则写
+  `Option :some value` 或 `Option :none`。
 - `E_PARTIAL_STRUCT_NIL_FILL`：`%{}?` / `&%{}?` 已退役，所有模式都拒绝隐式
-  `nil` 填充。改用 `%{}` 明确提供字段；可缺失字段应声明为 `Option<T>` 并使用 `%none`。
+  `nil` 填充。改用 `%{}` 明确提供字段；可缺失字段应声明为 `Option<T>` 并使用 `Option :none`。
 - `E_NIL_FOR_UNIT`: a function declared to return `Unit` actually returns the
   distinct `Nil` value. Replace returned `nil` / `;nil` with `&unit`, or end the
   body with an effect that already returns Unit. Intermediate nil expressions
@@ -563,7 +563,7 @@ WASI command 中的 `try-parse-cirru-edn-as` 与 `format-cirru-edn` 直接使用
 
 WASM 可根据已解析的静态 callee 与函数参数 schema，特化携带非逃逸 inline closure 的普通函数调用；闭包在创建位置捕获词法局部值，因此 `Option.map`、`Result.map` 等静态方法不需要各自的 backend 拦截规则。动态 callee、可变参数函数、闭包逃逸与递归特化仍以 `E_WASM_CLOSURE_SPECIALIZATION` 明确失败，不会生成 `nil`、`0` 或失去捕获环境的替代实现。
 
-WASI command 继续使用与原生、JavaScript 相同的 `get-env` 和 `get-args` API。Preview 1 路径两者均可用；WASI 0.3 Component 的 `get-args` 通过 `wasi:cli/environment@0.3.1#get-arguments` 返回包含第 0 项的完整 `List<String>`。`get-env` 从同一接口的 `get-environment` 按名称查找，保留 `Option<String>`：未设置时为 `%none`，已设置为空字符串时为 `%some |`；非 ASCII 名称和值按 UTF-8 字节精确比较和复制。宿主只会提供显式授权的环境变量，例如用 `wasmtime run -S p3 --env CALCIT_TEST=你好 program.wasm`。Preview 1 与 Component 的内存 ABI 都只存在于编译器内部，不进入 Calcit 源码接口。
+WASI command 继续使用与原生、JavaScript 相同的 `get-env` 和 `get-args` API。Preview 1 路径两者均可用；WASI 0.3 Component 的 `get-args` 通过 `wasi:cli/environment@0.3.1#get-arguments` 返回包含第 0 项的完整 `List<String>`。`get-env` 从同一接口的 `get-environment` 按名称查找，保留 `Option<String>`：未设置时为 `Option :none`，已设置为空字符串时为 `Option :some |`；非 ASCII 名称和值按 UTF-8 字节精确比较和复制。宿主只会提供显式授权的环境变量，例如用 `wasmtime run -S p3 --env CALCIT_TEST=你好 program.wasm`。Preview 1 与 Component 的内存 ABI 都只存在于编译器内部，不进入 Calcit 源码接口。
 
 `println` 和 `echo` 写标准输出，`eprintln` 写标准错误，保留参数间空格与结尾换行。编译器通过 `wasi:cli/stdout` / `stderr@0.3.1` 的字节流处理部分写入，支持 UTF-8 和长文本；标准输入由 `read-stdin-text` 在 Component 路径支持，Preview 1 路径以明确诊断拒绝。输出流关闭后会等待宿主 completion future 并检查结果，失败时陷阱终止，而不会误报成功。`println` 等表层函数仍不返回 `Result`，因此不要把它们当成可靠持久化或审计通道。
 

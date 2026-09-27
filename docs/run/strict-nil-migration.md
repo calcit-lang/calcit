@@ -7,8 +7,8 @@ Calcit 0.14 的默认严格诊断把隐式缺失值视为编译错误；迁移�
 
 | Code | Rejected form | Migration |
 | --- | --- | --- |
-| `E_LEGACY_OPTIONAL_PARAM` | `defn f (required ? optional) ...` or the equivalent `fn` form | Remove `?`, declare trailing parameters as `Option<T>`, and rely on trailing omission to insert `%none`; use `%some value` / `%none` at explicit call sites. |
-| `E_PARTIAL_STRUCT_NIL_FILL` | `%{}? Struct ...` and `&%{}? Struct ...` | Use `%{}` with every field present. Change genuinely absent fields to `Option<T>` and provide `%none`. Do not infer business defaults automatically. |
+| `E_LEGACY_OPTIONAL_PARAM` | `defn f (required ? optional) ...` 或等价 `fn` | 移除 `?`，把末尾参数声明成 `Option<T>`；省略实参时自动插入 `Option :none`，显式调用处写 `Option :some value` / `Option :none`。 |
+| `E_PARTIAL_STRUCT_NIL_FILL` | `%{}? Struct ...` 与 `&%{}? Struct ...` | 用 `%{}` 显式提供全部字段。真正可缺失的字段声明为 `Option<T>` 并提供 `Option :none`；不要自动猜测业务默认值。 |
 | `E_NIL_FOR_UNIT` | A function declared to return `Unit` whose returned expression has static type `Nil`, including legacy `;nil` | Return `&unit`, or end the body with an effect that already returns `Unit`. Intermediate nil values are not treated as the function return. |
 | `E_NIL_CALLBACK_SENTINEL` | An inline `map-kv` callback has a return path that uses `nil` to drop an entry, including an `if` without an else branch | Use `filter-map-kv`; return `MapEntryDecision :keep key value` or `MapEntryDecision :drop` on every path. A `nil` nested inside the returned key/value pair remains ordinary data and is not rejected. |
 | `W_MAP_KV_UNPROVEN_CONTRACT` / `E_MAP_KV_UNPROVEN_CONTRACT` | Typed project code calls legacy `map-kv`, whose heterogeneous pair and nil/enum drop protocol cannot prove output key/value types. Compatibility mode warns and exposes only `Dynamic`; strict mode rejects it. | Use `filter-map-kv` with `MapEntryDecision` when the result remains a Map or entries may be dropped. Use `map-list-kv` for `Fn(K,V)->U` collection into `List<U>`. |

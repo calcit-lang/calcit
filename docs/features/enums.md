@@ -235,7 +235,9 @@ Use the Option-returning `enum-definition` API to inspect the definition behind 
 let
     ApiResult $ defenum ApiResult (:ok :number) (:err :string)
     x $ %:: ApiResult :ok 1
-  println $ = (enum-definition x) (%some ApiResult)
+  println $ match (enum-definition x)
+    (:some original) $ = original ApiResult
+    (:none) false
   ; => true
 ```
 
