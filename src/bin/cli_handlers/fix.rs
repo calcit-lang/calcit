@@ -2941,6 +2941,13 @@ fn plan_core_option_method_fixes(
     let warnings = RefCell::new(Vec::new());
     let usages = runner::preprocess::trace_definition_source_usages(namespace, definition, &warnings, &CallStackList::default())
       .map_err(|failure| failure.msg)?;
+    let expressions = runner::preprocess::trace_definition_source_expressions(
+      namespace,
+      definition,
+      &RefCell::new(Vec::new()),
+      &CallStackList::default(),
+    )
+    .map_err(|failure| failure.msg)?;
     for usage in usages {
       if usage.target_ns.as_ref() != "calcit.core" {
         continue;
@@ -3008,7 +3015,11 @@ fn plan_core_option_method_fixes(
               matches!(receiver, Cirru::List(_)),
             )
           })
-          .and_then(runner::preprocess::infer_static_type_from_expr);
+          .and_then(runner::preprocess::infer_static_type_from_expr)
+          .or_else(|| {
+            runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &receiver_path)
+              .and_then(|item| item.inferred_type.clone())
+          });
         let proven = inferred.as_ref().is_some_and(|receiver_type| {
           let is_core_option = matches!(
             receiver_type.as_ref(),
