@@ -1351,7 +1351,7 @@
         'test-str-includes-false $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-includes-false () (|hello .includes? |xyz)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
           :tests $ [] $ %{} 'TestEntry (:name |uses-typed-string-method)
             :code $ quote $ assert= false (|hello .includes? |xyz)
@@ -1359,7 +1359,7 @@
         'test-str-includes-true $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-includes-true () (|hello .includes? |ell)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
           :tests $ [] $ %{} 'TestEntry (:name |uses-typed-string-method)
             :code $ quote $ assert= true (|hello .includes? |ell)
