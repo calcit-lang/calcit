@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::sync::Arc;
 
 use calcit::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, LocatedWarning, SchemaKind};
 use calcit::call_stack::CallStackList;
@@ -2946,6 +2947,13 @@ fn plan_core_option_method_fixes(
     let warnings = RefCell::new(Vec::new());
     let usages = runner::preprocess::trace_definition_source_usages(namespace, definition, &warnings, &CallStackList::default())
       .map_err(|failure| failure.msg)?;
+    let core_empty_option_heads = usages
+      .iter()
+      .filter(|usage| usage.target_ns.as_ref() == "calcit.core" && matches!(usage.target_def.as_ref(), "%none" | "Option"))
+      .filter_map(|usage| usage.location.as_ref())
+      .filter(|location| location.ns.as_ref() == namespace && location.def.as_ref() == definition)
+      .map(|location| location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>())
+      .collect::<HashSet<_>>();
     let expressions = runner::preprocess::trace_definition_source_expressions(
       namespace,
       definition,
@@ -3033,7 +3041,43 @@ fn plan_core_option_method_fixes(
           );
           let contract = runner::preprocess::static_method_contract(receiver_type.as_ref(), method.method);
           is_core_option && contract.status == "proven" && contract.definition.as_deref() == Some(method.definition)
-        });
+        }) || (method.method == ".unwrap-or"
+          && matches!(receiver, Cirru::List(parts) if
+            matches!(parts.as_slice(), [Cirru::Leaf(name)] if matches!(name.as_ref(), "%none" | "calcit.core/%none"))
+            || matches!(parts.as_slice(), [Cirru::Leaf(name), Cirru::Leaf(variant)]
+              if matches!(name.as_ref(), "Option" | "calcit.core/Option") && variant.as_ref() == ":none"))
+          && {
+            let mut constructor_head_path = receiver_path.clone();
+            constructor_head_path.push(0);
+            core_empty_option_heads.contains(&constructor_head_path)
+          }
+          && {
+            let mut fallback_path = call_path.to_vec();
+            fallback_path.push(2);
+            runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &fallback_path)
+              .and_then(|item| item.inferred_type.clone())
+              .or_else(|| {
+                if matches!(&items[2], Cirru::Leaf(_)) {
+                  code_to_calcit(&items[2], namespace, definition, vec![])
+                    .ok()
+                    .and_then(|value| runner::preprocess::infer_static_type_from_expr(&value))
+                } else {
+                  None
+                }
+              })
+              .is_some_and(|fallback_type| {
+                let fallback_type = runner::preprocess::resolve_namespace_type_refs_for_body(fallback_type, namespace);
+                if matches!(
+                  fallback_type.as_ref(),
+                  CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
+                ) {
+                  return false;
+                }
+                let narrowed = CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/Option"), Arc::new(vec![fallback_type]));
+                let contract = runner::preprocess::static_method_contract(&narrowed, method.method);
+                contract.status == "proven" && contract.definition.as_deref() == Some(method.definition)
+              })
+          });
         if proven {
           safe_calls.insert(call_path.to_vec(), method);
         } else {
