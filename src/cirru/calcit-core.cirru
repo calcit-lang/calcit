@@ -7249,7 +7249,9 @@
               (:some _) false
               (:none) true
           :examples $ [] $ quote
-            assert= true $ option:none? $ %none
+            assert= true $
+              %none
+              , .none?
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] $ :: 'Option 'T
             :generics $ [] 'T
@@ -7279,7 +7281,9 @@
               (:some _) true
               (:none) false
           :examples $ [] $ quote
-            assert= true $ option:some? $ %some 1
+            assert= true $
+              %some 1
+              , .some?
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] $ :: 'Option 'T
             :generics $ [] 'T
@@ -7291,7 +7295,9 @@
               (:some value) value
               (:none) (raise |option:unwrap-received-none)
           :examples $ [] $ quote
-            assert= 3 $ option:unwrap $ %some 3
+            assert= 3 $
+              %some 3
+              , .unwrap
           :schema $ :: 'Fn $ {} (:return 'T)
             :args $ [] $ :: 'Option 'T
             :generics $ [] 'T
@@ -7692,7 +7698,9 @@
               (:ok _) false
               (:err _) true
           :examples $ [] $ quote
-            assert= true $ result:err? $ %err |failed
+            assert= true $
+              %err |failed
+              , .err?
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] $ :: 'Result 'T 'E
             :generics $ [] 'T 'E
@@ -7737,7 +7745,9 @@
               (:ok _) true
               (:err _) false
           :examples $ [] $ quote
-            assert= true $ result:ok? $ %ok 1
+            assert= true $
+              %ok 1
+              , .ok?
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] $ :: 'Result 'T 'E
             :generics $ [] 'T 'E
