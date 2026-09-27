@@ -8281,11 +8281,24 @@
               :code $ quote $ assert= "|ab cd" (trim "| ab cd")
               :tags $ #{} :core :unit
         'try $ %{} 'CodeEntry
-          :doc "|internal syntax for try-catch error handling\nSyntax: (try body (catch error handler))\nParams: body (expression), error (symbol), handler (expression)\nReturns: result of body or handler if error occurs\nProvides exception handling mechanism"
+          :doc "|Evaluate body and return its value on success. On failure, evaluate handler-fn and call it with the error message String. Syntax: (try body handler-fn). The handler is a one-argument function, not a (catch ...) form."
           :code $ quote &runtime-implementation
-          :examples $ []
+          :examples $ [] $ quote
+            assert= |boom $ try (raise |boom)
+              fn (message) message
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :control :internal :syntax
+          :tests $ []
+            %{} 'TestEntry (:name |returns-body-on-success)
+              :code $ quote $ assert= 3
+                try (+ 1 2)
+                  fn (message) 0
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |passes-error-message-to-handler)
+              :code $ quote $ assert= |boom
+                try (raise |boom)
+                  fn (message) message
+              :tags $ #{} :core :unit
         'try-decode-map-as $ %{} 'CodeEntry
           :doc "|Decode an evaluated Calcit value into a compile-time-derived type and return Result<T,String>. Runtime shape failures become :err with a structural path; invalid TypeExpr decoder derivation remains a compile-time error. Syntax: (try-decode-map-as value TypeExpr). Native and JavaScript are supported; WASM typed decoding is not yet supported."
           :code $ quote $ def try-decode-map-as &runtime-implementation
