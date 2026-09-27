@@ -591,6 +591,33 @@ fn run_staged_transaction_with<F>(
   operations: &[Vec<String>],
   expected_revision: Option<&str>,
   dry_run: bool,
+  run_operation: F,
+) -> Result<TransactionReport, String>
+where
+  F: FnMut(&Path, usize, &[String]) -> Result<TransactionOperationReport, String>,
+{
+  run_staged_transaction_with_options(snapshot_file, operations, expected_revision, dry_run, false, run_operation)
+}
+
+fn run_staged_transaction_with_preserving_schemas<F>(
+  snapshot_file: &Path,
+  operations: &[Vec<String>],
+  expected_revision: Option<&str>,
+  dry_run: bool,
+  run_operation: F,
+) -> Result<TransactionReport, String>
+where
+  F: FnMut(&Path, usize, &[String]) -> Result<TransactionOperationReport, String>,
+{
+  run_staged_transaction_with_options(snapshot_file, operations, expected_revision, dry_run, true, run_operation)
+}
+
+fn run_staged_transaction_with_options<F>(
+  snapshot_file: &Path,
+  operations: &[Vec<String>],
+  expected_revision: Option<&str>,
+  dry_run: bool,
+  preserve_untouched_schemas: bool,
   mut run_operation: F,
 ) -> Result<TransactionReport, String>
 where
@@ -615,7 +642,16 @@ where
 
   let staged_path = staged.path().to_string_lossy();
   let staged_snapshot = load_snapshot(&staged_path)?;
-  let staged_content = render_snapshot_content(&staged_snapshot)?;
+  let rendered_content = render_snapshot_content(&staged_snapshot)?;
+  let staged_content = if preserve_untouched_schemas
+    && !operations
+      .iter()
+      .any(|operation| operation.first().is_some_and(|group| group == "edit") && operation.get(1).is_some_and(|name| name == "format"))
+  {
+    restore_untouched_schema_forms(&original_content, &rendered_content, &staged_snapshot, &staged_path, operations)?
+  } else {
+    rendered_content
+  };
   staged.write_and_sync(staged_content.as_bytes(), "transaction snapshot")?;
 
   let new_revision = snapshot_content_revision(&staged_content);
@@ -710,13 +746,19 @@ pub(crate) fn run_staged_fix_transaction(
 
   guard_snapshot_mutation_toolchain(&snapshot_file.to_string_lossy())?;
   let operation_count = operations.len();
-  let report = run_staged_transaction_with(snapshot_file, operations, expected_revision, dry_run, |stage_path, index, args| {
-    let operation = run_transaction_child(stage_path, index, args)?;
-    if index + 1 == operation_count {
-      validate_staged_fix(stage_path, validation_entry, validation_args, allowed_warning_identities)?;
-    }
-    Ok(operation)
-  })?;
+  let report = run_staged_transaction_with_preserving_schemas(
+    snapshot_file,
+    operations,
+    expected_revision,
+    dry_run,
+    |stage_path, index, args| {
+      let operation = run_transaction_child(stage_path, index, args)?;
+      if index + 1 == operation_count {
+        validate_staged_fix(stage_path, validation_entry, validation_args, allowed_warning_identities)?;
+      }
+      Ok(operation)
+    },
+  )?;
   Ok(StagedFixReport {
     changed: report.changed,
     original_revision: report.original_revision,
@@ -1690,6 +1732,120 @@ fn find_edn_struct_value_mut<'a>(struct_value: &'a mut EdnStructView, expected: 
     .pairs
     .iter_mut()
     .find_map(|(key, value)| (key.ref_str() == expected).then_some(value))
+}
+
+fn snapshot_schema_form(root: &mut Edn, namespace: &str, definition: &str) -> Option<Option<Edn>> {
+  let Edn::Map(root) = root else { return None };
+  let Edn::Map(files) = find_edn_map_value_mut(root, "files")? else {
+    return None;
+  };
+  let Edn::Struct(file) = find_edn_map_value_mut(files, namespace)? else {
+    return None;
+  };
+  let Edn::Map(defs) = find_edn_struct_value_mut(file, "defs")? else {
+    return None;
+  };
+  let Edn::Struct(entry) = find_edn_map_value_mut(defs, definition)? else {
+    return None;
+  };
+  Some(find_edn_struct_value_mut(entry, "schema").cloned())
+}
+
+fn replace_snapshot_schema_form(root: &mut Edn, namespace: &str, definition: &str, schema: Option<Edn>) -> Result<(), String> {
+  let Edn::Map(root) = root else {
+    return Err("Staged Snapshot root must be an EDN map".to_owned());
+  };
+  let Edn::Map(files) = find_edn_map_value_mut(root, "files").ok_or("Staged Snapshot is missing :files")? else {
+    return Err("Staged Snapshot :files must be an EDN map".to_owned());
+  };
+  let Edn::Struct(file) =
+    find_edn_map_value_mut(files, namespace).ok_or_else(|| format!("Staged namespace '{namespace}' not found"))?
+  else {
+    return Err(format!("Staged namespace '{namespace}' must be a FileEntry struct"));
+  };
+  let Edn::Map(defs) =
+    find_edn_struct_value_mut(file, "defs").ok_or_else(|| format!("Staged namespace '{namespace}' is missing :defs"))?
+  else {
+    return Err(format!("Staged namespace '{namespace}' :defs must be an EDN map"));
+  };
+  let Edn::Struct(entry) =
+    find_edn_map_value_mut(defs, definition).ok_or_else(|| format!("Staged definition '{namespace}/{definition}' not found"))?
+  else {
+    return Err(format!("Staged definition '{namespace}/{definition}' must be a CodeEntry struct"));
+  };
+  if let Some(schema) = schema {
+    if let Some(value) = find_edn_struct_value_mut(entry, "schema") {
+      *value = schema;
+    } else {
+      entry.pairs.push((EdnTag::new("schema"), schema));
+    }
+  } else {
+    entry.pairs.retain(|(key, _)| key.ref_str() != "schema");
+  }
+  Ok(())
+}
+
+/// Preserve the surface form of unchanged schemas after typed staged edits.
+fn restore_untouched_schema_forms(
+  original_content: &str,
+  rendered_content: &str,
+  staged_snapshot: &Snapshot,
+  staged_path: &str,
+  operations: &[Vec<String>],
+) -> Result<String, String> {
+  let mut original_source = original_content.to_owned();
+  strip_shebang(&mut original_source);
+  let mut original_edn =
+    cirru_edn::parse(&original_source).map_err(|error| format!("Failed to parse original Snapshot EDN: {error}"))?;
+  let original_snapshot = snapshot::load_snapshot_data(&original_edn, "staged original")
+    .map_err(|error| format!("Failed to load original Snapshot for schema preservation: {error}"))?;
+  let mut rendered_source = rendered_content.to_owned();
+  let shebang = rendered_source
+    .lines()
+    .next()
+    .filter(|line| line.starts_with("#!"))
+    .map(str::to_owned);
+  strip_shebang(&mut rendered_source);
+  let mut rendered_edn = cirru_edn::parse(&rendered_source).map_err(|error| format!("Failed to parse staged Snapshot EDN: {error}"))?;
+
+  for (namespace, file) in &original_snapshot.files {
+    let Some(staged_file) = staged_snapshot.files.get(namespace) else {
+      continue;
+    };
+    if file.ns != staged_file.ns {
+      continue;
+    }
+    for (definition, entry) in &file.defs {
+      let Some(staged_entry) = staged_file.defs.get(definition) else {
+        continue;
+      };
+      if entry.schema != staged_entry.schema
+        || operations.iter().any(|operation| {
+          operation.first().is_some_and(|group| group == "edit")
+            && operation.get(1).is_some_and(|name| name == "schema")
+            && operation
+              .get(2)
+              .is_some_and(|target| target == &format!("{namespace}/{definition}"))
+        })
+      {
+        continue;
+      }
+      if let Some(original_schema) = snapshot_schema_form(&mut original_edn, namespace, definition) {
+        replace_snapshot_schema_form(&mut rendered_edn, namespace, definition, original_schema)?;
+      }
+    }
+  }
+
+  let restored_snapshot = snapshot::load_snapshot_data(&rendered_edn, staged_path)
+    .map_err(|error| format!("Failed to reload schema-preserving staged Snapshot: {error}"))?;
+  if &restored_snapshot != staged_snapshot {
+    return Err("Restoring unselected schema forms changed the staged Snapshot semantics; no changes were written.".to_owned());
+  }
+  let formatted = cirru_edn::format(&rendered_edn, true).map_err(|error| format!("Failed to format staged Snapshot EDN: {error}"))?;
+  Ok(match shebang {
+    Some(line) => format!("{line}\n{formatted}"),
+    None => formatted,
+  })
 }
 
 /// Save only one definition schema against the original EDN tree. Rendering the

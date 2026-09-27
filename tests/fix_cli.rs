@@ -3421,6 +3421,88 @@ fn core_option_method_rule_resolves_short_option_name_in_source_namespace() {
 }
 
 #[test]
+fn scoped_fix_preserves_unselected_short_schema_surface() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("calcit/test-types-inference.cirru", &snapshot).expect("copy Calcit inference Snapshot");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "tree",
+        "replace",
+        "test-types-inference.main/infer-raise-left",
+        "--path",
+        "@3.2",
+        "--input-format",
+        "cirru",
+        "--expect",
+        "quote $ value .unwrap",
+        "--code",
+        "quote $ option:unwrap value",
+      ],
+    ),
+    "restore legacy helper in a temporary Snapshot",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "test-types-inference.main/dynamic-last-compat",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return $ :: 'Option 'Dynamic)",
+      ],
+    ),
+    "restore the unrelated short Option schema",
+  );
+  let before = fs::read_to_string(&snapshot).expect("read baseline Snapshot");
+  assert!(before.contains(":return $ :: 'Option 'Dynamic"));
+  assert_eq!(before.matches("option:unwrap value").count(), 1);
+
+  let args = [
+    "--rule",
+    "core-option-method-v1",
+    "--ns",
+    "test-types-inference.main",
+    "--def",
+    "infer-raise-left",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &args);
+  assert_success(&preview, "preview scoped Option migration");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["suggestions"].as_array().map(Vec::len), Some(1));
+  assert_eq!(fs::read_to_string(&snapshot).expect("read after preview"), before);
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-option-method-v1",
+      "--ns",
+      "test-types-inference.main",
+      "--def",
+      "infer-raise-left",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "apply scoped Option migration");
+  assert_eq!(parse_stdout(&applied)["data"]["new_revision"], report["data"]["new_revision"]);
+  let after = fs::read_to_string(&snapshot).expect("read applied Snapshot");
+  assert_eq!(after, before.replacen("option:unwrap value", "value .unwrap", 1));
+  let repeated = run_fix(&snapshot, &args);
+  assert_success(&repeated, "repeat scoped Option migration");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+}
+
+#[test]
 fn core_option_method_rule_does_not_assume_shadowed_short_option_is_core() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

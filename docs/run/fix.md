@@ -363,6 +363,8 @@ apply 必须原样重复 preview 使用的 `--ns`、`--def` 以及 `--rule` 或 
 检查该 entry 的 target；不带 `--ns` 的整项目 staged 预处理与预览一样为 target 中立，不能证明 browser 或 Node 入口兼容，
 仍需对每个 entry 分别运行 `--check-only` 或 `fix --workflow strict --verify`。revision 过期、节点不匹配、替换重叠、
 parse/schema/preprocess 失败时均不写入。
+代码改写不会顺带规范化未选中的 schema：只要其加载后的类型契约未改变，事务保留原来的 Cirru EDN 表层写法；
+显式 schema 改写仍按预览列出的操作执行，整份 Snapshot 的格式升级继续单独使用 `calcit edit format`。
 重复运行同一规则必须返回空 suggestions，不能再次改写。
 
 为了让旧兼容代码在已经启用严格错误的版本中仍可迁移，初次规划会在隔离的兼容 preprocess 中收集 warning 和类型证据；这一步
