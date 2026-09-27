@@ -532,6 +532,8 @@ check("test-number-compare-method()", -1, e["test-number-compare-method"]);
 check("test-string-compare-method()", -1, e["test-string-compare-method"]);
 check("test-option-unwrap-or()", 7, e["test-option-unwrap-or"]);
 check("test-result-unwrap-or()", 7, e["test-result-unwrap-or"]);
+check("test-option-some-method()", 1, e["test-option-some-method"]);
+check("test-result-ok-method()", 1, e["test-result-ok-method"]);
 check("test-static-option-result-methods()", 16, e["test-static-option-result-methods"]);
 check("test-static-option-result-inline-closures()", 35, e["test-static-option-result-inline-closures"]);
 check("test-str-contains-true()", 1, e["test-str-contains-true"]); // idx 1 < len 5
