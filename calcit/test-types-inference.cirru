@@ -10,6 +10,15 @@
   :files $ {} $ 'test-types-inference.main
     %{} 'FileEntry
       :defs $ {}
+        '*dynamic-ref $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defatom *dynamic-ref (make-dynamic-value)
+          :examples $ []
+          :schema $ :: 'Ref 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |dynamic-atom-deref)
+            :code $ quote $ do
+              assert-type *dynamic-ref $ :: 'Ref 'Dynamic
+              assert= 1 $ deref *dynamic-ref
+              assert= 1 @*dynamic-ref
         'Address $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Address (:city 'String)
           :examples $ []
@@ -75,6 +84,11 @@
           :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity) (infer-raise-right true) (infer-raise-left false)
           :examples $ []
           :schema $ :: 'Dynamic
+        'make-dynamic-value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-dynamic-value () 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (:: 'Unit)
           :examples $ []
