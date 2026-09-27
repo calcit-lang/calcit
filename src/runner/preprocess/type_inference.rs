@@ -514,7 +514,9 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   // A definition schema is the public contract and is stronger evidence than
   // a Dynamic return inferred from its implementation body. Read it before
   // compiled metadata so generic collection/ref shapes survive call sites.
-  let declared_schema = program::lookup_def_schema(ns, def);
+  // Resolve the declaration before substituting caller argument types. Resolving
+  // the result afterward would reinterpret a caller-owned generic payload in ns.
+  let declared_schema = resolve_namespace_type_refs_for_body(program::lookup_def_schema(ns, def), ns);
   if let CalcitTypeAnnotation::Fn(info) = declared_schema.as_ref() {
     let declared_return = resolve_generic_return_type_parts(
       info.generics.as_ref(),
@@ -533,7 +535,8 @@ pub(crate) fn infer_return_type_from_compiled_callable(
       if declared_return.resolve_to_struct().is_some()
         && let Some(compiled) = program::lookup_compiled_def(ns, def)
         && let Some(inferred_body_return) = infer_compiled_callable_body_return(ns, def, &compiled.preprocessed_code)
-        && let Some(enriched) = enrich_declared_struct_return_with_impls(&declared_return, &inferred_body_return)
+        && let Some(enriched) =
+          enrich_declared_struct_return_with_impls(&declared_return, &resolve_namespace_type_refs_for_body(inferred_body_return, ns))
       {
         return Some(invocation_return_type(info, enriched, definition_marks_async(ns, def)));
       }
@@ -558,6 +561,10 @@ pub(crate) fn infer_return_type_from_compiled_callable(
           .find_map(CalcitTypeAnnotation::extract_fn_annotation_from_hint_form)
           .as_deref()
         {
+          let qualified = resolve_namespace_type_refs_for_body(Arc::new(CalcitTypeAnnotation::Fn(info.clone())), ns);
+          let CalcitTypeAnnotation::Fn(info) = qualified.as_ref() else {
+            unreachable!("a qualified function annotation remains a function annotation")
+          };
           let returned = resolve_generic_return_type_parts(
             info.generics.as_ref(),
             &info.arg_types,
@@ -571,18 +578,29 @@ pub(crate) fn infer_return_type_from_compiled_callable(
         }
       }
       Calcit::Fn { info, .. } => {
-        if let Some(resolved) = resolve_generic_return_type(&info, call_expr.iter().skip(1), scope_types) {
+        let qualified = resolve_namespace_type_refs_for_body(Arc::new(CalcitTypeAnnotation::from_calcit_fn(&info)), ns);
+        let CalcitTypeAnnotation::Fn(signature) = qualified.as_ref() else {
+          unreachable!("a qualified function annotation remains a function annotation")
+        };
+        if let Some(resolved) = resolve_generic_return_type_parts(
+          signature.generics.as_ref(),
+          &signature.arg_types,
+          signature.rest_type.as_ref(),
+          &signature.return_type,
+          call_expr.iter().skip(1),
+          scope_types,
+        ) {
           return Some(if definition_marks_async(ns, def) {
             pending_async_value(resolved)
           } else {
             resolved
           });
         }
-        if !is_core_enum_constructor || !info.return_type.contains_type_var() {
+        if !is_core_enum_constructor || !signature.return_type.contains_type_var() {
           return Some(if definition_marks_async(ns, def) {
-            pending_async_value(info.return_type.clone())
+            pending_async_value(signature.return_type.clone())
           } else {
-            info.return_type.clone()
+            signature.return_type.clone()
           });
         }
       }
@@ -590,7 +608,7 @@ pub(crate) fn infer_return_type_from_compiled_callable(
         if let Some(type_sig) = proc.get_type_signature()
           && (!is_core_enum_constructor || !type_sig.return_type.contains_type_var())
         {
-          return Some(type_sig.return_type.clone());
+          return Some(resolve_namespace_type_refs_for_body(type_sig.return_type.clone(), ns));
         }
       }
       _ => {}
