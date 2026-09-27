@@ -3339,6 +3339,7 @@ fn result_error_helpers_infer_fallback_without_erasing_error_payload() {
 #[test]
 fn result_success_with_dynamic_payload_stays_open_across_fallback() {
   for (definition, expected_type, expected_confidence) in [
+    ("infer-later-dynamic-generic", "'Dynamic", "unknown"),
     ("infer-result-ok-open", "'Dynamic", "unknown"),
     ("infer-named-result-ok-open", "'Dynamic", "unknown"),
     ("infer-result-ok-concrete", "'Number", "exact"),

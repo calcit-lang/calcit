@@ -10,4 +10,4 @@
 
 ## 验证
 
-Calcit definition `:tests` 分别验证 `%ok` 和 `Result :ok` 的动态与具体成功值，以及原有 `:err` 行为。CLI 查询断言开放成功值为 `Dynamic` 且置信度 `unknown`，具体成功值和已知错误分支为精确 `Number`；严格检查中对开放值调用 `.add` 必须报 `E_DYNAMIC_POSTFIX_METHOD`，不能因 fallback 获得虚假的 Number 方法证据。Rust 单元测试只覆盖泛型绑定与复合参数不应获证的低层边界。全量门禁与 JS/native/WASM 回归分别验证受影响路径。
+Calcit definition `:tests` 分别验证 `%ok` 和 `Result :ok` 的动态与具体成功值、同一泛型先收到 Number 后收到 Dynamic 并返回后者、以及原有 `:err` 行为。CLI 查询断言开放成功值为 `Dynamic` 且置信度 `unknown`，具体成功值和已知错误分支为精确 `Number`；严格检查中对开放值调用 `.add` 必须报 `E_DYNAMIC_POSTFIX_METHOD`，不能因 fallback 获得虚假的 Number 方法证据。Rust 单元测试覆盖泛型绑定（包含已有具体绑定被后续 Dynamic 扩宽）与复合参数不应获证的低层边界。全量门禁与 JS/native/WASM 回归分别验证受影响路径。

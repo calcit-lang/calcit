@@ -52,6 +52,16 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic
             :return $ :: 'Option 'Dynamic
+        'infer-later-dynamic-generic $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-later-dynamic-generic (value) (same-type-second 7 value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |dynamic-second-is-returned)
+            :code $ quote $ do
+              assert= |hello $ infer-later-dynamic-generic |hello
+              assert= 4 $ infer-later-dynamic-generic 4
+            :tags $ #{} :unit
         'infer-match-raise $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-match-raise (enabled)
             let
@@ -201,6 +211,12 @@
           :code $ quote $ defn reload! () (:: 'Unit)
           :examples $ []
           :schema $ :: 'Dynamic
+        'same-type-second $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn same-type-second (left right) right
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T 'T
+            :generics $ [] 'T
         'test-count-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-count-inference ()
             assert-type

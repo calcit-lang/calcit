@@ -506,6 +506,13 @@ fn resolve_generic_return_type_parts<'a>(
       }
       _ => None,
     })?;
+    if matches!(actual_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+      && let CalcitTypeAnnotation::TypeVar(var) = expected_type.as_ref()
+      && generics.iter().any(|generic| generic == var)
+    {
+      bindings.insert(var.clone(), calcit::DYNAMIC_TYPE.clone());
+      continue;
+    }
     if core_option_none_without_payload(arg, actual_type.as_ref(), expected_type.as_ref()) {
       continue;
     }
@@ -3029,6 +3036,25 @@ mod tests {
           && matches!(args.as_slice(), [ok, err]
             if matches!(ok.as_ref(), CalcitTypeAnnotation::Dynamic)
               && matches!(err.as_ref(), CalcitTypeAnnotation::Dynamic))));
+  }
+
+  #[test]
+  fn later_dynamic_argument_widens_an_existing_generic_binding() {
+    let payload = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let concrete = Calcit::Number(7.0);
+    let dynamic_value = local("value", calcit::DYNAMIC_TYPE.clone());
+    for arguments in [vec![&concrete, &dynamic_value], vec![&dynamic_value, &concrete]] {
+      let inferred = resolve_generic_return_type_parts(
+        &[Arc::from("T")],
+        &[payload.clone(), payload.clone()],
+        None,
+        &payload,
+        arguments.into_iter(),
+        &ScopeTypes::new(),
+      )
+      .expect("a Dynamic argument must not retain a concrete generic binding");
+      assert!(matches!(inferred.as_ref(), CalcitTypeAnnotation::Dynamic));
+    }
   }
 
   #[test]
