@@ -985,6 +985,41 @@ pub(crate) fn check_user_fn_arg_types(
   });
 }
 
+/// Check a tail call against the parameter contract of its lexical function.
+pub(crate) fn check_recur_arg_types(
+  args: &[Calcit],
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  call_location: Option<NodeLocation>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  if args.len() != expected_types.len() || expected_types.is_empty() {
+    return;
+  }
+  let head = Calcit::Proc(CalcitProc::Recur);
+  let args = CalcitList::from(args);
+  check_arg_types_loop(
+    CheckContext {
+      head_form: &head,
+      args: &args,
+      expected_types,
+      where_bounds: &[],
+      scope_types,
+      file_ns,
+      call_location,
+      warning_code: "W_RECUR_ARG_TYPE_MISMATCH",
+      check_warnings,
+    },
+    |index, expected, actual, expression| {
+      format!(
+        "[Warn] `recur` argument {index} expects type `{expected}`, but got `{actual}` in {file_ns}/{def_name}\n  Expression: `{expression}`"
+      )
+    },
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Return-type checking
 // ---------------------------------------------------------------------------
