@@ -247,6 +247,37 @@ fn nominal_constructor_variant(expr: &Calcit) -> Option<&'static str> {
   }
 }
 
+// An empty core Option carries no T value. Let a later concrete argument bind T,
+// but never grant this exception to an open Option that could contain a payload.
+fn core_option_none_without_payload(expr: &Calcit, actual_type: &CalcitTypeAnnotation, expected_type: &CalcitTypeAnnotation) -> bool {
+  let Calcit::List(items) = expr else { return false };
+  let is_core_none = match (items.len(), items.first(), items.get(1)) {
+    (1, Some(Calcit::Import(CalcitImport { ns, def, .. })), _) => ns.as_ref() == calcit::CORE_NS && def.as_ref() == "%none",
+    (1, Some(Calcit::Fn { info, .. }), _) => info.def_ns.as_ref() == calcit::CORE_NS && info.name.as_ref() == "%none",
+    (1, Some(Calcit::Registered(name)), _) => name.as_ref() == "calcit.core/%none",
+    (3, Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew)), Some(Calcit::Import(import))) => {
+      import.ns.as_ref() == "calcit.core"
+        && import.def.as_ref() == "Option"
+        && matches!(items.get(2), Some(Calcit::Tag(variant)) if variant.ref_str() == "none")
+    }
+    _ => false,
+  };
+  is_core_none
+    && match actual_type {
+      CalcitTypeAnnotation::TypeRef(name, args) => {
+        name.as_ref() == "calcit.core/Option"
+          && matches!(args.as_slice(), [payload] if matches!(payload.as_ref(), CalcitTypeAnnotation::Dynamic))
+      }
+      CalcitTypeAnnotation::Enum(def, args) => {
+        def.definition_ref().is_some_and(|name| name.as_ref() == "calcit.core/Option")
+          && matches!(args.as_slice(), [payload] if matches!(payload.as_ref(), CalcitTypeAnnotation::Dynamic))
+      }
+      _ => false,
+    }
+    && matches!(expected_type, CalcitTypeAnnotation::TypeRef(name, args)
+      if matches!(name.as_ref(), "Option" | "calcit.core/Option") && matches!(args.as_slice(), [payload] if matches!(payload.as_ref(), CalcitTypeAnnotation::TypeVar(_))))
+}
+
 fn merge_result_constructor_branches(
   true_expr: &Calcit,
   true_type: &CalcitTypeAnnotation,
@@ -421,6 +452,9 @@ fn resolve_generic_return_type_parts<'a>(
       continue;
     }
     let actual_type = resolve_type_value(arg, scope_types)?;
+    if core_option_none_without_payload(arg, actual_type.as_ref(), expected_type.as_ref()) {
+      continue;
+    }
     for generic in generics {
       if expected_type.contains_type_var_named(generic) && actual_type.contains_type_var_named(generic) {
         propagated_generics.insert(generic.clone());
@@ -1311,6 +1345,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           let mut bindings = HashMap::new();
           for (argument, expected) in xs.iter().skip(1).zip(info.arg_types.iter()) {
             if let Some(actual) = resolve_type_value(argument, scope_types)
+              && !core_option_none_without_payload(argument, actual.as_ref(), expected.as_ref())
               && actual
                 .as_ref()
                 .prove_available_bindings(expected.as_ref(), &mut bindings)
@@ -2693,6 +2728,22 @@ mod tests {
     assert_eq!(merge_option_absence_branch(&value, &concrete, &none, &open), Some(concrete.clone()));
     assert!(merge_option_absence_branch(&value, &concrete, &value, &open).is_none());
     assert_eq!(merge_if_branch_types(concrete, open.clone()), Some(open));
+  }
+
+  #[test]
+  fn empty_option_fallback_does_not_narrow_an_open_payload() {
+    let open = CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/Option"), Arc::new(vec![calcit::DYNAMIC_TYPE.clone()]));
+    let expected = CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]),
+    );
+    let none = Calcit::from(vec![Calcit::Registered(Arc::from("calcit.core/%none"))]);
+    let some = Calcit::from(vec![Calcit::Registered(Arc::from("calcit.core/%some")), Calcit::Number(1.0)]);
+    let shadowed = Calcit::from(vec![Calcit::Registered(Arc::from("app/%none"))]);
+    assert!(core_option_none_without_payload(&none, &open, &expected));
+    assert!(!core_option_none_without_payload(&some, &open, &expected));
+    assert!(!core_option_none_without_payload(&shadowed, &open, &expected));
+    assert!(!core_option_none_without_payload(&none, &CalcitTypeAnnotation::Dynamic, &expected));
   }
 
   #[test]

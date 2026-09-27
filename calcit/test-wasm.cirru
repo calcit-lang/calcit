@@ -1028,7 +1028,7 @@
             :args $ []
         'test-option-unwrap-or $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-option-unwrap-or ()
-            option:unwrap-or (%none) 7
+            (%none) .unwrap-or 7
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []

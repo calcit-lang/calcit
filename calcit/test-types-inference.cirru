@@ -69,6 +69,24 @@
               assert= true $ try (infer-match-raise false)
                 fn (error) (= error |missing)
             :tags $ #{} :unit
+        'infer-named-none-fallback $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-named-none-fallback ()
+            option:unwrap-or (Option :none) 7
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |named-none-fallback)
+            :code $ quote $ assert= 7 (infer-named-none-fallback)
+            :tags $ #{} :unit
+        'infer-none-fallback $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-none-fallback ()
+            option:unwrap-or (%none) 7
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |none-fallback-number)
+            :code $ quote $ assert= 7 (infer-none-fallback)
+            :tags $ #{} :unit
         'infer-raise-left $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-raise-left (enabled)
             let

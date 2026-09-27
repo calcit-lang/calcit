@@ -3045,6 +3045,83 @@ fn core_option_method_rule_uses_proven_receiver_and_is_idempotent() {
 }
 
 #[test]
+fn core_option_method_rule_migrates_proven_empty_option_with_typed_fallback() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("calcit/test-wasm.cirru", &snapshot).expect("copy WASM Snapshot");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "tree",
+        "replace",
+        "test-wasm.main/test-option-unwrap-or",
+        "--path",
+        "@3",
+        "--input-format",
+        "cirru",
+        "--expect",
+        "quote $ (%none) .unwrap-or 7",
+        "--code",
+        "quote $ option:unwrap-or (%none) 7",
+      ],
+    ),
+    "restore legacy empty Option helper",
+  );
+  let args = [
+    "--rule",
+    "core-option-method-v1",
+    "--ns",
+    "test-wasm.main",
+    "--def",
+    "test-option-unwrap-or",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &args);
+  assert_success(&preview, "empty Option migration preview");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["suggestions"][0]["applicability"], "machine-applicable", "{report}");
+  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-option-method-v1",
+      "--ns",
+      "test-wasm.main",
+      "--def",
+      "test-option-unwrap-or",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "empty Option migration apply");
+  let repeated = run_fix(&snapshot, &args);
+  assert_success(&repeated, "empty Option idempotence preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+}
+
+#[test]
+fn empty_option_helpers_infer_fallback_type_for_both_constructor_spellings() {
+  for definition in ["infer-none-fallback", "infer-named-none-fallback"] {
+    let target = format!("test-types-inference.main/{definition}");
+    let result = run_calcit(
+      Path::new("calcit/test-types-inference.cirru"),
+      &["query", "type-at", &target, "--path", "@3", "--format", "json"],
+    );
+    assert_success(&result, "empty Option fallback type query");
+    let report = parse_stdout(&result);
+    assert_eq!(report["data"]["inferred_type"], "'Number", "{report}");
+    assert_eq!(report["data"]["confidence"], "exact", "{report}");
+  }
+}
+
+#[test]
 fn core_option_method_rule_requires_review_without_proven_receiver() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
