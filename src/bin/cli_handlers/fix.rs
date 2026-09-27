@@ -2947,9 +2947,9 @@ fn plan_core_option_method_fixes(
     let warnings = RefCell::new(Vec::new());
     let usages = runner::preprocess::trace_definition_source_usages(namespace, definition, &warnings, &CallStackList::default())
       .map_err(|failure| failure.msg)?;
-    let core_none_heads = usages
+    let core_empty_option_heads = usages
       .iter()
-      .filter(|usage| usage.target_ns.as_ref() == "calcit.core" && usage.target_def.as_ref() == "%none")
+      .filter(|usage| usage.target_ns.as_ref() == "calcit.core" && matches!(usage.target_def.as_ref(), "%none" | "Option"))
       .filter_map(|usage| usage.location.as_ref())
       .filter(|location| location.ns.as_ref() == namespace && location.def.as_ref() == definition)
       .map(|location| location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>())
@@ -3042,11 +3042,14 @@ fn plan_core_option_method_fixes(
           let contract = runner::preprocess::static_method_contract(receiver_type.as_ref(), method.method);
           is_core_option && contract.status == "proven" && contract.definition.as_deref() == Some(method.definition)
         }) || (method.method == ".unwrap-or"
-          && matches!(receiver, Cirru::List(parts) if matches!(parts.as_slice(), [Cirru::Leaf(name)] if matches!(name.as_ref(), "%none" | "calcit.core/%none")))
+          && matches!(receiver, Cirru::List(parts) if
+            matches!(parts.as_slice(), [Cirru::Leaf(name)] if matches!(name.as_ref(), "%none" | "calcit.core/%none"))
+            || matches!(parts.as_slice(), [Cirru::Leaf(name), Cirru::Leaf(variant)]
+              if matches!(name.as_ref(), "Option" | "calcit.core/Option") && variant.as_ref() == ":none"))
           && {
-            let mut none_head_path = receiver_path.clone();
-            none_head_path.push(0);
-            core_none_heads.contains(&none_head_path)
+            let mut constructor_head_path = receiver_path.clone();
+            constructor_head_path.push(0);
+            core_empty_option_heads.contains(&constructor_head_path)
           }
           && {
             let mut fallback_path = call_path.to_vec();

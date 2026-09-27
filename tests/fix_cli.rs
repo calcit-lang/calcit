@@ -3104,6 +3104,55 @@ fn core_option_method_rule_migrates_proven_empty_option_with_typed_fallback() {
   let repeated = run_fix(&snapshot, &args);
   assert_success(&repeated, "empty Option idempotence preview");
   assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+
+  let named_snapshot = directory.path().join("named-option.cirru");
+  fs::copy("calcit/test-types-inference.cirru", &named_snapshot).expect("copy named Option Snapshot");
+  let named_args = [
+    "--rule",
+    "core-option-method-v1",
+    "--ns",
+    "test-types-inference.main",
+    "--def",
+    "infer-named-none-fallback",
+    "--format",
+    "json",
+  ];
+  let named_preview = run_fix(&named_snapshot, &named_args);
+  assert_success(&named_preview, "named empty Option migration preview");
+  let named_report = parse_stdout(&named_preview);
+  assert_eq!(
+    named_report["data"]["suggestions"][0]["applicability"], "machine-applicable",
+    "{named_report}"
+  );
+  assert_eq!(named_report["data"]["validation"]["status"], "passed", "{named_report}");
+  let named_applied = run_fix(
+    &named_snapshot,
+    &[
+      "--rule",
+      "core-option-method-v1",
+      "--ns",
+      "test-types-inference.main",
+      "--def",
+      "infer-named-none-fallback",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      named_report["revision"].as_str().expect("named preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&named_applied, "named empty Option migration apply");
+  let named_repeated = run_fix(&named_snapshot, &named_args);
+  assert_success(&named_repeated, "named empty Option idempotence preview");
+  assert_eq!(parse_stdout(&named_repeated)["data"]["suggestions"], serde_json::json!([]));
+  assert_success(
+    &run_calcit(
+      &named_snapshot,
+      &["test", "test-types-inference.main/infer-named-none-fallback", "--require-match"],
+    ),
+    "named empty Option behavior after method migration",
+  );
 }
 
 #[test]
