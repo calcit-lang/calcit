@@ -267,7 +267,8 @@ let
 - `&str:replace` - replace substring
 - `str-find-index`, string `.find-index` - find position as `Option<Number>`
 - `&str:find-index` - internal raw search primitive (`-1` when absent)
-- `&str:contains?`, `&str:includes?` - substring tests
+- `text .contains? index` - 检查字符串索引是否有效，不是子串搜索；`&str:contains?` 是内部 primitive
+- `text .includes? fragment` - 子串测试；`&str:includes?` 是内部 primitive
 - `&str:pad-left`, `&str:pad-right` - padding
 - `parse-float` - parse number from string
 - `get-char-code`, `char-from-code` - character operations

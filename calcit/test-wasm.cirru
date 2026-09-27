@@ -1349,15 +1349,21 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ []
         'test-str-includes-false $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-export test-str-includes-false () (&str:includes? |hello |xyz)
+          :code $ quote $ defwasm-export test-str-includes-false () (|hello .includes? |xyz)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |uses-typed-string-method)
+            :code $ quote $ assert= false (|hello .includes? |xyz)
+            :tags $ #{} :wasm
         'test-str-includes-true $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-export test-str-includes-true () (&str:includes? |hello |ell)
+          :code $ quote $ defwasm-export test-str-includes-true () (|hello .includes? |ell)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |uses-typed-string-method)
+            :code $ quote $ assert= true (|hello .includes? |ell)
+            :tags $ #{} :wasm
         'test-str-nth $ %{} 'CodeEntry (:doc "|nth character at index 1 of hello is e")
           :code $ quote $ defwasm-export test-str-nth ()
             if
