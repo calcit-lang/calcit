@@ -60,6 +60,13 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   不静默修改已有升级 preset；旧 helper 从 0.25.0 标记弃用，在真实消费者迁移且至少经过一个版本窗口后
   才考虑移除，最早为 0.26.0。试点只扫描所选 definition 的源码 `:code`；definition-attached
   `:tests`、`:examples`、macro 定义与无法映射回源码的展开引用暂不自动改写，须人工检查。
+- `core-option-method-v1` 是 0.26.0 的首批方法命名迁移：仅把编译器已解析到
+  `calcit.core/option:unwrap` 或 `option:unwrap-or`、且接收者的静态类型能证明会分派到对应
+  Option 方法的源码调用，改为 `value .unwrap` 或 `value .unwrap-or fallback`。接收者和备用值仍
+  各求值一次、顺序不变；开放的 `Option<Dynamic>`、函数值引用、未知 macro 来源或无法回溯
+  的类型证据只报告 `requires-review`。当前须显式指定 `--rule`，不改写已发布的 preset，
+  也不把内部 helper 立即删除。与构造器规则一样，改写只覆盖定义的 `:code`，不盲改
+  `:tests` / `:examples`。先预览、核对来源和 revision，再应用并运行严格检查与业务测试。
 - `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
   同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples
