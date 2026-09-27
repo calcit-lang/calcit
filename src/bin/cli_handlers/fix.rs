@@ -2890,7 +2890,8 @@ fn core_option_method(name: &str) -> Option<CoreOptionMethod> {
 }
 
 fn preserves_option_call_through_macro(origin: &str) -> bool {
-  // These core forms splice the nested call exactly once without quoting its head.
+  // These core forms retain one executable evaluation of the nested call.
+  // assert= also quotes its source for diagnostics, but never evaluates that copy.
   preserves_constructor_argument_through_macro(origin)
     || matches!(
       origin,
