@@ -3352,6 +3352,145 @@ fn core_option_method_rule_accepts_single_use_core_macro_wrappers() {
 }
 
 #[test]
+fn core_option_method_rule_resolves_short_option_name_in_source_namespace() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("calcit/test-types-inference.cirru", &snapshot).expect("copy Calcit inference Snapshot");
+  for definition in ["infer-raise-left", "infer-raise-right"] {
+    let target = format!("test-types-inference.main/{definition}");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "tree",
+          "replace",
+          &target,
+          "--path",
+          "@3.2",
+          "--input-format",
+          "cirru",
+          "--expect",
+          "quote $ value .unwrap",
+          "--code",
+          "quote $ option:unwrap value",
+        ],
+      ),
+      "restore legacy source call in temporary Snapshot",
+    );
+    let args = [
+      "--rule",
+      "core-option-method-v1",
+      "--ns",
+      "test-types-inference.main",
+      "--def",
+      definition,
+      "--format",
+      "json",
+    ];
+    let preview = run_fix(&snapshot, &args);
+    assert_success(&preview, "short core Option preview");
+    let report = parse_stdout(&preview);
+    assert_eq!(report["data"]["suggestions"][0]["applicability"], "machine-applicable", "{report}");
+    assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+    let applied = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-option-method-v1",
+        "--ns",
+        "test-types-inference.main",
+        "--def",
+        definition,
+        "--apply",
+        "--allow-no-vcs",
+        "--expect-revision",
+        report["revision"].as_str().expect("preview revision"),
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&applied, "short core Option apply");
+    let repeated = run_fix(&snapshot, &args);
+    assert_success(&repeated, "short core Option idempotence");
+    assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+    assert_success(
+      &run_calcit(&snapshot, &["test", &target, "--require-match"]),
+      "Calcit Option/raise behavior test",
+    );
+  }
+}
+
+#[test]
+fn core_option_method_rule_does_not_assume_shadowed_short_option_is_core() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/Option",
+        "--code",
+        "quote $ defenum Option ([] 'T) (:some 'T) (:none)",
+      ],
+    ),
+    "install local Option enum",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "schema", "fix-command.main/Option", "--code", "quote $ :: 'EnumDef"],
+    ),
+    "declare local Option enum",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/shadowed-option",
+        "--code",
+        "quote $ defn shadowed-option () $ option:unwrap $ %some 2",
+      ],
+    ),
+    "install core helper call under local Option name",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/shadowed-option",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+      ],
+    ),
+    "declare helper schema",
+  );
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-option-method-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "shadowed-option",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "shadowed short Option preview");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["suggestions"][0]["applicability"], "requires-review", "{report}");
+  assert_eq!(report["data"]["suggestions"][0]["replacement"], serde_json::Value::Null);
+}
+
+#[test]
 fn surface_latest_preset_migrates_named_enum_and_struct_constructors() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

@@ -62,7 +62,8 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   `:tests`、`:examples`、macro 定义与无法映射回源码的展开引用暂不自动改写，须人工检查。
 - `core-option-method-v1` 是 0.26.0 的首批方法命名迁移：仅把编译器已解析到
   `calcit.core/option:unwrap` 或 `option:unwrap-or`、且接收者的静态类型能证明会分派到对应
-  Option 方法的源码调用，改为 `value .unwrap` 或 `value .unwrap-or fallback`。接收者和备用值仍
+  Option 方法的源码调用，改为 `value .unwrap` 或 `value .unwrap-or fallback`。源码中推断为短名
+  `Option<T>` 时先按当前命名空间解析；同名项目类型不得仅凭拼写当成 core Option。接收者和备用值仍
   各求值一次、顺序不变；开放的 `Option<Dynamic>`、函数值引用、未知 macro 来源或无法回溯
   的类型证据只报告 `requires-review`。已核实会单次保留调用的 core `let`、`cond`、`do`、
   `fn`、`assert=` 等展开可通过宏边界，但仍必须满足同一静态类型与方法契约；其他宏不自动放行。

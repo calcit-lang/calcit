@@ -1127,7 +1127,8 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
 /// was written. Nested Struct fields often use concise forms such as
 /// `'Router`; once that field type flows into a caller in another namespace,
 /// retaining only `Router` is ambiguous and prevents required-field lowering.
-fn resolve_namespace_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, declaring_ns: &str) -> Arc<CalcitTypeAnnotation> {
+/// Source migrations also use this resolver before treating a short nominal name as core.
+pub fn resolve_namespace_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, declaring_ns: &str) -> Arc<CalcitTypeAnnotation> {
   map_type_references(annotation, &|name, resolved_args| {
     let stripped = name.trim_start_matches('\'').trim_start_matches(':');
     let qualified_name = if let Some((prefix, def)) = stripped.rsplit_once('/') {
