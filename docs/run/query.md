@@ -76,6 +76,8 @@ calcit query def calcit.core/to-js-data
 
 For source-backed definitions, `query def` prints the stored Cirru body. For special builtin helpers such as `calcit.core/to-js-data`, it falls back to builtin metadata (doc, schema, examples count) even when no snapshot source exists.
 
+`query type` 给出 `.method` 的类型契约，方法后面的 definition path 只是实现入口；`query def/context` 的 `:internal` 标签不能被误读为公开推荐。区分 nominal 类型名、构造器和内部函数时，参见 [API 命名角色](../features/api-roles.md)。
+
 Agent 查询优先显式使用 `--format edn`，例如 `calcit query def namespace/name --format edn`；
 需要与 JSON 工具互操作时再指定 `--format json`。`query type`、`type-at`、`context`、
 `def`、`config`，以及只读的 `config show/modules/type-slots` 使用相同的结构化输出约定。

@@ -402,6 +402,7 @@ fn repository_sample_docs_form_a_navigable_learning_chain() {
     "docs/docs-indexing.md",
     "docs/features.md",
     "docs/features/list.md",
+    "docs/features/api-roles.md",
     "docs/run.md",
     "docs/run/query.md",
     "docs/run/edit-tree.md",
@@ -430,6 +431,13 @@ fn repository_sample_docs_form_a_navigable_learning_chain() {
       .contains(&"core/features/hashmap".to_string())
   );
   assert!(find("core/run/query").unwrap().leads_to.contains(&"core/run/edit-tree".to_string()));
+  assert!(
+    find("core/features")
+      .unwrap()
+      .leads_to
+      .contains(&"core/features/api-roles".to_string())
+  );
+  assert_eq!(find("core/features/api-roles").unwrap().parent.as_deref(), Some("core/features"));
   assert_eq!(find("core/run/query").unwrap().parent.as_deref(), Some("core/run"));
   assert_eq!(find("core/run/edit-tree").unwrap().requires, vec!["core/run/query"]);
   assert_eq!(find("core/run/workflow-entrypoints").unwrap().parent.as_deref(), Some("core/run"));

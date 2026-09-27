@@ -20,6 +20,7 @@ leads_to:
   - core/features/anonymous-enums
   - core/features/enums
   - core/features/type-guidance
+  - core/features/api-roles
 ---
 
 # Features
@@ -59,6 +60,7 @@ For detailed information about specific features:
 - [JavaScript Interop](features/js-interop.md) - Calling JS from Calcit and vice versa
 - [Imports](features/imports.md) - Module system and dependency management
 - [Polymorphism](features/polymorphism.md) - Object-oriented programming patterns
+- [API 命名角色](features/api-roles.md) - 区分类型名、构造器、方法与内部实现
 - [Traits](features/traits.md) - Capability-based method dispatch and explicit trait calls
 - [Static Analysis](features/static-analysis.md) - Type checking and compile-time validation
 - [Type Guidance](type-guidance.md) - Dynamic audits, Option/Result composition, nested lookup, and typed Enum construction
