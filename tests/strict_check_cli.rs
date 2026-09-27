@@ -153,8 +153,10 @@ fn recur_arguments_follow_the_lexical_function_contract() {
   assert_eq!(mismatches.len(), 2, "report: {report}");
   assert_eq!(mismatches[0]["expected"], ":string");
   assert_eq!(mismatches[0]["actual"], ":number");
+  assert_eq!(mismatches[0]["path"], serde_json::json!([3, 3, 1, 1]));
   assert_eq!(mismatches[1]["expected"], ":number");
   assert_eq!(mismatches[1]["actual"], ":string");
+  assert_eq!(mismatches[1]["path"], serde_json::json!([3, 3, 2]));
   assert!(
     mismatches[0]["message"]
       .as_str()
@@ -173,6 +175,8 @@ fn recur_arguments_follow_the_lexical_function_contract() {
     .collect::<Vec<_>>();
   assert_eq!(recur_diagnostics.len(), 2, "report: {report}");
   assert_eq!(recur_diagnostics[0]["location"]["def"], "typed-recur");
+  assert_eq!(recur_diagnostics[0]["location"]["coord"], serde_json::json!([3, 3, 1, 1]));
+  assert_eq!(recur_diagnostics[1]["location"]["coord"], serde_json::json!([3, 3, 2]));
 }
 
 #[test]
