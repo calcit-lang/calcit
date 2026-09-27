@@ -60,9 +60,10 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   不静默修改已有升级 preset；旧 helper 从 0.25.0 标记弃用，在真实消费者迁移且至少经过一个版本窗口后
   才考虑移除，最早为 0.26.0。试点只扫描所选 definition 的源码 `:code`；definition-attached
   `:tests`、`:examples`、macro 定义与无法映射回源码的展开引用暂不自动改写，须人工检查。
-- `core-option-method-v1` 是 0.26.0 的首批方法命名迁移：仅把编译器已解析到
-  `calcit.core/option:unwrap` 或 `option:unwrap-or`、且接收者的静态类型能证明会分派到对应
-  Option 方法的源码调用，改为 `value .unwrap` 或 `value .unwrap-or fallback`。唯一的空值特例是
+- `core-option-method-v1` 在原有取值迁移之外，也把 `option:some?` / `option:none?` 改为
+  `value .some?` / `value .none?`。只有编译器已解析到对应 core helper、接收者静态类型
+  能证明分派到同一个 Option 方法的源码调用才自动改写。取值调用仍改为 `value .unwrap`
+  或 `value .unwrap-or fallback`；唯一的空值 fallback 特例是
   `option:unwrap-or (%none) fallback` 与 `option:unwrap-or (Option :none) fallback`：源码引用须证明构造器
   来自 core、没有 payload，且 fallback 有具体类型、目标方法契约为 `proven`，才允许改写。
   源码中推断为短名
@@ -73,7 +74,9 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   当前须显式指定 `--rule`，不改写已发布的 preset，
   也不把内部 helper 立即删除。与构造器规则一样，改写只覆盖定义的 `:code`，不盲改
   `:tests` / `:examples`。先预览、核对来源和 revision，再应用并运行严格检查与业务测试。
-- `core-result-method-v1` 只处理 `result:unwrap-or result fallback` 到 `result .unwrap-or fallback`。
+- `core-result-method-v1` 把 `result:ok?` / `result:err?` 改为 `value .ok?` / `value .err?`，
+  也处理 `result:unwrap-or result fallback` 到 `result .unwrap-or fallback`；仍须证明 core 来源和
+  同一个接收者方法契约，不因谓词返回 Bool 就跳过接收者类型检查。
   已证明来自 core 的 `%err error` 或 `Result :err error` 没有成功值，因而可由具体 fallback
   确定成功类型，同时保留错误类型；方法契约仍须为 `proven`，源码引用、求值次数和顺序也须可证明。
   成功值有具体类型、方法契约已证明的 core `%ok` 也可迁移；备用值不能代替成功值的类型证据。

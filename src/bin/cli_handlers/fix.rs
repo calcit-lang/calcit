@@ -2926,6 +2926,16 @@ impl CoreNominalMethodKind {
 
 fn core_nominal_method(name: &str, kind: CoreNominalMethodKind) -> Option<CoreNominalMethod> {
   match (kind, name.rsplit_once('/').map_or(name, |(_, definition)| definition)) {
+    (CoreNominalMethodKind::Option, "option:some?") => Some(CoreNominalMethod {
+      method: ".some?",
+      definition: "calcit.core/option:some?",
+      arity: 1,
+    }),
+    (CoreNominalMethodKind::Option, "option:none?") => Some(CoreNominalMethod {
+      method: ".none?",
+      definition: "calcit.core/option:none?",
+      arity: 1,
+    }),
     (CoreNominalMethodKind::Option, "option:unwrap") => Some(CoreNominalMethod {
       method: ".unwrap",
       definition: "calcit.core/option:unwrap",
@@ -2940,6 +2950,16 @@ fn core_nominal_method(name: &str, kind: CoreNominalMethodKind) -> Option<CoreNo
       method: ".unwrap-or",
       definition: "calcit.core/result:unwrap-or",
       arity: 2,
+    }),
+    (CoreNominalMethodKind::Result, "result:ok?") => Some(CoreNominalMethod {
+      method: ".ok?",
+      definition: "calcit.core/result:ok?",
+      arity: 1,
+    }),
+    (CoreNominalMethodKind::Result, "result:err?") => Some(CoreNominalMethod {
+      method: ".err?",
+      definition: "calcit.core/result:err?",
+      arity: 1,
     }),
     _ => None,
   }

@@ -3422,6 +3422,110 @@ fn result_method_fix_uses_concrete_success_evidence_but_not_dynamic_fallback() {
 }
 
 #[test]
+fn core_nominal_predicate_rules_migrate_proven_calls_idempotently() {
+  let directory = TestDirectory::create();
+  for (definition, rule) in [
+    ("infer-option-some-predicate", "core-option-method-v1"),
+    ("infer-option-none-predicate", "core-option-method-v1"),
+    ("infer-result-ok-predicate", "core-result-method-v1"),
+    ("infer-result-err-predicate", "core-result-method-v1"),
+  ] {
+    let snapshot = directory.path().join(format!("{definition}.cirru"));
+    fs::copy("calcit/test-types-inference.cirru", &snapshot).expect("copy type inference Snapshot");
+    let args = [
+      "--rule",
+      rule,
+      "--ns",
+      "test-types-inference.main",
+      "--def",
+      definition,
+      "--format",
+      "json",
+    ];
+    let preview = run_fix(&snapshot, &args);
+    assert_success(&preview, "nominal predicate preview");
+    let report = parse_stdout(&preview);
+    assert_eq!(report["data"]["suggestions"][0]["applicability"], "machine-applicable", "{report}");
+    assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+
+    let applied = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        rule,
+        "--ns",
+        "test-types-inference.main",
+        "--def",
+        definition,
+        "--apply",
+        "--allow-no-vcs",
+        "--expect-revision",
+        report["revision"].as_str().expect("preview revision"),
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&applied, "nominal predicate apply");
+    let repeated = run_fix(&snapshot, &args);
+    assert_success(&repeated, "nominal predicate idempotence preview");
+    assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+    let target = format!("test-types-inference.main/{definition}");
+    assert_success(
+      &run_calcit(&snapshot, &["test", &target, "--require-match"]),
+      "nominal predicate behavior after migration",
+    );
+  }
+
+  for (definition, helper, rule) in [
+    ("open-option-predicate", "option:some?", "core-option-method-v1"),
+    ("open-result-predicate", "result:ok?", "core-result-method-v1"),
+  ] {
+    let snapshot = directory.path().join(format!("{definition}.cirru"));
+    fs::copy("calcit/test-types-inference.cirru", &snapshot).expect("copy open predicate Snapshot");
+    let target = format!("test-types-inference.main/{definition}");
+    let code = format!("quote $ defn {definition} (value) ({helper} value)");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", &code]),
+      "install open predicate source",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Bool)",
+        ],
+      ),
+      "declare open predicate source",
+    );
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        rule,
+        "--ns",
+        "test-types-inference.main",
+        "--def",
+        definition,
+        "--format",
+        "json",
+      ],
+    );
+    assert!(
+      !preview.status.success(),
+      "a raw Dynamic receiver must not produce an automatic rewrite"
+    );
+    let diagnostic = String::from_utf8_lossy(&preview.stderr);
+    assert!(diagnostic.contains("E_ERASED_GENERIC_RELATION"), "{diagnostic}");
+  }
+}
+
+#[test]
 fn strict_result_success_consumption_rejects_dynamic_payload() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

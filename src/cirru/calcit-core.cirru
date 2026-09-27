@@ -7242,7 +7242,8 @@
               assert= (%some :ready)
                 consume $ %some :ready
             :tags $ #{} :core :unit
-        'option:none? $ %{} 'CodeEntry (:doc "|Returns true when an Option is :none.")
+        'option:none? $ %{} 'CodeEntry
+          :doc "|判断 Option 是否为 :none；公开代码优先使用 .none?，本辅助函数属于内部兼容入口。"
           :code $ quote $ defn option:none? (opt)
             match opt
               (:some _) false
@@ -7271,7 +7272,8 @@
             :generics $ [] 'T
             :return $ :: 'Option 'T
           :tags $ #{} :internal
-        'option:some? $ %{} 'CodeEntry (:doc "|Returns true when an Option is :some.")
+        'option:some? $ %{} 'CodeEntry
+          :doc "|判断 Option 是否为 :some；公开代码优先使用 .some?，本辅助函数属于内部兼容入口。"
           :code $ quote $ defn option:some? (opt)
             match opt
               (:some _) true
@@ -7683,7 +7685,8 @@
             :generics $ [] 'T 'U 'E
             :return $ :: 'Result 'U 'E
           :tags $ #{} :internal
-        'result:err? $ %{} 'CodeEntry (:doc "|Returns true when a Result is :err.")
+        'result:err? $ %{} 'CodeEntry
+          :doc "|判断 Result 是否为 :err；公开代码优先使用 .err?，本辅助函数属于内部兼容入口。"
           :code $ quote $ defn result:err? (res)
             match res
               (:ok _) false
@@ -7728,7 +7731,7 @@
             :generics $ [] 'T 'E 'F
             :return $ :: 'Result 'T 'F
           :tags $ #{} :internal
-        'result:ok? $ %{} 'CodeEntry (:doc "|Returns true when a Result is :ok.")
+        'result:ok? $ %{} 'CodeEntry (:doc "|判断 Result 是否为 :ok；公开代码优先使用 .ok?，本辅助函数属于内部兼容入口。")
           :code $ quote $ defn result:ok? (res)
             match res
               (:ok _) true

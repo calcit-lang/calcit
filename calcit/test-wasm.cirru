@@ -1026,6 +1026,15 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-option-some-method $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-option-some-method ()
+            (%some 1) .some?
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |typed-predicate)
+            :code $ quote $ assert= true (test-option-some-method)
+            :tags $ #{} :wasm
         'test-option-unwrap-or $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-option-unwrap-or ()
             (%none) .unwrap-or 7
@@ -1083,6 +1092,15 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-result-ok-method $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-result-ok-method ()
+            (%ok 1) .ok?
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |typed-predicate)
+            :code $ quote $ assert= true (test-result-ok-method)
+            :tags $ #{} :wasm
         'test-result-unwrap-or $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-result-unwrap-or ()
             (%err 3) .unwrap-or 7

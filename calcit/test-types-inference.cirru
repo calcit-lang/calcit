@@ -126,6 +126,24 @@
           :tests $ [] $ %{} 'TestEntry (:name |none-fallback-number)
             :code $ quote $ assert= 7 (infer-none-fallback)
             :tags $ #{} :unit
+        'infer-option-none-predicate $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-option-none-predicate ()
+            option:none? $ %some 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |predicate-contract)
+            :code $ quote $ assert= false (infer-option-none-predicate)
+            :tags $ #{} :unit
+        'infer-option-some-predicate $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-option-some-predicate ()
+            option:some? $ %some 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |predicate-contract)
+            :code $ quote $ assert= true (infer-option-some-predicate)
+            :tags $ #{} :unit
         'infer-raise-left $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-raise-left (enabled)
             let
@@ -163,6 +181,15 @@
           :tests $ [] $ %{} 'TestEntry (:name |err-fallback-number)
             :code $ quote $ assert= 7 (infer-result-err-fallback)
             :tags $ #{} :unit
+        'infer-result-err-predicate $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-result-err-predicate ()
+            result:err? $ %ok 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |predicate-contract)
+            :code $ quote $ assert= false (infer-result-err-predicate)
+            :tags $ #{} :unit
         'infer-result-ok-concrete $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-result-ok-concrete ()
             result:unwrap-or (%ok 9) 7
@@ -182,6 +209,15 @@
             :code $ quote $ do
               assert= |hello $ infer-result-ok-open |hello
               assert= 4 $ infer-result-ok-open 4
+            :tags $ #{} :unit
+        'infer-result-ok-predicate $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-result-ok-predicate ()
+            result:ok? $ %ok 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |predicate-contract)
+            :code $ quote $ assert= true (infer-result-ok-predicate)
             :tags $ #{} :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity) (infer-raise-right true) (infer-raise-left false)
