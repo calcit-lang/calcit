@@ -2890,8 +2890,13 @@ fn core_option_method(name: &str) -> Option<CoreOptionMethod> {
 }
 
 fn preserves_option_call_through_macro(origin: &str) -> bool {
-  // These core forms retain the nested call as one expression in its original position.
-  preserves_constructor_argument_through_macro(origin) || origin == "calcit.core/def"
+  // These core forms retain one executable evaluation of the nested call.
+  // assert= also quotes its source for diagnostics, but never evaluates that copy.
+  preserves_constructor_argument_through_macro(origin)
+    || matches!(
+      origin,
+      "calcit.core/def" | "calcit.core/do" | "calcit.core/fn" | "calcit.core/assert="
+    )
 }
 
 fn rewrite_core_option_method_tree(node: &Cirru, path: &mut Vec<usize>, selected: &BTreeMap<Vec<usize>, CoreOptionMethod>) -> Cirru {

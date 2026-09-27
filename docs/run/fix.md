@@ -64,7 +64,9 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   `calcit.core/option:unwrap` 或 `option:unwrap-or`、且接收者的静态类型能证明会分派到对应
   Option 方法的源码调用，改为 `value .unwrap` 或 `value .unwrap-or fallback`。接收者和备用值仍
   各求值一次、顺序不变；开放的 `Option<Dynamic>`、函数值引用、未知 macro 来源或无法回溯
-  的类型证据只报告 `requires-review`。当前须显式指定 `--rule`，不改写已发布的 preset，
+  的类型证据只报告 `requires-review`。已核实会单次保留调用的 core `let`、`cond`、`do`、
+  `fn`、`assert=` 等展开可通过宏边界，但仍必须满足同一静态类型与方法契约；其他宏不自动放行。
+  当前须显式指定 `--rule`，不改写已发布的 preset，
   也不把内部 helper 立即删除。与构造器规则一样，改写只覆盖定义的 `:code`，不盲改
   `:tests` / `:examples`。先预览、核对来源和 revision，再应用并运行严格检查与业务测试。
 - `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
