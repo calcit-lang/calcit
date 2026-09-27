@@ -2927,6 +2927,225 @@ fn core_nominal_constructor_rule_reviews_shadowed_types_and_function_values() {
 }
 
 #[test]
+fn core_option_method_rule_uses_proven_receiver_and_is_idempotent() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/option-methods",
+        "--code",
+        "quote $ defn option-methods (opt) (+ (option:unwrap opt) (option:unwrap-or opt 0))",
+      ],
+    ),
+    "install Option helper calls",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/option-methods",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] (:: 'Option 'Number)) (:return 'Number)",
+      ],
+    ),
+    "declare Option receiver schema",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "fix-command.main/option-methods",
+        "typed-option-result",
+        "--code",
+        "quote $ assert= 4 $ option-methods $ Option :some 2",
+      ],
+    ),
+    "attach Calcit behavior test",
+  );
+
+  let args = [
+    "--rule",
+    "core-option-method-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "option-methods",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &args);
+  assert_success(&preview, "Option method preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
+  assert_eq!(suggestions.len(), 2, "report: {report}");
+  assert!(
+    suggestions
+      .iter()
+      .all(|suggestion| suggestion["applicability"] == "machine-applicable"),
+    "report: {report}"
+  );
+  assert_eq!(report["data"]["validation"]["status"], "passed");
+  let revision = report["revision"].as_str().expect("preview should return revision");
+  let stale = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-option-method-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "option-methods",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      "md5:stale",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!stale.status.success());
+  assert!(String::from_utf8_lossy(&stale.stderr).contains("Snapshot revision mismatch"));
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-option-method-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "option-methods",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      revision,
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "Option method apply");
+  let updated = fs::read_to_string(&snapshot).expect("updated fixture should read");
+  assert!(updated.contains("opt .unwrap"), "snapshot: {updated}");
+  assert!(updated.contains("opt .unwrap-or 0"), "snapshot: {updated}");
+  let repeated = run_fix(&snapshot, &args);
+  assert_success(&repeated, "Option method idempotence preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+  assert_success(
+    &run_calcit(&snapshot, &["test", "fix-command.main/option-methods", "--require-match"]),
+    "Calcit attached test after Option migration",
+  );
+}
+
+#[test]
+fn core_option_method_rule_requires_review_without_proven_receiver() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/open-option",
+        "--code",
+        "quote $ defn open-option (opt) option:unwrap-or opt 0",
+      ],
+    ),
+    "install open Option helper call",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/open-option",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] (:: 'Option 'Dynamic)) (:return 'Dynamic)",
+      ],
+    ),
+    "declare open Option receiver schema",
+  );
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-option-method-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "open-option",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "open Option preview");
+  let report = parse_stdout(&preview);
+  assert_eq!(
+    report["data"]["suggestions"][0]["applicability"], "requires-review",
+    "report: {report}"
+  );
+  assert_eq!(report["data"]["suggestions"][0]["replacement"], serde_json::Value::Null);
+  assert_eq!(report["data"]["validation"]["checked_operations"], 0);
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/option-helper-value",
+        "--code",
+        "quote $ defn option-helper-value () option:unwrap",
+      ],
+    ),
+    "install Option helper as a function value",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/option-helper-value",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)",
+      ],
+    ),
+    "declare helper-value schema",
+  );
+  let value = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-option-method-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "option-helper-value",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&value, "Option helper function-value preview");
+  let report = parse_stdout(&value);
+  assert_eq!(
+    report["data"]["suggestions"][0]["applicability"], "requires-review",
+    "report: {report}"
+  );
+  assert_eq!(report["data"]["suggestions"][0]["replacement"], serde_json::Value::Null);
+}
+
+#[test]
 fn surface_latest_preset_migrates_named_enum_and_struct_constructors() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

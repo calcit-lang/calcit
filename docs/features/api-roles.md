@@ -45,7 +45,7 @@ leads_to:
 | --- | --- | --- |
 | Type and variant | `Option<T>` with `:some` / `:none`; `Result<T,E>` with `:ok` / `:err` | A bare type name is not a constructed value. |
 | Constructor | `Option :some value`, `Result :err error`, `Person :name name` | Migrate `%some`, `%none`, `%ok`, `%err` with `core-nominal-constructor-v1` when the call is statically resolved. |
-| Receiver method | `value .unwrap`, `text .includes? fragment` | `option:unwrap value` and `&str:includes? text fragment` are implementation paths, not preferred application calls. |
+| Receiver method | `value .unwrap`, `text .includes? fragment` | `option:unwrap value` and `&str:includes? text fragment` are implementation paths, not preferred application calls. Preview proven Option rewrites with `calcit fix --rule core-option-method-v1 --format edn`. |
 | Module function | `parse-float source`, imported `module/function` | Use when there is no natural typed receiver; do not introduce a parallel public `type:verb` spelling. |
 | Internal helper / primitive | No public spelling promised | `option:unwrap` is a core helper; `&str:includes?` and `&list:count` are runtime primitives. Trace them for implementation, not API discovery. |
 
@@ -56,7 +56,7 @@ The public, human-facing form is distinct from macro-expanded core definitions a
 | 遇到的写法 | 新代码首选 | 迁移与限制 |
 | --- | --- | --- |
 | `%some value`、`%none`、`%ok value`、`%err error` | `Option :some value`、`Option :none`、`Result :ok value`、`Result :err error` | `core-nominal-constructor-v1` 只改写解析到 core 且保序可证明的调用；被遮蔽或当函数值传递时人工确认 |
-| `option:unwrap value`、`option:unwrap-or value fallback` | `value .unwrap`、`value .unwrap-or fallback` | 先确认 `value` 的 `Option<T>` 类型；内部 helper 不自动改成无证据的动态方法调用 |
+| `option:unwrap value`、`option:unwrap-or value fallback` | `value .unwrap`、`value .unwrap-or fallback` | `core-option-method-v1` 只自动改写接收者有编译器证明的调用；开放类型、未知 macro、函数值引用仍需人工确认 |
 | `&str:includes? text fragment`（容易被误记为 `&string:include?`） | `text .includes? fragment` | 当前内部定义的准确拼写是 `&str:includes?`；`.contains?` 对 String 检查索引，不能把两者机械互换 |
 | 静态 `%:: Enum :variant payload`、`%{} Struct (:field value)` | `Enum :variant payload`、`Struct :field value` | 只有类型定义能静态解析、variant/字段契约可证明时才自动修复；动态 prototype 边界仍可显式使用低层形式 |
 
@@ -116,3 +116,5 @@ calcit query context 'calcit.core/option:unwrap' --format edn
 真实项目中，Quamolit 的 `quamolit.gpu-scalar-program/first-slot` 以 `get slots 0` 得到 `Option<BoundScalar>`，再调用 `.unwrap`；Timegrass 的 `app.server/main!` 对 `parse-float raw` 的 `Result<Number,String>` 调用 `.unwrap-or 11009`。这两条路径均可在各自 Snapshot 上用 `query context` 找到，再用 `query type ":: 'Option ..."` 或 `query type ":: 'Result ..."` 检查方法契约。它们说明推荐入口应由返回类型决定，而不是由内部函数名字决定；不要求改变这些项目的源码。
 
 `%some/%none/%ok/%err` 从 0.25.0 起标记弃用；在确认真实项目能迁移后，最早于 0.26.0 移除。先用 `calcit fix --rule core-nominal-constructor-v1 --format edn` 预览，再带预览返回的 `--expect-revision` 应用。规则只自动改写编译器已解析到 core、实参数量匹配且处在可证明保序的源码调用；把 helper 当函数值、局部遮蔽或跨未证明的 macro 边界时需人工确认，不会插入 Dynamic 或 `unsafe-coerce`。String 的 `.contains?`（索引）与 `.includes?`（子串）仍有命名歧义，但 `.contains?` 属于跨容器 trait，不适合在本试点机械重命名。
+
+对 Option 的内部取值 helper，可用 `calcit fix --rule core-option-method-v1 --format edn` 预览。只有接收者方法解析为 `proven` 且实现确实指向相同 core helper 时才提供自动改写；`Option<Dynamic>`、函数值、未知 macro 或无来源映射的表达式仍需人工处理。应用后重复预览应为空，并运行严格类型检查与项目测试。此规则仅处理 `option:unwrap` / `option:unwrap-or`，不把 Result、String 或其他内部函数类推为同一个迁移。
