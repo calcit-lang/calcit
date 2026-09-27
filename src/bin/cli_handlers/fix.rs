@@ -35,6 +35,8 @@ const CORE_NOMINAL_CONSTRUCTOR_RULE: &str = "core-nominal-constructor-v1";
 const CORE_NOMINAL_CONSTRUCTOR_DIAGNOSTIC: &str = "FIX_CORE_NOMINAL_CONSTRUCTOR";
 const CORE_OPTION_METHOD_RULE: &str = "core-option-method-v1";
 const CORE_OPTION_METHOD_DIAGNOSTIC: &str = "FIX_CORE_OPTION_METHOD";
+const CORE_RESULT_METHOD_RULE: &str = "core-result-method-v1";
+const CORE_RESULT_METHOD_DIAGNOSTIC: &str = "FIX_CORE_RESULT_METHOD";
 const RENAME_DEFINITION_RULE: &str = "rename-definition-v1";
 const RENAME_DEFINITION_DIAGNOSTIC: &str = "REFACTOR_RENAME_DEFINITION";
 const VALUE_TO_ZERO_ARG_FN_RULE: &str = "value-to-zero-arg-fn-v1";
@@ -481,10 +483,19 @@ pub(crate) fn handle_fix_command(
     )?);
   }
   if selected_rules.contains(&CORE_OPTION_METHOD_RULE) {
-    suggestions.extend(plan_core_option_method_fixes(
+    suggestions.extend(plan_core_nominal_method_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
+      CoreNominalMethodKind::Option,
+    )?);
+  }
+  if selected_rules.contains(&CORE_RESULT_METHOD_RULE) {
+    suggestions.extend(plan_core_nominal_method_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+      CoreNominalMethodKind::Result,
     )?);
   }
   let mut constructor_kinds = Vec::new();
@@ -875,6 +886,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | NAMED_STRUCT_CONSTRUCTOR_RULE
         | CORE_NOMINAL_CONSTRUCTOR_RULE
         | CORE_OPTION_METHOD_RULE
+        | CORE_RESULT_METHOD_RULE
         | RENAME_DEFINITION_RULE
         | VALUE_TO_ZERO_ARG_FN_RULE
         | SYNTHESIZE_SCHEMA_RULE
@@ -884,7 +896,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -909,6 +921,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | OPTIONAL_PARAMETERS_RULE
         | CORE_NOMINAL_CONSTRUCTOR_RULE
         | CORE_OPTION_METHOD_RULE
+        | CORE_RESULT_METHOD_RULE
     ) {
       return vec![match rule {
         RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
@@ -916,6 +929,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         SYNTHESIZE_SCHEMA_RULE => SYNTHESIZE_SCHEMA_RULE,
         CORE_NOMINAL_CONSTRUCTOR_RULE => CORE_NOMINAL_CONSTRUCTOR_RULE,
         CORE_OPTION_METHOD_RULE => CORE_OPTION_METHOD_RULE,
+        CORE_RESULT_METHOD_RULE => CORE_RESULT_METHOD_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
     }
@@ -976,6 +990,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
     CORE_OPTION_METHOD_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_OPTION_METHOD_DIAGNOSTIC,
+      evidence_source: "compiler-resolved-reference-and-proven-receiver-method",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    CORE_RESULT_METHOD_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: CORE_RESULT_METHOD_DIAGNOSTIC,
       evidence_source: "compiler-resolved-reference-and-proven-receiver-method",
       lifecycle: "semantic-refactor",
       source_version_required: false,
@@ -2868,29 +2889,63 @@ fn plan_core_nominal_constructor_fixes(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct CoreOptionMethod {
+struct CoreNominalMethod {
   method: &'static str,
   definition: &'static str,
   arity: usize,
 }
 
-fn core_option_method(name: &str) -> Option<CoreOptionMethod> {
-  match name.rsplit_once('/').map_or(name, |(_, definition)| definition) {
-    "option:unwrap" => Some(CoreOptionMethod {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CoreNominalMethodKind {
+  Option,
+  Result,
+}
+
+impl CoreNominalMethodKind {
+  fn rule_id(self) -> &'static str {
+    match self {
+      Self::Option => CORE_OPTION_METHOD_RULE,
+      Self::Result => CORE_RESULT_METHOD_RULE,
+    }
+  }
+
+  fn diagnostic(self) -> &'static str {
+    match self {
+      Self::Option => CORE_OPTION_METHOD_DIAGNOSTIC,
+      Self::Result => CORE_RESULT_METHOD_DIAGNOSTIC,
+    }
+  }
+
+  fn nominal(self) -> &'static str {
+    match self {
+      Self::Option => "Option",
+      Self::Result => "Result",
+    }
+  }
+}
+
+fn core_nominal_method(name: &str, kind: CoreNominalMethodKind) -> Option<CoreNominalMethod> {
+  match (kind, name.rsplit_once('/').map_or(name, |(_, definition)| definition)) {
+    (CoreNominalMethodKind::Option, "option:unwrap") => Some(CoreNominalMethod {
       method: ".unwrap",
       definition: "calcit.core/option:unwrap",
       arity: 1,
     }),
-    "option:unwrap-or" => Some(CoreOptionMethod {
+    (CoreNominalMethodKind::Option, "option:unwrap-or") => Some(CoreNominalMethod {
       method: ".unwrap-or",
       definition: "calcit.core/option:unwrap-or",
+      arity: 2,
+    }),
+    (CoreNominalMethodKind::Result, "result:unwrap-or") => Some(CoreNominalMethod {
+      method: ".unwrap-or",
+      definition: "calcit.core/result:unwrap-or",
       arity: 2,
     }),
     _ => None,
   }
 }
 
-fn preserves_option_call_through_macro(origin: &str) -> bool {
+fn preserves_nominal_method_call_through_macro(origin: &str) -> bool {
   // These core forms retain one executable evaluation of the nested call.
   // assert= also quotes its source for diagnostics, but never evaluates that copy.
   preserves_constructor_argument_through_macro(origin)
@@ -2900,7 +2955,7 @@ fn preserves_option_call_through_macro(origin: &str) -> bool {
     )
 }
 
-fn rewrite_core_option_method_tree(node: &Cirru, path: &mut Vec<usize>, selected: &BTreeMap<Vec<usize>, CoreOptionMethod>) -> Cirru {
+fn rewrite_core_nominal_method_tree(node: &Cirru, path: &mut Vec<usize>, selected: &BTreeMap<Vec<usize>, CoreNominalMethod>) -> Cirru {
   let Cirru::List(items) = node else {
     return node.clone();
   };
@@ -2909,7 +2964,7 @@ fn rewrite_core_option_method_tree(node: &Cirru, path: &mut Vec<usize>, selected
     .enumerate()
     .map(|(index, item)| {
       path.push(index);
-      let rewritten = rewrite_core_option_method_tree(item, path, selected);
+      let rewritten = rewrite_core_nominal_method_tree(item, path, selected);
       path.pop();
       rewritten
     })
@@ -2925,11 +2980,12 @@ fn rewrite_core_option_method_tree(node: &Cirru, path: &mut Vec<usize>, selected
   }
 }
 
-/// Rewrite only core helper calls whose receiver resolves to the same proven Option method.
-fn plan_core_option_method_fixes(
+/// Rewrite only core helper calls whose receiver resolves to the same proven nominal method.
+fn plan_core_nominal_method_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
   selected_definitions: &[(String, String)],
+  kind: CoreNominalMethodKind,
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
@@ -2941,15 +2997,23 @@ fn plan_core_option_method_fixes(
     if list_head(&entry.code) == Some("defmacro") {
       continue;
     }
+    let mut local_bindings = HashSet::new();
+    collect_potential_local_bindings(&entry.code, &mut local_bindings);
     let processed = program::lookup_compiled_def(namespace, definition);
-    let mut safe_calls = BTreeMap::<Vec<usize>, CoreOptionMethod>::new();
+    let mut safe_calls = BTreeMap::<Vec<usize>, CoreNominalMethod>::new();
     let mut review_calls = BTreeMap::<Vec<usize>, String>::new();
     let warnings = RefCell::new(Vec::new());
     let usages = runner::preprocess::trace_definition_source_usages(namespace, definition, &warnings, &CallStackList::default())
       .map_err(|failure| failure.msg)?;
-    let core_empty_option_heads = usages
+    let core_absent_heads = usages
       .iter()
-      .filter(|usage| usage.target_ns.as_ref() == "calcit.core" && matches!(usage.target_def.as_ref(), "%none" | "Option"))
+      .filter(|usage| {
+        usage.target_ns.as_ref() == "calcit.core"
+          && match kind {
+            CoreNominalMethodKind::Option => matches!(usage.target_def.as_ref(), "%none" | "Option"),
+            CoreNominalMethodKind::Result => matches!(usage.target_def.as_ref(), "%err" | "Result"),
+          }
+      })
       .filter_map(|usage| usage.location.as_ref())
       .filter(|location| location.ns.as_ref() == namespace && location.def.as_ref() == definition)
       .map(|location| location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>())
@@ -2965,7 +3029,7 @@ fn plan_core_option_method_fixes(
       if usage.target_ns.as_ref() != "calcit.core" {
         continue;
       }
-      let Some(method) = core_option_method(usage.target_def.as_ref()) else {
+      let Some(method) = core_nominal_method(usage.target_def.as_ref(), kind) else {
         continue;
       };
       let Some(location) = usage.location else {
@@ -2977,7 +3041,7 @@ fn plan_core_option_method_fixes(
       let leaf_path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
       if leaf_path.last() != Some(&0) {
         let node = navigate_to_path(&entry.code, &leaf_path)?;
-        if matches!(&node, Cirru::Leaf(name) if core_option_method(name.as_ref()) == Some(method)) {
+        if matches!(&node, Cirru::Leaf(name) if core_nominal_method(name.as_ref(), kind) == Some(method)) {
           review_calls.insert(
             leaf_path,
             "The helper is referenced as a function value; a receiver method cannot replace it without changing its callable shape."
@@ -2990,14 +3054,18 @@ fn plan_core_option_method_fixes(
         continue;
       };
       let source_leaf = navigate_to_path(&entry.code, &leaf_path)?;
-      if !matches!(&source_leaf, Cirru::Leaf(name) if core_option_method(name.as_ref()) == Some(method)) {
+      if !matches!(&source_leaf, Cirru::Leaf(name) if core_nominal_method(name.as_ref(), kind) == Some(method)) {
         continue;
       }
       let call = navigate_to_path(&entry.code, call_path)?;
       let Cirru::List(items) = call else {
         continue;
       };
-      if !usage.macro_origin.iter().all(|origin| preserves_option_call_through_macro(origin)) {
+      if !usage
+        .macro_origin
+        .iter()
+        .all(|origin| preserves_nominal_method_call_through_macro(origin))
+      {
         review_calls.insert(
           call_path.to_vec(),
           format!(
@@ -3017,6 +3085,14 @@ fn plan_core_option_method_fixes(
         let mut receiver_path = call_path.to_vec();
         receiver_path.push(1);
         let receiver = &items[1];
+        let short_constructor_is_shadowed = matches!(receiver, Cirru::List(parts)
+          if matches!(parts.first(), Some(Cirru::Leaf(name)) if name.as_ref() == kind.nominal()))
+          && !core_nominal_type_is_unshadowed(snapshot, namespace, kind.nominal(), &local_bindings);
+        let result_ok_constructor = kind == CoreNominalMethodKind::Result
+          && matches!(receiver, Cirru::List(parts)
+            if matches!(parts.as_slice(), [Cirru::Leaf(name), _] if matches!(name.as_ref(), "%ok" | "calcit.core/%ok"))
+              || matches!(parts.as_slice(), [Cirru::Leaf(name), Cirru::Leaf(variant), _]
+                if matches!(name.as_ref(), "Result" | "calcit.core/Result") && variant.as_ref() == ":ok"));
         let inferred = processed
           .as_ref()
           .and_then(|compiled| {
@@ -3033,58 +3109,92 @@ fn plan_core_option_method_fixes(
             runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &receiver_path)
               .and_then(|item| item.inferred_type.clone())
           });
-        let proven = inferred.as_ref().is_some_and(|receiver_type| {
-          let receiver_type = runner::preprocess::resolve_namespace_type_refs_for_body(receiver_type.clone(), namespace);
-          let is_core_option = matches!(
-            receiver_type.as_ref(),
-            CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "calcit.core/Option" && args.len() == 1
-          );
-          let contract = runner::preprocess::static_method_contract(receiver_type.as_ref(), method.method);
-          is_core_option && contract.status == "proven" && contract.definition.as_deref() == Some(method.definition)
-        }) || (method.method == ".unwrap-or"
-          && matches!(receiver, Cirru::List(parts) if
-            matches!(parts.as_slice(), [Cirru::Leaf(name)] if matches!(name.as_ref(), "%none" | "calcit.core/%none"))
-            || matches!(parts.as_slice(), [Cirru::Leaf(name), Cirru::Leaf(variant)]
-              if matches!(name.as_ref(), "Option" | "calcit.core/Option") && variant.as_ref() == ":none"))
-          && {
-            let mut constructor_head_path = receiver_path.clone();
-            constructor_head_path.push(0);
-            core_empty_option_heads.contains(&constructor_head_path)
-          }
-          && {
-            let mut fallback_path = call_path.to_vec();
-            fallback_path.push(2);
-            runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &fallback_path)
-              .and_then(|item| item.inferred_type.clone())
-              .or_else(|| {
-                if matches!(&items[2], Cirru::Leaf(_)) {
-                  code_to_calcit(&items[2], namespace, definition, vec![])
-                    .ok()
-                    .and_then(|value| runner::preprocess::infer_static_type_from_expr(&value))
-                } else {
-                  None
-                }
-              })
-              .is_some_and(|fallback_type| {
-                let fallback_type = runner::preprocess::resolve_namespace_type_refs_for_body(fallback_type, namespace);
-                if matches!(
-                  fallback_type.as_ref(),
-                  CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
-                ) {
-                  return false;
-                }
-                let narrowed = CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/Option"), Arc::new(vec![fallback_type]));
-                let contract = runner::preprocess::static_method_contract(&narrowed, method.method);
-                contract.status == "proven" && contract.definition.as_deref() == Some(method.definition)
-              })
-          });
+        let proven = !short_constructor_is_shadowed
+          && !result_ok_constructor
+          && (inferred.as_ref().is_some_and(|receiver_type| {
+            let receiver_type = runner::preprocess::resolve_namespace_type_refs_for_body(receiver_type.clone(), namespace);
+            let is_core_nominal = matches!(
+              receiver_type.as_ref(),
+              CalcitTypeAnnotation::TypeRef(name, args)
+                if name.as_ref() == format!("calcit.core/{}", kind.nominal())
+                  && args.len() == if kind == CoreNominalMethodKind::Option { 1 } else { 2 }
+            );
+            let contract = runner::preprocess::static_method_contract(receiver_type.as_ref(), method.method);
+            is_core_nominal && contract.status == "proven" && contract.definition.as_deref() == Some(method.definition)
+          }) || (method.method == ".unwrap-or"
+            && matches!(receiver, Cirru::List(parts) if match kind {
+              CoreNominalMethodKind::Option =>
+                matches!(parts.as_slice(), [Cirru::Leaf(name)] if matches!(name.as_ref(), "%none" | "calcit.core/%none"))
+                  || matches!(parts.as_slice(), [Cirru::Leaf(name), Cirru::Leaf(variant)]
+                    if matches!(name.as_ref(), "Option" | "calcit.core/Option") && variant.as_ref() == ":none"),
+              CoreNominalMethodKind::Result =>
+                matches!(parts.as_slice(), [Cirru::Leaf(name), _] if matches!(name.as_ref(), "%err" | "calcit.core/%err"))
+                  || matches!(parts.as_slice(), [Cirru::Leaf(name), Cirru::Leaf(variant), _]
+                    if matches!(name.as_ref(), "Result" | "calcit.core/Result") && variant.as_ref() == ":err"),
+            })
+            && {
+              let mut constructor_head_path = receiver_path.clone();
+              constructor_head_path.push(0);
+              core_absent_heads.contains(&constructor_head_path)
+            }
+            && {
+              let mut fallback_path = call_path.to_vec();
+              fallback_path.push(2);
+              runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &fallback_path)
+                .and_then(|item| item.inferred_type.clone())
+                .or_else(|| {
+                  if matches!(&items[2], Cirru::Leaf(_)) {
+                    code_to_calcit(&items[2], namespace, definition, vec![])
+                      .ok()
+                      .and_then(|value| runner::preprocess::infer_static_type_from_expr(&value))
+                  } else {
+                    None
+                  }
+                })
+                .is_some_and(|fallback_type| {
+                  let fallback_type = runner::preprocess::resolve_namespace_type_refs_for_body(fallback_type, namespace);
+                  if matches!(
+                    fallback_type.as_ref(),
+                    CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
+                  ) {
+                    return false;
+                  }
+                  let args = match kind {
+                    CoreNominalMethodKind::Option => vec![fallback_type],
+                    CoreNominalMethodKind::Result => {
+                      let Some(error_type) = inferred.as_ref().and_then(|receiver_type| match receiver_type.as_ref() {
+                        CalcitTypeAnnotation::TypeRef(name, args)
+                          if name.as_ref() == "calcit.core/Result" && matches!(args.as_slice(), [_, _]) =>
+                        {
+                          Some(args[1].clone())
+                        }
+                        CalcitTypeAnnotation::Enum(def, args)
+                          if def.definition_ref().is_some_and(|name| name.as_ref() == "calcit.core/Result")
+                            && matches!(args.as_slice(), [_, _]) =>
+                        {
+                          Some(args[1].clone())
+                        }
+                        _ => None,
+                      }) else {
+                        return false;
+                      };
+                      vec![fallback_type, error_type]
+                    }
+                  };
+                  let narrowed = CalcitTypeAnnotation::TypeRef(Arc::from(format!("calcit.core/{}", kind.nominal())), Arc::new(args));
+                  let contract = runner::preprocess::static_method_contract(&narrowed, method.method);
+                  contract.status == "proven" && contract.definition.as_deref() == Some(method.definition)
+                })
+            }));
         if proven {
           safe_calls.insert(call_path.to_vec(), method);
         } else {
           review_calls.insert(
             call_path.to_vec(),
-            "The receiver is not proven to dispatch to the matching Option method; retain the helper until its type is explicit."
-              .to_owned(),
+            format!(
+              "The receiver is not proven to dispatch to the matching {} method; retain the helper until its type is explicit.",
+              kind.nominal()
+            ),
           );
         }
       }
@@ -3093,8 +3203,8 @@ fn plan_core_option_method_fixes(
       safe_calls.remove(&path);
       let node = navigate_to_path(&entry.code, &path)?;
       suggestions.push(FixSuggestion {
-        rule_id: CORE_OPTION_METHOD_RULE,
-        diagnostic_code: CORE_OPTION_METHOD_DIAGNOSTIC,
+        rule_id: kind.rule_id(),
+        diagnostic_code: kind.diagnostic(),
         semantic_layer: "surface",
         source_file: snapshot_file.to_owned(),
         definition: format!("{namespace}/{definition}"),
@@ -3116,27 +3226,32 @@ fn plan_core_option_method_fixes(
       .collect::<Vec<_>>();
     for path in outermost {
       let original = navigate_to_path(&entry.code, &path)?;
-      let replacement = rewrite_core_option_method_tree(&original, &mut path.clone(), &safe_calls);
-      let original_code = original
-        .format_one_liner()
-        .map_err(|error| format!("Failed to format Option helper source at {namespace}/{definition}: {error}"))?;
-      let replacement_code = replacement
-        .format_one_liner()
-        .map_err(|error| format!("Failed to format Option method replacement at {namespace}/{definition}: {error}"))?;
+      let replacement = rewrite_core_nominal_method_tree(&original, &mut path.clone(), &safe_calls);
+      let original_code = original.format_one_liner().map_err(|error| {
+        format!(
+          "Failed to format {} helper source at {namespace}/{definition}: {error}",
+          kind.nominal()
+        )
+      })?;
+      let replacement_code = replacement.format_one_liner().map_err(|error| {
+        format!(
+          "Failed to format {} method replacement at {namespace}/{definition}: {error}",
+          kind.nominal()
+        )
+      })?;
       suggestions.push(FixSuggestion {
-        rule_id: CORE_OPTION_METHOD_RULE,
-        diagnostic_code: CORE_OPTION_METHOD_DIAGNOSTIC,
+        rule_id: kind.rule_id(),
+        diagnostic_code: kind.diagnostic(),
         semantic_layer: "surface",
         source_file: snapshot_file.to_owned(),
         definition: format!("{namespace}/{definition}"),
         path: format!("code{}", format_path(&path)),
         fingerprint: node_fingerprint(&original),
-        origin_chain: vec![serde_json::json!({"kind":"compiler-proven-option-method","calls":safe_calls.keys().filter(|candidate| candidate.starts_with(&path)).count()})],
+        origin_chain: vec![serde_json::json!({"kind":format!("compiler-proven-{}-method", kind.nominal().to_ascii_lowercase()),"calls":safe_calls.keys().filter(|candidate| candidate.starts_with(&path)).count()})],
         original: quoted_json(&original),
         replacement: Some(quoted_json(&replacement)),
         applicability: "machine-applicable",
-        message: "Use the proven Option receiver method; receiver and fallback expressions stay in their original order and are evaluated once."
-          .to_owned(),
+        message: format!("Use the proven {} receiver method; receiver and fallback expressions stay in their original order and are evaluated once.", kind.nominal()),
         target_path: path,
         operation: Some(FixOperation::ReplaceNode {
           original: original_code,

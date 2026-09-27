@@ -278,6 +278,52 @@ fn core_option_none_without_payload(expr: &Calcit, actual_type: &CalcitTypeAnnot
       if matches!(name.as_ref(), "Option" | "calcit.core/Option") && matches!(args.as_slice(), [payload] if matches!(payload.as_ref(), CalcitTypeAnnotation::TypeVar(_))))
 }
 
+// A known error has no success payload. Bind E from the actual error while
+// leaving T for a later fallback; an open Result is not proof of an error.
+fn bind_core_result_err_without_ok_payload(
+  expr: &Calcit,
+  actual_type: &CalcitTypeAnnotation,
+  expected_type: &CalcitTypeAnnotation,
+  bindings: &mut HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
+) -> Option<bool> {
+  let Calcit::List(items) = expr else { return None };
+  let is_core_err = match (items.len(), items.first(), items.get(1), items.get(2)) {
+    (2, Some(Calcit::Import(CalcitImport { ns, def, .. })), _, _) => ns.as_ref() == calcit::CORE_NS && def.as_ref() == "%err",
+    (2, Some(Calcit::Fn { info, .. }), _, _) => info.def_ns.as_ref() == calcit::CORE_NS && info.name.as_ref() == "%err",
+    (2, Some(Calcit::Registered(name)), _, _) => name.as_ref() == "calcit.core/%err",
+    (4, Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew)), Some(Calcit::Import(import)), Some(Calcit::Tag(variant))) => {
+      import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "Result" && variant.ref_str() == "err"
+    }
+    _ => false,
+  };
+  if !is_core_err {
+    return None;
+  }
+  let actual_args = match actual_type {
+    CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "calcit.core/Result" => args,
+    CalcitTypeAnnotation::Enum(def, args) if def.definition_ref().is_some_and(|name| name.as_ref() == "calcit.core/Result") => args,
+    _ => return None,
+  };
+  let CalcitTypeAnnotation::TypeRef(expected_name, expected_args) = expected_type else {
+    return None;
+  };
+  if !matches!(expected_name.as_ref(), "Result" | "calcit.core/Result") {
+    return None;
+  }
+  let ([actual_ok, actual_error], [expected_ok, expected_error]) = (actual_args.as_slice(), expected_args.as_slice()) else {
+    return None;
+  };
+  if !matches!(actual_ok.as_ref(), CalcitTypeAnnotation::Dynamic) || !matches!(expected_ok.as_ref(), CalcitTypeAnnotation::TypeVar(_)) {
+    return None;
+  }
+  Some(
+    !actual_error
+      .as_ref()
+      .prove_available_bindings(expected_error.as_ref(), bindings)
+      .is_mismatch(),
+  )
+}
+
 fn merge_result_constructor_branches(
   true_expr: &Calcit,
   true_type: &CalcitTypeAnnotation,
@@ -453,6 +499,13 @@ fn resolve_generic_return_type_parts<'a>(
     }
     let actual_type = resolve_type_value(arg, scope_types)?;
     if core_option_none_without_payload(arg, actual_type.as_ref(), expected_type.as_ref()) {
+      continue;
+    }
+    if let Some(compatible) = bind_core_result_err_without_ok_payload(arg, actual_type.as_ref(), expected_type.as_ref(), &mut bindings)
+    {
+      if !compatible {
+        return None;
+      }
       continue;
     }
     for generic in generics {
@@ -1344,12 +1397,24 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           };
           let mut bindings = HashMap::new();
           for (argument, expected) in xs.iter().skip(1).zip(info.arg_types.iter()) {
-            if let Some(actual) = resolve_type_value(argument, scope_types)
-              && !core_option_none_without_payload(argument, actual.as_ref(), expected.as_ref())
-              && actual
-                .as_ref()
-                .prove_available_bindings(expected.as_ref(), &mut bindings)
-                .is_mismatch()
+            let Some(actual) = resolve_type_value(argument, scope_types) else {
+              continue;
+            };
+            if core_option_none_without_payload(argument, actual.as_ref(), expected.as_ref()) {
+              continue;
+            }
+            if let Some(compatible) =
+              bind_core_result_err_without_ok_payload(argument, actual.as_ref(), expected.as_ref(), &mut bindings)
+            {
+              if !compatible {
+                return Some(calcit::DYNAMIC_TYPE.clone());
+              }
+              continue;
+            }
+            if actual
+              .as_ref()
+              .prove_available_bindings(expected.as_ref(), &mut bindings)
+              .is_mismatch()
             {
               return Some(calcit::DYNAMIC_TYPE.clone());
             }
@@ -2744,6 +2809,44 @@ mod tests {
     assert!(!core_option_none_without_payload(&some, &open, &expected));
     assert!(!core_option_none_without_payload(&shadowed, &open, &expected));
     assert!(!core_option_none_without_payload(&none, &CalcitTypeAnnotation::Dynamic, &expected));
+  }
+
+  #[test]
+  fn known_result_error_binds_only_error_payload() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let actual = CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Result"),
+      Arc::new(vec![calcit::DYNAMIC_TYPE.clone(), number.clone()]),
+    );
+    let expected = CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Result"),
+      Arc::new(vec![
+        Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))),
+        Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("E"))),
+      ]),
+    );
+    let err = Calcit::from(vec![Calcit::Registered(Arc::from("calcit.core/%err")), Calcit::Number(3.0)]);
+    let ok = Calcit::from(vec![Calcit::Registered(Arc::from("calcit.core/%ok")), Calcit::Number(3.0)]);
+    let shadowed = Calcit::from(vec![Calcit::Registered(Arc::from("app/%err")), Calcit::Number(3.0)]);
+    let mut bindings = HashMap::new();
+    assert_eq!(
+      bind_core_result_err_without_ok_payload(&err, &actual, &expected, &mut bindings),
+      Some(true)
+    );
+    assert_eq!(bindings.get("E"), Some(&number));
+    assert!(!bindings.contains_key("T"));
+    assert_eq!(
+      bind_core_result_err_without_ok_payload(&ok, &actual, &expected, &mut HashMap::new()),
+      None
+    );
+    assert_eq!(
+      bind_core_result_err_without_ok_payload(&shadowed, &actual, &expected, &mut HashMap::new()),
+      None
+    );
+    assert_eq!(
+      bind_core_result_err_without_ok_payload(&err, &CalcitTypeAnnotation::Dynamic, &expected, &mut HashMap::new()),
+      None
+    );
   }
 
   #[test]

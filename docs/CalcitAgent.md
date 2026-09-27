@@ -545,6 +545,8 @@ Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。
 
 需要尝试备用来源时使用 `.or-else`；它只在 `none`/`err` 分支调用 fallback。`.unwrap` 只适合已经由原生 `match`、`.some?` 或明确不变量证明为 `some` 的位置；默认值用 `.unwrap-or`，继续转换用 `.map` / `.and-then`。接收者已静态推断为 `Option`/`Result` 时，避免使用 `option:*` / `result:*` 的函数形式，以便接收者类型和类型流保持可见；未类型化 legacy 数据或 core 边界才保留直接 helper。
 
+旧 `result:unwrap-or` 可通过 `calcit fix --rule core-result-method-v1 --format edn` 预览迁移为接收者 `.unwrap-or`。规则仅自动改写可证明的同一方法调用；core `%err` / `Result :err` 没有成功值，可用具体 fallback 推断成功类型并保留错误类型。普通 `Result<Dynamic,E>`、`:ok` 中的动态成功值和遮蔽类型不因 fallback 自动收窄，须审阅类型边界。先核对预览与 Snapshot revision，再应用、重复预览并运行测试。
+
 以下正反例可以直接由 `docs check-md` 执行。Unicode 字符数量不同于 UTF-8 字节数；`List.get` 的越界结果是 `Option :none`；列表的 `.contains?` 查询索引，`.includes?` 才查询元素；解析失败保留为 `Result` 的错误分支：
 
 ```cirru

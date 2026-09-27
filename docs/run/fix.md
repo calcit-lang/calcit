@@ -73,6 +73,14 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   当前须显式指定 `--rule`，不改写已发布的 preset，
   也不把内部 helper 立即删除。与构造器规则一样，改写只覆盖定义的 `:code`，不盲改
   `:tests` / `:examples`。先预览、核对来源和 revision，再应用并运行严格检查与业务测试。
+- `core-result-method-v1` 只处理 `result:unwrap-or result fallback` 到 `result .unwrap-or fallback`。
+  已证明来自 core 的 `%err error` 或 `Result :err error` 没有成功值，因而可由具体 fallback
+  确定成功类型，同时保留错误类型；方法契约仍须为 `proven`，源码引用、求值次数和顺序也须可证明。
+  普通 `Result<Dynamic,E>`、`%ok` / `Result :ok`（尤其成功值来自 Dynamic）、同名类型遮蔽、
+  函数值和未知 macro 只给 `requires-review`，不把 fallback 当成已存在成功值的类型证据。
+  与 Option 规则一样，本规则须显式选择，不修改已发布 preset，也不自动改写 `:tests` / `:examples`。
+  先运行 `calcit calcit.cirru fix --rule core-result-method-v1 --format edn` 预览，再带原样
+  `--expect-revision` 应用；重复预览应为空，随后运行严格类型检查和项目测试。
 - `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
   同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples

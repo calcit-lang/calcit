@@ -78,6 +78,15 @@
           :tests $ [] $ %{} 'TestEntry (:name |named-none-fallback)
             :code $ quote $ assert= 7 (infer-named-none-fallback)
             :tags $ #{} :unit
+        'infer-named-result-err-fallback $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-named-result-err-fallback ()
+            result:unwrap-or (Result :err 3) 7
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |named-err-fallback-number)
+            :code $ quote $ assert= 7 (infer-named-result-err-fallback)
+            :tags $ #{} :unit
         'infer-none-fallback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-none-fallback ()
             option:unwrap-or (%none) 7
@@ -114,6 +123,15 @@
               assert= 1 $ infer-raise-right true
               assert= true $ try (infer-raise-right false)
                 fn (error) true
+            :tags $ #{} :unit
+        'infer-result-err-fallback $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-result-err-fallback ()
+            result:unwrap-or (%err 3) 7
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |err-fallback-number)
+            :code $ quote $ assert= 7 (infer-result-err-fallback)
             :tags $ #{} :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity) (infer-raise-right true) (infer-raise-left false)

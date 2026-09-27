@@ -1085,7 +1085,7 @@
             :args $ []
         'test-result-unwrap-or $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-result-unwrap-or ()
-            result:unwrap-or (%err 3) 7
+            (%err 3) .unwrap-or 7
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
