@@ -56,7 +56,7 @@ The public, human-facing form is distinct from macro-expanded core definitions a
 | 遇到的写法 | 新代码首选 | 迁移与限制 |
 | --- | --- | --- |
 | `%some value`、`%none`、`%ok value`、`%err error` | `Option :some value`、`Option :none`、`Result :ok value`、`Result :err error` | `core-nominal-constructor-v1` 只改写解析到 core 且保序可证明的调用；被遮蔽或当函数值传递时人工确认 |
-| `option:unwrap value`、`option:unwrap-or value fallback` | `value .unwrap`、`value .unwrap-or fallback` | `core-option-method-v1` 只自动改写接收者有编译器证明的调用；开放类型、未知 macro、函数值引用仍需人工确认 |
+| `option:unwrap value`、`option:unwrap-or value fallback` | `value .unwrap`、`value .unwrap-or fallback` | `core-option-method-v1` 只自动改写接收者有编译器证明的调用；core 空 Option 可由具体 fallback 补足类型，其他开放类型、未知 macro、函数值引用仍需人工确认 |
 | `&str:includes? text fragment`（容易被误记为 `&string:include?`） | `text .includes? fragment` | 当前内部定义的准确拼写是 `&str:includes?`；`.contains?` 对 String 检查索引，不能把两者机械互换 |
 | 静态 `%:: Enum :variant payload`、`%{} Struct (:field value)` | `Enum :variant payload`、`Struct :field value` | 只有类型定义能静态解析、variant/字段契约可证明时才自动修复；动态 prototype 边界仍可显式使用低层形式 |
 
@@ -117,4 +117,4 @@ calcit query context 'calcit.core/option:unwrap' --format edn
 
 `%some/%none/%ok/%err` 从 0.25.0 起标记弃用；在确认真实项目能迁移后，最早于 0.26.0 移除。先用 `calcit fix --rule core-nominal-constructor-v1 --format edn` 预览，再带预览返回的 `--expect-revision` 应用。规则只自动改写编译器已解析到 core、实参数量匹配且处在可证明保序的源码调用；把 helper 当函数值、局部遮蔽或跨未证明的 macro 边界时需人工确认，不会插入 Dynamic 或 `unsafe-coerce`。String 的 `.contains?`（索引）与 `.includes?`（子串）仍有命名歧义，但 `.contains?` 属于跨容器 trait，不适合在本试点机械重命名。
 
-对 Option 的内部取值 helper，可用 `calcit fix --rule core-option-method-v1 --format edn` 预览。只有接收者方法解析为 `proven` 且实现确实指向相同 core helper 时才提供自动改写；已核实单次保留调用的 core `let`、`cond`、`do`、`fn`、`assert=` 宏允许通过，其他宏仍需审阅。`Option<Dynamic>`、函数值或无来源映射的表达式也不能自动改写。应用后重复预览应为空，并运行严格类型检查与项目测试。此规则仅处理 `option:unwrap` / `option:unwrap-or`，不把 Result、String 或其他内部函数类推为同一个迁移。
+对 Option 的内部取值 helper，可用 `calcit fix --rule core-option-method-v1 --format edn` 预览。只有接收者方法解析为 `proven` 且实现确实指向相同 core helper 时才提供自动改写；已核实单次保留调用的 core `let`、`cond`、`do`、`fn`、`assert=` 宏允许通过，其他宏仍需审阅。已证明来自 core 的空值 `%none` 或 `Option :none` 即使起初显示 `Option<Dynamic>`，也可由具体 fallback 推出 payload 类型，再检查方法分派；普通 `Option<Dynamic>`、函数值或无来源映射的表达式仍不能自动改写。应用后重复预览应为空，并运行严格类型检查与项目测试。此规则仅处理 `option:unwrap` / `option:unwrap-or`，不把 Result、String 或其他内部函数类推为同一个迁移。
