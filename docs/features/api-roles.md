@@ -117,4 +117,4 @@ calcit query context 'calcit.core/option:unwrap' --format edn
 
 `%some/%none/%ok/%err` 从 0.25.0 起标记弃用；在确认真实项目能迁移后，最早于 0.26.0 移除。先用 `calcit fix --rule core-nominal-constructor-v1 --format edn` 预览，再带预览返回的 `--expect-revision` 应用。规则只自动改写编译器已解析到 core、实参数量匹配且处在可证明保序的源码调用；把 helper 当函数值、局部遮蔽或跨未证明的 macro 边界时需人工确认，不会插入 Dynamic 或 `unsafe-coerce`。String 的 `.contains?`（索引）与 `.includes?`（子串）仍有命名歧义，但 `.contains?` 属于跨容器 trait，不适合在本试点机械重命名。
 
-对 Option 的内部取值 helper，可用 `calcit fix --rule core-option-method-v1 --format edn` 预览。只有接收者方法解析为 `proven` 且实现确实指向相同 core helper 时才提供自动改写；`Option<Dynamic>`、函数值、未知 macro 或无来源映射的表达式仍需人工处理。应用后重复预览应为空，并运行严格类型检查与项目测试。此规则仅处理 `option:unwrap` / `option:unwrap-or`，不把 Result、String 或其他内部函数类推为同一个迁移。
+对 Option 的内部取值 helper，可用 `calcit fix --rule core-option-method-v1 --format edn` 预览。只有接收者方法解析为 `proven` 且实现确实指向相同 core helper 时才提供自动改写；已核实单次保留调用的 core `let`、`cond`、`do`、`fn`、`assert=` 宏允许通过，其他宏仍需审阅。`Option<Dynamic>`、函数值或无来源映射的表达式也不能自动改写。应用后重复预览应为空，并运行严格类型检查与项目测试。此规则仅处理 `option:unwrap` / `option:unwrap-or`，不把 Result、String 或其他内部函数类推为同一个迁移。

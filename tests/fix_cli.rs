@@ -3216,6 +3216,142 @@ fn core_option_method_rule_uses_direct_get_env_type_evidence() {
 }
 
 #[test]
+fn core_option_method_rule_accepts_single_use_core_macro_wrappers() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (definition, code, return_type) in [
+    (
+      "asserted-option",
+      "quote $ defn asserted-option (opt) $ assert= 2 $ do $ option:unwrap-or opt 0",
+      "'Unit",
+    ),
+    (
+      "closure-option",
+      "quote $ defn closure-option (opt) $ let ((f $ fn () $ option:unwrap-or opt 0)) (f)",
+      "'Number",
+    ),
+  ] {
+    let target = format!("fix-command.main/{definition}");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--code", code]),
+      "install macro-wrapped helper call",
+    );
+    let schema = format!("quote $ :: 'Fn $ {{}} (:args $ [] (:: 'Option 'Number)) (:return {return_type})");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", &target, "--code", &schema]),
+      "declare Option receiver schema",
+    );
+    let behavior = if definition == "asserted-option" {
+      "quote $ asserted-option $ Option :some 2"
+    } else {
+      "quote $ assert= 2 $ closure-option $ Option :some 2"
+    };
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "add-test", &target, "preserves-result", "--code", behavior]),
+      "attach Calcit behavior test",
+    );
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-option-method-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        definition,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, "macro-wrapped Option method preview");
+    let report = parse_stdout(&preview);
+    assert_eq!(report["data"]["suggestions"][0]["applicability"], "machine-applicable", "{report}");
+    assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+    let applied = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-option-method-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        definition,
+        "--apply",
+        "--allow-no-vcs",
+        "--expect-revision",
+        report["revision"].as_str().expect("preview revision"),
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&applied, "macro-wrapped Option method apply");
+    let repeated = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-option-method-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        definition,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&repeated, "macro-wrapped Option method idempotence");
+    assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+    assert_success(
+      &run_calcit(&snapshot, &["test", &target, "--require-match"]),
+      "Calcit behavior test after macro-wrapped migration",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/gated-option",
+        "--code",
+        "quote $ defn gated-option (opt) $ if-not false (option:unwrap-or opt 0) 0",
+      ],
+    ),
+    "install unapproved macro wrapper",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/gated-option",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] (:: 'Option 'Number)) (:return 'Number)",
+      ],
+    ),
+    "declare gated Option schema",
+  );
+  let unknown_macro = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-option-method-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "gated-option",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&unknown_macro, "unapproved macro preview");
+  let report = parse_stdout(&unknown_macro);
+  assert_eq!(report["data"]["suggestions"][0]["applicability"], "requires-review", "{report}");
+  assert_eq!(report["data"]["suggestions"][0]["replacement"], serde_json::Value::Null);
+}
+
+#[test]
 fn surface_latest_preset_migrates_named_enum_and_struct_constructors() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
