@@ -32,6 +32,24 @@ const scenarios = [
     },
   },
   {
+    name: "Option helper context recommends receiver method",
+    args: ["src/cirru/calcit-core.cirru", "query", "context", "calcit.core/option:some?", "--format", "json"],
+    check(result) {
+      assert.equal(result.data.id, "calcit.core/option:some?");
+      assert.match(result.data.doc, /\.some\?/);
+      assert.equal(result.data.examples.items[0]?.cirru, "assert= true $\n  %some 1\n  , .some?");
+    },
+  },
+  {
+    name: "Result helper context recommends receiver method",
+    args: ["src/cirru/calcit-core.cirru", "query", "context", "calcit.core/result:ok?", "--format", "json"],
+    check(result) {
+      assert.equal(result.data.id, "calcit.core/result:ok?");
+      assert.match(result.data.doc, /\.ok\?/);
+      assert.equal(result.data.examples.items[0]?.cirru, "assert= true $\n  %ok 1\n  , .ok?");
+    },
+  },
+  {
     name: "module-owned JS FFI definition provenance",
     args: ["calcit/js-ffi-consumer.cirru", "query", "def", "app.main/base-name", "--format", "json"],
     check(result) {
