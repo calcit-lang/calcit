@@ -756,7 +756,9 @@
             :args $ []
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println |WASI-stdout: "|你好") (echo |WASI-echo) (eprintln |WASI-stderr: 42)
-            println |WASI-env: $ option:unwrap-or (get-env |CALCIT_WASI_TEST_ENV) |missing
+            println |WASI-env: $
+              get-env |CALCIT_WASI_TEST_ENV
+              , .unwrap-or |missing
             each (get-args)
               fn (arg) (println |WASI-arg: arg)
             + 1 2

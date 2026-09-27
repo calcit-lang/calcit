@@ -35,7 +35,9 @@
                 let
                     input-path $ &list:nth args 1
                     output-path $ &list:nth args 2
-                    prefix $ option:unwrap-or (get-env |WASI_PREFIX) |
+                    prefix $
+                      get-env |WASI_PREFIX
+                      , .unwrap-or |
                   match
                     .read-text $ fs:path input-path
                     (:ok content)
