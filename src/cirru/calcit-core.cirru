@@ -26,34 +26,42 @@
           :schema $ :: 'Fn $ {} (:return 'Enum)
             :args $ [] 'Dynamic 'Tag
           :tags $ #{} :builtin :internal
-        '%err $ %{} 'CodeEntry (:doc "|Create Err variant of Result")
+        '%err $ %{} 'CodeEntry
+          :doc "|构造 Result<T,E> 的 :err 值；类型名 Result 用于 schema，值由 %err 或具名 Enum 构造语法创建。"
           :code $ quote $ defn %err (message) (%:: Result :err message)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'E
             :generics $ [] 'T 'E
             :return $ :: 'Result 'T 'E
-        '%none $ %{} 'CodeEntry (:doc "|Create None variant of Option")
+          :tags $ #{} :constructor
+        '%none $ %{} 'CodeEntry
+          :doc "|构造 Option<T> 的 :none 值；类型名 Option 用于 schema，值由 %none 或具名 Enum 构造语法创建。需要具体 T 时用 schema 提供类型证据。"
           :code $ quote $ defn %none () (%:: Option :none)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ []
             :generics $ [] 'T
             :return $ :: 'Option 'T
-        '%ok $ %{} 'CodeEntry (:doc "|Create Ok variant of Result")
+          :tags $ #{} :constructor
+        '%ok $ %{} 'CodeEntry
+          :doc "|构造 Result<T,E> 的 :ok 值；类型名 Result 用于 schema，值由 %ok 或具名 Enum 构造语法创建。"
           :code $ quote $ defn %ok (value) (%:: Result :ok value)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'T
             :generics $ [] 'T 'E
             :return $ :: 'Result 'T 'E
-        '%some $ %{} 'CodeEntry (:doc "|Create Some variant of Option")
+          :tags $ #{} :constructor
+        '%some $ %{} 'CodeEntry
+          :doc "|构造 Option<T> 的 :some 值；类型名 Option 用于 schema，值由 %some 或具名 Enum 构造语法创建。已知接收者上的操作优先使用 .method。"
           :code $ quote $ defn %some (value) (%:: Option :some value)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'T
             :generics $ [] 'T
             :return $ :: 'Option 'T
+          :tags $ #{} :constructor
         '%{} $ %{} 'CodeEntry
           :doc "|Construct a struct value. Use a StructDef for nominal values or `_` for an anonymous struct."
           :code $ quote $ defmacro %{} (R & xs)
@@ -2091,7 +2099,7 @@
               assert= |12 $ &str:concat 1 2
             :tags $ #{} :core :unit
         '&str:contains? $ %{} 'CodeEntry
-          :doc "|internal function for checking whether a string has a character at an index\nSyntax: (&str:contains? s index)\nParams: s (string), index (number)\nReturns: boolean\nReturns true when index is a valid character index in s"
+          :doc "|String .contains? 的内部实现，检查字符索引是否有效；应用代码优先使用 text .contains? index。检查子串请用 text .includes? fragment。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
@@ -2170,7 +2178,7 @@
             :code $ quote $ assert= |a (&str:first |abc)
             :tags $ #{} :core :unit
         '&str:includes? $ %{} 'CodeEntry
-          :doc "|internal function for checking if string includes substring\nSyntax: (&str:includes? s substring)\nParams: s (string), substring (string)\nReturns: boolean\nReturns true if string includes substring (alias for contains?)"
+          :doc "|String .includes? 的内部实现，检查是否包含子串；应用代码优先使用 text .includes? fragment。不要与 String .contains? 的字符索引检查混淆。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
@@ -2957,7 +2965,8 @@
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'Option $ %{} 'CodeEntry (:doc "|Rust-style Option enum")
+        'Option $ %{} 'CodeEntry
+          :doc "|Calcit 泛型 Option<T> 的 nominal 类型名，可用于公开 schema；此 core 定义自身是内部实现，不是构造函数。使用 %some/%none 构造值，用 query type 查询已知 Option<T> 的方法。"
           :code $ quote $ def Option
             impl-traits
               defenum Option ([] 'T) (:some 'T) (:none)
@@ -3038,7 +3047,8 @@
           :examples $ []
           :schema $ :: 'Struct
           :tags $ #{} :data :internal
-        'Result $ %{} 'CodeEntry (:doc "|Rust-style Result enum")
+        'Result $ %{} 'CodeEntry
+          :doc "|Calcit 泛型 Result<T,E> 的 nominal 类型名，可用于公开 schema；此 core 定义自身是内部实现，不是构造函数。使用 %ok/%err 构造值，用 query type 查询已知 Result<T,E> 的方法。"
           :code $ quote $ def Result
             impl-traits
               defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
@@ -7250,7 +7260,7 @@
             :generics $ [] 'T
           :tags $ #{} :internal
         'option:unwrap $ %{} 'CodeEntry
-          :doc "|Return the payload of some; raise when the Option is none."
+          :doc "|Option 的内部方法实现。接收者类型已知时优先使用 value .unwrap，让编译器验证 Option<T>；仅在有意保留开放边界时显式调用此内部函数。:none 仍会抛错。"
           :code $ quote $ defn option:unwrap (opt)
             match opt
               (:some value) value

@@ -1951,6 +1951,9 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
   }
 
   println!("\n## Methods\n");
+  println!(
+    "Call the listed `.method` on a typed receiver. A definition path is its implementation reference, not a second recommended call form. `open` or `ambiguous` does not prove a typed call; use `query def` for constructors and `docs read api-roles.md` for API roles.\n"
+  );
   match data.methods {
     Some(methods) if methods.is_empty() => {
       println!("_No methods registered for this type._");

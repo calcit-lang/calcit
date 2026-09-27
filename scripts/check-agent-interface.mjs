@@ -943,6 +943,24 @@ assert.match(contractChild.stdout, /Agent contract digest: md5:[0-9a-f]{32}/);
 assert.match(contractChild.stdout, /calcit docs read edit-tree\.md 'Atomic Transactions'/);
 assert.ok(Buffer.byteLength(contractChild.stdout) < 5_000, "compact mutation contract should remain bounded");
 
+const apiTypeQuery = spawnSync(binary, ["src/cirru/calcit-core.cirru", "query", "type", ":: 'Option 'Number"], {
+  encoding: "utf8",
+  maxBuffer: 4 * 1024 * 1024,
+  env: { ...process.env, NO_COLOR: "1" },
+});
+assert.equal(apiTypeQuery.status, 0, apiTypeQuery.stderr);
+assert.match(apiTypeQuery.stdout, /\.unwrap.*proven/);
+assert.match(apiTypeQuery.stdout, /implementation reference, not a second recommended call form/);
+for (const [definition, role] of [["%some", "constructor"], ["option:unwrap", "internal"], ["&str:includes?", "internal"]]) {
+  const queried = spawnSync(binary, ["src/cirru/calcit-core.cirru", "query", "def", `calcit.core/${definition}`, "--format", "json"], {
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+    env: { ...process.env, NO_COLOR: "1" },
+  });
+  assert.equal(queried.status, 0, `${definition}: ${queried.stderr}`);
+  assert.ok(JSON.parse(queried.stdout).data.tags.includes(role), `${definition} lost its ${role} role`);
+}
+
 const remoteLibsHelp = spawnSync(binary, ["docs", "remote-libs", "--help"], { encoding: "utf8" });
 assert.ifError(remoteLibsHelp.error);
 assert.equal(remoteLibsHelp.status, 0, remoteLibsHelp.stderr);
