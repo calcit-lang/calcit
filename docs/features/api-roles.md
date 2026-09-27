@@ -39,6 +39,18 @@ leads_to:
 
 `?` 表示返回布尔判断，`!` 只用于确有作用或特殊控制语义的公开名字；不要机械地给每个动词添加后缀。模块名和普通函数继续用 kebab-case。公开名称是否是方法由类型契约和解析证据决定，不由字符串里是否有 `:` 或 `&` 决定。内部 helper 与 primitive 暂有不同实现命名；它们不是两套公开语言风格，不承诺用户可依赖其拼写。下一步先迁移公开调用，再根据真实编译器重复逻辑决定是否调整内部名字，避免为了表面一致重做 lowering。
 
+### English reference for Agents
+
+| Role | Preferred public form | Legacy or implementation form |
+| --- | --- | --- |
+| Type and variant | `Option<T>` with `:some` / `:none`; `Result<T,E>` with `:ok` / `:err` | A bare type name is not a constructed value. |
+| Constructor | `Option :some value`, `Result :err error`, `Person :name name` | Migrate `%some`, `%none`, `%ok`, `%err` with `core-nominal-constructor-v1` when the call is statically resolved. |
+| Receiver method | `value .unwrap`, `text .includes? fragment` | `option:unwrap value` and `&str:includes? text fragment` are implementation paths, not preferred application calls. |
+| Module function | `parse-float source`, imported `module/function` | Use when there is no natural typed receiver; do not introduce a parallel public `type:verb` spelling. |
+| Internal helper / primitive | No public spelling promised | `option:unwrap` is a core helper; `&str:includes?` and `&list:count` are runtime primitives. Trace them for implementation, not API discovery. |
+
+The public, human-facing form is distinct from macro-expanded core definitions and JS/native/WASI lowering names. Type schemas and receiver resolution—not punctuation alone—establish a method's contract. Keep Calcit's kebab-case, `?` predicates, and meaningful `!` effects; Rust is a model for clear roles, not a mandate to copy Rust syntax. Deprecated constructors may remain during migration, but Agent-facing examples should show one preferred spelling. Ambiguous or shadowed calls require manual review rather than an unproven rewrite.
+
 `Option` / `Result` 等名义定义即使在 core 元数据中带 `:internal`，也可以是公开的 schema 类型和直接构造入口；判断是否推荐给应用要看其**角色和调用契约**，不能只按一个 tag 或定义路径过滤。
 
 | 遇到的写法 | 新代码首选 | 迁移与限制 |
