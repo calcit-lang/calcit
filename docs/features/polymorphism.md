@@ -245,7 +245,7 @@ do
 
 ## Option and Result helpers
 
-`Option T` and `Result T E` are generic core enums. Their constructors remain `%some`/`%none` and `%ok`/`%err`; use inferred methods for normal pipelines without losing type relationships:
+`Option<T>` 和 `Result<T,E>` 是泛型 core Enum。具名定义同时承担类型与构造入口：`Option :some value` / `Option :none`、`Result :ok value` / `Result :err error`。`%some/%none/%ok/%err` 是待迁移的旧 helper；普通链式处理应继续用可推断的接收者方法：
 
 - Option: `.some?`, `.none?`, `.map`, `.unwrap`, `.unwrap-or`, `.and-then`, `.fold`
 - Result: `.ok?`, `.err?`, `.map`, `.map-err`, `.unwrap-or`, `.and-then`
@@ -300,19 +300,19 @@ The same operations are available as methods on enum values:
 
 ```cirru
 do
-  assert= (%some 1) $ optionally 1
-  assert= (%none) $ optionally nil
-  assert= (%some 2) $ find ([] 1 2 3) (fn (x) (> x 1))
-  assert= (%ok 1.5) $ parse-float |1.5
+  assert= (Option :some 1) $ optionally 1
+  assert= (Option :none) $ optionally nil
+  assert= (Option :some 2) $ find ([] 1 2 3) (fn (x) (> x 1))
+  assert= (Result :ok 1.5) $ parse-float |1.5
   assert= |fallback $ (get-env |__MISSING_ENV__) .unwrap-or |fallback
   assert= 0 $
-    %none
+    Option :none
     , .unwrap-or 0
-  assert= (%ok 4)
-    (%ok 2) .and-then $ fn (x)
-      %ok $ * x 2
-  assert= (%err |failed!)
-    (%err |failed) .map-err $ fn (e) (str e |!)
+  assert= (Result :ok 4)
+    (Result :ok 2) .and-then $ fn (x)
+      Result :ok $ * x 2
+  assert= (Result :err |failed!)
+    (Result :err |failed) .map-err $ fn (e) (str e |!)
 ```
 
 ## Notes

@@ -959,7 +959,19 @@ for (const [definition, role] of [["%some", "constructor"], ["option:unwrap", "i
   });
   assert.equal(queried.status, 0, `${definition}: ${queried.stderr}`);
   assert.ok(JSON.parse(queried.stdout).data.tags.includes(role), `${definition} lost its ${role} role`);
+  if (definition === "%some") {
+    assert.ok(JSON.parse(queried.stdout).data.tags.includes("deprecated"), "legacy constructor should expose deprecation to Agents");
+    assert.match(JSON.parse(queried.stdout).data.doc, /Option :some value/);
+  }
 }
+
+const directOptionQuery = spawnSync(binary, ["src/cirru/calcit-core.cirru", "query", "def", "calcit.core/Option", "--format", "json"], {
+  encoding: "utf8",
+  maxBuffer: 4 * 1024 * 1024,
+  env: { ...process.env, NO_COLOR: "1" },
+});
+assert.equal(directOptionQuery.status, 0, directOptionQuery.stderr);
+assert.match(JSON.parse(directOptionQuery.stdout).data.doc, /Option :some value/);
 
 const remoteLibsHelp = spawnSync(binary, ["docs", "remote-libs", "--help"], { encoding: "utf8" });
 assert.ifError(remoteLibsHelp.error);

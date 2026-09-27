@@ -58,9 +58,9 @@ The low-level primitive `&{}` takes flat key-value pairs:
 let
     m $ {} (:a 1) (:b 2) (:c 3)
   println $ get m :a
-  ; => (%some 1)
+  ; => (Option :some 1)
   println $ get m :missing
-  ; => (%none)
+  ; => (Option :none)
   println $ contains? m :b
   ; => true
   println $ count m
@@ -83,12 +83,11 @@ erasing it to `Dynamic`.
 let
     nested $ {} (:user $ {} (:name |Alice) (:age 30))
   println $ get-in nested $ [] :user :name
-  ; => (%some |Alice)
+  ; => (Option :some |Alice)
 ```
 
-`get-in` returns `Option<Dynamic>` (`%some` for a resolved value and `%none`
-for a missing path or a `nil` encountered while traversing). Use
-`.unwrap-or` 或原生 `match` 后再消费 payload。
+`get-in` 返回 `Option<Dynamic>`：查到值对应 `Option :some value`，缺失路径或遍历时遇到 `nil`
+对应 `Option :none`。消费 payload 前请使用 `.unwrap-or` 或原生 `match`。
 
 ## Modifying Maps
 

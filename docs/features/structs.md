@@ -94,7 +94,7 @@ let
 
 Arguments must be tag/value pairs. Required fields must be present, while a field
 declared as `Option<T>` may be omitted; the constructor inserts the nominal
-`%none` variant. Non-`Option` fields are never silently filled with `nil`.
+`Option :none` 值；非 `Option` 字段绝不会被静默填成 `nil`。
 
 Use the `%{}` macro to instantiate a struct:
 
@@ -223,7 +223,7 @@ let
 
 `%{}?` 与底层 `&%{}?` 已从运行时和 JS backend 移除；严格模式与
 `--compat-types` 都会返回 `E_PARTIAL_STRUCT_NIL_FILL`。改用 `%{}` 明确填写字段；
-确实可能缺失的字段应声明为 `Option<T>` 并提供 `%none`。遗漏字段也可能需要业务默认值，
+确实可能缺失的字段应声明为 `Option<T>` 并提供 `Option :none`。遗漏字段也可能需要业务默认值，
 因此不能自动改写。
 
 The low-level `&%{}` form accepts fields as flat keyword-value pairs (no type checking):

@@ -486,7 +486,7 @@ div
 
 ### 5.3 可选参数优先使用 `Option`
 
-新代码优先用 `Option<T>` 表达“可能没有值”，减少通过参数列表里的 `?` 设置可选参数，也减少用 `nil` 表达缺失。函数末尾连续声明为 `Option<T>` 的参数可以在调用时省略；Calcit 会依次补成 `%none`。同样，已知 Struct 定义可以直接用 `Struct :field value` 构造，声明为 `Option<T>` 的字段可以省略并自动得到 `%none`：
+新代码优先用 `Option<T>` 表达“可能没有值”，减少通过参数列表里的 `?` 设置可选参数，也减少用 `nil` 表达缺失。函数末尾连续声明为 `Option<T>` 的参数可以在调用时省略；Calcit 会依次补成 `Option :none`。同样，已知 Struct 定义可以直接用 `Struct :field value` 构造，声明为 `Option<T>` 的字段可以省略并自动得到 `Option :none`：
 
 ```cirru.no-check
 defn request (url trace-id timeout-ms)
@@ -496,13 +496,13 @@ defn request (url trace-id timeout-ms)
   println url trace-id timeout-ms
 
 request |/health
-request |/health (%some |trace-1)
+request |/health (Option :some |trace-1)
 
 defstruct Profile (:name 'String) (:bio (:: 'Option 'String))
 Profile :name |Ada
 ```
 
-这项语法糖只处理**结尾连续的** `Option` 参数：位于必填参数之前的 `Option` 仍然必须显式传 `(%none)` 或 `(%some value)`，带 rest 参数的函数也不会自动补值。`?` 参数只用于兼容已有的非类型化 API，其缺省值是 `nil`；默认严格诊断会以 `E_LEGACY_OPTIONAL_PARAM` 拒绝它。`%{}?` 及其底层写法 `&%{}?` 已退役，包括 `--compat-types` 在内都会触发 `E_PARTIAL_STRUCT_NIL_FILL`；修改旧接口时应迁移到 `Option` 和完整 `%{}` 构造。在 FFI 或非类型化边界之外，缺失值使用 `Option`，失败使用 `Result`，无有效返回值使用 `Unit`。`Nil` 与 `Unit` 是不同类型：声明返回 `Unit` 的函数应返回 `&unit` 或以 Unit effect 结束；默认严格诊断以 `E_NIL_FOR_UNIT` 拒绝返回位置的 `nil` / `;nil`。
+这项语法糖只处理**结尾连续的** `Option` 参数：位于必填参数之前的 `Option` 仍然必须显式传 `(Option :none)` 或 `(Option :some value)`，带 rest 参数的函数也不会自动补值。`?` 参数只用于兼容已有的非类型化 API，其缺省值是 `nil`；默认严格诊断会以 `E_LEGACY_OPTIONAL_PARAM` 拒绝它。`%{}?` 及其底层写法 `&%{}?` 已退役，包括 `--compat-types` 在内都会触发 `E_PARTIAL_STRUCT_NIL_FILL`；修改旧接口时应迁移到 `Option` 和完整 `%{}` 构造。在 FFI 或非类型化边界之外，缺失值使用 `Option`，失败使用 `Result`，无有效返回值使用 `Unit`。`Nil` 与 `Unit` 是不同类型：声明返回 `Unit` 的函数应返回 `&unit` 或以 Unit effect 结束；默认严格诊断以 `E_NIL_FOR_UNIT` 拒绝返回位置的 `nil` / `;nil`。
 
 Option/Result 的级联优先使用接收者方法，不要在每一层都 `unwrap`：
 
@@ -545,19 +545,19 @@ Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。
 
 需要尝试备用来源时使用 `.or-else`；它只在 `none`/`err` 分支调用 fallback。`.unwrap` 只适合已经由原生 `match`、`.some?` 或明确不变量证明为 `some` 的位置；默认值用 `.unwrap-or`，继续转换用 `.map` / `.and-then`。接收者已静态推断为 `Option`/`Result` 时，避免使用 `option:*` / `result:*` 的函数形式，以便接收者类型和类型流保持可见；未类型化 legacy 数据或 core 边界才保留直接 helper。
 
-以下正反例可以直接由 `docs check-md` 执行。Unicode 字符数量不同于 UTF-8 字节数；`List.get` 的越界结果是 `%none`；列表的 `.contains?` 查询索引，`.includes?` 才查询元素；解析失败保留为 `Result` 的错误分支：
+以下正反例可以直接由 `docs check-md` 执行。Unicode 字符数量不同于 UTF-8 字节数；`List.get` 的越界结果是 `Option :none`；列表的 `.contains?` 查询索引，`.includes?` 才查询元素；解析失败保留为 `Result` 的错误分支：
 
 ```cirru
 let
     xs $ [] 10 20
   assert= 2 $ count |A😀
   assert= 5 $ &str:utf8-byte-count |A😀
-  assert= (%some 20) $ xs.get 1
-  assert= (%none) $ xs.get 2
+  assert= (Option :some 20) $ xs.get 1
+  assert= (Option :none) $ xs.get 2
   assert= true $ xs.contains? 1
   assert= false $ xs.contains? 20
   assert= true $ xs.includes? 20
-  assert= (%ok 1.5) $ parse-float |1.5
+  assert= (Result :ok 1.5) $ parse-float |1.5
   assert= true $ (parse-float |bad).err?
 ```
 

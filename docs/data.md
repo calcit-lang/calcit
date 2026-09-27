@@ -31,11 +31,11 @@ Calcit uses persistent values by default, with a small set of explicit stateful 
 
 ## Named Data
 
-- **Struct**: `defstruct` creates a `StructDef`; `%{}` constructs a fixed-field struct value.
-- **Enum**: `defenum` creates an `EnumDef`; `%::` constructs a tagged enum value.
-- **Anonymous Struct / Enum**: `%{} _ ...` and `%:: _ ...` create short-lived values without named definitions.
-- **Option**: `Option T` has `%some T` and `%none` variants.
-- **Result**: `Result T E` has `%ok T` and `%err E` variants.
+- **Struct**：`defstruct` 创建 `StructDef`；具名定义可直接用 `Struct :field value` 构造。
+- **Enum**：`defenum` 创建 `EnumDef`；具名定义可直接用 `Enum :variant value` 构造。
+- **匿名 Struct / Enum**：`%{} _ ...` 和 `%:: _ ...` 创建没有具名定义的临时值。
+- **Option**：`Option<T>` 用 `Option :some value` 或 `Option :none` 构造。
+- **Result**：`Result<T,E>` 用 `Result :ok value` 或 `Result :err error` 构造。
 
 Prefer named structs and enums at module boundaries: their definitions carry schemas, support trait attachment, and give static analysis more information than ad-hoc maps or anonymous values.
 

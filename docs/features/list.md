@@ -74,11 +74,11 @@ let
 let
     xs $ [] 10 20 30 40
   println $ nth xs 0
-  ; => (%some 10)
+  ; => (Option :some 10)
   println $ first xs
-  ; => (%some 10)
+  ; => (Option :some 10)
   println $ last xs
-  ; => (%some 40)
+  ; => (Option :some 40)
   println $ count xs
   ; => 4
 ```
@@ -89,10 +89,10 @@ let
 let
     xs $ [] :a :b :c
   println $ xs.get 1
-  ; => (%some :b)
+  ; => (Option :some :b)
 ```
 
-已知 `List<T>` 的访问优先使用接收者方法 `.get`、`.nth`、`.first` 和 `.last`，让元素类型随 receiver 进入推断；对应的前缀函数仍可使用，并不是 `.get` 的替代契约。索引不存在时返回 `%none`，不要把缺失当作 `nil`。
+已知 `List<T>` 的访问优先使用接收者方法 `.get`、`.nth`、`.first` 和 `.last`，让元素类型随 receiver 进入推断；对应的前缀函数仍可使用，并不是 `.get` 的替代契约。索引不存在时返回 `Option :none`，不要把缺失当作 `nil`。
 
 ### 索引范围与元素成员
 
@@ -199,15 +199,15 @@ let
   ; => $ [] 1 2 3
   println $ find xs
     fn (x) (> x 3)
-  ; => (%some 4)
+  ; => (Option :some 4)
   println $ find-index xs
     fn (x) (> x 3)
-  ; => (%some 3)
+  ; => (Option :some 3)
   println $ index-of xs 3
-  ; => (%some 2)
+  ; => (Option :some 2)
 ```
 
-`find` 返回 `Option<T>`，`find-index` 和 `index-of` 返回 `Option<Number>`；找不到时为 `%none`，使用前应明确处理该分支。
+`find` 返回 `Option<T>`，`find-index` 和 `index-of` 返回 `Option<Number>`；找不到时为 `Option :none`，使用前应明确处理该分支。
 
 ## Transforming
 
@@ -331,7 +331,7 @@ let
       fn (i k)
         [] k $ nth vs i
   println zipped
-  ; => $ [] ([] :a (%some 1)) ([] :b (%some 2)) ([] :c (%some 3))
+  ; => $ [] ([] :a (Option :some 1)) ([] :b (Option :some 2)) ([] :c (Option :some 3))
 ```
 
 ### Deduplicate

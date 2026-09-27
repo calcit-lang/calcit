@@ -62,7 +62,7 @@ sort entries $ fn (a b)
 
 `%{}?` 与底层 `&%{}?` 已退役，`--compat-types` 也不再恢复其隐式 `nil` 补字段行为。
 旧代码应改用完整的 `%{}` 构造；确实可能缺失的字段先声明为 `Option<T>`，再显式提供
-`%none`，不能由编译器猜测业务默认值。旧调用会给出 `E_PARTIAL_STRUCT_NIL_FILL` 迁移错误。
+`Option :none`，不能由编译器猜测业务默认值。旧调用会给出 `E_PARTIAL_STRUCT_NIL_FILL` 迁移错误。
 
 基于 String path 的 `try-read-file path` 与 `try-write-file path content` 包装已移除。
 分别改为 `.read-text (fs:path path)` 与 `.write-text (fs:path path) content`，仍返回相同的
@@ -294,7 +294,7 @@ definition-attached tests/examples 与仓库外消费者仍未纳入完整性证
 候选并不证明函数体对缺失值的处理、显式 `nil` 与省略调用是否等价，也不证明 macro、跨模块消费者
 和函数值调用均可定位。因此该规则目前一律标记 `needs-review`，不接受 `--apply`，也不在默认 preset 中。
 人工迁移应在审阅这些语义后，把声明和所有调用点一起改为明确的 `Option` 契约并运行严格检查与业务测试；
-不要把 `nil` 一律改成 `%none`，也不要为了通过检查扩大 `Dynamic`。
+不要把 `nil` 一律改成 `Option :none`，也不要为了通过检查扩大 `Dynamic`。
 
 ### Step A：确认 Calcit CLI 版本
 
@@ -522,12 +522,12 @@ Struct 字段是定义的一部分，因此已知 struct 上的 `:field` 和 `.f
 
 | API | 当前返回类型 | 迁移注意点 |
 | --- | --- | --- |
-| `find-index` | `Option<Number>` | 不再用 `-1`；索引运算前先处理 `%none` |
+| `find-index` | `Option<Number>` | 不再用 `-1`；索引运算前先处理 `Option :none` |
 | `first` / `last` | `Option<T>` | 空集合和空字符串可能没有元素 |
-| `nth` | `Option<T>` | 越界是 `%none`；不要把结果直接当元素值 |
+| `nth` | `Option<T>` | 越界是 `Option :none`；不要把结果直接当元素值 |
 | `get` | `Option<T>` | Map/List 等可缺失查找返回 Option；显式 `Dynamic` 的运行值若为 Struct，则按运行时字段名返回 `Option<Dynamic>`；已知 Struct 改用 `(:field value)` |
-| `get-in` | `Option<T>`（开放动态路径常为 `Option<Dynamic>`） | 任一路径缺失都是 `%none` |
-| `get-env` | `Option<String>` | 未设置的环境变量是 `%none` |
+| `get-in` | `Option<T>`（开放动态路径常为 `Option<Dynamic>`） | 任一路径缺失都是 `Option :none` |
+| `get-env` | `Option<String>` | 未设置的环境变量是 `Option :none` |
 
 不要用 `str` 或 `turn-string` 掩盖尚未处理的 `Option<T>` / `Result<T,E>`。默认 strict mode 会以
 `E_NOMINAL_ENUM_STRINGIFICATION` 拒绝这种隐式转换；先用 `match`、`.unwrap-or` 或对应 helper 取出 payload。

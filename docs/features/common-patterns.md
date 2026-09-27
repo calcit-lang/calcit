@@ -122,17 +122,16 @@ let
       fn (current)
         inc $ current .unwrap
   println result1
-  ; => (%some 1)
+  ; => (Option :some 1)
   println result2
   ; => {} (:a $ {} (:b $ {} (:c 100)))
   println result3
   ; => {} (:a $ {} (:b $ {} (:c 2)))
 ```
 
-`update-in` passes `Option<T>` to its updater. Existing values arrive as
-`%some value`; a missing leaf arrives as `%none`. Use `.unwrap` only when the
-path is known to exist, or use `.fold`/`.unwrap-or` to define the creation
-behavior explicitly. An empty path updates `%some data`.
+`update-in` 将 `Option<T>` 传给 updater。已有值对应 `Option :some value`，缺失叶子对应
+`Option :none`；只有已证明路径存在时才使用 `.unwrap`，否则通过 `.fold` / `.unwrap-or`
+明确新建语义。空路径会更新 `Option :some data`。
 
 ### Merging Maps
 
@@ -215,7 +214,7 @@ let
     result3 $ str-find-index |hello-world |world
   ; result1 => true
   ; result2 => true
-  ; result3 => (%some 6) (index of |world in |hello-world)
+  ; result3 => (Option :some 6) (index of |world in |hello-world)
   [] result1 result2 result3
 ```
 
@@ -346,7 +345,7 @@ let
     content-result source.read-text
   content-result.and-then $ fn (content)
     println content
-    %ok &unit
+    Result :ok &unit
 ```
 
 `fs:path` 构造 nominal `FsPath`，不会规范化路径或触碰文件系统。`.read-text`、`.read-dir`、`.walk-dir` 与 `.write-text` 都返回 `Result`，因此预期内的 I/O 失败留在类型流中；`.read-dir` 只枚举即时子项，`.walk-dir` 递归枚举。String 不提供文件效果方法；旧 `try-read-file` / `try-write-file` 已退役，`try-read-dir` 与 raw raising procedure 暂留为兼容入口。Native 与 Node-hosted 的生成 JavaScript 支持这些文件效果；browser JavaScript 不提供 `.read-dir` 与 `.walk-dir`。WASI 0.3 Component command 支持 preopen 内最多 4 MiB 的 UTF-8 文本读写；写入采用 create + truncate，失败可能留下部分内容，不保证原子替换。`.read-dir` 和 `.walk-dir` 仍待实现，core WASM 会明确拒绝文件效果。

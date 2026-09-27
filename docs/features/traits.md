@@ -279,7 +279,7 @@ Two helpers are useful when debugging trait + method dispatch:
 
 - `&methods-of` returns a list of available method names (strings, including the leading dot).
 - `&inspect-methods` prints impl records and methods to stderr, and returns the value unchanged.
-- `impl-origin` returns the trait origin as `Option<Trait>`; inherent method bags return `%none`.
+- `impl-origin` 返回 trait 来源 `Option<Trait>`；内建方法集合返回 `Option :none`。
 
 ```cirru
 let
@@ -306,7 +306,9 @@ let
     shape $ %:: Shape :point 10 20
     impls $ &enum:impls shape
   any? impls $ fn (impl)
-    = (impl-origin impl) (%some MyFoo)
+    match (impl-origin impl)
+      (:some origin) $ = origin MyFoo
+      (:none) false
 ```
 
 ## Checking trait requirements

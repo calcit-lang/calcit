@@ -303,7 +303,7 @@ let
       .-textContent node
       ; host absence becomes ordinary Calcit data only by explicit conversion
       js-nullish->option node
-    %none
+    Option :none
 ```
 
 ### 3.3 方法调用体验
