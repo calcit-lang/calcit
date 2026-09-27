@@ -73,7 +73,7 @@
           :code $ quote $ defn infer-raise-left (enabled)
             let
                 value $ if enabled (raise |missing-left) (%some 2)
-              option:unwrap value
+              value .unwrap
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Bool
@@ -87,7 +87,7 @@
           :code $ quote $ defn infer-raise-right (enabled)
             let
                 value $ if enabled (%some 1) (raise |missing-right)
-              option:unwrap value
+              value .unwrap
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Bool

@@ -3352,6 +3352,390 @@ fn core_option_method_rule_accepts_single_use_core_macro_wrappers() {
 }
 
 #[test]
+fn core_option_method_rule_resolves_short_option_name_in_source_namespace() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("calcit/test-types-inference.cirru", &snapshot).expect("copy Calcit inference Snapshot");
+  for definition in ["infer-raise-left", "infer-raise-right"] {
+    let target = format!("test-types-inference.main/{definition}");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "tree",
+          "replace",
+          &target,
+          "--path",
+          "@3.2",
+          "--input-format",
+          "cirru",
+          "--expect",
+          "quote $ value .unwrap",
+          "--code",
+          "quote $ option:unwrap value",
+        ],
+      ),
+      "restore legacy source call in temporary Snapshot",
+    );
+    let args = [
+      "--rule",
+      "core-option-method-v1",
+      "--ns",
+      "test-types-inference.main",
+      "--def",
+      definition,
+      "--format",
+      "json",
+    ];
+    let preview = run_fix(&snapshot, &args);
+    assert_success(&preview, "short core Option preview");
+    let report = parse_stdout(&preview);
+    assert_eq!(report["data"]["suggestions"][0]["applicability"], "machine-applicable", "{report}");
+    assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+    let applied = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-option-method-v1",
+        "--ns",
+        "test-types-inference.main",
+        "--def",
+        definition,
+        "--apply",
+        "--allow-no-vcs",
+        "--expect-revision",
+        report["revision"].as_str().expect("preview revision"),
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&applied, "short core Option apply");
+    let repeated = run_fix(&snapshot, &args);
+    assert_success(&repeated, "short core Option idempotence");
+    assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+    assert_success(
+      &run_calcit(&snapshot, &["test", &target, "--require-match"]),
+      "Calcit Option/raise behavior test",
+    );
+  }
+}
+
+#[test]
+fn core_option_method_rule_does_not_assume_shadowed_short_option_is_core() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/Option",
+        "--code",
+        "quote $ defenum Option ([] 'T) (:some 'T) (:none)",
+      ],
+    ),
+    "install local Option enum",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "schema", "fix-command.main/Option", "--code", "quote $ :: 'EnumDef"],
+    ),
+    "declare local Option enum",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/shadowed-option",
+        "--code",
+        "quote $ defn shadowed-option () $ option:unwrap $ Option :some 2",
+      ],
+    ),
+    "install core helper call with local Option constructor",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/shadowed-option",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+      ],
+    ),
+    "declare helper schema",
+  );
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-option-method-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "shadowed-option",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "shadowed short Option preview");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["suggestions"][0]["applicability"], "requires-review", "{report}");
+  assert_eq!(report["data"]["suggestions"][0]["replacement"], serde_json::Value::Null);
+}
+
+#[test]
+fn imported_callable_return_keeps_its_declaration_namespace() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "add-ns", "fix-command.foreign"]),
+    "add foreign namespace",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.foreign/Option",
+        "--code",
+        "quote $ defenum Option ([] 'T) (:some 'T) (:none)",
+      ],
+    ),
+    "install foreign Option enum",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "schema", "fix-command.foreign/Option", "--code", "quote $ :: 'EnumDef"],
+    ),
+    "declare foreign Option enum",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.foreign/make-option",
+        "--code",
+        "quote $ defn make-option () $ Option :some 2",
+      ],
+    ),
+    "install foreign Option constructor",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.foreign/make-option",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Number)",
+      ],
+    ),
+    "declare short foreign Option return",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/foreign-value",
+        "--code",
+        "quote $ defn foreign-value () $ fix-command.foreign/make-option",
+      ],
+    ),
+    "install cross-namespace caller",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/foreign-value",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'fix-command.foreign/Option 'Number)",
+      ],
+    ),
+    "declare qualified consumer return",
+  );
+  let query = run_calcit(
+    &snapshot,
+    &[
+      "query",
+      "type-at",
+      "fix-command.main/foreign-value",
+      "--path",
+      "@3",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&query, "query imported callable return type");
+  let report = parse_stdout(&query);
+  assert_eq!(
+    report["data"]["inferred_type"], ":: 'fix-command.foreign/Option 'Number",
+    "{report}"
+  );
+  assert!(
+    report["data"]["static_methods"].as_array().is_none_or(|methods| !methods
+      .iter()
+      .any(|method| method["name"] == ".unwrap" && method["status"] == "proven")),
+    "foreign Option must not inherit core methods: {report}"
+  );
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.foreign/make-option-hinted",
+        "--code",
+        "quote $ defn make-option-hinted () (hint-fn $ {} (:args $ []) (:return $ :: 'Option 'Number)) (Option :some 3)",
+      ],
+    ),
+    "install hint-only foreign callable",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/foreign-hinted-value",
+        "--code",
+        "quote $ defn foreign-hinted-value () $ fix-command.foreign/make-option-hinted",
+      ],
+    ),
+    "install caller of hint-only foreign callable",
+  );
+  let hinted = run_calcit(
+    &snapshot,
+    &[
+      "query",
+      "type-at",
+      "fix-command.main/foreign-hinted-value",
+      "--path",
+      "@3",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&hinted, "query hint-only imported return type");
+  let report = parse_stdout(&hinted);
+  assert_eq!(
+    report["data"]["inferred_type"], ":: 'fix-command.foreign/Option 'Number",
+    "{report}"
+  );
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.foreign/pass-through",
+        "--code",
+        "quote $ defn pass-through (value) value",
+      ],
+    ),
+    "install cross-namespace generic helper",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.foreign/pass-through",
+        "--code",
+        "quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] 'T) (:return 'T)",
+      ],
+    ),
+    "declare generic identity contract",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/Option",
+        "--code",
+        "quote $ defenum Option ([] 'T) (:some 'T) (:none)",
+      ],
+    ),
+    "install caller-owned Option enum",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "schema", "fix-command.main/Option", "--code", "quote $ :: 'EnumDef"],
+    ),
+    "declare caller-owned Option enum",
+  );
+  let foreign_again = run_calcit(
+    &snapshot,
+    &[
+      "query",
+      "type-at",
+      "fix-command.main/foreign-value",
+      "--path",
+      "@3",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&foreign_again, "query foreign return after caller shadowing");
+  let foreign_again_report = parse_stdout(&foreign_again);
+  assert_eq!(
+    foreign_again_report["data"]["inferred_type"], ":: 'fix-command.foreign/Option 'Number",
+    "{foreign_again_report}"
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/passed-option",
+        "--code",
+        "quote $ defn passed-option () $ fix-command.foreign/pass-through $ assert-type (Option :some 4) $ :: 'fix-command.main/Option 'Number",
+      ],
+    ),
+    "install generic caller",
+  );
+  let passed = run_calcit(
+    &snapshot,
+    &[
+      "query",
+      "type-at",
+      "fix-command.main/passed-option",
+      "--path",
+      "@3",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&passed, "query generic caller-owned return type");
+  let report = parse_stdout(&passed);
+  assert_eq!(report["data"]["inferred_type"], ":: 'fix-command.main/Option 'Number", "{report}");
+}
+
+#[test]
 fn surface_latest_preset_migrates_named_enum_and_struct_constructors() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

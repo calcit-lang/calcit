@@ -3026,6 +3026,7 @@ fn plan_core_option_method_fixes(
               .and_then(|item| item.inferred_type.clone())
           });
         let proven = inferred.as_ref().is_some_and(|receiver_type| {
+          let receiver_type = runner::preprocess::resolve_namespace_type_refs_for_body(receiver_type.clone(), namespace);
           let is_core_option = matches!(
             receiver_type.as_ref(),
             CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "calcit.core/Option" && args.len() == 1

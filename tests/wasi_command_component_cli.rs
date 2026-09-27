@@ -255,7 +255,7 @@ fn manifest_result_branches_retain_nominal_payload_type() {
     .expect("query Manifest type evidence");
   assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
   let report: serde_json::Value = serde_json::from_slice(&result.stdout).expect("JSON type-at envelope");
-  assert_eq!(report["data"]["inferred_type"], ":: 'Result 'Manifest 'String");
+  assert_eq!(report["data"]["inferred_type"], ":: 'calcit.core/Result 'Manifest 'String");
   assert_eq!(report["data"]["confidence"], "exact");
   assert_eq!(report["data"]["dynamic_intent"], serde_json::Value::Null);
 }
