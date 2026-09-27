@@ -52,6 +52,23 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic
             :return $ :: 'Option 'Dynamic
+        'infer-match-raise $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-match-raise (enabled)
+            let
+                parsed $ if enabled (%ok 1) (%err |missing)
+                value $ match parsed
+                  (:ok n) (%some n)
+                  (:err error) (raise error)
+              value .unwrap
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Bool
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-live-option-and-error)
+            :code $ quote $ do
+              assert= 1 $ infer-match-raise true
+              assert= true $ try (infer-match-raise false)
+                fn (error) (= error |missing)
+            :tags $ #{} :unit
         'infer-raise-left $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-raise-left (enabled)
             let

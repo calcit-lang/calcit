@@ -327,19 +327,41 @@ pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
   }
 }
 
-/// Merge the body types of a preprocessed pair-based `match` expression.
-fn infer_match_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+/// Read branch bodies from either the pair-based or indexed enum representation.
+fn preprocessed_match_bodies(xs: &CalcitList) -> Option<Vec<&Calcit>> {
   if xs.len() < 3 {
     return None;
   }
 
-  let mut inferred: Option<Arc<CalcitTypeAnnotation>> = None;
-  for branch in xs.iter().skip(2) {
+  let indexed_table = matches!(xs.get(2), Some(Calcit::EnumDef(_)));
+  let branches = if indexed_table {
+    let Calcit::List(table) = xs.get(3)? else { return None };
+    table.iter().collect::<Vec<_>>()
+  } else {
+    xs.iter().skip(2).collect::<Vec<_>>()
+  };
+  let mut bodies = Vec::with_capacity(branches.len());
+  for branch in branches {
+    if indexed_table && matches!(branch, Calcit::Nil) {
+      continue;
+    }
     let Calcit::List(pair) = branch else { return None };
     if pair.len() != 2 {
       return None;
     }
-    let branch_type = resolve_type_value(pair.get(1)?, scope_types)?;
+    bodies.push(pair.get(1)?);
+  }
+  Some(bodies)
+}
+
+/// Merge the body types of a preprocessed `match` expression.
+fn infer_match_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  let mut inferred: Option<Arc<CalcitTypeAnnotation>> = None;
+  for branch_expr in preprocessed_match_bodies(xs)? {
+    if expression_definitely_diverges(branch_expr) {
+      continue;
+    }
+    let branch_type = resolve_type_value(branch_expr, scope_types)?;
     inferred = Some(match inferred {
       Some(previous) => merge_if_branch_types(previous, branch_type)?,
       None => branch_type,
@@ -668,9 +690,7 @@ fn infer_guaranteed_nominal_impl_return(expr: &Calcit) -> Option<Arc<CalcitTypeA
       }
       Calcit::Syntax(CalcitSyntax::Match, _) => {
         let mut merged = None;
-        for branch in items.iter().skip(2) {
-          let Calcit::List(pair) = branch else { return None };
-          let branch_expr = pair.get(1)?;
+        for branch_expr in preprocessed_match_bodies(items)? {
           if expression_definitely_diverges(branch_expr) {
             continue;
           }
@@ -3404,6 +3424,67 @@ mod tests {
     ]);
 
     assert_eq!(infer_type_from_expr(&match_expr, &ScopeTypes::new()), Some(option_number));
+  }
+
+  #[test]
+  fn preprocessed_match_skips_only_proven_raise_branches() {
+    let option_number = core_type_ref("Option", vec![Arc::new(CalcitTypeAnnotation::Number)]);
+    let live = local("value", option_number.clone());
+    let raise = proc_call(CalcitProc::Raise, vec![Calcit::Str(Arc::from("missing"))]);
+    let match_expr = |first: Calcit, second: Calcit| {
+      Calcit::from(vec![
+        Calcit::Syntax(CalcitSyntax::Match, Arc::from("tests.match-raise")),
+        Calcit::Tag(EdnTag::from("some")),
+        Calcit::from(vec![Calcit::Tag(EdnTag::from("some")), first]),
+        Calcit::from(vec![Calcit::Tag(EdnTag::from("none")), second]),
+      ])
+    };
+
+    assert_eq!(
+      infer_type_from_expr(&match_expr(live.clone(), raise.clone()), &ScopeTypes::new()),
+      Some(option_number.clone())
+    );
+    assert_eq!(
+      infer_type_from_expr(&match_expr(raise, live.clone()), &ScopeTypes::new()),
+      Some(option_number.clone())
+    );
+    assert_ne!(
+      infer_type_from_expr(&match_expr(live, local("open", calcit::DYNAMIC_TYPE.clone())), &ScopeTypes::new()),
+      Some(option_number)
+    );
+  }
+
+  #[test]
+  fn indexed_match_preserves_live_type_without_narrowing_dynamic() {
+    let enum_def = CalcitEnumDef::from_struct(CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(
+        EdnTag::from("Status"),
+        vec![EdnTag::from("ok"), EdnTag::from("err")],
+      )),
+      values: Arc::new(vec![Calcit::from(vec![]), Calcit::from(vec![])]),
+    })
+    .expect("valid enum");
+    let option_number = core_type_ref("Option", vec![Arc::new(CalcitTypeAnnotation::Number)]);
+    let live = local("value", option_number.clone());
+    let raise = proc_call(CalcitProc::Raise, vec![Calcit::Str(Arc::from("missing"))]);
+    let branch = |tag: &str, value: Calcit| Calcit::from(vec![Calcit::from(vec![Calcit::Tag(EdnTag::from(tag))]), value]);
+    let indexed = |other: Calcit| {
+      Calcit::from(vec![
+        Calcit::Syntax(CalcitSyntax::Match, Arc::from("tests.match-raise")),
+        Calcit::Tag(EdnTag::from("ok")),
+        Calcit::EnumDef(enum_def.clone()),
+        Calcit::from(vec![branch("ok", live.clone()), branch("err", other), Calcit::Nil]),
+      ])
+    };
+
+    assert_eq!(
+      infer_type_from_expr(&indexed(raise), &ScopeTypes::new()),
+      Some(option_number.clone())
+    );
+    assert_ne!(
+      infer_type_from_expr(&indexed(local("open", calcit::DYNAMIC_TYPE.clone())), &ScopeTypes::new()),
+      Some(option_number)
+    );
   }
 
   #[test]
