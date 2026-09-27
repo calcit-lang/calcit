@@ -3171,6 +3171,282 @@ fn empty_option_helpers_infer_fallback_type_for_both_constructor_spellings() {
 }
 
 #[test]
+fn core_result_method_rule_migrates_proven_error_with_typed_fallback() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("calcit/test-wasm.cirru", &snapshot).expect("copy WASM Snapshot");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "tree",
+        "replace",
+        "test-wasm.main/test-result-unwrap-or",
+        "--path",
+        "@3",
+        "--input-format",
+        "cirru",
+        "--expect",
+        "quote $ (%err 3) .unwrap-or 7",
+        "--code",
+        "quote $ result:unwrap-or (%err 3) 7",
+      ],
+    ),
+    "restore legacy Result helper",
+  );
+  let args = [
+    "--rule",
+    "core-result-method-v1",
+    "--ns",
+    "test-wasm.main",
+    "--def",
+    "test-result-unwrap-or",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &args);
+  assert_success(&preview, "Result method preview");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["suggestions"][0]["applicability"], "machine-applicable", "{report}");
+  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+  let stale = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-result-method-v1",
+      "--ns",
+      "test-wasm.main",
+      "--def",
+      "test-result-unwrap-or",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      "md5:stale",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!stale.status.success());
+  assert!(String::from_utf8_lossy(&stale.stderr).contains("Snapshot revision mismatch"));
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-result-method-v1",
+      "--ns",
+      "test-wasm.main",
+      "--def",
+      "test-result-unwrap-or",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "Result method apply");
+  let repeated = run_fix(&snapshot, &args);
+  assert_success(&repeated, "Result method idempotence preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+
+  let named_snapshot = directory.path().join("named-result.cirru");
+  fs::copy("calcit/test-types-inference.cirru", &named_snapshot).expect("copy named Result Snapshot");
+  let named_args = [
+    "--rule",
+    "core-result-method-v1",
+    "--ns",
+    "test-types-inference.main",
+    "--def",
+    "infer-named-result-err-fallback",
+    "--format",
+    "json",
+  ];
+  let named_preview = run_fix(&named_snapshot, &named_args);
+  assert_success(&named_preview, "named Result method preview");
+  let named_report = parse_stdout(&named_preview);
+  assert_eq!(
+    named_report["data"]["suggestions"][0]["applicability"], "machine-applicable",
+    "{named_report}"
+  );
+  assert_eq!(named_report["data"]["validation"]["status"], "passed", "{named_report}");
+  let named_applied = run_fix(
+    &named_snapshot,
+    &[
+      "--rule",
+      "core-result-method-v1",
+      "--ns",
+      "test-types-inference.main",
+      "--def",
+      "infer-named-result-err-fallback",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      named_report["revision"].as_str().expect("named preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&named_applied, "named Result method apply");
+  let named_repeated = run_fix(&named_snapshot, &named_args);
+  assert_success(&named_repeated, "named Result idempotence preview");
+  assert_eq!(parse_stdout(&named_repeated)["data"]["suggestions"], serde_json::json!([]));
+  assert_success(
+    &run_calcit(
+      &named_snapshot,
+      &[
+        "test",
+        "test-types-inference.main/infer-named-result-err-fallback",
+        "--require-match",
+      ],
+    ),
+    "named Result behavior after method migration",
+  );
+}
+
+#[test]
+fn result_error_helpers_infer_fallback_without_erasing_error_payload() {
+  for definition in ["infer-result-err-fallback", "infer-named-result-err-fallback"] {
+    let target = format!("test-types-inference.main/{definition}");
+    let result = run_calcit(
+      Path::new("calcit/test-types-inference.cirru"),
+      &["query", "type-at", &target, "--path", "@3", "--format", "json"],
+    );
+    assert_success(&result, "Result fallback type query");
+    let report = parse_stdout(&result);
+    assert_eq!(report["data"]["inferred_type"], "'Number", "{report}");
+    assert_eq!(report["data"]["confidence"], "exact", "{report}");
+  }
+  let receiver = run_calcit(
+    Path::new("calcit/test-types-inference.cirru"),
+    &[
+      "query",
+      "type-at",
+      "test-types-inference.main/infer-result-err-fallback",
+      "--path",
+      "@3.1",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&receiver, "Result error payload type query");
+  assert_eq!(
+    parse_stdout(&receiver)["data"]["inferred_type"],
+    ":: 'calcit.core/Result 'Dynamic 'Number"
+  );
+}
+
+#[test]
+fn core_result_method_rule_keeps_open_and_shadowed_receivers_for_review() {
+  let directory = TestDirectory::create();
+  for (name, code, schema) in [
+    (
+      "open-result",
+      "quote $ defn open-result (value) (result:unwrap-or value 7)",
+      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Result 'Dynamic 'Number)) (:return 'Dynamic)",
+    ),
+    (
+      "open-ok-result",
+      "quote $ defn open-ok-result (value) (result:unwrap-or (%ok value) 7)",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+    ),
+  ] {
+    let snapshot = directory.path().join(format!("{name}.cirru"));
+    fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fix fixture");
+    let target = format!("fix-command.main/{name}");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--code", code]),
+      "install Result helper call",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", &target, "--code", schema]),
+      "declare Result schema",
+    );
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-result-method-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, "open Result preview");
+    let report = parse_stdout(&preview);
+    assert_eq!(report["data"]["suggestions"][0]["applicability"], "requires-review", "{report}");
+  }
+
+  let snapshot = directory.path().join("shadowed-result.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy shadowing fixture");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/Result",
+        "--code",
+        "quote $ defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)",
+      ],
+    ),
+    "install local Result enum",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "schema", "fix-command.main/Result", "--code", "quote $ :: 'EnumDef"],
+    ),
+    "declare local Result enum",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/shadowed-result",
+        "--code",
+        "quote $ defn shadowed-result () (result:unwrap-or (Result :err 3) 7)",
+      ],
+    ),
+    "install core helper with local Result constructor",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/shadowed-result",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+      ],
+    ),
+    "declare shadowed helper schema",
+  );
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-result-method-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "shadowed-result",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "shadowed Result preview");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["suggestions"][0]["applicability"], "requires-review", "{report}");
+}
+
+#[test]
 fn core_option_method_rule_requires_review_without_proven_receiver() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
