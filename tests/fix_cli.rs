@@ -3146,6 +3146,76 @@ fn core_option_method_rule_requires_review_without_proven_receiver() {
 }
 
 #[test]
+fn core_option_method_rule_uses_direct_get_env_type_evidence() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/env-or",
+        "--code",
+        "quote $ defn env-or () $ option:unwrap-or (get-env |CALCIT_TEST_ENV) |missing",
+      ],
+    ),
+    "install direct get-env helper call",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/env-or",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)",
+      ],
+    ),
+    "declare env-or schema",
+  );
+  let args = [
+    "--rule",
+    "core-option-method-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "env-or",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &args);
+  assert_success(&preview, "get-env Option method preview");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["suggestions"][0]["applicability"], "machine-applicable", "{report}");
+  assert_eq!(report["data"]["validation"]["status"], "passed");
+  let revision = report["revision"].as_str().expect("preview revision");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-option-method-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "env-or",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      revision,
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "get-env Option method apply");
+  let updated = fs::read_to_string(&snapshot).expect("updated fixture should read");
+  assert!(updated.contains("get-env |CALCIT_TEST_ENV"), "snapshot: {updated}");
+  assert!(updated.contains(".unwrap-or |missing"), "snapshot: {updated}");
+}
+
+#[test]
 fn surface_latest_preset_migrates_named_enum_and_struct_constructors() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

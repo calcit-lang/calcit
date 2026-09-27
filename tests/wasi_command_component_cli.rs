@@ -261,6 +261,27 @@ fn manifest_result_branches_retain_nominal_payload_type() {
 }
 
 #[test]
+fn direct_get_env_call_retains_source_type_evidence() {
+  for (snapshot, target, path) in [
+    ("calcit/test-wasi-command.cirru", "app.main/main!", "@6.2.0"),
+    ("examples/wasi-command/calcit.cirru", "app.main/main!", "@3.2.3.1.2.1.0"),
+  ] {
+    let result = Command::new(env!("CARGO_BIN_EXE_calcit"))
+      .args([snapshot, "query", "type-at", target, "--path", path, "--format", "json"])
+      .output()
+      .expect("query direct get-env type evidence");
+    assert!(result.status.success(), "{}: {}", snapshot, String::from_utf8_lossy(&result.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&result.stdout).expect("JSON type-at envelope");
+    assert_eq!(
+      report["data"]["inferred_type"], ":: 'calcit.core/Option 'String",
+      "{snapshot}: {report}"
+    );
+    assert_eq!(report["data"]["confidence"], "exact", "{snapshot}: {report}");
+    assert_eq!(report["data"]["dynamic_intent"], serde_json::Value::Null);
+  }
+}
+
+#[test]
 fn effectful_result_method_keeps_nominal_callback_and_static_lowering() {
   let result = Command::new(env!("CARGO_BIN_EXE_calcit"))
     .args([

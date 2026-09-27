@@ -72,14 +72,67 @@ pub struct ResolvedSourceUsage {
   pub macro_origin: Vec<String>,
 }
 
+/// A processed call tied to its original call head, retained only for semantic queries.
+#[derive(Debug, Clone)]
+pub struct SourceExpressionEvidence {
+  pub location: NodeLocation,
+  pub processed: Calcit,
+  pub inferred_type: Option<Arc<CalcitTypeAnnotation>>,
+}
+
 thread_local! {
   static RESOLVED_SOURCE_USAGE_TRACE: RefCell<Option<Vec<ResolvedSourceUsage>>> = const { RefCell::new(None) };
+  static SOURCE_EXPRESSION_TRACE: RefCell<Option<Vec<SourceExpressionEvidence>>> = const { RefCell::new(None) };
   #[cfg(test)]
   static TEST_WARN_DYN_METHOD: Cell<bool> = const { Cell::new(false) };
   #[cfg(test)]
   static TEST_STRICT_TYPES: Cell<bool> = const { Cell::new(false) };
   #[cfg(test)]
   static TEST_PROJECT_NAMESPACES: RefCell<HashSet<Arc<str>>> = RefCell::new(HashSet::new());
+}
+
+/// Re-preprocess one definition and retain the compiler's actual result for source-headed calls.
+/// This recovers type evidence when lowering removes every located child of a call.
+pub fn trace_definition_source_expressions(
+  ns: &str,
+  def: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<Vec<SourceExpressionEvidence>, CalcitErr> {
+  let code = program::lookup_def_code(ns, def).ok_or_else(|| {
+    CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Var,
+      format!("unknown ns/def in program: {ns}/{def}"),
+      call_stack,
+      Some(NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]))),
+    )
+  })?;
+  let previous = SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(Some(Vec::new())));
+  debug_assert!(previous.is_none(), "source expression traces must not be nested");
+  let mut scope_types = ScopeTypes::new();
+  let result = builtins::meta::with_compiling_def(ns, def, || {
+    calcit::with_type_annotation_warning_context(format!("{ns}/{def}"), || {
+      preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, call_stack)
+    })
+  });
+  let expressions = SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(previous).unwrap_or_default());
+  result.map(|_| expressions)
+}
+
+/// A source coordinate is usable only when preprocessing produced one unique call at that path.
+pub fn unique_source_expression_at_path<'a>(
+  evidence: &'a [SourceExpressionEvidence],
+  ns: &str,
+  def: &str,
+  path: &[usize],
+) -> Option<&'a SourceExpressionEvidence> {
+  let mut matching = evidence.iter().filter(|item| {
+    item.location.ns.as_ref() == ns
+      && item.location.def.as_ref() == def
+      && item.location.coord.iter().map(|index| usize::from(*index)).eq(path.iter().copied())
+  });
+  let selected = matching.next()?;
+  matching.next().is_none().then_some(selected)
 }
 
 /// Re-preprocess one source definition and retain only compiler-resolved definition references.
@@ -2092,7 +2145,31 @@ pub fn preprocess_expr(
       } else {
         // TODO whether function bothers this...
         // println!("start calling: {}", expr);
-        preprocess_list_call(xs, scope_defs, scope_types, file_ns, check_warnings, call_stack).map(into_executable_call)
+        let processed = into_executable_call(preprocess_list_call(
+          xs,
+          scope_defs,
+          scope_types,
+          file_ns,
+          check_warnings,
+          call_stack,
+        )?);
+        if SOURCE_EXPRESSION_TRACE.with(|trace| trace.borrow().is_some())
+          && let Some(head) = xs.first()
+          && matches!(head, Calcit::Symbol { .. } | Calcit::Import { .. })
+          && let Some(location) = derive_call_expr_location(head)
+        {
+          let inferred_type = resolve_type_value(&processed, scope_types);
+          SOURCE_EXPRESSION_TRACE.with(|trace| {
+            if let Some(items) = trace.borrow_mut().as_mut() {
+              items.push(SourceExpressionEvidence {
+                location,
+                processed: processed.clone(),
+                inferred_type,
+              });
+            }
+          });
+        }
+        Ok(processed)
       }
     }
     Calcit::Number(..)

@@ -2590,8 +2590,16 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
     runner::preprocess::compile_source_def_for_snapshot(namespace, &definition, &warnings, &CallStackList::default()).err();
   let compiled = program::lookup_compiled_def(namespace, &definition);
   let processed_root = compiled.as_ref().map(|compiled| &compiled.preprocessed_code);
-  let processed_target = processed_root
+  let located_target = processed_root
     .and_then(|root| find_preprocessed_node_at_path(root, namespace, &definition, &target_path, matches!(target_node, Cirru::List(_))));
+  let traced = if compile_error.is_none() && located_target.is_none() && matches!(target_node, Cirru::List(_)) {
+    runner::preprocess::trace_definition_source_expressions(namespace, &definition, &RefCell::new(vec![]), &CallStackList::default())
+      .unwrap_or_default()
+  } else {
+    vec![]
+  };
+  let traced_target = runner::preprocess::unique_source_expression_at_path(&traced, namespace, &definition, &target_path);
+  let processed_target = located_target.or_else(|| traced_target.map(|item| &item.processed));
   let source_target = code_to_calcit(
     &target_node,
     namespace,
@@ -2602,7 +2610,9 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
       .collect::<Result<Vec<_>, _>>()?,
   )?;
   let inference_target = processed_target.unwrap_or(&source_target);
-  let inferred = infer_type_at_target(&source_target, processed_target);
+  let inferred = traced_target
+    .and_then(|item| item.inferred_type.clone())
+    .or_else(|| infer_type_at_target(&source_target, processed_target));
   let expected = expected_type_at_path(entry, processed_root, namespace, &definition, &target_path);
   let inferred_rendered = inferred
     .as_ref()
