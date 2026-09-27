@@ -25,15 +25,30 @@ leads_to:
 
 调用前先判断角色，再找拼写：类型名描述值的形状，构造器创建值，方法以已知类型的值为接收者，命名空间函数执行独立操作，内部函数只是编译器或 core 的实现入口。同一操作在内部可能有多种表示，不代表每种表示都应成为用户的首选 API。
 
-这套规则参考 Rust API 中「类型、构造、方法各有位置」的可预测性，但不照搬 snake_case 或 `Type::method` 语法。Calcit 保留有意义的 kebab-case、谓词 `?` 和作用标记 `!`。具名 Enum 定义同时是 schema 中的类型名和构造值时的可调用入口：`Option :some value` 与 `Result :err error` 中的类型名都必须解析到对应 core 定义。`%some/%none/%ok/%err` 是旧构造 helper，后续按 [#1420](https://github.com/calcit-lang/calcit/issues/1420) 的 fix 迁移。
+这套规则参考 Rust API 中「类型、构造、方法各有位置」的可预测性，但不照搬 snake_case 或 `Type::method` 语法。Calcit 保留有意义的 kebab-case、谓词 `?` 和作用标记 `!`。具名 Enum 定义同时是 schema 中的类型名和构造值时的可调用入口：`Option :some value` 与 `Result :err error` 中的类型名都必须解析到对应 core 定义。`%some/%none/%ok/%err` 是旧构造 helper，已有 [#1420](https://github.com/calcit-lang/calcit/issues/1420) 的 fix 可迁移；本页只推荐直接构造。
 
-| 角色 | 当前代表 | 类型或签名证据 | 推荐用法 | 其他入口的定位 |
-| --- | --- | --- | --- | --- |
-| nominal 类型 | `Option`、`Result`；`:: 'List 'Number`、`:: 'Map 'Tag 'Number` | `Option<'T>`、`Result<'T,'E>`、`List<Number>`、`Map<Tag,Number>` | 用类型名写 schema、`query type` 查方法 | core 定义可能带 `:internal`，不表示名义类型不可用于公开 schema；具名 Enum 定义也能直接构造值 |
-| 构造器 | `Option :some value` / `Option :none`、`Result :ok value` / `Result :err error`；`[]`、`{}`、字符串字面量 | `Option :some` 保留 `T -> Option<T>`；`Result :ok` 保留 `T -> Result<T,E>` | 具名 Enum 直接调用定义，随后让推断保留具体类型 | `%some/%none/%ok/%err` 是待迁移的旧 helper；`%::` 留给动态 prototype 和兼容边界 |
-| 实例方法 | `option .unwrap`、`result .unwrap-or fallback`、`text .includes? fragment`、`items .get index`、`table .get key` | `Option<Number>.unwrap: () -> Number`；`String.includes?: (String) -> Bool`；`List<Number>.get: (Number) -> Option<Number>`；`Map<Tag,Number>.get: (Tag) -> Option<Number>` | 接收者类型已知、`query type` 显示 `proven` 时优先使用 | `query type` 中显示的 `calcit.core/&...` 是实现定义链接，不是与 `.method` 平级的推荐调用 |
-| 命名空间函数 | `parse-float source`、用户模块的 `ns/function` | `parse-float: String -> Result<Number,String>` | 操作本身无接收者时使用；项目函数按模块导入 | 不能仅因名字里有 `:` 就判定为用户公开 API |
-| 内部实现 | `option:unwrap`、`&str:includes?`、`&list:count` | 内部定义带 `:internal`；底层签名可供定位 | 通常只在维护 core 或明确的开放边界使用 | 先查接收者的 `.method` 和类型证据，避免绕开推断或把内部拼写传播到应用 |
+## 表层命名矩阵
+
+| 角色 | 首选形态 | 命名与类型依据 | 不作为新代码入口 |
+| --- | --- | --- | --- |
+| 类型、trait、Enum 变体 | `Person`、`Option`、`Result`；`:some`、`:err` | 类型名用 PascalCase；variant 用 tag，由定义验证 payload；`Option<T>` / `Result<T,E>` 写进 schema | 把 `%some` 当作类型或把裸 `Option` 当作已构造的值 |
+| 构造 | `Person :name name`、`Option :some value`、`Result :err error`；集合字面量 `[]` / `{}` | 调用已知名义定义，保留 `T -> Option<T>` 等具体关系，不以 `%` 前缀猜构造类别 | `%{}`、`%::` 的静态可替代场景；`%some/%none/%ok/%err` |
+| 接收者方法 | `value .unwrap`、`text .includes? fragment`、`items .get index` | 接收者类型决定可用方法与返回类型；名称用 kebab-case，布尔谓词以 `?` 结尾；`query type` 应显示 `proven` | 在业务代码直接使用 `option:unwrap`、`&str:includes?` |
+| 无接收者函数 | `parse-float source`、导入的 `module/function` | 行为无自然接收者，或显式跨模块复用；名称用 kebab-case；`parse-float: String -> Result<Number,String>` | 为已有 typed receiver 另造平行的公开 `type:verb` 函数 |
+| 内部 helper 与 primitive | `option:unwrap`、`&str:includes?`、`&list:count` | `:internal` 标签与实现链接表明它们是 core/lowering 细节；`&` 保留给 runtime/backend primitive | 把内部路径写成应用文档中的首选 API，或仅凭名字推断其类型安全性 |
+
+`?` 表示返回布尔判断，`!` 只用于确有作用或特殊控制语义的公开名字；不要机械地给每个动词添加后缀。模块名和普通函数继续用 kebab-case。公开名称是否是方法由类型契约和解析证据决定，不由字符串里是否有 `:` 或 `&` 决定。内部 helper 与 primitive 暂有不同实现命名；它们不是两套公开语言风格，不承诺用户可依赖其拼写。下一步先迁移公开调用，再根据真实编译器重复逻辑决定是否调整内部名字，避免为了表面一致重做 lowering。
+
+`Option` / `Result` 等名义定义即使在 core 元数据中带 `:internal`，也可以是公开的 schema 类型和直接构造入口；判断是否推荐给应用要看其**角色和调用契约**，不能只按一个 tag 或定义路径过滤。
+
+| 遇到的写法 | 新代码首选 | 迁移与限制 |
+| --- | --- | --- |
+| `%some value`、`%none`、`%ok value`、`%err error` | `Option :some value`、`Option :none`、`Result :ok value`、`Result :err error` | `core-nominal-constructor-v1` 只改写解析到 core 且保序可证明的调用；被遮蔽或当函数值传递时人工确认 |
+| `option:unwrap value`、`option:unwrap-or value fallback` | `value .unwrap`、`value .unwrap-or fallback` | 先确认 `value` 的 `Option<T>` 类型；内部 helper 不自动改成无证据的动态方法调用 |
+| `&str:includes? text fragment`（容易被误记为 `&string:include?`） | `text .includes? fragment` | 当前内部定义的准确拼写是 `&str:includes?`；`.contains?` 对 String 检查索引，不能把两者机械互换 |
+| 静态 `%:: Enum :variant payload`、`%{} Struct (:field value)` | `Enum :variant payload`、`Struct :field value` | 只有类型定义能静态解析、variant/字段契约可证明时才自动修复；动态 prototype 边界仍可显式使用低层形式 |
+
+这张对照表只规定**公开源码的首选写法**，不是要求一次删除所有内部实现名。内部函数即使仍出现在 `query type` 的定义路径中，也不得反向成为 Agent 推荐的应用代码。
 
 ## 可运行的角色示例
 
