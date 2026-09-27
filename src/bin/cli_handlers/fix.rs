@@ -3088,11 +3088,6 @@ fn plan_core_nominal_method_fixes(
         let short_constructor_is_shadowed = matches!(receiver, Cirru::List(parts)
           if matches!(parts.first(), Some(Cirru::Leaf(name)) if name.as_ref() == kind.nominal()))
           && !core_nominal_type_is_unshadowed(snapshot, namespace, kind.nominal(), &local_bindings);
-        let result_ok_constructor = kind == CoreNominalMethodKind::Result
-          && matches!(receiver, Cirru::List(parts)
-            if matches!(parts.as_slice(), [Cirru::Leaf(name), _] if matches!(name.as_ref(), "%ok" | "calcit.core/%ok"))
-              || matches!(parts.as_slice(), [Cirru::Leaf(name), Cirru::Leaf(variant), _]
-                if matches!(name.as_ref(), "Result" | "calcit.core/Result") && variant.as_ref() == ":ok"));
         let inferred = processed
           .as_ref()
           .and_then(|compiled| {
@@ -3110,7 +3105,6 @@ fn plan_core_nominal_method_fixes(
               .and_then(|item| item.inferred_type.clone())
           });
         let proven = !short_constructor_is_shadowed
-          && !result_ok_constructor
           && (inferred.as_ref().is_some_and(|receiver_type| {
             let receiver_type = runner::preprocess::resolve_namespace_type_refs_for_body(receiver_type.clone(), namespace);
             let is_core_nominal = matches!(

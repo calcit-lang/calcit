@@ -52,6 +52,16 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic
             :return $ :: 'Option 'Dynamic
+        'infer-later-dynamic-generic $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-later-dynamic-generic (value) (same-type-second 7 value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |dynamic-second-is-returned)
+            :code $ quote $ do
+              assert= |hello $ infer-later-dynamic-generic |hello
+              assert= 4 $ infer-later-dynamic-generic 4
+            :tags $ #{} :unit
         'infer-match-raise $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-match-raise (enabled)
             let
@@ -86,6 +96,26 @@
             :args $ []
           :tests $ [] $ %{} 'TestEntry (:name |named-err-fallback-number)
             :code $ quote $ assert= 7 (infer-named-result-err-fallback)
+            :tags $ #{} :unit
+        'infer-named-result-ok-concrete $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-named-result-ok-concrete ()
+            result:unwrap-or (Result :ok 9) 7
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |retains-named-concrete-success)
+            :code $ quote $ assert= 9 (infer-named-result-ok-concrete)
+            :tags $ #{} :unit
+        'infer-named-result-ok-open $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-named-result-ok-open (value)
+            result:unwrap-or (Result :ok value) 7
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-named-success-payload)
+            :code $ quote $ do
+              assert= |hello $ infer-named-result-ok-open |hello
+              assert= 4 $ infer-named-result-ok-open 4
             :tags $ #{} :unit
         'infer-none-fallback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-none-fallback ()
@@ -133,6 +163,26 @@
           :tests $ [] $ %{} 'TestEntry (:name |err-fallback-number)
             :code $ quote $ assert= 7 (infer-result-err-fallback)
             :tags $ #{} :unit
+        'infer-result-ok-concrete $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-result-ok-concrete ()
+            result:unwrap-or (%ok 9) 7
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |retains-concrete-success)
+            :code $ quote $ assert= 9 (infer-result-ok-concrete)
+            :tags $ #{} :unit
+        'infer-result-ok-open $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn infer-result-ok-open (value)
+            result:unwrap-or (%ok value) 7
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-success-payload)
+            :code $ quote $ do
+              assert= |hello $ infer-result-ok-open |hello
+              assert= 4 $ infer-result-ok-open 4
+            :tags $ #{} :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity) (infer-raise-right true) (infer-raise-left false)
             assert= 2 $ recur-types-safe
@@ -161,6 +211,12 @@
           :code $ quote $ defn reload! () (:: 'Unit)
           :examples $ []
           :schema $ :: 'Dynamic
+        'same-type-second $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn same-type-second (left right) right
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T 'T
+            :generics $ [] 'T
         'test-count-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-count-inference ()
             assert-type
