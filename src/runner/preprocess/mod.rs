@@ -26,7 +26,7 @@ use checked_call_contract::{
 };
 use type_checking::{
   CallTypeCheckInfo, check_core_fn_arg_types, check_function_return_type, check_local_fn_call_arg_types, check_proc_arg_types,
-  check_reset_arg_types, check_user_fn_arg_types, detect_return_type_hint_from_processed_body,
+  check_recur_arg_types, check_reset_arg_types, check_user_fn_arg_types, detect_return_type_hint_from_processed_body,
   specialize_collection_sort_expected_types,
 };
 use type_inference::{
@@ -4161,12 +4161,12 @@ fn derive_call_expr_location(head: &Calcit) -> Option<NodeLocation> {
   ))
 }
 
-/// Check recur arity in function body
-/// Recursively walks the expression tree to find recur calls and validates argument count
-/// Skips checking for macro-generated functions (containing %, $, etc.)
-fn check_recur_arity_in_expr(
+/// Check recur calls against the arity and parameter types of their lexical function.
+fn check_recur_args_in_expr(
   expr: &Calcit,
   expected_arity: usize,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+  scope_types: &ScopeTypes,
   file_ns: &str,
   def_name: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
@@ -4184,10 +4184,21 @@ fn check_recur_arity_in_expr(
           location,
           check_warnings,
         );
+      } else {
+        let source_location = find_calcit_location_matching(expr, |location| location.def.as_ref() != GENERATED_DEF);
+        check_recur_arg_types(
+          args,
+          expected_types,
+          scope_types,
+          file_ns,
+          def_name,
+          source_location,
+          check_warnings,
+        );
       }
       // Also check nested expressions in recur arguments
       for arg in args {
-        check_recur_arity_in_expr(arg, expected_arity, file_ns, def_name, check_warnings);
+        check_recur_args_in_expr(arg, expected_arity, expected_types, scope_types, file_ns, def_name, check_warnings);
       }
     }
     Calcit::List(xs) => {
@@ -4213,6 +4224,18 @@ fn check_recur_arity_in_expr(
             location,
             check_warnings,
           );
+        } else {
+          let call_args = xs.iter().skip(1).cloned().collect::<Vec<_>>();
+          let source_location = find_calcit_location_matching(expr, |location| location.def.as_ref() != GENERATED_DEF);
+          check_recur_arg_types(
+            &call_args,
+            expected_types,
+            scope_types,
+            file_ns,
+            def_name,
+            source_location,
+            check_warnings,
+          );
         }
       } else if let Some(Calcit::Syntax(s, _)) = xs.first()
         && (s == &CalcitSyntax::Defn
@@ -4225,7 +4248,7 @@ fn check_recur_arity_in_expr(
       }
       // Recurse into all list items
       for item in xs.iter() {
-        check_recur_arity_in_expr(item, expected_arity, file_ns, def_name, check_warnings);
+        check_recur_args_in_expr(item, expected_arity, expected_types, scope_types, file_ns, def_name, check_warnings);
       }
     }
     Calcit::Fn { info, .. } => {
@@ -4243,7 +4266,15 @@ fn check_recur_arity_in_expr(
       };
       // Check body with nested function's arity
       for body_expr in &info.body {
-        check_recur_arity_in_expr(body_expr, nested_arity, file_ns, def_name, check_warnings);
+        check_recur_args_in_expr(
+          body_expr,
+          nested_arity,
+          &info.arg_types,
+          scope_types,
+          file_ns,
+          def_name,
+          check_warnings,
+        );
       }
     }
     _ => {
@@ -8464,6 +8495,10 @@ pub fn preprocess_defn(
           local.type_info = type_info.clone();
         }
       }
+      let recur_param_types = param_symbols
+        .iter()
+        .map(|symbol| body_types.get(symbol).cloned().unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
+        .collect::<Vec<_>>();
       xs = xs.push_right(Calcit::from(zs.clone()));
 
       let mut to_skip = 2;
@@ -8613,7 +8648,7 @@ pub fn preprocess_defn(
           ctx.check_warnings,
         );
 
-        // Check recur arity in function body
+        // Check recur calls against the function's declared parameter types.
         // Skip checking for:
         // 1. Functions with marked args (& or ?) - complex arity rules
         // 2. calcit.core functions - external library, should be fixed separately
@@ -8621,7 +8656,15 @@ pub fn preprocess_defn(
         if !has_marked_args && !is_core_ns {
           let expected_arity = param_symbols.len();
           for body_expr in &processed_body {
-            check_recur_arity_in_expr(body_expr, expected_arity, ctx.file_ns, def_name.as_ref(), ctx.check_warnings);
+            check_recur_args_in_expr(
+              body_expr,
+              expected_arity,
+              &recur_param_types,
+              &body_types,
+              ctx.file_ns,
+              def_name.as_ref(),
+              ctx.check_warnings,
+            );
           }
         }
       }

@@ -94,6 +94,88 @@ fn prepare_project() -> (TestDirectory, PathBuf) {
 }
 
 #[test]
+fn recur_arguments_follow_the_lexical_function_contract() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  assert_success(&run_calcit(&snapshot, &["config", "set", "target", "native"]), "set native target");
+  edit_definition(
+    &snapshot,
+    "typed-recur",
+    "quote $ defn typed-recur (label index) $ if (>= index 2) index $ recur label (inc index)",
+    false,
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/typed-recur",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'String 'Number) (:return 'Number)",
+      ],
+    ),
+    "declare typed recur contract",
+  );
+  edit_definition(&snapshot, "main!", "quote $ defn main! () $ typed-recur |point 0", true);
+  edit_schema(&snapshot, "main!", "Number");
+  edit_definition(&snapshot, "reload!", "quote $ defn reload! () &unit", false);
+  edit_schema(&snapshot, "reload!", "Unit");
+
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "correct recur argument order");
+  assert_success(
+    &run_calcit(&snapshot, &["analyze", "check-public", "--ns", "app.main", "--format", "json"]),
+    "correct public contract",
+  );
+
+  edit_definition(
+    &snapshot,
+    "typed-recur",
+    "quote $ defn typed-recur (label index) $ if (>= index 2) index $ recur (inc index) label",
+    true,
+  );
+  let strict = run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "json"]);
+  assert!(!strict.status.success(), "wrong recur argument order must fail strict checking");
+  let report: serde_json::Value = serde_json::from_slice(&strict.stdout).expect("strict check should return JSON");
+  let diagnostics = report["data"]["definitions"]
+    .as_array()
+    .expect("definitions should be an array")
+    .iter()
+    .find(|definition| definition["definition"] == "app.main/typed-recur")
+    .expect("typed recur definition should be present")["diagnostics"]
+    .as_array()
+    .expect("diagnostics should be an array");
+  let mismatches = diagnostics
+    .iter()
+    .filter(|diagnostic| diagnostic["code"] == "W_RECUR_ARG_TYPE_MISMATCH")
+    .collect::<Vec<_>>();
+  assert_eq!(mismatches.len(), 2, "report: {report}");
+  assert_eq!(mismatches[0]["expected"], ":string");
+  assert_eq!(mismatches[0]["actual"], ":number");
+  assert_eq!(mismatches[1]["expected"], ":number");
+  assert_eq!(mismatches[1]["actual"], ":string");
+  assert!(
+    mismatches[0]["message"]
+      .as_str()
+      .expect("recur diagnostic should include a message")
+      .contains("app.main/typed-recur")
+  );
+
+  let public = run_calcit(&snapshot, &["analyze", "check-public", "--ns", "app.main", "--format", "json"]);
+  assert!(!public.status.success(), "public analysis must reject wrong recur arguments");
+  let report: serde_json::Value = serde_json::from_slice(&public.stdout).expect("public check should return JSON");
+  let recur_diagnostics = report["diagnostics"]
+    .as_array()
+    .expect("diagnostics should be an array")
+    .iter()
+    .filter(|diagnostic| diagnostic["code"] == "W_RECUR_ARG_TYPE_MISMATCH")
+    .collect::<Vec<_>>();
+  assert_eq!(recur_diagnostics.len(), 2, "report: {report}");
+  assert_eq!(recur_diagnostics[0]["location"]["def"], "typed-recur");
+}
+
+#[test]
 fn keep_going_reports_independent_failures_and_blocks_dependents() {
   let (_directory, snapshot) = prepare_project();
   let output = run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "json"]);

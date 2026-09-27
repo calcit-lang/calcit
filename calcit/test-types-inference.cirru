@@ -99,6 +99,9 @@
             :tags $ #{} :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity) (infer-raise-right true) (infer-raise-left false)
+            assert= 2 $ recur-types-safe
+              Person :name |Ada :age 3 :address $ Address :city |X
+              , 0
           :examples $ []
           :schema $ :: 'Dynamic
         'make-dynamic-value $ %{} 'CodeEntry (:doc |)
@@ -106,6 +109,18 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
+        'recur-types-safe $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recur-types-safe (person index)
+            if (>= index 2) index $ recur person $ inc index
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Person 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-typed-recur-parameters)
+            :code $ quote $ assert= 2
+              recur-types-safe
+                Person :name |Ada :age 3 :address $ Address :city |X
+                , 0
+            :tags $ #{} :type-inference :unit
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (:: 'Unit)
           :examples $ []

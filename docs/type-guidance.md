@@ -39,6 +39,10 @@ calcit query context app.main/initial-count --format edn
 
 `type-at` 返回完整推断函数类型；`context` 保留缺省的 `:schema`，另以 `:inferred-schema` 展示编译器证据。查询不写回声明。要主动移除已确认冗余的声明，使用 `edit schema ... --clear` 后重新严格检查及运行测试；不要批量清除无法推断的边界。
 
+## 递归参数遵守函数契约
+
+有固定参数的递归函数应声明 `Fn` schema。`recur` 的每个实参会按所在函数的参数顺序和类型检查；参数个数相同但顺序写错，也会在严格检查与 `analyze check-public` 中报告到调用位置。嵌套函数的 `recur` 遵守嵌套函数自己的参数契约。不要为了让错误的递归调用通过而把参数放宽为 `Dynamic`；应修正实参顺序或在确实需要开放输入的边界显式转换。
+
 ## Dynamic 是边界，不是默认多态
 
 `Dynamic` 适合 JS FFI、框架开放数据、宏和确实无法提前知道的外部输入。普通函数不要用多个 `Dynamic` 表示“它们应该是同一个类型”：输入和返回关联时用 `:generics` 与 TypeVar；只需要能力时用 trait 与 `:where`；同质集合写出元素类型；有限异构数据定义为 Enum；可缺失值使用 `Option<T>`，带失败信息使用 `Result<T, E>`。
