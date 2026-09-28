@@ -31,6 +31,30 @@ test("release manifest records asset name, size, and SHA-256", async () => {
   });
 });
 
+test("release manifest includes the Ubuntu no-WASM binary alongside the standard binary", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "calcit-release-assets-"));
+  const standard = path.join(directory, "calcit");
+  const lightweight = path.join(directory, "calcit-ubuntu22.04-x86_64-no-wasm");
+  await writeFile(standard, "standard");
+  await writeFile(lightweight, "no-wasm");
+
+  const result = spawnSync(process.execPath, ["scripts/release-manifest.mjs", "0.27.0", standard, lightweight], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+
+  const manifest = JSON.parse(result.stdout);
+  assert.deepEqual(manifest.assets, [
+    { name: "calcit", sha256: createHash("sha256").update("standard").digest("hex"), size: 8 },
+    {
+      name: "calcit-ubuntu22.04-x86_64-no-wasm",
+      sha256: createHash("sha256").update("no-wasm").digest("hex"),
+      size: 7,
+    },
+  ]);
+});
+
 test("release manifest reports a concise usage error", () => {
   const result = spawnSync(process.execPath, ["scripts/release-manifest.mjs"], {
     cwd: process.cwd(),

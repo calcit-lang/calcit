@@ -407,6 +407,7 @@ fn main() -> Result<(), String> {
   }
 }
 
+#[cfg(feature = "wasm")]
 fn resolve_public_wasm_options(
   cli_args: &ToplevelCalcit,
   input: Option<&str>,
@@ -539,6 +540,7 @@ fn run_cli() -> Result<(), String> {
 
   // Handle standalone commands that don't need full program loading
   match &cli_args.subcommand {
+    #[cfg(feature = "wasm")]
     Some(CalcitCommand::EmitWasm(command)) => {
       let mut options = resolve_public_wasm_options(
         &cli_args,
@@ -552,6 +554,7 @@ fn run_cli() -> Result<(), String> {
       options.boundary = command.boundary.parse()?;
       return calcit::wasm_cli::run(&options, codegen::emit_wasm::WasmTarget::Core);
     }
+    #[cfg(feature = "wasm")]
     Some(CalcitCommand::EmitWasi(command)) => {
       let mut options = resolve_public_wasm_options(
         &cli_args,
@@ -564,6 +567,10 @@ fn run_cli() -> Result<(), String> {
       );
       options.boundary = command.boundary.parse()?;
       return calcit::wasm_cli::run(&options, codegen::emit_wasm::WasmTarget::Wasi);
+    }
+    #[cfg(not(feature = "wasm"))]
+    Some(CalcitCommand::EmitWasm(_)) | Some(CalcitCommand::EmitWasi(_)) => {
+      return Err("WASM and WASI code generation are disabled in this Calcit build; install a WASM-enabled release or build with `--features wasm`.".to_owned());
     }
     Some(CalcitCommand::Query(query_cmd)) => {
       return cli_handlers::handle_query_command(query_cmd, &cli_args.input);

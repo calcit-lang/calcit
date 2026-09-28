@@ -134,6 +134,42 @@ jobs:
           test "$stacksize" = "33554432"
       - run: ./target/debug/calcit -v
 
+  ubuntu_2204_no_wasm:
+    name: Ubuntu 22.04 no-WASM binary
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify no-WASM normal dependency graph
+        run: |
+          if cargo tree --locked --no-default-features --edges normal | grep -E ' (wasm-encoder|calcit-bindgen|wasmtime) v'; then
+            echo 'WASM dependencies leaked into the no-WASM build' >&2
+            exit 1
+          fi
+      - name: Build and smoke Ubuntu 22.04 release binary
+        run: |
+          cargo build --locked --release --no-default-features --bin calcit
+          file target/release/calcit
+          ldd target/release/calcit
+          target/release/calcit -v
+          target/release/calcit calcit/test.cirru
+          target/release/calcit --emit-path target/no-wasm-js calcit/test.cirru js
+          if target/release/calcit wasm calcit/test.cirru >target/no-wasm-command.out 2>&1; then
+            echo 'WASM command unexpectedly succeeded' >&2
+            exit 1
+          fi
+          grep -F 'WASM and WASI code generation are disabled' target/no-wasm-command.out
+          if target/release/calcit wasi calcit/test.cirru >target/no-wasm-command.out 2>&1; then
+            echo 'WASI command unexpectedly succeeded' >&2
+            exit 1
+          fi
+          grep -F 'WASM and WASI code generation are disabled' target/no-wasm-command.out
+
   # Rust unit/integration tests are the longest leg, so they keep a dedicated
   # job that runs unchanged alongside the CLI, docs, and lint jobs below.
   rust_tests:
@@ -315,6 +351,7 @@ jobs:
       - wasi_preprocess
       - wasi03_command_smoke
       - wasi_business_smoke
+      - ubuntu_2204_no_wasm
       - rust_tests
       - core_checks
       - docs_checks
@@ -327,6 +364,7 @@ jobs:
           echo "wasi03_command_smoke=${{ needs.wasi03_command_smoke.result }}"
           echo "rust_tests=${{ needs.rust_tests.result }}"
           echo "wasi_business_smoke=${{ needs.wasi_business_smoke.result }}"
+          echo "ubuntu_2204_no_wasm=${{ needs.ubuntu_2204_no_wasm.result }}"
           echo "core_checks=${{ needs.core_checks.result }}"
           echo "docs_checks=${{ needs.docs_checks.result }}"
           echo "clippy=${{ needs.clippy.result }}"
@@ -334,6 +372,7 @@ jobs:
           test "${{ needs.wasi03_command_smoke.result }}" = "success"
           test "${{ needs.rust_tests.result }}" = "success"
           test "${{ needs.wasi_business_smoke.result }}" = "success"
+          test "${{ needs.ubuntu_2204_no_wasm.result }}" = "success"
           test "${{ needs.core_checks.result }}" = "success"
           test "${{ needs.docs_checks.result }}" = "success"
           test "${{ needs.clippy.result }}" = "success"

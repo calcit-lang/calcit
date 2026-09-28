@@ -22,6 +22,7 @@ pub mod project_state;
 pub mod runner;
 pub mod snapshot;
 pub mod util;
+#[cfg(feature = "wasm")]
 pub mod wasm_cli;
 
 use calcit::{CalcitErrKind, LocatedWarning};
