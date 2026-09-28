@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 pub mod emit_js;
+#[cfg(feature = "wasm")]
 pub mod emit_wasm;
 pub mod gen_ir;
 

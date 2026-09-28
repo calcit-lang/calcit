@@ -60,6 +60,8 @@ Installed binaries:
 - `calcit`, the runtime and JS compiler
 - `caps`, for downloading dependencies declared in `deps.cirru`
 
+从首次包含该资产的版本起，Ubuntu 22.04 x86_64 的低资源机器可下载 Release 中的 `calcit-ubuntu22.04-x86_64-no-wasm`，无需在本机编译；安装与功能边界见 [无 WASM 构建](docs/installation/no-wasm-build.md)。源码构建可用 `cargo build --release --no-default-features --bin calcit` 关闭 WASM/WASI 代码生成依赖，native 运行与 JS 编译仍可使用。
+
 When developing Calcit core from source, install its runtime locally and install caps from its own release:
 
 ```bash

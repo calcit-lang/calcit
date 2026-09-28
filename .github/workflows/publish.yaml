@@ -11,7 +11,7 @@ permissions:
 jobs:
   publish:
     name: Publish to cargo
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - uses: actions/checkout@v4
@@ -71,22 +71,50 @@ jobs:
       - name: "check docs markdown"
         run: bash scripts/check-docs-md.sh
 
-      - run: cargo build --release
+      - name: Build standard and Ubuntu 22.04 no-WASM release assets
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          test "$(uname -m)" = "x86_64"
+          grep -F 'VERSION_ID="22.04"' /etc/os-release
+          mkdir -p target/release/assets
+          cargo build --locked --release --bin calcit
+          cp target/release/calcit target/release/assets/calcit
+          test "$(target/release/assets/calcit -v)" = "$RELEASE_TAG"
+          cargo build --locked --release --no-default-features --bin calcit
+          cp target/release/calcit target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm
+          file target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm
+          ldd target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm
+          test "$(target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm -v)" = "$RELEASE_TAG"
+          target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm calcit/test.cirru
+          target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm --emit-path target/release/no-wasm-js calcit/test.cirru js
+          if target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm wasm calcit/test.cirru >target/release/no-wasm-command.out 2>&1; then
+            echo 'WASM command unexpectedly succeeded' >&2
+            exit 1
+          fi
+          grep -F 'WASM and WASI code generation are disabled' target/release/no-wasm-command.out
+          if target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm wasi calcit/test.cirru >target/release/no-wasm-command.out 2>&1; then
+            echo 'WASI command unexpectedly succeeded' >&2
+            exit 1
+          fi
+          grep -F 'WASM and WASI code generation are disabled' target/release/no-wasm-command.out
 
       - name: Generate release asset manifest
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: >
           node scripts/release-manifest.mjs "$RELEASE_TAG"
-          target/release/calcit
-          > target/release/calcit-release-manifest.json
+          target/release/assets/calcit
+          target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm
+          > target/release/assets/calcit-release-manifest.json
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            target/release/calcit
-            target/release/calcit-release-manifest.json
+            target/release/assets/calcit
+            target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm
+            target/release/assets/calcit-release-manifest.json
 
       - uses: katyo/publish-crates@v1
         with:
