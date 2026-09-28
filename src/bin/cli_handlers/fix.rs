@@ -41,6 +41,8 @@ const CORE_NON_NIL_PREDICATE_RULE: &str = "core-non-nil-predicate-v1";
 const CORE_NON_NIL_PREDICATE_DIAGNOSTIC: &str = "FIX_CORE_NON_NIL_PREDICATE";
 const CORE_LIST_ADD_RULE: &str = "core-list-add-v1";
 const CORE_LIST_ADD_DIAGNOSTIC: &str = "FIX_CORE_LIST_ADD";
+const CORE_COLLECTION_LEN_RULE: &str = "core-collection-len-v1";
+const CORE_COLLECTION_LEN_DIAGNOSTIC: &str = "FIX_CORE_COLLECTION_LEN";
 const RENAME_DEFINITION_RULE: &str = "rename-definition-v1";
 const RENAME_DEFINITION_DIAGNOSTIC: &str = "REFACTOR_RENAME_DEFINITION";
 const VALUE_TO_ZERO_ARG_FN_RULE: &str = "value-to-zero-arg-fn-v1";
@@ -514,6 +516,13 @@ pub(crate) fn handle_fix_command(
   if selected_rules.contains(&CORE_LIST_ADD_RULE) {
     suggestions.extend(plan_core_list_add_fixes(&source_snapshot, snapshot_file, &selected_definitions)?);
   }
+  if selected_rules.contains(&CORE_COLLECTION_LEN_RULE) {
+    suggestions.extend(plan_core_collection_len_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+    )?);
+  }
   let mut constructor_kinds = Vec::new();
   if selected_rules.contains(&NAMED_ENUM_CONSTRUCTOR_RULE) {
     constructor_kinds.push(NominalKind::Enum);
@@ -905,6 +914,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_RESULT_METHOD_RULE
         | CORE_NON_NIL_PREDICATE_RULE
         | CORE_LIST_ADD_RULE
+        | CORE_COLLECTION_LEN_RULE
         | RENAME_DEFINITION_RULE
         | VALUE_TO_ZERO_ARG_FN_RULE
         | SYNTHESIZE_SCHEMA_RULE
@@ -914,7 +924,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_LIST_ADD_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -942,6 +952,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_RESULT_METHOD_RULE
         | CORE_NON_NIL_PREDICATE_RULE
         | CORE_LIST_ADD_RULE
+        | CORE_COLLECTION_LEN_RULE
     ) {
       return vec![match rule {
         RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
@@ -952,6 +963,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_RESULT_METHOD_RULE => CORE_RESULT_METHOD_RULE,
         CORE_NON_NIL_PREDICATE_RULE => CORE_NON_NIL_PREDICATE_RULE,
         CORE_LIST_ADD_RULE => CORE_LIST_ADD_RULE,
+        CORE_COLLECTION_LEN_RULE => CORE_COLLECTION_LEN_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
     }
@@ -1034,6 +1046,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_LIST_ADD_DIAGNOSTIC,
       evidence_source: "proven-receiver-and-method-implementation",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    CORE_COLLECTION_LEN_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: CORE_COLLECTION_LEN_DIAGNOSTIC,
+      evidence_source: "proven-builtin-receiver-and-method-implementation",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -3452,7 +3471,7 @@ fn collect_list_add_calls(node: &Cirru, path: &mut Vec<usize>, calls: &mut Vec<(
 }
 
 /// Unknown enclosing macros may inspect source spelling even when the nested call type is known.
-fn list_add_source_context_is_stable(code: &Cirru, call_path: &[usize]) -> bool {
+fn method_source_context_is_stable(code: &Cirru, call_path: &[usize]) -> bool {
   (0..call_path.len()).all(|depth| {
     let Ok(Cirru::List(items)) = navigate_to_path(code, &call_path[..depth]) else {
       return false;
@@ -3544,7 +3563,7 @@ fn plan_core_list_add_fixes(
       if definitely_other_type {
         continue;
       }
-      let machine_applicable = concrete_list && proven_same_impl && list_add_source_context_is_stable(&entry.code, &call_path);
+      let machine_applicable = concrete_list && proven_same_impl && method_source_context_is_stable(&entry.code, &call_path);
       let original_node = navigate_to_path(&entry.code, &method_path)?;
       let replacement_node = Cirru::leaf(".append");
       suggestions.push(FixSuggestion {
@@ -3578,6 +3597,163 @@ fn plan_core_list_add_fixes(
         operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
           original: ".add".to_owned(),
           replacement: ".append".to_owned(),
+        }),
+      });
+    }
+  }
+  Ok(suggestions)
+}
+
+/// A zero-argument method call has two source nodes in either method-first or receiver-first form.
+fn collect_collection_count_calls(node: &Cirru, path: &mut Vec<usize>, calls: &mut Vec<(Vec<usize>, Vec<usize>, Vec<usize>)>) {
+  let Cirru::List(items) = node else {
+    return;
+  };
+  if matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "quote" | "quasiquote")) {
+    return;
+  }
+  if items.len() == 2 {
+    let indices = if matches!(&items[0], Cirru::Leaf(name) if name.as_ref() == ".count") {
+      Some((0, 1))
+    } else if matches!(&items[1], Cirru::Leaf(name) if name.as_ref() == ".count") {
+      Some((1, 0))
+    } else {
+      None
+    };
+    if let Some((method_index, receiver_index)) = indices {
+      let mut method_path = path.clone();
+      method_path.push(method_index);
+      let mut receiver_path = path.clone();
+      receiver_path.push(receiver_index);
+      calls.push((path.clone(), method_path, receiver_path));
+    }
+  }
+  for (index, child) in items.iter().enumerate() {
+    path.push(index);
+    collect_collection_count_calls(child, path, calls);
+    path.pop();
+  }
+}
+
+fn plan_core_collection_len_fixes(
+  snapshot: &Snapshot,
+  snapshot_file: &str,
+  selected_definitions: &[(String, String)],
+) -> Result<Vec<FixSuggestion>, String> {
+  let mut suggestions = Vec::new();
+  for (namespace, definition) in selected_definitions {
+    let entry = snapshot
+      .files
+      .get(namespace)
+      .and_then(|file| file.defs.get(definition))
+      .ok_or_else(|| format!("Selected definition `{namespace}/{definition}` is missing from the source snapshot."))?;
+    if list_head(&entry.code) == Some("defmacro") {
+      continue;
+    }
+    let mut calls = Vec::new();
+    collect_collection_count_calls(&entry.code, &mut Vec::new(), &mut calls);
+    if calls.is_empty() {
+      continue;
+    }
+    let compiled = program::lookup_compiled_def(namespace, definition);
+    let expressions = runner::preprocess::trace_definition_source_expressions(
+      namespace,
+      definition,
+      &RefCell::new(Vec::new()),
+      &CallStackList::default(),
+    )
+    .map_err(|failure| failure.msg)?;
+    for (call_path, method_path, receiver_path) in calls {
+      let receiver = navigate_to_path(&entry.code, &receiver_path)?;
+      let source_receiver = code_to_calcit(
+        &receiver,
+        namespace,
+        definition,
+        receiver_path
+          .iter()
+          .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
+          .collect::<Result<Vec<_>, _>>()?,
+      )
+      .map_err(|error| error.to_string())?;
+      let inferred = compiled
+        .as_ref()
+        .and_then(|compiled| {
+          super::query::find_preprocessed_node_at_path(
+            &compiled.preprocessed_code,
+            namespace,
+            definition,
+            &receiver_path,
+            matches!(receiver, Cirru::List(_)),
+          )
+        })
+        .and_then(runner::preprocess::infer_static_type_from_expr)
+        .or_else(|| {
+          runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &receiver_path)
+            .and_then(|item| item.inferred_type.clone())
+        })
+        .or_else(|| super::query::infer_type_at_target(&source_receiver, None));
+      let resolved = inferred
+        .as_ref()
+        .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
+      let expected_definition = resolved.as_ref().and_then(|annotation| match annotation.as_ref() {
+        CalcitTypeAnnotation::List(_) => Some("calcit.core/&list:count"),
+        CalcitTypeAnnotation::Map(_, _) => Some("calcit.core/&map:count"),
+        CalcitTypeAnnotation::Set(_) => Some("calcit.core/&set:count"),
+        CalcitTypeAnnotation::String => Some("calcit.core/&str:count"),
+        _ => None,
+      });
+      if resolved.as_ref().is_some_and(|annotation| {
+        !matches!(
+          annotation.as_ref(),
+          CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
+        ) && expected_definition.is_none()
+      }) {
+        continue;
+      }
+      let proven_same_impl = resolved.as_ref().zip(expected_definition).is_some_and(|(annotation, expected)| {
+        let old = runner::preprocess::static_method_contract(annotation.as_ref(), ".count");
+        let new = runner::preprocess::static_method_contract(annotation.as_ref(), ".len");
+        old.status == "proven"
+          && new.status == "proven"
+          && old.definition.as_deref() == Some(expected)
+          && old.definition == new.definition
+          && old.arg_types == new.arg_types
+          && old.return_type == new.return_type
+      });
+      let machine_applicable = proven_same_impl && method_source_context_is_stable(&entry.code, &call_path);
+      let original_node = navigate_to_path(&entry.code, &method_path)?;
+      let replacement_node = Cirru::leaf(".len");
+      suggestions.push(FixSuggestion {
+        rule_id: CORE_COLLECTION_LEN_RULE,
+        diagnostic_code: CORE_COLLECTION_LEN_DIAGNOSTIC,
+        semantic_layer: "surface",
+        source_file: snapshot_file.to_owned(),
+        definition: format!("{namespace}/{definition}"),
+        path: format!("code{}", format_path(&method_path)),
+        fingerprint: node_fingerprint(&original_node),
+        origin_chain: vec![serde_json::json!({
+          "kind": "receiver-method-query",
+          "receiver_type": inferred.as_ref().map(|annotation| annotation.describe()),
+          "same_core_count_implementation": proven_same_impl,
+        })],
+        original: quoted_json(&original_node),
+        replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
+        applicability: if machine_applicable {
+          "machine-applicable"
+        } else {
+          "requires-review"
+        },
+        message: if machine_applicable {
+          "Use `.len` for built-in collection or String length; both methods resolve to the same core implementation."
+            .to_owned()
+        } else {
+          "Cannot prove a built-in collection/String receiver, matching method implementation, or stable source context; review `.count` manually."
+            .to_owned()
+        },
+        target_path: method_path,
+        operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
+          original: ".count".to_owned(),
+          replacement: ".len".to_owned(),
         }),
       });
     }

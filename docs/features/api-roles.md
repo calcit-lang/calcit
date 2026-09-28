@@ -146,6 +146,8 @@ do
 
 核对基线时，`query type ":: 'List 'Number"` 的 `.reduce` 为 proven，`.append/.foldl` 却为 open；具体 `([] 1 2) .append 3` 和 `.foldl 10 +` 都能通过严格检查。第一批已修复 `.append` 的查询证据：内建过程的方法查询现在读取 Snapshot 的公开泛型 schema，`List<Number>` 上可得到 `Number -> List<Number>` 的 proven 契约；运行时宽签名不再覆盖公开契约。`.foldl` 与自定义 trait 的收敛仍需分别验证，不能用 primitive 替换用户方法测试来绕过。
 
+长度迁移的小批次使用显式 `core-collection-len-v1`：只在 List/Map/Set/String 的 `.count` 与 `.len` 同指对应 core 实现、方法契约已证明时改写。Struct/Enum 的 `.count` 另有语义，用户自定义 trait 也不据名字猜测；这不是一次全局文本替换。见 [fix 规则](../run/fix.md)。
+
 ```cirru
 do
   assert= ([] 1 0 2)

@@ -100,6 +100,13 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   `calcit calcit.cirru fix --rule core-list-add-v1 --format edn` 预览，再核对 definition、path、来源和 revision；
   应用后重复预览并运行项目测试。该规则目前只覆盖 definition `:code`，`:tests` / `:examples` 仍需单独检查，
   也不加入已发布的 preset。
+- `core-collection-len-v1` 仅把 List、Map、Set、String 上已证明的零参数 `.count` 改成 `.len`。
+  编译器须同时证明具体接收者类型、旧/新方法指向同一个对应的 core `&*:count` 实现、形参与返回类型一致，
+  且源码处于已知保持调用的结构。Struct 字段数、Enum payload 数、用户自定义 `Countable` 不在自动范围；
+  开放类型与未知 macro 只给 `requires-review`，quoted data 不扫描。String 两种方法都按 Unicode 标量计数，
+  不会转为 UTF-8 字节长度。用 `calcit calcit.cirru fix --rule core-collection-len-v1 --format edn` 预览，
+  核对来源与 revision 后带 `--expect-revision` 应用；重复预览应为空，再运行严格检查与项目测试。
+  当前仅覆盖 definition `:code`，`:tests` / `:examples` 需单独检查；该规则也不加入已发布 preset。
 - `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
   同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples

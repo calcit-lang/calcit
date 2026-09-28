@@ -101,6 +101,207 @@ fn assert_success(output: &Output, context: &str) {
 }
 
 #[test]
+fn collection_len_fix_rewrites_only_proven_builtin_count_calls() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let target = "fix-command.main/count-builtins";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn count-builtins (xs m s text)\n  assert= 2 $ xs .count\n  assert= 1 $ m .count\n  assert= 2 $ s .count\n  text .count",
+      ],
+    ),
+    "install four built-in count calls",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'Number) (:: 'Map 'Tag 'Number) (:: 'Set 'Number) 'String) (:return 'Number)",
+      ],
+    ),
+    "declare concrete List, Map, Set and String receivers",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        target,
+        "preserves-collection-length",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= 2 $ count-builtins ([] 1 2) ({} (:a 1)) (#{} 1 2) |A😀",
+      ],
+    ),
+    "attach Calcit collection length test",
+  );
+  let selector = [
+    "--rule",
+    "core-collection-len-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "count-builtins",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &selector);
+  assert_success(&preview, "collection length preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+  assert_eq!(suggestions.len(), 4, "{report}");
+  assert!(
+    suggestions
+      .iter()
+      .all(|suggestion| suggestion["applicability"] == "machine-applicable"),
+    "{report}"
+  );
+  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+
+  let stale = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-collection-len-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "count-builtins",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      "stale-revision",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!stale.status.success(), "stale revision must reject apply");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-collection-len-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "count-builtins",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "collection length apply");
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "Calcit length semantics after migration",
+  );
+  let repeated = run_fix(&snapshot, &selector);
+  assert_success(&repeated, "collection length idempotent preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+}
+
+#[test]
+fn collection_len_fix_preserves_nominal_count_and_unknown_macro_source() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (name, code) in [
+    ("struct-count", "quote $ defn struct-count (person) person .count"),
+    ("enum-count", "quote $ defn enum-count (choice) choice .count"),
+    ("quoted-count", "quote $ defn quoted-count ()\n  quote $ ([] 1 2) .count\n  , 0"),
+    ("pass-form", "quote $ defmacro pass-form (body) body"),
+    ("macro-count", "quote $ defn macro-count (xs) $ pass-form $ xs .count"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "install nominal or macro count source",
+    );
+  }
+  for (name, argument) in [
+    ("struct-count", "'fix-command.main/FixPerson"),
+    ("enum-count", "'fix-command.main/FixPersonChoice"),
+    ("macro-count", ":: 'List 'Number"),
+  ] {
+    let args = if name == "macro-count" {
+      format!("[] $ {argument}")
+    } else {
+      format!("[] {argument}")
+    };
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ :: 'Fn $ {{}} (:args $ {args}) (:return 'Number)"),
+        ],
+      ),
+      "declare nominal or List argument",
+    );
+  }
+  for (name, expected) in [("struct-count", 0), ("enum-count", 0), ("quoted-count", 0), ("macro-count", 1)] {
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-collection-len-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, "collection length boundary preview");
+    let report = parse_stdout(&preview);
+    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+    assert_eq!(suggestions.len(), expected, "{name}: {report}");
+    if name == "macro-count" {
+      assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
+      assert!(suggestions[0]["replacement"].is_null(), "{report}");
+    }
+  }
+}
+
+#[test]
 fn list_add_fix_rewrites_only_proven_element_append() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
