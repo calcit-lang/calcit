@@ -135,7 +135,7 @@ do
 | List/Map/Set/String `count/.count` 与 `Len/.len: C -> Number` 重叠 | **保留并首选** `.len`，收敛 Countable 的这些用途 | 参数单次求值；String 仍按标量。用户 Countable impl/bound 单独迁移；Struct 字段数与 Enum payload 数 **暂缓**，不把所有 count 当容器长度 |
 | List `.add/.append: (List<T>, T) -> List<T>`；底层 Add trait 是两 List 组合 | **保留** `.append` 与 `.concat`，退场 List 单元素 `.add` 别名 | 先解决 originless `.add` 遮蔽；旧入口失效后也不能静默暴露另一种参数语义。名义 `Add` 调用/泛型界限保留单独验证 |
 | Map `.assoc: (Map<K,V>, K,V) -> Map<K,V>` / `.dissoc: (Map<K,V>, K, & K) -> Map<K,V>`；Set `include/exclude` 返回新 Set | **目标** Map `.insert/.remove`、Set `.insert/.remove`，保持原参数个数/可变参和返回新集合 | 不返回 Rust 风格旧值/Bool，不原地修改。Map `.add` 接受 entry，与 assoc 不同，**暂缓**到 entry 类型证明完成，不自动拆包 |
-| `foldl/.foldl/foldl'/reduce/.reduce: (List<T>, U, (U,T)->U) -> U` | **目标** seeded `.fold`；`foldl'` 转 **内部**备选实现 | 保持左到右、空集返回初值、异类型 accumulator、callback 次数；不把旧 reduce 换成无初值语义。新方法证明不弱于现有 `.reduce` |
+| `foldl/.foldl/foldl'/reduce/.reduce: (List<T>, U, (U,T)->U) -> U` | **已引入** seeded `.fold`；`foldl'` 转 **内部**备选实现仍待评估 | 保持左到右、空 List 返回初值、异类型 accumulator、callback 次数；不把旧 reduce 换成无初值语义。新方法证明不弱于现有 `.reduce` |
 | `join/.join: (List<T>, T) -> List<T>` | **目标** `.intersperse`；兼容前缀目标 `intersperse` | 只插入分隔项，保持空/单项/顺序；不改成 String 返回 |
 | `join-str/.join-str: (List<T>, String) -> String`，逐项格式化 | **目标** `.join-string`；兼容前缀目标 `join-string` | 不缩窄成 List<String> 或偷偷改显示规则；先验证实际元素类型与格式化失败边界 |
 | `vals` / Map `.values: Map<K,V> -> Set<V>`，去重 | **目标** `.distinct-values: Map<K,V> -> Set<V>` | 不把旧 values 改为保留重复值的 List；顺序不保证。保留重复值的视图是独立语义任务，本轮不复用旧名 |
@@ -144,7 +144,7 @@ do
 | List/String `get/nth` 返回 Option；List `.find/.find-index` 接受 predicate，`.index-of` 接受元素；String `.find-index` 接受子串 | **保留**各命题，位置访问首选 `.get`；等价 `.nth` 迁移待证据齐全 | 不把 predicate 查找改成值比较；缺失保持 Option，String 保持标量索引；Enum 异构位置访问 **暂缓** |
 | `.map/.filter/.slice/.reverse/.sort/.keys`、`map-entries` | **保留**明确的现有词义 | `map-entries: Map<K,V> -> List<MapEntry<K,V>>` 保留 K/V；不为缩短名字退回异构 List<Dynamic> |
 
-核对基线时，`query type ":: 'List 'Number"` 的 `.reduce` 为 proven，`.append/.foldl` 却为 open；具体 `([] 1 2) .append 3` 和 `.foldl 10 +` 都能通过严格检查。第一批已修复 `.append` 的查询证据：内建过程的方法查询现在读取 Snapshot 的公开泛型 schema，`List<Number>` 上可得到 `Number -> List<Number>` 的 proven 契约；运行时宽签名不再覆盖公开契约。`.foldl` 与自定义 trait 的收敛仍需分别验证，不能用 primitive 替换用户方法测试来绕过。
+历史基线曾出现 `query type ":: 'List 'Number"` 的 `.reduce` 为 proven、`.append/.foldl` 为 open；目前这些方法已能从公开泛型 schema 获得 proven 契约。seeded `.fold` 也保持 `U, (U,T)->U -> U` 的 proven 方法契约；List `.reduce` 与 `.fold` 指向同一个 core 实现，可用显式 `core-list-fold-v1` 规则迁移已证明的调用。前缀 `reduce`、自定义 trait 和开放接收者不按名字批量改写，不能用 primitive 替换用户方法测试来绕过。
 
 长度迁移的小批次使用显式 `core-collection-len-v1`：只在 List/Map/Set/String 的 `.count` 与 `.len` 同指对应 core 实现、方法契约已证明时改写。Struct/Enum 的 `.count` 另有语义，用户自定义 trait 也不据名字猜测；这不是一次全局文本替换。见 [fix 规则](../run/fix.md)。
 

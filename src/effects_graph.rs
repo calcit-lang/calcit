@@ -687,7 +687,7 @@ fn record_control_head(head: &Calcit, control: &mut Vec<String>) {
     Calcit::Syntax(CalcitSyntax::Match, _) => Some("match"),
     Calcit::Syntax(CalcitSyntax::Try, _) => Some("try"),
     Calcit::Proc(CalcitProc::Foldl) => Some("foldl"),
-    Calcit::Symbol { sym, .. } if sym.as_ref() == "foldl" || sym.as_ref() == "map" || sym.as_ref() == "filter" => Some(sym.as_ref()),
+    Calcit::Symbol { sym, .. } if matches!(sym.as_ref(), "fold" | "foldl" | "map" | "filter") => Some(sym.as_ref()),
     _ => None,
   };
   if let Some(name) = label {

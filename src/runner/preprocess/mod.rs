@@ -2810,9 +2810,9 @@ fn preprocess_list_call(
         // types during its own preprocessing.
         let can_refresh_checked_contract =
           checked_call_contract_arity(&info.def_ns, &info.name).is_some_and(|required_arity| args.len() == required_arity);
-        let refreshed_checked_contract = if arg_idx == 0 || !can_refresh_checked_contract {
-          None
-        } else {
+        let can_refresh_fold_types =
+          args.len() == 3 && info.def_ns.as_ref() == calcit::CORE_NS && matches!(info.name.as_ref(), "fold" | "foldl" | "reduce");
+        let staged_args = if arg_idx > 0 && (can_refresh_checked_contract || can_refresh_fold_types) {
           let processed_count = ys.len().saturating_sub(1);
           let staged_values = args
             .iter()
@@ -2825,12 +2825,28 @@ fn preprocess_list_call(
               }
             })
             .collect::<Vec<_>>();
-          let staged_args = CalcitList::from(staged_values.as_slice());
-          resolve_checked_call_contract(&info.def_ns, &info.name, &staged_args, scope_types)
+          Some(CalcitList::from(staged_values.as_slice()))
+        } else {
+          None
+        };
+        let refreshed_checked_contract = if can_refresh_checked_contract {
+          staged_args
+            .as_ref()
+            .and_then(|staged| resolve_checked_call_contract(&info.def_ns, &info.name, staged, scope_types))
+        } else {
+          None
+        };
+        let refreshed_fold_types = if can_refresh_fold_types {
+          staged_args
+            .as_ref()
+            .and_then(|staged| type_checking::specialize_collection_fold_expected_types(staged, scope_types, &info.arg_types))
+        } else {
+          None
         };
         let active_expected_types = refreshed_checked_contract
           .as_ref()
           .and_then(|contract| contract.expected_types.as_deref())
+          .or(refreshed_fold_types.as_deref())
           .unwrap_or(preprocessing_expected_types);
 
         // Set expected fn type hint if this arg position has a Fn-typed param

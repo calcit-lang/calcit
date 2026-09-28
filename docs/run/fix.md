@@ -107,6 +107,12 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   不会转为 UTF-8 字节长度。用 `calcit calcit.cirru fix --rule core-collection-len-v1 --format edn` 预览，
   核对来源与 revision 后带 `--expect-revision` 应用；重复预览应为空，再运行严格检查与项目测试。
   当前仅覆盖 definition `:code`，`:tests` / `:examples` 需单独检查；该规则也不加入已发布 preset。
+- `core-list-fold-v1` 仅把具体 List 上已证明的 seeded `.reduce` 方法改成 `.fold`。两者必须指向同一个
+  `calcit.core/fold` 实现，参数与返回类型一致；空列表仍返回初值，按从左到右顺序调用 reducer，累加器类型可与元素类型不同。
+  开放接收者、用户自定义同名方法、未知 macro 和 quoted data 不会自动改写。前缀函数 `reduce` 暂保留兼容，
+  不在本规则范围。运行 `calcit calcit.cirru fix --rule core-list-fold-v1 --format edn` 预览，审阅来源与 revision
+  后带 `--expect-revision` 应用，重复预览应为空。本规则仅覆盖 definition `:code`，`:tests` / `:examples`
+  需单独检查；目前不加入已发布 preset。
 - `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
   同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples
