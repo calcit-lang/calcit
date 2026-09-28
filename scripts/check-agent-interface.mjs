@@ -112,7 +112,7 @@ const scenarios = [
     },
   },
   {
-    name: "list append and length expose proven contracts",
+    name: "list append, length, and fold expose proven contracts",
     args: ["calcit/test.cirru", "query", "type", ":: 'List 'Number", "--format", "json"],
     check(result) {
       const append = result.data.methods.find((method) => method.name === ".append");
@@ -122,6 +122,13 @@ const scenarios = [
       const len = result.data.methods.find((method) => method.name === ".len");
       assert.equal(len?.status, "proven");
       assert.equal(len.return_type, "number");
+      const fold = result.data.methods.find((method) => method.name === ".fold");
+      const reduce = result.data.methods.find((method) => method.name === ".reduce");
+      assert.equal(fold?.status, "proven");
+      assert.equal(fold?.definition, "calcit.core/fold");
+      assert.deepEqual(fold?.parameter_types, reduce?.parameter_types);
+      assert.equal(fold?.return_type, reduce?.return_type);
+      assert.equal(reduce?.definition, fold?.definition);
     },
   },
   {

@@ -151,7 +151,7 @@ fn specialize_core_expected_types(
   }
   let required_arity = match fn_info.name.as_ref() {
     "&list:apply" | "&list:sort-by" | "contains?" | "includes?" => 2,
-    "assoc" | "foldl" | "reduce" | "update" => 3,
+    "assoc" | "fold" | "foldl" | "reduce" | "update" => 3,
     _ => return None,
   };
   if expected_types.len() < required_arity || args.len() < required_arity {
@@ -176,7 +176,7 @@ fn specialize_core_expected_types(
       };
       Some(specialized)
     }
-    "foldl" | "reduce" => specialize_collection_fold_expected_types(args, scope_types, expected_types),
+    "fold" | "foldl" | "reduce" => specialize_collection_fold_expected_types(args, scope_types, expected_types),
     "&list:sort-by" => specialize_list_sort_by_expected_types(args, scope_types, expected_types),
     "includes?" => {
       let mut specialized = expected_types.to_vec();
@@ -238,7 +238,7 @@ fn specialize_list_sort_by_expected_types(
   Some(specialized)
 }
 
-fn specialize_collection_fold_expected_types(
+pub(super) fn specialize_collection_fold_expected_types(
   args: &CalcitList,
   scope_types: &ScopeTypes,
   expected_types: &[Arc<CalcitTypeAnnotation>],

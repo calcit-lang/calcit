@@ -364,7 +364,7 @@
           :tags $ #{} :internal
         '&core-list-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-list-methods
-            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :join join) (:: :join-str join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth nth) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce reduce) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
+            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :join join) (:: :join-str join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth nth) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce fold) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -5267,6 +5267,37 @@
             :args $ [] 'T
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
+        'fold $ %{} 'CodeEntry
+          :doc "|Seeded left fold over a List<T>. Calls reducer once per element from left to right and returns the initial accumulator for an empty list; U may differ from T."
+          :code $ quote $ defn fold (xs initial reducer) (foldl xs initial reducer)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'U)
+            :args $ [] (:: 'List 'T) 'U $ :: 'Fn
+              {} (:return 'U)
+                :args $ [] 'U 'T
+            :generics $ [] 'T 'U
+          :tests $ []
+            %{} 'TestEntry (:name |left-to-right)
+              :code $ quote $ assert= ([] 1 2 3)
+                fold ([] 1 2 3) ([])
+                  fn (acc item) (append acc item)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |heterogeneous-accumulator)
+              :code $ quote $ assert= |n:1:2:3
+                fold ([] 1 2 3) |n $ fn (acc item) (str acc |: item)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |empty-retains-seed)
+              :code $ quote $ assert= |seed
+                fold ([]) |seed $ fn (acc item) (str acc item)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |receiver-method)
+              :code $ quote $ assert= 6
+                ([] 1 2 3) .fold 0 +
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |receiver-heterogeneous-accumulator)
+              :code $ quote $ assert= |n:1:2:3
+                ([] 1 2 3) .fold |n $ fn (acc item) (str acc |: item)
+              :tags $ #{} :core :unit
         'foldl $ %{} 'CodeEntry
           :doc "|internal function for left fold\nSyntax: (foldl list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from left with reducer function and initial value"
           :code $ quote &runtime-implementation

@@ -101,6 +101,188 @@ fn assert_success(output: &Output, context: &str) {
 }
 
 #[test]
+fn list_fold_fix_preserves_seeded_method_semantics_and_revision_guard() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let target = "fix-command.main/fold-values";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn fold-values (xs)\n  xs .reduce |n $ fn (acc item) (str acc |: item)",
+      ],
+    ),
+    "install seeded reduce method",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return 'String)",
+      ],
+    ),
+    "declare a concrete list receiver",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        target,
+        "preserves-order-and-empty-seed",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ do\n  assert= |n:1:2:3 $ fold-values ([] 1 2 3)\n  assert= |n $ fold-values ([]) ",
+      ],
+    ),
+    "attach Calcit fold contract",
+  );
+  let selector = [
+    "--rule",
+    "core-list-fold-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "fold-values",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &selector);
+  assert_success(&preview, "fold preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+  assert_eq!(suggestions.len(), 1, "{report}");
+  assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
+  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+  let stale = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-list-fold-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "fold-values",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      "stale-revision",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!stale.status.success(), "stale revision must reject apply");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-list-fold-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "fold-values",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "fold apply");
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "Calcit fold after migration",
+  );
+  let repeated = run_fix(&snapshot, &selector);
+  assert_success(&repeated, "idempotent fold preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+}
+
+#[test]
+fn list_fold_fix_preserves_quoted_and_macro_boundaries() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (name, code) in [
+    ("quoted-fold", "quote $ defn quoted-fold ()\n  quote $ ([] 1 2) .reduce 0 +\n  , 0"),
+    ("pass-form", "quote $ defmacro pass-form (body) body"),
+    ("macro-fold", "quote $ defn macro-fold (xs) $ pass-form $ xs .reduce 0 +"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "install fold boundary source",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/macro-fold",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return 'Number)",
+      ],
+    ),
+    "declare macro fold receiver",
+  );
+  for (name, expected) in [("quoted-fold", 0), ("macro-fold", 1)] {
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-list-fold-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, "fold boundary preview");
+    let report = parse_stdout(&preview);
+    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+    assert_eq!(suggestions.len(), expected, "{name}: {report}");
+    if expected == 1 {
+      assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
+      assert!(suggestions[0]["replacement"].is_null(), "{report}");
+    }
+  }
+}
+
+#[test]
 fn collection_len_fix_rewrites_only_proven_builtin_count_calls() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

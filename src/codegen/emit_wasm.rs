@@ -6042,8 +6042,8 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "union" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Union),
           "difference" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Difference),
           "include" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Include),
-          // `reduce xs x0 f` → inline as foldl so proc/import callees work.
-          "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
+          // Seeded fold aliases lower to the same loop for proc/import callees.
+          "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
           // `foldl-compare xs acc f` → inline comparison loop.
           "foldl-compare" if args_list.len() == 3 => return emit_foldl_compare(ctx, &args_list),
           // Unary HOF intercepts — callee 'f' would be unresolvable inside core defs.
@@ -6164,7 +6164,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         "find-index" if args_list.len() == 2 => return emit_find_index(ctx, &args_list),
         "map-indexed" if args_list.len() == 2 => return emit_map_indexed(ctx, &args_list),
         "mapcat" if args_list.len() == 2 => return emit_mapcat(ctx, &args_list),
-        "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
+        "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
         "foldl'" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
         "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
         "map-kv" if args_list.len() == 2 => return emit_map_kv(ctx, &args_list),
@@ -6230,7 +6230,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "find-index" if args_list.len() == 2 => return emit_find_index(ctx, &args_list),
           "map-indexed" if args_list.len() == 2 => return emit_map_indexed(ctx, &args_list),
           "mapcat" if args_list.len() == 2 => return emit_mapcat(ctx, &args_list),
-          "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
+          "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
           "foldl'" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
           "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
           "map-kv" if args_list.len() == 2 => return emit_map_kv(ctx, &args_list),
