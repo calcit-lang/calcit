@@ -1,6 +1,6 @@
 ---
 title: "Calcit API 命名角色"
-summary: "区分类型名、构造器、方法、命名空间函数和内部实现；让人类与 Agent 找到推荐调用入口"
+summary: "区分 API 角色；按家族给出命名决策、类型与失败契约、等价迁移和暂缓边界"
 scope: "core"
 kind: "guide"
 category: "features"
@@ -8,6 +8,8 @@ aliases:
   - "API naming"
   - "constructor naming"
   - "method naming"
+  - "API vocabulary"
+  - "命名决策"
 entry_for:
   - "calcit query type"
   - "calcit query def"
@@ -68,6 +70,144 @@ The public, human-facing form is distinct from macro-expanded core definitions a
 
 String 的 `.len/.count`、`.get/.nth/.slice` 与 `.find-index` 使用 Unicode 标量单位；查找返回 `Option<Number>`，不是 Rust `str::find` 的字节偏移。Calcit 借鉴语义清晰的命名，不照搬会破坏自身索引一致性的底层表示。`.includes?` 判断子串，`.contains?` 当前判断索引存在，不因统一索引单位而互换。协议长度使用显式 `&str:utf8-byte-count`，不可混入普通索引。示例和边界见 [String](../data/string.md#子串搜索索引)；其他 API 族的重命名仍由 #1452 逐项决策，本修复不增加别名或 fix 规则。
 
+## 逐族命名决策（0.27–0.28）
+
+这是 [#1452](https://github.com/calcit-lang/calcit/issues/1452) 的实施契约，不是“以下新名字已经可用”的 API 清单。**保留**表示当前首选不变；**目标**表示本轮确定的新拼写、仍待对应 issue 实现；**内部**表示只保留可追溯的实现角色；**暂缓**表示已有语义或类型问题尚不能安全定名。Agent 生成代码应先查当前版本的 `query type/def`，不得调用尚未实现的目标。
+
+表中的签名包含 receiver；`T/U/K/V` 是保留关系的类型参数，不是 Dynamic。只有旧新入口的来源、参数/返回类型、失败行为和求值顺序均能证明等价，才允许自动迁移。这里的迁移分类不增加 CLI flag、命名 linter 或第二份公开 API registry。
+
+### 词法与职责
+
+- 类型/trait 用 PascalCase；值、函数、方法、模块、字段用 kebab-case；variant 继续使用 `:some/:err`。保留 `[]/{}/#{}`、算术/比较运算符、`defn/let/->/->>` 等结构化 Lisp 表达，不把宏改成 Rust 的 `name!` 语法。
+- 返回 Bool 的判断保留 `?`，优先 `empty?`、`contains-key?`，不额外套 `is-…?`。`Option<Number>` 查找结果不是谓词；名字不能代替类型证明。
+- 实例操作优先 typed `.method`；没有自然 receiver 时保留普通模块函数 `alias/name`，不再并列增加公开 `type:verb` 别名。
+- 参考 [Rust 命名指南](https://rust-lang.github.io/api-guidelines/naming.html) 的角色划分和语义词汇，不照搬 snake_case、借用/所有权对应的 `as_/into_` 或惰性 iterator。Calcit 集合操作返回新值；普通 String 索引是 Unicode 标量，不是 Rust 字节偏移。
+- 本轮目标是让入口与语义更可预测；不宣称仅改名就能证明 LLM 正确率提升。验收使用实际查询、迁移和消费者运行，不引入新的评分系统。
+
+### 谓词与成员查询
+
+实施任务：[#1454](https://github.com/calcit-lang/calcit/issues/1454)。成员判断选用现有 `.includes?`；**不把旧 `.contains?` 原地改成另一种含义**，也不安排先移走旧义、再复用同名的二次迁移。
+
+| 当前入口与签名/行为 | 决策与目标签名 | 迁移边界 |
+| --- | --- | --- |
+| `some?: T -> Bool`，仅排除 nil；Option none 也为 true | **目标** `non-nil?: T -> Bool` | 等价改名，不自动改成 Option `.some?`，也不附带 narrow |
+| Option `.some?/.none?: Option<T> -> Bool`；Result `.ok?/.err?: Result<T,E> -> Bool` | **保留**，判断名义 variant | 空值、false 和 nil payload 不改变 variant；既有 helper 退场条件仍适用 |
+| List/String `.contains?: (receiver, Number) -> Bool`，检查索引 | **目标** `.contains-index?`，签名/索引错误行为不变 | 已证明 builtin receiver 才可迁移；非法索引的 backend 边界另测，不能改写为值查询 |
+| Map `.contains?: (Map<K,V>, K) -> Bool`；`.includes?: (Map<K,V>, V) -> Bool` | **目标** `.contains-key?`、`.contains-value?`，签名不变 | 明确 K/V；不能因为二者恰为同类型而互换 |
+| Struct `.contains?` 检查字段；Enum `.contains?` 检查 payload 位置 | **目标** `.contains-field?` / `.contains-index?`，分别保持字段键/数值参数及 Bool 返回 | 反射与异构 payload 不伪装成普通同质集合；缺少类型证据时人工审阅 |
+| String `.includes?: (String, String) -> Bool`；List/Set `.includes?: (C<T>, T) -> Bool` | **保留** `.includes?`；Set `.contains?` 的同义入口迁到 `.includes?` | String 是子串，其余为成员；Set 别名只在证明实际实现后迁移，不全局替换 Contains trait |
+| `round?/.round?: Number -> Bool`，意图为“无小数部分” | **目标词** `integer?/.integer?`；**先修语义再迁移** | 目标为有限且无小数部分；NaN/±Infinity false，-0 true。native 的 EPSILON 容差与 JS 舍入比较存在近零/Infinity 分歧，修复不伪装成 rename；Bool 不等于 Int refinement 证明 |
+| `every?` / `any?`，predicate 返回 Bool，短路；空集分别 true/false | **目标** `all?` / **保留** `any?`，参数顺序和短路不变 | 先补足已有支持的 receiver/callback 类型关系；不凭当前宽 schema 承诺所有容器，或凭改名新增方法 |
+| `nil?/empty?/blank?/starts-with?/ends-with?/even?/odd?` | **保留**现有签名和命题 | 空白不等于空串；其他已有明确类型谓词同样不为相似拼写强改 |
+
+`Contains` 不能直接别名成一个新 trait：它目前横跨索引、键、字段与成员。#1454 先为上述命题建立具体签名，逐一迁移 builtin 与已定位的自定义 impl；旧 `Contains` bound 和具名 trait-call 在兼容窗口保持原契约。自动 fix 只有在 origin/receiver/bound 都能证明时才动，普通用户自定义同名方法不改。不得把泛型 `Contains<T,K>` 草率替换成更宽 Dynamic 或猜测性的 trait 联集。
+
+前置缺陷不能由改名掩盖：本次实际 WASM 复现中 `some? false` 与 `some? 0` 为 false，而 native/JS 为 true；需先修复 nil 判断的类型/表示边界，再证明 `some? -> non-nil?` 在已支持目标等价。`round?` 的近零/无穷差异也先由 #1454 修复并说明行为变化，不把这些旧缺陷固化成新的跨目标契约。
+
+下面是**当前旧契约的反例**，说明为什么不能只凭词形替换；对应 definition `:tests` 会随等价迁移一起保留这些断言：
+
+```cirru
+do
+  assert= true $ some? $ Option :none
+  assert= false $
+    Option :none
+    , .some?
+  assert= true $
+    [] 10 20
+    , .contains? 1
+  assert= false $
+    [] 10 20
+    , .includes? 1
+  assert= true $
+    {} $ :key :value
+    , .contains? :key
+  assert= false $
+    {} $ :key :value
+    , .includes? :key
+```
+
+### 集合长度、组合与遍历
+
+实施任务：[#1455](https://github.com/calcit-lang/calcit/issues/1455)。参考 [Rust fold/reduce](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.fold) 对“有初始值”和“无初始值”的区分，但不引入 iterator/ownership。
+
+| 当前入口与签名/行为 | 决策与目标签名 | 迁移边界 |
+| --- | --- | --- |
+| List/Map/Set/String `count/.count` 与 `Len/.len: C -> Number` 重叠 | **保留并首选** `.len`，收敛 Countable 的这些用途 | 参数单次求值；String 仍按标量。用户 Countable impl/bound 单独迁移；Struct 字段数与 Enum payload 数 **暂缓**，不把所有 count 当容器长度 |
+| List `.add/.append: (List<T>, T) -> List<T>`；底层 Add trait 是两 List 组合 | **保留** `.append` 与 `.concat`，退场 List 单元素 `.add` 别名 | 先解决 originless `.add` 遮蔽；旧入口失效后也不能静默暴露另一种参数语义。名义 `Add` 调用/泛型界限保留单独验证 |
+| Map `.assoc: (Map<K,V>, K,V) -> Map<K,V>` / `.dissoc: (Map<K,V>, K, & K) -> Map<K,V>`；Set `include/exclude` 返回新 Set | **目标** Map `.insert/.remove`、Set `.insert/.remove`，保持原参数个数/可变参和返回新集合 | 不返回 Rust 风格旧值/Bool，不原地修改。Map `.add` 接受 entry，与 assoc 不同，**暂缓**到 entry 类型证明完成，不自动拆包 |
+| `foldl/.foldl/foldl'/reduce/.reduce: (List<T>, U, (U,T)->U) -> U` | **目标** seeded `.fold`；`foldl'` 转 **内部**备选实现 | 保持左到右、空集返回初值、异类型 accumulator、callback 次数；不把旧 reduce 换成无初值语义。新方法证明不弱于现有 `.reduce` |
+| `join/.join: (List<T>, T) -> List<T>` | **目标** `.intersperse`；兼容前缀目标 `intersperse` | 只插入分隔项，保持空/单项/顺序；不改成 String 返回 |
+| `join-str/.join-str: (List<T>, String) -> String`，逐项格式化 | **目标** `.join-string`；兼容前缀目标 `join-string` | 不缩窄成 List<String> 或偷偷改显示规则；先验证实际元素类型与格式化失败边界 |
+| `vals` / Map `.values: Map<K,V> -> Set<V>`，去重 | **目标** `.distinct-values: Map<K,V> -> Set<V>` | 不把旧 values 改为保留重复值的 List；顺序不保证。保留重复值的视图是独立语义任务，本轮不复用旧名 |
+| List `mapcat/.bind: (List<T>, (T)->List<U>) -> List<U>` | **目标** `.flat-map` | 保持顺序、展平层数、callback 次数与具体 U；Fn `.bind` 是不同组合，**暂缓** |
+| `.mappend` 在 List/Map/Set/String 上为各自组合，Fn 另有含义 | **目标** List `.concat`、Map `.merge`、Set `.union`；String 与 Fn **暂缓** | 分别验证拼接顺序、重复 key 胜出方、去重；String 现有格式化宽度先核对，不跨 receiver 批量替换 |
+| List/String `get/nth` 返回 Option；List `.find/.find-index` 接受 predicate，`.index-of` 接受元素；String `.find-index` 接受子串 | **保留**各命题，位置访问首选 `.get`；等价 `.nth` 迁移待证据齐全 | 不把 predicate 查找改成值比较；缺失保持 Option，String 保持标量索引；Enum 异构位置访问 **暂缓** |
+| `.map/.filter/.slice/.reverse/.sort/.keys`、`map-entries` | **保留**明确的现有词义 | `map-entries: Map<K,V> -> List<MapEntry<K,V>>` 保留 K/V；不为缩短名字退回异构 List<Dynamic> |
+
+核对基线时，`query type ":: 'List 'Number"` 的 `.reduce` 为 proven，`.append/.foldl` 却为 open；具体 `([] 1 2) .append 3` 和 `.foldl 10 +` 都能通过严格检查。**open 是查询证明不足，不等于运行必然失败**。#1455 首先补齐类型/来源证据并回归泛型及自定义 trait，不能用 primitive 替换用户方法测试来绕过。
+
+```cirru
+do
+  assert= ([] 1 0 2)
+    ([] 1 2) .join 0
+  assert= |1-2 $
+    [] 1 2
+    , .join-str |-
+  assert= (#{} 1)
+    ({} (:a 1) (:b 1))
+      , .values
+  assert= 13 $
+    [] 1 2
+    , .foldl 10 +
+  assert= ([] 1 2 3)
+    ([] 1 2) .append 3
+```
+
+### 转换、解析与名义构造
+
+实施任务：[#1456](https://github.com/calcit-lang/calcit/issues/1456)。`!` 不表示“可能抛错”，`try-` 不表示异步，转换词不能充当类型断言。
+
+| 当前契约 | 决策 | 类型/失败与迁移限制 |
+| --- | --- | --- |
+| `Option/Result/Struct` 名义构造；旧 `%some/%none/%ok/%err` | **保留**直接名义构造，旧 helper 属 **内部兼容** | 完整保留 payload/字段类型与错误；沿用现有 fix 与退场门禁 |
+| `turn-str` 转调 `turn-string`，schema 为 `T -> String`，native 实际只接受 nil/Bool/String/Tag/Symbol/Number | **目标词** `to-string`；**暂缓具体入口替换**直到可接受类型证明齐全 | nil 转空串、Tag/Symbol 文本等语义要保留；不能直接指向 Debug/Show，也不把所有 T 声称合法 |
+| `turn-symbol: Dynamic -> Dynamic`；`turn-tag` | **目标词** `to-symbol/to-tag`；先修输入/成功返回契约 | Symbol 成功结果不能继续伪装 Dynamic；不凭更好看的名字允许集合等非法输入 |
+| `str`、`.debug/.show`、`format-cirru-edn`、`format-to-lisp/to-lispy-string` | **保留**显示/调试/序列化职责；最后两者的等价范围 **暂缓** | 序列化默认 Cirru EDN；格式化不是通用安全转换，不借改名改变 escaping/往返行为 |
+| `.parse-json/.parse-cirru-edn/.parse-cirru/.parse-float` 返回 Result；`json-parse` 等旧入口抛错 | **保留并首选** `.parse-格式` 的 checked 路径；旧 throwing 入口属 **内部兼容** | `String -> Result<T,String>`；开放数据合法保留 Dynamic，typed parse-as 先证明 schema。throw→Result 是人工迁移，不能自动插入 unwrap/fallback；不新增公开 throwing 别名 |
+| `number->int8` 等 `Number -> Result<Refinement,String>`；`js-nullish->option: JsNullish<T> -> Option<T>` | **保留**显式源→目标边界箭头 | 前者检查范围/整数/有限性，后者只包装、不验证 T；不并列再造 `to-/as-/into-` 同义入口，JS 后者仍受 `:js-ffi` 限制 |
+| `strip-prefix/strip-suffix: (String,String) -> String`，未匹配保留原串 | **保留**现有签名和不匹配行为 | 不因为 Rust 同名 API 返回 Option 就夹带返回类型变更 |
+| `fs:path: String -> FsPath` 与直接 Struct 构造 | **保留当前推荐** `fs:path`；**暂缓**构造方式合并 | 先核对初始化/trait/校验等价性；不要把内部 `fs-path:*` 当成应用首选 |
+
+### 效果、宿主与内部实现
+
+实施任务：[#1457](https://github.com/calcit-lang/calcit/issues/1457)；元数据与兼容入口收尾为 [#1458](https://github.com/calcit-lang/calcit/issues/1458)。统一 Calcit-facing adapter，不要求改动外部 JS 属性、native ABI 或 WIT 字段名。
+
+`!` 的目标含义是**显式状态写入、外部动作、资源生命周期与回调注册/取消**。它不是纯度系统、错误标记或权限证明。普通文件/环境/时钟读取和随机数取值不因“不纯”自动加 `!`；消耗输入/等待另列有限例外。持久化集合的 insert/remove 返回新值，不加 `!`。
+
+| 当前入口 | 决策与目标签名原则 | 边界 |
+| --- | --- | --- |
+| `reset!/swap!`；`add-watch/remove-watch` | **保留**前者，后者 **目标** `add-watch!/remove-watch!` | 原参数、返回和 watcher 次数不变；不是借后缀新增类型缩窄 |
+| FsPath `.write-text`；js-ffi `write-text!` | core **目标** `.write-text!`；模块 **保留**已有 `!` | core 仍 `(FsPath,String)->Result<Unit,String>`；js-ffi 原有 Unit/throw/async 契约不因命名一致而自动统一 |
+| FfiTask `.cancel/.cancel-with`，FfiResponse `.resolve/.reject` | **目标**对应 `.cancel!/.cancel-with!/.resolve!/.reject!` | 保持既有泛型、签名、exactly-once、释放与失败行为，不能用返回 Bool 或命名代替生命周期证明 |
+| `.read-text/.read-dir/.walk-dir`、`get-args/get-env`；std `read-file!/read-dir!/walk-dir!` | **保留**core 查询名字；std **目标**去掉读取的 `!` | 保留 Option/Result/throw 各自边界；模块分别 PR，不为命名增加新宿主能力 |
+| `cpu-time: () -> Number` 实际为单调毫秒；`unix-time-ms` | **目标** `monotonic-time-ms`；**保留** `unix-time-ms` | 时间基准和单位不能随 rename 改变；std `get-time!/get-timestamp` 先核对返回模型再定映射 |
+| 定时器注册/取消、`on-ctrl-c`；随机数、ID 生成 | **目标**注册/取消使用 `!`；随机/ID 的具体词汇 **暂缓** | 区分产生值与改变资源状态，核对 async、句柄和 callback；不按字符串后缀批量处理 |
+| `println/echo/eprintln/read-stdin-text/wait-ms` | **保留**这些有限、按名明确的效果例外 | 输出、消费 stdin 和等待仍有真实效果；不是“所有 read-/print- 都自动例外” |
+| `non-nil!` 是会失败的检查；旧 helper 中的 `!` | **暂缓**到 checked assertion/unwrap 命名明确 | 不改变失败模型，不将 `.unwrap` 自动插入业务代码 |
+| `&trait::new/&impl::new` 对比 `&enum-def:new/&struct-def:new`，`is-spreading-mark?/data-definition-*/foldl'` | **内部**；先修角色元数据，后有界统一内部拼写 | 不给应用新增 alias；同步注册、macro、typing、lowering 与错误映射，不能为前缀整齐重做编译器 |
+| `tuple?/tuple-enum` 迁移报错桩；Option/Result method helper | **内部兼容**，分别退场 | 报错桩与仍被方法引用的实现不是一类；`:internal` 也不能隐藏 Option、数学函数等实际公开能力 |
+
+### 实施与验收顺序
+
+1. 0.27.0：已合并的 Unicode 索引修复 → #1454 明确 nil/Option 与成员命题、修整数边界 → #1455 长度/List add 遮蔽 → seeded fold/intersperse → 去重 values 与其他组合。后续每批以对应 issue/PR 决定实际发布范围，不把整张表一次替换。
+2. 0.28.0：#1456 转换/解析证据 → #1457 core/js-ffi/std 效果 adapter → #1458 已落地入口的 Agent 推荐、版本化 preset 和兼容清理；暂缓项不阻塞前一批，也不被视为默许改名。
+3. 等价 fix 复用已有源码来源与 revision/fingerprint 防护；先 preview，再带 `--expect-revision` 应用，再次 preview 应为空。code、`:tests`、`:examples` 分别记录覆盖或人工处置；未知 macro、遮蔽、函数值、开放 receiver、自定义 trait 不猜。旧 preset 内容不变，新规则组合进后续版本的 preset，不新增顶层入口。
+4. 每批保留 Calcit `:tests` 的用户方法调用，覆盖正常、空值、重复项、类型错误、失败与副作用顺序；Rust/脚本只验证 CLI、host/内存等边界。当前已支持的 native/JS/WASM/WASI 路径都验证，unsupported 明确列出，不能为测试绕过 lowering 改成 native call。
+5. Respo 优先回归事件键、HTML/属性/样式输出与集合转换；js-ffi 回归 effect/JS 边界；std 核对时间/随机/文件模型。用实际 commit、entry、发布依赖记录证据，不写“所有消费者已迁移”。参考已核对的 Respo `respo.render.html/element->string` 中 `some?/turn-string/join-str`，旧 nil 判断不能自动换成 Option 判断。
+6. 删除旧入口前同时满足：首选入口具有不弱于旧入口的类型证据；严格检查与相关 backend/真实消费者通过；fix 或人工迁移说明可用；至少一个正式版本的迁移窗口；core method 与待删应用入口解耦。到达版本号不自动授权删除；保留原因写到 issue，不让兼容名永久成为平行推荐。
+
+本表来自 core metadata/method tables、`src/calcit/proc_name.rs`、native/JS builtin 实现、实时 `query type` 与 Respo/js-ffi/std 用法核对。它不是新的运行时 source of truth；实际 API 仍由 schema、解析到的定义和测试决定。每阶段完成后独立发版并发布中文成果 Discussion，不把本规划当作所有功能已交付。
+
 ## 可运行的角色示例
 
 `Option` 是名义类型定义；加上 variant 后，同一定义也能直接构造值。类型表达式仍写在 schema 中，不能把 `Option` 裸名当成已构造的值：
@@ -79,13 +219,15 @@ assert= 3 $ .unwrap $ Option :some 3
 方法在具体接收者上保留类型关系，失败行为也属于该方法的契约：
 
 ```cirru
-assert= 3 $ (Option :some 3) .unwrap
+assert= 3 $
+  Option :some 3
+  , .unwrap
 ```
 
 无接收者的解析操作保持命名空间函数形式，其返回值是 Result：
 
 ```cirru
-assert= (Result :ok 3) $ parse-float |3
+assert= (Result :ok 3) (parse-float |3)
 ```
 
 String 的 `.includes?` 检查子串；`.contains?` 在 String 上检查**字符索引**是否有效，不能只凭英文词形把两者当同义词。List 和 Map 的 `.get` 都返回 Option：
@@ -93,8 +235,11 @@ String 的 `.includes?` 检查子串；`.contains?` 在 String 上检查**字符
 ```cirru
 do
   assert= true $ |abc .includes? |b
-  assert= (Option :some 2) $ ([] 1 2 3) .get 1
-  assert= (Option :some 2) $ ({} (:x 2)) .get :x
+  assert= (Option :some 2)
+    ([] 1 2 3) .get 1
+  assert= (Option :some 2)
+    ({} (:x 2))
+      , .get :x
 ```
 
 下面是内部 primitive 的定位示例，不是应用代码的推荐写法；它和上面的 `.includes?` 在这个输入上结果相同，但应用应先使用方法：
@@ -108,6 +253,8 @@ assert= true $ &str:includes? |abc |b
 先查类型再选方法，不要从模糊搜索到的内部定义名猜调用形式：
 
 ```bash
+calcit docs read api-roles.md '逐族命名决策'
+calcit docs read api-roles.md '谓词与成员查询'
 calcit query type ":: 'Option 'Number"
 calcit query type "'String"
 calcit query type ":: 'List 'Number"
@@ -116,6 +263,8 @@ calcit query def 'calcit.core/Option' --format edn
 calcit query def 'calcit.core/%some' --format edn
 calcit query context 'calcit.core/option:unwrap' --format edn
 ```
+
+`docs read` 的默认 guidebook 来自已安装的 `~/.config/calcit/docs`，不是当前工作目录的源码，也不会因重编译 CLI 自动更新。找不到新章节时，先用 `docs sections api-roles.md` 核对已安装文档版本，再按已有文档安装流程更新；不要为查新名字再创建查询入口。开发中的 Markdown 可直接用 `docs check-md <path> --snapshot <snapshot>` 验证，模块文档仍用现有 `--module` 参数查询。
 
 `query type` 的 `proven` 表示当前类型能证明该方法的调用契约；`open` 或 `ambiguous` 不是类型安全的肯定结论。方法旁边的 definition path 用于追踪实现。再用 `query def/context` 读取 `:constructor` 或 `:internal` 标签、schema 与示例；需要机器处理时优先用 `--format edn`。项目代码的类型证据可用 `query type-at` 或 `query context` 查看。
 

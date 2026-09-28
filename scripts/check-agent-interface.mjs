@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import assert from "node:assert/strict";
 
 const binary = process.env.CALCIT_AGENT_BIN ?? process.env.CALCIT_AGENT_CR ?? "./target/debug/calcit";
@@ -1043,6 +1043,24 @@ assert.match(topLevelHelp.stdout, /ir\s+diagnostic compiler output/);
 // Real CLI round trips, including the legacy wire format and negative paths.
 const fixtureDir = mkdtempSync(join(tmpdir(), "calcit-query-def-"));
 try {
+  // Exercise the same offline reader with checkout docs in an isolated module;
+  // the user's installed guidebook may be an older release and must not change.
+  const namingDocs = join(fixtureDir, ".calcit", "modules", "naming-contract", "docs");
+  mkdirSync(namingDocs, { recursive: true });
+  copyFileSync("docs/features/api-roles.md", join(namingDocs, "api-roles.md"));
+  const namingBinary = binary.includes("/") || binary.includes("\\") ? resolve(binary) : binary;
+  const namingGuide = spawnSync(namingBinary, ["docs", "read", "api-roles.md", "逐族命名决策", "--module", "naming-contract"], {
+    cwd: fixtureDir,
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  assert.ifError(namingGuide.error);
+  assert.equal(namingGuide.status, 0, namingGuide.stderr);
+  assert.match(namingGuide.stdout, /不是“以下新名字已经可用”/);
+  assert.match(namingGuide.stdout, /谓词与成员查询/);
+  assert.match(namingGuide.stdout, /non-nil\?/);
+  assert.match(namingGuide.stdout, /不把旧.*contains/);
+
   const fixture = join(fixtureDir, "calcit.cirru");
   copyFileSync("calcit/test.cirru", fixture);
   const run = (...args) => {
