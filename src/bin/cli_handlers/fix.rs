@@ -3530,6 +3530,13 @@ fn plan_core_predicate_rename_fixes(
     if list_head(&entry.code) == Some("defmacro") {
       continue;
     }
+    if matches!(rule, CorePredicateRename::Integer) {
+      let mut local_bindings = HashSet::new();
+      collect_potential_local_bindings(&entry.code, &mut local_bindings);
+      if local_bindings.contains(old_name) {
+        continue;
+      }
+    }
 
     let usages = if matches!(rule, CorePredicateRename::NonNil) {
       runner::preprocess::trace_definition_source_usages(namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
@@ -5156,16 +5163,16 @@ fn print_human_report(report: &FixReport<'_>) {
 #[cfg(test)]
 mod tests {
   use super::{
-    FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_potential_local_bindings, collect_redundant_do_paths,
-    fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion, legacy_constructor_replacement, migration_for_source_leaf,
-    optional_candidate_signature_is_closed, optional_candidate_type_is_closed, optional_parameter_candidate, prototype_is_shadowed,
-    resolve_fix_target, rewrite_loaded_schema_type_references, rewrite_named_constructor_tree, struct_fields_are_complete,
-    suggestion_operations,
+    FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_builtin_round_call_heads,
+    collect_potential_local_bindings, collect_redundant_do_paths, fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion,
+    legacy_constructor_replacement, migration_for_source_leaf, optional_candidate_signature_is_closed,
+    optional_candidate_type_is_closed, optional_parameter_candidate, prototype_is_shadowed, resolve_fix_target,
+    rewrite_loaded_schema_type_references, rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
   };
   use calcit::calcit::{CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTrait, CalcitTypeAnnotation, SchemaKind};
   use cirru_parser::Cirru;
   use serde_json::Value;
-  use std::collections::BTreeMap;
+  use std::collections::{BTreeMap, HashSet};
   use std::sync::Arc;
 
   use super::super::common::markdown_cirru_section;
@@ -5428,6 +5435,34 @@ mod tests {
     collect_potential_local_bindings(&code, &mut shadowed);
     assert!(prototype_is_shadowed("Result", &shadowed));
     assert!(!prototype_is_shadowed("app.schema/Result", &shadowed));
+  }
+
+  #[test]
+  fn integer_predicate_scanner_rejects_binder_shaped_source() {
+    let parameter = Cirru::List(vec![
+      leaf("defn"),
+      leaf("demo"),
+      Cirru::List(vec![leaf("round?"), leaf("x")]),
+      Cirru::List(vec![leaf("round?"), leaf("x")]),
+    ]);
+    let binding = Cirru::List(vec![
+      leaf("defn"),
+      leaf("demo"),
+      Cirru::List(vec![]),
+      Cirru::List(vec![
+        leaf("let"),
+        Cirru::List(vec![Cirru::List(vec![leaf("round?"), leaf("x")])]),
+        Cirru::List(vec![leaf("round?"), leaf("x")]),
+      ]),
+    ]);
+    for code in [parameter, binding] {
+      let mut bindings = HashSet::new();
+      collect_potential_local_bindings(&code, &mut bindings);
+      assert!(bindings.contains("round?"));
+      let mut heads = Vec::new();
+      collect_builtin_round_call_heads(&code, &mut Vec::new(), &mut heads);
+      assert!(!heads.is_empty(), "the binder guard must precede shape-based call scanning");
+    }
   }
 
   #[test]
