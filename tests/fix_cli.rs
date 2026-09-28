@@ -1010,6 +1010,91 @@ fn list_get_fix_skips_string_and_quoted_calls() {
 }
 
 #[test]
+fn list_get_fix_keeps_user_defined_nth_method() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (name, code) in [
+    ("IndexedBox0", "quote $ defstruct IndexedBox0 (:value 'Number)"),
+    ("IndexedBoxTrait", "quote $ deftrait IndexedBoxTrait (.nth :fn)"),
+    (
+      "IndexedBoxImpl",
+      "quote $ defimpl IndexedBoxImpl IndexedBoxTrait\n  .nth $ fn (box index)\n    %some $ &struct:get box :value",
+    ),
+    ("IndexedBox", "quote $ def IndexedBox $ impl-traits IndexedBox0 IndexedBoxImpl"),
+    ("read-box-index", "quote $ defn read-box-index (box index) (box .nth index)"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "install custom index trait boundary",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/read-box-index",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'fix-command.main/IndexedBox 'Number) (:return $ :: 'Option 'Number)",
+      ],
+    ),
+    "declare custom index receiver",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "fix-command.main/read-box-index",
+        "retains-custom-nth-behavior",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= (%some 7) $ read-box-index (%{} IndexedBox (:value 7)) 0",
+      ],
+    ),
+    "attach custom index behavior test",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["test", "fix-command.main/read-box-index", "--require-match"]),
+    "custom index method behavior",
+  );
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-list-get-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "read-box-index",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "custom index method preview");
+  assert_eq!(parse_stdout(&preview)["data"]["suggestions"], serde_json::json!([]));
+}
+
+#[test]
 fn map_distinct_values_fix_preserves_deduplication_and_revision_guard() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
