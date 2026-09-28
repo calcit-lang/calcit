@@ -965,7 +965,7 @@ fn list_get_fix_preserves_option_lookup_and_revision_guard() {
 }
 
 #[test]
-fn list_get_fix_skips_string_and_quoted_calls() {
+fn list_get_fix_preserves_non_list_quoted_and_macro_boundaries() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
@@ -1007,6 +1007,63 @@ fn list_get_fix_skips_string_and_quoted_calls() {
     assert_success(&preview, "excluded List lookup preview");
     assert_eq!(parse_stdout(&preview)["data"]["suggestions"], serde_json::json!([]));
   }
+  for (name, code) in [
+    ("pass-form", "quote $ defmacro pass-form (body) body"),
+    (
+      "macro-list-index",
+      "quote $ defn macro-list-index (xs index) $ pass-form $ xs .nth index",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "install macro lookup boundary source",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/macro-list-index",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'Number) 'Number) (:return $ :: 'Option 'Number)",
+      ],
+    ),
+    "declare macro lookup receiver",
+  );
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-list-get-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "macro-list-index",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "macro lookup preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+  assert_eq!(suggestions.len(), 1, "{report}");
+  assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
+  assert!(suggestions[0]["replacement"].is_null(), "{report}");
 }
 
 #[test]
