@@ -8019,7 +8019,7 @@
             :args $ [] 'Dynamic $ :: 'List 'K
             :generics $ [] 'K
         'some? $ %{} 'CodeEntry
-          :doc "|Complement of nil?\nReturns true when the value is not nil."
+          :doc "|判断一个值是否不为 nil。false、0、空集合以及 Option :none 都会返回 true；该谓词不同于 Option 的 .some?。WASM 会依据静态类型证据 lowering，泛型的直接调用会在调用点单态化；无法证明具体类型的开放导出或一等函数边界会明确报错。"
           :code $ quote $ defn some? (x)
             not $ nil? x
           :examples $ []
@@ -8028,24 +8028,58 @@
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'T
             :generics $ [] 'T
-          :tests $ [] $ %{} 'TestEntry (:name |non-nil-is-not-option-variant)
-            :code $ quote $ do
-              assert= false $ some? nil
-              assert= true $ some? false
-              assert= true $ some? 0
-              assert= true $ some? $ []
-              assert= true $ some? $ Option :none
-              assert= true $ some? $ Option :some nil
-              assert= false $
-                Option :none
-                , .some?
-              assert= true $
-                Option :none
-                , .none?
-              assert= true $
-                Option :some nil
-                , .some?
-            :tags $ #{} :core :naming-contract :unit
+          :tests $ []
+            %{} 'TestEntry (:name |non-nil-is-not-option-variant)
+              :code $ quote $ do
+                assert= false $ some? nil
+                assert= true $ some? false
+                assert= true $ some? 0
+                assert= true $ some? $ []
+                assert= true $ some? $ Option :none
+                assert= true $ some? $ Option :some nil
+                assert= false $
+                  Option :none
+                  , .some?
+                assert= true $
+                  Option :none
+                  , .none?
+                assert= true $
+                  Option :some nil
+                  , .some?
+              :tags $ #{} :core :naming-contract :unit
+            %{} 'TestEntry (:name |typed-callers-preserve-non-nil-semantics)
+              :code $ quote $ do
+                let
+                    typed-bool $ fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'Bool
+                        :return 'Bool
+                      some? x
+                    typed-number $ fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'Number
+                        :return 'Bool
+                      some? x
+                  assert= true $ typed-bool false
+                  assert= true $ typed-number 0
+                let
+                    generic $ fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'T
+                        :generics $ [] 'T
+                        :return 'Bool
+                      some? x
+                    forward $ fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'T
+                        :generics $ [] 'T
+                        :return 'Bool
+                      generic x
+                  assert= true $ forward false
+                  assert= true $ forward 0
+                  assert= false $ forward nil
+                  assert= true $ forward $ Option :none
+              :tags $ #{} :core :naming-contract :unit :wasm
         'sort $ %{} 'CodeEntry
           :doc "|internal function for sorting lists\nSyntax: (sort list) or (sort list comparator)\nParams: list (list), comparator (function, optional)\nReturns: list\nReturns sorted list using natural order or custom comparator"
           :code $ quote &runtime-implementation

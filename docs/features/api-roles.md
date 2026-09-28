@@ -90,7 +90,7 @@ String 的 `.len/.count`、`.get/.nth/.slice` 与 `.find-index` 使用 Unicode �
 
 | 当前入口与签名/行为 | 决策与目标签名 | 迁移边界 |
 | --- | --- | --- |
-| `some?: T -> Bool`，仅排除 nil；Option none 也为 true | **目标** `non-nil?: T -> Bool` | 等价改名，不自动改成 Option `.some?`，也不附带 narrow |
+| `some?: T -> Bool`，仅排除 nil；Option none 也为 true | **目标** `non-nil?: T -> Bool` | 等价改名，不自动改成 Option `.some?`，也不附带 narrow；WASM 已以类型证据修复 false/0 误判 |
 | Option `.some?/.none?: Option<T> -> Bool`；Result `.ok?/.err?: Result<T,E> -> Bool` | **保留**，判断名义 variant | 空值、false 和 nil payload 不改变 variant；既有 helper 退场条件仍适用 |
 | List/String `.contains?: (receiver, Number) -> Bool`，检查索引 | **目标** `.contains-index?`，签名/索引错误行为不变 | 已证明 builtin receiver 才可迁移；非法索引的 backend 边界另测，不能改写为值查询 |
 | Map `.contains?: (Map<K,V>, K) -> Bool`；`.includes?: (Map<K,V>, V) -> Bool` | **目标** `.contains-key?`、`.contains-value?`，签名不变 | 明确 K/V；不能因为二者恰为同类型而互换 |
@@ -102,7 +102,7 @@ String 的 `.len/.count`、`.get/.nth/.slice` 与 `.find-index` 使用 Unicode �
 
 `Contains` 不能直接别名成一个新 trait：它目前横跨索引、键、字段与成员。#1454 先为上述命题建立具体签名，逐一迁移 builtin 与已定位的自定义 impl；旧 `Contains` bound 和具名 trait-call 在兼容窗口保持原契约。自动 fix 只有在 origin/receiver/bound 都能证明时才动，普通用户自定义同名方法不改。不得把泛型 `Contains<T,K>` 草率替换成更宽 Dynamic 或猜测性的 trait 联集。
 
-前置缺陷不能由改名掩盖：实际 WASM 复现中 `some? false` 与 `some? 0` 为 false，而 native/JS 为 true；#1454 仍需修复 nil 判断的类型/表示边界，再证明 `some? -> non-nil?` 在已支持目标等价。`round?` 的近零/无穷差异已由共享 Calcit 测试覆盖并修复；此处不把旧缺陷固化成新的跨目标契约，也不将部分修复标记为整个 #1454 完成。
+前置缺陷不能由改名掩盖：WASM 的 `some? false` 与 `some? 0` 误判已经改为依据静态类型证据 lowering；具体参数及直接调用的泛型 helper 会单态化，无法证明类型的开放导出或一等函数边界则以 `E_WASM_NIL_TYPE_EVIDENCE` 拒绝。native、JS、core WASM 与 WASI Component 共享同一组 Calcit 定义测试；详细迁移边界见[升级说明](../run/upgrade.md#wasm-的-nil-类型证据)。这证明旧 `some?` 的跨目标语义，但不会提前授权 `some? -> non-nil?` 改名或标记整个 #1454 完成。`round?` 的近零/无穷差异也已由共享测试修复；此处不把旧缺陷固化成新契约。
 
 下面是**当前旧契约的反例**，说明为什么不能只凭词形替换；对应 definition `:tests` 会随等价迁移一起保留这些断言：
 

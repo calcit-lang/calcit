@@ -44,6 +44,26 @@ assert= true $ .round? -0
 assert= true $ round? 9007199254740992
 ```
 
+## WASM 的 nil 类型证据
+
+WASM 后端现在依据静态类型证据 lowering `nil?`，从而让 `some? false`、`some? 0` 与 native、JavaScript 保持一致。当前 scalar ABI 中 nil、false 与数值 0 的位表示不能单靠运行时比较区分；因此具体类型的参数会直接得到确定的 nil 判断结果，同时原表达式仍严格求值一次，不会跳过副作用。
+
+泛型 helper 在直接调用点取得具体实参类型后会被单态化，跨 namespace 的普通 Calcit 引用同样有效；不需要改成 native call，也不需要为 helper 建立额外加载路径。名义 `Option` 自身不是 nil，所以 `some? $ Option :none` 仍为 true，不能替代 Option 的 `.some?`。
+
+无法取得具体类型证据的开放 `Dynamic`、未绑定泛型，以及把 nil-sensitive 泛型 helper 作为一等函数或公开 WASM 导出的边界，会明确报出 `E_WASM_NIL_TYPE_EVIDENCE`。带 `&` 的 spread 调用没有固定实参形状，不能充当泛型特化点；如果目标 helper 依赖 nil 类型证据，同样会在编译期拒绝，而不是留下运行时 trap。应改为类型已具体化的普通直接调用，或增加一个签名闭合、无需猜测 payload 类型的 wrapper。
+
+旧 `Optional<T>` 只有在 payload 使用确定非零的引用/句柄表示时才可做运行时 nil 判断，例如 WASI `get-env` 的 `Optional<String>`；`Optional<Number>` 与 `Optional<Bool>` 仍会拒绝，因为 0/false 和 nil 在 scalar ABI 中相同。这类边界应先收紧 schema、迁到名义 `Option`，或在 Calcit 调用点完成具体化；编译器不会猜测零值，也不会为了兼容扩展动态追踪规则。此次修复不改变 scalar ABI，也没有提供掩盖开放类型的自动转换。
+
+```cirru
+assert= true $ some? false
+
+assert= true $ some? 0
+
+assert= false $ some? nil
+
+assert= true $ some? $ Option :none
+```
+
 ## 字符串搜索索引单位修复
 
 `.find-index` / `str-find-index` 现在返回 Unicode 标量索引，与 `.get/.slice/.len` 一致。此前 native/WASM 返回 UTF-8 字节偏移，JS 返回 UTF-16 单元偏移，例如在 `😀a` 中搜索 `a` 分别得到 4 和 2；修复后统一为 `Option :some 1`。ASCII、找不到、空 pattern 与首次匹配行为不变，`Option<Number>` 类型也不变。
