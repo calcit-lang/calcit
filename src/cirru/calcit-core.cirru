@@ -7843,17 +7843,58 @@
               assert= 2 $ round 1.8
             :tags $ #{} :core :unit
         'round? $ %{} 'CodeEntry
-          :doc "|internal function for checking if number is round\nSyntax: (round? n)\nParams: n (number)\nReturns: boolean\nReturns true if number has no fractional part"
+          :doc "|判断 Number 是否有限且恰好无小数部分。函数 round? 和方法 .round? 语义相同：NaN、正负 Infinity、非零小数返回 false，-0 返回 true。这不是安全整数范围或 Int32/UInt32 等 refinement 检查，也不执行舍入。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |distinguishes-integers)
-            :code $ quote $ do
-              assert= true $ round? 1
-              assert= false $ round? 1.1
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |distinguishes-integers)
+              :code $ quote $ do
+                assert= true $ round? 1
+                assert= false $ round? 1.1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |finite-exact-integer-boundaries)
+              :code $ quote $ do
+                assert= true $ round? 0
+                assert= true $ round? -0
+                assert= true $ round? 1
+                assert= true $ round? -1
+                assert= true $ round? 9007199254740992
+                assert= true $ round? 1e100
+                assert= false $ round? 1.25
+                assert= false $ round? -1.25
+                assert= false $ round? 0.0000000000000001
+                assert= false $ round? -0.0000000000000001
+                assert= false $ round? $ / 1 1e300
+                assert= false $ round? $ / -1 1e300
+                assert= false $ round? $ / 1 0
+                assert= false $ round? $ / -1 0
+                assert= false $ round? $ / 0 0
+                assert= false $ round? $ sqrt -1
+              :tags $ #{} :core :numeric-predicate :unit
+            %{} 'TestEntry (:name |integer-method-and-evaluation)
+              :code $ quote $ do
+                assert= true $ .round? 0
+                assert= true $ .round? -0
+                assert= true $ .round? 1
+                assert= true $ .round? -1
+                assert= true $ .round? 9007199254740992
+                assert= true $ .round? 1e100
+                assert= false $ .round? 1.25
+                assert= false $ .round? -1.25
+                assert= false $ .round? 0.0000000000000001
+                assert= false $ .round? -0.0000000000000001
+                assert= false $ .round? $ / 1 1e300
+                assert= false $ .round? $ / -1 1e300
+                assert= false $ .round? $ / 0 0
+                assert= false $ .round? $ sqrt -1
+                assert= false $ .round? $ / 1 0
+                assert= false $ .round? $ / -1 0
+                assert= true $ round? $ do (println |integer-free-argument) 0
+                assert= false $ .round? $ do (println |integer-method-argument) 0.0000000000000001
+              :tags $ #{} :core :numeric-predicate :unit
         'section-by $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn section-by (xs0 n)
             if (>= n 1)

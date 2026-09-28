@@ -96,13 +96,13 @@ String 的 `.len/.count`、`.get/.nth/.slice` 与 `.find-index` 使用 Unicode �
 | Map `.contains?: (Map<K,V>, K) -> Bool`；`.includes?: (Map<K,V>, V) -> Bool` | **目标** `.contains-key?`、`.contains-value?`，签名不变 | 明确 K/V；不能因为二者恰为同类型而互换 |
 | Struct `.contains?` 检查字段；Enum `.contains?` 检查 payload 位置 | **目标** `.contains-field?` / `.contains-index?`，分别保持字段键/数值参数及 Bool 返回 | 反射与异构 payload 不伪装成普通同质集合；缺少类型证据时人工审阅 |
 | String `.includes?: (String, String) -> Bool`；List/Set `.includes?: (C<T>, T) -> Bool` | **保留** `.includes?`；Set `.contains?` 的同义入口迁到 `.includes?` | String 是子串，其余为成员；Set 别名只在证明实际实现后迁移，不全局替换 Contains trait |
-| `round?/.round?: Number -> Bool`，意图为“无小数部分” | **目标词** `integer?/.integer?`；**先修语义再迁移** | 目标为有限且无小数部分；NaN/±Infinity false，-0 true。native 的 EPSILON 容差与 JS 舍入比较存在近零/Infinity 分歧，修复不伪装成 rename；Bool 不等于 Int refinement 证明 |
+| `round?/.round?: Number -> Bool`，有限且无小数部分 | **目标词** `integer?/.integer?`；语义已修复，名称尚未迁移 | native/JS/WASM/WASI 统一 NaN/±Infinity false，-0 true，非零小数 false；近零/Infinity 的旧行为变化见 [升级说明](../run/upgrade.md#整数谓词的跨目标语义修复)。Bool 不等于 Int refinement 证明 |
 | `every?` / `any?`，predicate 返回 Bool，短路；空集分别 true/false | **目标** `all?` / **保留** `any?`，参数顺序和短路不变 | 先补足已有支持的 receiver/callback 类型关系；不凭当前宽 schema 承诺所有容器，或凭改名新增方法 |
 | `nil?/empty?/blank?/starts-with?/ends-with?/even?/odd?` | **保留**现有签名和命题 | 空白不等于空串；其他已有明确类型谓词同样不为相似拼写强改 |
 
 `Contains` 不能直接别名成一个新 trait：它目前横跨索引、键、字段与成员。#1454 先为上述命题建立具体签名，逐一迁移 builtin 与已定位的自定义 impl；旧 `Contains` bound 和具名 trait-call 在兼容窗口保持原契约。自动 fix 只有在 origin/receiver/bound 都能证明时才动，普通用户自定义同名方法不改。不得把泛型 `Contains<T,K>` 草率替换成更宽 Dynamic 或猜测性的 trait 联集。
 
-前置缺陷不能由改名掩盖：本次实际 WASM 复现中 `some? false` 与 `some? 0` 为 false，而 native/JS 为 true；需先修复 nil 判断的类型/表示边界，再证明 `some? -> non-nil?` 在已支持目标等价。`round?` 的近零/无穷差异也先由 #1454 修复并说明行为变化，不把这些旧缺陷固化成新的跨目标契约。
+前置缺陷不能由改名掩盖：实际 WASM 复现中 `some? false` 与 `some? 0` 为 false，而 native/JS 为 true；#1454 仍需修复 nil 判断的类型/表示边界，再证明 `some? -> non-nil?` 在已支持目标等价。`round?` 的近零/无穷差异已由共享 Calcit 测试覆盖并修复；此处不把旧缺陷固化成新的跨目标契约，也不将部分修复标记为整个 #1454 完成。
 
 下面是**当前旧契约的反例**，说明为什么不能只凭词形替换；对应 definition `:tests` 会随等价迁移一起保留这些断言：
 

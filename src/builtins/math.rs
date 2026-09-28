@@ -2,7 +2,7 @@ use crate::builtins::meta::type_of;
 use crate::calcit::type_annotation::CalcitNumericRefinement;
 use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitProc, format_proc_examples_hint};
 
-use crate::util::number::{f64_to_i32, is_integer};
+use crate::util::number::f64_to_i32;
 
 pub fn binary_add(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
@@ -63,7 +63,7 @@ pub fn binary_divide(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn round_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
-    Some(Calcit::Number(n)) => Ok(Calcit::Bool(is_integer(*n))),
+    Some(Calcit::Number(n)) => Ok(Calcit::Bool(n.is_finite() && n.fract() == 0.0)),
     Some(a) => {
       let msg = format!(
         "&math:round? requires a number, but received: {}",

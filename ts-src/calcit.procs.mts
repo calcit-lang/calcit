@@ -1253,7 +1253,7 @@ export let _$n_number_$o_fits_$q_ = (value: number, target: CalcitTag): boolean 
   }
 };
 export let round_$q_ = (a: number) => {
-  return a === Math.round(a);
+  return Number.isInteger(a);
 };
 export let _$n_str_$o_concat = (a: string, b: string) => {
   // Optimize string concatenation by avoiding unnecessary toString calls
