@@ -94,6 +94,12 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   可以自动迁移，未知 macro 只返回 `requires-review`。当前只扫描所选 definition 的源码 `:code`，不会盲改 attached
   `:tests` / `:examples`；这些位置应由测试和人工检查同步迁移。本规则当前须显式选择，不改变已发布 preset；完成本阶段其余
   predicate/member 迁移后再统一进入新的版本化 preset。
+- `core-list-add-v1` 仅把类型和方法契约均已证明的 List `.add` 改成 `.append`。它要求旧、新方法都指向
+  `calcit.core/append`，形参和返回类型一致，且源码只经过已知保持调用的结构；Set/Map `.add` 不属于此规则，
+  开放 List、未知 macro 和无法回溯的接收者只给 `requires-review`。显式运行
+  `calcit calcit.cirru fix --rule core-list-add-v1 --format edn` 预览，再核对 definition、path、来源和 revision；
+  应用后重复预览并运行项目测试。该规则目前只覆盖 definition `:code`，`:tests` / `:examples` 仍需单独检查，
+  也不加入已发布的 preset。
 - `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
   同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples

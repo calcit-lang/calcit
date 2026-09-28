@@ -549,6 +549,8 @@ Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。
 
 普通值的非 nil 判断使用 `non-nil?`；旧 `some?` 只作为同义兼容入口，不能与 Option `.some?` 混淆。可用 `calcit fix --rule core-non-nil-predicate-v1 --format edn` 预览等价改名；规则只接受编译器已解析的 core 引用，未知 macro 保留 review，不会把 Option 判断或用户同名函数按词形替换。`JsNullish<T>` 继续使用 `js-present?` / `js-nullish?`，不能借 `non-nil?` 擦除宿主边界。
 
+List 单元素追加首选 `.append`，List 拼接用 `.concat`。迁移旧 `.add` 可显式运行 `calcit fix --rule core-list-add-v1 --format edn`：仅当具体 List 接收者与旧、新方法同指 `calcit.core/append` 且源码上下文稳定时提供可应用建议；Set/Map、开放类型与未知 macro 不得按字面改写。先预览，再携带原 revision 应用并重复预览；definition 附带的 `:tests` / `:examples` 不在本规则的自动覆盖范围内。
+
 0.26.0 不删除旧 `option:*` / `result:*` 方法 helper：它们仍是 core method 的实现目标，不应在新应用代码中直接调用。其应用兼容入口最早于 0.27.0、且真实消费者在匹配的发布版依赖上迁移并通过严格检查、运行测试、Agent 文档和受影响 backend 验证，以及 core method 实现解耦后，才可考虑删除。完整条件见 [API 角色与命名](features/api-roles.md#旧方法-helper-的退场条件)；不能仅凭 fix 预览为空就推断可以删除。
 
 以下正反例可以直接由 `docs check-md` 执行。Unicode 字符数量不同于 UTF-8 字节数；`List.get` 的越界结果是 `Option :none`；列表的 `.contains?` 查询索引，`.includes?` 才查询元素；解析失败保留为 `Result` 的错误分支：

@@ -101,6 +101,248 @@ fn assert_success(output: &Output, context: &str) {
 }
 
 #[test]
+fn list_add_fix_rewrites_only_proven_element_append() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let target = "fix-command.main/list-add";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn list-add ()\n  ([] 1 2) .add 3",
+      ],
+    ),
+    "install List element-add method",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'List 'Number)",
+      ],
+    ),
+    "declare List return type",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        target,
+        "preserves-element-append",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= ([] 1 2 3) $ list-add",
+      ],
+    ),
+    "attach Calcit behavior test",
+  );
+  let selector = [
+    "--rule",
+    "core-list-add-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "list-add",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &selector);
+  assert_success(&preview, "List add migration preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+  assert_eq!(suggestions.len(), 1, "{report}");
+  assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
+  assert_eq!(suggestions[0]["rule_id"], "core-list-add-v1");
+  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+
+  let stale = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-list-add-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "list-add",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      "stale-revision",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!stale.status.success(), "stale revision must reject apply");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-list-add-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "list-add",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "List add migration apply");
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "Calcit behavior after migration",
+  );
+  let repeated = run_fix(&snapshot, &selector);
+  assert_success(&repeated, "List add idempotent preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+
+  let parameter_target = "fix-command.main/add-to-list";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        parameter_target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn add-to-list (xs)\n  xs .add 3",
+      ],
+    ),
+    "install typed List parameter method",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        parameter_target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return $ :: 'List 'Number)",
+      ],
+    ),
+    "declare typed List parameter",
+  );
+  let parameter_preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-list-add-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "add-to-list",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&parameter_preview, "typed List parameter preview");
+  let parameter_report = parse_stdout(&parameter_preview);
+  assert_eq!(
+    parameter_report["data"]["suggestions"][0]["applicability"], "machine-applicable",
+    "{parameter_report}"
+  );
+}
+
+#[test]
+fn list_add_fix_keeps_other_collections_and_unknown_macro_for_review() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (target, source) in [
+    ("set-add", "quote $ defn set-add ()\n  (#{} 1 2) .add 3"),
+    ("quoted-add", "quote $ defn quoted-add ()\n  quote $ ([] 1 2) .add 3\n  [] 1 2"),
+    ("pass-form", "quote $ defmacro pass-form (body) body"),
+    ("macro-add", "quote $ defn macro-add () $ pass-form $ ([] 1 2) .add 3"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("fix-command.main/{target}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          source,
+        ],
+      ),
+      "install collection or macro source",
+    );
+  }
+  for (definition, return_type) in [
+    ("set-add", ":: 'Set 'Number"),
+    ("quoted-add", ":: 'List 'Number"),
+    ("macro-add", ":: 'List 'Number"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &format!("fix-command.main/{definition}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ :: 'Fn $ {{}} (:args $ []) (:return $ {return_type})"),
+        ],
+      ),
+      "declare collection return type",
+    );
+  }
+  for (definition, expected) in [("set-add", 0), ("quoted-add", 0), ("macro-add", 1)] {
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-list-add-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        definition,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, "collection add boundary preview");
+    let report = parse_stdout(&preview);
+    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+    assert_eq!(suggestions.len(), expected, "{definition}: {report}");
+    if definition == "macro-add" {
+      assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
+      assert!(suggestions[0]["replacement"].is_null(), "{report}");
+    }
+  }
+}
+
+#[test]
 fn optional_parameter_rule_reports_review_evidence_without_writing() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
