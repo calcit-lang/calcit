@@ -11,10 +11,15 @@ const run = (...args) => execFileSync(binary, args, {
 });
 const corePath = resolve("src/cirru/calcit-core.cirru");
 const core = JSON.parse(run("cirru", "parse-edn", "--file", corePath));
-const tests = core[":files"]["'calcit.core"].defs["'some?"].tests;
-assert.deepEqual(tests.map(test => test.name).sort(), [
+const legacyTests = core[":files"]["'calcit.core"].defs["'some?"].tests;
+assert.deepEqual(legacyTests.map(test => test.name).sort(), [
   "non-nil-is-not-option-variant", "typed-callers-preserve-non-nil-semantics",
 ]);
+const canonicalTests = core[":files"]["'calcit.core"].defs["'non-nil?"].tests;
+assert.deepEqual(canonicalTests.map(test => test.name).sort(), [
+  "distinguishes-nil-from-values-and-option-variants", "typed-callers-preserve-non-nil-semantics",
+]);
+const tests = [...legacyTests, ...canonicalTests];
 
 const fixture = await mkdtemp(join(tmpdir(), "calcit-nil-predicate-"));
 try {
@@ -73,7 +78,7 @@ try {
   const openSnapshot = join(fixture, "open.cirru");
   await copyFile(snapshot, openSnapshot);
   run(openSnapshot, "edit", "def", "calcit.nil-predicate/open-nil", "--input-format", "cirru", "--code",
-    "quote $ defwasm-export open-nil (x)\n  some? x");
+    "quote $ defwasm-export open-nil (x)\n  non-nil? x");
   run(openSnapshot, "edit", "schema", "calcit.nil-predicate/open-nil", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ [] 'T) (:generics $ [] 'T) (:return 'Bool)");
   const rejected = spawnSync(binary, ["wasm", openSnapshot, ...entry.slice(1), "--emit-path", join(fixture, "open-output")], {
@@ -87,7 +92,7 @@ try {
   const spreadSnapshot = join(fixture, "spread.cirru");
   await copyFile(snapshot, spreadSnapshot);
   run(spreadSnapshot, "edit", "def", "calcit.nil-predicate/generic-rest", "--input-format", "cirru", "--code",
-    "quote $ defn generic-rest (x & xs)\n  some? x");
+    "quote $ defn generic-rest (x & xs)\n  non-nil? x");
   run(spreadSnapshot, "edit", "schema", "calcit.nil-predicate/generic-rest", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ [] 'T) (:generics $ [] 'T) (:rest 'T) (:return 'Bool)");
   run(spreadSnapshot, "edit", "def", "calcit.nil-predicate/spread-nil", "--input-format", "cirru", "--code",
@@ -110,7 +115,7 @@ try {
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
   run(shadowSnapshot, "edit", "def", "calcit.nil-predicate/shadow-value", "--input-format", "json-ast", "--code",
     JSON.stringify(["defwasm-export", "shadow-value", ["x"], ["let", [
-      ["f", ["fn", ["x"], ["some?", "x"]]],
+      ["f", ["fn", ["x"], ["non-nil?", "x"]]],
     ], ["f", ["dynamic-number"]]]]));
   run(shadowSnapshot, "edit", "schema", "calcit.nil-predicate/shadow-value", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'Bool)");

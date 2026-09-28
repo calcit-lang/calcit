@@ -1312,7 +1312,7 @@ fn mixed_public_equality_reports_guided_type_mismatches() {
 fn option_migration_source_calls_fail_during_preprocessing() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
-      "do\n  = |dev $ get-env |mode\n  let\n      x $ get-env |mode\n    some? x\n  update-in ({} (:a ({}))) ([] :a) $ fn (x) do (assoc x :b 1)\n  let\n      op $ :: :session/connect\n      tag-name $ nth op 0\n    starts-with? tag-name :session/",
+      "do\n  = |dev $ get-env |mode\n  let\n      x $ get-env |mode\n    some? x\n  let\n      x $ get-env |mode\n    non-nil? x\n  update-in ({} (:a ({}))) ([] :a) $ fn (x) do (assoc x :b 1)\n  let\n      op $ :: :session/connect\n      tag-name $ nth op 0\n    starts-with? tag-name :session/",
     );
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
 
@@ -1320,7 +1320,7 @@ fn option_migration_source_calls_fail_during_preprocessing() {
       .expect("Option migration examples should preprocess with warnings, not reach runtime");
 
     let warnings = warnings.borrow();
-    for operation in ["=", "some?", "assoc"] {
+    for operation in ["=", "some?", "non-nil?", "assoc"] {
       assert!(
         warnings.iter().any(|warning| {
           warning.code() == Some("W_NOMINAL_ENUM_LEGACY_USE")

@@ -41,6 +41,16 @@ const scenarios = [
     },
   },
   {
+    name: "non-nil predicate context distinguishes Option variants",
+    args: ["src/cirru/calcit-core.cirru", "query", "context", "calcit.core/non-nil?", "--format", "json"],
+    check(result) {
+      assert.equal(result.data.id, "calcit.core/non-nil?");
+      assert.match(result.data.doc, /Option variant/);
+      assert.equal(result.data.schema, ":: 'Fn $ {} (:return 'Bool)\n  :args $ [] 'T\n  :generics $ [] 'T");
+      assert.equal(result.data.examples.items[0]?.cirru, "assert= true $ non-nil? 0");
+    },
+  },
+  {
     name: "Result helper context recommends receiver method",
     args: ["src/cirru/calcit-core.cirru", "query", "context", "calcit.core/result:ok?", "--format", "json"],
     check(result) {

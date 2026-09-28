@@ -1504,7 +1504,7 @@
               do
                 let
                     parts $ &map:destruct m
-                  if (some? parts)
+                  if (non-nil? parts)
                     assert= 3 $ count $ option:unwrap (last parts)
                     raise |expected-non-empty-map
                 assert= 10 $ foldl m 0 $ fn (acc pair)
@@ -2063,7 +2063,7 @@
             if (&list:empty? xs)
               if head? (&str x0)
                 if (nil? x0) | $ &str:concat "| " x0
-              if (some? x0)
+              if (non-nil? x0)
                 &str:concat
                   if head? (&str x0) (&str:concat "| " x0)
                   &str-spaced false & xs
@@ -6884,6 +6884,69 @@
           :schema $ :: 'Fn $ {} (:return 'T)
             :args $ [] 'T
             :generics $ [] 'T
+        'non-nil? $ %{} 'CodeEntry
+          :doc "|判断一个值是否不为 nil。false、0、空集合以及 Option :none 都会返回 true；Option variant 请使用 .some?/.none?。WASM 会依据静态类型证据 lowering，泛型直接调用会在调用点单态化；无法证明具体类型的开放导出或一等函数边界会明确报错。"
+          :code $ quote $ defn non-nil? (x)
+            not $ nil? x
+          :examples $ []
+            quote $ assert= true $ non-nil? 0
+            quote $ assert= false $ non-nil? nil
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T
+            :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry
+              :name |distinguishes-nil-from-values-and-option-variants
+              :code $ quote $ do
+                assert= false $ non-nil? nil
+                assert= true $ non-nil? false
+                assert= true $ non-nil? 0
+                assert= true $ non-nil? $ []
+                assert= true $ non-nil? $ Option :none
+                assert= true $ non-nil? $ Option :some nil
+                assert= false $
+                  Option :none
+                  , .some?
+                assert= true $
+                  Option :none
+                  , .none?
+                assert= true $
+                  Option :some nil
+                  , .some?
+              :tags $ #{} :core :naming-contract :unit
+            %{} 'TestEntry (:name |typed-callers-preserve-non-nil-semantics)
+              :code $ quote $ do
+                let
+                    typed-bool $ fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'Bool
+                        :return 'Bool
+                      non-nil? x
+                    typed-number $ fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'Number
+                        :return 'Bool
+                      non-nil? x
+                  assert= true $ typed-bool false
+                  assert= true $ typed-number 0
+                let
+                    generic $ fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'T
+                        :generics $ [] 'T
+                        :return 'Bool
+                      non-nil? x
+                    forward $ fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'T
+                        :generics $ [] 'T
+                        :return 'Bool
+                      generic x
+                  assert= true $ forward false
+                  assert= true $ forward 0
+                  assert= false $ forward nil
+                  assert= true $ forward $ Option :none
+              :tags $ #{} :core :naming-contract :unit :wasm
         'not $ %{} 'CodeEntry
           :doc "|internal function for logical not\nSyntax: (not value)\nParams: value (boolean, nil, or Unit)\nReturns: boolean\nReturns true if value is falsy (nil, false, or Unit), false otherwise"
           :code $ quote &runtime-implementation
@@ -8019,7 +8082,7 @@
             :args $ [] 'Dynamic $ :: 'List 'K
             :generics $ [] 'K
         'some? $ %{} 'CodeEntry
-          :doc "|判断一个值是否不为 nil。false、0、空集合以及 Option :none 都会返回 true；该谓词不同于 Option 的 .some?。WASM 会依据静态类型证据 lowering，泛型的直接调用会在调用点单态化；无法证明具体类型的开放导出或一等函数边界会明确报错。"
+          :doc "|兼容旧名：判断一个值是否不为 nil。新代码使用 non-nil?；Option variant 使用 .some?/.none?。false、0、空集合以及 Option :none 都会返回 true。旧名在兼容窗口内保留，语义不会改成 Option variant 判断。"
           :code $ quote $ defn some? (x)
             not $ nil? x
           :examples $ []

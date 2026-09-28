@@ -64,6 +64,32 @@ assert= false $ some? nil
 assert= true $ some? $ Option :none
 ```
 
+## 非 nil 谓词改名
+
+新代码使用 `non-nil?` 表示“值不为 nil”。旧 `some?` 在兼容窗口内保留相同语义，但不再作为首选入口；它不会改成 Option variant 判断。`Option :none` 本身是一个非 nil 的名义值，因此 `non-nil? $ Option :none` 仍返回 true；要判断 Option variant，请使用 `.some?`、`.none?` 或原生 `match`。
+
+```cirru
+assert= true $ non-nil? false
+
+assert= true $ non-nil? 0
+
+assert= false $ non-nil? nil
+
+assert= true $ non-nil? $ Option :none
+
+assert= false $ (Option :none) .some?
+```
+
+自动迁移使用统一的 `calcit fix` 入口，不新增顶层命令：
+
+```bash
+calcit calcit.cirru fix --rule core-non-nil-predicate-v1 --format edn
+```
+
+规则只改写编译器已解析到 `calcit.core/some?` 的源码引用，并使用明确限定的 `calcit.core/non-nil?` 防止同名局部变量或 import 改变解析结果。已知保持表达式求值的 core macro 可以安全通过；未知 macro 只给出 review 提示。规则不把 `some? option` 猜成 `option.some?`，不改写用户自定义同名函数，也不改变参数的求值次数。预览后应带原 revision 应用、重复预览确认幂等，再运行严格检查与项目测试。
+
+`non-nil?` 仍不能擦除宿主空值边界：`JsNullish<T>` 必须使用 `js-present?` / `js-nullish?`。对名义 Option 使用 `non-nil?` 也会保留提示，因为它通常表示把“容器存在”误当成“variant 为 some”。
+
 ## 字符串搜索索引单位修复
 
 `.find-index` / `str-find-index` 现在返回 Unicode 标量索引，与 `.get/.slice/.len` 一致。此前 native/WASM 返回 UTF-8 字节偏移，JS 返回 UTF-16 单元偏移，例如在 `😀a` 中搜索 `a` 分别得到 4 和 2；修复后统一为 `Option :some 1`。ASCII、找不到、空 pattern 与首次匹配行为不变，`Option<Number>` 类型也不变。

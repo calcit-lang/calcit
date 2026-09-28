@@ -88,6 +88,12 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   0.26.0 不删除 Option/Result 旧方法 helper；它们仍是 core method 的实现目标。应用可直接调用的
   兼容入口最早于 0.27.0 且满足[退场条件](../features/api-roles.md#旧方法-helper-的退场条件)后才考虑移除，
   不能把一次空预览误认为已完成消费者迁移。
+- `core-non-nil-predicate-v1` 把编译器已解析到 `calcit.core/some?` 的源码引用改为
+  `calcit.core/non-nil?`。这是等价的非 nil 谓词改名，不会猜成 Option `.some?`，也不会改写用户自定义同名函数。
+  规则保留实参位置、求值次数和失败行为；明确限定新引用可避免局部变量或 import 遮蔽。已知保持调用的 core macro
+  可以自动迁移，未知 macro 只返回 `requires-review`。当前只扫描所选 definition 的源码 `:code`，不会盲改 attached
+  `:tests` / `:examples`；这些位置应由测试和人工检查同步迁移。本规则当前须显式选择，不改变已发布 preset；完成本阶段其余
+  predicate/member 迁移后再统一进入新的版本化 preset。
 - `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
   同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples

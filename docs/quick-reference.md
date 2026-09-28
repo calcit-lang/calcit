@@ -337,7 +337,7 @@ let
 
 ### Type Predicates
 
-- `nil?`, `some?` - nil checks
+- `nil?`, `non-nil?` - nil checks；`some?` 是暂留的旧非 nil 名称，Option variant 使用 `.some?/.none?`
 - `number?`, `string?`, `tag?`, `symbol?`
 - `list?`, `map?`, `set?`, `struct?`, `enum?`
 - `struct-def?`, `enum-def?`, `ref?`
