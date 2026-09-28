@@ -47,6 +47,8 @@ const CORE_LIST_FOLD_RULE: &str = "core-list-fold-v1";
 const CORE_LIST_FOLD_DIAGNOSTIC: &str = "FIX_CORE_LIST_FOLD";
 const CORE_LIST_INTERSPERSE_RULE: &str = "core-list-intersperse-v1";
 const CORE_LIST_INTERSPERSE_DIAGNOSTIC: &str = "FIX_CORE_LIST_INTERSPERSE";
+const CORE_LIST_FLAT_MAP_RULE: &str = "core-list-flat-map-v1";
+const CORE_LIST_FLAT_MAP_DIAGNOSTIC: &str = "FIX_CORE_LIST_FLAT_MAP";
 const CORE_MAP_DISTINCT_VALUES_RULE: &str = "core-map-distinct-values-v1";
 const CORE_MAP_DISTINCT_VALUES_DIAGNOSTIC: &str = "FIX_CORE_MAP_DISTINCT_VALUES";
 const RENAME_DEFINITION_RULE: &str = "rename-definition-v1";
@@ -545,6 +547,14 @@ pub(crate) fn handle_fix_command(
       LIST_INTERSPERSE_ALIAS,
     )?);
   }
+  if selected_rules.contains(&CORE_LIST_FLAT_MAP_RULE) {
+    suggestions.extend(plan_core_collection_method_alias_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+      LIST_FLAT_MAP_ALIAS,
+    )?);
+  }
   if selected_rules.contains(&CORE_MAP_DISTINCT_VALUES_RULE) {
     suggestions.extend(plan_core_collection_method_alias_fixes(
       &source_snapshot,
@@ -947,6 +957,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_COLLECTION_LEN_RULE
         | CORE_LIST_FOLD_RULE
         | CORE_LIST_INTERSPERSE_RULE
+        | CORE_LIST_FLAT_MAP_RULE
         | CORE_MAP_DISTINCT_VALUES_RULE
         | RENAME_DEFINITION_RULE
         | VALUE_TO_ZERO_ARG_FN_RULE
@@ -957,7 +968,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -988,6 +999,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_COLLECTION_LEN_RULE
         | CORE_LIST_FOLD_RULE
         | CORE_LIST_INTERSPERSE_RULE
+        | CORE_LIST_FLAT_MAP_RULE
         | CORE_MAP_DISTINCT_VALUES_RULE
     ) {
       return vec![match rule {
@@ -1002,6 +1014,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_COLLECTION_LEN_RULE => CORE_COLLECTION_LEN_RULE,
         CORE_LIST_FOLD_RULE => CORE_LIST_FOLD_RULE,
         CORE_LIST_INTERSPERSE_RULE => CORE_LIST_INTERSPERSE_RULE,
+        CORE_LIST_FLAT_MAP_RULE => CORE_LIST_FLAT_MAP_RULE,
         CORE_MAP_DISTINCT_VALUES_RULE => CORE_MAP_DISTINCT_VALUES_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
@@ -1105,6 +1118,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
     CORE_LIST_INTERSPERSE_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_LIST_INTERSPERSE_DIAGNOSTIC,
+      evidence_source: "proven-list-receiver-and-method-implementation",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    CORE_LIST_FLAT_MAP_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: CORE_LIST_FLAT_MAP_DIAGNOSTIC,
       evidence_source: "proven-list-receiver-and-method-implementation",
       lifecycle: "semantic-refactor",
       source_version_required: false,
@@ -3718,6 +3738,17 @@ const LIST_INTERSPERSE_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasR
   implementation: "calcit.core/intersperse",
   call_size: 3,
   message: "Use `.intersperse` for List separator insertion; both methods resolve to the same core implementation.",
+};
+
+const LIST_FLAT_MAP_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
+  rule_id: CORE_LIST_FLAT_MAP_RULE,
+  diagnostic_code: CORE_LIST_FLAT_MAP_DIAGNOSTIC,
+  receiver: CollectionReceiverKind::List,
+  old_method: ".bind",
+  new_method: ".flat-map",
+  implementation: "calcit.core/mapcat",
+  call_size: 3,
+  message: "Use `.flat-map` for List element-to-List mapping; both methods resolve to the same core implementation.",
 };
 
 const MAP_DISTINCT_VALUES_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {

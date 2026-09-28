@@ -401,6 +401,7 @@ check("test-list-sort-stable()", 11321, e["test-list-sort-stable"]); // ids 10,1
 check("test-list-sort-input-immutable()", 41, e["test-list-sort-input-immutable"]); // source first=4, sorted first=1
 check("test-list-sort-dynamic-callee()", 14, e["test-list-sort-dynamic-callee"]);
 check("test-list-concat()", 44, e["test-list-concat"]); // count=4 + nth(3)=40
+check("test-list-flat-map-method()", 16, e["test-list-flat-map-method"]);
 check("test-list-assoc()", 99, e["test-list-assoc"]);
 check("test-list-assoc-before()", 103, e["test-list-assoc-before"]); // count=4 + nth(1)=99
 check("test-list-assoc-after()", 103, e["test-list-assoc-after"]); // count=4 + nth(1)=99
