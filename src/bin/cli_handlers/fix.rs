@@ -39,6 +39,8 @@ const CORE_RESULT_METHOD_RULE: &str = "core-result-method-v1";
 const CORE_RESULT_METHOD_DIAGNOSTIC: &str = "FIX_CORE_RESULT_METHOD";
 const CORE_NON_NIL_PREDICATE_RULE: &str = "core-non-nil-predicate-v1";
 const CORE_NON_NIL_PREDICATE_DIAGNOSTIC: &str = "FIX_CORE_NON_NIL_PREDICATE";
+const CORE_INTEGER_PREDICATE_RULE: &str = "core-integer-predicate-v1";
+const CORE_INTEGER_PREDICATE_DIAGNOSTIC: &str = "FIX_CORE_INTEGER_PREDICATE";
 const CORE_LIST_ADD_RULE: &str = "core-list-add-v1";
 const CORE_LIST_ADD_DIAGNOSTIC: &str = "FIX_CORE_LIST_ADD";
 const CORE_COLLECTION_LEN_RULE: &str = "core-collection-len-v1";
@@ -431,10 +433,11 @@ pub(crate) fn handle_fix_command(
   let value_to_zero_arg_fn = selected_rules.contains(&VALUE_TO_ZERO_ARG_FN_RULE);
   let schema_synthesis = selected_rules.contains(&SYNTHESIZE_SCHEMA_RULE);
   let optional_parameters = selected_rules.contains(&OPTIONAL_PARAMETERS_RULE);
-  let core_non_nil_predicate = selected_rules.contains(&CORE_NON_NIL_PREDICATE_RULE);
+  let core_predicate_rename =
+    selected_rules.contains(&CORE_NON_NIL_PREDICATE_RULE) || selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn;
   let migration_rule =
-    semantic_refactor || schema_synthesis || optional_parameters || core_non_nil_predicate || options.workflow.is_some();
+    semantic_refactor || schema_synthesis || optional_parameters || core_predicate_rename || options.workflow.is_some();
   let validation_only = std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1");
   let project_definitions = if semantic_refactor || schema_synthesis || optional_parameters {
     select_project_definitions(compiled_snapshot, project_namespaces)?
@@ -521,10 +524,19 @@ pub(crate) fn handle_fix_command(
     )?);
   }
   if selected_rules.contains(&CORE_NON_NIL_PREDICATE_RULE) {
-    suggestions.extend(plan_core_non_nil_predicate_fixes(
+    suggestions.extend(plan_core_predicate_rename_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
+      CorePredicateRename::NonNil,
+    )?);
+  }
+  if selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE) {
+    suggestions.extend(plan_core_predicate_rename_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+      CorePredicateRename::Integer,
     )?);
   }
   if selected_rules.contains(&CORE_LIST_ADD_RULE) {
@@ -985,6 +997,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_OPTION_METHOD_RULE
         | CORE_RESULT_METHOD_RULE
         | CORE_NON_NIL_PREDICATE_RULE
+        | CORE_INTEGER_PREDICATE_RULE
         | CORE_LIST_ADD_RULE
         | CORE_COLLECTION_LEN_RULE
         | CORE_LIST_FOLD_RULE
@@ -1003,7 +1016,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -1030,6 +1043,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_OPTION_METHOD_RULE
         | CORE_RESULT_METHOD_RULE
         | CORE_NON_NIL_PREDICATE_RULE
+        | CORE_INTEGER_PREDICATE_RULE
         | CORE_LIST_ADD_RULE
         | CORE_COLLECTION_LEN_RULE
         | CORE_LIST_FOLD_RULE
@@ -1048,6 +1062,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_OPTION_METHOD_RULE => CORE_OPTION_METHOD_RULE,
         CORE_RESULT_METHOD_RULE => CORE_RESULT_METHOD_RULE,
         CORE_NON_NIL_PREDICATE_RULE => CORE_NON_NIL_PREDICATE_RULE,
+        CORE_INTEGER_PREDICATE_RULE => CORE_INTEGER_PREDICATE_RULE,
         CORE_LIST_ADD_RULE => CORE_LIST_ADD_RULE,
         CORE_COLLECTION_LEN_RULE => CORE_COLLECTION_LEN_RULE,
         CORE_LIST_FOLD_RULE => CORE_LIST_FOLD_RULE,
@@ -1132,6 +1147,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_NON_NIL_PREDICATE_DIAGNOSTIC,
       evidence_source: "compiler-resolved-reference",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    CORE_INTEGER_PREDICATE_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: CORE_INTEGER_PREDICATE_DIAGNOSTIC,
+      evidence_source: "reader-resolved-builtin-proc",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -3474,14 +3496,30 @@ fn plan_core_nominal_method_fixes(
   Ok(suggestions)
 }
 
-/// Rename the legacy non-nil predicate only when the compiler resolves the
-/// source leaf to calcit.core/some?. The qualified replacement prevents a new
-/// local or imported `non-nil?` binding from changing dispatch after the fix.
-fn plan_core_non_nil_predicate_fixes(
+#[derive(Clone, Copy)]
+enum CorePredicateRename {
+  NonNil,
+  Integer,
+}
+
+impl CorePredicateRename {
+  fn names(self) -> (&'static str, &'static str, &'static str, &'static str) {
+    match self {
+      Self::NonNil => ("some?", "non-nil?", CORE_NON_NIL_PREDICATE_RULE, CORE_NON_NIL_PREDICATE_DIAGNOSTIC),
+      Self::Integer => ("round?", "integer?", CORE_INTEGER_PREDICATE_RULE, CORE_INTEGER_PREDICATE_DIAGNOSTIC),
+    }
+  }
+}
+
+/// Rewrite proven core predicate references. The qualified replacement cannot
+/// be captured by a local or imported name.
+fn plan_core_predicate_rename_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
   selected_definitions: &[(String, String)],
+  rule: CorePredicateRename,
 ) -> Result<Vec<FixSuggestion>, String> {
+  let (old_name, new_name, rule_id, diagnostic_code) = rule.names();
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
     let entry = snapshot
@@ -3492,13 +3530,23 @@ fn plan_core_non_nil_predicate_fixes(
     if list_head(&entry.code) == Some("defmacro") {
       continue;
     }
+    if matches!(rule, CorePredicateRename::Integer) {
+      let mut local_bindings = HashSet::new();
+      collect_potential_local_bindings(&entry.code, &mut local_bindings);
+      if local_bindings.contains(old_name) {
+        continue;
+      }
+    }
 
-    let warnings = RefCell::new(Vec::new());
-    let usages = runner::preprocess::trace_definition_source_usages(namespace, definition, &warnings, &CallStackList::default())
-      .map_err(|failure| failure.msg)?;
+    let usages = if matches!(rule, CorePredicateRename::NonNil) {
+      runner::preprocess::trace_definition_source_usages(namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
+        .map_err(|failure| failure.msg)?
+    } else {
+      Vec::new()
+    };
     let mut planned = BTreeMap::<Vec<usize>, (String, String, Vec<String>, Option<String>)>::new();
     for usage in usages {
-      if usage.target_ns.as_ref() != "calcit.core" || usage.target_def.as_ref() != "some?" {
+      if usage.target_ns.as_ref() != "calcit.core" || usage.target_def.as_ref() != old_name {
         continue;
       }
       let Some(location) = usage.location else {
@@ -3512,7 +3560,7 @@ fn plan_core_non_nil_predicate_fixes(
       let Cirru::Leaf(source_leaf) = node else {
         continue;
       };
-      let Ok(replacement) = semantic_rename_leaf_replacement(source_leaf.as_ref(), "some?", "calcit.core", "non-nil?") else {
+      let Ok(replacement) = semantic_rename_leaf_replacement(source_leaf.as_ref(), old_name, "calcit.core", new_name) else {
         continue;
       };
       let macro_origin = usage.macro_origin;
@@ -3540,26 +3588,43 @@ fn plan_core_non_nil_predicate_fixes(
         .or_insert_with(|| (source_leaf.to_string(), replacement, macro_origin, review));
     }
 
+    if matches!(rule, CorePredicateRename::Integer) {
+      // The Cirru reader resolves `round?` directly to a built-in Proc before
+      // preprocessing, so it has no source location in definition-usage traces.
+      // A source call head is therefore sufficient evidence for this one proc.
+      let mut call_heads = Vec::new();
+      collect_builtin_round_call_heads(&entry.code, &mut Vec::new(), &mut call_heads);
+      for head_path in call_heads {
+        let mut call_path = head_path.clone();
+        call_path.pop();
+        let review = (!method_source_context_is_stable(&entry.code, &call_path)).then(|| {
+          "The built-in predicate call crosses an unknown source context; review whether macro expansion observes its spelling."
+            .to_owned()
+        });
+        planned.insert(
+          head_path,
+          (old_name.to_owned(), format!("calcit.core/{new_name}"), Vec::new(), review),
+        );
+      }
+    }
+
     for (target_path, (original_leaf, replacement, macro_origin, review)) in planned {
       let original_node = Cirru::leaf(original_leaf.as_str());
       let replacement_node = Cirru::leaf(replacement.as_str());
       let machine_applicable = review.is_none();
-      let message = review.unwrap_or_else(|| {
-        "Use the explicit non-nil predicate; this changes only the resolved name and preserves argument evaluation and nil semantics."
-          .to_owned()
-      });
+      let message = review.unwrap_or_else(|| format!("Use the explicit core predicate `{new_name}`; this changes only the resolved name and preserves argument evaluation and predicate semantics."));
       suggestions.push(FixSuggestion {
-        rule_id: CORE_NON_NIL_PREDICATE_RULE,
-        diagnostic_code: CORE_NON_NIL_PREDICATE_DIAGNOSTIC,
+        rule_id,
+        diagnostic_code,
         semantic_layer: "surface",
         source_file: snapshot_file.to_owned(),
         definition: format!("{namespace}/{definition}"),
         path: format!("code{}", format_path(&target_path)),
         fingerprint: node_fingerprint(&original_node),
         origin_chain: vec![serde_json::json!({
-          "kind": "compiler-resolved-core-predicate",
-          "target": "calcit.core/some?",
-          "replacement": "calcit.core/non-nil?",
+          "kind": if matches!(rule, CorePredicateRename::Integer) { "reader-resolved-builtin-proc" } else { "compiler-resolved-core-predicate" },
+          "target": format!("calcit.core/{old_name}"),
+          "replacement": format!("calcit.core/{new_name}"),
           "macro_origin": macro_origin,
         })],
         original: quoted_json(&original_node),
@@ -3579,6 +3644,25 @@ fn plan_core_non_nil_predicate_fixes(
     }
   }
   Ok(suggestions)
+}
+
+fn collect_builtin_round_call_heads(node: &Cirru, path: &mut Vec<usize>, heads: &mut Vec<Vec<usize>>) {
+  let Cirru::List(items) = node else {
+    return;
+  };
+  if matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "quote" | "quasiquote")) {
+    return;
+  }
+  if items.len() == 2 && matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "round?") {
+    let mut head_path = path.clone();
+    head_path.push(0);
+    heads.push(head_path);
+  }
+  for (index, child) in items.iter().enumerate() {
+    path.push(index);
+    collect_builtin_round_call_heads(child, path, heads);
+    path.pop();
+  }
 }
 
 /// Locate only one-argument method calls; a first-class method value cannot be renamed safely.
@@ -5079,16 +5163,16 @@ fn print_human_report(report: &FixReport<'_>) {
 #[cfg(test)]
 mod tests {
   use super::{
-    FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_potential_local_bindings, collect_redundant_do_paths,
-    fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion, legacy_constructor_replacement, migration_for_source_leaf,
-    optional_candidate_signature_is_closed, optional_candidate_type_is_closed, optional_parameter_candidate, prototype_is_shadowed,
-    resolve_fix_target, rewrite_loaded_schema_type_references, rewrite_named_constructor_tree, struct_fields_are_complete,
-    suggestion_operations,
+    FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_builtin_round_call_heads,
+    collect_potential_local_bindings, collect_redundant_do_paths, fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion,
+    legacy_constructor_replacement, migration_for_source_leaf, optional_candidate_signature_is_closed,
+    optional_candidate_type_is_closed, optional_parameter_candidate, prototype_is_shadowed, resolve_fix_target,
+    rewrite_loaded_schema_type_references, rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
   };
   use calcit::calcit::{CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTrait, CalcitTypeAnnotation, SchemaKind};
   use cirru_parser::Cirru;
   use serde_json::Value;
-  use std::collections::BTreeMap;
+  use std::collections::{BTreeMap, HashSet};
   use std::sync::Arc;
 
   use super::super::common::markdown_cirru_section;
@@ -5351,6 +5435,34 @@ mod tests {
     collect_potential_local_bindings(&code, &mut shadowed);
     assert!(prototype_is_shadowed("Result", &shadowed));
     assert!(!prototype_is_shadowed("app.schema/Result", &shadowed));
+  }
+
+  #[test]
+  fn integer_predicate_scanner_rejects_binder_shaped_source() {
+    let parameter = Cirru::List(vec![
+      leaf("defn"),
+      leaf("demo"),
+      Cirru::List(vec![leaf("round?"), leaf("x")]),
+      Cirru::List(vec![leaf("round?"), leaf("x")]),
+    ]);
+    let binding = Cirru::List(vec![
+      leaf("defn"),
+      leaf("demo"),
+      Cirru::List(vec![]),
+      Cirru::List(vec![
+        leaf("let"),
+        Cirru::List(vec![Cirru::List(vec![leaf("round?"), leaf("x")])]),
+        Cirru::List(vec![leaf("round?"), leaf("x")]),
+      ]),
+    ]);
+    for code in [parameter, binding] {
+      let mut bindings = HashSet::new();
+      collect_potential_local_bindings(&code, &mut bindings);
+      assert!(bindings.contains("round?"));
+      let mut heads = Vec::new();
+      collect_builtin_round_call_heads(&code, &mut Vec::new(), &mut heads);
+      assert!(!heads.is_empty(), "the binder guard must precede shape-based call scanning");
+    }
   }
 
   #[test]
