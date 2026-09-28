@@ -160,6 +160,8 @@ List 展平映射优先使用 `.flat-map`：回调对每个元素调用一次，
 
 List 的位置读取优先用 `.get`：`List<T>` 的 `.get` 与兼容入口 `.nth` 均接收 Number 并返回 `Option<T>`，空表或越界返回 `none`。两者的方法查询现在能给出同一精确契约；`get` 前缀函数仍承担 Map、开放 Struct 等更广的查找语义。不要据名字把 Map/String/Enum 的 `get/nth` 批量互换，也不要把按 predicate 的 `.find/.find-index` 或按值的 `.index-of` 当作位置读取。
 
+具体 List 的旧 `.nth index` 调用可显式使用 `core-list-get-v1` 迁移到 `.get index`：仅在旧、新方法同指 `calcit.core/get` 且 `Option<T>` 契约均已证明时给出自动改写；开放或自定义方法只供审阅。该规则不改 `:tests`、`:examples` 或 String/Enum 的索引调用，也不进入已发布 preset。
+
 ```cirru
 do
   assert= ([] 1 0 2)

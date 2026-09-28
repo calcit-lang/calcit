@@ -844,6 +844,172 @@ fn list_join_string_fix_preserves_quoted_and_macro_boundaries() {
 }
 
 #[test]
+fn list_get_fix_preserves_option_lookup_and_revision_guard() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let target = "fix-command.main/read-list-index";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn read-list-index (xs index) (xs .nth index)",
+      ],
+    ),
+    "install List nth method",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'Number) 'Number) (:return $ :: 'Option 'Number)",
+      ],
+    ),
+    "declare List index lookup contract",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        target,
+        "preserves-some-and-none",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ do\n  assert= (%some 2) $ read-list-index ([] 1 2 2) 2\n  assert= (%none) $ read-list-index ([] 1 2) -1\n  assert= (%none) $ read-list-index ([]) 0",
+      ],
+    ),
+    "attach Calcit List lookup contract",
+  );
+  let selector = [
+    "--rule",
+    "core-list-get-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "read-list-index",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &selector);
+  assert_success(&preview, "List lookup preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+  assert_eq!(suggestions.len(), 1, "{report}");
+  assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
+  assert_eq!(
+    suggestions[0]["replacement"],
+    serde_json::json!({"$type": "quote", "value": ".get"}),
+    "{report}"
+  );
+  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+  let stale = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-list-get-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "read-list-index",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      "stale-revision",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!stale.status.success(), "stale revision must reject apply");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-list-get-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "read-list-index",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "List lookup apply");
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "Calcit List lookup after migration",
+  );
+  let repeated = run_fix(&snapshot, &selector);
+  assert_success(&repeated, "idempotent List lookup preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+}
+
+#[test]
+fn list_get_fix_skips_string_and_quoted_calls() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (name, code) in [
+    ("string-index", "quote $ defn string-index () $ |abc .nth 1"),
+    (
+      "quoted-list-index",
+      "quote $ defn quoted-list-index ()\n  quote $ ([] 1 2) .nth 1\n  , 0",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "install excluded List lookup source",
+    );
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-list-get-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, "excluded List lookup preview");
+    assert_eq!(parse_stdout(&preview)["data"]["suggestions"], serde_json::json!([]));
+  }
+}
+
+#[test]
 fn map_distinct_values_fix_preserves_deduplication_and_revision_guard() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
