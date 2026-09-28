@@ -24,6 +24,26 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 整数谓词的跨目标语义修复
+
+`round?` 与 Number 的 `.round?` 现在统一判断“有限且恰好没有小数部分”。native、JS、core WASM 和 WASI Component 使用相同契约：NaN、正负 Infinity、任何非零小数均为 false；0、-0 与有限的整数值为 true。
+
+此前 native 使用 EPSILON 容差，把 `0.0000000000000001` 等近零非整数误判为 true；JS/WASM 则把 Infinity 误判为 true。这是行为修复，不是批量 rename。依赖旧容差的业务需要显式选择适合其精度的近似比较；不要通过自动 fix 猜测容差或加入舍入。现有源码无需改名，`integer?/.integer?` 仍是 [API 命名计划](../features/api-roles.md#谓词与成员查询) 中的目标词，尚未提供。
+
+该 Bool 谓词不等于“安全整数”或 `Int32/UInt32` 等数值 refinement 证明。例如 `9007199254740992` 仍是有限且无小数部分的 Number，所以结果为 true；需要特定边界时继续使用对应的 checked 转换。这次不改变索引转换、JSON 格式化的内部容差，也不改变 `round` 的舍入行为。
+
+```cirru
+assert= false $ round? 0.0000000000000001
+
+assert= false $ .round? $ / 1 0
+
+assert= false $ .round? $ / 0 0
+
+assert= true $ .round? -0
+
+assert= true $ round? 9007199254740992
+```
+
 ## 字符串搜索索引单位修复
 
 `.find-index` / `str-find-index` 现在返回 Unicode 标量索引，与 `.get/.slice/.len` 一致。此前 native/WASM 返回 UTF-8 字节偏移，JS 返回 UTF-16 单元偏移，例如在 `😀a` 中搜索 `a` 分别得到 4 和 2；修复后统一为 `Option :some 1`。ASCII、找不到、空 pattern 与首次匹配行为不变，`Option<Number>` 类型也不变。

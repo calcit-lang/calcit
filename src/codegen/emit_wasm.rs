@@ -6312,15 +6312,18 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::Round => emit_unary(ctx, Instruction::F64Nearest, args),
     CalcitProc::Sqrt => emit_unary(ctx, Instruction::F64Sqrt, args),
 
-    // round?: x == floor(x)
+    // round?: a finite Number with no fractional part, not a safe-integer bound.
     CalcitProc::IsRound => {
       expect_arity(1, args, "round?")?;
       let v = ctx.alloc_local();
       emit_expr(ctx, &args[0])?;
       ctx.emit(Instruction::LocalSet(v));
       ctx.emit(Instruction::LocalGet(v));
-      ctx.emit(Instruction::F64Floor);
       ctx.emit(Instruction::LocalGet(v));
+      ctx.emit(Instruction::F64Trunc);
+      // Infinities produce NaN here, so they cannot compare equal to zero.
+      ctx.emit(Instruction::F64Sub);
+      ctx.emit(f64_const(0.0));
       ctx.emit(Instruction::F64Eq);
       ctx.emit(Instruction::F64ConvertI32U);
       Ok(())
