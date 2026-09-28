@@ -163,6 +163,32 @@ const scenarios = [
     },
   },
   {
+    name: "map merge exposes the same contract as legacy mappend",
+    args: ["calcit/test.cirru", "query", "type", ":: 'Map 'Tag 'Number", "--format", "json"],
+    check(result) {
+      const merge = result.data.methods.find((method) => method.name === ".merge");
+      const legacy = result.data.methods.find((method) => method.name === ".mappend");
+      assert.equal(merge?.status, "proven");
+      assert.equal(merge?.definition, "calcit.core/merge");
+      assert.equal(legacy?.definition, merge?.definition);
+      assert.deepEqual(legacy?.parameter_types, merge?.parameter_types);
+      assert.equal(legacy?.return_type, merge?.return_type);
+    },
+  },
+  {
+    name: "set union exposes the same contract as legacy mappend",
+    args: ["calcit/test.cirru", "query", "type", ":: 'Set 'Number", "--format", "json"],
+    check(result) {
+      const union = result.data.methods.find((method) => method.name === ".union");
+      const legacy = result.data.methods.find((method) => method.name === ".mappend");
+      assert.equal(union?.status, "proven");
+      assert.equal(union?.definition, "calcit.core/union");
+      assert.equal(legacy?.definition, union?.definition);
+      assert.deepEqual(legacy?.parameter_types, union?.parameter_types);
+      assert.equal(legacy?.return_type, union?.return_type);
+    },
+  },
+  {
     name: "legacy any alias",
     args: ["calcit/test.cirru", "query", "type", ":any", "--format", "json"],
     check(result) {
