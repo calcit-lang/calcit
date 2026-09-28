@@ -5602,7 +5602,7 @@ fn core_non_nil_predicate_rule_uses_resolved_references_and_is_idempotent() {
 }
 
 #[test]
-fn core_integer_predicate_rule_preserves_methods_and_guards_source() {
+fn core_integer_predicate_rule_migrates_proven_number_methods_and_guards_source() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
@@ -5670,17 +5670,26 @@ fn core_integer_predicate_rule_preserves_methods_and_guards_source() {
   assert_success(&preview, "integer predicate preview");
   let report = parse_stdout(&preview);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
-  assert_eq!(suggestions.len(), 3, "{report}");
-  assert!(suggestions.iter().all(|suggestion| {
-    suggestion["rule_id"] == "core-integer-predicate-v1"
-      && suggestion["applicability"] == "machine-applicable"
-      && suggestion["origin_chain"][0]["target"] == "calcit.core/round?"
-  }));
-  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+  assert_eq!(suggestions.len(), 4, "{report}");
   assert!(
+    suggestions.iter().all(|suggestion| {
+      suggestion["rule_id"] == "core-integer-predicate-v1" && suggestion["applicability"] == "machine-applicable"
+    })
+  );
+  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+  assert_eq!(
     suggestions
       .iter()
-      .all(|suggestion| suggestion["origin_chain"][0]["kind"] == "reader-resolved-builtin-proc")
+      .filter(|suggestion| suggestion["origin_chain"][0]["kind"] == "reader-resolved-builtin-proc")
+      .count(),
+    3
+  );
+  assert_eq!(
+    suggestions
+      .iter()
+      .filter(|suggestion| suggestion["origin_chain"][0]["kind"] == "receiver-method-query")
+      .count(),
+    1
   );
 
   let stale = run_fix(
@@ -5721,7 +5730,10 @@ fn core_integer_predicate_rule_preserves_methods_and_guards_source() {
   assert_success(&applied, "integer predicate apply");
   let updated = fs::read_to_string(&snapshot).expect("updated Snapshot should read");
   assert!(updated.contains("calcit.core/integer?"));
-  assert!(updated.contains(".round?"), "method form stays unchanged");
+  assert!(
+    updated.contains("assert= true $ .integer? -1"),
+    "proven Number method should migrate"
+  );
   assert!(updated.contains("quote $ round? 8"), "quoted data stays unchanged");
   assert_success(
     &run_calcit(&snapshot, &["test", target, "--require-match"]),
@@ -5794,6 +5806,119 @@ fn core_integer_predicate_rule_preserves_methods_and_guards_source() {
   assert_eq!(macro_report["data"]["suggestions"].as_array().map(Vec::len), Some(1));
   assert_eq!(macro_report["data"]["suggestions"][0]["applicability"], "requires-review");
   assert_eq!(macro_report["data"]["suggestions"][0]["replacement"], serde_json::Value::Null);
+
+  for (name, code, schema) in [
+    (
+      "typed-integer-method",
+      "quote $ defn typed-integer-method (value)\n  value .round?",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Bool)",
+    ),
+    (
+      "macro-integer-method",
+      "quote $ defn macro-integer-method () $ pass-form $ .round? 4",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)",
+    ),
+  ] {
+    let target = format!("fix-command.main/{name}");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", code]),
+      "install Number method source",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", &target, "--input-format", "cirru", "--code", schema]),
+      "declare Number method source",
+    );
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-integer-predicate-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, "Number method preview");
+    let report = parse_stdout(&preview);
+    assert_eq!(report["data"]["suggestions"].as_array().map(Vec::len), Some(1), "{report}");
+    let suggestion = &report["data"]["suggestions"][0];
+    assert_eq!(
+      suggestion["applicability"],
+      if name.starts_with("typed") {
+        "machine-applicable"
+      } else {
+        "requires-review"
+      }
+    );
+    assert_eq!(suggestion["origin_chain"][0]["kind"], "receiver-method-query");
+    assert_eq!(suggestion["origin_chain"][0]["receiver_type"], "number");
+  }
+}
+
+#[test]
+fn integer_predicate_fix_keeps_custom_round_method() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (name, code) in [
+    ("RoundedBox0", "quote $ defstruct RoundedBox0 (:value 'Number)"),
+    ("RoundedBoxTrait", "quote $ deftrait RoundedBoxTrait (.round? :fn)"),
+    (
+      "RoundedBoxImpl",
+      "quote $ defimpl RoundedBoxImpl RoundedBoxTrait\n  .round? $ fn (box) true",
+    ),
+    ("RoundedBox", "quote $ def RoundedBox $ impl-traits RoundedBox0 RoundedBoxImpl"),
+    ("read-box-round", "quote $ defn read-box-round (box) box .round?"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "install custom method boundary",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/read-box-round",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'fix-command.main/RoundedBox) (:return 'Bool)",
+      ],
+    ),
+    "declare custom method receiver",
+  );
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-integer-predicate-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "read-box-round",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "custom method preview");
+  assert_eq!(parse_stdout(&preview)["data"]["suggestions"], serde_json::json!([]));
 }
 
 #[test]

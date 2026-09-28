@@ -388,7 +388,7 @@
           :tags $ #{} :internal
         '&core-number-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-number-methods
-            &impl::new :&core-number-methods (:: :ceil ceil) (:: :empty &number:empty) (:: :floor floor) (:: :format &number:format) (:: :display-by &number:display-by) (:: :inc inc) (:: :pow pow) (:: :round round) (:: :round? round?) (:: :integer? integer?) (:: :fract &number:fract) (:: :sqrt sqrt) (:: :negate negate) (:: :rem &number:rem) (:: :compare &compare)
+            &impl::new :&core-number-methods (:: :ceil ceil) (:: :empty &number:empty) (:: :floor floor) (:: :format &number:format) (:: :display-by &number:display-by) (:: :inc inc) (:: :pow pow) (:: :round round) (:: :round? integer?) (:: :integer? integer?) (:: :fract &number:fract) (:: :sqrt sqrt) (:: :negate negate) (:: :rem &number:rem) (:: :compare &compare)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
