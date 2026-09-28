@@ -112,6 +112,19 @@ const scenarios = [
     },
   },
   {
+    name: "list append and length expose proven contracts",
+    args: ["calcit/test.cirru", "query", "type", ":: 'List 'Number", "--format", "json"],
+    check(result) {
+      const append = result.data.methods.find((method) => method.name === ".append");
+      assert.equal(append?.status, "proven");
+      assert.deepEqual(append.parameter_types, ["number"]);
+      assert.equal(append.return_type, "list<number>");
+      const len = result.data.methods.find((method) => method.name === ".len");
+      assert.equal(len?.status, "proven");
+      assert.equal(len.return_type, "number");
+    },
+  },
+  {
     name: "legacy any alias",
     args: ["calcit/test.cirru", "query", "type", ":any", "--format", "json"],
     check(result) {

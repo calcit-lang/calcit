@@ -113,6 +113,16 @@ let
 
 ## Adding / Removing Elements
 
+单个元素追加首选 `.append`；两组 List 拼接使用 `.concat`，两者均返回新 List。旧 `.add` 在 List 上仍指向单元素追加，与 `Add` trait 的 List 组合契约同名；迁移需先按 receiver 与实际方法来源证明，不能按词形全局替换。容器长度首选 `.len`；String 的 `.len` 统计 Unicode 标量，UTF-8 字节数使用显式的 `&str:utf8-byte-count`。
+
+```cirru
+do
+  assert= ([] 1 2 3) $ ([] 1 2) .append 3
+  assert= ([] 1 2 3 4) $ ([] 1 2) .concat $ [] 3 4
+  assert= 3 $ ([] 1 2 3) .len
+  assert= 3 $ "|a😀b" .len
+```
+
 ```cirru
 let
     xs $ [] 1 2 3
