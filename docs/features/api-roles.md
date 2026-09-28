@@ -122,3 +122,9 @@ calcit query context 'calcit.core/option:unwrap' --format edn
 对 Option 的旧 helper，可用 `calcit fix --rule core-option-method-v1 --format edn` 预览 `.some?` / `.none?` / `.unwrap` / `.unwrap-or` 迁移。只有接收者方法解析为 `proven` 且实现确实指向相同 core helper 时才提供自动改写；已核实单次保留调用的 core `let`、`cond`、`do`、`fn`、`assert=` 宏允许通过，其他宏仍需审阅。已证明来自 core 的空值 `%none` 或 `Option :none` 即使起初显示 `Option<Dynamic>`，也可由具体 fallback 推出 payload 类型，再检查方法分派；普通开放接收者、函数值或无来源映射的表达式仍不能自动改写。应用后重复预览应为空，并运行严格类型检查与项目测试；不把 String 或其他内部函数类推为同一个迁移。
 
 Result 的 `result:ok?` / `result:err?` / `result:unwrap-or` 沿用单独的 `core-result-method-v1` 规则，不新增顶层 CLI 入口。只有编译器能证明同一方法契约才自动迁移；已证明来自 core 的 `%err` / `Result :err` 不携带成功值，因此允许具体 fallback 绑定成功类型，同时仍检查错误类型。成功值已有具体类型的 core `%ok` 可按同一方法契约迁移；普通开放 Result 和 `:ok` 的动态成功值不能凭 fallback 收窄，具名构造缺少精确源码证据时也保留审阅。旧 helper 作为 core 实现暂留；公开文档只推荐 `.ok?` / `.err?` / `.unwrap-or`。在真实消费者完成迁移、Agent 查询和升级文档统一首选写法、经过至少一个发布窗口且 JS/native/WASI 相关测试通过之前，不删除旧 helper。其他 `result:*` 逐项确认语义与迁移证据，不跟随批量废弃。
+
+### 旧方法 helper 的退场条件
+
+0.26.0 只收敛**应用源码的首选入口**，不直接删除 `option:some?`、`option:none?`、`option:unwrap`、`option:unwrap-or`、`result:ok?`、`result:err?`、`result:unwrap-or`。这些名字目前也是 core trait method 的实现目标；直接删除会破坏推荐的 `.method`，而不是仅移除旧别名。旧 helper 暂作内部兼容实现，不把它们和方法并列推荐，也不把内部调用数量当作应用迁移进度。
+
+最早在 0.27.0 考虑移除其**应用可直接调用**的兼容入口，且须同时满足：真实消费者在发布版 Calcit 与匹配的运行时依赖上完成严格类型和运行测试；对消费者 Snapshot 重复运行对应 fix 无可自动改写的旧调用，剩余 `requires-review` 已逐一处置；Agent 查询、升级文档与示例只推荐方法；至少经历一个已发布版本的迁移窗口；JS/native 及实际受影响的 WASM/WASI 路径验证通过；core method 实现已与将删除的入口解耦，并有 Calcit `:tests` 证明行为不变。任一条件未满足就继续保留兼容入口，记录原因和下一次检查的版本，不通过扩大 Dynamic 或机械替换绕过。此约束不适用于无自然接收者的模块函数，也不承诺把所有 `result:*` / `option:*` 内部实现一并移除。
