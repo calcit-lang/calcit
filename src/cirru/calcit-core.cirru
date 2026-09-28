@@ -376,7 +376,7 @@
           :tags $ #{} :internal
         '&core-map-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-map-methods
-            &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :values vals)
+            &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :distinct-values distinct-values) (:: :values distinct-values)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -4698,6 +4698,30 @@
             :code $ quote $ assert= ([] 1 2 3)
               distinct $ [] 1 2 3 1 2
             :tags $ #{} :core :unit
+        'distinct-values $ %{} 'CodeEntry (:doc "|取得 Map 中去重后的值集合，返回 Set；重复值只出现一次，顺序不保证。")
+          :code $ quote $ defn distinct-values (x) (vals x)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'Set 'V
+          :tests $ []
+            %{} 'TestEntry (:name |deduplicates-values)
+              :code $ quote $ assert= (#{} 1 2)
+                distinct-values $ &{} :a 1 :b 2 :c 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |empty-map)
+              :code $ quote $ assert= (#{})
+                distinct-values $ &{}
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |receiver-method)
+              :code $ quote $ assert= (#{} 1 2)
+                (&{} :a 1 :b 2 :c 2) .distinct-values
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |legacy-receiver-alias)
+              :code $ quote $ assert= (#{} 1)
+                (&{} :a 1 :b 1) .values
+              :tags $ #{} :core :unit
         'do $ %{} 'CodeEntry
           :doc "|Evaluates expressions sequentially and returns the last result\nUseful for grouping side effects or multiple steps where only the final value matters."
           :code $ quote $ defmacro do (& body)

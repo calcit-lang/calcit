@@ -47,6 +47,8 @@ const CORE_LIST_FOLD_RULE: &str = "core-list-fold-v1";
 const CORE_LIST_FOLD_DIAGNOSTIC: &str = "FIX_CORE_LIST_FOLD";
 const CORE_LIST_INTERSPERSE_RULE: &str = "core-list-intersperse-v1";
 const CORE_LIST_INTERSPERSE_DIAGNOSTIC: &str = "FIX_CORE_LIST_INTERSPERSE";
+const CORE_MAP_DISTINCT_VALUES_RULE: &str = "core-map-distinct-values-v1";
+const CORE_MAP_DISTINCT_VALUES_DIAGNOSTIC: &str = "FIX_CORE_MAP_DISTINCT_VALUES";
 const RENAME_DEFINITION_RULE: &str = "rename-definition-v1";
 const RENAME_DEFINITION_DIAGNOSTIC: &str = "REFACTOR_RENAME_DEFINITION";
 const VALUE_TO_ZERO_ARG_FN_RULE: &str = "value-to-zero-arg-fn-v1";
@@ -528,7 +530,7 @@ pub(crate) fn handle_fix_command(
     )?);
   }
   if selected_rules.contains(&CORE_LIST_FOLD_RULE) {
-    suggestions.extend(plan_core_list_method_alias_fixes(
+    suggestions.extend(plan_core_collection_method_alias_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
@@ -536,11 +538,19 @@ pub(crate) fn handle_fix_command(
     )?);
   }
   if selected_rules.contains(&CORE_LIST_INTERSPERSE_RULE) {
-    suggestions.extend(plan_core_list_method_alias_fixes(
+    suggestions.extend(plan_core_collection_method_alias_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
       LIST_INTERSPERSE_ALIAS,
+    )?);
+  }
+  if selected_rules.contains(&CORE_MAP_DISTINCT_VALUES_RULE) {
+    suggestions.extend(plan_core_collection_method_alias_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+      MAP_DISTINCT_VALUES_ALIAS,
     )?);
   }
   let mut constructor_kinds = Vec::new();
@@ -937,6 +947,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_COLLECTION_LEN_RULE
         | CORE_LIST_FOLD_RULE
         | CORE_LIST_INTERSPERSE_RULE
+        | CORE_MAP_DISTINCT_VALUES_RULE
         | RENAME_DEFINITION_RULE
         | VALUE_TO_ZERO_ARG_FN_RULE
         | SYNTHESIZE_SCHEMA_RULE
@@ -946,7 +957,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -977,6 +988,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_COLLECTION_LEN_RULE
         | CORE_LIST_FOLD_RULE
         | CORE_LIST_INTERSPERSE_RULE
+        | CORE_MAP_DISTINCT_VALUES_RULE
     ) {
       return vec![match rule {
         RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
@@ -990,6 +1002,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_COLLECTION_LEN_RULE => CORE_COLLECTION_LEN_RULE,
         CORE_LIST_FOLD_RULE => CORE_LIST_FOLD_RULE,
         CORE_LIST_INTERSPERSE_RULE => CORE_LIST_INTERSPERSE_RULE,
+        CORE_MAP_DISTINCT_VALUES_RULE => CORE_MAP_DISTINCT_VALUES_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
     }
@@ -1093,6 +1106,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_LIST_INTERSPERSE_DIAGNOSTIC,
       evidence_source: "proven-list-receiver-and-method-implementation",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    CORE_MAP_DISTINCT_VALUES_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: CORE_MAP_DISTINCT_VALUES_DIAGNOSTIC,
+      evidence_source: "proven-map-receiver-and-method-implementation",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -3645,9 +3665,32 @@ fn plan_core_list_add_fixes(
 }
 
 #[derive(Clone, Copy)]
-struct ListMethodAliasRule {
+enum CollectionReceiverKind {
+  List,
+  Map,
+}
+
+impl CollectionReceiverKind {
+  fn matches(self, annotation: &CalcitTypeAnnotation) -> bool {
+    match self {
+      Self::List => matches!(annotation, CalcitTypeAnnotation::List(_)),
+      Self::Map => matches!(annotation, CalcitTypeAnnotation::Map(_, _)),
+    }
+  }
+
+  fn name(self) -> &'static str {
+    match self {
+      Self::List => "List",
+      Self::Map => "Map",
+    }
+  }
+}
+
+#[derive(Clone, Copy)]
+struct CollectionMethodAliasRule {
   rule_id: &'static str,
   diagnostic_code: &'static str,
+  receiver: CollectionReceiverKind,
   old_method: &'static str,
   new_method: &'static str,
   implementation: &'static str,
@@ -3655,9 +3698,10 @@ struct ListMethodAliasRule {
   message: &'static str,
 }
 
-const LIST_FOLD_ALIAS: ListMethodAliasRule = ListMethodAliasRule {
+const LIST_FOLD_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
   rule_id: CORE_LIST_FOLD_RULE,
   diagnostic_code: CORE_LIST_FOLD_DIAGNOSTIC,
+  receiver: CollectionReceiverKind::List,
   old_method: ".reduce",
   new_method: ".fold",
   implementation: "calcit.core/fold",
@@ -3665,9 +3709,10 @@ const LIST_FOLD_ALIAS: ListMethodAliasRule = ListMethodAliasRule {
   message: "Use `.fold` for seeded left-to-right List accumulation; both methods resolve to the same core implementation.",
 };
 
-const LIST_INTERSPERSE_ALIAS: ListMethodAliasRule = ListMethodAliasRule {
+const LIST_INTERSPERSE_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
   rule_id: CORE_LIST_INTERSPERSE_RULE,
   diagnostic_code: CORE_LIST_INTERSPERSE_DIAGNOSTIC,
+  receiver: CollectionReceiverKind::List,
   old_method: ".join",
   new_method: ".intersperse",
   implementation: "calcit.core/intersperse",
@@ -3675,12 +3720,23 @@ const LIST_INTERSPERSE_ALIAS: ListMethodAliasRule = ListMethodAliasRule {
   message: "Use `.intersperse` for List separator insertion; both methods resolve to the same core implementation.",
 };
 
+const MAP_DISTINCT_VALUES_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
+  rule_id: CORE_MAP_DISTINCT_VALUES_RULE,
+  diagnostic_code: CORE_MAP_DISTINCT_VALUES_DIAGNOSTIC,
+  receiver: CollectionReceiverKind::Map,
+  old_method: ".values",
+  new_method: ".distinct-values",
+  implementation: "calcit.core/distinct-values",
+  call_size: 2,
+  message: "Use `.distinct-values` for a deduplicated Set of Map values; both methods resolve to the same core implementation.",
+};
+
 /// Only rewrite complete method calls. First-class method values are not equivalent.
-fn collect_list_method_alias_calls(
+fn collect_collection_method_alias_calls(
   node: &Cirru,
   path: &mut Vec<usize>,
   calls: &mut Vec<(Vec<usize>, Vec<usize>, Vec<usize>)>,
-  rule: ListMethodAliasRule,
+  rule: CollectionMethodAliasRule,
 ) {
   let Cirru::List(items) = node else {
     return;
@@ -3706,16 +3762,16 @@ fn collect_list_method_alias_calls(
   }
   for (index, child) in items.iter().enumerate() {
     path.push(index);
-    collect_list_method_alias_calls(child, path, calls, rule);
+    collect_collection_method_alias_calls(child, path, calls, rule);
     path.pop();
   }
 }
 
-fn plan_core_list_method_alias_fixes(
+fn plan_core_collection_method_alias_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
   selected_definitions: &[(String, String)],
-  rule: ListMethodAliasRule,
+  rule: CollectionMethodAliasRule,
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
@@ -3728,7 +3784,7 @@ fn plan_core_list_method_alias_fixes(
       continue;
     }
     let mut calls = Vec::new();
-    collect_list_method_alias_calls(&entry.code, &mut Vec::new(), &mut calls, rule);
+    collect_collection_method_alias_calls(&entry.code, &mut Vec::new(), &mut calls, rule);
     if calls.is_empty() {
       continue;
     }
@@ -3773,15 +3829,16 @@ fn plan_core_list_method_alias_fixes(
         .as_ref()
         .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
       if resolved.as_ref().is_some_and(|annotation| {
-        !matches!(
-          annotation.as_ref(),
-          CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
-        )
+        !rule.receiver.matches(annotation.as_ref())
+          && !matches!(
+            annotation.as_ref(),
+            CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
+          )
       }) {
         continue;
       }
       let proven_same_impl = resolved.as_ref().is_some_and(|annotation| {
-        if !matches!(annotation.as_ref(), CalcitTypeAnnotation::List(_)) {
+        if !rule.receiver.matches(annotation.as_ref()) {
           return false;
         }
         let old = runner::preprocess::static_method_contract(annotation.as_ref(), rule.old_method);
@@ -3824,7 +3881,8 @@ fn plan_core_list_method_alias_fixes(
           rule.message.to_owned()
         } else {
           format!(
-            "Cannot prove a concrete List receiver, matching method implementation, or stable source context; review `{}` manually.",
+            "Cannot prove a concrete {} receiver, matching method implementation, or stable source context; review `{}` manually.",
+            rule.receiver.name(),
             rule.old_method
           )
         },

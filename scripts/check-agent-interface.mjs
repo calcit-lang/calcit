@@ -140,6 +140,21 @@ const scenarios = [
     },
   },
   {
+    name: "map distinct-values exposes its deduplicating Set contract",
+    args: ["calcit/test.cirru", "query", "type", ":: 'Map 'Tag 'Number", "--format", "json"],
+    check(result) {
+      const distinctValues = result.data.methods.find((method) => method.name === ".distinct-values");
+      const values = result.data.methods.find((method) => method.name === ".values");
+      assert.equal(distinctValues?.status, "proven");
+      assert.equal(distinctValues?.definition, "calcit.core/distinct-values");
+      assert.deepEqual(distinctValues?.parameter_types, []);
+      assert.equal(distinctValues?.return_type, "set<number>");
+      assert.deepEqual(values?.parameter_types, distinctValues?.parameter_types);
+      assert.equal(values?.return_type, distinctValues?.return_type);
+      assert.equal(values?.definition, distinctValues?.definition);
+    },
+  },
+  {
     name: "legacy any alias",
     args: ["calcit/test.cirru", "query", "type", ":any", "--format", "json"],
     check(result) {
