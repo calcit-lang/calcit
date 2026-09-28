@@ -145,6 +145,14 @@ const scenarios = [
       assert.equal(flatMap?.return_type, "list<'U>");
       assert.deepEqual(bind?.parameter_types, flatMap?.parameter_types);
       assert.equal(bind?.definition, flatMap?.definition);
+      const joinString = result.data.methods.find((method) => method.name === ".join-string");
+      const joinStr = result.data.methods.find((method) => method.name === ".join-str");
+      assert.equal(joinString?.status, "proven");
+      assert.equal(joinString?.definition, "calcit.core/join-str");
+      assert.deepEqual(joinString?.parameter_types, ["string"]);
+      assert.equal(joinString?.return_type, "string");
+      assert.deepEqual(joinStr?.parameter_types, joinString?.parameter_types);
+      assert.equal(joinStr?.definition, joinString?.definition);
     },
   },
   {

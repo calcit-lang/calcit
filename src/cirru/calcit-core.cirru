@@ -364,7 +364,7 @@
           :tags $ #{} :internal
         '&core-list-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-list-methods
-            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join intersperse) (:: :join-str join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth nth) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce fold) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
+            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join intersperse) (:: :join-str join-str) (:: :join-string join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth nth) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce fold) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -6082,7 +6082,7 @@
             :code $ quote $ assert= ([] 1 10 2 10 3 10 4)
               join ([] 1 2 3 4) 10
             :tags $ #{} :core :unit
-        'join-str $ %{} 'CodeEntry (:doc |)
+        'join-str $ %{} 'CodeEntry (:doc "|将 List 元素按既有显示规则逐项转为文本，并用 String 分隔符连接；旧名称保留兼容，首选 join-string 或 .join-string。")
           :code $ quote $ defn join-str (xs0 sep)
             apply-args (| xs0 true)
               defn %join-str (acc xs beginning?)
@@ -6106,6 +6106,27 @@
               assert= |1-2-3 $ join-str ([] 1 2 3) |-
               assert= | $ join-str ([]) |-
             :tags $ #{} :core :unit
+        'join-string $ %{} 'CodeEntry (:doc "|将 List 元素按既有显示规则逐项转为文本，并用 String 分隔符连接；空 List 返回空字符串。")
+          :code $ quote $ defn join-string (xs sep) (join-str xs sep)
+          :examples $ []
+            quote $ assert= |1-2-3 $ join-string ([] 1 2 3) |-
+            quote $ assert= |a,b $ ([] |a |b) .join-string |,
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] (:: 'List 'T) 'String
+            :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |renders-numbers-duplicates-and-empty-list)
+              :code $ quote $ do
+                assert-type (join-string ([] 1 2) |-) 'String
+                assert= |1,1,2 $ join-string ([] 1 1 2) |,
+                assert= |1,1,2 $ ([] 1 1 2) .join-string |,
+                assert= | $ join-string ([]) |,
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-legacy-rendering)
+              :code $ quote $ do
+                assert= (join-str ([] |a |b) |/) $ join-string ([] |a |b) |/
+                assert= (([] |a |b) .join-str |/) $ ([] |a |b) .join-string |/
+              :tags $ #{} :core :unit
         'js-nullish->option $ %{} 'CodeEntry
           :doc "|Explicitly convert a JavaScript null/undefined boundary value into nominal Option<T>. This does not validate or coerce the opaque payload type."
           :code $ quote $ defn js-nullish->option (x)

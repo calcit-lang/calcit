@@ -119,6 +119,11 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   运行 `calcit calcit.cirru fix --rule core-list-intersperse-v1 --format edn` 预览，核对来源和 revision 后携带
   `--expect-revision` 应用并重复预览。未知 macro、quoted data 和未证明的接收者不自动改写；当前只覆盖
   definition `:code`，不改 `:tests` / `:examples`，也不加入已发布 preset。
+- `core-list-join-string-v1` 仅把具体 List 上已证明的 `.join-str separator` 改成 `.join-string separator`。
+  两者必须同指 `calcit.core/join-str`，形参与返回类型契约一致；保留对 List 元素的原有显示转换、String 分隔符
+  和空 List 的空字符串结果。运行 `calcit calcit.cirru fix --rule core-list-join-string-v1 --format edn` 预览，
+  核对来源与 revision 后携带 `--expect-revision` 应用并重复预览。前缀 `join-str`、quoted data、开放接收者、
+  未知 macro 和用户方法不自动改写；当前只覆盖 definition `:code`，不改 `:tests` / `:examples`，不加入已发布 preset。
 - `core-map-distinct-values-v1` 仅把具体 Map 上已证明的零参数 `.values` 改成 `.distinct-values`。
   两者必须同指 `calcit.core/distinct-values`，形参与返回契约一致，均返回去重的 Set，不能解释成保留重复值的 List。
   运行 `calcit calcit.cirru fix --rule core-map-distinct-values-v1 --format edn` 预览，核对来源与 revision 后携带

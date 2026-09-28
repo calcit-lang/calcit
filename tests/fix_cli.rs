@@ -650,6 +650,200 @@ fn list_flat_map_fix_keeps_quoted_and_unknown_macro_calls_unmodified() {
 }
 
 #[test]
+fn list_join_string_fix_preserves_rendering_and_revision_guard() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let target = "fix-command.main/render-values";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn render-values (xs) (xs .join-str |,)",
+      ],
+    ),
+    "install List string join method",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return 'String)",
+      ],
+    ),
+    "declare List string join contract",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        target,
+        "preserves-number-rendering-duplicates-and-empty",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ do\n  assert= |1,1,2 $ render-values ([] 1 1 2)\n  assert= | $ render-values ([])\n  assert= |7 $ render-values ([] 7)",
+      ],
+    ),
+    "attach Calcit string join contract",
+  );
+  let selector = [
+    "--rule",
+    "core-list-join-string-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "render-values",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &selector);
+  assert_success(&preview, "join-string preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+  assert_eq!(suggestions.len(), 1, "{report}");
+  assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
+  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+  let stale = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-list-join-string-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "render-values",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      "stale-revision",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!stale.status.success(), "stale revision must reject apply");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-list-join-string-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "render-values",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "join-string apply");
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "Calcit string join after migration",
+  );
+  let invalid_separator = run_calcit(&snapshot, &["eval", "join-string ([] 1 2) 3"]);
+  assert!(
+    !invalid_separator.status.success(),
+    "non-String separator must fail strict checking"
+  );
+  assert!(
+    String::from_utf8_lossy(&invalid_separator.stderr).contains("W_FN_ARG_TYPE_MISMATCH"),
+    "invalid separator should retain a type diagnostic"
+  );
+  let repeated = run_fix(&snapshot, &selector);
+  assert_success(&repeated, "idempotent join-string preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+}
+
+#[test]
+fn list_join_string_fix_preserves_quoted_and_macro_boundaries() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (name, code) in [
+    (
+      "quoted-join-str",
+      "quote $ defn quoted-join-str ()\n  quote $ ([] 1 2) .join-str |,\n  , 0",
+    ),
+    ("pass-form", "quote $ defmacro pass-form (body) body"),
+    ("macro-join-str", "quote $ defn macro-join-str (xs) $ pass-form $ xs .join-str |,"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "install string join boundary source",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/macro-join-str",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return 'String)",
+      ],
+    ),
+    "declare macro string join receiver",
+  );
+  for (name, expected) in [("quoted-join-str", 0), ("macro-join-str", 1)] {
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-list-join-string-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, "string join boundary preview");
+    let report = parse_stdout(&preview);
+    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+    assert_eq!(suggestions.len(), expected, "{name}: {report}");
+    if expected == 1 {
+      assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
+      assert!(suggestions[0]["replacement"].is_null(), "{report}");
+    }
+  }
+}
+
+#[test]
 fn map_distinct_values_fix_preserves_deduplication_and_revision_guard() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
