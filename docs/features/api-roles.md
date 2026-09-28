@@ -158,6 +158,8 @@ List 展平映射优先使用 `.flat-map`：回调对每个元素调用一次，
 
 集合组合的显式 `core-collection-combine-v1` 只迁移具体 Map `.mappend` → `.merge` 和具体 Set `.mappend` → `.union`，要求各组旧、新方法解析到同一个 core 实现且类型契约一致。Map 后面的相同 key 覆盖前值，Set 去重；List、String、Fn 的 `.mappend` 保持单独审阅，不做跨类型全局替换。旧名暂保留，等待消费者迁移验证后再考虑移除。
 
+List 的位置读取优先用 `.get`：`List<T>` 的 `.get` 与兼容入口 `.nth` 均接收 Number 并返回 `Option<T>`，空表或越界返回 `none`。两者的方法查询现在能给出同一精确契约；`get` 前缀函数仍承担 Map、开放 Struct 等更广的查找语义。不要据名字把 Map/String/Enum 的 `get/nth` 批量互换，也不要把按 predicate 的 `.find/.find-index` 或按值的 `.index-of` 当作位置读取。
+
 ```cirru
 do
   assert= ([] 1 0 2)

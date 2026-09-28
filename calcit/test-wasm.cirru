@@ -631,6 +631,16 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-list-index-methods $ %{} 'CodeEntry (:doc "|验证 List .get/.nth 在 WASM 中共享有类型的 Option 索引读取。")
+          :code $ quote $ defwasm-export test-list-index-methods ()
+            let
+                xs $ [] 10 20 30
+              &+
+                option:unwrap-or (xs .get 1) -1
+                option:unwrap-or (xs .nth 2) -1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
         'test-list-max-empty $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-list-max-empty ()
             option:unwrap-or
@@ -953,18 +963,19 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-map-merge-value $ %{} 'CodeEntry (:doc "|merge override check via get")
-          :code $ quote $ defwasm-export test-map-merge-value ()
+        'test-map-merge-method $ %{} 'CodeEntry (:doc "|typed Map .merge keeps later-key precedence")
+          :code $ quote $ defwasm-export test-map-merge-method ()
             &map:get
-              &merge (&{} :a 1 :b 2) (&{} :b 99)
+                &{} :a 1 :b 2
+                , .merge (&{} :b 3) (&{} :b 99)
               , :b
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-map-merge-method $ %{} 'CodeEntry (:doc "|typed Map .merge keeps later-key precedence")
-          :code $ quote $ defwasm-export test-map-merge-method ()
+        'test-map-merge-value $ %{} 'CodeEntry (:doc "|merge override check via get")
+          :code $ quote $ defwasm-export test-map-merge-value ()
             &map:get
-              (&{} :a 1 :b 2) .merge (&{} :b 3) (&{} :b 99)
+              &merge (&{} :a 1 :b 2) (&{} :b 99)
               , :b
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -1242,15 +1253,17 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-set-union-same $ %{} 'CodeEntry (:doc "|union of identical sets")
-          :code $ quote $ defwasm-export test-set-union-same ()
-            &set:count $ &union (#{} 10 20 30) (#{} 10 20 30)
+        'test-set-union-method $ %{} 'CodeEntry (:doc "|typed Set .union deduplicates variadic inputs")
+          :code $ quote $ defwasm-export test-set-union-method ()
+            &set:count $
+              #{} 10 20
+              , .union (#{} 20 30) (#{} 10 40)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-set-union-method $ %{} 'CodeEntry (:doc "|typed Set .union deduplicates variadic inputs")
-          :code $ quote $ defwasm-export test-set-union-method ()
-            &set:count $ (#{} 10 20) .union (#{} 20 30) (#{} 10 40)
+        'test-set-union-same $ %{} 'CodeEntry (:doc "|union of identical sets")
+          :code $ quote $ defwasm-export test-set-union-same ()
+            &set:count $ &union (#{} 10 20 30) (#{} 10 20 30)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []

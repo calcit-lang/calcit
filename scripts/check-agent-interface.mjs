@@ -112,7 +112,7 @@ const scenarios = [
     },
   },
   {
-    name: "list append, length, fold, and intersperse expose proven contracts",
+    name: "list append, length, fold, intersperse, and index lookup expose proven contracts",
     args: ["calcit/test.cirru", "query", "type", ":: 'List 'Number", "--format", "json"],
     check(result) {
       const append = result.data.methods.find((method) => method.name === ".append");
@@ -153,6 +153,16 @@ const scenarios = [
       assert.equal(joinString?.return_type, "string");
       assert.deepEqual(joinStr?.parameter_types, joinString?.parameter_types);
       assert.equal(joinStr?.definition, joinString?.definition);
+      const get = result.data.methods.find((method) => method.name === ".get");
+      const nth = result.data.methods.find((method) => method.name === ".nth");
+      assert.equal(get?.status, "proven");
+      assert.equal(get?.definition, "calcit.core/get");
+      assert.deepEqual(get?.parameter_types, ["number"]);
+      assert.equal(get?.return_type, "type calcit.core/Option<number>");
+      assert.equal(nth?.status, "proven");
+      assert.equal(nth?.definition, get?.definition);
+      assert.deepEqual(nth?.parameter_types, get?.parameter_types);
+      assert.equal(nth?.return_type, get?.return_type);
     },
   },
   {
