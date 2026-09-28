@@ -555,6 +555,8 @@ List 带初始值的从左到右累加首选 `.fold initial reducer`，空 List 
 
 List 元素间插入同类型分隔值首选 `.intersperse separator`，结果仍是 List；需要 String 时使用现有 `join-str`，两者不是同义词。旧 `.join` 方法可显式用 `core-list-intersperse-v1` 预览和迁移，仅具体 List 的两种方法契约均 proven 且同指 `calcit.core/intersperse` 时自动改写。前缀 `join`、未知 macro 和附带的 `:tests` / `:examples` 不自动改写；该规则不加入已发布 preset。
 
+Map 的去重值集合首选 `.distinct-values` / `distinct-values`，返回 `Set<V>`；旧 `.values` / `vals` 的返回值也是去重 Set，不应误认成保留重复值的 List。旧方法可显式用 `core-map-distinct-values-v1` 预览和迁移，自动改写仅限具体 Map 的新旧方法契约均 proven、同指 `calcit.core/distinct-values` 的完整调用。前缀 `vals`、开放接收者、用户方法和附带的 `:tests` / `:examples` 不自动改写；该规则不加入已发布 preset。
+
 0.26.0 不删除旧 `option:*` / `result:*` 方法 helper：它们仍是 core method 的实现目标，不应在新应用代码中直接调用。其应用兼容入口最早于 0.27.0、且真实消费者在匹配的发布版依赖上迁移并通过严格检查、运行测试、Agent 文档和受影响 backend 验证，以及 core method 实现解耦后，才可考虑删除。完整条件见 [API 角色与命名](features/api-roles.md#旧方法-helper-的退场条件)；不能仅凭 fix 预览为空就推断可以删除。
 
 以下正反例可以直接由 `docs check-md` 执行。Unicode 字符数量不同于 UTF-8 字节数；`List.get` 的越界结果是 `Option :none`；列表的 `.contains?` 查询索引，`.includes?` 才查询元素；解析失败保留为 `Result` 的错误分支：

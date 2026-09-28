@@ -138,7 +138,7 @@ do
 | `foldl/.foldl/foldl'/reduce/.reduce: (List<T>, U, (U,T)->U) -> U` | **已引入** seeded `.fold`；`foldl'` 转 **内部**备选实现仍待评估 | 保持左到右、空 List 返回初值、异类型 accumulator、callback 次数；不把旧 reduce 换成无初值语义。新方法证明不弱于现有 `.reduce` |
 | `join/.join: (List<T>, T) -> List<T>` | **已引入** `intersperse/.intersperse`；旧名暂保留兼容 | 只插入同类型分隔项，保持空/单项/重复值/顺序；不改成 String 返回，也不与 `join-str` 混用 |
 | `join-str/.join-str: (List<T>, String) -> String`，逐项格式化 | **目标** `.join-string`；兼容前缀目标 `join-string` | 不缩窄成 List<String> 或偷偷改显示规则；先验证实际元素类型与格式化失败边界 |
-| `vals` / Map `.values: Map<K,V> -> Set<V>`，去重 | **目标** `.distinct-values: Map<K,V> -> Set<V>` | 不把旧 values 改为保留重复值的 List；顺序不保证。保留重复值的视图是独立语义任务，本轮不复用旧名 |
+| `vals` / Map `.values: Map<K,V> -> Set<V>`，去重 | **已引入** `distinct-values/.distinct-values`；旧名暂保留兼容 | 新旧都返回去重 Set，顺序不保证；保留重复值的视图是独立语义任务，本轮不复用旧名 |
 | List `mapcat/.bind: (List<T>, (T)->List<U>) -> List<U>` | **目标** `.flat-map` | 保持顺序、展平层数、callback 次数与具体 U；Fn `.bind` 是不同组合，**暂缓** |
 | `.mappend` 在 List/Map/Set/String 上为各自组合，Fn 另有含义 | **目标** List `.concat`、Map `.merge`、Set `.union`；String 与 Fn **暂缓** | 分别验证拼接顺序、重复 key 胜出方、去重；String 现有格式化宽度先核对，不跨 receiver 批量替换 |
 | List/String `get/nth` 返回 Option；List `.find/.find-index` 接受 predicate，`.index-of` 接受元素；String `.find-index` 接受子串 | **保留**各命题，位置访问首选 `.get`；等价 `.nth` 迁移待证据齐全 | 不把 predicate 查找改成值比较；缺失保持 Option，String 保持标量索引；Enum 异构位置访问 **暂缓** |
@@ -149,6 +149,8 @@ do
 长度迁移的小批次使用显式 `core-collection-len-v1`：只在 List/Map/Set/String 的 `.count` 与 `.len` 同指对应 core 实现、方法契约已证明时改写。Struct/Enum 的 `.count` 另有语义，用户自定义 trait 也不据名字猜测；这不是一次全局文本替换。见 [fix 规则](../run/fix.md)。
 
 List 分隔元素的小批次使用显式 `core-list-intersperse-v1`：仅当具体 List 上 `.join` 和 `.intersperse` 同指 `calcit.core/intersperse` 且契约已证明时改写方法调用。前缀 `join` 与返回 String 的 `join-str` 不在规则范围，旧名暂保留以便分批迁移。
+
+Map 去重值使用 `distinct-values` / `.distinct-values`，返回 `Set<V>`，不是保留重复值的 List。旧 `.values` 方法可用显式 `core-map-distinct-values-v1` 迁移：只有具体 Map 上旧、新方法均已证明指向同一实现且契约一致时才自动改写；前缀 `vals`、开放接收者与用户方法不按名字改写。
 
 ```cirru
 do
