@@ -12,4 +12,4 @@ WASM lowering 现在保存函数参数、局部绑定、闭包与 IIFE 的静态
 
 ## 验证
 
-`some?` 的定义级 `:tests` 覆盖 nil、false、0、Option 与类型化/泛型转发调用。独立脚本从这些测试构造临时 Snapshot，并在 native、生成 JavaScript、core WASM、WASI 0.3 Component/Wasmtime 执行同一组断言；另有显式泛型导出的负例验证错误码。CI 同时运行常规共享契约和真实 Wasmtime 路径。
+`some?` 的定义级 `:tests` 覆盖 nil、false、0、Option 与类型化/泛型转发调用。独立脚本从这些测试构造临时 Snapshot，并在 native、生成 JavaScript、core WASM、WASI 0.3 Component/Wasmtime 执行同一组断言；另有显式泛型导出与 spread 泛型调用的负例验证错误码。闭包参数遮蔽回归还会执行生成的 WASM，确认同名捕获变量不会泄漏旧类型证据。CI 同时运行常规共享契约和真实 Wasmtime 路径。

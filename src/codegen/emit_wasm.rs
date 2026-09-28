@@ -5186,6 +5186,7 @@ fn emit_inline_closure_body(ctx: &mut WasmGenCtx, closure: &InlineClosure, param
   let caller_closures = std::mem::replace(&mut ctx.lambda_locals, closure.captured_closures.clone());
   for (param, local) in closure.params.iter().zip(param_locals) {
     ctx.locals.insert(param.clone(), *local);
+    ctx.local_types.remove(param);
   }
   let result = emit_body(ctx, &closure.body);
   ctx.locals = caller_locals;
@@ -5228,9 +5229,12 @@ fn emit_inline_closure_call(ctx: &mut WasmGenCtx, closure: &InlineClosure, args:
         ctx.locals.insert(param.clone(), local);
         if let Some(Some(annotation)) = argument_types.get(index) {
           ctx.local_types.insert(param.clone(), annotation.clone());
+        } else {
+          ctx.local_types.remove(param);
         }
       }
       InlineArgument::Closure(value) => {
+        ctx.local_types.remove(param);
         ctx.lambda_locals.insert(param.clone(), value);
       }
     }
@@ -5311,6 +5315,16 @@ fn function_requires_nil_specialization(ctx: &WasmGenCtx, qualified: &str, fallb
     .get(qualified)
     .or_else(|| ctx.static_fn_defs.get(fallback))
     .is_some_and(|definition| definition_requires_nil_specialization(definition))
+}
+
+fn reject_nil_specialized_spread_call(ctx: &WasmGenCtx, qualified: &str, fallback: &str) -> Result<(), String> {
+  if function_requires_nil_specialization(ctx, qualified, fallback) {
+    Err(format!(
+      "E_WASM_NIL_TYPE_EVIDENCE: `{qualified}` cannot be called through a spread call before its generic argument type is known"
+    ))
+  } else {
+    Ok(())
+  }
 }
 
 fn resolve_nil_specialization_types(
@@ -6315,6 +6329,7 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
   match head {
     Calcit::Import(import) => {
       let qualified = format!("{}/{}", import.ns, import.def);
+      reject_nil_specialized_spread_call(ctx, &qualified, import.def.as_ref())?;
       let fn_idx = ctx
         .fn_index
         .get(&qualified)
@@ -6338,6 +6353,7 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
     }
     Calcit::Symbol { sym, .. } => {
       let name = sym.as_ref();
+      reject_nil_specialized_spread_call(ctx, name, name)?;
       let fn_idx = *ctx
         .fn_index
         .get(name)
@@ -6356,6 +6372,7 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
         )
       })?;
       let qualified = format!("{}/{}", def_ref.def_ns, def_ref.def_name);
+      reject_nil_specialized_spread_call(ctx, &qualified, def_ref.def_name.as_ref())?;
       let fn_idx = ctx
         .fn_index
         .get(&qualified)
@@ -8728,6 +8745,7 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
       ctx.emit(Instruction::I32TruncF64U);
       ctx.emit(Instruction::F64Load(mem_arg_f64(offset)));
       let idx = ctx.declare_local(&bind_name);
+      ctx.local_types.remove(&bind_name);
       ctx.emit(Instruction::LocalSet(idx));
     }
 

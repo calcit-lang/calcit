@@ -50,7 +50,9 @@ WASM 后端现在依据静态类型证据 lowering `nil?`，从而让 `some? fal
 
 泛型 helper 在直接调用点取得具体实参类型后会被单态化，跨 namespace 的普通 Calcit 引用同样有效；不需要改成 native call，也不需要为 helper 建立额外加载路径。名义 `Option` 自身不是 nil，所以 `some? $ Option :none` 仍为 true，不能替代 Option 的 `.some?`。
 
-无法取得具体类型证据的开放 `Dynamic`、未绑定泛型，以及把 nil-sensitive 泛型 helper 作为一等函数或公开 WASM 导出的边界，会明确报出 `E_WASM_NIL_TYPE_EVIDENCE`。旧 `Optional<T>` 只有在 payload 使用确定非零的引用/句柄表示时才可做运行时 nil 判断，例如 WASI `get-env` 的 `Optional<String>`；`Optional<Number>` 与 `Optional<Bool>` 仍会拒绝，因为 0/false 和 nil 在 scalar ABI 中相同。这类边界应先收紧 schema、迁到名义 `Option`，或在 Calcit 调用点完成具体化；编译器不会猜测零值，也不会为了兼容扩展动态追踪规则。此次修复不改变 scalar ABI，也没有提供掩盖开放类型的自动转换。
+无法取得具体类型证据的开放 `Dynamic`、未绑定泛型，以及把 nil-sensitive 泛型 helper 作为一等函数或公开 WASM 导出的边界，会明确报出 `E_WASM_NIL_TYPE_EVIDENCE`。带 `&` 的 spread 调用没有固定实参形状，不能充当泛型特化点；如果目标 helper 依赖 nil 类型证据，同样会在编译期拒绝，而不是留下运行时 trap。应改为类型已具体化的普通直接调用，或增加一个签名闭合、无需猜测 payload 类型的 wrapper。
+
+旧 `Optional<T>` 只有在 payload 使用确定非零的引用/句柄表示时才可做运行时 nil 判断，例如 WASI `get-env` 的 `Optional<String>`；`Optional<Number>` 与 `Optional<Bool>` 仍会拒绝，因为 0/false 和 nil 在 scalar ABI 中相同。这类边界应先收紧 schema、迁到名义 `Option`，或在 Calcit 调用点完成具体化；编译器不会猜测零值，也不会为了兼容扩展动态追踪规则。此次修复不改变 scalar ABI，也没有提供掩盖开放类型的自动转换。
 
 ```cirru
 assert= true $ some? false
