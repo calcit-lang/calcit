@@ -1315,6 +1315,7 @@ mod type_query_tests {
         ".format",
         ".fract",
         ".inc",
+        ".integer?",
         ".negate",
         ".pow",
         ".rem",
@@ -1327,6 +1328,17 @@ mod type_query_tests {
         ".multiply",
       ]
     );
+
+    let integer = runner::preprocess::static_method_contracts(&CalcitTypeAnnotation::Number)
+      .expect("number method contracts should resolve")
+      .into_iter()
+      .find(|(method, _)| method.name == ".integer?")
+      .map(|(method, contract)| context_method(method, contract))
+      .expect("integer predicate should be discoverable");
+    assert_eq!(integer.status, "proven");
+    assert_eq!(integer.parameter_types, Some(vec![]));
+    assert_eq!(integer.return_type.as_deref(), Some("bool"));
+    assert_eq!(integer.definition.as_deref(), Some("calcit.core/integer?"));
   }
 
   #[test]
