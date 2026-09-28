@@ -465,6 +465,191 @@ fn list_intersperse_fix_preserves_quoted_and_macro_boundaries() {
 }
 
 #[test]
+fn list_flat_map_fix_preserves_typed_output_and_revision_guard() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let target = "fix-command.main/duplicate-as-strings";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn duplicate-as-strings (xs) (xs .bind $ fn (x) ([] (str x) (str x)))",
+      ],
+    ),
+    "install List bind method",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return $ :: 'List 'String)",
+      ],
+    ),
+    "declare List flat-map contract",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        target,
+        "preserves-order-and-empty",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ do\n  assert= ([] |1 |1 |2 |2) $ duplicate-as-strings $ [] 1 2\n  assert= ([]) $ duplicate-as-strings ([])",
+      ],
+    ),
+    "attach Calcit flat-map contract",
+  );
+  let selector = [
+    "--rule",
+    "core-list-flat-map-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "duplicate-as-strings",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &selector);
+  assert_success(&preview, "flat-map preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+  assert_eq!(suggestions.len(), 1, "{report}");
+  assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
+  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+  let stale = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-list-flat-map-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "duplicate-as-strings",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      "stale-revision",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!stale.status.success(), "stale revision must reject apply");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-list-flat-map-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "duplicate-as-strings",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "flat-map apply");
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "Calcit flat-map after migration",
+  );
+  let repeated = run_fix(&snapshot, &selector);
+  assert_success(&repeated, "idempotent flat-map preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+}
+
+#[test]
+fn list_flat_map_fix_keeps_quoted_and_unknown_macro_calls_unmodified() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (name, code) in [
+    (
+      "quoted-bind",
+      "quote $ defn quoted-bind ()\n  quote $ ([] 1 2) .bind $ fn (x) ([] x)\n  , 0",
+    ),
+    ("pass-form", "quote $ defmacro pass-form (body) body"),
+    ("macro-bind", "quote $ defn macro-bind (xs) $ pass-form $ xs .bind $ fn (x) ([] x)"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "install flat-map boundary source",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/macro-bind",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return $ :: 'List 'Number)",
+      ],
+    ),
+    "declare macro List receiver",
+  );
+  for (name, expected) in [("quoted-bind", 0), ("macro-bind", 1)] {
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-list-flat-map-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, "flat-map boundary preview");
+    let report = parse_stdout(&preview);
+    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+    assert_eq!(suggestions.len(), expected, "{name}: {report}");
+    if expected == 1 {
+      assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
+      assert!(suggestions[0]["replacement"].is_null(), "{report}");
+    }
+  }
+}
+
+#[test]
 fn map_distinct_values_fix_preserves_deduplication_and_revision_guard() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

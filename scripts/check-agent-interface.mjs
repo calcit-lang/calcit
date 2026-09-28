@@ -137,6 +137,14 @@ const scenarios = [
       assert.equal(intersperse?.return_type, "list<number>");
       assert.deepEqual(join?.parameter_types, intersperse?.parameter_types);
       assert.equal(join?.definition, intersperse?.definition);
+      const flatMap = result.data.methods.find((method) => method.name === ".flat-map");
+      const bind = result.data.methods.find((method) => method.name === ".bind");
+      assert.equal(flatMap?.status, "proven");
+      assert.equal(flatMap?.definition, "calcit.core/mapcat");
+      assert.deepEqual(flatMap?.parameter_types, ["fn(number) -> list<'U>"]);
+      assert.equal(flatMap?.return_type, "list<'U>");
+      assert.deepEqual(bind?.parameter_types, flatMap?.parameter_types);
+      assert.equal(bind?.definition, flatMap?.definition);
     },
   },
   {

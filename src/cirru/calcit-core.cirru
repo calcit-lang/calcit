@@ -364,7 +364,7 @@
           :tags $ #{} :internal
         '&core-list-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-list-methods
-            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join intersperse) (:: :join-str join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth nth) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce fold) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
+            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join intersperse) (:: :join-str join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth nth) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce fold) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -6842,7 +6842,7 @@
             :args $ [] 'T
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'mapcat $ %{} 'CodeEntry (:doc |)
+        'mapcat $ %{} 'CodeEntry (:doc "|对 List 的每个元素调用回调，并按原顺序把回调返回的 List 展平一层。公开方法优先使用 `.flat-map`；前缀 `mapcat` 与旧方法 `.bind` 暂保留兼容。")
           :code $ quote $ defn mapcat (xs f)
             &list:concat & $ map xs f
           :examples $ []
@@ -6853,15 +6853,30 @@
                 :return $ :: 'List 'U
             :generics $ [] 'T 'U
             :return $ :: 'List 'U
-          :tests $ [] $ %{} 'TestEntry (:name |concatenates-mapped-lists)
-            :code $ quote $ do
-              assert= ([] 0 0 1 0 1 2)
-                mapcat ([] 1 2 3)
-                  fn (x) (range x)
-              assert= ([])
-                mapcat ([])
-                  fn (x) (range x)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |concatenates-mapped-lists)
+              :code $ quote $ do
+                assert= ([] 0 0 1 0 1 2)
+                  mapcat ([] 1 2 3)
+                    fn (x) (range x)
+                assert= ([])
+                  mapcat ([])
+                    fn (x) (range x)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |flat-map-keeps-order-type-and-callback-count)
+              :code $ quote $ let
+                  calls $ atom 0
+                  result $ ([] 1 2 3) .flat-map $ fn (x)
+                    swap! calls inc
+                    [] (str x) (str x)
+                assert-type result $ :: 'List 'String
+                assert= ([] |1 |1 |2 |2 |3 |3) result
+                assert= 3 @calls
+                assert= ([])
+                  ([]) .flat-map $ fn (x) ([] x)
+                assert= ([] 1 1 2 2)
+                  ([] 1 2) .bind $ fn (x) ([] x x)
+              :tags $ #{} :core :unit
         'max $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn max (xs) (.max xs)
           :examples $ []

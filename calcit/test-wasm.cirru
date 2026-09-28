@@ -513,6 +513,14 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-list-flat-map-method $ %{} 'CodeEntry (:doc "|typed List .flat-map keeps mapped element order")
+          :code $ quote $ defwasm-export test-list-flat-map-method ()
+            &let
+              xs $ ([] 1 2) .flat-map $ fn (x) ([] x (&+ x 10))
+              &+ (&list:count xs) (&list:nth xs 3)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
         'test-list-contains $ %{} 'CodeEntry (:doc "|contains checks index bounds")
           :code $ quote $ defwasm-export test-list-contains ()
             &let
