@@ -234,11 +234,11 @@ pub fn compare_string(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-/// returns -1 if not found
+/// Returns a Unicode scalar index, or -1 if not found.
 pub fn find_index(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => match s.find(&**pattern) {
-      Some(idx) => Ok(Calcit::Number(idx as f64)),
+      Some(idx) => Ok(Calcit::Number(s[..idx].chars().count() as f64)),
       None => Ok(Calcit::Number(-1.0)),
     },
     (Some(a), Some(b)) => CalcitErr::err_str(

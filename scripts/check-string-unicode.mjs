@@ -11,15 +11,16 @@ const corePath = resolve("src/cirru/calcit-core.cirru");
 // Read the authoritative definition tests as AST, not a second JS assertion suite.
 const core = JSON.parse(run("cirru", "parse-edn", "--file", corePath));
 const definitions = core[":files"]["'calcit.core"].defs;
-const successNames = ["unicode-scalar-indexing", "scalar-slice-boundaries"];
+const successNames = ["unicode-scalar-indexing", "scalar-slice-boundaries", "scalar-search-indices"];
 const failureNames = ["rejects-invalid-string-indices", "scalar-slice-invalid-evaluation"];
-const available = [...definitions["'last"].tests, ...definitions["'&str:slice"].tests];
+const available = [...definitions["'last"].tests, ...definitions["'&str:slice"].tests, ...definitions["'str-find-index"].tests];
 const tests = [...successNames, ...failureNames].map((name) => {
   const test = available.find((entry) => entry.name === name);
   assert.ok(test, `missing Unicode definition test: ${name}`);
   return test;
 });
 const expectedTrace = ["unicode-receiver", "unicode-start", "unicode-end",
+  "unicode-search-receiver", "unicode-search-needle",
   "unicode-invalid-receiver", "unicode-invalid-start", "unicode-invalid-end"];
 const fixture = await mkdtemp(join(tmpdir(), "calcit-string-unicode-"));
 try {

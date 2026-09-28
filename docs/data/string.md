@@ -45,6 +45,20 @@ WASM 的底层 `first`/`nth`/`rest`/`slice`/`contains?` 复用有界的标量边
 
 native/JS 的非法索引通过既有错误路径报告；当前 WASM 对应为 trap，尚不提供可捕获的 `try` 语义。共享 Calcit 测试验证正常结果，宿主测试验证 trap 与求值顺序。不将这些结果外推到所有 Dynamic 方法、任意 host 字符串或其他文本操作；本次修复不扩大 WASI 宿主能力。
 
+## 子串搜索索引
+
+`.find-index` / `str-find-index` 返回首次匹配的 `Option<Number>`，索引同样按 Unicode 标量计数，可直接传给 `.get` 或 `.slice`。找不到返回 `Option :none`；空 pattern 在任意字符串（包括空串）中返回 `Option :some 0`。组合字符不合并为字素簇，也不隐式做 Unicode normalization。
+
+```cirru
+assert= (Option :some 1) $ |😀中 .find-index |中
+assert= (Option :some 2) $ |éa .find-index |a
+assert= (Option :none) $ |éa .find-index |é
+assert= (Option :some 0) $ | .find-index |
+assert= |中文 $ |A😀中文 .slice ((|A😀中文 .find-index |中文) .unwrap) (|A😀中文 .len)
+```
+
+这修复了旧 native/WASM 返回 UTF-8 字节偏移、旧 JS 返回 UTF-16 单元偏移的不一致；不改变 `.includes?` 的子串存在判断或显式 `&str:utf8-byte-count`。普通 Calcit 搜索不提供 byte-offset 模式；需要协议偏移的调用者应在明确的编码边界自行计算，不再依赖旧缺陷。JS FFI 的孤立 surrogate 仍按既有宿主行为处理，不替换为 `�`，也不扩大跨 backend 的合法文本保证范围。
+
 ## Tag
 
 Calcit also provides the Tag type, written with a leading `:` such as `:demo`. Tags are interned immutable identifiers with consistent Calcit semantics across the Rust interpreter and JavaScript output. They are commonly used for struct fields, enum variants, map keys, and protocol labels; ordinary user-facing text should remain a String.

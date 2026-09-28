@@ -24,6 +24,12 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 字符串搜索索引单位修复
+
+`.find-index` / `str-find-index` 现在返回 Unicode 标量索引，与 `.get/.slice/.len` 一致。此前 native/WASM 返回 UTF-8 字节偏移，JS 返回 UTF-16 单元偏移，例如在 `😀a` 中搜索 `a` 分别得到 4 和 2；修复后统一为 `Option :some 1`。ASCII、找不到、空 pattern 与首次匹配行为不变，`Option<Number>` 类型也不变。
+
+正常源码无需改写；请移除应用中为旧偏移错误添加的编码补偿，并检查把搜索结果交给 JS `slice` 或协议 byte offset 的 FFI 边界。此类补偿含业务语义，不提供全局自动 fix；不能把返回值直接当作宿主编码单位。需要 UTF-8 长度时继续显式使用 `&str:utf8-byte-count`，不要用 `.len` 代替。调用形态、组合字符与跨目标范围见 [String 搜索契约](../data/string.md#子串搜索索引)。
+
 ## Map 条目参与排序与组件调用
 
 旧的 `&map:to-list` 生成异构的 `[key value]` 列表；即使输入是 `Map<K,V>`，

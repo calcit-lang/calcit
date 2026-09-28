@@ -1476,7 +1476,15 @@ export let _$n_str_$o_slice = (xs: string, m: number, n?: number): string => {
 };
 
 export let _$n_str_$o_find_index = (x: string, y: string): number => {
-  return x.indexOf(y);
+  const index = x.indexOf(y);
+  if (index <= 0 || !/[\uD800-\uDBFF]/.test(x)) return index;
+  // Count only the matched prefix, without allocating a character array.
+  // Lone host surrogates retain the same one-unit behavior as stringScalarOffset.
+  let scalar = 0;
+  for (let offset = 0; offset < index; scalar += 1) {
+    offset += x.codePointAt(offset)! > 0xffff ? 2 : 1;
+  }
+  return scalar;
 };
 
 export let _$n_parse_float = (x: string): number | null => {

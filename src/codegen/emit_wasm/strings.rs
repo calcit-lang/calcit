@@ -392,7 +392,7 @@ pub(super) fn emit_str_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   Ok(())
 }
 
-/// `&str:find-index haystack needle` — byte offset of first occurrence, or -1.0.
+/// `&str:find-index haystack needle` — Unicode scalar index of first occurrence, or -1.0.
 pub(super) fn emit_str_find_index(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&str:find-index")?;
   let ptr_h = emit_ptr_to_i32(ctx, &args[0])?;
