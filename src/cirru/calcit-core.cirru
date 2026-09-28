@@ -364,7 +364,7 @@
           :tags $ #{} :internal
         '&core-list-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-list-methods
-            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join intersperse) (:: :join-str join-str) (:: :join-string join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth nth) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce fold) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
+            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join intersperse) (:: :join-str join-str) (:: :join-string join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth get) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce fold) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -5620,6 +5620,14 @@
             :args $ [] 'Dynamic 'Dynamic
             :return $ :: 'Option 'Dynamic
           :tests $ []
+            %{} 'TestEntry (:name |reads-list-indices-as-options)
+              :code $ quote $ do
+                assert= (%some 2) $ ([] 1 2 2) .get 1
+                assert= (%some 2) $ ([] 1 2 2) .nth 2
+                assert= (%none) $ ([] 1 2) .get -1
+                assert= (%none) $ ([] 1 2) .nth 3
+                assert= (%none) $ ([]) .get 0
+              :tags $ #{} :core :unit
             %{} 'TestEntry (:name |returns-some-or-none-for-map)
               :code $ quote $ assert= (%none)
                 get (&{}) :missing

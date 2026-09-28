@@ -368,6 +368,7 @@ check("test-max(9,2)", 9, e["test-max"], 9, 2);
 
 // --- List tests ---
 check("test-list-count()", 3, e["test-list-count"]);
+check("test-list-index-methods()", 50, e["test-list-index-methods"]);
 check("test-list-nth(0)", 10, e["test-list-nth"], 0);
 check("test-list-nth(2)", 30, e["test-list-nth"], 2);
 check("test-list-first-generic()", 42, e["test-list-first-generic"]);
