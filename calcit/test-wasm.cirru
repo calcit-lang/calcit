@@ -521,6 +521,14 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-list-join-string $ %{} 'CodeEntry (:doc "|List join-string method and prefix preserve rendering")
+          :code $ quote $ defwasm-export test-list-join-string ()
+            &+
+              &str:count $ ([] 1 2 3) .join-string |-
+              &str:count $ join-string ([] 1 2 3) |-
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
         'test-list-contains $ %{} 'CodeEntry (:doc "|contains checks index bounds")
           :code $ quote $ defwasm-export test-list-contains ()
             &let

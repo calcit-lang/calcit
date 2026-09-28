@@ -137,7 +137,7 @@ do
 | Map `.assoc: (Map<K,V>, K,V) -> Map<K,V>` / `.dissoc: (Map<K,V>, K, & K) -> Map<K,V>`；Set `include/exclude` 返回新 Set | **目标** Map `.insert/.remove`、Set `.insert/.remove`，保持原参数个数/可变参和返回新集合 | 不返回 Rust 风格旧值/Bool，不原地修改。Map `.add` 接受 entry，与 assoc 不同，**暂缓**到 entry 类型证明完成，不自动拆包 |
 | `foldl/.foldl/foldl'/reduce/.reduce: (List<T>, U, (U,T)->U) -> U` | **已引入** seeded `.fold`；`foldl'` 转 **内部**备选实现仍待评估 | 保持左到右、空 List 返回初值、异类型 accumulator、callback 次数；不把旧 reduce 换成无初值语义。新方法证明不弱于现有 `.reduce` |
 | `join/.join: (List<T>, T) -> List<T>` | **已引入** `intersperse/.intersperse`；旧名暂保留兼容 | 只插入同类型分隔项，保持空/单项/重复值/顺序；不改成 String 返回，也不与 `join-str` 混用 |
-| `join-str/.join-str: (List<T>, String) -> String`，逐项格式化 | **目标** `.join-string`；兼容前缀目标 `join-string` | 不缩窄成 List<String> 或偷偷改显示规则；先验证实际元素类型与格式化失败边界 |
+| `join-str/.join-str: (List<T>, String) -> String`，逐项格式化 | **已引入** `join-string/.join-string` | 保留 List<T>、原有显示规则和空 List 结果；旧名暂留兼容，不与返回 List 的 `intersperse` 混淆 |
 | `vals` / Map `.values: Map<K,V> -> Set<V>`，去重 | **已引入** `distinct-values/.distinct-values`；旧名暂保留兼容 | 新旧都返回去重 Set，顺序不保证；保留重复值的视图是独立语义任务，本轮不复用旧名 |
 | List `mapcat/.bind: (List<T>, (T)->List<U>) -> List<U>` | **已引入** `.flat-map` | 保持顺序、展平一层、callback 次数与具体 U；Fn `.bind` 是不同组合，**暂缓** |
 | `.mappend` 在 List/Map/Set/String 上为各自组合，Fn 另有含义 | **目标** List `.concat`、Map `.merge`、Set `.union`；String 与 Fn **暂缓** | 分别验证拼接顺序、重复 key 胜出方、去重；String 现有格式化宽度先核对，不跨 receiver 批量替换 |
@@ -149,6 +149,8 @@ do
 长度迁移的小批次使用显式 `core-collection-len-v1`：只在 List/Map/Set/String 的 `.count` 与 `.len` 同指对应 core 实现、方法契约已证明时改写。Struct/Enum 的 `.count` 另有语义，用户自定义 trait 也不据名字猜测；这不是一次全局文本替换。见 [fix 规则](../run/fix.md)。
 
 List 分隔元素的小批次使用显式 `core-list-intersperse-v1`：仅当具体 List 上 `.join` 和 `.intersperse` 同指 `calcit.core/intersperse` 且契约已证明时改写方法调用。前缀 `join` 与返回 String 的 `join-str` 不在规则范围，旧名暂保留以便分批迁移。
+
+List 文本拼接使用 `join-string` / `.join-string`，逐项沿用 `join-str` 的显示转换并插入 String 分隔符，空 List 返回空字符串；这不是返回 List 的 `intersperse`。显式 `core-list-join-string-v1` 只迁移具体 List 且旧新方法同指 `calcit.core/join-str`、类型契约一致的 `.join-str` 调用。前缀 `join-str` 需要独立审阅，不在此 fix 范围。
 
 Map 去重值使用 `distinct-values` / `.distinct-values`，返回 `Set<V>`，不是保留重复值的 List。旧 `.values` 方法可用显式 `core-map-distinct-values-v1` 迁移：只有具体 Map 上旧、新方法均已证明指向同一实现且契约一致时才自动改写；前缀 `vals`、开放接收者与用户方法不按名字改写。
 
