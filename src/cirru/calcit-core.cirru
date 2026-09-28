@@ -2155,7 +2155,7 @@
             :code $ quote $ assert= "|\"a \\\"\"" (&str:escape "|a \"")
             :tags $ #{} :core :unit
         '&str:find-index $ %{} 'CodeEntry
-          :doc "|Internal string search primitive. Returns a numeric index or -1 when absent; public callers should use str-find-index or .find-index."
+          :doc "|内部字符串搜索 primitive：返回首次匹配的 Unicode 标量索引，未找到返回 -1，空 pattern 返回 0。公开调用优先使用返回 Option<Number> 的 str-find-index 或 .find-index。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -8045,17 +8045,59 @@
                 assert= "|(%:: _ :a |世界 \"|海 洋\")" $ str $ :: :a "|世界" "|海 洋"
               :tags $ #{} :core :unit
         'str-find-index $ %{} 'CodeEntry
-          :doc "|Find the first string index as Option<Number>, returning none when the pattern is absent."
+          :doc "|返回首次匹配的 Unicode 标量索引 Option<Number>，可直接用于 .get/.slice；不是 UTF-8 字节或 UTF-16 单元偏移，也不按 grapheme 分组。未找到返回 Option :none，空 pattern 返回 Option :some 0。"
           :code $ quote $ defn str-find-index (text pattern)
             let
                 idx $ &str:find-index text pattern
               if (&= idx -1) (%none) (%some idx)
           :examples $ []
-            quote $ assert= (%some 1) (str-find-index |abc |b)
-            quote $ assert= (%none) (str-find-index |abc |z)
+            quote $ assert= (Option :some 1) ("|😀中" .find-index "|中")
+            quote $ assert= (Option :none) (str-find-index |hello |xyz)
+            quote $ assert= "|中文" $ "|A😀中文" .slice
+              ("|A😀中文" .find-index "|中文") .unwrap
+              "|A😀中文" .len
           :schema $ :: 'Fn $ {}
             :args $ [] 'String 'String
             :return $ :: 'Option 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |scalar-search-indices)
+            :code $ quote $ do
+              assert= (Option :some 1) (|hello .find-index |ell)
+              assert= (Option :some 1) ("|中a" .find-index |a)
+              assert= (Option :some 1) ("|😀a" .find-index |a)
+              assert= (Option :some 2) ("|A😀中文" .find-index "|中文")
+              assert= (Option :some 1) ("|中😀文😀" .find-index "|😀")
+              assert= (Option :some 2) ("|éa" .find-index |a)
+              assert= (Option :some 1) ("|éa" .find-index "|́")
+              assert= (Option :none) ("|éa" .find-index "|é")
+              assert= (Option :some 0) ("|😀😀" .find-index "|😀")
+              assert= (Option :some 1) (|ababa .find-index |ba)
+              assert= (Option :none) ("|😀中" .find-index |a)
+              assert= (Option :none) (| .find-index |a)
+              assert= (Option :none) ("|😀" .find-index "|😀中")
+              assert= (Option :some 0) (| .find-index |)
+              assert= (Option :some 0) ("|😀中" .find-index |)
+              assert= (Option :some 1) (str-find-index "|😀a" |a)
+              assert= (Option :none) (str-find-index "|😀a" |b)
+              assert= (Option :some 0) (str-find-index "|😀a" |)
+              assert= 1 $ &str:find-index "|😀a" |a
+              assert= -1 $ &str:find-index "|😀a" |b
+              assert= 0 $ &str:find-index "|😀a" |
+              assert= (Option :some "|中")
+                "|A😀中" .get $
+                  "|A😀中" .find-index "|中"
+                  , .unwrap
+              assert= "|中文" $ "|A😀中文" .slice
+                ("|A😀中文" .find-index "|中文") .unwrap
+                "|A😀中文" .len
+              assert= true $ "|A😀中" .includes? "|😀中"
+              assert= false $ "|A😀中" .includes? "|😀文"
+              assert= true $ "|A😀中" .includes? |
+              assert= 8 $ &str:utf8-byte-count "|A😀中"
+              assert= (Option :some 1)
+                .find-index
+                  do (println |unicode-search-receiver) "|😀中"
+                  do (println |unicode-search-needle) "|中"
+            :tags $ #{} :core :unicode :unit
         'str-spaced $ %{} 'CodeEntry
           :doc "|converts values to string and joins them with spaces"
           :code $ quote $ defn str-spaced (& xs) (&str-spaced true & xs)

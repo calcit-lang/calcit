@@ -3939,7 +3939,7 @@ pub(super) fn build_runtime_fns(
   ));
 
   // Substring search helper: __rt_str_find_index(h_ptr: i32, n_ptr: i32) → f64
-  // Returns byte offset of first occurrence, or -1.0 if not found.
+  // Returns Unicode scalar index of first occurrence, or -1.0 if not found.
   let str_find_index_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_str_find_index"), str_find_index_idx);
   fns.push(build_rt_str_find_index());
@@ -5557,13 +5557,13 @@ fn build_rt_str_compare() -> CompiledFn {
 
 /// `__rt_str_find_index(h_ptr: i32, n_ptr: i32) → f64`
 ///
-/// Naive byte-level substring search. Returns the byte offset of the first
+/// Naive byte-level substring search. Returns the Unicode scalar index of the first
 /// occurrence of the needle string in the haystack, or -1.0 if not found.
 /// An empty needle always returns 0.0.
 fn build_rt_str_find_index() -> CompiledFn {
   // params: 0=h_ptr (i32), 1=n_ptr (i32)
   // locals: 2=h_len(i32), 3=n_len(i32), 4=h_base(i32), 5=n_base(i32),
-  //         6=i(i32), 7=j(i32), 8=limit(i32), 9=byte_h(i32), 10=byte_n(i32)
+  //         6=i(i32), 7=j(i32), 8=limit(i32), 9=byte_h(i32), 10=byte_n(i32), 11=scalar(i32)
   let instructions = vec![
     // h_len = i32(f64.load h_ptr+0)
     Instruction::LocalGet(0),
@@ -5626,12 +5626,40 @@ fn build_rt_str_find_index() -> CompiledFn {
     Instruction::Block(wasm_encoder::BlockType::Empty),
     // Loop $inner_loop
     Instruction::Loop(wasm_encoder::BlockType::Empty),
-    // if j >= n_len: found at i → push f64(i), br $outer
+    // if j >= n_len: found at byte i. Count scalars in [0, i) only on success.
     Instruction::LocalGet(7),
     Instruction::LocalGet(3),
     Instruction::I32GeU,
     Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::I32Const(0),
+    Instruction::LocalSet(7), // reuse j as prefix cursor
+    Instruction::Block(wasm_encoder::BlockType::Empty),
+    Instruction::Loop(wasm_encoder::BlockType::Empty),
+    Instruction::LocalGet(7),
     Instruction::LocalGet(6),
+    Instruction::I32GeU,
+    Instruction::BrIf(1),
+    // A valid UTF-8 scalar starts at every non-continuation byte.
+    // j < i <= h_len - n_len keeps every load inside the haystack.
+    Instruction::LocalGet(11),
+    Instruction::LocalGet(4),
+    Instruction::LocalGet(7),
+    Instruction::I32Add,
+    Instruction::I32Load8U(mem_arg_byte(0)),
+    Instruction::I32Const(0xc0),
+    Instruction::I32And,
+    Instruction::I32Const(0x80),
+    Instruction::I32Ne,
+    Instruction::I32Add,
+    Instruction::LocalSet(11),
+    Instruction::LocalGet(7),
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::LocalSet(7),
+    Instruction::Br(0),
+    Instruction::End,
+    Instruction::End,
+    Instruction::LocalGet(11),
     Instruction::F64ConvertI32U,
     // depths inside If: 0=If,1=$inner_loop,2=$mismatch,3=$outer_loop,4=$exit_outer,5=$outer
     Instruction::Br(5),
@@ -5690,6 +5718,7 @@ fn build_rt_str_find_index() -> CompiledFn {
       ValType::I32, // limit (8)
       ValType::I32, // byte_h (9)
       ValType::I32, // byte_n (10)
+      ValType::I32, // scalar (11), zero-initialized on entry
     ],
     instructions,
   }

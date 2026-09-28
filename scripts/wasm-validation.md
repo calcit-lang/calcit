@@ -51,7 +51,7 @@ WASM 相关能力分属四个不同层级，排查或文档引用时不要把它
 | `&str:concat`                          | ✅   | bump alloc + `memory.copy` |
 | `&str:compare`                         | ✅   | 逐字节字典序比较         |
 | `&str:contains?`                       | ✅   | Unicode 标量索引范围检查；负数/小数/非有限值 trap |
-| `&str:find-index`                      | ✅   | 朴素字节子串搜索，返回偏移或 -1 |
+| `&str:find-index`                      | ✅   | 子串搜索返回 Unicode 标量索引或 -1；与 `.get/.slice/.len` 使用相同单位，共享 Calcit 测试覆盖中文、emoji、组合字符与求值顺序 |
 | `&str:includes?`                       | ✅   | `find-index >= 0`          |
 | `&str:pad-left` / `&str:pad-right`     | ✅   | 循环填充 pattern 字节    |
 | `format-cirru-edn`                     | 部分 | 由闭合静态类型导向；支持标量、递归容器、Struct field 与 Enum payload |

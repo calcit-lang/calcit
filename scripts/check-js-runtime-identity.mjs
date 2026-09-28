@@ -65,6 +65,14 @@ try {
   assert.equal(runtimeA._$n_str_$o_slice("A😀中", 1), "😀中", "omitted end retains scalar indexing");
   assert.equal(runtimeA.last("中😀"), "😀", "legacy runtime exports must retain complete scalars");
   assert.equal(runtimeA.butlast("中😀"), "中");
+  // Malformed UTF-16 can only arrive through the JS host boundary. Do not
+  // normalize it to replacement characters or count a lone surrogate twice.
+  for (const surrogate of ["\uD800", "\uDC00"]) {
+    assert.equal(runtimeA._$n_str_$o_find_index(`${surrogate}a`, "a"), 1);
+    assert.equal(runtimeA._$n_str_$o_find_index(`😀${surrogate}a`, "a"), 2);
+    assert.equal(runtimeA._$n_str_$o_find_index(`${surrogate}a`, surrogate), 0);
+    assert.equal(runtimeA._$n_str_$o_find_index(`${surrogate}a`, "\uFFFD"), -1);
+  }
 
   const boundedList = new runtimeA.CalcitSliceList([1, 2]);
   assert.equal(runtimeA._$n_list_$o_nth(boundedList, 1), 2);

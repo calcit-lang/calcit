@@ -538,7 +538,7 @@ check("test-static-option-result-methods()", 16, e["test-static-option-result-me
 check("test-static-option-result-inline-closures()", 35, e["test-static-option-result-inline-closures"]);
 check("test-str-contains-true()", 1, e["test-str-contains-true"]); // idx 1 < len 5
 check("test-str-contains-false()", 0, e["test-str-contains-false"]); // idx 10 >= len 5
-check("test-str-find-index-found()", 1, e["test-str-find-index-found"]); // "ell" at byte 1
+check("test-str-find-index-found()", 1, e["test-str-find-index-found"]); // "ell" at scalar index 1
 check("test-str-find-index-not-found()", -1, e["test-str-find-index-not-found"]); // "xyz" not found
 check("test-str-includes-true()", 1, e["test-str-includes-true"]); // "ell" in "hello"
 check("test-str-includes-false()", 0, e["test-str-includes-false"]); // "xyz" not in "hello"

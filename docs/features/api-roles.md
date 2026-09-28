@@ -64,6 +64,10 @@ The public, human-facing form is distinct from macro-expanded core definitions a
 
 这张对照表只规定**公开源码的首选写法**，不是要求一次删除所有内部实现名。内部函数即使仍出现在 `query type` 的定义路径中，也不得反向成为 Agent 推荐的应用代码。
 
+### 索引单位：普通索引与显式 byte 单位
+
+String 的 `.len/.count`、`.get/.nth/.slice` 与 `.find-index` 使用 Unicode 标量单位；查找返回 `Option<Number>`，不是 Rust `str::find` 的字节偏移。Calcit 借鉴语义清晰的命名，不照搬会破坏自身索引一致性的底层表示。`.includes?` 判断子串，`.contains?` 当前判断索引存在，不因统一索引单位而互换。协议长度使用显式 `&str:utf8-byte-count`，不可混入普通索引。示例和边界见 [String](../data/string.md#子串搜索索引)；其他 API 族的重命名仍由 #1452 逐项决策，本修复不增加别名或 fix 规则。
+
 ## 可运行的角色示例
 
 `Option` 是名义类型定义；加上 variant 后，同一定义也能直接构造值。类型表达式仍写在 schema 中，不能把 `Option` 裸名当成已构造的值：
