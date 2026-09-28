@@ -388,7 +388,7 @@
           :tags $ #{} :internal
         '&core-number-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-number-methods
-            &impl::new :&core-number-methods (:: :ceil ceil) (:: :empty &number:empty) (:: :floor floor) (:: :format &number:format) (:: :display-by &number:display-by) (:: :inc inc) (:: :pow pow) (:: :round round) (:: :round? round?) (:: :fract &number:fract) (:: :sqrt sqrt) (:: :negate negate) (:: :rem &number:rem) (:: :compare &compare)
+            &impl::new :&core-number-methods (:: :ceil ceil) (:: :empty &number:empty) (:: :floor floor) (:: :format &number:format) (:: :display-by &number:display-by) (:: :inc inc) (:: :pow pow) (:: :round round) (:: :round? round?) (:: :integer? integer?) (:: :fract &number:fract) (:: :sqrt sqrt) (:: :negate negate) (:: :rem &number:rem) (:: :compare &compare)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -5987,6 +5987,27 @@
               assert= (%none)
                 index-of ([] :a :b :c) :missing
             :tags $ #{} :core :unit
+        'integer? $ %{} 'CodeEntry
+          :doc "|判断 Number 是否有限且恰好没有小数部分；这是首选公开名字，返回 Bool 而不收窄为整数类型。旧 round?/.round? 保持同义兼容。"
+          :code $ quote $ defn integer? (x) (round? x)
+          :examples $ [] $ quote (integer? 12)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |integer-alias-boundaries-and-evaluation)
+            :code $ quote $ do
+              assert= true $ integer? 0
+              assert= true $ integer? -0
+              assert= true $ integer? 1e100
+              assert= false $ integer? 1.25
+              assert= false $ integer? 0.0000000000000001
+              assert= false $ integer? $ / 1 0
+              assert= false $ integer? $ / 0 0
+              assert= true $ .integer? -1
+              assert= false $ .integer? 0.25
+              assert= false $ .integer? $ / -1 0
+              assert= true $ integer? $ do (println |integer-alias-free-argument) 0
+              assert= false $ .integer? $ do (println |integer-alias-method-argument) 0.25
+            :tags $ #{} :core :numeric-predicate :unit
         'interleave $ %{} 'CodeEntry
           :doc "|Interleave two homogeneous lists, truncating to the shorter input. Both inputs and the result share one element type; explicitly use List<Dynamic> only at a reviewed heterogeneous boundary."
           :code $ quote $ defn interleave (xs0 ys0)

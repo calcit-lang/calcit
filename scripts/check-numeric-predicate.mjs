@@ -12,11 +12,17 @@ const run = (...args) => execFileSync(binary, args, {
 const corePath = resolve("src/cirru/calcit-core.cirru");
 // Replay the authoritative Calcit tests, including method calls, on each target.
 const core = JSON.parse(run("cirru", "parse-edn", "--file", corePath));
-const tests = core[":files"]["'calcit.core"].defs["'round?"].tests;
-assert.deepEqual(tests.map(test => test.name).sort(), [
+const definitions = core[":files"]["'calcit.core"].defs;
+const roundTests = definitions["'round?"].tests;
+const integerTests = definitions["'integer?"].tests;
+assert.deepEqual(roundTests.map(test => test.name).sort(), [
   "distinguishes-integers", "finite-exact-integer-boundaries", "integer-method-and-evaluation",
 ]);
-const expectedTrace = ["integer-free-argument", "integer-method-argument"];
+assert.deepEqual(integerTests.map(test => test.name), ["integer-alias-boundaries-and-evaluation"]);
+const tests = [...roundTests, ...integerTests];
+const expectedTrace = [
+  "integer-free-argument", "integer-method-argument", "integer-alias-free-argument", "integer-alias-method-argument",
+];
 const fixture = await mkdtemp(join(tmpdir(), "calcit-numeric-predicate-"));
 try {
   const snapshot = join(fixture, "calcit.cirru");
