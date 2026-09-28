@@ -448,11 +448,13 @@ check("test-set-difference()", 2, e["test-set-difference"]); // {10,30} from {10
 check("test-set-difference-empty()", 2, e["test-set-difference-empty"]); // disjoint, keeps all
 check("test-set-union()", 4, e["test-set-union"]); // {10,20,30,40}
 check("test-set-union-same()", 3, e["test-set-union-same"]); // {10,20,30}
+check("test-set-union-method()", 4, e["test-set-union-method"]);
 check("test-to-pairs()", 4, e["test-to-pairs"]); // list count=2 + first pair count=2
 
 // --- Map merge/diff tests ---
 check("test-map-merge()", 3, e["test-map-merge"]); // {a:1, b:3, c:4}
 check("test-map-merge-value()", 99, e["test-map-merge-value"]); // b overridden to 99
+check("test-map-merge-method()", 99, e["test-map-merge-method"]);
 check("test-filter-map-kv()", 32, e["test-filter-map-kv"]); // count=2 plus transformed c=30
 check("test-map-diff-new()", 1, e["test-map-diff-new"]); // {a:1} — entries of a not in b
 check("test-map-diff-keys()", 2, e["test-map-diff-keys"]); // #{a, c} not in b

@@ -129,6 +129,13 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   运行 `calcit calcit.cirru fix --rule core-list-flat-map-v1 --format edn` 预览，核对来源和 revision 后携带
   `--expect-revision` 应用并重复预览。Fn `.bind` 是不同语义，开放接收者、未知 macro、quoted data 和用户方法
   不自动改写。当前只覆盖 definition `:code`，不改 `:tests` / `:examples`，不加入已发布 preset。
+- `core-collection-combine-v1` 仅把具体 Map 的 `.mappend` 改成 `.merge`、具体 Set 的 `.mappend` 改成 `.union`。
+  两组旧/新方法必须各自指向同一个 core 实现，形参与返回契约一致；Map 后出现的同名 key 覆盖前值，Set 去重。
+  规则支持至少一个组合参数的完整方法调用，不处理作为值传递的方法名。运行
+  `calcit calcit.cirru fix --rule core-collection-combine-v1 --format edn` 预览，核对 receiver、来源与 revision 后
+  携带 `--expect-revision` 应用并再次预览。List、String、Fn 的 `.mappend` 语义不同，开放接收者、quoted data、
+  未知 macro 和用户自定义方法也不自动改写。当前只覆盖 definition `:code`，不改 `:tests` / `:examples`，
+  不加入已发布 preset。
 - `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
   同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples

@@ -850,6 +850,167 @@ fn map_distinct_values_fix_respects_quoted_macro_and_open_boundaries() {
 }
 
 #[test]
+fn collection_combine_fix_preserves_map_set_semantics_and_revision_guard() {
+  for (name, code, schema, test_code, replacement) in [
+    (
+      "combine-maps",
+      "quote $ defn combine-maps (xs ys zs) (xs .mappend ys zs)",
+      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Map 'Tag 'Number) (:: 'Map 'Tag 'Number) (:: 'Map 'Tag 'Number)) (:return $ :: 'Map 'Tag 'Number)",
+      "quote $ do\n  assert= ({} (:a 3) (:b 2)) $ combine-maps ({} (:a 1)) ({} (:b 2)) ({} (:a 3))\n  assert= ({}) $ combine-maps ({}) ({}) ({})",
+      ".merge",
+    ),
+    (
+      "combine-sets",
+      "quote $ defn combine-sets (xs ys zs) (xs .mappend ys zs)",
+      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Set 'Number) (:: 'Set 'Number) (:: 'Set 'Number)) (:return $ :: 'Set 'Number)",
+      "quote $ do\n  assert= (#{} 1 2 3) $ combine-sets (#{} 1 2) (#{} 2 3) (#{} 1)\n  assert= (#{}) $ combine-sets (#{}) (#{}) (#{})",
+      ".union",
+    ),
+  ] {
+    let directory = TestDirectory::create();
+    let snapshot = directory.path().join("calcit.cirru");
+    fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+    let target = format!("fix-command.main/{name}");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", code]),
+      "install collection combine method",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", &target, "--input-format", "cirru", "--code", schema]),
+      "declare collection combine contract",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "add-test",
+          &target,
+          "preserves-combination",
+          "--tags",
+          "unit",
+          "--input-format",
+          "cirru",
+          "--code",
+          test_code,
+        ],
+      ),
+      "attach Calcit combination contract",
+    );
+    let selector = [
+      "--rule",
+      "core-collection-combine-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      name,
+      "--format",
+      "json",
+    ];
+    let preview = run_fix(&snapshot, &selector);
+    assert_success(&preview, "collection combine preview");
+    let report = parse_stdout(&preview);
+    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+    assert_eq!(suggestions.len(), 1, "{report}");
+    assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
+    assert_eq!(
+      suggestions[0]["replacement"],
+      serde_json::json!({"$type": "quote", "value": replacement}),
+      "{report}"
+    );
+    assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+    let stale = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-collection-combine-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--apply",
+        "--allow-no-vcs",
+        "--expect-revision",
+        "stale-revision",
+        "--format",
+        "json",
+      ],
+    );
+    assert!(!stale.status.success(), "stale revision must reject apply");
+    let applied = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-collection-combine-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--apply",
+        "--allow-no-vcs",
+        "--expect-revision",
+        report["revision"].as_str().expect("preview revision"),
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&applied, "collection combine apply");
+    assert_success(
+      &run_calcit(&snapshot, &["test", &target, "--require-match"]),
+      "Calcit combination after migration",
+    );
+    let repeated = run_fix(&snapshot, &selector);
+    assert_success(&repeated, "idempotent collection combine preview");
+    assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+  }
+}
+
+#[test]
+fn collection_combine_fix_skips_list_and_quoted_calls() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (name, code) in [
+    ("list-combine", "quote $ defn list-combine () $ ([] 1) .mappend ([] 2)"),
+    (
+      "quoted-combine",
+      "quote $ defn quoted-combine ()\n  quote $ ({} (:a 1)) .mappend ({} (:b 2))\n  , 0",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "install excluded combination source",
+    );
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-collection-combine-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, "excluded combination preview");
+    assert_eq!(parse_stdout(&preview)["data"]["suggestions"], serde_json::json!([]));
+  }
+}
+
+#[test]
 fn collection_len_fix_rewrites_only_proven_builtin_count_calls() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

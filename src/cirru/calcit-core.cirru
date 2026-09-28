@@ -6908,11 +6908,18 @@
             :generics $ [] 'K 'V
             :rest $ :: 'Map 'K 'V
             :return $ :: 'Map 'K 'V
-          :tests $ [] $ %{} 'TestEntry (:name |combines-maps-left-to-right)
-            :code $ quote $ assert=
-              {,} :a nil :b 12 :c nil :d 14
-              merge ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |combines-maps-left-to-right)
+              :code $ quote $ assert=
+                {,} :a nil :b 12 :c nil :d 14
+                merge ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |map-method-combination-preserves-overwrite-order)
+              :code $ quote $ do
+                assert= ({} (:a 3) (:b 2)) $ ({} (:a 1)) .merge ({} (:b 2)) ({} (:a 3))
+                assert= ({} (:a 3) (:b 2)) $ ({} (:a 1)) .mappend ({} (:b 2)) ({} (:a 3))
+                assert= ({}) $ ({}) .merge ({})
+              :tags $ #{} :core :unit
         'merge-dynamic $ %{} 'CodeEntry
           :doc "|Combines open Map<K,Dynamic> values left-to-right with later maps overwriting earlier keys, without claiming a homogeneous value relation."
           :code $ quote $ defn merge-dynamic (x0 & xs) (reduce xs x0 &merge)
@@ -8896,10 +8903,17 @@
             :generics $ [] 'T
             :rest $ :: 'Set 'T
             :return $ :: 'Set 'T
-          :tests $ [] $ %{} 'TestEntry (:name |combines-all-sets)
-            :code $ quote $ assert= (#{} 1 2 3)
-              union (#{} 1) (#{} 2) (#{} 3)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |combines-all-sets)
+              :code $ quote $ assert= (#{} 1 2 3)
+                union (#{} 1) (#{} 2) (#{} 3)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |set-method-combination-deduplicates)
+              :code $ quote $ do
+                assert= (#{} 1 2 3) $ (#{} 1 2) .union (#{} 2 3) (#{} 1)
+                assert= (#{} 1 2 3) $ (#{} 1 2) .mappend (#{} 2 3) (#{} 1)
+                assert= (#{}) $ (#{}) .union (#{})
+              :tags $ #{} :core :unit
         'unix-time-ms $ %{} 'CodeEntry
           :doc "|返回 Unix epoch 以来的系统时间，单位为毫秒。系统时钟可能被宿主校准，不保证单调递增。"
           :code $ quote &runtime-implementation

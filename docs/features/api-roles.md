@@ -154,6 +154,8 @@ Map 去重值使用 `distinct-values` / `.distinct-values`，返回 `Set<V>`，�
 
 List 展平映射优先使用 `.flat-map`：回调对每个元素调用一次，返回 List 并按顺序展平一层，类型从 `List<T>` 与 `Fn(T)->List<U>` 推断为 `List<U>`。旧 List `.bind` 与新方法同指 `calcit.core/mapcat`，可用显式 `core-list-flat-map-v1` 在具体 List 且契约证明一致时迁移；前缀 `mapcat` 暂留，Fn `.bind` 不按名字替换。
 
+集合组合的显式 `core-collection-combine-v1` 只迁移具体 Map `.mappend` → `.merge` 和具体 Set `.mappend` → `.union`，要求各组旧、新方法解析到同一个 core 实现且类型契约一致。Map 后面的相同 key 覆盖前值，Set 去重；List、String、Fn 的 `.mappend` 保持单独审阅，不做跨类型全局替换。旧名暂保留，等待消费者迁移验证后再考虑移除。
+
 ```cirru
 do
   assert= ([] 1 0 2)

@@ -51,6 +51,8 @@ const CORE_LIST_FLAT_MAP_RULE: &str = "core-list-flat-map-v1";
 const CORE_LIST_FLAT_MAP_DIAGNOSTIC: &str = "FIX_CORE_LIST_FLAT_MAP";
 const CORE_MAP_DISTINCT_VALUES_RULE: &str = "core-map-distinct-values-v1";
 const CORE_MAP_DISTINCT_VALUES_DIAGNOSTIC: &str = "FIX_CORE_MAP_DISTINCT_VALUES";
+const CORE_COLLECTION_COMBINE_RULE: &str = "core-collection-combine-v1";
+const CORE_COLLECTION_COMBINE_DIAGNOSTIC: &str = "FIX_CORE_COLLECTION_COMBINE";
 const RENAME_DEFINITION_RULE: &str = "rename-definition-v1";
 const RENAME_DEFINITION_DIAGNOSTIC: &str = "REFACTOR_RENAME_DEFINITION";
 const VALUE_TO_ZERO_ARG_FN_RULE: &str = "value-to-zero-arg-fn-v1";
@@ -563,6 +565,16 @@ pub(crate) fn handle_fix_command(
       MAP_DISTINCT_VALUES_ALIAS,
     )?);
   }
+  if selected_rules.contains(&CORE_COLLECTION_COMBINE_RULE) {
+    for rule in [MAP_MERGE_ALIAS, SET_UNION_ALIAS] {
+      suggestions.extend(plan_core_collection_method_alias_fixes(
+        &source_snapshot,
+        snapshot_file,
+        &selected_definitions,
+        rule,
+      )?);
+    }
+  }
   let mut constructor_kinds = Vec::new();
   if selected_rules.contains(&NAMED_ENUM_CONSTRUCTOR_RULE) {
     constructor_kinds.push(NominalKind::Enum);
@@ -959,6 +971,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_LIST_INTERSPERSE_RULE
         | CORE_LIST_FLAT_MAP_RULE
         | CORE_MAP_DISTINCT_VALUES_RULE
+        | CORE_COLLECTION_COMBINE_RULE
         | RENAME_DEFINITION_RULE
         | VALUE_TO_ZERO_ARG_FN_RULE
         | SYNTHESIZE_SCHEMA_RULE
@@ -968,7 +981,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -1001,6 +1014,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_LIST_INTERSPERSE_RULE
         | CORE_LIST_FLAT_MAP_RULE
         | CORE_MAP_DISTINCT_VALUES_RULE
+        | CORE_COLLECTION_COMBINE_RULE
     ) {
       return vec![match rule {
         RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
@@ -1016,6 +1030,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_LIST_INTERSPERSE_RULE => CORE_LIST_INTERSPERSE_RULE,
         CORE_LIST_FLAT_MAP_RULE => CORE_LIST_FLAT_MAP_RULE,
         CORE_MAP_DISTINCT_VALUES_RULE => CORE_MAP_DISTINCT_VALUES_RULE,
+        CORE_COLLECTION_COMBINE_RULE => CORE_COLLECTION_COMBINE_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
     }
@@ -1133,6 +1148,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_MAP_DISTINCT_VALUES_DIAGNOSTIC,
       evidence_source: "proven-map-receiver-and-method-implementation",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    CORE_COLLECTION_COMBINE_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: CORE_COLLECTION_COMBINE_DIAGNOSTIC,
+      evidence_source: "proven-map-or-set-receiver-and-method-implementation",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -3688,6 +3710,7 @@ fn plan_core_list_add_fixes(
 enum CollectionReceiverKind {
   List,
   Map,
+  Set,
 }
 
 impl CollectionReceiverKind {
@@ -3695,6 +3718,7 @@ impl CollectionReceiverKind {
     match self {
       Self::List => matches!(annotation, CalcitTypeAnnotation::List(_)),
       Self::Map => matches!(annotation, CalcitTypeAnnotation::Map(_, _)),
+      Self::Set => matches!(annotation, CalcitTypeAnnotation::Set(_)),
     }
   }
 
@@ -3702,6 +3726,7 @@ impl CollectionReceiverKind {
     match self {
       Self::List => "List",
       Self::Map => "Map",
+      Self::Set => "Set",
     }
   }
 }
@@ -3715,6 +3740,7 @@ struct CollectionMethodAliasRule {
   new_method: &'static str,
   implementation: &'static str,
   call_size: usize,
+  variadic: bool,
   message: &'static str,
 }
 
@@ -3726,6 +3752,7 @@ const LIST_FOLD_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
   new_method: ".fold",
   implementation: "calcit.core/fold",
   call_size: 4,
+  variadic: false,
   message: "Use `.fold` for seeded left-to-right List accumulation; both methods resolve to the same core implementation.",
 };
 
@@ -3737,6 +3764,7 @@ const LIST_INTERSPERSE_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasR
   new_method: ".intersperse",
   implementation: "calcit.core/intersperse",
   call_size: 3,
+  variadic: false,
   message: "Use `.intersperse` for List separator insertion; both methods resolve to the same core implementation.",
 };
 
@@ -3748,6 +3776,7 @@ const LIST_FLAT_MAP_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule
   new_method: ".flat-map",
   implementation: "calcit.core/mapcat",
   call_size: 3,
+  variadic: false,
   message: "Use `.flat-map` for List element-to-List mapping; both methods resolve to the same core implementation.",
 };
 
@@ -3759,7 +3788,32 @@ const MAP_DISTINCT_VALUES_ALIAS: CollectionMethodAliasRule = CollectionMethodAli
   new_method: ".distinct-values",
   implementation: "calcit.core/distinct-values",
   call_size: 2,
+  variadic: false,
   message: "Use `.distinct-values` for a deduplicated Set of Map values; both methods resolve to the same core implementation.",
+};
+
+const MAP_MERGE_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
+  rule_id: CORE_COLLECTION_COMBINE_RULE,
+  diagnostic_code: CORE_COLLECTION_COMBINE_DIAGNOSTIC,
+  receiver: CollectionReceiverKind::Map,
+  old_method: ".mappend",
+  new_method: ".merge",
+  implementation: "calcit.core/merge",
+  call_size: 3,
+  variadic: true,
+  message: "Use `.merge` for Map combination; both methods resolve to the same core implementation and later keys overwrite earlier keys.",
+};
+
+const SET_UNION_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
+  rule_id: CORE_COLLECTION_COMBINE_RULE,
+  diagnostic_code: CORE_COLLECTION_COMBINE_DIAGNOSTIC,
+  receiver: CollectionReceiverKind::Set,
+  old_method: ".mappend",
+  new_method: ".union",
+  implementation: "calcit.core/union",
+  call_size: 3,
+  variadic: true,
+  message: "Use `.union` for Set combination; both methods resolve to the same core implementation and deduplicate values.",
 };
 
 /// Only rewrite complete method calls. First-class method values are not equivalent.
@@ -3775,7 +3829,7 @@ fn collect_collection_method_alias_calls(
   if matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "quote" | "quasiquote")) {
     return;
   }
-  if items.len() == rule.call_size {
+  if items.len() == rule.call_size || (rule.variadic && items.len() > rule.call_size) {
     let indices = if matches!(&items[0], Cirru::Leaf(name) if name.as_ref() == rule.old_method) {
       Some((0, 1))
     } else if matches!(&items[1], Cirru::Leaf(name) if name.as_ref() == rule.old_method) {
@@ -3859,6 +3913,13 @@ fn plan_core_collection_method_alias_fixes(
       let resolved = inferred
         .as_ref()
         .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
+      if rule.rule_id == CORE_COLLECTION_COMBINE_RULE
+        && !resolved
+          .as_ref()
+          .is_some_and(|annotation| rule.receiver.matches(annotation.as_ref()))
+      {
+        continue;
+      }
       if resolved.as_ref().is_some_and(|annotation| {
         !rule.receiver.matches(annotation.as_ref())
           && !matches!(

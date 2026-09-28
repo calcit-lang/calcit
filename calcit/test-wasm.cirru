@@ -953,6 +953,14 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-map-merge-method $ %{} 'CodeEntry (:doc "|typed Map .merge keeps later-key precedence")
+          :code $ quote $ defwasm-export test-map-merge-method ()
+            &map:get
+              (&{} :a 1 :b 2) .merge (&{} :b 3) (&{} :b 99)
+              , :b
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
         'test-map-two-keys-sum $ %{} 'CodeEntry (:doc "|sum lookups for two numeric keys")
           :code $ quote $ defwasm-export test-map-two-keys-sum (a b)
             &let
@@ -1229,6 +1237,12 @@
         'test-set-union-same $ %{} 'CodeEntry (:doc "|union of identical sets")
           :code $ quote $ defwasm-export test-set-union-same ()
             &set:count $ &union (#{} 10 20 30) (#{} 10 20 30)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'test-set-union-method $ %{} 'CodeEntry (:doc "|typed Set .union deduplicates variadic inputs")
+          :code $ quote $ defwasm-export test-set-union-method ()
+            &set:count $ (#{} 10 20) .union (#{} 20 30) (#{} 10 40)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
