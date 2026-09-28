@@ -551,7 +551,7 @@ Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。
 
 List 单元素追加首选 `.append`，List 拼接用 `.concat`。迁移旧 `.add` 可显式运行 `calcit fix --rule core-list-add-v1 --format edn`：仅当具体 List 接收者与旧、新方法同指 `calcit.core/append` 且源码上下文稳定时提供可应用建议；Set/Map、开放类型与未知 macro 不得按字面改写。先预览，再携带原 revision 应用并重复预览；definition 附带的 `:tests` / `:examples` 不在本规则的自动覆盖范围内。
 
-判断 Number 是否有限且恰好没有小数部分时，首选 `integer? value` 或 `value .integer?`；返回 Bool，不代表安全整数范围或整数类型 refinement。旧 `round?/.round?` 暂留同义兼容；自动迁移规则尚未交付，不要按词形批量替换用户函数或方法。使用前可查询 `calcit.core/integer?` 的公开 schema 和 Number 方法契约。
+判断 Number 是否有限且恰好没有小数部分时，首选 `integer? value` 或 `value .integer?`；返回 Bool，不代表安全整数范围或整数类型 refinement。旧 `round?/.round?` 暂留同义兼容。旧函数调用可显式用 `core-integer-predicate-v1` 预览：只自动改写 reader 解析成内建 Proc 的单参数 `round?` 调用头；quoted 数据、未知 macro 和 `.round?` 方法不按词形批量替换。附带的 `:tests` / `:examples` 需人工检查。使用前可查询 `calcit.core/integer?` 的公开 schema 和 Number 方法契约。
 
 List 带初始值的从左到右累加首选 `.fold initial reducer`，空 List 返回初值，累加器类型可不同于元素类型。旧 `.reduce` 方法可显式用 `core-list-fold-v1` 预览和迁移：仅具体 List 的旧、新方法契约都 proven 且指向同一 core 实现时自动改写；前缀 `reduce`、开放接收者和用户方法保留人工审阅。该规则目前不加入版本化 preset，也不自动修改 `:tests` / `:examples`。
 

@@ -5602,6 +5602,201 @@ fn core_non_nil_predicate_rule_uses_resolved_references_and_is_idempotent() {
 }
 
 #[test]
+fn core_integer_predicate_rule_preserves_methods_and_guards_source() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let target = "fix-command.main/legacy-integer";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn legacy-integer ()\n  assert= true $ round? 0\n  assert= false $ round? 0.25\n  assert= true $ .round? -1\n  quote $ round? 8\n  round? 4",
+      ],
+    ),
+    "install legacy integer calls",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)",
+      ],
+    ),
+    "declare legacy integer source",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        target,
+        "preserves-integer-result",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= true $ legacy-integer",
+      ],
+    ),
+    "attach legacy integer behavior test",
+  );
+
+  let args = [
+    "--rule",
+    "core-integer-predicate-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "legacy-integer",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &args);
+  assert_success(&preview, "integer predicate preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
+  assert_eq!(suggestions.len(), 3, "{report}");
+  assert!(suggestions.iter().all(|suggestion| {
+    suggestion["rule_id"] == "core-integer-predicate-v1"
+      && suggestion["applicability"] == "machine-applicable"
+      && suggestion["origin_chain"][0]["target"] == "calcit.core/round?"
+  }));
+  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+  assert!(
+    suggestions
+      .iter()
+      .all(|suggestion| suggestion["origin_chain"][0]["kind"] == "reader-resolved-builtin-proc")
+  );
+
+  let stale = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-integer-predicate-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "legacy-integer",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      "md5:stale",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!stale.status.success(), "stale revision must reject apply");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-integer-predicate-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "legacy-integer",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "integer predicate apply");
+  let updated = fs::read_to_string(&snapshot).expect("updated Snapshot should read");
+  assert!(updated.contains("calcit.core/integer?"));
+  assert!(updated.contains(".round?"), "method form stays unchanged");
+  assert!(updated.contains("quote $ round? 8"), "quoted data stays unchanged");
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "integer behavior after migration",
+  );
+  let repeated = run_fix(&snapshot, &args);
+  assert_success(&repeated, "integer predicate idempotence preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/pass-form",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defmacro pass-form (body) body",
+      ],
+    ),
+    "install unknown source macro",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/macro-integer",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn macro-integer () $ pass-form $ round? 4",
+      ],
+    ),
+    "install macro-wrapped integer call",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/macro-integer",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)",
+      ],
+    ),
+    "declare macro-wrapped integer result",
+  );
+  let macro_preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-integer-predicate-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "macro-integer",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&macro_preview, "macro-wrapped integer predicate preview");
+  let macro_report = parse_stdout(&macro_preview);
+  assert_eq!(macro_report["data"]["suggestions"].as_array().map(Vec::len), Some(1));
+  assert_eq!(macro_report["data"]["suggestions"][0]["applicability"], "requires-review");
+  assert_eq!(macro_report["data"]["suggestions"][0]["replacement"], serde_json::Value::Null);
+}
+
+#[test]
 fn strict_result_success_consumption_rejects_dynamic_payload() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
