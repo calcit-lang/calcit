@@ -96,6 +96,8 @@ jobs:
             node scripts/test-wasi-stdin.mjs
           WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
             node scripts/check-numeric-predicate.mjs
+          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
+            node scripts/check-nil-predicate.mjs
 
   wasi_business_smoke:
     name: Published WASI HTTP business loop
@@ -222,6 +224,7 @@ jobs:
         run: |
           node scripts/check-string-unicode.mjs
           node scripts/check-numeric-predicate.mjs
+          node scripts/check-nil-predicate.mjs
           node scripts/check-helper-inference.mjs
 
       - name: "run generated namespace-import regression in Node"
