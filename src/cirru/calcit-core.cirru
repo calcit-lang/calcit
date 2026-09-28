@@ -3949,6 +3949,41 @@
                 assert= true $ contains? |abcd 0
                 assert= false $ contains? |abcd 4
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |distinguishes-index-key-and-member)
+              :code $ quote $ do
+                assert= true $
+                  [] 10 20
+                  , .contains? 1
+                assert= false $
+                  [] 10 20
+                  , .includes? 1
+                assert= false $
+                  [] 10 20
+                  , .contains? 10
+                assert= true $
+                  [] 10 20
+                  , .includes? 10
+                assert= true $
+                  {} $ :key :value
+                  , .contains? :key
+                assert= false $
+                  {} $ :key :value
+                  , .includes? :key
+                assert= false $
+                  {} $ :key :value
+                  , .contains? :value
+                assert= true $
+                  {} $ :key :value
+                  , .includes? :value
+                assert= true $ "|😀a" .contains? 1
+                assert= true $ "|😀a" .includes? |a
+                assert= true $
+                  #{} 10 20
+                  , .contains? 10
+                assert= true $
+                  #{} 10 20
+                  , .includes? 10
+              :tags $ #{} :core :naming-contract :unit
         'cos $ %{} 'CodeEntry
           :doc "|internal function for cosine\nSyntax: (cos n)\nParams: n (number, radians)\nReturns: number\nReturns cosine of angle in radians"
           :code $ quote &runtime-implementation
@@ -7952,6 +7987,24 @@
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'T
             :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |non-nil-is-not-option-variant)
+            :code $ quote $ do
+              assert= false $ some? nil
+              assert= true $ some? false
+              assert= true $ some? 0
+              assert= true $ some? $ []
+              assert= true $ some? $ Option :none
+              assert= true $ some? $ Option :some nil
+              assert= false $
+                Option :none
+                , .some?
+              assert= true $
+                Option :none
+                , .none?
+              assert= true $
+                Option :some nil
+                , .some?
+            :tags $ #{} :core :naming-contract :unit
         'sort $ %{} 'CodeEntry
           :doc "|internal function for sorting lists\nSyntax: (sort list) or (sort list comparator)\nParams: list (list), comparator (function, optional)\nReturns: list\nReturns sorted list using natural order or custom comparator"
           :code $ quote &runtime-implementation
