@@ -85,6 +85,9 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   与 Option 规则一样，本规则须显式选择，不修改已发布 preset，也不自动改写 `:tests` / `:examples`。
   先运行 `calcit calcit.cirru fix --rule core-result-method-v1 --format edn` 预览，再带原样
   `--expect-revision` 应用；重复预览应为空，随后运行严格类型检查和项目测试。
+  0.26.0 不删除 Option/Result 旧方法 helper；它们仍是 core method 的实现目标。应用可直接调用的
+  兼容入口最早于 0.27.0 且满足[退场条件](../features/api-roles.md#旧方法-helper-的退场条件)后才考虑移除，
+  不能把一次空预览误认为已完成消费者迁移。
 - `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
   同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples
