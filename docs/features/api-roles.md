@@ -144,7 +144,7 @@ do
 | List/String `get/nth` 返回 Option；List `.find/.find-index` 接受 predicate，`.index-of` 接受元素；String `.find-index` 接受子串 | **保留**各命题，位置访问首选 `.get`；等价 `.nth` 迁移待证据齐全 | 不把 predicate 查找改成值比较；缺失保持 Option，String 保持标量索引；Enum 异构位置访问 **暂缓** |
 | `.map/.filter/.slice/.reverse/.sort/.keys`、`map-entries` | **保留**明确的现有词义 | `map-entries: Map<K,V> -> List<MapEntry<K,V>>` 保留 K/V；不为缩短名字退回异构 List<Dynamic> |
 
-核对基线时，`query type ":: 'List 'Number"` 的 `.reduce` 为 proven，`.append/.foldl` 却为 open；具体 `([] 1 2) .append 3` 和 `.foldl 10 +` 都能通过严格检查。**open 是查询证明不足，不等于运行必然失败**。#1455 首先补齐类型/来源证据并回归泛型及自定义 trait，不能用 primitive 替换用户方法测试来绕过。
+核对基线时，`query type ":: 'List 'Number"` 的 `.reduce` 为 proven，`.append/.foldl` 却为 open；具体 `([] 1 2) .append 3` 和 `.foldl 10 +` 都能通过严格检查。第一批已修复 `.append` 的查询证据：内建过程的方法查询现在读取 Snapshot 的公开泛型 schema，`List<Number>` 上可得到 `Number -> List<Number>` 的 proven 契约；运行时宽签名不再覆盖公开契约。`.foldl` 与自定义 trait 的收敛仍需分别验证，不能用 primitive 替换用户方法测试来绕过。
 
 ```cirru
 do

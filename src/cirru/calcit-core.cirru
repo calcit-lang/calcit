@@ -3291,10 +3291,30 @@
             :generics $ [] 'T
             :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |adds-list-item-at-end)
-            :code $ quote $ assert= ([] 1 2 3 4)
-              append ([] 1 2 3) 4
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |adds-list-item-at-end)
+              :code $ quote $ assert= ([] 1 2 3 4)
+                append ([] 1 2 3) 4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |method-spellings-preserve-list-semantics)
+              :code $ quote $ do
+                assert= ([] 1 2 3)
+                  ([] 1 2) .append 3
+                assert= ([] 1 2 3)
+                  ([] 1 2) .add 3
+                assert= ([] 1 2 3 4)
+                  ([] 1 2) .concat $ [] 3 4
+                assert= 3 $
+                  [] 1 2 3
+                  , .len
+                assert= 2 $
+                  {} (:a 1) (:b 2)
+                  , .len
+                assert= 2 $
+                  #{} :a :b
+                  , .len
+                assert= 3 $ "|a😀b" .len
+              :tags $ #{} :core :naming-contract :unit
         'apply $ %{} 'CodeEntry
           :doc "|Call a function with arguments spread from a list. Static analysis preserves the callable return type only when the list has a non-Dynamic homogeneous member satisfying every fixed/rest input and its known cardinality proves the callable arity; a rest-only callable does not require a known length. Otherwise the compatibility result remains Dynamic. Normalize heterogeneous arguments or call the function directly when positions differ."
           :code $ quote $ defn apply (f args) (f & args)

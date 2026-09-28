@@ -7368,13 +7368,18 @@ fn static_method_contract_with_impls(
       ),
       Calcit::Proc(proc) => {
         let (namespace, definition) = proc.get_ns_def();
+        let source_schema = program::lookup_def_schema(namespace, definition);
         (
-          proc.get_type_signature().map(|signature| {
-            Arc::new(CalcitTypeAnnotation::from_function_parts(
-              signature.arg_types.clone(),
-              signature.return_type.clone(),
-            ))
-          }),
+          if matches!(source_schema.as_ref(), CalcitTypeAnnotation::Fn(_)) {
+            Some(source_schema)
+          } else {
+            proc.get_type_signature().map(|signature| {
+              Arc::new(CalcitTypeAnnotation::from_function_parts(
+                signature.arg_types.clone(),
+                signature.return_type.clone(),
+              ))
+            })
+          },
           Some(format!("{namespace}/{definition}")),
         )
       }

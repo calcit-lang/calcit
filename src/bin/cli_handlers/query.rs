@@ -1353,6 +1353,18 @@ mod type_query_tests {
     assert_eq!(list_concat.rest_type.unwrap().describe(), "list<number>");
     assert_eq!(list_concat.return_type.unwrap().describe(), "list<number>");
     assert_eq!(list_concat.definition.as_deref(), Some("calcit.core/&list:concat"));
+    let list_append = runner::preprocess::static_method_contract(list.as_ref(), ".append");
+    assert_eq!(
+      list_append.status, "proven",
+      "core definition schema should survive method dispatch: {list_append:?}"
+    );
+    assert_eq!(list_append.arg_types.unwrap()[0].describe(), "number");
+    assert_eq!(list_append.return_type.unwrap().describe(), "list<number>");
+    assert_eq!(list_append.definition.as_deref(), Some("calcit.core/append"));
+    let open_list = parse_type_annotation_query(":: 'List 'Dynamic").expect("open list should parse");
+    let open_append = runner::preprocess::static_method_contract(open_list.as_ref(), ".append");
+    assert_eq!(open_append.status, "open", "an explicitly dynamic element still needs narrowing");
+    assert!(open_append.arg_types.is_none());
     let original_fingerprint = method_contract_fingerprint(&Some(vec![list_get.clone()])).expect("method serialization");
     let mut changed = list_get.clone();
     changed.return_type = Some("type calcit.core/Option<string>".to_owned());
